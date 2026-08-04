@@ -156,7 +156,7 @@ Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct]
 
 POps is actively developed and maintained by **Pasha Core**.
 
-[🌐 Website](https://pashacore.com.tr) • [👔 LinkedIn](https://www.linkedin.com/company/pashacore) • [🐙 GitHub](https://github.com/PashaCore)
+[🌐 Website](https://pashacore.com.tr) • [🏢 Company LinkedIn](https://www.linkedin.com/company/112521167/) • [👤 Founder LinkedIn](https://www.linkedin.com/in/p4sha/) • [🐙 GitHub](https://github.com/PashaCore)
 
 <br/>
 
