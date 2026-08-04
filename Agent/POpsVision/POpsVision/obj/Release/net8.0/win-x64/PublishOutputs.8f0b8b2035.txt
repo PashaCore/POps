@@ -1,0 +1,10 @@
+D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsVision\POpsVision\bin\Release\net8.0\win-x64\publish\POpsVision.exe
+D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsVision\POpsVision\bin\Release\net8.0\win-x64\publish\POpsVision.dll
+D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsVision\POpsVision\bin\Release\net8.0\win-x64\publish\POpsVision.deps.json
+D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsVision\POpsVision\bin\Release\net8.0\win-x64\publish\POpsVision.runtimeconfig.json
+D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsVision\POpsVision\bin\Release\net8.0\win-x64\publish\POpsVision.pdb
+D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsVision\POpsVision\bin\Release\net8.0\win-x64\publish\Microsoft.Win32.SystemEvents.dll
+D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsVision\POpsVision\bin\Release\net8.0\win-x64\publish\SharpDX.dll
+D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsVision\POpsVision\bin\Release\net8.0\win-x64\publish\SharpDX.Direct3D11.dll
+D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsVision\POpsVision\bin\Release\net8.0\win-x64\publish\SharpDX.DXGI.dll
+D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsVision\POpsVision\bin\Release\net8.0\win-x64\publish\System.Drawing.Common.dll
