@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="assets/logo/logo.png" alt="POps Logo" width="180" />
+  <img src="assets/logo/sidemenu.png" alt="POps Logo" width="180" />
   
   # POps
   
