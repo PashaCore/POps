@@ -29,11 +29,13 @@
 
 ---
 
-## 📖 The Problem
+## 📖 Why POps Exists
+
+### The Problem
 
 Modern IT teams still rely on fragmented tools for inventory, remote assistance, software deployment, monitoring, and policy management. Administrators often juggle multiple thick clients, spreadsheets, and web portals just to maintain a fleet of devices. 
 
-## 💡 The Solution
+### The Solution
 
 **POps (Pasha Operations Platform)** brings these capabilities together in a single transparent platform designed for schools, enterprises, and managed environments. 
 
@@ -69,23 +71,6 @@ For a deep dive into the 5-component agent system (Agent, Tray, Vision, Watchdog
 
 ---
 
-## ✨ Core Features
-
-| Feature | Description |
-| :--- | :--- |
-| **Endpoint Inventory** | Automatically track devices using immutable Hardware IDs (HWID). |
-| **Live Monitoring** | Real-time telemetry, active window tracking, and idle detection. |
-| **Remote Assistance** | POpsVision provides 1-5 FPS adjustable streaming and remote I/O control. |
-| **Software Deployment** | Orchestrate ZIP and MSI installations across your entire fleet instantly. |
-| **OTA Updates** | Agents update themselves seamlessly via the backend update server. |
-| **Terminal** | Execute remote PowerShell commands directly from the web panel. |
-| **Device Identity** | Secure device authentication blocking unauthorized agent spoofing. |
-| **Audit Logs** | Comprehensive tracking of every action, maintaining full accountability. |
-| **Role Based Access** | Strict JWT-based RBAC separating Admins, Managers, and Viewers. |
-| **Multi Lab Management**| Group devices into logical labs for isolated policy enforcement. |
-
----
-
 ## 📸 Screenshots
 
 <details>
@@ -101,6 +86,23 @@ For a deep dive into the 5-component agent system (Agent, Tray, Vision, Watchdog
 | <img src="screenshots/light/devices.png" width="100%"> | <img src="screenshots/light/terminal.PNG" width="100%"> |
 
 </details>
+
+---
+
+## ✨ Core Features
+
+| Feature | Description |
+| :--- | :--- |
+| **Endpoint Inventory** | Automatically track devices using immutable Hardware IDs (HWID). |
+| **Live Monitoring** | Real-time telemetry, active window tracking, and idle detection. |
+| **Remote Assistance** | POpsVision provides 1-5 FPS adjustable streaming and remote I/O control. |
+| **Software Deployment** | Orchestrate ZIP and MSI installations across your entire fleet instantly. |
+| **OTA Updates** | Agents update themselves seamlessly via the backend update server. |
+| **Terminal** | Execute remote PowerShell commands directly from the web panel. |
+| **Device Identity** | Secure device authentication blocking unauthorized agent spoofing. |
+| **Audit Logs** | Comprehensive tracking of every action, maintaining full accountability. |
+| **Role Based Access** | Strict JWT-based RBAC separating Admins, Managers, and Viewers. |
+| **Multi Lab Management**| Group devices into logical labs for isolated policy enforcement. |
 
 ---
 

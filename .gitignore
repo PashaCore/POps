@@ -1,0 +1,24 @@
+# .NET Core
+bin/
+obj/
+TestResults/
+*.suo
+*.user
+*.pdb
+*.cache
+*.dll
+*.exe
+
+# Python
+__pycache__/
+*.pyc
+.env
+venv/
+
+# PHP / Web
+vendor/
+node_modules/
+
+# OS Files
+.DS_Store
+Thumbs.db
