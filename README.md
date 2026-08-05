@@ -4,7 +4,7 @@
   
   # POps
   
-  **Modern Endpoint Management & IT Operations Platform**
+  POps is an open-source endpoint operations platform that combines device management, remote assistance, software deployment and infrastructure automation into a single system.
   
   <br />
 
@@ -15,7 +15,7 @@
   
   <br />
   
-  ⭐ **Open Source** &nbsp;&nbsp;•&nbsp;&nbsp; 🛡️ **Transparent by Design** &nbsp;&nbsp;•&nbsp;&nbsp; ⚡ **Real-time** &nbsp;&nbsp;•&nbsp;&nbsp; 🏫 **Built for Education & Enterprise**
+  ⭐ **Open Source** &nbsp;&nbsp;•&nbsp;&nbsp; 🛡️ **Transparent by Design** &nbsp;&nbsp;•&nbsp;&nbsp; ⚡ **Real-time** &nbsp;&nbsp;•&nbsp;&nbsp; 🏫 **Built for Education & Teams**
 
 </div>
 
@@ -29,6 +29,16 @@
 
 ---
 
+## 🧠 Philosophy
+
+POps was created around one simple idea:
+
+> **Administrators should have powerful tools. Users should always know when those tools are being used.**
+
+We believe transparency builds trust, and trusted systems create better institutions. That is why our core principle is being **Transparent by Design**.
+
+---
+
 ## 📖 Why POps Exists
 
 ### The Problem
@@ -37,7 +47,7 @@ Modern IT teams still rely on fragmented tools for inventory, remote assistance,
 
 ### The Solution
 
-**POps (Pasha Operations Platform)** brings these capabilities together in a single transparent platform designed for schools, enterprises, and managed environments. 
+**POps (Pasha Operations Platform)** brings these capabilities together in a single transparent platform designed for schools, IT teams, and managed environments. 
 
 Instead of hiding administrative activity from users, POps embraces **transparency by design**, providing clear notifications, immutable audit logs, and privacy-conscious remote assistance.
 
@@ -53,19 +63,40 @@ Instead of hiding administrative activity from users, POps embraces **transparen
 
 POps relies on a dual-socket, asynchronous architecture to guarantee responsiveness across thousands of devices.
 
-<div align="center">
-  <br/>
-  <code><b>Web Dashboard (PHP 8)</b></code>
-  <br/>⬇<br/>
-  <code><b>FastAPI Server (Python)</b></code>
-  <br/>⬇<br/>
-  <code><b>WebSocket Hub (WSS)</b></code>
-  <br/>⬇<br/>
-  <code><b>POps Agent (.NET 8)</b></code>
-  <br/>⬇<br/>
-  <code><b>Windows Endpoint</b></code>
-  <br/><br/>
-</div>
+
+```mermaid
+graph TD
+    classDef frontend fill:#2563EB,stroke:#1E40AF,stroke-width:2px,color:#fff;
+    classDef backend fill:#10B981,stroke:#047857,stroke-width:2px,color:#fff;
+    classDef agent fill:#8B5CF6,stroke:#6D28D9,stroke-width:2px,color:#fff;
+    classDef db fill:#F59E0B,stroke:#B45309,stroke-width:2px,color:#fff;
+
+    subgraph "Web Dashboard"
+        UI[PHP 8 & JS Frontend]:::frontend
+        Auth[JWT RBAC Auth]:::frontend
+    end
+
+    subgraph "Central Server"
+        API[Python FastAPI]:::backend
+        WS[WebSocket Hub]:::backend
+        DB[(PostgreSQL)]:::db
+    end
+
+    subgraph "Windows Endpoint"
+        Agent[.NET 8 POpsAgent]:::agent
+        Vision[POpsVision Streaming]:::agent
+        Watchdog[POpsWatchdog]:::agent
+    end
+
+    UI <-->|REST API| API
+    UI <-->|Secure WSS| WS
+    API <-->|Read/Write| DB
+    WS <-->|Real-time JSON| Agent
+    
+    Agent --- Vision
+    Agent --- Watchdog
+```
+
 
 For a deep dive into the 5-component agent system (Agent, Tray, Vision, Watchdog, Updater), read our full [Architecture Specification](docs/architecture.md).
 
