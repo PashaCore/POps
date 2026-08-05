@@ -1,5 +1,0 @@
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsTray\bin\Release\net8.0-windows\win-x64\publish\POpsTray.exe
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsTray\bin\Release\net8.0-windows\win-x64\publish\POpsTray.dll
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsTray\bin\Release\net8.0-windows\win-x64\publish\POpsTray.deps.json
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsTray\bin\Release\net8.0-windows\win-x64\publish\POpsTray.runtimeconfig.json
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\POpsTray\bin\Release\net8.0-windows\win-x64\publish\POpsTray.pdb

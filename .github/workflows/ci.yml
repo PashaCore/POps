@@ -7,9 +7,33 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
+  build-agent:
+    name: Build .NET Agent
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore dependencies
+        run: dotnet restore Agent/POps.Agent/POps.Agent.sln
+      - name: Build
+        run: dotnet build Agent/POps.Agent/POps.Agent.sln --configuration Release --no-restore
+
+  lint-backend:
+    name: Lint Python Backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Placeholder Build
-        run: echo "CI Pipeline will be configured as core components are migrated."
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+      - name: Lint with flake8
+        run: |
+          flake8 Backend/ --count --select=E9,F63,F7,F82 --show-source --statistics

@@ -1,8 +1,0 @@
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\PashaWatchdog\PashaWatchDog\bin\Release\net8.0\win-x64\publish\PashaCoreWatchdog.exe
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\PashaWatchdog\PashaWatchDog\bin\Release\net8.0\win-x64\publish\PashaCoreWatchdog.dll
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\PashaWatchdog\PashaWatchDog\bin\Release\net8.0\win-x64\publish\PashaCoreWatchdog.deps.json
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\PashaWatchdog\PashaWatchDog\bin\Release\net8.0\win-x64\publish\PashaCoreWatchdog.runtimeconfig.json
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\PashaWatchdog\PashaWatchDog\bin\Release\net8.0\win-x64\publish\PashaCoreWatchdog.pdb
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\PashaWatchdog\PashaWatchDog\bin\Release\net8.0\win-x64\publish\System.Diagnostics.EventLog.Messages.dll
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\PashaWatchdog\PashaWatchDog\bin\Release\net8.0\win-x64\publish\System.Diagnostics.EventLog.dll
-D:\Projeler\OmyoWeb\Yama\Agent-Architecture\PashaWatchdog\PashaWatchDog\bin\Release\net8.0\win-x64\publish\System.ServiceProcess.ServiceController.dll
