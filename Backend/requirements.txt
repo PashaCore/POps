@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+asyncpg
+pydantic
+python-jose[cryptography]
+bcrypt
+slowapi
+python-dotenv
+python-multipart
+werkzeug

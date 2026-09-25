@@ -18,6 +18,7 @@ import zipfile
 import secrets
 import bcrypt
 from jose import JWTError, jwt
+from werkzeug.utils import secure_filename
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -65,7 +66,8 @@ def ws_check_token(token: Optional[str]) -> bool:
 # ──────────────────────────────────────────────────────────────────────────────
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "storage")
+# Yükleme klasörü sabit ve çözümlenmiş (realpath) bir yoldur; kullanıcı girdisinden türetilmez
+UPLOAD_DIR = os.path.realpath(os.path.join(BASE_DIR, "storage"))
 UPDATES_DIR = os.path.join(BASE_DIR, "updates")
 
 USE_V2_SCHEMA = True
@@ -914,9 +916,16 @@ async def get_concurrent_limit(auth: dict = Depends(require_auth)):
 
 @app.post("/api/upload")
 async def upload_file(request: Request, file: UploadFile = File(...), auth: dict = Depends(require_admin)):
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    # Dosya adını temizle ("../", mutlak yol, ayraç vb. atılır)
+    filename = secure_filename(file.filename or "")
+    if not filename:
+        raise HTTPException(status_code=400, detail="Geçersiz dosya adı")
+    # Son yol mutlaka UPLOAD_DIR'in doğrudan içinde olmalı (path traversal / symlink engeli)
+    file_path = os.path.realpath(os.path.join(UPLOAD_DIR, filename))
+    if os.path.dirname(file_path) != UPLOAD_DIR:
+        raise HTTPException(status_code=400, detail="Geçersiz dosya yolu")
     with open(file_path, "wb") as buffer: shutil.copyfileobj(file.file, buffer)
-    return {"status": "success", "url": f"{request.base_url}download/{file.filename}"}
+    return {"status": "success", "filename": filename, "url": f"{request.base_url}download/{filename}"}
 
 @app.post("/api/add_package")
 async def add_package(data: CreatePackageInput, auth: dict = Depends(require_admin)):
