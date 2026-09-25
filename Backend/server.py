@@ -371,16 +371,13 @@ async def admin_login(request: Request, data: AdminLoginInput):
     u = user[0]
     stored_hash = u['password_hash']
     
-    # bcrypt veya eski SHA256 hash kontrolü (geçiş dönemi)
+    # Yalnızca bcrypt kabul edilir. Tuzsuz SHA256 özetleri ve '!disabled' gibi
+    # geçersiz değerler bcrypt'te ValueError verir; bu hesaplar giriş yapamaz.
     try:
         valid = bcrypt.checkpw(data.password.encode(), stored_hash.encode())
-    except Exception:
-        # Eski SHA256 hash ise doğrula ve bcrypt'e güncelle
-        valid = (hashlib.sha256(data.password.encode()).hexdigest() == stored_hash)
-        if valid:
-            new_hash = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt()).decode()
-            await execute_query("UPDATE users SET password_hash=$1 WHERE id=$2", (new_hash, u['id']))
-    
+    except ValueError:
+        valid = False
+
     if not valid:
         raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre")
     

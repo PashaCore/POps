@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Active Directory (LDAP) authentication integration for the dashboard.
 - Cross-platform agent scaffolding.
 
+### Security
+- **Backend:** Panel login accepts bcrypt password hashes only. The fallback that accepted legacy unsalted SHA-256 hashes is removed; an account still stored that way can no longer log in until an admin sets a new password.
+
 ### Removed
 - **Dashboard:** Dark mode. The panel now uses a single light theme; the theme toggle buttons and the saved `pops_theme` preference are gone, and native form controls stay light even when the operating system prefers dark.
 
