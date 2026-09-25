@@ -129,11 +129,11 @@ window.sendQuickAction = function(cmd, actionName) {
     if (currentMode === 'single') {
         const sel = document.getElementById('terminalDeviceSelect').value;
         if (!sel) return showToast('Lütfen bir cihaz seçin.', 'error');
-        appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Hızlı İşlem: ${actionName} (Tekil) - Neden: ${escapeHtml(reason)}</div>`);
+        appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Hızlı İşlem: ${escapeHtml(actionName)} (Tekil) - Neden: ${escapeHtml(reason)}</div>`);
         apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'PC', targets: [sel], taskSequence: [{ name: actionName, type: 'CMD', command: `powershell -Command "${cmd}"` }], reason: reason.trim() }) });
     } else {
         if (!selectedLab) return showToast('Lütfen bir laboratuvar seçin.', 'error');
-        appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Hızlı İşlem: ${actionName} (Lab: ${selectedLab}) - Neden: ${escapeHtml(reason)}</div>`);
+        appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Hızlı İşlem: ${escapeHtml(actionName)} (Lab: ${escapeHtml(selectedLab)}) - Neden: ${escapeHtml(reason)}</div>`);
         apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'LAB', targets: [selectedLab], taskSequence: [{ name: actionName, type: 'CMD', command: `powershell -Command "${cmd}"` }], reason: reason.trim() }) });
     }
 };
@@ -214,7 +214,7 @@ function renderTerminal() {
 function initTerminalHeader() {
     return `<div class="header">
         <div class="title">POps Command Line Interface [v4.0.0]</div>
-        <div>Yönetici: <?php echo htmlspecialchars($_SESSION['username'] ?? 'Admin'); ?> — Güvenli Bağlantı Aktif</div>
+        <div>Yönetici: ${<?php echo json_encode(htmlspecialchars($_SESSION['username'] ?? 'Admin', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>} — Güvenli Bağlantı Aktif</div>
         <div>(c) POps Bilişim Sistemleri. Tüm Hakları Saklıdır.</div>
     </div>
     <div class="tip">[İPUCU] Aşağıdaki Hızlı İşlem butonlarını kullanarak rutin operasyonları anında gerçekleştirebilirsiniz.</div>`;
@@ -258,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
             appendToTerminal('<div class="warn" style="margin:0.75rem 0;">[*] WOL Gönderiliyor: LAB-' + escapeHtml(selectedLab) + '...</div>');
             try {
                 const res = await apiRequest(`/api/wake_lab/${encodeURIComponent(selectedLab)}`, { method: 'POST' });
-                appendToTerminal(`<div style="color:#4ade80;margin-bottom:0.75rem;">[+] ${res.woken_pcs} cihaza uyandırma sinyali gönderildi.</div>`);
+                appendToTerminal(`<div style="color:#4ade80;margin-bottom:0.75rem;">[+] ${escapeHtml(String(res.woken_pcs))} cihaza uyandırma sinyali gönderildi.</div>`);
             } catch (e) { appendToTerminal('<div class="err" style="margin-bottom:0.75rem;">[-] Hata: Sinyal gönderilemedi.</div>'); }
         } else { showToast('Toplu uyandırma için lab seçin.', 'warning'); }
     };

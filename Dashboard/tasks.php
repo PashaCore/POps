@@ -260,23 +260,23 @@ window.fetchAndRenderTasks = async function() {
                 else if (pc.status === 'Paused') { statusClass = 'paused'; statusIcon = 'fa-pause'; statusText = 'Durduruldu'; }
                 else if (['Failed', 'Error', 'Cancelled'].includes(pc.status)) { statusClass = 'failed'; statusIcon = 'fa-xmark'; statusText = pc.status === 'Cancelled' ? 'İptal Edildi' : 'Hata Alındı'; isCancelable = false; }
                 const displayName = window.POpsMemory.deviceMap[pc.target_pc] || pc.target_pc;
-                const showMac = displayName === pc.target_pc ? '' : `<br><span style="font-family:var(--font-mono);font-size:0.6875rem;color:var(--text-tertiary);">${pc.target_pc}</span>`;
+                const showMac = displayName === pc.target_pc ? '' : `<br><span style="font-family:var(--font-mono);font-size:0.6875rem;color:var(--text-tertiary);">${escapeHtml(pc.target_pc)}</span>`;
                 return `<tr>
                     <td><strong>${escapeHtml(displayName)}</strong>${showMac}</td>
                     <td class="status-text ${statusClass}"><i class="fas ${statusIcon}"></i> ${statusText}</td>
-                    <td style="color:var(--text-tertiary);font-size:0.75rem;font-family:var(--font-mono);">${pc.created_at || '-'}</td>
+                    <td style="color:var(--text-tertiary);font-size:0.75rem;font-family:var(--font-mono);">${escapeHtml(pc.created_at || '-')}</td>
                     <td style="text-align:right;">
                         <div style="display:inline-flex;gap:0.375rem;">
-                            <button class="btn-action retry icon" onclick="window.taskAction('RETRY', 'TASK', '${pc.id}')" title="Yeniden Başlat"><i class="fas fa-rotate"></i></button>
-                            <button class="btn secondary" style="padding:0.375rem 0.625rem;font-size:0.75rem;" onclick="window.openTaskDetail('${pc.id}', '${gId}')"><i class="fas fa-magnifying-glass" style="color:var(--primary-500);"></i> Detay</button>
-                            ${isCancelable ? `<button class="btn-action stop icon" onclick="window.taskAction('CANCEL', 'TASK', '${pc.id}')" title="İptal"><i class="fas fa-xmark"></i></button>` : ''}
+                            <button class="btn-action retry icon" onclick="window.taskAction('RETRY', 'TASK', ${jsArg(pc.id)})" title="Yeniden Başlat"><i class="fas fa-rotate"></i></button>
+                            <button class="btn secondary" style="padding:0.375rem 0.625rem;font-size:0.75rem;" onclick="window.openTaskDetail(${jsArg(pc.id)}, ${jsArg(gId)})"><i class="fas fa-magnifying-glass" style="color:var(--primary-500);"></i> Detay</button>
+                            ${isCancelable ? `<button class="btn-action stop icon" onclick="window.taskAction('CANCEL', 'TASK', ${jsArg(pc.id)})" title="İptal"><i class="fas fa-xmark"></i></button>` : ''}
                         </div>
                     </td>
                 </tr>`;
             }).join('');
 
-            html += `<div class="task-group-card ${isExpanded}" id="${group.id}">
-                <div class="task-group-header" onclick="window.toggleGroup('${group.id}')">
+            html += `<div class="task-group-card ${isExpanded}" id="${escapeHtml(group.id)}">
+                <div class="task-group-header" onclick="window.toggleGroup(${jsArg(group.id)})">
                     <div class="task-info-area">
                         <span class="task-lab"><i class="fas fa-layer-group"></i> ${escapeHtml(group.lab)}</span>
                         <span class="task-cmd" title="${escapeHtml(group.command)}"><i class="fas fa-code" style="color:var(--text-tertiary);margin-right:0.375rem;"></i>${escapeHtml(group.command)}</span>
@@ -285,9 +285,9 @@ window.fetchAndRenderTasks = async function() {
                         <div class="badge-box total"><i class="fas fa-desktop"></i> ${group.total}</div>
                         <div class="badge-box success">${group.success} başarılı</div>
                         <div style="display:inline-flex;gap:0.25rem;margin-left:0.5rem;">
-                            <button class="btn-action pause icon" onclick="event.stopPropagation(); window.taskAction('PAUSE', 'LAB', '${escapeHtml(group.lab)}')" title="Labı Duraklat"><i class="fas fa-pause"></i></button>
-                            <button class="btn-action resume icon" onclick="event.stopPropagation(); window.taskAction('RESUME', 'LAB', '${escapeHtml(group.lab)}')" title="Devam Ettir"><i class="fas fa-play"></i></button>
-                            <button class="btn-action stop icon" onclick="event.stopPropagation(); window.taskAction('CANCEL', 'LAB', '${escapeHtml(group.lab)}')" title="İptal"><i class="fas fa-xmark"></i></button>
+                            <button class="btn-action pause icon" onclick="event.stopPropagation(); window.taskAction('PAUSE', 'LAB', ${jsArg(group.lab)})" title="Labı Duraklat"><i class="fas fa-pause"></i></button>
+                            <button class="btn-action resume icon" onclick="event.stopPropagation(); window.taskAction('RESUME', 'LAB', ${jsArg(group.lab)})" title="Devam Ettir"><i class="fas fa-play"></i></button>
+                            <button class="btn-action stop icon" onclick="event.stopPropagation(); window.taskAction('CANCEL', 'LAB', ${jsArg(group.lab)})" title="İptal"><i class="fas fa-xmark"></i></button>
                         </div>
                         <i class="fas fa-chevron-down toggle-icon" style="margin-left:0.5rem;"></i>
                     </div>
@@ -325,7 +325,7 @@ window.fetchAgentLogs = async function() {
         const pcSelect = document.getElementById('logPcFilter');
         if (pcSelect.options.length <= 1 && logs.length > 0) {
             const uniquePcs = [...new Set(logs.map(l => l.pc_name))];
-            uniquePcs.forEach(pc => { const dName = window.POpsMemory.deviceMap[pc] || pc; pcSelect.innerHTML += `<option value="${pc}">${escapeHtml(dName)}</option>`; });
+            uniquePcs.forEach(pc => { const dName = window.POpsMemory.deviceMap[pc] || pc; pcSelect.innerHTML += `<option value="${escapeHtml(pc)}">${escapeHtml(dName)}</option>`; });
         }
         window.renderLogs();
     } catch (e) {}
@@ -346,10 +346,10 @@ window.renderLogs = function() {
         const iconClass = icons[log.log_type] || 'fa-info-circle';
         const dName = window.POpsMemory.deviceMap[log.pc_name] || log.pc_name;
         const timeOnly = log.timestamp ? log.timestamp.split(' ')[1] : '';
-        return `<div class="log-line type-${log.log_type}">
-            <span class="log-time">${timeOnly}</span>
-            <span class="log-badge badge-${log.log_type}"><i class="fas ${iconClass}"></i> ${log.log_type}</span>
-            <span class="log-pc" title="${log.pc_name}">${escapeHtml(dName)}</span>
+        return `<div class="log-line type-${escapeHtml(log.log_type)}">
+            <span class="log-time">${escapeHtml(timeOnly)}</span>
+            <span class="log-badge badge-${escapeHtml(log.log_type)}"><i class="fas ${iconClass}"></i> ${escapeHtml(log.log_type)}</span>
+            <span class="log-pc" title="${escapeHtml(log.pc_name)}">${escapeHtml(dName)}</span>
             <span class="log-msg">${escapeHtml(log.message)}</span>
         </div>`;
     }).join('');

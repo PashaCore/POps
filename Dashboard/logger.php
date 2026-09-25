@@ -352,7 +352,7 @@ function renderLogsTable() {
                 ${reason ? `<div style="font-size:0.75rem;color:var(--primary-400);margin-top:0.25rem;"><i class="fas fa-info-circle"></i> Neden: ${reason}</div>` : ''}
             </td>
             <td style="text-align:center;">
-                <button onclick="showInspectModal(${log.id})" style="background:var(--bg-surface-3);border:1px solid var(--border-default);color:var(--text-primary);padding:0.3rem 0.5rem;border-radius:4px;cursor:pointer;"><i class="fas fa-search-plus"></i></button>
+                <button onclick="showInspectModal(${jsArg(log.id)})" style="background:var(--bg-surface-3);border:1px solid var(--border-default);color:var(--text-primary);padding:0.3rem 0.5rem;border-radius:4px;cursor:pointer;"><i class="fas fa-search-plus"></i></button>
             </td>
         </tr>`;
     }).join('');

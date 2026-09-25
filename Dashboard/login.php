@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/config.php';
-session_start();
+require_once __DIR__ . '/includes/session.php';
+pops_session_start();
 
 if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     header('Location: index.php');
@@ -52,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['loggedin'] = true;
                     $_SESSION['username'] = $responseData['username'] ?? $username;
                     $_SESSION['role'] = $responseData['role'] ?? 'superadmin';
-                    // JWT token'ı sakla — WebSocket ve AJAX çağrılarında kullanılacak
+                    // JWT token'ı sunucu tarafında sakla; tarayıcıya yalnızca httpOnly çerez olarak gider
                     $_SESSION['jwt_token'] = $responseData['token'] ?? '';
                     
                     // Yetkileri session'a dizi olarak kaydet
@@ -63,10 +64,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $_SESSION['permissions'] = $perms;
                     
-                    // Token'ı JS'e geçirmek için query param ile yönlendir
-                    $jwt = urlencode($responseData['token'] ?? '');
+                    // Token URL'ye veya JS'e verilmez; AJAX/WebSocket istekleri httpOnly çerezle doğrulanır
                     session_regenerate_id(true);
-                    header("Location: index.php?_jwt=$jwt");
+                    pops_set_jwt_cookie($_SESSION['jwt_token']);
+                    header('Location: index.php');
                     exit;
                 } else {
                     $error = $responseData['message'] ?? "Giriş reddedildi (HTTP $httpcode)";

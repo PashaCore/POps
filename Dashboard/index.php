@@ -825,7 +825,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchCoreData() {
         if (!apiBaseUrl) return;
         try {
-            const opts = { headers: { "Authorization": "Bearer " + sessionJwt } };
+            const opts = {};
             const devReq = fetch(`${apiBaseUrl}/api/devices`, opts).catch(() => null);
             const taskReq = fetch(`${apiBaseUrl}/api/tasks?limit=50`, opts).catch(() => null);
             const storageReq = fetch(`${apiBaseUrl}/api/storage`, opts).catch(() => null);
@@ -833,7 +833,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const [devRes, taskRes, storageRes, pkgRes] = await Promise.all([devReq, taskReq, storageReq, pkgReq]);
             if (devRes && devRes.status === 401) {
-                window.location.href = '/login.php';
+                window.location.href = '/logout.php';
                 return;
             }
             if (!devRes || !devRes.ok) throw new Error("Ağ hatası");
@@ -1063,7 +1063,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const target = (t.target_lab && t.target_lab !== 'Atanmamis_Cihazlar') ? t.target_lab : t.target_pc;
             const time = t.created_at ? t.created_at.split(' ')[1] : '-';
             return `<div class="op-row">
-                <span class="op-ts">${time}</span>
+                <span class="op-ts">${escapeHtml(time)}</span>
                 <span class="op-target"><i class="fas fa-crosshairs"></i>${escapeHtml(target || '-')}</span>
                 <span class="op-cmd" title="${escapeHtml(t.script_path)}">${escapeHtml(t.script_path)}</span>
             </div>`;
@@ -1073,7 +1073,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.clearTaskHistory = async function() {
         if (!confirm('Tüm aktif ve geçmiş görev kuyruğu silinecek. Emin misiniz?')) return;
         try {
-            await fetch(apiBaseUrl + '/api/flush_queue', { method: 'POST', headers: { 'Authorization': 'Bearer ' + sessionJwt } });
+            await fetch(apiBaseUrl + '/api/flush_queue', { method: 'POST' });
             lastHistoryHash = "";
             fetchCoreData();
             showToast('Kuyruk temizlendi', 'success');
@@ -1083,7 +1083,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchAgentLogs() {
         if (!apiBaseUrl) return;
         try {
-            const res = await fetch(apiBaseUrl + '/api/logs?limit=200', { headers: { 'Authorization': 'Bearer ' + sessionJwt } });
+            const res = await fetch(apiBaseUrl + '/api/logs?limit=200');
             if (!res.ok) return;
             const logs = await res.json();
             const important = logs.filter(l => l.log_type === 'Deploy' || l.log_type === 'Security' || l.log_type === 'Error');
@@ -1110,7 +1110,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const pill = isCrit ? `<span class="log-pill danger"><i class="fas fa-shield-halved"></i> ${g.type === 'Error' ? 'Hata' : 'Güvenlik'}</span>`
                                   : `<span class="log-pill success"><i class="fas fa-circle-check"></i> Sistem</span>`;
                 return `<div class="op-row" style="grid-template-columns:60px auto 1fr;">
-                    <span class="op-ts">${g.time}</span>
+                    <span class="op-ts">${escapeHtml(g.time)}</span>
                     ${pill}
                     <span class="op-cmd" style="font-family:inherit;font-size:0.8125rem;"><strong style="color:var(--text-primary);">${g.pcs.size} cihaz</strong> — ${escapeHtml(g.msg.substring(0, 50))}${g.msg.length > 50 ? '…' : ''}</span>
                 </div>`;

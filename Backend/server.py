@@ -40,6 +40,10 @@ JWT_SECRET   = require_env('JWT_SECRET')
 JWT_ALGO     = 'HS256'
 JWT_EXPIRE_H = int(os.environ.get('JWT_EXPIRE_HOURS', '12'))         # Token ömrü (saat)
 
+# Panel JWT'yi httpOnly çerezde taşır (JS erişemez); diğer istemciler Authorization: Bearer kullanabilir
+JWT_COOKIE_NAME = 'pops_jwt'
+CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
 limiter = Limiter(key_func=get_remote_address)
 security_scheme = HTTPBearer(auto_error=False)
 
@@ -53,10 +57,15 @@ def verify_jwt(token: str) -> dict:
     except JWTError:
         return None
 
-async def require_auth(creds: HTTPAuthorizationCredentials = Depends(security_scheme)):
-    if not creds:
+async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security_scheme)):
+    token = creds.credentials if creds else request.cookies.get(JWT_COOKIE_NAME)
+    if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Token gerekli')
-    payload = verify_jwt(creds.credentials)
+    # Çerezle doğrulanan, durum değiştiren isteklerde CSRF koruması: özel başlık zorunlu
+    # (başka bir site bu başlığı CORS izni olmadan gönderemez)
+    if not creds and request.method not in CSRF_SAFE_METHODS and request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='CSRF doğrulaması başarısız')
+    payload = verify_jwt(token)
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Geçersiz veya süresi dolmuş token')
     return payload
@@ -67,7 +76,7 @@ async def require_admin(payload: dict = Depends(require_auth)):
     return payload
 
 def ws_check_token(token: Optional[str]) -> bool:
-    """WebSocket bağlantılarında ?token= query parametresi ile doğrulama."""
+    """WebSocket bağlantılarında httpOnly JWT çereziyle doğrulama."""
     if not token:
         return False
     return verify_jwt(token) is not None
@@ -93,7 +102,7 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type", "X-Agent-Version"],
+    allow_headers=["Authorization", "Content-Type", "X-Agent-Version", "X-Requested-With"],
 )
 
 if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
@@ -619,8 +628,8 @@ async def reconcile_device(claimed_hwid: str, dna_payload: dict, client_ip: str,
             return claimed_hwid
 
 @app.websocket("/ws/panel")
-async def websocket_panel(websocket: WebSocket, token: Optional[str] = None):
-    if not ws_check_token(token):
+async def websocket_panel(websocket: WebSocket):
+    if not ws_check_token(websocket.cookies.get(JWT_COOKIE_NAME)):
         await websocket.accept()
         await websocket.close(code=4001, reason="Kimlik doğrulama hatası")
         return

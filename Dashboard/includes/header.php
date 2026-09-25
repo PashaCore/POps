@@ -1,8 +1,14 @@
 <?php
-session_start();
+require_once __DIR__ . '/session.php';
+pops_session_start();
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || empty($_SESSION['jwt_token'])) {
     header('Location: login.php');
     exit;
+}
+
+// JWT çerezi eksik veya eskiyse oturumdaki token ile yenile (httpOnly, JS erişemez)
+if (($_COOKIE[POPS_JWT_COOKIE] ?? '') !== $_SESSION['jwt_token']) {
+    pops_set_jwt_cookie($_SESSION['jwt_token']);
 }
 
 // Yetki Kontrolü
@@ -39,7 +45,7 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
     <title>POps | Merkez Komuta</title>
     <link rel="icon" type="image/png" href="assets/favicon/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon/favicon.svg" />
-    <script>window.USER_ROLE = "<?php echo $_SESSION['role'] ?? 'admin'; ?>";</script>
+    <script>window.USER_ROLE = <?php echo json_encode($_SESSION['role'] ?? 'admin', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
     <link rel="shortcut icon" href="assets/favicon/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon/apple-touch-icon.png" />
     <link rel="manifest" href="assets/favicon/site.webmanifest" />
@@ -54,52 +60,38 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
         if (savedTheme === 'dark') {
             document.documentElement.setAttribute('data-theme', 'dark');
         }
-        
-        // PHP session'dan JWT'yi JS'e aktar (her sayfada localStorage güncellenir)
-        const sessionJwt = "<?php echo htmlspecialchars($_SESSION['jwt_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>";
-        if (sessionJwt) {
-            localStorage.setItem('pops_jwt', sessionJwt);
+
+        // XSS koruması: API'den gelen değerler (pc_name, hostname, lab adı, log vb.) HTML'e
+        // basılmadan önce escapeHtml ile kaçırılır. Satır içi olay niteliklerine
+        // (onclick="fn(...)") verilen argümanlar ise jsArg ile önce JS, sonra HTML olarak kaçırılır.
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
         }
-        
-        // Global Fetch Interceptor to attach JWT and handle 401 Unauthorized
+        function jsArg(value) {
+            return escapeHtml(JSON.stringify(value == null ? '' : value));
+        }
+
+        // Eski sürümlerin localStorage'a yazdığı token'ı temizle
+        try { localStorage.removeItem('pops_jwt'); } catch (e) {}
+
+        // Global fetch sarmalayıcı: JWT httpOnly çerezde taşınır, JS token'ı görmez.
+        // /api/ isteklerine CSRF başlığı eklenir; 401 gelirse oturum kapatılır.
         const originalFetch = window.fetch;
         window.fetch = async function(resource, config) {
             if (typeof resource === 'string' && resource.includes('/api/')) {
-                config = config || {};
-                config.headers = config.headers || {};
-                if (config.headers instanceof Headers) {
-                    if (!config.headers.has('Authorization')) {
-                        config.headers.set('Authorization', 'Bearer ' + sessionJwt);
-                    }
-                } else {
-                    if (!config.headers['Authorization']) {
-                        config.headers['Authorization'] = 'Bearer ' + sessionJwt;
-                    }
-                }
+                config = Object.assign({ credentials: 'same-origin' }, config || {});
+                const headers = new Headers(config.headers || {});
+                if (!headers.has('X-Requested-With')) headers.set('X-Requested-With', 'XMLHttpRequest');
+                config.headers = headers;
             }
-            
-            try {
-                const response = await originalFetch(resource, config);
-                if (response.status === 401) {
-                    localStorage.removeItem('pops_jwt');
-                    window.location.href = '/login.php';
-                    return new Promise(() => {}); // Halt execution
-                }
-                return response;
-            } catch (error) {
-                throw error;
+            const response = await originalFetch(resource, config);
+            if (response.status === 401) {
+                window.location.href = '/logout.php';
+                return new Promise(() => {}); // Halt execution
             }
+            return response;
         };
-        
-        // Eğer URL'de gelirse (eski login akışı yedeği), URL'yi temizle
-        (function() {
-            const params = new URLSearchParams(window.location.search);
-            if (params.has('_jwt')) {
-                params.delete('_jwt');
-                const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-                history.replaceState({}, '', newUrl);
-            }
-        })();
     </script>
     <style>
         /* ============ APP SHELL LAYOUT ============ */
@@ -180,7 +172,7 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
             </nav>
             <div class="sidebar-footer">
                 <div class="user-card">
-                    <div class="user-avatar"><?php echo strtoupper(substr($_SESSION['username'] ?? 'A', 0, 1)); ?></div>
+                    <div class="user-avatar"><?php echo htmlspecialchars(strtoupper(substr($_SESSION['username'] ?? 'A', 0, 1)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); ?></div>
                     <div class="user-info">
                         <div class="user-name"><?php echo htmlspecialchars($_SESSION['username'] ?? 'Admin'); ?></div>
                         <div class="user-role"><?php echo ($_SESSION['role'] ?? 'admin') === 'superadmin' ? 'Süper Admin' : 'Yönetici'; ?></div>
@@ -211,7 +203,7 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
                                 'update' => 'Ajan Güncelleme', 'logger' => 'Log & Envanter', 'terminal' => 'Terminal',
                                 'settings' => 'Sistem Ayarları'
                             ];
-                            echo $titles[$current_page] ?? ucfirst($current_page);
+                            echo htmlspecialchars($titles[$current_page] ?? ucfirst($current_page), ENT_QUOTES, 'UTF-8');
                         ?></strong>
                     </div>
                 </div>

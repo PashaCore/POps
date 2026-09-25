@@ -271,8 +271,8 @@
 
 <script>
 const SESSION_ADMIN_ID = <?php echo isset($_SESSION['admin_id']) ? intval($_SESSION['admin_id']) : 1; ?>;
-const SESSION_ADMIN_NAME = "<?php echo isset($_SESSION['username']) ? addslashes($_SESSION['username']) : 'Admin'; ?>";
-const SESSION_ADMIN_ROLE = "<?php echo isset($_SESSION['role']) ? addslashes($_SESSION['role']) : 'superadmin'; ?>";
+const SESSION_ADMIN_NAME = <?php echo json_encode($_SESSION['username'] ?? 'Admin', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
+const SESSION_ADMIN_ROLE = <?php echo json_encode($_SESSION['role'] ?? 'superadmin', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
 
 const App = {
     apiUrl: (typeof OMYO_API !== 'undefined') ? OMYO_API.HTTP_URL : '',
@@ -309,7 +309,7 @@ const App = {
                         keepalive: true
                     });
                 }
-                fetch(`${this.apiUrl}/api/stream/stop/${this.currentPc}`, { keepalive: true });
+                fetch(`${this.apiUrl}/api/stream/stop/${encodeURIComponent(this.currentPc)}`, { keepalive: true });
             }
         });
     },
@@ -556,7 +556,7 @@ const App = {
         this.isStreamActive = true;
         
         if (countdown > 0) {
-            document.getElementById('streamWaiting').innerHTML = `<i class="fas fa-clock fa-spin" style="margin-bottom:0.75rem;font-size:2.5rem;display:block;"></i>Zorunlu müdahale başlatıldı.<br><span style="font-size:var(--text-sm);font-weight:normal;color:var(--text-tertiary);">Kullanıcıya ${countdown} saniye süre verildi...</span>`;
+            document.getElementById('streamWaiting').innerHTML = `<i class="fas fa-clock fa-spin" style="margin-bottom:0.75rem;font-size:2.5rem;display:block;"></i>Zorunlu müdahale başlatıldı.<br><span style="font-size:var(--text-sm);font-weight:normal;color:var(--text-tertiary);">Kullanıcıya ${escapeHtml(countdown)} saniye süre verildi...</span>`;
             document.getElementById('streamWaiting').style.display = 'block';
             let c = countdown;
             const timer = setInterval(() => {
@@ -591,7 +591,7 @@ const App = {
         document.getElementById('controlToggleWrapper').classList.add('disabled');
         const badge = document.getElementById('hudRecBadge');
         badge.className = 'hud-badge'; badge.style.background = 'transparent'; badge.style.color = 'rgba(255,255,255,0.6)'; badge.style.borderColor = 'rgba(255,255,255,0.3)'; badge.innerHTML = '📷 BEKLEMEDE';
-        try { await fetch(`${this.apiUrl}/api/stream/stop/${this.currentPc}`); } catch (e) {}
+        try { await fetch(`${this.apiUrl}/api/stream/stop/${encodeURIComponent(this.currentPc)}`); } catch (e) {}
         if (this.currentAuditSessionId) {
             try { await fetch(`${this.apiUrl}/api/audit/session/end`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: this.currentAuditSessionId, status: 'Ended' }) }); this.currentAuditSessionId = null; } catch (e) {}
         }
@@ -707,7 +707,7 @@ const App = {
             const pcs = this.devices.filter(d => d.lab === lab);
             const online = pcs.filter(d => d.status.toLowerCase() === 'online').length;
             html += `
-                <div class="lab-card" onclick="App.openLab('${escapeHtml(lab)}')">
+                <div class="lab-card" onclick="App.openLab(${jsArg(lab)})">
                     <div class="lab-card-header">
                         <h3 class="lab-card-title">${escapeHtml(lab)}</h3>
                         <i class="fas fa-network-wired lab-card-icon"></i>
@@ -743,10 +743,10 @@ const App = {
             const placeStyle = cachedImg ? 'display:none;' : 'display:flex;';
             
             html += `
-                <div class="screen-card ${isOnline ? '' : 'offline'}" id="vcard_${pc.hostname}" ${isOnline ? `ondblclick="App.openStream('${pc.hostname}', '${escapeHtml(dName)}')"` : ''}>
+                <div class="screen-card ${isOnline ? '' : 'offline'}" id="vcard_${escapeHtml(pc.hostname)}" ${isOnline ? `ondblclick="App.openStream(${jsArg(pc.hostname)}, ${jsArg(dName)})"` : ''}>
                     <div class="thumb-wrapper">
-                        <img id="thumb_${pc.hostname}" class="thumb-img" src="${imgSrc}" style="${imgStyle}" alt="">
-                        <div class="thumb-placeholder" id="place_${pc.hostname}" style="${placeStyle}">
+                        <img id="thumb_${escapeHtml(pc.hostname)}" class="thumb-img" src="${escapeHtml(imgSrc)}" style="${imgStyle}" alt="">
+                        <div class="thumb-placeholder" id="place_${escapeHtml(pc.hostname)}" style="${placeStyle}">
                             <i class="fas ${isOnline ? 'fa-camera' : 'fa-power-off'}" style="font-size:1.5rem;"></i>
                             <span>${isOnline ? 'Bekleniyor...' : 'Kapalı'}</span>
                         </div>
@@ -754,7 +754,7 @@ const App = {
                     <div class="card-footer">
                         <div style="overflow:hidden;">
                             <div class="card-pc-name">${escapeHtml(dName)}</div>
-                            <div class="card-ip">${pc.ip || 'IP Yok'}</div>
+                            <div class="card-ip">${escapeHtml(pc.ip || 'IP Yok')}</div>
                         </div>
                         <div class="card-status ${isOnline ? 'online' : 'offline'}"></div>
                     </div>
@@ -775,10 +775,10 @@ const App = {
         else {
             let html = '';
             matches.slice(0, 5).forEach(m => {
-                html += `<div class="search-result-item" onclick="App.jumpToSearch('${escapeHtml(m.lab)}', '${m.hostname}')">
+                html += `<div class="search-result-item" onclick="App.jumpToSearch(${jsArg(m.lab)}, ${jsArg(m.hostname)})">
                     <div>
                         <div class="sr-pc-name"><i class="fas fa-desktop" style="margin-right:0.375rem;color:var(--text-tertiary);"></i> ${escapeHtml(m.real_hostname || m.hostname)}</div>
-                        <div class="sr-pc-network">IP: ${m.ip || '-'} • ${m.hostname}</div>
+                        <div class="sr-pc-network">IP: ${escapeHtml(m.ip || '-')} • ${escapeHtml(m.hostname)}</div>
                     </div>
                     <span class="sr-lab"><i class="fas fa-sitemap"></i> ${escapeHtml(m.lab)}</span>
                 </div>`;

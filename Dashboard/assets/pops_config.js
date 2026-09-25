@@ -5,21 +5,9 @@ window.OMYO_API = {
     DOWNLOAD_URL: window.location.origin + '/download',
     UPDATE_URL: window.location.origin + '/updates',
 
-    // JWT token'ini localStorage'dan veya meta tag'den al
-    getToken: function() {
-        return localStorage.getItem('pops_jwt') || '';
-    },
-
-    // Korumalı bir WebSocket URL'si üret (token query parametresi ile)
+    // JWT httpOnly çerezde taşınır; tarayıcı onu HTTP ve WebSocket isteklerine kendisi ekler.
+    // Token URL'ye yazılmaz ve JavaScript tarafından okunamaz.
     wsUrl: function(path) {
-        const token = this.getToken();
-        const base = this.WS_URL + path;
-        return token ? base + '?token=' + encodeURIComponent(token) : base;
-    },
-
-    // HTTP isteklerinde kullanılacak Authorization header'ı
-    authHeader: function() {
-        const token = this.getToken();
-        return token ? { 'Authorization': 'Bearer ' + token } : {};
+        return this.WS_URL + path;
     }
 };

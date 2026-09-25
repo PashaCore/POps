@@ -333,7 +333,7 @@ function togglePkgInputs() {
 function updateFileName(input) {
     const textSpan = document.getElementById('pkgFileText');
     if (input.files && input.files.length > 0) {
-        textSpan.innerHTML = `<i class="fas fa-file-circle-check" style="color:var(--success-solid);"></i> Seçildi: <strong>${input.files[0].name}</strong>`;
+        textSpan.innerHTML = `<i class="fas fa-file-circle-check" style="color:var(--success-solid);"></i> Seçildi: <strong>${escapeHtml(input.files[0].name)}</strong>`;
     } else {
         textSpan.innerHTML = '<i class="fas fa-cloud-arrow-up"></i> Dosya seçmek için tıklayın';
     }
@@ -418,11 +418,11 @@ function renderRepoList() {
         div.className = `repo-item ${item.type}`;
         div.draggable = true;
         div.innerHTML = `
-            <i class="fas ${item.icon} icon" ${item.color ? `style="color:${item.color}"` : ''}></i>
-            <div class="details"><span class="title" title="${item.name}">${escapeHtml(item.name)}</span><span class="meta">${escapeHtml(item.meta)}</span></div>
+            <i class="fas ${escapeHtml(item.icon)} icon" ${item.color ? `style="color:${escapeHtml(item.color)}"` : ''}></i>
+            <div class="details"><span class="title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span><span class="meta">${escapeHtml(item.meta)}</span></div>
             <div style="display:flex;gap:0.25rem;opacity:0;transition:0.2s;" class="repo-actions">
-                <button class="btn-remove-task" title="Düzenle" onclick="openPkgModal('${item.id}')"><i class="fas fa-pen"></i></button>
-                <button class="btn-remove-task" title="Sil" onclick="window.deletePackage('${item.id}', '${(item.name || '').replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button>
+                <button class="btn-remove-task" title="Düzenle" onclick="openPkgModal(${jsArg(item.id)})"><i class="fas fa-pen"></i></button>
+                <button class="btn-remove-task" title="Sil" onclick="window.deletePackage(${jsArg(item.id)}, ${jsArg(item.name || '')})"><i class="fas fa-trash"></i></button>
             </div>
             <i class="fas fa-grip-vertical" style="color:var(--text-muted);font-size:0.75rem;"></i>`;
         div.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', JSON.stringify(item)); div.style.opacity = '0.5'; });
@@ -466,7 +466,7 @@ function renderWorkflow() {
             <div class="task-step">${index + 1}</div>
             <div class="task-content">
                 <div class="task-info">
-                    <i class="fas ${task.icon} task-icon" style="color: ${task.color || 'var(--warning-solid)'}"></i>
+                    <i class="fas ${escapeHtml(task.icon)} task-icon" style="color: ${escapeHtml(task.color || 'var(--warning-solid)')}"></i>
                     <div style="min-width:0;">
                         <div class="task-type-badge ${task.type === 'package' ? 'pkg' : 'scr'}">${task.type === 'package' ? 'Paket' : 'Betik'}</div>
                         <div style="font-weight:var(--fw-semibold);font-size:var(--text-sm);">${escapeHtml(task.name)}</div>
@@ -499,7 +499,7 @@ function renderTargetList() {
         filtered.forEach(lab => {
             const div = document.createElement('label');
             div.className = 'target-item';
-            div.innerHTML = `<input type="checkbox" value="${lab}" ${selectedTargetIds.has(lab) ? 'checked' : ''}><span><i class="fas fa-network-wired" style="color:var(--text-tertiary);"></i> <strong>${escapeHtml(lab)}</strong></span>`;
+            div.innerHTML = `<input type="checkbox" value="${escapeHtml(lab)}" ${selectedTargetIds.has(lab) ? 'checked' : ''}><span><i class="fas fa-network-wired" style="color:var(--text-tertiary);"></i> <strong>${escapeHtml(lab)}</strong></span>`;
             div.querySelector('input').addEventListener('change', (e) => { e.target.checked ? selectedTargetIds.add(lab) : selectedTargetIds.delete(lab); });
             listContainer.appendChild(div);
         });
@@ -514,7 +514,7 @@ function renderTargetList() {
                 labDevs.forEach(d => {
                     const div = document.createElement('label');
                     div.className = 'target-item';
-                    div.innerHTML = `<input type="checkbox" value="${d.hostname}" ${selectedTargetIds.has(d.hostname) ? 'checked' : ''}><span><i class="fas fa-desktop" style="color:var(--text-tertiary);"></i> ${escapeHtml(d.display_name || d.real_hostname || d.hostname)}</span>`;
+                    div.innerHTML = `<input type="checkbox" value="${escapeHtml(d.hostname)}" ${selectedTargetIds.has(d.hostname) ? 'checked' : ''}><span><i class="fas fa-desktop" style="color:var(--text-tertiary);"></i> ${escapeHtml(d.display_name || d.real_hostname || d.hostname)}</span>`;
                     div.querySelector('input').addEventListener('change', (e) => { e.target.checked ? selectedTargetIds.add(d.hostname) : selectedTargetIds.delete(d.hostname); });
                     listContainer.appendChild(div);
                 });
@@ -549,7 +549,7 @@ window.executeDeployment = async function() {
         trackerList.innerHTML = '';
         targets.forEach(pc => {
             const dName = deviceMap[pc] || pc;
-            trackerList.innerHTML += `<div class="tracker-item" id="track-${pc}"><div style="font-weight:var(--fw-semibold);font-size:0.75rem;">${escapeHtml(dName)} <span style="float:right;color:var(--text-tertiary);" id="track-status-${pc}">Kuyrukta</span></div><div class="tracker-progress-bg"><div class="tracker-progress-fill"></div></div></div>`;
+            trackerList.innerHTML += `<div class="tracker-item" id="track-${escapeHtml(pc)}"><div style="font-weight:var(--fw-semibold);font-size:0.75rem;">${escapeHtml(dName)} <span style="float:right;color:var(--text-tertiary);" id="track-status-${escapeHtml(pc)}">Kuyrukta</span></div><div class="tracker-progress-bg"><div class="tracker-progress-fill"></div></div></div>`;
         });
     } catch (e) { showToast('Başlatılamadı.', 'error'); }
     btn.innerHTML = '<i class="fas fa-rocket"></i> Dağıtımı Başlat'; btn.disabled = false;

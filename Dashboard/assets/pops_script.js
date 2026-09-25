@@ -41,20 +41,15 @@ async function apiRequest(endpoint, options = {}) {
     const url = state.apiBaseUrl + endpoint;
     try {
         const opts = { ...options };
-        // Her istekte Authorization header'ı ekle
-        const authHeaders = (typeof OMYO_API !== 'undefined') ? OMYO_API.authHeader() : {};
-        opts.headers = {
-            ...authHeaders,
-            ...(options.headers || {})
-        };
+        // Kimlik doğrulama httpOnly JWT çereziyle yapılır (bkz. includes/header.php)
+        opts.headers = { ...(options.headers || {}) };
         if (opts.method && opts.method.toUpperCase() !== 'GET') {
             opts.headers['Content-Type'] = 'application/json';
         }
         const response = await fetch(url, opts);
         // 401 gelirse oturumu sonlandır
         if (response.status === 401) {
-            localStorage.removeItem('pops_jwt');
-            window.location.href = '/login.php';
+            window.location.href = '/logout.php';
             return;
         }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);

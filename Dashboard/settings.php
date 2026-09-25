@@ -210,13 +210,13 @@ function renderUsersTable() {
     usersList.forEach(u => {
         const roleStr = u.role === 'superadmin' ? '<span class="badge success">Süper Admin</span>' : '<span class="badge warning">Admin</span>';
         tbody.innerHTML += `<tr>
-            <td style="color:var(--text-tertiary);">#${u.id}</td>
+            <td style="color:var(--text-tertiary);">#${escapeHtml(u.id)}</td>
             <td><strong>${escapeHtml(u.username)}</strong></td>
             <td>${roleStr}</td>
             <td style="color:var(--text-tertiary);font-size:var(--text-sm);">${escapeHtml(u.last_login || '-')}</td>
             <td style="text-align:right;">
-                <button class="btn sm secondary" onclick="editUser(${u.id})" style="padding:0.25rem 0.5rem;"><i class="fas fa-pen"></i></button>
-                ${u.role !== 'superadmin' ? `<button class="btn sm danger" onclick="deleteUser(${u.id})" style="padding:0.25rem 0.5rem;margin-left:0.25rem;"><i class="fas fa-trash"></i></button>` : ''}
+                <button class="btn sm secondary" onclick="editUser(${jsArg(u.id)})" style="padding:0.25rem 0.5rem;"><i class="fas fa-pen"></i></button>
+                ${u.role !== 'superadmin' ? `<button class="btn sm danger" onclick="deleteUser(${jsArg(u.id)})" style="padding:0.25rem 0.5rem;margin-left:0.25rem;"><i class="fas fa-trash"></i></button>` : ''}
             </td>
         </tr>`;
     });

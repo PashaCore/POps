@@ -393,13 +393,13 @@ window.renderUnassignedZone = function() {
             <div class="unassigned-grid">
                 ${unassignedPcs.map(pc => `
                     <label class="unassigned-pc">
-                        <input type="checkbox" class="unassigned-cb" value="${pc.hostname}" onchange="window.checkUnassignedMaster()">
+                        <input type="checkbox" class="unassigned-cb" value="${escapeHtml(pc.hostname)}" onchange="window.checkUnassignedMaster()">
                         <div style="display:flex;flex-direction:column;overflow:hidden;flex:1;">
                             <span class="pc-name" style="display:flex;align-items:center;justify-content:space-between;width:100%;">
                                 <span>${escapeHtml(pc.display_name || pc.real_hostname || pc.hostname)}</span>
-                                <button class="mini-btn" style="padding:0;font-size:12px;background:transparent;border:none;color:var(--text-tertiary);" title="İsmi Değiştir" onclick="event.preventDefault(); event.stopPropagation(); window.renameDevice('${pc.hostname}', '${escapeHtml(pc.display_name || pc.real_hostname || pc.hostname)}')"><i class="fas fa-edit"></i></button>
+                                <button class="mini-btn" style="padding:0;font-size:12px;background:transparent;border:none;color:var(--text-tertiary);" title="İsmi Değiştir" onclick="event.preventDefault(); event.stopPropagation(); window.renameDevice(${jsArg(pc.hostname)}, ${jsArg(pc.display_name || pc.real_hostname || pc.hostname)})"><i class="fas fa-edit"></i></button>
                             </span>
-                            <span class="pc-meta">${pc.ip || 'IP Yok'} • ${pc.status}</span>
+                            <span class="pc-meta">${escapeHtml(pc.ip || 'IP Yok')} • ${escapeHtml(pc.status)}</span>
                         </div>
                     </label>
                 `).join('')}
@@ -409,7 +409,7 @@ window.renderUnassignedZone = function() {
                     <label class="modal-label">Mevcut Laba Taşı</label>
                     <select id="unassignedTargetLab">
                         <option value="">— Lab Seçin —</option>
-                        ${allLabs.map(l => `<option value="${l}">${l}</option>`).join('')}
+                        ${allLabs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('')}
                     </select>
                 </div>
                 <span style="color:var(--text-tertiary);font-weight:var(--fw-semibold);">VEYA</span>
@@ -457,16 +457,16 @@ window.renderAdvancedLabsView = function() {
                 const dName = pc.display_name || pc.display_name || pc.real_hostname || pc.hostname;
                 const iconClass = statusClass === 'online' ? 'fa-desktop' : (statusClass === 'idle' ? 'fa-moon' : 'fa-power-off');
                 return `
-                    <div class="pc-desk ${statusClass} ${isMain ? 'main-pc' : ''}" data-hostname="${pc.hostname}" title="IP: ${pc.ip || 'Yok'} | MAC: ${pc.mac || 'Yok'}">
+                    <div class="pc-desk ${escapeHtml(statusClass)} ${isMain ? 'main-pc' : ''}" data-hostname="${escapeHtml(pc.hostname)}" title="IP: ${escapeHtml(pc.ip || 'Yok')} | MAC: ${escapeHtml(pc.mac || 'Yok')}">
                         <div style="overflow:hidden;flex:1;">
                             <div class="pc-name">${escapeHtml(dName)}</div>
-                            <div class="pc-host">${pc.hostname}</div>
+                            <div class="pc-host">${escapeHtml(pc.hostname)}</div>
                         </div>
                         <i class="fas ${iconClass} pc-icon-main"></i>
                         <div class="pc-desk-actions">
-                            <button class="desk-btn wake" title="Uyandır" onclick="window.wakeUpCommand('PC', '${pc.hostname}')"><i class="fas fa-bolt"></i></button>
-                            <button class="desk-btn res" title="Yeniden Başlat" onclick="window.powerCommand('PC', 'restart', '${pc.hostname}')"><i class="fas fa-arrows-rotate"></i></button>
-                            <button class="desk-btn shut" title="Kapat" onclick="window.powerCommand('PC', 'shutdown', '${pc.hostname}')"><i class="fas fa-power-off"></i></button>
+                            <button class="desk-btn wake" title="Uyandır" onclick="window.wakeUpCommand('PC', ${jsArg(pc.hostname)})"><i class="fas fa-bolt"></i></button>
+                            <button class="desk-btn res" title="Yeniden Başlat" onclick="window.powerCommand('PC', 'restart', ${jsArg(pc.hostname)})"><i class="fas fa-arrows-rotate"></i></button>
+                            <button class="desk-btn shut" title="Kapat" onclick="window.powerCommand('PC', 'shutdown', ${jsArg(pc.hostname)})"><i class="fas fa-power-off"></i></button>
                         </div>
                     </div>`;
             };
@@ -502,18 +502,18 @@ window.renderAdvancedLabsView = function() {
                 mapHtml += `
                 <div class="power-controls">
                     <span style="color:var(--text-tertiary);font-size:var(--text-sm);margin-right:0.5rem;"><i class="fas fa-plug"></i> Sınıf Kontrolü:</span>
-                    <button class="power-btn wake" onclick="window.wakeUpCommand('LAB', '${labName}')"><i class="fas fa-bolt"></i> Aç (WOL)</button>
-                    <button class="power-btn restart" onclick="window.powerCommand('LAB', 'restart', '${labName}')"><i class="fas fa-arrows-rotate"></i> Yeniden Başlat</button>
-                    <button class="power-btn shutdown" onclick="window.powerCommand('LAB', 'shutdown', '${labName}')"><i class="fas fa-power-off"></i> Kapat</button>
+                    <button class="power-btn wake" onclick="window.wakeUpCommand('LAB', ${jsArg(labName)})"><i class="fas fa-bolt"></i> Aç (WOL)</button>
+                    <button class="power-btn restart" onclick="window.powerCommand('LAB', 'restart', ${jsArg(labName)})"><i class="fas fa-arrows-rotate"></i> Yeniden Başlat</button>
+                    <button class="power-btn shutdown" onclick="window.powerCommand('LAB', 'shutdown', ${jsArg(labName)})"><i class="fas fa-power-off"></i> Kapat</button>
                 </div>
                 <div style="width:100%;max-width:400px;text-align:center;">
                     <div style="color:var(--warning-text);font-size:0.75rem;font-weight:var(--fw-semibold);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.06em;"><i class="fas fa-crown"></i> Yönetici (Ana) Bilgisayar</div>
                     ${teacherPc ? buildPcHtml(teacherPc, true) : `<div class="pc-desk main-pc" style="border-style:dashed;opacity:0.4;justify-content:center;"><span class="pc-name" style="color:var(--text-tertiary);">Ana PC Atanmadı</span></div>`}
                 </div>
                 <div class="branches-wrapper">
-                    <div class="pc-column sortable-col" id="col_left_${labName}" data-col="left"><div class="col-title">Sol Sütun</div>${leftPcs.map(p => buildPcHtml(p)).join('')}</div>
-                    <div class="pc-column sortable-col" id="col_center_${labName}" data-col="center"><div class="col-title">Orta Sütun</div>${centerPcs.map(p => buildPcHtml(p)).join('')}</div>
-                    <div class="pc-column sortable-col" id="col_right_${labName}" data-col="right"><div class="col-title">Sağ Sütun</div>${rightPcs.map(p => buildPcHtml(p)).join('')}</div>
+                    <div class="pc-column sortable-col" id="col_left_${escapeHtml(labName)}" data-col="left"><div class="col-title">Sol Sütun</div>${leftPcs.map(p => buildPcHtml(p)).join('')}</div>
+                    <div class="pc-column sortable-col" id="col_center_${escapeHtml(labName)}" data-col="center"><div class="col-title">Orta Sütun</div>${centerPcs.map(p => buildPcHtml(p)).join('')}</div>
+                    <div class="pc-column sortable-col" id="col_right_${escapeHtml(labName)}" data-col="right"><div class="col-title">Sağ Sütun</div>${rightPcs.map(p => buildPcHtml(p)).join('')}</div>
                 </div>`;
             } else { mapHtml += `<div class="empty-state"><i class="fas fa-ghost"></i><h3>Laboratuvar boş</h3><p>Bu sınıfta kayıtlı cihaz yok.</p></div>`; }
             mapHtml += `</div>`;
@@ -522,9 +522,9 @@ window.renderAdvancedLabsView = function() {
                 <div class="manage-section">
                     <div class="manage-title"><i class="fas fa-sliders"></i> Laboratuvar Kontrolleri</div>
                     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
-                        <input type="text" id="renameInput_${labName}" value="${labName}" style="flex:1;min-width:200px;">
-                        <button class="btn" onclick="window.renameLab('${labName}')"><i class="fas fa-save"></i> Adı Güncelle</button>
-                        <button class="btn danger" onclick="window.deleteLab('${labName}')"><i class="fas fa-trash"></i> Labı Sil</button>
+                        <input type="text" id="renameInput_${escapeHtml(labName)}" value="${escapeHtml(labName)}" style="flex:1;min-width:200px;">
+                        <button class="btn" onclick="window.renameLab(${jsArg(labName)})"><i class="fas fa-save"></i> Adı Güncelle</button>
+                        <button class="btn danger" onclick="window.deleteLab(${jsArg(labName)})"><i class="fas fa-trash"></i> Labı Sil</button>
                     </div>
                 </div>
                 <div class="manage-section">
@@ -537,14 +537,14 @@ window.renderAdvancedLabsView = function() {
                                     const isMain = teacherPc && teacherPc.hostname === d.hostname;
                                     const dName = d.display_name || d.display_name || d.real_hostname || d.hostname;
                                     return `<tr>
-                                        <td><div style="font-weight:var(--fw-semibold);">${escapeHtml(dName)} ${isMain ? '<i class="fas fa-crown" style="color:var(--warning-solid);margin-left:0.25rem;"></i>' : ''}</div><div style="font-size:0.6875rem;color:var(--text-tertiary);font-family:var(--font-mono);">${d.hostname}</div></td>
-                                        <td><div style="color:var(--info-text);font-family:var(--font-mono);font-size:var(--text-xs);">${d.ip || '—'}</div><div style="color:var(--text-tertiary);font-size:0.6875rem;font-family:var(--font-mono);">${d.mac || '—'}</div></td>
-                                        <td><span class="status-dot ${d.status.toLowerCase() === 'online' ? 'online' : (d.status.toLowerCase() === 'idle' ? 'idle' : 'offline')}"></span> <span style="font-size:var(--text-xs);">${d.status}</span></td>
+                                        <td><div style="font-weight:var(--fw-semibold);">${escapeHtml(dName)} ${isMain ? '<i class="fas fa-crown" style="color:var(--warning-solid);margin-left:0.25rem;"></i>' : ''}</div><div style="font-size:0.6875rem;color:var(--text-tertiary);font-family:var(--font-mono);">${escapeHtml(d.hostname)}</div></td>
+                                        <td><div style="color:var(--info-text);font-family:var(--font-mono);font-size:var(--text-xs);">${escapeHtml(d.ip || '—')}</div><div style="color:var(--text-tertiary);font-size:0.6875rem;font-family:var(--font-mono);">${escapeHtml(d.mac || '—')}</div></td>
+                                        <td><span class="status-dot ${d.status.toLowerCase() === 'online' ? 'online' : (d.status.toLowerCase() === 'idle' ? 'idle' : 'offline')}"></span> <span style="font-size:var(--text-xs);">${escapeHtml(d.status)}</span></td>
                                         <td style="text-align:right;">
                                             <div style="display:inline-flex;gap:0.375rem;">
-                                                <button class="action-btn crown" onclick="window.setMainPc('${labName}', '${d.hostname}')" title="Ana PC yap"><i class="fas fa-crown"></i></button>
-                                                <button class="action-btn" onclick="window.openMovePcModal('${d.hostname}', '${labName}')" title="Taşı"><i class="fas fa-right-left"></i></button>
-                                                <button class="action-btn eject" onclick="window.unassignPc('${d.hostname}')" title="Çıkar"><i class="fas fa-eject"></i></button>
+                                                <button class="action-btn crown" onclick="window.setMainPc(${jsArg(labName)}, ${jsArg(d.hostname)})" title="Ana PC yap"><i class="fas fa-crown"></i></button>
+                                                <button class="action-btn" onclick="window.openMovePcModal(${jsArg(d.hostname)}, ${jsArg(labName)})" title="Taşı"><i class="fas fa-right-left"></i></button>
+                                                <button class="action-btn eject" onclick="window.unassignPc(${jsArg(d.hostname)})" title="Çıkar"><i class="fas fa-eject"></i></button>
                                             </div>
                                         </td>
                                     </tr>`;
@@ -556,7 +556,7 @@ window.renderAdvancedLabsView = function() {
             </div>`;
 
             wrapper.innerHTML = `
-                <div class="lab-summary ${isExpanded ? 'expanded' : ''}" onclick="window.toggleLab('${labName}')">
+                <div class="lab-summary ${isExpanded ? 'expanded' : ''}" onclick="window.toggleLab(${jsArg(labName)})">
                     <div class="lab-title-area">
                         <i class="fas fa-network-wired lab-icon"></i>
                         <div>
@@ -571,8 +571,8 @@ window.renderAdvancedLabsView = function() {
                 </div>
                 <div class="lab-content" style="${isExpanded ? 'display:flex;' : 'display:none;'}">
                     <div class="lab-inner-tabs">
-                        <button class="inner-tab-btn ${activeTab === 'map' ? 'active' : ''}" onclick="window.switchLabTab('${labName}', 'map')"><i class="fas fa-sitemap"></i> Cihaz Haritası</button>
-                        <button class="inner-tab-btn ${activeTab === 'manage' ? 'active' : ''}" onclick="window.switchLabTab('${labName}', 'manage')"><i class="fas fa-gear"></i> Lab Ayarları & Liste</button>
+                        <button class="inner-tab-btn ${activeTab === 'map' ? 'active' : ''}" onclick="window.switchLabTab(${jsArg(labName)}, 'map')"><i class="fas fa-sitemap"></i> Cihaz Haritası</button>
+                        <button class="inner-tab-btn ${activeTab === 'manage' ? 'active' : ''}" onclick="window.switchLabTab(${jsArg(labName)}, 'manage')"><i class="fas fa-gear"></i> Lab Ayarları & Liste</button>
                     </div>
                     ${mapHtml}
                     ${manageHtml}
@@ -689,12 +689,12 @@ window.openModal = function(id) {
         const select = document.getElementById(id === 'autoEnrollModal' ? 'autoEnrollLabSelect' : (id === 'movePcModal' ? 'movePcLabSelect' : 'globalMoveLabSelect'));
         select.innerHTML = '';
         if (id === 'movePcModal' || id === 'globalMoveModal') select.innerHTML += `<option value="Atanmamis_Cihazlar" style="color:var(--danger-text);">❌ Bekleme Odası</option>`;
-        allLabs.forEach(l => { select.innerHTML += `<option value="${l}">${l}</option>`; });
+        allLabs.forEach(l => { select.innerHTML += `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`; });
     }
     if (id === 'globalMoveModal') {
         const filterSelect = document.getElementById('bulkMoveFilter');
         filterSelect.innerHTML = `<option value="ALL">Tüm Cihazlar</option>`;
-        allLabs.forEach(l => { filterSelect.innerHTML += `<option value="${l}">Sadece ${l}</option>`; });
+        allLabs.forEach(l => { filterSelect.innerHTML += `<option value="${escapeHtml(l)}">Sadece ${escapeHtml(l)}</option>`; });
         window.renderBulkMoveList();
     }
 };
@@ -722,9 +722,9 @@ window.renderBulkMoveList = function() {
     filtered.forEach(d => {
         const dName = d.display_name || d.display_name || d.real_hostname || d.hostname;
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td style="text-align:center;"><input type="checkbox" class="bulk-pc-cb" value="${d.hostname}"></td>
-            <td><strong>${escapeHtml(dName)}</strong><br><span style="font-size:0.6875rem;color:var(--text-tertiary);font-family:var(--font-mono);">${d.hostname}</span></td>
-            <td><span class="lab-pill">${d.lab}</span></td>`;
+        tr.innerHTML = `<td style="text-align:center;"><input type="checkbox" class="bulk-pc-cb" value="${escapeHtml(d.hostname)}"></td>
+            <td><strong>${escapeHtml(dName)}</strong><br><span style="font-size:0.6875rem;color:var(--text-tertiary);font-family:var(--font-mono);">${escapeHtml(d.hostname)}</span></td>
+            <td><span class="lab-pill">${escapeHtml(d.lab)}</span></td>`;
         tbody.appendChild(tr);
     });
     document.getElementById('bulkSelectAll').checked = false;

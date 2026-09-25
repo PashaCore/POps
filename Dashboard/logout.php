@@ -2,7 +2,8 @@
 // =====================================================================
 // POps V4 Enterprise - Güvenli Çıkış (Logout) Modülü
 // =====================================================================
-session_start();
+require_once __DIR__ . '/includes/session.php';
+pops_session_start();
 
 // Tüm oturum değişkenlerini boşalt
 $_SESSION = array();
@@ -18,6 +19,9 @@ if (ini_get("session.use_cookies")) {
 
 // Oturumu fiziksel olarak sunucuda yok et
 session_destroy();
+
+// httpOnly JWT çerezini de sil
+pops_clear_jwt_cookie();
 
 // Güvenli bir şekilde giriş ekranına şutla
 header("Location: login.php");

@@ -172,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('statOffline').innerText = offline;
         const uniqueLabs = [...new Set(pageState.devices.map(d => d.lab))].filter(l => l && l !== 'Atanmamis_Cihazlar');
         const datalist = document.getElementById('existingLabsList');
-        if (datalist) datalist.innerHTML = uniqueLabs.map(l => `<option value="${l}">`).join('');
+        if (datalist) datalist.innerHTML = uniqueLabs.map(l => `<option value="${escapeHtml(l)}">`).join('');
     }
 
     function renderDataView() {
@@ -209,10 +209,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const expanded = query.length > 0 || pageState.expandedLabs.has(labName);
                 const labSelected = pcs.every(d => pageState.selectedIds.has(d.hostname)) && pcs.length > 0;
                 html += `<div class="lab-accordion">
-                    <div class="lab-header ${expanded ? 'open' : ''}" onclick="toggleLab('${labName}', event)">
+                    <div class="lab-header ${expanded ? 'open' : ''}" onclick="toggleLab(${jsArg(labName)}, event)">
                         <div class="lab-title">
-                            <input type="checkbox" ${labSelected ? 'checked' : ''} onclick="event.stopPropagation()" onchange="toggleSelectLab('${labName}', this.checked)">
-                            <i class="fas fa-network-wired" style="color:var(--text-tertiary);"></i> ${labName} <span class="lab-pill">${pcs.length} cihaz</span>
+                            <input type="checkbox" ${labSelected ? 'checked' : ''} onclick="event.stopPropagation()" onchange="toggleSelectLab(${jsArg(labName)}, this.checked)">
+                            <i class="fas fa-network-wired" style="color:var(--text-tertiary);"></i> ${escapeHtml(labName)} <span class="lab-pill">${pcs.length} cihaz</span>
                         </div>
                         <i class="fas ${expanded ? 'fa-chevron-up' : 'fa-chevron-down'}" style="color:var(--text-tertiary);"></i>
                     </div>
@@ -232,34 +232,34 @@ document.addEventListener('DOMContentLoaded', () => {
         const isChecked = pageState.selectedIds.has(device.hostname) ? 'checked' : '';
         const statusLower = device.status.toLowerCase();
         const dotClass = statusLower === 'online' ? 'online' : (statusLower === 'idle' ? 'idle' : 'offline');
-        const labCol = showLab ? `<td><span class="lab-pill">${device.lab || 'Belirsiz'}</span></td>` : '';
+        const labCol = showLab ? `<td><span class="lab-pill">${escapeHtml(device.lab || 'Belirsiz')}</span></td>` : '';
         const IS_SUPERADMIN = <?php echo (isset($_SESSION['role']) && $_SESSION['role'] === 'superadmin') ? 'true' : 'false'; ?>;
-        const deleteBtn = IS_SUPERADMIN ? `<button class="mini-btn power" style="border-color:var(--danger-border); color:var(--danger-text);" title="Cihazı Sil" onclick="window.deleteDevice('${device.hostname}')"><i class="fas fa-trash"></i></button>` : '';
+        const deleteBtn = IS_SUPERADMIN ? `<button class="mini-btn power" style="border-color:var(--danger-border); color:var(--danger-text);" title="Cihazı Sil" onclick="window.deleteDevice(${jsArg(device.hostname)})"><i class="fas fa-trash"></i></button>` : '';
         
         return `<tr>
-            <td style="text-align:center;"><input type="checkbox" class="dev-cb" data-id="${device.hostname}" ${isChecked} onchange="handleRowSelect(this)"></td>
-            <td><span class="status-dot ${dotClass}"></span> <span style="font-size:0.6875rem;color:var(--text-tertiary);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">${device.status}</span></td>
+            <td style="text-align:center;"><input type="checkbox" class="dev-cb" data-id="${escapeHtml(device.hostname)}" ${isChecked} onchange="handleRowSelect(this)"></td>
+            <td><span class="status-dot ${dotClass}"></span> <span style="font-size:0.6875rem;color:var(--text-tertiary);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">${escapeHtml(device.status)}</span></td>
             <td>
                 <div class="device-name" style="display:flex;align-items:center;gap:5px;">
                     ${escapeHtml(dName)}
-                    <button class="mini-btn" style="padding:2px 5px;font-size:10px;background:transparent;border:1px solid var(--border-subtle);color:var(--text-secondary);" title="İsmi Değiştir" onclick="window.renameDevice('${device.hostname}', '${escapeHtml(dName)}')"><i class="fas fa-edit"></i></button>
+                    <button class="mini-btn" style="padding:2px 5px;font-size:10px;background:transparent;border:1px solid var(--border-subtle);color:var(--text-secondary);" title="İsmi Değiştir" onclick="window.renameDevice(${jsArg(device.hostname)}, ${jsArg(dName)})"><i class="fas fa-edit"></i></button>
                 </div>
-                <div class="device-host">${device.hostname}</div>
+                <div class="device-host">${escapeHtml(device.hostname)}</div>
             </td>
             ${labCol}
             <td style="font-family:var(--font-mono);font-size:var(--text-xs);">
-                <div style="color:var(--info-text);">${device.ip || 'Bilinmiyor'}</div>
-                <div style="color:var(--text-tertiary);font-size:0.6875rem;">${device.mac || '—'}</div>
+                <div style="color:var(--info-text);">${escapeHtml(device.ip || 'Bilinmiyor')}</div>
+                <div style="color:var(--text-tertiary);font-size:0.6875rem;">${escapeHtml(device.mac || '—')}</div>
             </td>
             <td>
-                <div style="font-size:var(--text-sm);color:var(--text-primary);"><i class="fas fa-microchip" style="color:var(--text-tertiary);margin-right:0.25rem;"></i>${device.cpu || '—'}</div>
-                <div class="hw-info"><i class="fas fa-memory"></i> ${device.ram || '—'} <span style="margin:0 0.25rem;color:var(--border-default);">|</span> <i class="fab fa-windows"></i> ${device.os || '—'}</div>
+                <div style="font-size:var(--text-sm);color:var(--text-primary);"><i class="fas fa-microchip" style="color:var(--text-tertiary);margin-right:0.25rem;"></i>${escapeHtml(device.cpu || '—')}</div>
+                <div class="hw-info"><i class="fas fa-memory"></i> ${escapeHtml(device.ram || '—')} <span style="margin:0 0.25rem;color:var(--border-default);">|</span> <i class="fab fa-windows"></i> ${escapeHtml(device.os || '—')}</div>
             </td>
             <td style="text-align:right;">
                 <div class="action-row">
-                    <button class="mini-btn wake" title="Uyandır" onclick="window.wakeUpCommand('PC', '${device.hostname}')"><i class="fas fa-bolt"></i></button>
-                    <button class="mini-btn reboot" title="Yeniden Başlat" onclick="window.powerCommand('PC', 'restart', '${device.hostname}')"><i class="fas fa-arrows-rotate"></i></button>
-                    <button class="mini-btn power" title="Kapat" onclick="window.powerCommand('PC', 'shutdown', '${device.hostname}')"><i class="fas fa-power-off"></i></button>
+                    <button class="mini-btn wake" title="Uyandır" onclick="window.wakeUpCommand('PC', ${jsArg(device.hostname)})"><i class="fas fa-bolt"></i></button>
+                    <button class="mini-btn reboot" title="Yeniden Başlat" onclick="window.powerCommand('PC', 'restart', ${jsArg(device.hostname)})"><i class="fas fa-arrows-rotate"></i></button>
+                    <button class="mini-btn power" title="Kapat" onclick="window.powerCommand('PC', 'shutdown', ${jsArg(device.hostname)})"><i class="fas fa-power-off"></i></button>
                     ${deleteBtn}
                 </div>
             </td>
@@ -288,7 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.deleteDevice = async function(hostname) {
         if (!confirm(`${hostname} cihazını sistemden tamamen silmek istediğinize emin misiniz?\nBu işlem geri alınamaz!`)) return;
         try {
-            const res = await fetch(`${apiUrl}/api/devices/${hostname}`, { method: 'DELETE' });
+            const res = await fetch(`${apiUrl}/api/devices/${encodeURIComponent(hostname)}`, { method: 'DELETE' });
             if (res.ok) {
                 showToast('Cihaz başarıyla silindi.', 'success');
                 fetchDevices();

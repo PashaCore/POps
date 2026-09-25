@@ -209,7 +209,7 @@ const UI = {
         let pcs = globalDevices.filter(d => d.lab === lab && (d.status || '').toLowerCase() === 'online');
         pcs.sort((a, b) => extractNumber(a.display_name || a.real_hostname || a.hostname) - extractNumber(b.display_name || b.real_hostname || b.hostname));
         pcSel.innerHTML = '<option value="">— Cihaz Seçin —</option>';
-        pcs.forEach(pc => { pcSel.innerHTML += `<option value="${pc.hostname}">${escapeHtml(pc.display_name || pc.real_hostname || pc.hostname)}</option>`; });
+        pcs.forEach(pc => { pcSel.innerHTML += `<option value="${escapeHtml(pc.hostname)}">${escapeHtml(pc.display_name || pc.real_hostname || pc.hostname)}</option>`; });
         this.validateForm();
     },
     handleFile: function() {
@@ -304,7 +304,7 @@ const Deployment = {
                 UI.validateForm();
             }, 5000);
         } catch (error) {
-            UI.showStatus(`Hata: ${error.message}`, 'error');
+            UI.showStatus(`Hata: ${escapeHtml(error.message)}`, 'error');
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-rocket"></i> Ajanları Güncelle';
         }
