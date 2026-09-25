@@ -10,6 +10,7 @@ import datetime
 from typing import List, Dict, Optional
 import json
 import os
+import re
 import shutil
 import asyncio
 import socket
@@ -324,7 +325,6 @@ class LogInput(BaseModel):
     meta_data: Optional[dict] = {}
 class AuthEventInput(BaseModel): hw_id: str; hostname: str; student_id: str; message: Optional[str] = ""
 class TaskActionInput(BaseModel): action: str; target_mode: str; target_id: str
-class UpdateAgentInput(BaseModel): download_url: Optional[str] = None; version: Optional[str] = None
 class RemoteInputData(BaseModel): type: str; device: str; input_type: str; data: dict
 class HwInventoryInput(BaseModel): hw_id: Optional[str] = None; hostname: Optional[str] = None; cpu: str = "-"; ram: str = "-"; motherboard: str = "-"; gpu: str = "-"; os_version: str = "-"; ip_address: str = "-"; mac_address: str = "-"; disk_info: str = "-"
 class StartAuditSessionInput(BaseModel): admin_id: int; admin_name: str; admin_role: str; target_pc: str; reason: str; is_mandatory: bool
@@ -1061,29 +1061,44 @@ async def get_latest_update(auth: dict = Depends(require_auth)):
     row = await execute_query("SELECT value FROM global_settings WHERE key = 'latest_update_url'", fetch=True)
     return {"download_url": row[0]["value"] if row else None}
 
-@app.post("/api/update_agent/{hw_id}")
-async def update_single_agent(hw_id: str, data: UpdateAgentInput, auth: dict = Depends(require_admin)):
-    url = data.download_url
-    update_hash = None
+SHA256_HEX_RE = re.compile(r"[0-9a-f]{64}")
+
+async def get_update_command():
+    """Sunucuya yüklenmiş son paketten ajan güncelleme emrini üretir.
+
+    Paket adresi istekten (dışarıdan) alınmaz, yalnızca /api/upload_update ile bu sunucuya
+    yüklenen paket gönderilir. SHA-256 özeti zorunludur; özeti olmayan paket gönderilmez.
+    Hata durumunda (None, mesaj) döner.
+    """
+    rows = await execute_query("SELECT key, value FROM global_settings WHERE key IN ('latest_update_url', 'latest_update_hash')", fetch=True)
+    settings = {r["key"]: r["value"] for r in (rows or [])}
+    url = settings.get("latest_update_url")
+    file_hash = (settings.get("latest_update_hash") or "").lower()
     if not url:
-        row = await execute_query("SELECT key, value FROM global_settings WHERE key IN ('latest_update_url', 'latest_update_hash')", fetch=True)
-        settings = {r["key"]: r["value"] for r in (row or [])}
-        url = settings.get("latest_update_url")
-        update_hash = settings.get("latest_update_hash")
-    if not url: return {"status": "error"}
-    
+        return None, "Sunucuda güncelleme paketi yok"
+    if not SHA256_HEX_RE.fullmatch(file_hash):
+        return None, "Paketin SHA-256 özeti yok, paketi yeniden yükleyin"
+    package = os.path.basename(url.rstrip("/"))
+    if not os.path.isfile(os.path.join(UPDATES_DIR, package)):
+        return None, "Güncelleme paketi sunucuda bulunamadı, paketi yeniden yükleyin"
+    return {"action": "update_agent", "download_url": url, "hash": file_hash}, None
+
+@app.post("/api/update_agent/{hw_id}")
+async def update_single_agent(hw_id: str, auth: dict = Depends(require_admin)):
+    # İstek gövdesi okunmaz: indirme adresi dışarıdan kabul edilmez
+    msg, error = await get_update_command()
+    if not msg: return {"status": "error", "message": error}
+
     if hw_id in manager.active_agents:
-        await manager.send_command({"action": "update_agent", "download_url": url, "hash": update_hash}, hw_id)
+        await manager.send_command(msg, hw_id)
         return {"status": "success"}
     return {"status": "error", "message": "Offline"}
 
 @app.get("/api/broadcast_update")
 async def broadcast_update(auth: dict = Depends(require_admin)):
-    row = await execute_query("SELECT key, value FROM global_settings WHERE key IN ('latest_update_url', 'latest_update_hash')", fetch=True)
-    settings = {r["key"]: r["value"] for r in (row or [])}
-    if not settings.get("latest_update_url"): return {"status": "error"}
-    
-    msg = {"action": "update_agent", "download_url": settings.get("latest_update_url"), "hash": settings.get("latest_update_hash")}
+    msg, error = await get_update_command()
+    if not msg: return {"status": "error", "message": error}
+
     for pc_name in list(manager.active_agents.keys()):
         await manager.send_command(msg, pc_name)
     return {"status": "success"}

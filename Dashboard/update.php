@@ -257,7 +257,6 @@ const Deployment = {
         const tgt = document.querySelector('input[name="targetMode"]:checked').value;
         btn.disabled = true;
         try {
-            let downloadUrl = latestUpdateUrl;
             if (pkg === 'new') {
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Paket Yükleniyor...';
                 const fd = new FormData(); fd.append('file', document.getElementById('updateFile').files[0]);
@@ -265,27 +264,34 @@ const Deployment = {
                 if (!res.ok) throw new Error('Yükleme başarısız.');
                 const data = await res.json();
                 if (data.status === 'error') throw new Error(data.message);
-                downloadUrl = OMYO_API.UPDATE_URL + '/' + data.filename;
-                latestUpdateUrl = downloadUrl;
+                latestUpdateUrl = data.download_url;
             }
+            // Emir her zaman sunucudaki son paketi (SHA-256 doğrulamalı) kullanır; indirme adresi gönderilmez
+            const sendUpdate = async (hwId) => {
+                const r = await fetch(`${getApiBase()}/api/update_agent/${encodeURIComponent(hwId)}`, { method: 'POST' });
+                const d = r.ok ? await r.json() : { message: 'Cihaza erişilemedi.' };
+                if (d.status !== 'success') throw new Error(d.message || 'Güncelleme emri gönderilemedi.');
+            };
             btn.innerHTML = '<i class="fas fa-paper-plane"></i> Emir Gönderiliyor...';
             let successMessage = '';
             if (tgt === 'all') {
                 const bRes = await fetch(`${getApiBase()}/api/broadcast_update`);
-                if (!bRes.ok) throw new Error('Broadcast başarısız.');
+                const bData = bRes.ok ? await bRes.json() : {};
+                if (bData.status !== 'success') throw new Error(bData.message || 'Broadcast başarısız.');
                 successMessage = 'Tüm aktif cihazlara güncelleme emri gönderildi!';
             } else if (tgt === 'single') {
                 const target = document.getElementById('pcSelect').value;
-                const sRes = await fetch(`${getApiBase()}/api/update_agent/${target}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ download_url: downloadUrl }) });
-                if (!sRes.ok) throw new Error('Cihaza erişilemedi.');
+                await sendUpdate(target);
                 successMessage = `<strong>${escapeHtml(target)}</strong> cihazına test emri gönderildi.`;
             } else if (tgt === 'lab') {
                 const targetLab = document.getElementById('labSelect').value;
                 const pcs = globalDevices.filter(d => d.lab === targetLab && (d.status || '').toLowerCase() === 'online');
                 if (pcs.length === 0) throw new Error('Sınıfta açık cihaz yok!');
                 btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${pcs.length} Cihaza İletiliyor...`;
-                await Promise.all(pcs.map(pc => fetch(`${getApiBase()}/api/update_agent/${pc.hostname}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ download_url: downloadUrl }) }).catch(() => {})));
-                successMessage = `<strong>${escapeHtml(targetLab)}</strong> sınıfındaki ${pcs.length} cihaza güncelleme ateşlendi.`;
+                const results = await Promise.allSettled(pcs.map(pc => sendUpdate(pc.hostname)));
+                const sent = results.filter(r => r.status === 'fulfilled').length;
+                if (sent === 0) throw new Error(results[0].reason.message);
+                successMessage = `<strong>${escapeHtml(targetLab)}</strong> sınıfındaki ${sent}/${pcs.length} cihaza güncelleme ateşlendi.`;
             }
             btn.innerHTML = '<i class="fas fa-check-double"></i> Dağıtım Başarılı';
             UI.showStatus(successMessage, 'success');
