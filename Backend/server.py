@@ -1135,9 +1135,13 @@ async def list_updates(request: Request, auth: dict = Depends(require_auth)):
     return sorted(updates, key=lambda x: x["uploaded_at"], reverse=True)
 
 @app.delete("/api/updates/{filename}")
-async def delete_update(filename: str):
-    file_path = os.path.join(UPDATES_DIR, filename)
-    if os.path.exists(file_path):
+async def delete_update(filename: str, auth: dict = Depends(require_admin)):
+    # Yalnızca UPDATES_DIR'in doğrudan içindeki bir .zip silinebilir (path traversal engeli)
+    updates_root = os.path.realpath(UPDATES_DIR)
+    file_path = os.path.realpath(os.path.join(updates_root, filename))
+    if os.path.dirname(file_path) != updates_root or not file_path.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Geçersiz dosya adı")
+    if os.path.isfile(file_path):
         os.remove(file_path)
         return {"status": "success"}
     return {"status": "error"}
