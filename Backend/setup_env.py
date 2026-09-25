@@ -84,6 +84,11 @@ def scram_sha256_verifier(password, iterations=4096):
     return f"SCRAM-SHA-256${iterations}:{b64(salt)}${b64(stored_key)}:{b64(server_key)}"
 
 
+def md5_verifier(password, role):
+    """PostgreSQL 10 öncesi sürümlerin sakladığı MD5 özeti."""
+    return "md5" + hashlib.md5((password + role).encode("utf-8")).hexdigest()
+
+
 def agent_bypass_command(secret):
     """Ajanın C:\\POps\\appsettings.json dosyasına BypassSecret yazan tek satırlık komut."""
     script = (
@@ -123,12 +128,18 @@ async def rotate_db_password(cfg, current_password, new_password):
     role = cfg["DB_USER"]
     conn = await connect(cfg, current_password)
     try:
-        await conn.execute(f"ALTER ROLE \"{role}\" WITH PASSWORD '{scram_sha256_verifier(new_password)}'")
+        # SCRAM-SHA-256 PostgreSQL 10 ile geldi; daha eski sürümlerde MD5 özeti gönderilir
+        use_scram = int(await conn.fetchval("SHOW server_version_num")) >= 100000
+
+        def verifier(password):
+            return scram_sha256_verifier(password) if use_scram else md5_verifier(password, role)
+
+        await conn.execute(f"ALTER ROLE \"{role}\" WITH PASSWORD '{verifier(new_password)}'")
         try:
             check = await connect(cfg, new_password)
             await check.close()
         except Exception as exc:
-            await conn.execute(f"ALTER ROLE \"{role}\" WITH PASSWORD '{scram_sha256_verifier(current_password)}'")
+            await conn.execute(f"ALTER ROLE \"{role}\" WITH PASSWORD '{verifier(current_password)}'")
             raise RuntimeError(f"Yeni şifreyle bağlantı doğrulanamadı, eski şifre geri yüklendi: {exc}")
     finally:
         await conn.close()
