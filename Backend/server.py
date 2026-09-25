@@ -1186,7 +1186,9 @@ async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(require_a
     return {"status": "success"}
 
 @app.get("/api/agent_policies")
-async def get_policies(auth: dict = Depends(require_auth)):
+async def get_policies():
+    # Ajanlar JWT taşımaz; adil kullanım metni ve DNS kategorilerini okuyabilmeleri için bu uç
+    # kimlik doğrulaması istemez. Politikayı değiştirmek (POST) admin JWT gerektirir.
     row = await execute_query("SELECT value FROM global_settings WHERE key = 'agent_policies'", fetch=True)
     if row:
         return json.loads(row[0]["value"])
