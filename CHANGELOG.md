@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Active Directory (LDAP) authentication integration for the dashboard.
 - Cross-platform agent scaffolding.
 
+### Removed
+- **Dashboard:** Dark mode. The panel now uses a single light theme; the theme toggle buttons and the saved `pops_theme` preference are gone, and native form controls stay light even when the operating system prefers dark.
+
 ---
 
 ## [0.1.1-alpha] - 2026-09-25

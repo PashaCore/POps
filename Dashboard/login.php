@@ -94,10 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="assets/pops_theme.css?v=<?php echo time(); ?>">
     <script>
-        const savedTheme = localStorage.getItem('pops_theme') || 'light';
-        if (savedTheme === 'dark') {
-            document.documentElement.setAttribute('data-theme', 'dark');
-        }
+        try { localStorage.removeItem('pops_theme'); } catch (e) {}
     </script>
     <style>
         body { 
@@ -112,26 +109,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             max-width: 420px;
             padding: var(--space-4);
             position: relative;
-        }
-        .theme-toggle-btn {
-            position: absolute;
-            top: var(--space-4);
-            right: var(--space-4);
-            width: 36px;
-            height: 36px;
-            border-radius: var(--radius-md);
-            background: var(--bg-surface);
-            border: 1px solid var(--border-subtle);
-            color: var(--text-secondary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }
-        .theme-toggle-btn:hover {
-            background: var(--bg-surface-2);
-            color: var(--text-primary);
         }
         .login-logo {
             width: 80px;
@@ -182,10 +159,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <div class="login-wrapper">
-        <button class="theme-toggle-btn" onclick="toggleTheme()" title="Temayı Değiştir">
-            <i class="fas fa-moon"></i>
-        </button>
-        
         <div class="login-logo">
             <img src="assets/favicon/apple-touch-icon.png" alt="POps Logo" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">
         </div>
@@ -220,19 +193,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </span>
         </div>
     </div>
-
-    <script>
-        function toggleTheme() {
-            const html = document.documentElement;
-            const isDark = html.getAttribute('data-theme') === 'dark';
-            if (isDark) {
-                html.removeAttribute('data-theme');
-                localStorage.setItem('pops_theme', 'light');
-            } else {
-                html.setAttribute('data-theme', 'dark');
-                localStorage.setItem('pops_theme', 'dark');
-            }
-        }
-    </script>
 </body>
 </html>

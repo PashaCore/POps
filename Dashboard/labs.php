@@ -197,7 +197,6 @@
         transition: transform 0.2s ease;
     }
     .pc-desk:hover .pc-desk-actions { transform: translateX(0); }
-    [data-theme="dark"] .pc-desk-actions { background: rgba(0, 0, 0, 0.92); }
 
     .desk-btn { width: 26px; height: 26px; border-radius: var(--radius-sm); border: none; color: white; font-size: 0.75rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: filter 0.15s; }
     .desk-btn:hover { filter: brightness(1.2); }
