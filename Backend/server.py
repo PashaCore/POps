@@ -665,7 +665,6 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
     agent_version = websocket.headers.get("X-Agent-Version", "unknown")
 
     async def handle_routine_payload(pld):
-        nonlocal active_hwid
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         current_hostname = pld.get("hostname", active_hwid)
         if pld.get("type") == "result":
