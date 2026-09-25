@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/includes/config.php';
 session_start();
 
 if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
@@ -15,8 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Kullanıcı adı ve şifre boş bırakılamaz!';
     } else {
         // === DOĞRUDAN SUNUCU İÇİ BAĞLANTI (404 ve IP sorunlarını kökten çözer) ===
-        // API'nin gerçek kapısı:
-        $url = 'http://127.0.0.1:8000/api/admin/login';
+        // API'nin gerçek kapısı (.env: POPS_API_INTERNAL_URL):
+        $url = API_INTERNAL_URL . '/api/admin/login';
         
         $data = json_encode([
             'username' => $username,

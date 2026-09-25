@@ -55,7 +55,14 @@ namespace POpsAgent
         // ==========================================
         public static string GetServerUrl()
         {
-            string defaultUrl = "http://***REMOVED***:8000"; // Son çare (Fallback)
+            string defaultUrl = "http://127.0.0.1:8000"; // Son çare (Fallback)
+
+            // Sunucu adresi koda gömülmez: önce POPS_SERVER_URL ortam değişkeni, sonra appsettings.json
+            string envUrl = Environment.GetEnvironmentVariable("POPS_SERVER_URL");
+            if (!string.IsNullOrWhiteSpace(envUrl))
+            {
+                return envUrl.Trim().TrimEnd('/');
+            }
 
             try
             {
@@ -84,6 +91,42 @@ namespace POpsAgent
             }
 
             return defaultUrl;
+        }
+
+        // ==========================================
+        // ÇEVRİMDIŞI BYPASS GİZLİ ANAHTARI
+        // ==========================================
+        // Koda gömülmez: POPS_BYPASS_SECRET ortam değişkeni veya appsettings.json "BypassSecret".
+        // Tanımlı değilse null döner ve çevrimdışı bypass devre dışı kalır.
+        public static string GetBypassSecret()
+        {
+            string envSecret = Environment.GetEnvironmentVariable("POPS_BYPASS_SECRET");
+            if (!string.IsNullOrWhiteSpace(envSecret))
+            {
+                return envSecret.Trim();
+            }
+
+            try
+            {
+                if (File.Exists(ConfigPath))
+                {
+                    using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(ConfigPath));
+                    if (doc.RootElement.TryGetProperty("BypassSecret", out JsonElement secretElement))
+                    {
+                        string secret = secretElement.GetString();
+                        if (!string.IsNullOrWhiteSpace(secret))
+                        {
+                            return secret.Trim();
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("HELPERS", $"Config okuma hatası: {ex.Message}", true);
+            }
+
+            return null;
         }
 
         // ==========================================

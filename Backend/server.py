@@ -26,11 +26,18 @@ from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 load_dotenv()
 
+def require_env(name: str) -> str:
+    """Zorunlu ortam değişkenini oku; tanımlı değilse sunucu açıklayıcı bir hatayla durur."""
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"Ortam değişkeni tanımlı değil: {name} (bkz. .env.example)")
+    return value
+
 # ─── Güvenlik Sabitleri ────────────────────────────────────────────────────────
-JWT_SECRET   = os.getenv('JWT_SECRET', secrets.token_hex(32))   # .env'den oku, yoksa random üret
+# Şifre, anahtar ve IP gibi ortama özel değerler koda gömülmez; .env / os.environ'dan okunur.
+JWT_SECRET   = require_env('JWT_SECRET')
 JWT_ALGO     = 'HS256'
-JWT_EXPIRE_H = int(os.getenv('JWT_EXPIRE_HOURS', '12'))         # Token ömrü (saat)
-BYPASS_SECRET = os.getenv('BYPASS_SECRET', 'POps_Bypass_2026') # bypass token salt
+JWT_EXPIRE_H = int(os.environ.get('JWT_EXPIRE_HOURS', '12'))         # Token ömrü (saat)
 
 limiter = Limiter(key_func=get_remote_address)
 security_scheme = HTTPBearer(auto_error=False)
@@ -78,12 +85,8 @@ app = FastAPI(title="POps Merkez API")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# İzin verilen originler — hem dev hem prod
-ALLOWED_ORIGINS = [
-    "https://dev.pashacore.com.tr",
-    "http://localhost",
-    "http://127.0.0.1",
-]
+# İzin verilen originler — CORS_ALLOWED_ORIGINS (virgülle ayrılmış) ortam değişkeninden
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -98,7 +101,18 @@ if not os.path.exists(UPDATES_DIR): os.makedirs(UPDATES_DIR)
 app.mount("/download", StaticFiles(directory=UPLOAD_DIR), name="download")
 app.mount("/updates", StaticFiles(directory=UPDATES_DIR), name="updates")
 
-DB_DSN = f"postgresql://{os.getenv('DB_USER', 'pasha_user')}:{os.getenv('DB_PASS', '***REMOVED***')}@127.0.0.1:5432/{os.getenv('DB_NAME', 'pashacore_db')}"
+# Parametreler ayrı verilir; şifredeki '@', ':' gibi karakterler DSN'i bozmaz
+DB_CONFIG = {
+    "host": os.environ.get('DB_HOST', 'localhost'),
+    "port": int(os.environ.get('DB_PORT', '5432')),
+    "user": require_env('DB_USER'),
+    "password": require_env('DB_PASS'),
+    "database": require_env('DB_NAME'),
+}
+
+# Wake-on-LAN yayın hedefi ('<broadcast>' = 255.255.255.255)
+WOL_BROADCAST_ADDR = os.environ.get('WOL_BROADCAST_ADDR') or '<broadcast>'
+WOL_PORT = int(os.environ.get('WOL_PORT', '9'))
 db_pool = None
 
 async def execute_query(query: str, params=(), fetch=False):
@@ -187,17 +201,19 @@ async def startup_event():
     print("⏳ Veritabanı motoru başlatılıyor...")
     for i in range(5):
         try:
-            db_pool = await asyncpg.create_pool(DB_DSN, min_size=5, max_size=100)
+            db_pool = await asyncpg.create_pool(**DB_CONFIG, min_size=5, max_size=100)
             await init_db()
             print("✅ PostgreSQL Bağlantısı Başarılı!")
             
-            admin_user = os.getenv('PANEL_ADMIN_USER', 'admin')
-            admin_pass = os.getenv('PANEL_ADMIN_PASS', '***REMOVED***')
-            # bcrypt ile hash'le
-            hashed = bcrypt.hashpw(admin_pass.encode(), bcrypt.gensalt()).decode()
+            admin_user = os.environ.get('PANEL_ADMIN_USER', 'admin')
+            admin_pass = os.environ.get('PANEL_ADMIN_PASS')
             # Mevcut kayıt varsa sadece yoksa ekle (her restart'ta üzerine yazma)
             existing = await execute_query("SELECT id FROM users WHERE username=$1", (admin_user,), fetch=True)
-            if not existing:
+            if not existing and not admin_pass:
+                print(f"⚠️ PANEL_ADMIN_PASS tanımlı değil, '{admin_user}' hesabı oluşturulmadı (bkz. .env.example)")
+            elif not existing:
+                # bcrypt ile hash'le
+                hashed = bcrypt.hashpw(admin_pass.encode(), bcrypt.gensalt()).decode()
                 await execute_query(
                     "INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'superadmin')",
                     (admin_user, hashed)
@@ -222,7 +238,7 @@ def send_wol_packet(mac_address: str):
         data = bytes.fromhex('FFFFFFFFFFFF' + clean_mac * 16)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            s.sendto(data, ('255.255.255.255', 9))
+            s.sendto(data, (WOL_BROADCAST_ADDR, WOL_PORT))
         return True
     except: return False
 

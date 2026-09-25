@@ -235,13 +235,22 @@ namespace POpsAgent
                 else if (message.StartsWith("UNLOCK_BYPASS:"))
                 {
                     string token = message.Split(':')[1].Trim();
-                    string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
-                    string raw = $"{_hwId}***REMOVED***{dateStr}";
-                    using var sha = System.Security.Cryptography.SHA256.Create();
-                    byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(raw));
-                    string expectedToken = BitConverter.ToString(hash).Replace("-", "").Substring(0, 6).ToUpper();
+                    string bypassSecret = POpsHelpers.GetBypassSecret();
+                    string expectedToken = null;
+                    if (string.IsNullOrEmpty(bypassSecret))
+                    {
+                        POpsHelpers.Log("AGENT", "Offline Bypass devre dışı: BypassSecret tanımlı değil (appsettings.json / POPS_BYPASS_SECRET).", true);
+                    }
+                    else
+                    {
+                        string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
+                        string raw = $"{_hwId}{bypassSecret}{dateStr}";
+                        using var sha = System.Security.Cryptography.SHA256.Create();
+                        byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(raw));
+                        expectedToken = BitConverter.ToString(hash).Replace("-", "").Substring(0, 6).ToUpper();
+                    }
                     
-                    if (token.ToUpper() == expectedToken)
+                    if (expectedToken != null && token.ToUpper() == expectedToken)
                     {
                         POpsHelpers.Log("AGENT", "Offline Bypass Token DOGRULANDI! Karantina Kaldiriliyor...");
                         _ = DisableNetworkIsolationAsync();

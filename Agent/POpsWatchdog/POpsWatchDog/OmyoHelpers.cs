@@ -56,6 +56,13 @@ namespace POpsWatchDog // Hangi projedeysen namespace'i ona göre uyarlayabilirs
         {
             string defaultUrl = "http://127.0.0.1:8000"; // Son çare (Fallback)
 
+            // Sunucu adresi koda gömülmez: önce POPS_SERVER_URL ortam değişkeni, sonra appsettings.json
+            string envUrl = Environment.GetEnvironmentVariable("POPS_SERVER_URL");
+            if (!string.IsNullOrWhiteSpace(envUrl))
+            {
+                return envUrl.Trim().TrimEnd('/');
+            }
+
             try
             {
                 if (File.Exists(ConfigPath))
