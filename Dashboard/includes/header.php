@@ -55,12 +55,6 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="assets/pops_theme.css?v=<?php echo time(); ?>">
     <script>
-        // Sayfa yüklenmeden temayı uygula (FOUC engellemek için)
-        const savedTheme = localStorage.getItem('pops_theme') || 'light';
-        if (savedTheme === 'dark') {
-            document.documentElement.setAttribute('data-theme', 'dark');
-        }
-
         // XSS koruması: API'den gelen değerler (pc_name, hostname, lab adı, log vb.) HTML'e
         // basılmadan önce escapeHtml ile kaçırılır. Satır içi olay niteliklerine
         // (onclick="fn(...)") verilen argümanlar ise jsArg ile önce JS, sonra HTML olarak kaçırılır.
@@ -72,8 +66,8 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
             return escapeHtml(JSON.stringify(value == null ? '' : value));
         }
 
-        // Eski sürümlerin localStorage'a yazdığı token'ı temizle
-        try { localStorage.removeItem('pops_jwt'); } catch (e) {}
+        // Eski sürümlerin localStorage'a yazdığı token'ı ve kaldırılan tema tercihini temizle
+        try { localStorage.removeItem('pops_jwt'); localStorage.removeItem('pops_theme'); } catch (e) {}
 
         // Global fetch sarmalayıcı: JWT httpOnly çerezde taşınır, JS token'ı görmez.
         // /api/ isteklerine CSRF başlığı eklenir; 401 gelirse oturum kapatılır.
@@ -113,7 +107,6 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
         .nav-item.active { background: var(--primary-50); color: var(--primary-600); }
         .nav-item.active::before { content: ''; position: absolute; left: -16px; top: 50%; transform: translateY(-50%); width: 3px; height: 20px; background: var(--primary-500); border-radius: 0 2px 2px 0; }
         .nav-item i { width: 18px; text-align: center; font-size: 0.95rem; flex-shrink: 0; }
-        [data-theme="dark"] .nav-item.active { background: rgba(59, 130, 246, 0.12); color: var(--primary-600); }
 
         .sidebar-footer { padding: var(--space-4); border-top: 1px solid var(--border-subtle); }
         .user-card { display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem; border-radius: var(--radius-md); margin-bottom: 0.5rem; }
@@ -179,11 +172,9 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
                     </div>
                 </div>
                 <div class="sidebar-actions">
-                    <button class="sidebar-action-btn" onclick="toggleTheme()" title="Tema Değiştir" aria-label="Tema Değiştir">
-                        <i class="fas fa-circle-half-stroke"></i>
-                    </button>
                     <a href="logout.php" class="sidebar-action-btn danger" title="Çıkış" aria-label="Çıkış Yap">
                         <i class="fas fa-right-from-bracket"></i>
+                        <span>Çıkış Yap</span>
                     </a>
                 </div>
             </div>
@@ -213,7 +204,6 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
                         <span class="date" id="topbarDate">--/--/----</span>
                     </div>
                     <button class="topbar-icon-btn" title="Bildirimler" aria-label="Bildirimler"><i class="fas fa-bell"></i></button>
-                    <button class="topbar-icon-btn" onclick="toggleTheme()" title="Tema" aria-label="Tema Değiştir"><i class="fas fa-circle-half-stroke"></i></button>
                 </div>
             </header>
             <main class="app-content">

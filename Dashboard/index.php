@@ -186,7 +186,6 @@
     .quick-card.wake .qa-icon    { background: rgba(16, 185, 129, 0.10); color: var(--success-text); }
     .quick-card.deploy .qa-icon  { background: rgba(245, 158, 11, 0.10); color: var(--warning-text); }
     .quick-card.logger .qa-icon  { background: rgba(139, 92, 246, 0.10); color: #8b5cf6; }
-    [data-theme="dark"] .quick-card.logger .qa-icon { color: #a78bfa; }
 
     /* === ANA IZGARA (12-col) === */
     .dash-layout {

@@ -17,7 +17,6 @@
     .pc-item { padding: 0.5rem 0.625rem; border-radius: var(--radius-sm); cursor: pointer; transition: background-color 0.1s; border-left: 3px solid transparent; margin-bottom: 0.125rem; display: flex; justify-content: space-between; align-items: center; }
     .pc-item:hover { background: var(--bg-surface-2); }
     .pc-item.active { background: var(--primary-50); border-left-color: var(--primary-500); color: var(--primary-600); font-weight: var(--fw-semibold); }
-    [data-theme="dark"] .pc-item.active { background: rgba(59, 130, 246, 0.12); }
     .pc-name { font-size: var(--text-sm); color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem; }
 
     .mystic-btn { width: 100%; padding: 0.625rem; background: linear-gradient(135deg, var(--danger-bg), rgba(139, 92, 246, 0.10)); border: 1px solid var(--danger-border); color: var(--danger-text); border-radius: var(--radius-sm); cursor: pointer; font-weight: var(--fw-semibold); font-size: var(--text-sm); transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
@@ -48,7 +47,6 @@
     .log-filter-btn { padding: 0.3125rem 0.625rem; font-size: 0.75rem; border-radius: var(--radius-sm); border: 1px solid transparent; background: transparent; color: var(--text-tertiary); cursor: pointer; font-weight: var(--fw-semibold); }
     .log-filter-btn:hover { background: var(--bg-surface); }
     .log-filter-btn.active { background: var(--primary-50); border-color: var(--primary-500); color: var(--primary-600); }
-    [data-theme="dark"] .log-filter-btn.active { background: rgba(59, 130, 246, 0.15); }
     .log-search input { padding: 0.4375rem 0.75rem; font-size: var(--text-sm); width: 240px; }
 
     .log-table { width: 100%; border-collapse: collapse; }

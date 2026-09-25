@@ -8,18 +8,6 @@
     <script src="assets/pops_script.js?v=<?php echo time(); ?>"></script>
     <script>
         // ============ GLOBAL UI SCRIPTS ============
-        function toggleTheme() {
-            const html = document.documentElement;
-            const isDark = html.getAttribute('data-theme') === 'dark';
-            if (isDark) {
-                html.removeAttribute('data-theme');
-                localStorage.setItem('pops_theme', 'light');
-            } else {
-                html.setAttribute('data-theme', 'dark');
-                localStorage.setItem('pops_theme', 'dark');
-            }
-        }
-
         function toggleMobileSidebar() {
             const sidebar = document.getElementById('appSidebar');
             const overlay = document.getElementById('sidebarOverlay');
