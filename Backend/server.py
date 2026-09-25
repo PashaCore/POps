@@ -439,8 +439,12 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
         await execute_query("DELETE FROM hw_inventory WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM agent_logs WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM agent_versions WHERE pc_name = $1", (pc_name,))
-        if pc_name in manager.active_connections:
-            await manager.disconnect(manager.active_connections[pc_name], pc_name)
+        # Cihaz çevrimiçiyse ajan bağlantısını da kapat
+        agent_ws = manager.active_agents.get(pc_name)
+        manager.disconnect_agent(pc_name)
+        if agent_ws:
+            try: await agent_ws.close(code=4000, reason="Cihaz silindi")
+            except Exception: pass
         return {"status": "success", "message": f"{pc_name} silindi."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
