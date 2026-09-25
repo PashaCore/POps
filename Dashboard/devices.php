@@ -235,6 +235,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const labCol = showLab ? `<td><span class="lab-pill">${escapeHtml(device.lab || 'Belirsiz')}</span></td>` : '';
         const IS_SUPERADMIN = <?php echo (isset($_SESSION['role']) && $_SESSION['role'] === 'superadmin') ? 'true' : 'false'; ?>;
         const deleteBtn = IS_SUPERADMIN ? `<button class="mini-btn power" style="border-color:var(--danger-border); color:var(--danger-text);" title="Cihazı Sil" onclick="window.deleteDevice(${jsArg(device.hostname)})"><i class="fas fa-trash"></i></button>` : '';
+        const CAN_ADMIN = <?php echo in_array($_SESSION['role'] ?? '', ['admin', 'superadmin'], true) ? 'true' : 'false'; ?>;
+        const bypassBtn = CAN_ADMIN ? `<button class="mini-btn" title="Çevrimdışı Bypass Kodu" onclick="window.showBypassCode(${jsArg(device.hostname)})"><i class="fas fa-key"></i></button>` : '';
         
         return `<tr>
             <td style="text-align:center;"><input type="checkbox" class="dev-cb" data-id="${escapeHtml(device.hostname)}" ${isChecked} onchange="handleRowSelect(this)"></td>
@@ -260,6 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button class="mini-btn wake" title="Uyandır" onclick="window.wakeUpCommand('PC', ${jsArg(device.hostname)})"><i class="fas fa-bolt"></i></button>
                     <button class="mini-btn reboot" title="Yeniden Başlat" onclick="window.powerCommand('PC', 'restart', ${jsArg(device.hostname)})"><i class="fas fa-arrows-rotate"></i></button>
                     <button class="mini-btn power" title="Kapat" onclick="window.powerCommand('PC', 'shutdown', ${jsArg(device.hostname)})"><i class="fas fa-power-off"></i></button>
+                    ${bypassBtn}
                     ${deleteBtn}
                 </div>
             </td>
@@ -296,6 +299,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('Silme işlemi başarısız.', 'error');
             }
         } catch(e) { showToast('Sunucu hatası.', 'error'); }
+    };
+    // Karantinadaki cihazın tepsi uygulamasına girilecek günlük çevrimdışı bypass kodu
+    window.showBypassCode = async function(hostname) {
+        try {
+            const res = await fetch(`${apiUrl}/api/security/bypass_token/${encodeURIComponent(hostname)}`);
+            const data = res.ok ? await res.json() : {};
+            if (data.status !== 'success') return showToast(data.message || 'Bypass kodu alınamadı.', 'error');
+            alert(`${hostname} için çevrimdışı bypass kodu (${data.valid_for}): ${data.token}\n\nKullanıcı bu kodu POps tepsi simgesi > "Yönetici Müdahalesi (Bypass)" menüsüne girmelidir.`);
+        } catch (e) { showToast('Sunucu hatası.', 'error'); }
     };
 
     window.switchViewMode = function(mode) {

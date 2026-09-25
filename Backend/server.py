@@ -39,6 +39,8 @@ def require_env(name: str) -> str:
 JWT_SECRET   = require_env('JWT_SECRET')
 JWT_ALGO     = 'HS256'
 JWT_EXPIRE_H = int(os.environ.get('JWT_EXPIRE_HOURS', '12'))         # Token ömrü (saat)
+# Çevrimdışı bypass kodları için ajanlarla paylaşılan gizli anahtar (ajan: BypassSecret / POPS_BYPASS_SECRET)
+BYPASS_SECRET = os.environ.get('BYPASS_SECRET', '').strip()
 
 # Panel JWT'yi httpOnly çerezde taşır (JS erişemez); diğer istemciler Authorization: Bearer kullanabilir
 JWT_COOKIE_NAME = 'pops_jwt'
@@ -519,21 +521,24 @@ async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     
     return {"status": "success", "message": "Karantina kaldırma sinyali gönderildi."}
 
+def offline_bypass_code(hw_id: str, day: datetime.date) -> str:
+    """Ajanın ağ bağlantısı olmadan doğruladığı günlük 6 haneli bypass kodu.
+
+    Formül POpsAgent Worker.cs (UNLOCK_BYPASS) ile aynıdır: SHA-256(hw_id + BYPASS_SECRET + yyyy-MM-dd).
+    Kod sunucunun yerel tarihine göre üretilir; sunucu ve ajanlar aynı saat diliminde olmalıdır.
+    """
+    raw = f"{hw_id}{BYPASS_SECRET}{day.strftime('%Y-%m-%d')}"
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()[:6].upper()
+
 @app.get("/api/security/bypass_token/{pc_name}")
-async def get_bypass_token(pc_name: str, auth=Depends(require_auth)):
-    # Tek kullanımlık, 5 dakika TTL'li token
-    token = secrets.token_hex(3).upper()  # 6 karakter hex = 16^6 = 16M kombinasyon
-    expires = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
-    # Mevcut kullanılmamış tokenları iptal et
-    await execute_query(
-        "UPDATE bypass_tokens SET is_used=TRUE WHERE pc_name=$1 AND is_used=FALSE",
-        (pc_name,)
-    )
-    await execute_query(
-        "INSERT INTO bypass_tokens (pc_name, token, expires_at) VALUES ($1, $2, $3)",
-        (pc_name, token, expires.strftime("%Y-%m-%d %H:%M:%S"))
-    )
-    return {"status": "success", "token": token, "expires_in_seconds": 300}
+async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
+    # Karantinadaki (çevrimdışı) cihaz için tepsi uygulamasına girilecek kod
+    if not BYPASS_SECRET:
+        return {"status": "error", "message": "BYPASS_SECRET tanımlı değil (bkz. .env.example)"}
+    today = datetime.date.today()
+    token = offline_bypass_code(pc_name, today)
+    await log_audit_event(pc_name, "Security", "🔑 Çevrimdışı bypass kodu üretildi", actor_id=auth.get('sub', 'admin'), event_type="security.bypass_code", category="security", action="bypass_code", risk_level="medium")
+    return {"status": "success", "token": token, "valid_for": today.isoformat()}
 
 @app.post("/api/auth/login")
 async def auth_login(data: AuthEventInput):
