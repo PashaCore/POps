@@ -406,7 +406,7 @@ async def delete_user(user_id: int, auth=Depends(require_admin)):
         return {"status": "error", "message": str(e)}
 
 @app.delete("/api/devices/{pc_name}")
-async def delete_device(pc_name: str):
+async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
     try:
         await execute_query("DELETE FROM clients WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM hw_inventory WHERE pc_name = $1", (pc_name,))
@@ -719,7 +719,7 @@ async def flush_queue(auth: dict = Depends(require_admin)):
     return {"status": "success"}
 
 @app.post("/api/tasks/action")
-async def handle_task_action(data: TaskActionInput):
+async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require_admin)):
     action = data.action.upper()
     mode = data.target_mode.upper()
     tid = data.target_id
@@ -913,7 +913,7 @@ async def get_concurrent_limit(auth: dict = Depends(require_auth)):
     return {"limit": int(row[0]["value"]) if row else 5}
 
 @app.post("/api/upload")
-async def upload_file(request: Request, file: UploadFile = File(...)):
+async def upload_file(request: Request, file: UploadFile = File(...), auth: dict = Depends(require_admin)):
     file_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(file_path, "wb") as buffer: shutil.copyfileobj(file.file, buffer)
     return {"status": "success", "url": f"{request.base_url}download/{file.filename}"}
@@ -1038,7 +1038,7 @@ async def get_latest_update(auth: dict = Depends(require_auth)):
     return {"download_url": row[0]["value"] if row else None}
 
 @app.post("/api/update_agent/{hw_id}")
-async def update_single_agent(hw_id: str, data: UpdateAgentInput):
+async def update_single_agent(hw_id: str, data: UpdateAgentInput, auth: dict = Depends(require_admin)):
     url = data.download_url
     update_hash = None
     if not url:
@@ -1117,7 +1117,7 @@ async def get_thumbnail(pc_name: str, auth: dict = Depends(require_auth)):
             manager.pending_thumbnails[pc_name].remove(fut)
 
 @app.post("/api/remote_input")
-async def send_remote_input(data: RemoteInputData):
+async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_auth)):
     target = data.device
     sent = await manager.send_remote_input_to_vision(data.dict(), target)
     if not sent:
@@ -1128,7 +1128,7 @@ async def send_remote_input(data: RemoteInputData):
     return {"status": "success"}
 
 @app.post("/api/agent_policies")
-async def save_policies(data: AgentPoliciesInput):
+async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(require_admin)):
     val = json.dumps({"fair_use_text": data.fair_use_text, "dns_categories": data.dns_categories, "auto_quarantine": data.auto_quarantine, "quarantine_threshold": data.quarantine_threshold}, ensure_ascii=False)
     await execute_query("INSERT INTO global_settings (key, value) VALUES ('agent_policies', $1) ON CONFLICT (key) DO UPDATE SET value = $1", (val,))
     return {"status": "success"}
