@@ -75,6 +75,14 @@ namespace POpsUpdater
                     string destPath = newPath.Replace(sourceDir, targetDir + "\\");
                     string destFolder = Path.GetDirectoryName(destPath);
 
+                    // Yerel yapılandırma (sunucu adresi, gizli anahtarlar) güncelleme paketiyle ezilmez;
+                    // paketteki appsettings.json yalnızca hedefte hiç yoksa kopyalanır
+                    if (Path.GetFileName(newPath).Equals("appsettings.json", StringComparison.OrdinalIgnoreCase) && File.Exists(destPath))
+                    {
+                        Console.WriteLine("  -> Korundu: appsettings.json (yerel ayarlar)");
+                        continue;
+                    }
+
                     if (destFolder != null && !Directory.Exists(destFolder))
                         Directory.CreateDirectory(destFolder);
 
