@@ -7,12 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Active Directory (LDAP) authentication integration for the dashboard.
-- Cross-platform agent scaffolding.
-
 ### Security
 - **Backend:** Panel login accepts bcrypt password hashes only. The fallback that accepted legacy unsalted SHA-256 hashes is removed; an account still stored that way can no longer log in until an admin sets a new password.
+- **Backend:** `/docs`, `/redoc` and `/openapi.json` are no longer served.
+- **Backend:** Removed `GET /api/stream/start/{pc_name}`, which started screen capture without the Vision consent flow. The dashboard never used it.
+- **Backend:** An agent can only complete tasks that are assigned to it.
+
+### Fixed
+- **Dashboard:** The Terminal page never showed command output because it opened its WebSocket at `/panel` instead of `/ws/panel`.
+- **Dashboard:** The sidebar never highlighted the current page.
+- **Dashboard:** Bulk "wake" on the devices page showed a success message without sending anything; it now wakes each selected device and reports how many succeeded.
+- **Dashboard:** Eight CSS variables were used but never defined, so the home page KPI accent bars and some other elements did not render. Chart grid lines, the storage chart's free slice, the log inspector and loading placeholders still used dark-theme colors.
+- **Backend:** The device list always showed the agent version as unknown.
+- **Backend:** Peer Wake-on-LAN never found a peer in the lab (status case mismatch); it now also requires the peer to be connected.
+- **Backend:** Storage statistics and device deletion used the retired `agent_logs` table instead of `agent_logs_v2`.
+- **Backend:** Renaming a lab lost its seating layout and left tasks pointing at the old name; deleting a lab left its settings behind.
+- **Backend:** A device could stay "Online" after its connection failed, and an agent's old socket closing late could drop its new connection. All devices are marked offline when the server starts.
 
 ### Removed
 - **Dashboard:** Dark mode. The panel now uses a single light theme; the theme toggle buttons and the saved `pops_theme` preference are gone, and native form controls stay light even when the operating system prefers dark.
