@@ -1,0 +1,136 @@
+<!--
+  POps Agent MSI (x64, makine geneli).
+
+  Kurulum: msiexec /i POps-Agent-<sürüm>-win-x64.msi /qn SERVER_URL=https://pops.example.com ENROLL_TOKEN=<panelden jeton>
+  Özellikler (hepsi isteğe bağlı; SERVER_URL ilk kurulumda zorunlu):
+    SERVER_URL     sunucu adresi -> appsettings.json "ServerUrl"
+    ENROLL_TOKEN   tek kullanımlık kayıt jetonu -> C:\POpsData\secure\enroll.token
+    BYPASS_SECRET  çevrimdışı karantina bypass anahtarı -> C:\POpsData\secure\bypass.secret
+    PERSIST_DIR    dondurma yazılımının geri almadığı klasör -> appsettings.json "PersistDir"
+    INSTALLFOLDER  kurulum klasörü (varsayılan C:\Program Files\POps)
+  Güncellemede (major upgrade) özellik verilmezse mevcut ayarlar korunur. Ayrıntılar: Installer/README.md
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
+
+  <Package Name="POps Agent"
+           Manufacturer="PashaCore"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="1F4A5444-0EA0-40FE-8D23-C5233D4576D1"
+           Scope="perMachine"
+           Language="1055"
+           Codepage="1254"
+           InstallerVersion="500">
+
+    <SummaryInformation Description="POps Agent" Manufacturer="PashaCore" Codepage="1254" />
+
+    <!-- Eski ürün, yeni kurulumla aynı işlem (transaction) içinde kaldırılır: yeni sürüm kurulamazsa
+         Windows Installer eskisini geri yükler. Sürümün 4. alanı (CI çalışma no.) yükseltme kararında
+         sayılmadığı için aynı a.b.c'li yeni derleme de yükseltme sayılır. -->
+    <MajorUpgrade Schedule="afterInstallInitialize"
+                  AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="Bu bilgisayarda daha yeni bir POps Agent sürümü kurulu; eski sürüm kurulmadı." />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="PopsIcon" SourceFile="$(var.RepoRoot)assets\icons\favicon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="PopsIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/PashaCore/POps" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <Property Id="SERVER_URL" Secure="yes" />
+    <Property Id="PERSIST_DIR" Secure="yes" />
+    <!-- Gizli özellikler MSI loguna yazılmaz (MsiHiddenProperties) -->
+    <Property Id="ENROLL_TOKEN" Secure="yes" Hidden="yes" />
+    <Property Id="BYPASS_SECRET" Secure="yes" Hidden="yes" />
+    <Property Id="PopsConfigure" Hidden="yes" />
+
+    <!-- Ajan framework'e bağımlıdır: .NET 8 Desktop Runtime (x64) yoksa kurulum başlamaz -->
+    <netfx:DotNetCompatibilityCheck Property="DOTNET_DESKTOP8"
+                                    RuntimeType="desktop"
+                                    Platform="x64"
+                                    Version="8.0.0"
+                                    RollForward="minor" />
+    <Launch Condition="Installed OR DOTNET_DESKTOP8 = &quot;0&quot;"
+            Message="POps Agent için .NET 8 Desktop Runtime (x64) gerekli. İndirme: https://dotnet.microsoft.com/download/dotnet/8.0" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="POps" />
+    </StandardDirectory>
+
+    <Feature Id="Agent" Title="POps Agent" Level="1">
+      <ComponentGroupRef Id="AgentComponents" />
+    </Feature>
+
+    <ComponentGroup Id="AgentComponents" Directory="INSTALLFOLDER">
+      <Component Id="AgentService">
+        <File Id="POpsAgentExe" Source="$(var.PopsPublishDir)POpsAgent.exe" KeyPath="yes" />
+        <ServiceInstall Id="POpsAgentService"
+                        Name="POpsAgent"
+                        DisplayName="POps Agent"
+                        Description="POps uç nokta ajanı: sunucuyla bağlantı, envanter ve uzaktan yönetim."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="LocalSystem"
+                        Vital="yes">
+          <!-- Çökerse Windows servisi yeniden başlatır (watchdog kullanıcı oturumunda çalıştığı için bunu yapamaz) -->
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart"
+                              RestartServiceDelayInSeconds="10"
+                              ResetPeriodInDays="1" />
+        </ServiceInstall>
+        <!-- Stop/Remove kurulumda da çalışır: MSI'sız eski kurulumun aynı adlı servisi durdurulup silinir,
+             ardından yeni konumdaki exe ile yeniden oluşturulur -->
+        <ServiceControl Id="POpsAgentControl" Name="POpsAgent" Start="install" Stop="both" Remove="both" Wait="yes" />
+      </Component>
+
+      <!-- Tepsi uygulamasını her kullanıcı oturumunda yalnızca MSI başlatır (tepsinin kendi HKCU Run kaydı kaldırıldı) -->
+      <Component Id="TrayAutoStart">
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run" Name="POpsTray"
+                       Type="string" Value="&quot;[INSTALLFOLDER]POpsTray.exe&quot;" KeyPath="yes" />
+      </Component>
+
+      <!-- appsettings*.json MSI dosyası değildir: PopsConfigure yazar, güncellemede silinmez -->
+      <Files Include="$(var.PopsPublishDir)**">
+        <Exclude Files="$(var.PopsPublishDir)POpsAgent.exe" />
+        <Exclude Files="$(var.PopsPublishDir)appsettings*.json" />
+        <Exclude Files="$(var.PopsPublishDir)**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+
+    <!-- Kullanıcı oturumundaki süreçler dosyaları kilitler; watchdog tepsiyi yeniden açtığı için önce o kapanır -->
+    <util:CloseApplication Id="CloseWatchdog" Target="POpsWatchdog.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
+    <util:CloseApplication Id="CloseTray" Target="POpsTray.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
+    <util:CloseApplication Id="CloseVision" Target="POpsVision.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
+    <util:CloseApplication Id="CloseUpdater" Target="POpsUpdater.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
+    <util:CloseApplication Id="CloseLegacyAgent" Target="PashaCoreAgent.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
+
+    <Binary Id="PopsActions" SourceFile="$(var.PopsInstallerActions.TargetDir)PopsInstallerActions.CA.dll" />
+
+    <!-- appsettings.json + gizli değerler; eski kurulumdan ayar taşıma. Hata kurulumu geri alır. -->
+    <CustomAction Id="PopsConfigure" BinaryRef="PopsActions" DllEntry="Configure"
+                  Execute="deferred" Impersonate="no" Return="check" HideTarget="yes" />
+    <SetProperty Id="PopsConfigure" Sequence="execute" Before="PopsConfigure"
+                 Value="INSTALLFOLDER=[INSTALLFOLDER];SERVER_URL=[SERVER_URL];PERSIST_DIR=[PERSIST_DIR];ENROLL_TOKEN=[ENROLL_TOKEN];BYPASS_SECRET=[BYPASS_SECRET]" />
+
+    <!-- Eski (MSI'sız) kurulum klasörleri ve kalıntılar; yalnızca yeni servis başladıktan sonra -->
+    <CustomAction Id="PopsCleanupLegacy" BinaryRef="PopsActions" DllEntry="CleanupLegacy"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <SetProperty Id="PopsCleanupLegacy" Sequence="execute" Before="PopsCleanupLegacy" Value="INSTALLFOLDER=[INSTALLFOLDER]" />
+
+    <!-- Gerçek kaldırmada appsettings.json; güncellemede (UPGRADINGPRODUCTCODE) dokunulmaz -->
+    <CustomAction Id="PopsRemoveConfig" BinaryRef="PopsActions" DllEntry="RemoveConfig"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <SetProperty Id="PopsRemoveConfig" Sequence="execute" Before="PopsRemoveConfig" Value="INSTALLFOLDER=[INSTALLFOLDER]" />
+
+    <InstallExecuteSequence>
+      <Custom Action="PopsConfigure" After="InstallFiles" Condition="NOT (REMOVE~=&quot;ALL&quot;)" />
+      <Custom Action="PopsCleanupLegacy" After="StartServices" Condition="NOT (REMOVE~=&quot;ALL&quot;)" />
+      <Custom Action="PopsRemoveConfig" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
+  </Package>
+</Wix>

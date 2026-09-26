@@ -1,7 +1,7 @@
 name: Release
 
-# v* etiketi push edildiğinde iki kurulum dosyasını (sunucu paketi + ajan paketi) derler ve
-# tek bir GitHub Release olarak yayımlar. Bu dosya main'de değiştiğinde paketler yalnızca
+# v* etiketi push edildiğinde kurulum dosyalarını (sunucu paketi, ajan MSI'ı ve ajan zip'i) derler
+# ve tek bir GitHub Release olarak yayımlar. Bu dosya main'de değiştiğinde paketler yalnızca
 # derlenir (yayımlanmaz), böylece iş akışı etiket atılmadan denenebilir.
 on:
   push:
@@ -47,10 +47,28 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq "tag") { $ver = $env:GITHUB_REF_NAME.TrimStart("v") }
           else { $ver = "dev-" + $env:GITHUB_SHA.Substring(0, 7) }
           Compress-Archive -Path "dist/POps/*" -DestinationPath "POps-Agent-$ver-win-x64.zip"
+      - name: MSI
+        # WiX 5, NuGet'ten sabit sürümle gelir (Installer/agent/POps.Agent.Installer.wixproj). MSI yalnızca
+        # sayısal sürüm kabul eder: VERSION'ın a.b.c kısmı + çalışma numarası, böylece her derleme bir
+        # öncekini yükseltir. appsettings*.json pakete girmez; ayarları kurulum yazar.
+        shell: pwsh
+        run: |
+          $raw = (Get-Content VERSION -Raw).Trim()
+          if ($raw -notmatch '^(\d+)\.(\d+)\.(\d+)') { throw "VERSION sayısal bir a.b.c ile başlamıyor: $raw" }
+          $msiVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3]).$env:GITHUB_RUN_NUMBER"
+          if ($env:GITHUB_REF_TYPE -eq "tag") { $ver = $env:GITHUB_REF_NAME.TrimStart("v") }
+          else { $ver = "dev-" + $env:GITHUB_SHA.Substring(0, 7) }
+          $publishDir = (Resolve-Path "dist/POps").Path + "\"
+          dotnet build Installer/agent/POps.Agent.Installer.wixproj -c Release "-p:PopsPublishDir=$publishDir" "-p:ProductVersion=$msiVersion" -o msi-out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Move-Item msi-out/POps-Agent.msi "POps-Agent-$ver-win-x64.msi"
+          Write-Host "MSI $msiVersion -> POps-Agent-$ver-win-x64.msi"
       - uses: actions/upload-artifact@v4
         with:
           name: agent
-          path: POps-Agent-*-win-x64.zip
+          path: |
+            POps-Agent-*-win-x64.msi
+            POps-Agent-*-win-x64.zip
           if-no-files-found: error
 
   server:
@@ -125,7 +143,7 @@ jobs:
           (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
           VER="${GITHUB_REF_NAME#v}"
           {
-            echo "> **İmzalı sürüm (ed25519).** \`manifest.json\` ve \`manifest.json.sig\` release'e dahildir; açık anahtar depoda \`keys/pops_release_ed25519.pub.pem\`. Doğrulama için bkz. \`keys/README.md\`. Ajan paketi Windows'ta SmartScreen uyarısı verebilir (Authenticode ayrı); uç noktalarda .NET 8 Desktop Runtime (x64) gerekir."
+            echo "> **İmzalı sürüm (ed25519).** \`manifest.json\` ve \`manifest.json.sig\` release'e dahildir; açık anahtar depoda \`keys/pops_release_ed25519.pub.pem\`. Doğrulama için bkz. \`keys/README.md\`. Ajan için \`POps-Agent-*-win-x64.msi\` önerilir (sessiz kurulum ve özellikleri: \`Installer/README.md\`); zip eski elle kurulum yoludur. Ajan paketleri Windows'ta SmartScreen uyarısı verebilir (Authenticode ayrı); uç noktalarda .NET 8 Desktop Runtime (x64) gerekir."
             echo
             awk -v v="$VER" 'index($0, "## [" v "]") == 1 {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md
           } > notes.md

@@ -1,0 +1,40 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <!--
+    POps Agent MSI. Önce ajan bileşenleri tek klasöre yayımlanır (bkz. build.ps1), sonra:
+      dotnet build Installer/agent/POps.Agent.Installer.wixproj -c Release -p:PopsPublishDir=<klasör>\ -p:ProductVersion=a.b.c.d
+    ProductVersion verilmezse kök VERSION'dan türetilir: "0.1.2-alpha" -> "0.1.2.0". MSI yalnızca sayısal
+    sürüm kabul eder ve yükseltme kararında ilk üç alana bakar; CI dördüncü alana çalışma numarasını koyar.
+  -->
+  <PropertyGroup>
+    <OutputName>POps-Agent</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\'))</RepoRoot>
+    <PopsPublishDir Condition="'$(PopsPublishDir)' == ''">$(RepoRoot)dist\POps\</PopsPublishDir>
+    <_PopsVersionRaw>$([System.IO.File]::ReadAllText('$(RepoRoot)VERSION').Trim())</_PopsVersionRaw>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">$([System.Text.RegularExpressions.Regex]::Match('$(_PopsVersionRaw)', '^\d+\.\d+\.\d+').Value).0</ProductVersion>
+    <DefineConstants>ProductVersion=$(ProductVersion);PopsPublishDir=$(PopsPublishDir);RepoRoot=$(RepoRoot)</DefineConstants>
+    <!-- ICE61: aynı a.b.c sürümü de yükseltir (AllowSameVersionUpgrades) - bilinçli -->
+    <SuppressIces>ICE61</SuppressIces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.Netfx.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="CustomActions\PopsInstallerActions.csproj" />
+  </ItemGroup>
+
+  <!-- WiX'in artımlı derlemesi DefineConstants'ı girdi saymaz: yalnızca ProductVersion ya da yayın klasörü
+       değiştiğinde MSI eski sürümüyle kalırdı. Değer değişince güncellenen bir damga dosyası girdiye eklenir. -->
+  <Target Name="PopsDefineConstantsStamp" BeforeTargets="CoreCompile">
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <WriteLinesToFile File="$(IntermediateOutputPath)pops.defines.stamp" Lines="$(DefineConstants)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <PropertyGroup>
+      <MSBuildAllProjects>$(MSBuildAllProjects);$(IntermediateOutputPath)pops.defines.stamp</MSBuildAllProjects>
+    </PropertyGroup>
+  </Target>
+
+</Project>

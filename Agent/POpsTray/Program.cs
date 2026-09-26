@@ -25,15 +25,13 @@ static class Program
 
         // Gizli (--stealth) mod kaldırıldı: tepsi simgesi ve bildirimler her zaman görünür.
 
+        // Otomatik başlatmanın tek sahibi MSI'dır (HKLM\...\Run "POpsTray"). Eski sürümlerin kullanıcı
+        // başına yazdığı kayıt, silinmiş eski kurulum klasörünü gösterebileceği için temizlenir.
         try
         {
-            // Otomatik başlatma kaydı
             using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
             {
-                if (key != null)
-                {
-                    key.SetValue("POpsTrayApp", Application.ExecutablePath);
-                }
+                key?.DeleteValue("POpsTrayApp", false);
             }
         }
         catch { }
