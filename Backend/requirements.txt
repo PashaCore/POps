@@ -6,7 +6,7 @@ pydantic==2.13.3
 PyJWT==2.10.1
 bcrypt==5.0.0
 slowapi==0.1.10
-python-dotenv==1.2.1
+python-dotenv==1.2.3
 python-multipart==0.0.20
 werkzeug==3.1.8
 # ed25519 release imza doğrulaması (Faz 2 tüketicisi) ve ileride Fernet (Faz 8) için.
