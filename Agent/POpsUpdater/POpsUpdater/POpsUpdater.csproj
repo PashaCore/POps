@@ -10,7 +10,7 @@
   <!-- Ajan updater'ı C:\POpsData\updater'a kopyalayıp oradan başlatır; kopyalanacak dosyaları
        POpsUpdater.deps.json'dan okur (AgentUpdate.UpdaterFiles). -->
   <ItemGroup>
-    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.0" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
   </ItemGroup>
 
 </Project>
