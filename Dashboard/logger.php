@@ -145,8 +145,8 @@
             <h3 style="margin:0;font-size:1.1rem;"><i class="fas fa-search-plus" style="color:var(--primary-500);margin-right:0.5rem;"></i> Log İncelemesi</h3>
             <button onclick="document.getElementById('inspectModal').style.display='none'" style="background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:1.2rem;"><i class="fas fa-times"></i></button>
         </div>
-        <div style="padding:1.5rem;overflow-y:auto;max-height:60vh;background:#0d1117;">
-            <pre id="inspectJsonContent" style="margin:0;color:#c9d1d9;font-family:var(--font-mono);font-size:0.85rem;white-space:pre-wrap;word-break:break-all;"></pre>
+        <div style="padding:1.5rem;overflow-y:auto;max-height:60vh;background:var(--bg-app);">
+            <pre id="inspectJsonContent" style="margin:0;color:var(--text-primary);font-family:var(--font-mono);font-size:0.85rem;white-space:pre-wrap;word-break:break-all;"></pre>
         </div>
         <div style="padding:1rem 1.5rem;border-top:1px solid var(--border-default);text-align:right;">
             <button class="mystic-btn" onclick="document.getElementById('inspectModal').style.display='none'">Kapat</button>

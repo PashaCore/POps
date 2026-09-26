@@ -216,7 +216,7 @@
     .action-btn.eject:hover { background: var(--danger-solid); color: white; }
 
     .skeleton-card { height: 80px; background: var(--bg-surface-2); border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); margin-bottom: 0.75rem; position: relative; overflow: hidden; }
-    .skeleton-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent); animation: shimmer 1.5s infinite; transform: translateX(-100%); }
+    .skeleton-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.7), transparent); animation: shimmer 1.5s infinite; transform: translateX(-100%); }
     @keyframes shimmer { 100% { transform: translateX(100%); } }
 
     .modal-label { font-size: var(--text-xs); color: var(--text-tertiary); margin-bottom: 0.375rem; display: block; font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: 0.05em; }
