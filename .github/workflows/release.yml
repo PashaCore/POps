@@ -18,7 +18,7 @@ jobs:
     name: Agent package (win-x64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -75,7 +75,7 @@ jobs:
     name: Server package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Package backend and dashboard
         run: |
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then VER="${GITHUB_REF_NAME#v}"; else VER="dev-${GITHUB_SHA::7}"; fi
@@ -103,7 +103,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag == VERSION == CHANGELOG
         # Etiket, kök VERSION dosyası ve CHANGELOG başlığı birbirini tutmazsa yayım durur.
         run: |
