@@ -34,7 +34,7 @@ foreach ($grouped as $section => $items): ?>
     <div class="nav-section">
         <div class="nav-section-title"><?php echo htmlspecialchars($section); ?></div>
         <?php foreach ($items as $item):
-            $isActive = $current_file === $item['page'] . '..php';
+            $isActive = $current_file === $item['page'] . '.php';
         ?>
             <a href="<?php echo $item['page']; ?>.php" class="nav-item <?php echo $isActive ? 'active' : ''; ?>">
                 <i class="fas <?php echo $item['icon']; ?>"></i>

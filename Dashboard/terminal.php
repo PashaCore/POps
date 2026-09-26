@@ -103,7 +103,7 @@ let panelWs = null;
 function initTerminalWebSocket() {
     if (typeof OMYO_API === 'undefined') return;
     try {
-        panelWs = new WebSocket(OMYO_API.WS_URL + '/panel');
+        panelWs = new WebSocket(OMYO_API.wsUrl('/ws/panel'));
         panelWs.onmessage = (event) => {
             try {
                 const payload = JSON.parse(event.data);

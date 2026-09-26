@@ -756,8 +756,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     scales: {
                         x: { display: false },
                         y: { 
-                            beginAtZero: false, 
-                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            beginAtZero: false,
+                            grid: { color: getComputedStyle(document.documentElement).getPropertyValue('--border-subtle').trim() || '#e5e7eb' },
                             ticks: { precision: 0, color: getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary').trim() || '#94a3b8' }
                         }
                     }
@@ -786,7 +786,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     plugins: { legend: { display: false } },
                     scales: {
                         x: { grid: { display: false }, ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary').trim() || '#94a3b8' } },
-                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { precision: 0, color: getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary').trim() || '#94a3b8' } }
+                        y: { beginAtZero: true, grid: { color: getComputedStyle(document.documentElement).getPropertyValue('--border-subtle').trim() || '#e5e7eb' }, ticks: { precision: 0, color: getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary').trim() || '#94a3b8' } }
                     }
                 }
             });
@@ -801,7 +801,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     labels: ['Ayrılmış Alan (Reserved)', 'Boş Alan (Empty)'],
                     datasets: [{
                         data: [0, 20],
-                        backgroundColor: ['#f59e0b', '#334155'], // warning for used, slate for free
+                        backgroundColor: ['#f59e0b', '#e5e7eb'], // dolu kısım turuncu, boş kısım açık gri
                         borderWidth: 0
                     }]
                 },

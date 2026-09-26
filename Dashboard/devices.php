@@ -349,14 +349,20 @@ document.addEventListener('DOMContentLoaded', () => {
         cb.checked ? pageState.selectedIds.add(cb.dataset.id) : pageState.selectedIds.delete(cb.dataset.id);
     };
 
-    window.bulkAction = function(action) {
+    window.bulkAction = async function(action) {
         if (pageState.selectedIds.size === 0) return showToast('Önce tablodan cihaz seçin.', 'warning');
         const cmd = action === 'shutdown' ? 'shutdown /s /f /t 5' : 'shutdown /r /f /t 5';
         const actionName = action === 'shutdown' ? 'KAPAT' : (action === 'wake' ? 'UYANDIR' : 'YENİDEN BAŞLAT');
         if (!confirm(`Seçili ${pageState.selectedIds.size} cihaza [${actionName}] emri gönderilecek. Onaylıyor musunuz?`)) return;
         const targets = Array.from(pageState.selectedIds);
         if (action === 'wake') {
-            showToast('Uyandırma paketi ağa fırlatıldı.', 'info');
+            // Her cihaz için tek tek WOL isteği gönderilir; kaçının başarılı olduğu bildirilir
+            const results = await Promise.allSettled(
+                targets.map(pc => apiRequest(`/api/wake_pc/${encodeURIComponent(pc)}`, { method: 'POST' }))
+            );
+            const ok = results.filter(r => r.status === 'fulfilled').length;
+            if (ok === targets.length) showToast(`${ok} cihaza uyandırma sinyali gönderildi.`, 'success');
+            else showToast(`${ok}/${targets.length} cihaza uyandırma sinyali gönderilebildi.`, ok ? 'warning' : 'error');
         } else {
             apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'PC', targets, taskSequence: [{ name: `Toplu ${actionName}`, type: 'CMD', command: cmd }] }) });
             showToast('Operasyon başlatıldı.', 'success');

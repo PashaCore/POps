@@ -89,6 +89,16 @@
     --input-focus: #2563eb;
     --input-placeholder: #94a3b8;
 
+    /* Sayfalarda kullanılan eş adlar (tanımsız kaldıklarında o öğeler hiç çizilmiyordu) */
+    --success-500: var(--success-solid);
+    --warning-500: var(--warning-solid);
+    --danger-500: var(--danger-solid);
+    --primary-400: #3b82f6;
+    --bg-body: var(--bg-app);
+    --bg-surface-1: var(--bg-surface);
+    --bg-surface-3: #f1f5f9;
+    --font-body: var(--font-sans);
+
     /* Shadows — yumuşak, modern */
     --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
     --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.06), 0 1px 2px 0 rgba(15, 23, 42, 0.04);
