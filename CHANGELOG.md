@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backend:** `/docs`, `/redoc` and `/openapi.json` are no longer served.
 - **Backend:** Removed `GET /api/stream/start/{pc_name}`, which started screen capture without the Vision consent flow. The dashboard never used it.
 - **Backend:** An agent can only complete tasks that are assigned to it.
+- **Backend:** Creating, editing and deleting panel users now requires the `superadmin` role; before, any admin could create a superadmin. Roles are limited to `superadmin`, `admin` and `viewer`, the permission list must be a JSON array, a user cannot delete their own account, and the last active superadmin cannot be deleted or demoted. Errors now return 4xx with a message the dashboard shows.
+- **Backend:** Vision session and quarantine audit records take the administrator's identity from the JWT instead of trusting `admin_id` / `admin_name` / `admin_role` from the request body. Starting a mandatory (no-consent) Vision session requires a reason.
+- **Backend:** Replaced `python-jose` with `PyJWT` and pinned every backend dependency to an exact version. Existing tokens stay valid.
+- **Dashboard:** Login rate limiting (10 attempts per minute) now counts per browser IP; before, every login came from the dashboard's own address and shared one quota.
+- **Dashboard:** The "wake all devices" confirmation password is no longer written into the page's JavaScript, where every logged-in user could read it. The action now asks the user to type `TÜMÜ`.
 
 ### Fixed
 - **Dashboard:** The Terminal page never showed command output because it opened its WebSocket at `/panel` instead of `/ws/panel`.
@@ -25,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backend:** A device could stay "Online" after its connection failed, and an agent's old socket closing late could drop its new connection. All devices are marked offline when the server starts.
 
 ### Removed
+- **Configuration:** `POPS_WOL_CONFIRM_PASSWORD` is no longer used and can be deleted from `.env`.
 - **Dashboard:** Dark mode. The panel now uses a single light theme; the theme toggle buttons and the saved `pops_theme` preference are gone, and native form controls stay light even when the operating system prefers dark.
 
 ---

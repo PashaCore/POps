@@ -356,19 +356,13 @@ function renderLogsTable() {
     }).join('');
 }
 
-// Onay şifresi koda gömülmez, .env'den gelir (POPS_WOL_CONFIRM_PASSWORD). Bu yalnızca yanlışlıkla
-// toplu uyandırmayı önleyen bir onay adımıdır; asıl yetki kontrolü API'deki admin JWT doğrulamasıdır.
-const WOL_CONFIRM_PASSWORD = <?php require_once __DIR__ . '/includes/config.php'; echo json_encode(pops_env('POPS_WOL_CONFIRM_PASSWORD', ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
-
+// Yanlışlıkla toplu uyandırmayı önleyen onay adımı. Sayfaya şifre gömülmez (her giriş yapan
+// kullanıcı görebiliyordu); asıl yetki kontrolü API'deki admin JWT doğrulamasıdır.
 async function wakeAllDevicesMistic() {
     if (!getApiBase()) return;
-    if (WOL_CONFIRM_PASSWORD) {
-        const pwd = prompt('Tüm cihazlara WOL fırlatılacak. Yetkilendirme şifresi:');
-        if (pwd === null) return;
-        if (pwd !== WOL_CONFIRM_PASSWORD) return showToast('Hatalı şifre.', 'error');
-    } else if (!confirm('Tüm cihazlara WOL fırlatılacak. Emin misiniz?')) {
-        return;
-    }
+    const answer = prompt('Tüm laboratuvarlardaki cihazlar uyandırılacak. Onaylamak için TÜMÜ yazın:');
+    if (answer === null) return;
+    if (answer.trim().toLocaleUpperCase('tr-TR') !== 'TÜMÜ') return showToast('Onay metni eşleşmedi, işlem yapılmadı.', 'warning');
     showToast('Sihirli paketler gönderiliyor...', 'info');
     try {
         const labs = [...new Set(globalDevices.map(d => d.lab))];
