@@ -4,6 +4,7 @@ using POpsAgent;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
@@ -95,24 +96,35 @@ namespace POpsAgent
             _serverUrl = POpsHelpers.GetServerUrl();
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor (Hedef: {_serverUrl})");
             foreach (string configPath in POpsHelpers.ConfigPaths) SecureConfigFile(configPath);
+        }
 
-            _cachedDna = GetHardwareDnaInternal();
-            _cachedInventory = BuildInventoryInternal();
-
+        // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
+        // planda çalıştırır: servisin açılışını ve updater'ın beklediği health.json'u bekletmezler.
+        // Kimlik önce kurulur; envanter hw_id'yi ondan alır.
+        private void InitializeState()
+        {
             _hwId = InitializeIdentity();
             POpsHelpers.Log("AGENT", $"Kimlik Başlatıldı: {_hwId}");
 
             AgentCredentials.Initialize();
             _agentSecret = AgentCredentials.LoadSecret();
+
+            _cachedDna = GetHardwareDnaInternal();
+            _cachedInventory = BuildInventoryInternal();
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            string baseWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://");
-
-            // Güncelleme sonrası updater yeni sürümün ayağa kalktığını bu dosyadan doğrular
-            AgentUpdate.WriteHealth();
+            await Task.Run(InitializeState, stoppingToken);
             AgentUpdate.LogLastResult();
+
+            if (!POpsHelpers.IsSecureServerUrl(_serverUrl))
+            {
+                await RunWithoutServerAsync(stoppingToken);
+                return;
+            }
+
+            string baseWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://");
 
             // Start background tasks
             _ = Task.Run(() => PolicyPollingLoop(stoppingToken));
@@ -157,11 +169,26 @@ namespace POpsAgent
             }
         }
 
+        // Şifresiz (http/ws) ve yerel olmayan sunucuya bağlanılmaz (bkz. POpsHelpers.IsSecureServerUrl).
+        // Tepsi ve watchdog yerel işler (ör. karantinada çevrimdışı bypass) için yine çalışır.
+        private async Task RunWithoutServerAsync(CancellationToken stoppingToken)
+        {
+            EnsureWatchDogIsRunning();
+            StartTrayPipeServer();
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                POpsHelpers.Log("AGENT", $"[GÜVENLİK] ServerUrl şifresiz http ve yerel değil ({_serverUrl}); cihaz secret'ı ve komutlar ağda açık gideceği için sunucuya bağlanılmıyor. https:// bir adres verin (MSI: SERVER_URL=https://...).", true);
+                await Task.Delay(TimeSpan.FromMinutes(10), stoppingToken);
+            }
+        }
+
         // Cihaz secret'ı varsa X-Agent-Secret, enroll jetonu varsa X-Enroll-Token gönderilir. Sunucu önce
         // secret'a bakar; secret geçersizse (ör. dondurma ile kaybolmuşsa) jetonla yeniden kayıt olunabilir.
         // Değerler loglanmaz; dönen metin yalnızca hangi başlıkların gittiğini söyler.
         private string ApplyAuthHeaders(ClientWebSocket ws)
         {
+            if (!POpsHelpers.IsSecureServerUrl(_serverUrl)) return "yok (şifresiz bağlantı)";
+
             string secret = _agentSecret ??= AgentCredentials.LoadSecret();
             string enrollToken = AgentCredentials.GetEnrollToken();
 
@@ -294,33 +321,7 @@ namespace POpsAgent
                 }
                 else if (message.StartsWith("UNLOCK_BYPASS:"))
                 {
-                    string token = message.Split(':')[1].Trim();
-                    string bypassSecret = AgentCredentials.GetBypassSecret();
-                    string expectedToken = null;
-                    if (string.IsNullOrEmpty(bypassSecret))
-                    {
-                        POpsHelpers.Log("AGENT", $"Offline Bypass devre dışı: BypassSecret tanımlı değil ({SecureStore.Dir}\\{AgentCredentials.BypassSecretFileName}).", true);
-                    }
-                    else
-                    {
-                        string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
-                        string raw = $"{_hwId}{bypassSecret}{dateStr}";
-                        using var sha = System.Security.Cryptography.SHA256.Create();
-                        byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(raw));
-                        expectedToken = BitConverter.ToString(hash).Replace("-", "").Substring(0, 6).ToUpper();
-                    }
-                    
-                    if (expectedToken != null && token.ToUpper() == expectedToken)
-                    {
-                        POpsHelpers.Log("AGENT", "Offline Bypass Token DOGRULANDI! Karantina Kaldiriliyor...");
-                        _ = DisableNetworkIsolationAsync();
-                        _trayPipe?.SendCommandToDesktop("BYPASS_SUCCESS");
-                    }
-                    else
-                    {
-                        POpsHelpers.Log("AGENT", "Offline Bypass Token HATALI!");
-                        _trayPipe?.SendCommandToDesktop("BYPASS_FAILED");
-                    }
+                    HandleBypassAttempt(message.Substring("UNLOCK_BYPASS:".Length));
                 }
             };
 
@@ -354,6 +355,38 @@ namespace POpsAgent
             };
 
             _trayPipe.Start();
+        }
+
+        private readonly OfflineBypass _bypass = new OfflineBypass();
+
+        private void HandleBypassAttempt(string token)
+        {
+            string bypassSecret = AgentCredentials.GetBypassSecret();
+            if (string.IsNullOrEmpty(bypassSecret))
+            {
+                POpsHelpers.Log("AGENT", $"Offline Bypass devre dışı: BypassSecret tanımlı değil ({SecureStore.Dir}\\{AgentCredentials.BypassSecretFileName}).", true);
+                _trayPipe?.SendCommandToDesktop("BYPASS_FAILED");
+                return;
+            }
+
+            switch (_bypass.Attempt(token, _hwId, bypassSecret, DateTime.Now))
+            {
+                case OfflineBypass.Result.Accepted:
+                    POpsHelpers.Log("AGENT", "Offline Bypass kodu doğrulandı; karantina kaldırılıyor.");
+                    _ = DisableNetworkIsolationAsync();
+                    _trayPipe?.SendCommandToDesktop("BYPASS_SUCCESS");
+                    return;
+                case OfflineBypass.Result.Locked:
+                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] Offline Bypass kilitli ({_bypass.LockedUntilUtc.ToLocalTime():HH:mm} saatine kadar); deneme değerlendirilmedi.", true);
+                    break;
+                case OfflineBypass.Result.LockedOut:
+                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] {OfflineBypass.MaxFailures} hatalı Offline Bypass denemesi; bypass {_bypass.LockedUntilUtc.ToLocalTime():HH:mm} saatine kadar kilitlendi.", true);
+                    break;
+                default:
+                    POpsHelpers.Log("AGENT", $"Offline Bypass kodu hatalı ({_bypass.Failures}/{OfflineBypass.MaxFailures}).", true);
+                    break;
+            }
+            _trayPipe?.SendCommandToDesktop("BYPASS_FAILED");
         }
 
         private async Task ConnectVisionTunnelAsync(CancellationToken token)
@@ -676,12 +709,21 @@ namespace POpsAgent
             catch { }
         }
 
+        // Takılan bir WMI sağlayıcısı sorguyu süresiz bekletmesin: bağlantı ve her sonuç için zaman aşımı
+        private static readonly TimeSpan WmiTimeout = TimeSpan.FromSeconds(15);
+
+        private static ManagementObjectSearcher WmiQuery(string query) =>
+            new ManagementObjectSearcher(
+                new ManagementScope(@"\\.\root\cimv2", new ConnectionOptions { Timeout = WmiTimeout }),
+                new ObjectQuery(query),
+                new System.Management.EnumerationOptions { Timeout = WmiTimeout, ReturnImmediately = true, Rewindable = false });
+
         private string GetRamSerialNumbers()
         {
             try
             {
                 var serials = new List<string>();
-                using var searcher = new ManagementObjectSearcher("SELECT SerialNumber FROM Win32_PhysicalMemory");
+                using var searcher = WmiQuery("SELECT SerialNumber FROM Win32_PhysicalMemory");
                 foreach (var obj in searcher.Get())
                 {
                     string sn = obj["SerialNumber"]?.ToString()?.Trim();
@@ -731,7 +773,7 @@ namespace POpsAgent
         {
             try
             {
-                using var searcher = new ManagementObjectSearcher($"SELECT {property} FROM {wmiClass}");
+                using var searcher = WmiQuery($"SELECT {property} FROM {wmiClass}");
                 foreach (var obj in searcher.Get()) return obj[property]?.ToString()?.Trim() ?? "-";
             }
             catch { }
@@ -742,7 +784,7 @@ namespace POpsAgent
         {
             try
             {
-                using var searcher = new ManagementObjectSearcher("SELECT TotalPhysicalMemory FROM Win32_ComputerSystem");
+                using var searcher = WmiQuery("SELECT TotalPhysicalMemory FROM Win32_ComputerSystem");
                 foreach (var obj in searcher.Get()) if (ulong.TryParse(obj["TotalPhysicalMemory"]?.ToString(), out ulong bytes)) return (bytes / (1024L * 1024 * 1024)) + " GB";
             }
             catch { }
@@ -878,6 +920,7 @@ namespace POpsAgent
         private readonly string _hwId;
         private readonly HttpClient _http;
         private readonly string _serverUrl;
+        private const int MaxPipeMessageBytes = 32 * 1024 * 1024;
         private CancellationTokenSource _cts;
         private NamedPipeServerStream _pipeServer;
         public event Action<string> OnMessageReceived = delegate { };
@@ -941,6 +984,13 @@ namespace POpsAgent
                         if (lRead < 4) break;
                         
                         int dLen = BitConverter.ToInt32(lBuf, 0);
+                        // Boru hattına oturum açan her kullanıcı yazabilir: sınırsız ya da negatif uzunluk SYSTEM
+                        // servisinin belleğini tüketirdi. En büyük meşru mesaj tepsinin gönderdiği ekran karesidir.
+                        if (dLen <= 0 || dLen > MaxPipeMessageBytes)
+                        {
+                            POpsHelpers.Log("PIPE", $"[GÜVENLİK] Geçersiz mesaj uzunluğu ({dLen}); bağlantı kapatıldı.", true);
+                            break;
+                        }
                         byte[] d = new byte[dLen];
                         int total = 0;
                         while (total < dLen)

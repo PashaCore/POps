@@ -17,13 +17,14 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 
 | Property | Needed | Written to |
 | -------- | ------ | ---------- |
-| `SERVER_URL`    | first install | `appsettings.json` → `ServerUrl` (in the install folder) |
+| `SERVER_URL`    | first install | `appsettings.json` → `ServerUrl` (in the install folder). Must be `https://`; plain `http://` is accepted only for `127.0.0.1` / `localhost`. |
 | `ENROLL_TOKEN`  | recommended   | `C:\POpsData\secure\enroll.token` |
 | `BYPASS_SECRET` | optional      | `C:\POpsData\secure\bypass.secret` |
 | `PERSIST_DIR`   | optional      | `appsettings.json` → `PersistDir` (see `Agent/README.md`, machines with freeze software) |
 | `INSTALLFOLDER` | optional      | install folder, default `C:\Program Files\POps` |
 
 - Every property is optional on an upgrade: a value that is not given keeps the installed one. A first install without `SERVER_URL` (and without an old install to take it from) fails with a clear message in the log.
+- A plain `http://` server address is refused, including one migrated from an older install. Over `ws://` the device secret, the enrollment token and the commands the agent runs as SYSTEM would cross the network in clear text. Pre-MSI installs that used `http://<ip>:8000` therefore need `SERVER_URL=https://…` on the command line.
 - `ENROLL_TOKEN` and `BYPASS_SECRET` are hidden from the MSI log. A command line is still visible to other logged-on users while `msiexec` runs, so install from a deployment tool (GPO, Intune, the panel's remote command) or while no student is signed in.
 - The server treats an enrollment token as single-use, so each device needs its own token.
 - `appsettings.json` and the secret files are written by a custom action, not installed as MSI files, so they survive upgrades. `appsettings.json` is readable only by SYSTEM and Administrators.
@@ -31,10 +32,10 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 ### What the package does
 
 - Installs the agent, tray, watchdog and updater into `C:\Program Files\POps` and registers the `POpsAgent` service (LocalSystem, automatic start; Windows restarts it on failure).
-- Starts the tray in every user session through `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` (`POpsTray`). The tray no longer writes its own per-user Run entry and removes the one older versions left.
-- **Upgrades** replace the installed version inside one transaction: the old product is removed right after `InstallInitialize`, and if the new version fails to install Windows Installer restores the old one. The MSI version is `a.b.c.<CI run number>`; a build with the same `a.b.c` and a higher run number is treated as an upgrade. Installing an older version over a newer one is refused.
+- Starts the tray in every user session through `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` (`POpsTray`). The tray no longer writes its own per-user Run entry. An Active Setup entry runs the tray once per user at their next sign-in, before the desktop, in a mode that only deletes the per-user entry older versions left (`POpsTrayApp`), so an old tray cannot start next to the new one.
+- **Upgrades** replace the installed version inside one transaction: the old product is removed right after `InstallInitialize`, and if the new version fails to install Windows Installer restores the old one. The MSI version is `a.b.c.<CI run number>`; a build with the same `a.b.c` and a higher run number is treated as an upgrade. Installing an older version over a newer one is refused, except with `POPS_ROLLBACK=1`, which only `POpsUpdater` passes when it rolls back: the older package then removes the newer version inside the same transaction, so a failed rollback leaves the newer version installed instead of leaving the machine without an agent.
 - **Pre-MSI installs** are taken over: the old `POpsAgent` service is stopped and deleted, the tray, watchdog and other POps processes are closed, and the settings are migrated — `ServerUrl` from `C:\POps\appsettings.json` first (the only file released pre-MSI builds read), then from `C:\Program Files (x86)\POps`; a `BypassSecret` found there moves into `C:\POpsData\secure`. After the new service has started, the old install folder (`C:\Program Files (x86)\POps`) and the settings in `C:\POps` are deleted along with leftovers such as `PashaCoreAgent.*`, `apply_update.bat` and `appsettings.Development.json`. Files that are still in use are deleted at the next restart.
-- Every install keeps its own package as `C:\POpsData\packages\installed.msi`. `POpsUpdater` rolls back to it when the next version does not start cleanly; see *Updates* in `Agent/README.md`. `POPS_KEEP_CONFIG=1` is used by that rollback only: an uninstall with it keeps `appsettings.json`.
+- Every install keeps its own package as `C:\POpsData\packages\installed.msi`. `POpsUpdater` rolls back to it when the next version does not start cleanly; see *Updates* in `Agent/README.md`.
 - **Uninstall** removes the service, the files, the Run entry and `appsettings.json`. `C:\POpsData` (device identity and secret) and `C:\POpsLogs` are kept, so a reinstalled device returns with the same identity.
 
 ### Checking an install

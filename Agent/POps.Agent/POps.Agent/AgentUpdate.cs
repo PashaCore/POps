@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -188,14 +189,11 @@ namespace POpsAgent
         private static bool LaunchUpdater(string msiPath, string sha256, string toVersion)
         {
             string installDir = AppContext.BaseDirectory.TrimEnd('\\');
-            // Updater'ın kendi dosyaları + tek NuGet bağımlılığı (POpsUpdater.csproj ile uyumlu tutulmalı)
-            string[] files = Directory.GetFiles(installDir, "POpsUpdater.*")
-                .Append(Path.Combine(installDir, "System.ServiceProcess.ServiceController.dll"))
-                .Where(File.Exists)
-                .ToArray();
-            if (!files.Any(f => Path.GetFileName(f).Equals("POpsUpdater.exe", StringComparison.OrdinalIgnoreCase)))
+            string[] files;
+            try { files = UpdaterFiles(installDir).ToArray(); }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is JsonException || ex is InvalidDataException)
             {
-                Reject($"POpsUpdater.exe kurulum klasöründe yok ({installDir})");
+                Reject($"POpsUpdater kopyalanamıyor: {ex.Message}");
                 return false;
             }
 
@@ -223,6 +221,39 @@ namespace POpsAgent
             {
                 TryDelete(LockPath);
                 throw;
+            }
+        }
+
+        // Updater'ın çalışması için gereken dosyaların tamamı: kendi dosyaları + POpsUpdater.deps.json'daki her
+        // kütüphanenin çalışma zamanı dosyaları (dotnet publish -r win-x64 hepsini kurulum klasörünün köküne koyar).
+        // Paylaşılan .NET çalışma zamanındaki derlemeler (ör. Microsoft.Win32.Registry) deps.json'da yer almaz.
+        // Listelenen bir dosya eksikse updater hiç başlatılmaz: güncellemenin ortasında düşerdi.
+        public static IEnumerable<string> UpdaterFiles(string installDir)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "POpsUpdater.exe", "POpsUpdater.dll", "POpsUpdater.deps.json", "POpsUpdater.runtimeconfig.json",
+            };
+            string depsPath = Path.Combine(installDir, "POpsUpdater.deps.json");
+            if (!File.Exists(depsPath)) throw new FileNotFoundException("POpsUpdater.deps.json yok", depsPath);
+
+            using (JsonDocument deps = JsonDocument.Parse(File.ReadAllText(depsPath)))
+            {
+                if (!deps.RootElement.TryGetProperty("targets", out JsonElement targets) || targets.ValueKind != JsonValueKind.Object)
+                    throw new InvalidDataException("POpsUpdater.deps.json'da targets yok");
+                foreach (JsonProperty target in targets.EnumerateObject())
+                    foreach (JsonProperty library in target.Value.EnumerateObject())
+                        foreach (string section in new[] { "runtime", "runtimeTargets", "native" })
+                            if (library.Value.TryGetProperty(section, out JsonElement assets) && assets.ValueKind == JsonValueKind.Object)
+                                foreach (JsonProperty asset in assets.EnumerateObject())
+                                    names.Add(Path.GetFileName(asset.Name));
+            }
+
+            foreach (string name in names)
+            {
+                string path = Path.Combine(installDir, name);
+                if (!File.Exists(path)) throw new FileNotFoundException($"{name} kurulum klasöründe yok", path);
+                yield return path;
             }
         }
 

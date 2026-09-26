@@ -19,9 +19,13 @@ namespace POpsUpdater
     // Ajan güncellemesini MSI ile uygular (Faz 7). Ajan (SYSTEM) imzalı manifest'i ve paketi doğruladıktan
     // sonra bu programı kurulum klasörü dışından (C:\POpsData\updater) başlatır:
     //   POpsUpdater --msi <paket> --sha256 <özet> --from <kurulu sürüm> --to <yeni sürüm> --installdir <klasör>
-    // Adımlar: kilit, özet kontrolü, dosya yedeği, kullanıcı süreçlerini kapatma, msiexec /i, yeni sürümün
-    // health.json'unu bekleme; yeni sürüm sağlıklı açılmazsa önceki MSI'a (yoksa dosya yedeğine) dönüş;
-    // update-result.json; kilidi kaldırma. update.lock varken watchdog servisi ve tepsiyi yeniden başlatmaz.
+    // Adımlar: kilit, özet kontrolü, geri dönüş paketinin doğrulanması, dosya yedeği, kullanıcı süreçlerini
+    // kapatma, msiexec /i, yeni sürümün health.json'unu bekleme; yeni sürüm sağlıklı açılmazsa önceki MSI'a
+    // (yoksa dosya yedeğine) dönüş; her durumda ajan servisinin varlık/çalışma kontrolü; update-result.json;
+    // kilidi kaldırma. update.lock varken watchdog servisi ve tepsiyi yeniden başlatmaz.
+    //
+    // Hiçbir adım çalışan kurulumu, yerine geleceği kanıtlanmadan kaldırmaz: yükseltme ve geri dönüş tek bir
+    // Windows Installer işlemidir (başarısızsa kurulu sürüm yerinde kalır); ayrı bir "msiexec /x" yoktur.
     [SupportedOSPlatform("windows")]
     static class Program
     {
@@ -75,7 +79,7 @@ namespace POpsUpdater
                     return 1;
                 }
 
-                string previousMsi = PreservePreviousPackage();
+                string previousMsi = PrepareRollbackPackage();
                 BackupInstall(opt.InstallDir, opt.From);
                 StopUserProcesses();
 
@@ -94,11 +98,17 @@ namespace POpsUpdater
                     result["rollback"] = "msi_transaction";
                     result["detail"] = $"msiexec {exit} döndü; Windows Installer değişiklikleri geri aldı";
                     if (previousMsi != null) CopyPackage(previousMsi, Path.Combine(PackagesDir, "installed.msi"));
-                    EnsureServiceRunning();
                 }
                 else if (WaitForHealth(opt.To, installStart))
                 {
                     outcome = "success";
+                }
+                else if (exit == 3010)
+                {
+                    // Kullanımdaki dosyalar yeniden başlatmada değişecek; yeni sürüm ancak o zaman açılır.
+                    // Burada geri dönmek, tamamlanmak üzere olan sağlam bir kurulumu bozardı.
+                    outcome = "pending_reboot";
+                    result["detail"] = "msiexec 3010: kurulum yeniden başlatmada tamamlanacak; geri dönülmedi";
                 }
                 else
                 {
@@ -117,6 +127,7 @@ namespace POpsUpdater
             }
             finally
             {
+                result["agent_state"] = EnsureAgentPresent(opt);
                 result["outcome"] = outcome;
                 result["finished_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 WriteAtomic(ResultPath, JsonSerializer.Serialize(result));
@@ -134,13 +145,27 @@ namespace POpsUpdater
             DateTime start = DateTime.UtcNow;
             if (previousMsi != null)
             {
-                // Eski MSI yenisinin üzerine kurulamaz (downgrade engeli): önce yenisi kaldırılır. POPS_KEEP_CONFIG,
-                // kaldırmanın appsettings.json'u silmesini engeller.
-                int uninstall = RunMsiexec($"/x \"{opt.Msi}\" /qn /norestart REBOOT=ReallySuppress POPS_KEEP_CONFIG=1", "uninstall-" + opt.To);
-                int reinstall = RunMsiexec($"/i \"{previousMsi}\" /qn /norestart REBOOT=ReallySuppress{installFolderArg}", "rollback-" + opt.From);
-                if ((reinstall == 0 || reinstall == 3010) && WaitForHealth(opt.From, start))
-                    return ("rolled_back", "msi", $"{opt.To} sağlıklı açılmadı; {opt.From} yeniden kuruldu");
-                return ("rollback_failed", "msi", $"{opt.To} sağlıklı açılmadı; geri kurulum başarısız (kaldırma {uninstall}, kurulum {reinstall})");
+                // Tek işlem: önceki paket, kurulu yeni sürümü aynı Windows Installer işlemi içinde kaldırıp kendini
+                // kurar (POPS_ROLLBACK=1 sürüm düşürme engelini yalnızca bu çağrı için açar). İşlem başarısız
+                // olursa Windows Installer yeni sürümü yerinde bırakır; makine hiçbir anda ajansız kalmaz.
+                int exit = -1;
+                for (int attempt = 1; attempt <= 2; attempt++)
+                {
+                    exit = RunMsiexec($"/i \"{previousMsi}\" /qn /norestart REBOOT=ReallySuppress POPS_ROLLBACK=1{installFolderArg}", $"rollback-{opt.From}-{attempt}");
+                    if (exit == 0 || exit == 3010) break;
+                    if (attempt == 1)
+                    {
+                        Log($"Geri kurulum {exit} döndü; 30 sn sonra bir kez daha denenecek.", true);
+                        Thread.Sleep(TimeSpan.FromSeconds(30));
+                    }
+                }
+                if (exit == 3010)
+                    return ("rollback_pending_reboot", "msi", $"{opt.To} sağlıklı açılmadı; {opt.From} kuruldu, yeniden başlatmada tamamlanacak");
+                if (exit == 0 && WaitForHealth(opt.From, start))
+                    return ("rolled_back", "msi", $"{opt.To} sağlıklı açılmadı; {opt.From} geri kuruldu");
+                if (exit == 0)
+                    return ("rollback_failed", "msi", $"{opt.To} sağlıklı açılmadı; {opt.From} geri kuruldu ama o da sağlıklı açılmadı");
+                return ("rollback_failed", "msi", $"{opt.To} sağlıklı açılmadı; geri kurulum {exit} döndü ve Windows Installer {opt.To} sürümünü yerinde bıraktı");
             }
 
             // Önceki MSI yok (ilk MSI'dan önceki kurulum): dosya yedeği geri yüklenir. Windows Installer kaydı
@@ -192,18 +217,52 @@ namespace POpsUpdater
             }
         }
 
-        // Kurulum yeni paketi installed.msi olarak bırakacağı için şu anki kurulu paket önce saklanır
-        static string PreservePreviousPackage()
+        // Kurulum yeni paketi installed.msi olarak bırakacağı için şu anki kurulu paket önce previous.msi olarak
+        // saklanır. Geri dönüş kaynağı sayılması için: kopya kaynağıyla aynı özette olmalı, POps Agent paketi
+        // olmalı, POPS_ROLLBACK'i desteklemeli ve bu makinede şu an kurulu olan ürünün paketi olmalı.
+        static string PrepareRollbackPackage()
         {
             string installed = Path.Combine(PackagesDir, "installed.msi");
             if (!File.Exists(installed))
             {
-                Log("Önceki MSI paketi yok; geri dönüş gerekirse dosya yedeği kullanılacak.");
+                Log("Kurulu sürümün MSI paketi yok; geri dönüş gerekirse dosya yedeği kullanılacak.");
                 return null;
             }
             string previous = Path.Combine(PackagesDir, "previous.msi");
-            CopyPackage(installed, previous);
-            return previous;
+            try
+            {
+                File.Copy(installed, previous, true);
+                if (!CryptographicOperations.FixedTimeEquals(Sha256Of(installed), Sha256Of(previous)))
+                    return RollbackPackageRejected("kopya kaynağıyla aynı değil");
+
+                MsiPackage package = MsiPackage.TryRead(previous, out string error);
+                if (package == null) return RollbackPackageRejected(error);
+                if (!string.Equals(package.UpgradeCode, UpgradeCode, StringComparison.OrdinalIgnoreCase))
+                    return RollbackPackageRejected($"başka bir ürünün paketi ({package.UpgradeCode})");
+                if (!package.SupportsRollback)
+                    return RollbackPackageRejected("paket POPS_ROLLBACK ile geri kurulumu desteklemiyor");
+                if (!MsiPackage.IsInstalled(package.ProductCode))
+                    return RollbackPackageRejected($"paket ({package.ProductVersion}) şu an kurulu ürünün paketi değil");
+
+                Log($"Geri dönüş paketi doğrulandı: {package.ProductVersion} ({package.ProductCode}).");
+                return previous;
+            }
+            catch (Exception ex)
+            {
+                return RollbackPackageRejected(ex.Message);
+            }
+        }
+
+        static string RollbackPackageRejected(string reason)
+        {
+            Log($"Önceki MSI geri dönüş için kullanılmayacak: {reason}. Geri dönüş gerekirse dosya yedeği kullanılacak.", true);
+            return null;
+        }
+
+        static byte[] Sha256Of(string path)
+        {
+            using FileStream stream = File.OpenRead(path);
+            return SHA256.HashData(stream);
         }
 
         static void CopyPackage(string from, string to)
@@ -313,6 +372,55 @@ namespace POpsUpdater
         {
             var productCode = new StringBuilder(39);
             return MsiEnumRelatedProducts(UpgradeCode, 0, 0, productCode) == 0;
+        }
+
+        // Her sonuçtan sonra: POpsAgent servisi var ve çalışıyor olmalı. Servis yoksa son çare olarak elde kalan
+        // paketle onarım/kurulum yapılır; o da olmazsa durum [KRİTİK] olarak loglanır ve sonuca yazılır.
+        static string EnsureAgentPresent(Options opt)
+        {
+            try
+            {
+                if (ServiceExists())
+                {
+                    EnsureServiceRunning();
+                    return ServiceRunning() ? "running" : "not_running";
+                }
+
+                Log("[KRİTİK] POpsAgent servisi yok; son çare kurulum deneniyor.", true);
+                string package = new[] { Path.Combine(PackagesDir, "installed.msi"), opt.Msi }.FirstOrDefault(File.Exists);
+                if (package == null)
+                {
+                    Log("[KRİTİK] Kurulabilecek paket yok; cihaz yönetimsiz kaldı, elle kurulum gerekiyor.", true);
+                    return "unmanaged";
+                }
+                MsiPackage info = MsiPackage.TryRead(package, out _);
+                string arguments = info != null && MsiPackage.IsInstalled(info.ProductCode)
+                    ? $"/fvamus \"{package}\" /qn /norestart REBOOT=ReallySuppress"
+                    : $"/i \"{package}\" /qn /norestart REBOOT=ReallySuppress POPS_ROLLBACK=1";
+                RunMsiexec(arguments, "last-resort");
+                EnsureServiceRunning();
+                if (ServiceExists() && ServiceRunning())
+                {
+                    Log("[KRİTİK] Ajan son çare kurulumla geri getirildi.", true);
+                    return "reinstalled";
+                }
+                Log("[KRİTİK] Son çare kurulum da ajanı çalıştıramadı; cihaz yönetimsiz kaldı, elle kurulum gerekiyor.", true);
+                return "unmanaged";
+            }
+            catch (Exception ex)
+            {
+                Log($"[KRİTİK] Ajan durumu doğrulanamadı: {ex.Message}", true);
+                return "unknown";
+            }
+        }
+
+        static bool ServiceExists() =>
+            ServiceController.GetServices().Any(s => s.ServiceName.Equals(ServiceName, StringComparison.OrdinalIgnoreCase));
+
+        static bool ServiceRunning()
+        {
+            using var sc = new ServiceController(ServiceName);
+            return sc.Status == ServiceControllerStatus.Running;
         }
 
         static void StopService()

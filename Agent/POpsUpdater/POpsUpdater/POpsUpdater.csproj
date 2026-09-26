@@ -7,8 +7,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <!-- Ajan updater'ı C:\POpsData\updater'a kopyalayıp oradan başlatır; yeni bir bağımlılık eklenirse
-       AgentUpdate.LaunchUpdater'daki kopyalanan dosya listesi de güncellenmeli. -->
+  <!-- Ajan updater'ı C:\POpsData\updater'a kopyalayıp oradan başlatır; kopyalanacak dosyaları
+       POpsUpdater.deps.json'dan okur (AgentUpdate.UpdaterFiles). -->
   <ItemGroup>
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.0" />
   </ItemGroup>

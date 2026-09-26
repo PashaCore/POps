@@ -102,6 +102,13 @@ namespace POpsAgent
             return defaultUrl;
         }
 
+        // Cihaz secret'ı, enroll jetonu ve sunucunun gönderdiği komutlar (execute, set_secret, set_identity)
+        // yalnızca şifreli kanaldan (https/wss) taşınır: düz ws:// üzerinde aynı ağdaki biri bunları okuyup
+        // SYSTEM olarak komut gönderebilirdi. Düz http yalnızca aynı makinedeki (loopback) sunucu için kabul edilir.
+        public static bool IsSecureServerUrl(string url) =>
+            Uri.TryCreate(url, UriKind.Absolute, out Uri uri)
+            && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback));
+
         // Gizli olmayan bir ayar: önce sistem ortam değişkeni, sonra appsettings.json.
         public static string GetSetting(string key, string envVar)
         {

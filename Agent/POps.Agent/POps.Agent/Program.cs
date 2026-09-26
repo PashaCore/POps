@@ -29,6 +29,10 @@ namespace POpsAgent
             POpsHelpers.Log("AGENT", "========================================");
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor ({Worker.APP_VERSION})");
 
+            // Güncellemeden sonra POpsUpdater yeni sürümün açıldığını bu dosyadan anlar. Açılışın en başında
+            // yazılır: yavaş WMI sorguları onu updater'ın 90 sn'lik bekleme süresinin dışına itmesin.
+            AgentUpdate.WriteHealth();
+
             var builder = Host.CreateApplicationBuilder(args);
 
             // Ajanımızı resmi bir Windows Servisi olarak sisteme tanıtıyoruz

@@ -25,12 +25,20 @@
 
     <SummaryInformation Description="POps Agent" Manufacturer="PashaCore" Codepage="1254" />
 
-    <!-- Eski ürün, yeni kurulumla aynı işlem (transaction) içinde kaldırılır: yeni sürüm kurulamazsa
-         Windows Installer eskisini geri yükler. Sürümün 4. alanı (CI çalışma no.) yükseltme kararında
-         sayılmadığı için aynı a.b.c'li yeni derleme de yükseltme sayılır. -->
-    <MajorUpgrade Schedule="afterInstallInitialize"
-                  AllowSameVersionUpgrades="yes"
-                  DowngradeErrorMessage="Bu bilgisayarda daha yeni bir POps Agent sürümü kurulu; eski sürüm kurulmadı." />
+    <!-- Kurulu sürüm, yeni kurulumla aynı Windows Installer işlemi içinde kaldırılır (RemoveExistingProducts
+         InstallInitialize'dan hemen sonra): yeni sürüm kurulamazsa eskisi geri yüklenir. Sürümün 4. alanı
+         (CI çalışma no.) yükseltme kararında sayılmadığı için aynı a.b.c'li yeni derleme de yükseltme sayılır.
+         Daha yeni bir sürüm kuruluysa kurulum yalnızca POpsUpdater'ın geri dönüşünde (POPS_ROLLBACK=1) ilerler
+         ve o sürümü de aynı işlemle kaldırır: geri dönüş de tek işlemdir, başarısızsa kurulu sürüm yerinde kalır. -->
+    <Upgrade Id="1F4A5444-0EA0-40FE-8D23-C5233D4576D1">
+      <UpgradeVersion Minimum="0.0.0" IncludeMinimum="yes" Maximum="$(var.ProductVersion)" IncludeMaximum="yes"
+                      Property="WIX_UPGRADE_DETECTED" MigrateFeatures="yes" />
+      <UpgradeVersion Minimum="$(var.ProductVersion)" IncludeMinimum="no"
+                      Property="POPS_NEWER_DETECTED" MigrateFeatures="yes" />
+    </Upgrade>
+    <Property Id="POPS_ROLLBACK" Secure="yes" />
+    <Launch Condition="NOT POPS_NEWER_DETECTED OR POPS_ROLLBACK = &quot;1&quot;"
+            Message="Bu bilgisayarda daha yeni bir POps Agent sürümü kurulu; eski sürüm kurulmadı." />
 
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
@@ -45,8 +53,6 @@
     <Property Id="ENROLL_TOKEN" Secure="yes" Hidden="yes" />
     <Property Id="BYPASS_SECRET" Secure="yes" Hidden="yes" />
     <Property Id="PopsConfigure" Hidden="yes" />
-    <!-- POpsUpdater'ın geri dönüşte kullandığı kaldırma: appsettings.json silinmez -->
-    <Property Id="POPS_KEEP_CONFIG" Secure="yes" />
 
     <!-- Ajan framework'e bağımlıdır: .NET 8 Desktop Runtime (x64) yoksa kurulum başlamaz -->
     <netfx:DotNetCompatibilityCheck Property="DOTNET_DESKTOP8"
@@ -95,6 +101,18 @@
                        Type="string" Value="&quot;[INSTALLFOLDER]POpsTray.exe&quot;" KeyPath="yes" />
       </Component>
 
+      <!-- Eski sürümlerin kullanıcı başına yazdığı HKCU Run kaydı (POpsTrayApp), yeni tepsiyle birlikte eski
+           tepsiyi de açabilirdi. Active Setup her kullanıcının bir sonraki oturumunda, masaüstünden önce ve bir
+           kez tepsiyi yalnızca bu kaydı silen kipte çalıştırır. -->
+      <Component Id="TrayLegacyAutostartCleanup">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Active Setup\Installed Components\{2DD166B4-61E8-4DA3-8E44-106E9339F306}">
+          <RegistryValue Type="string" Value="POps Agent" KeyPath="yes" />
+          <RegistryValue Name="StubPath" Type="string" Value="&quot;[INSTALLFOLDER]POpsTray.exe&quot; --cleanup-autostart" />
+          <RegistryValue Name="Version" Type="string" Value="1,0" />
+          <RegistryValue Name="IsInstalled" Type="integer" Value="1" />
+        </RegistryKey>
+      </Component>
+
       <!-- appsettings*.json MSI dosyası değildir: PopsConfigure yazar, güncellemede silinmez -->
       <Files Include="$(var.PopsPublishDir)**">
         <Exclude Files="$(var.PopsPublishDir)POpsAgent.exe" />
@@ -129,17 +147,17 @@
                   Execute="deferred" Impersonate="no" Return="ignore" />
     <SetProperty Id="PopsKeepPackage" Sequence="execute" Before="PopsKeepPackage" Value="ORIGINAL_MSI=[OriginalDatabase]" />
 
-    <!-- Gerçek kaldırmada appsettings.json; güncellemede (UPGRADINGPRODUCTCODE) ve updater'ın geri
-         dönüşünde (POPS_KEEP_CONFIG) dokunulmaz -->
+    <!-- Gerçek kaldırmada appsettings.json; yükseltme ve geri dönüşte (UPGRADINGPRODUCTCODE) dokunulmaz -->
     <CustomAction Id="PopsRemoveConfig" BinaryRef="PopsActions" DllEntry="RemoveConfig"
                   Execute="deferred" Impersonate="no" Return="ignore" />
     <SetProperty Id="PopsRemoveConfig" Sequence="execute" Before="PopsRemoveConfig" Value="INSTALLFOLDER=[INSTALLFOLDER]" />
 
     <InstallExecuteSequence>
+      <RemoveExistingProducts After="InstallInitialize" />
       <Custom Action="PopsConfigure" After="InstallFiles" Condition="NOT (REMOVE~=&quot;ALL&quot;)" />
       <Custom Action="PopsCleanupLegacy" After="StartServices" Condition="NOT (REMOVE~=&quot;ALL&quot;)" />
       <Custom Action="PopsKeepPackage" After="PopsCleanupLegacy" Condition="NOT Installed AND NOT (REMOVE~=&quot;ALL&quot;)" />
-      <Custom Action="PopsRemoveConfig" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND NOT POPS_KEEP_CONFIG" />
+      <Custom Action="PopsRemoveConfig" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 
   </Package>

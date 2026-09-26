@@ -142,6 +142,11 @@ namespace POps.Installer
                     return "SERVER_URL verilmedi ve mevcut bir kurulumda da sunucu adresi bulunamadı. Örnek: msiexec /i POps-Agent.msi SERVER_URL=https://pops.example.com";
                 if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out Uri uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
                     return "SERVER_URL http:// ya da https:// ile başlayan tam bir adres olmalı.";
+                // Düz http'de cihaz secret'ı, enroll jetonu ve sunucu komutları ağda okunup değiştirilebilir. Yalnızca
+                // aynı makinedeki test sunucusu (loopback) kabul edilir; ajan da aynı kuralla bağlanmayı reddeder.
+                // Eski kurulumdan taşınan adres de bu kurala tabidir.
+                if (uri.Scheme == Uri.UriSchemeHttp && !uri.IsLoopback)
+                    return $"SERVER_URL şifresiz http ({serverUrl}); https:// bir adres gerekli, düz http'de cihaz secret'ı ve sunucu komutları ağda açık gider. Kurulumu SERVER_URL=https://... ile yeniden başlatın.";
 
                 string enrollToken = Prop("ENROLL_TOKEN");
                 if (enrollToken != null && !TokenRegex.IsMatch(enrollToken))
