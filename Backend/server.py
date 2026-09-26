@@ -160,22 +160,27 @@ async def init_db():
         await conn.execute('''CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
             role TEXT DEFAULT 'admin', last_login TEXT, permissions TEXT DEFAULT '[]')''')
-        try:
-            await conn.execute("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT '[]'")
-        except:
-            pass
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT DEFAULT '[]'")
         await conn.execute('''CREATE TABLE IF NOT EXISTS clients (
-            pc_name TEXT PRIMARY KEY, hostname TEXT, lab_name TEXT, last_seen TEXT, status TEXT, 
-            active_window TEXT, boot_count INTEGER DEFAULT 0, logged_user TEXT DEFAULT '-', 
-            ip_address TEXT, dna_uuid TEXT, dna_bios TEXT, dna_disk TEXT, dna_mac TEXT, 
+            pc_name TEXT PRIMARY KEY, hostname TEXT, lab_name TEXT, last_seen TEXT, status TEXT,
+            active_window TEXT, boot_count INTEGER DEFAULT 0, logged_user TEXT DEFAULT '-',
+            ip_address TEXT, dna_uuid TEXT, dna_bios TEXT, dna_disk TEXT, dna_mac TEXT,
             dna_ram TEXT, cap_ram_readable BOOLEAN DEFAULT TRUE, is_quarantined BOOLEAN DEFAULT FALSE)''')
+        # Panelde cihaza verilen görünen ad (rename_device)
+        await conn.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS display_name TEXT")
         await conn.execute('''CREATE TABLE IF NOT EXISTS device_audit_logs (
             id SERIAL PRIMARY KEY, hw_id TEXT, action TEXT, reason TEXT, changes TEXT, timestamp TEXT)''')
         await conn.execute('''CREATE TABLE IF NOT EXISTS lab_settings (lab_name TEXT PRIMARY KEY, main_pc TEXT)''')
-        try:
-            await conn.execute("ALTER TABLE lab_settings ADD COLUMN layout_json TEXT DEFAULT '{}'")
-        except:
-            pass
+        await conn.execute("ALTER TABLE lab_settings ADD COLUMN IF NOT EXISTS layout_json TEXT DEFAULT '{}'")
+        # Görev kuyruğu: dağıtım, terminal ve toplu işlemler (process_queue)
+        await conn.execute('''CREATE TABLE IF NOT EXISTS tasks (
+            id SERIAL PRIMARY KEY, target_pc TEXT, target_lab TEXT, script_path TEXT,
+            status TEXT, created_at TEXT, output TEXT)''')
+        # Vision oturumlarının denetim kaydı
+        await conn.execute('''CREATE TABLE IF NOT EXISTS enterprise_audit_logs (
+            session_id TEXT PRIMARY KEY, admin_id INTEGER, admin_name TEXT, admin_role TEXT,
+            target_pc TEXT, start_time TEXT, end_time TEXT, reason TEXT,
+            is_notified BOOLEAN, is_mandatory BOOLEAN, status TEXT)''')
         await conn.execute('''CREATE TABLE IF NOT EXISTS global_settings (key TEXT PRIMARY KEY, value TEXT)''')
         await conn.execute('''CREATE TABLE IF NOT EXISTS packages (id TEXT PRIMARY KEY, name TEXT, type TEXT, meta TEXT, command TEXT, icon TEXT, color TEXT)''')
         await conn.execute('''CREATE TABLE IF NOT EXISTS custom_labs (lab_name TEXT PRIMARY KEY)''')
