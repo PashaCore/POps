@@ -1,0 +1,18 @@
+# Faz 5 — Backend'in yazdığı self-update isteğini (root olmadan) izleyen path-unit.
+# İstek dosyası belirdiğinde pops-selfupdate.service'i (root, oneshot) tetikler.
+# Kurulum:
+#   sudo install -m 644 Installer/server/pops-selfupdate.path    /etc/systemd/system/
+#   sudo install -m 644 Installer/server/pops-selfupdate.service /etc/systemd/system/
+#   sudo install -m 755 Installer/server/pops-selfupdate         /usr/local/sbin/
+#   sudo install -d -o pashacore_admin -g pashacore_admin -m 750 /var/lib/pops
+#   sudo systemctl daemon-reload && sudo systemctl enable --now pops-selfupdate.path
+[Unit]
+Description=POps: panelden gelen sunucu self-update isteğini izle
+
+[Path]
+# Backend (pashacore_admin) bu dosyayı yazar; ROOT servis tetiklenir.
+PathExists=/var/lib/pops/deploy-request.json
+Unit=pops-selfupdate.service
+
+[Install]
+WantedBy=multi-user.target

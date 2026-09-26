@@ -131,6 +131,19 @@
         </div>
         <div class="status-msg" id="enforce-status"></div>
     </div>
+
+    <div class="sys-card">
+        <h2><i class="fas fa-server"></i> Sunucu backend'ini güncelle (self-update)</h2>
+        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
+            SSH gerektirmeden sunucu backend'ini <strong>origin/main</strong>'den günceller. İstek root systemd
+            path-unit'ine iletilir; deploy sağlık kontrolü + otomatik geri dönüş yapar. Keyfi kod yürütülmez.
+        </p>
+        <div class="row">
+            <span id="su-badge"></span>
+            <button class="btn primary" id="btn-selfupdate"><i class="fas fa-download"></i> Şimdi güncelle</button>
+        </div>
+        <div class="status-msg" id="su-status"></div>
+    </div>
 </div>
 
 <?php include 'includes/footer.php'; ?>
@@ -288,7 +301,56 @@
     });
     $('btn-upload').addEventListener('click', upload);
 
+    // ---- sunucu self-update ----
+    async function loadSelfUpdate() {
+        try {
+            const res = await fetch('/api/system/self-update/status');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const d = await res.json();
+            const badge = $('su-badge');
+            const btn = $('btn-selfupdate');
+            if (!d.configured) {
+                badge.innerHTML = '<span class="badge muted"><i class="fas fa-plug"></i> Kurulu değil</span>';
+                btn.disabled = true;
+                btn.title = 'systemd path-unit etkin değil (bkz. docs/self-update.md)';
+                return;
+            }
+            btn.disabled = false;
+            const s = d.status;
+            if (d.pending) badge.innerHTML = '<span class="badge warn"><i class="fas fa-hourglass-half"></i> Kuyrukta…</span>';
+            else if (s && s.state === 'running') badge.innerHTML = '<span class="badge warn"><i class="fas fa-spinner fa-spin"></i> Çalışıyor…</span>';
+            else if (s && s.state === 'ok') badge.innerHTML = '<span class="badge ok"><i class="fas fa-check"></i> Son: ' + escapeHtml(s.rev || '') + '</span>';
+            else if (s && s.state === 'failed') badge.innerHTML = '<span class="badge warn"><i class="fas fa-triangle-exclamation"></i> Son deneme başarısız</span>';
+            else badge.innerHTML = '<span class="badge ok"><i class="fas fa-server"></i> Hazır</span>';
+        } catch (e) {
+            $('su-badge').innerHTML = '<span class="badge warn">Durum alınamadı</span>';
+        }
+    }
+
+    $('btn-selfupdate').addEventListener('click', async function () {
+        if (!confirm("Sunucu backend'i origin/main sürümüne güncellenecek. Devam edilsin mi?")) return;
+        const st = $('su-status'); st.className = 'status-msg'; st.style.display = 'block'; st.textContent = 'Kuyruklanıyor…';
+        const btn = this;
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/system/self-update', { method: 'POST' });
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
+            st.className = 'status-msg status-success'; st.textContent = 'Güncelleme kuyruklandı, uygulanıyor…';
+            let tries = 0;
+            const poll = setInterval(async () => {
+                tries++;
+                await loadSelfUpdate();
+                const txt = ($('su-badge').textContent || '');
+                if (tries > 20 || txt.includes('Son:') || txt.includes('başarısız')) { clearInterval(poll); btn.disabled = false; }
+            }, 3000);
+        } catch (e) {
+            st.className = 'status-msg status-error'; st.textContent = e.message; btn.disabled = false;
+        }
+    });
+
     loadVersion(false);
     loadEnroll();
+    loadSelfUpdate();
 })();
 </script>

@@ -44,6 +44,10 @@ class EnforceInput(BaseModel):
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Doğrulanmış release'lerin stage edildiği çalışma zamanı dizini (git dışı)
 RELEASES_DIR = os.path.join(BASE_DIR, "releases")
+# Faz 5 self-update: backend'in (root DEĞİL) yazdığı istek dosyasının bulunduğu spool
+# dizini. Root systemd path-unit (pops-selfupdate.path) bu dosyayı izleyip deploy'u
+# çalıştırır. Dizin yoksa/yazılamıyorsa self-update "kurulu değil" sayılır (uç 503 döner).
+SELFUPDATE_DIR = os.environ.get("POPS_SELFUPDATE_DIR", "/var/lib/pops")
 GITHUB_REPO = os.environ.get("POPS_GITHUB_REPO", "PashaCore/POps")
 _GITHUB_TIMEOUT = 5.0
 _GITHUB_TTL = 3600.0  # saniye
@@ -331,5 +335,53 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
                             "Ajan kimlik zorlaması %s" % ("AÇILDI" if data.enabled else "kapatıldı"),
                             {"enabled": data.enabled})
         return {"ok": True, "enforce_agent_auth": data.enabled}
+
+    # --- Faz 5: sunucu backend self-update (SSH'siz, panelden) --------------------
+    def _selfupdate_configured() -> bool:
+        return os.path.isdir(SELFUPDATE_DIR) and os.access(SELFUPDATE_DIR, os.W_OK)
+
+    @router.get("/api/system/self-update/status")
+    async def self_update_status(auth: dict = Depends(require_admin)):
+        """Son self-update denemesinin durumunu (deploy-status.json) ve kurulu olup
+        olmadığını döner. Root deploy betiği bu dosyayı yazar."""
+        status = None
+        try:
+            with open(os.path.join(SELFUPDATE_DIR, "deploy-status.json"), "r", encoding="utf-8") as f:
+                status = json.load(f)
+        except Exception:
+            status = None
+        return {
+            "configured": _selfupdate_configured(),
+            "pending": os.path.exists(os.path.join(SELFUPDATE_DIR, "deploy-request.json")),
+            "status": status,
+        }
+
+    @router.post("/api/system/self-update")
+    async def self_update(auth: dict = Depends(require_superadmin)):
+        """origin/main'den sunucu backend'ini güncellemeyi KUYRUKLAR. Backend root
+        olmadığından yalnızca bir istek dosyası yazar; root systemd path-unit bunu görüp
+        git ff-only çeker ve pops-deploy-backend'i (sağlık kontrolü + geri dönüşlü) çalıştırır.
+        Keyfi kod yürütülmez; yalnızca origin/main yeniden dağıtılır."""
+        if not _selfupdate_configured():
+            raise HTTPException(
+                status_code=503,
+                detail="Self-update kurulu değil. systemd path-unit'i etkinleştirin (bkz. docs/self-update.md).")
+        payload = {
+            "requested_by": auth.get("sub"),
+            "requested_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "target": "origin/main",
+        }
+        req_path = os.path.join(SELFUPDATE_DIR, "deploy-request.json")
+        tmp = req_path + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            os.replace(tmp, req_path)   # atomik: path-unit yarım dosya görmesin
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="İstek yazılamadı: %s" % exc)
+        await add_audit_log("*", "self_update",
+                            "Sunucu self-update kuyruklandı (%s)" % (auth.get("sub") or "?"),
+                            {"target": "origin/main"})
+        return {"ok": True, "queued": True}
 
     return router

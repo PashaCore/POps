@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Faz 5 — Panelden tetiklenen SUNUCU backend self-update'i (SSH gerektirmez).
+#
+# Ayrıcalık ayrımı: backend servisi (pashacore_admin, ROOT DEĞİL) yalnızca bir istek
+# dosyası ($SPOOL/deploy-request.json) yazabilir. Bu betiği, o dosyanın belirmesini
+# izleyen bir systemd PATH-unit (pops-selfupdate.path) ROOT olarak tetikler. Böylece
+# backend'in kendisi root yetkisi almadan güncelleme başlatılabilir.
+#
+# Yaptığı: origin/main'i ff-only çeker (varsa), sonra authoritative deploy betiği
+# /usr/local/sbin/pops-deploy-backend'i çalıştırır (o da sağlık kontrolü + otomatik
+# geri dönüş yapar) ve sonucu $SPOOL/deploy-status.json'a yazar.
+#
+# GÜVENLİK: Keyfi kod ÇALIŞTIRILMAZ; yalnızca origin/main yeniden dağıtılır. İstek
+# dosyasının içeriği yürütülmez (yalnızca tetikleyicidir). Çevrimdışı sunucuda git
+# adımı atlanır, mevcut commit'lenmiş kodla redeploy denenir.
+set -uo pipefail
+
+REPO=/home/pasha/domains/dev.pashacore.com.tr/public_html
+SPOOL="${POPS_SELFUPDATE_DIR:-/var/lib/pops}"
+OWNER=pashacore_admin
+REQ="$SPOOL/deploy-request.json"
+STATUS="$SPOOL/deploy-status.json"
+LOG="$SPOOL/deploy.log"
+
+write_status() {   # $1=state  $2=ok(true/false)  $3=message
+    local rev
+    rev=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
+    printf '{"state":"%s","ok":%s,"rev":"%s","message":"%s","at":"%s"}\n' \
+        "$1" "$2" "$rev" "${3//\"/}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STATUS"
+    chown "$OWNER:$OWNER" "$STATUS" 2>/dev/null || true
+}
+
+[ -f "$REQ" ] || exit 0        # istek yoksa sessizce çık (path-unit yine de tetikleyebilir)
+rm -f "$REQ"
+: >> "$LOG"; chown "$OWNER:$OWNER" "$LOG" 2>/dev/null || true
+echo "==== $(date -u +%Y-%m-%dT%H:%M:%SZ) self-update başladı ====" >> "$LOG"
+write_status running true "guncelleme basladi"
+
+# origin/main'i güvenli şekilde çek (ff-only: yerel commit'leri EZMEZ). Başarısızsa
+# (çevrimdışı ya da ıraksama) mevcut HEAD ile devam edilir.
+if git -C "$REPO" fetch --quiet origin main >>"$LOG" 2>&1 \
+   && git -C "$REPO" merge --ff-only origin/main >>"$LOG" 2>&1; then
+    echo "origin/main çekildi." >> "$LOG"
+else
+    echo "uyarı: git fetch/ff-only başarısız (çevrimdışı ya da ıraksak); mevcut HEAD ile devam." >> "$LOG"
+fi
+
+if /usr/local/sbin/pops-deploy-backend >>"$LOG" 2>&1; then
+    write_status ok true "guncelleme tamamlandi"
+    echo "self-update OK" >> "$LOG"
+else
+    write_status failed false "deploy basarisiz (bkz deploy.log); saglik kontrolu otomatik geri dondu"
+    echo "self-update BAŞARISIZ" >> "$LOG"
+fi

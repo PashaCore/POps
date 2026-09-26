@@ -1,0 +1,13 @@
+# Faz 5 — pops-selfupdate.path tarafından tetiklenen ROOT oneshot güncelleme servisi.
+# origin/main'i çeker (ff-only) ve /usr/local/sbin/pops-deploy-backend'i çalıştırır
+# (sağlık kontrolü + otomatik geri dönüş dahil). Sonucu /var/lib/pops/deploy-status.json'a yazar.
+[Unit]
+Description=POps sunucu backend self-update (root; pops-deploy-backend çalıştırır)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pops-selfupdate
+# İstek dosyası backend tarafından yazılır; içeriği YÜRÜTÜLMEZ, yalnızca tetikleyicidir.
+Environment=POPS_SELFUPDATE_DIR=/var/lib/pops
