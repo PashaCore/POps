@@ -29,7 +29,9 @@ if cmp -s Backend/server.py "$APP/server.py" \
    && cmp -s Backend/requirements.txt "$APP/requirements.txt" \
    && cmp -s Backend/migrate.py "$APP/migrate.py" \
    && cmp -s Backend/system_routes.py "$APP/system_routes.py" \
+   && cmp -s Backend/release_verify.py "$APP/release_verify.py" \
    && cmp -s VERSION "$APP/VERSION" \
+   && cmp -s keys/pops_release_ed25519.pub.pem "$APP/keys/pops_release_ed25519.pub.pem" \
    && diff -rq Backend/migrations "$APP/migrations" >/dev/null 2>&1; then
     echo "Canlı backend zaten $REV ile aynı."
     exit 0
@@ -55,10 +57,13 @@ for f in Backend/migrations/*.sql; do
     install -o "$OWNER" -g "$OWNER" -m 644 "$f" "$APP/migrations/$(basename "$f")"
 done
 
-# Sürüm uçları modülü ve kök VERSION dosyası ($APP/VERSION -> /api/system/version okur)
+# Sürüm/release uçları modülleri + kök VERSION + release doğrulama açık anahtarı
 [ -e "$APP/system_routes.py" ] && cp -a "$APP/system_routes.py" "$APP/system_routes.py.bak-$STAMP"
 install -o "$OWNER" -g "$OWNER" -m 644 Backend/system_routes.py "$APP/system_routes.py"
+install -o "$OWNER" -g "$OWNER" -m 644 Backend/release_verify.py "$APP/release_verify.py"
 install -o "$OWNER" -g "$OWNER" -m 644 VERSION "$APP/VERSION"
+install -d -o "$OWNER" -g "$OWNER" -m 755 "$APP/keys"
+install -o "$OWNER" -g "$OWNER" -m 644 keys/pops_release_ed25519.pub.pem "$APP/keys/pops_release_ed25519.pub.pem"
 
 install -o "$OWNER" -g "$OWNER" -m 644 Backend/server.py "$APP/server.py"
 systemctl restart "$SVC"

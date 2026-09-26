@@ -9,3 +9,6 @@ slowapi==0.1.10
 python-dotenv==1.2.1
 python-multipart==0.0.20
 werkzeug==3.1.8
+# ed25519 release imza doğrulaması (Faz 2 tüketicisi) ve ileride Fernet (Faz 8) için.
+# Python 3.9 / AlmaLinux 9'da cp39 wheel ile kurulur.
+cryptography==50.0.0

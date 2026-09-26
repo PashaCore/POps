@@ -169,7 +169,7 @@ async def log_audit_event(pc_name: str, log_type: str, message: str, actor_id: s
 # Sistem/sürüm uçları ayrı router'da (server.py şişmesin). Döngüsel import olmasın diye
 # bağımlılıklar (require_admin, execute_query) enjekte edilir.
 from system_routes import build_router as _build_system_router
-app.include_router(_build_system_router(require_admin, execute_query))
+app.include_router(_build_system_router(require_admin, require_superadmin, execute_query))
 
 
 @app.on_event("startup")

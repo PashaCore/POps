@@ -193,7 +193,7 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
                                 'index' => 'Dashboard', 'devices' => 'Cihaz Yönetimi', 'labs' => 'Laboratuvar Yönetimi',
                                 'vision' => 'POpsVision', 'tasks' => 'Görev Kuyruğu', 'deploy' => 'Dosya Dağıtımı',
                                 'update' => 'Ajan Güncelleme', 'logger' => 'Log & Envanter', 'terminal' => 'Terminal',
-                                'settings' => 'Sistem Ayarları'
+                                'settings' => 'Sistem Ayarları', 'system' => 'Sistem & Sürüm'
                             ];
                             echo htmlspecialchars($titles[$current_page] ?? ucfirst($current_page), ENT_QUOTES, 'UTF-8');
                         ?></strong>

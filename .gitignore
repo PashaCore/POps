@@ -14,9 +14,10 @@ __pycache__/
 *.pyc
 .env
 venv/
-# Backend çalışma zamanı verileri (yüklenen paketler, ajan güncellemeleri)
+# Backend çalışma zamanı verileri (yüklenen paketler, ajan güncellemeleri, doğrulanmış release'ler)
 Backend/storage/
 Backend/updates/
+Backend/releases/
 
 # PHP / Web
 vendor/

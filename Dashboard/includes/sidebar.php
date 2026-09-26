@@ -18,6 +18,7 @@ $nav_items = [
     ['page' => 'deploy', 'icon' => 'fa-cloud-arrow-up', 'label' => 'Dosya Dağıtımı', 'show' => can_view('deploy'), 'section' => 'Operasyon'],
     ['page' => 'terminal', 'icon' => 'fa-terminal', 'label' => 'Terminal', 'show' => can_view('terminal'), 'section' => 'Operasyon'],
     ['page' => 'update', 'icon' => 'fa-arrows-rotate', 'label' => 'Ajan Güncelleme', 'show' => can_view('update'), 'section' => 'Sistem'],
+    ['page' => 'system', 'icon' => 'fa-server', 'label' => 'Sistem & Sürüm', 'show' => $role === 'superadmin', 'section' => 'Sistem'],
     ['page' => 'logger', 'icon' => 'fa-clipboard-list', 'label' => 'Log & Envanter', 'show' => can_view('logger'), 'section' => 'Sistem'],
     ['page' => 'policies', 'icon' => 'fa-shield-halved', 'label' => 'Politikalar', 'show' => can_view('policies') || $role === 'superadmin', 'section' => 'Sistem'],
     ['page' => 'settings', 'icon' => 'fa-gear', 'label' => 'Ayarlar', 'show' => can_view('settings'), 'section' => 'Sistem'],
