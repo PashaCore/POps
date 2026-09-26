@@ -1124,7 +1124,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     fetchCoreData();
     fetchAgentLogs();
-    setInterval(() => { fetchCoreData(); fetchAgentLogs(); }, 1000);
+    // Polling 1sn -> 5sn (cihaz sayisi arttikca her saniye cekilen payload buyuyordu) ve
+    // sekme arka plandayken durur; sekmeye donunce hemen bir kez tazeler.
+    setInterval(() => { if (document.hidden) return; fetchCoreData(); fetchAgentLogs(); }, 5000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { fetchCoreData(); fetchAgentLogs(); } });
 });
 </script>
 
