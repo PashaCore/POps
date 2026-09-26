@@ -37,6 +37,10 @@ class DeployUpdateInput(BaseModel):
     target_mode: str = "PC"          # "ALL" | "LAB" | "PC"
     targets: List[str] = []
 
+
+class EnforceInput(BaseModel):
+    enabled: bool
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Doğrulanmış release'lerin stage edildiği çalışma zamanı dizini (git dışı)
 RELEASES_DIR = os.path.join(BASE_DIR, "releases")
@@ -141,6 +145,11 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
                 return None
         return None
 
+    async def _enforce_enabled() -> bool:
+        rows = await execute_query(
+            "SELECT value FROM global_settings WHERE key='enforce_agent_auth'", fetch=True)
+        return bool(rows and str(rows[0]["value"]) == "1")
+
     @router.get("/api/health")
     async def health():
         try:
@@ -165,6 +174,7 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             "repo": GITHUB_REPO,
             "staged_version": staged_version,   # offline'da yüklenip doğrulanan sürüm
             "staged_tag": staged.get("tag") if staged else None,
+            "enforce_agent_auth": await _enforce_enabled(),
         }
 
     @router.post("/api/system/upload-release")
@@ -309,5 +319,17 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
                             {"version": version, "msi": msi_name, "dispatched": online, "offline": offline})
         return {"ok": True, "version": version, "msi": msi_name,
                 "dispatched": online, "skipped_offline": offline}
+
+    @router.post("/api/system/enforce-auth")
+    async def set_enforce(data: EnforceInput, auth: dict = Depends(require_superadmin)):
+        """Ajan kimlik zorlamasını aç/kapa. AÇIKKEN secret'sız ajan bağlantıları reddedilir —
+        yalnızca tüm filo yeni (kimlik doğrulayan) ajana geçtikten sonra açın."""
+        await execute_query(
+            "INSERT INTO global_settings (key, value) VALUES ('enforce_agent_auth', $1) "
+            "ON CONFLICT (key) DO UPDATE SET value = $1", ("1" if data.enabled else "0",))
+        await add_audit_log("*", "enforce_auth",
+                            "Ajan kimlik zorlaması %s" % ("AÇILDI" if data.enabled else "kapatıldı"),
+                            {"enabled": data.enabled})
+        return {"ok": True, "enforce_agent_auth": data.enabled}
 
     return router

@@ -31,6 +31,8 @@
     .status-error { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-solid); display: block; }
     .row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
     .muted-text { color: var(--text-tertiary); font-size: var(--text-sm); }
+    .fld { padding: 0.5rem 0.75rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface-2); color: var(--text-primary); font-size: var(--text-sm); }
+    .enroll-list code { font-size: 0.75rem; word-break: break-all; }
 </style>
 
 <div class="page-header">
@@ -77,9 +79,57 @@
         <div class="status-msg" id="upload-status"></div>
         <p class="note" style="margin-top:var(--space-4);">
             <i class="fas fa-circle-info"></i>
-            Yükleme yalnızca <strong>doğrular ve saklar</strong>. Sunucunun/ajanların bu paketle güncellenmesi
-            sonraki aşamada eklenecek.
+            Yükleme yalnızca <strong>doğrular ve saklar</strong>. Ajanlara göndermek için aşağıdaki
+            <strong>"Ajanlara imzalı güncelleme dağıt"</strong> kartını kullanın.
         </p>
+    </div>
+
+    <div class="sys-card">
+        <h2><i class="fas fa-key"></i> Ajan kayıt jetonu (enroll)</h2>
+        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
+            Kurulumda MSI'a verilecek jeton (<code>ENROLL_TOKEN</code>). Çok-kullanımlı jeton, bir laba
+            tek MSI ile toplu kurulum içindir.
+        </p>
+        <div class="row">
+            <input id="et-lab" class="fld" style="max-width:190px;" placeholder="Lab adı (opsiyonel)">
+            <input id="et-note" class="fld" style="max-width:200px;" placeholder="Açıklama (opsiyonel)">
+            <input id="et-uses" class="fld" type="number" min="1" value="1" title="Kaç makine kaydolabilir" style="max-width:110px;">
+            <input id="et-ttl" class="fld" type="number" min="1" value="72" title="Geçerlilik (saat)" style="max-width:120px;">
+            <button class="btn primary" id="btn-enroll"><i class="fas fa-plus"></i> Üret</button>
+        </div>
+        <div class="status-msg" id="enroll-status"></div>
+        <ul class="file-list enroll-list" id="enroll-list" style="margin-top:1rem;"></ul>
+    </div>
+
+    <div class="sys-card">
+        <h2><i class="fas fa-rocket"></i> Ajanlara imzalı güncelleme dağıt</h2>
+        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
+            Yüklenip doğrulanan sürümü (<strong id="dep-staged">—</strong>) seçili online ajanlara gönderir;
+            ajan MSI'ı sunucudan indirip imzayı kendi doğrular.
+        </p>
+        <div class="row">
+            <select id="dep-mode" class="fld" style="max-width:220px;">
+                <option value="ALL">Tüm ajanlar</option>
+                <option value="LAB">Belirli lab</option>
+                <option value="PC">Belirli cihaz(lar)</option>
+            </select>
+            <input id="dep-targets" class="fld" style="flex:1;min-width:200px;display:none;" placeholder="Lab adı / HW- kimlikleri (virgülle)">
+            <button class="btn primary" id="btn-deploy"><i class="fas fa-paper-plane"></i> Dağıt</button>
+        </div>
+        <div class="status-msg" id="deploy-status"></div>
+    </div>
+
+    <div class="sys-card">
+        <h2><i class="fas fa-lock"></i> Ajan kimlik zorlaması</h2>
+        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
+            Açıkken kimliği doğrulanmayan (secret'sız) ajan bağlantıları reddedilir.
+            <strong>Yalnızca tüm ajanlar yeni sürüme geçtikten sonra açın</strong> — yoksa eski ajanlar bağlantıyı kaybeder.
+        </p>
+        <div class="row">
+            <span id="enforce-badge"></span>
+            <button class="btn" id="btn-enforce">…</button>
+        </div>
+        <div class="status-msg" id="enforce-status"></div>
     </div>
 </div>
 
@@ -109,6 +159,8 @@
             $('v-running').textContent = d.running || '—';
             $('v-latest').textContent = d.latest || (d.checked_github ? '—' : 'bilinmiyor');
             $('v-staged').textContent = d.staged_version || '—';
+            $('dep-staged').textContent = d.staged_version || '—';
+            renderEnforce(!!d.enforce_agent_auth);
             setBadge(d);
         } catch (e) {
             $('v-running').textContent = 'hata';
@@ -156,6 +208,76 @@
         }
     }
 
+    // ---- enroll tokens ----
+    async function loadEnroll() {
+        try {
+            const rows = await (await fetch('/api/system/enroll-tokens')).json();
+            const ul = $('enroll-list'); ul.innerHTML = '';
+            (rows || []).slice(0, 20).forEach(r => {
+                const state = r.expired ? ' · süresi doldu' : (r.is_used ? ' · tükendi' : '');
+                const li = document.createElement('li');
+                li.innerHTML = '<i class="fas fa-key"></i> <code>' + escapeHtml(r.token) + '</code> '
+                    + '<span class="muted-text">' + escapeHtml(r.lab_name || '—') + ' · '
+                    + (r.use_count || 0) + '/' + (r.max_uses || 1) + ' kullanım' + state + '</span> '
+                    + '<button class="btn" style="padding:0.1rem 0.5rem;font-size:0.72rem;" data-id="' + r.id + '">sil</button>';
+                ul.appendChild(li);
+            });
+            ul.querySelectorAll('button[data-id]').forEach(b => b.addEventListener('click', async () => {
+                await fetch('/api/system/enroll-token/' + b.dataset.id, { method: 'DELETE' });
+                loadEnroll();
+            }));
+        } catch (e) { /* yoksay */ }
+    }
+    $('btn-enroll').addEventListener('click', async () => {
+        const st = $('enroll-status'); st.className = 'status-msg'; st.style.display = 'block'; st.textContent = 'Üretiliyor…';
+        try {
+            const body = {
+                lab_name: $('et-lab').value || null, note: $('et-note').value || null,
+                ttl_hours: parseInt($('et-ttl').value) || 72, max_uses: parseInt($('et-uses').value) || 1
+            };
+            const res = await fetch('/api/system/enroll-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const d = await res.json(); if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
+            st.className = 'status-msg status-success';
+            st.innerHTML = '<i class="fas fa-circle-check"></i> MSI kurulumunda: <code>ENROLL_TOKEN=' + escapeHtml(d.token) + '</code>';
+            loadEnroll();
+        } catch (e) { st.className = 'status-msg status-error'; st.textContent = e.message; }
+    });
+
+    // ---- deploy ----
+    $('dep-mode').addEventListener('change', () => { $('dep-targets').style.display = $('dep-mode').value === 'ALL' ? 'none' : 'block'; });
+    $('btn-deploy').addEventListener('click', async () => {
+        const st = $('deploy-status'); st.className = 'status-msg'; st.style.display = 'block'; st.textContent = 'Dağıtılıyor…';
+        try {
+            const mode = $('dep-mode').value;
+            const targets = mode === 'ALL' ? [] : $('dep-targets').value.split(',').map(s => s.trim()).filter(Boolean);
+            const res = await fetch('/api/system/deploy-update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_mode: mode, targets }) });
+            const d = await res.json(); if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
+            st.className = 'status-msg status-success';
+            st.innerHTML = '<i class="fas fa-circle-check"></i> ' + escapeHtml(d.version) + ' gönderildi: ' + (d.dispatched || []).length + ' online'
+                + ((d.skipped_offline || []).length ? (', ' + d.skipped_offline.length + ' offline atlandı') : '');
+        } catch (e) { st.className = 'status-msg status-error'; st.textContent = e.message; }
+    });
+
+    // ---- enforce ----
+    function renderEnforce(on) {
+        $('enforce-badge').innerHTML = on
+            ? '<span class="badge ok"><i class="fas fa-lock"></i> Zorlama AÇIK</span>'
+            : '<span class="badge warn"><i class="fas fa-lock-open"></i> Zorlama kapalı (accept-both)</span>';
+        const b = $('btn-enforce'); b.textContent = on ? 'Kapat' : 'Aç'; b.dataset.on = on ? '1' : '0';
+        b.classList.toggle('primary', !on);
+    }
+    $('btn-enforce').addEventListener('click', async () => {
+        const turnOn = $('btn-enforce').dataset.on !== '1';
+        if (turnOn && !confirm('Zorlamayı AÇMAK üzeresiniz. Yeni sürüme geçmemiş tüm ajanlar bağlantıyı kaybeder. Emin misiniz?')) return;
+        const st = $('enforce-status'); st.className = 'status-msg'; st.style.display = 'block'; st.textContent = '…';
+        try {
+            const res = await fetch('/api/system/enforce-auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: turnOn }) });
+            const d = await res.json(); if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
+            renderEnforce(d.enforce_agent_auth);
+            st.className = 'status-msg status-success'; st.textContent = d.enforce_agent_auth ? 'Zorlama açıldı.' : 'Zorlama kapatıldı.';
+        } catch (e) { st.className = 'status-msg status-error'; st.textContent = e.message; }
+    });
+
     $('btn-check').addEventListener('click', async function () {
         this.disabled = true;
         const icon = this.querySelector('i');
@@ -167,5 +289,6 @@
     $('btn-upload').addEventListener('click', upload);
 
     loadVersion(false);
+    loadEnroll();
 })();
 </script>
