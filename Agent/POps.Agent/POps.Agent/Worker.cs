@@ -51,9 +51,6 @@ namespace POpsAgent
         // 🚀 ARTIK SABİT DEĞİL, HELPERS'TAN OKUNACAK
         private string _serverUrl;
 
-        // Sunucunun enroll sonrası verdiği cihaz secret'ı (Faz 3). Yoksa null.
-        private volatile string _agentSecret;
-
         // Sunucu kimliksiz ajanı reddederken WebSocket'i bu kodla kapatır (enforce_agent_auth açıkken)
         private const WebSocketCloseStatus AuthRejectedCloseStatus = (WebSocketCloseStatus)4401;
 
@@ -107,7 +104,7 @@ namespace POpsAgent
             POpsHelpers.Log("AGENT", $"Kimlik Başlatıldı: {_hwId}");
 
             AgentCredentials.Initialize();
-            _agentSecret = AgentCredentials.LoadSecret();
+            AgentCredentials.LoadSecret();
 
             _cachedDna = GetHardwareDnaInternal();
             _cachedInventory = BuildInventoryInternal();
@@ -149,7 +146,9 @@ namespace POpsAgent
 
                     while (_commandWs.State == WebSocketState.Open && !stoppingToken.IsCancellationRequested)
                     {
+                        // İlk mesaj daima dna_payload'lı heartbeat'tir (sunucu kimliği ondan çözer)
                         await SendHeartbeatAsync(stoppingToken);
+                        await ReportUpdateResultAsync(stoppingToken);
                         await Task.Delay(5000, stoppingToken);
                     }
                 }
@@ -189,7 +188,7 @@ namespace POpsAgent
         {
             if (!POpsHelpers.IsSecureServerUrl(_serverUrl)) return "yok (şifresiz bağlantı)";
 
-            string secret = _agentSecret ??= AgentCredentials.LoadSecret();
+            string secret = AgentCredentials.CurrentSecret ?? AgentCredentials.LoadSecret();
             string enrollToken = AgentCredentials.GetEnrollToken();
 
             if (secret != null) ws.Options.SetRequestHeader("X-Agent-Secret", secret);
@@ -211,7 +210,6 @@ namespace POpsAgent
                 return;
             }
 
-            _agentSecret = secret;
             if (AgentCredentials.SaveSecret(secret, _hwId))
             {
                 AgentCredentials.ForgetEnrollToken();
@@ -394,6 +392,9 @@ namespace POpsAgent
             if (_visionWs != null && _visionWs.State == WebSocketState.Open) return;
             string visionWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://") + $"/ws/vision/{_hwId}";
             var newWs = new ClientWebSocket();
+            // Sunucu enforce_agent_auth açıkken kimliksiz Vision tünelini (sahte ekran görüntüsü) reddeder
+            newWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
+            ApplyAuthHeaders(newWs);
             try
             {
                 await newWs.ConnectAsync(new Uri(visionWsUrl), token);
@@ -571,6 +572,26 @@ namespace POpsAgent
             finally { _wsCommandLock.Release(); }
         }
 
+        // POpsUpdater'ın bıraktığı sonuç (update-result.json) sunucuya bir kez "update_result" olarak iletilir.
+        // Updater sonucu yeni sürüm açıldıktan sonra yazdığı için her heartbeat'te bakılır.
+        private async Task ReportUpdateResultAsync(CancellationToken token)
+        {
+            Dictionary<string, object> message = AgentUpdate.PendingResultMessage();
+            if (message == null) return;
+
+            byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message));
+            await _wsCommandLock.WaitAsync(token);
+            try
+            {
+                if (_commandWs == null || _commandWs.State != WebSocketState.Open) return;
+                await _commandWs.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
+            }
+            finally { _wsCommandLock.Release(); }
+
+            AgentUpdate.MarkResultReported();
+            POpsHelpers.Log("UPDATE", $"Güncelleme sonucu sunucuya iletildi: {message["status"]}.");
+        }
+
         private string InitializeIdentity()
         {
             try
@@ -701,9 +722,17 @@ namespace POpsAgent
             try
             {
                 string json = JsonSerializer.Serialize(_cachedInventory);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                string apiUrl = _serverUrl.TrimEnd('/') + $"/api/inventory/{_hwId}";
-                await _httpClient.PostAsync(apiUrl, content);
+                using var request = new HttpRequestMessage(HttpMethod.Post, _serverUrl.TrimEnd('/') + $"/api/inventory/{_hwId}")
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json"),
+                };
+                AgentCredentials.AddHttpAuth(request, _hwId);
+                using var response = await _httpClient.SendAsync(request);
+                if (!response.IsSuccessStatusCode)
+                {
+                    POpsHelpers.Log("AGENT", $"Donanım envanteri gönderilemedi: HTTP {(int)response.StatusCode}.", true);
+                    return;
+                }
                 POpsHelpers.Log("AGENT", "Donanım envanteri sunucuya gönderildi.");
             }
             catch { }

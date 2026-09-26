@@ -58,6 +58,41 @@ namespace POpsAgent
             catch (Exception ex) { POpsHelpers.Log("UPDATE", $"health.json yazılamadı: {ex.Message}", true); }
         }
 
+        public static string ReportedResultPath => Path.Combine(DataDir, "update-result.reported.json");
+
+        // Updater'ın bıraktığı ve henüz sunucuya iletilmemiş sonuç, sunucunun beklediği "update_result" mesajı
+        // olarak (status = outcome); yoksa null. İletildikten sonra MarkResultReported ile kenara alınır.
+        public static Dictionary<string, object> PendingResultMessage()
+        {
+            try
+            {
+                if (!File.Exists(ResultPath)) return null;
+                using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(ResultPath));
+                JsonElement result = doc.RootElement;
+                var message = new Dictionary<string, object>
+                {
+                    ["type"] = "update_result",
+                    ["status"] = Str(result, "outcome") ?? "unknown",
+                };
+                foreach (string key in new[] { "from_version", "to_version", "detail", "rollback", "agent_state" })
+                    if (Str(result, key) is string value) message[key] = value;
+                if (result.TryGetProperty("msi_exit_code", out JsonElement code) && code.TryGetInt32(out int exitCode)) message["msi_exit_code"] = exitCode;
+                if (result.TryGetProperty("reboot_required", out JsonElement reboot) && (reboot.ValueKind == JsonValueKind.True || reboot.ValueKind == JsonValueKind.False))
+                    message["reboot_required"] = reboot.GetBoolean();
+                return message;
+            }
+            catch (Exception ex) when (ex is IOException || ex is JsonException)
+            {
+                return null;
+            }
+        }
+
+        public static void MarkResultReported()
+        {
+            try { File.Move(ResultPath, ReportedResultPath, true); }
+            catch (Exception ex) { POpsHelpers.Log("UPDATE", $"update-result.json kenara alınamadı: {ex.Message}", true); }
+        }
+
         public static void LogLastResult()
         {
             try

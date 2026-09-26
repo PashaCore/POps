@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net.Http;
 using System.Runtime.Versioning;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -56,6 +57,21 @@ namespace POpsAgent
 
         public static bool IsWellFormed(string value) => value != null && TokenRegex.IsMatch(value);
 
+        // Bu çalışmada bilinen cihaz secret'ı (LoadSecret / SaveSecret günceller). Komut ve Vision WebSocket'i ile
+        // ajan HTTP çağrıları buradan okur; diske yazılamasa bile servis yeniden başlayana kadar kullanılır.
+        private static volatile string _currentSecret;
+        public static string CurrentSecret => _currentSecret;
+
+        // Ajan HTTP uçları (inventory, policy_alert) sunucuda enforce_agent_auth açıkken X-Agent-Id + X-Agent-Secret
+        // bekler. Secret yalnızca şifreli (ya da aynı makinedeki) sunucuya gönderilir.
+        public static void AddHttpAuth(HttpRequestMessage request, string hwId)
+        {
+            string secret = _currentSecret;
+            if (secret == null || string.IsNullOrEmpty(hwId) || !POpsHelpers.IsSecureServerUrl(request.RequestUri?.ToString())) return;
+            request.Headers.TryAddWithoutValidation("X-Agent-Id", hwId);
+            request.Headers.TryAddWithoutValidation("X-Agent-Secret", secret);
+        }
+
         // Servis açılışında: güvenli klasörü (ACL dahil) hazırlar ve açıkta kalan gizli ayarları taşır.
         public static void Initialize()
         {
@@ -75,6 +91,7 @@ namespace POpsAgent
             SecretRecord mirror = mirrorPath == null ? null : ParseRecord(SecureStore.Read(mirrorPath, requireTrustedOwner: true));
             SecretRecord best = Newest(primary, mirror);
             if (best == null) return null;
+            _currentSecret = best.Secret;
 
             if (best != primary)
             {
@@ -89,6 +106,7 @@ namespace POpsAgent
         // En az bir konuma yazılabildiyse true.
         public static bool SaveSecret(string secret, string pcName)
         {
+            _currentSecret = secret;
             var record = new SecretRecord { Secret = secret, PcName = pcName, SavedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
             bool saved = TryWriteRecord(SecureStore.PathOf(SecretFileName), record);
             string mirrorPath = MirrorPath();

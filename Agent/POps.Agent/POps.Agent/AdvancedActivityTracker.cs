@@ -226,8 +226,13 @@ namespace POpsAgent
 
                     using var http = new System.Net.Http.HttpClient();
                     string json = System.Text.Json.JsonSerializer.Serialize(payload);
-                    var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-                    await http.PostAsync(_serverUrl.TrimEnd('/') + "/api/policy_alert", content);
+                    using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, _serverUrl.TrimEnd('/') + "/api/policy_alert")
+                    {
+                        Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+                    };
+                    // Sunucu enforce_agent_auth açıkken kimliksiz uyarıyı reddeder
+                    AgentCredentials.AddHttpAuth(request, _agentHwId);
+                    using var response = await http.SendAsync(request);
 
                     // Eğer karantina limiti aşıldıysa
                     if (_policy.auto_quarantine && _dnsViolationsCount >= _policy.quarantine_threshold)
