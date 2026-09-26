@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# POps backend'ini repodaki commit'lenmiş koddan canlıya alır:
+# Backend/{server.py,migrate.py,migrations/} -> /opt/PashaCore_API, gerekirse pip
+# install, servis restart, sağlık kontrolü; kontrol başarısızsa eski server.py'ye
+# otomatik geri döner.
+#
+# NOT: Bu, sürüm takibi için tutulan REFERANS kopyadır. Canlıda çalışan authoritative
+# kopya /usr/local/sbin/pops-deploy-backend'dedir (root'a ait, betiğin kendini çalışma
+# sırasında ezmemesi için repoda değil host'ta durur). Bu dosyayı değiştirdiğinizde
+# host'takini de elle güncelleyin.
+set -euo pipefail
+
+REPO=/home/pasha/domains/dev.pashacore.com.tr/public_html
+APP=/opt/PashaCore_API
+SVC=pashacore
+OWNER=pashacore_admin
+STAMP=$(date +%Y%m%d-%H%M%S)
+
+[ "$(id -u)" -eq 0 ] || { echo "root olarak çalıştır"; exit 1; }
+cd "$REPO"
+
+if ! git diff --quiet HEAD -- Backend; then
+    echo "Backend/ altında commit'lenmemiş değişiklik var, önce commit'le."
+    exit 1
+fi
+REV=$(git rev-parse --short HEAD)
+
+if cmp -s Backend/server.py "$APP/server.py" \
+   && cmp -s Backend/requirements.txt "$APP/requirements.txt" \
+   && cmp -s Backend/migrate.py "$APP/migrate.py" \
+   && diff -rq Backend/migrations "$APP/migrations" >/dev/null 2>&1; then
+    echo "Canlı backend zaten $REV ile aynı."
+    exit 0
+fi
+
+cp -a "$APP/server.py" "$APP/server.py.bak-$STAMP"
+
+# Servis kullanıcısı repo klasörünü okuyamaz; dosya önce $APP'e kopyalanır.
+if ! cmp -s Backend/requirements.txt "$APP/requirements.txt"; then
+    [ -e "$APP/requirements.txt" ] && cp -a "$APP/requirements.txt" "$APP/requirements.txt.bak-$STAMP"
+    install -o "$OWNER" -g "$OWNER" -m 644 Backend/requirements.txt "$APP/requirements.txt"
+    sudo -H -u "$OWNER" "$APP/venv/bin/pip" install -q --disable-pip-version-check -r "$APP/requirements.txt"
+fi
+
+# Migration çalıştırıcısı ve SQL dosyaları da senkronlanır; server.py açılışta
+# run_migrations() ile bekleyen migration'ları (idempotent) uygular. Not: ileride
+# yıkıcı/ağır bir migration gelirse, açılışın sağlık kontrolüyle yarışmaması için
+# burada restart'tan ÖNCE pg_dump + "python migrate.py" adımı eklenmeli (Faz 5).
+[ -e "$APP/migrate.py" ] && cp -a "$APP/migrate.py" "$APP/migrate.py.bak-$STAMP"
+install -o "$OWNER" -g "$OWNER" -m 644 Backend/migrate.py "$APP/migrate.py"
+install -d -o "$OWNER" -g "$OWNER" -m 755 "$APP/migrations"
+for f in Backend/migrations/*.sql; do
+    install -o "$OWNER" -g "$OWNER" -m 644 "$f" "$APP/migrations/$(basename "$f")"
+done
+
+install -o "$OWNER" -g "$OWNER" -m 644 Backend/server.py "$APP/server.py"
+systemctl restart "$SVC"
+sleep 4
+
+ok=1
+systemctl is-active --quiet "$SVC" || ok=0
+[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/agent_policies)" = 200 ] || ok=0
+[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/devices)" = 401 ] || ok=0
+
+if [ "$ok" = 1 ]; then
+    echo "Backend $REV canlıda. Yedek: $APP/server.py.bak-$STAMP"
+else
+    echo "Sağlık kontrolü başarısız, eski server.py'ye dönülüyor."
+    journalctl -u "$SVC" -n 20 --no-pager
+    install -o "$OWNER" -g "$OWNER" -m 644 "$APP/server.py.bak-$STAMP" "$APP/server.py"
+    systemctl restart "$SVC"
+    exit 1
+fi

@@ -27,6 +27,9 @@ from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 load_dotenv()
 
+# Sema artik migration'larla kurulur (migrate.py); init_db() kaldirildi.
+from migrate import run_migrations
+
 def require_env(name: str) -> str:
     """Zorunlu ortam değişkenini oku; tanımlı değilse sunucu açıklayıcı bir hatayla durur."""
     value = os.environ.get(name)
@@ -160,65 +163,8 @@ async def log_audit_event(pc_name: str, log_type: str, message: str, actor_id: s
     else:
         await execute_query("INSERT INTO agent_logs (pc_name, log_type, message, timestamp) VALUES ($1, $2, $3, $4)", (pc_name, log_type, message, now))
 
-async def init_db():
-    async with db_pool.acquire() as conn:
-        await conn.execute('''CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
-            role TEXT DEFAULT 'admin', last_login TEXT, permissions TEXT DEFAULT '[]')''')
-        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT DEFAULT '[]'")
-        await conn.execute('''CREATE TABLE IF NOT EXISTS clients (
-            pc_name TEXT PRIMARY KEY, hostname TEXT, lab_name TEXT, last_seen TEXT, status TEXT,
-            active_window TEXT, boot_count INTEGER DEFAULT 0, logged_user TEXT DEFAULT '-',
-            ip_address TEXT, dna_uuid TEXT, dna_bios TEXT, dna_disk TEXT, dna_mac TEXT,
-            dna_ram TEXT, cap_ram_readable BOOLEAN DEFAULT TRUE, is_quarantined BOOLEAN DEFAULT FALSE)''')
-        # Panelde cihaza verilen görünen ad (rename_device)
-        await conn.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS display_name TEXT")
-        await conn.execute('''CREATE TABLE IF NOT EXISTS device_audit_logs (
-            id SERIAL PRIMARY KEY, hw_id TEXT, action TEXT, reason TEXT, changes TEXT, timestamp TEXT)''')
-        await conn.execute('''CREATE TABLE IF NOT EXISTS lab_settings (lab_name TEXT PRIMARY KEY, main_pc TEXT)''')
-        await conn.execute("ALTER TABLE lab_settings ADD COLUMN IF NOT EXISTS layout_json TEXT DEFAULT '{}'")
-        # Görev kuyruğu: dağıtım, terminal ve toplu işlemler (process_queue)
-        await conn.execute('''CREATE TABLE IF NOT EXISTS tasks (
-            id SERIAL PRIMARY KEY, target_pc TEXT, target_lab TEXT, script_path TEXT,
-            status TEXT, created_at TEXT, output TEXT)''')
-        # Vision oturumlarının denetim kaydı
-        await conn.execute('''CREATE TABLE IF NOT EXISTS enterprise_audit_logs (
-            session_id TEXT PRIMARY KEY, admin_id INTEGER, admin_name TEXT, admin_role TEXT,
-            target_pc TEXT, start_time TEXT, end_time TEXT, reason TEXT,
-            is_notified BOOLEAN, is_mandatory BOOLEAN, status TEXT)''')
-        await conn.execute('''CREATE TABLE IF NOT EXISTS global_settings (key TEXT PRIMARY KEY, value TEXT)''')
-        await conn.execute('''CREATE TABLE IF NOT EXISTS packages (id TEXT PRIMARY KEY, name TEXT, type TEXT, meta TEXT, command TEXT, icon TEXT, color TEXT)''')
-        await conn.execute('''CREATE TABLE IF NOT EXISTS custom_labs (lab_name TEXT PRIMARY KEY)''')
-        await conn.execute('''CREATE TABLE IF NOT EXISTS hw_inventory (
-            pc_name TEXT PRIMARY KEY, hostname TEXT, cpu TEXT, ram TEXT, motherboard TEXT, 
-            gpu TEXT, os_version TEXT, ip_address TEXT, mac_address TEXT, disk_info TEXT, last_updated TEXT)''')
-        await conn.execute('''CREATE TABLE IF NOT EXISTS agent_logs (id SERIAL PRIMARY KEY, pc_name TEXT, log_type TEXT, message TEXT, timestamp TEXT)''')
-        # Tek kullanımlık bypass token tablosu
-        await conn.execute('''CREATE TABLE IF NOT EXISTS bypass_tokens (
-            id SERIAL PRIMARY KEY,
-            pc_name TEXT NOT NULL,
-            token TEXT NOT NULL UNIQUE,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            expires_at TIMESTAMPTZ NOT NULL,
-            is_used BOOLEAN DEFAULT FALSE
-        )''')
-        await conn.execute('''CREATE TABLE IF NOT EXISTS agent_logs_v2 (
-            id SERIAL PRIMARY KEY, 
-            pc_name TEXT, 
-            actor_id TEXT, 
-            event_type TEXT, 
-            category TEXT, 
-            action TEXT, 
-            risk_level TEXT, 
-            reason TEXT, 
-            message TEXT, 
-            meta_data JSONB, 
-            timestamp TEXT
-        )''')
-        await conn.execute('''CREATE TABLE IF NOT EXISTS agent_versions (pc_name TEXT PRIMARY KEY, version TEXT, last_update TEXT)''')
-        
-        await conn.execute("INSERT INTO global_settings (key, value) VALUES ('concurrent_limit', '5') ON CONFLICT (key) DO NOTHING")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_dna_uuid ON clients(dna_uuid)")
+# NOT: Veritabani semasi artik yalnizca migration'larla (migrate.py + migrations/NNNN_*.sql)
+# kurulur. Yeni tablo/kolon eklerken buraya degil, yeni bir numarali .sql dosyasina yazin.
 
 @app.on_event("startup")
 async def startup_event():
@@ -227,7 +173,7 @@ async def startup_event():
     for i in range(5):
         try:
             db_pool = await asyncpg.create_pool(**DB_CONFIG, min_size=5, max_size=100)
-            await init_db()
+            await run_migrations(db_pool)
             print("✅ PostgreSQL Bağlantısı Başarılı!")
             # Açılışta hiçbir ajan bağlı değil; bağlananlar yeniden Online yazılır
             await execute_query("UPDATE clients SET status = 'Offline' WHERE status IS DISTINCT FROM 'Offline'")

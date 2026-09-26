@@ -107,3 +107,45 @@ jobs:
             exit 1
           fi
           echo "Sürüm tutarlı: $VER"
+
+  migrations:
+    name: Migrations (PostgreSQL 13)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: pops
+          POSTGRES_PASSWORD: pops
+          POSTGRES_DB: pops_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USER: pops
+      DB_PASS: pops
+      DB_NAME: pops_ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install migrate.py deps
+        run: pip install asyncpg python-dotenv
+      - name: Fresh migrate + schema check + idempotency
+        # Boş bir veritabanında migrate.py tüm şemayı kurmalı, şema kontrolünü geçmeli
+        # ve ikinci çalıştırma hiçbir şey uygulamamalı (idempotent).
+        run: |
+          set -euo pipefail
+          echo "== 1. calistirma (bos DB)"
+          python Backend/migrate.py
+          echo "== sema dogrulama"
+          python .github/scripts/ci_schema_check.py
+          echo "== 2. calistirma (idempotent olmali)"
+          out=$(python Backend/migrate.py)
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "yok (her sey guncel)" || { echo "::error::Migration idempotent degil"; exit 1; }

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Backend:** The database schema is now owned by a migration runner (`Backend/migrate.py` + numbered `Backend/migrations/NNNN_*.sql`) instead of the inline `init_db()` function, which is removed. On startup the server applies any pending migration under a PostgreSQL advisory lock; `0001_baseline.sql` is idempotent, so an existing live database only gains a `schema_migrations` bookkeeping table. New tables and columns must be added as a new numbered migration, never inline in `server.py`. The deploy script now syncs `migrate.py` and `migrations/` to the app directory, and CI runs the migration on an empty PostgreSQL 13 to prove it builds the full schema and is idempotent.
 - **Agent/CI:** Version numbers now come from a single source. The repository-root `VERSION` file feeds `<Version>` to every agent project through `Agent/Directory.Build.props`, and each component reads its version from its own assembly at runtime instead of a hardcoded constant. The stale `POpsWatchdog` (`2.0.1-GHOST-SERGEANT`) and `POpsVision` (`1.0.7-FULL-COMMAND`) version strings are gone. A CI job fails the build when `VERSION`, the top CHANGELOG release heading and the built assembly `<Version>` disagree.
 
 ### Fixed

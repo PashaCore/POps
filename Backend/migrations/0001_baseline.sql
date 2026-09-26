@@ -5,9 +5,10 @@
 -- kurduğu şemayı birebir tanımlar. İkisi `pg_dump --schema-only` ile
 -- karşılaştırılmış ve aynı olduğu doğrulanmıştır.
 --
--- Şimdilik şemayı init_db() kurar; bu dosya başvuru ve ileride gelecek
--- migration sisteminin (Alembic) başlangıç noktasıdır. Şemaya yapılan her
--- değişiklik hem init_db()'ye hem de yeni bir 000N_*.sql dosyasına yazılmalıdır.
+-- Şemanın tek sahibi migration çalıştırıcısıdır (Backend/migrate.py): bu dosyayı ve
+-- sonraki 000N_*.sql dosyalarını sırayla, her birini yalnızca bir kez uygular ve
+-- schema_migrations tablosuna kaydeder. Şemaya yapılan her değişiklik server.py'ye
+-- değil, yeni numaralı bir 000N_*.sql dosyasına yazılır.
 --
 -- Bilinçli olarak olduğu gibi bırakılanlar (sonraki migration'larda ele alınacak):
 --   * Zaman damgaları TEXT ('YYYY-MM-DD HH:MM:SS'); yalnızca bypass_tokens
