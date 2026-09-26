@@ -11,3 +11,5 @@ Type=oneshot
 ExecStart=/usr/local/sbin/pops-selfupdate
 # İstek dosyası backend tarafından yazılır; içeriği YÜRÜTÜLMEZ, yalnızca tetikleyicidir.
 Environment=POPS_SELFUPDATE_DIR=/var/lib/pops
+# git'in /root/.gitconfig'i (safe.directory) okuyabilmesi için HOME sabitlenir.
+Environment=HOME=/root

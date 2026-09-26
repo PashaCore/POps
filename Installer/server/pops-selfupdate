@@ -32,6 +32,13 @@ write_status() {   # $1=state  $2=ok(true/false)  $3=message
 
 [ -f "$REQ" ] || exit 0        # istek yoksa sessizce çık (path-unit yine de tetikleyebilir)
 rm -f "$REQ"
+
+# systemd altında (root, minimal ortam) git, pasha kullanıcısına ait repoyu "dubious
+# ownership" diye reddeder. HOME'u sabitle ve repoyu açıkça güvenli işaretle; bu ayar
+# çocuk süreç olan pops-deploy-backend'e de miras kalır (o da git çalıştırır).
+export HOME=/root
+git config --global --get-all safe.directory 2>/dev/null | grep -qFx "$REPO" \
+    || git config --global --add safe.directory "$REPO"
 : >> "$LOG"; chown "$OWNER:$OWNER" "$LOG" 2>/dev/null || true
 echo "==== $(date -u +%Y-%m-%dT%H:%M:%SZ) self-update başladı ====" >> "$LOG"
 write_status running true "guncelleme basladi"
