@@ -39,7 +39,7 @@ namespace POpsAgent
     [SupportedOSPlatform("windows")]
     public class Worker : BackgroundService
     {
-        public const string APP_VERSION = "v1.0.0 Stable";
+        public const string APP_VERSION = "v0.1.2-alpha";
 
         private readonly ILogger<Worker> _logger;
         private readonly string _pcName;

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2-alpha] - 2026-09-26
+
+Security and bug-fix release, and the first release published as two install files: `pops-server-0.1.2-alpha.tar.gz` (backend and dashboard) and `POps-Agent-0.1.2-alpha-win-x64.zip` (agent, tray, watchdog and updater; needs the .NET 8 Desktop Runtime, x64). Unsigned pilot build.
+
+Upgrading the server: install the pinned requirements (`pip install -r Backend/requirements.txt`, which replaces `python-jose` with `PyJWT`), restart the backend, and delete `POPS_WOL_CONFIRM_PASSWORD` from `.env`.
+
 ### Security
 - **Backend:** Panel login accepts bcrypt password hashes only. The fallback that accepted legacy unsalted SHA-256 hashes is removed; an account still stored that way can no longer log in until an admin sets a new password.
 - **Backend:** `/docs`, `/redoc` and `/openapi.json` are no longer served.
@@ -38,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **Configuration:** `POPS_WOL_CONFIRM_PASSWORD` is no longer used and can be deleted from `.env`.
 - **Dashboard:** Dark mode. The panel now uses a single light theme; the theme toggle buttons and the saved `pops_theme` preference are gone, and native form controls stay light even when the operating system prefers dark.
+
+### Known issues
+- **Agent updates:** Updating through the Update Center does not replace `POpsTray`, because the updater does not close the running tray and its files stay locked; the copy then stops part-way. Until the updater is fixed, leave `POpsTray.*` out of packages uploaded to the Update Center. The tray changes in this release (no stealth mode, preview notices, reduced menu) reach a device only through a fresh install.
+- **Agent connections** are not authenticated with per-device credentials yet. Allow the backend port or `/ws/agent` only from lab networks.
+- **.NET 8** reaches end of support on 10 November 2026; the agent moves to .NET 10 in a later release.
 
 ---
 
@@ -99,6 +110,7 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.1-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.2-alpha...HEAD
+[0.1.2-alpha]: https://github.com/PashaCore/POps/compare/v0.1.1-alpha...v0.1.2-alpha
 [0.1.1-alpha]: https://github.com/PashaCore/POps/compare/v0.1.0-alpha...v0.1.1-alpha
 [0.1.0-alpha]: https://github.com/PashaCore/POps/releases/tag/v0.1.0-alpha
