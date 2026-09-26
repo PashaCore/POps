@@ -861,9 +861,22 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             if payload.get("type") == "update_result":
                 # Ajanın güncelleme sonucu (POpsUpdater update-result.json'ından). Ajanların
                 # yazamadığı device_audit_logs'a düşür + panele bildir.
-                detail = {k: payload.get(k) for k in ("status", "from_version", "to_version", "detail")}
+                detail = {k: payload.get(k) for k in
+                          ("status", "from_version", "to_version", "detail", "rollback", "agent_state",
+                           "msi_exit_code", "reboot_required")}
                 await add_audit_log(active_hwid, "update_result",
                                     f"Ajan guncelleme sonucu: {payload.get('status', '?')}", detail)
+                # "unmanaged" (rollback da başarısız -> serviste ürün yok) ya da başarısız durumlar
+                # kritik olarak da loglanır ki panelin güvenlik log'unda öne çıksın.
+                _astate = str(payload.get("agent_state") or "")
+                _st = str(payload.get("status") or "")
+                if _astate == "unmanaged" or _st in ("rollback_failed", "failed", "reverted_by_freeze",
+                                                     "install_failed", "error", "rejected"):
+                    await log_audit_event(active_hwid, "Critical Security",
+                                          f"Ajan guncelleme sorunu: {_astate or _st}",
+                                          actor_id="System/Update", event_type="agent.update",
+                                          category="system_maintenance", action="update_problem",
+                                          risk_level="critical", reason=(_astate or _st), meta_data=detail)
                 await manager.broadcast_to_panels({"type": "update_result", "pc_name": active_hwid, **detail})
                 continue
             await handle_routine_payload(payload)
