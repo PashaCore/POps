@@ -165,3 +165,44 @@ jobs:
         # Geçici anahtarla imzala/doğrula, kurcalanmış manifest ve bozuk artefakt reddedilmeli.
         # Gerçek imza anahtarı (secret) gerekmez.
         run: python tools/sign_release.py selftest
+
+  security:
+    name: Security invariants (integration)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: pops
+          POSTGRES_PASSWORD: pops
+          POSTGRES_DB: pops_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USER: pops
+      DB_PASS: pops
+      DB_NAME: pops_ci
+      JWT_SECRET: ci-test-secret
+      CORS_ALLOWED_ORIGINS: ""
+      POPS_TEST_HTTP: http://127.0.0.1:8099
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install backend deps
+        run: pip install -r Backend/requirements.txt
+      - name: Migrate + start server + run security invariants
+        # Enroll->secret, enforce->4401, valid secret ok, unauth HTTP 401, wrong-signature
+        # upload rejected — hepsi çalışan sunucuya karşı doğrulanır.
+        run: |
+          set -euo pipefail
+          python Backend/migrate.py
+          ( cd Backend && python -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/uvicorn.log 2>&1 & )
+          curl --retry-connrefused --retry 40 --retry-delay 1 -sf http://127.0.0.1:8099/api/health >/dev/null || { echo "server did not start"; cat /tmp/uvicorn.log; exit 1; }
+          python Backend/tests/test_security.py
