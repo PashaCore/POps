@@ -123,7 +123,8 @@ async def valid_enroll_token(token: Optional[str]) -> Optional[dict]:
         return None
     try:
         rows = await execute_query(
-            "SELECT id, lab_name FROM enroll_tokens WHERE token=$1 AND NOT is_used AND expires_at > NOW()",
+            "SELECT id, lab_name FROM enroll_tokens "
+            "WHERE token=$1 AND NOT is_used AND expires_at > NOW() AND use_count < max_uses",
             (token,), fetch=True)
     except Exception:
         return None
@@ -203,12 +204,6 @@ async def log_audit_event(pc_name: str, log_type: str, message: str, actor_id: s
 
 # NOT: Veritabani semasi artik yalnizca migration'larla (migrate.py + migrations/NNNN_*.sql)
 # kurulur. Yeni tablo/kolon eklerken buraya degil, yeni bir numarali .sql dosyasina yazin.
-
-# Sistem/sürüm uçları ayrı router'da (server.py şişmesin). Döngüsel import olmasın diye
-# bağımlılıklar (require_admin, execute_query) enjekte edilir.
-from system_routes import build_router as _build_system_router
-app.include_router(_build_system_router(require_admin, require_superadmin, execute_query))
-
 
 @app.on_event("startup")
 async def startup_event():
@@ -807,8 +802,10 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     "ON CONFLICT (pc_name) DO UPDATE SET secret_hash=$2, rotated_at=NOW()",
                     (active_hwid, _hash_secret(new_secret)))
                 await execute_query(
-                    "UPDATE enroll_tokens SET is_used=TRUE, used_by=$1, used_at=NOW() "
-                    "WHERE id=$2 AND NOT is_used", (active_hwid, pending_enroll["id"]))
+                    "UPDATE enroll_tokens SET use_count = use_count + 1, "
+                    "is_used = (use_count + 1 >= max_uses), used_by=$1, used_at=NOW() "
+                    "WHERE id=$2 AND NOT is_used AND use_count < max_uses",
+                    (active_hwid, pending_enroll["id"]))
                 if pending_enroll.get("lab_name"):
                     await execute_query("UPDATE clients SET lab_name=$1 WHERE pc_name=$2",
                                         (pending_enroll["lab_name"], active_hwid))
@@ -840,6 +837,14 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 continue
             if payload.get("type") == "vision_rejected":
                 await manager.broadcast_to_panels(payload)
+                continue
+            if payload.get("type") == "update_result":
+                # Ajanın güncelleme sonucu (POpsUpdater update-result.json'ından). Ajanların
+                # yazamadığı device_audit_logs'a düşür + panele bildir.
+                detail = {k: payload.get(k) for k in ("status", "from_version", "to_version", "detail")}
+                await add_audit_log(active_hwid, "update_result",
+                                    f"Ajan guncelleme sonucu: {payload.get('status', '?')}", detail)
+                await manager.broadcast_to_panels({"type": "update_result", "pc_name": active_hwid, **detail})
                 continue
             await handle_routine_payload(payload)
     except WebSocketDisconnect:
@@ -1340,3 +1345,9 @@ async def add_policy_alert(data: PolicyAlertInput):
         meta_data={"domain": data.domain, "violation_category": data.category}
     )
     return {"status": "success"}
+
+
+# Sistem/sürüm/release uçları ayrı router'da (server.py şişmesin). Döngüsel import olmasın diye
+# bağımlılıklar enjekte edilir; manager ve add_audit_log dosyanın bu noktasında tanımlı.
+from system_routes import build_router as _build_system_router
+app.include_router(_build_system_router(require_admin, require_superadmin, execute_query, manager, UPDATES_DIR, add_audit_log))

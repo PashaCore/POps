@@ -11,9 +11,11 @@ server.py bunu `build_router(require_admin, execute_query)` ile kurar; böylece 
 server.py'yi import etmez (döngüsel import yok). Python 3.9 uyumlu.
 """
 import asyncio
+import base64
 import json
 import os
 import secrets
+import shutil
 import time
 import urllib.request
 from typing import List, Optional
@@ -28,6 +30,12 @@ class EnrollTokenInput(BaseModel):
     lab_name: Optional[str] = None
     note: Optional[str] = None
     ttl_hours: int = 72
+    max_uses: int = 1
+
+
+class DeployUpdateInput(BaseModel):
+    target_mode: str = "PC"          # "ALL" | "LAB" | "PC"
+    targets: List[str] = []
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Doğrulanmış release'lerin stage edildiği çalışma zamanı dizini (git dışı)
@@ -108,8 +116,20 @@ def _pubkey_path() -> Optional[str]:
     return None
 
 
-def build_router(require_admin, require_superadmin, execute_query):
+def build_router(require_admin, require_superadmin, execute_query, manager, updates_dir, add_audit_log):
     router = APIRouter()
+
+    async def _resolve_targets(data: DeployUpdateInput):
+        if data.target_mode == "ALL":
+            rows = await execute_query("SELECT pc_name FROM clients", fetch=True)
+            return {r["pc_name"] for r in (rows or [])}
+        if data.target_mode == "LAB":
+            out = set()
+            for lab in data.targets:
+                rows = await execute_query("SELECT pc_name FROM clients WHERE lab_name=$1", (lab,), fetch=True)
+                out |= {r["pc_name"] for r in (rows or [])}
+            return out
+        return {t for t in (data.targets or []) if t}
 
     async def _staged_release() -> Optional[dict]:
         rows = await execute_query(
@@ -221,25 +241,73 @@ def build_router(require_admin, require_superadmin, execute_query):
     @router.post("/api/system/enroll-token")
     async def create_enroll_token(data: EnrollTokenInput, auth: dict = Depends(require_superadmin)):
         ttl = max(1, min(int(data.ttl_hours or 72), 24 * 30))  # 1 saat – 30 gün
+        uses = max(1, min(int(data.max_uses or 1), 10000))     # 1 = tek kullanımlık; lab için toplu
         lab = (data.lab_name or "").strip() or None
         note = (data.note or "").strip() or None
         token = secrets.token_urlsafe(24)
         await execute_query(
-            "INSERT INTO enroll_tokens (token, lab_name, note, expires_at) "
-            "VALUES ($1, $2, $3, NOW() + make_interval(hours => $4))",
-            (token, lab, note, ttl))
-        return {"token": token, "lab_name": lab, "note": note, "ttl_hours": ttl}
+            "INSERT INTO enroll_tokens (token, lab_name, note, expires_at, max_uses) "
+            "VALUES ($1, $2, $3, NOW() + make_interval(hours => $4), $5)",
+            (token, lab, note, ttl, uses))
+        return {"token": token, "lab_name": lab, "note": note, "ttl_hours": ttl, "max_uses": uses}
 
     @router.get("/api/system/enroll-tokens")
     async def list_enroll_tokens(auth: dict = Depends(require_superadmin)):
         return await execute_query(
             "SELECT id, token, lab_name, note, created_at, expires_at, is_used, used_by, used_at, "
-            "(expires_at < NOW() AND NOT is_used) AS expired "
+            "max_uses, use_count, (expires_at < NOW() AND NOT is_used) AS expired "
             "FROM enroll_tokens ORDER BY id DESC LIMIT 200", fetch=True)
 
     @router.delete("/api/system/enroll-token/{token_id}")
     async def revoke_enroll_token(token_id: int, auth: dict = Depends(require_superadmin)):
         await execute_query("DELETE FROM enroll_tokens WHERE id = $1", (token_id,))
         return {"ok": True}
+
+    @router.post("/api/system/deploy-update")
+    async def deploy_update(data: DeployUpdateInput, auth: dict = Depends(require_superadmin)):
+        """Staged (yüklenip doğrulanmış) imzalı release'i hedef ajanlara dağıtır. Ajana
+        {"action":"update_agent","manifest":<b64>,"manifest_sig":<sig>} gönderilir; ajan MSI'ı
+        kendi ServerUrl'inin /updates/<ad>'ından indirip imza + SHA-256'yı kendisi doğrular."""
+        staged = await _staged_release()
+        if not staged:
+            raise HTTPException(status_code=400,
+                                detail="Önce imzalı bir release yükleyin (Sistem > çevrimdışı imzalı paket).")
+        version = str(staged.get("version") or "")
+        reldir = os.path.join(RELEASES_DIR, version.replace(os.sep, "_"))
+        mpath = os.path.join(reldir, "manifest.json")
+        spath = os.path.join(reldir, "manifest.json.sig")
+        if not (os.path.isfile(mpath) and os.path.isfile(spath)):
+            raise HTTPException(status_code=409, detail="Staged release dosyaları eksik; tekrar yükleyin.")
+        msis = [a for a in staged.get("artifacts", [])
+                if str(a.get("name", "")).startswith("POps-Agent-") and str(a.get("name", "")).endswith("-win-x64.msi")]
+        if len(msis) != 1:
+            raise HTTPException(status_code=409,
+                                detail="Staged release'de tek bir ajan MSI'ı bekleniyordu, %d var." % len(msis))
+        msi_name = msis[0]["name"]
+        msi_src = os.path.join(reldir, msi_name)
+        if not os.path.isfile(msi_src):
+            raise HTTPException(status_code=409,
+                                detail="MSI staged klasörde yok: %s (upload-release'e MSI'ı da yükleyin)." % msi_name)
+        # Ajan buradan indirir (/updates StaticFiles); yol-gezinme koruması
+        os.makedirs(updates_dir, exist_ok=True)
+        msi_dst = os.path.realpath(os.path.join(updates_dir, msi_name))
+        if os.path.dirname(msi_dst) != os.path.realpath(updates_dir):
+            raise HTTPException(status_code=400, detail="geçersiz MSI adı")
+        shutil.copyfile(msi_src, msi_dst)
+        with open(mpath, "rb") as f:
+            manifest_b64 = base64.b64encode(f.read()).decode("ascii")
+        with open(spath, "r", encoding="utf-8") as f:
+            sig = f.read().strip()
+        msg = {"action": "update_agent", "manifest": manifest_b64, "manifest_sig": sig}
+
+        targets = await _resolve_targets(data)
+        online = sorted(t for t in targets if t in manager.active_agents)
+        offline = sorted(t for t in targets if t not in manager.active_agents)
+        for pc in online:
+            await manager.send_command(msg, pc)
+        await add_audit_log("*", "deploy_update", "İmzalı güncelleme dağıtıldı: %s" % version,
+                            {"version": version, "msi": msi_name, "dispatched": online, "offline": offline})
+        return {"ok": True, "version": version, "msi": msi_name,
+                "dispatched": online, "skipped_offline": offline}
 
     return router
