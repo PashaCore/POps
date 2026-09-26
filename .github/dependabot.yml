@@ -1,0 +1,23 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /Backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: nuget
+    directories:
+      - /Agent/POps.Agent/POps.Agent
+      - /Agent/POpsVision/POpsVision
+      - /Agent/POpsUpdater/POpsUpdater
+      - /Agent/POpsWatchdog/POpsWatchDog
+      - /Agent/POpsTray
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

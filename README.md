@@ -10,7 +10,7 @@
 
   [![Website](https://img.shields.io/badge/Website-pashacore.com.tr-2563EB?style=for-the-badge&logo=vercel)](https://pashacore.com.tr)
   [![Documentation](https://img.shields.io/badge/Documentation-docs-10B981?style=for-the-badge&logo=gitbook)](https://github.com/PashaCore/POps/tree/main/docs)
-  [![Release](https://img.shields.io/badge/Release-v0.1.0--alpha-F59E0B?style=for-the-badge&logo=github)](https://github.com/PashaCore/POps/releases)
+  [![Release](https://img.shields.io/github/v/release/PashaCore/POps?include_prereleases&label=Release&color=F59E0B&style=for-the-badge&logo=github)](https://github.com/PashaCore/POps/releases)
   [![License](https://img.shields.io/badge/License-Apache%202.0-8B5CF6?style=for-the-badge&logo=apache)](https://github.com/PashaCore/POps/blob/main/LICENSE)
   
   <br />
