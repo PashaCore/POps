@@ -65,7 +65,7 @@ Instead of hiding administrative activity from users, POps embraces **transparen
 
 ## 🏗 Architecture
 
-POps relies on a dual-socket, asynchronous architecture to stay responsive across a lab or a multi-lab fleet. (Measured capacity numbers will be published in `BENCHMARKS.md`; until then we do not quote a device count.)
+POps relies on a dual-socket, asynchronous architecture to stay responsive across a lab or a multi-lab fleet. See [`BENCHMARKS.md`](BENCHMARKS.md) for measured numbers — a first honest baseline: one un-tuned worker comfortably serves a lab / a few hundred agents on modest hardware, and horizontal scaling (more workers + Redis fan-out) is on the roadmap. We do not quote "thousands" without measuring it.
 
 
 ```mermaid
