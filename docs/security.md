@@ -1,3 +1,3 @@
 # Security Architecture
 
-POps authenticates agents using immutable Hardware IDs (HWID). The dashboard uses JSON Web Tokens (JWT) for Role-Based Access Control (RBAC). No keyloggers are implemented, and remote sessions notify the active user.
+POps authenticates agents with a per-device secret issued at enrollment (a one-time, lab-bound token); the hardware-derived ID (HWID) is an identifier, not the credential. The server stores only the secret's SHA-256. The dashboard uses JSON Web Tokens (JWT) in an httpOnly cookie with CSRF protection for Role-Based Access Control (RBAC). No keyloggers are implemented, and remote sessions notify the active user. See `../SECURITY.md` for the full threat model.

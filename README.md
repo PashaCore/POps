@@ -49,7 +49,7 @@ Modern IT teams still rely on fragmented tools for inventory, remote assistance,
 
 **POps (Pasha Operations Platform)** brings these capabilities together in a single transparent platform designed for schools, IT teams, and managed environments. 
 
-Instead of hiding administrative activity from users, POps embraces **transparency by design**, providing clear notifications, immutable audit logs, and privacy-conscious remote assistance.
+Instead of hiding administrative activity from users, POps embraces **transparency by design**, providing clear notifications, an administrative audit trail, and privacy-conscious remote assistance.
 
 <div align="center">
   <img src="screenshots/light/dashboard.png" alt="POps Dashboard Overview" width="100%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" />
@@ -61,7 +61,7 @@ Instead of hiding administrative activity from users, POps embraces **transparen
 
 ## 🏗 Architecture
 
-POps relies on a dual-socket, asynchronous architecture to guarantee responsiveness across thousands of devices.
+POps relies on a dual-socket, asynchronous architecture to stay responsive across a lab or a multi-lab fleet. (Measured capacity numbers will be published in `BENCHMARKS.md`; until then we do not quote a device count.)
 
 
 ```mermaid
@@ -124,7 +124,7 @@ For a deep dive into the 5-component agent system (Agent, Tray, Vision, Watchdog
 
 | Feature | Description |
 | :--- | :--- |
-| **Endpoint Inventory** | Automatically track devices using immutable Hardware IDs (HWID). |
+| **Endpoint Inventory** | Automatically track devices using stable, hardware-derived IDs (HWID). |
 | **Live Monitoring** | Real-time telemetry, active window tracking, and idle detection. |
 | **Remote Assistance** | POpsVision provides 1-5 FPS adjustable streaming and remote I/O control. |
 | **Software Deployment** | Orchestrate ZIP and MSI installations across your entire fleet instantly. |

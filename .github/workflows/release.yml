@@ -96,6 +96,10 @@ jobs:
     if: github.ref_type == 'tag'
     needs: [ agent, server ]
     runs-on: ubuntu-latest
+    # İmza anahtarına yalnızca bu iş erişir. Anahtarı "release" GitHub Environment'ının
+    # secret'ı yapın ve environment'a "required reviewers" koruması ekleyin; böylece
+    # imzalı yayın, elle onay olmadan tetiklenemez. (GitHub → Settings → Environments)
+    environment: release
     permissions:
       contents: write
     steps:
