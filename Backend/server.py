@@ -646,9 +646,44 @@ async def process_queue():
                     await log_audit_event(pc, "Deploy", f"Görev: {task['script_path'][:50]}", actor_id="System/Queue", event_type="deploy.execution", category="system_maintenance", action="execute_queue", risk_level="info", meta_data={"raw_command": task["script_path"]})
                     available_slots -= 1
 
+_AUDIT_CHAIN_LOCK = 0x504F6175  # 'POau' — denetim zinciri eklemelerini serileştirir
+
+def _audit_entry_hash(prev, hw_id, action, reason, changes_json, ts):
+    raw = "%s|%s|%s|%s|%s|%s" % (prev or "", hw_id, action, reason, changes_json, ts)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
 async def add_audit_log(hw_id, action, reason, changes):
+    # Kurcalanamaz (tamper-evident) hash zinciri: her kayıt bir öncekinin hash'ini taşır.
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    await execute_query("INSERT INTO device_audit_logs (hw_id, action, reason, changes, timestamp) VALUES ($1, $2, $3, $4, $5)", (hw_id, action, reason, json.dumps(changes, ensure_ascii=False), now))
+    payload = json.dumps(changes, ensure_ascii=False)
+    async with db_pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock($1)", _AUDIT_CHAIN_LOCK)
+            row = await conn.fetchrow("SELECT entry_hash FROM device_audit_logs ORDER BY id DESC LIMIT 1")
+            prev = row["entry_hash"] if row else None
+            entry = _audit_entry_hash(prev, hw_id, action, reason, payload, now)
+            await conn.execute(
+                "INSERT INTO device_audit_logs (hw_id, action, reason, changes, timestamp, prev_hash, entry_hash) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                hw_id, action, reason, payload, now, prev, entry)
+
+@app.get("/api/system/audit-verify")
+async def audit_verify(auth: dict = Depends(require_superadmin)):
+    """Denetim zincirini baştan yürütür; bir kayıt kurcalanmış/silinmişse ilk kırık id'yi döner."""
+    rows = await execute_query(
+        "SELECT id, hw_id, action, reason, changes, timestamp, prev_hash, entry_hash "
+        "FROM device_audit_logs ORDER BY id ASC", fetch=True)
+    prev = None
+    checked = 0
+    for r in (rows or []):
+        if r["entry_hash"] is None:
+            continue  # 0004 öncesi eski satırlar zincire dahil değil
+        expected = _audit_entry_hash(prev, r["hw_id"], r["action"], r["reason"], r["changes"], r["timestamp"])
+        if expected != r["entry_hash"]:
+            return {"ok": False, "first_broken_id": r["id"], "reason": "zincir kırık (kurcalanmış/silinmiş)", "checked": checked}
+        prev = r["entry_hash"]
+        checked += 1
+    return {"ok": True, "checked": checked, "total": len(rows or [])}
 
 def calculate_dna_score(incoming_hw, db_hw, incoming_caps, db_caps):
     if incoming_hw.get('uuid') in ["NULL", "-"] and incoming_hw.get('mac') in ["00:00:00:00:00:00", "-", "NULL"]: return 11, 11 
