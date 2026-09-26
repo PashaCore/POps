@@ -63,9 +63,16 @@ def create_jwt(username: str, role: str) -> str:
 
 def verify_jwt(token: str) -> dict:
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
     except jwt.PyJWTError:
         return None
+    # 2FA challenge jetonu (twofa=pending) bir OTURUM jetonu DEĞİLDİR: şifre doğrulandıktan
+    # sonra, OTP girilmeden önce üretilir. Aynı JWT_SECRET ile imzalı olduğundan burada açıkça
+    # reddedilmezse require_auth-only uçlara (ör. /api/admin/2fa/*) veya WebSocket'e sunulup
+    # 2FA atlatılabilirdi. Challenge yalnızca verify_totp_challenge (kendi decode'u) ile geçerlidir.
+    if payload.get('twofa'):
+        return None
+    return payload
 
 async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security_scheme)):
     token = creds.credentials if creds else request.cookies.get(JWT_COOKIE_NAME)

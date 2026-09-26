@@ -93,6 +93,11 @@ def main():
           "2FA açık → totp_required + challenge")
     challenge = b["challenge"]
 
+    # GÜVENLİK: challenge jetonu bir OTURUM jetonu değildir → require_auth ucunda 401 olmalı
+    # (aksi halde şifre-sonrası/OTP-öncesi jetonla 2FA atlatılabilirdi).
+    s, b = req("/api/admin/2fa/status", "GET", token=challenge)
+    check(s == 401, "challenge jetonu oturum olarak kullanılamaz (2FA atlatma engeli)")
+
     s, b = req("/api/admin/login", "POST", {"username": USER, "password": "WRONG"})
     check(s == 401, "yanlış şifre → 401")
 
