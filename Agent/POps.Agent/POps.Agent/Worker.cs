@@ -51,6 +51,12 @@ namespace POpsAgent
         // 🚀 ARTIK SABİT DEĞİL, HELPERS'TAN OKUNACAK
         private string _serverUrl;
 
+        // Sunucunun enroll sonrası verdiği cihaz secret'ı (Faz 3). Yoksa null.
+        private volatile string _agentSecret;
+
+        // Sunucu kimliksiz ajanı reddederken WebSocket'i bu kodla kapatır (enforce_agent_auth açıkken)
+        private const WebSocketCloseStatus AuthRejectedCloseStatus = (WebSocketCloseStatus)4401;
+
         private ClientWebSocket _commandWs;
         private ClientWebSocket _visionWs;
         private readonly SemaphoreSlim _wsCommandLock = new(1, 1);
@@ -96,6 +102,9 @@ namespace POpsAgent
 
             _hwId = InitializeIdentity();
             POpsHelpers.Log("AGENT", $"Kimlik Başlatıldı: {_hwId}");
+
+            AgentCredentials.Initialize();
+            _agentSecret = AgentCredentials.LoadSecret();
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -108,12 +117,13 @@ namespace POpsAgent
             while (!stoppingToken.IsCancellationRequested)
             {
                 string commandWsUrl = $"{baseWsUrl}/ws/agent/{_hwId}";
-                POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({APP_VERSION})");
 
                 EnsureWatchDogIsRunning();
                 StartTrayPipeServer();
                 _commandWs = new ClientWebSocket();
                 _commandWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
+                string authMode = ApplyAuthHeaders(_commandWs);
+                POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({APP_VERSION}, kimlik: {authMode})");
 
                 try
                 {
@@ -133,9 +143,53 @@ namespace POpsAgent
                     POpsHelpers.Log("AGENT", $"[!] Santralle bağlantı koptu: {ex.Message}", true);
                 }
 
+                // Reddedilen her bağlantı sunucuda denetim kaydı açar; 5 sn'de bir yeniden denenmez
+                bool authRejected = _commandWs.CloseStatus == AuthRejectedCloseStatus;
+                if (authRejected)
+                    POpsHelpers.Log("AGENT", "[GÜVENLİK] Sunucu ajan kimliğini reddetti (4401): geçerli bir enroll jetonu gerekiyor. 60 sn sonra yeniden denenecek.", true);
+
                 _trayPipe?.Stop();
                 await DisconnectVisionTunnelAsync();
-                await Task.Delay(5000, stoppingToken);
+                await Task.Delay(authRejected ? 60000 : 5000, stoppingToken);
+            }
+        }
+
+        // Cihaz secret'ı varsa X-Agent-Secret, enroll jetonu varsa X-Enroll-Token gönderilir. Sunucu önce
+        // secret'a bakar; secret geçersizse (ör. dondurma ile kaybolmuşsa) jetonla yeniden kayıt olunabilir.
+        // Değerler loglanmaz; dönen metin yalnızca hangi başlıkların gittiğini söyler.
+        private string ApplyAuthHeaders(ClientWebSocket ws)
+        {
+            string secret = _agentSecret ??= AgentCredentials.LoadSecret();
+            string enrollToken = AgentCredentials.GetEnrollToken();
+
+            if (secret != null) ws.Options.SetRequestHeader("X-Agent-Secret", secret);
+            if (enrollToken != null) ws.Options.SetRequestHeader("X-Enroll-Token", enrollToken);
+
+            if (secret != null && enrollToken != null) return "secret + enroll jetonu";
+            if (secret != null) return "secret";
+            if (enrollToken != null) return "enroll jetonu";
+            return "yok";
+        }
+
+        // Enroll jetonuyla kaydolan ajana sunucu kalıcı secret'ı bir kez gönderir.
+        private void HandleSetSecret(JsonElement root)
+        {
+            string secret = root.TryGetProperty("secret", out var sProp) && sProp.ValueKind == JsonValueKind.String ? sProp.GetString() : null;
+            if (!AgentCredentials.IsWellFormed(secret))
+            {
+                POpsHelpers.Log("AGENT", "[GÜVENLİK] set_secret yok sayıldı: secret biçimi geçersiz.", true);
+                return;
+            }
+
+            _agentSecret = secret;
+            if (AgentCredentials.SaveSecret(secret, _hwId))
+            {
+                AgentCredentials.ForgetEnrollToken();
+                POpsHelpers.Log("AGENT", "Cihaz secret'ı alındı ve güvenli depoya yazıldı; sonraki bağlantılar secret ile doğrulanacak.");
+            }
+            else
+            {
+                POpsHelpers.Log("AGENT", "Cihaz secret'ı alındı ancak diske yazılamadı; servis yeniden başlayana kadar bellekte tutuluyor.", true);
             }
         }
 
@@ -238,11 +292,11 @@ namespace POpsAgent
                 else if (message.StartsWith("UNLOCK_BYPASS:"))
                 {
                     string token = message.Split(':')[1].Trim();
-                    string bypassSecret = POpsHelpers.GetBypassSecret();
+                    string bypassSecret = AgentCredentials.GetBypassSecret();
                     string expectedToken = null;
                     if (string.IsNullOrEmpty(bypassSecret))
                     {
-                        POpsHelpers.Log("AGENT", "Offline Bypass devre dışı: BypassSecret tanımlı değil (appsettings.json / POPS_BYPASS_SECRET).", true);
+                        POpsHelpers.Log("AGENT", $"Offline Bypass devre dışı: BypassSecret tanımlı değil ({SecureStore.Dir}\\{AgentCredentials.BypassSecretFileName}).", true);
                     }
                     else
                     {
@@ -425,6 +479,7 @@ namespace POpsAgent
                         }
                         else if (action == "wake_peer") { POpsHelpers.SendWolPacket(root.GetProperty("mac").GetString()); }
                         else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
+                        else if (action == "set_secret") { HandleSetSecret(root); }
                         else if (action == "lockdown") 
                         { 
                             _trayPipe?.SendCommandToDesktop(message); 
@@ -525,19 +580,21 @@ namespace POpsAgent
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"POpsData izinleri ayarlanamadı: {ex.Message}", true); }
         }
 
-        // appsettings.json BypassSecret içerir; öğrenci hesapları (Users) okuyamamalı.
+        // appsettings.json yalnızca SYSTEM ve Administrators'a açıktır; izin üst klasörden devralınmaz
+        // (Program Files, Users'a okuma verir). Kurulum ya da onarım dosyayı varsayılan izinlerle yeniden
+        // oluşturabildiği için ACL her açılışta kurulur ve sonuç geri okunarak doğrulanır. Gizli değerler
+        // zaten bu dosyada tutulmaz (bkz. AgentCredentials.MigrateSecrets).
         private static void SecureConfigFile(string path)
         {
             try
             {
                 if (!File.Exists(path)) return;
-                var sec = new FileSecurity();
-                sec.SetAccessRuleProtection(true, false);
-                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, AccessControlType.Allow));
-                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), FileSystemRights.FullControl, AccessControlType.Allow));
-                new FileInfo(path).SetAccessControl(sec);
+                var file = new FileInfo(path);
+                file.SetAccessControl(SecureStore.ProtectedFileSecurity());
+                if (!SecureStore.IsLockedDown(file.GetAccessControl()))
+                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] {path} kilitlenemedi: SYSTEM/Administrators dışında erişim izni hâlâ var.", true);
             }
-            catch (Exception ex) { POpsHelpers.Log("AGENT", $"appsettings.json izinleri ayarlanamadı: {ex.Message}", true); }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"{path} izinleri ayarlanamadı: {ex.Message}", true); }
         }
 
         private void UpdateIdentityFile(string newId)

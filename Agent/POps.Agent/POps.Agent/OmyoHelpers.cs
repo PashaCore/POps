@@ -102,8 +102,15 @@ namespace POpsAgent
             return defaultUrl;
         }
 
+        // Gizli olmayan bir ayar: önce sistem ortam değişkeni, sonra appsettings.json.
+        public static string GetSetting(string key, string envVar)
+        {
+            string env = Environment.GetEnvironmentVariable(envVar);
+            return !string.IsNullOrWhiteSpace(env) ? env.Trim() : ReadConfigValue(key);
+        }
+
         // Bir ayarı sırayla ConfigPaths içindeki dosyalarda arar; hiçbirinde dolu değilse null döner.
-        private static string ReadConfigValue(string key)
+        public static string ReadConfigValue(string key)
         {
             foreach (string path in ConfigPaths)
             {
@@ -126,22 +133,6 @@ namespace POpsAgent
                 }
             }
             return null;
-        }
-
-        // ==========================================
-        // ÇEVRİMDIŞI BYPASS GİZLİ ANAHTARI
-        // ==========================================
-        // Koda gömülmez: POPS_BYPASS_SECRET ortam değişkeni veya appsettings.json "BypassSecret".
-        // Tanımlı değilse null döner ve çevrimdışı bypass devre dışı kalır.
-        public static string GetBypassSecret()
-        {
-            string envSecret = Environment.GetEnvironmentVariable("POPS_BYPASS_SECRET");
-            if (!string.IsNullOrWhiteSpace(envSecret))
-            {
-                return envSecret.Trim();
-            }
-
-            return ReadConfigValue("BypassSecret");
         }
 
         // ==========================================
