@@ -21,11 +21,9 @@
 
 <br />
 
-> **🚧 Development Status**
+> **🚧 Status: Alpha**
 > 
-> POps is currently under active development. 
-> 
-> Documentation is being published first while the core components are gradually moved into this public repository. Early commits will mainly contain documentation, architecture, and infrastructure before source code is published.
+> POps is in active development (alpha). The agent, backend and dashboard source are published and build in CI, and the full device-enrollment, per-device authentication and signed over-the-air update flow has been validated end to end on a real Windows machine. It is **not yet hardened for large-scale or enterprise production** — see [`SECURITY.md`](SECURITY.md) for the threat model and the current residual risks (e.g. capability policy, audit hash-chain, 2FA still on the roadmap).
 
 ---
 
