@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Backend:** New `GET /api/health` (unauthenticated: database reachability plus the running version, no sensitive data) and `GET /api/system/version` (admin: running version plus the latest GitHub release when reachable). The GitHub check is offline-safe — short timeout, off the event loop, cached hourly and never fatal — so an offline server still answers. The server reads its version from a `VERSION` file synced next to the app, with a CHANGELOG fallback. These live in a separate `Backend/system_routes.py` router to keep `server.py` from growing, and the deploy script now syncs `system_routes.py` and `VERSION`.
 - **Release/CI:** Release packages are now signed. The release workflow builds a `manifest.json` (the SHA-256 of every package plus the version, git tag and a timestamp) and signs it with an ed25519 key held only in the `POPS_RELEASE_PRIVATE_KEY` GitHub secret, attaching `manifest.json` and `manifest.json.sig` to the release. The public key ships in the repo and server package at `keys/pops_release_ed25519.pub.pem`; `tools/sign_release.py` signs and verifies (cross-checked against OpenSSL), and CI runs its self-test. Because the version is inside the signed manifest, a verifier can refuse a replayed older release. The release workflow now also fails unless the git tag equals `v<VERSION>` and the CHANGELOG has an entry for it. Server- and agent-side verification land in later phases.
 
 ### Changed

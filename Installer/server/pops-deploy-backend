@@ -28,6 +28,8 @@ REV=$(git rev-parse --short HEAD)
 if cmp -s Backend/server.py "$APP/server.py" \
    && cmp -s Backend/requirements.txt "$APP/requirements.txt" \
    && cmp -s Backend/migrate.py "$APP/migrate.py" \
+   && cmp -s Backend/system_routes.py "$APP/system_routes.py" \
+   && cmp -s VERSION "$APP/VERSION" \
    && diff -rq Backend/migrations "$APP/migrations" >/dev/null 2>&1; then
     echo "Canlı backend zaten $REV ile aynı."
     exit 0
@@ -52,6 +54,11 @@ install -d -o "$OWNER" -g "$OWNER" -m 755 "$APP/migrations"
 for f in Backend/migrations/*.sql; do
     install -o "$OWNER" -g "$OWNER" -m 644 "$f" "$APP/migrations/$(basename "$f")"
 done
+
+# Sürüm uçları modülü ve kök VERSION dosyası ($APP/VERSION -> /api/system/version okur)
+[ -e "$APP/system_routes.py" ] && cp -a "$APP/system_routes.py" "$APP/system_routes.py.bak-$STAMP"
+install -o "$OWNER" -g "$OWNER" -m 644 Backend/system_routes.py "$APP/system_routes.py"
+install -o "$OWNER" -g "$OWNER" -m 644 VERSION "$APP/VERSION"
 
 install -o "$OWNER" -g "$OWNER" -m 644 Backend/server.py "$APP/server.py"
 systemctl restart "$SVC"
