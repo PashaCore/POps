@@ -13,13 +13,21 @@ server.py'yi import etmez (döngüsel import yok). Python 3.9 uyumlu.
 import asyncio
 import json
 import os
+import secrets
 import time
 import urllib.request
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 import release_verify
+
+
+class EnrollTokenInput(BaseModel):
+    lab_name: Optional[str] = None
+    note: Optional[str] = None
+    ttl_hours: int = 72
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Doğrulanmış release'lerin stage edildiği çalışma zamanı dizini (git dışı)
@@ -205,5 +213,33 @@ def build_router(require_admin, require_superadmin, execute_query):
             "artifacts_present": present,
             "artifacts_expected": [a.get("name") for a in manifest.get("artifacts", [])],
         }
+
+    # --- Ajan kayıt (enroll) jetonları (Faz 3) -----------------------------------
+    # Jeton üretimi/yönetimi burada; jetonu TÜKETME (ilk bağlanışta doğrula + secret ver)
+    # ve /ws/agent kimlik zorlaması sonraki dilimde eklenecek.
+
+    @router.post("/api/system/enroll-token")
+    async def create_enroll_token(data: EnrollTokenInput, auth: dict = Depends(require_superadmin)):
+        ttl = max(1, min(int(data.ttl_hours or 72), 24 * 30))  # 1 saat – 30 gün
+        lab = (data.lab_name or "").strip() or None
+        note = (data.note or "").strip() or None
+        token = secrets.token_urlsafe(24)
+        await execute_query(
+            "INSERT INTO enroll_tokens (token, lab_name, note, expires_at) "
+            "VALUES ($1, $2, $3, NOW() + make_interval(hours => $4))",
+            (token, lab, note, ttl))
+        return {"token": token, "lab_name": lab, "note": note, "ttl_hours": ttl}
+
+    @router.get("/api/system/enroll-tokens")
+    async def list_enroll_tokens(auth: dict = Depends(require_superadmin)):
+        return await execute_query(
+            "SELECT id, token, lab_name, note, created_at, expires_at, is_used, used_by, used_at, "
+            "(expires_at < NOW() AND NOT is_used) AS expired "
+            "FROM enroll_tokens ORDER BY id DESC LIMIT 200", fetch=True)
+
+    @router.delete("/api/system/enroll-token/{token_id}")
+    async def revoke_enroll_token(token_id: int, auth: dict = Depends(require_superadmin)):
+        await execute_query("DELETE FROM enroll_tokens WHERE id = $1", (token_id,))
+        return {"ok": True}
 
     return router
