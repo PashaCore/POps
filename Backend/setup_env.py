@@ -9,7 +9,7 @@ Yaptıkları:
   1. Backend bağımlılıklarını kurar (pip install -r Backend/requirements.txt).
   2. .env.example'ı şablon alarak proje kökünde .env üretir; mevcut .env değerleri korunur.
   3. Boş gizli değerleri güçlü rastgele değerlerle doldurur:
-     JWT_SECRET, BYPASS_SECRET, POPS_WOL_CONFIRM_PASSWORD.
+     JWT_SECRET, BYPASS_SECRET.
   4. Git geçmişinde açığa çıkmış şifreleri yeniler:
      - PostgreSQL kullanıcısının şifresi (sunucuya düz metin değil, SCRAM-SHA-256 özeti gönderilir)
      - Panel yönetici hesabının (PANEL_ADMIN_USER) şifresi
@@ -209,8 +209,6 @@ def main():
         values["JWT_SECRET"] = secrets.token_hex(32)
     if not values.get("BYPASS_SECRET"):
         values["BYPASS_SECRET"] = secrets.token_urlsafe(24)
-    if not values.get("POPS_WOL_CONFIRM_PASSWORD"):
-        values["POPS_WOL_CONFIRM_PASSWORD"] = f"{secrets.randbelow(10**6):06d}"
     new_db_password = secrets.token_urlsafe(24) if not args.no_rotate_db else current_db_password
     values["DB_PASS"] = new_db_password
     new_admin_password = secrets.token_urlsafe(12)
@@ -256,13 +254,12 @@ def main():
         if admin_created_by_server:
             print("                   Hesap, backend ilk açıldığında oluşturulacak; sonra .env'deki")
             print("                   PANEL_ADMIN_PASS değerini silebilirsiniz.")
-    print(f"WOL onay şifresi : {values['POPS_WOL_CONFIRM_PASSWORD']}  (Log & Envanter > tüm cihazları uyandır)")
     print("\nSonraki adımlar:")
     print("  1. Backend servisini yeniden başlatın (örn. sudo systemctl restart <pops-servis-adı>).")
     print("     Servis tanımında (systemd Environment=, docker-compose vb.) DB_PASS, JWT_SECRET gibi")
     print("     değişkenler varsa .env'deki değerleri ezer; bunları kaldırın.")
     print("  2. Dashboard bu dizinden sunuluyorsa .env'i kendisi okur. Farklı bir dizinden sunuluyorsa")
-    print("     POPS_API_INTERNAL_URL ve POPS_WOL_CONFIRM_PASSWORD'ü web sunucusu ortamına ekleyin.")
+    print("     POPS_API_INTERNAL_URL'yi web sunucusu ortamına ekleyin.")
     print("  3. Ajanlara BypassSecret göndermek için panelde Dosya Dağıtımı > Sistem Betiği ile tüm ağa")
     print("     (veya Terminal'den lab bazında) şu komutu çalıştırın; kapalı cihazlar açılınca alır:\n")
     print(agent_bypass_command(values["BYPASS_SECRET"]))

@@ -270,7 +270,7 @@ async function saveUser() {
     try {
         const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (res.ok) { closeModal('userModal'); loadUsers(); showToast('Kullanıcı kaydedildi.', 'success'); }
-        else showToast('Kaydedilemedi.', 'error');
+        else showToast(await apiErrorMessage(res, 'Kaydedilemedi.'), 'error');
     } catch (e) { showToast('Bağlantı hatası.', 'error'); }
 }
 
@@ -279,7 +279,17 @@ async function deleteUser(id) {
     try {
         const res = await fetch(`${apiBase}/api/admin/users/${id}`, { method: 'DELETE' });
         if (res.ok) { loadUsers(); showToast('Kullanıcı silindi.', 'success'); }
+        else showToast(await apiErrorMessage(res, 'Silinemedi.'), 'error');
     } catch (e) { showToast('Silinemedi.', 'error'); }
+}
+
+// Sunucunun döndürdüğü hata açıklamasını (FastAPI 'detail') gösterir
+async function apiErrorMessage(res, fallback) {
+    try {
+        const body = await res.json();
+        if (typeof body.detail === 'string') return body.detail;
+    } catch (e) {}
+    return fallback;
 }
 
 function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }

@@ -31,7 +31,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Content-Type: application/json',
-            'Content-Length: ' . strlen($data)
+            'Content-Length: ' . strlen($data),
+            // Giriş denemesi sınırı (dakikada 10) tarayıcının IP'sine göre işlesin; aksi halde
+            // bütün girişler PHP'nin 127.0.0.1 adresinden geliyor görünür ve tek kotayı paylaşır.
+            // REMOTE_ADDR, Apache mod_remoteip sayesinde Cloudflare arkasındaki gerçek istemcidir.
+            'X-Forwarded-For: ' . ($_SERVER['REMOTE_ADDR'] ?? '')
         ]);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
 

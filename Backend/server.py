@@ -18,7 +18,7 @@ import hashlib
 import zipfile
 import secrets
 import bcrypt
-from jose import JWTError, jwt
+import jwt  # PyJWT
 from werkzeug.utils import secure_filename
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -50,13 +50,13 @@ limiter = Limiter(key_func=get_remote_address)
 security_scheme = HTTPBearer(auto_error=False)
 
 def create_jwt(username: str, role: str) -> str:
-    expire = datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_EXPIRE_H)
+    expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=JWT_EXPIRE_H)
     return jwt.encode({'sub': username, 'role': role, 'exp': expire}, JWT_SECRET, algorithm=JWT_ALGO)
 
 def verify_jwt(token: str) -> dict:
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
-    except JWTError:
+    except jwt.PyJWTError:
         return None
 
 async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security_scheme)):
@@ -75,6 +75,11 @@ async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = D
 async def require_admin(payload: dict = Depends(require_auth)):
     if payload.get('role') not in ['admin', 'superadmin']:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu islem icin admin yetkisi gereklidir.")
+    return payload
+
+async def require_superadmin(payload: dict = Depends(require_auth)):
+    if payload.get('role') != 'superadmin':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu islem icin superadmin yetkisi gereklidir.")
     return payload
 
 def ws_check_token(token: Optional[str]) -> bool:
@@ -354,9 +359,10 @@ class AuthEventInput(BaseModel): hw_id: str; hostname: str; student_id: str; mes
 class TaskActionInput(BaseModel): action: str; target_mode: str; target_id: str
 class RemoteInputData(BaseModel): type: str; device: str; input_type: str; data: dict
 class HwInventoryInput(BaseModel): hw_id: Optional[str] = None; hostname: Optional[str] = None; cpu: str = "-"; ram: str = "-"; motherboard: str = "-"; gpu: str = "-"; os_version: str = "-"; ip_address: str = "-"; mac_address: str = "-"; disk_info: str = "-"
-class StartAuditSessionInput(BaseModel): admin_id: int; admin_name: str; admin_role: str; target_pc: str; reason: str; is_mandatory: bool
+# admin_id/admin_name/admin_role geriye uyumluluk için kabul edilir ama kullanılmaz; kimlik JWT'den alınır
+class StartAuditSessionInput(BaseModel): target_pc: str; reason: str; is_mandatory: bool; admin_id: Optional[int] = None; admin_name: Optional[str] = None; admin_role: Optional[str] = None
 class EndAuditSessionInput(BaseModel): session_id: str; status: str
-class LockdownInput(BaseModel): admin_name: str; target_pc: str; reason: str
+class LockdownInput(BaseModel): target_pc: str; reason: str; admin_name: Optional[str] = None
 
 class UserCreateInput(BaseModel): username: str; password: str; role: str; permissions: str
 class UserUpdateInput(BaseModel): username: str; password: Optional[str] = None; role: str; permissions: str
@@ -415,37 +421,74 @@ async def get_users(auth=Depends(require_admin)):
     users = await execute_query("SELECT id, username, role, last_login, permissions FROM users ORDER BY id ASC", fetch=True)
     return {"status": "success", "users": users}
 
+VALID_ROLES = ('superadmin', 'admin', 'viewer')
+
+def _clean_user_fields(username: str, role: str, permissions: str) -> tuple:
+    """Kullanıcı alanlarını doğrular; hatada 400 döner. Yetki listesi JSON dizisi olarak normalize edilir."""
+    username = (username or '').strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="Kullanıcı adı boş olamaz.")
+    if role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail="Geçersiz rol.")
+    try:
+        perms = json.loads(permissions or '[]')
+    except ValueError:
+        perms = None
+    if not isinstance(perms, list) or not all(isinstance(p, str) for p in perms):
+        raise HTTPException(status_code=400, detail="Yetki listesi geçerli bir JSON dizisi olmalı.")
+    return username, json.dumps(perms)
+
+async def _superadmin_count(exclude_id: Optional[int] = None) -> int:
+    rows = await execute_query("SELECT COUNT(*) AS c FROM users WHERE role = 'superadmin' AND password_hash LIKE '$2%' AND id IS DISTINCT FROM $1",
+                               (exclude_id,), fetch=True)
+    return rows[0]["c"] if rows else 0
+
+# Kullanıcı oluşturma, düzenleme ve silme yalnızca superadmin'e açıktır;
+# aksi halde bir admin kendine superadmin hesabı açabilirdi.
 @app.post("/api/admin/users")
-async def create_user(data: UserCreateInput, auth=Depends(require_admin)):
+async def create_user(data: UserCreateInput, auth=Depends(require_superadmin)):
+    username, permissions = _clean_user_fields(data.username, data.role, data.permissions)
+    if not data.password:
+        raise HTTPException(status_code=400, detail="Şifre boş olamaz.")
     hashed_pw = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt()).decode()
     try:
         await execute_query("INSERT INTO users (username, password_hash, role, permissions) VALUES ($1, $2, $3, $4)",
-                           (data.username, hashed_pw, data.role, data.permissions))
-        return {"status": "success", "message": "Kullanıcı başarıyla oluşturuldu."}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+                           (username, hashed_pw, data.role, permissions))
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Bu kullanıcı adı zaten var.")
+    return {"status": "success", "message": "Kullanıcı başarıyla oluşturuldu."}
 
 @app.put("/api/admin/users/{user_id}")
-async def update_user(user_id: int, data: UserUpdateInput, auth=Depends(require_admin)):
+async def update_user(user_id: int, data: UserUpdateInput, auth=Depends(require_superadmin)):
+    username, permissions = _clean_user_fields(data.username, data.role, data.permissions)
+    current = await execute_query("SELECT role FROM users WHERE id=$1", (user_id,), fetch=True)
+    if not current:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+    if current[0]["role"] == 'superadmin' and data.role != 'superadmin' and await _superadmin_count(exclude_id=user_id) == 0:
+        raise HTTPException(status_code=400, detail="Son superadmin hesabının rolü düşürülemez.")
     try:
         if data.password:
             hashed_pw = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt()).decode()
             await execute_query("UPDATE users SET username=$1, password_hash=$2, role=$3, permissions=$4 WHERE id=$5",
-                               (data.username, hashed_pw, data.role, data.permissions, user_id))
+                               (username, hashed_pw, data.role, permissions, user_id))
         else:
             await execute_query("UPDATE users SET username=$1, role=$2, permissions=$3 WHERE id=$4",
-                               (data.username, data.role, data.permissions, user_id))
-        return {"status": "success", "message": "Kullanıcı başarıyla güncellendi."}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+                               (username, data.role, permissions, user_id))
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Bu kullanıcı adı zaten var.")
+    return {"status": "success", "message": "Kullanıcı başarıyla güncellendi."}
 
 @app.delete("/api/admin/users/{user_id}")
-async def delete_user(user_id: int, auth=Depends(require_admin)):
-    try:
-        await execute_query("DELETE FROM users WHERE id=$1", (user_id,))
-        return {"status": "success", "message": "Kullanıcı silindi."}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+async def delete_user(user_id: int, auth=Depends(require_superadmin)):
+    target = await execute_query("SELECT username, role FROM users WHERE id=$1", (user_id,), fetch=True)
+    if not target:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+    if target[0]["username"] == auth.get('sub'):
+        raise HTTPException(status_code=400, detail="Kendi hesabınızı silemezsiniz.")
+    if target[0]["role"] == 'superadmin' and await _superadmin_count(exclude_id=user_id) == 0:
+        raise HTTPException(status_code=400, detail="Son superadmin hesabı silinemez.")
+    await execute_query("DELETE FROM users WHERE id=$1", (user_id,))
+    return {"status": "success", "message": "Kullanıcı silindi."}
 
 @app.delete("/api/devices/{pc_name}")
 async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
@@ -468,12 +511,18 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
 async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends(require_admin)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     session_id = f"SES-{secrets.token_hex(6).upper()}"
-    
+    # Rıza sorulmadan açılan (zorunlu) oturum için gerekçe şarttır
+    if data.is_mandatory and not data.reason.strip():
+        raise HTTPException(status_code=400, detail="Zorunlu oturum için gerekçe yazılmalıdır.")
+    admin_name, admin_role = auth.get('sub'), auth.get('role')
+    admin_row = await execute_query("SELECT id FROM users WHERE username = $1", (admin_name,), fetch=True)
+    admin_id = admin_row[0]["id"] if admin_row else None
+
     await execute_query("""
-        INSERT INTO enterprise_audit_logs 
-        (session_id, admin_id, admin_name, admin_role, target_pc, start_time, end_time, reason, is_notified, is_mandatory, status) 
+        INSERT INTO enterprise_audit_logs
+        (session_id, admin_id, admin_name, admin_role, target_pc, start_time, end_time, reason, is_notified, is_mandatory, status)
         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, TRUE, $8, 'Active')
-    """, (session_id, data.admin_id, data.admin_name, data.admin_role, data.target_pc, now, data.reason, data.is_mandatory))
+    """, (session_id, admin_id, admin_name, admin_role, data.target_pc, now, data.reason, data.is_mandatory))
     # Karantina durumunu kontrol et
     rows = await execute_query("SELECT is_quarantined FROM clients WHERE pc_name = $1", (data.target_pc,), fetch=True)
     is_quarantined = False
@@ -489,7 +538,7 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
         "action": "start_vision_session",
         "session_id": session_id,
         "is_mandatory": data.is_mandatory,
-        "admin_name": data.admin_name,
+        "admin_name": admin_name,
         "reason": data.reason,
         "countdown_seconds": countdown,
         "is_quarantined": is_quarantined
@@ -509,7 +558,8 @@ async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # Karantina logunu yaz
-    await log_audit_event(data.target_pc, "Critical Security", f"🚨 KARANTİNA BAŞLATILDI by {data.admin_name} - Neden: {data.reason}", actor_id=data.admin_name, event_type="security.lockdown", category="security", action="lockdown", risk_level="critical", reason=data.reason)
+    admin_name = auth.get('sub')
+    await log_audit_event(data.target_pc, "Critical Security", f"🚨 KARANTİNA BAŞLATILDI by {admin_name} - Neden: {data.reason}", actor_id=admin_name, event_type="security.lockdown", category="security", action="lockdown", risk_level="critical", reason=data.reason)
     
     # Cihazı karantina moduna al
     await execute_query("UPDATE clients SET is_quarantined = TRUE WHERE pc_name = $1", (data.target_pc,))
@@ -524,7 +574,8 @@ async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # Karantina logunu yaz
-    await log_audit_event(data.target_pc, "Critical Security", f"✅ KARANTİNA KALDIRILDI by {data.admin_name} - Neden: {data.reason}", actor_id=data.admin_name, event_type="security.unlock", category="security", action="unlock", risk_level="info", reason=data.reason)
+    admin_name = auth.get('sub')
+    await log_audit_event(data.target_pc, "Critical Security", f"✅ KARANTİNA KALDIRILDI by {admin_name} - Neden: {data.reason}", actor_id=admin_name, event_type="security.unlock", category="security", action="unlock", risk_level="info", reason=data.reason)
     
     # Cihazı karantina modundan çıkar
     await execute_query("UPDATE clients SET is_quarantined = FALSE WHERE pc_name = $1", (data.target_pc,))
