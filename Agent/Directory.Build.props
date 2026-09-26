@@ -1,0 +1,18 @@
+<Project>
+
+  <!--
+    Tek sürüm kaynağı: repo kökündeki VERSION dosyası.
+    Beş ajan projesi de (POps.Agent, POpsTray, POpsWatchdog, POpsUpdater, POpsVision)
+    Agent/ altında olduğu için MSBuild proje dizininden yukarı yürürken bu dosyayı bulur
+    ve <Version> hepsine buradan gelir. Sürümü değiştirmek için yalnızca kök VERSION
+    dosyasını düzenleyin; koda gömülü sürüm sabiti bırakmayın.
+  -->
+  <PropertyGroup>
+    <_PopsVersionFile>$(MSBuildThisFileDirectory)../VERSION</_PopsVersionFile>
+    <_PopsVersionRaw>$([System.IO.File]::ReadAllText('$(_PopsVersionFile)'))</_PopsVersionRaw>
+    <Version>$(_PopsVersionRaw.Trim())</Version>
+    <!-- InformationalVersion'a "+<commit>" eklenmesin ki sürüm okuması deterministik kalsın. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+</Project>

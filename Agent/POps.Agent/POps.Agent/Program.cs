@@ -27,7 +27,7 @@ namespace POpsAgent
 
             // POpsHelpers ile sistem başlangıcını logluyoruz
             POpsHelpers.Log("AGENT", "========================================");
-            POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor (v{Worker.APP_VERSION})");
+            POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor ({Worker.APP_VERSION})");
 
             var builder = Host.CreateApplicationBuilder(args);
 

@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 namespace POpsAgent
 {
     public static class POpsHelpers
@@ -19,6 +20,25 @@ namespace POpsAgent
             Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
             @"C:\POps\appsettings.json",
         };
+
+        // ==========================================
+        // 0. SÜRÜM (TEK KAYNAK)
+        // ==========================================
+        // Sürüm kök VERSION dosyasından gelir (Directory.Build.props -> assembly). Koda gömülmez.
+        // "+<commit>" derleme meta verisi varsa atılır; önüne "v" eklenir (ör. "v0.1.2-alpha").
+        public static string AppVersion
+        {
+            get
+            {
+                var asm = Assembly.GetExecutingAssembly();
+                string v = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                           ?? asm.GetName().Version?.ToString()
+                           ?? "0.0.0";
+                int plus = v.IndexOf('+');
+                if (plus >= 0) v = v.Substring(0, plus);
+                return v.StartsWith("v") ? v : "v" + v;
+            }
+        }
 
         // ==========================================
         // 1. MERKEZİ VE NİZAMLI LOGLAMA

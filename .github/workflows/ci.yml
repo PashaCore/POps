@@ -75,3 +75,35 @@ jobs:
             echo "::error::Panel yalnızca açık temayı kullanır; data-theme/toggleTheme geri eklenmemeli."
             exit 1
           fi
+
+  version:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: VERSION == CHANGELOG == Directory.Build.props
+        # Tek sürüm kaynağı bozulmasın: kök VERSION, CHANGELOG'un en üst sürüm başlığı ve
+        # Directory.Build.props'un ürettiği <Version> birbirini tutmazsa derleme kırılır.
+        run: |
+          set -euo pipefail
+          VER=$(tr -d '[:space:]' < VERSION)
+          echo "VERSION dosyası:          $VER"
+          TOP=$(grep -oP '^## \[\K[^]]+' CHANGELOG.md | grep -vx 'Unreleased' | head -1)
+          echo "CHANGELOG en üst sürüm:   $TOP"
+          if [ "$VER" != "$TOP" ]; then
+            echo "::error::VERSION ($VER) ile CHANGELOG'un en üst sürüm başlığı ($TOP) uyuşmuyor."
+            exit 1
+          fi
+          # net8.0 (Windows'a bağımlı olmayan) POpsUpdater üzerinden Directory.Build.props'un
+          # ürettiği <Version>'ı Linux'ta değerlendir; ajan assembly'lerine giden değer budur.
+          BUILT=$(dotnet msbuild Agent/POpsUpdater/POpsUpdater/POpsUpdater.csproj -getProperty:Version -nologo | tr -d '[:space:]')
+          echo "Directory.Build.props:    $BUILT"
+          if [ "$VER" != "$BUILT" ]; then
+            echo "::error::VERSION ($VER) ile derlenen <Version> ($BUILT) uyuşmuyor."
+            exit 1
+          fi
+          echo "Sürüm tutarlı: $VER"

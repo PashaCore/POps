@@ -16,7 +16,8 @@ namespace POpsVision
 {
     class Program
     {
-        public const string APP_VERSION = "1.0.7-FULL-COMMAND";
+        // Sürüm kök VERSION dosyasından gelir (Directory.Build.props -> assembly). Elle güncellenmez.
+        public static readonly string APP_VERSION = POpsHelpers.AppVersion;
 
         // --- WIN32 API ENTEGRASYONLARI ---
         [DllImport("user32.dll")] static extern bool SetProcessDPIAware();

@@ -14,8 +14,8 @@ namespace POpsWatchDog
 {
     class Program
     {
-        // 🚀 SÜRÜM BİLGİSİ
-        public const string APP_VERSION = "2.0.1-GHOST-SERGEANT";
+        // Sürüm kök VERSION dosyasından gelir (Directory.Build.props -> assembly). Elle güncellenmez.
+        public static readonly string APP_VERSION = POpsHelpers.AppVersion;
 
         // 🚀 Windows 11 Terminal kalıntılarını öldürmek için son çare
         [DllImport("kernel32.dll")]

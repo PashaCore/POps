@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 
 namespace POpsWatchDog // Hangi projedeysen namespace'i ona göre uyarlayabilirsin (örn: POps.Agent)
@@ -10,6 +11,25 @@ namespace POpsWatchDog // Hangi projedeysen namespace'i ona göre uyarlayabilirs
         private static readonly string LogDir = @"C:\POpsLogs";
         private static readonly string ConfigPath = @"C:\POps\appsettings.json";
         private static readonly object LogLock = new object();
+
+        // ==========================================
+        // 0. SÜRÜM (TEK KAYNAK)
+        // ==========================================
+        // Sürüm kök VERSION dosyasından gelir (Directory.Build.props -> assembly). Koda gömülmez.
+        // "+<commit>" derleme meta verisi varsa atılır; önüne "v" eklenir (ör. "v0.1.2-alpha").
+        public static string AppVersion
+        {
+            get
+            {
+                var asm = Assembly.GetExecutingAssembly();
+                string v = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                           ?? asm.GetName().Version?.ToString()
+                           ?? "0.0.0";
+                int plus = v.IndexOf('+');
+                if (plus >= 0) v = v.Substring(0, plus);
+                return v.StartsWith("v") ? v : "v" + v;
+            }
+        }
 
         // ==========================================
         // 1. MERKEZİ VE NİZAMLI LOGLAMA

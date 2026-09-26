@@ -39,7 +39,8 @@ namespace POpsAgent
     [SupportedOSPlatform("windows")]
     public class Worker : BackgroundService
     {
-        public const string APP_VERSION = "v0.1.2-alpha";
+        // Sürüm kök VERSION dosyasından gelir (Directory.Build.props -> assembly). Elle güncellenmez.
+        public static readonly string APP_VERSION = POpsHelpers.AppVersion;
 
         private readonly ILogger<Worker> _logger;
         private readonly string _pcName;

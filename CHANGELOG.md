@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Agent/CI:** Version numbers now come from a single source. The repository-root `VERSION` file feeds `<Version>` to every agent project through `Agent/Directory.Build.props`, and each component reads its version from its own assembly at runtime instead of a hardcoded constant. The stale `POpsWatchdog` (`2.0.1-GHOST-SERGEANT`) and `POpsVision` (`1.0.7-FULL-COMMAND`) version strings are gone. A CI job fails the build when `VERSION`, the top CHANGELOG release heading and the built assembly `<Version>` disagree.
+
 ### Fixed
 - **Agent:** Settings are read from `appsettings.json` in the agent's install folder first, then from `C:\POps\appsettings.json`. Before, only `C:\POps` was checked, so an agent installed elsewhere (for example `C:\Program Files (x86)\POps`) found no `ServerUrl` and, since the built-in server address was removed in 0.1.1, connected to `127.0.0.1` and stopped reporting after an update.
 - **Agent:** The startup log showed the version as `vv0.1.2-alpha`.
