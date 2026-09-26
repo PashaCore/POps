@@ -26,8 +26,6 @@ namespace POpsWatchDog
         static readonly string VisionExeName = "POpsTray";
         static readonly string VisionExePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "POpsTray.exe");
 
-        static string _hwId = "UNKNOWN";
-        static string _serverUrl = "http://127.0.0.1:8000"; // Fallback, Helpers'tan güncellenecek
 
         // Main artık sadece asenkron değil, aynı zamanda gizlilik kalkanıyla sarılı
         static void Main(string[] args)
@@ -50,19 +48,9 @@ namespace POpsWatchDog
         {
             POpsHelpers.Log("WATCHDOG", $"Hayalet Çavuş Uyandı. Versiyon: {APP_VERSION}");
 
-            // Yapılandırma Bilgilerini Al
-            _serverUrl = POpsHelpers.GetServerUrl();
-            _hwId = POpsHelpers.GetHardwareId();
-
-            // 2. KORUMA DÖNGÜSÜ VE AĞ DİNLEME (ÇİFT MOTOR)
-            // A - Görev 1: Sistemleri sürekli kontrol et (Eski bekçi görevi)
-            var patrolTask = Task.Run(() => PatrolLoopAsync());
-
-            // B - Görev 2: Sunucuyla telsiz bağlantısı kur (Yeni çavuş görevi)
-            var radioTask = Task.Run(() => RadioCommsLoopAsync());
-
-            // Ana threadi canlı tutmak için bekleriz.
-            await Task.WhenAll(patrolTask, radioTask);
+            // Watchdog yalnızca ajan servisini ve tepsi uygulamasını ayakta tutar. Sunucuya bağlanmaz:
+            // eski "telsiz" döngüsü backend'de hiç olmayan /ws/watchdog ucuna 15 saniyede bir bağlanmaya çalışıyordu.
+            await PatrolLoopAsync();
         }
 
         // ================================================================
@@ -74,15 +62,8 @@ namespace POpsWatchDog
             {
                 try
                 {
-                    if (IsWatchDogPaused())
-                    {
-                        POpsHelpers.Log("WATCHDOG", "Koruyucu uyku modunda (Kullanıcı tarafından duraklatıldı).", false);
-                    }
-                    else
-                    {
-                        CheckAndRepairVisionProcess();
-                        CheckAndRepairAgentService();
-                    }
+                    CheckAndRepairVisionProcess();
+                    CheckAndRepairAgentService();
                 }
                 catch (Exception ex)
                 {
@@ -93,27 +74,6 @@ namespace POpsWatchDog
             }
         }
 
-        private static bool IsWatchDogPaused()
-        {
-            try
-            {
-                string pauseFile = @"C:\POpsData\watchdog_pause.flag";
-                if (File.Exists(pauseFile))
-                {
-                    var lastWrite = File.GetLastWriteTime(pauseFile);
-                    if ((DateTime.Now - lastWrite).TotalMinutes < 15)
-                    {
-                        return true;
-                    }
-                    else
-                    {
-                        File.Delete(pauseFile); // Süresi dolmuş, sil
-                    }
-                }
-            }
-            catch { }
-            return false;
-        }
 
         private static void CheckAndRepairVisionProcess()
         {
@@ -164,107 +124,6 @@ namespace POpsWatchDog
             {
                 // Admin değilse veya servis yoksa sessizce yutar.
             }
-        }
-
-        // ================================================================
-        // 2. MOTOR: TELSİZ HABERLEŞMESİ (WebSocket)
-        // ================================================================
-        private static async Task RadioCommsLoopAsync()
-        {
-            if (_hwId == "HW-UNKNOWN")
-            {
-                POpsHelpers.Log("WATCHDOG", "Kimlik yok, telsiz bağlantısı iptal.", true);
-                return;
-            }
-
-            string wsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://") + $"/ws/watchdog/{_hwId}";
-
-            while (true)
-            {
-                using (var ws = new ClientWebSocket())
-                {
-                    try
-                    {
-                        await ws.ConnectAsync(new Uri(wsUrl), CancellationToken.None);
-                        POpsHelpers.Log("WATCHDOG", "🟢 Telsiz bağlantısı (WebSocket) kuruldu.");
-
-                        var buffer = new byte[4096];
-                        while (ws.State == WebSocketState.Open)
-                        {
-                            var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-                            if (result.MessageType == WebSocketMessageType.Close) break;
-
-                            string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                            ProcessRadioCommand(message);
-                        }
-                    }
-                    catch
-                    {
-                        // Bağlantı koparsa veya kurulamazsa sessizce bekler.
-                    }
-                }
-                await Task.Delay(15000); // 15 saniye bekle, tekrar dene
-            }
-        }
-
-        private static void ProcessRadioCommand(string json)
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                if (root.TryGetProperty("action", out var actionProp))
-                {
-                    string action = actionProp.GetString();
-                    POpsHelpers.Log("WATCHDOG", $"Merkezden Emir Geldi: [{action}]");
-
-                    switch (action)
-                    {
-                        case "restart_agent":
-                            RestartService(AgentServiceName);
-                            break;
-                        case "kill_vision":
-                            KillProcess(VisionExeName);
-                            break;
-                        case "restart_pc":
-                            Process.Start(new ProcessStartInfo("shutdown", "/r /f /t 0") { CreateNoWindow = true, UseShellExecute = false });
-                            break;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                POpsHelpers.Log("WATCHDOG", $"Emir işleme hatası: {ex.Message}", true);
-            }
-        }
-
-        private static void RestartService(string sName)
-        {
-            try
-            {
-                using (ServiceController sc = new ServiceController(sName))
-                {
-                    if (sc.Status == ServiceControllerStatus.Running)
-                    {
-                        sc.Stop();
-                        sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
-                    }
-                    sc.Start();
-                    POpsHelpers.Log("WATCHDOG", $"{sName} servisi başarıyla yeniden başlatıldı.");
-                }
-            }
-            catch (Exception ex) { POpsHelpers.Log("WATCHDOG", $"Servis restart hatası: {ex.Message}", true); }
-        }
-
-        private static void KillProcess(string pName)
-        {
-            try
-            {
-                foreach (var p in Process.GetProcessesByName(pName)) p.Kill();
-                POpsHelpers.Log("WATCHDOG", $"{pName} süreçleri zorla sonlandırıldı.");
-            }
-            catch (Exception ex) { POpsHelpers.Log("WATCHDOG", $"Süreç kapatma hatası: {ex.Message}", true); }
         }
 
         static void SpawnVersionWindow()

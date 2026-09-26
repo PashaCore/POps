@@ -167,10 +167,9 @@
         </div>
         <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
             <select id="fpsSelector" class="fps-select" onchange="App.changeFPS()" style="padding:0.4375rem 0.625rem;border-radius:var(--radius-md);background:var(--bg-surface-2);color:var(--text-primary);border:1px solid var(--border-subtle);font-size:var(--text-xs);font-weight:var(--fw-semibold);">
-                <option value="15">15 FPS (Ekonomik)</option>
-                <option value="30" selected>30 FPS (Standart)</option>
-                <option value="45">45 FPS (Akıcı)</option>
-                <option value="60">60 FPS (Ultra)</option>
+                <option value="1">1 FPS (Düşük bant)</option>
+                <option value="2" selected>2 FPS (Standart)</option>
+                <option value="5">5 FPS (Akıcı)</option>
             </select>
             <button class="btn-vision refresh" onclick="App.requestSingleSnapshot()" id="btnSnapShot"><i class="fas fa-arrows-rotate"></i> Tazele</button>
             <button class="btn-vision diag" onclick="App.openDiag()"><i class="fas fa-stethoscope"></i> Teşhis</button>

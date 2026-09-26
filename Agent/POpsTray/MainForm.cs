@@ -19,8 +19,10 @@ namespace POpsTray
         private NamedPipeClientStream? pipeClient;
         private CancellationTokenSource cts = new CancellationTokenSource();
         private string lastWindow = "";
-        private bool isStealthMode = false;
         private KioskForm _activeKioskForm;
+        // Ekran önizlemesi bildirimleri: her önizleme ipucu metnine yazılır, balon en fazla 5 dakikada bir çıkar
+        private DateTime _lastPreviewBalloon = DateTime.MinValue;
+        private static readonly TimeSpan PreviewBalloonInterval = TimeSpan.FromMinutes(5);
         private CancellationTokenSource? _captureCts;
         private readonly object _pipeLock = new object();
 
@@ -54,19 +56,17 @@ namespace POpsTray
         private const uint KEYEVENTF_KEYDOWN = 0x0000;
         private const uint KEYEVENTF_KEYUP = 0x0002;
 
-        public MainForm(bool isStealth = false)
+        public MainForm()
         {
-            this.isStealthMode = isStealth;
             this.ShowInTaskbar = false;
             this.WindowState = FormWindowState.Minimized;
             this.FormBorderStyle = FormBorderStyle.FixedToolWindow;
             this.Opacity = 0;
 
+            // Öğrenci menüsünde tepsiyi kapatan, watchdog'u duraklatan veya yerine getirilmeyen
+            // "izlemeyi duraklat" seçenekleri yoktur; kiosk ve rıza pencereleri tepsiyle birlikte kapanırdı.
             trayMenu = new ContextMenuStrip();
-            trayMenu.Items.Add("Ekran İzlemeyi Duraklat (15 Dk)", null, OnPauseClicked);
-            trayMenu.Items.Add("Koruyucuyu (WatchDog) Duraklat", null, OnWatchDogPauseClicked);
             trayMenu.Items.Add(new ToolStripMenuItem("Hakkında", null, OnAboutClicked));
-            trayMenu.Items.Add(new ToolStripMenuItem("Çıkış", null, OnExitClicked));
             trayMenu.Items.Add("-");
             var adminItem = new ToolStripMenuItem("Yönetici Müdahalesi (Bypass)", null, OnAdminBypassClicked);
             adminItem.ForeColor = Color.Red;
@@ -76,11 +76,7 @@ namespace POpsTray
             trayIcon.Text = "POps - Ajanı";
             trayIcon.Icon = SystemIcons.Shield; // İleride özel bir .ico dosyası yüklenebilir
             trayIcon.ContextMenuStrip = trayMenu;
-            
-            if (!isStealthMode)
-            {
-                trayIcon.Visible = true;
-            }
+            trayIcon.Visible = true;
 
             _ = Task.Run(() => ConnectToServiceAsync(cts.Token));
             _ = Task.Run(() => MonitorActiveWindowAsync(cts.Token));
@@ -88,8 +84,6 @@ namespace POpsTray
 
         public void ShowNotification(string title, string message)
         {
-            if (isStealthMode) return; // Hayalet modundaysa bildirim gösterme
-            
             trayIcon.BalloonTipTitle = title;
             trayIcon.BalloonTipText = message;
             trayIcon.BalloonTipIcon = ToolTipIcon.Info;
@@ -175,7 +169,7 @@ namespace POpsTray
                     return; 
                 }
                 if (jsonMsg.Contains("STOP_CAPTURE")) { StopCaptureLoop(); return; }
-                if (jsonMsg.Contains("CAPTURE_SNAPSHOT")) { SendSnapshot(); return; }
+                if (jsonMsg.Contains("CAPTURE_SNAPSHOT")) { SendSnapshot(); NotifyPreviewTaken(); return; }
                 
                 if (jsonMsg.StartsWith("SHOW_FAIR_USE:"))
                 {
@@ -291,11 +285,8 @@ namespace POpsTray
                     }
                     else if (action == "get_thumbnail")
                     {
-                        this.Invoke(new Action(() => 
-                        {
-                            ShowNotification("Gizlilik Bildirimi", "Sistem yöneticisi ekran önizlemenizi güncelledi.");
-                        }));
                         SendSnapshot();
+                        NotifyPreviewTaken();
                     }
                     else if (action == "stop_stream")
                     {
@@ -313,6 +304,14 @@ namespace POpsTray
         {
             try
             {
+                // Panelin FPS seçicisi {"action":"set_fps","fps":N} gönderir; eskiden input_type olmadığı için atılıyordu
+                if (root.TryGetProperty("action", out var actionProp) && actionProp.GetString() == "set_fps")
+                {
+                    int fps = root.TryGetProperty("fps", out var fpsProp) && fpsProp.ValueKind == JsonValueKind.Number ? fpsProp.GetInt32() : 2;
+                    ChangeCaptureFps(fps);
+                    return;
+                }
+
                 if (!root.TryGetProperty("input_type", out var typeProp)) return;
                 string inputType = typeProp.GetString();
 
@@ -479,10 +478,37 @@ namespace POpsTray
             _captureCts = null;
         }
 
+        // Yalnızca açık bir yakalama varsa hızını değiştirir; kendiliğinden yakalama başlatmaz
+        private void ChangeCaptureFps(int fps)
+        {
+            if (_captureCts == null) return;
+            StopCaptureLoop();
+            StartCaptureLoop(fps);
+        }
+
         private void SendSnapshot()
         {
             byte[] jpeg = CaptureScreenToJpeg();
             if (jpeg != null) SendToServiceBytes(jpeg);
+        }
+
+        // Her ekran önizlemesi görünür bir iz bırakır: simgenin ipucu metni son önizleme saatini gösterir,
+        // balon bildirimi ise öğrenciyi rahatsız etmemek için en fazla 5 dakikada bir çıkar.
+        private void NotifyPreviewTaken()
+        {
+            try
+            {
+                this.BeginInvoke(new Action(() =>
+                {
+                    trayIcon.Text = $"POps - Son ekran önizlemesi: {DateTime.Now:HH:mm}";
+                    if (DateTime.Now - _lastPreviewBalloon >= PreviewBalloonInterval)
+                    {
+                        _lastPreviewBalloon = DateTime.Now;
+                        ShowNotification("Gizlilik Bildirimi", "Bilgi İşlem ekranınızın küçük bir önizlemesini aldı.");
+                    }
+                }));
+            }
+            catch { }
         }
 
         private byte[]? CaptureScreenToJpeg()
@@ -515,26 +541,9 @@ namespace POpsTray
         }
 
 
-        private void OnPauseClicked(object? sender, EventArgs e)
-        {
-            ShowNotification("Bağlantı Duraklatıldı", "Ekran izleme 15 dakika boyunca askıya alındı.");
-            SendToService("USER_COMMAND:PAUSE_VISION");
-        }
-
-        private void OnWatchDogPauseClicked(object? sender, EventArgs e)
-        {
-            ShowNotification("WatchDog Uyutuldu", "Koruyucu servis duraklatıldı.");
-            SendToService("USER_COMMAND:PAUSE_WATCHDOG");
-        }
-
         private void OnAboutClicked(object? sender, EventArgs e)
         {
             MessageBox.Show("POps - POps Uç Nokta Ajanı\nYasal ve Etik Yönetim Sistemi", "Hakkında", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
-
-        private void OnExitClicked(object? sender, EventArgs e)
-        {
-            Application.Exit();
         }
 
         private void OnAdminBypassClicked(object? sender, EventArgs e)

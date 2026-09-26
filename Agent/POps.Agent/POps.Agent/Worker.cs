@@ -88,6 +88,7 @@ namespace POpsAgent
             // 🚀 IP'Yİ CONFIG DOSYASINDAN AL
             _serverUrl = POpsHelpers.GetServerUrl();
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor (Hedef: {_serverUrl})");
+            SecureConfigFile(@"C:\POps\appsettings.json");
 
             _cachedDna = GetHardwareDnaInternal();
             _cachedInventory = BuildInventoryInternal();
@@ -194,10 +195,10 @@ namespace POpsAgent
 
             _trayPipe.OnMessageReceived += (message) =>
             {
-                if (message == "USER_COMMAND:PAUSE_WATCHDOG")
+                if (message.StartsWith("USER_COMMAND:"))
                 {
-                    try { File.WriteAllText(@"C:\POpsData\watchdog_pause.flag", DateTime.Now.ToString()); } catch { }
-                    POpsHelpers.Log("AGENT", "Kullanıcı WatchDog'u duraklattı.");
+                    // Eski tepsi sürümlerinin "WatchDog'u / ekran izlemeyi duraklat" komutları artık kabul edilmez
+                    POpsHelpers.Log("AGENT", $"Yok sayılan kullanıcı komutu: {message}");
                 }
                 else if (message == "FAIR_USE_ACK")
                 {
@@ -484,18 +485,12 @@ namespace POpsAgent
             try
             {
                 string dir = Path.GetDirectoryName(_identityFilePath);
-                if (!Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                    try
-                    {
-                        DirectoryInfo dInfo = new DirectoryInfo(dir);
-                        DirectorySecurity sec = dInfo.GetAccessControl();
-                        sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null), FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
-                        dInfo.SetAccessControl(sec);
-                    }
-                    catch { }
-                }
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                // Eski sürümler bu klasörü Everyone:FullControl ile açıyordu; oturum açan herkes kimlik
+                // dosyasını değiştirip başka bir cihaz gibi bağlanabiliyordu. ACL her başlangıçta yeniden kurulur.
+                SecureDataDirectory(dir);
+                // Watchdog'u duraklatma özelliği kaldırıldı; eski sürümden kalan bayrak temizlenir
+                try { File.Delete(Path.Combine(dir, "watchdog_pause.flag")); } catch { }
 
                 if (File.Exists(_identityFilePath))
                 {
@@ -511,6 +506,37 @@ namespace POpsAgent
             {
                 return GenerateFallbackHash();
             }
+        }
+
+        // Yalnızca SYSTEM ve Administrators yazabilir; kullanıcı oturumunda çalışan watchdog kimliği okuyabilir.
+        private static void SecureDataDirectory(string dir)
+        {
+            try
+            {
+                var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+                var sec = new DirectorySecurity();
+                sec.SetAccessRuleProtection(true, false);
+                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null), FileSystemRights.ReadAndExecute, inherit, PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(dir).SetAccessControl(sec);
+            }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"POpsData izinleri ayarlanamadı: {ex.Message}", true); }
+        }
+
+        // appsettings.json BypassSecret içerir; öğrenci hesapları (Users) okuyamamalı.
+        private static void SecureConfigFile(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return;
+                var sec = new FileSecurity();
+                sec.SetAccessRuleProtection(true, false);
+                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, AccessControlType.Allow));
+                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), FileSystemRights.FullControl, AccessControlType.Allow));
+                new FileInfo(path).SetAccessControl(sec);
+            }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"appsettings.json izinleri ayarlanamadı: {ex.Message}", true); }
         }
 
         private void UpdateIdentityFile(string newId)
@@ -908,10 +934,14 @@ del ""%~f0""";
                 try
                 {
                     var ps = new PipeSecurity();
-                    var everyone = new SecurityIdentifier(WellKnownSidType.WorldSid, null);
+                    // Yalnızca oturum açmış (etkileşimli) kullanıcının tepsi uygulaması bağlanabilir;
+                    // ağ ve servis hesapları için Everyone izni kaldırıldı.
+                    var interactive = new SecurityIdentifier(WellKnownSidType.InteractiveSid, null);
                     var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+                    var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+                    ps.AddAccessRule(new PipeAccessRule(system, PipeAccessRights.FullControl, AccessControlType.Allow));
                     ps.AddAccessRule(new PipeAccessRule(admins, PipeAccessRights.FullControl, AccessControlType.Allow));
-                    ps.AddAccessRule(new PipeAccessRule(everyone, PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize, AccessControlType.Allow));
+                    ps.AddAccessRule(new PipeAccessRule(interactive, PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize, AccessControlType.Allow));
 
                     _pipeServer = NamedPipeServerStreamAcl.Create(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, ps);
                     POpsHelpers.Log("PIPE", $"Bekleniyor: {pipeName}");

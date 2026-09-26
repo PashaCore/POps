@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backend:** Replaced `python-jose` with `PyJWT` and pinned every backend dependency to an exact version. Existing tokens stay valid.
 - **Dashboard:** Login rate limiting (10 attempts per minute) now counts per browser IP; before, every login came from the dashboard's own address and shared one quota.
 - **Dashboard:** The "wake all devices" confirmation password is no longer written into the page's JavaScript, where every logged-in user could read it. The action now asks the user to type `TÜMÜ`.
+- **Agent:** `C:\POpsData` was created with Everyone:FullControl, so any logged-in student could edit `identity.key` and connect as another device, or pause the watchdog. The service now resets the folder's ACL on every start to SYSTEM and Administrators (full control) and Users (read only), and restricts `C:\POps\appsettings.json`, which holds `BypassSecret`, to SYSTEM and Administrators.
+- **Agent:** The tray pipe accepts interactive users, SYSTEM and Administrators instead of Everyone.
+- **Agent:** Removed the tray's `--stealth` mode (hidden icon, no notifications) and the student menu items "Çıkış", "Koruyucuyu (WatchDog) Duraklat" and "Ekran İzlemeyi Duraklat" (the last one never did anything). The service ignores the old pause commands.
+- **Agent:** Screen previews were captured without telling the user. Every preview now updates the tray icon's tooltip with the time and shows a notification at most every five minutes.
 
 ### Fixed
 - **Dashboard:** The Terminal page never showed command output because it opened its WebSocket at `/panel` instead of `/ws/panel`.
@@ -28,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backend:** Storage statistics and device deletion used the retired `agent_logs` table instead of `agent_logs_v2`.
 - **Backend:** Renaming a lab lost its seating layout and left tasks pointing at the old name; deleting a lab left its settings behind.
 - **Backend:** A device could stay "Online" after its connection failed, and an agent's old socket closing late could drop its new connection. All devices are marked offline when the server starts.
+- **Vision:** The frame-rate selector offered 15-60 FPS but the setting was dropped on the way to the tray, which caps capture at 5 FPS anyway. The selector now offers 1, 2 and 5 FPS and the tray applies the change to a running capture.
+- **Agent:** The watchdog no longer retries a WebSocket connection to `/ws/watchdog` every 15 seconds; the backend never had that endpoint.
 
 ### Removed
 - **Configuration:** `POPS_WOL_CONFIRM_PASSWORD` is no longer used and can be deleted from `.env`.

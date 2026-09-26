@@ -14,10 +14,10 @@ Currently, POps is in active development. Security updates are applied to the `m
 POps handles privileged access on endpoints (running as SYSTEM/Administrator) and must be treated with the highest security standards. 
 
 Key security guarantees in POps:
-1. **Agent Authentication:** Agents authenticate using an immutable Hardware ID (HWID). The server strictly verifies connections to prevent unauthorized agents from joining a lab.
+1. **Agent Identity:** Agents identify themselves with a hardware ID (HWID) stored in `C:\POpsData`, which only SYSTEM and Administrators can modify. Agent connections are not yet authenticated with per-device credentials (planned for v0.2, device enrollment). Until then, allow the agent port or the `/ws/agent` endpoint only from your lab networks.
 2. **Dashboard Access:** The Web Panel is secured via JWT (JSON Web Tokens) with strictly enforced Role-Based Access Control (RBAC). 
 3. **No Keyloggers:** POps is designed for transparency. We explicitly avoid implementing keystroke logging mechanisms.
-4. **Transparent Sessions:** Active `POpsVision` (Remote Desktop) sessions will inherently trigger a visual notification to the active user to ensure privacy and compliance.
+4. **Transparent Sessions:** A `POpsVision` (remote screen) session asks the logged-in user for consent, or, for a mandatory session started by an admin with a written reason, shows a countdown and a notice. Every screen preview updates the tray icon's tooltip with the time and shows a notification at most every five minutes. The tray icon is always visible; there is no hidden mode.
 
 ## Reporting a Vulnerability
 

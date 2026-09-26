@@ -23,7 +23,7 @@ static class Program
             return;
         }
 
-        bool isStealth = args.Contains("--stealth");
+        // Gizli (--stealth) mod kaldırıldı: tepsi simgesi ve bildirimler her zaman görünür.
 
         try
         {
@@ -39,7 +39,7 @@ static class Program
         catch { }
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new MainForm(isStealth));
+        Application.Run(new MainForm());
 
         GC.KeepAlive(_mutex);
     }    
