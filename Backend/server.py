@@ -522,7 +522,8 @@ async def totp_status(auth: dict = Depends(require_auth)):
     return {"enabled": bool(rows and rows[0].get('totp_enabled'))}
 
 @app.post("/api/admin/2fa/setup")
-async def totp_setup(auth: dict = Depends(require_auth)):
+@limiter.limit("10/minute")
+async def totp_setup(request: Request, auth: dict = Depends(require_auth)):
     """Yeni gizli anahtar üretir (henüz zorunlu DEĞİL; onaylanınca aktifleşir). QR için
     otpauth URI'si + manuel giriş için base32 anahtar döner."""
     rows = await execute_query("SELECT totp_enabled FROM users WHERE username=$1", (auth['sub'],), fetch=True)
@@ -534,9 +535,11 @@ async def totp_setup(auth: dict = Depends(require_auth)):
     return {"secret": secret, "otpauth_uri": totp_provisioning_uri(secret, auth['sub'])}
 
 @app.post("/api/admin/2fa/enable")
-async def totp_enable(data: TotpEnableInput, auth: dict = Depends(require_auth)):
+@limiter.limit("10/minute")
+async def totp_enable(request: Request, data: TotpEnableInput, auth: dict = Depends(require_auth)):
     """Kurulumdaki anahtarı bir kod ONAYLAYARAK aktifleştirir. Kod doğrulanmadan aktif
-    edilmez → yanlış kurulumla kilitlenme olmaz."""
+    edilmez → yanlış kurulumla kilitlenme olmaz. OTP doğrulayan bu uç ve /disable brute-force'a
+    karşı rate-limitlidir (login-TOTP yoluyla aynı korumada)."""
     rows = await execute_query("SELECT totp_secret, totp_enabled FROM users WHERE username=$1",
                                (auth['sub'],), fetch=True)
     if not rows or not rows[0].get('totp_secret'):
@@ -549,8 +552,10 @@ async def totp_enable(data: TotpEnableInput, auth: dict = Depends(require_auth))
     return {"ok": True, "enabled": True}
 
 @app.post("/api/admin/2fa/disable")
-async def totp_disable(data: TotpDisableInput, auth: dict = Depends(require_auth)):
-    """2FA'yı kapatır. Aktifse geçerli bir kod ister (oturum çalınmışsa saldırgan kapatamasın)."""
+@limiter.limit("10/minute")
+async def totp_disable(request: Request, data: TotpDisableInput, auth: dict = Depends(require_auth)):
+    """2FA'yı kapatır. Aktifse geçerli bir kod ister (oturum çalınmışsa saldırgan kapatamasın).
+    Kod doğrulaması rate-limitli: çalınmış oturumla bile 6 haneli kod brute-force edilemez."""
     rows = await execute_query("SELECT totp_secret, totp_enabled FROM users WHERE username=$1",
                                (auth['sub'],), fetch=True)
     if rows and rows[0].get('totp_enabled'):

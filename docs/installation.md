@@ -38,4 +38,5 @@ production must be `https://` / `wss://`.
 
 - Point agents at `https://<your-domain>` (installed via the agent MSI with `SERVER_URL=` and `ENROLL_TOKEN=`).
 - Generate enrollment tokens and dispatch signed updates from the **Sistem & Sürüm** panel page.
-- To update the server later from a git checkout, see `Installer/server/pops-deploy-backend`.
+- To update the server later from a git checkout, run `Installer/server/pops-deploy-backend` (health-checked, auto-rollback).
+- Optional: enable **one-click server self-update from the panel** (no SSH) by installing the systemd path-unit — see [`self-update.md`](self-update.md). Until you do, the panel's self-update button shows "not installed" (safe default).

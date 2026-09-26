@@ -189,7 +189,8 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
     ):
         """İnternetsiz kurulum yolu: imzalı bir release (manifest.json + .sig + paketler)
         yükle, ed25519 imzasını depodaki açık anahtarla doğrula, özetleri kontrol et ve
-        doğrulanmışsa stage et. Uygulamak (sunucu/ajan güncelleme) sonraki fazlarda."""
+        doğrulanmışsa stage et. Staged sürümü uygulamak: ajanlara /api/system/deploy-update,
+        sunucu backend'ine /api/system/self-update (Faz 5)."""
         pub = _pubkey_path()
         if not pub:
             raise HTTPException(status_code=503,
@@ -249,8 +250,9 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         }
 
     # --- Ajan kayıt (enroll) jetonları (Faz 3) -----------------------------------
-    # Jeton üretimi/yönetimi burada; jetonu TÜKETME (ilk bağlanışta doğrula + secret ver)
-    # ve /ws/agent kimlik zorlaması sonraki dilimde eklenecek.
+    # Jeton üretimi/yönetimi burada. Jetonun TÜKETİMİ (ilk bağlanışta doğrula + secret ver)
+    # ve /ws/agent kimlik zorlaması server.py'de uygulanmıştır (enroll consume + set_secret,
+    # enforce_agent_auth → WS 4401).
 
     @router.post("/api/system/enroll-token")
     async def create_enroll_token(data: EnrollTokenInput, auth: dict = Depends(require_superadmin)):
