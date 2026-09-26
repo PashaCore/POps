@@ -28,7 +28,7 @@ jobs:
           - name: POpsTray
             project: Agent/POpsTray/POpsTray.csproj
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -40,7 +40,7 @@ jobs:
     name: Backend (Python 3.9)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python
         # Sunucu hedefi AlmaLinux/RHEL 9'un Python 3.9'u
         uses: actions/setup-python@v5
@@ -66,7 +66,7 @@ jobs:
     name: Dashboard checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: PHP syntax
         run: find Dashboard -name '*.php' -print0 | xargs -0 -n1 php -l
       - name: Dark mode stays removed
@@ -80,7 +80,7 @@ jobs:
     name: Version consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -129,7 +129,7 @@ jobs:
       DB_PASS: pops
       DB_NAME: pops_ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -154,7 +154,7 @@ jobs:
     name: Release signing tool
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -190,7 +190,7 @@ jobs:
       CORS_ALLOWED_ORIGINS: ""
       POPS_TEST_HTTP: http://127.0.0.1:8099
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
