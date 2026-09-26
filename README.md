@@ -37,6 +37,12 @@ We believe transparency builds trust, and trusted systems create better institut
 
 ---
 
+## 🌱 Origins
+
+POps grew out of a graduation project: an earlier version was built for, and ran in, a real computer lab at a Turkish public university's IT department for roughly two to three months (with the department's awareness). That real-world use — automating machines, keeping an inventory, and doing it transparently for the people at the keyboard — is what shaped the current design. This repository is the open-source redesign of that work within clear legal and ethical bounds.
+
+---
+
 ## 📖 Why POps Exists
 
 ### The Problem
