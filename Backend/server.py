@@ -15,6 +15,7 @@ import shutil
 import asyncio
 import socket
 import hashlib
+import hmac
 import zipfile
 import secrets
 import bcrypt
@@ -90,6 +91,43 @@ def ws_check_token(token: Optional[str]) -> bool:
     if not token:
         return False
     return verify_jwt(token) is not None
+
+# ── Ajan kimlik doğrulama (Faz 3): enroll token + per-cihaz secret ──────────────
+def _hash_secret(secret: str) -> str:
+    return hashlib.sha256(secret.encode('utf-8')).hexdigest()
+
+async def enforce_agent_auth_enabled() -> bool:
+    """global_settings.enforce_agent_auth = '1' ise kimliksiz ajan bağlantıları reddedilir.
+    Varsayılan KAPALI (accept-both): ajan güncellenene kadar mevcut (secret'sız) ajanlar düşmez."""
+    try:
+        rows = await execute_query("SELECT value FROM global_settings WHERE key='enforce_agent_auth'", fetch=True)
+    except Exception:
+        return False
+    return bool(rows and str(rows[0]["value"]) == '1')
+
+async def verify_agent_secret(pc_name: str, secret: Optional[str]) -> bool:
+    """Ajanın sunduğu secret, o cihaz için saklanan SHA-256 hash ile sabit-zamanlı karşılaştırılır."""
+    if not secret:
+        return False
+    try:
+        rows = await execute_query("SELECT secret_hash FROM agent_secrets WHERE pc_name=$1", (pc_name,), fetch=True)
+    except Exception:
+        return False
+    if not rows:
+        return False
+    return hmac.compare_digest(str(rows[0]["secret_hash"]), _hash_secret(secret))
+
+async def valid_enroll_token(token: Optional[str]) -> Optional[dict]:
+    """Kullanılmamış ve süresi dolmamış enroll jetonunu döndürür (henüz tüketmez); yoksa None."""
+    if not token:
+        return None
+    try:
+        rows = await execute_query(
+            "SELECT id, lab_name FROM enroll_tokens WHERE token=$1 AND NOT is_used AND expires_at > NOW()",
+            (token,), fetch=True)
+    except Exception:
+        return None
+    return rows[0] if rows else None
 # ──────────────────────────────────────────────────────────────────────────────
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -449,6 +487,7 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
         await execute_query("DELETE FROM hw_inventory WHERE pc_name = $1", (pc_name,))
         await execute_query(f"DELETE FROM {LOG_TABLE} WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM agent_versions WHERE pc_name = $1", (pc_name,))
+        await execute_query("DELETE FROM agent_secrets WHERE pc_name = $1", (pc_name,))
         # Cihaz çevrimiçiyse ajan bağlantısını da kapat
         agent_ws = manager.active_agents.get(pc_name)
         manager.disconnect_agent(pc_name)
@@ -695,8 +734,29 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
     forwarded = websocket.headers.get("X-Forwarded-For")
     client_ip = forwarded.split(",")[0] if forwarded else (websocket.client.host if websocket.client else "Bilinmiyor")
     active_hwid = pc_name
-    manager.active_agents[active_hwid] = websocket
     agent_version = websocket.headers.get("X-Agent-Version", "unknown")
+
+    # ── Faz 3 kimlik doğrulama (accept-both) ──
+    # Secret ya da geçerli enroll token varsa kimlikli; hiçbiri yoksa "legacy".
+    # enforce_agent_auth KAPALIYKEN legacy bağlantı KABUL edilir (mevcut ajan düşmez);
+    # AÇIKKEN reddedilir. Değerlendirme reconcile'dan önce, URL pc_name'e karşı yapılır.
+    auth_method = "none"
+    pending_enroll = None
+    if await verify_agent_secret(active_hwid, websocket.headers.get("X-Agent-Secret")):
+        auth_method = "secret"
+    else:
+        pending_enroll = await valid_enroll_token(websocket.headers.get("X-Enroll-Token"))
+        if pending_enroll:
+            auth_method = "enroll"
+    if auth_method == "none" and await enforce_agent_auth_enabled():
+        # Kimliksiz: audit'i ajanların YAZAMADIĞI device_audit_logs'a düş, sonra reddet.
+        await add_audit_log(active_hwid, "auth_reject",
+                            "Kimliksiz ajan bağlantısı reddedildi (enforce açık)",
+                            {"ip": client_ip, "agent_version": agent_version})
+        await websocket.close(code=4401, reason="Ajan kimlik dogrulamasi gerekli")
+        return
+
+    manager.active_agents[active_hwid] = websocket
 
     async def handle_routine_payload(pld):
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -720,6 +780,11 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             verified_hwid = await reconcile_device(active_hwid, payload.get("dna_payload"), client_ip, websocket)
             if verified_hwid != active_hwid:
                 manager.rename_agent(active_hwid, verified_hwid)
+                # Enrolled secret'ı çözümlenen yeni kimliğe taşı (hedefte yoksa)
+                await execute_query(
+                    "UPDATE agent_secrets SET pc_name=$1 WHERE pc_name=$2 "
+                    "AND NOT EXISTS (SELECT 1 FROM agent_secrets WHERE pc_name=$1)",
+                    (verified_hwid, active_hwid))
                 active_hwid = verified_hwid
             hw = payload.get("dna_payload", {}).get("hardware", {})
             caps = payload.get("dna_payload", {}).get("capabilities", {})
@@ -733,7 +798,29 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             """, (active_hwid, real_hostname, now, client_ip, hw.get('uuid'), hw.get('bios_sn'), hw.get('disk_sn'), hw.get('mac'), hw.get('ram_sn'), caps.get('ram_readable', True)))
             
             await execute_query("INSERT INTO agent_versions (pc_name, version, last_update) VALUES ($1, $2, $3) ON CONFLICT (pc_name) DO UPDATE SET version=$2, last_update=$3", (active_hwid, agent_version, now))
-            
+
+            # Enroll token ile bağlandıysa: tüket, kalıcı secret üret+sakla, ajana gönder, laba ata.
+            if auth_method == "enroll" and pending_enroll:
+                new_secret = secrets.token_urlsafe(32)
+                await execute_query(
+                    "INSERT INTO agent_secrets (pc_name, secret_hash) VALUES ($1, $2) "
+                    "ON CONFLICT (pc_name) DO UPDATE SET secret_hash=$2, rotated_at=NOW()",
+                    (active_hwid, _hash_secret(new_secret)))
+                await execute_query(
+                    "UPDATE enroll_tokens SET is_used=TRUE, used_by=$1, used_at=NOW() "
+                    "WHERE id=$2 AND NOT is_used", (active_hwid, pending_enroll["id"]))
+                if pending_enroll.get("lab_name"):
+                    await execute_query("UPDATE clients SET lab_name=$1 WHERE pc_name=$2",
+                                        (pending_enroll["lab_name"], active_hwid))
+                await add_audit_log(active_hwid, "enroll", "Ajan enroll token ile kaydoldu",
+                                    {"lab": pending_enroll.get("lab_name"), "ip": client_ip})
+                try:
+                    await websocket.send_text(json.dumps({"action": "set_secret", "secret": new_secret}))
+                except Exception:
+                    pass
+                pending_enroll = None
+                auth_method = "secret"
+
             hw_exists = await execute_query("SELECT cpu FROM hw_inventory WHERE pc_name = $1", (active_hwid,), fetch=True)
             if not hw_exists or hw_exists[0]["cpu"] == "-": await manager.send_command({"action": "get_hardware"}, active_hwid)
             await process_queue()
