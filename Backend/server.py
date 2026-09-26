@@ -90,8 +90,11 @@ UPLOAD_DIR = os.path.realpath(os.path.join(BASE_DIR, "storage"))
 UPDATES_DIR = os.path.join(BASE_DIR, "updates")
 
 USE_V2_SCHEMA = True
+# Ajan loglarının yazıldığı tablo; istatistik ve silme işlemleri de bunu kullanır
+LOG_TABLE = "agent_logs_v2" if USE_V2_SCHEMA else "agent_logs"
 
-app = FastAPI(title="POps Merkez API")
+# API şeması ve etkileşimli dokümantasyon (/docs, /redoc, /openapi.json) dışarıya sunulmaz
+app = FastAPI(title="POps Merkez API", docs_url=None, redoc_url=None, openapi_url=None)
 
 # Rate limiter hata yöneticisi
 app.state.limiter = limiter
@@ -216,7 +219,9 @@ async def startup_event():
             db_pool = await asyncpg.create_pool(**DB_CONFIG, min_size=5, max_size=100)
             await init_db()
             print("✅ PostgreSQL Bağlantısı Başarılı!")
-            
+            # Açılışta hiçbir ajan bağlı değil; bağlananlar yeniden Online yazılır
+            await execute_query("UPDATE clients SET status = 'Offline' WHERE status IS DISTINCT FROM 'Offline'")
+
             admin_user = os.environ.get('PANEL_ADMIN_USER', 'admin')
             admin_pass = os.environ.get('PANEL_ADMIN_PASS')
             # Mevcut kayıt varsa sadece yoksa ekle (her restart'ta üzerine yazma)
@@ -272,9 +277,15 @@ class ConnectionManager:
         await websocket.accept()
         self.active_vision_ws[pc_name] = websocket
 
-    def disconnect_agent(self, pc_name: str):
-        if pc_name in self.active_agents: del self.active_agents[pc_name]
-        if pc_name in self.active_vision_ws: del self.active_vision_ws[pc_name]
+    def disconnect_agent(self, pc_name: str, websocket: Optional[WebSocket] = None) -> bool:
+        """Ajan soketini kayıttan düşürür. websocket verilirse yalnızca kayıtlı soket o ise
+        silinir; böylece geç kapanan eski bir bağlantı, yeniden bağlanan ajanın yeni soketini
+        silmez. Kayıt gerçekten silindiyse True döner."""
+        if websocket is not None and self.active_agents.get(pc_name) is not websocket:
+            return False
+        removed = self.active_agents.pop(pc_name, None) is not None
+        self.active_vision_ws.pop(pc_name, None)
+        return removed
 
     def disconnect_panel(self, websocket: WebSocket):
         if websocket in self.active_panels: self.active_panels.remove(websocket)
@@ -436,7 +447,7 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
     try:
         await execute_query("DELETE FROM clients WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM hw_inventory WHERE pc_name = $1", (pc_name,))
-        await execute_query("DELETE FROM agent_logs WHERE pc_name = $1", (pc_name,))
+        await execute_query(f"DELETE FROM {LOG_TABLE} WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM agent_versions WHERE pc_name = $1", (pc_name,))
         # Cihaz çevrimiçiyse ajan bağlantısını da kapat
         agent_ws = manager.active_agents.get(pc_name)
@@ -683,7 +694,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         current_hostname = pld.get("hostname", active_hwid)
         if pld.get("type") == "result":
-            await execute_query("UPDATE tasks SET status = 'Completed', output = $1 WHERE id = $2", (pld.get("output"), pld.get("task_id")))
+            # Ajan yalnızca kendisine atanmış görevin sonucunu yazabilir
+            await execute_query("UPDATE tasks SET status = 'Completed', output = $1 WHERE id = $2 AND target_pc = $3", (pld.get("output"), pld.get("task_id"), active_hwid))
             await manager.broadcast_to_panels({"type": "terminal_output", "id": active_hwid, "pc_name": current_hostname, "output": pld.get("output"), "task_id": pld.get("task_id")})
             await process_queue()
             return
@@ -736,9 +748,18 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 continue
             await handle_routine_payload(payload)
     except WebSocketDisconnect:
-        manager.disconnect_agent(active_hwid)
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        await execute_query("UPDATE clients SET status = 'Offline' WHERE pc_name = $1", (active_hwid,))
+        pass
+    except Exception as e:
+        # Bozuk mesaj veya beklenmeyen hata: soket kapansın ki cihaz yanlışlıkla Online görünmesin
+        print(f"⚠️ /ws/agent/{active_hwid} hata: {e}")
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
+    finally:
+        # Yeniden bağlanan ajanın yeni soketi kayıtlıysa ona dokunulmaz
+        if manager.disconnect_agent(active_hwid, websocket):
+            await execute_query("UPDATE clients SET status = 'Offline' WHERE pc_name = $1", (active_hwid,))
 
 @app.get("/api/tasks")
 async def get_tasks(limit: int = 1000, auth: dict = Depends(require_auth)):
@@ -766,11 +787,13 @@ async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require
     return {"status": "success"}
 
 async def attempt_p2p_wol(mac_address: str, lab_name: str):
-    peer = await execute_query("SELECT pc_name FROM clients WHERE lab_name = $1 AND status = 'online' LIMIT 1", (lab_name,), fetch=True)
-    if peer:
-        peer_name = peer[0]["pc_name"]
-        await manager.send_command({"action": "wake_peer", "mac": mac_address}, peer_name)
-        return True
+    # Veritabanı durumu 'Online' olarak yazılır; ayrıca soketi gerçekten açık olan bir eş seçilir
+    peers = await execute_query("SELECT pc_name FROM clients WHERE lab_name = $1 AND status = 'Online'", (lab_name,), fetch=True)
+    for peer in peers or []:
+        peer_name = peer["pc_name"]
+        if peer_name in manager.active_agents:
+            await manager.send_command({"action": "wake_peer", "mac": mac_address}, peer_name)
+            return True
     return False
 
 @app.post("/api/wake_pc/{pc_name}")
@@ -837,7 +860,7 @@ async def get_devices(auth: dict = Depends(require_auth)):
             "boot_count": r["boot_count"], 
             "current_user": r.get("logged_user", "-"), 
             "is_quarantined": r.get("is_quarantined", False),
-            "agent_version": r.get("version") or "Bilinmiyor"
+            "agent_version": r.get("agent_version") or "Bilinmiyor"
         } 
         for r in (rows or [])
     ]
@@ -883,8 +906,14 @@ async def get_custom_labs(auth: dict = Depends(require_auth)):
 
 @app.post("/api/rename_lab")
 async def rename_lab(data: RenameLabInput, auth: dict = Depends(require_admin)):
-    await execute_query("UPDATE clients SET lab_name = $1 WHERE lab_name = $2", (data.new_name, data.old_name))
-    await execute_query("UPDATE custom_labs SET lab_name = $1 WHERE lab_name = $2", (data.new_name, data.old_name))
+    # Oturma planı (lab_settings) ve görev kayıtları da yeni ada taşınır; hepsi tek işlemde
+    async with db_pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("UPDATE clients SET lab_name = $1 WHERE lab_name = $2", data.new_name, data.old_name)
+            await conn.execute("UPDATE custom_labs SET lab_name = $1 WHERE lab_name = $2", data.new_name, data.old_name)
+            await conn.execute("""UPDATE lab_settings SET lab_name = $1 WHERE lab_name = $2
+                                  AND NOT EXISTS (SELECT 1 FROM lab_settings WHERE lab_name = $1)""", data.new_name, data.old_name)
+            await conn.execute("UPDATE tasks SET target_lab = $1 WHERE target_lab = $2", data.new_name, data.old_name)
     return {"status": "success"}
 
 @app.post("/api/rename_device")
@@ -894,8 +923,11 @@ async def rename_device(data: RenameDeviceInput, auth: dict = Depends(require_ad
 
 @app.post("/api/delete_lab")
 async def delete_lab(data: DeleteLabInput, auth: dict = Depends(require_admin)):
-    await execute_query("DELETE FROM custom_labs WHERE lab_name = $1", (data.lab_name,))
-    await execute_query("UPDATE clients SET lab_name = 'Atanmamis_Cihazlar' WHERE lab_name = $1", (data.lab_name,))
+    async with db_pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM custom_labs WHERE lab_name = $1", data.lab_name)
+            await conn.execute("UPDATE clients SET lab_name = 'Atanmamis_Cihazlar' WHERE lab_name = $1", data.lab_name)
+            await conn.execute("DELETE FROM lab_settings WHERE lab_name = $1", data.lab_name)
     return {"status": "success"}
 
 @app.post("/api/move_pc")
@@ -990,12 +1022,12 @@ async def api_storage(auth: dict = Depends(require_auth)):
     total_bytes = 20 * 1024 * 1024 * 1024  # 20 GB
     
     try:
-        size_row = await execute_query("SELECT pg_total_relation_size('agent_logs') as size", fetch=True)
+        size_row = await execute_query(f"SELECT pg_total_relation_size('{LOG_TABLE}') as size", fetch=True)
         log_bytes = size_row[0]['size'] if size_row else 0
-        
-        trend_rows = await execute_query("""
-            SELECT SUBSTRING(timestamp FROM 1 FOR 10) as day, COUNT(*) as c 
-            FROM agent_logs 
+
+        trend_rows = await execute_query(f"""
+            SELECT SUBSTRING(timestamp FROM 1 FOR 10) as day, COUNT(*) as c
+            FROM {LOG_TABLE}
             WHERE timestamp >= to_char(current_date - interval '6 days', 'YYYY-MM-DD')
             GROUP BY SUBSTRING(timestamp FROM 1 FOR 10) 
             ORDER BY day ASC
@@ -1148,10 +1180,8 @@ async def delete_update(filename: str, auth: dict = Depends(require_admin)):
         return {"status": "success"}
     return {"status": "error"}
 
-@app.get("/api/stream/start/{pc_name}")
-async def start_stream(pc_name: str, auth: dict = Depends(require_auth)):
-    await manager.send_command({"action": "start_stream"}, pc_name)
-    return {"status": "started"}
+# Ekran akışı yalnızca Vision oturumu (rıza/bildirim akışı) üzerinden başlatılır;
+# rıza sormadan yakalama başlatan eski /api/stream/start ucu kaldırıldı.
 
 @app.get("/api/stream/stop/{pc_name}")
 async def stop_stream(pc_name: str, auth: dict = Depends(require_auth)):
