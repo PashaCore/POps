@@ -76,7 +76,39 @@
             <i class="fas fa-save"></i> Performans Ayarlarını Kaydet
         </button>
     </div>
+
+    <div class="setting-card">
+        <div class="setting-header">
+            <i class="fas fa-shield-halved" style="color:var(--success-solid);"></i> İki Adımlı Doğrulama (2FA)
+        </div>
+        <p style="font-size:var(--text-sm);color:var(--text-tertiary);margin-bottom:1rem;line-height:1.5;">
+            Girişte şifreye ek olarak authenticator uygulamasından (Google Authenticator, Authy, Microsoft Authenticator) 6 haneli kod ister. Yalnızca <strong>kendi hesabınız</strong> için geçerlidir.
+        </p>
+        <div id="twofaStatus" class="status-box warning"><i class="fas fa-arrows-rotate fa-spin"></i> Durum yükleniyor...</div>
+
+        <div id="twofaSetup" style="display:none;margin-top:1rem;">
+            <div id="twofaQr" style="display:flex;justify-content:center;margin:1rem 0;background:#fff;padding:0.75rem;border-radius:var(--radius-md);"></div>
+            <div class="setting-group">
+                <label class="setting-label">Manuel Anahtar (QR okutamazsanız)</label>
+                <input type="text" class="setting-input" id="twofaSecret" readonly onclick="this.select()" style="font-size:0.8rem;">
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Uygulamadaki 6 Haneli Kod</label>
+                <input type="text" class="setting-input" id="twofaEnableCode" inputmode="numeric" maxlength="6" placeholder="123456">
+            </div>
+            <button class="btn" style="width:100%;padding:0.75rem;" onclick="twofaEnable()"><i class="fas fa-check"></i> Etkinleştir</button>
+        </div>
+
+        <div style="margin-top:1rem;">
+            <button class="btn" id="twofaSetupBtn" style="width:100%;padding:0.75rem;display:none;" onclick="twofaSetup()"><i class="fas fa-plus"></i> 2FA Kur</button>
+            <button class="btn danger" id="twofaDisableBtn" style="width:100%;padding:0.75rem;display:none;" onclick="twofaDisable()"><i class="fas fa-shield-xmark"></i> 2FA'yı Devre Dışı Bırak</button>
+        </div>
+    </div>
 </div>
+
+<!-- QR üretimi tarayıcıda yapılır (gizli anahtar dışarı gitmez). Kütüphane yerelde
+     barındırılır → çevrimdışı okullarda da çalışır, harici CDN'e bağımlı değildir. -->
+<script src="assets/vendor/qrcode.min.js"></script>
 
 <div class="page-header" style="margin-top:var(--space-8);margin-bottom:var(--space-4);">
     <div><h2 style="font-size:var(--text-2xl);"><i class="fas fa-users" style="color:var(--primary-500);"></i> Kullanıcı Yönetimi</h2></div>
@@ -147,6 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
         testApiConnection();
         fetchCurrentLimits();
         loadUsers();
+        loadTwofaStatus();
     } else {
         document.getElementById('dispHttpUrl').value = 'HATA: api_config.js okunamadı!';
         document.getElementById('dispWsUrl').value = 'HATA: api_config.js okunamadı!';
@@ -281,6 +314,76 @@ async function deleteUser(id) {
         if (res.ok) { loadUsers(); showToast('Kullanıcı silindi.', 'success'); }
         else showToast(await apiErrorMessage(res, 'Silinemedi.'), 'error');
     } catch (e) { showToast('Silinemedi.', 'error'); }
+}
+
+// ============== İKİ ADIMLI DOĞRULAMA (2FA) ==============
+async function loadTwofaStatus() {
+    try {
+        const res = await fetch(`${apiBase}/api/admin/2fa/status`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        renderTwofa(!!data.enabled);
+    } catch (e) {
+        const box = document.getElementById('twofaStatus');
+        box.className = 'status-box offline';
+        box.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Durum alınamadı';
+    }
+}
+
+function renderTwofa(enabled) {
+    const box = document.getElementById('twofaStatus');
+    document.getElementById('twofaSetup').style.display = 'none';
+    document.getElementById('twofaSetupBtn').style.display = enabled ? 'none' : 'block';
+    document.getElementById('twofaDisableBtn').style.display = enabled ? 'block' : 'none';
+    if (enabled) {
+        box.className = 'status-box online';
+        box.innerHTML = '<i class="fas fa-lock"></i> 2FA aktif — girişte kod istenir';
+    } else {
+        box.className = 'status-box warning';
+        box.innerHTML = '<i class="fas fa-lock-open"></i> 2FA kapalı';
+    }
+}
+
+async function twofaSetup() {
+    try {
+        const res = await fetch(`${apiBase}/api/admin/2fa/setup`, { method: 'POST' });
+        if (!res.ok) return showToast(await apiErrorMessage(res, 'Kurulum başlatılamadı.'), 'error');
+        const data = await res.json();
+        document.getElementById('twofaSecret').value = data.secret || '';
+        const qr = document.getElementById('twofaQr');
+        qr.innerHTML = '';
+        if (typeof QRCode !== 'undefined' && data.otpauth_uri) {
+            new QRCode(qr, { text: data.otpauth_uri, width: 180, height: 180 });
+        } else {
+            qr.innerHTML = '<span style="font-size:var(--text-xs);color:#666;">QR yüklenemedi — aşağıdaki manuel anahtarı kullanın.</span>';
+        }
+        document.getElementById('twofaSetup').style.display = 'block';
+        document.getElementById('twofaSetupBtn').style.display = 'none';
+    } catch (e) { showToast('Bağlantı hatası.', 'error'); }
+}
+
+async function twofaEnable() {
+    const code = (document.getElementById('twofaEnableCode').value || '').trim();
+    if (!/^\d{6}$/.test(code)) return showToast('6 haneli kodu girin.', 'warning');
+    try {
+        const res = await fetch(`${apiBase}/api/admin/2fa/enable`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp: code })
+        });
+        if (res.ok) { showToast('2FA etkinleştirildi.', 'success'); loadTwofaStatus(); }
+        else showToast(await apiErrorMessage(res, 'Etkinleştirilemedi.'), 'error');
+    } catch (e) { showToast('Bağlantı hatası.', 'error'); }
+}
+
+async function twofaDisable() {
+    const code = prompt("2FA'yı kapatmak için authenticator kodunu girin:");
+    if (code === null) return;
+    try {
+        const res = await fetch(`${apiBase}/api/admin/2fa/disable`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp: (code || '').trim() })
+        });
+        if (res.ok) { showToast('2FA devre dışı bırakıldı.', 'success'); loadTwofaStatus(); }
+        else showToast(await apiErrorMessage(res, 'Kapatılamadı.'), 'error');
+    } catch (e) { showToast('Bağlantı hatası.', 'error'); }
 }
 
 // Sunucunun döndürdüğü hata açıklamasını (FastAPI 'detail') gösterir

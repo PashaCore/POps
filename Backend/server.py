@@ -18,6 +18,10 @@ import hashlib
 import hmac
 import zipfile
 import secrets
+import base64
+import struct
+import time
+from urllib.parse import quote
 import bcrypt
 import jwt  # PyJWT
 from werkzeug.utils import secure_filename
@@ -91,6 +95,63 @@ def ws_check_token(token: Optional[str]) -> bool:
     if not token:
         return False
     return verify_jwt(token) is not None
+
+# ── İki adımlı doğrulama (TOTP, RFC 6238) — opt-in, ek bağımlılık yok ────────────
+# Standart TOTP: base32 gizli anahtar + HMAC-SHA1, 30 sn'lik pencere. Python
+# standart kütüphanesiyle üretilir (pyotp gibi ek paket internetsiz okullarda
+# pip gerektirmesin diye kullanılmaz). Google Authenticator/Authy uyumludur.
+_TOTP_STEP = 30
+_TOTP_DIGITS = 6
+
+def _totp_new_secret(nbytes: int = 20) -> str:
+    """Yeni base32 gizli anahtar (dolgu '='siz; authenticator uygulamaları böyle bekler)."""
+    return base64.b32encode(secrets.token_bytes(nbytes)).decode('ascii').rstrip('=')
+
+def _totp_code(secret_b32: str, counter: int) -> str:
+    key = base64.b32decode(secret_b32 + '=' * ((8 - len(secret_b32) % 8) % 8))
+    digest = hmac.new(key, struct.pack('>Q', counter), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0f
+    bincode = struct.unpack('>I', digest[offset:offset + 4])[0] & 0x7fffffff
+    return str(bincode % (10 ** _TOTP_DIGITS)).zfill(_TOTP_DIGITS)
+
+def verify_totp(secret_b32: Optional[str], code: Optional[str], window: int = 1) -> bool:
+    """Kullanıcının girdiği kodu ±1 pencereyle (saat kayması toleransı) sabit zamanlı doğrular."""
+    if not secret_b32 or not code:
+        return False
+    code = code.strip().replace(' ', '')
+    if not code.isdigit() or len(code) != _TOTP_DIGITS:
+        return False
+    now = int(time.time() // _TOTP_STEP)
+    try:
+        for w in range(-window, window + 1):
+            if hmac.compare_digest(_totp_code(secret_b32, now + w), code):
+                return True
+    except Exception:
+        return False
+    return False
+
+def totp_provisioning_uri(secret_b32: str, username: str, issuer: str = "POps") -> str:
+    """Authenticator'a QR/manuel eklemek için otpauth:// URI'si. Etiket 'issuer:hesap'
+    biçimindedir; ayraç ':' literal kalır (Google Authenticator vb. böyle bekler), parçalar
+    ayrı ayrı yüzde-kodlanır."""
+    label = "%s:%s" % (quote(issuer, safe=''), quote(username, safe=''))
+    return "otpauth://totp/%s?secret=%s&issuer=%s&digits=%d&period=%d" % (
+        label, secret_b32, quote(issuer, safe=''), _TOTP_DIGITS, _TOTP_STEP)
+
+def create_totp_challenge(username: str) -> str:
+    """Şifre doğrulandıktan sonra 2. adım (kod) için kısa ömürlü (5 dk) challenge jetonu.
+    'twofa=pending' taşır; normal oturum jetonu olarak KULLANILAMAZ (role yok → require_admin reddeder)."""
+    expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5)
+    return jwt.encode({'sub': username, 'twofa': 'pending', 'exp': expire}, JWT_SECRET, algorithm=JWT_ALGO)
+
+def verify_totp_challenge(token: str) -> Optional[str]:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except jwt.PyJWTError:
+        return None
+    if payload.get('twofa') != 'pending':
+        return None
+    return payload.get('sub')
 
 # ── Ajan kimlik doğrulama (Faz 3): enroll token + per-cihaz secret ──────────────
 def _hash_secret(secret: str) -> str:
@@ -325,7 +386,10 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-class AdminLoginInput(BaseModel): username: str; password: str
+class AdminLoginInput(BaseModel): username: str; password: str; otp: Optional[str] = None
+class TotpLoginInput(BaseModel): challenge: str; otp: str
+class TotpEnableInput(BaseModel): otp: str
+class TotpDisableInput(BaseModel): otp: Optional[str] = None
 class TaskInput(BaseModel): target_pc: str; target_lab: str; script_path: str
 class MovePcInput(BaseModel): pc_name: str; new_lab: str
 class MovePcsInput(BaseModel): pc_names: List[str]; new_lab: str
@@ -374,21 +438,36 @@ class PolicyAlertInput(BaseModel):
     domain: str
     category: str
 
+def _login_success(u: dict) -> dict:
+    return {
+        "status": "success",
+        "message": "Giriş Başarılı",
+        "role": u['role'],
+        "username": u['username'],
+        "permissions": u.get('permissions', '[]'),
+        "token": create_jwt(u['username'], u['role']),
+    }
+
+async def _mark_login(user_id: int):
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    await execute_query("UPDATE users SET last_login=$1 WHERE id=$2", (now, user_id))
+
 @app.post("/api/admin/login")
 @limiter.limit("10/minute")
 async def admin_login(request: Request, data: AdminLoginInput):
     user = await execute_query(
-        "SELECT id, username, role, permissions, password_hash FROM users WHERE username = $1",
+        "SELECT id, username, role, permissions, password_hash, totp_enabled, totp_secret "
+        "FROM users WHERE username = $1",
         (data.username,), fetch=True
     )
     if not user:
         # Sabit süre bekleyerek timing attack'ı engelle
         bcrypt.checkpw(b'dummy', bcrypt.hashpw(b'dummy', bcrypt.gensalt()))
         raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre")
-    
+
     u = user[0]
     stored_hash = u['password_hash']
-    
+
     # Yalnızca bcrypt kabul edilir. Tuzsuz SHA256 özetleri ve '!disabled' gibi
     # geçersiz değerler bcrypt'te ValueError verir; bu hesaplar giriş yapamaz.
     try:
@@ -398,19 +477,80 @@ async def admin_login(request: Request, data: AdminLoginInput):
 
     if not valid:
         raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre")
-    
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    await execute_query("UPDATE users SET last_login=$1 WHERE id=$2", (now, u['id']))
-    
-    token = create_jwt(u['username'], u['role'])
-    return {
-        "status": "success",
-        "message": "Giriş Başarılı",
-        "role": u['role'],
-        "username": u['username'],
-        "permissions": u.get('permissions', '[]'),
-        "token": token
-    }
+
+    # İki adımlı doğrulama etkinse: kod yoksa challenge dön (2. adım), varsa burada doğrula.
+    if u.get('totp_enabled'):
+        if data.otp:
+            if not verify_totp(u.get('totp_secret'), data.otp):
+                raise HTTPException(status_code=401, detail="Doğrulama kodu geçersiz")
+        else:
+            return {"status": "totp_required", "challenge": create_totp_challenge(u['username'])}
+
+    await _mark_login(u['id'])
+    return _login_success(u)
+
+@app.post("/api/admin/login/totp")
+@limiter.limit("10/minute")
+async def admin_login_totp(request: Request, data: TotpLoginInput):
+    """Girişin 2. adımı: şifre doğrulandıktan sonra dönen challenge + authenticator kodu.
+    Böylece şifre 2. adımda tekrar taşınmaz."""
+    username = verify_totp_challenge(data.challenge)
+    if not username:
+        raise HTTPException(status_code=401, detail="Oturum doğrulaması süresi doldu, tekrar giriş yapın")
+    user = await execute_query(
+        "SELECT id, username, role, permissions, totp_enabled, totp_secret FROM users WHERE username = $1",
+        (username,), fetch=True)
+    if not user or not user[0].get('totp_enabled'):
+        raise HTTPException(status_code=401, detail="Geçersiz istek")
+    u = user[0]
+    if not verify_totp(u.get('totp_secret'), data.otp):
+        raise HTTPException(status_code=401, detail="Doğrulama kodu geçersiz")
+    await _mark_login(u['id'])
+    return _login_success(u)
+
+# ── 2FA kayıt/yönetim (giriş yapmış kullanıcı kendi 2FA'sını yönetir) ─────────────
+@app.get("/api/admin/2fa/status")
+async def totp_status(auth: dict = Depends(require_auth)):
+    rows = await execute_query("SELECT totp_enabled FROM users WHERE username=$1", (auth['sub'],), fetch=True)
+    return {"enabled": bool(rows and rows[0].get('totp_enabled'))}
+
+@app.post("/api/admin/2fa/setup")
+async def totp_setup(auth: dict = Depends(require_auth)):
+    """Yeni gizli anahtar üretir (henüz zorunlu DEĞİL; onaylanınca aktifleşir). QR için
+    otpauth URI'si + manuel giriş için base32 anahtar döner."""
+    rows = await execute_query("SELECT totp_enabled FROM users WHERE username=$1", (auth['sub'],), fetch=True)
+    if rows and rows[0].get('totp_enabled'):
+        raise HTTPException(status_code=400, detail="2FA zaten aktif. Önce devre dışı bırakın.")
+    secret = _totp_new_secret()
+    await execute_query("UPDATE users SET totp_secret=$1, totp_enabled=FALSE WHERE username=$2",
+                        (secret, auth['sub']))
+    return {"secret": secret, "otpauth_uri": totp_provisioning_uri(secret, auth['sub'])}
+
+@app.post("/api/admin/2fa/enable")
+async def totp_enable(data: TotpEnableInput, auth: dict = Depends(require_auth)):
+    """Kurulumdaki anahtarı bir kod ONAYLAYARAK aktifleştirir. Kod doğrulanmadan aktif
+    edilmez → yanlış kurulumla kilitlenme olmaz."""
+    rows = await execute_query("SELECT totp_secret, totp_enabled FROM users WHERE username=$1",
+                               (auth['sub'],), fetch=True)
+    if not rows or not rows[0].get('totp_secret'):
+        raise HTTPException(status_code=400, detail="Önce 2FA kurulumunu başlatın.")
+    if rows[0].get('totp_enabled'):
+        return {"ok": True, "enabled": True}
+    if not verify_totp(rows[0]['totp_secret'], data.otp):
+        raise HTTPException(status_code=400, detail="Kod doğrulanamadı. Authenticator saatini kontrol edin.")
+    await execute_query("UPDATE users SET totp_enabled=TRUE WHERE username=$1", (auth['sub'],))
+    return {"ok": True, "enabled": True}
+
+@app.post("/api/admin/2fa/disable")
+async def totp_disable(data: TotpDisableInput, auth: dict = Depends(require_auth)):
+    """2FA'yı kapatır. Aktifse geçerli bir kod ister (oturum çalınmışsa saldırgan kapatamasın)."""
+    rows = await execute_query("SELECT totp_secret, totp_enabled FROM users WHERE username=$1",
+                               (auth['sub'],), fetch=True)
+    if rows and rows[0].get('totp_enabled'):
+        if not verify_totp(rows[0].get('totp_secret'), data.otp):
+            raise HTTPException(status_code=400, detail="Kapatmak için geçerli bir doğrulama kodu gerekir.")
+    await execute_query("UPDATE users SET totp_secret=NULL, totp_enabled=FALSE WHERE username=$1", (auth['sub'],))
+    return {"ok": True, "enabled": False}
 
 @app.get("/api/admin/users")
 async def get_users(auth=Depends(require_admin)):

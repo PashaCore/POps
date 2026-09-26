@@ -8,77 +8,110 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     exit;
 }
 
+// "Baştan giriş yap": bekleyen 2FA challenge'ını temizle.
+if (isset($_GET['reset'])) {
+    unset($_SESSION['totp_challenge'], $_SESSION['totp_username']);
+    header('Location: login.php');
+    exit;
+}
+
+// API'ye JSON POST atan yardımcı; [$responseData, $httpcode, $error] döner.
+function pops_api_post($path, $payload) {
+    $ch = curl_init(API_INTERNAL_URL . $path);
+    $data = json_encode($payload);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Content-Length: ' . strlen($data),
+        // Giriş denemesi sınırı (dakikada 10) tarayıcının IP'sine göre işlesin; aksi halde
+        // bütün girişler PHP'nin 127.0.0.1 adresinden geliyor görünür ve tek kotayı paylaşır.
+        // REMOTE_ADDR, Apache mod_remoteip sayesinde Cloudflare arkasındaki gerçek istemcidir.
+        'X-Forwarded-For: ' . ($_SERVER['REMOTE_ADDR'] ?? '')
+    ]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    $response = curl_exec($ch);
+    $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_error = curl_error($ch);
+    curl_close($ch);
+    if ($response === false) {
+        return [null, 0, 'API Sunucusuna Ulaşılamıyor! (Detay: ' . $curl_error . ')'];
+    }
+    $decoded = json_decode($response, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        return [null, $httpcode, "API Yanıt Hatası (HTTP $httpcode): " . strip_tags(substr($response, 0, 150))];
+    }
+    return [$decoded, $httpcode, ''];
+}
+
+// Başarılı yanıtı session'a yazıp panele yönlendirir.
+function pops_finish_login($responseData, $fallback_username) {
+    $_SESSION['loggedin'] = true;
+    $_SESSION['username'] = $responseData['username'] ?? $fallback_username;
+    $_SESSION['role'] = $responseData['role'] ?? 'superadmin';
+    $_SESSION['jwt_token'] = $responseData['token'] ?? '';
+    $perms = [];
+    if (isset($responseData['permissions'])) {
+        $decoded = json_decode($responseData['permissions'], true);
+        if (is_array($decoded)) $perms = $decoded;
+    }
+    $_SESSION['permissions'] = $perms;
+    unset($_SESSION['totp_challenge'], $_SESSION['totp_username']);
+    session_regenerate_id(true);
+    pops_set_jwt_cookie($_SESSION['jwt_token']);
+    header('Location: index.php');
+    exit;
+}
+
 $error = '';
+$show_otp = false;   // true ise şifre doğrulandı, 2. adım (kod) formunu göster
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
+    $otp = trim($_POST['otp'] ?? '');
 
-    if (empty($username) || empty($password)) {
-        $error = 'Kullanıcı adı ve şifre boş bırakılamaz!';
-    } else {
-        // === DOĞRUDAN SUNUCU İÇİ BAĞLANTI (404 ve IP sorunlarını kökten çözer) ===
-        // API'nin gerçek kapısı (.env: POPS_API_INTERNAL_URL):
-        $url = API_INTERNAL_URL . '/api/admin/login';
-        
-        $data = json_encode([
-            'username' => $username,
-            'password' => $password
+    // 2. ADIM: şifre zaten doğrulandı, elimizde challenge var; sadece kodu doğrula.
+    if ($otp !== '' && !empty($_SESSION['totp_challenge'])) {
+        list($responseData, $httpcode, $err) = pops_api_post('/api/admin/login/totp', [
+            'challenge' => $_SESSION['totp_challenge'],
+            'otp'       => $otp,
         ]);
-
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/json',
-            'Content-Length: ' . strlen($data),
-            // Giriş denemesi sınırı (dakikada 10) tarayıcının IP'sine göre işlesin; aksi halde
-            // bütün girişler PHP'nin 127.0.0.1 adresinden geliyor görünür ve tek kotayı paylaşır.
-            // REMOTE_ADDR, Apache mod_remoteip sayesinde Cloudflare arkasındaki gerçek istemcidir.
-            'X-Forwarded-For: ' . ($_SERVER['REMOTE_ADDR'] ?? '')
-        ]);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-
-        $response = curl_exec($ch);
-        $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curl_error = curl_error($ch);
-        curl_close($ch);
-
-        if ($response === false) {
-            $error = 'API Sunucusuna Ulaşılamıyor! (Detay: ' . $curl_error . ')';
+        if ($err) {
+            $error = $err;
+        } elseif (($responseData['status'] ?? '') === 'success') {
+            pops_finish_login($responseData, $_SESSION['totp_username'] ?? '');
         } else {
-            $responseData = json_decode($response, true);
-            
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                $error = "API Yanıt Hatası (HTTP $httpcode): " . strip_tags(substr($response, 0, 150));
+            $error = $responseData['detail'] ?? $responseData['message'] ?? "Kod doğrulanamadı (HTTP $httpcode)";
+            $show_otp = true;   // aynı ekranda kal, tekrar denesin
+        }
+
+    // 1. ADIM: kullanıcı adı + şifre.
+    } else {
+        $username = trim($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+        if (empty($username) || empty($password)) {
+            $error = 'Kullanıcı adı ve şifre boş bırakılamaz!';
+        } else {
+            list($responseData, $httpcode, $err) = pops_api_post('/api/admin/login', [
+                'username' => $username,
+                'password' => $password,
+            ]);
+            if ($err) {
+                $error = $err;
+            } elseif (($responseData['status'] ?? '') === 'success') {
+                pops_finish_login($responseData, $username);
+            } elseif (($responseData['status'] ?? '') === 'totp_required') {
+                // Şifre doğru; 2FA açık. Challenge'ı session'da tut, kod formunu göster.
+                $_SESSION['totp_challenge'] = $responseData['challenge'] ?? '';
+                $_SESSION['totp_username'] = $username;
+                $show_otp = true;
             } else {
-                if (isset($responseData['status']) && $responseData['status'] === 'success') {
-                    // Şifre doğru, içeri al!
-                    $_SESSION['loggedin'] = true;
-                    $_SESSION['username'] = $responseData['username'] ?? $username;
-                    $_SESSION['role'] = $responseData['role'] ?? 'superadmin';
-                    // JWT token'ı sunucu tarafında sakla; tarayıcıya yalnızca httpOnly çerez olarak gider
-                    $_SESSION['jwt_token'] = $responseData['token'] ?? '';
-                    
-                    // Yetkileri session'a dizi olarak kaydet
-                    $perms = [];
-                    if (isset($responseData['permissions'])) {
-                        $decoded = json_decode($responseData['permissions'], true);
-                        if (is_array($decoded)) $perms = $decoded;
-                    }
-                    $_SESSION['permissions'] = $perms;
-                    
-                    // Token URL'ye veya JS'e verilmez; AJAX/WebSocket istekleri httpOnly çerezle doğrulanır
-                    session_regenerate_id(true);
-                    pops_set_jwt_cookie($_SESSION['jwt_token']);
-                    header('Location: index.php');
-                    exit;
-                } else {
-                    $error = $responseData['message'] ?? "Giriş reddedildi (HTTP $httpcode)";
-                }
+                $error = $responseData['detail'] ?? $responseData['message'] ?? "Giriş reddedildi (HTTP $httpcode)";
             }
         }
     }
+} elseif (!empty($_SESSION['totp_challenge'])) {
+    // Sayfa yenilendi ama challenge hâlâ geçerli olabilir → kod ekranında kal.
+    $show_otp = true;
 }
 ?>
 <!DOCTYPE html>
@@ -176,7 +209,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php if ($error): ?>
                 <div class="error-box"><?php echo htmlspecialchars($error); ?></div>
             <?php endif; ?>
-            
+
+            <?php if ($show_otp): ?>
+            <form method="POST" action="">
+                <div class="input-wrapper">
+                    <label>Doğrulama Kodu</label>
+                    <input type="text" name="otp" inputmode="numeric" autocomplete="one-time-code"
+                           pattern="[0-9]*" maxlength="6" placeholder="123456" required autofocus
+                           style="letter-spacing:0.4em; text-align:center; font-size:1.25rem;">
+                    <p style="margin-top:0.5rem; font-size:var(--text-xs); color:var(--text-tertiary);">
+                        Authenticator uygulamanızdaki 6 haneli kodu girin.
+                    </p>
+                </div>
+                <button type="submit" class="btn block mt-6" style="padding: 0.875rem;">Doğrula ve Giriş Yap</button>
+                <a href="login.php?reset=1" style="display:block; text-align:center; margin-top:var(--space-4); font-size:var(--text-sm); color:var(--text-tertiary);">← Baştan giriş yap</a>
+            </form>
+            <?php else: ?>
             <form method="POST" action="">
                 <div class="input-wrapper">
                     <label>Kullanıcı Adı</label>
@@ -188,6 +236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <button type="submit" class="btn block mt-6" style="padding: 0.875rem;">Sisteme Giriş Yap</button>
             </form>
+            <?php endif; ?>
         </div>
         <div style="text-align:center; margin-top: var(--space-6); font-size: var(--text-xs); color: var(--text-muted); line-height: 1.6;">
             &copy; <?php echo date("Y"); ?> POps CORE<br>

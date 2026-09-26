@@ -15,3 +15,4 @@ UP=$!
 trap 'kill "$UP" 2>/dev/null || true' EXIT
 for _ in $(seq 1 40); do curl -sf "$POPS_TEST_HTTP/api/health" >/dev/null 2>&1 && break; sleep 1; done
 python tests/test_security.py
+python tests/test_2fa.py

@@ -206,3 +206,4 @@ jobs:
           ( cd Backend && python -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/uvicorn.log 2>&1 & )
           curl --retry-connrefused --retry 40 --retry-delay 1 -sf http://127.0.0.1:8099/api/health >/dev/null || { echo "server did not start"; cat /tmp/uvicorn.log; exit 1; }
           python Backend/tests/test_security.py
+          python Backend/tests/test_2fa.py
