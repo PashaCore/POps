@@ -149,3 +149,19 @@ jobs:
           out=$(python Backend/migrate.py)
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -q "yok (her sey guncel)" || { echo "::error::Migration idempotent degil"; exit 1; }
+
+  signing:
+    name: Release signing tool
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install cryptography
+        run: pip install 'cryptography==43.0.3'
+      - name: sign_release selftest
+        # Geçici anahtarla imzala/doğrula, kurcalanmış manifest ve bozuk artefakt reddedilmeli.
+        # Gerçek imza anahtarı (secret) gerekmez.
+        run: python tools/sign_release.py selftest

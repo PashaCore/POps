@@ -63,7 +63,7 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then VER="${GITHUB_REF_NAME#v}"; else VER="dev-${GITHUB_SHA::7}"; fi
           NAME="pops-server-$VER"
           mkdir -p "dist/$NAME"
-          cp -r Backend Dashboard docs .env.example CHANGELOG.md LICENSE README.md SECURITY.md "dist/$NAME/"
+          cp -r Backend Dashboard docs keys VERSION .env.example CHANGELOG.md LICENSE README.md SECURITY.md "dist/$NAME/"
           rm -rf "dist/$NAME/Backend/__pycache__"
           tar -C dist -czf "$NAME.tar.gz" "$NAME"
           tar -tzf "$NAME.tar.gz" | head -20
@@ -82,16 +82,50 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Tag == VERSION == CHANGELOG
+        # Etiket, kök VERSION dosyası ve CHANGELOG başlığı birbirini tutmazsa yayım durur.
+        run: |
+          set -euo pipefail
+          VER=$(tr -d '[:space:]' < VERSION)
+          if [ "$GITHUB_REF_NAME" != "v$VER" ]; then
+            echo "::error::Etiket ($GITHUB_REF_NAME) ile VERSION (v$VER) uyuşmuyor; etiketi 'v$VER' olarak atın."
+            exit 1
+          fi
+          if ! grep -q "^## \[$VER\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md içinde '## [$VER]' başlığı yok."
+            exit 1
+          fi
+          echo "Sürüm tutarlı: v$VER"
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Sign release manifest (ed25519)
+        # Tüm paketlerin SHA-256'sını + sürüm + tag + zaman damgasını içeren manifest'i
+        # imzalar ve depodaki açık anahtarla doğrular. Özel anahtar yalnızca bu secret'tan gelir.
+        env:
+          POPS_RELEASE_PRIVATE_KEY: ${{ secrets.POPS_RELEASE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${POPS_RELEASE_PRIVATE_KEY:-}" ]; then
+            echo "::error::POPS_RELEASE_PRIVATE_KEY secret'ı tanımlı değil; imzasız release yayımlanmaz."
+            echo "Kurulum: 'python tools/sign_release.py genkey --out-dir keys' ile üretilen özel PEM'i bu secret'a ekleyin (açık anahtar keys/pops_release_ed25519.pub.pem repoda)."
+            exit 1
+          fi
+          python -m pip install --quiet 'cryptography==43.0.3'
+          VER=$(tr -d '[:space:]' < VERSION)
+          python tools/sign_release.py sign --dir dist --version "$VER" --tag "$GITHUB_REF_NAME"
+          python tools/sign_release.py verify --dir dist --pub-pem keys/pops_release_ed25519.pub.pem
       - name: Checksums and release notes
         run: |
           (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
           VER="${GITHUB_REF_NAME#v}"
           {
-            echo "> **Pilot sürüm, imzasız.** Ajan paketi Windows'ta SmartScreen uyarısı verebilir; uç noktalarda .NET 8 Desktop Runtime (x64) gerekir."
+            echo "> **İmzalı sürüm (ed25519).** \`manifest.json\` ve \`manifest.json.sig\` release'e dahildir; açık anahtar depoda \`keys/pops_release_ed25519.pub.pem\`. Doğrulama için bkz. \`keys/README.md\`. Ajan paketi Windows'ta SmartScreen uyarısı verebilir (Authenticode ayrı); uç noktalarda .NET 8 Desktop Runtime (x64) gerekir."
             echo
             awk -v v="$VER" 'index($0, "## [" v "]") == 1 {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md
           } > notes.md

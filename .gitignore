@@ -22,6 +22,10 @@ Backend/updates/
 vendor/
 node_modules/
 
+# İmza özel anahtarları asla commit'lenmez (yalnızca *.pub.pem repoda durur)
+*.key.pem
+keys/*.key.pem
+
 # OS Files
 .DS_Store
 Thumbs.db
