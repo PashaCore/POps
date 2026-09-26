@@ -97,7 +97,9 @@ jobs:
           } > notes.md
           cat notes.md
       - name: Publish
-        uses: softprops/action-gh-release@v2
+        # Üçüncü taraf action, repoya yazma yetkisiyle çalıştığı için commit SHA'sına sabitlenmiştir
+        # (Dependabot sürümü günceller)
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           files: dist/*
           body_path: notes.md
