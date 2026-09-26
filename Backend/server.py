@@ -129,6 +129,17 @@ async def valid_enroll_token(token: Optional[str]) -> Optional[dict]:
     except Exception:
         return None
     return rows[0] if rows else None
+
+async def agent_http_auth(request: Request):
+    """Ajan HTTP uçları (inventory/logs/auth/policy_alert) için accept-both kimlik.
+    enforce_agent_auth KAPALIYKEN serbest (mevcut ajanlar etkilenmez); AÇIKKEN ajan
+    X-Agent-Id + X-Agent-Secret göndermeli, yoksa 401. Panel uçları bundan etkilenmez."""
+    if not await enforce_agent_auth_enabled():
+        return
+    hwid = request.headers.get("X-Agent-Id")
+    if hwid and await verify_agent_secret(hwid, request.headers.get("X-Agent-Secret")):
+        return
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Ajan kimlik dogrulamasi gerekli")
 # ──────────────────────────────────────────────────────────────────────────────
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -591,20 +602,20 @@ async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
     return {"status": "success", "token": token, "valid_for": today.isoformat()}
 
 @app.post("/api/auth/login")
-async def auth_login(data: AuthEventInput):
+async def auth_login(data: AuthEventInput, _auth=Depends(agent_http_auth)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await log_audit_event(data.hw_id, "Security", f"🟢 GİRİŞ: {data.student_id}", actor_id=data.student_id, event_type="auth.login", category="security", action="login", risk_level="info")
     await execute_query("UPDATE clients SET logged_user=$1 WHERE pc_name=$2", (data.student_id, data.hw_id))
     return {"status": "success"}
 
 @app.post("/api/auth/failed")
-async def auth_failed(data: AuthEventInput):
+async def auth_failed(data: AuthEventInput, _auth=Depends(agent_http_auth)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await log_audit_event(data.hw_id, "Security", f"🔴 RED: {data.student_id} ({data.message})", actor_id=data.student_id, event_type="auth.failed", category="security", action="login_failed", risk_level="medium", reason=data.message)
     return {"status": "success"}
 
 @app.post("/api/auth/logout")
-async def auth_logout(data: AuthEventInput):
+async def auth_logout(data: AuthEventInput, _auth=Depends(agent_http_auth)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await log_audit_event(data.hw_id, "Security", "⚪ OTURUM KAPATILDI", actor_id="System", event_type="auth.logout", category="security", action="logout", risk_level="info")
     await execute_query("UPDATE clients SET logged_user='-' WHERE pc_name=$1", (data.hw_id,))
@@ -711,7 +722,16 @@ async def websocket_panel(websocket: WebSocket):
 
 @app.websocket("/ws/vision/{pc_name}")
 async def websocket_vision(websocket: WebSocket, pc_name: str):
-    await manager.connect_vision(websocket, pc_name)
+    await websocket.accept()
+    # Faz 3 accept-both: enforce açıkken kimliksiz vision tüneli reddedilir (sahte ekran engellenir)
+    if await enforce_agent_auth_enabled() and not (
+        await verify_agent_secret(pc_name, websocket.headers.get("X-Agent-Secret"))
+        or await valid_enroll_token(websocket.headers.get("X-Enroll-Token"))
+    ):
+        await add_audit_log(pc_name, "auth_reject", "Kimliksiz vision baglantisi reddedildi (enforce acik)", {})
+        await websocket.close(code=4401, reason="Ajan kimlik dogrulamasi gerekli")
+        return
+    manager.active_vision_ws[pc_name] = websocket
     try:
         while True:
             data = await websocket.receive_text()
@@ -966,7 +986,7 @@ async def get_devices(auth: dict = Depends(require_auth)):
     ]
 
 @app.post("/api/inventory/{pc_name}")
-async def update_inventory(pc_name: str, data: HwInventoryInput):
+async def update_inventory(pc_name: str, data: HwInventoryInput, _auth=Depends(agent_http_auth)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await execute_query('''INSERT INTO hw_inventory (pc_name, hostname, cpu, ram, motherboard, gpu, os_version, ip_address, mac_address, disk_info, last_updated) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (pc_name) DO UPDATE SET hostname=EXCLUDED.hostname, cpu=EXCLUDED.cpu, ram=EXCLUDED.ram, motherboard=EXCLUDED.motherboard, gpu=EXCLUDED.gpu, os_version=EXCLUDED.os_version, ip_address=EXCLUDED.ip_address, mac_address=EXCLUDED.mac_address, disk_info=EXCLUDED.disk_info, last_updated=EXCLUDED.last_updated''', (pc_name, data.hostname, data.cpu, data.ram, data.motherboard, data.gpu, data.os_version, data.ip_address, data.mac_address, data.disk_info, now))
     return {"status": "success"}
@@ -977,7 +997,7 @@ async def get_all_inventory(auth: dict = Depends(require_auth)):
     return rows if rows else []
 
 @app.post("/api/logs/{pc_name}")
-async def add_log(pc_name: str, data: LogInput):
+async def add_log(pc_name: str, data: LogInput, _auth=Depends(agent_http_auth)):
     await log_audit_event(
         pc_name=pc_name, log_type=data.log_type or "System", message=data.message or "", 
         actor_id=data.actor_id or "Agent", event_type=data.event_type or "agent.log", 
@@ -1331,7 +1351,7 @@ async def get_policies():
     return {"fair_use_text": "Bu cihaz POps platformu tarafından izlenmekte ve yönetilmektedir.", "dns_categories": ["yasadisi_bahis", "pornografi"], "auto_quarantine": False, "quarantine_threshold": 5}
 
 @app.post("/api/policy_alert")
-async def add_policy_alert(data: PolicyAlertInput):
+async def add_policy_alert(data: PolicyAlertInput, _auth=Depends(agent_http_auth)):
     await log_audit_event(
         pc_name=data.hw_id, 
         log_type="Security", 
