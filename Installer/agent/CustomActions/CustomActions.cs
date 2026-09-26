@@ -56,6 +56,13 @@ namespace POps.Installer
             return ActionResult.Success;
         }
 
+        [CustomAction]
+        public static ActionResult KeepPackage(Session session)
+        {
+            Setup.KeepPackage(Value(session.CustomActionData, "ORIGINAL_MSI"), Layout.Default, session.Log);
+            return ActionResult.Success;
+        }
+
         private static Dictionary<string, string> ToDictionary(CustomActionData data)
         {
             var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -216,6 +223,39 @@ namespace POps.Installer
             {
                 string path = Path.Combine(installDir, name);
                 if (File.Exists(path)) DeleteFile(path, log);
+            }
+        }
+
+        // ==========================================================================================
+        // KeepPackage: kurulan MSI, POpsUpdater'ın geri dönüş kaynağı olarak saklanır. Hata kurulumu bozmaz.
+        // ==========================================================================================
+        public static void KeepPackage(string originalMsi, Layout layout, Action<string> log)
+        {
+            try
+            {
+                if (originalMsi == null || !File.Exists(originalMsi))
+                {
+                    log("POps: kurulum paketi bulunamadı, saklanmadı.");
+                    return;
+                }
+                // Windows Installer önbelleğindeki kopyada gömülü dosyalar yoktur; ondan yeniden kurulamaz
+                string cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Installer") + "\\";
+                if (Path.GetFullPath(originalMsi).StartsWith(cache, StringComparison.OrdinalIgnoreCase)) return;
+
+                string dir = Path.Combine(layout.DataDir, "packages");
+                string target = Path.Combine(dir, "installed.msi");
+                if (SamePath(originalMsi, target)) return;
+
+                Directory.CreateDirectory(dir);
+                string tmp = target + ".tmp";
+                File.Copy(originalMsi, tmp, true);
+                if (!MoveFileEx(tmp, target, MoveFileReplaceExisting | MoveFileWriteThrough))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                log($"POps: kurulum paketi geri dönüş için saklandı: {target}");
+            }
+            catch (Exception ex)
+            {
+                log("POps: kurulum paketi saklanamadı (güncelleme geri dönüşü dosya yedeğine düşer): " + ex.Message);
             }
         }
 

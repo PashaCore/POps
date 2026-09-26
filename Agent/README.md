@@ -36,3 +36,17 @@ The secret is bound to the device identity the server resolves; when the server 
 ### Machines with freeze software
 
 Enroll before freezing: install with the machine thawed, wait until the device appears in the panel (the secret is now on disk), then freeze, so the secret is part of the frozen image. A machine that enrolls while frozen loses the secret at the next reboot, and its one-time token is already used. To avoid that, set `PersistDir` to a folder that is not rolled back. With Windows Unified Write Filter, add a file exclusion for `C:\POpsData\secure` instead. Once the server enforces authentication, a device that has lost its secret needs a new enrollment token.
+
+## Updates
+
+Agent updates are signed MSI installs; the agent applies nothing unsigned.
+
+1. The server sends `{"action":"update_agent","manifest":"<base64 of manifest.json>","manifest_sig":"<contents of manifest.json.sig>"}` — the release manifest produced by `tools/sign_release.py`.
+2. The agent verifies the ed25519 signature with the public key compiled into it (`ReleaseVerifier.PublicKeyBase64`, the raw bytes of `keys/pops_release_ed25519.pub.pem`), requires the manifest version to be newer than its own (no downgrade, no re-install of the same version) and takes the MSI's name, size and SHA-256 from the signed manifest only.
+3. It downloads that file from its own server only (`<ServerUrl>/updates/<name>`), stops reading at the signed size and deletes the file unless size and SHA-256 match. Only then does anything change on the machine.
+4. The verified MSI is kept in `C:\POpsData\updates`, and `POpsUpdater` is copied to `C:\POpsData\updater` and started from there, so that `msiexec` never has to replace a running updater.
+5. `POpsUpdater` holds `C:\POpsData\update.lock`, backs up the install folder file by file, closes the tray and watchdog and runs `msiexec /i … /qn /norestart` (0 and 3010 count as success; 1618 is retried). It then waits up to 90 seconds for the new version to write `C:\POpsData\health.json` (`{"version":"<version>","ts":<epoch>,"pid":…}`), which the service writes on every start; a `health.json` older than the install is ignored.
+6. If the new version does not report healthy, the updater uninstalls it and reinstalls the previous MSI (every install keeps its own package as `C:\POpsData\packages\installed.msi`). If there is no previous MSI, it restores the file backup. A failed `msiexec` needs no extra step: the old version is restored by Windows Installer's own rollback.
+7. The outcome goes to `C:\POpsData\update-result.json` (`success`, `install_failed`, `rolled_back`, `rollback_failed` or `rejected`, with the msiexec exit code and log path under `C:\POpsLogs`), and the agent logs it on its next start.
+
+While `update.lock` is younger than 15 minutes the watchdog neither restarts the service nor relaunches the tray; once the lock is gone it starts the tray again in the user's session.

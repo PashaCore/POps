@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Compression;
 using System.IO.Pipes;
 using System.Linq;
 using System.Management;
@@ -110,6 +109,10 @@ namespace POpsAgent
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             string baseWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://");
+
+            // Güncelleme sonrası updater yeni sürümün ayağa kalktığını bu dosyadan doğrular
+            AgentUpdate.WriteHealth();
+            AgentUpdate.LogLastResult();
 
             // Start background tasks
             _ = Task.Run(() => PolicyPollingLoop(stoppingToken));
@@ -471,11 +474,10 @@ namespace POpsAgent
                             _trayPipe?.SendCommandToDesktop("STOP_CAPTURE"); 
                             await DisconnectVisionTunnelAsync(); 
                         }
-                        else if (action == "update_agent") 
-                        { 
-                            string url = root.TryGetProperty("download_url", out var uProp) ? uProp.GetString() : null;
-                            string hash = root.TryGetProperty("hash", out var hProp) ? hProp.GetString() : null;
-                            await TriggerAutoUpdateAsync(url, hash); 
+                        else if (action == "update_agent")
+                        {
+                            JsonElement command = root.Clone();
+                            _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl));
                         }
                         else if (action == "wake_peer") { POpsHelpers.SendWolPacket(root.GetProperty("mac").GetString()); }
                         else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
@@ -777,87 +779,6 @@ namespace POpsAgent
             }
             catch { }
             return "-";
-        }
-
-        private static readonly Regex UpdatePackageNameRegex = new Regex(@"^[A-Za-z0-9_.-]+\.zip$", RegexOptions.Compiled);
-        private static readonly Regex Sha256HexRegex = new Regex("^[0-9a-fA-F]{64}$", RegexOptions.Compiled);
-
-        // Güncelleme paketi yalnızca bu ajanın bağlı olduğu sunucunun /updates dizininden indirilir:
-        // emirdeki adresin sadece dosya adı kullanılır, host ve yol dikkate alınmaz.
-        // SHA-256 özeti zorunludur; özeti olmayan veya eşleşmeyen paket uygulanmaz.
-        private async Task TriggerAutoUpdateAsync(string announcedUrl, string expectedHash)
-        {
-            try
-            {
-                string packageName = null;
-                if (Uri.TryCreate(announcedUrl, UriKind.Absolute, out Uri announcedUri))
-                    packageName = Path.GetFileName(Uri.UnescapeDataString(announcedUri.AbsolutePath));
-
-                if (string.IsNullOrEmpty(packageName) || !UpdatePackageNameRegex.IsMatch(packageName))
-                {
-                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] Güncelleme reddedildi: geçersiz paket adresi ({announcedUrl}).", true);
-                    return;
-                }
-                if (string.IsNullOrEmpty(expectedHash) || !Sha256HexRegex.IsMatch(expectedHash))
-                {
-                    POpsHelpers.Log("AGENT", "[GÜVENLİK] Güncelleme reddedildi: SHA-256 özeti yok veya geçersiz.", true);
-                    return;
-                }
-
-                string downloadUrl = $"{_serverUrl.TrimEnd('/')}/updates/{Uri.EscapeDataString(packageName)}";
-                POpsHelpers.Log("AGENT", $"Güncelleme başlatıldı. İndiriliyor: {downloadUrl}");
-
-                // Önce indir ve doğrula; doğrulanmayan paket için hiçbir süreç durdurulmaz
-                byte[] fileBytes = await _httpClient.GetByteArrayAsync(downloadUrl);
-                byte[] computedHash = SHA256.HashData(fileBytes);
-                if (!CryptographicOperations.FixedTimeEquals(computedHash, Convert.FromHexString(expectedHash)))
-                {
-                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] İndirilen paketin bütünlük doğrulaması (Hash Mismatch) başarısız oldu. Beklenen: {expectedHash.ToLowerInvariant()}, Hesaplanan: {Convert.ToHexString(computedHash).ToLowerInvariant()}", true);
-                    return; // Abort update
-                }
-                POpsHelpers.Log("AGENT", "[GÜVENLİK] Paket bütünlüğü doğrulandı (SHA256 eşleşti).");
-
-                string targetDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
-                string tmpDir = @"C:\.pops_tmp";
-                string zipPath = Path.Combine(Path.GetTempPath(), "update.zip");
-
-                foreach (var p in Process.GetProcessesByName("POpsWatchdog")) { try { p.Kill(); } catch { } }
-                foreach (var p in Process.GetProcessesByName("POpsVision")) { try { p.Kill(); } catch { } }
-                await Task.Delay(1000);
-
-                if (Directory.Exists(tmpDir)) Directory.Delete(tmpDir, true);
-                Directory.CreateDirectory(tmpDir);
-
-                await File.WriteAllBytesAsync(zipPath, fileBytes);
-                ZipFile.ExtractToDirectory(zipPath, tmpDir);
-
-                string updaterPath = Path.Combine(tmpDir, "POpsUpdater.exe");
-                if (!File.Exists(updaterPath)) return;
-
-                string batPath = Path.Combine(tmpDir, "apply_update.bat");
-
-                string batContent = $@"@echo off
-sc stop POpsAgent >nul 2>&1
-timeout /t 3 /nobreak >nul
-taskkill /F /IM POpsWatchdog.exe >nul 2>&1
-taskkill /F /IM POpsVision.exe >nul 2>&1
-taskkill /F /IM POpsAgent.exe >nul 2>&1
-timeout /t 2 /nobreak >nul
-""{updaterPath}"" ""{targetDir}""
-
-schtasks /create /tn ""POpsWatchdogLauncher"" /tr ""\""{targetDir}\POpsWatchdog.exe\"""" /sc once /st 00:00 /ru ""BUILTIN\Users"" /it /f >nul 2>&1
-schtasks /run /tn ""POpsWatchdogLauncher"" >nul 2>&1
-schtasks /delete /tn ""POpsWatchdogLauncher"" /f >nul 2>&1
-
-del ""%~f0""";
-
-                File.WriteAllText(batPath, batContent);
-                Process.Start(new ProcessStartInfo { FileName = batPath, UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden });
-            }
-            catch (Exception ex)
-            {
-                POpsHelpers.Log("AGENT", $"Güncelleme Hatası: {ex.Message}", true);
-            }
         }
 
         private async Task EnableNetworkIsolationAsync()

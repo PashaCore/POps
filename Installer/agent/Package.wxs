@@ -45,6 +45,8 @@
     <Property Id="ENROLL_TOKEN" Secure="yes" Hidden="yes" />
     <Property Id="BYPASS_SECRET" Secure="yes" Hidden="yes" />
     <Property Id="PopsConfigure" Hidden="yes" />
+    <!-- POpsUpdater'ın geri dönüşte kullandığı kaldırma: appsettings.json silinmez -->
+    <Property Id="POPS_KEEP_CONFIG" Secure="yes" />
 
     <!-- Ajan framework'e bağımlıdır: .NET 8 Desktop Runtime (x64) yoksa kurulum başlamaz -->
     <netfx:DotNetCompatibilityCheck Property="DOTNET_DESKTOP8"
@@ -105,8 +107,8 @@
     <util:CloseApplication Id="CloseWatchdog" Target="POpsWatchdog.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
     <util:CloseApplication Id="CloseTray" Target="POpsTray.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
     <util:CloseApplication Id="CloseVision" Target="POpsVision.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
-    <util:CloseApplication Id="CloseUpdater" Target="POpsUpdater.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
     <util:CloseApplication Id="CloseLegacyAgent" Target="PashaCoreAgent.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
+    <!-- POpsUpdater bilerek kapatılmaz: güncellemede msiexec'i o çalıştırır (C:\POpsData\updater'dan) -->
 
     <Binary Id="PopsActions" SourceFile="$(var.PopsInstallerActions.TargetDir)PopsInstallerActions.CA.dll" />
 
@@ -121,7 +123,14 @@
                   Execute="deferred" Impersonate="no" Return="ignore" />
     <SetProperty Id="PopsCleanupLegacy" Sequence="execute" Before="PopsCleanupLegacy" Value="INSTALLFOLDER=[INSTALLFOLDER]" />
 
-    <!-- Gerçek kaldırmada appsettings.json; güncellemede (UPGRADINGPRODUCTCODE) dokunulmaz -->
+    <!-- Kurulan paket C:\POpsData\packages\installed.msi olarak saklanır: POpsUpdater, yeni sürüm sağlıklı
+         açılmazsa buna geri döner (Windows Installer'ın önbelleğindeki kopyada gömülü dosyalar yoktur) -->
+    <CustomAction Id="PopsKeepPackage" BinaryRef="PopsActions" DllEntry="KeepPackage"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <SetProperty Id="PopsKeepPackage" Sequence="execute" Before="PopsKeepPackage" Value="ORIGINAL_MSI=[OriginalDatabase]" />
+
+    <!-- Gerçek kaldırmada appsettings.json; güncellemede (UPGRADINGPRODUCTCODE) ve updater'ın geri
+         dönüşünde (POPS_KEEP_CONFIG) dokunulmaz -->
     <CustomAction Id="PopsRemoveConfig" BinaryRef="PopsActions" DllEntry="RemoveConfig"
                   Execute="deferred" Impersonate="no" Return="ignore" />
     <SetProperty Id="PopsRemoveConfig" Sequence="execute" Before="PopsRemoveConfig" Value="INSTALLFOLDER=[INSTALLFOLDER]" />
@@ -129,7 +138,8 @@
     <InstallExecuteSequence>
       <Custom Action="PopsConfigure" After="InstallFiles" Condition="NOT (REMOVE~=&quot;ALL&quot;)" />
       <Custom Action="PopsCleanupLegacy" After="StartServices" Condition="NOT (REMOVE~=&quot;ALL&quot;)" />
-      <Custom Action="PopsRemoveConfig" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="PopsKeepPackage" After="PopsCleanupLegacy" Condition="NOT Installed AND NOT (REMOVE~=&quot;ALL&quot;)" />
+      <Custom Action="PopsRemoveConfig" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND NOT POPS_KEEP_CONFIG" />
     </InstallExecuteSequence>
 
   </Package>

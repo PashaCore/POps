@@ -1,118 +1,418 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.ServiceProcess;
-using System.Threading;
+using System.Linq;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
+using System.ServiceProcess;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using Microsoft.Win32;
+
+#nullable disable
 
 namespace POpsUpdater
 {
+    // Ajan güncellemesini MSI ile uygular (Faz 7). Ajan (SYSTEM) imzalı manifest'i ve paketi doğruladıktan
+    // sonra bu programı kurulum klasörü dışından (C:\POpsData\updater) başlatır:
+    //   POpsUpdater --msi <paket> --sha256 <özet> --from <kurulu sürüm> --to <yeni sürüm> --installdir <klasör>
+    // Adımlar: kilit, özet kontrolü, dosya yedeği, kullanıcı süreçlerini kapatma, msiexec /i, yeni sürümün
+    // health.json'unu bekleme; yeni sürüm sağlıklı açılmazsa önceki MSI'a (yoksa dosya yedeğine) dönüş;
+    // update-result.json; kilidi kaldırma. update.lock varken watchdog servisi ve tepsiyi yeniden başlatmaz.
     [SupportedOSPlatform("windows")]
-    class Program
+    static class Program
     {
-        static void Main(string[] args)
+        const string DataDir = @"C:\POpsData";
+        const string LogDir = @"C:\POpsLogs";
+        const string ServiceName = "POpsAgent";
+        // Installer/agent/Package.wxs UpgradeCode
+        const string UpgradeCode = "{1F4A5444-0EA0-40FE-8D23-C5233D4576D1}";
+
+        static readonly string LockPath = Path.Combine(DataDir, "update.lock");
+        static readonly string HealthPath = Path.Combine(DataDir, "health.json");
+        static readonly string ResultPath = Path.Combine(DataDir, "update-result.json");
+        // MSI her kurulumda kendi paketini buraya installed.msi olarak bırakır (geri dönüş kaynağı)
+        static readonly string PackagesDir = Path.Combine(DataDir, "packages");
+        static readonly string BackupRoot = Path.Combine(DataDir, "backup");
+        static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(90);
+        static readonly string[] UserProcesses = { "POpsWatchdog", "POpsTray", "POpsVision" };
+
+        sealed class Options
         {
-            // 1. KONSOL EKRANI HAZIRLIĞI
-            Console.WriteLine("========================================");
-            Console.WriteLine(" POps Otomatik Guncelleyici v3 (.NET 8)");
-            Console.WriteLine("========================================");
+            public string Msi, Sha256, From, To, InstallDir;
+        }
 
-            POpsHelpers.Log("UPDATER", "Güncelleme operasyonu başlatıldı.");
+        static int Main(string[] args)
+        {
+            Options opt = ParseArgs(args);
+            if (opt == null)
+            {
+                Log("Kullanım: POpsUpdater --msi <paket> --sha256 <özet> --from <sürüm> --to <sürüm> --installdir <klasör>", true);
+                return 2;
+            }
 
-            // Ajanın ortamdan tamamen çekilmesi (dosya kilitlerinin kalkması) için bekle
-            Thread.Sleep(3000);
-
-            string serviceName = "POpsAgent";
-            string targetDir = args.Length > 0 ? args[0] : @"C:\POps"; // 🚀 MSI Standart Dizini
-            string sourceDir = AppDomain.CurrentDomain.BaseDirectory;
-
-            POpsHelpers.Log("UPDATER", $"Kaynak: {sourceDir} | Hedef: {targetDir}");
-
-            // 2. SERVİSİ DURDUR
+            var result = new Dictionary<string, object>
+            {
+                ["schema"] = "pops-update-result/1",
+                ["from_version"] = opt.From,
+                ["to_version"] = opt.To,
+                ["started_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                ["rollback"] = "none",
+            };
+            string outcome = "error";
             try
             {
-                using (ServiceController sc = new ServiceController(serviceName))
+                Log($"Güncelleme başladı: {opt.From} -> {opt.To} ({opt.Msi})");
+                TouchLock();
+
+                if (!HashMatches(opt.Msi, opt.Sha256))
                 {
-                    if (sc.Status != ServiceControllerStatus.Stopped)
-                    {
-                        POpsHelpers.Log("UPDATER", "Ajan servisi durduruluyor...");
-                        sc.Stop();
-                        sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
-                    }
+                    outcome = "rejected";
+                    result["detail"] = "paketin SHA-256'sı ajanın doğruladığı özetle uyuşmuyor";
+                    return 1;
                 }
+
+                string previousMsi = PreservePreviousPackage();
+                BackupInstall(opt.InstallDir, opt.From);
+                StopUserProcesses();
+
+                // MSI ile kurulu bir sürüm varsa aynı klasöre kurulur; MSI'sız eski kurulumda varsayılan klasör kullanılır
+                string installFolderArg = IsMsiManaged() ? $" INSTALLFOLDER=\"{opt.InstallDir.TrimEnd('\\')}\"" : "";
+
+                DateTime installStart = DateTime.UtcNow;
+                int exit = RunMsiexec($"/i \"{opt.Msi}\" /qn /norestart REBOOT=ReallySuppress{installFolderArg}", "install-" + opt.To);
+                result["msi_exit_code"] = exit;
+                result["reboot_required"] = exit == 3010;
+
+                if (exit != 0 && exit != 3010)
+                {
+                    // Eski ürün aynı işlem içinde kaldırıldığı için Windows Installer onu geri yükledi
+                    outcome = "install_failed";
+                    result["rollback"] = "msi_transaction";
+                    result["detail"] = $"msiexec {exit} döndü; Windows Installer değişiklikleri geri aldı";
+                    if (previousMsi != null) CopyPackage(previousMsi, Path.Combine(PackagesDir, "installed.msi"));
+                    EnsureServiceRunning();
+                }
+                else if (WaitForHealth(opt.To, installStart))
+                {
+                    outcome = "success";
+                }
+                else
+                {
+                    Log($"Yeni sürüm {HealthTimeout.TotalSeconds:0} sn içinde sağlıklı açılmadı; geri dönülüyor.", true);
+                    (outcome, string rollback, string detail) = Rollback(opt, previousMsi, installFolderArg);
+                    result["rollback"] = rollback;
+                    result["detail"] = detail;
+                }
+                return outcome == "success" ? 0 : 1;
             }
             catch (Exception ex)
             {
-                POpsHelpers.Log("UPDATER", $"Servis durdurma hatası (Önemli olmayabilir): {ex.Message}");
+                result["detail"] = ex.Message;
+                Log($"Güncelleme hatası: {ex}", true);
+                return 1;
+            }
+            finally
+            {
+                result["outcome"] = outcome;
+                result["finished_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                WriteAtomic(ResultPath, JsonSerializer.Serialize(result));
+                Log($"Güncelleme bitti: {outcome} ({JsonSerializer.Serialize(result)})", outcome != "success");
+                try { File.Delete(LockPath); } catch { }
+                LaunchWatchdog();
+            }
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Geri dönüş
+        // ------------------------------------------------------------------------------------------
+        static (string Outcome, string Rollback, string Detail) Rollback(Options opt, string previousMsi, string installFolderArg)
+        {
+            DateTime start = DateTime.UtcNow;
+            if (previousMsi != null)
+            {
+                // Eski MSI yenisinin üzerine kurulamaz (downgrade engeli): önce yenisi kaldırılır. POPS_KEEP_CONFIG,
+                // kaldırmanın appsettings.json'u silmesini engeller.
+                int uninstall = RunMsiexec($"/x \"{opt.Msi}\" /qn /norestart REBOOT=ReallySuppress POPS_KEEP_CONFIG=1", "uninstall-" + opt.To);
+                int reinstall = RunMsiexec($"/i \"{previousMsi}\" /qn /norestart REBOOT=ReallySuppress{installFolderArg}", "rollback-" + opt.From);
+                if ((reinstall == 0 || reinstall == 3010) && WaitForHealth(opt.From, start))
+                    return ("rolled_back", "msi", $"{opt.To} sağlıklı açılmadı; {opt.From} yeniden kuruldu");
+                return ("rollback_failed", "msi", $"{opt.To} sağlıklı açılmadı; geri kurulum başarısız (kaldırma {uninstall}, kurulum {reinstall})");
             }
 
-            // 3. KALINTILARI ZORLA YOK ET (Dosya kilitlenmesini kesin önlemek için)
-            string[] processesToKill = { "POpsAgent", "POpsWatchdog", "POpsVision" };
-            foreach (var pName in processesToKill)
+            // Önceki MSI yok (ilk MSI'dan önceki kurulum): dosya yedeği geri yüklenir. Windows Installer kaydı
+            // yeni sürümde kalır; bir sonraki başarılı güncelleme bunu düzeltir.
+            if (RestoreBackup(opt) && WaitForHealth(opt.From, start))
+                return ("rolled_back", "files", $"{opt.To} sağlıklı açılmadı; {opt.From} dosya yedeğinden geri yüklendi");
+            return ("rollback_failed", "files", $"{opt.To} sağlıklı açılmadı; dosya yedeği geri yüklenemedi");
+        }
+
+        static bool RestoreBackup(Options opt)
+        {
+            string backup = Path.Combine(BackupRoot, Safe(opt.From));
+            string target = ServiceInstallDir() ?? opt.InstallDir;
+            if (!Directory.Exists(backup)) return false;
+            try
+            {
+                StopService();
+                foreach (string file in Directory.GetFiles(backup, "*", SearchOption.AllDirectories))
+                {
+                    string dest = Path.Combine(target, Path.GetRelativePath(backup, file));
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest));
+                    File.Copy(file, dest, true);
+                }
+                EnsureServiceRunning();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log($"Dosya yedeği geri yüklenemedi: {ex.Message}", true);
+                return false;
+            }
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Adımlar
+        // ------------------------------------------------------------------------------------------
+        static bool HashMatches(string path, string expectedHex)
+        {
+            try
+            {
+                using FileStream stream = File.OpenRead(path);
+                byte[] actual = SHA256.HashData(stream);
+                return CryptographicOperations.FixedTimeEquals(actual, Convert.FromHexString(expectedHex));
+            }
+            catch (Exception ex)
+            {
+                Log($"Paket özeti okunamadı: {ex.Message}", true);
+                return false;
+            }
+        }
+
+        // Kurulum yeni paketi installed.msi olarak bırakacağı için şu anki kurulu paket önce saklanır
+        static string PreservePreviousPackage()
+        {
+            string installed = Path.Combine(PackagesDir, "installed.msi");
+            if (!File.Exists(installed))
+            {
+                Log("Önceki MSI paketi yok; geri dönüş gerekirse dosya yedeği kullanılacak.");
+                return null;
+            }
+            string previous = Path.Combine(PackagesDir, "previous.msi");
+            CopyPackage(installed, previous);
+            return previous;
+        }
+
+        static void CopyPackage(string from, string to)
+        {
+            try { File.Copy(from, to, true); }
+            catch (Exception ex) { Log($"{from} kopyalanamadı: {ex.Message}", true); }
+        }
+
+        // Kurulum klasörünün dosya dosya yedeği (ayar dosyası hariç; o güncellemede değişmez)
+        static void BackupInstall(string installDir, string version)
+        {
+            try
+            {
+                if (Directory.Exists(BackupRoot)) Directory.Delete(BackupRoot, true);
+                string backup = Path.Combine(BackupRoot, Safe(version));
+                foreach (string file in Directory.GetFiles(installDir, "*", SearchOption.AllDirectories))
+                {
+                    if (Path.GetFileName(file).StartsWith("appsettings", StringComparison.OrdinalIgnoreCase)) continue;
+                    string dest = Path.Combine(backup, Path.GetRelativePath(installDir, file));
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest));
+                    File.Copy(file, dest, true);
+                }
+                Log($"Kurulum klasörü yedeklendi: {backup}");
+            }
+            catch (Exception ex)
+            {
+                Log($"Yedek alınamadı (güncelleme sürüyor): {ex.Message}", true);
+            }
+        }
+
+        // Kullanıcı oturumundaki süreçler dosyaları kilitler; eski watchdog kilit dosyasını tanımadığı için kapatılır
+        static void StopUserProcesses()
+        {
+            foreach (string name in UserProcesses)
+                foreach (Process p in Process.GetProcessesByName(name))
+                {
+                    try
+                    {
+                        p.Kill();
+                        p.WaitForExit(5000);
+                        Log($"{name} kapatıldı (PID {p.Id}, oturum {p.SessionId}).");
+                    }
+                    catch (Exception ex) { Log($"{name} kapatılamadı: {ex.Message}", true); }
+                    finally { p.Dispose(); }
+                }
+        }
+
+        // Başka bir kurulum sürüyorsa (1618) bir süre beklenip yeniden denenir
+        static int RunMsiexec(string arguments, string logName)
+        {
+            // msiexec log klasörünü oluşturmaz; yoksa kurulum 1622 ile düşer
+            Directory.CreateDirectory(LogDir);
+            string log = Path.Combine(LogDir, $"msi-{Safe(logName)}-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+            for (int attempt = 1; ; attempt++)
+            {
+                TouchLock();
+                Log($"msiexec {arguments} (log: {log})");
+                using Process p = Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe"), $"{arguments} /l*v \"{log}\"")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                });
+                p.WaitForExit();
+                Log($"msiexec çıkış kodu: {p.ExitCode}");
+                if (p.ExitCode != 1618 || attempt == 5) return p.ExitCode;
+                Log("Başka bir Windows Installer işlemi sürüyor (1618); 60 sn sonra yeniden denenecek.");
+                Thread.Sleep(TimeSpan.FromSeconds(60));
+            }
+        }
+
+        // Yeni sürüm açılışta health.json yazar. Güncelleme öncesinden kalan dosya, yazılma zamanıyla ayırt edilir.
+        static bool WaitForHealth(string expectedVersion, DateTime notBeforeUtc)
+        {
+            DateTime deadline = DateTime.UtcNow + HealthTimeout;
+            string expected = expectedVersion.TrimStart('v');
+            while (DateTime.UtcNow < deadline)
             {
                 try
                 {
-                    foreach (var process in Process.GetProcessesByName(pName))
+                    var file = new FileInfo(HealthPath);
+                    if (file.Exists && file.LastWriteTimeUtc >= notBeforeUtc)
                     {
-                        POpsHelpers.Log("UPDATER", $"Kilitli işlem sonlandırılıyor: {pName}.exe");
-                        process.Kill();
-                        process.WaitForExit(2000);
+                        using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(HealthPath));
+                        string version = doc.RootElement.TryGetProperty("version", out JsonElement v) ? v.GetString()?.TrimStart('v') : null;
+                        if (string.Equals(version, expected, StringComparison.OrdinalIgnoreCase))
+                        {
+                            Log($"health.json doğrulandı: {version}");
+                            return true;
+                        }
                     }
                 }
-                catch { }
+                catch (IOException) { }
+                catch (JsonException) { }
+                TouchLock();
+                Thread.Sleep(2000);
             }
+            return false;
+        }
 
-            // 4. DOSYALARI KOPYALA (EZE EZE)
-            POpsHelpers.Log("UPDATER", "Yeni sürüm dosyaları aktarılıyor...");
+        // ------------------------------------------------------------------------------------------
+        // Servis, MSI kaydı, watchdog
+        // ------------------------------------------------------------------------------------------
+        [DllImport("msi.dll", CharSet = CharSet.Unicode)]
+        static extern uint MsiEnumRelatedProducts(string upgradeCode, uint reserved, uint productIndex, StringBuilder productCode);
+
+        static bool IsMsiManaged()
+        {
+            var productCode = new StringBuilder(39);
+            return MsiEnumRelatedProducts(UpgradeCode, 0, 0, productCode) == 0;
+        }
+
+        static void StopService()
+        {
+            using var sc = new ServiceController(ServiceName);
+            if (sc.Status == ServiceControllerStatus.Stopped) return;
+            sc.Stop();
+            sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(30));
+        }
+
+        static void EnsureServiceRunning()
+        {
             try
             {
-                foreach (string newPath in Directory.GetFiles(sourceDir, "*.*", SearchOption.AllDirectories))
-                {
-                    // Updater'ın kendisini, PDB'leri ve ZIP'leri kopyalama
-                    if (newPath.EndsWith(".pdb") || newPath.EndsWith(".zip") || newPath.Contains("POpsUpdater.exe") || newPath.Contains("POpsUpdater.dll"))
-                        continue;
-
-                    string destPath = newPath.Replace(sourceDir, targetDir + "\\");
-                    string destFolder = Path.GetDirectoryName(destPath);
-
-                    // Yerel yapılandırma (sunucu adresi, gizli anahtarlar) güncelleme paketiyle ezilmez;
-                    // paketteki appsettings.json yalnızca hedefte hiç yoksa kopyalanır
-                    if (Path.GetFileName(newPath).Equals("appsettings.json", StringComparison.OrdinalIgnoreCase) && File.Exists(destPath))
-                    {
-                        Console.WriteLine("  -> Korundu: appsettings.json (yerel ayarlar)");
-                        continue;
-                    }
-
-                    if (destFolder != null && !Directory.Exists(destFolder))
-                        Directory.CreateDirectory(destFolder);
-
-                    File.Copy(newPath, destPath, true);
-                    Console.WriteLine($"  -> Kopyalandi: {Path.GetFileName(newPath)}");
-                }
-                POpsHelpers.Log("UPDATER", "Dosya aktarımı başarıyla tamamlandı.");
+                using var sc = new ServiceController(ServiceName);
+                if (sc.Status == ServiceControllerStatus.Running) return;
+                if (sc.Status != ServiceControllerStatus.StartPending) sc.Start();
+                sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(30));
             }
-            catch (Exception ex)
-            {
-                POpsHelpers.Log("UPDATER", $"Kopyalama Hatasi: {ex.Message}", true);
-            }
+            catch (Exception ex) { Log($"{ServiceName} başlatılamadı: {ex.Message}", true); }
+        }
 
-            // 5. SERVİSİ GERİ BAŞLAT
+        // Servisin gerçekte çalıştırdığı exe'nin klasörü (MSI'sız kurulumdan MSI'a geçişte değişir)
+        static string ServiceInstallDir()
+        {
             try
             {
-                using (ServiceController sc = new ServiceController(serviceName))
-                {
-                    POpsHelpers.Log("UPDATER", "Ajan servisi yeniden başlatılıyor...");
-                    sc.Start();
-                }
+                string image = Registry.GetValue($@"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\{ServiceName}", "ImagePath", null) as string;
+                if (string.IsNullOrWhiteSpace(image)) return null;
+                image = image.Trim();
+                string exe = image.StartsWith("\"") ? image.Substring(1, image.IndexOf('"', 1) - 1) : image.Split(' ')[0];
+                return Path.GetDirectoryName(exe);
             }
-            catch (Exception ex)
-            {
-                POpsHelpers.Log("UPDATER", $"Servis başlatılamadı: {ex.Message}", true);
-            }
+            catch { return null; }
+        }
 
-            POpsHelpers.Log("UPDATER", "Güncelleme operasyonu bitti. Çıkış yapılıyor.");
-            Console.WriteLine("\n[!] Guncelleme Basariyla Tamamlandi! Bu pencere otomatik kapanacaktir.");
-            Thread.Sleep(3000);
+        // Kilit kalktıktan sonra watchdog tepsiyi açar; çalışmıyorsa kullanıcı oturumunda başlatılır
+        static void LaunchWatchdog()
+        {
+            try
+            {
+                if (Process.GetProcessesByName("POpsWatchdog").Length > 0) return;
+                string dir = ServiceInstallDir();
+                string exe = dir == null ? null : Path.Combine(dir, "POpsWatchdog.exe");
+                if (exe == null || !File.Exists(exe)) return;
+                string task = "POpsWatchdogLauncher";
+                RunHidden("schtasks.exe", $"/create /tn \"{task}\" /tr \"\\\"{exe}\\\"\" /sc once /st 00:00 /ru \"BUILTIN\\Users\" /it /f");
+                RunHidden("schtasks.exe", $"/run /tn \"{task}\"");
+                RunHidden("schtasks.exe", $"/delete /tn \"{task}\" /f");
+            }
+            catch (Exception ex) { Log($"Watchdog başlatılamadı: {ex.Message}", true); }
+        }
+
+        static void RunHidden(string file, string arguments)
+        {
+            using Process p = Process.Start(new ProcessStartInfo(file, arguments) { UseShellExecute = false, CreateNoWindow = true });
+            p.WaitForExit(15000);
+        }
+
+        // ------------------------------------------------------------------------------------------
+        static void TouchLock()
+        {
+            try
+            {
+                if (File.Exists(LockPath)) File.SetLastWriteTimeUtc(LockPath, DateTime.UtcNow);
+                else WriteAtomic(LockPath, JsonSerializer.Serialize(new { started_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
+            }
+            catch { }
+        }
+
+        static void WriteAtomic(string path, string content)
+        {
+            try
+            {
+                string tmp = path + ".tmp";
+                File.WriteAllText(tmp, content);
+                File.Move(tmp, path, true);
+            }
+            catch (Exception ex) { Log($"{path} yazılamadı: {ex.Message}", true); }
+        }
+
+        static string Safe(string s) => string.Concat(s.Select(c => char.IsLetterOrDigit(c) || c == '.' || c == '-' || c == '_' ? c : '_'));
+
+        static void Log(string message, bool isError = false) => POpsHelpers.Log("UPDATER", message, isError);
+
+        static Options ParseArgs(string[] args)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i + 1 < args.Length; i += 2) map[args[i]] = args[i + 1];
+            var opt = new Options
+            {
+                Msi = map.GetValueOrDefault("--msi"),
+                Sha256 = map.GetValueOrDefault("--sha256"),
+                From = map.GetValueOrDefault("--from"),
+                To = map.GetValueOrDefault("--to"),
+                InstallDir = map.GetValueOrDefault("--installdir"),
+            };
+            bool ok = new[] { opt.Msi, opt.Sha256, opt.From, opt.To, opt.InstallDir }.All(v => !string.IsNullOrWhiteSpace(v))
+                      && File.Exists(opt.Msi) && opt.Sha256.Length == 64;
+            return ok ? opt : null;
         }
     }
 }

@@ -26,6 +26,12 @@ namespace POpsWatchDog
         static readonly string VisionExeName = "POpsTray";
         static readonly string VisionExePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "POpsTray.exe");
 
+        // POpsUpdater güncelleme boyunca bu dosyayı tutar; msiexec servisi durdurup tepsiyi kapattığında
+        // watchdog onları yeniden başlatıp kurulumla yarışmasın. Updater çökse bile 15 dk sonra yok sayılır.
+        static readonly string UpdateLockPath = @"C:\POpsData\update.lock";
+        static readonly TimeSpan StaleUpdateLockAge = TimeSpan.FromMinutes(15);
+        static bool _updatePauseLogged;
+
 
         // Main artık sadece asenkron değil, aynı zamanda gizlilik kalkanıyla sarılı
         static void Main(string[] args)
@@ -62,8 +68,17 @@ namespace POpsWatchDog
             {
                 try
                 {
-                    CheckAndRepairVisionProcess();
-                    CheckAndRepairAgentService();
+                    if (UpdateInProgress())
+                    {
+                        if (!_updatePauseLogged) POpsHelpers.Log("WATCHDOG", "Güncelleme sürüyor (update.lock); servis ve tepsi yeniden başlatılmıyor.");
+                        _updatePauseLogged = true;
+                    }
+                    else
+                    {
+                        _updatePauseLogged = false;
+                        CheckAndRepairVisionProcess();
+                        CheckAndRepairAgentService();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -74,6 +89,16 @@ namespace POpsWatchDog
             }
         }
 
+
+        private static bool UpdateInProgress()
+        {
+            try
+            {
+                var lockFile = new FileInfo(UpdateLockPath);
+                return lockFile.Exists && DateTime.UtcNow - lockFile.LastWriteTimeUtc < StaleUpdateLockAge;
+            }
+            catch { return false; }
+        }
 
         private static void CheckAndRepairVisionProcess()
         {
