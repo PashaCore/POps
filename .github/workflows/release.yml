@@ -1,0 +1,104 @@
+name: Release
+
+# v* etiketi push edildiğinde iki kurulum dosyasını (sunucu paketi + ajan paketi) derler ve
+# tek bir GitHub Release olarak yayımlar. Bu dosya main'de değiştiğinde paketler yalnızca
+# derlenir (yayımlanmaz), böylece iş akışı etiket atılmadan denenebilir.
+on:
+  push:
+    tags: [ "v*" ]
+    branches: [ "main" ]
+    paths: [ ".github/workflows/release.yml" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  agent:
+    name: Agent package (win-x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish agent components into one folder
+        # Framework'e bağımlı derleme: uç noktalarda .NET 8 Desktop Runtime (x64) gerekir.
+        # Güncelleme Merkezi paketi C:\POps içine açar, bu yüzden dosyalar ZIP'in köküne konur.
+        shell: pwsh
+        run: |
+          $out = "dist/POps"
+          $projects = @(
+            "Agent/POps.Agent/POps.Agent/POpsAgent.csproj",
+            "Agent/POpsTray/POpsTray.csproj",
+            "Agent/POpsWatchdog/POpsWatchDog/POpsWatchDog.csproj",
+            "Agent/POpsUpdater/POpsUpdater/POpsUpdater.csproj"
+          )
+          foreach ($p in $projects) {
+            dotnet publish $p -c Release -r win-x64 --self-contained false -o $out
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Remove-Item "$out/*.pdb" -ErrorAction SilentlyContinue
+          Get-ChildItem $out | Select-Object Name, Length | Format-Table -AutoSize
+      - name: Zip
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag") { $ver = $env:GITHUB_REF_NAME.TrimStart("v") }
+          else { $ver = "dev-" + $env:GITHUB_SHA.Substring(0, 7) }
+          Compress-Archive -Path "dist/POps/*" -DestinationPath "POps-Agent-$ver-win-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent
+          path: POps-Agent-*-win-x64.zip
+          if-no-files-found: error
+
+  server:
+    name: Server package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package backend and dashboard
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then VER="${GITHUB_REF_NAME#v}"; else VER="dev-${GITHUB_SHA::7}"; fi
+          NAME="pops-server-$VER"
+          mkdir -p "dist/$NAME"
+          cp -r Backend Dashboard docs .env.example CHANGELOG.md LICENSE README.md SECURITY.md "dist/$NAME/"
+          rm -rf "dist/$NAME/Backend/__pycache__"
+          tar -C dist -czf "$NAME.tar.gz" "$NAME"
+          tar -tzf "$NAME.tar.gz" | head -20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server
+          path: pops-server-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: github.ref_type == 'tag'
+    needs: [ agent, server ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums and release notes
+        run: |
+          (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+          VER="${GITHUB_REF_NAME#v}"
+          {
+            echo "> **Pilot sürüm, imzasız.** Ajan paketi Windows'ta SmartScreen uyarısı verebilir; uç noktalarda .NET 8 Desktop Runtime (x64) gerekir."
+            echo
+            awk -v v="$VER" 'index($0, "## [" v "]") == 1 {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md
+          } > notes.md
+          cat notes.md
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: notes.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
