@@ -6,34 +6,72 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
 jobs:
   build-agent:
-    name: Build .NET Agent
+    name: Build ${{ matrix.name }}
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: POps.Agent
+            project: Agent/POps.Agent/POps.Agent.sln
+          - name: POpsVision
+            project: Agent/POpsVision/POpsVision.sln
+          - name: POpsUpdater
+            project: Agent/POpsUpdater/POpsUpdater.sln
+          - name: POpsWatchdog
+            project: Agent/POpsWatchdog/POpsWatchDog.sln
+          - name: POpsTray
+            project: Agent/POpsTray/POpsTray.csproj
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - name: Restore dependencies
-        run: dotnet restore Agent/POps.Agent/POps.Agent.sln
       - name: Build
-        run: dotnet build Agent/POps.Agent/POps.Agent.sln --configuration Release --no-restore
+        run: dotnet build "${{ matrix.project }}" --configuration Release
 
-  lint-backend:
-    name: Lint Python Backend
+  backend:
+    name: Backend (Python 3.9)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        # Sunucu hedefi AlmaLinux/RHEL 9'un Python 3.9'u
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.9'
+          cache: pip
+          cache-dependency-path: Backend/requirements.txt
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install flake8
+        run: pip install -r Backend/requirements.txt flake8
       - name: Lint with flake8
+        run: flake8 Backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
+      - name: Import smoke test
+        # Modül yüklenirken zorunlu ortam değişkenleri okunur; veritabanına bağlanılmaz
+        working-directory: Backend
+        env:
+          JWT_SECRET: ci-only
+          DB_USER: ci
+          DB_PASS: ci
+          DB_NAME: ci
+        run: python -c "import server, setup_env; print('ok', len(server.app.routes), 'routes')"
+
+  dashboard:
+    name: Dashboard checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: find Dashboard -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Dark mode stays removed
         run: |
-          flake8 Backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          if grep -rnE "data-theme|toggleTheme" Dashboard; then
+            echo "::error::Panel yalnızca açık temayı kullanır; data-theme/toggleTheme geri eklenmemeli."
+            exit 1
+          fi
