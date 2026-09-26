@@ -9,8 +9,16 @@ namespace POpsAgent
     {
         // Klasör yolları POps standartlarına göre güncellendi
         private static readonly string LogDir = @"C:\POpsLogs";
-        private static readonly string ConfigPath = @"C:\POps\appsettings.json";
         private static readonly object LogLock = new object();
+
+        // Ayar dosyası önce ajanın kurulu olduğu klasörde (ör. C:\Program Files (x86)\POps), sonra eski
+        // sabit konumda (C:\POps) aranır; her ayar için ilk dolu değer kullanılır. Yalnızca C:\POps'a
+        // bakıldığında başka klasöre kurulan ajanlar sunucu adresini bulamıyordu.
+        public static readonly string[] ConfigPaths =
+        {
+            Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
+            @"C:\POps\appsettings.json",
+        };
 
         // ==========================================
         // 1. MERKEZİ VE NİZAMLI LOGLAMA
@@ -64,33 +72,40 @@ namespace POpsAgent
                 return envUrl.Trim().TrimEnd('/');
             }
 
-            try
+            string url = ReadConfigValue("ServerUrl");
+            if (url != null)
             {
-                if (File.Exists(ConfigPath))
-                {
-                    string json = File.ReadAllText(ConfigPath);
-                    using JsonDocument doc = JsonDocument.Parse(json);
+                return url.TrimEnd('/');
+            }
 
-                    if (doc.RootElement.TryGetProperty("ServerUrl", out JsonElement urlElement))
+            Log("HELPERS", $"ServerUrl tanımlı değil ({string.Join(" | ", ConfigPaths)}); {defaultUrl} kullanılıyor.", true);
+            return defaultUrl;
+        }
+
+        // Bir ayarı sırayla ConfigPaths içindeki dosyalarda arar; hiçbirinde dolu değilse null döner.
+        private static string ReadConfigValue(string key)
+        {
+            foreach (string path in ConfigPaths)
+            {
+                try
+                {
+                    if (!File.Exists(path)) continue;
+                    using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
+                    if (doc.RootElement.TryGetProperty(key, out JsonElement element) && element.ValueKind == JsonValueKind.String)
                     {
-                        string url = urlElement.GetString();
-                        if (!string.IsNullOrWhiteSpace(url))
+                        string value = element.GetString();
+                        if (!string.IsNullOrWhiteSpace(value))
                         {
-                            return url.TrimEnd('/');
+                            return value.Trim();
                         }
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    Log("HELPERS", "appsettings.json bulunamadı, varsayılan IP kullanılıyor.", true);
+                    Log("HELPERS", $"Config okuma hatası ({path}): {ex.Message}", true);
                 }
             }
-            catch (Exception ex)
-            {
-                Log("HELPERS", $"Config okuma hatası: {ex.Message}", true);
-            }
-
-            return defaultUrl;
+            return null;
         }
 
         // ==========================================
@@ -106,27 +121,7 @@ namespace POpsAgent
                 return envSecret.Trim();
             }
 
-            try
-            {
-                if (File.Exists(ConfigPath))
-                {
-                    using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(ConfigPath));
-                    if (doc.RootElement.TryGetProperty("BypassSecret", out JsonElement secretElement))
-                    {
-                        string secret = secretElement.GetString();
-                        if (!string.IsNullOrWhiteSpace(secret))
-                        {
-                            return secret.Trim();
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("HELPERS", $"Config okuma hatası: {ex.Message}", true);
-            }
-
-            return null;
+            return ReadConfigValue("BypassSecret");
         }
 
         // ==========================================

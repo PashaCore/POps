@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Agent:** Settings are read from `appsettings.json` in the agent's install folder first, then from `C:\POps\appsettings.json`. Before, only `C:\POps` was checked, so an agent installed elsewhere (for example `C:\Program Files (x86)\POps`) found no `ServerUrl` and, since the built-in server address was removed in 0.1.1, connected to `127.0.0.1` and stopped reporting after an update.
+- **Agent:** The startup log showed the version as `vv0.1.2-alpha`.
+
 ## [0.1.2-alpha] - 2026-09-26
 
 Security and bug-fix release, and the first release published as two install files: `pops-server-0.1.2-alpha.tar.gz` (backend and dashboard) and `POps-Agent-0.1.2-alpha-win-x64.zip` (agent, tray, watchdog and updater; needs the .NET 8 Desktop Runtime, x64). Unsigned pilot build.
@@ -49,6 +53,7 @@ Upgrading the server: install the pinned requirements (`pip install -r Backend/r
 - **Agent updates:** Updating through the Update Center does not replace `POpsTray`, because the updater does not close the running tray and its files stay locked; the copy then stops part-way. Until the updater is fixed, leave `POpsTray.*` out of packages uploaded to the Update Center. The tray changes in this release (no stealth mode, preview notices, reduced menu) reach a device only through a fresh install.
 - **Agent connections** are not authenticated with per-device credentials yet. Allow the backend port or `/ws/agent` only from lab networks.
 - **.NET 8** reaches end of support on 10 November 2026; the agent moves to .NET 10 in a later release.
+- **Updating agents older than 0.1.1:** those agents had the server address compiled in. Updated agents read it only from `C:\POps\appsettings.json` (the install folder is also checked from the next release), so set `ServerUrl` there before updating; otherwise the agent connects to `127.0.0.1` and stops reporting.
 
 ---
 

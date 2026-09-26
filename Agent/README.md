@@ -4,7 +4,7 @@ Windows endpoint agent (.NET 8). Includes the main agent, tray application, remo
 
 ## Configuration
 
-All components read their settings from `C:\POps\appsettings.json`. No server address or secret is compiled into the binaries; each value can also be supplied as a system environment variable, which takes precedence over the file.
+The agent reads its settings from `appsettings.json` in its install folder first (for example `C:\Program Files (x86)\POps`), then from `C:\POps\appsettings.json`; for each setting the first non-empty value wins. The service restricts both files to SYSTEM and Administrators. No server address or secret is compiled into the binaries; each value can also be supplied as a system environment variable, which takes precedence over the file.
 
 | `appsettings.json` key | Environment variable | Description |
 | ---------------------- | -------------------- | ----------- |

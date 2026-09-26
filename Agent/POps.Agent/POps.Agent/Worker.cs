@@ -88,7 +88,7 @@ namespace POpsAgent
             // 🚀 IP'Yİ CONFIG DOSYASINDAN AL
             _serverUrl = POpsHelpers.GetServerUrl();
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor (Hedef: {_serverUrl})");
-            SecureConfigFile(@"C:\POps\appsettings.json");
+            foreach (string configPath in POpsHelpers.ConfigPaths) SecureConfigFile(configPath);
 
             _cachedDna = GetHardwareDnaInternal();
             _cachedInventory = BuildInventoryInternal();
@@ -107,7 +107,7 @@ namespace POpsAgent
             while (!stoppingToken.IsCancellationRequested)
             {
                 string commandWsUrl = $"{baseWsUrl}/ws/agent/{_hwId}";
-                POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI (v{APP_VERSION})");
+                POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({APP_VERSION})");
 
                 EnsureWatchDogIsRunning();
                 StartTrayPipeServer();
