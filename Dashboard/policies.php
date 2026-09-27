@@ -1,312 +1,272 @@
-<?php
-require_once __DIR__ . '/includes/session.php';
-pops_session_start();
-if (!isset($_SESSION['username'])) { header('Location: login.php'); exit; }
-$pageTitle = 'Adil Kullanım ve Politikalar';
-$pageIcon = 'fa-shield-halved';
-include 'includes/header.php';
-?>
+<?php include 'includes/header.php'; ?>
+<?php $canEdit = ($_SESSION['role'] ?? '') !== 'viewer'; ?>
+
 <style>
-    .policy-container {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2rem;
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 1rem 0;
-    }
-    
-    .policy-card {
-        background: var(--bg-surface-1);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-lg);
-        padding: 2rem;
-        box-shadow: var(--shadow-sm);
-        display: flex;
-        flex-direction: column;
-    }
-    
-    .policy-card h2 {
-        font-size: 1.25rem;
-        margin-top: 0;
-        margin-bottom: 1.5rem;
-        color: var(--text-primary);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-    
-    .policy-section {
-        margin-bottom: 2rem;
-    }
-    
-    .policy-section label {
-        display: block;
-        margin-bottom: 0.5rem;
-        color: var(--text-secondary);
-        font-weight: 500;
-    }
-    
-    .category-list {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-    }
-    
-    .checkbox-item {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 0.75rem 1rem;
-        background: var(--bg-surface-2);
-        border-radius: var(--radius-md);
-        border: 1px solid var(--border-subtle);
-        transition: all 0.2s;
-    }
-    
-    .checkbox-item:hover {
-        border-color: var(--primary-500);
-        background: rgba(99, 102, 241, 0.05);
-    }
-    
-    .checkbox-item input[type="checkbox"] {
-        width: 1.25rem;
-        height: 1.25rem;
-        accent-color: var(--primary-500);
-        cursor: pointer;
-    }
-    
-    textarea.policy-text {
-        width: 100%;
-        height: 250px;
-        background: var(--bg-surface-2);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
-        padding: 1rem;
-        color: var(--text-primary);
-        font-family: var(--font-body);
-        font-size: 0.95rem;
-        resize: vertical;
-        line-height: 1.5;
-    }
-    
-    textarea.policy-text:focus {
-        outline: none;
-        border-color: var(--primary-500);
-        box-shadow: 0 0 0 2px rgba(99,102,241,0.2);
-    }
-    
-    .switch-group {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem;
-        background: var(--bg-surface-2);
-        border-radius: var(--radius-md);
-        border: 1px solid var(--border-subtle);
-        margin-bottom: 1rem;
-    }
-    
-    .action-bar {
-        margin-top: auto;
-        padding-top: 1.5rem;
-        border-top: 1px solid var(--border-default);
-        display: flex;
-        justify-content: flex-end;
-    }
-    
-    .info-box {
-        background: rgba(6, 182, 212, 0.1);
-        border-left: 3px solid #06b6d4;
-        padding: 1rem;
-        border-radius: 0 var(--radius-md) var(--radius-md) 0;
-        margin-bottom: 1.5rem;
-        font-size: 0.9rem;
-        color: var(--text-secondary);
-        line-height: 1.5;
-    }
-    
-    @media (max-width: 1024px) {
-        .policy-container { grid-template-columns: 1fr; }
-    }
+    .pol-wrap { display: flex; flex-direction: column; gap: var(--space-5); max-width: 920px; margin: 0 auto; padding: var(--space-4) 0; }
+    .pol-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6); box-shadow: var(--shadow-sm); }
+    .pol-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: var(--space-3); }
+    .pol-head h2 { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 0.5rem; }
+    .pol-head h2 i { color: var(--primary-500); }
+    .pol-desc { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0 0 var(--space-4); line-height: 1.55; }
+    .badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3rem 0.7rem; border-radius: 999px; font-size: var(--text-xs); font-weight: var(--fw-semibold); white-space: nowrap; }
+    .badge.ok { background: var(--success-bg); color: var(--success-text); }
+    .badge.warn { background: var(--warning-bg); color: var(--warning-text); }
+    .badge.muted { background: var(--bg-surface-2); color: var(--text-tertiary); }
+
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-3); }
+    .status-tile { background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); }
+    .status-tile .l { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: var(--fw-semibold); }
+    .status-tile .v { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); margin-top: 0.3rem; display: flex; align-items: center; gap: 0.4rem; }
+    .status-tile .s { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 0.3rem; line-height: 1.45; }
+
+    textarea.fld, input.fld { width: 100%; padding: 0.625rem 0.75rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface-2); color: var(--text-primary); font-size: var(--text-sm); }
+    textarea.fld { min-height: 110px; resize: vertical; line-height: 1.5; }
+    textarea.domains { font-family: var(--font-mono); font-size: 0.8125rem; min-height: 90px; }
+    .row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .muted { color: var(--text-tertiary); font-size: var(--text-sm); }
+
+    .cat { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); margin-bottom: 0.625rem; background: var(--bg-surface); }
+    .cat.on { border-color: var(--primary-500); }
+    .cat-head { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 0.875rem; cursor: pointer; }
+    .cat-head .t { font-weight: var(--fw-semibold); color: var(--text-primary); font-size: var(--text-sm); }
+    .cat-head .d { font-size: var(--text-xs); color: var(--text-tertiary); }
+    .cat-head .cnt { margin-left: auto; }
+    .cat-body { display: none; padding: 0 0.875rem 0.875rem; }
+    .cat.open .cat-body { display: block; }
+    .cat-body .hint { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 0.375rem; }
+    .cat-head .chev { color: var(--text-tertiary); transition: transform 0.15s; }
+    .cat.open .cat-head .chev { transform: rotate(90deg); }
+
+    .switch { position: relative; width: 38px; height: 22px; flex: none; display: inline-block; }
+    .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .switch span { position: absolute; inset: 0; background: var(--border-default); border-radius: 999px; transition: background 0.15s; cursor: pointer; }
+    .switch span::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform 0.15s; }
+    .switch input:checked + span { background: var(--primary-500); }
+    .switch input:checked + span::before { transform: translateX(16px); }
+    .switch input:disabled + span { opacity: 0.5; cursor: not-allowed; }
+
+    .btn { padding: 0.625rem 1rem; border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: var(--fw-semibold); cursor: pointer; border: 1px solid var(--border-default); background: var(--bg-surface-2); color: var(--text-primary); display: inline-flex; align-items: center; gap: 0.5rem; }
+    .btn.primary { background: var(--primary-500); color: #fff; border-color: var(--primary-500); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .savebar { position: sticky; bottom: 0; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-4) var(--space-5); display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; box-shadow: var(--shadow-sm); }
 </style>
 
 <div class="page-header">
     <div>
-        <h1><i class="fas fa-shield-halved"></i> Adil Kullanım & Politikalar</h1>
-        <p>Ağ bazlı içerik filtreleme kategorilerini ve son kullanıcı aydınlatma metnini yönetin.</p>
+        <h1><i class="fas fa-shield-halved"></i> Politikalar</h1>
+        <p>Kullanıcıya gösterilen aydınlatma metni ve yasaklı alan adlarına erişimin tespiti</p>
     </div>
 </div>
 
-<div class="policy-container">
-    <div class="policy-card">
-        <h2><i class="fas fa-filter" style="color:var(--primary-500);"></i> Web Filtreleme (DNS İzleme)</h2>
-        <div class="info-box">
-            <i class="fas fa-info-circle"></i> POps klavye vuruşlarını, şifreleri ya da sayfa içeriğini kaydetmez. Ajan yalnızca cihazın DNS önbelleğine bakar ve aşağıdaki listelerde <strong>birebir</strong> geçen alan adlarını (ya da alt alan adlarını) bildirir. Engelleme yapmaz; ihlal kaydedilir, yöneticiye bildirilir ve açıksa eşikte karantina uygulanır. Bir kategorinin listesi boşsa o kategoride hiçbir şey işaretlenmez.
-        </div>
-        
-        <div class="policy-section">
-            <label>İzlenecek kategoriler ve alan adları</label>
-            <div class="category-list" id="dnsCategoriesList">
-                <label class="checkbox-item">
-                    <input type="checkbox" value="pornografi" class="policy-cat-chk">
-                    <div>
-                        <div style="font-weight:600;color:var(--text-primary);">Pornografik İçerik</div>
-                        <div style="font-size:0.75rem;color:var(--text-muted);">Yetişkinlere yönelik web siteleri ve materyaller</div>
-                    </div>
-                </label>
-                <textarea class="policy-text policy-domains" data-cat="pornografi" placeholder="Alan adları (her satıra bir tane), ör. ornek-bahis.com"></textarea>
-                <label class="checkbox-item">
-                    <input type="checkbox" value="yasadisi_bahis" class="policy-cat-chk">
-                    <div>
-                        <div style="font-weight:600;color:var(--text-primary);">Yasadışı Bahis & Kumar</div>
-                        <div style="font-size:0.75rem;color:var(--text-muted);">Lisanssız kumar ve bahis platformları</div>
-                    </div>
-                </label>
-                <textarea class="policy-text policy-domains" data-cat="yasadisi_bahis" placeholder="Alan adları (her satıra bir tane), ör. ornek-bahis.com"></textarea>
-                <label class="checkbox-item">
-                    <input type="checkbox" value="teror_siddet" class="policy-cat-chk">
-                    <div>
-                        <div style="font-weight:600;color:var(--text-primary);">Terör ve Şiddet Propagandası</div>
-                        <div style="font-size:0.75rem;color:var(--text-muted);">Radikal oluşumlar ve şiddet içerikli platformlar</div>
-                    </div>
-                </label>
-                <textarea class="policy-text policy-domains" data-cat="teror_siddet" placeholder="Alan adları (her satıra bir tane), ör. ornek-bahis.com"></textarea>
-                <label class="checkbox-item">
-                    <input type="checkbox" value="zararli_yazilim" class="policy-cat-chk">
-                    <div>
-                        <div style="font-weight:600;color:var(--text-primary);">Malware & Phishing</div>
-                        <div style="font-size:0.75rem;color:var(--text-muted);">Zararlı yazılım ve kimlik avı (C2) domainleri</div>
-                    </div>
-                </label>
-                <textarea class="policy-text policy-domains" data-cat="zararli_yazilim" placeholder="Alan adları (her satıra bir tane), ör. ornek-bahis.com"></textarea>
+<div class="pol-wrap">
+    <!-- DURUM -->
+    <div class="pol-card">
+        <div class="pol-head"><h2><i class="fas fa-circle-info"></i> Ajanlarda durum</h2></div>
+        <div class="status-grid">
+            <div class="status-tile">
+                <div class="l">Aydınlatma metni</div>
+                <div class="v" id="stFair">…</div>
+                <div class="s">Ajan açılınca kullanıcıya tepsiden gösterilir; kullanıcı onaylayana kadar dakikada bir yeniden sorulur.</div>
             </div>
-        </div>
-
-        <div class="policy-section">
-            <label>Otomatik Karantina Aksiyonu</label>
-            <div class="switch-group">
-                <div>
-                    <div style="font-weight:600;color:var(--text-primary);">İhlalde Karantinaya Al</div>
-                    <div style="font-size:0.75rem;color:var(--text-muted);">Kullanıcı eşiği aştığında cihazı otomatik kilitler.</div>
-                </div>
-                <input type="checkbox" id="autoQuarantineSwitch" style="width:1.25rem;height:1.25rem;accent-color:var(--danger-500);">
+            <div class="status-tile">
+                <div class="l">DNS ihlal tespiti</div>
+                <div class="v" id="stDns">…</div>
+                <div class="s" id="stDnsSub">Tespit, 0.1.5-alpha ve sonrası ajanlarda çalışır.</div>
             </div>
-            
-            <div>
-                <label>Karantina Eşiği (İhlal Sayısı)</label>
-                <input type="number" id="quarantineThreshold" min="1" max="20" value="3" style="width:100%;padding:0.75rem;background:var(--bg-surface-2);border:1px solid var(--border-default);color:var(--text-primary);border-radius:var(--radius-md);">
-                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem;">Cihaz belirlenen ihlal sayısına ulaştığında Karantina protokolü devreye girer.</div>
+            <div class="status-tile">
+                <div class="l">Otomatik karantina</div>
+                <div class="v" id="stQ">…</div>
+                <div class="s">Yalnızca DNS tespiti çalışan ajanlarda etkilidir.</div>
             </div>
         </div>
     </div>
-    <style>
-        .policy-domains { width: 100%; min-height: 70px; margin: 0.25rem 0 0.75rem; font-family: var(--font-mono); font-size: 0.8125rem; }
-        .policy-domains-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: -0.25rem; }
-    </style>
 
-    <div class="policy-card">
-        <h2><i class="fas fa-file-contract" style="color:var(--primary-500);"></i> Adil Kullanım & Şeffaflık</h2>
-        <div class="info-box">
-            <i class="fas fa-lightbulb"></i> Ajan yazılımı, cihaz açıldığında kullanıcıya bu metni göstererek rıza/onay alacaktır. Tam bir kurumsal şeffaflık politikası sunulur.
-        </div>
-        
-        <div class="policy-section" style="flex-grow:1;">
-            <label>Kullanıcı Aydınlatma Metni</label>
-            <textarea class="policy-text" id="fairUseText" placeholder="Örn: Bu cihaz kurumumuz tarafından izlenmektedir..."></textarea>
-        </div>
-        
-        <div class="policy-section">
-            <div style="background:rgba(239, 68, 68, 0.1);border-left:3px solid #ef4444;padding:1rem;border-radius:0 var(--radius-md) var(--radius-md) 0;font-size:0.85rem;color:var(--text-secondary);">
-                <i class="fas fa-exclamation-triangle" style="color:#ef4444;margin-right:0.5rem;"></i>
-                <strong>Not (Ajan Durumu):</strong> Ajan kaynak kodlarına entegrasyon tamamlanana kadar (DNS modülü aktifleşene kadar) bu sayfa <strong>Hazır ama Pasif</strong> durumdadır. Konfigürasyonlar backend'e kaydedilir.
-            </div>
-        </div>
-
-        <?php if(($_SESSION['role'] ?? '') !== 'viewer'): ?>
-        <div class="action-bar">
-            <button class="mystic-btn" id="savePoliciesBtn" onclick="savePolicies()">
-                <i class="fas fa-save"></i> Politikaları Kaydet & Uygula
-            </button>
+    <!-- AYDINLATMA METNİ -->
+    <div class="pol-card">
+        <div class="pol-head"><h2><i class="fas fa-file-contract"></i> Aydınlatma ve adil kullanım metni</h2></div>
+        <p class="pol-desc">
+            Öğrenciye ya da personele bu bilgisayarın okul tarafından yönetildiğini, neyin kaydedildiğini ve neyin
+            kaydedilmediğini anlatan kısa metin. Boş bırakılırsa gösterilmez. Kurumunuzun KVKK aydınlatma metnine
+            bağlantı vermeniz önerilir (şablon: <code>docs/kvkk-aydinlatma.md</code>).
+        </p>
+        <textarea class="fld" id="fairUseText" maxlength="4000" <?= $canEdit ? '' : 'disabled' ?> placeholder="Örn: Bu bilgisayar okul tarafından yönetilmektedir…"></textarea>
+        <?php if ($canEdit): ?>
+        <div class="row" style="margin-top:0.625rem;">
+            <button class="btn" type="button" id="fairDefault"><i class="fas fa-wand-magic-sparkles"></i> Örnek metni kullan</button>
+            <span class="muted" id="fairCount"></span>
         </div>
         <?php endif; ?>
     </div>
+
+    <!-- DNS -->
+    <div class="pol-card">
+        <div class="pol-head"><h2><i class="fas fa-filter"></i> Yasaklı alan adı tespiti (DNS)</h2></div>
+        <p class="pol-desc">
+            Ajan, bilgisayarın DNS önbelleğine bakar ve açık bir kategorinin listesinde <strong>birebir</strong> geçen
+            alan adını ya da onun alt alan adını görürse ihlal kaydeder ve yöneticilere bildirir. Sayfa içeriği, arama,
+            klavye ya da şifre kaydedilmez. <strong>Engelleme yapılmaz</strong>; engelleme için okulun ağ filtresini
+            kullanın. Açık bir kategorinin listesi boşsa o kategoride hiçbir şey işaretlenmez.
+        </p>
+        <div id="cats"></div>
+    </div>
+
+    <!-- KARANTİNA -->
+    <div class="pol-card">
+        <div class="pol-head">
+            <h2><i class="fas fa-biohazard"></i> Otomatik karantina</h2>
+            <label class="switch" title="Otomatik karantina"><input type="checkbox" id="autoQ" <?= $canEdit ? '' : 'disabled' ?>><span></span></label>
+        </div>
+        <p class="pol-desc">
+            Açıkken, bir bilgisayarda (ajan son açıldığından beri) belirlenen sayıda ihlal tespit edilince o bilgisayar
+            kendini ağdan yalıtır: yalnızca POps sunucusuna, DNS ve DHCP'ye erişebilir. Yalıtım, <strong>Cihazlar</strong>
+            sayfasından karantina kaldırılarak ya da çevrimdışı bypass koduyla kalkar.
+        </p>
+        <div class="row">
+            <label class="muted" for="qThreshold">Eşik (ihlal sayısı)</label>
+            <input class="fld" type="number" id="qThreshold" min="1" max="100" value="3" style="width:110px;" <?= $canEdit ? '' : 'disabled' ?>>
+        </div>
+    </div>
+
+    <?php if ($canEdit): ?>
+    <div class="savebar">
+        <span class="muted" id="saveState">Değişiklik yok.</span>
+        <button class="btn primary" id="saveBtn" disabled><i class="fas fa-floppy-disk"></i> Kaydet</button>
+    </div>
+    <?php else: ?>
+    <div class="muted" style="text-align:center;">Bu sayfayı yalnızca görüntüleyebilirsiniz.</div>
+    <?php endif; ?>
 </div>
 
-<script>
-function getApiBase() { return (typeof OMYO_API !== 'undefined') ? OMYO_API.HTTP_URL : ''; }
-
-async function fetchPolicies() {
-    if (!getApiBase()) return;
-    try {
-        const res = await fetch(`${getApiBase()}/api/agent_policies`);
-        if (res.ok) {
-            const data = await res.json();
-            document.getElementById('fairUseText').value = data.fair_use_text || '';
-            document.getElementById('autoQuarantineSwitch').checked = data.auto_quarantine || false;
-            document.getElementById('quarantineThreshold').value = data.quarantine_threshold || 3;
-            
-            const cats = data.dns_categories || [];
-            const domains = data.dns_domains || {};
-            document.querySelectorAll('.policy-cat-chk').forEach(chk => {
-                chk.checked = cats.includes(chk.value);
-                const ta = document.querySelector(`.policy-domains[data-cat="${chk.value}"]`);
-                if (ta) ta.value = (domains[chk.value] || []).join('\n');
-            });
-        }
-    } catch (e) {
-        console.warn('Politikalar çekilemedi.');
-    }
-}
-
-async function savePolicies() {
-    if (!getApiBase()) return;
-    
-    const btn = document.getElementById('savePoliciesBtn');
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Kaydediliyor...';
-    btn.disabled = true;
-    
-    const cats = [];
-    document.querySelectorAll('.policy-cat-chk:checked').forEach(chk => cats.push(chk.value));
-    
-    const payload = {
-        fair_use_text: document.getElementById('fairUseText').value,
-        dns_categories: cats,
-        auto_quarantine: document.getElementById('autoQuarantineSwitch').checked,
-        quarantine_threshold: parseInt(document.getElementById('quarantineThreshold').value) || 3,
-        dns_domains: Object.fromEntries([...document.querySelectorAll('.policy-domains')].map(ta =>
-            [ta.dataset.cat, ta.value.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean)]))
-    };
-    
-    try {
-        const res = await fetch(`${getApiBase()}/api/agent_policies`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        
-        if (res.ok) {
-            showToast('Politikalar başarıyla kaydedildi.', 'success');
-        } else {
-            throw new Error('API Hatası');
-        }
-    } catch (e) {
-        showToast('Kaydetme başarısız.', 'error');
-    } finally {
-        btn.innerHTML = '<i class="fas fa-save"></i> Politikaları Kaydet & Uygula';
-        btn.disabled = false;
-    }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(fetchPolicies, 500);
-    
-    if (window.USER_ROLE === 'viewer') {
-        document.querySelectorAll('input, select, textarea').forEach(el => {
-            el.disabled = true;
-        });
-    }
-});
-</script>
-
 <?php include 'includes/footer.php'; ?>
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+    const canEdit = <?= $canEdit ? 'true' : 'false' ?>;
+    // Kategori anahtarları ajanla ortak sözleşmedir (dns_categories / dns_domains)
+    const CATS = [
+        { key: 'pornografi', t: 'Pornografik içerik', d: 'Yetişkinlere yönelik siteler' },
+        { key: 'yasadisi_bahis', t: 'Yasadışı bahis ve kumar', d: 'Lisanssız bahis ve kumar siteleri' },
+        { key: 'teror_siddet', t: 'Terör ve şiddet propagandası', d: 'Radikal örgüt ve şiddet içerikli siteler' },
+        { key: 'zararli_yazilim', t: 'Zararlı yazılım ve kimlik avı', d: 'Malware, phishing ve komuta-kontrol alan adları' },
+        { key: 'okul_ozel', t: 'Okulun özel listesi', d: 'Okulunuzun ayrıca izlemek istediği alan adları' },
+    ];
+    const DEFAULT_TEXT = 'Bu bilgisayar okulumuz tarafından POps ile yönetilmektedir. Bilgisayarın açık/kapalı durumu, ' +
+        'donanım bilgileri ve belirlenen yasaklı alan adlarına erişim kaydedilir. Klavye, şifre ve sayfa içerikleri kaydedilmez. ' +
+        'Yönetici ekranı yalnızca kayıtlı bir oturumda görüntüleyebilir; uzaktan kontrol için ekranda bildirim gösterilir. ' +
+        'Ayrıntılı bilgi için okul yönetiminin KVKK aydınlatma metnine bakınız.';
+    let saved = '';
+    let policy = {};
+
+    const lines = (t) => t.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);
+    function renderCats() {
+        const cats = new Set(policy.dns_categories || []);
+        const domains = policy.dns_domains || {};
+        $('cats').innerHTML = CATS.map(c => {
+            const list = domains[c.key] || [];
+            const on = cats.has(c.key);
+            return `<div class="cat${on ? ' on' : ''}" data-key="${c.key}">
+                <div class="cat-head">
+                    <label class="switch" onclick="event.stopPropagation()"><input type="checkbox" class="cat-on" ${on ? 'checked' : ''} ${canEdit ? '' : 'disabled'}><span></span></label>
+                    <div><div class="t">${escapeHtml(c.t)}</div><div class="d">${escapeHtml(c.d)}</div></div>
+                    <span class="cnt"></span>
+                    <i class="fas fa-chevron-right chev"></i>
+                </div>
+                <div class="cat-body">
+                    <textarea class="fld domains" ${canEdit ? '' : 'disabled'} placeholder="ornek-bahis.com&#10;baska-site.net">${escapeHtml(list.join('\n'))}</textarea>
+                    <div class="hint">Her satıra bir alan adı. Alt alan adları kendiliğinden dahildir (<code>ornek.com</code> yazınca <code>www.ornek.com</code> da eşleşir). <code>https://</code>, yol ve <code>*.</code> kaydederken temizlenir.</div>
+                </div>
+            </div>`;
+        }).join('');
+        document.querySelectorAll('.cat').forEach(el => {
+            el.querySelector('.cat-head').addEventListener('click', () => el.classList.toggle('open'));
+            el.querySelector('.cat-on').addEventListener('change', (e) => { el.classList.toggle('on', e.target.checked); if (e.target.checked) el.classList.add('open'); refresh(); });
+            el.querySelector('textarea').addEventListener('input', refresh);
+        });
+    }
+
+    function collect() {
+        const cats = [], domains = {};
+        document.querySelectorAll('.cat').forEach(el => {
+            if (el.querySelector('.cat-on').checked) cats.push(el.dataset.key);
+            domains[el.dataset.key] = lines(el.querySelector('textarea').value);
+        });
+        return {
+            fair_use_text: $('fairUseText').value.trim(),
+            dns_categories: cats,
+            auto_quarantine: $('autoQ').checked,
+            quarantine_threshold: Math.max(1, Math.min(100, parseInt($('qThreshold').value) || 3)),
+            dns_domains: domains,
+        };
+    }
+
+    function refresh() {
+        const p = collect();
+        document.querySelectorAll('.cat').forEach(el => {
+            const n = lines(el.querySelector('textarea').value).length, on = el.querySelector('.cat-on').checked;
+            el.querySelector('.cnt').innerHTML = !on ? '<span class="badge muted">kapalı</span>'
+                : n ? `<span class="badge ok">${n} alan adı</span>` : '<span class="badge warn">liste boş</span>';
+        });
+        const activeCats = p.dns_categories.filter(k => (p.dns_domains[k] || []).length);
+        $('stFair').innerHTML = p.fair_use_text ? '<span class="badge ok"><i class="fas fa-check"></i> Tanımlı</span>' : '<span class="badge muted">Boş (gösterilmez)</span>';
+        $('stDns').innerHTML = activeCats.length ? `<span class="badge ok"><i class="fas fa-check"></i> ${activeCats.length} kategori, ${activeCats.reduce((a, k) => a + p.dns_domains[k].length, 0)} alan adı</span>`
+            : '<span class="badge muted">Kapalı (listeli açık kategori yok)</span>';
+        $('stQ').innerHTML = p.auto_quarantine ? `<span class="badge warn"><i class="fas fa-lock"></i> Açık · eşik ${p.quarantine_threshold}</span>` : '<span class="badge muted">Kapalı</span>';
+        if (!canEdit) return;
+        $('fairCount').textContent = `${p.fair_use_text.length}/4000 karakter`;
+        const dirty = JSON.stringify(p) !== saved;
+        $('saveBtn').disabled = !dirty;
+        $('saveState').textContent = dirty ? 'Kaydedilmemiş değişiklik var. Ajanlar yeni politikayı bir dakika içinde alır.' : 'Değişiklik yok.';
+    }
+
+    async function load() {
+        try {
+            const res = await fetch('/api/agent_policies');
+            policy = res.ok ? await res.json() : {};
+        } catch (e) { policy = {}; }
+        $('fairUseText').value = policy.fair_use_text || '';
+        $('autoQ').checked = !!policy.auto_quarantine;
+        $('qThreshold').value = policy.quarantine_threshold || 3;
+        renderCats();
+        saved = JSON.stringify(collect());
+        refresh();
+        loadFleet();
+    }
+
+    // Kaç ajan DNS tespitini çalıştırabilir (0.1.5-alpha ve sonrası)
+    async function loadFleet() {
+        try {
+            const devs = await (await fetch('/api/devices')).json();
+            const ver = (v) => { const m = String(v || '').match(/(\d+)\.(\d+)\.(\d+)/); return m ? [+m[1], +m[2], +m[3]] : null; };
+            const ok = devs.filter(d => {
+                const v = ver(d.agent_version);
+                if (!v || /stable/i.test(d.agent_version)) return false;   // "v1.0.0 Stable" eski, sürümsüz derleme
+                return v[0] > 0 || v[1] > 1 || (v[1] === 1 && v[2] >= 5);
+            }).length;
+            $('stDnsSub').textContent = `Tespit, 0.1.5-alpha ve sonrası ajanlarda çalışır: şu an ${ok}/${devs.length} ajan.`;
+        } catch (e) { /* sessiz */ }
+    }
+
+    if (canEdit) {
+        $('fairUseText').addEventListener('input', refresh);
+        $('autoQ').addEventListener('change', refresh);
+        $('qThreshold').addEventListener('input', refresh);
+        $('fairDefault').addEventListener('click', () => {
+            if ($('fairUseText').value.trim() && !confirm('Mevcut metin örnek metinle değiştirilsin mi?')) return;
+            $('fairUseText').value = DEFAULT_TEXT; refresh();
+        });
+        $('saveBtn').addEventListener('click', async function () {
+            const p = collect();
+            if (p.auto_quarantine && !p.dns_categories.some(k => (p.dns_domains[k] || []).length)
+                && !confirm('Otomatik karantina açık ama listeli açık kategori yok; karantina hiç tetiklenmez. Yine de kaydedilsin mi?')) return;
+            this.disabled = true;
+            try {
+                const res = await fetch('/api/agent_policies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                showToast('Politikalar kaydedildi.', 'success');
+                await load();
+            } catch (e) { showToast('Kaydedilemedi: ' + e.message, 'error'); refresh(); }
+        });
+    }
+    load();
+})();
+</script>

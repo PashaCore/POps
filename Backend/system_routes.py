@@ -82,6 +82,8 @@ _REV_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _SERVER_PATHS = ("Backend/", "Dashboard/", "keys/", "VERSION")
 _COMPARE_TTL = 600.0
 _compare_cache = {"rev": None, "at": 0.0, "data": None}
+# Sürüm notları: GitHub'daki CHANGELOG.md (commit'e sabit sürümler kalıcı, main 10 dk) önbelleği
+_changelog_cache = {}
 
 
 def _read_version() -> str:
@@ -211,6 +213,64 @@ async def _server_update(force: bool = False) -> dict:
     return out
 
 
+def _fetch_changelog(ref: str) -> Optional[str]:
+    """GitHub'daki CHANGELOG.md (belirli commit ya da main). Hata olursa None (çevrimdışı-güvenli)."""
+    now = time.time()
+    hit = _changelog_cache.get(ref)
+    if hit and (_REV_RE.match(ref) or now - hit[0] < _COMPARE_TTL):
+        return hit[1]
+    try:
+        text = _http_get("https://raw.githubusercontent.com/%s/%s/CHANGELOG.md" % (GITHUB_REPO, ref),
+                         2 * 1024 * 1024, "text/plain").decode("utf-8")
+    except Exception:
+        return hit[1] if hit else None
+    _changelog_cache[ref] = (now, text)
+    return text
+
+
+def _parse_changelog(text: str) -> List[dict]:
+    """Keep a Changelog biçimi -> [{version, date, intro, groups: [{kind, items: [str]}]}]."""
+    sections, cur, group = [], None, None
+    for raw in (text or "").splitlines():
+        line = raw.rstrip()
+        if line.startswith("## ["):
+            ver = line[4:line.index("]")] if "]" in line else line[4:]
+            date = line.split(" - ", 1)[1].strip() if " - " in line else None
+            cur = {"version": ver, "date": date, "intro": "", "groups": []}
+            group = None
+            sections.append(cur)
+        elif cur is None:
+            continue
+        elif line.startswith("### "):
+            group = {"kind": line[4:].strip(), "items": []}
+            cur["groups"].append(group)
+        elif line.startswith("- ") and group is not None:
+            group["items"].append(line[2:].strip())
+        elif line.startswith("  ") and group is not None and group["items"]:
+            group["items"][-1] += " " + line.strip()
+        elif line and group is None:
+            cur["intro"] = (cur["intro"] + " " + line.strip()).strip()
+    return sections
+
+
+def _section(sections: List[dict], version: Optional[str]) -> Optional[dict]:
+    want = _norm(version)
+    for sec in sections:
+        if _norm(sec["version"]) == want:
+            return sec
+    return None
+
+
+def _new_items(new: Optional[dict], old: Optional[dict]) -> Optional[dict]:
+    """`new` bölümünde olup `old` bölümünde olmayan maddeler (aynı sürüm bölümünün iki hali)."""
+    if not new:
+        return None
+    seen = {i for g in (old or {}).get("groups", []) for i in g["items"]}
+    groups = [{"kind": g["kind"], "items": [i for i in g["items"] if i not in seen]} for g in new["groups"]]
+    groups = [g for g in groups if g["items"]]
+    return {**new, "groups": groups} if groups else None
+
+
 def _agent_msis(manifest: dict) -> List[str]:
     """İmzalı manifest'teki ajan MSI'larının adları (deploy-update tam olarak birini bekler)."""
     return [str(a.get("name", "")) for a in manifest.get("artifacts", [])
@@ -297,6 +357,43 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             "staged_tag": staged.get("tag") if staged else None,
             "release_available": release_available,
             "enforce_agent_auth": await _enforce_enabled(),
+        }
+
+    @router.get("/api/system/release-notes")
+    async def release_notes(auth: dict = Depends(require_admin)):
+        """Sürüm notları (GitHub'daki CHANGELOG.md'den): sunucuda kurulu kodun içeriği, güncellemeyle gelecek
+        yenilikler ve ajan paketinin notları. GitHub'a ulaşılamazsa available=false (çevrimdışı-güvenli)."""
+        running = _read_version()
+        st = _read_deploy_status() or {}
+        rev = str(st.get("rev") or "") if st.get("state") == "ok" else ""
+        main_text = await asyncio.to_thread(_fetch_changelog, "main")
+        if main_text is None:
+            return {"available": False}
+        main_secs = _parse_changelog(main_text)
+        rev_secs = None
+        if _REV_RE.match(rev):
+            rev_text = await asyncio.to_thread(_fetch_changelog, rev)
+            rev_secs = _parse_changelog(rev_text) if rev_text is not None else None
+        base = rev_secs if rev_secs is not None else main_secs
+        installed = [sec for sec in (_section(base, "Unreleased"), _section(base, running)) if sec and sec["groups"]]
+        incoming = []
+        if rev_secs is not None:
+            rev_versions = {_norm(sec["version"]) for sec in rev_secs}
+            for sec in main_secs:
+                if sec["version"] == "Unreleased":
+                    diff = _new_items(sec, _section(rev_secs, "Unreleased"))
+                    if diff:
+                        incoming.append(diff)
+                elif _norm(sec["version"]) not in rev_versions:
+                    incoming.append(sec)
+        latest = await _github_latest(force=False)
+        return {
+            "available": True,
+            "running": running,
+            "rev": rev or None,
+            "installed": installed,
+            "incoming": incoming,
+            "agent": _section(main_secs, latest) if latest else None,
         }
 
     @router.post("/api/system/upload-release")

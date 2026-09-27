@@ -83,6 +83,20 @@
     .status-msg.show { display: block; }
     .status-success { background: var(--success-bg); color: var(--success-text); border-color: var(--success-solid); }
     .status-error { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-solid); }
+    .notes { margin-top: var(--space-4); }
+    .notes > details, .notes .note-sec { background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-top: 0.5rem; }
+    .notes summary { cursor: pointer; font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); }
+    .notes .ver { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); margin: 0.5rem 0 0.25rem; }
+    .notes .intro { font-size: var(--text-sm); color: var(--text-secondary); margin: 0.25rem 0 0.5rem; line-height: 1.5; }
+    .notes .kind { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: var(--fw-semibold); margin: 0.625rem 0 0.25rem; }
+    .notes ul { margin: 0; padding-left: 1.1rem; }
+    .notes li { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; margin-bottom: 0.25rem; }
+    .notes li details summary { font-weight: normal; color: var(--text-secondary); list-style: none; }
+    .notes li details summary::-webkit-details-marker { display: none; }
+    .notes li details[open] summary .more { display: none; }
+    .notes li .more { color: var(--primary-500); font-weight: var(--fw-semibold); white-space: nowrap; }
+    .notes code { font-size: 0.8em; }
+    .notes .lang { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 0.375rem; }
     .cap-state { margin: 0.75rem 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
 </style>
 
@@ -109,10 +123,11 @@
             <div class="ver-tile"><div class="lbl">Çalışan sürüm</div><div class="val" id="srv-version">…</div><div class="sub" id="srv-rev"></div></div>
             <div class="ver-tile"><div class="lbl">GitHub (main)</div><div class="val" id="srv-main">…</div><div class="sub" id="srv-main-sub"></div></div>
         </div>
-        <div class="changes" id="srv-changes" style="display:none;">
-            <div class="mini-lbl">Güncellemeyle gelecek değişiklikler</div>
+        <div class="notes" id="srv-notes"></div>
+        <details class="changes" id="srv-changes" style="display:none;">
+            <summary class="mini-lbl" style="cursor:pointer;">Teknik ayrıntı: gelecek commit'ler</summary>
             <ul id="srv-commits"></ul>
-        </div>
+        </details>
         <div class="row mt">
             <button class="btn" id="btn-selfupdate"><i class="fas fa-download"></i> Sunucuyu güncelle</button>
             <span class="muted-text">GitHub main'deki kodu kurar. Sağlık kontrolü başarısız olursa önceki koda kendiliğinden döner.</span>
@@ -133,6 +148,7 @@
             <div class="ver-tile"><div class="lbl">GitHub'daki son sürüm</div><div class="val" id="ag-latest">…</div><div class="sub" id="ag-latest-sub"></div></div>
             <div class="ver-tile"><div class="lbl">Gönderilecek paket (doğrulandı)</div><div class="val" id="ag-staged">…</div><div class="sub" id="ag-staged-sub"></div></div>
         </div>
+        <div class="notes" id="ag-notes"></div>
         <div class="row mt" id="fetch-row" style="display:none;">
             <button class="btn primary" id="btn-fetch"><i class="fas fa-cloud-arrow-down"></i> <span id="btn-fetch-lbl">GitHub'dan indir ve doğrula</span></button>
             <span class="muted-text">İmza ve özetler doğrulanmadan paket kullanılmaz.</span>
@@ -368,6 +384,38 @@
             }
         }, 3000);
     });
+
+    // ================= SÜRÜM NOTLARI =================
+    // CHANGELOG (Keep a Changelog) maddeleri: **kalın** ve `kod` dışında biçim yok; önce kaçırılır.
+    const KIND = { Added: 'Eklenenler', Changed: 'Değişenler', Fixed: 'Düzeltmeler', Security: 'Güvenlik', Removed: 'Kaldırılanlar', Deprecated: 'Kullanımdan kalkacaklar' };
+    const md = (t) => escapeHtml(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    function noteItem(t) {
+        const m = t.match(/^\*\*(.+?)\*\*\s*(.*)$/);
+        const head = m ? `<strong>${escapeHtml(m[1])}</strong> ` : '';
+        const rest = m ? m[2] : t;
+        const first = rest.split(/(?<=\.)\s/)[0];
+        if (first.length >= rest.length - 1 || rest.length < 180) return `<li>${head}${md(rest)}</li>`;
+        return `<li><details><summary>${head}${md(first)} <span class="more">devamı</span></summary>${md(rest.slice(first.length))}</details></li>`;
+    }
+    function noteSection(sec, title) {
+        return `<div class="ver">${escapeHtml(title || (sec.version === 'Unreleased' ? 'Henüz sürüm numarası almamış yenilikler' : fmtV(sec.version) + (sec.date ? ' · ' + sec.date : '')))}</div>`
+            + (sec.intro ? `<div class="intro">${md(sec.intro)}</div>` : '')
+            + sec.groups.map(g => `<div class="kind">${escapeHtml(KIND[g.kind] || g.kind)}</div><ul>${g.items.map(noteItem).join('')}</ul>`).join('');
+    }
+    const LANG = '<div class="lang">Sürüm notları GitHub\'daki CHANGELOG\'dan alınır (İngilizce).</div>';
+    async function loadNotes() {
+        let d;
+        try { d = await api('/api/system/release-notes'); } catch (e) { return; }
+        if (!d.available) { $('srv-notes').innerHTML = ''; $('ag-notes').innerHTML = ''; return; }
+        const srv = (S.ver && S.ver.server) || {};
+        if (srv.update_available && d.incoming.length) {
+            $('srv-notes').innerHTML = `<div class="note-sec"><div class="mini-lbl">Güncellemeyle gelecek yenilikler</div>${d.incoming.map(sec => noteSection(sec)).join('')}${LANG}</div>`;
+        } else if (d.installed.length) {
+            $('srv-notes').innerHTML = `<details><summary>Bu sunucuda neler var (${escapeHtml(fmtV(d.running))}${d.rev ? ' · ' + escapeHtml(d.rev) : ''})</summary>${d.installed.map(sec => noteSection(sec)).join('')}${LANG}</details>`;
+        } else { $('srv-notes').innerHTML = ''; }
+        $('ag-notes').innerHTML = d.agent && d.agent.groups.length
+            ? `<details${S.ver && S.ver.release_available ? ' open' : ''}><summary>${escapeHtml(fmtV(d.agent.version))} sürüm notları</summary>${noteSection(d.agent, ' ')}${LANG}</details>` : '';
+    }
 
     // ================= AJAN PAKETİ =================
     function outdated() {
@@ -693,6 +741,7 @@
         renderDeploy();
         renderCapDevices();
         renderEnforce();
+        loadNotes();
         $('last-check').textContent = 'Son kontrol: ' + new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
     }
 
