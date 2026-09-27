@@ -9,6 +9,7 @@
 
 Ortam: POPS_TEST_HTTP + DB_* + JWT_SECRET (uvicorn ile aynı).
 """
+
 import asyncio
 import datetime
 import json
@@ -18,9 +19,9 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
-import server      # noqa: E402  (create_jwt, JWT_SECRET, JWT_ALGO)
-import asyncpg     # noqa: E402
-import bcrypt      # noqa: E402
+import server  # noqa: E402  (create_jwt, JWT_SECRET, JWT_ALGO)
+import asyncpg  # noqa: E402
+import bcrypt  # noqa: E402
 import jwt as pyjwt  # noqa: E402
 
 HTTP = os.environ["POPS_TEST_HTTP"]
@@ -47,14 +48,29 @@ def old_token_no_tv(username, role):
 
 async def main():
     c = await asyncpg.connect(
-        host=os.environ.get("DB_HOST", "localhost"), port=int(os.environ.get("DB_PORT", "5432")),
-        user=os.environ["DB_USER"], password=os.environ["DB_PASS"], database=os.environ["DB_NAME"])
+        host=os.environ.get("DB_HOST", "localhost"),
+        port=int(os.environ.get("DB_PORT", "5432")),
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASS"],
+        database=os.environ["DB_NAME"],
+    )
     h = bcrypt.hashpw(b"pw12345", bcrypt.gensalt()).decode()
     for u in ("f4admin", "f4target", "f4del"):
         await c.execute("DELETE FROM users WHERE username=$1", u)
-    await c.execute("INSERT INTO users (username,password_hash,role,permissions,token_version) VALUES ('f4admin',$1,'superadmin','[]',0)", h)
-    await c.execute("INSERT INTO users (username,password_hash,role,permissions,token_version) VALUES ('f4target',$1,'admin','[]',0)", h)
-    await c.execute("INSERT INTO users (username,password_hash,role,permissions,token_version) VALUES ('f4del',$1,'admin','[]',0)", h)
+    await c.execute(
+        "INSERT INTO users (username,password_hash,role,permissions,token_version) "
+        "VALUES ('f4admin',$1,'superadmin','[]',0)",
+        h,
+    )
+    await c.execute(
+        "INSERT INTO users (username,password_hash,role,permissions,token_version) "
+        "VALUES ('f4target',$1,'admin','[]',0)",
+        h,
+    )
+    await c.execute(
+        "INSERT INTO users (username,password_hash,role,permissions,token_version) VALUES ('f4del',$1,'admin','[]',0)",
+        h,
+    )
     tgt_id = await c.fetchval("SELECT id FROM users WHERE username='f4target'")
     del_id = await c.fetchval("SELECT id FROM users WHERE username='f4del'")
     passed = 0
@@ -68,16 +84,26 @@ async def main():
     admin_tok = server.create_jwt("f4admin", "superadmin", 0)
     chk(req("/api/devices", token=admin_tok) == 200, "geçerli jeton (tv=0) çalışıyor")
     chk(req("/api/devices", token=server.create_jwt("f4admin", "superadmin", 99)) == 401, "bayat token_version → 401")
-    chk(req("/api/devices", token=old_token_no_tv("f4admin", "superadmin")) == 200, "tv'siz eski jeton kabul (geçiş uyumu)")
+    chk(
+        req("/api/devices", token=old_token_no_tv("f4admin", "superadmin")) == 200,
+        "tv'siz eski jeton kabul (geçiş uyumu)",
+    )
     chk(req("/api/devices", token=server.create_jwt("ghost", "superadmin", 0)) == 401, "var olmayan kullanıcı → 401")
 
     # Rol DB'den: f4target admin jetonuyla admin ucu 200
     tgt_tok = server.create_jwt("f4target", "admin", 0)
     chk(req("/api/admin/users", token=tgt_tok) == 200, "f4target admin jetonu admin ucunda 200")
     # f4admin, f4target'ı viewer'a düşürür → token_version artar
-    chk(req("/api/admin/users/%d" % tgt_id, method="PUT",
-            body={"username": "f4target", "role": "viewer", "permissions": "[]"}, token=admin_tok) == 200,
-        "f4target viewer'a düşürüldü")
+    chk(
+        req(
+            "/api/admin/users/%d" % tgt_id,
+            method="PUT",
+            body={"username": "f4target", "role": "viewer", "permissions": "[]"},
+            token=admin_tok,
+        )
+        == 200,
+        "f4target viewer'a düşürüldü",
+    )
     chk(req("/api/admin/users", token=tgt_tok) == 401, "rol düşürme sonrası f4target'ın eski jetonu → 401 (iptal)")
 
     # Silinen kullanıcının jetonu geçersiz

@@ -8,6 +8,7 @@ F12: canlı ekran kareleri yalnızca o cihaz için açık oturumu olan admin pan
 
 Ortam: POPS_TEST_HTTP + POPS_TEST_WS + DB_* + JWT_SECRET (uvicorn ile aynı JWT_SECRET şart!).
 """
+
 import asyncio
 import json
 import os
@@ -16,9 +17,9 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
-import server          # noqa: E402  (create_jwt, JWT_COOKIE_NAME)
-import asyncpg         # noqa: E402
-import websockets      # noqa: E402
+import server  # noqa: E402  (create_jwt, JWT_COOKIE_NAME)
+import asyncpg  # noqa: E402
+import websockets  # noqa: E402
 
 HTTP = os.environ["POPS_TEST_HTTP"]
 WS = os.environ.get("POPS_TEST_WS", HTTP.replace("http", "ws", 1))
@@ -54,16 +55,25 @@ def cookie(jwt):
 
 async def main():
     c = await asyncpg.connect(
-        host=os.environ.get("DB_HOST", "localhost"), port=int(os.environ.get("DB_PORT", "5432")),
-        user=os.environ["DB_USER"], password=os.environ["DB_PASS"], database=os.environ["DB_NAME"])
-    await c.execute("INSERT INTO global_settings (key,value) VALUES ('enforce_agent_auth','0') "
-                    "ON CONFLICT (key) DO UPDATE SET value='0'")
+        host=os.environ.get("DB_HOST", "localhost"),
+        port=int(os.environ.get("DB_PORT", "5432")),
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASS"],
+        database=os.environ["DB_NAME"],
+    )
+    await c.execute(
+        "INSERT INTO global_settings (key,value) VALUES ('enforce_agent_auth','0') "
+        "ON CONFLICT (key) DO UPDATE SET value='0'"
+    )
     await c.execute("DELETE FROM enterprise_audit_logs WHERE target_pc IN ('HW-X','HW-Y')")
     # F4: verify_session JWT 'sub'unun DB'de olmasını ister → panel kullanıcılarını seed et (token_version 0).
     for uname, role in (("admin1", "admin"), ("viewer1", "viewer")):
-        await c.execute("INSERT INTO users (username, password_hash, role, permissions, token_version) "
-                        "VALUES ($1, 'x', $2, '[]', 0) ON CONFLICT (username) DO UPDATE SET role=$2, token_version=0",
-                        uname, role)
+        await c.execute(
+            "INSERT INTO users (username, password_hash, role, permissions, token_version) "
+            "VALUES ($1, 'x', $2, '[]', 0) ON CONFLICT (username) DO UPDATE SET role=$2, token_version=0",
+            uname,
+            role,
+        )
     passed = 0
 
     def chk(cond, msg):
@@ -74,6 +84,7 @@ async def main():
 
     admin_jwt = server.create_jwt("admin1", "admin")
     viewer_jwt = server.create_jwt("viewer1", "viewer")
+
     def rinput(dev):
         return {"type": "remote_input", "device": dev, "input_type": "mouse_move", "data": {"x": 1, "y": 1}}
 
@@ -90,8 +101,9 @@ async def main():
     viewer_panel = await websockets.connect(WS + "/ws/panel", additional_headers=cookie(viewer_jwt))
 
     # Admin, HW-X için denetim oturumu açar
-    s, b = http("/api/audit/session/start", body={"target_pc": "HW-X",
-                "reason": "test", "is_mandatory": True}, token=admin_jwt)
+    s, b = http(
+        "/api/audit/session/start", body={"target_pc": "HW-X", "reason": "test", "is_mandatory": True}, token=admin_jwt
+    )
     chk(s == 200 and b.get("session_id"), "admin denetim oturumu açtı")
     session_id = b["session_id"]
 
@@ -128,11 +140,19 @@ async def main():
 
     # F1 kalıntısı (final review): thumbnail (ekran görüntüsü) /ws/agent'tan gelir; YALNIZCA admin
     # panellere gitmeli, viewer'a ASLA. (Oturum yok bile olsa admin rolüyle alır; viewer alamaz.)
-    agent = await websockets.connect(WS + "/ws/agent/HW-X",
-                                     additional_headers={"X-Agent-Version": "test"})
-    await agent.send(json.dumps({"dna_payload": {"hardware": {"uuid": "HW-X-U", "bios_sn": "HW-X-B",
-                     "disk_sn": "-", "mac": "-", "ram_sn": "-"}, "capabilities": {"ram_readable": True}},
-                                 "hostname": "hwx", "status": "Online"}))
+    agent = await websockets.connect(WS + "/ws/agent/HW-X", additional_headers={"X-Agent-Version": "test"})
+    await agent.send(
+        json.dumps(
+            {
+                "dna_payload": {
+                    "hardware": {"uuid": "HW-X-U", "bios_sn": "HW-X-B", "disk_sn": "-", "mac": "-", "ram_sn": "-"},
+                    "capabilities": {"ram_readable": True},
+                },
+                "hostname": "hwx",
+                "status": "Online",
+            }
+        )
+    )
     await agent.send(json.dumps({"type": "thumbnail", "hw_id": "HW-X", "image": "THUMB1"}))
     admin_thumb = await recv_timeout(admin_panel, 3)
     viewer_thumb = await recv_timeout(viewer_panel, 2)

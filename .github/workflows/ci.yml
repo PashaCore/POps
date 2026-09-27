@@ -51,7 +51,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r Backend/requirements.txt flake8
       - name: Lint with flake8
-        run: flake8 Backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Tam kapı: repo kökündeki .flake8 (max-line-length 120). Backend temiz tutulur; yeni uyarı CI'ı kırar.
+        run: flake8 Backend/ --count --show-source --statistics
       - name: Import smoke test
         # Modül yüklenirken zorunlu ortam değişkenleri okunur; veritabanına bağlanılmaz
         working-directory: Backend

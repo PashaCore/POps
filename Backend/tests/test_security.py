@@ -39,22 +39,41 @@ def check(name, cond):
 
 
 async def db():
-    return await asyncpg.connect(host=os.environ.get("DB_HOST", "localhost"),
-                                 port=int(os.environ.get("DB_PORT", "5432")),
-                                 user=os.environ["DB_USER"], password=os.environ["DB_PASS"],
-                                 database=os.environ["DB_NAME"])
+    return await asyncpg.connect(
+        host=os.environ.get("DB_HOST", "localhost"),
+        port=int(os.environ.get("DB_PORT", "5432")),
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASS"],
+        database=os.environ["DB_NAME"],
+    )
 
 
 def dna(host, mac):
-    return json.dumps({"dna_payload": {"hardware": {"uuid": host + "-U", "bios_sn": host + "-B",
-                                                    "disk_sn": host + "-D", "mac": mac, "ram_sn": host + "-R"},
-                                       "capabilities": {"ram_readable": True}},
-                       "hostname": host, "status": "Online"})
+    return json.dumps(
+        {
+            "dna_payload": {
+                "hardware": {
+                    "uuid": host + "-U",
+                    "bios_sn": host + "-B",
+                    "disk_sn": host + "-D",
+                    "mac": mac,
+                    "ram_sn": host + "-R",
+                },
+                "capabilities": {"ram_readable": True},
+            },
+            "hostname": host,
+            "status": "Online",
+        }
+    )
 
 
 def http_post(path, body, headers=None):
-    req = urllib.request.Request(HTTP + path, data=json.dumps(body).encode(),
-                                 method="POST", headers={"Content-Type": "application/json", **(headers or {})})
+    req = urllib.request.Request(
+        HTTP + path,
+        data=json.dumps(body).encode(),
+        method="POST",
+        headers={"Content-Type": "application/json", **(headers or {})},
+    )
     try:
         with urllib.request.urlopen(req, timeout=8) as r:
             return r.status
@@ -78,17 +97,23 @@ async def ws_closed_code(pc, headers=None):
 def _superadmin_jwt():
     sys.path.insert(0, SERVER_DIR)
     import server
+
     return server.create_jwt("integration-test", "superadmin")
 
 
 def _wrong_key_signed_manifest():
     """Gerçek olmayan bir ed25519 anahtarıyla imzalanmış manifest + imza (base64)."""
-    manifest = {"schema": "pops-manifest/1", "version": "9.9.9", "tag": "v9.9.9",
-                "released_at": 1700000000,
-                "artifacts": [{"name": "POps-Agent-9.9.9-win-x64.msi", "sha256": "0" * 64, "size": 1}]}
+    manifest = {
+        "schema": "pops-manifest/1",
+        "version": "9.9.9",
+        "tag": "v9.9.9",
+        "released_at": 1700000000,
+        "artifacts": [{"name": "POps-Agent-9.9.9-win-x64.msi", "sha256": "0" * 64, "size": 1}],
+    }
     payload = (json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
     key = Ed25519PrivateKey.generate()
     import base64
+
     return payload, base64.b64encode(key.sign(payload))
 
 
@@ -97,8 +122,10 @@ def _multipart(fields):
     boundary = "----popstest7f3a"
     out = b""
     for name, filename, data in fields:
-        out += ("--%s\r\nContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\n"
-                "Content-Type: application/octet-stream\r\n\r\n" % (boundary, name, filename)).encode()
+        out += (
+            "--%s\r\nContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\n"
+            "Content-Type: application/octet-stream\r\n\r\n" % (boundary, name, filename)
+        ).encode()
         out += data + b"\r\n"
     out += ("--%s--\r\n" % boundary).encode()
     return out, "multipart/form-data; boundary=%s" % boundary
@@ -112,18 +139,26 @@ async def main():
     await conn.execute(
         "INSERT INTO users (username, password_hash, role, permissions, token_version) "
         "VALUES ('integration-test', 'x', 'superadmin', '[]', 0) "
-        "ON CONFLICT (username) DO UPDATE SET role='superadmin', token_version=0")
+        "ON CONFLICT (username) DO UPDATE SET role='superadmin', token_version=0"
+    )
 
     async def set_enforce(v):
-        await conn.execute("INSERT INTO global_settings (key,value) VALUES ('enforce_agent_auth',$1) "
-                           "ON CONFLICT (key) DO UPDATE SET value=$1", v)
+        await conn.execute(
+            "INSERT INTO global_settings (key,value) VALUES ('enforce_agent_auth',$1) "
+            "ON CONFLICT (key) DO UPDATE SET value=$1",
+            v,
+        )
 
     # 1) enroll -> secret (accept-both)
     await set_enforce("0")
-    await conn.execute("INSERT INTO enroll_tokens (token, lab_name, expires_at, max_uses) "
-                       "VALUES ('INTEGTOK1', NULL, NOW()+interval '1 hour', 5) ON CONFLICT (token) DO NOTHING")
+    await conn.execute(
+        "INSERT INTO enroll_tokens (token, lab_name, expires_at, max_uses) "
+        "VALUES ('INTEGTOK1', NULL, NOW()+interval '1 hour', 5) ON CONFLICT (token) DO NOTHING"
+    )
     secret = None
-    async with websockets.connect(WS + "/ws/agent/HW-INTEG", additional_headers=[("X-Enroll-Token", "INTEGTOK1")]) as ws:
+    async with websockets.connect(
+        WS + "/ws/agent/HW-INTEG", additional_headers=[("X-Enroll-Token", "INTEGTOK1")]
+    ) as ws:
         await ws.send(dna("HW-INTEG", "AA:BB:CC:00:11:01"))
         try:
             for _ in range(6):
@@ -142,14 +177,20 @@ async def main():
     check("3) enforce: gecerli secret -> acik", (await ws_closed_code(enr_id, [("X-Agent-Secret", secret)])) is None)
     logout = {"hw_id": enr_id, "hostname": "h", "student_id": "s"}
     check("4a) enforce: kimliksiz HTTP -> 401", http_post("/api/auth/logout", logout) == 401)
-    check("4b) enforce: gecerli secret HTTP -> 200",
-          http_post("/api/auth/logout", logout, {"X-Agent-Id": enr_id, "X-Agent-Secret": secret}) == 200)
+    check(
+        "4b) enforce: gecerli secret HTTP -> 200",
+        http_post("/api/auth/logout", logout, {"X-Agent-Id": enr_id, "X-Agent-Secret": secret}) == 200,
+    )
 
     # 5) yanlis anahtarla imzali paket reddedilir
     payload, sig = _wrong_key_signed_manifest()
     body, ctype = _multipart([("files", "manifest.json", payload), ("files", "manifest.json.sig", sig)])
-    req = urllib.request.Request(HTTP + "/api/system/upload-release", data=body, method="POST",
-                                 headers={"Content-Type": ctype, "Authorization": "Bearer " + _superadmin_jwt()})
+    req = urllib.request.Request(
+        HTTP + "/api/system/upload-release",
+        data=body,
+        method="POST",
+        headers={"Content-Type": ctype, "Authorization": "Bearer " + _superadmin_jwt()},
+    )
     try:
         with urllib.request.urlopen(req, timeout=8) as r:
             code = r.status

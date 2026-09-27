@@ -7,6 +7,7 @@ dolmuş challenge reddedilir. TOTP kodları server modülünden (_totp_code) ür
 
 Ortam: POPS_TEST_HTTP + DB_* + JWT_SECRET (run_local.sh / CI export eder).
 """
+
 import asyncio
 import json
 import os
@@ -18,7 +19,7 @@ import urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 import server  # noqa: E402  (_totp_code, _totp_new_secret)
 import asyncpg  # noqa: E402
-import bcrypt   # noqa: E402
+import bcrypt  # noqa: E402
 
 BASE = os.environ["POPS_TEST_HTTP"]
 USER = "twofa-test"
@@ -44,12 +45,17 @@ def req(path, method="GET", body=None, token=None):
 
 async def _seed():
     conn = await asyncpg.connect(
-        host=os.environ.get("DB_HOST", "localhost"), port=int(os.environ.get("DB_PORT", "5432")),
-        user=os.environ["DB_USER"], password=os.environ["DB_PASS"], database=os.environ["DB_NAME"])
+        host=os.environ.get("DB_HOST", "localhost"),
+        port=int(os.environ.get("DB_PORT", "5432")),
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASS"],
+        database=os.environ["DB_NAME"],
+    )
     h = bcrypt.hashpw(PW.encode(), bcrypt.gensalt()).decode()
     await conn.execute("DELETE FROM users WHERE username=$1", USER)
     await conn.execute(
-        "INSERT INTO users (username,password_hash,role,permissions) VALUES ($1,$2,'superadmin','[]')", USER, h)
+        "INSERT INTO users (username,password_hash,role,permissions) VALUES ($1,$2,'superadmin','[]')", USER, h
+    )
     await conn.close()
 
 
@@ -75,8 +81,10 @@ def main():
     check(s == 200 and b.get("enabled") is False, "status: kapalı")
 
     s, b = req("/api/admin/2fa/setup", "POST", token=token)
-    check(s == 200 and b.get("secret") and b.get("otpauth_uri", "").startswith("otpauth://totp/"),
-          "setup: secret + otpauth uri")
+    check(
+        s == 200 and b.get("secret") and b.get("otpauth_uri", "").startswith("otpauth://totp/"),
+        "setup: secret + otpauth uri",
+    )
     secret = b["secret"]
 
     s, b = req("/api/admin/login", "POST", {"username": USER, "password": PW})
@@ -89,8 +97,9 @@ def main():
     check(s == 200 and b.get("enabled") is True, "doğru kodla enable → aktif")
 
     s, b = req("/api/admin/login", "POST", {"username": USER, "password": PW})
-    check(s == 200 and b.get("status") == "totp_required" and b.get("challenge"),
-          "2FA açık → totp_required + challenge")
+    check(
+        s == 200 and b.get("status") == "totp_required" and b.get("challenge"), "2FA açık → totp_required + challenge"
+    )
     challenge = b["challenge"]
 
     # GÜVENLİK: challenge jetonu bir OTURUM jetonu değildir → require_auth ucunda 401 olmalı
