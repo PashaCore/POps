@@ -42,7 +42,7 @@
         </div>
         <div class="info-alert">
             <i class="fas fa-shield-halved"></i>
-            <div><strong>Güvenlik:</strong> Adresler kurulum sihirbazı tarafından mühürlenmiştir. Değiştirmek için web_install.php çalıştırılmalıdır.</div>
+            <div>Adresler sunucudaki <code>.env</code> dosyasından okunur (<code>POPS_API_URL</code>, <code>POPS_API_INTERNAL_URL</code>); buradan değiştirilemez. Ayrıntı: <code>docs/configuration.md</code>.</div>
         </div>
         <div class="setting-group">
             <label class="setting-label">REST API Adresi (HTTP)</label>
@@ -143,6 +143,7 @@
             <div class="modal-section">
                 <label>Yetki Rolü</label>
                 <select id="modalRole" onchange="togglePermissionsDiv()">
+                    <option value="viewer">İzleyici (yalnızca görüntüler)</option>
                     <option value="admin">Standart Yönetici</option>
                     <option value="superadmin">Süper Admin (Tüm Yetkiler)</option>
                 </select>
@@ -157,6 +158,7 @@
                     <label><input type="checkbox" class="perm-cb" value="deploy"> Dosya Dağıtımı</label>
                     <label><input type="checkbox" class="perm-cb" value="logger"> Log & Envanter</label>
                     <label><input type="checkbox" class="perm-cb" value="reports"> Raporlar</label>
+                    <label><input type="checkbox" class="perm-cb" value="policies"> Politikalar</label>
                     <label><input type="checkbox" class="perm-cb" value="terminal"> Orkestratör</label>
                     <label><input type="checkbox" class="perm-cb" value="settings"> Sistem Ayarları</label>
                 </div>
@@ -241,7 +243,8 @@ function renderUsersTable() {
     tbody.innerHTML = '';
     if (usersList.length === 0) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-tertiary);">Kayıtlı kullanıcı bulunamadı.</td></tr>'; return; }
     usersList.forEach(u => {
-        const roleStr = u.role === 'superadmin' ? '<span class="badge success">Süper Admin</span>' : '<span class="badge warning">Admin</span>';
+        const roleStr = u.role === 'superadmin' ? '<span class="badge success">Süper Admin</span>'
+            : u.role === 'viewer' ? '<span class="badge">İzleyici</span>' : '<span class="badge warning">Admin</span>';
         tbody.innerHTML += `<tr>
             <td style="color:var(--text-tertiary);">#${escapeHtml(u.id)}</td>
             <td><strong>${escapeHtml(u.username)}</strong></td>

@@ -1,6 +1,9 @@
 """Cihaz/lab yönetimi, envanter/log okuma ve Wake-on-LAN uçları."""
 
-from fastapi import APIRouter, Depends
+import datetime
+import json
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from pops.config import LOG_TABLE, USE_V2_SCHEMA
 from pops import db
@@ -17,6 +20,7 @@ from pops.models import (
     SetMainPcInput,
 )
 from pops.security import require_admin, require_auth
+from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.wol import attempt_p2p_wol, send_wol_packet
 
@@ -250,10 +254,25 @@ async def get_lab_settings(auth: dict = Depends(require_auth)):
 
 @router.post("/api/set_auto_enroll")
 async def set_auto_enroll(data: AutoEnrollInput, auth: dict = Depends(require_admin)):
+    """Bitiş tarihine kadar (o gün dahil) İLK kez bağlanan cihazlar bu sınıfa atanır (bkz. agents.py).
+    Sınıfı belirtilmiş bir enroll jetonu varsa o önceliklidir."""
+    try:
+        until = datetime.date.fromisoformat((data.expire_date or "").strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Bitiş tarihi YYYY-AA-GG olmalı.")
+    lab = (data.target_lab or "").strip()
+    if not lab:
+        raise HTTPException(status_code=400, detail="Sınıf seçin.")
     await execute_query(
         "INSERT INTO global_settings (key, value) "
         "VALUES ('auto_enroll_lab', $1) ON CONFLICT (key) DO UPDATE "
         "SET value=EXCLUDED.value",
-        (data.target_lab,),
+        (json.dumps({"lab": lab, "until": until.isoformat()}),),
+    )
+    await add_audit_log(
+        "*",
+        "auto_enroll",
+        "Oto-kayıt: %s (%s tarihine kadar)" % (lab, until.isoformat()),
+        {"by": auth.get("sub"), "lab": lab, "until": until.isoformat()},
     )
     return {"status": "success"}

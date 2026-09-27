@@ -123,7 +123,7 @@
                     <div style="font-size:0.8125rem;font-weight:var(--fw-semibold);color:var(--warning-text);"><i class="fas fa-random"></i> Akıllı Kuyruk Limiti</div>
                     <div style="font-size:0.6875rem;color:var(--text-tertiary);">Eşzamanlı kurulum sayısı</div>
                 </div>
-                <input type="number" id="queueLimitInput" value="5" min="1" max="100" onchange="updateQueueLimit()">
+                <input type="number" id="queueLimitInput" value="5" min="1" max="100" onchange="updateQueueLimit(this.value)">
             </div>
         </div>
 
@@ -262,9 +262,12 @@ window.loadRepository = async function() {
 window.updateQueueLimit = async function(newLim) {
     if (!getApiBase()) return;
     try {
-        await fetch(getApiBase() + '/api/set_concurrent_limit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: parseInt(newLim) || 5 }) });
-        showToast('Kuyruk limiti güncellendi.', 'success');
-    } catch (e) {}
+        const lim = parseInt(newLim);
+        if (!(lim >= 1 && lim <= 100)) { showToast('Limit 1-100 arasında olmalı.', 'warning'); return; }
+        const res = await fetch(getApiBase() + '/api/set_concurrent_limit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: lim }) });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        showToast('Kuyruk limiti ' + lim + ' olarak güncellendi.', 'success');
+    } catch (e) { showToast('Kuyruk limiti kaydedilemedi.', 'error'); }
 }
 
 function openPkgModal(editId = null) {

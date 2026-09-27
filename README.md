@@ -88,7 +88,7 @@ graph TD
 
     subgraph "Windows Endpoint"
         Agent[.NET 8 POpsAgent]:::agent
-        Vision[POpsVision Streaming]:::agent
+        Vision[POpsTray - screen capture]:::agent
         Watchdog[POpsWatchdog]:::agent
     end
 
@@ -129,14 +129,17 @@ For a deep dive into the 5-component agent system (Agent, Tray, Vision, Watchdog
 | Feature | Description |
 | :--- | :--- |
 | **Endpoint Inventory** | Automatically track devices using stable, hardware-derived IDs (HWID). |
-| **Live Monitoring** | Real-time telemetry, active window tracking, and idle detection. |
-| **Remote Assistance** | POpsVision provides 1-5 FPS adjustable streaming and remote I/O control. |
+| **Live Monitoring** | Online/offline state, heartbeats and hardware inventory per device and lab. |
+| **Remote Assistance** | Vision: 1-5 FPS screen view (captured by the tray) for admins with an open, audited session; remote mouse/keyboard only while the user has accepted or been notified of that session. |
 | **Software Deployment** | Orchestrate ZIP and MSI installations across your entire fleet instantly. |
-| **OTA Updates** | Agents update themselves seamlessly via the backend update server. |
+| **Signed Updates** | Agent MSIs are ed25519-signed, dispatched from the panel (downloaded from GitHub or uploaded offline) and rolled back automatically if the new version does not start. The server updates itself from the panel too. |
+| **Scheduled Tasks** | Run a command once, daily or on chosen weekdays on all devices, a lab or selected devices. |
+| **Notifications** | Update failures, takeover attempts, policy violations and similar events under the panel bell, optionally by e-mail or webhook. |
+| **Reports** | Fleet, security-event, software and Windows update reports with CSV export. |
 | **Terminal** | Execute remote PowerShell commands directly from the web panel. |
 | **Device Identity** | Secure device authentication blocking unauthorized agent spoofing. |
 | **Audit Logs** | Security-relevant actions recorded in a tamper-evident, hash-chained log (see `SECURITY.md`). |
-| **Role Based Access** | Strict JWT-based RBAC separating Admins, Managers, and Viewers. |
+| **Role Based Access** | Superadmin, admin and viewer roles with per-page permissions; sessions can be revoked at once. |
 | **Multi Lab Management**| Group devices into logical labs for isolated policy enforcement. |
 
 ---
@@ -146,9 +149,12 @@ For a deep dive into the 5-component agent system (Agent, Tray, Vision, Watchdog
 ### v1.0 (Current Phase)
 - [x] Dashboard & System Overview
 - [x] Device Inventory & Heartbeats
-- [x] Remote Assistance (POpsVision)
+- [x] Remote Assistance (Vision)
 - [x] Mass Software Deployment Engine
 - [x] Real-time Remote Terminal
+- [x] Signed agent updates with automatic rollback, server self-update
+- [x] Scheduled tasks, notifications (bell, e-mail, webhook), reports
+- [ ] Software inventory and Windows update status (server ready; agent side in 0.1.5-alpha)
 
 ### v2.0 (Coming Next)
 - [ ] Active Directory (LDAP) Integration

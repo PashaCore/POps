@@ -192,7 +192,7 @@ class AgentPoliciesInput(BaseModel):
     quarantine_threshold: int
     # F8: ajan (v0.1.4+) tam alan-adı eşleşmesi yapar; kategori -> alan adları. BOŞ ise DNS tespiti
     # kapalı kalır (kaba substring yanlış-alarmı + KVKK riski böyle önlenir).
-    dns_domains: Optional[dict] = {}
+    dns_domains: Optional[dict] = None   # None: mevcut liste korunur (eski panel sürümü göndermez)
 
 
 class PolicyAlertInput(BaseModel):

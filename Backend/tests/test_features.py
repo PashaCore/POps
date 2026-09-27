@@ -295,6 +295,37 @@ def main():
         chk(s == 200 and txt.startswith("﻿"), "CSV: %s" % kind)
     chk(req("/api/reports/export?kind=users", ad)[0] == 400, "bilinmeyen rapor türü → 400")
 
+    print("== politikalar ve oto-kayıt")
+    pol = {"fair_use_text": "ft", "dns_categories": ["kumar"], "auto_quarantine": False, "quarantine_threshold": 3}
+    s, _ = req(
+        "/api/agent_policies",
+        ad,
+        {**pol, "dns_domains": {"kumar": ["HTTPS://WWW.Bahis.example/giris", "*.bahis.example", "bahis.example."]}},
+    )
+    s2, got = req("/api/agent_policies")
+    chk(
+        s == 200 and got.get("dns_domains", {}).get("kumar") == ["www.bahis.example", "bahis.example"],
+        "alan adları temizlendi (şema/yol/joker/nokta, tekrar) %s" % got.get("dns_domains"),
+    )
+    req("/api/agent_policies", ad, pol)
+    s2, got = req("/api/agent_policies")
+    chk(
+        got.get("dns_domains", {}).get("kumar") == ["www.bahis.example", "bahis.example"],
+        "dns_domains göndermeyen kayıt listeyi silmedi",
+    )
+    req("/api/agent_policies", ad, {**pol, "dns_domains": {}})
+    chk(
+        req("/api/set_auto_enroll", ad, {"target_lab": "FT-LAB", "expire_date": "yarin"})[0] == 400,
+        "oto-kayıt: bozuk tarih → 400",
+    )
+    s, _ = req("/api/set_auto_enroll", ad, {"target_lab": "FT-LAB", "expire_date": "2099-12-31"})
+    row = asyncio.run(q("SELECT value FROM global_settings WHERE key='auto_enroll_lab'"))
+    chk(
+        s == 200 and json.loads(row[0]["value"]) == {"lab": "FT-LAB", "until": "2099-12-31"},
+        "oto-kayıt tarihiyle saklandı",
+    )
+    asyncio.run(q("DELETE FROM global_settings WHERE key='auto_enroll_lab'"))
+
     # temizlik
     asyncio.run(q("DELETE FROM device_software WHERE pc_name = ANY($1::text[])", PCS))
     asyncio.run(q("DELETE FROM device_patch_status WHERE pc_name = ANY($1::text[])", PCS))

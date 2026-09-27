@@ -121,7 +121,6 @@
         <h1><i class="fas fa-th-large"></i> POpsVision <span style="color:var(--text-tertiary);font-size:var(--text-md);font-weight:var(--fw-regular);margin-left:0.5rem;">| Laboratuvar İzleme Motoru</span></h1>
     </div>
     <div class="page-header-actions">
-        <button class="btn-vision diag" onclick="App.fixOfflineCameras()"><i class="fas fa-wrench"></i> Görüntüleri Onar</button>
         <button class="btn-vision danger" onclick="App.powerCommand('ALL', 'shutdown')"><i class="fas fa-power-off"></i> Tümünü Kapat</button>
         <button class="btn-vision refresh" onclick="App.wakeUpCommand('ALL')"><i class="fas fa-bolt"></i> Tümünü Uyandır</button>
     </div>
@@ -213,13 +212,14 @@
         <div class="modal-body">
             <div id="diagConsole" style="background:var(--bg-surface-2);color:var(--success-text);font-family:var(--font-mono);padding:var(--space-4);border-radius:var(--radius-md);height:240px;overflow-y:auto;font-size:var(--text-sm);border:1px solid var(--border-subtle);margin-bottom:var(--space-4);white-space:pre-wrap;word-break:break-all;">POps Teşhis Birimi Hazır...</div>
             <?php if(($_SESSION['role'] ?? '') !== 'viewer'): ?>
+            <div style="font-size:var(--text-xs);color:var(--text-tertiary);margin-bottom:0.5rem;">Komutlar görev kuyruğundan SYSTEM olarak çalışır ve kimin gönderdiği kaydedilir. Cihazda terminal yeteneği kapalıysa ajan reddeder.</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
-                <button class="action-btn" onclick="App.diagCommand('restart_agent')">Ajanı Yeniden Başlat</button>
-                <button class="action-btn" onclick="App.diagCommand('kill_vision')">Vision Sürecini Öldür</button>
-                <button class="action-btn" onclick="App.diagCommand('sync_time')">Zamanı Eşitle</button>
-                <button class="action-btn eject" onclick="App.diagCommand('reboot_pc')">PC'yi Yeniden Başlat</button>
-                <button class="action-btn" onclick="App.runDiagCommand('check_logs')"><i class="fas fa-file-lines"></i> Son Logları Oku</button>
-                <button class="action-btn" onclick="App.runDiagCommand('restart_vision')"><i class="fas fa-eye-slash"></i> Vision'ı Yeniden Başlat</button>
+                <button class="action-btn" onclick="App.runDiagCommand('check_process')"><i class="fas fa-list"></i> POps süreçlerini listele</button>
+                <button class="action-btn" onclick="App.runDiagCommand('check_logs')"><i class="fas fa-file-lines"></i> Son logları oku</button>
+                <button class="action-btn" onclick="App.runDiagCommand('restart_capture')"><i class="fas fa-eye"></i> Ekran yakalamayı yeniden başlat</button>
+                <button class="action-btn" onclick="App.runDiagCommand('sync_time')"><i class="fas fa-clock"></i> Zamanı eşitle</button>
+                <button class="action-btn" onclick="App.runDiagCommand('restart_agent')"><i class="fas fa-rotate"></i> Ajanı yeniden başlat</button>
+                <button class="action-btn eject" onclick="App.runDiagCommand('reboot_pc')"><i class="fas fa-power-off"></i> PC'yi yeniden başlat</button>
             </div>
             <?php endif; ?>
         </div>
@@ -296,7 +296,7 @@ const App = {
         this.syncData();
         this.setupSearch();
         this.setupInputLayer();
-        setInterval(() => { this.syncData(); this.autoRecoveryCheck(); }, 5000);
+        setInterval(() => { this.syncData(); }, 5000);
         
         window.addEventListener('beforeunload', () => {
             if (this.isStreamActive && this.currentPc) {
@@ -337,7 +337,7 @@ const App = {
             this.ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    if (data.type === 'result' && document.getElementById('diagModal').classList.contains('open')) {
+                    if (data.type === 'terminal_output' && data.id === this.currentPc && document.getElementById('diagModal').classList.contains('open')) {
                         const c = document.getElementById('diagConsole');
                         c.innerText += `\n[SİSTEM ÇIKTISI]:\n${data.output}\n`;
                         c.scrollTop = c.scrollHeight;
@@ -386,49 +386,34 @@ const App = {
         return true;
     },
 
-    autoRecoveryCheck: function() {
-        if (this.currentView !== 'wall') return;
-        const now = Date.now();
-        this.devices.filter(d => d.lab === this.currentLab && d.status.toLowerCase() === 'online').forEach(pc => {
-            const lastSeen = this.lastFrameTime[pc.hostname] || 0;
-            if (lastSeen > 0 && (now - lastSeen) > 25000) {
-                this.lastFrameTime[pc.hostname] = now;
-                const fix = 'taskkill /F /IM POpsWatchdog.exe & taskkill /F /IM POpsVision.exe & schtasks /run /tn "POpsWatchdogLauncher"';
-                this.safeWsSend(JSON.stringify({ type: 'remote_input', device: pc.hostname, action: 'execute', script_path: fix, task_id: 999 }));
-            }
-        });
-    },
-
-    fixOfflineCameras: function() {
-        if (!confirm('Ağdaki tüm açık cihazlarda kamera motoru yeniden başlatılacak. Emin misiniz?')) return;
-        const onlinePcs = this.devices.filter(d => d.status.toLowerCase() === 'online');
-        if (onlinePcs.length === 0) return showToast('Ağda açık cihaz yok.', 'warning');
-        const fix = 'taskkill /F /IM POpsWatchdog.exe & taskkill /F /IM POpsVision.exe & schtasks /run /tn "POpsWatchdogLauncher"';
-        onlinePcs.forEach(pc => this.safeWsSend(JSON.stringify({ type: 'remote_input', device: pc.hostname, action: 'execute', script_path: fix, task_id: 888 })));
-        showToast('Onarma sinyali gönderildi. 10-15 saniye bekleyin.', 'info');
-    },
-
     openDiag: function() { if (!this.currentPc) return; document.getElementById('diagConsole').innerText = 'Konsol hazır...'; openModal('diagModal'); },
     closeDiag: function() { closeModal('diagModal'); },
 
-    runDiagCommand: function(cmdType) {
-        let script = '';
-        const taskId = Math.floor(Math.random() * 10000);
-        document.getElementById('diagConsole').innerText = '[İşlem Başlatıldı] Görev bekleniyor...\n';
-        if (cmdType === 'check_process') script = 'tasklist | findstr /I "POps"';
-        else if (cmdType === 'check_logs') script = `powershell.exe -ExecutionPolicy Bypass -Command "$log = Get-ChildItem 'C:\\POpsLogs\\*.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if($log){ Get-Content $log.FullName -Tail 10 }else{ Write-Host 'Log bulunamadi.' }"`;
-        else if (cmdType === 'restart_vision') script = 'taskkill /F /IM POpsVision.exe';
-        else if (cmdType === 'restart_watchdog') script = 'taskkill /F /IM POpsWatchdog.exe & schtasks /run /tn "POpsWatchdogLauncher"';
-        this.safeWsSend(JSON.stringify({ type: 'remote_input', device: this.currentPc, action: 'execute', script_path: script, task_id: taskId }));
-    },
-
-    diagCommand: function(cmd) {
-        const map = { restart_agent: 'taskkill /F /IM POpsAgent.exe & schtasks /run /tn "POpsLauncher"', kill_vision: 'taskkill /F /IM POpsVision.exe', sync_time: 'w32tm /resync', reboot_pc: 'shutdown /r /t 5' };
-        const script = map[cmd] || '';
-        if (!script) return;
-        const taskId = Math.floor(Math.random() * 10000);
-        this.safeWsSend(JSON.stringify({ type: 'remote_input', device: this.currentPc, action: 'execute', script_path: script, task_id: taskId }));
-        showToast('Teşhis komutu gönderildi.', 'info');
+    // Teşhis komutları görev kuyruğundan gider (/api/deploy_orchestration): Vision oturumu gerekmez, kimin
+    // gönderdiği kaydedilir; çıktı 'terminal_output' olarak döner. MSI kurulumunda servis çökünce Windows
+    // yeniden başlatır, tepsiyi (ekran yakalama) watchdog yeniden açar.
+    runDiagCommand: async function(cmdType) {
+        if (!this.currentPc) return;
+        const map = {
+            check_process: ['Süreçler', 'tasklist /FI "IMAGENAME eq POps*"'],
+            check_logs: ['Son loglar', `powershell.exe -NoProfile -Command "$log = Get-ChildItem 'C:\\POpsLogs\\*.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if($log){ Get-Content $log.FullName -Tail 20 }else{ 'Log bulunamadi.' }"`],
+            restart_capture: ['Ekran yakalama', 'taskkill /F /IM POpsTray.exe'],
+            sync_time: ['Zaman eşitleme', 'w32tm /resync'],
+            restart_agent: ['Ajan yeniden başlatma', 'taskkill /F /IM POpsAgent.exe'],
+            reboot_pc: ['Yeniden başlatma', 'shutdown /r /t 5'],
+        };
+        const item = map[cmdType];
+        if (!item) return;
+        if ((cmdType === 'reboot_pc' || cmdType === 'restart_agent') && !confirm(`${item[0]} bu cihaza gönderilsin mi?`)) return;
+        const c = document.getElementById('diagConsole');
+        c.innerText += `\n> ${item[1]}\n[Kuyruğa eklendi, ajan yanıtı bekleniyor...]`;
+        try {
+            const res = await fetch(`${this.apiUrl}/api/deploy_orchestration`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_mode: 'PC', targets: [this.currentPc], taskSequence: [{ name: 'Teşhis: ' + item[0], type: 'CMD', command: item[1] }] }) });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            if (cmdType === 'restart_agent' || cmdType === 'reboot_pc') c.innerText += '\n[Bu komut yanıt döndürmez; ajan birkaç saniye içinde yeniden bağlanır.]';
+        } catch (e) { c.innerText += `\n[Gönderilemedi: ${e.message}]`; }
+        c.scrollTop = c.scrollHeight;
     },
 
     requestSingleSnapshot: function() {

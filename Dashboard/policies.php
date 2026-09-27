@@ -142,11 +142,11 @@ include 'includes/header.php';
     <div class="policy-card">
         <h2><i class="fas fa-filter" style="color:var(--primary-500);"></i> Web Filtreleme (DNS İzleme)</h2>
         <div class="info-box">
-            <i class="fas fa-info-circle"></i> <strong>Sıfır Keylogger Prensibi:</strong> POps, klavye vuruşlarını veya şifreleri kaydetmez. İçerik filtreleme tamamen DNS ve ağ paketleri üzerinden (Davranışsal) gerçekleştirilir. Bu yöntem KVKK standartlarına tamamen uygundur.
+            <i class="fas fa-info-circle"></i> POps klavye vuruşlarını, şifreleri ya da sayfa içeriğini kaydetmez. Ajan yalnızca cihazın DNS önbelleğine bakar ve aşağıdaki listelerde <strong>birebir</strong> geçen alan adlarını (ya da alt alan adlarını) bildirir. Engelleme yapmaz; ihlal kaydedilir, yöneticiye bildirilir ve açıksa eşikte karantina uygulanır. Bir kategorinin listesi boşsa o kategoride hiçbir şey işaretlenmez.
         </div>
         
         <div class="policy-section">
-            <label>İzlenecek ve Engellenecek Kategoriler</label>
+            <label>İzlenecek kategoriler ve alan adları</label>
             <div class="category-list" id="dnsCategoriesList">
                 <label class="checkbox-item">
                     <input type="checkbox" value="pornografi" class="policy-cat-chk">
@@ -155,6 +155,7 @@ include 'includes/header.php';
                         <div style="font-size:0.75rem;color:var(--text-muted);">Yetişkinlere yönelik web siteleri ve materyaller</div>
                     </div>
                 </label>
+                <textarea class="policy-text policy-domains" data-cat="pornografi" placeholder="Alan adları (her satıra bir tane), ör. ornek-bahis.com"></textarea>
                 <label class="checkbox-item">
                     <input type="checkbox" value="yasadisi_bahis" class="policy-cat-chk">
                     <div>
@@ -162,6 +163,7 @@ include 'includes/header.php';
                         <div style="font-size:0.75rem;color:var(--text-muted);">Lisanssız kumar ve bahis platformları</div>
                     </div>
                 </label>
+                <textarea class="policy-text policy-domains" data-cat="yasadisi_bahis" placeholder="Alan adları (her satıra bir tane), ör. ornek-bahis.com"></textarea>
                 <label class="checkbox-item">
                     <input type="checkbox" value="teror_siddet" class="policy-cat-chk">
                     <div>
@@ -169,6 +171,7 @@ include 'includes/header.php';
                         <div style="font-size:0.75rem;color:var(--text-muted);">Radikal oluşumlar ve şiddet içerikli platformlar</div>
                     </div>
                 </label>
+                <textarea class="policy-text policy-domains" data-cat="teror_siddet" placeholder="Alan adları (her satıra bir tane), ör. ornek-bahis.com"></textarea>
                 <label class="checkbox-item">
                     <input type="checkbox" value="zararli_yazilim" class="policy-cat-chk">
                     <div>
@@ -176,6 +179,7 @@ include 'includes/header.php';
                         <div style="font-size:0.75rem;color:var(--text-muted);">Zararlı yazılım ve kimlik avı (C2) domainleri</div>
                     </div>
                 </label>
+                <textarea class="policy-text policy-domains" data-cat="zararli_yazilim" placeholder="Alan adları (her satıra bir tane), ör. ornek-bahis.com"></textarea>
             </div>
         </div>
 
@@ -196,6 +200,10 @@ include 'includes/header.php';
             </div>
         </div>
     </div>
+    <style>
+        .policy-domains { width: 100%; min-height: 70px; margin: 0.25rem 0 0.75rem; font-family: var(--font-mono); font-size: 0.8125rem; }
+        .policy-domains-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: -0.25rem; }
+    </style>
 
     <div class="policy-card">
         <h2><i class="fas fa-file-contract" style="color:var(--primary-500);"></i> Adil Kullanım & Şeffaflık</h2>
@@ -239,8 +247,11 @@ async function fetchPolicies() {
             document.getElementById('quarantineThreshold').value = data.quarantine_threshold || 3;
             
             const cats = data.dns_categories || [];
+            const domains = data.dns_domains || {};
             document.querySelectorAll('.policy-cat-chk').forEach(chk => {
                 chk.checked = cats.includes(chk.value);
+                const ta = document.querySelector(`.policy-domains[data-cat="${chk.value}"]`);
+                if (ta) ta.value = (domains[chk.value] || []).join('\n');
             });
         }
     } catch (e) {
@@ -262,7 +273,9 @@ async function savePolicies() {
         fair_use_text: document.getElementById('fairUseText').value,
         dns_categories: cats,
         auto_quarantine: document.getElementById('autoQuarantineSwitch').checked,
-        quarantine_threshold: parseInt(document.getElementById('quarantineThreshold').value) || 3
+        quarantine_threshold: parseInt(document.getElementById('quarantineThreshold').value) || 3,
+        dns_domains: Object.fromEntries([...document.querySelectorAll('.policy-domains')].map(ta =>
+            [ta.dataset.cat, ta.value.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean)]))
     };
     
     try {

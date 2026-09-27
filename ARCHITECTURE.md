@@ -8,13 +8,13 @@ POps is designed as a highly scalable, real-time endpoint management platform.
 
 ## 2. Central Server (Backend)
 - **Tech:** Python 3.9+, FastAPI, WebSockets, Uvicorn, PostgreSQL
-- **Role:** The brain. It maintains thousands of persistent WebSocket connections to the endpoints and exposes REST endpoints for the dashboard.
+- **Role:** The brain. It keeps one persistent WebSocket connection per endpoint and exposes REST endpoints for the dashboard. A single worker process is required, because connections are tracked in memory (see BENCHMARKS.md for measured capacity).
 
 ## 3. Windows Endpoint (Agent)
 - **Tech:** .NET 8, C#, Windows Forms
-- **Role:** The executor. A 5-component modular system:
-  - **POpsAgent:** The core background service maintaining the WebSocket heartbeat.
-  - **POpsTray:** The user-facing taskbar application.
-  - **POpsVision:** The 1-5 FPS screen streaming and remote I/O module.
-  - **POpsWatchdog:** A resilience service ensuring the agent stays alive.
-  - **POpsUpdater:** Handles seamless OTA (Over-The-Air) updates.
+- **Role:** The executor. Four shipped programs sharing one helper library (`POps.Shared`):
+  - **POpsAgent:** The core Windows service (LocalSystem) maintaining the WebSocket connection and running commands.
+  - **POpsTray:** The user-facing taskbar application; it also captures the screen for Vision over a named pipe.
+  - **POpsWatchdog:** Runs in the user session and restarts the tray if it stops.
+  - **POpsUpdater:** Installs signed MSI updates and rolls back if the new version does not come up healthy.
+  - The older standalone `Agent/POpsVision` project is not shipped.

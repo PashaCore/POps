@@ -169,11 +169,22 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 "UPDATE tasks SET status = 'Completed (Rebooted)' WHERE target_pc = $1 AND status = 'Running'",
                 (active_hwid,),
             )
+            # Oto-kayıt: bitiş tarihine kadar İLK kez bağlanan cihaz o sınıfa (yalnız yeni satırda; mevcut
+            # cihazın sınıfı değişmez). Eski biçimdeki (tarihsiz) kayıt etkisizdir.
+            new_lab = "Atanmamis_Cihazlar"
+            ae = await execute_query("SELECT value FROM global_settings WHERE key = 'auto_enroll_lab'", fetch=True)
+            if ae:
+                try:
+                    rule = json.loads(ae[0]["value"] or "")
+                    if rule.get("lab") and datetime.date.today().isoformat() <= str(rule.get("until") or ""):
+                        new_lab = rule["lab"]
+                except (ValueError, AttributeError):
+                    pass
             await execute_query(
                 """
                 INSERT INTO clients (pc_name, hostname, lab_name, last_seen, status, active_window, boot_count,
                     ip_address, dna_uuid, dna_bios, dna_disk, dna_mac, dna_ram, cap_ram_readable)
-                VALUES ($1, $2, 'Atanmamis_Cihazlar', $3, 'Online', '-', 1, $4, $5, $6, $7, $8, $9, $10)
+                VALUES ($1, $2, $11, $3, 'Online', '-', 1, $4, $5, $6, $7, $8, $9, $10)
                 ON CONFLICT (pc_name) DO UPDATE SET status='Online', last_seen=$3, ip_address=$4,
                     boot_count=clients.boot_count + 1, hostname=$2, dna_uuid=$5, dna_bios=$6, dna_disk=$7, dna_mac=$8,
                     dna_ram=$9, cap_ram_readable=$10
@@ -189,6 +200,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     hw.get('mac'),
                     hw.get('ram_sn'),
                     caps.get('ram_readable', True),
+                    new_lab,
                 ),
             )
 
@@ -501,15 +513,39 @@ async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depend
     return {"status": "success"}
 
 
+def _clean_dns_domains(raw: dict) -> dict:
+    """kategori -> tam alan adları. Küçük harf, baştaki '*.' / '.' ve sondaki '.' atılır, http(s):// ve yol
+    temizlenir, tekrarlar birleşir. Kategori başına en fazla 5000 alan adı."""
+    out = {}
+    for cat, domains in (raw or {}).items():
+        cat = str(cat).strip()[:60]
+        if not cat or not isinstance(domains, list):
+            continue
+        seen = []
+        for d in domains[:5000]:
+            d = str(d).strip().lower()
+            d = d.split("://", 1)[-1].split("/", 1)[0].lstrip("*.").rstrip(".")
+            if d and " " not in d and len(d) <= 253 and d not in seen:
+                seen.append(d)
+        out[cat] = seen
+    return out
+
+
 @router.post("/api/agent_policies")
 async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(require_admin)):
+    if data.dns_domains is None:
+        # Alan adı listesini göndermeyen istemci onu silmesin: kayıtlı listeyi koru
+        row = await execute_query("SELECT value FROM global_settings WHERE key = 'agent_policies'", fetch=True)
+        dns_domains = (json.loads(row[0]["value"]).get("dns_domains") or {}) if row else {}
+    else:
+        dns_domains = _clean_dns_domains(data.dns_domains)
     val = json.dumps(
         {
             "fair_use_text": data.fair_use_text,
             "dns_categories": data.dns_categories,
             "auto_quarantine": data.auto_quarantine,
             "quarantine_threshold": data.quarantine_threshold,
-            "dns_domains": data.dns_domains or {},
+            "dns_domains": dns_domains,
         },
         ensure_ascii=False,
     )
