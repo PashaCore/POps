@@ -124,6 +124,23 @@ async def main():
     s, _ = http("/api/remote_input", body=rinput("HW-X"), token=admin_jwt)
     chk(s == 403, "F1: oturum bitince admin girdi → 403")
 
+    # F1 kalıntısı (final review): thumbnail (ekran görüntüsü) /ws/agent'tan gelir; YALNIZCA admin
+    # panellere gitmeli, viewer'a ASLA. (Oturum yok bile olsa admin rolüyle alır; viewer alamaz.)
+    agent = await websockets.connect(WS + "/ws/agent/HW-X",
+                                     additional_headers={"X-Agent-Version": "test"})
+    await agent.send(json.dumps({"dna_payload": {"hardware": {"uuid": "HW-X-U", "bios_sn": "HW-X-B",
+                     "disk_sn": "-", "mac": "-", "ram_sn": "-"}, "capabilities": {"ram_readable": True}},
+                     "hostname": "hwx", "status": "Online"}))
+    await agent.send(json.dumps({"type": "thumbnail", "hw_id": "HW-X", "image": "THUMB1"}))
+    admin_thumb = await recv_timeout(admin_panel, 3)
+    viewer_thumb = await recv_timeout(viewer_panel, 2)
+    chk(admin_thumb and "THUMB1" in admin_thumb, "F1: thumbnail admin panele ulaştı (rol bazlı)")
+    chk(viewer_thumb is None, "F1: thumbnail viewer'a SIZMADI (broadcast_to_admin_panels)")
+    try:
+        await agent.close()
+    except Exception:
+        pass
+
     for w in (admin_panel, viewer_panel, vision):
         try:
             await w.close()

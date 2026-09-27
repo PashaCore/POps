@@ -366,39 +366,63 @@ def send_wol_packet(mac_address: str):
         return True
     except: return False
 
+_VISION_SESSION_TTL = 1800   # denetim oturumu yetkisi: son etkinlikten 30 dk sonra kendiliğinden düşer (fail-closed)
+
 class ConnectionManager:
     def __init__(self):
         self.active_agents: Dict[str, WebSocket] = {}
         self.active_panels: List[WebSocket] = []
-        self.panel_users: Dict[WebSocket, str] = {}          # panel soketi -> giriş yapan admin kullanıcı adı
-        self.vision_sessions: Dict[str, set] = {}            # pc_name -> o cihazda AKTİF oturumu olan admin kullanıcı adları
+        self.panel_users: Dict[WebSocket, str] = {}          # panel soketi -> giriş yapan kullanıcı adı
+        self.panel_roles: Dict[WebSocket, str] = {}          # panel soketi -> rol (ekran görüntüsü yalnız admin'e)
+        self.vision_sessions: Dict[str, Dict[str, float]] = {}  # pc_name -> {kullanıcı: bitiş_zamanı}; süreli (fail-closed)
         self.pending_thumbnails: Dict[str, List[asyncio.Future]] = {}
         self.active_vision_ws: Dict[str, WebSocket] = {}
 
     async def connect_agent(self, websocket: WebSocket, pc_name: str):
         self.active_agents[pc_name] = websocket
 
-    async def connect_panel(self, websocket: WebSocket, username: Optional[str] = None):
+    async def connect_panel(self, websocket: WebSocket, username: Optional[str] = None, role: Optional[str] = None):
         await websocket.accept()
         self.active_panels.append(websocket)
         if username:
             self.panel_users[websocket] = username
+        if role:
+            self.panel_roles[websocket] = role
 
-    # ── Uzaktan kontrol/izleme oturumu (F1/F12): girdi ve canlı kare, yalnızca o cihaz
-    # için AÇIK bir denetim oturumu olan admin'e verilir. Oturum start/end_audit_session ile yönetilir.
+    # ── Uzaktan kontrol/izleme oturumu (F1/F12): girdi ve canlı kare/önizleme, yalnızca o cihaz için
+    # AÇIK bir denetim oturumu olan admin'e verilir. Oturum start/end_audit_session ile yönetilir; ayrıca
+    # süreli — son etkinlikten _VISION_SESSION_TTL sonra kendiliğinden düşer (end çağrılmasa da fail-closed).
     def add_vision_session(self, pc_name: str, username: str):
-        self.vision_sessions.setdefault(pc_name, set()).add(username)
+        self.vision_sessions.setdefault(pc_name, {})[username] = time.time() + _VISION_SESSION_TTL
+
+    def touch_vision_session(self, pc_name: str, username: str):
+        s = self.vision_sessions.get(pc_name)
+        if s and username in s:
+            s[username] = time.time() + _VISION_SESSION_TTL
 
     def remove_vision_session(self, pc_name: str, username: str):
         s = self.vision_sessions.get(pc_name)
         if s:
-            s.discard(username)
+            s.pop(username, None)
             if not s:
                 self.vision_sessions.pop(pc_name, None)
 
+    def _live_session_users(self, pc_name: str) -> set:
+        s = self.vision_sessions.get(pc_name)
+        if not s:
+            return set()
+        now = time.time()
+        live = {u for u, exp in s.items() if exp > now}
+        expired = set(s) - live
+        for u in expired:      # süresi dolanları tembel temizle
+            s.pop(u, None)
+        if not s:
+            self.vision_sessions.pop(pc_name, None)
+        return live
+
     def user_has_session(self, username: Optional[str], pc_name: str) -> bool:
-        return bool(username) and username in self.vision_sessions.get(pc_name, set())
-        
+        return bool(username) and username in self._live_session_users(pc_name)
+
     async def connect_vision(self, websocket: WebSocket, pc_name: str):
         await websocket.accept()
         self.active_vision_ws[pc_name] = websocket
@@ -416,6 +440,7 @@ class ConnectionManager:
     def disconnect_panel(self, websocket: WebSocket):
         if websocket in self.active_panels: self.active_panels.remove(websocket)
         self.panel_users.pop(websocket, None)
+        self.panel_roles.pop(websocket, None)
             
     def disconnect_vision(self, pc_name: str):
         if pc_name in self.active_vision_ws: del self.active_vision_ws[pc_name]
@@ -436,11 +461,22 @@ class ConnectionManager:
             except: disconnected.append(panel)
         for p in disconnected: self.disconnect_panel(p)
 
+    async def broadcast_to_admin_panels(self, message: dict):
+        """Yalnızca admin/superadmin rollü panellere gönderir. Ekran görüntüsü/thumbnail gibi hassas
+        içerik salt-okur 'viewer' hesaplarına SIZMAMALI (F1). get_thumbnail yanıtı /ws/agent'tan gelir
+        ve bu yolla tüm panellere yayınlanıyordu — artık viewer'a gitmez."""
+        disconnected = []
+        for panel in self.active_panels:
+            if self.panel_roles.get(panel) in ("admin", "superadmin"):
+                try: await panel.send_text(json.dumps(message))
+                except: disconnected.append(panel)
+        for p in disconnected: self.disconnect_panel(p)
+
     async def send_frame_to_viewers(self, message: dict, pc_name: str):
-        """Canlı ekran karesi/önizlemesi YALNIZCA o cihaz için açık denetim oturumu olan admin
-        panellerine gider (F12: tüm panellere yayınlama sızıntısı kapandı). Oturumu olan panel yoksa
-        kare düşer."""
-        allowed = self.vision_sessions.get(pc_name, set())
+        """Canlı ekran karesi/önizlemesi YALNIZCA o cihaz için açık (süresi dolmamış) denetim oturumu
+        olan admin panellerine gider (F12: tüm panellere yayınlama sızıntısı kapandı). Oturumu olan
+        panel yoksa kare düşer."""
+        allowed = self._live_session_users(pc_name)
         if not allowed:
             return
         disconnected = []
@@ -990,7 +1026,8 @@ async def websocket_panel(websocket: WebSocket):
         return
     username = session.get("sub")
     role = session.get("role")   # DB'den (iptal/rol-düşürme anında geçerli)
-    await manager.connect_panel(websocket, username)
+    await manager.connect_panel(websocket, username, role)
+    last_reverify = time.time()
     try:
         while True:
             data = await websocket.receive_text()
@@ -998,6 +1035,16 @@ async def websocket_panel(websocket: WebSocket):
                 msg = json.loads(data)
                 if msg.get("type") == "remote_input":
                     target = msg.get("device")
+                    # F4: açık soket için de iptal geçerli olsun — kontrol yolunda periyodik (≤10 sn)
+                    # yeniden doğrula; kullanıcı silinmiş/rolü düşmüş/token_version artmışsa soketi kapat.
+                    if time.time() - last_reverify > 10:
+                        fresh = await verify_session(verify_jwt(websocket.cookies.get(JWT_COOKIE_NAME) or ""))
+                        if not fresh:
+                            await websocket.close(code=4001, reason="Oturum iptal edildi")
+                            break
+                        role = fresh.get("role")
+                        manager.panel_roles[websocket] = role
+                        last_reverify = time.time()
                     # F1: viewer HİÇBİR remote_input gönderemez.
                     if role not in ("admin", "superadmin"):
                         continue
@@ -1006,6 +1053,8 @@ async def websocket_panel(websocket: WebSocket):
                     is_control = bool(msg.get("input_type")) or msg.get("action") == "execute"
                     if is_control and not manager.user_has_session(username, target):
                         continue
+                    if is_control:
+                        manager.touch_vision_session(target, username)   # etkinlik oturum süresini uzatır (idle-timeout)
                     if target:
                         sent = await manager.send_remote_input_to_vision(msg, target)
                         if not sent: await manager.send_command(msg, target)
@@ -1013,6 +1062,8 @@ async def websocket_panel(websocket: WebSocket):
                     await websocket.send_text(json.dumps({"type": "pong"}))
             except json.JSONDecodeError: pass
     except WebSocketDisconnect:
+        pass
+    finally:
         manager.disconnect_panel(websocket)
 
 @app.websocket("/ws/vision/{pc_name}")
@@ -1173,7 +1224,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     for fut in manager.pending_thumbnails[hwid]:
                         if not fut.done(): fut.set_result(payload.get("image", ""))
                     manager.pending_thumbnails[hwid] = []
-                await manager.broadcast_to_panels(payload)
+                # F1 kalıntısı: ekran görüntüsü yalnızca admin panellerine (viewer'a SIZMAZ).
+                await manager.broadcast_to_admin_panels(payload)
                 continue
             if payload.get("type") == "vision_rejected":
                 await manager.broadcast_to_panels(payload)
