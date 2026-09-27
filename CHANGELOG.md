@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Agent:** Capability policy (threat #4 in `SECURITY.md`). A school can disable the remote terminal (`execute`) and/or Vision (screen streaming, previews, remote input) on its PCs, so even a compromised server cannot use them there. The state lives in the SYSTEM-only `C:\POpsData\secure\capabilities.json`. The MSI sets it either way (`TERMINAL_ENABLED` / `VISION_ENABLED`, default on; an update without them keeps the current state). The server can only switch a capability off (`set_capabilities` … `false`); requests to switch one on are ignored and logged. A refused `execute` is closed with a `[REDDEDİLDİ]` result, and every refusal is reported as `capability_denied`. The agent reports its state as `capabilities` on every connection. An unreadable policy file counts as both disabled.
+
 ## [0.1.3-alpha] - 2026-09-27
 
 First release whose agent is installed and updated as a signed MSI: `POps-Agent-0.1.3-alpha-win-x64.msi`, listed with its SHA-256 in the ed25519-signed `manifest.json`. Agents now authenticate to the server and keep their secrets in a SYSTEM-only store.

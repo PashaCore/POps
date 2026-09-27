@@ -49,6 +49,9 @@
 
     <Property Id="SERVER_URL" Secure="yes" />
     <Property Id="PERSIST_DIR" Secure="yes" />
+    <!-- Yetenek politikası: 1 açık, 0 kapalı; verilmezse mevcut durum korunur (ilk kurulumda açık) -->
+    <Property Id="TERMINAL_ENABLED" Secure="yes" />
+    <Property Id="VISION_ENABLED" Secure="yes" />
     <!-- Gizli özellikler MSI loguna yazılmaz (MsiHiddenProperties) -->
     <Property Id="ENROLL_TOKEN" Secure="yes" Hidden="yes" />
     <Property Id="BYPASS_SECRET" Secure="yes" Hidden="yes" />
@@ -134,7 +137,7 @@
     <CustomAction Id="PopsConfigure" BinaryRef="PopsActions" DllEntry="Configure"
                   Execute="deferred" Impersonate="no" Return="check" HideTarget="yes" />
     <SetProperty Id="PopsConfigure" Sequence="execute" Before="PopsConfigure"
-                 Value="INSTALLFOLDER=[INSTALLFOLDER];SERVER_URL=[SERVER_URL];PERSIST_DIR=[PERSIST_DIR];ENROLL_TOKEN=[ENROLL_TOKEN];BYPASS_SECRET=[BYPASS_SECRET]" />
+                 Value="INSTALLFOLDER=[INSTALLFOLDER];SERVER_URL=[SERVER_URL];PERSIST_DIR=[PERSIST_DIR];ENROLL_TOKEN=[ENROLL_TOKEN];BYPASS_SECRET=[BYPASS_SECRET];TERMINAL_ENABLED=[TERMINAL_ENABLED];VISION_ENABLED=[VISION_ENABLED]" />
 
     <!-- Eski (MSI'sız) kurulum klasörleri ve kalıntılar; yalnızca yeni servis başladıktan sonra -->
     <CustomAction Id="PopsCleanupLegacy" BinaryRef="PopsActions" DllEntry="CleanupLegacy"

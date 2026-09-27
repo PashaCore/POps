@@ -39,6 +39,23 @@ The secret is bound to the device identity the server resolves; when the server 
 
 Enroll before freezing: install with the machine thawed, wait until the device appears in the panel (the secret is now on disk), then freeze, so the secret is part of the frozen image. A machine that enrolls while frozen loses the secret at the next reboot, and its one-time token is already used. To avoid that, set `PersistDir` to a folder that is not rolled back. With Windows Unified Write Filter, add a file exclusion for `C:\POpsData\secure` instead. Once the server enforces authentication, a device that has lost its secret needs a new enrollment token.
 
+## Capability policy
+
+A school can switch off the two server features that matter most if the server or a panel account is compromised (threat #4 in `SECURITY.md`):
+
+| Capability | Covers |
+| --- | --- |
+| `terminal_enabled` | `execute`: commands the agent runs as SYSTEM |
+| `vision_enabled` | screen streaming, screen previews (`get_thumbnail`) and remote mouse/keyboard |
+
+The state lives in `C:\POpsData\secure\capabilities.json` (SYSTEM and Administrators only):
+
+- **Installer.** `TERMINAL_ENABLED` / `VISION_ENABLED` (`1` or `0`) set either direction. A flag that is not given keeps its current value, so an update never turns a disabled capability back on. A first install without them enables both.
+- **Server.** It may only switch a capability **off**: `{"action":"set_capabilities","terminal_enabled":false}`. A request to switch one on is ignored and logged, so turning it back on takes a local administrator (MSI repair or reinstall with `…_ENABLED=1`). A compromised server can therefore not re-enable what the school disabled.
+- **Missing or unreadable file.** An install from before this feature (no file) keeps both enabled. A file that exists but cannot be read counts as both disabled.
+
+A disabled capability is refused on the agent, not merely hidden in the panel. `execute` does not run; the task is closed with a `[REDDEDİLDİ]` result, and the server receives `{"type":"capability_denied","capability":"terminal","action":"execute","task_id":…}`. Vision requests are refused in the same way, and a stream that is already running is stopped when Vision is switched off. On every connection, and after every change, the agent reports its state as `{"type":"capabilities","terminal_enabled":…,"vision_enabled":…}`.
+
 ## Updates
 
 Agent updates are signed MSI installs; the agent applies nothing unsigned.

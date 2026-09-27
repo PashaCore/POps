@@ -102,6 +102,7 @@ namespace POps.Installer
         private const string ConfigName = "appsettings.json";
         private const string EnrollTokenFile = "enroll.token";
         private const string BypassSecretFile = "bypass.secret";
+        private const string CapabilitiesFile = "capabilities.json";
 
         // Sunucu jetonu secrets.token_urlsafe(24) ile üretir; ajan da aynı alfabeyi bekler
         private static readonly Regex TokenRegex = new Regex(@"^[A-Za-z0-9_-]{16,256}$");
@@ -156,7 +157,13 @@ namespace POps.Installer
                 if (persistDir != null && !Path.IsPathRooted(persistDir))
                     return "PERSIST_DIR tam bir klasör yolu olmalı (ör. T:\\POps).";
 
+                if (!TryParseFlag(Prop("TERMINAL_ENABLED"), out bool? terminal))
+                    return "TERMINAL_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
+                if (!TryParseFlag(Prop("VISION_ENABLED"), out bool? vision))
+                    return "VISION_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
+
                 EnsureDataDirectories(layout);
+                WriteCapabilities(layout, terminal, vision, log);
                 WriteSecret(Path.Combine(layout.SecureDir, BypassSecretFile), Prop("BYPASS_SECRET"), Existing("BypassSecret"), "BypassSecret", log);
                 WriteSecret(Path.Combine(layout.SecureDir, EnrollTokenFile), enrollToken, Existing("EnrollToken"), "EnrollToken", log);
 
@@ -267,6 +274,44 @@ namespace POps.Installer
         // ------------------------------------------------------------------------------------------
         private static bool SamePath(string a, string b) =>
             string.Equals(Path.GetFullPath(a).TrimEnd('\\'), Path.GetFullPath(b).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+
+        // Yetenek politikası (ajanda AgentCapabilities): terminal ve Vision. Kurulum iki yönde de yazabilir; sunucu
+        // yalnızca kapatabilir. Özellik verilmeyen bayrak mevcut dosyadan korunur, böylece sunucunun kapattığı yetenek
+        // bir güncellemeyle kendiliğinden açılmaz. Dosya yoksa ikisi de açık başlar; var ama okunamıyorsa (ajan da
+        // öyle sayar) verilmeyen bayrak kapalı kalır.
+        private static void WriteCapabilities(Layout layout, bool? terminal, bool? vision, Action<string> log)
+        {
+            string path = Path.Combine(layout.SecureDir, CapabilitiesFile);
+            bool exists = File.Exists(path);
+            Dictionary<string, object> current = exists ? ReadJsonObject(path, log) : null;
+            if (exists && terminal == null && vision == null) return;
+
+            bool Keep(string key) => !exists || (current != null && (!current.TryGetValue(key, out object v) || !(v is bool b) || b));
+            bool terminalEnabled = terminal ?? Keep("terminal_enabled");
+            bool visionEnabled = vision ?? Keep("vision_enabled");
+
+            var json = new Dictionary<string, object>
+            {
+                ["terminal_enabled"] = terminalEnabled,
+                ["vision_enabled"] = visionEnabled,
+                ["source"] = "msi",
+                ["updated_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            };
+            WriteProtected(path, ToJson(json, 0) + "\r\n");
+            log($"POps: yetenekler yazıldı: terminal={(terminalEnabled ? "açık" : "kapalı")}, vision={(visionEnabled ? "açık" : "kapalı")}.");
+        }
+
+        private static bool TryParseFlag(string value, out bool? flag)
+        {
+            flag = null;
+            if (value == null) return true;
+            switch (value.Trim().ToLowerInvariant())
+            {
+                case "1": case "true": case "yes": case "on": case "evet": flag = true; return true;
+                case "0": case "false": case "no": case "off": case "hayir": case "hayır": flag = false; return true;
+                default: return false;
+            }
+        }
 
         // Açık gelen değer her zaman yazılır; yoksa eski ayardaki değer, depoda henüz yoksa taşınır
         private static void WriteSecret(string path, string explicitValue, string legacyValue, string label, Action<string> log)

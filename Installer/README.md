@@ -21,6 +21,8 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 | `ENROLL_TOKEN`  | recommended   | `C:\POpsData\secure\enroll.token` |
 | `BYPASS_SECRET` | optional      | `C:\POpsData\secure\bypass.secret` |
 | `PERSIST_DIR`   | optional      | `appsettings.json` → `PersistDir` (see `Agent/README.md`, machines with freeze software) |
+| `TERMINAL_ENABLED` | optional   | `C:\POpsData\secure\capabilities.json`: `1` allows the panel's remote terminal (`execute`) on this PC, `0` disables it. See *Capability policy* in `Agent/README.md`. |
+| `VISION_ENABLED`   | optional   | same file: `1` / `0` for screen streaming, previews and remote input. |
 | `INSTALLFOLDER` | optional      | install folder, default `C:\Program Files\POps` |
 
 - Every property is optional on an upgrade: a value that is not given keeps the installed one. A first install without `SERVER_URL` (and without an old install to take it from) fails with a clear message in the log.
