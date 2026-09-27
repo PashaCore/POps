@@ -64,14 +64,111 @@ namespace POpsAgent
         public static string ReportedResultPath => Path.Combine(DataDir, "update-result.reported.json");
 
         // Geri dönüş tatbikatı: yönetici bu dosyayı oluşturunca (klasör yalnızca SYSTEM/Administrators'a açık)
-        // yeni sürüm açılışta health.json yazmaz, updater onu sağlıksız sayıp önceki MSI'a döner ve dosyayı siler.
+        // güncellemeyle kurulan yeni sürüm açılışta health.json yazmaz, updater onu sağlıksız sayıp önceki MSI'a döner.
         // Böylece rollback, bozuk bir sürüm yayımlamadan gerçek imzalı bir güncellemeyle denenir.
-        public static string RollbackDrillPath => Path.Combine(DataDir, "secure", "rollback-drill");
+        //
+        // İşaret, onu gören ilk açılışta TÜKETİLİR (rollback-drill -> rollback-drill.consumed, içinde kendi sürümü ve
+        // güncelleme çalışmasının başlangıcı). 0.1.5'e kadar işaret yalnızca updater'ın sonunda siliniyordu: geri
+        // kurulan eski sürüm de işareti görüp sağlık bildirmiyor, geri dönüş "rollback_failed" oluyordu.
+        //  * Yalnızca KENDİ sürümüne bir güncelleme sürerken (update.lock'taki to_version) tüketilir; güncelleme
+        //    dışında servis yeniden başlarsa işaret sonraki güncelleme için yerinde kalır.
+        //  * health.json yalnızca .consumed'daki sürüm kendi sürümü ve güncelleme çalışması aynıysa atlanır: SCM yeni
+        //    sürümü yeniden başlatsa da tatbikat sürer; geri kurulan eski sürüm (işareti bilmese de) sağlık bildirir;
+        //    aynı sürüm sonra yeniden gönderilirse (yeni çalışma) eski .consumed silinir ve normal kurulur.
+        public static string SecureDataDir => Path.Combine(DataDir, "secure");
+        public static string RollbackDrillPath => Path.Combine(SecureDataDir, RollbackDrill.MarkerFileName);
+        public static string ConsumedDrillPath => Path.Combine(SecureDataDir, RollbackDrill.ConsumedFileName);
 
         public static bool RollbackDrillRequested()
         {
             try { return File.Exists(RollbackDrillPath); }
             catch { return false; }
+        }
+
+        // update.lock (ajan updater'ı başlatmadan önce yazar) ve rollback-drill.consumed içerikleri
+        public sealed class UpdateRun
+        {
+            public string ToVersion { get; set; }
+            public long StartedAt { get; set; }
+        }
+
+        public sealed class ConsumedDrill
+        {
+            public string Version { get; set; }
+            public long UpdateStartedAt { get; set; }
+        }
+
+        public sealed class DrillDecision
+        {
+            public bool SkipHealth { get; set; }
+            public bool Consume { get; set; }
+            public bool DiscardConsumed { get; set; }
+        }
+
+        // Açılıştaki tatbikat kararı (dosyalara dokunmaz)
+        public static DrillDecision DecideDrill(bool markerExists, ConsumedDrill consumed, UpdateRun run, string ownVersion)
+        {
+            var decision = new DrillDecision();
+            bool updatingToMe = run != null && SameVersion(run.ToVersion, ownVersion);
+            if (consumed != null)
+            {
+                if (updatingToMe && SameVersion(consumed.Version, ownVersion) && consumed.UpdateStartedAt == run.StartedAt)
+                {
+                    decision.SkipHealth = true;   // aynı çalışmada yeniden başlatıldı: tatbikat sürüyor
+                    return decision;
+                }
+                decision.DiscardConsumed = true;  // başka sürümün ya da bitmiş bir çalışmanın kaydı
+            }
+            if (markerExists && updatingToMe)
+            {
+                decision.Consume = true;
+                decision.SkipHealth = true;
+            }
+            return decision;
+        }
+
+        public static bool SameVersion(string a, string b)
+        {
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+            try { return ReleaseVerifier.CompareVersions(a.Trim(), b.Trim()) == 0; }
+            catch (FormatException) { return string.Equals(a.Trim().TrimStart('v', 'V'), b.Trim().TrimStart('v', 'V'), StringComparison.OrdinalIgnoreCase); }
+        }
+
+        // Servis açılışında, health.json'dan önce. Dönen: health.json bu açılışta yazılmasın mı
+        public static bool ApplyRollbackDrillOnStartup()
+        {
+            try
+            {
+                // Bayat kilit (15 dk'dan eski, updater çökmüş) "güncelleme yok" sayılır
+                UpdateRun run = IsLockFresh() ? ReadJson<UpdateRun>(LockPath) : null;
+                DrillDecision decision = DecideDrill(RollbackDrillRequested(), ReadJson<ConsumedDrill>(ConsumedDrillPath), run, InstalledVersion);
+                if (decision.DiscardConsumed) TryDelete(ConsumedDrillPath);
+                if (decision.Consume)
+                {
+                    SecureStore.WriteProtected(ConsumedDrillPath, JsonSerializer.Serialize(new ConsumedDrill { Version = InstalledVersion, UpdateStartedAt = run.StartedAt }, DrillJson));
+                    File.Delete(RollbackDrillPath);
+                    POpsHelpers.Log("UPDATE", $"[TATBİKAT] rollback-drill işareti tüketildi ({ConsumedDrillPath}); geri kurulan sürüm sağlık bildirebilecek.");
+                }
+                return decision.SkipHealth;
+            }
+            catch (Exception ex)
+            {
+                // Tatbikat işlenemezse sağlık yine de bildirilir: gerçek bir güncellemeyi sebepsiz geri almaktan iyidir
+                POpsHelpers.Log("UPDATE", $"[TATBİKAT] işaret işlenemedi, sağlık normal bildiriliyor: {ex.Message}", true);
+                return false;
+            }
+        }
+
+        private static readonly JsonSerializerOptions DrillJson = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+            PropertyNameCaseInsensitive = true,
+        };
+
+        private static T ReadJson<T>(string path) where T : class
+        {
+            try { return File.Exists(path) ? JsonSerializer.Deserialize<T>(File.ReadAllText(path), DrillJson) : null; }
+            catch { return null; }
         }
 
         // Updater'ın bıraktığı ve henüz sunucuya iletilmemiş sonuç, sunucunun beklediği "update_result" mesajı

@@ -43,7 +43,8 @@ namespace POpsUpdater
         static readonly string BackupRoot = Path.Combine(DataDir, "backup");
         static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(90);
         // Geri dönüş tatbikatı: yönetici bu dosyayı koyarsa yeni sürüm health.json yazmaz (bkz. Agent/README.md)
-        static readonly string RollbackDrillPath = Path.Combine(DataDir, "secure", "rollback-drill");
+        // Tatbikat işaretleri (rollback-drill ve yeni ajanın tükettiği rollback-drill.consumed; bkz. POps.Shared.RollbackDrill)
+        static readonly string SecureDir = Path.Combine(DataDir, "secure");
 
         // msiexec'in kurulum hiç başlamadan döndüğü kodlar: bu durumlarda makinede hiçbir şey değişmez
         static readonly Dictionary<int, string> InstallNeverStarted = new Dictionary<int, string>
@@ -141,6 +142,9 @@ namespace POpsUpdater
                 else
                 {
                     Log($"Yeni sürüm {HealthTimeout.TotalSeconds:0} sn içinde sağlıklı açılmadı; geri dönülüyor.", true);
+                    // Tatbikat işareti geri kurulumdan ÖNCE silinir: geri kurulan sürüm (işareti tanısın tanımasın) onu
+                    // görüp sağlık bildirmezse geri dönüş sahte bir "rollback_failed" olurdu
+                    ClearRollbackDrill("geri kurulumdan önce");
                     (outcome, string rollback, string detail) = Rollback(opt, previousMsi, installFolderArg);
                     result["rollback"] = rollback;
                     result["detail"] = detail;
@@ -158,18 +162,20 @@ namespace POpsUpdater
                 result["agent_state"] = EnsureAgentPresent(opt);
                 result["running_version"] = RunningVersion();
                 result["outcome"] = outcome;
-                if (File.Exists(RollbackDrillPath))
-                {
-                    // Tatbikat işareti tek seferliktir: bir sonraki güncelleme normal ilerler
-                    try { File.Delete(RollbackDrillPath); Log("[TATBİKAT] rollback-drill işareti silindi."); }
-                    catch (Exception ex) { Log($"[TATBİKAT] rollback-drill işareti silinemedi: {ex.Message}", true); }
-                }
+                // Tatbikat işareti tek seferliktir: bir sonraki güncelleme normal ilerler
+                ClearRollbackDrill("güncelleme sonunda");
                 result["finished_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 WriteAtomic(ResultPath, JsonSerializer.Serialize(result));
                 Log($"Güncelleme bitti: {outcome} ({JsonSerializer.Serialize(result)})", outcome != "success");
                 try { File.Delete(LockPath); } catch { }
-                LaunchWatchdog();
+                LaunchUserApps();
             }
+        }
+
+        static void ClearRollbackDrill(string when)
+        {
+            if (RollbackDrill.Clear(SecureDir, (message, error) => Log(message, error)) > 0)
+                Log($"[TATBİKAT] rollback-drill işaretleri silindi ({when}).");
         }
 
         // ------------------------------------------------------------------------------------------
@@ -495,35 +501,41 @@ namespace POpsUpdater
             try
             {
                 string image = Registry.GetValue($@"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\{ServiceName}", "ImagePath", null) as string;
-                if (string.IsNullOrWhiteSpace(image)) return null;
-                image = image.Trim();
-                string exe = image.StartsWith("\"") ? image.Substring(1, image.IndexOf('"', 1) - 1) : image.Split(' ')[0];
-                return Path.GetDirectoryName(exe);
+                // Tırnaksız ve boşluklu yol da (C:\Program Files\POps\POpsAgent.exe) doğru okunur
+                string exe = ServiceImagePath.ExecutablePath(image);
+                return exe == null ? null : Path.GetDirectoryName(exe);
             }
             catch { return null; }
         }
 
-        // Kilit kalktıktan sonra watchdog tepsiyi açar; çalışmıyorsa kullanıcı oturumunda başlatılır
-        static void LaunchWatchdog()
+        // Güncelleme (ya da geri dönüş) bitince watchdog ve tepsi kullanıcı oturumunda başlatılır; oturum kapatıp açmak
+        // gerekmez. Eskiden "schtasks /ru BUILTIN\Users /it" kullanılıyordu ve sahada tepsiyi başlatmıyordu
+        // (bkz. POps.Shared.UserSessionLauncher). Kurulu sürüm hangisiyse onun klasöründen.
+        static void LaunchUserApps()
         {
             try
             {
-                if (Process.GetProcessesByName("POpsWatchdog").Length > 0) return;
+                uint session = UserSessionLauncher.ActiveConsoleSession();
+                if (!UserSessionLauncher.HasSignedInUser(session))
+                {
+                    Log("Oturum açmış kullanıcı yok; tepsi ve watchdog oturum açılınca başlayacak.");
+                    return;
+                }
                 string dir = ServiceInstallDir();
-                string exe = dir == null ? null : Path.Combine(dir, "POpsWatchdog.exe");
-                if (exe == null || !File.Exists(exe)) return;
-                string task = "POpsWatchdogLauncher";
-                RunHidden("schtasks.exe", $"/create /tn \"{task}\" /tr \"\\\"{exe}\\\"\" /sc once /st 00:00 /ru \"BUILTIN\\Users\" /it /f");
-                RunHidden("schtasks.exe", $"/run /tn \"{task}\"");
-                RunHidden("schtasks.exe", $"/delete /tn \"{task}\" /f");
+                if (dir == null) return;
+                var (watchdog, tray) = UserAppsPolicy.WhatToStart(true, UserSessionLauncher.WindowsInstallerBusy(),
+                    UserSessionLauncher.IsRunning(Path.Combine(dir, "POpsWatchdog.exe")), UserSessionLauncher.IsRunning(Path.Combine(dir, "POpsTray.exe")),
+                    shellReady: true, signedInFor: TimeSpan.MaxValue);
+                foreach ((bool start, string exe) in new[] { (watchdog, "POpsWatchdog.exe"), (tray, "POpsTray.exe") })
+                {
+                    if (!start) continue;
+                    if (UserSessionLauncher.TryStart(session, Path.Combine(dir, exe), out int pid, out string error))
+                        Log($"{exe} kullanıcı oturumunda başlatıldı (oturum {session}, PID {pid}).");
+                    else
+                        Log($"{exe} kullanıcı oturumunda başlatılamadı: {error}", true);
+                }
             }
-            catch (Exception ex) { Log($"Watchdog başlatılamadı: {ex.Message}", true); }
-        }
-
-        static void RunHidden(string file, string arguments)
-        {
-            using Process p = Process.Start(new ProcessStartInfo(file, arguments) { UseShellExecute = false, CreateNoWindow = true });
-            p.WaitForExit(15000);
+            catch (Exception ex) { Log($"Tepsi/watchdog başlatılamadı: {ex.Message}", true); }
         }
 
         // ------------------------------------------------------------------------------------------

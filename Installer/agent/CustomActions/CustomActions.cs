@@ -45,6 +45,50 @@ namespace POps.Installer
             return ActionResult.Failure;
         }
 
+        // Hemen (immediate), CostFinalize'dan sonra, dosyalar kopyalanmadan ÖNCE: INSTALLFOLDER'ı doğrular ve kurulumdan
+        // önceki durumunu (yeni / yalnızca POps dosyaları / başka dosyalar) POPS_INSTALLDIR_STATE ile Configure'a aktarır
+        [CustomAction]
+        public static ActionResult CheckInstallFolder(Session session)
+        {
+            string dir = Setup.Clean(session["INSTALLFOLDER"]);
+            string error = Setup.CheckInstallFolder(dir, Setup.DefaultProtectedFolders(), KnownFileNames(session), out string state);
+            if (error != null) return Fail(session, error);
+            session["POPS_INSTALLDIR_STATE"] = state;
+            session.Log($"POps: kurulum klasörü {dir} ({state}).");
+            return ActionResult.Success;
+        }
+
+        // Paketin kurduğu dosya adları (File tablosu; "KISA|uzun" biçiminde uzun ad)
+        private static ISet<string> KnownFileNames(Session session)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (string value in session.Database.ExecuteStringQuery("SELECT `FileName` FROM `File`"))
+                {
+                    int bar = value.IndexOf('|');
+                    names.Add(bar >= 0 ? value.Substring(bar + 1) : value);
+                }
+            }
+            catch (Exception ex) { session.Log("POps: dosya listesi okunamadı: " + ex.Message); }
+            return names;
+        }
+
+        private static ActionResult Fail(Session session, string error)
+        {
+            session.Log("POps: HATA: " + error);
+            try
+            {
+                using (var record = new Record(1) { FormatString = "[1]" })
+                {
+                    record[1] = error;
+                    session.Message(InstallMessage.Error, record);
+                }
+            }
+            catch { }
+            return ActionResult.Failure;
+        }
+
         [CustomAction]
         public static ActionResult CleanupLegacy(Session session)
         {
@@ -167,6 +211,8 @@ namespace POps.Installer
                     return "VISION_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
 
                 EnsureDataDirectories(layout);
+                string folderError = ApplyInstallFolderPolicy(installDir, Prop("INSTALLDIR_STATE"), log);
+                if (folderError != null) return folderError;
                 WriteCapabilities(layout, terminal, vision, log);
                 WriteSecret(Path.Combine(layout.SecureDir, BypassSecretFile), Prop("BYPASS_SECRET"), Existing("BypassSecret"), "BypassSecret", log);
                 WriteSecret(Path.Combine(layout.SecureDir, EnrollTokenFile), enrollToken, Existing("EnrollToken"), "EnrollToken", log);
@@ -364,6 +410,205 @@ namespace POps.Installer
             logs.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
             if (layout.LogDir != null) CreateOrSecure(layout.LogDir, logs);
         }
+
+        // ==========================================================================================
+        // Kurulum klasörü (INSTALLFOLDER). Servis POpsAgent.exe'yi buradan SYSTEM olarak çalıştırır, updater buradan
+        // kopyalanır: kullanıcılar ne klasöre yazabilmeli ne de onu (ya da bir üst klasörünü) silip/yeniden adlandırıp
+        // yerine kendi klasörünü koyabilmeli.
+        //  * CheckInstallFolder (immediate, dosyalardan önce): ağ yolu, sabit/NTFS olmayan birim, sürücü kökü, sistem
+        //    klasörleri (ve üstleri) reddedilir; üst klasör zinciri denetlenir; klasörün kurulumdan önceki durumu
+        //    belirlenir: new (yoktu), pops (boş ya da yalnızca bu paketin dosyaları), other (başka dosyalar var).
+        //  * ApplyInstallFolderPolicy (Configure, SYSTEM): kullanıcıların yazabildiği klasör yalnızca POps'unsa
+        //    (new/pops) daraltılır; başkasınınsa kurulum durur. Program Files gibi zaten korunan klasöre dokunulmaz.
+        //    Sürücü kökünün, paylaşılan bir klasörün ya da başka programların izinleri böylece hiç değişmez.
+        // ==========================================================================================
+        public const string StateNew = "new", StatePops = "pops", StateOther = "other";
+
+        // Yazma, silme ya da izin değiştirme sayılan haklar
+        private const FileSystemRights WriteRights =
+            FileSystemRights.WriteData | FileSystemRights.AppendData | FileSystemRights.WriteExtendedAttributes | FileSystemRights.WriteAttributes |
+            FileSystemRights.Delete | FileSystemRights.DeleteSubdirectoriesAndFiles | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership;
+
+        // Klasörü silip yeniden adlandırabilme ya da izinlerini değiştirebilme
+        private const FileSystemRights ReplaceRights = FileSystemRights.Delete | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership;
+
+        // Kurulumun bu dosyalarından başka bir şey yoksa klasör POps'undur (eski sürüm kalıntıları dahil)
+        private static readonly string[] PopsFilePatterns = { "appsettings*.json", "*.pdb", "PashaCoreAgent.*", "apply_update.bat", "POps*" };
+
+        internal static IList<string> DefaultProtectedFolders()
+        {
+            var list = new List<string>();
+            void Add(string path) { if (!string.IsNullOrWhiteSpace(path)) list.Add(path); }
+            Add(Environment.GetFolderPath(Environment.SpecialFolder.Windows));
+            Add(Environment.GetEnvironmentVariable("WINDIR"));
+            Add(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
+            Add(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86));
+            Add(Environment.GetEnvironmentVariable("ProgramFiles"));
+            Add(Environment.GetEnvironmentVariable("ProgramFiles(x86)"));
+            Add(Environment.GetEnvironmentVariable("ProgramW6432"));
+            Add(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
+            Add(Environment.GetEnvironmentVariable("ProgramData"));
+            string systemDrive = Environment.GetEnvironmentVariable("SystemDrive") ?? "C:";
+            Add(systemDrive.TrimEnd('\\') + @"\Users");
+            return list;
+        }
+
+        // Hata metni ya da null; state: new / pops / other
+        internal static string CheckInstallFolder(string installDir, IList<string> protectedFolders, ISet<string> knownFiles, out string state)
+        {
+            state = null;
+            if (string.IsNullOrWhiteSpace(installDir)) return "INSTALLFOLDER boş.";
+            string dir = installDir.Trim();
+            if (dir.StartsWith(@"\\", StringComparison.Ordinal) || dir.StartsWith("//", StringComparison.Ordinal))
+                return $"Kurulum klasörü ağ yolu olamaz ({dir}): POps yerel bir diske, ör. C:\\Program Files\\POps klasörüne kurulmalı.";
+            if (!Path.IsPathRooted(dir) || !Regex.IsMatch(dir, @"^[A-Za-z]:\\"))
+                return $"Kurulum klasörü tam bir yerel yol olmalı ({dir}), ör. C:\\Program Files\\POps.";
+            string full;
+            try { full = Path.GetFullPath(dir).TrimEnd('\\'); }
+            catch (Exception ex) { return $"Kurulum klasörü geçersiz ({dir}): {ex.Message}"; }
+
+            string root = Path.GetPathRoot(full);
+            if (string.Equals(full + "\\", root, StringComparison.OrdinalIgnoreCase) || string.Equals(full, root.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                return $"Kurulum klasörü bir sürücü kökü olamaz ({root}): POps'a ait ayrı bir klasör verin, ör. {root}Program Files\\POps.";
+
+            DriveInfo drive;
+            try { drive = new DriveInfo(root); }
+            catch (Exception ex) { return $"Kurulum klasörünün sürücüsü okunamadı ({root}): {ex.Message}"; }
+            if (!drive.IsReady || drive.DriveType != DriveType.Fixed)
+                return $"Kurulum klasörü sabit bir yerel diskte olmalı ({root}: {drive.DriveType}).";
+            if (!string.Equals(drive.DriveFormat, "NTFS", StringComparison.OrdinalIgnoreCase))
+                return $"Kurulum klasörü NTFS bir diskte olmalı ({root}: {drive.DriveFormat}); izinler başka dosya sistemlerinde korunamaz.";
+
+            foreach (string folder in protectedFolders ?? new string[0])
+            {
+                string protectedFull;
+                try { protectedFull = Path.GetFullPath(folder).TrimEnd('\\'); }
+                catch { continue; }
+                if (SamePath(full, protectedFull) || protectedFull.StartsWith(full + "\\", StringComparison.OrdinalIgnoreCase))
+                    return $"Kurulum klasörü bir sistem klasörü ya da onun üst klasörü olamaz ({full}): POps'a ait ayrı bir alt klasör verin, ör. {Path.Combine(protectedFull, "POps")}.";
+            }
+
+            string ancestorError = CheckAncestors(full);
+            if (ancestorError != null) return ancestorError;
+
+            if (!Directory.Exists(full)) { state = StateNew; return null; }
+            state = OnlyPopsFiles(full, knownFiles) ? StatePops : StateOther;
+            if (state == StateOther && Exposed(Directory.GetAccessControl(full)))
+                return $"Kurulum klasöründe ({full}) başka dosyalar var ve kullanıcılar bu klasöre yazabiliyor. Servis buradan SYSTEM olarak çalışacağı için POps'u ayrı, yeni bir klasöre kurun (ör. C:\\Program Files\\POps).";
+            return null;
+        }
+
+        // Yoldaki her üst klasör: kullanıcı onu (ya da içindeki alt klasörü) silip yeniden adlandıramamalı, izinlerini
+        // değiştirememeli; henüz yoksa msiexec oluşturacağı için en yakın var olan üstten devralacağı haklara bakılır.
+        // Birim testleri: zincir bu klasörde (hariç) durur. Testler kullanıcı profilindeki geçici klasörde çalışır; profilin
+        // üst klasörlerinde uygulama paketlerinin (S-1-15-2-...) tam yetkisi vardır ve gerçekte oraya kurulum reddedilir.
+        internal static string TrustedBaseForTests { get; set; }
+
+        private static string CheckAncestors(string full)
+        {
+            string root = Path.GetPathRoot(full);
+            string stop = TrustedBaseForTests != null ? Path.GetFullPath(TrustedBaseForTests).TrimEnd('\\') : null;
+            bool underStop = stop != null && full.StartsWith(stop + "\\", StringComparison.OrdinalIgnoreCase);
+            var chain = new List<string>();
+            for (string p = Path.GetDirectoryName(full); p != null && !SamePath(p, root) && !(underStop && SamePath(p, stop)); p = Path.GetDirectoryName(p)) chain.Insert(0, p);
+
+            string existing = underStop ? stop : root;
+            if (!underStop && UntrustedHas(Directory.GetAccessControl(root), FileSystemRights.DeleteSubdirectoriesAndFiles, forChildren: false))
+                return $"Kullanıcılar {root} içindeki klasörleri silebiliyor; POps bu diske güvenli kurulamaz.";
+            foreach (string ancestor in chain)
+            {
+                if (!Directory.Exists(ancestor))
+                {
+                    if (UntrustedHas(Directory.GetAccessControl(existing), ReplaceRights | FileSystemRights.DeleteSubdirectoriesAndFiles, forChildren: true))
+                        return $"{ancestor} kurulumla oluşturulunca kullanıcılar onu silip yeniden adlandırabilecek (izinleri {existing} klasöründen gelir). Üst klasörü önceden yalnızca yöneticilerin değiştirebileceği biçimde oluşturun ya da POps'u Program Files'a kurun.";
+                    return null;
+                }
+                DirectorySecurity sec = Directory.GetAccessControl(ancestor);
+                if (!IsTrusted(Owner(sec)) || UntrustedHas(sec, ReplaceRights | FileSystemRights.DeleteSubdirectoriesAndFiles, forChildren: false))
+                    return $"Kullanıcılar üst klasörü ({ancestor}) silip yeniden adlandırabiliyor ya da izinlerini değiştirebiliyor; servis buradan SYSTEM olarak çalışacağı için POps oraya kurulamaz. Program Files'a ya da yalnızca yöneticilerin değiştirebildiği bir klasöre kurun.";
+                existing = ancestor;
+            }
+            return null;
+        }
+
+        private static bool OnlyPopsFiles(string dir, ISet<string> knownFiles)
+        {
+            try
+            {
+                int count = 0;
+                foreach (string file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    if (++count > 10000) return false;
+                    string name = Path.GetFileName(file);
+                    if (knownFiles != null && knownFiles.Contains(name)) continue;
+                    if (PopsFilePatterns.Any(p => MatchesPattern(name, p))) continue;
+                    return false;
+                }
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static bool MatchesPattern(string name, string pattern)
+        {
+            string regex = "^" + Regex.Escape(pattern).Replace(@"\*", ".*") + "$";
+            return Regex.IsMatch(name, regex, RegexOptions.IgnoreCase);
+        }
+
+        // Kullanıcıların yazabildiği ya da sahibi güvenilir olmayan (izinlerini değiştirebilen) klasör
+        internal static bool Exposed(DirectorySecurity sec) => UsersCanWrite(sec) || !IsTrusted(Owner(sec));
+
+        // Configure (SYSTEM): hata metni ya da null
+        internal static string ApplyInstallFolderPolicy(string installDir, string state, Action<string> log)
+        {
+            if (!Directory.Exists(installDir)) return null;
+            if (!Exposed(Directory.GetAccessControl(installDir))) return null;   // zaten korunuyor (ör. Program Files): dokunulmaz
+            if (state != StateNew && state != StatePops)
+                return $"Kurulum klasörü ({installDir}) kullanıcıların yazabildiği bir yerde ve POps'a ait değil; izinleri değiştirilmedi. POps'u ayrı, yeni bir klasöre kurun (ör. C:\\Program Files\\POps).";
+            try
+            {
+                var sec = new DirectorySecurity();
+                sec.SetOwner(SystemSid);
+                sec.SetAccessRuleProtection(true, false);
+                sec.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
+                sec.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
+                sec.AddAccessRule(new FileSystemAccessRule(UsersSid, FileSystemRights.ReadAndExecute, Inherit, PropagationFlags.None, AccessControlType.Allow));
+                Directory.SetAccessControl(installDir, sec);
+            }
+            catch (Exception ex)
+            {
+                return $"Kurulum klasörünün izinleri daraltılamadı ({installDir}): {ex.GetType().Name}: {ex.Message}. Klasör kullanıcıların yazabildiği bir yerde kaldığı için kurulum durduruldu.";
+            }
+            log?.Invoke($"[GÜVENLİK] {installDir} kullanıcıların yazabildiği bir klasördü ({state}); sahibi SYSTEM, izinleri SYSTEM/Administrators tam, Users okuma olarak daraltıldı.");
+            return null;
+        }
+
+        // SYSTEM ve Administrators dışında yazma/değiştirme izni olan biri var mı (yalnızca klasörün kendisine uygulanan kurallar)
+        internal static bool UsersCanWrite(DirectorySecurity sec) => UntrustedHas(sec, WriteRights, forChildren: false);
+
+        // forChildren: false -> klasörün kendisine uygulanan kurallar; true -> yeni alt klasörlere geçecek kurallar
+        private static bool UntrustedHas(DirectorySecurity sec, FileSystemRights rights, bool forChildren)
+        {
+            foreach (FileSystemAccessRule rule in sec.GetAccessRules(true, true, typeof(SecurityIdentifier)))
+            {
+                if (rule.AccessControlType != AccessControlType.Allow || (rule.FileSystemRights & rights) == 0) continue;
+                bool applies = forChildren
+                    ? (rule.InheritanceFlags & InheritanceFlags.ContainerInherit) != 0
+                    : (rule.PropagationFlags & PropagationFlags.InheritOnly) == 0;
+                if (!applies) continue;
+                var sid = rule.IdentityReference as SecurityIdentifier;
+                // CREATOR OWNER yeni öğeyi oluşturana geçer; msiexec'in (SYSTEM) oluşturduğu klasörde SYSTEM olur
+                if (sid != null && (IsTrusted(sid) || sid.IsWellKnown(WellKnownSidType.CreatorOwnerSid))) continue;
+                return true;
+            }
+            return false;
+        }
+
+        private static SecurityIdentifier Owner(DirectorySecurity sec) => sec.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+
+        // SYSTEM, Administrators ve hizmet SID'leri (NT SERVICE\TrustedInstaller: Program Files'ın olağan sahibi)
+        private static bool IsTrusted(SecurityIdentifier sid) =>
+            sid != null && (sid.Equals(SystemSid) || sid.Equals(AdminsSid) || sid.IsWellKnown(WellKnownSidType.LocalSystemSid) || sid.Value.StartsWith("S-1-5-80-", StringComparison.Ordinal));
 
         private static void CreateOrSecure(string dir, DirectorySecurity sec)
         {

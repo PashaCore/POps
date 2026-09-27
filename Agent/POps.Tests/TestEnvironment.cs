@@ -18,6 +18,9 @@ namespace POps.Tests
 
 #if !NETFRAMEWORK
         public static readonly string[] DefaultConfigPaths;
+        // Testlerin kullandığı veri ve güvenli klasörler (hep geçici klasörün içinde)
+        public static readonly string DefaultDataDir = Path.Combine(Root, "data-default");
+        public static readonly string DefaultSecureDir = Path.Combine(Root, "secure-default");
 #endif
 
         static TestEnvironment()
@@ -33,8 +36,8 @@ namespace POps.Tests
             POps.Shared.POpsHelpers.LogDirectoryOverride = Path.Combine(Root, "logs");
             POps.Shared.POpsHelpers.ConfigPaths = new string[0];
             POpsAgent.SecureStore.SystemSid = me;
-            POpsAgent.SecureStore.Dir = Path.Combine(Root, "secure-default");
-            POpsAgent.AgentUpdate.DataDir = Path.Combine(Root, "data-default");
+            POpsAgent.SecureStore.Dir = DefaultSecureDir;
+            POpsAgent.AgentUpdate.DataDir = DefaultDataDir;
 #endif
         }
 
@@ -55,11 +58,31 @@ namespace POps.Tests
         }
 
         public static string TestData(string name) => Path.Combine(AppContext.BaseDirectory, "TestData", name);
+
+#if !NETFRAMEWORK
+        // Bir test gerçek klasörlere (C:\POpsData, ...) dönen bir yol bırakmışsa bir sonraki test öncesinde geçici
+        // klasörlere geri alınır. (Türetilmiş sınıfın alan başlatıcıları temel kurucudan ÖNCE çalışır: orada okunan
+        // yol, ortam kurulmadan önceki gerçek yol olabilir.)
+        public static void EnsureIsolated()
+        {
+            if (!IsUnderRoot(POpsAgent.AgentUpdate.DataDir)) POpsAgent.AgentUpdate.DataDir = DefaultDataDir;
+            if (!IsUnderRoot(POpsAgent.SecureStore.Dir)) POpsAgent.SecureStore.Dir = DefaultSecureDir;
+        }
+
+        private static bool IsUnderRoot(string path) =>
+            !string.IsNullOrEmpty(path) && Path.GetFullPath(path).StartsWith(Root, StringComparison.OrdinalIgnoreCase);
+#endif
     }
 
     // Statik kurucunun her test sınıfından önce çalışmasını garanti eder
     public abstract class TestBase
     {
-        protected TestBase() => System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(TestEnvironment).TypeHandle);
+        protected TestBase()
+        {
+            System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(TestEnvironment).TypeHandle);
+#if !NETFRAMEWORK
+            TestEnvironment.EnsureIsolated();
+#endif
+        }
     }
 }

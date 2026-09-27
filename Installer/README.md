@@ -23,7 +23,7 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 | `PERSIST_DIR`   | optional      | `appsettings.json` → `PersistDir` (see `Agent/README.md`, machines with freeze software) |
 | `TERMINAL_ENABLED` | optional   | `C:\POpsData\secure\capabilities.json`: `1` allows the panel's remote terminal (`execute`) on this PC, `0` disables it. See *Capability policy* in `Agent/README.md`. |
 | `VISION_ENABLED`   | optional   | same file: `1` / `0` for screen streaming, previews and remote input. |
-| `INSTALLFOLDER` | optional      | install folder, default `C:\Program Files\POps` |
+| `INSTALLFOLDER` | optional      | install folder, default `C:\Program Files\POps`. See *Install folder* below. |
 
 - Every property is optional on an upgrade: a value that is not given keeps the installed one. A first install without `SERVER_URL` (and without an old install to take it from) fails with a clear message in the log.
 - A plain `http://` server address is refused, including one migrated from an older install. Over `ws://` the device secret, the enrollment token and the commands the agent runs as SYSTEM would cross the network in clear text. Pre-MSI installs that used `http://<ip>:8000` therefore need `SERVER_URL=https://…` on the command line.
@@ -31,10 +31,21 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 - An enrollment token enrolls up to `max_uses` devices (1–10000, chosen when it is created on the **Sistem & Sürüm** page; 1 by default) until it expires (1 hour to 30 days, 72 hours by default), so one token can enroll a whole lab. Each device still receives its own secret. A device that is already enrolled cannot take a new secret with a token unless a superadmin allows re-enrollment for it (`POST /api/system/allow-reenroll`).
 - `appsettings.json` and the secret files are written by a custom action, not installed as MSI files, so they survive upgrades. `appsettings.json` is readable only by SYSTEM and Administrators.
 
+### Install folder
+
+The service runs `POpsAgent.exe` from `INSTALLFOLDER` as SYSTEM, and the updater is copied from there. Users must therefore neither write to the folder nor delete, rename or replace it, or any folder above it. The MSI checks this before any file is copied and stops with a message in the log if the folder is:
+
+- a network path (`\\server\share\...`), on a removable, network or non-NTFS drive, or a drive root (`C:\`, `D:\`);
+- a system folder or a folder above one: Windows, Program Files, Program Files (x86), ProgramData, `C:\Users` (a subfolder such as `C:\Program Files\POps` is fine);
+- below a folder that users can delete, rename or change the permissions of, for example inside a user profile, or below a folder that the install would create with such inherited permissions;
+- an existing folder that already holds other programs' files **and** is writable by users. Install POps into a separate, new folder instead.
+
+If the folder is new, or holds only POps files (an older POps install), and users could write to it, for example `C:\POps`, which inherits Modify for Authenticated Users from `C:\`, the MSI makes it SYSTEM-owned with SYSTEM and Administrators full control and Users read and execute, and logs this. A folder users cannot write to, such as the default under Program Files, is left as it is. The MSI never changes the permissions of a drive root, a shared folder or another program's folder.
+
 ### What the package does
 
 - Installs the agent, tray, watchdog and updater into `C:\Program Files\POps` and registers the `POpsAgent` service (LocalSystem, automatic start; Windows restarts it on failure).
-- Starts the tray in every user session through `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` (`POpsTray`). The tray no longer writes its own per-user Run entry. An Active Setup entry runs the tray once per user at their next sign-in, before the desktop, in a mode that only deletes the per-user entry older versions left (`POpsTrayApp`), so an old tray cannot start next to the new one.
+- Starts the tray in every user session through `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` (`POpsTray`). From 0.1.6-alpha the service also starts the tray and the watchdog in the signed-in user's session within about 30 seconds after an install or an update, so nobody has to sign out and in again. The tray no longer writes its own per-user Run entry. An Active Setup entry runs the tray once per user at their next sign-in, before the desktop, in a mode that only deletes the per-user entry older versions left (`POpsTrayApp`), so an old tray cannot start next to the new one.
 - **Upgrades** replace the installed version inside one transaction: the old product is removed right after `InstallInitialize`, and if the new version fails to install Windows Installer restores the old one. The MSI version is `a.b.c.<CI run number>`; a build with the same `a.b.c` and a higher run number is treated as an upgrade. Installing an older version over a newer one is refused, except with `POPS_ROLLBACK=1`, which only `POpsUpdater` passes when it rolls back: the older package then removes the newer version inside the same transaction, so a failed rollback leaves the newer version installed instead of leaving the machine without an agent.
 - **Pre-MSI installs** are taken over: the old `POpsAgent` service is stopped and deleted, the tray, watchdog and other POps processes are closed, and the settings are migrated — `ServerUrl` from `C:\POps\appsettings.json` first (the only file released pre-MSI builds read), then from `C:\Program Files (x86)\POps`; a `BypassSecret` found there moves into `C:\POpsData\secure`. After the new service has started, the old install folder (`C:\Program Files (x86)\POps`) and the settings in `C:\POps` are deleted along with leftovers such as `PashaCoreAgent.*`, `apply_update.bat` and `appsettings.Development.json`. Files that are still in use are deleted at the next restart.
 - Every install keeps its own package as `C:\POpsData\packages\installed.msi`. `POpsUpdater` rolls back to it when the next version does not start cleanly; see *Updates* in `Agent/README.md`.

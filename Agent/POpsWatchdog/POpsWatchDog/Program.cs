@@ -23,7 +23,6 @@ namespace POpsWatchDog
 
         // Ayarlar DOĞRU dosya isimlerine göre güncellendi! (Core YOK)
         static readonly string AgentServiceName = "POpsAgent";
-        static readonly string VisionExeName = "POpsTray";
         static readonly string VisionExePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "POpsTray.exe");
 
         // POpsUpdater güncelleme boyunca bu dosyayı tutar; msiexec servisi durdurup tepsiyi kapattığında
@@ -107,8 +106,8 @@ namespace POpsWatchDog
         {
             try
             {
-                var processes = Process.GetProcessesByName(VisionExeName);
-                if (processes.Length == 0)
+                // Yalnızca ada bakılmaz: POpsTray.exe adını taşıyan başka bir program tepsinin yerini tutamasın
+                if (!POps.Shared.UserSessionLauncher.IsRunning(VisionExePath))
                 {
                     if (File.Exists(VisionExePath))
                     {

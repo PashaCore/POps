@@ -34,9 +34,9 @@ namespace POpsAgent
 
             // Güncellemeden sonra POpsUpdater yeni sürümün açıldığını bu dosyadan anlar. Açılışın en başında
             // yazılır: yavaş WMI sorguları onu updater'ın 90 sn'lik bekleme süresinin dışına itmesin.
-            // Geri dönüş tatbikatında (yöneticinin koyduğu işaret dosyası) bilerek yazılmaz.
-            if (AgentUpdate.RollbackDrillRequested())
-                POpsHelpers.Log("UPDATE", $"[TATBİKAT] {AgentUpdate.RollbackDrillPath} var: health.json yazılmadı; güncelleme sürüyorsa updater önceki sürüme dönecek.", true);
+            // Geri dönüş tatbikatında, bu sürüme güncellenirken bilerek yazılmaz (bkz. AgentUpdate.ApplyRollbackDrillOnStartup).
+            if (AgentUpdate.ApplyRollbackDrillOnStartup())
+                POpsHelpers.Log("UPDATE", "[TATBİKAT] health.json yazılmadı; updater bu sürümü sağlıksız sayıp önceki sürüme dönecek.", true);
             else
                 AgentUpdate.WriteHealth();
 

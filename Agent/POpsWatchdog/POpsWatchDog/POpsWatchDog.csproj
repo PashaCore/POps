@@ -6,6 +6,8 @@
     <AssemblyName>POpsWatchdog</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Kullanıcı oturumunda çalışır: DOTNET_STARTUP_HOOKS ile kullanıcı kodu yüklenmesin (tepsiyle aynı) -->
+    <StartupHookSupport>false</StartupHookSupport>
   </PropertyGroup>
 
   <ItemGroup>
