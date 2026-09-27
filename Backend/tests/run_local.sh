@@ -17,3 +17,4 @@ for _ in $(seq 1 40); do curl -sf "$POPS_TEST_HTTP/api/health" >/dev/null 2>&1 &
 python tests/test_security.py
 python tests/test_2fa.py
 python tests/test_agent_authz.py
+python tests/test_remote_authz.py

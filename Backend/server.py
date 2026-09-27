@@ -348,15 +348,34 @@ class ConnectionManager:
     def __init__(self):
         self.active_agents: Dict[str, WebSocket] = {}
         self.active_panels: List[WebSocket] = []
+        self.panel_users: Dict[WebSocket, str] = {}          # panel soketi -> giriş yapan admin kullanıcı adı
+        self.vision_sessions: Dict[str, set] = {}            # pc_name -> o cihazda AKTİF oturumu olan admin kullanıcı adları
         self.pending_thumbnails: Dict[str, List[asyncio.Future]] = {}
         self.active_vision_ws: Dict[str, WebSocket] = {}
 
     async def connect_agent(self, websocket: WebSocket, pc_name: str):
         self.active_agents[pc_name] = websocket
 
-    async def connect_panel(self, websocket: WebSocket):
+    async def connect_panel(self, websocket: WebSocket, username: Optional[str] = None):
         await websocket.accept()
         self.active_panels.append(websocket)
+        if username:
+            self.panel_users[websocket] = username
+
+    # ── Uzaktan kontrol/izleme oturumu (F1/F12): girdi ve canlı kare, yalnızca o cihaz
+    # için AÇIK bir denetim oturumu olan admin'e verilir. Oturum start/end_audit_session ile yönetilir.
+    def add_vision_session(self, pc_name: str, username: str):
+        self.vision_sessions.setdefault(pc_name, set()).add(username)
+
+    def remove_vision_session(self, pc_name: str, username: str):
+        s = self.vision_sessions.get(pc_name)
+        if s:
+            s.discard(username)
+            if not s:
+                self.vision_sessions.pop(pc_name, None)
+
+    def user_has_session(self, username: Optional[str], pc_name: str) -> bool:
+        return bool(username) and username in self.vision_sessions.get(pc_name, set())
         
     async def connect_vision(self, websocket: WebSocket, pc_name: str):
         await websocket.accept()
@@ -374,6 +393,7 @@ class ConnectionManager:
 
     def disconnect_panel(self, websocket: WebSocket):
         if websocket in self.active_panels: self.active_panels.remove(websocket)
+        self.panel_users.pop(websocket, None)
             
     def disconnect_vision(self, pc_name: str):
         if pc_name in self.active_vision_ws: del self.active_vision_ws[pc_name]
@@ -392,6 +412,20 @@ class ConnectionManager:
         for panel in self.active_panels:
             try: await panel.send_text(json.dumps(message))
             except: disconnected.append(panel)
+        for p in disconnected: self.disconnect_panel(p)
+
+    async def send_frame_to_viewers(self, message: dict, pc_name: str):
+        """Canlı ekran karesi/önizlemesi YALNIZCA o cihaz için açık denetim oturumu olan admin
+        panellerine gider (F12: tüm panellere yayınlama sızıntısı kapandı). Oturumu olan panel yoksa
+        kare düşer."""
+        allowed = self.vision_sessions.get(pc_name, set())
+        if not allowed:
+            return
+        disconnected = []
+        for panel in self.active_panels:
+            if self.panel_users.get(panel) in allowed:
+                try: await panel.send_text(json.dumps(message))
+                except: disconnected.append(panel)
         for p in disconnected: self.disconnect_panel(p)
     
     async def send_remote_input_to_vision(self, message: dict, pc_name: str):
@@ -683,6 +717,14 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
         (session_id, admin_id, admin_name, admin_role, target_pc, start_time, end_time, reason, is_notified, is_mandatory, status)
         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, TRUE, $8, 'Active')
     """, (session_id, admin_id, admin_name, admin_role, data.target_pc, now, data.reason, data.is_mandatory))
+    # F1/F12: bu oturum, uzaktan girdi ve canlı kare almanın ÖN KOŞULU. Oturumu aç (admin, cihaz).
+    manager.add_vision_session(data.target_pc, admin_name)
+    # Hesap verebilirlik (F4): kontrol oturumunu ajanların yazamadığı hash-zincirli loga META olarak
+    # yaz (ham tuş/koordinat DEĞİL — sadece kim, hangi cihaz, gerekçe, zorunlu mu).
+    await add_audit_log(data.target_pc, "remote_session_start",
+                        "Uzaktan denetim oturumu açıldı: %s → %s" % (admin_name, data.target_pc),
+                        {"session_id": session_id, "admin": admin_name, "role": admin_role,
+                         "reason": data.reason, "mandatory": bool(data.is_mandatory)})
     # Karantina durumunu kontrol et
     rows = await execute_query("SELECT is_quarantined FROM clients WHERE pc_name = $1", (data.target_pc,), fetch=True)
     is_quarantined = False
@@ -710,7 +752,12 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
 @app.post("/api/audit/session/end")
 async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(require_admin)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Oturumu kapatmadan önce hedef+admin'i öğren ki vision-session yetkisini geri alalım (F1/F12).
+    srow = await execute_query(
+        "SELECT target_pc, admin_name FROM enterprise_audit_logs WHERE session_id = $1", (data.session_id,), fetch=True)
     await execute_query("UPDATE enterprise_audit_logs SET end_time = $1, status = $2 WHERE session_id = $3", (now, data.status, data.session_id))
+    if srow:
+        manager.remove_vision_session(srow[0]["target_pc"], srow[0]["admin_name"])
     return {"status": "success"}
 
 @app.post("/api/security/lockdown")
@@ -900,22 +947,33 @@ async def reconcile_device(claimed_hwid: str, dna_payload: dict, client_ip: str,
 
 @app.websocket("/ws/panel")
 async def websocket_panel(websocket: WebSocket):
-    if not ws_check_token(websocket.cookies.get(JWT_COOKIE_NAME)):
+    jwt_payload = verify_jwt(websocket.cookies.get(JWT_COOKIE_NAME) or "")
+    if not jwt_payload:
         await websocket.accept()
         await websocket.close(code=4001, reason="Kimlik doğrulama hatası")
         return
-    await manager.connect_panel(websocket)
+    username = jwt_payload.get("sub")
+    role = jwt_payload.get("role")
+    await manager.connect_panel(websocket, username)
     try:
-        while True: 
+        while True:
             data = await websocket.receive_text()
             try:
-                payload = json.loads(data)
-                if payload.get("type") == "remote_input":
-                    target = payload.get("device")
+                msg = json.loads(data)
+                if msg.get("type") == "remote_input":
+                    target = msg.get("device")
+                    # F1: viewer HİÇBİR remote_input gönderemez.
+                    if role not in ("admin", "superadmin"):
+                        continue
+                    # KONTROL (gerçek fare/klavye girdisi veya SYSTEM 'execute'): o cihaz için AÇIK
+                    # denetim oturumu ŞART. Önizleme-tipi (get_thumbnail/set_fps) admin'e serbest.
+                    is_control = bool(msg.get("input_type")) or msg.get("action") == "execute"
+                    if is_control and not manager.user_has_session(username, target):
+                        continue
                     if target:
-                        sent = await manager.send_remote_input_to_vision(payload, target)
-                        if not sent: await manager.send_command(payload, target)
-                elif payload.get("type") == "ping":
+                        sent = await manager.send_remote_input_to_vision(msg, target)
+                        if not sent: await manager.send_command(msg, target)
+                elif msg.get("type") == "ping":
                     await websocket.send_text(json.dumps({"type": "pong"}))
             except json.JSONDecodeError: pass
     except WebSocketDisconnect:
@@ -939,7 +997,8 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
             try:
                 payload = json.loads(data)
                 if payload.get("type") in ["stream_frame", "thumbnail"]:
-                    await manager.broadcast_to_panels(payload)
+                    # F12: kare yalnızca o cihaz için açık oturumu olan admin panellerine
+                    await manager.send_frame_to_viewers(payload, pc_name)
             except json.JSONDecodeError: pass
     except WebSocketDisconnect:
         manager.disconnect_vision(pc_name)
@@ -1595,7 +1654,8 @@ async def stop_stream(pc_name: str, auth: dict = Depends(require_auth)):
     return {"status": "stopped"}
 
 @app.get("/api/thumbnail/{pc_name}")
-async def get_thumbnail(pc_name: str, auth: dict = Depends(require_auth)):
+async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin)):
+    # F1: ekran önizlemesi salt-okur viewer'a kapalı (yalnız admin/superadmin)
     if pc_name not in manager.active_agents: return {"status": "error", "image": None}
     loop = asyncio.get_event_loop()
     fut = loop.create_future()
@@ -1611,8 +1671,12 @@ async def get_thumbnail(pc_name: str, auth: dict = Depends(require_auth)):
             manager.pending_thumbnails[pc_name].remove(fut)
 
 @app.post("/api/remote_input")
-async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_auth)):
+async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_admin)):
     target = data.device
+    # F1: uzaktan girdi yalnızca admin + o cihaz için AÇIK denetim oturumu olan kullanıcıdan
+    if not manager.user_has_session(auth.get("sub"), target):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Uzaktan girdi için o cihazda açık bir denetim oturumu gerekir.")
     sent = await manager.send_remote_input_to_vision(data.dict(), target)
     if not sent:
         if target in manager.active_agents:
