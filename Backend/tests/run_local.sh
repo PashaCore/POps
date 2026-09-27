@@ -18,3 +18,4 @@ python tests/test_security.py
 python tests/test_2fa.py
 python tests/test_agent_authz.py
 python tests/test_remote_authz.py
+python tests/test_f4_accountability.py

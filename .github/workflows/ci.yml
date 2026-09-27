@@ -209,3 +209,4 @@ jobs:
           python Backend/tests/test_2fa.py
           python Backend/tests/test_agent_authz.py
           python Backend/tests/test_remote_authz.py
+          python Backend/tests/test_f4_accountability.py

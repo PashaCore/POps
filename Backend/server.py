@@ -57,9 +57,10 @@ CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 limiter = Limiter(key_func=get_remote_address)
 security_scheme = HTTPBearer(auto_error=False)
 
-def create_jwt(username: str, role: str) -> str:
+def create_jwt(username: str, role: str, token_version: int = 0) -> str:
     expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=JWT_EXPIRE_H)
-    return jwt.encode({'sub': username, 'role': role, 'exp': expire}, JWT_SECRET, algorithm=JWT_ALGO)
+    return jwt.encode({'sub': username, 'role': role, 'tv': int(token_version or 0), 'exp': expire},
+                      JWT_SECRET, algorithm=JWT_ALGO)
 
 def verify_jwt(token: str) -> dict:
     try:
@@ -74,6 +75,27 @@ def verify_jwt(token: str) -> dict:
         return None
     return payload
 
+async def verify_session(payload: Optional[dict]) -> Optional[dict]:
+    """JWT imza/exp doğrulandıktan SONRA, oturumu DB'ye karşı kontrol eder (F4 iptal):
+    - kullanıcı silinmişse (satır yok) reddet;
+    - JWT'deki token_version DB'dekiyle uyuşmuyorsa reddet (rol/şifre değişimi eski jetonları geçersizler);
+    - ROLÜ JWT iddiasından DEĞİL, DB'den döndür (rol düşürme anında geçerli olur).
+    Eski (tv iddiası olmayan) jetonlar tv=0 sayılır (geçiş uyumu)."""
+    if not payload:
+        return None
+    sub = payload.get('sub')
+    if not sub:
+        return None
+    try:
+        rows = await execute_query("SELECT role, token_version FROM users WHERE username=$1", (sub,), fetch=True)
+    except Exception:
+        return None
+    if not rows:
+        return None
+    if int(payload.get('tv', 0)) != int(rows[0].get('token_version') or 0):
+        return None
+    return {'sub': sub, 'role': rows[0].get('role')}
+
 async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security_scheme)):
     token = creds.credentials if creds else request.cookies.get(JWT_COOKIE_NAME)
     if not token:
@@ -82,10 +104,10 @@ async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = D
     # (başka bir site bu başlığı CORS izni olmadan gönderemez)
     if not creds and request.method not in CSRF_SAFE_METHODS and request.headers.get('X-Requested-With') != 'XMLHttpRequest':
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='CSRF doğrulaması başarısız')
-    payload = verify_jwt(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Geçersiz veya süresi dolmuş token')
-    return payload
+    session = await verify_session(verify_jwt(token))
+    if not session:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Geçersiz, süresi dolmuş ya da iptal edilmiş oturum')
+    return session
 
 async def require_admin(payload: dict = Depends(require_auth)):
     if payload.get('role') not in ['admin', 'superadmin']:
@@ -497,7 +519,7 @@ def _login_success(u: dict) -> dict:
         "role": u['role'],
         "username": u['username'],
         "permissions": u.get('permissions', '[]'),
-        "token": create_jwt(u['username'], u['role']),
+        "token": create_jwt(u['username'], u['role'], u.get('token_version', 0)),
     }
 
 async def _mark_login(user_id: int):
@@ -508,7 +530,7 @@ async def _mark_login(user_id: int):
 @limiter.limit("10/minute")
 async def admin_login(request: Request, data: AdminLoginInput):
     user = await execute_query(
-        "SELECT id, username, role, permissions, password_hash, totp_enabled, totp_secret "
+        "SELECT id, username, role, permissions, password_hash, totp_enabled, totp_secret, token_version "
         "FROM users WHERE username = $1",
         (data.username,), fetch=True
     )
@@ -550,7 +572,7 @@ async def admin_login_totp(request: Request, data: TotpLoginInput):
     if not username:
         raise HTTPException(status_code=401, detail="Oturum doğrulaması süresi doldu, tekrar giriş yapın")
     user = await execute_query(
-        "SELECT id, username, role, permissions, totp_enabled, totp_secret FROM users WHERE username = $1",
+        "SELECT id, username, role, permissions, totp_enabled, totp_secret, token_version FROM users WHERE username = $1",
         (username,), fetch=True)
     if not user or not user[0].get('totp_enabled'):
         raise HTTPException(status_code=401, detail="Geçersiz istek")
@@ -660,12 +682,14 @@ async def update_user(user_id: int, data: UserUpdateInput, auth=Depends(require_
     if current[0]["role"] == 'superadmin' and data.role != 'superadmin' and await _superadmin_count(exclude_id=user_id) == 0:
         raise HTTPException(status_code=400, detail="Son superadmin hesabının rolü düşürülemez.")
     try:
+        # F4: her düzenlemede token_version artar → bu kullanıcının eldeki eski JWT'leri anında
+        # geçersiz olur (şifre sıfırlama/rol düşürme sonrası 12 saat beklenmez).
         if data.password:
             hashed_pw = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt()).decode()
-            await execute_query("UPDATE users SET username=$1, password_hash=$2, role=$3, permissions=$4 WHERE id=$5",
+            await execute_query("UPDATE users SET username=$1, password_hash=$2, role=$3, permissions=$4, token_version=token_version+1 WHERE id=$5",
                                (username, hashed_pw, data.role, permissions, user_id))
         else:
-            await execute_query("UPDATE users SET username=$1, role=$2, permissions=$3 WHERE id=$4",
+            await execute_query("UPDATE users SET username=$1, role=$2, permissions=$3, token_version=token_version+1 WHERE id=$4",
                                (username, data.role, permissions, user_id))
     except asyncpg.UniqueViolationError:
         raise HTTPException(status_code=409, detail="Bu kullanıcı adı zaten var.")
@@ -767,7 +791,10 @@ async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     # Karantina logunu yaz
     admin_name = auth.get('sub')
     await log_audit_event(data.target_pc, "Critical Security", f"🚨 KARANTİNA BAŞLATILDI by {admin_name} - Neden: {data.reason}", actor_id=admin_name, event_type="security.lockdown", category="security", action="lockdown", risk_level="critical", reason=data.reason)
-    
+    # F4(c): hassas admin işlemi → ajanların yazamadığı, hash-zincirli device_audit_logs'a da düş.
+    await add_audit_log(data.target_pc, "lockdown", "Karantina başlatıldı: %s" % admin_name,
+                        {"admin": admin_name, "reason": data.reason})
+
     # Cihazı karantina moduna al
     await execute_query("UPDATE clients SET is_quarantined = TRUE WHERE pc_name = $1", (data.target_pc,))
     
@@ -783,7 +810,9 @@ async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     # Karantina logunu yaz
     admin_name = auth.get('sub')
     await log_audit_event(data.target_pc, "Critical Security", f"✅ KARANTİNA KALDIRILDI by {admin_name} - Neden: {data.reason}", actor_id=admin_name, event_type="security.unlock", category="security", action="unlock", risk_level="info", reason=data.reason)
-    
+    await add_audit_log(data.target_pc, "unlock", "Karantina kaldırıldı: %s" % admin_name,
+                        {"admin": admin_name, "reason": data.reason})
+
     # Cihazı karantina modundan çıkar
     await execute_query("UPDATE clients SET is_quarantined = FALSE WHERE pc_name = $1", (data.target_pc,))
     
@@ -809,6 +838,8 @@ async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
     today = datetime.date.today()
     token = offline_bypass_code(pc_name, today)
     await log_audit_event(pc_name, "Security", "🔑 Çevrimdışı bypass kodu üretildi", actor_id=auth.get('sub', 'admin'), event_type="security.bypass_code", category="security", action="bypass_code", risk_level="medium")
+    await add_audit_log(pc_name, "bypass_code", "Çevrimdışı bypass kodu üretildi: %s" % auth.get('sub', 'admin'),
+                        {"admin": auth.get('sub')})
     return {"status": "success", "token": token, "valid_for": today.isoformat()}
 
 @app.post("/api/auth/login")
@@ -856,7 +887,12 @@ async def process_queue():
                     await execute_query("UPDATE tasks SET status = 'Running' WHERE id = $1", (task["id"],))
                     await manager.send_command({"action": "execute", "task_id": task["id"], "script_path": task["script_path"]}, pc)
                     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    await log_audit_event(pc, "Deploy", f"Görev: {task['script_path'][:50]}", actor_id="System/Queue", event_type="deploy.execution", category="system_maintenance", action="execute_queue", risk_level="info", meta_data={"raw_command": task["script_path"]})
+                    # F4(a): komutu KİMİN kuyrukladığını göster (eskiden 'System/Queue' idi, iz yoktu).
+                    actor = task.get("created_by") or "System/Queue"
+                    await log_audit_event(pc, "Deploy", f"Görev: {task['script_path'][:50]}", actor_id=actor, event_type="deploy.execution", category="system_maintenance", action="execute_queue", risk_level="info", meta_data={"raw_command": task["script_path"], "created_by": task.get("created_by")})
+                    # SYSTEM olarak komut çalıştırma yüksek-değerli olay → hash-zincirli, ajanların yazamadığı loga da düş.
+                    await add_audit_log(pc, "execute", "SYSTEM komutu çalıştırıldı (kuyruk: %s)" % actor,
+                                        {"task_id": task["id"], "created_by": task.get("created_by"), "command": (task["script_path"] or "")[:200]})
                     available_slots -= 1
 
 _AUDIT_CHAIN_LOCK = 0x504F6175  # 'POau' — denetim zinciri eklemelerini serileştirir
@@ -947,13 +983,13 @@ async def reconcile_device(claimed_hwid: str, dna_payload: dict, client_ip: str,
 
 @app.websocket("/ws/panel")
 async def websocket_panel(websocket: WebSocket):
-    jwt_payload = verify_jwt(websocket.cookies.get(JWT_COOKIE_NAME) or "")
-    if not jwt_payload:
+    session = await verify_session(verify_jwt(websocket.cookies.get(JWT_COOKIE_NAME) or ""))
+    if not session:
         await websocket.accept()
         await websocket.close(code=4001, reason="Kimlik doğrulama hatası")
         return
-    username = jwt_payload.get("sub")
-    role = jwt_payload.get("role")
+    username = session.get("sub")
+    role = session.get("role")   # DB'den (iptal/rol-düşürme anında geçerli)
     await manager.connect_panel(websocket, username)
     try:
         while True:
@@ -1224,6 +1260,10 @@ async def get_tasks(limit: int = 1000, auth: dict = Depends(require_auth)):
 
 @app.post("/api/flush_queue")
 async def flush_queue(auth: dict = Depends(require_admin)):
+    # F4(b): tüm görev geçmişini silmeden ÖNCE, kimin sildiğini + kaç kayıt olduğunu hash-zincirli loga yaz.
+    cnt = await execute_query("SELECT COUNT(*) AS c FROM tasks", fetch=True)
+    await add_audit_log("*", "flush_queue", "Görev kuyruğu/geçmişi silindi: %s" % auth.get("sub"),
+                        {"admin": auth.get("sub"), "deleted": (cnt[0]["c"] if cnt else None)})
     await execute_query("DELETE FROM tasks")
     return {"status": "success"}
 
@@ -1528,9 +1568,10 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
             target_pcs.append({"pc": pc, "lab": res[0]["lab_name"] if res else "Bilinmeyen Lab"})
 
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    creator = auth.get("sub")   # F4(a): görevi kuyruklayan admin kaydedilir
     for target in target_pcs:
         for task in data.taskSequence:
-            await execute_query("INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at) VALUES ($1, $2, $3, 'Pending', $4)", (target["pc"], target["lab"], task.command, now))
+            await execute_query("INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by) VALUES ($1, $2, $3, 'Pending', $4, $5)", (target["pc"], target["lab"], task.command, now, creator))
     await process_queue()
     return {"status": "success"}
 
