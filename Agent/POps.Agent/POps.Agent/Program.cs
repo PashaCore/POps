@@ -25,6 +25,9 @@ namespace POpsAgent
             // 🚀 ÇALIŞMA DİZİNİNİ EXE KONUMUNA ZORLA
             Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
+            // Log klasörü her açılışta SYSTEM/Administrators'a kilitlenir (ilk log satırından önce)
+            POpsHelpers.SecureLogDirectory();
+
             // POpsHelpers ile sistem başlangıcını logluyoruz
             POpsHelpers.Log("AGENT", "========================================");
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor ({Worker.APP_VERSION})");

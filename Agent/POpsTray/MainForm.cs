@@ -159,7 +159,9 @@ namespace POpsTray
         {
             try
             {
-                File.AppendAllText(@"C:\POpsLogs\TrayLog.txt", $"[TRAY] Received: {jsonMsg}\n");
+                // Yalnızca mesaj türü; içerik (özellikle uzaktan tuş/fare olayları) loglanmaz
+                string kind = TrayLog.Describe(jsonMsg);
+                if (!kind.StartsWith("type=remote_input")) TrayLog.Write($"Alındı: {kind}");
 
                 if (jsonMsg.StartsWith("START_CAPTURE")) 
                 { 
@@ -296,7 +298,7 @@ namespace POpsTray
             }
             catch (Exception ex)
             {
-                File.AppendAllText(@"C:\POpsLogs\TrayLog.txt", $"[TRAY] Error: {ex.Message}\n{ex.StackTrace}\n");
+                TrayLog.Write($"Hata ({TrayLog.Describe(jsonMsg)}): {ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -351,7 +353,7 @@ namespace POpsTray
             }
             catch (Exception ex)
             {
-                File.AppendAllText(@"C:\POpsLogs\TrayLog.txt", $"[TRAY] Remote Input Error: {ex.Message}\n");
+                TrayLog.Write($"Uzaktan girdi uygulanamadı: {ex.GetType().Name}");
             }
         }
 

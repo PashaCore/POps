@@ -4,6 +4,9 @@ using System.Text.Json;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
 namespace POpsAgent
 {
     public static class POpsHelpers
@@ -43,12 +46,32 @@ namespace POpsAgent
         // ==========================================
         // 1. MERKEZİ VE NİZAMLI LOGLAMA
         // ==========================================
+        // C:\POpsLogs yalnızca SYSTEM ve Administrators'a açıktır (izin devralınmaz). C:\ altındaki varsayılan izinle
+        // oturum açan her kullanıcı buraya dosya ya da bağlantı (hardlink/junction) bırakabiliyor, SYSTEM olarak
+        // yazılan logu başka bir dosyaya yönlendirebiliyor ve logları okuyabiliyordu. Tepsi ve watchdog kullanıcı
+        // oturumunda çalıştığı için kendi loglarını %LOCALAPPDATA%\POps\Logs'a yazar.
+        public static void SecureLogDirectory()
+        {
+            try
+            {
+                var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+                var sec = new DirectorySecurity();
+                sec.SetAccessRuleProtection(true, false);
+                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+                var dir = new DirectoryInfo(LogDir);
+                if (dir.Exists) dir.SetAccessControl(sec);
+                else dir.Create(sec);
+            }
+            catch (Exception ex) { Log("HELPERS", $"{LogDir} izinleri ayarlanamadı: {ex.Message}", true); }
+        }
+
         public static void Log(string component, string message, bool isError = false)
         {
             try
             {
                 if (!Directory.Exists(LogDir))
-                    Directory.CreateDirectory(LogDir);
+                    SecureLogDirectory();
 
                 string dateStr = DateTime.Now.ToString("yyyyMMdd");
                 string logFile = Path.Combine(LogDir, $"POps_{dateStr}.log"); // Log dosya adı POps oldu

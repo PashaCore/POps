@@ -79,6 +79,7 @@ namespace POps.Installer
     {
         public string DataDir = @"C:\POpsData";
         public string SecureDir = @"C:\POpsData\secure";
+        public string LogDir = @"C:\POpsLogs";
         public IList<string> LegacyDirs;
 
         public static Layout Default => new Layout { LegacyDirs = DefaultLegacyDirs() };
@@ -350,6 +351,14 @@ namespace POps.Installer
             secure.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
             secure.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
             CreateOrSecure(layout.SecureDir, secure);
+
+            // C:\POpsLogs: SYSTEM olarak yazılan loglar; kullanıcılar okuyamaz, içine dosya/bağlantı bırakamaz
+            // (tepsi ve watchdog loglarını %LOCALAPPDATA%\POps\Logs'a yazar)
+            var logs = new DirectorySecurity();
+            logs.SetAccessRuleProtection(true, false);
+            logs.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
+            logs.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
+            if (layout.LogDir != null) CreateOrSecure(layout.LogDir, logs);
         }
 
         private static void CreateOrSecure(string dir, DirectorySecurity sec)
