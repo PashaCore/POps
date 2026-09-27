@@ -2,6 +2,7 @@
 
 Native install, **no Docker required** — the server uses your system's Python and
 PostgreSQL. Tested on AlmaLinux/RHEL/Rocky (`dnf`) and Debian/Ubuntu (`apt`).
+Docker is optional: to run the server with Docker Compose instead, see [`docker.md`](docker.md).
 
 ## One command
 

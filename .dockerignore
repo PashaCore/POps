@@ -1,0 +1,23 @@
+# Build context for docker/*.Dockerfile. Allowlist: everything is excluded unless re-included
+# below, which keeps .git, Agent/, Installer/ (and any agent build outputs), docs, local
+# .env files, venvs, private signing keys and runtime data out of the images.
+*
+!Backend
+!Dashboard
+!docker
+!keys/*.pub.pem
+!VERSION
+
+# Excluded again inside the allowed directories
+**/__pycache__
+**/*.py[cod]
+**/.env
+**/venv
+**/.venv
+Backend/tests
+Backend/storage
+Backend/updates
+Backend/releases
+# Server-specific files that are not in git
+Dashboard/.htaccess
+Dashboard/includes/config.php

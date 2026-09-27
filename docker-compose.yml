@@ -1,0 +1,75 @@
+# POps with Docker Compose. Optional: the native install (docs/installation.md) is the
+# primary path. Quick start: cp .env.example .env, fill in the values, then
+#     docker compose up -d --build
+# TLS, agents, upgrades and backups: docs/docker.md.
+name: pops
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:?set DB_USER in .env}
+      POSTGRES_PASSWORD: ${DB_PASS:?set DB_PASS in .env}
+      POSTGRES_DB: ${DB_NAME:?set DB_NAME in .env}
+      TZ: ${TZ:-Europe/Istanbul}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    logging: *logging
+    # No published port: only the backend talks to the database.
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Always the "db" service, whatever DB_HOST / DB_PORT say in .env.
+      DB_HOST: db
+      DB_PORT: "5432"
+      # Timestamps and the daily offline bypass code use local time: match the agents.
+      TZ: ${TZ:-Europe/Istanbul}
+    volumes:
+      - storage:/app/storage
+      - updates:/app/updates
+      - releases:/app/releases
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *logging
+    # No published port: reach it through the dashboard (/api, /ws, /updates, /download).
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/dashboard.Dockerfile
+    restart: unless-stopped
+    environment:
+      POPS_API_INTERNAL_URL: http://backend:8000
+      # Empty = trust X-Forwarded-For only from the container's gateway (a proxy on the host).
+      POPS_TRUSTED_PROXIES: ${POPS_TRUSTED_PROXIES:-}
+    ports:
+      # Plain HTTP; keep it on loopback and put a TLS reverse proxy in front.
+      - "${POPS_HTTP_BIND:-127.0.0.1}:${POPS_HTTP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  pgdata:
+  storage:
+  updates:
+  releases:
