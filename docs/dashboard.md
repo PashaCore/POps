@@ -20,6 +20,7 @@ the account is changed or deleted; any `401` from the API returns you to the log
 | Cihaz Yönetimi | `devices.php` | page permission `devices` |
 | Laboratuvarlar | `labs.php` | `labs` |
 | Görev Kuyruğu | `tasks.php` | `tasks` |
+| Yardım Masası | `helpdesk.php` | `helpdesk` (the ticket API needs `admin` or `superadmin`) |
 | POpsVision | `vision.php` | `vision` |
 | Dosya Dağıtımı | `deploy.php` | `deploy`; never for `viewer` |
 | Terminal | `terminal.php` | `terminal`; never for `viewer` |
@@ -33,8 +34,8 @@ A superadmin sees every page. Other users see the pages ticked under **Erişebil
 is created or edited (the **Terminal** permission is labelled "Orkestratör" there). These page permissions only
 control the panel; what a user may do through the API depends on the role ([`security.md`](security.md#roles)).
 Within pages, some controls are hidden by role, for example device deletion (superadmin only), the offline
-bypass key (admin and superadmin), the Windows Update buttons on **Raporlar** and the scheduled tasks on
-**Görev Kuyruğu** (admin and superadmin).
+bypass key (admin and superadmin), the Windows Update buttons and licence editing on **Raporlar** and the
+scheduled tasks on **Görev Kuyruğu** (admin and superadmin).
 
 ## Notifications (bell)
 
@@ -101,6 +102,24 @@ schedule is due, the server queues its command as normal tasks, so the concurren
 of each PC and the audit log apply as for any other command. Creating, pausing, running and deleting schedules is
 recorded with the user who did it.
 
+### Yardım Masası
+
+The helpdesk: tickets opened from the panel (**Yeni talep**) or sent by an agent from the PC.
+
+- Filter chips by status with counts (the default shows the active ones: open, in progress, waiting) and a search
+  over subject, text, reporter and computer name. The list refreshes every 30 seconds.
+- A ticket shows the reporter (and whether it came from the tray or the panel), the device with its lab and
+  online state, the foreground program when known, the category, the opening time, the text and the thread. Change **status**, **priority** and **assignee** (**Bana ata** assigns it to you) with
+  **Güncelle**; each change is added to the thread as an internal note.
+- Write a reply, or tick **İç not (yalnızca panelde görünür)** for an internal note. For a ticket from a PC, the
+  replies (never the internal notes) are what the agent can show to the user. Replying to an `open` ticket sets it
+  to "Yanıt bekleniyor".
+- Categories: Donanım, Yazılım, Ağ / İnternet, Yazıcı, Hesap / Şifre, Diğer.
+
+A new ticket from an agent raises a notification. The server side accepts tickets only from enrolled agents,
+with at most 5 open tickets per PC and 10 new tickets per hour; agents up to 0.1.4-alpha have no ticket function
+in the tray yet.
+
 ### POpsVision
 
 Lab cards, a wall of screen previews per lab, and a focus view for one PC with a live stream, remote control,
@@ -135,11 +154,16 @@ enabled local user and its network adapters, then restart the PC. `cls` clears t
 
 Superadmin page in five parts:
 
-1. **Sunucu**: running version, the state of GitHub `main` compared with the last self-update, incoming changes,
-   and **Sunucuyu güncelle** (panel self-update, see [`self-update.md`](self-update.md)).
+1. **Sunucu**: running version, the state of GitHub `main` compared with the last self-update, and
+   **Sunucuyu güncelle** (panel self-update, see [`self-update.md`](self-update.md)). When an update is available
+   the card lists what it brings ("Güncellemeyle gelecek yenilikler", the `CHANGELOG.md` entries on GitHub `main`
+   that the installed code does not have); otherwise "Bu sunucuda neler var" shows the notes of the running
+   version. The notes come from GitHub (in English) and are hidden when the server is offline. The commit list is
+   kept as a collapsed technical detail.
 2. **Ajan güncelleme**: step 1, the package: download and verify the latest GitHub release, or upload
-   `manifest.json`, `manifest.json.sig` and the MSI on an offline server; step 2, the targets: all agents, one lab
-   or selected online devices (with a shortcut to select outdated ones), then send.
+   `manifest.json`, `manifest.json.sig` and the MSI on an offline server; the release notes of the latest agent
+   release are shown here. Step 2, the targets: all agents, one lab or selected online devices (with a shortcut to
+   select outdated ones), then send.
 3. **Cihaz yetenekleri (terminal / Vision)**: per device, turn the terminal or Vision off, or clear a standing
    "off" request ("izin ver"; the agent itself is re-enabled only locally).
 4. **Bildirimler**: whether notifications are also sent out (**Dışarıya gönder**), the lowest severity to send
@@ -157,7 +181,7 @@ type `TÜMÜ` to confirm.
 
 ### Raporlar
 
-Fleet reports for the last 7, 30 or 90 days, in three tabs:
+Fleet reports for the last 7, 30 or 90 days, in four tabs:
 
 - **Özet**: devices (total, online, quarantined, enrolled), devices missing security updates, software coverage,
   high and critical events per day, agent versions, agent update results, the most-violated domains and the
@@ -167,21 +191,37 @@ Fleet reports for the last 7, 30 or 90 days, in three tabs:
 - **Windows güncellemeleri**: each device's Windows Update state (pending, security, critical, restart needed,
   last scan, last result; "bildirmedi" if it never reported). Admins can select online devices and use **Tara**,
   **Güvenlik güncellemelerini kur** or **Tümünü kur**; the PC is not restarted automatically.
+- **Lisanslar**: licence definitions compared with the software inventory: installed against allowed seats, free
+  seats, and the state (Uygun, Aşım, Bitiyor within 30 days, Süresi doldu), with a summary of problems. Open a
+  licence to see the devices that have it. Admins add (**Lisans ekle**), edit and delete licences: name, the text
+  matched in program names (**Eşleşme ifadesi**, plain text; while typing, the form lists the programs it matches),
+  an optional publisher filter, seats (empty = unlimited), type (Cihaz başına, Site / kampüs, Abonelik), end date
+  and notes. Licences over their seats, expired or ending within 30 days raise a notification once a day.
 
-**CSV indir** exports devices, software, Windows updates or the events of the chosen period.
+**CSV indir** exports devices, software, Windows updates, licences or the events of the chosen period.
 
-Software and Windows Update data come from agents 0.1.5-alpha and later; older agents show no data and ignore the
-scan and install commands.
+Software, Windows Update and licence data come from agents 0.1.5-alpha and later; older agents show no data and
+ignore the scan and install commands.
 
 ### Politikalar
 
-Edits the agent policy: the DNS categories, with a box of domains (one per line) for each category,
-**İhlalde Karantinaya Al** with **Karantina Eşiği**, and the **Kullanıcı Aydınlatma Metni** (fair-use text) that
-the tray shows to users. Only domains in a category's list, and their subdomains, are matched; an empty list
-matches nothing. Viewers see the page read-only.
+Edits the agent policy, in four parts:
 
-Agents up to 0.1.4-alpha do not start their DNS monitoring, so they report no violations yet. See
-[`configuration.md`](configuration.md#agent-policy-object).
+- **Ajanlarda durum**: whether a fair-use text is set, whether DNS detection is on and how many agents can run it
+  (0.1.5-alpha and later), and whether automatic quarantine is on.
+- **Aydınlatma ve adil kullanım metni**: the text the tray shows to users until they acknowledge it; empty means
+  none. **Örnek metni kullan** fills in an example to adapt (see also [`kvkk-aydinlatma.md`](kvkk-aydinlatma.md)).
+- **Yasaklı alan adı tespiti (DNS)**: a switch and a domain list (one per line) for each category: pornography,
+  illegal betting, terror propaganda, malware and phishing, and the school's own list (`okul_ozel`). Only listed
+  domains and their subdomains are matched; an empty list matches nothing. Matches are detected and reported, not
+  blocked; use the school's network filter to block.
+- **Otomatik karantina**: on or off, with the violation threshold. A PC that reaches it isolates itself from the
+  network except for the POps server, DNS and DHCP.
+
+**Kaydet** is enabled when there are unsaved changes. Viewers see the page read-only.
+
+Agents up to 0.1.4-alpha do not start their DNS monitoring, so DNS detection and automatic quarantine have no
+effect on them. See [`configuration.md`](configuration.md#agent-policy-object).
 
 ### Ayarlar
 

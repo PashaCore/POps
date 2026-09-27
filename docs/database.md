@@ -1,7 +1,7 @@
 # Database
 
 POps stores everything in one PostgreSQL database, accessed by the backend through an `asyncpg` pool
-(`min_size=5`, `max_size=100`). There is no SQLite or other storage backend. Connection settings are the
+(`DB_POOL_MIN` / `DB_POOL_MAX`, default 2 / 20 connections). There is no SQLite or other storage backend. Connection settings are the
 `DB_*` variables in [`configuration.md`](configuration.md).
 
 ## Migrations
@@ -44,12 +44,14 @@ tables from Python code at startup and never edit a migration that has already b
 | `0007_allow_reenroll.sql` | `clients.allow_reenroll` (one-time re-enrollment permission). |
 | `0008_token_version_and_task_actor.sql` | `users.token_version` (session revocation) and `tasks.created_by`. |
 | `0009_notifications_schedules_inventory.sql` | `notifications`, `scheduled_tasks`, `device_software`, `device_patch_status`. |
+| `0010_licenses_helpdesk.sql` | `licenses`, `tickets`, `ticket_messages`. |
 
 ## Tables
 
 Device-related tables are keyed by `pc_name`, which holds the device's hardware ID (`HW-…`), not its Windows
-host name. The host name is a separate column. There are no foreign keys between tables; consistency (for
-example when a lab is renamed or a device deleted) is kept by the application code.
+host name. The host name is a separate column. Apart from `ticket_messages` → `tickets`, there are no foreign
+keys between tables; consistency (for example when a lab is renamed or a device deleted) is kept by the
+application code.
 
 ### Devices and labs
 
@@ -82,6 +84,14 @@ Filled by agents from 0.1.5-alpha on; see [`agent.md`](agent.md#software-invento
 
 Deleting a device also deletes its rows in both tables.
 
+### Licences and helpdesk
+
+| Table | Contents |
+| --- | --- |
+| `licenses` | Licence definitions: `name`, `match_pattern` (text searched in installed program names, case-insensitive), `publisher` (optional filter), `seats` (`NULL` = unlimited), `license_type` (`per_device` / `site` / `subscription`), `expires_at` (date), `notes`, `created_by`, `created_at`. Usage is not stored; it is counted from `device_software` when read. |
+| `tickets` | Helpdesk tickets: `source` (`agent` / `panel`), `pc_name` (optional), `reporter`, `category`, `subject`, `body`, `status` (`open` / `in_progress` / `waiting` / `resolved` / `closed`), `priority` (`low` / `normal` / `high`), `assignee`, `created_at`, `updated_at`, `resolved_at`. |
+| `ticket_messages` | Thread of a ticket: `ticket_id` (foreign key, deleted with the ticket), `author`, `body`, `internal` (panel-only note; never returned to agents), `created_at`. Status, priority and assignee changes are recorded here as internal notes. |
+
 ### Panel users
 
 | Table | Contents |
@@ -100,7 +110,7 @@ Deleting a device also deletes its rows in both tables.
 | Table | Contents |
 | --- | --- |
 | `agent_logs_v2` | Event log shown on the Log pages: `pc_name`, `actor_id`, `event_type`, `category`, `action`, `risk_level`, `reason`, `message`, `meta_data` (JSONB), `timestamp`. Written by the server and by agents (`POST /api/logs/{pc}`). |
-| `device_audit_logs` | Security audit log that agents **cannot** write: enrollment, authentication rejections, identity changes, remote-control session starts, lockdown/unlock, bypass codes, SYSTEM command execution, queue flushes, update results, releases, enforcement, capability and re-enrollment changes, scheduled-task changes and runs, Windows Update scan/install requests, auto-enrollment and notification settings. Each row has `prev_hash` and `entry_hash` (SHA-256 chain). |
+| `device_audit_logs` | Security audit log that agents **cannot** write: enrollment, authentication rejections, identity changes, remote-control session starts, lockdown/unlock, bypass codes, SYSTEM command execution, queue flushes, update results, releases, enforcement, capability and re-enrollment changes, scheduled-task changes and runs, Windows Update scan/install requests, licence changes, agent self-quarantine and offline-bypass events, auto-enrollment and notification settings. Each row has `prev_hash` and `entry_hash` (SHA-256 chain). |
 | `enterprise_audit_logs` | Remote-control (Vision) sessions: session id, admin, role, target, start/end time, reason, mandatory flag, status. |
 | `notifications` | Entries under the panel's bell: `created_at`, `event`, `severity` (`info` / `medium` / `high` / `critical`), `pc_name`, `title`, `detail`, `channels` (where it was sent: `email`, `webhook`), `delivery_error`, `is_read`. Written only by the server. |
 | `agent_logs` | Old log table from before `agent_logs_v2`. Kept, no longer written. |
@@ -123,14 +133,15 @@ returns the first broken entry. Rows written before migration `0004` have no has
 | `verified_release_manifest` | release upload / GitHub fetch | The staged release's manifest (JSON); `deploy-update` sends this release. |
 | `auto_enroll_lab` | Labs page ("Oto-Kayıt") | JSON `{"lab": ..., "until": "YYYY-MM-DD"}`: lab for devices connecting for the first time up to that date. |
 | `notify_enabled`, `notify_min_severity`, `notify_email_to`, `notify_webhook_url` | **Sistem & Sürüm** → Bildirimler | Whether and where notifications are sent out. |
+| `license_check_date` | scheduler | Date (`YYYY-MM-DD`, server date) of the last daily licence check, so the check and its notifications run once a day. |
 
 See [`configuration.md`](configuration.md#runtime-settings-database) for how to change them.
 
 ### Timestamps
 
 Most timestamp columns of the older tables are `TEXT` in the form `YYYY-MM-DD HH:MM:SS`, in the server's local
-time. The newer tables (`enroll_tokens`, `agent_secrets`, `schema_migrations` and the four tables of migration
-`0009`) use `TIMESTAMPTZ`.
+time. The newer tables (`enroll_tokens`, `agent_secrets`, `schema_migrations` and the tables of migrations
+`0009` and `0010`) use `TIMESTAMPTZ` (`licenses.expires_at` is a `DATE`).
 
 ## Useful queries
 

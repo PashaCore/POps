@@ -11,8 +11,9 @@ The server runs on Linux with systemd (`install.sh` is tested on AlmaLinux/RHEL/
 PostgreSQL and Python 3.9 or newer. The agent runs on 64-bit Windows with the .NET 8 Desktop Runtime.
 
 **How many PCs can one server handle?**
-The measured baseline is in [`BENCHMARKS.md`](../BENCHMARKS.md): one backend worker comfortably serves a lab to a
-few hundred agents. The backend runs as a single worker.
+The measured numbers are in [`BENCHMARKS.md`](../BENCHMARKS.md): one backend worker held 1000 connected agents with
+no errors; hundreds of agents sending full software lists at the same moment raise latency above a second. The backend
+runs as a single worker, so plan one server per school.
 
 **Is the panel available in English?**
 No. The panel and most server messages are in Turkish.

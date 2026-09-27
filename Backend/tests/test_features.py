@@ -349,6 +349,16 @@ def main():
     )
     st = asyncio.run(q("SELECT is_quarantined FROM clients WHERE pc_name = 'HW-FT1'"))[0]["is_quarantined"]
     chk(st is False, "bypass sonrası karantina bayrağı kalktı")
+    req(
+        "/api/logs/HW-FT1",
+        body={**log_q, "event_type": "agent.unlock_failed", "action": "unlock_failed"},
+        headers=agent1,
+    )
+    s, lst = req("/api/notifications", ad)
+    chk(
+        any(n["event"] == "unlock_failed" and n["pc_name"] == "HW-FT1" for n in lst.get("items", [])),
+        "karantina kaldırılamadı bildirimi",
+    )
 
     print("== politikalar ve oto-kayıt")
     pol = {"fair_use_text": "ft", "dns_categories": ["kumar"], "auto_quarantine": False, "quarantine_threshold": 3}

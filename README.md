@@ -65,7 +65,7 @@ Instead of hiding administrative activity from users, POps embraces **transparen
 
 ## 🏗 Architecture
 
-POps relies on a dual-socket, asynchronous architecture to stay responsive across a lab or a multi-lab fleet. See [`BENCHMARKS.md`](BENCHMARKS.md) for measured numbers — a first honest baseline: one un-tuned worker comfortably serves a lab / a few hundred agents on modest hardware, and horizontal scaling (more workers + Redis fan-out) is on the roadmap. We do not quote "thousands" without measuring it.
+POps relies on a dual-socket, asynchronous architecture to stay responsive across a lab or a multi-lab fleet. See [`BENCHMARKS.md`](BENCHMARKS.md) for measured numbers — a first honest baseline: one worker held 1000 connected agents with no errors on an 8-core host; hundreds of agents sending full software lists at the same moment push p95 latency above a second, so plan one worker per school. Horizontal scaling (more workers + Redis fan-out) is on the roadmap.
 
 
 ```mermaid
@@ -102,7 +102,7 @@ graph TD
 ```
 
 
-For a deep dive into the 5-component agent system (Agent, Tray, Vision, Watchdog, Updater), read our full [Architecture Specification](docs/architecture.md).
+For a deep dive into the agent (service, tray with screen capture, watchdog and updater, sharing one helper library), read the [Architecture Specification](docs/architecture.md).
 
 ---
 
@@ -146,23 +146,8 @@ For a deep dive into the 5-component agent system (Agent, Tray, Vision, Watchdog
 
 ## 🚀 Roadmap
 
-### v1.0 (Current Phase)
-- [x] Dashboard & System Overview
-- [x] Device Inventory & Heartbeats
-- [x] Remote Assistance (Vision)
-- [x] Mass Software Deployment Engine
-- [x] Real-time Remote Terminal
-- [x] Signed agent updates with automatic rollback, server self-update
-- [x] Scheduled tasks, notifications (bell, e-mail, webhook), reports
-- [ ] Software inventory and Windows update status (server ready; agent side in 0.1.5-alpha)
-
-### v2.0 (Coming Next)
-- [ ] Active Directory (LDAP) Integration
-- [ ] Advanced Group Policies
-- [ ] Extensible Plugin SDK
-- [ ] Linux & macOS Agents
-
-*See the full [ROADMAP.md](ROADMAP.md) for more details.*
+What is done, what is being built and what is planned is kept in one place: [ROADMAP.md](ROADMAP.md). The
+changes in each release are in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

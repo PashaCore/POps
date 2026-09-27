@@ -37,8 +37,8 @@ still use the `/api/admin/2fa/*` endpoints directly.
 
 | Role | Can |
 | --- | --- |
-| `viewer` | Read devices, labs, inventory, software, Windows Update state, logs, tasks, packages and reports (including CSV exports). Cannot see screen previews or live frames, cannot send remote input, and cannot open the Deployment, Terminal or Settings pages. |
-| `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, scheduled tasks, Windows Update scan and install, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies, the notification bell. |
+| `viewer` | Read devices, labs, inventory, software, Windows Update state, licences, logs, tasks, packages and reports (including CSV exports). Cannot see screen previews or live frames, cannot send remote input, and cannot open the Deployment, Terminal or Settings pages. |
+| `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, scheduled tasks, Windows Update scan and install, licence definitions, helpdesk tickets, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies, the notification bell. |
 | `superadmin` | Additionally: panel users, agent releases and updates, enrollment tokens, agent-auth enforcement, re-enrollment, capability policy, server self-update, audit-chain verification, notification settings. |
 
 Things to keep in mind:
@@ -71,10 +71,15 @@ Things to keep in mind:
   for example after a reinstall behind freeze software.
 - **Binding.** On the agent HTTP endpoints the authenticated device ID must match the device being written;
   otherwise `403`.
-- **Newer agent endpoints are enrolled-only.** The software inventory and Windows Update endpoints
-  (`POST /api/software/{hw_id}`, `POST /api/patches/{hw_id}`) require a valid device secret even while enforcement
-  is off (`401` otherwise). Only agents from 0.1.5-alpha on send this data, so the accept-both exception for
+- **Newer agent endpoints are enrolled-only.** The software inventory, Windows Update and helpdesk endpoints
+  (`POST /api/software/{hw_id}`, `POST /api/patches/{hw_id}`, `/api/tickets/agent/{hw_id}`) require a valid device
+  secret even while enforcement is off (`401` otherwise, `403` for another device). The accept-both exception for
   older agents does not apply there.
+- **State changes need an enrolled agent.** Events on the older, accept-both endpoints can change something
+  beyond the event log only when they come from an enrolled agent: `agent.auto_quarantine` and
+  `agent.offline_bypass` on `POST /api/logs/{hw_id}` set or clear the device's quarantine flag (and are audited and
+  notified), and `/api/policy_alert` raises a notification. From a client without a valid secret they are only
+  logged.
 - **Transport.** The agent refuses a non-loopback `http://` server and validates the server certificate with the
   Windows defaults, so credentials never travel in clear text. A self-signed certificate must be trusted by the
   PCs.
@@ -122,11 +127,16 @@ and/or a webhook.
 | Agent update failed (`rollback_failed`, `error`, `rejected`, …, or the agent is no longer managed) | critical |
 | Agent update rolled back | high |
 | Update sent, but no result from the agent after 20 minutes | high |
-| DNS policy violation reported by an agent | high |
+| DNS policy violation reported by an enrolled agent | high |
 | Device quarantined by an admin | high |
+| Enrolled agent quarantined itself at the DNS violation threshold | high |
 | Scheduled task could not be queued | high |
+| Licence over its seats, or expired (checked once a day) | high |
 | Update did not start (machine unchanged), or waits for a restart | medium |
 | Agent refused a disabled capability | medium |
+| Quarantine lifted on the PC with an offline bypass code (enrolled agent) | medium |
+| New helpdesk ticket from an agent | medium |
+| Licence ends within 30 days (checked once a day) | medium |
 | Agent updated successfully | info |
 
 The `risk_level` an agent writes with `POST /api/logs` never creates a notification, so a device that is not
@@ -144,6 +154,30 @@ the background with a 10-second timeout and never blocks or breaks the event tha
 read only from the backend `.env` and are never stored in the database or shown in the panel. Changes to the
 notification settings are written to the audit log.
 
+**Webhook target guard (SSRF).** The webhook host is resolved, and **every** address it resolves to must be a
+public internet address; loopback, private ranges, link-local (including the cloud metadata address
+`169.254.169.254`), CGNAT, reserved, multicast and unspecified addresses are refused. The check runs when the
+settings are saved or tested and again before each delivery. The connection is then made to the checked address
+(so a DNS answer that changes in between does not help), TLS is still verified against the host name, and
+redirects are not followed. A school that wants to post to a system inside its own network opts in with
+`NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` in `.env`; multicast and unspecified addresses stay refused even then.
+
+## Helpdesk
+
+- Agents can open tickets and read their own device's tickets only with a valid device secret (see above).
+- Per device at most 5 tickets may be open (open, in progress or waiting) and at most 10 may be opened per hour;
+  beyond that the agent gets `429`.
+- Ticket text is stored as plain text and escaped in the panel. Internal notes (and the automatic notes that record
+  status, priority and assignee changes) are shown only in the panel; the agent endpoint never returns them.
+- The panel endpoints require the `admin` role.
+
+## Licences
+
+Licence patterns are plain text matched with a case-insensitive "contains" against installed program names (and
+optionally the publisher). `%`, `_` and `\` are rejected in the pattern and the publisher filter, so a definition
+cannot use SQL wildcards to match everything. Creating, changing and deleting licences is written to the audit
+log; reading them is open to every signed-in role.
+
 ## Reports and CSV export
 
 The report and export endpoints are readable by every signed-in role (the **Raporlar** page itself needs the
@@ -155,7 +189,7 @@ programs then show them as text instead of running them as formulas.
 
 | Log | Written by | Use |
 | --- | --- | --- |
-| `device_audit_logs` | server only (agents cannot write it) | Security record: enrollment and rejections, remote-control session starts, lockdown/unlock, bypass codes, SYSTEM commands with their requester, scheduled-task changes and runs, Windows Update scan/install requests, update results, releases, enforcement and capability changes, auto-enrollment and notification settings. Hash-chained. |
+| `device_audit_logs` | server only (agents cannot write it) | Security record: enrollment and rejections, remote-control session starts, lockdown/unlock, bypass codes, SYSTEM commands with their requester, scheduled-task changes and runs, Windows Update scan/install requests, licence changes, agent self-quarantine and offline-bypass events, update results, releases, enforcement and capability changes, auto-enrollment and notification settings. Hash-chained. |
 | `agent_logs_v2` | server and agents | Operational event log shown on the Log pages. |
 | `enterprise_audit_logs` | server | Remote-control sessions (who, target, reason, mandatory, start/end). |
 
@@ -172,7 +206,7 @@ restrict database access.
 | `GET /api/agent_policies` | Agents read the policy; it holds no secrets. |
 | `/download/<file>` | Deployment packages for agents. Do not upload anything confidential on the Deployment page. |
 | `/updates/<file>` | The agent MSI being distributed (verified by agents against the signed manifest). |
-| `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. The software and Windows Update endpoints always require them. |
+| `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. The software, Windows Update and helpdesk endpoints always require them. |
 
 ## Operator checklist
 

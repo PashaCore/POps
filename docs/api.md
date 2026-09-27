@@ -4,8 +4,8 @@ The POps backend (FastAPI) serves a REST API under `/api/` and WebSockets under 
 reverse proxy both are reached on the panel's own origin, for example `https://pops.example.com/api/devices`.
 The backend itself listens on `127.0.0.1:8000` (see [`installation.md`](installation.md)).
 
-The tables below were produced from the running app's route table (`server.app.routes`) together with the
-authentication dependency of each route, and each purpose line was checked against the endpoint code in
+The tables below were produced from the running app's route table (`server.app.routes`: 102 HTTP routes, 3
+WebSocket routes and 2 static mounts) together with the authentication dependency of each route, and each purpose line was checked against the endpoint code in
 `Backend/pops/routers/` and `Backend/system_routes.py`.
 
 There is no interactive API documentation: the app is created with `docs_url=None`, `redoc_url=None` and
@@ -38,8 +38,8 @@ their existing tokens stop working immediately.
 
 | Dependency | Who passes | Used for |
 | --- | --- | --- |
-| `require_auth` | any signed-in user (`viewer`, `admin`, `superadmin`) | reading data (including reports and CSV exports), own 2FA settings |
-| `require_admin` | `admin`, `superadmin` | day-to-day operations (devices, labs, tasks and scheduled tasks, remote control, policies, Windows Update commands, the notification list) |
+| `require_auth` | any signed-in user (`viewer`, `admin`, `superadmin`) | reading data (including reports, licences and CSV exports), own 2FA settings |
+| `require_admin` | `admin`, `superadmin` | day-to-day operations (devices, labs, tasks and scheduled tasks, remote control, policies, Windows Update commands, licence definitions, helpdesk tickets, the notification list, release notes) |
 | `require_superadmin` | `superadmin` | users, releases and agent updates, enrollment, enforcement, capabilities, self-update, audit verification, notification settings |
 
 Missing or invalid token: `401`. Valid token but insufficient role, or a failed CSRF check: `403`.
@@ -79,6 +79,7 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | --- | --- | --- | --- |
 | GET | `/api/health` | none | Database reachability and running version: `{"status": "ok" \| "degraded", "database": bool, "version": "..."}`. Used by the deploy health check. |
 | GET | `/api/system/version` | require_admin | Running version, latest GitHub release, staged (verified) agent release, server update status (commits on GitHub `main` since the last self-update), enrolled/total agent counts, `enforce_agent_auth`. `?check=true` bypasses the hourly GitHub cache. Offline-safe: GitHub failures give `latest: null`. |
+| GET | `/api/system/release-notes` | require_admin | Release notes parsed from `CHANGELOG.md` on GitHub: `installed` (the running version and Unreleased entries of the installed commit), `incoming` (entries on GitHub `main` that the installed commit does not have; needs a successful self-update so the installed commit is known) and `agent` (notes of the latest GitHub release). `{"available": false}` when GitHub cannot be reached. The `main` copy is cached for 10 minutes. |
 | GET | `/api/system/audit-verify` | require_superadmin | Walks the hash chain of `device_audit_logs`; returns `{"ok": true, "checked": n}` or the first broken entry id. |
 
 ### Panel login, 2FA and users
@@ -171,9 +172,9 @@ See [`vision.md`](vision.md) for the session rules.
 
 Meant for agents, not for the dashboard. Agents up to 0.1.4-alpha send `POST /api/inventory/{hw_id}` (when the
 server asks for hardware data) and have code for `POST /api/policy_alert`; they do not call the sign-in or log
-endpoints. All of these accept the same agent authentication (accept-both while enforcement is off). The
-software and Windows Update endpoints are listed [below](#software-inventory-and-windows-updates); they are
-stricter.
+endpoints. All of these accept the same agent authentication (accept-both while enforcement is off), but the
+side effects listed below happen only for an **enrolled** agent (valid `X-Agent-Id` + `X-Agent-Secret`). The
+software, Windows Update and helpdesk endpoints are stricter and are listed in their own sections.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
@@ -181,8 +182,18 @@ stricter.
 | POST | `/api/auth/failed` | agent_http_auth | Failed sign-in event. |
 | POST | `/api/auth/logout` | agent_http_auth | Sign-out event; clears the current user. |
 | POST | `/api/inventory/{pc_name}` | agent_http_auth | Hardware inventory (CPU, RAM, board, GPU, OS, IP, MAC, disks). |
-| POST | `/api/logs/{pc_name}` | agent_http_auth | Event log entry into `agent_logs_v2`. |
-| POST | `/api/policy_alert` | agent_http_auth | `{hw_id, domain, category}`: DNS policy violation. |
+| POST | `/api/logs/{pc_name}` | agent_http_auth | Event log entry into `agent_logs_v2`. Two event types also change the device state when an enrolled agent sends them (see below). |
+| POST | `/api/policy_alert` | agent_http_auth | `{hw_id, domain, category}`: DNS policy violation, logged as a high-risk event. A notification is raised only when an enrolled agent sends it (one per device and category per 10 minutes). |
+
+Special `event_type` values on `POST /api/logs/{pc_name}`, applied only for an enrolled agent:
+
+| `event_type` | Effect |
+| --- | --- |
+| `agent.auto_quarantine` | The agent quarantined itself at the DNS violation threshold: the device is marked quarantined, the event is written to the hash-chained audit log (`auto_quarantine`), and a high-severity notification is raised. |
+| `agent.offline_bypass` | The quarantine was lifted on the PC with an offline bypass code: the quarantine flag is cleared, the event is audited (`offline_bypass`), and a medium-severity notification is raised. |
+
+From an agent without a valid secret these are stored as ordinary log entries and change nothing. Agents up to
+0.1.4-alpha do not send them.
 
 ### Scheduled tasks
 
@@ -232,7 +243,44 @@ taken as device IDs.
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/reports/summary` | require_auth | `?days=` (1–365, default 30). Device counts (total, online, quarantined, enrolled, per lab), agent versions, Windows Update and software coverage, events by risk and by day, most-violated domains, devices with the most high/critical events, and agent update results in the period. |
-| GET | `/api/reports/export` | require_auth | `?kind=devices \| software \| patches \| events&days=`: CSV download (semicolon-separated, UTF-8 with BOM). `events` covers the chosen period, at most 50000 rows. Cells starting with `=`, `+`, `-`, `@`, tab or carriage return are prefixed with `'` so spreadsheets do not run them as formulas. |
+| GET | `/api/reports/export` | require_auth | `?kind=devices \| software \| patches \| licenses \| events&days=`: CSV download (semicolon-separated, UTF-8 with BOM). `events` covers the chosen period, at most 50000 rows. Cells starting with `=`, `+`, `-`, `@`, tab or carriage return are prefixed with `'` so spreadsheets do not run them as formulas. |
+
+### Licences
+
+A licence counts the devices whose installed programs match it, using the software inventory (agents 0.1.5-alpha
+and later). A program matches when its name contains `match_pattern` and, if `publisher` is set, its publisher
+contains that text (both case-insensitive). Every change is written to the hash-chained audit log.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/licenses` | require_auth | All licences with `installed`, `free` and `state` (`ok`, `over`, `expiring` within 30 days, `expired`), plus a `summary` count per state. |
+| GET | `/api/licenses/{license_id}/devices` | require_auth | Devices with a matching program, and the program name and version. |
+| POST | `/api/licenses` | require_admin | `{name, match_pattern, publisher?, seats?, license_type: per_device \| site \| subscription, expires_at?: "YYYY-MM-DD", notes?}`. `seats` empty means unlimited. `match_pattern` is 2–200 characters of plain text; `%`, `_` and `\` are rejected in the pattern and the publisher filter. |
+| POST | `/api/licenses/{license_id}` | require_admin | Replaces a licence definition (same body). |
+| DELETE | `/api/licenses/{license_id}` | require_admin | Deletes a licence definition. |
+
+Once a day the scheduler raises a notification for each licence that is over its seats (high), expired (high) or
+ends within 30 days (medium).
+
+### Helpdesk
+
+Tickets are opened from the panel or by an agent on behalf of the signed-in user. Categories: `donanim`,
+`yazilim`, `ag`, `yazici`, `hesap`, `diger`; statuses: `open`, `in_progress`, `waiting`, `resolved`, `closed`;
+priorities: `low`, `normal`, `high`.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/tickets/agent/{pc_name}` | agent_http_auth, enrolled only | `{subject, body?, category?, reporter?}`: opens a ticket for that device. `429` when the device already has 5 open tickets (open, in progress or waiting) or opened 10 in the last hour. Raises a medium-severity notification. |
+| GET | `/api/tickets/agent/{pc_name}` | agent_http_auth, enrolled only | The device's latest 20 tickets with their status and the replies, **without** internal notes. |
+| GET | `/api/tickets` | require_admin | Ticket list: `?status=active` (default: open, in progress, waiting) or one status, `?q=` searches subject, text, reporter and host name; at most 300, high priority first; plus counts per status. |
+| GET | `/api/tickets/{ticket_id}` | require_admin | One ticket with the device's current state and the full thread, internal notes included. |
+| POST | `/api/tickets` | require_admin | `{subject, body?, category?, priority?, pc_name?, reporter?}`: opens a ticket from the panel (reporter defaults to the current user). |
+| POST | `/api/tickets/{ticket_id}/update` | require_admin | `{status?, priority?, assignee?}`. Each change is added to the thread as an internal note. |
+| POST | `/api/tickets/{ticket_id}/messages` | require_admin | `{body, internal}`. A reply (`internal: false`) to an `open` ticket sets it to `waiting`; an internal note does not change the status. |
+
+The agent endpoints require a valid `X-Agent-Id` + `X-Agent-Secret` for that device even while enforcement is
+off (`401` without, `403` for another device). The subject must have at least 3 characters. Agents up to
+0.1.4-alpha have no ticket function in the tray.
 
 ### Signed releases and agent updates
 
@@ -309,7 +357,7 @@ taken as device IDs.
   10 seconds have passed since the last check, the user's session is re-checked against the database; a revoked
   session closes the socket (`4001`).
 - **Server → panel:** `terminal_output` (task results), `update_result`, `capabilities`, `capability_denied`,
-  `vision_rejected`; `thumbnail` replies go to admin/superadmin panels only; live `stream_frame`s go only to the
+  `vision_rejected`, `ticket_new` (a ticket opened by an agent); `thumbnail` replies go to admin/superadmin panels only; live `stream_frame`s go only to the
   session holder (see above).
 
 ## Example

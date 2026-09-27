@@ -531,6 +531,11 @@ async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depend
             )
         else:
             await notify("offline_bypass", "medium", "Çevrimdışı bypass kodu kullanıldı, karantina kalktı", "", pc_name)
+    elif agent_id is not None and data.event_type == "agent.unlock_failed":
+        # Karantina kaldırılmak istendi ama ajan ağ yalıtımını kaldıramadı: kilit sürüyor, yönetici bilsin
+        await notify(
+            "unlock_failed", "high", "Karantina kaldırılamadı, ağ yalıtımı sürüyor", (data.reason or "")[:300], pc_name
+        )
     return {"status": "success"}
 
 

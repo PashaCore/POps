@@ -176,6 +176,10 @@ signed updates; install the MSI on them once.
   after it was written; `first_broken_id` tells where. Find out who has write access to the database.
 - **The panel shows no GitHub version.** The server cannot reach GitHub; the check is skipped silently. Offline
   servers use the manual release upload.
+- **No release notes on Sistem & Sürüm.** They are read from `CHANGELOG.md` on GitHub (`raw.githubusercontent.com`)
+  and are hidden when the server cannot reach it. The list of what an update brings also needs the installed
+  commit, which is known only after a successful panel self-update; until then the card shows the notes of the
+  running version (and the unreleased entries) as they are on GitHub `main`.
 
 ## Quarantine and offline bypass
 
@@ -220,6 +224,12 @@ signed updates; install the MSI on them once.
   - A failed delivery is marked "gönderilemedi" under the bell; the error text is in the `delivery_error` field of
     `GET /api/notifications` and in the `notifications` table.
   - At most 30 notifications are sent out per 10 minutes; further ones are only shown under the bell.
+- **Saving or testing the webhook fails with `Webhook adresi kabul edilmedi: adres iç ağa ya da yerel bir adrese
+  çıkıyor (…)`.** The webhook host resolves to a loopback, private, link-local or otherwise non-public address,
+  which is refused by default. For a receiver inside the school network set `NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` in the
+  backend `.env` and restart the backend. `adres çözülemedi` means the server cannot resolve the host name.
+- **The webhook test reports `HTTP 3xx (yönlendirme izlenmez)`.** The receiver answered with a redirect, which is
+  not followed. Use the final URL (for example with `https://` instead of `http://`).
 
 ## Scheduled tasks
 
@@ -245,3 +255,27 @@ signed updates; install the MSI on them once.
 - **Scan or install did nothing.** Commands go only to devices that are online at that moment; the reply lists the
   skipped ones (`skipped_offline`). Results arrive when the agent reports them; the page reloads the list 15 seconds
   after sending.
+
+## Licences
+
+- **A licence shows 0 installed.**
+  - Installed programs are reported by agents 0.1.5-alpha and later only. Check **Raporlar** → **Yazılım**: if no
+    device reports software yet, every licence counts 0.
+  - The **Eşleşme ifadesi** must appear in the program name as the inventory shows it (case does not matter). Type
+    it in the licence form and look at the programs it matches, or search the **Yazılım** tab. A publisher filter
+    that does not match the program's publisher also gives 0.
+- **`Eşleşme ifadesinde %, _ ve \ kullanılamaz`.** Patterns are plain text; write the part of the name without
+  wildcards.
+- **No licence notifications.** The check runs once a day (on the first scheduler run of each day, server date),
+  and only licences that are over their seats, expired or ending within 30 days notify. Sending them out by e-mail
+  or webhook also depends on **En az önem**: expiring licences are `medium`, the default minimum is `high`.
+
+## Helpdesk
+
+- **An agent's ticket is refused with `429`.** That PC already has 5 open tickets (open, in progress or waiting)
+  or opened 10 in the last hour. Resolve or close some tickets on **Yardım Masası**.
+- **An agent's ticket is refused with `401`.** Only enrolled agents with a valid device secret can open tickets,
+  even while enforcement is off.
+- **Viewers see errors on Yardım Masası.** The ticket API needs the `admin` role; give the page only to admins.
+- **A user does not see a reply.** Internal notes (**İç not**) are never sent to the PC; write a normal reply.
+  Agents up to 0.1.4-alpha have no ticket function in the tray.

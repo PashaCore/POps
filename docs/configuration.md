@@ -36,6 +36,8 @@ Ways to create it:
 | `DB_USER` | yes | – | PostgreSQL role. |
 | `DB_PASS` | yes | – | Its password. |
 | `DB_NAME` | yes | – | Database name. |
+| `DB_POOL_MIN` | no | `2` | Connections the backend keeps open to PostgreSQL. |
+| `DB_POOL_MAX` | no | `20` | Largest number of database connections. When the pool is full, requests wait for a free connection. Keep it below the PostgreSQL server's `max_connections` (100 by default), especially when other applications share that server, and raise both together if needed. |
 | `PANEL_ADMIN_USER` | no | `admin` | Name of the first panel account. |
 | `PANEL_ADMIN_PASS` | no | – | If no user with `PANEL_ADMIN_USER` exists at startup, the backend creates it as `superadmin` with this password. It is never written again once the account exists; change the password in the panel afterwards and you may delete the value. |
 | `BYPASS_SECRET` | no | empty | Secret shared with the agents for offline quarantine bypass codes. Must equal the agents' `BypassSecret`. Empty: the panel does not issue bypass codes. The code changes daily with the server's local date, so keep the server and the PCs in the same time zone. |
@@ -51,6 +53,7 @@ Ways to create it:
 | `SMTP_USER` | no | empty | Login name; when empty the server sends without logging in. |
 | `SMTP_PASS` | no | empty | Password for `SMTP_USER`. |
 | `SMTP_FROM` | no | `SMTP_USER` | Sender address. |
+| `NOTIFY_WEBHOOK_ALLOW_PRIVATE` | no | off | By default the notification webhook may only point at public internet addresses: its host is resolved and loopback, private ranges, link-local (including `169.254.169.254`), CGNAT and reserved addresses are refused. `1` (or `true` / `yes`) also allows those, for a webhook receiver inside the school network. Multicast and unspecified addresses stay refused. |
 
 The backend refuses to start (`RuntimeError: Ortam değişkeni tanımlı değil: …`) when `JWT_SECRET`, `DB_USER`,
 `DB_PASS` or `DB_NAME` is missing.
@@ -185,7 +188,7 @@ UPDATE global_settings SET value = '0' WHERE key = 'enforce_agent_auth';
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `fair_use_text` | string | Text the tray shows to the user in a notice that must be acknowledged. |
-| `dns_categories` | list | Active DNS categories. The **Politikalar** page offers `pornografi`, `yasadisi_bahis`, `teror_siddet`, `zararli_yazilim`. |
+| `dns_categories` | list | Active DNS categories. The **Politikalar** page offers `pornografi`, `yasadisi_bahis`, `teror_siddet`, `zararli_yazilim` and `okul_ozel` (the school's own list). |
 | `auto_quarantine` | bool | Quarantine a device after `quarantine_threshold` DNS violations. |
 | `quarantine_threshold` | int | Violation count for `auto_quarantine`. |
 | `dns_domains` | object | `{"<category>": ["example.com", ...]}`. Only these domains and their subdomains are matched. Empty means no DNS detection. |
@@ -208,7 +211,7 @@ Set by a superadmin on **Sistem & Sürüm** → **Bildirimler** (`POST /api/syst
 | `notify_enabled` | `1` / `0` (default `0`) | Send notifications out by e-mail and/or webhook. The bell in the panel works regardless. |
 | `notify_min_severity` | `info`, `medium`, `high` (default), `critical` | Lowest severity that is sent out. |
 | `notify_email_to` | comma-separated addresses (at most 20) | E-mail recipients. Needs the `SMTP_*` settings in `.env`. |
-| `notify_webhook_url` | `http://` or `https://` URL (at most 500 characters) | Receives a JSON `POST` for each notification. |
+| `notify_webhook_url` | `http://` or `https://` URL (at most 500 characters) that resolves to public addresses only, unless `NOTIFY_WEBHOOK_ALLOW_PRIVATE` is set | Receives a JSON `POST` for each notification. Redirects are not followed; any status of 300 or above counts as a failed delivery. |
 
 The webhook body contains `text` (for Slack), `content` (for Discord, cut to 1900 characters), `event`, `severity`,
 `title`, `detail` and `pc_name`. Which events notify, and the limits, are described in
