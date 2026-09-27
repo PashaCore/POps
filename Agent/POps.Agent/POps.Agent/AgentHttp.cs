@@ -77,6 +77,36 @@ namespace POpsAgent
         public static async Task<bool> PostJsonAsync(string serverUrl, string path, string hwId, object payload, string what) =>
             await PostAsync(serverUrl, path, hwId, payload, what) == PostResult.Sent;
 
+        // Yanıt gövdesi gereken çağrılar (yardım masası). Status null: gönderilmedi (secret yok, şifresiz sunucu) ya da
+        // ağ hatası. Yanıt en çok MaxResponseBytes okunur.
+        public const int MaxResponseBytes = 4 * 1024 * 1024;
+
+        public static async Task<(int? Status, string Body)> SendAsync(HttpMethod method, string serverUrl, string path, string hwId, object payload, string what)
+        {
+            if (!CanReport || !POpsHelpers.IsSecureServerUrl(serverUrl)) return (null, null);
+            try
+            {
+                using var request = new HttpRequestMessage(method, serverUrl.TrimEnd('/') + path);
+                if (payload != null) request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                AgentCredentials.AddHttpAuth(request, hwId);
+                using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                int status = (int)response.StatusCode;
+                if (response.Content.Headers.ContentLength > MaxResponseBytes)
+                {
+                    POpsHelpers.Log("AGENT", $"{what}: yanıt çok büyük ({response.Content.Headers.ContentLength} bayt), okunmadı.", true);
+                    return (status, null);
+                }
+                string body = await response.Content.ReadAsStringAsync();
+                if (status < 200 || status >= 300) POpsHelpers.Log("AGENT", $"{what}: HTTP {status}.", true);
+                return (status, body);
+            }
+            catch (Exception ex)
+            {
+                POpsHelpers.Log("AGENT", $"{what} başarısız: {ex.Message}", true);
+                return (null, null);
+            }
+        }
+
         public static string DevicePath(string prefix, string hwId) => prefix + Uri.EscapeDataString(hwId ?? "");
     }
 

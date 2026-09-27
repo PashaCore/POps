@@ -79,6 +79,8 @@ namespace POpsAgent
         // Karantina (lockdown/unlock/çevrimdışı bypass) ve Windows Update: bkz. QuarantineControl, PatchManager
         private readonly QuarantineControl _quarantine;
         private readonly PatchManager _patches;
+        // Yardım masası: tepsinin "Sorun bildir" / "Taleplerim" istekleri (bkz. Helpdesk)
+        private readonly Helpdesk _helpdesk;
         // Ön plandaki uygulamanın süreç adı (tepsiden, yalnızca ad; bkz. ActiveApp). Bilinmiyorsa null.
         private volatile string _activeApp;
 
@@ -108,6 +110,7 @@ namespace POpsAgent
             // DNS eşiğindeki otomatik karantina da kilit ekranı + yalıtım yolundan geçer (bkz. AutoQuarantineAsync)
             DnsPolicyMonitor.Quarantine = reason => _ = AutoQuarantineAsync(reason);
             _patches = new PatchManager(_serverUrl, () => _hwId);
+            _helpdesk = new Helpdesk(_serverUrl, () => _hwId, () => ConsoleSession.Current().User, message => _trayPipe?.SendCommandToDesktop(message));
         }
 
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
@@ -128,6 +131,10 @@ namespace POpsAgent
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            // Tepsi ve watchdog kullanıcı oturumunda yoksa başlatılır (kurulum/güncelleme sonrası, karantinada kilit ekranı).
+            // Yavaş WMI açılışını beklemez.
+            _ = Task.Run(() => new UserSessionApps().RunAsync(stoppingToken));
+
             await Task.Run(InitializeState, stoppingToken);
             AgentUpdate.LogLastResult();
 
@@ -154,12 +161,12 @@ namespace POpsAgent
             _ = Task.Run(() => new SoftwareReporter(_serverUrl, () => _hwId).RunAsync(stoppingToken));
             _ = Task.Run(() => _patches.ScheduleLoopAsync(stoppingToken));
             _ = Task.Run(() => sessions.RunAsync(stoppingToken));
+            _ = Task.Run(() => _helpdesk.PollLoopAsync(stoppingToken, () => _trayPipe?.IsConnected == true));
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 string commandWsUrl = $"{baseWsUrl}/ws/agent/{_hwId}";
 
-                EnsureWatchDogIsRunning();
                 StartTrayPipeServer();
                 _commandWs = new ClientWebSocket();
                 _commandWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
@@ -216,7 +223,6 @@ namespace POpsAgent
         // Tepsi ve watchdog yerel işler (ör. karantinada çevrimdışı bypass) için yine çalışır.
         private async Task RunWithoutServerAsync(CancellationToken stoppingToken)
         {
-            EnsureWatchDogIsRunning();
             StartTrayPipeServer();
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -263,30 +269,6 @@ namespace POpsAgent
             {
                 POpsHelpers.Log("AGENT", "Cihaz secret'ı alındı ancak diske yazılamadı; servis yeniden başlayana kadar bellekte tutuluyor.", true);
             }
-        }
-
-        private void EnsureWatchDogIsRunning()
-        {
-            try
-            {
-                string targetDir = AppDomain.CurrentDomain.BaseDirectory;
-                string exePath = Path.Combine(targetDir, "POpsWatchdog.exe");
-                if (File.Exists(exePath))
-                {
-                    // Eğer çalışmıyorsa schtasks ile Session 1'de (BUILTIN\Users) başlat
-                    if (Process.GetProcessesByName("POpsWatchdog").Length == 0)
-                    {
-                        Process p = new Process();
-                        p.StartInfo.FileName = "cmd.exe";
-                        p.StartInfo.Arguments = $"/c schtasks /create /tn \"POpsWatchdogLauncher\" /tr \"\\\"{exePath}\\\"\" /sc once /st 00:00 /ru \"BUILTIN\\Users\" /it /f >nul 2>&1 & schtasks /run /tn \"POpsWatchdogLauncher\" >nul 2>&1 & schtasks /delete /tn \"POpsWatchdogLauncher\" /f >nul 2>&1";
-                        p.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
-                        p.StartInfo.CreateNoWindow = true;
-                        p.Start();
-                        POpsHelpers.Log("AGENT", "POpsWatchDog etkileşimli oturumda (Session 1+) başlatıldı.");
-                    }
-                }
-            }
-            catch { }
         }
 
         private async Task PolicyPollingLoop(CancellationToken token)
@@ -382,6 +364,14 @@ namespace POpsAgent
                 else if (message.StartsWith("UNLOCK_BYPASS:"))
                 {
                     _ = HandleBypassAttemptAsync(message.Substring("UNLOCK_BYPASS:".Length));
+                }
+                else if (message.StartsWith("TICKET_CREATE:"))
+                {
+                    _ = _helpdesk.CreateAsync(message.Substring("TICKET_CREATE:".Length));
+                }
+                else if (message == "TICKET_LIST")
+                {
+                    _ = _helpdesk.ListAsync();
                 }
             };
 
@@ -1121,6 +1111,15 @@ namespace POpsAgent
         }
 
         public void Start() { _cts = new CancellationTokenSource(); Task.Run(() => ListenPipeAsync(_cts.Token)); }
+
+        public bool IsConnected
+        {
+            get
+            {
+                try { return _pipeServer?.IsConnected == true; }
+                catch (ObjectDisposedException) { return false; }
+            }
+        }
         public void Stop() { _cts?.Cancel(); _pipeServer?.Dispose(); }
 
         public void SendCommandToDesktop(string json)
@@ -1161,6 +1160,9 @@ namespace POpsAgent
                     ps.AddAccessRule(new PipeAccessRule(system, PipeAccessRights.FullControl, AccessControlType.Allow));
                     ps.AddAccessRule(new PipeAccessRule(admins, PipeAccessRights.FullControl, AccessControlType.Allow));
                     ps.AddAccessRule(new PipeAccessRule(interactive, PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize, AccessControlType.Allow));
+                    // Tepsi borunun sahibini denetler (SYSTEM ya da Administrators; bkz. POps.Shared.PipeOwner). Sahip
+                    // belirtecin varsayılanına bırakılmaz. ReadWrite, tepsinin sahibi okuması için ReadPermissions'ı içerir.
+                    ps.SetOwner(system);
 
                     _pipeServer = NamedPipeServerStreamAcl.Create(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, ps);
                     POpsHelpers.Log("PIPE", $"Bekleniyor: {pipeName}");

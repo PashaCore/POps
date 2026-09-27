@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Agent: help desk in the tray.** **Sorun bildir** sends a request (subject, category, description) through the service to `POST /api/tickets/agent/{hw_id}`. The service adds the signed-in user as the reporter, limits the text to 200/5000 characters and shows the server's answer in Turkish (for example the limit of open requests). **Taleplerim** lists the requests and the IT team's replies, only those of the signed-in user, since lab PCs are shared. New replies are checked every 5 minutes and shown as a balloon. Nothing is sent without a device secret.
+- **Docs:** How a local administrator lifts a quarantine by hand when the panel and the bypass code cannot, for example when PowerShell or the firewall is broken (`Agent/README.md`).
+
+### Security
+- **Agent:** The tray checks that `POpsTrayPipe` belongs to the service (owner SYSTEM or Administrators, set explicitly by the service) before it trusts it. A program started while the service is down, or in another session, can no longer pose as the service and send the tray fake lock screens, capture requests or remote input.
+
 ### Fixed
+- **Agent/Updater:** After an MSI install or an update the tray and the watchdog did not start until the next sign-in (seen on a Windows 11 laptop): without the tray there was no lock screen, fair-use notice, bypass field or foreground program name. Both started them with a scheduled task for `BUILTIN\Users`, which did not reach the user's session, with all errors discarded. The service now starts them in the active console session as the signed-in user (`WTSQueryUserToken` + `CreateProcessAsUser`) when neither runs: at start, every 30 seconds, and from the updater when it finishes. The tray waits for the shell up to a minute after sign-in and nothing is started during an update.
+- **Tests:** A test class could capture the real `C:\POpsData` path before the test environment redirected it (field initialisers run before the base constructor) and later tests then used the real folder. On the development PC this only failed on permissions, but the tests now always reset the data and secret folders to their temporary folders.
 - **Agent/Updater:** The rollback drill ended in a false `rollback_failed` (seen on 0.1.4 → 0.1.5): the updater deleted the `rollback-drill` marker only at the very end, so the reinstalled previous version also saw it, did not report healthy, and the last-resort repair had to bring the agent back. The new version's agent now consumes the marker the first time it starts during an update to its own version. It renames it to `rollback-drill.consumed` and records its version and the update run, and skips `health.json` only for that version and run. The previous version never sees the marker, a service restart during the drill does not break it, and sending the same version again later installs normally. The updater also deletes both files as soon as it decides to roll back, before reinstalling the previous package, and again at the end. The fix is in the agent being installed, so the first drill that ends in `rolled_back` is 0.1.5 → 0.1.6.
 
 ## [0.1.5-alpha] - 2026-09-27

@@ -15,13 +15,14 @@ This page is an overview. The detailed references are:
 | Program | Runs as | Started by | Does |
 | --- | --- | --- | --- |
 | `POpsAgent.exe` | Windows service `POpsAgent`, LocalSystem | Windows (automatic start; restarted on failure) | Server connection, heartbeats, commands, inventory, quarantine, update download and verification. |
-| `POpsTray.exe` | the signed-in user | `HKLM\…\Run` for every user | Tray icon and notices, consent dialog and countdown for remote sessions, fair-use notice, quarantine lock screen, screen capture, applying remote input, offline bypass code entry. |
-| `POpsWatchdog.exe` | the signed-in user | the service, in the signed-in user's session | Every 10 seconds: restarts the tray if it is not running and starts the `POpsAgent` service if it is stopped. Pauses while an update is in progress. |
+| `POpsTray.exe` | the signed-in user | `HKLM\…\Run` for every user; from 0.1.6-alpha also the service and the updater, in the active console session, when no tray runs | Tray icon and notices, consent dialog and countdown for remote sessions, fair-use notice, quarantine lock screen, screen capture, applying remote input, offline bypass code entry, help desk (**Sorun bildir**, **Taleplerim**). |
+| `POpsWatchdog.exe` | the signed-in user | the service (at start and every 30 seconds) and the updater, in the signed-in user's session | Every 10 seconds: restarts the tray if it is not running and starts the `POpsAgent` service if it is stopped. Pauses while an update is in progress. |
 | `POpsUpdater.exe` | LocalSystem | the service, from a copy in `C:\POpsData\updater` | Installs a verified MSI, checks the new version's health and rolls back if needed. |
 | `POps.Shared.dll` | – | – | Shared helpers: version, logging, settings lookup, hardware ID. |
 
 The service and the tray talk over the local named pipe `POpsTrayPipe`. The service accepts only the installed
 `POpsTray.exe` running in a user session on it (and, when the tray is Authenticode-signed, a valid signature).
+From 0.1.6-alpha the tray also checks that the pipe's owner is SYSTEM or Administrators before it trusts it.
 
 `Agent/POpsVision` is the source of an older standalone screen-streaming program. It is not part of releases or
 the MSI; screen capture is done by the tray ([`vision.md`](vision.md)).
@@ -119,7 +120,8 @@ reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities
 From 0.1.5-alpha the lock survives the tray: the service keeps it in `C:\POpsData\secure\lockdown.json` and shows
 the lock screen again whenever the tray connects (after closing it in Task Manager, signing out or restarting). If
 the rules cannot be removed, the lock stays, the user is not told it was lifted, and the agent records
-`agent.unlock_failed`. The DNS threshold (`auto_quarantine`) takes the same path as `lockdown`: lock screen with the
+`agent.unlock_failed`; how a local administrator lifts a quarantine by hand is described in
+[`Agent/README.md`](../Agent/README.md#lifting-a-quarantine-by-hand). The DNS threshold (`auto_quarantine`) takes the same path as `lockdown`: lock screen with the
 reason "DNS kural ihlali eşiği" plus isolation, reported as `agent.auto_quarantine` so the panel shows the device as
 quarantined.
 
@@ -145,6 +147,14 @@ restart, and the lock screen and the tray check the code format first so a typo 
   (subdomains of the same entry count once), the threshold applies to the last hour, and the count starts again
   when the user signed in at the console changes. Details in
   [`Agent/README.md`](../Agent/README.md#local-hardening).
+
+## Help desk
+
+From 0.1.6-alpha the tray menu has **Sorun bildir** and **Taleplerim**. The tray sends the form to the service
+over the pipe; the service adds the signed-in user as the reporter, limits the text (subject 200, description 5000
+characters) and calls `POST /api/tickets/agent/{hw_id}`. **Taleplerim** reads `GET /api/tickets/agent/{hw_id}` and
+shows only the signed-in user's requests, because a lab PC is shared. New replies are checked every 5 minutes and
+shown as a balloon. Details in [`Agent/README.md`](../Agent/README.md#help-desk-sorun-bildir--taleplerim).
 
 ## Software inventory and Windows updates
 

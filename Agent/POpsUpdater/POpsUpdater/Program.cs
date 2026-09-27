@@ -168,7 +168,7 @@ namespace POpsUpdater
                 WriteAtomic(ResultPath, JsonSerializer.Serialize(result));
                 Log($"Güncelleme bitti: {outcome} ({JsonSerializer.Serialize(result)})", outcome != "success");
                 try { File.Delete(LockPath); } catch { }
-                LaunchWatchdog();
+                LaunchUserApps();
             }
         }
 
@@ -510,26 +510,34 @@ namespace POpsUpdater
         }
 
         // Kilit kalktıktan sonra watchdog tepsiyi açar; çalışmıyorsa kullanıcı oturumunda başlatılır
-        static void LaunchWatchdog()
+        // Güncelleme (ya da geri dönüş) bitince watchdog ve tepsi kullanıcı oturumunda başlatılır; oturum kapatıp açmak
+        // gerekmez. Eskiden "schtasks /ru BUILTIN\Users /it" kullanılıyordu ve sahada tepsiyi başlatmıyordu
+        // (bkz. POps.Shared.UserSessionLauncher). Kurulu sürüm hangisiyse onun klasöründen.
+        static void LaunchUserApps()
         {
             try
             {
-                if (Process.GetProcessesByName("POpsWatchdog").Length > 0) return;
+                uint session = UserSessionLauncher.ActiveConsoleSession();
+                if (!UserSessionLauncher.HasSignedInUser(session))
+                {
+                    Log("Oturum açmış kullanıcı yok; tepsi ve watchdog oturum açılınca başlayacak.");
+                    return;
+                }
                 string dir = ServiceInstallDir();
-                string exe = dir == null ? null : Path.Combine(dir, "POpsWatchdog.exe");
-                if (exe == null || !File.Exists(exe)) return;
-                string task = "POpsWatchdogLauncher";
-                RunHidden("schtasks.exe", $"/create /tn \"{task}\" /tr \"\\\"{exe}\\\"\" /sc once /st 00:00 /ru \"BUILTIN\\Users\" /it /f");
-                RunHidden("schtasks.exe", $"/run /tn \"{task}\"");
-                RunHidden("schtasks.exe", $"/delete /tn \"{task}\" /f");
+                if (dir == null) return;
+                var (watchdog, tray) = UserAppsPolicy.WhatToStart(true, false,
+                    UserSessionLauncher.IsRunning("POpsWatchdog"), UserSessionLauncher.IsRunning("POpsTray"),
+                    shellReady: true, signedInFor: TimeSpan.MaxValue);
+                foreach ((bool start, string exe) in new[] { (watchdog, "POpsWatchdog.exe"), (tray, "POpsTray.exe") })
+                {
+                    if (!start) continue;
+                    if (UserSessionLauncher.TryStart(session, Path.Combine(dir, exe), out int pid, out string error))
+                        Log($"{exe} kullanıcı oturumunda başlatıldı (oturum {session}, PID {pid}).");
+                    else
+                        Log($"{exe} kullanıcı oturumunda başlatılamadı: {error}", true);
+                }
             }
-            catch (Exception ex) { Log($"Watchdog başlatılamadı: {ex.Message}", true); }
-        }
-
-        static void RunHidden(string file, string arguments)
-        {
-            using Process p = Process.Start(new ProcessStartInfo(file, arguments) { UseShellExecute = false, CreateNoWindow = true });
-            p.WaitForExit(15000);
+            catch (Exception ex) { Log($"Tepsi/watchdog başlatılamadı: {ex.Message}", true); }
         }
 
         // ------------------------------------------------------------------------------------------

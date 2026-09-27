@@ -27,6 +27,10 @@ namespace POpsTray
         private static readonly TimeSpan PreviewBalloonInterval = TimeSpan.FromMinutes(5);
         private CancellationTokenSource? _captureCts;
         private readonly object _pipeLock = new object();
+        // Yardım masası pencereleri (tek kopya) ve son balonun bir talep yanıtı olup olmadığı
+        private ReportProblemForm? _reportForm;
+        private MyTicketsForm? _ticketsForm;
+        private bool _lastBalloonIsTicket;
 
         // UIPI gerektirmeyen, doğrudan User Session'da çalışan API'ler
         [DllImport("user32.dll")]
@@ -68,6 +72,9 @@ namespace POpsTray
             // Öğrenci menüsünde tepsiyi kapatan, watchdog'u duraklatan veya yerine getirilmeyen
             // "izlemeyi duraklat" seçenekleri yoktur; kiosk ve rıza pencereleri tepsiyle birlikte kapanırdı.
             trayMenu = new ContextMenuStrip();
+            trayMenu.Items.Add(new ToolStripMenuItem("Sorun bildir", null, (_, _) => OpenReportForm()));
+            trayMenu.Items.Add(new ToolStripMenuItem("Taleplerim", null, (_, _) => OpenTicketsForm()));
+            trayMenu.Items.Add("-");
             trayMenu.Items.Add(new ToolStripMenuItem("Hakkında", null, OnAboutClicked));
             trayMenu.Items.Add("-");
             var adminItem = new ToolStripMenuItem("Yönetici Müdahalesi (Bypass)", null, OnAdminBypassClicked);
@@ -79,6 +86,7 @@ namespace POpsTray
             trayIcon.Icon = SystemIcons.Shield; // İleride özel bir .ico dosyası yüklenebilir
             trayIcon.ContextMenuStrip = trayMenu;
             trayIcon.Visible = true;
+            trayIcon.BalloonTipClicked += (_, _) => { if (_lastBalloonIsTicket) OpenTicketsForm(); };
 
             _ = Task.Run(() => ConnectToServiceAsync(cts.Token));
             _ = Task.Run(() => MonitorActiveAppAsync(cts.Token));
@@ -86,6 +94,7 @@ namespace POpsTray
 
         public void ShowNotification(string title, string message)
         {
+            _lastBalloonIsTicket = false;
             trayIcon.BalloonTipTitle = title;
             trayIcon.BalloonTipText = message;
             trayIcon.BalloonTipIcon = ToolTipIcon.Info;
@@ -112,6 +121,14 @@ namespace POpsTray
                     pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
                     
                     await pipeClient.ConnectAsync(5000, token);
+                    // Boru servisin mi? Sahibi SYSTEM ya da Administrators olmalı (bkz. POps.Shared.PipeOwner)
+                    if (!POps.Shared.PipeOwner.Check(pipeClient, out string owner))
+                    {
+                        TrayLog.Write($"[GÜVENLİK] POpsTrayPipe servise ait değil (sahip: {owner}); bağlantı kesildi.");
+                        pipeClient.Dispose();
+                        await Task.Delay(10000, token);
+                        continue;
+                    }
                     // Servis yeniden bağlanınca uygulama adını bilmez; bir sonraki turda yeniden gönderilir
                     lastApp = "";
                     
@@ -188,6 +205,11 @@ namespace POpsTray
                     return;
                 }
                 if (jsonMsg == "BYPASS_SUCCESS") return;
+                if (jsonMsg.StartsWith("TICKET_RESULT:") || jsonMsg.StartsWith("TICKET_LIST_RESULT:") || jsonMsg.StartsWith("TICKET_NOTIFY:"))
+                {
+                    HandleHelpdeskMessage(jsonMsg);
+                    return;
+                }
                 // Karantina kaldırılamadı (ağ yalıtımı duruyor): kilit ekranı açık kalır, kullanıcıya "kaldırıldı" denmez
                 if (jsonMsg == "UNLOCK_FAILED")
                 {
@@ -577,6 +599,50 @@ namespace POpsTray
             catch { return null; }
         }
 
+
+        // ---------------------------------------------------------------- yardım masası
+        private void OpenReportForm()
+        {
+            if (_reportForm == null || _reportForm.IsDisposed) _reportForm = new ReportProblemForm(SendToService);
+            _reportForm.Show();
+            _reportForm.Activate();
+        }
+
+        private void OpenTicketsForm()
+        {
+            if (_ticketsForm == null || _ticketsForm.IsDisposed) _ticketsForm = new MyTicketsForm(SendToService);
+            else _ticketsForm.Request();
+            _ticketsForm.Show();
+            _ticketsForm.Activate();
+        }
+
+        // TICKET_RESULT / TICKET_LIST_RESULT / TICKET_NOTIFY:<base64 JSON>
+        private void HandleHelpdeskMessage(string message)
+        {
+            int colon = message.IndexOf(':');
+            string kind = message.Substring(0, colon);
+            using JsonDocument? doc = HelpdeskProtocol.Decode(message.Substring(colon + 1));
+            if (doc == null) return;
+            JsonElement root = doc.RootElement;
+            this.Invoke(new Action(() =>
+            {
+                if (kind == "TICKET_RESULT")
+                {
+                    if (_reportForm != null && !_reportForm.IsDisposed) _reportForm.ShowResult(root);
+                }
+                else if (kind == "TICKET_LIST_RESULT")
+                {
+                    if (_ticketsForm != null && !_ticketsForm.IsDisposed) _ticketsForm.ShowTickets(root);
+                }
+                else
+                {
+                    long id = root.TryGetProperty("id", out var i) && i.TryGetInt64(out long n) ? n : 0;
+                    ShowNotification("Talebinize yanıt geldi", $"#{id} {HelpdeskProtocol.Text(root, "subject")} ({HelpdeskProtocol.Text(root, "status_text")})\nGörmek için tıklayın.");
+                    _lastBalloonIsTicket = true;
+                    if (_ticketsForm != null && !_ticketsForm.IsDisposed && _ticketsForm.Visible) _ticketsForm.Request();
+                }
+            }));
+        }
 
         private void OnAboutClicked(object? sender, EventArgs e)
         {

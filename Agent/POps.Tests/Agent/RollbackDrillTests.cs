@@ -11,8 +11,6 @@ namespace POps.Tests.Agent
     // tatbikatı "rollback_failed" vermişti: geri kurulan 0.1.4 de işareti görüp sağlık bildirmemişti.
     public class RollbackDrillTests : TestBase, IDisposable
     {
-        private readonly string _previousDataDir = AgentUpdate.DataDir;
-
         public RollbackDrillTests()
         {
             AgentUpdate.DataDir = TestEnvironment.NewDir("drill");
@@ -21,7 +19,7 @@ namespace POps.Tests.Agent
 
         public void Dispose()
         {
-            AgentUpdate.DataDir = _previousDataDir;
+            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
             AgentUpdate.InstalledVersionOverride = null;
         }
 

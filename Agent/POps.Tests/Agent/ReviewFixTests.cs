@@ -197,11 +197,9 @@ namespace POps.Tests.Agent
     // M2: gönderilemeyen durum saklanır, yalnızca gönderim yeniden denenir; uç yoksa bırakılır
     public class PatchDeliveryTests : TestBase, IDisposable
     {
-        private readonly string _previousDataDir = AgentUpdate.DataDir;
-
         public PatchDeliveryTests() => AgentUpdate.DataDir = TestEnvironment.NewDir("patch");
 
-        public void Dispose() => AgentUpdate.DataDir = _previousDataDir;
+        public void Dispose() => AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
 
         private static PatchStatusPayload Status(string lastResult = null) =>
             PatchClassifier.BuildStatus(new List<PendingUpdate> { new PendingUpdate { Kb = "KB1", Title = "t", Severity = "Critical" } }, false, DateTime.UtcNow, null, lastResult);

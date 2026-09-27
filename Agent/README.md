@@ -61,7 +61,8 @@ Enroll before freezing: install with the machine thawed, wait until the device a
 
 ## Local hardening
 
-- **Tray pipe.** Every logged-on user can open `POpsTrayPipe`, so the service checks each client before trusting it. The client process must be the installed `POpsTray.exe` (resolved from its PID; `Program Files` is admin-only), run in a user session, and, when the installed tray is Authenticode-signed, carry a valid signature. Any other program is logged and disconnected, so a student cannot feed fake screen frames or request a Vision tunnel.
+- **Tray pipe.** Every logged-on user can open `POpsTrayPipe`, so the service checks each client before trusting it. The client process must be the installed `POpsTray.exe` (resolved from its PID; `Program Files` is admin-only), run in a user session, and, when the installed tray is Authenticode-signed, carry a valid signature. Any other program is logged and disconnected, so a student cannot feed fake screen frames or request a Vision tunnel. The tray in turn checks that the pipe belongs to the service: its owner must be SYSTEM or Administrators (the service sets SYSTEM explicitly). If the owner cannot be read, the tray does not connect. A program started while the service is down, or in another session, therefore cannot pose as the service and send the tray fake lock screens, capture requests or remote input.
+- **Tray and watchdog start.** When neither runs in any session, the service starts the watchdog and the tray in the active console session, as the signed-in user (`WTSQueryUserToken` + `CreateProcessAsUser`). It checks at start and then every 30 seconds, and the updater does the same when it finishes. After an install or an update the tray therefore appears within about 30 seconds without signing out; in quarantine this also brings back the lock screen. The tray waits up to a minute after sign-in for the shell (`explorer`) so its icon is not lost, and nothing is started while an update is running. Up to 0.1.5 a scheduled task for `BUILTIN\Users` was used instead, which did not start them in the user's session; the tray came back only at the next sign-in (`HKLM\...\Run`).
 - **Remote input needs local consent.** Remote mouse/keyboard events are applied only while a Vision session is open that the tray started after the user accepted it (or after showing the mandatory-session notice). A compromised server alone cannot drive the PC. Screen previews are not affected.
 - **Logs.** `C:\POpsLogs` (service and updater logs) is restricted to SYSTEM and Administrators. The tray, watchdog and Vision run in the user's session and log to `%LOCALAPPDATA%\POps\Logs`. The tray's log rotates at 1 MB and records only message types, never message contents or remote keystrokes.
 - **Network quarantine** (`lockdown`, or the DNS threshold when `auto_quarantine` is on) adds two Windows Firewall block rules (group `POps Isolation`). They block every IPv4/IPv6 address except the POps server (resolved to IPs), the DNS and DHCP servers, loopback and IPv6 link-local/multicast. Block rules override every allow rule, so no other program's rule can bypass them. All firewall profiles are switched on for the duration; their previous state is saved in `C:\POpsData\secure\isolation.json` and restored by `unlock` or a valid offline bypass code. The lock screen is part of the quarantine: its state is kept in `C:\POpsData\secure\lockdown.json` (with the reason), and the service shows it again whenever the tray connects, so closing the tray in Task Manager, signing out or restarting does not remove it. If the isolation cannot be removed, the lock stays, the user is told so instead of "removed", and the agent records `agent.unlock_failed`. Every heartbeat reports the lock state as `"quarantined": true|false`; the server uses it to finish or resend a pending lock or unlock (every 5 minutes), so an unlock given while the PC was off is not lost. Both commands are idempotent: a repeated `lockdown` while isolated does not rebuild the firewall rules (the reason is kept if the repeat has none), and a repeated `unlock` while unlocked starts no PowerShell and shows no notice.
@@ -84,6 +85,35 @@ Besides the heartbeat, the agent sends the data below. The software inventory, t
 - **Installing updates** (`{"action":"install_updates","scope":"security"|"all"}` from the panel): the agent scans and accepts license terms where needed. It then downloads and installs either the security and critical updates (`security`) or all pending ones (`all`), scans again and reports a short summary as `last_result`, for example `3 güncelleme kuruldu, 1 başarısız (KB5043080)`. **The agent never restarts the PC**; `reboot_required` tells the panel when a restart is needed. Updates that may ask the user for input are skipped. Downloading and installing together may take at most 3 hours; after that the agent asks Windows Update to stop and reports it in the summary. Only one scan or installation runs at a time; a request that arrives meanwhile is logged and ignored. All of this runs on a background thread and never holds up the command channel.
 - **Sign-in events** keep the panel's logged-on user current. The last reported sign-in is kept in `C:\POpsData\session.json`, so a service restart does not report the same sign-in again, and a sign-out missed at shutdown is reported at the next start. If a report cannot be sent, the next attempt is 5 minutes later.
 - **Foreground program:** the tray sends only the process name. Window titles can contain personal data (document names, websites, chat partners), so the tray does not read them, and the service ignores the titles that older trays sent.
+
+## Help desk (Sorun bildir / Taleplerim)
+
+The tray menu has **Sorun bildir** (report a problem) and **Taleplerim** (my requests).
+
+- **Sorun bildir** asks for a subject (at least 3 characters), a category (hardware, software, network/internet, printer, account/password, other) and a description. The tray passes it to the service over the pipe. The service adds the user signed in at the console as the reporter (the form does not ask for a name), limits the subject to 200 and the description to 5000 characters, and sends it to `POST /api/tickets/agent/{hw_id}`. The user sees the server's answer in Turkish, for example that the subject is too short or that the PC already has too many open requests (the server allows 5 open and 10 new per hour).
+- **Taleplerim** shows the requests and the IT team's replies (`GET /api/tickets/agent/{hw_id}`; internal notes never leave the server). It lists **only the signed-in user's** requests: the server returns every request of the PC, and on a shared lab PC one student must not read another's.
+- The service checks for new replies every 5 minutes while the tray is connected and shows a balloon; clicking it opens **Taleplerim**. The reply counts already shown are kept in `C:\POpsData\tickets-seen.json`, so a restart does not repeat old notices.
+- Like the other reports, nothing is sent without a device secret.
+
+## Lifting a quarantine by hand
+
+Use this only when neither the panel's unlock nor the offline bypass code helps. For example: the server is gone for good, or PowerShell or Windows Firewall on the PC is broken, so the agent cannot remove its own rules (the panel then reports that the quarantine could not be lifted). You need a local administrator account.
+
+1. Press Ctrl+Alt+Del on the locked PC (the lock screen cannot block it), choose **Switch user** and sign in as a local administrator. The lock screen belongs to the student's session and does not appear in yours.
+2. In an elevated command prompt, remove the firewall rules:
+   ```
+   netsh advfirewall firewall delete rule name="POps Isolation - Outbound"
+   netsh advfirewall firewall delete rule name="POps Isolation - Inbound"
+   ```
+   The PowerShell equivalent is `Get-NetFirewallRule -Group "POps Isolation" | Remove-NetFirewallRule`. Agents older than 0.1.4-alpha named their rules `POps_Isolation_*`.
+3. The quarantine switched every firewall profile on. `type C:\POpsData\secure\isolation.json` shows which profiles were off before (`previous_profiles`); switch only those off again, for example `netsh advfirewall set privateprofile state off`. If the file is missing, leave the profiles on.
+4. Delete the lock state:
+   ```
+   del C:\POpsData\secure\lockdown.json
+   del C:\POpsData\secure\isolation.json
+   ```
+5. Restart the agent: `sc stop POpsAgent`, then `sc start POpsAgent`. When the tray reconnects, the service finds no lock and closes the lock screen, and the heartbeat reports `"quarantined": false`.
+6. If the panel still shows a pending lock for the device, lift it there as well; otherwise the server sends the lock again within 5 minutes.
 
 ## Capability policy
 
