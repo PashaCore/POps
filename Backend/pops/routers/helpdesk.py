@@ -5,6 +5,7 @@ sınırlıdır: en fazla 5 açık talep, saatte en fazla 10 yeni talep. Ajan ken
 panelden verilen yanıtları (iç notlar hariç) okuyabilir. Panel uçları require_admin."""
 
 import datetime
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -30,6 +31,19 @@ STATUS_TR = {
 }
 MAX_OPEN_PER_PC = 5
 MAX_NEW_PER_HOUR = 10
+AGENT_MIN_INTERVAL = 5.0  # ajan uçları: cihaz başına en az 5 sn arayla (tepsi içinde çalışan koda karşı)
+_agent_last = {}  # (uç, pc_name) -> son istek zamanı
+
+
+def _throttle(kind: str, pc_name: str) -> None:
+    now = time.monotonic()
+    key = (kind, pc_name)
+    if now - _agent_last.get(key, 0.0) < AGENT_MIN_INTERVAL:
+        raise HTTPException(status_code=429, detail="Çok sık istek; birkaç saniye sonra tekrar deneyin.")
+    _agent_last[key] = now
+    if len(_agent_last) > 10000:  # bellek sınırı: eski kayıtları at
+        for k in [k for k, t in _agent_last.items() if now - t > 60]:
+            _agent_last.pop(k, None)
 
 
 def _iso(r: dict) -> dict:
@@ -54,6 +68,7 @@ async def agent_create_ticket(pc_name: str, data: AgentTicketInput, agent_id: Op
     if agent_id is None:
         raise HTTPException(status_code=401, detail="Bu uç yalnızca kayıtlı (anahtarlı) ajanları kabul eder.")
     _bind_agent(agent_id, pc_name)
+    _throttle("create", pc_name)
     subject, body, category = _clean(data.subject, data.body, data.category)
     counts = await execute_query(
         "SELECT count(*) FILTER (WHERE status IN ('open','in_progress','waiting')) AS open_n, "
@@ -90,22 +105,32 @@ async def agent_list_tickets(pc_name: str, agent_id: Optional[str] = Depends(age
     if agent_id is None:
         raise HTTPException(status_code=401, detail="Bu uç yalnızca kayıtlı (anahtarlı) ajanları kabul eder.")
     _bind_agent(agent_id, pc_name)
+    _throttle("list", pc_name)
     tickets = await execute_query(
         "SELECT id, created_at, updated_at, subject, status, reporter FROM tickets WHERE pc_name = $1 "
         "ORDER BY id DESC LIMIT 20",
         (pc_name,),
         fetch=True,
     )
-    out = []
-    for t in tickets or []:
-        msgs = await execute_query(
-            "SELECT created_at, author, body FROM ticket_messages WHERE ticket_id = $1 AND NOT internal ORDER BY id",
-            (t["id"],),
+    ids = [t["id"] for t in tickets or []]
+    msgs = (
+        await execute_query(
+            "SELECT ticket_id, created_at, author, body FROM ticket_messages WHERE ticket_id = ANY($1::int[]) "
+            "AND NOT internal ORDER BY id",
+            (ids,),
             fetch=True,
         )
+        if ids
+        else []
+    )
+    by_ticket = {}
+    for m in msgs or []:
+        by_ticket.setdefault(m["ticket_id"], []).append(_iso({k: m[k] for k in ("created_at", "author", "body")}))
+    out = []
+    for t in tickets or []:
         item = _iso(t)
         item["status_text"] = STATUS_TR.get(t["status"], t["status"])
-        item["replies"] = [_iso(m) for m in msgs or []]
+        item["replies"] = by_ticket.get(t["id"], [])
         out.append(item)
     return out
 

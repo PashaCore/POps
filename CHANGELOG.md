@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Backend:** The agent helpdesk endpoints accept at most one request per device every 5 seconds (per endpoint, invalid requests included), so code running inside a tray process cannot flood the server; the agent's ticket list is read with two queries instead of one per ticket.
+
 ## [0.1.5-alpha] - 2026-09-27
 
 Turns POps from a remote-control tool into a school IT operations tool: the agent now reports installed software and Windows Update status and can install updates on request, and the server adds a helpdesk, licence tracking, scheduled tasks, notifications and reports. DNS policy detection actually runs for the first time, and quarantine now survives reboots and stays in step with the panel. The release also carries the server hardening found by load testing (connection pool) and the webhook SSRF guard.
