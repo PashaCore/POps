@@ -31,7 +31,7 @@ sudo -u pops venv/bin/python migrate.py            # apply pending migrations
 plain DDL without parameters and make it idempotent where possible (`ADD COLUMN IF NOT EXISTS`). Never change
 tables from Python code at startup and never edit a migration that has already been released.
 
-### Core schema migrations
+### Migration files
 
 | File | Adds |
 | --- | --- |
@@ -43,6 +43,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0006_agent_capabilities.sql` | `clients.cap_*` columns (capability policy) and `clients.running_version`. |
 | `0007_allow_reenroll.sql` | `clients.allow_reenroll` (one-time re-enrollment permission). |
 | `0008_token_version_and_task_actor.sql` | `users.token_version` (session revocation) and `tasks.created_by`. |
+| `0009_notifications_schedules_inventory.sql` | `notifications`, `scheduled_tasks`, `device_software`, `device_patch_status`. |
 
 ## Tables
 
@@ -62,12 +63,24 @@ example when a lab is renamed or a device deleted) is kept by the application co
 
 At startup the backend marks every device `Offline`; agents that reconnect are written `Online` again.
 
-### Tasks and packages
+### Tasks, schedules and packages
 
 | Table | Contents |
 | --- | --- |
 | `tasks` | Command queue: `target_pc`, `target_lab`, `script_path` (the command line the agent runs), `status`, `created_at`, `output`, `created_by`. Statuses used by the code: `Pending`, `Running`, `Completed`, `Completed (Rebooted)`, `Paused`, `Cancelled`. |
 | `packages` | Package and script definitions of the Deployment page (`id`, `name`, `type`, `meta`, `command`, `icon`, `color`). The uploaded files themselves are on disk in `Backend/storage`. |
+| `scheduled_tasks` | Scheduled commands: `name`, `command`, `target_mode` (`ALL` / `LAB` / `PC`), `targets` (JSON list of labs or hardware IDs), `schedule_type` (`once` / `daily` / `weekly`), `run_at` (once), `time_of_day` (`HH:MM`, server time zone), `weekdays` (`1`–`7`, 1 = Monday), `enabled`, `next_run`, `last_run`, `last_result`, `created_by`, `created_at`. When due, the scheduler inserts normal rows into `tasks`. |
+
+### Software and Windows updates
+
+Filled by agents from 0.1.5-alpha on; see [`agent.md`](agent.md#software-inventory-and-windows-updates).
+
+| Table | Contents |
+| --- | --- |
+| `device_software` | Installed programs per device: `pc_name`, `name`, `version`, `publisher`, `install_date`, `updated_at`. Primary key (`pc_name`, `name`, `version`). Each report from an agent replaces that device's whole list. |
+| `device_patch_status` | One row per device with its last Windows Update scan: `pending_count`, `pending_security`, `pending_critical`, `reboot_required`, `last_search`, `last_install`, `updates` (JSON list: KB, title, severity, categories, security flag), `last_result`, `updated_at`. |
+
+Deleting a device also deletes its rows in both tables.
 
 ### Panel users
 
@@ -87,8 +100,9 @@ At startup the backend marks every device `Offline`; agents that reconnect are w
 | Table | Contents |
 | --- | --- |
 | `agent_logs_v2` | Event log shown on the Log pages: `pc_name`, `actor_id`, `event_type`, `category`, `action`, `risk_level`, `reason`, `message`, `meta_data` (JSONB), `timestamp`. Written by the server and by agents (`POST /api/logs/{pc}`). |
-| `device_audit_logs` | Security audit log that agents **cannot** write: enrollment, authentication rejections, remote-control session starts, lockdown/unlock, bypass codes, SYSTEM command execution, update results, releases, enforcement and capability changes. Each row has `prev_hash` and `entry_hash` (SHA-256 chain). |
+| `device_audit_logs` | Security audit log that agents **cannot** write: enrollment, authentication rejections, identity changes, remote-control session starts, lockdown/unlock, bypass codes, SYSTEM command execution, queue flushes, update results, releases, enforcement, capability and re-enrollment changes, scheduled-task changes and runs, Windows Update scan/install requests, auto-enrollment and notification settings. Each row has `prev_hash` and `entry_hash` (SHA-256 chain). |
 | `enterprise_audit_logs` | Remote-control (Vision) sessions: session id, admin, role, target, start/end time, reason, mandatory flag, status. |
+| `notifications` | Entries under the panel's bell: `created_at`, `event`, `severity` (`info` / `medium` / `high` / `critical`), `pc_name`, `title`, `detail`, `channels` (where it was sent: `email`, `webhook`), `delivery_error`, `is_read`. Written only by the server. |
 | `agent_logs` | Old log table from before `agent_logs_v2`. Kept, no longer written. |
 | `bypass_tokens` | Created by the baseline; not used by the current code. |
 
@@ -102,19 +116,21 @@ returns the first broken entry. Rows written before migration `0004` have no has
 
 | Key | Set by | Meaning |
 | --- | --- | --- |
-| `concurrent_limit` | **Ayarlar** page | How many devices may run a task at the same time (default `5`; `0` = unlimited). |
+| `concurrent_limit` | **Ayarlar** / **Dosya Dağıtımı** pages | How many devices may run a task at the same time (default `5`; `0` = unlimited). |
 | `enforce_agent_auth` | **Sistem & Sürüm** page | `1` = agents without valid credentials are rejected; anything else = accept-both. |
 | `agent_policies` | **Politikalar** page / API | JSON: fair-use text, DNS categories, `auto_quarantine`, `quarantine_threshold`, `dns_domains`. |
 | `verified_release_version` | release upload / GitHub fetch | Version of the staged, signature-verified agent release. |
 | `verified_release_manifest` | release upload / GitHub fetch | The staged release's manifest (JSON); `deploy-update` sends this release. |
-| `auto_enroll_lab` | Labs page ("Oto-Kayıt") | Stored but not read by the backend. |
+| `auto_enroll_lab` | Labs page ("Oto-Kayıt") | JSON `{"lab": ..., "until": "YYYY-MM-DD"}`: lab for devices connecting for the first time up to that date. |
+| `notify_enabled`, `notify_min_severity`, `notify_email_to`, `notify_webhook_url` | **Sistem & Sürüm** → Bildirimler | Whether and where notifications are sent out. |
 
 See [`configuration.md`](configuration.md#runtime-settings-database) for how to change them.
 
 ### Timestamps
 
-Most timestamp columns are `TEXT` in the form `YYYY-MM-DD HH:MM:SS`, in the server's local time. The newer
-tables (`enroll_tokens`, `agent_secrets`, `schema_migrations`) use `TIMESTAMPTZ`.
+Most timestamp columns of the older tables are `TEXT` in the form `YYYY-MM-DD HH:MM:SS`, in the server's local
+time. The newer tables (`enroll_tokens`, `agent_secrets`, `schema_migrations` and the four tables of migration
+`0009`) use `TIMESTAMPTZ`.
 
 ## Useful queries
 

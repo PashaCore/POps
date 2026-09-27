@@ -45,11 +45,21 @@ Ways to create it:
 | `POPS_GITHUB_REPO` | no | `PashaCore/POps` | GitHub repository used for the release check, the server update check and **GitHub'dan indir ve doğrula**. |
 | `POPS_SELFUPDATE_DIR` | no | `/var/lib/pops` | Spool directory for panel-triggered server self-update. Self-update counts as installed only if the backend user can write here. See [`self-update.md`](self-update.md). |
 | `POPS_VERSION` | no | – | Overrides the version the server reports. Normally unset; the version is read from the `VERSION` file next to the backend (or one level up), then from `CHANGELOG.md`. |
+| `SMTP_HOST` | no | empty | Mail server for e-mail notifications. E-mail is sent only when `SMTP_HOST` and a sender (`SMTP_FROM` or `SMTP_USER`) are set. |
+| `SMTP_PORT` | no | `587` | Mail server port. |
+| `SMTP_SECURITY` | no | `starttls` | `starttls` (typically port 587), `ssl` (implicit TLS, typically 465) or `none` (only for a local or trusted relay). |
+| `SMTP_USER` | no | empty | Login name; when empty the server sends without logging in. |
+| `SMTP_PASS` | no | empty | Password for `SMTP_USER`. |
+| `SMTP_FROM` | no | `SMTP_USER` | Sender address. |
 
 The backend refuses to start (`RuntimeError: Ortam değişkeni tanımlı değil: …`) when `JWT_SECRET`, `DB_USER`,
 `DB_PASS` or `DB_NAME` is missing.
 
 `POPS_WOL_CONFIRM_PASSWORD` from older versions is no longer used and can be deleted.
+
+The SMTP settings are kept only in `.env`; the panel shows whether SMTP is configured but never the values.
+The recipients, the webhook address and the minimum severity are set on the panel (see
+[Notification settings](#notification-settings)).
 
 ### Listening address
 
@@ -156,10 +166,12 @@ SQL is shown for recovery situations.
 
 | Setting | Where in the panel | Values |
 | --- | --- | --- |
-| `concurrent_limit` | **Ayarlar** → "Orkestrasyon Performansı" (1–200) | How many devices run a queued task at the same time. Default `5`. The backend treats `0` as no limit (API or SQL only). |
+| `concurrent_limit` | **Ayarlar** → "Orkestrasyon Performansı" (1–200), or **Dosya Dağıtımı** → "Akıllı Kuyruk Limiti" (1–100) | How many devices run a queued task at the same time. Default `5`. The backend treats `0` as no limit (API or SQL only). |
 | `enforce_agent_auth` | **Sistem & Sürüm** → "Kimlik zorlaması" | `1`: agents without a valid secret or enrollment token are rejected (WebSocket `4401`, HTTP `401`). Default off (accept-both). |
 | `agent_policies` | **Politikalar** | JSON policy read by agents every 60 seconds (below). |
 | `verified_release_version`, `verified_release_manifest` | **Sistem & Sürüm** → agent update | The staged, verified agent release. Set only by a successful upload or GitHub download. |
+| `auto_enroll_lab` | **Laboratuvarlar** → **Oto-Kayıt** | JSON `{"lab": "<lab>", "until": "YYYY-MM-DD"}`. Devices that connect for the **first time** on or before `until` (server date) are put into that lab. A lab from the enrollment token takes precedence, devices that are already known keep their lab, and a value without `until` (from older versions) is ignored. |
+| `notify_enabled`, `notify_min_severity`, `notify_email_to`, `notify_webhook_url` | **Sistem & Sürüm** → **Bildirimler** | Notification delivery, see below. |
 
 ```sql
 -- Emergency: turn agent-auth enforcement off (for example if a lab was enforced before it enrolled)
@@ -178,7 +190,26 @@ UPDATE global_settings SET value = '0' WHERE key = 'enforce_agent_auth';
 | `quarantine_threshold` | int | Violation count for `auto_quarantine`. |
 | `dns_domains` | object | `{"<category>": ["example.com", ...]}`. Only these domains and their subdomains are matched. Empty means no DNS detection. |
 
-The **Politikalar** page does not show `dns_domains`, and saving the page sends the policy without it, which
-stores an empty `dns_domains`. To use domain lists, send the complete object (including `dns_domains`) with the
-API, and do not save the page afterwards. In the current agent build the DNS monitoring loop is not started, so
-no DNS violations are reported yet; the fair-use text is shown. See [`agent.md`](agent.md#policies).
+The **Politikalar** page edits all of these fields, with one box of domains per category (one domain per line).
+The server cleans the lists: lower case; `http(s)://`, paths, a leading `*.` or `.` and a trailing `.` are removed;
+duplicates are dropped; at most 5000 domains per category. A request that omits `dns_domains` keeps the stored
+lists; send `"dns_domains": {}` to clear them.
+
+Agents up to 0.1.4-alpha do not start their DNS monitoring, so they report no violations and never quarantine a
+PC automatically; they do show the fair-use text. See [`agent.md`](agent.md#policies).
+
+### Notification settings
+
+Set by a superadmin on **Sistem & Sürüm** → **Bildirimler** (`POST /api/system/notify-settings`) and stored in
+`global_settings`:
+
+| Key | Values | Meaning |
+| --- | --- | --- |
+| `notify_enabled` | `1` / `0` (default `0`) | Send notifications out by e-mail and/or webhook. The bell in the panel works regardless. |
+| `notify_min_severity` | `info`, `medium`, `high` (default), `critical` | Lowest severity that is sent out. |
+| `notify_email_to` | comma-separated addresses (at most 20) | E-mail recipients. Needs the `SMTP_*` settings in `.env`. |
+| `notify_webhook_url` | `http://` or `https://` URL (at most 500 characters) | Receives a JSON `POST` for each notification. |
+
+The webhook body contains `text` (for Slack), `content` (for Discord, cut to 1900 characters), `event`, `severity`,
+`title`, `detail` and `pc_name`. Which events notify, and the limits, are described in
+[`security.md`](security.md#notifications).

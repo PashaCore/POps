@@ -592,5 +592,11 @@ async def add_policy_alert(data: PolicyAlertInput, agent_id: Optional[str] = Dep
         reason="DNS Kural İhlali",
         meta_data={"domain": data.domain, "violation_category": data.category},
     )
-    await notify("policy_alert", "high", "Kural ihlali: %s (%s)" % (data.domain, data.category), "", data.hw_id)
+    # Bildirim yalnız anahtarı doğrulanmış ajandan: enforce kapalıyken kimliksiz istemci de bu uca
+    # yazabilir (accept-both) ve sahte ihlallerle bildirim yağdırmamalı. Başlık kategori bazlı: aynı
+    # cihaz + kategori 10 dakikada bir bildirir, alan adı değiştirerek süzgeç aşılamaz.
+    if agent_id is not None:
+        await notify(
+            "policy_alert", "high", "Kural ihlali: %s" % data.category, "Alan adı: %s" % data.domain, data.hw_id
+        )
     return {"status": "success"}

@@ -23,6 +23,24 @@ Mostly. The server checks GitHub for new versions but works without it; agent re
 locally. The panel pages load charts, drag-and-drop, icons and fonts from public CDNs, so those parts need
 internet access in the administrator's browser.
 
+**Can POps tell me when something goes wrong?**
+Yes. Failed or rolled-back agent updates, takeover attempts, DNS policy violations, quarantines and similar events
+appear under the bell in the panel, and a superadmin can have them sent by e-mail or to a webhook
+(**Sistem & Sürüm** → **Bildirimler**). See [`security.md`](security.md#notifications) and
+[`configuration.md`](configuration.md#notification-settings).
+
+**Can I run a command every night or on certain weekdays?**
+Yes, with a scheduled task on **Görev Kuyruğu** (once, every day, or on chosen weekdays, in the server's time
+zone). It runs through the normal task queue. See [`dashboard.md`](dashboard.md#görev-kuyruğu).
+
+**Does POps list installed software and missing Windows updates?**
+The server and the **Raporlar** page support it, and admins can ask PCs to scan for or install updates. The data
+comes from agents 0.1.5-alpha and later; older agents do not report it. See
+[`agent.md`](agent.md#software-inventory-and-windows-updates).
+
+**Can I run the server in Docker?**
+Yes, optionally: [`docker.md`](docker.md). The native installation is the primary path.
+
 ## Privacy and transparency
 
 **Does POps log keystrokes or record screens?**
@@ -108,3 +126,7 @@ In [`api.md`](api.md). The interactive `/docs` page is disabled on purpose.
 
 **What should I back up?**
 The PostgreSQL database, the backend `.env` and `Backend/storage/` ([`database.md`](database.md#backups)).
+
+**Can I export data to a spreadsheet?**
+Yes. **Raporlar** → **CSV indir** exports devices, software, Windows update state or events as CSV
+(semicolon-separated, UTF-8 with a byte-order mark so that Excel shows Turkish characters correctly).

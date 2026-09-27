@@ -2,7 +2,8 @@
 
 This page describes a production POps server: what runs where, how to put the web server and TLS in front of
 the backend, and how to update it. The first installation itself is covered in
-[`installation.md`](installation.md).
+[`installation.md`](installation.md). Running the server in containers instead is described in
+[`docker.md`](docker.md); this page covers the native installation.
 
 ## Layout
 
@@ -91,6 +92,8 @@ project-root `.env`. See [`configuration.md`](configuration.md#panel-php-configu
 - Open only 443 (and 80 for the redirect) to clients. Keep port 8000 closed; `install.sh` binds the backend to
   `127.0.0.1`.
 - Agents need outbound HTTPS to the server name.
+- The server needs outbound access to GitHub for the version check and release download (optional; offline
+  servers upload releases by hand), and to the SMTP server and webhook address if notifications are sent out.
 - Wake-on-LAN packets are sent by the server to `WOL_BROADCAST_ADDR` (default `255.255.255.255`, which stays in
   the server's own subnet) and, for devices in a lab, also by an online agent in that lab. For a routed lab subnet
   set `WOL_BROADCAST_ADDR` to that subnet's broadcast address.

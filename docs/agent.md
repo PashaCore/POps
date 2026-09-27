@@ -89,6 +89,9 @@ What the service does with each server command:
 | `set_capabilities` | Switches terminal and/or Vision **off**; requests to switch them on are ignored. |
 | `update_agent` | Starts a signed update (below). |
 
+The server may also send `scan_updates` and `install_updates`
+([below](#software-inventory-and-windows-updates)); agents up to 0.1.4-alpha ignore them.
+
 The agent reports back `result`, `thumbnail`, `stream_frame` (on the Vision socket), `vision_rejected`,
 `capabilities`, `capability_denied` and `update_result`. The full message list is in [`api.md`](api.md#websockets).
 
@@ -124,9 +127,25 @@ minutes, doubling up to 24 hours.
 - **Fair-use notice.** When the policy has a `fair_use_text`, the tray shows it in a window titled
   "Kurumsal Adil Kullanım Politikası" that the user closes with "Okudum, Anladım ve Kabul Ediyorum".
 - **DNS policy.** The agent contains DNS-cache matching against the policy's `dns_domains` (exact domain or
-  subdomain, per active category), `policy_alert` reporting and the `auto_quarantine` threshold. In this version
-  the service does not start that monitoring loop, so no DNS violations are reported and no automatic quarantine
-  happens.
+  subdomain, per active category), `policy_alert` reporting and the `auto_quarantine` threshold. In agents up to
+  0.1.4-alpha the service does not start that monitoring loop, so they report no DNS violations and never
+  quarantine a PC automatically.
+
+## Software inventory and Windows updates
+
+The server side is in place; agents report this data from 0.1.5-alpha on. Older agents send nothing, show as
+"bildirmedi" on **Raporlar**, and ignore the commands. The contract between agent and server
+(`Backend/pops/routers/inventory.py`, `Backend/pops/models.py`):
+
+| Direction | Message | Content |
+| --- | --- | --- |
+| agent → server | `POST /api/software/{hw_id}` | `{"items": [{"name", "version", "publisher", "install_date"}]}`: the complete list of installed programs, which replaces the stored list (at most 5000 items). |
+| agent → server | `POST /api/patches/{hw_id}` | Windows Update state: pending, security and critical counts, `reboot_required`, `last_search`, `last_install` (ISO 8601), the pending updates (`kb`, `title`, `severity`, `categories`, `is_security`) and `last_result`. |
+| server → agent | `{"action": "scan_updates", "scope": ...}` | Run a Windows Update scan and report the result with `POST /api/patches/{hw_id}`. |
+| server → agent | `{"action": "install_updates", "scope": "security" \| "all"}` | Install the pending security/critical updates, or all of them. The PC is not restarted; the need for a restart is reported as `reboot_required`. |
+
+Both endpoints require `X-Agent-Id` + `X-Agent-Secret` of an enrolled device, even while enforcement is off.
+Admins send the commands from **Raporlar** → **Windows güncellemeleri**; only online devices receive them.
 
 ## Updates
 

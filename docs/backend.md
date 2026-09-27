@@ -16,8 +16,10 @@ database pool and migrations) and wires the routers. Everything else lives in th
 | `pops/audit.py` | `agent_logs_v2` event log and the agent-unwritable, hash-chained `device_audit_logs`. |
 | `pops/manager.py` | WebSocket connection manager (agents, panels, vision) and time-limited remote-control session grants. |
 | `pops/models.py` | Pydantic request models. |
-| `pops/taskqueue.py`, `pops/dna.py`, `pops/wol.py` | Task queue dispatch, hardware-DNA identity reconciliation, Wake-on-LAN. |
-| `pops/routers/*.py` | Endpoint groups, one `APIRouter` each: `auth` (login, 2FA, users), `control` (audit sessions, lockdown, bypass codes, panel/vision WebSockets, preview, remote input), `agents` (`/ws/agent` and the agent HTTP endpoints), `devices` (devices, labs, inventory, logs, WoL), `tasks` (queue, orchestration, packages, storage). |
+| `pops/taskqueue.py`, `pops/dna.py`, `pops/wol.py` | Task queue dispatch and target resolution, hardware-DNA identity reconciliation, Wake-on-LAN. |
+| `pops/notify.py` | Notifications: the `notifications` table behind the panel bell, optional e-mail (SMTP from `.env`) and webhook delivery in the background, dedupe and send cap. |
+| `pops/scheduler.py` | Background loop started at startup (every 30 s): queues due scheduled tasks (one process at a time, advisory lock) and alerts on agents that never answered an update. |
+| `pops/routers/*.py` | Endpoint groups, one `APIRouter` each: `auth` (login, 2FA, users), `control` (audit sessions, lockdown, bypass codes, panel/vision WebSockets, preview, remote input), `agents` (`/ws/agent` and the agent HTTP endpoints), `devices` (devices, labs, inventory, logs, WoL), `tasks` (queue, orchestration, packages, storage), `schedules` (scheduled tasks), `notifications` (bell, channel settings, test), `inventory` (software inventory and Windows update status), `reports` (summary and CSV export). |
 
 `Backend/system_routes.py` (version and update checks, signed releases from GitHub or upload, enrollment tokens,
 agent deploy, server self-update, capabilities) is a separate router built with injected dependencies. Agent updates

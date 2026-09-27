@@ -73,11 +73,15 @@ After a backend restart every device is shown Offline until its agent reconnects
 
 Each successful enrollment uses up one use of the token; a token created with several uses enrolls that many PCs.
 
+**A new PC did not land in the lab of the Oto-Kayıt rule.** The rule applies only to devices connecting for the
+first time on or before its end date (server date). A device the server already knows keeps its lab, and an
+enrollment token created for a lab takes precedence.
+
 ## Commands and deployments
 
 - **Task stays "Sırada" (Pending).** The PC is offline (tasks wait until it connects), the task is paused, or the
-  concurrency limit is reached: at most `concurrent_limit` PCs run a task at once (**Ayarlar**), and each PC runs one
-  task at a time.
+  concurrency limit is reached: at most `concurrent_limit` PCs run a task at once (**Ayarlar** or
+  **Dosya Dağıtımı**), and each PC runs one task at a time.
 - **Task stays "İşleniyor" (Running).** A command may run for up to 30 minutes before the agent stops it. If the PC
   restarts meanwhile, the task is marked `Completed (Rebooted)` when the agent reconnects.
 - **Output is `[REDDEDİLDİ]`.** The terminal capability is disabled on that PC; the refusal is logged as
@@ -195,6 +199,49 @@ signed updates; install the MSI on them once.
 
 ## Policies
 
-- **DNS policy violations never appear.** DNS monitoring is not active in the current agent build.
-- **Domain lists disappeared.** Saving the **Politikalar** page stores the policy without `dns_domains`, which
-  clears them. Set them through `POST /api/agent_policies` ([`configuration.md`](configuration.md#agent-policy-object)).
+- **DNS policy violations never appear.**
+  - Agents up to 0.1.4-alpha do not start their DNS monitoring, so they never report violations.
+  - A category only matches the domains listed for it on **Politikalar** (and their subdomains). An empty list
+    matches nothing, and a category that is not ticked is not checked.
+
+## Notifications
+
+- **Nothing appears under the bell.** The bell is shown to admins and superadmins only. Only events the server
+  decides on create notifications ([`security.md`](security.md#notifications)); the risk level of ordinary log
+  entries never does. An identical notification (same event, device and title) is recorded at most once per
+  10 minutes.
+- **No e-mail or webhook message.**
+  - **Sistem & Sürüm** → **Bildirimler**: **Dışarıya gönder** must be on, and the event's severity must be at least
+    **En az önem** (default: high). Everything is still shown under the bell.
+  - E-mail also needs `SMTP_HOST` and a sender (`SMTP_FROM` or `SMTP_USER`) in the backend `.env`, then a restart
+    of the backend. The card shows whether SMTP is configured.
+  - Use **Test gönder**: it sends with the values in the form and shows the error text, for example a refused
+    login or an unreachable host.
+  - A failed delivery is marked "gönderilemedi" under the bell; the error text is in the `delivery_error` field of
+    `GET /api/notifications` and in the `notifications` table.
+  - At most 30 notifications are sent out per 10 minutes; further ones are only shown under the bell.
+
+## Scheduled tasks
+
+- **A scheduled task did not run.**
+  - It is paused (**Durdur**), or it is a one-time task that has already run; the list shows "Durduruldu".
+  - If the backend was not running at the scheduled time, the missed run is queued once when it starts again.
+  - Times are in the **server's** time zone. The form shows the server's current time; compare it with yours.
+  - The scheduler checks every 30 seconds, so a run can start up to about half a minute late. It runs only while
+    the backend is running.
+  - The last result shows how many devices the command was queued for, or the error; if queuing fails, a
+    notification is created too.
+- **It ran, but a PC did nothing.** A due schedule only queues tasks. They then behave like any other task: an
+  offline PC runs it when it connects, the concurrency limit applies, and a PC whose terminal capability is off
+  refuses it with `[REDDEDİLDİ]`. Check the tasks on **Görev Kuyruğu**.
+
+## Software inventory and Windows updates
+
+- **No software or Windows Update data for a device.** These are reported by agents 0.1.5-alpha and later; older
+  agents show "bildirmedi" and ignore **Tara** and the install buttons.
+- **The agent's reports are rejected with `401`.** The software and Windows Update endpoints accept only enrolled
+  agents with a valid device secret, even while enforcement is off. Enroll the device (see
+  [Enrollment and 4401 rejections](#enrollment-and-4401-rejections)).
+- **Scan or install did nothing.** Commands go only to devices that are online at that moment; the reply lists the
+  skipped ones (`skipped_offline`). Results arrive when the agent reports them; the page reloads the list 15 seconds
+  after sending.

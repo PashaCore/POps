@@ -45,11 +45,14 @@ WebSocket directly from the browser on the same origin. See [`dashboard.md`](das
 
 A FastAPI application (`Backend/server.py`) served by uvicorn, with the code in the `Backend/pops/` package and
 `Backend/system_routes.py`. It provides the REST API, three WebSocket endpoints, the static download folders and
-the task queue, and it applies database migrations at startup. Code layout: [`backend.md`](backend.md). Endpoints:
-[`api.md`](api.md).
+the task queue, and it applies database migrations at startup. A background loop runs every 30 seconds: it
+queues scheduled tasks that are due and raises a notification for agent updates that were never answered.
+Notifications are stored for the panel's bell and, if configured, sent by e-mail or webhook. Code layout:
+[`backend.md`](backend.md). Endpoints: [`api.md`](api.md).
 
 Some state is kept only in the backend process's memory: which agents and panels are connected, the Vision
-sockets, remote-control session grants and pending screenshot requests. Everything else is in PostgreSQL
+sockets, remote-control session grants, pending screenshot requests, updates waiting for a result, and the
+notification de-duplication and rate counters. Everything else is in PostgreSQL
 ([`database.md`](database.md)). Because of the in-memory state the backend runs as a single worker.
 
 ### Database
@@ -77,6 +80,8 @@ Four .NET 8 programs installed by one MSI ([`agent.md`](agent.md)):
 | Agent → backend | HTTPS `/api/agent_policies`, `/api/inventory/{hw_id}` | `X-Agent-Id` + `X-Agent-Secret` (inventory) | Policy (every 60 s), hardware inventory. |
 | Agent → backend | HTTPS `/updates/<msi>`, `/download/<file>` | none (content verified by the agent for updates) | Signed update package, deployment files. |
 | Service ↔ tray | named pipe `POpsTrayPipe` | the service checks the client is the installed `POpsTray.exe` | Consent, notices, lock screen, capture, remote input. |
+| Backend → GitHub | HTTPS | none | Version check and signed release download (optional; works offline without it). |
+| Backend → mail server, webhook | SMTP, HTTP(S) `POST` | SMTP login from `.env` | Notifications, only if configured. |
 
 All traffic between PCs and the server is TLS; the agent refuses a plain `http://` server that is not on the same
 machine.
@@ -95,8 +100,9 @@ machine.
 
 ### Running a command
 
-1. An admin queues commands on the Deployment or Terminal page (`POST /api/deploy_orchestration`); each step
-   becomes one task per target PC, recorded with the requesting user.
+1. An admin queues commands on the Deployment or Terminal page or in the Vision diagnostics dialog
+   (`POST /api/deploy_orchestration`), or a scheduled task becomes due; each step becomes one task per target PC,
+   recorded with the requesting user.
 2. The queue sends `execute` to idle online PCs, at most `concurrent_limit` at a time, and writes each dispatch to
    the hash-chained audit log.
 3. The service runs the command as SYSTEM (unless the terminal capability is off) and returns the output. The
@@ -149,6 +155,7 @@ script, which health-checks the new code and restores the previous code if the c
 | `Agent/` | .NET agent projects and unit tests. |
 | `Installer/agent/` | WiX MSI project and custom actions. |
 | `Installer/server/` | `install.sh`, nginx example, `pops-deploy-backend`, self-update script and systemd units. |
+| `docker/`, `docker-compose.yml` | Optional container setup ([`docker.md`](docker.md)). |
 | `keys/` | Release public key. |
 | `tools/` | `sign_release.py` (release signing), `agent_simulator.py` (load test). |
 | `.github/workflows/` | CI (`ci.yml`), release (`release.yml`), CodeQL. |

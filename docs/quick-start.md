@@ -87,6 +87,8 @@ the server rejects agents without a valid device secret or enrollment token.
 ## Next steps
 
 - Distribute software: [`dashboard.md`](dashboard.md#dosya-dağıtımı).
+- Get notified of failed updates and other problems by e-mail or webhook:
+  [`configuration.md`](configuration.md#notification-settings).
 - Update agents with signed releases: [`agent.md`](agent.md#updates).
 - Enable server updates from the panel: [`self-update.md`](self-update.md).
 - Review the security checklist: [`security.md`](security.md#operator-checklist).

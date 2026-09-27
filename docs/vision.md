@@ -55,6 +55,25 @@ When you open a lab on the POpsVision page, the wall view requests a preview of 
 The tray never logs remote keystrokes; its log records message types only. The audit log records that a session
 was opened, not what was typed.
 
+## Diagnostics (Teşhis)
+
+The focus view has a **Teşhis** button that opens "Uç Nokta Teşhisi". Its commands are queued like any other
+command (`POST /api/deploy_orchestration`): they run as SYSTEM through the task queue, are recorded with the user
+who sent them, need no Vision session, and are refused on a PC whose terminal capability is off. The agent's reply
+is shown in the dialog. The buttons are hidden for viewers.
+
+| Button | Command on the PC |
+| --- | --- |
+| POps süreçlerini listele | `tasklist` filtered to POps processes |
+| Son logları oku | last 20 lines of the newest log in `C:\POpsLogs` |
+| Ekran yakalamayı yeniden başlat | ends `POpsTray.exe`; the watchdog starts the tray again within about 10 seconds |
+| Zamanı eşitle | `w32tm /resync` |
+| Ajanı yeniden başlat | ends `POpsAgent.exe`; Windows restarts the service after about 10 seconds (asks for confirmation) |
+| PC'yi yeniden başlat | `shutdown /r /t 5` (asks for confirmation) |
+
+**Ajanı yeniden başlat** ends the agent before it can answer; the task is marked `Completed (Rebooted)` when the
+agent reconnects. The POpsVision page sends no commands on its own.
+
 ## Turning Vision off on a PC
 
 The capability policy can disable Vision (streaming, previews and remote input) on a PC:

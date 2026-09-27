@@ -218,11 +218,18 @@ def main():
     time.sleep(2)
     got = [h for h in Hook.received[before:] if h.get("event") == "policy_alert"]
     chk(
-        len(got) == 1 and "ft-test.example" in got[0].get("text", ""),
+        len(got) == 1 and "kumar" in got[0].get("title", "") and "ft-test.example" in got[0].get("text", ""),
         "yüksek önemli olay webhook'a gitti, tekrarı süzüldü",
     )
     s, lst = req("/api/notifications", ad)
     mine = [n for n in lst.get("items", []) if n["event"] == "policy_alert" and n["pc_name"] == "HW-FT1"]
+    s_anon = req("/api/policy_alert", body={"hw_id": "HW-FT2", "domain": "sahte.example", "category": "kumar"})[0]
+    time.sleep(1)
+    s, lst2 = req("/api/notifications", ad)
+    chk(
+        s_anon == 200 and not [n for n in lst2.get("items", []) if n["pc_name"] == "HW-FT2"],
+        "anahtarsız ihlal bildirimi kaydedilir ama bildirim üretmez",
+    )
     chk(s == 200 and mine and not mine[0]["is_read"] and lst.get("unread", 0) >= 1, "zil listesinde okunmamış")
     chk(mine and mine[0].get("channels") == "webhook", "kaydın gönderildiği kanal işlendi")
     chk(req("/api/notifications", vw)[0] == 403, "viewer bildirim listesini göremez")

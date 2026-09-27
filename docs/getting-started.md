@@ -1,8 +1,9 @@
 # Getting Started
 
 POps (Pasha Operations Platform) manages the Windows PCs of computer labs and similar fleets from one web panel:
-inventory, remote commands and software deployment, screen view and remote control with the user's consent,
-quarantine, Wake-on-LAN, and signed agent updates. It is designed to be transparent to the people using the PCs:
+inventory, remote commands (also on a schedule) and software deployment, screen view and remote control with the
+user's consent, quarantine, Wake-on-LAN, signed agent updates, reports, and notifications by e-mail or webhook.
+Installed software and Windows Update status are reported by agents from 0.1.5-alpha on. It is designed to be transparent to the people using the PCs:
 remote sessions ask for consent or show a notice with the reason, and security-relevant actions are recorded.
 
 POps is alpha software. Read [`../SECURITY.md`](../SECURITY.md) before you run it on real machines.
@@ -29,7 +30,8 @@ sees, a watchdog and an updater. The server has a FastAPI backend, a PostgreSQL 
 
 ## Path to a working lab
 
-1. **Install the server:** [`installation.md`](installation.md) (one script).
+1. **Install the server:** [`installation.md`](installation.md) (one script), or with Docker Compose:
+   [`docker.md`](docker.md).
 2. **Put the web server and TLS in front of it:** [`deployment.md`](deployment.md).
 3. **Enroll the first PCs:** [`quick-start.md`](quick-start.md) walks through the whole sequence, from the first
    sign-in to running a command on a PC.
@@ -55,6 +57,7 @@ sees, a watchdog and an updater. The server has a FastAPI backend, a PostgreSQL 
 | Topic | Page |
 | --- | --- |
 | Install the server | [`installation.md`](installation.md) |
+| Run the server with Docker (optional) | [`docker.md`](docker.md) |
 | First steps end to end | [`quick-start.md`](quick-start.md) |
 | Production setup, updates, releases | [`deployment.md`](deployment.md) |
 | All settings | [`configuration.md`](configuration.md) |

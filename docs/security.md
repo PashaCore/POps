@@ -37,20 +37,23 @@ still use the `/api/admin/2fa/*` endpoints directly.
 
 | Role | Can |
 | --- | --- |
-| `viewer` | Read devices, labs, inventory, logs, tasks and packages. Cannot see screen previews or live frames, cannot send remote input, and cannot open the Deployment, Terminal or Settings pages. |
-| `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies. |
-| `superadmin` | Additionally: panel users, agent releases and updates, enrollment tokens, agent-auth enforcement, re-enrollment, capability policy, server self-update, audit-chain verification. |
+| `viewer` | Read devices, labs, inventory, software, Windows Update state, logs, tasks, packages and reports (including CSV exports). Cannot see screen previews or live frames, cannot send remote input, and cannot open the Deployment, Terminal or Settings pages. |
+| `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, scheduled tasks, Windows Update scan and install, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies, the notification bell. |
+| `superadmin` | Additionally: panel users, agent releases and updates, enrollment tokens, agent-auth enforcement, re-enrollment, capability policy, server self-update, audit-chain verification, notification settings. |
 
 Things to keep in mind:
 
-- **Admins can run commands as SYSTEM on managed PCs** through the task queue (Deployment and Terminal pages).
-  Each command is written to the hash-chained audit log, with the user who queued it, when it is sent to the PC.
-  On a PC where the terminal capability is disabled the agent refuses them.
+- **Admins can run commands as SYSTEM on managed PCs** through the task queue (Deployment and Terminal pages,
+  the Vision diagnostics dialog and scheduled tasks). Each command is written to the hash-chained audit log, with
+  the user who queued it, when it is sent to the PC. On a PC where the terminal capability is disabled the agent
+  refuses them.
+- **Scheduled tasks** use the same queue: when due, the server queues the command as normal tasks, so the
+  concurrency limit, the capability policy and the per-command audit entry apply. Creating, pausing, resuming,
+  running and deleting a schedule is also written to the audit log with the user, and each automatic run is
+  recorded. A queued run keeps the schedule's creator (or the user who pressed **Şimdi**) as requester.
 - The per-user **page permissions** set on the Settings page only decide which dashboard pages a non-superadmin
   can open. The API authorizes by role alone, so an admin without the `deploy` page can still call the deployment
   endpoints. Use the `viewer` role for read-only accounts.
-- The Settings page offers only `admin` and `superadmin` when creating users; create `viewer` accounts through
-  `POST /api/admin/users` ([`api.md`](api.md#panel-login-2fa-and-users)).
 - The last active superadmin cannot be deleted or demoted, and nobody can delete their own account.
 
 ## Agent identity
@@ -68,6 +71,10 @@ Things to keep in mind:
   for example after a reinstall behind freeze software.
 - **Binding.** On the agent HTTP endpoints the authenticated device ID must match the device being written;
   otherwise `403`.
+- **Newer agent endpoints are enrolled-only.** The software inventory and Windows Update endpoints
+  (`POST /api/software/{hw_id}`, `POST /api/patches/{hw_id}`) require a valid device secret even while enforcement
+  is off (`401` otherwise). Only agents from 0.1.5-alpha on send this data, so the accept-both exception for
+  older agents does not apply there.
 - **Transport.** The agent refuses a non-loopback `http://` server and validates the server certificate with the
   Windows defaults, so credentials never travel in clear text. A self-signed certificate must be trusted by the
   PCs.
@@ -102,11 +109,53 @@ off, even a compromised server cannot use them. It takes effect on agents from 0
 
 See [`vision.md`](vision.md).
 
+## Notifications
+
+Notifications appear under the bell in the panel (admins and superadmins) and can also be sent out by e-mail
+and/or a webhook.
+
+**Which events notify.** Only events the server itself decides on:
+
+| Event | Severity |
+| --- | --- |
+| Attempt to take over an enrolled device with an enrollment token (`enroll_denied`) | critical |
+| Agent update failed (`rollback_failed`, `error`, `rejected`, …, or the agent is no longer managed) | critical |
+| Agent update rolled back | high |
+| Update sent, but no result from the agent after 20 minutes | high |
+| DNS policy violation reported by an agent | high |
+| Device quarantined by an admin | high |
+| Scheduled task could not be queued | high |
+| Update did not start (machine unchanged), or waits for a restart | medium |
+| Agent refused a disabled capability | medium |
+| Agent updated successfully | info |
+
+The `risk_level` an agent writes with `POST /api/logs` never creates a notification, so a device that is not
+enrolled cannot flood administrators with fake "critical" alerts. DNS policy alerts notify only when they come
+from an enrolled agent with a valid secret: while enforcement is off `/api/policy_alert` still records alerts from
+agents without credentials in the event log, but those never notify. The notification title is per category (the
+domain is in the detail), so one device raises at most one notification per category every 10 minutes.
+
+**Limits.** An identical notification (same event, device and title) is recorded at most once per 10 minutes.
+At most 30 notifications are sent out per 10 minutes; the rest are still shown under the bell. Sending runs in
+the background with a 10-second timeout and never blocks or breaks the event that caused it.
+
+**Settings.** Only a superadmin can change where notifications go. The webhook address must be `http://` or
+`https://` (use `https://`; the body contains device names and event details). SMTP host, user and password are
+read only from the backend `.env` and are never stored in the database or shown in the panel. Changes to the
+notification settings are written to the audit log.
+
+## Reports and CSV export
+
+The report and export endpoints are readable by every signed-in role (the **Raporlar** page itself needs the
+`reports` page permission). CSV exports contain values reported by agents (program names, event
+texts), so cells that start with `=`, `+`, `-`, `@`, a tab or a carriage return are prefixed with `'`; spreadsheet
+programs then show them as text instead of running them as formulas.
+
 ## Audit logs
 
 | Log | Written by | Use |
 | --- | --- | --- |
-| `device_audit_logs` | server only (agents cannot write it) | Security record: enrollment and rejections, remote-control session starts, lockdown/unlock, bypass codes, SYSTEM commands with their requester, update results, releases, enforcement and capability changes. Hash-chained. |
+| `device_audit_logs` | server only (agents cannot write it) | Security record: enrollment and rejections, remote-control session starts, lockdown/unlock, bypass codes, SYSTEM commands with their requester, scheduled-task changes and runs, Windows Update scan/install requests, update results, releases, enforcement and capability changes, auto-enrollment and notification settings. Hash-chained. |
 | `agent_logs_v2` | server and agents | Operational event log shown on the Log pages. |
 | `enterprise_audit_logs` | server | Remote-control sessions (who, target, reason, mandatory, start/end). |
 
@@ -123,7 +172,7 @@ restrict database access.
 | `GET /api/agent_policies` | Agents read the policy; it holds no secrets. |
 | `/download/<file>` | Deployment packages for agents. Do not upload anything confidential on the Deployment page. |
 | `/updates/<file>` | The agent MSI being distributed (verified by agents against the signed manifest). |
-| `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. |
+| `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. The software and Windows Update endpoints always require them. |
 
 ## Operator checklist
 
@@ -137,6 +186,7 @@ restrict database access.
 - [ ] Install the MSI with `TERMINAL_ENABLED=0` and/or `VISION_ENABLED=0` on PCs that do not need those features.
 - [ ] Restrict who can reach the database; back it up.
 - [ ] Check the audit chain from time to time (`/api/system/audit-verify`).
+- [ ] Send notifications out (e-mail or an `https://` webhook) so takeover attempts and failed updates reach you.
 - [ ] Prepare the KVKK notice for the people whose PCs are managed: [`kvkk-aydinlatma.md`](kvkk-aydinlatma.md).
 
 ## Reporting a vulnerability

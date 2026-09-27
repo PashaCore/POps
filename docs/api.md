@@ -38,9 +38,9 @@ their existing tokens stop working immediately.
 
 | Dependency | Who passes | Used for |
 | --- | --- | --- |
-| `require_auth` | any signed-in user (`viewer`, `admin`, `superadmin`) | reading data, own 2FA settings |
-| `require_admin` | `admin`, `superadmin` | day-to-day operations (devices, labs, tasks, remote control, policies) |
-| `require_superadmin` | `superadmin` | users, releases and agent updates, enrollment, enforcement, capabilities, self-update, audit verification |
+| `require_auth` | any signed-in user (`viewer`, `admin`, `superadmin`) | reading data (including reports and CSV exports), own 2FA settings |
+| `require_admin` | `admin`, `superadmin` | day-to-day operations (devices, labs, tasks and scheduled tasks, remote control, policies, Windows Update commands, the notification list) |
+| `require_superadmin` | `superadmin` | users, releases and agent updates, enrollment, enforcement, capabilities, self-update, audit verification, notification settings |
 
 Missing or invalid token: `401`. Valid token but insufficient role, or a failed CSRF check: `403`.
 
@@ -101,7 +101,7 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/devices` | require_auth | All devices with status, lab, IP, current user, active window, quarantine flag, agent version, running version and capability state. |
-| DELETE | `/api/devices/{pc_name}` | require_admin | Deletes the device, its inventory, its `agent_logs_v2` rows, its version row and its **device secret**, and closes its socket (code `4000`). |
+| DELETE | `/api/devices/{pc_name}` | require_admin | Deletes the device, its hardware and software inventory, its Windows Update status, its `agent_logs_v2` rows, its version row and its **device secret**, and closes its socket (code `4000`). |
 | GET | `/api/inventory` | require_auth | Hardware inventory of all devices (`hw_inventory`). |
 | GET | `/api/logs` | require_auth | Latest event log entries (`agent_logs_v2`), `?limit=` (default 1000). |
 | POST | `/api/rename_device` | require_admin | `{pc_name, display_name}`: sets the display name. |
@@ -114,7 +114,7 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | GET | `/api/lab_settings` | require_auth | Per lab: main PC and seating layout JSON. |
 | POST | `/api/set_main_pc` | require_admin | `{lab_name, pc_name}`; sets the lab's main PC, or clears it if it is already that PC. |
 | POST | `/api/save_lab_layout` | require_admin | `{lab_name, layout_json}`. |
-| POST | `/api/set_auto_enroll` | require_admin | `{target_lab, expire_date}`; stores `auto_enroll_lab` in `global_settings`. The backend does not read this value; use lab-bound enrollment tokens instead. |
+| POST | `/api/set_auto_enroll` | require_admin | `{target_lab, expire_date: "YYYY-MM-DD"}`. Devices that connect for the first time on or before that date go into `target_lab`; an enrollment token's lab takes precedence. Stored as `auto_enroll_lab` and written to the audit log. `400` for an invalid date or an empty lab. |
 
 ### Wake-on-LAN
 
@@ -165,13 +165,15 @@ See [`vision.md`](vision.md) for the session rules.
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/agent_policies` | none | Fair-use text, DNS categories, `auto_quarantine`, `quarantine_threshold` and `dns_domains`. Read by agents; contains no secrets. |
-| POST | `/api/agent_policies` | require_admin | Saves the policy object above. |
+| POST | `/api/agent_policies` | require_admin | Saves the policy object above. `dns_domains` is cleaned (lower case, no scheme or path, no leading `*.`, no duplicates, at most 5000 per category); if the field is omitted, the stored lists are kept. |
 
 ### Agent-facing HTTP endpoints
 
-Meant for agents, not for the dashboard. The current Windows agent sends `POST /api/inventory/{hw_id}` (when the
-server asks for hardware data) and has code for `POST /api/policy_alert`; it does not call the sign-in or log
-endpoints. All of them accept the same agent authentication.
+Meant for agents, not for the dashboard. Agents up to 0.1.4-alpha send `POST /api/inventory/{hw_id}` (when the
+server asks for hardware data) and have code for `POST /api/policy_alert`; they do not call the sign-in or log
+endpoints. All of these accept the same agent authentication (accept-both while enforcement is off). The
+software and Windows Update endpoints are listed [below](#software-inventory-and-windows-updates); they are
+stricter.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
@@ -181,6 +183,56 @@ endpoints. All of them accept the same agent authentication.
 | POST | `/api/inventory/{pc_name}` | agent_http_auth | Hardware inventory (CPU, RAM, board, GPU, OS, IP, MAC, disks). |
 | POST | `/api/logs/{pc_name}` | agent_http_auth | Event log entry into `agent_logs_v2`. |
 | POST | `/api/policy_alert` | agent_http_auth | `{hw_id, domain, category}`: DNS policy violation. |
+
+### Scheduled tasks
+
+A scheduled task queues a command for its targets at a set time; when due it goes through the normal task queue.
+Times are in the server's time zone. Every change and every run is written to the hash-chained audit log.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/scheduled_tasks` | require_admin | All scheduled tasks with `next_run`, `last_run`, `last_result`, plus the current `server_time`. |
+| POST | `/api/scheduled_tasks` | require_admin | `{name, command, target_mode: ALL \| LAB \| PC, targets, schedule_type: once \| daily \| weekly, run_at?, time_of_day?, weekdays?, enabled}`. `once` needs a future `run_at` (`YYYY-MM-DDTHH:MM`); `daily` and `weekly` need `time_of_day` (`HH:MM`); `weekly` needs `weekdays` (1 = Monday … 7 = Sunday). Name up to 100, command up to 4000 characters. |
+| POST | `/api/scheduled_tasks/{task_id}/toggle` | require_admin | `{enabled}`: pause or resume. A one-time task whose time has passed cannot be resumed (`400`). |
+| POST | `/api/scheduled_tasks/{task_id}/run` | require_admin | Queues the command once, now; the caller is recorded as the requester. Returns `queued` (number of tasks). |
+| DELETE | `/api/scheduled_tasks/{task_id}` | require_admin | Deletes the scheduled task. Already queued tasks are not affected. |
+
+### Notifications
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/notifications` | require_admin | Latest notifications (`?limit=`, default 30, at most 200) with `channels`, `delivery_error`, `is_read`, and the `unread` count. |
+| POST | `/api/notifications/read` | require_admin | `{ids: [...]}` marks those as read; an empty list marks all. |
+| GET | `/api/system/notify-settings` | require_superadmin | `enabled`, `min_severity`, `email_to`, `webhook_url` and `smtp_configured` (SMTP values themselves are never returned). |
+| POST | `/api/system/notify-settings` | require_superadmin | Saves the same fields. `min_severity` is `info`, `medium`, `high` or `critical`; up to 20 comma-separated addresses; the webhook must start with `http://` or `https://`. Audited. |
+| POST | `/api/system/notify-test` | require_superadmin | Sends a test notification with the settings in the request body (saved or not) and returns the channels that worked and any `error`. |
+
+### Software inventory and Windows updates
+
+The two agent endpoints accept **only enrolled agents** with a valid `X-Agent-Id` + `X-Agent-Secret` for that
+device, even while `enforce_agent_auth` is off: without credentials the answer is `401`, for another device `403`.
+Agents send this data from 0.1.5-alpha on.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/software/{pc_name}` | agent_http_auth, enrolled only | `{items: [{name, version, publisher, install_date}]}`: the device's complete list of installed programs; replaces the previous list. At most 5000 items (`413` above). |
+| POST | `/api/patches/{pc_name}` | agent_http_auth, enrolled only | Windows Update state: `{pending_count, pending_security, pending_critical, reboot_required, last_search, last_install, updates: [{kb, title, severity, categories, is_security}], last_result}`. Timestamps are ISO 8601; at most 500 updates are stored. |
+| POST | `/api/patches/scan` | require_admin | `{target_mode, targets, scope}`: sends `scan_updates` to the online targets. Returns `dispatched` and `skipped_offline`. Audited. |
+| POST | `/api/patches/install` | require_admin | Same body; sends `install_updates` with `scope` `security` (security and critical updates) or `all`. The agent does not restart the PC; it reports `reboot_required`. Audited. |
+| GET | `/api/patches` | require_auth | Windows Update state of every device, including devices that never reported (`reported: false`). |
+| GET | `/api/software` | require_auth | Programs across the fleet (`?q=` searches name and publisher, `?limit=` default 300, at most 2000) with publisher, versions and the number of devices; also `reporting_devices`. |
+| GET | `/api/software/devices` | require_auth | `?name=<exact program name>`: devices with that program and their versions. |
+| GET | `/api/devices/{pc_name}/software` | require_auth | Installed programs of one device. |
+
+`/api/patches/scan` and `/api/patches/install` are registered before `/api/patches/{pc_name}`, so they are not
+taken as device IDs.
+
+### Reports
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/reports/summary` | require_auth | `?days=` (1–365, default 30). Device counts (total, online, quarantined, enrolled, per lab), agent versions, Windows Update and software coverage, events by risk and by day, most-violated domains, devices with the most high/critical events, and agent update results in the period. |
+| GET | `/api/reports/export` | require_auth | `?kind=devices \| software \| patches \| events&days=`: CSV download (semicolon-separated, UTF-8 with BOM). `events` covers the chosen period, at most 50000 rows. Cells starting with `=`, `+`, `-`, `@`, tab or carriage return are prefixed with `'` so spreadsheets do not run them as formulas. |
 
 ### Signed releases and agent updates
 
@@ -230,11 +282,12 @@ endpoints. All of them accept the same agent authentication.
   `hostname` and the hardware fingerprint `dna_payload`. On the first message of a connection the server
   reconciles the fingerprint with the known devices and may answer with `set_identity` to give the agent a
   different `HW-…` ID (clone detection or identity recovery).
-- **Other agent → server messages** include `result` (task output), `thumbnail`, `vision_rejected`, `update_result`,
+- **Other agent → server messages:** `result` (task output), `thumbnail`, `vision_rejected`, `update_result`,
   `capabilities`, `capability_denied`.
-- **Server → agent actions** include `execute`, `get_hardware`, `set_secret`, `set_identity`, `update_agent`,
-  `set_capabilities`, `lockdown`, `unlock`, `start_vision_session`, `stop_stream`, `wake_peer`, and
-  `remote_input` messages forwarded from the panel (for example `get_thumbnail`).
+- **Server → agent actions:** `execute`, `get_hardware`, `set_secret`, `set_identity`, `update_agent`,
+  `set_capabilities`, `lockdown`, `unlock`, `start_vision_session`, `stop_stream`, `wake_peer`,
+  `scan_updates` and `install_updates` (`{"scope": "security" | "all"}`; handled by agents from 0.1.5-alpha on),
+  and `remote_input` messages forwarded from the panel (for example `get_thumbnail`).
 - **Other close codes:** `4000` when the device is deleted in the panel, `1011` after a malformed message or
   server error.
 
@@ -255,7 +308,7 @@ endpoints. All of them accept the same agent authentication.
   additionally require an open remote-control session for that device. When remote input arrives and more than
   10 seconds have passed since the last check, the user's session is re-checked against the database; a revoked
   session closes the socket (`4001`).
-- **Server → panel** messages include `terminal_output` (task results), `update_result`, `capabilities`, `capability_denied`,
+- **Server → panel:** `terminal_output` (task results), `update_result`, `capabilities`, `capability_denied`,
   `vision_rejected`; `thumbnail` replies go to admin/superadmin panels only; live `stream_frame`s go only to the
   session holder (see above).
 
