@@ -92,8 +92,12 @@ def _read_version() -> str:
 
 
 def _fetch_github_latest_tag() -> Optional[str]:
-    """GitHub'daki son release tag'i (bloklayan; thread'de çağrılır). Hata olursa None."""
-    url = "https://api.github.com/repos/%s/releases/latest" % GITHUB_REPO
+    """GitHub'daki son release tag'i (bloklayan; thread'de çağrılır). Hata olursa None.
+
+    /releases/latest ön sürümleri (-alpha, -beta) saymaz ve hepsi ön sürüm olduğunda 404 döner;
+    bu yüzden liste alınır ve taslak olmayan en yeni release seçilir (liste en yeniden başlar).
+    """
+    url = "https://api.github.com/repos/%s/releases?per_page=10" % GITHUB_REPO
     req = urllib.request.Request(url, headers={
         "Accept": "application/vnd.github+json",
         "User-Agent": "POps-server",
@@ -101,8 +105,10 @@ def _fetch_github_latest_tag() -> Optional[str]:
     try:
         with urllib.request.urlopen(req, timeout=_GITHUB_TIMEOUT) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        tag = data.get("tag_name")
-        return tag or None
+        for rel in data:
+            if not rel.get("draft") and rel.get("tag_name"):
+                return rel["tag_name"]
+        return None
     except Exception:
         return None
 

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Backend:** The **Sistem & Sürüm** page never showed the latest GitHub release. It asked GitHub for `/releases/latest`, which skips pre-releases, and every POps release so far is a pre-release (`-alpha`). The check now takes the newest non-draft release from the release list.
+
 ## [0.1.4-alpha] - 2026-09-27
 
 Closes the findings of an external penetration test on the server and the agent (F1–F8, F10, F12–F14; F9 and F11 remain open), and pays down maintainability debt: the backend is split into a package with a clean lint gate, and the agent components share one helper library with unit tests in CI.
