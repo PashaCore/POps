@@ -12,7 +12,7 @@ from pops.db import execute_query
 from pops.models import CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput
 from pops.security import require_admin, require_auth
 from pops.audit import add_audit_log
-from pops.taskqueue import process_queue
+from pops.taskqueue import process_queue, resolve_targets
 
 router = APIRouter()
 
@@ -171,18 +171,7 @@ async def api_storage(auth: dict = Depends(require_auth)):
 
 @router.post("/api/deploy_orchestration")
 async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(require_admin)):
-    target_pcs = []
-    if data.target_mode == 'ALL':
-        res = await execute_query("SELECT pc_name, lab_name FROM clients", fetch=True)
-        target_pcs = [{"pc": r["pc_name"], "lab": r["lab_name"]} for r in (res or [])]
-    elif data.target_mode == 'LAB':
-        for lab in data.targets:
-            res = await execute_query("SELECT pc_name, lab_name FROM clients WHERE lab_name = $1", (lab,), fetch=True)
-            target_pcs.extend([{"pc": r["pc_name"], "lab": r["lab_name"]} for r in (res or [])])
-    else:
-        for pc in data.targets:
-            res = await execute_query("SELECT lab_name FROM clients WHERE pc_name = $1", (pc,), fetch=True)
-            target_pcs.append({"pc": pc, "lab": res[0]["lab_name"] if res else "Bilinmeyen Lab"})
+    target_pcs = await resolve_targets(data.target_mode, data.targets)
 
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     creator = auth.get("sub")  # F4(a): görevi kuyruklayan admin kaydedilir

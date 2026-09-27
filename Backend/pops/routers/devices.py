@@ -31,6 +31,8 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
         await execute_query(f"DELETE FROM {LOG_TABLE} WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM agent_versions WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM agent_secrets WHERE pc_name = $1", (pc_name,))
+        await execute_query("DELETE FROM device_software WHERE pc_name = $1", (pc_name,))
+        await execute_query("DELETE FROM device_patch_status WHERE pc_name = $1", (pc_name,))
         # Cihaz çevrimiçiyse ajan bağlantısını da kapat
         agent_ws = manager.active_agents.get(pc_name)
         manager.disconnect_agent(pc_name)

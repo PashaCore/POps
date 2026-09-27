@@ -77,6 +77,35 @@
 
     .live-indicator { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.625rem; border-radius: var(--radius-full); font-size: 0.75rem; font-weight: var(--fw-semibold); background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
     .live-indicator .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.5s infinite; }
+    /* Zamanlanmış görevler */
+    .sched-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5); margin-top: var(--space-6); }
+    .sched-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .sched-head h2 { font-size: var(--text-lg); margin: 0; display: flex; align-items: center; gap: 0.5rem; }
+    .sched-head h2 i { color: var(--primary-500); }
+    .sched-form { display: none; margin-top: var(--space-4); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); }
+    .sched-form.open { display: block; }
+    .sched-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
+    .sched-form label.f { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.75rem; font-weight: var(--fw-semibold); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }
+    .sched-form input, .sched-form select, .sched-form textarea { padding: 0.5rem 0.75rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); color: var(--text-primary); font-size: var(--text-sm); text-transform: none; letter-spacing: 0; font-weight: normal; }
+    .sched-form input[type=checkbox] { width: auto; padding: 0; flex: none; margin: 0; }
+    .sched-devs label { justify-content: flex-start; text-align: left; }
+    .sched-form textarea { font-family: var(--font-mono); min-height: 70px; resize: vertical; }
+    .sched-days { display: flex; gap: 0.375rem; flex-wrap: wrap; }
+    .sched-days label { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--text-sm); color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 0.25rem 0.5rem; }
+    .sched-devs { max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.25rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.5rem; }
+    .sched-devs label { font-size: var(--text-sm); color: var(--text-secondary); display: flex; gap: 0.5rem; align-items: center; }
+    .sched-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm); }
+    .sched-row:last-child { border-bottom: none; }
+    .sched-row .n { font-weight: var(--fw-semibold); color: var(--text-primary); }
+    .sched-row .c { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
+    .sched-row .s { color: var(--text-secondary); }
+    .sched-row .sub { font-size: 0.75rem; color: var(--text-tertiary); }
+    .sched-row.off { opacity: 0.55; }
+    .sched-actions { display: flex; gap: 0.375rem; flex-wrap: wrap; justify-content: flex-end; }
+    .sched-btn { padding: 0.35rem 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--bg-surface-2); color: var(--text-primary); font-size: 0.75rem; font-weight: var(--fw-semibold); cursor: pointer; }
+    .sched-btn.primary { background: var(--primary-500); border-color: var(--primary-500); color: #fff; }
+    .sched-btn.danger { color: var(--danger-text); }
+    @media (max-width: 760px) { .sched-row { grid-template-columns: 1fr; } .sched-actions { justify-content: flex-start; } }
 </style>
 
 <div class="page-header">
@@ -107,6 +136,40 @@
         <i class="fas fa-circle-notch fa-spin" style="font-size:1.5rem;"></i>
         <div style="margin-top:0.5rem;font-size:var(--text-sm);">Veriler toplanıyor...</div>
     </div>
+</div>
+
+<div class="sched-card" id="schedCard">
+    <div class="sched-head">
+        <h2><i class="fas fa-calendar-days"></i> Zamanlanmış görevler</h2>
+        <button class="sched-btn primary" id="schedNewBtn"><i class="fas fa-plus"></i> Yeni zamanlanmış görev</button>
+    </div>
+    <div class="sched-form" id="schedForm">
+        <div class="sched-grid">
+            <label class="f">Ad<input id="sfName" maxlength="100" placeholder="ör. Gece temizliği"></label>
+            <label class="f">Zamanlama
+                <select id="sfType"><option value="daily">Her gün</option><option value="weekly">Seçili günler</option><option value="once">Bir kez</option></select>
+            </label>
+            <label class="f" id="sfTimeWrap">Saat<input id="sfTime" type="time" value="03:00"></label>
+            <label class="f" id="sfAtWrap" style="display:none;">Tarih ve saat<input id="sfAt" type="datetime-local"></label>
+        </div>
+        <div id="sfDaysWrap" style="display:none;margin-top:var(--space-3);">
+            <div class="sched-days" id="sfDays"></div>
+        </div>
+        <label class="f" style="margin-top:var(--space-3);">Komut (hedef cihazlarda SYSTEM olarak çalışır)<textarea id="sfCmd" maxlength="4000" placeholder="ör. cleanmgr /sagerun:1"></textarea></label>
+        <div class="sched-grid" style="margin-top:var(--space-3);">
+            <label class="f">Hedef
+                <select id="sfMode"><option value="ALL">Tüm cihazlar</option><option value="LAB">Bir sınıf</option><option value="PC">Seçili cihazlar</option></select>
+            </label>
+            <label class="f" id="sfLabWrap" style="display:none;">Sınıf<select id="sfLab"></select></label>
+        </div>
+        <div class="sched-devs" id="sfDevs" style="display:none;margin-top:var(--space-3);"></div>
+        <div style="display:flex;gap:0.5rem;margin-top:var(--space-4);align-items:center;flex-wrap:wrap;">
+            <button class="sched-btn primary" id="sfSave"><i class="fas fa-floppy-disk"></i> Kaydet</button>
+            <button class="sched-btn" id="sfCancel">Vazgeç</button>
+            <span style="font-size:var(--text-xs);color:var(--text-tertiary);" id="sfTz"></span>
+        </div>
+    </div>
+    <div id="schedList" style="margin-top:var(--space-3);"><div style="color:var(--text-tertiary);font-size:var(--text-sm);">Yükleniyor…</div></div>
 </div>
 
 <div style="margin-top:var(--space-8);">
@@ -356,6 +419,113 @@ window.renderLogs = function() {
 };
 
 function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+
+// ================= Zamanlanmış görevler =================
+(function () {
+    const $ = (id) => document.getElementById(id);
+    const DAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+    let devices = [];
+    const fmt = (iso) => { if (!iso) return '—'; try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso || ''; } };
+    async function api(path, opts) {
+        const r = await fetch(path, opts);
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { const e = new Error(d.detail || ('HTTP ' + r.status)); e.status = r.status; throw e; }
+        return d;
+    }
+    const post = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+    $('sfDays').innerHTML = DAYS.map((d, i) => `<label><input type="checkbox" value="${i + 1}" ${i < 5 ? 'checked' : ''}> ${d}</label>`).join('');
+    function syncForm() {
+        const t = $('sfType').value, m = $('sfMode').value;
+        $('sfTimeWrap').style.display = t === 'once' ? 'none' : '';
+        $('sfAtWrap').style.display = t === 'once' ? '' : 'none';
+        $('sfDaysWrap').style.display = t === 'weekly' ? '' : 'none';
+        $('sfLabWrap').style.display = m === 'LAB' ? '' : 'none';
+        $('sfDevs').style.display = m === 'PC' ? 'flex' : 'none';
+    }
+    ['sfType', 'sfMode'].forEach(id => $(id).addEventListener('change', syncForm));
+
+    async function loadDevices() {
+        try { devices = await api('/api/devices'); } catch (e) { devices = []; }
+        const labs = [...new Set(devices.map(d => d.lab).filter(Boolean))].sort();
+        $('sfLab').innerHTML = labs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('') || '<option value="">Sınıf yok</option>';
+        $('sfDevs').innerHTML = devices.map(d => `<label><input type="checkbox" value="${escapeHtml(d.hw_id)}"> ${escapeHtml(d.display_name || d.real_hostname || d.hw_id)} <span style="color:var(--text-tertiary);font-size:0.75rem;">${escapeHtml(d.lab || '')} · ${escapeHtml(d.hw_id)}</span></label>`).join('') || '<span>Cihaz yok</span>';
+    }
+
+    function when(t) {
+        if (t.schedule_type === 'once') return 'Bir kez · ' + fmt(t.run_at);
+        if (t.schedule_type === 'daily') return 'Her gün ' + escapeHtml(t.time_of_day || '');
+        return (t.weekdays || []).map(d => DAYS[d - 1]).join(', ') + ' ' + escapeHtml(t.time_of_day || '');
+    }
+    function target(t) {
+        if (t.target_mode === 'ALL') return 'Tüm cihazlar';
+        if (t.target_mode === 'LAB') return 'Sınıf: ' + escapeHtml((t.targets || []).join(', '));
+        return (t.targets || []).length + ' cihaz';
+    }
+    async function loadList() {
+        let d;
+        try { d = await api('/api/scheduled_tasks'); }
+        catch (e) {
+            if (e.status === 403) { $('schedCard').style.display = 'none'; return; }
+            $('schedList').innerHTML = `<div style="color:var(--text-tertiary);font-size:var(--text-sm);">Zamanlanmış görevler alınamadı${e.status === 404 ? ' (sunucu güncellemesi gerekli)' : ''}.</div>`;
+            return;
+        }
+        $('sfTz').textContent = 'Saatler sunucu saatine göredir (şu an: ' + fmt(d.server_time) + ').';
+        const items = d.items || [];
+        $('schedList').innerHTML = items.length ? items.map(t => `
+            <div class="sched-row${t.enabled ? '' : ' off'}">
+                <div><div class="n">${escapeHtml(t.name)}</div><div class="c" title="${escapeHtml(t.command)}">${escapeHtml(t.command)}</div></div>
+                <div><div class="s">${when(t)}</div><div class="sub">${target(t)}</div></div>
+                <div><div class="s">${t.enabled && t.next_run ? 'Sıradaki: ' + fmt(t.next_run) : 'Durduruldu'}</div>
+                     <div class="sub">${t.last_run ? 'Son: ' + fmt(t.last_run) + (t.last_result ? ' · ' + escapeHtml(t.last_result) : '') : 'Henüz çalışmadı'}</div></div>
+                <div class="sched-actions">
+                    <button class="sched-btn" data-act="run" data-id="${t.id}" title="Şimdi bir kez çalıştır"><i class="fas fa-play"></i> Şimdi</button>
+                    <button class="sched-btn" data-act="toggle" data-id="${t.id}" data-on="${t.enabled ? 1 : 0}">${t.enabled ? '<i class="fas fa-pause"></i> Durdur' : '<i class="fas fa-play"></i> Başlat'}</button>
+                    <button class="sched-btn danger" data-act="del" data-id="${t.id}"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>`).join('') : '<div style="color:var(--text-tertiary);font-size:var(--text-sm);padding:0.5rem 0;">Zamanlanmış görev yok.</div>';
+        $('schedList').querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', () => act(b)));
+    }
+    async function act(b) {
+        const id = b.dataset.id;
+        try {
+            if (b.dataset.act === 'run') {
+                if (!confirm('Bu görev şimdi bir kez hedef cihazlarda çalıştırılsın mı?')) return;
+                const r = await post(`/api/scheduled_tasks/${id}/run`, {});
+                showToast(`${r.queued} cihaz için kuyruğa eklendi.`, 'success');
+                window.fetchAndRenderTasks && window.fetchAndRenderTasks();
+            } else if (b.dataset.act === 'toggle') {
+                await post(`/api/scheduled_tasks/${id}/toggle`, { enabled: b.dataset.on !== '1' });
+            } else {
+                if (!confirm('Zamanlanmış görev silinsin mi?')) return;
+                await api(`/api/scheduled_tasks/${id}`, { method: 'DELETE' });
+            }
+            loadList();
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+    $('schedNewBtn').addEventListener('click', () => { $('schedForm').classList.add('open'); syncForm(); loadDevices(); });
+    $('sfCancel').addEventListener('click', () => $('schedForm').classList.remove('open'));
+    $('sfSave').addEventListener('click', async () => {
+        const mode = $('sfMode').value;
+        const body = {
+            name: $('sfName').value.trim(), command: $('sfCmd').value.trim(), target_mode: mode,
+            targets: mode === 'LAB' ? [$('sfLab').value].filter(Boolean) : mode === 'PC' ? [...$('sfDevs').querySelectorAll('input:checked')].map(i => i.value) : [],
+            schedule_type: $('sfType').value, time_of_day: $('sfTime').value, run_at: $('sfAt').value || null,
+            weekdays: [...$('sfDays').querySelectorAll('input:checked')].map(i => parseInt(i.value)),
+        };
+        if (!confirm(`"${body.command.slice(0, 80)}" komutu zamanlanacak ve hedef cihazlarda SYSTEM olarak çalışacak. Onaylıyor musunuz?`)) return;
+        try {
+            await post('/api/scheduled_tasks', body);
+            showToast('Zamanlanmış görev kaydedildi.', 'success');
+            $('schedForm').classList.remove('open');
+            $('sfName').value = ''; $('sfCmd').value = '';
+            loadList();
+        } catch (e) { showToast(e.message, 'error'); }
+    });
+    syncForm();
+    loadList();
+    setInterval(loadList, 30000);
+})();
 
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof window.showToast !== 'function') window.showToast = function(msg) { console.log(msg); };

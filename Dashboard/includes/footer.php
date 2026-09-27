@@ -45,6 +45,40 @@
             if (el) el.classList.add('open');
         };
 
+        // Bildirim zili (admin ve superadmin): okunmamış sayısı dakikada bir yenilenir
+        (function() {
+            if (!['admin', 'superadmin'].includes(window.USER_ROLE)) return;
+            const wrap = document.getElementById('notifWrap');
+            if (!wrap) return;
+            wrap.style.display = '';
+            const btn = document.getElementById('notifBtn'), panel = document.getElementById('notifPanel');
+            const list = document.getElementById('notifList'), count = document.getElementById('notifCount');
+            const when = (iso) => { try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } };
+            async function load() {
+                try {
+                    const r = await fetch('/api/notifications?limit=30');
+                    if (!r.ok) return;
+                    const d = await r.json();
+                    count.textContent = d.unread > 99 ? '99+' : d.unread;
+                    count.style.display = d.unread ? 'block' : 'none';
+                    list.innerHTML = (d.items || []).length ? d.items.map(n => `
+                        <div class="notif-item${n.is_read ? '' : ' unread'}">
+                            <span class="sev ${escapeHtml(n.severity)}"></span>
+                            <div><div class="t">${escapeHtml(n.title)}</div>
+                            <div class="m">${escapeHtml(when(n.created_at))}${n.pc_name ? ' · ' + escapeHtml(n.pc_name) : ''}${n.detail ? ' · ' + escapeHtml(n.detail) : ''}${n.delivery_error ? ' · gönderilemedi' : ''}</div></div>
+                        </div>`).join('') : '<div class="notif-empty">Bildirim yok.</div>';
+                } catch (e) { /* çevrimdışı: sessiz */ }
+            }
+            btn.addEventListener('click', (e) => { e.stopPropagation(); panel.classList.toggle('open'); if (panel.classList.contains('open')) load(); });
+            document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) panel.classList.remove('open'); });
+            document.getElementById('notifReadAll').addEventListener('click', async () => {
+                await fetch('/api/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [] }) });
+                load();
+            });
+            load();
+            setInterval(load, 60000);
+        })();
+
         // ESC ile modal kapat
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {

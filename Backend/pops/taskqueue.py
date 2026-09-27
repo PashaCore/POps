@@ -5,6 +5,23 @@ from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 
 
+async def resolve_targets(target_mode: str, targets) -> list:
+    """Görev hedefleri: ALL (tüm cihazlar), LAB (lab adları), PC (HW- kimlikleri) -> [{"pc", "lab"}]."""
+    out = []
+    if target_mode == 'ALL':
+        res = await execute_query("SELECT pc_name, lab_name FROM clients", fetch=True)
+        out = [{"pc": r["pc_name"], "lab": r["lab_name"]} for r in (res or [])]
+    elif target_mode == 'LAB':
+        for lab in targets:
+            res = await execute_query("SELECT pc_name, lab_name FROM clients WHERE lab_name = $1", (lab,), fetch=True)
+            out.extend([{"pc": r["pc_name"], "lab": r["lab_name"]} for r in (res or [])])
+    else:
+        for pc in targets:
+            res = await execute_query("SELECT lab_name FROM clients WHERE pc_name = $1", (pc,), fetch=True)
+            out.append({"pc": pc, "lab": res[0]["lab_name"] if res else "Bilinmeyen Lab"})
+    return out
+
+
 async def process_queue():
     limit_row = await execute_query("SELECT value FROM global_settings WHERE key = 'concurrent_limit'", fetch=True)
     limit = int(limit_row[0]["value"]) if limit_row else 5

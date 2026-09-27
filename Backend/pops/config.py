@@ -74,3 +74,24 @@ WOL_BROADCAST_ADDR = os.environ.get('WOL_BROADCAST_ADDR') or '<broadcast>'
 
 
 WOL_PORT = int(os.environ.get('WOL_PORT', '9'))
+
+
+# ─── Bildirimler (e-posta) ────────────────────────────────────────────────────
+# SMTP gizli bilgileri .env'de durur (veritabanına yazılmaz). Alıcılar ve webhook adresi panelden ayarlanır.
+SMTP_HOST = os.environ.get('SMTP_HOST', '').strip()
+
+
+SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
+
+
+SMTP_USER = os.environ.get('SMTP_USER', '').strip()
+
+
+SMTP_PASS = os.environ.get('SMTP_PASS', '')
+
+
+SMTP_FROM = os.environ.get('SMTP_FROM', '').strip() or SMTP_USER
+
+
+# starttls (587) | ssl (465) | none (yalnızca yerel/güvenilir ağdaki relay için)
+SMTP_SECURITY = os.environ.get('SMTP_SECURITY', 'starttls').strip().lower()

@@ -199,3 +199,69 @@ class PolicyAlertInput(BaseModel):
     hw_id: str
     domain: str
     category: str
+
+
+# ─── Zamanlanmış görevler ─────────────────────────────────────────────────────
+class ScheduledTaskInput(BaseModel):
+    name: str
+    command: str
+    target_mode: str  # ALL | LAB | PC
+    targets: List[str] = []
+    schedule_type: str  # once | daily | weekly
+    run_at: Optional[str] = None  # once: "YYYY-MM-DDTHH:MM" (sunucu saati)
+    time_of_day: Optional[str] = None  # daily/weekly: "HH:MM"
+    weekdays: List[int] = []  # weekly: 1 = Pazartesi … 7 = Pazar
+    enabled: bool = True
+
+
+class ScheduleToggleInput(BaseModel):
+    enabled: bool
+
+
+# ─── Bildirimler ──────────────────────────────────────────────────────────────
+class NotifySettingsInput(BaseModel):
+    enabled: bool = False
+    min_severity: str = "high"  # info | medium | high | critical
+    email_to: str = ""  # virgülle ayrılmış adresler
+    webhook_url: str = ""
+
+
+class NotificationsReadInput(BaseModel):
+    ids: List[int] = []  # boşsa hepsi okundu
+
+
+# ─── Yazılım envanteri ve Windows güncelleme durumu (ajan gönderir) ───────────
+class SoftwareItem(BaseModel):
+    name: str
+    version: Optional[str] = ""
+    publisher: Optional[str] = None
+    install_date: Optional[str] = None
+
+
+class SoftwareInventoryInput(BaseModel):
+    items: List[SoftwareItem] = []
+
+
+class PatchUpdateItem(BaseModel):
+    kb: Optional[str] = None
+    title: str
+    severity: Optional[str] = None  # Critical | Important | Moderate | Low | None (MSRC)
+    categories: List[str] = []
+    is_security: bool = False
+
+
+class PatchStatusInput(BaseModel):
+    pending_count: int = 0
+    pending_security: int = 0
+    pending_critical: int = 0
+    reboot_required: bool = False
+    last_search: Optional[str] = None  # ISO 8601
+    last_install: Optional[str] = None  # ISO 8601
+    updates: List[PatchUpdateItem] = []
+    last_result: Optional[str] = None
+
+
+class PatchInstallInput(BaseModel):
+    target_mode: str = "PC"  # ALL | LAB | PC
+    targets: List[str] = []
+    scope: str = "security"  # security | all

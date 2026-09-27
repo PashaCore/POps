@@ -21,6 +21,9 @@ class ConnectionManager:
         self.vision_sessions: Dict[str, Dict[str, float]] = {}
         self.pending_thumbnails: Dict[str, List[asyncio.Future]] = {}
         self.active_vision_ws: Dict[str, WebSocket] = {}
+        # pc_name -> (sürüm, gönderim zamanı): güncelleme gönderildi, sonucu bekleniyor. Sonuç gelmeden
+        # uzun süre geçerse zamanlayıcı "ajan geri dönmedi" bildirimi üretir (ölü ajan sonuç gönderemez).
+        self.pending_updates: Dict[str, tuple] = {}
 
     async def connect_agent(self, websocket: WebSocket, pc_name: str):
         self.active_agents[pc_name] = websocket

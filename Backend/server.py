@@ -22,7 +22,8 @@ from pops.audit import add_audit_log
 from pops.config import DB_CONFIG, JWT_ALGO, JWT_COOKIE_NAME, JWT_SECRET, UPDATES_DIR, UPLOAD_DIR
 from pops.db import execute_query
 from pops.manager import manager
-from pops.routers import agents, auth, control, devices, tasks
+from pops.routers import agents, auth, control, devices, inventory, notifications, reports, schedules, tasks
+from pops.scheduler import scheduler_loop
 from pops.security import _totp_code, create_jwt, limiter, require_admin, require_superadmin
 from system_routes import build_router as _build_system_router
 
@@ -99,6 +100,8 @@ async def startup_event():
                 print(f"👑 Panel Admin Hesabı Oluşturuldu: {admin_user}")
             else:
                 print(f"👑 Panel Admin Hesabı Mevcut: {admin_user}")
+            # Zamanlanmış görevler + güncelleme sonucu gelmeyen ajan uyarısı (30 sn'de bir)
+            app.state.scheduler = asyncio.create_task(scheduler_loop())
             break
         except Exception as e:
             print(f"⚠️ Veritabanı bağlantı hatası (deneme {i+1}/5): {e}")
@@ -107,12 +110,15 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    task = getattr(app.state, "scheduler", None)
+    if task:
+        task.cancel()
     if db.db_pool:
         await db.db_pool.close()
 
 
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
-for _r in (auth, control, agents, tasks, devices):
+for _r in (auth, control, agents, tasks, devices, schedules, notifications, inventory, reports):
     app.include_router(_r.router)
 
 # Sistem/sürüm/release uçları (system_routes, bağımlılıklar enjekte edilir) en sonda

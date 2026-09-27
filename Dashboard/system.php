@@ -36,6 +36,8 @@
     .row.between { justify-content: space-between; }
     .mt { margin-top: var(--space-4); }
     .muted-text { color: var(--text-tertiary); font-size: var(--text-sm); }
+    .sys-card input[type=checkbox] { width: auto; flex: none; margin: 0; }
+    .sys-card label.muted-text { white-space: nowrap; }
     .fld { padding: 0.5rem 0.75rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface-2); color: var(--text-primary); font-size: var(--text-sm); }
 
     .changes { margin-top: var(--space-4); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
@@ -198,6 +200,40 @@
             <button class="btn" id="cap-on-vision"><i class="fas fa-unlock"></i> Vision'a izin ver</button>
         </div>
         <div class="status-msg" id="cap-status"></div>
+    </div>
+
+    <!-- ============ BİLDİRİMLER ============ -->
+    <div class="sys-card">
+        <div class="card-head">
+            <h2><i class="fas fa-bell"></i> Bildirimler</h2>
+            <span id="nt-badge"></span>
+        </div>
+        <p class="card-desc">
+            Önemli olaylar (güncelleme sorunu, kayıtlı cihazın kimliğini ele geçirme girişimi, kural ihlali, karantina, sonucu
+            gelmeyen güncelleme…) üstteki zilde her zaman görünür. Burada ayrıca e-posta ve/veya webhook (Slack, Discord, Teams
+            ya da kendi sisteminiz) ile gönderilmelerini açabilirsiniz. Aynı olay 10 dakika içinde bir kez gönderilir.
+        </p>
+        <div class="row">
+            <label class="muted-text" style="display:flex;align-items:center;gap:0.4rem;"><input type="checkbox" id="nt-enabled"> Dışarıya gönder</label>
+            <label class="muted-text">En az önem
+                <select id="nt-sev" class="fld">
+                    <option value="critical">Kritik</option>
+                    <option value="high">Yüksek</option>
+                    <option value="medium">Orta</option>
+                    <option value="info">Bilgi (her şey)</option>
+                </select>
+            </label>
+        </div>
+        <div class="row mt">
+            <input id="nt-email" class="fld" style="flex:1;min-width:220px;" placeholder="E-posta alıcıları (virgülle)">
+            <input id="nt-webhook" class="fld" style="flex:1;min-width:220px;" placeholder="Webhook adresi (https://…)">
+        </div>
+        <div class="muted-text" id="nt-smtp" style="margin-top:0.5rem;"></div>
+        <div class="row mt">
+            <button class="btn primary" id="nt-save"><i class="fas fa-floppy-disk"></i> Kaydet</button>
+            <button class="btn" id="nt-test"><i class="fas fa-paper-plane"></i> Test gönder</button>
+        </div>
+        <div class="status-msg" id="nt-status"></div>
     </div>
 
     <!-- ============ KAYIT VE KİMLİK ============ -->
@@ -606,6 +642,38 @@
         } catch (e) { msg('enforce-status', 'status-error', escapeHtml(e.message)); }
     });
 
+    // ================= BİLDİRİMLER =================
+    const ntBody = () => ({ enabled: $('nt-enabled').checked, min_severity: $('nt-sev').value,
+                            email_to: $('nt-email').value.trim(), webhook_url: $('nt-webhook').value.trim() });
+    function renderNotify(d) {
+        $('nt-enabled').checked = !!d.enabled;
+        $('nt-sev').value = d.min_severity || 'high';
+        $('nt-email').value = d.email_to || '';
+        $('nt-webhook').value = d.webhook_url || '';
+        $('nt-smtp').innerHTML = d.smtp_configured
+            ? '<i class="fas fa-circle-check" style="color:var(--success-solid)"></i> Sunucuda SMTP ayarlı; e-posta gönderilebilir.'
+            : '<i class="fas fa-circle-info"></i> E-posta için sunucunun <code>.env</code> dosyasında <code>SMTP_HOST</code> ve <code>SMTP_FROM</code> tanımlanmalı. Webhook ek ayar gerektirmez.';
+        const on = d.enabled && (d.email_to || d.webhook_url);
+        $('nt-badge').innerHTML = on ? badge('ok', 'fa-bell', 'Açık') : badge('muted', 'fa-bell-slash', 'Yalnızca zil');
+    }
+    async function loadNotify() {
+        try { renderNotify(await api('/api/system/notify-settings')); }
+        catch (e) { $('nt-badge').innerHTML = badge('muted', 'fa-plug', 'Sunucu güncellemesi gerekli'); }
+    }
+    $('nt-save').addEventListener('click', async () => {
+        msg('nt-status', '', 'Kaydediliyor…');
+        try { renderNotify(await postJson('/api/system/notify-settings', ntBody())); msg('nt-status', 'status-success', 'Kaydedildi.'); }
+        catch (e) { msg('nt-status', 'status-error', escapeHtml(e.message)); }
+    });
+    $('nt-test').addEventListener('click', async () => {
+        msg('nt-status', '', '<i class="fas fa-spinner fa-spin"></i> Gönderiliyor…');
+        try {
+            const d = await postJson('/api/system/notify-test', ntBody());
+            if (d.error) msg('nt-status', 'status-error', 'Gönderilemedi: ' + escapeHtml(d.error) + (d.channels.length ? ' (başarılı: ' + escapeHtml(d.channels.join(', ')) + ')' : ''));
+            else msg('nt-status', 'status-success', 'Test bildirimi gönderildi: ' + escapeHtml(d.channels.join(', ')));
+        } catch (e) { msg('nt-status', 'status-error', escapeHtml(e.message)); }
+    });
+
     // ================= YÜKLE =================
     async function loadAll(check) {
         const [ver, , devs] = await Promise.all([
@@ -637,5 +705,6 @@
 
     loadAll(false);
     loadEnroll();
+    loadNotify();
 })();
 </script>

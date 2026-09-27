@@ -22,6 +22,10 @@ CHECKS = [
     ("agent_logs_v2", "meta_data"),
     ("bypass_tokens", "expires_at"),
     ("agent_versions", "version"),
+    ("notifications", "severity"),
+    ("scheduled_tasks", "next_run"),
+    ("device_software", "name"),
+    ("device_patch_status", "pending_security"),
 ]
 
 

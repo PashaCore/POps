@@ -496,6 +496,7 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         offline = sorted(t for t in targets if t not in manager.active_agents)
         for pc in online:
             await manager.send_command(msg, pc)
+            manager.pending_updates[pc] = (version, time.time())
         await add_audit_log("*", "deploy_update", "İmzalı güncelleme dağıtıldı: %s" % version,
                             {"version": version, "msi": msi_name, "dispatched": online, "offline": offline})
         return {"ok": True, "version": version, "msi": msi_name,

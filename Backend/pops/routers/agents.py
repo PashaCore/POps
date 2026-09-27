@@ -22,6 +22,7 @@ from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 from pops.taskqueue import process_queue
 from pops.dna import reconcile_device
+from pops.notify import notify
 
 router = APIRouter()
 
@@ -229,6 +230,13 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                             reason="already_enrolled",
                             meta_data={"ip": client_ip},
                         )
+                        await notify(
+                            "enroll_denied",
+                            "critical",
+                            "Kayıtlı cihazın kimliğini ele geçirme girişimi reddedildi",
+                            "Kaynak IP: %s" % client_ip,
+                            active_hwid,
+                        )
                         try:
                             await websocket.close(code=4401, reason="Cihaz zaten kayıtlı")
                         except Exception:
@@ -340,6 +348,42 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         reason=(_astate or _st),
                         meta_data=detail,
                     )
+                manager.pending_updates.pop(active_hwid, None)
+                _to = payload.get("running_version") or payload.get("to_version") or "?"
+                if _astate == "unmanaged" or _st in (
+                    "rollback_failed",
+                    "failed",
+                    "reverted_by_freeze",
+                    "error",
+                    "rejected",
+                ):
+                    await notify(
+                        "update_problem",
+                        "critical",
+                        "Ajan güncellemesi başarısız: %s" % (_astate or _st),
+                        str(payload.get("detail") or ""),
+                        active_hwid,
+                    )
+                elif _st == "rolled_back":
+                    await notify(
+                        "update_rolled_back",
+                        "high",
+                        "Güncelleme geri alındı, çalışan sürüm %s" % _to,
+                        str(payload.get("detail") or ""),
+                        active_hwid,
+                    )
+                elif _st == "install_failed":
+                    await notify(
+                        "update_not_started",
+                        "medium",
+                        "Güncelleme başlatılamadı, makine değişmedi",
+                        str(payload.get("detail") or ""),
+                        active_hwid,
+                    )
+                elif _st == "pending_reboot":
+                    await notify("update_reboot", "medium", "Güncelleme yeniden başlatma bekliyor", "", active_hwid)
+                elif _st in ("ok", "success", "updated"):
+                    await notify("update_ok", "info", "Ajan güncellendi: %s" % _to, "", active_hwid)
                 await manager.broadcast_to_panels({"type": "update_result", "pc_name": active_hwid, **detail})
                 continue
             if payload.get("type") == "capabilities":
@@ -384,6 +428,13 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     risk_level="medium",
                     reason=str(payload.get("capability") or ""),
                     meta_data=_md,
+                )
+                await notify(
+                    "capability_denied",
+                    "medium",
+                    "Kapalı yetenek istendi, ajan reddetti: %s" % (payload.get("capability") or "?"),
+                    str(payload.get("action") or ""),
+                    active_hwid,
                 )
                 await manager.broadcast_to_panels({"type": "capability_denied", "pc_name": active_hwid, **_md})
                 continue
@@ -505,4 +556,5 @@ async def add_policy_alert(data: PolicyAlertInput, agent_id: Optional[str] = Dep
         reason="DNS Kural İhlali",
         meta_data={"domain": data.domain, "violation_category": data.category},
     )
+    await notify("policy_alert", "high", "Kural ihlali: %s (%s)" % (data.domain, data.category), "", data.hw_id)
     return {"status": "success"}

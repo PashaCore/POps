@@ -19,6 +19,7 @@ $nav_items = [
     ['page' => 'terminal', 'icon' => 'fa-terminal', 'label' => 'Terminal', 'show' => can_view('terminal'), 'section' => 'Operasyon'],
     ['page' => 'system', 'icon' => 'fa-server', 'label' => 'Sistem & Sürüm', 'show' => $role === 'superadmin', 'section' => 'Sistem'],
     ['page' => 'logger', 'icon' => 'fa-clipboard-list', 'label' => 'Log & Envanter', 'show' => can_view('logger'), 'section' => 'Sistem'],
+    ['page' => 'reports', 'icon' => 'fa-chart-column', 'label' => 'Raporlar', 'show' => can_view('reports'), 'section' => 'Sistem'],
     ['page' => 'policies', 'icon' => 'fa-shield-halved', 'label' => 'Politikalar', 'show' => can_view('policies') || $role === 'superadmin', 'section' => 'Sistem'],
     ['page' => 'settings', 'icon' => 'fa-gear', 'label' => 'Ayarlar', 'show' => can_view('settings'), 'section' => 'Sistem'],
 ];

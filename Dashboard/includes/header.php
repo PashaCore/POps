@@ -128,6 +128,20 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
         .topbar-actions { display: flex; align-items: center; gap: 0.5rem; }
         .topbar-icon-btn { width: 36px; height: 36px; border-radius: var(--radius-md); background: transparent; border: none; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.15s, color 0.15s; padding: 0; }
         .topbar-icon-btn:hover { background: var(--bg-surface-2); color: var(--text-primary); }
+        /* Bildirim zili */
+        .notif-wrap { position: relative; }
+        .notif-count { position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--danger-solid); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; display: none; }
+        .notif-panel { position: absolute; right: 0; top: 44px; width: 380px; max-width: calc(100vw - 24px); max-height: 460px; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg, 0 10px 30px rgba(0,0,0,.12)); display: none; z-index: 60; }
+        .notif-panel.open { display: block; }
+        .notif-head { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-subtle); font-weight: var(--fw-semibold); font-size: var(--text-sm); position: sticky; top: 0; background: var(--bg-surface); }
+        .notif-head button { background: none; border: none; color: var(--primary-500); cursor: pointer; font-size: var(--text-xs); font-weight: var(--fw-semibold); }
+        .notif-item { display: flex; gap: 0.625rem; padding: 0.625rem 1rem; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm); }
+        .notif-item.unread { background: var(--primary-50); }
+        .notif-item .sev { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; background: var(--text-muted); }
+        .notif-item .sev.critical { background: var(--danger-solid); } .notif-item .sev.high { background: var(--warning-solid); } .notif-item .sev.medium { background: var(--primary-500); }
+        .notif-item .t { color: var(--text-primary); font-weight: var(--fw-medium); }
+        .notif-item .m { color: var(--text-tertiary); font-size: var(--text-xs); margin-top: 2px; }
+        .notif-empty { padding: 1.5rem 1rem; text-align: center; color: var(--text-tertiary); font-size: var(--text-sm); }
         .topbar-clock { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; padding: 0 0.75rem; border-right: 1px solid var(--border-subtle); margin-right: 0.5rem; }
         .topbar-clock .time { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); font-variant-numeric: tabular-nums; }
         .topbar-clock .date { font-size: 0.6875rem; color: var(--text-tertiary); }
@@ -193,7 +207,7 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
                                 'index' => 'Dashboard', 'devices' => 'Cihaz Yönetimi', 'labs' => 'Laboratuvar Yönetimi',
                                 'vision' => 'POpsVision', 'tasks' => 'Görev Kuyruğu', 'deploy' => 'Dosya Dağıtımı',
                                 'logger' => 'Log & Envanter', 'terminal' => 'Terminal',
-                                'settings' => 'Sistem Ayarları', 'system' => 'Sistem & Sürüm'
+                                'settings' => 'Sistem Ayarları', 'system' => 'Sistem & Sürüm', 'reports' => 'Raporlar'
                             ];
                             echo htmlspecialchars($titles[$current_page] ?? ucfirst($current_page), ENT_QUOTES, 'UTF-8');
                         ?></strong>
@@ -204,7 +218,13 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
                         <span class="time" id="topbarTime">--:--:--</span>
                         <span class="date" id="topbarDate">--/--/----</span>
                     </div>
-                    <button class="topbar-icon-btn" title="Bildirimler" aria-label="Bildirimler"><i class="fas fa-bell"></i></button>
+                    <div class="notif-wrap" id="notifWrap" style="display:none;">
+                        <button class="topbar-icon-btn" id="notifBtn" title="Bildirimler" aria-label="Bildirimler"><i class="fas fa-bell"></i><span class="notif-count" id="notifCount"></span></button>
+                        <div class="notif-panel" id="notifPanel">
+                            <div class="notif-head"><span>Bildirimler</span><button id="notifReadAll">Tümünü okundu say</button></div>
+                            <div id="notifList"><div class="notif-empty">Yükleniyor…</div></div>
+                        </div>
+                    </div>
                 </div>
             </header>
             <main class="app-content">

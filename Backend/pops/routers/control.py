@@ -17,6 +17,7 @@ from pops.security import require_admin, require_auth, require_superadmin, verif
 from pops.agent_auth import enforce_agent_auth_enabled, valid_enroll_token, verify_agent_secret
 from pops.audit import _audit_entry_hash, add_audit_log, log_audit_event
 from pops.manager import manager
+from pops.notify import notify
 
 router = APIRouter()
 
@@ -127,6 +128,7 @@ async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
 
     # Ajanı kilitleme emri gönder
     await manager.send_command({"action": "lockdown", "reason": data.reason}, data.target_pc)
+    await notify("lockdown", "high", "Cihaz karantinaya alındı (%s)" % admin_name, data.reason or "", data.target_pc)
 
     return {"status": "success", "message": "Karantina sinyali gönderildi."}
 

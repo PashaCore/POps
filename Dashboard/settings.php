@@ -156,6 +156,7 @@
                     <label><input type="checkbox" class="perm-cb" value="tasks"> Görev Kuyruğu</label>
                     <label><input type="checkbox" class="perm-cb" value="deploy"> Dosya Dağıtımı</label>
                     <label><input type="checkbox" class="perm-cb" value="logger"> Log & Envanter</label>
+                    <label><input type="checkbox" class="perm-cb" value="reports"> Raporlar</label>
                     <label><input type="checkbox" class="perm-cb" value="terminal"> Orkestratör</label>
                     <label><input type="checkbox" class="perm-cb" value="settings"> Sistem Ayarları</label>
                 </div>
