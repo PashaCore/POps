@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5-alpha] - 2026-09-27
+
+Turns POps from a remote-control tool into a school IT operations tool: the agent now reports installed software and Windows Update status and can install updates on request, and the server adds a helpdesk, licence tracking, scheduled tasks, notifications and reports. DNS policy detection actually runs for the first time, and quarantine now survives reboots and stays in step with the panel. The release also carries the server hardening found by load testing (connection pool) and the webhook SSRF guard.
+
+Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**; migrations `0009`–`0011` run on start), then send 0.1.5-alpha to the agents from the same page. Try **Güvenlik güncellemelerini kur** on one PC with pending updates before using it across a lab.
+
 ### Added
 - **Backend/Dashboard: notifications.** Important events now reach administrators without watching the panel: an agent update that failed, was rolled back, did not start or needs a restart; an update that was sent but never answered for 20 minutes (a dead agent cannot report); an attempt to take over an enrolled device with an enrollment token; DNS policy violations; lockdowns; refused capabilities; failed scheduled tasks. They appear under the bell in the top bar (unread count, mark as read) and can also be sent by e-mail (SMTP settings in `.env`) and/or to a webhook (Slack, Discord, Teams or any JSON endpoint), configured on **Sistem & Sürüm** with a minimum severity and a test button. Only events the server decides on raise notifications; the severity an agent writes into `/api/logs` never does, and DNS policy alerts notify only when they come from an enrolled agent (one per device and category every 10 minutes), so an unenrolled client cannot flood them. The same event is sent at most once per 10 minutes, and at most 30 notifications are sent out per 10 minutes. Migration `0009`.
 - **Backend/Dashboard: scheduled tasks.** A command can run once at a given time, every day, or on chosen weekdays, on all devices, one lab or selected devices (**Görev Kuyruğu** page). When due, it goes through the normal task queue, so concurrency limits, capability refusals and per-device audit apply as before. Creating, changing, running and deleting a schedule is written to the hash-chained audit log with who did it. Times are in the server's time zone; several backend processes never queue the same run twice.
@@ -221,7 +227,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.4-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.5-alpha...HEAD
+[0.1.5-alpha]: https://github.com/PashaCore/POps/compare/v0.1.4-alpha...v0.1.5-alpha
 [0.1.4-alpha]: https://github.com/PashaCore/POps/compare/v0.1.3-alpha...v0.1.4-alpha
 [0.1.3-alpha]: https://github.com/PashaCore/POps/compare/v0.1.2-alpha...v0.1.3-alpha
 [0.1.2-alpha]: https://github.com/PashaCore/POps/compare/v0.1.1-alpha...v0.1.2-alpha
