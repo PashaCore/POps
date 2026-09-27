@@ -93,6 +93,8 @@ namespace POpsVision
 
         static async Task Main(string[] args)
         {
+            // Kullanıcı oturumunda çalışır: logu %LOCALAPPDATA%\POps\Logs\POpsVision_<tarih>.log
+            POpsHelpers.Component = "Vision";
             try
             {
                 IntPtr hWnd = GetConsoleWindow();

@@ -2,6 +2,26 @@
 
 Windows endpoint agent (.NET 8). Includes the main agent, tray application, remote vision service, and watchdog.
 
+## Layout
+
+| Folder | Contents |
+| --- | --- |
+| `POps.Agent` | The Windows service (`POpsAgent.exe`, LocalSystem) |
+| `POpsTray` | Tray application in the user's session |
+| `POpsVision` | Screen streaming in the user's session |
+| `POpsWatchdog` | Restarts the service and the tray |
+| `POpsUpdater` | Applies signed MSI updates and rolls them back |
+| `POps.Shared` | `POps.Shared.dll`, helpers used by the service, updater, watchdog and Vision: version, log, `appsettings.json` lookup, hardware ID. Each program sets `POpsHelpers.Component` at start; that name picks the log location. |
+| `POps.Tests` | xUnit tests (see below) |
+
+## Tests
+
+```
+dotnet test Agent/POps.Tests/POps.Tests.csproj --configuration Release
+```
+
+The project targets `net8.0-windows` (agent and `POps.Shared`) and `net472` (the MSI custom actions in `Installer/agent/CustomActions`), and CI runs it as the `test-agent` job. Tests cover logic only; firewall, pipe and service behaviour is not tested. Everything runs in a temporary folder with the current user standing in for SYSTEM, so the tests need no administrator rights and never touch `C:\POps`, `C:\POpsData` or `C:\POpsLogs`. `TestData/manifest.json` and its `.sig` are the signed v0.1.3-alpha release manifest, used to check the embedded public key.
+
 Install it with the MSI from the release (`POps-Agent-<version>-win-x64.msi`); properties, upgrades and migration from older installs are described in [`Installer/README.md`](../Installer/README.md).
 
 ## Configuration
@@ -43,7 +63,7 @@ Enroll before freezing: install with the machine thawed, wait until the device a
 
 - **Tray pipe.** Every logged-on user can open `POpsTrayPipe`, so the service checks each client before trusting it. The client process must be the installed `POpsTray.exe` (resolved from its PID; `Program Files` is admin-only), run in a user session, and, when the installed tray is Authenticode-signed, carry a valid signature. Any other program is logged and disconnected, so a student cannot feed fake screen frames or request a Vision tunnel.
 - **Remote input needs local consent.** Remote mouse/keyboard events are applied only while a Vision session is open that the tray started after the user accepted it (or after showing the mandatory-session notice). A compromised server alone cannot drive the PC. Screen previews are not affected.
-- **Logs.** `C:\POpsLogs` (service and updater logs) is restricted to SYSTEM and Administrators. The tray and watchdog run in the user's session and log to `%LOCALAPPDATA%\POps\Logs`. The tray's log rotates at 1 MB and records only message types, never message contents or remote keystrokes.
+- **Logs.** `C:\POpsLogs` (service and updater logs) is restricted to SYSTEM and Administrators. The tray, watchdog and Vision run in the user's session and log to `%LOCALAPPDATA%\POps\Logs`. The tray's log rotates at 1 MB and records only message types, never message contents or remote keystrokes.
 - **Network quarantine** (`lockdown`, or the DNS threshold when `auto_quarantine` is on) adds two Windows Firewall block rules (group `POps Isolation`). They block every IPv4/IPv6 address except the POps server (resolved to IPs), the DNS and DHCP servers, loopback and IPv6 link-local/multicast. Block rules override every allow rule, so no other program's rule can bypass them. All firewall profiles are switched on for the duration; their previous state is saved in `C:\POpsData\secure\isolation.json` and restored by `unlock` or a valid offline bypass code.
 - **DNS policy detection** reads the Windows DNS client cache through the DNS API, independent of the Windows display language. It flags a name only if it equals, or is a subdomain of, a domain the school listed for an active category in the policy's `dns_domains` (`{"<category>": ["example.com", …]}`). Without such a list, nothing is flagged. Substring guesses such as "sex" in `essex.ac.uk` are gone.
 - **Server messages** are read until the end of the WebSocket message, with a limit of 8 MB on the command socket and 1 MB on the Vision socket, so long deployment scripts arrive whole. Oversized or malformed messages are logged instead of dropped silently.

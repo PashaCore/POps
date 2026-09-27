@@ -67,6 +67,8 @@ namespace POpsUpdater
 
         static int Main(string[] args)
         {
+            // SYSTEM olarak çalışır; ajanla aynı log dosyasına (C:\POpsLogs\POps_<tarih>.log) yazar
+            POpsHelpers.Component = "Updater";
             Options opt = ParseArgs(args);
             if (opt == null)
             {

@@ -36,6 +36,20 @@ jobs:
       - name: Build
         run: dotnet build "${{ matrix.project }}" --configuration Release
 
+  test-agent:
+    name: Agent unit tests
+    # Ajan (net8.0-windows) ve MSI custom action'ları (net472) için xUnit testleri; yalnızca saf mantık ve
+    # geçici klasörlerde dosya işlemleri (güvenlik duvarı, pipe, servis test edilmez)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test
+        run: dotnet test Agent/POps.Tests/POps.Tests.csproj --configuration Release --logger "console;verbosity=normal"
+
   backend:
     name: Backend (Python 3.9)
     runs-on: ubuntu-latest

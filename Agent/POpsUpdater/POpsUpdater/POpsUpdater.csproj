@@ -13,4 +13,10 @@
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.0" />
   </ItemGroup>
 
+  <!-- Ortak yardımcılar: POps.Shared.dll deps.json'a girer, ajan updater'ı onunla birlikte kopyalar -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\POps.Shared\POps.Shared.csproj" />
+    <Using Include="POps.Shared" />
+  </ItemGroup>
+
 </Project>

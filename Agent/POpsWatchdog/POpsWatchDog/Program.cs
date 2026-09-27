@@ -36,6 +36,9 @@ namespace POpsWatchDog
         // Main artık sadece asenkron değil, aynı zamanda gizlilik kalkanıyla sarılı
         static void Main(string[] args)
         {
+            // Kullanıcı oturumunda çalışır: logu %LOCALAPPDATA%\POps\Logs\POpsWatchdog_<tarih>.log
+            POpsHelpers.Component = "Watchdog";
+
             // Windows 11 Terminali tamamen koparıp atar. Eğer bir konsol açılmaya çalıştıysa bile yok eder.
             FreeConsole();
 

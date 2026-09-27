@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Ajan tarafının birim testleri (xUnit). Yalnızca saf mantık ve geçici klasörlerde dosya işlemleri test edilir;
+    güvenlik duvarı, named pipe, servis gibi makineyi değiştiren şeyler test edilmez.
+      net8.0-windows: POps.Agent + POps.Shared
+      net472:         MSI custom action'ları (Installer/agent/CustomActions; Windows Installer .NET Framework'te çalıştırır)
+    dotnet test Agent/POps.Tests/POps.Tests.csproj -c Release  -> iki hedef de çalışır.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0-windows;net472</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Custom action DLL'i x64 derlenir; net472 test host'u da x64 olmalı -->
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <ProjectReference Include="..\POps.Shared\POps.Shared.csproj" />
+    <ProjectReference Include="..\POps.Agent\POps.Agent\POpsAgent.csproj" />
+    <Compile Remove="Installer\**" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <ProjectReference Include="..\..\Installer\agent\CustomActions\PopsInstallerActions.csproj" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Web.Extensions" />
+    <Compile Remove="Agent\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="TestData\manifest.json;TestData\manifest.json.sig" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

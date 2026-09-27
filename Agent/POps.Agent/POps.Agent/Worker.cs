@@ -587,7 +587,7 @@ namespace POpsAgent
                             JsonElement command = root.Clone();
                             _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl));
                         }
-                        else if (action == "wake_peer") { POpsHelpers.SendWolPacket(root.GetProperty("mac").GetString()); }
+                        else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
                         else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
                         else if (action == "set_secret") { HandleSetSecret(root); }
                         else if (action == "lockdown") 
