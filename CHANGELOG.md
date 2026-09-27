@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4-alpha] - 2026-09-27
+
+Closes the findings of an external penetration test on the server and the agent (F1–F8, F10, F12–F14; F9 and F11 remain open), and pays down maintainability debt: the backend is split into a package with a clean lint gate, and the agent components share one helper library with unit tests in CI.
+
+Upgrading: 0.1.3-alpha agents update from the panel's **Sistem & Sürüm** page (upload the signed release, then dispatch it). The server side is already live and works with 0.1.3-alpha agents; the agent-side fixes below take effect once agents run this version.
+
 ### Security
+- **Backend (F1):** Remote mouse/keyboard input and the SYSTEM `execute` command were available to any logged-in panel user, including read-only viewers, without a consent session or audit. They now require an admin/superadmin and an open audit session for that device; opening the session is recorded (who, device, reason, mandatory or not; never raw keystrokes) in the hash-chained `device_audit_logs`. Screen previews (`get_thumbnail`, `set_fps`, `/api/thumbnail`) are admin-only. Session grants expire after 30 minutes without activity.
+- **Backend (F12):** Live screen frames and preview replies were broadcast to every connected panel. They now go only to admin panels that hold an open session for that device, and never to viewers.
+- **Backend (F2):** A valid enrollment token plus a device's hardware identity was enough to be issued a new secret for a device that already had one, taking it over. `/ws/agent` now refuses re-enrollment of an enrolled device (critical audit entry, close 4401) unless a superadmin allows it once with `POST /api/system/allow-reenroll` (migration `0007`), for example after a reinstall behind freeze software.
+- **Backend (F3):** An authenticated agent could write inventory, logs, login events and policy alerts for any other device. The agent HTTP endpoints now bind the verified `X-Agent-Id` to the target device and answer 403 on a mismatch. Agents without a secret are still accepted while `enforce_agent_auth` is off.
+- **Backend (F4):** Panel sessions could not be revoked and several admin actions left no trustworthy trail. JWTs now carry the user's `token_version`, and every request (and an open `/ws/panel` socket, within 10 seconds) re-checks the user, role and version in the database, so deleting a user, lowering a role or changing a password ends their sessions at once; the role is read from the database, not the token. Queued commands record who queued them (migration `0008`), and queue flushes, lockdown/unlock and bypass tokens are also written to the hash-chained `device_audit_logs`, which agents cannot write.
+- **Backend (F8):** `GET /api/agent_policies` now returns `dns_domains`, the category → exact-domain lists the agent matches. It is empty by default, so DNS detection stays off until an admin fills it in.
+
 - **Agent (F5):** Any logged-on user could connect to the tray pipe with their own program and pose as the tray, for example to send fake screen frames to an admin. The service now resolves the connecting process and accepts only the installed `POpsTray.exe`, running in a user session. When the installed tray is Authenticode-signed, its signature must also be valid. Every other client is logged and disconnected.
 - **Agent (F6):** The tray wrote every message it received, including an admin's remote keystrokes, in plain text to `C:\POpsLogs\TrayLog.txt`, and every user could read `C:\POpsLogs` and create files or links in it. `C:\POpsLogs` is now restricted to SYSTEM and Administrators by the service on every start and by the MSI. The tray and watchdog log to `%LOCALAPPDATA%\POps\Logs`, and the tray log rotates at 1 MB and holds only message types.
 - **Agent (F7):** Network quarantine never took effect. The multi-line PowerShell command was written to a `.bat` file line by line, the server was passed as a host name, and the firewall's block rule would have overridden the allow rule for the server anyway. Quarantine now runs one encoded PowerShell script that adds block rules for every address except the resolved server IPs, DNS/DHCP, loopback and IPv6 link-local/multicast. It switches on all firewall profiles and restores their previous state on `unlock`.
@@ -22,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Agent:** The four copies of `OmyoHelpers.cs` in the agent, updater, watchdog and Vision are now one shared library, `Agent/POps.Shared` (`POps.Shared.dll`, class `POpsHelpers`), which the MSI and the updater's self-copy ship with. Each program sets its own component name for its log. The service and updater still write to `C:\POpsLogs`, and the watchdog to `%LOCALAPPDATA%\POps\Logs`. Vision also runs in the user's session and now logs to `%LOCALAPPDATA%\POps\Logs` too; since `C:\POpsLogs` was restricted to SYSTEM and Administrators (F6), it could no longer write its log there. The updater, watchdog and Vision now also read `appsettings.json` from the install folder first, like the service; before, they only read `C:\POps`.
+
+- **Backend:** `server.py` (about 2,100 lines) is split into the `Backend/pops/` package: configuration, database, panel and agent authentication, audit log, connection manager, models, and one router per endpoint group; `server.py` only builds the app (see `docs/backend.md`). Behaviour is unchanged: the route table and responses were compared before and after. flake8 findings went from 1,241 to 0, and CI now fails on any new one (`.flake8`, line length 120).
+- **Server:** `pops-deploy-backend` deploys the whole package and backs up the complete live code set before each deploy (`/opt/PashaCore_API/.deploy-backups`, last 10). If the health check fails it restores that set exactly, including removing files the failed deploy added.
+- **Docs/Dashboard (F13, F14):** Documentation said Python 3.12 and SQLite; the backend targets Python 3.9+ and PostgreSQL only. The panel's `Dashboard/includes/config.php` is no longer tracked: `API_URL` comes from the environment, with `config.example.php` next to it as the template.
 
 ## [0.1.3-alpha] - 2026-09-27
 
