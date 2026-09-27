@@ -23,7 +23,7 @@
 
 > **🚧 Status: Alpha**
 > 
-> POps is in active development (alpha). The agent, backend and dashboard source are published and build in CI, and the full device-enrollment, per-device authentication and signed over-the-air update flow has been validated end to end on a real Windows machine. It is **not yet hardened for large-scale or enterprise production** — see [`SECURITY.md`](SECURITY.md) for the threat model and the current residual risks (the main one still on the roadmap is an agent-side **capability policy** for terminal/Vision; opt-in **2FA** and a **tamper-evident audit hash-chain** have since landed).
+> POps is in active development (alpha). The agent, backend and dashboard source are published and build in CI, and the full device-enrollment, per-device authentication and signed over-the-air update flow has been validated end to end on a real Windows machine. It is **not yet hardened for large-scale or enterprise production** — see [`SECURITY.md`](SECURITY.md) for the threat model and the current residual risks. Opt-in **2FA**, a **tamper-evident audit hash-chain**, and an agent-side **capability policy** (hard-disable terminal/Vision per device) have all landed; remaining hardening such as **mTLS** is on the roadmap.
 
 ---
 
@@ -135,7 +135,7 @@ For a deep dive into the 5-component agent system (Agent, Tray, Vision, Watchdog
 | **OTA Updates** | Agents update themselves seamlessly via the backend update server. |
 | **Terminal** | Execute remote PowerShell commands directly from the web panel. |
 | **Device Identity** | Secure device authentication blocking unauthorized agent spoofing. |
-| **Audit Logs** | Comprehensive tracking of every action, maintaining full accountability. |
+| **Audit Logs** | Security-relevant actions recorded in a tamper-evident, hash-chained log (see `SECURITY.md`). |
 | **Role Based Access** | Strict JWT-based RBAC separating Admins, Managers, and Viewers. |
 | **Multi Lab Management**| Group devices into logical labs for isolated policy enforcement. |
 
@@ -175,8 +175,8 @@ The `docs/` directory contains comprehensive guides for deploying, configuring, 
 ## 💻 Tech Stack
 
 - **Agent:** `.NET 8`, `C#`, `Windows Forms`
-- **Backend:** `Python 3.12`, `FastAPI`, `WebSockets`, `Uvicorn`
-- **Database:** `PostgreSQL`, `SQLite`
+- **Backend:** `Python 3.9+`, `FastAPI`, `WebSockets`, `Uvicorn`
+- **Database:** `PostgreSQL`
 - **Dashboard:** `PHP 8`, `Vanilla JS`, `CSS Custom Properties`
 
 ---

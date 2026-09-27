@@ -1,9 +1,9 @@
 <?php
-// Bu dosya kurulum sihirbazi tarafindan otomatik uretilmistir.
-define('API_URL', 'https://dev.pashacore.com.tr/api');
+// KURULUM ŞABLONU — kurulum sihirbazı bunu config.php olarak üretir (config.php depoda izlenmez).
+// Ortama özel adresler koda gömülmez: önce ortam değişkeni (getenv), sonra proje kökündeki .env,
+// en sonda buradaki güvenli varsayılan kullanılır.
+define('API_URL', pops_env('POPS_API_URL', 'https://ornek-alan-adiniz/api'));
 
-// Ortama ozel degerler (IP, sifre vb.) koda gomulmez. Once web sunucusunun ortam
-// degiskenlerine, sonra proje kokundeki .env dosyasina bakilir (bkz. .env.example).
 function pops_env(string $key, ?string $default = null): ?string
 {
     $value = getenv($key);
@@ -30,5 +30,5 @@ function pops_env(string $key, ?string $default = null): ?string
     return ($dotenv[$key] ?? '') !== '' ? $dotenv[$key] : $default;
 }
 
-// Panelin sunucu tarafindan (PHP -> FastAPI) konustugu ic API adresi
+// Panelin sunucu tarafından (PHP -> FastAPI) konuştuğu iç API adresi
 define('API_INTERNAL_URL', rtrim(pops_env('POPS_API_INTERNAL_URL', 'http://localhost:8000'), '/'));

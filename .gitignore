@@ -30,3 +30,6 @@ keys/*.key.pem
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Kuruluma özel, üretilen panel config'i (şablon: config.example.php)
+Dashboard/includes/config.php

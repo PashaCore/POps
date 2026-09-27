@@ -53,7 +53,7 @@ differentiators are exactly the things a general RMM does not care about:
   are minors — see `kvkk-aydinlatma.md`).
 - **Reboot-to-restore awareness** — the assumption that breaks most tools in a Turkish
   school lab (frozen machines) is a first-class concept in POps.
-- **A capability policy** (roadmap) that lets a site hard-disable the remote terminal so
+- **A capability policy** (shipped) that lets a site hard-disable the remote terminal so
   that even a compromised server cannot run code on their PCs — a security *and* sales
   argument a general RMM cannot make.
 
