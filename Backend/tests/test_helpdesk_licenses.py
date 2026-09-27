@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -138,11 +139,18 @@ def main():
     chk(req("/api/tickets/agent/HW-HD1", body=t)[0] == 401, "anahtarsız ajan talep açamaz")
     chk(req("/api/tickets/agent/HW-HD2", body=t, headers=agent)[0] == 403, "başka cihaz adına talep açılamaz")
     chk(req("/api/tickets/agent/HW-HD1", body={**t, "subject": "a"}, headers=agent)[0] == 400, "kısa konu reddedildi")
+    time.sleep(5.1)  # geçersiz istek de hız sınırına sayılır
     s, r = req("/api/tickets/agent/HW-HD1", body=t, headers=agent)
     tid = r.get("id")
     chk(s == 200 and tid, "ajan talep açtı (#%s)" % tid)
+    chk(
+        req("/api/tickets/agent/HW-HD1", body={**t, "subject": "Hemen tekrar"}, headers=agent)[0] == 429,
+        "5 sn içinde ikinci istek hız sınırına takıldı",
+    )
     for _ in range(4):
+        time.sleep(5.1)
         req("/api/tickets/agent/HW-HD1", body={**t, "subject": "Tekrar talep"}, headers=agent)
+    time.sleep(5.1)
     chk(req("/api/tickets/agent/HW-HD1", body=t, headers=agent)[0] == 429, "cihaz başına açık talep sınırı (5)")
     s, lst = req("/api/notifications", ad)
     chk(
