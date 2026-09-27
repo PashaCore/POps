@@ -1050,21 +1050,60 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 # yazamadığı device_audit_logs'a düşür + panele bildir.
                 detail = {k: payload.get(k) for k in
                           ("status", "from_version", "to_version", "detail", "rollback", "agent_state",
-                           "msi_exit_code", "reboot_required")}
+                           "msi_exit_code", "reboot_required", "running_version")}
                 await add_audit_log(active_hwid, "update_result",
                                     f"Ajan guncelleme sonucu: {payload.get('status', '?')}", detail)
-                # "unmanaged" (rollback da başarısız -> serviste ürün yok) ya da başarısız durumlar
-                # kritik olarak da loglanır ki panelin güvenlik log'unda öne çıksın.
+                # Güncelleme/rollback sonrası GERÇEKTEN çalışan sürümü sakla (v0.1.3+ ajan gönderir).
+                if payload.get("running_version"):
+                    await execute_query("UPDATE clients SET running_version=$1 WHERE pc_name=$2",
+                                        (str(payload.get("running_version")), active_hwid))
+                # Yalnızca GERÇEKTEN kötü durumlar kritik loglanır. NOT: v0.1.3'ten beri başarılı
+                # geri dönüş "rolled_back" (kurtarıldı, kritik değil), "install_failed" ise kurulum
+                # hiç başlamadı = makine değişmedi (iyi huylu) → ikisi de kritik SAYILMAZ.
                 _astate = str(payload.get("agent_state") or "")
                 _st = str(payload.get("status") or "")
                 if _astate == "unmanaged" or _st in ("rollback_failed", "failed", "reverted_by_freeze",
-                                                     "install_failed", "error", "rejected"):
+                                                     "error", "rejected"):
                     await log_audit_event(active_hwid, "Critical Security",
                                           f"Ajan guncelleme sorunu: {_astate or _st}",
                                           actor_id="System/Update", event_type="agent.update",
                                           category="system_maintenance", action="update_problem",
                                           risk_level="critical", reason=(_astate or _st), meta_data=detail)
                 await manager.broadcast_to_panels({"type": "update_result", "pc_name": active_hwid, **detail})
+                continue
+            if payload.get("type") == "capabilities":
+                # Ajan güncel yetenek durumunu bildirir (bağlantıda + her değişimde). Sakla + panele yay.
+                t = payload.get("terminal_enabled")
+                v = payload.get("vision_enabled")
+                await execute_query(
+                    "UPDATE clients SET cap_terminal_enabled=$1, cap_vision_enabled=$2 WHERE pc_name=$3",
+                    (bool(t) if t is not None else None, bool(v) if v is not None else None, active_hwid))
+                # Yönetici daha önce kapatma istediyse ama ajan hâlâ AÇIK bildiriyorsa (ör. istek
+                # çevrimdışıyken verildi) kapatmayı yeniden gönder. Fail-safe: yalnızca kapatırız.
+                reqrow = await execute_query(
+                    "SELECT cap_terminal_disable_requested AS t, cap_vision_disable_requested AS v "
+                    "FROM clients WHERE pc_name=$1", (active_hwid,), fetch=True)
+                if reqrow:
+                    resend = {}
+                    if reqrow[0]["t"] and t:
+                        resend["terminal_enabled"] = False
+                    if reqrow[0]["v"] and v:
+                        resend["vision_enabled"] = False
+                    if resend:
+                        await manager.send_command({"action": "set_capabilities", **resend}, active_hwid)
+                await manager.broadcast_to_panels({"type": "capabilities", "pc_name": active_hwid,
+                                                   "terminal_enabled": t, "vision_enabled": v})
+                continue
+            if payload.get("type") == "capability_denied":
+                # Ajan, kapalı bir yetenek için gelen isteği reddettiğini bildirir. Denetime yaz + panele yay.
+                _md = {k: payload.get(k) for k in ("capability", "action", "task_id")}
+                await log_audit_event(active_hwid, "Security",
+                                      f"Yetenek reddedildi: {payload.get('capability')} ({payload.get('action')})",
+                                      actor_id="Agent", event_type="agent.capability_denied",
+                                      category="security", action="capability_denied",
+                                      risk_level="medium", reason=str(payload.get("capability") or ""),
+                                      meta_data=_md)
+                await manager.broadcast_to_panels({"type": "capability_denied", "pc_name": active_hwid, **_md})
                 continue
             await handle_routine_payload(payload)
     except WebSocketDisconnect:
@@ -1157,9 +1196,11 @@ async def wake_all(auth: dict = Depends(require_admin)):
 @app.get("/api/devices")
 async def get_devices(auth: dict = Depends(require_auth)):
     query = """
-    SELECT 
+    SELECT
         c.pc_name, c.hostname, c.display_name, c.lab_name, c.last_seen, c.status, c.active_window,
         c.boot_count, c.logged_user, c.ip_address, c.cap_ram_readable, c.is_quarantined,
+        c.cap_terminal_enabled, c.cap_vision_enabled,
+        c.cap_terminal_disable_requested, c.cap_vision_disable_requested, c.running_version,
         av.version AS agent_version
     FROM clients c
     LEFT JOIN agent_versions av ON c.pc_name = av.pc_name
@@ -1180,8 +1221,13 @@ async def get_devices(auth: dict = Depends(require_auth)):
             "boot_count": r["boot_count"], 
             "current_user": r.get("logged_user", "-"), 
             "is_quarantined": r.get("is_quarantined", False),
-            "agent_version": r.get("agent_version") or "Bilinmiyor"
-        } 
+            "agent_version": r.get("agent_version") or "Bilinmiyor",
+            "running_version": r.get("running_version"),
+            "cap_terminal_enabled": r.get("cap_terminal_enabled"),
+            "cap_vision_enabled": r.get("cap_vision_enabled"),
+            "cap_terminal_disable_requested": r.get("cap_terminal_disable_requested", False),
+            "cap_vision_disable_requested": r.get("cap_vision_disable_requested", False)
+        }
         for r in (rows or [])
     ]
 

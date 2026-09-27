@@ -144,6 +144,29 @@
         </div>
         <div class="status-msg" id="su-status"></div>
     </div>
+
+    <div class="sys-card">
+        <h2><i class="fas fa-shield-halved"></i> Cihaz yetenekleri (terminal / Vision)</h2>
+        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
+            Bir cihazda uzaktan <strong>terminal (execute)</strong> ve/veya <strong>Vision</strong>'ı kapatır. Sunucu ele
+            geçirilse bile bu yetenekler o cihazda çalışmaz. <strong>Fail-safe:</strong> "Kapat" kalıcıdır — cihaz
+            çevrimdışıysa yeniden bağlanınca uygulanır ve ajan yeniden kurulsa bile kapalı kalır. Geri açmak için önce
+            <strong>"İzin ver"</strong>e basıp kapatma isteğini kaldırın; yetenek, ajan onu <em>açık</em> bildirdiğinde
+            (yeni/temiz kurulum) geri gelir. Ajan, sunucudan gelen "aç" komutuna güvenmez.
+        </p>
+        <div class="row">
+            <select id="cap-device" class="fld" style="flex:1;min-width:220px;"><option value="">Cihaz seçin…</option></select>
+            <button class="btn secondary" id="cap-refresh" title="Listeyi yenile"><i class="fas fa-arrows-rotate"></i></button>
+        </div>
+        <div id="cap-state" class="muted-text" style="margin:0.5rem 0;font-size:var(--text-sm);"></div>
+        <div class="row" style="flex-wrap:wrap;gap:0.5rem;">
+            <button class="btn danger" id="cap-off-terminal"><i class="fas fa-terminal"></i> Terminali kapat</button>
+            <button class="btn secondary" id="cap-on-terminal" title="Terminal kapatma isteğini kaldır"><i class="fas fa-unlock"></i> Terminale izin ver</button>
+            <button class="btn danger" id="cap-off-vision"><i class="fas fa-video-slash"></i> Vision'ı kapat</button>
+            <button class="btn secondary" id="cap-on-vision" title="Vision kapatma isteğini kaldır"><i class="fas fa-unlock"></i> Vision'a izin ver</button>
+        </div>
+        <div class="status-msg" id="cap-status"></div>
+    </div>
 </div>
 
 <?php include 'includes/footer.php'; ?>
@@ -349,8 +372,76 @@
         }
     });
 
+    // ---- cihaz yetenekleri (terminal/Vision) ----
+    let capDevices = [];
+    function capLabel(v) {
+        if (v === true) return '<span class="badge ok">açık</span>';
+        if (v === false) return '<span class="badge warn">KAPALI</span>';
+        return '<span class="badge muted">bilinmiyor (eski ajan)</span>';
+    }
+    async function loadCapDevices() {
+        try {
+            const res = await fetch('/api/devices');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            capDevices = await res.json();
+            const sel = $('cap-device');
+            const prev = sel.value;
+            sel.innerHTML = '<option value="">Cihaz seçin…</option>' + capDevices.map(d =>
+                `<option value="${escapeHtml(d.hw_id)}">${escapeHtml(d.display_name || d.real_hostname || d.hw_id)} — ${escapeHtml(d.hw_id)}${d.status === 'Online' ? '' : ' (çevrimdışı)'}</option>`
+            ).join('');
+            if (prev && capDevices.some(d => d.hw_id === prev)) sel.value = prev;
+            renderCapState();
+        } catch (e) {
+            $('cap-state').textContent = 'Cihaz listesi alınamadı.';
+        }
+    }
+    function renderCapState() {
+        const hw = $('cap-device').value;
+        const d = capDevices.find(x => x.hw_id === hw);
+        const box = $('cap-state');
+        const offT = $('cap-off-terminal'), offV = $('cap-off-vision');
+        const onT = $('cap-on-terminal'), onV = $('cap-on-vision');
+        if (!d) { box.innerHTML = ''; [offT, offV, onT, onV].forEach(b => b.disabled = true); return; }
+        // "Kapat": kapatma isteği yoksa aktif. "İzin ver": ancak kapatma isteği kayıtlıysa anlamlı.
+        offT.disabled = !!d.cap_terminal_disable_requested;
+        offV.disabled = !!d.cap_vision_disable_requested;
+        onT.disabled = !d.cap_terminal_disable_requested;
+        onV.disabled = !d.cap_vision_disable_requested;
+        const reqT = d.cap_terminal_disable_requested ? ' <span class="muted-text">(kapatma isteği kayıtlı)</span>' : '';
+        const reqV = d.cap_vision_disable_requested ? ' <span class="muted-text">(kapatma isteği kayıtlı)</span>' : '';
+        box.innerHTML = `Terminal: ${capLabel(d.cap_terminal_enabled)}${reqT} &nbsp;·&nbsp; Vision: ${capLabel(d.cap_vision_enabled)}${reqV}`;
+    }
+    async function capSet(which, enabled) {
+        const hw = $('cap-device').value;
+        if (!hw) return showToast('Önce cihaz seçin.', 'warning');
+        const label = which === 'terminal' ? 'terminali (execute)' : "Vision'ı";
+        if (!enabled && !confirm(`Bu cihazda ${label} KAPATMAK üzeresiniz. Kalıcıdır; geri açmak için "İzin ver"e basıp ajanı yeniden kurmanız gerekir. Devam?`)) return;
+        const body = { pc_name: hw };
+        body[which === 'terminal' ? 'terminal_enabled' : 'vision_enabled'] = !!enabled;
+        const st = $('cap-status'); st.className = 'status-msg'; st.style.display = 'block'; st.textContent = 'Gönderiliyor…';
+        try {
+            const res = await fetch('/api/system/set-capabilities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
+            st.className = 'status-msg status-success';
+            if (enabled) {
+                st.textContent = 'Kapatma isteği kaldırıldı. Yetenek, ajan onu açık bildirdiğinde (yeni/temiz kurulum) geri gelir.';
+            } else {
+                st.textContent = d.delivered_online ? 'Kapatma gönderildi ve uygulandı.' : 'Kapatma kaydedildi; cihaz çevrimdışı, yeniden bağlanınca uygulanacak.';
+            }
+            setTimeout(loadCapDevices, 1200);
+        } catch (e) { st.className = 'status-msg status-error'; st.textContent = e.message; }
+    }
+    $('cap-device').addEventListener('change', renderCapState);
+    $('cap-refresh').addEventListener('click', loadCapDevices);
+    $('cap-off-terminal').addEventListener('click', () => capSet('terminal', false));
+    $('cap-off-vision').addEventListener('click', () => capSet('vision', false));
+    $('cap-on-terminal').addEventListener('click', () => capSet('terminal', true));
+    $('cap-on-vision').addEventListener('click', () => capSet('vision', true));
+
     loadVersion(false);
     loadEnroll();
     loadSelfUpdate();
+    loadCapDevices();
 })();
 </script>

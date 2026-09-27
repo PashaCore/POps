@@ -41,6 +41,12 @@ class DeployUpdateInput(BaseModel):
 class EnforceInput(BaseModel):
     enabled: bool
 
+
+class CapabilityInput(BaseModel):
+    pc_name: str
+    terminal_enabled: Optional[bool] = None   # yalnızca False anlamlı (fail-safe kapatma)
+    vision_enabled: Optional[bool] = None
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Doğrulanmış release'lerin stage edildiği çalışma zamanı dizini (git dışı)
 RELEASES_DIR = os.path.join(BASE_DIR, "releases")
@@ -385,5 +391,38 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
                             "Sunucu self-update kuyruklandı (%s)" % (auth.get("sub") or "?"),
                             {"target": "origin/main"})
         return {"ok": True, "queued": True}
+
+    # --- Ajan yetenek politikası (terminal/Vision) — fail-safe: yalnızca KAPATMA -----
+    @router.post("/api/system/set-capabilities")
+    async def set_capabilities(data: CapabilityInput, auth: dict = Depends(require_superadmin)):
+        """Bir cihazda terminal/Vision yeteneğini kapatır. FAIL-SAFE: ajan sunucudan gelen "aç"ı
+        yok sayar (kalıcı açma yeniden kurulum / offline-imzalı politika ister); bu uç pratikte
+        yalnızca KAPATMAK içindir. İstek kalıcı kaydedilir; ajan çevrimdışıysa yeniden bağlanınca
+        uygulanır. Panelde açığa çekmek isteği temizler ama ajanı otomatik açmaz."""
+        pc = (data.pc_name or "").strip()
+        if not pc:
+            raise HTTPException(status_code=400, detail="pc_name gerekli")
+        msg = {"action": "set_capabilities"}
+        sets, params = [], []
+        if data.terminal_enabled is not None:
+            msg["terminal_enabled"] = bool(data.terminal_enabled)
+            params.append(not bool(data.terminal_enabled))
+            sets.append("cap_terminal_disable_requested=$%d" % len(params))
+        if data.vision_enabled is not None:
+            msg["vision_enabled"] = bool(data.vision_enabled)
+            params.append(not bool(data.vision_enabled))
+            sets.append("cap_vision_disable_requested=$%d" % len(params))
+        if len(msg) == 1:
+            raise HTTPException(status_code=400, detail="terminal_enabled ve/veya vision_enabled verin.")
+        params.append(pc)
+        await execute_query("UPDATE clients SET %s WHERE pc_name=$%d" % (", ".join(sets), len(params)),
+                            tuple(params))
+        # send_command çevrimdışıysa no-op; online durumunu ayrıca bildiriyoruz. Kapatma isteği
+        # kalıcı kaydedildi, ajan sonra bağlanınca /ws/agent 'capabilities' handler'ı uygular.
+        online = pc in manager.active_agents
+        await manager.send_command(msg, pc)
+        applied = {k: msg[k] for k in msg if k != "action"}
+        await add_audit_log(pc, "set_capabilities", "Yetenek politikası gönderildi", applied)
+        return {"ok": True, "delivered_online": online, **applied}
 
     return router
