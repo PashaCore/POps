@@ -59,6 +59,11 @@ async def main():
     await c.execute("INSERT INTO global_settings (key,value) VALUES ('enforce_agent_auth','0') "
                     "ON CONFLICT (key) DO UPDATE SET value='0'")
     await c.execute("DELETE FROM enterprise_audit_logs WHERE target_pc IN ('HW-X','HW-Y')")
+    # F4: verify_session JWT 'sub'unun DB'de olmasını ister → panel kullanıcılarını seed et (token_version 0).
+    for uname, role in (("admin1", "admin"), ("viewer1", "viewer")):
+        await c.execute("INSERT INTO users (username, password_hash, role, permissions, token_version) "
+                        "VALUES ($1, 'x', $2, '[]', 0) ON CONFLICT (username) DO UPDATE SET role=$2, token_version=0",
+                        uname, role)
     passed = 0
 
     def chk(cond, msg):

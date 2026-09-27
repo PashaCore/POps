@@ -109,6 +109,13 @@ def _multipart(fields):
 async def main():
     conn = await db()
 
+    # F4: verify_session artık JWT'nin 'sub'unun DB'de gerçek kullanıcı olmasını ister.
+    # _superadmin_jwt() 'integration-test' için jeton üretir → o kullanıcıyı seed et (token_version 0).
+    await conn.execute(
+        "INSERT INTO users (username, password_hash, role, permissions, token_version) "
+        "VALUES ('integration-test', 'x', 'superadmin', '[]', 0) "
+        "ON CONFLICT (username) DO UPDATE SET role='superadmin', token_version=0")
+
     async def set_enforce(v):
         await conn.execute("INSERT INTO global_settings (key,value) VALUES ('enforce_agent_auth',$1) "
                            "ON CONFLICT (key) DO UPDATE SET value=$1", v)
