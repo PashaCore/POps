@@ -76,7 +76,7 @@ namespace POpsAgent
     //  * "Taleplerim" yalnızca oturumdaki kullanıcının taleplerini gösterir: sunucu cihazın bütün taleplerini döner,
     //    ortak laboratuvar bilgisayarında bir öğrenci başkasının talebini ve yanıtlarını görmemeli.
     //  * Tepsi mesajlarına güvenilmeyen girdi gibi davranılır (tepsi kullanıcının ortamıyla başlar; kullanıcı kendi kodunu
-    //    onun içinde çalıştırabilir): her tür için aynı anda tek istek, liste için en az 5 sn, talep için en az 10 sn
+    //    onun içinde çalıştırabilir): her tür için aynı anda tek istek, liste için en az 6 sn, talep için en az 10 sn
     //    aralık; fazlası sunucuya gitmez, tepsiye "meşgul" döner. Yoklama da liste sınırına tabidir (sunucu cihaz
     //    başına 5 sn'den sık isteğe 429 döner).
     //  * 5 dk'da bir yeni yanıt yoklanır; yeni yanıt tepsiye TICKET_NOTIFY ile bildirilir (balon). Görülen yanıt
@@ -95,7 +95,8 @@ namespace POpsAgent
         public const string UnreachableMessage = "Sunucuya ulaşılamadı; biraz sonra yeniden deneyin.";
         public const string BusyMessage = "Çok sık istek; birkaç saniye sonra yeniden deneyin.";
         public static readonly TimeSpan CreateInterval = TimeSpan.FromSeconds(10);
-        public static readonly TimeSpan ListInterval = TimeSpan.FromSeconds(5);
+        // Sunucunun sınırı 5 sn: aynı aralık saat kaymasıyla ara sıra 429 alıyordu
+        public static readonly TimeSpan ListInterval = TimeSpan.FromSeconds(6);
 
         // Tür başına: aynı anda tek istek ve iki istek arası en az süre
         private sealed class RequestGate

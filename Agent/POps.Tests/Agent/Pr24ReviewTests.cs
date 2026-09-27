@@ -61,7 +61,7 @@ namespace POps.Tests.Agent
         }
 
         [Fact]
-        public async Task List_OneAtATimeAndAtMostEveryFiveSeconds()
+        public async Task List_OneAtATimeAndAtMostEverySixSeconds()
         {
             var gate = new TaskCompletionSource<(int?, string)>();
             Helpdesk desk = Desk(() => gate.Task);
@@ -78,7 +78,11 @@ namespace POps.Tests.Agent
             await desk.ListAsync();                     // bittiği saniye: aralık dolmadı
             Assert.Equal(1, _requests);
 
-            _now = _now.AddSeconds(5);
+            _now = _now.AddSeconds(5);                  // sunucunun 5 sn'si ajana yetmez (6 sn)
+            await desk.ListAsync();
+            Assert.Equal(1, _requests);
+
+            _now = _now.AddSeconds(1);
             gate = new TaskCompletionSource<(int?, string)>();
             gate.SetResult((200, "[]"));
             await desk.ListAsync();
@@ -140,14 +144,20 @@ namespace POps.Tests.Agent
         public void ServiceImagePath_IsParsed(string imagePath, string expected) =>
             Assert.Equal(expected, ServiceImagePath.ExecutablePath(imagePath));
 
-        // L5: Windows Installer bir işlem yürütürken tepsi/watchdog başlatılmaz (gerçek _MSIExecute'a dokunulmaz)
+        // L5 + N1: Windows Installer meşgulken tepsi/watchdog başlatılmaz; ama aynı adlı mutex'i herhangi bir kullanıcı
+        // oluşturabildiği için yalnızca sahibi SYSTEM/Administrators olan sayılır (gerçek _MSIExecute'a dokunulmaz)
         [Fact]
-        public void WindowsInstallerMutex_MeansBusy()
+        public void OnlyASystemOwnedInstallerMutex_MeansBusy()
         {
             string name = @"Local\POpsTest_MSIExecute_" + Guid.NewGuid().ToString("N");
             Assert.False(UserSessionLauncher.WindowsInstallerBusy(name));
             using (new Mutex(true, name))
-                Assert.True(UserSessionLauncher.WindowsInstallerBusy(name));
+            {
+                SecurityIdentifier owner = UserSessionLauncher.MutexOwner(name);
+                Assert.Equal(WindowsIdentity.GetCurrent().Owner, owner);
+                // Yönetici olmayan kullanıcının oluşturduğu mutex tepsiyi durduramaz
+                Assert.Equal(PipeOwner.IsTrustedOwner(owner), UserSessionLauncher.WindowsInstallerBusy(name));
+            }
         }
     }
 

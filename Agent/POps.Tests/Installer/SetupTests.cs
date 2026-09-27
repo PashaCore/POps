@@ -17,6 +17,9 @@ namespace POps.Tests.Installer
         private readonly string _root = TestEnvironment.NewDir("msi");
         private readonly List<string> _log = new List<string>();
 
+        // Üst klasör zinciri geçici test klasöründe durur (bkz. Setup.TrustedBaseForTests)
+        public SetupTests() => Setup.TrustedBaseForTests = TestEnvironment.Root;
+
         private Layout NewLayout() => new Layout
         {
             DataDir = Path.Combine(_root, "POpsData"),
@@ -93,7 +96,8 @@ namespace POps.Tests.Installer
             Directory.SetAccessControl(InstallDir, open);
             Assert.True(Setup.UsersCanWrite(Directory.GetAccessControl(InstallDir)));
 
-            Assert.Null(Configure(NewLayout(), ("SERVER_URL", "https://pops.example")));
+            // Klasör boştu (kurulumdan önce yalnızca POps'unkiler): daraltılır
+            Assert.Null(Configure(NewLayout(), ("SERVER_URL", "https://pops.example"), ("INSTALLDIR_STATE", Setup.StatePops)));
 
             DirectorySecurity sec = Directory.GetAccessControl(InstallDir);
             Assert.True(sec.AreAccessRulesProtected);
@@ -101,6 +105,129 @@ namespace POps.Tests.Installer
             var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
             Assert.Contains(sec.GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<FileSystemAccessRule>(),
                 r => r.IdentityReference.Equals(users) && (r.FileSystemRights & FileSystemRights.ExecuteFile) != 0);
+        }
+
+        // ---------------------------------------------------------------- INSTALLFOLDER denetimi (immediate)
+
+        private static readonly ISet<string> NoKnownFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        private static void GrantAuthenticatedUsers(string dir, FileSystemRights rights, PropagationFlags propagation = PropagationFlags.None)
+        {
+            DirectorySecurity sec = Directory.GetAccessControl(dir);
+            sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null), rights,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, propagation, AccessControlType.Allow));
+            Directory.SetAccessControl(dir, sec);
+        }
+
+        [Theory]
+        [InlineData(@"C:\", "sürücü kökü")]
+        [InlineData(@"C:", "tam bir yerel yol")]
+        [InlineData(@"\\server\share\POps", "ağ yolu")]
+        [InlineData(@"//server/share/POps", "ağ yolu")]
+        [InlineData(@"POps", "tam bir yerel yol")]
+        [InlineData("", "boş")]
+        public void InvalidInstallFolders_AreRejected(string dir, string reason)
+        {
+            string error = Setup.CheckInstallFolder(dir, Setup.DefaultProtectedFolders(), NoKnownFiles, out string state);
+            Assert.NotNull(error);
+            Assert.Contains(reason, error);
+            Assert.Null(state);
+        }
+
+        [Fact]
+        public void SystemFoldersAndTheirParents_AreRejected()
+        {
+            IList<string> system = Setup.DefaultProtectedFolders();
+            foreach (string dir in new[]
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                (Environment.GetEnvironmentVariable("SystemDrive") ?? "C:") + "\\Users",
+            })
+            {
+                string error = Setup.CheckInstallFolder(dir, system, NoKnownFiles, out _);
+                Assert.True(error != null && error.Contains("sistem klasörü"), dir + ": " + error);
+            }
+
+            // Korunan bir klasörün üstü de reddedilir (burada geçici klasörde taklit edilir)
+            string fakeSystem = Path.Combine(_root, "Sys", "Windows");
+            Directory.CreateDirectory(fakeSystem);
+            Assert.Contains("sistem klasörü", Setup.CheckInstallFolder(Path.Combine(_root, "Sys"), new[] { fakeSystem }, NoKnownFiles, out _));
+            Assert.Null(Setup.CheckInstallFolder(Path.Combine(fakeSystem, "POps"), new[] { fakeSystem }, NoKnownFiles, out string inside));
+            Assert.Equal(Setup.StateNew, inside);
+        }
+
+        [Fact]
+        public void DefaultLocation_IsAccepted()
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "POps");
+            Assert.Null(Setup.CheckInstallFolder(dir, Setup.DefaultProtectedFolders(), NoKnownFiles, out string state));
+            Assert.NotNull(state);
+        }
+
+        [Fact]
+        public void NewFolder_IsNew_AndPopsOnlyFolder_IsPops()
+        {
+            string fresh = Path.Combine(_root, "Apps", "POps");
+            Directory.CreateDirectory(Path.GetDirectoryName(fresh));
+            Assert.Null(Setup.CheckInstallFolder(fresh, new string[0], NoKnownFiles, out string state));
+            Assert.Equal(Setup.StateNew, state);
+
+            Directory.CreateDirectory(fresh);
+            Write(Path.Combine(fresh, "POpsAgent.exe"), "x");
+            Write(Path.Combine(fresh, "Microsoft.Extensions.Hosting.dll"), "x");
+            Write(Path.Combine(fresh, "appsettings.json"), "{}");
+            var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Microsoft.Extensions.Hosting.dll" };
+            Assert.Null(Setup.CheckInstallFolder(fresh, new string[0], known, out state));
+            Assert.Equal(Setup.StatePops, state);
+        }
+
+        // Kullanıcıların yazabildiği ve başka dosyalar içeren klasör reddedilir; yazamıyorlarsa dokunulmadan kurulur
+        [Fact]
+        public void ForeignFolder_IsRejectedOnlyWhenUsersCanWrite()
+        {
+            string shared = Path.Combine(_root, "Shared", "Tools");
+            Directory.CreateDirectory(shared);
+            Write(Path.Combine(shared, "baska-program.exe"), "x");
+            Assert.Null(Setup.CheckInstallFolder(shared, new string[0], NoKnownFiles, out string state));
+            Assert.Equal(Setup.StateOther, state);
+
+            GrantAuthenticatedUsers(shared, FileSystemRights.Modify);
+            string error = Setup.CheckInstallFolder(shared, new string[0], NoKnownFiles, out _);
+            Assert.Contains("başka dosyalar", error);
+
+            // Configure (SYSTEM) da savunma olarak durur ve izinlere dokunmaz
+            string configureError = Setup.ApplyInstallFolderPolicy(shared, Setup.StateOther, _log.Add);
+            Assert.Contains("POps'a ait değil", configureError);
+            Assert.False(Directory.GetAccessControl(shared).AreAccessRulesProtected);
+        }
+
+        // Kullanıcı bir üst klasörü silip yeniden adlandırabiliyorsa (yerine kendi klasörünü koyabilir) kurulmaz
+        [Fact]
+        public void UserReplaceableParent_IsRejected()
+        {
+            string parent = Path.Combine(_root, "OpenParent");
+            Directory.CreateDirectory(parent);
+            GrantAuthenticatedUsers(parent, FileSystemRights.Modify);
+            Assert.Contains("üst klasörü", Setup.CheckInstallFolder(Path.Combine(parent, "POps"), new string[0], NoKnownFiles, out _));
+
+            // Henüz olmayan ara klasör, kullanıcıların değiştirebileceği izinleri devralacaksa da
+            string inheriting = Path.Combine(_root, "InheritParent");
+            Directory.CreateDirectory(inheriting);
+            GrantAuthenticatedUsers(inheriting, FileSystemRights.Modify, PropagationFlags.InheritOnly);
+            Assert.Contains("oluşturulunca", Setup.CheckInstallFolder(Path.Combine(inheriting, "Apps", "POps"), new string[0], NoKnownFiles, out _));
+        }
+
+        // Zaten korunan klasöre (ör. Program Files) dokunulmaz
+        [Fact]
+        public void ProtectedFolder_IsLeftAlone()
+        {
+            string dir = Path.Combine(_root, "Protected");
+            Directory.CreateDirectory(dir);
+            Assert.Null(Setup.ApplyInstallFolderPolicy(dir, Setup.StateOther, _log.Add));
+            Assert.False(Directory.GetAccessControl(dir).AreAccessRulesProtected);
         }
 
         [Fact]

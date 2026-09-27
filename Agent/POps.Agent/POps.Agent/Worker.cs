@@ -1113,6 +1113,8 @@ namespace POpsAgent
 
         public void Start() { _cts = new CancellationTokenSource(); Task.Run(() => ListenPipeAsync(_cts.Token)); }
 
+        private string _lastPipeError;
+
         // Bağlı tepsinin oturumundaki kullanıcı (bağlantı yoksa null)
         public string ClientUser { get; private set; }
 
@@ -1182,6 +1184,7 @@ namespace POpsAgent
                         continue;
                     }
                     ClientUser = UserSessionLauncher.SessionUser(UserSessionLauncher.SessionOf((int)clientPid));
+                    _lastPipeError = null;
                     POpsHelpers.Log("PIPE", "🟢 Tepsi bağlandı (doğrulandı).");
                     try { OnConnected?.Invoke(); } catch (Exception ex) { POpsHelpers.Log("PIPE", $"Bağlantı sonrası eşitleme başarısız: {ex.Message}", true); }
 
@@ -1229,7 +1232,9 @@ namespace POpsAgent
                 }
                 catch (Exception ex)
                 {
-                    POpsHelpers.Log("PIPE", $"Hata: {ex.Message}", true);
+                    // Boru adı başka bir süreçte kaldıkça 3 sn'de bir aynı hata loglanmaz
+                    if (ex.Message != _lastPipeError) POpsHelpers.Log("PIPE", $"Hata: {ex.Message}", true);
+                    _lastPipeError = ex.Message;
                     await Task.Delay(3000, token);
                 }
                 finally

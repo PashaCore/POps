@@ -5,7 +5,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using System.Threading;
+using System.Security.Principal;
 
 namespace POps.Shared
 {
@@ -77,16 +77,28 @@ namespace POps.Shared
 
         // Windows Installer bir işlem yürütüyorsa (elle ya da GPO ile MSI kurulumu/yükseltmesi update.lock yazmaz)
         // tepsi ve watchdog başlatılmaz: kurulumun kapattığı dosyalarla yarışılmasın
+        // Her kullanıcı aynı adla mutex oluşturabilir: yalnızca sahibi SYSTEM ya da Administrators olan mutex sayılır
+        // (Windows Installer hizmeti SYSTEM'dir). Sahibi okunamayan mutex de sayılmaz: öğrenci kendini engelleyen bir
+        // izinle mutex oluşturup servisin tepsiyi (karantinada kilit ekranını) hiç başlatmamasını sağlayamasın.
         public static bool WindowsInstallerBusy(string mutexName = @"Global\_MSIExecute")
         {
+            try { return PipeOwner.IsTrustedOwner(MutexOwner(mutexName)); }
+            catch { return false; }
+        }
+
+        // Adlandırılmış mutex'in sahibi; yoksa ya da okunamazsa null (yalnızca READ_CONTROL ile açılır)
+        public static SecurityIdentifier MutexOwner(string mutexName)
+        {
+            IntPtr handle = OpenMutexW(ReadControl, false, mutexName);
+            if (handle == IntPtr.Zero) return null;
             try
             {
-                if (!Mutex.TryOpenExisting(mutexName, out Mutex mutex)) return false;
-                mutex.Dispose();
-                return true;
+                if (GetSecurityInfo(handle, SeKernelObject, OwnerSecurityInformation, out IntPtr owner, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, out IntPtr descriptor) != 0)
+                    return null;
+                try { return new SecurityIdentifier(owner); }
+                finally { LocalFree(descriptor); }
             }
-            catch (UnauthorizedAccessException) { return true; }   // var ama açılamıyor: yine de meşgul
-            catch { return false; }
+            finally { CloseHandle(handle); }
         }
 
         // Sürecin oturumu ve o oturumun kullanıcısı (yardım masası talebinin sahibi: isteği yapan tepsi). SYSTEM'de çalışır.
@@ -203,6 +215,18 @@ namespace POps.Shared
         private static extern bool CloseHandle(IntPtr handle);
 
         private const uint ProcessQueryLimitedInformation = 0x1000;
+        private const uint ReadControl = 0x00020000;
+        private const int SeKernelObject = 6;
+        private const uint OwnerSecurityInformation = 0x00000001;
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr OpenMutexW(uint desiredAccess, bool inheritHandle, string name);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern uint GetSecurityInfo(IntPtr handle, int objectType, uint securityInfo, out IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl, out IntPtr securityDescriptor);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr LocalFree(IntPtr memory);
         private const int WTSUserName = 5;
 
         [DllImport("kernel32.dll", SetLastError = true)]
