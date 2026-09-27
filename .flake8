@@ -1,4 +1,6 @@
 [flake8]
 # Modern satır sınırı (79 yerine 120). Biçim/kalite kapısı CI'daki 'lint' job'ında.
 max-line-length = 120
+# E203: black'in dilim biçimi (x[a : b]) ile çakışır — black kullanan projelerde standart olarak kapalı.
+extend-ignore = E203
 exclude = .git,__pycache__,venv,.venv,build,dist,node_modules
