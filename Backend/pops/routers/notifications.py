@@ -45,6 +45,19 @@ async def mark_notifications_read(data: NotificationsReadInput, auth: dict = Dep
     return {"ok": True}
 
 
+@router.post("/api/notifications/clear")
+async def clear_notifications(data: NotificationsReadInput, auth: dict = Depends(require_admin)):
+    """Zili temizler: verilen kayıtları ya da (ids boşsa) okunmuş olanların hepsini siler. Bildirimler denetim kaydı
+    değildir; olayların kendisi hash-zincirli device_audit_logs'ta ve olay günlüğünde kalır."""
+    if data.ids:
+        rows = await execute_query(
+            "DELETE FROM notifications WHERE id = ANY($1::int[]) RETURNING id", (data.ids,), fetch=True
+        )
+    else:
+        rows = await execute_query("DELETE FROM notifications WHERE is_read RETURNING id", fetch=True)
+    return {"ok": True, "deleted": len(rows or [])}
+
+
 def _settings_out(s: dict) -> dict:
     return {
         "enabled": s.get("notify_enabled") == "1",

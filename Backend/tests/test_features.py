@@ -254,6 +254,13 @@ def main():
     req("/api/notifications/read", ad, {"ids": []})
     s, lst = req("/api/notifications", ad)
     chk(lst.get("unread") == 0, "hepsi okundu işaretlendi")
+    chk(req("/api/notifications/clear", vw, {"ids": []})[0] == 403, "viewer zili temizleyemez")
+    s, r = req("/api/notifications/clear", ad, {"ids": []})
+    s2, lst = req("/api/notifications", ad)
+    chk(
+        s == 200 and r.get("deleted", 0) >= 1 and not lst.get("items"),
+        "okunanlar temizlendi (%s silindi)" % r.get("deleted"),
+    )
     req("/api/system/notify-settings", sa, {**good, "enabled": False, "webhook_url": ""})
     srv.shutdown()
 

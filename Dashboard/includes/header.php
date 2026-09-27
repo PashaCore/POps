@@ -221,7 +221,7 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
                     <div class="notif-wrap" id="notifWrap" style="display:none;">
                         <button class="topbar-icon-btn" id="notifBtn" title="Bildirimler" aria-label="Bildirimler"><i class="fas fa-bell"></i><span class="notif-count" id="notifCount"></span></button>
                         <div class="notif-panel" id="notifPanel">
-                            <div class="notif-head"><span>Bildirimler</span><button id="notifReadAll">Tümünü okundu say</button></div>
+                            <div class="notif-head"><span>Bildirimler</span><span><button id="notifReadAll">Tümünü okundu say</button> · <button id="notifClear" title="Okunmuş bildirimleri sil">Okunanları temizle</button></span></div>
                             <div id="notifList"><div class="notif-empty">Yükleniyor…</div></div>
                         </div>
                     </div>

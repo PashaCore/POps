@@ -71,6 +71,12 @@
             }
             btn.addEventListener('click', (e) => { e.stopPropagation(); panel.classList.toggle('open'); if (panel.classList.contains('open')) load(); });
             document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) panel.classList.remove('open'); });
+            document.getElementById('notifClear').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (!confirm('Okunmuş bildirimler silinsin mi? Olayların kendisi denetim kayıtlarında kalır.')) return;
+                await fetch('/api/notifications/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [] }) });
+                load();
+            });
             document.getElementById('notifReadAll').addEventListener('click', async () => {
                 await fetch('/api/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [] }) });
                 load();

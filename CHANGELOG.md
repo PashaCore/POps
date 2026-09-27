@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Panel: the notification bell can clear read notifications ("Okunanları temizle"); `POST /api/notifications/clear` deletes the given ids or all read ones.
+
 ## [0.1.6-alpha] - 2026-09-27
 
 Fixes what the 0.1.5 field test found and completes the helpdesk: the tray and watchdog now start in the signed-in user's session right after an install or update (before, only at the next sign-in, so a quarantine could not show its lock screen), students can report problems from the tray, and the rollback drill reports a clean `rolled_back`. It also closes ways a student could keep the lock screen away or flood the server from the tray, and refuses install folders that would let a user replace a program that runs as SYSTEM.
