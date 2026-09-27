@@ -1,40 +1,319 @@
 # Contributing to POps
 
-First off, thank you for considering contributing to POps! We believe that open source and community collaboration are what make software truly great. 
+Thank you for helping with POps (Pasha Operations Platform). This guide explains how the repository is laid out,
+how to run each part locally, which rules CI enforces, which areas need extra review, and how releases are made.
 
-This document provides guidelines for contributing to the Pasha Operations Platform.
+By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md); report unacceptable behaviour to
+`opensource@pashacore.com.tr`. **Security vulnerabilities are not reported as public issues**; see
+[Reporting security issues](#reporting-security-issues).
 
-## Code of Conduct
+Useful background before a first change: [`docs/getting-started.md`](docs/getting-started.md) (terms),
+[`docs/architecture.md`](docs/architecture.md) (components and flows), [`docs/decisions.md`](docs/decisions.md)
+(why things are built this way) and [`ROADMAP.md`](ROADMAP.md).
 
-By participating in this project, you are expected to uphold our [Code of Conduct](CODE_OF_CONDUCT.md). Please report any unacceptable behavior to `opensource@pashacore.com.tr`.
+## Ways to contribute
 
-## How Can I Contribute?
+- **Bugs:** search the [issues](https://github.com/PashaCore/POps/issues) first. A new report should include the
+  server OS, the backend and agent versions (the panel's **Sistem & Sürüm** page shows both), the Windows version
+  for agent problems, steps to reproduce, and the relevant log lines
+  ([`docs/troubleshooting.md`](docs/troubleshooting.md) lists where the logs are). Remove host names, IP addresses
+  and secrets from logs before posting.
+- **Enhancements:** open an issue that explains the problem for lab administrators, not only the proposed
+  solution. Larger design changes are discussed before code is written.
+- **Pull requests:** see [Pull requests](#pull-requests).
 
-### 1. Reporting Bugs
-- Check the [Issues](https://github.com/PashaCore/POps/issues) to ensure the bug hasn't already been reported.
-- If it hasn't, open a new issue. Include your OS, Agent version, Backend version, and clear steps to reproduce the issue.
-- If the bug is a security vulnerability, please refer to our [Security Policy](SECURITY.md).
+## Repository layout
 
-### 2. Suggesting Enhancements
-- Enhancement suggestions are tracked as GitHub issues. 
-- Please provide a clear title and description, and explain how the enhancement would improve the workflow for lab administrators or enterprise IT.
+| Path | Contents |
+| --- | --- |
+| `Backend/` | FastAPI backend. `server.py` only builds the app. `pops/` holds configuration, database pool, panel security, agent authentication, audit log, connection manager, models, notifications, scheduler, task queue, hardware-DNA identity and Wake-on-LAN; `pops/routers/` has one router per endpoint group. `system_routes.py` covers releases, enrollment, agent updates, self-update and capabilities; `release_verify.py` checks signed releases. `migrate.py` and `migrations/NNNN_*.sql` own the schema. `setup_env.py` is the server setup script. `tests/` holds the integration tests. `storage/`, `updates/` and `releases/` are runtime data and git-ignored. |
+| `Dashboard/` | PHP 8 panel: one file per page (`index.php`, `devices.php`, `system.php`, ...), `includes/` (`header.php` with the fetch wrapper and escaping helpers, `session.php`, `sidebar.php`, `config.example.php`), `assets/`. |
+| `Agent/` | .NET 8 agent: `POps.Agent` (Windows service), `POpsTray`, `POpsWatchdog`, `POpsUpdater`, `POps.Shared` (helpers shared by the programs), `POps.Tests` (xUnit). `POpsVision` is legacy source and is not shipped. `Directory.Build.props` takes the version from `VERSION`. |
+| `Installer/agent/` | WiX 5 MSI (`Package.wxs`, `POps.Agent.Installer.wixproj`) and its custom actions (`CustomActions/`, .NET Framework 4.7.2). |
+| `Installer/server/` | `install.sh` (native install), `nginx.example.conf`, `pops-deploy-backend` (deploy with health check and rollback), `pops-selfupdate` with its systemd `.path` and `.service` units. |
+| `docker/`, `docker-compose.yml` | Optional container setup ([`docs/docker.md`](docs/docker.md)). |
+| `tools/` | `sign_release.py` (sign, verify, generate keys, self-test) and `agent_simulator.py` (load test). |
+| `keys/` | The release **public** key only. Private keys (`*.key.pem`) are git-ignored and never committed. |
+| `docs/` | Operator and developer documentation, including the decision log `decisions.md`. |
+| `.github/` | `workflows/ci.yml`, `release.yml`, `codeql.yml`; `scripts/ci_schema_check.py`; Dependabot; CODEOWNERS; issue and PR templates. |
+| `VERSION`, `CHANGELOG.md` | The single version source and the changelog. |
+| `Shared/`, `assets/`, `screenshots/` | A placeholder README; images used by the README. |
 
-### 3. Submitting Pull Requests
-- Fork the repo and create your branch from `main`.
-- If you've added code that should be tested, add tests.
-- Ensure the code follows the existing style:
-  - C# (Agent): Follow standard Microsoft C# naming conventions.
-  - Python (Backend): PEP 8 compliant.
-  - PHP (Dashboard): PSR-12 compliant.
-- Issue that pull request!
+The panel's text is Turkish. `CHANGELOG.md` and most of `docs/` are in English; code comments are mostly Turkish.
 
-## Local Development Setup
+## Local setup
 
-To set up a local development environment, please refer to our [Installation Guide](docs/installation.md) in the `docs/` directory.
+### Backend (Python 3.9+, PostgreSQL)
 
-You will need:
-- `.NET 8 SDK` (for the Agent)
-- `Python 3.12+` and `PostgreSQL` (for the Backend)
-- `PHP 8.2+` and a Web Server like Apache/Nginx (for the Dashboard)
+CI and the reference server (AlmaLinux/RHEL 9) use **Python 3.9**, so do not use syntax or libraries that need a
+newer version. CI tests migrations on PostgreSQL 13.
 
-Thank you for helping us make POps better!
+```bash
+python3 -m venv venv                        # venv/ is git-ignored
+. venv/bin/activate
+pip install -r Backend/requirements.txt flake8
+
+# a development role and database (as the PostgreSQL superuser)
+sudo -u postgres createuser --pwprompt pops_dev
+sudo -u postgres createdb -O pops_dev pops_dev
+
+cp .env.example .env                        # repository root; set at least:
+#   JWT_SECRET  (python3 -c "import secrets; print(secrets.token_hex(32))")
+#   DB_USER=pops_dev  DB_PASS=...  DB_NAME=pops_dev  PANEL_ADMIN_PASS=...
+python Backend/migrate.py                   # --status lists applied and pending migrations
+cd Backend && python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
+curl http://127.0.0.1:8000/api/health       # {"status":"ok","database":true,...}
+```
+
+- The backend and `migrate.py` read `.env` (repository root or `Backend/`). Variables already set in the
+  environment take precedence.
+- The first start creates `PANEL_ADMIN_USER` (default `admin`) as superadmin if that account does not exist.
+- Migrations also run at every startup; running `migrate.py` first just shows errors earlier.
+- Do **not** use `Backend/setup_env.py` for development. It is the server setup script: it also changes the
+  database role's password and the panel admin's password.
+- `--reload` is for development. Production runs one uvicorn worker without it ([D-01](docs/decisions.md)).
+- Code layout: [`docs/backend.md`](docs/backend.md). Endpoints: [`docs/api.md`](docs/api.md). Settings:
+  [`docs/configuration.md`](docs/configuration.md).
+
+### Panel (PHP 8)
+
+Needs PHP 8 with the `curl` extension and nginx or Apache with PHP.
+
+```bash
+cp Dashboard/includes/config.example.php Dashboard/includes/config.php   # git-ignored
+```
+
+- The browser calls `/api/` and `/ws/` on the panel's **own origin**, so the web server must serve `Dashboard/` and
+  proxy `/api/`, `/ws/` (with WebSocket upgrade), `/updates/` and `/download/` to the backend. `php -S` alone does
+  not do that. Working examples: [`Installer/server/nginx.example.conf`](Installer/server/nginx.example.conf) and
+  [`docker/apache-pops.conf`](docker/apache-pops.conf); or use Docker Compose (below).
+- PHP signs users in by calling the backend at `POPS_API_INTERNAL_URL` (default `http://localhost:8000`), taken
+  from the web server's environment or the repository-root `.env`.
+- Plain `http://` works on a development machine; the cookies are marked `Secure` only over HTTPS.
+- New pages include `includes/header.php`. It provides `escapeHtml()` and `jsArg()` for API values and wraps
+  `fetch` so `/api/` calls send the cookie and the `X-Requested-With` header the backend requires.
+
+### Agent (Windows, .NET 8 SDK)
+
+Needs 64-bit Windows and the .NET 8 SDK. WiX and the other build tools come from NuGet; nothing else has to be
+installed. There is no solution for the whole agent, so build the projects CI builds:
+
+```powershell
+dotnet build Agent/POps.Agent/POps.Agent.sln -c Release
+dotnet build Agent/POpsTray/POpsTray.csproj -c Release
+dotnet build Agent/POpsWatchdog/POpsWatchDog.sln -c Release
+dotnet build Agent/POpsUpdater/POpsUpdater.sln -c Release
+dotnet test Agent/POps.Tests/POps.Tests.csproj -c Release
+```
+
+- The tests cover logic only (not the firewall, the pipe or the service), need no administrator rights and run in
+  a temporary folder; they never touch `C:\POps`, `C:\POpsData` or `C:\POpsLogs`. They target `net8.0-windows`
+  (agent) and `net472` (MSI custom actions).
+- To try a change end to end, build the MSI as in [`Installer/README.md`](Installer/README.md#build-locally) and
+  install it on a **disposable Windows VM**. The agent runs as SYSTEM, resets folder permissions and can add
+  firewall rules.
+- The agent refuses a plain `http://` server unless it is on the same machine. Use
+  `SERVER_URL=http://127.0.0.1:8000` for a backend on the VM itself; otherwise put TLS in front with a certificate
+  the VM trusts. Enrollment tokens are created on the panel's **Sistem & Sürüm** page.
+- Agent internals: [`Agent/README.md`](Agent/README.md), [`docs/agent.md`](docs/agent.md).
+
+### Docker Compose (alternative)
+
+Runs PostgreSQL, the backend and the panel (Apache, with the proxy already configured):
+
+```bash
+cp .env.example .env    # JWT_SECRET, BYPASS_SECRET, DB_USER, DB_PASS, DB_NAME, PANEL_ADMIN_PASS
+docker compose up -d --build
+curl http://127.0.0.1:8080/api/health       # panel: http://127.0.0.1:8080/login.php
+```
+
+The code is copied into the images at build time, so run `docker compose up -d --build` again after a change.
+Details and limits: [`docs/docker.md`](docs/docker.md).
+
+## Checks and tests
+
+### What CI runs
+
+`.github/workflows/ci.yml` runs on every push and pull request to `main`; `codeql.yml` adds CodeQL for Python,
+JavaScript and C#.
+
+| Job | Checks | Run it locally |
+| --- | --- | --- |
+| Build (5 agent projects) | `dotnet build -c Release` of the agent, tray, watchdog, updater and legacy Vision | see [Agent](#agent-windows-net-8-sdk) |
+| Agent unit tests | `dotnet test Agent/POps.Tests/POps.Tests.csproj` | same |
+| Backend (Python 3.9) | `flake8 Backend/`; importing `server` and `setup_env` | `flake8 Backend/` |
+| Dashboard checks | `php -l` on every PHP file; dark mode stays removed | `find Dashboard -name '*.php' -print0 \| xargs -0 -n1 php -l` |
+| Version consistency | `VERSION` == top CHANGELOG release heading == built `<Version>` | compare by hand |
+| Migrations (PostgreSQL 13) | fresh `migrate.py`, `ci_schema_check.py`, second run applies nothing | see below |
+| Release signing tool | `tools/sign_release.py selftest` (temporary key, no secret needed) | same command |
+| Security invariants | the integration tests against a running backend | see below |
+
+### Lint and formatting
+
+- `flake8 Backend/` must report nothing. The configuration is the repository-root `.flake8`: line length 120,
+  E203 ignored.
+- Formatting follows black with `-l 120 -S` (line length 120, quotes left as written). CI runs flake8 only, not
+  black.
+
+### Backend integration tests
+
+`Backend/tests/*.py` are plain scripts, not pytest. Each talks to a **running backend** over HTTP and WebSocket
+and also writes to **its database directly**: it creates users and enrollment tokens and switches
+`enforce_agent_auth`. Run them only against an **empty, throwaway database**, never against a real server. The
+steps below mirror the `security` job in `ci.yml`, which is the reference for the list and the order:
+
+```bash
+createdb pops_test                          # empty database your role owns
+export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<user> DB_PASS=<password> DB_NAME=pops_test
+export JWT_SECRET=ci-test-secret CORS_ALLOWED_ORIGINS= NOTIFY_WEBHOOK_ALLOW_PRIVATE=1
+export POPS_TEST_HTTP=http://127.0.0.1:8099
+cd Backend
+python migrate.py
+python -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/pops-test.log 2>&1 &
+SERVER_PID=$!
+curl --retry-connrefused --retry 40 --retry-delay 1 -sf "$POPS_TEST_HTTP/api/health" >/dev/null
+python tests/test_security.py
+python tests/test_2fa.py
+python tests/test_agent_authz.py
+python tests/test_remote_authz.py
+python tests/test_f4_accountability.py
+python tests/test_features.py
+python tests/test_helpdesk_licenses.py
+kill "$SERVER_PID"
+```
+
+- Export every `DB_*` variable and `JWT_SECRET` yourself. A value missing from the environment is read from `.env`,
+  which may point at another database. The server and the tests must use the same `JWT_SECRET`, because the tests
+  create their own tokens.
+- `NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` lets `test_features.py` send webhooks to its own receiver on `127.0.0.1`.
+- `Backend/tests/run_local.sh` runs the first five scripts the same way and stops the server when it exits.
+- Each script prints its checks and exits non-zero on failure. Add a new test file to the `security` job.
+
+### Migration check
+
+With the same `DB_*` variables pointing at an empty database:
+
+```bash
+python Backend/migrate.py
+python .github/scripts/ci_schema_check.py
+python Backend/migrate.py                    # must apply nothing
+```
+
+## Rules
+
+### Enforced by CI
+
+- **flake8 clean** and importable on Python 3.9.
+- **PHP syntax:** every file under `Dashboard/` passes `php -l`.
+- **Dark mode must not come back.** The panel has one light theme since 0.1.2-alpha. Any `data-theme` or
+  `toggleTheme` under `Dashboard/` fails the build.
+- **Version consistency:** `VERSION`, the top release heading in `CHANGELOG.md` (the `Unreleased` heading is
+  skipped) and the `<Version>` that `Agent/Directory.Build.props` produces must be equal. `VERSION` changes only
+  in a release commit; between releases, changes collect under `## [Unreleased]`.
+- **Migrations** build an empty database, pass the schema check and are idempotent.
+- **Agent** projects build and the unit tests pass.
+
+### Enforced by review
+
+- **Migrations.** Add a new file `Backend/migrations/NNNN_<name>.sql` with the next free number. Keep it plain,
+  idempotent DDL (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) and additive: a code rollback does not
+  undo a migration. Never edit, rename or renumber a migration once it is on `main`; servers that self-update from
+  `main` may already have applied it. Never change the schema from Python code. For a new table, add a
+  `(table, column)` pair to `.github/scripts/ci_schema_check.py` and a row to the migration table in
+  [`docs/database.md`](docs/database.md). A migration that changes or deletes data must tell operators in the
+  CHANGELOG to take a `pg_dump` first.
+- **Changelog.** Every user-visible change gets an entry under `## [Unreleased]` in the same pull request, in the
+  [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) sections (`Added`, `Changed`, `Removed`, `Security`,
+  `Fixed`, and `Known issues` when needed). Follow the existing style: start with the component in bold
+  (`**Backend:**`, `**Dashboard:**`, `**Agent:**`, `**Backend/Dashboard:**`, `**Docs:**`), write in plain English
+  what changed for the user and why, and name new migrations, settings and endpoints and the agent version a
+  change needs.
+- **Commit messages** follow the pattern in `git log`: `type(scope): summary`. Types: `feat`, `fix`, `docs`,
+  `refactor`, `test`, `ci`, `chore`, `perf`, `style`. Common scopes: `backend`, `agent`, `dashboard`, `system`,
+  `security`, `installer`, `deploy`, `release`, `docker`, `notify`, `auth`, `deps`. The summary is imperative,
+  lower case, without a final period, and describes the effect, for example
+  `fix(notify): block webhooks to internal addresses (SSRF), pin the checked IP, do not follow redirects`. The body
+  explains why and how it was verified, and names pentest findings or issues (`F1`, `#22`). Release commits are
+  `chore(release): <version>`.
+- **No secrets in the repository.** `.env`, `Dashboard/includes/config.php` and `*.key.pem` are git-ignored. Do not
+  commit passwords, tokens, keys, real server addresses or data from real devices; examples use
+  `pops.example.com`. Server secrets come from `.env`, agent secrets live only in `C:\POpsData\secure`. A secret
+  that was ever committed must be rotated: deleting it from the tree leaves it in the history.
+- **Dependencies.** Pin exact versions in `Backend/requirements.txt` and prefer the standard library, since servers
+  may have to install offline. Dependabot proposes updates. The agent stays on `net8.0` packages until the move to
+  .NET 10.
+- **Documentation** changes with the code: endpoints in [`docs/api.md`](docs/api.md), settings in
+  [`docs/configuration.md`](docs/configuration.md) and `.env.example`, tables in `docs/database.md`, security
+  behaviour in [`docs/security.md`](docs/security.md) and [`SECURITY.md`](SECURITY.md). A new or changed design
+  decision gets an entry in [`docs/decisions.md`](docs/decisions.md).
+- **Design rules** ([`docs/decisions.md`](docs/decisions.md)): nothing hidden from the person at the PC (no stealth
+  mode, no keystroke logging, remote sessions ask or announce); new agent HTTP endpoints require a valid device
+  secret even while enforcement is off, as the software and Windows Update endpoints do; notifications come only
+  from events the server decides on, never from severity an agent reports; outbound calls from the server are
+  optional, time-limited and never fatal, so an offline server keeps working.
+
+## Security-sensitive areas
+
+Changes in these areas need a careful second review, a test in `Backend/tests/` or `Agent/POps.Tests` where
+possible, and a `### Security` CHANGELOG entry when behaviour changes. The threat model is in
+[`SECURITY.md`](SECURITY.md), the controls in [`docs/security.md`](docs/security.md).
+
+| Area | Code | What must keep holding |
+| --- | --- | --- |
+| Panel sign-in and sessions | `Backend/pops/security.py`, `pops/routers/auth.py`, `Dashboard/includes/session.php`, `header.php` | bcrypt only; JWT only in the httpOnly cookie or a Bearer header; `X-Requested-With` on cookie-authenticated writes; role and `token_version` re-read from the database on each request; a 2FA challenge is never accepted as a session; login and 2FA rate limits. |
+| Agent authentication | `pops/agent_auth.py`, `pops/routers/agents.py`, `pops/dna.py`; `AgentCredentials.cs`, `SecureStore.cs` | Secrets stored only as SHA-256 and compared in constant time; no re-enrollment of an enrolled device without `allow-reenroll`; `X-Agent-Id` bound to the target device; rejections audited; no credentials over a non-loopback `http://` URL. |
+| Signed updates and release keys | `tools/sign_release.py`, `Backend/release_verify.py`, `system_routes.py` (upload, fetch, deploy), `ReleaseVerifier.cs`, `AgentUpdate.cs`, `Agent/POpsUpdater`, `Installer/agent`, `keys/`, `release.yml` | Verify the signature and SHA-256 before anything changes; no downgrade; download only from the agent's own server; the private key never in the repository, on a server or on an agent; an update or rollback never leaves a PC without an agent. |
+| Capability policy | `AgentCapabilities.cs`, `Worker.cs`, `Installer/agent/CustomActions`, `system_routes.py` (`set-capabilities`) | The server can only disable; an "enable" from the server is ignored; an unreadable policy file means disabled; an MSI update without the properties keeps the current state. |
+| Remote control and Vision | `pops/routers/control.py`, `pops/manager.py`, `Worker.cs`, `PipeClientVerifier.cs`, `Agent/POpsTray` | Input only for an admin with an open, reasoned session; frames only to panels that hold the session; the agent applies input only in a session the tray started after consent or notice; the pipe accepts only the installed `POpsTray.exe`. |
+| Audit hash chain | `pops/audit.py`, migration `0004`, `audit-verify` in `system_routes.py` | Only server code writes `device_audit_logs`; security actions are recorded with the acting user; the chain is written under its lock; never secrets or keystrokes in any log. |
+| Notifications and webhooks | `pops/notify.py`, `pops/routers/notifications.py` | Only server-decided events notify; webhook addresses must be public when saved and when sent; the checked address is pinned; redirects are not followed; SMTP credentials only in `.env`. |
+| CSV export | `pops/routers/reports.py` | Cells starting with `=`, `+`, `-`, `@`, a tab or a carriage return are prefixed with `'`. |
+| Server self-update and deploy | `Installer/server/pops-selfupdate*`, `pops-deploy-backend`, `system_routes.py` (`self-update`) | The backend never runs as root and only writes the request file; its content is never executed; only `origin/main` is deployed; health check with exact rollback. |
+| Uploads and downloads | `pops/routers/tasks.py` | `secure_filename` and a fixed storage folder; `/download/` is unauthenticated, so it must never serve anything confidential. |
+| Quarantine and offline bypass | `NetworkIsolation.cs`, `OfflineBypass.cs` | The previous firewall state is restored on unlock; bypass codes keep the lockout and the constant-time comparison. |
+
+Agent files named without a path are in `Agent/POps.Agent/POps.Agent/`.
+
+## Pull requests
+
+- Fork the repository (or use a branch if you have write access) and branch from `main`. Keep one topic per pull
+  request, and keep refactoring separate from behaviour changes.
+- Fill in the [pull request template](.github/pull_request_template.md) and say how you tested: which scripts, and
+  for agent changes which Windows version. For changes to the updater or the MSI, say whether the rollback drill
+  was run.
+- All CI jobs and CodeQL must pass.
+- [`.github/CODEOWNERS`](.github/CODEOWNERS) requests a review from the maintainer (`@TheP4SHA`) for every path.
+
+## Release process
+
+For maintainers. The mechanics are in `.github/workflows/release.yml`; see also
+[`docs/deployment.md`](docs/deployment.md#releases).
+
+1. `main` is green and `## [Unreleased]` in `CHANGELOG.md` is complete.
+2. Make one commit `chore(release): X.Y.Z-alpha` that:
+   - sets `VERSION` to `X.Y.Z-alpha` (it must start with a numeric `a.b.c`, which becomes the MSI version together
+     with the CI run number);
+   - adds `## [X.Y.Z-alpha] - YYYY-MM-DD` under the now empty `## [Unreleased]`, with a short summary and upgrade
+     notes above the moved entries, and updates the compare links at the end of the file.
+
+   `Agent/Directory.Build.props` needs no change. Push and wait for the `version` job.
+3. Tag and push: `git tag vX.Y.Z-alpha && git push origin vX.Y.Z-alpha`.
+4. `release.yml` builds the agent zip and MSI (Windows) and the server tarball. The `release` job runs in the
+   GitHub environment `release`: it checks that the tag is `v<VERSION>` and that the CHANGELOG has that section,
+   signs `manifest.json` with `POPS_RELEASE_PRIVATE_KEY`, verifies it against
+   `keys/pops_release_ed25519.pub.pem`, writes `SHA256SUMS` and publishes the release with the CHANGELOG section as
+   notes. A version containing `-` is published as a pre-release. Keep the key as a secret of the `release`
+   environment with required reviewers, so a signed release cannot be published without a manual approval.
+   Changing `release.yml` on `main`, or starting it by hand on a branch, builds the packages without publishing.
+5. Roll out. **Server:** self-update from the panel or `pops-deploy-backend` (take a `pg_dump` first when a
+   migration changes data). **Agents:** on **Sistem & Sürüm**, download the release from GitHub (or upload it on an
+   offline server), dispatch it to one pilot PC or lab, check the update results, then dispatch it to the rest.
+6. Rollback drill: when a release changes `POpsUpdater` or what it depends on (such as `POps.Shared`), ship it
+   normally first, then run the drill with the next release, because the updater that runs is always the
+   installed one. Steps: [`Agent/README.md`](Agent/README.md#rollback-drill).
+7. Key generation, storage and rotation: [`keys/README.md`](keys/README.md).
+
+## Reporting security issues
+
+Do not open a public issue. Email **security@pashacore.com.tr** with a description, steps to reproduce and the
+impact, as described in [`SECURITY.md`](SECURITY.md).
