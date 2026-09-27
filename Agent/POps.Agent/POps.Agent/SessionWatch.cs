@@ -61,6 +61,8 @@ namespace POpsAgent
     public sealed class SessionReporter
     {
         public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
+        // Gönderim başarısızsa (sunucu kapalı, 401...) 15 sn'de bir değil, bu kadar sonra yeniden denenir
+        public static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(5);
 
         private readonly string _serverUrl;
         private readonly Func<string> _hwId;
@@ -82,6 +84,7 @@ namespace POpsAgent
         {
             SessionSnapshot reported = Load();
             string lastSeenUser = null;
+            DateTime retryAfterUtc = DateTime.MinValue;
             while (!token.IsCancellationRequested)
             {
                 try
@@ -92,27 +95,31 @@ namespace POpsAgent
                         lastSeenUser = current.User;
                         UserChanged(current.User);
                     }
-                    if (AgentHttp.EnsureCanReport())
-                        reported = await ReportChangesAsync(reported, current);
+                    if (DateTime.UtcNow >= retryAfterUtc && AgentHttp.EnsureCanReport())
+                    {
+                        (reported, bool delivered) = await ReportChangesAsync(reported, current);
+                        retryAfterUtc = delivered ? DateTime.MinValue : DateTime.UtcNow + RetryDelay;
+                    }
                 }
                 catch (Exception ex) { POpsHelpers.Log("AGENT", $"Oturum durumu okunamadı: {ex.Message}", true); }
                 await Task.Delay(PollInterval, token);
             }
         }
 
-        private async Task<SessionSnapshot> ReportChangesAsync(SessionSnapshot reported, SessionSnapshot current)
+        // Dönen: son bildirilen durum ve bütün olaylar gönderildi mi
+        private async Task<(SessionSnapshot, bool)> ReportChangesAsync(SessionSnapshot reported, SessionSnapshot current)
         {
             foreach (var (action, user) in SessionEvents.Diff(reported, current))
             {
                 string hwId = _hwId();
                 var body = new AuthEventPayload { HwId = hwId, Hostname = _hostname, StudentId = user };
                 if (!await AgentHttp.PostJsonAsync(_serverUrl, "/api/auth/" + action, hwId, body, action == "login" ? "Oturum açma bildirimi" : "Oturum kapama bildirimi"))
-                    break;
+                    return (reported, false);
                 reported = action == "logout" ? SessionSnapshot.Nobody(current.BootUtc) : current;
                 Save(reported);
                 POpsHelpers.Log("AGENT", action == "login" ? "Oturum açma sunucuya bildirildi." : "Oturum kapama sunucuya bildirildi.");
             }
-            return reported;
+            return (reported, true);
         }
 
         internal static SessionSnapshot Load()

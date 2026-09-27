@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Runtime.Versioning;
 using System.Text;
@@ -14,7 +15,16 @@ namespace POpsAgent
 {
     // DNS tabanlı içerik politikası (eşleştirme: bkz. DnsWatch). 15 sn'de bir Windows DNS istemci önbelleğini okur;
     // okulun politikasında (dns_domains) listelenen alan adlarına ya da alt alanlarına uyan adları /api/policy_alert
-    // ile bildirir, auto_quarantine açıksa eşikte ağı yalıtır. Liste yoksa ya da boşsa hiçbir şey işaretlenmez.
+    // ile bildirir, auto_quarantine açıksa eşikte cihazı karantinaya alır. Liste yoksa ya da boşsa hiçbir şey
+    // işaretlenmez.
+    //
+    // Sayım (otomatik karantina bir öğrenciyi yanlışlıkla yalıtmasın diye):
+    //  * Bir ihlal = listedeki bir GİRİŞ. www.site, cdn.site, static.site aynı girişe (site) düşer ve 1 sayılır;
+    //    her giriş oturum başına bir kez bildirilir (ilk görülen alan adıyla).
+    //  * Eşik son 1 saatteki ihlallere uygulanır (kayan pencere).
+    //  * Konsoldaki kullanıcı değişince sayaç ve bildirilenler sıfırlanır; önbellekte o anda duran adlar önceki
+    //    kullanıcıya aittir, önbellekten düşene kadar yeni kullanıcıya yazılmaz. Aynı siteyi ikinci öğrenci
+    //    açınca yine bildirilir.
     //
     // Servis komut tüneli ilk kez kurulunca başlatılır (Worker.OnCommandChannelConnected); politika her dakika
     // yenilenir (Configure). Eski AdvancedActivityTracker hiç başlatılmıyordu; başlatılsaydı DNS'in yanında
@@ -24,6 +34,7 @@ namespace POpsAgent
     public static class DnsPolicyMonitor
     {
         public static readonly TimeSpan Interval = TimeSpan.FromSeconds(15);
+        public static readonly TimeSpan Window = TimeSpan.FromHours(1);
         private const int MaxRemembered = 10000;
 
         private static readonly object Sync = new object();
@@ -31,22 +42,39 @@ namespace POpsAgent
         private static AgentPolicy _policy = new AgentPolicy();
         private static string _hwId = "";
         private static string _serverUrl = "";
+        // Bu oturumda bildirilen girişler ("kategori|giriş")
         private static readonly HashSet<string> Reported = new HashSet<string>(StringComparer.Ordinal);
-        private static int _violations;
+        // Pencere içindeki ihlaller (zaman, kategori)
+        private static readonly List<(DateTime At, string Category)> Recent = new List<(DateTime, string)>();
+        // Kullanıcı değiştiğinde önbellekte olan adlar (önceki kullanıcının)
+        private static HashSet<string> _baseline = new HashSet<string>(StringComparer.Ordinal);
         private static bool _quarantined;
         private static bool _listMissingLogged;
         private static int _checking;
 
-        // Testlerde değiştirilir: önbellek okuyucu, ihlal bildirimi, karantina
+        // Testlerde değiştirilir: saat, önbellek okuyucu, ihlal bildirimi, karantina (neden metniyle)
+        internal static Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
         internal static Func<IEnumerable<string>> CacheReader { get; set; } = DnsWatch.ReadCacheNames;
         internal static Action<string, string> Reporter { get; set; } = ReportViolation;
-        internal static Action Quarantine { get; set; } = () => _ = NetworkIsolation.EnableAsync(ServerUrl);
+        // Worker bunu QuarantineControl.LockdownAsync'e bağlar (kilit ekranı + yalıtım + denetim kaydı)
+        public static Action<string> Quarantine { get; set; } = reason => { _ = NetworkIsolation.EnableAsync(ServerUrl); };
 
         private static string ServerUrl { get { lock (Sync) return _serverUrl; } }
 
         public static bool IsRunning { get { lock (Sync) return _timer != null; } }
 
-        public static int Violations { get { lock (Sync) return _violations; } }
+        // Son 1 saatteki ihlal sayısı
+        public static int Violations
+        {
+            get
+            {
+                lock (Sync)
+                {
+                    Prune(UtcNow());
+                    return Recent.Count;
+                }
+            }
+        }
 
         public static void Configure(AgentPolicy policy, string hwId, string serverUrl)
         {
@@ -78,13 +106,27 @@ namespace POpsAgent
             }
         }
 
-        // Karantina kaldırılınca (unlock ya da çevrimdışı bypass) sayaç sıfırlanır; eşik yeniden aşılırsa yine yalıtılır
+        // Karantina kaldırılınca (unlock ya da çevrimdışı bypass) sayaç sıfırlanır; eşik yeniden aşılırsa yine karantina
         public static void ResetViolations()
         {
             lock (Sync)
             {
-                _violations = 0;
+                Recent.Clear();
                 _quarantined = false;
+            }
+        }
+
+        // Konsoldaki kullanıcı değişti (SessionReporter.UserChanged)
+        public static void OnUserChanged()
+        {
+            HashSet<string> present;
+            try { present = new HashSet<string>(CacheReader().Select(DnsWatch.Normalize).Where(n => n != null), StringComparer.Ordinal); }
+            catch { present = new HashSet<string>(StringComparer.Ordinal); }
+            lock (Sync)
+            {
+                Reported.Clear();
+                Recent.Clear();
+                _baseline = present;
             }
         }
 
@@ -96,13 +138,16 @@ namespace POpsAgent
             {
                 _policy = new AgentPolicy();
                 Reported.Clear();
-                _violations = 0;
+                Recent.Clear();
+                _baseline = new HashSet<string>(StringComparer.Ordinal);
                 _quarantined = false;
                 _listMissingLogged = false;
             }
         }
 
-        // Bir tarama turu; bu turda bildirilen yeni ihlaller (alan adı, kategori)
+        private static void Prune(DateTime now) => Recent.RemoveAll(v => now - v.At >= Window);
+
+        // Bir tarama turu; bu turda bildirilen yeni ihlaller (ilk görülen alan adı, kategori)
         public static List<(string Domain, string Category)> CheckNow()
         {
             var found = new List<(string, string)>();
@@ -120,30 +165,40 @@ namespace POpsAgent
                 }
                 _listMissingLogged = false;
 
-                foreach (string domain in CacheReader())
-                {
-                    string category = DnsWatch.MatchCategory(domain, policy.dns_categories, policy.dns_domains);
-                    if (category == null) continue;
+                List<string> names = CacheReader().Select(DnsWatch.Normalize).Where(n => n != null).Distinct().ToList();
+                lock (Sync) _baseline.IntersectWith(names);   // önbellekten düşen ad yeniden görülürse yeni ziyarettir
 
-                    bool quarantineNow;
+                foreach (string domain in names)
+                {
+                    var match = DnsWatch.Match(domain, policy.dns_categories, policy.dns_domains);
+                    if (match == null) continue;
+                    (string category, string entry) = match.Value;
+
+                    string quarantineReason = null;
                     lock (Sync)
                     {
-                        if (Reported.Contains(domain)) continue;
+                        if (_baseline.Contains(domain)) continue;
                         if (Reported.Count >= MaxRemembered) Reported.Clear();
-                        Reported.Add(domain);
-                        _violations++;
-                        quarantineNow = policy.auto_quarantine && !_quarantined && _violations >= Math.Max(1, policy.quarantine_threshold);
-                        if (quarantineNow) _quarantined = true;
+                        if (!Reported.Add(category + "|" + entry)) continue;
+                        DateTime now = UtcNow();
+                        Prune(now);
+                        Recent.Add((now, category));
+                        int threshold = Math.Max(1, policy.quarantine_threshold);
+                        if (policy.auto_quarantine && !_quarantined && Recent.Count >= threshold)
+                        {
+                            _quarantined = true;
+                            quarantineReason = $"{Recent.Count} ihlal / {Window.TotalHours:0} saat ({string.Join(", ", Recent.Select(v => v.Category).Distinct())})";
+                        }
                     }
 
                     found.Add((domain, category));
                     POpsHelpers.Log("TRACKER", $"DNS kural ihlali: {domain} ({category}).");
                     Reporter(domain, category);
-                    if (quarantineNow)
+                    if (quarantineReason != null)
                     {
                         // Sunucuya ulaşılamasa da eşik uygulanır
-                        POpsHelpers.Log("TRACKER", "Karantina eşiği aşıldı, ağ yalıtılıyor.");
-                        Quarantine();
+                        POpsHelpers.Log("TRACKER", $"Karantina eşiği aşıldı ({quarantineReason}); cihaz karantinaya alınıyor.");
+                        Quarantine(quarantineReason);
                     }
                 }
             }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -20,28 +21,38 @@ namespace POpsAgent
     public static class DnsWatch
     {
         // "sub.example.com" -> "example.com" listede ise eşleşir; "badexample.com" eşleşmez.
-        public static string MatchCategory(string domain, IEnumerable<string> activeCategories, IDictionary<string, List<string>> domainsByCategory)
+        public static string MatchCategory(string domain, IEnumerable<string> activeCategories, IDictionary<string, List<string>> domainsByCategory) =>
+            Match(domain, activeCategories, domainsByCategory)?.Category;
+
+        // Eşleşen kategori ve listedeki giriş (normalleştirilmiş). www., cdn., static. gibi alt alanlar aynı girişe düşer.
+        public static (string Category, string Entry)? Match(string domain, IEnumerable<string> activeCategories, IDictionary<string, List<string>> domainsByCategory)
         {
             string name = Normalize(domain);
             if (name == null || domainsByCategory == null || activeCategories == null) return null;
 
             foreach (string category in activeCategories)
             {
-                if (!domainsByCategory.TryGetValue(category, out List<string> listed) || listed == null) continue;
+                if (category == null || !domainsByCategory.TryGetValue(category, out List<string> listed) || listed == null) continue;
                 foreach (string entry in listed)
                 {
                     string listedName = Normalize(entry);
                     if (listedName == null) continue;
-                    if (name == listedName || name.EndsWith("." + listedName, StringComparison.Ordinal)) return category;
+                    if (name == listedName || name.EndsWith("." + listedName, StringComparison.Ordinal)) return (category, listedName);
                 }
             }
             return null;
         }
 
+        // Küçük harf, sondaki nokta atılır; Türkçe karakterli (IDN) adlar punycode'a çevrilir: DNS önbelleğinde
+        // "xn--..." biçimi durur, okul listeye "örnek.com" yazmış olabilir.
         public static string Normalize(string domain)
         {
-            string name = domain?.Trim().TrimEnd('.').ToLowerInvariant();
-            return string.IsNullOrEmpty(name) || name.Contains(' ') ? null : name;
+            string name = domain?.Trim().TrimEnd('.');
+            if (string.IsNullOrEmpty(name) || name.Contains(' ')) return null;
+            // IdnMapping örnekleri thread'ler arasında paylaşılmaz
+            try { name = new IdnMapping().GetAscii(name); }
+            catch (ArgumentException) { }
+            return name.ToLowerInvariant();
         }
 
         // DNS istemci önbelleğindeki adlar (yinelenmeden). Okunamazsa boş liste.

@@ -39,6 +39,8 @@ namespace POpsAgent
     public static class SoftwareInventory
     {
         public const int MaxItems = 5000;
+        // Sunucu sütun sınırları (Backend/pops/routers/inventory.py); ajan da kısaltır, özet sunucunun sakladığıyla aynı olsun
+        public const int MaxName = 300, MaxVersion = 100, MaxPublisher = 200, MaxInstallDate = 20;
         public const string UninstallPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
         public const string UninstallPath32 = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall";
 
@@ -57,11 +59,11 @@ namespace POpsAgent
 
             return new SoftwareItem
             {
-                Name = name,
-                Version = Text(values, "DisplayVersion") ?? "",
-                Publisher = Text(values, "Publisher"),
+                Name = Clip(name, MaxName),
+                Version = Clip(Text(values, "DisplayVersion"), MaxVersion) ?? "",
+                Publisher = Clip(Text(values, "Publisher"), MaxPublisher),
                 // YYYYMMDD olduğu gibi (bazı kurulumlar başka biçim yazar; sunucu metin olarak saklar)
-                InstallDate = Text(values, "InstallDate"),
+                InstallDate = Clip(Text(values, "InstallDate"), MaxInstallDate),
             };
         }
 
@@ -145,6 +147,9 @@ namespace POpsAgent
             return string.IsNullOrEmpty(text) ? null : text;
         }
 
+        public static string Clip(string value, int maxLength) =>
+            value == null || value.Length <= maxLength ? value : value.Substring(0, maxLength).TrimEnd();
+
         private static long? Number(IReadOnlyDictionary<string, object> values, string name)
         {
             if (!values.TryGetValue(name, out object value) || value == null) return null;
@@ -185,6 +190,14 @@ namespace POpsAgent
             }
         }
 
+        // Başarısız gönderimden sonra: sunucuda uç yoksa (eski sunucu) bir gün, secret yoksa bir dakika, aksi halde 15 dk
+        public static TimeSpan DelayAfter(PostResult result) => result switch
+        {
+            PostResult.EndpointMissing => MaxSilence,
+            PostResult.NotSent => WaitForSecret,
+            _ => RetryDelay,
+        };
+
         // Bir tur; null: normal aralık, aksi halde bir sonraki denemeye kadar beklenecek süre
         private async Task<TimeSpan?> ReportOnceAsync()
         {
@@ -196,8 +209,8 @@ namespace POpsAgent
                 if (!_gate.ShouldSend(hash, DateTime.UtcNow)) return null;
 
                 string hwId = _hwId();
-                if (!await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/software/", hwId), hwId, new SoftwareInventoryPayload { Items = items }, "Yazılım envanteri"))
-                    return RetryDelay;
+                PostResult result = await AgentHttp.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/software/", hwId), hwId, new SoftwareInventoryPayload { Items = items }, "Yazılım envanteri");
+                if (result != PostResult.Sent) return DelayAfter(result);
                 _gate.MarkSent(hash, DateTime.UtcNow);
                 POpsHelpers.Log("AGENT", $"Yazılım envanteri gönderildi ({items.Count} kayıt).");
                 return null;

@@ -12,10 +12,13 @@ namespace POpsAgent
 {
     // Windows Update durumu ve sunucunun istediği kurulumlar.
     //  * scan_updates: tara, /api/patches/{hw_id} ile bildir. Günlük tarama da aynı yoldan (bkz. PatchSchedule).
-    //  * install_updates (security | all): tara, seçilenleri indir ve kur (EULA kabul edilir), yeniden tara ve
-    //    last_result'a kısa Türkçe özetle bildir. ASLA yeniden başlatılmaz; gerekiyorsa reboot_required bildirilir.
+    //  * install_updates (security | all): tara, seçilenleri indir ve kur (EULA kabul edilir; toplam en çok 3 saat),
+    //    yeniden tara ve last_result'a kısa Türkçe özetle bildir. ASLA yeniden başlatılmaz; gerekiyorsa
+    //    reboot_required bildirilir.
     //  * Aynı anda tek tarama/kurulum çalışır; o sırada gelen istek loglanıp yok sayılır.
     //  * WUA çağrıları ayrı bir arka plan thread'indedir; tarama 15 dakikada biter ya da durdurulur.
+    //  * Gönderilemeyen durum C:\POpsData\patch-scan.json'da saklanır ve yalnızca GÖNDERİM yeniden denenir (30 dk'da
+    //    bir); tarama günde bir kalır. Sunucuda uç yoksa (404/405) gönderim bırakılır, sonraki günlük taramada denenir.
     [SupportedOSPlatform("windows")]
     public sealed class PatchManager
     {
@@ -24,16 +27,25 @@ namespace POpsAgent
 
         private readonly string _serverUrl;
         private readonly Func<string> _hwId;
+        private readonly object _stateLock = new object();
         private int _busy;
         private DateTime? _lastAttemptUtc;
-        // Son başarılı taramanın durumu: sonraki bir tarama başarısız olursa hata last_result ile bunun üzerinden bildirilir
+        // Son başarıyla gönderilen durum: sonraki bir tarama başarısız olursa hata last_result ile bunun üzerinden bildirilir
         private PatchStatusPayload _lastStatus;
 
         public PatchManager(string serverUrl, Func<string> hwId)
         {
             _serverUrl = serverUrl;
             _hwId = hwId;
+            Poster = status =>
+            {
+                string id = _hwId();
+                return AgentHttp.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/patches/", id), id, status, "Windows Update durumu");
+            };
         }
+
+        // Testlerde değiştirilir: durumu sunucuya gönderen çağrı
+        internal Func<PatchStatusPayload, Task<PostResult>> Poster { get; set; }
 
         public static string StatePath => Path.Combine(AgentUpdate.DataDir, "patch-scan.json");
 
@@ -46,7 +58,8 @@ namespace POpsAgent
         {
             if (!PatchClassifier.IsValidScope(scope))
             {
-                POpsHelpers.Log("PATCH", $"install_updates yok sayıldı: geçersiz kapsam '{scope}' (security ya da all olmalı).", true);
+                // Sunucudan gelen metin loga ham yazılmaz (satır sonuyla sahte log satırı eklenemesin)
+                POpsHelpers.Log("PATCH", $"install_updates yok sayıldı: geçersiz kapsam '{LogText.Safe(scope, 20)}' (security ya da all olmalı).", true);
                 return;
             }
             TryRun($"Windows güncellemeleri kurulumu ({scope})", () => InstallAndReportAsync(scope));
@@ -73,19 +86,26 @@ namespace POpsAgent
             return true;
         }
 
-        // Günlük tarama. Tarama sürerken (ör. sunucunun istediği kurulum) sıra bir sonraki tura kalır.
+        // Günlük döngü: bekleyen gönderim varsa onu, zamanı gelmişse taramayı yapar. Tarama/kurulum sürerken sıra
+        // bir sonraki tura kalır.
         public async Task ScheduleLoopAsync(CancellationToken token)
         {
             DateTime started = DateTime.UtcNow;
             while (!token.IsCancellationRequested)
             {
                 await Task.Delay(ScheduleTick, token);
+                PatchState state = LoadState();
                 DateTime now = DateTime.UtcNow;
-                if (now < PatchSchedule.NextScanUtc(LoadLastReportedScanUtc(), _lastAttemptUtc, started, now, _hwId())) continue;
-                if (!AgentHttp.EnsureCanReport()) continue;
+                DateTime? pendingPost = state.PendingReport != null ? state.NextPostUtc ?? now : null;
+                PatchStep step = PatchSchedule.NextStep(state.LastScanUtc, _lastAttemptUtc, pendingPost, started, now, _hwId());
+                if (step == PatchStep.Wait || !AgentHttp.EnsureCanReport()) continue;
                 if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) continue;
-                try { await ScanAndReportAsync(null); }
-                catch (Exception ex) { POpsHelpers.Log("PATCH", $"Günlük Windows Update taraması başarısız: {ex.Message}", true); }
+                try
+                {
+                    if (step == PatchStep.RetryPost) await DeliverAsync(state.PendingReport);
+                    else await ScanAndReportAsync(null);
+                }
+                catch (Exception ex) { POpsHelpers.Log("PATCH", $"Günlük Windows Update işlemi başarısız: {ex.Message}", true); }
                 finally { Volatile.Write(ref _busy, 0); }
             }
         }
@@ -108,7 +128,8 @@ namespace POpsAgent
                 await ReportFailureAsync($"Tarama başarısız: {WindowsUpdateAgent.ErrorText(ex)}");
                 throw;
             }
-            await ReportAsync(status);
+            RecordScan(DateTime.UtcNow);
+            await DeliverAsync(status);
         }
 
         private async Task InstallAndReportAsync(string scope)
@@ -129,8 +150,8 @@ namespace POpsAgent
                     {
                         try
                         {
-                            WindowsUpdateAgent.InstallOutcome outcome = WindowsUpdateAgent.Install(session, scan, selected);
-                            summary = PatchClassifier.Summarize(outcome.Installed, outcome.Failed, outcome.Skipped, outcome.RebootRequired || WindowsUpdateAgent.RebootRequired());
+                            WindowsUpdateAgent.InstallOutcome outcome = WindowsUpdateAgent.Install(session, scan, selected, WindowsUpdateAgent.InstallTimeout);
+                            summary = PatchClassifier.Summarize(outcome.Installed, outcome.Failed, outcome.Skipped, outcome.RebootRequired || WindowsUpdateAgent.RebootRequired(), outcome.TimedOut);
                         }
                         catch (Exception ex)
                         {
@@ -161,7 +182,8 @@ namespace POpsAgent
                 await ReportFailureAsync($"Kurulum yapılamadı: {WindowsUpdateAgent.ErrorText(ex)}");
                 throw;
             }
-            await ReportAsync(status);
+            RecordScan(DateTime.UtcNow);
+            await DeliverAsync(status);
         }
 
         private static PatchStatusPayload StatusOf(dynamic session, WindowsUpdateAgent.Scan scan, string lastResult)
@@ -172,16 +194,42 @@ namespace POpsAgent
             return PatchClassifier.BuildStatus(scan.Pending, WindowsUpdateAgent.RebootRequired(), scan.SearchedUtc, lastInstall, lastResult);
         }
 
-        private async Task ReportAsync(PatchStatusPayload status)
+        // Durumu gönderir. Başarısızsa saklar ve yalnızca gönderimi sonra yeniden dener (bkz. PatchSchedule.NextPostUtc).
+        internal async Task<PostResult> DeliverAsync(PatchStatusPayload status)
         {
-            string hwId = _hwId();
-            if (!await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/patches/", hwId), hwId, status, "Windows Update durumu")) return;
-            _lastStatus = status;
-            SaveLastReportedScanUtc(DateTime.UtcNow);
-            POpsHelpers.Log("PATCH", $"Windows Update durumu gönderildi: {status.PendingCount} bekleyen ({status.PendingSecurity} güvenlik, {status.PendingCritical} kritik), yeniden başlatma {(status.RebootRequired ? "gerekiyor" : "gerekmiyor")}.");
+            PostResult result = await Poster(status);
+            DateTime now = DateTime.UtcNow;
+            lock (_stateLock)
+            {
+                PatchState state = LoadState();
+                DateTime? next = PatchSchedule.NextPostUtc(result, now);
+                state.PendingReport = next.HasValue ? status : null;
+                state.NextPostUtc = next;
+                SaveState(state);
+            }
+            if (result == PostResult.Sent)
+            {
+                _lastStatus = status;
+                POpsHelpers.Log("PATCH", $"Windows Update durumu gönderildi: {status.PendingCount} bekleyen ({status.PendingSecurity} güvenlik, {status.PendingCritical} kritik), yeniden başlatma {(status.RebootRequired ? "gerekiyor" : "gerekmiyor")}.");
+            }
+            else if (result == PostResult.EndpointMissing)
+                POpsHelpers.Log("PATCH", "Sunucuda /api/patches ucu yok; durum bir sonraki günlük taramada yeniden gönderilecek.", true);
+            else
+                POpsHelpers.Log("PATCH", $"Windows Update durumu saklandı; gönderim {PatchSchedule.PostRetryDelay.TotalMinutes:0} dk sonra yeniden denenecek (yeniden taranmadan).");
+            return result;
         }
 
-        // Tarama başarısızsa sayılar bilinmez: yalnızca daha önce başarılı bir tarama varsa hata onun üzerinden bildirilir
+        private void RecordScan(DateTime utc)
+        {
+            lock (_stateLock)
+            {
+                PatchState state = LoadState();
+                state.LastScanUtc = utc;
+                SaveState(state);
+            }
+        }
+
+        // Tarama başarısızsa sayılar bilinmez: yalnızca daha önce gönderilmiş bir durum varsa hata onun üzerinden bildirilir
         private async Task ReportFailureAsync(string message)
         {
             POpsHelpers.Log("PATCH", message, true);
@@ -190,8 +238,7 @@ namespace POpsAgent
             var status = JsonSerializer.Deserialize<PatchStatusPayload>(JsonSerializer.Serialize(last));
             status.LastResult = message.Length <= 500 ? message : message.Substring(0, 497) + "...";
             status.RebootRequired = WindowsUpdateAgent.RebootRequired();
-            string hwId = _hwId();
-            await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/patches/", hwId), hwId, status, "Windows Update durumu");
+            await DeliverAsync(status);
         }
 
         private static Task<T> RunOnWuaThread<T>(Func<T> work)
@@ -208,26 +255,22 @@ namespace POpsAgent
             return tcs.Task;
         }
 
-        // Son BAŞARIYLA bildirilen taramanın zamanı; servis yeniden başlayınca günlük tarama tekrarlanmasın
-        internal static DateTime? LoadLastReportedScanUtc()
+        internal static PatchState LoadState()
         {
             try
             {
-                if (!File.Exists(StatePath)) return null;
-                using var doc = JsonDocument.Parse(File.ReadAllText(StatePath));
-                return doc.RootElement.TryGetProperty("last_reported_scan_utc", out var p) && p.TryGetDateTime(out DateTime t)
-                    ? DateTime.SpecifyKind(t.ToUniversalTime(), DateTimeKind.Utc)
-                    : null;
+                if (File.Exists(StatePath)) return JsonSerializer.Deserialize<PatchState>(File.ReadAllText(StatePath)) ?? new PatchState();
             }
-            catch { return null; }
+            catch { }
+            return new PatchState();
         }
 
-        internal static void SaveLastReportedScanUtc(DateTime utc)
+        internal static void SaveState(PatchState state)
         {
             try
             {
                 Directory.CreateDirectory(AgentUpdate.DataDir);
-                File.WriteAllText(StatePath, JsonSerializer.Serialize(new Dictionary<string, string> { ["last_reported_scan_utc"] = PatchClassifier.Iso(utc) }));
+                File.WriteAllText(StatePath, JsonSerializer.Serialize(state));
             }
             catch (Exception ex) { POpsHelpers.Log("PATCH", $"{StatePath} yazılamadı: {ex.Message}", true); }
         }

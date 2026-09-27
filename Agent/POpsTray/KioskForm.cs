@@ -36,6 +36,10 @@ namespace POpsTray
         private readonly Action<string> _submitBypass;
         private TextBox _txtBypass = null!;
         private Label _lblBypassStatus = null!;
+        // "Kod doğrulanıyor…" servis yanıt vermezse 10 sn sonra silinir
+        private readonly Timer _statusTimer = new Timer { Interval = 10000 };
+
+        public const string CodeFormatHint = "Kod en az 6 karakterdir ve yalnızca 0-9 rakamları ile A-F harflerinden oluşur (O harfi değil 0 rakamı).";
 
         public KioskForm(string reason, Action<string> submitBypass)
         {
@@ -119,6 +123,11 @@ namespace POpsTray
             this.Controls.Add(table);
 
             this.FormClosing += KioskForm_FormClosing;
+            _statusTimer.Tick += (s, e) =>
+            {
+                _statusTimer.Stop();
+                _lblBypassStatus.Text = "";
+            };
         }
 
         public bool AllowClose { get; set; } = false;
@@ -127,18 +136,32 @@ namespace POpsTray
         {
             string code = _txtBypass.Text.Trim();
             if (code.Length == 0) return;
+            // Biçim hatası servise gitmez: deneme hakkı yemez
+            if (!POps.Shared.BypassCode.IsWellFormed(code))
+            {
+                ShowStatus(CodeFormatHint, Color.Orange);
+                return;
+            }
             _txtBypass.Clear();
-            _lblBypassStatus.ForeColor = Color.LightGray;
-            _lblBypassStatus.Text = "Kod doğrulanıyor…";
+            ShowStatus("Kod doğrulanıyor…", Color.LightGray, clearAfterTimeout: true);
             _submitBypass?.Invoke(code);
         }
 
-        // Servis kodu reddetti (hatalı ya da çok sayıda denemeden sonra bypass geçici olarak kilitli)
-        public void ShowBypassRejected()
+        private void ShowStatus(string text, Color color, bool clearAfterTimeout = false)
         {
-            _lblBypassStatus.ForeColor = Color.Orange;
-            _lblBypassStatus.Text = "Kod kabul edilmedi. Art arda hatalı denemelerden sonra bypass bir süre kilitlenir.";
+            _statusTimer.Stop();
+            _lblBypassStatus.ForeColor = color;
+            _lblBypassStatus.Text = text;
+            if (clearAfterTimeout) _statusTimer.Start();
         }
+
+        // Servis kodu reddetti (hatalı ya da çok sayıda denemeden sonra bypass geçici olarak kilitli)
+        public void ShowBypassRejected() =>
+            ShowStatus("Kod kabul edilmedi. Art arda hatalı denemelerden sonra bypass bir süre kilitlenir.", Color.Orange);
+
+        // Kod ya da panel kilidi kaldırmak istedi ama ağ yalıtımı kaldırılamadı
+        public void ShowUnlockFailed() =>
+            ShowStatus("Ağ yalıtımı kaldırılamadı; kilit sürüyor. BT yöneticisine bildirin.", Color.Orange);
 
         private void KioskForm_FormClosing(object? sender, FormClosingEventArgs e)
         {
@@ -167,6 +190,7 @@ namespace POpsTray
 
         protected override void OnClosed(EventArgs e)
         {
+            _statusTimer.Dispose();
             UnhookWindowsHookEx(_hookID);
             base.OnClosed(e);
         }

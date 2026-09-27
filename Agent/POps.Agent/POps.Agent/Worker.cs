@@ -105,6 +105,8 @@ namespace POpsAgent
             foreach (string configPath in POpsHelpers.ConfigPaths) SecureConfigFile(configPath);
 
             _quarantine = new QuarantineControl(message => _trayPipe?.SendCommandToDesktop(message), EnableNetworkIsolationAsync, DisableNetworkIsolationAsync);
+            // DNS eşiğindeki otomatik karantina da kilit ekranı + yalıtım yolundan geçer (bkz. AutoQuarantineAsync)
+            DnsPolicyMonitor.Quarantine = reason => _ = AutoQuarantineAsync(reason);
             _patches = new PatchManager(_serverUrl, () => _hwId);
         }
 
@@ -143,7 +145,12 @@ namespace POpsAgent
             // Sunucuya bildirimler (yalnızca cihaz secret'ı varken; bkz. AgentHttp): yazılım envanteri (açılıştan
             // kısa süre sonra, sonra 6 saatte bir), günlük Windows Update taraması, oturum açma/kapama
             var sessions = new SessionReporter(_serverUrl, () => _hwId, _pcName);
-            sessions.UserChanged += _ => _activeApp = null;
+            sessions.UserChanged += _ =>
+            {
+                _activeApp = null;
+                // Yeni kullanıcı öncekinin DNS ihlalleriyle karantinaya girmesin
+                DnsPolicyMonitor.OnUserChanged();
+            };
             _ = Task.Run(() => new SoftwareReporter(_serverUrl, () => _hwId).RunAsync(stoppingToken));
             _ = Task.Run(() => _patches.ScheduleLoopAsync(stoppingToken));
             _ = Task.Run(() => sessions.RunAsync(stoppingToken));
@@ -413,29 +420,38 @@ namespace POpsAgent
                 _activeApp = null;
             };
 
+            // Kilit ekranı tepsiyle birlikte kapanmış olabilir: karantina sürüyorsa yeniden gösterilir
+            _trayPipe.OnConnected += () => _quarantine.SyncTray();
+
             _trayPipe.Start();
         }
 
         // Çevrimdışı bypass kodu: geçerliyse sunucunun unlock'u ile aynı yol (kilit ekranı kapanır, yalıtım kalkar).
-        // Sunucuya ulaşılabiliyorsa kullanım denetim kaydına da düşer.
+        // Kilit gerçekten kalktıysa ve sunucuya ulaşılabiliyorsa agent.offline_bypass olarak bildirilir (sunucu panelde
+        // karantina durumunu günceller).
         private async Task HandleBypassAttemptAsync(string token)
         {
             try
             {
-                var result = await _quarantine.HandleBypassAsync(token, _hwId, AgentCredentials.GetBypassSecret(), DateTime.Now);
-                if (result != OfflineBypass.Result.Accepted) return;
+                if (!await _quarantine.HandleBypassAsync(token, _hwId, AgentCredentials.GetBypassSecret(), DateTime.Now)) return;
                 string hwId = _hwId;
-                await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, new AgentLogPayload
-                {
-                    LogType = "Security",
-                    Message = "Çevrimdışı bypass kodu ile kilit ekranı ve karantina kaldırıldı",
-                    EventType = "agent.offline_bypass",
-                    Category = "security",
-                    Action = "offline_bypass",
-                    RiskLevel = "medium",
-                }, "Bypass denetim kaydı");
+                await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, QuarantineControl.OfflineBypassLog(), "Bypass denetim kaydı");
             }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Offline Bypass işlenemedi: {ex.Message}", true); }
+        }
+
+        // DNS kural ihlali eşiği aşıldı: sunucunun lockdown'u ile aynı yol (kilit ekranı + ağ yalıtımı). Sunucuya
+        // ulaşılabiliyorsa agent.auto_quarantine olarak bildirilir (yalıtım sunucuya erişimi kesmez); sunucu panelde
+        // karantina durumunu günceller ve bildirim gönderir.
+        private async Task AutoQuarantineAsync(string reason)
+        {
+            try
+            {
+                await _quarantine.LockdownAsync(QuarantineControl.AutoQuarantineReason);
+                string hwId = _hwId;
+                await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, QuarantineControl.AutoQuarantineLog(reason), "Otomatik karantina bildirimi");
+            }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"Otomatik karantina uygulanamadı: {ex.Message}", true); }
         }
 
         private async Task ConnectVisionTunnelAsync(CancellationToken token)
@@ -620,7 +636,12 @@ namespace POpsAgent
                             string reason = root.TryGetProperty("reason", out var rProp) && rProp.ValueKind == JsonValueKind.String ? rProp.GetString() : null;
                             await _quarantine.LockdownAsync(reason);
                         }
-                        else if (action == "unlock") await _quarantine.UnlockAsync("server");
+                        else if (action == "unlock")
+                        {
+                            // Panel cihazı açık gösterir; yalıtım kaldırılamadıysa denetim kaydı bunu söyler
+                            if (!await _quarantine.UnlockAsync("server"))
+                                await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId), _hwId, QuarantineControl.UnlockFailedLog(), "Karantina kaldırma hatası");
+                        }
                         // Windows Update: arka planda yürür, bu döngüyü bekletmez (bkz. PatchManager)
                         else if (action == "scan_updates") _patches.RequestScan();
                         else if (action == "install_updates")
@@ -886,7 +907,8 @@ namespace POpsAgent
                     Content = new StringContent(json, Encoding.UTF8, "application/json"),
                 };
                 AgentCredentials.AddHttpAuth(request, _hwId);
-                using var response = await _httpClient.SendAsync(request);
+                // Kimlik başlıkları taşıyan istek yönlendirme izlemeyen istemciyle gider (bkz. AgentHttp)
+                using var response = await AgentHttp.Client.SendAsync(request);
                 if (!response.IsSuccessStatusCode)
                 {
                     POpsHelpers.Log("AGENT", $"Donanım envanteri gönderilemedi: HTTP {(int)response.StatusCode}.", true);
@@ -1012,9 +1034,9 @@ namespace POpsAgent
         }
 
         // Ağ karantinası: bkz. NetworkIsolation (eski uygulama güvenlik duvarında hiçbir kural oluşturamıyordu)
-        private Task EnableNetworkIsolationAsync() => NetworkIsolation.EnableAsync(_serverUrl);
+        private Task<bool> EnableNetworkIsolationAsync() => NetworkIsolation.EnableAsync(_serverUrl);
 
-        private Task DisableNetworkIsolationAsync() => NetworkIsolation.DisableAsync();
+        private Task<bool> DisableNetworkIsolationAsync() => NetworkIsolation.DisableAsync();
 
         private async Task<string> ExecuteCommandAsync(string command)
         {
@@ -1085,6 +1107,9 @@ namespace POpsAgent
         public event Action<byte[]> OnFrameReceived = delegate { };
         // Tepsi bağlantısı koptuğunda (onaylı Vision oturumu da onunla biter)
         public event Action OnDisconnected = delegate { };
+        // Doğrulanmış tepsi bağlandı (servis açılışı, tepsinin yeniden başlaması, oturum değişimi)
+        public event Action OnConnected = delegate { };
+        private readonly object _writeLock = new object();
 
         // Boruya yalnızca kurulum klasöründeki tepsi bağlanabilir (bkz. PipeClientVerifier)
         private static readonly string TrayExePath = Path.Combine(AppContext.BaseDirectory, "POpsTray.exe");
@@ -1099,16 +1124,24 @@ namespace POpsAgent
 
         public void SendCommandToDesktop(string json)
         {
-            if (_pipeServer == null || !_pipeServer.IsConnected) return;
-            try
-            {
-                byte[] b = Encoding.UTF8.GetBytes(json);
-                byte[] len = BitConverter.GetBytes(b.Length);
-                _pipeServer.Write(len, 0, 4);
-                _pipeServer.Write(b, 0, b.Length);
-                _pipeServer.Flush();
-            }
+            var pipe = _pipeServer;
+            if (pipe == null || !pipe.IsConnected) return;
+            try { WriteFrame(pipe, _writeLock, Encoding.UTF8.GetBytes(json)); }
             catch { }
+        }
+
+        // Bir mesaj: 4 bayt uzunluk + içerik, tek parça ve kilit altında yazılır. Komut döngüsü, Vision, zamanlayıcılar
+        // ve bypass aynı anda yazabilir; kilitsiz iki mesajın parçaları birbirine karışıp tepsinin okumasını bozardı.
+        internal static void WriteFrame(Stream stream, object gate, byte[] payload)
+        {
+            byte[] frame = new byte[4 + payload.Length];
+            BitConverter.GetBytes(payload.Length).CopyTo(frame, 0);
+            payload.CopyTo(frame, 4);
+            lock (gate)
+            {
+                stream.Write(frame, 0, frame.Length);
+                stream.Flush();
+            }
         }
 
         private async Task ListenPipeAsync(CancellationToken token)
@@ -1142,6 +1175,7 @@ namespace POpsAgent
                         continue;
                     }
                     POpsHelpers.Log("PIPE", "🟢 Tepsi bağlandı (doğrulandı).");
+                    try { OnConnected?.Invoke(); } catch (Exception ex) { POpsHelpers.Log("PIPE", $"Bağlantı sonrası eşitleme başarısız: {ex.Message}", true); }
 
                     byte[] lBuf = new byte[4];
                     while (_pipeServer.IsConnected && !token.IsCancellationRequested)

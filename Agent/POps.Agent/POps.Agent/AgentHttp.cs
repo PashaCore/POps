@@ -13,9 +13,24 @@ namespace POpsAgent
     // Ajanın sunucuya HTTP bildirimleri (yazılım envanteri, Windows Update durumu, oturum olayları, loglar).
     // Bu uçlar yalnızca anahtarlı ajanı kabul eder (X-Agent-Id + X-Agent-Secret; enforce_agent_auth kapalı olsa
     // bile): cihaz secret'ı yoksa hiçbir şey gönderilmez. Şifresiz ve yerel olmayan sunucuya da gönderilmez.
+    public enum PostResult
+    {
+        Sent,
+        // Ağ hatası, sunucu hatası, 401/403, yönlendirme: sonra yeniden denenir
+        Failed,
+        // 404/405: sunucuda bu uç yok (eski sunucu); sık denemenin anlamı yok
+        EndpointMissing,
+        // Secret yok ya da sunucu adresi şifresiz: hiç gönderilmedi
+        NotSent,
+    }
+
     public static class AgentHttp
     {
-        public static HttpClient Client { get; set; } = new HttpClient { Timeout = TimeSpan.FromSeconds(100) };
+        // Yönlendirme izlenmez: .NET yönlendirmede Authorization'ı atar ama X-Agent-Secret gibi özel başlıkları yeni
+        // hosta da taşır. Sunucunun 3xx yanıtı başarısız gönderim sayılır.
+        internal static readonly HttpClientHandler Handler = new HttpClientHandler { AllowAutoRedirect = false };
+
+        public static HttpClient Client { get; set; } = new HttpClient(Handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(100) };
 
         public static bool CanReport => AgentCredentials.CurrentSecret != null;
 
@@ -30,10 +45,15 @@ namespace POpsAgent
             return false;
         }
 
-        // path: "/api/software/{hw_id}" gibi. Başarılıysa true; hata loglanır.
-        public static async Task<bool> PostJsonAsync(string serverUrl, string path, string hwId, object payload, string what)
+        public static PostResult Classify(int statusCode) =>
+            statusCode >= 200 && statusCode < 300 ? PostResult.Sent
+            : statusCode == 404 || statusCode == 405 ? PostResult.EndpointMissing
+            : PostResult.Failed;
+
+        // path: "/api/software/{hw_id}" gibi. Hata loglanır.
+        public static async Task<PostResult> PostAsync(string serverUrl, string path, string hwId, object payload, string what)
         {
-            if (!CanReport || !POpsHelpers.IsSecureServerUrl(serverUrl)) return false;
+            if (!CanReport || !POpsHelpers.IsSecureServerUrl(serverUrl)) return PostResult.NotSent;
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Post, serverUrl.TrimEnd('/') + path)
@@ -42,15 +62,20 @@ namespace POpsAgent
                 };
                 AgentCredentials.AddHttpAuth(request, hwId);
                 using var response = await Client.SendAsync(request);
-                if (response.IsSuccessStatusCode) return true;
-                POpsHelpers.Log("AGENT", $"{what} gönderilemedi: HTTP {(int)response.StatusCode}.", true);
+                PostResult result = Classify((int)response.StatusCode);
+                if (result != PostResult.Sent)
+                    POpsHelpers.Log("AGENT", $"{what} gönderilemedi: HTTP {(int)response.StatusCode}{(result == PostResult.EndpointMissing ? " (sunucuda bu uç yok)" : "")}.", true);
+                return result;
             }
             catch (Exception ex)
             {
                 POpsHelpers.Log("AGENT", $"{what} gönderilemedi: {ex.Message}", true);
+                return PostResult.Failed;
             }
-            return false;
         }
+
+        public static async Task<bool> PostJsonAsync(string serverUrl, string path, string hwId, object payload, string what) =>
+            await PostAsync(serverUrl, path, hwId, payload, what) == PostResult.Sent;
 
         public static string DevicePath(string prefix, string hwId) => prefix + Uri.EscapeDataString(hwId ?? "");
     }

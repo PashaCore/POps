@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Ajan bileşenlerinin (POpsAgent, POpsWatchdog, POpsUpdater, POpsVision) ortak yardımcıları.
+    Ajan bileşenlerinin (POpsAgent, POpsWatchdog, POpsUpdater, POpsVision; tepsi yalnızca BypassCode) ortak yardımcıları.
     net8.0: hem net8.0 (watchdog, updater, vision) hem net8.0-windows (ajan) projeler başvurabilsin diye;
     Windows'a özgü API'ler [SupportedOSPlatform("windows")] ile işaretlidir. Sürüm, Agent/ altındaki
     Directory.Build.props'tan (kök VERSION) gelir.

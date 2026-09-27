@@ -109,14 +109,69 @@ namespace POps.Tests.Agent
             Assert.Null(status.LastInstall);
         }
 
+        // L5: "security" kapsamı güvenlik VE kritik güncellemeleri kurar (panel ve belgeler "güvenlik/kritik" der)
         [Fact]
         public void SelectForInstall_ByScope()
         {
             var pending = new List<PendingUpdate> { Update("KB1", null, Plain), Update("KB2", "Important", Security), Update("KB3", null, Critical), Update("KB4", null, Security) };
-            Assert.Equal(new[] { 1, 3 }, PatchClassifier.SelectForInstall(pending, "security"));
+            Assert.Equal(new[] { 1, 2, 3 }, PatchClassifier.SelectForInstall(pending, "security"));
             Assert.Equal(new[] { 0, 1, 2, 3 }, PatchClassifier.SelectForInstall(pending, "all"));
             Assert.Empty(PatchClassifier.SelectForInstall(pending, "drivers"));
             Assert.Empty(PatchClassifier.SelectForInstall(pending, null));
+        }
+
+        private static readonly (string, string) Upgrades = ("Upgrades", "{3689BDC8-B205-4AF4-8D4A-A63924C5E9D5}");
+
+        // M3: isteğe bağlı/önizleme (BrowseOnly) ve sürüm yükseltmeleri (Upgrades) hiçbir kapsamda kurulmaz ve
+        // bekleyen sayılmaz
+        [Fact]
+        public void OptionalAndUpgradeUpdates_AreNeverInstalledOrCounted()
+        {
+            PendingUpdate preview = Update("KB10", null, Plain);
+            preview.BrowseOnly = true;
+            PendingUpdate securityPreview = Update("KB11", "Important", Security);
+            securityPreview.BrowseOnly = true;
+            PendingUpdate featureUpgrade = Update(null, null, Upgrades, Product);
+            var pending = new List<PendingUpdate> { preview, securityPreview, featureUpgrade, Update("KB12", "Critical", Security) };
+
+            Assert.False(PatchClassifier.IsManaged(preview));
+            Assert.False(PatchClassifier.IsManaged(featureUpgrade));
+            Assert.True(PatchClassifier.IsUpgrade(featureUpgrade));
+            Assert.Equal(new[] { 3 }, PatchClassifier.SelectForInstall(pending, "all"));
+            Assert.Equal(new[] { 3 }, PatchClassifier.SelectForInstall(pending, "security"));
+
+            PatchStatusPayload status = PatchClassifier.BuildStatus(pending, false, DateTime.UtcNow, null, null);
+            Assert.Equal(1, status.PendingCount);
+            Assert.Equal(1, status.PendingSecurity);
+            Assert.Equal(new[] { "KB12" }, status.Updates.Select(u => u.Kb));
+        }
+
+        // L11: alanlar ajanda da sunucunun sütun sınırlarına kısaltılır
+        [Fact]
+        public void LongFields_AreClipped()
+        {
+            var update = new PendingUpdate
+            {
+                Kb = "KB" + new string('9', 40),
+                Title = new string('t', 400),
+                Severity = new string('s', 30),
+                Categories = Enumerable.Range(0, 15).Select(i => new string((char)('a' + i), 80)).ToList(),
+            };
+            PatchUpdateItem item = PatchClassifier.BuildStatus(new[] { update }, false, DateTime.UtcNow, null, null).Updates.Single();
+            Assert.Equal(PatchClassifier.MaxKb, item.Kb.Length);
+            Assert.Equal(PatchClassifier.MaxTitle, item.Title.Length);
+            Assert.Equal(PatchClassifier.MaxSeverity, item.Severity.Length);
+            Assert.Equal(PatchClassifier.MaxCategories, item.Categories.Count);
+            Assert.All(item.Categories, c => Assert.Equal(PatchClassifier.MaxCategory, c.Length));
+        }
+
+        [Fact]
+        public void Summary_ReportsATimeout()
+        {
+            Assert.Equal("1 güncelleme kuruldu, 2 başarısız (KB1, KB2); süre doldu, kurulum durduruldu",
+                PatchClassifier.Summarize(1, new List<string> { "KB1", "KB2" }, 0, false, timedOut: true));
+            Assert.Equal("0 güncelleme kuruldu; süre doldu, kurulum durduruldu; yeniden başlatma gerekiyor",
+                PatchClassifier.Summarize(0, null, 0, true, timedOut: true));
         }
 
         [Theory]
@@ -203,14 +258,43 @@ namespace POps.Tests.Agent
         }
 
         [Fact]
-        public void LastReportedScan_SurvivesRestart()
+        public void State_SurvivesRestart()
         {
             if (File.Exists(PatchManager.StatePath)) File.Delete(PatchManager.StatePath);
-            Assert.Null(PatchManager.LoadLastReportedScanUtc());
+            Assert.Null(PatchManager.LoadState().LastScanUtc);
             DateTime t = new DateTime(2026, 9, 27, 9, 30, 0, DateTimeKind.Utc);
-            PatchManager.SaveLastReportedScanUtc(t);
-            Assert.Equal(t, PatchManager.LoadLastReportedScanUtc());
+            var pending = PatchClassifier.BuildStatus(new List<PendingUpdate> { new PendingUpdate { Kb = "KB1", Title = "t" } }, true, t, null, "özet");
+            PatchManager.SaveState(new PatchState { LastScanUtc = t, PendingReport = pending, NextPostUtc = t.AddMinutes(30) });
+
+            PatchState loaded = PatchManager.LoadState();
+            Assert.Equal(t, loaded.LastScanUtc);
+            Assert.Equal(t.AddMinutes(30), loaded.NextPostUtc);
+            Assert.Equal("KB1", loaded.PendingReport.Updates.Single().Kb);
+            Assert.Equal("özet", loaded.PendingReport.LastResult);
             if (File.Exists(PatchManager.StatePath)) File.Delete(PatchManager.StatePath);
+        }
+
+        // M2: gönderim başarısızsa yalnızca GÖNDERİM yeniden denenir; tam tarama günde bir kalır
+        [Fact]
+        public void FailedPost_RetriesThePostNotTheScan()
+        {
+            DateTime scanned = Start.AddHours(1);
+            DateTime? retry = PatchSchedule.NextPostUtc(PostResult.Failed, scanned);
+            Assert.Equal(scanned + PatchSchedule.PostRetryDelay, retry);
+
+            Assert.Equal(PatchStep.Wait, PatchSchedule.NextStep(scanned, scanned, retry, Start, scanned.AddMinutes(10), "HW-A"));
+            Assert.Equal(PatchStep.RetryPost, PatchSchedule.NextStep(scanned, scanned, retry, Start, scanned.AddMinutes(31), "HW-A"));
+            // Gönderim saatlerce başarısız olsa da tarama ancak 24 saat sonra
+            Assert.Equal(PatchStep.Wait, PatchSchedule.NextStep(scanned, scanned, null, Start, scanned.AddHours(23), "HW-A"));
+            Assert.Equal(PatchStep.Scan, PatchSchedule.NextStep(scanned, scanned, null, Start, scanned.AddHours(24), "HW-A"));
+        }
+
+        [Fact]
+        public void MissingEndpointOrSuccess_DropsThePendingPost()
+        {
+            Assert.Null(PatchSchedule.NextPostUtc(PostResult.Sent, Start));
+            Assert.Null(PatchSchedule.NextPostUtc(PostResult.EndpointMissing, Start));
+            Assert.NotNull(PatchSchedule.NextPostUtc(PostResult.NotSent, Start));
         }
     }
 }

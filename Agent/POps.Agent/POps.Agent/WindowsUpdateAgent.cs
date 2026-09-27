@@ -12,17 +12,21 @@ namespace POpsAgent
 {
     // Windows Update Agent (WUA) COM API'si, interop DLL'i olmadan (ProgID + dynamic). Bütün çağrılar tek bir arka
     // plan thread'inde yapılır (bkz. PatchManager); WebSocket döngüsü beklemez. Hiçbir çağrı yeniden başlatmaz.
+    // Arama, indirme ve kurma zaman uyumsuz (Begin*/End*) çalışır: süre dolunca RequestAbort ile gerçekten durdurulur;
+    // eşzamanlı Search/Download/Install durdurulamaz ve saatlerce takılabilir.
     [SupportedOSPlatform("windows")]
     internal static class WindowsUpdateAgent
     {
         public const string Criteria = "IsInstalled=0 and IsHidden=0 and Type='Software'";
+        // İndirme + kurmanın toplam üst sınırı
+        public static readonly TimeSpan InstallTimeout = TimeSpan.FromHours(3);
 
         // OperationResultCode
         private const int OrcSucceeded = 2, OrcSucceededWithErrors = 3, OrcAborted = 5;
         // UpdateOperation
         private const int UoInstallation = 1;
-        // Zaman aşımında RequestAbort'tan sonra işin kapanması için tanınan ek süre
-        private static readonly TimeSpan AbortGrace = TimeSpan.FromMinutes(1);
+        // Zaman aşımında RequestAbort'tan sonra işin kapanması için tanınan ek süre; kapanmazsa beklenmez
+        private static readonly TimeSpan AbortGrace = TimeSpan.FromMinutes(2);
 
         public sealed class Scan
         {
@@ -38,6 +42,16 @@ namespace POpsAgent
             public List<string> Failed { get; } = new List<string>();
             public int Skipped { get; set; }
             public bool RebootRequired { get; set; }
+            public bool TimedOut { get; set; }
+        }
+
+        // Tek bir işin (tarama ya da indirme + kurma) süresi
+        private sealed class Budget
+        {
+            private readonly Stopwatch _clock = Stopwatch.StartNew();
+            private readonly TimeSpan _limit;
+            public Budget(TimeSpan limit) => _limit = limit;
+            public bool Expired => _clock.Elapsed > _limit;
         }
 
         public static dynamic NewSession()
@@ -49,26 +63,31 @@ namespace POpsAgent
 
         private static dynamic NewCollection() => Activator.CreateInstance(Type.GetTypeFromProgID("Microsoft.Update.UpdateColl", true));
 
-        // Zaman uyumsuz arama: zaman aşımında RequestAbort ile gerçekten durdurulur (eşzamanlı Search durdurulamaz)
+        // İş bitene ya da süre dolana kadar bekler. Süre dolunca RequestAbort; iş AbortGrace içinde kapanmazsa
+        // beklemeyi bırakır (thread ve "meşgul" bayrağı serbest kalır). Dönen: süre doldu mu
+        private static bool WaitForJob(dynamic job, Budget budget)
+        {
+            Stopwatch sinceAbort = null;
+            while (!(bool)job.IsCompleted)
+            {
+                if (sinceAbort == null && budget.Expired)
+                {
+                    try { job.RequestAbort(); } catch { }
+                    sinceAbort = Stopwatch.StartNew();
+                }
+                if (sinceAbort != null && sinceAbort.Elapsed > AbortGrace) break;
+                Thread.Sleep(500);
+            }
+            return sinceAbort != null;
+        }
+
         public static Scan Search(dynamic session, TimeSpan timeout)
         {
             dynamic searcher = session.CreateUpdateSearcher();
-            dynamic job = searcher.BeginSearch(Criteria, new SearchCompletedCallback(), new UnknownWrapper(null));
+            dynamic job = searcher.BeginSearch(Criteria, new WuaCallback(), new UnknownWrapper(null));
             try
             {
-                var clock = Stopwatch.StartNew();
-                bool abortRequested = false;
-                while (!(bool)job.IsCompleted)
-                {
-                    if (!abortRequested && clock.Elapsed > timeout)
-                    {
-                        job.RequestAbort();
-                        abortRequested = true;
-                    }
-                    if (abortRequested && clock.Elapsed > timeout + AbortGrace) break;
-                    Thread.Sleep(500);
-                }
-                if (abortRequested) throw new TimeoutException($"Windows Update taraması {timeout.TotalMinutes:0} dakikada bitmedi, durduruldu");
+                if (WaitForJob(job, new Budget(timeout))) throw new TimeoutException($"Windows Update taraması {timeout.TotalMinutes:0} dakikada bitmedi, durduruldu");
 
                 dynamic result = searcher.EndSearch(job);
                 int code = result.ResultCode;
@@ -110,6 +129,8 @@ namespace POpsAgent
                 pending.CategoryIds.Add((string)category.CategoryID);
             }
             try { pending.NeedsUserInput = (bool)update.InstallationBehavior.CanRequestUserInput; } catch { }
+            // Okunamazsa isteğe bağlı sayılır: emin olunamayan güncelleme kurulmaz
+            try { pending.BrowseOnly = (bool)update.BrowseOnly; } catch { pending.BrowseOnly = true; }
             return pending;
         }
 
@@ -149,16 +170,19 @@ namespace POpsAgent
             catch { return false; }
         }
 
-        // Seçilen güncellemeler: gerekirse EULA kabul edilir, indirilir ve kurulur. Kullanıcı girişi isteyebilenler
-        // gözetimsiz kurulamayacağı için atlanır. Yeniden başlatılmaz; gerekiyorsa RebootRequired döner.
-        public static InstallOutcome Install(dynamic session, Scan scan, IReadOnlyList<int> selected)
+        // Seçilen güncellemeler: gerekirse EULA kabul edilir, indirilir ve kurulur; toplam en çok `timeout`. Kullanıcı
+        // girişi isteyebilenler gözetimsiz kurulamayacağı için, isteğe bağlı ve sürüm yükseltmesi olanlar hiç
+        // kurulmaz (seçimde de elenir). Yeniden başlatılmaz; gerekiyorsa RebootRequired döner.
+        public static InstallOutcome Install(dynamic session, Scan scan, IReadOnlyList<int> selected, TimeSpan timeout)
         {
+            var budget = new Budget(timeout);
             var outcome = new InstallOutcome();
             var chosen = new List<(PendingUpdate Info, dynamic Update)>();
             foreach (int index in selected)
             {
                 PendingUpdate info = scan.Pending[index];
                 dynamic update = scan.Handles[index];
+                if (!PatchClassifier.IsManaged(info)) continue;
                 if (info.NeedsUserInput) { outcome.Skipped++; continue; }
                 try
                 {
@@ -178,16 +202,26 @@ namespace POpsAgent
                 if (!(bool)update.IsDownloaded) toDownload.Add(update);
             if ((int)toDownload.Count > 0)
             {
+                dynamic downloader = session.CreateUpdateDownloader();
+                downloader.Updates = toDownload;
+                dynamic job = downloader.BeginDownload(new WuaCallback(), new WuaCallback(), new UnknownWrapper(null));
                 try
                 {
-                    dynamic downloader = session.CreateUpdateDownloader();
-                    downloader.Updates = toDownload;
-                    downloader.Download();
+                    if (WaitForJob(job, budget))
+                    {
+                        outcome.TimedOut = true;
+                        POpsHelpers.Log("PATCH", "Güncellemelerin indirilmesi süresinde bitmedi, durduruldu.", true);
+                    }
+                    else
+                    {
+                        // Sonuç tek tek IsDownloaded ile denetlenir; inmeyenler başarısız sayılır
+                        try { downloader.EndDownload(job); }
+                        catch (Exception ex) { POpsHelpers.Log("PATCH", $"İndirme hatası: {ErrorText(ex)}", true); }
+                    }
                 }
-                catch (Exception ex)
+                finally
                 {
-                    // Tek tek IsDownloaded ile denetlenir; inmeyenler başarısız sayılır
-                    POpsHelpers.Log("PATCH", $"İndirme hatası: {ErrorText(ex)}", true);
+                    try { job.CleanUp(); } catch { }
                 }
             }
 
@@ -195,7 +229,7 @@ namespace POpsAgent
             var installing = new List<PendingUpdate>();
             foreach (var (info, update) in chosen)
             {
-                if ((bool)update.IsDownloaded) { toInstall.Add(update); installing.Add(info); }
+                if (!outcome.TimedOut && (bool)update.IsDownloaded) { toInstall.Add(update); installing.Add(info); }
                 else outcome.Failed.Add(PatchClassifier.Label(info));
             }
             if (installing.Count == 0) return outcome;
@@ -204,15 +238,39 @@ namespace POpsAgent
             installer.AllowSourcePrompts = false;
             try { installer.ForceQuiet = true; } catch { }
             installer.Updates = toInstall;
-            dynamic result = installer.Install();
-            for (int i = 0; i < installing.Count; i++)
+            dynamic installJob = installer.BeginInstall(new WuaCallback(), new WuaCallback(), new UnknownWrapper(null));
+            try
             {
-                int code = result.GetUpdateResult(i).ResultCode;
-                if (code == OrcSucceeded || code == OrcSucceededWithErrors) outcome.Installed++;
-                else outcome.Failed.Add(PatchClassifier.Label(installing[i]));
+                bool timedOut = WaitForJob(installJob, budget);
+                dynamic result = null;
+                if (!timedOut || (bool)installJob.IsCompleted)
+                {
+                    try { result = installer.EndInstall(installJob); }
+                    catch when (timedOut) { }
+                }
+                if (timedOut)
+                {
+                    outcome.TimedOut = true;
+                    POpsHelpers.Log("PATCH", "Güncellemelerin kurulumu süresinde bitmedi, durduruldu.", true);
+                }
+                if (result == null)
+                {
+                    foreach (PendingUpdate info in installing) outcome.Failed.Add(PatchClassifier.Label(info));
+                    return outcome;
+                }
+                for (int i = 0; i < installing.Count; i++)
+                {
+                    int code = result.GetUpdateResult(i).ResultCode;
+                    if (code == OrcSucceeded || code == OrcSucceededWithErrors) outcome.Installed++;
+                    else outcome.Failed.Add(PatchClassifier.Label(installing[i]));
+                }
+                outcome.RebootRequired = (bool)result.RebootRequired;
+                return outcome;
             }
-            outcome.RebootRequired = (bool)result.RebootRequired;
-            return outcome;
+            finally
+            {
+                try { installJob.CleanUp(); } catch { }
+            }
         }
 
         // COM hataları HRESULT ile anlatılır (ör. 0x80240016: başka bir kurulum sürüyor)
@@ -220,19 +278,51 @@ namespace POpsAgent
             ex is COMException ? $"0x{ex.HResult:X8} {ex.Message}".Trim() : ex.Message;
     }
 
-    // IUpdateSearcher.BeginSearch geri çağırma nesnesi ister (null kabul etmez); tamamlanma IsCompleted ile izlenir.
+    // WUA'nın Begin* çağrıları geri çağırma nesnesi ister (null kabul etmez); tamamlanma IsCompleted ile izlenir.
+    // Arayüz kimlikleri wuapi.dll'in tür kitaplığından alınmıştır.
     [ComVisible(true)]
     [ClassInterface(ClassInterfaceType.None)]
-    public sealed class SearchCompletedCallback : ISearchCompletedCallback
+    public sealed class WuaCallback :
+        ISearchCompletedCallback,
+        IDownloadProgressChangedCallback,
+        IDownloadCompletedCallback,
+        IInstallationProgressChangedCallback,
+        IInstallationCompletedCallback
     {
-        public void Invoke(object searchJob, object callbackArgs) { }
+        void ISearchCompletedCallback.Invoke(object job, object args) { }
+        void IDownloadProgressChangedCallback.Invoke(object job, object args) { }
+        void IDownloadCompletedCallback.Invoke(object job, object args) { }
+        void IInstallationProgressChangedCallback.Invoke(object job, object args) { }
+        void IInstallationCompletedCallback.Invoke(object job, object args) { }
     }
 
-    [ComImport]
-    [Guid("88AEE058-D4B0-4725-A2F1-814A67AE964C")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [ComImport, Guid("88AEE058-D4B0-4725-A2F1-814A67AE964C"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface ISearchCompletedCallback
     {
-        void Invoke([MarshalAs(UnmanagedType.IUnknown)] object searchJob, [MarshalAs(UnmanagedType.IUnknown)] object callbackArgs);
+        void Invoke([MarshalAs(UnmanagedType.IUnknown)] object job, [MarshalAs(UnmanagedType.IUnknown)] object args);
+    }
+
+    [ComImport, Guid("8C3F1CDD-6173-4591-AEBD-A56A53CA77C1"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IDownloadProgressChangedCallback
+    {
+        void Invoke([MarshalAs(UnmanagedType.IUnknown)] object job, [MarshalAs(UnmanagedType.IUnknown)] object args);
+    }
+
+    [ComImport, Guid("77254866-9F5B-4C8E-B9E2-C77A8530D64B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IDownloadCompletedCallback
+    {
+        void Invoke([MarshalAs(UnmanagedType.IUnknown)] object job, [MarshalAs(UnmanagedType.IUnknown)] object args);
+    }
+
+    [ComImport, Guid("E01402D5-F8DA-43BA-A012-38894BD048F1"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IInstallationProgressChangedCallback
+    {
+        void Invoke([MarshalAs(UnmanagedType.IUnknown)] object job, [MarshalAs(UnmanagedType.IUnknown)] object args);
+    }
+
+    [ComImport, Guid("45F4F6F3-D602-4F98-9A8A-3EFA152AD2D3"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IInstallationCompletedCallback
+    {
+        void Invoke([MarshalAs(UnmanagedType.IUnknown)] object job, [MarshalAs(UnmanagedType.IUnknown)] object args);
     }
 }
