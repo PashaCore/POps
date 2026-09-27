@@ -198,16 +198,27 @@ async def valid_enroll_token(token: Optional[str]) -> Optional[dict]:
         return None
     return rows[0] if rows else None
 
-async def agent_http_auth(request: Request):
+async def agent_http_auth(request: Request) -> Optional[str]:
     """Ajan HTTP uçları (inventory/logs/auth/policy_alert) için accept-both kimlik.
-    enforce_agent_auth KAPALIYKEN serbest (mevcut ajanlar etkilenmez); AÇIKKEN ajan
-    X-Agent-Id + X-Agent-Secret göndermeli, yoksa 401. Panel uçları bundan etkilenmez."""
-    if not await enforce_agent_auth_enabled():
-        return
+    DOĞRULANAN X-Agent-Id'yi döndürür (uçlar bunu hedef pc_name/hw_id ile karşılaştırıp
+    cross-device sahteciliği engeller — bkz. _bind_agent). Geçerli X-Agent-Secret sunulursa
+    kimlik döner. enforce_agent_auth AÇIKKEN geçerli secret ZORUNLU (yoksa 401). KAPALIYKEN
+    (varsayılan) eksik/geçersiz secret legacy kabul edilir (None döner, bağlama yapılamaz) —
+    böylece mevcut/secret'sız ajanlar düşmez. Panel uçları bundan etkilenmez."""
     hwid = request.headers.get("X-Agent-Id")
-    if hwid and await verify_agent_secret(hwid, request.headers.get("X-Agent-Secret")):
-        return
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Ajan kimlik dogrulamasi gerekli")
+    secret = request.headers.get("X-Agent-Secret")
+    if hwid and secret and await verify_agent_secret(hwid, secret):
+        return hwid
+    if await enforce_agent_auth_enabled():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Ajan kimlik dogrulamasi gerekli")
+    return None
+
+def _bind_agent(agent_id: Optional[str], target: str):
+    """Doğrulanan ajan kimliğini hedef cihazla eşle. Eşleşmezse 403. agent_id None ise (legacy,
+    enforce kapalı) bağlama yapılamaz — accept-both'un kabul ettiği artık risk; enforce açılınca kapanır."""
+    if agent_id is not None and agent_id != target:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Ajan kimliği hedef cihazla eşleşmiyor")
 # ──────────────────────────────────────────────────────────────────────────────
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -754,20 +765,23 @@ async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
     return {"status": "success", "token": token, "valid_for": today.isoformat()}
 
 @app.post("/api/auth/login")
-async def auth_login(data: AuthEventInput, _auth=Depends(agent_http_auth)):
+async def auth_login(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
+    _bind_agent(agent_id, data.hw_id)   # başka cihaz adına giriş kaydı yazılamaz
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await log_audit_event(data.hw_id, "Security", f"🟢 GİRİŞ: {data.student_id}", actor_id=data.student_id, event_type="auth.login", category="security", action="login", risk_level="info")
     await execute_query("UPDATE clients SET logged_user=$1 WHERE pc_name=$2", (data.student_id, data.hw_id))
     return {"status": "success"}
 
 @app.post("/api/auth/failed")
-async def auth_failed(data: AuthEventInput, _auth=Depends(agent_http_auth)):
+async def auth_failed(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
+    _bind_agent(agent_id, data.hw_id)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await log_audit_event(data.hw_id, "Security", f"🔴 RED: {data.student_id} ({data.message})", actor_id=data.student_id, event_type="auth.failed", category="security", action="login_failed", risk_level="medium", reason=data.message)
     return {"status": "success"}
 
 @app.post("/api/auth/logout")
-async def auth_logout(data: AuthEventInput, _auth=Depends(agent_http_auth)):
+async def auth_logout(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
+    _bind_agent(agent_id, data.hw_id)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await log_audit_event(data.hw_id, "Security", "⚪ OTURUM KAPATILDI", actor_id="System", event_type="auth.logout", category="security", action="logout", risk_level="info")
     await execute_query("UPDATE clients SET logged_user='-' WHERE pc_name=$1", (data.hw_id,))
@@ -1003,6 +1017,30 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
 
             # Enroll token ile bağlandıysa: tüket, kalıcı secret üret+sakla, ajana gönder, laba ata.
             if auth_method == "enroll" and pending_enroll:
+                # F2: Zaten secret'ı OLAN bir cihaza düz enroll token'la yeniden-secret vermek
+                # kimlik hırsızlığıdır (saldırgan geçerli token + hedef DNA'sıyla secret'ı ezip
+                # ele geçirebilir). allow_reenroll açık DEĞİLSE reddet (Critical audit + 4401).
+                existing_secret = await execute_query(
+                    "SELECT 1 FROM agent_secrets WHERE pc_name=$1", (active_hwid,), fetch=True)
+                if existing_secret:
+                    rerow = await execute_query(
+                        "SELECT allow_reenroll FROM clients WHERE pc_name=$1", (active_hwid,), fetch=True)
+                    if not (rerow and rerow[0].get("allow_reenroll")):
+                        await add_audit_log(active_hwid, "enroll_denied",
+                            "Zaten kayıtlı cihaza enroll token'la yeniden-secret REDDEDİLDİ (olası impersonation)",
+                            {"ip": client_ip, "token_id": pending_enroll["id"], "agent_version": agent_version})
+                        await log_audit_event(active_hwid, "Critical Security",
+                            "🔴 Enroll ile secret ele geçirme girişimi reddedildi",
+                            actor_id="System/Enroll", event_type="agent.enroll_denied",
+                            category="security", action="enroll_denied", risk_level="critical",
+                            reason="already_enrolled", meta_data={"ip": client_ip})
+                        try:
+                            await websocket.close(code=4401, reason="Cihaz zaten kayıtlı")
+                        except Exception:
+                            pass
+                        return
+                    # Meşru yeniden-kayıt (admin allow_reenroll açtı): izin ver, bayrağı tek-seferlik temizle.
+                    await execute_query("UPDATE clients SET allow_reenroll=FALSE WHERE pc_name=$1", (active_hwid,))
                 new_secret = secrets.token_urlsafe(32)
                 await execute_query(
                     "INSERT INTO agent_secrets (pc_name, secret_hash) VALUES ($1, $2) "
@@ -1232,7 +1270,8 @@ async def get_devices(auth: dict = Depends(require_auth)):
     ]
 
 @app.post("/api/inventory/{pc_name}")
-async def update_inventory(pc_name: str, data: HwInventoryInput, _auth=Depends(agent_http_auth)):
+async def update_inventory(pc_name: str, data: HwInventoryInput, agent_id: Optional[str] = Depends(agent_http_auth)):
+    _bind_agent(agent_id, pc_name)   # başka cihaz adına envanter yazılamaz
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await execute_query('''INSERT INTO hw_inventory (pc_name, hostname, cpu, ram, motherboard, gpu, os_version, ip_address, mac_address, disk_info, last_updated) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (pc_name) DO UPDATE SET hostname=EXCLUDED.hostname, cpu=EXCLUDED.cpu, ram=EXCLUDED.ram, motherboard=EXCLUDED.motherboard, gpu=EXCLUDED.gpu, os_version=EXCLUDED.os_version, ip_address=EXCLUDED.ip_address, mac_address=EXCLUDED.mac_address, disk_info=EXCLUDED.disk_info, last_updated=EXCLUDED.last_updated''', (pc_name, data.hostname, data.cpu, data.ram, data.motherboard, data.gpu, data.os_version, data.ip_address, data.mac_address, data.disk_info, now))
     return {"status": "success"}
@@ -1243,7 +1282,8 @@ async def get_all_inventory(auth: dict = Depends(require_auth)):
     return rows if rows else []
 
 @app.post("/api/logs/{pc_name}")
-async def add_log(pc_name: str, data: LogInput, _auth=Depends(agent_http_auth)):
+async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depends(agent_http_auth)):
+    _bind_agent(agent_id, pc_name)   # başka cihaz adına log yazılamaz
     await log_audit_event(
         pc_name=pc_name, log_type=data.log_type or "System", message=data.message or "", 
         actor_id=data.actor_id or "Agent", event_type=data.event_type or "agent.log", 
@@ -1597,7 +1637,8 @@ async def get_policies():
     return {"fair_use_text": "Bu cihaz POps platformu tarafından izlenmekte ve yönetilmektedir.", "dns_categories": ["yasadisi_bahis", "pornografi"], "auto_quarantine": False, "quarantine_threshold": 5}
 
 @app.post("/api/policy_alert")
-async def add_policy_alert(data: PolicyAlertInput, _auth=Depends(agent_http_auth)):
+async def add_policy_alert(data: PolicyAlertInput, agent_id: Optional[str] = Depends(agent_http_auth)):
+    _bind_agent(agent_id, data.hw_id)   # başka cihaz adına ihlal uyarısı yazılamaz
     await log_audit_event(
         pc_name=data.hw_id, 
         log_type="Security", 

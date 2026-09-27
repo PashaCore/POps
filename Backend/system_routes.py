@@ -47,6 +47,11 @@ class CapabilityInput(BaseModel):
     terminal_enabled: Optional[bool] = None   # yalnızca False anlamlı (fail-safe kapatma)
     vision_enabled: Optional[bool] = None
 
+
+class ReenrollInput(BaseModel):
+    pc_name: str
+    allow: bool = True
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Doğrulanmış release'lerin stage edildiği çalışma zamanı dizini (git dışı)
 RELEASES_DIR = os.path.join(BASE_DIR, "releases")
@@ -424,5 +429,20 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         applied = {k: msg[k] for k in msg if k != "action"}
         await add_audit_log(pc, "set_capabilities", "Yetenek politikası gönderildi", applied)
         return {"ok": True, "delivered_online": online, **applied}
+
+    # --- Yeniden-enroll izni (F2 kurtarma yolu: Deep Freeze / yeniden kurulum) --------
+    @router.post("/api/system/allow-reenroll")
+    async def allow_reenroll(data: ReenrollInput, auth: dict = Depends(require_superadmin)):
+        """Bir cihaz için tek-seferlik yeniden-enroll iznini aç/kapat. Varsayılan KAPALI: enroll
+        token'la mevcut secret'ı ele geçirme engellenir (F2). AÇIKKEN cihaz enroll token'la yeniden
+        secret alabilir; sunucu başarılı yeniden-enroll'da bayrağı otomatik FALSE yapar."""
+        pc = (data.pc_name or "").strip()
+        if not pc:
+            raise HTTPException(status_code=400, detail="pc_name gerekli")
+        await execute_query("UPDATE clients SET allow_reenroll=$1 WHERE pc_name=$2", (bool(data.allow), pc))
+        await add_audit_log(pc, "allow_reenroll",
+                            "Yeniden-enroll izni %s" % ("AÇILDI" if data.allow else "kapatıldı"),
+                            {"allow": bool(data.allow), "by": auth.get("sub")})
+        return {"ok": True, "pc_name": pc, "allow_reenroll": bool(data.allow)}
 
     return router
