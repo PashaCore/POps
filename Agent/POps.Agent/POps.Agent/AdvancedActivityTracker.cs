@@ -151,58 +151,35 @@ namespace POpsAgent
             dnsTimer.Stop();
         }
 
+        // DNS tespiti: bkz. DnsWatch. Yalnızca okulun politikada verdiği alan adları (dns_domains) ve alt alanları
+        // eşleşir; liste yoksa tespit yapılmaz (alan adı içinde kelime aramak masum siteleri işaretliyordu).
+        private static bool _dnsListMissingLogged;
+
         private static void CheckDnsCacheForViolations()
         {
             if (_policy == null || _policy.dns_categories == null || _policy.dns_categories.Count == 0) return;
+            if (_policy.dns_domains == null || _policy.dns_domains.Count == 0)
+            {
+                if (!_dnsListMissingLogged) POpsHelpers.Log("TRACKER", "DNS kategorileri açık ama politikada alan adı listesi (dns_domains) yok; DNS tespiti yapılmıyor.");
+                _dnsListMissingLogged = true;
+                return;
+            }
+            _dnsListMissingLogged = false;
 
             try
             {
-                var processInfo = new ProcessStartInfo
+                foreach (string domain in DnsWatch.ReadCacheNames())
                 {
-                    FileName = "ipconfig",
-                    Arguments = "/displaydns",
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                
-                using var process = Process.Start(processInfo);
-                string output = process.StandardOutput.ReadToEnd();
-                process.WaitForExit();
+                    if (_reportedDomains.Contains(domain)) continue;
+                    string matchedCategory = DnsWatch.MatchCategory(domain, _policy.dns_categories, _policy.dns_domains);
+                    if (matchedCategory == null) continue;
 
-                var lines = output.Split('\n');
-                foreach (var line in lines)
-                {
-                    if (line.Contains("Record Name", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var parts = line.Split(':');
-                        if (parts.Length > 1)
-                        {
-                            string domain = parts[1].Trim().ToLower();
-                            if (_reportedDomains.Contains(domain)) continue;
-
-                            string matchedCategory = null;
-
-                            if (_policy.dns_categories.Contains("pornografi") && (domain.Contains("porno") || domain.Contains("sex") || domain.Contains("xxx") || domain.Contains("adult")))
-                                matchedCategory = "pornografi";
-                            else if (_policy.dns_categories.Contains("yasadisi_bahis") && (domain.Contains("bet") || domain.Contains("bahis") || domain.Contains("slot") || domain.Contains("casino")))
-                                matchedCategory = "yasadisi_bahis";
-                            else if (_policy.dns_categories.Contains("teror_siddet") && (domain.Contains("terror") || domain.Contains("isis") || domain.Contains("silah") || domain.Contains("gore")))
-                                matchedCategory = "teror_siddet";
-                            else if (_policy.dns_categories.Contains("zararli_yazilim") && (domain.Contains("malware") || domain.Contains("phishing") || domain.Contains("hack") || domain.Contains("exploit")))
-                                matchedCategory = "zararli_yazilim";
-
-                            if (matchedCategory != null)
-                            {
-                                _reportedDomains.Add(domain);
-                                AddEvent("DNS_Violation", $"İhlal tespit edildi: {domain} ({matchedCategory})");
-                                ReportPolicyViolation(matchedCategory, domain);
-                            }
-                        }
-                    }
+                    _reportedDomains.Add(domain);
+                    AddEvent("DNS_Violation", $"İhlal tespit edildi: {domain} ({matchedCategory})");
+                    ReportPolicyViolation(matchedCategory, domain);
                 }
             }
-            catch { }
+            catch (Exception ex) { POpsHelpers.Log("TRACKER", $"DNS önbelleği okunamadı: {ex.Message}", true); }
         }
 
         private static void ReportPolicyViolation(string category, string domain)
@@ -248,32 +225,8 @@ namespace POpsAgent
             });
         }
 
-        private static void TriggerNetworkIsolation()
-        {
-            try
-            {
-                Uri serverUri = new Uri(_serverUrl);
-                string serverIp = serverUri.Host;
-
-                string psCommand = $@"
-                    New-NetFirewallRule -DisplayName 'POps_Isolation_BlockOut' -Direction Outbound -Action Block -Profile Any
-                    New-NetFirewallRule -DisplayName 'POps_Isolation_BlockIn' -Direction Inbound -Action Block -Profile Any
-                    New-NetFirewallRule -DisplayName 'POps_Isolation_AllowServerOut' -Direction Outbound -Action Allow -RemoteAddress {serverIp} -Profile Any
-                    New-NetFirewallRule -DisplayName 'POps_Isolation_AllowServerIn' -Direction Inbound -Action Allow -RemoteAddress {serverIp} -Profile Any
-                ";
-                
-                var processInfo = new ProcessStartInfo
-                {
-                    FileName = "powershell.exe",
-                    Arguments = $"-Command \"{psCommand.Replace("\r\n", " ")}\"",
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                Process.Start(processInfo);
-            }
-            catch { }
-        }
+        // Karantina eşiği aşıldı: bkz. NetworkIsolation
+        private static void TriggerNetworkIsolation() => _ = NetworkIsolation.EnableAsync(_serverUrl);
 
         private static void StartFileWatchers()
         {

@@ -32,6 +32,8 @@ namespace POpsAgent
     {
         public string fair_use_text { get; set; } = "";
         public List<string> dns_categories { get; set; } = new List<string>();
+        // Kategori -> alan adları (tam eşleşme ya da alt alan; bkz. DnsWatch). Yoksa DNS tespiti yapılmaz.
+        public Dictionary<string, List<string>> dns_domains { get; set; } = new Dictionary<string, List<string>>();
         public bool auto_quarantine { get; set; } = false;
         public int quarantine_threshold { get; set; } = 3;
     }
@@ -61,6 +63,9 @@ namespace POpsAgent
 
         private TrayPipeServer _trayPipe;
         private volatile bool _isVisionStreamActive;
+        // Uzaktan fare/klavye yalnızca kullanıcının tepsi üzerinden onayladığı (ya da zorunlu oturumda bildirimin
+        // gösterildiği) Vision oturumu açıkken uygulanır. Sunucu ele geçirilse bile yerel onay olmadan girdi yok.
+        private volatile bool _visionSessionApproved;
         private TaskCompletionSource<byte[]> _thumbnailTcs;
 
 
@@ -306,12 +311,18 @@ namespace POpsAgent
                     _ = Task.Run(async () =>
                     {
                         await ConnectVisionTunnelAsync(CancellationToken.None);
-                        // Tünel açılmadıysa (Vision kapalı, şifresiz sunucu, bağlantı hatası) ekran yakalanmaz
-                        if (_isVisionStreamActive) _trayPipe?.SendCommandToDesktop($"START_CAPTURE:{fps}");
+                        // Tünel açılmadıysa (Vision kapalı, şifresiz sunucu, bağlantı hatası) ekran yakalanmaz.
+                        // İstek doğrulanmış tepsiden, kullanıcı onayından sonra geldiği için oturum onaylıdır.
+                        if (_isVisionStreamActive)
+                        {
+                            _visionSessionApproved = true;
+                            _trayPipe?.SendCommandToDesktop($"START_CAPTURE:{fps}");
+                        }
                     });
                 }
                 else if (message.StartsWith("REJECT_VISION_TUNNEL:"))
                 {
+                    _visionSessionApproved = false;
                     string sessionId = message.Split(':')[1];
                     var payload = new { type = "vision_rejected", session_id = sessionId, hw_id = _hwId };
                     byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
@@ -326,6 +337,7 @@ namespace POpsAgent
                 }
                 else if (message == "STOP_VISION_TUNNEL")
                 {
+                    _visionSessionApproved = false;
                     _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
                     _ = DisconnectVisionTunnelAsync();
                 }
@@ -363,6 +375,8 @@ namespace POpsAgent
                 }
                 catch { }
             };
+
+            _trayPipe.OnDisconnected += () => _visionSessionApproved = false;
 
             _trayPipe.Start();
         }
@@ -438,9 +452,19 @@ namespace POpsAgent
         private async Task DisconnectVisionTunnelAsync()
         {
             _isVisionStreamActive = false;
+            _visionSessionApproved = false;
             var ws = Interlocked.Exchange(ref _visionWs, null);
             if (ws != null) { try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Yayın Kesildi", CancellationToken.None); } catch { } ws.Dispose(); }
         }
+
+        // Mesaj boyu sınırları (parçalı mesajlar EndOfMessage'a kadar birleştirilir; bkz. WebSocketMessages)
+        private const int MaxCommandMessageBytes = 8 * 1024 * 1024;
+        private const int MaxVisionMessageBytes = 1024 * 1024;
+
+        // Uzaktan fare/klavye olayı (input_type taşıyan remote_input). Ekran önizlemesi ve FPS ayarı girdi değildir.
+        private static bool IsInputEvent(JsonElement root) => root.TryGetProperty("input_type", out _);
+
+        private bool InputAllowed() => _visionSessionApproved && _isVisionStreamActive;
 
         private async Task ReceiveVisionInputsAsync(ClientWebSocket ws, CancellationToken token)
         {
@@ -449,18 +473,21 @@ namespace POpsAgent
             {
                 while (ws.State == WebSocketState.Open && _isVisionStreamActive)
                 {
-                    var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
-                    if (result.MessageType == WebSocketMessageType.Close) break;
-                    string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    var (message, type) = await WebSocketMessages.ReceiveTextAsync(ws, buffer, MaxVisionMessageBytes, token);
+                    if (type == WebSocketMessageType.Close) break;
                     using var doc = JsonDocument.Parse(message);
                     var root = doc.RootElement;
                     if (root.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "remote_input")
                     {
                         string targetDevice = root.GetProperty("device").GetString();
-                        if (targetDevice == _hwId) _trayPipe?.SendCommandToDesktop(message);
+                        if (targetDevice != _hwId) continue;
+                        if (!AgentCapabilities.VisionEnabled) { await DenyCapabilityAsync("vision", "remote_input"); continue; }
+                        if (IsInputEvent(root) && !InputAllowed()) { await DenyCapabilityAsync("consent", "remote_input"); continue; }
+                        _trayPipe?.SendCommandToDesktop(message);
                     }
                 }
             }
+            catch (WebSocketMessages.TooLargeException ex) { POpsHelpers.Log("AGENT", $"[GÜVENLİK] Vision tüneli kapatıldı: {ex.Message}.", true); }
             catch { }
             finally { await DisconnectVisionTunnelAsync(); }
         }
@@ -472,9 +499,8 @@ namespace POpsAgent
             {
                 try
                 {
-                    var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), stoppingToken);
-                    if (result.MessageType == WebSocketMessageType.Close) break;
-                    string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    var (message, messageType) = await WebSocketMessages.ReceiveTextAsync(ws, buffer, MaxCommandMessageBytes, stoppingToken);
+                    if (messageType == WebSocketMessageType.Close) break;
                     using var doc = JsonDocument.Parse(message);
                     var root = doc.RootElement;
 
@@ -488,6 +514,12 @@ namespace POpsAgent
                         if (!AgentCapabilities.VisionEnabled)
                         {
                             await DenyCapabilityAsync("vision", string.IsNullOrEmpty(act) ? "remote_input" : act);
+                            continue;
+                        }
+                        // Sunucu ele geçirilse bile kullanıcının onayladığı bir oturum yoksa fare/klavye uygulanmaz
+                        if (IsInputEvent(root) && !InputAllowed())
+                        {
+                            await DenyCapabilityAsync("consent", "remote_input");
                             continue;
                         }
                         if (act == "get_thumbnail")
@@ -570,6 +602,18 @@ namespace POpsAgent
                         }
                         else if (action == "start_vision_session") { _trayPipe?.SendCommandToDesktop(message); }
                     }
+                }
+                catch (WebSocketMessages.TooLargeException ex)
+                {
+                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] Sunucu mesajı yok sayıldı: {ex.Message}.", true);
+                }
+                catch (JsonException ex)
+                {
+                    POpsHelpers.Log("AGENT", $"Sunucu mesajı çözümlenemedi, yok sayıldı: {ex.Message}", true);
+                }
+                catch (Exception ex) when (ws.State == WebSocketState.Open && !stoppingToken.IsCancellationRequested)
+                {
+                    POpsHelpers.Log("AGENT", $"Sunucu mesajı işlenemedi: {ex.Message}", true);
                 }
                 catch { }
             }
@@ -938,40 +982,10 @@ namespace POpsAgent
             return "-";
         }
 
-        private async Task EnableNetworkIsolationAsync()
-        {
-            try
-            {
-                Uri serverUri = new Uri(_serverUrl);
-                string serverIp = serverUri.Host;
+        // Ağ karantinası: bkz. NetworkIsolation (eski uygulama güvenlik duvarında hiçbir kural oluşturamıyordu)
+        private Task EnableNetworkIsolationAsync() => NetworkIsolation.EnableAsync(_serverUrl);
 
-                string psCommand = $@"
-                    New-NetFirewallRule -DisplayName 'POps_Isolation_BlockOut' -Direction Outbound -Action Block -Profile Any
-                    New-NetFirewallRule -DisplayName 'POps_Isolation_BlockIn' -Direction Inbound -Action Block -Profile Any
-                    New-NetFirewallRule -DisplayName 'POps_Isolation_AllowServerOut' -Direction Outbound -Action Allow -RemoteAddress {serverIp} -Profile Any
-                    New-NetFirewallRule -DisplayName 'POps_Isolation_AllowServerIn' -Direction Inbound -Action Allow -RemoteAddress {serverIp} -Profile Any
-                ";
-                await ExecuteCommandAsync($"powershell -Command \"{psCommand.Replace("\r\n", " ")}\"");
-                POpsHelpers.Log("AGENT", "AG IZOLASYONU AKTIF EDILDI!");
-            }
-            catch (Exception ex) { POpsHelpers.Log("AGENT", $"Ag Izolasyonu basarisiz: {ex.Message}", true); }
-        }
-
-        private async Task DisableNetworkIsolationAsync()
-        {
-            try
-            {
-                string psCommand = $@"
-                    Remove-NetFirewallRule -DisplayName 'POps_Isolation_BlockOut' -ErrorAction SilentlyContinue
-                    Remove-NetFirewallRule -DisplayName 'POps_Isolation_BlockIn' -ErrorAction SilentlyContinue
-                    Remove-NetFirewallRule -DisplayName 'POps_Isolation_AllowServerOut' -ErrorAction SilentlyContinue
-                    Remove-NetFirewallRule -DisplayName 'POps_Isolation_AllowServerIn' -ErrorAction SilentlyContinue
-                ";
-                await ExecuteCommandAsync($"powershell -Command \"{psCommand.Replace("\r\n", " ")}\"");
-                POpsHelpers.Log("AGENT", "AG IZOLASYONU KALDIRILDI!");
-            }
-            catch (Exception ex) { POpsHelpers.Log("AGENT", $"Ag Izolasyonu kaldirilamadi: {ex.Message}", true); }
-        }
+        private Task DisableNetworkIsolationAsync() => NetworkIsolation.DisableAsync();
 
         private async Task<string> ExecuteCommandAsync(string command)
         {
@@ -1040,6 +1054,11 @@ namespace POpsAgent
         private NamedPipeServerStream _pipeServer;
         public event Action<string> OnMessageReceived = delegate { };
         public event Action<byte[]> OnFrameReceived = delegate { };
+        // Tepsi bağlantısı koptuğunda (onaylı Vision oturumu da onunla biter)
+        public event Action OnDisconnected = delegate { };
+
+        // Boruya yalnızca kurulum klasöründeki tepsi bağlanabilir (bkz. PipeClientVerifier)
+        private static readonly string TrayExePath = Path.Combine(AppContext.BaseDirectory, "POpsTray.exe");
 
         public TrayPipeServer(ILogger logger, string hwId, HttpClient http, string serverUrl)
         {
@@ -1084,7 +1103,16 @@ namespace POpsAgent
                     POpsHelpers.Log("PIPE", $"Bekleniyor: {pipeName}");
 
                     await _pipeServer.WaitForConnectionAsync(token);
-                    POpsHelpers.Log("PIPE", "🟢 Vision bağlandı!");
+                    string rejection = PipeClientVerifier.Verify(_pipeServer.SafePipeHandle, TrayExePath);
+                    if (rejection != null)
+                    {
+                        POpsHelpers.Log("PIPE", $"[GÜVENLİK] Tepsi borusuna doğrulanmamış istemci bağlandı, bağlantı kesildi: {rejection}", true);
+                        _pipeServer.Disconnect();
+                        // Sürekli bağlanıp gerçek tepsiyi dışarıda bırakmaya çalışan istemciyi yavaşlatır
+                        await Task.Delay(2000, token);
+                        continue;
+                    }
+                    POpsHelpers.Log("PIPE", "🟢 Tepsi bağlandı (doğrulandı).");
 
                     byte[] lBuf = new byte[4];
                     while (_pipeServer.IsConnected && !token.IsCancellationRequested)
@@ -1133,7 +1161,11 @@ namespace POpsAgent
                     POpsHelpers.Log("PIPE", $"Hata: {ex.Message}", true);
                     await Task.Delay(3000, token);
                 }
-                finally { _pipeServer?.Dispose(); }
+                finally
+                {
+                    _pipeServer?.Dispose();
+                    OnDisconnected?.Invoke();
+                }
             }
         }
     }

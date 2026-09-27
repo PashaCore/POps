@@ -7,8 +7,9 @@ namespace POpsWatchDog // Hangi projedeysen namespace'i ona göre uyarlayabilirs
 {
     public static class POpsHelpers
     {
-        // Klasör yolları POps standartlarına göre güncellendi
-        private static readonly string LogDir = @"C:\POpsLogs";
+        // Watchdog kullanıcı oturumunda çalışır; C:\POpsLogs yalnızca SYSTEM/Administrators'a açık olduğu için
+        // logunu kullanıcının kendi klasörüne yazar.
+        private static readonly string LogDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "POps", "Logs");
         private static readonly string ConfigPath = @"C:\POps\appsettings.json";
         private static readonly object LogLock = new object();
 
@@ -42,7 +43,7 @@ namespace POpsWatchDog // Hangi projedeysen namespace'i ona göre uyarlayabilirs
                     Directory.CreateDirectory(LogDir);
 
                 string dateStr = DateTime.Now.ToString("yyyyMMdd");
-                string logFile = Path.Combine(LogDir, $"POps_{dateStr}.log"); // Log dosya adı POps oldu
+                string logFile = Path.Combine(LogDir, $"POpsWatchdog_{dateStr}.log");
 
                 string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
                 string errorTag = isError ? "[ERROR]" : "[INFO ]";
