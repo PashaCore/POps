@@ -60,6 +60,17 @@ namespace POpsAgent
 
         public static string ReportedResultPath => Path.Combine(DataDir, "update-result.reported.json");
 
+        // Geri dönüş tatbikatı: yönetici bu dosyayı oluşturunca (klasör yalnızca SYSTEM/Administrators'a açık)
+        // yeni sürüm açılışta health.json yazmaz, updater onu sağlıksız sayıp önceki MSI'a döner ve dosyayı siler.
+        // Böylece rollback, bozuk bir sürüm yayımlamadan gerçek imzalı bir güncellemeyle denenir.
+        public static string RollbackDrillPath => Path.Combine(DataDir, "secure", "rollback-drill");
+
+        public static bool RollbackDrillRequested()
+        {
+            try { return File.Exists(RollbackDrillPath); }
+            catch { return false; }
+        }
+
         // Updater'ın bıraktığı ve henüz sunucuya iletilmemiş sonuç, sunucunun beklediği "update_result" mesajı
         // olarak (status = outcome); yoksa null. İletildikten sonra MarkResultReported ile kenara alınır.
         public static Dictionary<string, object> PendingResultMessage()
@@ -74,7 +85,7 @@ namespace POpsAgent
                     ["type"] = "update_result",
                     ["status"] = Str(result, "outcome") ?? "unknown",
                 };
-                foreach (string key in new[] { "from_version", "to_version", "detail", "rollback", "agent_state" })
+                foreach (string key in new[] { "from_version", "to_version", "running_version", "detail", "rollback", "agent_state" })
                     if (Str(result, key) is string value) message[key] = value;
                 if (result.TryGetProperty("msi_exit_code", out JsonElement code) && code.TryGetInt32(out int exitCode)) message["msi_exit_code"] = exitCode;
                 if (result.TryGetProperty("reboot_required", out JsonElement reboot) && (reboot.ValueKind == JsonValueKind.True || reboot.ValueKind == JsonValueKind.False))

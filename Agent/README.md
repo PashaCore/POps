@@ -51,6 +51,29 @@ Agent updates are signed MSI installs; the agent applies nothing unsigned.
 6. It waits up to 90 seconds for the new version to write `C:\POpsData\health.json` (`{"version":"<version>","ts":<epoch>,"pid":…}`). The service writes this file first thing on every start, before the slower WMI inventory; a `health.json` older than the install is ignored.
 7. **Nothing installed is removed before its replacement is in place.** A failed `msiexec` needs no extra step: Windows Installer restores the old version itself. A 3010 exit (files in use) means the install completes at the next restart, so the updater reports `pending_reboot` and does not roll back. If the new version does not report healthy, the updater installs `previous.msi` with `POPS_ROLLBACK=1`, which removes the newer version inside the same Windows Installer transaction. If that fails (retried once), Windows Installer leaves the newer version installed. If there is no usable previous MSI, the updater restores the file backup instead.
 8. After every outcome it checks that the `POpsAgent` service exists and is running and starts it if needed. If the service is missing, it repairs or installs from the package it still has as a last resort and logs `[KRİTİK]`.
-9. The outcome goes to `C:\POpsData\update-result.json`: `success`, `pending_reboot`, `install_failed`, `rolled_back`, `rollback_pending_reboot`, `rollback_failed` or `rejected`, plus `agent_state` (`running`, `not_running`, `reinstalled`, `unmanaged`), the msiexec exit code and the log path under `C:\POpsLogs`. The agent sends it to the server once over the command WebSocket as `{"type":"update_result","status":"<outcome>","from_version",…}`, then renames the file to `update-result.reported.json`.
+9. The outcome goes to `C:\POpsData\update-result.json`, together with `rollback`, `running_version` (the version actually running afterwards), `agent_state` (`running`, `not_running`, `reinstalled`, `unmanaged`) and the msiexec exit code. The log path is under `C:\POpsLogs`. The outcome is one of:
+
+   | Outcome | Meaning |
+   | --- | --- |
+   | `success` | The new version is running. |
+   | `pending_reboot` | 3010: completes at the next restart; no rollback. |
+   | `rolled_back` | The update was not applied and the machine runs the previous version. `rollback` says how: `msi_transaction` (msiexec failed and Windows Installer restored it), `msi` (unhealthy, previous MSI reinstalled) or `files` (file backup restored). |
+   | `rollback_pending_reboot` | Like `rolled_back`, completing at the next restart. |
+   | `rollback_failed` | The previous version could not be restored; check `agent_state` and `running_version`. |
+   | `install_failed` | msiexec refused to start (another install in progress, policy, unreadable package, …); nothing on the machine changed. |
+   | `rejected` | The package did not match its SHA-256. |
+   | `error` | Unexpected failure; see `detail`. |
+
+ The agent sends it to the server once over the command WebSocket as `{"type":"update_result","status":"<outcome>","from_version",…}`, then renames the file to `update-result.reported.json`.
 
 While `update.lock` is younger than 15 minutes the watchdog neither restarts the service nor relaunches the tray; once the lock is gone it starts the tray again in the user's session.
+
+### Rollback drill
+
+To prove the rollback path on a real machine without publishing a broken build:
+
+1. Have someone present who can recover the machine.
+2. In an elevated command prompt, run `type nul > C:\POpsData\secure\rollback-drill`. Only SYSTEM and Administrators can write to that folder.
+3. Dispatch a newer signed release to that machine from the panel.
+
+The new version starts but, seeing the marker, does not write `health.json`. The updater treats it as unhealthy after 90 seconds and reinstalls the previous MSI with `POPS_ROLLBACK=1`. It then deletes the marker (one-shot) and reports `rolled_back` / `msi` with `running_version` set to the previous version. Dispatching the same release again then succeeds normally.

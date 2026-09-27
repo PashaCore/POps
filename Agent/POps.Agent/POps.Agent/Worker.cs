@@ -390,6 +390,13 @@ namespace POpsAgent
         private async Task ConnectVisionTunnelAsync(CancellationToken token)
         {
             if (_visionWs != null && _visionWs.State == WebSocketState.Open) return;
+            // Ekran akışı ve uzaktan girdi yalnızca şifreli kanaldan (bkz. POpsHelpers.IsSecureServerUrl). Tepsi
+            // START_VISION_TUNNEL'ı komut tüneli bağlı olmasa da isteyebildiği için burada ayrıca denetlenir.
+            if (!POpsHelpers.IsSecureServerUrl(_serverUrl))
+            {
+                POpsHelpers.Log("AGENT", "[GÜVENLİK] Vision tüneli açılmadı: ServerUrl şifresiz ve yerel değil.", true);
+                return;
+            }
             string visionWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://") + $"/ws/vision/{_hwId}";
             var newWs = new ClientWebSocket();
             // Sunucu enforce_agent_auth açıkken kimliksiz Vision tünelini (sahte ekran görüntüsü) reddeder

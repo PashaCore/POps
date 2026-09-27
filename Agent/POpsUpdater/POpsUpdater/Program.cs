@@ -42,6 +42,22 @@ namespace POpsUpdater
         static readonly string PackagesDir = Path.Combine(DataDir, "packages");
         static readonly string BackupRoot = Path.Combine(DataDir, "backup");
         static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(90);
+        // Geri dönüş tatbikatı: yönetici bu dosyayı koyarsa yeni sürüm health.json yazmaz (bkz. Agent/README.md)
+        static readonly string RollbackDrillPath = Path.Combine(DataDir, "secure", "rollback-drill");
+
+        // msiexec'in kurulum hiç başlamadan döndüğü kodlar: bu durumlarda makinede hiçbir şey değişmez
+        static readonly Dictionary<int, string> InstallNeverStarted = new Dictionary<int, string>
+        {
+            [1602] = "kullanıcı iptal etti",
+            [1618] = "başka bir Windows Installer kurulumu sürüyor",
+            [1619] = "paket açılamadı",
+            [1620] = "paket geçersiz",
+            [1622] = "kurulum logu açılamadı",
+            [1625] = "sistem politikası kurulumu engelliyor",
+            [1633] = "platform desteklenmiyor",
+            [1638] = "ürünün başka bir sürümü kurulu",
+            [1639] = "komut satırı geçersiz",
+        };
         static readonly string[] UserProcesses = { "POpsWatchdog", "POpsTray", "POpsVision" };
 
         sealed class Options
@@ -93,11 +109,21 @@ namespace POpsUpdater
 
                 if (exit != 0 && exit != 3010)
                 {
-                    // Eski ürün aynı işlem içinde kaldırıldığı için Windows Installer onu geri yükledi
-                    outcome = "install_failed";
-                    result["rollback"] = "msi_transaction";
-                    result["detail"] = $"msiexec {exit} döndü; Windows Installer değişiklikleri geri aldı";
                     if (previousMsi != null) CopyPackage(previousMsi, Path.Combine(PackagesDir, "installed.msi"));
+                    if (InstallNeverStarted.TryGetValue(exit, out string reason))
+                    {
+                        // Kurulum hiç başlamadı: makinede hiçbir şey değişmedi
+                        outcome = "install_failed";
+                        result["detail"] = $"msiexec {exit}: {reason}; kurulum başlamadı, kurulu sürüm ({opt.From}) değişmedi";
+                    }
+                    else
+                    {
+                        // Kurulum işlem içinde başarısız oldu; eski ürün aynı işlem içinde kaldırıldığı için
+                        // Windows Installer onu geri yükledi: güncelleme uygulanmadı ama makine önceki sürümde
+                        outcome = "rolled_back";
+                        result["rollback"] = "msi_transaction";
+                        result["detail"] = $"msiexec {exit}: kurulum başarısız, Windows Installer kurulu sürüme ({opt.From}) geri döndü";
+                    }
                 }
                 else if (WaitForHealth(opt.To, installStart))
                 {
@@ -128,7 +154,14 @@ namespace POpsUpdater
             finally
             {
                 result["agent_state"] = EnsureAgentPresent(opt);
+                result["running_version"] = RunningVersion();
                 result["outcome"] = outcome;
+                if (File.Exists(RollbackDrillPath))
+                {
+                    // Tatbikat işareti tek seferliktir: bir sonraki güncelleme normal ilerler
+                    try { File.Delete(RollbackDrillPath); Log("[TATBİKAT] rollback-drill işareti silindi."); }
+                    catch (Exception ex) { Log($"[TATBİKAT] rollback-drill işareti silinemedi: {ex.Message}", true); }
+                }
                 result["finished_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 WriteAtomic(ResultPath, JsonSerializer.Serialize(result));
                 Log($"Güncelleme bitti: {outcome} ({JsonSerializer.Serialize(result)})", outcome != "success");
@@ -360,6 +393,17 @@ namespace POpsUpdater
                 Thread.Sleep(2000);
             }
             return false;
+        }
+
+        // İşlem sonunda makinede çalışan ajanın sürümü (en son açılan servisin yazdığı health.json); bilinmiyorsa null
+        static string RunningVersion()
+        {
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(HealthPath));
+                return doc.RootElement.TryGetProperty("version", out JsonElement v) ? v.GetString() : null;
+            }
+            catch { return null; }
         }
 
         // ------------------------------------------------------------------------------------------
