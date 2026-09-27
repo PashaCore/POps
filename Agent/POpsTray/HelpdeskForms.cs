@@ -181,9 +181,12 @@ internal sealed class MyTicketsForm : Form
     // Servisin yanıtı (TICKET_LIST_RESULT): yalnızca oturumdaki kullanıcının talepleri
     public void ShowTickets(JsonElement result)
     {
-        _view.Clear();
         string message = HelpdeskProtocol.Text(result, "message");
         _status.Text = message;
+        // Çok sık istendi ya da sunucu yanıt veremedi: ekrandaki liste korunur, yalnızca not değişir
+        bool ok = result.TryGetProperty("ok", out var o) && o.ValueKind == JsonValueKind.True;
+        if (!ok) return;
+        _view.Clear();
         if (!result.TryGetProperty("tickets", out var tickets) || tickets.ValueKind != JsonValueKind.Array) return;
         var bold = new Font(_view.Font, FontStyle.Bold);
         foreach (JsonElement t in tickets.EnumerateArray())

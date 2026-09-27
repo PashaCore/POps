@@ -81,6 +81,28 @@ namespace POps.Tests.Installer
             Assert.True(LockedDown(Directory.GetAccessControl(layout.LogDir)));
         }
 
+        // Kullanıcının yazabildiği bir klasöre kurulum (ör. INSTALLFOLDER=C:\POps) SYSTEM olarak kod çalıştırmaya
+        // açılırdı: kurulum klasörünün izinleri daraltılır
+        [Fact]
+        public void InstallFolder_IsLockedDown_EvenWhenUsersCouldWrite()
+        {
+            Directory.CreateDirectory(InstallDir);
+            DirectorySecurity open = Directory.GetAccessControl(InstallDir);
+            open.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null), FileSystemRights.Modify,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+            Directory.SetAccessControl(InstallDir, open);
+            Assert.True(Setup.UsersCanWrite(Directory.GetAccessControl(InstallDir)));
+
+            Assert.Null(Configure(NewLayout(), ("SERVER_URL", "https://pops.example")));
+
+            DirectorySecurity sec = Directory.GetAccessControl(InstallDir);
+            Assert.True(sec.AreAccessRulesProtected);
+            Assert.False(Setup.UsersCanWrite(sec));
+            var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
+            Assert.Contains(sec.GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<FileSystemAccessRule>(),
+                r => r.IdentityReference.Equals(users) && (r.FileSystemRights & FileSystemRights.ExecuteFile) != 0);
+        }
+
         [Fact]
         public void Upgrade_WithoutProperties_KeepsSettingsAndPreservesUnknownKeys()
         {

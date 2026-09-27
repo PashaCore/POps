@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -6,6 +6,9 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Tepsi kullanıcının ortam değişkenleriyle başlar: HKCU\Environment'taki DOTNET_STARTUP_HOOKS kullanıcının kendi
+         kodunu tepsinin içine yükleyemesin (servis tepsi mesajlarına yine güvenilmeyen girdi gibi davranır) -->
+    <StartupHookSupport>false</StartupHookSupport>
   </PropertyGroup>
 
   <!-- Bypass kodu biçimi (servisle aynı kural): Agent/POps.Shared -->

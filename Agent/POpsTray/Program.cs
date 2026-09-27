@@ -24,11 +24,11 @@ static class Program
 
         _mutex = new Mutex(true, appName, out createdNew);
 
-        if (!createdNew)
-        {
-            // Zaten bir kopya çalışıyor, yeni açılanı kapat.
+        // Zaten bir kopya çalışıyorsa yeni açılan kapanır. Kilidi gerçek tepsi değil de aynı adla kilit açan başka bir
+        // program tutuyorsa (tepsiyi kapatıp kilidi ele geçiren öğrenci) yine de açılır: yoksa karantinada kilit ekranı
+        // hiç gelmezdi. Başka oturumdaki tepsinin yolu okunamaz; o durumda da açılır (boru tek bağlantı kabul eder).
+        if (!createdNew && POps.Shared.UserSessionLauncher.IsRunning(Environment.ProcessPath ?? Application.ExecutablePath, Environment.ProcessId))
             return;
-        }
 
         // Gizli (--stealth) mod kaldırıldı: tepsi simgesi ve bildirimler her zaman görünür.
 

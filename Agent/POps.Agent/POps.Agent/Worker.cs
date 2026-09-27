@@ -110,7 +110,8 @@ namespace POpsAgent
             // DNS eşiğindeki otomatik karantina da kilit ekranı + yalıtım yolundan geçer (bkz. AutoQuarantineAsync)
             DnsPolicyMonitor.Quarantine = reason => _ = AutoQuarantineAsync(reason);
             _patches = new PatchManager(_serverUrl, () => _hwId);
-            _helpdesk = new Helpdesk(_serverUrl, () => _hwId, () => ConsoleSession.Current().User, message => _trayPipe?.SendCommandToDesktop(message));
+            // Talebin sahibi konsoldaki değil, isteği yapan tepsinin oturumundaki kullanıcı (hızlı kullanıcı değiştirme, RDP)
+            _helpdesk = new Helpdesk(_serverUrl, () => _hwId, () => _trayPipe?.ClientUser, message => _trayPipe?.SendCommandToDesktop(message));
         }
 
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
@@ -1112,6 +1113,9 @@ namespace POpsAgent
 
         public void Start() { _cts = new CancellationTokenSource(); Task.Run(() => ListenPipeAsync(_cts.Token)); }
 
+        // Bağlı tepsinin oturumundaki kullanıcı (bağlantı yoksa null)
+        public string ClientUser { get; private set; }
+
         public bool IsConnected
         {
             get
@@ -1168,7 +1172,7 @@ namespace POpsAgent
                     POpsHelpers.Log("PIPE", $"Bekleniyor: {pipeName}");
 
                     await _pipeServer.WaitForConnectionAsync(token);
-                    string rejection = PipeClientVerifier.Verify(_pipeServer.SafePipeHandle, TrayExePath);
+                    string rejection = PipeClientVerifier.Verify(_pipeServer.SafePipeHandle, TrayExePath, out uint clientPid);
                     if (rejection != null)
                     {
                         POpsHelpers.Log("PIPE", $"[GÜVENLİK] Tepsi borusuna doğrulanmamış istemci bağlandı, bağlantı kesildi: {rejection}", true);
@@ -1177,6 +1181,7 @@ namespace POpsAgent
                         await Task.Delay(2000, token);
                         continue;
                     }
+                    ClientUser = UserSessionLauncher.SessionUser(UserSessionLauncher.SessionOf((int)clientPid));
                     POpsHelpers.Log("PIPE", "🟢 Tepsi bağlandı (doğrulandı).");
                     try { OnConnected?.Invoke(); } catch (Exception ex) { POpsHelpers.Log("PIPE", $"Bağlantı sonrası eşitleme başarısız: {ex.Message}", true); }
 
@@ -1230,6 +1235,7 @@ namespace POpsAgent
                 finally
                 {
                     _pipeServer?.Dispose();
+                    ClientUser = null;
                     OnDisconnected?.Invoke();
                 }
             }

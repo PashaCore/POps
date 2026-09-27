@@ -501,15 +501,13 @@ namespace POpsUpdater
             try
             {
                 string image = Registry.GetValue($@"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\{ServiceName}", "ImagePath", null) as string;
-                if (string.IsNullOrWhiteSpace(image)) return null;
-                image = image.Trim();
-                string exe = image.StartsWith("\"") ? image.Substring(1, image.IndexOf('"', 1) - 1) : image.Split(' ')[0];
-                return Path.GetDirectoryName(exe);
+                // Tırnaksız ve boşluklu yol da (C:\Program Files\POps\POpsAgent.exe) doğru okunur
+                string exe = ServiceImagePath.ExecutablePath(image);
+                return exe == null ? null : Path.GetDirectoryName(exe);
             }
             catch { return null; }
         }
 
-        // Kilit kalktıktan sonra watchdog tepsiyi açar; çalışmıyorsa kullanıcı oturumunda başlatılır
         // Güncelleme (ya da geri dönüş) bitince watchdog ve tepsi kullanıcı oturumunda başlatılır; oturum kapatıp açmak
         // gerekmez. Eskiden "schtasks /ru BUILTIN\Users /it" kullanılıyordu ve sahada tepsiyi başlatmıyordu
         // (bkz. POps.Shared.UserSessionLauncher). Kurulu sürüm hangisiyse onun klasöründen.
@@ -525,8 +523,8 @@ namespace POpsUpdater
                 }
                 string dir = ServiceInstallDir();
                 if (dir == null) return;
-                var (watchdog, tray) = UserAppsPolicy.WhatToStart(true, false,
-                    UserSessionLauncher.IsRunning("POpsWatchdog"), UserSessionLauncher.IsRunning("POpsTray"),
+                var (watchdog, tray) = UserAppsPolicy.WhatToStart(true, UserSessionLauncher.WindowsInstallerBusy(),
+                    UserSessionLauncher.IsRunning(Path.Combine(dir, "POpsWatchdog.exe")), UserSessionLauncher.IsRunning(Path.Combine(dir, "POpsTray.exe")),
                     shellReady: true, signedInFor: TimeSpan.MaxValue);
                 foreach ((bool start, string exe) in new[] { (watchdog, "POpsWatchdog.exe"), (tray, "POpsTray.exe") })
                 {

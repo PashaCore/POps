@@ -19,6 +19,9 @@ namespace POps.Tests.Agent
     // 1) Tepsi/watchdog kullanıcı oturumunda başlatılır (saha: kurulum ve güncellemeden sonra tepsi yoktu)
     public class UserSessionAppsTests : TestBase
     {
+        // SYSTEM olarak çalışan bir CI'da WTSQueryUserToken başarılı olur ve süreç gerçekten başlardı: o durumda atlanır
+        public static bool SkipLaunchTests => WindowsIdentity.GetCurrent().IsSystem;
+
         [Fact]
         public void NoSignedInUser_StartsNothing() =>
             Assert.Equal((false, false), UserAppsPolicy.WhatToStart(false, false, false, false, true, TimeSpan.FromHours(1)));
@@ -48,6 +51,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void WithoutSystemRights_NothingIsStarted()
         {
+            if (SkipLaunchTests) return;
             string harmless = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "whoami.exe");
             uint session = UserSessionLauncher.ActiveConsoleSession();
             Assert.False(UserSessionLauncher.HasSignedInUser(session));

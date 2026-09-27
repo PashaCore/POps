@@ -54,6 +54,8 @@ namespace POpsAgent
     public sealed class TicketListMessage
     {
         [JsonPropertyName("ok")] public bool Ok { get; set; }
+        // Çok sık istendi (ajan ya da sunucu sınırı): tepsi açık listeyi korur, yalnızca notu gösterir
+        [JsonPropertyName("busy")] public bool Busy { get; set; }
         [JsonPropertyName("message")] public string Message { get; set; }
         [JsonPropertyName("tickets")] public List<TicketView> Tickets { get; set; } = new List<TicketView>();
     }
@@ -73,6 +75,10 @@ namespace POpsAgent
     //  * Sunucu uçları yalnızca anahtarlı ajanı kabul eder; secret yoksa hiç gönderilmez.
     //  * "Taleplerim" yalnızca oturumdaki kullanıcının taleplerini gösterir: sunucu cihazın bütün taleplerini döner,
     //    ortak laboratuvar bilgisayarında bir öğrenci başkasının talebini ve yanıtlarını görmemeli.
+    //  * Tepsi mesajlarına güvenilmeyen girdi gibi davranılır (tepsi kullanıcının ortamıyla başlar; kullanıcı kendi kodunu
+    //    onun içinde çalıştırabilir): her tür için aynı anda tek istek, liste için en az 5 sn, talep için en az 10 sn
+    //    aralık; fazlası sunucuya gitmez, tepsiye "meşgul" döner. Yoklama da liste sınırına tabidir (sunucu cihaz
+    //    başına 5 sn'den sık isteğe 429 döner).
     //  * 5 dk'da bir yeni yanıt yoklanır; yeni yanıt tepsiye TICKET_NOTIFY ile bildirilir (balon). Görülen yanıt
     //    sayıları C:\POpsData\tickets-seen.json'da tutulur (servis yeniden başlayınca eski yanıtlar yeniden bildirilmez).
     [SupportedOSPlatform("windows")]
@@ -87,6 +93,41 @@ namespace POpsAgent
 
         public const string NotEnrolledMessage = "Bu bilgisayar sunucuya kayıtlı değil; talep gönderilemedi. BT ekibine haber verin.";
         public const string UnreachableMessage = "Sunucuya ulaşılamadı; biraz sonra yeniden deneyin.";
+        public const string BusyMessage = "Çok sık istek; birkaç saniye sonra yeniden deneyin.";
+        public static readonly TimeSpan CreateInterval = TimeSpan.FromSeconds(10);
+        public static readonly TimeSpan ListInterval = TimeSpan.FromSeconds(5);
+
+        // Tür başına: aynı anda tek istek ve iki istek arası en az süre
+        private sealed class RequestGate
+        {
+            public readonly TimeSpan Interval;
+            public bool Busy;
+            public DateTime LastUtc = DateTime.MinValue;
+            public RequestGate(TimeSpan interval) => Interval = interval;
+        }
+
+        private readonly RequestGate _createGate = new RequestGate(CreateInterval);
+        private readonly RequestGate _listGate = new RequestGate(ListInterval);
+
+        // Testlerde değiştirilir
+        internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
+
+        private bool TryEnter(RequestGate gate)
+        {
+            lock (gate)
+            {
+                DateTime now = UtcNow();
+                if (gate.Busy || now - gate.LastUtc < gate.Interval) return false;
+                gate.Busy = true;
+                gate.LastUtc = now;
+                return true;
+            }
+        }
+
+        private static void Exit(RequestGate gate)
+        {
+            lock (gate) gate.Busy = false;
+        }
 
         private readonly string _serverUrl;
         private readonly Func<string> _hwId;
@@ -125,10 +166,19 @@ namespace POpsAgent
                 Reply("TICKET_RESULT", new TicketResultMessage { Ok = false, Message = NotEnrolledMessage });
                 return;
             }
-            var (status, body) = await Sender(HttpMethod.Post, DevicePath, payload, "Destek talebi");
-            TicketResultMessage result = CreateResult(status, body);
-            if (result.Ok) POpsHelpers.Log("AGENT", $"Destek talebi gönderildi (#{result.Id}, {payload.Category}).");
-            Reply("TICKET_RESULT", result);
+            if (!TryEnter(_createGate))
+            {
+                Reply("TICKET_RESULT", new TicketResultMessage { Ok = false, Message = BusyMessage });
+                return;
+            }
+            try
+            {
+                var (status, body) = await Sender(HttpMethod.Post, DevicePath, payload, "Destek talebi");
+                TicketResultMessage result = CreateResult(status, body);
+                if (result.Ok) POpsHelpers.Log("AGENT", $"Destek talebi gönderildi (#{result.Id}, {payload.Category}).");
+                Reply("TICKET_RESULT", result);
+            }
+            finally { Exit(_createGate); }
         }
 
         public async Task ListAsync()
@@ -139,10 +189,20 @@ namespace POpsAgent
                 Reply("TICKET_LIST_RESULT", new TicketListMessage { Ok = false, Message = NotEnrolledMessage });
                 return;
             }
-            var (tickets, message) = await FetchAsync();
+            if (!TryEnter(_listGate))
+            {
+                // Tepsi açık listeyi korur, yalnızca bu kısa notu gösterir
+                Reply("TICKET_LIST_RESULT", new TicketListMessage { Ok = false, Message = BusyMessage, Busy = true });
+                return;
+            }
+            List<TicketView> tickets;
+            string message;
+            bool rateLimited;
+            try { (tickets, message, rateLimited) = await FetchAsync(); }
+            finally { Exit(_listGate); }
             if (tickets == null)
             {
-                Reply("TICKET_LIST_RESULT", new TicketListMessage { Ok = false, Message = message });
+                Reply("TICKET_LIST_RESULT", new TicketListMessage { Ok = false, Message = message, Busy = rateLimited });
                 return;
             }
             List<TicketView> mine = ForUser(tickets, user);
@@ -166,9 +226,12 @@ namespace POpsAgent
                 try
                 {
                     string user = _currentUser();
-                    if (user != null && trayConnected() && AgentHttp.CanReport)
+                    // Liste sınırını tepsiyle paylaşır; o sırada liste isteniyorsa bu tur atlanır. 429 sessizce geçilir.
+                    if (user != null && trayConnected() && AgentHttp.CanReport && TryEnter(_listGate))
                     {
-                        var (tickets, _) = await FetchAsync();
+                        List<TicketView> tickets;
+                        try { (tickets, _, _) = await FetchAsync(); }
+                        finally { Exit(_listGate); }
                         if (tickets != null)
                         {
                             List<TicketView> fresh;
@@ -189,15 +252,17 @@ namespace POpsAgent
             }
         }
 
-        private async Task<(List<TicketView> Tickets, string Message)> FetchAsync()
+        // RateLimited: sunucu 429 döndü (cihaz başına 5 sn sınırı); hata sayılmaz
+        private async Task<(List<TicketView> Tickets, string Message, bool RateLimited)> FetchAsync()
         {
             var (status, body) = await Sender(HttpMethod.Get, DevicePath, null, "Destek talepleri");
-            if (status == null) return (null, UnreachableMessage);
-            if (status == 401 || status == 403) return (null, NotEnrolledMessage);
-            if (status == 404 || status == 405) return (null, "Sunucu yardım masasını henüz desteklemiyor.");
-            if (status < 200 || status >= 300 || body == null) return (null, $"Talepler alınamadı (HTTP {status}).");
-            try { return (JsonSerializer.Deserialize<List<TicketView>>(body) ?? new List<TicketView>(), null); }
-            catch (JsonException) { return (null, "Sunucunun yanıtı okunamadı."); }
+            if (status == null) return (null, UnreachableMessage, false);
+            if (status == 429) return (null, BusyMessage, true);
+            if (status == 401 || status == 403) return (null, NotEnrolledMessage, false);
+            if (status == 404 || status == 405) return (null, "Sunucu yardım masasını henüz desteklemiyor.", false);
+            if (status < 200 || status >= 300 || body == null) return (null, $"Talepler alınamadı (HTTP {status}).", false);
+            try { return (JsonSerializer.Deserialize<List<TicketView>>(body) ?? new List<TicketView>(), null, false); }
+            catch (JsonException) { return (null, "Sunucunun yanıtı okunamadı.", false); }
         }
 
         private void Reply(string kind, object message) =>

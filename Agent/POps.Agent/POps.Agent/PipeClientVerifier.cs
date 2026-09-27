@@ -24,10 +24,15 @@ namespace POpsAgent
     public static class PipeClientVerifier
     {
         // null: kabul; aksi halde ret nedeni.
-        public static string Verify(SafePipeHandle pipe, string expectedImagePath)
+        public static string Verify(SafePipeHandle pipe, string expectedImagePath) => Verify(pipe, expectedImagePath, out _);
+
+        // clientProcessId: bağlanan tepsinin PID'i (yardım masası talebinin sahibi bu sürecin oturumundan belirlenir)
+        public static string Verify(SafePipeHandle pipe, string expectedImagePath, out uint clientProcessId)
         {
+            clientProcessId = 0;
             if (!GetNamedPipeClientProcessId(pipe, out uint pid))
                 return $"istemci süreci belirlenemedi (hata {Marshal.GetLastWin32Error()})";
+            clientProcessId = pid;
 
             string image = ProcessImagePath(pid);
             if (image == null) return $"istemci sürecinin (PID {pid}) yolu okunamadı";

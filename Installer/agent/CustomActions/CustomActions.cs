@@ -167,6 +167,7 @@ namespace POps.Installer
                     return "VISION_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
 
                 EnsureDataDirectories(layout);
+                SecureInstallDirectory(installDir, log);
                 WriteCapabilities(layout, terminal, vision, log);
                 WriteSecret(Path.Combine(layout.SecureDir, BypassSecretFile), Prop("BYPASS_SECRET"), Existing("BypassSecret"), "BypassSecret", log);
                 WriteSecret(Path.Combine(layout.SecureDir, EnrollTokenFile), enrollToken, Existing("EnrollToken"), "EnrollToken", log);
@@ -363,6 +364,42 @@ namespace POps.Installer
             logs.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
             logs.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
             if (layout.LogDir != null) CreateOrSecure(layout.LogDir, logs);
+        }
+
+        // Kurulum klasörü: servis POpsAgent.exe'yi buradan SYSTEM olarak çalıştırır, updater buradan kopyalanır. Kullanıcının
+        // yazabildiği bir klasöre kurulursa (ör. INSTALLFOLDER=C:\POps: C:\ altında açılan klasör "Authenticated Users:
+        // Modify" devralır) bir öğrenci exe'yi değiştirip SYSTEM olarak kod çalıştırabilirdi. Klasöre korumalı ACL konur:
+        // SYSTEM/Administrators tam, Users okuma ve çalıştırma (tepsi ve watchdog oradan çalışır).
+        internal static void SecureInstallDirectory(string installDir, Action<string> log)
+        {
+            if (!Directory.Exists(installDir)) return;
+            bool userCouldWrite = UsersCanWrite(Directory.GetAccessControl(installDir));
+            var sec = new DirectorySecurity();
+            sec.SetAccessRuleProtection(true, false);
+            sec.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
+            sec.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
+            sec.AddAccessRule(new FileSystemAccessRule(UsersSid, FileSystemRights.ReadAndExecute, Inherit, PropagationFlags.None, AccessControlType.Allow));
+            Directory.SetAccessControl(installDir, sec);
+            if (userCouldWrite) log?.Invoke($"[GÜVENLİK] {installDir} kullanıcıların yazabildiği bir klasördü; izinler SYSTEM/Administrators tam, Users okuma olarak daraltıldı.");
+        }
+
+        // SYSTEM ve Administrators dışında yazma/değiştirme izni olan biri var mı
+        internal static bool UsersCanWrite(DirectorySecurity sec)
+        {
+            const FileSystemRights write = FileSystemRights.WriteData | FileSystemRights.AppendData | FileSystemRights.Delete |
+                                           FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership | FileSystemRights.WriteAttributes;
+            foreach (FileSystemAccessRule rule in sec.GetAccessRules(true, true, typeof(SecurityIdentifier)))
+            {
+                if (rule.AccessControlType != AccessControlType.Allow || (rule.FileSystemRights & write) == 0) continue;
+                // Yalnızca alt öğelere geçen kural (ör. Program Files'taki CREATOR OWNER) klasörün kendisine yazma izni vermez
+                if ((rule.PropagationFlags & PropagationFlags.InheritOnly) != 0) continue;
+                var sid = rule.IdentityReference as SecurityIdentifier;
+                if (sid == null || sid.Equals(SystemSid) || sid.Equals(AdminsSid) || sid.IsWellKnown(WellKnownSidType.LocalSystemSid) || sid.IsWellKnown(WellKnownSidType.CreatorOwnerSid)) continue;
+                // TrustedInstaller (NT SERVICE\TrustedInstaller) Program Files'ın olağan sahibidir
+                if (sid.Value.StartsWith("S-1-5-80-", StringComparison.Ordinal)) continue;
+                return true;
+            }
+            return false;
         }
 
         private static void CreateOrSecure(string dir, DirectorySecurity sec)

@@ -151,8 +151,9 @@ restart, and the lock screen and the tray check the code format first so a typo 
 ## Help desk
 
 From 0.1.6-alpha the tray menu has **Sorun bildir** and **Taleplerim**. The tray sends the form to the service
-over the pipe; the service adds the signed-in user as the reporter, limits the text (subject 200, description 5000
-characters) and calls `POST /api/tickets/agent/{hw_id}`. **Taleplerim** reads `GET /api/tickets/agent/{hw_id}` and
+over the pipe; the service adds the user of the tray's session as the reporter, limits the text (subject 200,
+description 5000 characters) and the request rate (list every 5 s, new request every 10 s, one at a time), and
+calls `POST /api/tickets/agent/{hw_id}`. **Taleplerim** reads `GET /api/tickets/agent/{hw_id}` and
 shows only the signed-in user's requests, because a lab PC is shared. New replies are checked every 5 minutes and
 shown as a balloon. Details in [`Agent/README.md`](../Agent/README.md#help-desk-sorun-bildir--taleplerim).
 

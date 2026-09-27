@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+using System.Threading;
 
 namespace POps.Shared
 {
@@ -32,12 +33,75 @@ namespace POps.Shared
             return true;
         }
 
-        // Süreç makinede herhangi bir oturumda çalışıyor mu (tepsinin tek kopya kilidi makine geneli)
-        public static bool IsRunning(string processName)
+        // Kurulum klasöründeki program makinede herhangi bir oturumda çalışıyor mu. Yalnızca ada bakılmaz: İndirilenler'e
+        // kopyalanıp POpsTray.exe adı verilen başka bir program, servisin gerçek tepsiyi (karantinada kilit ekranını)
+        // yeniden başlatmasını engelleyemesin. Yolu okunamayan süreç sayılmaz (SYSTEM her sürecin yolunu okuyabilir;
+        // kullanıcı yalnızca kendi süreçlerininkini).
+        public static bool IsRunning(string expectedPath, int excludeProcessId = 0)
         {
-            Process[] found = Process.GetProcessesByName(processName);
-            foreach (Process p in found) p.Dispose();
-            return found.Length > 0;
+            string name = Path.GetFileNameWithoutExtension(expectedPath);
+            Process[] found = Process.GetProcessesByName(name);
+            try
+            {
+                return found.Any(p =>
+                {
+                    if (p.Id == excludeProcessId) return false;
+                    string image = ImagePath(p.Id);
+                    return image != null && SamePath(image, expectedPath);
+                });
+            }
+            finally
+            {
+                foreach (Process p in found) p.Dispose();
+            }
+        }
+
+        public static string ImagePath(int processId)
+        {
+            IntPtr process = OpenProcess(ProcessQueryLimitedInformation, false, (uint)processId);
+            if (process == IntPtr.Zero) return null;
+            try
+            {
+                var buffer = new StringBuilder(1024);
+                int size = buffer.Capacity;
+                return QueryFullProcessImageName(process, 0, buffer, ref size) ? buffer.ToString(0, size) : null;
+            }
+            finally { CloseHandle(process); }
+        }
+
+        public static bool SamePath(string a, string b)
+        {
+            try { return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase); }
+            catch { return false; }
+        }
+
+        // Windows Installer bir işlem yürütüyorsa (elle ya da GPO ile MSI kurulumu/yükseltmesi update.lock yazmaz)
+        // tepsi ve watchdog başlatılmaz: kurulumun kapattığı dosyalarla yarışılmasın
+        public static bool WindowsInstallerBusy(string mutexName = @"Global\_MSIExecute")
+        {
+            try
+            {
+                if (!Mutex.TryOpenExisting(mutexName, out Mutex mutex)) return false;
+                mutex.Dispose();
+                return true;
+            }
+            catch (UnauthorizedAccessException) { return true; }   // var ama açılamıyor: yine de meşgul
+            catch { return false; }
+        }
+
+        // Sürecin oturumu ve o oturumun kullanıcısı (yardım masası talebinin sahibi: isteği yapan tepsi). SYSTEM'de çalışır.
+        public static uint SessionOf(int processId) => ProcessIdToSessionId((uint)processId, out uint session) ? session : NoSession;
+
+        public static string SessionUser(uint sessionId)
+        {
+            if (sessionId == NoSession) return null;
+            if (!WTSQuerySessionInformationW(IntPtr.Zero, sessionId, WTSUserName, out IntPtr buffer, out _)) return null;
+            try
+            {
+                string user = Marshal.PtrToStringUni(buffer)?.Trim();
+                return string.IsNullOrEmpty(user) ? null : user;
+            }
+            finally { WTSFreeMemory(buffer); }
         }
 
         // Kabuk (explorer) oturumda açılmış mı: tepsi simgesi görev çubuğu hazır olmadan eklenmesin
@@ -62,7 +126,13 @@ namespace POps.Shared
             {
                 if (!WTSQueryUserToken(sessionId, out userToken)) { error = $"oturum {sessionId} kullanıcı belirteci alınamadı (Win32 {Marshal.GetLastWin32Error()})"; return false; }
                 if (!DuplicateTokenEx(userToken, MaximumAllowed, IntPtr.Zero, SecurityImpersonation, TokenPrimary, out primary)) { error = $"belirteç kopyalanamadı (Win32 {Marshal.GetLastWin32Error()})"; return false; }
-                if (!CreateEnvironmentBlock(out environment, primary, false)) environment = IntPtr.Zero;
+                // Kullanıcının ortamı kurulamazsa başlatılmaz: yoksa süreç SYSTEM'in (servisin) ortamını alırdı
+                if (!CreateEnvironmentBlock(out environment, primary, false))
+                {
+                    environment = IntPtr.Zero;
+                    error = $"kullanıcı ortamı kurulamadı (Win32 {Marshal.GetLastWin32Error()})";
+                    return false;
+                }
 
                 var startup = new StartupInfo { cb = Marshal.SizeOf<StartupInfo>(), lpDesktop = @"winsta0\default" };
                 var commandLine = new StringBuilder("\"" + exePath + "\"");
@@ -131,6 +201,43 @@ namespace POps.Shared
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr handle);
+
+        private const uint ProcessQueryLimitedInformation = 0x1000;
+        private const int WTSUserName = 5;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint access, bool inheritHandle, uint processId);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool QueryFullProcessImageName(IntPtr process, int flags, StringBuilder name, ref int size);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool ProcessIdToSessionId(uint processId, out uint sessionId);
+
+        [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool WTSQuerySessionInformationW(IntPtr server, uint sessionId, int infoClass, out IntPtr buffer, out uint bytes);
+
+        [DllImport("wtsapi32.dll")]
+        private static extern void WTSFreeMemory(IntPtr memory);
+    }
+
+    // Servisin kayıt defterindeki ImagePath'inden exe yolu. Tırnaklı ("C:\Program Files\POps\POpsAgent.exe" -x)
+    // ya da tırnaksız ve boşluklu (C:\Program Files\POps\POpsAgent.exe) olabilir: ".exe"ye kadar okunur; boşlukta
+    // kesmek "C:\Program" verirdi.
+    public static class ServiceImagePath
+    {
+        public static string ExecutablePath(string imagePath)
+        {
+            if (string.IsNullOrWhiteSpace(imagePath)) return null;
+            string value = imagePath.Trim();
+            if (value.StartsWith("\""))
+            {
+                int end = value.IndexOf('"', 1);
+                return end > 1 ? value.Substring(1, end - 1) : null;
+            }
+            int exe = value.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+            return exe > 0 ? value.Substring(0, exe + 4) : value.Split(' ')[0];
+        }
     }
 
     // Hangi kullanıcı uygulaması başlatılmalı (saf karar; testlerde denenir)

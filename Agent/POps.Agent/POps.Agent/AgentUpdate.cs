@@ -139,7 +139,8 @@ namespace POpsAgent
         {
             try
             {
-                UpdateRun run = ReadJson<UpdateRun>(LockPath);
+                // Bayat kilit (15 dk'dan eski, updater çökmüş) "güncelleme yok" sayılır
+                UpdateRun run = IsLockFresh() ? ReadJson<UpdateRun>(LockPath) : null;
                 DrillDecision decision = DecideDrill(RollbackDrillRequested(), ReadJson<ConsumedDrill>(ConsumedDrillPath), run, InstalledVersion);
                 if (decision.DiscardConsumed) TryDelete(ConsumedDrillPath);
                 if (decision.Consume)

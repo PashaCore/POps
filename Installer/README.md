@@ -23,7 +23,7 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 | `PERSIST_DIR`   | optional      | `appsettings.json` → `PersistDir` (see `Agent/README.md`, machines with freeze software) |
 | `TERMINAL_ENABLED` | optional   | `C:\POpsData\secure\capabilities.json`: `1` allows the panel's remote terminal (`execute`) on this PC, `0` disables it. See *Capability policy* in `Agent/README.md`. |
 | `VISION_ENABLED`   | optional   | same file: `1` / `0` for screen streaming, previews and remote input. |
-| `INSTALLFOLDER` | optional      | install folder, default `C:\Program Files\POps` |
+| `INSTALLFOLDER` | optional      | install folder, default `C:\Program Files\POps`. The service runs `POpsAgent.exe` from it as SYSTEM, so users must not be able to write there. The MSI therefore sets a protected ACL on it (SYSTEM and Administrators full control, Users read and execute) and logs when users could write before, for example in `C:\POps`, which inherits Modify for Authenticated Users from `C:\`. |
 
 - Every property is optional on an upgrade: a value that is not given keeps the installed one. A first install without `SERVER_URL` (and without an old install to take it from) fails with a clear message in the log.
 - A plain `http://` server address is refused, including one migrated from an older install. Over `ws://` the device secret, the enrollment token and the commands the agent runs as SYSTEM would cross the network in clear text. Pre-MSI installs that used `http://<ip>:8000` therefore need `SERVER_URL=https://…` on the command line.

@@ -78,8 +78,9 @@ namespace POpsAgent
             await PostAsync(serverUrl, path, hwId, payload, what) == PostResult.Sent;
 
         // Yanıt gövdesi gereken çağrılar (yardım masası). Status null: gönderilmedi (secret yok, şifresiz sunucu) ya da
-        // ağ hatası. Yanıt en çok MaxResponseBytes okunur.
-        public const int MaxResponseBytes = 4 * 1024 * 1024;
+        // ağ hatası. Yanıt en çok MaxResponseBytes okunur: Content-Length'e güvenilmez (parçalı yanıtta yoktur), akış
+        // sınırlı okunur; sınırı aşan yanıtın gövdesi null döner.
+        internal static int MaxResponseBytes { get; set; } = 4 * 1024 * 1024;
 
         public static async Task<(int? Status, string Body)> SendAsync(HttpMethod method, string serverUrl, string path, string hwId, object payload, string what)
         {
@@ -91,13 +92,10 @@ namespace POpsAgent
                 AgentCredentials.AddHttpAuth(request, hwId);
                 using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
                 int status = (int)response.StatusCode;
-                if (response.Content.Headers.ContentLength > MaxResponseBytes)
-                {
-                    POpsHelpers.Log("AGENT", $"{what}: yanıt çok büyük ({response.Content.Headers.ContentLength} bayt), okunmadı.", true);
-                    return (status, null);
-                }
-                string body = await response.Content.ReadAsStringAsync();
-                if (status < 200 || status >= 300) POpsHelpers.Log("AGENT", $"{what}: HTTP {status}.", true);
+                string body = await ReadLimitedAsync(response.Content, MaxResponseBytes);
+                if (body == null) POpsHelpers.Log("AGENT", $"{what}: yanıt {MaxResponseBytes} bayttan büyük, okunmadı.", true);
+                // 429: sunucunun "çok sık" sınırı; hata değil, sessizce geçilir
+                if ((status < 200 || status >= 300) && status != 429) POpsHelpers.Log("AGENT", $"{what}: HTTP {status}.", true);
                 return (status, body);
             }
             catch (Exception ex)
@@ -105,6 +103,22 @@ namespace POpsAgent
                 POpsHelpers.Log("AGENT", $"{what} başarısız: {ex.Message}", true);
                 return (null, null);
             }
+        }
+
+        // Gövde en çok maxBytes okunur; aşarsa null
+        internal static async Task<string> ReadLimitedAsync(HttpContent content, int maxBytes)
+        {
+            if (content.Headers.ContentLength > maxBytes) return null;
+            using System.IO.Stream stream = await content.ReadAsStreamAsync();
+            using var buffer = new System.IO.MemoryStream();
+            byte[] chunk = new byte[16 * 1024];
+            int read;
+            while ((read = await stream.ReadAsync(chunk, 0, chunk.Length)) > 0)
+            {
+                if (buffer.Length + read > maxBytes) return null;
+                buffer.Write(chunk, 0, read);
+            }
+            return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
         }
 
         public static string DevicePath(string prefix, string hwId) => prefix + Uri.EscapeDataString(hwId ?? "");

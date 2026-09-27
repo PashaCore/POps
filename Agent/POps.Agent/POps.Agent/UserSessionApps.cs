@@ -22,6 +22,8 @@ namespace POpsAgent
         private uint _session = UserSessionLauncher.NoSession;
         private DateTime _signedInSinceUtc;
         private string _lastProblem;
+        // Art arda başlatma sayısı (program görülünce sıfırlanır): hemen kapanan program 30 sn'de bir loglanmasın
+        private readonly System.Collections.Generic.Dictionary<string, int> _starts = new System.Collections.Generic.Dictionary<string, int>();
 
         public UserSessionApps(string installDir = null) => _installDir = installDir ?? AppContext.BaseDirectory;
 
@@ -51,11 +53,16 @@ namespace POpsAgent
                     _signedInSinceUtc = DateTime.UtcNow;
                 }
 
+                bool watchdogRunning = UserSessionLauncher.IsRunning(Path.Combine(_installDir, "POpsWatchdog.exe"));
+                bool trayRunning = UserSessionLauncher.IsRunning(Path.Combine(_installDir, "POpsTray.exe"));
+                if (watchdogRunning) _starts.Remove("POpsWatchdog.exe");
+                if (trayRunning) _starts.Remove("POpsTray.exe");
                 var (watchdog, tray) = UserAppsPolicy.WhatToStart(
                     userSignedIn: true,
-                    updateInProgress: AgentUpdate.IsLockFresh(),
-                    watchdogRunning: UserSessionLauncher.IsRunning("POpsWatchdog"),
-                    trayRunning: UserSessionLauncher.IsRunning("POpsTray"),
+                    // update.lock yalnızca ajanın başlattığı güncellemede var; elle/GPO ile MSI kurulumu için Windows Installer'a da bakılır
+                    updateInProgress: AgentUpdate.IsLockFresh() || UserSessionLauncher.WindowsInstallerBusy(),
+                    watchdogRunning: watchdogRunning,
+                    trayRunning: trayRunning,
                     shellReady: UserSessionLauncher.ShellReady(session),
                     signedInFor: DateTime.UtcNow - _signedInSinceUtc);
                 if (watchdog) Start(session, "POpsWatchdog.exe");
@@ -69,7 +76,10 @@ namespace POpsAgent
             if (UserSessionLauncher.TryStart(session, Path.Combine(_installDir, exeName), out int pid, out string error))
             {
                 _lastProblem = null;
-                POpsHelpers.Log("AGENT", $"{exeName} kullanıcı oturumunda başlatıldı (oturum {session}, PID {pid}).");
+                int count = _starts.TryGetValue(exeName, out int n) ? n + 1 : 1;
+                _starts[exeName] = count;
+                if (count == 1) POpsHelpers.Log("AGENT", $"{exeName} kullanıcı oturumunda başlatıldı (oturum {session}, PID {pid}).");
+                else if (count == 2) POpsHelpers.Log("AGENT", $"{exeName} başlatıldıktan sonra hemen kapanıyor; yeniden denenecek ama artık loglanmayacak.", true);
             }
             else Problem($"{exeName} kullanıcı oturumunda başlatılamadı: {error}");
         }
