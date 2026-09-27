@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Backend/Dashboard:** One-click agent release download. When GitHub has a newer release than the verified agent package, the **Sistem & Sürüm** page shows **GitHub'dan indir ve doğrula**. `POST /api/system/fetch-release` (superadmin) downloads `manifest.json` and its signature, verifies them, then downloads the agent MSI the signed manifest names and runs the same checks as a manual upload (ed25519 signature, SHA-256, no downgrade without `force`). Trust comes from the signature, not from where the files were downloaded. The download is recorded in the audit log. Dispatching to agents stays a separate step, and offline servers keep using the manual upload.
+
 ### Fixed
 - **Backend:** The **Sistem & Sürüm** page never showed the latest GitHub release. It asked GitHub for `/releases/latest`, which skips pre-releases, and every POps release so far is a pre-release (`-alpha`). The check now takes the newest non-draft release from the release list.
 

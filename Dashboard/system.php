@@ -38,7 +38,7 @@
 <div class="page-header">
     <div>
         <h1><i class="fas fa-server"></i> Sistem &amp; Sürüm</h1>
-        <p>Sunucu sürümünü görüntüleyin, güncelleme olup olmadığını kontrol edin ve imzalı bir paketi çevrimdışı yükleyin</p>
+        <p>Sunucu sürümünü görüntüleyin, güncelleme olup olmadığını kontrol edin; imzalı ajan paketini GitHub'dan indirin ya da çevrimdışı yükleyin</p>
     </div>
 </div>
 
@@ -48,12 +48,20 @@
         <div class="ver-grid">
             <div class="ver-tile"><div class="lbl">Çalışan sürüm</div><div class="val" id="v-running">…</div></div>
             <div class="ver-tile"><div class="lbl">GitHub'daki son sürüm</div><div class="val" id="v-latest">…</div></div>
-            <div class="ver-tile"><div class="lbl">Yüklenip doğrulanan (çevrimdışı)</div><div class="val" id="v-staged">—</div></div>
+            <div class="ver-tile"><div class="lbl">Doğrulanmış ajan paketi</div><div class="val" id="v-staged">—</div></div>
         </div>
         <div class="row" style="margin-top: var(--space-4);">
             <button class="btn primary" id="btn-check"><i class="fas fa-arrows-rotate"></i> Güncellemeleri kontrol et</button>
+            <button class="btn primary" id="btn-fetch" style="display:none;"><i class="fas fa-cloud-arrow-down"></i> <span id="btn-fetch-lbl">GitHub'dan indir ve doğrula</span></button>
             <span id="v-badge"></span>
         </div>
+        <div class="status-msg" id="fetch-status"></div>
+        <p class="note" style="margin-top:var(--space-4);">
+            <i class="fas fa-circle-info"></i>
+            <strong>GitHub'dan indir</strong> imzalı ajan paketini sunucuya indirir; imza ve özetler elle yüklemedeki gibi
+            doğrulanır. Ajanlara göndermek için ardından <strong>"Ajanlara imzalı güncelleme dağıt"</strong> kartını kullanın.
+            İnternetsiz sunucuda paketi aşağıdan elle yükleyin.
+        </p>
     </div>
 
     <div class="sys-card">
@@ -176,14 +184,52 @@
 
     function setBadge(data) {
         const b = $('v-badge');
-        if (data.staged_version) {
-            b.innerHTML = '<span class="badge ok"><i class="fas fa-box-check"></i> Doğrulanmış paket hazır: ' + escapeHtml(data.staged_version) + '</span>';
-        } else if (data.update_available) {
-            b.innerHTML = '<span class="badge warn"><i class="fas fa-circle-up"></i> Yeni sürüm mevcut</span>';
-        } else if (data.checked_github) {
-            b.innerHTML = '<span class="badge ok"><i class="fas fa-check"></i> Güncel</span>';
-        } else {
-            b.innerHTML = '<span class="badge muted"><i class="fas fa-wifi"></i> GitHub kontrol edilmedi (çevrimdışı olabilir)</span>';
+        const parts = [];
+        if (data.update_available) {
+            parts.push('<span class="badge warn"><i class="fas fa-circle-up"></i> Sunucu için yeni sürüm var: aşağıdan "Sunucu backend\'ini güncelle"</span>');
+        }
+        if (data.release_available) {
+            parts.push('<span class="badge warn"><i class="fas fa-circle-up"></i> Ajanlar için yeni paket var: ' + escapeHtml(data.latest) + '</span>');
+        }
+        if (!parts.length) {
+            if (data.checked_github) {
+                parts.push('<span class="badge ok"><i class="fas fa-check"></i> Güncel</span>');
+            } else if (data.staged_version) {
+                parts.push('<span class="badge ok"><i class="fas fa-box-check"></i> Doğrulanmış paket hazır: ' + escapeHtml(data.staged_version) + '</span>');
+            } else {
+                parts.push('<span class="badge muted"><i class="fas fa-wifi"></i> GitHub kontrol edilmedi (çevrimdışı olabilir)</span>');
+            }
+        }
+        b.innerHTML = parts.join(' ');
+        const f = $('btn-fetch');
+        f.style.display = data.release_available ? '' : 'none';
+        f.dataset.tag = data.latest || '';
+        $('btn-fetch-lbl').textContent = 'GitHub\'dan indir ve doğrula' + (data.latest ? ' (' + data.latest + ')' : '');
+    }
+
+    async function fetchRelease() {
+        const btn = $('btn-fetch');
+        const st = $('fetch-status');
+        st.className = 'status-msg';
+        st.style.display = 'block';
+        st.textContent = 'GitHub\'dan indiriliyor ve doğrulanıyor…';
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/system/fetch-release', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tag: btn.dataset.tag || null })
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
+            st.className = 'status-msg status-success';
+            st.innerHTML = '<i class="fas fa-circle-check"></i> İndirildi ve doğrulandı: <strong>' + escapeHtml(d.version) +
+                '</strong>. Ajanlara göndermek için "Ajanlara imzalı güncelleme dağıt" kartını kullanın.';
+            await loadVersion(false);
+        } catch (e) {
+            st.className = 'status-msg status-error';
+            st.innerHTML = '<i class="fas fa-circle-xmark"></i> ' + escapeHtml(e.message);
+        } finally {
+            btn.disabled = false;
         }
     }
 
@@ -323,6 +369,7 @@
         this.disabled = false;
     });
     $('btn-upload').addEventListener('click', upload);
+    $('btn-fetch').addEventListener('click', fetchRelease);
 
     // ---- sunucu self-update ----
     async function loadSelfUpdate() {

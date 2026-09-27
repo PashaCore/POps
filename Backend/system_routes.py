@@ -2,6 +2,8 @@
 
 - GET /api/health          — kimliksiz; DB erişilebilirliği + çalışan sürüm (hassas veri yok)
 - GET /api/system/version  — admin; çalışan sürüm + (varsa) GitHub'daki son sürüm
+- POST /api/system/fetch-release — superadmin; imzalı release'i GitHub'dan indirip upload-release
+  ile aynı doğrulamayla stage eder (internetli kurulum; internetsiz kurulumda upload-release)
 
 GitHub kontrolü OFFLINE-GÜVENLİDİR: kısa zaman aşımlı, event loop'u bloklamaz
 (thread'de urllib), başarısız olursa `latest=None` döner ve hiçbir zaman hata fırlatmaz.
@@ -14,6 +16,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import secrets
 import shutil
 import time
@@ -53,6 +56,11 @@ class ReenrollInput(BaseModel):
     allow: bool = True
 
 
+class FetchReleaseInput(BaseModel):
+    tag: Optional[str] = None   # boşsa GitHub'daki son release
+    force: bool = False
+
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Doğrulanmış release'lerin stage edildiği çalışma zamanı dizini (git dışı)
 RELEASES_DIR = os.path.join(BASE_DIR, "releases")
@@ -64,6 +72,11 @@ GITHUB_REPO = os.environ.get("POPS_GITHUB_REPO", "PashaCore/POps")
 _GITHUB_TIMEOUT = 5.0
 _GITHUB_TTL = 3600.0  # saniye
 _latest_cache = {"at": 0.0, "tag": None, "checked": False}
+_TAG_RE = re.compile(r"^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$")
+_DOWNLOAD_TIMEOUT = 30.0
+_MAX_MANIFEST_BYTES = 1024 * 1024
+_MAX_ARTIFACT_BYTES = 200 * 1024 * 1024
+_fetch_state = {"busy": False}
 
 
 def _read_version() -> str:
@@ -124,6 +137,30 @@ async def _github_latest(force: bool = False) -> Optional[str]:
     _latest_cache["at"] = now
     _latest_cache["checked"] = True
     return _latest_cache["tag"]
+
+
+def _http_get(url: str, limit: int, accept: str = "application/octet-stream") -> bytes:
+    """Bloklayan HTTPS GET (thread'de çağrılır); `limit` bayttan büyük yanıtı reddeder."""
+    req = urllib.request.Request(url, headers={"Accept": accept, "User-Agent": "POps-server"})
+    with urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT) as resp:
+        data = resp.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("yanıt çok büyük: %s" % url)
+    return data
+
+
+def _github_release_assets(tag: str) -> dict:
+    """Bir release'in dosyaları: ad -> indirme adresi (yalnız github.com üzerinden)."""
+    url = "https://api.github.com/repos/%s/releases/tags/%s" % (GITHUB_REPO, tag)
+    data = json.loads(_http_get(url, 5 * 1024 * 1024, "application/vnd.github+json").decode("utf-8"))
+    return {a["name"]: a["browser_download_url"] for a in data.get("assets", [])
+            if a.get("name") and str(a.get("browser_download_url", "")).startswith("https://github.com/")}
+
+
+def _agent_msis(manifest: dict) -> List[str]:
+    """İmzalı manifest'teki ajan MSI'larının adları (deploy-update tam olarak birini bekler)."""
+    return [str(a.get("name", "")) for a in manifest.get("artifacts", [])
+            if str(a.get("name", "")).startswith("POps-Agent-") and str(a.get("name", "")).endswith("-win-x64.msi")]
 
 
 def _norm(v: Optional[str]) -> Optional[str]:
@@ -188,6 +225,8 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         staged = await _staged_release()
         staged_version = staged.get("version") if staged else None
         update_available = bool(latest and _norm(latest) != _norm(running))
+        # Doğrulanmış ajan paketi GitHub'daki son sürüm değil: panel "GitHub'dan indir" düğmesini gösterir
+        release_available = bool(latest and _norm(latest) != _norm(staged_version))
         return {
             "running": running,
             "latest": latest,           # offline ise None olabilir
@@ -196,6 +235,7 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             "repo": GITHUB_REPO,
             "staged_version": staged_version,   # offline'da yüklenip doğrulanan sürüm
             "staged_tag": staged.get("tag") if staged else None,
+            "release_available": release_available,
             "enforce_agent_auth": await _enforce_enabled(),
         }
 
@@ -209,13 +249,19 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         yükle, ed25519 imzasını depodaki açık anahtarla doğrula, özetleri kontrol et ve
         doğrulanmışsa stage et. Staged sürümü uygulamak: ajanlara /api/system/deploy-update,
         sunucu backend'ine /api/system/self-update (Faz 5)."""
+        blobs = {}
+        for f in files:
+            blobs[os.path.basename(f.filename or "")] = await f.read()
+        return await _verify_and_stage(blobs, force)
+
+    async def _verify_and_stage(blobs: dict, force: bool) -> dict:
+        """manifest.json + .sig + paket(ler): ed25519 imzası, SHA-256'lar ve downgrade koruması
+        doğrulanırsa releases/<sürüm>/ altına yazar ve staged sürüm yapar. upload-release ve
+        fetch-release aynı kontrolden geçer; paketin nereden geldiği güveni etkilemez."""
         pub = _pubkey_path()
         if not pub:
             raise HTTPException(status_code=503,
                                 detail="Açık anahtar bulunamadı (keys/pops_release_ed25519.pub.pem).")
-        blobs = {}
-        for f in files:
-            blobs[os.path.basename(f.filename or "")] = await f.read()
         if "manifest.json" not in blobs or "manifest.json.sig" not in blobs:
             raise HTTPException(status_code=400,
                                 detail="manifest.json ve manifest.json.sig birlikte yüklenmeli.")
@@ -267,6 +313,58 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             "artifacts_expected": [a.get("name") for a in manifest.get("artifacts", [])],
         }
 
+    @router.post("/api/system/fetch-release")
+    async def fetch_release(data: FetchReleaseInput, auth: dict = Depends(require_superadmin)):
+        """İnternetli kurulum yolu: imzalı release'i (manifest.json + .sig + ajan MSI'ı) GitHub'dan
+        indirir ve upload-release ile AYNI doğrulamadan geçirip stage eder. Güven imzadan gelir,
+        indirme kaynağından değil. Önce manifest indirilip doğrulanır; MSI'ın adını ve özetini
+        imzalı manifest belirler. Ajanlara göndermek yine ayrı adımdır (deploy-update)."""
+        pub = _pubkey_path()
+        if not pub:
+            raise HTTPException(status_code=503,
+                                detail="Açık anahtar bulunamadı (keys/pops_release_ed25519.pub.pem).")
+        if _fetch_state["busy"]:
+            raise HTTPException(status_code=409, detail="Başka bir indirme sürüyor.")
+        _fetch_state["busy"] = True
+        try:
+            tag = (data.tag or "").strip() or await asyncio.to_thread(_fetch_github_latest_tag)
+            if not tag:
+                raise HTTPException(status_code=502, detail="GitHub'a ulaşılamadı. İnternetsiz kurulumda "
+                                                            "paketi 'Çevrimdışı imzalı paket yükle' ile yükleyin.")
+            if not _TAG_RE.match(tag):
+                raise HTTPException(status_code=400, detail="Geçersiz sürüm etiketi.")
+            names = ("manifest.json", "manifest.json.sig")
+            try:
+                assets = await asyncio.to_thread(_github_release_assets, tag)
+                missing = [n for n in names if n not in assets]
+                if missing:
+                    raise HTTPException(status_code=502, detail="%s release'inde yok: %s" % (tag, ", ".join(missing)))
+                blobs = {}
+                for n in names:
+                    blobs[n] = await asyncio.to_thread(_http_get, assets[n], _MAX_MANIFEST_BYTES)
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail="GitHub'dan indirilemedi (%s): %s" % (tag, exc))
+            try:
+                manifest = release_verify.verify_manifest(blobs["manifest.json"], blobs["manifest.json.sig"], pub)
+            except release_verify.ReleaseVerifyError as exc:
+                raise HTTPException(status_code=400, detail="İmza doğrulanamadı: %s" % exc)
+            msis = _agent_msis(manifest)
+            if len(msis) != 1 or msis[0] not in assets:
+                raise HTTPException(status_code=502, detail="%s release'inde imzalı ajan MSI'ı bulunamadı." % tag)
+            try:
+                blobs[msis[0]] = await asyncio.to_thread(_http_get, assets[msis[0]], _MAX_ARTIFACT_BYTES)
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail="MSI indirilemedi: %s" % exc)
+            result = await _verify_and_stage(blobs, data.force)
+        finally:
+            _fetch_state["busy"] = False
+        await add_audit_log("*", "fetch_release",
+                            "İmzalı sürüm GitHub'dan indirildi ve doğrulandı: %s" % result["version"],
+                            {"tag": tag, "by": auth.get("sub"), "artifacts": result["artifacts_present"]})
+        return result
+
     # --- Ajan kayıt (enroll) jetonları (Faz 3) -----------------------------------
     # Jeton üretimi/yönetimi burada. Jetonun TÜKETİMİ (ilk bağlanışta doğrula + secret ver)
     # ve /ws/agent kimlik zorlaması server.py'de uygulanmıştır (enroll consume + set_secret,
@@ -312,12 +410,11 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         spath = os.path.join(reldir, "manifest.json.sig")
         if not (os.path.isfile(mpath) and os.path.isfile(spath)):
             raise HTTPException(status_code=409, detail="Staged release dosyaları eksik; tekrar yükleyin.")
-        msis = [a for a in staged.get("artifacts", [])
-                if str(a.get("name", "")).startswith("POps-Agent-") and str(a.get("name", "")).endswith("-win-x64.msi")]
+        msis = _agent_msis(staged)
         if len(msis) != 1:
             raise HTTPException(status_code=409,
                                 detail="Staged release'de tek bir ajan MSI'ı bekleniyordu, %d var." % len(msis))
-        msi_name = msis[0]["name"]
+        msi_name = msis[0]
         msi_src = os.path.join(reldir, msi_name)
         if not os.path.isfile(msi_src):
             raise HTTPException(status_code=409,
