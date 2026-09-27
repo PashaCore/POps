@@ -57,11 +57,15 @@ fi
 
 # Geri dönüş için mevcut canlı kod setinin TAMAMINI yedekle
 install -d -o root -g root -m 700 "$BACKUPS"
-BACKUP="$BACKUPS/code-$STAMP.tgz"
+BACKUP="$BACKUPS/code-$STAMP-$$.tgz"          # PID: aynı saniyedeki iki deploy birbirinin yedeğini ezmesin
+PRE_LIST="${BACKUP%.tgz}.list"                  # kurulum ÖNCESİ dosyalar: geri dönüşte yeni eklenenler silinir
+( cd "$APP" && { ls ./*.py 2>/dev/null; ls ./migrations/*.sql 2>/dev/null; } ) > "$PRE_LIST" || true
 ( cd "$APP" && tar czf "$BACKUP" --exclude='__pycache__' $(ls ./*.py 2>/dev/null) \
-    $( [ -d pops ] && echo pops ) $( [ -d migrations ] && echo migrations ) \
+    $( [ -d pops ] && echo pops ) $( [ -d migrations ] && echo migrations ) $( [ -d keys ] && echo keys ) \
     $( [ -e requirements.txt ] && echo requirements.txt ) $( [ -e VERSION ] && echo VERSION ) )
-ls -1t "$BACKUPS"/code-*.tgz 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm -f
+ls -1t "$BACKUPS"/code-*.tgz 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1)) | while read -r old; do
+    rm -f "$old" "${old%.tgz}.list"
+done
 
 # Servis kullanıcısı repo klasörünü okuyamaz; dosyalar $APP'e kopyalanır.
 if ! cmp -s Backend/requirements.txt "$APP/requirements.txt"; then
@@ -101,8 +105,12 @@ systemctl is-active --quiet "$SVC" || ok=0
 if [ "$ok" = 1 ]; then
     echo "Backend $REV canlıda. Yedek: $BACKUP"
 else
+    set +e   # geri yüklemenin hiçbir adımı yarıda kesilmesin
     echo "Sağlık kontrolü başarısız, önceki kod seti geri yükleniyor ($BACKUP)."
     journalctl -u "$SVC" -n 20 --no-pager
+    # Bu deploy'un YENİ eklediği üst-seviye .py ve migration dosyalarını sil (öncesinde yoklardı)
+    ( cd "$APP" && { ls ./*.py 2>/dev/null; ls ./migrations/*.sql 2>/dev/null; } ) \
+        | grep -vxF -f "$PRE_LIST" | ( cd "$APP" && xargs -r rm -f )
     rm -rf "$APP/pops"
     tar xzf "$BACKUP" -C "$APP"
     chown -R "$OWNER:$OWNER" "$APP"/*.py "$APP/migrations" 2>/dev/null || true
