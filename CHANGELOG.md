@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Agent/Updater:** The rollback drill ended in a false `rollback_failed` (seen on 0.1.4 → 0.1.5): the updater deleted the `rollback-drill` marker only at the very end, so the reinstalled previous version also saw it, did not report healthy, and the last-resort repair had to bring the agent back. The new version's agent now consumes the marker the first time it starts during an update to its own version. It renames it to `rollback-drill.consumed` and records its version and the update run, and skips `health.json` only for that version and run. The previous version never sees the marker, a service restart during the drill does not break it, and sending the same version again later installs normally. The updater also deletes both files as soon as it decides to roll back, before reinstalling the previous package, and again at the end. The fix is in the agent being installed, so the first drill that ends in `rolled_back` is 0.1.5 → 0.1.6.
+
 ## [0.1.5-alpha] - 2026-09-27
 
 Turns POps from a remote-control tool into a school IT operations tool: the agent now reports installed software and Windows Update status and can install updates on request, and the server adds a helpdesk, licence tracking, scheduled tasks, notifications and reports. DNS policy detection actually runs for the first time, and quarantine now survives reboots and stays in step with the panel. The release also carries the server hardening found by load testing (connection pool) and the webhook SSRF guard.

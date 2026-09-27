@@ -43,7 +43,8 @@ namespace POpsUpdater
         static readonly string BackupRoot = Path.Combine(DataDir, "backup");
         static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(90);
         // Geri dönüş tatbikatı: yönetici bu dosyayı koyarsa yeni sürüm health.json yazmaz (bkz. Agent/README.md)
-        static readonly string RollbackDrillPath = Path.Combine(DataDir, "secure", "rollback-drill");
+        // Tatbikat işaretleri (rollback-drill ve yeni ajanın tükettiği rollback-drill.consumed; bkz. POps.Shared.RollbackDrill)
+        static readonly string SecureDir = Path.Combine(DataDir, "secure");
 
         // msiexec'in kurulum hiç başlamadan döndüğü kodlar: bu durumlarda makinede hiçbir şey değişmez
         static readonly Dictionary<int, string> InstallNeverStarted = new Dictionary<int, string>
@@ -141,6 +142,9 @@ namespace POpsUpdater
                 else
                 {
                     Log($"Yeni sürüm {HealthTimeout.TotalSeconds:0} sn içinde sağlıklı açılmadı; geri dönülüyor.", true);
+                    // Tatbikat işareti geri kurulumdan ÖNCE silinir: geri kurulan sürüm (işareti tanısın tanımasın) onu
+                    // görüp sağlık bildirmezse geri dönüş sahte bir "rollback_failed" olurdu
+                    ClearRollbackDrill("geri kurulumdan önce");
                     (outcome, string rollback, string detail) = Rollback(opt, previousMsi, installFolderArg);
                     result["rollback"] = rollback;
                     result["detail"] = detail;
@@ -158,18 +162,20 @@ namespace POpsUpdater
                 result["agent_state"] = EnsureAgentPresent(opt);
                 result["running_version"] = RunningVersion();
                 result["outcome"] = outcome;
-                if (File.Exists(RollbackDrillPath))
-                {
-                    // Tatbikat işareti tek seferliktir: bir sonraki güncelleme normal ilerler
-                    try { File.Delete(RollbackDrillPath); Log("[TATBİKAT] rollback-drill işareti silindi."); }
-                    catch (Exception ex) { Log($"[TATBİKAT] rollback-drill işareti silinemedi: {ex.Message}", true); }
-                }
+                // Tatbikat işareti tek seferliktir: bir sonraki güncelleme normal ilerler
+                ClearRollbackDrill("güncelleme sonunda");
                 result["finished_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 WriteAtomic(ResultPath, JsonSerializer.Serialize(result));
                 Log($"Güncelleme bitti: {outcome} ({JsonSerializer.Serialize(result)})", outcome != "success");
                 try { File.Delete(LockPath); } catch { }
                 LaunchWatchdog();
             }
+        }
+
+        static void ClearRollbackDrill(string when)
+        {
+            if (RollbackDrill.Clear(SecureDir, (message, error) => Log(message, error)) > 0)
+                Log($"[TATBİKAT] rollback-drill işaretleri silindi ({when}).");
         }
 
         // ------------------------------------------------------------------------------------------
