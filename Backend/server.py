@@ -19,7 +19,16 @@ from slowapi.errors import RateLimitExceeded
 from migrate import run_migrations
 from pops import db
 from pops.audit import add_audit_log
-from pops.config import DB_CONFIG, JWT_ALGO, JWT_COOKIE_NAME, JWT_SECRET, UPDATES_DIR, UPLOAD_DIR
+from pops.config import (
+    DB_CONFIG,
+    DB_POOL_MAX,
+    DB_POOL_MIN,
+    JWT_ALGO,
+    JWT_COOKIE_NAME,
+    JWT_SECRET,
+    UPDATES_DIR,
+    UPLOAD_DIR,
+)
 from pops.db import execute_query
 from pops.manager import manager
 from pops.routers import (
@@ -90,7 +99,7 @@ async def startup_event():
     print("⏳ Veritabanı motoru başlatılıyor...")
     for i in range(5):
         try:
-            db.db_pool = await asyncpg.create_pool(**DB_CONFIG, min_size=5, max_size=100)
+            db.db_pool = await asyncpg.create_pool(**DB_CONFIG, min_size=DB_POOL_MIN, max_size=DB_POOL_MAX)
             await run_migrations(db.db_pool)
             print("✅ PostgreSQL Bağlantısı Başarılı!")
             # Açılışta hiçbir ajan bağlı değil; bağlananlar yeniden Online yazılır

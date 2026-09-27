@@ -58,3 +58,39 @@ ordinary path and is on the roadmap:
 
 Until those are measured, treat **"a lab to a few hundred agents per worker"** as the
 supported figure. Re-run the simulator after tuning and update this file with the new numbers.
+
+---
+
+## Update 2026-09-27: pool fix and a realistic load profile
+
+Same host (8 cores, shared PostgreSQL 13 with `max_connections = 100`), one `uvicorn` worker, simulator
+`tools/agent_simulator.py` (now with enrollment, software/Windows-update reports, panel sockets and server
+CPU/RSS sampling).
+
+**Correction to the conclusion above.** The WebSocket 1011 closes were not the pool being too small. With
+`max_size = 100` the pool tried to open as many connections as the whole PostgreSQL server allows; on a server
+shared with other applications the database refused new connections ("remaining connection slots are
+reserved"), and those agents were dropped. The pool is now configurable (`DB_POOL_MIN` / `DB_POOL_MAX`,
+default 2 / 20): when it is busy, requests wait for a connection instead of failing. Raising the pool is **not**
+the fix; keep `DB_POOL_MAX` well below `max_connections`.
+
+| Profile | Result |
+|---|---|
+| **A** — 1000 agents connect within 2.6 s, heartbeat every 5 s | 1000/1000 connected, 0 errors, ~200 heartbeat writes/s, server ~83 % of one core, RSS 281 MB, at most 8 PostgreSQL connections in use |
+| **B** — 300 agents enroll with a token, each sends a 150-item software list and a Windows-update status every 30 s, 3 panel sockets open | 0 errors; 45 000 software rows and 300 update states written. Latency software p50 203 ms / p95 1.6 s, update status p50 15 ms / p95 1.4 s (all 300 agents report in the same few seconds on purpose); server ~84 % of one core, RSS 313 MB |
+
+**What this says.** One worker holds 1000 idle agents comfortably. Bulk reports are the expensive part: when
+hundreds of agents send their full software list at the same moment, p95 latency rises above a second and the
+single core is busy. Real agents spread these reports (software on start and when the list changes, Windows
+update 10–70 minutes after start and then daily), so this profile is a worst case.
+
+Not measured yet: Vision streams (they need open audit sessions and the tray capture channel) and several
+workers. Next steps are unchanged: multiple workers with events fanned out through Redis, and connect jitter.
+
+Reproduce:
+
+```bash
+python tools/agent_simulator.py --n 1000 --url ws://127.0.0.1:8099 --duration 20 --hb 5 --server-pid <uvicorn pid>
+python tools/agent_simulator.py --n 300 --url ws://127.0.0.1:8099 --duration 30 --hb 5 --enroll-token <multi-use token> \
+    --software 150 --software-every 30 --patches --patch-every 30 --panels 3 --jwt <superadmin JWT> --server-pid <pid>
+```

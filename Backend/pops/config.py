@@ -69,6 +69,15 @@ DB_CONFIG = {
 }
 
 
+# Bağlantı havuzu. Paylaşılan bir PostgreSQL'de (varsayılan max_connections=100) havuz, sunucunun toplam
+# sınırını tek başına tüketmesin: sorgular kısa ve asenkron olduğu için 20 bağlantı yüzlerce ajana yeter;
+# havuz doluysa istekler sıra bekler (hata vermez). Yük artarsa max_connections ile birlikte artırın.
+DB_POOL_MIN = int(os.environ.get('DB_POOL_MIN', '2'))
+
+
+DB_POOL_MAX = int(os.environ.get('DB_POOL_MAX', '20'))
+
+
 # Wake-on-LAN yayın hedefi ('<broadcast>' = 255.255.255.255)
 WOL_BROADCAST_ADDR = os.environ.get('WOL_BROADCAST_ADDR') or '<broadcast>'
 

@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backend/Dashboard:** The old **Ajan Güncelleme** page (`update.php`) and its unsigned-zip endpoints (`/api/upload_update`, `/api/latest_update`, `/api/update_agent/{id}`, `/api/broadcast_update`, `/api/agent_versions`, `/api/updates`). Agents since 0.1.3-alpha accept only signed updates, which **Sistem & Sürüm** handles.
 
 ### Security
+- **Backend (stability):** The database pool could grow to 100 connections, the whole limit of a default PostgreSQL. On a server shared with other applications this made the database refuse connections under load, and agents were dropped (WebSocket 1011); it could also starve the other applications. The pool is now `DB_POOL_MIN`/`DB_POOL_MAX` in `.env` (default 2/20); when it is busy requests wait instead of failing. Measured: 1000 agents connect with no errors (see BENCHMARKS.md, which also corrects the earlier "raise the pool" advice). `tools/agent_simulator.py` gained a realistic profile: enrollment, software and Windows-update reports, panel sockets, latency percentiles and server CPU/RSS.
 - **Backend:** Notification webhooks can no longer be pointed at internal addresses (SSRF). The host is resolved and every address must be public: loopback, private ranges, link-local (including cloud metadata `169.254.169.254`), CGNAT, reserved and multicast addresses are refused, both when the setting is saved and when a notification is sent. The connection is pinned to the checked address (TLS is still verified against the host name), so DNS rebinding does not help, and redirects are not followed. A school that wants to post to an internal system opts in with `NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` in `.env`.
 
 ### Fixed
@@ -214,7 +215,9 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.2-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.4-alpha...HEAD
+[0.1.4-alpha]: https://github.com/PashaCore/POps/compare/v0.1.3-alpha...v0.1.4-alpha
+[0.1.3-alpha]: https://github.com/PashaCore/POps/compare/v0.1.2-alpha...v0.1.3-alpha
 [0.1.2-alpha]: https://github.com/PashaCore/POps/compare/v0.1.1-alpha...v0.1.2-alpha
 [0.1.1-alpha]: https://github.com/PashaCore/POps/compare/v0.1.0-alpha...v0.1.1-alpha
 [0.1.0-alpha]: https://github.com/PashaCore/POps/releases/tag/v0.1.0-alpha
