@@ -204,6 +204,8 @@ jobs:
       JWT_SECRET: ci-test-secret
       CORS_ALLOWED_ORIGINS: ""
       POPS_TEST_HTTP: http://127.0.0.1:8099
+      # test_features.py kendi webhook alıcısını 127.0.0.1'de açar
+      NOTIFY_WEBHOOK_ALLOW_PRIVATE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python

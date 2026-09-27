@@ -10,11 +10,14 @@ Aynı olay 10 dakika içinde tekrar gelirse yok sayılır; dışarıya gönderim
 """
 
 import asyncio
+import http.client
+import ipaddress
 import json
 import smtplib
+import socket
 import ssl
 import time
-import urllib.request
+import urllib.parse
 from email.message import EmailMessage
 from typing import Optional
 
@@ -80,14 +83,72 @@ def _send_email(to_list, subject: str, body: str) -> None:
             pass
 
 
+def _addr_allowed(ip: str) -> bool:
+    """Webhook hedef adresi: varsayılan yalnız genel (internet) adresler. İç ağ, loopback, link-local
+    (169.254.169.254 bulut metadata dahil), CGNAT, ayrılmış ve çoklu yayın adresleri reddedilir."""
+    a = ipaddress.ip_address(ip)
+    if a.is_multicast or a.is_unspecified:
+        return False
+    return True if config.NOTIFY_WEBHOOK_ALLOW_PRIVATE else a.is_global
+
+
+def resolve_webhook(url: str) -> tuple:
+    """(parçalanmış URL, bağlanılacak IP). Adres çözülür ve HER sonuç kontrol edilir; bağlantı doğrulanan
+    IP'ye sabitlenir, böylece DNS'in arada başka adres döndürmesi (rebinding) işe yaramaz."""
+    u = urllib.parse.urlsplit(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise ValueError("adres http:// ya da https:// olmalı")
+    port = u.port or (443 if u.scheme == "https" else 80)
+    try:
+        ips = sorted({i[4][0] for i in socket.getaddrinfo(u.hostname, port, type=socket.SOCK_STREAM)})
+    except socket.gaierror:
+        raise ValueError("adres çözülemedi: %s" % u.hostname)
+    bad = [ip for ip in ips if not _addr_allowed(ip)]
+    if bad or not ips:
+        raise ValueError(
+            "adres iç ağa ya da yerel bir adrese çıkıyor (%s); okul içi bir sistem için .env'de "
+            "NOTIFY_WEBHOOK_ALLOW_PRIVATE=1" % ", ".join(bad or ips)
+        )
+    return u, ips[0]
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, ip, host, port, timeout):
+        super().__init__(host, port, timeout=timeout)
+        self._ip = ip
+
+    def connect(self):
+        self.sock = socket.create_connection((self._ip, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """Doğrulanan IP'ye bağlanır; TLS sertifikası yine ana bilgisayar adıyla doğrulanır (SNI)."""
+
+    def __init__(self, ip, host, port, timeout):
+        super().__init__(host, port, timeout=timeout, context=ssl.create_default_context())
+        self._ip = ip
+
+    def connect(self):
+        sock = socket.create_connection((self._ip, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
 def _send_webhook(url: str, payload: dict) -> None:
-    # Slack ("text"), Discord ("content") ve genel JSON alıcıları aynı gövdeyi anlar
+    # Slack ("text"), Discord ("content") ve genel JSON alıcıları aynı gövdeyi anlar. Yönlendirme izlenmez.
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=data, method="POST", headers={"Content-Type": "application/json", "User-Agent": "POps-server"}
-    )
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+    u, ip = resolve_webhook(url)
+    port = u.port or (443 if u.scheme == "https" else 80)
+    cls = _PinnedHTTPSConnection if u.scheme == "https" else _PinnedHTTPConnection
+    conn = cls(ip, u.hostname, port, _TIMEOUT)
+    path = (u.path or "/") + ("?" + u.query if u.query else "")
+    try:
+        conn.request("POST", path, body=data, headers={"Content-Type": "application/json", "User-Agent": "POps-server"})
+        resp = conn.getresponse()
         resp.read(1024)
+        if resp.status >= 300:
+            raise ValueError("HTTP %d%s" % (resp.status, " (yönlendirme izlenmez)" if resp.status < 400 else ""))
+    finally:
+        conn.close()
 
 
 def _deliver(settings: dict, event: str, severity: str, title: str, detail: str, pc_name: Optional[str]) -> tuple:

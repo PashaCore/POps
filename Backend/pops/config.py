@@ -95,3 +95,12 @@ SMTP_FROM = os.environ.get('SMTP_FROM', '').strip() or SMTP_USER
 
 # starttls (587) | ssl (465) | none (yalnızca yerel/güvenilir ağdaki relay için)
 SMTP_SECURITY = os.environ.get('SMTP_SECURITY', 'starttls').strip().lower()
+
+
+# Webhook yalnızca internetteki (genel) adreslere gider; iç ağ, loopback, link-local ve bulut metadata
+# adresleri reddedilir (SSRF). Okul içindeki bir sisteme göndermek için bilerek açın: 1
+NOTIFY_WEBHOOK_ALLOW_PRIVATE = os.environ.get('NOTIFY_WEBHOOK_ALLOW_PRIVATE', '').strip().lower() in (
+    '1',
+    'true',
+    'yes',
+)

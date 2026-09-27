@@ -185,6 +185,24 @@ def main():
     )
     chk(audit[0]["n"] >= 4, "zamanlanmış görev işlemleri hash-zincirli denetimde")
 
+    print("== webhook SSRF koruması")
+    from pops import config as pcfg
+    from pops import notify as pnotify
+
+    pcfg.NOTIFY_WEBHOOK_ALLOW_PRIVATE = False
+    blocked = ["127.0.0.1", "10.1.2.3", "192.168.1.5", "169.254.169.254", "100.64.0.1", "::1", "fe80::1", "0.0.0.0"]
+    chk(not any(pnotify._addr_allowed(ip) for ip in blocked), "iç/yerel/metadata adresleri reddedilir")
+    chk(pnotify._addr_allowed("1.1.1.1") and pnotify._addr_allowed("2606:4700::1111"), "genel adreslere izin var")
+    try:
+        pnotify.resolve_webhook("http://localhost:9/hook")
+        chk(False, "localhost webhook reddedilmeli")
+    except ValueError:
+        chk(True, "localhost adına çözülen webhook reddedildi")
+    pcfg.NOTIFY_WEBHOOK_ALLOW_PRIVATE = True
+    chk(
+        pnotify._addr_allowed("10.1.2.3") and not pnotify._addr_allowed("224.0.0.1"), "bilerek açılınca iç ağa izin var"
+    )
+
     print("== bildirimler")
     srv = HTTPServer(("127.0.0.1", 0), Hook)
     threading.Thread(target=srv.serve_forever, daemon=True).start()

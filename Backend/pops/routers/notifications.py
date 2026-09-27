@@ -70,6 +70,11 @@ def _validated(data: NotifySettingsInput) -> dict:
     url = (data.webhook_url or "").strip()
     if url and (not re.match(r"^https?://[^\s]+$", url) or len(url) > 500):
         raise HTTPException(status_code=400, detail="Webhook adresi http:// ya da https:// ile başlamalı.")
+    if url:
+        try:
+            notify_mod.resolve_webhook(url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Webhook adresi kabul edilmedi: %s" % exc)
     return {
         "notify_enabled": "1" if data.enabled else "0",
         "notify_min_severity": data.min_severity,
