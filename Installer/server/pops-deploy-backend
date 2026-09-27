@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # POps backend'ini repodaki commit'lenmiş koddan canlıya alır:
-# Backend/{server.py,migrate.py,migrations/} -> /opt/PashaCore_API, gerekirse pip
-# install, servis restart, sağlık kontrolü; kontrol başarısızsa eski server.py'ye
-# otomatik geri döner.
+# Backend/*.py + Backend/pops/ paketi + migrations/ -> /opt/PashaCore_API, gerekirse pip
+# install, servis restart, sağlık kontrolü; kontrol başarısızsa TÜM kod seti yedekten geri
+# yüklenir (server.py artık tek dosya değil; uçlar pops/routers/ altında).
 #
 # NOT: Bu, sürüm takibi için tutulan REFERANS kopyadır. Canlıda çalışan authoritative
 # kopya /usr/local/sbin/pops-deploy-backend'dedir (root'a ait, betiğin kendini çalışma
@@ -15,71 +15,98 @@ APP=/opt/PashaCore_API
 SVC=pashacore
 OWNER=pashacore_admin
 STAMP=$(date +%Y%m%d-%H%M%S)
+BACKUPS="$APP/.deploy-backups"
+KEEP_BACKUPS=10
 
 [ "$(id -u)" -eq 0 ] || { echo "root olarak çalıştır"; exit 1; }
 cd "$REPO"
 
-if ! git diff --quiet HEAD -- Backend; then
-    echo "Backend/ altında commit'lenmemiş değişiklik var, önce commit'le."
+# Yalnız commit'lenmiş kod canlıya gider: değişiklik ya da izlenmeyen dosya varsa dur.
+if ! git diff --quiet HEAD -- Backend || [ -n "$(git ls-files --others --exclude-standard Backend)" ]; then
+    echo "Backend/ altında commit'lenmemiş ya da izlenmeyen dosya var, önce commit'le."
     exit 1
 fi
 REV=$(git rev-parse --short HEAD)
 
-if cmp -s Backend/server.py "$APP/server.py" \
-   && cmp -s Backend/requirements.txt "$APP/requirements.txt" \
-   && cmp -s Backend/migrate.py "$APP/migrate.py" \
-   && cmp -s Backend/system_routes.py "$APP/system_routes.py" \
-   && cmp -s Backend/release_verify.py "$APP/release_verify.py" \
-   && cmp -s VERSION "$APP/VERSION" \
-   && cmp -s keys/pops_release_ed25519.pub.pem "$APP/keys/pops_release_ed25519.pub.pem" \
-   && diff -rq Backend/migrations "$APP/migrations" >/dev/null 2>&1; then
+# Dağıtılan kod seti = git'te İZLENEN Backend altındaki .py'ler (server.py, migrate.py, pops/ paketi...;
+# testler hariç). git pathspec'te '*' alt dizinleri de kapsar.
+mapfile -t CODE < <(git ls-files 'Backend/*.py' | grep -v '^Backend/tests/' | sort)
+[ "${#CODE[@]}" -gt 0 ] || { echo "Dağıtılacak kod bulunamadı"; exit 1; }
+
+# Kaynak manifesti: "<canlıdaki göreli yol> <sha256>" (VERSION ve anahtar repo kökünden gelir)
+manifest_src() {
+    for f in "${CODE[@]}"; do printf '%s %s\n' "${f#Backend/}" "$(sha256sum < "$f" | cut -d' ' -f1)"; done
+    for f in Backend/migrations/*.sql; do printf 'migrations/%s %s\n' "$(basename "$f")" "$(sha256sum < "$f" | cut -d' ' -f1)"; done
+    printf 'requirements.txt %s\n' "$(sha256sum < Backend/requirements.txt | cut -d' ' -f1)"
+    printf 'VERSION %s\n' "$(sha256sum < VERSION | cut -d' ' -f1)"
+    printf 'keys/pops_release_ed25519.pub.pem %s\n' "$(sha256sum < keys/pops_release_ed25519.pub.pem | cut -d' ' -f1)"
+}
+same=1
+while read -r rel sum; do
+    [ -e "$APP/$rel" ] && [ "$(sha256sum < "$APP/$rel" | cut -d' ' -f1)" = "$sum" ] || { same=0; break; }
+done < <(manifest_src)
+# Kaynaktan silinmiş ama canlıda kalmış bir pops modülü de fark sayılır
+if [ "$same" = 1 ] && [ -d "$APP/pops" ]; then
+    extra=$(cd "$APP" && find pops -name '*.py' | sort | comm -23 - <(printf '%s\n' "${CODE[@]}" | sed 's#^Backend/##' | grep '^pops/' | sort))
+    [ -z "$extra" ] || same=0
+fi
+if [ "$same" = 1 ]; then
     echo "Canlı backend zaten $REV ile aynı."
     exit 0
 fi
 
-cp -a "$APP/server.py" "$APP/server.py.bak-$STAMP"
+# Geri dönüş için mevcut canlı kod setinin TAMAMINI yedekle
+install -d -o root -g root -m 700 "$BACKUPS"
+BACKUP="$BACKUPS/code-$STAMP.tgz"
+( cd "$APP" && tar czf "$BACKUP" --exclude='__pycache__' $(ls ./*.py 2>/dev/null) \
+    $( [ -d pops ] && echo pops ) $( [ -d migrations ] && echo migrations ) \
+    $( [ -e requirements.txt ] && echo requirements.txt ) $( [ -e VERSION ] && echo VERSION ) )
+ls -1t "$BACKUPS"/code-*.tgz 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm -f
 
-# Servis kullanıcısı repo klasörünü okuyamaz; dosya önce $APP'e kopyalanır.
+# Servis kullanıcısı repo klasörünü okuyamaz; dosyalar $APP'e kopyalanır.
 if ! cmp -s Backend/requirements.txt "$APP/requirements.txt"; then
-    [ -e "$APP/requirements.txt" ] && cp -a "$APP/requirements.txt" "$APP/requirements.txt.bak-$STAMP"
     install -o "$OWNER" -g "$OWNER" -m 644 Backend/requirements.txt "$APP/requirements.txt"
     sudo -H -u "$OWNER" "$APP/venv/bin/pip" install -q --disable-pip-version-check -r "$APP/requirements.txt"
 fi
 
-# Migration çalıştırıcısı ve SQL dosyaları da senkronlanır; server.py açılışta
-# run_migrations() ile bekleyen migration'ları (idempotent) uygular. Not: ileride
-# yıkıcı/ağır bir migration gelirse, açılışın sağlık kontrolüyle yarışmaması için
-# burada restart'tan ÖNCE pg_dump + "python migrate.py" adımı eklenmeli (Faz 5).
-[ -e "$APP/migrate.py" ] && cp -a "$APP/migrate.py" "$APP/migrate.py.bak-$STAMP"
-install -o "$OWNER" -g "$OWNER" -m 644 Backend/migrate.py "$APP/migrate.py"
+# Migration SQL'leri (yalnız eklenir; server.py açılışta bekleyenleri idempotent uygular). Not: ileride
+# yıkıcı/ağır bir migration gelirse restart'tan ÖNCE pg_dump + "python migrate.py" adımı eklenmeli.
 install -d -o "$OWNER" -g "$OWNER" -m 755 "$APP/migrations"
 for f in Backend/migrations/*.sql; do
     install -o "$OWNER" -g "$OWNER" -m 644 "$f" "$APP/migrations/$(basename "$f")"
 done
 
-# Sürüm/release uçları modülleri + kök VERSION + release doğrulama açık anahtarı
-[ -e "$APP/system_routes.py" ] && cp -a "$APP/system_routes.py" "$APP/system_routes.py.bak-$STAMP"
-install -o "$OWNER" -g "$OWNER" -m 644 Backend/system_routes.py "$APP/system_routes.py"
-install -o "$OWNER" -g "$OWNER" -m 644 Backend/release_verify.py "$APP/release_verify.py"
+# pops/ paketi temiz kurulur (kaynaktan silinen modül canlıda kalmasın), sonra tüm kod dosyaları
+rm -rf "$APP/pops"
+for f in "${CODE[@]}"; do
+    rel="${f#Backend/}"
+    install -d -o "$OWNER" -g "$OWNER" -m 755 "$APP/$(dirname "$rel")"
+    install -o "$OWNER" -g "$OWNER" -m 644 "$f" "$APP/$rel"
+done
+
+# Kök VERSION + release doğrulama açık anahtarı
 install -o "$OWNER" -g "$OWNER" -m 644 VERSION "$APP/VERSION"
 install -d -o "$OWNER" -g "$OWNER" -m 755 "$APP/keys"
 install -o "$OWNER" -g "$OWNER" -m 644 keys/pops_release_ed25519.pub.pem "$APP/keys/pops_release_ed25519.pub.pem"
 
-install -o "$OWNER" -g "$OWNER" -m 644 Backend/server.py "$APP/server.py"
 systemctl restart "$SVC"
 sleep 4
 
 ok=1
 systemctl is-active --quiet "$SVC" || ok=0
+[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/health)" = 200 ] || ok=0
 [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/agent_policies)" = 200 ] || ok=0
 [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/devices)" = 401 ] || ok=0
 
 if [ "$ok" = 1 ]; then
-    echo "Backend $REV canlıda. Yedek: $APP/server.py.bak-$STAMP"
+    echo "Backend $REV canlıda. Yedek: $BACKUP"
 else
-    echo "Sağlık kontrolü başarısız, eski server.py'ye dönülüyor."
+    echo "Sağlık kontrolü başarısız, önceki kod seti geri yükleniyor ($BACKUP)."
     journalctl -u "$SVC" -n 20 --no-pager
-    install -o "$OWNER" -g "$OWNER" -m 644 "$APP/server.py.bak-$STAMP" "$APP/server.py"
+    rm -rf "$APP/pops"
+    tar xzf "$BACKUP" -C "$APP"
+    chown -R "$OWNER:$OWNER" "$APP"/*.py "$APP/migrations" 2>/dev/null || true
+    [ -d "$APP/pops" ] && chown -R "$OWNER:$OWNER" "$APP/pops"
     systemctl restart "$SVC"
     exit 1
 fi

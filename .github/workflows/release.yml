@@ -82,7 +82,7 @@ jobs:
           NAME="pops-server-$VER"
           mkdir -p "dist/$NAME"
           cp -r Backend Dashboard docs keys VERSION .env.example CHANGELOG.md LICENSE README.md SECURITY.md "dist/$NAME/"
-          rm -rf "dist/$NAME/Backend/__pycache__"
+          find "dist/$NAME/Backend" -type d -name __pycache__ -prune -exec rm -rf {} +
           tar -C dist -czf "$NAME.tar.gz" "$NAME"
           tar -tzf "$NAME.tar.gz" | head -20
       - uses: actions/upload-artifact@v4

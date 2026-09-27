@@ -26,7 +26,7 @@ pops-selfupdate.service (systemd, ROOT, oneshot)
 - İstek dosyasının **içeriği yürütülmez**, yalnızca tetikleyicidir. Güncelleme her
   zaman `origin/main`'i yeniden dağıtır — panel/istek üzerinden **keyfi kod
   çalıştırılamaz**.
-- `pops-deploy-backend` zaten sağlık kontrolü yapıp başarısızlıkta eski `server.py`'ye
+- `pops-deploy-backend` zaten sağlık kontrolü yapıp başarısızlıkta önceki kod setine (tarball yedeği)
   otomatik döner; self-update bunu değiştirmez.
 - Uç noktalar `require_superadmin` (tetikleme) / `require_admin` (durum) ile korunur.
 
