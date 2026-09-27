@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Backend/Dashboard:** One-click agent release download. When GitHub has a newer release than the verified agent package, the **Sistem & Sürüm** page shows **GitHub'dan indir ve doğrula**. `POST /api/system/fetch-release` (superadmin) downloads `manifest.json` and its signature, verifies them, then downloads the agent MSI the signed manifest names and runs the same checks as a manual upload (ed25519 signature, SHA-256, no downgrade without `force`). Trust comes from the signature, not from where the files were downloaded. The download is recorded in the audit log. Dispatching to agents stays a separate step, and offline servers keep using the manual upload.
 
+### Changed
+- **Dashboard:** The **Sistem & Sürüm** page is reorganised into four parts: server, agent update, device capabilities, and agent enrollment/identity. The server and the agent package now each have their own status, so the page no longer shows "up to date" while a newer agent package exists. The server check compares the commit the last self-update installed with GitHub `main` and lists the incoming changes (`/api/system/version` returns `server`), instead of showing only a commit id. Agent updates follow two steps: first the package, then the targets (all agents, one lab, or a device list with each agent's version and online state). The deploy button stays disabled while a newer package is available on GitHub or when the selected agents are already on that version. For agents that do not report capabilities yet, the capability card shows their version and says reporting starts with 0.1.4-alpha. The identity card shows how many agents are enrolled before the enforcement switch is turned on.
+
+### Removed
+- **Backend/Dashboard:** The old **Ajan Güncelleme** page (`update.php`) and its unsigned-zip endpoints (`/api/upload_update`, `/api/latest_update`, `/api/update_agent/{id}`, `/api/broadcast_update`, `/api/agent_versions`, `/api/updates`). Agents since 0.1.3-alpha accept only signed updates, which **Sistem & Sürüm** handles.
+
 ### Fixed
 - **Backend:** The **Sistem & Sürüm** page never showed the latest GitHub release. It asked GitHub for `/releases/latest`, which skips pre-releases, and every POps release so far is a pre-release (`-alpha`). The check now takes the newest non-draft release from the release list.
 

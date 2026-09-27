@@ -77,6 +77,11 @@ _DOWNLOAD_TIMEOUT = 30.0
 _MAX_MANIFEST_BYTES = 1024 * 1024
 _MAX_ARTIFACT_BYTES = 200 * 1024 * 1024
 _fetch_state = {"busy": False}
+# Sunucu güncelleme sorgusu: canlıdaki commit (son self-update) ile GitHub main karşılaştırılır
+_REV_RE = re.compile(r"^[0-9a-f]{7,40}$")
+_SERVER_PATHS = ("Backend/", "Dashboard/", "keys/", "VERSION")
+_COMPARE_TTL = 600.0
+_compare_cache = {"rev": None, "at": 0.0, "data": None}
 
 
 def _read_version() -> str:
@@ -157,6 +162,55 @@ def _github_release_assets(tag: str) -> dict:
             if a.get("name") and str(a.get("browser_download_url", "")).startswith("https://github.com/")}
 
 
+def _fetch_github_compare(rev: str) -> Optional[dict]:
+    """Canlıdaki commit (rev) ile GitHub main arası: kaç commit ileride, sunucuyu (Backend/Dashboard/
+    VERSION/keys) etkiliyor mu, son değişikliklerin başlıkları. Hata olursa None (çevrimdışı-güvenli)."""
+    url = "https://api.github.com/repos/%s/compare/%s...main" % (GITHUB_REPO, rev)
+    try:
+        data = json.loads(_http_get(url, 20 * 1024 * 1024, "application/vnd.github+json").decode("utf-8"))
+    except Exception:
+        return None
+    files = [str(f.get("filename", "")) for f in data.get("files", [])]
+    commits = data.get("commits", [])   # eskiden yeniye
+    return {
+        "status": data.get("status"),   # identical | ahead | behind | diverged
+        "ahead_by": int(data.get("ahead_by") or 0),
+        "server_changed": any(f.startswith(p) for f in files for p in _SERVER_PATHS),
+        "version_changed": "VERSION" in files,
+        "commits": [str(c.get("commit", {}).get("message", "")).split("\n", 1)[0] for c in commits[-15:]][::-1],
+    }
+
+
+def _read_deploy_status() -> Optional[dict]:
+    """Root self-update betiğinin yazdığı son deneme: state (running|ok|failed), rev, at."""
+    try:
+        with open(os.path.join(SELFUPDATE_DIR, "deploy-status.json"), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+async def _server_update(force: bool = False) -> dict:
+    """Sunucu güncel mi? Canlı commit = son BAŞARILI self-update'in rev'i (deploy o commit'i dağıtır)."""
+    st = _read_deploy_status() or {}
+    rev = str(st.get("rev") or "")
+    out = {"rev": rev or None, "deployed_at": st.get("at"), "last_state": st.get("state"),
+           "checked": False, "update_available": None, "ahead_by": 0, "commits": [], "version_changed": False}
+    if st.get("state") != "ok" or not _REV_RE.match(rev):
+        return out   # canlı commit bilinmiyor (hiç self-update yok ya da son deneme başarısız)
+    now = time.time()
+    if force or _compare_cache["rev"] != rev or (now - _compare_cache["at"]) >= _COMPARE_TTL:
+        data = await asyncio.to_thread(_fetch_github_compare, rev)
+        if data is not None:
+            _compare_cache.update({"rev": rev, "at": now, "data": data})
+    data = _compare_cache["data"] if _compare_cache["rev"] == rev else None
+    if data:
+        out.update({"checked": True, "ahead_by": data["ahead_by"], "commits": data["commits"],
+                    "version_changed": data["version_changed"],
+                    "update_available": data["ahead_by"] > 0 and data["server_changed"]})
+    return out
+
+
 def _agent_msis(manifest: dict) -> List[str]:
     """İmzalı manifest'teki ajan MSI'larının adları (deploy-update tam olarak birini bekler)."""
     return [str(a.get("name", "")) for a in manifest.get("artifacts", [])
@@ -227,7 +281,13 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         update_available = bool(latest and _norm(latest) != _norm(running))
         # Doğrulanmış ajan paketi GitHub'daki son sürüm değil: panel "GitHub'dan indir" düğmesini gösterir
         release_available = bool(latest and _norm(latest) != _norm(staged_version))
+        counts = await execute_query(
+            "SELECT count(*) AS total, count(s.pc_name) AS enrolled "
+            "FROM clients c LEFT JOIN agent_secrets s ON s.pc_name = c.pc_name", fetch=True)
         return {
+            "server": await _server_update(force=check),
+            "agents_total": int(counts[0]["total"]) if counts else 0,
+            "agents_enrolled": int(counts[0]["enrolled"]) if counts else 0,
             "running": running,
             "latest": latest,           # offline ise None olabilir
             "update_available": update_available,
@@ -461,16 +521,10 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
     async def self_update_status(auth: dict = Depends(require_admin)):
         """Son self-update denemesinin durumunu (deploy-status.json) ve kurulu olup
         olmadığını döner. Root deploy betiği bu dosyayı yazar."""
-        status = None
-        try:
-            with open(os.path.join(SELFUPDATE_DIR, "deploy-status.json"), "r", encoding="utf-8") as f:
-                status = json.load(f)
-        except Exception:
-            status = None
         return {
             "configured": _selfupdate_configured(),
             "pending": os.path.exists(os.path.join(SELFUPDATE_DIR, "deploy-request.json")),
-            "status": status,
+            "status": _read_deploy_status(),
         }
 
     @router.post("/api/system/self-update")

@@ -18,7 +18,7 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
     $permissions = $_SESSION['permissions'] ?? [];
     
     // Viewer can never access these pages regardless of permissions
-    $viewer_blocked = ['deploy', 'settings', 'update', 'terminal'];
+    $viewer_blocked = ['deploy', 'settings', 'terminal'];
     
     $is_unauthorized = false;
     if ($role === 'viewer' && in_array($current_page, $viewer_blocked)) {
@@ -192,7 +192,7 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
                             $titles = [
                                 'index' => 'Dashboard', 'devices' => 'Cihaz Yönetimi', 'labs' => 'Laboratuvar Yönetimi',
                                 'vision' => 'POpsVision', 'tasks' => 'Görev Kuyruğu', 'deploy' => 'Dosya Dağıtımı',
-                                'update' => 'Ajan Güncelleme', 'logger' => 'Log & Envanter', 'terminal' => 'Terminal',
+                                'logger' => 'Log & Envanter', 'terminal' => 'Terminal',
                                 'settings' => 'Sistem Ayarları', 'system' => 'Sistem & Sürüm'
                             ];
                             echo htmlspecialchars($titles[$current_page] ?? ucfirst($current_page), ENT_QUOTES, 'UTF-8');

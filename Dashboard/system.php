@@ -1,179 +1,233 @@
 <?php include 'includes/header.php'; ?>
 
 <style>
-    .sys-wrap { display: flex; flex-direction: column; gap: var(--space-5); max-width: 900px; margin: 0 auto; padding: var(--space-4) 0; }
+    .sys-wrap { display: flex; flex-direction: column; gap: var(--space-5); max-width: 920px; margin: 0 auto; padding: var(--space-4) 0; }
     .sys-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6); box-shadow: var(--shadow-sm); }
-    .sys-card h2 { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); margin: 0 0 var(--space-4); display: flex; align-items: center; gap: 0.5rem; }
-    .sys-card h2 i { color: var(--primary-500); }
-    .ver-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: var(--space-4); }
+    .card-head h2 { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 0.5rem; }
+    .card-head h2 i { color: var(--primary-500); }
+    .card-desc { color: var(--text-tertiary); font-size: var(--text-sm); margin: -0.5rem 0 var(--space-4); line-height: 1.5; }
+
+    .section-title { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); margin: var(--space-6) 0 var(--space-3); display: flex; align-items: center; gap: 0.625rem; padding-bottom: 0.625rem; border-bottom: 1px solid var(--border-subtle); }
+    .section-title.first { margin-top: 0; }
+    .step { width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--primary-50); color: var(--primary-500); display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: var(--fw-semibold); }
+
+    .ver-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); }
     .ver-tile { background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); }
-    .ver-tile .lbl { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: var(--fw-semibold); }
+    .ver-tile .lbl, .mini-lbl { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: var(--fw-semibold); }
     .ver-tile .val { font-size: var(--text-lg); font-weight: var(--fw-semibold); color: var(--text-primary); margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
-    .badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.625rem; border-radius: var(--radius-md); font-size: var(--text-xs); font-weight: var(--fw-semibold); }
+    .ver-tile .sub { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 0.25rem; }
+
+    .badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3rem 0.7rem; border-radius: 999px; font-size: var(--text-xs); font-weight: var(--fw-semibold); white-space: nowrap; }
     .badge.ok { background: var(--success-bg); color: var(--success-text); }
-    .badge.warn { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); }
+    .badge.warn { background: var(--warning-bg); color: var(--warning-text); }
+    .badge.bad { background: var(--danger-bg); color: var(--danger-text); }
     .badge.muted { background: var(--bg-surface-2); color: var(--text-tertiary); }
-    .btn { padding: 0.625rem 1rem; border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: var(--fw-semibold); cursor: pointer; border: 1px solid var(--border-default); background: var(--bg-surface-2); color: var(--text-primary); display: inline-flex; align-items: center; gap: 0.5rem; transition: all 0.15s; }
+
+    .btn { padding: 0.625rem 1rem; border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: var(--fw-semibold); cursor: pointer; border: 1px solid var(--border-default); background: var(--bg-surface-2); color: var(--text-primary); display: inline-flex; align-items: center; gap: 0.5rem; transition: all 0.15s; max-width: 100%; text-align: left; }
     .btn:hover { background: var(--bg-app); }
     .btn.primary { background: var(--primary-500); color: #fff; border-color: var(--primary-500); }
     .btn.primary:hover { background: var(--primary-600); }
+    .btn.danger { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border, transparent); }
+    .btn.small { padding: 0.35rem 0.7rem; font-size: var(--text-xs); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .upload-zone { border: 2px dashed var(--border-default); border-radius: var(--radius-md); padding: 2rem 1.25rem; text-align: center; cursor: pointer; position: relative; background: var(--bg-surface-2); transition: all 0.15s; }
-    .upload-zone:hover, .upload-zone.dragover { border-color: var(--primary-500); background: var(--primary-50); }
-    .upload-zone i { font-size: 2rem; color: var(--text-tertiary); }
-    .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-    .file-list { list-style: none; margin: 0.75rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
-    .file-list li { font-size: var(--text-sm); color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem; }
-    .file-list li i { color: var(--text-tertiary); }
-    .note { font-size: var(--text-sm); color: var(--text-secondary); background: var(--info-bg, rgba(59,130,246,0.1)); border-left: 3px solid var(--info-solid, #3b82f6); padding: 0.75rem 1rem; border-radius: var(--radius-sm); }
-    .status-msg { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: var(--radius-md); display: none; font-weight: var(--fw-semibold); font-size: var(--text-sm); border-left: 4px solid transparent; }
-    .status-success { background: var(--success-bg); color: var(--success-text); border-color: var(--success-solid); display: block; }
-    .status-error { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-solid); display: block; }
+
     .row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .row.between { justify-content: space-between; }
+    .mt { margin-top: var(--space-4); }
     .muted-text { color: var(--text-tertiary); font-size: var(--text-sm); }
     .fld { padding: 0.5rem 0.75rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface-2); color: var(--text-primary); font-size: var(--text-sm); }
+
+    .changes { margin-top: var(--space-4); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
+    .changes ul { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
+
+    .option-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--space-3); }
+    .option-card { background: var(--bg-surface-2); border: 2px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; }
+    .option-card:hover { border-color: var(--primary-500); background: var(--bg-surface); }
+    .option-card.active { border-color: var(--primary-500); background: var(--primary-50); }
+    .option-card i { font-size: 1.5rem; color: var(--text-tertiary); }
+    .option-card.active i { color: var(--primary-500); }
+    .option-title { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); }
+    .option-desc { font-size: var(--text-xs); color: var(--text-tertiary); }
+
+    .target-box { margin-top: var(--space-3); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); }
+    .dev-list { display: flex; flex-direction: column; gap: 0.25rem; max-height: 320px; overflow-y: auto; margin-top: 0.75rem; }
+    .dev-row { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 0.625rem; padding: 0.5rem 0.625rem; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid var(--border-subtle); cursor: pointer; }
+    .dev-row.offline { opacity: 0.55; cursor: default; }
+    .dev-name { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); }
+    .dev-meta { font-size: var(--text-xs); color: var(--text-tertiary); }
+    .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--text-muted, #94a3b8); }
+    .dot.on { background: var(--success-solid); }
+    .ver-pill { font-size: var(--text-xs); font-weight: var(--fw-semibold); padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--success-bg); color: var(--success-text); white-space: nowrap; }
+    .ver-pill.old { background: var(--warning-bg); color: var(--warning-text); }
+
+    .summary { margin-top: var(--space-4); font-size: var(--text-sm); color: var(--text-secondary); }
+    .btn-deploy { width: 100%; padding: 0.875rem; background: var(--primary-500); color: #fff; border: none; border-radius: var(--radius-md); font-size: var(--text-md); font-weight: var(--fw-semibold); cursor: pointer; transition: all 0.15s; display: flex; justify-content: center; align-items: center; gap: 0.625rem; margin-top: var(--space-4); }
+    .btn-deploy:hover { background: var(--primary-600); }
+    .btn-deploy:disabled { background: var(--bg-surface-2); color: var(--text-muted, #94a3b8); border: 1px solid var(--border-subtle); cursor: not-allowed; }
+
+    details.offline { margin-top: var(--space-4); border: 1px dashed var(--border-default); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; }
+    details.offline summary { cursor: pointer; font-size: var(--text-sm); color: var(--text-secondary); font-weight: var(--fw-semibold); }
+    .upload-zone { border: 2px dashed var(--border-default); border-radius: var(--radius-md); padding: 1.5rem 1rem; text-align: center; cursor: pointer; position: relative; background: var(--bg-surface-2); margin-top: 0.75rem; transition: all 0.15s; }
+    .upload-zone:hover, .upload-zone.dragover { border-color: var(--primary-500); background: var(--primary-50); }
+    .upload-zone i { font-size: 1.75rem; color: var(--text-tertiary); }
+    .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .file-list { list-style: none; margin: 0.75rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+    .file-list li { font-size: var(--text-sm); color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .file-list li i { color: var(--text-tertiary); }
     .enroll-list code { font-size: 0.75rem; word-break: break-all; }
+
+    .status-msg { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: var(--radius-md); display: none; font-weight: var(--fw-semibold); font-size: var(--text-sm); border-left: 4px solid transparent; background: var(--bg-surface-2); color: var(--text-secondary); }
+    .status-msg.show { display: block; }
+    .status-success { background: var(--success-bg); color: var(--success-text); border-color: var(--success-solid); }
+    .status-error { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-solid); }
+    .cap-state { margin: 0.75rem 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
 </style>
 
-<div class="page-header">
+<div class="page-header" style="display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
     <div>
         <h1><i class="fas fa-server"></i> Sistem &amp; Sürüm</h1>
-        <p>Sunucu sürümünü görüntüleyin, güncelleme olup olmadığını kontrol edin; imzalı ajan paketini GitHub'dan indirin ya da çevrimdışı yükleyin</p>
+        <p>Sunucu ve ajan sürümlerini tek yerden kontrol edin ve güncelleyin</p>
+    </div>
+    <div class="row">
+        <span class="muted-text" id="last-check"></span>
+        <button class="btn" id="btn-check"><i class="fas fa-arrows-rotate"></i> Güncellemeleri kontrol et</button>
     </div>
 </div>
 
 <div class="sys-wrap">
+
+    <!-- ============ SUNUCU ============ -->
     <div class="sys-card">
-        <h2><i class="fas fa-code-branch"></i> Sürüm</h2>
+        <div class="card-head">
+            <h2><i class="fas fa-server"></i> Sunucu</h2>
+            <span id="srv-badge"><span class="badge muted">…</span></span>
+        </div>
         <div class="ver-grid">
-            <div class="ver-tile"><div class="lbl">Çalışan sürüm</div><div class="val" id="v-running">…</div></div>
-            <div class="ver-tile"><div class="lbl">GitHub'daki son sürüm</div><div class="val" id="v-latest">…</div></div>
-            <div class="ver-tile"><div class="lbl">Doğrulanmış ajan paketi</div><div class="val" id="v-staged">—</div></div>
+            <div class="ver-tile"><div class="lbl">Çalışan sürüm</div><div class="val" id="srv-version">…</div><div class="sub" id="srv-rev"></div></div>
+            <div class="ver-tile"><div class="lbl">GitHub (main)</div><div class="val" id="srv-main">…</div><div class="sub" id="srv-main-sub"></div></div>
         </div>
-        <div class="row" style="margin-top: var(--space-4);">
-            <button class="btn primary" id="btn-check"><i class="fas fa-arrows-rotate"></i> Güncellemeleri kontrol et</button>
-            <button class="btn primary" id="btn-fetch" style="display:none;"><i class="fas fa-cloud-arrow-down"></i> <span id="btn-fetch-lbl">GitHub'dan indir ve doğrula</span></button>
-            <span id="v-badge"></span>
+        <div class="changes" id="srv-changes" style="display:none;">
+            <div class="mini-lbl">Güncellemeyle gelecek değişiklikler</div>
+            <ul id="srv-commits"></ul>
         </div>
-        <div class="status-msg" id="fetch-status"></div>
-        <p class="note" style="margin-top:var(--space-4);">
-            <i class="fas fa-circle-info"></i>
-            <strong>GitHub'dan indir</strong> imzalı ajan paketini sunucuya indirir; imza ve özetler elle yüklemedeki gibi
-            doğrulanır. Ajanlara göndermek için ardından <strong>"Ajanlara imzalı güncelleme dağıt"</strong> kartını kullanın.
-            İnternetsiz sunucuda paketi aşağıdan elle yükleyin.
-        </p>
-    </div>
-
-    <div class="sys-card">
-        <h2><i class="fas fa-file-signature"></i> Çevrimdışı imzalı paket yükle</h2>
-        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
-            GitHub Release'inden indirdiğiniz <code>manifest.json</code>, <code>manifest.json.sig</code> ve
-            paket dosyalarını (ör. <code>pops-server-*.tar.gz</code>, <code>POps-Agent-*.zip</code>) birlikte seçin.
-            Sunucu ed25519 imzasını ve SHA-256 özetlerini doğrular; doğrulanırsa paket saklanır.
-        </p>
-        <div class="upload-zone" id="uz">
-            <i class="fas fa-file-shield"></i>
-            <h3 style="margin:0.5rem 0 0;color:var(--text-primary);font-size:var(--text-md);">Dosyaları seçin veya sürükleyin</h3>
-            <p class="muted-text">manifest.json + manifest.json.sig + paket(ler)</p>
-            <input type="file" id="files" multiple>
-        </div>
-        <ul class="file-list" id="file-list"></ul>
-        <div class="row" style="margin-top: var(--space-4);">
-            <button class="btn primary" id="btn-upload" disabled><i class="fas fa-upload"></i> Doğrula ve yükle</button>
-            <label class="muted-text" style="display:flex;align-items:center;gap:0.4rem;">
-                <input type="checkbox" id="force"> aynı/eski sürümü zorla (downgrade)
-            </label>
-        </div>
-        <div class="status-msg" id="upload-status"></div>
-        <p class="note" style="margin-top:var(--space-4);">
-            <i class="fas fa-circle-info"></i>
-            Yükleme yalnızca <strong>doğrular ve saklar</strong>. Ajanlara göndermek için aşağıdaki
-            <strong>"Ajanlara imzalı güncelleme dağıt"</strong> kartını kullanın.
-        </p>
-    </div>
-
-    <div class="sys-card">
-        <h2><i class="fas fa-key"></i> Ajan kayıt jetonu (enroll)</h2>
-        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
-            Kurulumda MSI'a verilecek jeton (<code>ENROLL_TOKEN</code>). Çok-kullanımlı jeton, bir laba
-            tek MSI ile toplu kurulum içindir.
-        </p>
-        <div class="row">
-            <input id="et-lab" class="fld" style="max-width:190px;" placeholder="Lab adı (opsiyonel)">
-            <input id="et-note" class="fld" style="max-width:200px;" placeholder="Açıklama (opsiyonel)">
-            <input id="et-uses" class="fld" type="number" min="1" value="1" title="Kaç makine kaydolabilir" style="max-width:110px;">
-            <input id="et-ttl" class="fld" type="number" min="1" value="72" title="Geçerlilik (saat)" style="max-width:120px;">
-            <button class="btn primary" id="btn-enroll"><i class="fas fa-plus"></i> Üret</button>
-        </div>
-        <div class="status-msg" id="enroll-status"></div>
-        <ul class="file-list enroll-list" id="enroll-list" style="margin-top:1rem;"></ul>
-    </div>
-
-    <div class="sys-card">
-        <h2><i class="fas fa-rocket"></i> Ajanlara imzalı güncelleme dağıt</h2>
-        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
-            Yüklenip doğrulanan sürümü (<strong id="dep-staged">—</strong>) seçili online ajanlara gönderir;
-            ajan MSI'ı sunucudan indirip imzayı kendi doğrular.
-        </p>
-        <div class="row">
-            <select id="dep-mode" class="fld" style="max-width:220px;">
-                <option value="ALL">Tüm ajanlar</option>
-                <option value="LAB">Belirli lab</option>
-                <option value="PC">Belirli cihaz(lar)</option>
-            </select>
-            <input id="dep-targets" class="fld" style="flex:1;min-width:200px;display:none;" placeholder="Lab adı / HW- kimlikleri (virgülle)">
-            <button class="btn primary" id="btn-deploy"><i class="fas fa-paper-plane"></i> Dağıt</button>
-        </div>
-        <div class="status-msg" id="deploy-status"></div>
-    </div>
-
-    <div class="sys-card">
-        <h2><i class="fas fa-lock"></i> Ajan kimlik zorlaması</h2>
-        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
-            Açıkken kimliği doğrulanmayan (secret'sız) ajan bağlantıları reddedilir.
-            <strong>Yalnızca tüm ajanlar yeni sürüme geçtikten sonra açın</strong> — yoksa eski ajanlar bağlantıyı kaybeder.
-        </p>
-        <div class="row">
-            <span id="enforce-badge"></span>
-            <button class="btn" id="btn-enforce">…</button>
-        </div>
-        <div class="status-msg" id="enforce-status"></div>
-    </div>
-
-    <div class="sys-card">
-        <h2><i class="fas fa-server"></i> Sunucu backend'ini güncelle (self-update)</h2>
-        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
-            SSH gerektirmeden sunucu backend'ini <strong>origin/main</strong>'den günceller. İstek root systemd
-            path-unit'ine iletilir; deploy sağlık kontrolü + otomatik geri dönüş yapar. Keyfi kod yürütülmez.
-        </p>
-        <div class="row">
-            <span id="su-badge"></span>
-            <button class="btn primary" id="btn-selfupdate"><i class="fas fa-download"></i> Şimdi güncelle</button>
+        <div class="row mt">
+            <button class="btn" id="btn-selfupdate"><i class="fas fa-download"></i> Sunucuyu güncelle</button>
+            <span class="muted-text">GitHub main'deki kodu kurar. Sağlık kontrolü başarısız olursa önceki koda kendiliğinden döner.</span>
         </div>
         <div class="status-msg" id="su-status"></div>
     </div>
 
+    <!-- ============ AJAN GÜNCELLEME ============ -->
     <div class="sys-card">
-        <h2><i class="fas fa-shield-halved"></i> Cihaz yetenekleri (terminal / Vision)</h2>
-        <p class="muted-text" style="margin-top:-0.5rem;margin-bottom:0.75rem;">
-            Bir cihazda uzaktan <strong>terminal (execute)</strong> ve/veya <strong>Vision</strong>'ı kapatır. Sunucu ele
-            geçirilse bile bu yetenekler o cihazda çalışmaz. <strong>Fail-safe:</strong> "Kapat" kalıcıdır — cihaz
-            çevrimdışıysa yeniden bağlanınca uygulanır ve ajan yeniden kurulsa bile kapalı kalır. Geri açmak için önce
-            <strong>"İzin ver"</strong>e basıp kapatma isteğini kaldırın; yetenek, ajan onu <em>açık</em> bildirdiğinde
-            (yeni/temiz kurulum) geri gelir. Ajan, sunucudan gelen "aç" komutuna güvenmez.
-        </p>
-        <div class="row">
-            <select id="cap-device" class="fld" style="flex:1;min-width:220px;"><option value="">Cihaz seçin…</option></select>
-            <button class="btn secondary" id="cap-refresh" title="Listeyi yenile"><i class="fas fa-arrows-rotate"></i></button>
+        <div class="card-head">
+            <h2><i class="fas fa-laptop"></i> Ajan güncelleme</h2>
+            <span id="ag-badge"><span class="badge muted">…</span></span>
         </div>
-        <div id="cap-state" class="muted-text" style="margin:0.5rem 0;font-size:var(--text-sm);"></div>
-        <div class="row" style="flex-wrap:wrap;gap:0.5rem;">
+        <p class="card-desc">Ajanlara yalnızca imzası doğrulanmış paket gönderilir. Ajan MSI'ı sunucudan indirir, imzayı kendisi de doğrular; yeni sürüm açılmazsa önceki sürüme döner.</p>
+
+        <div class="section-title first"><span class="step">1</span> Paket</div>
+        <div class="ver-grid">
+            <div class="ver-tile"><div class="lbl">GitHub'daki son sürüm</div><div class="val" id="ag-latest">…</div><div class="sub" id="ag-latest-sub"></div></div>
+            <div class="ver-tile"><div class="lbl">Gönderilecek paket (doğrulandı)</div><div class="val" id="ag-staged">…</div><div class="sub" id="ag-staged-sub"></div></div>
+        </div>
+        <div class="row mt" id="fetch-row" style="display:none;">
+            <button class="btn primary" id="btn-fetch"><i class="fas fa-cloud-arrow-down"></i> <span id="btn-fetch-lbl">GitHub'dan indir ve doğrula</span></button>
+            <span class="muted-text">İmza ve özetler doğrulanmadan paket kullanılmaz.</span>
+        </div>
+        <div class="status-msg" id="fetch-status"></div>
+
+        <details class="offline">
+            <summary>İnternetsiz sunucu: paketi elle yükle</summary>
+            <p class="muted-text" style="margin:0.75rem 0 0;">
+                GitHub Release sayfasından <code>manifest.json</code>, <code>manifest.json.sig</code> ve
+                <code>POps-Agent-*-win-x64.msi</code> dosyalarını indirip birlikte seçin. Doğrulama GitHub'dan indirmeyle aynıdır.
+            </p>
+            <div class="upload-zone" id="uz">
+                <i class="fas fa-file-shield"></i>
+                <div class="muted-text" style="margin-top:0.4rem;">Dosyaları seçin veya buraya sürükleyin</div>
+                <input type="file" id="files" multiple>
+            </div>
+            <ul class="file-list" id="file-list"></ul>
+            <div class="row mt">
+                <button class="btn primary" id="btn-upload" disabled><i class="fas fa-upload"></i> Doğrula ve yükle</button>
+                <label class="muted-text" style="display:flex;align-items:center;gap:0.4rem;">
+                    <input type="checkbox" id="force"> aynı ya da eski sürümü zorla
+                </label>
+            </div>
+            <div class="status-msg" id="upload-status"></div>
+        </details>
+
+        <div class="section-title"><span class="step">2</span> Hedef</div>
+        <div class="option-grid">
+            <div class="option-card active" data-mode="ALL"><i class="fas fa-globe"></i><div class="option-title">Tüm ajanlar</div><div class="option-desc" id="opt-all-desc">…</div></div>
+            <div class="option-card" data-mode="LAB"><i class="fas fa-network-wired"></i><div class="option-title">Bir sınıf</div><div class="option-desc">Seçilen laboratuvardaki açık cihazlar</div></div>
+            <div class="option-card" data-mode="PC"><i class="fas fa-laptop"></i><div class="option-title">Seçili cihazlar</div><div class="option-desc">Önce tek cihazda denemek için</div></div>
+        </div>
+        <div class="target-box" id="tgt-lab" style="display:none;">
+            <select id="lab-select" class="fld" style="width:100%;"></select>
+        </div>
+        <div class="target-box" id="tgt-pc" style="display:none;">
+            <div class="row between">
+                <span class="muted-text">Yalnızca açık (online) cihazlar seçilebilir.</span>
+                <button class="btn small" id="btn-select-outdated"><i class="fas fa-check-double"></i> Eski sürümdekileri seç</button>
+            </div>
+            <div class="dev-list" id="dev-list"></div>
+        </div>
+        <div class="summary" id="dep-summary"></div>
+        <button class="btn-deploy" id="btn-deploy" disabled><i class="fas fa-rocket"></i> <span id="btn-deploy-lbl">Gönder</span></button>
+        <div class="status-msg" id="deploy-status"></div>
+    </div>
+
+    <!-- ============ YETENEKLER ============ -->
+    <div class="sys-card">
+        <div class="card-head">
+            <h2><i class="fas fa-shield-halved"></i> Cihaz yetenekleri (terminal / Vision)</h2>
+        </div>
+        <p class="card-desc">
+            Bir cihazda uzaktan terminali ve/veya Vision'ı (ekran izleme, uzaktan kontrol) kapatır; sunucu ele geçirilse bile
+            o cihazda çalışmazlar. Kapatma kalıcıdır: çevrimdışı cihaza bağlanınca, eski ajana güncellenince uygulanır.
+            Geri açmak için "İzin ver" kapatma isteğini kaldırır; yetenek ancak ajan kurulumu onu açık bildirirse geri gelir.
+        </p>
+        <select id="cap-device" class="fld" style="width:100%;"><option value="">Cihaz seçin…</option></select>
+        <div class="cap-state" id="cap-state"></div>
+        <div class="row">
             <button class="btn danger" id="cap-off-terminal"><i class="fas fa-terminal"></i> Terminali kapat</button>
-            <button class="btn secondary" id="cap-on-terminal" title="Terminal kapatma isteğini kaldır"><i class="fas fa-unlock"></i> Terminale izin ver</button>
+            <button class="btn" id="cap-on-terminal"><i class="fas fa-unlock"></i> Terminale izin ver</button>
             <button class="btn danger" id="cap-off-vision"><i class="fas fa-video-slash"></i> Vision'ı kapat</button>
-            <button class="btn secondary" id="cap-on-vision" title="Vision kapatma isteğini kaldır"><i class="fas fa-unlock"></i> Vision'a izin ver</button>
+            <button class="btn" id="cap-on-vision"><i class="fas fa-unlock"></i> Vision'a izin ver</button>
         </div>
         <div class="status-msg" id="cap-status"></div>
+    </div>
+
+    <!-- ============ KAYIT VE KİMLİK ============ -->
+    <div class="sys-card">
+        <div class="card-head">
+            <h2><i class="fas fa-key"></i> Ajan kaydı ve kimlik</h2>
+            <span id="enroll-count"></span>
+        </div>
+
+        <div class="section-title first"><i class="fas fa-ticket" style="color:var(--primary-500);"></i> Kayıt jetonu</div>
+        <p class="card-desc" style="margin-top:0;">
+            Yeni kurulumda MSI'a <code>ENROLL_TOKEN</code> olarak verilir; ajan ilk bağlanışta kendine özel bir anahtar alır.
+            Çok kullanımlık jeton, bir sınıfa tek MSI ile toplu kurulum içindir.
+        </p>
+        <div class="row">
+            <input id="et-lab" class="fld" style="flex:1;min-width:150px;" placeholder="Sınıf (isteğe bağlı)">
+            <input id="et-note" class="fld" style="flex:1;min-width:150px;" placeholder="Not (isteğe bağlı)">
+            <label class="muted-text">Kullanım <input id="et-uses" class="fld" type="number" min="1" value="1" style="width:70px;"></label>
+            <label class="muted-text">Saat <input id="et-ttl" class="fld" type="number" min="1" value="72" style="width:80px;"></label>
+            <button class="btn primary" id="btn-enroll"><i class="fas fa-plus"></i> Jeton üret</button>
+        </div>
+        <div class="status-msg" id="enroll-status"></div>
+        <ul class="file-list enroll-list" id="enroll-list"></ul>
+
+        <div class="section-title"><i class="fas fa-lock" style="color:var(--primary-500);"></i> Kimlik zorlaması</div>
+        <div class="row between">
+            <div class="row"><span id="enforce-badge"></span><span class="muted-text" id="enforce-hint"></span></div>
+            <button class="btn" id="btn-enforce">…</button>
+        </div>
+        <div class="status-msg" id="enforce-status"></div>
     </div>
 </div>
 
@@ -181,85 +235,151 @@
 <script>
 (function () {
     const $ = (id) => document.getElementById(id);
+    const S = { ver: null, su: null, devices: [], mode: 'ALL' };
 
-    function setBadge(data) {
-        const b = $('v-badge');
-        const parts = [];
-        if (data.update_available) {
-            parts.push('<span class="badge warn"><i class="fas fa-circle-up"></i> Sunucu için yeni sürüm var: aşağıdan "Sunucu backend\'ini güncelle"</span>');
+    const fmtV = (v) => !v ? '—' : (/^v/i.test(v) ? v : 'v' + v);
+    const normV = (v) => String(v || '').trim().replace(/^v/i, '');
+    const fmtDate = (iso) => { try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso || ''; } };
+    const badge = (cls, icon, text) => `<span class="badge ${cls}"><i class="fas ${icon}"></i> ${escapeHtml(text)}</span>`;
+    const isOnline = (d) => String(d.status || '').toLowerCase() === 'online';
+    const devName = (d) => d.display_name || d.real_hostname || d.hw_id;
+    function msg(id, cls, html) { const el = $(id); el.className = 'status-msg show' + (cls ? ' ' + cls : ''); el.innerHTML = html; }
+    async function api(path, opts) {
+        const res = await fetch(path, opts);
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
+        return d;
+    }
+    const postJson = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+    // ================= SUNUCU =================
+    function renderServer() {
+        const v = S.ver, su = S.su;
+        if (!v) return;
+        const srv = v.server || {};
+        $('srv-version').textContent = fmtV(v.running);
+        $('srv-rev').textContent = srv.rev ? `commit ${srv.rev}` + (srv.deployed_at ? ' · ' + fmtDate(srv.deployed_at) : '') : 'Henüz panelden güncellenmedi';
+
+        const busy = su && (su.pending || (su.status && su.status.state === 'running'));
+        const btn = $('btn-selfupdate');
+        btn.disabled = !(su && su.configured) || busy;
+        btn.classList.toggle('primary', !!srv.update_available);
+        $('srv-changes').style.display = 'none';
+
+        let b, main = '—', sub = '';
+        if (!v.server) {
+            // Eski backend bu sorguyu bilmiyor: sayfanın kendisi sunucu güncellemesi bekliyor
+            b = badge('warn', 'fa-circle-up', 'Güncelleme var');
+            main = '?';
+            sub = 'Güncelleme sorgusu için sunucuyu bir kez güncelleyin.';
+            btn.classList.add('primary');
+        } else if (su && !su.configured) {
+            b = badge('muted', 'fa-plug', 'Self-update kurulu değil');
+            sub = 'bkz. docs/self-update.md';
+        } else if (busy) {
+            b = badge('warn', 'fa-spinner fa-spin', 'Güncelleniyor…');
+        } else if (srv.last_state === 'failed') {
+            b = badge('bad', 'fa-triangle-exclamation', 'Son güncelleme başarısız');
+            sub = 'Önceki kod çalışıyor (otomatik geri dönüldü).';
+        } else if (!srv.rev) {
+            b = badge('muted', 'fa-circle-question', 'Durum bilinmiyor');
+            sub = 'Bir kez "Sunucuyu güncelle" ile kurulunca takip edilir.';
+        } else if (!srv.checked) {
+            b = badge('muted', 'fa-wifi', 'GitHub\'a ulaşılamadı');
+            main = '?';
+        } else if (srv.update_available) {
+            b = badge('warn', 'fa-circle-up', 'Güncelleme var');
+            main = `+${srv.ahead_by} değişiklik`;
+            sub = srv.version_changed ? 'Yeni sürüm numarası içeriyor.' : '';
+            $('srv-commits').innerHTML = (srv.commits || []).map(c => `<li>${escapeHtml(c)}</li>`).join('');
+            $('srv-changes').style.display = (srv.commits || []).length ? 'block' : 'none';
+        } else {
+            b = badge('ok', 'fa-check', 'Güncel');
+            main = 'Güncel';
+            if (srv.ahead_by > 0) sub = `main'de ${srv.ahead_by} değişiklik var ama sunucuyu etkilemiyor.`;
         }
-        if (data.release_available) {
-            parts.push('<span class="badge warn"><i class="fas fa-circle-up"></i> Ajanlar için yeni paket var: ' + escapeHtml(data.latest) + '</span>');
-        }
-        if (!parts.length) {
-            if (data.checked_github) {
-                parts.push('<span class="badge ok"><i class="fas fa-check"></i> Güncel</span>');
-            } else if (data.staged_version) {
-                parts.push('<span class="badge ok"><i class="fas fa-box-check"></i> Doğrulanmış paket hazır: ' + escapeHtml(data.staged_version) + '</span>');
+        $('srv-badge').innerHTML = b;
+        $('srv-main').textContent = main;
+        $('srv-main-sub').textContent = sub;
+    }
+
+    async function loadSelfUpdate() {
+        try { S.su = await api('/api/system/self-update/status'); } catch (e) { S.su = null; }
+    }
+
+    $('btn-selfupdate').addEventListener('click', async function () {
+        if (!confirm("Sunucu, GitHub main'deki koda güncellenecek. Birkaç saniye bağlantı kopabilir. Devam edilsin mi?")) return;
+        const before = (S.su && S.su.status && S.su.status.at) || '';
+        this.disabled = true;
+        msg('su-status', '', '<i class="fas fa-spinner fa-spin"></i> Güncelleme başlatılıyor…');
+        try {
+            await api('/api/system/self-update', { method: 'POST' });
+        } catch (e) { msg('su-status', 'status-error', escapeHtml(e.message)); this.disabled = false; return; }
+        let tries = 0;
+        const poll = setInterval(async () => {
+            tries++;
+            await loadSelfUpdate();   // servis yeniden başlarken birkaç istek düşebilir; sorun değil
+            const st = S.su && S.su.status;
+            const done = st && st.at !== before && (st.state === 'ok' || st.state === 'failed') && !S.su.pending;
+            if (done || tries > 40) {
+                clearInterval(poll);
+                if (st && st.state === 'ok') msg('su-status', 'status-success', '<i class="fas fa-circle-check"></i> Sunucu güncellendi.');
+                else if (st && st.state === 'failed') msg('su-status', 'status-error', '<i class="fas fa-circle-xmark"></i> Güncelleme başarısız; önceki koda geri dönüldü.');
+                else msg('su-status', 'status-error', 'Sonuç alınamadı; sayfayı yenileyin.');
+                await loadAll(true);
             } else {
-                parts.push('<span class="badge muted"><i class="fas fa-wifi"></i> GitHub kontrol edilmedi (çevrimdışı olabilir)</span>');
+                renderServer();
             }
-        }
-        b.innerHTML = parts.join(' ');
-        const f = $('btn-fetch');
-        f.style.display = data.release_available ? '' : 'none';
-        f.dataset.tag = data.latest || '';
-        $('btn-fetch-lbl').textContent = 'GitHub\'dan indir ve doğrula' + (data.latest ? ' (' + data.latest + ')' : '');
+        }, 3000);
+    });
+
+    // ================= AJAN PAKETİ =================
+    function outdated() {
+        const staged = normV(S.ver && S.ver.staged_version);
+        return S.devices.filter(d => staged && normV(d.agent_version) !== staged);
     }
 
-    async function fetchRelease() {
-        const btn = $('btn-fetch');
-        const st = $('fetch-status');
-        st.className = 'status-msg';
-        st.style.display = 'block';
-        st.textContent = 'GitHub\'dan indiriliyor ve doğrulanıyor…';
-        btn.disabled = true;
+    function renderAgentPackage() {
+        const v = S.ver;
+        if (!v) return;
+        $('ag-latest').textContent = v.latest ? fmtV(v.latest) : (v.checked_github ? '—' : '?');
+        $('ag-latest-sub').textContent = v.latest ? '' : 'GitHub\'a ulaşılamadı';
+        $('ag-staged').textContent = fmtV(v.staged_version);
+        $('ag-staged-sub').textContent = v.staged_version
+            ? (v.release_available ? 'GitHub\'daki son sürüm değil' : 'GitHub\'daki son sürümle aynı')
+            : 'Henüz paket yok';
+
+        $('fetch-row').style.display = v.release_available ? 'flex' : 'none';
+        $('btn-fetch').dataset.tag = v.latest || '';
+        $('btn-fetch-lbl').textContent = `${fmtV(v.latest)} indir ve doğrula`;
+
+        const old = outdated();
+        let b;
+        if (v.release_available) b = badge('warn', 'fa-circle-up', `Yeni sürüm var: ${fmtV(v.latest)}`);
+        else if (!v.staged_version) b = badge('muted', 'fa-box-open', 'Paket yok');
+        else if (old.length) {
+            const off = old.filter(d => !isOnline(d)).length;
+            b = badge('warn', 'fa-circle-up', `${old.length} ajan eski sürümde` + (off ? ` (${off} çevrimdışı)` : ''));
+        }
+        else b = badge('ok', 'fa-check', 'Tüm ajanlar güncel');
+        $('ag-badge').innerHTML = b;
+    }
+
+    $('btn-fetch').addEventListener('click', async function () {
+        this.disabled = true;
+        msg('fetch-status', '', '<i class="fas fa-spinner fa-spin"></i> GitHub\'dan indiriliyor ve doğrulanıyor…');
         try {
-            const res = await fetch('/api/system/fetch-release', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tag: btn.dataset.tag || null })
-            });
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
-            st.className = 'status-msg status-success';
-            st.innerHTML = '<i class="fas fa-circle-check"></i> İndirildi ve doğrulandı: <strong>' + escapeHtml(d.version) +
-                '</strong>. Ajanlara göndermek için "Ajanlara imzalı güncelleme dağıt" kartını kullanın.';
-            await loadVersion(false);
+            const d = await postJson('/api/system/fetch-release', { tag: this.dataset.tag || null });
+            msg('fetch-status', 'status-success', `<i class="fas fa-circle-check"></i> ${escapeHtml(fmtV(d.version))} indirildi ve doğrulandı. Şimdi aşağıdan hedef seçip gönderebilirsiniz.`);
+            await loadAll(false);
         } catch (e) {
-            st.className = 'status-msg status-error';
-            st.innerHTML = '<i class="fas fa-circle-xmark"></i> ' + escapeHtml(e.message);
-        } finally {
-            btn.disabled = false;
-        }
-    }
+            msg('fetch-status', 'status-error', '<i class="fas fa-circle-xmark"></i> ' + escapeHtml(e.message));
+        } finally { this.disabled = false; }
+    });
 
-    async function loadVersion(check) {
-        try {
-            const res = await fetch('/api/system/version' + (check ? '?check=true' : ''));
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const d = await res.json();
-            $('v-running').textContent = d.running || '—';
-            $('v-latest').textContent = d.latest || (d.checked_github ? '—' : 'bilinmiyor');
-            $('v-staged').textContent = d.staged_version || '—';
-            $('dep-staged').textContent = d.staged_version || '—';
-            renderEnforce(!!d.enforce_agent_auth);
-            setBadge(d);
-        } catch (e) {
-            $('v-running').textContent = 'hata';
-            $('v-badge').innerHTML = '<span class="badge warn">Sürüm alınamadı</span>';
-        }
-    }
-
-    // dosya seçimi
     let chosen = [];
     function renderFiles() {
-        const ul = $('file-list');
-        ul.innerHTML = '';
-        chosen.forEach(f => {
-            const li = document.createElement('li');
-            li.innerHTML = '<i class="fas fa-file"></i> ' + escapeHtml(f.name) + ' <span class="muted-text">(' + Math.round(f.size / 1024) + ' KB)</span>';
-            ul.appendChild(li);
-        });
+        $('file-list').innerHTML = chosen.map(f => `<li><i class="fas fa-file"></i> ${escapeHtml(f.name)} <span class="muted-text">(${Math.round(f.size / 1024)} KB)</span></li>`).join('');
         $('btn-upload').disabled = chosen.length === 0;
     }
     $('files').addEventListener('change', (e) => { chosen = Array.from(e.target.files); renderFiles(); });
@@ -267,228 +387,255 @@
     ['dragover', 'dragenter'].forEach(ev => uz.addEventListener(ev, (e) => { e.preventDefault(); uz.classList.add('dragover'); }));
     ['dragleave', 'drop'].forEach(ev => uz.addEventListener(ev, () => uz.classList.remove('dragover')));
     uz.addEventListener('drop', (e) => { e.preventDefault(); chosen = Array.from(e.dataTransfer.files); renderFiles(); });
-
-    async function upload() {
-        const st = $('upload-status');
-        st.className = 'status-msg';
-        st.style.display = 'block';
-        st.textContent = 'Doğrulanıyor ve yükleniyor…';
+    $('btn-upload').addEventListener('click', async function () {
+        this.disabled = true;
+        msg('upload-status', '', '<i class="fas fa-spinner fa-spin"></i> Doğrulanıyor…');
         const fd = new FormData();
         chosen.forEach(f => fd.append('files', f));
         fd.append('force', $('force').checked ? 'true' : 'false');
         try {
-            const res = await fetch('/api/system/upload-release', { method: 'POST', body: fd });
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
-            st.className = 'status-msg status-success';
-            st.innerHTML = '<i class="fas fa-circle-check"></i> Doğrulandı ve saklandı: <strong>' + escapeHtml(d.version) +
-                '</strong> (' + escapeHtml((d.artifacts_present || []).join(', ') || 'paket yok') + ')';
-            loadVersion(false);
+            const d = await api('/api/system/upload-release', { method: 'POST', body: fd });
+            msg('upload-status', 'status-success', `<i class="fas fa-circle-check"></i> ${escapeHtml(fmtV(d.version))} doğrulandı ve kaydedildi.`);
+            await loadAll(false);
         } catch (e) {
-            st.className = 'status-msg status-error';
-            st.innerHTML = '<i class="fas fa-circle-xmark"></i> ' + escapeHtml(e.message);
+            msg('upload-status', 'status-error', '<i class="fas fa-circle-xmark"></i> ' + escapeHtml(e.message));
+        } finally { this.disabled = chosen.length === 0; }
+    });
+
+    // ================= AJAN HEDEF + GÖNDER =================
+    document.querySelectorAll('.option-card[data-mode]').forEach(c => c.addEventListener('click', () => {
+        S.mode = c.dataset.mode;
+        document.querySelectorAll('.option-card[data-mode]').forEach(x => x.classList.toggle('active', x === c));
+        $('tgt-lab').style.display = S.mode === 'LAB' ? 'block' : 'none';
+        $('tgt-pc').style.display = S.mode === 'PC' ? 'block' : 'none';
+        renderDeploy();
+    }));
+
+    function renderTargets() {
+        const devs = S.devices;
+        const online = devs.filter(isOnline);
+        $('opt-all-desc').textContent = `${devs.length} cihaz · ${online.length} açık`;
+
+        const labs = [...new Set(devs.map(d => d.lab).filter(Boolean))].sort();
+        const labSel = $('lab-select');
+        const prevLab = labSel.value;
+        labSel.innerHTML = '<option value="">Sınıf seçin…</option>' + labs.map(l => {
+            const n = devs.filter(d => d.lab === l), on = n.filter(isOnline).length;
+            return `<option value="${escapeHtml(l)}">${escapeHtml(l)} — ${n.length} cihaz, ${on} açık</option>`;
+        }).join('');
+        if (labs.includes(prevLab)) labSel.value = prevLab;
+
+        const checked = new Set([...document.querySelectorAll('#dev-list input:checked')].map(i => i.value));
+        const staged = normV(S.ver && S.ver.staged_version);
+        const sorted = [...devs].sort((a, b) => (isOnline(b) - isOnline(a)) || devName(a).localeCompare(devName(b), 'tr', { numeric: true }));
+        $('dev-list').innerHTML = sorted.length ? sorted.map(d => {
+            const on = isOnline(d);
+            const old = staged && normV(d.agent_version) !== staged;
+            return `<label class="dev-row${on ? '' : ' offline'}">
+                <input type="checkbox" value="${escapeHtml(d.hw_id)}" ${on ? '' : 'disabled'} ${on && checked.has(d.hw_id) ? 'checked' : ''}>
+                <span class="dot${on ? ' on' : ''}" title="${on ? 'Açık' : 'Çevrimdışı'}"></span>
+                <span><span class="dev-name">${escapeHtml(devName(d))}</span>
+                    <span class="dev-meta"> · ${escapeHtml(d.lab || 'sınıfsız')} · ${escapeHtml(d.hw_id)}${on ? '' : ' · çevrimdışı'}</span></span>
+                <span class="ver-pill${old ? ' old' : ''}" title="${old ? 'Gönderilecek paketten farklı' : 'Güncel'}">${escapeHtml(fmtV(d.agent_version))}</span>
+            </label>`;
+        }).join('') : '<div class="muted-text">Kayıtlı cihaz yok.</div>';
+        $('dev-list').querySelectorAll('input').forEach(i => i.addEventListener('change', renderDeploy));
+    }
+    $('lab-select').addEventListener('change', renderDeploy);
+    $('btn-select-outdated').addEventListener('click', () => {
+        const old = new Set(outdated().filter(isOnline).map(d => d.hw_id));
+        $('dev-list').querySelectorAll('input:not(:disabled)').forEach(i => { i.checked = old.has(i.value); });
+        renderDeploy();
+    });
+
+    function deployTargets() {
+        if (S.mode === 'ALL') return { body: { target_mode: 'ALL', targets: [] }, list: S.devices };
+        if (S.mode === 'LAB') {
+            const lab = $('lab-select').value;
+            return { body: { target_mode: 'LAB', targets: lab ? [lab] : [] }, list: lab ? S.devices.filter(d => d.lab === lab) : [] };
         }
+        const ids = [...document.querySelectorAll('#dev-list input:checked')].map(i => i.value);
+        return { body: { target_mode: 'PC', targets: ids }, list: S.devices.filter(d => ids.includes(d.hw_id)) };
     }
 
-    // ---- enroll tokens ----
-    async function loadEnroll() {
-        try {
-            const rows = await (await fetch('/api/system/enroll-tokens')).json();
-            const ul = $('enroll-list'); ul.innerHTML = '';
-            (rows || []).slice(0, 20).forEach(r => {
-                const state = r.expired ? ' · süresi doldu' : (r.is_used ? ' · tükendi' : '');
-                const li = document.createElement('li');
-                li.innerHTML = '<i class="fas fa-key"></i> <code>' + escapeHtml(r.token) + '</code> '
-                    + '<span class="muted-text">' + escapeHtml(r.lab_name || '—') + ' · '
-                    + (r.use_count || 0) + '/' + (r.max_uses || 1) + ' kullanım' + state + '</span> '
-                    + '<button class="btn" style="padding:0.1rem 0.5rem;font-size:0.72rem;" data-id="' + r.id + '">sil</button>';
-                ul.appendChild(li);
-            });
-            ul.querySelectorAll('button[data-id]').forEach(b => b.addEventListener('click', async () => {
-                await fetch('/api/system/enroll-token/' + b.dataset.id, { method: 'DELETE' });
-                loadEnroll();
-            }));
-        } catch (e) { /* yoksay */ }
+    function renderDeploy() {
+        const staged = S.ver && S.ver.staged_version;
+        const t = deployTargets();
+        const on = t.list.filter(isOnline);
+        const old = on.filter(d => normV(d.agent_version) !== normV(staged));
+        let reason = '';
+        if (!staged) reason = 'Önce 1. adımda bir paket indirin ya da yükleyin.';
+        else if (S.ver.release_available) reason = `Gönderilecek paket (${fmtV(staged)}) GitHub'daki son sürüm değil. Önce 1. adımda ${fmtV(S.ver.latest)} sürümünü indirin.`;
+        else if (S.mode === 'LAB' && !$('lab-select').value) reason = 'Bir sınıf seçin.';
+        else if (S.mode === 'PC' && !t.list.length) reason = 'En az bir cihaz seçin.';
+        else if (!on.length) reason = 'Seçimde açık cihaz yok; çevrimdışı cihazlara gönderilemez.';
+        else if (!old.length) reason = `Seçimdeki açık cihazların hepsi zaten ${fmtV(staged)} sürümünde.`;
+        const same = on.length - old.length, off = t.list.length - on.length;
+        $('dep-summary').innerHTML = reason ? escapeHtml(reason)
+            : `<strong>${old.length}</strong> açık cihaz ${escapeHtml(fmtV(staged))} sürümüne güncellenecek.`
+              + (same ? ` ${same} cihaz zaten bu sürümde.` : '') + (off ? ` ${off} çevrimdışı cihaz atlanacak.` : '');
+        $('btn-deploy').disabled = !!reason;
+        $('btn-deploy-lbl').textContent = staged ? `${fmtV(staged)} sürümünü gönder` : 'Gönder';
     }
-    $('btn-enroll').addEventListener('click', async () => {
-        const st = $('enroll-status'); st.className = 'status-msg'; st.style.display = 'block'; st.textContent = 'Üretiliyor…';
-        try {
-            const body = {
-                lab_name: $('et-lab').value || null, note: $('et-note').value || null,
-                ttl_hours: parseInt($('et-ttl').value) || 72, max_uses: parseInt($('et-uses').value) || 1
-            };
-            const res = await fetch('/api/system/enroll-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            const d = await res.json(); if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
-            st.className = 'status-msg status-success';
-            st.innerHTML = '<i class="fas fa-circle-check"></i> MSI kurulumunda: <code>ENROLL_TOKEN=' + escapeHtml(d.token) + '</code>';
-            loadEnroll();
-        } catch (e) { st.className = 'status-msg status-error'; st.textContent = e.message; }
-    });
 
-    // ---- deploy ----
-    $('dep-mode').addEventListener('change', () => { $('dep-targets').style.display = $('dep-mode').value === 'ALL' ? 'none' : 'block'; });
-    $('btn-deploy').addEventListener('click', async () => {
-        const st = $('deploy-status'); st.className = 'status-msg'; st.style.display = 'block'; st.textContent = 'Dağıtılıyor…';
-        try {
-            const mode = $('dep-mode').value;
-            const targets = mode === 'ALL' ? [] : $('dep-targets').value.split(',').map(s => s.trim()).filter(Boolean);
-            const res = await fetch('/api/system/deploy-update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_mode: mode, targets }) });
-            const d = await res.json(); if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
-            st.className = 'status-msg status-success';
-            st.innerHTML = '<i class="fas fa-circle-check"></i> ' + escapeHtml(d.version) + ' gönderildi: ' + (d.dispatched || []).length + ' online'
-                + ((d.skipped_offline || []).length ? (', ' + d.skipped_offline.length + ' offline atlandı') : '');
-        } catch (e) { st.className = 'status-msg status-error'; st.textContent = e.message; }
-    });
-
-    // ---- enforce ----
-    function renderEnforce(on) {
-        $('enforce-badge').innerHTML = on
-            ? '<span class="badge ok"><i class="fas fa-lock"></i> Zorlama AÇIK</span>'
-            : '<span class="badge warn"><i class="fas fa-lock-open"></i> Zorlama kapalı (accept-both)</span>';
-        const b = $('btn-enforce'); b.textContent = on ? 'Kapat' : 'Aç'; b.dataset.on = on ? '1' : '0';
-        b.classList.toggle('primary', !on);
-    }
-    $('btn-enforce').addEventListener('click', async () => {
-        const turnOn = $('btn-enforce').dataset.on !== '1';
-        if (turnOn && !confirm('Zorlamayı AÇMAK üzeresiniz. Yeni sürüme geçmemiş tüm ajanlar bağlantıyı kaybeder. Emin misiniz?')) return;
-        const st = $('enforce-status'); st.className = 'status-msg'; st.style.display = 'block'; st.textContent = '…';
-        try {
-            const res = await fetch('/api/system/enforce-auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: turnOn }) });
-            const d = await res.json(); if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
-            renderEnforce(d.enforce_agent_auth);
-            st.className = 'status-msg status-success'; st.textContent = d.enforce_agent_auth ? 'Zorlama açıldı.' : 'Zorlama kapatıldı.';
-        } catch (e) { st.className = 'status-msg status-error'; st.textContent = e.message; }
-    });
-
-    $('btn-check').addEventListener('click', async function () {
+    $('btn-deploy').addEventListener('click', async function () {
+        const staged = S.ver && S.ver.staged_version;
+        const t = deployTargets();
+        const n = t.list.filter(d => isOnline(d) && normV(d.agent_version) !== normV(staged)).length;
+        if (!confirm(`${n} cihaz ${fmtV(staged)} sürümüne güncellenecek. Devam edilsin mi?`)) return;
         this.disabled = true;
-        const icon = this.querySelector('i');
-        icon.classList.add('fa-spin');
-        await loadVersion(true);
-        icon.classList.remove('fa-spin');
-        this.disabled = false;
-    });
-    $('btn-upload').addEventListener('click', upload);
-    $('btn-fetch').addEventListener('click', fetchRelease);
-
-    // ---- sunucu self-update ----
-    async function loadSelfUpdate() {
+        msg('deploy-status', '', '<i class="fas fa-spinner fa-spin"></i> Gönderiliyor…');
         try {
-            const res = await fetch('/api/system/self-update/status');
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const d = await res.json();
-            const badge = $('su-badge');
-            const btn = $('btn-selfupdate');
-            if (!d.configured) {
-                badge.innerHTML = '<span class="badge muted"><i class="fas fa-plug"></i> Kurulu değil</span>';
-                btn.disabled = true;
-                btn.title = 'systemd path-unit etkin değil (bkz. docs/self-update.md)';
-                return;
-            }
-            btn.disabled = false;
-            const s = d.status;
-            if (d.pending) badge.innerHTML = '<span class="badge warn"><i class="fas fa-hourglass-half"></i> Kuyrukta…</span>';
-            else if (s && s.state === 'running') badge.innerHTML = '<span class="badge warn"><i class="fas fa-spinner fa-spin"></i> Çalışıyor…</span>';
-            else if (s && s.state === 'ok') badge.innerHTML = '<span class="badge ok"><i class="fas fa-check"></i> Son: ' + escapeHtml(s.rev || '') + '</span>';
-            else if (s && s.state === 'failed') badge.innerHTML = '<span class="badge warn"><i class="fas fa-triangle-exclamation"></i> Son deneme başarısız</span>';
-            else badge.innerHTML = '<span class="badge ok"><i class="fas fa-server"></i> Hazır</span>';
+            const d = await postJson('/api/system/deploy-update', t.body);
+            const off = (d.skipped_offline || []).length;
+            msg('deploy-status', 'status-success', `<i class="fas fa-circle-check"></i> ${escapeHtml(fmtV(d.version))} ${(d.dispatched || []).length} cihaza gönderildi`
+                + (off ? `, ${off} çevrimdışı cihaz atlandı` : '') + '. Ajanlar birkaç dakika içinde yeniden bağlanıp yeni sürümü bildirir; liste kendiliğinden yenilenir.');
+            [30, 90, 180].forEach(s => setTimeout(() => loadAll(false), s * 1000));
         } catch (e) {
-            $('su-badge').innerHTML = '<span class="badge warn">Durum alınamadı</span>';
-        }
-    }
-
-    $('btn-selfupdate').addEventListener('click', async function () {
-        if (!confirm("Sunucu backend'i origin/main sürümüne güncellenecek. Devam edilsin mi?")) return;
-        const st = $('su-status'); st.className = 'status-msg'; st.style.display = 'block'; st.textContent = 'Kuyruklanıyor…';
-        const btn = this;
-        btn.disabled = true;
-        try {
-            const res = await fetch('/api/system/self-update', { method: 'POST' });
-            const d = await res.json();
-            if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
-            st.className = 'status-msg status-success'; st.textContent = 'Güncelleme kuyruklandı, uygulanıyor…';
-            let tries = 0;
-            const poll = setInterval(async () => {
-                tries++;
-                await loadSelfUpdate();
-                const txt = ($('su-badge').textContent || '');
-                if (tries > 20 || txt.includes('Son:') || txt.includes('başarısız')) { clearInterval(poll); btn.disabled = false; }
-            }, 3000);
-        } catch (e) {
-            st.className = 'status-msg status-error'; st.textContent = e.message; btn.disabled = false;
-        }
+            msg('deploy-status', 'status-error', '<i class="fas fa-circle-xmark"></i> ' + escapeHtml(e.message));
+        } finally { renderDeploy(); }
     });
 
-    // ---- cihaz yetenekleri (terminal/Vision) ----
-    let capDevices = [];
+    // ================= YETENEKLER =================
     function capLabel(v) {
         if (v === true) return '<span class="badge ok">açık</span>';
-        if (v === false) return '<span class="badge warn">KAPALI</span>';
-        return '<span class="badge muted">bilinmiyor (eski ajan)</span>';
+        if (v === false) return '<span class="badge bad">kapalı</span>';
+        return '<span class="badge muted">bildirilmedi</span>';
     }
-    async function loadCapDevices() {
-        try {
-            const res = await fetch('/api/devices');
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            capDevices = await res.json();
-            const sel = $('cap-device');
-            const prev = sel.value;
-            sel.innerHTML = '<option value="">Cihaz seçin…</option>' + capDevices.map(d =>
-                `<option value="${escapeHtml(d.hw_id)}">${escapeHtml(d.display_name || d.real_hostname || d.hw_id)} — ${escapeHtml(d.hw_id)}${d.status === 'Online' ? '' : ' (çevrimdışı)'}</option>`
-            ).join('');
-            if (prev && capDevices.some(d => d.hw_id === prev)) sel.value = prev;
-            renderCapState();
-        } catch (e) {
-            $('cap-state').textContent = 'Cihaz listesi alınamadı.';
-        }
+    function renderCapDevices() {
+        const sel = $('cap-device');
+        const prev = sel.value;
+        sel.innerHTML = '<option value="">Cihaz seçin…</option>' + S.devices.map(d =>
+            `<option value="${escapeHtml(d.hw_id)}">${escapeHtml(devName(d))} — ${escapeHtml(d.hw_id)} · ${escapeHtml(fmtV(d.agent_version))}${isOnline(d) ? '' : ' (çevrimdışı)'}</option>`).join('');
+        if (prev && S.devices.some(d => d.hw_id === prev)) sel.value = prev;
+        renderCapState();
     }
     function renderCapState() {
-        const hw = $('cap-device').value;
-        const d = capDevices.find(x => x.hw_id === hw);
-        const box = $('cap-state');
-        const offT = $('cap-off-terminal'), offV = $('cap-off-vision');
-        const onT = $('cap-on-terminal'), onV = $('cap-on-vision');
-        if (!d) { box.innerHTML = ''; [offT, offV, onT, onV].forEach(b => b.disabled = true); return; }
-        // "Kapat": kapatma isteği yoksa aktif. "İzin ver": ancak kapatma isteği kayıtlıysa anlamlı.
-        offT.disabled = !!d.cap_terminal_disable_requested;
-        offV.disabled = !!d.cap_vision_disable_requested;
-        onT.disabled = !d.cap_terminal_disable_requested;
-        onV.disabled = !d.cap_vision_disable_requested;
-        const reqT = d.cap_terminal_disable_requested ? ' <span class="muted-text">(kapatma isteği kayıtlı)</span>' : '';
-        const reqV = d.cap_vision_disable_requested ? ' <span class="muted-text">(kapatma isteği kayıtlı)</span>' : '';
-        box.innerHTML = `Terminal: ${capLabel(d.cap_terminal_enabled)}${reqT} &nbsp;·&nbsp; Vision: ${capLabel(d.cap_vision_enabled)}${reqV}`;
+        const d = S.devices.find(x => x.hw_id === $('cap-device').value);
+        const btns = ['cap-off-terminal', 'cap-on-terminal', 'cap-off-vision', 'cap-on-vision'].map($);
+        if (!d) { $('cap-state').innerHTML = ''; btns.forEach(b => b.disabled = true); return; }
+        btns[0].disabled = !!d.cap_terminal_disable_requested;
+        btns[1].disabled = !d.cap_terminal_disable_requested;
+        btns[2].disabled = !!d.cap_vision_disable_requested;
+        btns[3].disabled = !d.cap_vision_disable_requested;
+        const req = (r) => r ? ' <span class="muted-text">(kapatma isteği kayıtlı)</span>' : '';
+        let html = `Terminal: ${capLabel(d.cap_terminal_enabled)}${req(d.cap_terminal_disable_requested)} &nbsp;·&nbsp; Vision: ${capLabel(d.cap_vision_enabled)}${req(d.cap_vision_disable_requested)}`;
+        if (d.cap_terminal_enabled == null && d.cap_vision_enabled == null) {
+            html += `<br><span class="muted-text"><i class="fas fa-circle-info"></i> Bu cihazdaki ajan (${escapeHtml(fmtV(d.agent_version))}) yetenek durumunu bildirmiyor; bildirim v0.1.4-alpha ile geldi. Ajan güncellenince burada görünür. Kapatma şimdi de kaydedilebilir, güncellemeden sonra uygulanır.</span>`;
+        }
+        $('cap-state').innerHTML = html;
     }
     async function capSet(which, enabled) {
         const hw = $('cap-device').value;
-        if (!hw) return showToast('Önce cihaz seçin.', 'warning');
-        const label = which === 'terminal' ? 'terminali (execute)' : "Vision'ı";
-        if (!enabled && !confirm(`Bu cihazda ${label} KAPATMAK üzeresiniz. Kalıcıdır; geri açmak için "İzin ver"e basıp ajanı yeniden kurmanız gerekir. Devam?`)) return;
+        if (!hw) return;
+        const label = which === 'terminal' ? 'terminali' : "Vision'ı";
+        if (!enabled && !confirm(`Bu cihazda ${label} KAPATMAK üzeresiniz. Kalıcıdır; geri açmak için "İzin ver" ve ajanın yeniden kurulumu gerekir. Devam edilsin mi?`)) return;
         const body = { pc_name: hw };
         body[which === 'terminal' ? 'terminal_enabled' : 'vision_enabled'] = !!enabled;
-        const st = $('cap-status'); st.className = 'status-msg'; st.style.display = 'block'; st.textContent = 'Gönderiliyor…';
+        msg('cap-status', '', 'Gönderiliyor…');
         try {
-            const res = await fetch('/api/system/set-capabilities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            const d = await res.json();
-            if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
-            st.className = 'status-msg status-success';
-            if (enabled) {
-                st.textContent = 'Kapatma isteği kaldırıldı. Yetenek, ajan onu açık bildirdiğinde (yeni/temiz kurulum) geri gelir.';
-            } else {
-                st.textContent = d.delivered_online ? 'Kapatma gönderildi ve uygulandı.' : 'Kapatma kaydedildi; cihaz çevrimdışı, yeniden bağlanınca uygulanacak.';
-            }
-            setTimeout(loadCapDevices, 1200);
-        } catch (e) { st.className = 'status-msg status-error'; st.textContent = e.message; }
+            const d = await postJson('/api/system/set-capabilities', body);
+            msg('cap-status', 'status-success', enabled
+                ? 'Kapatma isteği kaldırıldı. Yetenek, ajan kurulumu onu açık bildirdiğinde geri gelir.'
+                : (d.delivered_online ? 'Kapatma gönderildi.' : 'Kapatma kaydedildi; cihaz bağlanınca uygulanacak.'));
+            setTimeout(() => loadAll(false), 1200);
+        } catch (e) { msg('cap-status', 'status-error', escapeHtml(e.message)); }
     }
     $('cap-device').addEventListener('change', renderCapState);
-    $('cap-refresh').addEventListener('click', loadCapDevices);
     $('cap-off-terminal').addEventListener('click', () => capSet('terminal', false));
-    $('cap-off-vision').addEventListener('click', () => capSet('vision', false));
     $('cap-on-terminal').addEventListener('click', () => capSet('terminal', true));
+    $('cap-off-vision').addEventListener('click', () => capSet('vision', false));
     $('cap-on-vision').addEventListener('click', () => capSet('vision', true));
 
-    loadVersion(false);
+    // ================= KAYIT + ZORLAMA =================
+    async function loadEnroll() {
+        try {
+            const rows = await api('/api/system/enroll-tokens');
+            $('enroll-list').innerHTML = (rows || []).slice(0, 20).map(r => {
+                const state = r.expired ? 'süresi doldu' : (r.is_used ? 'tükendi' : 'geçerli');
+                return `<li><i class="fas fa-ticket"></i> <code>${escapeHtml(r.token)}</code>
+                    <span class="muted-text">${escapeHtml(r.lab_name || 'tüm sınıflar')} · ${r.use_count || 0}/${r.max_uses || 1} kullanım · ${state}</span>
+                    <button class="btn small" data-id="${r.id}">sil</button></li>`;
+            }).join('') || '<li class="muted-text">Jeton yok.</li>';
+            $('enroll-list').querySelectorAll('button[data-id]').forEach(b => b.addEventListener('click', async () => {
+                if (!confirm('Jeton silinsin mi? Bu jetonla henüz kaydolmamış kurulumlar kaydolamaz.')) return;
+                await fetch('/api/system/enroll-token/' + b.dataset.id, { method: 'DELETE' });
+                loadEnroll();
+            }));
+        } catch (e) { $('enroll-list').innerHTML = '<li class="muted-text">Jetonlar alınamadı.</li>'; }
+    }
+    $('btn-enroll').addEventListener('click', async () => {
+        msg('enroll-status', '', 'Üretiliyor…');
+        try {
+            const d = await postJson('/api/system/enroll-token', {
+                lab_name: $('et-lab').value || null, note: $('et-note').value || null,
+                ttl_hours: parseInt($('et-ttl').value) || 72, max_uses: parseInt($('et-uses').value) || 1
+            });
+            msg('enroll-status', 'status-success', `<i class="fas fa-circle-check"></i> MSI kurulumunda kullanın: <code>ENROLL_TOKEN=${escapeHtml(d.token)}</code>`);
+            loadEnroll();
+        } catch (e) { msg('enroll-status', 'status-error', escapeHtml(e.message)); }
+    });
+
+    function renderEnforce() {
+        const v = S.ver;
+        if (!v) return;
+        const on = !!v.enforce_agent_auth, total = v.agents_total || 0, enr = v.agents_enrolled || 0;
+        $('enroll-count').innerHTML = badge(enr === total ? 'ok' : 'muted', 'fa-id-card', `${enr}/${total} ajan kayıtlı`);
+        $('enforce-badge').innerHTML = on ? badge('ok', 'fa-lock', 'Açık') : badge('muted', 'fa-lock-open', 'Kapalı');
+        $('enforce-hint').textContent = on
+            ? 'Anahtarı olmayan ajanlar bağlanamaz.'
+            : (enr < total ? `Geçiş modu: kayıtsız ajanlar da bağlanabilir. Açmadan önce ${total - enr} ajan kaydolmalı.` : 'Tüm ajanlar kayıtlı; açılabilir.');
+        const b = $('btn-enforce');
+        b.textContent = on ? 'Zorlamayı kapat' : 'Zorlamayı aç';
+        b.dataset.on = on ? '1' : '0';
+        b.classList.toggle('primary', !on && enr === total && total > 0);
+    }
+    $('btn-enforce').addEventListener('click', async () => {
+        const turnOn = $('btn-enforce').dataset.on !== '1';
+        const v = S.ver || {};
+        const missing = (v.agents_total || 0) - (v.agents_enrolled || 0);
+        if (turnOn && !confirm(missing > 0
+            ? `${missing} ajan kayıtlı değil ve zorlama açılınca bağlantısını kaybeder. Yine de açılsın mı?`
+            : 'Zorlama açılacak: anahtarı olmayan ajan bağlanamaz. Devam edilsin mi?')) return;
+        msg('enforce-status', '', '…');
+        try {
+            const d = await postJson('/api/system/enforce-auth', { enabled: turnOn });
+            S.ver.enforce_agent_auth = d.enforce_agent_auth;
+            renderEnforce();
+            msg('enforce-status', 'status-success', d.enforce_agent_auth ? 'Zorlama açıldı.' : 'Zorlama kapatıldı.');
+        } catch (e) { msg('enforce-status', 'status-error', escapeHtml(e.message)); }
+    });
+
+    // ================= YÜKLE =================
+    async function loadAll(check) {
+        const [ver, , devs] = await Promise.all([
+            api('/api/system/version' + (check ? '?check=true' : '')).catch(() => null),
+            loadSelfUpdate(),
+            api('/api/devices').catch(() => null),
+        ]);
+        if (ver) S.ver = ver;
+        if (Array.isArray(devs)) S.devices = devs;
+        if (!S.ver) {
+            $('srv-badge').innerHTML = badge('bad', 'fa-triangle-exclamation', 'Sürüm bilgisi alınamadı');
+            return;
+        }
+        renderServer();
+        renderAgentPackage();
+        renderTargets();
+        renderDeploy();
+        renderCapDevices();
+        renderEnforce();
+        $('last-check').textContent = 'Son kontrol: ' + new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    $('btn-check').addEventListener('click', async function () {
+        this.disabled = true;
+        const i = this.querySelector('i'); i.classList.add('fa-spin');
+        await loadAll(true);
+        i.classList.remove('fa-spin'); this.disabled = false;
+    });
+
+    loadAll(false);
     loadEnroll();
-    loadSelfUpdate();
-    loadCapDevices();
 })();
 </script>
