@@ -9,6 +9,7 @@ using System.Threading;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.IO;
+using System.Diagnostics;
 
 namespace POpsTray
 {
@@ -18,7 +19,8 @@ namespace POpsTray
         private ContextMenuStrip trayMenu;
         private NamedPipeClientStream? pipeClient;
         private CancellationTokenSource cts = new CancellationTokenSource();
-        private string lastWindow = "";
+        // Sunucuya son bildirilen ön plan uygulaması (yalnızca süreç adı)
+        private string lastApp = "";
         private KioskForm _activeKioskForm;
         // Ekran önizlemesi bildirimleri: her önizleme ipucu metnine yazılır, balon en fazla 5 dakikada bir çıkar
         private DateTime _lastPreviewBalloon = DateTime.MinValue;
@@ -31,7 +33,7 @@ namespace POpsTray
         static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll")]
-        static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+        static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
         [DllImport("user32.dll")]
         public static extern bool LockWorkStation();
@@ -79,7 +81,7 @@ namespace POpsTray
             trayIcon.Visible = true;
 
             _ = Task.Run(() => ConnectToServiceAsync(cts.Token));
-            _ = Task.Run(() => MonitorActiveWindowAsync(cts.Token));
+            _ = Task.Run(() => MonitorActiveAppAsync(cts.Token));
         }
 
         public void ShowNotification(string title, string message)
@@ -110,6 +112,8 @@ namespace POpsTray
                     pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
                     
                     await pipeClient.ConnectAsync(5000, token);
+                    // Servis yeniden bağlanınca uygulama adını bilmez; bir sonraki turda yeniden gönderilir
+                    lastApp = "";
                     
                     // Bağlantı başarılı, dinlemeye başla
                     byte[] lBuf = new byte[4];
@@ -172,6 +176,28 @@ namespace POpsTray
                 }
                 if (jsonMsg.Contains("STOP_CAPTURE")) { StopCaptureLoop(); return; }
                 if (jsonMsg.Contains("CAPTURE_SNAPSHOT")) { SendSnapshot(); NotifyPreviewTaken(); return; }
+
+                // Çevrimdışı bypass kodunun sonucu. Kabul edilirse servis ayrıca "unlock" gönderir (kilit ekranı kapanır).
+                if (jsonMsg == "BYPASS_FAILED")
+                {
+                    this.Invoke(new Action(() =>
+                    {
+                        if (_activeKioskForm != null && !_activeKioskForm.IsDisposed) _activeKioskForm.ShowBypassRejected();
+                        else ShowNotification("Bypass", "Bypass kodu kabul edilmedi.");
+                    }));
+                    return;
+                }
+                if (jsonMsg == "BYPASS_SUCCESS") return;
+                // Karantina kaldırılamadı (ağ yalıtımı duruyor): kilit ekranı açık kalır, kullanıcıya "kaldırıldı" denmez
+                if (jsonMsg == "UNLOCK_FAILED")
+                {
+                    this.Invoke(new Action(() =>
+                    {
+                        if (_activeKioskForm != null && !_activeKioskForm.IsDisposed) _activeKioskForm.ShowUnlockFailed();
+                        ShowNotification("Karantina kaldırılamadı", "Ağ yalıtımı kaldırılamadı; cihaz kilitli kalıyor. BT yöneticisine bildirin.");
+                    }));
+                    return;
+                }
                 
                 if (jsonMsg.StartsWith("SHOW_FAIR_USE:"))
                 {
@@ -203,28 +229,37 @@ namespace POpsTray
                     if (action == "lockdown")
                     {
                         string reason = root.TryGetProperty("reason", out var r) ? r.GetString() : "Bilinmiyor";
-                        this.Invoke(new Action(() => 
+                        // Servis kilit sürdükçe tepsi her bağlandığında bunu yeniden gönderir; kilit ekranı zaten açıksa
+                        // yeni pencere ve bildirim yok
+                        this.Invoke(new Action(() =>
                         {
                             if (_activeKioskForm == null || _activeKioskForm.IsDisposed)
                             {
-                                _activeKioskForm = new KioskForm(reason);
+                                _activeKioskForm = new KioskForm(reason ?? "Belirtilmedi", code => SendToService($"UNLOCK_BYPASS:{code}"));
                                 _activeKioskForm.Show();
+                                ShowNotification("Acil Durum İzolasyonu", $"Cihaz BT tarafından kilitlendi!\nNeden: {reason}");
                             }
-                            ShowNotification("Acil Durum İzolasyonu", $"Cihaz BT tarafından kilitlendi!\nNeden: {reason}");
                         }));
                     }
                     else if (action == "unlock")
                     {
-                        this.Invoke(new Action(() => 
+                        // source: server (panel), bypass (çevrimdışı kod), sync (tepsi bağlandı ve kilit yok: açık kalmış
+                        // eski kilit ekranı kapanır, kilit ekranı yoksa bildirim de yok)
+                        string source = root.TryGetProperty("source", out var src) && src.ValueKind == JsonValueKind.String ? src.GetString() ?? "" : "";
+                        this.Invoke(new Action(() =>
                         {
-                            if (_activeKioskForm != null && !_activeKioskForm.IsDisposed)
+                            bool wasLocked = _activeKioskForm != null && !_activeKioskForm.IsDisposed;
+                            if (wasLocked)
                             {
-                                _activeKioskForm.AllowClose = true;
+                                _activeKioskForm!.AllowClose = true;
                                 _activeKioskForm.Hide();
                                 _activeKioskForm.Close();
                                 _activeKioskForm = null;
                             }
-                            ShowNotification("Karantina Kaldırıldı", "Cihazın karantina durumu sistem yöneticisi tarafından kaldırıldı.");
+                            if (source == "sync" && !wasLocked) return;
+                            ShowNotification("Karantina Kaldırıldı", source == "bypass"
+                                ? "Çevrimdışı bypass kodu kabul edildi; kilit ekranı ve ağ yalıtımı kaldırıldı."
+                                : "Cihazın karantina durumu sistem yöneticisi tarafından kaldırıldı.");
                         }));
                     }
                     else if (action == "start_vision_session")
@@ -386,23 +421,23 @@ namespace POpsTray
         }
 
 
-        private async Task MonitorActiveWindowAsync(CancellationToken token)
+        // Ön plandaki uygulama. KVKK: yalnızca süreç adı gönderilir (ör. "chrome", "WINWORD"); pencere başlığı (açık
+        // belge, site, sohbet adı) okunmaz.
+        private async Task MonitorActiveAppAsync(CancellationToken token)
         {
             while (!token.IsCancellationRequested)
             {
                 try
                 {
                     IntPtr hWnd = GetForegroundWindow();
-                    if (hWnd != IntPtr.Zero)
+                    if (hWnd != IntPtr.Zero && GetWindowThreadProcessId(hWnd, out uint pid) != 0 && pid != 0)
                     {
-                        StringBuilder sb = new StringBuilder(256);
-                        GetWindowText(hWnd, sb, 256);
-                        string currentWindow = sb.ToString();
-
-                        if (!string.IsNullOrEmpty(currentWindow) && currentWindow != lastWindow)
+                        string app;
+                        using (Process process = Process.GetProcessById((int)pid)) app = process.ProcessName;
+                        if (!string.IsNullOrEmpty(app) && app != lastApp)
                         {
-                            lastWindow = currentWindow;
-                            SendToService($"ACTIVE_WINDOW:{currentWindow}");
+                            lastApp = app;
+                            SendToService($"ACTIVE_APP:{app}");
                         }
                     }
                 }
@@ -551,11 +586,15 @@ namespace POpsTray
         private void OnAdminBypassClicked(object? sender, EventArgs e)
         {
             string token = ShowInputDialog("Yönetici Bypass", "POps Paneli üzerinden oluşturduğunuz 6 Haneli Bypass Token'ı girin:");
-            if (!string.IsNullOrEmpty(token))
+            if (string.IsNullOrWhiteSpace(token)) return;
+            // Biçim hatası (ör. 0 yerine O) servise gitmez, deneme hakkı yemez
+            if (!POps.Shared.BypassCode.IsWellFormed(token))
             {
-                SendToService($"UNLOCK_BYPASS:{token}");
-                MessageBox.Show("Bypass Token gönderildi. Eğer token doğruysa ağ izolasyonu kaldırılacaktır.", "Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(KioskForm.CodeFormatHint, "Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
+            SendToService($"UNLOCK_BYPASS:{token}");
+            MessageBox.Show("Bypass Token gönderildi. Token doğruysa kilit ekranı ve ağ izolasyonu kaldırılacaktır.", "Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private string ShowInputDialog(string title, string promptText)

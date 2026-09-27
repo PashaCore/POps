@@ -28,7 +28,7 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 - Every property is optional on an upgrade: a value that is not given keeps the installed one. A first install without `SERVER_URL` (and without an old install to take it from) fails with a clear message in the log.
 - A plain `http://` server address is refused, including one migrated from an older install. Over `ws://` the device secret, the enrollment token and the commands the agent runs as SYSTEM would cross the network in clear text. Pre-MSI installs that used `http://<ip>:8000` therefore need `SERVER_URL=https://…` on the command line.
 - `ENROLL_TOKEN` and `BYPASS_SECRET` are hidden from the MSI log. A command line is still visible to other logged-on users while `msiexec` runs, so install from a deployment tool (GPO, Intune, the panel's remote command) or while no student is signed in.
-- The server treats an enrollment token as single-use, so each device needs its own token.
+- An enrollment token enrolls up to `max_uses` devices (1–10000, chosen when it is created on the **Sistem & Sürüm** page; 1 by default) until it expires (1 hour to 30 days, 72 hours by default), so one token can enroll a whole lab. Each device still receives its own secret. A device that is already enrolled cannot take a new secret with a token unless a superadmin allows re-enrollment for it (`POST /api/system/allow-reenroll`).
 - `appsettings.json` and the secret files are written by a custom action, not installed as MSI files, so they survive upgrades. `appsettings.json` is readable only by SYSTEM and Administrators.
 
 ### What the package does

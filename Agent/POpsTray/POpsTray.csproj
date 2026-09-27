@@ -8,4 +8,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- Bypass kodu biçimi (servisle aynı kural): Agent/POps.Shared -->
+  <ItemGroup>
+    <ProjectReference Include="..\POps.Shared\POps.Shared.csproj" />
+  </ItemGroup>
+
 </Project>
