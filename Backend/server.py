@@ -542,6 +542,9 @@ class AgentPoliciesInput(BaseModel):
     dns_categories: list
     auto_quarantine: bool
     quarantine_threshold: int
+    # F8: ajan (v0.1.4+) tam alan-adı eşleşmesi yapar; kategori -> alan adları. BOŞ ise DNS tespiti
+    # kapalı kalır (kaba substring yanlış-alarmı + KVKK riski böyle önlenir).
+    dns_domains: Optional[dict] = {}
 
 class PolicyAlertInput(BaseModel):
     hw_id: str
@@ -1780,7 +1783,9 @@ async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_
 
 @app.post("/api/agent_policies")
 async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(require_admin)):
-    val = json.dumps({"fair_use_text": data.fair_use_text, "dns_categories": data.dns_categories, "auto_quarantine": data.auto_quarantine, "quarantine_threshold": data.quarantine_threshold}, ensure_ascii=False)
+    val = json.dumps({"fair_use_text": data.fair_use_text, "dns_categories": data.dns_categories,
+                      "auto_quarantine": data.auto_quarantine, "quarantine_threshold": data.quarantine_threshold,
+                      "dns_domains": data.dns_domains or {}}, ensure_ascii=False)
     await execute_query("INSERT INTO global_settings (key, value) VALUES ('agent_policies', $1) ON CONFLICT (key) DO UPDATE SET value = $1", (val,))
     return {"status": "success"}
 
@@ -1790,8 +1795,13 @@ async def get_policies():
     # kimlik doğrulaması istemez. Politikayı değiştirmek (POST) admin JWT gerektirir.
     row = await execute_query("SELECT value FROM global_settings WHERE key = 'agent_policies'", fetch=True)
     if row:
-        return json.loads(row[0]["value"])
-    return {"fair_use_text": "Bu cihaz POps platformu tarafından izlenmekte ve yönetilmektedir.", "dns_categories": ["yasadisi_bahis", "pornografi"], "auto_quarantine": False, "quarantine_threshold": 5}
+        pol = json.loads(row[0]["value"])
+    else:
+        pol = {"fair_use_text": "Bu cihaz POps platformu tarafından izlenmekte ve yönetilmektedir.",
+               "dns_categories": ["yasadisi_bahis", "pornografi"], "auto_quarantine": False, "quarantine_threshold": 5}
+    # F8: ajan sözleşmesi — dns_domains her zaman bulunsun (yoksa {} => DNS tespiti kapalı, güvenli).
+    pol.setdefault("dns_domains", {})
+    return pol
 
 @app.post("/api/policy_alert")
 async def add_policy_alert(data: PolicyAlertInput, agent_id: Optional[str] = Depends(agent_http_auth)):
