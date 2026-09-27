@@ -360,6 +360,68 @@ def main():
         "karantina kaldırılamadı bildirimi",
     )
 
+    print("== karantina teslimi ve eşitleme")
+    import websockets
+
+    async def reconcile_flow():
+        results = {}
+        lk = {"target_pc": "HW-FT1", "reason": "test kilidi"}
+        s, r = req("/api/security/lockdown", ad, lk)
+        results["offline_lock"] = (s, r.get("delivered"))
+        row = (await q("SELECT is_quarantined, pending_quarantine_action FROM clients WHERE pc_name='HW-FT1'"))[0]
+        results["pending_lock"] = row["pending_quarantine_action"]
+        uri = HTTP.replace("http://", "ws://") + "/ws/agent/HW-FT1"
+        hdr = {"X-Agent-Secret": "ft-secret-1", "X-Agent-Version": "test"}
+        async with websockets.connect(uri, additional_headers=hdr) as ws:
+            await ws.send(json.dumps({"status": "Online", "hostname": "FT-PC1", "quarantined": False}))
+            got = None
+            for _ in range(10):
+                try:
+                    m = json.loads(await asyncio.wait_for(ws.recv(), timeout=1))
+                    if m.get("action") == "lockdown":
+                        got = m
+                        break
+                except asyncio.TimeoutError:
+                    pass
+            results["resent_lock"] = bool(got and got.get("reason") == "test kilidi")
+            await ws.send(json.dumps({"status": "Online", "hostname": "FT-PC1", "quarantined": True}))
+            await asyncio.sleep(1)
+            row = (await q("SELECT is_quarantined, pending_quarantine_action FROM clients WHERE pc_name='HW-FT1'"))[0]
+            results["lock_done"] = (row["is_quarantined"], row["pending_quarantine_action"])
+            s, r = req("/api/security/unlock", ad, {"target_pc": "HW-FT1", "reason": "test"})
+            results["online_unlock"] = r.get("delivered")
+            await ws.send(json.dumps({"status": "Online", "hostname": "FT-PC1", "quarantined": False}))
+            await asyncio.sleep(1)
+            row = (await q("SELECT is_quarantined, pending_quarantine_action FROM clients WHERE pc_name='HW-FT1'"))[0]
+            results["unlock_done"] = (row["is_quarantined"], row["pending_quarantine_action"])
+            await ws.send(json.dumps({"status": "Online", "hostname": "FT-PC1", "quarantined": True}))
+            await asyncio.sleep(1)
+            row = (await q("SELECT is_quarantined FROM clients WHERE pc_name='HW-FT1'"))[0]
+            results["reconciled"] = row["is_quarantined"]
+        async with websockets.connect(
+            HTTP.replace("http://", "ws://") + "/ws/agent/HW-FT2", additional_headers={"X-Agent-Version": "test"}
+        ) as ws2:
+            await ws2.send(json.dumps({"status": "Online", "hostname": "FT-PC2", "quarantined": True}))
+            await asyncio.sleep(1)
+        row = (await q("SELECT is_quarantined FROM clients WHERE pc_name='HW-FT2'"))[0]
+        results["legacy_ignored"] = row["is_quarantined"]
+        await q(
+            "UPDATE clients SET is_quarantined=FALSE, pending_quarantine_action=NULL WHERE pc_name = ANY($1::text[])",
+            PCS,
+        )
+        return results
+
+    rr = asyncio.run(reconcile_flow())
+    chk(
+        rr["offline_lock"] == (200, False) and rr["pending_lock"] == "lock",
+        "çevrimdışı cihaza kilit bekleyen olarak saklandı",
+    )
+    chk(rr["resent_lock"], "ajan açık bildirince kilit komutu yeniden gönderildi (gerekçesiyle)")
+    chk(rr["lock_done"] == (True, None), "ajan kilitli bildirince bekleyen işlem tamamlandı")
+    chk(rr["online_unlock"] is True and rr["unlock_done"] == (False, None), "çevrimiçi kilit açma tamamlandı")
+    chk(rr["reconciled"] is True, "bekleyen işlem yokken panel ajanın durumuna eşitlendi")
+    chk(not rr["legacy_ignored"], "anahtarsız bağlantının bildirdiği durum yok sayıldı")
+
     print("== politikalar ve oto-kayıt")
     pol = {"fair_use_text": "ft", "dns_categories": ["kumar"], "auto_quarantine": False, "quarantine_threshold": 3}
     s, _ = req(

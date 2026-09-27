@@ -123,14 +123,22 @@ async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
         {"admin": admin_name, "reason": data.reason},
     )
 
-    # Cihazı karantina moduna al
-    await execute_query("UPDATE clients SET is_quarantined = TRUE WHERE pc_name = $1", (data.target_pc,))
-
-    # Ajanı kilitleme emri gönder
+    # Cihazı karantina moduna al. İstenen durum "bekleyen" olarak da saklanır: cihaz çevrimdışıysa ya da komut
+    # ulaşmazsa, ajan heartbeat'te durumunu bildirince yeniden gönderilir (agents.py reconcile_quarantine).
+    await execute_query(
+        "UPDATE clients SET is_quarantined = TRUE, pending_quarantine_action = 'lock', pending_quarantine_reason = $2 "
+        "WHERE pc_name = $1",
+        (data.target_pc, (data.reason or "")[:300]),
+    )
+    online = data.target_pc in manager.active_agents
     await manager.send_command({"action": "lockdown", "reason": data.reason}, data.target_pc)
     await notify("lockdown", "high", "Cihaz karantinaya alındı (%s)" % admin_name, data.reason or "", data.target_pc)
 
-    return {"status": "success", "message": "Karantina sinyali gönderildi."}
+    return {
+        "status": "success",
+        "delivered": online,
+        "message": "Karantina sinyali gönderildi." if online else "Cihaz çevrimdışı; bağlanınca karantinaya alınacak.",
+    }
 
 
 @router.post("/api/security/unlock")
@@ -153,13 +161,24 @@ async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
         data.target_pc, "unlock", "Karantina kaldırıldı: %s" % admin_name, {"admin": admin_name, "reason": data.reason}
     )
 
-    # Cihazı karantina modundan çıkar
-    await execute_query("UPDATE clients SET is_quarantined = FALSE WHERE pc_name = $1", (data.target_pc,))
-
-    # Ajanı kilit açma emri gönder
+    # Cihazı karantina modundan çıkar; istenen durum ajan onaylayana kadar "bekleyen" kalır
+    await execute_query(
+        "UPDATE clients SET is_quarantined = FALSE, pending_quarantine_action = 'unlock', "
+        "pending_quarantine_reason = NULL WHERE pc_name = $1",
+        (data.target_pc,),
+    )
+    online = data.target_pc in manager.active_agents
     await manager.send_command({"action": "unlock"}, data.target_pc)
 
-    return {"status": "success", "message": "Karantina kaldırma sinyali gönderildi."}
+    return {
+        "status": "success",
+        "delivered": online,
+        "message": (
+            "Karantina kaldırma sinyali gönderildi."
+            if online
+            else "Cihaz çevrimdışı; bağlanınca karantina kaldırılacak."
+        ),
+    }
 
 
 def offline_bypass_code(hw_id: str, day: datetime.date) -> str:

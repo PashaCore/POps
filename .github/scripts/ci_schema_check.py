@@ -29,6 +29,7 @@ CHECKS = [
     ("licenses", "match_pattern"),
     ("tickets", "status"),
     ("ticket_messages", "internal"),
+    ("clients", "pending_quarantine_action"),
 ]
 
 

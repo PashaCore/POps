@@ -3,6 +3,7 @@
 import datetime
 import json
 import secrets
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -78,6 +79,50 @@ async def auth_logout(data: AuthEventInput, agent_id: Optional[str] = Depends(ag
     return {"status": "success"}
 
 
+QUARANTINE_RESEND_SECONDS = 300
+_quarantine_resent = {}  # pc_name -> son yeniden gönderim zamanı
+
+
+async def reconcile_quarantine(pc_name: str, reported: bool) -> None:
+    """Ajanın heartbeat'te bildirdiği kilit durumu (0.1.5+, yalnız anahtarlı bağlantı) ile panel durumunu eşitler.
+    Bekleyen yönetici işlemi varsa: ajan istenen durumdaysa işlem tamamlanır, değilse komut yeniden gönderilir
+    (en fazla 5 dakikada bir). Bekleyen işlem yoksa panel ajanın gerçek durumunu gösterir (ör. kendini karantinaya
+    aldığını bildiren istek kaybolduysa)."""
+    rows = await execute_query(
+        "SELECT is_quarantined, pending_quarantine_action AS act, pending_quarantine_reason AS reason "
+        "FROM clients WHERE pc_name = $1",
+        (pc_name,),
+        fetch=True,
+    )
+    if not rows:
+        return
+    row = rows[0]
+    if row["act"] in ("lock", "unlock"):
+        want = row["act"] == "lock"
+        if reported == want:
+            await execute_query(
+                "UPDATE clients SET is_quarantined = $1, pending_quarantine_action = NULL, "
+                "pending_quarantine_reason = NULL WHERE pc_name = $2",
+                (reported, pc_name),
+            )
+            _quarantine_resent.pop(pc_name, None)
+            return
+        now = time.time()
+        if now - _quarantine_resent.get(pc_name, 0) >= QUARANTINE_RESEND_SECONDS:
+            _quarantine_resent[pc_name] = now
+            cmd = {"action": "lockdown", "reason": row["reason"] or ""} if want else {"action": "unlock"}
+            await manager.send_command(cmd, pc_name)
+        return
+    if bool(row["is_quarantined"]) != reported:
+        await execute_query("UPDATE clients SET is_quarantined = $1 WHERE pc_name = $2", (reported, pc_name))
+        await add_audit_log(
+            pc_name,
+            "quarantine_state",
+            "Panel karantina durumu ajanın bildirdiğine eşitlendi: %s" % ("kilitli" if reported else "açık"),
+            {"reported": reported},
+        )
+
+
 @router.websocket("/ws/agent/{pc_name}")
 async def websocket_agent(websocket: WebSocket, pc_name: str):
     await websocket.accept()
@@ -144,6 +189,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     active_hwid,
                 ),
             )
+            if auth_method == "secret" and isinstance(pld.get("quarantined"), bool):
+                await reconcile_quarantine(active_hwid, pld["quarantined"])
 
     try:
         data = await websocket.receive_text()
@@ -532,7 +579,12 @@ async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depend
         else:
             await notify("offline_bypass", "medium", "Çevrimdışı bypass kodu kullanıldı, karantina kalktı", "", pc_name)
     elif agent_id is not None and data.event_type == "agent.unlock_failed":
-        # Karantina kaldırılmak istendi ama ajan ağ yalıtımını kaldıramadı: kilit sürüyor, yönetici bilsin
+        # Karantina kaldırılmak istendi ama ajan ağ yalıtımını kaldıramadı: kilit sürüyor. Panel bunu göstersin;
+        # kilit açma "bekleyen" kalır ve ajan heartbeat'te kilitli bildirdikçe (5 dk'da bir) yeniden denenir.
+        await execute_query(
+            "UPDATE clients SET is_quarantined = TRUE, pending_quarantine_action = 'unlock' WHERE pc_name = $1",
+            (pc_name,),
+        )
         await notify(
             "unlock_failed", "high", "Karantina kaldırılamadı, ağ yalıtımı sürüyor", (data.reason or "")[:300], pc_name
         )
