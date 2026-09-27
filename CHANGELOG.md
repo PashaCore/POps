@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6-alpha] - 2026-09-27
+
+Fixes what the 0.1.5 field test found and completes the helpdesk: the tray and watchdog now start in the signed-in user's session right after an install or update (before, only at the next sign-in, so a quarantine could not show its lock screen), students can report problems from the tray, and the rollback drill reports a clean `rolled_back`. It also closes ways a student could keep the lock screen away or flood the server from the tray, and refuses install folders that would let a user replace a program that runs as SYSTEM.
+
+Upgrading: send 0.1.6-alpha from **Sistem & Sürüm** as usual; no server change is needed beyond the current main. After the update the tray should appear within a minute without signing out.
+
 ### Added
 - **Agent: help desk in the tray.** **Sorun bildir** sends a request (subject, category, description) through the service to `POST /api/tickets/agent/{hw_id}`. The service adds the user of the requesting tray's session as the reporter, limits the text to 200/5000 characters and shows the server's answer in Turkish (for example the limit of open requests). **Taleplerim** lists the requests and the IT team's replies, only those of that user, since lab PCs are shared. New replies are checked every 5 minutes and shown as a balloon. Nothing is sent without a device secret.
 - **Docs:** How a local administrator lifts a quarantine by hand when the panel and the bypass code cannot, for example when PowerShell or the firewall is broken (`Agent/README.md`).
@@ -243,7 +249,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.5-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.6-alpha...HEAD
+[0.1.6-alpha]: https://github.com/PashaCore/POps/compare/v0.1.5-alpha...v0.1.6-alpha
 [0.1.5-alpha]: https://github.com/PashaCore/POps/compare/v0.1.4-alpha...v0.1.5-alpha
 [0.1.4-alpha]: https://github.com/PashaCore/POps/compare/v0.1.3-alpha...v0.1.4-alpha
 [0.1.3-alpha]: https://github.com/PashaCore/POps/compare/v0.1.2-alpha...v0.1.3-alpha
