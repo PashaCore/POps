@@ -123,3 +123,5 @@ To prove the rollback path on a real machine without publishing a broken build:
 3. Dispatch a newer signed release to that machine from the panel.
 
 The new version starts but, seeing the marker, does not write `health.json`. The updater treats it as unhealthy after 90 seconds and reinstalls the previous MSI with `POPS_ROLLBACK=1`. It then deletes the marker (one-shot) and reports `rolled_back` / `msi` with `running_version` set to the previous version. Dispatching the same release again then succeeds normally.
+
+The updater that runs is always the one from the version **installed before** the update: the running service copies `POpsUpdater` out of its own install folder, using its own `POpsUpdater.deps.json` to decide which files to copy. A drill therefore tests the installed version's updater and copy step, not the new version's. To test a change to the updater or to what it depends on (such as `POps.Shared.dll` in 0.1.4), first ship that version normally without the marker and check that the service, watchdog and tray run. Then do the drill with the next release (0.1.4 → 0.1.5, rolling back to 0.1.4).
