@@ -111,7 +111,7 @@
     <div class="rp-pane" id="pane-patches">
         <div class="rp-note" id="ptNote">
             <i class="fas fa-circle-info"></i> Windows güncelleme durumu, bu özelliği destekleyen ajanlardan gelir (0.1.5-alpha ve sonrası).
-            Eski ajanlar "bildirmedi" görünür ve tarama/kurma komutunu yok sayar. Ajan güncellemeleri kurar ama bilgisayarı kendiliğinden yeniden başlatmaz.
+            Eski ajanlar "bildirmedi" görünür ve tarama/kurma komutunu yok sayar. Ajan güncellemeleri kurar ama bilgisayarı yeniden başlatmaz; yeniden başlatma gereken güncellemelerden sonra Windows kendi ayarlarına göre (etkin saatler dışında) yeniden başlatabilir. "Güvenlik" kurulumu kritik güncellemeleri de kapsar; "Tümünü kur" isteğe bağlı ve sürüm yükseltme güncellemelerini kurmaz.
         </div>
         <div class="rp-card">
             <div class="rp-row" style="justify-content:space-between;margin-bottom:var(--space-4);" id="ptActions">

@@ -302,6 +302,36 @@ def main():
         chk(s == 200 and txt.startswith("﻿"), "CSV: %s" % kind)
     chk(req("/api/reports/export?kind=users", ad)[0] == 400, "bilinmeyen rapor türü → 400")
 
+    print("== ajanın bildirdiği karantina durumu")
+    log_q = {
+        "log_type": "Security",
+        "message": "eşik",
+        "event_type": "agent.auto_quarantine",
+        "action": "auto_quarantine",
+        "risk_level": "high",
+        "reason": "3 ihlal",
+    }
+    req("/api/logs/HW-FT2", body=log_q)
+    st = asyncio.run(q("SELECT is_quarantined FROM clients WHERE pc_name = 'HW-FT2'"))[0]["is_quarantined"]
+    chk(not st, "anahtarsız 'auto_quarantine' olayı karantina bayrağını değiştirmez")
+    chk(
+        req("/api/logs/HW-FT1", body=log_q, headers=agent1)[0] == 200,
+        "anahtarlı ajan kendini karantinaya aldığını bildirdi",
+    )
+    st = asyncio.run(q("SELECT is_quarantined FROM clients WHERE pc_name = 'HW-FT1'"))[0]["is_quarantined"]
+    s, lst = req("/api/notifications", ad)
+    chk(
+        st is True and any(n["event"] == "auto_quarantine" and n["pc_name"] == "HW-FT1" for n in lst.get("items", [])),
+        "panelde karantinada görünür ve bildirim üretildi",
+    )
+    req(
+        "/api/logs/HW-FT1",
+        body={**log_q, "event_type": "agent.offline_bypass", "action": "offline_bypass"},
+        headers=agent1,
+    )
+    st = asyncio.run(q("SELECT is_quarantined FROM clients WHERE pc_name = 'HW-FT1'"))[0]["is_quarantined"]
+    chk(st is False, "bypass sonrası karantina bayrağı kalktı")
+
     print("== politikalar ve oto-kayıt")
     pol = {"fair_use_text": "ft", "dns_categories": ["kumar"], "auto_quarantine": False, "quarantine_threshold": 3}
     s, _ = req(

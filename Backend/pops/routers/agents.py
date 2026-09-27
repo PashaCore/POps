@@ -510,6 +510,27 @@ async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depend
         reason=data.reason or "",
         meta_data=data.meta_data or {},
     )
+    # Ajanın kendi karantina durumunu değiştiren olaylar panel durumunu da günceller; YALNIZ anahtarı
+    # doğrulanmış ajandan (kimliksiz istemci başka cihazın karantina bayrağını değiştiremesin).
+    if agent_id is not None and data.event_type in ("agent.auto_quarantine", "agent.offline_bypass"):
+        quarantined = data.event_type == "agent.auto_quarantine"
+        await execute_query("UPDATE clients SET is_quarantined = $1 WHERE pc_name = $2", (quarantined, pc_name))
+        await add_audit_log(
+            pc_name,
+            "auto_quarantine" if quarantined else "offline_bypass",
+            (data.message or "")[:300],
+            {"event_type": data.event_type, "reason": (data.reason or "")[:200]},
+        )
+        if quarantined:
+            await notify(
+                "auto_quarantine",
+                "high",
+                "Cihaz kural ihlali eşiğinde kendini karantinaya aldı",
+                (data.reason or "")[:300],
+                pc_name,
+            )
+        else:
+            await notify("offline_bypass", "medium", "Çevrimdışı bypass kodu kullanıldı, karantina kalktı", "", pc_name)
     return {"status": "success"}
 
 
