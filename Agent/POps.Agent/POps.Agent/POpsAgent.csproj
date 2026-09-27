@@ -15,4 +15,11 @@
 		<PackageReference Include="System.Management" Version="8.0.0" />
 	</ItemGroup>
 
+	<!-- Ortak yardımcılar (sürüm, log, ayarlar, kimlik): Agent/POps.Shared -->
+	<ItemGroup>
+		<ProjectReference Include="..\..\POps.Shared\POps.Shared.csproj" />
+		<Using Include="POps.Shared" />
+		<InternalsVisibleTo Include="POps.Tests" />
+	</ItemGroup>
+
 </Project>

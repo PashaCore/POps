@@ -12,4 +12,17 @@
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.0" />
   </ItemGroup>
 
+  <!-- Ortak yardımcılar (sürüm, log, ayarlar, kimlik): Agent/POps.Shared -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\POps.Shared\POps.Shared.csproj" />
+    <Using Include="POps.Shared" />
+  </ItemGroup>
+
+  <!-- Yalnızca Windows'ta çalışır (servis denetimi, ACL): platform çözümleyicisine (CA1416) bildirilir -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>windows</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

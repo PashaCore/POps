@@ -42,7 +42,10 @@ namespace POpsAgent
         private static int _busy;
 
         // Ajanın kendi sürümü, manifest ve VERSION dosyasındaki biçimde ("0.1.2-alpha")
-        public static string InstalledVersion => POpsHelpers.AppVersion.TrimStart('v');
+        public static string InstalledVersion => InstalledVersionOverride ?? POpsHelpers.AppVersion.TrimStart('v');
+
+        // Birim testleri için (kurulu sürümü taklit eder)
+        internal static string InstalledVersionOverride { get; set; }
 
         // ==========================================
         // health.json: updater yeni sürümün ayağa kalktığını buradan anlar
@@ -190,7 +193,7 @@ namespace POpsAgent
             }
         }
 
-        private static async Task<bool> DownloadVerifiedAsync(HttpClient http, string url, string path, ReleaseVerifier.Artifact expected)
+        internal static async Task<bool> DownloadVerifiedAsync(HttpClient http, string url, string path, ReleaseVerifier.Artifact expected)
         {
             POpsHelpers.Log("UPDATE", $"İndiriliyor: {url}");
             string partial = path + ".partial";

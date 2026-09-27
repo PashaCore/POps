@@ -1,39 +1,42 @@
-using System;
-using System.IO;
-using System.Text.Json;
-using System.Net;
-using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
-namespace POpsAgent
+using System.Text.Json;
+
+namespace POps.Shared
 {
+    // Ajan bileşenlerinin ortak yardımcıları: sürüm, log, ayar okuma, cihaz kimliği.
+    // Eskiden her bileşende ayrı bir kopya (OmyoHelpers.cs) vardı ve kopyalar ayrışmıştı: örneğin ayarı önce
+    // kurulum klasöründen okuyan düzeltme yalnızca ajandaydı; watchdog, updater ve vision yalnızca C:\POps'a
+    // bakıyor, MSI kurulumunda (C:\Program Files\POps) sunucu adresini bulamayıp 127.0.0.1'e düşebiliyordu.
+    [SupportedOSPlatform("windows")]
     public static class POpsHelpers
     {
-        // Klasör yolları POps standartlarına göre güncellendi
-        private static readonly string LogDir = @"C:\POpsLogs";
+        public const string MachineLogDir = @"C:\POpsLogs";
+        public const string IdentityPath = @"C:\POpsData\identity.key";
         private static readonly object LogLock = new object();
 
-        // Ayar dosyası önce ajanın kurulu olduğu klasörde (ör. C:\Program Files (x86)\POps), sonra eski
-        // sabit konumda (C:\POps) aranır; her ayar için ilk dolu değer kullanılır. Yalnızca C:\POps'a
-        // bakıldığında başka klasöre kurulan ajanlar sunucu adresini bulamıyordu.
-        public static readonly string[] ConfigPaths =
-        {
-            Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
-            @"C:\POps\appsettings.json",
-        };
+        // ==========================================
+        // 0. BİLEŞEN VE SÜRÜM
+        // ==========================================
+        // Bileşen adı her exe'nin açılışında ayarlanır. "Agent" ve "Updater" SYSTEM olarak çalışır ve
+        // C:\POpsLogs\POps_<tarih>.log'a yazar. Kullanıcı oturumunda çalışanlar ("Watchdog", "Vision") oraya
+        // yazamaz (klasör SYSTEM/Administrators'a kilitli), kendi %LOCALAPPDATA%\POps\Logs klasörlerine yazar.
+        public static string Component { get; set; } = "Agent";
 
-        // ==========================================
-        // 0. SÜRÜM (TEK KAYNAK)
-        // ==========================================
-        // Sürüm kök VERSION dosyasından gelir (Directory.Build.props -> assembly). Koda gömülmez.
-        // "+<commit>" derleme meta verisi varsa atılır; önüne "v" eklenir (ör. "v0.1.2-alpha").
+        private static readonly HashSet<string> UserSessionComponents = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Watchdog", "Vision" };
+
+        public static bool LogsToUserProfile => UserSessionComponents.Contains(Component);
+
+        // Sürüm kök VERSION dosyasından gelir (Agent/Directory.Build.props -> assembly). Bütün bileşenler aynı
+        // VERSION ile derlendiği için ortak kütüphanenin sürümü bileşenin sürümüdür. "+<commit>" atılır, önüne
+        // "v" eklenir (ör. "v0.1.3-alpha").
         public static string AppVersion
         {
             get
             {
-                var asm = Assembly.GetExecutingAssembly();
+                var asm = typeof(POpsHelpers).Assembly;
                 string v = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
                            ?? asm.GetName().Version?.ToString()
                            ?? "0.0.0";
@@ -44,14 +47,27 @@ namespace POpsAgent
         }
 
         // ==========================================
-        // 1. MERKEZİ VE NİZAMLI LOGLAMA
+        // 1. LOG
         // ==========================================
+        // Testler logu geçici bir klasöre yönlendirir (C:\POpsLogs'a asla dokunmasınlar)
+        internal static string LogDirectoryOverride { get; set; }
+
+        public static string LogDirectory =>
+            LogDirectoryOverride
+            ?? (LogsToUserProfile
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "POps", "Logs")
+                : MachineLogDir);
+
+        public static string LogFilePath(DateTime day) =>
+            Path.Combine(LogDirectory, LogsToUserProfile ? $"POps{Component}_{day:yyyyMMdd}.log" : $"POps_{day:yyyyMMdd}.log");
+
         // C:\POpsLogs yalnızca SYSTEM ve Administrators'a açıktır (izin devralınmaz). C:\ altındaki varsayılan izinle
         // oturum açan her kullanıcı buraya dosya ya da bağlantı (hardlink/junction) bırakabiliyor, SYSTEM olarak
-        // yazılan logu başka bir dosyaya yönlendirebiliyor ve logları okuyabiliyordu. Tepsi ve watchdog kullanıcı
-        // oturumunda çalıştığı için kendi loglarını %LOCALAPPDATA%\POps\Logs'a yazar.
+        // yazılan logu başka bir dosyaya yönlendirebiliyor ve logları okuyabiliyordu. Kullanıcı oturumundaki
+        // bileşenler için (kendi klasörleri) bir şey yapmaz.
         public static void SecureLogDirectory()
         {
+            if (LogsToUserProfile || LogDirectoryOverride != null) return;
             try
             {
                 var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
@@ -59,31 +75,32 @@ namespace POpsAgent
                 sec.SetAccessRuleProtection(true, false);
                 sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
                 sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-                var dir = new DirectoryInfo(LogDir);
+                var dir = new DirectoryInfo(MachineLogDir);
                 if (dir.Exists) dir.SetAccessControl(sec);
                 else dir.Create(sec);
             }
-            catch (Exception ex) { Log("HELPERS", $"{LogDir} izinleri ayarlanamadı: {ex.Message}", true); }
+            catch (Exception ex) { Log("HELPERS", $"{MachineLogDir} izinleri ayarlanamadı: {ex.Message}", true); }
         }
 
         public static void Log(string component, string message, bool isError = false)
         {
             try
             {
-                if (!Directory.Exists(LogDir))
-                    SecureLogDirectory();
-
-                string dateStr = DateTime.Now.ToString("yyyyMMdd");
-                string logFile = Path.Combine(LogDir, $"POps_{dateStr}.log"); // Log dosya adı POps oldu
+                string dir = LogDirectory;
+                if (!Directory.Exists(dir))
+                {
+                    if (LogsToUserProfile || LogDirectoryOverride != null) Directory.CreateDirectory(dir);
+                    else SecureLogDirectory();
+                }
 
                 string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
                 string errorTag = isError ? "[ERROR]" : "[INFO ]";
                 string logLine = $"[{timestamp}] {errorTag} [{component}] {message}{Environment.NewLine}";
 
-                // Multi-process çakışmalarını önlemek için kilit (Lock)
+                // Aynı süreçteki iş parçacıkları için kilit
                 lock (LogLock)
                 {
-                    File.AppendAllText(logFile, logLine);
+                    File.AppendAllText(LogFilePath(DateTime.Now), logLine);
                 }
 
                 // Konsol ekranı açıksa oraya da renkli yaz (Debug için)
@@ -102,24 +119,23 @@ namespace POpsAgent
         }
 
         // ==========================================
-        // 2. ORTAK CONFIG (IP) OKUMA
+        // 2. AYARLAR
         // ==========================================
+        // Ayar dosyası önce bileşenin kurulu olduğu klasörde (MSI: C:\Program Files\POps), sonra eski sabit konumda
+        // (C:\POps) aranır; her ayar için ilk dolu değer kullanılır. Testler yolları değiştirebilir.
+        public static IReadOnlyList<string> ConfigPaths { get; internal set; } = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
+            @"C:\POps\appsettings.json",
+        };
+
         public static string GetServerUrl()
         {
             string defaultUrl = "http://127.0.0.1:8000"; // Son çare (Fallback)
 
             // Sunucu adresi koda gömülmez: önce POPS_SERVER_URL ortam değişkeni, sonra appsettings.json
-            string envUrl = Environment.GetEnvironmentVariable("POPS_SERVER_URL");
-            if (!string.IsNullOrWhiteSpace(envUrl))
-            {
-                return envUrl.Trim().TrimEnd('/');
-            }
-
-            string url = ReadConfigValue("ServerUrl");
-            if (url != null)
-            {
-                return url.TrimEnd('/');
-            }
+            string url = GetSetting("ServerUrl", "POPS_SERVER_URL");
+            if (url != null) return url.TrimEnd('/');
 
             Log("HELPERS", $"ServerUrl tanımlı değil ({string.Join(" | ", ConfigPaths)}); {defaultUrl} kullanılıyor.", true);
             return defaultUrl;
@@ -140,9 +156,11 @@ namespace POpsAgent
         }
 
         // Bir ayarı sırayla ConfigPaths içindeki dosyalarda arar; hiçbirinde dolu değilse null döner.
-        public static string ReadConfigValue(string key)
+        public static string ReadConfigValue(string key) => ReadConfigValue(key, ConfigPaths);
+
+        public static string ReadConfigValue(string key, IEnumerable<string> paths)
         {
-            foreach (string path in ConfigPaths)
+            foreach (string path in paths)
             {
                 try
                 {
@@ -151,10 +169,7 @@ namespace POpsAgent
                     if (doc.RootElement.TryGetProperty(key, out JsonElement element) && element.ValueKind == JsonValueKind.String)
                     {
                         string value = element.GetString();
-                        if (!string.IsNullOrWhiteSpace(value))
-                        {
-                            return value.Trim();
-                        }
+                        if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
                     }
                 }
                 catch (Exception ex)
@@ -166,66 +181,21 @@ namespace POpsAgent
         }
 
         // ==========================================
-        // 3. ORTAK KİMLİK (HW_ID) OKUMA
+        // 3. CİHAZ KİMLİĞİ (HW_ID)
         // ==========================================
         public static string GetHardwareId()
         {
-            string identityPath = @"C:\POpsData\identity.key"; // Kimlik yolu güncellendi
             try
             {
-                if (File.Exists(identityPath))
+                if (File.Exists(IdentityPath))
                 {
-                    string savedId = File.ReadAllText(identityPath).Trim();
-                    if (!string.IsNullOrEmpty(savedId) && savedId.StartsWith("HW-"))
-                    {
-                        return savedId;
-                    }
+                    string savedId = File.ReadAllText(IdentityPath).Trim();
+                    if (!string.IsNullOrEmpty(savedId) && savedId.StartsWith("HW-")) return savedId;
                 }
             }
             catch { }
 
             return "HW-UNKNOWN";
-        }
-
-        // ==========================================
-        // 4. WAKE-ON-LAN YAYINI (P2P UYANDIRMA)
-        // ==========================================
-        public static void SendWolPacket(string macAddress)
-        {
-            try
-            {
-                string cleanMac = macAddress.Replace(":", "").Replace("-", "").Replace(".", "").Trim();
-                if (cleanMac.Length != 12)
-                {
-                    Log("HELPERS", $"WOL Hatası: Geçersiz MAC adresi formatı ({macAddress})", true);
-                    return;
-                }
-
-                byte[] macBytes = new byte[6];
-                for (int i = 0; i < 6; i++)
-                {
-                    macBytes[i] = Convert.ToByte(cleanMac.Substring(i * 2, 2), 16);
-                }
-
-                byte[] packet = new byte[102];
-                for (int i = 0; i < 6; i++) packet[i] = 0xFF;
-                for (int i = 1; i <= 16; i++)
-                {
-                    for (int j = 0; j < 6; j++)
-                    {
-                        packet[i * 6 + j] = macBytes[j];
-                    }
-                }
-
-                using UdpClient client = new UdpClient();
-                client.EnableBroadcast = true;
-                client.Send(packet, packet.Length, new IPEndPoint(IPAddress.Broadcast, 9));
-                Log("HELPERS", $"WOL Sihirli Paketi fırlatıldı: {macAddress}");
-            }
-            catch (Exception ex)
-            {
-                Log("HELPERS", $"WOL Gönderim hatası ({macAddress}): {ex.Message}", true);
-            }
         }
     }
 }

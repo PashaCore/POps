@@ -19,7 +19,9 @@ namespace POpsAgent
     {
         public const string DefaultDir = @"C:\POpsData\secure";
 
-        private static readonly SecurityIdentifier SystemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        // Ajanın çalıştığı hesap (LocalSystem). Birim testleri bunu testi çalıştıran kullanıcıya çevirir: korumalı
+        // dosyayı değiştirmek için SYSTEM'in sahip olduğu hakları test kullanıcısı üstlenir.
+        internal static SecurityIdentifier SystemSid { get; set; } = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
         private static readonly SecurityIdentifier AdminsSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
 
         public static string Dir { get; set; } = DefaultDir;

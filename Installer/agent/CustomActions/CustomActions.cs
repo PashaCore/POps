@@ -13,6 +13,9 @@ using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
 using WixToolset.Dtf.WindowsInstaller;
 
+// Birim testleri (Agent/POps.Tests) iç mantığa (Setup, Layout) erişir; proje GenerateAssemblyInfo=false olduğu için burada
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("POps.Tests")]
+
 namespace POps.Installer
 {
     // POps Agent MSI'ının ertelenmiş (deferred, SYSTEM) custom action'ları.
@@ -330,7 +333,8 @@ namespace POps.Installer
         }
 
         // ---- ACL (ajandaki SecureDataDirectory / SecureStore ile aynı) ----
-        private static readonly SecurityIdentifier SystemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        // Kurulumun çalıştığı hesap (LocalSystem). Birim testleri bunu testi çalıştıran kullanıcıya çevirir.
+        internal static SecurityIdentifier SystemSid { get; set; } = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
         private static readonly SecurityIdentifier AdminsSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
         private static readonly SecurityIdentifier UsersSid = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
         private const InheritanceFlags Inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
