@@ -32,10 +32,15 @@ namespace POpsTray
         private static extern IntPtr GetModuleHandle(string lpModuleName);
 
         private string _reason;
+        // Yönetici bypass kodu servise gönderilir (UNLOCK_BYPASS); servis doğrular, hatalı denemeleri kilitler
+        private readonly Action<string> _submitBypass;
+        private TextBox _txtBypass = null!;
+        private Label _lblBypassStatus = null!;
 
-        public KioskForm(string reason)
+        public KioskForm(string reason, Action<string> submitBypass)
         {
             _reason = reason;
+            _submitBypass = submitBypass;
             InitializeComponent();
         }
 
@@ -75,11 +80,41 @@ namespace POpsTray
             lblSubText.ForeColor = Color.LightGray;
             lblSubText.Font = new Font("Segoe UI", 16, FontStyle.Regular);
             lblSubText.TextAlign = ContentAlignment.TopCenter;
-            lblSubText.Dock = DockStyle.Fill;
+            lblSubText.AutoSize = true;
+            lblSubText.Anchor = AnchorStyles.Top;
+
+            // Kilit ekranı görev çubuğunu da kapattığı için tepsi menüsündeki bypass girişine ulaşılamaz: çevrimdışı
+            // bypass kodu burada girilir. Geçerliyse servis kilit ekranını kapatır ve ağ yalıtımını kaldırır.
+            var bypassRow = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Anchor = AnchorStyles.Top,
+                Margin = new Padding(0, 24, 0, 0),
+            };
+            var lblBypass = new Label { Text = "Yönetici bypass kodu:", ForeColor = Color.LightGray, Font = new Font("Segoe UI", 12), AutoSize = true, Margin = new Padding(0, 6, 8, 0) };
+            _txtBypass = new TextBox { Width = 180, Font = new Font("Segoe UI", 12), CharacterCasing = CharacterCasing.Upper, MaxLength = 64 };
+            var btnBypass = new Button { Text = "Kilidi Aç", AutoSize = true, Font = new Font("Segoe UI", 11), ForeColor = Color.White, BackColor = Color.FromArgb(60, 60, 60), FlatStyle = FlatStyle.Flat, Margin = new Padding(8, 0, 0, 0) };
+            btnBypass.Click += (s, e) => SubmitBypass();
+            this.AcceptButton = btnBypass;
+            bypassRow.Controls.AddRange(new Control[] { lblBypass, _txtBypass, btnBypass });
+
+            _lblBypassStatus = new Label { Text = "", ForeColor = Color.Orange, Font = new Font("Segoe UI", 11), AutoSize = true, Anchor = AnchorStyles.Top, Margin = new Padding(0, 10, 0, 0) };
+
+            TableLayoutPanel bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            bottom.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bottom.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bottom.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bottom.Controls.Add(lblSubText, 0, 0);
+            bottom.Controls.Add(bypassRow, 0, 1);
+            bottom.Controls.Add(_lblBypassStatus, 0, 2);
 
             table.Controls.Add(lblIcon, 0, 0);
             table.Controls.Add(lblWarning, 0, 1);
-            table.Controls.Add(lblSubText, 0, 2);
+            table.Controls.Add(bottom, 0, 2);
             
             this.Controls.Add(table);
 
@@ -87,6 +122,23 @@ namespace POpsTray
         }
 
         public bool AllowClose { get; set; } = false;
+
+        private void SubmitBypass()
+        {
+            string code = _txtBypass.Text.Trim();
+            if (code.Length == 0) return;
+            _txtBypass.Clear();
+            _lblBypassStatus.ForeColor = Color.LightGray;
+            _lblBypassStatus.Text = "Kod doğrulanıyor…";
+            _submitBypass?.Invoke(code);
+        }
+
+        // Servis kodu reddetti (hatalı ya da çok sayıda denemeden sonra bypass geçici olarak kilitli)
+        public void ShowBypassRejected()
+        {
+            _lblBypassStatus.ForeColor = Color.Orange;
+            _lblBypassStatus.Text = "Kod kabul edilmedi. Art arda hatalı denemelerden sonra bypass bir süre kilitlenir.";
+        }
 
         private void KioskForm_FormClosing(object? sender, FormClosingEventArgs e)
         {

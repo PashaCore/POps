@@ -117,7 +117,9 @@ reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities
 
 **Offline bypass.** If a quarantined PC cannot reach the server, an admin can get the day's code for it with the
 key button on **Cihaz Yönetimi** (`GET /api/security/bypass_token/{pc}`; every request is logged). The user enters
-it in the tray menu **Yönetici Müdahalesi (Bypass)**. A valid code removes the network isolation. The code is the
+it on the lock screen or in the tray menu **Yönetici Müdahalesi (Bypass)**. From 0.1.5-alpha a valid code does what
+`unlock` does: it closes the lock screen and removes the network isolation, and when the server can be reached the
+agent records the use as `agent.offline_bypass`. Older agents only remove the isolation. The code is the
 first 6 hex characters of SHA-256(`hw_id` + `BYPASS_SECRET` + date), so the agent's `BypassSecret` must equal the
 server's `BYPASS_SECRET` and both must use the same local date. After 5 wrong codes the bypass locks for 15
 minutes, doubling up to 24 hours.
@@ -129,7 +131,8 @@ minutes, doubling up to 24 hours.
 - **DNS policy.** The agent contains DNS-cache matching against the policy's `dns_domains` (exact domain or
   subdomain, per active category), `policy_alert` reporting and the `auto_quarantine` threshold. In agents up to
   0.1.4-alpha the service does not start that monitoring loop, so they report no DNS violations and never
-  quarantine a PC automatically.
+  quarantine a PC automatically. From 0.1.5-alpha it starts when the command channel first connects and checks
+  the DNS cache every 15 seconds; without a `dns_domains` list nothing is flagged.
 
 ## Software inventory and Windows updates
 
@@ -145,7 +148,9 @@ The server side is in place; agents report this data from 0.1.5-alpha on. Older 
 | server → agent | `{"action": "install_updates", "scope": "security" \| "all"}` | Install the pending security/critical updates, or all of them. The PC is not restarted; the need for a restart is reported as `reboot_required`. |
 
 Both endpoints require `X-Agent-Id` + `X-Agent-Secret` of an enrolled device, even while enforcement is off.
-Admins send the commands from **Raporlar** → **Windows güncellemeleri**; only online devices receive them.
+Admins send the commands from **Raporlar** → **Windows güncellemeleri**; only online devices receive them. When the
+agent collects and sends this data, how it classifies updates and what an installation does are described in
+[`Agent/README.md`](../Agent/README.md#what-the-agent-reports).
 
 ## Updates
 
@@ -174,9 +179,10 @@ older than 0.1.3-alpha cannot apply signed updates and must be reinstalled once 
 | `C:\POpsData\identity.key` | Hardware ID. |
 | `C:\POpsData\secure\` | `agent.secret`, `enroll.token`, `bypass.secret`, `capabilities.json`, `isolation.json` (SYSTEM and Administrators only). |
 | `C:\POpsData\health.json`, `update.lock`, `update-result.json` | Update state. |
+| `C:\POpsData\session.json`, `patch-scan.json` | Last reported sign-in and time of the last reported Windows Update scan (0.1.5-alpha on). |
 | `C:\POpsData\packages\installed.msi`, `updates\`, `updater\` | Rollback package, downloaded update, updater copy. |
 | `C:\POpsLogs\POps_<yyyyMMdd>.log` | Service and updater log (SYSTEM and Administrators only). |
-| `%LOCALAPPDATA%\POps\Logs\` | Per-user logs: `POpsWatchdog_<yyyyMMdd>.log` and the tray's `TrayLog.txt` (message types only, rotated at 1 MB). |
+| `%LOCALAPPDATA%\POps\Logs\` | Per-user logs: `POpsWatchdog_<yyyyMMdd>.log`, `POpsVision_<yyyyMMdd>.log` and the tray's `TrayLog.txt` (message types only, rotated at 1 MB). |
 
 Uninstalling removes the programs, the service, the Run entry and `appsettings.json`, but keeps `C:\POpsData`
 (identity and secret) and `C:\POpsLogs`, so a reinstalled PC returns with the same identity.

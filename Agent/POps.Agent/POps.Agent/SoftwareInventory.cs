@@ -1,0 +1,212 @@
+using Microsoft.Win32;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Runtime.Versioning;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
+
+#nullable disable
+
+namespace POpsAgent
+{
+    // Sunucu modeli: Backend/pops/models.py SoftwareItem / SoftwareInventoryInput
+    public sealed class SoftwareItem
+    {
+        [JsonPropertyName("name")] public string Name { get; set; }
+        [JsonPropertyName("version")] public string Version { get; set; } = "";
+        [JsonPropertyName("publisher")] public string Publisher { get; set; }
+        [JsonPropertyName("install_date")] public string InstallDate { get; set; }
+    }
+
+    public sealed class SoftwareInventoryPayload
+    {
+        [JsonPropertyName("items")] public List<SoftwareItem> Items { get; set; } = new List<SoftwareItem>();
+    }
+
+    // Kurulu yazılımlar: "Programlar ve Özellikler"in kaynağı olan Uninstall anahtarları.
+    //  * HKLM (64 bit) ve WOW6432Node (32 bit uygulamalar), ayrıca oturumu açık kullanıcıların hive'ları
+    //    (HKU\<SID>: yalnızca o kullanıcıya kurulan uygulamalar, ör. kullanıcı kurulumu VS Code, Zoom).
+    //  * Windows bileşenleri ve güncelleme kayıtları atlanır: SystemComponent=1, ParentKeyName (başka bir ürünün
+    //    parçası), ReleaseType Update/Hotfix/Security Update, boş DisplayName.
+    //  * Liste (ad, sürüm) çiftine göre tekilleştirilip sıralanır; aynı kurulum her zaman aynı özeti verir.
+    [SupportedOSPlatform("windows")]
+    public static class SoftwareInventory
+    {
+        public const int MaxItems = 5000;
+        public const string UninstallPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+        public const string UninstallPath32 = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall";
+
+        private static readonly string[] SkippedReleaseTypes = { "Update", "Hotfix", "Security Update" };
+        private static readonly string[] ValueNames = { "DisplayName", "DisplayVersion", "Publisher", "InstallDate", "SystemComponent", "ParentKeyName", "ReleaseType" };
+
+        // Bir Uninstall alt anahtarının değerleri -> kayıt; atlanacaksa null
+        public static SoftwareItem FromEntry(IReadOnlyDictionary<string, object> values)
+        {
+            string name = Text(values, "DisplayName");
+            if (name == null) return null;
+            if (Number(values, "SystemComponent") == 1) return null;
+            if (Text(values, "ParentKeyName") != null) return null;
+            string releaseType = Text(values, "ReleaseType");
+            if (releaseType != null && SkippedReleaseTypes.Any(t => string.Equals(t, releaseType, StringComparison.OrdinalIgnoreCase))) return null;
+
+            return new SoftwareItem
+            {
+                Name = name,
+                Version = Text(values, "DisplayVersion") ?? "",
+                Publisher = Text(values, "Publisher"),
+                // YYYYMMDD olduğu gibi (bazı kurulumlar başka biçim yazar; sunucu metin olarak saklar)
+                InstallDate = Text(values, "InstallDate"),
+            };
+        }
+
+        public static List<SoftwareItem> Build(IEnumerable<IReadOnlyDictionary<string, object>> entries)
+        {
+            var byKey = new Dictionary<(string, string), SoftwareItem>();
+            foreach (var entry in entries)
+            {
+                SoftwareItem item = FromEntry(entry);
+                if (item == null) continue;
+                if (byKey.TryGetValue((item.Name, item.Version), out SoftwareItem existing))
+                {
+                    existing.Publisher ??= item.Publisher;
+                    existing.InstallDate ??= item.InstallDate;
+                }
+                else byKey[(item.Name, item.Version)] = item;
+            }
+            return byKey.Values
+                .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(i => i.Name, StringComparer.Ordinal)
+                .ThenBy(i => i.Version, StringComparer.Ordinal)
+                .Take(MaxItems)
+                .ToList();
+        }
+
+        public static string Hash(List<SoftwareItem> items) =>
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new SoftwareInventoryPayload { Items = items }))));
+
+        // Yerel ve etki alanı kullanıcıları (S-1-5-21-…); "_Classes" hive'ları ve hizmet hesapları (S-1-5-18/19/20) atlanır
+        public static bool IsUserHive(string name) =>
+            name != null && name.StartsWith("S-1-5-21-", StringComparison.OrdinalIgnoreCase) && !name.EndsWith("_Classes", StringComparison.OrdinalIgnoreCase);
+
+        public static List<SoftwareItem> Collect() => Build(ReadRegistry());
+
+        public static List<IReadOnlyDictionary<string, object>> ReadRegistry()
+        {
+            var entries = new List<IReadOnlyDictionary<string, object>>();
+            using (RegistryKey hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+            {
+                ReadUninstallKey(hklm, UninstallPath, entries);
+                ReadUninstallKey(hklm, UninstallPath32, entries);
+            }
+            using (RegistryKey users = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Registry64))
+            {
+                foreach (string sid in users.GetSubKeyNames().Where(IsUserHive))
+                    ReadUninstallKey(users, sid + "\\" + UninstallPath, entries);
+            }
+            return entries;
+        }
+
+        private static void ReadUninstallKey(RegistryKey root, string path, List<IReadOnlyDictionary<string, object>> entries)
+        {
+            try
+            {
+                using RegistryKey key = root.OpenSubKey(path);
+                if (key == null) return;
+                foreach (string sub in key.GetSubKeyNames())
+                {
+                    try
+                    {
+                        using RegistryKey app = key.OpenSubKey(sub);
+                        if (app == null) continue;
+                        var values = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                        foreach (string name in ValueNames)
+                        {
+                            object value = app.GetValue(name);
+                            if (value != null) values[name] = value;
+                        }
+                        entries.Add(values);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private static string Text(IReadOnlyDictionary<string, object> values, string name)
+        {
+            if (!values.TryGetValue(name, out object value) || value == null) return null;
+            string text = Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim();
+            return string.IsNullOrEmpty(text) ? null : text;
+        }
+
+        private static long? Number(IReadOnlyDictionary<string, object> values, string name)
+        {
+            if (!values.TryGetValue(name, out object value) || value == null) return null;
+            if (value is int i) return i;
+            if (value is long l) return l;
+            return long.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long n) ? n : null;
+        }
+    }
+
+    // Açılıştan kısa süre sonra, sonra 6 saatte bir liste okunur. Değişmediyse gönderilmez; yine de günde en az bir
+    // kez gönderilir (sunucu listeyi her seferinde bütünüyle değiştirir). Gönderim başarısızsa 15 dk sonra yeniden.
+    [SupportedOSPlatform("windows")]
+    public sealed class SoftwareReporter
+    {
+        public static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(1);
+        public static readonly TimeSpan Interval = TimeSpan.FromHours(6);
+        public static readonly TimeSpan MaxSilence = TimeSpan.FromDays(1);
+        public static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(15);
+        private static readonly TimeSpan WaitForSecret = TimeSpan.FromMinutes(1);
+
+        private readonly ReportGate _gate = new ReportGate(MaxSilence);
+        private readonly string _serverUrl;
+        private readonly Func<string> _hwId;
+
+        public SoftwareReporter(string serverUrl, Func<string> hwId)
+        {
+            _serverUrl = serverUrl;
+            _hwId = hwId;
+        }
+
+        public async Task RunAsync(CancellationToken token)
+        {
+            await Task.Delay(StartupDelay, token);
+            while (!token.IsCancellationRequested)
+            {
+                TimeSpan wait = await ReportOnceAsync() ?? Interval;
+                await Task.Delay(wait, token);
+            }
+        }
+
+        // Bir tur; null: normal aralık, aksi halde bir sonraki denemeye kadar beklenecek süre
+        private async Task<TimeSpan?> ReportOnceAsync()
+        {
+            if (!AgentHttp.EnsureCanReport()) return WaitForSecret;
+            try
+            {
+                List<SoftwareItem> items = SoftwareInventory.Collect();
+                string hash = SoftwareInventory.Hash(items);
+                if (!_gate.ShouldSend(hash, DateTime.UtcNow)) return null;
+
+                string hwId = _hwId();
+                if (!await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/software/", hwId), hwId, new SoftwareInventoryPayload { Items = items }, "Yazılım envanteri"))
+                    return RetryDelay;
+                _gate.MarkSent(hash, DateTime.UtcNow);
+                POpsHelpers.Log("AGENT", $"Yazılım envanteri gönderildi ({items.Count} kayıt).");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                POpsHelpers.Log("AGENT", $"Yazılım envanteri okunamadı: {ex.Message}", true);
+                return RetryDelay;
+            }
+        }
+    }
+}

@@ -74,8 +74,13 @@ namespace POpsAgent
 
         private AgentPolicy _currentPolicy = new AgentPolicy();
         private bool _fairUseAcknowledged = false;
-        private int _infractionCount = 0;
         private DateTime _lastPolicyFetch = DateTime.MinValue;
+
+        // Karantina (lockdown/unlock/çevrimdışı bypass) ve Windows Update: bkz. QuarantineControl, PatchManager
+        private readonly QuarantineControl _quarantine;
+        private readonly PatchManager _patches;
+        // Ön plandaki uygulamanın süreç adı (tepsiden, yalnızca ad; bkz. ActiveApp). Bilinmiyorsa null.
+        private volatile string _activeApp;
 
         public Worker(ILogger<Worker> logger)
         {
@@ -98,6 +103,9 @@ namespace POpsAgent
             _serverUrl = POpsHelpers.GetServerUrl();
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor (Hedef: {_serverUrl})");
             foreach (string configPath in POpsHelpers.ConfigPaths) SecureConfigFile(configPath);
+
+            _quarantine = new QuarantineControl(message => _trayPipe?.SendCommandToDesktop(message), EnableNetworkIsolationAsync, DisableNetworkIsolationAsync);
+            _patches = new PatchManager(_serverUrl, () => _hwId);
         }
 
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
@@ -132,6 +140,14 @@ namespace POpsAgent
             // Start background tasks
             _ = Task.Run(() => PolicyPollingLoop(stoppingToken));
 
+            // Sunucuya bildirimler (yalnızca cihaz secret'ı varken; bkz. AgentHttp): yazılım envanteri (açılıştan
+            // kısa süre sonra, sonra 6 saatte bir), günlük Windows Update taraması, oturum açma/kapama
+            var sessions = new SessionReporter(_serverUrl, () => _hwId, _pcName);
+            sessions.UserChanged += _ => _activeApp = null;
+            _ = Task.Run(() => new SoftwareReporter(_serverUrl, () => _hwId).RunAsync(stoppingToken));
+            _ = Task.Run(() => _patches.ScheduleLoopAsync(stoppingToken));
+            _ = Task.Run(() => sessions.RunAsync(stoppingToken));
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 string commandWsUrl = $"{baseWsUrl}/ws/agent/{_hwId}";
@@ -147,6 +163,7 @@ namespace POpsAgent
                 {
                     await _commandWs.ConnectAsync(new Uri(commandWsUrl), stoppingToken);
                     POpsHelpers.Log("AGENT", "[+] Ana Komut Tüneli Kuruldu.");
+                    OnCommandChannelConnected();
 
                     _ = ReceiveCommandsAsync(_commandWs, stoppingToken);
 
@@ -178,6 +195,14 @@ namespace POpsAgent
                 await DisconnectVisionTunnelAsync();
                 await Task.Delay(authRejected ? 60000 : 5000, stoppingToken);
             }
+        }
+
+        // Komut tüneli kuruldu: DNS politika izleme başlar (yalnızca ilk bağlantıda; sonra açık kalır). Politika ve
+        // dns_domains her dakika PolicyPollingLoop'ta yenilenir.
+        internal void OnCommandChannelConnected()
+        {
+            DnsPolicyMonitor.Configure(_currentPolicy, _hwId, _serverUrl);
+            DnsPolicyMonitor.Start();
         }
 
         // Şifresiz (http/ws) ve yerel olmayan sunucuya bağlanılmaz (bkz. POpsHelpers.IsSecureServerUrl).
@@ -269,7 +294,7 @@ namespace POpsAgent
                     if (policy != null)
                     {
                         _currentPolicy = policy;
-                        AdvancedActivityTracker.ConfigurePolicy(policy, _hwId, _serverUrl);
+                        DnsPolicyMonitor.Configure(policy, _hwId, _serverUrl);
                         
                         if (!string.IsNullOrWhiteSpace(policy.fair_use_text) && !_fairUseAcknowledged)
                         {
@@ -300,9 +325,15 @@ namespace POpsAgent
                     _fairUseAcknowledged = true;
                     POpsHelpers.Log("AGENT", "Kullanıcı aydınlatma metnini onayladı.");
                 }
+                else if (message.StartsWith("ACTIVE_APP:"))
+                {
+                    // Yalnızca süreç adı; heartbeat'te active_window olarak gider
+                    string app = ActiveApp.Sanitize(message.Substring("ACTIVE_APP:".Length));
+                    if (app != null) _activeApp = app;
+                }
                 else if (message.StartsWith("ACTIVE_WINDOW:"))
                 {
-                    // İleride active window bilgisini sunucuya heartbeat'e dahil edebiliriz
+                    // Eski tepsi pencere başlığı gönderir: KVKK gereği sunucuya iletilmez (bkz. ActiveApp)
                 }
                 else if (message.StartsWith("START_VISION_TUNNEL"))
                 {
@@ -343,7 +374,7 @@ namespace POpsAgent
                 }
                 else if (message.StartsWith("UNLOCK_BYPASS:"))
                 {
-                    HandleBypassAttempt(message.Substring("UNLOCK_BYPASS:".Length));
+                    _ = HandleBypassAttemptAsync(message.Substring("UNLOCK_BYPASS:".Length));
                 }
             };
 
@@ -376,41 +407,35 @@ namespace POpsAgent
                 catch { }
             };
 
-            _trayPipe.OnDisconnected += () => _visionSessionApproved = false;
+            _trayPipe.OnDisconnected += () =>
+            {
+                _visionSessionApproved = false;
+                _activeApp = null;
+            };
 
             _trayPipe.Start();
         }
 
-        private readonly OfflineBypass _bypass = new OfflineBypass();
-
-        private void HandleBypassAttempt(string token)
+        // Çevrimdışı bypass kodu: geçerliyse sunucunun unlock'u ile aynı yol (kilit ekranı kapanır, yalıtım kalkar).
+        // Sunucuya ulaşılabiliyorsa kullanım denetim kaydına da düşer.
+        private async Task HandleBypassAttemptAsync(string token)
         {
-            string bypassSecret = AgentCredentials.GetBypassSecret();
-            if (string.IsNullOrEmpty(bypassSecret))
+            try
             {
-                POpsHelpers.Log("AGENT", $"Offline Bypass devre dışı: BypassSecret tanımlı değil ({SecureStore.Dir}\\{AgentCredentials.BypassSecretFileName}).", true);
-                _trayPipe?.SendCommandToDesktop("BYPASS_FAILED");
-                return;
+                var result = await _quarantine.HandleBypassAsync(token, _hwId, AgentCredentials.GetBypassSecret(), DateTime.Now);
+                if (result != OfflineBypass.Result.Accepted) return;
+                string hwId = _hwId;
+                await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, new AgentLogPayload
+                {
+                    LogType = "Security",
+                    Message = "Çevrimdışı bypass kodu ile kilit ekranı ve karantina kaldırıldı",
+                    EventType = "agent.offline_bypass",
+                    Category = "security",
+                    Action = "offline_bypass",
+                    RiskLevel = "medium",
+                }, "Bypass denetim kaydı");
             }
-
-            switch (_bypass.Attempt(token, _hwId, bypassSecret, DateTime.Now))
-            {
-                case OfflineBypass.Result.Accepted:
-                    POpsHelpers.Log("AGENT", "Offline Bypass kodu doğrulandı; karantina kaldırılıyor.");
-                    _ = DisableNetworkIsolationAsync();
-                    _trayPipe?.SendCommandToDesktop("BYPASS_SUCCESS");
-                    return;
-                case OfflineBypass.Result.Locked:
-                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] Offline Bypass kilitli ({_bypass.LockedUntilUtc.ToLocalTime():HH:mm} saatine kadar); deneme değerlendirilmedi.", true);
-                    break;
-                case OfflineBypass.Result.LockedOut:
-                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] {OfflineBypass.MaxFailures} hatalı Offline Bypass denemesi; bypass {_bypass.LockedUntilUtc.ToLocalTime():HH:mm} saatine kadar kilitlendi.", true);
-                    break;
-                default:
-                    POpsHelpers.Log("AGENT", $"Offline Bypass kodu hatalı ({_bypass.Failures}/{OfflineBypass.MaxFailures}).", true);
-                    break;
-            }
-            _trayPipe?.SendCommandToDesktop("BYPASS_FAILED");
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"Offline Bypass işlenemedi: {ex.Message}", true); }
         }
 
         private async Task ConnectVisionTunnelAsync(CancellationToken token)
@@ -590,15 +615,18 @@ namespace POpsAgent
                         else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
                         else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
                         else if (action == "set_secret") { HandleSetSecret(root); }
-                        else if (action == "lockdown") 
-                        { 
-                            _trayPipe?.SendCommandToDesktop(message); 
-                            await EnableNetworkIsolationAsync(); 
+                        else if (action == "lockdown")
+                        {
+                            string reason = root.TryGetProperty("reason", out var rProp) && rProp.ValueKind == JsonValueKind.String ? rProp.GetString() : null;
+                            await _quarantine.LockdownAsync(reason);
                         }
-                        else if (action == "unlock") 
-                        { 
-                            _trayPipe?.SendCommandToDesktop(message); 
-                            await DisableNetworkIsolationAsync(); 
+                        else if (action == "unlock") await _quarantine.UnlockAsync("server");
+                        // Windows Update: arka planda yürür, bu döngüyü bekletmez (bkz. PatchManager)
+                        else if (action == "scan_updates") _patches.RequestScan();
+                        else if (action == "install_updates")
+                        {
+                            string scope = root.TryGetProperty("scope", out var scProp) && scProp.ValueKind == JsonValueKind.String ? scProp.GetString() : null;
+                            _patches.RequestInstall(scope);
                         }
                         else if (action == "start_vision_session") { _trayPipe?.SendCommandToDesktop(message); }
                     }
@@ -638,7 +666,8 @@ namespace POpsAgent
 
         private async Task SendHeartbeatAsync(CancellationToken token)
         {
-            string currentWindow = "-"; // Servis modunda aktif pencere okunamıyor.
+            // Ön plandaki uygulamanın adı (tepsiden); pencere başlığı gönderilmez
+            string currentApp = _activeApp ?? "-";
 
             var statusPayload = new
             {
@@ -646,7 +675,7 @@ namespace POpsAgent
                 hostname = _pcName,
                 lab_name = "Atanmamis_Cihazlar",
                 status = "Online",
-                active_window = currentWindow,
+                active_window = currentApp,
                 dna_payload = _cachedDna
             };
 

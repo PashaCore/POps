@@ -129,7 +129,7 @@ For a deep dive into the 5-component agent system (Agent, Tray, Vision, Watchdog
 | Feature | Description |
 | :--- | :--- |
 | **Endpoint Inventory** | Automatically track devices using stable, hardware-derived IDs (HWID). |
-| **Live Monitoring** | Online/offline state, heartbeats and hardware inventory per device and lab. |
+| **Live Monitoring** | Online/offline state, heartbeats, hardware inventory, the signed-in user and the foreground program (name only, never window titles) per device and lab. |
 | **Remote Assistance** | Vision: 1-5 FPS screen view (captured by the tray) for admins with an open, audited session; remote mouse/keyboard only while the user has accepted or been notified of that session. |
 | **Software Deployment** | Orchestrate ZIP and MSI installations across your entire fleet instantly. |
 | **Signed Updates** | Agent MSIs are ed25519-signed, dispatched from the panel (downloaded from GitHub or uploaded offline) and rolled back automatically if the new version does not start. The server updates itself from the panel too. |

@@ -16,7 +16,8 @@
 | Cihaz kimliği (HWID) + hostname | Sunucu DB | Cihazı tanımlama | Kurum belirler | BT yöneticisi |
 | **Oturum açan kullanıcı adı** (`logged_user`) | Sunucu DB | Hangi makinede kim var | Kurum belirler | BT yöneticisi |
 | **Ekran görüntüsü / canlı ekran (POpsVision)** | Yalnızca izleme anında akar; **kalıcı kaydedilmez** (varsayılan) | Uzaktan destek / denetim | Akış anlıktır | Oturumu başlatan yönetici |
-| Etkin pencere başlığı / aktivite | Sunucu DB (loglar) | Denetim | Kurum belirler | BT yöneticisi |
+| Ön plandaki programın adı (ör. `chrome`; **pencere başlığı alınmaz**) | Sunucu DB (`active_window`, yalnızca son değer) | Anlık durum | Bir sonraki bildirimle değişir | BT yöneticisi |
+| Kurulu yazılımlar (ad, sürüm, yayıncı, kurulum tarihi) ve Windows Update durumu | Sunucu DB | Varlık ve yama yönetimi | Kurum belirler | BT yöneticisi |
 | Denetim kayıtları (kim, ne zaman, hangi işlem) | Sunucu DB (`device_audit_logs` / `agent_logs_v2`) | Hesap verebilirlik | Kurum belirler | BT yöneticisi |
 | Politika ihlali uyarıları (DNS/kategori) | Sunucu DB | İçerik politikası | Kurum belirler | BT yöneticisi |
 

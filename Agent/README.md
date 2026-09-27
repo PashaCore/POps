@@ -39,9 +39,9 @@ Secrets are never kept in `appsettings.json` or in environment variables, which 
 
 | File in `C:\POpsData\secure` | Written by | Description |
 | ---------------------------- | ---------- | ----------- |
-| `enroll.token`  | installer (`ENROLL_TOKEN`) | One-time enrollment token created in the panel. Deleted once the server has issued the device secret. |
+| `enroll.token`  | installer (`ENROLL_TOKEN`) | Enrollment token created in the panel (it can be valid for several devices, see `Installer/README.md`). Deleted once the server has issued the device secret. |
 | `agent.secret`  | the agent, from the server's `set_secret` | Per-device secret, sent as `X-Agent-Secret` on every connection. |
-| `bypass.secret` | installer or administrator | Shared secret that verifies offline quarantine bypass codes (the panel's daily code, `offline_bypass_code` in the backend). Offline bypass is disabled when it is missing. Any logged-on user can reach the tray pipe, so after 5 wrong codes the bypass locks for 15 minutes, doubling with each further lockout up to 24 hours. |
+| `bypass.secret` | installer or administrator | Shared secret that verifies offline quarantine bypass codes (the panel's daily code, `offline_bypass_code` in the backend). Offline bypass is disabled when it is missing. A valid code does what the panel's unlock does: it closes the lock screen and lifts the network isolation. The lock screen covers the taskbar, so it has its own code field; the tray menu has one too. When the server can be reached, the use is recorded in its audit log. Any logged-on user can reach the tray pipe, so after 5 wrong codes the bypass locks for 15 minutes, doubling with each further lockout up to 24 hours. |
 
 To set one by hand, put `EnrollToken` or `BypassSecret` into `appsettings.json` (or the legacy `POPS_ENROLL_TOKEN` / `POPS_BYPASS_SECRET` system variables) and restart the service. On start the agent moves the value into `C:\POpsData\secure`, replacing the stored one, and removes it from the file (or deletes the variable).
 
@@ -51,13 +51,13 @@ To set one by hand, put `EnrollToken` or `BypassSecret` into `appsettings.json` 
 2. **Later connections** send `X-Agent-Secret`. When both a secret and a token are present both are sent; the server checks the secret first, so a device whose secret was lost can re-enroll with a new token without reinstalling.
 3. **Rejection.** When the server enforces authentication and rejects the agent, it closes the socket with code 4401. The agent logs this and retries every 60 seconds instead of every 5, because each rejected attempt writes an audit record on the server.
 
-The Vision WebSocket (`/ws/vision/{hw_id}`) sends the same headers. The agent's HTTP calls (`POST /api/inventory/{hw_id}`, `POST /api/policy_alert`) send `X-Agent-Id` + `X-Agent-Secret`. None of these credentials is ever sent to a non-loopback `http://` address.
+The Vision WebSocket (`/ws/vision/{hw_id}`) sends the same headers. The agent's HTTP calls (`POST /api/inventory/{hw_id}`, `/api/policy_alert` and the reports under *What the agent reports*) send `X-Agent-Id` + `X-Agent-Secret`. None of these credentials is ever sent to a non-loopback `http://` address.
 
 The secret is bound to the device identity the server resolves; when the server renames the device (`set_identity`) it moves the secret with it, so the agent keeps using the same secret. Neither value is ever written to the log.
 
 ### Machines with freeze software
 
-Enroll before freezing: install with the machine thawed, wait until the device appears in the panel (the secret is now on disk), then freeze, so the secret is part of the frozen image. A machine that enrolls while frozen loses the secret at the next reboot, and its one-time token is already used. To avoid that, set `PersistDir` to a folder that is not rolled back. With Windows Unified Write Filter, add a file exclusion for `C:\POpsData\secure` instead. Once the server enforces authentication, a device that has lost its secret needs a new enrollment token.
+Enroll before freezing: install with the machine thawed, wait until the device appears in the panel (the secret is now on disk), then freeze, so the secret is part of the frozen image. A machine that enrolls while frozen loses the secret at the next reboot, and a single-use token is already used up. To avoid that, set `PersistDir` to a folder that is not rolled back. With Windows Unified Write Filter, add a file exclusion for `C:\POpsData\secure` instead. Once the server enforces authentication, a device that has lost its secret needs a new enrollment token.
 
 ## Local hardening
 
@@ -65,8 +65,25 @@ Enroll before freezing: install with the machine thawed, wait until the device a
 - **Remote input needs local consent.** Remote mouse/keyboard events are applied only while a Vision session is open that the tray started after the user accepted it (or after showing the mandatory-session notice). A compromised server alone cannot drive the PC. Screen previews are not affected.
 - **Logs.** `C:\POpsLogs` (service and updater logs) is restricted to SYSTEM and Administrators. The tray, watchdog and Vision run in the user's session and log to `%LOCALAPPDATA%\POps\Logs`. The tray's log rotates at 1 MB and records only message types, never message contents or remote keystrokes.
 - **Network quarantine** (`lockdown`, or the DNS threshold when `auto_quarantine` is on) adds two Windows Firewall block rules (group `POps Isolation`). They block every IPv4/IPv6 address except the POps server (resolved to IPs), the DNS and DHCP servers, loopback and IPv6 link-local/multicast. Block rules override every allow rule, so no other program's rule can bypass them. All firewall profiles are switched on for the duration; their previous state is saved in `C:\POpsData\secure\isolation.json` and restored by `unlock` or a valid offline bypass code.
-- **DNS policy detection** reads the Windows DNS client cache through the DNS API, independent of the Windows display language. It flags a name only if it equals, or is a subdomain of, a domain the school listed for an active category in the policy's `dns_domains` (`{"<category>": ["example.com", …]}`). Without such a list, nothing is flagged. Substring guesses such as "sex" in `essex.ac.uk` are gone.
+- **DNS policy detection** reads the Windows DNS client cache through the DNS API, independent of the Windows display language. It flags a name only if it equals, or is a subdomain of, a domain the school listed for an active category in the policy's `dns_domains` (`{"<category>": ["example.com", …]}`). Without such a list, nothing is flagged. Substring guesses such as "sex" in `essex.ac.uk` are gone. The check runs every 15 seconds from the first time the command channel connects; the policy is refreshed every minute. Each domain is reported once per service run (`POST /api/policy_alert`). With `auto_quarantine` the network is isolated once the number of violations reaches `quarantine_threshold`, even if the server cannot be reached; `unlock` or a valid bypass code resets the count.
 - **Server messages** are read until the end of the WebSocket message, with a limit of 8 MB on the command socket and 1 MB on the Vision socket, so long deployment scripts arrive whole. Oversized or malformed messages are logged instead of dropped silently.
+
+## What the agent reports
+
+Besides the heartbeat, the agent sends the data below. The software inventory, the Windows Update status and sign-in events are accepted only from an enrolled agent (`X-Agent-Id` + `X-Agent-Secret`, even when the server does not enforce authentication), so an agent without a device secret sends none of them.
+
+| Data | Endpoint | When |
+| --- | --- | --- |
+| Installed programs: name, version, publisher, install date | `POST /api/software/{hw_id}`, the whole list (at most 5000 entries); the server replaces the previous one | About a minute after start, then every 6 hours when the list has changed, and at least once a day |
+| Windows Update: pending updates (KB, title, MSRC severity, categories, security flag), their counts, whether a restart is needed, time of the scan and of the last successful install | `POST /api/patches/{hw_id}` (at most 500 updates, critical and security ones first) | Once a day, and when the panel asks |
+| User signed in at the console | `POST /api/auth/login`, `POST /api/auth/logout` | When it changes (checked every 15 seconds) |
+| Name of the program in the foreground, for example `chrome` or `WINWORD` | `active_window` in the heartbeat | While the tray runs |
+
+- **Installed programs** are read from the `Uninstall` registry keys (64-bit, `WOW6432Node`, and the hives of signed-in users for programs installed per user). Windows components and update entries are left out: `SystemComponent=1`, a `ParentKeyName`, a `ReleaseType` of `Update`, `Hotfix` or `Security Update`, or an empty `DisplayName`.
+- **Windows Update** status comes from the Windows Update Agent API. Security and critical updates are recognised by their classification ID, because category names depend on the Windows language. An update counts as a security update when it is in *Security Updates* or has an MSRC severity, and as critical when its severity is *Critical* or it is in *Critical Updates*. The daily scan runs 10–70 minutes after the service starts, with a fixed delay per device so that a lab switched on together does not scan at once. After that it runs 24 hours after the last reported scan; `C:\POpsData\patch-scan.json` keeps that time across restarts. A scan that takes longer than 15 minutes is cancelled.
+- **Installing updates** (`{"action":"install_updates","scope":"security"|"all"}` from the panel): the agent scans and accepts license terms where needed. It then downloads and installs either the security updates or all pending ones, scans again and reports a short summary as `last_result`, for example `3 güncelleme kuruldu, 1 başarısız (KB5043080)`. **The agent never restarts the PC**; `reboot_required` tells the panel when a restart is needed. Updates that may ask the user for input are skipped. Only one scan or installation runs at a time; a request that arrives meanwhile is logged and ignored. All of this runs on a background thread and never holds up the command channel.
+- **Sign-in events** keep the panel's logged-on user current. The last reported sign-in is kept in `C:\POpsData\session.json`, so a service restart does not report the same sign-in again, and a sign-out missed at shutdown is reported at the next start.
+- **Foreground program:** the tray sends only the process name. Window titles can contain personal data (document names, websites, chat partners), so the tray does not read them, and the service ignores the titles that older trays sent.
 
 ## Capability policy
 
