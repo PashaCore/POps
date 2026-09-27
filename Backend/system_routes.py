@@ -52,6 +52,7 @@ class ReenrollInput(BaseModel):
     pc_name: str
     allow: bool = True
 
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Doğrulanmış release'lerin stage edildiği çalışma zamanı dizini (git dışı)
 RELEASES_DIR = os.path.join(BASE_DIR, "releases")

@@ -1,0 +1,4 @@
+[flake8]
+# Modern satır sınırı (79 yerine 120). Biçim/kalite kapısı CI'daki 'lint' job'ında.
+max-line-length = 120
+exclude = .git,__pycache__,venv,.venv,build,dist,node_modules

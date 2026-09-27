@@ -164,7 +164,8 @@ async def reset_admin_password(cfg, db_password, admin_user, new_password):
 
 def main():
     parser = argparse.ArgumentParser(description="POps .env üretimi ve şifre yenileme")
-    parser.add_argument("--env", default=os.path.join(ROOT, ".env"), help=".env dosyasının yolu (varsayılan: proje kökü)")
+    parser.add_argument("--env", default=os.path.join(ROOT, ".env"),
+                        help=".env dosyasının yolu (varsayılan: proje kökü)")
     parser.add_argument("--skip-install", action="store_true", help="pip install adımını atla")
     parser.add_argument("--no-rotate-db", action="store_true", help="veritabanı şifresini değiştirme")
     parser.add_argument("--no-rotate-admin", action="store_true", help="panel yönetici şifresini değiştirme")

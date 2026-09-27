@@ -35,6 +35,7 @@ load_dotenv()
 # Sema artik migration'larla kurulur (migrate.py); init_db() kaldirildi.
 from migrate import run_migrations
 
+
 def require_env(name: str) -> str:
     """Zorunlu ortam değişkenini oku; tanımlı değilse sunucu açıklayıcı bir hatayla durur."""
     value = os.environ.get(name)
@@ -42,10 +43,11 @@ def require_env(name: str) -> str:
         raise RuntimeError(f"Ortam değişkeni tanımlı değil: {name} (bkz. .env.example)")
     return value
 
+
 # ─── Güvenlik Sabitleri ────────────────────────────────────────────────────────
 # Şifre, anahtar ve IP gibi ortama özel değerler koda gömülmez; .env / os.environ'dan okunur.
-JWT_SECRET   = require_env('JWT_SECRET')
-JWT_ALGO     = 'HS256'
+JWT_SECRET = require_env('JWT_SECRET')
+JWT_ALGO = 'HS256'
 JWT_EXPIRE_H = int(os.environ.get('JWT_EXPIRE_HOURS', '12'))         # Token ömrü (saat)
 # Çevrimdışı bypass kodları için ajanlarla paylaşılan gizli anahtar (ajan: BypassSecret / POPS_BYPASS_SECRET)
 BYPASS_SECRET = os.environ.get('BYPASS_SECRET', '').strip()
@@ -57,10 +59,12 @@ CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 limiter = Limiter(key_func=get_remote_address)
 security_scheme = HTTPBearer(auto_error=False)
 
+
 def create_jwt(username: str, role: str, token_version: int = 0) -> str:
     expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=JWT_EXPIRE_H)
     return jwt.encode({'sub': username, 'role': role, 'tv': int(token_version or 0), 'exp': expire},
                       JWT_SECRET, algorithm=JWT_ALGO)
+
 
 def verify_jwt(token: str) -> dict:
     try:
@@ -74,6 +78,7 @@ def verify_jwt(token: str) -> dict:
     if payload.get('twofa'):
         return None
     return payload
+
 
 async def verify_session(payload: Optional[dict]) -> Optional[dict]:
     """JWT imza/exp doğrulandıktan SONRA, oturumu DB'ye karşı kontrol eder (F4 iptal):
@@ -96,34 +101,43 @@ async def verify_session(payload: Optional[dict]) -> Optional[dict]:
         return None
     return {'sub': sub, 'role': rows[0].get('role')}
 
+
 async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security_scheme)):
     token = creds.credentials if creds else request.cookies.get(JWT_COOKIE_NAME)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Token gerekli')
     # Çerezle doğrulanan, durum değiştiren isteklerde CSRF koruması: özel başlık zorunlu
     # (başka bir site bu başlığı CORS izni olmadan gönderemez)
-    if not creds and request.method not in CSRF_SAFE_METHODS and request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+    if not creds and request.method not in CSRF_SAFE_METHODS and request.headers.get(
+        'X-Requested-With') != 'XMLHttpRequest':
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='CSRF doğrulaması başarısız')
     session = await verify_session(verify_jwt(token))
     if not session:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Geçersiz, süresi dolmuş ya da iptal edilmiş oturum')
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+     detail='Geçersiz, süresi dolmuş ya da iptal edilmiş oturum')
     return session
+
 
 async def require_admin(payload: dict = Depends(require_auth)):
     if payload.get('role') not in ['admin', 'superadmin']:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu islem icin admin yetkisi gereklidir.")
     return payload
 
+
 async def require_superadmin(payload: dict = Depends(require_auth)):
     if payload.get('role') != 'superadmin':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu islem icin superadmin yetkisi gereklidir.")
+        raise HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+     detail="Bu islem icin superadmin yetkisi gereklidir.")
     return payload
+
 
 def ws_check_token(token: Optional[str]) -> bool:
     """WebSocket bağlantılarında httpOnly JWT çereziyle doğrulama."""
     if not token:
         return False
     return verify_jwt(token) is not None
+
 
 # ── İki adımlı doğrulama (TOTP, RFC 6238) — opt-in, ek bağımlılık yok ────────────
 # Standart TOTP: base32 gizli anahtar + HMAC-SHA1, 30 sn'lik pencere. Python
@@ -132,9 +146,11 @@ def ws_check_token(token: Optional[str]) -> bool:
 _TOTP_STEP = 30
 _TOTP_DIGITS = 6
 
+
 def _totp_new_secret(nbytes: int = 20) -> str:
     """Yeni base32 gizli anahtar (dolgu '='siz; authenticator uygulamaları böyle bekler)."""
     return base64.b32encode(secrets.token_bytes(nbytes)).decode('ascii').rstrip('=')
+
 
 def _totp_code(secret_b32: str, counter: int) -> str:
     key = base64.b32decode(secret_b32 + '=' * ((8 - len(secret_b32) % 8) % 8))
@@ -142,6 +158,7 @@ def _totp_code(secret_b32: str, counter: int) -> str:
     offset = digest[-1] & 0x0f
     bincode = struct.unpack('>I', digest[offset:offset + 4])[0] & 0x7fffffff
     return str(bincode % (10 ** _TOTP_DIGITS)).zfill(_TOTP_DIGITS)
+
 
 def verify_totp(secret_b32: Optional[str], code: Optional[str], window: int = 1) -> bool:
     """Kullanıcının girdiği kodu ±1 pencereyle (saat kayması toleransı) sabit zamanlı doğrular."""
@@ -159,6 +176,7 @@ def verify_totp(secret_b32: Optional[str], code: Optional[str], window: int = 1)
         return False
     return False
 
+
 def totp_provisioning_uri(secret_b32: str, username: str, issuer: str = "POps") -> str:
     """Authenticator'a QR/manuel eklemek için otpauth:// URI'si. Etiket 'issuer:hesap'
     biçimindedir; ayraç ':' literal kalır (Google Authenticator vb. böyle bekler), parçalar
@@ -167,11 +185,13 @@ def totp_provisioning_uri(secret_b32: str, username: str, issuer: str = "POps") 
     return "otpauth://totp/%s?secret=%s&issuer=%s&digits=%d&period=%d" % (
         label, secret_b32, quote(issuer, safe=''), _TOTP_DIGITS, _TOTP_STEP)
 
+
 def create_totp_challenge(username: str) -> str:
     """Şifre doğrulandıktan sonra 2. adım (kod) için kısa ömürlü (5 dk) challenge jetonu.
     'twofa=pending' taşır; normal oturum jetonu olarak KULLANILAMAZ (role yok → require_admin reddeder)."""
     expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5)
     return jwt.encode({'sub': username, 'twofa': 'pending', 'exp': expire}, JWT_SECRET, algorithm=JWT_ALGO)
+
 
 def verify_totp_challenge(token: str) -> Optional[str]:
     try:
@@ -183,8 +203,11 @@ def verify_totp_challenge(token: str) -> Optional[str]:
     return payload.get('sub')
 
 # ── Ajan kimlik doğrulama (Faz 3): enroll token + per-cihaz secret ──────────────
+
+
 def _hash_secret(secret: str) -> str:
     return hashlib.sha256(secret.encode('utf-8')).hexdigest()
+
 
 async def enforce_agent_auth_enabled() -> bool:
     """global_settings.enforce_agent_auth = '1' ise kimliksiz ajan bağlantıları reddedilir.
@@ -194,6 +217,7 @@ async def enforce_agent_auth_enabled() -> bool:
     except Exception:
         return False
     return bool(rows and str(rows[0]["value"]) == '1')
+
 
 async def verify_agent_secret(pc_name: str, secret: Optional[str]) -> bool:
     """Ajanın sunduğu secret, o cihaz için saklanan SHA-256 hash ile sabit-zamanlı karşılaştırılır."""
@@ -207,6 +231,7 @@ async def verify_agent_secret(pc_name: str, secret: Optional[str]) -> bool:
         return False
     return hmac.compare_digest(str(rows[0]["secret_hash"]), _hash_secret(secret))
 
+
 async def valid_enroll_token(token: Optional[str]) -> Optional[dict]:
     """Kullanılmamış ve süresi dolmamış enroll jetonunu döndürür (henüz tüketmez); yoksa None."""
     if not token:
@@ -219,6 +244,7 @@ async def valid_enroll_token(token: Optional[str]) -> Optional[dict]:
     except Exception:
         return None
     return rows[0] if rows else None
+
 
 async def agent_http_auth(request: Request) -> Optional[str]:
     """Ajan HTTP uçları (inventory/logs/auth/policy_alert) için accept-both kimlik.
@@ -235,6 +261,7 @@ async def agent_http_auth(request: Request) -> Optional[str]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Ajan kimlik dogrulamasi gerekli")
     return None
 
+
 def _bind_agent(agent_id: Optional[str], target: str):
     """Doğrulanan ajan kimliğini hedef cihazla eşle. Eşleşmezse 403. agent_id None ise (legacy,
     enforce kapalı) bağlama yapılamaz — accept-both'un kabul ettiği artık risk; enforce açılınca kapanır."""
@@ -242,6 +269,7 @@ def _bind_agent(agent_id: Optional[str], target: str):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Ajan kimliği hedef cihazla eşleşmiyor")
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Yükleme klasörü sabit ve çözümlenmiş (realpath) bir yoldur; kullanıcı girdisinden türetilmez
@@ -269,8 +297,10 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Agent-Version", "X-Requested-With"],
 )
 
-if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
-if not os.path.exists(UPDATES_DIR): os.makedirs(UPDATES_DIR)
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+if not os.path.exists(UPDATES_DIR):
+    os.makedirs(UPDATES_DIR)
 
 app.mount("/download", StaticFiles(directory=UPLOAD_DIR), name="download")
 app.mount("/updates", StaticFiles(directory=UPDATES_DIR), name="updates")
@@ -289,6 +319,7 @@ WOL_BROADCAST_ADDR = os.environ.get('WOL_BROADCAST_ADDR') or '<broadcast>'
 WOL_PORT = int(os.environ.get('WOL_PORT', '9'))
 db_pool = None
 
+
 async def execute_query(query: str, params=(), fetch=False):
     async with db_pool.acquire() as conn:
         if fetch:
@@ -299,14 +330,18 @@ async def execute_query(query: str, params=(), fetch=False):
             return True
 
 
-async def log_audit_event(pc_name: str, log_type: str, message: str, actor_id: str="System", event_type: str="system", category: str="legacy", action: str="unknown", risk_level: str="info", reason: str="", meta_data: dict=None):
-    if meta_data is None: meta_data = {}
+async def log_audit_event(pc_name: str, log_type: str, message: str, actor_id: str = "System", event_type: str = "system",
+                          category: str = "legacy", action: str = "unknown", risk_level: str = "info", reason: str = "", meta_data: dict = None):
+    if meta_data is None:
+        meta_data = {}
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if USE_V2_SCHEMA:
         cat = category if category != "legacy" else log_type.lower().replace(" ", "_")
         if risk_level == "info":
-            if log_type in ["Error", "Critical Security"]: risk_level = "critical"
-            elif log_type in ["Security", "Warning"]: risk_level = "medium"
+            if log_type in ["Error", "Critical Security"]:
+                risk_level = "critical"
+            elif log_type in ["Security", "Warning"]:
+                risk_level = "medium"
         await execute_query("""
             INSERT INTO agent_logs_v2 (pc_name, actor_id, event_type, category, action, risk_level, reason, message, meta_data, timestamp)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -316,6 +351,7 @@ async def log_audit_event(pc_name: str, log_type: str, message: str, actor_id: s
 
 # NOT: Veritabani semasi artik yalnizca migration'larla (migrate.py + migrations/NNNN_*.sql)
 # kurulur. Yeni tablo/kolon eklerken buraya degil, yeni bir numarali .sql dosyasina yazin.
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -350,23 +386,29 @@ async def startup_event():
             print(f"⚠️ Veritabanı bağlantı hatası (deneme {i+1}/5): {e}")
             await asyncio.sleep(3)
 
+
 @app.on_event("shutdown")
 async def shutdown_event():
     if db_pool:
         await db_pool.close()
 
+
 def send_wol_packet(mac_address: str):
     try:
         clean_mac = mac_address.replace(":", "").replace("-", "").replace(".", "")
-        if len(clean_mac) != 12: return False
+        if len(clean_mac) != 12:
+            return False
         data = bytes.fromhex('FFFFFFFFFFFF' + clean_mac * 16)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             s.sendto(data, (WOL_BROADCAST_ADDR, WOL_PORT))
         return True
-    except: return False
+    except:
+        return False
+
 
 _VISION_SESSION_TTL = 1800   # denetim oturumu yetkisi: son etkinlikten 30 dk sonra kendiliğinden düşer (fail-closed)
+
 
 class ConnectionManager:
     def __init__(self):
@@ -374,7 +416,8 @@ class ConnectionManager:
         self.active_panels: List[WebSocket] = []
         self.panel_users: Dict[WebSocket, str] = {}          # panel soketi -> giriş yapan kullanıcı adı
         self.panel_roles: Dict[WebSocket, str] = {}          # panel soketi -> rol (ekran görüntüsü yalnız admin'e)
-        self.vision_sessions: Dict[str, Dict[str, float]] = {}  # pc_name -> {kullanıcı: bitiş_zamanı}; süreli (fail-closed)
+        # pc_name -> {kullanıcı: bitiş_zamanı}; süreli (fail-closed)
+        self.vision_sessions: Dict[str, Dict[str, float]] = {}
         self.pending_thumbnails: Dict[str, List[asyncio.Future]] = {}
         self.active_vision_ws: Dict[str, WebSocket] = {}
 
@@ -438,28 +481,37 @@ class ConnectionManager:
         return removed
 
     def disconnect_panel(self, websocket: WebSocket):
-        if websocket in self.active_panels: self.active_panels.remove(websocket)
+        if websocket in self.active_panels:
+            self.active_panels.remove(websocket)
         self.panel_users.pop(websocket, None)
         self.panel_roles.pop(websocket, None)
-            
+
     def disconnect_vision(self, pc_name: str):
-        if pc_name in self.active_vision_ws: del self.active_vision_ws[pc_name]
-            
+        if pc_name in self.active_vision_ws:
+            del self.active_vision_ws[pc_name]
+
     def rename_agent(self, old_name: str, new_name: str):
-        if old_name in self.active_agents: self.active_agents[new_name] = self.active_agents.pop(old_name)
-        if old_name in self.active_vision_ws: self.active_vision_ws[new_name] = self.active_vision_ws.pop(old_name)
+        if old_name in self.active_agents:
+            self.active_agents[new_name] = self.active_agents.pop(old_name)
+        if old_name in self.active_vision_ws:
+            self.active_vision_ws[new_name] = self.active_vision_ws.pop(old_name)
 
     async def send_command(self, message: dict, pc_name: str):
         if pc_name in self.active_agents:
-            try: await self.active_agents[pc_name].send_text(json.dumps(message))
-            except Exception: self.disconnect_agent(pc_name)
+            try:
+                await self.active_agents[pc_name].send_text(json.dumps(message))
+            except Exception:
+                self.disconnect_agent(pc_name)
 
     async def broadcast_to_panels(self, message: dict):
         disconnected = []
         for panel in self.active_panels:
-            try: await panel.send_text(json.dumps(message))
-            except: disconnected.append(panel)
-        for p in disconnected: self.disconnect_panel(p)
+            try:
+                await panel.send_text(json.dumps(message))
+            except:
+                disconnected.append(panel)
+        for p in disconnected:
+            self.disconnect_panel(p)
 
     async def broadcast_to_admin_panels(self, message: dict):
         """Yalnızca admin/superadmin rollü panellere gönderir. Ekran görüntüsü/thumbnail gibi hassas
@@ -468,9 +520,12 @@ class ConnectionManager:
         disconnected = []
         for panel in self.active_panels:
             if self.panel_roles.get(panel) in ("admin", "superadmin"):
-                try: await panel.send_text(json.dumps(message))
-                except: disconnected.append(panel)
-        for p in disconnected: self.disconnect_panel(p)
+                try:
+                    await panel.send_text(json.dumps(message))
+                except:
+                    disconnected.append(panel)
+        for p in disconnected:
+            self.disconnect_panel(p)
 
     async def send_frame_to_viewers(self, message: dict, pc_name: str):
         """Canlı ekran karesi/önizlemesi YALNIZCA o cihaz için açık (süresi dolmamış) denetim oturumu
@@ -482,39 +537,124 @@ class ConnectionManager:
         disconnected = []
         for panel in self.active_panels:
             if self.panel_users.get(panel) in allowed:
-                try: await panel.send_text(json.dumps(message))
-                except: disconnected.append(panel)
-        for p in disconnected: self.disconnect_panel(p)
-    
+                try:
+                    await panel.send_text(json.dumps(message))
+                except:
+                    disconnected.append(panel)
+        for p in disconnected:
+            self.disconnect_panel(p)
+
     async def send_remote_input_to_vision(self, message: dict, pc_name: str):
         if pc_name in self.active_vision_ws:
             try:
                 await self.active_vision_ws[pc_name].send_text(json.dumps(message))
                 return True
-            except: self.disconnect_vision(pc_name)
+            except:
+                self.disconnect_vision(pc_name)
         return False
+
 
 manager = ConnectionManager()
 
-class AdminLoginInput(BaseModel): username: str; password: str; otp: Optional[str] = None
-class TotpLoginInput(BaseModel): challenge: str; otp: str
-class TotpEnableInput(BaseModel): otp: str
-class TotpDisableInput(BaseModel): otp: Optional[str] = None
-class TaskInput(BaseModel): target_pc: str; target_lab: str; script_path: str
-class MovePcInput(BaseModel): pc_name: str; new_lab: str
-class MovePcsInput(BaseModel): pc_names: List[str]; new_lab: str
-class RenameLabInput(BaseModel): old_name: str; new_name: str
-class RenameDeviceInput(BaseModel): pc_name: str; display_name: str
-class CreateLabInput(BaseModel): lab_name: str
-class DeleteLabInput(BaseModel): lab_name: str
-class SetMainPcInput(BaseModel): lab_name: str; pc_name: str
-class SaveLabLayoutInput(BaseModel): lab_name: str; layout_json: str
-class AutoEnrollInput(BaseModel): target_lab: str; expire_date: str
-class SetLimitInput(BaseModel): limit: int
-class TaskSequenceItem(BaseModel): name: str; type: str; command: str
-class OrchestrationInput(BaseModel): target_mode: str; targets: List[str]; taskSequence: List[TaskSequenceItem]
-class CreatePackageInput(BaseModel): id: str; name: str; type: str; meta: str; command: str; icon: str; color: str
-class DeletePackageInput(BaseModel): id: str
+
+class AdminLoginInput(BaseModel):
+    username: str
+    password: str
+    otp: Optional[str] = None
+
+
+class TotpLoginInput(BaseModel):
+    challenge: str
+    otp: str
+
+
+class TotpEnableInput(BaseModel):
+    otp: str
+
+
+class TotpDisableInput(BaseModel):
+    otp: Optional[str] = None
+
+
+class TaskInput(BaseModel):
+    target_pc: str
+    target_lab: str
+    script_path: str
+
+
+class MovePcInput(BaseModel):
+    pc_name: str
+    new_lab: str
+
+
+class MovePcsInput(BaseModel):
+    pc_names: List[str]
+    new_lab: str
+
+
+class RenameLabInput(BaseModel):
+    old_name: str
+    new_name: str
+
+
+class RenameDeviceInput(BaseModel):
+    pc_name: str
+    display_name: str
+
+
+class CreateLabInput(BaseModel):
+    lab_name: str
+
+
+class DeleteLabInput(BaseModel):
+    lab_name: str
+
+
+class SetMainPcInput(BaseModel):
+    lab_name: str
+    pc_name: str
+
+
+class SaveLabLayoutInput(BaseModel):
+    lab_name: str
+    layout_json: str
+
+
+class AutoEnrollInput(BaseModel):
+    target_lab: str
+    expire_date: str
+
+
+class SetLimitInput(BaseModel):
+    limit: int
+
+
+class TaskSequenceItem(BaseModel):
+    name: str
+    type: str
+    command: str
+
+
+class OrchestrationInput(BaseModel):
+    target_mode: str
+    targets: List[str]
+    taskSequence: List[TaskSequenceItem]
+
+
+class CreatePackageInput(BaseModel):
+    id: str
+    name: str
+    type: str
+    meta: str
+    command: str
+    icon: str
+    color: str
+
+
+class DeletePackageInput(BaseModel):
+    id: str
+
+
 class LogInput(BaseModel):
     log_type: Optional[str] = "System"
     message: Optional[str] = ""
@@ -525,17 +665,75 @@ class LogInput(BaseModel):
     risk_level: Optional[str] = "info"
     reason: Optional[str] = ""
     meta_data: Optional[dict] = {}
-class AuthEventInput(BaseModel): hw_id: str; hostname: str; student_id: str; message: Optional[str] = ""
-class TaskActionInput(BaseModel): action: str; target_mode: str; target_id: str
-class RemoteInputData(BaseModel): type: str; device: str; input_type: str; data: dict
-class HwInventoryInput(BaseModel): hw_id: Optional[str] = None; hostname: Optional[str] = None; cpu: str = "-"; ram: str = "-"; motherboard: str = "-"; gpu: str = "-"; os_version: str = "-"; ip_address: str = "-"; mac_address: str = "-"; disk_info: str = "-"
-# admin_id/admin_name/admin_role geriye uyumluluk için kabul edilir ama kullanılmaz; kimlik JWT'den alınır
-class StartAuditSessionInput(BaseModel): target_pc: str; reason: str; is_mandatory: bool; admin_id: Optional[int] = None; admin_name: Optional[str] = None; admin_role: Optional[str] = None
-class EndAuditSessionInput(BaseModel): session_id: str; status: str
-class LockdownInput(BaseModel): target_pc: str; reason: str; admin_name: Optional[str] = None
 
-class UserCreateInput(BaseModel): username: str; password: str; role: str; permissions: str
-class UserUpdateInput(BaseModel): username: str; password: Optional[str] = None; role: str; permissions: str
+
+class AuthEventInput(BaseModel):
+    hw_id: str
+    hostname: str
+    student_id: str
+    message: Optional[str] = ""
+
+
+class TaskActionInput(BaseModel):
+    action: str
+    target_mode: str
+    target_id: str
+
+
+class RemoteInputData(BaseModel):
+    type: str
+    device: str
+    input_type: str
+    data: dict
+
+
+class HwInventoryInput(BaseModel):
+    hw_id: Optional[str] = None
+    hostname: Optional[str] = None
+    cpu: str = "-"
+    ram: str = "-"
+    motherboard: str = "-"
+    gpu: str = "-"
+    os_version: str = "-"
+    ip_address: str = "-"
+    mac_address: str = "-"
+    disk_info: str = "-"
+# admin_id/admin_name/admin_role geriye uyumluluk için kabul edilir ama kullanılmaz; kimlik JWT'den alınır
+
+
+class StartAuditSessionInput(BaseModel):
+    target_pc: str
+    reason: str
+    is_mandatory: bool
+    admin_id: Optional[int] = None
+    admin_name: Optional[str] = None
+    admin_role: Optional[str] = None
+
+
+class EndAuditSessionInput(BaseModel):
+    session_id: str
+    status: str
+
+
+class LockdownInput(BaseModel):
+    target_pc: str
+    reason: str
+    admin_name: Optional[str] = None
+
+
+class UserCreateInput(BaseModel):
+    username: str
+    password: str
+    role: str
+    permissions: str
+
+
+class UserUpdateInput(BaseModel):
+    username: str
+    password: Optional[str] = None
+    role: str
+    permissions: str
+
 
 class AgentPoliciesInput(BaseModel):
     fair_use_text: str
@@ -546,10 +744,12 @@ class AgentPoliciesInput(BaseModel):
     # kapalı kalır (kaba substring yanlış-alarmı + KVKK riski böyle önlenir).
     dns_domains: Optional[dict] = {}
 
+
 class PolicyAlertInput(BaseModel):
     hw_id: str
     domain: str
     category: str
+
 
 def _login_success(u: dict) -> dict:
     return {
@@ -561,9 +761,11 @@ def _login_success(u: dict) -> dict:
         "token": create_jwt(u['username'], u['role'], u.get('token_version', 0)),
     }
 
+
 async def _mark_login(user_id: int):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await execute_query("UPDATE users SET last_login=$1 WHERE id=$2", (now, user_id))
+
 
 @app.post("/api/admin/login")
 @limiter.limit("10/minute")
@@ -602,6 +804,7 @@ async def admin_login(request: Request, data: AdminLoginInput):
     await _mark_login(u['id'])
     return _login_success(u)
 
+
 @app.post("/api/admin/login/totp")
 @limiter.limit("10/minute")
 async def admin_login_totp(request: Request, data: TotpLoginInput):
@@ -622,10 +825,13 @@ async def admin_login_totp(request: Request, data: TotpLoginInput):
     return _login_success(u)
 
 # ── 2FA kayıt/yönetim (giriş yapmış kullanıcı kendi 2FA'sını yönetir) ─────────────
+
+
 @app.get("/api/admin/2fa/status")
 async def totp_status(auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT totp_enabled FROM users WHERE username=$1", (auth['sub'],), fetch=True)
     return {"enabled": bool(rows and rows[0].get('totp_enabled'))}
+
 
 @app.post("/api/admin/2fa/setup")
 @limiter.limit("10/minute")
@@ -639,6 +845,7 @@ async def totp_setup(request: Request, auth: dict = Depends(require_auth)):
     await execute_query("UPDATE users SET totp_secret=$1, totp_enabled=FALSE WHERE username=$2",
                         (secret, auth['sub']))
     return {"secret": secret, "otpauth_uri": totp_provisioning_uri(secret, auth['sub'])}
+
 
 @app.post("/api/admin/2fa/enable")
 @limiter.limit("10/minute")
@@ -657,6 +864,7 @@ async def totp_enable(request: Request, data: TotpEnableInput, auth: dict = Depe
     await execute_query("UPDATE users SET totp_enabled=TRUE WHERE username=$1", (auth['sub'],))
     return {"ok": True, "enabled": True}
 
+
 @app.post("/api/admin/2fa/disable")
 @limiter.limit("10/minute")
 async def totp_disable(request: Request, data: TotpDisableInput, auth: dict = Depends(require_auth)):
@@ -670,12 +878,14 @@ async def totp_disable(request: Request, data: TotpDisableInput, auth: dict = De
     await execute_query("UPDATE users SET totp_secret=NULL, totp_enabled=FALSE WHERE username=$1", (auth['sub'],))
     return {"ok": True, "enabled": False}
 
+
 @app.get("/api/admin/users")
 async def get_users(auth=Depends(require_admin)):
     users = await execute_query("SELECT id, username, role, last_login, permissions FROM users ORDER BY id ASC", fetch=True)
     return {"status": "success", "users": users}
 
 VALID_ROLES = ('superadmin', 'admin', 'viewer')
+
 
 def _clean_user_fields(username: str, role: str, permissions: str) -> tuple:
     """Kullanıcı alanlarını doğrular; hatada 400 döner. Yetki listesi JSON dizisi olarak normalize edilir."""
@@ -692,6 +902,7 @@ def _clean_user_fields(username: str, role: str, permissions: str) -> tuple:
         raise HTTPException(status_code=400, detail="Yetki listesi geçerli bir JSON dizisi olmalı.")
     return username, json.dumps(perms)
 
+
 async def _superadmin_count(exclude_id: Optional[int] = None) -> int:
     rows = await execute_query("SELECT COUNT(*) AS c FROM users WHERE role = 'superadmin' AND password_hash LIKE '$2%' AND id IS DISTINCT FROM $1",
                                (exclude_id,), fetch=True)
@@ -699,6 +910,8 @@ async def _superadmin_count(exclude_id: Optional[int] = None) -> int:
 
 # Kullanıcı oluşturma, düzenleme ve silme yalnızca superadmin'e açıktır;
 # aksi halde bir admin kendine superadmin hesabı açabilirdi.
+
+
 @app.post("/api/admin/users")
 async def create_user(data: UserCreateInput, auth=Depends(require_superadmin)):
     username, permissions = _clean_user_fields(data.username, data.role, data.permissions)
@@ -707,10 +920,11 @@ async def create_user(data: UserCreateInput, auth=Depends(require_superadmin)):
     hashed_pw = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt()).decode()
     try:
         await execute_query("INSERT INTO users (username, password_hash, role, permissions) VALUES ($1, $2, $3, $4)",
-                           (username, hashed_pw, data.role, permissions))
+                            (username, hashed_pw, data.role, permissions))
     except asyncpg.UniqueViolationError:
         raise HTTPException(status_code=409, detail="Bu kullanıcı adı zaten var.")
     return {"status": "success", "message": "Kullanıcı başarıyla oluşturuldu."}
+
 
 @app.put("/api/admin/users/{user_id}")
 async def update_user(user_id: int, data: UserUpdateInput, auth=Depends(require_superadmin)):
@@ -726,13 +940,14 @@ async def update_user(user_id: int, data: UserUpdateInput, auth=Depends(require_
         if data.password:
             hashed_pw = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt()).decode()
             await execute_query("UPDATE users SET username=$1, password_hash=$2, role=$3, permissions=$4, token_version=token_version+1 WHERE id=$5",
-                               (username, hashed_pw, data.role, permissions, user_id))
+                                (username, hashed_pw, data.role, permissions, user_id))
         else:
             await execute_query("UPDATE users SET username=$1, role=$2, permissions=$3, token_version=token_version+1 WHERE id=$4",
-                               (username, data.role, permissions, user_id))
+                                (username, data.role, permissions, user_id))
     except asyncpg.UniqueViolationError:
         raise HTTPException(status_code=409, detail="Bu kullanıcı adı zaten var.")
     return {"status": "success", "message": "Kullanıcı başarıyla güncellendi."}
+
 
 @app.delete("/api/admin/users/{user_id}")
 async def delete_user(user_id: int, auth=Depends(require_superadmin)):
@@ -746,6 +961,7 @@ async def delete_user(user_id: int, auth=Depends(require_superadmin)):
     await execute_query("DELETE FROM users WHERE id=$1", (user_id,))
     return {"status": "success", "message": "Kullanıcı silindi."}
 
+
 @app.delete("/api/devices/{pc_name}")
 async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
     try:
@@ -758,11 +974,14 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
         agent_ws = manager.active_agents.get(pc_name)
         manager.disconnect_agent(pc_name)
         if agent_ws:
-            try: await agent_ws.close(code=4000, reason="Cihaz silindi")
-            except Exception: pass
+            try:
+                await agent_ws.close(code=4000, reason="Cihaz silindi")
+            except Exception:
+                pass
         return {"status": "success", "message": f"{pc_name} silindi."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
 
 @app.post("/api/audit/session/start")
 async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends(require_admin)):
@@ -793,7 +1012,7 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
     is_quarantined = False
     if rows and len(rows) > 0:
         is_quarantined = rows[0].get("is_quarantined", False)
-        
+
     countdown = 5 if is_quarantined else 30
     if not data.is_mandatory:
         countdown = 0
@@ -809,8 +1028,9 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
         "is_quarantined": is_quarantined
     }
     await manager.send_command(payload, data.target_pc)
-    
+
     return {"status": "success", "session_id": session_id, "countdown_seconds": countdown}
+
 
 @app.post("/api/audit/session/end")
 async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(require_admin)):
@@ -823,10 +1043,11 @@ async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(req
         manager.remove_vision_session(srow[0]["target_pc"], srow[0]["admin_name"])
     return {"status": "success"}
 
+
 @app.post("/api/security/lockdown")
 async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     # Karantina logunu yaz
     admin_name = auth.get('sub')
     await log_audit_event(data.target_pc, "Critical Security", f"🚨 KARANTİNA BAŞLATILDI by {admin_name} - Neden: {data.reason}", actor_id=admin_name, event_type="security.lockdown", category="security", action="lockdown", risk_level="critical", reason=data.reason)
@@ -836,16 +1057,17 @@ async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
 
     # Cihazı karantina moduna al
     await execute_query("UPDATE clients SET is_quarantined = TRUE WHERE pc_name = $1", (data.target_pc,))
-    
+
     # Ajanı kilitleme emri gönder
     await manager.send_command({"action": "lockdown", "reason": data.reason}, data.target_pc)
-    
+
     return {"status": "success", "message": "Karantina sinyali gönderildi."}
+
 
 @app.post("/api/security/unlock")
 async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     # Karantina logunu yaz
     admin_name = auth.get('sub')
     await log_audit_event(data.target_pc, "Critical Security", f"✅ KARANTİNA KALDIRILDI by {admin_name} - Neden: {data.reason}", actor_id=admin_name, event_type="security.unlock", category="security", action="unlock", risk_level="info", reason=data.reason)
@@ -854,11 +1076,12 @@ async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
 
     # Cihazı karantina modundan çıkar
     await execute_query("UPDATE clients SET is_quarantined = FALSE WHERE pc_name = $1", (data.target_pc,))
-    
+
     # Ajanı kilit açma emri gönder
     await manager.send_command({"action": "unlock"}, data.target_pc)
-    
+
     return {"status": "success", "message": "Karantina kaldırma sinyali gönderildi."}
+
 
 def offline_bypass_code(hw_id: str, day: datetime.date) -> str:
     """Ajanın ağ bağlantısı olmadan doğruladığı günlük 6 haneli bypass kodu.
@@ -868,6 +1091,7 @@ def offline_bypass_code(hw_id: str, day: datetime.date) -> str:
     """
     raw = f"{hw_id}{BYPASS_SECRET}{day.strftime('%Y-%m-%d')}"
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()[:6].upper()
+
 
 @app.get("/api/security/bypass_token/{pc_name}")
 async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
@@ -881,6 +1105,7 @@ async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
                         {"admin": auth.get('sub')})
     return {"status": "success", "token": token, "valid_for": today.isoformat()}
 
+
 @app.post("/api/auth/login")
 async def auth_login(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     _bind_agent(agent_id, data.hw_id)   # başka cihaz adına giriş kaydı yazılamaz
@@ -889,12 +1114,14 @@ async def auth_login(data: AuthEventInput, agent_id: Optional[str] = Depends(age
     await execute_query("UPDATE clients SET logged_user=$1 WHERE pc_name=$2", (data.student_id, data.hw_id))
     return {"status": "success"}
 
+
 @app.post("/api/auth/failed")
 async def auth_failed(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     _bind_agent(agent_id, data.hw_id)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await log_audit_event(data.hw_id, "Security", f"🔴 RED: {data.student_id} ({data.message})", actor_id=data.student_id, event_type="auth.failed", category="security", action="login_failed", risk_level="medium", reason=data.message)
     return {"status": "success"}
+
 
 @app.post("/api/auth/logout")
 async def auth_logout(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
@@ -903,6 +1130,7 @@ async def auth_logout(data: AuthEventInput, agent_id: Optional[str] = Depends(ag
     await log_audit_event(data.hw_id, "Security", "⚪ OTURUM KAPATILDI", actor_id="System", event_type="auth.logout", category="security", action="logout", risk_level="info")
     await execute_query("UPDATE clients SET logged_user='-' WHERE pc_name=$1", (data.hw_id,))
     return {"status": "success"}
+
 
 async def process_queue():
     limit_row = await execute_query("SELECT value FROM global_settings WHERE key = 'concurrent_limit'", fetch=True)
@@ -919,7 +1147,8 @@ async def process_queue():
             idle_online_pcs = [pc for pc in online_pcs if pc not in busy_pcs]
 
             for pc in idle_online_pcs:
-                if limit > 0 and available_slots <= 0: break
+                if limit > 0 and available_slots <= 0:
+                    break
                 task_row = await execute_query("SELECT * FROM tasks WHERE status = 'Pending' AND target_pc = $1 ORDER BY id ASC LIMIT 1", (pc,), fetch=True)
                 if task_row:
                     task = task_row[0]
@@ -929,16 +1158,19 @@ async def process_queue():
                     # F4(a): komutu KİMİN kuyrukladığını göster (eskiden 'System/Queue' idi, iz yoktu).
                     actor = task.get("created_by") or "System/Queue"
                     await log_audit_event(pc, "Deploy", f"Görev: {task['script_path'][:50]}", actor_id=actor, event_type="deploy.execution", category="system_maintenance", action="execute_queue", risk_level="info", meta_data={"raw_command": task["script_path"], "created_by": task.get("created_by")})
-                    # SYSTEM olarak komut çalıştırma yüksek-değerli olay → hash-zincirli, ajanların yazamadığı loga da düş.
+                    # SYSTEM olarak komut çalıştırma yüksek-değerli olay → hash-zincirli,
+                    # ajanların yazamadığı loga da düş.
                     await add_audit_log(pc, "execute", "SYSTEM komutu çalıştırıldı (kuyruk: %s)" % actor,
                                         {"task_id": task["id"], "created_by": task.get("created_by"), "command": (task["script_path"] or "")[:200]})
                     available_slots -= 1
 
 _AUDIT_CHAIN_LOCK = 0x504F6175  # 'POau' — denetim zinciri eklemelerini serileştirir
 
+
 def _audit_entry_hash(prev, hw_id, action, reason, changes_json, ts):
     raw = "%s|%s|%s|%s|%s|%s" % (prev or "", hw_id, action, reason, changes_json, ts)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
 
 async def add_audit_log(hw_id, action, reason, changes):
     # Kurcalanamaz (tamper-evident) hash zinciri: her kayıt bir öncekinin hash'ini taşır.
@@ -955,6 +1187,7 @@ async def add_audit_log(hw_id, action, reason, changes):
                 "VALUES ($1, $2, $3, $4, $5, $6, $7)",
                 hw_id, action, reason, payload, now, prev, entry)
 
+
 @app.get("/api/system/audit-verify")
 async def audit_verify(auth: dict = Depends(require_superadmin)):
     """Denetim zincirini baştan yürütür; bir kayıt kurcalanmış/silinmişse ilk kırık id'yi döner."""
@@ -968,25 +1201,36 @@ async def audit_verify(auth: dict = Depends(require_superadmin)):
             continue  # 0004 öncesi eski satırlar zincire dahil değil
         expected = _audit_entry_hash(prev, r["hw_id"], r["action"], r["reason"], r["changes"], r["timestamp"])
         if expected != r["entry_hash"]:
-            return {"ok": False, "first_broken_id": r["id"], "reason": "zincir kırık (kurcalanmış/silinmiş)", "checked": checked}
+            return {"ok": False, "first_broken_id": r["id"],
+                "reason": "zincir kırık (kurcalanmış/silinmiş)", "checked": checked}
         prev = r["entry_hash"]
         checked += 1
     return {"ok": True, "checked": checked, "total": len(rows or [])}
 
+
 def calculate_dna_score(incoming_hw, db_hw, incoming_caps, db_caps):
-    if incoming_hw.get('uuid') in ["NULL", "-"] and incoming_hw.get('mac') in ["00:00:00:00:00:00", "-", "NULL"]: return 11, 11 
+    if incoming_hw.get('uuid') in ["NULL", "-"] and incoming_hw.get('mac') in ["00:00:00:00:00:00", "-", "NULL"]:
+        return 11, 11
     score = 0
     max_score = 11
-    if incoming_hw.get('uuid') != "NULL" and incoming_hw.get('uuid') == db_hw.get('dna_uuid'): score += 4
-    if incoming_hw.get('bios_sn') != "NULL" and incoming_hw.get('bios_sn') == db_hw.get('dna_bios'): score += 3
-    if incoming_hw.get('disk_sn') != "NULL" and incoming_hw.get('disk_sn') == db_hw.get('dna_disk'): score += 2
-    if incoming_hw.get('mac') != "NULL" and incoming_hw.get('mac') == db_hw.get('dna_mac'): score += 1
+    if incoming_hw.get('uuid') != "NULL" and incoming_hw.get('uuid') == db_hw.get('dna_uuid'):
+        score += 4
+    if incoming_hw.get('bios_sn') != "NULL" and incoming_hw.get('bios_sn') == db_hw.get('dna_bios'):
+        score += 3
+    if incoming_hw.get('disk_sn') != "NULL" and incoming_hw.get('disk_sn') == db_hw.get('dna_disk'):
+        score += 2
+    if incoming_hw.get('mac') != "NULL" and incoming_hw.get('mac') == db_hw.get('dna_mac'):
+        score += 1
     db_ram_readable = db_caps.get('cap_ram_readable', True) if db_caps else True
     inc_ram_readable = incoming_caps.get('ram_readable', True)
-    if not db_ram_readable: max_score = 10
+    if not db_ram_readable:
+        max_score = 10
     else:
-        if inc_ram_readable and incoming_hw.get('ram_sn') != "NULL" and incoming_hw.get('ram_sn') == db_hw.get('dna_ram'): score += 1
+        if inc_ram_readable and incoming_hw.get(
+            'ram_sn') != "NULL" and incoming_hw.get('ram_sn') == db_hw.get('dna_ram'):
+            score += 1
     return score, max_score
+
 
 async def reconcile_device(claimed_hwid: str, dna_payload: dict, client_ip: str, ws: WebSocket):
     hw = dna_payload.get("hardware", {})
@@ -995,13 +1239,15 @@ async def reconcile_device(claimed_hwid: str, dna_payload: dict, client_ip: str,
     if existing_pc:
         db_record = existing_pc[0]
         score, max_score = calculate_dna_score(hw, db_record, caps, db_record)
-        threshold = 5.5 if hw.get('uuid') != "NULL" and hw.get('uuid') == db_record.get('dna_uuid') and hw.get('bios_sn') == db_record.get('dna_bios') else 6
+        threshold = 5.5 if hw.get('uuid') != "NULL" and hw.get('uuid') == db_record.get(
+            'dna_uuid') and hw.get('bios_sn') == db_record.get('dna_bios') else 6
         if score >= threshold:
-            await execute_query("UPDATE clients SET dna_uuid=$1, dna_bios=$2, dna_disk=$3, dna_mac=$4, dna_ram=$5, cap_ram_readable=$6 WHERE pc_name=$7", 
+            await execute_query("UPDATE clients SET dna_uuid=$1, dna_bios=$2, dna_disk=$3, dna_mac=$4, dna_ram=$5, cap_ram_readable=$6 WHERE pc_name=$7",
                                 (hw.get('uuid'), hw.get('bios_sn'), hw.get('disk_sn'), hw.get('mac'), hw.get('ram_sn'), caps.get('ram_readable', True), claimed_hwid))
             return claimed_hwid
         else:
-            new_hwid = "HW-" + hashlib.md5((hw.get('uuid', '') + hw.get('mac', '') + str(datetime.datetime.now().timestamp())).encode()).hexdigest()[:12].upper()
+            new_hwid = "HW-" + hashlib.md5((hw.get('uuid', '') + hw.get('mac', '') + \
+                                           str(datetime.datetime.now().timestamp())).encode()).hexdigest()[:12].upper()
             await add_audit_log(claimed_hwid, "CLONE_DETECTED", f"Skor: {score}/{max_score}", {"old_hw": db_record.get('dna_uuid'), "new_hw": hw.get('uuid')})
             await ws.send_text(json.dumps({"action": "set_identity", "new_hw_id": new_hwid}))
             return new_hwid
@@ -1010,7 +1256,8 @@ async def reconcile_device(claimed_hwid: str, dna_payload: dict, client_ip: str,
         best_match, best_score, best_max = None, 0, 11
         for pc in all_pcs:
             s, m = calculate_dna_score(hw, pc, caps, pc)
-            if s > best_score: best_score, best_max, best_match = s, m, pc
+            if s > best_score:
+                best_score, best_max, best_match = s, m, pc
         if best_match and best_score >= 6:
             real_hwid = best_match["pc_name"]
             await add_audit_log(real_hwid, "RECOVERED_IDENTITY", f"Kurtarıldı: {best_score}/{best_max}", {"temp_id": claimed_hwid})
@@ -1019,6 +1266,7 @@ async def reconcile_device(claimed_hwid: str, dna_payload: dict, client_ip: str,
         else:
             await add_audit_log(claimed_hwid, "NEW_DEVICE", "Yeni Cihaz", hw)
             return claimed_hwid
+
 
 @app.websocket("/ws/panel")
 async def websocket_panel(websocket: WebSocket):
@@ -1057,17 +1305,21 @@ async def websocket_panel(websocket: WebSocket):
                     if is_control and not manager.user_has_session(username, target):
                         continue
                     if is_control:
-                        manager.touch_vision_session(target, username)   # etkinlik oturum süresini uzatır (idle-timeout)
+                        # etkinlik oturum süresini uzatır (idle-timeout)
+                        manager.touch_vision_session(target, username)
                     if target:
                         sent = await manager.send_remote_input_to_vision(msg, target)
-                        if not sent: await manager.send_command(msg, target)
+                        if not sent:
+                            await manager.send_command(msg, target)
                 elif msg.get("type") == "ping":
                     await websocket.send_text(json.dumps({"type": "pong"}))
-            except json.JSONDecodeError: pass
+            except json.JSONDecodeError:
+                pass
     except WebSocketDisconnect:
         pass
     finally:
         manager.disconnect_panel(websocket)
+
 
 @app.websocket("/ws/vision/{pc_name}")
 async def websocket_vision(websocket: WebSocket, pc_name: str):
@@ -1089,9 +1341,11 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
                 if payload.get("type") in ["stream_frame", "thumbnail"]:
                     # F12: kare yalnızca o cihaz için açık oturumu olan admin panellerine
                     await manager.send_frame_to_viewers(payload, pc_name)
-            except json.JSONDecodeError: pass
+            except json.JSONDecodeError:
+                pass
     except WebSocketDisconnect:
         manager.disconnect_vision(pc_name)
+
 
 @app.websocket("/ws/agent/{pc_name}")
 async def websocket_agent(websocket: WebSocket, pc_name: str):
@@ -1133,7 +1387,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             await process_queue()
             return
         if "status" in pld:
-            await execute_query("UPDATE clients SET last_seen=$1, status=$2, active_window=$3, hostname=$4, ip_address=$5 WHERE pc_name=$6", 
+            await execute_query("UPDATE clients SET last_seen=$1, status=$2, active_window=$3, hostname=$4, ip_address=$5 WHERE pc_name=$6",
                                 (current_time, pld.get("status"), pld.get("active_window", "-"), current_hostname, client_ip, active_hwid))
 
     try:
@@ -1161,7 +1415,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 VALUES ($1, $2, 'Atanmamis_Cihazlar', $3, 'Online', '-', 1, $4, $5, $6, $7, $8, $9, $10)
                 ON CONFLICT (pc_name) DO UPDATE SET status='Online', last_seen=$3, ip_address=$4, boot_count=clients.boot_count + 1, hostname=$2, dna_uuid=$5, dna_bios=$6, dna_disk=$7, dna_mac=$8, dna_ram=$9, cap_ram_readable=$10
             """, (active_hwid, real_hostname, now, client_ip, hw.get('uuid'), hw.get('bios_sn'), hw.get('disk_sn'), hw.get('mac'), hw.get('ram_sn'), caps.get('ram_readable', True)))
-            
+
             await execute_query("INSERT INTO agent_versions (pc_name, version, last_update) VALUES ($1, $2, $3) ON CONFLICT (pc_name) DO UPDATE SET version=$2, last_update=$3", (active_hwid, agent_version, now))
 
             # Enroll token ile bağlandıysa: tüket, kalıcı secret üret+sakla, ajana gönder, laba ata.
@@ -1176,13 +1430,13 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         "SELECT allow_reenroll FROM clients WHERE pc_name=$1", (active_hwid,), fetch=True)
                     if not (rerow and rerow[0].get("allow_reenroll")):
                         await add_audit_log(active_hwid, "enroll_denied",
-                            "Zaten kayıtlı cihaza enroll token'la yeniden-secret REDDEDİLDİ (olası impersonation)",
-                            {"ip": client_ip, "token_id": pending_enroll["id"], "agent_version": agent_version})
+                                            "Zaten kayıtlı cihaza enroll token'la yeniden-secret REDDEDİLDİ (olası impersonation)",
+                                            {"ip": client_ip, "token_id": pending_enroll["id"], "agent_version": agent_version})
                         await log_audit_event(active_hwid, "Critical Security",
-                            "🔴 Enroll ile secret ele geçirme girişimi reddedildi",
-                            actor_id="System/Enroll", event_type="agent.enroll_denied",
-                            category="security", action="enroll_denied", risk_level="critical",
-                            reason="already_enrolled", meta_data={"ip": client_ip})
+                                              "🔴 Enroll ile secret ele geçirme girişimi reddedildi",
+                                              actor_id="System/Enroll", event_type="agent.enroll_denied",
+                                              category="security", action="enroll_denied", risk_level="critical",
+                                              reason="already_enrolled", meta_data={"ip": client_ip})
                         try:
                             await websocket.close(code=4401, reason="Cihaz zaten kayıtlı")
                         except Exception:
@@ -1213,7 +1467,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 auth_method = "secret"
 
             hw_exists = await execute_query("SELECT cpu FROM hw_inventory WHERE pc_name = $1", (active_hwid,), fetch=True)
-            if not hw_exists or hw_exists[0]["cpu"] == "-": await manager.send_command({"action": "get_hardware"}, active_hwid)
+            if not hw_exists or hw_exists[0]["cpu"] == "-":
+                await manager.send_command({"action": "get_hardware"}, active_hwid)
             await process_queue()
 
         await handle_routine_payload(payload)
@@ -1225,7 +1480,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 hwid = payload.get("hw_id")
                 if hwid in manager.pending_thumbnails:
                     for fut in manager.pending_thumbnails[hwid]:
-                        if not fut.done(): fut.set_result(payload.get("image", ""))
+                        if not fut.done():
+                            fut.set_result(payload.get("image", ""))
                     manager.pending_thumbnails[hwid] = []
                 # F1 kalıntısı: ekran görüntüsü yalnızca admin panellerine (viewer'a SIZMAZ).
                 await manager.broadcast_to_admin_panels(payload)
@@ -1308,10 +1564,12 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
         if manager.disconnect_agent(active_hwid, websocket):
             await execute_query("UPDATE clients SET status = 'Offline' WHERE pc_name = $1", (active_hwid,))
 
+
 @app.get("/api/tasks")
 async def get_tasks(limit: int = 1000, auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT * FROM tasks ORDER BY id DESC LIMIT $1", (limit,), fetch=True)
     return rows if rows else []
+
 
 @app.post("/api/flush_queue")
 async def flush_queue(auth: dict = Depends(require_admin)):
@@ -1322,6 +1580,7 @@ async def flush_queue(auth: dict = Depends(require_admin)):
     await execute_query("DELETE FROM tasks")
     return {"status": "success"}
 
+
 @app.post("/api/tasks/action")
 async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require_admin)):
     action = data.action.upper()
@@ -1329,13 +1588,19 @@ async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require
     tid = data.target_id
     new_status = {"CANCEL": "Cancelled", "RETRY": "Pending", "PAUSE": "Paused", "RESUME": "Pending"}.get(action)
     status_condition = "1=1" if action == "RETRY" else "status IN ('Pending', 'Running', 'Paused')"
-    
-    if mode == "TASK": await execute_query(f"UPDATE tasks SET status = $1 WHERE id = $2 AND {status_condition}", (new_status, int(tid)))
-    elif mode == "LAB": await execute_query(f"UPDATE tasks SET status = $1 WHERE target_lab = $2 AND {status_condition}", (new_status, tid))
-    elif mode == "PC": await execute_query(f"UPDATE tasks SET status = $1 WHERE target_pc = $2 AND {status_condition}", (new_status, tid))
-    elif mode == "ALL": await execute_query(f"UPDATE tasks SET status = $1 WHERE {status_condition}", (new_status,))
-    if action in ["RESUME", "RETRY"]: await process_queue()
+
+    if mode == "TASK":
+        await execute_query(f"UPDATE tasks SET status = $1 WHERE id = $2 AND {status_condition}", (new_status, int(tid)))
+    elif mode == "LAB":
+        await execute_query(f"UPDATE tasks SET status = $1 WHERE target_lab = $2 AND {status_condition}", (new_status, tid))
+    elif mode == "PC":
+        await execute_query(f"UPDATE tasks SET status = $1 WHERE target_pc = $2 AND {status_condition}", (new_status, tid))
+    elif mode == "ALL":
+        await execute_query(f"UPDATE tasks SET status = $1 WHERE {status_condition}", (new_status,))
+    if action in ["RESUME", "RETRY"]:
+        await process_queue()
     return {"status": "success"}
+
 
 async def attempt_p2p_wol(mac_address: str, lab_name: str):
     # Veritabanı durumu 'Online' olarak yazılır; ayrıca soketi gerçekten açık olan bir eş seçilir
@@ -1346,6 +1611,7 @@ async def attempt_p2p_wol(mac_address: str, lab_name: str):
             await manager.send_command({"action": "wake_peer", "mac": mac_address}, peer_name)
             return True
     return False
+
 
 @app.post("/api/wake_pc/{pc_name}")
 async def wake_pc(pc_name: str, auth: dict = Depends(require_admin)):
@@ -1359,6 +1625,7 @@ async def wake_pc(pc_name: str, auth: dict = Depends(require_admin)):
         await attempt_p2p_wol(mac, lab_name)
     return {"status": "success", "message": "WOL gönderildi."}
 
+
 @app.post("/api/wake_lab/{lab_name}")
 async def wake_lab(lab_name: str, auth: dict = Depends(require_admin)):
     rows = await execute_query("SELECT hw_inventory.mac_address FROM hw_inventory JOIN clients ON hw_inventory.pc_name = clients.pc_name WHERE clients.lab_name = $1", (lab_name,), fetch=True)
@@ -1370,6 +1637,7 @@ async def wake_lab(lab_name: str, auth: dict = Depends(require_admin)):
             await attempt_p2p_wol(mac, lab_name)
             count += 1
     return {"status": "success", "woken_pcs": count}
+
 
 @app.post("/api/wake_all")
 async def wake_all(auth: dict = Depends(require_admin)):
@@ -1384,6 +1652,7 @@ async def wake_all(auth: dict = Depends(require_admin)):
                 await attempt_p2p_wol(mac, lab)
             count += 1
     return {"status": "success", "woken_pcs": count}
+
 
 @app.get("/api/devices")
 async def get_devices(auth: dict = Depends(require_auth)):
@@ -1400,18 +1669,18 @@ async def get_devices(auth: dict = Depends(require_auth)):
     rows = await execute_query(query, fetch=True)
     return [
         {
-            "hostname": r["pc_name"], 
-            "real_hostname": r["hostname"] or r["pc_name"], 
+            "hostname": r["pc_name"],
+            "real_hostname": r["hostname"] or r["pc_name"],
             "display_name": r["display_name"],
             "pc_name": r["hostname"] or r["pc_name"],
             "hw_id": r["pc_name"],
             "ip": r["ip_address"],
-            "lab": r["lab_name"], 
-            "status": r["status"], 
-            "last_seen": r["last_seen"], 
-            "active_window": r["active_window"], 
-            "boot_count": r["boot_count"], 
-            "current_user": r.get("logged_user", "-"), 
+            "lab": r["lab_name"],
+            "status": r["status"],
+            "last_seen": r["last_seen"],
+            "active_window": r["active_window"],
+            "boot_count": r["boot_count"],
+            "current_user": r.get("logged_user", "-"),
             "is_quarantined": r.get("is_quarantined", False),
             "agent_version": r.get("agent_version") or "Bilinmiyor",
             "running_version": r.get("running_version"),
@@ -1423,6 +1692,7 @@ async def get_devices(auth: dict = Depends(require_auth)):
         for r in (rows or [])
     ]
 
+
 @app.post("/api/inventory/{pc_name}")
 async def update_inventory(pc_name: str, data: HwInventoryInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     _bind_agent(agent_id, pc_name)   # başka cihaz adına envanter yazılamaz
@@ -1430,21 +1700,24 @@ async def update_inventory(pc_name: str, data: HwInventoryInput, agent_id: Optio
     await execute_query('''INSERT INTO hw_inventory (pc_name, hostname, cpu, ram, motherboard, gpu, os_version, ip_address, mac_address, disk_info, last_updated) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (pc_name) DO UPDATE SET hostname=EXCLUDED.hostname, cpu=EXCLUDED.cpu, ram=EXCLUDED.ram, motherboard=EXCLUDED.motherboard, gpu=EXCLUDED.gpu, os_version=EXCLUDED.os_version, ip_address=EXCLUDED.ip_address, mac_address=EXCLUDED.mac_address, disk_info=EXCLUDED.disk_info, last_updated=EXCLUDED.last_updated''', (pc_name, data.hostname, data.cpu, data.ram, data.motherboard, data.gpu, data.os_version, data.ip_address, data.mac_address, data.disk_info, now))
     return {"status": "success"}
 
+
 @app.get("/api/inventory")
 async def get_all_inventory(auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT * FROM hw_inventory", fetch=True)
     return rows if rows else []
 
+
 @app.post("/api/logs/{pc_name}")
 async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     _bind_agent(agent_id, pc_name)   # başka cihaz adına log yazılamaz
     await log_audit_event(
-        pc_name=pc_name, log_type=data.log_type or "System", message=data.message or "", 
-        actor_id=data.actor_id or "Agent", event_type=data.event_type or "agent.log", 
-        category=data.category or "legacy", action=data.action or "unknown", 
+        pc_name=pc_name, log_type=data.log_type or "System", message=data.message or "",
+        actor_id=data.actor_id or "Agent", event_type=data.event_type or "agent.log",
+        category=data.category or "legacy", action=data.action or "unknown",
         risk_level=data.risk_level or "info", reason=data.reason or "", meta_data=data.meta_data or {}
     )
     return {"status": "success"}
+
 
 @app.get("/api/logs")
 async def get_all_logs(limit: int = 1000, auth: dict = Depends(require_auth)):
@@ -1454,15 +1727,18 @@ async def get_all_logs(limit: int = 1000, auth: dict = Depends(require_auth)):
         rows = await execute_query("SELECT * FROM agent_logs ORDER BY id DESC LIMIT $1", (limit,), fetch=True)
     return rows if rows else []
 
+
 @app.post("/api/create_lab")
 async def create_lab(data: CreateLabInput, auth: dict = Depends(require_admin)):
     await execute_query("INSERT INTO custom_labs (lab_name) VALUES ($1) ON CONFLICT DO NOTHING", (data.lab_name,))
     return {"status": "success"}
 
+
 @app.get("/api/custom_labs")
 async def get_custom_labs(auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT lab_name FROM custom_labs", fetch=True)
     return [row["lab_name"] for row in (rows or [])]
+
 
 @app.post("/api/rename_lab")
 async def rename_lab(data: RenameLabInput, auth: dict = Depends(require_admin)):
@@ -1476,10 +1752,12 @@ async def rename_lab(data: RenameLabInput, auth: dict = Depends(require_admin)):
             await conn.execute("UPDATE tasks SET target_lab = $1 WHERE target_lab = $2", data.new_name, data.old_name)
     return {"status": "success"}
 
+
 @app.post("/api/rename_device")
 async def rename_device(data: RenameDeviceInput, auth: dict = Depends(require_admin)):
     await execute_query("UPDATE clients SET display_name = $1 WHERE pc_name = $2", (data.display_name, data.pc_name))
     return {"status": "success"}
+
 
 @app.post("/api/delete_lab")
 async def delete_lab(data: DeleteLabInput, auth: dict = Depends(require_admin)):
@@ -1490,15 +1768,19 @@ async def delete_lab(data: DeleteLabInput, auth: dict = Depends(require_admin)):
             await conn.execute("DELETE FROM lab_settings WHERE lab_name = $1", data.lab_name)
     return {"status": "success"}
 
+
 @app.post("/api/move_pc")
 async def move_pc(data: MovePcInput, auth: dict = Depends(require_admin)):
     await execute_query("UPDATE clients SET lab_name = $1 WHERE pc_name = $2", (data.new_lab, data.pc_name))
     return {"status": "success"}
 
+
 @app.post("/api/move_pcs")
 async def move_pcs(data: MovePcsInput, auth: dict = Depends(require_admin)):
-    for pc in data.pc_names: await execute_query("UPDATE clients SET lab_name = $1 WHERE pc_name = $2", (data.new_lab, pc))
+    for pc in data.pc_names:
+        await execute_query("UPDATE clients SET lab_name = $1 WHERE pc_name = $2", (data.new_lab, pc))
     return {"status": "success"}
+
 
 @app.post("/api/set_main_pc")
 async def set_main_pc(data: SetMainPcInput, auth: dict = Depends(require_admin)):
@@ -1506,24 +1788,29 @@ async def set_main_pc(data: SetMainPcInput, auth: dict = Depends(require_admin))
     if current and current[0]["main_pc"] == data.pc_name:
         await execute_query("UPDATE lab_settings SET main_pc = NULL WHERE lab_name = $1", (data.lab_name,))
         return {"status": "success", "message": f"{data.pc_name} ana bilgisayar yetkisi kaldırıldı."}
-    
+
     await execute_query("INSERT INTO lab_settings (lab_name, main_pc) VALUES ($1, $2) ON CONFLICT (lab_name) DO UPDATE SET main_pc=EXCLUDED.main_pc", (data.lab_name, data.pc_name))
     return {"status": "success", "message": f"{data.pc_name} ana bilgisayar yapıldı."}
+
 
 @app.post("/api/save_lab_layout")
 async def save_lab_layout(data: SaveLabLayoutInput, auth: dict = Depends(require_admin)):
     await execute_query("INSERT INTO lab_settings (lab_name, layout_json) VALUES ($1, $2) ON CONFLICT (lab_name) DO UPDATE SET layout_json=EXCLUDED.layout_json", (data.lab_name, data.layout_json))
     return {"status": "success"}
 
+
 @app.get("/api/lab_settings")
 async def get_lab_settings(auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT lab_name, main_pc, layout_json FROM lab_settings", fetch=True)
-    return {row["lab_name"]: {"main_pc": row["main_pc"], "layout_json": row["layout_json"] or "{}"} for row in (rows or [])}
+    return {row["lab_name"]: {"main_pc": row["main_pc"], "layout_json": row["layout_json"] or "{}"}
+        for row in (rows or [])}
+
 
 @app.post("/api/set_auto_enroll")
 async def set_auto_enroll(data: AutoEnrollInput, auth: dict = Depends(require_admin)):
     await execute_query("INSERT INTO global_settings (key, value) VALUES ('auto_enroll_lab', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", (data.target_lab,))
     return {"status": "success"}
+
 
 @app.post("/api/set_concurrent_limit")
 async def set_concurrent_limit(data: SetLimitInput, auth: dict = Depends(require_admin)):
@@ -1531,10 +1818,12 @@ async def set_concurrent_limit(data: SetLimitInput, auth: dict = Depends(require
     await process_queue()
     return {"status": "success"}
 
+
 @app.get("/api/get_concurrent_limit")
 async def get_concurrent_limit(auth: dict = Depends(require_auth)):
     row = await execute_query("SELECT value FROM global_settings WHERE key = 'concurrent_limit'", fetch=True)
     return {"limit": int(row[0]["value"]) if row else 5}
+
 
 @app.post("/api/upload")
 async def upload_file(request: Request, file: UploadFile = File(...), auth: dict = Depends(require_admin)):
@@ -1546,23 +1835,28 @@ async def upload_file(request: Request, file: UploadFile = File(...), auth: dict
     file_path = os.path.realpath(os.path.join(UPLOAD_DIR, filename))
     if os.path.dirname(file_path) != UPLOAD_DIR:
         raise HTTPException(status_code=400, detail="Geçersiz dosya yolu")
-    with open(file_path, "wb") as buffer: shutil.copyfileobj(file.file, buffer)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
     return {"status": "success", "filename": filename, "url": f"{request.base_url}download/{filename}"}
+
 
 @app.post("/api/add_package")
 async def add_package(data: CreatePackageInput, auth: dict = Depends(require_admin)):
     await execute_query("INSERT INTO packages (id, name, type, meta, command, icon, color) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type, meta=EXCLUDED.meta, command=EXCLUDED.command, icon=EXCLUDED.icon, color=EXCLUDED.color", (data.id, data.name, data.type, data.meta, data.command, data.icon, data.color))
     return {"status": "success"}
 
+
 @app.post("/api/delete_package")
 async def delete_package(data: DeletePackageInput, auth: dict = Depends(require_admin)):
     await execute_query("DELETE FROM packages WHERE id = $1", (data.id,))
     return {"status": "success"}
 
+
 @app.get("/api/packages")
 async def get_packages(auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT * FROM packages", fetch=True)
     return rows if rows else []
+
 
 def get_folder_size(folder):
     total = 0
@@ -1574,13 +1868,14 @@ def get_folder_size(folder):
                     total += os.path.getsize(fp)
     return total
 
+
 @app.get("/api/storage")
 async def api_storage(auth: dict = Depends(require_auth)):
     upload_size = get_folder_size(UPLOAD_DIR)
     updates_size = get_folder_size(UPDATES_DIR)
     used_bytes = upload_size + updates_size
     total_bytes = 20 * 1024 * 1024 * 1024  # 20 GB
-    
+
     try:
         size_row = await execute_query(f"SELECT pg_total_relation_size('{LOG_TABLE}') as size", fetch=True)
         log_bytes = size_row[0]['size'] if size_row else 0
@@ -1607,6 +1902,7 @@ async def api_storage(auth: dict = Depends(require_auth)):
         "log_trend": log_trend
     }
 
+
 @app.post("/api/deploy_orchestration")
 async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(require_admin)):
     target_pcs = []
@@ -1617,7 +1913,7 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
         for lab in data.targets:
             res = await execute_query("SELECT pc_name, lab_name FROM clients WHERE lab_name = $1", (lab,), fetch=True)
             target_pcs.extend([{"pc": r["pc_name"], "lab": r["lab_name"]} for r in (res or [])])
-    else: 
+    else:
         for pc in data.targets:
             res = await execute_query("SELECT lab_name FROM clients WHERE pc_name = $1", (pc,), fetch=True)
             target_pcs.append({"pc": pc, "lab": res[0]["lab_name"] if res else "Bilinmeyen Lab"})
@@ -1630,6 +1926,7 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
     await process_queue()
     return {"status": "success"}
 
+
 @app.post("/api/upload_update")
 async def upload_update(request: Request, file: UploadFile = File(...), auth: dict = Depends(require_admin)):
     try:
@@ -1637,32 +1934,39 @@ async def upload_update(request: Request, file: UploadFile = File(...), auth: di
         filename = f"pops_update_{timestamp}.zip"
         file_path = os.path.join(UPDATES_DIR, filename)
         content = await file.read()
-        with open(file_path, "wb") as f: f.write(content)
-        
+        with open(file_path, "wb") as f:
+            f.write(content)
+
         has_agent, has_updater, has_vision, has_watchdog = False, False, False, False
         try:
             with zipfile.ZipFile(file_path, 'r') as zf:
                 for name in zf.namelist():
-                    if "POpsAgent" in name: has_agent = True
-                    if "POpsUpdater" in name: has_updater = True
-                    if "POpsVision" in name: has_vision = True
-                    if "POpsWatchdog" in name: has_watchdog = True
+                    if "POpsAgent" in name:
+                        has_agent = True
+                    if "POpsUpdater" in name:
+                        has_updater = True
+                    if "POpsVision" in name:
+                        has_vision = True
+                    if "POpsWatchdog" in name:
+                        has_watchdog = True
         except Exception:
             os.remove(file_path)
             return {"status": "error", "message": "ZIP dosyası bozuk"}
-        
+
         if not has_agent or not has_updater:
             os.remove(file_path)
             return {"status": "error", "message": "ZIP dosyası gerekli exeleri içermiyor!"}
-        
+
         file_hash = hashlib.sha256(content).hexdigest()
-        
+
         dl_url = f"{request.base_url}updates/{filename}"
         await execute_query("INSERT INTO global_settings (key, value) VALUES ('latest_update_url', $1) ON CONFLICT (key) DO UPDATE SET value=$1", (dl_url,))
         await execute_query("INSERT INTO global_settings (key, value) VALUES ('latest_update_version', $1) ON CONFLICT (key) DO UPDATE SET value=$1", (f"update_{timestamp}",))
         await execute_query("INSERT INTO global_settings (key, value) VALUES ('latest_update_hash', $1) ON CONFLICT (key) DO UPDATE SET value=$1", (file_hash,))
         return {"status": "success", "download_url": dl_url, "hash": file_hash}
-    except Exception as e: return {"status": "error", "message": str(e)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 @app.get("/api/latest_update")
 async def get_latest_update(auth: dict = Depends(require_auth)):
@@ -1670,6 +1974,7 @@ async def get_latest_update(auth: dict = Depends(require_auth)):
     return {"download_url": row[0]["value"] if row else None}
 
 SHA256_HEX_RE = re.compile(r"[0-9a-f]{64}")
+
 
 async def get_update_command():
     """Sunucuya yüklenmiş son paketten ajan güncelleme emrini üretir.
@@ -1691,30 +1996,36 @@ async def get_update_command():
         return None, "Güncelleme paketi sunucuda bulunamadı, paketi yeniden yükleyin"
     return {"action": "update_agent", "download_url": url, "hash": file_hash}, None
 
+
 @app.post("/api/update_agent/{hw_id}")
 async def update_single_agent(hw_id: str, auth: dict = Depends(require_admin)):
     # İstek gövdesi okunmaz: indirme adresi dışarıdan kabul edilmez
     msg, error = await get_update_command()
-    if not msg: return {"status": "error", "message": error}
+    if not msg:
+        return {"status": "error", "message": error}
 
     if hw_id in manager.active_agents:
         await manager.send_command(msg, hw_id)
         return {"status": "success"}
     return {"status": "error", "message": "Offline"}
 
+
 @app.get("/api/broadcast_update")
 async def broadcast_update(auth: dict = Depends(require_admin)):
     msg, error = await get_update_command()
-    if not msg: return {"status": "error", "message": error}
+    if not msg:
+        return {"status": "error", "message": error}
 
     for pc_name in list(manager.active_agents.keys()):
         await manager.send_command(msg, pc_name)
     return {"status": "success"}
 
+
 @app.get("/api/agent_versions")
 async def get_agent_versions(auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT av.pc_name, av.version, av.last_update, c.status, c.hostname FROM agent_versions av LEFT JOIN clients c ON av.pc_name = c.pc_name", fetch=True)
     return rows if rows else []
+
 
 @app.get("/api/updates")
 async def list_updates(request: Request, auth: dict = Depends(require_auth)):
@@ -1728,6 +2039,7 @@ async def list_updates(request: Request, auth: dict = Depends(require_auth)):
                     "url": f"{request.base_url}updates/{f}"
                 })
     return sorted(updates, key=lambda x: x["uploaded_at"], reverse=True)
+
 
 @app.delete("/api/updates/{filename}")
 async def delete_update(filename: str, auth: dict = Depends(require_admin)):
@@ -1744,27 +2056,33 @@ async def delete_update(filename: str, auth: dict = Depends(require_admin)):
 # Ekran akışı yalnızca Vision oturumu (rıza/bildirim akışı) üzerinden başlatılır;
 # rıza sormadan yakalama başlatan eski /api/stream/start ucu kaldırıldı.
 
+
 @app.get("/api/stream/stop/{pc_name}")
 async def stop_stream(pc_name: str, auth: dict = Depends(require_auth)):
     await manager.send_command({"action": "stop_stream"}, pc_name)
     return {"status": "stopped"}
 
+
 @app.get("/api/thumbnail/{pc_name}")
 async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin)):
     # F1: ekran önizlemesi salt-okur viewer'a kapalı (yalnız admin/superadmin)
-    if pc_name not in manager.active_agents: return {"status": "error", "image": None}
+    if pc_name not in manager.active_agents:
+        return {"status": "error", "image": None}
     loop = asyncio.get_event_loop()
     fut = loop.create_future()
-    if pc_name not in manager.pending_thumbnails: manager.pending_thumbnails[pc_name] = []
+    if pc_name not in manager.pending_thumbnails:
+        manager.pending_thumbnails[pc_name] = []
     manager.pending_thumbnails[pc_name].append(fut)
     await manager.send_command({"type": "remote_input", "device": pc_name, "action": "get_thumbnail"}, pc_name)
     try:
         image_data = await asyncio.wait_for(fut, timeout=5.0)
         return {"status": "success", "image": image_data}
-    except: return {"status": "timeout", "image": None}
+    except:
+        return {"status": "timeout", "image": None}
     finally:
         if pc_name in manager.pending_thumbnails and fut in manager.pending_thumbnails[pc_name]:
             manager.pending_thumbnails[pc_name].remove(fut)
+
 
 @app.post("/api/remote_input")
 async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_admin)):
@@ -1781,6 +2099,7 @@ async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_
         return {"status": "error"}
     return {"status": "success"}
 
+
 @app.post("/api/agent_policies")
 async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(require_admin)):
     val = json.dumps({"fair_use_text": data.fair_use_text, "dns_categories": data.dns_categories,
@@ -1788,6 +2107,7 @@ async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(require_a
                       "dns_domains": data.dns_domains or {}}, ensure_ascii=False)
     await execute_query("INSERT INTO global_settings (key, value) VALUES ('agent_policies', $1) ON CONFLICT (key) DO UPDATE SET value = $1", (val,))
     return {"status": "success"}
+
 
 @app.get("/api/agent_policies")
 async def get_policies():
@@ -1803,19 +2123,20 @@ async def get_policies():
     pol.setdefault("dns_domains", {})
     return pol
 
+
 @app.post("/api/policy_alert")
 async def add_policy_alert(data: PolicyAlertInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     _bind_agent(agent_id, data.hw_id)   # başka cihaz adına ihlal uyarısı yazılamaz
     await log_audit_event(
-        pc_name=data.hw_id, 
-        log_type="Security", 
-        message=f"🚨 KURAL İHLALİ: {data.domain} ({data.category})", 
-        actor_id=data.hw_id, 
-        event_type="policy.alert", 
-        category="restricted_content", 
-        action="dns_block", 
-        risk_level="high", 
-        reason="DNS Kural İhlali", 
+        pc_name=data.hw_id,
+        log_type="Security",
+        message=f"🚨 KURAL İHLALİ: {data.domain} ({data.category})",
+        actor_id=data.hw_id,
+        event_type="policy.alert",
+        category="restricted_content",
+        action="dns_block",
+        risk_level="high",
+        reason="DNS Kural İhlali",
         meta_data={"domain": data.domain, "violation_category": data.category}
     )
     return {"status": "success"}
@@ -1824,4 +2145,11 @@ async def add_policy_alert(data: PolicyAlertInput, agent_id: Optional[str] = Dep
 # Sistem/sürüm/release uçları ayrı router'da (server.py şişmesin). Döngüsel import olmasın diye
 # bağımlılıklar enjekte edilir; manager ve add_audit_log dosyanın bu noktasında tanımlı.
 from system_routes import build_router as _build_system_router
-app.include_router(_build_system_router(require_admin, require_superadmin, execute_query, manager, UPDATES_DIR, add_audit_log))
+app.include_router(
+    _build_system_router(
+        require_admin,
+        require_superadmin,
+        execute_query,
+        manager,
+        UPDATES_DIR,
+         add_audit_log))

@@ -89,7 +89,8 @@ async def main():
     viewer_panel = await websockets.connect(WS + "/ws/panel", additional_headers=cookie(viewer_jwt))
 
     # Admin, HW-X için denetim oturumu açar
-    s, b = http("/api/audit/session/start", body={"target_pc": "HW-X", "reason": "test", "is_mandatory": True}, token=admin_jwt)
+    s, b = http("/api/audit/session/start", body={"target_pc": "HW-X",
+                "reason": "test", "is_mandatory": True}, token=admin_jwt)
     chk(s == 200 and b.get("session_id"), "admin denetim oturumu açtı")
     session_id = b["session_id"]
 
@@ -130,7 +131,7 @@ async def main():
                                      additional_headers={"X-Agent-Version": "test"})
     await agent.send(json.dumps({"dna_payload": {"hardware": {"uuid": "HW-X-U", "bios_sn": "HW-X-B",
                      "disk_sn": "-", "mac": "-", "ram_sn": "-"}, "capabilities": {"ram_readable": True}},
-                     "hostname": "hwx", "status": "Online"}))
+                                 "hostname": "hwx", "status": "Online"}))
     await agent.send(json.dumps({"type": "thumbnail", "hw_id": "HW-X", "image": "THUMB1"}))
     admin_thumb = await recv_timeout(admin_panel, 3)
     viewer_thumb = await recv_timeout(viewer_panel, 2)
