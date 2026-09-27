@@ -15,7 +15,6 @@ POPS_TEST_HTTP (varsayılan http://127.0.0.1:8099). Sunucu ayrıca çalışıyor
 Python 3.9 uyumlu. Bkz. tests/run_local.sh (yerel) ve .github/workflows/ci.yml (CI).
 """
 import asyncio
-import hashlib
 import json
 import os
 import sys
@@ -24,7 +23,6 @@ import urllib.request
 
 import asyncpg
 import websockets
-from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 HTTP = os.environ.get("POPS_TEST_HTTP", "http://127.0.0.1:8099").rstrip("/")

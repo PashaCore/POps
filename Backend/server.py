@@ -2,7 +2,6 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import asyncpg
@@ -29,11 +28,11 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+# Şema migration'larla kurulur (migrate.py); init_db() kaldırıldı.
+from migrate import run_migrations
 from dotenv import load_dotenv
 load_dotenv()
 
-# Sema artik migration'larla kurulur (migrate.py); init_db() kaldirildi.
-from migrate import run_migrations
 
 
 def require_env(name: str) -> str:
@@ -403,7 +402,7 @@ def send_wol_packet(mac_address: str):
             s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             s.sendto(data, (WOL_BROADCAST_ADDR, WOL_PORT))
         return True
-    except:
+    except Exception:
         return False
 
 
@@ -508,7 +507,7 @@ class ConnectionManager:
         for panel in self.active_panels:
             try:
                 await panel.send_text(json.dumps(message))
-            except:
+            except Exception:
                 disconnected.append(panel)
         for p in disconnected:
             self.disconnect_panel(p)
@@ -522,7 +521,7 @@ class ConnectionManager:
             if self.panel_roles.get(panel) in ("admin", "superadmin"):
                 try:
                     await panel.send_text(json.dumps(message))
-                except:
+                except Exception:
                     disconnected.append(panel)
         for p in disconnected:
             self.disconnect_panel(p)
@@ -539,7 +538,7 @@ class ConnectionManager:
             if self.panel_users.get(panel) in allowed:
                 try:
                     await panel.send_text(json.dumps(message))
-                except:
+                except Exception:
                     disconnected.append(panel)
         for p in disconnected:
             self.disconnect_panel(p)
@@ -549,7 +548,7 @@ class ConnectionManager:
             try:
                 await self.active_vision_ws[pc_name].send_text(json.dumps(message))
                 return True
-            except:
+            except Exception:
                 self.disconnect_vision(pc_name)
         return False
 
@@ -1046,7 +1045,6 @@ async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(req
 
 @app.post("/api/security/lockdown")
 async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Karantina logunu yaz
     admin_name = auth.get('sub')
@@ -1066,7 +1064,6 @@ async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
 
 @app.post("/api/security/unlock")
 async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Karantina logunu yaz
     admin_name = auth.get('sub')
@@ -1109,7 +1106,6 @@ async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
 @app.post("/api/auth/login")
 async def auth_login(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     _bind_agent(agent_id, data.hw_id)   # başka cihaz adına giriş kaydı yazılamaz
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await log_audit_event(data.hw_id, "Security", f"🟢 GİRİŞ: {data.student_id}", actor_id=data.student_id, event_type="auth.login", category="security", action="login", risk_level="info")
     await execute_query("UPDATE clients SET logged_user=$1 WHERE pc_name=$2", (data.student_id, data.hw_id))
     return {"status": "success"}
@@ -1118,7 +1114,6 @@ async def auth_login(data: AuthEventInput, agent_id: Optional[str] = Depends(age
 @app.post("/api/auth/failed")
 async def auth_failed(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     _bind_agent(agent_id, data.hw_id)
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await log_audit_event(data.hw_id, "Security", f"🔴 RED: {data.student_id} ({data.message})", actor_id=data.student_id, event_type="auth.failed", category="security", action="login_failed", risk_level="medium", reason=data.message)
     return {"status": "success"}
 
@@ -1126,7 +1121,6 @@ async def auth_failed(data: AuthEventInput, agent_id: Optional[str] = Depends(ag
 @app.post("/api/auth/logout")
 async def auth_logout(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     _bind_agent(agent_id, data.hw_id)
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await log_audit_event(data.hw_id, "Security", "⚪ OTURUM KAPATILDI", actor_id="System", event_type="auth.logout", category="security", action="logout", risk_level="info")
     await execute_query("UPDATE clients SET logged_user='-' WHERE pc_name=$1", (data.hw_id,))
     return {"status": "success"}
@@ -1154,7 +1148,6 @@ async def process_queue():
                     task = task_row[0]
                     await execute_query("UPDATE tasks SET status = 'Running' WHERE id = $1", (task["id"],))
                     await manager.send_command({"action": "execute", "task_id": task["id"], "script_path": task["script_path"]}, pc)
-                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     # F4(a): komutu KİMİN kuyrukladığını göster (eskiden 'System/Queue' idi, iz yoktu).
                     actor = task.get("created_by") or "System/Queue"
                     await log_audit_event(pc, "Deploy", f"Görev: {task['script_path'][:50]}", actor_id=actor, event_type="deploy.execution", category="system_maintenance", action="execute_queue", risk_level="info", meta_data={"raw_command": task["script_path"], "created_by": task.get("created_by")})
@@ -1937,7 +1930,7 @@ async def upload_update(request: Request, file: UploadFile = File(...), auth: di
         with open(file_path, "wb") as f:
             f.write(content)
 
-        has_agent, has_updater, has_vision, has_watchdog = False, False, False, False
+        has_agent, has_updater = False, False
         try:
             with zipfile.ZipFile(file_path, 'r') as zf:
                 for name in zf.namelist():
@@ -1945,10 +1938,6 @@ async def upload_update(request: Request, file: UploadFile = File(...), auth: di
                         has_agent = True
                     if "POpsUpdater" in name:
                         has_updater = True
-                    if "POpsVision" in name:
-                        has_vision = True
-                    if "POpsWatchdog" in name:
-                        has_watchdog = True
         except Exception:
             os.remove(file_path)
             return {"status": "error", "message": "ZIP dosyası bozuk"}
@@ -2077,7 +2066,7 @@ async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin)):
     try:
         image_data = await asyncio.wait_for(fut, timeout=5.0)
         return {"status": "success", "image": image_data}
-    except:
+    except Exception:
         return {"status": "timeout", "image": None}
     finally:
         if pc_name in manager.pending_thumbnails and fut in manager.pending_thumbnails[pc_name]:
@@ -2144,7 +2133,7 @@ async def add_policy_alert(data: PolicyAlertInput, agent_id: Optional[str] = Dep
 
 # Sistem/sürüm/release uçları ayrı router'da (server.py şişmesin). Döngüsel import olmasın diye
 # bağımlılıklar enjekte edilir; manager ve add_audit_log dosyanın bu noktasında tanımlı.
-from system_routes import build_router as _build_system_router
+from system_routes import build_router as _build_system_router  # noqa: E402 (bağımlılıklar burada tanımlı)
 app.include_router(
     _build_system_router(
         require_admin,

@@ -74,7 +74,8 @@ async def main():
 
     admin_jwt = server.create_jwt("admin1", "admin")
     viewer_jwt = server.create_jwt("viewer1", "viewer")
-    rinput = lambda dev: {"type": "remote_input", "device": dev, "input_type": "mouse_move", "data": {"x": 1, "y": 1}}
+    def rinput(dev):
+        return {"type": "remote_input", "device": dev, "input_type": "mouse_move", "data": {"x": 1, "y": 1}}
 
     # Geçersiz token ile panel bağlantısı reddedilmeli
     try:
