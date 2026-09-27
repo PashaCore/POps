@@ -14,6 +14,7 @@ $nav_items = [
     ['page' => 'devices', 'icon' => 'fa-desktop', 'label' => 'Cihaz Yönetimi', 'show' => can_view('devices'), 'section' => 'Yönetim'],
     ['page' => 'labs', 'icon' => 'fa-network-wired', 'label' => 'Laboratuvarlar', 'show' => can_view('labs'), 'section' => 'Yönetim'],
     ['page' => 'tasks', 'icon' => 'fa-tasks', 'label' => 'Görev Kuyruğu', 'show' => can_view('tasks'), 'section' => 'Yönetim'],
+    ['page' => 'helpdesk', 'icon' => 'fa-life-ring', 'label' => 'Yardım Masası', 'show' => can_view('helpdesk'), 'section' => 'Yönetim'],
     ['page' => 'vision', 'icon' => 'fa-eye', 'label' => 'POpsVision', 'show' => can_view('vision'), 'section' => 'Operasyon'],
     ['page' => 'deploy', 'icon' => 'fa-cloud-arrow-up', 'label' => 'Dosya Dağıtımı', 'show' => can_view('deploy'), 'section' => 'Operasyon'],
     ['page' => 'terminal', 'icon' => 'fa-terminal', 'label' => 'Terminal', 'show' => can_view('terminal'), 'section' => 'Operasyon'],

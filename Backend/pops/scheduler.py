@@ -130,11 +130,46 @@ async def check_pending_updates() -> None:
         )
 
 
+async def check_licenses_daily() -> None:
+    """Günde bir kez: koltuk aşımı, süresi dolmuş ve 30 gün içinde bitecek lisanslar için bildirim."""
+    from pops.routers.licenses import licenses_with_usage  # döngüsel import olmasın diye burada
+
+    today = datetime.date.today().isoformat()
+    rows = await db.execute_query("SELECT value FROM global_settings WHERE key = 'license_check_date'", fetch=True)
+    if rows and rows[0]["value"] == today:
+        return
+    await db.execute_query(
+        "INSERT INTO global_settings (key, value) VALUES ('license_check_date', $1) "
+        "ON CONFLICT (key) DO UPDATE SET value = $1",
+        (today,),
+    )
+    for lic in await licenses_with_usage():
+        if lic["state"] == "over":
+            await notify(
+                "license_over",
+                "high",
+                "Lisans aşımı: %s (%d kurulu / %d izinli)" % (lic["name"], lic["installed"], lic["seats"]),
+                "",
+            )
+        elif lic["state"] == "expired":
+            await notify(
+                "license_expired", "high", "Lisansın süresi doldu: %s (%s)" % (lic["name"], lic["expires_at"]), ""
+            )
+        elif lic["state"] == "expiring":
+            await notify(
+                "license_expiring",
+                "medium",
+                "Lisans 30 gün içinde bitiyor: %s (%s)" % (lic["name"], lic["expires_at"]),
+                "",
+            )
+
+
 async def scheduler_loop() -> None:
     while True:
         try:
             await run_due()
             await check_pending_updates()
+            await check_licenses_daily()
         except asyncio.CancelledError:
             raise
         except Exception as exc:

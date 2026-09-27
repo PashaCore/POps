@@ -1,4 +1,5 @@
 <?php include 'includes/header.php'; ?>
+<?php $rpCanEdit = in_array($_SESSION['role'] ?? '', ['admin', 'superadmin'], true); ?>
 
 <style>
     .rp-wrap { display: flex; flex-direction: column; gap: var(--space-5); }
@@ -48,6 +49,13 @@
     .rp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .rp-fld { width: auto; padding: 0.5rem 0.75rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface-2); color: var(--text-primary); font-size: var(--text-sm); }
     .rp-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .lic-form { display: none; background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); margin-bottom: var(--space-4); }
+    .lic-form.open { display: block; }
+    .lic-form .g { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.5rem; }
+    .lic-form .g .rp-fld, .lic-form textarea { width: 100%; }
+    .lic-bar { height: 8px; background: var(--bg-surface-2); border-radius: 4px; min-width: 90px; }
+    .lic-bar > div { height: 8px; border-radius: 0 4px 4px 0; background: var(--primary-500); }
+    .lic-bar.over > div { background: var(--danger-solid); }
     .rp-note { font-size: var(--text-sm); color: var(--text-secondary); background: var(--info-bg); border-left: 3px solid var(--info-solid, #3b82f6); padding: 0.625rem 0.875rem; border-radius: var(--radius-sm); }
 </style>
 
@@ -67,6 +75,7 @@
             <option value="devices">Cihazlar</option>
             <option value="software">Yazılımlar</option>
             <option value="patches">Windows güncellemeleri</option>
+            <option value="licenses">Lisanslar</option>
             <option value="events">Olaylar (seçili dönem)</option>
         </select>
     </div>
@@ -77,6 +86,7 @@
         <button class="rp-tab active" data-tab="summary"><i class="fas fa-gauge"></i> Özet</button>
         <button class="rp-tab" data-tab="software"><i class="fas fa-box"></i> Yazılım</button>
         <button class="rp-tab" data-tab="patches"><i class="fas fa-shield-virus"></i> Windows güncellemeleri</button>
+        <button class="rp-tab" data-tab="licenses"><i class="fas fa-certificate"></i> Lisanslar</button>
     </div>
 
     <!-- ÖZET -->
@@ -125,6 +135,34 @@
             <div class="rp-scroll"><table class="rp-table" id="ptTable"></table></div>
         </div>
     </div>
+
+    <!-- LİSANSLAR -->
+    <div class="rp-pane" id="pane-licenses">
+        <div class="rp-note"><i class="fas fa-circle-info"></i> Lisans, yazılım envanterindeki program adında <strong>eşleşme ifadesi</strong> geçen kurulumları sayar (ör. "Office LTSC"). Koltuk boş bırakılırsa sınırsız (site/kampüs) lisans sayılır. Aşım ve 30 gün içinde bitecek lisanslar için günde bir bildirim gider. Sayım, yazılım envanteri gönderen ajanlara (0.1.5-alpha ve sonrası) dayanır.</div>
+        <div class="rp-card">
+            <div class="rp-row" style="justify-content:space-between;margin-bottom:var(--space-4);">
+                <span id="licSummary" class="rp-row"></span>
+                <?php if ($rpCanEdit): ?><button class="rp-btn primary" id="licNew"><i class="fas fa-plus"></i> Lisans ekle</button><?php endif; ?>
+            </div>
+            <?php if ($rpCanEdit): ?>
+            <div class="lic-form" id="licForm">
+                <input type="hidden" id="lfId">
+                <div class="g">
+                    <input class="rp-fld" id="lfName" maxlength="200" placeholder="Lisans adı (ör. Office LTSC 2021 okul lisansı)">
+                    <input class="rp-fld" id="lfPattern" maxlength="200" placeholder="Eşleşme ifadesi (ör. Office LTSC)">
+                    <input class="rp-fld" id="lfPublisher" maxlength="200" placeholder="Yayıncı süzgeci (isteğe bağlı, ör. Microsoft)">
+                    <input class="rp-fld" id="lfSeats" type="number" min="0" placeholder="Koltuk (boş = sınırsız)">
+                    <select class="rp-fld" id="lfType"><option value="per_device">Cihaz başına</option><option value="site">Site / kampüs</option><option value="subscription">Abonelik</option></select>
+                    <input class="rp-fld" id="lfExpires" type="date" title="Bitiş tarihi (isteğe bağlı)">
+                </div>
+                <textarea class="rp-fld" id="lfNotes" maxlength="2000" placeholder="Notlar (sözleşme no, tedarikçi…)" style="margin-top:0.5rem;min-height:60px;"></textarea>
+                <div class="rp-empty" id="lfPreview" style="padding:0.5rem 0 0;"></div>
+                <div class="rp-row" style="margin-top:0.5rem;"><button class="rp-btn primary" id="lfSave"><i class="fas fa-floppy-disk"></i> Kaydet</button><button class="rp-btn" id="lfCancel">Vazgeç</button></div>
+            </div>
+            <?php endif; ?>
+            <div class="rp-scroll"><table class="rp-table" id="licTable"></table></div>
+        </div>
+    </div>
 </div>
 
 <?php include 'includes/footer.php'; ?>
@@ -147,7 +185,7 @@
     document.querySelectorAll('.rp-tab').forEach(t => t.addEventListener('click', () => {
         document.querySelectorAll('.rp-tab').forEach(x => x.classList.toggle('active', x === t));
         document.querySelectorAll('.rp-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + t.dataset.tab));
-        if (!loaded[t.dataset.tab]) { loaded[t.dataset.tab] = true; ({ software: loadSoftware, patches: loadPatches })[t.dataset.tab]?.(); }
+        if (!loaded[t.dataset.tab]) { loaded[t.dataset.tab] = true; ({ software: loadSoftware, patches: loadPatches, licenses: loadLicenses })[t.dataset.tab]?.(); }
     }));
 
     // ---- CSV ----
@@ -291,6 +329,80 @@
     $('ptScan').addEventListener('click', () => patchCmd('scan', 'security'));
     $('ptSec').addEventListener('click', () => patchCmd('install', 'security'));
     $('ptAll').addEventListener('click', () => patchCmd('install', 'all'));
+
+    // ---- LİSANSLAR ----
+    const canEditLic = <?= $rpCanEdit ? 'true' : 'false' ?>;
+    const LT = { per_device: 'Cihaz başına', site: 'Site / kampüs', subscription: 'Abonelik' };
+    const LS = { ok: ['ok', 'fa-circle-check', 'Uygun'], over: ['bad', 'fa-triangle-exclamation', 'Aşım'], expiring: ['warn', 'fa-hourglass-half', 'Bitiyor'], expired: ['bad', 'fa-calendar-xmark', 'Süresi doldu'] };
+    let licenses = [];
+    async function loadLicenses() {
+        let d;
+        try { d = await api('/api/licenses'); }
+        catch (e) { $('licTable').innerHTML = `<tr><td class="rp-empty">Lisanslar alınamadı: ${escapeHtml(e.message)}</td></tr>`; return; }
+        licenses = d.items || [];
+        const sm = d.summary || {};
+        $('licSummary').innerHTML = ['over', 'expired', 'expiring'].filter(k => sm[k]).map(k => `<span class="pill ${LS[k][0]}"><i class="fas ${LS[k][1]}"></i> ${sm[k]} ${LS[k][2].toLowerCase()}</span>`).join(' ')
+            || (licenses.length ? '<span class="pill ok"><i class="fas fa-circle-check"></i> Tüm lisanslar uygun</span>' : '');
+        $('licTable').innerHTML = licenses.length ? `<tr><th>Lisans</th><th>Tür</th><th>Kullanım</th><th>Durum</th><th>Bitiş</th>${canEditLic ? '<th></th>' : ''}</tr>` + licenses.map(l => {
+            const st = LS[l.state] || LS.ok;
+            const pct = l.seats ? Math.min(100, (l.installed / Math.max(1, l.seats)) * 100) : 0;
+            return `<tr class="click" data-id="${l.id}">
+                <td><strong>${escapeHtml(l.name)}</strong><div style="color:var(--text-tertiary);font-size:0.75rem;">"${escapeHtml(l.match_pattern)}"${l.publisher ? ' · ' + escapeHtml(l.publisher) : ''}${l.notes ? ' · ' + escapeHtml(l.notes.slice(0, 60)) : ''}</div></td>
+                <td>${escapeHtml(LT[l.license_type] || l.license_type)}</td>
+                <td>${l.seats == null ? `${n(l.installed)} kurulu · sınırsız` : `<div class="rp-row" style="flex-wrap:nowrap;"><div class="lic-bar${l.installed > l.seats ? ' over' : ''}"><div style="width:${pct}%"></div></div><span>${n(l.installed)} / ${n(l.seats)}</span></div>`}</td>
+                <td><span class="pill ${st[0]}"><i class="fas ${st[1]}"></i> ${st[2]}</span></td>
+                <td>${l.expires_at ? new Date(l.expires_at).toLocaleDateString('tr-TR') : '—'}</td>
+                ${canEditLic ? `<td style="white-space:nowrap;"><button class="rp-btn" data-edit="${l.id}" title="Düzenle"><i class="fas fa-pen"></i></button> <button class="rp-btn" data-del="${l.id}" title="Sil"><i class="fas fa-trash"></i></button></td>` : ''}
+            </tr>`;
+        }).join('') : `<tr><td class="rp-empty">Tanımlı lisans yok.${canEditLic ? ' "Lisans ekle" ile başlayın.' : ''}</td></tr>`;
+        $('licTable').querySelectorAll('tr.click').forEach(tr => tr.addEventListener('click', (e) => { if (!e.target.closest('button')) licDevices(tr); }));
+        $('licTable').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => licEdit(licenses.find(l => l.id == b.dataset.edit))));
+        $('licTable').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+            if (!confirm('Lisans tanımı silinsin mi?')) return;
+            try { await api('/api/licenses/' + b.dataset.del, { method: 'DELETE' }); loadLicenses(); } catch (e) { showToast(e.message, 'error'); }
+        }));
+    }
+    async function licDevices(tr) {
+        const next = tr.nextElementSibling;
+        if (next && next.classList.contains('sw-dev')) { next.remove(); return; }
+        const rows = await api(`/api/licenses/${tr.dataset.id}/devices`).catch(() => []);
+        const el = document.createElement('tr'); el.className = 'sw-dev';
+        el.innerHTML = `<td colspan="6" style="background:var(--bg-surface-2);">${rows.map(r => `<span class="pill" style="margin:0.15rem;">${escapeHtml(devName(r))} · ${escapeHtml(r.lab_name || 'sınıfsız')} · ${escapeHtml(r.name)} ${escapeHtml(r.version || '')}</span>`).join('') || 'Eşleşen kurulum yok.'}</td>`;
+        tr.after(el);
+    }
+    function licEdit(l) {
+        $('licForm').classList.add('open');
+        $('lfId').value = l ? l.id : '';
+        $('lfName').value = l ? l.name : ''; $('lfPattern').value = l ? l.match_pattern : ''; $('lfPublisher').value = l ? (l.publisher || '') : '';
+        $('lfSeats').value = l && l.seats != null ? l.seats : ''; $('lfType').value = l ? l.license_type : 'per_device';
+        $('lfExpires').value = l && l.expires_at ? l.expires_at.slice(0, 10) : ''; $('lfNotes').value = l ? (l.notes || '') : '';
+        licPreview();
+    }
+    let lpT;
+    async function licPreview() {
+        const q = $('lfPattern').value.trim();
+        if (q.length < 2) { $('lfPreview').textContent = ''; return; }
+        try {
+            const d = await api('/api/software?limit=8&q=' + encodeURIComponent(q));
+            $('lfPreview').innerHTML = d.items.length ? 'Bu ifadeye uyan programlar: ' + d.items.map(i => `<span class="pill">${escapeHtml(i.name)} · ${n(i.devices)} cihaz</span>`).join(' ')
+                : 'Envanterde bu ifadeye uyan program yok (henüz yazılım bildiren ajan olmayabilir).';
+        } catch (e) { $('lfPreview').textContent = ''; }
+    }
+    if (canEditLic) {
+        $('licNew').addEventListener('click', () => licEdit(null));
+        $('lfCancel').addEventListener('click', () => $('licForm').classList.remove('open'));
+        $('lfPattern').addEventListener('input', () => { clearTimeout(lpT); lpT = setTimeout(licPreview, 300); });
+        $('lfSave').addEventListener('click', async () => {
+            const id = $('lfId').value;
+            const body = { name: $('lfName').value, match_pattern: $('lfPattern').value, publisher: $('lfPublisher').value || null,
+                           seats: $('lfSeats').value === '' ? null : parseInt($('lfSeats').value), license_type: $('lfType').value,
+                           expires_at: $('lfExpires').value || null, notes: $('lfNotes').value || null };
+            try {
+                await api(id ? '/api/licenses/' + id : '/api/licenses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                $('licForm').classList.remove('open'); showToast('Lisans kaydedildi.', 'success'); loadLicenses();
+            } catch (e) { showToast(e.message, 'error'); }
+        });
+    }
 
     loadSummary();
 })();

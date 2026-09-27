@@ -22,7 +22,19 @@ from pops.audit import add_audit_log
 from pops.config import DB_CONFIG, JWT_ALGO, JWT_COOKIE_NAME, JWT_SECRET, UPDATES_DIR, UPLOAD_DIR
 from pops.db import execute_query
 from pops.manager import manager
-from pops.routers import agents, auth, control, devices, inventory, notifications, reports, schedules, tasks
+from pops.routers import (
+    agents,
+    auth,
+    control,
+    devices,
+    helpdesk,
+    inventory,
+    licenses,
+    notifications,
+    reports,
+    schedules,
+    tasks,
+)
 from pops.scheduler import scheduler_loop
 from pops.security import _totp_code, create_jwt, limiter, require_admin, require_superadmin
 from system_routes import build_router as _build_system_router
@@ -118,7 +130,7 @@ async def shutdown_event():
 
 
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
-for _r in (auth, control, agents, tasks, devices, schedules, notifications, inventory, reports):
+for _r in (auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk):
     app.include_router(_r.router)
 
 # Sistem/sürüm/release uçları (system_routes, bağımlılıklar enjekte edilir) en sonda

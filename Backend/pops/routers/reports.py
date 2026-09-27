@@ -181,6 +181,28 @@ async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_
             "LEFT JOIN device_patch_status p ON p.pc_name = c.pc_name ORDER BY c.lab_name NULLS LAST, c.hostname",
             fetch=True,
         )
+    elif kind == "licenses":
+        from pops.routers.licenses import licenses_with_usage
+
+        header = ["name", "type", "match", "publisher", "seats", "installed", "free", "expires", "state", "notes"]
+        rows = [
+            {
+                k: lic.get(k)
+                for k in (
+                    "name",
+                    "license_type",
+                    "match_pattern",
+                    "publisher",
+                    "seats",
+                    "installed",
+                    "free",
+                    "expires_at",
+                    "state",
+                    "notes",
+                )
+            }
+            for lic in await licenses_with_usage()
+        ]
     elif kind == "events":
         header = ["timestamp", "hw_id", "risk", "category", "action", "actor", "message"]
         rows = await execute_query(
@@ -190,7 +212,7 @@ async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_
             fetch=True,
         )
     else:
-        raise HTTPException(status_code=400, detail="kind: devices | software | patches | events")
+        raise HTTPException(status_code=400, detail="kind: devices | software | patches | licenses | events")
 
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")

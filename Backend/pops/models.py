@@ -192,7 +192,7 @@ class AgentPoliciesInput(BaseModel):
     quarantine_threshold: int
     # F8: ajan (v0.1.4+) tam alan-adı eşleşmesi yapar; kategori -> alan adları. BOŞ ise DNS tespiti
     # kapalı kalır (kaba substring yanlış-alarmı + KVKK riski böyle önlenir).
-    dns_domains: Optional[dict] = None   # None: mevcut liste korunur (eski panel sürümü göndermez)
+    dns_domains: Optional[dict] = None  # None: mevcut liste korunur (eski panel sürümü göndermez)
 
 
 class PolicyAlertInput(BaseModel):
@@ -265,3 +265,42 @@ class PatchInstallInput(BaseModel):
     target_mode: str = "PC"  # ALL | LAB | PC
     targets: List[str] = []
     scope: str = "security"  # security | all
+
+
+# ─── Lisans takibi ────────────────────────────────────────────────────────────
+class LicenseInput(BaseModel):
+    name: str
+    match_pattern: str
+    publisher: Optional[str] = None
+    seats: Optional[int] = None  # None = sınırsız
+    license_type: str = "per_device"  # per_device | site | subscription
+    expires_at: Optional[str] = None  # YYYY-MM-DD
+    notes: Optional[str] = None
+
+
+# ─── Yardım masası ────────────────────────────────────────────────────────────
+class AgentTicketInput(BaseModel):
+    subject: str
+    body: Optional[str] = ""
+    category: Optional[str] = "diger"
+    reporter: Optional[str] = None  # oturumdaki kullanıcı adı (ajan doldurur)
+
+
+class PanelTicketInput(BaseModel):
+    subject: str
+    body: Optional[str] = ""
+    category: Optional[str] = "diger"
+    priority: Optional[str] = "normal"
+    pc_name: Optional[str] = None
+    reporter: Optional[str] = None
+
+
+class TicketUpdateInput(BaseModel):
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    assignee: Optional[str] = None  # "" = atamayı kaldır
+
+
+class TicketMessageInput(BaseModel):
+    body: str
+    internal: bool = False

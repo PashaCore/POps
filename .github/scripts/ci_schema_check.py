@@ -26,6 +26,9 @@ CHECKS = [
     ("scheduled_tasks", "next_run"),
     ("device_software", "name"),
     ("device_patch_status", "pending_security"),
+    ("licenses", "match_pattern"),
+    ("tickets", "status"),
+    ("ticket_messages", "internal"),
 ]
 
 
