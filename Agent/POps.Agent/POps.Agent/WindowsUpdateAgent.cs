@@ -25,8 +25,10 @@ namespace POpsAgent
         private const int OrcSucceeded = 2, OrcSucceededWithErrors = 3, OrcAborted = 5;
         // UpdateOperation
         private const int UoInstallation = 1;
-        // Zaman aşımında RequestAbort'tan sonra işin kapanması için tanınan ek süre; kapanmazsa beklenmez
-        private static readonly TimeSpan AbortGrace = TimeSpan.FromMinutes(2);
+        // Zaman aşımında RequestAbort'tan sonra işin kapanması için tanınan ek süre; kapanmazsa beklenmez (testlerde kısaltılır)
+        internal static TimeSpan AbortGrace { get; set; } = TimeSpan.FromMinutes(2);
+        // BrowseOnly okunamayan güncelleme ilk kez görüldüğünde loglanır
+        private static int _browseOnlyUnreadableLogged;
 
         public sealed class Scan
         {
@@ -63,6 +65,8 @@ namespace POpsAgent
 
         private static dynamic NewCollection() => Activator.CreateInstance(Type.GetTypeFromProgID("Microsoft.Update.UpdateColl", true));
 
+        internal static bool WaitForJob(dynamic job, TimeSpan timeout) => WaitForJob(job, new Budget(timeout));
+
         // İş bitene ya da süre dolana kadar bekler. Süre dolunca RequestAbort; iş AbortGrace içinde kapanmazsa
         // beklemeyi bırakır (thread ve "meşgul" bayrağı serbest kalır). Dönen: süre doldu mu
         private static bool WaitForJob(dynamic job, Budget budget)
@@ -79,6 +83,27 @@ namespace POpsAgent
                 Thread.Sleep(500);
             }
             return sinceAbort != null;
+        }
+
+        // ISearchJob/IDownloadJob/IInstallationJob.CleanUp işin BİTMESİNİ BEKLER: takılan bir işte bu thread'i ve
+        // "meşgul" bayrağını yine kilitlerdi. Bitmiş iş hemen temizlenir; bitmemiş iş ayrı, beklenmeyen bir thread'de
+        // (iş kapanınca) temizlenir. Durumu okunamayan iş hiç temizlenmez (sızıntı kabul edilir).
+        internal static void ReleaseJob(dynamic job)
+        {
+            bool completed;
+            try { completed = (bool)job.IsCompleted; }
+            catch { return; }
+            if (completed)
+            {
+                try { job.CleanUp(); } catch { }
+                return;
+            }
+            object pending = job;
+            new Thread(() =>
+            {
+                try { ((dynamic)pending).CleanUp(); } catch { }
+            })
+            { IsBackground = true, Name = "POps Windows Update cleanup" }.Start();
         }
 
         public static Scan Search(dynamic session, TimeSpan timeout)
@@ -107,7 +132,7 @@ namespace POpsAgent
             }
             finally
             {
-                try { job.CleanUp(); } catch { }
+                ReleaseJob(job);
             }
         }
 
@@ -130,7 +155,13 @@ namespace POpsAgent
             }
             try { pending.NeedsUserInput = (bool)update.InstallationBehavior.CanRequestUserInput; } catch { }
             // Okunamazsa isteğe bağlı sayılır: emin olunamayan güncelleme kurulmaz
-            try { pending.BrowseOnly = (bool)update.BrowseOnly; } catch { pending.BrowseOnly = true; }
+            try { pending.BrowseOnly = (bool)update.BrowseOnly; }
+            catch (Exception ex)
+            {
+                pending.BrowseOnly = true;
+                if (Interlocked.Exchange(ref _browseOnlyUnreadableLogged, 1) == 0)
+                    POpsHelpers.Log("PATCH", $"Güncellemenin BrowseOnly bilgisi okunamadı ({ErrorText(ex)}); böyle güncellemeler isteğe bağlı sayılıp kurulmuyor ({pending.Kb ?? pending.Title}).", true);
+            }
             return pending;
         }
 
@@ -221,7 +252,7 @@ namespace POpsAgent
                 }
                 finally
                 {
-                    try { job.CleanUp(); } catch { }
+                    ReleaseJob(job);
                 }
             }
 
@@ -269,7 +300,7 @@ namespace POpsAgent
             }
             finally
             {
-                try { installJob.CleanUp(); } catch { }
+                ReleaseJob(installJob);
             }
         }
 

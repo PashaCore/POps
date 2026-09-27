@@ -685,22 +685,23 @@ namespace POpsAgent
             finally { Interlocked.CompareExchange(ref _thumbnailTcs, null, tcs); }
         }
 
+        // Ön plandaki uygulamanın adı (tepsiden; pencere başlığı gönderilmez) ve karantina durumu. Sunucu (anahtarlı
+        // bağlantıda) "quarantined" ile bekleyen kilit/açma isteğini tamamlar ya da yeniden gönderir; bekleyen istek
+        // yoksa panel ajanın gerçek durumunu gösterir.
+        internal object HeartbeatPayload() => new
+        {
+            hw_id = _hwId,
+            hostname = _pcName,
+            lab_name = "Atanmamis_Cihazlar",
+            status = "Online",
+            active_window = _activeApp ?? "-",
+            quarantined = _quarantine.IsLocked,
+            dna_payload = _cachedDna
+        };
+
         private async Task SendHeartbeatAsync(CancellationToken token)
         {
-            // Ön plandaki uygulamanın adı (tepsiden); pencere başlığı gönderilmez
-            string currentApp = _activeApp ?? "-";
-
-            var statusPayload = new
-            {
-                hw_id = _hwId,
-                hostname = _pcName,
-                lab_name = "Atanmamis_Cihazlar",
-                status = "Online",
-                active_window = currentApp,
-                dna_payload = _cachedDna
-            };
-
-            string json = JsonSerializer.Serialize(statusPayload);
+            string json = JsonSerializer.Serialize(HeartbeatPayload());
             var bytes = Encoding.UTF8.GetBytes(json);
 
             await _wsCommandLock.WaitAsync(token);

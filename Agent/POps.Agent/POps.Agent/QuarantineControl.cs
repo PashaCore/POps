@@ -99,21 +99,34 @@ namespace POpsAgent
         public static string UnlockMessage(string source) =>
             JsonSerializer.Serialize(new Dictionary<string, string> { ["action"] = "unlock", ["source"] = source });
 
-        // Kilit ekranı gösterilir ve ağ yalıtılır. Dönen: yalıtım uygulandı mı (uygulanamasa da kilit sürer)
+        // Kilit ekranı gösterilir ve ağ yalıtılır. Dönen: yalıtım uygulandı mı (uygulanamasa da kilit sürer).
+        // İdempotent: sunucu bekleyen kilidi heartbeat'teki "quarantined" doğrulanana kadar yeniden gönderir. Zaten
+        // yalıtılmışsa kurallar yeniden kurulmaz (PowerShell yok, kurallar bir an bile kalkmaz); yalnızca neden
+        // güncellenir ve tepsi eşitlenir (açık kilit ekranı yinelenmez).
         public async Task<bool> LockdownAsync(string reason)
         {
-            reason = string.IsNullOrWhiteSpace(reason) ? DefaultReason : reason.Trim();
+            // Sunucunun yeniden gönderdiği kilit nedensiz olabilir: kayıtlı neden korunur
+            reason = !string.IsNullOrWhiteSpace(reason) ? reason.Trim() : IsLocked ? LockReason : DefaultReason;
+            bool alreadyIsolated = File.Exists(NetworkIsolation.StatePath);
             try { SecureStore.WriteProtected(LockPath, JsonSerializer.Serialize(new Dictionary<string, string> { ["reason"] = reason })); }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Kilit durumu yazılamadı ({LockPath}): {ex.Message}", true); }
             _toTray(LockdownMessage(reason));
+            if (alreadyIsolated) return true;
             bool isolated = await _enableIsolation();
             if (!isolated) POpsHelpers.Log("AGENT", "[GÜVENLİK] Kilit ekranı gösterildi ama ağ yalıtımı uygulanamadı.", true);
             return isolated;
         }
 
         // Ağ yalıtımı kaldırılır; başarılıysa kilit ekranı kapanır. Başarısızsa kilit sürer ve tepsi UNLOCK_FAILED alır.
+        // İdempotent: kilit yokken gelen unlock (ör. sunucunun yeniden gönderdiği) PowerShell çalıştırmaz ve bildirim
+        // göstermez; yalnızca açık kalmış eski bir kilit ekranı sessizce kapanır.
         public async Task<bool> UnlockAsync(string source)
         {
+            if (!IsLocked)
+            {
+                _toTray(UnlockMessage("sync"));
+                return true;
+            }
             bool removed = await _disableIsolation();
             if (!removed)
             {

@@ -59,7 +59,8 @@ and closes the connection with `4401`.
   refused: the agent logs `[GÜVENLİK] ServerUrl şifresiz http ve yerel değil …` every 10 minutes and does not
   connect (the tray and watchdog keep running).
 - It sends a heartbeat every 5 seconds and reconnects 5 seconds after a disconnect, or 60 seconds after the
-  server rejected its credentials (close code `4401`).
+  server rejected its credentials (close code `4401`). From 0.1.5-alpha the heartbeat carries `"quarantined"`
+  (lock screen and/or isolation active), which the server uses to finish or resend a pending lock/unlock.
 - **Hardware ID.** The device ID (`HW-…`) is kept in `C:\POpsData\identity.key`. On first start it is derived from
   the machine UUID and the primary MAC address. The server compares a hardware fingerprint (UUID, BIOS serial,
   disk serial, MAC, RAM serial) on every connection and may assign a different ID (`set_identity`), for example

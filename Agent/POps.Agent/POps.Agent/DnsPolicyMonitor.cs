@@ -40,6 +40,10 @@ namespace POpsAgent
         private static readonly object Sync = new object();
         private static Timer _timer;
         private static AgentPolicy _policy = new AgentPolicy();
+        // Açık kategorilerin alan adı dizini; yalnızca kategoriler ya da listeler değişince yeniden kurulur
+        private static DnsDomainIndex _index = DnsDomainIndex.Empty;
+        private static string _indexSignature;
+        internal static int IndexBuilds { get; private set; }
         private static string _hwId = "";
         private static string _serverUrl = "";
         // Bu oturumda bildirilen girişler ("kategori|giriş")
@@ -76,13 +80,26 @@ namespace POpsAgent
             }
         }
 
+        // Politika her dakika yeniden okunur; dizin yalnızca dns_categories / dns_domains değiştiyse kurulur
         public static void Configure(AgentPolicy policy, string hwId, string serverUrl)
         {
+            policy ??= new AgentPolicy();
+            string signature = JsonSerializer.Serialize(new object[] { policy.dns_categories, policy.dns_domains });
+            string current;
+            lock (Sync) current = _indexSignature;
+            // Dizin kilit dışında kurulur (büyük listelerde tarama turunu bekletmesin)
+            DnsDomainIndex index = signature != current ? new DnsDomainIndex(policy.dns_categories, policy.dns_domains) : null;
             lock (Sync)
             {
-                _policy = policy ?? new AgentPolicy();
+                _policy = policy;
                 _hwId = hwId ?? "";
                 _serverUrl = serverUrl ?? "";
+                if (index != null)
+                {
+                    _index = index;
+                    _indexSignature = signature;
+                    IndexBuilds++;
+                }
             }
         }
 
@@ -137,6 +154,8 @@ namespace POpsAgent
             lock (Sync)
             {
                 _policy = new AgentPolicy();
+                _index = DnsDomainIndex.Empty;
+                _indexSignature = null;
                 Reported.Clear();
                 Recent.Clear();
                 _baseline = new HashSet<string>(StringComparer.Ordinal);
@@ -155,7 +174,8 @@ namespace POpsAgent
             try
             {
                 AgentPolicy policy;
-                lock (Sync) policy = _policy;
+                DnsDomainIndex index;
+                lock (Sync) { policy = _policy; index = _index; }
                 if (policy?.dns_categories == null || policy.dns_categories.Count == 0) return found;
                 if (policy.dns_domains == null || policy.dns_domains.Count == 0)
                 {
@@ -164,13 +184,17 @@ namespace POpsAgent
                     return found;
                 }
                 _listMissingLogged = false;
+                if (index.Count == 0) return found;
 
                 List<string> names = CacheReader().Select(DnsWatch.Normalize).Where(n => n != null).Distinct().ToList();
-                lock (Sync) _baseline.IntersectWith(names);   // önbellekten düşen ad yeniden görülürse yeni ziyarettir
+                // Önbellekten düşen ad yeniden görülürse yeni ziyarettir. Okuma boş döndüyse (ya da başarısızsa) taban
+                // korunur: yoksa önceki kullanıcının adları bir sonraki okumada yeni kullanıcıya yazılırdı.
+                if (names.Count > 0)
+                    lock (Sync) _baseline.IntersectWith(names);
 
                 foreach (string domain in names)
                 {
-                    var match = DnsWatch.Match(domain, policy.dns_categories, policy.dns_domains);
+                    var match = index.Match(domain);
                     if (match == null) continue;
                     (string category, string entry) = match.Value;
 

@@ -161,9 +161,11 @@ namespace POps.Tests.Agent
             }, HwId, "https://pops.example");
             try
             {
+                QuarantineControl control = Control();
+                await control.LockdownAsync("DNS kural ihlali eşiği");
                 DnsPolicyMonitor.CheckNow();
                 Assert.Equal(1, DnsPolicyMonitor.Violations);
-                await Control().UnlockAsync("bypass");
+                await control.UnlockAsync("bypass");
                 Assert.Equal(0, DnsPolicyMonitor.Violations);
             }
             finally
