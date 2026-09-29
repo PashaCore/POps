@@ -35,8 +35,9 @@ WebSockets. `install.sh` is tested on AlmaLinux/RHEL/Rocky and Debian/Ubuntu.
 
 Run the backend with a **single** uvicorn worker. The list of connected agents, the panel sockets and the
 remote-control session grants are kept in the process's memory, so an agent and a panel connected to different
-workers would not see each other. [`BENCHMARKS.md`](../BENCHMARKS.md) has measured numbers for one worker: 1000 connected agents with no
-errors, with bulk reports from hundreds of agents at once as the expensive case. Plan one worker per school.
+workers would not see each other. One worker is enough for a whole district: the [capacity report](kapasite/README.md) measured 5,000 agents back
+11 s after a restart with no failed attempt and 40 % of one core in steady state, and gives hardware sizing by fleet
+size (raw numbers in [`BENCHMARKS.md`](../BENCHMARKS.md)).
 
 ## Web server and TLS
 

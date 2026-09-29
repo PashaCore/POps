@@ -4,6 +4,10 @@ Measured numbers instead of a "thousands of devices" claim. Reproduce with
 [`tools/agent_simulator.py`](tools/agent_simulator.py) on your own hardware; these are a
 first honest baseline, not a marketing figure.
 
+> **Full capacity report with charts, hardware sizing and 250–5,000 agents: [`docs/kapasite/README.md`](docs/kapasite/README.md)** (Turkish).
+> Headline: 5,000 agents back 11 s after a restart, 0 failed attempts; steady state 40 % of one core + PostgreSQL 17 %,
+> 864 MB (≈ 69 MB + 0.16 MB per agent), 875 heartbeat writes/s. Raw data: [`docs/kapasite/olcum.json`](docs/kapasite/olcum.json).
+
 ## Update 2026-09-29: restart storm with real reconnect behaviour, and the bottleneck it found
 
 Scenario: the server restarts and every agent reconnects at the same moment (`--ramp 0`), using the agent's

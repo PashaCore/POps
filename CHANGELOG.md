@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Docs: capacity report** (`docs/kapasite/README.md`, Turkish, with charts): restart storms for 250–5,000 agents on one server process (5,000 back in 11 s, 0 failed attempts), CPU for POps and PostgreSQL, memory model (≈ 69 MB + 0.16 MB per agent), database write rate, panel latency under load, the task-queue bottleneck it found, and hardware sizing by fleet size, with what was and was not measured. Raw data `docs/kapasite/olcum.json`; charts from `tools/bench_charts.py`.
+
 ### Changed
 
 - **Server self-update follows releases.** By default (`CHANNEL=release`) "Sunucuyu güncelle" moves the server to the newest release tag on `main`, never backwards, and the System page compares the running version with the latest release instead of counting commits ("Yeni sürüm: v0.1.12-alpha" / "Güncel"). `CHANNEL=main` in the root-owned `/etc/pops/selfupdate.conf` keeps the old behaviour for development servers. `POPS_SELFUPDATE_DRYRUN=1` shows the target without deploying. See `docs/self-update.md`.

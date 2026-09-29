@@ -1,0 +1,115 @@
+{
+  "tarih": "2026-09-29",
+  "ortam": {
+    "islemci": "AMD EPYC 7642 (sanal makine, 8 vCPU)",
+    "bellek_gb": 11.7,
+    "isletim_sistemi": "AlmaLinux 9.8",
+    "veritabani": "PostgreSQL 13.23 (başka sitelerle paylaşımlı)",
+    "python": "3.9.25",
+    "pops": "0.1.11-alpha",
+    "backend": "tek uvicorn worker, veritabanı havuzu 20",
+    "simulator": "aynı makinede, tek süreç",
+    "senaryo": "sunucu yeni başladı; bütün cihazlar aynı anda bağlanıyor (ramp 0), ajanın rastgele geri çekilmesiyle; sinyal 5 sn; 40 sn ölçüm penceresi"
+  },
+  "olcumler": [
+    {
+      "cihaz": 250,
+      "toparlanma_sn": 0.4,
+      "basarisiz_deneme": 0,
+      "sinyal_yazma_sn": 50,
+      "backend_cpu": 1,
+      "backend_mb": 109,
+      "pg_cpu": 0,
+      "panel_acik_backend_cpu": 17,
+      "panel_p50_ms": 330,
+      "panel_p95_ms": 434,
+      "saglik_p95_ms": 26.9
+    },
+    {
+      "cihaz": 500,
+      "toparlanma_sn": 0.8,
+      "basarisiz_deneme": 0,
+      "sinyal_yazma_sn": 92,
+      "backend_cpu": 2,
+      "backend_mb": 149,
+      "pg_cpu": 1,
+      "panel_acik_backend_cpu": 18,
+      "panel_p50_ms": 334,
+      "panel_p95_ms": 459,
+      "saglik_p95_ms": 239.7
+    },
+    {
+      "cihaz": 1000,
+      "toparlanma_sn": 1.8,
+      "basarisiz_deneme": 0,
+      "sinyal_yazma_sn": 179,
+      "backend_cpu": 6,
+      "backend_mb": 228,
+      "pg_cpu": 3,
+      "panel_acik_backend_cpu": 21,
+      "panel_p50_ms": 326,
+      "panel_p95_ms": 528,
+      "saglik_p95_ms": 158.6
+    },
+    {
+      "cihaz": 2000,
+      "toparlanma_sn": 4.0,
+      "basarisiz_deneme": 0,
+      "sinyal_yazma_sn": 398,
+      "backend_cpu": 12,
+      "backend_mb": 386,
+      "pg_cpu": 7,
+      "panel_acik_backend_cpu": 28,
+      "panel_p50_ms": 345,
+      "panel_p95_ms": 757,
+      "saglik_p95_ms": 285.7
+    },
+    {
+      "cihaz": 3000,
+      "toparlanma_sn": 6.7,
+      "basarisiz_deneme": 0,
+      "sinyal_yazma_sn": 586,
+      "backend_cpu": 18,
+      "backend_mb": 546,
+      "pg_cpu": 10,
+      "panel_acik_backend_cpu": 37,
+      "panel_p50_ms": 340,
+      "panel_p95_ms": 1046,
+      "saglik_p95_ms": 160.7
+    },
+    {
+      "cihaz": 5000,
+      "toparlanma_sn": 11.0,
+      "basarisiz_deneme": 0,
+      "sinyal_yazma_sn": 875,
+      "backend_cpu": 40,
+      "backend_mb": 864,
+      "pg_cpu": 17,
+      "panel_acik_backend_cpu": 57,
+      "panel_p50_ms": 411,
+      "panel_p95_ms": 1197,
+      "saglik_p95_ms": 175.9
+    }
+  ],
+  "duzeltme_oncesi": [
+    {
+      "cihaz": 500,
+      "once": 1,
+      "sonra": 2
+    },
+    {
+      "cihaz": 1000,
+      "once": 83,
+      "sonra": 6
+    },
+    {
+      "cihaz": 2000,
+      "once": 84,
+      "sonra": 12
+    }
+  ],
+  "bellek_modeli": {
+    "taban_mb": 69.1,
+    "cihaz_basi_mb": 0.159
+  }
+}

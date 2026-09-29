@@ -65,7 +65,7 @@ Instead of hiding administrative activity from users, POps embraces **transparen
 
 ## 🏗 Architecture
 
-POps relies on a dual-socket, asynchronous architecture to stay responsive across a lab or a multi-lab fleet. See [`BENCHMARKS.md`](BENCHMARKS.md) for measured numbers — a first honest baseline: one worker held 1000 connected agents with no errors on an 8-core host; hundreds of agents sending full software lists at the same moment push p95 latency above a second, so plan one worker per school. Horizontal scaling (more workers + Redis fan-out) is on the roadmap.
+POps relies on a dual-socket, asynchronous architecture to stay responsive across a lab or a multi-lab fleet. Measured, reproducible capacity (**[capacity report with charts](docs/kapasite/README.md)**, Turkish; raw numbers in [`BENCHMARKS.md`](BENCHMARKS.md)): one server process brings **5,000 agents back within 11 seconds** of a restart with no failed attempt, and in steady state uses 40 % of one core (PostgreSQL 17 %) and ~69 MB + 0.16 MB per agent. Hardware guidance by fleet size is in the report. More workers + Redis are about availability, not capacity.
 
 
 ```mermaid
