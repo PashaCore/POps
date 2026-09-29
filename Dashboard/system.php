@@ -761,16 +761,33 @@
             tile('Veritabanı bağlantısı', poolBusy + ' / ' + (pool.max || '—'), 'kullanımda / en çok'),
             tile('Hata', errs, escapeHtml((d.http_5xx || 0) + ' sunucu hatası yanıtı, ' + (d.log_counts && d.log_counts.WARNING || 0) + ' uyarı')),
             tile('Zamanlayıcı', tickAge === null ? 'başlamadı' : fmtDur(tickAge) + ' önce', tickBad ? '<span style="color:var(--danger-solid)">30 sn\'de bir çalışmalı</span>' : 'son tur'),
+            backupTile(d.backup),
         ].join('');
         const list = d.recent_errors || [];
         $('dg-errors-wrap').style.display = list.length ? '' : 'none';
         $('dg-errors-title').textContent = 'Son hatalar (' + list.length + ')';
         $('dg-errors').innerHTML = list.map(e => `<li><div class="meta-line">${escapeHtml(fmtDate(e.ts))} · ${escapeHtml(e.logger)}${e.request_id ? ' · istek ' + escapeHtml(e.request_id) : ''}</div>${escapeHtml(e.msg)}${e.exc ? '<div class="meta-line">' + escapeHtml(e.exc) + '</div>' : ''}</li>`).join('');
-        const bad = errs > 0 || tickBad;
-        $('dg-badge').innerHTML = bad ? badge('warn', 'fa-triangle-exclamation', errs ? errs + ' hata' : 'Zamanlayıcı durdu') : badge('ok', 'fa-circle-check', 'Sağlıklı');
+        const bk = backupState(d.backup);
+        const bad = errs > 0 || tickBad || bk !== 'ok';
+        const why = errs ? errs + ' hata' : tickBad ? 'Zamanlayıcı durdu' : bk === 'none' ? 'Yedek yok' : bk === 'old' ? 'Yedek eski' : 'Yedek başarısız';
+        $('dg-badge').innerHTML = bad ? badge('warn', 'fa-triangle-exclamation', why) : badge('ok', 'fa-circle-check', 'Sağlıklı');
         $('dg-foot').innerHTML = d.metrics_enabled
             ? '<i class="fas fa-chart-line"></i> Prometheus <code>/metrics</code> açık.'
             : '<i class="fas fa-circle-info"></i> Prometheus ile izlemek için sunucunun <code>.env</code> dosyasında <code>METRICS_TOKEN</code> tanımlayın.';
+    }
+    // Son yedek: yok / başarısız / 2 günden eski ise uyarı (gece yedeği pops-backup.timer ile alınır)
+    function backupState(b) {
+        if (!b || !b.at) return 'none';
+        if (!b.ok || !b.verified) return 'failed';
+        return (Date.now() - Date.parse(b.at)) / 1000 > 2 * 86400 ? 'old' : 'ok';
+    }
+    function backupTile(b) {
+        const st = backupState(b);
+        if (st === 'none') return tile('Son yedek', 'yok', '<span style="color:var(--danger-solid)">Gece yedeği kurulu değil (docs/backup.md)</span>');
+        const age = fmtDur((Date.now() - Date.parse(b.at)) / 1000) + ' önce';
+        if (st === 'failed') return tile('Son yedek', age, '<span style="color:var(--danger-solid)">' + escapeHtml(b.message || 'başarısız') + '</span>');
+        const size = b.bytes ? (b.bytes > 1048576 ? (b.bytes / 1048576).toFixed(1) + ' MB' : Math.round(b.bytes / 1024) + ' KB') : '';
+        return tile('Son yedek', age, st === 'old' ? '<span style="color:var(--danger-solid)">2 günden eski</span>' : escapeHtml(size + ' · geri yükleme sınandı'));
     }
     async function loadDiag() {
         try { renderDiag(await api('/api/system/diagnostics')); }

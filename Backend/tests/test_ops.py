@@ -98,7 +98,8 @@ def main():
     s, _, d = req("/api/system/diagnostics", sa)
     chk(s == 200, "superadmin 200")
     d = d or {}
-    for key in ("version", "uptime_seconds", "db_pool", "devices", "log_counts", "recent_errors", "slowest_routes"):
+    for key in ("version", "uptime_seconds", "db_pool", "devices", "log_counts", "recent_errors", "slowest_routes",
+                "backup"):
         chk(key in d, "alan var: %s" % key)
     chk(d.get("metrics_enabled") is True, "metrik ucunun açık olduğu görünüyor")
     chk(isinstance(d.get("recent_errors"), list), "son hatalar liste")

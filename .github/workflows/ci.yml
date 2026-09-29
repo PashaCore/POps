@@ -10,6 +10,35 @@ permissions:
   contents: read
 
 jobs:
+  commit-messages:
+    name: No AI attribution in commits
+    # Proje kuralı: commit mesajlarında yapay zekâ ortak yazar/"generated with" satırı olmaz
+    # (GitHub bu satırlardan katkıda bulunan listesi üretir). Push ya da PR'daki yeni commit'lere bakar.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check commit messages
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE:-}" ]; then range="$BASE..$HEAD"
+          elif [ -n "${BEFORE:-}" ] && ! [[ "$BEFORE" =~ ^0+$ ]] && git cat-file -e "$BEFORE" 2>/dev/null; then range="$BEFORE..$AFTER"
+          else range="$AFTER~1..$AFTER"; fi
+          echo "Aralık: $range"
+          bad=$(git log --format='%h %s%n%b' "$range" | grep -inE 'co-authored-by:.*(claude|anthropic|openai|copilot|gpt)|generated with.*(claude|copilot|chatgpt)|noreply@anthropic\.com' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Commit mesajında yapay zekâ atfı var; mesajı düzeltin (git commit --amend / rebase):"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "Temiz."
+
   build-agent:
     name: Build ${{ matrix.name }}
     runs-on: windows-latest
@@ -166,6 +195,100 @@ jobs:
           out=$(python Backend/migrate.py)
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -q "yok (her sey guncel)" || { echo "::error::Migration idempotent degil"; exit 1; }
+
+  backup-restore:
+    name: Backup and restore (PostgreSQL 16)
+    # pops-backup / pops-restore gerçekten çalışıyor mu: yedek + sınama, kurcalanmış zincir reddi, geri dönüş.
+    # Runner'daki pg_dump 16 olduğu için sunucu da 16 (betikler PostgreSQL 13+ ister; üretim 13'te).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pops
+          POSTGRES_PASSWORD: pops
+          POSTGRES_DB: pops_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_USER: pops
+      DB_PASS: pops
+      DB_NAME: pops_ci
+      JWT_SECRET: ci-backup-secret
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install deps
+        run: |
+          pip install -r Backend/requirements.txt
+          sudo apt-get install -y -qq postgresql-client >/dev/null
+          pg_dump --version
+      - name: Migrate and write audit entries
+        working-directory: Backend
+        run: |
+          python migrate.py
+          python - <<'PY'
+          import asyncio, asyncpg
+          from pops import db
+          from pops.audit import add_audit_log
+          from pops.config import DB_CONFIG
+          async def main():
+              db.db_pool = await asyncpg.create_pool(**DB_CONFIG, min_size=1, max_size=2)
+              for i in range(5):
+                  await add_audit_log("HW-CI-BACKUP", "ci_seed", "yedek testi", {"i": i})
+          asyncio.run(main())
+          PY
+      - name: Backup, tamper, restore
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/app"; mkdir -p "$APP"; cp -a Backend/. "$APP/"
+          printf 'DB_HOST=%s\nDB_PORT=%s\nDB_USER=%s\nDB_PASS=%s\nDB_NAME=%s\nJWT_SECRET=%s\n' \
+            "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" "$JWT_SECRET" > "$APP/.env"
+          mkdir -p "$APP/storage"; echo "ci-storage" > "$APP/storage/ci.txt"
+          CONF="$RUNNER_TEMP/backup.conf"
+          cat > "$CONF" <<CONF
+          POPS_APP=$APP
+          POPS_SERVICE=
+          POPS_SERVICE_USER=
+          POPS_PYTHON=$(command -v python)
+          BACKUP_DIR=$RUNNER_TEMP/backups
+          STATUS_FILE=$RUNNER_TEMP/backups/status.json
+          PGADMIN_CMD="psql -h 127.0.0.1 -U pops -d postgres -X -q -v ON_ERROR_STOP=1"
+          CONF
+          export POPS_BACKUP_CONF="$CONF" POPS_BACKUP_ALLOW_NONROOT=1 PGPASSWORD=pops
+          # Uygulama dizinindeki .env'deki DB_* değerleri kullanılır; job ortamındakiler betiği etkilemesin
+          unset DB_HOST DB_PORT DB_USER DB_PASS DB_NAME JWT_SECRET
+
+          echo "== 1. yedek (sınamalı)"
+          Installer/server/pops-backup
+          cat "$RUNNER_TEMP/backups/status.json"
+          grep -q '"ok":true' "$RUNNER_TEMP/backups/status.json"
+          grep -q '"verified":true' "$RUNNER_TEMP/backups/status.json"
+          FIRST=$(ls -d "$RUNNER_TEMP"/backups/20*Z | head -1)
+          tar -tzf "$FIRST/files.tgz" | grep -q 'storage/ci.txt'
+
+          echo "== bozuk özet reddedilmeli"
+          cp -a "$FIRST" "$RUNNER_TEMP/tampered-copy"
+          echo x >> "$RUNNER_TEMP/tampered-copy/meta.json"
+          if Installer/server/pops-restore --check "$RUNNER_TEMP/tampered-copy"; then echo "::error::bozuk yedek kabul edildi"; exit 1; fi
+
+          echo "== denetim kaydı kurcalanınca yeni yedek sınamadan geçmemeli"
+          psql -h 127.0.0.1 -U pops -d pops_ci -X -q -c "UPDATE device_audit_logs SET reason='degistirildi' WHERE id = (SELECT min(id) FROM device_audit_logs WHERE action='ci_seed')"
+          sleep 1
+          if Installer/server/pops-backup; then echo "::error::kurcalanmış zincirle yedek 'tamam' dedi"; exit 1; fi
+          grep -q '"ok":false' "$RUNNER_TEMP/backups/status.json"
+
+          echo "== ilk yedeğe geri dönüş (--db-only)"
+          sudo -E env "PATH=$PATH" Installer/server/pops-restore --yes --db-only "$FIRST"
+          test "$(psql -h 127.0.0.1 -U pops -d pops_ci -X -A -t -c "SELECT count(*) FROM device_audit_logs WHERE reason='degistirildi'")" = 0
+          ( cd "$APP" && python audit_verify.py )
 
   signing:
     name: Release signing tool

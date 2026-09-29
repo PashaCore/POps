@@ -167,13 +167,10 @@ UPDATE users SET totp_enabled = false, totp_secret = NULL WHERE username = '<use
 
 ## Backups
 
-Everything the panel shows is in the database, so back it up regularly with the standard PostgreSQL tools, for
-example `pg_dump -Fc <DB_NAME> > pops-$(date +%F).dump` as a role that can read the database, and restore with
-`pg_restore`. Also keep:
+Everything the panel shows is in the database. `pops-backup` (nightly, installed by `install.sh`) dumps it together
+with the backend `.env`, uploaded files and staged releases, test-restores every backup into a temporary database
+and verifies the audit chain; `pops-restore` brings a backup back. Setup, off-site copies and the recovery runbook:
+[`backup.md`](backup.md).
 
-- the backend `.env` (JWT and bypass secrets, database password),
-- `Backend/storage/` (files uploaded on the Deployment page).
-
-`Backend/releases/` and `Backend/updates/` can be recreated by staging the signed release again. The backend
-deploy script backs up **code** before each deploy; it does not back up the database. Take a database dump before
-applying a release whose migrations change existing data.
+The backend deploy script backs up **code** before each deploy; it does not back up the database. Run
+`sudo pops-backup` before applying a release whose migrations change existing data.

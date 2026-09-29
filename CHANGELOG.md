@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backend: request IDs.** Every request and WebSocket connection gets an ID, returned in `X-Request-ID` and written on every log line of that request; unhandled errors are logged with it.
 - **Backend: `/metrics`** in Prometheus format (off unless `METRICS_TOKEN` is set; Bearer token): requests and durations per route template, WebSocket sessions, errors, connected agents and panels, devices, database pool, scheduler tick, memory.
 - **Panel: "Sunucu sağlığı"** on the System page (`GET /api/system/diagnostics`, superadmin): uptime, connected agents, database connections, error counts, the scheduler's last run and the last 50 errors with their request IDs.
+- **Server: nightly, test-restored backups.** `pops-backup` (root, `pops-backup.timer`, installed by `install.sh`) dumps the database and backs up the backend `.env`, signed releases, uploaded files and agent MSIs with SHA-256 checksums, keeps 14 days (at least the newest 3) and can copy each backup to another machine (`RSYNC_TARGET`). Every backup is restored into a temporary database and the audit chain is verified before it counts as good. `pops-restore` brings a backup back (`--db-only` after a wrong change, full restore on a new server; `--check` only tests). The panel's "Sunucu sağlığı" shows the last backup and warns when it is missing, failed or older than two days. Runbook: `docs/backup.md`.
+- **Backend:** `audit_verify.py` checks the audit chain from the command line (same check as `/api/system/audit-verify`).
+- **CI:** a backup → tamper → restore job, and a check that fails when a commit message carries an AI co-author or "generated with" line.
 - **CI: backend coverage.** The integration suite runs the server under coverage; the report is in the job summary and CI fails below a floor. `docs/testing.md` lists which critical paths are tested and which are only verified by hand.
 
 ### Changed

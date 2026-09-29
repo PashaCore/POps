@@ -5,7 +5,9 @@ kapalı). Sağlık özeti superadmin içindir: okulda Prometheus olmasa da sunuc
 görülür.
 """
 
+import calendar
 import hmac
+import json
 import os
 import time
 
@@ -19,6 +21,20 @@ from pops.manager import manager
 from pops.security import require_superadmin
 
 router = APIRouter()
+
+# pops-backup'ın (root) yazdığı son yedek sonucu; gizli bilgi içermez
+BACKUP_STATUS_FILE = os.environ.get("POPS_BACKUP_STATUS", "/var/lib/pops/backup-status.json")
+
+
+def _backup_status():
+    try:
+        with open(BACKUP_STATUS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return {k: data.get(k) for k in ("ok", "at", "message", "bytes", "verified")}
 
 
 def _version():
@@ -77,6 +93,16 @@ async def prometheus_metrics(request: Request):
          [({}, round(time.time() - tick, 1) if tick else -1)]),
         ("pops_process_resident_memory_mb", "Surecin bellek kullanimi (MB)", [({}, _rss_mb() or 0)]),
     ]
+    backup = _backup_status()
+    if backup and backup.get("at"):
+        try:
+            at = calendar.timegm(time.strptime(backup["at"], "%Y-%m-%dT%H:%M:%SZ"))
+            age = round(time.time() - at)
+            gauges.append(("pops_backup_last_age_seconds", "Son yedekten beri gecen sure", [({}, age)]))
+        except (TypeError, ValueError):
+            pass
+        gauges.append(("pops_backup_last_ok", "Son yedek basarili ve sinanmis mi (1/0)",
+                       [({}, 1 if backup.get("ok") and backup.get("verified") else 0)]))
     return PlainTextResponse(
         metrics.render(gauges, logs.level_counts, _version()), media_type="text/plain; version=0.0.4"
     )
@@ -110,4 +136,5 @@ async def diagnostics(auth: dict = Depends(require_superadmin)):
         "slowest_routes": slow[:5],
         "recent_errors": list(reversed(logs.recent_errors))[:50],
         "metrics_enabled": len(METRICS_TOKEN) >= 16,
+        "backup": _backup_status(),
     }

@@ -1,0 +1,11 @@
+# POps gece yedeği (root, oneshot): veritabanı + sunucu dosyaları, geçici veritabanına açılarak sınanır.
+# pops-backup.timer tetikler; elle: sudo systemctl start pops-backup.service (ya da doğrudan sudo pops-backup)
+[Unit]
+Description=POps sunucu yedeği (veritabanı + dosyalar, geri yükleme sınamalı)
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pops-backup
+Nice=10
+IOSchedulingClass=idle

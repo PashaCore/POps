@@ -1,0 +1,26 @@
+# /etc/pops/backup.conf — pops-backup ve pops-restore ayarları (root'a ait, 600). Kabuk sözdizimi.
+# Belge: docs/backup.md
+
+# Backend dizini (.env burada) ve systemd birimi / servis kullanıcısı
+POPS_APP=/opt/pops
+POPS_SERVICE=pops
+POPS_SERVICE_USER=pops
+# Backend'in dinlediği adres (geri dönüş sonrası sağlık kontrolü)
+POPS_HEALTH_URL=http://127.0.0.1:8000/api/health
+
+# Panel .env'i backend dizini dışındaysa (ör. panel başka bir web kökünden sunuluyorsa)
+POPS_PANEL_ENV=
+
+# Yedeklerin yeri ve saklama süresi (en yeni KEEP_MIN yedek her zaman kalır)
+BACKUP_DIR=/var/backups/pops
+KEEP_DAYS=14
+KEEP_MIN=3
+
+# Başka bir makineye kopya (önerilir: sunucu diski ölürse yedek de gider). ssh anahtarıyla, parolasız:
+#   RSYNC_TARGET=yedek@nas.okul.local:/yedek/pops
+RSYNC_TARGET=
+
+# 1: her yedek geçici bir veritabanına açılıp denetim zinciri doğrulanır (önerilir)
+VERIFY_RESTORE=1
+# 1: ajan MSI'larını (updates/) alma; GitHub'dan yeniden indirilebilirler
+BACKUP_EXCLUDE_UPDATES=0

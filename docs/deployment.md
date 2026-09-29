@@ -178,5 +178,6 @@ The signing key exists only as a GitHub secret; the public key is `keys/pops_rel
 
 ## Backups
 
-Back up the PostgreSQL database, the backend `.env` and `Backend/storage/` (uploaded packages). Details in
-[`database.md`](database.md#backups).
+`install.sh` enables a nightly, test-restored backup of the database, the backend `.env` and the uploaded and
+staged files (`pops-backup.timer`). Keep a copy on another machine (`RSYNC_TARGET`). Setup and the recovery
+runbook: [`backup.md`](backup.md).

@@ -48,6 +48,8 @@ PGHBA=$(sudo -u postgres psql -tAc "SHOW hba_file" 2>/dev/null || true)
 if [ -n "$PGHBA" ] && ! grep -qE "^host\s+$DB_NAME\s+$DB_USER\s+127.0.0.1/32\s+md5" "$PGHBA" 2>/dev/null; then
     echo "host    $DB_NAME    $DB_USER    127.0.0.1/32    md5" >> "$PGHBA"
     echo "host    $DB_NAME    $DB_USER    ::1/128         md5" >> "$PGHBA"
+    # pops-backup her yedeği bu geçici veritabanına açıp sınar
+    echo "host    ${DB_NAME}_restorecheck    $DB_USER    127.0.0.1/32    md5" >> "$PGHBA"
     systemctl reload postgresql || systemctl restart postgresql
 fi
 
@@ -104,6 +106,19 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now pops.service
 
+echo "==> Gece yedeği: pops-backup.timer (/var/backups/pops, 14 gün)"
+install -m 755 "$SRC/Installer/server/pops-backup" "$SRC/Installer/server/pops-restore" /usr/local/sbin/
+install -m 644 "$SRC/Installer/server/pops-backup.service" "$SRC/Installer/server/pops-backup.timer" /etc/systemd/system/
+install -d -m 755 /etc/pops
+if [ ! -f /etc/pops/backup.conf ]; then
+    sed -e "s#^POPS_APP=.*#POPS_APP=$APP_DIR#" -e "s#^POPS_SERVICE_USER=.*#POPS_SERVICE_USER=$SVC_USER#" \
+        -e "s#^POPS_HEALTH_URL=.*#POPS_HEALTH_URL=http://127.0.0.1:$PORT/api/health#" \
+        "$SRC/Installer/server/backup.conf.example" > /etc/pops/backup.conf
+    chmod 600 /etc/pops/backup.conf
+fi
+systemctl daemon-reload
+systemctl enable --now pops-backup.timer
+
 echo "==> Sağlık kontrolü"
 ok=0
 for _ in $(seq 1 15); do
@@ -117,6 +132,8 @@ if [ "$ok" = 1 ]; then
     echo "  Backend:      http://127.0.0.1:$PORT (systemd: pops.service)"
     echo "  Panel admin:  admin / $ADMIN_PASS"
     echo "  App dizini:   $APP_DIR   (.env burada, 600)"
+    echo "  Yedek:        her gece /var/backups/pops (ayar: /etc/pops/backup.conf; başka makineye"
+    echo "                kopya için RSYNC_TARGET'ı doldurun). Geri dönüş: pops-restore, bkz. docs/backup.md"
     echo
     echo "  SONRAKİ ADIM (web + TLS + panel — ortama özel, elle):"
     echo "   1. Bir web sunucusu (Apache/nginx) $PORT'u https'e proxyleyin;"

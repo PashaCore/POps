@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# POps sunucu yedeği: veritabanı (pg_dump -Fc) + sunucudaki dosyalar (.env'ler, imzalı paketler, yüklenen
+# dosyalar, ajan MSI'ları, açık anahtar) tek klasöre, SHA-256 özetleriyle. Varsayılan olarak yedek, geçici bir
+# veritabanına geri yüklenip denetim zinciri doğrulanarak SINANIR: "yedek var ama açılmıyor" durumu fark edilir.
+#
+# root ile çalışır; pops-backup.timer her gece çalıştırır. Elle:  sudo pops-backup
+# Ayarlar: /etc/pops/backup.conf (yoksa varsayılanlar). Geri yükleme: pops-restore. Belge: docs/backup.md
+#
+# Sonuç /var/lib/pops/backup-status.json'a yazılır (gizli bilgi içermez); panel Sistem sayfası "Son yedek"i
+# buradan gösterir.
+set -euo pipefail
+
+CONF=${POPS_BACKUP_CONF:-/etc/pops/backup.conf}
+# shellcheck disable=SC1090
+[ -f "$CONF" ] && . "$CONF"
+
+POPS_APP=${POPS_APP:-/opt/pops}                     # backend dizini (.env burada)
+POPS_PANEL_ENV=${POPS_PANEL_ENV:-}                  # panel .env'i (panel başka dizinden sunuluyorsa)
+BACKUP_DIR=${BACKUP_DIR:-/var/backups/pops}
+KEEP_DAYS=${KEEP_DAYS:-14}                          # bundan eski yedekler silinir...
+KEEP_MIN=${KEEP_MIN:-3}                             # ...ama en yeni KEEP_MIN yedek her zaman kalır
+RSYNC_TARGET=${RSYNC_TARGET:-}                      # başka makineye kopya: kullanici@makine:/yol (ssh anahtarıyla)
+VERIFY_RESTORE=${VERIFY_RESTORE:-1}                 # 1: yedeği geçici veritabanına açıp doğrula
+STATUS_FILE=${STATUS_FILE:-/var/lib/pops/backup-status.json}
+BACKUP_EXCLUDE_UPDATES=${BACKUP_EXCLUDE_UPDATES:-0} # 1: ajan MSI'larını (GitHub'dan yeniden indirilebilir) alma
+
+log() { echo "[pops-backup] $*"; }
+
+write_status() {   # $1=ok(true/false) $2=mesaj [$3=klasör] [$4=boyut bayt]
+    mkdir -p "$(dirname "$STATUS_FILE")"
+    local tmp="$STATUS_FILE.tmp"
+    printf '{"ok":%s,"at":"%s","message":"%s","path":"%s","bytes":%s,"verified":%s}\n' \
+        "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${2//\"/}" "${3:-}" "${4:-0}" "${VERIFIED:-false}" > "$tmp"
+    chmod 644 "$tmp"
+    mv -f "$tmp" "$STATUS_FILE"
+}
+
+envval() {   # .env'den tek değer (dosya ÇALIŞTIRILMAZ): KEY=değer, isteğe bağlı tırnak
+    sed -n "s/^$1=//p" "$POPS_APP/.env" | tail -n1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+
+[ "$(id -u)" -eq 0 ] || [ "${POPS_BACKUP_ALLOW_NONROOT:-0}" = 1 ] || { echo "root olarak çalıştırın"; exit 1; }
+[ -f "$POPS_APP/.env" ] || { echo "$POPS_APP/.env yok (POPS_APP doğru mu? bkz. $CONF)"; exit 1; }
+
+DB_HOST=$(envval DB_HOST); DB_HOST=${DB_HOST:-127.0.0.1}
+DB_PORT=$(envval DB_PORT); DB_PORT=${DB_PORT:-5432}
+DB_USER=$(envval DB_USER); DB_NAME=$(envval DB_NAME)
+PGPASSWORD=$(envval DB_PASS); export PGPASSWORD
+[ -n "$DB_USER" ] && [ -n "$DB_NAME" ] || { echo "DB_USER/DB_NAME .env'de yok"; exit 1; }
+
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+OUT="$BACKUP_DIR/$TS"
+umask 077
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+mkdir "$OUT"
+VERIFIED=false
+
+fail() {
+    local msg="$1"
+    log "BAŞARISIZ: $msg"
+    [ -d "$OUT" ] && mv "$OUT" "$OUT.failed" 2>/dev/null || true
+    write_status false "$msg" "$OUT.failed"
+    exit 1
+}
+trap 'fail "beklenmeyen hata (satır $LINENO)"' ERR
+
+log "veritabanı: $DB_NAME@$DB_HOST:$DB_PORT -> $OUT/db.dump"
+pg_dump -Fc -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "$OUT/db.dump" || fail "pg_dump başarısız"
+pg_restore --list "$OUT/db.dump" >/dev/null || fail "döküm okunamıyor (pg_restore --list)"
+
+# Dosyalar: yalnızca var olanlar; yollar / köküne göre saklanır (geri yüklemede aynı yere döner)
+paths=()
+add() { [ -e "$1" ] && paths+=("${1#/}") || true; }
+add "$POPS_APP/.env"
+add "$POPS_APP/VERSION"
+add "$POPS_APP/keys"
+add "$POPS_APP/releases"
+add "$POPS_APP/storage"
+[ "$BACKUP_EXCLUDE_UPDATES" = 1 ] || add "$POPS_APP/updates"
+[ -n "$POPS_PANEL_ENV" ] && add "$POPS_PANEL_ENV"
+add /etc/pops
+add /var/lib/pops/deploy-status.json
+log "dosyalar: ${paths[*]:-(yok)}"
+if [ "${#paths[@]}" -gt 0 ]; then
+    tar -C / -czf "$OUT/files.tgz" "${paths[@]}" || fail "dosya arşivi oluşturulamadı"
+else
+    tar -C / -czf "$OUT/files.tgz" --files-from /dev/null
+fi
+
+version=$(cat "$POPS_APP/VERSION" 2>/dev/null || echo unknown)
+cat > "$OUT/meta.json" <<META
+{"format":"pops-backup/1","created_at":"$TS","host":"$(hostname -f 2>/dev/null || hostname)","version":"$version","db_name":"$DB_NAME","db_user":"$DB_USER","pg_dump":"$(pg_dump --version | awk '{print $NF}')","app":"$POPS_APP","panel_env":"$POPS_PANEL_ENV"}
+META
+( cd "$OUT" && sha256sum db.dump files.tgz meta.json > SHA256SUMS )
+
+if [ "$VERIFY_RESTORE" = 1 ]; then
+    log "yedek sınanıyor: geçici veritabanına geri yükleme + denetim zinciri"
+    if "$(dirname "$(readlink -f "$0")")/pops-restore" --check "$OUT"; then
+        VERIFIED=true
+    else
+        fail "yedek geri yüklenemedi ya da denetim zinciri kırık (pops-restore --check)"
+    fi
+fi
+trap - ERR
+
+# Saklama: KEEP_DAYS'ten eski yedekler silinir, en yeni KEEP_MIN tanesi her durumda kalır
+mapfile -t all < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -name '20*Z' | sort -r)
+for i in "${!all[@]}"; do
+    [ "$i" -lt "$KEEP_MIN" ] && continue
+    if [ -n "$(find "${all[$i]}" -maxdepth 0 -mtime +"$KEEP_DAYS")" ]; then
+        log "eski yedek siliniyor: ${all[$i]}"
+        rm -rf -- "${all[$i]}"
+    fi
+done
+find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.failed' -mtime +"$KEEP_DAYS" -exec rm -rf -- {} + 2>/dev/null || true
+
+if [ -n "$RSYNC_TARGET" ]; then
+    log "başka makineye kopyalanıyor: $RSYNC_TARGET"
+    rsync -a "$OUT" "$RSYNC_TARGET/" || { write_status false "yerel yedek tamam ama $RSYNC_TARGET kopyası başarısız" "$OUT" "$(du -sb "$OUT" | cut -f1)"; exit 1; }
+fi
+
+size=$(du -sb "$OUT" | cut -f1)
+write_status true "yedek tamam" "$OUT" "$size"
+log "tamam: $OUT ($((size / 1024)) KB, doğrulandı: $VERIFIED)"

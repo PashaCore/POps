@@ -15,7 +15,8 @@ from pops.db import execute_query
 from pops.models import EndAuditSessionInput, LockdownInput, RemoteInputData, StartAuditSessionInput
 from pops.security import require_admin, require_auth, require_superadmin, verify_jwt, verify_session
 from pops.agent_auth import enforce_agent_auth_enabled, valid_enroll_token, verify_agent_secret
-from pops.audit import _audit_entry_hash, add_audit_log, log_audit_event
+from pops import auditchain
+from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 from pops.notify import notify
 
@@ -220,27 +221,7 @@ async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
 @router.get("/api/system/audit-verify")
 async def audit_verify(auth: dict = Depends(require_superadmin)):
     """Denetim zincirini baştan yürütür; bir kayıt kurcalanmış/silinmişse ilk kırık id'yi döner."""
-    rows = await execute_query(
-        "SELECT id, hw_id, action, reason, changes, timestamp, prev_hash, entry_hash "
-        "FROM device_audit_logs ORDER BY id ASC",
-        fetch=True,
-    )
-    prev = None
-    checked = 0
-    for r in rows or []:
-        if r["entry_hash"] is None:
-            continue  # 0004 öncesi eski satırlar zincire dahil değil
-        expected = _audit_entry_hash(prev, r["hw_id"], r["action"], r["reason"], r["changes"], r["timestamp"])
-        if expected != r["entry_hash"]:
-            return {
-                "ok": False,
-                "first_broken_id": r["id"],
-                "reason": "zincir kırık (kurcalanmış/silinmiş)",
-                "checked": checked,
-            }
-        prev = r["entry_hash"]
-        checked += 1
-    return {"ok": True, "checked": checked, "total": len(rows or [])}
+    return auditchain.verify(await execute_query(auditchain.SELECT_ROWS, fetch=True))
 
 
 @router.websocket("/ws/panel")

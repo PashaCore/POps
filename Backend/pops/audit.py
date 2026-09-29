@@ -1,12 +1,11 @@
 """Denetim kayıtları: agent_logs_v2 olay günlüğü ve ajanların yazamadığı, hash-zincirli device_audit_logs."""
 
 import datetime
-import hashlib
 import json
 
 
 from pops.config import USE_V2_SCHEMA
-from pops import db
+from pops import auditchain, db
 from pops.db import execute_query
 
 
@@ -50,9 +49,7 @@ async def log_audit_event(
 _AUDIT_CHAIN_LOCK = 0x504F6175  # 'POau' — denetim zinciri eklemelerini serileştirir
 
 
-def _audit_entry_hash(prev, hw_id, action, reason, changes_json, ts):
-    raw = "%s|%s|%s|%s|%s|%s" % (prev or "", hw_id, action, reason, changes_json, ts)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+_audit_entry_hash = auditchain.entry_hash  # geri uyum: eski içe aktarmalar
 
 
 async def add_audit_log(hw_id, action, reason, changes):
