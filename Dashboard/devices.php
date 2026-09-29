@@ -397,7 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     fetchDevices();
-    setInterval(fetchDevices, 3000);
+    popsPoll(fetchDevices, 5000);
 });
 </script>
 
