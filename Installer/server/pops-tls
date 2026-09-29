@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# POps TLS aracı: kurum içi sertifika otoritesi (CA) ve sunucu sertifikası. openssl dışında bağımlılık yok;
+# internetsiz okulda da çalışır. install.sh bunu çağırır; Let's Encrypt kullanılmıyorsa sertifika buradan gelir.
+#
+#   pops-tls init <alan-adı> [ip ...]     CA yoksa oluşturur (10 yıl), sunucu sertifikasını üretir (825 gün)
+#   pops-tls renew [--force]              bitmesine 30 günden az kaldıysa (ya da --force) aynı adlarla yeniler, web sunucusunu yeniler
+#   pops-tls import <cert.pem> <key.pem>  dışarıdan alınmış sertifikayı yerine koyar (kurum CA'sı kullanılmaz)
+#   pops-tls show                         CA parmak izi, sunucu sertifikasının adları ve bitiş tarihi
+#
+# Dosyalar: /etc/pops/ca/pops-ca.pem (herkese açık: ajanlara SERVER_CA_CERT ile, tarayıcılara güvenilen kök olarak
+# verilir), /etc/pops/ca/ca.key (yalnızca root; sunucudan ÇIKMAZ), /etc/pops/tls/server.crt + server.key (nginx).
+# Belge: docs/tls.md
+set -euo pipefail
+
+CA_DIR=${POPS_CA_DIR:-/etc/pops/ca}
+TLS_DIR=${POPS_TLS_DIR:-/etc/pops/tls}
+CA_KEY=$CA_DIR/ca.key
+CA_CERT=$CA_DIR/pops-ca.pem
+CERT=$TLS_DIR/server.crt
+KEY=$TLS_DIR/server.key
+SAN_FILE=$TLS_DIR/san.txt          # renew için: ilk satır alan adı, sonrakiler IP'ler
+CA_DAYS=3650
+CERT_DAYS=825                      # tarayıcıların kabul ettiği en uzun süre
+RENEW_BEFORE_DAYS=30
+
+log() { echo "[pops-tls] $*"; }
+die() { echo "[pops-tls] HATA: $*" >&2; exit 1; }
+
+[ "$(id -u)" -eq 0 ] || [ "${POPS_TLS_ALLOW_NONROOT:-0}" = 1 ] || die "root olarak çalıştırın"
+command -v openssl >/dev/null || die "openssl yok"
+
+ensure_ca() {
+    [ -f "$CA_KEY" ] && [ -f "$CA_CERT" ] && return 0
+    log "kurum CA'sı oluşturuluyor: $CA_CERT ($CA_DAYS gün)"
+    install -d -m 755 "$CA_DIR"
+    ( umask 077 && openssl ecparam -name prime256v1 -genkey -noout -out "$CA_KEY" )
+    openssl req -x509 -new -key "$CA_KEY" -sha256 -days "$CA_DAYS" \
+        -subj "/CN=POps CA ($(hostname -s 2>/dev/null || echo pops) $(date +%Y))/O=POps" \
+        -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -addext "subjectKeyIdentifier=hash" \
+        -out "$CA_CERT"
+    chmod 600 "$CA_KEY"; chmod 644 "$CA_CERT"
+}
+
+issue() {   # $1=alan adı, sonrası IP'ler
+    local domain="$1"; shift
+    [ -n "$domain" ] || die "alan adı gerekli"
+    ensure_ca
+    install -d -m 755 "$TLS_DIR"
+    local san="DNS:$domain" ip
+    for ip in "$@"; do
+        [ -n "$ip" ] && san="$san,IP:$ip"
+    done
+    cat > "$TLS_DIR/server.cnf" <<CNF
+[req]
+distinguished_name = dn
+prompt = no
+[dn]
+CN = $domain
+O = POps
+[ext]
+subjectAltName = $san
+basicConstraints = CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid,issuer
+CNF
+    ( umask 077 && openssl ecparam -name prime256v1 -genkey -noout -out "$KEY.new" )
+    openssl req -new -key "$KEY.new" -config "$TLS_DIR/server.cnf" -out "$TLS_DIR/server.csr"
+    openssl x509 -req -in "$TLS_DIR/server.csr" -CA "$CA_CERT" -CAkey "$CA_KEY" -CAcreateserial \
+        -days "$CERT_DAYS" -sha256 -extfile "$TLS_DIR/server.cnf" -extensions ext -out "$CERT.new" 2>/dev/null
+    mv -f "$KEY.new" "$KEY"; mv -f "$CERT.new" "$CERT"
+    chmod 600 "$KEY"; chmod 644 "$CERT"
+    rm -f "$TLS_DIR/server.csr"
+    { echo "$domain"; for ip in "$@"; do [ -n "$ip" ] && echo "$ip"; done; } > "$SAN_FILE"
+    log "sunucu sertifikası üretildi: $CERT ($san, $CERT_DAYS gün)"
+}
+
+reload_web() {
+    local svc
+    for svc in nginx httpd apache2; do
+        if systemctl is-active -q "$svc" 2>/dev/null; then
+            systemctl reload "$svc" && log "$svc yenilendi" || log "uyarı: $svc yenilenemedi"
+        fi
+    done
+}
+
+days_left() {   # $1=sertifika
+    local end now
+    end=$(date -d "$(openssl x509 -enddate -noout -in "$1" | cut -d= -f2)" +%s)
+    now=$(date +%s)
+    echo $(( (end - now) / 86400 ))
+}
+
+cmd_renew() {
+    local force=0
+    [ "${1:-}" = "--force" ] && force=1
+    [ -f "$CERT" ] || die "sunucu sertifikası yok; önce: pops-tls init <alan-adı>"
+    [ -f "$SAN_FILE" ] || die "bu sertifika dışarıdan alınmış (import); yenilemesini kaynağından yapın"
+    if [ "$force" != 1 ] && openssl x509 -checkend $((RENEW_BEFORE_DAYS * 86400)) -noout -in "$CERT" >/dev/null; then
+        log "yenilemeye gerek yok: $(days_left "$CERT") gün kaldı"
+        return 0
+    fi
+    mapfile -t names < "$SAN_FILE"
+    issue "${names[@]}"
+    reload_web
+}
+
+cmd_import() {
+    local cert="${1:-}" key="${2:-}"
+    [ -f "$cert" ] && [ -f "$key" ] || die "kullanım: pops-tls import <cert.pem> <key.pem>"
+    openssl x509 -in "$cert" -noout >/dev/null || die "sertifika okunamadı: $cert"
+    local pc pk
+    pc=$(openssl x509 -in "$cert" -noout -pubkey | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum)
+    pk=$(openssl pkey -in "$key" -pubout -outform DER 2>/dev/null | sha256sum) || die "anahtar okunamadı: $key"
+    [ "$pc" = "$pk" ] || die "sertifika ile anahtar eşleşmiyor"
+    install -d -m 755 "$TLS_DIR"
+    install -m 644 "$cert" "$CERT"
+    install -m 600 "$key" "$KEY"
+    rm -f "$SAN_FILE"
+    log "sertifika yerine kondu: $CERT ($(days_left "$CERT") gün); yenilemesi sizin elinizde"
+    reload_web
+}
+
+cmd_show() {
+    if [ -f "$CA_CERT" ]; then
+        echo "Kurum CA'sı: $CA_CERT"
+        openssl x509 -in "$CA_CERT" -noout -subject -enddate | sed 's/^/  /'
+        echo "  SHA-256: $(openssl x509 -in "$CA_CERT" -noout -fingerprint -sha256 | cut -d= -f2)"
+    else
+        echo "Kurum CA'sı yok (Let's Encrypt ya da dışarıdan sertifika kullanılıyor)"
+    fi
+    if [ -f "$CERT" ]; then
+        echo "Sunucu sertifikası: $CERT"
+        openssl x509 -in "$CERT" -noout -subject -issuer -enddate | sed 's/^/  /'
+        openssl x509 -in "$CERT" -noout -ext subjectAltName 2>/dev/null | tail -n +2 | sed 's/^ */  Adlar: /'
+        echo "  Kalan: $(days_left "$CERT") gün$([ -f "$SAN_FILE" ] && echo " (pops-tls renew ile yenilenir)")"
+    else
+        echo "Sunucu sertifikası yok: pops-tls init <alan-adı>"
+    fi
+}
+
+case "${1:-}" in
+    init) shift; issue "$@" ;;
+    renew) shift; cmd_renew "$@" ;;
+    import) shift; cmd_import "$@" ;;
+    show) cmd_show ;;
+    *) sed -n '2,12p' "$0"; exit 1 ;;
+esac

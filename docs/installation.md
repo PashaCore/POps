@@ -24,16 +24,25 @@ That script:
 
 Overridable with environment variables, e.g. `sudo APP_DIR=/srv/pops PORT=8080 DB_NAME=pops Installer/server/install.sh`.
 
-## The one manual step: web server + TLS
+## Web server and TLS (done by the installer)
 
-The backend listens on `127.0.0.1:8000`. Put a web server in front of it to serve the
-PHP dashboard and to terminate TLS — **the agent refuses a non-TLS server address**, so
-production must be `https://` / `wss://`.
+The backend listens on `127.0.0.1:8000`; `install.sh` also installs nginx and PHP-FPM in front of it and
+sets up TLS, because **the agent refuses a non-TLS server address**. Give it the name agents will use:
 
-- An example config is at [`../Installer/server/nginx.example.conf`](../Installer/server/nginx.example.conf):
-  it proxies `/api` and `/ws` (with WebSocket upgrade), `/updates` and `/download` to the
-  backend, and serves `Dashboard/` as PHP.
-- Add a certificate, e.g. `certbot --nginx -d pops.example.com`.
+```bash
+sudo POPS_DOMAIN=pops.okul.local Installer/server/install.sh
+```
+
+- Default (`TLS_MODE=internal`): a school-internal certificate authority is created on the server
+  (`pops-tls`), works without internet. Install agents with `SERVER_CA_CERT=<pops-ca.pem>` and add the
+  CA to browsers. Renewed automatically.
+- Internet-facing server: `TLS_MODE=letsencrypt LE_EMAIL=you@example.com` (falls back to the internal
+  CA when the challenge fails).
+- Your own certificate: `TLS_MODE=existing TLS_CERT=/path/cert.pem TLS_KEY=/path/key.pem`.
+- Your own web server: `TLS_MODE=none` installs the backend only; the site template is
+  [`../Installer/server/nginx.pops.conf.in`](../Installer/server/nginx.pops.conf.in).
+
+Details, renewal and how to distribute the CA: [`tls.md`](tls.md).
 
 ## After install
 

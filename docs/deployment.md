@@ -176,6 +176,12 @@ The signing key exists only as a GitHub secret; the public key is `keys/pops_rel
 | Panel (PHP) | the web server's error log |
 | Agents | see [`troubleshooting.md`](troubleshooting.md#where-the-logs-are) |
 
+## TLS
+
+`install.sh` puts nginx in front of the backend with TLS from the school-internal CA (`pops-tls`, default,
+works offline), Let's Encrypt or your own certificate. The agent refuses `http://`; with the internal CA
+agents are installed with `SERVER_CA_CERT` so they accept only that CA. See [`tls.md`](tls.md).
+
 ## Backups
 
 `install.sh` enables a nightly, test-restored backup of the database, the backend `.env` and the uploaded and

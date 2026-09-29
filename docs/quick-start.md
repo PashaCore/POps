@@ -15,7 +15,7 @@ The script installs PostgreSQL and Python if needed, creates the database, the `
 the `pops.service` unit, and prints the panel **admin password** at the end. Keep it, and keep the clone: the
 panel is served from its `Dashboard` folder. Details: [`installation.md`](installation.md).
 
-## 2. Web server and TLS
+## 2. Web server and TLS (installed by `install.sh`; this section is for a manual setup)
 
 The backend listens on `127.0.0.1:8000`. Serve the panel and proxy the backend under one HTTPS host name. The
 script does not install the web server or PHP; install nginx and PHP 8 with PHP-FPM and the `curl` extension

@@ -1,0 +1,67 @@
+# POps nginx sitesi — install.sh bu şablondan üretir (@DOMAIN@ vb. yer tutucular doldurulur).
+# Elle kurulum için: yer tutucuları değiştirip /etc/nginx/conf.d/pops.conf olarak kaydedin.
+# Ajan şifresiz (http) sunucuyu reddeder; panel ve ajanlar yalnızca bu https adresini kullanır.
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name @DOMAIN@;
+
+    ssl_certificate     @CERT@;
+    ssl_certificate_key @KEY@;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # İmzalı ajan paketi yükleme (MSI) panelden geçer
+    client_max_body_size 600m;
+
+    root  @DASHBOARD@;
+    index index.php;
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://127.0.0.1:@PORT@;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 300s;
+    }
+    # WebSocket (ajan + panel): upgrade başlıkları şart
+    location /ws/ {
+        proxy_pass http://127.0.0.1:@PORT@;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 3600s;
+    }
+    # İmzalı güncelleme paketleri + dağıtılan dosyalar (/metrics bilerek dışarı açılmaz)
+    location /updates/  { proxy_pass http://127.0.0.1:@PORT@; }
+    location /download/ { proxy_pass http://127.0.0.1:@PORT@; }
+
+    # Kurum CA'sı (yalnızca kurum içi sertifika kullanılıyorsa vardır): ajan kurulumu (SERVER_CA_CERT) ve
+    # tarayıcılar için herkese açık dosya; içinde gizli bir şey yoktur
+    location = /pops-ca.pem { alias /etc/pops/ca/pops-ca.pem; default_type application/x-pem-file; }
+
+    location ~ /\.(env|git|ht) { deny all; }
+
+    # PHP panel
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass unix:@PHP_SOCK@;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+    location / { try_files $uri $uri/ /index.php; }
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @DOMAIN@;
+    # Let's Encrypt doğrulaması http üzerinden gelir; gerisi https'e yönlenir
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://$host$request_uri; }
+}

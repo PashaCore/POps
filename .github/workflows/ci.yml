@@ -285,6 +285,43 @@ jobs:
           test "$(psql -h 127.0.0.1 -U pops -d pops_ci -X -A -t -c "SELECT count(*) FROM device_audit_logs WHERE reason='degistirildi'")" = 0
           ( cd "$APP" && python audit_verify.py )
 
+  tls:
+    name: TLS tool and nginx template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: pops-tls init / show / renew, chain and name checks
+        run: |
+          set -euo pipefail
+          export POPS_CA_DIR=$RUNNER_TEMP/ca POPS_TLS_DIR=$RUNNER_TEMP/tls POPS_TLS_ALLOW_NONROOT=1
+          T=Installer/server/pops-tls
+          $T init pops.okul.local 10.0.0.5
+          $T show
+          openssl verify -CAfile "$POPS_CA_DIR/pops-ca.pem" "$POPS_TLS_DIR/server.crt"
+          san=$(openssl x509 -in "$POPS_TLS_DIR/server.crt" -noout -ext subjectAltName)
+          grep -q 'DNS:pops.okul.local' <<<"$san" && grep -q 'IP Address:10.0.0.5' <<<"$san"
+          openssl x509 -in "$POPS_CA_DIR/pops-ca.pem" -noout -ext basicConstraints | grep -q 'CA:TRUE'
+          test "$(stat -c %a "$POPS_CA_DIR/ca.key")" = 600 && test "$(stat -c %a "$POPS_TLS_DIR/server.key")" = 600
+          before=$(sha256sum "$POPS_TLS_DIR/server.crt")
+          $T renew | grep -q 'gerek yok'
+          test "$before" = "$(sha256sum "$POPS_TLS_DIR/server.crt")"
+          $T renew --force
+          test "$before" != "$(sha256sum "$POPS_TLS_DIR/server.crt")"
+          openssl verify -CAfile "$POPS_CA_DIR/pops-ca.pem" "$POPS_TLS_DIR/server.crt"
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$RUNNER_TEMP/other.key" -out "$RUNNER_TEMP/other.pem" -days 1 -subj "/CN=Other CA" 2>/dev/null
+          if openssl verify -CAfile "$RUNNER_TEMP/other.pem" "$POPS_TLS_DIR/server.crt" 2>/dev/null; then echo "::error::yabancı CA kabul edildi"; exit 1; fi
+          if $T import "$RUNNER_TEMP/other.pem" "$POPS_TLS_DIR/server.key" 2>/dev/null; then echo "::error::eşleşmeyen anahtar kabul edildi"; exit 1; fi
+      - name: nginx template renders and validates
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq nginx >/dev/null
+          mkdir -p "$RUNNER_TEMP/dash" && touch "$RUNNER_TEMP/php.sock"
+          sed -e "s#@DOMAIN@#pops.okul.local#g" -e "s#@DASHBOARD@#$RUNNER_TEMP/dash#g" -e "s#@PHP_SOCK@#$RUNNER_TEMP/php.sock#g" \
+              -e "s#@CERT@#$RUNNER_TEMP/tls/server.crt#g" -e "s#@KEY@#$RUNNER_TEMP/tls/server.key#g" -e "s#@PORT@#8000#g" \
+              Installer/server/nginx.pops.conf.in > "$RUNNER_TEMP/pops.conf"
+          printf 'events {}\nhttp { include %s; }\n' "$RUNNER_TEMP/pops.conf" > "$RUNNER_TEMP/nginx.conf"
+          sudo nginx -t -c "$RUNNER_TEMP/nginx.conf"
+
   signing:
     name: Release signing tool
     runs-on: ubuntu-latest

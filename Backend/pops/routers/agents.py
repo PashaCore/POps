@@ -412,9 +412,13 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 # Ajan güncel yetenek durumunu bildirir (bağlantıda + her değişimde). Sakla + panele yay.
                 t = payload.get("terminal_enabled")
                 v = payload.get("vision_enabled")
+                # server_ca (0.1.10+): custom = cihazdaki kurum CA'sı, system = Windows kök deposu; yoksa eskisi kalır
+                sc = payload.get("server_ca")
+                sc = sc if sc in ("custom", "system") else None
                 await execute_query(
-                    "UPDATE clients SET cap_terminal_enabled=$1, cap_vision_enabled=$2 WHERE pc_name=$3",
-                    (bool(t) if t is not None else None, bool(v) if v is not None else None, active_hwid),
+                    "UPDATE clients SET cap_terminal_enabled=$1, cap_vision_enabled=$2, "
+                    "cap_server_ca=COALESCE($4, cap_server_ca) WHERE pc_name=$3",
+                    (bool(t) if t is not None else None, bool(v) if v is not None else None, active_hwid, sc),
                 )
                 # Yönetici daha önce kapatma istediyse ama ajan hâlâ AÇIK bildiriyorsa (ör. istek
                 # çevrimdışıyken verildi) kapatmayı yeniden gönder. Fail-safe: yalnızca kapatırız.

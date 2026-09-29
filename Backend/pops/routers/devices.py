@@ -111,7 +111,7 @@ async def get_devices(auth: dict = Depends(require_auth)):
     SELECT
         c.pc_name, c.hostname, c.display_name, c.lab_name, c.last_seen, c.status, c.active_window,
         c.boot_count, c.logged_user, c.ip_address, c.cap_ram_readable, c.is_quarantined,
-        c.cap_terminal_enabled, c.cap_vision_enabled,
+        c.cap_terminal_enabled, c.cap_vision_enabled, c.cap_server_ca,
         c.cap_terminal_disable_requested, c.cap_vision_disable_requested, c.running_version,
         av.version AS agent_version
     FROM clients c
@@ -137,6 +137,7 @@ async def get_devices(auth: dict = Depends(require_auth)):
             "running_version": r.get("running_version"),
             "cap_terminal_enabled": r.get("cap_terminal_enabled"),
             "cap_vision_enabled": r.get("cap_vision_enabled"),
+            "cap_server_ca": r.get("cap_server_ca"),
             "cap_terminal_disable_requested": r.get("cap_terminal_disable_requested", False),
             "cap_vision_disable_requested": r.get("cap_vision_disable_requested", False),
         }

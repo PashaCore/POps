@@ -622,7 +622,10 @@
         btns[2].disabled = !!d.cap_vision_disable_requested;
         btns[3].disabled = !d.cap_vision_disable_requested;
         const req = (r) => r ? ' <span class="muted-text">(kapatma isteği kayıtlı)</span>' : '';
-        let html = `Terminal: ${capLabel(d.cap_terminal_enabled)}${req(d.cap_terminal_disable_requested)} &nbsp;·&nbsp; Vision: ${capLabel(d.cap_vision_enabled)}${req(d.cap_vision_disable_requested)}`;
+        const caLabel = d.cap_server_ca === 'custom' ? '<span class="badge ok">kurum CA\'sı</span>'
+            : d.cap_server_ca === 'system' ? '<span class="badge muted">sistem deposu</span>'
+            : '<span class="badge muted">bildirilmedi</span>';
+        let html = `Terminal: ${capLabel(d.cap_terminal_enabled)}${req(d.cap_terminal_disable_requested)} &nbsp;·&nbsp; Vision: ${capLabel(d.cap_vision_enabled)}${req(d.cap_vision_disable_requested)} &nbsp;·&nbsp; Sunucu sertifikası: ${caLabel}`;
         if (d.cap_terminal_enabled == null && d.cap_vision_enabled == null) {
             html += `<br><span class="muted-text"><i class="fas fa-circle-info"></i> Bu cihazdaki ajan (${escapeHtml(fmtV(d.agent_version))}) yetenek durumunu bildirmiyor; bildirim v0.1.4-alpha ile geldi. Ajan güncellenince burada görünür. Kapatma şimdi de kaydedilebilir, güncellemeden sonra uygulanır.</span>`;
         }

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Server: TLS by default.** `install.sh` now installs nginx + PHP-FPM and sets up HTTPS itself: by default with a school-internal certificate authority created by the new `pops-tls` tool (works without internet; the server certificate is renewed by `pops-tls-renew.timer`), or with Let's Encrypt (`TLS_MODE=letsencrypt`), or an existing certificate (`TLS_MODE=existing`). The CA's public certificate is served at `https://<server>/pops-ca.pem` for agent installs (`SERVER_CA_CERT`) and browsers. `TLS_MODE=none` keeps the old backend-only install. Site template: `Installer/server/nginx.pops.conf.in`; runbook: `docs/tls.md`.
+- **Backend/Panel:** The agent's `capabilities` message may carry `server_ca` (`custom` = pinned to the school CA on the device, `system` = Windows trust store); it is stored (migration 0012) and shown on the System page next to terminal/Vision.
+
 ### Fixed
 
 - **Backend:** The agent update dispatch audit entry records who sent it, so "Etkinlik geçmişim" shows it under "Yapan".
