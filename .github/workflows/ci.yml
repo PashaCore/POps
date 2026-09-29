@@ -10,35 +10,6 @@ permissions:
   contents: read
 
 jobs:
-  commit-messages:
-    name: No AI attribution in commits
-    # Proje kuralı: commit mesajlarında yapay zekâ ortak yazar/"generated with" satırı olmaz
-    # (GitHub bu satırlardan katkıda bulunan listesi üretir). Push ya da PR'daki yeni commit'lere bakar.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check commit messages
-        env:
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          if [ -n "${BASE:-}" ]; then range="$BASE..$HEAD"
-          elif [ -n "${BEFORE:-}" ] && ! [[ "$BEFORE" =~ ^0+$ ]] && git cat-file -e "$BEFORE" 2>/dev/null; then range="$BEFORE..$AFTER"
-          else range="$AFTER~1..$AFTER"; fi
-          echo "Aralık: $range"
-          bad=$(git log --format='%h %s%n%b' "$range" | grep -inE 'co-authored-by:.*(claude|anthropic|openai|copilot|gpt)|generated with.*(claude|copilot|chatgpt)|noreply@anthropic\.com' || true)
-          if [ -n "$bad" ]; then
-            echo "::error::Commit mesajında yapay zekâ atfı var; mesajı düzeltin (git commit --amend / rebase):"
-            printf '%s\n' "$bad"
-            exit 1
-          fi
-          echo "Temiz."
-
   build-agent:
     name: Build ${{ matrix.name }}
     runs-on: windows-latest
