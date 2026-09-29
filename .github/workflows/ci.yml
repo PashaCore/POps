@@ -316,6 +316,8 @@ jobs:
           set -euo pipefail
           sudo apt-get install -y -qq nginx >/dev/null
           mkdir -p "$RUNNER_TEMP/dash" && touch "$RUNNER_TEMP/php.sock"
+          # nginx göreli include'ları (fastcgi_params) ana yapılandırmanın klasöründe arar
+          cp /etc/nginx/fastcgi_params "$RUNNER_TEMP/"
           sed -e "s#@DOMAIN@#pops.okul.local#g" -e "s#@DASHBOARD@#$RUNNER_TEMP/dash#g" -e "s#@PHP_SOCK@#$RUNNER_TEMP/php.sock#g" \
               -e "s#@CERT@#$RUNNER_TEMP/tls/server.crt#g" -e "s#@KEY@#$RUNNER_TEMP/tls/server.key#g" -e "s#@PORT@#8000#g" \
               Installer/server/nginx.pops.conf.in > "$RUNNER_TEMP/pops.conf"
