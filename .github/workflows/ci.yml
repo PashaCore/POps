@@ -48,7 +48,29 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - name: Test
-        run: dotnet test Agent/POps.Tests/POps.Tests.csproj --configuration Release --logger "console;verbosity=normal"
+        # Kapsam coverlet.collector ile (iki hedef: ajan net8.0-windows ve MSI custom action'ları net472)
+        run: dotnet test Agent/POps.Tests/POps.Tests.csproj --configuration Release --logger "console;verbosity=normal" --collect:"XPlat Code Coverage" --results-directory TestResults
+      - name: Agent coverage summary
+        if: always()
+        shell: python
+        run: |
+          import glob, os, xml.etree.ElementTree as ET
+          rows = []
+          for path in sorted(glob.glob("TestResults/**/coverage.cobertura.xml", recursive=True)):
+              for pkg in ET.parse(path).getroot().iter("package"):
+                  rows.append((pkg.get("name"), float(pkg.get("line-rate") or 0) * 100))
+          lines = ["### Ajan kapsamı (satır)", "", "| Paket | Kapsam |", "|---|---|"]
+          lines += ["| %s | %.1f %% |" % row for row in rows] or ["| (rapor yok) | — |"]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+          print("\n".join(lines))
+      - name: Upload agent coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-coverage
+          path: TestResults/**/coverage.cobertura.xml
+          if-no-files-found: ignore
 
   backend:
     name: Backend (Python 3.9)
