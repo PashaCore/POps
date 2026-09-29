@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Agent/Tray: "Etkinlik geçmişim".** The tray menu shows what IT administrators did on this PC in the last 30 days (remote sessions, commands, quarantine, updates, capability changes, Windows Update, enrolment), with date, action, who and details. The service reads `GET /api/activity/agent/{hw_id}` as the enrolled agent (same credentials as **Taleplerim**), one request at a time and at most every 6 s, and keeps a successful answer for 60 s. Entries are shown as the server wrote them (newest first, at most 200; unknown kinds too). Without a device secret, when the server cannot be reached or does not have the endpoint yet, the window says so in Turkish.
+
 ## [0.1.8-alpha] - 2026-09-29
 
 Agents no longer come back all at once after a server restart: reconnecting uses exponential backoff with full jitter. This is also the release for the first rollback drill that runs with the fixed updater (0.1.7 → 0.1.8, rolling back to 0.1.7).

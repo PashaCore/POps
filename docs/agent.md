@@ -160,6 +160,16 @@ calls `POST /api/tickets/agent/{hw_id}`. **Taleplerim** reads `GET /api/tickets/
 shows only the signed-in user's requests, because a lab PC is shared. New replies are checked every 5 minutes and
 shown as a balloon. Details in [`Agent/README.md`](../Agent/README.md#help-desk-sorun-bildir--taleplerim).
 
+From 0.1.9-alpha the tray menu also has **Etkinlik geçmişim**: what IT administrators did on this PC in the last
+30 days (remote sessions, commands, quarantine, updates, capability changes, Windows Update, enrolment). The tray
+sends `ACTIVITY_LIST` over the pipe; the service calls `GET /api/activity/agent/{hw_id}` as the enrolled agent
+(`X-Agent-Id` + `X-Agent-Secret`, as for **Taleplerim**), at most one request at a time and one every 6 s (the server
+allows one per device every 5 s), and keeps a successful answer for 60 s. The server writes the Turkish title and
+detail of each entry; the tray shows them as they are (newest first, at most 200; unknown kinds too), with only
+control characters removed. The list holds only actions on this device, never other users' personal data. Without a
+device secret, when the server is unreachable, or when it does not have the endpoint yet (404) the window shows a
+Turkish message instead.
+
 ## Software inventory and Windows updates
 
 The server side is in place; agents report this data from 0.1.5-alpha on. Older agents send nothing, show as
