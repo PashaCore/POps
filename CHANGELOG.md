@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7-alpha] - 2026-09-29
+
+Fixes the rollback itself. Up to 0.1.6 the rollback install returned 0 but left the machine without the agent until the updater's last-resort repair about 90 seconds later, so both drills reported a failure; the updater now forces every file back and repairs at once if the service or executable is still missing. The server gains structured logs with request IDs, a Prometheus `/metrics` endpoint, a health card on the System page, and nightly backups that are restored into a temporary database and verified before they count.
+
+Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**), then send 0.1.7-alpha to the agents **without** the rollback-drill marker: a rollback from 0.1.6 still runs 0.1.6's updater and is not covered by the fix. The first drill that proves it is 0.1.7 → 0.1.8. Nightly backups are set up by `install.sh` on new servers; on an existing server follow `docs/backup.md`.
+
 ### Added
 
 - Panel: the notification bell can clear read notifications ("Okunanları temizle"); `POST /api/notifications/clear` deletes the given ids or all read ones.
@@ -270,7 +276,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.6-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.7-alpha...HEAD
+[0.1.7-alpha]: https://github.com/PashaCore/POps/compare/v0.1.6-alpha...v0.1.7-alpha
 [0.1.6-alpha]: https://github.com/PashaCore/POps/compare/v0.1.5-alpha...v0.1.6-alpha
 [0.1.5-alpha]: https://github.com/PashaCore/POps/compare/v0.1.4-alpha...v0.1.5-alpha
 [0.1.4-alpha]: https://github.com/PashaCore/POps/compare/v0.1.3-alpha...v0.1.4-alpha
