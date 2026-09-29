@@ -462,7 +462,9 @@
         else if (!v.staged_version) b = badge('muted', 'fa-box-open', 'Paket yok');
         else if (old.length) {
             const off = old.filter(d => !isOnline(d)).length;
-            b = badge('warn', 'fa-circle-up', `${old.length} ajan eski sürümde` + (off ? ` (${off} çevrimdışı)` : ''));
+            // Çevrimdışı olanlar eski sürümdekilerin İÇİNDEN sayılır: "1 ajan eski sürümde (1 çevrimdışı)" iki ayrı cihaz gibi okunuyordu
+            const offTxt = !off ? '' : off === old.length ? (old.length === 1 ? ', çevrimdışı' : ', hepsi çevrimdışı') : `, ${off} tanesi çevrimdışı`;
+            b = badge('warn', 'fa-circle-up', `${old.length} ajan eski sürümde${offTxt}`);
         }
         else b = badge('ok', 'fa-check', 'Tüm ajanlar güncel');
         $('ag-badge').innerHTML = b;
