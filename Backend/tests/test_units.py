@@ -7,7 +7,10 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
-from pops import update_notice  # noqa: E402
+import json  # noqa: E402
+import logging  # noqa: E402
+
+from pops import logs, update_notice  # noqa: E402
 
 FAILS = []
 
@@ -52,8 +55,20 @@ def test_update_notice():
     chk(update_notice.describe({"status": "something-new"}) is None, "bilinmeyen durum bildirim üretmez")
 
 
+def test_log_format():
+    print("== log biçimi")
+    rec = logging.LogRecord("uvicorn.error", logging.INFO, __file__, 1, "connection open", None, None)
+    rec.websocket = object()
+    rec.pc_name = "HW-1"
+    out = json.loads(logs.JsonFormatter().format(rec))
+    chk(out["msg"] == "connection open" and out["level"] == "INFO", "temel alanlar")
+    chk(out.get("pc_name") == "HW-1", "düz ek alan yazılır")
+    chk("websocket" not in out, "nesne ek alanı yazılmaz")
+
+
 def main():
     test_update_notice()
+    test_log_format()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

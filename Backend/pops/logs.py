@@ -34,8 +34,16 @@ def _ts(record):
     return datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(timespec="milliseconds")
 
 
+_PLAIN = (str, int, float, bool, type(None), list, tuple, dict)
+
+
 def _extras(record):
-    return {k: v for k, v in vars(record).items() if k not in _STD_ATTRS and not k.startswith("_")}
+    # Yalnızca düz değerler: uvicorn bazı kayıtlara nesne ekler (ör. "connection open" satırında websocket
+    # protokol nesnesi); onların repr'i log'a bir şey katmaz
+    return {
+        k: v for k, v in vars(record).items()
+        if k not in _STD_ATTRS and not k.startswith("_") and isinstance(v, _PLAIN)
+    }
 
 
 class JsonFormatter(logging.Formatter):
