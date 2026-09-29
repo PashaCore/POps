@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8-alpha] - 2026-09-29
+
+Agents no longer come back all at once after a server restart: reconnecting uses exponential backoff with full jitter. This is also the release for the first rollback drill that runs with the fixed updater (0.1.7 → 0.1.8, rolling back to 0.1.7).
+
+Upgrading: send 0.1.8-alpha from **Sistem & Sürüm** as usual; no server change is needed.
+
 ### Changed
 
 - **Agent:** Reconnecting to the server uses exponential backoff with full jitter instead of a fixed 5 seconds: after a disconnect the agent waits a random time between 0 and min(60 s, 2 s × 2^n), n being the number of connections that failed in a row. The count goes back to 0 once a connection stays open for one heartbeat after the first messages. After a server restart, 500 agents no longer come back in the same second (`BENCHMARKS.md`), and an agent that stays offline tries about once a minute. When the server rejects the credentials (`4401`) the agent still waits at least 60 seconds, now plus the same random time. The calculation is `POps.Shared.ReconnectBackoff`, with unit tests.
@@ -281,7 +287,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.7-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.8-alpha...HEAD
+[0.1.8-alpha]: https://github.com/PashaCore/POps/compare/v0.1.7-alpha...v0.1.8-alpha
 [0.1.7-alpha]: https://github.com/PashaCore/POps/compare/v0.1.6-alpha...v0.1.7-alpha
 [0.1.6-alpha]: https://github.com/PashaCore/POps/compare/v0.1.5-alpha...v0.1.6-alpha
 [0.1.5-alpha]: https://github.com/PashaCore/POps/compare/v0.1.4-alpha...v0.1.5-alpha
