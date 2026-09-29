@@ -39,6 +39,13 @@
     <Property Id="POPS_ROLLBACK" Secure="yes" />
     <Launch Condition="NOT POPS_NEWER_DETECTED OR POPS_ROLLBACK = &quot;1&quot;"
             Message="Bu bilgisayarda daha yeni bir POps Agent sürümü kurulu; eski sürüm kurulmadı." />
+    <!-- Geri dönüşte maliyet hesabı, daha yeni sürüm hâlâ kuruluyken yapılır: dosyaları bu paketinkilerden yüksek
+         sürümlü bileşenler kurulmaz ("Disallowing installation of component ... higher versioned keyfile exists"),
+         RemoveExistingProducts sonra yeni sürümü kaldırır; msiexec 0 döner ama servis ve exe yoktur (0.1.6'ya kadar).
+         REINSTALLMODE=amus bütün dosyaları sürümüne bakmadan yazdırır; elle yapılan geri kurulumda da geçerlidir.
+         Açıkça verilen REINSTALLMODE'a dokunulmaz. -->
+    <SetProperty Id="REINSTALLMODE" Value="amus" Sequence="both" Before="CostInitialize"
+                 Condition="POPS_ROLLBACK = &quot;1&quot; AND NOT REINSTALLMODE" />
 
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
