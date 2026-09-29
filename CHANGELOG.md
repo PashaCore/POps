@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9-alpha] - 2026-09-29
+
+Transparency for the person at the PC: the tray lists what IT administrators did on this computer in the last 30 days.
+
+Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**; it adds the activity endpoint), then send 0.1.9-alpha to the agents.
+
 ### Added
 
+- **Backend:** `GET /api/activity/agent/{hw_id}` returns what administrators did on that device in the last 30 days: remote sessions, commands (who and when, not the script), quarantine, capability changes, agent and Windows updates. Enrolled agents only, bound to their own device, one request per 5 seconds. Other users' personal data (browsing, policy alerts) is not included, since lab PCs are shared. The capability audit entry now records who changed it.
 - **Agent/Tray: "Etkinlik geçmişim".** The tray menu shows what IT administrators did on this PC in the last 30 days (remote sessions, commands, quarantine, updates, capability changes, Windows Update, enrolment), with date, action, who and details. The service reads `GET /api/activity/agent/{hw_id}` as the enrolled agent (same credentials as **Taleplerim**), one request at a time and at most every 6 s, and keeps a successful answer for 60 s. Entries are shown as the server wrote them (newest first, at most 200; unknown kinds too). Without a device secret, when the server cannot be reached or does not have the endpoint yet, the window says so in Turkish.
 
 ## [0.1.8-alpha] - 2026-09-29
@@ -291,7 +298,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.8-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.9-alpha...HEAD
+[0.1.9-alpha]: https://github.com/PashaCore/POps/compare/v0.1.8-alpha...v0.1.9-alpha
 [0.1.8-alpha]: https://github.com/PashaCore/POps/compare/v0.1.7-alpha...v0.1.8-alpha
 [0.1.7-alpha]: https://github.com/PashaCore/POps/compare/v0.1.6-alpha...v0.1.7-alpha
 [0.1.6-alpha]: https://github.com/PashaCore/POps/compare/v0.1.5-alpha...v0.1.6-alpha
