@@ -53,6 +53,8 @@ jobs:
       - name: Agent coverage summary
         if: always()
         shell: python
+        env:
+          PYTHONUTF8: "1"
         run: |
           import glob, os, xml.etree.ElementTree as ET
           rows = []
@@ -63,7 +65,7 @@ jobs:
           lines += ["| %s | %.1f %% |" % row for row in rows] or ["| (rapor yok) | — |"]
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
               f.write("\n".join(lines) + "\n")
-          print("\n".join(lines))
+          print("%d paket" % len(rows))
       - name: Upload agent coverage
         if: always()
         uses: actions/upload-artifact@v4
