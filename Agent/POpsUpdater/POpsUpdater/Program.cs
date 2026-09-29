@@ -189,24 +189,19 @@ namespace POpsUpdater
                 // Tek işlem: önceki paket, kurulu yeni sürümü aynı Windows Installer işlemi içinde kaldırıp kendini
                 // kurar (POPS_ROLLBACK=1 sürüm düşürme engelini yalnızca bu çağrı için açar). İşlem başarısız
                 // olursa Windows Installer yeni sürümü yerinde bırakır; makine hiçbir anda ajansız kalmaz.
-                int exit = -1;
-                for (int attempt = 1; attempt <= 2; attempt++)
+                // msiexec 0 dönse de servis ve exe hemen denetlenir, eksikse aynı paketle onarılır (bkz. UpdaterRollback).
+                var steps = new UpdaterRollback.Steps
                 {
-                    exit = RunMsiexec($"/i \"{previousMsi}\" /qn /norestart REBOOT=ReallySuppress POPS_ROLLBACK=1{installFolderArg}", $"rollback-{opt.From}-{attempt}");
-                    if (exit == 0 || exit == 3010) break;
-                    if (attempt == 1)
-                    {
-                        Log($"Geri kurulum {exit} döndü; 30 sn sonra bir kez daha denenecek.", true);
-                        Thread.Sleep(TimeSpan.FromSeconds(30));
-                    }
-                }
-                if (exit == 3010)
-                    return ("rollback_pending_reboot", "msi", $"{opt.To} sağlıklı açılmadı; {opt.From} kuruldu, yeniden başlatmada tamamlanacak");
-                if (exit == 0 && WaitForHealth(opt.From, start))
-                    return ("rolled_back", "msi", $"{opt.To} sağlıklı açılmadı; {opt.From} geri kuruldu");
-                if (exit == 0)
-                    return ("rollback_failed", "msi", $"{opt.To} sağlıklı açılmadı; {opt.From} geri kuruldu ama o da sağlıklı açılmadı");
-                return ("rollback_failed", "msi", $"{opt.To} sağlıklı açılmadı; geri kurulum {exit} döndü ve Windows Installer {opt.To} sürümünü yerinde bıraktı");
+                    RunMsiexec = RunMsiexec,
+                    ServiceExists = ServiceExists,
+                    AgentExeVersion = () => AgentExeVersion(opt),
+                    PackageProductInstalled = () => MsiPackage.TryRead(previousMsi, out _) is MsiPackage package && MsiPackage.IsInstalled(package.ProductCode),
+                    EnsureServiceRunning = EnsureServiceRunning,
+                    WaitForHealth = () => WaitForHealth(opt.From, start),
+                    Sleep = Thread.Sleep,
+                    Log = (message, error) => Log(message, error),
+                };
+                return UpdaterRollback.RunMsi(steps, previousMsi, installFolderArg, opt.From, opt.To);
             }
 
             // Önceki MSI yok (ilk MSI'dan önceki kurulum): dosya yedeği geri yüklenir. Windows Installer kaydı
@@ -446,10 +441,7 @@ namespace POpsUpdater
                     return "unmanaged";
                 }
                 MsiPackage info = MsiPackage.TryRead(package, out _);
-                string arguments = info != null && MsiPackage.IsInstalled(info.ProductCode)
-                    ? $"/fvamus \"{package}\" /qn /norestart REBOOT=ReallySuppress"
-                    : $"/i \"{package}\" /qn /norestart REBOOT=ReallySuppress POPS_ROLLBACK=1";
-                RunMsiexec(arguments, "last-resort");
+                RunMsiexec(UpdaterRollback.RepairArguments(package, info != null && MsiPackage.IsInstalled(info.ProductCode), ""), "last-resort");
                 EnsureServiceRunning();
                 if (ServiceExists() && ServiceRunning())
                 {
@@ -493,6 +485,21 @@ namespace POpsUpdater
                 sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(30));
             }
             catch (Exception ex) { Log($"{ServiceName} başlatılamadı: {ex.Message}", true); }
+        }
+
+        // Servisin çalıştırdığı (servis yoksa kurulum klasöründeki) POpsAgent.exe'nin FileVersion'ı; dosya yoksa null
+        static string AgentExeVersion(Options opt)
+        {
+            try
+            {
+                string exe = Path.Combine(ServiceInstallDir() ?? opt.InstallDir, "POpsAgent.exe");
+                return File.Exists(exe) ? FileVersionInfo.GetVersionInfo(exe).FileVersion : null;
+            }
+            catch (Exception ex)
+            {
+                Log($"POpsAgent.exe sürümü okunamadı: {ex.Message}", true);
+                return null;
+            }
         }
 
         // Servisin gerçekte çalıştırdığı exe'nin klasörü (MSI'sız kurulumdan MSI'a geçişte değişir)
