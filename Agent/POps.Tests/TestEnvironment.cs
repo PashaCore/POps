@@ -39,6 +39,8 @@ namespace POps.Tests
             POpsAgent.SecureStore.Dir = DefaultSecureDir;
             POpsAgent.AgentUpdate.DataDir = DefaultDataDir;
             POps.Shared.ServerTrust.CaPath = Path.Combine(DefaultSecureDir, POps.Shared.ServerTrust.FileName);
+            // Karantina testleri gerçek Görev Yöneticisi / oturum politikalarına dokunmasın
+            POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
 #endif
         }
 
@@ -69,6 +71,7 @@ namespace POps.Tests
             if (!IsUnderRoot(POpsAgent.AgentUpdate.DataDir)) POpsAgent.AgentUpdate.DataDir = DefaultDataDir;
             if (!IsUnderRoot(POpsAgent.SecureStore.Dir)) POpsAgent.SecureStore.Dir = DefaultSecureDir;
             if (!IsUnderRoot(POps.Shared.ServerTrust.CaPath)) POps.Shared.ServerTrust.CaPath = Path.Combine(DefaultSecureDir, POps.Shared.ServerTrust.FileName);
+            if (!(POpsAgent.KioskMode.Registry is FakeKioskRegistry)) POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
         }
 
         private static bool IsUnderRoot(string path) =>

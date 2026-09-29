@@ -177,16 +177,46 @@ namespace POpsTray
             base.OnLoad(e);
             _hookID = SetHook(_proc);
             
-            // Keep enforcing TopMost aggressively
+            // En üstte kalır ve odağı geri alır: Ctrl+Shift+Esc, Win tuşu, Alt+Tab ya da başka bir pencere öne geçse de
+            // en geç yarım saniyede kilit ekranı yeniden öne gelir
             Timer t = new Timer();
-            t.Interval = 1000;
-            t.Tick += (s, ev) => 
+            t.Interval = 500;
+            t.Tick += (s, ev) =>
             {
                 this.TopMost = true;
-                this.BringToFront();
+                TakeForeground();
             };
             t.Start();
+            this.Deactivate += (s, ev) => { if (!AllowClose) BeginInvoke(new Action(TakeForeground)); };
         }
+
+        // Windows başka sürecin önündeki pencereye odak vermeyi kısıtlar: öndeki pencerenin iş parçacığına geçici
+        // bağlanılarak (AttachThreadInput) odak alınır
+        private void TakeForeground()
+        {
+            if (AllowClose || IsDisposed || !IsHandleCreated) return;
+            IntPtr foreground = GetForegroundWindow();
+            if (foreground == this.Handle) return;
+            uint foregroundThread = GetWindowThreadProcessId(foreground, IntPtr.Zero);
+            uint me = GetCurrentThreadId();
+            bool attached = foregroundThread != 0 && foregroundThread != me && AttachThreadInput(me, foregroundThread, true);
+            try
+            {
+                SetForegroundWindow(this.Handle);
+                this.BringToFront();
+                this.Activate();
+            }
+            finally
+            {
+                if (attached) AttachThreadInput(me, foregroundThread, false);
+            }
+        }
+
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
+        [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+        [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+        [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         protected override void OnClosed(EventArgs e)
         {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Agent: Ctrl+Alt+Del no longer leads out of a quarantine.** Windows handles Ctrl+Alt+Del itself and no program can block it, and during a quarantine its screen let a student open Task Manager (and kill the tray, with it the lock screen), sign out, switch user, lock or change a password. While the lock lasts the service now hides these options with policy values. Task Manager (`DisableTaskMgr`, also blocking Ctrl+Shift+Esc and running `taskmgr`) and Switch user (`HideFastUserSwitching`) disappear at once. Sign out (`NoLogoff`), Change a password (`DisableChangePassword`) and Lock (`DisableLockWorkstation`) are written to every signed-in user's hive; Windows reads them only at sign-in (measured on Windows 11, `gpupdate` does not refresh them), so they are hidden from the next sign-in and after a restart, and in the already open session they stay visible without ending the lock. The previous values are recorded first in `C:\POpsData\secure\kiosk-policies.json` and put back when the lock ends: panel unlock, bypass code, service start without a lock, and MSI uninstall. Only what POps changed is undone: a value that was already set by the school stays, a value changed by someone else during the lock is left alone. A user who signed out during the lock gets their settings back at the next sign-in; a lock that survives a restart applies them again at service start. The logic is `POps.Shared.KioskPolicies`, shared by the agent and the MSI, with unit tests.
+- **Tray:** The lock screen takes the focus back within half a second after Ctrl+Shift+Esc, the Windows key, Alt+Tab or another window, instead of only staying on top.
+- **Docs:** *Lifting a quarantine by hand* (`Agent/README.md`) now starts in Safe Mode, because the quarantine hides **Switch user**; it keeps `kiosk-policies.json` so the agent restores the options itself, and lists the values to remove by hand if the agent is gone.
+
 ## [0.1.10-alpha] - 2026-09-29
 
 TLS is now part of the product, not a manual step: the installer sets up HTTPS itself (a school-internal certificate authority by default, which works without internet, or Let's Encrypt), and agents can be pinned to that CA so that no other certificate, public or planted, is accepted. The panel polls far less, and the tray's activity list shows full lines.

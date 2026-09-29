@@ -101,6 +101,8 @@ namespace POps.Installer
         public static ActionResult RemoveConfig(Session session)
         {
             Setup.RemoveConfig(Value(session.CustomActionData, "INSTALLFOLDER"), session.Log);
+            // Karantinadayken kaldırılsa bile Görev Yöneticisi vb. kapalı kalmaz
+            Setup.RestoreKiosk(Layout.Default, new POps.Shared.WindowsKioskRegistry(), session.Log);
             return ActionResult.Success;
         }
 
@@ -354,6 +356,25 @@ namespace POps.Installer
             };
             WriteProtected(path, ToJson(json, 0) + "\r\n");
             log($"POps: yetenekler yazıldı: terminal={(terminalEnabled ? "açık" : "kapalı")}, vision={(visionEnabled ? "açık" : "kapalı")}.");
+        }
+
+        // Karantina kilit politikaları (ajanda KioskMode): kaldırmada kayıttaki önceki değerlere dönülür, kayıt silinir.
+        // Kovanı yüklü olmayan kullanıcının ayarı (karantinada oturumu kapatmış) geri alınamaz; loglanır (Agent/README).
+        internal const string KioskRecordFile = "kiosk-policies.json";
+
+        public static void RestoreKiosk(Layout layout, POps.Shared.IKioskRegistry registry, Action<string> log)
+        {
+            string path = Path.Combine(layout.SecureDir, KioskRecordFile);
+            try
+            {
+                if (!File.Exists(path)) return;
+                var record = Json.Deserialize<List<POps.Shared.KioskEntry>>(File.ReadAllText(path)) ?? new List<POps.Shared.KioskEntry>();
+                List<POps.Shared.KioskEntry> pending = POps.Shared.KioskPolicies.Restore(registry, record);
+                File.Delete(path);
+                if (pending.Count == 0) log("POps: karantina kilit politikaları geri alındı.");
+                else log($"POps: {pending.Count} kilit ayarı geri alınamadı (oturumu kapalı kullanıcı): {string.Join(", ", pending.Select(e => e.Hive + "\\" + e.Key + "\\" + e.Name))}. Elle temizlik: Agent/README.md.");
+            }
+            catch (Exception ex) { log("POps: karantina kilit politikaları geri alınamadı: " + ex.Message); }
         }
 
         // Kurum sertifikası (ajanda ServerTrust): SERVER_CA_CERT=<PEM yolu> dosyayı server-ca.pem olarak güvenli depoya

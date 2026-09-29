@@ -136,7 +136,15 @@ the current file. How to set up the server side, distribute `pops-ca.pem` and ro
 
 `lockdown` (from **POpsVision** → "Karantinaya Al", or `POST /api/security/lockdown`):
 
-- the tray shows a full-screen lock screen that blocks the Windows, Tab, Esc and F4 keys,
+- the tray shows a full-screen lock screen that blocks the Windows, Tab, Esc and F4 keys, stays on top and takes the
+  focus back within half a second,
+- from 0.1.11-alpha the Ctrl+Alt+Del screen offers no way out while the lock lasts: Task Manager (also
+  Ctrl+Shift+Esc and `taskmgr`) and Switch user disappear at once (machine policy); Sign out, Change a password and
+  Lock are hidden in every signed-in user's hive and take effect at that user's next sign-in (Windows reads them only
+  then; in the open session they stay visible but do not end the lock). The previous values are kept in `C:\POpsData\secure\kiosk-policies.json` and put back
+  when the lock ends (panel, bypass code, service start without a lock, MSI uninstall); only what POps changed is
+  undone. Details and the manual procedure: `Agent/README.md` (*Ctrl+Alt+Del during a quarantine*, *Lifting a
+  quarantine by hand*),
 - the service adds Windows Firewall block rules (group `POps Isolation`) for every address except the POps server,
   the DNS and DHCP servers, loopback and IPv6 link-local/multicast, and switches on all firewall profiles. Their
   previous state is saved in `C:\POpsData\secure\isolation.json`.
