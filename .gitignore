@@ -33,3 +33,9 @@ Thumbs.db
 
 # Kuruluma özel, üretilen panel config'i (şablon: config.example.php)
 Dashboard/includes/config.php
+
+# Backend kapsam ölçümü çıktıları
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/

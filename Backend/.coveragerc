@@ -1,0 +1,14 @@
+# Backend kapsam ölçümü (CI 'security' job'ı ve tests/run_local.sh COVERAGE=1).
+# Sunucu coverage altında çalışır; entegrasyon testleri ona istek atar. SIGTERM'de veri yazılır.
+[run]
+source = .
+omit =
+    tests/*
+    setup_env.py
+parallel = true
+sigterm = true
+
+[report]
+skip_empty = true
+precision = 1
+sort = cover

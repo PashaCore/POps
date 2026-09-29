@@ -13,6 +13,7 @@ import asyncio
 import http.client
 import ipaddress
 import json
+import logging
 import smtplib
 import socket
 import ssl
@@ -23,6 +24,8 @@ from typing import Optional
 
 from pops import config
 from pops.db import execute_query
+
+log = logging.getLogger("pops.notify")
 
 SEVERITIES = ("info", "medium", "high", "critical")
 _SEV_RANK = {s: i for i, s in enumerate(SEVERITIES)}
@@ -208,8 +211,8 @@ async def _deliver_and_record(nid: int, settings: dict, event, severity, title, 
             "UPDATE notifications SET channels=$1, delivery_error=$2 WHERE id=$3",
             (channels or None, error or None, nid),
         )
-    except Exception as exc:
-        print("⚠️ bildirim gönderilemedi: %s" % exc)
+    except Exception:
+        log.exception("bildirim gönderilemedi", extra={"notification_id": nid})
 
 
 async def notify(
@@ -248,8 +251,8 @@ async def notify(
             _tasks.add(task)
             task.add_done_callback(_tasks.discard)
         return nid
-    except Exception as exc:
-        print("⚠️ bildirim kaydedilemedi: %s" % exc)
+    except Exception:
+        log.exception("bildirim kaydedilemedi", extra={"event": event})
         return None
 
 

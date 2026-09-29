@@ -2,11 +2,13 @@
 
 import datetime
 import json
+import logging
 import secrets
 import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from pops.db import execute_query
 from pops.models import AgentPoliciesInput, AuthEventInput, HwInventoryInput, LogInput, PolicyAlertInput
@@ -24,7 +26,9 @@ from pops.manager import manager
 from pops.taskqueue import process_queue
 from pops.dna import reconcile_device
 from pops.notify import notify
+from pops import update_notice
 
+log = logging.getLogger("pops.agents")
 router = APIRouter()
 
 
@@ -383,66 +387,25 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         "UPDATE clients SET running_version=$1 WHERE pc_name=$2",
                         (str(payload.get("running_version")), active_hwid),
                     )
-                # Yalnızca GERÇEKTEN kötü durumlar kritik loglanır. NOT: v0.1.3'ten beri başarılı
-                # geri dönüş "rolled_back" (kurtarıldı, kritik değil), "install_failed" ise kurulum
-                # hiç başlamadı = makine değişmedi (iyi huylu) → ikisi de kritik SAYILMAZ.
-                _astate = str(payload.get("agent_state") or "")
-                _st = str(payload.get("status") or "")
-                if _astate == "unmanaged" or _st in (
-                    "rollback_failed",
-                    "failed",
-                    "reverted_by_freeze",
-                    "error",
-                    "rejected",
-                ):
+                # Yalnızca GERÇEKTEN kötü durumlar kritik loglanır (bkz. pops/update_notice.py)
+                notice = update_notice.describe(payload)
+                if update_notice.is_critical(payload):
+                    _reason = str(payload.get("agent_state") or "") or str(payload.get("status") or "")
                     await log_audit_event(
                         active_hwid,
                         "Critical Security",
-                        f"Ajan guncelleme sorunu: {_astate or _st}",
+                        f"Ajan guncelleme sorunu: {_reason}",
                         actor_id="System/Update",
                         event_type="agent.update",
                         category="system_maintenance",
                         action="update_problem",
                         risk_level="critical",
-                        reason=(_astate or _st),
+                        reason=_reason,
                         meta_data=detail,
                     )
                 manager.pending_updates.pop(active_hwid, None)
-                _to = payload.get("running_version") or payload.get("to_version") or "?"
-                if _astate == "unmanaged" or _st in (
-                    "rollback_failed",
-                    "failed",
-                    "reverted_by_freeze",
-                    "error",
-                    "rejected",
-                ):
-                    await notify(
-                        "update_problem",
-                        "critical",
-                        "Ajan güncellemesi başarısız: %s" % (_astate or _st),
-                        str(payload.get("detail") or ""),
-                        active_hwid,
-                    )
-                elif _st == "rolled_back":
-                    await notify(
-                        "update_rolled_back",
-                        "high",
-                        "Güncelleme geri alındı, çalışan sürüm %s" % _to,
-                        str(payload.get("detail") or ""),
-                        active_hwid,
-                    )
-                elif _st == "install_failed":
-                    await notify(
-                        "update_not_started",
-                        "medium",
-                        "Güncelleme başlatılamadı, makine değişmedi",
-                        str(payload.get("detail") or ""),
-                        active_hwid,
-                    )
-                elif _st == "pending_reboot":
-                    await notify("update_reboot", "medium", "Güncelleme yeniden başlatma bekliyor", "", active_hwid)
-                elif _st in ("ok", "success", "updated"):
-                    await notify("update_ok", "info", "Ajan güncellendi: %s" % _to, "", active_hwid)
+                if notice:
+                    await notify(notice[0], notice[1], notice[2], str(payload.get("detail") or ""), active_hwid)
                 await manager.broadcast_to_panels({"type": "update_result", "pc_name": active_hwid, **detail})
                 continue
             if payload.get("type") == "capabilities":
@@ -501,8 +464,12 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        # Bozuk mesaj veya beklenmeyen hata: soket kapansın ki cihaz yanlışlıkla Online görünmesin
-        print(f"⚠️ /ws/agent/{active_hwid} hata: {e}")
+        if websocket.application_state == WebSocketState.DISCONNECTED:
+            # Soketi sunucu kapattı (ör. cihaz silindi); bekleyen receive bu yüzden hata verdi, sorun değil
+            log.info("ajan bağlantısı sunucu tarafından kapatıldı", extra={"pc_name": active_hwid})
+        else:
+            # Bozuk mesaj veya beklenmeyen hata: soket kapansın ki cihaz yanlışlıkla Online görünmesin
+            log.warning("ajan bağlantısı hatayla kapandı", extra={"pc_name": active_hwid, "error": repr(e)[:300]})
         try:
             await websocket.close(code=1011)
         except Exception:

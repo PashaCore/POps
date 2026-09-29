@@ -98,6 +98,10 @@
     .notes code { font-size: 0.8em; }
     .notes .lang { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 0.375rem; }
     .cap-state { margin: 0.75rem 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
+
+    .err-list { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.375rem; }
+    .err-list li { background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
+    .err-list .meta-line { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 </style>
 
 <div class="page-header" style="display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
@@ -133,6 +137,21 @@
             <span class="muted-text">GitHub main'deki kodu kurar. Sağlık kontrolü başarısız olursa önceki koda kendiliğinden döner.</span>
         </div>
         <div class="status-msg" id="su-status"></div>
+    </div>
+
+    <!-- ============ SUNUCU SAĞLIĞI ============ -->
+    <div class="sys-card">
+        <div class="card-head">
+            <h2><i class="fas fa-heart-pulse"></i> Sunucu sağlığı</h2>
+            <span id="dg-badge"><span class="badge muted">…</span></span>
+        </div>
+        <p class="card-desc">Sunucunun son açılışından bu yana durumu. Hata olursa aşağıda istek kimliğiyle listelenir; sorun bildirirken bu kimliği verin.</p>
+        <div class="ver-grid" id="dg-tiles"></div>
+        <details id="dg-errors-wrap" style="margin-top:var(--space-4);display:none;">
+            <summary class="mini-lbl" style="cursor:pointer;" id="dg-errors-title">Son hatalar</summary>
+            <ul class="err-list" id="dg-errors"></ul>
+        </details>
+        <div class="muted-text" id="dg-foot" style="margin-top:0.75rem;"></div>
     </div>
 
     <!-- ============ AJAN GÜNCELLEME ============ -->
@@ -722,6 +741,42 @@
         } catch (e) { msg('nt-status', 'status-error', escapeHtml(e.message)); }
     });
 
+    // ================= SUNUCU SAĞLIĞI =================
+    function fmtDur(sec) {
+        sec = Math.max(0, Math.round(sec || 0));
+        const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+        return d ? d + ' gün ' + h + ' sa' : h ? h + ' sa ' + m + ' dk' : m + ' dk';
+    }
+    const tile = (lbl, val, sub) => `<div class="ver-tile"><div class="lbl">${escapeHtml(lbl)}</div><div class="val">${escapeHtml(String(val))}</div><div class="sub">${sub || ''}</div></div>`;
+    function renderDiag(d) {
+        const errs = (d.log_counts && d.log_counts.ERROR || 0) + (d.log_counts && d.log_counts.CRITICAL || 0);
+        const tickAge = d.scheduler_last_tick_age;
+        const tickBad = tickAge === null || tickAge > 120;
+        const pool = d.db_pool || {};
+        const poolBusy = (pool.size || 0) - (pool.idle || 0);
+        const dev = d.devices || {};
+        $('dg-tiles').innerHTML = [
+            tile('Açık kalma süresi', fmtDur(d.uptime_seconds), 'Bellek: ' + (d.rss_mb != null ? d.rss_mb + ' MB' : '—')),
+            tile('Bağlı ajan', d.agents_connected, escapeHtml((dev.online || 0) + ' çevrimiçi / ' + (dev.total || 0) + ' kayıtlı cihaz')),
+            tile('Veritabanı bağlantısı', poolBusy + ' / ' + (pool.max || '—'), 'kullanımda / en çok'),
+            tile('Hata', errs, escapeHtml((d.http_5xx || 0) + ' sunucu hatası yanıtı, ' + (d.log_counts && d.log_counts.WARNING || 0) + ' uyarı')),
+            tile('Zamanlayıcı', tickAge === null ? 'başlamadı' : fmtDur(tickAge) + ' önce', tickBad ? '<span style="color:var(--danger-solid)">30 sn\'de bir çalışmalı</span>' : 'son tur'),
+        ].join('');
+        const list = d.recent_errors || [];
+        $('dg-errors-wrap').style.display = list.length ? '' : 'none';
+        $('dg-errors-title').textContent = 'Son hatalar (' + list.length + ')';
+        $('dg-errors').innerHTML = list.map(e => `<li><div class="meta-line">${escapeHtml(fmtDate(e.ts))} · ${escapeHtml(e.logger)}${e.request_id ? ' · istek ' + escapeHtml(e.request_id) : ''}</div>${escapeHtml(e.msg)}${e.exc ? '<div class="meta-line">' + escapeHtml(e.exc) + '</div>' : ''}</li>`).join('');
+        const bad = errs > 0 || tickBad;
+        $('dg-badge').innerHTML = bad ? badge('warn', 'fa-triangle-exclamation', errs ? errs + ' hata' : 'Zamanlayıcı durdu') : badge('ok', 'fa-circle-check', 'Sağlıklı');
+        $('dg-foot').innerHTML = d.metrics_enabled
+            ? '<i class="fas fa-chart-line"></i> Prometheus <code>/metrics</code> açık.'
+            : '<i class="fas fa-circle-info"></i> Prometheus ile izlemek için sunucunun <code>.env</code> dosyasında <code>METRICS_TOKEN</code> tanımlayın.';
+    }
+    async function loadDiag() {
+        try { renderDiag(await api('/api/system/diagnostics')); }
+        catch (e) { $('dg-badge').innerHTML = badge('muted', 'fa-plug', 'Sunucu güncellemesi gerekli'); }
+    }
+
     // ================= YÜKLE =================
     async function loadAll(check) {
         const [ver, , devs] = await Promise.all([
@@ -748,12 +803,13 @@
     $('btn-check').addEventListener('click', async function () {
         this.disabled = true;
         const i = this.querySelector('i'); i.classList.add('fa-spin');
-        await loadAll(true);
+        await Promise.all([loadAll(true), loadDiag()]);
         i.classList.remove('fa-spin'); this.disabled = false;
     });
 
     loadAll(false);
     loadEnroll();
     loadNotify();
+    loadDiag();
 })();
 </script>

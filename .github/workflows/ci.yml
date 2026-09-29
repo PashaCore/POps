@@ -76,6 +76,8 @@ jobs:
           DB_PASS: ci
           DB_NAME: ci
         run: python -c "import server, setup_env; print('ok', len(server.app.routes), 'routes')"
+      - name: Unit tests (no server)
+        run: python Backend/tests/test_units.py
 
   dashboard:
     name: Dashboard checks
@@ -206,6 +208,8 @@ jobs:
       POPS_TEST_HTTP: http://127.0.0.1:8099
       # test_features.py kendi webhook alıcısını 127.0.0.1'de açar
       NOTIFY_WEBHOOK_ALLOW_PRIVATE: "1"
+      # test_ops.py /metrics'i bu jetonla okur (sunucu ile aynı değer)
+      METRICS_TOKEN: ci-metrics-token-0123456789
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -213,14 +217,17 @@ jobs:
         with:
           python-version: "3.9"
       - name: Install backend deps
-        run: pip install -r Backend/requirements.txt
+        # coverage yalnızca CI'da (canlı sunucunun venv'ine girmez)
+        run: pip install -r Backend/requirements.txt coverage==7.10.7
       - name: Migrate + start server + run security invariants
         # Enroll->secret, enforce->4401, valid secret ok, unauth HTTP 401, wrong-signature
-        # upload rejected — hepsi çalışan sunucuya karşı doğrulanır.
+        # upload rejected — hepsi çalışan sunucuya karşı doğrulanır. Sunucu coverage altında çalışır.
         run: |
           set -euo pipefail
           python Backend/migrate.py
-          ( cd Backend && python -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/uvicorn.log 2>&1 & )
+          ( cd Backend && python -m coverage run --rcfile=.coveragerc tests/test_units.py >/dev/null )
+          ( cd Backend && exec python -m coverage run --rcfile=.coveragerc -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/uvicorn.log 2>&1 ) &
+          echo $! > /tmp/uvicorn.pid
           curl --retry-connrefused --retry 40 --retry-delay 1 -sf http://127.0.0.1:8099/api/health >/dev/null || { echo "server did not start"; cat /tmp/uvicorn.log; exit 1; }
           python Backend/tests/test_security.py
           python Backend/tests/test_2fa.py
@@ -229,3 +236,23 @@ jobs:
           python Backend/tests/test_f4_accountability.py
           python Backend/tests/test_features.py
           python Backend/tests/test_helpdesk_licenses.py
+          python Backend/tests/test_ops.py
+      - name: Backend coverage
+        # Alt sınır (fail_under) kapsamın fark edilmeden düşmesini engeller; kapsam arttıkça yükseltin.
+        # Hangi kritik yolların test edildiği: docs/testing.md
+        run: |
+          set -euo pipefail
+          kill -TERM "$(cat /tmp/uvicorn.pid)"
+          for _ in $(seq 1 20); do kill -0 "$(cat /tmp/uvicorn.pid)" 2>/dev/null || break; sleep 0.5; done
+          cd Backend
+          python -m coverage combine --rcfile=.coveragerc
+          python -m coverage xml --rcfile=.coveragerc -o coverage.xml
+          { echo '### Backend kapsamı'; echo '```'; python -m coverage report --rcfile=.coveragerc; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          python -m coverage report --rcfile=.coveragerc --fail-under=65
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: Backend/coverage.xml
+          if-no-files-found: ignore

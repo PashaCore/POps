@@ -1,6 +1,7 @@
 """Görev kuyruğu, orkestrasyon, paket deposu ve depolama uçları."""
 
 import datetime
+import logging
 import os
 import shutil
 
@@ -14,6 +15,7 @@ from pops.security import require_admin, require_auth
 from pops.audit import add_audit_log
 from pops.taskqueue import process_queue, resolve_targets
 
+log = logging.getLogger("pops.tasks")
 router = APIRouter()
 
 
@@ -154,8 +156,8 @@ async def api_storage(auth: dict = Depends(require_auth)):
             fetch=True,
         )
         log_trend = [{"day": r['day'], "count": r['c']} for r in trend_rows] if trend_rows else []
-    except Exception as e:
-        print(f"Log stat error: {e}")
+    except Exception:
+        log.exception("log istatistiği okunamadı")
         log_bytes = 0
         log_trend = []
 

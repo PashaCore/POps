@@ -8,6 +8,7 @@ kez eklenmez: tur, PostgreSQL advisory kilidiyle tek sürece verilir ve satırla
 import asyncio
 import datetime
 import json
+import logging
 import time
 from typing import Optional
 
@@ -16,6 +17,8 @@ from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.notify import notify
 from pops.taskqueue import process_queue, resolve_targets
+
+log = logging.getLogger("pops.scheduler")
 
 TICK_SECONDS = 30
 UPDATE_SILENCE_SECONDS = 20 * 60
@@ -164,14 +167,19 @@ async def check_licenses_daily() -> None:
             )
 
 
+# Son tamamlanan turun zamanı (epoch); /api/system/diagnostics zamanlayıcının durup durmadığını gösterir
+last_tick = [0.0]
+
+
 async def scheduler_loop() -> None:
     while True:
         try:
             await run_due()
             await check_pending_updates()
             await check_licenses_daily()
+            last_tick[0] = time.time()
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
-            print("⚠️ zamanlayıcı hatası: %s" % exc)
+        except Exception:
+            log.exception("zamanlayıcı turu başarısız")
         await asyncio.sleep(TICK_SECONDS)

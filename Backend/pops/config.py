@@ -113,3 +113,8 @@ NOTIFY_WEBHOOK_ALLOW_PRIVATE = os.environ.get('NOTIFY_WEBHOOK_ALLOW_PRIVATE', ''
     'true',
     'yes',
 )
+
+
+# Prometheus /metrics ucu yalnızca bu jeton tanımlıysa açılır (en az 16 karakter) ve
+# "Authorization: Bearer <jeton>" ister; tanımlı değilse uç 404 döner.
+METRICS_TOKEN = os.environ.get('METRICS_TOKEN', '').strip()

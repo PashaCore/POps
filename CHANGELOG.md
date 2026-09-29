@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Panel: the notification bell can clear read notifications ("Okunanları temizle"); `POST /api/notifications/clear` deletes the given ids or all read ones.
+- **Backend: structured logs.** Every log line is one JSON object (`ts`, `level`, `logger`, `msg`, `request_id`, extra fields); uvicorn's lines use the same format. `LOG_FORMAT=text` gives readable lines, `LOG_LEVEL` sets the level. The remaining `print()` calls in the server are gone.
+- **Backend: request IDs.** Every request and WebSocket connection gets an ID, returned in `X-Request-ID` and written on every log line of that request; unhandled errors are logged with it.
+- **Backend: `/metrics`** in Prometheus format (off unless `METRICS_TOKEN` is set; Bearer token): requests and durations per route template, WebSocket sessions, errors, connected agents and panels, devices, database pool, scheduler tick, memory.
+- **Panel: "Sunucu sağlığı"** on the System page (`GET /api/system/diagnostics`, superadmin): uptime, connected agents, database connections, error counts, the scheduler's last run and the last 50 errors with their request IDs.
+- **CI: backend coverage.** The integration suite runs the server under coverage; the report is in the job summary and CI fails below a floor. `docs/testing.md` lists which critical paths are tested and which are only verified by hand.
+
+### Changed
+
+- **Backend:** Update results are described in plain words. A rollback that the updater could only finish with its last-resort reinstall is reported as "Geri dönüş çalışmadı; son çare kurulum ajanı … sürümünde geri getirdi" instead of "başarısız: reinstalled"; a `rolled_back` that needed a repair (`rollback: msi_repair`) says so; `rollback_pending_reboot` now raises a notification.
+- **Backend:** An agent socket that the server itself closed (for example after the device was deleted) is logged at INFO, not as an error.
 
 ## [0.1.6-alpha] - 2026-09-27
 

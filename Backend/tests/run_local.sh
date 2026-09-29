@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# POps entegrasyon testlerini yerelde çalıştırır (CI'daki 'security' job'ının eşi): yedi test betiği,
-# CI ile aynı sırada, geçici olarak başlatılan sunucuya karşı.
+# POps entegrasyon testlerini yerelde çalıştırır (CI'daki 'security' job'ının eşi): test betikleri
+# CI ile aynı sırada, geçici olarak başlatılan sunucuya karşı. COVERAGE=1 ile sunucu coverage altında
+# çalışır ve sonunda kapsam raporu basılır (coverage paketi gerekir; canlı venv'e kurmayın).
 #
 # Önce şunları export edin — DB_NAME BOŞ bir test veritabanı olmalı (migrate.py şemayı kurar):
 #   export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<u> DB_PASS=<p> DB_NAME=pops_sec_test JWT_SECRET=dev
@@ -13,9 +14,20 @@ export POPS_TEST_HTTP="${POPS_TEST_HTTP:-http://127.0.0.1:8099}"
 # webhook göndermeye izin vermeli. Boş CORS listesi .env'deki değeri ezer.
 export NOTIFY_WEBHOOK_ALLOW_PRIVATE=1
 export CORS_ALLOWED_ORIGINS=""
+export METRICS_TOKEN="${METRICS_TOKEN:-local-metrics-token-0123456789}"
 
+if [ "${COVERAGE:-0}" = "1" ]; then
+  rm -f .coverage .coverage.*
+  python -m coverage run --rcfile=.coveragerc tests/test_units.py
+else
+  python tests/test_units.py
+fi
 python migrate.py
-python -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/pops-test-uvicorn.log 2>&1 &
+if [ "${COVERAGE:-0}" = "1" ]; then
+  python -m coverage run --rcfile=.coveragerc -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/pops-test-uvicorn.log 2>&1 &
+else
+  python -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/pops-test-uvicorn.log 2>&1 &
+fi
 UP=$!
 trap 'kill "$UP" 2>/dev/null || true' EXIT
 for _ in $(seq 1 40); do curl -sf "$POPS_TEST_HTTP/api/health" >/dev/null 2>&1 && break; sleep 1; done
@@ -26,3 +38,9 @@ python tests/test_remote_authz.py
 python tests/test_f4_accountability.py
 python tests/test_features.py
 python tests/test_helpdesk_licenses.py
+python tests/test_ops.py
+if [ "${COVERAGE:-0}" = "1" ]; then
+  kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
+  python -m coverage combine --rcfile=.coveragerc >/dev/null
+  python -m coverage report --rcfile=.coveragerc
+fi

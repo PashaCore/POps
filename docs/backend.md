@@ -35,7 +35,26 @@ The endpoint list is in [`api.md`](api.md) and the schema in [`database.md`](dat
 
 `Backend/tests/` holds integration tests that run against a live backend and an empty PostgreSQL database. CI's
 `security` job runs them in this order: `test_security.py`, `test_2fa.py`, `test_agent_authz.py`,
-`test_remote_authz.py`, `test_f4_accountability.py`, `test_features.py`, `test_helpdesk_licenses.py`.
-`Backend/tests/run_local.sh` does the same locally: it applies the migrations, starts a temporary backend on
-`127.0.0.1:8099` and runs the seven scripts. Export `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME` (an empty
+`test_remote_authz.py`, `test_f4_accountability.py`, `test_features.py`, `test_helpdesk_licenses.py`, `test_ops.py`.
+`test_units.py` needs no server. `Backend/tests/run_local.sh` does the same locally: it applies the migrations,
+starts a temporary backend on `127.0.0.1:8099` and runs the scripts (`COVERAGE=1` adds a coverage report). What is
+and is not covered: [`testing.md`](testing.md). Export `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME` (an empty
 test database) and `JWT_SECRET` first; never point it at a production database.
+
+## Logs, metrics and diagnostics
+
+- **Logs** are one JSON object per line on stderr (journald under systemd): `ts`, `level`, `logger`, `msg`, the
+  request's `request_id` and any extra fields. `LOG_FORMAT=text` gives readable lines for development;
+  `LOG_LEVEL` sets the level (default `INFO`). uvicorn's own lines (access log included) use the same format.
+  Find one request: `journalctl -u <service> | grep '"request_id": "<id>"'`.
+- **Request ID:** every HTTP request and WebSocket connection gets one; it is returned in the `X-Request-ID` response
+  header and appears on every log line written while handling it. A safe incoming `X-Request-ID` (8–64 characters of
+  `A-Z a-z 0-9 . _ -`) is kept, so a reverse proxy can pass its own.
+- **`/metrics`** (Prometheus text format) is off unless `METRICS_TOKEN` (at least 16 characters) is set, and then
+  needs `Authorization: Bearer <token>`. It exposes request counts and durations per route template (never the raw
+  path, so device names do not leak into labels), WebSocket sessions, unhandled errors, WARNING/ERROR log counts,
+  connected agents and panels, device counts, database pool usage, the scheduler's last tick and memory use.
+  The endpoint is not under `/api`, so the panel's reverse proxy does not expose it; scrape it on `127.0.0.1`.
+- **Diagnostics** (`GET /api/system/diagnostics`, superadmin) returns the same health figures plus the last 50
+  errors (with request IDs) and the slowest routes; the panel shows them on the System page. The error list lives in
+  memory and resets when the backend restarts; journald keeps the full history.

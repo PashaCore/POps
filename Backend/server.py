@@ -6,6 +6,7 @@ CORS, statik dosya bağlamaları, açılış/kapanış (DB havuzu + migration'la
 """
 
 import asyncio
+import logging
 import os
 
 import asyncpg
@@ -18,6 +19,8 @@ from slowapi.errors import RateLimitExceeded
 
 from migrate import run_migrations
 from pops import db
+from pops.logs import setup_logging
+from pops.metrics import RequestContextMiddleware
 from pops.audit import add_audit_log
 from pops.config import (
     DB_CONFIG,
@@ -40,6 +43,7 @@ from pops.routers import (
     inventory,
     licenses,
     notifications,
+    ops,
     reports,
     schedules,
     tasks,
@@ -51,6 +55,10 @@ from system_routes import build_router as _build_system_router
 # server modülünden dışarıya açılan adlar: uvicorn için 'app'; testler ve geri uyum için JWT/TOTP
 # yardımcıları (eskiden hepsi bu dosyadaydı, artık pops/ altında).
 __all__ = ["app", "create_jwt", "_totp_code", "JWT_SECRET", "JWT_ALGO", "JWT_COOKIE_NAME"]
+
+# Log biçimi uygulama kurulmadan ayarlanır: uvicorn'un kendi satırları da aynı biçime yönlenir (bkz. pops/logs.py)
+setup_logging()
+log = logging.getLogger("pops.server")
 
 # API şeması ve etkileşimli dokümantasyon (/docs, /redoc, /openapi.json) dışarıya sunulmaz
 app = FastAPI(title="POps Merkez API", docs_url=None, redoc_url=None, openapi_url=None)
@@ -72,8 +80,12 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type", "X-Agent-Version", "X-Requested-With"],
+    allow_headers=["Authorization", "Content-Type", "X-Agent-Version", "X-Requested-With", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
+
+# En dıştaki kullanıcı middleware'i (en son eklenen): request_id, istek metrikleri, yakalanmayan hata logu
+app.add_middleware(RequestContextMiddleware)
 
 
 if not os.path.exists(UPLOAD_DIR):
@@ -96,12 +108,12 @@ app.mount("/updates", StaticFiles(directory=UPDATES_DIR), name="updates")
 
 @app.on_event("startup")
 async def startup_event():
-    print("⏳ Veritabanı motoru başlatılıyor...")
+    log.info("veritabanına bağlanılıyor")
     for i in range(5):
         try:
             db.db_pool = await asyncpg.create_pool(**DB_CONFIG, min_size=DB_POOL_MIN, max_size=DB_POOL_MAX)
-            await run_migrations(db.db_pool)
-            print("✅ PostgreSQL Bağlantısı Başarılı!")
+            applied = await run_migrations(db.db_pool, verbose=False)
+            log.info("veritabanı hazır", extra={"migrations_applied": applied})
             # Açılışta hiçbir ajan bağlı değil; bağlananlar yeniden Online yazılır
             await execute_query("UPDATE clients SET status = 'Offline' WHERE status IS DISTINCT FROM 'Offline'")
 
@@ -110,7 +122,8 @@ async def startup_event():
             # Mevcut kayıt varsa sadece yoksa ekle (her restart'ta üzerine yazma)
             existing = await execute_query("SELECT id FROM users WHERE username=$1", (admin_user,), fetch=True)
             if not existing and not admin_pass:
-                print(f"⚠️ PANEL_ADMIN_PASS tanımlı değil, '{admin_user}' hesabı oluşturulmadı (bkz. .env.example)")
+                log.warning("PANEL_ADMIN_PASS tanımlı değil, yönetici hesabı oluşturulmadı (bkz. .env.example)",
+                            extra={"user": admin_user})
             elif not existing:
                 # bcrypt ile hash'le
                 hashed = bcrypt.hashpw(admin_pass.encode(), bcrypt.gensalt()).decode()
@@ -118,14 +131,14 @@ async def startup_event():
                     "INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'superadmin')",
                     (admin_user, hashed),
                 )
-                print(f"👑 Panel Admin Hesabı Oluşturuldu: {admin_user}")
+                log.info("panel yönetici hesabı oluşturuldu", extra={"user": admin_user})
             else:
-                print(f"👑 Panel Admin Hesabı Mevcut: {admin_user}")
+                log.info("panel yönetici hesabı mevcut", extra={"user": admin_user})
             # Zamanlanmış görevler + güncelleme sonucu gelmeyen ajan uyarısı (30 sn'de bir)
             app.state.scheduler = asyncio.create_task(scheduler_loop())
             break
         except Exception as e:
-            print(f"⚠️ Veritabanı bağlantı hatası (deneme {i+1}/5): {e}")
+            log.error("veritabanı bağlantı hatası", extra={"attempt": i + 1, "of": 5, "error": repr(e)[:300]})
             await asyncio.sleep(3)
 
 
@@ -139,7 +152,10 @@ async def shutdown_event():
 
 
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
-for _r in (auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk):
+_ROUTERS = (
+    auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
+)
+for _r in _ROUTERS:
     app.include_router(_r.router)
 
 # Sistem/sürüm/release uçları (system_routes, bağımlılıklar enjekte edilir) en sonda
