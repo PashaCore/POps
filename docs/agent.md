@@ -59,8 +59,11 @@ and closes the connection with `4401`.
 - The agent reads `ServerUrl` and connects to `wss://<host>/ws/agent/<hw_id>`. A non-loopback `http://` address is
   refused: the agent logs `[GÜVENLİK] ServerUrl şifresiz http ve yerel değil …` every 10 minutes and does not
   connect (the tray and watchdog keep running).
-- It sends a heartbeat every 5 seconds and reconnects 5 seconds after a disconnect, or 60 seconds after the
-  server rejected its credentials (close code `4401`). From 0.1.5-alpha the heartbeat carries `"quarantined"`
+- It sends a heartbeat every 5 seconds. After a disconnect it waits a random time between 0 and
+  min(60 s, 2 s × 2^n), where n is the number of connections that failed in a row (full jitter; 0.1.7 and older
+  waited a fixed 5 s, so all agents came back at once after a server restart). n goes back to 0 once a connection
+  stays open for one heartbeat after the first messages. If the server rejected the credentials (close code
+  `4401`) it waits 60 s plus that random time. From 0.1.5-alpha the heartbeat carries `"quarantined"`
   (lock screen and/or isolation active), which the server uses to finish or resend a pending lock/unlock.
 - **Hardware ID.** The device ID (`HW-…`) is kept in `C:\POpsData\identity.key`. On first start it is derived from
   the machine UUID and the primary MAC address. The server compares a hardware fingerprint (UUID, BIOS serial,

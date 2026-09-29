@@ -22,6 +22,9 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <!-- Kapsam: dotnet test, collect "XPlat Code Coverage" ile (cobertura: TestResults/<guid>/coverage.cobertura.xml).
+         6.0.4'te sabit: 8.x ve 10.x net472 hedefinde (custom action'lar) boş rapor üretiyor; 6.0.4 iki hedefi de ölçer. -->
+    <PackageReference Include="coverlet.collector" Version="6.0.4" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">

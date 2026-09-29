@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent:** Reconnecting to the server uses exponential backoff with full jitter instead of a fixed 5 seconds: after a disconnect the agent waits a random time between 0 and min(60 s, 2 s × 2^n), n being the number of connections that failed in a row. The count goes back to 0 once a connection stays open for one heartbeat after the first messages. After a server restart, 500 agents no longer come back in the same second (`BENCHMARKS.md`), and an agent that stays offline tries about once a minute. When the server rejects the credentials (`4401`) the agent still waits at least 60 seconds, now plus the same random time. The calculation is `POps.Shared.ReconnectBackoff`, with unit tests.
+- **Tests:** `POps.Tests` references `coverlet.collector` 6.0.4, so `dotnet test --collect:"XPlat Code Coverage"` writes a Cobertura report for both targets (agent and custom actions). Versions 8.x and 10.x produce an empty report for the net472 target.
+
 ## [0.1.7-alpha] - 2026-09-29
 
 Fixes the rollback itself. Up to 0.1.6 the rollback install returned 0 but left the machine without the agent until the updater's last-resort repair about 90 seconds later, so both drills reported a failure; the updater now forces every file back and repairs at once if the service or executable is still missing. The server gains structured logs with request IDs, a Prometheus `/metrics` endpoint, a health card on the System page, and nightly backups that are restored into a temporary database and verified before they count.
