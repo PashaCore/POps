@@ -27,8 +27,9 @@ namespace POpsAgent
     public static class AgentHttp
     {
         // Yönlendirme izlenmez: .NET yönlendirmede Authorization'ı atar ama X-Agent-Secret gibi özel başlıkları yeni
-        // hosta da taşır. Sunucunun 3xx yanıtı başarısız gönderim sayılır.
-        internal static readonly HttpClientHandler Handler = new HttpClientHandler { AllowAutoRedirect = false };
+        // hosta da taşır. Sunucunun 3xx yanıtı başarısız gönderim sayılır. Sunucu sertifikası ServerTrust ile
+        // doğrulanır (kurum sertifikası varsa yalnızca ona zincirlenen kabul edilir).
+        internal static readonly HttpClientHandler Handler = ServerTrust.NewHandler();
 
         public static HttpClient Client { get; set; } = new HttpClient(Handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(100) };
 

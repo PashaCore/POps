@@ -101,7 +101,8 @@ namespace POpsAgent
 
             _logger = logger;
             _pcName = Environment.MachineName;
-            _httpClient = new HttpClient();
+            // Politika ve /updates paket indirme: sunucu sertifikası da ServerTrust ile doğrulanır
+            _httpClient = new HttpClient(ServerTrust.NewHandler());
 
             // 🚀 IP'Yİ CONFIG DOSYASINDAN AL
             _serverUrl = POpsHelpers.GetServerUrl();
@@ -128,6 +129,8 @@ namespace POpsAgent
             AgentCredentials.Initialize();
             AgentCredentials.LoadSecret();
             AgentCapabilities.Load();
+            // Kurum sertifikası (server-ca.pem) varsa sunucu yalnızca onunla doğrulanır; kip loglanır
+            ServerTrust.Reload();
 
             _cachedDna = GetHardwareDnaInternal();
             _cachedInventory = BuildInventoryInternal();
@@ -175,6 +178,7 @@ namespace POpsAgent
 
                 StartTrayPipeServer();
                 _commandWs = new ClientWebSocket();
+                _commandWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(commandWsUrl));
                 _commandWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
                 string authMode = ApplyAuthHeaders(_commandWs);
                 POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({APP_VERSION}, kimlik: {authMode})");
@@ -479,6 +483,7 @@ namespace POpsAgent
             }
             string visionWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://") + $"/ws/vision/{_hwId}";
             var newWs = new ClientWebSocket();
+            newWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(visionWsUrl));
             // Sunucu enforce_agent_auth açıkken kimliksiz Vision tünelini (sahte ekran görüntüsü) reddeder
             newWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
             ApplyAuthHeaders(newWs);
