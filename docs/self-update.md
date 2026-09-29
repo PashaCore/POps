@@ -30,6 +30,17 @@ pops-selfupdate.service (systemd, ROOT, oneshot)
   otomatik döner; self-update bunu değiştirmez.
 - Uç noktalar `require_superadmin` (tetikleme) / `require_admin` (durum) ile korunur.
 
+## Kanal: sürüm (varsayılan) ya da main
+
+- **`release` (varsayılan):** Sunucu yalnızca **yayımlanmış sürümlere** geçer: `origin/main` üzerindeki en yeni
+  `v*` etiketi (sürüm sırasıyla; `0.1.10` > `0.1.9`). Sunucu zaten o sürümde ya da daha yenisindeyse git adımı
+  atlanır, **geri gidilmez**. Panel "Yeni sürüm: vX" yazar, ara commit'ler sayılmaz. Okullar için doğru ayar.
+- **`main`:** `origin/main`'in son hali (geliştirme sunucusu). Panel commit farkını gösterir.
+
+Kanal root'a ait `/etc/pops/selfupdate.conf` dosyasından okunur (`CHANNEL=release` ya da `CHANNEL=main`);
+dosya yoksa `release`. Panel kanalı değiştiremez. Denemek için: `sudo POPS_SELFUPDATE_DRYRUN=1 pops-selfupdate`
+(hedefi yazar, hiçbir şey dağıtmaz).
+
 ## Kurulum (root, tek seferlik)
 
 ```bash

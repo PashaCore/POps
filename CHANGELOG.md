@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Server self-update follows releases.** By default (`CHANNEL=release`) "Sunucuyu güncelle" moves the server to the newest release tag on `main`, never backwards, and the System page compares the running version with the latest release instead of counting commits ("Yeni sürüm: v0.1.12-alpha" / "Güncel"). `CHANNEL=main` in the root-owned `/etc/pops/selfupdate.conf` keeps the old behaviour for development servers. `POPS_SELFUPDATE_DRYRUN=1` shows the target without deploying. See `docs/self-update.md`.
+
 ## [0.1.11-alpha] - 2026-09-29
 
 Closes the quarantine escape the owner found: during a quarantine Task Manager and "Switch user" are gone at once and the lock screen keeps the focus; Lock, Sign out and Change password are hidden from the next sign-in on. Everything is restored when the quarantine ends. The server also survives restart storms: 2000 agents reconnect in about 4 seconds.

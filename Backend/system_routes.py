@@ -68,6 +68,23 @@ RELEASES_DIR = os.path.join(BASE_DIR, "releases")
 # dizini. Root systemd path-unit (pops-selfupdate.path) bu dosyayı izleyip deploy'u
 # çalıştırır. Dizin yoksa/yazılamıyorsa self-update "kurulu değil" sayılır (uç 503 döner).
 SELFUPDATE_DIR = os.environ.get("POPS_SELFUPDATE_DIR", "/var/lib/pops")
+# Sunucu güncelleme kanalı (root'a ait; pops-selfupdate de aynı dosyayı okur): release (varsayılan) | main
+SELFUPDATE_CONF = os.environ.get("POPS_SELFUPDATE_CONF", "/etc/pops/selfupdate.conf")
+
+
+def _selfupdate_channel() -> str:
+    try:
+        with open(SELFUPDATE_CONF, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("CHANNEL="):
+                    value = line.split("=", 1)[1].strip().strip("\"'")
+                    return value if value in ("release", "main") else "release"
+    except OSError:
+        pass
+    return "release"
+
+
 GITHUB_REPO = os.environ.get("POPS_GITHUB_REPO", "PashaCore/POps")
 _GITHUB_TIMEOUT = 5.0
 _GITHUB_TTL = 3600.0  # saniye
@@ -193,11 +210,22 @@ def _read_deploy_status() -> Optional[dict]:
 
 
 async def _server_update(force: bool = False) -> dict:
-    """Sunucu güncel mi? Canlı commit = son BAŞARILI self-update'in rev'i (deploy o commit'i dağıtır)."""
+    """Sunucu güncel mi?
+
+    release kanalı (varsayılan): çalışan sürüm (VERSION) GitHub'daki son sürüm etiketiyle karşılaştırılır; ara
+    commit'ler sayılmaz. main kanalı (geliştirme): canlı commit (son BAŞARILI self-update'in rev'i) origin/main ile
+    karşılaştırılır."""
     st = _read_deploy_status() or {}
     rev = str(st.get("rev") or "")
-    out = {"rev": rev or None, "deployed_at": st.get("at"), "last_state": st.get("state"),
+    channel = _selfupdate_channel()
+    out = {"rev": rev or None, "deployed_at": st.get("at"), "last_state": st.get("state"), "channel": channel,
            "checked": False, "update_available": None, "ahead_by": 0, "commits": [], "version_changed": False}
+    if channel == "release":
+        latest = await _github_latest(force=force)
+        if latest:
+            out.update({"checked": True, "latest_release": latest,
+                        "update_available": _norm(latest) != _norm(_read_version())})
+        return out
     if st.get("state") != "ok" or not _REV_RE.match(rev):
         return out   # canlı commit bilinmiyor (hiç self-update yok ya da son deneme başarısız)
     now = time.time()
@@ -636,10 +664,11 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             raise HTTPException(
                 status_code=503,
                 detail="Self-update kurulu değil. systemd path-unit'i etkinleştirin (bkz. docs/self-update.md).")
+        target = "origin/main" if _selfupdate_channel() == "main" else "latest-release"
         payload = {
             "requested_by": auth.get("sub"),
             "requested_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "target": "origin/main",
+            "target": target,   # bilgi amaçlı: root betiği kanalı kendi ayar dosyasından okur
         }
         req_path = os.path.join(SELFUPDATE_DIR, "deploy-request.json")
         tmp = req_path + ".tmp"
@@ -651,7 +680,7 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             raise HTTPException(status_code=503, detail="İstek yazılamadı: %s" % exc)
         await add_audit_log("*", "self_update",
                             "Sunucu self-update kuyruklandı (%s)" % (auth.get("sub") or "?"),
-                            {"target": "origin/main"})
+                            {"target": target})
         return {"ok": True, "queued": True}
 
     # --- Ajan yetenek politikası (terminal/Vision) — fail-safe: yalnızca KAPATMA -----

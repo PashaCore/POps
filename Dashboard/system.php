@@ -125,7 +125,7 @@
         </div>
         <div class="ver-grid">
             <div class="ver-tile"><div class="lbl">Çalışan sürüm</div><div class="val" id="srv-version">…</div><div class="sub" id="srv-rev"></div></div>
-            <div class="ver-tile"><div class="lbl">GitHub (main)</div><div class="val" id="srv-main">…</div><div class="sub" id="srv-main-sub"></div></div>
+            <div class="ver-tile"><div class="lbl" id="srv-main-lbl">Son sürüm (GitHub)</div><div class="val" id="srv-main">…</div><div class="sub" id="srv-main-sub"></div></div>
         </div>
         <div class="notes" id="srv-notes"></div>
         <details class="changes" id="srv-changes" style="display:none;">
@@ -134,7 +134,7 @@
         </details>
         <div class="row mt">
             <button class="btn" id="btn-selfupdate"><i class="fas fa-download"></i> Sunucuyu güncelle</button>
-            <span class="muted-text">GitHub main'deki kodu kurar. Sağlık kontrolü başarısız olursa önceki koda kendiliğinden döner.</span>
+            <span class="muted-text">Yayımlanmış son sürümü kurar, geri gitmez. Sağlık kontrolü başarısız olursa önceki koda kendiliğinden döner.</span>
         </div>
         <div class="status-msg" id="su-status"></div>
     </div>
@@ -329,7 +329,9 @@
         if (!v) return;
         const srv = v.server || {};
         $('srv-version').textContent = fmtV(v.running);
-        $('srv-rev').textContent = srv.rev ? `commit ${srv.rev}` + (srv.deployed_at ? ' · ' + fmtDate(srv.deployed_at) : '') : 'Henüz panelden güncellenmedi';
+        const rel = (srv.channel || 'release') === 'release';
+        $('srv-main-lbl').textContent = rel ? 'Son sürüm (GitHub)' : 'GitHub (main) · geliştirme kanalı';
+        $('srv-rev').textContent = (srv.deployed_at ? 'güncellendi ' + fmtDate(srv.deployed_at) : 'Henüz panelden güncellenmedi') + (srv.rev ? ` · commit ${srv.rev}` : '');
 
         const busy = su && (su.pending || (su.status && su.status.state === 'running'));
         const btn = $('btn-selfupdate');
@@ -352,6 +354,14 @@
         } else if (srv.last_state === 'failed') {
             b = badge('bad', 'fa-triangle-exclamation', 'Son güncelleme başarısız');
             sub = 'Önceki kod çalışıyor (otomatik geri dönüldü).';
+        } else if (rel) {
+            // Sürüm kanalı: yalnızca yayımlanmış sürümler sayılır, ara commit'ler değil
+            if (!srv.checked) { b = badge('muted', 'fa-wifi', 'GitHub\'a ulaşılamadı'); main = '?'; }
+            else if (srv.update_available) {
+                b = badge('warn', 'fa-circle-up', `Yeni sürüm: ${fmtV(srv.latest_release)}`);
+                main = fmtV(srv.latest_release);
+                sub = 'Güncelleme bu sürüme geçirir; notlar aşağıda.';
+            } else { b = badge('ok', 'fa-check', 'Güncel'); main = fmtV(srv.latest_release); }
         } else if (!srv.rev) {
             b = badge('muted', 'fa-circle-question', 'Durum bilinmiyor');
             sub = 'Bir kez "Sunucuyu güncelle" ile kurulunca takip edilir.';

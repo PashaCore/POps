@@ -6,16 +6,24 @@
 # izleyen bir systemd PATH-unit (pops-selfupdate.path) ROOT olarak tetikler. Böylece
 # backend'in kendisi root yetkisi almadan güncelleme başlatılabilir.
 #
-# Yaptığı: origin/main'i ff-only çeker (varsa), sonra authoritative deploy betiği
+# Yaptığı: kanala göre hedefi ff-only çeker, sonra authoritative deploy betiği
 # /usr/local/sbin/pops-deploy-backend'i çalıştırır (o da sağlık kontrolü + otomatik
 # geri dönüş yapar) ve sonucu $SPOOL/deploy-status.json'a yazar.
+#   CHANNEL=release (varsayılan): origin/main üzerindeki EN SON SÜRÜM ETİKETİ (v*). Sunucu yalnızca
+#                     yayımlanmış sürümlere geçer; zaten o sürümde ya da daha yenisindeyse geri gitmez.
+#   CHANNEL=main:     origin/main'in son hali (geliştirme sunucusu). Ayar: /etc/pops/selfupdate.conf
 #
-# GÜVENLİK: Keyfi kod ÇALIŞTIRILMAZ; yalnızca origin/main yeniden dağıtılır. İstek
-# dosyasının içeriği yürütülmez (yalnızca tetikleyicidir). Çevrimdışı sunucuda git
-# adımı atlanır, mevcut commit'lenmiş kodla redeploy denenir.
+# GÜVENLİK: Keyfi kod ÇALIŞTIRILMAZ; yalnızca origin/main ya da onun üzerindeki bir sürüm etiketi
+# dağıtılır. Kanal root'a ait ayar dosyasından okunur, istek dosyasının içeriği yürütülmez (yalnızca
+# tetikleyicidir). Çevrimdışı sunucuda git adımı atlanır, mevcut commit'lenmiş kodla redeploy denenir.
 set -uo pipefail
 
 REPO=/home/pasha/domains/dev.pashacore.com.tr/public_html
+CHANNEL=release
+# shellcheck disable=SC1091
+[ -f /etc/pops/selfupdate.conf ] && . /etc/pops/selfupdate.conf
+case "$CHANNEL" in main|release) ;; *) CHANNEL=release ;; esac
+TARGET=""
 SPOOL="${POPS_SELFUPDATE_DIR:-/var/lib/pops}"
 OWNER=pashacore_admin
 REQ="$SPOOL/deploy-request.json"
@@ -25,12 +33,12 @@ LOG="$SPOOL/deploy.log"
 write_status() {   # $1=state  $2=ok(true/false)  $3=message
     local rev
     rev=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
-    printf '{"state":"%s","ok":%s,"rev":"%s","message":"%s","at":"%s"}\n' \
-        "$1" "$2" "$rev" "${3//\"/}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STATUS"
+    printf '{"state":"%s","ok":%s,"rev":"%s","message":"%s","at":"%s","channel":"%s","target":"%s"}\n' \
+        "$1" "$2" "$rev" "${3//\"/}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$CHANNEL" "$TARGET" > "$STATUS"
     chown "$OWNER:$OWNER" "$STATUS" 2>/dev/null || true
 }
 
-[ -f "$REQ" ] || exit 0        # istek yoksa sessizce çık (path-unit yine de tetikleyebilir)
+[ -f "$REQ" ] || [ "${POPS_SELFUPDATE_DRYRUN:-0}" = 1 ] || exit 0   # istek yoksa sessizce çık
 rm -f "$REQ"
 
 # systemd altında (root, minimal ortam) git, pasha kullanıcısına ait repoyu "dubious
@@ -43,13 +51,32 @@ git config --global --get-all safe.directory 2>/dev/null | grep -qFx "$REPO" \
 echo "==== $(date -u +%Y-%m-%dT%H:%M:%SZ) self-update başladı ====" >> "$LOG"
 write_status running true "guncelleme basladi"
 
-# origin/main'i güvenli şekilde çek (ff-only: yerel commit'leri EZMEZ). Başarısızsa
+# Hedefi güvenli şekilde çek (ff-only: yerel commit'leri EZMEZ, geri gitmez). Başarısızsa
 # (çevrimdışı ya da ıraksama) mevcut HEAD ile devam edilir.
-if git -C "$REPO" fetch --quiet origin main >>"$LOG" 2>&1 \
-   && git -C "$REPO" merge --ff-only origin/main >>"$LOG" 2>&1; then
-    echo "origin/main çekildi." >> "$LOG"
+if git -C "$REPO" fetch --quiet --tags origin main >>"$LOG" 2>&1; then
+    if [ "$CHANNEL" = release ]; then
+        # origin/main'de bulunan en yeni sürüm etiketi (0.1.10 > 0.1.9; -alpha gibi ekler aynı sürümden önce)
+        TARGET=$(git -C "$REPO" -c versionsort.suffix=- tag -l 'v*' --merged origin/main --sort=-v:refname | head -1)
+        if [ -z "$TARGET" ]; then
+            echo "uyarı: origin/main üzerinde sürüm etiketi yok; mevcut HEAD ile devam." >> "$LOG"
+        elif git -C "$REPO" merge-base --is-ancestor "$TARGET" HEAD; then
+            echo "zaten $TARGET ya da daha yenisinde; git adımı yok." >> "$LOG"
+        elif git -C "$REPO" merge --ff-only "$TARGET" >>"$LOG" 2>&1; then
+            echo "$TARGET sürümüne geçildi." >> "$LOG"
+        else
+            echo "uyarı: $TARGET'a ff-only geçilemedi (ıraksak); mevcut HEAD ile devam." >> "$LOG"
+        fi
+    elif git -C "$REPO" merge --ff-only origin/main >>"$LOG" 2>&1; then
+        TARGET=origin/main
+        echo "origin/main çekildi." >> "$LOG"
+    else
+        echo "uyarı: origin/main'e ff-only geçilemedi (ıraksak); mevcut HEAD ile devam." >> "$LOG"
+    fi
 else
-    echo "uyarı: git fetch/ff-only başarısız (çevrimdışı ya da ıraksak); mevcut HEAD ile devam." >> "$LOG"
+    echo "uyarı: git fetch başarısız (çevrimdışı); mevcut HEAD ile devam." >> "$LOG"
+fi
+if [ "${POPS_SELFUPDATE_DRYRUN:-0}" = 1 ]; then
+    echo "DRYRUN kanal=$CHANNEL hedef=${TARGET:-yok} HEAD=$(git -C "$REPO" rev-parse --short HEAD)"; exit 0
 fi
 
 if /usr/local/sbin/pops-deploy-backend >>"$LOG" 2>&1; then
