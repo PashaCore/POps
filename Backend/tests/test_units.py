@@ -7,10 +7,14 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
+# Router modülleri yapılandırmayı içe aktarır; veritabanına bağlanılmaz, değerler yalnızca doğrulamayı geçer
+for _k in ("JWT_SECRET", "DB_USER", "DB_PASS", "DB_NAME"):
+    os.environ.setdefault(_k, "unit-test")
 import json  # noqa: E402
 import logging  # noqa: E402
 
 from pops import logs, update_notice  # noqa: E402
+from pops.routers import activity  # noqa: E402
 
 FAILS = []
 
@@ -66,9 +70,42 @@ def test_log_format():
     chk("websocket" not in out, "nesne ek alanı yazılmaz")
 
 
+def test_activity():
+    print("== etkinlik geçmişi")
+    dev = "HW-A"
+    items = activity.build_items(
+        dev,
+        [{"start_time": "2026-09-27 19:22:38", "end_time": "2026-09-27 19:22:42", "admin_name": "Pasha",
+          "reason": "sınav", "is_mandatory": False}],
+        [{"action": "lockdown", "timestamp": "2026-09-27 20:08:48", "changes": '{"admin": "Pasha", "reason": "s"}'},
+         {"action": "update_result", "timestamp": "2026-09-29 20:31:29",
+          "changes": '{"status": "rolled_back", "to_version": "0.1.8-alpha", "running_version": "0.1.7-alpha"}'},
+         {"action": "NEW_DEVICE", "timestamp": "2026-09-20 10:00:00", "changes": '{"bios_sn": "GIZLI-SERI"}'},
+         {"action": "set_capabilities", "timestamp": "2026-09-21 10:00:00",
+          "changes": '{"vision_enabled": false, "by": "Pasha"}'}],
+        [{"action": "install_updates", "timestamp": "2026-09-27 18:00:05",
+          "changes": '{"by": "Pasha", "dispatched": ["HW-A"]}'},
+         {"action": "install_updates", "timestamp": "2026-09-27 18:00:06",
+          "changes": '{"by": "Pasha", "dispatched": ["HW-AB"]}'}],
+        [{"created_at": "2026-09-26 19:44:40", "created_by": "Pasha", "status": "Completed"}],
+    )
+    chk([i["at"] for i in items] == sorted([i["at"] for i in items], reverse=True), "en yeni başta")
+    chk(len(items) == 7, "başka cihaza gönderilen işlem dahil değil (%d kayıt)" % len(items))
+    chk(items[0]["title"] == "0.1.8-alpha güncellemesi geri alındı, 0.1.7-alpha çalışıyor", "güncelleme başlığı")
+    chk("GIZLI-SERI" not in json.dumps(items, ensure_ascii=False), "donanım seri numarası sızmıyor")
+    kinds = {i["kind"] for i in items}
+    chk(kinds == {"remote_session", "quarantine", "update", "enroll", "capability", "windows_update", "command"},
+        "tüm türler: %s" % sorted(kinds))
+    cap = [i for i in items if i["kind"] == "capability"][0]
+    chk(cap["title"] == "Uzaktan izleme kapatıldı" and cap["actor"] == "Pasha", "yetenek değişikliği ve yapan")
+    cmd = [i for i in items if i["kind"] == "command"][0]
+    chk(cmd["detail"] == "Durum: Completed" and cmd["actor"] == "Pasha", "komut içeriği yok, yapan var")
+
+
 def main():
     test_update_notice()
     test_log_format()
+    test_activity()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

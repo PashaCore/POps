@@ -683,7 +683,7 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         online = pc in manager.active_agents
         await manager.send_command(msg, pc)
         applied = {k: msg[k] for k in msg if k != "action"}
-        await add_audit_log(pc, "set_capabilities", "Yetenek politikası gönderildi", applied)
+        await add_audit_log(pc, "set_capabilities", "Yetenek politikası gönderildi", {**applied, "by": auth.get("sub")})
         return {"ok": True, "delivered_online": online, **applied}
 
     # --- Yeniden-enroll izni (F2 kurtarma yolu: Deep Freeze / yeniden kurulum) --------

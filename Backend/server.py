@@ -35,6 +35,7 @@ from pops.config import (
 from pops.db import execute_query
 from pops.manager import manager
 from pops.routers import (
+    activity,
     agents,
     auth,
     control,
@@ -154,6 +155,7 @@ async def shutdown_event():
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
+    activity,
 )
 for _r in _ROUTERS:
     app.include_router(_r.router)
