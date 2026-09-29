@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.10-alpha] - 2026-09-29
+
+TLS is now part of the product, not a manual step: the installer sets up HTTPS itself (a school-internal certificate authority by default, which works without internet, or Let's Encrypt), and agents can be pinned to that CA so that no other certificate, public or planted, is accepted. The panel polls far less, and the tray's activity list shows full lines.
+
+Upgrading: update the server (**Sistem & Sürüm → Sunucuyu güncelle**; migration 0012), then send 0.1.10-alpha to the agents. Agents are **not** pinned unless you install them with `SERVER_CA_CERT`; a server with a Let's Encrypt certificate needs nothing else. See `docs/tls.md`.
+
 ### Added
 
 - **Server: TLS by default.** `install.sh` now installs nginx + PHP-FPM and sets up HTTPS itself: by default with a school-internal certificate authority created by the new `pops-tls` tool (works without internet; the server certificate is renewed by `pops-tls-renew.timer`), or with Let's Encrypt (`TLS_MODE=letsencrypt`), or an existing certificate (`TLS_MODE=existing`). The CA's public certificate is served at `https://<server>/pops-ca.pem` for agent installs (`SERVER_CA_CERT`) and browsers. `TLS_MODE=none` keeps the old backend-only install. Site template: `Installer/server/nginx.pops.conf.in`; runbook: `docs/tls.md`.
@@ -313,7 +319,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.9-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.10-alpha...HEAD
+[0.1.10-alpha]: https://github.com/PashaCore/POps/compare/v0.1.9-alpha...v0.1.10-alpha
 [0.1.9-alpha]: https://github.com/PashaCore/POps/compare/v0.1.8-alpha...v0.1.9-alpha
 [0.1.8-alpha]: https://github.com/PashaCore/POps/compare/v0.1.7-alpha...v0.1.8-alpha
 [0.1.7-alpha]: https://github.com/PashaCore/POps/compare/v0.1.6-alpha...v0.1.7-alpha
