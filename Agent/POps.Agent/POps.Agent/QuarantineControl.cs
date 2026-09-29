@@ -110,6 +110,8 @@ namespace POpsAgent
             bool alreadyIsolated = File.Exists(NetworkIsolation.StatePath);
             try { SecureStore.WriteProtected(LockPath, JsonSerializer.Serialize(new Dictionary<string, string> { ["reason"] = reason })); }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Kilit durumu yazılamadı ({LockPath}): {ex.Message}", true); }
+            // Ctrl+Alt+Del seçenekleri (Görev Yöneticisi, oturumu kapat, kullanıcı değiştir, ...) kilit sürerken kapalı
+            KioskMode.Engage();
             _toTray(LockdownMessage(reason));
             if (alreadyIsolated) return true;
             bool isolated = await _enableIsolation();
@@ -124,6 +126,7 @@ namespace POpsAgent
         {
             if (!IsLocked)
             {
+                KioskMode.Release();
                 _toTray(UnlockMessage("sync"));
                 return true;
             }
@@ -135,6 +138,7 @@ namespace POpsAgent
                 return false;
             }
             SecureStore.Delete(LockPath);
+            KioskMode.Release();
             DnsPolicyMonitor.ResetViolations();
             _toTray(UnlockMessage(source));
             return true;
@@ -143,6 +147,9 @@ namespace POpsAgent
         // Tepsi bağlandı: kilit durumunu tepsiyle eşitler
         public void SyncTray()
         {
+            // Sonradan oturum açan kullanıcının kovanı da kapsanır; kilit yoksa karantinada oturumu kapatmış
+            // kullanıcının bekleyen ayarları geri alınır
+            KioskMode.Sync(IsLocked);
             if (IsLocked) _toTray(LockdownMessage(LockReason));
             else _toTray(UnlockMessage("sync"));
         }

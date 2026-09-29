@@ -100,7 +100,7 @@ The tray menu has **Sorun bildir** (report a problem) and **Taleplerim** (my req
 
 Use this only when neither the panel's unlock nor the offline bypass code helps. For example: the server is gone for good, or PowerShell or Windows Firewall on the PC is broken, so the agent cannot remove its own rules (the panel then reports that the quarantine could not be lifted). You need a local administrator account.
 
-1. Press Ctrl+Alt+Del on the locked PC (the lock screen cannot block it), choose **Switch user** and sign in as a local administrator. The lock screen belongs to the student's session and does not appear in yours.
+1. From 0.1.11-alpha the quarantine also hides **Switch user**, **Sign out**, **Lock**, **Change a password** and **Task Manager** on the Ctrl+Alt+Del screen (see *Ctrl+Alt+Del during a quarantine* below). Start the PC in Safe Mode instead: press Ctrl+Alt+Del, click the power icon, hold **Shift** and choose **Restart**, then **Troubleshoot → Advanced options → Startup Settings → Restart → 4 (Safe Mode)**. Sign in as a local administrator. Neither the POps service nor the tray runs in Safe Mode. (Agents older than 0.1.11: Ctrl+Alt+Del → **Switch user** still works.)
 2. In an elevated command prompt, remove the firewall rules:
    ```
    netsh advfirewall firewall delete rule name="POps Isolation - Outbound"
@@ -113,8 +113,28 @@ Use this only when neither the panel's unlock nor the offline bypass code helps.
    del C:\POpsData\secure\lockdown.json
    del C:\POpsData\secure\isolation.json
    ```
-5. Restart the agent: `sc stop POpsAgent`, then `sc start POpsAgent`. When the tray reconnects, the service finds no lock and closes the lock screen, and the heartbeat reports `"quarantined": false`.
+   Do **not** delete `C:\POpsData\secure\kiosk-policies.json`: it holds the values the Ctrl+Alt+Del options had before the quarantine.
+5. Restart the PC normally. The service finds no lock, puts the Ctrl+Alt+Del options back from `kiosk-policies.json` (the machine settings at once, each user's own settings when that user signs in) and deletes the file; when the tray reconnects it closes the lock screen, and the heartbeat reports `"quarantined": false`. (Without a reboot: `sc stop POpsAgent`, then `sc start POpsAgent`.)
 6. If the panel still shows a pending lock for the device, lift it there as well; otherwise the server sends the lock again within 5 minutes.
+7. Only if the agent cannot run any more (for example it was removed while users who were signed in during the quarantine had signed out): remove the values by hand. Machine: `reg delete "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v <name> /f` for `HideFastUserSwitching` and `DisableTaskMgr`. Per user, signed in as that user: `reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v <name> /f` for `DisableTaskMgr`, `DisableLockWorkstation`, `DisableChangePassword`, and `reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" /v NoLogoff /f`. Check `kiosk-policies.json` first: an entry with `"HadValue": true` had its own value before (for example your GPO), put that `PreviousValue` back instead of deleting it.
+
+### Ctrl+Alt+Del during a quarantine
+
+Windows always handles Ctrl+Alt+Del itself; no program can block it. From 0.1.11-alpha the quarantine removes what that screen offers, so a student can no longer leave or kill the lock screen:
+
+| Option on the Ctrl+Alt+Del screen | Policy value (1 = hidden) | Where | Takes effect |
+| --- | --- | --- | --- |
+| Task Manager (also Ctrl+Shift+Esc and running `taskmgr`) | `DisableTaskMgr` | machine and every signed-in user | at once |
+| Switch user | `HideFastUserSwitching` | machine | at once |
+| Sign out | `NoLogoff` (`…\Policies\Explorer`) | every signed-in user | at that user's next sign-in |
+| Change a password | `DisableChangePassword` | every signed-in user | at that user's next sign-in |
+| Lock | `DisableLockWorkstation` | every signed-in user | at that user's next sign-in |
+
+- Measured on Windows 11: Task Manager and Switch user disappear at once from the machine values. Sign out, Change a password and Lock are user policies that Windows reads only when the user signs in (a `gpupdate` does not refresh them), and their machine copies have no effect. In the session that was already open when the lock started they therefore stay visible, but none of them ends the quarantine: after signing out and in again the student gets the lock screen back (and now without those options), and the network stays isolated throughout. A quarantine that survives a restart hides all five from the first sign-in.
+- The values go under `…\CurrentVersion\Policies\System` (except `NoLogoff`) in `HKLM` and in each signed-in user's hive (`HKU\<SID>`); a user who signs in during the quarantine is covered when their tray connects.
+- Before writing, the service records every previous value in `C:\POpsData\secure\kiosk-policies.json` (SYSTEM and Administrators only). When the lock ends (panel, bypass code, or at service start when there is no lock) it puts back only what it changed: a value that was already 1 (your own policy) stays 1, a value someone else changed during the quarantine is left alone, and a value that did not exist is deleted. Settings of a user who signed out during the quarantine are restored when they sign in again. Uninstalling the MSI restores them too.
+- A quarantine that survives a restart applies them again when the service starts.
+- The lock screen stays on top and takes the focus back within half a second after Ctrl+Shift+Esc, the Windows key, Alt+Tab or another window.
 
 ## Capability policy
 

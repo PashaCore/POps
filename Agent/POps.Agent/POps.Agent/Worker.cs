@@ -129,6 +129,8 @@ namespace POpsAgent
             AgentCredentials.Initialize();
             AgentCredentials.LoadSecret();
             AgentCapabilities.Load();
+            // Karantina yeniden başlatmadan sonra sürüyorsa Ctrl+Alt+Del seçenekleri yeniden kapatılır; sürmüyorsa kalıntı temizlenir
+            KioskMode.Sync(_quarantine.IsLocked);
             // Kurum sertifikası (server-ca.pem) varsa sunucu yalnızca onunla doğrulanır; kip loglanır
             ServerTrust.Reload();
 
