@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11-alpha] - 2026-09-29
+
+Closes the quarantine escape the owner found: during a quarantine Task Manager and "Switch user" are gone at once and the lock screen keeps the focus; Lock, Sign out and Change password are hidden from the next sign-in on. Everything is restored when the quarantine ends. The server also survives restart storms: 2000 agents reconnect in about 4 seconds.
+
+Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**; task queue fix), then send 0.1.11-alpha to the agents.
+
 ### Security
 
 - **Agent: Ctrl+Alt+Del no longer leads out of a quarantine.** Windows handles Ctrl+Alt+Del itself and no program can block it, and during a quarantine its screen let a student open Task Manager (and kill the tray, with it the lock screen), sign out, switch user, lock or change a password. While the lock lasts the service now hides these options with policy values. Task Manager (`DisableTaskMgr`, also blocking Ctrl+Shift+Esc and running `taskmgr`) and Switch user (`HideFastUserSwitching`) disappear at once. Sign out (`NoLogoff`), Change a password (`DisableChangePassword`) and Lock (`DisableLockWorkstation`) are written to every signed-in user's hive; Windows reads them only at sign-in (measured on Windows 11, `gpupdate` does not refresh them), so they are hidden from the next sign-in and after a restart, and in the already open session they stay visible without ending the lock. The previous values are recorded first in `C:\POpsData\secure\kiosk-policies.json` and put back when the lock ends: panel unlock, bypass code, service start without a lock, and MSI uninstall. Only what POps changed is undone: a value that was already set by the school stays, a value changed by someone else during the lock is left alone. A user who signed out during the lock gets their settings back at the next sign-in; a lock that survives a restart applies them again at service start. The logic is `POps.Shared.KioskPolicies`, shared by the agent and the MSI, with unit tests.
@@ -333,7 +339,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.10-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.11-alpha...HEAD
+[0.1.11-alpha]: https://github.com/PashaCore/POps/compare/v0.1.10-alpha...v0.1.11-alpha
 [0.1.10-alpha]: https://github.com/PashaCore/POps/compare/v0.1.9-alpha...v0.1.10-alpha
 [0.1.9-alpha]: https://github.com/PashaCore/POps/compare/v0.1.8-alpha...v0.1.9-alpha
 [0.1.8-alpha]: https://github.com/PashaCore/POps/compare/v0.1.7-alpha...v0.1.8-alpha
