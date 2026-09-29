@@ -23,6 +23,7 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 | `PERSIST_DIR`   | optional      | `appsettings.json` → `PersistDir` (see `Agent/README.md`, machines with freeze software) |
 | `TERMINAL_ENABLED` | optional   | `C:\POpsData\secure\capabilities.json`: `1` allows the panel's remote terminal (`execute`) on this PC, `0` disables it. See *Capability policy* in `Agent/README.md`. |
 | `VISION_ENABLED`   | optional   | same file: `1` / `0` for screen streaming, previews and remote input. |
+| `SERVER_CA_CERT` | optional      | path to the school CA's PEM (`pops-ca.pem`, served at `https://<server>/pops-ca.pem`) → `C:\POpsData\secure\server-ca.pem`. The agent then accepts the server certificate only if it chains to that CA. `system` removes the file (Windows trust store). Do **not** pass it for a Let's Encrypt or other public certificate. See [`docs/tls.md`](../docs/tls.md). |
 | `INSTALLFOLDER` | optional      | install folder, default `C:\Program Files\POps`. See *Install folder* below. |
 
 - Every property is optional on an upgrade: a value that is not given keeps the installed one. A first install without `SERVER_URL` (and without an old install to take it from) fails with a clear message in the log.
@@ -30,6 +31,7 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 - `ENROLL_TOKEN` and `BYPASS_SECRET` are hidden from the MSI log. A command line is still visible to other logged-on users while `msiexec` runs, so install from a deployment tool (GPO, Intune, the panel's remote command) or while no student is signed in.
 - An enrollment token enrolls up to `max_uses` devices (1–10000, chosen when it is created on the **Sistem & Sürüm** page; 1 by default) until it expires (1 hour to 30 days, 72 hours by default), so one token can enroll a whole lab. Each device still receives its own secret. A device that is already enrolled cannot take a new secret with a token unless a superadmin allows re-enrollment for it (`POST /api/system/allow-reenroll`).
 - `appsettings.json` and the secret files are written by a custom action, not installed as MSI files, so they survive upgrades. `appsettings.json` is readable only by SYSTEM and Administrators.
+- `SERVER_CA_CERT` must point to a CA certificate in PEM form. A file that is not a PEM certificate, or that is the server's own certificate rather than the CA that signed it, stops the install with a message saying so; nothing is written in that case. Only the first certificate block of the file is kept.
 
 ### Install folder
 

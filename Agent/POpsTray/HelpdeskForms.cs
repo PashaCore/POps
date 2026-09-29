@@ -160,14 +160,17 @@ internal sealed class ActivityForm : Form
         _send = send;
         Text = "POps - Etkinlik geçmişim";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(820, 480);
+        ClientSize = new Size(900, 480);
+        MinimumSize = new Size(640, 320);
         Font = new Font("Segoe UI", 9.5F);
         SetIntro(30);
 
         _list.Columns.Add("Tarih", 130);
-        _list.Columns.Add("İşlem", 230);
-        _list.Columns.Add("Yapan", 110);
+        _list.Columns.Add("İşlem", MinActionWidth);
+        _list.Columns.Add("Yapan", MinActorWidth);
         _list.Columns.Add("Ayrıntı", 320);
+        // İşlem ve Yapan içeriğe göre genişler, Ayrıntı kalan alanı doldurur; pencere boyutuyla birlikte uyar
+        _list.Resize += (_, _) => FitColumns();
 
         var refresh = new Button { Text = "Yenile", AutoSize = true };
         refresh.Click += (_, _) => Request();
@@ -202,12 +205,29 @@ internal sealed class ActivityForm : Form
         {
             foreach (JsonElement e in items.EnumerateArray())
             {
-                string detail = HelpdeskProtocol.Text(e, "detail");
-                var row = new ListViewItem(new[] { HelpdeskProtocol.Text(e, "at"), HelpdeskProtocol.Text(e, "title"), HelpdeskProtocol.Text(e, "actor"), detail });
-                row.ToolTipText = detail;
+                string title = HelpdeskProtocol.Text(e, "title"), actor = HelpdeskProtocol.Text(e, "actor"), detail = HelpdeskProtocol.Text(e, "detail");
+                var row = new ListViewItem(new[] { HelpdeskProtocol.Text(e, "at"), title, actor, detail });
+                // Satıra gelince tam metin: sütunda kesilse de işlem ve ayrıntı bütünüyle okunur
+                row.ToolTipText = actor.Length > 0 ? $"{title}\nYapan: {actor}\n{detail}".TrimEnd() : $"{title}\n{detail}".TrimEnd();
                 _list.Items.Add(row);
             }
         }
+        _list.EndUpdate();
+        FitColumns();
+    }
+
+    private const int MinActionWidth = 320, MinActorWidth = 110, MaxActorWidth = 220, MinDetailWidth = 160;
+
+    private void FitColumns()
+    {
+        if (_list.Columns.Count < 4 || _list.ClientSize.Width <= 0) return;
+        _list.BeginUpdate();
+        _list.AutoResizeColumn(1, ColumnHeaderAutoResizeStyle.ColumnContent);
+        _list.Columns[1].Width = Math.Max(MinActionWidth, _list.Columns[1].Width);
+        _list.AutoResizeColumn(2, ColumnHeaderAutoResizeStyle.ColumnContent);
+        _list.Columns[2].Width = Math.Min(MaxActorWidth, Math.Max(MinActorWidth, _list.Columns[2].Width));
+        int used = _list.Columns[0].Width + _list.Columns[1].Width + _list.Columns[2].Width;
+        _list.Columns[3].Width = Math.Max(MinDetailWidth, _list.ClientSize.Width - used - SystemInformation.VerticalScrollBarWidth - 4);
         _list.EndUpdate();
     }
 }

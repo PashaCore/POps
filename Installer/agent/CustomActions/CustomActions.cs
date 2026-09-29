@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
+using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -209,11 +210,15 @@ namespace POps.Installer
                     return "TERMINAL_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
                 if (!TryParseFlag(Prop("VISION_ENABLED"), out bool? vision))
                     return "VISION_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
+                // Bozuk sertifika hiçbir şey yazılmadan reddedilir
+                string caError = ReadServerCa(Prop("SERVER_CA_CERT"), out string caPem, out bool removeCa, out string caSubject);
+                if (caError != null) return caError;
 
                 EnsureDataDirectories(layout);
                 string folderError = ApplyInstallFolderPolicy(installDir, Prop("INSTALLDIR_STATE"), log);
                 if (folderError != null) return folderError;
                 WriteCapabilities(layout, terminal, vision, log);
+                WriteServerCa(layout, caPem, removeCa, caSubject, log);
                 WriteSecret(Path.Combine(layout.SecureDir, BypassSecretFile), Prop("BYPASS_SECRET"), Existing("BypassSecret"), "BypassSecret", log);
                 WriteSecret(Path.Combine(layout.SecureDir, EnrollTokenFile), enrollToken, Existing("EnrollToken"), "EnrollToken", log);
 
@@ -349,6 +354,51 @@ namespace POps.Installer
             };
             WriteProtected(path, ToJson(json, 0) + "\r\n");
             log($"POps: yetenekler yazıldı: terminal={(terminalEnabled ? "açık" : "kapalı")}, vision={(visionEnabled ? "açık" : "kapalı")}.");
+        }
+
+        // Kurum sertifikası (ajanda ServerTrust): SERVER_CA_CERT=<PEM yolu> dosyayı server-ca.pem olarak güvenli depoya
+        // yazar, "system" siler, verilmezse mevcut dosya korunur. Yalnızca ilk sertifika bloğu alınır; CA olmayan
+        // sertifika (BasicConstraints CA=false) reddedilir: ajan onunla zincir kuramaz ve hiçbir sunucuya bağlanamazdı.
+        internal const string ServerCaFile = "server-ca.pem";
+
+        private static string ReadServerCa(string value, out string pem, out bool remove, out string subject)
+        {
+            pem = null; remove = false; subject = null;
+            if (value == null) return null;
+            if (string.Equals(value, "system", StringComparison.OrdinalIgnoreCase)) { remove = true; return null; }
+            if (!File.Exists(value)) return $"SERVER_CA_CERT dosyası bulunamadı: {value}";
+            string text;
+            try { text = File.ReadAllText(value); }
+            catch (Exception ex) { return $"SERVER_CA_CERT dosyası okunamadı ({value}): {ex.Message}"; }
+            const string begin = "-----BEGIN CERTIFICATE-----", end = "-----END CERTIFICATE-----";
+            int start = text.IndexOf(begin, StringComparison.Ordinal);
+            int stop = start < 0 ? -1 : text.IndexOf(end, start, StringComparison.Ordinal);
+            if (stop < 0) return $"SERVER_CA_CERT geçerli bir PEM sertifikası değil ({value}): \"{begin}\" bloğu yok. Sunucudaki pops-ca.pem dosyasını verin (bkz. docs/tls.md).";
+            string body = text.Substring(start + begin.Length, stop - start - begin.Length);
+            X509Certificate2 cert;
+            try { cert = new X509Certificate2(Convert.FromBase64String(Regex.Replace(body, @"\s+", ""))); }
+            catch (Exception ex) { return $"SERVER_CA_CERT geçerli bir PEM sertifikası değil ({value}): {ex.Message}"; }
+            foreach (X509Extension ext in cert.Extensions)
+                if (ext is X509BasicConstraintsExtension bc && !bc.CertificateAuthority)
+                    return $"SERVER_CA_CERT bir CA sertifikası değil ({cert.Subject}); sunucunun sertifikasını değil, onu imzalayan kurum sertifikasını (pops-ca.pem) verin.";
+            subject = $"{cert.Subject}, parmak izi {cert.Thumbprint}";
+            pem = begin + "\r\n" + Regex.Replace(Convert.ToBase64String(cert.RawData), ".{64}", "$0\r\n").TrimEnd() + "\r\n" + end + "\r\n";
+            return null;
+        }
+
+        private static void WriteServerCa(Layout layout, string pem, bool remove, string subject, Action<string> log)
+        {
+            string path = Path.Combine(layout.SecureDir, ServerCaFile);
+            if (remove)
+            {
+                if (!File.Exists(path)) return;
+                File.Delete(path);
+                log("POps: kurum sertifikası kaldırıldı; sunucu sertifikası sistem güven deposuyla doğrulanacak.");
+                return;
+            }
+            if (pem == null) return;
+            WriteProtected(path, pem);
+            log($"POps: kurum sertifikası yazıldı ({subject}); sunucu sertifikası yalnızca onunla doğrulanacak.");
         }
 
         private static bool TryParseFlag(string value, out bool? flag)

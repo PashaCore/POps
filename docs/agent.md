@@ -109,6 +109,29 @@ a `[REDDEDİLDİ]` result and reported as `capability_denied`. Re-enabling needs
 reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; see
 [`Agent/README.md`](../Agent/README.md#capability-policy).
 
+## Server certificate
+
+The agent talks to the server only over TLS and verifies the server certificate on every connection: the
+command WebSocket, the HTTP endpoints, the Vision tunnel and the package download for updates all go through
+one check, `POps.Shared.ServerTrust`.
+
+- **Pinned to the school CA** (`server_ca = custom`): the MSI property `SERVER_CA_CERT=<path to pops-ca.pem>`
+  stores the CA as `C:\POpsData\secure\server-ca.pem` (SYSTEM and Administrators only). While that file exists a
+  server certificate is accepted **only** if it chains to that one root (custom root trust, no revocation check,
+  so it works on a network without internet) **and** its name matches the host in `ServerUrl`. Nothing in the
+  Windows trust store counts, so a certificate planted there, or a stolen public certificate, does not get a
+  connection.
+- **Windows trust store** (`server_ca = system`): no `server-ca.pem`. .NET's usual decision applies, as in every
+  version before 0.1.10: public CAs such as Let's Encrypt, and the school CA if it was distributed by GPO.
+- A `server-ca.pem` that cannot be read or is not a certificate fails closed: every connection is refused until
+  the file is fixed or removed (the MSI refuses such a file at install time, so this needs a hand-edited file).
+
+A refused certificate is logged as `[GÜVENLİK] Sunucu sertifikası kurum sertifikasına (server-ca.pem)
+zincirlenmiyor` (or `… ana makine adıyla eşleşmiyor`), at most once a minute; the connection is not made and the
+agent retries with its normal backoff. The `capabilities` message carries `server_ca` so the System page shows
+the mode of each device. `SERVER_CA_CERT=system` on an upgrade removes the pinned CA; not giving the property keeps
+the current file. How to set up the server side, distribute `pops-ca.pem` and rotate the CA: [`docs/tls.md`](tls.md).
+
 ## Quarantine and offline bypass
 
 `lockdown` (from **POpsVision** → "Karantinaya Al", or `POST /api/security/lockdown`):

@@ -88,11 +88,12 @@ namespace POpsAgent
             return (disabled, ignored);
         }
 
-        // Sunucuya bildirilen durum ({"type":"capabilities", ...})
+        // Sunucuya bildirilen durum ({"type":"capabilities", ...}); server_ca: sunucu sertifikası kurum sertifikasıyla
+        // ("custom", server-ca.pem) mı, sistem deposuyla ("system") mı doğrulanıyor (bkz. ServerTrust)
         public static Dictionary<string, object> StatusMessage()
         {
             lock (Gate)
-                return new Dictionary<string, object> { ["type"] = "capabilities", [Terminal] = State[Terminal], [Vision] = State[Vision] };
+                return new Dictionary<string, object> { ["type"] = "capabilities", [Terminal] = State[Terminal], [Vision] = State[Vision], ["server_ca"] = ServerTrust.Mode };
         }
 
         public static string Describe()
