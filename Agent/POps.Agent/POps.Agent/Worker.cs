@@ -164,6 +164,8 @@ namespace POpsAgent
             _ = Task.Run(() => sessions.RunAsync(stoppingToken));
             _ = Task.Run(() => _helpdesk.PollLoopAsync(stoppingToken, () => _trayPipe?.IsConnected == true));
 
+            // Son sağlam bağlantıdan beri art arda başarısız bağlantı sayısı (bkz. ReconnectBackoff)
+            int reconnectAttempt = 0;
             while (!stoppingToken.IsCancellationRequested)
             {
                 string commandWsUrl = $"{baseWsUrl}/ws/agent/{_hwId}";
@@ -194,6 +196,9 @@ namespace POpsAgent
                         }
                         await ReportUpdateResultAsync(stoppingToken);
                         await Task.Delay(5000, stoppingToken);
+                        // İlk mesajlar gitti ve sunucu bağlantıyı bir heartbeat aralığı boyunca açık tuttu (kimliği
+                        // reddetseydi ilk mesajı okuyunca 4401 ile kapatırdı): bağlantı sağlam, geri çekilme sıfırlanır
+                        if (_commandWs.State == WebSocketState.Open) reconnectAttempt = 0;
                     }
                 }
                 catch (Exception ex)
@@ -201,14 +206,19 @@ namespace POpsAgent
                     POpsHelpers.Log("AGENT", $"[!] Santralle bağlantı koptu: {ex.Message}", true);
                 }
 
-                // Reddedilen her bağlantı sunucuda denetim kaydı açar; 5 sn'de bir yeniden denenmez
+                // Sabit aralık yerine üstel geri çekilme + full jitter: sunucu yeniden başlayınca ajanlar aynı anda gelmez.
+                // Reddedilen her bağlantı sunucuda denetim kaydı açar; kimlik reddinde en az 60 sn beklenir.
                 bool authRejected = _commandWs.CloseStatus == AuthRejectedCloseStatus;
+                TimeSpan wait = ReconnectBackoff.Delay(reconnectAttempt, authRejected, Random.Shared);
+                reconnectAttempt = ReconnectBackoff.NextAttempt(reconnectAttempt);
                 if (authRejected)
-                    POpsHelpers.Log("AGENT", "[GÜVENLİK] Sunucu ajan kimliğini reddetti (4401): geçerli bir enroll jetonu gerekiyor. 60 sn sonra yeniden denenecek.", true);
+                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] Sunucu ajan kimliğini reddetti (4401): geçerli bir enroll jetonu gerekiyor. {wait.TotalSeconds:0} sn sonra yeniden denenecek.", true);
+                else
+                    POpsHelpers.Log("AGENT", $"Sunucuya {wait.TotalSeconds:0.0} sn sonra yeniden bağlanılacak.");
 
                 _trayPipe?.Stop();
                 await DisconnectVisionTunnelAsync();
-                await Task.Delay(authRejected ? 60000 : 5000, stoppingToken);
+                await Task.Delay(wait, stoppingToken);
             }
         }
 
