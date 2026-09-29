@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Backend:** The agent update dispatch audit entry records who sent it, so "Etkinlik geçmişim" shows it under "Yapan".
+
 ## [0.1.9-alpha] - 2026-09-29
 
 Transparency for the person at the PC: the tray lists what IT administrators did on this computer in the last 30 days.

@@ -595,7 +595,8 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             await manager.send_command(msg, pc)
             manager.pending_updates[pc] = (version, time.time())
         await add_audit_log("*", "deploy_update", "İmzalı güncelleme dağıtıldı: %s" % version,
-                            {"version": version, "msi": msi_name, "dispatched": online, "offline": offline})
+                            {"version": version, "msi": msi_name, "dispatched": online, "offline": offline,
+                             "by": auth.get("sub")})
         return {"ok": True, "version": version, "msi": msi_name,
                 "dispatched": online, "skipped_offline": offline}
 
