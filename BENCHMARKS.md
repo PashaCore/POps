@@ -4,6 +4,38 @@ Measured numbers instead of a "thousands of devices" claim. Reproduce with
 [`tools/agent_simulator.py`](tools/agent_simulator.py) on your own hardware; these are a
 first honest baseline, not a marketing figure.
 
+## Update 2026-09-29: restart storm with real reconnect behaviour, and the bottleneck it found
+
+Scenario: the server restarts and every agent reconnects at the same moment (`--ramp 0`), using the agent's
+real reconnect logic from 0.1.8 (`--reconnect`: full-jitter backoff, random 0 – min(60 s, 2 s × 2^n)). Devices
+already known to the server (a warm-up run registered 2000 first). One uvicorn worker, database pool 20,
+PostgreSQL 13 shared with other sites, 8 vCPU / 11.7 GB, simulator on the same host. Heartbeat every 5 s,
+20 s measurement window after everyone connected.
+
+| Agents | All connected after | Failed attempts | Heartbeat writes/s | Server CPU (one core) before → after fix | Server RSS |
+|---:|---:|---:|---:|---:|---:|
+| 500  | 0.9 s | 0 | 90  | 1 % → 2 %      | 149 MB |
+| 1000 | 1.9 s | 0 | 200 | **83 % → 5 %** | 228 MB |
+| 2000 | 4.0 s | 0 | 371 | **84 % → 11 %** | 385 MB |
+
+**What the first run found.** Every agent connection called the task queue, and the queue ran one database query
+**per online device** each time. With N agents arriving together that is about N²/2 queries (≈ 2 million for
+2000): the server stayed busy for minutes after the storm, and even after all clients had left, and a restart hung
+in shutdown. This, not the single worker or the connection count, is what made the earlier 500-agent burst drop
+connections. The queue now returns after one cheap query when nothing is pending, fetches the oldest pending task
+of every idle online device in a single query, and coalesces concurrent calls into one extra pass
+(`Backend/pops/taskqueue.py`).
+
+**What it means.** On one worker, 2000 agents come back within about 4 seconds of a restart with no failed
+attempt, and steady state costs about a tenth of one core. The single process is not the limit at district scale;
+the remaining costs are one database write per heartbeat (batching `last_seen` would cut it ~6–12×) and the
+identity reconciliation on every connect. Multiple workers with shared state (Redis) are about availability
+(surviving a process crash), not capacity, and are not needed for these numbers. Not measured here: Vision frame
+relay (limited to 5 fps per device and to open audit sessions), and agents on a real network with latency.
+
+Reproduce: `python tools/agent_simulator.py --n 2000 --url ws://127.0.0.1:8099 --ramp 0 --reconnect --duration 20
+--hb 5 --server-pid <uvicorn pid>` after one warm-up run (`ulimit -n 65536` for both processes).
+
 ## Method
 
 `tools/agent_simulator.py` opens N WebSocket connections to `/ws/agent`, each sending a

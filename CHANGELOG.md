@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Backend: connection storms.** Every agent connection ran the task queue, which queried the database once per online device: after a server restart N agents meant about N²/2 queries (≈ 2 million for 2000) and the server stayed busy for minutes. The queue now exits after one query when nothing is pending, fetches the oldest pending task of every idle online device in one query, and coalesces concurrent calls. Measured restart storm on one worker: 2000 agents back in 4 s with no failed attempt; CPU during steady state 84 % → 11 % of one core (`BENCHMARKS.md`).
+
+### Added
+
+- **Tools:** `agent_simulator.py --reconnect` reconnects like the real agent (full-jitter backoff), to measure how fast agents come back after a server restart.
+
 ## [0.1.10-alpha] - 2026-09-29
 
 TLS is now part of the product, not a manual step: the installer sets up HTTPS itself (a school-internal certificate authority by default, which works without internet, or Let's Encrypt), and agents can be pinned to that CA so that no other certificate, public or planted, is accepted. The panel polls far less, and the tray's activity list shows full lines.

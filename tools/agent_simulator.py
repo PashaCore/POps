@@ -9,6 +9,9 @@ Her sahte ajan gerçek ajan gibi /ws/agent'a bağlanır, dna_payload gönderir v
   --patches        Windows Update durumu gönderir (--patch-every ile tekrar)
   --panels K       K panel WebSocket'i açar (--jwt ile) ve yayın (broadcast) yükünü sayar
   --server-pid P   ölçüm penceresinde sunucu sürecinin CPU ve bellek kullanımını /proc'tan okur (Linux)
+  --reconnect      bağlantı düşerse ya da kurulamazsa gerçek ajan (0.1.8+) gibi yeniden dener: bekleme =
+                   rastgele(0, min(60 sn, 2 sn × 2^deneme)), sağlam bağlantıda sayaç sıfırlanır. "Sunucu yeniden
+                   başladı, herkes aynı anda geliyor" senaryosu için --ramp 0 ile kullanın; toparlanma süresi ölçülür.
 
 Ölçülenler: bağlanan ajan, heartbeat/sn, HTTP istek/sn ve gecikme yüzdelikleri (p50/p95/p99), hatalar,
 panellere düşen mesaj/sn, sunucu CPU/RSS. Vision kare akışı simüle edilmez (açık denetim oturumu ve tepsi
@@ -25,6 +28,7 @@ import argparse
 import asyncio
 import json
 import os
+import random
 import statistics
 import time
 import urllib.error
@@ -94,7 +98,24 @@ async def http_post(stats, name, url, body, headers):
     s["lat"].append(dt)
 
 
+def backoff(attempt):
+    # POps.Shared.ReconnectBackoff ile aynı: full jitter, tavan 60 sn
+    return random.random() * min(60.0, 2.0 * (2 ** min(attempt, 5)))
+
+
 async def agent(i, args, stop_at, stats):
+    attempt = 0
+    while True:
+        ok = await agent_once(i, args, stop_at, stats)
+        if not args.reconnect or time.monotonic() >= stop_at:
+            return
+        attempt = 0 if ok else attempt + 1
+        stats["retries"] += 1
+        await asyncio.sleep(backoff(attempt))
+
+
+async def agent_once(i, args, stop_at, stats):
+    """Bir bağlantı ömrü. Dönen: bağlantı sağlam kuruldu mu (en az bir heartbeat gitti)."""
     base = args.url.rstrip("/")
     http_base = base.replace("wss://", "https://").replace("ws://", "http://")
     uri = base + "/ws/agent/" + hwid(i)
@@ -109,7 +130,11 @@ async def agent(i, args, stop_at, stats):
             conn = websockets.connect(uri, open_timeout=30, close_timeout=5, max_queue=8, extra_headers=headers)
         async with conn as ws:
             await ws.send(dna(i))
-            stats["connected"] += 1
+            if i not in stats["ever"]:
+                stats["ever"].add(i)
+                stats["connected"] += 1
+                if stats["connected"] == args.n:
+                    stats["all_at"] = time.monotonic()
             next_sw = time.monotonic() + (i % 10) if args.software else float("inf")
             next_patch = time.monotonic() + 5 + (i % 10) if args.patches else float("inf")
             while time.monotonic() < stop_at:
@@ -137,10 +162,12 @@ async def agent(i, args, stop_at, stats):
                     await http_post(stats, "patches", "%s/api/patches/%s" % (http_base, hwid(i)), patch_payload(i), auth)
                     next_patch = now + args.patch_every if args.patch_every else float("inf")
                 await asyncio.sleep(args.hb)
+        return True
     except Exception as e:
         stats["errors"] += 1
         if stats["errors"] <= 3:
             stats["last_error"] = repr(e)
+        return False
 
 
 async def panel(k, args, stop_at, stats):
@@ -199,6 +226,7 @@ async def main():
     p.add_argument("--panels", type=int, default=0)
     p.add_argument("--jwt", default=os.environ.get("POPS_SIM_JWT"))
     p.add_argument("--server-pid", type=int, default=None)
+    p.add_argument("--reconnect", action="store_true", help="düşen/kurulamayan bağlantıyı ajan gibi yeniden dene")
     args = p.parse_args()
     if (args.software or args.patches) and not args.enroll_token:
         p.error("--software/--patches için --enroll-token gerekir (bu uçlar yalnız anahtarlı ajanı kabul eder)")
@@ -206,7 +234,7 @@ async def main():
         p.error("--panels için --jwt (ya da POPS_SIM_JWT) gerekir")
 
     stats = {"connected": 0, "enrolled": 0, "heartbeats": 0, "errors": 0, "last_error": None, "http": {},
-             "panels": 0, "panel_msgs": 0, "panel_errors": 0}
+             "panels": 0, "panel_msgs": 0, "panel_errors": 0, "ever": set(), "retries": 0, "all_at": None}
     t0 = time.monotonic()
     stop_at = t0 + 15 + args.duration + args.n * args.ramp
     tasks = [asyncio.ensure_future(panel(k, args, stop_at, stats)) for k in range(args.panels)]
@@ -215,13 +243,16 @@ async def main():
         if args.ramp:
             await asyncio.sleep(args.ramp)
     connect_done = time.monotonic()
-    for _ in range(75):
-        if stats["connected"] + stats["errors"] >= args.n:
+    for _ in range(300 if args.reconnect else 75):
+        if stats["connected"] >= args.n or (not args.reconnect and stats["connected"] + stats["errors"] >= args.n):
             break
         await asyncio.sleep(0.2)
     print("connected=%d/%d  connect_wall=%.1fs  enrolled=%d  errors=%d  panels=%d  %s"
           % (stats["connected"], args.n, connect_done - t0, stats["enrolled"], stats["errors"], stats["panels"],
              stats["last_error"] or ""))
+    if args.reconnect:
+        print("reconnect: all_connected_after=%s  failed_attempts=%d  retries=%d"
+              % ("%.1fs" % (stats["all_at"] - t0) if stats["all_at"] else "henüz değil", stats["errors"], stats["retries"]))
 
     # Isınma: ilk yazılım/yama gönderimleri bağlanmayla çakışmasın diye pencereden önce kısa bekle
     await asyncio.sleep(min(10.0, args.hb * 2))
@@ -234,7 +265,7 @@ async def main():
     s1 = proc_sample(args.server_pid) if args.server_pid else None
     w = args.duration
     print("sustained=%d  heartbeat_writes_per_sec=%.0f  panel_msgs_per_sec=%.0f  (window=%ds, hb=%.1fs)"
-          % (stats["connected"] - stats["errors"], (stats["heartbeats"] - hb0) / w,
+          % (stats["connected"] - (0 if args.reconnect else stats["errors"]), (stats["heartbeats"] - hb0) / w,
              (stats["panel_msgs"] - msgs0) / w, w, args.hb))
     for name, v in sorted(stats["http"].items()):
         total = v["ok"] + v["err"]
