@@ -146,6 +146,72 @@ internal sealed class ReportProblemForm : Form
     }
 }
 
+// "Etkinlik geçmişim": BT yöneticilerinin bu bilgisayarda yaptığı işlemler. Servis sunucudan alır (ACTIVITY_LIST);
+// başlık ve açıklama sunucuda Türkçe hazırlanır, tepsi olduğu gibi gösterir.
+internal sealed class ActivityForm : Form
+{
+    private readonly Action<string> _send;
+    private readonly Label _intro = new Label { AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(12, 10, 12, 8) };
+    private readonly ListView _list = new ListView { View = View.Details, FullRowSelect = true, Dock = DockStyle.Fill, HeaderStyle = ColumnHeaderStyle.Nonclickable, ShowItemToolTips = true };
+    private readonly Label _status = new Label { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(3, 8, 3, 3) };
+
+    public ActivityForm(Action<string> send)
+    {
+        _send = send;
+        Text = "POps - Etkinlik geçmişim";
+        StartPosition = FormStartPosition.CenterScreen;
+        ClientSize = new Size(820, 480);
+        Font = new Font("Segoe UI", 9.5F);
+        SetIntro(30);
+
+        _list.Columns.Add("Tarih", 130);
+        _list.Columns.Add("İşlem", 230);
+        _list.Columns.Add("Yapan", 110);
+        _list.Columns.Add("Ayrıntı", 320);
+
+        var refresh = new Button { Text = "Yenile", AutoSize = true };
+        refresh.Click += (_, _) => Request();
+        var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(8) };
+        bottom.Controls.Add(refresh);
+        bottom.Controls.Add(_status);
+        Controls.Add(_list);
+        Controls.Add(_intro);
+        Controls.Add(bottom);
+        Shown += (_, _) => Request();
+    }
+
+    private void SetIntro(int days) => _intro.Text = $"Bu bilgisayarda BT yöneticilerinin yaptığı işlemler (son {days} gün)";
+
+    public void Request()
+    {
+        _status.Text = "Etkinlik geçmişi alınıyor…";
+        _send("ACTIVITY_LIST");
+    }
+
+    // Servisin yanıtı (ACTIVITY_LIST_RESULT)
+    public void ShowActivity(JsonElement result)
+    {
+        _status.Text = HelpdeskProtocol.Text(result, "message");
+        // Çok sık istendi ya da sunucu yanıt veremedi: ekrandaki liste korunur, yalnızca not değişir
+        bool ok = result.TryGetProperty("ok", out var o) && o.ValueKind == JsonValueKind.True;
+        if (!ok) return;
+        if (result.TryGetProperty("days", out var d) && d.TryGetInt32(out int days) && days > 0) SetIntro(days);
+        _list.BeginUpdate();
+        _list.Items.Clear();
+        if (result.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement e in items.EnumerateArray())
+            {
+                string detail = HelpdeskProtocol.Text(e, "detail");
+                var row = new ListViewItem(new[] { HelpdeskProtocol.Text(e, "at"), HelpdeskProtocol.Text(e, "title"), HelpdeskProtocol.Text(e, "actor"), detail });
+                row.ToolTipText = detail;
+                _list.Items.Add(row);
+            }
+        }
+        _list.EndUpdate();
+    }
+}
+
 internal sealed class MyTicketsForm : Form
 {
     private readonly Action<string> _send;

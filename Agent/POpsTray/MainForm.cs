@@ -30,6 +30,7 @@ namespace POpsTray
         // Yardım masası pencereleri (tek kopya) ve son balonun bir talep yanıtı olup olmadığı
         private ReportProblemForm? _reportForm;
         private MyTicketsForm? _ticketsForm;
+        private ActivityForm? _activityForm;
         private bool _lastBalloonIsTicket;
 
         // UIPI gerektirmeyen, doğrudan User Session'da çalışan API'ler
@@ -74,6 +75,7 @@ namespace POpsTray
             trayMenu = new ContextMenuStrip();
             trayMenu.Items.Add(new ToolStripMenuItem("Sorun bildir", null, (_, _) => OpenReportForm()));
             trayMenu.Items.Add(new ToolStripMenuItem("Taleplerim", null, (_, _) => OpenTicketsForm()));
+            trayMenu.Items.Add(new ToolStripMenuItem("Etkinlik geçmişim", null, (_, _) => OpenActivityForm()));
             trayMenu.Items.Add("-");
             trayMenu.Items.Add(new ToolStripMenuItem("Hakkında", null, OnAboutClicked));
             trayMenu.Items.Add("-");
@@ -205,7 +207,7 @@ namespace POpsTray
                     return;
                 }
                 if (jsonMsg == "BYPASS_SUCCESS") return;
-                if (jsonMsg.StartsWith("TICKET_RESULT:") || jsonMsg.StartsWith("TICKET_LIST_RESULT:") || jsonMsg.StartsWith("TICKET_NOTIFY:"))
+                if (jsonMsg.StartsWith("TICKET_RESULT:") || jsonMsg.StartsWith("TICKET_LIST_RESULT:") || jsonMsg.StartsWith("TICKET_NOTIFY:") || jsonMsg.StartsWith("ACTIVITY_LIST_RESULT:"))
                 {
                     HandleHelpdeskMessage(jsonMsg);
                     return;
@@ -616,7 +618,15 @@ namespace POpsTray
             _ticketsForm.Activate();
         }
 
-        // TICKET_RESULT / TICKET_LIST_RESULT / TICKET_NOTIFY:<base64 JSON>
+        private void OpenActivityForm()
+        {
+            if (_activityForm == null || _activityForm.IsDisposed) _activityForm = new ActivityForm(SendToService);
+            else _activityForm.Request();
+            _activityForm.Show();
+            _activityForm.Activate();
+        }
+
+        // TICKET_RESULT / TICKET_LIST_RESULT / TICKET_NOTIFY / ACTIVITY_LIST_RESULT:<base64 JSON>
         private void HandleHelpdeskMessage(string message)
         {
             int colon = message.IndexOf(':');
@@ -633,6 +643,10 @@ namespace POpsTray
                 else if (kind == "TICKET_LIST_RESULT")
                 {
                     if (_ticketsForm != null && !_ticketsForm.IsDisposed) _ticketsForm.ShowTickets(root);
+                }
+                else if (kind == "ACTIVITY_LIST_RESULT")
+                {
+                    if (_activityForm != null && !_activityForm.IsDisposed) _activityForm.ShowActivity(root);
                 }
                 else
                 {

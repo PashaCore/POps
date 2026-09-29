@@ -81,6 +81,8 @@ namespace POpsAgent
         private readonly PatchManager _patches;
         // Yardım masası: tepsinin "Sorun bildir" / "Taleplerim" istekleri (bkz. Helpdesk)
         private readonly Helpdesk _helpdesk;
+        // "Etkinlik geçmişim": yöneticilerin bu cihazda yaptığı işlemler (bkz. ActivityHistory)
+        private readonly ActivityHistory _activity;
         // Ön plandaki uygulamanın süreç adı (tepsiden, yalnızca ad; bkz. ActiveApp). Bilinmiyorsa null.
         private volatile string _activeApp;
 
@@ -112,6 +114,7 @@ namespace POpsAgent
             _patches = new PatchManager(_serverUrl, () => _hwId);
             // Talebin sahibi konsoldaki değil, isteği yapan tepsinin oturumundaki kullanıcı (hızlı kullanıcı değiştirme, RDP)
             _helpdesk = new Helpdesk(_serverUrl, () => _hwId, () => _trayPipe?.ClientUser, message => _trayPipe?.SendCommandToDesktop(message));
+            _activity = new ActivityHistory(_serverUrl, () => _hwId, message => _trayPipe?.SendCommandToDesktop(message));
         }
 
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
@@ -383,6 +386,10 @@ namespace POpsAgent
                 else if (message == "TICKET_LIST")
                 {
                     _ = _helpdesk.ListAsync();
+                }
+                else if (message == "ACTIVITY_LIST")
+                {
+                    _ = _activity.ListAsync();
                 }
             };
 
