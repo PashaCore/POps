@@ -296,7 +296,7 @@ const App = {
         this.syncData();
         this.setupSearch();
         this.setupInputLayer();
-        setInterval(() => { this.syncData(); }, 5000);
+        popsPoll(() => this.syncData(), 5000);
         
         window.addEventListener('beforeunload', () => {
             if (this.isStreamActive && this.currentPc) {

@@ -1124,10 +1124,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     fetchCoreData();
     fetchAgentLogs();
-    // Polling 1sn -> 5sn (cihaz sayisi arttikca her saniye cekilen payload buyuyordu) ve
-    // sekme arka plandayken durur; sekmeye donunce hemen bir kez tazeler.
-    setInterval(() => { if (document.hidden) return; fetchCoreData(); fetchAgentLogs(); }, 5000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) { fetchCoreData(); fetchAgentLogs(); } });
+    // 5 sn'de bir; arka planda durur, boşta yavaşlar (bkz. header.php popsPoll)
+    popsPoll(() => Promise.all([fetchCoreData(), fetchAgentLogs()]), 5000);
 });
 </script>
 

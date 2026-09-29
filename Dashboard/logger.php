@@ -378,7 +378,7 @@ async function wakeAllDevicesMistic() {
 
 document.addEventListener('DOMContentLoaded', () => {
     fetchLoggerData();
-    setInterval(fetchLoggerData, 3000);
+    popsPoll(fetchLoggerData, 5000);
 });
 </script>
 

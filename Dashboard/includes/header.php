@@ -47,6 +47,30 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
     <link rel="icon" type="image/png" href="assets/favicon/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon/favicon.svg" />
     <script>window.USER_ROLE = <?php echo json_encode($_SESSION['role'] ?? 'admin', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
+    <script>
+    // Sayfa yoklama yardımcısı (bütün sayfalar): sekme arka plandayken sunucuya hiç istek atılmaz, sekmeye
+    // dönünce hemen bir kez tazelenir; 5 dk boyunca fare/klavye yoksa aralık 4 katına çıkar (açık unutulan
+    // sekmeler sunucuyu dövmesin); istek hata verirse aralık 60 sn'ye kadar ikiye katlanır, başarıda normale döner.
+    window.popsPoll = function (fn, intervalMs) {
+        let lastInput = Date.now(), timer = null, failures = 0;
+        ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(ev =>
+            document.addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true }));
+        const delay = () => {
+            const idle = Date.now() - lastInput > 5 * 60 * 1000;
+            return Math.min(60000, intervalMs * (idle ? 4 : 1) * Math.pow(2, failures));
+        };
+        const tick = async () => {
+            timer = null;
+            if (!document.hidden) {
+                try { await fn(); failures = 0; } catch (e) { failures = Math.min(failures + 1, 4); }
+            }
+            timer = setTimeout(tick, delay());
+        };
+        document.addEventListener('visibilitychange', () => { if (!document.hidden && timer) { clearTimeout(timer); tick(); } });
+        timer = setTimeout(tick, delay());
+        return { now: () => { if (timer) clearTimeout(timer); tick(); } };
+    };
+    </script>
     <link rel="shortcut icon" href="assets/favicon/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon/apple-touch-icon.png" />
     <link rel="manifest" href="assets/favicon/site.webmanifest" />

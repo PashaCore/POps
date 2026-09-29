@@ -188,6 +188,6 @@
     });
     let qt; $('q').addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(load, 300); });
     load();
-    setInterval(load, 30000);
+    popsPoll(load, 30000);
 })();
 </script>

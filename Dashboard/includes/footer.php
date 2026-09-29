@@ -82,7 +82,7 @@
                 load();
             });
             load();
-            setInterval(load, 60000);
+            popsPoll(load, 60000);
         })();
 
         // ESC ile modal kapat

@@ -524,14 +524,14 @@ function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&':
     });
     syncForm();
     loadList();
-    setInterval(loadList, 30000);
+    popsPoll(loadList, 30000);
 })();
 
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof window.showToast !== 'function') window.showToast = function(msg) { console.log(msg); };
     window.fetchAndRenderTasks();
     window.fetchAgentLogs();
-    setInterval(() => { window.fetchAndRenderTasks(); window.fetchAgentLogs(); }, 3000);
+    popsPoll(() => Promise.all([window.fetchAndRenderTasks(), window.fetchAgentLogs()]), 5000);
 });
 </script>
 

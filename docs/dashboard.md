@@ -51,7 +51,7 @@ every minute and has **Tümünü okundu say** (mark all as read). Which events c
 "Sistem Özeti": device totals and online count, active tasks, backend reachability, quick links (hidden for
 viewers), recent administrator operations, recent log signals, agent version distribution, task queue and
 recently seen devices, a live chart of connected PCs, log volume for the last 7 days, devices per lab, disk use
-of uploaded files and update packages, and the latest packages and scripts. Refreshes every 5 seconds while the tab is visible.
+of uploaded files and update packages, and the latest packages and scripts. Refreshes every 5 seconds while the tab is visible; nothing is requested while the tab is in the background, the interval grows four-fold after five minutes without keyboard or mouse input, and it backs off (up to 60 s) while requests fail. Every page that polls uses the same helper (`popsPoll` in `includes/header.php`).
 
 ### Cihaz Yönetimi
 
