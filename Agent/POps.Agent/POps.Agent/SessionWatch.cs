@@ -67,13 +67,20 @@ namespace POpsAgent
         private readonly string _serverUrl;
         private readonly Func<string> _hwId;
         private readonly string _hostname;
+        private readonly Action<string> _error;
 
-        public SessionReporter(string serverUrl, Func<string> hwId, string hostname)
+        public SessionReporter(string serverUrl, Func<string> hwId, string hostname, Action<string> error = null)
         {
             _serverUrl = serverUrl;
             _hwId = hwId;
             _hostname = hostname;
+            _error = error ?? (_ => { });
+            Poster = (action, id, body) => AgentHttp.PostJsonAsync(_serverUrl, "/api/auth/" + action, id, body,
+                action == "login" ? "Oturum açma bildirimi" : "Oturum kapama bildirimi");
         }
+
+        // Ağ sınırı testlerde sahtesiyle değiştirilir.
+        internal Func<string, string, AuthEventPayload, Task<bool>> Poster { get; set; }
 
         // Konsoldaki kullanıcı değişti (null: kimse yok)
         public event Action<string> UserChanged = delegate { };
@@ -101,19 +108,23 @@ namespace POpsAgent
                         retryAfterUtc = delivered ? DateTime.MinValue : DateTime.UtcNow + RetryDelay;
                     }
                 }
-                catch (Exception ex) { POpsHelpers.Log("AGENT", $"Oturum durumu okunamadı: {ex.Message}", true); }
+                catch (Exception ex)
+                {
+                    _error(ex.Message);
+                    POpsHelpers.Log("AGENT", $"Oturum durumu okunamadı: {ex.Message}", true);
+                }
                 await Task.Delay(PollInterval, token);
             }
         }
 
         // Dönen: son bildirilen durum ve bütün olaylar gönderildi mi
-        private async Task<(SessionSnapshot, bool)> ReportChangesAsync(SessionSnapshot reported, SessionSnapshot current)
+        internal async Task<(SessionSnapshot, bool)> ReportChangesAsync(SessionSnapshot reported, SessionSnapshot current)
         {
             foreach (var (action, user) in SessionEvents.Diff(reported, current))
             {
                 string hwId = _hwId();
                 var body = new AuthEventPayload { HwId = hwId, Hostname = _hostname, StudentId = user };
-                if (!await AgentHttp.PostJsonAsync(_serverUrl, "/api/auth/" + action, hwId, body, action == "login" ? "Oturum açma bildirimi" : "Oturum kapama bildirimi"))
+                if (!await Poster(action, hwId, body))
                     return (reported, false);
                 reported = action == "logout" ? SessionSnapshot.Nobody(current.BootUtc) : current;
                 Save(reported);

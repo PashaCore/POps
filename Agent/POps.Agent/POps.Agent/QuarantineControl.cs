@@ -21,13 +21,16 @@ namespace POpsAgent
         private readonly Func<Task<bool>> _enableIsolation;
         private readonly Func<Task<bool>> _disableIsolation;
         private readonly OfflineBypass _bypass;
+        private readonly Action<LocalAuditEvent> _audit;
 
-        public QuarantineControl(Action<string> toTray, Func<Task<bool>> enableIsolation, Func<Task<bool>> disableIsolation, OfflineBypass bypass = null)
+        public QuarantineControl(Action<string> toTray, Func<Task<bool>> enableIsolation, Func<Task<bool>> disableIsolation,
+            OfflineBypass bypass = null, Action<LocalAuditEvent> audit = null)
         {
             _toTray = toTray;
             _enableIsolation = enableIsolation;
             _disableIsolation = disableIsolation;
             _bypass = bypass ?? new OfflineBypass(statePath: SecureStore.PathOf(OfflineBypass.StateFileName));
+            _audit = audit ?? (_ => { });
         }
 
         public OfflineBypass Bypass => _bypass;
@@ -103,16 +106,18 @@ namespace POpsAgent
         // İdempotent: sunucu bekleyen kilidi heartbeat'teki "quarantined" doğrulanana kadar yeniden gönderir. Zaten
         // yalıtılmışsa kurallar yeniden kurulmaz (PowerShell yok, kurallar bir an bile kalkmaz); yalnızca neden
         // güncellenir ve tepsi eşitlenir (açık kilit ekranı yinelenmez).
-        public async Task<bool> LockdownAsync(string reason)
+        public async Task<bool> LockdownAsync(string reason, string source = "panel")
         {
             // Sunucunun yeniden gönderdiği kilit nedensiz olabilir: kayıtlı neden korunur
             reason = !string.IsNullOrWhiteSpace(reason) ? reason.Trim() : IsLocked ? LockReason : DefaultReason;
+            bool wasLocked = IsLocked;
             bool alreadyIsolated = File.Exists(NetworkIsolation.StatePath);
             try { SecureStore.WriteProtected(LockPath, JsonSerializer.Serialize(new Dictionary<string, string> { ["reason"] = reason })); }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Kilit durumu yazılamadı ({LockPath}): {ex.Message}", true); }
             // Ctrl+Alt+Del seçenekleri (Görev Yöneticisi, oturumu kapat, kullanıcı değiştir, ...) kilit sürerken kapalı
             KioskMode.Engage();
             _toTray(LockdownMessage(reason));
+            if (!wasLocked) _audit(LocalAudit.QuarantineStarted(AuditSource(source)));
             if (alreadyIsolated) return true;
             bool isolated = await _enableIsolation();
             if (!isolated) POpsHelpers.Log("AGENT", "[GÜVENLİK] Kilit ekranı gösterildi ama ağ yalıtımı uygulanamadı.", true);
@@ -141,8 +146,18 @@ namespace POpsAgent
             KioskMode.Release();
             DnsPolicyMonitor.ResetViolations();
             _toTray(UnlockMessage(source));
+            _audit(LocalAudit.QuarantineFinished(AuditSource(source)));
             return true;
         }
+
+        private static string AuditSource(string source) => source switch
+        {
+            "server" => "panel",
+            "bypass" => "bypass kodu",
+            "startup" => "açılış",
+            "dns" => "otomatik DNS",
+            _ => source,
+        };
 
         // Tepsi bağlandı: kilit durumunu tepsiyle eşitler
         public void SyncTray()
@@ -157,15 +172,21 @@ namespace POpsAgent
         // Tepsiden gelen kod. Geçerliyse karantina kalkar (bkz. UnlockAsync); sonuç tepsiye BYPASS_SUCCESS /
         // BYPASS_FAILED olarak döner. bypassSecret yoksa bypass kapalıdır. Dönen: kod kabul edildi VE kilit kalktı mı
         public async Task<bool> HandleBypassAsync(string token, string hwId, string bypassSecret, DateTime localDate)
+            => await HandleBypassAsync(token, hwId, bypassSecret, null, false, localDate);
+
+        public async Task<bool> HandleBypassAsync(string token, string hwId, string legacySecret,
+            string deviceSecret, bool deviceSecretPresent, DateTime localDate)
         {
-            if (string.IsNullOrEmpty(bypassSecret))
+            if ((!deviceSecretPresent && string.IsNullOrEmpty(legacySecret)) ||
+                (deviceSecretPresent && !POps.Shared.DeviceBypassSecret.TryDecode(deviceSecret, out _)))
             {
-                POpsHelpers.Log("AGENT", $"Offline Bypass devre dışı: BypassSecret tanımlı değil ({SecureStore.Dir}\\{AgentCredentials.BypassSecretFileName}).", true);
+                string reason = deviceSecretPresent ? "bypass.device okunamadı ya da biçimi geçersiz" : "BypassSecret tanımlı değil";
+                POpsHelpers.Log("AGENT", $"Offline Bypass devre dışı: {reason}.", true);
                 _toTray("BYPASS_FAILED");
                 return false;
             }
 
-            switch (_bypass.Attempt(token, hwId, bypassSecret, localDate))
+            switch (_bypass.Attempt(token, hwId, legacySecret, deviceSecret, deviceSecretPresent, localDate))
             {
                 case OfflineBypass.Result.Accepted:
                     POpsHelpers.Log("AGENT", "Offline Bypass kodu doğrulandı; kilit ekranı ve karantina kaldırılıyor.");

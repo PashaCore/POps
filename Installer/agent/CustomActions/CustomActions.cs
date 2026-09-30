@@ -201,8 +201,14 @@ namespace POps.Installer
                     return $"SERVER_URL şifresiz http ({serverUrl}); https:// bir adres gerekli, düz http'de cihaz secret'ı ve sunucu komutları ağda açık gider. Kurulumu SERVER_URL=https://... ile yeniden başlatın.";
 
                 string enrollToken = Prop("ENROLL_TOKEN");
+                string secretFileError = ReadSecretFile(Prop("ENROLL_TOKEN_FILE"), "ENROLL_TOKEN_FILE", enrollToken, out enrollToken);
+                if (secretFileError != null) return secretFileError;
                 if (enrollToken != null && !TokenRegex.IsMatch(enrollToken))
                     return "ENROLL_TOKEN biçimi geçersiz; panelde üretilen jetonu olduğu gibi verin.";
+
+                string bypassSecret = Prop("BYPASS_SECRET");
+                secretFileError = ReadSecretFile(Prop("BYPASS_SECRET_FILE"), "BYPASS_SECRET_FILE", bypassSecret, out bypassSecret);
+                if (secretFileError != null) return secretFileError;
 
                 string persistDir = Prop("PERSIST_DIR") ?? Existing("PersistDir");
                 if (persistDir != null && !Path.IsPathRooted(persistDir))
@@ -221,7 +227,7 @@ namespace POps.Installer
                 if (folderError != null) return folderError;
                 WriteCapabilities(layout, terminal, vision, log);
                 WriteServerCa(layout, caPem, removeCa, caSubject, log);
-                WriteSecret(Path.Combine(layout.SecureDir, BypassSecretFile), Prop("BYPASS_SECRET"), Existing("BypassSecret"), "BypassSecret", log);
+                WriteSecret(Path.Combine(layout.SecureDir, BypassSecretFile), bypassSecret, Existing("BypassSecret"), "BypassSecret", log);
                 WriteSecret(Path.Combine(layout.SecureDir, EnrollTokenFile), enrollToken, Existing("EnrollToken"), "EnrollToken", log);
 
                 // Mevcut dosyadaki diğer ayarlar (Logging vb.) korunur; gizli değerler dosyada kalmaz
@@ -239,6 +245,21 @@ namespace POps.Installer
             catch (Exception ex)
             {
                 return "POps ayarları yazılamadı: " + ex.Message;
+            }
+        }
+
+        private static string ReadSecretFile(string path, string property, string directValue, out string value)
+        {
+            value = directValue;
+            if (path == null) return null;
+            try
+            {
+                value = Clean(File.ReadAllText(path));
+                return value == null ? $"{property} dosyası boş; gizli değer okunamadı." : null;
+            }
+            catch (Exception ex)
+            {
+                return $"{property} dosyası okunamadı ({path}): {ex.GetType().Name}: {ex.Message}";
             }
         }
 
@@ -564,7 +585,7 @@ namespace POps.Installer
 
             if (!Directory.Exists(full)) { state = StateNew; return null; }
             state = OnlyPopsFiles(full, knownFiles) ? StatePops : StateOther;
-            if (state == StateOther && Exposed(Directory.GetAccessControl(full)))
+            if (state == StateOther && Exposed(full, Directory.GetAccessControl(full)))
                 return $"Kurulum klasöründe ({full}) başka dosyalar var ve kullanıcılar bu klasöre yazabiliyor. Servis buradan SYSTEM olarak çalışacağı için POps'u ayrı, yeni bir klasöre kurun (ör. C:\\Program Files\\POps).";
             return null;
         }
@@ -590,12 +611,14 @@ namespace POps.Installer
             {
                 if (!Directory.Exists(ancestor))
                 {
-                    if (UntrustedHas(Directory.GetAccessControl(existing), ReplaceRights | FileSystemRights.DeleteSubdirectoriesAndFiles, forChildren: true))
+                    if (UntrustedHas(Directory.GetAccessControl(existing), ReplaceRights | FileSystemRights.DeleteSubdirectoriesAndFiles,
+                        forChildren: true, explicitOnly: underStop))
                         return $"{ancestor} kurulumla oluşturulunca kullanıcılar onu silip yeniden adlandırabilecek (izinleri {existing} klasöründen gelir). Üst klasörü önceden yalnızca yöneticilerin değiştirebileceği biçimde oluşturun ya da POps'u Program Files'a kurun.";
                     return null;
                 }
                 DirectorySecurity sec = Directory.GetAccessControl(ancestor);
-                if (!IsTrusted(Owner(sec)) || UntrustedHas(sec, ReplaceRights | FileSystemRights.DeleteSubdirectoriesAndFiles, forChildren: false))
+                if (!IsTrusted(Owner(sec)) || UntrustedHas(sec, ReplaceRights | FileSystemRights.DeleteSubdirectoriesAndFiles,
+                    forChildren: false, explicitOnly: underStop))
                     return $"Kullanıcılar üst klasörü ({ancestor}) silip yeniden adlandırabiliyor ya da izinlerini değiştirebiliyor; servis buradan SYSTEM olarak çalışacağı için POps oraya kurulamaz. Program Files'a ya da yalnızca yöneticilerin değiştirebildiği bir klasöre kurun.";
                 existing = ancestor;
             }
@@ -629,11 +652,24 @@ namespace POps.Installer
         // Kullanıcıların yazabildiği ya da sahibi güvenilir olmayan (izinlerini değiştirebilen) klasör
         internal static bool Exposed(DirectorySecurity sec) => UsersCanWrite(sec) || !IsTrusted(Owner(sec));
 
+        // Testler kullanıcı profilindeki geçici klasörde çalışır. TrustedBaseForTests altında yalnızca testin açıkça
+        // eklediği kurallar değerlendirilir; üstteki profil ACL'leri makineden makineye değişir. Üretimde kanca null'dır.
+        private static bool Exposed(string path, DirectorySecurity sec) =>
+            UntrustedHas(sec, WriteRights, forChildren: false, explicitOnly: IsUnderTrustedBase(path)) || !IsTrusted(Owner(sec));
+
+        private static bool IsUnderTrustedBase(string path)
+        {
+            if (TrustedBaseForTests == null) return false;
+            string full = Path.GetFullPath(path).TrimEnd('\\');
+            string stop = Path.GetFullPath(TrustedBaseForTests).TrimEnd('\\');
+            return SamePath(full, stop) || full.StartsWith(stop + "\\", StringComparison.OrdinalIgnoreCase);
+        }
+
         // Configure (SYSTEM): hata metni ya da null
         internal static string ApplyInstallFolderPolicy(string installDir, string state, Action<string> log)
         {
             if (!Directory.Exists(installDir)) return null;
-            if (!Exposed(Directory.GetAccessControl(installDir))) return null;   // zaten korunuyor (ör. Program Files): dokunulmaz
+            if (!Exposed(installDir, Directory.GetAccessControl(installDir))) return null;   // zaten korunuyor (ör. Program Files): dokunulmaz
             if (state != StateNew && state != StatePops)
                 return $"Kurulum klasörü ({installDir}) kullanıcıların yazabildiği bir yerde ve POps'a ait değil; izinleri değiştirilmedi. POps'u ayrı, yeni bir klasöre kurun (ör. C:\\Program Files\\POps).";
             try
@@ -658,9 +694,9 @@ namespace POps.Installer
         internal static bool UsersCanWrite(DirectorySecurity sec) => UntrustedHas(sec, WriteRights, forChildren: false);
 
         // forChildren: false -> klasörün kendisine uygulanan kurallar; true -> yeni alt klasörlere geçecek kurallar
-        private static bool UntrustedHas(DirectorySecurity sec, FileSystemRights rights, bool forChildren)
+        private static bool UntrustedHas(DirectorySecurity sec, FileSystemRights rights, bool forChildren, bool explicitOnly = false)
         {
-            foreach (FileSystemAccessRule rule in sec.GetAccessRules(true, true, typeof(SecurityIdentifier)))
+            foreach (FileSystemAccessRule rule in sec.GetAccessRules(true, !explicitOnly, typeof(SecurityIdentifier)))
             {
                 if (rule.AccessControlType != AccessControlType.Allow || (rule.FileSystemRights & rights) == 0) continue;
                 bool applies = forChildren

@@ -173,12 +173,22 @@ namespace POpsAgent
         private readonly ReportGate _gate = new ReportGate(MaxSilence);
         private readonly string _serverUrl;
         private readonly Func<string> _hwId;
+        private readonly Action _uploaded;
+        private readonly Action<string> _error;
 
-        public SoftwareReporter(string serverUrl, Func<string> hwId)
+        public SoftwareReporter(string serverUrl, Func<string> hwId, Action uploaded = null, Action<string> error = null)
         {
             _serverUrl = serverUrl;
             _hwId = hwId;
+            _uploaded = uploaded ?? (() => { });
+            _error = error ?? (_ => { });
+            Poster = (id, payload) => AgentHttp.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/software/", id), id, payload, "Yazılım envanteri");
         }
+
+        // İşletim sistemi ve ağ sınırları testlerde sahteleriyle değiştirilir.
+        internal Func<List<SoftwareItem>> Collector { get; set; } = SoftwareInventory.Collect;
+        internal Func<string, SoftwareInventoryPayload, Task<PostResult>> Poster { get; set; }
+        internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
 
         public async Task RunAsync(CancellationToken token)
         {
@@ -199,24 +209,27 @@ namespace POpsAgent
         };
 
         // Bir tur; null: normal aralık, aksi halde bir sonraki denemeye kadar beklenecek süre
-        private async Task<TimeSpan?> ReportOnceAsync()
+        internal async Task<TimeSpan?> ReportOnceAsync()
         {
             if (!AgentHttp.EnsureCanReport()) return WaitForSecret;
             try
             {
-                List<SoftwareItem> items = SoftwareInventory.Collect();
+                List<SoftwareItem> items = Collector();
                 string hash = SoftwareInventory.Hash(items);
-                if (!_gate.ShouldSend(hash, DateTime.UtcNow)) return null;
+                DateTime now = UtcNow();
+                if (!_gate.ShouldSend(hash, now)) return null;
 
                 string hwId = _hwId();
-                PostResult result = await AgentHttp.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/software/", hwId), hwId, new SoftwareInventoryPayload { Items = items }, "Yazılım envanteri");
+                PostResult result = await Poster(hwId, new SoftwareInventoryPayload { Items = items });
                 if (result != PostResult.Sent) return DelayAfter(result);
-                _gate.MarkSent(hash, DateTime.UtcNow);
+                _gate.MarkSent(hash, now);
+                _uploaded();
                 POpsHelpers.Log("AGENT", $"Yazılım envanteri gönderildi ({items.Count} kayıt).");
                 return null;
             }
             catch (Exception ex)
             {
+                _error(ex.Message);
                 POpsHelpers.Log("AGENT", $"Yazılım envanteri okunamadı: {ex.Message}", true);
                 return RetryDelay;
             }

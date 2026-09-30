@@ -1,9 +1,7 @@
 using System;
-using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using POps.Shared;
 
 #nullable disable
 
@@ -44,6 +42,10 @@ namespace POpsAgent
         public DateTime LastFailureUtc { get; private set; } = DateTime.MinValue;
 
         public Result Attempt(string token, string hwId, string secret, DateTime localDate)
+            => Attempt(token, hwId, secret, null, false, localDate);
+
+        public Result Attempt(string token, string hwId, string legacySecret, string deviceSecret,
+            bool deviceSecretPresent, DateTime localDate)
         {
             DateTime now = _utcNow();
             DateTime quietSince = LastFailureUtc > LockedUntilUtc ? LastFailureUtc : LockedUntilUtc;
@@ -55,7 +57,7 @@ namespace POpsAgent
             }
             if (now < LockedUntilUtc) return Result.Locked;
 
-            if (Matches(token, hwId, secret, localDate))
+            if (Matches(token, hwId, legacySecret, deviceSecret, deviceSecretPresent, localDate))
             {
                 bool changed = _failures != 0 || _lockouts != 0;
                 _failures = 0;
@@ -113,13 +115,10 @@ namespace POpsAgent
         }
 
         public static bool Matches(string token, string hwId, string secret, DateTime localDate)
-        {
-            // Biçim kuralı tepsiyle ortak (POps.Shared.BypassCode)
-            token = BypassCode.Normalize(token);
-            if (string.IsNullOrEmpty(secret) || token == null) return false;
-            string raw = $"{hwId}{secret}{localDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}";
-            string expected = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
-            return CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(token), Encoding.ASCII.GetBytes(expected.Substring(0, token.Length)));
-        }
+            => DeviceBypassSecret.Matches(token, hwId, localDate, null, false, secret);
+
+        public static bool Matches(string token, string hwId, string legacySecret, string deviceSecret,
+            bool deviceSecretPresent, DateTime localDate) =>
+            DeviceBypassSecret.Matches(token, hwId, localDate, deviceSecret, deviceSecretPresent, legacySecret);
     }
 }

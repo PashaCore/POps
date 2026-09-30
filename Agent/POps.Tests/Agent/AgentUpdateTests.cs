@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using POps.Shared;
 using POpsAgent;
 using Xunit;
 
@@ -113,19 +114,36 @@ namespace POps.Tests.Agent
         }
 
         [Fact]
-        public void WriteHealth_WritesInstalledVersionAndTimestamp()
+        public void WriteOperationalHealth_WritesPhaseChecksVersionAndTimestamp()
         {
             NewDataDir();
             AgentUpdate.InstalledVersionOverride = "0.1.3-alpha";
             try
             {
-                AgentUpdate.WriteHealth();
+                AgentUpdate.WriteOperationalHealth(new OperationalChecks
+                {
+                    Identity = true,
+                    Credentials = true,
+                    Capabilities = true,
+                    Pipe = true,
+                    Loop = true,
+                });
                 using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(AgentUpdate.HealthPath));
                 Assert.Equal("0.1.3-alpha", doc.RootElement.GetProperty("version").GetString());
+                Assert.Equal("operational", doc.RootElement.GetProperty("phase").GetString());
+                Assert.All(doc.RootElement.GetProperty("checks").EnumerateObject(), check => Assert.True(check.Value.GetBoolean()));
                 Assert.InRange(doc.RootElement.GetProperty("ts").GetInt64(), DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 5, DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 5);
                 Assert.False(File.Exists(AgentUpdate.HealthPath + ".tmp"));
             }
             finally { AgentUpdate.InstalledVersionOverride = null; }
+        }
+
+        [Fact]
+        public void WriteOperationalHealth_DoesNotWriteIncompleteChecks()
+        {
+            NewDataDir();
+            AgentUpdate.WriteOperationalHealth(new OperationalChecks { Identity = true });
+            Assert.False(File.Exists(AgentUpdate.HealthPath));
         }
 
         [Fact]

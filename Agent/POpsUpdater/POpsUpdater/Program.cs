@@ -369,7 +369,8 @@ namespace POpsUpdater
             }
         }
 
-        // Yeni sürüm açılışta health.json yazar. Güncelleme öncesinden kalan dosya, yazılma zamanıyla ayırt edilir.
+        // Yeni sürüm çekirdek başlangıcı tamamlanınca phase=operational health.json yazar. Geri dönüşteki eski
+        // sürümlerin phase alanı yoktur; HealthCheck bu biçimi version + ts ile geriye uyumlu kabul eder.
         static bool WaitForHealth(string expectedVersion, DateTime notBeforeUtc)
         {
             DateTime deadline = DateTime.UtcNow + HealthTimeout;
@@ -378,14 +379,12 @@ namespace POpsUpdater
             {
                 try
                 {
-                    var file = new FileInfo(HealthPath);
-                    if (file.Exists && file.LastWriteTimeUtc >= notBeforeUtc)
+                    if (File.Exists(HealthPath))
                     {
-                        using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(HealthPath));
-                        string version = doc.RootElement.TryGetProperty("version", out JsonElement v) ? v.GetString()?.TrimStart('v') : null;
-                        if (string.Equals(version, expected, StringComparison.OrdinalIgnoreCase))
+                        string json = File.ReadAllText(HealthPath);
+                        if (HealthCheck.IsHealthy(json, expected, notBeforeUtc))
                         {
-                            Log($"health.json doğrulandı: {version}");
+                            Log($"health.json doğrulandı: {expected}");
                             return true;
                         }
                     }

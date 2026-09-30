@@ -49,6 +49,9 @@ namespace POpsAgent
         private string _hwId;
         private readonly string _identityFilePath = @"C:\POpsData\identity.key";
         private readonly HttpClient _httpClient;
+        private readonly AgentStartupHealth _startupHealth;
+        private readonly AgentHealthTelemetry _health = new AgentHealthTelemetry();
+        private Task _slowInitialization;
 
         // 🚀 ARTIK SABİT DEĞİL, HELPERS'TAN OKUNACAK
         private string _serverUrl;
@@ -57,6 +60,7 @@ namespace POpsAgent
         private const WebSocketCloseStatus AuthRejectedCloseStatus = (WebSocketCloseStatus)4401;
 
         private ClientWebSocket _commandWs;
+        private bool _commandUsesDeviceSecret;
         private ClientWebSocket _visionWs;
         private readonly SemaphoreSlim _wsCommandLock = new(1, 1);
         private readonly SemaphoreSlim _wsVisionLock = new(1, 1);
@@ -66,6 +70,11 @@ namespace POpsAgent
         // Uzaktan fare/klavye yalnızca kullanıcının tepsi üzerinden onayladığı (ya da zorunlu oturumda bildirimin
         // gösterildiği) Vision oturumu açıkken uygulanır. Sunucu ele geçirilse bile yerel onay olmadan girdi yok.
         private volatile bool _visionSessionApproved;
+        private string _visionSessionId;
+        private string _visionRequestedBy;
+        private bool _visionUserApproved;
+        private bool _visionAuditActive;
+        private bool _pendingVisionMandatory;
         private TaskCompletionSource<byte[]> _thumbnailTcs;
 
 
@@ -74,7 +83,6 @@ namespace POpsAgent
 
         private AgentPolicy _currentPolicy = new AgentPolicy();
         private bool _fairUseAcknowledged = false;
-        private DateTime _lastPolicyFetch = DateTime.MinValue;
 
         // Karantina (lockdown/unlock/çevrimdışı bypass) ve Windows Update: bkz. QuarantineControl, PatchManager
         private readonly QuarantineControl _quarantine;
@@ -86,7 +94,9 @@ namespace POpsAgent
         // Ön plandaki uygulamanın süreç adı (tepsiden, yalnızca ad; bkz. ActiveApp). Bilinmiyorsa null.
         private volatile string _activeApp;
 
-        public Worker(ILogger<Worker> logger)
+        public Worker(ILogger<Worker> logger) : this(logger, new AgentStartupHealth(false)) { }
+
+        public Worker(ILogger<Worker> logger, AgentStartupHealth startupHealth)
         {
             string[] args = Environment.GetCommandLineArgs();
             if (args.Contains("POpsV", StringComparer.OrdinalIgnoreCase))
@@ -100,6 +110,7 @@ namespace POpsAgent
             }
 
             _logger = logger;
+            _startupHealth = startupHealth ?? throw new ArgumentNullException(nameof(startupHealth));
             _pcName = Environment.MachineName;
             // Politika ve /updates paket indirme: sunucu sertifikası da ServerTrust ile doğrulanır
             _httpClient = new HttpClient(ServerTrust.NewHandler());
@@ -109,7 +120,9 @@ namespace POpsAgent
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor (Hedef: {_serverUrl})");
             foreach (string configPath in POpsHelpers.ConfigPaths) SecureConfigFile(configPath);
 
-            _quarantine = new QuarantineControl(message => _trayPipe?.SendCommandToDesktop(message), EnableNetworkIsolationAsync, DisableNetworkIsolationAsync);
+            _quarantine = new QuarantineControl(message => _trayPipe?.SendCommandToDesktop(message),
+                EnableNetworkIsolationAsync, DisableNetworkIsolationAsync, audit: LocalAudit.Write);
+            DnsPolicyMonitor.ErrorReporter = message => _health.RecordError("dns", message);
             // DNS eşiğindeki otomatik karantina da kilit ekranı + yalıtım yolundan geçer (bkz. AutoQuarantineAsync)
             DnsPolicyMonitor.Quarantine = reason => _ = AutoQuarantineAsync(reason);
             _patches = new PatchManager(_serverUrl, () => _hwId);
@@ -121,21 +134,37 @@ namespace POpsAgent
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
         // planda çalıştırır: servisin açılışını ve updater'ın beklediği health.json'u bekletmezler.
         // Kimlik önce kurulur; envanter hw_id'yi ondan alır.
-        private void InitializeState()
+        private void InitializeCoreState()
         {
-            _hwId = InitializeIdentity();
+            _startupHealth.Run(StartupCheck.Identity, () => _hwId = InitializeIdentity());
             POpsHelpers.Log("AGENT", $"Kimlik Başlatıldı: {_hwId}");
 
-            AgentCredentials.Initialize();
-            AgentCredentials.LoadSecret();
-            AgentCapabilities.Load();
+            _startupHealth.Run(StartupCheck.Credentials, () =>
+            {
+                AgentCredentials.Initialize();
+                AgentCredentials.LoadSecret();
+            });
+            _startupHealth.Run(StartupCheck.Capabilities, AgentCapabilities.Load);
             // Karantina yeniden başlatmadan sonra sürüyorsa Ctrl+Alt+Del seçenekleri yeniden kapatılır; sürmüyorsa kalıntı temizlenir
             KioskMode.Sync(_quarantine.IsLocked);
+            if (_quarantine.IsLocked) LocalAudit.Write(LocalAudit.QuarantineStarted("açılış"));
             // Kurum sertifikası (server-ca.pem) varsa sunucu yalnızca onunla doğrulanır; kip loglanır
             ServerTrust.Reload();
+        }
 
-            _cachedDna = GetHardwareDnaInternal();
-            _cachedInventory = BuildInventoryInternal();
+        private void InitializeSlowState()
+        {
+            try
+            {
+                _cachedDna = GetHardwareDnaInternal();
+                _cachedInventory = BuildInventoryInternal();
+            }
+            catch (Exception ex)
+            {
+                // Hata burada kalır: bağlantı döngüsü bu görevi bekler, istisna her yeniden bağlanışta tekrar fırlamasın
+                _health.RecordError("inventory", ex.Message);
+                POpsHelpers.Log("AGENT", $"Donanım bilgisi toplanamadı: {ex.Message}", true);
+            }
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -144,11 +173,14 @@ namespace POpsAgent
             // Yavaş WMI açılışını beklemez.
             _ = Task.Run(() => new UserSessionApps().RunAsync(stoppingToken));
 
-            await Task.Run(InitializeState, stoppingToken);
+            await Task.Run(InitializeCoreState, stoppingToken);
+            _slowInitialization = Task.Run(InitializeSlowState, stoppingToken);
             AgentUpdate.LogLastResult();
 
             if (!POpsHelpers.IsSecureServerUrl(_serverUrl))
             {
+                StartTrayPipeServer();
+                _startupHealth.Mark(StartupCheck.Loop);
                 await RunWithoutServerAsync(stoppingToken);
                 return;
             }
@@ -160,14 +192,16 @@ namespace POpsAgent
 
             // Sunucuya bildirimler (yalnızca cihaz secret'ı varken; bkz. AgentHttp): yazılım envanteri (açılıştan
             // kısa süre sonra, sonra 6 saatte bir), günlük Windows Update taraması, oturum açma/kapama
-            var sessions = new SessionReporter(_serverUrl, () => _hwId, _pcName);
+            var sessions = new SessionReporter(_serverUrl, () => _hwId, _pcName,
+                error => _health.RecordError("session", error));
             sessions.UserChanged += _ =>
             {
                 _activeApp = null;
                 // Yeni kullanıcı öncekinin DNS ihlalleriyle karantinaya girmesin
                 DnsPolicyMonitor.OnUserChanged();
             };
-            _ = Task.Run(() => new SoftwareReporter(_serverUrl, () => _hwId).RunAsync(stoppingToken));
+            _ = Task.Run(() => new SoftwareReporter(_serverUrl, () => _hwId,
+                _health.InventoryUploaded, error => _health.RecordError("inventory", error)).RunAsync(stoppingToken));
             _ = Task.Run(() => _patches.ScheduleLoopAsync(stoppingToken));
             _ = Task.Run(() => sessions.RunAsync(stoppingToken));
             _ = Task.Run(() => _helpdesk.PollLoopAsync(stoppingToken, () => _trayPipe?.IsConnected == true));
@@ -184,12 +218,15 @@ namespace POpsAgent
                 _commandWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
                 string authMode = ApplyAuthHeaders(_commandWs);
                 POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({APP_VERSION}, kimlik: {authMode})");
+                _startupHealth.Mark(StartupCheck.Loop);
 
                 try
                 {
                     await _commandWs.ConnectAsync(new Uri(commandWsUrl), stoppingToken);
                     POpsHelpers.Log("AGENT", "[+] Ana Komut Tüneli Kuruldu.");
                     OnCommandChannelConnected();
+
+                    await _slowInitialization;
 
                     _ = ReceiveCommandsAsync(_commandWs, stoppingToken);
 
@@ -212,6 +249,7 @@ namespace POpsAgent
                 }
                 catch (Exception ex)
                 {
+                    _health.RecordError("connection", ex.Message);
                     POpsHelpers.Log("AGENT", $"[!] Santralle bağlantı koptu: {ex.Message}", true);
                 }
 
@@ -221,7 +259,10 @@ namespace POpsAgent
                 TimeSpan wait = ReconnectBackoff.Delay(reconnectAttempt, authRejected, Random.Shared);
                 reconnectAttempt = ReconnectBackoff.NextAttempt(reconnectAttempt);
                 if (authRejected)
+                {
+                    LocalAudit.Write(LocalAudit.AuthenticationRejected("command"));
                     POpsHelpers.Log("AGENT", $"[GÜVENLİK] Sunucu ajan kimliğini reddetti (4401): geçerli bir enroll jetonu gerekiyor. {wait.TotalSeconds:0} sn sonra yeniden denenecek.", true);
+                }
                 else
                     POpsHelpers.Log("AGENT", $"Sunucuya {wait.TotalSeconds:0.0} sn sonra yeniden bağlanılacak.");
 
@@ -243,7 +284,6 @@ namespace POpsAgent
         // Tepsi ve watchdog yerel işler (ör. karantinada çevrimdışı bypass) için yine çalışır.
         private async Task RunWithoutServerAsync(CancellationToken stoppingToken)
         {
-            StartTrayPipeServer();
             while (!stoppingToken.IsCancellationRequested)
             {
                 POpsHelpers.Log("AGENT", $"[GÜVENLİK] ServerUrl şifresiz http ve yerel değil ({_serverUrl}); cihaz secret'ı ve komutlar ağda açık gideceği için sunucuya bağlanılmıyor. https:// bir adres verin (MSI: SERVER_URL=https://...).", true);
@@ -256,10 +296,12 @@ namespace POpsAgent
         // Değerler loglanmaz; dönen metin yalnızca hangi başlıkların gittiğini söyler.
         private string ApplyAuthHeaders(ClientWebSocket ws)
         {
+            _commandUsesDeviceSecret = false;
             if (!POpsHelpers.IsSecureServerUrl(_serverUrl)) return "yok (şifresiz bağlantı)";
 
             string secret = AgentCredentials.CurrentSecret ?? AgentCredentials.LoadSecret();
             string enrollToken = AgentCredentials.GetEnrollToken();
+            _commandUsesDeviceSecret = secret != null;
 
             if (secret != null) ws.Options.SetRequestHeader("X-Agent-Secret", secret);
             if (enrollToken != null) ws.Options.SetRequestHeader("X-Enroll-Token", enrollToken);
@@ -304,6 +346,7 @@ namespace POpsAgent
                     {
                         _currentPolicy = policy;
                         DnsPolicyMonitor.Configure(policy, _hwId, _serverUrl);
+                        _health.PolicySynced();
                         
                         if (!string.IsNullOrWhiteSpace(policy.fair_use_text) && !_fairUseAcknowledged)
                         {
@@ -312,11 +355,19 @@ namespace POpsAgent
                         }
                     }
                 }
-                catch { }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
+                catch (Exception ex)
+                {
+                    _health.RecordError("policy", ex.Message);
+                    POpsHelpers.Log("AGENT", $"Politika eşitleme başarısız: {ex.Message}", true);
+                }
                 await Task.Delay(60000, token); // Poll every minute
             }
         }
 
+        // Boru dinlemeye geçince sağlık kontrolü işaretlenir (bkz. AgentStartupHealth). Bağlantı döngüsü bunu
+        // beklemez: boru adı başka bir süreçte kalırsa (ör. yerel bir kullanıcı adı önceden aldıysa) tepsi çalışmaz
+        // ama ajan sunucuya yine bağlanır; health.json yazılmadığı için güncelleme de başarılı sayılmaz.
         private void StartTrayPipeServer()
         {
             _trayPipe?.Stop();
@@ -356,6 +407,12 @@ namespace POpsAgent
                         if (_isVisionStreamActive)
                         {
                             _visionSessionApproved = true;
+                            _visionUserApproved = !_pendingVisionMandatory;
+                            if (!_visionAuditActive)
+                            {
+                                LocalAudit.Write(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, _visionUserApproved));
+                                _visionAuditActive = true;
+                            }
                             _trayPipe?.SendCommandToDesktop($"START_CAPTURE:{fps}");
                         }
                     });
@@ -437,7 +494,24 @@ namespace POpsAgent
             // Kilit ekranı tepsiyle birlikte kapanmış olabilir: karantina sürüyorsa yeniden gösterilir
             _trayPipe.OnConnected += () => _quarantine.SyncTray();
 
-            _trayPipe.Start();
+            _trayPipe.Start().ContinueWith(_ => _startupHealth.Mark(StartupCheck.Pipe), CancellationToken.None,
+                TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+        }
+
+        private async Task HandleSetBypassSecretAsync(JsonElement root)
+        {
+            string secret = root.TryGetProperty("secret", out var property) && property.ValueKind == JsonValueKind.String
+                ? property.GetString() : null;
+            bool saved = BypassSecretCommand.Process(secret, _commandUsesDeviceSecret,
+                AgentCredentials.SaveDeviceBypassSecret,
+                message => POpsHelpers.Log("AGENT", message,
+                    message.StartsWith("[GÜVENLİK]", StringComparison.Ordinal) || message.EndsWith("yazılamadı.", StringComparison.Ordinal)),
+                out string fingerprint);
+            if (saved)
+            {
+                LocalAudit.Write(LocalAudit.BypassSecretReceived(fingerprint));
+                await SendCommandMessageAsync(new { type = "bypass_secret_ack", fingerprint });
+            }
         }
 
         // Çevrimdışı bypass kodu: geçerliyse sunucunun unlock'u ile aynı yol (kilit ekranı kapanır, yalıtım kalkar).
@@ -447,7 +521,9 @@ namespace POpsAgent
         {
             try
             {
-                if (!await _quarantine.HandleBypassAsync(token, _hwId, AgentCredentials.GetBypassSecret(), DateTime.Now)) return;
+                string deviceSecret = AgentCredentials.GetDeviceBypassSecret(out bool deviceSecretPresent);
+                if (!await _quarantine.HandleBypassAsync(token, _hwId, AgentCredentials.GetBypassSecret(),
+                    deviceSecret, deviceSecretPresent, DateTime.Now)) return;
                 string hwId = _hwId;
                 await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, QuarantineControl.OfflineBypassLog(), "Bypass denetim kaydı");
             }
@@ -461,7 +537,7 @@ namespace POpsAgent
         {
             try
             {
-                await _quarantine.LockdownAsync(QuarantineControl.AutoQuarantineReason);
+                await _quarantine.LockdownAsync(QuarantineControl.AutoQuarantineReason, "dns");
                 string hwId = _hwId;
                 await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, QuarantineControl.AutoQuarantineLog(reason), "Otomatik karantina bildirimi");
             }
@@ -484,11 +560,18 @@ namespace POpsAgent
                 return;
             }
             string visionWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://") + $"/ws/vision/{_hwId}";
+            string secret = AgentCredentials.CurrentSecret ?? AgentCredentials.LoadSecret();
+            VisionAuthSelection auth = VisionChannel.SelectHeaders(secret, AgentCredentials.GetEnrollToken(), APP_VERSION);
+            if (!auth.CanConnect)
+            {
+                POpsHelpers.Log("AGENT", "[GÜVENLİK] Vision tüneli açılmadı: cihaz henüz kayıtlı değil (anahtar yok)", true);
+                await DenyCapabilityAsync("vision", "vision_tunnel", reason: "not_enrolled");
+                return;
+            }
             var newWs = new ClientWebSocket();
             newWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(visionWsUrl));
-            // Sunucu enforce_agent_auth açıkken kimliksiz Vision tünelini (sahte ekran görüntüsü) reddeder
-            newWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
-            ApplyAuthHeaders(newWs);
+            foreach (KeyValuePair<string, string> header in auth.Headers)
+                newWs.Options.SetRequestHeader(header.Key, header.Value);
             try
             {
                 await newWs.ConnectAsync(new Uri(visionWsUrl), token);
@@ -500,7 +583,7 @@ namespace POpsAgent
             catch (Exception ex)
             {
                 POpsHelpers.Log("AGENT", $"[!] Vision Tüneli açılamadı: {ex.Message}", true);
-                _isVisionStreamActive = false;
+                ApplyVisionClose(newWs.CloseStatus);
                 newWs.Dispose();
             }
         }
@@ -511,6 +594,11 @@ namespace POpsAgent
             _visionSessionApproved = false;
             var ws = Interlocked.Exchange(ref _visionWs, null);
             if (ws != null) { try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Yayın Kesildi", CancellationToken.None); } catch { } ws.Dispose(); }
+            if (_visionAuditActive)
+            {
+                LocalAudit.Write(LocalAudit.VisionFinished(_visionSessionId, _visionRequestedBy, _visionUserApproved));
+                _visionAuditActive = false;
+            }
         }
 
         // Mesaj boyu sınırları (parçalı mesajlar EndOfMessage'a kadar birleştirilir; bkz. WebSocketMessages)
@@ -520,7 +608,8 @@ namespace POpsAgent
         // Uzaktan fare/klavye olayı (input_type taşıyan remote_input). Ekran önizlemesi ve FPS ayarı girdi değildir.
         private static bool IsInputEvent(JsonElement root) => root.TryGetProperty("input_type", out _);
 
-        private bool InputAllowed() => _visionSessionApproved && _isVisionStreamActive;
+        private string VisionDenial(bool isInputEvent) => VisionInputGate.DenialReason(
+            AgentCapabilities.VisionEnabled, _visionSessionApproved, _isVisionStreamActive, isInputEvent);
 
         private async Task ReceiveVisionInputsAsync(ClientWebSocket ws, CancellationToken token)
         {
@@ -537,15 +626,31 @@ namespace POpsAgent
                     {
                         string targetDevice = root.GetProperty("device").GetString();
                         if (targetDevice != _hwId) continue;
-                        if (!AgentCapabilities.VisionEnabled) { await DenyCapabilityAsync("vision", "remote_input"); continue; }
-                        if (IsInputEvent(root) && !InputAllowed()) { await DenyCapabilityAsync("consent", "remote_input"); continue; }
+                        string denial = VisionDenial(IsInputEvent(root));
+                        if (denial != null) { await DenyCapabilityAsync(denial, "remote_input"); continue; }
                         _trayPipe?.SendCommandToDesktop(message);
                     }
                 }
             }
             catch (WebSocketMessages.TooLargeException ex) { POpsHelpers.Log("AGENT", $"[GÜVENLİK] Vision tüneli kapatıldı: {ex.Message}.", true); }
             catch { }
-            finally { await DisconnectVisionTunnelAsync(); }
+            finally
+            {
+                ApplyVisionClose(ws.CloseStatus);
+                await DisconnectVisionTunnelAsync();
+            }
+        }
+
+        private void ApplyVisionClose(WebSocketCloseStatus? status)
+        {
+            VisionCloseDecision decision = VisionChannel.OnClosed(status == null ? null : (int)status.Value);
+            if (decision.AuthenticationRejected)
+            {
+                LocalAudit.Write(LocalAudit.AuthenticationRejected("vision"));
+                POpsHelpers.Log("AGENT", "[GÜVENLİK] Sunucu Vision kanalında cihaz kimliğini reddetti (4401); tünel yeniden denenmeyecek.", true);
+            }
+            if (decision.ClearStream) _isVisionStreamActive = false;
+            if (decision.ClearApproval) _visionSessionApproved = false;
         }
 
         private async Task ReceiveCommandsAsync(ClientWebSocket ws, CancellationToken stoppingToken)
@@ -567,15 +672,10 @@ namespace POpsAgent
 
                         string act = root.TryGetProperty("action", out var actProp) ? actProp.GetString() : "";
                         // Ekran önizlemesi ve uzaktan fare/klavye Vision yeteneğidir
-                        if (!AgentCapabilities.VisionEnabled)
+                        string denial = VisionDenial(IsInputEvent(root));
+                        if (denial != null)
                         {
-                            await DenyCapabilityAsync("vision", string.IsNullOrEmpty(act) ? "remote_input" : act);
-                            continue;
-                        }
-                        // Sunucu ele geçirilse bile kullanıcının onayladığı bir oturum yoksa fare/klavye uygulanmaz
-                        if (IsInputEvent(root) && !InputAllowed())
-                        {
-                            await DenyCapabilityAsync("consent", "remote_input");
+                            await DenyCapabilityAsync(denial, string.IsNullOrEmpty(act) ? "remote_input" : act);
                             continue;
                         }
                         if (act == "get_thumbnail")
@@ -601,22 +701,28 @@ namespace POpsAgent
                     else
                     {
                         string action = root.TryGetProperty("action", out var actionProp) ? actionProp.GetString() : "";
-                        if (action == "execute" && !AgentCapabilities.TerminalEnabled)
+                        CommandPermission commandPermission = action == "execute"
+                            ? CommandExecutionPolicy.Permission(AgentCapabilities.TerminalEnabled) : null;
+                        if (action == "execute" && !commandPermission.Allowed)
                         {
                             // Görev "Running"de asılı kalmasın diye sonuç olarak da bildirilir
                             int tid = root.GetProperty("task_id").GetInt32();
-                            await SendCommandMessageAsync(new { type = "result", pc_name = _hwId, task_id = tid, output = "[REDDEDİLDİ] Bu cihazda uzaktan terminal kapalı (yetenek politikası); komut çalıştırılmadı." });
+                            await SendCommandMessageAsync(new { type = "result", pc_name = _hwId, task_id = tid, output = commandPermission.Rejection });
                             await DenyCapabilityAsync("terminal", "execute", tid);
                         }
                         else if (action == "execute")
                         {
                             string cmd = root.GetProperty("script_path").GetString();
                             int tid = root.GetProperty("task_id").GetInt32();
+                            string requestedBy = root.TryGetProperty("requested_by", out var requestedByProperty) && requestedByProperty.ValueKind == JsonValueKind.String
+                                ? requestedByProperty.GetString() : null;
                             POpsHelpers.Log("AGENT", $"Uzaktan komut çalıştırılıyor (TaskID: {tid})");
+                            LocalAudit.Write(LocalAudit.CommandStarted(tid, cmd, requestedBy));
                             _ = Task.Run(async () =>
                             {
-                                string outpt = await ExecuteCommandAsync(cmd);
-                                var res = new { type = "result", pc_name = _hwId, output = outpt, task_id = tid };
+                                CommandExecutionResult execution = await ExecuteCommandAsync(cmd);
+                                LocalAudit.Write(LocalAudit.CommandFinished(tid, execution.ExitCode, execution.Duration));
+                                var res = new { type = "result", pc_name = _hwId, output = execution.Output, task_id = tid };
                                 byte[] b = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(res));
                                 await _wsCommandLock.WaitAsync();
                                 try { await ws.SendAsync(new ArraySegment<byte>(b), WebSocketMessageType.Text, true, CancellationToken.None); }
@@ -630,9 +736,24 @@ namespace POpsAgent
                             await DenyCapabilityAsync("vision", action);
                         }
                         else if (action == "start_stream") {
+                            if (!_visionAuditActive)
+                            {
+                                _visionSessionId = null;
+                                _visionRequestedBy = null;
+                                _pendingVisionMandatory = true;
+                            }
                             await ConnectVisionTunnelAsync(stoppingToken); 
                             int fps = root.TryGetProperty("fps", out var fProp) ? (fProp.ValueKind == JsonValueKind.Number ? fProp.GetInt32() : 2) : 2;
-                            if (_isVisionStreamActive) _trayPipe?.SendCommandToDesktop($"START_CAPTURE:{fps}");
+                            if (_isVisionStreamActive)
+                            {
+                                if (!_visionAuditActive)
+                                {
+                                    _visionUserApproved = false;
+                                    LocalAudit.Write(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, false));
+                                    _visionAuditActive = true;
+                                }
+                                _trayPipe?.SendCommandToDesktop($"START_CAPTURE:{fps}");
+                            }
                         }
                         else if (action == "stop_stream") { 
                             _trayPipe?.SendCommandToDesktop("STOP_CAPTURE"); 
@@ -646,6 +767,7 @@ namespace POpsAgent
                         else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
                         else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
                         else if (action == "set_secret") { HandleSetSecret(root); }
+                        else if (action == "set_bypass_secret") { await HandleSetBypassSecretAsync(root); }
                         else if (action == "lockdown")
                         {
                             string reason = root.TryGetProperty("reason", out var rProp) && rProp.ValueKind == JsonValueKind.String ? rProp.GetString() : null;
@@ -664,7 +786,15 @@ namespace POpsAgent
                             string scope = root.TryGetProperty("scope", out var scProp) && scProp.ValueKind == JsonValueKind.String ? scProp.GetString() : null;
                             _patches.RequestInstall(scope);
                         }
-                        else if (action == "start_vision_session") { _trayPipe?.SendCommandToDesktop(message); }
+                        else if (action == "start_vision_session")
+                        {
+                            _visionSessionId = root.TryGetProperty("session_id", out var session) && session.ValueKind == JsonValueKind.String ? session.GetString() : null;
+                            _visionRequestedBy = root.TryGetProperty("requested_by", out var requester) && requester.ValueKind == JsonValueKind.String
+                                ? requester.GetString()
+                                : root.TryGetProperty("admin_name", out var admin) && admin.ValueKind == JsonValueKind.String ? admin.GetString() : null;
+                            _pendingVisionMandatory = root.TryGetProperty("is_mandatory", out var mandatory) && mandatory.ValueKind == JsonValueKind.True;
+                            _trayPipe?.SendCommandToDesktop(message);
+                        }
                     }
                 }
                 catch (WebSocketMessages.TooLargeException ex)
@@ -711,7 +841,11 @@ namespace POpsAgent
             status = "Online",
             active_window = _activeApp ?? "-",
             quarantined = _quarantine.IsLocked,
-            dna_payload = _cachedDna
+            dna_payload = _cachedDna,
+            agent_health = _health.Snapshot(
+                _trayPipe?.IsConnected == true,
+                AgentCapabilities.VisionEnabled,
+                _visionWs?.State == WebSocketState.Open)
         };
 
         private async Task SendHeartbeatAsync(CancellationToken token)
@@ -728,7 +862,9 @@ namespace POpsAgent
         // süren yayın hemen durdurulur. Son durum sunucuya "capabilities" olarak bildirilir.
         private async Task HandleSetCapabilitiesAsync(JsonElement request)
         {
-            AgentCapabilities.ApplyServerRequest(request);
+            var changed = AgentCapabilities.ApplyServerRequest(request);
+            foreach (string capability in changed.Disabled)
+                LocalAudit.Write(LocalAudit.CapabilityChanged(capability == AgentCapabilities.Terminal ? "terminal" : "vision", true, false));
             if (!AgentCapabilities.VisionEnabled && _isVisionStreamActive)
             {
                 _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
@@ -741,17 +877,19 @@ namespace POpsAgent
         // hareketi gibi sık gelen istekler için aynı yetenek/eylem en çok dakikada bir bildirilir.
         private readonly Dictionary<string, DateTime> _lastDenialNotice = new Dictionary<string, DateTime>();
 
-        private async Task DenyCapabilityAsync(string capability, string action, int? taskId = null)
+        private async Task DenyCapabilityAsync(string capability, string action, int? taskId = null, string reason = null)
         {
-            string key = $"{capability}/{action}";
+            string key = $"{capability}/{action}/{reason}";
             lock (_lastDenialNotice)
             {
                 if (taskId == null && _lastDenialNotice.TryGetValue(key, out DateTime last) && DateTime.UtcNow - last < TimeSpan.FromMinutes(1)) return;
                 _lastDenialNotice[key] = DateTime.UtcNow;
             }
-            POpsHelpers.Log("POLICY", $"[GÜVENLİK] {action} reddedildi: {capability} bu cihazda kapalı (yetenek politikası).", true);
+            if (reason == null)
+                POpsHelpers.Log("POLICY", $"[GÜVENLİK] {action} reddedildi: {capability} bu cihazda kapalı (yetenek politikası).", true);
             var notice = new Dictionary<string, object> { ["type"] = "capability_denied", ["capability"] = capability, ["action"] = action };
             if (taskId != null) notice["task_id"] = taskId.Value;
+            if (reason != null) notice["reason"] = reason;
             await SendCommandMessageAsync(notice);
         }
 
@@ -931,8 +1069,13 @@ namespace POpsAgent
                     return;
                 }
                 POpsHelpers.Log("AGENT", "Donanım envanteri sunucuya gönderildi.");
+                _health.InventoryUploaded();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _health.RecordError("inventory", ex.Message);
+                POpsHelpers.Log("AGENT", $"Donanım envanteri gönderilemedi: {ex.Message}", true);
+            }
         }
 
         // Takılan bir WMI sağlayıcısı sorguyu süresiz bekletmesin: bağlantı ve her sonuç için zaman aşımı
@@ -1054,9 +1197,12 @@ namespace POpsAgent
 
         private Task<bool> DisableNetworkIsolationAsync() => NetworkIsolation.DisableAsync();
 
-        private async Task<string> ExecuteCommandAsync(string command)
+        private async Task<CommandExecutionResult> ExecuteCommandAsync(string command)
         {
             string tempBatPath = "";
+            var stopwatch = Stopwatch.StartNew();
+            int exitCode = -1;
+            string output;
             try
             {
                 tempBatPath = Path.Combine(Path.GetTempPath(), $"pops_task_{Guid.NewGuid():N}.bat");
@@ -1085,31 +1231,67 @@ namespace POpsAgent
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
 
-                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(30));
+                using var cts = new CancellationTokenSource(CommandExecutionPolicy.MaxDuration);
                 try { await process.WaitForExitAsync(cts.Token); }
                 catch (TaskCanceledException)
                 {
                     try { process.Kill(true); } catch { }
-                    return "[HATA]: İşlem 30 dakikadan uzun sürdüğü için zorla sonlandırıldı.";
+                    output = "[HATA]: İşlem 30 dakikadan uzun sürdüğü için zorla sonlandırıldı.";
+                    return new CommandExecutionResult(output, exitCode, stopwatch.Elapsed);
                 }
 
+                exitCode = process.ExitCode;
                 string stdOut = outputBuilder.ToString().Trim();
                 string stdErr = errorBuilder.ToString().Trim();
-                try { File.Delete(tempBatPath); } catch { }
 
                 if (process.ExitCode != 0 && !string.IsNullOrWhiteSpace(stdErr))
-                    return $"[ÇIKIŞ KODU: {process.ExitCode}]\n[HATA]:\n{stdErr}\n[ÇIKTI]:\n{stdOut}";
+                    output = $"[ÇIKIŞ KODU: {process.ExitCode}]\n[HATA]:\n{stdErr}\n[ÇIKTI]:\n{stdOut}";
+                else
+                    output = string.IsNullOrWhiteSpace(stdOut) ? $"Komut çalıştı (Çıkış: {process.ExitCode}) ancak çıktı üretilmedi." : stdOut;
 
-                return string.IsNullOrWhiteSpace(stdOut) ? $"Komut çalıştı (Çıkış: {process.ExitCode}) ancak çıktı üretilmedi." : stdOut;
+                return new CommandExecutionResult(output, exitCode, stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
+                return new CommandExecutionResult($"Ajan Hatası: {ex.Message}", exitCode, stopwatch.Elapsed);
+            }
+            finally
+            {
+                stopwatch.Stop();
                 if (!string.IsNullOrEmpty(tempBatPath) && File.Exists(tempBatPath)) try { File.Delete(tempBatPath); } catch { }
-                return $"Ajan Hatası: {ex.Message}";
             }
         }
 
     }
+
+    public sealed class CommandExecutionResult
+    {
+        public CommandExecutionResult(string output, int exitCode, TimeSpan duration)
+        {
+            Output = CommandExecutionPolicy.TruncateOutput(output);
+            ExitCode = exitCode;
+            Duration = duration;
+        }
+
+        public string Output { get; }
+        public int ExitCode { get; }
+        public TimeSpan Duration { get; }
+    }
+
+    public sealed class AgentStartupHealth
+    {
+        private readonly OperationalHealthGate _gate;
+
+        public AgentStartupHealth(bool suppressed, Action<OperationalChecks> writer = null)
+        {
+            _gate = new OperationalHealthGate(suppressed, writer ?? AgentUpdate.WriteOperationalHealth);
+        }
+
+        public void Run(StartupCheck check, Action action) => _gate.Run(check, action);
+        public void Mark(StartupCheck check) => _gate.Mark(check);
+        public OperationalChecks Snapshot() => _gate.Snapshot();
+    }
+
     public class TrayPipeServer
     {
         private readonly ILogger _logger;
@@ -1119,6 +1301,7 @@ namespace POpsAgent
         private const int MaxPipeMessageBytes = 32 * 1024 * 1024;
         private CancellationTokenSource _cts;
         private NamedPipeServerStream _pipeServer;
+        private TaskCompletionSource<bool> _listening;
         public event Action<string> OnMessageReceived = delegate { };
         public event Action<byte[]> OnFrameReceived = delegate { };
         // Tepsi bağlantısı koptuğunda (onaylı Vision oturumu da onunla biter)
@@ -1135,7 +1318,13 @@ namespace POpsAgent
             _logger = logger; _hwId = hwId; _http = http; _serverUrl = serverUrl;
         }
 
-        public void Start() { _cts = new CancellationTokenSource(); Task.Run(() => ListenPipeAsync(_cts.Token)); }
+        public Task Start()
+        {
+            _cts = new CancellationTokenSource();
+            _listening = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _ = Task.Run(() => ListenPipeAsync(_cts.Token));
+            return _listening.Task;
+        }
 
         private string _lastPipeError;
 
@@ -1195,6 +1384,7 @@ namespace POpsAgent
                     ps.SetOwner(system);
 
                     _pipeServer = NamedPipeServerStreamAcl.Create(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, ps);
+                    _listening.TrySetResult(true);
                     POpsHelpers.Log("PIPE", $"Bekleniyor: {pipeName}");
 
                     await _pipeServer.WaitForConnectionAsync(token);

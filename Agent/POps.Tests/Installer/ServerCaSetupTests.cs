@@ -18,7 +18,7 @@ namespace POps.Tests.Installer
         private readonly string _root = TestEnvironment.NewDir("msi-ca");
         private readonly List<string> _log = new List<string>();
 
-        public ServerCaSetupTests() => Setup.TrustedBaseForTests = TestEnvironment.Root;
+        public ServerCaSetupTests() => Setup.TrustedBaseForTests = _root;
 
         private Layout NewLayout() => new Layout
         {
@@ -30,7 +30,13 @@ namespace POps.Tests.Installer
 
         private string Configure(Layout layout, params (string Key, string Value)[] properties)
         {
-            var data = new Dictionary<string, string> { ["INSTALLFOLDER"] = Path.Combine(_root, "PF", "POps") + "\\", ["SERVER_URL"] = "https://pops.okul.local" };
+            string installDir = Path.Combine(_root, "PF", "POps");
+            var data = new Dictionary<string, string>
+            {
+                ["INSTALLFOLDER"] = installDir + "\\",
+                ["INSTALLDIR_STATE"] = Directory.Exists(installDir) ? Setup.StatePops : Setup.StateNew,
+                ["SERVER_URL"] = "https://pops.okul.local",
+            };
             foreach (var (key, value) in properties) data[key] = value;
             return Setup.Configure(data, layout, _log.Add);
         }

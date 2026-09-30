@@ -88,6 +88,17 @@ namespace POps.Tests.Agent
             Assert.True(SecureStore.IsLockedDown(new FileInfo(config).GetAccessControl()));
         }
 
+        [Fact]
+        public void DeviceBypassSecret_IsStoredProtected_AndPresenceIsSeparateFromReadValue()
+        {
+            NewStore();
+            const string secret = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
+            Assert.True(AgentCredentials.SaveDeviceBypassSecret(secret));
+            Assert.Equal(secret, AgentCredentials.GetDeviceBypassSecret(out bool present));
+            Assert.True(present);
+            Assert.True(SecureStore.IsLockedDown(new FileInfo(SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName)).GetAccessControl()));
+        }
+
         [Theory]
         [InlineData("https://pops.example/api/inventory/HW-TEST", true)]
         [InlineData("http://127.0.0.1:8000/api/policy_alert", true)]

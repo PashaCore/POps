@@ -4,8 +4,8 @@
   Kurulum: msiexec /i POps-Agent-<sürüm>-win-x64.msi /qn SERVER_URL=https://pops.example.com ENROLL_TOKEN=<panelden jeton>
   Özellikler (hepsi isteğe bağlı; SERVER_URL ilk kurulumda zorunlu):
     SERVER_URL     sunucu adresi -> appsettings.json "ServerUrl"
-    ENROLL_TOKEN   tek kullanımlık kayıt jetonu -> C:\POpsData\secure\enroll.token
-    BYPASS_SECRET  çevrimdışı karantina bypass anahtarı -> C:\POpsData\secure\bypass.secret
+    ENROLL_TOKEN / ENROLL_TOKEN_FILE   tek kullanımlık kayıt jetonu -> C:\POpsData\secure\enroll.token
+    BYPASS_SECRET / BYPASS_SECRET_FILE eski çevrimdışı karantina anahtarı -> C:\POpsData\secure\bypass.secret
     PERSIST_DIR    dondurma yazılımının geri almadığı klasör -> appsettings.json "PersistDir"
     INSTALLFOLDER  kurulum klasörü (varsayılan C:\Program Files\POps)
   Güncellemede (major upgrade) özellik verilmezse mevcut ayarlar korunur. Ayrıntılar: Installer/README.md
@@ -64,7 +64,9 @@
     <Property Id="SERVER_CA_CERT" Secure="yes" />
     <!-- Gizli özellikler MSI loguna yazılmaz (MsiHiddenProperties) -->
     <Property Id="ENROLL_TOKEN" Secure="yes" Hidden="yes" />
+    <Property Id="ENROLL_TOKEN_FILE" Secure="yes" Hidden="yes" />
     <Property Id="BYPASS_SECRET" Secure="yes" Hidden="yes" />
+    <Property Id="BYPASS_SECRET_FILE" Secure="yes" Hidden="yes" />
     <Property Id="PopsConfigure" Hidden="yes" />
 
     <!-- Ajan framework'e bağımlıdır: .NET 8 Desktop Runtime (x64) yoksa kurulum başlamaz -->
@@ -106,6 +108,11 @@
         <!-- Stop/Remove kurulumda da çalışır: MSI'sız eski kurulumun aynı adlı servisi durdurulup silinir,
              ardından yeni konumdaki exe ile yeniden oluşturulur -->
         <ServiceControl Id="POpsAgentControl" Name="POpsAgent" Start="install" Stop="both" Remove="both" Wait="yes" />
+        <util:EventSource Name="POps Agent"
+                          Log="Application"
+                          EventMessageFile="[INSTALLFOLDER]System.Diagnostics.EventLog.Messages.dll"
+                          SupportsInformationals="yes"
+                          SupportsWarnings="yes" />
       </Component>
 
       <!-- Tepsi uygulamasını her kullanıcı oturumunda yalnızca MSI başlatır (tepsinin kendi HKCU Run kaydı kaldırıldı) -->
@@ -154,7 +161,7 @@
     <CustomAction Id="PopsConfigure" BinaryRef="PopsActions" DllEntry="Configure"
                   Execute="deferred" Impersonate="no" Return="check" HideTarget="yes" />
     <SetProperty Id="PopsConfigure" Sequence="execute" Before="PopsConfigure"
-                 Value="INSTALLFOLDER=[INSTALLFOLDER];INSTALLDIR_STATE=[POPS_INSTALLDIR_STATE];SERVER_URL=[SERVER_URL];PERSIST_DIR=[PERSIST_DIR];ENROLL_TOKEN=[ENROLL_TOKEN];BYPASS_SECRET=[BYPASS_SECRET];TERMINAL_ENABLED=[TERMINAL_ENABLED];VISION_ENABLED=[VISION_ENABLED];SERVER_CA_CERT=[SERVER_CA_CERT]" />
+                 Value="INSTALLFOLDER=[INSTALLFOLDER];INSTALLDIR_STATE=[POPS_INSTALLDIR_STATE];SERVER_URL=[SERVER_URL];PERSIST_DIR=[PERSIST_DIR];ENROLL_TOKEN=[ENROLL_TOKEN];ENROLL_TOKEN_FILE=[ENROLL_TOKEN_FILE];BYPASS_SECRET=[BYPASS_SECRET];BYPASS_SECRET_FILE=[BYPASS_SECRET_FILE];TERMINAL_ENABLED=[TERMINAL_ENABLED];VISION_ENABLED=[VISION_ENABLED];SERVER_CA_CERT=[SERVER_CA_CERT]" />
 
     <!-- Eski (MSI'sız) kurulum klasörleri ve kalıntılar; yalnızca yeni servis başladıktan sonra -->
     <CustomAction Id="PopsCleanupLegacy" BinaryRef="PopsActions" DllEntry="CleanupLegacy"

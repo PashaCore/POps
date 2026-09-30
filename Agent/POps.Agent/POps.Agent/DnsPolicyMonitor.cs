@@ -62,6 +62,7 @@ namespace POpsAgent
         internal static Action<string, string> Reporter { get; set; } = ReportViolation;
         // Worker bunu QuarantineControl.LockdownAsync'e bağlar (kilit ekranı + yalıtım + denetim kaydı)
         public static Action<string> Quarantine { get; set; } = reason => { _ = NetworkIsolation.EnableAsync(ServerUrl); };
+        public static Action<string> ErrorReporter { get; set; } = _ => { };
 
         private static string ServerUrl { get { lock (Sync) return _serverUrl; } }
 
@@ -138,7 +139,11 @@ namespace POpsAgent
         {
             HashSet<string> present;
             try { present = new HashSet<string>(CacheReader().Select(DnsWatch.Normalize).Where(n => n != null), StringComparer.Ordinal); }
-            catch { present = new HashSet<string>(StringComparer.Ordinal); }
+            catch (Exception ex)
+            {
+                ErrorReporter(ex.Message);
+                present = new HashSet<string>(StringComparer.Ordinal);
+            }
             lock (Sync)
             {
                 Reported.Clear();
@@ -161,6 +166,7 @@ namespace POpsAgent
                 _baseline = new HashSet<string>(StringComparer.Ordinal);
                 _quarantined = false;
                 _listMissingLogged = false;
+                ErrorReporter = _ => { };
             }
         }
 
@@ -226,7 +232,11 @@ namespace POpsAgent
                     }
                 }
             }
-            catch (Exception ex) { POpsHelpers.Log("TRACKER", $"DNS önbelleği okunamadı: {ex.Message}", true); }
+            catch (Exception ex)
+            {
+                ErrorReporter(ex.Message);
+                POpsHelpers.Log("TRACKER", $"DNS önbelleği okunamadı: {ex.Message}", true);
+            }
             finally { Interlocked.Exchange(ref _checking, 0); }
             return found;
         }
@@ -258,7 +268,11 @@ namespace POpsAgent
                     using var response = await AgentHttp.Client.SendAsync(request);
                     if (!response.IsSuccessStatusCode) POpsHelpers.Log("TRACKER", $"Kural ihlali bildirilemedi: HTTP {(int)response.StatusCode}.", true);
                 }
-                catch (Exception ex) { POpsHelpers.Log("TRACKER", $"Kural ihlali bildirilemedi: {ex.Message}", true); }
+                catch (Exception ex)
+                {
+                    ErrorReporter(ex.Message);
+                    POpsHelpers.Log("TRACKER", $"Kural ihlali bildirilemedi: {ex.Message}", true);
+                }
             });
         }
     }

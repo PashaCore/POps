@@ -149,5 +149,23 @@ namespace POps.Tests.Agent
             Assert.Equal(Helpdesk.NotEnrolledMessage, m.Message);
             Assert.Equal(0, _calls);
         }
+
+        [Fact]
+        public async Task ListAsync_SendsTheEncodedResultToTheTray()
+        {
+            string frame = null;
+            ActivityHistory h = new ActivityHistory("https://pops.example", () => "HW-1", value => frame = value)
+            {
+                UtcNow = () => _now,
+                CanReport = () => true,
+                Sender = (_, _, _, _) => Task.FromResult<(int? Status, string Body)>((200, Sample)),
+            };
+
+            await h.ListAsync();
+
+            Assert.StartsWith("ACTIVITY_LIST_RESULT:", frame);
+            string json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(frame.Substring("ACTIVITY_LIST_RESULT:".Length)));
+            Assert.True(JsonSerializer.Deserialize<ActivityListMessage>(json).Ok);
+        }
     }
 }

@@ -65,6 +65,10 @@ and closes the connection with `4401`.
   stays open for one heartbeat after the first messages. If the server rejected the credentials (close code
   `4401`) it waits 60 s plus that random time. From 0.1.5-alpha the heartbeat carries `"quarantined"`
   (lock screen and/or isolation active), which the server uses to finish or resend a pending lock/unlock.
+- The heartbeat also carries `agent_health`: service start time, last successful policy sync and inventory upload,
+  tray connection, Vision channel (`off` / `idle` / `connected`), background-loop errors in the last hour and a
+  sanitized last error of at most 200 characters. The in-memory window resets with the service; older servers
+  ignore the unknown block.
 - **Hardware ID.** The device ID (`HW-…`) is kept in `C:\POpsData\identity.key`. On first start it is derived from
   the machine UUID and the primary MAC address. The server compares a hardware fingerprint (UUID, BIOS serial,
   disk serial, MAC, RAM serial) on every connection and may assign a different ID (`set_identity`), for example
@@ -72,6 +76,9 @@ and closes the connection with `4401`.
 - **Authentication.** Before it has a device secret the agent sends the enrollment token (`X-Enroll-Token`); the
   server answers with `set_secret`. From then on it sends `X-Agent-Secret`. Secrets live in `C:\POpsData\secure`
   (SYSTEM and Administrators only) and are never written to a log. See [`security.md`](security.md#agent-identity).
+- **Vision authentication.** The command socket may use the enrollment token for first registration, but the
+  Vision socket never sends it: Vision requires the device's `X-Agent-Secret` and stays closed before enrollment.
+  A Vision `4401` rejection clears the stream and local approval without an automatic retry.
 - **Inventory.** When the server has no hardware inventory for the device, it asks for it (`get_hardware`) and the
   agent posts CPU, RAM, motherboard, GPU, OS, IP, MAC and disk information.
 - **Policy.** The agent fetches `GET /api/agent_policies` every 60 seconds.
@@ -91,6 +98,7 @@ What the service does with each server command:
 | `wake_peer` | Sends a Wake-on-LAN packet for another PC in the same lab. |
 | `set_identity` | Replaces the stored hardware ID. |
 | `set_secret` | Stores the device secret and deletes the enrollment token. |
+| `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
 | `set_capabilities` | Switches terminal and/or Vision **off**; requests to switch them on are ignored. |
 | `update_agent` | Starts a signed update (below). |
 
@@ -99,6 +107,12 @@ The server may also send `scan_updates` and `install_updates`
 
 The agent reports back `result`, `thumbnail`, `stream_frame` (on the Vision socket), `vision_rejected`,
 `capabilities`, `capability_denied` and `update_result`. The full message list is in [`api.md`](api.md#websockets).
+
+High-impact actions also have a server-independent local record in the Windows **Application** event log under
+the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 and length are recorded, never the
+command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1030 update results, 1040 capability changes,
+1050 identity rejection and 1060 receipt of a bypass-key fingerprint. Failure to write an event does not stop the
+service.
 
 ## Capability policy
 
@@ -163,9 +177,12 @@ quarantined.
 key button on **Cihaz Yönetimi** (`GET /api/security/bypass_token/{pc}`; every request is logged). The user enters
 it on the lock screen or in the tray menu **Yönetici Müdahalesi (Bypass)**. From 0.1.5-alpha a valid code does what
 `unlock` does: it closes the lock screen and removes the network isolation, and when the server can be reached the
-agent records the use as `agent.offline_bypass`. Older agents only remove the isolation. The code is the
-first 6 hex characters of SHA-256(`hw_id` + `BYPASS_SECRET` + date), so the agent's `BypassSecret` must equal the
-server's `BYPASS_SECRET` and both must use the same local date. After 5 wrong codes the bypass locks for 15
+agent records the use as `agent.offline_bypass`. Older agents only remove the isolation. The server provisions a
+separate 32-byte base64url key for each enrolled device with `set_bypass_secret`. The agent stores it as
+`C:\POpsData\secure\bypass.device`; the code is the first six uppercase hex characters of HMAC-SHA256(key,
+UTF-8(`hw_id|yyyy-MM-dd`), using the device's local date). If `bypass.device` exists, a malformed or unreadable file
+fails closed and the legacy fleet secret is not tried. When the file is absent, older servers remain compatible
+through the deprecated first-six-hex SHA-256(`hw_id` + `BYPASS_SECRET` + date) formula. After 5 wrong codes the bypass locks for 15
 minutes, doubling up to 24 hours; from 0.1.5-alpha the counters are kept in `bypass-state.json` and survive a
 restart, and the lock screen and the tray check the code format first so a typo does not use up an attempt.
 
@@ -229,8 +246,12 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
 2. The agent verifies the manifest's ed25519 signature with the public key compiled into it, refuses a version
    that is not newer than its own, downloads the MSI from `<ServerUrl>/updates/<name>` and checks its size and
    SHA-256.
-3. `POpsUpdater` installs it, waits up to 90 seconds for the new version to report healthy
-   (`C:\POpsData\health.json`), and otherwise rolls back to the previous MSI.
+3. `POpsUpdater` installs it, waits up to 90 seconds for the new version to report `phase: "operational"`
+   in `C:\POpsData\health.json`, and otherwise rolls back to the previous MSI. Operational means the agent's
+   identity, credentials, capabilities, quarantine/TLS state and tray pipe are ready and its first connection
+   attempt has begun; the server need not be reachable and slow WMI inventory continues in the background.
+   This avoids accepting a process that starts but fails during core initialization. Phase-less health files
+   from 0.1.11 and older remain valid when an update rolls back to one of those versions.
 4. The result (`success`, `pending_reboot`, `rolled_back`, `rollback_failed`, `install_failed`, `rejected`, …) is
    written to `C:\POpsData\update-result.json` and reported to the server, which records it in the audit log and
    shows it in the panel.

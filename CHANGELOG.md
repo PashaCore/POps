@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Agent/MSI: local Windows audit trail.** The MSI registers `POps Agent` in the Application event log. The service records remote-command start/finish (command hash and length, never its text), Vision sessions, quarantine changes, update results, capability changes, `4401` identity rejections and bypass-key receipt as event IDs 1000–1060. Event-log failures are reported to the POps log and never stop the service.
+- **Agent: per-device offline bypass keys.** An authenticated command channel can store a server-issued 32-byte base64url key as `bypass.device`; daily codes use HMAC-SHA256 over `hw_id|local-date`, and acknowledgements expose only a short key fingerprint. If the per-device file exists it fails closed instead of falling back to the deprecated fleet-wide `BYPASS_SECRET`. The MSI can read enrollment and legacy bypass secrets from files, keeping their values off the command line.
+- **Agent: Vision authenticates only with the device secret.** The Vision WebSocket no longer receives `X-Enroll-Token`; enrollment remains confined to the command socket. An agent without its per-device `X-Agent-Secret` refuses to open Vision and reports `reason: "not_enrolled"`. A Vision `4401` rejection clears the stream and local consent state and is logged once without an automatic retry, while the command socket keeps its existing enrollment behaviour.
+- **Agent/Updater: successful updates now require an operational agent.** `health.json` is no longer written before the host exists. It is written with `phase: "operational"` only after identity, credentials, capabilities, quarantine/TLS state and the tray pipe are ready and the first connection attempt has begun; slow WMI inventory stays in the background and the server need not be reachable. `POpsUpdater` requires this phase for new agents, while accepting the phase-less health file of 0.1.11 and older during rollback. A build that starts and then fails during core initialization therefore rolls back instead of being reported as successful.
+
 ### Added
 
+- **Agent health telemetry.** Every heartbeat now includes service start time, last successful policy sync and inventory upload, tray and Vision-channel state, errors seen by background loops in the last hour and a sanitized 200-character last error. Policy, inventory, DNS and session loops report failures to this in-memory window while continuing to run; older servers safely ignore the new block.
 - **Docs: capacity report** (`docs/kapasite/README.md`, Turkish, with charts): restart storms for 250–5,000 agents on one server process (5,000 back in 11 s, 0 failed attempts), CPU for POps and PostgreSQL, memory model (≈ 69 MB + 0.16 MB per agent), database write rate, panel latency under load, the task-queue bottleneck it found, and hardware sizing by fleet size, with what was and was not measured. Raw data `docs/kapasite/olcum.json`; charts from `tools/bench_charts.py`.
 
 ### Changed

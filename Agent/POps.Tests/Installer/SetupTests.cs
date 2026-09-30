@@ -18,7 +18,7 @@ namespace POps.Tests.Installer
         private readonly List<string> _log = new List<string>();
 
         // Üst klasör zinciri geçici test klasöründe durur (bkz. Setup.TrustedBaseForTests)
-        public SetupTests() => Setup.TrustedBaseForTests = TestEnvironment.Root;
+        public SetupTests() => Setup.TrustedBaseForTests = _root;
 
         private Layout NewLayout() => new Layout
         {
@@ -32,7 +32,11 @@ namespace POps.Tests.Installer
 
         private string Configure(Layout layout, params (string Key, string Value)[] properties)
         {
-            var data = new Dictionary<string, string> { ["INSTALLFOLDER"] = InstallDir + "\\" };
+            var data = new Dictionary<string, string>
+            {
+                ["INSTALLFOLDER"] = InstallDir + "\\",
+                ["INSTALLDIR_STATE"] = Directory.Exists(InstallDir) ? Setup.StatePops : Setup.StateNew,
+            };
             foreach (var (key, value) in properties) data[key] = value;
             return Setup.Configure(data, layout, _log.Add);
         }
@@ -252,6 +256,41 @@ namespace POps.Tests.Installer
             Assert.Equal("https://new.example", config["ServerUrl"]);
             Assert.Equal(@"T:\POps", config["PersistDir"]);
             Assert.Equal("new-bp", File.ReadAllText(Secure(layout, "bypass.secret")));
+        }
+
+        [Fact]
+        public void SecretFiles_WinOverDirectProperties()
+        {
+            Layout layout = NewLayout();
+            string enroll = Path.Combine(_root, "enroll.txt");
+            string bypass = Path.Combine(_root, "bypass.txt");
+            Write(enroll, "AbCdEfGhIjKlMnOpQrStUvWxYz012345\r\n");
+            Write(bypass, "file-bypass\r\n");
+
+            Assert.Null(Configure(layout,
+                ("SERVER_URL", "https://pops.example"),
+                ("ENROLL_TOKEN", "ZZZZZZZZZZZZZZZZZZZZZZZZ"),
+                ("ENROLL_TOKEN_FILE", enroll),
+                ("BYPASS_SECRET", "direct-bypass"),
+                ("BYPASS_SECRET_FILE", bypass)));
+
+            Assert.Equal("AbCdEfGhIjKlMnOpQrStUvWxYz012345", File.ReadAllText(Secure(layout, "enroll.token")));
+            Assert.Equal("file-bypass", File.ReadAllText(Secure(layout, "bypass.secret")));
+            Assert.DoesNotContain(_log, line => line.Contains("AbCdEfGh") || line.Contains("file-bypass"));
+        }
+
+        [Theory]
+        [InlineData("ENROLL_TOKEN_FILE")]
+        [InlineData("BYPASS_SECRET_FILE")]
+        public void UnreadableSecretFile_StopsBeforeWriting(string property)
+        {
+            Layout layout = NewLayout();
+            string missing = Path.Combine(_root, "missing.secret");
+            string error = Configure(layout, ("SERVER_URL", "https://pops.example"), (property, missing));
+
+            Assert.Contains(property + " dosyası okunamadı", error);
+            Assert.False(File.Exists(Path.Combine(InstallDir, "appsettings.json")));
+            Assert.False(Directory.Exists(layout.SecureDir));
         }
 
         [Theory]
