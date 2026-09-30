@@ -42,6 +42,7 @@
 
   <ItemGroup>
     <None Include="TestData\manifest.json;TestData\manifest.json.sig" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Installer\agent\Package.wxs" Link="TestData\AgentPackage.wxs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

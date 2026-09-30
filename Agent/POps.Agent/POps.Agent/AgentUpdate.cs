@@ -223,9 +223,15 @@ namespace POpsAgent
         {
             try
             {
-                if (File.Exists(ResultPath)) POpsHelpers.Log("UPDATE", $"Son güncelleme sonucu: {File.ReadAllText(ResultPath).Trim()}");
+                if (!File.Exists(ResultPath)) return;
+                string json = File.ReadAllText(ResultPath);
+                POpsHelpers.Log("UPDATE", $"Son güncelleme sonucu: {json.Trim()}");
+                using JsonDocument doc = JsonDocument.Parse(json);
+                JsonElement result = doc.RootElement;
+                LocalAudit.Write(LocalAudit.UpdateResult(Str(result, "from_version"), Str(result, "to_version"),
+                    Str(result, "outcome"), Str(result, "rollback")));
             }
-            catch { }
+            catch (Exception ex) { POpsHelpers.Log("UPDATE", $"Güncelleme sonucu yerel denetim izine yazılamadı: {ex.Message}", true); }
         }
 
         // ==========================================

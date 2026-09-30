@@ -108,6 +108,11 @@
         <!-- Stop/Remove kurulumda da çalışır: MSI'sız eski kurulumun aynı adlı servisi durdurulup silinir,
              ardından yeni konumdaki exe ile yeniden oluşturulur -->
         <ServiceControl Id="POpsAgentControl" Name="POpsAgent" Start="install" Stop="both" Remove="both" Wait="yes" />
+        <util:EventSource Name="POps Agent"
+                          Log="Application"
+                          EventMessageFile="[INSTALLFOLDER]System.Diagnostics.EventLog.Messages.dll"
+                          SupportsInformationals="yes"
+                          SupportsWarnings="yes" />
       </Component>
 
       <!-- Tepsi uygulamasını her kullanıcı oturumunda yalnızca MSI başlatır (tepsinin kendi HKCU Run kaydı kaldırıldı) -->

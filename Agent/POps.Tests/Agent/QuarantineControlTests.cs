@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -21,6 +22,7 @@ namespace POps.Tests.Agent
         private readonly List<string> _tray = new List<string>();
         private int _enabled, _disabled;
         private bool _disableSucceeds = true;
+        private readonly List<LocalAuditEvent> _audit = new List<LocalAuditEvent>();
 
         public QuarantineControlTests()
         {
@@ -36,7 +38,7 @@ namespace POps.Tests.Agent
                 if (_disableSucceeds) File.Delete(NetworkIsolation.StatePath);
                 return Task.FromResult(_disableSucceeds);
             },
-            bypass ?? new OfflineBypass());
+            bypass ?? new OfflineBypass(), _audit.Add);
 
         private static string ValidCode() =>
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(HwId + Secret + "2026-09-26"))).Substring(0, 6);
@@ -63,6 +65,8 @@ namespace POps.Tests.Agent
             Assert.Equal("BYPASS_SUCCESS", _tray[1]);
             Assert.Equal(1, _disabled);
             Assert.False(control.IsLocked);
+            Assert.Equal(new[] { 1020, 1021 }, _audit.Select(e => e.EventId));
+            Assert.Contains("source: bypass kodu", _audit[1].Message);
         }
 
         [Fact]

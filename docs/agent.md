@@ -104,6 +104,12 @@ The server may also send `scan_updates` and `install_updates`
 The agent reports back `result`, `thumbnail`, `stream_frame` (on the Vision socket), `vision_rejected`,
 `capabilities`, `capability_denied` and `update_result`. The full message list is in [`api.md`](api.md#websockets).
 
+High-impact actions also have a server-independent local record in the Windows **Application** event log under
+the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 and length are recorded, never the
+command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1030 update results, 1040 capability changes,
+1050 identity rejection and 1060 receipt of a bypass-key fingerprint. Failure to write an event does not stop the
+service.
+
 ## Capability policy
 
 Terminal (`execute`) and Vision (streaming, previews, remote input) can be disabled per PC, so that even a
