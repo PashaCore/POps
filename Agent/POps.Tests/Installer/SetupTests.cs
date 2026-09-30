@@ -254,6 +254,41 @@ namespace POps.Tests.Installer
             Assert.Equal("new-bp", File.ReadAllText(Secure(layout, "bypass.secret")));
         }
 
+        [Fact]
+        public void SecretFiles_WinOverDirectProperties()
+        {
+            Layout layout = NewLayout();
+            string enroll = Path.Combine(_root, "enroll.txt");
+            string bypass = Path.Combine(_root, "bypass.txt");
+            Write(enroll, "AbCdEfGhIjKlMnOpQrStUvWxYz012345\r\n");
+            Write(bypass, "file-bypass\r\n");
+
+            Assert.Null(Configure(layout,
+                ("SERVER_URL", "https://pops.example"),
+                ("ENROLL_TOKEN", "ZZZZZZZZZZZZZZZZZZZZZZZZ"),
+                ("ENROLL_TOKEN_FILE", enroll),
+                ("BYPASS_SECRET", "direct-bypass"),
+                ("BYPASS_SECRET_FILE", bypass)));
+
+            Assert.Equal("AbCdEfGhIjKlMnOpQrStUvWxYz012345", File.ReadAllText(Secure(layout, "enroll.token")));
+            Assert.Equal("file-bypass", File.ReadAllText(Secure(layout, "bypass.secret")));
+            Assert.DoesNotContain(_log, line => line.Contains("AbCdEfGh") || line.Contains("file-bypass"));
+        }
+
+        [Theory]
+        [InlineData("ENROLL_TOKEN_FILE")]
+        [InlineData("BYPASS_SECRET_FILE")]
+        public void UnreadableSecretFile_StopsBeforeWriting(string property)
+        {
+            Layout layout = NewLayout();
+            string missing = Path.Combine(_root, "missing.secret");
+            string error = Configure(layout, ("SERVER_URL", "https://pops.example"), (property, missing));
+
+            Assert.Contains(property + " dosyası okunamadı", error);
+            Assert.False(File.Exists(Path.Combine(InstallDir, "appsettings.json")));
+            Assert.False(Directory.Exists(layout.SecureDir));
+        }
+
         [Theory]
         [InlineData("SERVER_URL", "pops.example", "http")]
         [InlineData("SERVER_URL", "http://10.0.0.5:8000", "şifresiz http")]

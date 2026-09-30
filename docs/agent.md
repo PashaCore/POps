@@ -94,6 +94,7 @@ What the service does with each server command:
 | `wake_peer` | Sends a Wake-on-LAN packet for another PC in the same lab. |
 | `set_identity` | Replaces the stored hardware ID. |
 | `set_secret` | Stores the device secret and deletes the enrollment token. |
+| `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
 | `set_capabilities` | Switches terminal and/or Vision **off**; requests to switch them on are ignored. |
 | `update_agent` | Starts a signed update (below). |
 
@@ -166,9 +167,12 @@ quarantined.
 key button on **Cihaz Yönetimi** (`GET /api/security/bypass_token/{pc}`; every request is logged). The user enters
 it on the lock screen or in the tray menu **Yönetici Müdahalesi (Bypass)**. From 0.1.5-alpha a valid code does what
 `unlock` does: it closes the lock screen and removes the network isolation, and when the server can be reached the
-agent records the use as `agent.offline_bypass`. Older agents only remove the isolation. The code is the
-first 6 hex characters of SHA-256(`hw_id` + `BYPASS_SECRET` + date), so the agent's `BypassSecret` must equal the
-server's `BYPASS_SECRET` and both must use the same local date. After 5 wrong codes the bypass locks for 15
+agent records the use as `agent.offline_bypass`. Older agents only remove the isolation. The server provisions a
+separate 32-byte base64url key for each enrolled device with `set_bypass_secret`. The agent stores it as
+`C:\POpsData\secure\bypass.device`; the code is the first six uppercase hex characters of HMAC-SHA256(key,
+UTF-8(`hw_id|yyyy-MM-dd`), using the device's local date). If `bypass.device` exists, a malformed or unreadable file
+fails closed and the legacy fleet secret is not tried. When the file is absent, older servers remain compatible
+through the deprecated first-six-hex SHA-256(`hw_id` + `BYPASS_SECRET` + date) formula. After 5 wrong codes the bypass locks for 15
 minutes, doubling up to 24 hours; from 0.1.5-alpha the counters are kept in `bypass-state.json` and survive a
 restart, and the lock screen and the tray check the code format first so a typo does not use up an attempt.
 

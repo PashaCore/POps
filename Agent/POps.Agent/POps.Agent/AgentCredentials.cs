@@ -26,6 +26,7 @@ namespace POpsAgent
         public const string SecretFileName = "agent.secret";
         public const string EnrollTokenFileName = "enroll.token";
         public const string BypassSecretFileName = "bypass.secret";
+        public const string DeviceBypassSecretFileName = "bypass.device";
 
         // appsettings.json'dan (ve eski sürümlerin kullandığı sistem ortam değişkenlerinden) güvenli depoya
         // taşınan gizli ayarlar. Sistem ortam değişkenlerini ve kurulum klasöründeki dosyayı her kullanıcı
@@ -206,6 +207,29 @@ namespace POpsAgent
         // Tanımlı değilse null döner ve çevrimdışı bypass devre dışı kalır.
         public static string GetBypassSecret() =>
             SecureStore.Read(SecureStore.PathOf(BypassSecretFileName)) ?? POpsHelpers.ReadConfigValue("BypassSecret");
+
+        // Dosya varsa okuma/biçim hatasında eski filo anahtarına geri düşülmez; çağıran present değerini korur.
+        public static string GetDeviceBypassSecret(out bool present)
+        {
+            string path = SecureStore.PathOf(DeviceBypassSecretFileName);
+            present = File.Exists(path);
+            return present ? SecureStore.Read(path) : null;
+        }
+
+        public static bool SaveDeviceBypassSecret(string secret)
+        {
+            if (!DeviceBypassSecret.TryDecode(secret, out _)) return false;
+            try
+            {
+                SecureStore.WriteProtected(SecureStore.PathOf(DeviceBypassSecretFileName), secret.Trim());
+                return true;
+            }
+            catch (Exception ex)
+            {
+                POpsHelpers.Log("SECURE", $"Bypass cihaz anahtarı yazılamadı ({DeviceBypassSecretFileName}): {ex.Message}", true);
+                return false;
+            }
+        }
 
         // ==========================================
         // GİZLİ AYARLARIN TAŞINMASI

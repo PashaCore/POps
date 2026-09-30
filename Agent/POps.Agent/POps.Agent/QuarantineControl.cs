@@ -157,15 +157,21 @@ namespace POpsAgent
         // Tepsiden gelen kod. Geçerliyse karantina kalkar (bkz. UnlockAsync); sonuç tepsiye BYPASS_SUCCESS /
         // BYPASS_FAILED olarak döner. bypassSecret yoksa bypass kapalıdır. Dönen: kod kabul edildi VE kilit kalktı mı
         public async Task<bool> HandleBypassAsync(string token, string hwId, string bypassSecret, DateTime localDate)
+            => await HandleBypassAsync(token, hwId, bypassSecret, null, false, localDate);
+
+        public async Task<bool> HandleBypassAsync(string token, string hwId, string legacySecret,
+            string deviceSecret, bool deviceSecretPresent, DateTime localDate)
         {
-            if (string.IsNullOrEmpty(bypassSecret))
+            if ((!deviceSecretPresent && string.IsNullOrEmpty(legacySecret)) ||
+                (deviceSecretPresent && !POps.Shared.DeviceBypassSecret.TryDecode(deviceSecret, out _)))
             {
-                POpsHelpers.Log("AGENT", $"Offline Bypass devre dışı: BypassSecret tanımlı değil ({SecureStore.Dir}\\{AgentCredentials.BypassSecretFileName}).", true);
+                string reason = deviceSecretPresent ? "bypass.device okunamadı ya da biçimi geçersiz" : "BypassSecret tanımlı değil";
+                POpsHelpers.Log("AGENT", $"Offline Bypass devre dışı: {reason}.", true);
                 _toTray("BYPASS_FAILED");
                 return false;
             }
 
-            switch (_bypass.Attempt(token, hwId, bypassSecret, localDate))
+            switch (_bypass.Attempt(token, hwId, legacySecret, deviceSecret, deviceSecretPresent, localDate))
             {
                 case OfflineBypass.Result.Accepted:
                     POpsHelpers.Log("AGENT", "Offline Bypass kodu doğrulandı; kilit ekranı ve karantina kaldırılıyor.");

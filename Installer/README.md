@@ -19,7 +19,9 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 | -------- | ------ | ---------- |
 | `SERVER_URL`    | first install | `appsettings.json` → `ServerUrl` (in the install folder). Must be `https://`; plain `http://` is accepted only for `127.0.0.1` / `localhost`. |
 | `ENROLL_TOKEN`  | recommended   | `C:\POpsData\secure\enroll.token` |
-| `BYPASS_SECRET` | optional      | `C:\POpsData\secure\bypass.secret` |
+| `ENROLL_TOKEN_FILE` | recommended for unattended installs | Reads the enrollment token from this file into `C:\POpsData\secure\enroll.token`; takes precedence over `ENROLL_TOKEN`. |
+| `BYPASS_SECRET` | optional, legacy | `C:\POpsData\secure\bypass.secret`. Shared-fleet bypass secret; deprecated in favour of the per-device key delivered by the server. |
+| `BYPASS_SECRET_FILE` | optional, legacy | Reads the shared bypass secret from this file; takes precedence over `BYPASS_SECRET`. |
 | `PERSIST_DIR`   | optional      | `appsettings.json` → `PersistDir` (see `Agent/README.md`, machines with freeze software) |
 | `TERMINAL_ENABLED` | optional   | `C:\POpsData\secure\capabilities.json`: `1` allows the panel's remote terminal (`execute`) on this PC, `0` disables it. See *Capability policy* in `Agent/README.md`. |
 | `VISION_ENABLED`   | optional   | same file: `1` / `0` for screen streaming, previews and remote input. |
@@ -28,7 +30,7 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 
 - Every property is optional on an upgrade: a value that is not given keeps the installed one. A first install without `SERVER_URL` (and without an old install to take it from) fails with a clear message in the log.
 - A plain `http://` server address is refused, including one migrated from an older install. Over `ws://` the device secret, the enrollment token and the commands the agent runs as SYSTEM would cross the network in clear text. Pre-MSI installs that used `http://<ip>:8000` therefore need `SERVER_URL=https://…` on the command line.
-- `ENROLL_TOKEN` and `BYPASS_SECRET` are hidden from the MSI log. A command line is still visible to other logged-on users while `msiexec` runs, so install from a deployment tool (GPO, Intune, the panel's remote command) or while no student is signed in.
+- The four secret properties are hidden from the MSI log. Prefer `ENROLL_TOKEN_FILE`: direct values on an `msiexec` command line are still visible to other logged-on users. A named file must be readable by the installer (which runs as SYSTEM); an unreadable or empty file stops the install with a Turkish error. When both forms are supplied, the file wins.
 - An enrollment token enrolls up to `max_uses` devices (1–10000, chosen when it is created on the **Sistem & Sürüm** page; 1 by default) until it expires (1 hour to 30 days, 72 hours by default), so one token can enroll a whole lab. Each device still receives its own secret. A device that is already enrolled cannot take a new secret with a token unless a superadmin allows re-enrollment for it (`POST /api/system/allow-reenroll`).
 - `appsettings.json` and the secret files are written by a custom action, not installed as MSI files, so they survive upgrades. `appsettings.json` is readable only by SYSTEM and Administrators.
 - `SERVER_CA_CERT` must point to a CA certificate in PEM form. A file that is not a PEM certificate, or that is the server's own certificate rather than the CA that signed it, stops the install with a message saying so; nothing is written in that case. Only the first certificate block of the file is kept.

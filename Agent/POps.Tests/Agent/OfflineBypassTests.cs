@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using POps.Shared;
 using POpsAgent;
 using Xunit;
 
@@ -6,6 +8,28 @@ namespace POps.Tests.Agent
 {
     public class OfflineBypassTests : TestBase
     {
+        private const string DeviceSecret = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
+
+        [Fact]
+        public void PerDeviceHmac_MatchesTheContractVector()
+        {
+            byte[] key = Enumerable.Repeat((byte)1, 32).ToArray();
+            DateTime date = new DateTime(2026, 10, 1);
+
+            Assert.Equal("BA258E", DeviceBypassSecret.Code(key, "HW-TEST", date));
+            Assert.True(OfflineBypass.Matches("BA258E", "HW-TEST", "legacy", DeviceSecret, true, date));
+            Assert.Equal("72cd6e8422c407fb", DeviceBypassSecret.Fingerprint(key));
+        }
+
+        [Fact]
+        public void DeviceFilePresence_DisablesLegacyFallback()
+        {
+            DateTime date = new DateTime(2026, 9, 26);
+            Assert.True(OfflineBypass.Matches("372CC1", "HW-678CC8C5265E", "sekret-Ç-1", null, false, date));
+            Assert.False(OfflineBypass.Matches("372CC1", "HW-678CC8C5265E", "sekret-Ç-1", "broken", true, date));
+            Assert.False(OfflineBypass.Matches("372CC1", "HW-678CC8C5265E", "sekret-Ç-1", DeviceSecret, true, date));
+        }
+
         // Backend offline_bypass_code() ile üretilmiş vektörler (sunucu ve ajan aynı kodu kabul etmeli)
         [Theory]
         [InlineData("HW-678CC8C5265E", "sekret-Ç-1", "2026-09-26", "372CC1")]

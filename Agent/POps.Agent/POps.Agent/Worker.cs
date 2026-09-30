@@ -59,6 +59,7 @@ namespace POpsAgent
         private const WebSocketCloseStatus AuthRejectedCloseStatus = (WebSocketCloseStatus)4401;
 
         private ClientWebSocket _commandWs;
+        private bool _commandUsesDeviceSecret;
         private ClientWebSocket _visionWs;
         private readonly SemaphoreSlim _wsCommandLock = new(1, 1);
         private readonly SemaphoreSlim _wsVisionLock = new(1, 1);
@@ -274,10 +275,12 @@ namespace POpsAgent
         // Değerler loglanmaz; dönen metin yalnızca hangi başlıkların gittiğini söyler.
         private string ApplyAuthHeaders(ClientWebSocket ws)
         {
+            _commandUsesDeviceSecret = false;
             if (!POpsHelpers.IsSecureServerUrl(_serverUrl)) return "yok (şifresiz bağlantı)";
 
             string secret = AgentCredentials.CurrentSecret ?? AgentCredentials.LoadSecret();
             string enrollToken = AgentCredentials.GetEnrollToken();
+            _commandUsesDeviceSecret = secret != null;
 
             if (secret != null) ws.Options.SetRequestHeader("X-Agent-Secret", secret);
             if (enrollToken != null) ws.Options.SetRequestHeader("X-Enroll-Token", enrollToken);
@@ -458,6 +461,18 @@ namespace POpsAgent
             await _trayPipe.Start().WaitAsync(token);
         }
 
+        private async Task HandleSetBypassSecretAsync(JsonElement root)
+        {
+            string secret = root.TryGetProperty("secret", out var property) && property.ValueKind == JsonValueKind.String
+                ? property.GetString() : null;
+            bool saved = BypassSecretCommand.Process(secret, _commandUsesDeviceSecret,
+                AgentCredentials.SaveDeviceBypassSecret,
+                message => POpsHelpers.Log("AGENT", message,
+                    message.StartsWith("[GÜVENLİK]", StringComparison.Ordinal) || message.EndsWith("yazılamadı.", StringComparison.Ordinal)),
+                out string fingerprint);
+            if (saved) await SendCommandMessageAsync(new { type = "bypass_secret_ack", fingerprint });
+        }
+
         // Çevrimdışı bypass kodu: geçerliyse sunucunun unlock'u ile aynı yol (kilit ekranı kapanır, yalıtım kalkar).
         // Kilit gerçekten kalktıysa ve sunucuya ulaşılabiliyorsa agent.offline_bypass olarak bildirilir (sunucu panelde
         // karantina durumunu günceller).
@@ -465,7 +480,9 @@ namespace POpsAgent
         {
             try
             {
-                if (!await _quarantine.HandleBypassAsync(token, _hwId, AgentCredentials.GetBypassSecret(), DateTime.Now)) return;
+                string deviceSecret = AgentCredentials.GetDeviceBypassSecret(out bool deviceSecretPresent);
+                if (!await _quarantine.HandleBypassAsync(token, _hwId, AgentCredentials.GetBypassSecret(),
+                    deviceSecret, deviceSecretPresent, DateTime.Now)) return;
                 string hwId = _hwId;
                 await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, QuarantineControl.OfflineBypassLog(), "Bypass denetim kaydı");
             }
@@ -684,6 +701,7 @@ namespace POpsAgent
                         else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
                         else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
                         else if (action == "set_secret") { HandleSetSecret(root); }
+                        else if (action == "set_bypass_secret") { await HandleSetBypassSecretAsync(root); }
                         else if (action == "lockdown")
                         {
                             string reason = root.TryGetProperty("reason", out var rProp) && rProp.ValueKind == JsonValueKind.String ? rProp.GetString() : null;

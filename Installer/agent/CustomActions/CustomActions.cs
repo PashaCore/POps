@@ -201,8 +201,14 @@ namespace POps.Installer
                     return $"SERVER_URL şifresiz http ({serverUrl}); https:// bir adres gerekli, düz http'de cihaz secret'ı ve sunucu komutları ağda açık gider. Kurulumu SERVER_URL=https://... ile yeniden başlatın.";
 
                 string enrollToken = Prop("ENROLL_TOKEN");
+                string secretFileError = ReadSecretFile(Prop("ENROLL_TOKEN_FILE"), "ENROLL_TOKEN_FILE", enrollToken, out enrollToken);
+                if (secretFileError != null) return secretFileError;
                 if (enrollToken != null && !TokenRegex.IsMatch(enrollToken))
                     return "ENROLL_TOKEN biçimi geçersiz; panelde üretilen jetonu olduğu gibi verin.";
+
+                string bypassSecret = Prop("BYPASS_SECRET");
+                secretFileError = ReadSecretFile(Prop("BYPASS_SECRET_FILE"), "BYPASS_SECRET_FILE", bypassSecret, out bypassSecret);
+                if (secretFileError != null) return secretFileError;
 
                 string persistDir = Prop("PERSIST_DIR") ?? Existing("PersistDir");
                 if (persistDir != null && !Path.IsPathRooted(persistDir))
@@ -221,7 +227,7 @@ namespace POps.Installer
                 if (folderError != null) return folderError;
                 WriteCapabilities(layout, terminal, vision, log);
                 WriteServerCa(layout, caPem, removeCa, caSubject, log);
-                WriteSecret(Path.Combine(layout.SecureDir, BypassSecretFile), Prop("BYPASS_SECRET"), Existing("BypassSecret"), "BypassSecret", log);
+                WriteSecret(Path.Combine(layout.SecureDir, BypassSecretFile), bypassSecret, Existing("BypassSecret"), "BypassSecret", log);
                 WriteSecret(Path.Combine(layout.SecureDir, EnrollTokenFile), enrollToken, Existing("EnrollToken"), "EnrollToken", log);
 
                 // Mevcut dosyadaki diğer ayarlar (Logging vb.) korunur; gizli değerler dosyada kalmaz
@@ -239,6 +245,21 @@ namespace POps.Installer
             catch (Exception ex)
             {
                 return "POps ayarları yazılamadı: " + ex.Message;
+            }
+        }
+
+        private static string ReadSecretFile(string path, string property, string directValue, out string value)
+        {
+            value = directValue;
+            if (path == null) return null;
+            try
+            {
+                value = Clean(File.ReadAllText(path));
+                return value == null ? $"{property} dosyası boş; gizli değer okunamadı." : null;
+            }
+            catch (Exception ex)
+            {
+                return $"{property} dosyası okunamadı ({path}): {ex.GetType().Name}: {ex.Message}";
             }
         }
 
