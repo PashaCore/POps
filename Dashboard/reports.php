@@ -6,6 +6,9 @@
     .rp-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; }
     .rp-tab { padding: 0.625rem 1rem; border: none; background: none; color: var(--text-secondary); font-weight: var(--fw-semibold); font-size: var(--text-sm); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
     .rp-tab.active { color: var(--primary-600); border-bottom-color: var(--primary-500); }
+    /* Genel button:hover (mavi zemin) sekmeye uygulanmasın */
+    .rp-tab:hover { background: var(--bg-surface-2); color: var(--text-primary); box-shadow: none; }
+    .rp-tab.active:hover { color: var(--primary-600); }
     .rp-pane { display: none; flex-direction: column; gap: var(--space-5); }
     .rp-pane.active { display: flex; }
     .rp-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5); box-shadow: var(--shadow-sm); min-width: 0; }
