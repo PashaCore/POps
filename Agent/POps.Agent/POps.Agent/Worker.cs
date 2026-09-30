@@ -154,8 +154,17 @@ namespace POpsAgent
 
         private void InitializeSlowState()
         {
-            _cachedDna = GetHardwareDnaInternal();
-            _cachedInventory = BuildInventoryInternal();
+            try
+            {
+                _cachedDna = GetHardwareDnaInternal();
+                _cachedInventory = BuildInventoryInternal();
+            }
+            catch (Exception ex)
+            {
+                // Hata burada kalır: bağlantı döngüsü bu görevi bekler, istisna her yeniden bağlanışta tekrar fırlamasın
+                _health.RecordError("inventory", ex.Message);
+                POpsHelpers.Log("AGENT", $"Donanım bilgisi toplanamadı: {ex.Message}", true);
+            }
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -170,8 +179,7 @@ namespace POpsAgent
 
             if (!POpsHelpers.IsSecureServerUrl(_serverUrl))
             {
-                await StartTrayPipeServerAsync(stoppingToken);
-                _startupHealth.Mark(StartupCheck.Pipe);
+                StartTrayPipeServer();
                 _startupHealth.Mark(StartupCheck.Loop);
                 await RunWithoutServerAsync(stoppingToken);
                 return;
@@ -204,8 +212,7 @@ namespace POpsAgent
             {
                 string commandWsUrl = $"{baseWsUrl}/ws/agent/{_hwId}";
 
-                await StartTrayPipeServerAsync(stoppingToken);
-                _startupHealth.Mark(StartupCheck.Pipe);
+                StartTrayPipeServer();
                 _commandWs = new ClientWebSocket();
                 _commandWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(commandWsUrl));
                 _commandWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
@@ -358,7 +365,10 @@ namespace POpsAgent
             }
         }
 
-        private async Task StartTrayPipeServerAsync(CancellationToken token)
+        // Boru dinlemeye geçince sağlık kontrolü işaretlenir (bkz. AgentStartupHealth). Bağlantı döngüsü bunu
+        // beklemez: boru adı başka bir süreçte kalırsa (ör. yerel bir kullanıcı adı önceden aldıysa) tepsi çalışmaz
+        // ama ajan sunucuya yine bağlanır; health.json yazılmadığı için güncelleme de başarılı sayılmaz.
+        private void StartTrayPipeServer()
         {
             _trayPipe?.Stop();
             _trayPipe = new TrayPipeServer(_logger, _hwId, _httpClient, _serverUrl);
@@ -484,7 +494,8 @@ namespace POpsAgent
             // Kilit ekranı tepsiyle birlikte kapanmış olabilir: karantina sürüyorsa yeniden gösterilir
             _trayPipe.OnConnected += () => _quarantine.SyncTray();
 
-            await _trayPipe.Start().WaitAsync(token);
+            _trayPipe.Start().ContinueWith(_ => _startupHealth.Mark(StartupCheck.Pipe), CancellationToken.None,
+                TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
         }
 
         private async Task HandleSetBypassSecretAsync(JsonElement root)
