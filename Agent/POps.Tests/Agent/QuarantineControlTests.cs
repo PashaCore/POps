@@ -121,6 +121,28 @@ namespace POps.Tests.Agent
             Assert.DoesNotContain("BYPASS_SUCCESS", _tray);
         }
 
+        [Fact]
+        public async Task StateMachine_LockFailedUnlockThenSuccessfulUnlock()
+        {
+            QuarantineControl control = Control();
+            Assert.False(control.IsLocked);
+
+            Assert.True(await control.LockdownAsync("Sınav"));
+            Assert.True(control.IsLocked);
+            Assert.Equal(1, _enabled);
+
+            _disableSucceeds = false;
+            Assert.False(await control.UnlockAsync("server"));
+            Assert.True(control.IsLocked);
+            Assert.Equal(1, _disabled);
+
+            _disableSucceeds = true;
+            Assert.True(await control.UnlockAsync("server"));
+            Assert.False(control.IsLocked);
+            Assert.Equal(2, _disabled);
+            Assert.Equal(new[] { 1020, 1021 }, _audit.Select(e => e.EventId));
+        }
+
         // M6: kilit ekranı tepsi yeniden bağlanınca (Görev Yöneticisi, oturum kapatma, yeniden başlatma) geri gelir
         [Fact]
         public async Task LockSurvivesTrayReconnectAndServiceRestart()

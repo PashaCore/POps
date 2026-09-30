@@ -18,7 +18,7 @@ namespace POps.Tests.Installer
         private readonly List<string> _log = new List<string>();
 
         // Üst klasör zinciri geçici test klasöründe durur (bkz. Setup.TrustedBaseForTests)
-        public SetupTests() => Setup.TrustedBaseForTests = TestEnvironment.Root;
+        public SetupTests() => Setup.TrustedBaseForTests = _root;
 
         private Layout NewLayout() => new Layout
         {
@@ -32,7 +32,11 @@ namespace POps.Tests.Installer
 
         private string Configure(Layout layout, params (string Key, string Value)[] properties)
         {
-            var data = new Dictionary<string, string> { ["INSTALLFOLDER"] = InstallDir + "\\" };
+            var data = new Dictionary<string, string>
+            {
+                ["INSTALLFOLDER"] = InstallDir + "\\",
+                ["INSTALLDIR_STATE"] = Directory.Exists(InstallDir) ? Setup.StatePops : Setup.StateNew,
+            };
             foreach (var (key, value) in properties) data[key] = value;
             return Setup.Configure(data, layout, _log.Add);
         }

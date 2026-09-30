@@ -597,7 +597,8 @@ namespace POpsAgent
         // Uzaktan fare/klavye olayı (input_type taşıyan remote_input). Ekran önizlemesi ve FPS ayarı girdi değildir.
         private static bool IsInputEvent(JsonElement root) => root.TryGetProperty("input_type", out _);
 
-        private bool InputAllowed() => _visionSessionApproved && _isVisionStreamActive;
+        private string VisionDenial(bool isInputEvent) => VisionInputGate.DenialReason(
+            AgentCapabilities.VisionEnabled, _visionSessionApproved, _isVisionStreamActive, isInputEvent);
 
         private async Task ReceiveVisionInputsAsync(ClientWebSocket ws, CancellationToken token)
         {
@@ -614,8 +615,8 @@ namespace POpsAgent
                     {
                         string targetDevice = root.GetProperty("device").GetString();
                         if (targetDevice != _hwId) continue;
-                        if (!AgentCapabilities.VisionEnabled) { await DenyCapabilityAsync("vision", "remote_input"); continue; }
-                        if (IsInputEvent(root) && !InputAllowed()) { await DenyCapabilityAsync("consent", "remote_input"); continue; }
+                        string denial = VisionDenial(IsInputEvent(root));
+                        if (denial != null) { await DenyCapabilityAsync(denial, "remote_input"); continue; }
                         _trayPipe?.SendCommandToDesktop(message);
                     }
                 }
@@ -660,15 +661,10 @@ namespace POpsAgent
 
                         string act = root.TryGetProperty("action", out var actProp) ? actProp.GetString() : "";
                         // Ekran önizlemesi ve uzaktan fare/klavye Vision yeteneğidir
-                        if (!AgentCapabilities.VisionEnabled)
+                        string denial = VisionDenial(IsInputEvent(root));
+                        if (denial != null)
                         {
-                            await DenyCapabilityAsync("vision", string.IsNullOrEmpty(act) ? "remote_input" : act);
-                            continue;
-                        }
-                        // Sunucu ele geçirilse bile kullanıcının onayladığı bir oturum yoksa fare/klavye uygulanmaz
-                        if (IsInputEvent(root) && !InputAllowed())
-                        {
-                            await DenyCapabilityAsync("consent", "remote_input");
+                            await DenyCapabilityAsync(denial, string.IsNullOrEmpty(act) ? "remote_input" : act);
                             continue;
                         }
                         if (act == "get_thumbnail")
@@ -694,11 +690,13 @@ namespace POpsAgent
                     else
                     {
                         string action = root.TryGetProperty("action", out var actionProp) ? actionProp.GetString() : "";
-                        if (action == "execute" && !AgentCapabilities.TerminalEnabled)
+                        CommandPermission commandPermission = action == "execute"
+                            ? CommandExecutionPolicy.Permission(AgentCapabilities.TerminalEnabled) : null;
+                        if (action == "execute" && !commandPermission.Allowed)
                         {
                             // Görev "Running"de asılı kalmasın diye sonuç olarak da bildirilir
                             int tid = root.GetProperty("task_id").GetInt32();
-                            await SendCommandMessageAsync(new { type = "result", pc_name = _hwId, task_id = tid, output = "[REDDEDİLDİ] Bu cihazda uzaktan terminal kapalı (yetenek politikası); komut çalıştırılmadı." });
+                            await SendCommandMessageAsync(new { type = "result", pc_name = _hwId, task_id = tid, output = commandPermission.Rejection });
                             await DenyCapabilityAsync("terminal", "execute", tid);
                         }
                         else if (action == "execute")
@@ -1222,7 +1220,7 @@ namespace POpsAgent
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
 
-                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(30));
+                using var cts = new CancellationTokenSource(CommandExecutionPolicy.MaxDuration);
                 try { await process.WaitForExitAsync(cts.Token); }
                 catch (TaskCanceledException)
                 {
@@ -1259,7 +1257,7 @@ namespace POpsAgent
     {
         public CommandExecutionResult(string output, int exitCode, TimeSpan duration)
         {
-            Output = output;
+            Output = CommandExecutionPolicy.TruncateOutput(output);
             ExitCode = exitCode;
             Duration = duration;
         }

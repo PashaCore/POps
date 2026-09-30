@@ -75,7 +75,12 @@ namespace POpsAgent
             _hwId = hwId;
             _hostname = hostname;
             _error = error ?? (_ => { });
+            Poster = (action, id, body) => AgentHttp.PostJsonAsync(_serverUrl, "/api/auth/" + action, id, body,
+                action == "login" ? "Oturum açma bildirimi" : "Oturum kapama bildirimi");
         }
+
+        // Ağ sınırı testlerde sahtesiyle değiştirilir.
+        internal Func<string, string, AuthEventPayload, Task<bool>> Poster { get; set; }
 
         // Konsoldaki kullanıcı değişti (null: kimse yok)
         public event Action<string> UserChanged = delegate { };
@@ -113,13 +118,13 @@ namespace POpsAgent
         }
 
         // Dönen: son bildirilen durum ve bütün olaylar gönderildi mi
-        private async Task<(SessionSnapshot, bool)> ReportChangesAsync(SessionSnapshot reported, SessionSnapshot current)
+        internal async Task<(SessionSnapshot, bool)> ReportChangesAsync(SessionSnapshot reported, SessionSnapshot current)
         {
             foreach (var (action, user) in SessionEvents.Diff(reported, current))
             {
                 string hwId = _hwId();
                 var body = new AuthEventPayload { HwId = hwId, Hostname = _hostname, StudentId = user };
-                if (!await AgentHttp.PostJsonAsync(_serverUrl, "/api/auth/" + action, hwId, body, action == "login" ? "Oturum açma bildirimi" : "Oturum kapama bildirimi"))
+                if (!await Poster(action, hwId, body))
                     return (reported, false);
                 reported = action == "logout" ? SessionSnapshot.Nobody(current.BootUtc) : current;
                 Save(reported);
