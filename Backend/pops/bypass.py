@@ -49,7 +49,8 @@ def legacy_code(hw_id: str, day: datetime.date) -> Optional[str]:
 
 
 def supports_device_key(agent_version: Optional[str]) -> bool:
-    m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", (agent_version or "").strip())
+    # Başlıktan gelen değer: kısa tutulur ve basamak sayısı sınırlıdır (uzun girdide düzenli ifade yavaşlamasın)
+    m = re.match(r"v?(\d{1,6})\.(\d{1,6})\.(\d{1,6})", (agent_version or "")[:32].strip())
     return bool(m) and tuple(int(x) for x in m.groups()) >= MIN_AGENT_VERSION
 
 
