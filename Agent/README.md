@@ -78,6 +78,8 @@ Enroll before freezing: install with the machine thawed, wait until the device a
 
 Besides the heartbeat, the agent sends the data below. The software inventory, the Windows Update status and sign-in events are accepted only from an enrolled agent (`X-Agent-Id` + `X-Agent-Secret`, even when the server does not enforce authentication), so an agent without a device secret sends none of them.
 
+The heartbeat's `agent_health` block gives the service start time, last successful policy sync and inventory upload, whether the tray is connected, the Vision channel state (`off`, `idle` or `connected`), the number of background-loop errors in the last hour and the latest error. The error text is stripped of control characters and limited to 200 characters. These counters are diagnostic and reset when the service restarts.
+
 | Data | Endpoint | When |
 | --- | --- | --- |
 | Installed programs: name, version, publisher, install date | `POST /api/software/{hw_id}`, the whole list (at most 5000 entries); the server replaces the previous one | About a minute after start, then every 6 hours when the list has changed, and at least once a day |

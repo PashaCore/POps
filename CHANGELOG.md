@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent health telemetry.** Every heartbeat now includes service start time, last successful policy sync and inventory upload, tray and Vision-channel state, errors seen by background loops in the last hour and a sanitized 200-character last error. Policy, inventory, DNS and session loops report failures to this in-memory window while continuing to run; older servers safely ignore the new block.
 - **Docs: capacity report** (`docs/kapasite/README.md`, Turkish, with charts): restart storms for 250–5,000 agents on one server process (5,000 back in 11 s, 0 failed attempts), CPU for POps and PostgreSQL, memory model (≈ 69 MB + 0.16 MB per agent), database write rate, panel latency under load, the task-queue bottleneck it found, and hardware sizing by fleet size, with what was and was not measured. Raw data `docs/kapasite/olcum.json`; charts from `tools/bench_charts.py`.
 
 ### Changed

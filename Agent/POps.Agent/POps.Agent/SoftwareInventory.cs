@@ -173,11 +173,15 @@ namespace POpsAgent
         private readonly ReportGate _gate = new ReportGate(MaxSilence);
         private readonly string _serverUrl;
         private readonly Func<string> _hwId;
+        private readonly Action _uploaded;
+        private readonly Action<string> _error;
 
-        public SoftwareReporter(string serverUrl, Func<string> hwId)
+        public SoftwareReporter(string serverUrl, Func<string> hwId, Action uploaded = null, Action<string> error = null)
         {
             _serverUrl = serverUrl;
             _hwId = hwId;
+            _uploaded = uploaded ?? (() => { });
+            _error = error ?? (_ => { });
         }
 
         public async Task RunAsync(CancellationToken token)
@@ -212,11 +216,13 @@ namespace POpsAgent
                 PostResult result = await AgentHttp.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/software/", hwId), hwId, new SoftwareInventoryPayload { Items = items }, "Yazılım envanteri");
                 if (result != PostResult.Sent) return DelayAfter(result);
                 _gate.MarkSent(hash, DateTime.UtcNow);
+                _uploaded();
                 POpsHelpers.Log("AGENT", $"Yazılım envanteri gönderildi ({items.Count} kayıt).");
                 return null;
             }
             catch (Exception ex)
             {
+                _error(ex.Message);
                 POpsHelpers.Log("AGENT", $"Yazılım envanteri okunamadı: {ex.Message}", true);
                 return RetryDelay;
             }

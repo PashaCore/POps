@@ -67,12 +67,14 @@ namespace POpsAgent
         private readonly string _serverUrl;
         private readonly Func<string> _hwId;
         private readonly string _hostname;
+        private readonly Action<string> _error;
 
-        public SessionReporter(string serverUrl, Func<string> hwId, string hostname)
+        public SessionReporter(string serverUrl, Func<string> hwId, string hostname, Action<string> error = null)
         {
             _serverUrl = serverUrl;
             _hwId = hwId;
             _hostname = hostname;
+            _error = error ?? (_ => { });
         }
 
         // Konsoldaki kullanıcı değişti (null: kimse yok)
@@ -101,7 +103,11 @@ namespace POpsAgent
                         retryAfterUtc = delivered ? DateTime.MinValue : DateTime.UtcNow + RetryDelay;
                     }
                 }
-                catch (Exception ex) { POpsHelpers.Log("AGENT", $"Oturum durumu okunamadı: {ex.Message}", true); }
+                catch (Exception ex)
+                {
+                    _error(ex.Message);
+                    POpsHelpers.Log("AGENT", $"Oturum durumu okunamadı: {ex.Message}", true);
+                }
                 await Task.Delay(PollInterval, token);
             }
         }

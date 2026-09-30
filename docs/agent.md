@@ -65,6 +65,10 @@ and closes the connection with `4401`.
   stays open for one heartbeat after the first messages. If the server rejected the credentials (close code
   `4401`) it waits 60 s plus that random time. From 0.1.5-alpha the heartbeat carries `"quarantined"`
   (lock screen and/or isolation active), which the server uses to finish or resend a pending lock/unlock.
+- The heartbeat also carries `agent_health`: service start time, last successful policy sync and inventory upload,
+  tray connection, Vision channel (`off` / `idle` / `connected`), background-loop errors in the last hour and a
+  sanitized last error of at most 200 characters. The in-memory window resets with the service; older servers
+  ignore the unknown block.
 - **Hardware ID.** The device ID (`HW-…`) is kept in `C:\POpsData\identity.key`. On first start it is derived from
   the machine UUID and the primary MAC address. The server compares a hardware fingerprint (UUID, BIOS serial,
   disk serial, MAC, RAM serial) on every connection and may assign a different ID (`set_identity`), for example

@@ -50,6 +50,7 @@ namespace POpsAgent
         private readonly string _identityFilePath = @"C:\POpsData\identity.key";
         private readonly HttpClient _httpClient;
         private readonly AgentStartupHealth _startupHealth;
+        private readonly AgentHealthTelemetry _health = new AgentHealthTelemetry();
         private Task _slowInitialization;
 
         // 🚀 ARTIK SABİT DEĞİL, HELPERS'TAN OKUNACAK
@@ -82,7 +83,6 @@ namespace POpsAgent
 
         private AgentPolicy _currentPolicy = new AgentPolicy();
         private bool _fairUseAcknowledged = false;
-        private DateTime _lastPolicyFetch = DateTime.MinValue;
 
         // Karantina (lockdown/unlock/çevrimdışı bypass) ve Windows Update: bkz. QuarantineControl, PatchManager
         private readonly QuarantineControl _quarantine;
@@ -122,6 +122,7 @@ namespace POpsAgent
 
             _quarantine = new QuarantineControl(message => _trayPipe?.SendCommandToDesktop(message),
                 EnableNetworkIsolationAsync, DisableNetworkIsolationAsync, audit: LocalAudit.Write);
+            DnsPolicyMonitor.ErrorReporter = message => _health.RecordError("dns", message);
             // DNS eşiğindeki otomatik karantina da kilit ekranı + yalıtım yolundan geçer (bkz. AutoQuarantineAsync)
             DnsPolicyMonitor.Quarantine = reason => _ = AutoQuarantineAsync(reason);
             _patches = new PatchManager(_serverUrl, () => _hwId);
@@ -183,14 +184,16 @@ namespace POpsAgent
 
             // Sunucuya bildirimler (yalnızca cihaz secret'ı varken; bkz. AgentHttp): yazılım envanteri (açılıştan
             // kısa süre sonra, sonra 6 saatte bir), günlük Windows Update taraması, oturum açma/kapama
-            var sessions = new SessionReporter(_serverUrl, () => _hwId, _pcName);
+            var sessions = new SessionReporter(_serverUrl, () => _hwId, _pcName,
+                error => _health.RecordError("session", error));
             sessions.UserChanged += _ =>
             {
                 _activeApp = null;
                 // Yeni kullanıcı öncekinin DNS ihlalleriyle karantinaya girmesin
                 DnsPolicyMonitor.OnUserChanged();
             };
-            _ = Task.Run(() => new SoftwareReporter(_serverUrl, () => _hwId).RunAsync(stoppingToken));
+            _ = Task.Run(() => new SoftwareReporter(_serverUrl, () => _hwId,
+                _health.InventoryUploaded, error => _health.RecordError("inventory", error)).RunAsync(stoppingToken));
             _ = Task.Run(() => _patches.ScheduleLoopAsync(stoppingToken));
             _ = Task.Run(() => sessions.RunAsync(stoppingToken));
             _ = Task.Run(() => _helpdesk.PollLoopAsync(stoppingToken, () => _trayPipe?.IsConnected == true));
@@ -239,6 +242,7 @@ namespace POpsAgent
                 }
                 catch (Exception ex)
                 {
+                    _health.RecordError("connection", ex.Message);
                     POpsHelpers.Log("AGENT", $"[!] Santralle bağlantı koptu: {ex.Message}", true);
                 }
 
@@ -335,6 +339,7 @@ namespace POpsAgent
                     {
                         _currentPolicy = policy;
                         DnsPolicyMonitor.Configure(policy, _hwId, _serverUrl);
+                        _health.PolicySynced();
                         
                         if (!string.IsNullOrWhiteSpace(policy.fair_use_text) && !_fairUseAcknowledged)
                         {
@@ -343,7 +348,12 @@ namespace POpsAgent
                         }
                     }
                 }
-                catch { }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
+                catch (Exception ex)
+                {
+                    _health.RecordError("policy", ex.Message);
+                    POpsHelpers.Log("AGENT", $"Politika eşitleme başarısız: {ex.Message}", true);
+                }
                 await Task.Delay(60000, token); // Poll every minute
             }
         }
@@ -822,7 +832,11 @@ namespace POpsAgent
             status = "Online",
             active_window = _activeApp ?? "-",
             quarantined = _quarantine.IsLocked,
-            dna_payload = _cachedDna
+            dna_payload = _cachedDna,
+            agent_health = _health.Snapshot(
+                _trayPipe?.IsConnected == true,
+                AgentCapabilities.VisionEnabled,
+                _visionWs?.State == WebSocketState.Open)
         };
 
         private async Task SendHeartbeatAsync(CancellationToken token)
@@ -1046,8 +1060,13 @@ namespace POpsAgent
                     return;
                 }
                 POpsHelpers.Log("AGENT", "Donanım envanteri sunucuya gönderildi.");
+                _health.InventoryUploaded();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _health.RecordError("inventory", ex.Message);
+                POpsHelpers.Log("AGENT", $"Donanım envanteri gönderilemedi: {ex.Message}", true);
+            }
         }
 
         // Takılan bir WMI sağlayıcısı sorguyu süresiz bekletmesin: bağlantı ve her sonuç için zaman aşımı
