@@ -38,6 +38,10 @@ namespace POps.Tests
             POpsAgent.SecureStore.SystemSid = me;
             POpsAgent.SecureStore.Dir = DefaultSecureDir;
             POpsAgent.AgentUpdate.DataDir = DefaultDataDir;
+            // Gerçek kurulumda bu klasörler hep vardır; testler hangi sırayla çalışırsa çalışsın var olsunlar
+            // (ör. karantina kaydını yazan test, klasörü oluşturan başka bir testten önce çalışabilir)
+            Directory.CreateDirectory(DefaultSecureDir);
+            Directory.CreateDirectory(DefaultDataDir);
             POps.Shared.ServerTrust.CaPath = Path.Combine(DefaultSecureDir, POps.Shared.ServerTrust.FileName);
             // Karantina testleri gerçek Görev Yöneticisi / oturum politikalarına dokunmasın
             POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
