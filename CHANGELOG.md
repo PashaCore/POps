@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12-alpha] - 2026-09-30
+
+Fixes from the external security audit. An update counts as successful only once the new agent is really running, otherwise it rolls back. Vision accepts only the device's own key. Every PC gets its own offline bypass key, so a key read on one PC opens only that PC. The agent keeps a local record of remote commands, Vision sessions and quarantines in the Windows event log, where the server cannot erase it. Heartbeats report the agent's health, shown on the System page.
+
+Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**; migration `0013`), then send 0.1.12-alpha to the agents. Each agent receives its bypass key when it reconnects; until the agent confirms it, the panel shows the legacy code as a fallback.
+
 ### Security
 
 - **Server: Vision accepts only the device secret.** `/ws/vision/{hw_id}` now requires that device's own `X-Agent-Secret` whether or not "Kimlik zorlaması" is on; an enrollment token or no credentials get `4401` and an audit entry. A new tunnel from the same device takes over from the previous one, and the old one closing no longer drops the new registration. Agents that never enrolled can no longer stream.
@@ -359,7 +365,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.11-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.12-alpha...HEAD
+[0.1.12-alpha]: https://github.com/PashaCore/POps/compare/v0.1.11-alpha...v0.1.12-alpha
 [0.1.11-alpha]: https://github.com/PashaCore/POps/compare/v0.1.10-alpha...v0.1.11-alpha
 [0.1.10-alpha]: https://github.com/PashaCore/POps/compare/v0.1.9-alpha...v0.1.10-alpha
 [0.1.9-alpha]: https://github.com/PashaCore/POps/compare/v0.1.8-alpha...v0.1.9-alpha
