@@ -229,8 +229,12 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
 2. The agent verifies the manifest's ed25519 signature with the public key compiled into it, refuses a version
    that is not newer than its own, downloads the MSI from `<ServerUrl>/updates/<name>` and checks its size and
    SHA-256.
-3. `POpsUpdater` installs it, waits up to 90 seconds for the new version to report healthy
-   (`C:\POpsData\health.json`), and otherwise rolls back to the previous MSI.
+3. `POpsUpdater` installs it, waits up to 90 seconds for the new version to report `phase: "operational"`
+   in `C:\POpsData\health.json`, and otherwise rolls back to the previous MSI. Operational means the agent's
+   identity, credentials, capabilities, quarantine/TLS state and tray pipe are ready and its first connection
+   attempt has begun; the server need not be reachable and slow WMI inventory continues in the background.
+   This avoids accepting a process that starts but fails during core initialization. Phase-less health files
+   from 0.1.11 and older remain valid when an update rolls back to one of those versions.
 4. The result (`success`, `pending_reboot`, `rolled_back`, `rollback_failed`, `install_failed`, `rejected`, …) is
    written to `C:\POpsData\update-result.json` and reported to the server, which records it in the audit log and
    shows it in the panel.

@@ -48,14 +48,29 @@ namespace POpsAgent
         internal static string InstalledVersionOverride { get; set; }
 
         // ==========================================
-        // health.json: updater yeni sürümün ayağa kalktığını buradan anlar
+        // health.json: updater yeni sürümün çekirdek başlangıcını tamamladığını buradan anlar
         // ==========================================
-        public static void WriteHealth()
+        public static void WriteOperationalHealth(OperationalChecks checks)
         {
             try
             {
+                if (checks == null || !checks.Complete) return;
                 Directory.CreateDirectory(DataDir);
-                var health = new { version = InstalledVersion, ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), pid = Environment.ProcessId };
+                var health = new
+                {
+                    version = InstalledVersion,
+                    ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    pid = Environment.ProcessId,
+                    phase = "operational",
+                    checks = new
+                    {
+                        identity = checks.Identity,
+                        credentials = checks.Credentials,
+                        capabilities = checks.Capabilities,
+                        pipe = checks.Pipe,
+                        loop = checks.Loop,
+                    },
+                };
                 WriteAtomic(HealthPath, JsonSerializer.Serialize(health));
             }
             catch (Exception ex) { POpsHelpers.Log("UPDATE", $"health.json yazılamadı: {ex.Message}", true); }

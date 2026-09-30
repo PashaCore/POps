@@ -49,6 +49,8 @@ namespace POpsAgent
         private string _hwId;
         private readonly string _identityFilePath = @"C:\POpsData\identity.key";
         private readonly HttpClient _httpClient;
+        private readonly AgentStartupHealth _startupHealth;
+        private Task _slowInitialization;
 
         // 🚀 ARTIK SABİT DEĞİL, HELPERS'TAN OKUNACAK
         private string _serverUrl;
@@ -86,7 +88,9 @@ namespace POpsAgent
         // Ön plandaki uygulamanın süreç adı (tepsiden, yalnızca ad; bkz. ActiveApp). Bilinmiyorsa null.
         private volatile string _activeApp;
 
-        public Worker(ILogger<Worker> logger)
+        public Worker(ILogger<Worker> logger) : this(logger, new AgentStartupHealth(false)) { }
+
+        public Worker(ILogger<Worker> logger, AgentStartupHealth startupHealth)
         {
             string[] args = Environment.GetCommandLineArgs();
             if (args.Contains("POpsV", StringComparer.OrdinalIgnoreCase))
@@ -100,6 +104,7 @@ namespace POpsAgent
             }
 
             _logger = logger;
+            _startupHealth = startupHealth ?? throw new ArgumentNullException(nameof(startupHealth));
             _pcName = Environment.MachineName;
             // Politika ve /updates paket indirme: sunucu sertifikası da ServerTrust ile doğrulanır
             _httpClient = new HttpClient(ServerTrust.NewHandler());
@@ -121,19 +126,25 @@ namespace POpsAgent
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
         // planda çalıştırır: servisin açılışını ve updater'ın beklediği health.json'u bekletmezler.
         // Kimlik önce kurulur; envanter hw_id'yi ondan alır.
-        private void InitializeState()
+        private void InitializeCoreState()
         {
-            _hwId = InitializeIdentity();
+            _startupHealth.Run(StartupCheck.Identity, () => _hwId = InitializeIdentity());
             POpsHelpers.Log("AGENT", $"Kimlik Başlatıldı: {_hwId}");
 
-            AgentCredentials.Initialize();
-            AgentCredentials.LoadSecret();
-            AgentCapabilities.Load();
+            _startupHealth.Run(StartupCheck.Credentials, () =>
+            {
+                AgentCredentials.Initialize();
+                AgentCredentials.LoadSecret();
+            });
+            _startupHealth.Run(StartupCheck.Capabilities, AgentCapabilities.Load);
             // Karantina yeniden başlatmadan sonra sürüyorsa Ctrl+Alt+Del seçenekleri yeniden kapatılır; sürmüyorsa kalıntı temizlenir
             KioskMode.Sync(_quarantine.IsLocked);
             // Kurum sertifikası (server-ca.pem) varsa sunucu yalnızca onunla doğrulanır; kip loglanır
             ServerTrust.Reload();
+        }
 
+        private void InitializeSlowState()
+        {
             _cachedDna = GetHardwareDnaInternal();
             _cachedInventory = BuildInventoryInternal();
         }
@@ -144,11 +155,15 @@ namespace POpsAgent
             // Yavaş WMI açılışını beklemez.
             _ = Task.Run(() => new UserSessionApps().RunAsync(stoppingToken));
 
-            await Task.Run(InitializeState, stoppingToken);
+            await Task.Run(InitializeCoreState, stoppingToken);
+            _slowInitialization = Task.Run(InitializeSlowState, stoppingToken);
             AgentUpdate.LogLastResult();
 
             if (!POpsHelpers.IsSecureServerUrl(_serverUrl))
             {
+                await StartTrayPipeServerAsync(stoppingToken);
+                _startupHealth.Mark(StartupCheck.Pipe);
+                _startupHealth.Mark(StartupCheck.Loop);
                 await RunWithoutServerAsync(stoppingToken);
                 return;
             }
@@ -178,18 +193,22 @@ namespace POpsAgent
             {
                 string commandWsUrl = $"{baseWsUrl}/ws/agent/{_hwId}";
 
-                StartTrayPipeServer();
+                await StartTrayPipeServerAsync(stoppingToken);
+                _startupHealth.Mark(StartupCheck.Pipe);
                 _commandWs = new ClientWebSocket();
                 _commandWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(commandWsUrl));
                 _commandWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
                 string authMode = ApplyAuthHeaders(_commandWs);
                 POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({APP_VERSION}, kimlik: {authMode})");
+                _startupHealth.Mark(StartupCheck.Loop);
 
                 try
                 {
                     await _commandWs.ConnectAsync(new Uri(commandWsUrl), stoppingToken);
                     POpsHelpers.Log("AGENT", "[+] Ana Komut Tüneli Kuruldu.");
                     OnCommandChannelConnected();
+
+                    await _slowInitialization;
 
                     _ = ReceiveCommandsAsync(_commandWs, stoppingToken);
 
@@ -243,7 +262,6 @@ namespace POpsAgent
         // Tepsi ve watchdog yerel işler (ör. karantinada çevrimdışı bypass) için yine çalışır.
         private async Task RunWithoutServerAsync(CancellationToken stoppingToken)
         {
-            StartTrayPipeServer();
             while (!stoppingToken.IsCancellationRequested)
             {
                 POpsHelpers.Log("AGENT", $"[GÜVENLİK] ServerUrl şifresiz http ve yerel değil ({_serverUrl}); cihaz secret'ı ve komutlar ağda açık gideceği için sunucuya bağlanılmıyor. https:// bir adres verin (MSI: SERVER_URL=https://...).", true);
@@ -317,7 +335,7 @@ namespace POpsAgent
             }
         }
 
-        private void StartTrayPipeServer()
+        private async Task StartTrayPipeServerAsync(CancellationToken token)
         {
             _trayPipe?.Stop();
             _trayPipe = new TrayPipeServer(_logger, _hwId, _httpClient, _serverUrl);
@@ -437,7 +455,7 @@ namespace POpsAgent
             // Kilit ekranı tepsiyle birlikte kapanmış olabilir: karantina sürüyorsa yeniden gösterilir
             _trayPipe.OnConnected += () => _quarantine.SyncTray();
 
-            _trayPipe.Start();
+            await _trayPipe.Start().WaitAsync(token);
         }
 
         // Çevrimdışı bypass kodu: geçerliyse sunucunun unlock'u ile aynı yol (kilit ekranı kapanır, yalıtım kalkar).
@@ -1110,6 +1128,21 @@ namespace POpsAgent
         }
 
     }
+
+    public sealed class AgentStartupHealth
+    {
+        private readonly OperationalHealthGate _gate;
+
+        public AgentStartupHealth(bool suppressed, Action<OperationalChecks> writer = null)
+        {
+            _gate = new OperationalHealthGate(suppressed, writer ?? AgentUpdate.WriteOperationalHealth);
+        }
+
+        public void Run(StartupCheck check, Action action) => _gate.Run(check, action);
+        public void Mark(StartupCheck check) => _gate.Mark(check);
+        public OperationalChecks Snapshot() => _gate.Snapshot();
+    }
+
     public class TrayPipeServer
     {
         private readonly ILogger _logger;
@@ -1119,6 +1152,7 @@ namespace POpsAgent
         private const int MaxPipeMessageBytes = 32 * 1024 * 1024;
         private CancellationTokenSource _cts;
         private NamedPipeServerStream _pipeServer;
+        private TaskCompletionSource<bool> _listening;
         public event Action<string> OnMessageReceived = delegate { };
         public event Action<byte[]> OnFrameReceived = delegate { };
         // Tepsi bağlantısı koptuğunda (onaylı Vision oturumu da onunla biter)
@@ -1135,7 +1169,13 @@ namespace POpsAgent
             _logger = logger; _hwId = hwId; _http = http; _serverUrl = serverUrl;
         }
 
-        public void Start() { _cts = new CancellationTokenSource(); Task.Run(() => ListenPipeAsync(_cts.Token)); }
+        public Task Start()
+        {
+            _cts = new CancellationTokenSource();
+            _listening = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _ = Task.Run(() => ListenPipeAsync(_cts.Token));
+            return _listening.Task;
+        }
 
         private string _lastPipeError;
 
@@ -1195,6 +1235,7 @@ namespace POpsAgent
                     ps.SetOwner(system);
 
                     _pipeServer = NamedPipeServerStreamAcl.Create(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, ps);
+                    _listening.TrySetResult(true);
                     POpsHelpers.Log("PIPE", $"Bekleniyor: {pipeName}");
 
                     await _pipeServer.WaitForConnectionAsync(token);
