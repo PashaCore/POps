@@ -223,15 +223,24 @@ namespace POpsAgent
         {
             try
             {
-                if (!File.Exists(ResultPath)) return;
-                string json = File.ReadAllText(ResultPath);
-                POpsHelpers.Log("UPDATE", $"Son güncelleme sonucu: {json.Trim()}");
-                using JsonDocument doc = JsonDocument.Parse(json);
-                JsonElement result = doc.RootElement;
-                LocalAudit.Write(LocalAudit.UpdateResult(Str(result, "from_version"), Str(result, "to_version"),
-                    Str(result, "outcome"), Str(result, "rollback")));
+                if (File.Exists(ResultPath)) POpsHelpers.Log("UPDATE", $"Son güncelleme sonucu: {File.ReadAllText(ResultPath).Trim()}");
             }
-            catch (Exception ex) { POpsHelpers.Log("UPDATE", $"Güncelleme sonucu yerel denetim izine yazılamadı: {ex.Message}", true); }
+            catch { }
+        }
+
+        // Güncelleme sonucunun yerel denetim kaydı (olay 1030). Açılışta yazılamaz: updater sonucu yeni sürüm açılıp
+        // sağlıklı bulunduktan SONRA yazar. Bu yüzden sonuç ilk görüldüğünde (sunucuya iletilmeden önce) üretilir;
+        // aynı sonuç için süreç başına bir kez. Sonuç yoksa ya da zaten yazıldıysa null.
+        private static string _auditedResult;
+
+        public static LocalAuditEvent PendingResultAudit(Dictionary<string, object> message)
+        {
+            if (message == null) return null;
+            string key = JsonSerializer.Serialize(message);
+            if (key == _auditedResult) return null;
+            _auditedResult = key;
+            string Get(string name) => message.TryGetValue(name, out object value) ? value as string : null;
+            return LocalAudit.UpdateResult(Get("from_version"), Get("to_version"), Get("status"), Get("rollback"));
         }
 
         // ==========================================

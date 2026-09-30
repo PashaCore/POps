@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using POpsAgent;
 using Xunit;
@@ -25,6 +26,29 @@ namespace POps.Tests.Agent
             Assert.Equal(1001, finished.EventId);
             Assert.Contains("exit_code: 5", finished.Message);
             Assert.Contains("duration_ms: 1234", finished.Message);
+        }
+
+        [Fact]
+        public void UpdateResult_IsAuditedOnceWhenFirstSeen()
+        {
+            // Updater sonucu ajan açıldıktan sonra yazar; kayıt sonuç ilk görüldüğünde bir kez üretilir
+            var message = new Dictionary<string, object>
+            {
+                ["type"] = "update_result",
+                ["status"] = "success",
+                ["from_version"] = "0.1.11-alpha",
+                ["to_version"] = "0.1.12-alpha",
+                ["rollback"] = "none",
+                ["detail"] = Guid.NewGuid().ToString("N"),
+            };
+            LocalAuditEvent first = AgentUpdate.PendingResultAudit(message);
+
+            Assert.Equal(1030, first.EventId);
+            Assert.Contains("from: 0.1.11-alpha", first.Message);
+            Assert.Contains("to: 0.1.12-alpha", first.Message);
+            Assert.Contains("outcome: success", first.Message);
+            Assert.Null(AgentUpdate.PendingResultAudit(message));
+            Assert.Null(AgentUpdate.PendingResultAudit(null));
         }
 
         [Fact]

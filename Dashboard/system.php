@@ -629,19 +629,33 @@
         const d = S.devices.find(x => x.hw_id === $('cap-device').value);
         const btns = ['cap-off-terminal', 'cap-on-terminal', 'cap-off-vision', 'cap-on-vision'].map($);
         if (!d) { $('cap-state').innerHTML = ''; btns.forEach(b => b.disabled = true); return; }
-        btns[0].disabled = !!d.cap_terminal_disable_requested;
-        btns[1].disabled = !d.cap_terminal_disable_requested;
-        btns[2].disabled = !!d.cap_vision_disable_requested;
-        btns[3].disabled = !d.cap_vision_disable_requested;
-        const req = (r) => r ? ' <span class="muted-text">(kapatma isteği kayıtlı)</span>' : '';
+        capButtons('terminal', d.cap_terminal_enabled, d.cap_terminal_disable_requested, btns[0], btns[1]);
+        capButtons('vision', d.cap_vision_enabled, d.cap_vision_disable_requested, btns[2], btns[3]);
+        // Kapalı bir yetenek ya kurulumda (MSI) ya da panelden kapatılmıştır; panelden kapatılan kalıcı kilitlidir
+        const req = (r, v) => r ? ' <span class="muted-text">(panelden kalıcı kapatıldı)</span>'
+            : v === false ? ' <span class="muted-text">(kurulumda kapatılmış)</span>' : '';
         const caLabel = d.cap_server_ca === 'custom' ? '<span class="badge ok">kurum CA\'sı</span>'
             : d.cap_server_ca === 'system' ? '<span class="badge muted">sistem deposu</span>'
             : '<span class="badge muted">bildirilmedi</span>';
-        let html = `Terminal: ${capLabel(d.cap_terminal_enabled)}${req(d.cap_terminal_disable_requested)} &nbsp;·&nbsp; Vision: ${capLabel(d.cap_vision_enabled)}${req(d.cap_vision_disable_requested)} &nbsp;·&nbsp; Sunucu sertifikası: ${caLabel}`;
+        let html = `Terminal: ${capLabel(d.cap_terminal_enabled)}${req(d.cap_terminal_disable_requested, d.cap_terminal_enabled)} &nbsp;·&nbsp; Vision: ${capLabel(d.cap_vision_enabled)}${req(d.cap_vision_disable_requested, d.cap_vision_enabled)} &nbsp;·&nbsp; Sunucu sertifikası: ${caLabel}`;
         if (d.cap_terminal_enabled == null && d.cap_vision_enabled == null) {
             html += `<br><span class="muted-text"><i class="fas fa-circle-info"></i> Bu cihazdaki ajan (${escapeHtml(fmtV(d.agent_version))}) yetenek durumunu bildirmiyor; bildirim v0.1.4-alpha ile geldi. Ajan güncellenince burada görünür. Kapatma şimdi de kaydedilebilir, güncellemeden sonra uygulanır.</span>`;
         }
         $('cap-state').innerHTML = html + agentHealthHtml(d);
+    }
+    // Kapat / izin ver düğmeleri: yetenek uzaktan hiçbir zaman AÇILAMAZ. "İzin ver" yalnızca panelden konan kalıcı
+    // kapatmayı kaldırır; kurulumda kapatılmış yetenekte "Kapalı tut" ajan açık kurulsa bile kapalı kalmasını sağlar.
+    function capButtons(which, enabled, requested, off, on) {
+        const flag = which === 'terminal' ? 'TERMINAL_ENABLED=1' : 'VISION_ENABLED=1';
+        const offIcon = which === 'terminal' ? 'fa-terminal' : 'fa-video-slash';
+        off.disabled = !!requested;
+        on.disabled = !requested;
+        const obj = which === 'terminal' ? 'Terminali' : "Vision'ı";
+        off.innerHTML = `<i class="fas ${offIcon}"></i> ${obj} ` + (enabled === false && !requested ? 'kapalı tut' : 'kapat');
+        off.title = requested ? 'Panelden zaten kalıcı kapatılmış.'
+            : enabled === false ? `Kurulumda kapatılmış. Kapalı tut: ajan ${flag} ile yeniden kurulsa bile kapalı kalır.` : '';
+        on.title = requested ? 'Panelden konan kalıcı kapatmayı kaldırır; yetenek ancak ajan kurulumu onu açık bildirirse geri gelir.'
+            : enabled === false ? `Uzaktan açılamaz. Açmak için ajanı ${flag} ile yeniden kurun.` : 'Kaldırılacak bir kapatma yok.';
     }
     // Ajanın heartbeat'te bildirdiği durum (0.1.12+) ve çevrimdışı bypass anahtarı
     function agentHealthHtml(d) {
@@ -668,7 +682,11 @@
         const hw = $('cap-device').value;
         if (!hw) return;
         const label = which === 'terminal' ? 'terminali' : "Vision'ı";
-        if (!enabled && !confirm(`Bu cihazda ${label} KAPATMAK üzeresiniz. Kalıcıdır; geri açmak için "İzin ver" ve ajanın yeniden kurulumu gerekir. Devam edilsin mi?`)) return;
+        const dev = S.devices.find(x => x.hw_id === hw) || {};
+        const alreadyOff = (which === 'terminal' ? dev.cap_terminal_enabled : dev.cap_vision_enabled) === false;
+        if (!enabled && !confirm(alreadyOff
+            ? `Bu cihazda ${label} kurulumda kapatılmış. "Kapalı tut" ile ajan açık kurulsa bile kapalı kalır; geri açmak için "İzin ver" ve ajanın yeniden kurulumu gerekir. Devam edilsin mi?`
+            : `Bu cihazda ${label} KAPATMAK üzeresiniz. Kalıcıdır; geri açmak için "İzin ver" ve ajanın yeniden kurulumu gerekir. Devam edilsin mi?`)) return;
         const body = { pc_name: hw };
         body[which === 'terminal' ? 'terminal_enabled' : 'vision_enabled'] = !!enabled;
         msg('cap-status', '', 'Gönderiliyor…');
