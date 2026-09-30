@@ -6,7 +6,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops.config import LOG_TABLE, USE_V2_SCHEMA
-from pops import db
+from pops import agent_health, db
 from pops.db import execute_query
 from pops.models import (
     AutoEnrollInput,
@@ -35,6 +35,7 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
         await execute_query(f"DELETE FROM {LOG_TABLE} WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM agent_versions WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM agent_secrets WHERE pc_name = $1", (pc_name,))
+        await execute_query("DELETE FROM agent_bypass_keys WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM device_software WHERE pc_name = $1", (pc_name,))
         await execute_query("DELETE FROM device_patch_status WHERE pc_name = $1", (pc_name,))
         # Cihaz çevrimiçiyse ajan bağlantısını da kapat
@@ -113,9 +114,11 @@ async def get_devices(auth: dict = Depends(require_auth)):
         c.boot_count, c.logged_user, c.ip_address, c.cap_ram_readable, c.is_quarantined,
         c.cap_terminal_enabled, c.cap_vision_enabled, c.cap_server_ca,
         c.cap_terminal_disable_requested, c.cap_vision_disable_requested, c.running_version,
+        c.agent_health, bk.pc_name AS bypass_key_issued, bk.confirmed_at AS bypass_key_confirmed,
         av.version AS agent_version
     FROM clients c
     LEFT JOIN agent_versions av ON c.pc_name = av.pc_name
+    LEFT JOIN agent_bypass_keys bk ON c.pc_name = bk.pc_name
     """
     rows = await execute_query(query, fetch=True)
     return [
@@ -140,6 +143,12 @@ async def get_devices(auth: dict = Depends(require_auth)):
             "cap_server_ca": r.get("cap_server_ca"),
             "cap_terminal_disable_requested": r.get("cap_terminal_disable_requested", False),
             "cap_vision_disable_requested": r.get("cap_vision_disable_requested", False),
+            # Ajanın son heartbeat'teki sağlık özeti (0.1.12+; bkz. pops/agent_health.py)
+            "agent_health": agent_health.parse(r.get("agent_health")),
+            # Çevrimdışı bypass: device = cihaza özel anahtar onaylı, pending = gönderildi/onay bekliyor, None = eski
+            "bypass_key": (
+                "device" if r.get("bypass_key_confirmed") else "pending" if r.get("bypass_key_issued") else None
+            ),
         }
         for r in (rows or [])
     ]

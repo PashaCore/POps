@@ -3,19 +3,18 @@
 
 import asyncio
 import datetime
-import hashlib
 import json
 import secrets
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 
-from pops.config import BYPASS_SECRET, JWT_COOKIE_NAME
+from pops.config import JWT_COOKIE_NAME
 from pops.db import execute_query
 from pops.models import EndAuditSessionInput, LockdownInput, RemoteInputData, StartAuditSessionInput
 from pops.security import require_admin, require_auth, require_superadmin, verify_jwt, verify_session
-from pops.agent_auth import enforce_agent_auth_enabled, valid_enroll_token, verify_agent_secret
-from pops import auditchain
+from pops.agent_auth import verify_agent_secret
+from pops import auditchain, bypass
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 from pops.notify import notify
@@ -75,6 +74,8 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
         "session_id": session_id,
         "is_mandatory": data.is_mandatory,
         "admin_name": admin_name,
+        # Ajan yerel denetim izine (Windows Olay Günlüğü) oturumu kimin açtığını yazar (0.1.12+)
+        "requested_by": admin_name,
         "reason": data.reason,
         "countdown_seconds": countdown,
         "is_quarantined": is_quarantined,
@@ -182,23 +183,17 @@ async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     }
 
 
-def offline_bypass_code(hw_id: str, day: datetime.date) -> str:
-    """Ajanın ağ bağlantısı olmadan doğruladığı günlük 6 haneli bypass kodu.
-
-    Formül POpsAgent Worker.cs (UNLOCK_BYPASS) ile aynıdır: SHA-256(hw_id + BYPASS_SECRET + yyyy-MM-dd).
-    Kod sunucunun yerel tarihine göre üretilir; sunucu ve ajanlar aynı saat diliminde olmalıdır.
-    """
-    raw = f"{hw_id}{BYPASS_SECRET}{day.strftime('%Y-%m-%d')}"
-    return hashlib.sha256(raw.encode('utf-8')).hexdigest()[:6].upper()
-
-
 @router.get("/api/security/bypass_token/{pc_name}")
 async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
-    # Karantinadaki (çevrimdışı) cihaz için tepsi uygulamasına girilecek kod
-    if not BYPASS_SECRET:
-        return {"status": "error", "message": "BYPASS_SECRET tanımlı değil (bkz. .env.example)"}
+    # Karantinadaki (çevrimdışı) cihaz için tepsi uygulamasına girilecek kod (formüller: pops/bypass.py)
     today = datetime.date.today()
-    token = offline_bypass_code(pc_name, today)
+    result = await bypass.codes(pc_name, today)
+    if not result["token"]:
+        return {
+            "status": "error",
+            "message": "Bu cihazın cihaza özel bypass anahtarı yok ve BYPASS_SECRET tanımlı değil. "
+            "Ajan 0.1.12 ya da üstüne güncellenip bir kez bağlanınca anahtarını alır.",
+        }
     await log_audit_event(
         pc_name,
         "Security",
@@ -215,7 +210,13 @@ async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
         "Çevrimdışı bypass kodu üretildi: %s" % auth.get('sub', 'admin'),
         {"admin": auth.get('sub')},
     )
-    return {"status": "success", "token": token, "valid_for": today.isoformat()}
+    return {
+        "status": "success",
+        "token": result["token"],
+        "fallback_token": result.get("fallback_token"),
+        "method": result["method"],
+        "valid_for": today.isoformat(),
+    }
 
 
 @router.get("/api/system/audit-verify")
@@ -280,14 +281,18 @@ async def websocket_panel(websocket: WebSocket):
 @router.websocket("/ws/vision/{pc_name}")
 async def websocket_vision(websocket: WebSocket, pc_name: str):
     await websocket.accept()
-    # Faz 3 accept-both: enforce açıkken kimliksiz vision tüneli reddedilir (sahte ekran engellenir)
-    if await enforce_agent_auth_enabled() and not (
-        await verify_agent_secret(pc_name, websocket.headers.get("X-Agent-Secret"))
-        or await valid_enroll_token(websocket.headers.get("X-Enroll-Token"))
-    ):
-        await add_audit_log(pc_name, "auth_reject", "Kimliksiz vision baglantisi reddedildi (enforce acik)", {})
+    # Vision tüneli yalnızca o cihazın kalıcı anahtarıyla açılır; "Kimlik zorlaması" ayarından bağımsızdır.
+    # Kayıt jetonu burada geçmez: jetonu bilen biri başka bir cihazın adına sahte ekran gönderemesin.
+    if not await verify_agent_secret(pc_name, websocket.headers.get("X-Agent-Secret")):
+        forwarded = websocket.headers.get("X-Forwarded-For")
+        client_ip = forwarded.split(",")[0] if forwarded else (websocket.client.host if websocket.client else None)
+        await add_audit_log(
+            pc_name, "auth_reject", "Cihaz anahtarı olmayan vision bağlantısı reddedildi", {"ip": client_ip}
+        )
         await websocket.close(code=4401, reason="Ajan kimlik dogrulamasi gerekli")
         return
+    # Aynı cihazın yeni tüneli eskisinin yerini alır. Eski soket kapatılmaz (ajan onu zaten bırakmıştır; kapanışı
+    # ajanda yeni tüneli de düşürebilir), yalnızca kaydı devreder ve kapanınca yeni kaydı silmez (finally).
     manager.active_vision_ws[pc_name] = websocket
     try:
         while True:
@@ -300,7 +305,11 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
             except json.JSONDecodeError:
                 pass
     except WebSocketDisconnect:
-        manager.disconnect_vision(pc_name)
+        pass
+    finally:
+        # Yerini yeni bir tünele bırakan eski soket, yeni kaydı silmez
+        if manager.active_vision_ws.get(pc_name) is websocket:
+            manager.disconnect_vision(pc_name)
 
 
 # Ekran akışı yalnızca Vision oturumu (rıza/bildirim akışı) üzerinden başlatılır;

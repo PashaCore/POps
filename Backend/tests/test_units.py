@@ -13,7 +13,9 @@ for _k in ("JWT_SECRET", "DB_USER", "DB_PASS", "DB_NAME"):
 import json  # noqa: E402
 import logging  # noqa: E402
 
-from pops import logs, update_notice  # noqa: E402
+import datetime  # noqa: E402
+
+from pops import agent_health, bypass, logs, update_notice  # noqa: E402
 from pops.routers import activity  # noqa: E402
 
 FAILS = []
@@ -102,10 +104,40 @@ def test_activity():
     chk(cmd["detail"] == "Durum: Completed" and cmd["actor"] == "Pasha", "komut içeriği yok, yapan var")
 
 
+def test_bypass():
+    print("== bypass")
+    # Ajanla ortak vektör (POps.Tests OfflineBypassTests): anahtar 32 x 0x01, HW-TEST, 2026-10-01
+    import base64
+    key = base64.urlsafe_b64encode(bytes([1] * 32)).rstrip(b"=").decode()
+    chk(bypass.device_code(key, "HW-TEST", datetime.date(2026, 10, 1)) == "BA258E", "cihaz kodu test vektörü")
+    chk(bypass.fingerprint(key) == "72cd6e8422c407fb", "parmak izi test vektörü")
+    fresh = bypass.new_key()
+    chk(len(fresh) == 43 and "=" not in fresh and len(base64.urlsafe_b64decode(fresh + "=")) == 32,
+        "yeni anahtar 32 bayt base64url (dolgusuz)")
+    chk(bypass.supports_device_key("0.1.12-alpha") and bypass.supports_device_key("v0.2.0"), "0.1.12+ destekler")
+    chk(not bypass.supports_device_key("0.1.11-alpha") and not bypass.supports_device_key("test")
+        and not bypass.supports_device_key(None), "eski/bilinmeyen sürüme gönderilmez")
+
+
+def test_agent_health():
+    print("== agent_health")
+    chk(agent_health.clean(None) is None and agent_health.clean("x") is None, "blok yoksa NULL")
+    out = json.loads(agent_health.clean({
+        "started_at": 1700000000, "last_policy_sync": -5, "last_inventory_upload": True, "tray_connected": "evet",
+        "vision_channel": "connected", "loop_errors_1h": 2, "last_error": "ğ" * 300, "extra": 1}))
+    chk(out["started_at"] == 1700000000 and out["last_policy_sync"] is None and out["last_inventory_upload"] is None,
+        "zaman alanları: negatif ve bool atıldı")
+    chk(out["tray_connected"] is None and out["vision_channel"] == "connected", "tür denetimi")
+    chk(len(out["last_error"]) == 200 and "extra" not in out, "metin kırpıldı, bilinmeyen alan yok")
+    chk(agent_health.parse('{"a": 1}') == {"a": 1} and agent_health.parse("bozuk") is None, "okuma")
+
+
 def main():
     test_update_notice()
     test_log_format()
     test_activity()
+    test_bypass()
+    test_agent_health()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

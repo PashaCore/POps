@@ -57,7 +57,7 @@ application code.
 
 | Table | Contents |
 | --- | --- |
-| `clients` | One row per device: host name, display name, lab, `status` (`Online` / `Offline` / last heartbeat status), `last_seen`, active window, boot count, signed-in user (`logged_user`), IP, hardware fingerprint (`dna_uuid`, `dna_bios`, `dna_disk`, `dna_mac`, `dna_ram`, `cap_ram_readable`), `is_quarantined`, capability state (`cap_terminal_enabled`, `cap_vision_enabled`, `cap_terminal_disable_requested`, `cap_vision_disable_requested`), `running_version`, `allow_reenroll`. New devices land in lab `Atanmamis_Cihazlar` (unassigned). |
+| `clients` | One row per device: host name, display name, lab, `status` (`Online` / `Offline` / last heartbeat status), `last_seen`, active window, boot count, signed-in user (`logged_user`), IP, hardware fingerprint (`dna_uuid`, `dna_bios`, `dna_disk`, `dna_mac`, `dna_ram`, `cap_ram_readable`), `is_quarantined`, capability state (`cap_terminal_enabled`, `cap_vision_enabled`, `cap_terminal_disable_requested`, `cap_vision_disable_requested`), `running_version`, `allow_reenroll`, `agent_health` (health summary from the last heartbeat, agents 0.1.12+; see `Backend/pops/agent_health.py`). New devices land in lab `Atanmamis_Cihazlar` (unassigned). |
 | `hw_inventory` | Hardware inventory per device (CPU, RAM, motherboard, GPU, OS, IP, MAC, disks, last update). |
 | `agent_versions` | Agent version per device, from the `X-Agent-Version` header at connect. |
 | `custom_labs` | Lab names created in the panel. |
@@ -104,6 +104,7 @@ Deleting a device also deletes its rows in both tables.
 | --- | --- |
 | `enroll_tokens` | Enrollment tokens: `token`, `lab_name`, `note`, `created_at`, `expires_at`, `max_uses`, `use_count`, `is_used`, `used_by`, `used_at`. |
 | `agent_secrets` | Per-device secret as a **SHA-256 hash** (`secret_hash`); the plaintext is never stored. Moved with the device when its identity is reconciled, deleted when the device is deleted. |
+| `agent_bypass_keys` | Per-device offline bypass key (migration `0013`): `secret` (32 bytes, base64url), `fingerprint`, `issued_at`, `confirmed_at` (set when the agent acknowledges the fingerprint). Stored in the clear because codes are generated while the device is offline; anyone who can write the database can already lift a quarantine from the panel. Moved with the device and deleted with it. |
 
 ### Logs and audit
 
