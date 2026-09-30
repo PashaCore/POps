@@ -502,11 +502,18 @@ namespace POpsAgent
                 return;
             }
             string visionWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://") + $"/ws/vision/{_hwId}";
+            string secret = AgentCredentials.CurrentSecret ?? AgentCredentials.LoadSecret();
+            VisionAuthSelection auth = VisionChannel.SelectHeaders(secret, AgentCredentials.GetEnrollToken(), APP_VERSION);
+            if (!auth.CanConnect)
+            {
+                POpsHelpers.Log("AGENT", "[GÜVENLİK] Vision tüneli açılmadı: cihaz henüz kayıtlı değil (anahtar yok)", true);
+                await DenyCapabilityAsync("vision", "vision_tunnel", reason: "not_enrolled");
+                return;
+            }
             var newWs = new ClientWebSocket();
             newWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(visionWsUrl));
-            // Sunucu enforce_agent_auth açıkken kimliksiz Vision tünelini (sahte ekran görüntüsü) reddeder
-            newWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
-            ApplyAuthHeaders(newWs);
+            foreach (KeyValuePair<string, string> header in auth.Headers)
+                newWs.Options.SetRequestHeader(header.Key, header.Value);
             try
             {
                 await newWs.ConnectAsync(new Uri(visionWsUrl), token);
@@ -518,7 +525,7 @@ namespace POpsAgent
             catch (Exception ex)
             {
                 POpsHelpers.Log("AGENT", $"[!] Vision Tüneli açılamadı: {ex.Message}", true);
-                _isVisionStreamActive = false;
+                ApplyVisionClose(newWs.CloseStatus);
                 newWs.Dispose();
             }
         }
@@ -563,7 +570,20 @@ namespace POpsAgent
             }
             catch (WebSocketMessages.TooLargeException ex) { POpsHelpers.Log("AGENT", $"[GÜVENLİK] Vision tüneli kapatıldı: {ex.Message}.", true); }
             catch { }
-            finally { await DisconnectVisionTunnelAsync(); }
+            finally
+            {
+                ApplyVisionClose(ws.CloseStatus);
+                await DisconnectVisionTunnelAsync();
+            }
+        }
+
+        private void ApplyVisionClose(WebSocketCloseStatus? status)
+        {
+            VisionCloseDecision decision = VisionChannel.OnClosed(status == null ? null : (int)status.Value);
+            if (decision.AuthenticationRejected)
+                POpsHelpers.Log("AGENT", "[GÜVENLİK] Sunucu Vision kanalında cihaz kimliğini reddetti (4401); tünel yeniden denenmeyecek.", true);
+            if (decision.ClearStream) _isVisionStreamActive = false;
+            if (decision.ClearApproval) _visionSessionApproved = false;
         }
 
         private async Task ReceiveCommandsAsync(ClientWebSocket ws, CancellationToken stoppingToken)
@@ -759,17 +779,19 @@ namespace POpsAgent
         // hareketi gibi sık gelen istekler için aynı yetenek/eylem en çok dakikada bir bildirilir.
         private readonly Dictionary<string, DateTime> _lastDenialNotice = new Dictionary<string, DateTime>();
 
-        private async Task DenyCapabilityAsync(string capability, string action, int? taskId = null)
+        private async Task DenyCapabilityAsync(string capability, string action, int? taskId = null, string reason = null)
         {
-            string key = $"{capability}/{action}";
+            string key = $"{capability}/{action}/{reason}";
             lock (_lastDenialNotice)
             {
                 if (taskId == null && _lastDenialNotice.TryGetValue(key, out DateTime last) && DateTime.UtcNow - last < TimeSpan.FromMinutes(1)) return;
                 _lastDenialNotice[key] = DateTime.UtcNow;
             }
-            POpsHelpers.Log("POLICY", $"[GÜVENLİK] {action} reddedildi: {capability} bu cihazda kapalı (yetenek politikası).", true);
+            if (reason == null)
+                POpsHelpers.Log("POLICY", $"[GÜVENLİK] {action} reddedildi: {capability} bu cihazda kapalı (yetenek politikası).", true);
             var notice = new Dictionary<string, object> { ["type"] = "capability_denied", ["capability"] = capability, ["action"] = action };
             if (taskId != null) notice["task_id"] = taskId.Value;
+            if (reason != null) notice["reason"] = reason;
             await SendCommandMessageAsync(notice);
         }
 

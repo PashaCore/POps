@@ -72,6 +72,9 @@ and closes the connection with `4401`.
 - **Authentication.** Before it has a device secret the agent sends the enrollment token (`X-Enroll-Token`); the
   server answers with `set_secret`. From then on it sends `X-Agent-Secret`. Secrets live in `C:\POpsData\secure`
   (SYSTEM and Administrators only) and are never written to a log. See [`security.md`](security.md#agent-identity).
+- **Vision authentication.** The command socket may use the enrollment token for first registration, but the
+  Vision socket never sends it: Vision requires the device's `X-Agent-Secret` and stays closed before enrollment.
+  A Vision `4401` rejection clears the stream and local approval without an automatic retry.
 - **Inventory.** When the server has no hardware inventory for the device, it asks for it (`get_hardware`) and the
   agent posts CPU, RAM, motherboard, GPU, OS, IP, MAC and disk information.
 - **Policy.** The agent fetches `GET /api/agent_policies` every 60 seconds.
