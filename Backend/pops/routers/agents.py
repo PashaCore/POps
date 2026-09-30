@@ -26,7 +26,7 @@ from pops.manager import manager
 from pops.taskqueue import process_queue
 from pops.dna import reconcile_device
 from pops.notify import notify
-from pops import update_notice
+from pops import agent_health, bypass, update_notice
 
 log = logging.getLogger("pops.agents")
 router = APIRouter()
@@ -159,6 +159,9 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
         return
 
     manager.active_agents[active_hwid] = websocket
+    # Bu bağlantı cihazın kalıcı anahtarıyla mı açıldı (aynı bağlantıda enroll ile alınan anahtar sayılmaz;
+    # ajan da o bağlantıda set_bypass_secret'ı kabul etmez)
+    connected_with_secret = auth_method == "secret"
 
     async def handle_routine_payload(pld):
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -181,9 +184,10 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             await process_queue()
             return
         if "status" in pld:
+            # agent_health (0.1.12+): her heartbeat'te üzerine yazılır; bildirmeyen ajanda NULL kalır
             await execute_query(
-                "UPDATE clients SET last_seen=$1, status=$2, active_window=$3, hostname=$4, ip_address=$5 "
-                "WHERE pc_name=$6",
+                "UPDATE clients SET last_seen=$1, status=$2, active_window=$3, hostname=$4, ip_address=$5, "
+                "agent_health=$7::jsonb WHERE pc_name=$6",
                 (
                     current_time,
                     pld.get("status"),
@@ -191,6 +195,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     current_hostname,
                     client_ip,
                     active_hwid,
+                    agent_health.clean(pld.get("agent_health")),
                 ),
             )
             if auth_method == "secret" and isinstance(pld.get("quarantined"), bool):
@@ -211,6 +216,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     "AND NOT EXISTS (SELECT 1 FROM agent_secrets WHERE pc_name=$1)",
                     (verified_hwid, active_hwid),
                 )
+                await bypass.move(active_hwid, verified_hwid)
                 active_hwid = verified_hwid
             hw = payload.get("dna_payload", {}).get("hardware", {})
             caps = payload.get("dna_payload", {}).get("capabilities", {})
@@ -336,6 +342,16 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 pending_enroll = None
                 auth_method = "secret"
 
+            # Cihaz başına çevrimdışı bypass anahtarı (0.1.12+, bkz. pops/bypass.py). Ajan parmak iziyle onaylar
+            # (bypass_secret_ack); onaylanana kadar her bağlanışta aynı anahtar yeniden gönderilir.
+            if connected_with_secret and bypass.supports_device_key(agent_version):
+                bypass_key = await bypass.key_to_send(active_hwid)
+                if bypass_key:
+                    try:
+                        await websocket.send_text(json.dumps({"action": "set_bypass_secret", "secret": bypass_key}))
+                    except Exception:
+                        pass
+
             hw_exists = await execute_query(
                 "SELECT cpu FROM hw_inventory WHERE pc_name = $1", (active_hwid,), fetch=True
             )
@@ -440,9 +456,24 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     {"type": "capabilities", "pc_name": active_hwid, "terminal_enabled": t, "vision_enabled": v}
                 )
                 continue
+            if payload.get("type") == "bypass_secret_ack":
+                fp = str(payload.get("fingerprint") or "")[:64]
+                if connected_with_secret and await bypass.confirm(active_hwid, fp):
+                    await add_audit_log(
+                        active_hwid, "bypass_key", "Cihaza özel bypass anahtarı ajana ulaştı", {"fingerprint": fp}
+                    )
+                else:
+                    await add_audit_log(
+                        active_hwid,
+                        "bypass_key_mismatch",
+                        "Bypass anahtarı onayı saklanan anahtarla eşleşmedi",
+                        {"fingerprint": fp},
+                    )
+                continue
             if payload.get("type") == "capability_denied":
                 # Ajan, kapalı bir yetenek için gelen isteği reddettiğini bildirir. Denetime yaz + panele yay.
-                _md = {k: payload.get(k) for k in ("capability", "action", "task_id")}
+                # reason (0.1.12+): ör. not_enrolled = cihaz anahtarı olmadığı için Vision tüneli açılmadı
+                _md = {k: payload.get(k) for k in ("capability", "action", "task_id", "reason")}
                 await log_audit_event(
                     active_hwid,
                     "Security",
@@ -458,7 +489,9 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 await notify(
                     "capability_denied",
                     "medium",
-                    "Kapalı yetenek istendi, ajan reddetti: %s" % (payload.get("capability") or "?"),
+                    "Vision tüneli açılmadı: cihaz kayıtlı değil (anahtarı yok)"
+                    if payload.get("reason") == "not_enrolled"
+                    else "Kapalı yetenek istendi, ajan reddetti: %s" % (payload.get("capability") or "?"),
                     str(payload.get("action") or ""),
                     active_hwid,
                 )

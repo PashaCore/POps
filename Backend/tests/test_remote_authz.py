@@ -10,6 +10,7 @@ Ortam: POPS_TEST_HTTP + POPS_TEST_WS + DB_* + JWT_SECRET (uvicorn ile aynı JWT_
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -66,6 +67,12 @@ async def main():
         "ON CONFLICT (key) DO UPDATE SET value='0'"
     )
     await c.execute("DELETE FROM enterprise_audit_logs WHERE target_pc IN ('HW-X','HW-Y')")
+    # Vision tüneli yalnızca cihaz anahtarıyla açılır (bkz. test_device_keys.py)
+    await c.execute(
+        "INSERT INTO agent_secrets (pc_name, secret_hash) VALUES ('HW-X', $1) "
+        "ON CONFLICT (pc_name) DO UPDATE SET secret_hash=$1",
+        hashlib.sha256(b"hwx-secret").hexdigest(),
+    )
     # F4: verify_session JWT 'sub'unun DB'de olmasını ister → panel kullanıcılarını seed et (token_version 0).
     for uname, role in (("admin1", "admin"), ("viewer1", "viewer")):
         await c.execute(
@@ -108,7 +115,7 @@ async def main():
     session_id = b["session_id"]
 
     # Ajanı taklit et: HW-X vision tüneli açıp kare gönder
-    vision = await websockets.connect(WS + "/ws/vision/HW-X")
+    vision = await websockets.connect(WS + "/ws/vision/HW-X", additional_headers={"X-Agent-Secret": "hwx-secret"})
     await vision.send(json.dumps({"type": "stream_frame", "pc_name": "HW-X", "image": "FRAME1"}))
     admin_got = await recv_timeout(admin_panel, 3)
     viewer_got = await recv_timeout(viewer_panel, 2)

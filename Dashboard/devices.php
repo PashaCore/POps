@@ -306,7 +306,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(`${apiUrl}/api/security/bypass_token/${encodeURIComponent(hostname)}`);
             const data = res.ok ? await res.json() : {};
             if (data.status !== 'success') return showToast(data.message || 'Bypass kodu alınamadı.', 'error');
-            alert(`${hostname} için çevrimdışı bypass kodu (${data.valid_for}): ${data.token}\n\nKullanıcı bu kodu POps tepsi simgesi > "Yönetici Müdahalesi (Bypass)" menüsüne girmelidir.`);
+            // pending: cihaza özel anahtar gönderildi ama onayı gelmedi; ajan hangisini kullanıyorsa o kod geçer
+            const codes = data.fallback_token
+                ? `${data.token}\n(Kabul edilmezse şunu deneyin: ${data.fallback_token})`
+                : data.token;
+            alert(`${hostname} için çevrimdışı bypass kodu (${data.valid_for}): ${codes}\n\nKullanıcı bu kodu POps tepsi simgesi > "Yönetici Müdahalesi (Bypass)" menüsüne girmelidir.`);
         } catch (e) { showToast('Sunucu hatası.', 'error'); }
     };
 

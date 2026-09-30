@@ -78,11 +78,12 @@ async def _process_queue_once():
             break
         pc = task["target_pc"]
         await execute_query("UPDATE tasks SET status = 'Running' WHERE id = $1", (task["id"],))
-        await manager.send_command(
-            {"action": "execute", "task_id": task["id"], "script_path": task["script_path"]}, pc
-        )
         # F4(a): komutu KİMİN kuyrukladığını göster (eskiden 'System/Queue' idi, iz yoktu).
         actor = task.get("created_by") or "System/Queue"
+        # requested_by: ajan komutu kimin istediğini yerel denetim izine (Windows Olay Günlüğü) yazar (0.1.12+)
+        await manager.send_command(
+            {"action": "execute", "task_id": task["id"], "script_path": task["script_path"], "requested_by": actor}, pc
+        )
         await log_audit_event(
             pc,
             "Deploy",

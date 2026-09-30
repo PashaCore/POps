@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12-alpha] - 2026-09-30
+
+Fixes from the external security audit. An update counts as successful only once the new agent is really running, otherwise it rolls back. Vision accepts only the device's own key. Every PC gets its own offline bypass key, so a key read on one PC opens only that PC. The agent keeps a local record of remote commands, Vision sessions and quarantines in the Windows event log, where the server cannot erase it. Heartbeats report the agent's health, shown on the System page.
+
+Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**; migration `0013`), then send 0.1.12-alpha to the agents. Each agent receives its bypass key when it reconnects; until the agent confirms it, the panel shows the legacy code as a fallback.
+
 ### Security
 
+- **Server: Vision accepts only the device secret.** `/ws/vision/{hw_id}` now requires that device's own `X-Agent-Secret` whether or not "Kimlik zorlaması" is on; an enrollment token or no credentials get `4401` and an audit entry. A new tunnel from the same device takes over from the previous one, and the old one closing no longer drops the new registration. Agents that never enrolled can no longer stream.
+- **Server: per-device offline bypass keys.** The server sends each 0.1.12+ agent its own 32-byte key (`set_bypass_secret`) over a connection opened with the device secret, stores it in `agent_bypass_keys` (migration `0013`) and marks it confirmed when the agent acknowledges the matching fingerprint. The panel's bypass code then uses the device key; while confirmation is pending it shows that code and the legacy one as a fallback. Older agents keep the `BYPASS_SECRET` code, which is now needed only for them.
+- **Server: commands and Vision sessions name who asked.** `execute` and `start_vision_session` messages carry `requested_by` (the panel user, or the scheduler), which 0.1.12 agents write to the Windows event log.
 - **Agent/MSI: local Windows audit trail.** The MSI registers `POps Agent` in the Application event log. The service records remote-command start/finish (command hash and length, never its text), Vision sessions, quarantine changes, update results, capability changes, `4401` identity rejections and bypass-key receipt as event IDs 1000–1060. Event-log failures are reported to the POps log and never stop the service.
 - **Agent: per-device offline bypass keys.** An authenticated command channel can store a server-issued 32-byte base64url key as `bypass.device`; daily codes use HMAC-SHA256 over `hw_id|local-date`, and acknowledgements expose only a short key fingerprint. If the per-device file exists it fails closed instead of falling back to the deprecated fleet-wide `BYPASS_SECRET`. The MSI can read enrollment and legacy bypass secrets from files, keeping their values off the command line.
 - **Agent: Vision authenticates only with the device secret.** The Vision WebSocket no longer receives `X-Enroll-Token`; enrollment remains confined to the command socket. An agent without its per-device `X-Agent-Secret` refuses to open Vision and reports `reason: "not_enrolled"`. A Vision `4401` rejection clears the stream and local consent state and is logged once without an automatic retry, while the command socket keeps its existing enrollment behaviour.
@@ -16,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Panel: agent health.** *Sistem & Sürüm → Cihaz yetenekleri ve ajan durumu* shows, for the selected device, what its last heartbeat reported: service start, last policy sync and inventory upload, tray and Vision-channel state, errors in the last hour with the last one, and whether its bypass key is per-device, pending or legacy. `/api/devices` returns `agent_health` and `bypass_key`; the server keeps only known fields and cuts the error text to 200 characters.
 - **Agent health telemetry.** Every heartbeat now includes service start time, last successful policy sync and inventory upload, tray and Vision-channel state, errors seen by background loops in the last hour and a sanitized 200-character last error. Policy, inventory, DNS and session loops report failures to this in-memory window while continuing to run; older servers safely ignore the new block.
 - **Docs: capacity report** (`docs/kapasite/README.md`, Turkish, with charts): restart storms for 250–5,000 agents on one server process (5,000 back in 11 s, 0 failed attempts), CPU for POps and PostgreSQL, memory model (≈ 69 MB + 0.16 MB per agent), database write rate, panel latency under load, the task-queue bottleneck it found, and hardware sizing by fleet size, with what was and was not measured. Raw data `docs/kapasite/olcum.json`; charts from `tools/bench_charts.py`.
 
@@ -355,7 +365,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.11-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.12-alpha...HEAD
+[0.1.12-alpha]: https://github.com/PashaCore/POps/compare/v0.1.11-alpha...v0.1.12-alpha
 [0.1.11-alpha]: https://github.com/PashaCore/POps/compare/v0.1.10-alpha...v0.1.11-alpha
 [0.1.10-alpha]: https://github.com/PashaCore/POps/compare/v0.1.9-alpha...v0.1.10-alpha
 [0.1.9-alpha]: https://github.com/PashaCore/POps/compare/v0.1.8-alpha...v0.1.9-alpha

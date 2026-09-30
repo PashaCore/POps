@@ -219,7 +219,7 @@
     <!-- ============ YETENEKLER ============ -->
     <div class="sys-card">
         <div class="card-head">
-            <h2><i class="fas fa-shield-halved"></i> Cihaz yetenekleri (terminal / Vision)</h2>
+            <h2><i class="fas fa-shield-halved"></i> Cihaz yetenekleri ve ajan durumu</h2>
         </div>
         <p class="card-desc">
             Bir cihazda uzaktan terminali ve/veya Vision'ı (ekran izleme, uzaktan kontrol) kapatır; sunucu ele geçirilse bile
@@ -641,7 +641,28 @@
         if (d.cap_terminal_enabled == null && d.cap_vision_enabled == null) {
             html += `<br><span class="muted-text"><i class="fas fa-circle-info"></i> Bu cihazdaki ajan (${escapeHtml(fmtV(d.agent_version))}) yetenek durumunu bildirmiyor; bildirim v0.1.4-alpha ile geldi. Ajan güncellenince burada görünür. Kapatma şimdi de kaydedilebilir, güncellemeden sonra uygulanır.</span>`;
         }
-        $('cap-state').innerHTML = html;
+        $('cap-state').innerHTML = html + agentHealthHtml(d);
+    }
+    // Ajanın heartbeat'te bildirdiği durum (0.1.12+) ve çevrimdışı bypass anahtarı
+    function agentHealthHtml(d) {
+        const h = d.agent_health;
+        const ago = (t) => t ? fmtDur(Date.now() / 1000 - t) + ' önce' : 'henüz yok';
+        const bypass = d.bypass_key === 'device' ? '<span class="badge ok">cihaza özel</span>'
+            : d.bypass_key === 'pending' ? '<span class="badge muted">gönderildi, onay bekleniyor</span>'
+            : '<span class="badge muted">ortak anahtar (eski)</span>';
+        let out = `<br>Çevrimdışı bypass anahtarı: ${bypass}`;
+        if (!h) {
+            return out + `<br><span class="muted-text"><i class="fas fa-circle-info"></i> Bu ajan (${escapeHtml(fmtV(d.agent_version))}) durum bildirmiyor; bildirim v0.1.12-alpha ile geldi.</span>`;
+        }
+        const vision = { off: 'kapalı', idle: 'boşta', connected: 'bağlı' }[h.vision_channel] || 'bilinmiyor';
+        const errs = h.loop_errors_1h || 0;
+        out += `<br>Ajan${isOnline(d) ? '' : ' (son bilinen)'}: açılış ${escapeHtml(ago(h.started_at))} &nbsp;·&nbsp; politika eşitleme ${escapeHtml(ago(h.last_policy_sync))}`
+            + ` &nbsp;·&nbsp; envanter ${escapeHtml(ago(h.last_inventory_upload))}`
+            + ` &nbsp;·&nbsp; tepsi: ${h.tray_connected ? '<span class="badge ok">bağlı</span>' : '<span class="badge bad">bağlı değil</span>'}`
+            + ` &nbsp;·&nbsp; Vision kanalı: ${escapeHtml(vision)}`
+            + `<br>Son 1 saatte hata: ${errs ? `<span class="badge bad">${errs}</span>` : '<span class="badge ok">0</span>'}`;
+        if (errs && h.last_error) out += ` <span class="muted-text">son hata: ${escapeHtml(h.last_error)}</span>`;
+        return out;
     }
     async function capSet(which, enabled) {
         const hw = $('cap-device').value;
