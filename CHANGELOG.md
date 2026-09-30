@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agent: the update result reaches the Windows event log (1030).** It was written only at service start, but the updater records the result after the new version has started, and the agent moves the file aside once the server has it, so event 1030 never appeared. The agent now writes it once, when it first sees the result, whether or not the server is reachable.
+- **Panel: capability buttons say what they do.** A capability turned off at install shows "(kurulumda kapatılmış)", its button reads "Terminali kapalı tut" / "Vision'ı kapalı tut" (it stays off even if the agent is reinstalled with it on), and the disabled "İzin ver" explains that a capability cannot be turned on remotely. A capability locked from the panel shows "(panelden kalıcı kapatıldı)".
+- **Panel:** the report tabs no longer turn solid blue with unreadable text on hover.
+
 ## [0.1.12-alpha] - 2026-09-30
 
 Fixes from the external security audit. An update counts as successful only once the new agent is really running, otherwise it rolls back. Vision accepts only the device's own key. Every PC gets its own offline bypass key, so a key read on one PC opens only that PC. The agent keeps a local record of remote commands, Vision sessions and quarantines in the Windows event log, where the server cannot erase it. Heartbeats report the agent's health, shown on the System page.

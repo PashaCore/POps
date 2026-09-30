@@ -912,6 +912,8 @@ namespace POpsAgent
         {
             Dictionary<string, object> message = AgentUpdate.PendingResultMessage();
             if (message == null) return;
+            // Yerel denetim izi (1030) sunucu bağlantısından bağımsız, sonuç ilk görüldüğünde
+            LocalAudit.Write(AgentUpdate.PendingResultAudit(message));
 
             byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message));
             await _wsCommandLock.WaitAsync(token);
