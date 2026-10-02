@@ -22,6 +22,13 @@ namespace POpsAgent
                 return; // Uygulamayı burada bitir, hostu hiç başlatma.
             }
 
+            // İmaj öncesi temizlik: servis durdurulur, cihaza özel dosyalar silinir (bkz. Generalizer; çıkış kodları orada)
+            if (Generalizer.IsRequested(args))
+            {
+                Environment.ExitCode = Generalizer.Run(args, Console.Out);
+                return;
+            }
+
             // 🚀 ÇALIŞMA DİZİNİNİ EXE KONUMUNA ZORLA
             Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 

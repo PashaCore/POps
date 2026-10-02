@@ -30,7 +30,7 @@ The agent reads its settings from `appsettings.json` in its install folder first
 | `appsettings.json` key | Environment variable | Description |
 | ---------------------- | -------------------- | ----------- |
 | `ServerUrl`            | `POPS_SERVER_URL`    | POps backend URL, e.g. `https://pops.example.com`. Must be `https://`: over plain `ws://` anyone on the network could read the device secret and send commands the agent runs as SYSTEM, so with an `http://` address the agent does not connect at all and logs why. Plain `http://` is accepted only for a server on the same machine (`127.0.0.1`, `localhost`); that is also the fallback when unset. |
-| `PersistDir`           | `POPS_PERSIST_DIR`   | Optional. A local NTFS folder that freeze software (Deep Freeze ThawSpace, a thawed drive, …) does not roll back. The device secret is mirrored there so it survives a reboot on a frozen machine. |
+| `PersistDir`           | `POPS_PERSIST_DIR`   | Optional. A local NTFS folder that freeze software (Deep Freeze ThawSpace, a thawed drive, …) does not roll back. The device secret and the hardware binding (`hw.bind`) are mirrored there so they survive a reboot on a frozen machine. |
 
 ### Secrets
 
@@ -77,11 +77,11 @@ Enroll before freezing: install with the machine thawed, wait until the device a
 
 Besides the heartbeat, the agent sends the data below. The software inventory, the Windows Update status and sign-in events are accepted only from an enrolled agent (`X-Agent-Id` + `X-Agent-Secret`, even when the server does not enforce authentication), so an agent without a device secret sends none of them.
 
-The heartbeat's `agent_health` block gives the service start time, last successful policy sync and inventory upload, whether the tray is connected, the Vision channel state (`off`, `idle` or `connected`), the number of background-loop errors in the last hour and the latest error. The error text is stripped of control characters and limited to 200 characters. These counters are diagnostic and reset when the service restarts.
+The heartbeat's `agent_health` block gives the service start time, last successful policy sync and inventory upload, whether the tray is connected, the Vision channel state (`off`, `idle` or `connected`), the number of background-loop errors in the last hour and the latest error. The error text is stripped of control characters and limited to 200 characters. These counters are diagnostic and reset when the service restarts. The inventory time is also refreshed when an unchanged software list is not sent, because the server's copy is then known to be current; it stops moving only when the inventory loop does.
 
 | Data | Endpoint | When |
 | --- | --- | --- |
-| Installed programs: name, version, publisher, install date | `POST /api/software/{hw_id}`, the whole list (at most 5000 entries); the server replaces the previous one | About a minute after start, then every 6 hours when the list has changed, and at least once a day |
+| Installed programs: name, version, publisher, install date | `POST /api/software/{hw_id}`, the whole list (at most 5000 entries); the server replaces the previous one | 1–31 minutes after start (random, so a lab switched on together does not send at once), then every 6 hours. Sent only when the list differs from the last successful send or that send is 7 days old; `C:\POpsData\software-inventory.json` keeps it across restarts |
 | Windows Update: pending updates (KB, title, MSRC severity, categories, security flag), their counts, whether a restart is needed, time of the scan and of the last successful install | `POST /api/patches/{hw_id}` (at most 500 updates, critical and security ones first) | Once a day, and when the panel asks |
 | User signed in at the console | `POST /api/auth/login`, `POST /api/auth/logout` | When it changes (checked every 15 seconds) |
 | Name of the program in the foreground, for example `chrome` or `WINWORD` | `active_window` in the heartbeat | While the tray runs |

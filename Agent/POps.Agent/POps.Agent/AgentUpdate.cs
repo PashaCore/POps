@@ -34,6 +34,7 @@ namespace POpsAgent
         public static string LockPath => Path.Combine(DataDir, "update.lock");
         public static string HealthPath => Path.Combine(DataDir, "health.json");
         public static string ResultPath => Path.Combine(DataDir, "update-result.json");
+        public static string IdentityPath => Path.Combine(DataDir, "identity.key");
 
         private static readonly Regex MsiNameRegex = new Regex(@"^POps-Agent-[A-Za-z0-9._-]+-win-x64\.msi$", RegexOptions.Compiled);
         private static readonly Regex Sha256HexRegex = new Regex("^[0-9a-f]{64}$", RegexOptions.Compiled);
