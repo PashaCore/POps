@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Server: stopping a screen stream is `POST /api/stream/stop` for admins** (was a `GET` any signed-in user could trigger, also from a link).
 - **Server: self-update deploys only release tags signed with a trusted SSH key.** When `/etc/pops/allowed_signers` exists, `pops-selfupdate` checks the newest `v*` tag with `git verify-tag` against that file before fast-forwarding; an unsigned, lightweight, GPG-signed or foreign-key tag is neither merged nor deployed, and the status reads `etiket imzasi dogrulanamadi`. Without the file the update goes on with an "imzasız etiket" warning unless `REQUIRE_SIGNED_TAGS=1` (new in `selfupdate.conf`). The dry run reports what the check would say. Signing and setup: `docs/self-update.md`.
 - **Server: deploy and self-update settings are read only from root-owned files.** `pops-deploy-backend` and `pops-selfupdate` refuse `/etc/pops/deploy.conf`, `/etc/pops/selfupdate.conf` and `allowed_signers` when they (or `/etc/pops`) are writable by group or others, belong to another user or are symbolic links, and then change nothing.
+- **Panel: every value that comes from a PC or a person is escaped, and CI keeps it so.** All ~180 places that write HTML were reviewed. Fixed: helpdesk ticket status, ids and counts, the agent-health error count, enrollment token counts, report dates and counts, scheduled-task dates and ids, licence ids and the server memory figure are escaped; ids in API paths are URL-encoded; the sidebar escapes its links. A module dropped onto the deployment chain is now taken from the module library, so text dragged in from another page can no longer add a command. `Dashboard/tools/check_html_sinks.py` runs in the `Dashboard checks` job and fails on unescaped output (`innerHTML`, `insertAdjacentHTML`, `document.write`, PHP `echo`), on `escapeHtml` inside inline `on*` handlers and on unescaped `href`/`src` values; reviewed exceptions are listed with a reason in `Dashboard/tools/html_sinks_allowlist.txt`.
+- **Panel: Vision stops a stream with `POST /api/stream/stop`** (JSON `{"pc_name": …}`, as the other admin calls) instead of a `GET`; the call sent when the page closes keeps `keepalive`. Needs the matching server change.
+- **Panel: 2FA is recommended to admins.** An admin or superadmin whose own 2FA is off sees a notice on **Ayarlar** and **Sistem & Sürüm**; it can be hidden for 7 days in that browser. 2FA stays optional.
 
 ### Fixed
 
@@ -28,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Server: an agent update result is confirmed after it is stored.** The server answers `update_result_ack` (agents 0.1.14+ keep the result until then and send it again), stores each result once, and keeps the list of updates still waiting for a result across restarts.
 - **Server: a failed deploy also restores the venv.** When `requirements.txt` changed, `pops-deploy-backend` snapshots the whole venv before `pip` (`venv-<time>-<pid>.tgz` next to the code backup) and restores it at the same path together with the code on any failure after the first change: `pip`, copying a file, the restart or the health check. Before, `pip` changed the live venv with no way back, and a `pip` or copy error ended the script before the rollback and left the code half-deployed.
 - **Server: `install.sh` with `LE_EMAIL`** passed the address to certbot a second time as a stray argument, so Let's Encrypt always failed and the install fell back to the internal CA. A broken nginx configuration no longer ends the install before the summary with the admin password.
+- **Panel: the Terminal quick buttons work.** The agent runs commands with `cmd.exe`, but **Yazıcı Kuyruğu** and **Temp Temizle** were PowerShell commands whose paths never expanded (`$env:` inside single quotes), so they deleted nothing. Each quick button is now the exact `cmd` line the agent runs (**Temp Temizle** starts PowerShell itself): **Ağı Yenile** succeeds when the PC has an IPv4 address after renewing, **Yazıcı Kuyruğu** stops the spooler, clears its queue and starts it again, and **Temp Temizle** empties `C:\Windows\Temp` and every user's temp folder, skipping files in use, the running task's own batch file and links. **Görev Sonlandır** quotes the program name.
+- **Panel: remote keyboard sends the physical key and modifiers** (`code`, Ctrl/Alt/Shift/Win/AltGr), so the agent can handle Turkish layouts and AltGr characters, and keys still held are released when control is turned off, the page loses focus or the tab is hidden.
 
 ### Changed
 
@@ -68,9 +73,6 @@ Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**;
 - **Server: deployment packages are downloaded only with a signed link** returned at upload, and the deployment script checks the file's SHA-256 before running it.
 - **Server: closing a stale connection no longer drops the device's new connection** (command and Vision).
 - **Agent: an offline bypass code with the per-device key is accepted once per day.** Someone who saw a code cannot reuse it when the PC is quarantined again the same day; the panel hands out the day's next code each time (up to 10). The bypass code endpoint is now `POST` and not cached.
-- **Panel: every value that comes from a PC or a person is escaped, and CI keeps it so.** All ~180 places that write HTML were reviewed. Fixed: helpdesk ticket status, ids and counts, the agent-health error count, enrollment token counts, report dates and counts, scheduled-task dates and ids, licence ids and the server memory figure are escaped; ids in API paths are URL-encoded; the sidebar escapes its links. A module dropped onto the deployment chain is now taken from the module library, so text dragged in from another page can no longer add a command. `Dashboard/tools/check_html_sinks.py` runs in the `Dashboard checks` job and fails on unescaped output (`innerHTML`, `insertAdjacentHTML`, `document.write`, PHP `echo`), on `escapeHtml` inside inline `on*` handlers and on unescaped `href`/`src` values; reviewed exceptions are listed with a reason in `Dashboard/tools/html_sinks_allowlist.txt`.
-- **Panel: Vision stops a stream with `POST /api/stream/stop`** (JSON `{"pc_name": …}`, as the other admin calls) instead of a `GET`; the call sent when the page closes keeps `keepalive`. Needs the matching server change.
-- **Panel: 2FA is recommended to admins.** An admin or superadmin whose own 2FA is off sees a notice on **Ayarlar** and **Sistem & Sürüm**; it can be hidden for 7 days in that browser. 2FA stays optional.
 
 ### Fixed
 
@@ -81,8 +83,6 @@ Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**;
 - **Server: no database means not ready.** The backend stops after five failed database attempts (systemd and Docker restart it) instead of running without a database, and `/api/health` answers `503` while the database is unreachable.
 - **Server: the client address is the one the reverse proxy reports,** not the first `X-Forwarded-For` value, which the client controls.
 - **CI: a release is published only after the full CI suite passes on the tagged commit.**
-- **Panel: the Terminal quick buttons work.** The agent runs commands with `cmd.exe`, but **Yazıcı Kuyruğu** and **Temp Temizle** were PowerShell commands whose paths never expanded (`$env:` inside single quotes), so they deleted nothing. Each quick button is now the exact `cmd` line the agent runs (**Temp Temizle** starts PowerShell itself): **Ağı Yenile** succeeds when the PC has an IPv4 address after renewing, **Yazıcı Kuyruğu** stops the spooler, clears its queue and starts it again, and **Temp Temizle** empties `C:\Windows\Temp` and every user's temp folder, skipping files in use, the running task's own batch file and links. **Görev Sonlandır** quotes the program name.
-- **Panel: remote keyboard sends the physical key and modifiers** (`code`, Ctrl/Alt/Shift/Win/AltGr), so the agent can handle Turkish layouts and AltGr characters, and keys still held are released when control is turned off, the page loses focus or the tab is hidden.
 
 
 - **Agent: the update result reaches the Windows event log (1030).** It was written only at service start, but the updater records the result after the new version has started, and the agent moves the file aside once the server has it, so event 1030 never appeared. The agent now writes it once, when it first sees the result, whether or not the server is reachable.
@@ -447,7 +447,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.12-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.13-alpha...HEAD
+[0.1.13-alpha]: https://github.com/PashaCore/POps/compare/v0.1.12-alpha...v0.1.13-alpha
 [0.1.12-alpha]: https://github.com/PashaCore/POps/compare/v0.1.11-alpha...v0.1.12-alpha
 [0.1.11-alpha]: https://github.com/PashaCore/POps/compare/v0.1.10-alpha...v0.1.11-alpha
 [0.1.10-alpha]: https://github.com/PashaCore/POps/compare/v0.1.9-alpha...v0.1.10-alpha
