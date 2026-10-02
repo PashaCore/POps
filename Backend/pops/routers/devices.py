@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops.config import LOG_TABLE, USE_V2_SCHEMA
-from pops import agent_health, db
+from pops import agent_health, db, modules
 from pops.db import execute_query
 from pops.models import (
     AutoEnrollInput,
@@ -73,6 +73,8 @@ async def wake_pc(pc_name: str, auth: dict = Depends(require_admin)):
         (pc_name,),
         fetch=True,
     )
+    if row:
+        await modules.check("wol", lab=row[0]["lab_name"])
     if not row or not row[0]["mac_address"] or row[0]["mac_address"] == "-":
         return {"status": "error", "message": "MAC adresi bulunamadı."}
     mac = row[0]["mac_address"]
@@ -85,6 +87,7 @@ async def wake_pc(pc_name: str, auth: dict = Depends(require_admin)):
 
 @router.post("/api/wake_lab/{lab_name}")
 async def wake_lab(lab_name: str, auth: dict = Depends(require_admin)):
+    await modules.check("wol", lab=lab_name)
     rows = await execute_query(
         "SELECT hw_inventory.mac_address FROM hw_inventory "
         "JOIN clients ON hw_inventory.pc_name = clients.pc_name "
@@ -102,15 +105,20 @@ async def wake_lab(lab_name: str, auth: dict = Depends(require_admin)):
     return {"status": "success", "woken_pcs": count}
 
 
-@router.post("/api/wake_all")
+@router.post("/api/wake_all", dependencies=[modules.require("wol")])
 async def wake_all(auth: dict = Depends(require_admin)):
     rows = await execute_query(
         "SELECT c.lab_name, h.mac_address FROM hw_inventory h JOIN clients c ON h.pc_name = c.pc_name", fetch=True
     )
     count = 0
+    lab_on = {}
     for r in rows or []:
         mac = r["mac_address"]
         lab = r["lab_name"]
+        if lab not in lab_on:
+            lab_on[lab] = await modules.enabled("wol", lab)   # uyandırma modülü kapalı laboratuvar atlanır
+        if not lab_on[lab]:
+            continue
         if mac and mac != "-":
             send_wol_packet(mac)
             if lab and lab != "Atanmamis_Cihazlar":

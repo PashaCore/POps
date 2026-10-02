@@ -7,10 +7,10 @@ import secrets
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from pops import db
+from pops import db, modules
 from pops.db import execute_query
 from pops.models import AgentPoliciesInput, AuthEventInput, HwInventoryInput, LogInput, PolicyAlertInput
 from pops.security import require_admin
@@ -996,7 +996,7 @@ async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(require_a
 
 
 @router.get("/api/agent_policies")
-async def get_policies():
+async def get_policies(request: Request):
     # Ajanlar JWT taşımaz; adil kullanım metni ve DNS kategorilerini okuyabilmeleri için bu uç
     # kimlik doğrulaması istemez. Politikayı değiştirmek (POST) admin JWT gerektirir.
     row = await execute_query("SELECT value FROM global_settings WHERE key = 'agent_policies'", fetch=True)
@@ -1011,12 +1011,32 @@ async def get_policies():
         }
     # F8: ajan sözleşmesi — dns_domains her zaman bulunsun (yoksa {} => DNS tespiti kapalı, güvenli).
     pol.setdefault("dns_domains", {})
+    # Modüller: anahtarını gönderen ajana (X-Agent-Id + X-Agent-Secret) kendi laboratuvarının ayarı ve modül listesi
+    # gider. Kimliksiz istekte (bugünkü ajanlar) kurum geneli ayar geçerlidir; laboratuvar istisnaları DNS politikası
+    # için ajan bu başlıkları gönderince işler. DNS politikası kapalıysa liste boş gider (ajan izlemez); karantina
+    # modülü kapalıysa ajan eşikte kendini karantinaya almaz.
+    hwid = request.headers.get("X-Agent-Id")
+    secret = request.headers.get("X-Agent-Secret")
+    lab = None
+    if hwid and secret and await verify_agent_secret(hwid, secret):
+        lab = await modules.lab_of(hwid)
+        pol["modules"] = {m.id: await modules.enabled(m.id, lab) for m in modules.MODULES}
+    if not await modules.enabled("dns_policy", lab):
+        pol["dns_domains"] = {}
+        pol["dns_categories"] = []
+        pol["auto_quarantine"] = False
+    elif not await modules.enabled("quarantine", lab):
+        pol["auto_quarantine"] = False
     return pol
 
 
 @router.post("/api/policy_alert")
 async def add_policy_alert(data: PolicyAlertInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     await bind_agent(agent_id, data.hw_id)  # başka cihaz adına ihlal uyarısı yazılamaz
+    if not await modules.enabled("dns_policy", await modules.lab_of(data.hw_id)):
+        # DNS politikası bu laboratuvarda kapalı (eski ajan listeyi kurum ayarına göre almış olabilir): kayıt ve
+        # bildirim yok. Hata dönülmez, ajan yeniden denemesin.
+        return {"status": "ignored", "reason": "module_disabled"}
     await log_audit_event(
         pc_name=data.hw_id,
         log_type="Security",

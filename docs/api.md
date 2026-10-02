@@ -165,7 +165,7 @@ See [`vision.md`](vision.md) for the session rules.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/agent_policies` | none | Fair-use text, DNS categories, `auto_quarantine`, `quarantine_threshold` and `dns_domains`. Read by agents; contains no secrets. |
+| GET | `/api/agent_policies` | none | Fair-use text, DNS categories, `auto_quarantine`, `quarantine_threshold` and `dns_domains`. Read by agents; contains no secrets. An agent that sends `X-Agent-Id` and `X-Agent-Secret` also gets `modules` (`{module_id: bool}` for its lab) and the DNS settings of its lab; without them the organisation-wide setting applies. If DNS policy is off, `dns_domains` is `{}`, `dns_categories` `[]` and `auto_quarantine` `false`; if quarantine is off, `auto_quarantine` is `false`. |
 | POST | `/api/agent_policies` | require_admin | Saves the policy object above. `dns_domains` is cleaned (lower case, no scheme or path, no leading `*.`, no duplicates, at most 5000 per category); if the field is omitted, the stored lists are kept. |
 
 ### Agent-facing HTTP endpoints
@@ -286,6 +286,30 @@ priorities: `low`, `normal`, `high`.
 The agent endpoints require a valid `X-Agent-Id` + `X-Agent-Secret` for that device even while enforcement is
 off (`401` without, `403` for another device). The subject must have at least 3 characters. Agents up to
 0.1.4-alpha have no ticket function in the tray.
+
+### Modules and install profiles
+
+Features that can be turned off for the whole organisation or per lab (design: `docs/design/modules.md`). The most
+specific setting wins (lab, then organisation); without a setting a module is on, so an upgrade changes nothing. A
+module whose dependency is off is off too (`deploy` needs `terminal`, `licenses` needs `software`, `schedules` needs
+`terminal`). Modules: `vision`, `terminal`, `deploy`, `schedules`, `patches`, `software`, `licenses`, `helpdesk`,
+`dns_policy`, `quarantine`, `wol`, `reports`. Devices, labs, enrollment, agent updates, the audit log, users,
+notifications and server health are core and always on.
+
+When a module is off, its endpoints answer `409` with `detail` "'<name>' modülü kapalı." and the headers
+`X-POps-Module: <id>` and `X-POps-Module-State: disabled`. Device-specific calls use the device's lab; organisation
+pages (lists, reports) are available when the module is on anywhere. Requests for several devices skip the devices
+where the module is off and report `skipped_module_closed`; they fail with `409` only if it is off for all of them.
+The task queue does not send a command to a device whose lab has `terminal` off (the task becomes `Denied`), the
+scheduler skips devices whose lab has `schedules` off, and software lists, Windows Update results and DNS alerts from
+such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quarantine and bypass codes always work.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/modules` | require_auth | Every module with `setting` (organisation, `null` = none), `enabled` (organisation, with dependencies), `lab_overrides`, `lab_enabled`, dependencies and profile defaults, plus `profile`, `labs`. |
+| POST | `/api/modules/{module_id}` | require_superadmin | `{enabled: true \| false \| null, lab?}`: sets (or with `null` removes) the organisation or lab setting. Turning `vision` off closes open Vision sessions; turning `terminal` off denies pending and paused tasks there. Returns `vision_sessions_closed`, `tasks_denied`. Audited (`module_setting`); an organisation change sets the profile to `custom`. |
+| GET | `/api/system/install-profile/{name}` | require_superadmin | Preview of `school` or `org`: the organisation settings that would change and the number of lab overrides. |
+| POST | `/api/system/install-profile` | require_superadmin | `{profile: "school" \| "org", reset_labs}`: applies the profile's defaults organisation-wide (and with `reset_labs` deletes lab overrides). Audited (`module_profile`). |
 
 ### Signed releases and agent updates
 

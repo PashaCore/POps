@@ -3,7 +3,7 @@
 import asyncio
 import datetime
 
-from pops import metrics
+from pops import metrics, modules
 from pops.db import execute_query
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
@@ -101,10 +101,22 @@ async def _process_queue_once():
         (online_pcs,),
         fetch=True,
     )
+    # Uzak komut modülü cihazın laboratuvarında kapalıysa görev gönderilmez: "Denied" olur (modül kapatılırken
+    # bekleyenler zaten reddedilir; bu, arada kuyruğa girenler ve yeniden denemeler içindir)
+    _allowed, closed = await modules.split_pcs("terminal", [t["target_pc"] for t in tasks or []])
+    if closed:
+        await execute_query(
+            "UPDATE tasks SET status = 'Denied', output = COALESCE(NULLIF(output, ''), '') || '[MODÜL KAPALI]: Uzak "
+            "komut modülü bu cihazın laboratuvarında kapalı; görev çalıştırılmadı.' "
+            "WHERE status = 'Pending' AND target_pc = ANY($1::text[])",
+            (closed,),
+        )
     for task in tasks or []:
         if limit > 0 and available_slots <= 0:
             break
         pc = task["target_pc"]
+        if pc in closed:
+            continue
         # agent_started_at: o anki ajan sürecinin (heartbeat'teki) başlangıç değeri; yeniden bağlanınca değiştiyse ajan
         # yeniden başlamıştır (bkz. routers/agents.py _settle_running_tasks; saatler karşılaştırılmaz)
         await execute_query(

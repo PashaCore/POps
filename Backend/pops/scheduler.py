@@ -13,7 +13,7 @@ import os
 import time
 from typing import Optional
 
-from pops import db, health_alerts, retention, update_tracking
+from pops import db, health_alerts, modules, retention, update_tracking
 from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.notify import notify
@@ -73,6 +73,11 @@ async def enqueue(row: dict, actor_suffix: str, conn=None, expires_at=None) -> i
     targets = await resolve_targets(row["target_mode"], json.loads(row["targets"] or "[]"), conn)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     creator = "%s (%s #%s)" % (row.get("created_by") or "?", actor_suffix, row["id"])
+    if targets:
+        # Zamanlanmış görevler modülü kapalı laboratuvarlardaki cihazlar atlanır (uzak komut ayrıca kuyrukta denetlenir)
+        allowed, _closed = await modules.split_pcs("schedules", [t["pc"] for t in targets])
+        allowed = set(allowed)
+        targets = [t for t in targets if t["pc"] in allowed]
     if not targets:
         return 0
     created = await conn.fetch(
@@ -208,6 +213,9 @@ async def check_pending_updates() -> None:
 async def check_licenses_daily() -> None:
     """Günde bir kez: koltuk aşımı, süresi dolmuş ve 30 gün içinde bitecek lisanslar için bildirim."""
     from pops.routers.licenses import licenses_with_usage  # döngüsel import olmasın diye burada
+
+    if not await modules.enabled("licenses"):
+        return   # lisanslar modülü kapalı: aşım/süre bildirimi yok
 
     today = datetime.date.today().isoformat()
     rows = await db.execute_query("SELECT value FROM global_settings WHERE key = 'license_check_date'", fetch=True)

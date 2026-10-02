@@ -14,7 +14,7 @@ from pops.db import execute_query
 from pops.models import EndAuditSessionInput, LockdownInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
 from pops.security import require_admin, require_superadmin, verify_jwt, verify_session
 from pops.agent_auth import verify_agent_secret
-from pops import auditchain, bypass
+from pops import auditchain, bypass, modules
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 from pops.notify import notify
@@ -27,6 +27,7 @@ PANEL_REVALIDATE_SECONDS = 10
 
 @router.post("/api/audit/session/start")
 async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends(require_admin)):
+    await modules.check("vision", pc_name=data.target_pc)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     session_id = f"SES-{secrets.token_hex(6).upper()}"
     # Rıza sorulmadan açılan (zorunlu) oturum için gerekçe şarttır
@@ -106,6 +107,8 @@ async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(req
 
 @router.post("/api/security/lockdown")
 async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
+    # Kilitlemek karantina modülüne bağlı; kaldırmak (unlock) ve bypass kodu her zaman çalışır
+    await modules.check("quarantine", pc_name=data.target_pc)
 
     # Karantina logunu yaz
     admin_name = auth.get('sub')
@@ -260,6 +263,7 @@ async def websocket_panel(websocket: WebSocket):
     role = session.get("role")  # DB'den (iptal/rol-düşürme anında geçerli)
     await manager.connect_panel(websocket, username, role)
     last_reverify = time.time()
+    target_labs = {}   # cihaz -> (laboratuvar, okunma anı): modül denetimi için
 
     async def revalidate():
         # Açık soket, kullanıcı hiçbir şey göndermese de (yalnız canlı görüntü izlese de) oturum iptaline uyar:
@@ -308,6 +312,17 @@ async def websocket_panel(websocket: WebSocket):
                     is_control = bool(msg.get("input_type")) or msg.get("action") == "execute"
                     if is_control and not manager.user_has_session(username, target):
                         continue
+                    # Modül: önizleme ve girdi Vision'a, SYSTEM komutu ayrıca uzak komut modülüne bağlı. Cihazın
+                    # laboratuvarı 10 sn önbellekte (fare hareketi başına sorgu atılmasın)
+                    if target:
+                        cached = target_labs.get(target)
+                        if cached is None or time.time() - cached[1] > 10:
+                            cached = (await modules.lab_of(target), time.time())
+                            target_labs[target] = cached
+                        if not await modules.enabled("vision", cached[0]):
+                            continue
+                        if msg.get("action") == "execute" and not await modules.enabled("terminal", cached[0]):
+                            continue
                     if is_control:
                         # etkinlik oturum süresini uzatır (idle-timeout)
                         manager.touch_vision_session(target, username)
@@ -392,6 +407,7 @@ def _flat_remote_input(data: RemoteInputData) -> dict:
 @router.get("/api/thumbnail/{pc_name}")
 async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin)):
     # F1: ekran önizlemesi salt-okur viewer'a kapalı (yalnız admin/superadmin)
+    await modules.check("vision", pc_name=pc_name)
     if pc_name not in manager.active_agents:
         return {"status": "error", "image": None}
     loop = asyncio.get_event_loop()
@@ -413,6 +429,7 @@ async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin)):
 @router.post("/api/remote_input")
 async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_admin)):
     target = data.device
+    await modules.check("vision", pc_name=target)
     # F1: uzaktan girdi yalnızca admin + o cihaz için AÇIK denetim oturumu olan kullanıcıdan
     if not manager.user_has_session(auth.get("sub"), target):
         raise HTTPException(

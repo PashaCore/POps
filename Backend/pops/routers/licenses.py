@@ -7,6 +7,7 @@ import datetime
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops.audit import add_audit_log
+from pops import modules
 from pops.db import execute_query
 from pops.models import LicenseInput
 from pops.security import require_admin, require_auth
@@ -77,14 +78,14 @@ def _validated(data: LicenseInput) -> tuple:
     return name, pattern, publisher, data.seats, data.license_type, exp, notes
 
 
-@router.get("/api/licenses")
+@router.get("/api/licenses", dependencies=[modules.require("licenses")])
 async def list_licenses(auth: dict = Depends(require_auth)):
     items = await licenses_with_usage()
     summary = {s: sum(1 for i in items if i["state"] == s) for s in ("ok", "over", "expiring", "expired")}
     return {"items": items, "summary": summary}
 
 
-@router.get("/api/licenses/{license_id}/devices")
+@router.get("/api/licenses/{license_id}/devices", dependencies=[modules.require("licenses")])
 async def license_devices(license_id: int, auth: dict = Depends(require_auth)):
     lic = await execute_query("SELECT match_pattern, publisher FROM licenses WHERE id = $1", (license_id,), fetch=True)
     if not lic:
@@ -100,7 +101,7 @@ async def license_devices(license_id: int, auth: dict = Depends(require_auth)):
     return [dict(r) for r in rows or []]
 
 
-@router.post("/api/licenses")
+@router.post("/api/licenses", dependencies=[modules.require("licenses")])
 async def create_license(data: LicenseInput, auth: dict = Depends(require_admin)):
     name, pattern, publisher, seats, ltype, exp, notes = _validated(data)
     rows = await execute_query(
@@ -118,7 +119,7 @@ async def create_license(data: LicenseInput, auth: dict = Depends(require_admin)
     return {"ok": True, "id": rows[0]["id"]}
 
 
-@router.post("/api/licenses/{license_id}")
+@router.post("/api/licenses/{license_id}", dependencies=[modules.require("licenses")])
 async def update_license(license_id: int, data: LicenseInput, auth: dict = Depends(require_admin)):
     name, pattern, publisher, seats, ltype, exp, notes = _validated(data)
     rows = await execute_query(
@@ -138,7 +139,7 @@ async def update_license(license_id: int, data: LicenseInput, auth: dict = Depen
     return {"ok": True}
 
 
-@router.delete("/api/licenses/{license_id}")
+@router.delete("/api/licenses/{license_id}", dependencies=[modules.require("licenses")])
 async def delete_license(license_id: int, auth: dict = Depends(require_admin)):
     rows = await execute_query("DELETE FROM licenses WHERE id = $1 RETURNING name", (license_id,), fetch=True)
     if not rows:

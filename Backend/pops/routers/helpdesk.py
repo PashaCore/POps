@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops.agent_auth import agent_http_auth, bind_agent
+from pops import modules
 from pops.db import execute_query
 from pops.manager import manager
 from pops.models import AgentTicketInput, PanelTicketInput, TicketMessageInput, TicketUpdateInput
@@ -68,6 +69,7 @@ async def agent_create_ticket(pc_name: str, data: AgentTicketInput, agent_id: Op
     if agent_id is None:
         raise HTTPException(status_code=401, detail="Bu uç yalnızca kayıtlı (anahtarlı) ajanları kabul eder.")
     await bind_agent(agent_id, pc_name)
+    await modules.check("helpdesk", pc_name=pc_name)   # tepsi kapalı modülün hatasını kullanıcıya gösterir
     _throttle("create", pc_name)
     subject, body, category = _clean(data.subject, data.body, data.category)
     counts = await execute_query(
@@ -136,7 +138,7 @@ async def agent_list_tickets(pc_name: str, agent_id: Optional[str] = Depends(age
 
 
 # ─── Panel ────────────────────────────────────────────────────────────────────
-@router.get("/api/tickets")
+@router.get("/api/tickets", dependencies=[modules.require("helpdesk")])
 async def list_tickets(status: str = "active", q: str = "", auth: dict = Depends(require_admin)):
     where, params = [], []
     if status == "active":
@@ -165,7 +167,7 @@ async def list_tickets(status: str = "active", q: str = "", auth: dict = Depends
     return {"items": [_iso(r) for r in rows or []], "counts": {r["status"]: int(r["n"]) for r in counts or []}}
 
 
-@router.get("/api/tickets/{ticket_id}")
+@router.get("/api/tickets/{ticket_id}", dependencies=[modules.require("helpdesk")])
 async def get_ticket(ticket_id: int, auth: dict = Depends(require_admin)):
     rows = await execute_query(
         "SELECT t.*, c.hostname, c.display_name, c.lab_name, c.status AS device_status, c.logged_user, "
@@ -181,7 +183,7 @@ async def get_ticket(ticket_id: int, auth: dict = Depends(require_admin)):
     return {**_iso(rows[0]), "messages": [_iso(m) for m in msgs or []]}
 
 
-@router.post("/api/tickets")
+@router.post("/api/tickets", dependencies=[modules.require("helpdesk")])
 async def create_ticket(data: PanelTicketInput, auth: dict = Depends(require_admin)):
     subject, body, category = _clean(data.subject, data.body, data.category)
     priority = data.priority if data.priority in PRIORITIES else "normal"
@@ -196,7 +198,7 @@ async def create_ticket(data: PanelTicketInput, auth: dict = Depends(require_adm
     return {"ok": True, "id": rows[0]["id"]}
 
 
-@router.post("/api/tickets/{ticket_id}/update")
+@router.post("/api/tickets/{ticket_id}/update", dependencies=[modules.require("helpdesk")])
 async def update_ticket(ticket_id: int, data: TicketUpdateInput, auth: dict = Depends(require_admin)):
     rows = await execute_query("SELECT status, priority, assignee FROM tickets WHERE id = $1", (ticket_id,), fetch=True)
     if not rows:
@@ -232,7 +234,7 @@ async def update_ticket(ticket_id: int, data: TicketUpdateInput, auth: dict = De
     return {"ok": True, "changed": True}
 
 
-@router.post("/api/tickets/{ticket_id}/messages")
+@router.post("/api/tickets/{ticket_id}/messages", dependencies=[modules.require("helpdesk")])
 async def add_ticket_message(ticket_id: int, data: TicketMessageInput, auth: dict = Depends(require_admin)):
     body = (data.body or "").strip()[:5000]
     if not body:
