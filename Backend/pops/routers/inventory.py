@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from pops import db
+from pops import db, modules
 from pops.agent_auth import agent_http_auth, bind_agent
 from pops.audit import add_audit_log
 from pops.db import execute_query
@@ -45,6 +45,9 @@ def _parse_ts(v: Optional[str]) -> Optional[datetime.datetime]:
 async def put_software(pc_name: str, data: SoftwareInventoryInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     """Cihazın kurulu yazılım listesinin TAMAMI; önceki liste bununla değiştirilir."""
     await _require_enrolled(agent_id, pc_name)
+    if not await modules.enabled("software", await modules.lab_of(pc_name)):
+        # Modül bu laboratuvarda kapalı: liste saklanmaz. Hata dönülmez, ajan boşuna yeniden denemesin.
+        return {"status": "ignored", "reason": "module_disabled"}
     if len(data.items) > MAX_SOFTWARE_ITEMS:
         raise HTTPException(status_code=413, detail="En fazla %d kayıt gönderilebilir." % MAX_SOFTWARE_ITEMS)
     seen = {}
@@ -77,6 +80,9 @@ async def _patch_command(data: PatchInstallInput, auth: dict, action: str, label
     if data.scope not in ("security", "all"):
         raise HTTPException(status_code=400, detail="Kapsam 'security' ya da 'all' olmalı.")
     targets = [t["pc"] for t in await resolve_targets(data.target_mode, data.targets)]
+    targets, closed = await modules.split_pcs("patches", targets)
+    if closed and not targets:
+        raise modules.closed_error("patches")
     online = sorted(t for t in set(targets) if t in manager.active_agents)
     offline = sorted(t for t in set(targets) if t not in manager.active_agents)
     msg = {"action": action, "scope": data.scope}
@@ -88,7 +94,7 @@ async def _patch_command(data: PatchInstallInput, auth: dict, action: str, label
         "%s (%s): %d cihaz" % (label, auth.get("sub"), len(online)),
         {"by": auth.get("sub"), "scope": data.scope, "dispatched": online, "offline": offline},
     )
-    return {"ok": True, "dispatched": online, "skipped_offline": offline}
+    return {"ok": True, "dispatched": online, "skipped_offline": offline, "skipped_module_closed": closed}
 
 
 @router.post("/api/patches/scan")
@@ -108,6 +114,8 @@ async def install_patches(data: PatchInstallInput, auth: dict = Depends(require_
 async def put_patch_status(pc_name: str, data: PatchStatusInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     """Cihazın son Windows Update taraması (bekleyen güncellemeler, yeniden başlatma gereksinimi)."""
     await _require_enrolled(agent_id, pc_name)
+    if not await modules.enabled("patches", await modules.lab_of(pc_name)):
+        return {"status": "ignored", "reason": "module_disabled"}
     updates = [
         {
             "kb": (u.kb or "")[:20] or None,
@@ -142,7 +150,7 @@ async def put_patch_status(pc_name: str, data: PatchStatusInput, agent_id: Optio
 
 
 # ─── Panel ────────────────────────────────────────────────────────────────────
-@router.get("/api/software")
+@router.get("/api/software", dependencies=[modules.require("software")])
 async def search_software(q: str = "", limit: int = 300, auth: dict = Depends(require_auth)):
     """Filodaki yazılımlar: ad, yayıncı, sürümler ve kaç cihazda kurulu olduğu."""
     limit = max(1, min(limit, 2000))
@@ -158,7 +166,7 @@ async def search_software(q: str = "", limit: int = 300, auth: dict = Depends(re
     return {"items": [dict(r) for r in rows or []], "reporting_devices": int(total[0]["n"]) if total else 0}
 
 
-@router.get("/api/software/devices")
+@router.get("/api/software/devices", dependencies=[modules.require("software")])
 async def software_devices(name: str, auth: dict = Depends(require_auth)):
     """Belirli bir yazılımın kurulu olduğu cihazlar ve sürümleri."""
     rows = await execute_query(
@@ -171,7 +179,7 @@ async def software_devices(name: str, auth: dict = Depends(require_auth)):
     return [dict(r) for r in rows or []]
 
 
-@router.get("/api/devices/{pc_name}/software")
+@router.get("/api/devices/{pc_name}/software", dependencies=[modules.require("software")])
 async def device_software(pc_name: str, auth: dict = Depends(require_auth)):
     rows = await execute_query(
         "SELECT name, version, publisher, install_date, updated_at FROM device_software WHERE pc_name = $1 "
@@ -187,7 +195,7 @@ async def device_software(pc_name: str, auth: dict = Depends(require_auth)):
     return out
 
 
-@router.get("/api/patches")
+@router.get("/api/patches", dependencies=[modules.require("patches")])
 async def list_patch_status(auth: dict = Depends(require_auth)):
     """Cihaz başına Windows Update durumu (hiç bildirmeyen cihazlar da listelenir)."""
     rows = await execute_query(

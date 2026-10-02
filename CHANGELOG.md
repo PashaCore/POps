@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Server: modules and install profiles (server side).** Vision, remote commands, file deployment, scheduled tasks, Windows Update, software inventory, licences, helpdesk, DNS policy, quarantine, Wake-on-LAN and reports can be turned off for the whole organisation or per lab (`module_settings`, migration `0018`); the most specific setting wins and without a setting everything stays on, so upgrading changes nothing. A superadmin sets them with `POST /api/modules/{id}` or applies the "Okul laboratuvarı" / "Kurum" profile. A module that is off is enforced on the server: its endpoints answer `409` (`X-POps-Module`), the task queue and the scheduler skip its devices, turning Vision off closes open sessions and turning remote commands off denies waiting tasks. Agents that send their key with the policy request also get the module list of their lab. The panel page follows.
+
 ### Fixed
 
 - **Server: a deploy whose virtual environment holds files of another user stops before `pip`.** `pops-deploy-backend` checks that every file in the venv belongs to `OWNER` before installing changed requirements; otherwise it changes nothing and prints the `chown` command. On the development server, packages once installed as root made `pip` fail half-way through the 0.1.14 update.

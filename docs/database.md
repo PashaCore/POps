@@ -49,6 +49,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0012_server_ca.sql` | `clients.cap_server_ca` (how the agent verifies the server certificate: school CA or Windows store). |
 | `0013_agent_health_bypass_keys.sql` | `clients.agent_health` (heartbeat health summary) and `agent_bypass_keys` (per-device offline bypass keys). |
 | `0014_hardening.sql` | Enrollment tokens stored as hashes; `tasks.exit_code` / `dispatched_at`; partial index for the task queue; agent identity enforcement on by default for new installs. |
+| `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
 | `0017_task_expiry.sql` | `tasks.expires_at`, `tasks.schedule_id`, `tasks.agent_started_at` and the pending-by-schedule index. |
 | `0016_task_retry.sql` | `tasks.retry_of` (a retry opens a new task) and its index. |
 | `0015_p1_reliability.sql` | `users.totp_last_step` (a 2FA code works once); `clients.last_disconnect_at` / `last_disconnect_reason`; `pending_updates` and `update_results` (agent update tracking); indexes for reports, device activity, task history and the hardware-fingerprint lookup. |

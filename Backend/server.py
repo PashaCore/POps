@@ -46,6 +46,7 @@ from pops.routers import (
     helpdesk,
     inventory,
     licenses,
+    modules as modules_router,
     notifications,
     ops,
     reports,
@@ -213,7 +214,7 @@ async def shutdown_event():
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
-    activity,
+    activity, modules_router,
 )
 for _r in _ROUTERS:
     app.include_router(_r.router)

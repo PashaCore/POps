@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from werkzeug.utils import secure_filename
 
 from pops.config import LOG_TABLE, UPDATES_DIR, UPLOAD_DIR
-from pops import db
+from pops import db, modules
 from pops.db import execute_query
 from pops.models import CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput
 from pops.security import require_admin, require_auth
@@ -185,7 +185,7 @@ def _store_upload(src, dest: str) -> str:
     return h.hexdigest()
 
 
-@router.post("/api/upload")
+@router.post("/api/upload", dependencies=[modules.require("deploy")])
 async def upload_file(request: Request, file: UploadFile = File(...), auth: dict = Depends(require_admin)):
     # Dosya adını temizle ("../", mutlak yol, ayraç vb. atılır)
     filename = secure_filename(file.filename or "")
@@ -223,7 +223,7 @@ async def download_file(filename: str, sig: str = ""):
     return FileResponse(file_path, filename=filename)
 
 
-@router.post("/api/add_package")
+@router.post("/api/add_package", dependencies=[modules.require("deploy")])
 async def add_package(data: CreatePackageInput, auth: dict = Depends(require_admin)):
     await execute_query(
         "INSERT INTO packages (id, name, type, meta, command, icon, color) "
@@ -235,13 +235,13 @@ async def add_package(data: CreatePackageInput, auth: dict = Depends(require_adm
     return {"status": "success"}
 
 
-@router.post("/api/delete_package")
+@router.post("/api/delete_package", dependencies=[modules.require("deploy")])
 async def delete_package(data: DeletePackageInput, auth: dict = Depends(require_admin)):
     await execute_query("DELETE FROM packages WHERE id = $1", (data.id,))
     return {"status": "success"}
 
 
-@router.get("/api/packages")
+@router.get("/api/packages", dependencies=[modules.require("deploy")])
 async def get_packages(auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT * FROM packages", fetch=True)
     return rows if rows else []
@@ -333,6 +333,14 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
     _recent_orchestrations[key] = (time.monotonic(), outcome)
     try:
         target_pcs = await resolve_targets(data.target_mode, data.targets)
+        # Kütüphaneden paket/betik adımı dosya dağıtımı modülüne, serbest komut uzak komut modülüne bağlıdır; her
+        # hedef kendi laboratuvarının ayarıyla denetlenir. Hiçbirinde açık değilse istek reddedilir.
+        needed = "deploy" if any((t.type or "").upper() != "CMD" for t in data.taskSequence) else "terminal"
+        allowed, closed = await modules.split_pcs(needed, [t["pc"] for t in target_pcs])
+        if target_pcs and not allowed:
+            raise modules.closed_error(needed)
+        allowed = set(allowed)
+        target_pcs = [t for t in target_pcs if t["pc"] in allowed]
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         rows = [
             (target["pc"], target["lab"], task.command, now, creator)
@@ -354,4 +362,7 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
         raise
     outcome.set_result(len(rows))
     await process_queue()
-    return {"status": "success", "created": len(rows)}
+    out = {"status": "success", "created": len(rows)}
+    if closed:
+        out["skipped_module_closed"] = len(closed)   # modül kapalı laboratuvardaki hedefler
+    return out

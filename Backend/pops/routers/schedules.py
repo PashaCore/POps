@@ -9,6 +9,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops.audit import add_audit_log
+from pops import modules
 from pops.db import execute_query
 from pops.models import ScheduledTaskInput, ScheduleToggleInput
 from pops.scheduler import _now, compute_next_run, enqueue
@@ -68,7 +69,7 @@ def _validate(data: ScheduledTaskInput):
     return name, command, targets, run_at, time_of_day, weekdays
 
 
-@router.get("/api/scheduled_tasks")
+@router.get("/api/scheduled_tasks", dependencies=[modules.require("schedules")])
 async def list_scheduled_tasks(auth: dict = Depends(require_admin)):
     rows = await execute_query(
         "SELECT * FROM scheduled_tasks ORDER BY enabled DESC, next_run NULLS LAST, id", fetch=True
@@ -76,7 +77,7 @@ async def list_scheduled_tasks(auth: dict = Depends(require_admin)):
     return {"items": [_row_out(r) for r in (rows or [])], "server_time": _now().isoformat()}
 
 
-@router.post("/api/scheduled_tasks")
+@router.post("/api/scheduled_tasks", dependencies=[modules.require("schedules")])
 async def create_scheduled_task(data: ScheduledTaskInput, auth: dict = Depends(require_admin)):
     name, command, targets, run_at, time_of_day, weekdays = _validate(data)
     next_run = compute_next_run(data.schedule_type, run_at, time_of_day, weekdays, _now()) if data.enabled else None
@@ -118,7 +119,7 @@ async def create_scheduled_task(data: ScheduledTaskInput, auth: dict = Depends(r
     return _row_out(row)
 
 
-@router.post("/api/scheduled_tasks/{task_id}/toggle")
+@router.post("/api/scheduled_tasks/{task_id}/toggle", dependencies=[modules.require("schedules")])
 async def toggle_scheduled_task(task_id: int, data: ScheduleToggleInput, auth: dict = Depends(require_admin)):
     rows = await execute_query("SELECT * FROM scheduled_tasks WHERE id = $1", (task_id,), fetch=True)
     if not rows:
@@ -143,7 +144,7 @@ async def toggle_scheduled_task(task_id: int, data: ScheduleToggleInput, auth: d
     return {"ok": True, "enabled": data.enabled, "next_run": next_run.isoformat() if next_run else None}
 
 
-@router.post("/api/scheduled_tasks/{task_id}/run")
+@router.post("/api/scheduled_tasks/{task_id}/run", dependencies=[modules.require("schedules")])
 async def run_scheduled_task_now(task_id: int, auth: dict = Depends(require_admin)):
     rows = await execute_query("SELECT * FROM scheduled_tasks WHERE id = $1", (task_id,), fetch=True)
     if not rows:
