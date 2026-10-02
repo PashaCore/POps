@@ -49,8 +49,57 @@ namespace POpsTray
         [DllImport("user32.dll")]
         static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, int dwExtraInfo);
 
+        // Uzaktan klavye: SendInput (keybd_event'in yerine; KEYEVENTF_UNICODE ile düzenden bağımsız karakter)
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
         [DllImport("user32.dll")]
-        static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+        static extern IntPtr GetKeyboardLayout(uint idThread);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern short VkKeyScanEx(char ch, IntPtr dwhkl);
+
+        [DllImport("user32.dll")]
+        static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct INPUT
+        {
+            public uint type;
+            public InputUnion U;
+        }
+
+        // Birlik en büyük üyesi (MOUSEINPUT) kadar olmalı: SendInput cbSize'ı denetler
+        [StructLayout(LayoutKind.Explicit)]
+        struct InputUnion
+        {
+            [FieldOffset(0)] public MOUSEINPUT mi;
+            [FieldOffset(0)] public KEYBDINPUT ki;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct MOUSEINPUT
+        {
+            public int dx, dy;
+            public uint mouseData, dwFlags, time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct KEYBDINPUT
+        {
+            public ushort wVk, wScan;
+            public uint dwFlags, time;
+            public IntPtr dwExtraInfo;
+        }
+
+        private const uint INPUT_KEYBOARD = 1;
+        private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+        private const uint KEYEVENTF_KEYUP = 0x0002;
+        private const uint KEYEVENTF_UNICODE = 0x0004;
+
+        // Panelden basılıp henüz bırakılmamış sanal tuşlar (oturum bitince bırakılır)
+        private readonly POps.Shared.PressedKeys _pressedKeys = new POps.Shared.PressedKeys();
 
         private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
         private const uint MOUSEEVENTF_LEFTUP = 0x0004;
@@ -59,9 +108,6 @@ namespace POpsTray
         private const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
         private const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
         private const uint MOUSEEVENTF_WHEEL = 0x0800;
-
-        private const uint KEYEVENTF_KEYDOWN = 0x0000;
-        private const uint KEYEVENTF_KEYUP = 0x0002;
 
         public MainForm()
         {
@@ -174,6 +220,8 @@ namespace POpsTray
                 finally
                 {
                     pipeClient?.Dispose();
+                    // Servis bağlantısı koptu: uzaktan basılmış tuş kalmasın
+                    ReleasePressedKeys();
                 }
             }
         }
@@ -193,7 +241,7 @@ namespace POpsTray
                     StartCaptureLoop(fps); 
                     return; 
                 }
-                if (jsonMsg.Contains("STOP_CAPTURE")) { StopCaptureLoop(); return; }
+                if (jsonMsg.Contains("STOP_CAPTURE")) { StopCaptureLoop(); ReleasePressedKeys(); return; }
                 if (jsonMsg.Contains("CAPTURE_SNAPSHOT")) { SendSnapshot(); NotifyPreviewTaken(); return; }
 
                 // Çevrimdışı bypass kodunun sonucu. Kabul edilirse servis ayrıca "unlock" gönderir (kilit ekranı kapanır).
@@ -399,15 +447,16 @@ namespace POpsTray
                 }
                 else if (inputType == "keyboard")
                 {
-                    string keyStr = root.GetProperty("key").GetString();
+                    string key = root.TryGetProperty("key", out var keyProp) && keyProp.ValueKind == JsonValueKind.String ? keyProp.GetString() ?? "" : "";
+                    string? code = root.TryGetProperty("code", out var codeProp) && codeProp.ValueKind == JsonValueKind.String ? codeProp.GetString() : null;
                     bool isDown = root.GetProperty("is_down").GetBoolean();
-                    uint flag = isDown ? KEYEVENTF_KEYDOWN : KEYEVENTF_KEYUP;
-                    
-                    byte vk = MapJsKeyToVK(keyStr);
-                    if (vk != 0)
-                    {
-                        keybd_event(vk, 0, flag, 0);
-                    }
+                    bool Flag(string name) => root.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.True;
+                    var mods = new POps.Shared.RemoteKeyModifiers { Ctrl = Flag("ctrl"), Alt = Flag("alt"), Shift = Flag("shift"), Meta = Flag("meta"), AltGr = Flag("altgr") };
+
+                    POps.Shared.RemoteKeyStroke? stroke = POps.Shared.RemoteKeyMap.Map(key, code, mods, ForegroundVkKeyScan);
+                    if (stroke == null) return;
+                    _pressedKeys.Track(stroke, isDown);
+                    SendKeyStroke(stroke, isDown);
                 }
             }
             catch (Exception ex)
@@ -416,32 +465,42 @@ namespace POpsTray
             }
         }
 
-        private byte MapJsKeyToVK(string jsKey)
+        // Kısayol tuşunun sanal tuşu ön plandaki pencerenin klavye düzenine göre (ör. Türkçe Q'da "ç")
+        private static short ForegroundVkKeyScan(char c)
         {
-            if (jsKey.Length == 1)
+            uint thread = GetWindowThreadProcessId(GetForegroundWindow(), out _);
+            return VkKeyScanEx(c, GetKeyboardLayout(thread));
+        }
+
+        private static void SendKeyStroke(POps.Shared.RemoteKeyStroke stroke, bool isDown)
+        {
+            INPUT[] inputs;
+            if (stroke.IsUnicode)
             {
-                char c = char.ToUpperInvariant(jsKey[0]);
-                return (byte)c;
+                // Her UTF-16 birimi ayrı olay (vekil çift: iki olay); basma ve bırakma ayrı mesajlarla gelir
+                inputs = stroke.Units.Select(unit => KeyInput(0, unit, KEYEVENTF_UNICODE | (isDown ? 0 : KEYEVENTF_KEYUP))).ToArray();
             }
-            
-            return jsKey switch
+            else
             {
-                "Enter" => 0x0D,
-                "Backspace" => 0x08,
-                "Tab" => 0x09,
-                "Escape" => 0x1B,
-                "Space" => 0x20,
-                "ArrowLeft" => 0x25,
-                "ArrowUp" => 0x26,
-                "ArrowRight" => 0x27,
-                "ArrowDown" => 0x28,
-                "Delete" => 0x2E,
-                "Shift" => 0x10,
-                "Control" => 0x11,
-                "Alt" => 0x12,
-                "Meta" => 0x5B, 
-                _ => 0
-            };
+                ushort scan = (ushort)MapVirtualKey(stroke.VirtualKey, 0);
+                inputs = new[] { KeyInput(stroke.VirtualKey, scan, (stroke.Extended ? KEYEVENTF_EXTENDEDKEY : 0) | (isDown ? 0 : KEYEVENTF_KEYUP)) };
+            }
+            if (inputs.Length > 0 && SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) != inputs.Length)
+                TrayLog.Write($"Uzaktan tuş uygulanamadı (SendInput hata {Marshal.GetLastWin32Error()}).");
+        }
+
+        private static INPUT KeyInput(ushort vk, ushort scan, uint flags) => new INPUT
+        {
+            type = INPUT_KEYBOARD,
+            U = new InputUnion { ki = new KEYBDINPUT { wVk = vk, wScan = scan, dwFlags = flags } },
+        };
+
+        // Kontrol oturumu bitti ya da servis bağlantısı koptu: panelden basılı kalan tuşlar bırakılır
+        private void ReleasePressedKeys()
+        {
+            List<POps.Shared.RemoteKeyStroke> keys = _pressedKeys.TakeAll();
+            foreach (POps.Shared.RemoteKeyStroke key in keys) SendKeyStroke(key, false);
+            if (keys.Count > 0) TrayLog.Write($"Kontrol bitti; basılı kalan {keys.Count} tuş bırakıldı.");
         }
 
 

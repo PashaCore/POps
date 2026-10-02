@@ -186,19 +186,36 @@ namespace POpsAgent
             catch { return null; }
         }
 
+        // Sonucun kimliği: update-result.json ham baytlarının SHA-256'sı, küçük harf hex, ilk 32 karakter. Aynı sonuç
+        // için hep aynı değer (sunucu aynı cihaz + aynı kimliği ikinci kez kaydetmez, yine onaylar).
+        public static string ResultId(byte[] raw) =>
+            Convert.ToHexString(SHA256.HashData(raw ?? Array.Empty<byte>())).ToLowerInvariant().Substring(0, 32);
+
+        // Bekleyen sonucun kimliği; sonuç yoksa null
+        public static string PendingResultId()
+        {
+            try { return File.Exists(ResultPath) ? ResultId(File.ReadAllBytes(ResultPath)) : null; }
+            catch (IOException) { return null; }
+        }
+
         // Updater'ın bıraktığı ve henüz sunucuya iletilmemiş sonuç, sunucunun beklediği "update_result" mesajı
-        // olarak (status = outcome); yoksa null. İletildikten sonra MarkResultReported ile kenara alınır.
+        // olarak (status = outcome, result_id); yoksa null. Kenara alma zamanını UpdateResultReporter belirler
+        // (onaylı sunucuda onay gelince, eski sunucuda gönderince).
         public static Dictionary<string, object> PendingResultMessage()
         {
             try
             {
                 if (!File.Exists(ResultPath)) return null;
-                using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(ResultPath));
+                byte[] raw = File.ReadAllBytes(ResultPath);
+                // Kimlik ham baytlardan; ayrıştırmada olası UTF-8 BOM atlanır
+                int bom = raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF ? 3 : 0;
+                using JsonDocument doc = JsonDocument.Parse(raw.AsMemory(bom));
                 JsonElement result = doc.RootElement;
                 var message = new Dictionary<string, object>
                 {
                     ["type"] = "update_result",
                     ["status"] = Str(result, "outcome") ?? "unknown",
+                    ["result_id"] = ResultId(raw),
                 };
                 foreach (string key in new[] { "from_version", "to_version", "running_version", "detail", "rollback", "agent_state" })
                     if (Str(result, key) is string value) message[key] = value;

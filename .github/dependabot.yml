@@ -9,7 +9,6 @@ updates:
   - package-ecosystem: nuget
     directories:
       - /Agent/POps.Agent/POps.Agent
-      - /Agent/POpsVision/POpsVision
       - /Agent/POpsUpdater/POpsUpdater
       - /Agent/POpsWatchdog/POpsWatchDog
       - /Agent/POpsTray

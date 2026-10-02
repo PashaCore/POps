@@ -10,6 +10,7 @@ using System.Numerics;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -31,6 +32,11 @@ namespace POpsAgent
     //    karantinayı delemez;
     //  * güvenlik duvarı profilleri açılır; önceki durum C:\POpsData\secure\isolation.json'a yazılır ve
     //    kaldırmada geri yüklenir.
+    //  * Karantina sürerken sunucunun adresi değişebilir (DNS kaydı): 5 dakikada bir ve art arda 3 bağlantı hatasından
+    //    sonra sunucu adı yeniden çözülür (DNS karantinada açık); küme değiştiyse ve boş değilse kurallar yeni
+    //    adreslerle yeniden kurulur. Eskiden adresler yalnızca karantina anında çözülüyordu: sunucunun IP'si değişince
+    //    cihaz kalıcı koparıyordu, yalnızca bypass kurtarıyordu. isolation.json'daki "önceki profiller" İLK
+    //    karantinadaki hâliyle kalır (kaldırmada profiller doğru geri yüklensin); yalnızca server_addresses güncellenir.
     [SupportedOSPlatform("windows")]
     public static class NetworkIsolation
     {
@@ -38,7 +44,17 @@ namespace POpsAgent
         private static readonly string[] Profiles = { "Domain", "Private", "Public" };
         private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
 
+        public static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(5);
+        public const int RefreshAfterFailures = 3;
+
+        public enum RefreshResult { NotIsolated, Unchanged, Updated, ResolveFailed, Failed }
+
         public static string StatePath => SecureStore.PathOf("isolation.json");
+
+        public static bool IsActive => File.Exists(StatePath);
+
+        // Betiği çalıştıran (testlerde güvenlik duvarına dokunmayan sahtesiyle değiştirilir)
+        internal static Func<string, Task<(int Exit, string Output)>> ScriptRunner { get; set; } = RunPowerShellAsync;
 
         public static async Task<bool> EnableAsync(string serverUrl)
         {
@@ -54,13 +70,14 @@ namespace POpsAgent
                 }
 
                 List<(BigInteger Start, BigInteger End, bool V6)> allowed = AllowedRanges(server.Concat(LocalInfrastructure()));
-                (int exit, string output) = await RunPowerShellAsync(BuildEnableScript(allowed));
+                (int exit, string output) = await ScriptRunner(BuildEnableScript(allowed));
                 if (exit != 0)
                 {
                     POpsHelpers.Log("ISOLATION", $"Karantina uygulanamadı (çıkış {exit}): {output}", true);
                     return false;
                 }
                 SavePreviousProfiles(output);
+                SaveServerAddresses(server);
                 POpsHelpers.Log("ISOLATION", $"AĞ KARANTİNASI AKTİF: yalnızca sunucu ({string.Join(", ", server)}), DNS ve DHCP erişilebilir.");
                 return true;
             }
@@ -77,7 +94,7 @@ namespace POpsAgent
             await Gate.WaitAsync();
             try
             {
-                (int exit, string output) = await RunPowerShellAsync(BuildDisableScript(ReadPreviouslyDisabledProfiles()));
+                (int exit, string output) = await ScriptRunner(BuildDisableScript(ReadPreviouslyDisabledProfiles()));
                 if (exit != 0)
                 {
                     POpsHelpers.Log("ISOLATION", $"Karantina kaldırılamadı (çıkış {exit}): {output}", true);
@@ -93,6 +110,95 @@ namespace POpsAgent
                 return false;
             }
             finally { Gate.Release(); }
+        }
+
+        // Karantina sürüyorsa sunucu adı yeniden çözülür; adres kümesi değiştiyse kurallar yeni adreslerle kurulur.
+        // Çözüm boşsa ya da hata verirse mevcut kurallara dokunulmaz.
+        public static async Task<RefreshResult> RefreshServerAddressesAsync(string serverUrl, string reason)
+        {
+            await Gate.WaitAsync();
+            try
+            {
+                if (!File.Exists(StatePath)) return RefreshResult.NotIsolated;
+                List<IPAddress> server = await ResolveServerAsync(serverUrl);
+                if (server.Count == 0)
+                {
+                    POpsHelpers.Log("ISOLATION", $"Karantina: sunucu adı çözülemedi ({reason}); mevcut kurallara dokunulmadı.", true);
+                    return RefreshResult.ResolveFailed;
+                }
+                List<string> recorded = ReadServerAddresses(SecureStore.Read(StatePath));
+                if (recorded != null && SameAddresses(server, recorded)) return RefreshResult.Unchanged;
+
+                List<(BigInteger Start, BigInteger End, bool V6)> allowed = AllowedRanges(server.Concat(LocalInfrastructure()));
+                (int exit, string output) = await ScriptRunner(BuildEnableScript(allowed));
+                if (exit != 0)
+                {
+                    POpsHelpers.Log("ISOLATION", $"Karantina izin listesi yenilenemedi (çıkış {exit}): {output}", true);
+                    return RefreshResult.Failed;
+                }
+                // Önceki profil durumu ilk karantinadaki hâliyle kalır; yalnızca sunucu adresleri güncellenir
+                SaveServerAddresses(server);
+                List<string> now = NormalizeAddresses(server);
+                POpsHelpers.Log("ISOLATION", $"Karantina izin listesi yenilendi ({reason}): sunucu {(recorded == null ? "(bilinmiyor)" : string.Join(", ", recorded))} -> {string.Join(", ", now)}.");
+                LocalAudit.Write(LocalAudit.QuarantineAllowListRefreshed(recorded, now, reason));
+                return RefreshResult.Updated;
+            }
+            catch (Exception ex)
+            {
+                POpsHelpers.Log("ISOLATION", $"Karantina izin listesi yenilenemedi ({reason}): {ex.Message}", true);
+                return RefreshResult.Failed;
+            }
+            finally { Gate.Release(); }
+        }
+
+        private static void SaveServerAddresses(IEnumerable<IPAddress> server)
+        {
+            try { SecureStore.WriteProtected(StatePath, MergeServerAddresses(SecureStore.Read(StatePath), server)); }
+            catch (Exception ex) { POpsHelpers.Log("ISOLATION", $"Sunucu adresleri isolation.json'a yazılamadı: {ex.Message}", true); }
+        }
+
+        // isolation.json'a server_addresses yazılır; diğer alanlar (previous_profiles, since) olduğu gibi kalır
+        internal static string MergeServerAddresses(string stateJson, IEnumerable<IPAddress> server)
+        {
+            JsonObject state = null;
+            try { state = string.IsNullOrWhiteSpace(stateJson) ? null : JsonNode.Parse(stateJson) as JsonObject; }
+            catch (JsonException) { }
+            state ??= new JsonObject();
+            var addresses = new JsonArray();
+            foreach (string a in NormalizeAddresses(server)) addresses.Add(a);
+            state["server_addresses"] = addresses;
+            return state.ToJsonString();
+        }
+
+        // Kayıtlı sunucu adresleri; alan yoksa (eski sürümün karantinası) ya da okunamazsa null
+        internal static List<string> ReadServerAddresses(string stateJson)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(stateJson)) return null;
+                using JsonDocument doc = JsonDocument.Parse(stateJson);
+                if (!doc.RootElement.TryGetProperty("server_addresses", out JsonElement list) || list.ValueKind != JsonValueKind.Array) return null;
+                return list.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()).ToList();
+            }
+            catch (JsonException) { return null; }
+        }
+
+        // Karşılaştırma sıradan ve yazımdan bağımsız: IPv4'e eşlenmiş IPv6 ve kapsam kimliği ayıklanır
+        internal static List<string> NormalizeAddresses(IEnumerable<IPAddress> addresses) =>
+            addresses.Where(a => a != null).Select(Normalize).Select(a => a.ToString()).Distinct().OrderBy(s => s, StringComparer.Ordinal).ToList();
+
+        internal static bool SameAddresses(IEnumerable<IPAddress> resolved, IEnumerable<string> recorded)
+        {
+            var parsed = new List<IPAddress>();
+            foreach (string s in recorded ?? Enumerable.Empty<string>())
+                if (IPAddress.TryParse(s, out IPAddress a)) parsed.Add(a);
+            return NormalizeAddresses(resolved).SequenceEqual(NormalizeAddresses(parsed));
+        }
+
+        private static IPAddress Normalize(IPAddress address)
+        {
+            IPAddress a = address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
+            return a.AddressFamily == AddressFamily.InterNetworkV6 && a.ScopeId != 0 ? new IPAddress(a.GetAddressBytes()) : a;
         }
 
         // ------------------------------------------------------------------------------------------
@@ -125,8 +231,7 @@ namespace POpsAgent
             var ranges = new List<(BigInteger, BigInteger, bool)>();
             foreach (IPAddress address in addresses.Where(a => a != null).Distinct())
             {
-                IPAddress a = address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
-                if (a.AddressFamily == AddressFamily.InterNetworkV6 && a.ScopeId != 0) a = new IPAddress(a.GetAddressBytes());
+                IPAddress a = Normalize(address);
                 BigInteger v = ToBig(a);
                 ranges.Add((v, v, a.AddressFamily == AddressFamily.InterNetworkV6));
             }
@@ -190,11 +295,13 @@ namespace POpsAgent
             return $@"$ErrorActionPreference = 'Stop'
 $group = '{RuleGroup}'
 $previous = @(Get-NetFirewallProfile | ForEach-Object {{ [pscustomobject]@{{ Name = [string]$_.Name; Enabled = [string]$_.Enabled }} }})
-Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+$old = @(Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue)
 Get-NetFirewallRule -DisplayName 'POps_Isolation_*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 $blocked = @({blocked})
 New-NetFirewallRule -Group $group -DisplayName 'POps Isolation - Outbound' -Direction Outbound -Action Block -Profile Any -RemoteAddress $blocked | Out-Null
 New-NetFirewallRule -Group $group -DisplayName 'POps Isolation - Inbound' -Direction Inbound -Action Block -Profile Any -RemoteAddress $blocked | Out-Null
+# Eski kurallar yeniler kurulduktan SONRA kalkar: yenilemede cihaz bir an bile korumasız kalmaz
+if ($old.Count -gt 0) {{ $old | Remove-NetFirewallRule }}
 Set-NetFirewallProfile -Profile Domain,Private,Public -Enabled True
 ConvertTo-Json -Compress -InputObject $previous
 ";
