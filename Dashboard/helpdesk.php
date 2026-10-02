@@ -88,12 +88,8 @@
     const ago = (iso) => { const s = (Date.now() - new Date(iso)) / 1000; if (s < 60) return 'az önce'; if (s < 3600) return Math.floor(s / 60) + ' dk önce'; if (s < 86400) return Math.floor(s / 3600) + ' sa önce'; return new Date(iso).toLocaleDateString('tr-TR'); };
     const fmt = (iso) => iso ? new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
     const dev = (t) => t.display_name || t.hostname || t.pc_name || '';
-    async function api(path, opts) {
-        const r = await fetch(path, opts);
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
-        return d;
-    }
+    // Ortak istek yardımcısı: oturum düşerse giriş sayfası, hata metni sunucunun açıklaması (doğrulama hatası dahil)
+    const api = (path, opts) => POps.api(path, opts || {});
     const post = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
     $('nfCategory').innerHTML = Object.entries(CAT).map(([k, v]) => `<option value="${escapeHtml(k)}">${escapeHtml(v)}</option>`).join('');

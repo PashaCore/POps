@@ -315,12 +315,8 @@
     const isOnline = (d) => String(d.status || '').toLowerCase() === 'online';
     const devName = (d) => d.display_name || d.real_hostname || d.hw_id;
     function msg(id, cls, html) { const el = $(id); el.className = 'status-msg show' + (cls ? ' ' + cls : ''); el.innerHTML = html; }
-    async function api(path, opts) {
-        const res = await fetch(path, opts);
-        const d = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
-        return d;
-    }
+    // Ortak istek yardımcısı: oturum düşerse giriş sayfası, hata metni sunucunun açıklaması
+    const api = (path, opts) => POps.api(path, opts || {});
     const postJson = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
     // ================= SUNUCU =================
@@ -392,7 +388,7 @@
         // release kanalı (varsayılan) yayımlanmış son sürümü kurar; main kanalı geliştirme sunucusu içindir
         const onMain = (((S.ver && S.ver.server) || {}).channel || 'release') === 'main';
         const what = onMain ? "GitHub main'deki koda" : 'GitHub\'da yayımlanmış son sürüme';
-        if (!confirm('Sunucu, ' + what + ' güncellenecek. Birkaç saniye bağlantı kopabilir. Devam edilsin mi?')) return;
+        if (!await POps.confirm({ title: 'Sunucu güncellensin mi?', message: 'Sunucu ' + what + ' güncellenecek. Birkaç saniye bağlantı kopabilir; sağlık kontrolü başarısız olursa önceki koda kendiliğinden döner.', confirmText: 'Güncelle', icon: 'fa-download' })) return;
         const before = (S.su && S.su.status && S.su.status.at) || '';
         this.disabled = true;
         msg('su-status', '', '<i class="fas fa-spinner fa-spin"></i> Güncelleme başlatılıyor…');
@@ -600,7 +596,8 @@
         const staged = S.ver && S.ver.staged_version;
         const t = deployTargets();
         const n = t.list.filter(d => isOnline(d) && normV(d.agent_version) !== normV(staged)).length;
-        if (!confirm(`${n} cihaz ${fmtV(staged)} sürümüne güncellenecek. Devam edilsin mi?`)) return;
+        if (!n) { POps.toast('info', 'Seçilen hedeflerde güncellenecek açık cihaz yok.'); return; }
+        if (!await POps.confirm({ title: 'Ajanlar güncellensin mi?', message: `${n} açık cihaz ${fmtV(staged)} sürümüne güncellenecek. Yeni sürüm açılmazsa ajan önceki sürüme kendiliğinden döner.`, confirmText: 'Gönder', icon: 'fa-paper-plane' })) return;
         this.disabled = true;
         msg('deploy-status', '', '<i class="fas fa-spinner fa-spin"></i> Gönderiliyor…');
         try {
@@ -699,9 +696,10 @@
         const label = which === 'terminal' ? 'terminali' : "Vision'ı";
         const dev = S.devices.find(x => x.hw_id === hw) || {};
         const alreadyOff = (which === 'terminal' ? dev.cap_terminal_enabled : dev.cap_vision_enabled) === false;
-        if (!enabled && !confirm(alreadyOff
-            ? `Bu cihazda ${label} kurulumda kapatılmış. "Kapalı tut" ile ajan açık kurulsa bile kapalı kalır; geri açmak için "İzin ver" ve ajanın yeniden kurulumu gerekir. Devam edilsin mi?`
-            : `Bu cihazda ${label} KAPATMAK üzeresiniz. Kalıcıdır; geri açmak için "İzin ver" ve ajanın yeniden kurulumu gerekir. Devam edilsin mi?`)) return;
+        if (!enabled && !await POps.confirm({ title: alreadyOff ? 'Kapalı tutulsun mu?' : `Bu cihazda ${label} kapatılsın mı?`, danger: true, confirmText: alreadyOff ? 'Kapalı tut' : 'Kapat',
+            message: alreadyOff
+                ? `Bu cihazda ${label} kurulumda kapatılmış. "Kapalı tut" ile ajan açık kurulsa bile kapalı kalır; geri açmak için "İzin ver" ve ajanın yeniden kurulumu gerekir.`
+                : `Kalıcıdır: geri açmak için "İzin ver" ve ajanın bilgisayarda yeniden kurulması gerekir.` })) return;
         const body = { pc_name: hw };
         body[which === 'terminal' ? 'terminal_enabled' : 'vision_enabled'] = !!enabled;
         msg('cap-status', '', 'Gönderiliyor…');
@@ -731,9 +729,8 @@
                     <button class="btn small" data-id="${escapeHtml(r.id)}">sil</button></li>`;
             }).join('') || '<li class="muted-text">Jeton yok.</li>';
             $('enroll-list').querySelectorAll('button[data-id]').forEach(b => b.addEventListener('click', async () => {
-                if (!confirm('Jeton silinsin mi? Bu jetonla henüz kaydolmamış kurulumlar kaydolamaz.')) return;
-                await fetch('/api/system/enroll-token/' + encodeURIComponent(b.dataset.id), { method: 'DELETE' });
-                loadEnroll();
+                if (!await POps.confirm({ title: 'Jeton silinsin mi?', message: 'Bu jetonla henüz kaydolmamış kurulumlar kaydolamaz. Kayıtlı cihazlar etkilenmez.', confirmText: 'Sil', danger: true })) return;
+                if (await POps.act(b, () => POps.del('/api/system/enroll-token/' + encodeURIComponent(b.dataset.id)), { success: 'Jeton silindi.' })) loadEnroll();
             }));
         } catch (e) { $('enroll-list').innerHTML = '<li class="muted-text">Jetonlar alınamadı.</li>'; }
     }
@@ -767,9 +764,10 @@
         const turnOn = $('btn-enforce').dataset.on !== '1';
         const v = S.ver || {};
         const missing = (v.agents_total || 0) - (v.agents_enrolled || 0);
-        if (turnOn && !confirm(missing > 0
-            ? `${missing} ajan kayıtlı değil ve zorlama açılınca bağlantısını kaybeder. Yine de açılsın mı?`
-            : 'Zorlama açılacak: anahtarı olmayan ajan bağlanamaz. Devam edilsin mi?')) return;
+        if (turnOn && !await POps.confirm({ title: 'Kimlik zorlaması açılsın mı?', danger: missing > 0, confirmText: 'Aç',
+            message: missing > 0
+                ? `${missing} ajan kayıtlı değil ve zorlama açılınca bağlantısını kaybeder.`
+                : 'Anahtarı olmayan ajan artık bağlanamaz.' })) return;
         msg('enforce-status', '', '…');
         try {
             const d = await postJson('/api/system/enforce-auth', { enabled: turnOn });

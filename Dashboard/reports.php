@@ -176,12 +176,8 @@
     const fmt = (iso) => { if (!iso) return '—'; try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso; } };
     const devName = (d) => d.display_name || d.hostname || d.pc_name;
     const n = (v) => Number(v || 0).toLocaleString('tr-TR');
-    async function api(path, opts) {
-        const r = await fetch(path, opts);
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
-        return d;
-    }
+    // Ortak istek yardımcısı: oturum düşerse giriş sayfası, hata metni sunucunun açıklaması (doğrulama hatası dahil)
+    const api = (path, opts) => POps.api(path, opts || {});
 
     // ---- sekmeler ----
     const loaded = {};
@@ -323,7 +319,7 @@
         const ids = [...$('ptTable').querySelectorAll('input[value]:checked')].map(b => b.value);
         if (!ids.length) return;
         const label = kind === 'scan' ? 'Windows Update taraması' : (scope === 'security' ? 'güvenlik güncellemelerinin kurulumu' : 'tüm güncellemelerin kurulumu');
-        if (!confirm(`${ids.length} cihaz için ${label} istenecek. Devam edilsin mi?`)) return;
+        if (!await POps.confirm({ title: 'Emin misiniz?', message: `${ids.length} cihaz için ${label} istenecek. Bilgisayarlar yeniden başlatılmaz; gerekiyorsa raporda belirtilir.`, confirmText: 'Gönder' })) return;
         try {
             const d = await api('/api/patches/' + kind, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_mode: 'PC', targets: ids, scope }) });
             showToast(`${d.dispatched.length} cihaza gönderildi` + (d.skipped_offline.length ? `, ${d.skipped_offline.length} çevrimdışı atlandı` : '') + '.', 'success');
@@ -362,8 +358,8 @@
         $('licTable').querySelectorAll('tr.click').forEach(tr => tr.addEventListener('click', (e) => { if (!e.target.closest('button')) licDevices(tr); }));
         $('licTable').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => licEdit(licenses.find(l => l.id == b.dataset.edit))));
         $('licTable').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
-            if (!confirm('Lisans tanımı silinsin mi?')) return;
-            try { await api('/api/licenses/' + encodeURIComponent(b.dataset.del), { method: 'DELETE' }); loadLicenses(); } catch (e) { showToast(e.message, 'error'); }
+            if (!await POps.confirm({ title: 'Lisans tanımı silinsin mi?', message: 'Kurulum sayımı etkilenmez; yalnızca bu tanım ve koltuk bilgisi silinir.', confirmText: 'Sil', danger: true })) return;
+            if (await POps.act(b, () => api('/api/licenses/' + encodeURIComponent(b.dataset.del), { method: 'DELETE' }), { success: 'Lisans tanımı silindi.' })) loadLicenses();
         }));
     }
     async function licDevices(tr) {

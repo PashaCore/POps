@@ -250,19 +250,18 @@
         $('fairUseText').addEventListener('input', refresh);
         $('autoQ').addEventListener('change', refresh);
         $('qThreshold').addEventListener('input', refresh);
-        $('fairDefault').addEventListener('click', () => {
-            if ($('fairUseText').value.trim() && !confirm('Mevcut metin örnek metinle değiştirilsin mi?')) return;
+        $('fairDefault').addEventListener('click', async () => {
+            if ($('fairUseText').value.trim() && !await POps.confirm({ title: 'Metin değiştirilsin mi?', message: 'Mevcut metin örnek metinle değiştirilecek (kaydetmeden önce düzenleyebilirsiniz).', confirmText: 'Değiştir' })) return;
             $('fairUseText').value = DEFAULT_TEXT; refresh();
         });
         $('saveBtn').addEventListener('click', async function () {
             const p = collect();
             if (p.auto_quarantine && !p.dns_categories.some(k => (p.dns_domains[k] || []).length)
-                && !confirm('Otomatik karantina açık ama listeli açık kategori yok; karantina hiç tetiklenmez. Yine de kaydedilsin mi?')) return;
+                && !await POps.confirm({ title: 'Yine de kaydedilsin mi?', message: 'Otomatik karantina açık ama alan adı listesi olan açık bir kategori yok; karantina hiç tetiklenmez.', confirmText: 'Kaydet' })) return;
             this.disabled = true;
             try {
-                const res = await fetch('/api/agent_policies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                showToast('Politikalar kaydedildi.', 'success');
+                await POps.post('/api/agent_policies', p);
+                POps.toast('success', 'Politikalar kaydedildi; ajanlar bir dakika içinde alır.');
                 await load();
             } catch (e) { showToast('Kaydedilemedi: ' + e.message, 'error'); refresh(); }
         });

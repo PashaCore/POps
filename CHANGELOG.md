@@ -13,10 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Panel: buttons that did nothing work.** Devices: the flat/by-lab view switch only redrew when the table's HTML length changed by more than 50 characters, so it, status changes and selections often did not show. Labs: every lab whose name contains a space was hidden. Task queue and Logs: the type filters compared a field the server no longer sends (`log_type`; logs carry `category` and `risk_level`), so every filter except "all" was empty. Terminal: "Wake" did nothing for a single PC. Deployment: the live tracker stayed at "queued" forever; it now follows the tasks it created.
+- **Panel: actions report what really happened.** Bulk restart/shutdown, quick commands, quarantine, wake, package delete and other actions no longer say "sent" before the server answered; errors show the server's reason (validation errors included, they used to read "[object Object]"). A Vision session the server refuses no longer leaves the switch on without a picture. Retry is offered only for finished tasks.
+- **Panel: renaming a PC from the Terminal is validated** (Windows rules: at most 15 letters, digits and hyphens); the name used to go into the PowerShell command unchecked.
 - **Server: a deploy whose virtual environment holds files of another user stops before `pip`.** `pops-deploy-backend` checks that every file in the venv belongs to `OWNER` before installing changed requirements; otherwise it changes nothing and prints the `chown` command. On the development server, packages once installed as root made `pip` fail half-way through the 0.1.14 update.
 - **Server: a task result is shown only for the device's own task.** A result whose task ID belongs to another device or no longer exists is still acknowledged (the agent stops resending it) but is no longer broadcast to the panels.
 - **Server: a stalled log destination no longer freezes the server.** Log lines were written to stderr on the event loop, so when the write waited (a stalled disk, journald or a Docker log pipe not reading) every connection waited with it: agent WebSocket handshakes timed out and HTTP requests hung. On the project server a stalled disk held appends to a log file for 5–30 seconds (PostgreSQL commits waited just as long). Lines are still formatted where they are logged (same `request_id`), but one background thread writes them in order. If 10 000 lines are waiting, new ones are dropped, and when the writer catches up it logs one `log yazımı yetişemedi` warning with the `dropped` count.
 - **Panel: the server-update confirmation names what is installed** (the latest published release, or `main` on the development channel); it always said `main`.
+
+### Changed
+
+- **Panel: no browser pop-ups.** Every `confirm`, `alert` and `prompt` (about 35, on 11 pages) is an in-page dialog with focus handling, Esc and Enter, and destructive actions in red; results appear as toasts. One request helper for all pages (session expiry goes to the login page, the server's error text is shown). Pages share one design: consistent buttons with hover, focus and loading states, tables with row hover, empty and loading states, and every page fits a phone screen. The Devices and Task queue pages are rebuilt; the scheduled-task form opens in a dialog.
 
 ### Agent
 

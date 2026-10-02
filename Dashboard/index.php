@@ -1,4 +1,5 @@
 <?php include 'includes/header.php'; ?>
+<?php $canAdmin = in_array($_SESSION['role'] ?? '', ['admin', 'superadmin'], true); ?>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -51,11 +52,7 @@
         overflow: hidden;
         transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
     }
-    .metric-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 28px rgba(0,0,0,0.06);
-        border-color: var(--border-strong);
-    }
+    .metric-card:hover { border-color: var(--border-default); }
     .metric-card::before {
         content: "";
         position: absolute; left: 0; top: 0; bottom: 0;
@@ -339,9 +336,16 @@
         margin-right: 6px;
         font-weight: 700;
     }
+    .op-row.signal-row { grid-template-columns: 48px auto 1fr; }
+    .op-row .op-cmd.plain { font-family: inherit; font-size: 0.8125rem; white-space: normal; }
+    .op-row .op-cmd.plain::before { content: none; }
+    .op-row .op-cmd.plain strong { color: var(--text-primary); }
+    .list-row .lr-main .t.mono { font-family: var(--font-mono); font-size: 0.8125rem; }
     @media (max-width: 720px) {
         .op-row { grid-template-columns: 56px 1fr; }
         .op-row .op-target { grid-column: 1 / -1; }
+        .op-row.signal-row { grid-template-columns: 44px 1fr; }
+        .op-row.signal-row .op-cmd { grid-column: 1 / -1; }
     }
 
     /* === Sinyal pill === */
@@ -353,6 +357,7 @@
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.04em;
+        background: var(--bg-surface-3); color: var(--text-tertiary); border: 1px solid var(--border-subtle);
     }
     .signal-pill.online  { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
     .signal-pill.offline { background: var(--danger-bg);  color: var(--danger-text);  border: 1px solid var(--danger-border); }
@@ -415,10 +420,10 @@
 <div class="page-header">
     <div>
         <h1><i class="fas fa-house"></i> Sistem Özeti</h1>
-        <p><i class="fas fa-circle pulse pulse-dot" style="color:var(--success-solid);font-size:0.5rem;vertical-align:middle;"></i> Gerçek zamanlı ağ senkronizasyonu aktif</p>
+        <p>Cihazlar, görevler ve sunucu durumu; 5 saniyede bir yenilenir</p>
     </div>
     <div class="page-header-actions">
-        <span class="signal-pill online" id="serverSignal"><i class="fas fa-wifi pulse"></i> Çevrimiçi</span>
+        <span class="signal-pill" id="serverSignal"><span class="spinner sm"></span> Bağlanıyor</span>
     </div>
 </div>
 
@@ -513,13 +518,15 @@
                 <span class="ti t-info"><i class="fas fa-terminal"></i></span>
                 Yönetici Operasyon Geçmişi
             </div>
+            <?php if ($canAdmin): ?>
             <div class="dash-card-actions">
-                <button class="btn secondary sm" onclick="window.clearTaskHistory()" title="Temizle"><i class="fas fa-trash"></i></button>
+                <button type="button" class="btn ghost sm" id="clearHistoryBtn" title="Görev geçmişini temizle"><i class="fas fa-trash"></i> Temizle</button>
             </div>
+            <?php endif; ?>
         </div>
         <div class="dash-card-body">
             <div id="adminCommandsList" class="scrollable">
-                <div class="empty-mini"><i class="fas fa-circle-notch fa-spin"></i>Geçmiş yükleniyor...</div>
+                <div class="skeleton-list" aria-hidden="true"><span class="skeleton skeleton-line"></span><span class="skeleton skeleton-line mid"></span><span class="skeleton skeleton-line short"></span></div>
             </div>
         </div>
     </div>
@@ -534,7 +541,7 @@
         </div>
         <div class="dash-card-body">
             <div id="dashLogsList" class="scrollable">
-                <div class="empty-mini"><i class="fas fa-satellite-dish"></i>Sinyaller dinleniyor...</div>
+                <div class="skeleton-list" aria-hidden="true"><span class="skeleton skeleton-line"></span><span class="skeleton skeleton-line mid"></span><span class="skeleton skeleton-line short"></span></div>
             </div>
         </div>
     </div>
@@ -549,7 +556,7 @@
         </div>
         <div class="dash-card-body">
             <div id="widgetAgentVersions" class="scrollable">
-                <div class="empty-mini"><i class="fas fa-code-branch"></i>Veri bekleniyor...</div>
+                <div class="skeleton-list" aria-hidden="true"><span class="skeleton skeleton-line"></span><span class="skeleton skeleton-line mid"></span><span class="skeleton skeleton-line short"></span></div>
             </div>
         </div>
     </div>
@@ -565,7 +572,7 @@
         </div>
         <div class="dash-card-body">
             <div id="widgetRecentTasks" class="scrollable">
-                <div class="empty-mini"><i class="fas fa-tasks"></i>Veri bekleniyor...</div>
+                <div class="skeleton-list" aria-hidden="true"><span class="skeleton skeleton-line"></span><span class="skeleton skeleton-line mid"></span><span class="skeleton skeleton-line short"></span></div>
             </div>
         </div>
     </div>
@@ -581,7 +588,7 @@
         </div>
         <div class="dash-card-body">
             <div id="widgetRecentDevices" class="scrollable">
-                <div class="empty-mini"><i class="fas fa-laptop"></i>Veri bekleniyor...</div>
+                <div class="skeleton-list" aria-hidden="true"><span class="skeleton skeleton-line"></span><span class="skeleton skeleton-line mid"></span><span class="skeleton skeleton-line short"></span></div>
             </div>
         </div>
     </div>
@@ -607,7 +614,7 @@
                 <span id="logSizeDisplayBadge" class="badge-mini" style="margin-left:8px;">-- MB Yük</span>
             </div>
             <div class="dash-card-actions">
-                <a href="logger.php" class="btn secondary sm"><i class="fas fa-search"></i> İncele</a>
+                <a href="logger.php" class="btn ghost sm"><i class="fas fa-magnifying-glass"></i> İncele</a>
             </div>
         </div>
         <div class="chart-wrap"><canvas id="logSizeChart"></canvas></div>
@@ -642,12 +649,12 @@
                 <span class="badge-mini">5</span>
             </div>
             <div class="dash-card-actions">
-                <a href="deploy.php" class="btn secondary sm"><i class="fas fa-arrow-up-right-from-square"></i></a>
+                <a href="deploy.php" class="btn ghost sm" title="Dosya Dağıtımı'na git"><i class="fas fa-arrow-up-right-from-square"></i> Tümü</a>
             </div>
         </div>
         <div class="dash-card-body">
             <div id="widgetRecentPackages" class="scrollable">
-                <div class="empty-mini"><i class="fas fa-box-open"></i>Veri bekleniyor...</div>
+                <div class="skeleton-list" aria-hidden="true"><span class="skeleton skeleton-line"></span><span class="skeleton skeleton-line mid"></span><span class="skeleton skeleton-line short"></span></div>
             </div>
         </div>
     </div>
@@ -660,12 +667,12 @@
                 <span class="badge-mini">5</span>
             </div>
             <div class="dash-card-actions">
-                <a href="terminal.php" class="btn secondary sm"><i class="fas fa-arrow-up-right-from-square"></i></a>
+                <a href="deploy.php" class="btn ghost sm" title="Dosya Dağıtımı'na git"><i class="fas fa-arrow-up-right-from-square"></i> Tümü</a>
             </div>
         </div>
         <div class="dash-card-body">
             <div id="widgetRecentScripts" class="scrollable">
-                <div class="empty-mini"><i class="fas fa-terminal"></i>Veri bekleniyor...</div>
+                <div class="skeleton-list" aria-hidden="true"><span class="skeleton skeleton-line"></span><span class="skeleton skeleton-line mid"></span><span class="skeleton skeleton-line short"></span></div>
             </div>
         </div>
     </div>
@@ -681,386 +688,200 @@
         </div>
         <div class="dash-card-body">
             <div id="widgetTopLabs" class="scrollable">
-                <div class="empty-mini"><i class="fas fa-network-wired"></i>Veri bekleniyor...</div>
+                <div class="skeleton-list" aria-hidden="true"><span class="skeleton skeleton-line"></span><span class="skeleton skeleton-line mid"></span><span class="skeleton skeleton-line short"></span></div>
             </div>
         </div>
     </div>
 </section>
 
+
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    const apiBaseUrl = (typeof OMYO_API !== 'undefined') ? OMYO_API.HTTP_URL : "";
-    
-    let dashboardChart = null;
-    let pcCountChart = null;
-    let logSizeChart = null;
-    let storageChart = null;
-    
-    let lastLogsHash = "";
-    let lastHistoryHash = "";
-    
-    const pcHistoryData = [];
-    const pcHistoryLabels = [];
-    
+    let dashboardChart = null, pcCountChart = null, logSizeChart = null, storageChart = null;
+    let lastLogsHash = '', lastHistoryHash = '';
+    const pcHistoryData = [], pcHistoryLabels = [];
+    let deviceNames = {};
+    const css = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+
     function formatBytes(bytes, decimals = 1) {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const dm = decimals < 0 ? 0 : decimals;
-        const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+        if (!bytes) return '0 B';
+        const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
     }
 
     function initChart() {
-        // Doughnut Chart (Lab Dağılımı)
+        if (typeof Chart === 'undefined') return;   // grafik kütüphanesi yüklenemediyse kartlar boş kalır, sayfa çalışır
+        Chart.defaults.font.family = css('--font-sans', 'Inter, sans-serif');
         const ctxDoughnut = document.getElementById('labDistributionChart');
         if (ctxDoughnut) {
             dashboardChart = new Chart(ctxDoughnut.getContext('2d'), {
                 type: 'doughnut',
-                data: {
-                    labels: ['Veri Bekleniyor'],
-                    datasets: [{ data: [1], backgroundColor: ['#e2e8f0'], borderWidth: 0 }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { position: 'right', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim() || '#475569', font: { size: 11 }, boxWidth: 12, padding: 8 } } },
-                    cutout: '70%'
-                }
+                data: { labels: ['Veri bekleniyor'], datasets: [{ data: [1], backgroundColor: ['#e2e8f0'], borderWidth: 0 }] },
+                options: { responsive: true, maintainAspectRatio: false, cutout: '70%',
+                    plugins: { legend: { position: 'right', labels: { color: css('--text-secondary', '#475569'), font: { size: 11 }, boxWidth: 12, padding: 8 } } } }
             });
         }
-
-        // Line Chart (PC Sayısı - Canlı)
         const ctxLine = document.getElementById('pcCountChart');
         if (ctxLine) {
             pcCountChart = new Chart(ctxLine.getContext('2d'), {
                 type: 'line',
-                data: {
-                    labels: pcHistoryLabels,
-                    datasets: [{
-                        label: 'Toplam Cihaz',
-                        data: pcHistoryData,
-                        borderColor: '#10b981', // success color
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 0,
-                        pointHoverRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true, 
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: { display: false },
-                        y: { 
-                            beginAtZero: false,
-                            grid: { color: getComputedStyle(document.documentElement).getPropertyValue('--border-subtle').trim() || '#e5e7eb' },
-                            ticks: { precision: 0, color: getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary').trim() || '#94a3b8' }
-                        }
-                    }
-                }
+                data: { labels: pcHistoryLabels, datasets: [{ label: 'Toplam cihaz', data: pcHistoryData, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 2, fill: true, tension: 0.4, pointRadius: 0, pointHoverRadius: 4 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                    scales: { x: { display: false }, y: { beginAtZero: false, grid: { color: css('--border-subtle', '#e5e7eb') }, ticks: { precision: 0, color: css('--text-tertiary', '#94a3b8') } } } }
             });
         }
-
-        // Bar Chart (Log Boyutu - 7 Days)
         const ctxLog = document.getElementById('logSizeChart');
         if (ctxLog) {
             logSizeChart = new Chart(ctxLog.getContext('2d'), {
                 type: 'bar',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Log Kaydı',
-                        data: [],
-                        backgroundColor: 'rgba(59, 130, 246, 0.7)', // info color
-                        borderWidth: 0,
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: { grid: { display: false }, ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary').trim() || '#94a3b8' } },
-                        y: { beginAtZero: true, grid: { color: getComputedStyle(document.documentElement).getPropertyValue('--border-subtle').trim() || '#e5e7eb' }, ticks: { precision: 0, color: getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary').trim() || '#94a3b8' } }
-                    }
-                }
+                data: { labels: [], datasets: [{ label: 'Log kaydı', data: [], backgroundColor: 'rgba(59, 130, 246, 0.7)', borderWidth: 0, borderRadius: 4 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                    scales: { x: { grid: { display: false }, ticks: { color: css('--text-tertiary', '#94a3b8') } },
+                              y: { beginAtZero: true, grid: { color: css('--border-subtle', '#e5e7eb') }, ticks: { precision: 0, color: css('--text-tertiary', '#94a3b8') } } } }
             });
         }
-
-        // Doughnut Chart (Depolama Kullanımı)
         const ctxStorage = document.getElementById('storageChart');
         if (ctxStorage) {
             storageChart = new Chart(ctxStorage.getContext('2d'), {
                 type: 'doughnut',
-                data: {
-                    labels: ['Ayrılmış Alan (Reserved)', 'Boş Alan (Empty)'],
-                    datasets: [{
-                        data: [0, 20],
-                        backgroundColor: ['#f59e0b', '#e5e7eb'], // dolu kısım turuncu, boş kısım açık gri
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { 
-                        legend: { 
-                            position: 'bottom', 
-                            labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim() || '#475569', font: { size: 11 }, boxWidth: 12, padding: 8 } 
-                        } 
-                    },
-                    cutout: '70%'
-                }
+                data: { labels: ['Kullanılan (GB)', 'Boş (GB)'], datasets: [{ data: [0, 20], backgroundColor: ['#f59e0b', '#e5e7eb'], borderWidth: 0 }] },
+                options: { responsive: true, maintainAspectRatio: false, cutout: '70%',
+                    plugins: { legend: { position: 'bottom', labels: { color: css('--text-secondary', '#475569'), font: { size: 11 }, boxWidth: 12, padding: 8 } } } }
             });
         }
     }
     initChart();
 
-    async function fetchCoreData() {
-        if (!apiBaseUrl) return;
-        try {
-            const opts = {};
-            const devReq = fetch(`${apiBaseUrl}/api/devices`, opts).catch(() => null);
-            const taskReq = fetch(`${apiBaseUrl}/api/tasks?limit=50`, opts).catch(() => null);
-            const storageReq = fetch(`${apiBaseUrl}/api/storage`, opts).catch(() => null);
-            const pkgReq = fetch(`${apiBaseUrl}/api/packages`, opts).catch(() => null);
-            
-            const [devRes, taskRes, storageRes, pkgRes] = await Promise.all([devReq, taskReq, storageReq, pkgReq]);
-            if (devRes && devRes.status === 401) {
-                window.location.href = '/logout.php';
-                return;
-            }
-            if (!devRes || !devRes.ok) throw new Error("Ağ hatası");
-
-            const devices = await devRes.json();
-            const tasks = (taskRes && taskRes.ok) ? await taskRes.json() : [];
-            const storageData = (storageRes && storageRes.ok) ? await storageRes.json() : null;
-            const packages = (pkgRes && pkgRes.ok) ? await pkgRes.json() : [];
-
-            // Top Stats
-            document.getElementById('dashTotal').innerText = devices.length;
-            document.getElementById('dashActive').innerText = devices.filter(d => (d.status || '').toLowerCase() === 'online').length;
-            document.getElementById('dashTasks').innerText = tasks.filter(t => t.status === 'Running' || t.status === 'Pending').length;
-            document.getElementById('dashServerStatus').innerHTML = '<span class="signal-pill online"><i class="fas fa-wifi pulse"></i> Çevrimiçi</span>';
-
-            // Process Widgets Data
-            renderWidgets(devices, tasks, storageData, packages);
-            
-            // Admin History (Left Column)
-            renderAdminHistory(tasks);
-        } catch (e) {
-            const ss = document.getElementById('dashServerStatus');
-            if (ss) ss.innerHTML = '<span class="signal-pill offline"><i class="fas fa-triangle-exclamation"></i> Çevrimdışı</span>';
-        }
+    function setServerState(online) {
+        const pill = online ? '<span class="signal-pill online"><i class="fas fa-wifi"></i> Çevrimiçi</span>'
+                            : '<span class="signal-pill offline"><i class="fas fa-triangle-exclamation"></i> Bağlantı yok</span>';
+        document.getElementById('dashServerStatus').innerHTML = pill;
+        document.getElementById('serverSignal').outerHTML = online
+            ? '<span class="signal-pill online" id="serverSignal"><i class="fas fa-wifi"></i> Çevrimiçi</span>'
+            : '<span class="signal-pill offline" id="serverSignal"><i class="fas fa-triangle-exclamation"></i> Bağlantı yok</span>';
     }
 
-    function renderWidgets(devices, tasks, storageData, packages) {
-        // 1. Son 5 Cihaz
-        const allDevices = Array.isArray(devices) ? devices : [];
+    // 5 sn'de bir: cihazlar ve görevler
+    async function fetchCoreData() {
+        let devices, tasks;
+        try {
+            [devices, tasks] = await Promise.all([POps.get('/api/devices'), POps.get('/api/tasks?limit=50').catch(() => [])]);
+        } catch (e) {
+            setServerState(false);
+            throw e;
+        }
+        devices = Array.isArray(devices) ? devices : [];
+        tasks = Array.isArray(tasks) ? tasks : [];
+        deviceNames = {};
+        devices.forEach(d => { deviceNames[d.hostname] = POps.deviceName(d); });
+        document.getElementById('dashTotal').textContent = devices.length;
+        document.getElementById('dashActive').textContent = devices.filter(POps.isOnline).length;
+        document.getElementById('dashTasks').textContent = tasks.filter(t => t.status === 'Running' || t.status === 'Pending').length;
+        setServerState(true);
+        renderDevices(devices);
+        renderTasks(tasks);
+        renderAdminHistory(tasks);
+    }
+
+    function renderDevices(allDevices) {
         const recentDevices = allDevices.slice(-5).reverse();
-        
-        const rdHtml = recentDevices.length > 0 ? recentDevices.map(d => {
-            const name = d.pc_name || d.ip || d.hw_id || 'Bilinmeyen Cihaz';
-            const isOnline = (d.status||'').toLowerCase() === 'online';
+        document.getElementById('widgetRecentDevices').innerHTML = recentDevices.length ? recentDevices.map(d => {
+            const isOnline = POps.isOnline(d);
             return `
             <div class="list-row">
                 <span class="lr-icon"><i class="fas fa-laptop"></i></span>
                 <div class="lr-main">
-                    <span class="t">${escapeHtml(name)}</span>
+                    <span class="t">${escapeHtml(POps.deviceName(d))}</span>
                     <span class="m">${escapeHtml(d.ip || d.hw_id || '')}</span>
                 </div>
-                <span class="lr-end"><span class="signal-pill ${isOnline ? 'online' : 'offline'}">${isOnline ? 'Online' : 'Offline'}</span></span>
+                <span class="lr-end"><span class="signal-pill ${isOnline ? 'online' : 'offline'}">${isOnline ? 'Açık' : 'Kapalı'}</span></span>
             </div>`;
-        }).join('') : '<div class="empty-mini"><i class="fas fa-laptop"></i>Cihaz bulunamadı</div>';
-        
-        document.getElementById('widgetRecentDevices').innerHTML = rdHtml;
+        }).join('') : '<div class="empty-mini"><i class="fas fa-laptop"></i>Henüz kayıtlı cihaz yok</div>';
 
-        // 2. Aktif Laboratuvarlar & Grafik Dağılımı
         const labCounts = {};
-        allDevices.forEach(d => { const lab = d.lab || 'Atanmamış'; labCounts[lab] = (labCounts[lab] || 0) + 1; });
-        const sortedLabs = Object.entries(labCounts).sort((a,b) => b[1] - a[1]);
-        
-        const tlHtml = sortedLabs.slice(0, 5).length > 0 ? sortedLabs.slice(0, 5).map((l, idx) => `
+        allDevices.forEach(d => { const lab = d.lab && d.lab !== 'Atanmamis_Cihazlar' ? d.lab : 'Atanmamış'; labCounts[lab] = (labCounts[lab] || 0) + 1; });
+        const sortedLabs = Object.entries(labCounts).sort((a, b) => b[1] - a[1]);
+        document.getElementById('widgetTopLabs').innerHTML = sortedLabs.length ? sortedLabs.slice(0, 5).map((l, idx) => `
             <div class="list-row">
                 <span class="lr-icon"><i class="fas fa-network-wired"></i></span>
                 <div class="lr-main">
                     <span class="t">${escapeHtml(l[0])}</span>
-                    <span class="m">${idx === 0 ? 'En yoğun lab' : 'Aktif laboratuvar'}</span>
+                    <span class="m">${idx === 0 ? 'En kalabalık sınıf' : 'Sınıf'}</span>
                 </div>
-                <span class="lr-end">${l[1]} cihaz</span>
-            </div>
-        `).join('') : '<div class="empty-mini"><i class="fas fa-network-wired"></i>Lab bulunamadı</div>';
-        document.getElementById('widgetTopLabs').innerHTML = tlHtml;
+                <span class="lr-end">${Number(l[1])} cihaz</span>
+            </div>`).join('') : '<div class="empty-mini"><i class="fas fa-network-wired"></i>Sınıf yok</div>';
 
-        // Grafiği de güncelle (Doughnut)
-        const labels = Object.keys(labCounts);
-        const data = Object.values(labCounts);
+        const labels = Object.keys(labCounts), data = Object.values(labCounts);
         const colors = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e', '#84cc16'];
-        if (labels.length > 0) {
-            const currentChartHash = labels.join('|') + data.join('|');
-            if (dashboardChart && dashboardChart.canvas.dataset.hash !== currentChartHash) {
+        if (dashboardChart && labels.length) {
+            const hash = labels.join('|') + data.join('|');
+            if (dashboardChart.canvas.dataset.hash !== hash) {
                 dashboardChart.data.labels = labels;
                 dashboardChart.data.datasets[0].data = data;
-                dashboardChart.data.datasets[0].backgroundColor = colors.slice(0, labels.length);
+                dashboardChart.data.datasets[0].backgroundColor = labels.map((_, i) => colors[i % colors.length]);
                 dashboardChart.update();
-                dashboardChart.canvas.dataset.hash = currentChartHash;
+                dashboardChart.canvas.dataset.hash = hash;
             }
         }
 
-        // Kripto Tarzı Canlı PC Grafiğini Güncelle (Line Chart)
         const now = new Date();
-        const timeLabel = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
-        pcHistoryLabels.push(timeLabel);
+        pcHistoryLabels.push(now.toLocaleTimeString('tr-TR'));
         pcHistoryData.push(allDevices.length);
-        if (pcHistoryLabels.length > 30) {
-            pcHistoryLabels.shift();
-            pcHistoryData.shift();
-        }
+        if (pcHistoryLabels.length > 30) { pcHistoryLabels.shift(); pcHistoryData.shift(); }
         if (pcCountChart) {
-            const minVal = Math.min(...pcHistoryData);
-            const maxVal = Math.max(...pcHistoryData);
-            if (minVal === maxVal && minVal > 0) {
-                pcCountChart.options.scales.y.min = minVal - 1;
-                pcCountChart.options.scales.y.max = maxVal + 1;
-            } else {
-                delete pcCountChart.options.scales.y.min;
-                delete pcCountChart.options.scales.y.max;
-            }
+            const minVal = Math.min(...pcHistoryData), maxVal = Math.max(...pcHistoryData);
+            if (minVal === maxVal) { pcCountChart.options.scales.y.min = Math.max(0, minVal - 1); pcCountChart.options.scales.y.max = maxVal + 1; }
+            else { delete pcCountChart.options.scales.y.min; delete pcCountChart.options.scales.y.max; }
             pcCountChart.update('none');
         }
 
-        // 3. Ajan Sürüm Dağılımı
         const verCounts = {};
         allDevices.forEach(d => { const v = d.agent_version || 'Bilinmiyor'; verCounts[v] = (verCounts[v] || 0) + 1; });
-        const sortedVers = Object.entries(verCounts).sort((a,b) => b[1] - a[1]).slice(0, 5);
-        const vHtml = sortedVers.length > 0 ? sortedVers.map(v => {
-            const rawVer = v[0];
-            const displayVer = (rawVer.toLowerCase() === 'bilinmiyor' || rawVer.toLowerCase().startsWith('v')) ? escapeHtml(rawVer) : 'v' + escapeHtml(rawVer);
+        const sortedVers = Object.entries(verCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        document.getElementById('widgetAgentVersions').innerHTML = sortedVers.length ? sortedVers.map(v => {
+            const raw = String(v[0]);
+            const shown = (raw.toLowerCase() === 'bilinmiyor' || /^v/i.test(raw)) ? raw : 'v' + raw;
             return `
             <div class="list-row">
                 <span class="lr-icon"><i class="fas fa-tag"></i></span>
-                <div class="lr-main">
-                    <span class="t">${displayVer}</span>
-                    <span class="m">Ajan sürümü</span>
-                </div>
-                <span class="lr-end">${v[1]} cihaz</span>
+                <div class="lr-main"><span class="t">${escapeHtml(shown)}</span><span class="m">Ajan sürümü</span></div>
+                <span class="lr-end">${Number(v[1])} cihaz</span>
             </div>`;
         }).join('') : '<div class="empty-mini"><i class="fas fa-tag"></i>Veri yok</div>';
-        document.getElementById('widgetAgentVersions').innerHTML = vHtml;
+    }
 
-        // 4. Son Aktif Görevler
-        const activeTasks = tasks.filter(t => t.status === 'Running' || t.status === 'Pending').slice(0, 5);
-        if (activeTasks.length === 0) {
-            document.getElementById('widgetRecentTasks').innerHTML = '<div class="empty-mini"><i class="fas fa-tasks"></i>Aktif görev yok</div>';
-        } else {
-            document.getElementById('widgetRecentTasks').innerHTML = activeTasks.map(t => `
-                <div class="list-row">
-                    <span class="lr-icon"><i class="fas fa-terminal"></i></span>
-                    <div class="lr-main">
-                        <span class="t" title="${escapeHtml(t.script_path)}">${escapeHtml((t.script_path || '').split('/').pop() || t.script_path)}</span>
-                        <span class="m">${escapeHtml(t.target_pc || t.target_lab || '')}</span>
-                    </div>
-                    <span class="lr-end" style="color:var(--warning-text);font-weight:600;">${escapeHtml(t.status)}</span>
+    function renderTasks(tasks) {
+        const active = tasks.filter(t => t.status === 'Running' || t.status === 'Pending').slice(0, 5);
+        document.getElementById('widgetRecentTasks').innerHTML = active.length ? active.map(t => `
+            <div class="list-row">
+                <span class="lr-icon"><i class="fas fa-terminal"></i></span>
+                <div class="lr-main">
+                    <span class="t mono" title="${escapeHtml(t.script_path)}">${escapeHtml(String(t.script_path || '').slice(0, 60))}</span>
+                    <span class="m">${escapeHtml(deviceNames[t.target_pc] || t.target_pc || '')}${t.target_lab && t.target_lab !== 'Atanmamis_Cihazlar' ? ' · ' + escapeHtml(t.target_lab) : ''}</span>
                 </div>
-            `).join('');
-        }
-
-        // 5. Depolama ve Log
-        if (storageData && storageData.status === 'success') {
-            const badge = document.getElementById('logSizeDisplayBadge');
-            if (badge) badge.innerText = formatBytes(storageData.log_bytes) + ' Yük';
-            
-            if (storageChart) {
-                const usedGB = (storageData.used_bytes / (1024 * 1024 * 1024)).toFixed(2);
-                const freeGB = (storageData.free_bytes / (1024 * 1024 * 1024)).toFixed(2);
-                storageChart.data.datasets[0].data = [parseFloat(usedGB), parseFloat(freeGB)];
-                storageChart.update();
-            }
-            
-            if (logSizeChart && storageData.log_trend) {
-                const trend = storageData.log_trend;
-                const labels = trend.map(t => {
-                    const parts = t.day.split('-');
-                    return parts.length === 3 ? parts[2] + '/' + parts[1] : t.day;
-                });
-                const data = trend.map(t => t.count);
-                
-                const currentHash = labels.join('|') + data.join('|');
-                if (logSizeChart.canvas.dataset.hash !== currentHash) {
-                    logSizeChart.data.labels = labels;
-                    logSizeChart.data.datasets[0].data = data;
-                    logSizeChart.update();
-                    logSizeChart.canvas.dataset.hash = currentHash;
-                }
-            }
-        }
-        
-        // 6. Paket ve Betikler
-        const pkgs = Array.isArray(packages) ? packages : [];
-        const filesList = pkgs.filter(p => p.type === 'package').slice(-5).reverse();
-        const scriptsList = pkgs.filter(p => p.type === 'script').slice(-5).reverse();
-        
-        const wPkg = document.getElementById('widgetRecentPackages');
-        if (wPkg) {
-            wPkg.innerHTML = filesList.length > 0 
-                ? filesList.map(f => `
-                    <div class="list-row">
-                        <span class="lr-icon"><i class="fas fa-box"></i></span>
-                        <div class="lr-main">
-                            <span class="t" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
-                            <span class="m">${escapeHtml((f.meta || '').split('|')[1] || 'Paket')}</span>
-                        </div>
-                        <span class="lr-end">Paket</span>
-                    </div>
-                `).join('') 
-                : '<div class="empty-mini"><i class="fas fa-box"></i>Dosya bulunamadı</div>';
-        }
-            
-        const wScr = document.getElementById('widgetRecentScripts');
-        if (wScr) {
-            wScr.innerHTML = scriptsList.length > 0 
-                ? scriptsList.map(s => `
-                    <div class="list-row">
-                        <span class="lr-icon"><i class="fas fa-terminal"></i></span>
-                        <div class="lr-main">
-                            <span class="t" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
-                            <span class="m">${escapeHtml((s.meta || '').split('|')[1] || 'Script')}</span>
-                        </div>
-                        <span class="lr-end" style="color:var(--warning-text);font-weight:600;">Betik</span>
-                    </div>
-                `).join('') 
-                : '<div class="empty-mini"><i class="fas fa-terminal"></i>Betik bulunamadı</div>';
-        }
+                <span class="lr-end" style="color:var(--warning-text);font-weight:600;">${t.status === 'Running' ? 'Çalışıyor' : 'Sırada'}</span>
+            </div>`).join('') : '<div class="empty-mini"><i class="fas fa-circle-check"></i>Bekleyen ya da çalışan görev yok</div>';
     }
 
     function renderAdminHistory(tasks) {
         const list = document.getElementById('adminCommandsList');
-        const currentHash = JSON.stringify(tasks.slice(0, 6));
-        if (currentHash === lastHistoryHash && list.dataset.loaded) return;
-        lastHistoryHash = currentHash;
-        list.dataset.loaded = "1";
-
-        if (!tasks || tasks.length === 0) {
-            list.innerHTML = '<div class="empty-mini"><i class="fas fa-ghost"></i>Henüz kaydedilmiş bir operasyon yok.</div>';
+        const hash = JSON.stringify(tasks.slice(0, 6));
+        if (hash === lastHistoryHash) return;
+        lastHistoryHash = hash;
+        if (!tasks.length) {
+            list.innerHTML = '<div class="empty-mini"><i class="fas fa-clock-rotate-left"></i>Henüz kaydedilmiş bir işlem yok.</div>';
             return;
         }
-
-        const unique = [];
-        const seen = new Set();
-        for (let t of tasks) {
+        const unique = [], seen = new Set();
+        for (const t of tasks) {
             const k = t.script_path + t.created_at;
             if (!seen.has(k)) { seen.add(k); unique.push(t); }
             if (unique.length >= 6) break;
         }
-
         list.innerHTML = unique.map(t => {
-            const target = (t.target_lab && t.target_lab !== 'Atanmamis_Cihazlar') ? t.target_lab : t.target_pc;
-            const time = t.created_at ? t.created_at.split(' ')[1] : '-';
+            const target = (t.target_lab && t.target_lab !== 'Atanmamis_Cihazlar') ? t.target_lab : (deviceNames[t.target_pc] || t.target_pc);
+            const time = t.created_at ? String(t.created_at).split(' ')[1] || t.created_at : '-';
             return `<div class="op-row">
                 <span class="op-ts">${escapeHtml(time)}</span>
                 <span class="op-target"><i class="fas fa-crosshairs"></i>${escapeHtml(target || '-')}</span>
@@ -1069,63 +890,110 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
     }
 
-    window.clearTaskHistory = async function() {
-        if (!confirm('Tüm aktif ve geçmiş görev kuyruğu silinecek. Emin misiniz?')) return;
-        try {
-            await fetch(apiBaseUrl + '/api/flush_queue', { method: 'POST' });
-            lastHistoryHash = "";
-            fetchCoreData();
-            showToast('Kuyruk temizlendi', 'success');
-        } catch (e) { showToast('Sunucuya ulaşılamıyor.', 'error'); }
-    };
-
-    async function fetchAgentLogs() {
-        if (!apiBaseUrl) return;
-        try {
-            const res = await fetch(apiBaseUrl + '/api/logs?limit=200');
-            if (!res.ok) return;
-            const logs = await res.json();
-            const important = logs.filter(l => l.log_type === 'Deploy' || l.log_type === 'Security' || l.log_type === 'Error');
-            const grouped = {};
-            important.forEach(log => {
-                const timeKey = log.timestamp.substring(11, 16);
-                const msgKey = log.message.substring(0, 20).trim();
-                const k = timeKey + '_' + log.log_type + '_' + msgKey;
-                if (!grouped[k]) grouped[k] = { time: timeKey, type: log.log_type, pcs: new Set(), msg: log.message };
-                grouped[k].pcs.add(log.pc_name);
-            });
-            const currentHash = JSON.stringify(Object.keys(grouped).slice(0, 6));
-            if (currentHash === lastLogsHash) return;
-            lastLogsHash = currentHash;
-
-            const list = document.getElementById('dashLogsList');
-            const entries = Object.values(grouped).slice(0, 6);
-            if (entries.length === 0) {
-                list.innerHTML = '<div class="empty-mini"><i class="fas fa-satellite-dish"></i>Ajanlardan henüz önemli bir dönüş yok.</div>';
-                return;
+    // 30 sn'de bir: depolama, paketler ve önemli ajan olayları (ağır sorgular sık çekilmez)
+    async function fetchExtras() {
+        const [storageData, packages, logs] = await Promise.all([
+            POps.get('/api/storage').catch(() => null),
+            POps.get('/api/packages').catch(() => []),
+            POps.get('/api/logs?limit=200').catch(() => null)
+        ]);
+        if (storageData && storageData.status === 'success') {
+            document.getElementById('logSizeDisplayBadge').textContent = formatBytes(storageData.log_bytes);
+            if (storageChart) {
+                storageChart.data.datasets[0].data = [
+                    parseFloat((storageData.used_bytes / 1073741824).toFixed(2)),
+                    parseFloat((storageData.free_bytes / 1073741824).toFixed(2))
+                ];
+                storageChart.update();
             }
-            list.innerHTML = entries.map(g => {
-                const isCrit = g.type === 'Security' || g.type === 'Error';
-                const pill = isCrit ? `<span class="log-pill danger"><i class="fas fa-shield-halved"></i> ${g.type === 'Error' ? 'Hata' : 'Güvenlik'}</span>`
-                                  : `<span class="log-pill success"><i class="fas fa-circle-check"></i> Sistem</span>`;
-                return `<div class="op-row" style="grid-template-columns:60px auto 1fr;">
-                    <span class="op-ts">${escapeHtml(g.time)}</span>
-                    ${pill}
-                    <span class="op-cmd" style="font-family:inherit;font-size:0.8125rem;"><strong style="color:var(--text-primary);">${g.pcs.size} cihaz</strong> — ${escapeHtml(g.msg.substring(0, 50))}${g.msg.length > 50 ? '…' : ''}</span>
-                </div>`;
-            }).join('');
-        } catch (e) {}
+            if (logSizeChart && Array.isArray(storageData.log_trend)) {
+                const labels = storageData.log_trend.map(t => { const p = String(t.day).split('-'); return p.length === 3 ? p[2] + '/' + p[1] : t.day; });
+                const data = storageData.log_trend.map(t => t.count);
+                const hash = labels.join('|') + data.join('|');
+                if (logSizeChart.canvas.dataset.hash !== hash) {
+                    logSizeChart.data.labels = labels;
+                    logSizeChart.data.datasets[0].data = data;
+                    logSizeChart.update();
+                    logSizeChart.canvas.dataset.hash = hash;
+                }
+            }
+        }
+        const pkgs = Array.isArray(packages) ? packages : [];
+        const filesList = pkgs.filter(p => p.type === 'package').slice(-5).reverse();
+        const scriptsList = pkgs.filter(p => p.type === 'script').slice(-5).reverse();
+        document.getElementById('widgetRecentPackages').innerHTML = filesList.length ? filesList.map(f => `
+            <div class="list-row">
+                <span class="lr-icon"><i class="fas fa-box"></i></span>
+                <div class="lr-main"><span class="t" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span><span class="m">${escapeHtml(String(f.meta || '').split('|')[1] || 'Paket')}</span></div>
+                <span class="lr-end">Paket</span>
+            </div>`).join('') : '<div class="empty-mini"><i class="fas fa-box"></i>Depoda paket yok</div>';
+        document.getElementById('widgetRecentScripts').innerHTML = scriptsList.length ? scriptsList.map(s => `
+            <div class="list-row">
+                <span class="lr-icon"><i class="fas fa-terminal"></i></span>
+                <div class="lr-main"><span class="t" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span><span class="m">${escapeHtml(String(s.meta || '').split('|')[1] || 'Betik')}</span></div>
+                <span class="lr-end" style="color:var(--warning-text);font-weight:600;">Betik</span>
+            </div>`).join('') : '<div class="empty-mini"><i class="fas fa-terminal"></i>Depoda betik yok</div>';
+        if (Array.isArray(logs)) renderSignals(logs);
     }
 
-    function escapeHtml(unsafe) {
-        if(!unsafe) return "";
-        return unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    function signalPill(kind) {
+        if (kind === 'critical') return '<span class="log-pill danger"><i class="fas fa-shield-halved"></i> Kritik</span>';
+        if (kind === 'high') return '<span class="log-pill danger"><i class="fas fa-shield-halved"></i> Yüksek</span>';
+        if (kind === 'error') return '<span class="log-pill danger"><i class="fas fa-shield-halved"></i> Hata</span>';
+        if (kind === 'medium' || kind === 'security') return '<span class="log-pill warning"><i class="fas fa-triangle-exclamation"></i> Orta</span>';
+        return '<span class="log-pill success"><i class="fas fa-circle-check"></i> Görev</span>';
     }
 
-    fetchCoreData();
-    fetchAgentLogs();
-    // 5 sn'de bir; arka planda durur, boşta yavaşlar (bkz. header.php popsPoll)
-    popsPoll(() => Promise.all([fetchCoreData(), fetchAgentLogs()]), 5000);
+    // Önemli ajan olayları: orta/yüksek/kritik riskliler ve görev çalıştırmaları (eski şemada log_type)
+    function renderSignals(logs) {
+        const important = logs.filter(l => {
+            const risk = String(l.risk_level || '').toLowerCase();
+            if (risk) return risk !== 'info' || l.category === 'system_maintenance';
+            return ['Deploy', 'Security', 'Error'].includes(l.log_type);
+        });
+        const grouped = {};
+        important.forEach(log => {
+            const time = String(log.timestamp || '').substring(11, 16);
+            const kind = String(log.risk_level || log.log_type || '').toLowerCase();
+            const k = time + '_' + kind + '_' + String(log.message || '').substring(0, 20);
+            if (!grouped[k]) grouped[k] = { time, kind, pcs: new Set(), msg: String(log.message || '') };
+            grouped[k].pcs.add(log.pc_name);
+        });
+        const entries = Object.values(grouped).slice(0, 6);
+        const hash = JSON.stringify(entries.map(g => [g.time, g.kind, g.msg, g.pcs.size]));
+        if (hash === lastLogsHash) return;
+        lastLogsHash = hash;
+        const list = document.getElementById('dashLogsList');
+        if (!entries.length) {
+            list.innerHTML = '<div class="empty-mini"><i class="fas fa-satellite-dish"></i>Son 200 kayıtta önemli bir olay yok.</div>';
+            return;
+        }
+        list.innerHTML = entries.map(g => `<div class="op-row signal-row">
+                <span class="op-ts">${escapeHtml(g.time)}</span>
+                ${signalPill(g.kind)}
+                <span class="op-cmd plain"><strong>${g.pcs.size} cihaz</strong> · ${escapeHtml(g.msg.substring(0, 60))}${g.msg.length > 60 ? '…' : ''}</span>
+            </div>`).join('');
+    }
+
+    const clearBtn = document.getElementById('clearHistoryBtn');
+    if (clearBtn) clearBtn.addEventListener('click', async () => {
+        const ok = await POps.confirm({
+            title: 'Görev geçmişi silinsin mi?',
+            message: 'Sıradaki, çalışan ve biten bütün görev kayıtları silinir. Silme işlemi denetim kaydına yazılır; geri alınamaz.',
+            confirmText: 'Tümünü sil', danger: true, icon: 'fa-trash'
+        });
+        if (!ok) return;
+        if (await POps.act(clearBtn, () => POps.post('/api/flush_queue'), { success: 'Görev geçmişi temizlendi.' })) {
+            lastHistoryHash = '';
+            fetchCoreData().catch(() => {});
+        }
+    });
+
+    fetchCoreData().catch(() => {});
+    fetchExtras().catch(() => {});
+    // Arka planda durur, boşta yavaşlar (bkz. header.php popsPoll)
+    popsPoll(fetchCoreData, 5000);
+    popsPoll(fetchExtras, 30000);
 });
 </script>
 
