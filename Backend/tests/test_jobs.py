@@ -124,8 +124,9 @@ async def run(c, admin, viewer):
     s, b = req("/api/deploy_orchestration", admin, ctx)
     cid = (b.get("task_ids") or [None])[0]
     row = await c.fetchrow("SELECT title, source, reason, client_ip, batch_id FROM tasks WHERE id = $1", cid)
-    chk(s == 200 and row and row["title"] == "Yeniden başlat" and row["source"] == "labs" and row["reason"] == "ders bitti"
-        and row["client_ip"] == "127.0.0.1" and len(row["batch_id"] or "") == 16, "bağlam saklandı (%s)" % (dict(row) if row else None))
+    chk(s == 200 and row and row["title"] == "Yeniden başlat" and row["source"] == "labs"
+        and row["reason"] == "ders bitti" and row["client_ip"] == "127.0.0.1" and len(row["batch_id"] or "") == 16,
+        "bağlam saklandı (%s)" % (dict(row) if row else None))
     batch = await c.fetch("SELECT DISTINCT batch_id FROM tasks WHERE id = ANY($1::int[])", ids)
     chk(len(batch) == 1 and batch[0]["batch_id"], "aynı istekteki görevler tek iş kimliğinde")
     chk(req("/api/deploy_orchestration", admin, dict(ctx, reason="x" * 501))[0] == 422, "gerekçe en çok 500 karakter")
@@ -146,15 +147,22 @@ async def run(c, admin, viewer):
     chk(req("/api/devices/HW-JB1/activity", None)[0] == 401, "son işlemler: oturumsuz 401")
 
     print("== politika: son değiştiren")
+    # CI'da aynı veritabanını kullanan sonraki testler politikayı değişmemiş bulsun: önce saklanır, sonra geri yazılır
+    saved = await c.fetch(
+        "SELECT key, value FROM global_settings WHERE key IN ('agent_policies', 'agent_policies_meta')")
+    await c.execute("DELETE FROM global_settings WHERE key = 'agent_policies_meta'")
     chk(req("/api/agent_policies/meta", viewer)[1].get("updated_by") is None, "değişiklik yokken boş")
-    s, _ = req("/api/agent_policies", admin, {"fair_use_text": "jb", "dns_categories": [], "auto_quarantine": False,
-                                               "quarantine_threshold": 5})
+    policy = {"fair_use_text": "jb", "dns_categories": [], "auto_quarantine": False, "quarantine_threshold": 5}
+    s, _ = req("/api/agent_policies", admin, policy)
     s2, m = req("/api/agent_policies/meta", viewer)
     chk(s == 200 and s2 == 200 and m.get("updated_by") == "jbadmin" and str(m.get("updated_at", "")).startswith("20"),
         "kim ve ne zaman saklandı (%s)" % m)
     chk(await c.fetchval("SELECT count(*) FROM device_audit_logs WHERE action = 'policy_update'") >= 1,
         "denetim kaydına yazıldı")
     chk(req("/api/agent_policies/meta", None)[0] == 401, "meta: oturumsuz 401")
+    await c.execute("DELETE FROM global_settings WHERE key IN ('agent_policies', 'agent_policies_meta')")
+    for r in saved:
+        await c.execute("INSERT INTO global_settings (key, value) VALUES ($1, $2)", r["key"], r["value"])
 
     print("== ajan güncellemesi ilerlemesi")
     since = time.time() - 5

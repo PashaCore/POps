@@ -67,9 +67,19 @@ def _sha(s):
 PCS = ["HW-FT1", "HW-FT2"]
 
 
+ENFORCE_BEFORE = []   # testten önceki enforce_agent_auth değeri; sonunda geri yazılır
+
+
 async def setup():
     c = await conn()
     try:
+        # Bu test anahtarsız (eski) ajan yollarını da sınar: zorlama kapalı olmalı. Yeni veritabanında migration 0014
+        # zorlamayı açık başlatır; eskiden bu test, kendinden önce çalışan bir testin kapatmış olmasına güveniyordu.
+        ENFORCE_BEFORE.append(await c.fetchval("SELECT value FROM global_settings WHERE key = 'enforce_agent_auth'"))
+        await c.execute(
+            "INSERT INTO global_settings (key, value) VALUES ('enforce_agent_auth', '0') "
+            "ON CONFLICT (key) DO UPDATE SET value = '0'"
+        )
         for u, role in (("ftsuper", "superadmin"), ("ftadmin", "admin"), ("ftviewer", "viewer")):
             await c.execute("DELETE FROM users WHERE username=$1", u)
             await c.execute(
@@ -468,6 +478,10 @@ def main():
     asyncio.run(q("DELETE FROM device_software WHERE pc_name = ANY($1::text[])", PCS))
     asyncio.run(q("DELETE FROM device_patch_status WHERE pc_name = ANY($1::text[])", PCS))
     asyncio.run(q("DELETE FROM tasks WHERE target_pc = ANY($1::text[])", PCS))
+    if ENFORCE_BEFORE and ENFORCE_BEFORE[0] is not None:
+        asyncio.run(q("UPDATE global_settings SET value = $1 WHERE key = 'enforce_agent_auth'", ENFORCE_BEFORE[0]))
+    else:
+        asyncio.run(q("DELETE FROM global_settings WHERE key = 'enforce_agent_auth'"))
 
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
