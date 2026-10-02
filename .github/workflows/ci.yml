@@ -120,10 +120,10 @@ jobs:
           fi
       - name: HTML output is escaped (XSS)
         # innerHTML / insertAdjacentHTML / document.write ve PHP echo'ya kaçırılmamış veri gitmesin. Önce betiğin
-        # öz sınamaları, sonra panelin kendisi; incelenmiş istisnalar Dashboard/tools/html_sinks_allowlist.txt'de.
+        # öz sınamaları, sonra panelin kendisi; incelenmiş istisnalar tools/html_sinks/html_sinks_allowlist.txt'de.
         run: |
-          python3 Dashboard/tools/test_check_html_sinks.py
-          python3 Dashboard/tools/check_html_sinks.py
+          python3 tools/html_sinks/test_check_html_sinks.py
+          python3 tools/html_sinks/check_html_sinks.py
 
   version:
     name: Version consistency

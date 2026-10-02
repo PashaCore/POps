@@ -665,6 +665,12 @@
             : d.bypass_key === 'pending' ? '<span class="badge muted">gönderildi, onay bekleniyor</span>'
             : '<span class="badge muted">ortak anahtar (eski)</span>';
         let out = `<br>Çevrimdışı bypass anahtarı: ${bypass}`;
+        // Son kopma (0.1.14 sunucu): ne zaman ve neden (WebSocket kapanış kodu)
+        if (d.last_disconnect_reason) {
+            const at = d.last_disconnect_at ? new Date(d.last_disconnect_at).toLocaleString('tr-TR') : '';
+            out += `<br>Son bağlantı kopması: ${escapeHtml(d.last_disconnect_reason)}`
+                + (at ? ` <span class="muted-text">(${escapeHtml(at)})</span>` : '');
+        }
         if (!h) {
             return out + `<br><span class="muted-text"><i class="fas fa-circle-info"></i> Bu ajan (${escapeHtml(fmtV(d.agent_version))}) durum bildirmiyor; bildirim v0.1.12-alpha ile geldi.</span>`;
         }

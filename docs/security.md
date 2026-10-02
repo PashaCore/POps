@@ -57,11 +57,11 @@ text and quoted attributes, `jsArg()` for arguments of inline `onclick` handlers
 enough there), `encodeURIComponent()` for URL parts. PHP output uses `htmlspecialchars`, or `json_encode` with
 `JSON_HEX_TAG` inside scripts.
 
-The `Dashboard checks` CI job runs `Dashboard/tools/check_html_sinks.py` (and its self-tests), which fails on any
+The `Dashboard checks` CI job runs `tools/html_sinks/check_html_sinks.py` (and its self-tests), which fails on any
 `innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write` or PHP `echo` that writes an unescaped value, and on
 any HTML template or string concatenation built from one. To run it locally:
-`python3 Dashboard/tools/check_html_sinks.py`. When it reports a value that is safe (a number counted on the
-page, a class name from a fixed table), add a line to `Dashboard/tools/html_sinks_allowlist.txt`: the file, the
+`python3 tools/html_sinks/check_html_sinks.py`. When it reports a value that is safe (a number counted on the
+page, a class name from a fixed table), add a line to `tools/html_sinks/html_sinks_allowlist.txt`: the file, the
 key the checker printed for that line, and a one-line reason. Keys follow the line's text, not its number, so
 unrelated edits do not break them; changing the line itself requires a new review. Prefer escaping over adding
 an entry.
