@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Server: a 2FA code works once.** The server remembers the last code step used per account; the same code (or an older one) is refused inside its 90-second validity window, so a code seen over a shoulder or captured cannot be replayed. Two simultaneous logins with one code: only one succeeds.
+- **Server: the second login step is bound to the session.** If the user's sessions are revoked, the password changed or the role edited between the password and the code, the pending step is refused.
+- **Server: 2FA secrets are encrypted in the database** (Fernet). The key is `TOTP_ENCRYPTION_KEY` in `.env` or, if unset, derived from `JWT_SECRET`; existing secrets are re-encrypted at startup. A leaked database dump or backup no longer contains usable 2FA secrets. Set `TOTP_ENCRYPTION_KEY` before ever changing `JWT_SECRET` (see [docs/security.md](docs/security.md)).
+- **Server: stopping a screen stream is `POST /api/stream/stop` for admins** (was a `GET` any signed-in user could trigger, also from a link).
+- **Server: self-update deploys only release tags signed with a trusted SSH key.** When `/etc/pops/allowed_signers` exists, `pops-selfupdate` checks the newest `v*` tag with `git verify-tag` against that file before fast-forwarding; an unsigned, lightweight, GPG-signed or foreign-key tag is neither merged nor deployed, and the status reads `etiket imzasi dogrulanamadi`. Without the file the update goes on with an "imzasız etiket" warning unless `REQUIRE_SIGNED_TAGS=1` (new in `selfupdate.conf`). The dry run reports what the check would say. Signing and setup: `docs/self-update.md`.
+- **Server: deploy and self-update settings are read only from root-owned files.** `pops-deploy-backend` and `pops-selfupdate` refuse `/etc/pops/deploy.conf`, `/etc/pops/selfupdate.conf` and `allowed_signers` when they (or `/etc/pops`) are writable by group or others, belong to another user or are symbolic links, and then change nothing.
+- **Panel: every value that comes from a PC or a person is escaped, and CI keeps it so.** All ~180 places that write HTML were reviewed. Fixed: helpdesk ticket status, ids and counts, the agent-health error count, enrollment token counts, report dates and counts, scheduled-task dates and ids, licence ids and the server memory figure are escaped; ids in API paths are URL-encoded; the sidebar escapes its links. A module dropped onto the deployment chain is now taken from the module library, so text dragged in from another page can no longer add a command. `tools/html_sinks/check_html_sinks.py` runs in the `Dashboard checks` job and fails on unescaped output (`innerHTML`, `insertAdjacentHTML`, `document.write`, PHP `echo`), on `escapeHtml` inside inline `on*` handlers and on unescaped `href`/`src` values; reviewed exceptions are listed with a reason in `tools/html_sinks/html_sinks_allowlist.txt`.
+- **Panel: Vision stops a stream with `POST /api/stream/stop`** (JSON `{"pc_name": …}`, as the other admin calls) instead of a `GET`; the call sent when the page closes keeps `keepalive`. Needs the matching server change.
+- **Panel: 2FA is recommended to admins.** An admin or superadmin whose own 2FA is off sees a notice on **Ayarlar** and **Sistem & Sürüm**; it can be hidden for 7 days in that browser. 2FA stays optional.
+
+### Fixed
+
+- **Server: a scheduled task is never lost.** Its tasks and the schedule's next run are written in one transaction; if the server or the database stops in between, nothing is written and the next round retries. A schedule with a broken target list is still advanced and its error recorded.
+- **Server: a task that never reports back times out.** 35 minutes after it was sent (the agent's own limit is 30) a `Running` task becomes `Timed Out` and the device's queue moves on; a late result is still stored.
+- **Server: a double click or a retried request creates the task once.** The same user, targets and commands within 5 seconds return `duplicate: true` without a new task; all tasks of one request are written together.
+- **Server: a negative concurrency limit is refused** (it silently stopped the queue).
+- **Server: `POST /api/remote_input` forwards input the way the tray reads it** (fields at the top level; the old `data` object is still accepted). Only known input fields are forwarded.
+- **Server: a notification that could not be written is retried** (after 5, 30 and 120 seconds) instead of being suppressed as a duplicate for 10 minutes.
+- **Server: password checks no longer pause the server.** bcrypt runs outside the event loop, and the check for an unknown user uses a hash made once at startup.
+- **Server: an agent update result is confirmed after it is stored.** The server answers `update_result_ack` (agents 0.1.14+ keep the result until then and send it again), stores each result once, and keeps the list of updates still waiting for a result across restarts.
+- **Server: a failed deploy also restores the venv.** When `requirements.txt` changed, `pops-deploy-backend` snapshots the whole venv before `pip` (`venv-<time>-<pid>.tgz` next to the code backup) and restores it at the same path together with the code on any failure after the first change: `pip`, copying a file, the restart or the health check. Before, `pip` changed the live venv with no way back, and a `pip` or copy error ended the script before the rollback and left the code half-deployed.
+- **Server: `install.sh` with `LE_EMAIL`** passed the address to certbot a second time as a stray argument, so Let's Encrypt always failed and the install fell back to the internal CA. A broken nginx configuration no longer ends the install before the summary with the admin password.
+- **Panel: the Terminal quick buttons work.** The agent runs commands with `cmd.exe`, but **Yazıcı Kuyruğu** and **Temp Temizle** were PowerShell commands whose paths never expanded (`$env:` inside single quotes), so they deleted nothing. Each quick button is now the exact `cmd` line the agent runs (**Temp Temizle** starts PowerShell itself): **Ağı Yenile** succeeds when the PC has an IPv4 address after renewing, **Yazıcı Kuyruğu** stops the spooler, clears its queue and starts it again, and **Temp Temizle** empties `C:\Windows\Temp` and every user's temp folder, skipping files in use, the running task's own batch file and links. **Görev Sonlandır** quotes the program name.
+- **Panel: remote keyboard sends the physical key and modifiers** (`code`, Ctrl/Alt/Shift/Win/AltGr), so the agent can handle Turkish layouts and AltGr characters, and keys still held are released when control is turned off, the page loses focus or the tab is hidden.
+
+### Changed
+
+- **Server: database time limits.** Getting a pool connection waits at most 10 seconds, a query at most 30, an idle transaction is closed after 60 (`DB_ACQUIRE_TIMEOUT`, `DB_COMMAND_TIMEOUT`, `DB_CONNECT_TIMEOUT`, `DB_IDLE_IN_TRANSACTION_MS`). Migrations run on their own connection without a limit.
+- **Server: heartbeats are written in batches** every 2 seconds (`HEARTBEAT_FLUSH_SECONDS`), one statement for all devices, instead of one write per heartbeat. A disconnected device's pending heartbeat is dropped so it stays `Offline`.
+- **Server: a slow panel no longer holds up the others.** Each panel has its own send queue; screen frames and previews keep only the newest one per device, and a panel that falls too far behind is closed (the browser reconnects).
+- **Server: fewer queries.** Indexes for reports, device activity, the bypass code counter and task history (migration `0015`). A device that connects under an unknown ID is matched only against devices with the same UUID or BIOS serial, not the whole table. Lab and device targets are resolved in one query.
+- **Server: clean shutdown.** The scheduler stops, pending heartbeats are written, notifications being sent get up to 10 seconds, then the database pool closes.
+- **Server: `pops-deploy-backend` and `pops-selfupdate` read their paths from `/etc/pops/deploy.conf`** (`REPO`, `APP`, `SVC`, `OWNER`, `HEALTH_BASE`, `KEEP_BACKUPS`; template `Installer/server/deploy.conf.example`) instead of the project server's hard-coded values. Without the file they use the `install.sh` defaults, and `install.sh` now writes it. Both stop before changing anything when the checkout, the backend folder, the service user or the unit does not exist. **Upgrading:** a server not laid out by `install.sh` needs `/etc/pops/deploy.conf` before the new scripts are installed to `/usr/local/sbin` (by hand, as before).
+- **Release: the server package also contains `Installer/server/` and the Docker files** (`docker-compose.yml`, `docker/`, `.dockerignore`), so a native or Docker install can start from the tarball.
+- **CI: GitHub Actions are pinned to commit SHAs** (R-09), and a check refuses an unpinned `uses:`; Dependabot keeps the pins current.
+- **CI: new "Server scripts" job.** shellcheck on the server scripts, and `Installer/server/tests/test_deploy.sh` (no root, stubbed `systemctl`/`curl`/`sudo`/`pip`): normal deploy, byte-for-byte rollback of code and venv after a health-check, `pip` or copy failure, config checks, and signed-tag self-update including the dry run.
+
+### Added
+
+- **Server: retention.** Agent event logs and finished tasks are deleted after 365 days and read notifications after 90, once a day in chunks; superadmins change the periods with `GET`/`POST /api/system/retention` (`0` keeps forever). The hash-chained audit log is never deleted (see decision D-18).
+- **Server: disk and certificate alerts.** Free disk space is checked hourly (warning under 10 % or 2 GB, critical under 5 % or 1 GB) and TLS certificates daily (warning 21 days before expiry, critical 7): the `pops-tls` files and the panel's HTTPS address. Both appear as notifications and in `/api/system/diagnostics`.
+- **Server: load figures.** Diagnostics and `/metrics` show queries per heartbeat, database writes per second, the time from queueing a task to sending it and the time to write a command to the agent.
+- **Server: why a device went offline.** The WebSocket close code is stored with the time (`last_disconnect_at`, `last_disconnect_reason`) and returned by `/api/devices`.
+- **Panel:** tasks show `Timed Out` as "Zaman aşımı"; the device card on **Sistem & Sürüm** shows the last disconnect and its reason.
+- **Docs:** supported systems and network prerequisites (outbound 443 with WebSocket), release key rotation, backup consistency, an updated roadmap.
+- **Server: `server_info`.** After registration the server tells the agent its version and the features it supports.
+- **Tests:** `test_p1.py` (20 simultaneous enrollments on real PostgreSQL, agents 0.1.11–0.1.14 against this server, scheduler atomicity, timeouts, retention, batching) and new unit tests.
+
 ### Agent
 
 - **Remote keyboard: Turkish and other non-ASCII characters.** Typed characters are sent as Unicode with `SendInput` (`KEYEVENTF_UNICODE`), so İ, ı, ş, ğ, @, €, { } and \ arrive as typed; before, a character was turned into a virtual key by upper-casing it (İ became `0`, ş/ğ/@/€ were wrong or missing). Named keys cover F1–F24, Home/End, PageUp/PageDown, Insert, CapsLock, NumLock, ScrollLock, PrintScreen, Pause and the menu key, with left/right modifiers from `code` and the extended-key flag where Windows needs it. Shortcuts (Ctrl+C, Win+R) use the key from `code` or the foreground window's layout. Keys still held when control ends or the service connection drops are released. Older panels without `code` keep the old behaviour for ASCII letters and digits. Mapping: `POps.Shared.RemoteKeyMap`, with tests.
@@ -409,7 +459,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.12-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.13-alpha...HEAD
+[0.1.13-alpha]: https://github.com/PashaCore/POps/compare/v0.1.12-alpha...v0.1.13-alpha
 [0.1.12-alpha]: https://github.com/PashaCore/POps/compare/v0.1.11-alpha...v0.1.12-alpha
 [0.1.11-alpha]: https://github.com/PashaCore/POps/compare/v0.1.10-alpha...v0.1.11-alpha
 [0.1.10-alpha]: https://github.com/PashaCore/POps/compare/v0.1.9-alpha...v0.1.10-alpha

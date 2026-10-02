@@ -15,7 +15,8 @@ from pops.security import require_admin, require_superadmin
 
 router = APIRouter()
 
-_EMAIL_RE = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")
+# Alan adı kısmı noktalarla ayrılmış etiketler; etiket noktayı içermediği için ifade belirsiz değil (doğrusal)
+_EMAIL_RE = re.compile(r"^[^@\s,;]+@[^@\s,;.]+(?:\.[^@\s,;.]+)+$")
 
 
 @router.get("/api/notifications")
@@ -76,8 +77,9 @@ async def get_notify_settings(auth: dict = Depends(require_superadmin)):
 def _validated(data: NotifySettingsInput) -> dict:
     if data.min_severity not in notify_mod.SEVERITIES:
         raise HTTPException(status_code=400, detail="Geçersiz önem seviyesi.")
-    emails = [e.strip() for e in (data.email_to or "").split(",") if e.strip()]
-    bad = [e for e in emails if not _EMAIL_RE.match(e)]
+    emails = [e.strip() for e in (data.email_to or "")[:5000].split(",") if e.strip()]
+    # Uzunluk düzenli ifadeden ÖNCE sınırlanır (RFC 5321: adres en fazla 254 karakter); uzun girdi ifadeye gitmez
+    bad = [e for e in emails if len(e) > 254 or not _EMAIL_RE.match(e[:254])]
     if bad or len(emails) > 20:
         raise HTTPException(status_code=400, detail="Geçersiz e-posta adresi: %s" % ", ".join(bad[:3]))
     url = (data.webhook_url or "").strip()

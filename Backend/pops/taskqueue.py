@@ -1,27 +1,47 @@
 """Görev kuyruğu: eşzamanlılık sınırına göre bekleyen görevleri çevrimiçi ajanlara dağıtır."""
 
 import asyncio
+import datetime
 
+from pops import metrics
 from pops.db import execute_query
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 
 
-async def resolve_targets(target_mode: str, targets) -> list:
-    """Görev hedefleri: ALL (tüm cihazlar), LAB (lab adları), PC (HW- kimlikleri) -> [{"pc", "lab"}]."""
-    out = []
+async def resolve_targets(target_mode: str, targets, conn=None) -> list:
+    """Görev hedefleri: ALL (tüm cihazlar), LAB (lab adları), PC (HW- kimlikleri) -> [{"pc", "lab"}].
+    Hedef sayısından bağımsız tek sorgu (eskiden her lab/cihaz için ayrı sorgu gidiyordu). conn verilirse o bağlantı
+    (ve işlemi) kullanılır."""
+
+    async def fetch(query, *params):
+        if conn is not None:
+            return [dict(r) for r in await conn.fetch(query, *params)]
+        return await execute_query(query, params, fetch=True) or []
+
     if target_mode == 'ALL':
-        res = await execute_query("SELECT pc_name, lab_name FROM clients", fetch=True)
-        out = [{"pc": r["pc_name"], "lab": r["lab_name"]} for r in (res or [])]
-    elif target_mode == 'LAB':
-        for lab in targets:
-            res = await execute_query("SELECT pc_name, lab_name FROM clients WHERE lab_name = $1", (lab,), fetch=True)
-            out.extend([{"pc": r["pc_name"], "lab": r["lab_name"]} for r in (res or [])])
-    else:
-        for pc in targets:
-            res = await execute_query("SELECT lab_name FROM clients WHERE pc_name = $1", (pc,), fetch=True)
-            out.append({"pc": pc, "lab": res[0]["lab_name"] if res else "Bilinmeyen Lab"})
-    return out
+        res = await fetch("SELECT pc_name, lab_name FROM clients")
+        return [{"pc": r["pc_name"], "lab": r["lab_name"]} for r in res]
+    names = [str(t) for t in (targets or [])]
+    if target_mode == 'LAB':
+        res = await fetch(
+            "SELECT pc_name, lab_name FROM clients WHERE lab_name = ANY($1::text[]) "
+            "ORDER BY array_position($1::text[], lab_name), pc_name",
+            names,
+        )
+        return [{"pc": r["pc_name"], "lab": r["lab_name"]} for r in res]
+    res = await fetch("SELECT pc_name, lab_name FROM clients WHERE pc_name = ANY($1::text[])", names)
+    labs = {r["pc_name"]: r["lab_name"] for r in res}
+    return [{"pc": pc, "lab": labs[pc] if pc in labs else "Bilinmeyen Lab"} for pc in names]
+
+
+def _seconds_since(created_at) -> float:
+    # created_at yerel saatte 'YYYY-MM-DD HH:MM:SS' metni
+    try:
+        created = datetime.datetime.strptime(str(created_at), "%Y-%m-%d %H:%M:%S")
+        return (datetime.datetime.now() - created).total_seconds()
+    except ValueError:
+        return 0.0
 
 
 # Eşzamanlı çağrılar birleştirilir: bir tur sürerken gelen çağrılar üst üste yığılmaz, tur bitince bir kez
@@ -49,7 +69,10 @@ async def _process_queue_once():
     if not await execute_query("SELECT 1 FROM tasks WHERE status = 'Pending' LIMIT 1", fetch=True):
         return
     limit_row = await execute_query("SELECT value FROM global_settings WHERE key = 'concurrent_limit'", fetch=True)
-    limit = int(limit_row[0]["value"]) if limit_row else 5
+    try:
+        limit = max(0, int(limit_row[0]["value"])) if limit_row else 5
+    except ValueError:
+        limit = 5
     running_row = await execute_query(
         "SELECT COUNT(DISTINCT target_pc) as c FROM tasks WHERE status = 'Running'", fetch=True
     )
@@ -84,7 +107,9 @@ async def _process_queue_once():
         sent = await manager.send_command(
             {"action": "execute", "task_id": task["id"], "script_path": task["script_path"], "requested_by": actor}, pc
         )
-        if not sent:
+        if sent:
+            metrics.observe_dispatch(_seconds_since(task.get("created_at")))
+        else:
             # Bağlantı bu arada koptu: görev ajana ulaşmadı, sıraya geri döner (yeniden bağlanınca gönderilir)
             await execute_query(
                 "UPDATE tasks SET status = 'Pending', dispatched_at = NULL WHERE id = $1 AND status = 'Running'",

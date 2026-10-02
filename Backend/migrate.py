@@ -18,7 +18,8 @@ Kullanım:
     python migrate.py            # env'deki DB_* ile bağlan, bekleyenleri uygula
     python migrate.py --status   # neyin uygulandığını yaz, hiçbir şey değiştirme
 
-server.py açılışta `run_migrations(pool)` çağırır (eski init_db() yerine).
+server.py açılışta `run_migrations_on(conn)` çağırır (eski init_db() yerine): havuzdan değil, sorgu süre sınırı
+olmayan ayrı bir bağlantıda (büyük bir tabloda indeks kurmak havuzun 30 sn'lik sınırını aşabilir).
 """
 import asyncio
 import glob
@@ -80,9 +81,14 @@ async def _apply(conn: asyncpg.Connection, verbose: bool = True) -> List[str]:
 
 
 async def run_migrations(pool: asyncpg.Pool, verbose: bool = True) -> List[str]:
-    """server.py açılışında çağrılır: havuzdan bir bağlantı alıp bekleyen migration'ları uygular."""
+    """Havuzdan bir bağlantı alıp bekleyen migration'ları uygular."""
     async with pool.acquire() as conn:
         return await _apply(conn, verbose=verbose)
+
+
+async def run_migrations_on(conn: asyncpg.Connection, verbose: bool = True) -> List[str]:
+    """Verilen bağlantıda bekleyen migration'ları uygular (server.py açılışı)."""
+    return await _apply(conn, verbose=verbose)
 
 
 def _db_config() -> dict:

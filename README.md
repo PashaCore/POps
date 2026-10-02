@@ -65,7 +65,7 @@ Instead of hiding administrative activity from users, POps embraces **transparen
 
 ## 🏗 Architecture
 
-POps relies on a dual-socket, asynchronous architecture to stay responsive across a lab or a multi-lab fleet. Measured, reproducible capacity (**[capacity report with charts](docs/kapasite/README.md)**, Turkish; raw numbers in [`BENCHMARKS.md`](BENCHMARKS.md)): one server process brings **5,000 agents back within 11 seconds** of a restart with no failed attempt, and in steady state uses 40 % of one core (PostgreSQL 17 %) and ~69 MB + 0.16 MB per agent. Hardware guidance by fleet size is in the report. More workers + Redis are about availability, not capacity.
+POps relies on a dual-socket, asynchronous architecture to stay responsive across a lab or a multi-lab fleet. Measured, reproducible capacity of the **command channel** (**[capacity report with charts](docs/kapasite/README.md)**, Turkish; raw numbers in [`BENCHMARKS.md`](BENCHMARKS.md)): with 0.1.11-alpha, simulated agents connecting and sending heartbeats over plain WebSocket on the same host, one server process brought **5,000 agents back within 11 seconds** of a restart with no failed attempt, and in steady state used 40 % of one core (PostgreSQL 17 %) and ~69 MB + 0.16 MB per agent. Not measured yet: TLS, the health telemetry added in 0.1.12, the batched heartbeat writes of 0.1.14, and Vision streams; a new run is planned. Hardware guidance by fleet size is in the report. More workers + Redis are about availability, not capacity.
 
 
 ```mermaid

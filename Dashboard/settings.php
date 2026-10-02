@@ -77,7 +77,7 @@
         </button>
     </div>
 
-    <div class="setting-card">
+    <div class="setting-card" id="twofaCard">
         <div class="setting-header">
             <i class="fas fa-shield-halved" style="color:var(--success-solid);"></i> İki Adımlı Doğrulama (2FA)
         </div>
@@ -303,7 +303,7 @@ async function saveUser() {
     if (!username || (!id && !password)) return showToast('Kullanıcı adı ve şifre girin.', 'warning');
     const payload = { username, password: password || undefined, role, permissions: JSON.stringify(perms) };
     const method = id ? 'PUT' : 'POST';
-    const url = id ? `${apiBase}/api/admin/users/${id}` : `${apiBase}/api/admin/users`;
+    const url = id ? `${apiBase}/api/admin/users/${encodeURIComponent(id)}` : `${apiBase}/api/admin/users`;
     try {
         const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (res.ok) { closeModal('userModal'); loadUsers(); showToast('Kullanıcı kaydedildi.', 'success'); }
@@ -314,7 +314,7 @@ async function saveUser() {
 async function deleteUser(id) {
     if (!confirm('Kullanıcıyı silmek istediğinize emin misiniz?')) return;
     try {
-        const res = await fetch(`${apiBase}/api/admin/users/${id}`, { method: 'DELETE' });
+        const res = await fetch(`${apiBase}/api/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
         if (res.ok) { loadUsers(); showToast('Kullanıcı silindi.', 'success'); }
         else showToast(await apiErrorMessage(res, 'Silinemedi.'), 'error');
     } catch (e) { showToast('Silinemedi.', 'error'); }
@@ -339,6 +339,7 @@ function renderTwofa(enabled) {
     document.getElementById('twofaSetup').style.display = 'none';
     document.getElementById('twofaSetupBtn').style.display = enabled ? 'none' : 'block';
     document.getElementById('twofaDisableBtn').style.display = enabled ? 'block' : 'none';
+    if (typeof popsTwofaNudge === 'function') popsTwofaNudge(enabled);
     if (enabled) {
         box.className = 'status-box online';
         box.innerHTML = '<i class="fas fa-lock"></i> 2FA aktif — girişte kod istenir';

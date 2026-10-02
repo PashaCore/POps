@@ -1,6 +1,6 @@
 # POps Roadmap
 
-POps is alpha software; the latest release is **0.1.4-alpha**. This page lists what is done, what is being built
+POps is alpha software; the latest release is **0.1.13-alpha**. This page lists what is done, what is being built
 and what is planned. Items under **Next** and **Later** are plans, not features: nothing there is available until
 it appears in [`CHANGELOG.md`](CHANGELOG.md). There are no dates. The reasons behind existing designs are in
 [`docs/decisions.md`](docs/decisions.md).
@@ -33,7 +33,7 @@ tagged release.
 - [x] Immediate session revocation (`token_version`) and per-command accountability (0.1.4)
 - [x] Capability policy: a PC can disable the terminal and Vision; the server can only switch them off (0.1.4)
 - [x] Remote input only in an accepted or announced session; frames only to that admin (0.1.4)
-- [x] Webhooks cannot target internal addresses (SSRF guard) (Unreleased)
+- [x] Webhooks cannot target internal addresses (SSRF guard) (0.1.5)
 
 ### Updates and releases
 
@@ -42,8 +42,11 @@ tagged release.
 - [x] Agent MSI (WiX) with health check and transactional rollback; rollback drill (0.1.3)
 - [x] Signed agent updates dispatched from the panel; offline upload of releases (0.1.3)
 - [x] Server self-update from the panel through a root systemd path unit (0.1.3)
-- [x] One-click download and verification of the signed agent release from GitHub (Unreleased)
-- [x] Release notes from the CHANGELOG on the **Sistem & Sürüm** page (Unreleased)
+- [x] One-click download and verification of the signed agent release from GitHub (0.1.5)
+- [x] Release notes from the CHANGELOG on the **Sistem & Sürüm** page (0.1.5)
+- [x] Rollback that really restores the previous agent, proven by drills on real PCs (0.1.7, 0.1.8); an update
+  counts as successful only once the new agent is operational (0.1.12)
+- [x] Server self-update follows signed release tags; the release waits for the full test suite (0.1.12, 0.1.13)
 
 ### Maintainability
 
@@ -53,9 +56,11 @@ tagged release.
 - [x] CI builds every agent; CodeQL and Dependabot (0.1.2)
 - [x] Security invariants tested against a running server in CI (0.1.3)
 - [x] Agent simulator and a first measured baseline ([`BENCHMARKS.md`](BENCHMARKS.md)) (0.1.3)
-- [x] Operator documentation in `docs/` (Unreleased)
+- [x] Operator documentation in `docs/` (0.1.5)
+- [x] Structured logs with request IDs, Prometheus `/metrics`, diagnostics page (0.1.7); tested backups with
+  restore check (0.1.7)
 
-### Operations (Unreleased)
+### Operations (0.1.5–0.1.6)
 
 - [x] Notifications: panel bell, e-mail, webhook (Slack, Discord, Teams or any JSON endpoint)
 - [x] Scheduled tasks (once, daily, chosen weekdays) through the normal task queue
@@ -65,33 +70,55 @@ tagged release.
 - [x] Licence tracking against the software inventory (**Lisanslar** tab on **Raporlar**)
 - [x] Auto-enrollment lab rule; reworked **Politikalar** page with per-category DNS domain lists
 - [x] Optional Docker Compose packaging
+- [x] Agent side of software inventory and Windows Update status, with on-request update installs (0.1.5)
+- [x] **Sorun bildir** in the tray: students and staff open helpdesk tickets (0.1.6)
 
-## In progress
+### Hardening after external reviews (0.1.8–0.1.13)
 
-- [ ] **Agent side of software inventory and Windows Update status** (planned for 0.1.5-alpha). The server
-  already accepts the reports from enrolled agents.
-- [ ] **Rollback drill of the 0.1.4-alpha updater** during the 0.1.5-alpha rollout
-  ([`Agent/README.md`](Agent/README.md#rollback-drill)).
-- [ ] **"Sorun bildir" (report a problem) in the tray**: the agent half of the helpdesk; see below.
+- [x] Reconnect with exponential backoff and jitter; 2000 agents back in ~4 s after a restart (0.1.8, 0.1.11)
+- [x] The tray shows what administrators did on this PC in the last 30 days (0.1.9)
+- [x] HTTPS set up by the installer (school CA or Let's Encrypt) and agents pinned to that CA (0.1.10)
+- [x] Quarantine cannot be escaped through Task Manager, switch user or sign-out (0.1.11)
+- [x] Security audit R-01..R-20 (0.1.12): Vision only with the device's own key, per-device bypass keys, local
+  Windows event log of remote actions, agent health in the panel
+- [x] Second review F01–F21 (0.1.13): no root writes into backend-writable paths, enrollment in one transaction
+  with hashed tokens, identity bound to the device key, revoked panel sessions closed, honest task states with exit
+  codes and cancel, bounded command output, once-per-day bypass codes, signed deployment links
+
+## In progress (0.1.14)
+
+- [ ] **Reliability:** atomic scheduled tasks, stuck-task timeout, duplicate-task guard, database time limits,
+  batched heartbeats, per-panel send queues, retention, disk and certificate alerts, load figures.
+- [ ] **Security:** 2FA codes work once and are encrypted at rest; signed release tags for server self-update;
+  deploy settings from a root-owned file with venv rollback; actions pinned to commit SHAs; XSS check in CI.
+- [ ] **Agent:** Turkish keyboard in remote control, update results kept until the server confirms them,
+  quarantine follows a server address change, leftover command files removed, standalone POpsVision removed.
 
 ## Next
 
 Short design notes. Where options are listed, the choice has not been made.
 
-### Helpdesk and licences
+### Architecture round (after 0.1.14)
 
-*Status: server side and panel done (Unreleased); the tray part is next.*
+*Status: planned, in this order of value.*
 
-- **Tray "Sorun bildir".** A form in the tray (category, subject, description) that opens a ticket for that PC
-  and the signed-in user through `POST /api/tickets/agent/{hw_id}` and shows the replies. The server already
-  accepts only enrolled agents there and limits each device (5 open tickets, 10 new per hour), so an unenrolled
-  or misbehaving client cannot flood the queue. Internal notes never reach the agent.
-- **Transparency.** The tray shows what is sent (user name, PC, text) and never attaches a screenshot or logs
-  unless the user chooses to.
-- **Licences need software data.** Counting installations only works once agents report installed programs
-  (0.1.5-alpha). Matching is by text contained in the program name, optionally filtered by publisher, so the
-  matched programs the panel shows while a licence is defined should be checked; exact product identifiers can
-  replace text matching later if it proves too loose.
+- **Task state machine:** created → dispatched → received → started → finished, with an attempt id per send, so
+  a lost message is distinguished from a lost result.
+- **Signed commands (R-01):** commands carry a signature the agent verifies, so a database or backend compromise
+  cannot run code on PCs without the signing key.
+- **mTLS for agents**, or pinning the server certificate through the enrollment token for self-signed setups.
+- **Audit log hardening (R-07):** a separate database role that can only insert into the audit table, an anchor
+  of the chain kept outside the server, and archiving old rows (decision D-18).
+- **Immutable device id** with foreign keys and proper timestamps instead of text dates and `pc_name` keys.
+- **Lab-scoped permissions** (an admin limited to some labs) and a server-side owner filter for helpdesk tickets.
+- **Device list paging** for large fleets.
+- **High availability:** several backend processes with Redis (see Vision below).
+- **RDP and multi-session PCs (F19):** today the tray assumes one console session.
+- **Measure again:** 5,000 agents on 0.1.12+ over HTTPS with health telemetry, and a Vision load test.
+- **End-to-end tests:** Playwright for the panel in CI and a Windows test machine for the real MSI update and
+  rollback.
+- **Code signing:** apply to SignPath Foundation (free Authenticode for open-source projects).
+- **Update loop guard:** do not send the same update again to a PC that reported `pending_reboot`.
 
 ### Linux agent (Pardus first)
 
@@ -180,14 +207,18 @@ Whatever the choice, a second maintainer with review and release rights would re
 ## Other open items
 
 - Move the agent to .NET 10 before .NET 8 support ends (10 November 2026).
-- mTLS for agents, or pinning the server certificate through the enrollment token for self-signed setups.
-- Make the audit log write-protected, not only tamper-evident: a separate database owner role.
+- Move the backend to Python 3.11 or newer (AlmaLinux/RHEL 9 ship a `python3.11` package). Upstream support for
+  3.9 ended in October 2025 (RHEL still backports security fixes), and new FastAPI, uvicorn and python-dotenv
+  releases already require 3.10; Dependabot ignores those until then.
 - Per-action re-authentication for dangerous panel actions; enforce freshness of signed manifests.
 - Authenticode-sign the agent binaries; the tray pipe check then also requires a valid signature.
 - Close pentest findings F9 and F11.
 - Freeze software (Deep Freeze and similar): thaw before an update and freeze again afterwards. Today: enroll
   before freezing or use `PersistDir` ([`Agent/README.md`](Agent/README.md#machines-with-freeze-software)).
-- Remove the legacy `Agent/POpsVision` project and the leftovers that still name it.
+- A Turkish "Neden POps?" page for school management (terminal and screen off on staff PCs, on in labs) and a
+  "terminal/ekran kapalı" badge in the device list.
+- Release signing key rotation with two trusted keys in the agent (procedure in
+  [`keys/README.md`](keys/README.md#rotasyon)).
 
 ## Later (not scheduled)
 

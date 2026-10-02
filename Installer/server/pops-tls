@@ -82,7 +82,7 @@ reload_web() {
     local svc
     for svc in nginx httpd apache2; do
         if systemctl is-active -q "$svc" 2>/dev/null; then
-            systemctl reload "$svc" && log "$svc yenilendi" || log "uyarı: $svc yenilenemedi"
+            if systemctl reload "$svc"; then log "$svc yenilendi"; else log "uyarı: $svc yenilenemedi"; fi
         fi
     done
 }

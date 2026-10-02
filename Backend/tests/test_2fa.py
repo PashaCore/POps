@@ -3,7 +3,9 @@
 Doğrular: 2FA kapalıyken şifreyle giriş; opt-in kurulum ONAYLANANA kadar zorunlu
 DEĞİL (kilitlenme yok); yanlış kod enable/disable'ı reddeder; açıkken giriş
 challenge + kod ister; iki adımlı ve tek-atış (inline otp) giriş; geçersiz/süresi
-dolmuş challenge reddedilir. TOTP kodları server modülünden (_totp_code) üretilir.
+dolmuş challenge reddedilir. Kullanılmış kod (aynı zaman adımı) ikinci kez kabul edilmez; şifre adımından sonra
+oturumlar iptal edilirse bekleyen challenge geçmez; anahtar veritabanında şifreli durur (0.1.14).
+TOTP kodları server modülünden (_totp_code) üretilir.
 
 Ortam: POPS_TEST_HTTP + DB_* + JWT_SECRET (run_local.sh / CI export eder).
 """
@@ -43,14 +45,29 @@ def req(path, method="GET", body=None, token=None):
             return e.code, {}
 
 
-async def _seed():
-    conn = await asyncpg.connect(
+async def _db():
+    return await asyncpg.connect(
         host=os.environ.get("DB_HOST", "localhost"),
         port=int(os.environ.get("DB_PORT", "5432")),
         user=os.environ["DB_USER"],
         password=os.environ["DB_PASS"],
         database=os.environ["DB_NAME"],
     )
+
+
+def _sql(query, *args):
+    async def run():
+        c = await _db()
+        try:
+            return await c.fetchval(query, *args)
+        finally:
+            await c.close()
+
+    return asyncio.get_event_loop().run_until_complete(run())
+
+
+async def _seed():
+    conn = await _db()
     h = bcrypt.hashpw(PW.encode(), bcrypt.gensalt()).decode()
     await conn.execute("DELETE FROM users WHERE username=$1", USER)
     await conn.execute(
@@ -59,12 +76,21 @@ async def _seed():
     await conn.close()
 
 
-def _code(secret):
-    return server._totp_code(secret, int(time.time() // 30))
+BASE_STEP = [0]
+
+
+def _code(secret, offset=0):
+    # Kod sunucuda ±1 pencereyle kabul edilir; her kod bir kez kullanılabildiği için testler farklı adımlar kullanır.
+    # Adımlar testin başında sabitlenir (bkz. main: pencere sonuna yakınsa yeni pencere beklenir).
+    return server._totp_code(secret, BASE_STEP[0] + offset)
 
 
 def main():
     asyncio.get_event_loop().run_until_complete(_seed())
+    # Test 30 sn'lik pencerenin sonuna denk gelirse adımlar kayar: yeni pencerenin başını bekle
+    while time.time() % 30 > 12:
+        time.sleep(0.5)
+    BASE_STEP[0] = int(time.time() // 30)
     passed = 0
 
     def check(cond, msg):
@@ -93,8 +119,11 @@ def main():
     s, b = req("/api/admin/2fa/enable", "POST", {"otp": "000000"}, token=token)
     check(s == 400, "yanlış kodla enable reddedildi")
 
-    s, b = req("/api/admin/2fa/enable", "POST", {"otp": _code(secret)}, token=token)
+    s, b = req("/api/admin/2fa/enable", "POST", {"otp": _code(secret, -1)}, token=token)
     check(s == 200 and b.get("enabled") is True, "doğru kodla enable → aktif")
+
+    stored = _sql("SELECT totp_secret FROM users WHERE username=$1", USER)
+    check(stored.startswith("v1:") and secret not in stored, "anahtar veritabanında şifreli (R-12)")
 
     s, b = req("/api/admin/login", "POST", {"username": USER, "password": PW})
     check(
@@ -110,15 +139,35 @@ def main():
     s, b = req("/api/admin/login", "POST", {"username": USER, "password": "WRONG"})
     check(s == 401, "yanlış şifre → 401")
 
+    s, b = req("/api/admin/login/totp", "POST", {"challenge": challenge, "otp": _code(secret, -1)})
+    check(s == 401, "enable'da kullanılmış kod ikinci kez geçmez")
+
     s, b = req("/api/admin/login/totp", "POST", {"challenge": challenge, "otp": _code(secret)})
     check(s == 200 and b.get("status") == "success" and b.get("token"), "challenge + kod → giriş")
+    token = b["token"]
+
+    _, b3 = req("/api/admin/login", "POST", {"username": USER, "password": PW})
+    s, b = req("/api/admin/login/totp", "POST", {"challenge": b3["challenge"], "otp": _code(secret)})
+    check(s == 401, "aynı kod (aynı zaman adımı) tekrar kullanılamaz")
 
     _, b2 = req("/api/admin/login", "POST", {"username": USER, "password": PW})
     s, b = req("/api/admin/login/totp", "POST", {"challenge": b2["challenge"], "otp": "000000"})
     check(s == 401, "challenge + yanlış kod → 401")
 
-    s, b = req("/api/admin/login", "POST", {"username": USER, "password": PW, "otp": _code(secret)})
+    s, b = req("/api/admin/login", "POST", {"username": USER, "password": PW, "otp": _code(secret, 1)})
     check(s == 200 and b.get("status") == "success", "inline otp → tek adımda giriş")
+    token = b["token"]
+
+    # Şifre adımından sonra oturumlar iptal edilirse (token_version artar) bekleyen ikinci adım geçmez.
+    # Bir pencerede yalnızca üç kod üretilebildiği için test son kullanılan adımı sıfırlar.
+    _, b4 = req("/api/admin/login", "POST", {"username": USER, "password": PW})
+    _sql("UPDATE users SET token_version = token_version + 1, totp_last_step = NULL WHERE username=$1", USER)
+    s, b = req("/api/admin/login/totp", "POST", {"challenge": b4["challenge"], "otp": _code(secret)})
+    check(s == 401, "oturumlar iptal edilince bekleyen challenge geçersiz")
+    s, b = req("/api/admin/login", "POST", {"username": USER, "password": PW, "otp": _code(secret)})
+    check(s == 200 and b.get("token"), "yeni girişle oturum alınır")
+    token = b["token"]
+    _sql("UPDATE users SET totp_last_step = NULL WHERE username=$1", USER)
 
     s, b = req("/api/admin/login/totp", "POST", {"challenge": "bogus.token.x", "otp": _code(secret)})
     check(s == 401, "geçersiz challenge → 401")

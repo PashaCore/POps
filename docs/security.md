@@ -16,15 +16,31 @@ trustworthy record of it.
   it in the `pops_jwt` cookie (`httpOnly`, `SameSite=Strict`, `Secure` over HTTPS); JavaScript cannot read it.
 - State-changing requests authenticated by the cookie must carry `X-Requested-With: XMLHttpRequest` (CSRF check).
 - Every request re-checks the user in the database. Deleting a user, or editing them (role, password, name),
-  ends their existing sessions immediately. An open `/ws/panel` socket re-checks the session when it sends remote
-  input and more than 10 seconds have passed since the last check, and is closed if the session was revoked.
+  ends their existing sessions immediately. An open `/ws/panel` socket re-checks the session every 10 seconds and
+  is closed if the session was revoked, together with its screen and control grants.
 - Login and the 2FA endpoints allow 10 attempts per minute per client address.
 
 ### Two-factor authentication
 
-Opt-in TOTP (RFC 6238, any authenticator app), per account, off by default. A user enables it on the **Ayarlar**
-page: scan the QR code (generated locally, no external service), then confirm a code; only then is it required.
-Turning it off needs a valid code. If an authenticator is lost, a server administrator can reset it:
+Opt-in TOTP (RFC 6238, any authenticator app), per account, off by default and **recommended for every admin and
+superadmin**. A user enables it on the **Ayarlar** page: scan the QR code (generated locally, no external service),
+then confirm a code; only then is it required. Turning it off needs a valid code. It stays optional, but the
+panel recommends it: an admin or superadmin whose own 2FA is off sees a notice on **Ayarlar** and **Sistem &
+Sürüm** (read from `GET /api/admin/2fa/status`), which can be hidden for 7 days per browser.
+
+- **A code works once.** The server stores the time step of the last accepted code per account; that code, and
+  any older one, is refused even while it is still within its ±30-second window.
+- **The second step belongs to the session.** The short-lived challenge issued after the password carries the
+  account's `token_version`; if sessions are revoked, the password is changed or the role edited before the code is
+  entered, the challenge is refused.
+- **Secrets are encrypted in the database** (Fernet, `v1:` prefix). The key is `TOTP_ENCRYPTION_KEY` from `.env`
+  (generate with `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) or,
+  if it is not set, a key derived from `JWT_SECRET`. Decryption tries both, and at startup every secret is
+  re-encrypted with the current key (plain-text secrets from older versions included). **Before changing
+  `JWT_SECRET`, set `TOTP_ENCRYPTION_KEY` and restart once**; otherwise the existing 2FA secrets can no longer be
+  read and those users must have 2FA reset.
+
+If an authenticator is lost, a server administrator can reset it:
 
 ```sql
 UPDATE users SET totp_enabled = false, totp_secret = NULL WHERE username = '<user>';
@@ -32,6 +48,23 @@ UPDATE users SET totp_enabled = false, totp_secret = NULL WHERE username = '<use
 
 Viewers cannot open **Ayarlar**, and an admin needs the `settings` page permission to reach it; such accounts can
 still use the `/api/admin/2fa/*` endpoints directly.
+
+### Panel output (XSS)
+
+Everything the panel shows that came from a PC or a person (hostnames, lab names, window titles, software,
+command output, tickets, logs, error messages) is written with `textContent` or escaped first: `escapeHtml()` for
+text and quoted attributes, `jsArg()` for arguments of inline `onclick` handlers (HTML escaping alone is not
+enough there), `encodeURIComponent()` for URL parts. PHP output uses `htmlspecialchars`, or `json_encode` with
+`JSON_HEX_TAG` inside scripts.
+
+The `Dashboard checks` CI job runs `tools/html_sinks/check_html_sinks.py` (and its self-tests), which fails on any
+`innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write` or PHP `echo` that writes an unescaped value, and on
+any HTML template or string concatenation built from one. To run it locally:
+`python3 tools/html_sinks/check_html_sinks.py`. When it reports a value that is safe (a number counted on the
+page, a class name from a fixed table), add a line to `tools/html_sinks/html_sinks_allowlist.txt`: the file, the
+key the checker printed for that line, and a one-line reason. Keys follow the line's text, not its number, so
+unrelated edits do not break them; changing the line itself requires a new review. Prefer escaping over adding
+an entry.
 
 ### Roles
 
@@ -99,6 +132,10 @@ setting lives on the PC (`C:\POpsData\secure\capabilities.json`, set by the MSI 
 `VISION_ENABLED=0`). The server can only switch a capability **off**
 (`POST /api/system/set-capabilities`); a request to switch it on is ignored by the agent. On PCs where these are
 off, even a compromised server cannot use them. It takes effect on agents from 0.1.4-alpha.
+
+Both are on by default so that a fresh install works for a lab. **Turn them off where they are not needed**: on
+teachers' and administration PCs a remote terminal and screen view are rarely necessary, and a PC with both off
+offers nothing to someone who takes over the server or an admin account.
 
 ## Remote control and transparency
 
@@ -213,7 +250,8 @@ restrict database access.
 - [ ] Serve POps only over HTTPS; keep the backend on `127.0.0.1` and port 8000 closed.
 - [ ] Keep `.env` at mode `600`; never commit it. Use a random `JWT_SECRET` and `BYPASS_SECRET` (`install.sh` and
       `setup_env.py` generate them).
-- [ ] Change the initial admin password; enable 2FA on every admin and superadmin account.
+- [ ] Change the initial admin password; enable 2FA on every admin and superadmin account (recommended; the panel
+      reminds accounts that have not).
 - [ ] Give people the lowest role they need; use `viewer` for read-only access.
 - [ ] Enroll every PC, then turn on agent-auth enforcement.
 - [ ] Revoke enrollment tokens you no longer need; prefer short lifetimes.

@@ -112,7 +112,8 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   panel reads the progress from `deploy-status.json`. The request file's content is never executed.
 - **Consequences:** Only `origin/main` can be deployed; there is no version picker. Offline, the script redeploys
   the local checkout. Without the units the endpoint answers `503`. Not available in Docker. The deploy backs up
-  code, not the database. Details: [`self-update.md`](self-update.md).
+  code (and the venv when `requirements.txt` changes), not the database. With `/etc/pops/allowed_signers` only
+  release tags signed by a listed SSH key are deployed. Details: [`self-update.md`](self-update.md).
 
 ## D-08 Capability policy: the PC decides, the server can only switch off
 
@@ -259,3 +260,22 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
 - **Consequences:** Silent workflows that other tools offer are deliberately impossible, and Vision needs a
   signed-in user. New features that observe users must follow the same rules. A KVKK notice template is in
   [`kvkk-aydinlatma.md`](kvkk-aydinlatma.md).
+
+## D-18 Retention deletes logs, never the audit chain; the audit log is archived, not trimmed
+
+**Since:** 0.1.14-alpha.
+
+- **Context:** Agent event logs, task output and notifications grow without limit and hold personal data (user
+  names, program names, command output). KVKK expects data to be kept only as long as needed. The security audit
+  log (`device_audit_logs`, D-10) is a hash chain: deleting old rows breaks verification from the first row.
+- **Decision:** A daily job deletes, in chunks of 5000, agent event logs and finished tasks older than 365 days
+  and read notifications older than 90 (superadmin settings `retention_days_*`, `0` = keep). Pending, running and
+  unknown tasks, the audit chain and the Vision session records are never deleted by it.
+- **Audit archive (planned, not built):** export the oldest rows of `device_audit_logs` up to a cut-off id into a
+  signed, compressed file kept off the server; store the cut-off id and the `entry_hash` of the last archived row
+  as an anchor (a new table, written in the same transaction that deletes the rows); `audit-verify` then starts
+  from the anchor instead of the first row and the archive can be verified on its own. Together with a separate
+  database role for the audit table (R-07) and an external copy of the anchor this also makes truncation detectable.
+- **Consequences:** Defaults keep a school year of history. Shorter periods are a per-school decision recorded in
+  its KVKK notice. Until the archive exists the audit table keeps growing (it is small: metadata only).
+

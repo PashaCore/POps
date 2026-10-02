@@ -43,6 +43,22 @@ openssl pkeyutl -verify -pubin -inkey keys/pops_release_ed25519.pub.pem -rawin -
 
 ## Rotasyon
 
-Anahtar değişince: yeni açık anahtarı buraya commit'leyin, yeni özel anahtarı secret'a
-yazın ve doğrulayan tüm tarafların (sunucu paketi + gömülü ajan anahtarı) yeni açık
-anahtarı aldığından emin olun. Eski imzalar yeni anahtarla doğrulanmaz.
+Ajan açık anahtarı **içine gömülü** taşır (`ReleaseVerifier.PublicKeyBase64`) ve yalnızca onunla imzalanmış
+güncellemeyi kabul eder. Bu yüzden anahtar tek adımda değiştirilemez: yeni anahtarla imzalanmış bir sürümü sahadaki
+ajanlar reddeder.
+
+**Planlı değişim** (ör. yıllık ya da bakımcı değişince):
+
+1. Yeni anahtar çiftini üretin (`genkey`); özel anahtarı henüz secret'a yazmayın.
+2. Ajanı **iki anahtarı da** kabul edecek şekilde değiştirin ve bu sürümü **eski** anahtarla yayımlayın. Sunucu
+   paketine de iki açık anahtarı koyun. (Ajanda iki anahtar desteği henüz yok; rotasyondan önce eklenmeli.)
+3. Bütün ajanlar bu sürüme geçene kadar bekleyin (panel: Cihazlar → sürüm sütunu).
+4. Secret'ı yeni özel anahtarla değiştirin; sonraki sürüm yeni anahtarla imzalanır.
+5. Bir sonraki sürümde eski açık anahtarı ajandan ve sunucudan kaldırın.
+
+**Anahtar sızarsa:** secret'ı hemen silin (yeni sürüm çıkmasın) ve yeni anahtar üretin. Sızan anahtarla imzalanmış
+bir paket yine de yalnızca ajanın kendi sunucusundan indirilir, yani saldırganın ayrıca sunucuyu da ele geçirmesi
+gerekir. Sahadaki ajanları yeni anahtara taşımanın iki yolu var: yukarıdaki iki anahtarlı sürümü (sızan anahtar
+iptal edilmeden önce son kez onunla imzalayarak) dağıtmak ya da yeni anahtarlı MSI'ı elle/GPO ile yeniden kurmak.
+Sunucunun kendini güncellemesi etiket imzasına bağlıysa (`/etc/pops/allowed_signers`, bkz.
+[`docs/self-update.md`](../docs/self-update.md)) etiket anahtarı bundan ayrıdır ve ayrıca değiştirilir.

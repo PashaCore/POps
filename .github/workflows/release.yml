@@ -18,9 +18,9 @@ jobs:
     name: Agent package (win-x64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           dotnet-version: 8.0.x
       - name: Publish agent components into one folder
@@ -63,7 +63,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Move-Item msi-out/POps-Agent.msi "POps-Agent-$ver-win-x64.msi"
           Write-Host "MSI $msiVersion -> POps-Agent-$ver-win-x64.msi"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: agent
           path: |
@@ -75,17 +75,20 @@ jobs:
     name: Server package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Package backend and dashboard
+        # Native kurulum (Installer/server: install.sh, deploy/self-update/yedek betikleri, systemd birimleri) ve
+        # Docker Compose (docker-compose.yml, docker/, .dockerignore) paketten doğrudan çalışabilsin diye dahildir.
         run: |
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then VER="${GITHUB_REF_NAME#v}"; else VER="dev-${GITHUB_SHA::7}"; fi
           NAME="pops-server-$VER"
-          mkdir -p "dist/$NAME"
-          cp -r Backend Dashboard docs keys VERSION .env.example CHANGELOG.md LICENSE README.md SECURITY.md "dist/$NAME/"
+          mkdir -p "dist/$NAME/Installer"
+          cp -r Backend Dashboard docs keys docker VERSION .env.example .dockerignore docker-compose.yml CHANGELOG.md LICENSE README.md SECURITY.md "dist/$NAME/"
+          cp -r Installer/server "dist/$NAME/Installer/"
           find "dist/$NAME/Backend" -type d -name __pycache__ -prune -exec rm -rf {} +
           tar -C dist -czf "$NAME.tar.gz" "$NAME"
           tar -tzf "$NAME.tar.gz" | head -20
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: server
           path: pops-server-*.tar.gz
@@ -110,7 +113,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Tag == VERSION == CHANGELOG
         # Etiket, kök VERSION dosyası ve CHANGELOG başlığı birbirini tutmazsa yayım durur.
         run: |
@@ -126,16 +129,16 @@ jobs:
           fi
           echo "Sürüm tutarlı: v$VER"
       # Yalnızca paketler: "CI tests" işinin kapsam raporları da artifact'tir ve release'e girmemeli
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: agent
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: server
           path: dist
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.11"
       - name: Sign release manifest (ed25519)
@@ -167,7 +170,7 @@ jobs:
       - name: Publish
         # Üçüncü taraf action, repoya yazma yetkisiyle çalıştığı için commit SHA'sına sabitlenmiştir
         # (Dependabot sürümü günceller)
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           files: dist/*
           body_path: notes.md

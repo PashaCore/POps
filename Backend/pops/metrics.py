@@ -11,6 +11,7 @@ Tek uvicorn worker'ı olduğu için sayaçlar süreç içindedir; yeniden başla
 counter reset olarak anlar).
 """
 
+import contextvars
 import logging
 import re
 import time
@@ -31,6 +32,70 @@ ws_sessions = {}        # route -> kapanan WebSocket oturumu sayısı
 unhandled_errors = [0]
 
 _SAFE_RID = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
+
+# ── Yük ölçümleri (0.1.14): heartbeat başına sorgu, saniyedeki yazma, komut gönderme gecikmesi ──────────────
+# counters: heartbeats, heartbeat_queries (heartbeat işlenirken atılan sorgu), heartbeat_rows_written (toplu yazılan
+# satır), db_reads, db_writes (execute_query üzerinden; işlem içindeki sorgular sayılmaz)
+counters = {}
+_writes_per_second = {}  # epoch saniyesi -> yazma sayısı (son 60 sn)
+# Görevin kuyruğa girişinden ajana gönderilmesine kadar geçen süre (eşzamanlılık sınırında bekleme dahil) ve
+# komutun sokete yazılma süresi
+DISPATCH_BUCKETS = (0.1, 0.5, 1.0, 5.0, 30.0, 60.0, 300.0, 1800.0)
+SEND_BUCKETS = (0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0)
+dispatch_latency = [0] * (len(DISPATCH_BUCKETS) + 1) + [0.0]
+command_send = [0] * (len(SEND_BUCKETS) + 1) + [0.0]
+# Bir heartbeat işlenirken atılan sorguları saymak için (bkz. routers/agents.py)
+query_scope = contextvars.ContextVar("pops_query_scope", default=None)
+
+
+def count(name, n=1):
+    counters[name] = counters.get(name, 0) + n
+
+
+def db_query(write: bool):
+    count("db_writes" if write else "db_reads")
+    scope = query_scope.get()
+    if scope is not None:
+        scope[0] += 1
+    if write:
+        now = int(time.time())
+        _writes_per_second[now] = _writes_per_second.get(now, 0) + 1
+        if len(_writes_per_second) > 120:
+            for sec in [k for k in _writes_per_second if k < now - 60]:
+                del _writes_per_second[sec]
+
+
+def writes_last_minute() -> float:
+    now = int(time.time())
+    return round(sum(n for sec, n in _writes_per_second.items() if now - 60 < sec <= now) / 60.0, 2)
+
+
+def _observe_into(row, buckets, seconds):
+    for i, bound in enumerate(buckets):
+        if seconds <= bound:
+            row[i] += 1
+    row[len(buckets)] += 1
+    row[-1] += seconds
+
+
+def observe_dispatch(seconds):
+    _observe_into(dispatch_latency, DISPATCH_BUCKETS, max(0.0, seconds))
+
+
+def observe_send(seconds):
+    _observe_into(command_send, SEND_BUCKETS, seconds)
+
+
+def quantile(row, buckets, q):
+    """Histogramdan yaklaşık yüzdelik (kova üst sınırı); gözlem yoksa None."""
+    total = row[len(buckets)]
+    if not total:
+        return None
+    need = q * total
+    for i, bound in enumerate(buckets):
+        if row[i] >= need:
+            return bound
+    return float("inf")
 
 
 def _route_of(scope):
@@ -139,6 +204,23 @@ def render(gauges, level_counts, version):
         [({"route": r}, n) for r, n in sorted(ws_sessions.items())],
     )
     metric("pops_unhandled_errors_total", "counter", "Yakalanmayan istisnalar", [({}, unhandled_errors[0])])
+    metric(
+        "pops_events_total", "counter",
+        "Olay sayaclari (heartbeats, heartbeat_queries, heartbeat_rows_written, db_reads, db_writes)",
+        [({"event": k}, v) for k, v in sorted(counters.items())],
+    )
+    for name, help_text, row, buckets in (
+        ("pops_task_dispatch_seconds", "Gorevin kuyruga girisinden ajana gonderilmesine kadar", dispatch_latency,
+         DISPATCH_BUCKETS),
+        ("pops_command_send_seconds", "Komutun ajan soketine yazilma suresi", command_send, SEND_BUCKETS),
+    ):
+        out.append("# HELP %s %s" % (name, help_text))
+        out.append("# TYPE %s histogram" % name)
+        for i, bound in enumerate(buckets):
+            out.append("%s_bucket%s %d" % (name, _labels(le=bound), row[i]))
+        out.append("%s_bucket%s %d" % (name, _labels(le="+Inf"), row[len(buckets)]))
+        out.append("%s_sum %.6f" % (name, row[-1]))
+        out.append("%s_count %d" % (name, row[len(buckets)]))
     metric(
         "pops_log_messages_total", "counter", "WARNING ve ustu log satirlari",
         [({"level": lvl}, level_counts.get(lvl, 0)) for lvl in ("WARNING", "ERROR", "CRITICAL")],

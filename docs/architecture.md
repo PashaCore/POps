@@ -157,6 +157,6 @@ script, which health-checks the new code and restores the previous code if the c
 | `Installer/server/` | `install.sh`, nginx example, `pops-deploy-backend`, self-update script and systemd units. |
 | `docker/`, `docker-compose.yml` | Optional container setup ([`docker.md`](docker.md)). |
 | `keys/` | Release public key. |
-| `tools/` | `sign_release.py` (release signing), `agent_simulator.py` (load test). |
+| `tools/` | `sign_release.py` (release signing), `agent_simulator.py` (load test), `html_sinks/` (the panel's HTML output check run in CI; kept outside `Dashboard/` so the web server does not serve it). |
 | `.github/workflows/` | CI (`ci.yml`), release (`release.yml`), CodeQL. |
 | `VERSION` | Single version source for the server, the agent and the MSI. |

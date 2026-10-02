@@ -37,7 +37,7 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
         async with db.transaction() as conn:
             for table in (
                 "clients", "hw_inventory", LOG_TABLE, "agent_versions", "agent_secrets", "agent_bypass_keys",
-                "device_software", "device_patch_status",
+                "device_software", "device_patch_status", "pending_updates", "update_results",
             ):
                 await conn.execute(f"DELETE FROM {table} WHERE pc_name = $1", pc_name)
             running = await conn.fetch(
@@ -48,6 +48,7 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
     except Exception as e:
         log.error("cihaz silinemedi", extra={"pc_name": pc_name, "error": repr(e)[:300]})
         return {"status": "error", "message": "Cihaz silinemedi; hiçbir kayıt değiştirilmedi. Sunucu günlüğüne bakın."}
+    manager.pending_updates.pop(pc_name, None)
     await add_audit_log(pc_name, "device_deleted", "Cihaz silindi: %s" % auth.get("sub"), {"admin": auth.get("sub")})
     # Cihaz çevrimiçiyse çalışan komutu durdurması istenir, sonra bağlantı kapatılır
     agent_ws = manager.active_agents.get(pc_name)
@@ -126,7 +127,8 @@ async def get_devices(auth: dict = Depends(require_auth)):
         c.boot_count, c.logged_user, c.ip_address, c.cap_ram_readable, c.is_quarantined,
         c.cap_terminal_enabled, c.cap_vision_enabled, c.cap_server_ca,
         c.cap_terminal_disable_requested, c.cap_vision_disable_requested, c.running_version,
-        c.agent_health, bk.pc_name AS bypass_key_issued, bk.confirmed_at AS bypass_key_confirmed,
+        c.agent_health, c.last_disconnect_at, c.last_disconnect_reason,
+        bk.pc_name AS bypass_key_issued, bk.confirmed_at AS bypass_key_confirmed,
         av.version AS agent_version
     FROM clients c
     LEFT JOIN agent_versions av ON c.pc_name = av.pc_name
@@ -157,6 +159,9 @@ async def get_devices(auth: dict = Depends(require_auth)):
             "cap_vision_disable_requested": r.get("cap_vision_disable_requested", False),
             # Ajanın son heartbeat'teki sağlık özeti (0.1.12+; bkz. pops/agent_health.py)
             "agent_health": agent_health.parse(r.get("agent_health")),
+            # Son kopuş: ne zaman, neden (WebSocket kapanış kodu)
+            "last_disconnect_at": r["last_disconnect_at"].isoformat() if r.get("last_disconnect_at") else None,
+            "last_disconnect_reason": r.get("last_disconnect_reason"),
             # Çevrimdışı bypass: device = cihaza özel anahtar onaylı, pending = gönderildi/onay bekliyor, None = eski
             "bypass_key": (
                 "device" if r.get("bypass_key_confirmed") else "pending" if r.get("bypass_key_issued") else None
@@ -196,7 +201,7 @@ async def get_custom_labs(auth: dict = Depends(require_auth)):
 @router.post("/api/rename_lab")
 async def rename_lab(data: RenameLabInput, auth: dict = Depends(require_admin)):
     # Oturma planı (lab_settings) ve görev kayıtları da yeni ada taşınır; hepsi tek işlemde
-    async with db.db_pool.acquire() as conn:
+    async with db.acquire() as conn:
         async with conn.transaction():
             await conn.execute("UPDATE clients SET lab_name = $1 WHERE lab_name = $2", data.new_name, data.old_name)
             await conn.execute("UPDATE custom_labs SET lab_name = $1 WHERE lab_name = $2", data.new_name, data.old_name)
@@ -218,7 +223,7 @@ async def rename_device(data: RenameDeviceInput, auth: dict = Depends(require_ad
 
 @router.post("/api/delete_lab")
 async def delete_lab(data: DeleteLabInput, auth: dict = Depends(require_admin)):
-    async with db.db_pool.acquire() as conn:
+    async with db.acquire() as conn:
         async with conn.transaction():
             await conn.execute("DELETE FROM custom_labs WHERE lab_name = $1", data.lab_name)
             await conn.execute("UPDATE clients SET lab_name = 'Atanmamis_Cihazlar' WHERE lab_name = $1", data.lab_name)

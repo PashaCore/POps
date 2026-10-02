@@ -37,6 +37,15 @@ Ways to create it:
 | `DB_PASS` | yes | – | Its password. |
 | `DB_NAME` | yes | – | Database name. |
 | `DB_POOL_MIN` | no | `2` | Connections the backend keeps open to PostgreSQL. |
+| `DB_ACQUIRE_TIMEOUT` | no | `10` | Seconds a request waits for a free pool connection before it fails (it used to wait forever). |
+| `DB_CONNECT_TIMEOUT` | no | `10` | Seconds to open a database connection. |
+| `DB_COMMAND_TIMEOUT` | no | `30` | Longest single query, in seconds. Migrations run on a separate connection without this limit. |
+| `DB_IDLE_IN_TRANSACTION_MS` | no | `60000` | PostgreSQL closes a session that sits idle inside a transaction this long, so it cannot hold locks. |
+| `HEARTBEAT_FLUSH_SECONDS` | no | `2` | Agent heartbeats are collected and written in one statement this often. |
+| `TOTP_ENCRYPTION_KEY` | no | derived from `JWT_SECRET` | Fernet key that encrypts the 2FA secrets in the database. Set it before ever changing `JWT_SECRET`; see [`security.md`](security.md#two-factor-authentication). |
+| `DISK_CHECK_PATHS` | no | – | Extra comma-separated paths for the hourly free-space check (the backend folder and `storage/` are always checked). |
+| `TLS_CERT_FILES` | no | `/etc/pops/tls/server.crt,/etc/pops/ca/pops-ca.pem` | Certificate files whose expiry is checked daily (missing files are skipped). |
+| `TLS_CHECK_URL` | no | the `https` origins in `CORS_ALLOWED_ORIGINS` | Panel address(es) whose live certificate expiry is checked daily, for example `https://pops.okul.k12.tr`. |
 | `DB_POOL_MAX` | no | `20` | Largest number of database connections. When the pool is full, requests wait for a free connection. Keep it below the PostgreSQL server's `max_connections` (100 by default), especially when other applications share that server, and raise both together if needed. |
 | `PANEL_ADMIN_USER` | no | `admin` | Name of the first panel account. |
 | `PANEL_ADMIN_PASS` | no | – | If no user with `PANEL_ADMIN_USER` exists at startup, the backend creates it as `superadmin` with this password. It is never written again once the account exists; change the password in the panel afterwards and you may delete the value. |

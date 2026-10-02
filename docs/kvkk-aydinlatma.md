@@ -61,7 +61,9 @@ görünür, gizli mod yoktur.
 
 ## 3. Kurumun yapması gerekenler (kontrol listesi)
 
-- [ ] Saklama sürelerini POps tarafında yapılandır (telemetri özetleme planlanıyor).
+- [ ] Saklama sürelerini POps tarafında yapılandır: ajan olay kayıtları ve tamamlanmış görevler varsayılan 365
+      gün, okunmuş bildirimler 90 gün sonra her gece silinir (superadmin, `POST /api/system/retention`; 0 = süresiz).
+      Güvenlik denetim kaydı (hash zincirli) silinmez; arşivleme planı: `docs/decisions.md` D-18.
 - [ ] Ekran izleme için onay/bildirim akışının açık olduğunu doğrula (varsayılan açık).
 - [ ] Reşit olmayanlar için veli/vasi bilgilendirmesini hazırla.
 - [ ] Bu metni panele/giriş ekranına ve fiziksel laboratuvara asılabilir hale getir.

@@ -55,6 +55,11 @@ test database) and `JWT_SECRET` first; never point it at a production database.
   path, so device names do not leak into labels), WebSocket sessions, unhandled errors, WARNING/ERROR log counts,
   connected agents and panels, device counts, database pool usage, the scheduler's last tick and memory use.
   The endpoint is not under `/api`, so the panel's reverse proxy does not expose it; scrape it on `127.0.0.1`.
+- **Load figures** (both in `/metrics` and diagnostics): heartbeats received, queries per heartbeat, heartbeat rows
+  written in batches, database reads and writes (writes per second over the last minute), the time from queueing a
+  task to sending it (`pops_task_dispatch_seconds`) and the time to write a command to the agent socket
+  (`pops_command_send_seconds`). These are the numbers to watch when a server grows.
 - **Diagnostics** (`GET /api/system/diagnostics`, superadmin) returns the same health figures plus the last 50
-  errors (with request IDs) and the slowest routes; the panel shows them on the System page. The error list lives in
+  errors (with request IDs), the slowest routes, the load figures as `load` (95th percentiles from the histogram
+  buckets) and the last disk (`disk`) and certificate (`tls`) checks; the panel shows them on the System page. The error list lives in
   memory and resets when the backend restarts; journald keeps the full history.

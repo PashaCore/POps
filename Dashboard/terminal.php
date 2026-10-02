@@ -72,11 +72,11 @@
         <!-- Hızlı İşlemler -->
         <div class="quick-actions-bar" style="display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap; border-top:1px dashed var(--border-subtle); padding-top:0.75rem;">
             <span style="font-size:0.75rem; color:var(--text-tertiary); display:flex; align-items:center; margin-right:0.25rem;"><i class="fas fa-bolt"></i> Hızlı Komutlar:</span>
-            <button class="lab-btn" onclick="window.sendQuickAction('ipconfig /flushdns', 'DNS Temizle')"><i class="fas fa-globe"></i> DNS Temizle</button>
-            <button class="lab-btn" onclick="window.sendQuickAction('ipconfig /release; ipconfig /renew', 'Ağı Yenile')"><i class="fas fa-network-wired"></i> Ağı Yenile</button>
-            <button class="lab-btn" onclick="window.sendQuickAction('Stop-Service -Name Spooler -Force; Remove-Item -Path \'$env:windir\\System32\\spool\\PRINTERS\\*.*\' -Force -Recurse; Start-Service -Name Spooler', 'Yazıcı Kuyruğu Sıfırlandı')"><i class="fas fa-print"></i> Yazıcı Kuyruğu</button>
-            <button class="lab-btn" onclick="window.sendQuickAction('Remove-Item -Path \'$env:TEMP\\*\' -Recurse -Force -ErrorAction SilentlyContinue', 'Temp Temizle')"><i class="fas fa-broom"></i> Temp Temizle</button>
-            <button class="lab-btn" onclick="window.sendQuickAction('gpupdate /force', 'Grup İlkesi Güncellendi')"><i class="fas fa-shield-halved"></i> GPUpdate</button>
+            <button class="lab-btn" onclick="window.runQuickAction('dns')"><i class="fas fa-globe"></i> DNS Temizle</button>
+            <button class="lab-btn" onclick="window.runQuickAction('network')"><i class="fas fa-network-wired"></i> Ağı Yenile</button>
+            <button class="lab-btn" onclick="window.runQuickAction('spooler')"><i class="fas fa-print"></i> Yazıcı Kuyruğu</button>
+            <button class="lab-btn" onclick="window.runQuickAction('temp')"><i class="fas fa-broom"></i> Temp Temizle</button>
+            <button class="lab-btn" onclick="window.runQuickAction('gpupdate')"><i class="fas fa-shield-halved"></i> GPUpdate</button>
             <div style="width:1px; background:var(--border-subtle); margin:0 0.25rem;"></div>
             <button class="lab-btn" onclick="window.promptSingleRename()"><i class="fas fa-tag"></i> Tekil İsimlendir</button>
             <button class="lab-btn" id="btnQuickAutoRename" style="display:none;" onclick="window.promptAutoRename()"><i class="fas fa-tags"></i> Toplu İsimlendir</button>
@@ -94,6 +94,7 @@
 </div>
 
 <script>
+const TERMINAL_ADMIN = <?php echo json_encode($_SESSION['username'] ?? 'Admin', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
 window.state = window.state || { devices: [], terminalHistory: [] };
 let currentMode = 'single';
 let selectedLab = null;
@@ -122,6 +123,40 @@ function initTerminalWebSocket() {
     } catch(e) {}
 }
 
+// Hızlı komutlar. Ajan her komutu bir .bat dosyasına yazıp cmd.exe /c ile SYSTEM olarak çalıştırır; buradaki
+// metinler o .bat satırının kendisidir (PowerShell sarmalayıcısı yok). Komutlar '&' ile ayrılır; .bat içinde '%'
+// değişken açar, bu yüzden yalnızca bilerek kullanılan %windir% var. Sıfırdan farklı çıkış kodu görevi Başarısız
+// yapar: son komut işin başarısını söyler.
+const QUICK_ACTIONS = {
+    dns: { name: 'DNS Temizle', cmd: 'ipconfig /flushdns' },
+    // Sanal/statik IP'li ya da kablosu takılı olmayan bağdaştırıcı yüzünden release/renew hata kodu dönebilir;
+    // başarı ölçüsü yenilemeden sonra 169.254 dışı bir IPv4 adresinin olmasıdır (findstr bulursa 0 döner)
+    network: { name: 'Ağı Yenile', cmd: 'ipconfig /release & ipconfig /renew & ipconfig | findstr /c:"IPv4" | findstr /v /c:"169.254."' },
+    spooler: { name: 'Yazıcı Kuyruğu Sıfırlandı', cmd: 'net stop spooler /y & del /f /s /q "%windir%\\System32\\spool\\PRINTERS\\*.*" & net start spooler' },
+    // C:\Windows\Temp ve her kullanıcının AppData\Local\Temp'i. Çalışan görevin kendi .bat'ı (pops_task_*.bat)
+    // silinmez, kullanımdaki dosyalar atlanır. Bağlantılar (junction/symlink) izlenmez: kullanıcı kendi Temp'ini
+    // başka bir klasöre yönlendirip SYSTEM'e orayı sildiremesin. Tek satır olmalı; içinde " ve % yok.
+    temp: { name: 'Temp Temizle', cmd: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "' + [
+        "$c=@{n=0;s=0}",
+        "function L($p){ $x=Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue; (-not $x) -or [bool]($x.Attributes -band 1024) }",
+        "function C($d){ foreach($i in @(Get-ChildItem -LiteralPath $d -Force -ErrorAction SilentlyContinue)){ if($i.Attributes -band 1024){ continue }; " +
+            "if($i.PSIsContainer){ C $i.FullName; try{ $i.Delete() }catch{} } " +
+            "elseif($i.Name -notlike 'pops_task_*.bat'){ try{ if($i.IsReadOnly){ $i.IsReadOnly=$false }; $i.Delete(); $c.n++ }catch{ $c.s++ } } } }",
+        "$w=Join-Path $env:windir 'Temp'; if(-not (L $w)){ C $w }",
+        "foreach($u in @(Get-ChildItem -LiteralPath (Join-Path $env:SystemDrive 'Users') -Directory -Force -ErrorAction SilentlyContinue)){ " +
+            "$a=Join-Path $u.FullName 'AppData'; $b=Join-Path $a 'Local'; $t=Join-Path $b 'Temp'; " +
+            "if(-not ((L $u.FullName) -or (L $a) -or (L $b) -or (L $t))){ C $t } }",
+        "Write-Output ('Silinen dosya: '+$c.n+', kullanimda oldugu icin atlanan: '+$c.s)",
+        "exit 0",
+    ].join('; ') + '"' },
+    gpupdate: { name: 'Grup İlkesi Güncellendi', cmd: 'gpupdate /force' },
+};
+
+window.runQuickAction = function(key) {
+    const action = QUICK_ACTIONS[key];
+    if (action) window.sendQuickAction(action.cmd, action.name);
+};
+
 window.sendQuickAction = function(cmd, actionName) {
     const reason = prompt(`'${actionName}' işlemi için bir neden belirtin (Zorunlu):`);
     if (!reason || reason.trim() === '') return showToast('Neden belirtmek zorunludur!', 'error');
@@ -130,11 +165,11 @@ window.sendQuickAction = function(cmd, actionName) {
         const sel = document.getElementById('terminalDeviceSelect').value;
         if (!sel) return showToast('Lütfen bir cihaz seçin.', 'error');
         appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Hızlı İşlem: ${escapeHtml(actionName)} (Tekil) - Neden: ${escapeHtml(reason)}</div>`);
-        apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'PC', targets: [sel], taskSequence: [{ name: actionName, type: 'CMD', command: `powershell -Command "${cmd}"` }], reason: reason.trim() }) });
+        apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'PC', targets: [sel], taskSequence: [{ name: actionName, type: 'CMD', command: cmd }], reason: reason.trim() }) });
     } else {
         if (!selectedLab) return showToast('Lütfen bir laboratuvar seçin.', 'error');
         appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Hızlı İşlem: ${escapeHtml(actionName)} (Lab: ${escapeHtml(selectedLab)}) - Neden: ${escapeHtml(reason)}</div>`);
-        apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'LAB', targets: [selectedLab], taskSequence: [{ name: actionName, type: 'CMD', command: `powershell -Command "${cmd}"` }], reason: reason.trim() }) });
+        apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'LAB', targets: [selectedLab], taskSequence: [{ name: actionName, type: 'CMD', command: cmd }], reason: reason.trim() }) });
     }
 };
 
@@ -157,9 +192,11 @@ window.promptAutoRename = function() {
 };
 
 window.promptTaskkill = function() {
-    const exeName = prompt("Kapatılacak uygulamanın tam adını girin (Örn: msedge.exe):");
+    const exeName = (prompt("Kapatılacak uygulamanın tam adını girin (Örn: msedge.exe):") || '').trim();
     if (exeName) {
-        window.sendQuickAction(`taskkill /F /IM ${exeName}`, `Görev Sonlandır: ${exeName}`);
+        // Ad .bat satırında tırnak içinde gider: " ve % satırı bozar
+        if (/["%\r\n]/.test(exeName)) return showToast('Uygulama adında " ve % kullanılamaz.', 'error');
+        window.sendQuickAction(`taskkill /F /IM "${exeName}"`, `Görev Sonlandır: ${exeName}`);
     }
 };
 
@@ -214,7 +251,7 @@ function renderTerminal() {
 function initTerminalHeader() {
     return `<div class="header">
         <div class="title">POps Command Line Interface [v4.0.0]</div>
-        <div>Yönetici: ${<?php echo json_encode(htmlspecialchars($_SESSION['username'] ?? 'Admin', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>} — Güvenli Bağlantı Aktif</div>
+        <div>Yönetici: ${escapeHtml(TERMINAL_ADMIN)} — Güvenli Bağlantı Aktif</div>
         <div>(c) POps Bilişim Sistemleri. Tüm Hakları Saklıdır.</div>
     </div>
     <div class="tip">[İPUCU] Aşağıdaki Hızlı İşlem butonlarını kullanarak rutin operasyonları anında gerçekleştirebilirsiniz.</div>`;

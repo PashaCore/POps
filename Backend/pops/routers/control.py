@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebS
 
 from pops.config import JWT_COOKIE_NAME
 from pops.db import execute_query
-from pops.models import EndAuditSessionInput, LockdownInput, RemoteInputData, StartAuditSessionInput
-from pops.security import require_admin, require_auth, require_superadmin, verify_jwt, verify_session
+from pops.models import EndAuditSessionInput, LockdownInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
+from pops.security import require_admin, require_superadmin, verify_jwt, verify_session
 from pops.agent_auth import verify_agent_secret
 from pops import auditchain, bypass
 from pops.audit import add_audit_log, log_audit_event
@@ -357,10 +357,31 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
 # rıza sormadan yakalama başlatan eski /api/stream/start ucu kaldırıldı.
 
 
-@router.get("/api/stream/stop/{pc_name}")
-async def stop_stream(pc_name: str, auth: dict = Depends(require_auth)):
-    await manager.send_command({"action": "stop_stream"}, pc_name)
+# R-10: durum değiştiren bir işlem olduğu için GET değil POST (bağlantı önizleme/önbellek/CSRF ile tetiklenmesin);
+# yalnız admin (Vision zaten yalnız admin'e açık).
+@router.post("/api/stream/stop")
+async def stop_stream(data: StreamStopInput, auth: dict = Depends(require_admin)):
+    await manager.send_command({"action": "stop_stream"}, data.pc_name)
     return {"status": "stopped"}
+
+
+# Tepsiye iletilen uzaktan girdi alanları; başka alan (ör. "action") geçirilmez
+_INPUT_TYPES = {"mouse_move", "mouse_click", "mouse_wheel", "keyboard"}
+_INPUT_FIELDS = {
+    "x", "y", "relative", "button", "is_down", "double", "delta", "horizontal",
+    "key", "code", "ctrl", "alt", "shift", "meta", "altgr",
+}
+
+
+def _flat_remote_input(data: RemoteInputData) -> dict:
+    fields = dict(data.data or {})
+    fields.update(data.model_extra or {})
+    msg = {
+        k: v for k, v in fields.items()
+        if k in _INPUT_FIELDS and (v is None or isinstance(v, (bool, int, float, str))) and len(str(v)) <= 64
+    }
+    msg.update({"type": "remote_input", "device": data.device, "input_type": data.input_type})
+    return msg
 
 
 @router.get("/api/thumbnail/{pc_name}")
@@ -393,10 +414,13 @@ async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Uzaktan girdi için o cihazda açık bir denetim oturumu gerekir.",
         )
-    sent = await manager.send_remote_input_to_vision(data.dict(), target)
+    if data.input_type not in _INPUT_TYPES:
+        raise HTTPException(status_code=400, detail="Geçersiz girdi türü")
+    msg = _flat_remote_input(data)
+    sent = await manager.send_remote_input_to_vision(msg, target)
     if not sent:
         if target in manager.active_agents:
-            await manager.send_command(data.dict(), target)
+            await manager.send_command(msg, target)
             return {"status": "success"}
         return {"status": "error"}
     return {"status": "success"}

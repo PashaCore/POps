@@ -122,19 +122,19 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/api/wake_pc/{pc_name}` | require_admin | Sends a magic packet to the device's MAC (from its inventory) and asks one online agent in the same lab to send one too. |
-| POST | `/api/wake_lab/{lab_name}` | require_admin | Same for every device in the lab; returns `woken_pcs`. |
+| POST | `/api/wake_lab/{lab_name}` | require_admin | Same for every device in the lab; returns `woken_pcs`, the number of devices a magic packet was **sent** to. Wake-on-LAN has no acknowledgement: whether a PC started shows only when its agent connects. |
 | POST | `/api/wake_all` | require_admin | Same for every device with a known MAC. |
 
 ### Tasks, deployment and packages
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/deploy_orchestration` | require_admin | `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], taskSequence: [{name, type, command}]}`. Queues one task per target and step, recording the requesting user, then starts the queue. |
+| POST | `/api/deploy_orchestration` | require_admin | `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], taskSequence: [{name, type, command}]}`. Queues one task per target and step in one transaction, recording the requesting user, then starts the queue. Returns `created` (number of tasks). The same request from the same user within 5 seconds (double click, retry) creates nothing and returns `duplicate: true`. |
 | GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). |
 | POST | `/api/tasks/action` | require_admin | `{action: CANCEL \| RETRY \| PAUSE \| RESUME, target_mode: TASK \| LAB \| PC \| ALL, target_id}`. |
 | POST | `/api/flush_queue` | require_admin | Deletes all task records; the deletion (who, how many) is written to the hash-chained audit log first. |
 | GET | `/api/get_concurrent_limit` | require_auth | Current `concurrent_limit` (default 5). |
-| POST | `/api/set_concurrent_limit` | require_admin | `{limit}`: how many devices may run a task at the same time; `0` means no limit. |
+| POST | `/api/set_concurrent_limit` | require_admin | `{limit}` (0–10000): how many devices may run a task at the same time; `0` means no limit. A negative value is refused (`422`). |
 | POST | `/api/upload` | require_admin | Multipart `file`. Stored under `Backend/storage` with a sanitised name. Returns `sig` (and `url`) for the signed download link and the file's `sha256`. |
 | GET | `/api/packages` | require_auth | Saved package definitions of the Deployment page. |
 | POST | `/api/add_package` | require_admin | `{id, name, type, meta, command, icon, color}`; insert or update. |
@@ -148,8 +148,8 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | POST | `/api/audit/session/start` | require_admin | `{target_pc, reason, is_mandatory}`. Opens a recorded remote-control session and sends `start_vision_session` to the agent. A mandatory session needs a reason. Returns `session_id` and `countdown_seconds`. |
 | POST | `/api/audit/session/end` | require_admin | `{session_id, status}`: closes the session and withdraws the session grant. |
 | GET | `/api/thumbnail/{pc_name}` | require_admin | Asks the agent for a screen preview and waits up to 5 seconds. |
-| POST | `/api/remote_input` | require_admin | `{type, device, input_type, data}`. Refused with `403` unless the caller has an open session for that device. |
-| GET | `/api/stream/stop/{pc_name}` | require_auth | Sends `stop_stream` to the agent. |
+| POST | `/api/remote_input` | require_admin | `{device, input_type, ...fields}`: `input_type` is `mouse_move`, `mouse_click`, `mouse_wheel` or `keyboard`; fields (`x`, `y`, `relative`, `button`, `is_down`, `double`, `delta`, `horizontal`, `key`, `code`, `ctrl`, `alt`, `shift`, `meta`, `altgr`) go at the top level, as the panel sends them (the older `data: {...}` object is still accepted). Only these fields are forwarded. Refused with `403` unless the caller has an open session for that device. |
+| POST | `/api/stream/stop` | require_admin | `{pc_name}`: sends `stop_stream` to the agent. (A `GET` before 0.1.14.) |
 
 See [`vision.md`](vision.md) for the session rules.
 
@@ -331,13 +331,20 @@ off (`401` without, `403` for another device). The subject must have at least 3 
   reconciles the fingerprint with the known devices and may answer with `set_identity` to give the agent a
   different `HW-…` ID (clone detection or identity recovery).
 - **Other agent → server messages:** `result` (task output), `thumbnail`, `vision_rejected`, `update_result`,
-  `capabilities`, `capability_denied`.
-- **Server → agent actions:** `execute`, `get_hardware`, `set_secret`, `set_identity`, `update_agent`,
+  `capabilities`, `capability_denied`. Heartbeats are written to the database in batches every 2 seconds.
+- **Update results:** from 0.1.14 an `update_result` carries `result_id` (the first 32 hex characters of the
+  SHA-256 of the agent's `update-result.json`). After the result is stored the server answers
+  `{"action": "update_result_ack", "result_id": ...}`; a result it already stored is acknowledged without a second
+  record. The agent keeps the result and sends it again until it is acknowledged.
+- **Server → agent actions:** `server_info` (right after registration: `{"version", "features":
+  ["update_result_ack"]}`; older agents ignore it), `update_result_ack`, `execute`, `cancel_task`, `get_hardware`,
+  `set_secret`, `set_bypass_secret`, `set_identity`, `update_agent`,
   `set_capabilities`, `lockdown`, `unlock`, `start_vision_session`, `stop_stream`, `wake_peer`,
   `scan_updates` and `install_updates` (`{"scope": "security" | "all"}`; handled by agents from 0.1.5-alpha on),
   and `remote_input` messages forwarded from the panel (for example `get_thumbnail`).
 - **Other close codes:** `4000` when the device is deleted in the panel, `1011` after a malformed message or
-  server error.
+  server error. When a registered connection closes, the reason (the close code in words, for example "bağlantı
+  koptu" for `1006`) and the time are stored in `clients.last_disconnect_reason` / `last_disconnect_at`.
 
 ### `/ws/vision/{hw_id}` — agent screen stream
 
@@ -353,9 +360,12 @@ off (`401` without, `403` for another device). The subject must have at least 3 
   An invalid or revoked session is closed with code `4001`.
 - **Panel → server:** `{"type": "ping"}` (answered with `pong`) and `{"type": "remote_input", "device": ..., ...}`.
   Remote input is ignored for `viewer`. Real mouse/keyboard input (`input_type` set) and `action: "execute"`
-  additionally require an open remote-control session for that device. When remote input arrives and more than
-  10 seconds have passed since the last check, the user's session is re-checked against the database; a revoked
-  session closes the socket (`4001`).
+  additionally require an open remote-control session for that device. The user's session is re-checked against
+  the database every 10 seconds; a revoked session closes the socket (`4001`) and drops its screen and control
+  grants.
+- **Delivery:** each panel socket has its own send queue. Screen frames and previews keep only the newest one per
+  device (a slow panel skips frames); a panel whose queue grows past 500 messages, or whose send takes longer than
+  10 seconds, is closed with `1013` and the browser reconnects.
 - **Server → panel:** `terminal_output` (task results), `update_result`, `capabilities`, `capability_denied`,
   `vision_rejected`, `ticket_new` (a ticket opened by an agent); `thumbnail` replies go to admin/superadmin panels only; live `stream_frame`s go only to the
   session holder (see above).

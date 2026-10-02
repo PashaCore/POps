@@ -1,5 +1,6 @@
 """Panel girişi (şifre + opsiyonel TOTP), 2FA yönetimi ve kullanıcı yönetimi uçları."""
 
+import asyncio
 import datetime
 import json
 from typing import Optional
@@ -8,6 +9,7 @@ import asyncpg
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from pops import secretbox
 from pops.db import execute_query
 from pops.models import (
     AdminLoginInput,
@@ -19,6 +21,7 @@ from pops.models import (
 )
 from pops.security import (
     _totp_new_secret,
+    consume_totp,
     create_jwt,
     create_totp_challenge,
     limiter,
@@ -26,11 +29,28 @@ from pops.security import (
     require_auth,
     require_superadmin,
     totp_provisioning_uri,
-    verify_totp,
     verify_totp_challenge,
 )
 
 router = APIRouter()
+
+# F18: bcrypt saniyenin onda biri ile dörtte biri arası CPU yer. Tek uvicorn sürecinin olay döngüsünde çalışırsa o
+# sürede heartbeat'ler, komutlar ve WebSocket'ler bekler; bu yüzden ayrı bir iş parçacığında çalışır. Olmayan
+# kullanıcı için karşılaştırılan sahte özet açılışta bir kez üretilir (eskiden her istekte yeni hash üretiliyordu).
+_DUMMY_HASH = bcrypt.hashpw(b"pops-dummy-password", bcrypt.gensalt())
+
+
+def _check_password(password: str, stored_hash: str) -> bool:
+    # Yalnızca bcrypt kabul edilir. Tuzsuz SHA256 özetleri ve '!disabled' gibi
+    # geçersiz değerler bcrypt'te ValueError verir; bu hesaplar giriş yapamaz.
+    try:
+        return bcrypt.checkpw(password.encode(), stored_hash.encode())
+    except ValueError:
+        return False
+
+
+async def _hash_password(password: str) -> str:
+    return (await asyncio.to_thread(bcrypt.hashpw, password.encode(), bcrypt.gensalt())).decode()
 
 
 def _login_success(u: dict) -> dict:
@@ -59,30 +79,24 @@ async def admin_login(request: Request, data: AdminLoginInput):
         fetch=True,
     )
     if not user:
-        # Sabit süre bekleyerek timing attack'ı engelle
-        bcrypt.checkpw(b'dummy', bcrypt.hashpw(b'dummy', bcrypt.gensalt()))
+        # Olmayan kullanıcıda da aynı süre harcanır (kullanıcı adı tahmini zamanlamadan anlaşılmasın)
+        await asyncio.to_thread(bcrypt.checkpw, data.password.encode(), _DUMMY_HASH)
         raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre")
 
     u = user[0]
-    stored_hash = u['password_hash']
-
-    # Yalnızca bcrypt kabul edilir. Tuzsuz SHA256 özetleri ve '!disabled' gibi
-    # geçersiz değerler bcrypt'te ValueError verir; bu hesaplar giriş yapamaz.
-    try:
-        valid = bcrypt.checkpw(data.password.encode(), stored_hash.encode())
-    except ValueError:
-        valid = False
-
-    if not valid:
+    if not await asyncio.to_thread(_check_password, data.password, u['password_hash'] or ''):
         raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre")
 
     # İki adımlı doğrulama etkinse: kod yoksa challenge dön (2. adım), varsa burada doğrula.
     if u.get('totp_enabled'):
         if data.otp:
-            if not verify_totp(u.get('totp_secret'), data.otp):
+            if not await consume_totp(u['id'], secretbox.unseal(u.get('totp_secret')), data.otp):
                 raise HTTPException(status_code=401, detail="Doğrulama kodu geçersiz")
         else:
-            return {"status": "totp_required", "challenge": create_totp_challenge(u['username'])}
+            return {
+                "status": "totp_required",
+                "challenge": create_totp_challenge(u['username'], u.get('token_version') or 0),
+            }
 
     await _mark_login(u['id'])
     return _login_success(u)
@@ -93,9 +107,10 @@ async def admin_login(request: Request, data: AdminLoginInput):
 async def admin_login_totp(request: Request, data: TotpLoginInput):
     """Girişin 2. adımı: şifre doğrulandıktan sonra dönen challenge + authenticator kodu.
     Böylece şifre 2. adımda tekrar taşınmaz."""
-    username = verify_totp_challenge(data.challenge)
-    if not username:
+    challenge = verify_totp_challenge(data.challenge)
+    if not challenge:
         raise HTTPException(status_code=401, detail="Oturum doğrulaması süresi doldu, tekrar giriş yapın")
+    username, challenge_tv = challenge
     user = await execute_query(
         "SELECT id, username, role, permissions, totp_enabled, totp_secret, token_version "
         "FROM users WHERE username = $1",
@@ -105,7 +120,10 @@ async def admin_login_totp(request: Request, data: TotpLoginInput):
     if not user or not user[0].get('totp_enabled'):
         raise HTTPException(status_code=401, detail="Geçersiz istek")
     u = user[0]
-    if not verify_totp(u.get('totp_secret'), data.otp):
+    # Şifre adımından sonra şifre/rol değiştiyse ya da oturumlar iptal edildiyse bekleyen ikinci adım geçmez
+    if challenge_tv != int(u.get('token_version') or 0):
+        raise HTTPException(status_code=401, detail="Oturum doğrulaması süresi doldu, tekrar giriş yapın")
+    if not await consume_totp(u['id'], secretbox.unseal(u.get('totp_secret')), data.otp):
         raise HTTPException(status_code=401, detail="Doğrulama kodu geçersiz")
     await _mark_login(u['id'])
     return _login_success(u)
@@ -129,7 +147,10 @@ async def totp_setup(request: Request, auth: dict = Depends(require_auth)):
     if rows and rows[0].get('totp_enabled'):
         raise HTTPException(status_code=400, detail="2FA zaten aktif. Önce devre dışı bırakın.")
     secret = _totp_new_secret()
-    await execute_query("UPDATE users SET totp_secret=$1, totp_enabled=FALSE WHERE username=$2", (secret, auth['sub']))
+    await execute_query(
+        "UPDATE users SET totp_secret=$1, totp_enabled=FALSE, totp_last_step=NULL WHERE username=$2",
+        (secretbox.seal(secret), auth['sub']),
+    )
     return {"secret": secret, "otpauth_uri": totp_provisioning_uri(secret, auth['sub'])}
 
 
@@ -140,13 +161,13 @@ async def totp_enable(request: Request, data: TotpEnableInput, auth: dict = Depe
     edilmez → yanlış kurulumla kilitlenme olmaz. OTP doğrulayan bu uç ve /disable brute-force'a
     karşı rate-limitlidir (login-TOTP yoluyla aynı korumada)."""
     rows = await execute_query(
-        "SELECT totp_secret, totp_enabled FROM users WHERE username=$1", (auth['sub'],), fetch=True
+        "SELECT id, totp_secret, totp_enabled FROM users WHERE username=$1", (auth['sub'],), fetch=True
     )
     if not rows or not rows[0].get('totp_secret'):
         raise HTTPException(status_code=400, detail="Önce 2FA kurulumunu başlatın.")
     if rows[0].get('totp_enabled'):
         return {"ok": True, "enabled": True}
-    if not verify_totp(rows[0]['totp_secret'], data.otp):
+    if not await consume_totp(rows[0]['id'], secretbox.unseal(rows[0]['totp_secret']), data.otp):
         raise HTTPException(status_code=400, detail="Kod doğrulanamadı. Authenticator saatini kontrol edin.")
     await execute_query("UPDATE users SET totp_enabled=TRUE WHERE username=$1", (auth['sub'],))
     return {"ok": True, "enabled": True}
@@ -158,12 +179,15 @@ async def totp_disable(request: Request, data: TotpDisableInput, auth: dict = De
     """2FA'yı kapatır. Aktifse geçerli bir kod ister (oturum çalınmışsa saldırgan kapatamasın).
     Kod doğrulaması rate-limitli: çalınmış oturumla bile 6 haneli kod brute-force edilemez."""
     rows = await execute_query(
-        "SELECT totp_secret, totp_enabled FROM users WHERE username=$1", (auth['sub'],), fetch=True
+        "SELECT id, totp_secret, totp_enabled FROM users WHERE username=$1", (auth['sub'],), fetch=True
     )
     if rows and rows[0].get('totp_enabled'):
-        if not verify_totp(rows[0].get('totp_secret'), data.otp):
+        if not await consume_totp(rows[0]['id'], secretbox.unseal(rows[0].get('totp_secret')), data.otp):
             raise HTTPException(status_code=400, detail="Kapatmak için geçerli bir doğrulama kodu gerekir.")
-    await execute_query("UPDATE users SET totp_secret=NULL, totp_enabled=FALSE WHERE username=$1", (auth['sub'],))
+    await execute_query(
+        "UPDATE users SET totp_secret=NULL, totp_enabled=FALSE, totp_last_step=NULL WHERE username=$1",
+        (auth['sub'],),
+    )
     return {"ok": True, "enabled": False}
 
 
@@ -214,7 +238,7 @@ async def create_user(data: UserCreateInput, auth=Depends(require_superadmin)):
     username, permissions = _clean_user_fields(data.username, data.role, data.permissions)
     if not data.password:
         raise HTTPException(status_code=400, detail="Şifre boş olamaz.")
-    hashed_pw = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt()).decode()
+    hashed_pw = await _hash_password(data.password)
     try:
         await execute_query(
             "INSERT INTO users (username, password_hash, role, permissions) VALUES ($1, $2, $3, $4)",
@@ -241,7 +265,7 @@ async def update_user(user_id: int, data: UserUpdateInput, auth=Depends(require_
         # F4: her düzenlemede token_version artar → bu kullanıcının eldeki eski JWT'leri anında
         # geçersiz olur (şifre sıfırlama/rol düşürme sonrası 12 saat beklenmez).
         if data.password:
-            hashed_pw = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt()).decode()
+            hashed_pw = await _hash_password(data.password)
             await execute_query(
                 "UPDATE users SET username=$1, password_hash=$2, role=$3, permissions=$4, "
                 "token_version=token_version+1 WHERE id=$5",

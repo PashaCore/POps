@@ -49,6 +49,11 @@ the user it runs as), `POPS_PANEL_ENV`, `KEEP_DAYS`. The temporary restore datab
 access as the real one (`install.sh` adds a line for `<db>_restorecheck`). PostgreSQL 13 or later is required
 (`DROP DATABASE … WITH (FORCE)`).
 
+**Consistency.** `pg_dump` reads the whole database in one snapshot, so devices, secrets, tasks and the audit chain
+in `db.dump` always belong together, even while agents keep writing. The files are archived just after the dump:
+a file uploaded or an agent release staged during those seconds may be in one and not the other, which only means
+that upload has to be repeated after a restore. Nothing has to be stopped for a backup.
+
 **Keep a copy on another machine.** A backup on the same disk dies with the disk. Set `RSYNC_TARGET`
 (for example `backup@nas.school.local:/backup/pops`, with an SSH key for root and no password); each new backup
 folder is copied there after it is verified. Any other off-site method that copies `BACKUP_DIR` works too.

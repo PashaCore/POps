@@ -56,7 +56,7 @@ async def add_audit_log(hw_id, action, reason, changes):
     # Kurcalanamaz (tamper-evident) hash zinciri: her kayıt bir öncekinin hash'ini taşır.
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     payload = json.dumps(changes, ensure_ascii=False)
-    async with db.db_pool.acquire() as conn:
+    async with db.acquire() as conn:
         async with conn.transaction():
             await conn.execute("SELECT pg_advisory_xact_lock($1)", _AUDIT_CHAIN_LOCK)
             row = await conn.fetchrow("SELECT entry_hash FROM device_audit_logs ORDER BY id DESC LIMIT 1")

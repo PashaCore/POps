@@ -13,8 +13,21 @@ POps is alpha software. Read [`../SECURITY.md`](../SECURITY.md) before you run i
 | Part | Requirement |
 | --- | --- |
 | Server | Linux with systemd (tested: AlmaLinux/RHEL/Rocky, Debian/Ubuntu), PostgreSQL, Python 3.9+, PHP 8 with `curl`, nginx or Apache, a host name with a TLS certificate. |
-| Managed PCs | 64-bit Windows with the .NET 8 Desktop Runtime (x64), and HTTPS access to the server. |
+| Managed PCs | Windows 10 or 11, 64-bit, with the .NET 8 Desktop Runtime (x64). See *Supported systems* below. |
+| Network | Each PC opens outbound connections to the server on port 443 (HTTPS) and keeps two WebSocket connections open (commands and Vision). Proxies and firewalls must allow the WebSocket upgrade (`Upgrade: websocket`) and long-lived connections; TLS inspection must either be off for the POps host or use a CA the agents trust. There is no HTTP polling fallback. Wake-on-LAN needs UDP broadcasts from the server to the lab subnet. |
 | Administrators | A browser. The panel loads its charts, icons and fonts from public CDNs. |
+
+### Supported systems
+
+| Tested | Not tested (may work, no promise) |
+| --- | --- |
+| Windows 10 and 11, x64, one signed-in user at the console | Remote Desktop sessions and PCs with several users signed in at once (the tray assumes one console session) |
+| Standard user and administrator accounts | The UAC prompt ("secure desktop"): remote control cannot see or click it |
+| One monitor, 100 % scaling | Several monitors and display scaling other than 100 % (remote control coordinates) |
+| Turkish and English keyboard layouts (0.1.14) | Other layouts and input methods |
+
+Windows on ARM, 32-bit Windows, Windows Server as a managed PC, macOS and Linux PCs are not supported. Freeze
+software (Deep Freeze, Shadow Defender) needs care: see [`Agent/README.md`](../Agent/README.md#machines-with-freeze-software).
 
 ## How it fits together
 

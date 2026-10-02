@@ -13,11 +13,13 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, Field
 
-from pops import db, logs, metrics, scheduler
+from pops import db, health_alerts, logs, metrics, retention, scheduler
 from pops.config import DB_POOL_MAX, METRICS_TOKEN
 from pops.db import execute_query
 from pops.manager import manager
+from pops.audit import add_audit_log
 from pops.security import require_superadmin
 
 router = APIRouter()
@@ -142,4 +144,54 @@ async def diagnostics(auth: dict = Depends(require_superadmin)):
         "recent_errors": list(reversed(logs.recent_errors))[:50],
         "metrics_enabled": len(METRICS_TOKEN) >= 16,
         "backup": _backup_status(),
+        "load": _load_summary(),
+        # Son kontrol (disk saatte, sertifika günde bir; bkz. pops/health_alerts.py)
+        "disk": health_alerts.last["disk"],
+        "tls": health_alerts.last["tls"],
     }
+
+
+def _load_summary():
+    """Yük ölçümleri (süreç başladığından beri; saniyedeki yazma son 60 sn)."""
+    c = metrics.counters
+    beats = c.get("heartbeats", 0)
+
+    def p95(row, buckets, scale=1):
+        # Kova üst sınırı; en büyük kovayı aşan gözlemde ">sınır" (JSON sonsuzluk taşıyamaz)
+        q = metrics.quantile(row, buckets, 0.95)
+        if q is None:
+            return None
+        return ">%g" % (buckets[-1] * scale) if q == float("inf") else round(q * scale, 3)
+
+    return {
+        "heartbeats": beats,
+        "queries_per_heartbeat": round(c.get("heartbeat_queries", 0) / beats, 2) if beats else None,
+        "heartbeat_rows_written": c.get("heartbeat_rows_written", 0),
+        "db_writes_per_second": metrics.writes_last_minute(),
+        "db_reads": c.get("db_reads", 0),
+        "db_writes": c.get("db_writes", 0),
+        "task_dispatch_p95_seconds": p95(metrics.dispatch_latency, metrics.DISPATCH_BUCKETS),
+        "command_send_p95_ms": p95(metrics.command_send, metrics.SEND_BUCKETS, 1000),
+    }
+
+
+class RetentionInput(BaseModel):
+    # Gün; 0 = süresiz sakla
+    retention_days_logs: int = Field(ge=0, le=retention.MAX_DAYS)
+    retention_days_tasks: int = Field(ge=0, le=retention.MAX_DAYS)
+    retention_days_notifications: int = Field(ge=0, le=retention.MAX_DAYS)
+
+
+@router.get("/api/system/retention")
+async def get_retention(auth: dict = Depends(require_superadmin)):
+    return await retention.settings()
+
+
+@router.post("/api/system/retention")
+async def set_retention(data: RetentionInput, auth: dict = Depends(require_superadmin)):
+    before = await retention.settings()
+    after = await retention.save(data.model_dump())
+    await add_audit_log("*", "retention_settings", "Kayıt saklama süreleri değişti", {
+        "before": before, "after": after, "by": auth.get("sub"),
+    })
+    return after

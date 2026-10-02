@@ -325,6 +325,8 @@ window.fetchAndRenderTasks = async function() {
                 // Bağlantı koptuğunda sonucu bilinmeyen (Unknown) ya da ajan yeniden başladığı için yarıda kalan (Interrupted) görev
                 else if (pc.status === 'Unknown') { statusClass = 'paused'; statusIcon = 'fa-circle-question'; statusText = 'Sonuç bilinmiyor (bağlantı koptu)'; }
                 else if (pc.status === 'Interrupted') { statusClass = 'failed'; statusIcon = 'fa-circle-exclamation'; statusText = 'Yarıda kaldı (ajan yeniden başladı)'; isCancelable = false; }
+                // Gönderildikten 35 dk sonra hâlâ sonuç yok: ajan geri dönmedi (geç gelen sonuç yine kaydedilir)
+                else if (pc.status === 'Timed Out') { statusClass = 'failed'; statusIcon = 'fa-hourglass-end'; statusText = 'Zaman aşımı (35 dk sonuç gelmedi)'; isCancelable = false; }
                 const displayName = window.POpsMemory.deviceMap[pc.target_pc] || pc.target_pc;
                 const showMac = displayName === pc.target_pc ? '' : `<br><span style="font-family:var(--font-mono);font-size:0.6875rem;color:var(--text-tertiary);">${escapeHtml(pc.target_pc)}</span>`;
                 return `<tr>
@@ -456,9 +458,9 @@ function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&':
     }
 
     function when(t) {
-        if (t.schedule_type === 'once') return 'Bir kez · ' + fmt(t.run_at);
+        if (t.schedule_type === 'once') return 'Bir kez · ' + escapeHtml(fmt(t.run_at));
         if (t.schedule_type === 'daily') return 'Her gün ' + escapeHtml(t.time_of_day || '');
-        return (t.weekdays || []).map(d => DAYS[d - 1]).join(', ') + ' ' + escapeHtml(t.time_of_day || '');
+        return escapeHtml((t.weekdays || []).map(d => DAYS[d - 1]).join(', ')) + ' ' + escapeHtml(t.time_of_day || '');
     }
     function target(t) {
         if (t.target_mode === 'ALL') return 'Tüm cihazlar';
@@ -479,12 +481,12 @@ function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&':
             <div class="sched-row${t.enabled ? '' : ' off'}">
                 <div><div class="n">${escapeHtml(t.name)}</div><div class="c" title="${escapeHtml(t.command)}">${escapeHtml(t.command)}</div></div>
                 <div><div class="s">${when(t)}</div><div class="sub">${target(t)}</div></div>
-                <div><div class="s">${t.enabled && t.next_run ? 'Sıradaki: ' + fmt(t.next_run) : 'Durduruldu'}</div>
-                     <div class="sub">${t.last_run ? 'Son: ' + fmt(t.last_run) + (t.last_result ? ' · ' + escapeHtml(t.last_result) : '') : 'Henüz çalışmadı'}</div></div>
+                <div><div class="s">${t.enabled && t.next_run ? 'Sıradaki: ' + escapeHtml(fmt(t.next_run)) : 'Durduruldu'}</div>
+                     <div class="sub">${t.last_run ? 'Son: ' + escapeHtml(fmt(t.last_run)) + (t.last_result ? ' · ' + escapeHtml(t.last_result) : '') : 'Henüz çalışmadı'}</div></div>
                 <div class="sched-actions">
-                    <button class="sched-btn" data-act="run" data-id="${t.id}" title="Şimdi bir kez çalıştır"><i class="fas fa-play"></i> Şimdi</button>
-                    <button class="sched-btn" data-act="toggle" data-id="${t.id}" data-on="${t.enabled ? 1 : 0}">${t.enabled ? '<i class="fas fa-pause"></i> Durdur' : '<i class="fas fa-play"></i> Başlat'}</button>
-                    <button class="sched-btn danger" data-act="del" data-id="${t.id}"><i class="fas fa-trash"></i></button>
+                    <button class="sched-btn" data-act="run" data-id="${escapeHtml(t.id)}" title="Şimdi bir kez çalıştır"><i class="fas fa-play"></i> Şimdi</button>
+                    <button class="sched-btn" data-act="toggle" data-id="${escapeHtml(t.id)}" data-on="${t.enabled ? 1 : 0}">${t.enabled ? '<i class="fas fa-pause"></i> Durdur' : '<i class="fas fa-play"></i> Başlat'}</button>
+                    <button class="sched-btn danger" data-act="del" data-id="${escapeHtml(t.id)}"><i class="fas fa-trash"></i></button>
                 </div>
             </div>`).join('') : '<div style="color:var(--text-tertiary);font-size:var(--text-sm);padding:0.5rem 0;">Zamanlanmış görev yok.</div>';
         $('schedList').querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', () => act(b)));
@@ -494,14 +496,14 @@ function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&':
         try {
             if (b.dataset.act === 'run') {
                 if (!confirm('Bu görev şimdi bir kez hedef cihazlarda çalıştırılsın mı?')) return;
-                const r = await post(`/api/scheduled_tasks/${id}/run`, {});
+                const r = await post(`/api/scheduled_tasks/${encodeURIComponent(id)}/run`, {});
                 showToast(`${r.queued} cihaz için kuyruğa eklendi.`, 'success');
                 window.fetchAndRenderTasks && window.fetchAndRenderTasks();
             } else if (b.dataset.act === 'toggle') {
-                await post(`/api/scheduled_tasks/${id}/toggle`, { enabled: b.dataset.on !== '1' });
+                await post(`/api/scheduled_tasks/${encodeURIComponent(id)}/toggle`, { enabled: b.dataset.on !== '1' });
             } else {
                 if (!confirm('Zamanlanmış görev silinsin mi?')) return;
-                await api(`/api/scheduled_tasks/${id}`, { method: 'DELETE' });
+                await api(`/api/scheduled_tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
             }
             loadList();
         } catch (e) { showToast(e.message, 'error'); }

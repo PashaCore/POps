@@ -96,31 +96,31 @@
     }
     const post = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-    $('nfCategory').innerHTML = Object.entries(CAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+    $('nfCategory').innerHTML = Object.entries(CAT).map(([k, v]) => `<option value="${escapeHtml(k)}">${escapeHtml(v)}</option>`).join('');
 
     function renderChips(counts) {
         const active = (counts.open || 0) + (counts.in_progress || 0) + (counts.waiting || 0);
         const all = Object.values(counts).reduce((a, b) => a + b, 0);
         const chips = [['active', 'Aktif', active], ['open', ST.open, counts.open || 0], ['in_progress', ST.in_progress, counts.in_progress || 0],
                        ['waiting', ST.waiting, counts.waiting || 0], ['resolved', ST.resolved, counts.resolved || 0], ['closed', ST.closed, counts.closed || 0], ['all', 'Tümü', all]];
-        $('chips').innerHTML = chips.map(([k, l, n]) => `<button class="chip${filter === k ? ' active' : ''}" data-k="${k}">${l}<span class="n">${n}</span></button>`).join('');
+        $('chips').innerHTML = chips.map(([k, l, n]) => `<button class="chip${filter === k ? ' active' : ''}" data-k="${escapeHtml(k)}">${escapeHtml(l)}<span class="n">${escapeHtml(n)}</span></button>`).join('');
         $('chips').querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => { filter = c.dataset.k; load(); }));
     }
 
     async function load() {
         let d;
-        try { d = await api(`/api/tickets?status=${filter}&q=${encodeURIComponent($('q').value.trim())}`); }
+        try { d = await api(`/api/tickets?status=${encodeURIComponent(filter)}&q=${encodeURIComponent($('q').value.trim())}`); }
         catch (e) { $('list').innerHTML = `<div class="empty">Talepler alınamadı: ${escapeHtml(e.message)}</div>`; return; }
         items = d.items || [];
         renderChips(d.counts || {});
         $('list').innerHTML = items.length ? items.map(t => `
-            <div class="item${t.id === selected ? ' sel' : ''}" data-id="${t.id}">
-                <div class="s">#${t.id} · ${escapeHtml(t.subject)}</div>
-                <div class="m"><span class="pill ${t.status}">${ST[t.status] || escapeHtml(t.status)}</span>${t.priority === 'high' ? '<span class="pill high">Yüksek</span>' : ''}
+            <div class="item${t.id === selected ? ' sel' : ''}" data-id="${escapeHtml(t.id)}">
+                <div class="s">#${escapeHtml(t.id)} · ${escapeHtml(t.subject)}</div>
+                <div class="m"><span class="pill ${escapeHtml(t.status)}">${escapeHtml(ST[t.status] || t.status)}</span>${t.priority === 'high' ? '<span class="pill high">Yüksek</span>' : ''}
                     <span>${escapeHtml(CAT[t.category] || t.category)}</span>
                     ${t.pc_name ? `<span><i class="fas fa-desktop"></i> ${escapeHtml(dev(t))}${t.lab_name ? ' · ' + escapeHtml(t.lab_name) : ''}</span>` : ''}
                     ${t.reporter ? `<span><i class="fas fa-user"></i> ${escapeHtml(t.reporter)}</span>` : ''}
-                    <span>${ago(t.updated_at)}</span>${t.message_count ? `<span><i class="fas fa-comment"></i> ${t.message_count}</span>` : ''}</div>
+                    <span>${ago(t.updated_at)}</span>${t.message_count ? `<span><i class="fas fa-comment"></i> ${escapeHtml(t.message_count)}</span>` : ''}</div>
             </div>`).join('') : '<div class="empty">Bu görünümde talep yok.</div>';
         $('list').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => open(parseInt(el.dataset.id))));
     }
@@ -129,9 +129,9 @@
         selected = id;
         $('list').querySelectorAll('.item').forEach(el => el.classList.toggle('sel', parseInt(el.dataset.id) === id));
         let t;
-        try { t = await api('/api/tickets/' + id); } catch (e) { $('detail').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`; return; }
+        try { t = await api('/api/tickets/' + encodeURIComponent(id)); } catch (e) { $('detail').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`; return; }
         $('detail').innerHTML = `<div class="detail">
-            <h2>#${t.id} · ${escapeHtml(t.subject)}</h2>
+            <h2>#${escapeHtml(t.id)} · ${escapeHtml(t.subject)}</h2>
             <div class="meta">
                 <div><div class="l">Bildiren</div><div class="v">${escapeHtml(t.reporter || '—')} <span class="note">(${t.source === 'agent' ? 'tepsiden' : 'panelden'})</span></div></div>
                 <div><div class="l">Cihaz</div><div class="v">${t.pc_name ? escapeHtml(dev(t)) + (t.lab_name ? ' · ' + escapeHtml(t.lab_name) : '') + ` <span class="note">${t.device_status === 'Online' ? 'açık' : 'kapalı'}</span>` : '—'}</div></div>
@@ -141,8 +141,8 @@
             </div>
             ${t.body ? `<div class="body">${escapeHtml(t.body)}</div>` : ''}
             <div class="ctl">
-                <select class="fld" id="dStatus">${Object.entries(ST).map(([k, v]) => `<option value="${k}"${k === t.status ? ' selected' : ''}>${v}</option>`).join('')}</select>
-                <select class="fld" id="dPriority">${Object.entries(PR).map(([k, v]) => `<option value="${k}"${k === t.priority ? ' selected' : ''}>${v} öncelik</option>`).join('')}</select>
+                <select class="fld" id="dStatus">${Object.entries(ST).map(([k, v]) => `<option value="${escapeHtml(k)}"${k === t.status ? ' selected' : ''}>${escapeHtml(v)}</option>`).join('')}</select>
+                <select class="fld" id="dPriority">${Object.entries(PR).map(([k, v]) => `<option value="${escapeHtml(k)}"${k === t.priority ? ' selected' : ''}>${escapeHtml(v)} öncelik</option>`).join('')}</select>
                 <input class="fld" id="dAssignee" maxlength="100" placeholder="Atanan" value="${escapeHtml(t.assignee || '')}" style="width:150px;">
                 <button class="btn" id="dMine" type="button">Bana ata</button>
                 <button class="btn primary" id="dSave"><i class="fas fa-check"></i> Güncelle</button>
@@ -159,13 +159,13 @@
             </div></div>`;
         $('dMine').addEventListener('click', () => { $('dAssignee').value = me; });
         $('dSave').addEventListener('click', async () => {
-            try { await post(`/api/tickets/${id}/update`, { status: $('dStatus').value, priority: $('dPriority').value, assignee: $('dAssignee').value });
+            try { await post(`/api/tickets/${encodeURIComponent(id)}/update`, { status: $('dStatus').value, priority: $('dPriority').value, assignee: $('dAssignee').value });
                   showToast('Talep güncellendi.', 'success'); await load(); await open(id); } catch (e) { showToast(e.message, 'error'); }
         });
         $('dSend').addEventListener('click', async () => {
             const body = $('dReply').value.trim();
             if (!body) return;
-            try { await post(`/api/tickets/${id}/messages`, { body, internal: $('dInternal').checked });
+            try { await post(`/api/tickets/${encodeURIComponent(id)}/messages`, { body, internal: $('dInternal').checked });
                   await load(); await open(id); } catch (e) { showToast(e.message, 'error'); }
         });
     }
