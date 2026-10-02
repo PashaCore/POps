@@ -57,7 +57,7 @@ sees, a watchdog and an updater. The server has a FastAPI backend, a PostgreSQL 
 | --- | --- |
 | Hardware ID (`hw_id`, `HW-…`) | The device's identity, stored on the PC in `C:\POpsData\identity.key` and used as its key on the server. Not the Windows host name. |
 | Lab | A group of PCs (a classroom). New PCs land in `Atanmamis_Cihazlar` (unassigned) unless their enrollment token names a lab. |
-| Enrollment token | A token created on **Sistem & Sürüm** and given to the MSI; it lets a PC obtain its device secret. Can be bound to a lab and used by several PCs. |
+| Enrollment token | A token created on **Sistem** and given to the MSI; it lets a PC obtain its device secret. Can be bound to a lab and used by several PCs. |
 | Device secret | Per-PC credential issued at enrollment. The server stores only its hash. |
 | Enforcement (`enforce_agent_auth`) | When on, PCs without a valid secret or token are rejected. Off by default so a fleet can be enrolled first. |
 | Capability policy | Per-PC switch that disables remote commands and/or screen view on the PC itself. The server can switch them off, never on. |

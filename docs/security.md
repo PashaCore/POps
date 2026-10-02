@@ -25,8 +25,8 @@ trustworthy record of it.
 Opt-in TOTP (RFC 6238, any authenticator app), per account, off by default and **recommended for every admin and
 superadmin**. A user enables it on the **Ayarlar** page: scan the QR code (generated locally, no external service),
 then confirm a code; only then is it required. Turning it off needs a valid code. It stays optional, but the
-panel recommends it: an admin or superadmin whose own 2FA is off sees a notice on **Ayarlar** and **Sistem &
-Sürüm** (read from `GET /api/admin/2fa/status`), which can be hidden for 7 days per browser.
+panel recommends it: an admin or superadmin whose own 2FA is off sees a notice on **Ayarlar** and **Sistem**
+(read from `GET /api/admin/2fa/status`), which can be hidden for 7 days per browser.
 
 - **A code works once.** The server stores the time step of the last accepted code per account; that code, and
   any older one, is refused even while it is still within its ±30-second window.
@@ -75,35 +75,35 @@ an entry.
 
 | Role | Can |
 | --- | --- |
-| `viewer` | Read devices, labs, inventory, software, Windows Update state, licences, logs, tasks, packages and reports (including CSV exports). Cannot see screen previews or live frames, cannot send remote input, and cannot open the Deployment, Terminal or Settings pages. |
-| `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, scheduled tasks, Windows Update scan and install, licence definitions, helpdesk tickets, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies, the notification bell. |
+| `viewer` | Read devices, labs, inventory, software, Windows Update state, licences, logs, tasks, packages and reports (including CSV exports). Cannot see screen previews or live frames, cannot send remote input, and cannot open the **Dağıtım**, **Uzak komut** or **Ayarlar** pages. |
+| `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, scheduled tasks, Windows Update scan and install, licence definitions, helpdesk tickets, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies, the notification list (**Bildirimler**). |
 | `superadmin` | Additionally: panel users, agent releases and updates, enrollment tokens, agent-auth enforcement, re-enrollment, capability policy, server self-update, audit-chain verification, notification settings. |
 
 Things to keep in mind:
 
-- **Admins can run commands as SYSTEM on managed PCs** through the task queue (Deployment and Terminal pages,
-  the Vision diagnostics dialog and scheduled tasks). Each command is written to the hash-chained audit log, with
+- **Admins can run commands as SYSTEM on managed PCs** through the task queue (**Dağıtım** and **Uzak komut**,
+  the **Uzak ekran** diagnostics dialog, the PC actions on **Cihazlar** and **Sınıflar**, and scheduled tasks). Each command is written to the hash-chained audit log, with
   the user who queued it, when it is sent to the PC. On a PC where the terminal capability is disabled the agent
   refuses them.
 - **Scheduled tasks** use the same queue: when due, the server queues the command as normal tasks, so the
   concurrency limit, the capability policy and the per-command audit entry apply. Creating, pausing, resuming,
   running and deleting a schedule is also written to the audit log with the user, and each automatic run is
   recorded. A queued run keeps the schedule's creator (or the user who pressed **Şimdi**) as requester.
-- The per-user **page permissions** set on the Settings page only decide which dashboard pages a non-superadmin
+- The per-user **page permissions** set on the **Ayarlar** page only decide which dashboard pages a non-superadmin
   can open. The API authorizes by role alone, so an admin without the `deploy` page can still call the deployment
   endpoints. Use the `viewer` role for read-only accounts.
 - The last active superadmin cannot be deleted or demoted, and nobody can delete their own account.
 
 ## Agent identity
 
-- **Enrollment.** A superadmin creates an enrollment token on **Sistem & Sürüm** (lab-bound, expiring, one or
+- **Enrollment.** A superadmin creates an enrollment token on **Sistem** (lab-bound, expiring, one or
   more uses). The MSI stores it in the agent's protected store. On first connect the server consumes one use,
   issues a per-device secret and stores only its SHA-256; the agent keeps the secret in `C:\POpsData\secure`
   (SYSTEM and Administrators only) and presents it on every connection.
 - **Enforcement.** Until `enforce_agent_auth` is turned on, agents without credentials are still accepted
   ("accept-both", for rollout). Once it is on, they are rejected (`4401` on WebSockets, `401` on agent HTTP
   endpoints) and the rejection is written to the audit log. Turn it on as soon as every PC is enrolled; the
-  Sistem & Sürüm page shows how many are.
+  **Sistem** page shows how many are.
 - **No takeover by re-enrollment.** A device that already has a secret cannot get a new one with an enrollment
   token (critical audit entry, `4401`) unless a superadmin allows it once (`POST /api/system/allow-reenroll`),
   for example after a reinstall behind freeze software.
@@ -163,7 +163,7 @@ See [`vision.md`](vision.md).
 
 ## Notifications
 
-Notifications appear under the bell in the panel (admins and superadmins) and can also be sent out by e-mail
+Notifications appear under **Bildirimler** in the panel (admins and superadmins) and can also be sent out by e-mail
 and/or a webhook.
 
 **Which events notify.** Only events the server itself decides on:
@@ -193,7 +193,7 @@ agents without credentials in the event log, but those never notify. The notific
 domain is in the detail), so one device raises at most one notification per category every 10 minutes.
 
 **Limits.** An identical notification (same event, device and title) is recorded at most once per 10 minutes.
-At most 30 notifications are sent out per 10 minutes; the rest are still shown under the bell. Sending runs in
+At most 30 notifications are sent out per 10 minutes; the rest are still shown under **Bildirimler**. Sending runs in
 the background with a 10-second timeout and never blocks or breaks the event that caused it.
 
 **Settings.** Only a superadmin can change where notifications go. The webhook address must be `http://` or
@@ -237,7 +237,7 @@ programs then show them as text instead of running them as formulas.
 | Log | Written by | Use |
 | --- | --- | --- |
 | `device_audit_logs` | server only (agents cannot write it) | Security record: enrollment and rejections, remote-control session starts, lockdown/unlock, bypass codes, SYSTEM commands with their requester, scheduled-task changes and runs, Windows Update scan/install requests, licence changes, agent self-quarantine and offline-bypass events, update results, releases, enforcement and capability changes, auto-enrollment and notification settings. Hash-chained. |
-| `agent_logs_v2` | server and agents | Operational event log shown on the Log pages. |
+| `agent_logs_v2` | server and agents | Operational event log shown on the **Kayıtlar** page. |
 | `enterprise_audit_logs` | server | Remote-control sessions (who, target, reason, mandatory, start/end). |
 
 `GET /api/system/audit-verify` (superadmin) walks the hash chain and reports the first altered or deleted entry.
@@ -251,7 +251,7 @@ restrict database access.
 | `GET /api/health` | Health check (database state and version only). |
 | `POST /api/admin/login`, `/api/admin/login/totp` | Sign-in (rate-limited). |
 | `GET /api/agent_policies` | Agents read the policy; it holds no secrets. |
-| `/download/<file>?sig=…` | Deployment packages for agents, only with the signed link returned at upload (wrong or missing signature: 404). Anyone who has a package's link can still download it, so do not upload anything confidential on the Deployment page. |
+| `/download/<file>?sig=…` | Deployment packages for agents, only with the signed link returned at upload (wrong or missing signature: 404). Anyone who has a package's link can still download it, so do not upload anything confidential on the **Dağıtım** page. |
 | `/updates/<file>` | The agent MSI being distributed (verified by agents against the signed manifest). |
 | `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. The software, Windows Update and helpdesk endpoints always require them. |
 

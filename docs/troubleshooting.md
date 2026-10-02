@@ -13,7 +13,7 @@ them, most of them in Turkish.
 | Web server / PHP | the nginx or Apache error log |
 | Self-update | `/var/lib/pops-state/deploy.log`, `/var/lib/pops-state/deploy-status.json` |
 | Deploy script | its console output; code backups and venv snapshots in `<backend dir>/.deploy-backups/`; settings in `/etc/pops/deploy.conf` |
-| Agent events | panel **Log & Envanter**, or the `agent_logs_v2` table |
+| Agent events | panel **Kayıtlar**, or the `agent_logs_v2` table |
 | Security audit | `device_audit_logs` table; chain check with `GET /api/system/audit-verify` |
 
 ### Windows PC
@@ -22,7 +22,7 @@ them, most of them in Turkish.
 | --- | --- |
 | `C:\POpsLogs\POps_<yyyyMMdd>.log` | Service and updater. Readable by administrators only. |
 | `C:\POpsLogs\msi-install.log` | MSI log, if you installed with `/l*v C:\POpsLogs\msi-install.log` as in the docs. |
-| `C:\POpsLogs\deploy_trace.txt` | Progress of packages installed from the Deployment page. |
+| `C:\POpsLogs\deploy_trace.txt` | Progress of packages installed from the **Dağıtım** page. |
 | `%LOCALAPPDATA%\POps\Logs\` | Per user: `TrayLog.txt` (tray, message types only) and `POpsWatchdog_<yyyyMMdd>.log`. |
 | `C:\POpsData\update-result.json` | Result of the last update, until the agent has reported it (then renamed to `update-result.reported.json`). |
 
@@ -66,23 +66,23 @@ After a backend restart every device is shown Offline until its agent reconnects
 
 | Situation | What happens | Fix |
 | --- | --- | --- |
-| Token expired, used up or revoked | The token is ignored. With enforcement off the PC connects but does not enroll; with enforcement on it is rejected (`4401`). | Check **Sistem & Sürüm** → "Kayıt jetonu" (uses, expiry). Create a new token and run the MSI again with `ENROLL_TOKEN=` (other settings are kept), or put `EnrollToken` into `appsettings.json` and restart the service. |
+| Token expired, used up or revoked | The token is ignored. With enforcement off the PC connects but does not enroll; with enforcement on it is rejected (`4401`). | Check **Sistem** → "Kayıt jetonları" (uses, expiry). Create a new token and run the MSI again with `ENROLL_TOKEN=` (other settings are kept), or put `EnrollToken` into `appsettings.json` and restart the service. |
 | PC is already enrolled but lost its secret (freeze software, restored image) | The server refuses to issue a second secret: close `4401` "Cihaz zaten kayıtlı", a critical `enroll_denied` entry in the audit log. | A superadmin allows one re-enrollment for that device, then the PC connects with a valid token: `POST /api/system/allow-reenroll` with `{"pc_name": "<HW-…>", "allow": true}` (API only, no panel button). For freeze software, see `PERSIST_DIR` in [`agent.md`](agent.md#machines-with-freeze-software). |
 | Device was deleted in the panel | Deleting a device also deletes its secret. With enforcement on it is rejected at its next connection. | Give it a new enrollment token. |
-| Enforcement was turned on before all PCs enrolled | Every unenrolled PC is rejected. | Turn it off on **Sistem & Sürüm** (or `UPDATE global_settings SET value='0' WHERE key='enforce_agent_auth';`), enroll the remaining PCs, turn it on again. The card shows how many agents are enrolled. |
+| Enforcement was turned on before all PCs enrolled | Every unenrolled PC is rejected. | Turn it off on **Sistem** (or `UPDATE global_settings SET value='0' WHERE key='enforce_agent_auth';`), enroll the remaining PCs, turn it on again. The card shows how many agents are enrolled. |
 
 Each successful enrollment uses up one use of the token; a token created with several uses enrolls that many PCs.
 
-**A new PC did not land in the lab of the Oto-Kayıt rule.** The rule applies only to devices connecting for the
+**A new PC did not land in the lab of the Otomatik kayıt rule.** The rule applies only to devices connecting for the
 first time on or before its end date (server date). A device the server already knows keeps its lab, and an
 enrollment token created for a lab takes precedence.
 
 ## Commands and deployments
 
 - **Task stays "Sırada" (Pending).** The PC is offline (tasks wait until it connects), the task is paused, or the
-  concurrency limit is reached: at most `concurrent_limit` PCs run a task at once (**Ayarlar** or
-  **Dosya Dağıtımı**), and each PC runs one task at a time.
-- **Task stays "İşleniyor" (Running).** A command may run for up to 30 minutes before the agent stops it. If the PC
+  concurrency limit is reached: at most `concurrent_limit` PCs run a task at once (**Ayarlar**,
+  **Dağıtım** or **İşlemler**), and each PC runs one task at a time.
+- **Task stays "Çalışıyor" (Running).** A command may run for up to 30 minutes before the agent stops it. If the PC
   restarts meanwhile, the task is marked `Completed (Rebooted)` when the agent reconnects.
 - **Output is `[REDDEDİLDİ]`.** The terminal capability is disabled on that PC; the refusal is logged as
   `capability_denied`. It can only be re-enabled locally (MSI with `TERMINAL_ENABLED=1`).
@@ -183,7 +183,7 @@ signed updates; install the MSI on them once.
   after it was written; `first_broken_id` tells where. Find out who has write access to the database.
 - **The panel shows no GitHub version.** The server cannot reach GitHub; the check is skipped silently. Offline
   servers use the manual release upload.
-- **No release notes on Sistem & Sürüm.** They are read from `CHANGELOG.md` on GitHub (`raw.githubusercontent.com`)
+- **No release notes on Sistem.** They are read from `CHANGELOG.md` on GitHub (`raw.githubusercontent.com`)
   and are hidden when the server cannot reach it. The list of what an update brings also needs the installed
   commit, which is known only after a successful panel self-update; until then the card shows the notes of the
   running version (and the unreleased entries) as they are on GitHub `main`.
@@ -217,20 +217,20 @@ signed updates; install the MSI on them once.
 
 ## Notifications
 
-- **Nothing appears under the bell.** The bell is shown to admins and superadmins only. Only events the server
+- **Nothing appears under Bildirimler.** **Bildirimler** is shown to admins and superadmins only. Only events the server
   decides on create notifications ([`security.md`](security.md#notifications)); the risk level of ordinary log
   entries never does. An identical notification (same event, device and title) is recorded at most once per
   10 minutes.
 - **No e-mail or webhook message.**
-  - **Sistem & Sürüm** → **Bildirimler**: **Dışarıya gönder** must be on, and the event's severity must be at least
-    **En az önem** (default: high). Everything is still shown under the bell.
+  - **Sistem** → **Bildirimler**: **Dışarıya gönder** must be on, and the event's severity must be at least
+    **En az önem** (default: high). Everything is still shown under **Bildirimler**.
   - E-mail also needs `SMTP_HOST` and a sender (`SMTP_FROM` or `SMTP_USER`) in the backend `.env`, then a restart
     of the backend. The card shows whether SMTP is configured.
   - Use **Test gönder**: it sends with the values in the form and shows the error text, for example a refused
     login or an unreachable host.
-  - A failed delivery is marked "gönderilemedi" under the bell; the error text is in the `delivery_error` field of
+  - A failed delivery is marked "gönderilemedi" under **Bildirimler**; the error text is in the `delivery_error` field of
     `GET /api/notifications` and in the `notifications` table.
-  - At most 30 notifications are sent out per 10 minutes; further ones are only shown under the bell.
+  - At most 30 notifications are sent out per 10 minutes; further ones are only shown under **Bildirimler**.
 - **Saving or testing the webhook fails with `Webhook adresi kabul edilmedi: adres iç ağa ya da yerel bir adrese
   çıkıyor (…)`.** The webhook host resolves to a loopback, private, link-local or otherwise non-public address,
   which is refused by default. For a receiver inside the school network set `NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` in the
@@ -250,12 +250,12 @@ signed updates; install the MSI on them once.
     notification is created too.
 - **It ran, but a PC did nothing.** A due schedule only queues tasks. They then behave like any other task: an
   offline PC runs it when it connects, the concurrency limit applies, and a PC whose terminal capability is off
-  refuses it with `[REDDEDİLDİ]`. Check the tasks on **Görev Kuyruğu**.
+  refuses it with `[REDDEDİLDİ]`. Check the tasks on **İşlemler**.
 
 ## Software inventory and Windows updates
 
 - **No software or Windows Update data for a device.** These are reported by agents 0.1.5-alpha and later; older
-  agents show "bildirmedi" and ignore **Tara** and the install buttons.
+  agents show "bildirmedi" and ignore the scan and install buttons.
 - **The agent's reports are rejected with `401`.** The software and Windows Update endpoints accept only enrolled
   agents with a valid device secret, even while enforcement is off. Enroll the device (see
   [Enrollment and 4401 rejections](#enrollment-and-4401-rejections)).
@@ -280,9 +280,9 @@ signed updates; install the MSI on them once.
 ## Helpdesk
 
 - **An agent's ticket is refused with `429`.** That PC already has 5 open tickets (open, in progress or waiting)
-  or opened 10 in the last hour. Resolve or close some tickets on **Yardım Masası**.
+  or opened 10 in the last hour. Resolve or close some tickets on **Destek talepleri**.
 - **An agent's ticket is refused with `401`.** Only enrolled agents with a valid device secret can open tickets,
   even while enforcement is off.
-- **Viewers see errors on Yardım Masası.** The ticket API needs the `admin` role; give the page only to admins.
+- **Viewers see errors on Destek talepleri.** The ticket API needs the `admin` role; give the page only to admins.
 - **A user does not see a reply.** Internal notes (**İç not**) are never sent to the PC; write a normal reply.
   Agents up to 0.1.4-alpha have no ticket function in the tray.

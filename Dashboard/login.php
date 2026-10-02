@@ -89,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $username = trim($_POST['username'] ?? '');
         $password = $_POST['password'] ?? '';
         if (empty($username) || empty($password)) {
-            $error = 'Kullanıcı adı ve şifre boş bırakılamaz!';
+            $error = 'Kullanıcı adı ve şifre boş bırakılamaz.';
         } else {
             list($responseData, $httpcode, $err) = pops_api_post('/api/admin/login', [
                 'username' => $username,
@@ -202,7 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
         <div class="login-header">
             <h2>POps</h2>
-            <p>Operations Platform</p>
+            <p>Yönetim paneli</p>
         </div>
         
         <div class="card p-6">
@@ -213,7 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php if ($show_otp): ?>
             <form method="POST" action="">
                 <div class="input-wrapper">
-                    <label>Doğrulama Kodu</label>
+                    <label>Doğrulama kodu</label>
                     <input type="text" name="otp" inputmode="numeric" autocomplete="one-time-code"
                            pattern="[0-9]*" maxlength="6" placeholder="123456" required autofocus
                            style="letter-spacing:0.4em; text-align:center; font-size:1.25rem;">
@@ -221,20 +221,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         Authenticator uygulamanızdaki 6 haneli kodu girin.
                     </p>
                 </div>
-                <button type="submit" class="btn block mt-6" style="padding: 0.875rem;">Doğrula ve Giriş Yap</button>
+                <button type="submit" class="btn block mt-6" style="padding: 0.875rem;">Doğrula ve giriş yap</button>
                 <a href="login.php?reset=1" style="display:block; text-align:center; margin-top:var(--space-4); font-size:var(--text-sm); color:var(--text-tertiary);">← Baştan giriş yap</a>
             </form>
             <?php else: ?>
             <form method="POST" action="">
                 <div class="input-wrapper">
-                    <label>Kullanıcı Adı</label>
+                    <label>Kullanıcı adı</label>
                     <input type="text" name="username" placeholder="admin" required autofocus>
                 </div>
                 <div class="input-wrapper">
                     <label>Şifre</label>
                     <input type="password" name="password" placeholder="••••••••" required>
                 </div>
-                <button type="submit" class="btn block mt-6" style="padding: 0.875rem;">Sisteme Giriş Yap</button>
+                <button type="submit" class="btn block mt-6" style="padding: 0.875rem;">Giriş yap</button>
             </form>
             <?php endif; ?>
         </div>

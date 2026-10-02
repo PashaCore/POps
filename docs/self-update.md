@@ -1,6 +1,6 @@
 # Sunucu backend self-update (Faz 5)
 
-Paneldeki **Sistem & Sürüm** sayfasından, SSH açmadan sunucu backend'ini
+Paneldeki **Sistem** sayfasından, SSH açmadan sunucu backend'ini
 güncellemeyi sağlar. Tasarım ayrıcalık ayrımına dayanır:
 
 ```

@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from typing import Optional
 
 from pops import db, health_alerts, modules, retention, update_tracking
@@ -82,7 +83,7 @@ async def enqueue(row: dict, actor_suffix: str, conn=None, expires_at=None) -> i
         return 0
     created = await conn.fetch(
         "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, schedule_id, "
-        "expires_at) SELECT t.pc, t.lab, $3, 'Pending', $4, $5, $6, $7 "
+        "expires_at, title, source, batch_id) SELECT t.pc, t.lab, $3, 'Pending', $4, $5, $6, $7, $8, 'schedule', $9 "
         "FROM unnest($1::text[], $2::text[]) AS t(pc, lab) "
         "WHERE NOT EXISTS (SELECT 1 FROM tasks p WHERE p.schedule_id = $6 AND p.target_pc = t.pc "
         "AND p.status IN ('Pending', 'Paused')) RETURNING id",
@@ -93,6 +94,8 @@ async def enqueue(row: dict, actor_suffix: str, conn=None, expires_at=None) -> i
         creator,
         row["id"],
         expires_at,
+        (row.get("name") or None),
+        uuid.uuid4().hex[:16],
     )
     return len(created)
 

@@ -49,6 +49,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0012_server_ca.sql` | `clients.cap_server_ca` (how the agent verifies the server certificate: school CA or Windows store). |
 | `0013_agent_health_bypass_keys.sql` | `clients.agent_health` (heartbeat health summary) and `agent_bypass_keys` (per-device offline bypass keys). |
 | `0014_hardening.sql` | Enrollment tokens stored as hashes; `tasks.exit_code` / `dispatched_at`; partial index for the task queue; agent identity enforcement on by default for new installs. |
+| `0019_task_context.sql` | `tasks.title`, `source`, `reason`, `client_ip` and `batch_id` (what a task is, which panel page sent it, why, from which address, and which request it belongs to) and indexes on `batch_id` and on `target_pc`. |
 | `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
 | `0017_task_expiry.sql` | `tasks.expires_at`, `tasks.schedule_id`, `tasks.agent_started_at` and the pending-by-schedule index. |
 | `0016_task_retry.sql` | `tasks.retry_of` (a retry opens a new task) and its index. |
@@ -77,8 +78,8 @@ At startup the backend marks every device `Offline`; agents that reconnect are w
 
 | Table | Contents |
 | --- | --- |
-| `tasks` | Command queue: `target_pc`, `target_lab`, `script_path` (the command line the agent runs), `status`, `created_at`, `output`, `created_by`. `exit_code` and `dispatched_at` (migration `0014`). Statuses used by the code: `Pending`, `Running`, `Completed`, `Failed` (non-zero exit code), `Completed (Rebooted)` (a restart command, agent restarted), `Interrupted` (the agent restarted while the command ran), `Unknown` (the connection dropped and the agent cannot resend the result), `Timed Out` (no result 35 minutes after it was sent; a late result still completes it), `Denied` (the agent refused it: terminal turned off on that PC), `Expired` (a scheduled run that could not be sent before `expires_at`), `Paused`, `Cancelled`. `retry_of` (migration `0016`): a retry is a new row pointing at the task it repeats; the old row keeps its result. Migration `0017`: `expires_at` (scheduled runs only), `schedule_id` (the scheduled task that queued it; a schedule does not queue a second copy for a PC that still has one pending) and `agent_started_at` (the agent's service start time when the task was sent, used to tell a restart from a reconnect). |
-| `packages` | Package and script definitions of the Deployment page (`id`, `name`, `type`, `meta`, `command`, `icon`, `color`). The uploaded files themselves are on disk in `Backend/storage`. |
+| `tasks` | Command queue: `target_pc`, `target_lab`, `script_path` (the command line the agent runs), `status`, `created_at`, `output`, `created_by`. `exit_code` and `dispatched_at` (migration `0014`). Statuses used by the code: `Pending`, `Running`, `Completed`, `Failed` (non-zero exit code), `Completed (Rebooted)` (a restart command, agent restarted), `Interrupted` (the agent restarted while the command ran), `Unknown` (the connection dropped and the agent cannot resend the result), `Timed Out` (no result 35 minutes after it was sent; a late result still completes it), `Denied` (the agent refused it: terminal turned off on that PC), `Expired` (a scheduled run that could not be sent before `expires_at`), `Paused`, `Cancelled`. `retry_of` (migration `0016`): a retry is a new row pointing at the task it repeats; the old row keeps its result. Migration `0017`: `expires_at` (scheduled runs only), `schedule_id` (the scheduled task that queued it; a schedule does not queue a second copy for a PC that still has one pending) and `agent_started_at` (the agent's service start time when the task was sent, used to tell a restart from a reconnect). Migration `0019`: `title` (the readable name, normally the name of the step), `source` (the panel page the request came from, for example `devices`, `labs`, `terminal`, `deploy`, `tasks` for a retry, or `schedule`), `reason` (the reason typed by the admin), `client_ip` (the address the request came from) and `batch_id` (a 16-character job ID shared by the tasks created by one request); all are empty on tasks created before the migration. |
+| `packages` | Package and script definitions of the **Dağıtım** page (`id`, `name`, `type`, `meta`, `command`, `icon`, `color`). The uploaded files themselves are on disk in `Backend/storage`. |
 | `scheduled_tasks` | Scheduled commands: `name`, `command`, `target_mode` (`ALL` / `LAB` / `PC`), `targets` (JSON list of labs or hardware IDs), `schedule_type` (`once` / `daily` / `weekly`), `run_at` (once), `time_of_day` (`HH:MM`, server time zone), `weekdays` (`1`–`7`, 1 = Monday), `enabled`, `next_run`, `last_run`, `last_result`, `created_by`, `created_at`. When due, the scheduler inserts normal rows into `tasks`. |
 
 ### Software and Windows updates
@@ -118,10 +119,10 @@ Deleting a device also deletes its rows in both tables.
 
 | Table | Contents |
 | --- | --- |
-| `agent_logs_v2` | Event log shown on the Log pages: `pc_name`, `actor_id`, `event_type`, `category`, `action`, `risk_level`, `reason`, `message`, `meta_data` (JSONB), `timestamp`. Written by the server and by agents (`POST /api/logs/{pc}`). |
+| `agent_logs_v2` | Event log shown on the **Kayıtlar** page: `pc_name`, `actor_id`, `event_type`, `category`, `action`, `risk_level`, `reason`, `message`, `meta_data` (JSONB), `timestamp`. Written by the server and by agents (`POST /api/logs/{pc}`). |
 | `device_audit_logs` | Security audit log that agents **cannot** write: enrollment, authentication rejections, identity changes, remote-control session starts, lockdown/unlock, bypass codes, SYSTEM command execution, queue flushes, update results, releases, enforcement, capability and re-enrollment changes, scheduled-task changes and runs, Windows Update scan/install requests, licence changes, agent self-quarantine and offline-bypass events, auto-enrollment and notification settings. Each row has `prev_hash` and `entry_hash` (SHA-256 chain). |
 | `enterprise_audit_logs` | Remote-control (Vision) sessions: session id, admin, role, target, start/end time, reason, mandatory flag, status. |
-| `notifications` | Entries under the panel's bell: `created_at`, `event`, `severity` (`info` / `medium` / `high` / `critical`), `pc_name`, `title`, `detail`, `channels` (where it was sent: `email`, `webhook`), `delivery_error`, `is_read`. Written only by the server. |
+| `notifications` | Entries under **Bildirimler** in the panel: `created_at`, `event`, `severity` (`info` / `medium` / `high` / `critical`), `pc_name`, `title`, `detail`, `channels` (where it was sent: `email`, `webhook`), `delivery_error`, `is_read`. Written only by the server. |
 | `agent_logs` | Old log table from before `agent_logs_v2`. Kept, no longer written. |
 | `bypass_tokens` | Created by the baseline; not used by the current code. |
 
@@ -135,13 +136,13 @@ returns the first broken entry. Rows written before migration `0004` have no has
 
 | Key | Set by | Meaning |
 | --- | --- | --- |
-| `concurrent_limit` | **Ayarlar** / **Dosya Dağıtımı** pages | How many devices may run a task at the same time (default `5`; `0` = unlimited). |
-| `enforce_agent_auth` | **Sistem & Sürüm** page | `1` = agents without valid credentials are rejected; anything else = accept-both. |
+| `concurrent_limit` | **Ayarlar** / **Dağıtım** / **İşlemler** pages | How many devices may run a task at the same time (default `5`; `0` = unlimited). |
+| `enforce_agent_auth` | **Sistem** page | `1` = agents without valid credentials are rejected; anything else = accept-both. |
 | `agent_policies` | **Politikalar** page / API | JSON: fair-use text, DNS categories, `auto_quarantine`, `quarantine_threshold`, `dns_domains`. |
 | `verified_release_version` | release upload / GitHub fetch | Version of the staged, signature-verified agent release. |
 | `verified_release_manifest` | release upload / GitHub fetch | The staged release's manifest (JSON); `deploy-update` sends this release. |
-| `auto_enroll_lab` | Labs page ("Oto-Kayıt") | JSON `{"lab": ..., "until": "YYYY-MM-DD"}`: lab for devices connecting for the first time up to that date. |
-| `notify_enabled`, `notify_min_severity`, `notify_email_to`, `notify_webhook_url` | **Sistem & Sürüm** → Bildirimler | Whether and where notifications are sent out. |
+| `auto_enroll_lab` | **Sınıflar** page ("Otomatik kayıt…") | JSON `{"lab": ..., "until": "YYYY-MM-DD"}`: lab for devices connecting for the first time up to that date. |
+| `notify_enabled`, `notify_min_severity`, `notify_email_to`, `notify_webhook_url` | **Sistem** → Bildirimler | Whether and where notifications are sent out. |
 | `license_check_date` | scheduler | Date (`YYYY-MM-DD`, server date) of the last daily licence check, so the check and its notifications run once a day. |
 
 See [`configuration.md`](configuration.md#runtime-settings-database) for how to change them.

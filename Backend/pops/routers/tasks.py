@@ -11,6 +11,7 @@ import os
 import secrets
 import tempfile
 import time
+import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -19,7 +20,9 @@ from werkzeug.utils import secure_filename
 from pops.config import LOG_TABLE, UPDATES_DIR, UPLOAD_DIR
 from pops import db, modules
 from pops.db import execute_query
-from pops.models import CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput
+from pops.models import (
+    CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput, TaskStatusInput,
+)
 from pops.security import require_admin, require_auth
 from pops.audit import add_audit_log
 from pops.manager import manager
@@ -65,8 +68,13 @@ _ACTIVE_STATUSES = ["Pending", "Running", "Paused", "Unknown"]
 _ACTION_TARGET = {"CANCEL": "Cancelled", "RETRY": "Pending", "PAUSE": "Paused", "RESUME": "Pending"}
 
 
+def _client_ip(request):
+    # uvicorn güvenilen ters vekilin X-Forwarded-For başlığını zaten çözer; doğrudan çağrıda (testler) istek yoktur
+    return request.client.host if request is not None and request.client else None
+
+
 @router.post("/api/tasks/action")
-async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require_admin)):
+async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require_admin), request: Request = None):
     action = data.action.upper()
     mode = data.target_mode.upper()
     tid = data.target_id
@@ -83,7 +91,7 @@ async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require
         raise HTTPException(status_code=400, detail="Geçersiz hedef")
     where, value = scope
     if action == "RETRY":
-        return await _retry(where, value(), auth.get("sub"))
+        return await _retry(where, value(), auth.get("sub"), _client_ip(request))
     # Önceki durum da döner: çalışmakta olan görev iptal edildiyse ajana da bildirilir
     changed = await execute_query(
         "WITH target AS (SELECT t.id, t.target_pc, t.status FROM tasks t "
@@ -105,22 +113,41 @@ async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require
     return {"status": "success", "changed": len(changed or [])}
 
 
-async def _retry(where: str, value, creator: str) -> dict:
+async def _retry(where: str, value, creator: str, client_ip=None) -> dict:
     """Yeniden deneme YENİ bir görev kaydı açar (retry_of = eski görev); eski kayıt sonucuyla kalır. Eskiden aynı
     görev kimliği yeniden "Pending" yapılıyordu: iptal edilmiş ama hâlâ süren eski çalıştırmanın geç gelen sonucu
     yeni çalıştırmayı tamamlanmış gösterebilirdi. Aynı görevin süren bir yeniden denemesi varsa ikincisi açılmaz."""
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     created = await execute_query(
-        "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, retry_of) "
-        "SELECT t.target_pc, t.target_lab, t.script_path, 'Pending', $2, $3, t.id FROM tasks t "
+        "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, retry_of, "
+        "title, source, reason, client_ip, batch_id) "
+        "SELECT t.target_pc, t.target_lab, t.script_path, 'Pending', $2, $3, t.id, "
+        "t.title, 'tasks', t.reason, $6, $7 FROM tasks t "
         f"WHERE {where.format(v='$1')} AND t.status = ANY($4::text[]) "
         "AND NOT EXISTS (SELECT 1 FROM tasks n WHERE n.retry_of = t.id AND n.status = ANY($5::text[])) "
         "RETURNING id",
-        (value, now, creator, list(_ACTION_STATUSES["RETRY"]), _ACTIVE_STATUSES),
+        (value, now, creator, list(_ACTION_STATUSES["RETRY"]), _ACTIVE_STATUSES, client_ip, uuid.uuid4().hex[:16]),
         fetch=True,
     )
     await process_queue()
-    return {"status": "success", "changed": len(created or [])}
+    ids = [r["id"] for r in created or []]
+    return {"status": "success", "changed": len(ids), "task_ids": ids}
+
+
+@router.post("/api/tasks/status")
+async def task_status(data: TaskStatusInput, auth: dict = Depends(require_auth)):
+    """Verilen görevlerin durumu (panelin işlem merkezi bir işin ilerlemesini buradan izler). Silinmiş görev listede
+    yoktur."""
+    rows = await execute_query(
+        "SELECT id, target_pc, target_lab, status, exit_code, dispatched_at FROM tasks WHERE id = ANY($1::int[])",
+        (list(dict.fromkeys(data.ids)),),
+        fetch=True,
+    )
+    return {"items": [
+        {"id": r["id"], "target_pc": r["target_pc"], "target_lab": r["target_lab"], "status": r["status"],
+         "exit_code": r["exit_code"], "dispatched_at": r["dispatched_at"].isoformat() if r["dispatched_at"] else None}
+        for r in rows or []
+    ]}
 
 
 @router.post("/api/set_concurrent_limit")
@@ -315,7 +342,7 @@ def _orchestration_key(creator: str, data: OrchestrationInput) -> str:
 
 
 @router.post("/api/deploy_orchestration")
-async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(require_admin)):
+async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(require_admin), request: Request = None):
     creator = auth.get("sub")  # F4(a): görevi kuyruklayan admin kaydedilir
     key = _orchestration_key(creator, data)
     first = _recent_orchestrations.get(key)
@@ -323,12 +350,12 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
         # Aynı istek az önce geldi: ilkinin GERÇEK sonucu beklenir ve aynen döner (ilki başarısız olduysa bu da olur).
         # Eskiden ilki daha bitmeden "başarılı" dönülüyordu.
         try:
-            created = await asyncio.wait_for(asyncio.shield(first[1]), 30)
+            ids = await asyncio.wait_for(asyncio.shield(first[1]), 30)
         except Exception:
             raise HTTPException(
                 status_code=409, detail="Aynı istek az önce gönderildi ve tamamlanamadı; tekrar deneyin."
             )
-        return {"status": "success", "duplicate": True, "created": created}
+        return {"status": "success", "duplicate": True, "created": len(ids), "task_ids": ids}
     outcome = asyncio.get_running_loop().create_future()
     _recent_orchestrations[key] = (time.monotonic(), outcome)
     try:
@@ -343,26 +370,34 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
         target_pcs = [t for t in target_pcs if t["pc"] in allowed]
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         rows = [
-            (target["pc"], target["lab"], task.command, now, creator)
-            for target in target_pcs
-            for task in data.taskSequence
+            (target["pc"], target["lab"], task.command, (task.name or "")[:200] or None)
+            for target in target_pcs for task in data.taskSequence
         ]
+        batch_id = uuid.uuid4().hex[:16]
+        reason = (data.reason or "").strip() or None
+        ids = []
         if rows:
-            # Hepsi ya da hiçbiri: yarıda kalan bir istek hedeflerin bir kısmına görev bırakmaz
+            # Hepsi ya da hiçbiri: yarıda kalan bir istek hedeflerin bir kısmına görev bırakmaz. Kimlikler döner: panel
+            # işin ilerlemesini bu görevler üzerinden izler (POST /api/tasks/status).
             async with db.transaction() as conn:
-                await conn.executemany(
-                    "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by) "
-                    "VALUES ($1, $2, $3, 'Pending', $4, $5)",
-                    rows,
+                created = await conn.fetch(
+                    "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, "
+                    "title, source, reason, client_ip, batch_id) "
+                    "SELECT t.pc, t.lab, t.cmd, 'Pending', $5, $6, COALESCE(t.title, $7), $8, $9, $10, $11 "
+                    "FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) WITH ORDINALITY "
+                    "AS t(pc, lab, cmd, title, n) ORDER BY t.n RETURNING id",
+                    [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows],
+                    now, creator, data.title, data.source, reason, _client_ip(request), batch_id,
                 )
+            ids = [r["id"] for r in created]
     except Exception as exc:
         _recent_orchestrations.pop(key, None)   # başarısız istek yeniden denenebilsin
         outcome.set_exception(exc)
         outcome.exception()   # bekleyen yoksa "alınmamış hata" uyarısı çıkmasın
         raise
-    outcome.set_result(len(rows))
+    outcome.set_result(ids)
     await process_queue()
-    out = {"status": "success", "created": len(rows)}
+    out = {"status": "success", "created": len(ids), "task_ids": ids}
     if closed:
         out["skipped_module_closed"] = len(closed)   # modül kapalı laboratuvardaki hedefler
     return out

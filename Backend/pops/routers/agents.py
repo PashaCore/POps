@@ -13,7 +13,7 @@ from starlette.websockets import WebSocketState
 from pops import db, modules
 from pops.db import execute_query
 from pops.models import AgentPoliciesInput, AuthEventInput, HwInventoryInput, LogInput, PolicyAlertInput
-from pops.security import require_admin
+from pops.security import require_admin, require_auth
 from pops.agent_auth import (
     bind_agent,
     _hash_secret,
@@ -992,7 +992,31 @@ async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(require_a
         "SET value = $1",
         (val,),
     )
+    # Kim, ne zaman: panel "Son değişiklik" satırını buradan okur (GET /api/agent_policies/meta); politika
+    # değişikliği hash-zincirli denetim kaydına da yazılır.
+    who = auth.get("sub")
+    meta = json.dumps({"updated_by": who, "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+    await execute_query(
+        "INSERT INTO global_settings (key, value) VALUES ('agent_policies_meta', $1) "
+        "ON CONFLICT (key) DO UPDATE SET value = $1",
+        (meta,),
+    )
+    await add_audit_log(
+        "*", "policy_update", "Ajan politikası değiştirildi: %s" % who,
+        {"admin": who, "dns_categories": data.dns_categories, "auto_quarantine": data.auto_quarantine},
+    )
     return {"status": "success"}
+
+
+@router.get("/api/agent_policies/meta")
+async def policies_meta(auth: dict = Depends(require_auth)):
+    """Politikayı en son kimin, ne zaman değiştirdiği (panel için; ajanlar okumaz)."""
+    row = await execute_query("SELECT value FROM global_settings WHERE key = 'agent_policies_meta'", fetch=True)
+    try:
+        meta = json.loads(row[0]["value"]) if row else {}
+    except (TypeError, ValueError):
+        meta = {}
+    return {"updated_by": meta.get("updated_by"), "updated_at": meta.get("updated_at")}
 
 
 @router.get("/api/agent_policies")

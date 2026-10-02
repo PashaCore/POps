@@ -14,6 +14,7 @@ server.py'yi import etmez (döngüsel import yok). Python 3.9 uyumlu.
 """
 import asyncio
 import base64
+import datetime
 import hashlib
 import json
 import os
@@ -30,6 +31,7 @@ from pydantic import BaseModel
 
 import release_verify
 from pops import agent_version as agent_version_mod
+from pops.models import UpdateProgressInput
 
 
 class EnrollTokenInput(BaseModel):
@@ -601,6 +603,47 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
     async def revoke_enroll_token(token_id: int, auth: dict = Depends(require_superadmin)):
         await execute_query("DELETE FROM enroll_tokens WHERE id = $1", (token_id,))
         return {"ok": True}
+
+    @router.post("/api/system/update-progress")
+    async def update_progress(data: UpdateProgressInput, auth: dict = Depends(require_admin)):
+        """Gönderilmiş bir ajan güncellemesinin cihaz cihaz durumu (panelin işlem merkezi): bağlı mı, çalışan sürüm,
+        sonucu beklenen gönderim var mı ve gönderimden sonra gelen güncelleme sonucu (başarılı / geri döndü)."""
+        pcs = list(dict.fromkeys(str(p) for p in data.pcs))[:5000]
+        if not pcs:
+            return {"items": []}
+        since = datetime.datetime.fromtimestamp(max(0.0, data.since)).strftime("%Y-%m-%d %H:%M:%S")
+        rows = await execute_query(
+            "SELECT c.pc_name, c.status, c.running_version, av.version AS agent_version FROM clients c "
+            "LEFT JOIN agent_versions av ON av.pc_name = c.pc_name WHERE c.pc_name = ANY($1::text[])",
+            (pcs,), fetch=True,
+        )
+        results = await execute_query(
+            "SELECT DISTINCT ON (hw_id) hw_id, changes FROM device_audit_logs "
+            "WHERE action = 'update_result' AND hw_id = ANY($1::text[]) AND timestamp >= $2 ORDER BY hw_id, id DESC",
+            (pcs, since), fetch=True,
+        )
+        last = {}
+        for r in results or []:
+            try:
+                ch = json.loads(r["changes"]) if isinstance(r["changes"], str) else (r["changes"] or {})
+            except ValueError:
+                ch = {}
+            last[r["hw_id"]] = {k: ch.get(k) for k in ("status", "rollback", "to_version", "detail", "agent_state")}
+        known = {r["pc_name"]: r for r in rows or []}
+        items = []
+        for pc in pcs:
+            r = known.get(pc)
+            version = (r and (r["running_version"] or r["agent_version"])) or None
+            items.append({
+                "pc": pc,
+                "known": r is not None,
+                "online": bool(r and str(r["status"] or "").lower() != "offline"),
+                "version": version,
+                "on_target": bool(version) and _norm(version) == _norm(data.version),
+                "pending": pc in manager.pending_updates,
+                "result": last.get(pc),
+            })
+        return {"items": items}
 
     @router.post("/api/system/deploy-update")
     async def deploy_update(data: DeployUpdateInput, auth: dict = Depends(require_superadmin)):

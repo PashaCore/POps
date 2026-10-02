@@ -55,7 +55,7 @@ Ways to create it:
 | `CORS_ALLOWED_ORIGINS` | no | empty | Comma-separated list of extra origins allowed to call the API from a browser (for example `https://pops.example.com`). Leave empty when the panel and the API share one origin, which is the normal setup. |
 | `WOL_BROADCAST_ADDR` | no | `255.255.255.255` | Where the server sends Wake-on-LAN packets. For a routed lab subnet use its broadcast address, e.g. `10.0.5.255`. |
 | `WOL_PORT` | no | `9` | Wake-on-LAN UDP port. |
-| `POPS_GITHUB_REPO` | no | `PashaCore/POps` | GitHub repository used for the release check, the server update check and **GitHub'dan indir ve doğrula**. |
+| `POPS_GITHUB_REPO` | no | `PashaCore/POps` | GitHub repository used for the release check, the server update check and the agent package download on **Sistem** → **Ajanlar**. |
 | `POPS_SELFUPDATE_DIR` | no | `/var/lib/pops` | Spool directory for panel-triggered server self-update. Self-update counts as installed only if the backend user can write here. See [`self-update.md`](self-update.md). |
 | `POPS_VERSION` | no | – | Overrides the version the server reports. Normally unset; the version is read from the `VERSION` file next to the backend (or one level up), then from `CHANGELOG.md`. |
 | `SMTP_HOST` | no | empty | Mail server for e-mail notifications. E-mail is sent only when `SMTP_HOST` and a sender (`SMTP_FROM` or `SMTP_USER`) are set. |
@@ -90,7 +90,7 @@ Relative to the backend directory:
 
 | Path | Purpose |
 | --- | --- |
-| `storage/` | Files uploaded on the Deployment page, served at `/download/`. |
+| `storage/` | Files uploaded on the **Dağıtım** page, served at `/download/`. |
 | `updates/` | The agent MSI being dispatched, served at `/updates/`. |
 | `releases/<version>/` | Staged, signature-verified releases. |
 | `keys/pops_release_ed25519.pub.pem` (or `../keys/…`) | Public key used to verify releases. Without it, release upload and download return `503`. |
@@ -151,7 +151,7 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log
 | Property | Written to | Notes |
 | --- | --- | --- |
 | `SERVER_URL` | `ServerUrl` in `appsettings.json` (install folder) | Required on a first install. Must be `https://`; `http://` only for `127.0.0.1` / `localhost`. |
-| `ENROLL_TOKEN` | `C:\POpsData\secure\enroll.token` | Enrollment token from **Sistem & Sürüm**. Hidden from the MSI log. |
+| `ENROLL_TOKEN` | `C:\POpsData\secure\enroll.token` | Enrollment token from **Sistem**. Hidden from the MSI log. |
 | `BYPASS_SECRET` | `C:\POpsData\secure\bypass.secret` | Must equal the server's `BYPASS_SECRET` for offline bypass codes. Hidden from the MSI log. |
 | `PERSIST_DIR` | `PersistDir` in `appsettings.json` | Local NTFS folder that freeze software does not roll back; the device secret is mirrored there. |
 | `TERMINAL_ENABLED` | `C:\POpsData\secure\capabilities.json` | `1` / `0`: allow or forbid remote commands (`execute`) on this PC. |
@@ -183,12 +183,12 @@ SQL is shown for recovery situations.
 
 | Setting | Where in the panel | Values |
 | --- | --- | --- |
-| `concurrent_limit` | **Ayarlar** → "Orkestrasyon Performansı" (1–200), or **Dosya Dağıtımı** → "Akıllı Kuyruk Limiti" (1–100) | How many devices run a queued task at the same time. Default `5`. The backend treats `0` as no limit (API or SQL only). |
-| `enforce_agent_auth` | **Sistem & Sürüm** → "Kimlik zorlaması" | `1`: agents without a valid secret or enrollment token are rejected (WebSocket `4401`, HTTP `401`). Default off (accept-both). |
+| `concurrent_limit` | **Ayarlar** → "Görev kuyruğu" → "Eşzamanlı görev sınırı" (1–200), **Dağıtım** → "Eşzamanlı kurulum sınırı" (1–100) or the limit button on **İşlemler** (1–500) | How many devices run a queued task at the same time. Default `5`. The backend treats `0` as no limit (API or SQL only). |
+| `enforce_agent_auth` | **Sistem** → "Kimlik zorlaması" | `1`: agents without a valid secret or enrollment token are rejected (WebSocket `4401`, HTTP `401`). Default off (accept-both). |
 | `agent_policies` | **Politikalar** | JSON policy read by agents every 60 seconds (below). |
-| `verified_release_version`, `verified_release_manifest` | **Sistem & Sürüm** → agent update | The staged, verified agent release. Set only by a successful upload or GitHub download. |
-| `auto_enroll_lab` | **Laboratuvarlar** → **Oto-Kayıt** | JSON `{"lab": "<lab>", "until": "YYYY-MM-DD"}`. Devices that connect for the **first time** on or before `until` (server date) are put into that lab. A lab from the enrollment token takes precedence, devices that are already known keep their lab, and a value without `until` (from older versions) is ignored. |
-| `notify_enabled`, `notify_min_severity`, `notify_email_to`, `notify_webhook_url` | **Sistem & Sürüm** → **Bildirimler** | Notification delivery, see below. |
+| `verified_release_version`, `verified_release_manifest` | **Sistem** → **Ajanlar** | The staged, verified agent release. Set only by a successful upload or GitHub download. |
+| `auto_enroll_lab` | **Sınıflar** → **Sınıf işlemleri** → **Otomatik kayıt…** | JSON `{"lab": "<lab>", "until": "YYYY-MM-DD"}`. Devices that connect for the **first time** on or before `until` (server date) are put into that lab. A lab from the enrollment token takes precedence, devices that are already known keep their lab, and a value without `until` (from older versions) is ignored. |
+| `notify_enabled`, `notify_min_severity`, `notify_email_to`, `notify_webhook_url` | **Sistem** → **Bildirimler** | Notification delivery, see below. |
 
 ```sql
 -- Emergency: turn agent-auth enforcement off (for example if a lab was enforced before it enrolled)
@@ -217,12 +217,12 @@ PC automatically; they do show the fair-use text. See [`agent.md`](agent.md#poli
 
 ### Notification settings
 
-Set by a superadmin on **Sistem & Sürüm** → **Bildirimler** (`POST /api/system/notify-settings`) and stored in
+Set by a superadmin on **Sistem** → **Bildirimler** (`POST /api/system/notify-settings`) and stored in
 `global_settings`:
 
 | Key | Values | Meaning |
 | --- | --- | --- |
-| `notify_enabled` | `1` / `0` (default `0`) | Send notifications out by e-mail and/or webhook. The bell in the panel works regardless. |
+| `notify_enabled` | `1` / `0` (default `0`) | Send notifications out by e-mail and/or webhook. **Bildirimler** in the panel's sidebar works regardless. |
 | `notify_min_severity` | `info`, `medium`, `high` (default), `critical` | Lowest severity that is sent out. |
 | `notify_email_to` | comma-separated addresses (at most 20) | E-mail recipients. Needs the `SMTP_*` settings in `.env`. |
 | `notify_webhook_url` | `http://` or `https://` URL (at most 500 characters) that resolves to public addresses only, unless `NOTIFY_WEBHOOK_ALLOW_PRIVATE` is set | Receives a JSON `POST` for each notification. Redirects are not followed; any status of 300 or above counts as a failed delivery. |

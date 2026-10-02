@@ -179,6 +179,50 @@ async def get_devices(auth: dict = Depends(require_auth)):
     ]
 
 
+def _iso(v):
+    if v is None:
+        return None
+    if isinstance(v, (datetime.datetime, datetime.date)):
+        return v.isoformat()
+    return str(v)
+
+
+@router.get("/api/devices/{pc_name}/activity")
+async def device_activity(pc_name: str, limit: int = 15, auth: dict = Depends(require_auth)):
+    """Bir cihazın son işlemleri (görevler ve uzak ekran oturumları), yeniden eskiye. Panelin cihaz ayrıntı
+    panelindeki "Son işlemler" listesi: ne, kim, ne zaman, nereden, sonuç ve gerekçe."""
+    limit = max(1, min(int(limit), 50))
+    tasks = await execute_query(
+        "SELECT id, title, script_path, status, exit_code, created_at, created_by, source, reason, client_ip, "
+        "dispatched_at, batch_id FROM tasks WHERE target_pc = $1 ORDER BY id DESC LIMIT $2",
+        (pc_name, limit),
+        fetch=True,
+    )
+    sessions = await execute_query(
+        "SELECT start_time, end_time, admin_name, reason, is_mandatory, status FROM enterprise_audit_logs "
+        "WHERE target_pc = $1 ORDER BY start_time DESC NULLS LAST LIMIT $2",
+        (pc_name, limit),
+        fetch=True,
+    )
+    items = [
+        {
+            "kind": "task", "id": r["id"], "title": r["title"], "command": (r["script_path"] or "")[:300],
+            "status": r["status"], "exit_code": r["exit_code"], "at": _iso(r["created_at"]),
+            "by": r["created_by"], "source": r["source"], "reason": r["reason"], "ip": r["client_ip"],
+            "started_at": _iso(r["dispatched_at"]), "batch_id": r["batch_id"],
+        }
+        for r in tasks or []
+    ] + [
+        {
+            "kind": "vision", "status": r["status"], "at": _iso(r["start_time"]), "ended_at": _iso(r["end_time"]),
+            "by": r["admin_name"], "reason": r["reason"], "mandatory": bool(r["is_mandatory"]),
+        }
+        for r in sessions or []
+    ]
+    items.sort(key=lambda i: i["at"] or "", reverse=True)
+    return {"items": items[:limit]}
+
+
 @router.get("/api/inventory")
 async def get_all_inventory(auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT * FROM hw_inventory", fetch=True)

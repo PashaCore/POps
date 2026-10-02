@@ -26,8 +26,8 @@ A backup that cannot be restored is worse than none, because it gives false conf
 (`<db>_restorecheck`), runs `audit_verify.py` on it (the hash-chained audit log must be intact and the migration
 history present) and drops the temporary database. Only then is the backup marked `verified`.
 
-The result is written to `/var/lib/pops-state/backup-status.json` (a root-owned directory; up to 0.1.12 it was `/var/lib/pops`). The panel shows it on **Sistem & Sürüm → Sunucu
-sağlığı** ("Son yedek") and warns when there is no backup, the last one failed, or it is older than two days.
+The result is written to `/var/lib/pops-state/backup-status.json` (a root-owned directory; up to 0.1.12 it was `/var/lib/pops`). The panel shows it on **Sistem → Yedekler**
+("Son veritabanı yedeği") and warns when there is no backup, the last one failed, or it is older than two days.
 `/metrics` exposes `pops_backup_last_age_seconds` and `pops_backup_last_ok`.
 
 ## Setup
@@ -84,7 +84,7 @@ the audit chain, starts the service and waits for `/api/health`. Everything writ
 3. Point the server's DNS name at the new machine (agents connect to the `SERVER_URL` they were installed with) and
    set up the web server and TLS certificate as before. Agents reconnect by themselves with their existing
    secrets; nothing needs to be done on the PCs.
-4. Log in to the panel and check **Sistem & Sürüm**: devices come back online, "Sunucu sağlığı" is green.
+4. Log in to the panel and check **Sistem**: devices come back online, the **Sağlık** card says "Sağlıklı".
 5. Re-enable the nightly backup if you did not reuse `/etc/pops/backup.conf`.
 
 If the agents' server address changes (new DNS name), they must be reinstalled or re-pointed with the new
@@ -96,7 +96,7 @@ If the agents' server address changes (new DNS name), they must be reinstalled o
 |---|---|---|
 | Database | Every agent must be re-enrolled; audit history, users, tasks, licences, tickets gone. | Full restore; agents keep their secrets. |
 | Backend `.env` | New `JWT_SECRET` (everyone logs in again), database password must be reset. | Restored as it was. |
-| `releases/`, `updates/` | Re-fetch the release from GitHub on **Sistem & Sürüm**. | Restored. |
+| `releases/`, `updates/` | Re-fetch the release from GitHub on **Sistem**. | Restored. |
 | `storage/` | Uploaded distribution files must be uploaded again. | Restored. |
 
 ## Tested in CI

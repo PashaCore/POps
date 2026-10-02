@@ -1,95 +1,71 @@
 <?php include 'includes/header.php'; ?>
 
 <style>
-    .terminal-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); display: flex; flex-direction: column; min-height: 650px; box-shadow: var(--shadow-xs); }
-    .terminal-toolbar { display: flex; flex-direction: column; gap: 0.75rem; padding: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
-    .terminal-toolbar-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; }
-    .mode-switcher { display: flex; background: var(--bg-surface-2); padding: 0.25rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); }
-    .mode-switcher button { padding: 0.375rem 0.75rem; border: none; background: transparent; color: var(--text-tertiary); font-size: var(--text-xs); font-weight: var(--fw-semibold); border-radius: var(--radius-sm); cursor: pointer; display: inline-flex; align-items: center; gap: 0.375rem; }
-    .mode-switcher button.active { background: var(--bg-surface); color: var(--primary-600); box-shadow: var(--shadow-xs); }
-
-    .toolbar-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-
-    .target-area { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-    .search-input-wrap { position: relative; width: 220px; }
-    .search-input-wrap i { position: absolute; left: 0.625rem; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); font-size: 0.75rem; pointer-events: none; }
-    .search-input-wrap input { padding-left: 2rem; height: 36px; }
-
-    .terminal-container { background: #0a0e1a; padding: var(--space-5); flex: 1; overflow-y: auto; font-family: var(--font-mono); color: #4ade80; font-size: 0.875rem; cursor: text; display: flex; flex-direction: column; box-shadow: inset 0 2px 12px rgba(0,0,0,0.3); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
-    .pops-terminal-screen { line-height: 1.5; }
-    .pops-terminal-screen .header { color: #cbd5e1; margin-bottom: var(--space-3); }
-    .pops-terminal-screen .header .title { color: #f1f5f9; font-weight: var(--fw-semibold); }
-    .pops-terminal-screen .tip { color: #fbbf24; }
-    .pops-terminal-screen .cmd-block { color: #f1f5f9; }
-    .pops-terminal-screen .cmd-output { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; background: rgba(16, 185, 129, 0.05); padding: 0.5rem 0.75rem; border-left: 3px solid var(--success-solid); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
-    .pops-terminal-screen .cmd-output .pc { color: #60a5fa; font-weight: var(--fw-semibold); }
-    .pops-terminal-screen .info { color: #94a3b8; font-style: italic; font-size: 0.8125rem; }
-    .pops-terminal-screen .err { color: #f87171; }
-    .pops-terminal-screen .warn { color: #fbbf24; }
-
-    .cmd-input-line { display: flex; align-items: center; margin-top: 0.75rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 0.5rem; }
-    .cmd-prefix { margin-right: 0.5rem; color: #f1f5f9; font-weight: var(--fw-bold); letter-spacing: 0.05em; }
-    .cmd-input { background: transparent; border: none; color: #4ade80; font-family: var(--font-mono); font-size: 0.875rem; flex: 1; outline: none; padding: 0; box-shadow: none; }
+    .tm-target { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .tm-area { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
+    .tm-area .search-field { flex: 0 1 220px; min-width: 160px; }
+    .tm-area select { flex: 0 1 340px; width: auto; min-width: 200px; }
+    .tm-area .chip { cursor: pointer; }
+    .tm-note { font-size: var(--text-xs); color: var(--text-tertiary); margin: 0 0 12px; display: flex; gap: 14px; flex-wrap: wrap; }
+    .tm-note:empty { display: none; }
+    .tm-note span { display: inline-flex; align-items: center; gap: 6px; }
+    .tm-console { position: relative; background: #1d1d1f; border-radius: 16px; padding: 18px 20px; min-height: 560px; max-height: calc(100vh - 260px); overflow-y: auto; font-family: var(--font-mono); color: #e5e5ea; font-size: 13px; cursor: text; display: flex; flex-direction: column; }
+    .tm-tools { position: sticky; top: 0; align-self: flex-end; display: flex; gap: 2px; margin: -8px -10px 0 0; z-index: 2; }
+    .tm-tools .ibtn { color: #8e8e93; }
+    .tm-tools .ibtn:hover { background: #2c2c2e; color: #fff; }
+    .pops-terminal-screen { line-height: 1.55; flex: 1; }
+    .pops-terminal-screen .header { color: #aeaeb2; margin-bottom: 10px; }
+    .pops-terminal-screen .header .title { color: #fff; font-weight: 600; }
+    .pops-terminal-screen .tip { color: #8e8e93; }
+    .pops-terminal-screen .cmd-block { color: #fff; }
+    .pops-terminal-screen .cmd-output { display: flex; gap: 10px; margin-bottom: 8px; background: rgba(255, 255, 255, 0.04); padding: 8px 12px; border-radius: 10px; }
+    .pops-terminal-screen .cmd-output .pc { color: #64d2ff; font-weight: 600; white-space: nowrap; }
+    .pops-terminal-screen .info { color: #8e8e93; font-size: 12px; }
+    .pops-terminal-screen .err { color: #ff6961; }
+    .pops-terminal-screen .warn { color: #ffd60a; }
+    .pops-terminal-screen .ok { color: #30d158; }
+    .cmd-input-line { display: flex; align-items: center; margin-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; }
+    .cmd-prefix { margin-right: 8px; color: #fff; font-weight: 600; white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+    .cmd-input { background: transparent; border: none; color: #fff; font-family: var(--font-mono); font-size: 13px; flex: 1; outline: none; padding: 0; box-shadow: none; min-height: 0 !important; }
     .cmd-input:focus { box-shadow: none; }
-
-    .lab-btn { padding: 0.3125rem 0.625rem; border-radius: var(--radius-sm); border: 1px solid var(--border-default); font-size: 0.6875rem; background: var(--bg-surface-2); color: var(--text-secondary); cursor: pointer; font-weight: var(--fw-semibold); margin-bottom: 0.25rem; display: inline-flex; align-items: center; gap: 0.25rem; }
-    .lab-btn:hover { background: var(--bg-surface); color: var(--text-primary); }
-    .lab-btn.active { background: var(--primary-500); color: white; border-color: var(--primary-500); }
+    .cmd-input::placeholder { color: #636366; }
 </style>
 
 <div class="page-header">
     <div>
-        <h1><i class="fas fa-terminal"></i> Etkileşimli Terminal</h1>
-        <p>PC'lere doğrudan komut gönder, çıktıları canlı izle</p>
+        <h1>Uzak komut</h1>
+        <div class="summary" id="tmSummary"><span class="sum faint">Hedef seçin</span></div>
+    </div>
+    <div class="page-header-actions">
+        <button type="button" class="btn secondary" id="quickBtn" aria-haspopup="menu"><?php echo pops_icon('zap', 'sm'); ?>Hızlı komutlar<?php echo pops_icon('chev', 'sm'); ?></button>
+        <button type="button" class="ibtn boxed" id="historyBtn" data-tip="Komut geçmişi" data-tip-pos="left" aria-label="Komut geçmişi"><?php echo pops_icon('clock'); ?></button>
     </div>
 </div>
 
-<div class="terminal-card">
-    <div class="terminal-toolbar">
-        <div class="terminal-toolbar-row">
-            <div class="mode-switcher">
-                <button id="btnModeSingle" class="active"><i class="fas fa-desktop"></i> Tekil Cihaz</button>
-                <button id="btnModeLab"><i class="fas fa-network-wired"></i> Toplu (Lab)</button>
-            </div>
-            <div class="toolbar-actions">
-                <button id="wakeUpBtn" class="btn success"><i class="fas fa-bolt"></i> <span id="wakeUpText">Uyandır</span></button>
-                <button id="copyTerminalBtn" class="btn secondary"><i class="fas fa-copy"></i> Kopyala</button>
-                <button id="clearTerminalBtn" class="btn secondary"><i class="fas fa-eraser"></i> Temizle</button>
-            </div>
-        </div>
-        <div class="target-area">
-            <div id="areaSingle" class="target-area" style="flex:1;">
-                <div class="search-input-wrap">
-                    <i class="fas fa-filter"></i>
-                    <input type="text" id="terminalDeviceSearch" placeholder="Ad, sınıf ya da IP ile ara">
-                </div>
-                <select id="terminalDeviceSelect" style="flex:1;max-width:350px;height:36px;">
-                    <option value="">Cihaz Seçin...</option>
-                </select>
-            </div>
-            <div id="areaLab" class="target-area" style="display:none;flex:1;"></div>
-        </div>
-        <!-- Hızlı İşlemler -->
-        <div class="quick-actions-bar" style="display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap; border-top:1px dashed var(--border-subtle); padding-top:0.75rem;">
-            <span style="font-size:0.75rem; color:var(--text-tertiary); display:flex; align-items:center; margin-right:0.25rem;"><i class="fas fa-bolt"></i> Hızlı Komutlar:</span>
-            <button type="button" class="lab-btn" data-quick="dns"><i class="fas fa-globe"></i> DNS Temizle</button>
-            <button type="button" class="lab-btn" data-quick="network"><i class="fas fa-network-wired"></i> Ağı Yenile</button>
-            <button type="button" class="lab-btn" data-quick="spooler"><i class="fas fa-print"></i> Yazıcı Kuyruğu</button>
-            <button type="button" class="lab-btn" data-quick="temp"><i class="fas fa-broom"></i> Temp Temizle</button>
-            <button type="button" class="lab-btn" data-quick="gpupdate"><i class="fas fa-shield-halved"></i> GPUpdate</button>
-            <div style="width:1px; background:var(--border-subtle); margin:0 0.25rem;"></div>
-            <button type="button" class="lab-btn" id="btnQuickSingleRename" onclick="window.promptSingleRename(this)"><i class="fas fa-tag"></i> Yeniden adlandır</button>
-            <button type="button" class="lab-btn" id="btnQuickAutoRename" style="display:none;" onclick="window.promptAutoRename(this)"><i class="fas fa-tags"></i> Toplu adlandır</button>
-            <button type="button" class="lab-btn" onclick="window.promptTaskkill(this)"><i class="fas fa-xmark"></i> Uygulamayı kapat</button>
-        </div>
+<div class="tm-target">
+    <div class="segmented" id="tmMode" role="group" aria-label="Hedef türü">
+        <button type="button" id="btnModeSingle" data-mode="single" class="active" aria-pressed="true">Bilgisayar</button>
+        <button type="button" id="btnModeLab" data-mode="lab" aria-pressed="false">Sınıf</button>
+        <button type="button" id="btnModeMulti" data-mode="multi" aria-pressed="false" hidden>Seçili</button>
     </div>
+    <div id="areaSingle" class="tm-area">
+        <div class="search-field"><i class="fas fa-search" aria-hidden="true"></i><input type="search" id="terminalDeviceSearch" placeholder="Ad, sınıf ya da IP" aria-label="Bilgisayar ara"></div>
+        <select id="terminalDeviceSelect" aria-label="Bilgisayar"><option value="">Bilgisayar seçin</option></select>
+    </div>
+    <div id="areaLab" class="tm-area chip-row" hidden></div>
+    <div id="areaMulti" class="tm-area chip-row" hidden></div>
+</div>
+<div class="tm-note" id="tmNote" role="status"></div>
 
-    <div class="terminal-container" id="terminalContainer">
-        <div class="pops-terminal-screen" id="popsTerminalScreen"></div>
-        <div class="cmd-input-line" id="cmdInputLine">
-            <span id="cmdPrefix" class="cmd-prefix">POps:\&gt;</span>
-            <input type="text" id="terminalCommand" class="cmd-input" autocomplete="off" spellcheck="false" placeholder="Komut yazın...">
-        </div>
+<div class="tm-console" id="terminalContainer">
+    <div class="tm-tools">
+        <button type="button" class="ibtn sm" id="copyTerminalBtn" data-tip="Çıktıyı kopyala" data-tip-pos="left" aria-label="Çıktıyı kopyala"><?php echo pops_icon('copy', 'sm'); ?></button>
+        <button type="button" class="ibtn sm" id="clearTerminalBtn" data-tip="Ekranı temizle (cls)" data-tip-pos="left" aria-label="Ekranı temizle"><?php echo pops_icon('trash', 'sm'); ?></button>
+    </div>
+    <div class="pops-terminal-screen" id="popsTerminalScreen"></div>
+    <div class="cmd-input-line" id="cmdInputLine">
+        <span id="cmdPrefix" class="cmd-prefix">POps:\&gt;</span>
+        <input type="text" id="terminalCommand" class="cmd-input" autocomplete="off" spellcheck="false" placeholder="Komut yazın ve Enter'a basın" aria-label="Komut">
     </div>
 </div>
 
@@ -97,6 +73,9 @@
 const TERMINAL_ADMIN = <?php echo json_encode($_SESSION['username'] ?? 'Admin', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
 let currentMode = 'single';
 let selectedLab = null;
+// Sınıflar / Cihazlar sayfasından gelen seçim: terminal.php?pc=HW-1,HW-2
+const urlHosts = (new URLSearchParams(location.search).get('pc') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 500);
+let multiHosts = urlHosts.length > 1 ? urlHosts : [];
 let terminalHistory = [];
 const processedResponses = new Set();
 // Windows bilgisayar adı: en çok 15 karakter, harf, rakam ve tire (komut satırına tırnak ya da boşluk girmesin)
@@ -125,15 +104,15 @@ function initTerminalWebSocket() {
 // değişken açar, bu yüzden yalnızca bilerek kullanılan %windir% var. Sıfırdan farklı çıkış kodu görevi Başarısız
 // yapar: son komut işin başarısını söyler.
 const QUICK_ACTIONS = {
-    dns: { name: 'DNS Temizle', cmd: 'ipconfig /flushdns' },
+    dns: { name: 'DNS önbelleğini temizle', cmd: 'ipconfig /flushdns' },
     // Sanal/statik IP'li ya da kablosu takılı olmayan bağdaştırıcı yüzünden release/renew hata kodu dönebilir;
     // başarı ölçüsü yenilemeden sonra 169.254 dışı bir IPv4 adresinin olmasıdır (findstr bulursa 0 döner)
-    network: { name: 'Ağı Yenile', cmd: 'ipconfig /release & ipconfig /renew & ipconfig | findstr /c:"IPv4" | findstr /v /c:"169.254."' },
-    spooler: { name: 'Yazıcı Kuyruğu Sıfırlandı', cmd: 'net stop spooler /y & del /f /s /q "%windir%\\System32\\spool\\PRINTERS\\*.*" & net start spooler' },
+    network: { name: 'Ağ bağlantısını yenile', cmd: 'ipconfig /release & ipconfig /renew & ipconfig | findstr /c:"IPv4" | findstr /v /c:"169.254."' },
+    spooler: { name: 'Yazıcı kuyruğunu sıfırla', cmd: 'net stop spooler /y & del /f /s /q "%windir%\\System32\\spool\\PRINTERS\\*.*" & net start spooler' },
     // C:\Windows\Temp ve her kullanıcının AppData\Local\Temp'i. Çalışan görevin kendi .bat'ı (pops_task_*.bat)
     // silinmez, kullanımdaki dosyalar atlanır. Bağlantılar (junction/symlink) izlenmez: kullanıcı kendi Temp'ini
     // başka bir klasöre yönlendirip SYSTEM'e orayı sildiremesin. Tek satır olmalı; içinde " ve % yok.
-    temp: { name: 'Temp Temizle', cmd: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "' + [
+    temp: { name: 'Geçici dosyaları temizle', cmd: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "' + [
         "$c=@{n=0;s=0}",
         "function L($p){ $x=Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue; (-not $x) -or [bool]($x.Attributes -band 1024) }",
         "function C($d){ foreach($i in @(Get-ChildItem -LiteralPath $d -Force -ErrorAction SilentlyContinue)){ if($i.Attributes -band 1024){ continue }; " +
@@ -146,7 +125,7 @@ const QUICK_ACTIONS = {
         "Write-Output ('Silinen dosya: '+$c.n+', kullanimda oldugu icin atlanan: '+$c.s)",
         "exit 0",
     ].join('; ') + '"' },
-    gpupdate: { name: 'Grup İlkesi Güncellendi', cmd: 'gpupdate /force' },
+    gpupdate: { name: 'Grup ilkesini güncelle', cmd: 'gpupdate /force' },
 };
 
 function selectedDevice() {
@@ -157,6 +136,10 @@ function selectedDevice() {
 
 // Hedef: tek bilgisayar ya da seçili sınıf. Yoksa uyarı ve null.
 function currentTarget() {
+    if (currentMode === 'multi') {
+        if (!multiHosts.length) { POps.toast('warning', 'Seçili bilgisayar yok.'); return null; }
+        return { mode: 'PC', targets: multiHosts.slice(), label: `${multiHosts.length} bilgisayar` };
+    }
     if (currentMode === 'single') {
         const d = selectedDevice();
         if (!d) { POps.toast('warning', 'Önce bir bilgisayar seçin.'); return null; }
@@ -166,9 +149,12 @@ function currentTarget() {
     return { mode: 'LAB', targets: [selectedLab], label: 'Sınıf: ' + selectedLab };
 }
 
-async function sendTasks(target, taskSequence, btn) {
+async function sendTasks(target, taskSequence, btn, reason) {
     try {
-        const r = await POps.busy(btn, () => POps.post('/api/deploy_orchestration', { target_mode: target.mode, targets: target.targets, taskSequence }));
+        const title = taskSequence[0] && taskSequence[0].name;
+        const r = await POps.busy(btn, () => POps.post('/api/deploy_orchestration',
+            { target_mode: target.mode, targets: target.targets, taskSequence, title, source: 'terminal', reason: reason || null },
+            { jobTitle: (title === 'Komut' ? 'Komut: ' + (taskSequence[0].command || '').slice(0, 40) : title) + ' · ' + (target.label || '') }));
         const created = (r && r.created) || 0;
         appendToTerminal(`<div class="info">[i] ${escapeHtml(String(created))} görev kuyruğa eklendi, çıktı bekleniyor…${r && r.skipped_module_closed ? ' (' + escapeHtml(String(r.skipped_module_closed)) + ' bilgisayarda uzak komut kapalı)' : ''}</div>`);
         return true;
@@ -186,7 +172,7 @@ window.runQuickAction = async function(key, btn) {
     const reason = await POps.prompt({ title: action.name, message: `${target.label} için çalıştırılacak.`, label: 'Gerekçe (denetim kaydına yazılır)', required: true, maxLength: 300, confirmText: 'Çalıştır' });
     if (reason === null) return;
     appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] ${escapeHtml(action.name)} · ${escapeHtml(target.label)} · Gerekçe: ${escapeHtml(reason)}</div>`);
-    await sendTasks(target, [{ name: action.name, type: 'CMD', command: action.cmd }], btn);
+    await sendTasks(target, [{ name: action.name, type: 'CMD', command: action.cmd }], btn, reason);
 };
 
 function renameCommand(newName) {
@@ -200,7 +186,7 @@ async function renameSingle(newName, btn) {
     if (!PC_NAME_RE.test(newName)) { POps.toast('error', 'Geçersiz ad: en çok 15 karakter; harf, rakam ve tire.'); return; }
     if (!await POps.confirm({ title: 'Bilgisayar yeniden adlandırılsın mı?', message: `${d.name} → ${newName}. Bilgisayar 5 saniye sonra yeniden başlar; yerel kullanıcı ve ağ bağdaştırıcıları da yeniden adlandırılır.`, confirmText: 'Adlandır ve yeniden başlat', danger: true })) return;
     appendToTerminal(`<div class="cmd-block" style="margin-top:0.75rem;margin-bottom:0.5rem;"><span class="warn">[*]</span> ${escapeHtml(d.name)} → '${escapeHtml(newName)}'</div>`);
-    await sendTasks({ mode: 'PC', targets: [d.id] }, [{ name: 'Yeniden adlandır', type: 'CMD', command: renameCommand(newName) }], btn);
+    await sendTasks({ mode: 'PC', targets: [d.id], label: d.name }, [{ name: 'Yeniden adlandır', type: 'CMD', command: renameCommand(newName) }], btn);
 }
 
 async function renameLab(baseName, limit, btn) {
@@ -217,7 +203,7 @@ async function renameLab(baseName, limit, btn) {
     await POps.busy(btn, async () => {
         for (const [d, n] of plan) {
             try {
-                await POps.post('/api/deploy_orchestration', { target_mode: 'PC', targets: [d.hostname], taskSequence: [{ name: 'Toplu adlandırma', type: 'CMD', command: renameCommand(n) }] });
+                await POps.post('/api/deploy_orchestration', { target_mode: 'PC', targets: [d.hostname], taskSequence: [{ name: 'Toplu adlandırma', type: 'CMD', command: renameCommand(n) }], title: 'Toplu adlandırma', source: 'terminal' }, { jobTitle: 'Adlandırma · ' + n });
                 appendToTerminal(`<div style="color:#4ade80;margin-bottom:0.25rem;">→ ${escapeHtml(POps.deviceName(d))} → ${escapeHtml(n)}</div>`);
             } catch (e) {
                 appendToTerminal(`<div class="err">[-] ${escapeHtml(POps.deviceName(d))}: ${escapeHtml(POps.errorMessage(e))}</div>`);
@@ -249,7 +235,7 @@ window.promptTaskkill = async function(btn) {
     const reason = await POps.prompt({ title: 'Gerekçe', label: 'Gerekçe (denetim kaydına yazılır)', required: true, maxLength: 300, confirmText: 'Kapat' });
     if (reason === null) return;
     appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Uygulama kapatılıyor: ${escapeHtml(exe.trim())} · ${escapeHtml(target.label)} · Gerekçe: ${escapeHtml(reason)}</div>`);
-    await sendTasks(target, [{ name: 'Uygulamayı kapat: ' + exe.trim(), type: 'CMD', command: `taskkill /F /IM "${exe.trim()}"` }], btn);
+    await sendTasks(target, [{ name: 'Uygulamayı kapat: ' + exe.trim(), type: 'CMD', command: `taskkill /F /IM "${exe.trim()}"` }], btn, reason);
 };
 
 function renderTerminal() {
@@ -265,26 +251,46 @@ function renderTerminal() {
     const labArea = document.getElementById('areaLab');
     const labs = [...new Set(state.devices.map(d => d.lab))].filter(l => l && l !== 'Atanmamis_Cihazlar').sort((a, b) => a.localeCompare(b, 'tr'));
     labArea.replaceChildren(...(labs.length ? labs.map(lab => {
-        const b = POps.el('button', { type: 'button', className: 'lab-btn' + (selectedLab === lab ? ' active' : ''), 'aria-pressed': selectedLab === lab ? 'true' : 'false' },
-            [POps.icon('fa-users'), document.createTextNode(` ${lab} (${state.devices.filter(d => d.lab === lab).length})`)]);
+        const pcs = state.devices.filter(d => d.lab === lab);
+        const b = POps.el('button', { type: 'button', className: 'chip' + (selectedLab === lab ? ' active' : ''), 'aria-pressed': selectedLab === lab ? 'true' : 'false' },
+            [document.createTextNode(lab), POps.el('span', { className: 'count', text: String(pcs.filter(d => !POps.isOffline(d)).length) + '/' + pcs.length })]);
         b.addEventListener('click', () => { selectedLab = selectedLab === lab ? null : lab; renderTerminal(); });
         return b;
     }) : [POps.el('span', { className: 'text-sm text-muted', text: 'Henüz sınıf yok.' })]));
 
+    const multiArea = document.getElementById('areaMulti');
+    multiArea.replaceChildren(...multiHosts.slice(0, 10).map(h => POps.el('span', { className: 'chip', text: POps.dev.name(h) })),
+        ...(multiHosts.length > 10 ? [POps.el('span', { className: 'chip', text: `+${multiHosts.length - 10}` })] : []));
+
+    // Hedefin özeti ve göndermeden önce bilinmesi gerekenler
     const d = selectedDevice();
     const prefix = document.getElementById('cmdPrefix');
-    const wake = document.getElementById('wakeUpText');
-    if (currentMode === 'single') {
-        prefix.textContent = d ? `${d.name}:\\>` : 'POps:\\>';
-        wake.textContent = d ? `Uyandır (${d.name})` : 'Uyandır';
-    } else {
-        prefix.textContent = selectedLab ? `${selectedLab}:\\>` : 'Sınıf seçin:\\>';
-        wake.textContent = selectedLab ? `Sınıfı uyandır (${selectedLab})` : 'Uyandır';
+    let hosts = [];
+    let label = '';
+    if (currentMode === 'single' && d) { hosts = [d.id]; label = d.name; }
+    else if (currentMode === 'lab' && selectedLab) { hosts = state.devices.filter(x => x.lab === selectedLab).map(x => x.hostname); label = selectedLab; }
+    else if (currentMode === 'multi') { hosts = multiHosts; label = `${multiHosts.length} bilgisayar`; }
+    prefix.textContent = label ? `${label}:\\>` : 'Hedef seçin:\\>';
+    const devs = hosts.map(h => POps.dev.find(h)).filter(Boolean);
+    const onN = devs.filter(x => !POps.isOffline(x)).length;
+    const offN = hosts.length - onN;
+    const capOff = devs.filter(x => x.cap_terminal_enabled === false);
+    const sum = document.getElementById('tmSummary');
+    const note = document.getElementById('tmNote');
+    if (!hosts.length) {
+        sum.replaceChildren(POps.el('span', { className: 'sum faint', text: currentMode === 'lab' ? 'Bir sınıf seçin' : 'Bir bilgisayar seçin' }));
+        note.replaceChildren();
+        return;
     }
-    const auto = document.getElementById('btnQuickAutoRename');
-    if (auto) auto.style.display = currentMode === 'lab' ? 'inline-flex' : 'none';
-    const single = document.getElementById('btnQuickSingleRename');
-    if (single) single.style.display = currentMode === 'single' ? 'inline-flex' : 'none';
+    const dot = (cls) => POps.el('span', { className: 'dot ' + cls });
+    sum.replaceChildren(
+        POps.el('span', { className: 'sum' }, [document.createTextNode('Hedef: '), POps.el('b', { text: label })]),
+        POps.el('span', { className: 'sum' }, [dot('on'), POps.el('b', { text: String(onN) }), document.createTextNode(' açık')]),
+        ...(offN ? [POps.el('span', { className: 'sum' }, [dot('off'), POps.el('b', { text: String(offN) }), document.createTextNode(' kapalı')])] : []));
+    const notes = [];
+    if (offN) notes.push(POps.el('span', {}, [dot('warn'), document.createTextNode(`Kapalı ${offN} bilgisayarda komut, açıldığında çalışır.`)]));
+    if (capOff.length) notes.push(POps.el('span', {}, [dot('bad'), document.createTextNode(`Uzak komut kapalı olduğu için reddedilecek: ${capOff.slice(0, 4).map(POps.deviceName).join(', ')}${capOff.length > 4 ? ' +' + (capOff.length - 4) : ''}`)]));
+    note.replaceChildren(...notes);
 }
 
 function terminalHeaderHtml() {
@@ -292,7 +298,7 @@ function terminalHeaderHtml() {
         <div class="title">POps komut satırı</div>
         <div>Yönetici: ${escapeHtml(TERMINAL_ADMIN)} · Komutlar hedefte SYSTEM hesabıyla, cmd.exe ile çalışır.</div>
     </div>
-    <div class="tip">[İpucu] Rutin işler için yukarıdaki hızlı komutları kullanabilirsiniz. Ekranı temizlemek için: cls</div>`;
+    <div class="tip">Rutin işler için sağ üstteki Hızlı komutlar menüsünü kullanın. Ekranı temizlemek için: cls</div>`;
 }
 
 function appendToTerminal(html) {
@@ -330,20 +336,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (key !== devicesKey) { devicesKey = key; renderTerminal(); }
     });
 
-    const btnSingle = document.getElementById('btnModeSingle');
-    const btnLab = document.getElementById('btnModeLab');
     const termInput = document.getElementById('terminalCommand');
     const setMode = (mode) => {
         currentMode = mode;
-        if (mode === 'single') selectedLab = null;
-        btnSingle.classList.toggle('active', mode === 'single');
-        btnLab.classList.toggle('active', mode === 'lab');
-        document.getElementById('areaSingle').style.display = mode === 'single' ? 'flex' : 'none';
-        document.getElementById('areaLab').style.display = mode === 'lab' ? 'flex' : 'none';
+        if (mode !== 'lab') selectedLab = null;
+        document.querySelectorAll('#tmMode [data-mode]').forEach(b => { const on = b.dataset.mode === mode; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        document.getElementById('areaSingle').hidden = mode !== 'single';
+        document.getElementById('areaLab').hidden = mode !== 'lab';
+        document.getElementById('areaMulti').hidden = mode !== 'multi';
         renderTerminal();
     };
-    btnSingle.addEventListener('click', () => setMode('single'));
-    btnLab.addEventListener('click', () => setMode('lab'));
+    document.getElementById('tmMode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) setMode(b.dataset.mode); });
+    if (multiHosts.length) {
+        const mb = document.getElementById('btnModeMulti');
+        mb.hidden = false;
+        mb.textContent = `Seçili ${multiHosts.length}`;
+        currentMode = 'multi';
+    }
     document.getElementById('terminalDeviceSearch').addEventListener('input', renderTerminal);
     document.getElementById('terminalDeviceSelect').addEventListener('change', renderTerminal);
 
@@ -353,19 +362,58 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('clearTerminalBtn').addEventListener('click', () => { clearTerminal(); termInput.focus(); });
 
-    document.getElementById('wakeUpBtn').addEventListener('click', (e) => {
+    document.getElementById('quickBtn').addEventListener('click', (e) => {
         const btn = e.currentTarget;
-        if (currentMode === 'single') {
-            const d = selectedDevice();
-            if (!d) { POps.toast('warning', 'Uyandırmak için bir bilgisayar seçin.'); return; }
-            window.wakeUpCommand('PC', d.id, btn);
-        } else {
-            if (!selectedLab) { POps.toast('warning', 'Uyandırmak için bir sınıf seçin.'); return; }
-            window.wakeUpCommand('LAB', selectedLab, btn);
-        }
+        const wake = () => {
+            const t = currentTarget();
+            if (!t) return;
+            if (t.mode === 'LAB') POps.dev.power('wake', state.devices.filter(d => d.lab === selectedLab).map(d => d.hostname), { btn, lab: selectedLab, wholeLab: true });
+            else POps.dev.power('wake', t.targets, { btn });
+        };
+        POps.menu(btn, [
+            ...Object.keys(QUICK_ACTIONS).map(k => ({ label: QUICK_ACTIONS[k].name, icon: { dns: 'wifi', network: 'refresh', spooler: 'file', temp: 'trash', gpupdate: 'shield' }[k], onClick: () => window.runQuickAction(k, btn) })),
+            '-',
+            { label: 'Uygulamayı kapat…', icon: 'x', onClick: () => window.promptTaskkill(btn) },
+            currentMode === 'single' ? { label: 'Bilgisayarı yeniden adlandır…', icon: 'edit', onClick: () => window.promptSingleRename(btn) } : null,
+            currentMode === 'lab' ? { label: 'Sınıfı toplu adlandır…', icon: 'edit', onClick: () => window.promptAutoRename(btn) } : null,
+            '-',
+            { label: 'Hedefi uyandır', icon: 'zap', onClick: wake }
+        ]);
     });
 
-    document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => window.runQuickAction(b.dataset.quick, b)));
+    // Komut geçmişi: bu sayfadan gönderilen işler (kim, ne zaman, hedef, sonuç)
+    document.getElementById('historyBtn').addEventListener('click', async () => {
+        const body = POps.drawer.open('terminal-history');
+        body.innerHTML = '<div class="drawer-head"><div class="drawer-title"><span class="drawer-ico">' + POps.iconHtml('clock', 'lg') + '</span><div><h2>Komut geçmişi</h2><div class="sub">Uzak komut sayfasından gönderilenler</div></div></div><button type="button" class="ibtn sm" data-close="1" aria-label="Paneli kapat">' + POps.iconHtml('x', 'sm') + '</button></div><div id="tmHist"></div>';
+        body.onclick = (ev) => {
+            if (ev.target.closest('[data-close]')) POps.drawer.close();
+            const row = ev.target.closest('[data-cmd]');
+            if (row && !ev.target.closest('a')) { termInput.value = row.dataset.cmd; POps.drawer.close(); termInput.focus(); }
+        };
+        const box = body.querySelector('#tmHist');
+        POps.setLoading(box);
+        let tasks;
+        try { tasks = await POps.get('/api/tasks?limit=1000'); } catch (err) { POps.setError(box, err); return; }
+        const mine = (tasks || []).filter(t => t.source === 'terminal' || (!t.source && (t.title === 'Terminal' || t.title === 'Komut')));
+        const groups = new Map();
+        mine.forEach(t => { const k = t.batch_id || [t.created_at, t.created_by, t.script_path].join('|'); if (!groups.has(k)) groups.set(k, { key: k, t, list: [] }); groups.get(k).list.push(t); });
+        const rows = [...groups.values()].slice(0, 40);
+        if (!rows.length) { POps.setEmpty(box, { icon: 'fa-terminal', title: 'Henüz komut gönderilmedi', compact: true }); return; }
+        box.innerHTML = rows.map(g => {
+            const c = { ok: 0, bad: 0, run: 0 };
+            g.list.forEach(t => { c[POps.taskState(t.status)] += 1; });
+            const k = c.run ? 'run' : c.bad ? 'bad' : 'ok';
+            const where = g.list.length === 1 ? POps.dev.name(g.t.target_pc) : g.list.length + ' bilgisayar';
+            const free = !g.t.title || g.t.title === 'Terminal' || g.t.title === 'Komut';
+            const cmd = free ? g.t.script_path : g.t.title;
+            return `<div class="act clickable" data-cmd="${escapeHtml(free ? g.t.script_path || '' : '')}">
+                <div class="res ${escapeHtml(k)}">${POps.iconHtml(k === 'ok' ? 'check' : k === 'bad' ? 'x' : 'clock')}</div>
+                <div style="min-width:0"><div class="what mono" style="font-size:12px">${escapeHtml(String(cmd || '').slice(0, 160))}</div>
+                <div class="meta">${escapeHtml(g.t.created_by || '?')} · ${POps.timeHtml(g.t.created_at)} · ${escapeHtml(where)}${g.t.reason ? ' · gerekçe: ' + escapeHtml(g.t.reason) : ''}</div></div>
+                <div class="side"><span class="word ${escapeHtml(k)}">${c.run ? 'Sürüyor' : c.bad ? Number(c.bad) + ' başarısız' : 'Tamam'}</span><a class="when" href="tasks.php?job=${encodeURIComponent(g.key)}">ayrıntı</a></div>
+            </div>`;
+        }).join('') + '<div class="set-note">Bir satıra tıklayınca komut yeniden yazılır (gönderilmez).</div>';
+    });
     document.getElementById('terminalContainer').addEventListener('click', (e) => { if (!window.getSelection().toString()) termInput.focus(); });
     termInput.addEventListener('keydown', async (e) => {
         if (e.key !== 'Enter' || e.isComposing) return;
@@ -386,11 +434,16 @@ document.addEventListener('DOMContentLoaded', () => {
         termInput.value = '';
         termInput.disabled = true;
         appendToTerminal(`<div style="margin-top:1rem;margin-bottom:0.5rem;"><span class="warn">${escapeHtml(target.label)}:\\&gt;</span> <span class="cmd-block">${escapeHtml(command)}</span></div>`);
-        await sendTasks(target, [{ name: 'Terminal', type: 'CMD', command }], null);
+        await sendTasks(target, [{ name: 'Komut', type: 'CMD', command }], null);
         termInput.disabled = false;
         termInput.focus();
     });
-    renderTerminal();
+    setMode(currentMode);
+    if (urlHosts.length === 1) {
+        const sel = document.getElementById('terminalDeviceSelect');
+        const pick = () => { if ([...sel.options].some(o => o.value === urlHosts[0])) { sel.value = urlHosts[0]; renderTerminal(); return true; } return false; };
+        if (!pick()) document.addEventListener('pops_data_updated', function once() { if (pick()) document.removeEventListener('pops_data_updated', once); });
+    }
 });
 </script>
 

@@ -88,6 +88,10 @@ class OrchestrationInput(BaseModel):
     target_mode: str
     targets: List[str]
     taskSequence: List[TaskSequenceItem]
+    # Bağlam (isteğe bağlı): işin okunur adı, isteğin geldiği panel sayfası ve gerekçe görev kaydında saklanır
+    title: Optional[str] = Field(default=None, max_length=200)
+    source: Optional[str] = Field(default=None, max_length=40)
+    reason: Optional[str] = Field(default=None, max_length=500)
 
 
 class CreatePackageInput(BaseModel):
@@ -121,6 +125,16 @@ class AuthEventInput(BaseModel):
     hostname: str
     student_id: str
     message: Optional[str] = ""
+
+
+class TaskStatusInput(BaseModel):
+    ids: List[int] = Field(..., max_length=5000)
+
+
+class UpdateProgressInput(BaseModel):
+    pcs: List[str] = Field(..., max_length=5000)
+    version: str = Field(..., max_length=64)
+    since: float = 0   # gönderim anı (Unix saniye); öncesindeki güncelleme sonuçları sayılmaz
 
 
 class TaskActionInput(BaseModel):

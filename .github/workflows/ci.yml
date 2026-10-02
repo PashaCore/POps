@@ -441,6 +441,7 @@ jobs:
           python Backend/tests/test_p1.py
           python Backend/tests/test_review4.py
           python Backend/tests/test_modules.py
+          python Backend/tests/test_jobs.py
           python Backend/tests/test_f4_accountability.py
           python Backend/tests/test_features.py
           python Backend/tests/test_helpdesk_licenses.py

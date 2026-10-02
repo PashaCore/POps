@@ -20,19 +20,19 @@ No. The panel and most server messages are in Turkish.
 
 **Does POps work without internet access?**
 Mostly. The server checks GitHub for new versions but works without it; agent releases can be uploaded by hand on
-**Sistem & Sürüm**; the self-update redeploys the local checkout when it cannot fetch. The 2FA QR code is generated
+**Sistem**; the self-update redeploys the local checkout when it cannot fetch. The 2FA QR code is generated
 locally. The panel pages load charts, drag-and-drop, icons and fonts from public CDNs, so those parts need
 internet access in the administrator's browser.
 
 **Can POps tell me when something goes wrong?**
 Yes. Failed or rolled-back agent updates, takeover attempts, DNS policy violations, quarantines and similar events
-appear under the bell in the panel, and a superadmin can have them sent by e-mail or to a webhook
-(**Sistem & Sürüm** → **Bildirimler**). See [`security.md`](security.md#notifications) and
+appear under **Bildirimler** in the panel, and a superadmin can have them sent by e-mail or to a webhook
+(**Sistem** → **Bildirimler**). See [`security.md`](security.md#notifications) and
 [`configuration.md`](configuration.md#notification-settings).
 
 **Can I run a command every night or on certain weekdays?**
-Yes, with a scheduled task on **Görev Kuyruğu** (once, every day, or on chosen weekdays, in the server's time
-zone). It runs through the normal task queue. See [`dashboard.md`](dashboard.md#görev-kuyruğu).
+Yes, with a scheduled task on **İşlemler** (once, every day, or on chosen weekdays, in the server's time
+zone). It runs through the normal task queue. See [`dashboard.md`](dashboard.md#zamanlanmış).
 
 **Does POps list installed software and missing Windows updates?**
 The server and the **Raporlar** page support it, and admins can ask PCs to scan for or install updates. The data
@@ -101,7 +101,7 @@ The service does: it stays connected, runs commands and installs updates. The tr
 remote input and the user notices, runs only in a signed-in session.
 
 **How are agents updated?**
-Only with signed MSI releases, from **Sistem & Sürüm**: download and verify the release from GitHub (or upload it),
+Only with signed MSI releases, from **Sistem**: download and verify the release from GitHub (or upload it),
 then send it to all agents, a lab or selected PCs. Each agent verifies the signature again and rolls back if the
 new version does not start correctly. See [`agent.md`](agent.md#updates).
 
@@ -129,5 +129,5 @@ In [`api.md`](api.md). The interactive `/docs` page is disabled on purpose.
 The PostgreSQL database, the backend `.env` and `Backend/storage/` ([`database.md`](database.md#backups)).
 
 **Can I export data to a spreadsheet?**
-Yes. **Raporlar** → **CSV indir** exports devices, software, Windows update state or events as CSV
+Yes. **Raporlar** → the download icon (**CSV olarak indir**) exports devices, software, Windows update state, licences or events as CSV
 (semicolon-separated, UTF-8 with a byte-order mark so that Excel shows Turkish characters correctly).
