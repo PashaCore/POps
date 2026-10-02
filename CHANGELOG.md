@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Server: deployment packages are downloaded only with a signed link** returned at upload, and the deployment script checks the file's SHA-256 before running it.
 - **Server: closing a stale connection no longer drops the device's new connection** (command and Vision).
 - **Agent: an offline bypass code with the per-device key is accepted once per day.** Someone who saw a code cannot reuse it when the PC is quarantined again the same day; the panel hands out the day's next code each time (up to 10). The bypass code endpoint is now `POST` and not cached.
+- **Server: self-update deploys only release tags signed with a trusted SSH key.** When `/etc/pops/allowed_signers` exists, `pops-selfupdate` checks the newest `v*` tag with `git verify-tag` against that file before fast-forwarding; an unsigned, lightweight, GPG-signed or foreign-key tag is neither merged nor deployed, and the status reads `etiket imzasi dogrulanamadi`. Without the file the update goes on with an "imzasız etiket" warning unless `REQUIRE_SIGNED_TAGS=1` (new in `selfupdate.conf`). The dry run reports what the check would say. Signing and setup: `docs/self-update.md`.
+- **Server: deploy and self-update settings are read only from root-owned files.** `pops-deploy-backend` and `pops-selfupdate` refuse `/etc/pops/deploy.conf`, `/etc/pops/selfupdate.conf` and `allowed_signers` when they (or `/etc/pops`) are writable by group or others, belong to another user or are symbolic links, and then change nothing.
 
 ### Fixed
 
@@ -34,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent: the update result reaches the Windows event log (1030).** It was written only at service start, but the updater records the result after the new version has started, and the agent moves the file aside once the server has it, so event 1030 never appeared. The agent now writes it once, when it first sees the result, whether or not the server is reachable.
 - **Panel: capability buttons say what they do.** A capability turned off at install shows "(kurulumda kapatılmış)", its button reads "Terminali kapalı tut" / "Vision'ı kapalı tut" (it stays off even if the agent is reinstalled with it on), and the disabled "İzin ver" explains that a capability cannot be turned on remotely. A capability locked from the panel shows "(panelden kalıcı kapatıldı)".
 - **Panel:** the report tabs no longer turn solid blue with unreadable text on hover.
+- **Server: a failed deploy also restores the venv.** When `requirements.txt` changed, `pops-deploy-backend` snapshots the whole venv before `pip` (`venv-<time>-<pid>.tgz` next to the code backup) and restores it at the same path together with the code on any failure after the first change: `pip`, copying a file, the restart or the health check. Before, `pip` changed the live venv with no way back, and a `pip` or copy error ended the script before the rollback and left the code half-deployed.
+- **Server: `install.sh` with `LE_EMAIL`** passed the address to certbot a second time as a stray argument, so Let's Encrypt always failed and the install fell back to the internal CA. A broken nginx configuration no longer ends the install before the summary with the admin password.
+
+### Changed
+
+- **Server: `pops-deploy-backend` and `pops-selfupdate` read their paths from `/etc/pops/deploy.conf`** (`REPO`, `APP`, `SVC`, `OWNER`, `HEALTH_BASE`, `KEEP_BACKUPS`; template `Installer/server/deploy.conf.example`) instead of the project server's hard-coded values. Without the file they use the `install.sh` defaults, and `install.sh` now writes it. Both stop before changing anything when the checkout, the backend folder, the service user or the unit does not exist. **Upgrading:** a server not laid out by `install.sh` needs `/etc/pops/deploy.conf` before the new scripts are installed to `/usr/local/sbin` (by hand, as before).
+- **Release: the server package also contains `Installer/server/` and the Docker files** (`docker-compose.yml`, `docker/`, `.dockerignore`), so a native or Docker install can start from the tarball.
+- **CI: new "Server scripts" job.** shellcheck on the server scripts, and `Installer/server/tests/test_deploy.sh` (no root, stubbed `systemctl`/`curl`/`sudo`/`pip`): normal deploy, byte-for-byte rollback of code and venv after a health-check, `pip` or copy failure, config checks, and signed-tag self-update including the dry run.
 
 ## [0.1.12-alpha] - 2026-09-30
 

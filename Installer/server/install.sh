@@ -59,18 +59,22 @@ id "$SVC_USER" >/dev/null 2>&1 || useradd -r -s /usr/sbin/nologin "$SVC_USER" 2>
 
 echo "==> Veritabanı + rol: $DB_NAME / $DB_USER"
 DB_PASS=$(python3 -c "import secrets;print(secrets.token_urlsafe(24))")
-sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1 \
-    && sudo -u postgres psql -qc "ALTER ROLE $DB_USER LOGIN PASSWORD '$DB_PASS'" \
-    || sudo -u postgres psql -qc "CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_PASS'"
+if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
+    sudo -u postgres psql -qc "ALTER ROLE $DB_USER LOGIN PASSWORD '$DB_PASS'"
+else
+    sudo -u postgres psql -qc "CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_PASS'"
+fi
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 \
     || sudo -u postgres createdb -O "$DB_USER" "$DB_NAME"
 # 127.0.0.1 üzerinden parola (md5) auth'u garanti et (bazı dağıtımlar ident/peer varsayar)
 PGHBA=$(sudo -u postgres psql -tAc "SHOW hba_file" 2>/dev/null || true)
 if [ -n "$PGHBA" ] && ! grep -qE "^host\s+$DB_NAME\s+$DB_USER\s+127.0.0.1/32\s+md5" "$PGHBA" 2>/dev/null; then
-    echo "host    $DB_NAME    $DB_USER    127.0.0.1/32    md5" >> "$PGHBA"
-    echo "host    $DB_NAME    $DB_USER    ::1/128         md5" >> "$PGHBA"
-    # pops-backup her yedeği bu geçici veritabanına açıp sınar
-    echo "host    ${DB_NAME}_restorecheck    $DB_USER    127.0.0.1/32    md5" >> "$PGHBA"
+    {
+        echo "host    $DB_NAME    $DB_USER    127.0.0.1/32    md5"
+        echo "host    $DB_NAME    $DB_USER    ::1/128         md5"
+        # pops-backup her yedeği bu geçici veritabanına açıp sınar
+        echo "host    ${DB_NAME}_restorecheck    $DB_USER    127.0.0.1/32    md5"
+    } >> "$PGHBA"
     systemctl reload postgresql || systemctl restart postgresql
 fi
 
@@ -148,6 +152,14 @@ fi
 systemctl daemon-reload
 systemctl enable --now pops-backup.timer
 
+# pops-deploy-backend ve pops-selfupdate bu kurulumun yollarını buradan okur (var olan dosyaya dokunulmaz)
+if [ ! -f /etc/pops/deploy.conf ]; then
+    sed -e "s#^REPO=.*#REPO=$SRC#" -e "s#^APP=.*#APP=$APP_DIR#" -e "s#^SVC=.*#SVC=pops#" \
+        -e "s#^OWNER=.*#OWNER=$SVC_USER#" -e "s#^HEALTH_BASE=.*#HEALTH_BASE=http://127.0.0.1:$PORT#" \
+        "$SRC/Installer/server/deploy.conf.example" > /etc/pops/deploy.conf
+    chmod 644 /etc/pops/deploy.conf
+fi
+
 echo "==> Sağlık kontrolü"
 ok=0
 for _ in $(seq 1 15); do
@@ -159,6 +171,12 @@ done
 
 # ─── Web + TLS ─────────────────────────────────────────────────────────────────
 WEB_OK=skip; CA_NOTE=""
+first_php_sock() {   # dağıtımın php-fpm soketi (ilk eşleşen; yoksa boş)
+    local s
+    for s in /run/php/php*-fpm.sock /run/php-fpm/*.sock; do
+        if [ -S "$s" ]; then echo "$s"; return 0; fi
+    done
+}
 if [ "$TLS_MODE" != none ]; then
     echo "==> TLS ($TLS_MODE) + nginx: https://$POPS_DOMAIN"
     install -m 755 "$SRC/Installer/server/pops-tls" /usr/local/sbin/
@@ -169,9 +187,9 @@ if [ "$TLS_MODE" != none ]; then
             # shellcheck disable=SC2046
             /usr/local/sbin/pops-tls init "$POPS_DOMAIN" $(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9.]+$' | head -3) ;;
     esac
-    [ -S "$PHP_SOCK" ] || PHP_SOCK=$(ls /run/php/php*-fpm.sock /run/php-fpm/*.sock 2>/dev/null | head -1 || true)
+    [ -S "$PHP_SOCK" ] || PHP_SOCK=$(first_php_sock)
     systemctl enable --now php-fpm >/dev/null 2>&1 || systemctl enable --now "$(systemctl list-unit-files 'php*-fpm.service' --no-legend 2>/dev/null | awk 'NR==1{print $1}')" >/dev/null 2>&1 || true
-    [ -S "$PHP_SOCK" ] || PHP_SOCK=$(ls /run/php/php*-fpm.sock /run/php-fpm/*.sock 2>/dev/null | head -1 || true)
+    [ -S "$PHP_SOCK" ] || PHP_SOCK=$(first_php_sock)
     [ -n "$PHP_SOCK" ] || { echo "!!! php-fpm soketi bulunamadı; nginx yapılandırmasında fastcgi_pass'i elle düzeltin"; PHP_SOCK=/run/php-fpm/www.sock; }
     mkdir -p "$(dirname "$NGINX_SITE")" /var/www/html
     sed -e "s#@DOMAIN@#$POPS_DOMAIN#g" -e "s#@DASHBOARD@#$SRC/Dashboard#g" -e "s#@PHP_SOCK@#$PHP_SOCK#g" \
@@ -189,11 +207,16 @@ if [ "$TLS_MODE" != none ]; then
     if sudo -u "$NGINX_USER" test -r "$SRC/Dashboard/index.php" 2>/dev/null; then :; else
         echo "!!! $NGINX_USER kullanıcısı $SRC/Dashboard dosyalarını okuyamıyor (repo /root altında mı?). Repoyu /opt gibi bir yere klonlayıp yeniden çalıştırın."
     fi
-    nginx -t >/dev/null 2>&1 && systemctl enable --now nginx >/dev/null && systemctl reload nginx || { echo "!!! nginx yapılandırması hatalı:"; nginx -t; }
+    if ! nginx -t >/dev/null 2>&1; then
+        echo "!!! nginx yapılandırması hatalı:"; nginx -t || true
+    elif ! { systemctl enable --now nginx >/dev/null && systemctl reload nginx; }; then
+        echo "!!! nginx başlatılamadı: systemctl status nginx"
+    fi
     if [ "$TLS_MODE" = letsencrypt ]; then
         if command -v dnf >/dev/null 2>&1; then dnf install -y epel-release >/dev/null 2>&1 || true; dnf install -y certbot python3-certbot-nginx >/dev/null 2>&1 || true
         else apt-get install -y -qq certbot python3-certbot-nginx >/dev/null 2>&1 || true; fi
-        if certbot --nginx -d "$POPS_DOMAIN" --non-interactive --agree-tos ${LE_EMAIL:+-m "$LE_EMAIL"} ${LE_EMAIL:---register-unsafely-without-email} --redirect >/dev/null 2>&1; then
+        if [ -n "$LE_EMAIL" ]; then le_acct=(-m "$LE_EMAIL"); else le_acct=(--register-unsafely-without-email); fi
+        if certbot --nginx -d "$POPS_DOMAIN" --non-interactive --agree-tos "${le_acct[@]}" --redirect >/dev/null 2>&1; then
             echo "    Let's Encrypt sertifikası alındı (certbot kendi zamanlayıcısıyla yeniler)."
         else
             TLS_MODE=internal

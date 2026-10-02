@@ -112,7 +112,8 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   panel reads the progress from `deploy-status.json`. The request file's content is never executed.
 - **Consequences:** Only `origin/main` can be deployed; there is no version picker. Offline, the script redeploys
   the local checkout. Without the units the endpoint answers `503`. Not available in Docker. The deploy backs up
-  code, not the database. Details: [`self-update.md`](self-update.md).
+  code (and the venv when `requirements.txt` changes), not the database. With `/etc/pops/allowed_signers` only
+  release tags signed by a listed SSH key are deployed. Details: [`self-update.md`](self-update.md).
 
 ## D-08 Capability policy: the PC decides, the server can only switch off
 
