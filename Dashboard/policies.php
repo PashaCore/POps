@@ -2,7 +2,7 @@
 <?php $canEdit = ($_SESSION['role'] ?? '') !== 'viewer'; ?>
 
 <style>
-    .pol-wrap { display: flex; flex-direction: column; gap: var(--space-5); max-width: 920px; margin: 0 auto; padding: var(--space-4) 0; }
+    .pol-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(620px, 100%), 1fr)); gap: var(--space-5); align-items: start; padding: var(--space-2) 0; }
     .pol-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6); box-shadow: var(--shadow-sm); }
     .pol-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: var(--space-3); }
     .pol-head h2 { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 0.5rem; }

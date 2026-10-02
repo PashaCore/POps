@@ -132,7 +132,7 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
         .app-sidebar { width: var(--sidebar-width); background: var(--bg-surface); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0; z-index: var(--z-sidebar); transition: transform 0.25s var(--ease); }
         .app-main { flex: 1; margin-left: var(--sidebar-width); min-width: 0; display: flex; flex-direction: column; }
         .app-topbar { height: var(--topbar-height); background: rgba(255, 255, 255, 0.92); backdrop-filter: saturate(1.4) blur(6px); border-bottom: 1px solid var(--border-subtle); padding: 0 var(--space-8); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 40; }
-        .app-content { flex: 1; padding: var(--space-8); width: 100%; max-width: 1600px; margin: 0 auto; }
+        .app-content { flex: 1; padding: var(--space-6) var(--space-8); width: 100%; min-width: 0; }
 
         /* ============ YAN MENÜ ============ */
         .sidebar-header { height: var(--topbar-height); padding: 0 var(--space-5); display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }

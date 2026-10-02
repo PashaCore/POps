@@ -19,7 +19,9 @@ from werkzeug.utils import secure_filename
 from pops.config import LOG_TABLE, UPDATES_DIR, UPLOAD_DIR
 from pops import db, modules
 from pops.db import execute_query
-from pops.models import CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput
+from pops.models import (
+    CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput, TaskStatusInput,
+)
 from pops.security import require_admin, require_auth
 from pops.audit import add_audit_log
 from pops.manager import manager
@@ -120,7 +122,24 @@ async def _retry(where: str, value, creator: str) -> dict:
         fetch=True,
     )
     await process_queue()
-    return {"status": "success", "changed": len(created or [])}
+    ids = [r["id"] for r in created or []]
+    return {"status": "success", "changed": len(ids), "task_ids": ids}
+
+
+@router.post("/api/tasks/status")
+async def task_status(data: TaskStatusInput, auth: dict = Depends(require_auth)):
+    """Verilen görevlerin durumu (panelin işlem merkezi bir işin ilerlemesini buradan izler). Silinmiş görev listede
+    yoktur."""
+    rows = await execute_query(
+        "SELECT id, target_pc, target_lab, status, exit_code, dispatched_at FROM tasks WHERE id = ANY($1::int[])",
+        (list(dict.fromkeys(data.ids)),),
+        fetch=True,
+    )
+    return {"items": [
+        {"id": r["id"], "target_pc": r["target_pc"], "target_lab": r["target_lab"], "status": r["status"],
+         "exit_code": r["exit_code"], "dispatched_at": r["dispatched_at"].isoformat() if r["dispatched_at"] else None}
+        for r in rows or []
+    ]}
 
 
 @router.post("/api/set_concurrent_limit")
@@ -323,12 +342,12 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
         # Aynı istek az önce geldi: ilkinin GERÇEK sonucu beklenir ve aynen döner (ilki başarısız olduysa bu da olur).
         # Eskiden ilki daha bitmeden "başarılı" dönülüyordu.
         try:
-            created = await asyncio.wait_for(asyncio.shield(first[1]), 30)
+            ids = await asyncio.wait_for(asyncio.shield(first[1]), 30)
         except Exception:
             raise HTTPException(
                 status_code=409, detail="Aynı istek az önce gönderildi ve tamamlanamadı; tekrar deneyin."
             )
-        return {"status": "success", "duplicate": True, "created": created}
+        return {"status": "success", "duplicate": True, "created": len(ids), "task_ids": ids}
     outcome = asyncio.get_running_loop().create_future()
     _recent_orchestrations[key] = (time.monotonic(), outcome)
     try:
@@ -342,27 +361,28 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
         allowed = set(allowed)
         target_pcs = [t for t in target_pcs if t["pc"] in allowed]
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        rows = [
-            (target["pc"], target["lab"], task.command, now, creator)
-            for target in target_pcs
-            for task in data.taskSequence
-        ]
+        rows = [(target["pc"], target["lab"], task.command) for target in target_pcs for task in data.taskSequence]
+        ids = []
         if rows:
-            # Hepsi ya da hiçbiri: yarıda kalan bir istek hedeflerin bir kısmına görev bırakmaz
+            # Hepsi ya da hiçbiri: yarıda kalan bir istek hedeflerin bir kısmına görev bırakmaz. Kimlikler döner: panel
+            # işin ilerlemesini bu görevler üzerinden izler (POST /api/tasks/status).
             async with db.transaction() as conn:
-                await conn.executemany(
+                created = await conn.fetch(
                     "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by) "
-                    "VALUES ($1, $2, $3, 'Pending', $4, $5)",
-                    rows,
+                    "SELECT t.pc, t.lab, t.cmd, 'Pending', $4, $5 "
+                    "FROM unnest($1::text[], $2::text[], $3::text[]) WITH ORDINALITY AS t(pc, lab, cmd, n) "
+                    "ORDER BY t.n RETURNING id",
+                    [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows], now, creator,
                 )
+            ids = [r["id"] for r in created]
     except Exception as exc:
         _recent_orchestrations.pop(key, None)   # başarısız istek yeniden denenebilsin
         outcome.set_exception(exc)
         outcome.exception()   # bekleyen yoksa "alınmamış hata" uyarısı çıkmasın
         raise
-    outcome.set_result(len(rows))
+    outcome.set_result(ids)
     await process_queue()
-    out = {"status": "success", "created": len(rows)}
+    out = {"status": "success", "created": len(ids), "task_ids": ids}
     if closed:
         out["skipped_module_closed"] = len(closed)   # modül kapalı laboratuvardaki hedefler
     return out

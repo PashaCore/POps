@@ -123,6 +123,16 @@ class AuthEventInput(BaseModel):
     message: Optional[str] = ""
 
 
+class TaskStatusInput(BaseModel):
+    ids: List[int] = Field(..., max_length=5000)
+
+
+class UpdateProgressInput(BaseModel):
+    pcs: List[str] = Field(..., max_length=5000)
+    version: str = Field(..., max_length=64)
+    since: float = 0   # gönderim anı (Unix saniye); öncesindeki güncelleme sonuçları sayılmaz
+
+
 class TaskActionInput(BaseModel):
     action: str
     target_mode: str
