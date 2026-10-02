@@ -104,12 +104,22 @@ and closes the connection with `4401`.
   not real when it is empty, all zeros or `F`, the UUID many boards share (`03000200-0400-0500-0006-000700080009`)
   or a placeholder such as "To be filled by O.E.M." or "Default string". An agent that has a secret but no
   `hw.bind` (0.1.14 and older) writes today's hardware on its first start (trust on first use). At every start,
-  before the ID and the secret are read, the digest is computed again. If a value that was real both then and now
-  has changed, the installation was copied: `identity.key`, `agent.secret` (and its `PersistDir` copy),
-  `bypass.device` and `hw.bind` are moved, not deleted, to `C:\POpsData\secure\clone-<UTC time>\`, event 1070 is
-  written, the ID is derived from the hardware again and the agent continues as an unenrolled device (with
-  `enroll.token` if there is one). If the changed value cannot be read reliably, nothing is touched and this is
-  logged once. With `PersistDir` the newer `hw.bind` counts, and on the same hardware `identity.key` is set back
+  before the ID and the secret are read, the digest is computed again and the values that were real both then and
+  now are compared:
+  - **All of them changed** (a copied image on another PC changes both; if only one can be compared, it decides
+    alone): the installation was copied. `identity.key`, `agent.secret` (and its `PersistDir` copy),
+    `bypass.device`, `hw.bind` and unconfirmed task results (`pending-results.json`, so the original's results are
+    not sent under the new ID) are moved, not deleted, to `C:\POpsData\secure\clone-<UTC time>\`. Event 1070 is
+    written, the ID is derived from the hardware again and the agent continues as an unenrolled device (with
+    `enroll.token` if there is one).
+  - **One changed, the other did not** (motherboard service, a corrected BIOS serial, a virtual machine setting):
+    nothing is touched; it is logged and event 1072 is written once per start. The server's `4409` still refuses
+    a real copy while the original is connected.
+  - **None changed** (only a value that is not real differs, for example a BIOS update filled in an empty serial):
+    the same PC.
+  - **Nothing can be compared:** nothing is touched and this is logged once.
+
+  With `PersistDir` the newer `hw.bind` counts, and on the same hardware `identity.key` is set back
   to the ID in `hw.bind` (freeze software brings back the imaged ID at every boot). A copy made from an image
   without `hw.bind` (captured with 0.1.14 or older) trusts its own hardware on first start; the server's `4409`
   is then the only protection.
@@ -163,7 +173,8 @@ High-impact actions also have a server-independent local record in the Windows *
 the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 and length are recorded, never the
 command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine allow list refreshed (old and new
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
-bypass-key fingerprint, 1070 a copied installation set aside at start and 1071 a `4409` rejection. Failure to write an event does not stop the
+bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
+that partly changed (no decision taken). Failure to write an event does not stop the
 service.
 
 ## Capability policy

@@ -103,36 +103,75 @@ namespace POps.Tests.Agent
             Assert.Equal(BindingVerdict.Missing, HardwareBinding.Evaluate(null, Uuid, Bios));
         }
 
+        private static BindingRecord BothReal => HardwareBinding.CreateRecord(Uuid, Bios, "HW-A", T0);
+
+        // Kopya imaj başka makinede ikisini birden değiştirir
+        [Fact]
+        public void Evaluate_BothComparableValuesChanged_IsClone()
+        {
+            var result = HardwareBinding.Compare(BothReal, OtherUuid, OtherBios);
+            Assert.Equal(BindingVerdict.Clone, result.Verdict);
+            Assert.Equal(new[] { "uuid", "bios_sn" }, result.Changed);
+            Assert.Empty(result.Same);
+        }
+
+        // Anakart servisi, BIOS seri numarası düzeltmesi, sanal makine ayarı: karar verilmez
         [Theory]
-        [InlineData(OtherUuid, OtherBios)]
-        [InlineData(OtherUuid, Bios)]
-        [InlineData(Uuid, OtherBios)]
-        public void Evaluate_ReadableValueChanged_IsClone(string uuid, string bios) =>
-            Assert.Equal(BindingVerdict.Clone, HardwareBinding.Evaluate(HardwareBinding.CreateRecord(Uuid, Bios, "HW-A", T0), uuid, bios));
+        [InlineData(OtherUuid, Bios, "uuid", "bios_sn")]
+        [InlineData(Uuid, OtherBios, "bios_sn", "uuid")]
+        public void Evaluate_OneSameOneChanged_IsInconclusive(string uuid, string bios, string changed, string same)
+        {
+            var result = HardwareBinding.Compare(BothReal, uuid, bios);
+            Assert.Equal(BindingVerdict.Inconclusive, result.Verdict);
+            Assert.Equal(new[] { changed }, result.Changed);
+            Assert.Equal(new[] { same }, result.Same);
+        }
+
+        // Yalnız biri karşılaştırılabiliyor (bağlarken ya da şimdi diğeri güvenilir okunamadı) ve o farklı: kopya
+        [Theory]
+        [InlineData(OtherUuid, "NULL")]
+        [InlineData("NULL", OtherBios)]
+        [InlineData(OtherUuid, "Default string")]
+        public void Evaluate_OnlyComparableValueChanged_IsClone(string uuid, string bios) =>
+            Assert.Equal(BindingVerdict.Clone, HardwareBinding.Evaluate(BothReal, uuid, bios));
+
+        // Yalnız biri karşılaştırılabiliyor ve o aynı: aynı bilgisayar (Match). Özetteki fark yalnızca güvenilir
+        // okunamayan parçadan gelir; o parça ne kopyayı ne de aynı makineyi kanıtlar, güvenilir kanıt aynı makineyi
+        // gösterir. Inconclusive her açılışta Olay Günlüğüne uyarı yazardı (ör. BIOS seri numarası bir an okunamadı).
+        [Theory]
+        [InlineData(Uuid, "NULL")]
+        [InlineData("NULL", Bios)]
+        [InlineData(Uuid, "To be filled by O.E.M.")]
+        public void Evaluate_OnlyComparableValueSame_IsMatch(string uuid, string bios) =>
+            Assert.Equal(BindingVerdict.Match, HardwareBinding.Evaluate(BothReal, uuid, bios));
 
         [Fact]
-        public void Evaluate_UnreliableBiosAtBindTime_UuidStillDecides()
+        public void Evaluate_UnreliableBiosAtBindTime_UuidDecidesAlone()
         {
             var record = HardwareBinding.CreateRecord(Uuid, "Default string", "HW-A", T0);
             Assert.Null(record.BiosSerial);
             Assert.Equal(BindingVerdict.Clone, HardwareBinding.Evaluate(record, OtherUuid, "Default string"));
-            // Yalnızca güvenilmez parça değişti (ör. BIOS güncellemesi seri numarasını doldurdu): karar verilmez
-            Assert.Equal(BindingVerdict.Inconclusive, HardwareBinding.Evaluate(record, Uuid, Bios));
+            // Yalnızca güvenilmez parça değişti (ör. BIOS güncellemesi seri numarasını doldurdu): aynı bilgisayar
+            Assert.Equal(BindingVerdict.Match, HardwareBinding.Evaluate(record, Uuid, Bios));
         }
 
         [Theory]
         [InlineData("NULL", "NULL")]
         [InlineData("00000000-0000-0000-0000-000000000000", "Default string")]
         [InlineData("03000200-0400-0500-0006-000700080009", "0000000")]
-        [InlineData(Uuid, "NULL")]
-        [InlineData("NULL", Bios)]
-        public void Evaluate_ChangedValueNotReadable_IsInconclusive(string uuid, string bios) =>
-            Assert.Equal(BindingVerdict.Inconclusive, HardwareBinding.Evaluate(HardwareBinding.CreateRecord(Uuid, Bios, "HW-A", T0), uuid, bios));
+        public void Evaluate_NothingComparable_IsUnreadable(string uuid, string bios) =>
+            Assert.Equal(BindingVerdict.Unreadable, HardwareBinding.Evaluate(BothReal, uuid, bios));
+
+        private static string PendingResults => SecureStore.PathOf(ResultSpool.FileName);
+
+        private static void PendingResult(int taskId) =>
+            new ResultSpool(PendingResults).Add(taskId, new { type = "result", task_id = taskId, exit_code = 0 });
 
         [Fact]
         public void Startup_Clone_MovesDeviceFilesAsideWithoutDeleting()
         {
             Enrolled();
+            PendingResult(7);
             SecureStore.WriteProtected(SecureStore.PathOf(AgentCredentials.EnrollTokenFileName), "enroll-token-0123456789abcdef");
 
             var binding = Binding(OtherUuid, OtherBios);
@@ -141,12 +180,13 @@ namespace POps.Tests.Agent
             string folder = SecureStore.PathOf("clone-20261002-093000");
             Assert.Equal(folder, binding.CloneFolder);
             Assert.Equal("HW-ORIGINAL", binding.PreviousHwId);
-            Assert.Equal(new[] { "identity.key", "agent.secret", "bypass.device", "hw.bind" }, binding.MovedFiles);
+            Assert.Equal(new[] { "identity.key", "agent.secret", "bypass.device", "hw.bind", "pending-results.json" }, binding.MovedFiles);
             foreach (string name in binding.MovedFiles) Assert.True(File.Exists(Path.Combine(folder, name)), name);
             Assert.False(File.Exists(AgentUpdate.IdentityPath));
             Assert.False(File.Exists(SecureStore.PathOf(AgentCredentials.SecretFileName)));
             Assert.False(File.Exists(SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName)));
             Assert.False(File.Exists(HardwareBinding.PrimaryPath));
+            Assert.False(File.Exists(PendingResults));
             Assert.Equal("HW-ORIGINAL", File.ReadAllText(Path.Combine(folder, "identity.key")));
             // Jeton kalır: kopya onunla yeni cihaz olarak kaydolur
             Assert.True(File.Exists(SecureStore.PathOf(AgentCredentials.EnrollTokenFileName)));
@@ -169,17 +209,38 @@ namespace POps.Tests.Agent
             Assert.Null(AgentCredentials.LoadSecret());
         }
 
+        private static void AssertUntouched(HardwareBinding binding)
+        {
+            Assert.Null(binding.CloneFolder);
+            Assert.Empty(binding.MovedFiles);
+            Assert.True(File.Exists(AgentUpdate.IdentityPath));
+            Assert.True(File.Exists(SecureStore.PathOf(AgentCredentials.SecretFileName)));
+            Assert.True(File.Exists(SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName)));
+            Assert.True(File.Exists(HardwareBinding.PrimaryPath));
+            Assert.True(File.Exists(PendingResults));
+            Assert.Empty(Directory.GetDirectories(SecureStore.Dir, "clone-*"));
+        }
+
         [Fact]
         public void Startup_Unreadable_TouchesNothing()
         {
             Enrolled();
+            PendingResult(7);
             var binding = Binding("-", "To be filled by O.E.M.");
+            Assert.Equal(BindingVerdict.Unreadable, binding.CheckOnStartup());
+            AssertUntouched(binding);
+        }
+
+        [Fact]
+        public void Startup_PartlyChanged_TouchesNothing()
+        {
+            Enrolled();
+            PendingResult(7);
+            var binding = Binding(Uuid, OtherBios);
             Assert.Equal(BindingVerdict.Inconclusive, binding.CheckOnStartup());
-            Assert.Null(binding.CloneFolder);
-            Assert.True(File.Exists(AgentUpdate.IdentityPath));
-            Assert.True(File.Exists(SecureStore.PathOf(AgentCredentials.SecretFileName)));
-            Assert.True(File.Exists(HardwareBinding.PrimaryPath));
-            Assert.Empty(Directory.GetDirectories(SecureStore.Dir, "clone-*"));
+            Assert.Equal(new[] { "bios_sn" }, binding.ChangedParts);
+            Assert.Equal(new[] { "uuid" }, binding.SameParts);
+            AssertUntouched(binding);
         }
 
         [Fact]
@@ -281,6 +342,48 @@ namespace POps.Tests.Agent
             Assert.False(File.Exists(HardwareBinding.PrimaryPath));
         }
 
+        // Asıl cihazın onay bekleyen sonuçları servis açılırken okunmuştu: klonda bellekten de bırakılır, yeni kimlikle gitmez
+        [Fact]
+        public async Task Clone_DropsTheOriginalsPendingResults()
+        {
+            Enrolled();
+            PendingResult(7);
+            PendingResult(8);
+            var sent = new List<JsonElement>();
+            using Worker worker = new Worker(NullLogger<Worker>.Instance)
+            {
+                HwId = "HW-DERIVED",
+                SendOverride = payload => { sent.Add(JsonSerializer.SerializeToElement(payload)); return Task.FromResult(true); },
+                Binding = Binding(OtherUuid, OtherBios),
+            };
+            Assert.Equal(2, worker.Results.Count);
+
+            Assert.Equal(BindingVerdict.Clone, worker.Binding.CheckOnStartup());
+            worker.ApplyHardwareBinding(BindingVerdict.Clone);
+            Assert.Equal(0, worker.Results.Count);
+            Assert.False(File.Exists(PendingResults));
+            Assert.True(File.Exists(Path.Combine(worker.Binding.CloneFolder, ResultSpool.FileName)));
+
+            // Onaylı sunucu: diskteki ve bellekteki onaysız sonuçlar her heartbeat'te gönderilirdi
+            worker.Handshake.OnServerInfo(JsonDocument.Parse("{\"action\":\"server_info\",\"features\":[\"result_ack\"]}").RootElement);
+            await worker.FlushPendingResultsAsync();
+            Assert.DoesNotContain(sent, m => m.TryGetProperty("type", out var t) && t.GetString() == "result");
+        }
+
+        [Fact]
+        public void PartlyChanged_KeepsTheKeyAndPendingResults()
+        {
+            Enrolled();
+            PendingResult(7);
+            using Worker worker = NewWorker("HW-ORIGINAL");
+            worker.Binding = Binding(OtherUuid, Bios);
+            Assert.Equal(BindingVerdict.Inconclusive, worker.Binding.CheckOnStartup());
+            worker.ApplyHardwareBinding(BindingVerdict.Inconclusive);   // Olay Günlüğüne 1072
+            Assert.Equal(1, worker.Results.Count);
+            Assert.Equal("HW-ORIGINAL", worker.HwId);
+            AssertUntouched(worker.Binding);
+        }
+
         [Fact]
         public void AuditEvents_ForCloneAndCloneRejection()
         {
@@ -296,6 +399,12 @@ namespace POps.Tests.Agent
             LocalAuditEvent rejected = LocalAudit.CloneRejected("command");
             Assert.Equal(1071, rejected.EventId);
             Assert.Equal(LocalAuditLevel.Warning, rejected.Level);
+
+            LocalAuditEvent partly = LocalAudit.HardwarePartlyChanged(new[] { "bios_sn" }, new[] { "uuid" });
+            Assert.Equal(1072, partly.EventId);
+            Assert.Equal(LocalAuditLevel.Warning, partly.Level);
+            Assert.Contains("changed: bios_sn", partly.Message);
+            Assert.Contains("unchanged: uuid", partly.Message);
         }
 
         private sealed class FixedRandom : Random

@@ -75,6 +75,11 @@ namespace POpsAgent
                 ("new_hw_id", Safe(newHwId)), ("moved_to", Safe(folder)), ("files", Safe(string.Join(", ", moved ?? Array.Empty<string>()))),
                 ("enroll_token", enrollToken ? "var" : "yok"));
 
+        // Karşılaştırılabilen donanım değerlerinden biri değişti, biri aynı: kopya sayılmadı, dosyalara dokunulmadı
+        public static LocalAuditEvent HardwarePartlyChanged(IEnumerable<string> changed, IEnumerable<string> same) =>
+            Warning(1072, "Donanımın bir kısmı değişti; kopya kararı verilmedi", ("changed", Safe(string.Join(", ", changed ?? Array.Empty<string>()))),
+                ("unchanged", Safe(string.Join(", ", same ?? Array.Empty<string>()))), ("action", "dosyalara dokunulmadı"));
+
         public static LocalAuditEvent CloneRejected(string channel) =>
             Warning(1071, "Sunucu bu kimliği başka bir bilgisayarda bağlı buldu (4409)", ("channel", Safe(channel)));
 

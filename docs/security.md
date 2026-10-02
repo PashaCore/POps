@@ -110,9 +110,10 @@ Things to keep in mind:
 - **Binding.** On the agent HTTP endpoints the authenticated device ID must match the device being written;
   otherwise `403`.
 - **The key stays on its hardware (agent 0.1.15-alpha on).** The agent records the hardware it received its key
-  on (`secure\hw.bind`). A copy of the installation on other hardware moves the ID and key aside at start
-  (`secure\clone-<time>\`, event 1070) and enrolls as a new device; `POpsAgent.exe --generalize` prepares a disk
-  image. See [`agent.md`](agent.md#connection).
+  on (`secure\hw.bind`). When every reliably read value (machine UUID, BIOS serial) differs at start, the
+  installation is a copy: it moves the ID, key and unconfirmed task results aside (`secure\clone-<time>\`, event
+  1070) and enrolls as a new device. When only one of them changed, nothing is touched (event 1072); the server's
+  `4409` covers that case. `POpsAgent.exe --generalize` prepares a disk image. See [`agent.md`](agent.md#connection).
 - **Newer agent endpoints are enrolled-only.** The software inventory, Windows Update and helpdesk endpoints
   (`POST /api/software/{hw_id}`, `POST /api/patches/{hw_id}`, `/api/tickets/agent/{hw_id}`) require a valid device
   secret even while enforcement is off (`401` otherwise, `403` for another device). The accept-both exception for

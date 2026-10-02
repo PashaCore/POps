@@ -85,6 +85,19 @@ namespace POpsAgent
 
         public void OnConnected() { lock (_gate) _sent.Clear(); }
 
+        // Dosya kenara alındı (kopyalanmış kurulum, bkz. HardwareBinding): bellekteki sonuçlar da bırakılır, diske yazılmaz.
+        // Dönen, bırakılan sonuç sayısı.
+        public int Discard()
+        {
+            lock (_gate)
+            {
+                int count = _entries.Count;
+                _entries.Clear();
+                _sent.Clear();
+                return count;
+            }
+        }
+
         private void Save()
         {
             try

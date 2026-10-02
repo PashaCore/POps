@@ -14,8 +14,9 @@ using POps.Shared;
 
 namespace POpsAgent
 {
-    // Açılış denetiminin sonucu. Inconclusive: özet farklı ama değişen bir değer güvenilir okunamadı; dosyalara dokunulmaz.
-    public enum BindingVerdict { Missing, Match, Clone, Inconclusive }
+    // Açılış denetiminin sonucu. Inconclusive: karşılaştırılabilen değerlerden biri aynı, biri farklı. Unreadable: özet
+    // farklı ama karşılaştırılabilecek değer yok. İkisinde de dosyalara dokunulmaz.
+    public enum BindingVerdict { Missing, Match, Clone, Inconclusive, Unreadable }
 
     // secure\hw.bind: cihaz anahtarının alındığı donanım
     public sealed class BindingRecord
@@ -33,11 +34,13 @@ namespace POpsAgent
     // Cihaz anahtarı (secret) alındığı donanımda kalır. Anahtar gelince (set_secret) ya da anahtarı olup bağı olmayan
     // eski kurulumun ilk açılışında (ilk kullanımda güven) bugünkü donanımın özeti secure\hw.bind'e yazılır. PersistDir
     // ayarlıysa oraya da yazılır: dondurma yazılımı C:'yi geri alsa da bağ secret'la birlikte kalır, en yeni kayıt geçerlidir.
-    // Her açılışta, kimlik ve secret okunmadan önce özet yeniden hesaplanır. Bağlama anında da şimdi de güvenilir okunan
-    // bir değer (UUID ya da BIOS seri numarası) değiştiyse kurulum kopyalanmıştır: identity.key, secret, bypass.device ve
-    // hw.bind silinmez, secure\clone-<zaman>\ altına taşınır. Ajan kimliği donanımdan yeniden türetir ve kayıtsız cihaz
-    // olarak devam eder (enroll.token varsa onunla kaydolur). Değer okunamıyorsa (boş, sıfır UUID, "To be filled by O.E.M."
-    // gibi) bir şeye dokunulmaz: geçici bir WMI hatası anahtarı kaybettirmesin.
+    // Her açılışta, kimlik ve secret okunmadan önce özet yeniden hesaplanır. Karşılaştırılabilen değerlerin (bağlama anında
+    // da şimdi de güvenilir okunan UUID ve BIOS seri numarası) hepsi değiştiyse kurulum kopyalanmıştır: identity.key,
+    // secret, bypass.device, hw.bind ve onay bekleyen görev sonuçları silinmez, secure\clone-<zaman>\ altına taşınır. Ajan
+    // kimliği donanımdan yeniden türetir ve kayıtsız cihaz olarak devam eder (enroll.token varsa onunla kaydolur).
+    // Kopya imaj başka makinede ikisini birden değiştirir; yalnızca biri değiştiyse (anakart servisi, BIOS seri numarası
+    // düzeltmesi, sanal makine ayarı) karar verilmez, sunucunun 4409'u arkadan korur. Değer okunamıyorsa (boş, sıfır
+    // UUID, "To be filled by O.E.M." gibi) bir şeye dokunulmaz: geçici bir WMI hatası anahtarı kaybettirmesin.
     [SupportedOSPlatform("windows")]
     public sealed class HardwareBinding
     {
@@ -60,7 +63,7 @@ namespace POpsAgent
         private readonly Func<(string Uuid, string BiosSerial)> _read;
         private readonly Func<DateTimeOffset> _now;
         private (string Uuid, string BiosSerial)? _reading;
-        private bool _unreadableLogged;
+        private readonly HashSet<string> _logged = new HashSet<string>();
 
         // read: ham WMI değerleri (Win32_ComputerSystemProduct.UUID, Win32_BIOS.SerialNumber; okunamazsa "-")
         public HardwareBinding(string identityPath, Func<(string Uuid, string BiosSerial)> read, Func<DateTimeOffset> now = null)
@@ -78,6 +81,9 @@ namespace POpsAgent
         public string CloneFolder { get; private set; }
         public IReadOnlyList<string> MovedFiles { get; private set; } = Array.Empty<string>();
         public string PreviousHwId { get; private set; }
+        // Karşılaştırılan parçalar ("uuid", "bios_sn"): değişenler ve aynı kalanlar
+        public IReadOnlyList<string> ChangedParts { get; private set; } = Array.Empty<string>();
+        public IReadOnlyList<string> SameParts { get; private set; } = Array.Empty<string>();
 
         public static string PrimaryPath => SecureStore.PathOf(FileName);
         private static string MirrorPath() => AgentCredentials.PersistPath(FileName);
@@ -121,15 +127,31 @@ namespace POpsAgent
             SavedAt = now.ToUnixTimeMilliseconds(),
         };
 
-        // Klon: bağlama anında da şimdi de güvenilir okunan bir parça değişmiş. Özet farklı ama böyle bir parça yoksa
-        // (biri şimdi okunamıyor ya da yalnızca güvenilmez parça değişmiş) karar verilmez.
-        public static BindingVerdict Evaluate(BindingRecord saved, string uuid, string biosSerial)
+        public static BindingVerdict Evaluate(BindingRecord saved, string uuid, string biosSerial) =>
+            Compare(saved, uuid, biosSerial).Verdict;
+
+        // Karşılaştırılabilen parça: bağlama anında da şimdi de güvenilir okunan. Hepsi değiştiyse klon (tek parça
+        // karşılaştırılabiliyorsa o karar verir); biri aynı biri farklıysa karar verilmez. Hepsi aynıysa aynı makinedir:
+        // özetteki fark yalnızca güvenilmez parçadan gelir (ör. BIOS güncellemesi boş seri numarasını doldurdu).
+        public static (BindingVerdict Verdict, List<string> Changed, List<string> Same) Compare(BindingRecord saved, string uuid, string biosSerial)
         {
-            if (saved == null) return BindingVerdict.Missing;
-            if (Same(saved.Digest, Digest(uuid, biosSerial))) return BindingVerdict.Match;
-            bool changed = (saved.Uuid != null && IsReadableUuid(uuid) && !Same(saved.Uuid, Sha256(uuid)))
-                || (saved.BiosSerial != null && IsReadableSerial(biosSerial) && !Same(saved.BiosSerial, Sha256(biosSerial)));
-            return changed ? BindingVerdict.Clone : BindingVerdict.Inconclusive;
+            var changed = new List<string>();
+            var same = new List<string>();
+            if (saved == null) return (BindingVerdict.Missing, changed, same);
+            if (Same(saved.Digest, Digest(uuid, biosSerial))) return (BindingVerdict.Match, changed, same);
+            Part("uuid", saved.Uuid, IsReadableUuid(uuid) ? uuid : null);
+            Part("bios_sn", saved.BiosSerial, IsReadableSerial(biosSerial) ? biosSerial : null);
+            BindingVerdict verdict = changed.Count + same.Count == 0 ? BindingVerdict.Unreadable
+                : same.Count == 0 ? BindingVerdict.Clone
+                : changed.Count == 0 ? BindingVerdict.Match
+                : BindingVerdict.Inconclusive;
+            return (verdict, changed, same);
+
+            void Part(string name, string savedHash, string current)
+            {
+                if (savedHash == null || current == null) return;
+                (Same(savedHash, Sha256(current)) ? same : changed).Add(name);
+            }
         }
 
         public static BindingRecord Parse(string json)
@@ -170,16 +192,25 @@ namespace POpsAgent
             CloneFolder = null;
             MovedFiles = Array.Empty<string>();
             PreviousHwId = null;
+            ChangedParts = SameParts = Array.Empty<string>();
             BindingRecord saved = Load();
             BoundHwId = saved?.HwId;
             if (saved == null) return Verdict = BindingVerdict.Missing;
 
             var (uuid, bios) = Reading();
-            Verdict = Evaluate(saved, uuid, bios);
+            var result = Compare(saved, uuid, bios);
+            Verdict = result.Verdict;
+            ChangedParts = result.Changed;
+            SameParts = result.Same;
             if (Verdict == BindingVerdict.Clone) SetAside();
-            else if (Verdict == BindingVerdict.Inconclusive)
-                LogUnreadableOnce($"Donanım özeti kayıtlı bağdan (hw.bind) farklı ama değişen değer güvenilir okunamadı "
+            else if (Verdict == BindingVerdict.Unreadable)
+                LogOnce("unreadable", $"Donanım özeti kayıtlı bağdan (hw.bind) farklı ama karşılaştırılabilecek değer güvenilir okunamadı "
                     + $"(UUID {Describe(IsReadableUuid(uuid))}, BIOS seri no {Describe(IsReadableSerial(bios))}); kopya denetimi yapılmadı, dosyalara dokunulmadı.");
+            else if (Verdict == BindingVerdict.Inconclusive)
+                LogOnce("partial", $"[GÜVENLİK] Donanımın bir kısmı kayıtlı bağdan (hw.bind) farklı (değişen: {string.Join(", ", ChangedParts)}; "
+                    + $"aynı: {string.Join(", ", SameParts)}); kopya sayılmadı, dosyalara dokunulmadı.");
+            else if (Verdict == BindingVerdict.Match && !Same(saved.Digest, Digest(uuid, bios)))
+                LogOnce("unreliable", $"Donanım özeti kayıtlı bağdan farklı ama güvenilir okunan değerler ({string.Join(", ", SameParts)}) aynı; aynı bilgisayar sayıldı.");
             return Verdict;
         }
 
@@ -190,7 +221,7 @@ namespace POpsAgent
             var (uuid, bios) = Reading();
             if (!IsReadableUuid(uuid) && !IsReadableSerial(bios))
             {
-                LogUnreadableOnce($"Donanım bağı (hw.bind) yazılmadı ({reason}): UUID ve BIOS seri numarası güvenilir okunamadı.");
+                LogOnce("bind", $"Donanım bağı (hw.bind) yazılmadı ({reason}): UUID ve BIOS seri numarası güvenilir okunamadı.");
                 return false;
             }
             return Write(CreateRecord(uuid, bios, hwId, _now()), reason);
@@ -266,6 +297,8 @@ namespace POpsAgent
             yield return (SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName), AgentCredentials.DeviceBypassSecretFileName);
             yield return (PrimaryPath, FileName);
             yield return (MirrorPath(), FileName + PersistSuffix);
+            // Asıl cihazın görev sonuçları yeni kimlikle gönderilmesin
+            yield return (SecureStore.PathOf(ResultSpool.FileName), ResultSpool.FileName);
         }
 
         private string ReadIdentity()
@@ -274,11 +307,9 @@ namespace POpsAgent
             catch { return null; }
         }
 
-        private void LogUnreadableOnce(string message)
+        private void LogOnce(string key, string message)
         {
-            if (_unreadableLogged) return;
-            _unreadableLogged = true;
-            POpsHelpers.Log("SECURE", message, true);
+            if (_logged.Add(key)) POpsHelpers.Log("SECURE", message, true);
         }
 
         private static string Describe(bool readable) => readable ? "okundu" : "okunamadı";

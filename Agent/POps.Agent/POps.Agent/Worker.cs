@@ -182,25 +182,30 @@ namespace POpsAgent
             catch (Exception ex)
             {
                 POpsHelpers.Log("AGENT", $"Donanım bağı denetlenemedi: {ex.Message}", true);
-                return BindingVerdict.Inconclusive;
+                return BindingVerdict.Unreadable;
             }
         }
 
-        // Klon: yerel denetim kaydı (kimlik donanımdan yeniden türetildi). Aynı donanım: dondurma yazılımı C:'yi geri
-        // aldıysa identity.key anahtarın verildiği kimliğe döner. Bağ yoksa ve secret varsa (0.1.14 ve önceki kurulum)
-        // bugünkü donanım yazılır: ilk kullanımda güven.
+        // Klon: yerel denetim kaydı (kimlik donanımdan yeniden türetildi); dosyası kenara alınan görev sonuçları bellekten
+        // de bırakılır. Donanımın bir kısmı değişti: Olay Günlüğüne uyarı (açılış başına bir kez). Aynı donanım: dondurma
+        // yazılımı C:'yi geri aldıysa identity.key anahtarın verildiği kimliğe döner. Bağ yoksa ve secret varsa (0.1.14 ve
+        // önceki kurulum) bugünkü donanım yazılır: ilk kullanımda güven.
         internal void ApplyHardwareBinding(BindingVerdict verdict)
         {
             try
             {
                 if (verdict == BindingVerdict.Clone)
                 {
+                    int dropped = Results.Discard();
+                    if (dropped > 0) POpsHelpers.Log("AGENT", $"Asıl cihazın onay bekleyen {dropped} görev sonucu gönderilmeyecek (klon klasöründe).", true);
                     bool token = AgentCredentials.GetEnrollToken() != null;
                     LocalAudit.Write(LocalAudit.CloneDetected(Binding.PreviousHwId, _hwId, Binding.CloneFolder, Binding.MovedFiles, token));
                     POpsHelpers.Log("AGENT", $"[GÜVENLİK] Kopyalanmış kurulum: cihaz anahtarı bu donanıma ait değil. {string.Join(", ", Binding.MovedFiles)} "
                         + $"{Binding.CloneFolder} klasörüne taşındı; kimlik {Binding.PreviousHwId ?? "(yok)"} -> {_hwId}. "
                         + (token ? "Enroll jetonuyla yeni cihaz olarak kaydolunacak." : "Enroll jetonu yok: cihaz kayıtsız kalacak, yönetici jeton vermeli."), true);
                 }
+                else if (verdict == BindingVerdict.Inconclusive)
+                    LocalAudit.Write(LocalAudit.HardwarePartlyChanged(Binding.ChangedParts, Binding.SameParts));
                 else if (verdict == BindingVerdict.Match)
                 {
                     string bound = Binding.BoundHwId;
