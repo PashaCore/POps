@@ -125,6 +125,35 @@ kod değişikliğidir ve testle gelir.
   - Laboratuvar planında "Öğretmen bilgisayarı" olarak işaretlenir ve öğretmenin izlediği bilgisayarlar listesine
     girmez.
   - İleride öğretmen ekranı bu bilgisayarın tepsisinden açılabilir (öğretmen modu kararıyla birlikte).
+### 6.2 Zamanlı erişim: ders programına göre açılır, kapanır
+
+Üniversite ve okullarda üç bilgi zaten vardır: kim olduğu (kurumun giriş sistemi), hangi derslikte yetkili olduğu ve
+ne zaman dersi olduğu (ders programı). POps bunları birleştirir: öğretmenin erişimi **ders saatinde kendiliğinden
+açılır, ders bitince kapanır**; yetki kalıcı değil, yalnızca gereken saatte vardır.
+
+- **Erişim kaydı** (`lab_access_grants`): öğretmen × laboratuvar × zaman.
+  - Zaman, haftalık tekrar eden bir aralık (gün, başlangıç, bitiş, dönem başı/sonu) ya da tek seferlik bir aralık
+    olabilir.
+  - Kaynak `manual` (BT ekledi), `import` (ders programından) ya da `sso` (giriş sisteminden gelen grup) olarak
+    tutulur.
+- **Tolerans:** kurum ayarı, ör. dersten 10 dk önce açılır, bittikten 15 dk sonra kapanır.
+- **Ders programı içe aktarma:** önce CSV/Excel (ders, laboratuvar, gün, saat, öğretim elemanı kullanıcı adı ya da
+  e-postası, dönem). Üniversite bilgi sistemleri (UBYS, OBS vb.) ve okullarda e-Okul ders programı bu biçime
+  dışa aktarılabilir. Belirli bir sisteme doğrudan bağlayıcı, talep olursa sonra.
+  - Her içe aktarma önce önizlenir: eşleşmeyen öğretim elemanları ve bilinmeyen laboratuvarlar listelenir, onayla
+    uygulanır.
+  - Yeni dönem içe aktarıldığında eski dönemin kayıtları kapanır.
+- **Kimlik eşleme:** kurumsal girişten (bölüm 7.1) gelen kullanıcı adı ya da e-posta, ders programındaki öğretim
+  elemanıyla eşleşir. Kurumsal giriş yoksa öğretmen POps'ta yerel kullanıcı olarak açılır, eşleme kullanıcı adıyla
+  yapılır.
+- **Uygulama:**
+  - Öğretmenin "şu an yetkili olduğu laboratuvarlar" her istekte ve panel bağlantısının 10 saniyelik yeniden
+    denetiminde hesaplanır.
+  - Süre dolunca açık Vision izlemesi kapanır, laboratuvar listeden düşer; önizleme ve uyandırma reddedilir.
+  - Açılma ve kapanmalar denetim kaydına yazılır ("Ali Hoca, Lab-3: erişim açıldı 09:50, kapandı 12:05").
+- **BT yöneticileri** (admin, superadmin) saatten bağımsızdır.
+- **Saat:** sunucunun saat dilimine göre (zamanlanmış görevlerle aynı).
+
 - Öğretmen modülü bağımsız bir modül değildir; `vision` ve `wol` modüllerinin laboratuvardaki etkin ayarına uyar.
   Vision o laboratuvarda kapalıysa öğretmen de izleyemez.
 
@@ -187,10 +216,10 @@ yalnızca tepsideki öğeler ajan güncellenene kadar görünmeye devam eder.
 | --- | --- | --- |
 | 0 | .NET 10 geçişi (devam ediyor) | LOCAL |
 | 1a | Modül kaydı, `module_settings`, sunucu ve panel uygulaması, Sistem → Modüller, profiller, mevcut özelliklerin modüle bağlanması | Sunucu |
-| 1b | Öğretmen rolü, laboratuvar ataması, öğretmen bilgisayarının donanım kimliğine geçmesi | Sunucu |
+| 1b | Öğretmen rolü, zamanlı erişim kayıtları, ders programı CSV içe aktarma, öğretmen bilgisayarının donanım kimliğine geçmesi | Sunucu |
 | 1b | Ajanın modül listesini alıp uygulaması (tepsi öğeleri, DNS izleme) | LOCAL |
 | 2 | SIEM'e kayıt gönderme (yalnızca sunucu, en kısa) | Sunucu |
-| 3 | OIDC girişi; ardından LDAP | Sunucu |
+| 3 | OIDC girişi; ardından LDAP (ders programındaki öğretim elemanlarıyla otomatik eşleme) | Sunucu |
 | 4 | Uygulama kataloğu: önce kendi paketlerimiz, sonra winget prototipi | Sunucu + LOCAL |
 
 Her faz ayrı PR ve ayrı sürüm. Her biri testle ve belgeyle gelir.
