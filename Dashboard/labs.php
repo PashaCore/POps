@@ -604,7 +604,7 @@ window.assignUnassigned = async function() {
     let targetLab = existingLab;
     if (newLab) {
         targetLab = newLab;
-        try { await apiRequest('/api/create_lab', { method: 'POST', body: JSON.stringify({ lab_name: newLab }) }); } catch (e) {}
+        try { await apiRequest('/api/create_lab', { method: 'POST', body: JSON.stringify({ lab_name: newLab }) }); } catch (e) { POps.toast('error', POps.errorMessage(e)); }
     }
     if (!targetLab) return showToast('Lütfen sınıf seçin veya oluşturun!', 'error');
     try {
@@ -666,23 +666,27 @@ window.setMainPc = async function(labName, hostname) {
     }
 };
 window.unassignPc = async function(hostname) {
-    if (!confirm(`${hostname} cihazını sınıftan çıkarmak istediğinize emin misiniz?`)) return;
-    try { await apiRequest('/api/move_pc', { method: 'POST', body: JSON.stringify({ pc_name: hostname, new_lab: 'Atanmamis_Cihazlar' }) }); showToast(`${hostname} çıkarıldı.`, 'success'); if (typeof loadDevices === 'function') loadDevices(); } catch (e) {}
+    if (!await POps.confirm({ title: 'Cihaz sınıftan çıkarılsın mı?', message: `${hostname} bekleme odasına (atanmamış cihazlar) taşınacak.`, confirmText: 'Çıkar' })) return;
+    try { await apiRequest('/api/move_pc', { method: 'POST', body: JSON.stringify({ pc_name: hostname, new_lab: 'Atanmamis_Cihazlar' }) }); showToast(`${hostname} çıkarıldı.`, 'success'); if (typeof loadDevices === 'function') loadDevices(); } catch (e) { POps.toast('error', POps.errorMessage(e)); }
 };
 window.deleteLab = async function(labName) {
-    if (!confirm(`${labName} laboratuvarını silmek istiyor musunuz?`)) return;
-    try { await apiRequest('/api/delete_lab', { method: 'POST', body: JSON.stringify({ lab_name: labName }) }); expandedLabs.delete(labName); showToast(`${labName} silindi.`, 'success'); if (typeof loadDevices === 'function') loadDevices(); } catch (e) {}
+    if (!await POps.confirm({ title: 'Sınıf silinsin mi?', message: `"${labName}" silinecek; içindeki cihazlar atanmamış cihazlara taşınır.`, confirmText: 'Sil', danger: true })) return;
+    try { await apiRequest('/api/delete_lab', { method: 'POST', body: JSON.stringify({ lab_name: labName }) }); expandedLabs.delete(labName); showToast(`${labName} silindi.`, 'success'); if (typeof loadDevices === 'function') loadDevices(); } catch (e) { POps.toast('error', POps.errorMessage(e)); }
 };
 window.renameLab = async function(oldName) {
     const newName = document.getElementById(`renameInput_${oldName}`).value.trim();
     if (!newName || newName === oldName) return;
-    try { await apiRequest('/api/rename_lab', { method: 'POST', body: JSON.stringify({ old_name: oldName, new_name: newName }) }); if (expandedLabs.has(oldName)) { expandedLabs.delete(oldName); expandedLabs.add(newName); } showToast('Sınıf adı güncellendi.', 'success'); if (typeof loadDevices === 'function') loadDevices(); } catch (e) {}
+    try { await apiRequest('/api/rename_lab', { method: 'POST', body: JSON.stringify({ old_name: oldName, new_name: newName }) }); if (expandedLabs.has(oldName)) { expandedLabs.delete(oldName); expandedLabs.add(newName); } showToast('Sınıf adı güncellendi.', 'success'); if (typeof loadDevices === 'function') loadDevices(); } catch (e) { POps.toast('error', POps.errorMessage(e)); }
 };
 
+// Ortak pencere (odak, Esc, kapanış) korunur; bu sayfa yalnızca açılmadan önce seçim listelerini doldurur
+const sharedOpenModal = window.openModal;
 window.openModal = function(id) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.classList.add('open');
+    prepareLabsModal(id);
+    sharedOpenModal(id);
+};
+function prepareLabsModal(id) {
+    if (!document.getElementById(id)) return;
     const allLabs = [...new Set([...Object.keys(state.labsStats || {}), ...(state.customLabs || [])])].filter(l => l && l !== 'Atanmamis_Cihazlar');
     if (id === 'autoEnrollModal' || id === 'movePcModal' || id === 'globalMoveModal') {
         const select = document.getElementById(id === 'autoEnrollModal' ? 'autoEnrollLabSelect' : (id === 'movePcModal' ? 'movePcLabSelect' : 'globalMoveLabSelect'));
@@ -696,19 +700,19 @@ window.openModal = function(id) {
         allLabs.forEach(l => { filterSelect.innerHTML += `<option value="${escapeHtml(l)}">Sadece ${escapeHtml(l)}</option>`; });
         window.renderBulkMoveList();
     }
-};
+}
 
 window.createNewLab = async function() {
     const val = document.getElementById('newLabName').value.trim();
     if (!val) return;
-    try { await apiRequest('/api/create_lab', { method: 'POST', body: JSON.stringify({ lab_name: val }) }); showToast(`${val} oluşturuldu.`, 'success'); closeModal('newLabModal'); expandedLabs.add(val); document.getElementById('newLabName').value = ''; if (typeof loadDevices === 'function') loadDevices(); } catch (e) {}
+    try { await apiRequest('/api/create_lab', { method: 'POST', body: JSON.stringify({ lab_name: val }) }); showToast(`${val} oluşturuldu.`, 'success'); closeModal('newLabModal'); expandedLabs.add(val); document.getElementById('newLabName').value = ''; if (typeof loadDevices === 'function') loadDevices(); } catch (e) { POps.toast('error', POps.errorMessage(e)); }
 };
 
 window.openMovePcModal = function(hostname, currentLab) { pcToMove = hostname; document.getElementById('movePcName').innerText = hostname; openModal('movePcModal'); setTimeout(() => { document.getElementById('movePcLabSelect').value = currentLab; }, 50); };
 window.movePcSubmit = async function() {
     const targetLab = document.getElementById('movePcLabSelect').value;
     if (!pcToMove || !targetLab) return;
-    try { await apiRequest('/api/move_pc', { method: 'POST', body: JSON.stringify({ pc_name: pcToMove, new_lab: targetLab }) }); showToast(`${pcToMove} taşındı.`, 'success'); closeModal('movePcModal'); if (targetLab !== 'Atanmamis_Cihazlar') expandedLabs.add(targetLab); if (typeof loadDevices === 'function') loadDevices(); } catch (e) {}
+    try { await apiRequest('/api/move_pc', { method: 'POST', body: JSON.stringify({ pc_name: pcToMove, new_lab: targetLab }) }); showToast(`${pcToMove} taşındı.`, 'success'); closeModal('movePcModal'); if (targetLab !== 'Atanmamis_Cihazlar') expandedLabs.add(targetLab); if (typeof loadDevices === 'function') loadDevices(); } catch (e) { POps.toast('error', POps.errorMessage(e)); }
 };
 
 window.renderBulkMoveList = function() {
@@ -734,41 +738,29 @@ window.submitBulkMove = async function() {
     const checkedBoxes = document.querySelectorAll('.bulk-pc-cb:checked');
     const pcNames = Array.from(checkedBoxes).map(cb => cb.value);
     if (pcNames.length === 0 || !targetLab) return;
-    try { await apiRequest('/api/move_pcs', { method: 'POST', body: JSON.stringify({ pc_names: pcNames, new_lab: targetLab }) }); showToast(`${pcNames.length} cihaz taşındı.`, 'success'); closeModal('globalMoveModal'); if (targetLab !== 'Atanmamis_Cihazlar') expandedLabs.add(targetLab); if (typeof loadDevices === 'function') loadDevices(); } catch (e) {}
+    try { await apiRequest('/api/move_pcs', { method: 'POST', body: JSON.stringify({ pc_names: pcNames, new_lab: targetLab }) }); showToast(`${pcNames.length} cihaz taşındı.`, 'success'); closeModal('globalMoveModal'); if (targetLab !== 'Atanmamis_Cihazlar') expandedLabs.add(targetLab); if (typeof loadDevices === 'function') loadDevices(); } catch (e) { POps.toast('error', POps.errorMessage(e)); }
 };
 window.saveAutoEnroll = async function() {
     const targetLab = document.getElementById('autoEnrollLabSelect').value;
     const date = document.getElementById('autoEnrollDate').value;
     if (!targetLab || !date) return showToast('Eksik bilgi.', 'warning');
-    try { await apiRequest('/api/set_auto_enroll', { method: 'POST', body: JSON.stringify({ target_lab: targetLab, expire_date: date }) }); showToast('Oto-kayıt aktif.', 'success'); closeModal('autoEnrollModal'); } catch (e) {}
+    try { await apiRequest('/api/set_auto_enroll', { method: 'POST', body: JSON.stringify({ target_lab: targetLab, expire_date: date }) }); showToast('Oto-kayıt aktif.', 'success'); closeModal('autoEnrollModal'); } catch (e) { POps.toast('error', POps.errorMessage(e)); }
 };
 
 window.renameDevice = async function(hostname, currentName) {
-    const newName = prompt(`${hostname} için yeni görünen isim:`, currentName);
-    if (newName === null) return;
-    try {
-        const res = await fetch(`${apiUrl}/api/rename_device`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pc_name: hostname, display_name: newName.trim() })
-        });
-        if (res.ok) {
-            showToast('İsim güncellendi', 'success');
-            // Wait for WebSocket event or manually trigger a state refresh
-        } else {
-            showToast('İsim güncellenirken hata oluştu', 'danger');
-        }
-    } catch (e) {
-        showToast('Bağlantı hatası', 'danger');
-    }
-}
+    const name = await POps.prompt({ title: 'Cihazın adını değiştir', message: `${hostname} panelde bu adla görünür. Boş bırakırsanız bilgisayarın kendi adı kullanılır.`, label: 'Görünen ad', defaultValue: currentName, maxLength: 100, required: false, confirmText: 'Kaydet' });
+    if (name === null) return;
+    if (await POps.act(null, () => POps.post('/api/rename_device', { pc_name: hostname, display_name: name.trim() }), { success: 'Ad güncellendi.' })) loadDevices();
+};
 document.addEventListener('pops_data_updated', () => {
     const searchEl = document.getElementById('globalLabSearch');
     if (searchEl) pageState.searchQuery = searchEl.value;
     window.initLabsView();
 });
 document.getElementById('globalLabSearch')?.addEventListener('input', (e) => { pageState.searchQuery = e.target.value; window.initLabsView(true); });
-if (typeof state !== 'undefined' && state.devices && state.devices.length > 0) window.initLabsView();
+// Cihaz listesi ortak betikten yoklanır (yalnızca isteyen sayfa yoklar)
+POps.watchDevices({ inventory: true });
+if (state.devicesLoaded) window.initLabsView();
 </script>
 
 <?php include 'includes/footer.php'; ?>

@@ -312,7 +312,7 @@ async function saveUser() {
 }
 
 async function deleteUser(id) {
-    if (!confirm('Kullanıcıyı silmek istediğinize emin misiniz?')) return;
+    if (!await POps.confirm({ title: 'Kullanıcı silinsin mi?', message: 'Kullanıcının açık oturumları da kapanır. Bu işlem geri alınamaz.', confirmText: 'Sil', danger: true })) return;
     try {
         const res = await fetch(`${apiBase}/api/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
         if (res.ok) { loadUsers(); showToast('Kullanıcı silindi.', 'success'); }
@@ -380,7 +380,8 @@ async function twofaEnable() {
 }
 
 async function twofaDisable() {
-    const code = prompt("2FA'yı kapatmak için authenticator kodunu girin:");
+    const code = await POps.prompt({ title: "2FA'yı kapat", message: 'Doğrulama uygulamasındaki 6 haneli kodu girin.', label: 'Kod', placeholder: '123456', maxLength: 6, confirmText: 'Kapat', danger: true,
+        validate: (v) => /^\d{6}$/.test(v.trim()) ? null : '6 haneli kodu girin.' });
     if (code === null) return;
     try {
         const res = await fetch(`${apiBase}/api/admin/2fa/disable`, {
@@ -400,7 +401,6 @@ async function apiErrorMessage(res, fallback) {
     return fallback;
 }
 
-function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 </script>
 
 <?php include 'includes/footer.php'; ?>

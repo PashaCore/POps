@@ -17,7 +17,6 @@ Dashboard/terminal.php  sink:appendToTerminal/0  terminal geçmişine insertAdja
 Dashboard/system.php  3f543a6dbf2e  tile(): sub çağrı yerinde sink:tile/2 ile denetlenir; lbl ve val burada kaçırılır
 Dashboard/reports.php  88329894d780  kpi(): value ve sub çağrı yerinde sink:kpi ile denetlenir; label burada kaçırılır
 Dashboard/system.php  6ba9d334bdb3  badge(): cls ve icon her çağrıda sabit sınıf adı; metin kaçırılır
-Dashboard/terminal.php  2094d5a8335b  terminalHistory yalnızca appendToTerminal()'ın yazdığı (denetlenen) HTML'i tutar
 
 # ---- sabit tablolardan seçilen sınıf/ikon/etiket
 Dashboard/logger.php  ca17cec2552d  donanım kartı: icon ve label hemen üstteki sabit items dizisinden; değer kaçırılır
@@ -26,12 +25,9 @@ Dashboard/reports.php  1674bf72738e  güncelleme sonucu: u[0]/u[1] sabit U tablo
 Dashboard/reports.php  061afb6ced45  lisans özeti: k sabit listeden, LS sabit tablo; sayı kaçırılır
 Dashboard/reports.php  47985d2eb80f  lisans durumu: st sabit LS tablosundan (bilinmeyen durum LS.ok olur)
 Dashboard/reports.php  965e54d87bed  st üstteki üçlüde seçilen sabit işaretleme
-Dashboard/tasks.php  862241d7ec85  iconClass sabit icons tablosundan ya da sabit varsayılan
-Dashboard/tasks.php  b06e7ffa9d06  gün kutuları sabit DAYS dizisinden
 
 # ---- sayfada hesaplanan sayılar ve sabitler
 Dashboard/deploy.php  c5758fdf21a2  forEach sıra numarası
-Dashboard/devices.php  eaff093cf1c8  isChecked yalnızca 'checked' ya da ''
 Dashboard/policies.php  5a8c80ffed3a  alan adı sayıları (length toplamı)
 Dashboard/policies.php  9ac376eefcf4  quarantine_threshold collect() içinde Math.max/min(parseInt) ile sayı
 Dashboard/system.php  292362ab3ee6  b üstteki her dalda badge(...) ile atanır
@@ -39,11 +35,5 @@ Dashboard/system.php  1a64b761c129  b üstteki her dalda badge(...) ile atanır
 Dashboard/system.php  acf8c7ce35fa  on = filter(...).length (sınıftaki açık cihaz sayısı)
 Dashboard/system.php  1873390e87dc  same/off bu fonksiyonda hesaplanan sayılar
 Dashboard/system.php  497ffa1f8aba  off = skipped_offline.length
-Dashboard/tasks.php  b60c092b39e7  grup sayacı (g.total++)
-Dashboard/tasks.php  d3f0a7cd1e4d  grup sayacı (g.success++)
-Dashboard/tasks.php  7de7588b66ab  statCardsHtml(): çağıranlar yalnızca sayı verir (length/sayaç)
-Dashboard/tasks.php  90d7865c588e  statCardsHtml(): çağıranlar yalnızca sayı verir (length/sayaç)
-Dashboard/tasks.php  a2db6e6358e7  statCardsHtml(): çağıranlar yalnızca sayı verir (length/sayaç)
-Dashboard/tasks.php  b67182f17db6  statCardsHtml(): çağıranlar yalnızca sayı verir (length/sayaç)
 Dashboard/vision.php  b2067417a02b  c geri sayım: ilk gösterim escapeHtml ile, burada c-- sonrası sayı
 Dashboard/vision.php  e9ce9c3eae42  src sabit 'data:image/jpeg;base64,' ile başlar; base64 kısmı kaçırılır
