@@ -125,10 +125,15 @@ jobs:
             exit 1
           fi
           echo "Sürüm tutarlı: v$VER"
+      # Yalnızca paketler: "CI tests" işinin kapsam raporları da artifact'tir ve release'e girmemeli
       - uses: actions/download-artifact@v4
         with:
+          name: agent
           path: dist
-          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: server
+          path: dist
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
