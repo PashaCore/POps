@@ -47,7 +47,8 @@ namespace POpsAgent
         private readonly ILogger<Worker> _logger;
         private readonly string _pcName;
         private string _hwId;
-        private readonly string _identityFilePath = @"C:\POpsData\identity.key";
+        // C:\POpsData\identity.key (testlerde geçici klasör)
+        private readonly string _identityFilePath = AgentUpdate.IdentityPath;
         private readonly HttpClient _httpClient;
         private readonly AgentStartupHealth _startupHealth;
         private readonly AgentHealthTelemetry _health = new AgentHealthTelemetry();
@@ -60,9 +61,6 @@ namespace POpsAgent
 
         // 🚀 ARTIK SABİT DEĞİL, HELPERS'TAN OKUNACAK
         private string _serverUrl;
-
-        // Sunucu kimliksiz ajanı reddederken WebSocket'i bu kodla kapatır (enforce_agent_auth açıkken)
-        private const WebSocketCloseStatus AuthRejectedCloseStatus = (WebSocketCloseStatus)4401;
 
         private ClientWebSocket _commandWs;
         private bool _commandUsesDeviceSecret;
@@ -104,6 +102,11 @@ namespace POpsAgent
         internal ResultSpool Results { get; }
         // Ön plandaki uygulamanın süreç adı (tepsiden, yalnızca ad; bkz. ActiveApp). Bilinmiyorsa null.
         private volatile string _activeApp;
+        // Cihaz anahtarının donanıma bağı (hw.bind) ve kopyalanmış kurulum denetimi (bkz. HardwareBinding)
+        internal HardwareBinding Binding { get; set; }
+        // Yazılım envanteri (yeni secret alınınca son gönderim unutulur)
+        private SoftwareReporter _software;
+        private bool _cloneRejectedAudited;
 
         public Worker(ILogger<Worker> logger) : this(logger, new AgentStartupHealth(false)) { }
 
@@ -143,6 +146,8 @@ namespace POpsAgent
             UpdateResults = new UpdateResultReporter(Handshake);
             // Önceki çalışmadan onay bekleyen sonuçlar okunur
             Results = new ResultSpool(SecureStore.PathOf(ResultSpool.FileName));
+            Binding = new HardwareBinding(_identityFilePath,
+                () => (GetWmiValue("Win32_ComputerSystemProduct", "UUID"), GetWmiValue("Win32_BIOS", "SerialNumber")));
         }
 
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
@@ -152,6 +157,8 @@ namespace POpsAgent
         {
             // İlk görevden önce: önceki çalışmadan (çökme) kalmış pops_task_*.bat dosyaları (yönetici komutu içerebilir)
             CommandRunner.CleanupStaleTaskFiles();
+            // Kopyalanmış kurulum, kimlik ve secret okunmadan önce denetlenir: anahtar bu donanıma ait değilse kenara alınır
+            BindingVerdict binding = CheckHardwareBinding();
             _startupHealth.Run(StartupCheck.Identity, () => _hwId = InitializeIdentity());
             POpsHelpers.Log("AGENT", $"Kimlik Başlatıldı: {_hwId}");
 
@@ -160,12 +167,58 @@ namespace POpsAgent
                 AgentCredentials.Initialize();
                 AgentCredentials.LoadSecret();
             });
+            ApplyHardwareBinding(binding);
             _startupHealth.Run(StartupCheck.Capabilities, AgentCapabilities.Load);
             // Karantina yeniden başlatmadan sonra sürüyorsa Ctrl+Alt+Del seçenekleri yeniden kapatılır; sürmüyorsa kalıntı temizlenir
             KioskMode.Sync(_quarantine.IsLocked);
             if (_quarantine.IsLocked) LocalAudit.Write(LocalAudit.QuarantineStarted("açılış"));
             // Kurum sertifikası (server-ca.pem) varsa sunucu yalnızca onunla doğrulanır; kip loglanır
             ServerTrust.Reload();
+        }
+
+        private BindingVerdict CheckHardwareBinding()
+        {
+            try { return Binding.CheckOnStartup(); }
+            catch (Exception ex)
+            {
+                POpsHelpers.Log("AGENT", $"Donanım bağı denetlenemedi: {ex.Message}", true);
+                return BindingVerdict.Unreadable;
+            }
+        }
+
+        // Klon: yerel denetim kaydı (kimlik donanımdan yeniden türetildi); dosyası kenara alınan görev sonuçları bellekten
+        // de bırakılır. Donanımın bir kısmı değişti: Olay Günlüğüne uyarı (açılış başına bir kez). Aynı donanım: dondurma
+        // yazılımı C:'yi geri aldıysa identity.key anahtarın verildiği kimliğe döner. Bağ yoksa ve secret varsa (0.1.14 ve
+        // önceki kurulum) bugünkü donanım yazılır: ilk kullanımda güven.
+        internal void ApplyHardwareBinding(BindingVerdict verdict)
+        {
+            try
+            {
+                if (verdict == BindingVerdict.Clone)
+                {
+                    int dropped = Results.Discard();
+                    if (dropped > 0) POpsHelpers.Log("AGENT", $"Asıl cihazın onay bekleyen {dropped} görev sonucu gönderilmeyecek (klon klasöründe).", true);
+                    bool token = AgentCredentials.GetEnrollToken() != null;
+                    LocalAudit.Write(LocalAudit.CloneDetected(Binding.PreviousHwId, _hwId, Binding.CloneFolder, Binding.MovedFiles, token));
+                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] Kopyalanmış kurulum: cihaz anahtarı bu donanıma ait değil. {string.Join(", ", Binding.MovedFiles)} "
+                        + $"{Binding.CloneFolder} klasörüne taşındı; kimlik {Binding.PreviousHwId ?? "(yok)"} -> {_hwId}. "
+                        + (token ? "Enroll jetonuyla yeni cihaz olarak kaydolunacak." : "Enroll jetonu yok: cihaz kayıtsız kalacak, yönetici jeton vermeli."), true);
+                }
+                else if (verdict == BindingVerdict.Inconclusive)
+                    LocalAudit.Write(LocalAudit.HardwarePartlyChanged(Binding.ChangedParts, Binding.SameParts));
+                else if (verdict == BindingVerdict.Match)
+                {
+                    string bound = Binding.BoundHwId;
+                    if (bound != null && bound.StartsWith("HW-") && bound != _hwId)
+                    {
+                        POpsHelpers.Log("AGENT", $"Kimlik dosyası anahtarın verildiği kimlikten farklı ({_hwId}); {bound} geri yükleniyor.", true);
+                        UpdateIdentityFile(bound);
+                    }
+                }
+                else if (verdict == BindingVerdict.Missing && AgentCredentials.CurrentSecret != null)
+                    Binding.Bind(_hwId, "ilk kullanımda güven");
+            }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"Donanım bağı işlenemedi: {ex.Message}", true); }
         }
 
         private void InitializeSlowState()
@@ -216,8 +269,8 @@ namespace POpsAgent
                 // Yeni kullanıcı öncekinin DNS ihlalleriyle karantinaya girmesin
                 DnsPolicyMonitor.OnUserChanged();
             };
-            _ = Task.Run(() => new SoftwareReporter(_serverUrl, () => _hwId,
-                _health.InventoryUploaded, error => _health.RecordError("inventory", error)).RunAsync(stoppingToken));
+            _software = new SoftwareReporter(_serverUrl, () => _hwId, _health.InventoryUploaded, error => _health.RecordError("inventory", error));
+            _ = Task.Run(() => _software.RunAsync(stoppingToken));
             _ = Task.Run(() => _patches.ScheduleLoopAsync(stoppingToken));
             _ = Task.Run(() => sessions.RunAsync(stoppingToken));
             _ = Task.Run(() => _helpdesk.PollLoopAsync(stoppingToken, () => _trayPipe?.IsConnected == true));
@@ -275,9 +328,11 @@ namespace POpsAgent
                 }
 
                 // Sabit aralık yerine üstel geri çekilme + full jitter: sunucu yeniden başlayınca ajanlar aynı anda gelmez.
-                // Reddedilen her bağlantı sunucuda denetim kaydı açar; kimlik reddinde en az 60 sn beklenir.
-                bool authRejected = _commandWs.CloseStatus == AuthRejectedCloseStatus;
-                TimeSpan wait = ReconnectBackoff.Delay(reconnectAttempt, authRejected, Random.Shared);
+                // Reddedilen her bağlantı sunucuda denetim kaydı açar; kimlik reddinde en az 60 sn, kopya reddinde
+                // (4409: bu kimlik başka bir bilgisayarda bağlı) en az 10 dk beklenir.
+                var rejection = ReconnectBackoff.FromCloseStatus((int?)_commandWs.CloseStatus);
+                bool authRejected = rejection == ReconnectBackoff.Rejection.Auth;
+                TimeSpan wait = ReconnectBackoff.Delay(reconnectAttempt, rejection, Random.Shared);
                 reconnectAttempt = ReconnectBackoff.NextAttempt(reconnectAttempt);
                 // Karantinada art arda 3 bağlantı hatası: sunucunun adresi değişmiş olabilir, izin listesi beklemeden yenilenir
                 if (reconnectAttempt == NetworkIsolation.RefreshAfterFailures && NetworkIsolation.IsActive)
@@ -287,6 +342,8 @@ namespace POpsAgent
                     LocalAudit.Write(LocalAudit.AuthenticationRejected("command"));
                     POpsHelpers.Log("AGENT", $"[GÜVENLİK] Sunucu ajan kimliğini reddetti (4401): geçerli bir enroll jetonu gerekiyor. {wait.TotalSeconds:0} sn sonra yeniden denenecek.", true);
                 }
+                else if (rejection == ReconnectBackoff.Rejection.Clone)
+                    OnCloneRejected(wait);
                 else
                     POpsHelpers.Log("AGENT", $"Sunucuya {wait.TotalSeconds:0.0} sn sonra yeniden bağlanılacak.");
 
@@ -294,6 +351,16 @@ namespace POpsAgent
                 await DisconnectVisionTunnelAsync();
                 await Task.Delay(wait, stoppingToken);
             }
+        }
+
+        // 4409: sunucu bu kimliği başka bir bilgisayarda bağlı buldu (kopyalanmış kurulum, asıl cihaz bağlı).
+        // Olay Günlüğüne çalışma başına bir kez yazılır; log her kopuşta.
+        internal void OnCloneRejected(TimeSpan wait)
+        {
+            if (!_cloneRejectedAudited) LocalAudit.Write(LocalAudit.CloneRejected("command"));
+            _cloneRejectedAudited = true;
+            POpsHelpers.Log("AGENT", $"[GÜVENLİK] Sunucu bu cihaz kimliğinin ({_hwId}) başka bir bilgisayarda bağlı olduğunu bildirdi (4409): "
+                + $"bu kurulum kopyalanmış olabilir (bkz. POpsAgent.exe --generalize). {wait.TotalMinutes:0.0} dk sonra yeniden denenecek.", true);
         }
 
         // Komut tüneli kuruldu: DNS politika izleme başlar (yalnızca ilk bağlantıda; sonra açık kalır). Politika ve
@@ -353,6 +420,9 @@ namespace POpsAgent
                 return;
             }
 
+            // Anahtar bu donanıma bağlanır; yeni kayıtta sunucunun yazılım listesi boştur, son gönderim unutulur
+            Binding.Bind(_hwId, "set_secret");
+            _software?.ForgetLastReport();
             if (AgentCredentials.SaveSecret(secret, _hwId))
             {
                 AgentCredentials.ForgetEnrollToken();
@@ -1169,6 +1239,7 @@ namespace POpsAgent
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
                 File.WriteAllText(_identityFilePath, newId);
                 _hwId = newId;
+                Binding.UpdateHwId(newId);
                 POpsHelpers.Log("AGENT", $"Kimlik başarıyla güncellendi: {_hwId}");
             }
             catch { }
@@ -1181,10 +1252,9 @@ namespace POpsAgent
 
             try
             {
-                uuid = GetWmiValue("Win32_ComputerSystemProduct", "UUID");
-                if (uuid == "-" || uuid == "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF") uuid = "NULL";
-                biosSn = GetWmiValue("Win32_BIOS", "SerialNumber");
-                if (biosSn == "-" || biosSn.Contains("O.E.M")) biosSn = "NULL";
+                // hw.bind özeti aynı normalleştirmeyi kullanır (bkz. HardwareBinding)
+                uuid = HardwareBinding.NormalizeUuid(GetWmiValue("Win32_ComputerSystemProduct", "UUID"));
+                biosSn = HardwareBinding.NormalizeBiosSerial(GetWmiValue("Win32_BIOS", "SerialNumber"));
                 diskSn = GetWmiValue("Win32_DiskDrive", "SerialNumber");
                 if (diskSn == "-" || string.IsNullOrWhiteSpace(diskSn)) { diskSerialReal = false; diskSn = GetVolumeId(); }
                 ramSn = GetRamSerialNumbers();

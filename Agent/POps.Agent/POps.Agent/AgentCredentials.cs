@@ -148,9 +148,11 @@ namespace POpsAgent
             }
         }
 
-        // PersistDir: dondurma yazılımının geri almadığı yerel NTFS klasörü (ör. Deep Freeze ThawSpace).
-        // Ayarlı değilse ya da kullanılamıyorsa null.
-        private static string MirrorPath()
+        private static string MirrorPath() => PersistPath(SecretFileName);
+
+        // PersistDir: dondurma yazılımının geri almadığı yerel NTFS klasörü (ör. Deep Freeze ThawSpace). Secret ve
+        // donanım bağı (hw.bind) orada da tutulur. Ayarlı değilse ya da kullanılamıyorsa null.
+        internal static string PersistPath(string fileName)
         {
             string dir = POpsHelpers.GetSetting("PersistDir", "POPS_PERSIST_DIR");
             if (string.IsNullOrEmpty(dir)) return null;
@@ -169,7 +171,7 @@ namespace POpsAgent
                     return null;
                 }
                 Directory.CreateDirectory(dir);
-                return Path.Combine(dir, SecretFileName);
+                return Path.Combine(dir, fileName);
             }
             catch (Exception ex)
             {

@@ -168,7 +168,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void SoftwareReporter_BacksOffOnMissingEndpoint()
         {
-            Assert.Equal(SoftwareReporter.MaxSilence, SoftwareReporter.DelayAfter(PostResult.EndpointMissing));
+            Assert.Equal(SoftwareReporter.EndpointMissingDelay, SoftwareReporter.DelayAfter(PostResult.EndpointMissing));
             Assert.Equal(SoftwareReporter.RetryDelay, SoftwareReporter.DelayAfter(PostResult.Failed));
         }
     }
