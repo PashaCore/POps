@@ -65,7 +65,9 @@ and closes the connection with `4401`.
   min(60 s, 2 s × 2^n), where n is the number of connections that failed in a row (full jitter; 0.1.7 and older
   waited a fixed 5 s, so all agents came back at once after a server restart). n goes back to 0 once a connection
   stays open for one heartbeat after the first messages. If the server rejected the credentials (close code
-  `4401`) it waits 60 s plus that random time. From 0.1.5-alpha the heartbeat carries `"quarantined"`
+  `4401`) it waits 60 s plus that random time. If the server refused the ID because it is connected from another
+  PC (`4409`, a copied installation; 0.1.15-alpha on) it waits 10 minutes plus that random time and logs it (event
+  1071 once per service start). From 0.1.5-alpha the heartbeat carries `"quarantined"`
   (lock screen and/or isolation active), which the server uses to finish or resend a pending lock/unlock.
 - The heartbeat also carries `agent_health`: service start time, last successful policy sync and inventory upload,
   tray connection, Vision channel (`off` / `idle` / `connected`), background-loop errors in the last hour and a
@@ -78,9 +80,49 @@ and closes the connection with `4401`.
   other hardware: a connection whose hardware does not match is logged (`dna_mismatch`, at most once an hour per
   device) and does not overwrite the stored fingerprint, and while the original device is connected the copy is
   refused (close code `4409`, notification `clone_rejected`).
-- **Disk images.** An image captured after the agent enrolled carries that device's ID and secret, so every PC
-  cloned from it is the same device to the server. Install the agent after imaging (for example by GPO or the
-  deployment tool), or capture the image before the agent first connects.
+- **Disk images.** An image captured after the agent enrolled carries that device's ID and secret. As the last
+  step before capturing, run in an elevated prompt (0.1.15-alpha on):
+
+  ```
+  "C:\Program Files\POps\POpsAgent.exe" --generalize --enroll-token <token>
+  ```
+
+  It stops the service and the watchdog (which would start it again), deletes `identity.key`, the device secret
+  (also its `PersistDir` copy), `bypass.device`, `hw.bind`, unconfirmed task and update results, the last
+  software-inventory record and earlier `secure\clone-*` folders, and writes the token to `secure\enroll.token`.
+  Every PC started from the image derives its ID from its own hardware and enrolls with the token. Use a
+  **multi-use** token with enough uses for every PC and a lifetime that covers the rollout; the token's lab is
+  where the PCs land. Shut down and capture right away: if the service starts again on the reference PC, it
+  enrolls itself and the command has to be run again. Without `--enroll-token` an existing `enroll.token` is kept.
+  Exit codes: `0` done; `1` a file could not be deleted or the token could not be written (see the output); `2` not
+  run as administrator; `3` the service or the watchdog could not be stopped; `4` invalid arguments (unknown
+  argument, missing or malformed token). With `2`, `3` and `4` nothing is changed. Installing the agent after
+  imaging (GPO, deployment tool) also works.
+- **Key bound to the hardware (0.1.15-alpha on).** When the secret arrives (`set_secret`) the agent writes
+  `C:\POpsData\secure\hw.bind`: the SHA-256 of `uuid|bios_sn` (normalized as in `dna_payload`), separate digests
+  of the values that are real, the ID the key was issued to and the time; with `PersistDir` also there. A value is
+  not real when it is empty, all zeros or `F`, the UUID many boards share (`03000200-0400-0500-0006-000700080009`)
+  or a placeholder such as "To be filled by O.E.M." or "Default string". An agent that has a secret but no
+  `hw.bind` (0.1.14 and older) writes today's hardware on its first start (trust on first use). At every start,
+  before the ID and the secret are read, the digest is computed again and the values that were real both then and
+  now are compared:
+  - **All of them changed** (a copied image on another PC changes both; if only one can be compared, it decides
+    alone): the installation was copied. `identity.key`, `agent.secret` (and its `PersistDir` copy),
+    `bypass.device`, `hw.bind` and unconfirmed task results (`pending-results.json`, so the original's results are
+    not sent under the new ID) are moved, not deleted, to `C:\POpsData\secure\clone-<UTC time>\`. Event 1070 is
+    written, the ID is derived from the hardware again and the agent continues as an unenrolled device (with
+    `enroll.token` if there is one).
+  - **One changed, the other did not** (motherboard service, a corrected BIOS serial, a virtual machine setting):
+    nothing is touched; it is logged and event 1072 is written once per start. The server's `4409` still refuses
+    a real copy while the original is connected.
+  - **None changed** (only a value that is not real differs, for example a BIOS update filled in an empty serial):
+    the same PC.
+  - **Nothing can be compared:** nothing is touched and this is logged once.
+
+  With `PersistDir` the newer `hw.bind` counts, and on the same hardware `identity.key` is set back
+  to the ID in `hw.bind` (freeze software brings back the imaged ID at every boot). A copy made from an image
+  without `hw.bind` (captured with 0.1.14 or older) trusts its own hardware on first start; the server's `4409`
+  is then the only protection.
 - **Authentication.** Before it has a device secret the agent sends the enrollment token (`X-Enroll-Token`); the
   server answers with `set_secret`. From then on it sends `X-Agent-Secret`. Secrets live in `C:\POpsData\secure`
   (SYSTEM and Administrators only) and are never written to a log. See [`security.md`](security.md#agent-identity).
@@ -130,8 +172,9 @@ is reported as a `result` with `exit_code` -5 followed by `capability_denied`.
 High-impact actions also have a server-independent local record in the Windows **Application** event log under
 the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 and length are recorded, never the
 command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine allow list refreshed (old and new
-server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection and 1060 receipt of a
-bypass-key fingerprint. Failure to write an event does not stop the
+server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
+bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
+that partly changed (no decision taken). Failure to write an event does not stop the
 service.
 
 ## Capability policy
@@ -295,9 +338,10 @@ older than 0.1.3-alpha cannot apply signed updates and must be reinstalled once 
 | --- | --- |
 | `C:\Program Files\POps\` | Programs and `appsettings.json` (`ServerUrl`, `PersistDir`; SYSTEM and Administrators only). |
 | `C:\POpsData\identity.key` | Hardware ID. |
-| `C:\POpsData\secure\` | `agent.secret`, `enroll.token`, `bypass.secret`, `capabilities.json`, `isolation.json`, `lockdown.json`, `bypass-state.json` (SYSTEM and Administrators only). |
+| `C:\POpsData\secure\` | `agent.secret`, `enroll.token`, `bypass.secret`, `capabilities.json`, `isolation.json`, `lockdown.json`, `bypass-state.json`, `hw.bind`, `clone-<time>\` (SYSTEM and Administrators only). |
 | `C:\POpsData\health.json`, `update.lock`, `update-result.json` | Update state. |
 | `C:\POpsData\session.json`, `patch-scan.json` | Last reported sign-in; time of the last Windows Update scan and a report not yet delivered (0.1.5-alpha on). |
+| `C:\POpsData\software-inventory.json` | Last software inventory sent: SHA-256 of the sorted list, device ID and time (0.1.15-alpha on). |
 | `C:\POpsData\packages\installed.msi`, `updates\`, `updater\` | Rollback package, downloaded update, updater copy. |
 | `C:\POpsLogs\POps_<yyyyMMdd>.log` | Service and updater log (SYSTEM and Administrators only). |
 | `%LOCALAPPDATA%\POps\Logs\` | Per-user logs: `POpsWatchdog_<yyyyMMdd>.log` and the tray's `TrayLog.txt` (message types only, rotated at 1 MB). |

@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -162,15 +163,27 @@ namespace POpsAgent
     // Açılıştan kısa süre sonra, sonra 6 saatte bir liste okunur. Değişmediyse gönderilmez; yine de günde en az bir
     // kez gönderilir (sunucu listeyi her seferinde bütünüyle değiştirir). Gönderim başarısızsa 15 dk sonra yeniden.
     [SupportedOSPlatform("windows")]
+    // Yazılım envanteri: açılıştan sonra, sonra 6 saatte bir. Liste son başarılı gönderimle aynıysa (sıralı listenin
+    // SHA-256'sı, aynı kimlik) ve o gönderim 7 günden yeniyse gönderilmez; kayıt diskte tutulur, yeniden başlatma
+    // gönderim saymaz.
+    // İlk tur açılıştan 1 dk + rastgele 0–30 dk sonra: okul bilgisayarları ders başında topluca açılır; sabit 1 dk ile
+    // 2000 cihaz aynı dakikada gönderiyordu. 30 dk ile dakikada ~65 istek (saniyede ~1) olur. Pencere bir ders
+    // süresinden (40 dk) kısa tutuldu: yalnızca bir ders açık kalan bilgisayar da gönderebilsin. Sonraki turlar
+    // 6 saatlik aralıkla bu dağılımı korur.
     public sealed class SoftwareReporter
     {
         public static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(1);
+        public static readonly TimeSpan StartupSpread = TimeSpan.FromMinutes(30);
         public static readonly TimeSpan Interval = TimeSpan.FromHours(6);
-        public static readonly TimeSpan MaxSilence = TimeSpan.FromDays(1);
+        public static readonly TimeSpan MaxSilence = TimeSpan.FromDays(7);
+        public static readonly TimeSpan EndpointMissingDelay = TimeSpan.FromDays(1);
         public static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan WaitForSecret = TimeSpan.FromMinutes(1);
+        public const string StateFileName = "software-inventory.json";
 
-        private readonly ReportGate _gate = new ReportGate(MaxSilence);
+        public static string StatePath => Path.Combine(AgentUpdate.DataDir, StateFileName);
+
+        private readonly ReportGate _gate;
         private readonly string _serverUrl;
         private readonly Func<string> _hwId;
         private readonly Action _uploaded;
@@ -182,6 +195,7 @@ namespace POpsAgent
             _hwId = hwId;
             _uploaded = uploaded ?? (() => { });
             _error = error ?? (_ => { });
+            _gate = new ReportGate(MaxSilence, StatePath);
             Poster = (id, payload) => AgentHttp.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/software/", id), id, payload, "Yazılım envanteri");
         }
 
@@ -189,10 +203,18 @@ namespace POpsAgent
         internal Func<List<SoftwareItem>> Collector { get; set; } = SoftwareInventory.Collect;
         internal Func<string, SoftwareInventoryPayload, Task<PostResult>> Poster { get; set; }
         internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
+        internal Func<double> NextRandom { get; set; } = Random.Shared.NextDouble;
+
+        // random: [0, 1)
+        public static TimeSpan FirstDelay(double random) =>
+            StartupDelay + TimeSpan.FromMilliseconds(StartupSpread.TotalMilliseconds * Math.Clamp(random, 0, 1));
+
+        // Yeni kayıt (set_secret): sunucunun listesi boş olabilir, bir sonraki turda gönderilir
+        public void ForgetLastReport() => _gate.Forget();
 
         public async Task RunAsync(CancellationToken token)
         {
-            await Task.Delay(StartupDelay, token);
+            await Task.Delay(FirstDelay(NextRandom()), token);
             while (!token.IsCancellationRequested)
             {
                 TimeSpan wait = await ReportOnceAsync() ?? Interval;
@@ -203,7 +225,7 @@ namespace POpsAgent
         // Başarısız gönderimden sonra: sunucuda uç yoksa (eski sunucu) bir gün, secret yoksa bir dakika, aksi halde 15 dk
         public static TimeSpan DelayAfter(PostResult result) => result switch
         {
-            PostResult.EndpointMissing => MaxSilence,
+            PostResult.EndpointMissing => EndpointMissingDelay,
             PostResult.NotSent => WaitForSecret,
             _ => RetryDelay,
         };
@@ -217,12 +239,20 @@ namespace POpsAgent
                 List<SoftwareItem> items = Collector();
                 string hash = SoftwareInventory.Hash(items);
                 DateTime now = UtcNow();
-                if (!_gate.ShouldSend(hash, now)) return null;
-
                 string hwId = _hwId();
+                if (!_gate.ShouldSend(hash, now, hwId))
+                {
+                    // Sunucudaki liste güncel. agent_health.last_inventory_upload "envanterin sunucuda güncel olduğunun
+                    // bilindiği son an"dır: gönderilmeyen turda da yenilenir, panelde eski görünmez. Durursa raporlayıcı
+                    // çalışmıyordur.
+                    _uploaded();
+                    POpsHelpers.Log("AGENT", $"Yazılım envanteri değişmedi ({items.Count} kayıt, son gönderim {_gate.LastSentUtc:yyyy-MM-dd HH:mm} UTC); gönderilmedi.");
+                    return null;
+                }
+
                 PostResult result = await Poster(hwId, new SoftwareInventoryPayload { Items = items });
                 if (result != PostResult.Sent) return DelayAfter(result);
-                _gate.MarkSent(hash, now);
+                _gate.MarkSent(hash, now, hwId);
                 _uploaded();
                 POpsHelpers.Log("AGENT", $"Yazılım envanteri gönderildi ({items.Count} kayıt).");
                 return null;

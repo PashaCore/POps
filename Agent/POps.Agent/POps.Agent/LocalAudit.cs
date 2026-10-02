@@ -69,6 +69,20 @@ namespace POpsAgent
         public static LocalAuditEvent BypassSecretReceived(string fingerprint) =>
             Info(1060, "Bypass anahtarı alındı", ("fingerprint", Safe(fingerprint)));
 
+        // Açılışta donanım bağı (hw.bind) uyuşmadı: cihaza özel dosyalar klon klasörüne taşındı (bkz. HardwareBinding)
+        public static LocalAuditEvent CloneDetected(string previousHwId, string newHwId, string folder, IEnumerable<string> moved, bool enrollToken) =>
+            Warning(1070, "Kopyalanmış kurulum: cihaz anahtarı bu donanıma ait değil", ("old_hw_id", Safe(previousHwId)),
+                ("new_hw_id", Safe(newHwId)), ("moved_to", Safe(folder)), ("files", Safe(string.Join(", ", moved ?? Array.Empty<string>()))),
+                ("enroll_token", enrollToken ? "var" : "yok"));
+
+        // Karşılaştırılabilen donanım değerlerinden biri değişti, biri aynı: kopya sayılmadı, dosyalara dokunulmadı
+        public static LocalAuditEvent HardwarePartlyChanged(IEnumerable<string> changed, IEnumerable<string> same) =>
+            Warning(1072, "Donanımın bir kısmı değişti; kopya kararı verilmedi", ("changed", Safe(string.Join(", ", changed ?? Array.Empty<string>()))),
+                ("unchanged", Safe(string.Join(", ", same ?? Array.Empty<string>()))), ("action", "dosyalara dokunulmadı"));
+
+        public static LocalAuditEvent CloneRejected(string channel) =>
+            Warning(1071, "Sunucu bu kimliği başka bir bilgisayarda bağlı buldu (4409)", ("channel", Safe(channel)));
+
         public static void Write(LocalAuditEvent item)
         {
             if (item == null) return;
