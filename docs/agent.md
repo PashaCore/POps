@@ -2,7 +2,7 @@
 
 The POps agent runs on each managed Windows PC. It keeps a connection to the server, reports status and
 inventory, runs the commands the server queues, and provides screen view and remote control through the tray.
-It is written in C# for .NET 8.
+It is written in C# for .NET 10 and published self-contained: the .NET runtime is installed with the agent.
 
 This page is an overview. The detailed references are:
 
@@ -27,8 +27,10 @@ From 0.1.6-alpha the tray also checks that the pipe's owner is SYSTEM or Adminis
 Screen capture is done by the tray ([`vision.md`](vision.md)). Older releases had a standalone `POpsVision.exe`; it
 was not shipped since 0.1.2-alpha and its source was removed in 0.1.14-alpha.
 
-Requirements: 64-bit Windows and the .NET 8 Desktop Runtime (x64). The MSI checks for the runtime and refuses to
-install without it.
+Requirements: 64-bit Windows 10 or 11. Nothing else: from 0.1.15-alpha the service, tray, watchdog and updater are
+published self-contained into one folder and share a .NET 10 runtime that the MSI installs with them (no .NET
+prerequisite; up to 0.1.14 the .NET 8 Desktop Runtime was required). When the agent updates itself the updater is
+copied to `C:\POpsData\updater` together with every runtime file its `POpsUpdater.deps.json` lists (about 80 MB).
 
 ## Installing
 

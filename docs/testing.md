@@ -39,7 +39,7 @@ Baseline (2026-09-29): **backend 69.6 %** of statements. Lowest modules, and the
 | `migrate.py` | 52 % | The CLI branch is exercised by the `migrations` job, which does not collect coverage. |
 
 Agent coverage is collected with `coverlet.collector` (`dotnet test --collect:"XPlat Code Coverage"`, both targets:
-the agent on net8.0-windows and the MSI custom actions on net472) and shown in the `test-agent` job summary.
+the agent on net10.0-windows and the MSI custom actions on net472) and shown in the `test-agent` job summary.
 Baseline (2026-09-29): `POps.Shared` 80 %, `POpsAgent` 48 %, MSI custom actions 77 %. `coverlet.collector` stays on
 6.0.4: 8.x and 10.x write an empty report for the net472 target.
 

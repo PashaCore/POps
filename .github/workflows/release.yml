@@ -22,25 +22,34 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
       - name: Publish agent components into one folder
-        # Framework'e bağımlı derleme: uç noktalarda .NET 8 Desktop Runtime (x64) gerekir.
-        # Güncelleme Merkezi paketi C:\POps içine açar, bu yüzden dosyalar ZIP'in köküne konur.
+        # Self-contained: .NET 10 çalışma zamanı pakete gömülür, uç noktada ön koşul yoktur (D-19). Dört bileşen aynı
+        # klasöre yayımlanır ve çalışma zamanı dosyalarını paylaşır. Tepsi (WinForms, WindowsDesktop çalışma zamanı)
+        # EN SON yayımlanır: System.Drawing.dll ve Microsoft.VisualBasic.dll'in WindowsDesktop sürümleri (derleme sürümü
+        # 10.x) tepsi için gerekir; diğer bileşenlerin NETCore sürümleri (System.Drawing 4.0.0.0) tepsiyi açılmaz yapar,
+        # tersi ise sorunsuzdur (daha yüksek sürüm kabul edilir). Güncelleme Merkezi paketi C:\POps içine açar, bu yüzden
+        # dosyalar ZIP'in köküne konur.
         shell: pwsh
         run: |
           $out = "dist/POps"
           $projects = @(
             "Agent/POps.Agent/POps.Agent/POpsAgent.csproj",
-            "Agent/POpsTray/POpsTray.csproj",
             "Agent/POpsWatchdog/POpsWatchDog/POpsWatchDog.csproj",
-            "Agent/POpsUpdater/POpsUpdater/POpsUpdater.csproj"
+            "Agent/POpsUpdater/POpsUpdater/POpsUpdater.csproj",
+            "Agent/POpsTray/POpsTray.csproj"
           )
           foreach ($p in $projects) {
-            dotnet publish $p -c Release -r win-x64 --self-contained false -o $out
+            dotnet publish $p -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=false -o $out
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           Remove-Item "$out/*.pdb" -ErrorAction SilentlyContinue
-          Get-ChildItem $out | Select-Object Name, Length | Format-Table -AutoSize
+          # Koruma: paylaşılan dosyalar tepsinin istediği sürümde mi (yayın sırası bozulursa paket burada durur)
+          $drawing = [Reflection.AssemblyName]::GetAssemblyName((Resolve-Path "$out/System.Drawing.dll")).Version
+          if ($drawing.Major -lt 10) { Write-Error "System.Drawing.dll $drawing: tepsi en son yayımlanmamış"; exit 1 }
+          if (-not (Test-Path "$out/hostfxr.dll") -or -not (Test-Path "$out/coreclr.dll")) { Write-Error "Çalışma zamanı dosyaları yok (self-contained değil)"; exit 1 }
+          $files = Get-ChildItem $out -File -Recurse
+          "{0} dosya, {1:N1} MB" -f $files.Count, (($files | Measure-Object Length -Sum).Sum / 1MB)
       - name: Zip
         shell: pwsh
         run: |

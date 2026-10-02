@@ -1,6 +1,6 @@
 # POps Agent
 
-Windows endpoint agent (.NET 8). Includes the main agent, tray application, remote vision service, and watchdog.
+Windows endpoint agent (.NET 10, self-contained: the runtime ships with the agent). Includes the main agent (service), the tray application, the watchdog and the updater.
 
 ## Layout
 
@@ -19,7 +19,7 @@ Windows endpoint agent (.NET 8). Includes the main agent, tray application, remo
 dotnet test Agent/POps.Tests/POps.Tests.csproj --configuration Release
 ```
 
-The project targets `net8.0-windows` (agent and `POps.Shared`) and `net472` (the MSI custom actions in `Installer/agent/CustomActions`), and CI runs it as the `test-agent` job. Tests cover logic only; firewall, pipe and service behaviour is not tested. Everything runs in a temporary folder with the current user standing in for SYSTEM, so the tests need no administrator rights and never touch `C:\POps`, `C:\POpsData` or `C:\POpsLogs`. `TestData/manifest.json` and its `.sig` are the signed v0.1.3-alpha release manifest, used to check the embedded public key.
+The project targets `net10.0-windows` (agent and `POps.Shared`) and `net472` (the MSI custom actions in `Installer/agent/CustomActions`), and CI runs it as the `test-agent` job. Tests cover logic only; firewall, pipe and service behaviour is not tested. Everything runs in a temporary folder with the current user standing in for SYSTEM, so the tests need no administrator rights and never touch `C:\POps`, `C:\POpsData` or `C:\POpsLogs`. `TestData/manifest.json` and its `.sig` are the signed v0.1.3-alpha release manifest, used to check the embedded public key.
 
 Install it with the MSI from the release (`POps-Agent-<version>-win-x64.msi`); properties, upgrades and migration from older installs are described in [`Installer/README.md`](../Installer/README.md).
 
