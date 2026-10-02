@@ -5,6 +5,15 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # Backend Python 3.9'u (AlmaLinux/RHEL 9'un sistem Python'u; canlı sunucu ve install.sh) destekler. Bu sürümler
+      # Python 3.10 ister; backend daha yeni bir Python'a geçince (ROADMAP) kaldırılır.
+      - dependency-name: "fastapi"
+        versions: [">=0.129"]
+      - dependency-name: "uvicorn"
+        versions: [">=0.40"]
+      - dependency-name: "python-dotenv"
+        versions: [">=1.2.2"]
 
   - package-ecosystem: nuget
     directories:

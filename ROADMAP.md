@@ -207,6 +207,9 @@ Whatever the choice, a second maintainer with review and release rights would re
 ## Other open items
 
 - Move the agent to .NET 10 before .NET 8 support ends (10 November 2026).
+- Move the backend to Python 3.11 or newer (AlmaLinux/RHEL 9 ship a `python3.11` package). Upstream support for
+  3.9 ended in October 2025 (RHEL still backports security fixes), and new FastAPI, uvicorn and python-dotenv
+  releases already require 3.10; Dependabot ignores those until then.
 - Per-action re-authentication for dangerous panel actions; enforce freshness of signed manifests.
 - Authenticode-sign the agent binaries; the tray pipe check then also requires a valid signature.
 - Close pentest findings F9 and F11.
