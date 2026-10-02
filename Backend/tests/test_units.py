@@ -172,6 +172,169 @@ def test_agent_health():
     chk(agent_health.parse('{"a": 1}') == {"a": 1} and agent_health.parse("bozuk") is None, "okuma")
 
 
+def test_p1():
+    """0.1.14: veritabanı ya da sunucu gerektirmeyen parçalar."""
+    import asyncio
+    import time
+
+    from cryptography import x509
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    from pops import health_alerts, manager as manager_mod, metrics, notify, secretbox, security
+    from pops.models import RemoteInputData
+    from pops.routers import agents, control
+
+    print("== secretbox (R-12)")
+    sealed = secretbox.seal("JBSWY3DPEHPK3PXP")
+    chk(sealed.startswith("v1:") and "JBSWY3DP" not in sealed, "şifreli saklanır")
+    chk(secretbox.unseal(sealed) == "JBSWY3DPEHPK3PXP", "geri açılır")
+    chk(secretbox.unseal("JBSWY3DPEHPK3PXP") == "JBSWY3DPEHPK3PXP", "eski düz metin okunur")
+    chk(secretbox.needs_reseal("JBSWY3DPEHPK3PXP") and not secretbox.needs_reseal(sealed), "düz metin yeniden yazılır")
+    chk(secretbox.unseal("v1:bozuk") is None, "çözülemeyen değer None")
+    # Sonradan TOTP_ENCRYPTION_KEY eklenince eski (türetilmiş) anahtarla şifreli değer okunur ve yenilenir
+    old_primary, old_box = secretbox._primary, secretbox._box
+    os.environ["TOTP_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+    try:
+        secretbox._primary, secretbox._box = secretbox._build()
+        chk(secretbox.unseal(sealed) == "JBSWY3DPEHPK3PXP", "yeni anahtar eklenince eski değer okunur")
+        chk(secretbox.needs_reseal(sealed), "eski anahtarla şifreli değer yeniden şifrelenir")
+        os.environ["TOTP_ENCRYPTION_KEY"] = "kisa"
+        try:
+            secretbox._build()
+            chk(False, "geçersiz anahtar reddedilir")
+        except RuntimeError:
+            chk(True, "geçersiz anahtar reddedilir")
+    finally:
+        os.environ.pop("TOTP_ENCRYPTION_KEY", None)
+        secretbox._primary, secretbox._box = old_primary, old_box
+
+    print("== TOTP adımı")
+    secret = security._totp_new_secret()
+    now = int(time.time() // 30)
+    chk(security.totp_step(secret, security._totp_code(secret, now - 1)) == now - 1, "eşleşen adım döner")
+    chk(security.totp_step(secret, security._totp_code(secret, now + 3)) is None, "pencere dışı kod reddedilir")
+    chk(security.totp_step(secret, "12345") is None and security.totp_step(None, "123456") is None, "biçim")
+    ch = security.create_totp_challenge("ali", 7)
+    chk(security.verify_totp_challenge(ch) == ("ali", 7), "challenge oturum sürümünü taşır")
+    chk(security.verify_jwt(ch) is None, "challenge oturum jetonu değil")
+
+    print("== uzaktan girdi (F13) ve kopma sebebi")
+    flat = control._flat_remote_input(RemoteInputData(device="HW-1", input_type="keyboard", key="ş", is_down=True,
+                                                      action="execute", code="KeyS"))
+    chk(flat.get("key") == "ş" and flat.get("code") == "KeyS" and flat.get("is_down") is True, "düz alanlar geçer")
+    chk("action" not in flat and flat["type"] == "remote_input" and flat["device"] == "HW-1", "başka alan geçmez")
+    legacy = control._flat_remote_input(RemoteInputData(device="HW-1", input_type="mouse_move", data={"x": 5, "y": 6}))
+    chk(legacy.get("x") == 5 and legacy.get("y") == 6 and "data" not in legacy, "eski 'data' biçimi düzleşir")
+    chk(agents._close_reason(1006, "").startswith("bağlantı koptu"), "1006 = bağlantı koptu")
+    chk(agents._close_reason(4000, "x" * 500).endswith("x" * 120), "bilinmeyen kod + kırpılmış sebep")
+
+    print("== ölçümler")
+    row = [0] * (len(metrics.SEND_BUCKETS) + 1) + [0.0]
+    for v in (0.0005, 0.0005, 0.002, 0.2):
+        metrics._observe_into(row, metrics.SEND_BUCKETS, v)
+    chk(metrics.quantile(row, metrics.SEND_BUCKETS, 0.5) == 0.001, "medyan kovası")
+    chk(metrics.quantile(row, metrics.SEND_BUCKETS, 0.95) == 0.5, "p95 kovası")
+    metrics._observe_into(row, metrics.SEND_BUCKETS, 99)
+    chk(metrics.quantile(row, metrics.SEND_BUCKETS, 0.99) == float("inf"), "en büyük kovayı aşan gözlem")
+
+    print("== disk ve sertifika uyarısı")
+    real_usage = health_alerts.shutil.disk_usage
+    try:
+        Usage = type("U", (), {})
+
+        def fake(total, free):
+            u = Usage()
+            u.total, u.free, u.used = total, free, total - free
+            return lambda _p: u
+
+        health_alerts.shutil.disk_usage = fake(100 * 1024**3, 50 * 1024**3)
+        chk(all(d["level"] == "ok" for d in health_alerts.disk_status()), "yarısı boş: sorun yok")
+        health_alerts.shutil.disk_usage = fake(100 * 1024**3, 8 * 1024**3)
+        chk(health_alerts.disk_status()[0]["level"] == "high", "%8 boş: uyarı")
+        health_alerts.shutil.disk_usage = fake(100 * 1024**3, int(0.5 * 1024**3))
+        chk(health_alerts.disk_status()[0]["level"] == "critical", "yarım GB: kritik")
+    finally:
+        health_alerts.shutil.disk_usage = real_usage
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "pops-test")])
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(1).not_valid_before(now_dt - datetime.timedelta(days=1))
+            .not_valid_after(now_dt + datetime.timedelta(days=5)).sign(key, hashes.SHA256()))
+    import tempfile
+    with tempfile.NamedTemporaryFile("wb", suffix=".pem", delete=False) as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+    os.environ["TLS_CERT_FILES"] = f.name
+    os.environ["TLS_CHECK_URL"] = "http://yok.example"   # https değil: bağlanılmaz
+    try:
+        status = health_alerts.tls_status()
+        chk(len(status) == 1 and status[0]["level"] == "critical" and 4 < status[0]["days_left"] < 5.1,
+            "5 gün kalan sertifika kritik")
+    finally:
+        os.unlink(f.name)
+        os.environ.pop("TLS_CERT_FILES", None)
+        os.environ.pop("TLS_CHECK_URL", None)
+
+    async def panel_queue():
+        class SlowWs:
+            def __init__(self):
+                self.sent = []
+                self.gate = asyncio.Event()
+
+            async def send_text(self, text):
+                await self.gate.wait()
+                self.sent.append(text)
+
+            async def close(self, code=1000):
+                pass
+
+        m = manager_mod.ConnectionManager()
+        ws = SlowWs()
+        m.active_panels.append(ws)
+        m.panel_roles[ws] = "admin"
+        m.panel_senders[ws] = manager_mod._PanelSender(ws, m._drop_slow_panel)
+        await m.broadcast_to_panels({"type": "a"})
+        await asyncio.sleep(0.01)   # yazıcı ilk mesajda bekliyor
+        for i in range(5):
+            await m.broadcast_to_admin_panels({"type": "thumbnail", "hw_id": "HW-1", "n": i})
+        await m.broadcast_to_panels({"type": "b"})
+        ws.gate.set()
+        await asyncio.sleep(0.05)
+        kinds = [json.loads(t).get("type") + str(json.loads(t).get("n", "")) for t in ws.sent]
+        chk(kinds == ["a", "b", "thumbnail4"], "yavaş panelde yalnızca en son kare kalır: %s" % kinds)
+        ws.gate.clear()
+        for i in range(manager_mod._PANEL_QUEUE_MAX + 2):
+            await m.broadcast_to_panels({"type": "x"})
+        chk(ws not in m.active_panels, "sırası taşan panel kapatılır")
+        await asyncio.sleep(0)
+
+    async def notify_retry():
+        calls = []
+        real_exec, real_sched = notify.execute_query, notify._schedule_retry
+
+        async def broken(*a, **k):
+            raise ConnectionError("db yok")
+
+        notify.execute_query = broken
+        notify._schedule_retry = lambda attempt, args: calls.append((attempt, args[0]))
+        try:
+            await notify.notify("unit_evt", "high", "Başlık-retry")
+            chk(("unit_evt", None, "Başlık-retry") not in notify._recent, "kaydedilemeyen olay süzgeçte kalmaz (F15)")
+            chk(calls == [(0, "unit_evt")], "yeniden deneme planlandı")
+        finally:
+            notify.execute_query, notify._schedule_retry = real_exec, real_sched
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(panel_queue())
+        loop.run_until_complete(notify_retry())
+    finally:
+        loop.close()
+
+
 def main():
     test_update_notice()
     test_log_format()
@@ -179,6 +342,7 @@ def main():
     test_bypass()
     test_hardening()
     test_agent_health()
+    test_p1()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

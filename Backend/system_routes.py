@@ -336,11 +336,10 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             rows = await execute_query("SELECT pc_name FROM clients", fetch=True)
             return {r["pc_name"] for r in (rows or [])}
         if data.target_mode == "LAB":
-            out = set()
-            for lab in data.targets:
-                rows = await execute_query("SELECT pc_name FROM clients WHERE lab_name=$1", (lab,), fetch=True)
-                out |= {r["pc_name"] for r in (rows or [])}
-            return out
+            rows = await execute_query(
+                "SELECT pc_name FROM clients WHERE lab_name = ANY($1::text[])", ([str(x) for x in data.targets],),
+                fetch=True)
+            return {r["pc_name"] for r in (rows or [])}
         return {t for t in (data.targets or []) if t}
 
     async def _staged_release() -> Optional[dict]:
@@ -627,11 +626,19 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         msg = {"action": "update_agent", "manifest": manifest_b64, "manifest_sig": sig}
 
         targets = await _resolve_targets(data)
-        online = sorted(t for t in targets if t in manager.active_agents)
+        online = []
         offline = sorted(t for t in targets if t not in manager.active_agents)
-        for pc in online:
-            await manager.send_command(msg, pc)
+        for pc in sorted(t for t in targets if t in manager.active_agents):
+            if not await manager.send_command(msg, pc):
+                offline.append(pc)   # bağlantı bu arada koptu
+                continue
+            online.append(pc)
+            # Sonucu beklenen güncelleme; tabloda da tutulur, sunucu yeniden başlasa da izlenir
+            # (bkz. pops/update_tracking.py)
             manager.pending_updates[pc] = (version, time.time())
+            await execute_query(
+                "INSERT INTO pending_updates (pc_name, version, sent_at) VALUES ($1, $2, NOW()) "
+                "ON CONFLICT (pc_name) DO UPDATE SET version = $2, sent_at = NOW()", (pc, version))
         await add_audit_log("*", "deploy_update", "İmzalı güncelleme dağıtıldı: %s" % version,
                             {"version": version, "msi": msi_name, "dispatched": online, "offline": offline,
                              "by": auth.get("sub")})

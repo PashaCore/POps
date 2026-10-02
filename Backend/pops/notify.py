@@ -215,11 +215,44 @@ async def _deliver_and_record(nid: int, settings: dict, event, severity, title, 
         log.exception("bildirim gönderilemedi", extra={"notification_id": nid})
 
 
+# Kaydedilemeyen bildirim (veritabanı kısa süre yanıtsız) arka planda yeniden denenir: kritik bir olay yalnızca
+# sunucu günlüğünde kalmasın (F15). Bekleyen deneme sayısı sınırlı.
+_RETRY_DELAYS = (5, 30, 120)
+_MAX_PENDING_RETRIES = 100
+_pending_retries = [0]
+
+
+async def _retry_later(attempt: int, args: tuple) -> None:
+    try:
+        await asyncio.sleep(_RETRY_DELAYS[attempt])
+    finally:
+        _pending_retries[0] -= 1
+    await notify(*args, _attempt=attempt + 1)
+
+
+def _schedule_retry(attempt: int, args: tuple) -> None:
+    if attempt >= len(_RETRY_DELAYS) or _pending_retries[0] >= _MAX_PENDING_RETRIES:
+        log.error("bildirim kaydedilemedi, yeniden denenmeyecek", extra={"event": args[0], "title": args[2]})
+        return
+    _pending_retries[0] += 1
+    task = asyncio.create_task(_retry_later(attempt, args))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
 async def notify(
-    event: str, severity: str, title: str, detail: str = "", pc_name: Optional[str] = None, force: bool = False
+    event: str,
+    severity: str,
+    title: str,
+    detail: str = "",
+    pc_name: Optional[str] = None,
+    force: bool = False,
+    _attempt: int = 0,
 ) -> Optional[int]:
     """Bildirimi kaydeder ve ayarlara göre e-posta/webhook ile gönderir. Hiçbir zaman hata fırlatmaz.
     force=True (test) tekrar süzgecini ve hız sınırını atlar."""
+    key = None
+    recorded = False
     try:
         severity = severity if severity in _SEV_RANK else "info"
         title = (title or "")[:300]
@@ -232,6 +265,8 @@ async def notify(
                     del _recent[k]
             if key in _recent:
                 return None
+        # Kayıttan önce işaretlenir (aynı anda gelen iki olay iki kayıt açmasın); kayıt başarısız olursa işaret
+        # geri alınır, yoksa veritabanı geri gelince aynı olay tekrar süzgecine takılıp hiç kaydedilmezdi (F15)
         _recent[key] = now
 
         rows = await execute_query(
@@ -241,6 +276,7 @@ async def notify(
             fetch=True,
         )
         nid = rows[0]["id"]
+        recorded = True
 
         settings = await get_settings()
         wants = settings.get("notify_enabled") == "1" and (
@@ -252,7 +288,11 @@ async def notify(
             task.add_done_callback(_tasks.discard)
         return nid
     except Exception:
-        log.exception("bildirim kaydedilemedi", extra={"event": event})
+        if key is not None and not recorded:
+            _recent.pop(key, None)
+        log.exception("bildirim kaydedilemedi", extra={"event": event, "attempt": _attempt + 1})
+        if not recorded:
+            _schedule_retry(_attempt, (event, severity, title, detail, pc_name, force))
         return None
 
 

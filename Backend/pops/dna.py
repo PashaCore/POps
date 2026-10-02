@@ -95,10 +95,12 @@ async def reconcile_device(claimed_hwid: str, dna_payload: dict, client_ip: str,
             )
             return claimed_hwid
         else:
+            # Kimlik üretimi (güvenlik özeti değil); biçim aynı: HW- + 12 onaltılık
             new_hwid = (
                 "HW-"
-                + hashlib.md5(
-                    (hw.get('uuid', '') + hw.get('mac', '') + str(datetime.datetime.now().timestamp())).encode()
+                + hashlib.sha256(
+                    (str(hw.get('uuid') or '') + str(hw.get('mac') or '') + str(datetime.datetime.now().timestamp()))
+                    .encode()
                 )
                 .hexdigest()[:12]
                 .upper()
@@ -112,9 +114,21 @@ async def reconcile_device(claimed_hwid: str, dna_payload: dict, client_ip: str,
             await ws.send_text(json.dumps({"action": "set_identity", "new_hw_id": new_hwid}))
             return new_hwid
     else:
-        all_pcs = await execute_query("SELECT * FROM clients", fetch=True)
+        # Kimlik kurtarma eşiği (6 puan) UUID ya da BIOS seri numarası eşleşmeden aşılamaz (en fazla disk 2 + MAC 1
+        # + RAM 1 = 4). Bu yüzden yalnızca bu ikisinden biri tutan kayıtlar puanlanır; eskiden bilinmeyen her
+        # bağlantıda bütün cihaz tablosu okunuyordu. İkisi de okunamadıysa kurtarılacak kayıt yoktur.
+        uuid = hw.get('uuid').strip().lower() if _known(hw.get('uuid')) else None
+        bios = hw.get('bios_sn').strip().lower() if _known(hw.get('bios_sn')) else None
+        all_pcs = []
+        if uuid or bios:
+            all_pcs = await execute_query(
+                "SELECT * FROM clients WHERE ($1::text IS NOT NULL AND lower(btrim(dna_uuid)) = $1) "
+                "OR ($2::text IS NOT NULL AND lower(btrim(dna_bios)) = $2) LIMIT 50",
+                (uuid, bios),
+                fetch=True,
+            )
         best_match, best_score, best_max = None, 0, 11
-        for pc in all_pcs:
+        for pc in all_pcs or []:
             sc, m = calculate_dna_score(hw, pc, caps, pc)
             if sc > best_score:
                 best_score, best_max, best_match = sc, m, pc

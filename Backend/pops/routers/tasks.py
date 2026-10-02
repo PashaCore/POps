@@ -4,16 +4,19 @@ import base64
 import datetime
 import hashlib
 import hmac
+import json
 import logging
 import os
 import secrets
 import shutil
+import time
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from werkzeug.utils import secure_filename
 
 from pops.config import LOG_TABLE, UPDATES_DIR, UPLOAD_DIR
+from pops import db
 from pops.db import execute_query
 from pops.models import CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput
 from pops.security import require_admin, require_auth
@@ -51,7 +54,9 @@ _ACTION_STATUSES = {
     "CANCEL": ("Pending", "Running", "Paused", "Unknown"),
     "PAUSE": ("Pending",),
     "RESUME": ("Paused",),
-    "RETRY": ("Completed", "Completed (Rebooted)", "Failed", "Error", "Cancelled", "Unknown", "Interrupted"),
+    "RETRY": (
+        "Completed", "Completed (Rebooted)", "Failed", "Error", "Cancelled", "Unknown", "Interrupted", "Timed Out",
+    ),
 }
 _ACTION_TARGET = {"CANCEL": "Cancelled", "RETRY": "Pending", "PAUSE": "Paused", "RESUME": "Pending"}
 
@@ -254,18 +259,54 @@ async def api_storage(auth: dict = Depends(require_auth)):
     }
 
 
+# Çift tıklama / yeniden denenen istek aynı görevi iki kez oluşturmasın: aynı kullanıcının aynı hedef ve komut
+# dizisiyle birkaç saniye içindeki ikinci isteği yeni görev açmaz. Tek backend süreci olduğundan bellek yeterli.
+DUPLICATE_WINDOW_SECONDS = 5.0
+_recent_orchestrations = {}
+
+
+def _orchestration_key(creator: str, data: OrchestrationInput):
+    """Aynı istek birkaç saniye içinde ikinci kez geldiyse None, değilse isteğin anahtarı (kaydedilmiş olarak)."""
+    now = time.monotonic()
+    for key, at in list(_recent_orchestrations.items()):
+        if now - at > DUPLICATE_WINDOW_SECONDS:
+            _recent_orchestrations.pop(key, None)
+    key = hashlib.sha256(
+        json.dumps(
+            [creator, data.target_mode, data.targets, [(t.type, t.command) for t in data.taskSequence]],
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if key in _recent_orchestrations:
+        return None
+    _recent_orchestrations[key] = now
+    return key
+
+
 @router.post("/api/deploy_orchestration")
 async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(require_admin)):
-    target_pcs = await resolve_targets(data.target_mode, data.targets)
-
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     creator = auth.get("sub")  # F4(a): görevi kuyruklayan admin kaydedilir
-    for target in target_pcs:
-        for task in data.taskSequence:
-            await execute_query(
-                "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by) "
-                "VALUES ($1, $2, $3, 'Pending', $4, $5)",
-                (target["pc"], target["lab"], task.command, now, creator),
-            )
+    key = _orchestration_key(creator, data)
+    if key is None:
+        return {"status": "success", "duplicate": True, "created": 0}
+    try:
+        target_pcs = await resolve_targets(data.target_mode, data.targets)
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        rows = [
+            (target["pc"], target["lab"], task.command, now, creator)
+            for target in target_pcs
+            for task in data.taskSequence
+        ]
+        if rows:
+            # Hepsi ya da hiçbiri: yarıda kalan bir istek hedeflerin bir kısmına görev bırakmaz
+            async with db.transaction() as conn:
+                await conn.executemany(
+                    "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by) "
+                    "VALUES ($1, $2, $3, 'Pending', $4, $5)",
+                    rows,
+                )
+    except Exception:
+        _recent_orchestrations.pop(key, None)   # başarısız istek yeniden denenebilsin
+        raise
     await process_queue()
-    return {"status": "success"}
+    return {"status": "success", "created": len(rows)}

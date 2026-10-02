@@ -57,7 +57,7 @@ async def put_software(pc_name: str, data: SoftwareInventoryInput, agent_id: Opt
             (it.publisher or "").strip()[:200] or None,
             (it.install_date or "").strip()[:20] or None,
         )
-    async with db.db_pool.acquire() as conn:
+    async with db.acquire() as conn:
         async with conn.transaction():
             await conn.execute("DELETE FROM device_software WHERE pc_name = $1", pc_name)
             if seen:

@@ -17,13 +17,16 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from migrate import run_migrations
-from pops import db
+from migrate import run_migrations_on
+from pops import db, heartbeats, notify, secretbox, update_tracking
 from pops.logs import setup_logging
 from pops.metrics import RequestContextMiddleware
 from pops.audit import add_audit_log
 from pops.config import (
+    DB_COMMAND_TIMEOUT,
     DB_CONFIG,
+    DB_CONNECT_TIMEOUT,
+    DB_IDLE_IN_TRANSACTION_MS,
     DB_POOL_MAX,
     DB_POOL_MIN,
     JWT_ALGO,
@@ -112,9 +115,25 @@ async def startup_event():
     log.info("veritabanına bağlanılıyor")
     for i in range(5):
         try:
-            db.db_pool = await asyncpg.create_pool(**DB_CONFIG, min_size=DB_POOL_MIN, max_size=DB_POOL_MAX)
-            applied = await run_migrations(db.db_pool, verbose=False)
+            # Migration'lar ayrı bağlantıda ve sorgu süre sınırı olmadan (büyük tabloda indeks kurmak uzun sürebilir)
+            mig = await asyncpg.connect(**DB_CONFIG, timeout=DB_CONNECT_TIMEOUT)
+            try:
+                applied = await run_migrations_on(mig, verbose=False)
+            finally:
+                await mig.close()
+            db.db_pool = await asyncpg.create_pool(
+                **DB_CONFIG,
+                min_size=DB_POOL_MIN,
+                max_size=DB_POOL_MAX,
+                timeout=DB_CONNECT_TIMEOUT,
+                command_timeout=DB_COMMAND_TIMEOUT,
+                server_settings={"idle_in_transaction_session_timeout": str(DB_IDLE_IN_TRANSACTION_MS)},
+            )
             log.info("veritabanı hazır", extra={"migrations_applied": applied})
+            # Düz metin ya da eski anahtarla şifreli 2FA anahtarları birincil anahtarla şifrelenir (R-12)
+            await secretbox.reseal_totp_secrets(execute_query)
+            # Yeniden başlatmadan önce gönderilmiş, sonucu beklenen ajan güncellemeleri (S20)
+            await update_tracking.load()
             # Açılışta hiçbir ajan bağlı değil; bağlananlar yeniden Online yazılır
             await execute_query("UPDATE clients SET status = 'Offline' WHERE status IS DISTINCT FROM 'Offline'")
 
@@ -137,26 +156,56 @@ async def startup_event():
                 log.info("panel yönetici hesabı mevcut", extra={"user": admin_user})
             # Zamanlanmış görevler + güncelleme sonucu gelmeyen ajan uyarısı (30 sn'de bir)
             app.state.scheduler = asyncio.create_task(scheduler_loop())
+            # Heartbeat'ler toplu yazılır (bkz. pops/heartbeats.py)
+            app.state.heartbeats = asyncio.create_task(heartbeats.flush_loop())
             break
         except Exception as e:
             log.error("veritabanı bağlantı hatası", extra={"attempt": i + 1, "of": 5, "error": repr(e)[:300]})
+            # Yarım kalan denemenin havuzu kapatılır (bir sonraki deneme yenisini açar; bağlantılar sızmasın)
+            if db.db_pool is not None:
+                await db.db_pool.close()
+                db.db_pool = None
             if i == 4:
                 # Veritabanısız "çalışıyor" görünmek yerine dur: systemd (Restart=always) ve Docker yeniden başlatır,
                 # sağlık kontrolü de başarısız görünür
-                if db.db_pool is not None:
-                    await db.db_pool.close()
-                    db.db_pool = None
                 raise RuntimeError("Veritabanına bağlanılamadı ya da migration'lar uygulanamadı (5 deneme)") from e
             await asyncio.sleep(3)
 
 
+# Kapanışta beklenecek en uzun süre (saniye); systemd'nin durdurma süresinin (varsayılan 90 sn) altında kalır
+SHUTDOWN_DRAIN_SECONDS = 10
+
+
 @app.on_event("shutdown")
 async def shutdown_event():
-    task = getattr(app.state, "scheduler", None)
-    if task:
-        task.cancel()
+    """Düzgün kapanış. uvicorn bu noktada yeni bağlantı almayı bırakmış, açık WebSocket'leri kapatmış (ajanlar
+    "Offline" yazıldı) ve süren HTTP isteklerini beklemiştir. Kalanlar: zamanlayıcı (turu yarıda kalırsa işlemi
+    geri alınır), bellekte bekleyen heartbeat'ler, arka plandaki bildirim gönderimleri ve havuz."""
+    for name in ("scheduler", "heartbeats"):
+        task = getattr(app.state, name, None)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
     if db.db_pool:
-        await db.db_pool.close()
+        try:
+            await asyncio.wait_for(heartbeats.flush(), SHUTDOWN_DRAIN_SECONDS)
+        except Exception:
+            log.warning("kapanışta heartbeat'ler yazılamadı", exc_info=True)
+    pending = [t for t in notify._tasks if not t.done()]
+    if pending:
+        log.info("kapanış: bekleyen bildirim gönderimleri bekleniyor", extra={"count": len(pending)})
+        _done, late = await asyncio.wait(pending, timeout=SHUTDOWN_DRAIN_SECONDS)
+        for t in late:
+            t.cancel()
+    if db.db_pool:
+        try:
+            await asyncio.wait_for(db.db_pool.close(), SHUTDOWN_DRAIN_SECONDS)
+        except Exception:
+            db.db_pool.terminate()
+        db.db_pool = None
 
 
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)

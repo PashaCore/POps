@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminLoginInput(BaseModel):
@@ -74,7 +74,8 @@ class AutoEnrollInput(BaseModel):
 
 
 class SetLimitInput(BaseModel):
-    limit: int
+    # 0 = sınırsız; eksi değer kuyruğu sessizce durdururdu (F21)
+    limit: int = Field(ge=0, le=10000)
 
 
 class TaskSequenceItem(BaseModel):
@@ -129,10 +130,18 @@ class TaskActionInput(BaseModel):
 
 
 class RemoteInputData(BaseModel):
-    type: str
+    """HTTP uzaktan girdi. Tepsi alanları mesajın kökünde okur (panelin WebSocket yolu gibi): x, y, key, is_down...
+    Eski istemciler bunları "data" altında gönderiyordu (F13); ikisi de kabul edilir, tepsiye düz iletilir."""
+
+    model_config = ConfigDict(extra="allow")
+    type: str = "remote_input"
     device: str
     input_type: str
-    data: dict
+    data: Optional[dict] = None
+
+
+class StreamStopInput(BaseModel):
+    pc_name: str
 
 
 class HwInventoryInput(BaseModel):

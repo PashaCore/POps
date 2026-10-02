@@ -27,7 +27,8 @@ from pops.manager import manager
 from pops.taskqueue import process_queue
 from pops.dna import check_known_device, reconcile_device
 from pops.notify import notify
-from pops import agent_health, agent_version as agent_version_mod, bypass, update_notice
+from pops import agent_health, agent_version as agent_version_mod, bypass, heartbeats, metrics, update_notice
+from pops import update_tracking
 
 log = logging.getLogger("pops.agents")
 router = APIRouter()
@@ -157,6 +158,46 @@ async def reconcile_quarantine(
         )
 
 
+# Sunucunun desteklediği, ajanın davranışını değiştiren özellikler (0.1.14+ ajan okur; eskiler bilinmeyen action'ı
+# yok sayar). update_result_ack: güncelleme sonucu kaydedilince onaylanır, ajan onaya kadar sonucu saklar.
+SERVER_FEATURES = ("update_result_ack",)
+
+
+def _server_version() -> str:
+    import system_routes  # sürüm tek yerden okunur (VERSION / POPS_VERSION); döngüsel import olmasın diye burada
+
+    return system_routes._read_version()
+
+
+async def _send_server_info(websocket: WebSocket) -> None:
+    try:
+        await websocket.send_text(
+            json.dumps({"action": "server_info", "version": _server_version(), "features": list(SERVER_FEATURES)})
+        )
+    except Exception:
+        pass
+
+
+async def _ack_update_result(pc_name: str, result_id: str) -> None:
+    await manager.send_command({"action": "update_result_ack", "result_id": result_id}, pc_name)
+
+
+# WebSocket kapanış kodları (RFC 6455) → panelde ve günlükte okunur sebep
+_CLOSE_CODES = {
+    1000: "ajan kapattı (normal)",
+    1001: "ajan kapattı (servis duruyor ya da yeniden başlıyor)",
+    1006: "bağlantı koptu (ağ ya da sunucu yanıtsız; kapanış mesajı gelmedi)",
+    1011: "ajan tarafında hata",
+    1012: "ajan yeniden başlıyor",
+}
+
+
+def _close_reason(code, reason) -> str:
+    text = _CLOSE_CODES.get(code, "kapanış kodu %s" % code)
+    reason = str(reason or "").strip()
+    return "%s: %s" % (text, reason[:120]) if reason else text
+
+
 def _is_reboot_command(script: Optional[str]) -> bool:
     """Komut cihazı yeniden başlatıyor mu (shutdown /r, Restart-Computer)? Düzenli ifade kullanılmaz."""
     text = (script or "")[:20000].lower()
@@ -283,6 +324,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
     client_ip = websocket.client.host if websocket.client else "Bilinmiyor"
     active_hwid = pc_name
     agent_version = websocket.headers.get("X-Agent-Version", "unknown")
+    connected_at = time.monotonic()
+    close_reason = "bilinmiyor"
 
     # ── Faz 3 kimlik doğrulama (accept-both) ──
     # Secret ya da geçerli enroll token varsa kimlikli; hiçbiri yoksa "legacy".
@@ -329,9 +372,10 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             exit_code = exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None
             await execute_query(
                 "UPDATE tasks SET output = $1, exit_code = $4, status = CASE "
-                "WHEN status IN ('Running', 'Unknown', 'Interrupted') THEN "
+                "WHEN status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out') THEN "
                 "(CASE WHEN $4::int IS NULL OR $4::int = 0 THEN 'Completed' ELSE 'Failed' END) ELSE status END "
-                "WHERE id = $2 AND target_pc = $3 AND status IN ('Running', 'Unknown', 'Interrupted', 'Cancelled')",
+                "WHERE id = $2 AND target_pc = $3 "
+                "AND status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out', 'Cancelled')",
                 (pld.get("output"), pld.get("task_id"), active_hwid, exit_code),
             )
             await manager.broadcast_to_panels(
@@ -346,27 +390,29 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             await process_queue()
             return
         if "status" in pld:
-            # agent_health (0.1.12+): her heartbeat'te üzerine yazılır; bildirmeyen ajanda NULL kalır
-            await execute_query(
-                "UPDATE clients SET last_seen=$1, status=$2, active_window=$3, hostname=$4, ip_address=$5, "
-                "agent_health=$7::jsonb WHERE pc_name=$6",
-                (
-                    current_time,
-                    pld.get("status"),
-                    pld.get("active_window", "-"),
-                    current_hostname,
-                    client_ip,
-                    active_hwid,
-                    agent_health.clean(pld.get("agent_health")),
-                ),
+            # Toplu yazılır (bkz. pops/heartbeats.py). agent_health (0.1.12+): her heartbeat'te üzerine yazılır;
+            # bildirmeyen ajanda NULL kalır
+            heartbeats.record(
+                active_hwid,
+                current_time,
+                pld.get("status"),
+                pld.get("active_window", "-"),
+                current_hostname,
+                client_ip,
+                agent_health.clean(pld.get("agent_health")),
             )
-            if auth_method == "secret" and isinstance(pld.get("quarantined"), bool):
-                health = pld.get("agent_health") if isinstance(pld.get("agent_health"), dict) else {}
-                isolated = health.get("network_isolated")
-                await reconcile_quarantine(
-                    active_hwid, pld["quarantined"], isolated if isinstance(isolated, bool) else None,
-                    str(health.get("isolation_error") or "")[:200],
-                )
+            scope = metrics.query_scope.set([0])
+            try:
+                if auth_method == "secret" and isinstance(pld.get("quarantined"), bool):
+                    health = pld.get("agent_health") if isinstance(pld.get("agent_health"), dict) else {}
+                    isolated = health.get("network_isolated")
+                    await reconcile_quarantine(
+                        active_hwid, pld["quarantined"], isolated if isinstance(isolated, bool) else None,
+                        str(health.get("isolation_error") or "")[:200],
+                    )
+            finally:
+                metrics.count("heartbeat_queries", metrics.query_scope.get()[0])
+                metrics.query_scope.reset(scope)
 
     try:
         data = await websocket.receive_text()
@@ -474,6 +520,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 auth_method = "secret"
 
             manager.active_agents[active_hwid] = websocket
+            await _send_server_info(websocket)
 
             # Cihaz başına çevrimdışı bypass anahtarı (0.1.12+, bkz. pops/bypass.py). Ajan parmak iziyle onaylar
             # (bypass_secret_ack); onaylanana kadar her bağlanışta aynı anahtar yeniden gönderilir.
@@ -500,6 +547,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     pass
                 return
             manager.active_agents[active_hwid] = websocket
+            await _send_server_info(websocket)
 
         await handle_routine_payload(payload)
 
@@ -523,7 +571,13 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 continue
             if payload.get("type") == "update_result":
                 # Ajanın güncelleme sonucu (POpsUpdater update-result.json'ından). Ajanların
-                # yazamadığı device_audit_logs'a düşür + panele bildir.
+                # yazamadığı device_audit_logs'a düşür + panele bildir. 0.1.14+ ajan result_id gönderir ve sonucu
+                # onay (update_result_ack) gelene kadar saklayıp yeniden gönderir: aynı sonuç ikinci kez kaydedilmez,
+                # yalnızca onaylanır. Onay kayıt yazıldıktan SONRA gider (S20).
+                result_id = update_tracking.clean_result_id(payload.get("result_id"))
+                if result_id and await update_tracking.seen(active_hwid, result_id):
+                    await _ack_update_result(active_hwid, result_id)
+                    continue
                 detail = {
                     k: payload.get(k)
                     for k in (
@@ -563,7 +617,10 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         reason=_reason,
                         meta_data=detail,
                     )
-                manager.pending_updates.pop(active_hwid, None)
+                await update_tracking.forget(active_hwid)
+                if result_id:
+                    await update_tracking.remember(active_hwid, result_id)
+                    await _ack_update_result(active_hwid, result_id)
                 if notice:
                     await notify(notice[0], notice[1], notice[2], str(payload.get("detail") or ""), active_hwid)
                 await manager.broadcast_to_panels({"type": "update_result", "pc_name": active_hwid, **detail})
@@ -642,23 +699,39 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 await manager.broadcast_to_panels({"type": "capability_denied", "pc_name": active_hwid, **_md})
                 continue
             await handle_routine_payload(payload)
-    except WebSocketDisconnect:
-        pass
+    except WebSocketDisconnect as e:
+        close_reason = _close_reason(e.code, e.reason)
     except Exception as e:
         if websocket.application_state == WebSocketState.DISCONNECTED:
             # Soketi sunucu kapattı (ör. cihaz silindi); bekleyen receive bu yüzden hata verdi, sorun değil
-            log.info("ajan bağlantısı sunucu tarafından kapatıldı", extra={"pc_name": active_hwid})
+            close_reason = "sunucu kapattı"
         else:
             # Bozuk mesaj veya beklenmeyen hata: soket kapansın ki cihaz yanlışlıkla Online görünmesin
+            close_reason = "sunucu hatası: %s" % type(e).__name__
             log.warning("ajan bağlantısı hatayla kapandı", extra={"pc_name": active_hwid, "error": repr(e)[:300]})
         try:
             await websocket.close(code=1011)
         except Exception:
             pass
     finally:
-        # Yeniden bağlanan ajanın yeni soketi kayıtlıysa ona dokunulmaz
+        # Yeniden bağlanan ajanın yeni soketi kayıtlıysa ona dokunulmaz (o durumda bu eski bağlantının kapanması
+        # cihazın kopması değildir)
         if manager.disconnect_agent(active_hwid, websocket):
-            await execute_query("UPDATE clients SET status = 'Offline' WHERE pc_name = $1", (active_hwid,))
+            heartbeats.discard(active_hwid)
+            await execute_query(
+                "UPDATE clients SET status = 'Offline', last_disconnect_at = NOW(), last_disconnect_reason = $2 "
+                "WHERE pc_name = $1",
+                (active_hwid, close_reason[:200]),
+            )
+            log.info(
+                "ajan bağlantısı kapandı",
+                extra={
+                    "pc_name": active_hwid,
+                    "reason": close_reason,
+                    "seconds": round(time.monotonic() - connected_at),
+                    "agent_version": agent_version,
+                },
+            )
 
 
 @router.post("/api/inventory/{pc_name}")

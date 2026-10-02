@@ -78,6 +78,21 @@ DB_POOL_MIN = int(os.environ.get('DB_POOL_MIN', '2'))
 DB_POOL_MAX = int(os.environ.get('DB_POOL_MAX', '20'))
 
 
+# Süre sınırları (saniye). Veritabanı yanıt vermezse istekler ve WebSocket işleyicileri sonsuza dek beklemesin:
+# havuzdan bağlantı alma, bağlantı kurma ve tek sorgu. İşlem içinde boşta bekleyen oturum da kilit tutmasın diye
+# sunucu tarafında kesilir. Migration'lar bu sınırların dışında, ayrı bağlantıda çalışır.
+DB_ACQUIRE_TIMEOUT = float(os.environ.get('DB_ACQUIRE_TIMEOUT', '10'))
+
+
+DB_CONNECT_TIMEOUT = float(os.environ.get('DB_CONNECT_TIMEOUT', '10'))
+
+
+DB_COMMAND_TIMEOUT = float(os.environ.get('DB_COMMAND_TIMEOUT', '30'))
+
+
+DB_IDLE_IN_TRANSACTION_MS = int(os.environ.get('DB_IDLE_IN_TRANSACTION_MS', '60000'))
+
+
 # Wake-on-LAN yayın hedefi ('<broadcast>' = 255.255.255.255)
 WOL_BROADCAST_ADDR = os.environ.get('WOL_BROADCAST_ADDR') or '<broadcast>'
 

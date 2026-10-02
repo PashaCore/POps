@@ -12,7 +12,7 @@ import logging
 import time
 from typing import Optional
 
-from pops import db
+from pops import db, health_alerts, retention, update_tracking
 from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.notify import notify
@@ -54,30 +54,34 @@ def compute_next_run(
     return None
 
 
-async def enqueue(row: dict, actor_suffix: str) -> int:
-    """Zamanlanmış görevi hedef cihazlar için görev kuyruğuna ekler; eklenen görev sayısını döner."""
-    targets = await resolve_targets(row["target_mode"], json.loads(row["targets"] or "[]"))
+async def enqueue(row: dict, actor_suffix: str, conn=None) -> int:
+    """Zamanlanmış görevi hedef cihazlar için görev kuyruğuna ekler; eklenen görev sayısını döner. Bütün hedefler
+    tek işlemde yazılır: yarıda kalan bir ekleme (100 hedefin 40'ı) bırakmaz. conn verilirse çağıranın işlemi."""
+    if conn is None:
+        async with db.transaction() as own:
+            return await enqueue(row, actor_suffix, own)
+    targets = await resolve_targets(row["target_mode"], json.loads(row["targets"] or "[]"), conn)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     creator = "%s (%s #%s)" % (row.get("created_by") or "?", actor_suffix, row["id"])
-    async with db.db_pool.acquire() as conn:
-        for t in targets:
-            await conn.execute(
-                "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by) "
-                "VALUES ($1, $2, $3, 'Pending', $4, $5)",
-                t["pc"],
-                t["lab"],
-                row["command"],
-                now,
-                creator,
-            )
+    if targets:
+        await conn.executemany(
+            "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by) "
+            "VALUES ($1, $2, $3, 'Pending', $4, $5)",
+            [(t["pc"], t["lab"], row["command"], now, creator) for t in targets],
+        )
     return len(targets)
 
 
 async def run_due() -> int:
-    """Vakti gelen görevleri kuyruğa ekler. Eklenen toplam görev sayısını döner."""
+    """Vakti gelen görevleri kuyruğa ekler. Eklenen toplam görev sayısını döner.
+
+    F07: görevlerin eklenmesi ve takvimin ilerletilmesi (next_run, tek seferlikte enabled=false) AYNI işlemdedir.
+    Eskiden takvim önce ilerletilip işlem kapatılıyordu; görevler ondan sonra yazıldığı için arada süreç ya da
+    bağlantı ölürse iş hiç oluşmuyordu. Şimdi ya ikisi birden kalır ya hiçbiri: takvim bir sonraki turda yeniden
+    dener. Hedef çözülemeyen (bozuk) bir takvim yine ilerletilir ve hatası kaydedilir, her turda tekrarlanmaz."""
     added = 0
-    due = []
-    async with db.db_pool.acquire() as conn:
+    ran = []
+    async with db.acquire() as conn:
         async with conn.transaction():
             if not await conn.fetchval("SELECT pg_try_advisory_xact_lock($1)", _SCHEDULER_LOCK):
                 return 0
@@ -89,22 +93,29 @@ async def run_due() -> int:
             for r in rows:
                 r = dict(r)
                 nxt = compute_next_run(r["schedule_type"], r["run_at"], r["time_of_day"], r["weekdays"], now)
+                error = None
+                try:
+                    # Kayıt noktası: bir takvimin hatası diğerlerinin görevlerini geri almaz
+                    async with conn.transaction():
+                        n = await enqueue(r, "zamanlanmış", conn)
+                    result = "%d cihaz için kuyruğa eklendi" % n
+                    added += n
+                except (ValueError, TypeError) as exc:   # bozuk hedef listesi (JSON) gibi kalıcı hatalar
+                    error = exc
+                    result = "hata: %s" % exc
                 await conn.execute(
-                    "UPDATE scheduled_tasks SET last_run = now(), next_run = $1, enabled = $2 WHERE id = $3",
+                    "UPDATE scheduled_tasks SET last_run = now(), next_run = $1, enabled = $2, last_result = $3 "
+                    "WHERE id = $4",
                     nxt,
                     bool(nxt) if r["schedule_type"] == "once" else r["enabled"],
+                    result,
                     r["id"],
                 )
-                due.append(r)
-    for r in due:
-        try:
-            n = await enqueue(r, "zamanlanmış")
-            result = "%d cihaz için kuyruğa eklendi" % n
-            added += n
-        except Exception as exc:
-            result = "hata: %s" % exc
-            await notify("schedule_failed", "high", "Zamanlanmış görev çalıştırılamadı: %s" % r["name"], str(exc))
-        await db.execute_query("UPDATE scheduled_tasks SET last_result = $1 WHERE id = $2", (result, r["id"]))
+                ran.append((r, result, error))
+    # İşlem kapandıktan sonra: bildirim ve denetim kaydı (kendi bağlantılarıyla)
+    for r, result, error in ran:
+        if error is not None:
+            await notify("schedule_failed", "high", "Zamanlanmış görev çalıştırılamadı: %s" % r["name"], str(error))
         await add_audit_log(
             "*",
             "schedule_run",
@@ -116,13 +127,35 @@ async def run_due() -> int:
     return added
 
 
+# Ajanın kendi süre sınırı 30 dakika (CommandExecutionPolicy). Bundan 5 dakika sonra hâlâ sonucu gelmemiş
+# "Running" görev, ajan hiç geri dönmediği için takılı kalmıştır: "Timed Out" olur ve cihazın kuyruğu açılır.
+# Geç gelen sonuç yine kaydedilir (bkz. routers/agents.py, sonuç işleyici).
+TASK_STUCK_SECONDS = 35 * 60
+
+
+async def reap_stuck_tasks() -> int:
+    rows = await db.execute_query(
+        "UPDATE tasks SET status = 'Timed Out', "
+        "output = COALESCE(NULLIF(output, ''), '[ZAMAN AŞIMI]: 35 dakika içinde ajandan sonuç gelmedi.') "
+        "WHERE status = 'Running' AND dispatched_at IS NOT NULL "
+        "AND dispatched_at < NOW() - make_interval(secs => $1) RETURNING id, target_pc",
+        (TASK_STUCK_SECONDS,),
+        fetch=True,
+    )
+    for r in rows or []:
+        log.warning("takılı görev zaman aşımına uğradı", extra={"task_id": r["id"], "pc": r["target_pc"]})
+    if rows:
+        await process_queue()
+    return len(rows or [])
+
+
 async def check_pending_updates() -> None:
     """Güncelleme gönderilen ajan uzun süre sonuç bildirmediyse (ölü/yönetilemez ajan sonuç gönderemez)."""
     now = time.time()
     for pc, (version, sent_at) in list(manager.pending_updates.items()):
         if now - sent_at < UPDATE_SILENCE_SECONDS:
             continue
-        manager.pending_updates.pop(pc, None)
+        await update_tracking.forget(pc)
         online = pc in manager.active_agents
         await notify(
             "update_silent",
@@ -175,8 +208,11 @@ async def scheduler_loop() -> None:
     while True:
         try:
             await run_due()
+            await reap_stuck_tasks()
             await check_pending_updates()
             await check_licenses_daily()
+            await retention.apply_daily()
+            await health_alerts.check()
             last_tick[0] = time.time()
         except asyncio.CancelledError:
             raise

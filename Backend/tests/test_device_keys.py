@@ -120,6 +120,18 @@ async def wait_for(c, sql, *args, timeout=6):
     return None
 
 
+async def device_when(hw_id, token, cond, timeout=8):
+    """Cihaz listesindeki kayıt koşulu sağlayana kadar bekler (heartbeat'ler toplu, gecikmeli yazılır)."""
+    dev = {}
+    for _ in range(int(timeout / 0.25)):
+        s, devices = req("/api/devices", token)
+        dev = next((d for d in devices if d.get("hw_id") == hw_id), {}) if s == 200 else {}
+        if cond(dev):
+            return dev
+        await asyncio.sleep(0.25)
+    return dev
+
+
 async def cleanup(c):
     # Önceki bir koşuda DNA eşleşmesiyle yeniden adlandırılmış test cihazları da silinir
     renamed = await c.fetch("SELECT pc_name FROM clients WHERE dna_uuid = ANY($1::text[])", [p + "-U" for p in PCS])
@@ -234,9 +246,8 @@ async def main():
         "extra": "yok sayılır",
     }
     await agent.send(json.dumps({"hw_id": "HW-K1", "hostname": "hw-k1", "status": "Online", "agent_health": health}))
-    await asyncio.sleep(0.8)
-    s, devices = req("/api/devices", admin)
-    dev = next((d for d in devices if d.get("hw_id") == "HW-K1"), {}) if s == 200 else {}
+    # Heartbeat'ler toplu yazılır (en fazla birkaç saniye gecikmeli)
+    dev = await device_when("HW-K1", admin, lambda d: (d.get("agent_health") or {}).get("loop_errors_1h") == 3)
     h = dev.get("agent_health") or {}
     chk(h.get("loop_errors_1h") == 3 and h.get("tray_connected") is True, "sağlık özeti saklandı")
     chk(
@@ -246,9 +257,7 @@ async def main():
     chk("extra" not in h, "bilinmeyen alan saklanmadı")
     chk(dev.get("bypass_key") == "device", "cihaz listesinde bypass anahtarı onaylı görünüyor")
     await agent.send(json.dumps({"hw_id": "HW-K1", "hostname": "hw-k1", "status": "Online"}))
-    await asyncio.sleep(0.8)
-    s, devices = req("/api/devices", admin)
-    dev = next((d for d in devices if d.get("hw_id") == "HW-K1"), {})
+    dev = await device_when("HW-K1", admin, lambda d: d.get("agent_health") is None)
     chk(dev.get("agent_health") is None, "sağlık bildirmeyen heartbeat eski özeti siler")
     await agent.close()
 

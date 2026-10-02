@@ -126,21 +126,43 @@ def _totp_code(secret_b32: str, counter: int) -> str:
     return str(bincode % (10**_TOTP_DIGITS)).zfill(_TOTP_DIGITS)
 
 
-def verify_totp(secret_b32: Optional[str], code: Optional[str], window: int = 1) -> bool:
-    """Kullanıcının girdiği kodu ±1 pencereyle (saat kayması toleransı) sabit zamanlı doğrular."""
+def totp_step(secret_b32: Optional[str], code: Optional[str], window: int = 1) -> Optional[int]:
+    """Kod ±1 pencerede (saat kayması toleransı) geçerliyse eşleştiği zaman adımı, değilse None. Sabit zamanlı
+    karşılaştırma. Adım, aynı kodun ikinci kez kullanılmasını engellemek için saklanır (bkz. consume_totp)."""
     if not secret_b32 or not code:
-        return False
+        return None
     code = code.strip().replace(' ', '')
     if not code.isdigit() or len(code) != _TOTP_DIGITS:
-        return False
+        return None
     now = int(time.time() // _TOTP_STEP)
+    found = None
     try:
         for w in range(-window, window + 1):
             if hmac.compare_digest(_totp_code(secret_b32, now + w), code):
-                return True
+                found = now + w
     except Exception:
+        return None
+    return found
+
+
+def verify_totp(secret_b32: Optional[str], code: Optional[str], window: int = 1) -> bool:
+    return totp_step(secret_b32, code, window) is not None
+
+
+async def consume_totp(user_id: int, secret_b32: Optional[str], code: Optional[str]) -> bool:
+    """Kodu doğrular ve TÜKETİR: aynı kullanıcı için daha önce kullanılan adımdan (ya da öncesinden) bir kod bir daha
+    kabul edilmez. Böylece omuz üstünden ya da ağdan yakalanan bir kod, geçerlilik süresi içinde tekrar kullanılamaz.
+    Koşullu UPDATE atomiktir: aynı kodla iki eşzamanlı istekten yalnızca biri geçer."""
+    step = totp_step(secret_b32, code)
+    if step is None:
         return False
-    return False
+    rows = await execute_query(
+        "UPDATE users SET totp_last_step = $1 WHERE id = $2 "
+        "AND (totp_last_step IS NULL OR totp_last_step < $1) RETURNING id",
+        (step, user_id),
+        fetch=True,
+    )
+    return bool(rows)
 
 
 def totp_provisioning_uri(secret_b32: str, username: str, issuer: str = "POps") -> str:
@@ -157,18 +179,25 @@ def totp_provisioning_uri(secret_b32: str, username: str, issuer: str = "POps") 
     )
 
 
-def create_totp_challenge(username: str) -> str:
+def create_totp_challenge(username: str, token_version: int = 0) -> str:
     """Şifre doğrulandıktan sonra 2. adım (kod) için kısa ömürlü (5 dk) challenge jetonu.
-    'twofa=pending' taşır; normal oturum jetonu olarak KULLANILAMAZ (role yok → require_admin reddeder)."""
+    'twofa=pending' taşır; normal oturum jetonu olarak KULLANILAMAZ (role yok → require_admin reddeder).
+    Kullanıcının token_version'ı da içindedir: arada şifre/rol değişirse ya da oturumlar iptal edilirse
+    bekleyen ikinci adım da geçersiz olur."""
     expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5)
-    return jwt.encode({'sub': username, 'twofa': 'pending', 'exp': expire}, JWT_SECRET, algorithm=JWT_ALGO)
+    return jwt.encode(
+        {'sub': username, 'twofa': 'pending', 'tv': int(token_version or 0), 'exp': expire},
+        JWT_SECRET,
+        algorithm=JWT_ALGO,
+    )
 
 
-def verify_totp_challenge(token: str) -> Optional[str]:
+def verify_totp_challenge(token: str) -> Optional[tuple]:
+    """Geçerli challenge ise (kullanıcı adı, token_version), değilse None."""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
     except jwt.PyJWTError:
         return None
-    if payload.get('twofa') != 'pending':
+    if payload.get('twofa') != 'pending' or not payload.get('sub'):
         return None
-    return payload.get('sub')
+    return payload.get('sub'), int(payload.get('tv', 0))
