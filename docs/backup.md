@@ -9,7 +9,7 @@ What to do so that "the server died" is an inconvenience, not a loss.
 | File | Contents |
 |---|---|
 | `db.dump` | The whole PostgreSQL database (`pg_dump -Fc`): devices, agent secrets, audit chain, users, tasks, licences, tickets, notifications, settings. |
-| `files.tgz` | Backend `.env` (database password, `JWT_SECRET`, SMTP…), `VERSION`, `keys/` (release **public** key), `releases/` (verified signed agent packages), `storage/` (files uploaded for distribution), `updates/` (agent MSIs served to agents; skip with `BACKUP_EXCLUDE_UPDATES=1`), the panel `.env` if `POPS_PANEL_ENV` is set, `/etc/pops`, `/var/lib/pops/deploy-status.json`. |
+| `files.tgz` | Backend `.env` (database password, `JWT_SECRET`, SMTP…), `VERSION`, `keys/` (release **public** key), `releases/` (verified signed agent packages), `storage/` (files uploaded for distribution), `updates/` (agent MSIs served to agents; skip with `BACKUP_EXCLUDE_UPDATES=1`), the panel `.env` if `POPS_PANEL_ENV` is set, `/etc/pops`, `/var/lib/pops-state/deploy-status.json`. |
 | `meta.json` | Version, host, database name, `pg_dump` version. |
 | `SHA256SUMS` | Checksums of the three files; `pops-restore` refuses a folder whose checksums do not match. |
 
@@ -26,7 +26,7 @@ A backup that cannot be restored is worse than none, because it gives false conf
 (`<db>_restorecheck`), runs `audit_verify.py` on it (the hash-chained audit log must be intact and the migration
 history present) and drops the temporary database. Only then is the backup marked `verified`.
 
-The result is written to `/var/lib/pops/backup-status.json`. The panel shows it on **Sistem & Sürüm → Sunucu
+The result is written to `/var/lib/pops-state/backup-status.json` (a root-owned directory; up to 0.1.12 it was `/var/lib/pops`). The panel shows it on **Sistem & Sürüm → Sunucu
 sağlığı** ("Son yedek") and warns when there is no backup, the last one failed, or it is older than two days.
 `/metrics` exposes `pops_backup_last_age_seconds` and `pops_backup_last_ok`.
 

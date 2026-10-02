@@ -70,5 +70,18 @@ namespace POps.Tests.Agent
             Assert.Equal(0, health.GetProperty("loop_errors_1h").GetInt32());
             Assert.Equal("", health.GetProperty("last_error").GetString());
         }
+
+        [Fact]
+        public void QuarantineState_IsReportedSeparately()
+        {
+            var health = new AgentHealthTelemetry(() => DateTimeOffset.FromUnixTimeSeconds(1_700_000_000));
+            AgentHealthSnapshot snapshot = health.Snapshot(true, false, false, true, false, new string('x', 300));
+            Assert.True(snapshot.ScreenLocked);
+            Assert.False(snapshot.NetworkIsolated);
+            Assert.True(snapshot.IsolationError.Length <= 200);
+            string json = System.Text.Json.JsonSerializer.Serialize(snapshot);
+            Assert.Contains("\"screen_locked\":true", json);
+            Assert.Contains("\"network_isolated\":false", json);
+        }
     }
 }

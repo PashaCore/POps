@@ -97,7 +97,7 @@ if not os.path.exists(UPDATES_DIR):
     os.makedirs(UPDATES_DIR)
 
 
-app.mount("/download", StaticFiles(directory=UPLOAD_DIR), name="download")
+# /download artık statik değil: dağıtım paketleri yalnızca imzalı adresle iner (bkz. routers/tasks.py download_file)
 
 
 app.mount("/updates", StaticFiles(directory=UPDATES_DIR), name="updates")
@@ -140,6 +140,13 @@ async def startup_event():
             break
         except Exception as e:
             log.error("veritabanı bağlantı hatası", extra={"attempt": i + 1, "of": 5, "error": repr(e)[:300]})
+            if i == 4:
+                # Veritabanısız "çalışıyor" görünmek yerine dur: systemd (Restart=always) ve Docker yeniden başlatır,
+                # sağlık kontrolü de başarısız görünür
+                if db.db_pool is not None:
+                    await db.db_pool.close()
+                    db.db_pool = None
+                raise RuntimeError("Veritabanına bağlanılamadı ya da migration'lar uygulanamadı (5 deneme)") from e
             await asyncio.sleep(3)
 
 

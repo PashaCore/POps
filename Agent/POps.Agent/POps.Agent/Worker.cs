@@ -51,6 +51,11 @@ namespace POpsAgent
         private readonly HttpClient _httpClient;
         private readonly AgentStartupHealth _startupHealth;
         private readonly AgentHealthTelemetry _health = new AgentHealthTelemetry();
+        // Uzaktan komutlar (iptal ve servis durması işlemi sonlandırır) ve bağlantı yokken gönderilemeyen sonuçlar:
+        // sonuç kaybolmasın diye bağlantı yeniden kurulunca gönderilir (en çok MaxPendingResults)
+        private readonly CommandRunner _commandRunner = new CommandRunner();
+        private readonly System.Collections.Concurrent.ConcurrentQueue<object> _pendingResults = new System.Collections.Concurrent.ConcurrentQueue<object>();
+        private const int MaxPendingResults = 20;
         private Task _slowInitialization;
 
         // 🚀 ARTIK SABİT DEĞİL, HELPERS'TAN OKUNACAK
@@ -241,6 +246,7 @@ namespace POpsAgent
                             capabilitiesReported = true;
                         }
                         await ReportUpdateResultAsync(stoppingToken);
+                        await FlushPendingResultsAsync();
                         await Task.Delay(5000, stoppingToken);
                         // İlk mesajlar gitti ve sunucu bağlantıyı bir heartbeat aralığı boyunca açık tuttu (kimliği
                         // reddetseydi ilk mesajı okuyunca 4401 ile kapatırdı): bağlantı sağlam, geri çekilme sıfırlanır
@@ -720,13 +726,18 @@ namespace POpsAgent
                             LocalAudit.Write(LocalAudit.CommandStarted(tid, cmd, requestedBy));
                             _ = Task.Run(async () =>
                             {
-                                CommandExecutionResult execution = await ExecuteCommandAsync(cmd);
+                                CommandExecutionResult execution = await _commandRunner.RunAsync(tid, cmd, stoppingToken);
                                 LocalAudit.Write(LocalAudit.CommandFinished(tid, execution.ExitCode, execution.Duration));
-                                var res = new { type = "result", pc_name = _hwId, output = execution.Output, task_id = tid };
-                                byte[] b = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(res));
-                                await _wsCommandLock.WaitAsync();
-                                try { await ws.SendAsync(new ArraySegment<byte>(b), WebSocketMessageType.Text, true, CancellationToken.None); }
-                                finally { _wsCommandLock.Release(); }
+                                // Sonuç o anki bağlantıdan gider; bağlantı koptuysa sırada bekler (eskiden komutun geldiği
+                                // eski sokete yazılıyor ve bağlantı koptuysa kayboluyordu)
+                                await SendResultAsync(new
+                                {
+                                    type = "result",
+                                    pc_name = _hwId,
+                                    output = execution.Output,
+                                    task_id = tid,
+                                    exit_code = execution.ExitCode,
+                                });
                             });
                         }
                         else if (action == "get_hardware") await SendHardwareInfoAsync();
@@ -768,6 +779,13 @@ namespace POpsAgent
                         else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
                         else if (action == "set_secret") { HandleSetSecret(root); }
                         else if (action == "set_bypass_secret") { await HandleSetBypassSecretAsync(root); }
+                        else if (action == "cancel_task")
+                        {
+                            int cancelId = root.TryGetProperty("task_id", out var cancelProp) && cancelProp.ValueKind == JsonValueKind.Number
+                                && cancelProp.TryGetInt32(out int cancelTaskId) ? cancelTaskId : -1;
+                            if (_commandRunner.Cancel(cancelId))
+                                POpsHelpers.Log("AGENT", $"Uzaktan komut panelden iptal edildi; işlem sonlandırılıyor (TaskID: {cancelId}).");
+                        }
                         else if (action == "lockdown")
                         {
                             string reason = root.TryGetProperty("reason", out var rProp) && rProp.ValueKind == JsonValueKind.String ? rProp.GetString() : null;
@@ -845,7 +863,10 @@ namespace POpsAgent
             agent_health = _health.Snapshot(
                 _trayPipe?.IsConnected == true,
                 AgentCapabilities.VisionEnabled,
-                _visionWs?.State == WebSocketState.Open)
+                _visionWs?.State == WebSocketState.Open,
+                _quarantine.ScreenLocked,
+                _quarantine.NetworkIsolated,
+                _quarantine.LastIsolationError)
         };
 
         private async Task SendHeartbeatAsync(CancellationToken token)
@@ -893,17 +914,43 @@ namespace POpsAgent
             await SendCommandMessageAsync(notice);
         }
 
-        private async Task SendCommandMessageAsync(object payload)
+        private async Task SendCommandMessageAsync(object payload) => await TrySendCommandMessageAsync(payload);
+
+        // Dönen: mesaj o anki komut soketine yazıldı mı
+        private async Task<bool> TrySendCommandMessageAsync(object payload)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
             await _wsCommandLock.WaitAsync();
             try
             {
-                if (_commandWs != null && _commandWs.State == WebSocketState.Open)
-                    await _commandWs.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                if (_commandWs == null || _commandWs.State != WebSocketState.Open) return false;
+                await _commandWs.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                return true;
             }
-            catch (Exception ex) { POpsHelpers.Log("AGENT", $"Sunucuya mesaj gönderilemedi: {ex.Message}", true); }
+            catch (Exception ex)
+            {
+                POpsHelpers.Log("AGENT", $"Sunucuya mesaj gönderilemedi: {ex.Message}", true);
+                return false;
+            }
             finally { _wsCommandLock.Release(); }
+        }
+
+        // Görev sonucu: gönderilemezse bağlantı yeniden kurulunca gönderilmek üzere sırada bekler
+        private async Task SendResultAsync(object result)
+        {
+            if (_pendingResults.IsEmpty && await TrySendCommandMessageAsync(result)) return;
+            _pendingResults.Enqueue(result);
+            while (_pendingResults.Count > MaxPendingResults && _pendingResults.TryDequeue(out _))
+                POpsHelpers.Log("AGENT", "Gönderilemeyen görev sonuçları sınırı aşıldı; en eskisi atıldı.", true);
+        }
+
+        private async Task FlushPendingResultsAsync()
+        {
+            while (_pendingResults.TryPeek(out object result))
+            {
+                if (!await TrySendCommandMessageAsync(result)) return;
+                _pendingResults.TryDequeue(out _);
+            }
         }
 
         // POpsUpdater'ın bıraktığı sonuç (update-result.json) sunucuya bir kez "update_result" olarak iletilir.
@@ -1198,72 +1245,6 @@ namespace POpsAgent
         private Task<bool> EnableNetworkIsolationAsync() => NetworkIsolation.EnableAsync(_serverUrl);
 
         private Task<bool> DisableNetworkIsolationAsync() => NetworkIsolation.DisableAsync();
-
-        private async Task<CommandExecutionResult> ExecuteCommandAsync(string command)
-        {
-            string tempBatPath = "";
-            var stopwatch = Stopwatch.StartNew();
-            int exitCode = -1;
-            string output;
-            try
-            {
-                tempBatPath = Path.Combine(Path.GetTempPath(), $"pops_task_{Guid.NewGuid():N}.bat");
-                await File.WriteAllTextAsync(tempBatPath, "@echo off\r\nchcp 65001 > nul\r\n" + command, new UTF8Encoding(false));
-
-                var processInfo = new ProcessStartInfo
-                {
-                    FileName = "cmd.exe",
-                    Arguments = $"/c \"{tempBatPath}\"",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8
-                };
-
-                using var process = new Process { StartInfo = processInfo };
-                var outputBuilder = new StringBuilder();
-                var errorBuilder = new StringBuilder();
-
-                process.OutputDataReceived += (s, e) => { if (e.Data != null) outputBuilder.AppendLine(e.Data); };
-                process.ErrorDataReceived += (s, e) => { if (e.Data != null) errorBuilder.AppendLine(e.Data); };
-
-                process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-
-                using var cts = new CancellationTokenSource(CommandExecutionPolicy.MaxDuration);
-                try { await process.WaitForExitAsync(cts.Token); }
-                catch (TaskCanceledException)
-                {
-                    try { process.Kill(true); } catch { }
-                    output = "[HATA]: İşlem 30 dakikadan uzun sürdüğü için zorla sonlandırıldı.";
-                    return new CommandExecutionResult(output, exitCode, stopwatch.Elapsed);
-                }
-
-                exitCode = process.ExitCode;
-                string stdOut = outputBuilder.ToString().Trim();
-                string stdErr = errorBuilder.ToString().Trim();
-
-                if (process.ExitCode != 0 && !string.IsNullOrWhiteSpace(stdErr))
-                    output = $"[ÇIKIŞ KODU: {process.ExitCode}]\n[HATA]:\n{stdErr}\n[ÇIKTI]:\n{stdOut}";
-                else
-                    output = string.IsNullOrWhiteSpace(stdOut) ? $"Komut çalıştı (Çıkış: {process.ExitCode}) ancak çıktı üretilmedi." : stdOut;
-
-                return new CommandExecutionResult(output, exitCode, stopwatch.Elapsed);
-            }
-            catch (Exception ex)
-            {
-                return new CommandExecutionResult($"Ajan Hatası: {ex.Message}", exitCode, stopwatch.Elapsed);
-            }
-            finally
-            {
-                stopwatch.Stop();
-                if (!string.IsNullOrEmpty(tempBatPath) && File.Exists(tempBatPath)) try { File.Delete(tempBatPath); } catch { }
-            }
-        }
-
     }
 
     public sealed class CommandExecutionResult

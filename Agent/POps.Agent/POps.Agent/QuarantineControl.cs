@@ -75,6 +75,12 @@ namespace POpsAgent
 
         public bool IsLocked => File.Exists(LockPath) || File.Exists(NetworkIsolation.StatePath);
 
+        // Heartbeat'te ayrı bildirilir (F08): kilit ekranı açık ama ağ yalıtılamamışsa sunucu kilit işlemini
+        // tamamlanmış saymaz, komutu yeniden gönderir (yalıtım yeniden denenir) ve yöneticiyi uyarır.
+        public bool ScreenLocked => File.Exists(LockPath);
+        public bool NetworkIsolated => File.Exists(NetworkIsolation.StatePath);
+        public string LastIsolationError { get; private set; }
+
         public string LockReason
         {
             get
@@ -118,9 +124,18 @@ namespace POpsAgent
             KioskMode.Engage();
             _toTray(LockdownMessage(reason));
             if (!wasLocked) _audit(LocalAudit.QuarantineStarted(AuditSource(source)));
-            if (alreadyIsolated) return true;
+            if (alreadyIsolated)
+            {
+                LastIsolationError = null;
+                return true;
+            }
             bool isolated = await _enableIsolation();
-            if (!isolated) POpsHelpers.Log("AGENT", "[GÜVENLİK] Kilit ekranı gösterildi ama ağ yalıtımı uygulanamadı.", true);
+            if (!isolated)
+            {
+                LastIsolationError = "Ağ yalıtımı uygulanamadı (güvenlik duvarı kuralı ya da sunucu adresi; ayrıntı ajan logunda)";
+                POpsHelpers.Log("AGENT", "[GÜVENLİK] Kilit ekranı gösterildi ama ağ yalıtımı uygulanamadı.", true);
+            }
+            else LastIsolationError = null;
             return isolated;
         }
 
@@ -143,6 +158,7 @@ namespace POpsAgent
                 return false;
             }
             SecureStore.Delete(LockPath);
+            LastIsolationError = null;
             KioskMode.Release();
             DnsPolicyMonitor.ResetViolations();
             _toTray(UnlockMessage(source));

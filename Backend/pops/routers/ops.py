@@ -23,15 +23,20 @@ from pops.security import require_superadmin
 router = APIRouter()
 
 # pops-backup'ın (root) yazdığı son yedek sonucu; gizli bilgi içermez
-BACKUP_STATUS_FILE = os.environ.get("POPS_BACKUP_STATUS", "/var/lib/pops/backup-status.json")
+BACKUP_STATUS_FILE = os.environ.get("POPS_BACKUP_STATUS", "/var/lib/pops-state/backup-status.json")
+# 0.1.12 ve öncesi dosyayı backend'in yazabildiği /var/lib/pops'a yazıyordu
+_LEGACY_BACKUP_STATUS_FILE = "/var/lib/pops/backup-status.json"
 
 
 def _backup_status():
-    try:
-        with open(BACKUP_STATUS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return None
+    data = None
+    for path in (BACKUP_STATUS_FILE, _LEGACY_BACKUP_STATUS_FILE):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            break
+        except (OSError, ValueError):
+            continue
     if not isinstance(data, dict):
         return None
     return {k: data.get(k) for k in ("ok", "at", "message", "bytes", "verified")}

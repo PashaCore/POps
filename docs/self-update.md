@@ -17,7 +17,7 @@ pops-selfupdate.service (systemd, ROOT, oneshot)
    ▼
 /usr/local/sbin/pops-deploy-backend   ← sağlık kontrolü + otomatik geri dönüş
    ▼
-/var/lib/pops/deploy-status.json  → panel durumu buradan okur
+/var/lib/pops-state/deploy-status.json  → panel durumu buradan okur (dizin root'a ait)
 ```
 
 ## Neden böyle?
@@ -39,7 +39,7 @@ pops-selfupdate.service (systemd, ROOT, oneshot)
 
 Kanal root'a ait `/etc/pops/selfupdate.conf` dosyasından okunur (`CHANNEL=release` ya da `CHANNEL=main`);
 dosya yoksa `release`. Panel kanalı değiştiremez. Denemek için: `sudo POPS_SELFUPDATE_DRYRUN=1 pops-selfupdate`
-(hedefi yazar, hiçbir şey dağıtmaz).
+(hedefi yazar; depoyu ileri sarmaz, durum dosyasına dokunmaz, hiçbir şey dağıtmaz).
 
 ## Kurulum (root, tek seferlik)
 
@@ -49,12 +49,14 @@ sudo install -m 755 Installer/server/pops-selfupdate         /usr/local/sbin/pop
 sudo install -m 644 Installer/server/pops-selfupdate.service /etc/systemd/system/
 sudo install -m 644 Installer/server/pops-selfupdate.path    /etc/systemd/system/
 sudo install -d -o pashacore_admin -g pashacore_admin -m 750 /var/lib/pops
+sudo install -d -o root -g root -m 755 /var/lib/pops-state
 sudo systemctl daemon-reload
 sudo systemctl enable --now pops-selfupdate.path
 ```
 
 `/var/lib/pops` backend servis kullanıcısına (`pashacore_admin`) ait olmalıdır; istek
-dosyasını backend bu dizine yazar. Kurulmazsa uç nokta `503` döner ve panelde buton
+dosyasını backend bu dizine yazar. `/var/lib/pops-state` ise root'a aittir; betik durumu ve logu oraya yazar
+(betik dizini yoksa kendisi oluşturur, başka bir kullanıcıya aitse durur). Kurulmazsa uç nokta `503` döner ve panelde buton
 "Kurulu değil" görünür — güvenli varsayılan.
 
 ## Çevrimdışı sunucu
@@ -70,4 +72,7 @@ Ajan (MSI) güncellemesi ise ayrı, imzalı release yoluyla yürür (bkz. `SECUR
   adımı atlanır ve mevcut kod yeniden dağıtılır.
 - Ağır/yıkıcı bir DB migration'ı gelirse `pops-deploy-backend` içindeki nota göre
   restart öncesi `pg_dump` + `migrate.py` adımı eklenmelidir.
-- Durum/kayıt: `/var/lib/pops/deploy-status.json` ve `/var/lib/pops/deploy.log`.
+- Durum/kayıt: `/var/lib/pops-state/deploy-status.json` ve `/var/lib/pops-state/deploy.log`. Bu dizin
+  yalnızca root'a aittir: root, backend kullanıcısının yazabildiği bir dizine yazmaz (oraya konmuş bir sembolik
+  bağ, root'a istenen dosyayı yazdırabilirdi). 0.1.12 ve öncesinden kalan `/var/lib/pops/deploy-status.json`,
+  `deploy.log` ve `backup-status.json` silinebilir.

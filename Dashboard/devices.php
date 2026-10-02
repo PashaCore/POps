@@ -303,14 +303,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Karantinadaki cihazın tepsi uygulamasına girilecek günlük çevrimdışı bypass kodu
     window.showBypassCode = async function(hostname) {
         try {
-            const res = await fetch(`${apiUrl}/api/security/bypass_token/${encodeURIComponent(hostname)}`);
+            const res = await fetch(`${apiUrl}/api/security/bypass_token/${encodeURIComponent(hostname)}`, { method: 'POST' });
             const data = res.ok ? await res.json() : {};
             if (data.status !== 'success') return showToast(data.message || 'Bypass kodu alınamadı.', 'error');
             // pending: cihaza özel anahtar gönderildi ama onayı gelmedi; ajan hangisini kullanıyorsa o kod geçer
             const codes = data.fallback_token
                 ? `${data.token}\n(Kabul edilmezse şunu deneyin: ${data.fallback_token})`
                 : data.token;
-            alert(`${hostname} için çevrimdışı bypass kodu (${data.valid_for}): ${codes}\n\nKullanıcı bu kodu POps tepsi simgesi > "Yönetici Müdahalesi (Bypass)" menüsüne girmelidir.`);
+            // Ajan (0.1.13+) her kodu günde bir kez kabul eder; her tıklama günün bir sonraki kodunu verir
+            const which = data.n ? ` · bugünün ${data.n + 1}. kodu` : '';
+            alert(`${hostname} için çevrimdışı bypass kodu (${data.valid_for}${which}): ${codes}\n\nKullanıcı bu kodu POps tepsi simgesi > "Yönetici Müdahalesi (Bypass)" menüsüne girmelidir. Her kod bir kez geçerlidir; cihaz bugün zaten bir kodla açıldıysa yeni kod için tekrar tıklayın.`);
         } catch (e) { showToast('Sunucu hatası.', 'error'); }
     };
 

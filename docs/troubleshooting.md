@@ -11,7 +11,7 @@ them, most of them in Turkish.
 | --- | --- |
 | Backend | `journalctl -u pops -n 100 --no-pager` (`pops` is the unit `install.sh` creates; use your unit name otherwise) |
 | Web server / PHP | the nginx or Apache error log |
-| Self-update | `/var/lib/pops/deploy.log`, `/var/lib/pops/deploy-status.json` |
+| Self-update | `/var/lib/pops-state/deploy.log`, `/var/lib/pops-state/deploy-status.json` |
 | Deploy script | its console output; code backups in `<backend dir>/.deploy-backups/` |
 | Agent events | panel **Log & Envanter**, or the `agent_logs_v2` table |
 | Security audit | `device_audit_logs` table; chain check with `GET /api/system/audit-verify` |
@@ -165,7 +165,7 @@ signed updates; install the MSI on them once.
 
 - **Self-update button shows "Kurulu değil" / `503 Self-update kurulu değil`.** The systemd path unit is not
   installed or `/var/lib/pops` is not writable by the backend user. See [`self-update.md`](self-update.md).
-- **Self-update state `failed`.** Read `/var/lib/pops/deploy.log`. The deploy script already restored the previous
+- **Self-update state `failed`.** Read `/var/lib/pops-state/deploy.log`. The deploy script already restored the previous
   code; the service keeps running the old version.
 - **`pops-deploy-backend`: `Backend/ altında commit'lenmemiş ya da izlenmeyen dosya var`.** Only committed code is
   deployed; commit or remove the changes first.

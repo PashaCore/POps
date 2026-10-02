@@ -67,6 +67,11 @@ class ConnectionManager:
             self.vision_sessions.pop(pc_name, None)
         return live
 
+    def drop_user_sessions(self, username: Optional[str]):
+        """Kullanıcının bütün cihazlardaki görüntü/kontrol yetkileri (oturumu iptal edildi ya da rolü düştü)."""
+        for pc_name in list(self.vision_sessions):
+            self.remove_vision_session(pc_name, username)
+
     def user_has_session(self, username: Optional[str], pc_name: str) -> bool:
         return bool(username) and username in self._live_session_users(pc_name)
 
@@ -90,9 +95,11 @@ class ConnectionManager:
         self.panel_users.pop(websocket, None)
         self.panel_roles.pop(websocket, None)
 
-    def disconnect_vision(self, pc_name: str):
-        if pc_name in self.active_vision_ws:
-            del self.active_vision_ws[pc_name]
+    def disconnect_vision(self, pc_name: str, websocket: Optional[WebSocket] = None):
+        """websocket verilirse yalnızca kayıtlı tünel o ise silinir (bkz. disconnect_agent)."""
+        if websocket is not None and self.active_vision_ws.get(pc_name) is not websocket:
+            return
+        self.active_vision_ws.pop(pc_name, None)
 
     def rename_agent(self, old_name: str, new_name: str):
         if old_name in self.active_agents:
@@ -100,12 +107,18 @@ class ConnectionManager:
         if old_name in self.active_vision_ws:
             self.active_vision_ws[new_name] = self.active_vision_ws.pop(old_name)
 
-    async def send_command(self, message: dict, pc_name: str):
-        if pc_name in self.active_agents:
-            try:
-                await self.active_agents[pc_name].send_text(json.dumps(message))
-            except Exception:
-                self.disconnect_agent(pc_name)
+    async def send_command(self, message: dict, pc_name: str) -> bool:
+        """Mesaj sokete yazıldıysa True. Hata olursa YALNIZCA bu soket kayıttan düşer: gönderim beklerken aynı
+        cihazın yeni bağlantısı kaydedilmiş olabilir, o silinmemeli."""
+        ws = self.active_agents.get(pc_name)
+        if ws is None:
+            return False
+        try:
+            await ws.send_text(json.dumps(message))
+            return True
+        except Exception:
+            self.disconnect_agent(pc_name, ws)
+            return False
 
     async def broadcast_to_panels(self, message: dict):
         disconnected = []
@@ -140,7 +153,8 @@ class ConnectionManager:
             return
         disconnected = []
         for panel in self.active_panels:
-            if self.panel_users.get(panel) in allowed:
+            # Rol, panelin periyodik yeniden doğrulamasıyla güncel tutulur (bkz. control.websocket_panel)
+            if self.panel_users.get(panel) in allowed and self.panel_roles.get(panel) in ("admin", "superadmin"):
                 try:
                     await panel.send_text(json.dumps(message))
                 except Exception:
@@ -149,13 +163,15 @@ class ConnectionManager:
             self.disconnect_panel(p)
 
     async def send_remote_input_to_vision(self, message: dict, pc_name: str):
-        if pc_name in self.active_vision_ws:
-            try:
-                await self.active_vision_ws[pc_name].send_text(json.dumps(message))
-                return True
-            except Exception:
-                self.disconnect_vision(pc_name)
-        return False
+        ws = self.active_vision_ws.get(pc_name)
+        if ws is None:
+            return False
+        try:
+            await ws.send_text(json.dumps(message))
+            return True
+        except Exception:
+            self.disconnect_vision(pc_name, ws)
+            return False
 
 
 manager = ConnectionManager()

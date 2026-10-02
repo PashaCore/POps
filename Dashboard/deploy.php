@@ -307,6 +307,7 @@ function openPkgModal(editId = null) {
                             document.getElementById('pkgParams').value = paramJson.A || '';
                             document.getElementById('pkgEditId').dataset.oldU = paramJson.U;
                             document.getElementById('pkgEditId').dataset.oldF = paramJson.F;
+                            document.getElementById('pkgEditId').dataset.oldH = paramJson.H || '';
                             document.getElementById('pkgEditId').dataset.oldMeta = item.meta;
                         }
                     }
@@ -359,26 +360,29 @@ window.savePackage = async function() {
 
     try {
         if (type === 'package') {
-            let fileUrl = '', filePath = '';
+            let fileUrl = '', filePath = '', fileHash = '';
             if (!editId || isNewFileSelected) {
                 if (!isNewFileSelected) throw new Error('Lütfen kurulum dosyası seçin.');
                 const fd = new FormData(); fd.append('file', fileInput.files[0]);
                 const up = await fetch(`${getApiBase()}/api/upload`, { method: 'POST', body: fd });
                 if (!up.ok) throw new Error('Dosya yüklenemedi.');
                 const upData = await up.json();
-                fileUrl = OMYO_API.DOWNLOAD_URL + '/' + upData.filename;
+                // İmzalı adres (sunucu /download'u imzasız vermez) ve dosyanın SHA-256 özeti
+                fileUrl = OMYO_API.DOWNLOAD_URL + '/' + encodeURIComponent(upData.filename) + '?sig=' + encodeURIComponent(upData.sig);
+                fileHash = upData.sha256 || '';
                 filePath = 'C:\\POpsLogs\\' + upData.filename;
                 metaInfo = `${upData.filename} | ${(fileInput.files[0].size / (1024 * 1024)).toFixed(1)} MB`;
             } else {
                 fileUrl = document.getElementById('pkgEditId').dataset.oldU;
                 filePath = document.getElementById('pkgEditId').dataset.oldF;
+                fileHash = document.getElementById('pkgEditId').dataset.oldH || '';
                 metaInfo = document.getElementById('pkgEditId').dataset.oldMeta.replace(' (Reboot)', '');
             }
             if (needsReboot && !metaInfo.includes('(Reboot)')) metaInfo += ' (Reboot)';
             const params = document.getElementById('pkgParams').value.trim();
-            const payloadForPS = { U: fileUrl, F: filePath, A: params, R: needsReboot ? 1 : 0 };
+            const payloadForPS = { U: fileUrl, F: filePath, A: params, R: needsReboot ? 1 : 0, H: fileHash };
             const b64Params = btoa(unescape(encodeURIComponent(JSON.stringify(payloadForPS))));
-            const psCode = `New-Item -ItemType Directory -Force -Path 'C:\\POpsLogs' | Out-Null; $L='C:\\POpsLogs\\deploy_trace.txt'; function T($m){ $d='['+(Get-Date -f 'HH:mm:ss')+'] '+$m; Add-Content $L $d; Write-Output $d }; T '--- OPERASYON BASLADI ---'; try { T '1. Parametreler'; $j=ConvertFrom-Json([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64Params}'))); T ('2. URL: '+$j.U); [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { (New-Object System.Net.WebClient).DownloadFile($j.U, $j.F); } catch { T '[HATA] Indirilemedi'; exit 1; } if (!(Test-Path $j.F)) { exit 1; } T '4. Indi.'; Unblock-File $j.F -ea 0; $Ext = [IO.Path]::GetExtension($j.F).ToLower(); if($Ext -eq '.zip'){ Expand-Archive $j.F 'C:\\POpsLogs\\T' -Force; $b=Get-ChildItem 'C:\\POpsLogs\\T' -Filter 'install.bat' -Recurse | Select -First 1; if(!$b){ exit 1 }; $p=Start-Process 'cmd.exe' "/c \`"$($b.FullName)\`" $($j.A)" -Wait -NoNewWindow -PassThru } elseif($Ext -eq '.msi'){ $p=Start-Process 'msiexec.exe' "/i \`"$($j.F)\`" /qn /norestart $($j.A)" -Wait -NoNewWindow -PassThru } else { $p=Start-Process $j.F -ArgumentList $($j.A) -Wait -NoNewWindow -PassThru }; T ('Bitti: '+$p.ExitCode); if($p.ExitCode -in 0,3010){ if($j.R -eq 1){ shutdown -r -t 15 } } else { exit 1 } } catch { T ('[HATA] '+$_); exit 1 }`;
+            const psCode = `New-Item -ItemType Directory -Force -Path 'C:\\POpsLogs' | Out-Null; $L='C:\\POpsLogs\\deploy_trace.txt'; function T($m){ $d='['+(Get-Date -f 'HH:mm:ss')+'] '+$m; Add-Content $L $d; Write-Output $d }; T '--- OPERASYON BASLADI ---'; try { T '1. Parametreler'; $j=ConvertFrom-Json([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64Params}'))); T ('2. URL: '+$j.U); [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { (New-Object System.Net.WebClient).DownloadFile($j.U, $j.F); } catch { T '[HATA] Indirilemedi'; exit 1; } if (!(Test-Path $j.F)) { exit 1; } if ($j.H -and ((Get-FileHash -Algorithm SHA256 $j.F).Hash -ne $j.H)) { T '[HATA] Dosya ozeti uyusmuyor; calistirilmadi'; Remove-Item $j.F -Force -ea 0; exit 1 } T '4. Indi.'; Unblock-File $j.F -ea 0; $Ext = [IO.Path]::GetExtension($j.F).ToLower(); if($Ext -eq '.zip'){ Expand-Archive $j.F 'C:\\POpsLogs\\T' -Force; $b=Get-ChildItem 'C:\\POpsLogs\\T' -Filter 'install.bat' -Recurse | Select -First 1; if(!$b){ exit 1 }; $p=Start-Process 'cmd.exe' "/c \`"$($b.FullName)\`" $($j.A)" -Wait -NoNewWindow -PassThru } elseif($Ext -eq '.msi'){ $p=Start-Process 'msiexec.exe' "/i \`"$($j.F)\`" /qn /norestart $($j.A)" -Wait -NoNewWindow -PassThru } else { $p=Start-Process $j.F -ArgumentList $($j.A) -Wait -NoNewWindow -PassThru }; T ('Bitti: '+$p.ExitCode); if($p.ExitCode -in 0,3010){ if($j.R -eq 1){ shutdown -r -t 15 } } else { exit 1 } } catch { T ('[HATA] '+$_); exit 1 }`;
             const encoded = strToBase64UTF16LE(psCode);
             finalCommand = 'powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -EncodedCommand ' + encoded;
         } else {

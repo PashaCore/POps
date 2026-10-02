@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Server: self-update and backups no longer write as root into a directory the backend can write.** `pops-selfupdate` and `pops-backup` kept their status and log files in `/var/lib/pops`, which belongs to the backend user; whoever controlled that account could replace them with symbolic links and make root write or `chown` any file. Root now writes only to the root-owned `/var/lib/pops-state` (created with a temporary file and `rename`, no `chown`), and the backend only reads from there. The dry run no longer fast-forwards the repository or overwrites the status.
+- **Server: a refused enrollment changes nothing.** A connection with an enrollment token for a device that already has a secret used to replace the live connection, mark its running tasks as finished and update the device record before it was refused; the real agent then stayed connected but unreachable. The permission is now checked before any of that, and a connection is registered only after it has been authorized.
+- **Server: enrollment is one transaction.** Taking a use from the token, the one-time re-enrollment permission and the device secret are written together; when the token was used up or expired in the meantime nothing is written and the agent gets `4401`. Tokens are stored only as SHA-256 hashes (migration `0014`); the panel shows a token once, when it is created.
+- **Server: a device authenticated with its secret keeps its identity.** Hardware data that resembles another device no longer moves the connection, the secret or the bypass key to that device; a large mismatch is recorded for the administrator. Placeholder hardware values ("Default string", empty serials, all-zero MAC) no longer count as a match.
+- **Server: agent identity enforcement fails closed** when the setting cannot be read, and is on by default for new installations.
+- **Server: revoked panel sessions are closed.** Every open panel connection is re-validated every 10 seconds; a deleted, demoted or signed-out user loses the connection and any screen or control grant, even if only watching.
+- **Server: one device can no longer answer another device's screenshot request.**
+- **Server: deployment packages are downloaded only with a signed link** returned at upload, and the deployment script checks the file's SHA-256 before running it.
+- **Server: closing a stale connection no longer drops the device's new connection** (command and Vision).
+- **Agent: an offline bypass code with the per-device key is accepted once per day.** Someone who saw a code cannot reuse it when the PC is quarantined again the same day; the panel hands out the day's next code each time (up to 10). The bypass code endpoint is now `POST` and not cached.
+
 ### Fixed
+
+- **Server/Agent: task results tell what happened.** A task whose send failed goes back to the queue. When an agent reconnects, a running task stays running if the same agent process can still send the result (0.1.13), becomes `Interrupted` if the agent restarted (`Completed (Rebooted)` for a restart command), and `Unknown` otherwise; it is no longer reported as finished. Agents send the exit code; a non-zero code marks the task `Failed`. A running task cannot be paused or retried (no second copy), and cancelling it stops the process on the PC.
+- **Agent: command output is limited while it is read**, not at the end, so a command that floods its output cannot exhaust the service's memory. Stopping the service also stops running commands.
+- **Agent/Server: a quarantine whose network isolation failed is reported as such.** The heartbeat reports the lock screen and network isolation separately; the server keeps the lock pending (the agent retries) and notifies the administrator instead of showing the PC as isolated.
+- **Server: deleting a device is one transaction** and closes its queued and running tasks.
+- **Server: no database means not ready.** The backend stops after five failed database attempts (systemd and Docker restart it) instead of running without a database, and `/api/health` answers `503` while the database is unreachable.
+- **Server: the client address is the one the reverse proxy reports,** not the first `X-Forwarded-For` value, which the client controls.
+- **CI: a release is published only after the full CI suite passes on the tagged commit.**
+
 
 - **Agent: the update result reaches the Windows event log (1030).** It was written only at service start, but the updater records the result after the new version has started, and the agent moves the file aside once the server has it, so event 1030 never appeared. The agent now writes it once, when it first sees the result, whether or not the server is reachable.
 - **Panel: capability buttons say what they do.** A capability turned off at install shows "(kurulumda kapatılmış)", its button reads "Terminali kapalı tut" / "Vision'ı kapalı tut" (it stays off even if the agent is reinstalled with it on), and the disabled "İzin ver" explains that a capability cannot be turned on remotely. A capability locked from the panel shows "(panelden kalıcı kapatıldı)".
@@ -15,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.12-alpha] - 2026-09-30
 
-Fixes from the external security audit. An update counts as successful only once the new agent is really running, otherwise it rolls back. Vision accepts only the device's own key. Every PC gets its own offline bypass key, so a key read on one PC opens only that PC. The agent keeps a local record of remote commands, Vision sessions and quarantines in the Windows event log, where the server cannot erase it. Heartbeats report the agent's health, shown on the System page.
+Fixes from the external security audit. An update counts as successful only once the new agent is really running, otherwise it rolls back. Vision accepts only the device's own key. Every PC gets its own offline bypass key, so a key read on one PC opens only that PC. The agent keeps a local record of remote commands, Vision sessions and quarantines in the Windows event log, independent of the server. Heartbeats report the agent's health, shown on the System page.
 
 Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**; migration `0013`), then send 0.1.12-alpha to the agents. Each agent receives its bypass key when it reconnects; until the agent confirms it, the panel shows the legacy code as a fallback.
 

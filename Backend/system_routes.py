@@ -14,6 +14,7 @@ server.py'yi import etmez (döngüsel import yok). Python 3.9 uyumlu.
 """
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import re
@@ -24,6 +25,7 @@ import urllib.request
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import release_verify
@@ -68,6 +70,8 @@ RELEASES_DIR = os.path.join(BASE_DIR, "releases")
 # dizini. Root systemd path-unit (pops-selfupdate.path) bu dosyayı izleyip deploy'u
 # çalıştırır. Dizin yoksa/yazılamıyorsa self-update "kurulu değil" sayılır (uç 503 döner).
 SELFUPDATE_DIR = os.environ.get("POPS_SELFUPDATE_DIR", "/var/lib/pops")
+# Root'un yazdığı durum dosyaları (deploy-status.json, deploy.log): yalnız root'un yazabildiği dizin
+STATE_DIR = os.environ.get("POPS_STATE_DIR", "/var/lib/pops-state")
 # Sunucu güncelleme kanalı (root'a ait; pops-selfupdate de aynı dosyayı okur): release (varsayılan) | main
 SELFUPDATE_CONF = os.environ.get("POPS_SELFUPDATE_CONF", "/etc/pops/selfupdate.conf")
 
@@ -202,11 +206,14 @@ def _fetch_github_compare(rev: str) -> Optional[dict]:
 
 def _read_deploy_status() -> Optional[dict]:
     """Root self-update betiğinin yazdığı son deneme: state (running|ok|failed), rev, at."""
-    try:
-        with open(os.path.join(SELFUPDATE_DIR, "deploy-status.json"), "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return None
+    # Eski kurulumlar dosyayı istek dizinine yazıyordu; yeni dizinde yoksa oraya bakılır
+    for directory in (STATE_DIR, SELFUPDATE_DIR):
+        try:
+            with open(os.path.join(directory, "deploy-status.json"), "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            continue
+    return None
 
 
 async def _server_update(force: bool = False) -> dict:
@@ -358,7 +365,9 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             db_ok = True
         except Exception:
             db_ok = False
-        return {"status": "ok" if db_ok else "degraded", "database": db_ok, "version": _read_version()}
+        body = {"status": "ok" if db_ok else "degraded", "database": db_ok, "version": _read_version()}
+        # Veritabanı yoksa hizmet hazır değildir: 503 (curl -f, ters vekil ve Docker sağlık kontrolü bunu görür)
+        return body if db_ok else JSONResponse(body, status_code=503)
 
     @router.get("/api/system/version")
     async def system_version(check: bool = False, auth: dict = Depends(require_admin)):
@@ -562,16 +571,17 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         lab = (data.lab_name or "").strip() or None
         note = (data.note or "").strip() or None
         token = secrets.token_urlsafe(24)
+        # Veritabanında yalnızca özet ve tanıma ipucu (ilk 6 karakter) kalır; jeton yalnızca şimdi gösterilir
         await execute_query(
-            "INSERT INTO enroll_tokens (token, lab_name, note, expires_at, max_uses) "
-            "VALUES ($1, $2, $3, NOW() + make_interval(hours => $4), $5)",
-            (token, lab, note, ttl, uses))
+            "INSERT INTO enroll_tokens (token_hash, token_hint, lab_name, note, expires_at, max_uses) "
+            "VALUES ($1, $2, $3, $4, NOW() + make_interval(hours => $5), $6)",
+            (hashlib.sha256(token.encode("utf-8")).hexdigest(), token[:6], lab, note, ttl, uses))
         return {"token": token, "lab_name": lab, "note": note, "ttl_hours": ttl, "max_uses": uses}
 
     @router.get("/api/system/enroll-tokens")
     async def list_enroll_tokens(auth: dict = Depends(require_superadmin)):
         return await execute_query(
-            "SELECT id, token, lab_name, note, created_at, expires_at, is_used, used_by, used_at, "
+            "SELECT id, token_hint, lab_name, note, created_at, expires_at, is_used, used_by, used_at, "
             "max_uses, use_count, (expires_at < NOW() AND NOT is_used) AS expired "
             "FROM enroll_tokens ORDER BY id DESC LIMIT 200", fetch=True)
 

@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  # Sürüm iş akışı (release.yml) yayından önce bütün testleri aynı commit'te bununla yeniden çalıştırır
+  workflow_call:
 
 permissions:
   contents: read
@@ -391,6 +393,7 @@ jobs:
           python Backend/tests/test_agent_authz.py
           python Backend/tests/test_remote_authz.py
           python Backend/tests/test_device_keys.py
+          python Backend/tests/test_hardening.py
           python Backend/tests/test_f4_accountability.py
           python Backend/tests/test_features.py
           python Backend/tests/test_helpdesk_licenses.py

@@ -135,7 +135,7 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | POST | `/api/flush_queue` | require_admin | Deletes all task records; the deletion (who, how many) is written to the hash-chained audit log first. |
 | GET | `/api/get_concurrent_limit` | require_auth | Current `concurrent_limit` (default 5). |
 | POST | `/api/set_concurrent_limit` | require_admin | `{limit}`: how many devices may run a task at the same time; `0` means no limit. |
-| POST | `/api/upload` | require_admin | Multipart `file`. Stored under `Backend/storage` with a sanitised name and served at `/download/<name>`. |
+| POST | `/api/upload` | require_admin | Multipart `file`. Stored under `Backend/storage` with a sanitised name. Returns `sig` (and `url`) for the signed download link and the file's `sha256`. |
 | GET | `/api/packages` | require_auth | Saved package definitions of the Deployment page. |
 | POST | `/api/add_package` | require_admin | `{id, name, type, meta, command, icon, color}`; insert or update. |
 | POST | `/api/delete_package` | require_admin | `{id}`. |
@@ -159,7 +159,7 @@ See [`vision.md`](vision.md) for the session rules.
 | --- | --- | --- | --- |
 | POST | `/api/security/lockdown` | require_admin | `{target_pc, reason}`: marks the device quarantined and sends `lockdown`. Logged to both audit tables. |
 | POST | `/api/security/unlock` | require_admin | `{target_pc, reason}`: clears quarantine and sends `unlock`. |
-| GET | `/api/security/bypass_token/{pc_name}` | require_admin | Today's offline bypass code for the device (needs `BYPASS_SECRET`). Every request is logged. |
+| POST | `/api/security/bypass_token/{pc_name}` | require_admin | The device's next offline bypass code for today (per-device key; the legacy `BYPASS_SECRET` code for older agents). Each request returns the next of up to 10 daily codes (`n`), because 0.1.13+ agents accept each code once. Logged, `Cache-Control: no-store`. |
 
 ### Agent policies
 
@@ -312,7 +312,7 @@ off (`401` without, `403` for another device). The subject must have at least 3 
 
 | Path | Served from | Notes |
 | --- | --- | --- |
-| `/download/<name>` | `Backend/storage` | Files uploaded with `/api/upload`. Served **without authentication**, because agents download packages from here. |
+| `/download/<name>?sig=…` | `Backend/storage` | Files uploaded with `/api/upload`, only with the signed link (no login, because agents download packages from here; a wrong or missing signature gets 404). |
 | `/updates/<name>` | `Backend/updates` | The agent MSI copied there by `deploy-update`. Served without authentication; agents check its size and SHA-256 against the signed manifest. |
 
 ## WebSockets

@@ -78,7 +78,7 @@ Four .NET 8 programs installed by one MSI ([`agent.md`](agent.md)):
 | Agent ↔ backend | WSS `/ws/agent/{hw_id}` | enrollment token, then per-device secret | Heartbeats every 5 s, commands and their results, update results, capabilities. |
 | Agent ↔ backend | WSS `/ws/vision/{hw_id}` | same | Live frames and remote input, only during a remote-control session. |
 | Agent → backend | HTTPS `/api/agent_policies`, `/api/inventory/{hw_id}` | `X-Agent-Id` + `X-Agent-Secret` (inventory) | Policy (every 60 s), hardware inventory. |
-| Agent → backend | HTTPS `/updates/<msi>`, `/download/<file>` | none (content verified by the agent for updates) | Signed update package, deployment files. |
+| Agent → backend | HTTPS `/updates/<msi>`, `/download/<file>?sig=…` | none for updates (the agent verifies the signed manifest); a signed link for deployment files, whose SHA-256 the deployment script checks | Signed update package, deployment files. |
 | Service ↔ tray | named pipe `POpsTrayPipe` | the service checks the client is the installed `POpsTray.exe` | Consent, notices, lock screen, capture, remote input. |
 | Backend → GitHub | HTTPS | none | Version check and signed release download (optional; works offline without it). |
 | Backend → mail server, webhook | SMTP, HTTP(S) `POST` | SMTP login from `.env` | Notifications, only if configured. |

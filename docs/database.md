@@ -45,6 +45,10 @@ tables from Python code at startup and never edit a migration that has already b
 | `0008_token_version_and_task_actor.sql` | `users.token_version` (session revocation) and `tasks.created_by`. |
 | `0009_notifications_schedules_inventory.sql` | `notifications`, `scheduled_tasks`, `device_software`, `device_patch_status`. |
 | `0010_licenses_helpdesk.sql` | `licenses`, `tickets`, `ticket_messages`. |
+| `0011_quarantine_pending.sql` | `clients.pending_quarantine_action` / `pending_quarantine_reason` (lock or unlock requested while the device was offline or before it confirmed). |
+| `0012_server_ca.sql` | `clients.cap_server_ca` (how the agent verifies the server certificate: school CA or Windows store). |
+| `0013_agent_health_bypass_keys.sql` | `clients.agent_health` (heartbeat health summary) and `agent_bypass_keys` (per-device offline bypass keys). |
+| `0014_hardening.sql` | Enrollment tokens stored as hashes; `tasks.exit_code` / `dispatched_at`; partial index for the task queue; agent identity enforcement on by default for new installs. |
 
 ## Tables
 
@@ -69,7 +73,7 @@ At startup the backend marks every device `Offline`; agents that reconnect are w
 
 | Table | Contents |
 | --- | --- |
-| `tasks` | Command queue: `target_pc`, `target_lab`, `script_path` (the command line the agent runs), `status`, `created_at`, `output`, `created_by`. Statuses used by the code: `Pending`, `Running`, `Completed`, `Completed (Rebooted)`, `Paused`, `Cancelled`. |
+| `tasks` | Command queue: `target_pc`, `target_lab`, `script_path` (the command line the agent runs), `status`, `created_at`, `output`, `created_by`. `exit_code` and `dispatched_at` (migration `0014`). Statuses used by the code: `Pending`, `Running`, `Completed`, `Failed` (non-zero exit code), `Completed (Rebooted)` (a restart command, agent restarted), `Interrupted` (the agent restarted while the command ran), `Unknown` (the connection dropped and the agent cannot resend the result), `Paused`, `Cancelled`. |
 | `packages` | Package and script definitions of the Deployment page (`id`, `name`, `type`, `meta`, `command`, `icon`, `color`). The uploaded files themselves are on disk in `Backend/storage`. |
 | `scheduled_tasks` | Scheduled commands: `name`, `command`, `target_mode` (`ALL` / `LAB` / `PC`), `targets` (JSON list of labs or hardware IDs), `schedule_type` (`once` / `daily` / `weekly`), `run_at` (once), `time_of_day` (`HH:MM`, server time zone), `weekdays` (`1`–`7`, 1 = Monday), `enabled`, `next_run`, `last_run`, `last_result`, `created_by`, `created_at`. When due, the scheduler inserts normal rows into `tasks`. |
 
@@ -102,7 +106,7 @@ Deleting a device also deletes its rows in both tables.
 
 | Table | Contents |
 | --- | --- |
-| `enroll_tokens` | Enrollment tokens: `token`, `lab_name`, `note`, `created_at`, `expires_at`, `max_uses`, `use_count`, `is_used`, `used_by`, `used_at`. |
+| `enroll_tokens` | Enrollment tokens: `token_hash` (SHA-256; since migration `0014` the token itself is not stored and is shown only once, at creation), `token_hint` (first 6 characters), `lab_name`, `note`, `created_at`, `expires_at`, `max_uses`, `use_count`, `is_used`, `used_by`, `used_at`. A use is consumed in the same transaction that stores the device secret. |
 | `agent_secrets` | Per-device secret as a **SHA-256 hash** (`secret_hash`); the plaintext is never stored. Moved with the device when its identity is reconciled, deleted when the device is deleted. |
 | `agent_bypass_keys` | Per-device offline bypass key (migration `0013`): `secret` (32 bytes, base64url), `fingerprint`, `issued_at`, `confirmed_at` (set when the agent acknowledges the fingerprint). Stored in the clear because codes are generated while the device is offline; anyone who can write the database can already lift a quarantine from the panel. Moved with the device and deleted with it. |
 

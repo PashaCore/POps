@@ -173,7 +173,7 @@ The signing key exists only as a GitHub secret; the public key is `keys/pops_rel
 | What | Where |
 | --- | --- |
 | Backend | `journalctl -u pops` (the unit created by `install.sh`; use your unit name otherwise) |
-| Deploy and self-update | output of `pops-deploy-backend`; for self-update `/var/lib/pops/deploy.log` and `/var/lib/pops/deploy-status.json` |
+| Deploy and self-update | output of `pops-deploy-backend`; for self-update `/var/lib/pops-state/deploy.log` and `/var/lib/pops-state/deploy-status.json` |
 | Panel (PHP) | the web server's error log |
 | Agents | see [`troubleshooting.md`](troubleshooting.md#where-the-logs-are) |
 
