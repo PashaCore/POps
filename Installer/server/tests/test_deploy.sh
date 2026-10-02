@@ -325,6 +325,12 @@ chmod 666 "$E/selfupdate.conf"; release v0.0.9 A; run_su; chmod 644 "$E/selfupda
 check "herkesin yazabildiği selfupdate.conf okunmadı: durum failed, deploy yok, HEAD aynı" \
     '[ "$RC" != 0 ] && [ "$(su_head)" = "$(tag_commit v0.0.8)" ] && [ ! -s "$T/calls/deploy" ] && has "ayar dosyasi guvenli degil" "$STATUS"'
 
+echo "-- uzaktan gelen tırnaklı etiket adı durum dosyasını bozmaz"
+release 'v0.0.11"x' none; run_su
+check "tırnaklı etiket adı reddedildi; durum geçerli JSON, deploy yok, HEAD aynı" \
+    '[ "$RC" != 0 ] && [ ! -s "$T/calls/deploy" ] && [ "$(su_head)" = "$(tag_commit v0.0.8)" ] && has "gecersiz etiket adi" "$STATUS" && python3 -c "import json, sys; json.load(open(sys.argv[1]))" "$STATUS"'
+git -C "$D" push -q origin ':refs/tags/v0.0.11"x'; git -C "$D" tag -d 'v0.0.11"x' >/dev/null; git -C "$S" tag -d 'v0.0.11"x' >/dev/null
+
 echo "-- CHANNEL=main (geliştirme kanalı): imza denetlenmez"
 sed -i 's/^CHANNEL=.*/CHANNEL=main/' "$E/selfupdate.conf"
 write_v "$D" 0.0.10-dev; commit "$D" dev; git -C "$D" push -q origin main

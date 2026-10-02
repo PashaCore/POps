@@ -59,8 +59,9 @@ fi
 if [ -z "$APP" ] || [ ! -d "$APP" ]; then die "APP bulunamadı: '$APP' (ayar: $CONF). Hiçbir şey değiştirilmedi."; fi
 id -u "$OWNER" >/dev/null 2>&1 || die "OWNER kullanıcısı yok: '$OWNER' (ayar: $CONF). Hiçbir şey değiştirilmedi."
 GROUP=$(id -gn "$OWNER")
-case "$KEEP_BACKUPS" in ''|*[!0-9]*|0) die "KEEP_BACKUPS 1 ya da daha büyük bir sayı olmalı (ayar: $CONF)" ;; esac
-case "$HEALTH_WAIT" in ''|*[!0-9]*) die "HEALTH_WAIT saniye olmalı (ayar: $CONF)" ;; esac
+# Baştaki sıfır da reddedilir: kabuk aritmetiği 010'u sekizlik okur, 00 ise bütün yedekleri sildirirdi
+case "$KEEP_BACKUPS" in ''|*[!0-9]*|0*) die "KEEP_BACKUPS 1 ya da daha büyük bir sayı olmalı (ayar: $CONF)" ;; esac
+case "$HEALTH_WAIT" in ''|*[!0-9]*|0[0-9]*) die "HEALTH_WAIT saniye olmalı (ayar: $CONF)" ;; esac
 SVC=${SVC%.service}
 [ "$(systemctl show -p LoadState --value "$SVC.service" 2>/dev/null)" = loaded ] \
     || die "systemd birimi bulunamadı: '$SVC' (ayar: $CONF). Hiçbir şey değiştirilmedi."
@@ -84,14 +85,14 @@ managed_files() {
 rollback() {   # $1=neden. Kod setini ve (değiştiyse) venv'i yedekten geri yükler, servisi yeniden başlatır, çıkar.
     set +e   # geri yüklemenin hiçbir adımı yarıda kesilmesin
     trap - ERR
-    trap '' INT TERM HUP
+    trap '' INT TERM HUP PIPE   # çıktıyı okuyan (ör. ssh | tee) ölse de geri yükleme yarıda kalmasın
     echo "$1, önceki kod seti geri yükleniyor ($BACKUP)."
     # Bu deploy'un YENİ eklediği dosyaları sil (öncesinde yoklardı)
     managed_files | grep -vxF -f "$PRE_LIST" | ( cd "$APP" && xargs -r rm -f )
     rm -rf "$APP/pops"
+    # root olarak açılan arşiv dosyaların sahibini ve iznini de geri getirir; ayrıca chown yapılmaz (APP'te root'a
+    # ait yönetim betikleri olabilir, servis kullanıcısına geçmemeli)
     tar xzf "$BACKUP" -C "$APP" || echo "UYARI: kod yedeği açılamadı: $BACKUP"
-    chown -R "$OWNER:$GROUP" "$APP"/*.py "$APP/migrations" 2>/dev/null || true
-    [ -d "$APP/pops" ] && chown -R "$OWNER:$GROUP" "$APP/pops"
     if [ -n "$VENV_BACKUP" ]; then
         # pip'in yarım bıraktığı venv kenara alınır, anlık görüntü AYNI mutlak yola açılır
         # (konsol betiklerinin #! satırları venv'in yolunu içerir).
@@ -232,14 +233,14 @@ ok=0
 for _ in $(seq 1 $(( HEALTH_WAIT > 2 ? HEALTH_WAIT / 2 : 1 ))); do
     sleep 2
     if systemctl is-active --quiet "$SVC" \
-        && [ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/health")" = 200 ]; then
+        && [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/health")" = 200 ]; then
         ok=1
         break
     fi
 done
 if [ "$ok" = 1 ]; then
-    [ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/agent_policies")" = 200 ] || ok=0
-    [ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/devices")" = 401 ] || ok=0
+    [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/agent_policies")" = 200 ] || ok=0
+    [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/devices")" = 401 ] || ok=0
 fi
 
 if [ "$ok" = 1 ]; then
