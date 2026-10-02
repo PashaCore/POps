@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.16-alpha] - 2026-10-03
+
 The panel is redesigned: one calm layout on every page, one action bar per page instead of buttons on every row and desk, details in a panel that opens on click, and every operation shows who sent it, when, from which page, to which PCs, the result and, when it failed or was refused, why. Anything sent to PCs shows its progress in a job center at the bottom of the sidebar.
 
-Upgrading: update the server (**Sistem → Sunucuyu güncelle**; migration `0019`). Nothing changes on the agents.
+Upgrading: update the server (**Sistem → Sunucuyu güncelle**; migration `0019`). The agent code is unchanged; the 0.1.16-alpha agent package is the same build with the new version number, so updating agents is optional.
 
 ### Added
 
@@ -556,7 +558,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.15-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.16-alpha...HEAD
+[0.1.16-alpha]: https://github.com/PashaCore/POps/compare/v0.1.15-alpha...v0.1.16-alpha
 [0.1.15-alpha]: https://github.com/PashaCore/POps/compare/v0.1.14-alpha...v0.1.15-alpha
 [0.1.14-alpha]: https://github.com/PashaCore/POps/compare/v0.1.13-alpha...v0.1.14-alpha
 [0.1.13-alpha]: https://github.com/PashaCore/POps/compare/v0.1.12-alpha...v0.1.13-alpha
