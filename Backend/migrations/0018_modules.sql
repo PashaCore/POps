@@ -1,4 +1,4 @@
--- 0017: modüller (bkz. pops/modules.py, docs/design/modules.md). Bir modülün kurum geneli ('org', scope_id '')
+-- 0018: modüller (bkz. pops/modules.py, docs/design/modules.md). Bir modülün kurum geneli ('org', scope_id '')
 -- ya da laboratuvar bazında ('lab', scope_id = lab adı) açık/kapalı ayarı. Satır yoksa modül açıktır; en özel
 -- ayar kazanır. config, modüle özel ayarlar içindir (gizli değerler secretbox ile şifrelenir).
 CREATE TABLE IF NOT EXISTS module_settings (
