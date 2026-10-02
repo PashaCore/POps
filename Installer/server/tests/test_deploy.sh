@@ -188,6 +188,27 @@ check "APP birebir aynı (pip'in yarım bıraktığı venv dahil)" '[ "$BEFORE" 
 check "sağlık kontrolüne gelinmedi" '[ ! -s "$T/calls/curl" ]'
 [ "$BEFORE" = "$(snap "$A")" ] || show_out
 
+echo "-- (c) venv'de OWNER'a ait olmayan dosya: pip'e gelinmeden durur"
+OTHER=""
+for u in nobody daemon bin; do
+    if [ "$u" != "$ME" ] && id -u "$u" >/dev/null 2>&1; then OTHER=$u; break; fi
+done
+if [ -n "$OTHER" ]; then
+    # Root olmadan başka kullanıcıya ait dosya yaratılamaz; bunun yerine OWNER başka bir kullanıcı: venv'deki her dosya
+    # "OWNER'a ait değil" görünür
+    sed "s/^OWNER=.*/OWNER=$OTHER/" "$T/etc/deploy.conf" > "$T/etc/deploy-foreign.conf"; chmod 644 "$T/etc/deploy-foreign.conf"
+    BEFORE=$(snap "$A")
+    run_deploy "$T/etc/deploy-foreign.conf"
+    check "çıkış 1, sebep ve chown önerisi" \
+        '[ "$RC" != 0 ] && has "kullanıcısına ait olmayan" "$T/out" && has "chown -R $OTHER:" "$T/out"'
+    check "pip çağrılmadı, restart yok" '[ ! -s "$T/calls/pip" ] && ! has restart "$T/calls/systemctl"'
+    check "APP birebir aynı" '[ "$BEFORE" = "$(snap "$A")" ]'
+    check "yedek bırakılmadı" '[ -z "$(find "$A/.deploy-backups" -newer "$T/etc/deploy-foreign.conf" -name "code-*")" ]'
+    [ "$BEFORE" = "$(snap "$A")" ] || show_out
+else
+    echo "  atlandı: başka bir sistem kullanıcısı yok"
+fi
+
 echo "-- (c) kod kopyalanırken hata (set -e yolu): yine tek geri dönüş"
 BEFORE=$(snap "$A"); echo '*/pops/routers/a.py' > "$T/ctl/install_fail"
 run_deploy; rm -f "$T/ctl/install_fail"

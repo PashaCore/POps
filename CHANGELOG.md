@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Server: a deploy whose virtual environment holds files of another user stops before `pip`.** `pops-deploy-backend` checks that every file in the venv belongs to `OWNER` before installing changed requirements; otherwise it changes nothing and prints the `chown` command. On the development server, packages once installed as root made `pip` fail half-way through the 0.1.14 update.
+- **Server: a task result is shown only for the device's own task.** A result whose task ID belongs to another device or no longer exists is still acknowledged (the agent stops resending it) but is no longer broadcast to the panels.
+- **Panel: the server-update confirmation names what is installed** (the latest published release, or `main` on the development channel); it always said `main`.
+
 ### Agent
 
 - **.NET 10, self-contained: no prerequisite on the PC.** .NET 8 support ends on 10 November 2026. The agent, tray, watchdog and updater now target .NET 10 (LTS) and are published self-contained into one folder that shares the runtime, so the MSI installs the runtime with them and no longer requires the .NET 8 Desktop Runtime (its check is gone). A framework-dependent .NET 10 package would have failed to install on PCs without that runtime, and the updater would have rolled every such PC back. The MSI grows from about 4 MB to about 41 MB (about 270 files, 117 MB installed); only Turkish satellite resources are included. No ReadyToRun: it added 9 MB without a measurable start-up gain. The tray is published last because it needs the WindowsDesktop builds of `System.Drawing.dll` and `Microsoft.VisualBasic.dll`; the release workflow checks this. Updating from 0.1.14 works as before; rolling back from 0.1.15 to an earlier version runs that version on the .NET 8 runtime still installed on the PC. Packages move to 10.0.x; Dependabot ignores major (11.x) updates. Decision D-19.

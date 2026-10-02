@@ -172,6 +172,10 @@ signed updates; install the MSI on them once.
   mode of the named file (root, not writable by group or others).
 - **`pops-deploy-backend`: `Backend/ altında commit'lenmemiş ya da izlenmeyen dosya var`.** Only committed code is
   deployed; commit or remove the changes first.
+- **`pops-deploy-backend`: `venv'de <OWNER> kullanıcısına ait olmayan N dosya var`.** Some packages in the backend's
+  virtual environment were installed by another user (usually root), so `pip` running as the service user cannot
+  remove their old versions. Nothing was changed. Run the `chown -R` command from the message as root and update
+  again. Do not run `pip` in the backend's venv as root.
 - **`pops-deploy-backend`: `Sağlık kontrolü başarısız, önceki kod seti geri yükleniyor`.** The new code did not
   pass the health check and was rolled back; the last journal lines of the service are printed after that
   message.

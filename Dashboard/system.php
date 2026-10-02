@@ -389,7 +389,10 @@
     }
 
     $('btn-selfupdate').addEventListener('click', async function () {
-        if (!confirm("Sunucu, GitHub main'deki koda güncellenecek. Birkaç saniye bağlantı kopabilir. Devam edilsin mi?")) return;
+        // release kanalı (varsayılan) yayımlanmış son sürümü kurar; main kanalı geliştirme sunucusu içindir
+        const onMain = (((S.ver && S.ver.server) || {}).channel || 'release') === 'main';
+        const what = onMain ? "GitHub main'deki koda" : 'GitHub\'da yayımlanmış son sürüme';
+        if (!confirm('Sunucu, ' + what + ' güncellenecek. Birkaç saniye bağlantı kopabilir. Devam edilsin mi?')) return;
         const before = (S.su && S.su.status && S.su.status.at) || '';
         this.disabled = true;
         msg('su-status', '', '<i class="fas fa-spinner fa-spin"></i> Güncelleme başlatılıyor…');
