@@ -9,6 +9,7 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 import time
 from typing import Optional
 
@@ -21,6 +22,12 @@ from pops.taskqueue import process_queue, resolve_targets
 log = logging.getLogger("pops.scheduler")
 
 TICK_SECONDS = 30
+# Zamanlanmış çalışmanın geçerliliği (dk, planlanan zamandan itibaren): cihaz bu sürede bağlanıp görevi almazsa görev
+# başlatılmaz ("Expired"). Gece için konmuş bir "kapat" komutu, cihaz sabah açılınca çalışmasın.
+SCHEDULE_VALID_MINUTES = int(os.environ.get("SCHEDULE_VALID_MINUTES", "60"))
+# Sunucu kapalıyken kaçan çalışma: planlanan zamandan bu kadar sonra fark edilirse hiç çalıştırılmaz, "kaçırıldı"
+# diye kaydedilir (eskiden saatler sonra koşulsuz çalışıyordu)
+SCHEDULE_MISFIRE_MINUTES = int(os.environ.get("SCHEDULE_MISFIRE_MINUTES", "60"))
 UPDATE_SILENCE_SECONDS = 20 * 60
 _SCHEDULER_LOCK = 0x504F5053  # "POPS"
 
@@ -54,22 +61,35 @@ def compute_next_run(
     return None
 
 
-async def enqueue(row: dict, actor_suffix: str, conn=None) -> int:
+async def enqueue(row: dict, actor_suffix: str, conn=None, expires_at=None) -> int:
     """Zamanlanmış görevi hedef cihazlar için görev kuyruğuna ekler; eklenen görev sayısını döner. Bütün hedefler
-    tek işlemde yazılır: yarıda kalan bir ekleme (100 hedefin 40'ı) bırakmaz. conn verilirse çağıranın işlemi."""
+    tek işlemde yazılır: yarıda kalan bir ekleme (100 hedefin 40'ı) bırakmaz. conn verilirse çağıranın işlemi.
+
+    Aynı takvimin o cihaz için hâlâ bekleyen bir çalışması varsa yenisi eklenmez: çevrimdışı cihaz döndüğünde
+    biriken onlarca çalışma arka arkaya çalışmasın. expires_at verilirse görev o andan sonra başlatılmaz."""
     if conn is None:
         async with db.transaction() as own:
-            return await enqueue(row, actor_suffix, own)
+            return await enqueue(row, actor_suffix, own, expires_at)
     targets = await resolve_targets(row["target_mode"], json.loads(row["targets"] or "[]"), conn)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     creator = "%s (%s #%s)" % (row.get("created_by") or "?", actor_suffix, row["id"])
-    if targets:
-        await conn.executemany(
-            "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by) "
-            "VALUES ($1, $2, $3, 'Pending', $4, $5)",
-            [(t["pc"], t["lab"], row["command"], now, creator) for t in targets],
-        )
-    return len(targets)
+    if not targets:
+        return 0
+    created = await conn.fetch(
+        "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, schedule_id, "
+        "expires_at) SELECT t.pc, t.lab, $3, 'Pending', $4, $5, $6, $7 "
+        "FROM unnest($1::text[], $2::text[]) AS t(pc, lab) "
+        "WHERE NOT EXISTS (SELECT 1 FROM tasks p WHERE p.schedule_id = $6 AND p.target_pc = t.pc "
+        "AND p.status IN ('Pending', 'Paused')) RETURNING id",
+        [t["pc"] for t in targets],
+        [t["lab"] for t in targets],
+        row["command"],
+        now,
+        creator,
+        row["id"],
+        expires_at,
+    )
+    return len(created)
 
 
 async def run_due() -> int:
@@ -81,6 +101,7 @@ async def run_due() -> int:
     dener. Hedef çözülemeyen (bozuk) bir takvim yine ilerletilir ve hatası kaydedilir, her turda tekrarlanmaz."""
     added = 0
     ran = []
+    missed = []
     async with db.acquire() as conn:
         async with conn.transaction():
             if not await conn.fetchval("SELECT pg_try_advisory_xact_lock($1)", _SCHEDULER_LOCK):
@@ -94,15 +115,23 @@ async def run_due() -> int:
                 r = dict(r)
                 nxt = compute_next_run(r["schedule_type"], r["run_at"], r["time_of_day"], r["weekdays"], now)
                 error = None
-                try:
-                    # Kayıt noktası: bir takvimin hatası diğerlerinin görevlerini geri almaz
-                    async with conn.transaction():
-                        n = await enqueue(r, "zamanlanmış", conn)
-                    result = "%d cihaz için kuyruğa eklendi" % n
-                    added += n
-                except (ValueError, TypeError) as exc:   # bozuk hedef listesi (JSON) gibi kalıcı hatalar
-                    error = exc
-                    result = "hata: %s" % exc
+                late = (now - r["next_run"]).total_seconds() / 60
+                if late > SCHEDULE_MISFIRE_MINUTES:
+                    # Sunucu kapalıydı ya da zamanlayıcı durmuştu: planlanan saatten çok sonra çalıştırılmaz
+                    result = "kaçırıldı: planlanan %s, %d dk geç fark edildi" % (
+                        r["next_run"].astimezone().strftime("%Y-%m-%d %H:%M"), late)
+                    missed.append(r)
+                else:
+                    try:
+                        # Kayıt noktası: bir takvimin hatası diğerlerinin görevlerini geri almaz
+                        expires = r["next_run"] + datetime.timedelta(minutes=SCHEDULE_VALID_MINUTES)
+                        async with conn.transaction():
+                            n = await enqueue(r, "zamanlanmış", conn, expires)
+                        result = "%d cihaz için kuyruğa eklendi" % n
+                        added += n
+                    except (ValueError, TypeError) as exc:   # bozuk hedef listesi (JSON) gibi kalıcı hatalar
+                        error = exc
+                        result = "hata: %s" % exc
                 await conn.execute(
                     "UPDATE scheduled_tasks SET last_run = now(), next_run = $1, enabled = $2, last_result = $3 "
                     "WHERE id = $4",
@@ -113,6 +142,9 @@ async def run_due() -> int:
                 )
                 ran.append((r, result, error))
     # İşlem kapandıktan sonra: bildirim ve denetim kaydı (kendi bağlantılarıyla)
+    for r in missed:
+        await notify("schedule_missed", "medium", "Zamanlanmış görev kaçırıldı: %s" % r["name"],
+                     "Planlanan saatte sunucu çalışmıyordu; görev geç saatte çalıştırılmadı.")
     for r, result, error in ran:
         if error is not None:
             await notify("schedule_failed", "high", "Zamanlanmış görev çalıştırılamadı: %s" % r["name"], str(error))
@@ -144,9 +176,16 @@ async def reap_stuck_tasks() -> int:
     )
     for r in rows or []:
         log.warning("takılı görev zaman aşımına uğradı", extra={"task_id": r["id"], "pc": r["target_pc"]})
+    # Geçerlilik süresi dolan bekleyen görev (çoğunlukla çevrimdışı cihazın zamanlanmış görevi) başlatılmaz
+    expired = await db.execute_query(
+        "UPDATE tasks SET status = 'Expired', output = COALESCE(NULLIF(output, ''), "
+        "'[SÜRESİ DOLDU]: Cihaz görevin geçerlilik süresi içinde bağlanmadı; görev çalıştırılmadı.') "
+        "WHERE status IN ('Pending', 'Paused') AND expires_at IS NOT NULL AND expires_at < NOW() RETURNING id",
+        fetch=True,
+    )
     if rows:
         await process_queue()
-    return len(rows or [])
+    return len(rows or []) + len(expired or [])
 
 
 async def check_pending_updates() -> None:

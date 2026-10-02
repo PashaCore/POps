@@ -71,8 +71,14 @@ and closes the connection with `4401`.
   ignore the unknown block.
 - **Hardware ID.** The device ID (`HW-…`) is kept in `C:\POpsData\identity.key`. On first start it is derived from
   the machine UUID and the primary MAC address. The server compares a hardware fingerprint (UUID, BIOS serial,
-  disk serial, MAC, RAM serial) on every connection and may assign a different ID (`set_identity`), for example
-  when a disk image was cloned to another PC or when a reinstalled PC is recognised.
+  disk serial, MAC, RAM serial) on every connection. Before the device has a secret it may assign a different ID
+  (`set_identity`), for example when a reinstalled PC is recognised. Once enrolled, the ID and secret never move to
+  other hardware: a connection whose hardware does not match is logged (`dna_mismatch`, at most once an hour per
+  device) and does not overwrite the stored fingerprint, and while the original device is connected the copy is
+  refused (close code `4409`, notification `clone_rejected`).
+- **Disk images.** An image captured after the agent enrolled carries that device's ID and secret, so every PC
+  cloned from it is the same device to the server. Install the agent after imaging (for example by GPO or the
+  deployment tool), or capture the image before the agent first connects.
 - **Authentication.** Before it has a device secret the agent sends the enrollment token (`X-Enroll-Token`); the
   server answers with `set_secret`. From then on it sends `X-Agent-Secret`. Secrets live in `C:\POpsData\secure`
   (SYSTEM and Administrators only) and are never written to a log. See [`security.md`](security.md#agent-identity).

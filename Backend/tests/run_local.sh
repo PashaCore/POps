@@ -38,6 +38,7 @@ python tests/test_remote_authz.py
 python tests/test_device_keys.py
 python tests/test_hardening.py
 python tests/test_p1.py
+python tests/test_review4.py
 python tests/test_f4_accountability.py
 python tests/test_features.py
 python tests/test_helpdesk_licenses.py

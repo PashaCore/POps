@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from pops.agent_auth import _bind_agent, agent_http_auth
+from pops.agent_auth import agent_http_auth, bind_agent
 from pops.db import execute_query
 from pops.manager import manager
 from pops.models import AgentTicketInput, PanelTicketInput, TicketMessageInput, TicketUpdateInput
@@ -67,7 +67,7 @@ def _clean(subject: str, body: Optional[str], category: Optional[str]) -> tuple:
 async def agent_create_ticket(pc_name: str, data: AgentTicketInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     if agent_id is None:
         raise HTTPException(status_code=401, detail="Bu uç yalnızca kayıtlı (anahtarlı) ajanları kabul eder.")
-    _bind_agent(agent_id, pc_name)
+    await bind_agent(agent_id, pc_name)
     _throttle("create", pc_name)
     subject, body, category = _clean(data.subject, data.body, data.category)
     counts = await execute_query(
@@ -104,7 +104,7 @@ async def agent_list_tickets(pc_name: str, agent_id: Optional[str] = Depends(age
     """Tepsinin "Taleplerim" listesi: bu cihazın son 20 talebi ve iç not OLMAYAN yanıtlar."""
     if agent_id is None:
         raise HTTPException(status_code=401, detail="Bu uç yalnızca kayıtlı (anahtarlı) ajanları kabul eder.")
-    _bind_agent(agent_id, pc_name)
+    await bind_agent(agent_id, pc_name)
     _throttle("list", pc_name)
     tickets = await execute_query(
         "SELECT id, created_at, updated_at, subject, status, reporter FROM tickets WHERE pc_name = $1 "

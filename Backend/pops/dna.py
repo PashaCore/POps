@@ -3,6 +3,7 @@
 import datetime
 import hashlib
 import json
+import time
 
 from fastapi import WebSocket
 
@@ -47,7 +48,12 @@ def calculate_dna_score(incoming_hw, db_hw, incoming_caps, db_caps):
     return score, max_score
 
 
-async def check_known_device(hw_id: str, dna_payload: dict, client_ip: str) -> None:
+# Aynı cihaz için uyuşmazlık denetim satırı en fazla saatte bir (klonlar her bağlanışta zinciri büyütmesin)
+_MISMATCH_AUDIT_SECONDS = 3600
+_mismatch_seen = {}
+
+
+async def check_known_device(hw_id: str, dna_payload: dict, client_ip: str) -> bool:
     """Cihaz anahtarıyla doğrulanmış bağlantı: kimlik HER ZAMAN URL'deki kimliktir; ne klon kimliği verilir ne de
     anahtar başka bir kayda taşınır (F04). Donanım bilgisi kayıtla belirgin biçimde uyuşmuyorsa (disk/anakart
     değişti ya da kopyalanmış imaj) yönetici için kaydedilir; karar yöneticinindir."""
@@ -55,15 +61,20 @@ async def check_known_device(hw_id: str, dna_payload: dict, client_ip: str) -> N
     caps = (dna_payload or {}).get("capabilities", {}) or {}
     rows = await execute_query("SELECT * FROM clients WHERE pc_name = $1", (hw_id,), fetch=True)
     if not rows:
-        return
+        return False
     score, max_score = calculate_dna_score(hw, rows[0], caps, rows[0])
-    if max_score >= 4 and score * 2 < max_score:
+    if not (max_score >= 4 and score * 2 < max_score):
+        return False
+    now = time.monotonic()
+    if now - _mismatch_seen.get(hw_id, -_MISMATCH_AUDIT_SECONDS) >= _MISMATCH_AUDIT_SECONDS:
+        _mismatch_seen[hw_id] = now
         await add_audit_log(
             hw_id,
             "dna_mismatch",
             f"Donanım bilgisi kayıtla uyuşmuyor (skor {score}/{max_score}); cihaz anahtarı geçerli, kimlik korundu",
             {"ip": client_ip, "new_uuid": hw.get('uuid')},
         )
+    return True
 
 
 async def reconcile_device(claimed_hwid: str, dna_payload: dict, client_ip: str, ws: WebSocket):

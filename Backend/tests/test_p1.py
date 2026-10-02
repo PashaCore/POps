@@ -352,7 +352,7 @@ async def run(c, admin, superadmin, viewer):
     )
     real_enqueue = scheduler.enqueue
 
-    async def crashing(row, suffix, conn=None):
+    async def crashing(row, suffix, conn=None, expires_at=None):
         await conn.execute("INSERT INTO tasks (target_pc, script_path, status) VALUES ('HW-PS1', 'echo p1-sched', "
                            "'Pending')")
         raise RuntimeError("süreç burada öldü")

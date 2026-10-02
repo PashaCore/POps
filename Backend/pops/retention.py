@@ -27,6 +27,7 @@ BATCH = 5000
 # Sonuçlanmış görev durumları (bekleyen, duraklatılmış, çalışan ve sonucu belirsiz olanlar silinmez)
 _FINISHED_TASKS = [
     "Completed", "Completed (Rebooted)", "Failed", "Error", "Cancelled", "Interrupted", "Timed Out", "Denied",
+    "Expired",
 ]
 
 

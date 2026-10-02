@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops import db
-from pops.agent_auth import _bind_agent, agent_http_auth
+from pops.agent_auth import agent_http_auth, bind_agent
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.manager import manager
@@ -24,10 +24,10 @@ router = APIRouter()
 MAX_SOFTWARE_ITEMS = 5000
 
 
-def _require_enrolled(agent_id: Optional[str], pc_name: str) -> None:
+async def _require_enrolled(agent_id: Optional[str], pc_name: str) -> None:
     if agent_id is None:
         raise HTTPException(status_code=401, detail="Bu uç yalnızca kayıtlı (anahtarlı) ajanları kabul eder.")
-    _bind_agent(agent_id, pc_name)
+    await bind_agent(agent_id, pc_name)
 
 
 def _parse_ts(v: Optional[str]) -> Optional[datetime.datetime]:
@@ -44,7 +44,7 @@ def _parse_ts(v: Optional[str]) -> Optional[datetime.datetime]:
 @router.post("/api/software/{pc_name}")
 async def put_software(pc_name: str, data: SoftwareInventoryInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     """Cihazın kurulu yazılım listesinin TAMAMI; önceki liste bununla değiştirilir."""
-    _require_enrolled(agent_id, pc_name)
+    await _require_enrolled(agent_id, pc_name)
     if len(data.items) > MAX_SOFTWARE_ITEMS:
         raise HTTPException(status_code=413, detail="En fazla %d kayıt gönderilebilir." % MAX_SOFTWARE_ITEMS)
     seen = {}
@@ -107,7 +107,7 @@ async def install_patches(data: PatchInstallInput, auth: dict = Depends(require_
 @router.post("/api/patches/{pc_name}")
 async def put_patch_status(pc_name: str, data: PatchStatusInput, agent_id: Optional[str] = Depends(agent_http_auth)):
     """Cihazın son Windows Update taraması (bekleyen güncellemeler, yeniden başlatma gereksinimi)."""
-    _require_enrolled(agent_id, pc_name)
+    await _require_enrolled(agent_id, pc_name)
     updates = [
         {
             "kb": (u.kb or "")[:20] or None,

@@ -14,14 +14,23 @@ server {
     ssl_session_timeout 1d;
     add_header Strict-Transport-Security "max-age=31536000" always;
 
-    # İmzalı ajan paketi yükleme (MSI) panelden geçer
-    client_max_body_size 600m;
+    # Gövde sınırı küçük; büyük gövde yalnızca aşağıdaki iki yükleme adresinde kabul edilir (B4)
+    client_max_body_size 8m;
 
     root  @DASHBOARD@;
     index index.php;
 
     # Backend API
     location /api/ {
+        proxy_pass http://127.0.0.1:@PORT@;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 300s;
+    }
+    # Dağıtım paketi ve imzalı sürüm yükleme (yalnızca yönetici; MSI/paketler büyük olabilir)
+    location ~ ^/api/(upload|system/upload-release)$ {
+        client_max_body_size 600m;
         proxy_pass http://127.0.0.1:@PORT@;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;

@@ -15,7 +15,7 @@ from pops.db import execute_query
 from pops.models import AgentPoliciesInput, AuthEventInput, HwInventoryInput, LogInput, PolicyAlertInput
 from pops.security import require_admin
 from pops.agent_auth import (
-    _bind_agent,
+    bind_agent,
     _hash_secret,
     agent_http_auth,
     enforce_agent_auth_enabled,
@@ -36,7 +36,7 @@ router = APIRouter()
 
 @router.post("/api/auth/login")
 async def auth_login(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
-    _bind_agent(agent_id, data.hw_id)  # başka cihaz adına giriş kaydı yazılamaz
+    await bind_agent(agent_id, data.hw_id)  # başka cihaz adına giriş kaydı yazılamaz
     await log_audit_event(
         data.hw_id,
         "Security",
@@ -53,7 +53,7 @@ async def auth_login(data: AuthEventInput, agent_id: Optional[str] = Depends(age
 
 @router.post("/api/auth/failed")
 async def auth_failed(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
-    _bind_agent(agent_id, data.hw_id)
+    await bind_agent(agent_id, data.hw_id)
     await log_audit_event(
         data.hw_id,
         "Security",
@@ -70,7 +70,7 @@ async def auth_failed(data: AuthEventInput, agent_id: Optional[str] = Depends(ag
 
 @router.post("/api/auth/logout")
 async def auth_logout(data: AuthEventInput, agent_id: Optional[str] = Depends(agent_http_auth)):
-    _bind_agent(agent_id, data.hw_id)
+    await bind_agent(agent_id, data.hw_id)
     await log_audit_event(
         data.hw_id,
         "Security",
@@ -214,7 +214,8 @@ async def _settle_running_tasks(pc_name: str, health, agent_version: str) -> Non
         görev "Running" kalır, sonuç gelince kapanır;
       - aksi hâlde "Unknown": ne olduğu bilinmiyor (eskiden yanlışlıkla "tamamlandı" sayılıyordu)."""
     rows = await execute_query(
-        "SELECT id, script_path, dispatched_at FROM tasks WHERE target_pc = $1 AND status = 'Running'",
+        "SELECT id, script_path, dispatched_at, agent_started_at FROM tasks "
+        "WHERE target_pc = $1 AND status = 'Running'",
         (pc_name,),
         fetch=True,
     )
@@ -224,10 +225,19 @@ async def _settle_running_tasks(pc_name: str, health, agent_version: str) -> Non
     started = started if isinstance(started, (int, float)) and not isinstance(started, bool) else None
     resends = agent_version_mod.at_least(agent_version, (0, 1, 13))
     for r in rows:
+        recorded = r.get("agent_started_at")
         dispatched = r.get("dispatched_at")
-        if started is not None and dispatched is not None and started >= dispatched.timestamp():
+        if started is not None and recorded is not None:
+            # Gönderim anındaki ajan süreci ile şimdiki karşılaştırılır; ajan ve sunucu saatleri karşılaştırılmaz
+            # (saat kaymış bir bilgisayarda görev yanlışlıkla "yarıda kaldı" ya da "sürüyor" sayılırdı)
+            restarted = abs(started - recorded) > 1.0
+        elif started is not None and dispatched is not None:
+            restarted = started >= dispatched.timestamp()   # bu sürümden önce gönderilmiş görev
+        else:
+            restarted = None
+        if restarted:
             status = "Completed (Rebooted)" if _is_reboot_command(r.get("script_path")) else "Interrupted"
-        elif started is not None and dispatched is not None and resends:
+        elif restarted is False and resends:
             continue
         else:
             status = "Unknown"
@@ -274,6 +284,66 @@ async def _deny_reenroll(websocket: WebSocket, pc_name: str, client_ip: str, age
     )
     try:
         await websocket.close(code=4401, reason="Cihaz zaten kayitli")
+    except Exception:
+        pass
+
+
+async def _has_secret(pc_name: str) -> bool:
+    return bool(await execute_query("SELECT 1 FROM agent_secrets WHERE pc_name = $1", (pc_name,), fetch=True))
+
+
+# Bir dakikada bu kadar mesaj işlenemezse ajan bağlantısı kapatılır (tek hatada kapatılmaz)
+_MSG_ERROR_LIMIT = 20
+
+
+# Kimliksiz ret kayıtları: aynı cihaz ve adres için en fazla 10 dakikada bir denetim satırı (arada kalanlar sayılır)
+_REJECT_AUDIT_SECONDS = 600
+_reject_seen = {}
+
+
+async def _audit_rejected(pc_name: str, client_ip: str, agent_version: str) -> None:
+    key = (pc_name, client_ip)
+    now = time.monotonic()
+    last, suppressed = _reject_seen.get(key, (None, 0))
+    if last is not None and now - last < _REJECT_AUDIT_SECONDS:
+        _reject_seen[key] = (last, suppressed + 1)
+        return
+    if len(_reject_seen) > 10000:
+        _reject_seen.clear()
+    _reject_seen[key] = (now, 0)
+    await add_audit_log(
+        pc_name,
+        "auth_reject",
+        "Kimliksiz ajan bağlantısı reddedildi",
+        {"ip": client_ip, "agent_version": agent_version, "suppressed_since_last": suppressed},
+    )
+
+
+async def _reject_clone(websocket: WebSocket, pc_name: str, client_ip: str, agent_version: str) -> None:
+    key = ("clone:" + pc_name, client_ip)
+    now = time.monotonic()
+    last, suppressed = _reject_seen.get(key, (None, 0))
+    if last is None or now - last >= _REJECT_AUDIT_SECONDS:
+        _reject_seen[key] = (now, 0)
+        await add_audit_log(
+            pc_name,
+            "clone_rejected",
+            "Aynı cihaz kimliği ve anahtarıyla başka bir bilgisayar bağlanmaya çalıştı (kayıttan sonra imaj alınmış "
+            "olabilir); bağlı cihaz korundu",
+            {"ip": client_ip, "agent_version": agent_version, "suppressed_since_last": suppressed},
+        )
+        await notify(
+            "clone_rejected",
+            "high",
+            "Klon bilgisayar reddedildi: aynı cihaz kimliği başka bir donanımdan",
+            "Ajan kaydedildikten sonra disk imajı alınıp çoğaltılmış olabilir. Klonların kimliği ve anahtarı "
+            "silinip yeniden kaydedilmeli (bkz. belgeler: imaj öncesi hazırlık). Kaynak IP: %s" % client_ip,
+            pc_name,
+        )
+    else:
+        _reject_seen[key] = (last, suppressed + 1)
+    try:
+        await websocket.close(code=4409, reason="Bu cihaz kimligi baska bir bilgisayarda bagli")
     except Exception:
         pass
 
@@ -343,14 +413,11 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
         pending_enroll = await valid_enroll_token(websocket.headers.get("X-Enroll-Token"))
         if pending_enroll:
             auth_method = "enroll"
-    if auth_method == "none" and await enforce_agent_auth_enabled():
-        # Kimliksiz: audit'i ajanların YAZAMADIĞI device_audit_logs'a düş, sonra reddet.
-        await add_audit_log(
-            active_hwid,
-            "auth_reject",
-            "Kimliksiz ajan bağlantısı reddedildi (enforce açık)",
-            {"ip": client_ip, "agent_version": agent_version},
-        )
+    if auth_method == "none" and (await enforce_agent_auth_enabled() or await _has_secret(active_hwid)):
+        # Kimliksiz bağlantı reddedilir: zorlama açıksa her cihaz için, kapalıysa da ANAHTARI OLAN bir cihaz adına
+        # (anahtarı olan cihaz hiçbir zaman anahtarsız bağlanmaz; bu, kanalını ele geçirme denemesidir). Denetim
+        # kaydı cihaz ve adres başına seyreltilir (kimliksiz biri zincire sınırsız satır yazdıramasın).
+        await _audit_rejected(active_hwid, client_ip, agent_version)
         await websocket.close(code=4401, reason="Ajan kimlik dogrulamasi gerekli")
         return
 
@@ -431,12 +498,26 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
 
         if "dna_payload" in payload:
             dna_payload = payload.get("dna_payload") or {}
+            keep_dna = False
             if auth_method == "secret":
                 # Anahtarla doğrulanan bağlantının kimliği değişmez (F04): donanım bilgisi başka bir cihaza
                 # benzese de anahtar ve kimlik taşınmaz; uyuşmazlık yönetici için kaydedilir.
-                await check_known_device(active_hwid, dna_payload, client_ip)
+                mismatch = await check_known_device(active_hwid, dna_payload, client_ip)
+                if mismatch and manager.active_agents.get(active_hwid) is not None:
+                    # Aynı kimlik ve anahtar, başka bir donanımdan, asıl cihaz bağlıyken: kayıttan SONRA alınmış bir
+                    # imajın klonu. Bağlı cihazın yerini almaz, yönetici uyarılır (yoksa 40 klon tek cihaz görünür).
+                    await _reject_clone(websocket, active_hwid, client_ip, agent_version)
+                    return
+                # Uyuşmayan donanımın bilgisi kayıtlı donanımın üzerine yazılmaz (kayıt asıl cihazı göstermeye devam
+                # eder; bir sonraki klon da yine uyuşmaz)
+                keep_dna = mismatch
             else:
                 verified_hwid = await reconcile_device(active_hwid, dna_payload, client_ip, websocket)
+                if verified_hwid != active_hwid and auth_method == "none" and await _has_secret(verified_hwid):
+                    # Kimliksiz bağlantı, donanım benzerliğiyle anahtarı olan bir cihazın kimliğine taşınamaz
+                    await _audit_rejected(verified_hwid, client_ip, agent_version)
+                    await websocket.close(code=4401, reason="Ajan kimlik dogrulamasi gerekli")
+                    return
                 if verified_hwid != active_hwid:
                     if auth_method == "enroll" and not await _reenroll_allowed(verified_hwid):
                         await _deny_reenroll(websocket, verified_hwid, client_ip, agent_version, pending_enroll)
@@ -491,8 +572,13 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     ip_address, dna_uuid, dna_bios, dna_disk, dna_mac, dna_ram, cap_ram_readable)
                 VALUES ($1, $2, $11, $3, 'Online', '-', 1, $4, $5, $6, $7, $8, $9, $10)
                 ON CONFLICT (pc_name) DO UPDATE SET status='Online', last_seen=$3, ip_address=$4,
-                    boot_count=clients.boot_count + 1, hostname=$2, dna_uuid=$5, dna_bios=$6, dna_disk=$7, dna_mac=$8,
-                    dna_ram=$9, cap_ram_readable=$10
+                    boot_count=clients.boot_count + 1, hostname=$2,
+                    dna_uuid=CASE WHEN $12 THEN clients.dna_uuid ELSE $5 END,
+                    dna_bios=CASE WHEN $12 THEN clients.dna_bios ELSE $6 END,
+                    dna_disk=CASE WHEN $12 THEN clients.dna_disk ELSE $7 END,
+                    dna_mac=CASE WHEN $12 THEN clients.dna_mac ELSE $8 END,
+                    dna_ram=CASE WHEN $12 THEN clients.dna_ram ELSE $9 END,
+                    cap_ram_readable=$10
             """,
                 (
                     active_hwid,
@@ -506,6 +592,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     hw.get('ram_sn'),
                     caps.get('ram_readable', True),
                     new_lab,
+                    keep_dna,
                 ),
             )
 
@@ -561,166 +648,188 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
 
         await handle_routine_payload(payload)
 
+        msg_errors = []
         while True:
             data = await websocket.receive_text()
-            payload = json.loads(data)
-            if payload.get("type") == "thumbnail":
-                # Görüntü yalnızca bu bağlantının cihazına ait olabilir (F16): gövdedeki kimlik yetki taşımaz
-                hwid = active_hwid
-                payload["hw_id"] = active_hwid
-                if hwid in manager.pending_thumbnails:
-                    for fut in manager.pending_thumbnails[hwid]:
-                        if not fut.done():
-                            fut.set_result(payload.get("image", ""))
-                    manager.pending_thumbnails[hwid] = []
-                # F1 kalıntısı: ekran görüntüsü yalnızca admin panellerine (viewer'a SIZMAZ).
-                await manager.broadcast_to_admin_panels(payload)
-                continue
-            if payload.get("type") == "vision_rejected":
-                await manager.broadcast_to_panels(payload)
-                continue
-            if payload.get("type") == "update_result":
-                # Ajanın güncelleme sonucu (POpsUpdater update-result.json'ından). Ajanların
-                # yazamadığı device_audit_logs'a düşür + panele bildir. 0.1.14+ ajan result_id gönderir ve sonucu
-                # onay (update_result_ack) gelene kadar saklayıp yeniden gönderir: aynı sonuç ikinci kez kaydedilmez,
-                # yalnızca onaylanır. Onay kayıt yazıldıktan SONRA gider (S20).
-                result_id = update_tracking.clean_result_id(payload.get("result_id"))
-                if result_id and await update_tracking.seen(active_hwid, result_id):
-                    await _ack_update_result(active_hwid, result_id)
+            mtype = None
+            try:
+                payload = json.loads(data)
+                if not isinstance(payload, dict):
+                    raise ValueError("mesaj JSON nesnesi değil")
+                mtype = str(payload.get("type") or "")[:40]
+                if payload.get("type") == "thumbnail":
+                    # Görüntü yalnızca bu bağlantının cihazına ait olabilir (F16): gövdedeki kimlik yetki taşımaz
+                    hwid = active_hwid
+                    payload["hw_id"] = active_hwid
+                    if hwid in manager.pending_thumbnails:
+                        for fut in manager.pending_thumbnails[hwid]:
+                            if not fut.done():
+                                fut.set_result(payload.get("image", ""))
+                        manager.pending_thumbnails[hwid] = []
+                    # F1 kalıntısı: ekran görüntüsü yalnızca admin panellerine (viewer'a SIZMAZ).
+                    await manager.broadcast_to_admin_panels(payload)
                     continue
-                detail = {
-                    k: payload.get(k)
-                    for k in (
-                        "status",
-                        "from_version",
-                        "to_version",
-                        "detail",
-                        "rollback",
-                        "agent_state",
-                        "msi_exit_code",
-                        "reboot_required",
-                        "running_version",
+                if payload.get("type") == "vision_rejected":
+                    await manager.broadcast_to_panels(payload)
+                    continue
+                if payload.get("type") == "update_result":
+                    # Ajanın güncelleme sonucu (POpsUpdater update-result.json'ından). Ajanların yazamadığı
+                    # device_audit_logs'a düşür + panele bildir. 0.1.14+ ajan result_id gönderir ve sonucu onay
+                    # (update_result_ack) gelene kadar saklayıp yeniden gönderir: aynı sonuç ikinci kez kaydedilmez,
+                    # yalnızca onaylanır. Onay kayıt yazıldıktan SONRA gider (S20).
+                    result_id = update_tracking.clean_result_id(payload.get("result_id"))
+                    if result_id and await update_tracking.seen(active_hwid, result_id):
+                        await _ack_update_result(active_hwid, result_id)
+                        continue
+                    detail = {
+                        k: payload.get(k)
+                        for k in (
+                            "status",
+                            "from_version",
+                            "to_version",
+                            "detail",
+                            "rollback",
+                            "agent_state",
+                            "msi_exit_code",
+                            "reboot_required",
+                            "running_version",
+                        )
+                    }
+                    await add_audit_log(
+                        active_hwid, "update_result", f"Ajan guncelleme sonucu: {payload.get('status', '?')}", detail
                     )
-                }
-                await add_audit_log(
-                    active_hwid, "update_result", f"Ajan guncelleme sonucu: {payload.get('status', '?')}", detail
-                )
-                # Güncelleme/rollback sonrası GERÇEKTEN çalışan sürümü sakla (v0.1.3+ ajan gönderir).
-                if payload.get("running_version"):
+                    # Güncelleme/rollback sonrası GERÇEKTEN çalışan sürümü sakla (v0.1.3+ ajan gönderir).
+                    if payload.get("running_version"):
+                        await execute_query(
+                            "UPDATE clients SET running_version=$1 WHERE pc_name=$2",
+                            (str(payload.get("running_version")), active_hwid),
+                        )
+                    # Yalnızca GERÇEKTEN kötü durumlar kritik loglanır (bkz. pops/update_notice.py)
+                    notice = update_notice.describe(payload)
+                    if update_notice.is_critical(payload):
+                        _reason = str(payload.get("agent_state") or "") or str(payload.get("status") or "")
+                        await log_audit_event(
+                            active_hwid,
+                            "Critical Security",
+                            f"Ajan guncelleme sorunu: {_reason}",
+                            actor_id="System/Update",
+                            event_type="agent.update",
+                            category="system_maintenance",
+                            action="update_problem",
+                            risk_level="critical",
+                            reason=_reason,
+                            meta_data=detail,
+                        )
+                    await update_tracking.forget(active_hwid)
+                    if notice:
+                        await notify(notice[0], notice[1], notice[2], str(payload.get("detail") or ""), active_hwid)
+                    await manager.broadcast_to_panels({"type": "update_result", "pc_name": active_hwid, **detail})
+                    # Onay en sonda: arada sunucu çökerse ajan sonucu yeniden gönderir ve kayıt/bildirim tekrarlanır (en
+                    # az bir kez). Önce onaylanırsa çökmede bildirim hiç oluşmazdı.
+                    if result_id:
+                        await update_tracking.remember(active_hwid, result_id)
+                        await _ack_update_result(active_hwid, result_id)
+                    continue
+                if payload.get("type") == "capabilities":
+                    # Ajan güncel yetenek durumunu bildirir (bağlantıda + her değişimde). Sakla + panele yay.
+                    t = payload.get("terminal_enabled")
+                    v = payload.get("vision_enabled")
+                    # server_ca (0.1.10+): custom = cihazdaki kurum CA'sı, system = Windows kök deposu; yoksa eskisi
+                    # kalır
+                    sc = payload.get("server_ca")
+                    sc = sc if sc in ("custom", "system") else None
                     await execute_query(
-                        "UPDATE clients SET running_version=$1 WHERE pc_name=$2",
-                        (str(payload.get("running_version")), active_hwid),
+                        "UPDATE clients SET cap_terminal_enabled=$1, cap_vision_enabled=$2, "
+                        "cap_server_ca=COALESCE($4, cap_server_ca) WHERE pc_name=$3",
+                        (bool(t) if t is not None else None, bool(v) if v is not None else None, active_hwid, sc),
                     )
-                # Yalnızca GERÇEKTEN kötü durumlar kritik loglanır (bkz. pops/update_notice.py)
-                notice = update_notice.describe(payload)
-                if update_notice.is_critical(payload):
-                    _reason = str(payload.get("agent_state") or "") or str(payload.get("status") or "")
+                    # Yönetici daha önce kapatma istediyse ama ajan hâlâ AÇIK bildiriyorsa (ör. istek
+                    # çevrimdışıyken verildi) kapatmayı yeniden gönder. Fail-safe: yalnızca kapatırız.
+                    reqrow = await execute_query(
+                        "SELECT cap_terminal_disable_requested AS t, cap_vision_disable_requested AS v "
+                        "FROM clients WHERE pc_name=$1",
+                        (active_hwid,),
+                        fetch=True,
+                    )
+                    if reqrow:
+                        resend = {}
+                        if reqrow[0]["t"] and t:
+                            resend["terminal_enabled"] = False
+                        if reqrow[0]["v"] and v:
+                            resend["vision_enabled"] = False
+                        if resend:
+                            await manager.send_command({"action": "set_capabilities", **resend}, active_hwid)
+                    await manager.broadcast_to_panels(
+                        {"type": "capabilities", "pc_name": active_hwid, "terminal_enabled": t, "vision_enabled": v}
+                    )
+                    continue
+                if payload.get("type") == "bypass_secret_ack":
+                    fp = str(payload.get("fingerprint") or "")[:64]
+                    if connected_with_secret and await bypass.confirm(active_hwid, fp):
+                        await add_audit_log(
+                            active_hwid, "bypass_key", "Cihaza özel bypass anahtarı ajana ulaştı", {"fingerprint": fp}
+                        )
+                    else:
+                        await add_audit_log(
+                            active_hwid,
+                            "bypass_key_mismatch",
+                            "Bypass anahtarı onayı saklanan anahtarla eşleşmedi",
+                            {"fingerprint": fp},
+                        )
+                    continue
+                if payload.get("type") == "capability_denied":
+                    # Ajan, kapalı bir yetenek için gelen isteği reddettiğini bildirir. Denetime yaz + panele yay.
+                    # reason (0.1.12+): ör. not_enrolled = cihaz anahtarı olmadığı için Vision tüneli açılmadı
+                    _md = {k: payload.get(k) for k in ("capability", "action", "task_id", "reason")}
+                    denied_task = payload.get("task_id")
+                    if isinstance(denied_task, int) and not isinstance(denied_task, bool):
+                        # Komut çalıştırılmadı. Ajanın ret sonucu (0.1.13 ve öncesi çıkış kodsuz) görevi "Completed"
+                        # yapmış olabilir; görev "Denied" olur.
+                        await execute_query(
+                            "UPDATE tasks SET status = 'Denied', exit_code = COALESCE(exit_code, -5) "
+                            "WHERE id = $1 AND target_pc = $2 "
+                            "AND status IN ('Running', 'Completed', 'Failed', 'Unknown', 'Interrupted', 'Timed Out')",
+                            (denied_task, active_hwid),
+                        )
                     await log_audit_event(
                         active_hwid,
-                        "Critical Security",
-                        f"Ajan guncelleme sorunu: {_reason}",
-                        actor_id="System/Update",
-                        event_type="agent.update",
-                        category="system_maintenance",
-                        action="update_problem",
-                        risk_level="critical",
-                        reason=_reason,
-                        meta_data=detail,
+                        "Security",
+                        f"Yetenek reddedildi: {payload.get('capability')} ({payload.get('action')})",
+                        actor_id="Agent",
+                        event_type="agent.capability_denied",
+                        category="security",
+                        action="capability_denied",
+                        risk_level="medium",
+                        reason=str(payload.get("capability") or ""),
+                        meta_data=_md,
                     )
-                await update_tracking.forget(active_hwid)
-                if notice:
-                    await notify(notice[0], notice[1], notice[2], str(payload.get("detail") or ""), active_hwid)
-                await manager.broadcast_to_panels({"type": "update_result", "pc_name": active_hwid, **detail})
-                # Onay en sonda: arada sunucu çökerse ajan sonucu yeniden gönderir ve kayıt/bildirim tekrarlanır (en az
-                # bir kez). Önce onaylanırsa çökmede bildirim hiç oluşmazdı.
-                if result_id:
-                    await update_tracking.remember(active_hwid, result_id)
-                    await _ack_update_result(active_hwid, result_id)
-                continue
-            if payload.get("type") == "capabilities":
-                # Ajan güncel yetenek durumunu bildirir (bağlantıda + her değişimde). Sakla + panele yay.
-                t = payload.get("terminal_enabled")
-                v = payload.get("vision_enabled")
-                # server_ca (0.1.10+): custom = cihazdaki kurum CA'sı, system = Windows kök deposu; yoksa eskisi kalır
-                sc = payload.get("server_ca")
-                sc = sc if sc in ("custom", "system") else None
-                await execute_query(
-                    "UPDATE clients SET cap_terminal_enabled=$1, cap_vision_enabled=$2, "
-                    "cap_server_ca=COALESCE($4, cap_server_ca) WHERE pc_name=$3",
-                    (bool(t) if t is not None else None, bool(v) if v is not None else None, active_hwid, sc),
-                )
-                # Yönetici daha önce kapatma istediyse ama ajan hâlâ AÇIK bildiriyorsa (ör. istek
-                # çevrimdışıyken verildi) kapatmayı yeniden gönder. Fail-safe: yalnızca kapatırız.
-                reqrow = await execute_query(
-                    "SELECT cap_terminal_disable_requested AS t, cap_vision_disable_requested AS v "
-                    "FROM clients WHERE pc_name=$1",
-                    (active_hwid,),
-                    fetch=True,
-                )
-                if reqrow:
-                    resend = {}
-                    if reqrow[0]["t"] and t:
-                        resend["terminal_enabled"] = False
-                    if reqrow[0]["v"] and v:
-                        resend["vision_enabled"] = False
-                    if resend:
-                        await manager.send_command({"action": "set_capabilities", **resend}, active_hwid)
-                await manager.broadcast_to_panels(
-                    {"type": "capabilities", "pc_name": active_hwid, "terminal_enabled": t, "vision_enabled": v}
-                )
-                continue
-            if payload.get("type") == "bypass_secret_ack":
-                fp = str(payload.get("fingerprint") or "")[:64]
-                if connected_with_secret and await bypass.confirm(active_hwid, fp):
-                    await add_audit_log(
-                        active_hwid, "bypass_key", "Cihaza özel bypass anahtarı ajana ulaştı", {"fingerprint": fp}
-                    )
-                else:
-                    await add_audit_log(
+                    await notify(
+                        "capability_denied",
+                        "medium",
+                        "Vision tüneli açılmadı: cihaz kayıtlı değil (anahtarı yok)"
+                        if payload.get("reason") == "not_enrolled"
+                        else "Kapalı yetenek istendi, ajan reddetti: %s" % (payload.get("capability") or "?"),
+                        str(payload.get("action") or ""),
                         active_hwid,
-                        "bypass_key_mismatch",
-                        "Bypass anahtarı onayı saklanan anahtarla eşleşmedi",
-                        {"fingerprint": fp},
                     )
-                continue
-            if payload.get("type") == "capability_denied":
-                # Ajan, kapalı bir yetenek için gelen isteği reddettiğini bildirir. Denetime yaz + panele yay.
-                # reason (0.1.12+): ör. not_enrolled = cihaz anahtarı olmadığı için Vision tüneli açılmadı
-                _md = {k: payload.get(k) for k in ("capability", "action", "task_id", "reason")}
-                denied_task = payload.get("task_id")
-                if isinstance(denied_task, int) and not isinstance(denied_task, bool):
-                    # Komut çalıştırılmadı. Ajanın ret sonucu (0.1.13 ve öncesi çıkış kodsuz) görevi "Completed"
-                    # yapmış olabilir; görev "Denied" olur.
-                    await execute_query(
-                        "UPDATE tasks SET status = 'Denied', exit_code = COALESCE(exit_code, -5) "
-                        "WHERE id = $1 AND target_pc = $2 "
-                        "AND status IN ('Running', 'Completed', 'Failed', 'Unknown', 'Interrupted', 'Timed Out')",
-                        (denied_task, active_hwid),
-                    )
-                await log_audit_event(
-                    active_hwid,
-                    "Security",
-                    f"Yetenek reddedildi: {payload.get('capability')} ({payload.get('action')})",
-                    actor_id="Agent",
-                    event_type="agent.capability_denied",
-                    category="security",
-                    action="capability_denied",
-                    risk_level="medium",
-                    reason=str(payload.get("capability") or ""),
-                    meta_data=_md,
+                    await manager.broadcast_to_panels({"type": "capability_denied", "pc_name": active_hwid, **_md})
+                    continue
+                await handle_routine_payload(payload)
+            except WebSocketDisconnect:
+                raise
+            except Exception as e:
+                if WebSocketState.DISCONNECTED in (websocket.application_state, websocket.client_state):
+                    raise
+                # Tek bir bozuk ya da işlenemeyen mesaj (ör. anlık DB hatası) bağlantıyı düşürmez (B9). Dakikada
+                # _MSG_ERROR_LIMIT hatayı aşan ajan kapatılır ki bozuk bir istemci döngüye girmesin.
+                now_m = time.monotonic()
+                msg_errors = [t for t in msg_errors if now_m - t < 60.0] + [now_m]
+                log.warning(
+                    "ajan mesajı işlenemedi",
+                    extra={"pc_name": active_hwid, "msg_type": mtype, "error": repr(e)[:300]},
                 )
-                await notify(
-                    "capability_denied",
-                    "medium",
-                    "Vision tüneli açılmadı: cihaz kayıtlı değil (anahtarı yok)"
-                    if payload.get("reason") == "not_enrolled"
-                    else "Kapalı yetenek istendi, ajan reddetti: %s" % (payload.get("capability") or "?"),
-                    str(payload.get("action") or ""),
-                    active_hwid,
-                )
-                await manager.broadcast_to_panels({"type": "capability_denied", "pc_name": active_hwid, **_md})
-                continue
-            await handle_routine_payload(payload)
+                if len(msg_errors) >= _MSG_ERROR_LIMIT:
+                    raise
     except WebSocketDisconnect as e:
         close_reason = _close_reason(e.code, e.reason)
     except Exception as e:
@@ -728,7 +837,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             # Soketi sunucu kapattı (ör. cihaz silindi); bekleyen receive bu yüzden hata verdi, sorun değil
             close_reason = "sunucu kapattı"
         else:
-            # Bozuk mesaj veya beklenmeyen hata: soket kapansın ki cihaz yanlışlıkla Online görünmesin
+            # Sürekli işlenemeyen mesajlar ya da el sıkışmada hata: soket kapansın ki cihaz yanlışlıkla Online
+            # görünmesin
             close_reason = "sunucu hatası: %s" % type(e).__name__
             log.warning("ajan bağlantısı hatayla kapandı", extra={"pc_name": active_hwid, "error": repr(e)[:300]})
         try:
@@ -758,7 +868,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
 
 @router.post("/api/inventory/{pc_name}")
 async def update_inventory(pc_name: str, data: HwInventoryInput, agent_id: Optional[str] = Depends(agent_http_auth)):
-    _bind_agent(agent_id, pc_name)  # başka cihaz adına envanter yazılamaz
+    await bind_agent(agent_id, pc_name)  # başka cihaz adına envanter yazılamaz
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await execute_query(
         "INSERT INTO hw_inventory (pc_name, hostname, cpu, ram, motherboard, gpu, os_version, ip_address, "
@@ -787,7 +897,7 @@ async def update_inventory(pc_name: str, data: HwInventoryInput, agent_id: Optio
 
 @router.post("/api/logs/{pc_name}")
 async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depends(agent_http_auth)):
-    _bind_agent(agent_id, pc_name)  # başka cihaz adına log yazılamaz
+    await bind_agent(agent_id, pc_name)  # başka cihaz adına log yazılamaz
     await log_audit_event(
         pc_name=pc_name,
         log_type=data.log_type or "System",
@@ -900,7 +1010,7 @@ async def get_policies():
 
 @router.post("/api/policy_alert")
 async def add_policy_alert(data: PolicyAlertInput, agent_id: Optional[str] = Depends(agent_http_auth)):
-    _bind_agent(agent_id, data.hw_id)  # başka cihaz adına ihlal uyarısı yazılamaz
+    await bind_agent(agent_id, data.hw_id)  # başka cihaz adına ihlal uyarısı yazılamaz
     await log_audit_event(
         pc_name=data.hw_id,
         log_type="Security",

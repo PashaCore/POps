@@ -167,9 +167,16 @@ async def main():
         "F3: yanlış secret + enforce açık → 401",
     )
 
-    # ---- F3: enforce KAPALI (legacy kabul ama geçerli secret yine bağlanır) ----
+    # ---- F3: enforce KAPALI (anahtarı olmayan eski ajan kabul; anahtarı olan cihaz adına anahtarsız istek değil) ----
     await set_enforce(c, False)
-    chk(http("/api/inventory/HW-A", body={"hostname": "a"}) == 200, "F3: secret yok + enforce kapalı → 200 (legacy)")
+    chk(
+        http("/api/auth/login", body={"hw_id": "HW-C", "hostname": "c", "student_id": "s"}) == 200,
+        "F3: anahtarı olmayan cihaz + enforce kapalı → 200 (legacy)",
+    )
+    chk(
+        http("/api/inventory/HW-A", body={"hostname": "a"}) == 401,
+        "F3: anahtarı olan cihaz adına anahtarsız istek, enforce kapalı olsa da → 401",
+    )
     chk(
         http("/api/inventory/HW-B", body={"hostname": "b"}, headers=hA) == 403,
         "F3: enforce kapalı OLSA DA geçerli A secret'ıyla B'ye → 403 (binding)",

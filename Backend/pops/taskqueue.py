@@ -73,15 +73,19 @@ async def _process_queue_once():
         limit = max(0, int(limit_row[0]["value"])) if limit_row else 5
     except ValueError:
         limit = 5
+    online_pcs = list(manager.active_agents.keys())
+    if not online_pcs:
+        return
+    # Eşzamanlılık kotasını yalnızca BAĞLI cihazlardaki çalışan görevler tutar: bağlantısı kopmuş cihazın "Running"
+    # görevi (sonucu bekleniyor ya da zaman aşımına gidiyor) bütün filonun kuyruğunu bekletmesin
     running_row = await execute_query(
-        "SELECT COUNT(DISTINCT target_pc) as c FROM tasks WHERE status = 'Running'", fetch=True
+        "SELECT COUNT(DISTINCT target_pc) as c FROM tasks WHERE status = 'Running' AND target_pc = ANY($1::text[])",
+        (online_pcs,),
+        fetch=True,
     )
     running_pcs_count = running_row[0]["c"] if running_row else 0
     available_slots = limit - running_pcs_count
     if not (available_slots > 0 or limit == 0):
-        return
-    online_pcs = list(manager.active_agents.keys())
-    if not online_pcs:
         return
     # Çevrimiçi ve şu an görev çalıştırmayan her cihazın en eski bekleyen görevi, tek sorguda; en eski görev önce
     tasks = await execute_query(
@@ -89,6 +93,7 @@ async def _process_queue_once():
         SELECT * FROM (
             SELECT DISTINCT ON (t.target_pc) t.* FROM tasks t
             WHERE t.status = 'Pending' AND t.target_pc = ANY($1::text[])
+              AND (t.expires_at IS NULL OR t.expires_at > NOW())
               AND NOT EXISTS (SELECT 1 FROM tasks r WHERE r.status = 'Running' AND r.target_pc = t.target_pc)
             ORDER BY t.target_pc, t.id ASC
         ) oldest ORDER BY id ASC
@@ -100,7 +105,14 @@ async def _process_queue_once():
         if limit > 0 and available_slots <= 0:
             break
         pc = task["target_pc"]
-        await execute_query("UPDATE tasks SET status = 'Running', dispatched_at = NOW() WHERE id = $1", (task["id"],))
+        # agent_started_at: o anki ajan sürecinin (heartbeat'teki) başlangıç değeri; yeniden bağlanınca değiştiyse ajan
+        # yeniden başlamıştır (bkz. routers/agents.py _settle_running_tasks; saatler karşılaştırılmaz)
+        await execute_query(
+            "UPDATE tasks SET status = 'Running', dispatched_at = NOW(), agent_started_at = "
+            "(SELECT CASE WHEN jsonb_typeof(agent_health->'started_at') = 'number' "
+            "THEN (agent_health->>'started_at')::float8 END FROM clients WHERE pc_name = $2) WHERE id = $1",
+            (task["id"], pc),
+        )
         # F4(a): komutu KİMİN kuyrukladığını göster (eskiden 'System/Queue' idi, iz yoktu).
         actor = task.get("created_by") or "System/Queue"
         # requested_by: ajan komutu kimin istediğini yerel denetim izine (Windows Olay Günlüğü) yazar (0.1.12+)

@@ -209,7 +209,8 @@ async def get_bypass_token(pc_name: str, response: Response, auth: dict = Depend
     if not result["token"]:
         return {
             "status": "error",
-            "message": "Bu cihazın cihaza özel bypass anahtarı yok ve BYPASS_SECRET tanımlı değil. "
+            "message": result.get("message")
+            or "Bu cihazın cihaza özel bypass anahtarı yok ve BYPASS_SECRET tanımlı değil. "
             "Ajan 0.1.12 ya da üstüne güncellenip bir kez bağlanınca anahtarını alır.",
         }
     await log_audit_event(
@@ -241,7 +242,11 @@ async def get_bypass_token(pc_name: str, response: Response, auth: dict = Depend
 @router.get("/api/system/audit-verify")
 async def audit_verify(auth: dict = Depends(require_superadmin)):
     """Denetim zincirini baştan yürütür; bir kayıt kurcalanmış/silinmişse ilk kırık id'yi döner."""
-    return auditchain.verify(await execute_query(auditchain.SELECT_ROWS, fetch=True))
+
+    async def fetch(sql, last_id, limit):
+        return await execute_query(sql, (last_id, limit), fetch=True)
+
+    return await auditchain.verify_batched(fetch)
 
 
 @router.websocket("/ws/panel")

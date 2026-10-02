@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import secrets
-import shutil
+import tempfile
 import time
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -57,7 +57,7 @@ _ACTION_STATUSES = {
     "RESUME": ("Paused",),
     "RETRY": (
         "Completed", "Completed (Rebooted)", "Failed", "Error", "Cancelled", "Unknown", "Interrupted", "Timed Out",
-        "Denied",
+        "Denied", "Expired",
     ),
 }
 # Bir görevin yeniden denemesi sürüyorsa (bu durumlarda) ikinci kopya açılmaz
@@ -164,11 +164,24 @@ def _download_sig(key: bytes, filename: str) -> str:
     return base64.urlsafe_b64encode(digest[:18]).decode("ascii")
 
 
-def _file_sha256(path: str) -> str:
+def _store_upload(src, dest: str) -> str:
+    """Yüklenen dosyayı geçici ada yazarken özetini de çıkarır, bitince yerine taşır (yarım dosya indirilemez).
+    Büyük paketlerde olay döngüsü tıkanmasın diye iş parçacığında çalışır (B10)."""
     h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dest), prefix=".upload-")
+    try:
+        with os.fdopen(fd, "wb") as out:
+            for chunk in iter(lambda: src.read(1024 * 1024), b""):
+                h.update(chunk)
+                out.write(chunk)
+        os.chmod(tmp, 0o640)
+        os.replace(tmp, dest)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     return h.hexdigest()
 
 
@@ -182,15 +195,14 @@ async def upload_file(request: Request, file: UploadFile = File(...), auth: dict
     file_path = os.path.realpath(os.path.join(UPLOAD_DIR, filename))
     if not file_path.startswith(UPLOAD_DIR + os.sep) or os.path.dirname(file_path) != UPLOAD_DIR:
         raise HTTPException(status_code=400, detail="Geçersiz dosya yolu")
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    sha256 = await asyncio.to_thread(_store_upload, file.file, file_path)
     sig = _download_sig(await _download_key(), filename)
     return {
         "status": "success",
         "filename": filename,
         "url": f"{request.base_url}download/{filename}?sig={sig}",
         "sig": sig,
-        "sha256": _file_sha256(file_path),
+        "sha256": sha256,
     }
 
 
