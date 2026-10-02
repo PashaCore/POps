@@ -37,7 +37,7 @@ CONC = ["HW-PC%02d" % i for i in range(20)]
 MULTI = ["HW-PM%02d" % i for i in range(20)]
 COMPAT = {"HW-PV11": "0.1.11-alpha", "HW-PV12": "0.1.12-alpha", "HW-PV13": "0.1.13-alpha",
           "HW-PV14": "0.1.14-alpha", "HW-PVXX": None}
-OTHER = ["HW-PHB", "HW-PDUP", "HW-PS1", "HW-PS2", "HW-PR1", "HW-PRTMP"]
+OTHER = ["HW-PHB", "HW-PDUP", "HW-PS1", "HW-PS2", "HW-PR1", "HW-PRTMP", "HW-PSAME"]
 PCS = CONC + MULTI + list(COMPAT) + OTHER
 FAILS = []
 
@@ -212,6 +212,21 @@ async def run(c, admin, superadmin, viewer):
         if not isinstance(ws, Exception):
             await ws.close()
 
+    print("== aynı YENİ cihaz kimliğiyle eşzamanlı kayıt: tek anahtar")
+    s, created = req("/api/system/enroll-token", superadmin, {"max_uses": 5, "ttl_hours": 1})
+    token = created["token"]
+    heads = {"X-Enroll-Token": token, "X-Agent-Version": "0.1.14-alpha"}
+    sockets = await asyncio.gather(*[agent("HW-PSAME", heads, dna("HW-PSAME")) for _ in range(4)],
+                                   return_exceptions=True)
+    results = await asyncio.gather(*[collect(ws, 4) for ws in sockets if not isinstance(ws, Exception)])
+    granted = sum(1 for msgs in results if find(msgs, "action", "set_secret"))
+    used = await c.fetchval("SELECT use_count FROM enroll_tokens WHERE token_hash=$1", _sha(token))
+    chk(granted == 1 and used == 1,
+        "yalnızca bir bağlantı anahtar aldı, jeton bir kez tüketildi (%d, %s)" % (granted, used))
+    for ws in sockets:
+        if not isinstance(ws, Exception):
+            await ws.close()
+
     print("== sürüm uyumluluğu")
     agents = {}
     for pc, ver in COMPAT.items():
@@ -243,6 +258,24 @@ async def run(c, admin, superadmin, viewer):
         expect = "Failed" if ver and ver >= "0.1.13" else "Completed"
         got = await wait_for(c, "SELECT status FROM tasks WHERE id=$1 AND status <> 'Running'", tids[pc])
         chk(got == expect, "%s: sonuç işlendi (%s)" % (ver or "sürümsüz", got))
+
+    print("== görev sonucu onayı; yetenek reddi 'Denied'")
+    v14 = agents["HW-PV14"]
+    t_ack = await c.fetchval(
+        "INSERT INTO tasks (target_pc, script_path, status, created_at, dispatched_at) "
+        "VALUES ('HW-PV14', 'echo ack', 'Running', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), NOW()) RETURNING id")
+    await v14.send(json.dumps({"type": "result", "task_id": t_ack, "output": "ok", "exit_code": 0}))
+    acks = [m for m in await collect(v14, 1.5) if isinstance(m, dict) and m.get("action") == "result_ack"]
+    chk(any(m.get("task_id") == t_ack for m in acks), "sonuç kaydedilince onaylandı (result_ack)")
+    t_den = await c.fetchval(
+        "INSERT INTO tasks (target_pc, script_path, status, created_at, dispatched_at) "
+        "VALUES ('HW-PV14', 'hostname', 'Running', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), NOW()) RETURNING id")
+    # 0.1.13 ajanı: çıkış kodsuz ret sonucu, ardından capability_denied
+    await v14.send(json.dumps({"type": "result", "task_id": t_den, "output": "[REDDEDİLDİ] terminal kapalı"}))
+    await v14.send(json.dumps({"type": "capability_denied", "capability": "terminal", "action": "execute",
+                               "task_id": t_den}))
+    got = await wait_for(c, "SELECT status FROM tasks WHERE id=$1 AND status='Denied'", t_den)
+    chk(got == "Denied", "terminali kapalı cihazdaki görev 'Denied' (Completed değil)")
 
     print("== güncelleme sonucu onayı (S20)")
     v13, v14 = agents["HW-PV13"], agents["HW-PV14"]
@@ -286,6 +319,18 @@ async def run(c, admin, superadmin, viewer):
     chk(req("/api/stream/stop/HW-PHB", admin)[0] in (404, 405), "eski GET adresi yok")
     chk(req("/api/stream/stop", viewer, {"pc_name": "HW-PHB"})[0] == 403, "viewer durduramaz")
     chk(req("/api/stream/stop", admin, {"pc_name": "HW-PHB"})[0] == 200, "admin POST ile durdurur")
+
+    print("== yeniden deneme yeni görev açar; eski çalıştırmanın geç sonucu yenisini etkilemez")
+    old = await c.fetchval(
+        "INSERT INTO tasks (target_pc, script_path, status, created_at) VALUES ('HW-PDUP', 'echo retry', 'Cancelled', "
+        "to_char(now(), 'YYYY-MM-DD HH24:MI:SS')) RETURNING id")
+    s, b = req("/api/tasks/action", admin, {"action": "RETRY", "target_mode": "TASK", "target_id": str(old)})
+    new = await c.fetchrow("SELECT id, status, created_by FROM tasks WHERE retry_of=$1", old)
+    chk(b.get("changed") == 1 and new is not None and new["id"] != old and new["status"] == "Pending",
+        "yeni görev kaydı açıldı (retry_of)")
+    chk(await c.fetchval("SELECT status FROM tasks WHERE id=$1", old) == "Cancelled", "eski kayıt olduğu gibi kaldı")
+    s, b = req("/api/tasks/action", admin, {"action": "RETRY", "target_mode": "TASK", "target_id": str(old)})
+    chk(b.get("changed") == 0, "süren yeniden deneme varken ikinci kopya açılmadı")
 
     print("== çift istek tek görev; eksi sınır")
     body = {"target_mode": "PC", "targets": ["HW-PDUP"],

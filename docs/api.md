@@ -131,7 +131,7 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | --- | --- | --- | --- |
 | POST | `/api/deploy_orchestration` | require_admin | `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], taskSequence: [{name, type, command}]}`. Queues one task per target and step in one transaction, recording the requesting user, then starts the queue. Returns `created` (number of tasks). The same request from the same user within 5 seconds (double click, retry) creates nothing and returns `duplicate: true`. |
 | GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). |
-| POST | `/api/tasks/action` | require_admin | `{action: CANCEL \| RETRY \| PAUSE \| RESUME, target_mode: TASK \| LAB \| PC \| ALL, target_id}`. |
+| POST | `/api/tasks/action` | require_admin | `{action: CANCEL \| RETRY \| PAUSE \| RESUME, target_mode: TASK \| LAB \| PC \| ALL, target_id}`. RETRY opens a **new** task for each finished task (`retry_of` = the old one) unless a retry of it is still pending or running; the old task keeps its result. |
 | POST | `/api/flush_queue` | require_admin | Deletes all task records; the deletion (who, how many) is written to the hash-chained audit log first. |
 | GET | `/api/get_concurrent_limit` | require_auth | Current `concurrent_limit` (default 5). |
 | POST | `/api/set_concurrent_limit` | require_admin | `{limit}` (0–10000): how many devices may run a task at the same time; `0` means no limit. A negative value is refused (`422`). |
@@ -336,8 +336,11 @@ off (`401` without, `403` for another device). The subject must have at least 3 
   SHA-256 of the agent's `update-result.json`). After the result is stored the server answers
   `{"action": "update_result_ack", "result_id": ...}`; a result it already stored is acknowledged without a second
   record. The agent keeps the result and sends it again until it is acknowledged.
+- **Task results:** after a `result` is stored the server answers `{"action": "result_ack", "task_id": ...}`, so
+  an agent that keeps results until they are acknowledged (0.1.14+) can send them again after a lost connection. A
+  `capability_denied` with a `task_id` marks that task `Denied`.
 - **Server → agent actions:** `server_info` (right after registration: `{"version", "features":
-  ["update_result_ack"]}`; older agents ignore it), `update_result_ack`, `execute`, `cancel_task`, `get_hardware`,
+  ["update_result_ack", "result_ack"]}`; older agents ignore it), `update_result_ack`, `result_ack`, `execute`, `cancel_task`, `get_hardware`,
   `set_secret`, `set_bypass_secret`, `set_identity`, `update_agent`,
   `set_capabilities`, `lockdown`, `unlock`, `start_vision_session`, `stop_stream`, `wake_peer`,
   `scan_updates` and `install_updates` (`{"scope": "security" | "all"}`; handled by agents from 0.1.5-alpha on),

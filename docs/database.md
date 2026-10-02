@@ -49,6 +49,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0012_server_ca.sql` | `clients.cap_server_ca` (how the agent verifies the server certificate: school CA or Windows store). |
 | `0013_agent_health_bypass_keys.sql` | `clients.agent_health` (heartbeat health summary) and `agent_bypass_keys` (per-device offline bypass keys). |
 | `0014_hardening.sql` | Enrollment tokens stored as hashes; `tasks.exit_code` / `dispatched_at`; partial index for the task queue; agent identity enforcement on by default for new installs. |
+| `0016_task_retry.sql` | `tasks.retry_of` (a retry opens a new task) and its index. |
 | `0015_p1_reliability.sql` | `users.totp_last_step` (a 2FA code works once); `clients.last_disconnect_at` / `last_disconnect_reason`; `pending_updates` and `update_results` (agent update tracking); indexes for reports, device activity, task history and the hardware-fingerprint lookup. |
 
 ## Tables
@@ -74,7 +75,7 @@ At startup the backend marks every device `Offline`; agents that reconnect are w
 
 | Table | Contents |
 | --- | --- |
-| `tasks` | Command queue: `target_pc`, `target_lab`, `script_path` (the command line the agent runs), `status`, `created_at`, `output`, `created_by`. `exit_code` and `dispatched_at` (migration `0014`). Statuses used by the code: `Pending`, `Running`, `Completed`, `Failed` (non-zero exit code), `Completed (Rebooted)` (a restart command, agent restarted), `Interrupted` (the agent restarted while the command ran), `Unknown` (the connection dropped and the agent cannot resend the result), `Timed Out` (no result 35 minutes after it was sent; a late result still completes it), `Paused`, `Cancelled`. |
+| `tasks` | Command queue: `target_pc`, `target_lab`, `script_path` (the command line the agent runs), `status`, `created_at`, `output`, `created_by`. `exit_code` and `dispatched_at` (migration `0014`). Statuses used by the code: `Pending`, `Running`, `Completed`, `Failed` (non-zero exit code), `Completed (Rebooted)` (a restart command, agent restarted), `Interrupted` (the agent restarted while the command ran), `Unknown` (the connection dropped and the agent cannot resend the result), `Timed Out` (no result 35 minutes after it was sent; a late result still completes it), `Denied` (the agent refused it: terminal turned off on that PC), `Paused`, `Cancelled`. `retry_of` (migration `0016`): a retry is a new row pointing at the task it repeats; the old row keeps its result. |
 | `packages` | Package and script definitions of the Deployment page (`id`, `name`, `type`, `meta`, `command`, `icon`, `color`). The uploaded files themselves are on disk in `Backend/storage`. |
 | `scheduled_tasks` | Scheduled commands: `name`, `command`, `target_mode` (`ALL` / `LAB` / `PC`), `targets` (JSON list of labs or hardware IDs), `schedule_type` (`once` / `daily` / `weekly`), `run_at` (once), `time_of_day` (`HH:MM`, server time zone), `weekdays` (`1`–`7`, 1 = Monday), `enabled`, `next_run`, `last_run`, `last_result`, `created_by`, `created_at`. When due, the scheduler inserts normal rows into `tasks`. |
 

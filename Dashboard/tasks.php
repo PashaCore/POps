@@ -326,6 +326,7 @@ window.fetchAndRenderTasks = async function() {
                 else if (pc.status === 'Unknown') { statusClass = 'paused'; statusIcon = 'fa-circle-question'; statusText = 'Sonuç bilinmiyor (bağlantı koptu)'; }
                 else if (pc.status === 'Interrupted') { statusClass = 'failed'; statusIcon = 'fa-circle-exclamation'; statusText = 'Yarıda kaldı (ajan yeniden başladı)'; isCancelable = false; }
                 // Gönderildikten 35 dk sonra hâlâ sonuç yok: ajan geri dönmedi (geç gelen sonuç yine kaydedilir)
+                else if (pc.status === 'Denied') { statusClass = 'failed'; statusIcon = 'fa-ban'; statusText = 'Reddedildi (terminal bu cihazda kapalı)'; isCancelable = false; }
                 else if (pc.status === 'Timed Out') { statusClass = 'failed'; statusIcon = 'fa-hourglass-end'; statusText = 'Zaman aşımı (35 dk sonuç gelmedi)'; isCancelable = false; }
                 const displayName = window.POpsMemory.deviceMap[pc.target_pc] || pc.target_pc;
                 const showMac = displayName === pc.target_pc ? '' : `<br><span style="font-family:var(--font-mono);font-size:0.6875rem;color:var(--text-tertiary);">${escapeHtml(pc.target_pc)}</span>`;

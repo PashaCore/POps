@@ -2,6 +2,10 @@
 
 Çalışan sunucuya karşı koşar (CI 'security' job'ı). Ortam: POPS_TEST_HTTP + DB_* + JWT_SECRET.
 Zamanlayıcı turu 30 sn olduğu için bir kontrol en fazla ~40 sn bekler.
+
+Webhook kontrolleri bu sürecin 127.0.0.1'de açtığı alıcıya bildirim gönderir. Test edilen SUNUCU bu yüzden
+NOTIFY_WEBHOOK_ALLOW_PRIVATE=1 ile başlatılmalıdır (tests/run_local.sh ve CI ayarlar); aksi hâlde SSRF koruması
+iç adresi doğru biçimde reddeder ve webhook kontrolleri başarısız görünür. Bu bir hata değildir.
 """
 
 import asyncio

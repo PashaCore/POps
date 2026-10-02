@@ -55,6 +55,16 @@ async def flush() -> int:
         tuple(list(c) for c in cols),
     )
     metrics.count("heartbeat_rows_written", len(batch))
+    # Yazım sürerken kopan cihaz: bağlantı kapanışının "Offline" kaydı bu toplu yazımdan önce bitmiş olabilir, o
+    # durumda biz "Online"ı üstüne yazdık. Yazım bittiğinde artık bağlı olmayanlar yeniden "Offline" yapılır (kapanış
+    # bu andan sonra olursa kendi kaydı zaten sonra gelir).
+    gone = [pc for pc, _row in batch if pc not in manager.active_agents]
+    if gone:
+        await execute_query(
+            "UPDATE clients SET status = 'Offline' "
+            "WHERE pc_name = ANY($1::text[]) AND status IS DISTINCT FROM 'Offline'",
+            (gone,),
+        )
     return len(batch)
 
 
