@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 262" width="1000" height="262" role="img" aria-label="From first release to hardened alpha">
+<defs>
+<marker id="arr-line" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8c959f"/></marker>
+<marker id="arr-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker>
+<marker id="arr-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+<marker id="arr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b45309"/></marker>
+<marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
+</defs>
+<rect x="0" y="0" width="1000" height="262" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<text x="28" y="38" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="20" font-weight="700" fill="#1f2328" text-anchor="start">From first release to hardened alpha</text>
+<text x="28" y="60" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">Fourteen releases. Every one is in CHANGELOG.md with upgrade notes.</text>
+<line x1="62" y1="128" x2="938" y2="128" stroke="#d0d7de" stroke-width="3"/>
+<circle cx="92.0" cy="128" r="9" fill="#2563eb" stroke="#2563eb" stroke-width="2.5"/>
+<text x="92.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#2563eb" text-anchor="middle">0.1.0</text>
+<text x="92.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="middle">4 Aug</text>
+<text x="92.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">First public</text>
+<text x="92.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">release</text>
+<circle cx="228.0" cy="128" r="9" fill="#2563eb" stroke="#2563eb" stroke-width="2.5"/>
+<text x="228.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#2563eb" text-anchor="middle">0.1.1–0.1.4</text>
+<text x="228.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="middle">25–27 Sep</text>
+<text x="228.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">Enrollment, device</text>
+<text x="228.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">secrets, 2FA, audit</text>
+<text x="228.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">chain, signed</text>
+<text x="228.0" y="213" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">updates</text>
+<circle cx="364.0" cy="128" r="9" fill="#2563eb" stroke="#2563eb" stroke-width="2.5"/>
+<text x="364.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#2563eb" text-anchor="middle">0.1.5–0.1.6</text>
+<text x="364.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="middle">27 Sep</text>
+<text x="364.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">Inventory, Windows</text>
+<text x="364.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">Update, helpdesk,</text>
+<text x="364.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">licences, schedules</text>
+<circle cx="500.0" cy="128" r="9" fill="#2563eb" stroke="#2563eb" stroke-width="2.5"/>
+<text x="500.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#2563eb" text-anchor="middle">0.1.7–0.1.11</text>
+<text x="500.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="middle">29 Sep</text>
+<text x="500.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">Rollback drills,</text>
+<text x="500.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">TLS installer,</text>
+<text x="500.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">kiosk lock, 5,000</text>
+<text x="500.0" y="213" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">agent test</text>
+<circle cx="636.0" cy="128" r="9" fill="#059669" stroke="#059669" stroke-width="2.5"/>
+<text x="636.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#059669" text-anchor="middle">0.1.12</text>
+<text x="636.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="middle">30 Sep</text>
+<text x="636.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">Security audit</text>
+<text x="636.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">R-01 … R-20</text>
+<circle cx="772.0" cy="128" r="9" fill="#059669" stroke="#059669" stroke-width="2.5"/>
+<text x="772.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#059669" text-anchor="middle">0.1.13</text>
+<text x="772.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="middle">2 Oct</text>
+<text x="772.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">Second review</text>
+<text x="772.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="middle">F01 … F21</text>
+<circle cx="908.0" cy="128" r="9" fill="#ffffff" stroke="#8c959f" stroke-width="2.5" stroke-dasharray="3 3"/>
+<text x="908.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#59636e" text-anchor="middle">0.1.14</text>
+<text x="908.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="middle">next</text>
+<text x="908.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="middle" font-style="italic">Reliability:</text>
+<text x="908.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="middle" font-style="italic">timeouts, batching,</text>
+<text x="908.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="middle" font-style="italic">retention, alerts</text>
+</svg>
