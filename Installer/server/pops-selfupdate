@@ -8,22 +8,37 @@
 #
 # Yaptığı: kanala göre hedefi ff-only çeker, sonra authoritative deploy betiği
 # /usr/local/sbin/pops-deploy-backend'i çalıştırır (o da sağlık kontrolü + otomatik
-# geri dönüş yapar) ve sonucu $SPOOL/deploy-status.json'a yazar.
+# geri dönüş yapar) ve sonucu $STATE/deploy-status.json'a yazar.
 #   CHANNEL=release (varsayılan): origin/main üzerindeki EN SON SÜRÜM ETİKETİ (v*). Sunucu yalnızca
 #                     yayımlanmış sürümlere geçer; zaten o sürümde ya da daha yenisindeyse geri gitmez.
-#   CHANNEL=main:     origin/main'in son hali (geliştirme sunucusu). Ayar: /etc/pops/selfupdate.conf
+#                     Etiketin SSH imzası /etc/pops/allowed_signers ile doğrulanır; dosya varsa imza
+#                     ZORUNLUDUR (doğrulanamazsa merge ve deploy yapılmaz). Bkz. docs/self-update.md.
+#   CHANNEL=main:     origin/main'in son hali (geliştirme sunucusu; imza denetlenmez).
+# Ayarlar: /etc/pops/selfupdate.conf (CHANNEL, ALLOWED_SIGNERS, REQUIRE_SIGNED_TAGS); checkout'un yolu (REPO)
+# pops-deploy-backend ile aynı dosyadan, /etc/pops/deploy.conf'tan okunur.
 #
 # GÜVENLİK: Keyfi kod ÇALIŞTIRILMAZ; yalnızca origin/main ya da onun üzerindeki bir sürüm etiketi
-# dağıtılır. Kanal root'a ait ayar dosyasından okunur, istek dosyasının içeriği yürütülmez (yalnızca
-# tetikleyicidir). Çevrimdışı sunucuda git adımı atlanır, mevcut commit'lenmiş kodla redeploy denenir.
+# dağıtılır. Ayarlar yalnızca root'un yazabildiği dosyalardan okunur, istek dosyasının içeriği yürütülmez
+# (yalnızca tetikleyicidir). Çevrimdışı sunucuda git adımı atlanır, mevcut commit'lenmiş kodla redeploy denenir.
+#
+# NOT: Canlıda çalışan kopya /usr/local/sbin/pops-selfupdate'tir; bu dosyayı değiştirdiğinizde onu da elle güncelleyin.
+# Test kancaları (Installer/server/tests/test_deploy.sh): POPS_SELFUPDATE_CONF, POPS_DEPLOY_CONF, POPS_DEPLOY_SCRIPT
+# yollar; POPS_SELFUPDATE_ALLOW_NONROOT=1 root olmadan çalışma. Üretimde verilmez (birim yalnızca dizinleri verir).
 set -uo pipefail
 
-REPO=/home/pasha/domains/dev.pashacore.com.tr/public_html
 CHANNEL=release
-# shellcheck disable=SC1091
-[ -f /etc/pops/selfupdate.conf ] && . /etc/pops/selfupdate.conf
-case "$CHANNEL" in main|release) ;; *) CHANNEL=release ;; esac
+ALLOWED_SIGNERS=/etc/pops/allowed_signers   # sürüm etiketini imzalayabilecek SSH anahtarları (git allowed signers)
+REQUIRE_SIGNED_TAGS=0                       # 1: allowed_signers olmasa da imzası doğrulanmayan etikete geçme
+SU_CONF=${POPS_SELFUPDATE_CONF:-/etc/pops/selfupdate.conf}
+DEPLOY_CONF=${POPS_DEPLOY_CONF:-/etc/pops/deploy.conf}
+DEPLOY=${POPS_DEPLOY_SCRIPT:-/usr/local/sbin/pops-deploy-backend}
+# REPO deploy.conf'tan gelir; dosya yoksa pops-deploy-backend'deki gibi: betik bir checkout'un içindeyse o checkout
+REPO=""
+_self=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd || true)
+if [ -n "$_self" ] && [ -f "$_self/Backend/server.py" ]; then REPO=$_self; fi
 TARGET=""
+SIG=""   # etiket imzası: gecerli | gecersiz | denetlenmedi | atlandi (main)
+DRYRUN=${POPS_SELFUPDATE_DRYRUN:-0}
 # İstek dizini (SPOOL) backend kullanıcısına aittir: root orada YALNIZCA istek dosyasını siler, hiçbir şey yazmaz.
 # Root'un yazdığı durum ve log yalnızca root'un yazabildiği STATE dizinindedir. Aksi hâlde backend hesabını ele
 # geçiren biri bu dosyaların yerine sembolik bağ koyup root'a istediği dosyayı yazdırabilirdi.
@@ -40,7 +55,7 @@ ensure_state_dir() {   # root:root 755, sembolik bağ değil; değilse dur
 }
 
 write_status() {   # $1=state  $2=ok(true/false)  $3=message
-    [ "${POPS_SELFUPDATE_DRYRUN:-0}" = 1 ] && return 0   # deneme: gerçek durumun üzerine yazma
+    [ "$DRYRUN" = 1 ] && return 0   # deneme: gerçek durumun üzerine yazma
     local rev tmp
     rev=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
     tmp=$(mktemp "$STATE/.deploy-status.XXXXXX")
@@ -50,54 +65,133 @@ write_status() {   # $1=state  $2=ok(true/false)  $3=message
     mv -f "$tmp" "$STATUS"
 }
 
-[ -f "$REQ" ] || [ "${POPS_SELFUPDATE_DRYRUN:-0}" = 1 ] || exit 0   # istek yoksa sessizce çık
-[ "${POPS_SELFUPDATE_DRYRUN:-0}" = 1 ] || rm -f "$REQ"
+fail() {   # $1=durum mesajı (panelde görünür, ASCII). Hiçbir şey dağıtmadan durur.
+    write_status failed false "$1"
+    echo "self-update DURDURULDU: $1" >> "$LOG"
+    echo "pops-selfupdate: $1" >&2
+    exit 1
+}
+
+# Ayar dosyaları kabukla okunur (.): yalnızca root'un (ya da betiği çalıştıranın) yazabildiği, sembolik bağ
+# olmayan bir dosyaya ve dizine güvenilir. Aksi hâlde onu değiştirebilen biri root olarak kod çalıştırırdı.
+trusted_file() {   # $1=yol; 0: güvenilir
+    local p
+    for p in "$1" "$(dirname "$1")"; do
+        if [ -L "$p" ]; then return 1; fi
+        case "$(stat -c %u "$p")" in 0|"$(id -u)") ;; *) return 1 ;; esac
+        if [ $(( 8#$(stat -c %a "$p") & 8#022 )) -ne 0 ]; then return 1; fi
+    done
+}
+
+# Sürüm etiketinin imzası. allowed_signers VARSA imza zorunludur; yoksa REQUIRE_SIGNED_TAGS=1 aynı şeyi yapar,
+# 0 ise (eski kurulumlar) uyarıyla geçilir. Yalnızca SSH imzası kabul edilir: GPG imzalı bir etiket root'un GPG
+# anahtarlığıyla doğrulanmaya çalışılırdı.
+tag_signature_ok() {   # $1=etiket; 0: geçilebilir. SIG'i doldurur, ayrıntıyı loga yazar.
+    local ref="refs/tags/$1"
+    if [ ! -e "$ALLOWED_SIGNERS" ] && [ ! -L "$ALLOWED_SIGNERS" ]; then
+        if [ "$REQUIRE_SIGNED_TAGS" = 1 ]; then
+            SIG=gecersiz
+            echo "HATA: REQUIRE_SIGNED_TAGS=1 ama $ALLOWED_SIGNERS yok; $1 imzası doğrulanamaz." >> "$LOG"
+            return 1
+        fi
+        SIG=denetlenmedi
+        echo "uyarı: imzasız etiket kabulü: $ALLOWED_SIGNERS yok, $1 imzası denetlenmedi (bkz. docs/self-update.md)." >> "$LOG"
+        return 0
+    fi
+    SIG=gecersiz
+    if ! trusted_file "$ALLOWED_SIGNERS"; then
+        echo "HATA: $ALLOWED_SIGNERS güvenli değil (root'a ait olmalı, grup/diğerleri yazamamalı); $1 doğrulanmadı." >> "$LOG"
+        return 1
+    fi
+    local obj
+    obj=$(git -C "$REPO" cat-file tag "$ref" 2>/dev/null) || obj=""
+    if ! grep -qx -- '-----BEGIN SSH SIGNATURE-----' <<<"$obj"; then
+        echo "HATA: $1 SSH ile imzalanmış bir etiket değil (imzasız, GPG imzalı ya da hafif etiket)." >> "$LOG"
+        return 1
+    fi
+    if git -C "$REPO" -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$ALLOWED_SIGNERS" verify-tag "$ref" >>"$LOG" 2>&1; then
+        SIG=gecerli
+        echo "$1 imzası $ALLOWED_SIGNERS ile doğrulandı." >> "$LOG"
+        return 0
+    fi
+    echo "HATA: $1 imzası $ALLOWED_SIGNERS içindeki anahtarlarla doğrulanamadı." >> "$LOG"
+    return 1
+}
+
+[ "$(id -u)" -eq 0 ] || [ "${POPS_SELFUPDATE_ALLOW_NONROOT:-0}" = 1 ] || { echo "root olarak çalıştırın" >&2; exit 1; }
+[ -f "$REQ" ] || [ "$DRYRUN" = 1 ] || exit 0   # istek yoksa sessizce çık
+[ "$DRYRUN" = 1 ] || rm -f "$REQ"
 
 # systemd altında (root, minimal ortam) git, pasha kullanıcısına ait repoyu "dubious
 # ownership" diye reddeder. HOME'u sabitle ve repoyu açıkça güvenli işaretle; bu ayar
 # çocuk süreç olan pops-deploy-backend'e de miras kalır (o da git çalıştırır).
-export HOME=/root
-git config --global --get-all safe.directory 2>/dev/null | grep -qFx "$REPO" \
-    || git config --global --add safe.directory "$REPO"
+if [ "$(id -u)" -eq 0 ]; then export HOME=/root; fi
 ensure_state_dir
 : >> "$LOG"; chmod 644 "$LOG"
 echo "==== $(date -u +%Y-%m-%dT%H:%M:%SZ) self-update başladı ====" >> "$LOG"
+
+# Ayarlar. Güvenli olmayan bir ayar dosyası okunmaz; varsayılanla devam etmek yerine durulur.
+if [ -e "$SU_CONF" ] || [ -L "$SU_CONF" ]; then
+    # shellcheck disable=SC1090
+    if trusted_file "$SU_CONF"; then . "$SU_CONF"; else fail "ayar dosyasi guvenli degil: $SU_CONF"; fi
+fi
+case "$CHANNEL" in main|release) ;; *) CHANNEL=release ;; esac
+if [ -e "$DEPLOY_CONF" ] || [ -L "$DEPLOY_CONF" ]; then
+    trusted_file "$DEPLOY_CONF" || fail "ayar dosyasi guvenli degil: $DEPLOY_CONF"
+    # Yalnızca REPO alınır (alt kabukta okunur; diğer anahtarlar pops-deploy-backend'indir)
+    # shellcheck disable=SC1090
+    REPO=$(. "$DEPLOY_CONF" >/dev/null 2>&1; printf '%s' "${REPO:-}")
+fi
+if [ -z "$REPO" ] || [ ! -d "$REPO" ]; then fail "REPO bulunamadi: '$REPO' (ayar: $DEPLOY_CONF)"; fi
+git config --global --get-all safe.directory 2>/dev/null | grep -qFx "$REPO" \
+    || git config --global --add safe.directory "$REPO"
+git -C "$REPO" rev-parse --git-dir >/dev/null 2>>"$LOG" || fail "REPO bir git checkout'u degil: '$REPO' (bkz deploy.log)"
 write_status running true "guncelleme basladi"
 
 # Hedefi güvenli şekilde çek (ff-only: yerel commit'leri EZMEZ, geri gitmez). Başarısızsa
-# (çevrimdışı ya da ıraksama) mevcut HEAD ile devam edilir.
+# (çevrimdışı ya da ıraksama) mevcut HEAD ile devam edilir. İmzası doğrulanamayan etikette ise DURULUR.
 if git -C "$REPO" fetch --quiet --tags origin main >>"$LOG" 2>&1; then
     if [ "$CHANNEL" = release ]; then
         # origin/main'de bulunan en yeni sürüm etiketi (0.1.10 > 0.1.9; -alpha gibi ekler aynı sürümden önce)
         TARGET=$(git -C "$REPO" -c versionsort.suffix=- tag -l 'v*' --merged origin/main --sort=-v:refname | head -1)
         if [ -z "$TARGET" ]; then
             echo "uyarı: origin/main üzerinde sürüm etiketi yok; mevcut HEAD ile devam." >> "$LOG"
-        elif git -C "$REPO" merge-base --is-ancestor "$TARGET" HEAD; then
+        elif git -C "$REPO" merge-base --is-ancestor "refs/tags/$TARGET" HEAD; then
             echo "zaten $TARGET ya da daha yenisinde; git adımı yok." >> "$LOG"
-        elif [ "${POPS_SELFUPDATE_DRYRUN:-0}" = 1 ]; then
-            echo "DRYRUN: $TARGET sürümüne geçilecekti (merge yapılmadı)." >> "$LOG"
-        elif git -C "$REPO" merge --ff-only "$TARGET" >>"$LOG" 2>&1; then
+        elif ! tag_signature_ok "$TARGET"; then
+            if [ "$DRYRUN" = 1 ]; then
+                echo "DRYRUN: $TARGET imzası doğrulanamadı; gerçek çalıştırmada merge ve deploy YAPILMAZDI." >> "$LOG"
+            else
+                fail "etiket imzasi dogrulanamadi ($TARGET); guncelleme yapilmadi (bkz deploy.log)"
+            fi
+        elif [ "$DRYRUN" = 1 ]; then
+            echo "DRYRUN: $TARGET sürümüne geçilecekti (imza: $SIG; merge yapılmadı)." >> "$LOG"
+        elif git -C "$REPO" merge --ff-only "refs/tags/$TARGET^{commit}" >>"$LOG" 2>&1; then   # imza yukarıda denetlendi
             echo "$TARGET sürümüne geçildi." >> "$LOG"
         else
             echo "uyarı: $TARGET'a ff-only geçilemedi (ıraksak); mevcut HEAD ile devam." >> "$LOG"
         fi
-    elif [ "${POPS_SELFUPDATE_DRYRUN:-0}" = 1 ]; then
-        TARGET=origin/main
-        echo "DRYRUN: origin/main çekilecekti (merge yapılmadı)." >> "$LOG"
-    elif git -C "$REPO" merge --ff-only origin/main >>"$LOG" 2>&1; then
-        TARGET=origin/main
-        echo "origin/main çekildi." >> "$LOG"
     else
-        echo "uyarı: origin/main'e ff-only geçilemedi (ıraksak); mevcut HEAD ile devam." >> "$LOG"
+        SIG=atlandi
+        echo "CHANNEL=main (geliştirme kanalı): etiket imzası denetlenmez." >> "$LOG"
+        if [ "$DRYRUN" = 1 ]; then
+            TARGET=origin/main
+            echo "DRYRUN: origin/main çekilecekti (merge yapılmadı)." >> "$LOG"
+        elif git -C "$REPO" merge --ff-only origin/main >>"$LOG" 2>&1; then
+            TARGET=origin/main
+            echo "origin/main çekildi." >> "$LOG"
+        else
+            echo "uyarı: origin/main'e ff-only geçilemedi (ıraksak); mevcut HEAD ile devam." >> "$LOG"
+        fi
     fi
 else
     echo "uyarı: git fetch başarısız (çevrimdışı); mevcut HEAD ile devam." >> "$LOG"
 fi
-if [ "${POPS_SELFUPDATE_DRYRUN:-0}" = 1 ]; then
-    echo "DRYRUN kanal=$CHANNEL hedef=${TARGET:-yok} HEAD=$(git -C "$REPO" rev-parse --short HEAD)"; exit 0
+if [ "$DRYRUN" = 1 ]; then
+    echo "DRYRUN kanal=$CHANNEL hedef=${TARGET:-yok} imza=${SIG:-yok} HEAD=$(git -C "$REPO" rev-parse --short HEAD)"; exit 0
 fi
 
-if /usr/local/sbin/pops-deploy-backend >>"$LOG" 2>&1; then
+if "$DEPLOY" >>"$LOG" 2>&1; then
     write_status ok true "guncelleme tamamlandi"
     echo "self-update OK" >> "$LOG"
 else

@@ -123,28 +123,64 @@ stop matching the agents) and a new database password. Use one of the update pat
 `Installer/server/pops-deploy-backend` updates the backend from a git checkout, with a health check and automatic
 rollback:
 
-1. refuses to run if `Backend/` has uncommitted or untracked files (only committed code is deployed),
+1. stops before changing anything if the checkout (`REPO`), the backend folder (`APP`), the service user or the
+   systemd unit does not exist, or if `Backend/` has uncommitted or untracked files (only committed code is
+   deployed),
 2. exits if the live code already matches the checkout,
-3. backs up the complete live code set to `<app>/.deploy-backups/code-<timestamp>-<pid>.tgz` (the last 10 are kept),
+3. backs up the complete live code set to `<app>/.deploy-backups/code-<timestamp>-<pid>.tgz`; when
+   `requirements.txt` changed, it also snapshots the whole venv to `venv-<timestamp>-<pid>.tgz` next to it before
+   `pip` touches it (about 25 MB for the default requirements). If the snapshot fails, for example on a full disk,
+   it stops without changing anything,
 4. copies the tracked `Backend/*.py` files (including the `pops/` package, excluding tests), `migrations/`,
-   `requirements.txt` (and runs `pip install` if it changed), `VERSION` and the release public key,
+   `requirements.txt` (and runs `pip install` into the live venv if it changed), `VERSION` and the release public key,
 5. restarts the service and checks `/api/health` (200), `/api/agent_policies` (200) and `/api/devices` (401),
-6. on failure restores the previous code set exactly (also removing files the failed deploy added) and restarts.
+6. on **any** failure after the first change (`pip`, copying a file, the restart or the health check) restores the
+   previous code set exactly (also removing files the failed deploy added) and, if it was snapshotted, the venv at
+   the same absolute path, so the `#!` lines of its console scripts stay valid; then restarts the service. The
+   restore itself is never cut short by an error or a signal.
 
-The paths at the top of the script (`REPO`, `APP=/opt/PashaCore_API`, `SVC=pashacore`, `OWNER=pashacore_admin`) are
-those of the project's own server. For an `install.sh` layout set them to your checkout, `/opt/pops`, `pops` and
-`pops`, and change the port in the health-check URLs if you did not use 8000. The script in the repository is a reference copy; install the one you run as root, for example to
-`/usr/local/sbin/pops-deploy-backend`, so a deploy never overwrites the script while it runs.
+The last `KEEP_BACKUPS` (10) rollback points are kept; a venv snapshot is deleted together with its code backup.
+Database migrations are not rolled back (see [`decisions.md`](decisions.md)).
+
+The script in the repository is a reference copy. Install the copy you run as root, so a deploy never overwrites
+the script while it runs, and reinstall it when a release changes it (the CHANGELOG says so):
+
+```bash
+sudo install -m 755 Installer/server/pops-deploy-backend /usr/local/sbin/pops-deploy-backend
+```
 
 The script deploys the **backend** only. The panel is served directly from the checkout's `Dashboard/` folder, so
 updating the checkout (`git pull`) updates the panel.
 
+### `/etc/pops/deploy.conf`
+
+`pops-deploy-backend` reads its paths from `/etc/pops/deploy.conf`, and `pops-selfupdate` reads the checkout path
+(`REPO`) from the same file. `install.sh` writes it with the values it installed and leaves an existing file
+alone. Without the file the `install.sh` defaults apply. Template:
+[`Installer/server/deploy.conf.example`](../Installer/server/deploy.conf.example).
+
+| Key | Default (no file) | Meaning |
+| --- | --- | --- |
+| `REPO` | the checkout the script runs from, if any | git checkout with `Backend/`; the panel is served from its `Dashboard/` |
+| `APP` | `/opt/pops` | backend folder (`.env` and the venv `venv/` are here) |
+| `SVC` | `pops` | systemd unit |
+| `OWNER` | `pops` | service user; files are installed as this user and its primary group, and `pip` runs as this user |
+| `HEALTH_BASE` | `http://127.0.0.1:8000` | backend address used by the health check |
+| `HEALTH_WAIT` | `60` | seconds to wait for `/api/health` after the restart (pending migrations can slow the start) |
+| `KEEP_BACKUPS` | `10` | rollback points kept (code backup plus its venv snapshot) |
+
+Root sources the file as shell, so it must be owned by root, not writable by group or others and not a symbolic
+link, and the same holds for `/etc/pops`. Otherwise both scripts refuse to read it and change nothing; they do not
+fall back to the defaults. A server whose layout differs from `install.sh` (another folder, unit or user) must
+have this file **before** the new scripts are installed, or the deploy stops at the first check.
+
 ### Self-update from the panel
 
 With the systemd path unit installed, a superadmin can run the same deploy from **Sistem & Sürüm** without SSH.
-It fetches `origin/main` (fast-forward only) and runs `/usr/local/sbin/pops-deploy-backend`. Setup and design:
-[`self-update.md`](self-update.md). `pops-selfupdate` also contains the checkout path and the backend user; adjust
-them the same way.
+`pops-selfupdate` fast-forwards the checkout to the newest release tag on `origin/main` (or to `origin/main` on the
+`main` channel), checks the tag's SSH signature against `/etc/pops/allowed_signers` when that file exists, and runs
+`/usr/local/sbin/pops-deploy-backend`. A tag whose signature cannot be verified is neither merged nor deployed.
+Setup, signing and design: [`self-update.md`](self-update.md).
 
 ## Updating the agents
 
@@ -158,7 +194,7 @@ A `v*` tag runs `.github/workflows/release.yml`, which builds and attaches:
 
 | File | Contents |
 | --- | --- |
-| `pops-server-<version>.tar.gz` | `Backend/`, `Dashboard/`, `docs/`, `keys/`, `VERSION`, `.env.example` and the top-level documents. |
+| `pops-server-<version>.tar.gz` | `Backend/`, `Dashboard/`, `docs/`, `keys/`, `Installer/server/` (install, deploy, self-update, backup and TLS scripts with their systemd units), the Docker files (`docker-compose.yml`, `docker/`, `.dockerignore`), `VERSION`, `.env.example` and the top-level documents. |
 | `POps-Agent-<version>-win-x64.msi` | Agent MSI (service, tray, watchdog, updater). |
 | `POps-Agent-<version>-win-x64.zip` | The same files as a zip, for manual installs. |
 | `manifest.json`, `manifest.json.sig` | SHA-256 of every file, version, tag and time, signed with ed25519. |
@@ -166,7 +202,9 @@ A `v*` tag runs `.github/workflows/release.yml`, which builds and attaches:
 
 The signing key exists only as a GitHub secret; the public key is `keys/pops_release_ed25519.pub.pem`
 ([`keys/README.md`](../keys/README.md)). The workflow refuses to publish unless the tag equals `v<VERSION>` and
-`CHANGELOG.md` has a section for that version.
+`CHANGELOG.md` has a section for that version. The release tag itself is signed with a separate SSH key
+(`git tag -s`); servers with `/etc/pops/allowed_signers` self-update only to tags signed by a listed key
+([`self-update.md`](self-update.md#sürüm-etiketlerinin-imzası)).
 
 ## Logs
 

@@ -297,7 +297,9 @@ For maintainers. The mechanics are in `.github/workflows/release.yml`; see also
      notes above the moved entries, and updates the compare links at the end of the file.
 
    `Agent/Directory.Build.props` needs no change. Push and wait for the `version` job.
-3. Tag and push: `git tag vX.Y.Z-alpha && git push origin vX.Y.Z-alpha`.
+3. Tag with the release SSH key and push: `git tag -s vX.Y.Z-alpha -m vX.Y.Z-alpha && git push origin vX.Y.Z-alpha`.
+   Servers with `/etc/pops/allowed_signers` do not self-update to an unsigned tag
+   ([`docs/self-update.md`](docs/self-update.md#sürüm-etiketlerinin-imzası)).
 4. `release.yml` builds the agent zip and MSI (Windows) and the server tarball. The `release` job runs in the
    GitHub environment `release`: it checks that the tag is `v<VERSION>` and that the CHANGELOG has that section,
    signs `manifest.json` with `POPS_RELEASE_PRIVATE_KEY`, verifies it against

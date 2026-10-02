@@ -1,25 +1,130 @@
 #!/usr/bin/env bash
 # POps backend'ini repodaki commit'lenmiş koddan canlıya alır:
-# Backend/*.py + Backend/pops/ paketi + migrations/ -> /opt/PashaCore_API, gerekirse pip
-# install, servis restart, sağlık kontrolü; kontrol başarısızsa TÜM kod seti yedekten geri
-# yüklenir (server.py artık tek dosya değil; uçlar pops/routers/ altında).
+# Backend/*.py + Backend/pops/ paketi + migrations/ -> $APP, gerekirse pip install, servis restart,
+# sağlık kontrolü. İlk değişiklikten sonraki HER hata (pip, dosya kopyalama, restart, sağlık kontrolü)
+# tek bir geri dönüş yolundan geçer: TÜM kod seti ve requirements değiştiyse venv de yedekten birebir
+# geri yüklenir (server.py artık tek dosya değil; uçlar pops/routers/ altında).
+#
+# Ayarlar: /etc/pops/deploy.conf (REPO, APP, SVC, OWNER, HEALTH_BASE, HEALTH_WAIT, KEEP_BACKUPS; örnek ve açıklama:
+# Installer/server/deploy.conf.example). Dosya yoksa install.sh'in varsayılanları geçerlidir. pops-selfupdate
+# da REPO'yu aynı dosyadan okur.
 #
 # NOT: Bu, sürüm takibi için tutulan REFERANS kopyadır. Canlıda çalışan authoritative
-# kopya /usr/local/sbin/pops-deploy-backend'dedir (root'a ait, betiğin kendini çalışma
+# kopya hâlâ /usr/local/sbin/pops-deploy-backend'dedir (root'a ait, betiğin kendini çalışma
 # sırasında ezmemesi için repoda değil host'ta durur). Bu dosyayı değiştirdiğinizde
-# host'takini de elle güncelleyin.
-set -euo pipefail
+# host'takini de elle güncelleyin:  sudo install -m 755 Installer/server/pops-deploy-backend /usr/local/sbin/
+#
+# Test kancaları (Installer/server/tests/test_deploy.sh): POPS_DEPLOY_CONF ayar dosyasının yolu,
+# POPS_DEPLOY_ALLOW_NONROOT=1 root olmadan çalışma. Üretimde ikisi de verilmez.
+set -Eeuo pipefail
 
-REPO=/home/pasha/domains/dev.pashacore.com.tr/public_html
-APP=/opt/PashaCore_API
-SVC=pashacore
-OWNER=pashacore_admin
-STAMP=$(date +%Y%m%d-%H%M%S)
-BACKUPS="$APP/.deploy-backups"
+CONF=${POPS_DEPLOY_CONF:-/etc/pops/deploy.conf}
+# Varsayılanlar = install.sh'inkiler. REPO: betik bir POps checkout'unun içinden çalışıyorsa o checkout
+# (install.sh de kurduğu checkout'u deploy.conf'a yazar); /usr/local/sbin'deki kopya için deploy.conf gerekir.
+REPO=""
+_self=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd || true)
+if [ -n "$_self" ] && [ -f "$_self/Backend/server.py" ]; then REPO=$_self; fi
+APP=/opt/pops
+SVC=pops
+OWNER=pops
+HEALTH_BASE=http://127.0.0.1:8000
 KEEP_BACKUPS=10
+HEALTH_WAIT=60
+STAMP=$(date +%Y%m%d-%H%M%S)
 
-[ "$(id -u)" -eq 0 ] || { echo "root olarak çalıştır"; exit 1; }
+die() { echo "pops-deploy-backend: $*" >&2; exit 1; }
+
+# Ayar dosyası kabukla okunur (.): yalnızca root'un (ya da betiği çalıştıranın) yazabildiği, sembolik bağ
+# olmayan bir dosyaya ve dizine güvenilir. Aksi hâlde onu değiştirebilen biri root olarak kod çalıştırırdı.
+trusted_file() {   # $1=yol; 0: güvenilir
+    local p
+    for p in "$1" "$(dirname "$1")"; do
+        if [ -L "$p" ]; then return 1; fi
+        case "$(stat -c %u "$p")" in 0|"$(id -u)") ;; *) return 1 ;; esac
+        if [ $(( 8#$(stat -c %a "$p") & 8#022 )) -ne 0 ]; then return 1; fi
+    done
+}
+
+[ "$(id -u)" -eq 0 ] || [ "${POPS_DEPLOY_ALLOW_NONROOT:-0}" = 1 ] || die "root olarak çalıştır"
+if [ -e "$CONF" ] || [ -L "$CONF" ]; then
+    trusted_file "$CONF" || die "$CONF güvenli değil (root'a ait olmalı, grup/diğerleri yazamamalı, sembolik bağ olmamalı); okunmadı, hiçbir şey değiştirilmedi."
+    # shellcheck disable=SC1090
+    . "$CONF"
+fi
+
+# Bir şeye dokunmadan önce: yollar, kullanıcı ve servis gerçekten var mı?
+if [ -z "$REPO" ] || [ ! -d "$REPO/Backend" ]; then
+    die "REPO bulunamadı: '$REPO' (Backend/ içeren git checkout'u olmalı; ayar: $CONF). Hiçbir şey değiştirilmedi."
+fi
+if [ -z "$APP" ] || [ ! -d "$APP" ]; then die "APP bulunamadı: '$APP' (ayar: $CONF). Hiçbir şey değiştirilmedi."; fi
+id -u "$OWNER" >/dev/null 2>&1 || die "OWNER kullanıcısı yok: '$OWNER' (ayar: $CONF). Hiçbir şey değiştirilmedi."
+GROUP=$(id -gn "$OWNER")
+case "$KEEP_BACKUPS" in ''|*[!0-9]*|0) die "KEEP_BACKUPS 1 ya da daha büyük bir sayı olmalı (ayar: $CONF)" ;; esac
+case "$HEALTH_WAIT" in ''|*[!0-9]*) die "HEALTH_WAIT saniye olmalı (ayar: $CONF)" ;; esac
+SVC=${SVC%.service}
+[ "$(systemctl show -p LoadState --value "$SVC.service" 2>/dev/null)" = loaded ] \
+    || die "systemd birimi bulunamadı: '$SVC' (ayar: $CONF). Hiçbir şey değiştirilmedi."
+VENV="$APP/venv"
+BACKUPS="$APP/.deploy-backups"
+ID="$STAMP-$$"                                  # PID: aynı saniyedeki iki deploy birbirinin yedeğini ezmesin
+BACKUP="$BACKUPS/code-$ID.tgz"
+PRE_LIST="$BACKUPS/code-$ID.list"               # kurulum ÖNCESİ dosyalar: geri dönüşte yeni eklenenler silinir
+VENV_BACKUP=""                                  # yalnızca requirements değiştiyse: $BACKUPS/venv-$ID.tgz
+VENV_REAL=""
+CHANGED=0                                       # 1: canlıda bir şey değişti; bundan sonraki her hata geri döner
+
+# Deploy'un canlıda tek tek yönettiği dosyalar (pops/ paketi ayrıca bütün olarak silinip açılır)
+managed_files() {
+    local f
+    ( cd "$APP" && for f in ./*.py ./migrations/*.sql ./keys/* ./requirements.txt ./VERSION; do
+        if [ -e "$f" ]; then printf '%s\n' "$f"; fi
+    done )
+}
+
+rollback() {   # $1=neden. Kod setini ve (değiştiyse) venv'i yedekten geri yükler, servisi yeniden başlatır, çıkar.
+    set +e   # geri yüklemenin hiçbir adımı yarıda kesilmesin
+    trap - ERR
+    trap '' INT TERM HUP
+    echo "$1, önceki kod seti geri yükleniyor ($BACKUP)."
+    # Bu deploy'un YENİ eklediği dosyaları sil (öncesinde yoklardı)
+    managed_files | grep -vxF -f "$PRE_LIST" | ( cd "$APP" && xargs -r rm -f )
+    rm -rf "$APP/pops"
+    tar xzf "$BACKUP" -C "$APP" || echo "UYARI: kod yedeği açılamadı: $BACKUP"
+    chown -R "$OWNER:$GROUP" "$APP"/*.py "$APP/migrations" 2>/dev/null || true
+    [ -d "$APP/pops" ] && chown -R "$OWNER:$GROUP" "$APP/pops"
+    if [ -n "$VENV_BACKUP" ]; then
+        # pip'in yarım bıraktığı venv kenara alınır, anlık görüntü AYNI mutlak yola açılır
+        # (konsol betiklerinin #! satırları venv'in yolunu içerir).
+        echo "venv de geri yükleniyor ($VENV_BACKUP)."
+        local parent name failed
+        parent=$(dirname "$VENV_REAL"); name=$(basename "$VENV_REAL")
+        failed="$parent/.$name.failed-$ID"
+        if mv "$VENV_REAL" "$failed" && tar xzf "$VENV_BACKUP" -C "$parent"; then
+            rm -rf "$failed"
+        else
+            echo "UYARI: venv geri yüklenemedi; elle:  tar xzf $VENV_BACKUP -C $parent"
+            if [ -d "$failed" ]; then rm -rf "$VENV_REAL"; mv "$failed" "$VENV_REAL"; fi
+        fi
+    fi
+    systemctl restart "$SVC"
+    exit 1
+}
+
+on_error() {   # set -e'nin yakaladığı her hata buradan geçer
+    [ "$BASHPID" = "$$" ] || return 0   # alt kabuk / komut ikamesi: hatayı ana kabuk ayrıca görür
+    if [ "$CHANGED" = 1 ]; then rollback "Hata (satır $1)"; fi
+    echo "pops-deploy-backend: hata (satır $1); canlıda hiçbir şey değiştirilmedi." >&2
+    exit 1
+}
+on_signal() {
+    if [ "$CHANGED" = 1 ]; then rollback "Deploy kesildi"; fi
+    exit 1
+}
+trap 'on_error $LINENO' ERR
+trap on_signal INT TERM HUP
+
 cd "$REPO"
+git rev-parse --git-dir >/dev/null || die "REPO'da git çalışmıyor: $REPO (git checkout'u değil ya da sahiplik/safe.directory; git hatası yukarıda)"
 
 # Yalnız commit'lenmiş kod canlıya gider: değişiklik ya da izlenmeyen dosya varsa dur.
 if ! git diff --quiet HEAD -- Backend || [ -n "$(git ls-files --others --exclude-standard Backend)" ]; then
@@ -56,65 +161,91 @@ if [ "$same" = 1 ]; then
 fi
 
 # Geri dönüş için mevcut canlı kod setinin TAMAMINI yedekle
-install -d -o root -g root -m 700 "$BACKUPS"
-BACKUP="$BACKUPS/code-$STAMP-$$.tgz"          # PID: aynı saniyedeki iki deploy birbirinin yedeğini ezmesin
-PRE_LIST="${BACKUP%.tgz}.list"                  # kurulum ÖNCESİ dosyalar: geri dönüşte yeni eklenenler silinir
-( cd "$APP" && { ls ./*.py 2>/dev/null; ls ./migrations/*.sql 2>/dev/null; } ) > "$PRE_LIST" || true
-( cd "$APP" && tar czf "$BACKUP" --exclude='__pycache__' $(ls ./*.py 2>/dev/null) \
-    $( [ -d pops ] && echo pops ) $( [ -d migrations ] && echo migrations ) $( [ -d keys ] && echo keys ) \
-    $( [ -e requirements.txt ] && echo requirements.txt ) $( [ -e VERSION ] && echo VERSION ) )
-ls -1t "$BACKUPS"/code-*.tgz 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1)) | while read -r old; do
-    rm -f "$old" "${old%.tgz}.list"
+install -d -o "$(id -u)" -g "$(id -g)" -m 700 "$BACKUPS"   # üretimde root:root
+managed_files > "$PRE_LIST"
+mapfile -t ITEMS < <(cd "$APP" && for f in ./*.py pops migrations keys requirements.txt VERSION; do
+    if [ -e "$f" ]; then printf '%s\n' "$f"; fi
+done)
+tar czf "$BACKUP" -C "$APP" --exclude='__pycache__' -- "${ITEMS[@]}"
+
+# requirements değiştiyse pip, çalışan venv'e kurar: önce venv'in TAMAMININ anlık görüntüsü (geri dönüşte
+# aynı mutlak yola açılır). Görüntü alınamazsa (disk dolu vb.) hiçbir şeye dokunmadan dur.
+REQ_CHANGED=0
+cmp -s Backend/requirements.txt "$APP/requirements.txt" || REQ_CHANGED=1
+if [ "$REQ_CHANGED" = 1 ]; then
+    [ -x "$VENV/bin/pip" ] || { rm -f "$BACKUP" "$PRE_LIST"; die "$VENV/bin/pip yok (venv bulunamadı). Hiçbir şey değiştirilmedi."; }
+    VENV_REAL=$(readlink -f "$VENV")
+    VENV_BACKUP="$BACKUPS/venv-$ID.tgz"
+    # tar 1 = çalışan servis o sırada bir .pyc yazdı ("file changed as we read it"; Python bunu atomik yazar,
+    # görüntü kullanılabilir). 2 ve üstü gerçek hata.
+    rc=0; tar czf "$VENV_BACKUP" -C "$(dirname "$VENV_REAL")" "$(basename "$VENV_REAL")" || rc=$?
+    if [ "$rc" -gt 1 ]; then
+        rm -f "$VENV_BACKUP" "$BACKUP" "$PRE_LIST"
+        die "venv yedeklenemedi ($VENV_BACKUP; disk dolu mu?). Hiçbir şey değiştirilmedi."
+    fi
+fi
+
+# Saklama: en yeni KEEP_BACKUPS geri dönüş noktası; her kod yedeği aynı adlı venv görüntüsüyle birlikte silinir
+# Adlar betiğin ürettiği code-<zaman>-<pid>.tgz biçiminde; ls -t yalnızca zamana göre sıralar.
+# shellcheck disable=SC2012
+ls -1t "$BACKUPS"/code-*.tgz | tail -n +$((KEEP_BACKUPS + 1)) | while read -r old; do
+    rm -f "$old" "${old%.tgz}.list" "$BACKUPS/venv-${old##*/code-}"
+done
+for v in "$BACKUPS"/venv-*.tgz; do
+    if [ -e "$v" ] && [ ! -e "$BACKUPS/code-${v##*/venv-}" ]; then rm -f "$v"; fi
 done
 
+CHANGED=1   # buradan sonra her hata (ERR, sinyal ya da açık denetim) rollback'ten geçer
+
 # Servis kullanıcısı repo klasörünü okuyamaz; dosyalar $APP'e kopyalanır.
-if ! cmp -s Backend/requirements.txt "$APP/requirements.txt"; then
-    install -o "$OWNER" -g "$OWNER" -m 644 Backend/requirements.txt "$APP/requirements.txt"
-    sudo -H -u "$OWNER" "$APP/venv/bin/pip" install -q --disable-pip-version-check -r "$APP/requirements.txt"
+if [ "$REQ_CHANGED" = 1 ]; then
+    install -o "$OWNER" -g "$GROUP" -m 644 Backend/requirements.txt "$APP/requirements.txt"
+    sudo -H -u "$OWNER" "$VENV/bin/pip" install -q --disable-pip-version-check -r "$APP/requirements.txt" \
+        || rollback "pip install başarısız"
 fi
 
 # Migration SQL'leri (yalnız eklenir; server.py açılışta bekleyenleri idempotent uygular). Not: ileride
 # yıkıcı/ağır bir migration gelirse restart'tan ÖNCE pg_dump + "python migrate.py" adımı eklenmeli.
-install -d -o "$OWNER" -g "$OWNER" -m 755 "$APP/migrations"
+install -d -o "$OWNER" -g "$GROUP" -m 755 "$APP/migrations"
 for f in Backend/migrations/*.sql; do
-    install -o "$OWNER" -g "$OWNER" -m 644 "$f" "$APP/migrations/$(basename "$f")"
+    install -o "$OWNER" -g "$GROUP" -m 644 "$f" "$APP/migrations/$(basename "$f")"
 done
 
 # pops/ paketi temiz kurulur (kaynaktan silinen modül canlıda kalmasın), sonra tüm kod dosyaları
 rm -rf "$APP/pops"
 for f in "${CODE[@]}"; do
     rel="${f#Backend/}"
-    install -d -o "$OWNER" -g "$OWNER" -m 755 "$APP/$(dirname "$rel")"
-    install -o "$OWNER" -g "$OWNER" -m 644 "$f" "$APP/$rel"
+    install -d -o "$OWNER" -g "$GROUP" -m 755 "$APP/$(dirname "$rel")"
+    install -o "$OWNER" -g "$GROUP" -m 644 "$f" "$APP/$rel"
 done
 
 # Kök VERSION + release doğrulama açık anahtarı
-install -o "$OWNER" -g "$OWNER" -m 644 VERSION "$APP/VERSION"
-install -d -o "$OWNER" -g "$OWNER" -m 755 "$APP/keys"
-install -o "$OWNER" -g "$OWNER" -m 644 keys/pops_release_ed25519.pub.pem "$APP/keys/pops_release_ed25519.pub.pem"
+install -o "$OWNER" -g "$GROUP" -m 644 VERSION "$APP/VERSION"
+install -d -o "$OWNER" -g "$GROUP" -m 755 "$APP/keys"
+install -o "$OWNER" -g "$GROUP" -m 644 keys/pops_release_ed25519.pub.pem "$APP/keys/pops_release_ed25519.pub.pem"
 
-systemctl restart "$SVC"
-sleep 4
+systemctl restart "$SVC" || rollback "Servis yeniden başlatılamadı"
 
-ok=1
-systemctl is-active --quiet "$SVC" || ok=0
-[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/health)" = 200 ] || ok=0
-[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/agent_policies)" = 200 ] || ok=0
-[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/devices)" = 401 ] || ok=0
+# Açılış (bekleyen migration'lar, indeks kurulumu dahil) birkaç saniyeden uzun sürebilir: sağlık HEALTH_WAIT
+# saniyeye kadar 2 sn arayla beklenir; servis ayakta ve /api/health 200 olunca diğer uçlar denetlenir.
+ok=0
+for _ in $(seq 1 $(( HEALTH_WAIT > 2 ? HEALTH_WAIT / 2 : 1 ))); do
+    sleep 2
+    if systemctl is-active --quiet "$SVC" \
+        && [ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/health")" = 200 ]; then
+        ok=1
+        break
+    fi
+done
+if [ "$ok" = 1 ]; then
+    [ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/agent_policies")" = 200 ] || ok=0
+    [ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/devices")" = 401 ] || ok=0
+fi
 
 if [ "$ok" = 1 ]; then
-    echo "Backend $REV canlıda. Yedek: $BACKUP"
+    CHANGED=0
+    echo "Backend $REV canlıda. Yedek: $BACKUP${VENV_BACKUP:+ (venv: $VENV_BACKUP)}"
 else
-    set +e   # geri yüklemenin hiçbir adımı yarıda kesilmesin
-    echo "Sağlık kontrolü başarısız, önceki kod seti geri yükleniyor ($BACKUP)."
-    journalctl -u "$SVC" -n 20 --no-pager
-    # Bu deploy'un YENİ eklediği üst-seviye .py ve migration dosyalarını sil (öncesinde yoklardı)
-    ( cd "$APP" && { ls ./*.py 2>/dev/null; ls ./migrations/*.sql 2>/dev/null; } ) \
-        | grep -vxF -f "$PRE_LIST" | ( cd "$APP" && xargs -r rm -f )
-    rm -rf "$APP/pops"
-    tar xzf "$BACKUP" -C "$APP"
-    chown -R "$OWNER:$OWNER" "$APP"/*.py "$APP/migrations" 2>/dev/null || true
-    [ -d "$APP/pops" ] && chown -R "$OWNER:$OWNER" "$APP/pops"
-    systemctl restart "$SVC"
-    exit 1
+    journalctl -u "$SVC" -n 20 --no-pager || true
+    rollback "Sağlık kontrolü başarısız"
 fi

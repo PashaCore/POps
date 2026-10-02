@@ -326,6 +326,24 @@ jobs:
           printf 'events {}\nhttp { include %s; }\n' "$RUNNER_TEMP/pops.conf" > "$RUNNER_TEMP/nginx.conf"
           sudo nginx -t -c "$RUNNER_TEMP/nginx.conf"
 
+  server-scripts:
+    name: Server scripts
+    # Installer/server betikleri: shellcheck + pops-deploy-backend / pops-selfupdate davranış testleri (geçici
+    # dizinlerde, systemctl/curl/sudo/journalctl/pip taklitleriyle, root olmadan): normal deploy, sağlık kontrolü /
+    # pip / kopyalama hatasında kod ve venv'in birebir geri dönüşü, ayar dosyası, imzalı sürüm etiketleri, DRYRUN.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          set -euo pipefail
+          command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck >/dev/null; }
+          shellcheck --version | head -2
+          mapfile -t scripts < <(find Installer/server -maxdepth 1 -type f -name 'pops-*' ! -name '*.*' | sort)
+          shellcheck Installer/server/install.sh Installer/server/tests/*.sh "${scripts[@]}"
+      - name: Deploy and self-update tests
+        run: bash Installer/server/tests/test_deploy.sh
+
   signing:
     name: Release signing tool
     runs-on: ubuntu-latest

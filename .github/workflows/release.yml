@@ -77,11 +77,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Package backend and dashboard
+        # Native kurulum (Installer/server: install.sh, deploy/self-update/yedek betikleri, systemd birimleri) ve
+        # Docker Compose (docker-compose.yml, docker/, .dockerignore) paketten doğrudan çalışabilsin diye dahildir.
         run: |
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then VER="${GITHUB_REF_NAME#v}"; else VER="dev-${GITHUB_SHA::7}"; fi
           NAME="pops-server-$VER"
-          mkdir -p "dist/$NAME"
-          cp -r Backend Dashboard docs keys VERSION .env.example CHANGELOG.md LICENSE README.md SECURITY.md "dist/$NAME/"
+          mkdir -p "dist/$NAME/Installer"
+          cp -r Backend Dashboard docs keys docker VERSION .env.example .dockerignore docker-compose.yml CHANGELOG.md LICENSE README.md SECURITY.md "dist/$NAME/"
+          cp -r Installer/server "dist/$NAME/Installer/"
           find "dist/$NAME/Backend" -type d -name __pycache__ -prune -exec rm -rf {} +
           tar -C dist -czf "$NAME.tar.gz" "$NAME"
           tar -tzf "$NAME.tar.gz" | head -20
