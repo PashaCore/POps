@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.17-alpha] - 2026-10-03
+
+Fixes from the first day of the new panel: a PC's recent operations load after switching PCs, tooltips are no longer cut off, and a command the PC refused shows as refused.
+
+Upgrading: update the server (**Sistem → Sunucuyu güncelle**; migration `0020`). The agent code is unchanged; updating agents is optional.
+
 ### Fixed
 
 - **Panel: "Son işlemler" stays on "Yükleniyor…" no more.** Clicking another PC while the detail panel was open ran the old PC's close step after the new PC was set, which cleared it, so its recent operations never appeared. The same order cleared the selected job on İşlemler (its retry and cancel buttons then did nothing) and the selected row on Cihazlar, Sınıflar and the hardware tab of Kayıtlar.
@@ -564,7 +570,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.16-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.17-alpha...HEAD
+[0.1.17-alpha]: https://github.com/PashaCore/POps/compare/v0.1.16-alpha...v0.1.17-alpha
 [0.1.16-alpha]: https://github.com/PashaCore/POps/compare/v0.1.15-alpha...v0.1.16-alpha
 [0.1.15-alpha]: https://github.com/PashaCore/POps/compare/v0.1.14-alpha...v0.1.15-alpha
 [0.1.14-alpha]: https://github.com/PashaCore/POps/compare/v0.1.13-alpha...v0.1.14-alpha
