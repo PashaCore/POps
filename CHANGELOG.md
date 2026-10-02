@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Server: a deploy whose virtual environment holds files of another user stops before `pip`.** `pops-deploy-backend` checks that every file in the venv belongs to `OWNER` before installing changed requirements; otherwise it changes nothing and prints the `chown` command. On the development server, packages once installed as root made `pip` fail half-way through the 0.1.14 update.
+- **Server: a task result is shown only for the device's own task.** A result whose task ID belongs to another device or no longer exists is still acknowledged (the agent stops resending it) but is no longer broadcast to the panels.
+- **Panel: the server-update confirmation names what is installed** (the latest published release, or `main` on the development channel); it always said `main`.
+
 ## [0.1.14-alpha] - 2026-10-02
 
 Reliability and scale work, and the fixes from the third and fourth external reviews. Task results and update results are kept by the agent until the server confirms them, a retry is a new task and a command refused by the PC shows as refused. Scheduled tasks are written in one transaction, expire instead of running hours late and do not queue a second copy for a PC that still has one. Heartbeats are written in batches, each panel has its own send queue and database calls have time limits. A device that has a key must present it, and a clone of an enrolled disk image is refused while the original is connected. 2FA codes work once, and 2FA secrets and bypass keys are encrypted in the database. Self-update can require signed release tags.

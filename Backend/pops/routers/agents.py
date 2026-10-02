@@ -444,17 +444,23 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             task_id = pld.get("task_id")
             if not isinstance(task_id, int) or isinstance(task_id, bool):
                 return
-            await execute_query(
+            stored = await execute_query(
                 "UPDATE tasks SET output = $1, exit_code = $4, status = CASE "
                 "WHEN status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out') THEN "
                 "(CASE WHEN $4::int IS NULL OR $4::int = 0 THEN 'Completed' ELSE 'Failed' END) ELSE status END "
                 "WHERE id = $2 AND target_pc = $3 "
-                "AND status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out', 'Cancelled')",
+                "AND status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out', 'Cancelled') RETURNING id",
                 (pld.get("output"), task_id, active_hwid, exit_code),
+                fetch=True,
             )
             # Sonuç veritabanına yazıldı: 0.1.14+ ajan sonucu bu onaya kadar saklar ve yeniden gönderir (aynı sonucun
-            # ikinci kez gelmesi zararsızdır, yalnızca çıktı yeniden yazılır)
+            # ikinci kez gelmesi zararsızdır, yalnızca çıktı yeniden yazılır). Bu cihaza ait olmayan ya da artık var
+            # olmayan görevin sonucu da onaylanır (ajan saklamayı bıraksın) ama panele yayılmaz: başka cihazın görev
+            # kimliğiyle gelen çıktı (ör. kopyalanmış kurulumun eski sonuçları) o görevin çıktısı gibi görünmesin.
             await manager.send_command({"action": "result_ack", "task_id": task_id}, active_hwid)
+            if not stored:
+                log.info("görev sonucu eşleşmedi, yayılmadı", extra={"pc_name": active_hwid, "task_id": task_id})
+                return
             await manager.broadcast_to_panels(
                 {
                     "type": "terminal_output",

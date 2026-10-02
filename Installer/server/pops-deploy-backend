@@ -176,6 +176,14 @@ cmp -s Backend/requirements.txt "$APP/requirements.txt" || REQ_CHANGED=1
 if [ "$REQ_CHANGED" = 1 ]; then
     [ -x "$VENV/bin/pip" ] || { rm -f "$BACKUP" "$PRE_LIST"; die "$VENV/bin/pip yok (venv bulunamadı). Hiçbir şey değiştirilmedi."; }
     VENV_REAL=$(readlink -f "$VENV")
+    # pip OWNER olarak çalışır: venv'de başka bir kullanıcıya ait dosya (ör. bir zamanlar root'la kurulmuş paket)
+    # varsa eski sürümü kaldıramaz ve yarıda kalır. Bir şeye dokunmadan önce dur, düzeltmeyi söyle.
+    foreign=$(find "$VENV_REAL" ! -user "$OWNER" 2>/dev/null | wc -l)
+    if [ "$foreign" -gt 0 ]; then
+        example=$(find "$VENV_REAL" ! -user "$OWNER" -print -quit 2>/dev/null)
+        rm -f "$BACKUP" "$PRE_LIST"
+        die "venv'de $OWNER kullanıcısına ait olmayan $foreign dosya var (ör. $example); pip eski paketleri kaldıramaz. Düzeltmek için: chown -R $OWNER:$GROUP $VENV_REAL ve yeniden deneyin. Hiçbir şey değiştirilmedi."
+    fi
     VENV_BACKUP="$BACKUPS/venv-$ID.tgz"
     # tar 1 = çalışan servis o sırada bir .pyc yazdı ("file changed as we read it"; Python bunu atomik yazar,
     # görüntü kullanılabilir). 2 ve üstü gerçek hata.
