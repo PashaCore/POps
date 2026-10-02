@@ -1,6 +1,8 @@
-"""Veritabanında saklanan gizli değerlerin şifrelenmesi (R-12): bugün panel kullanıcılarının TOTP (2FA) anahtarı.
+"""Veritabanında saklanan gizli değerlerin şifrelenmesi (R-12): panel kullanıcılarının TOTP (2FA) anahtarı ve
+cihazların çevrimdışı bypass anahtarı (B14).
 
-Amaç: yalnızca veritabanı sızan biri (yedek dosyası, SQL okuma açığı) 2FA anahtarlarını kullanamasın. Anahtar
+Amaç: yalnızca veritabanı sızan biri (yedek dosyası, SQL okuma açığı) 2FA anahtarlarını ve bypass kodlarını
+kullanamasın. Anahtar
 veritabanında değil sunucunun ortamındadır:
   * TOTP_ENCRYPTION_KEY (.env; Fernet anahtarı: 32 baytın urlsafe base64'ü) tanımlıysa o kullanılır;
   * tanımlı değilse JWT_SECRET'tan HKDF ile türetilen anahtar kullanılır (kurulum değişmeden çalışır).
@@ -82,21 +84,36 @@ def needs_reseal(stored: Optional[str]) -> bool:
         return True
 
 
-async def reseal_totp_secrets(execute_query) -> int:
-    """Açılışta: düz metin ya da eski anahtarla şifreli TOTP anahtarlarını birincil anahtarla yeniden yazar."""
-    rows = await execute_query("SELECT id, totp_secret FROM users WHERE totp_secret IS NOT NULL", fetch=True)
+async def _reseal(execute_query, table: str, key_col: str, col: str) -> int:
+    rows = await execute_query(
+        "SELECT %s AS k, %s AS v FROM %s WHERE %s IS NOT NULL" % (key_col, col, table, col), fetch=True
+    )
     changed = 0
     for r in rows or []:
-        if not needs_reseal(r["totp_secret"]):
+        if not needs_reseal(r["v"]):
             continue
-        plain = unseal(r["totp_secret"])
+        plain = unseal(r["v"])
         if plain is None:
             continue  # çözülemedi: dokunma (hata zaten loglandı)
         await execute_query(
-            "UPDATE users SET totp_secret = $1 WHERE id = $2 AND totp_secret = $3",
-            (seal(plain), r["id"], r["totp_secret"]),
+            "UPDATE %s SET %s = $1 WHERE %s = $2 AND %s = $3" % (table, col, key_col, col),
+            (seal(plain), r["k"], r["v"]),
         )
         changed += 1
+    return changed
+
+
+async def reseal_totp_secrets(execute_query) -> int:
+    """Açılışta: düz metin ya da eski anahtarla şifreli TOTP anahtarlarını birincil anahtarla yeniden yazar."""
+    changed = await _reseal(execute_query, "users", "id", "totp_secret")
     if changed:
         log.info("TOTP anahtarları şifrelendi", extra={"count": changed})
+    return changed
+
+
+async def reseal_bypass_keys(execute_query) -> int:
+    """Açılışta: cihaz bypass anahtarları için aynısı (0.1.13 ve öncesinde düz metin yazılıyordu)."""
+    changed = await _reseal(execute_query, "agent_bypass_keys", "pc_name", "secret")
+    if changed:
+        log.info("bypass anahtarları şifrelendi", extra={"count": changed})
     return changed

@@ -147,7 +147,9 @@ async def main():
 
     # F1 kalıntısı (final review): thumbnail (ekran görüntüsü) /ws/agent'tan gelir; YALNIZCA admin
     # panellere gitmeli, viewer'a ASLA. (Oturum yok bile olsa admin rolüyle alır; viewer alamaz.)
-    agent = await websockets.connect(WS + "/ws/agent/HW-X", additional_headers={"X-Agent-Version": "test"})
+    agent = await websockets.connect(
+        WS + "/ws/agent/HW-X", additional_headers={"X-Agent-Version": "test", "X-Agent-Secret": "hwx-secret"}
+    )
     await agent.send(
         json.dumps(
             {

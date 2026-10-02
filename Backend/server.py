@@ -130,8 +130,10 @@ async def startup_event():
                 server_settings={"idle_in_transaction_session_timeout": str(DB_IDLE_IN_TRANSACTION_MS)},
             )
             log.info("veritabanı hazır", extra={"migrations_applied": applied})
-            # Düz metin ya da eski anahtarla şifreli 2FA anahtarları birincil anahtarla şifrelenir (R-12)
+            # Düz metin ya da eski anahtarla şifreli 2FA ve bypass anahtarları birincil anahtarla şifrelenir
+            # (R-12, B14)
             await secretbox.reseal_totp_secrets(execute_query)
+            await secretbox.reseal_bypass_keys(execute_query)
             # Yeniden başlatmadan önce gönderilmiş, sonucu beklenen ajan güncellemeleri (S20)
             await update_tracking.load()
             # Açılışta hiçbir ajan bağlı değil; bağlananlar yeniden Online yazılır

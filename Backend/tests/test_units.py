@@ -417,6 +417,63 @@ def test_p1():
         loop.close()
 
 
+def test_review4():
+    """Denetim zinciri parça parça doğrulanır (B6); yükleme tek geçişte yazılır ve özetlenir (B10)."""
+    import asyncio
+    import hashlib
+    import io
+    import tempfile
+
+    from pops import auditchain
+    from pops.routers import tasks as tasks_router
+
+    rows, prev = [], None
+    for i in range(1, 12):
+        r = {"id": i * 2, "hw_id": "HW-U", "action": "a%d" % i, "reason": "r", "changes": "{}", "timestamp": "t%d" % i,
+             "prev_hash": prev}
+        r["entry_hash"] = (
+            None if i == 3 else auditchain.entry_hash(prev, "HW-U", r["action"], "r", "{}", r["timestamp"])
+        )
+        prev = r["entry_hash"] or prev
+        rows.append(r)
+
+    def fetcher(data, calls):
+        async def fetch(sql, last_id, limit):
+            calls.append((last_id, limit))
+            return [r for r in data if r["id"] > last_id][:limit]
+        return fetch
+
+    calls = []
+    got = asyncio.run(auditchain.verify_batched(fetcher(rows, calls), batch_size=4))
+    chk(got == auditchain.verify(rows) and got["ok"] and got["checked"] == 10 and got["total"] == 11,
+        "parça parça doğrulama tek seferlikle aynı (%s)" % got)
+    chk([c[0] for c in calls] == [0, 8, 16], "id'ye göre ilerledi (%s)" % calls)
+    tampered = [dict(r) for r in rows]
+    tampered[6]["reason"] = "değişti"
+    got = asyncio.run(auditchain.verify_batched(fetcher(tampered, []), batch_size=4))
+    chk(not got["ok"] and got["first_broken_id"] == 14, "kurcalanan kayıt bulundu (%s)" % got)
+    chk(asyncio.run(auditchain.verify_batched(fetcher([], []), batch_size=4)) == {"ok": True, "checked": 0, "total": 0},
+        "boş tablo")
+
+    with tempfile.TemporaryDirectory() as d:
+        data = os.urandom(3 * 1024 * 1024 + 5)
+        dest = os.path.join(d, "paket.bin")
+        digest = tasks_router._store_upload(io.BytesIO(data), dest)
+        with open(dest, "rb") as f:
+            chk(f.read() == data and digest == hashlib.sha256(data).hexdigest(), "yükleme yazıldı ve özetlendi")
+        chk(os.listdir(d) == ["paket.bin"], "geçici dosya kalmadı")
+
+        class Broken(io.BytesIO):
+            def read(self, *a):
+                raise OSError("bağlantı koptu")
+
+        try:
+            tasks_router._store_upload(Broken(), os.path.join(d, "yarim.bin"))
+            chk(False, "yarıda kalan yükleme hata verdi")
+        except OSError:
+            chk(os.listdir(d) == ["paket.bin"], "yarıda kalan yükleme iz bırakmadı")
+
+
 def main():
     test_update_notice()
     test_log_format()
@@ -425,6 +482,7 @@ def main():
     test_hardening()
     test_agent_health()
     test_p1()
+    test_review4()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

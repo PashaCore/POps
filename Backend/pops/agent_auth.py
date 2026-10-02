@@ -65,7 +65,7 @@ async def valid_enroll_token(token: Optional[str]) -> Optional[dict]:
 async def agent_http_auth(request: Request) -> Optional[str]:
     """Ajan HTTP uçları (inventory/logs/auth/policy_alert) için accept-both kimlik.
     DOĞRULANAN X-Agent-Id'yi döndürür (uçlar bunu hedef pc_name/hw_id ile karşılaştırıp
-    cross-device sahteciliği engeller — bkz. _bind_agent). Geçerli X-Agent-Secret sunulursa
+    cross-device sahteciliği engeller — bkz. bind_agent). Geçerli X-Agent-Secret sunulursa
     kimlik döner. enforce_agent_auth AÇIKKEN geçerli secret ZORUNLU (yoksa 401). KAPALIYKEN
     (varsayılan) eksik/geçersiz secret legacy kabul edilir (None döner, bağlama yapılamaz) —
     böylece mevcut/secret'sız ajanlar düşmez. Panel uçları bundan etkilenmez."""
@@ -78,8 +78,13 @@ async def agent_http_auth(request: Request) -> Optional[str]:
     return None
 
 
-def _bind_agent(agent_id: Optional[str], target: str):
-    """Doğrulanan ajan kimliğini hedef cihazla eşle. Eşleşmezse 403. agent_id None ise (legacy,
-    enforce kapalı) bağlama yapılamaz — accept-both'un kabul ettiği artık risk; enforce açılınca kapanır."""
+async def bind_agent(agent_id: Optional[str], target: str):
+    """Doğrulanan ajan kimliğini hedef cihazla eşle. Eşleşmezse 403. agent_id None ise (legacy, enforce kapalı)
+    bağlama yapılamaz — accept-both'un kabul ettiği artık risk; ANCAK hedef cihazın anahtarı varsa kimliksiz istek
+    401 alır: anahtarı olan cihaz hiçbir zaman anahtarsız istek göndermez, böyle bir istek sahteciliktir."""
     if agent_id is not None and agent_id != target:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ajan kimliği hedef cihazla eşleşmiyor")
+    if agent_id is None and target:
+        rows = await execute_query("SELECT 1 FROM agent_secrets WHERE pc_name = $1", (target,), fetch=True)
+        if rows:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Ajan kimlik dogrulamasi gerekli")

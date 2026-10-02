@@ -35,7 +35,7 @@ async def _run():
         print(json.dumps({"ok": False, "error": "bağlanılamadı: %r" % exc}, ensure_ascii=False))
         return 2
     try:
-        result = auditchain.verify(await conn.fetch(auditchain.SELECT_ROWS))
+        result = await auditchain.verify_batched(conn.fetch)
         migrations = await conn.fetchval("SELECT count(*) FROM schema_migrations")
     finally:
         await conn.close()

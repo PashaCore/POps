@@ -17,7 +17,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from pops.agent_auth import _bind_agent, agent_http_auth
+from pops.agent_auth import agent_http_auth, bind_agent
 from pops.db import execute_query
 
 router = APIRouter()
@@ -136,7 +136,7 @@ def build_items(device, sessions, device_audits, fleet_audits, tasks):
 async def agent_activity(pc_name: str, agent_id: Optional[str] = Depends(agent_http_auth)):
     if agent_id is None:
         raise HTTPException(status_code=401, detail="Bu uç yalnızca kayıtlı (anahtarlı) ajanları kabul eder.")
-    _bind_agent(agent_id, pc_name)
+    await bind_agent(agent_id, pc_name)
     _throttle(pc_name)
     # Zaman damgaları yerel saatte 'YYYY-MM-DD HH:MM:SS' metni: metin karşılaştırması tarih sırasıyla aynıdır
     since = (datetime.datetime.now() - datetime.timedelta(days=DAYS)).strftime("%Y-%m-%d %H:%M:%S")

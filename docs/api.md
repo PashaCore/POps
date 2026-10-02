@@ -199,6 +199,11 @@ From an agent without a valid secret these are stored as ordinary log entries an
 
 A scheduled task queues a command for its targets at a set time; when due it goes through the normal task queue.
 Times are in the server's time zone. Every change and every run is written to the hash-chained audit log.
+A queued run must be sent within `SCHEDULE_VALID_MINUTES` (default 60) of its time, otherwise it becomes `Expired`
+instead of running late (a PC that was off at 08:00 does not run the 08:00 command at 15:00). If the server itself
+was down for more than `SCHEDULE_MISFIRE_MINUTES` (default 60) past the run time, the run is skipped, recorded as
+missed and a `schedule_missed` notification is raised. A PC that still has a pending copy from the same schedule does
+not get a second one.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |

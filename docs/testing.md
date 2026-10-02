@@ -67,9 +67,10 @@ machine and a regression would not be caught by CI.
 | **Agent update + rollback on a real machine (updater, MSI downgrade)** | **Manual** | Rollback drill on a real machine (see [agent.md](agent.md)). The drill decision logic is unit-tested (`RollbackDrillTests`); the MSI downgrade is not. The September 2026 false `rollback_failed` came from exactly this gap. |
 | Quarantine delivery, resend and reconciliation | Tested | `test_features.py`; agent-side isolation logic in `NetworkIsolationTests`, `QuarantineControlTests` |
 | Kiosk lock screen cannot be bypassed | Not tested | Known gap: Ctrl+Alt+Del still reaches Task Manager / sign-out (roadmap) |
-| Hash-chained device audit log | Partly | Written by the tested paths above; chain verification (`/api/system/audit-verify`) has no test |
+| Hash-chained device audit log | Tested | Written by the tested paths above; batched chain verification and tamper detection in `test_units.py`, the `/api/system/audit-verify` endpoint in `test_review4.py` |
 | Notifications, webhook SSRF guard | Tested | `test_features.py` |
 | Scheduled tasks, software inventory, patch status, reports and CSV formula escaping | Tested | `test_features.py` |
+| Clone of an enrolled image refused (4409), keyless requests for a keyed device refused, a bad agent message does not drop the connection, scheduled-task expiry / misfire / no duplicates, encrypted bypass keys | Tested | `test_review4.py` |
 | Licences and help desk (panel + agent, throttling) | Tested | `test_helpdesk_licenses.py` |
 | Request ID, `/metrics` access control, diagnostics | Tested | `test_ops.py` |
 | Migrations from empty and idempotency | Tested | `migrations` job |

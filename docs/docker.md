@@ -60,7 +60,8 @@ Agents refuse a plain `http://` server address unless it is loopback, so product
 
 - forwards WebSocket upgrades on `/ws/` (agents and the panel keep long-lived connections),
 - preserves the `Host` header and sets `X-Forwarded-For` and `X-Forwarded-Proto: https`,
-- allows large request bodies (signed releases and deployment packages are uploaded through `/api`).
+- allows large request bodies only on `/api/upload` and `/api/system/upload-release` (deployment packages
+  and signed releases) and keeps the limit small elsewhere.
 
 Example for nginx on the Docker host (add the certificate, e.g. with certbot):
 
@@ -70,8 +71,16 @@ server {
     server_name pops.example.com;
     ssl_certificate     /etc/letsencrypt/live/pops.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/pops.example.com/privkey.pem;
-    client_max_body_size 200m;
+    client_max_body_size 8m;
 
+    location ~ ^/api/(upload|system/upload-release)$ {
+        client_max_body_size 600m;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 300s;
+    }
     location /ws/ {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;

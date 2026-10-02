@@ -42,7 +42,9 @@ Ways to create it:
 | `DB_COMMAND_TIMEOUT` | no | `30` | Longest single query, in seconds. Migrations run on a separate connection without this limit. |
 | `DB_IDLE_IN_TRANSACTION_MS` | no | `60000` | PostgreSQL closes a session that sits idle inside a transaction this long, so it cannot hold locks. |
 | `HEARTBEAT_FLUSH_SECONDS` | no | `2` | Agent heartbeats are collected and written in one statement this often. |
-| `TOTP_ENCRYPTION_KEY` | no | derived from `JWT_SECRET` | Fernet key that encrypts the 2FA secrets in the database. Set it before ever changing `JWT_SECRET`; see [`security.md`](security.md#two-factor-authentication). |
+| `SCHEDULE_VALID_MINUTES` | no | `60` | A scheduled run that could not be sent within this many minutes of its time becomes `Expired`. |
+| `SCHEDULE_MISFIRE_MINUTES` | no | `60` | If the server was down longer than this past a run time, that run is skipped and reported as missed. |
+| `TOTP_ENCRYPTION_KEY` | no | derived from `JWT_SECRET` | Fernet key that encrypts the 2FA secrets and the per-device bypass keys in the database. Set it before ever changing `JWT_SECRET`; see [`security.md`](security.md#two-factor-authentication). |
 | `DISK_CHECK_PATHS` | no | – | Extra comma-separated paths for the hourly free-space check (the backend folder and `storage/` are always checked). |
 | `TLS_CERT_FILES` | no | `/etc/pops/tls/server.crt,/etc/pops/ca/pops-ca.pem` | Certificate files whose expiry is checked daily (missing files are skipped). |
 | `TLS_CHECK_URL` | no | the `https` origins in `CORS_ALLOWED_ORIGINS` | Panel address(es) whose live certificate expiry is checked daily, for example `https://pops.okul.k12.tr`. |
