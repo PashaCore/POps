@@ -17,8 +17,13 @@ namespace POpsAgent
     public sealed class UpdateResultReporter
     {
         public const string AckFeature = "update_result_ack";
-        public static readonly TimeSpan ServerInfoWait = TimeSpan.FromSeconds(15);
+        public static readonly TimeSpan ServerInfoWait = ServerHandshake.ServerInfoWait;
         public static readonly TimeSpan ResendInterval = TimeSpan.FromSeconds(60);
+
+        // server_info ve 15 sn kuralı görev sonucu onayıyla (ResultSpool) ortaktır: Worker aynı nesneyi verir
+        public UpdateResultReporter(ServerHandshake handshake = null) => Handshake = handshake ?? new ServerHandshake();
+
+        public ServerHandshake Handshake { get; }
 
         public enum Step
         {
@@ -33,50 +38,32 @@ namespace POpsAgent
         }
 
         private readonly object _gate = new object();
-        private DateTime _connectedUtc = DateTime.MinValue;
-        private bool _serverInfoSeen;
-        private bool _ackSupported;
         private string _sentId;
         private DateTime _sentUtc;
 
-        internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
+        // Saat el sıkışmayla ortak (testlerde değiştirilir)
+        internal Func<DateTime> UtcNow { get => Handshake.UtcNow; set => Handshake.UtcNow = value; }
 
-        public bool AckSupported { get { lock (_gate) return _ackSupported; } }
+        public bool AckSupported => Handshake.Supports(AckFeature) == true;
 
         public void OnConnected()
         {
-            lock (_gate)
-            {
-                _connectedUtc = UtcNow();
-                _serverInfoSeen = false;
-                _ackSupported = false;
-                _sentId = null;
-            }
+            Handshake.OnConnected();
+            lock (_gate) _sentId = null;
         }
 
         // {"action":"server_info","features":[...]}
-        public void OnServerInfo(JsonElement message)
-        {
-            bool supported = false;
-            if (message.ValueKind == JsonValueKind.Object && message.TryGetProperty("features", out JsonElement features) && features.ValueKind == JsonValueKind.Array)
-                foreach (JsonElement f in features.EnumerateArray())
-                    if (f.ValueKind == JsonValueKind.String && f.GetString() == AckFeature) supported = true;
-            lock (_gate)
-            {
-                _serverInfoSeen = true;
-                _ackSupported = supported;
-            }
-        }
+        public void OnServerInfo(JsonElement message) => Handshake.OnServerInfo(message);
 
         public Step Next(string resultId)
         {
             if (string.IsNullOrEmpty(resultId)) return Step.Nothing;
+            bool? supported = Handshake.Supports(AckFeature);
+            if (supported == null) return Step.Wait;
+            if (supported == false) return Step.SendAndMarkReported;
             lock (_gate)
             {
-                DateTime now = UtcNow();
-                if (!_serverInfoSeen && now - _connectedUtc < ServerInfoWait) return Step.Wait;
-                if (!_ackSupported) return Step.SendAndMarkReported;
-                if (_sentId == resultId && now - _sentUtc < ResendInterval) return Step.Nothing;
+                if (_sentId == resultId && UtcNow() - _sentUtc < ResendInterval) return Step.Nothing;
                 return Step.SendAndKeep;
             }
         }

@@ -43,7 +43,7 @@ the agent on net8.0-windows and the MSI custom actions on net472) and shown in t
 Baseline (2026-09-29): `POps.Shared` 80 %, `POpsAgent` 48 %, MSI custom actions 77 %. `coverlet.collector` stays on
 6.0.4: 8.x and 10.x write an empty report for the net472 target.
 
-0.1.14 (2026-10-02, local run): `POpsAgent` **62.9 %**, `POps.Shared` 86.0 %, MSI custom actions 77.2 %. The
+0.1.14 (2026-10-02, local run): `POpsAgent` **64.3 %**, `POps.Shared` 86.0 %, MSI custom actions 77.2 %. The
 "Agent coverage summary" step fails when `POpsAgent` drops below **62 %** (`AGENT_FLOOR` in
 `.github/workflows/ci.yml`); raise it when coverage goes up, never lower it to make a change pass. The server
 command handling is covered through `Worker.HandleServerMessageAsync` with outgoing messages captured
