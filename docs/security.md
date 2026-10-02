@@ -39,6 +39,9 @@ Sürüm** (read from `GET /api/admin/2fa/status`), which can be hidden for 7 day
   re-encrypted with the current key (plain-text secrets from older versions included). **Before changing
   `JWT_SECRET`, set `TOTP_ENCRYPTION_KEY` and restart once**; otherwise the existing 2FA secrets can no longer be
   read and those users must have 2FA reset.
+- **What the encryption covers:** a leaked database dump or SQL access alone. A full server backup holds both the
+  database and `.env` (with the key), so it must be protected like the server itself: root-only, encrypted when it
+  leaves the machine.
 
 If an authenticator is lost, a server administrator can reset it:
 

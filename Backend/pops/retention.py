@@ -14,6 +14,7 @@ takılmasın.
 
 import datetime
 import logging
+import time
 
 from pops.db import execute_query
 
@@ -24,7 +25,9 @@ MAX_DAYS = 3650
 BATCH = 5000
 
 # Sonuçlanmış görev durumları (bekleyen, duraklatılmış, çalışan ve sonucu belirsiz olanlar silinmez)
-_FINISHED_TASKS = ["Completed", "Completed (Rebooted)", "Failed", "Error", "Cancelled", "Interrupted", "Timed Out"]
+_FINISHED_TASKS = [
+    "Completed", "Completed (Rebooted)", "Failed", "Error", "Cancelled", "Interrupted", "Timed Out", "Denied",
+]
 
 
 async def settings() -> dict:
@@ -94,15 +97,23 @@ async def apply() -> dict:
     return removed
 
 
+_last_attempt = [-3600.0]
+
+
 async def apply_daily() -> None:
     """Günde bir kez (zamanlayıcı her turda çağırır; aynı gün ikinci kez çalışmaz)."""
     today = datetime.date.today().isoformat()
     rows = await execute_query("SELECT value FROM global_settings WHERE key = 'retention_run_date'", fetch=True)
     if rows and rows[0]["value"] == today:
         return
+    # Hata veren tur her 30 sn'de bir değil, en fazla saatte bir yeniden denenir
+    if time.monotonic() - _last_attempt[0] < 3600:
+        return
+    _last_attempt[0] = time.monotonic()
+    await apply()
+    # Tarih silme bittikten sonra yazılır: yarıda kalan (hata veren) tur aynı gün bir sonraki turda yeniden dener
     await execute_query(
         "INSERT INTO global_settings (key, value) VALUES ('retention_run_date', $1) "
         "ON CONFLICT (key) DO UPDATE SET value = $1",
         (today,),
     )
-    await apply()

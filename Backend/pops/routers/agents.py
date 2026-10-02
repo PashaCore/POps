@@ -160,7 +160,7 @@ async def reconcile_quarantine(
 
 # Sunucunun desteklediği, ajanın davranışını değiştiren özellikler (0.1.14+ ajan okur; eskiler bilinmeyen action'ı
 # yok sayar). update_result_ack: güncelleme sonucu kaydedilince onaylanır, ajan onaya kadar sonucu saklar.
-SERVER_FEATURES = ("update_result_ack",)
+SERVER_FEATURES = ("update_result_ack", "result_ack")
 
 
 def _server_version() -> str:
@@ -289,6 +289,10 @@ async def _enroll(pc_name: str, token_id: int):
     new_secret = secrets.token_urlsafe(32)
     try:
         async with db.transaction() as conn:
+            # Cihaz kimliği üzerinde kilit: yeni bir cihazın henüz anahtar satırı yoktur, FOR UPDATE bir şey kilitlemez.
+            # Aynı yeni kimlikle eşzamanlı iki kayıttan ikincisi burada bekler, sonra anahtarı görür ve yeniden kayıt
+            # kuralına takılır; ilkinin verdiği anahtarı ezemez.
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "enroll:" + pc_name)
             has_secret = await conn.fetchval("SELECT 1 FROM agent_secrets WHERE pc_name=$1 FOR UPDATE", pc_name)
             if has_secret:
                 allowed = await conn.fetchval(
@@ -370,14 +374,20 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             # saklanır); çıkış kodu (0.1.13+) sıfır değilse görev Failed olur.
             exit_code = pld.get("exit_code")
             exit_code = exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None
+            task_id = pld.get("task_id")
+            if not isinstance(task_id, int) or isinstance(task_id, bool):
+                return
             await execute_query(
                 "UPDATE tasks SET output = $1, exit_code = $4, status = CASE "
                 "WHEN status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out') THEN "
                 "(CASE WHEN $4::int IS NULL OR $4::int = 0 THEN 'Completed' ELSE 'Failed' END) ELSE status END "
                 "WHERE id = $2 AND target_pc = $3 "
                 "AND status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out', 'Cancelled')",
-                (pld.get("output"), pld.get("task_id"), active_hwid, exit_code),
+                (pld.get("output"), task_id, active_hwid, exit_code),
             )
+            # Sonuç veritabanına yazıldı: 0.1.14+ ajan sonucu bu onaya kadar saklar ve yeniden gönderir (aynı sonucun
+            # ikinci kez gelmesi zararsızdır, yalnızca çıktı yeniden yazılır)
+            await manager.send_command({"action": "result_ack", "task_id": task_id}, active_hwid)
             await manager.broadcast_to_panels(
                 {
                     "type": "terminal_output",
@@ -618,12 +628,14 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         meta_data=detail,
                     )
                 await update_tracking.forget(active_hwid)
-                if result_id:
-                    await update_tracking.remember(active_hwid, result_id)
-                    await _ack_update_result(active_hwid, result_id)
                 if notice:
                     await notify(notice[0], notice[1], notice[2], str(payload.get("detail") or ""), active_hwid)
                 await manager.broadcast_to_panels({"type": "update_result", "pc_name": active_hwid, **detail})
+                # Onay en sonda: arada sunucu çökerse ajan sonucu yeniden gönderir ve kayıt/bildirim tekrarlanır (en az
+                # bir kez). Önce onaylanırsa çökmede bildirim hiç oluşmazdı.
+                if result_id:
+                    await update_tracking.remember(active_hwid, result_id)
+                    await _ack_update_result(active_hwid, result_id)
                 continue
             if payload.get("type") == "capabilities":
                 # Ajan güncel yetenek durumunu bildirir (bağlantıda + her değişimde). Sakla + panele yay.
@@ -675,6 +687,16 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 # Ajan, kapalı bir yetenek için gelen isteği reddettiğini bildirir. Denetime yaz + panele yay.
                 # reason (0.1.12+): ör. not_enrolled = cihaz anahtarı olmadığı için Vision tüneli açılmadı
                 _md = {k: payload.get(k) for k in ("capability", "action", "task_id", "reason")}
+                denied_task = payload.get("task_id")
+                if isinstance(denied_task, int) and not isinstance(denied_task, bool):
+                    # Komut çalıştırılmadı. Ajanın ret sonucu (0.1.13 ve öncesi çıkış kodsuz) görevi "Completed"
+                    # yapmış olabilir; görev "Denied" olur.
+                    await execute_query(
+                        "UPDATE tasks SET status = 'Denied', exit_code = COALESCE(exit_code, -5) "
+                        "WHERE id = $1 AND target_pc = $2 "
+                        "AND status IN ('Running', 'Completed', 'Failed', 'Unknown', 'Interrupted', 'Timed Out')",
+                        (denied_task, active_hwid),
+                    )
                 await log_audit_event(
                     active_hwid,
                     "Security",
