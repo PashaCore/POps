@@ -4,6 +4,9 @@
 - POST /api/tasks/status verilen görevlerin durumunu döner; silinmiş ya da olmayan görev listede yoktur.
 - POST /api/system/update-progress ajan güncellemesinin cihaz cihaz durumunu döner: sürüm hedefte mi, bekleyen
   gönderim, gönderimden sonraki güncelleme sonucu; yalnızca yönetici.
+- Görev bağlamı: adımın adı, kaynak sayfa, gerekçe, isteğin IP'si ve iş kimliği görevle saklanır; yeniden deneme
+  adı ve gerekçeyi taşır. GET /api/devices/{pc}/activity cihazın son işlemlerini bu bağlamla döner.
+- Ajan politikasını kimin, ne zaman değiştirdiği saklanır (GET /api/agent_policies/meta) ve denetim kaydına yazılır.
 
 Bazı adımlar sunucunun modüllerini bu süreçte, aynı veritabanına bağlanarak çağırır (denetim kaydı).
 Ortam: POPS_TEST_HTTP + DB_* + JWT_SECRET.
@@ -114,6 +117,44 @@ async def run(c, admin, viewer):
     s, r = req("/api/tasks/action", admin, {"action": "RETRY", "target_mode": "TASK", "target_id": str(ids[0])})
     chk(s == 200 and r.get("changed") == 1 and len(r.get("task_ids") or []) == 1 and r["task_ids"][0] not in ids,
         "yeniden deneme yeni kimliği döner")
+
+    print("== görev bağlamı ve cihazın son işlemleri")
+    ctx = {"target_mode": "PC", "targets": ["HW-JB1"], "taskSequence": [{"name": "Yeniden başlat", "type": "CMD",
+           "command": "echo jb-ctx"}], "title": "Yeniden başlat · JB-Lab", "source": "labs", "reason": "ders bitti"}
+    s, b = req("/api/deploy_orchestration", admin, ctx)
+    cid = (b.get("task_ids") or [None])[0]
+    row = await c.fetchrow("SELECT title, source, reason, client_ip, batch_id FROM tasks WHERE id = $1", cid)
+    chk(s == 200 and row and row["title"] == "Yeniden başlat" and row["source"] == "labs" and row["reason"] == "ders bitti"
+        and row["client_ip"] == "127.0.0.1" and len(row["batch_id"] or "") == 16, "bağlam saklandı (%s)" % (dict(row) if row else None))
+    batch = await c.fetch("SELECT DISTINCT batch_id FROM tasks WHERE id = ANY($1::int[])", ids)
+    chk(len(batch) == 1 and batch[0]["batch_id"], "aynı istekteki görevler tek iş kimliğinde")
+    chk(req("/api/deploy_orchestration", admin, dict(ctx, reason="x" * 501))[0] == 422, "gerekçe en çok 500 karakter")
+    await c.execute("UPDATE tasks SET status = 'Denied', exit_code = -5 WHERE id = $1", cid)
+    s, r = req("/api/tasks/action", admin, {"action": "RETRY", "target_mode": "TASK", "target_id": str(cid)})
+    rid = (r.get("task_ids") or [None])[0]
+    rrow = await c.fetchrow("SELECT title, source, reason, batch_id FROM tasks WHERE id = $1", rid)
+    chk(rrow and rrow["title"] == "Yeniden başlat" and rrow["reason"] == "ders bitti" and rrow["source"] == "tasks"
+        and rrow["batch_id"] != row["batch_id"], "yeniden deneme adı ve gerekçeyi taşır, yeni iş")
+    s, a = req("/api/devices/HW-JB1/activity?limit=5", viewer)
+    acts = a.get("items") or []
+    first = acts[0] if acts else {}
+    chk(s == 200 and len(acts) == 5 and first.get("id") == rid and first.get("by") == "jbadmin"
+        and first.get("source") == "tasks" and first.get("title") == "Yeniden başlat", "son işlemler yeniden eskiye")
+    denied = next((x for x in acts if x.get("id") == cid), {})
+    chk(denied.get("status") == "Denied" and denied.get("exit_code") == -5 and denied.get("reason") == "ders bitti"
+        and denied.get("ip") == "127.0.0.1", "reddedilen görev nedeniyle")
+    chk(req("/api/devices/HW-JB1/activity", None)[0] == 401, "son işlemler: oturumsuz 401")
+
+    print("== politika: son değiştiren")
+    chk(req("/api/agent_policies/meta", viewer)[1].get("updated_by") is None, "değişiklik yokken boş")
+    s, _ = req("/api/agent_policies", admin, {"fair_use_text": "jb", "dns_categories": [], "auto_quarantine": False,
+                                               "quarantine_threshold": 5})
+    s2, m = req("/api/agent_policies/meta", viewer)
+    chk(s == 200 and s2 == 200 and m.get("updated_by") == "jbadmin" and str(m.get("updated_at", "")).startswith("20"),
+        "kim ve ne zaman saklandı (%s)" % m)
+    chk(await c.fetchval("SELECT count(*) FROM device_audit_logs WHERE action = 'policy_update'") >= 1,
+        "denetim kaydına yazıldı")
+    chk(req("/api/agent_policies/meta", None)[0] == 401, "meta: oturumsuz 401")
 
     print("== ajan güncellemesi ilerlemesi")
     since = time.time() - 5
