@@ -21,8 +21,6 @@ jobs:
         include:
           - name: POps.Agent
             project: Agent/POps.Agent/POps.Agent.sln
-          - name: POpsVision
-            project: Agent/POpsVision/POpsVision.sln
           - name: POpsUpdater
             project: Agent/POpsUpdater/POpsUpdater.sln
           - name: POpsWatchdog

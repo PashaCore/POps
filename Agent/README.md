@@ -8,10 +8,9 @@ Windows endpoint agent (.NET 8). Includes the main agent, tray application, remo
 | --- | --- |
 | `POps.Agent` | The Windows service (`POpsAgent.exe`, LocalSystem) |
 | `POpsTray` | Tray application in the user's session |
-| `POpsVision` | Screen streaming in the user's session |
 | `POpsWatchdog` | Restarts the service and the tray |
 | `POpsUpdater` | Applies signed MSI updates and rolls them back |
-| `POps.Shared` | `POps.Shared.dll`, helpers used by the service, updater, watchdog and Vision: version, log, `appsettings.json` lookup, hardware ID. Each program sets `POpsHelpers.Component` at start; that name picks the log location. |
+| `POps.Shared` | `POps.Shared.dll`, helpers used by the service, tray, updater and watchdog: version, log, `appsettings.json` lookup, hardware ID. Each program sets `POpsHelpers.Component` at start; that name picks the log location. |
 | `POps.Tests` | xUnit tests (see below) |
 
 ## Tests
