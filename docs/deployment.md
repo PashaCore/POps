@@ -47,7 +47,7 @@ The web server must:
 - serve `Dashboard/` as the document root with PHP (`index.php` as the index),
 - proxy `/api/`, `/ws/` (with WebSocket upgrade), `/updates/` and `/download/` to `http://127.0.0.1:8000`,
 - serve all of this on **one host name** that both the administrators' browsers and the PCs can reach: the
-  panel's JavaScript calls the API and WebSockets on the page's own origin, and the Deployment page builds the
+  panel's JavaScript calls the API and WebSockets on the page's own origin, and the **Dağıtım** page builds the
   package download links from that origin too. Use the same address as the agents' `SERVER_URL`.
 
 Agents need `/ws/agent/…`, `/ws/vision/…`, `/api/…` and `/updates/…` (signed MSI updates). Deployment packages
@@ -176,7 +176,7 @@ have this file **before** the new scripts are installed, or the deploy stops at 
 
 ### Self-update from the panel
 
-With the systemd path unit installed, a superadmin can run the same deploy from **Sistem & Sürüm** without SSH.
+With the systemd path unit installed, a superadmin can run the same deploy from **Sistem** without SSH.
 `pops-selfupdate` fast-forwards the checkout to the newest release tag on `origin/main` (or to `origin/main` on the
 `main` channel), checks the tag's SSH signature against `/etc/pops/allowed_signers` when that file exists, and runs
 `/usr/local/sbin/pops-deploy-backend`. A tag whose signature cannot be verified is neither merged nor deployed.
@@ -184,7 +184,7 @@ Setup, signing and design: [`self-update.md`](self-update.md).
 
 ## Updating the agents
 
-Agent updates are signed MSI packages distributed from **Sistem & Sürüm**: stage a release (download from GitHub
+Agent updates are signed MSI packages distributed from **Sistem**: stage a release (download from GitHub
 or upload it), then send it to all agents, one lab or selected PCs. Only online agents receive it. See
 [`agent.md`](agent.md#updates).
 

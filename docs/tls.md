@@ -31,7 +31,7 @@ tunnel, package download):
   Let's Encrypt and other public CAs, and the school CA if it was distributed to the machines (for example by
   GPO). `SERVER_CA_CERT=system` on an upgrade removes a previously pinned CA.
 
-The System page shows which mode each agent reports ("Sunucu sertifikası: kurum CA'sı / sistem deposu").
+The **Sistem** page shows which mode each agent reports (**Cihaz yetenekleri** → the device → "Sunucu sertifikası": "Kurum sertifikası" / "Sistem deposu").
 Agents older than 0.1.10 do not report it.
 
 Getting the CA file to the PCs: it is served at `https://<server>/pops-ca.pem` (public data, nothing secret);

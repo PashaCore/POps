@@ -102,6 +102,7 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/devices` | require_auth | All devices with status, lab, IP, current user, active window, quarantine flag, agent version, running version and capability state. |
+| GET | `/api/devices/{pc_name}/activity` | require_auth | The latest operations on one device, newest first, `?limit=` (default 15, at most 50): its tasks (`kind: "task"` with `id`, `title`, `command` (first 300 characters), `status`, `exit_code`, `at`, `by`, `source`, `reason`, `ip`, `started_at`, `batch_id`) and its remote-control sessions (`kind: "vision"` with `status`, `at`, `ended_at`, `by`, `reason`, `mandatory`), merged. Returns `{"items": [...]}`. The panel shows it as "Son işlemler" in the PC detail panel. |
 | DELETE | `/api/devices/{pc_name}` | require_admin | Deletes the device, its hardware and software inventory, its Windows Update status, its `agent_logs_v2` rows, its version row and its **device secret**, and closes its socket (code `4000`). |
 | GET | `/api/inventory` | require_auth | Hardware inventory of all devices (`hw_inventory`). |
 | GET | `/api/logs` | require_auth | Latest event log entries (`agent_logs_v2`), `?limit=` (default 1000). |
@@ -129,14 +130,15 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/deploy_orchestration` | require_admin | `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], taskSequence: [{name, type, command}]}`. Queues one task per target and step in one transaction, recording the requesting user, then starts the queue. Returns `created` (number of tasks). The same request from the same user within 5 seconds (double click, retry) creates nothing and returns `duplicate: true`. |
-| GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). |
-| POST | `/api/tasks/action` | require_admin | `{action: CANCEL \| RETRY \| PAUSE \| RESUME, target_mode: TASK \| LAB \| PC \| ALL, target_id}`. RETRY opens a **new** task for each finished task (`retry_of` = the old one) unless a retry of it is still pending or running; the old task keeps its result. |
+| POST | `/api/deploy_orchestration` | require_admin | `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], taskSequence: [{name, type, command}], title?, source?, reason?}`. Queues one task per target and step in one transaction, recording the requesting user, then starts the queue. `title` (at most 200 characters), `source` (the panel page the request comes from, at most 40) and `reason` (at most 500) are optional; they are stored on every created task together with the caller's IP address and a `batch_id` shared by the tasks of the request. A task's title is the step's `name`, or `title` when the step has none. Returns `created` (number of tasks) and `task_ids`. The same request from the same user within 5 seconds (double click, retry) creates nothing and returns `duplicate: true`. |
+| GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). Besides the queue columns each row has `title`, `source`, `reason`, `client_ip` and `batch_id` (empty on tasks created before migration `0019`); the panel groups the tasks of one `batch_id` into one job. |
+| POST | `/api/tasks/status` | require_auth | `{ids: [...]}` (at most 5000): `{"items": [{id, target_pc, target_lab, status, exit_code, dispatched_at}]}` for the tasks that still exist. The panel's job center polls it for the progress of what was sent. |
+| POST | `/api/tasks/action` | require_admin | `{action: CANCEL \| RETRY \| PAUSE \| RESUME, target_mode: TASK \| LAB \| PC \| ALL, target_id}`. RETRY opens a **new** task for each finished task (`retry_of` = the old one) unless a retry of it is still pending or running; the old task keeps its result. A retry keeps the title and reason, gets `source` `tasks` and a new `batch_id`, and the reply lists `task_ids`. |
 | POST | `/api/flush_queue` | require_admin | Deletes all task records; the deletion (who, how many) is written to the hash-chained audit log first. |
 | GET | `/api/get_concurrent_limit` | require_auth | Current `concurrent_limit` (default 5). |
 | POST | `/api/set_concurrent_limit` | require_admin | `{limit}` (0–10000): how many devices may run a task at the same time; `0` means no limit. A negative value is refused (`422`). |
 | POST | `/api/upload` | require_admin | Multipart `file`. Stored under `Backend/storage` with a sanitised name. Returns `sig` (and `url`) for the signed download link and the file's `sha256`. |
-| GET | `/api/packages` | require_auth | Saved package definitions of the Deployment page. |
+| GET | `/api/packages` | require_auth | Saved package definitions of the **Dağıtım** page. |
 | POST | `/api/add_package` | require_admin | `{id, name, type, meta, command, icon, color}`; insert or update. |
 | POST | `/api/delete_package` | require_admin | `{id}`. |
 | GET | `/api/storage` | require_auth | Size of uploaded files and update packages, event log table size and a 7-day log trend. |
@@ -219,6 +221,7 @@ not get a second one.
 | --- | --- | --- | --- |
 | GET | `/api/notifications` | require_admin | Latest notifications (`?limit=`, default 30, at most 200) with `channels`, `delivery_error`, `is_read`, and the `unread` count. |
 | POST | `/api/notifications/read` | require_admin | `{ids: [...]}` marks those as read; an empty list marks all. |
+| POST | `/api/notifications/clear` | require_admin | `{ids: [...]}` deletes those notifications; an empty list deletes all read ones. Returns `deleted`. |
 | GET | `/api/system/notify-settings` | require_superadmin | `enabled`, `min_severity`, `email_to`, `webhook_url` and `smtp_configured` (SMTP values themselves are never returned). |
 | POST | `/api/system/notify-settings` | require_superadmin | Saves the same fields. `min_severity` is `info`, `medium`, `high` or `critical`; up to 20 comma-separated addresses; the webhook must start with `http://` or `https://`. Audited. |
 | POST | `/api/system/notify-test` | require_superadmin | Sends a test notification with the settings in the request body (saved or not) and returns the channels that worked and any `error`. |
@@ -318,6 +321,7 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | POST | `/api/system/upload-release` | require_superadmin | Multipart `files` (`manifest.json`, `manifest.json.sig` and packages) and form field `force`. Verifies the ed25519 signature against `keys/pops_release_ed25519.pub.pem` and every file's SHA-256, then stages the release under `Backend/releases/<version>/`. `409` if it is not newer than the staged release (unless `force`). |
 | POST | `/api/system/fetch-release` | require_superadmin | `{tag?, force}`: downloads `manifest.json`, its signature and the agent MSI of a GitHub release (latest if `tag` is empty) and runs the same verification as an upload. `502` if GitHub cannot be reached. |
 | POST | `/api/system/deploy-update` | require_superadmin | `{target_mode: "ALL" \| "LAB" \| "PC", targets}`: copies the staged MSI to `/updates/` and sends `update_agent` with the signed manifest to the **online** targets. Returns `dispatched` and `skipped_offline`. |
+| POST | `/api/system/update-progress` | require_admin | `{pcs: [...], version, since}` (`since` = Unix time of the dispatch; at most 5000 devices): per device `known`, `online`, `version`, `on_target` (running `version`), `pending` (an update was sent and not answered yet) and `result` (the update result received since `since`: `status`, `rollback`, `to_version`, `detail`, `agent_state`). The panel follows an agent update with it. |
 
 ### Enrollment, identity and capabilities
 

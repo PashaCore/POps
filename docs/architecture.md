@@ -47,7 +47,7 @@ A FastAPI application (`Backend/server.py`) served by uvicorn, with the code in 
 `Backend/system_routes.py`. It provides the REST API, three WebSocket endpoints, the static download folders and
 the task queue, and it applies database migrations at startup. A background loop runs every 30 seconds: it
 queues scheduled tasks that are due and raises a notification for agent updates that were never answered.
-Notifications are stored for the panel's bell and, if configured, sent by e-mail or webhook. Code layout:
+Notifications are stored for the panel's **Bildirimler** and, if configured, sent by e-mail or webhook. Code layout:
 [`backend.md`](backend.md). Endpoints: [`api.md`](api.md).
 
 Some state is kept only in the backend process's memory: which agents and panels are connected, the Vision
@@ -100,8 +100,8 @@ machine.
 
 ### Running a command
 
-1. An admin queues commands on the Deployment or Terminal page or in the Vision diagnostics dialog
-   (`POST /api/deploy_orchestration`), or a scheduled task becomes due; each step becomes one task per target PC,
+1. An admin queues commands on **Dağıtım** or **Uzak komut**, with the PC actions on **Cihazlar** and **Sınıflar**,
+   or in the **Uzak ekran** diagnostics dialog (`POST /api/deploy_orchestration`), or a scheduled task becomes due; each step becomes one task per target PC,
    recorded with the requesting user.
 2. The queue sends `execute` to idle online PCs, at most `concurrent_limit` at a time, and writes each dispatch to
    the hash-chained audit log.

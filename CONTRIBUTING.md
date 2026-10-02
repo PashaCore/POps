@@ -14,7 +14,7 @@ Useful background before a first change: [`docs/getting-started.md`](docs/gettin
 ## Ways to contribute
 
 - **Bugs:** search the [issues](https://github.com/PashaCore/POps/issues) first. A new report should include the
-  server OS, the backend and agent versions (the panel's **Sistem & Sürüm** page shows both), the Windows version
+  server OS, the backend and agent versions (the panel's **Sistem** page shows both), the Windows version
   for agent problems, steps to reproduce, and the relevant log lines
   ([`docs/troubleshooting.md`](docs/troubleshooting.md) lists where the logs are). Remove host names, IP addresses
   and secrets from logs before posting.
@@ -114,7 +114,7 @@ dotnet test Agent/POps.Tests/POps.Tests.csproj -c Release
   firewall rules.
 - The agent refuses a plain `http://` server unless it is on the same machine. Use
   `SERVER_URL=http://127.0.0.1:8000` for a backend on the VM itself; otherwise put TLS in front with a certificate
-  the VM trusts. Enrollment tokens are created on the panel's **Sistem & Sürüm** page.
+  the VM trusts. Enrollment tokens are created on the panel's **Sistem** page.
 - Agent internals: [`Agent/README.md`](Agent/README.md), [`docs/agent.md`](docs/agent.md).
 
 ### Docker Compose (alternative)
@@ -308,7 +308,7 @@ For maintainers. The mechanics are in `.github/workflows/release.yml`; see also
    environment with required reviewers, so a signed release cannot be published without a manual approval.
    Changing `release.yml` on `main`, or starting it by hand on a branch, builds the packages without publishing.
 5. Roll out. **Server:** self-update from the panel or `pops-deploy-backend` (take a `pg_dump` first when a
-   migration changes data). **Agents:** on **Sistem & Sürüm**, download the release from GitHub (or upload it on an
+   migration changes data). **Agents:** on **Sistem**, download the release from GitHub (or upload it on an
    offline server), dispatch it to one pilot PC or lab, check the update results, then dispatch it to the rest.
 6. Rollback drill: when a release changes `POpsUpdater` or what it depends on (such as `POps.Shared`), ship it
    normally first, then run the drill with the next release, because the updater that runs is always the

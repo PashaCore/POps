@@ -125,7 +125,7 @@ as Veyon; the two can run side by side ([positioning](docs/positioning.md)).
 | Feature | What it does |
 | :--- | :--- |
 | **Helpdesk** | Students and staff open tickets from the tray ("Sorun bildir"); IT answers from the panel. |
-| **Notifications** | Failed updates, takeover attempts, policy alerts, a full disk or an expiring certificate reach the bell, e-mail or a webhook. |
+| **Notifications** | Failed updates, takeover attempts, policy alerts, a full disk or an expiring certificate reach **Bildirimler** in the panel, e-mail or a webhook. |
 | **Server self-update** | Update the backend from the panel to the latest signed release tag, with a health check and automatic rollback. |
 | **Backups** | A nightly backup that is test-restored into a scratch database every time, with an optional off-site copy. |
 | **Observability** | JSON logs with request IDs, Prometheus `/metrics`, and a diagnostics page with load figures. |
@@ -266,7 +266,7 @@ The installer sets up PostgreSQL, the Python environment, the `.env` with genera
 with PHP and HTTPS (a school CA by default, or Let's Encrypt), and prints the panel's **admin password** at the end.
 
 **2. Panel:** open `https://<your-server>/`, sign in as `admin`, change the password and set up 2FA on **Ayarlar**.
-On **Sistem & Sürüm**, create an **enrollment token** for a lab.
+On **Sistem**, create an **enrollment token** for a lab.
 
 **3. Agent** on each Windows PC (no prerequisites: the .NET runtime comes with the agent), from an elevated prompt:
 
@@ -275,7 +275,7 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn SERVER_URL=https://<your-server>
 ```
 
 Add `TERMINAL_ENABLED=0` and/or `VISION_ENABLED=0` on PCs that do not need those features. The PC shows up in
-**Cihaz Yönetimi** within seconds.
+**Cihazlar** within seconds.
 
 Step by step: [`docs/quick-start.md`](docs/quick-start.md). Docker Compose is available as an option
 ([`docs/docker.md`](docs/docker.md)).

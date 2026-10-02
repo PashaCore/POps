@@ -122,7 +122,7 @@ addresses because only the dashboard can reach it.
 ## Not supported in Docker
 
 - **Server self-update from the panel.** It relies on a systemd path unit on the host
-  ([`self-update.md`](self-update.md)); in Docker the Sistem & Sürüm page reports it as not
+  ([`self-update.md`](self-update.md)); in Docker the **Sistem** page reports it as not
   installed. Upgrade as described below. Agent updates (upload or fetch a signed release, then
   dispatch) work normally; the files are kept in the `updates` and `releases` volumes.
 - **Wake-on-LAN broadcast from the server.** The backend's own broadcast

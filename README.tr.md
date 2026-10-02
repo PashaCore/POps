@@ -265,7 +265,7 @@ nginx'i ve HTTPS'i (varsayılan olarak okulun kendi sertifika otoritesi, istenir
 panelin **admin şifresini** yazar.
 
 **2. Panel:** `https://<sunucunuz>/` adresini açın, `admin` olarak girin, **Ayarlar**'da şifreyi değiştirip 2FA'yı
-kurun. **Sistem & Sürüm** sayfasında bir lab için **kayıt jetonu** üretin.
+kurun. **Sistem** sayfasında bir sınıf için **kayıt jetonu** üretin.
 
 **3. Ajan:** her Windows bilgisayarda (ön koşul yok: .NET çalışma zamanı ajanla birlikte gelir), yönetici komut isteminde:
 
@@ -274,7 +274,7 @@ msiexec /i POps-Agent-<sürüm>-win-x64.msi /qn SERVER_URL=https://<sunucunuz> E
 ```
 
 Bu özelliklere ihtiyaç olmayan bilgisayarlarda `TERMINAL_ENABLED=0` ve/veya `VISION_ENABLED=0` ekleyin. Bilgisayar
-birkaç saniye içinde **Cihaz Yönetimi** sayfasında görünür.
+birkaç saniye içinde **Cihazlar** sayfasında görünür.
 
 Adım adım (İngilizce): [`docs/quick-start.md`](docs/quick-start.md). Docker Compose seçeneği:
 [`docs/docker.md`](docs/docker.md).

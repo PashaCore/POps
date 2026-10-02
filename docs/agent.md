@@ -34,7 +34,7 @@ copied to `C:\POpsData\updater` together with every runtime file its `POpsUpdate
 
 ## Installing
 
-1. On **Sistem & Sürüm** → "Ajan kaydı ve kimlik", create an enrollment token. Choose the lab the PCs should land
+1. On **Sistem** → "Ajan kaydı ve kimlik", create an enrollment token (**Jeton üret**). Choose the lab the PCs should land
    in, the number of uses (one token can enroll a whole lab) and the lifetime (default 72 hours).
 2. Install the MSI from the GitHub release on each PC:
 
@@ -42,7 +42,7 @@ copied to `C:\POpsData\updater` together with every runtime file its `POpsUpdate
    msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log SERVER_URL=https://pops.example.com ENROLL_TOKEN=<token>
    ```
 
-3. The PC appears on **Cihaz Yönetimi** within seconds, in the token's lab (or in `Atanmamis_Cihazlar` if the token
+3. The PC appears on **Cihazlar** within seconds, in the token's lab (or in `Atanmamis_Cihazlar` if the token
    has no lab).
 
 The command line is visible to other signed-in users while `msiexec` runs, so install through a deployment tool
@@ -139,7 +139,7 @@ What the service does with each server command:
 
 | Command | Effect |
 | --- | --- |
-| `execute` | Runs the command line as a temporary `.bat` through `cmd.exe` as LocalSystem (UTF-8, 30-minute limit) and returns the output as a `result`. Refused when the terminal capability is off. Used by the Deployment and Terminal pages through the task queue. The `.bat` (`pops_task_<32 hex>.bat` in the service's temp folder) is deleted when the task ends; from 0.1.14-alpha files left by a crash are deleted at service start, before the first task (only names matching exactly that pattern). Output is read in fixed 8192-character chunks, not by line, so even a single line of hundreds of megabytes stays within the 524 288-character (512 Ki) limit (the rest is read and dropped, the pipe never blocks). The same task ID is never run twice at once: a repeated `execute` for a running task is logged and ignored. Exit codes the agent sets itself: -1 time limit, -2 cancelled, -3 agent error, -4 service stopping, -5 refused (terminal capability off). |
+| `execute` | Runs the command line as a temporary `.bat` through `cmd.exe` as LocalSystem (UTF-8, 30-minute limit) and returns the output as a `result`. Refused when the terminal capability is off. Used by **Dağıtım**, **Uzak komut** and the PC actions on **Cihazlar** and **Sınıflar** through the task queue. The `.bat` (`pops_task_<32 hex>.bat` in the service's temp folder) is deleted when the task ends; from 0.1.14-alpha files left by a crash are deleted at service start, before the first task (only names matching exactly that pattern). Output is read in fixed 8192-character chunks, not by line, so even a single line of hundreds of megabytes stays within the 524 288-character (512 Ki) limit (the rest is read and dropped, the pipe never blocks). The same task ID is never run twice at once: a repeated `execute` for a running task is logged and ignored. Exit codes the agent sets itself: -1 time limit, -2 cancelled, -3 agent error, -4 service stopping, -5 refused (terminal capability off). |
 | `get_hardware` | Posts the hardware inventory. |
 | `start_vision_session` | Passes the session request to the tray (consent dialog or mandatory countdown). |
 | `stop_stream` | Stops screen capture and closes the Vision connection. |
@@ -181,7 +181,7 @@ service.
 
 Terminal (`execute`) and Vision (streaming, previews, remote input) can be disabled per PC, so that even a
 compromised server cannot use them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`, `1` / `0`);
-the server can only switch them off (**Sistem & Sürüm** → "Cihaz yetenekleri"). A refused command is closed with
+the server can only switch them off (**Sistem** → "Cihaz yetenekleri"). A refused command is closed with
 a `[REDDEDİLDİ]` result and reported as `capability_denied`. Re-enabling needs a local administrator: MSI repair or
 reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; see
 [`Agent/README.md`](../Agent/README.md#capability-policy).
@@ -235,13 +235,13 @@ one check, `POps.Shared.ServerTrust`.
 
 A refused certificate is logged as `[GÜVENLİK] Sunucu sertifikası kurum sertifikasına (server-ca.pem)
 zincirlenmiyor` (or `… ana makine adıyla eşleşmiyor`), at most once a minute; the connection is not made and the
-agent retries with its normal backoff. The `capabilities` message carries `server_ca` so the System page shows
+agent retries with its normal backoff. The `capabilities` message carries `server_ca` so the **Sistem** page shows
 the mode of each device. `SERVER_CA_CERT=system` on an upgrade removes the pinned CA; not giving the property keeps
 the current file. How to set up the server side, distribute `pops-ca.pem` and rotate the CA: [`docs/tls.md`](tls.md).
 
 ## Quarantine and offline bypass
 
-`lockdown` (from **POpsVision** → "Karantinaya Al", or `POST /api/security/lockdown`):
+`lockdown` (from **Uzak ekran** → "Karantinaya Al", from **Diğer** → "Karantinaya al" on **Cihazlar** or **Sınıflar**, or `POST /api/security/lockdown`):
 
 - the tray shows a full-screen lock screen that blocks the Windows, Tab, Esc and F4 keys, stays on top and takes the
   focus back within half a second,
@@ -272,8 +272,8 @@ the rules cannot be removed, the lock stays, the user is not told it was lifted,
 reason "DNS kural ihlali eşiği" plus isolation, reported as `agent.auto_quarantine` so the panel shows the device as
 quarantined.
 
-**Offline bypass.** If a quarantined PC cannot reach the server, an admin can get the day's code for it with the
-key button on **Cihaz Yönetimi** (`POST /api/security/bypass_token/{pc}`; every request is logged). With the per-device key a code works once per day: if the PC was already unlocked with today's code, press the key button again for the next one. The user enters
+**Offline bypass.** If a quarantined PC cannot reach the server, an admin can get the day's code for it with
+**Çevrimdışı açma kodu** in the **Diğer** menu of the PC's detail panel (on **Cihazlar** or **Sınıflar**; shown for a quarantined PC; `POST /api/security/bypass_token/{pc}`; every request is logged). With the per-device key a code works once per day: if the PC was already unlocked with today's code, ask for the code again to get the next one. The user enters
 it on the lock screen or in the tray menu **Yönetici Müdahalesi (Bypass)**. From 0.1.5-alpha a valid code does what
 `unlock` does: it closes the lock screen and removes the network isolation, and when the server can be reached the
 agent records the use as `agent.offline_bypass`. Older agents only remove the isolation. The server provisions a
@@ -339,7 +339,7 @@ agent collects and sends this data, how it classifies updates and what an instal
 
 Updates are signed MSI packages; the agent installs nothing unsigned.
 
-1. A superadmin stages a release on **Sistem & Sürüm** (download from GitHub, or upload `manifest.json`,
+1. A superadmin stages a release on **Sistem** (download from GitHub, or upload `manifest.json`,
    `manifest.json.sig` and the MSI) and sends it to all agents, a lab or selected PCs. Only online agents receive
    it; send it again for the others later.
 2. The agent verifies the manifest's ed25519 signature with the public key compiled into it, refuses a version

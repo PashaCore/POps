@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The panel is redesigned: one calm layout on every page, one action bar per page instead of buttons on every row and desk, details in a panel that opens on click, and every operation shows who sent it, when, from which page, to which PCs, the result and, when it failed or was refused, why. Anything sent to PCs shows its progress in a job center at the bottom of the sidebar.
+
+Upgrading: update the server (**Sistem → Sunucuyu güncelle**; migration `0019`). Nothing changes on the agents.
+
+### Added
+
+- **Panel: sidebar, search and job center.** A dark sidebar with grouped pages (Cihazlar, İşlem, Yönetim, Sunucu) replaces the top bar; notifications moved to its bottom. **Ctrl+K** searches pages, devices and labs and opens the device's detail panel. The job center ("N işlem sürüyor") follows every request that creates tasks (`task_ids`, `POST /api/tasks/status`) with a segmented progress bar per job, names the PCs that failed and ends with one toast.
+- **Panel: device detail panel.** Clicking a PC on Sınıflar, Cihazlar or in search opens the same right-hand panel: status, user, foreground app, lab, IP/MAC, agent, memory, last seen, last disconnect reason, problems (quarantine, outdated agent, agent errors, remote command/screen off), the last operations with who, when, page, result and reason, and the actions (screen, command, power, message, rename, move, teacher PC, quarantine, offline unlock code, delete).
+- **Server: tasks carry their context.** Tasks store a readable title, the panel page they came from, the reason, the caller's IP and a job id shared by all tasks of one request (migration `0019`); `POST /api/deploy_orchestration` accepts the optional `title`, `source` and `reason`, a retry keeps title and reason. New `GET /api/devices/{pc_name}/activity`: a PC's recent tasks and remote-screen sessions.
+- **Server: who changed the agent policy.** Saving the policy records who and when (`GET /api/agent_policies/meta`) and writes a `policy_update` entry to the audit chain; Politikalar shows it.
+- **Panel: message to the logged-in user** of one PC, a selection or a lab (Windows `msg`, shown for 2 minutes).
+
+### Changed
+
+- **Panel: every page rebuilt in one tone.** Page names follow the sidebar: Kontrol merkezi, Cihazlar, Sınıflar, İşlemler, Uzak komut, Uzak ekran, Dağıtım, Politikalar, Kayıtlar, Raporlar, Destek talepleri, Ayarlar, Sistem.
+  - **Sınıflar:** the labs are listed under Sınıflar in the sidebar, **Atanmamış** collects new PCs. One action bar acts on the whole lab or on the selected desks (click the circle, Ctrl/Cmd+click, Ctrl+A); desks show name, user and a status icon, problems as a small mark with a tooltip. Layout editing is drag and drop and is saved on every drop (it never worked before: the drag library was not loaded).
+  - **Cihazlar:** a sortable table with status, lab and agent filters, CSV export and the same action bar; no buttons on rows.
+  - **İşlemler:** tasks are grouped into jobs (one request = one job) with progress, sender, page, reason and the PCs' results; a job opens with retry, pause, resume and cancel and each PC's output and exit code. Scheduled tasks are a tab.
+  - **Kontrol merkezi:** four clickable figures (online, problem PCs, running jobs, current agents), recent activity with who/when/where/result/reason, things that need attention, labs and recent signals with honest levels (logons are "Bilgi").
+  - **Uzak komut:** targets a PC, a lab or the PCs selected on Sınıflar/Cihazlar, warns before sending about PCs that are off or have remote commands disabled, quick commands in one menu, command history.
+  - **Kayıtlar, Raporlar, Dağıtım, Destek talepleri, Politikalar, Ayarlar, Sistem, Uzak ekran:** same layout and detail panels; see [docs/dashboard.md](docs/dashboard.md).
+- **Panel: confirmations name the target and count** ("3 bilgisayar yeniden başlatılsın mı?" / "3 bilgisayarı yeniden başlat"); shutdown and restart skip PCs that are off and say how many.
+- **Tools: the HTML sink checker** treats calls of `…Html` methods (`POps.iconHtml(…)`) as ready HTML (their definitions are checked) and the panel's `pops_icon()` as safe PHP output.
+
 ## [0.1.15-alpha] - 2026-10-02
 
 The agent moves to .NET 10 and ships its own runtime: no .NET prerequisite on the PC. Features can be turned off for the whole organisation or per lab (modules, with "Okul laboratuvarı" and "Kurum" profiles); the server enforces it and agents follow it. A device key stays on the hardware it was issued to, and `POpsAgent.exe --generalize` prepares disk images. The panel has no browser pop-ups any more, shares one design and several buttons that did nothing work. The server keeps running while its disk stalls, and a deploy stops before `pip` when the venv belongs to another user.

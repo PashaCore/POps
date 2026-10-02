@@ -37,15 +37,16 @@ from your distribution first.
 
 Open `https://pops.example.com/`, sign in as `admin` with the password from step 1, then on **Ayarlar**:
 
-- change the password (**Kullanıcı Yönetimi** → edit your user; you are signed out and sign in again with the
-  new password),
-- set up **İki Adımlı Doğrulama (2FA)**.
+- change the password (**Kullanıcılar** → click your user → **Şifreyi sıfırla**; you are signed out and sign in
+  again with the new password),
+- set up **İki adımlı doğrulama**.
 
 ## 4. Create an enrollment token
 
-1. Optional: on **Laboratuvarlar** click **Lab Ekle** and create the lab, for example `Lab-1`.
-2. On **Sistem & Sürüm** → "Ajan kaydı ve kimlik" → "Kayıt jetonu": enter the lab (**Sınıf**), a note, how many PCs
-   may use the token (**Kullanım**) and its lifetime in hours (**Saat**, default 72), then **Jeton üret**.
+1. Optional: on **Sınıflar** open **Sınıf işlemleri** → **Yeni sınıf…** and create the lab, for example `Lab-1`.
+2. On **Sistem** → "Ajan kaydı ve kimlik" click **Jeton üret**, enter the lab (**Sınıf**), a note (**Not**), how many
+   PCs may use the token (**Kullanım sayısı**) and its lifetime in hours (**Geçerlilik (saat)**, default 72), then
+   confirm with **Jeton üret**.
 3. Copy the `ENROLL_TOKEN=…` value.
 
 ## 5. Install the agent on a PC
@@ -65,28 +66,28 @@ Optional properties: `BYPASS_SECRET=<the BYPASS_SECRET from the server's .env>` 
 
 ## 6. Check that it arrived
 
-- **Cihaz Yönetimi** lists the PC as online within a few seconds, in the token's lab.
+- **Cihazlar** lists the PC as online within a few seconds, in the token's lab.
 - The signed-in user sees the POps shield icon in the system tray.
-- **Sistem & Sürüm** → "Kimlik zorlaması" counts the PC as enrolled.
+- **Sistem** → "Kimlik zorlaması" counts the PC as enrolled.
 
 If the PC does not appear, see [`troubleshooting.md`](troubleshooting.md#a-pc-does-not-appear-or-shows-offline).
 
 ## 7. Try it
 
-- **Terminal:** choose the PC, type `hostname` and press Enter. The command runs as SYSTEM on the PC and its output
+- **Uzak komut:** choose the PC, type `hostname` and press Enter. The command runs as SYSTEM on the PC and its output
   appears below.
-- **POpsVision:** open the lab to see a screen preview; double-click the PC, turn on **Canlı Yayın**, choose
-  **Rutin Uzaktan Destek**, give a reason and start. The user on the PC is asked to accept.
-- **Log & Envanter:** select the PC and open **Donanım** for its hardware inventory.
+- **Uzak ekran:** pick the lab to see a screen preview; click the PC, turn on **Canlı izle**, choose
+  **Kullanıcıya sor**, give a reason and **Oturumu başlat**. The user on the PC is asked to accept.
+- **Kayıtlar:** open **Donanım** and find the PC for its hardware inventory.
 
 ## 8. Enforce agent authentication
 
-When every PC is enrolled, open **Sistem & Sürüm** → "Kimlik zorlaması" and click **Zorlamayı aç**. From then on
+When every PC is enrolled, open **Sistem** → "Kimlik zorlaması", turn the switch on and confirm with **Zorlamayı aç**. From then on
 the server rejects agents without a valid device secret or enrollment token.
 
 ## Next steps
 
-- Distribute software: [`dashboard.md`](dashboard.md#dosya-dağıtımı).
+- Distribute software: [`dashboard.md`](dashboard.md#dağıtım).
 - Get notified of failed updates and other problems by e-mail or webhook:
   [`configuration.md`](configuration.md#notification-settings).
 - Update agents with signed releases: [`agent.md`](agent.md#updates).
