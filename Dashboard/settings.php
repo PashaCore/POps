@@ -1,7 +1,7 @@
 <?php include 'includes/header.php'; ?>
 
 <style>
-    .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: var(--space-5); margin-bottom: var(--space-8); align-items: start; }
+    .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: var(--space-5); margin-bottom: var(--space-8); align-items: start; }
     .setting-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5); box-shadow: var(--shadow-xs); }
     .setting-header { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); margin-bottom: var(--space-4); display: flex; align-items: center; gap: 0.625rem; padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
     .setting-header i { color: var(--primary-500); }
@@ -19,7 +19,7 @@
     .info-alert { background: var(--info-bg); border-left: 3px solid var(--info-solid); padding: 0.75rem 1rem; border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--info-text); margin-bottom: var(--space-4); display: flex; gap: 0.5rem; align-items: flex-start; line-height: 1.5; }
 
     .user-table-wrapper { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-4); box-shadow: var(--shadow-xs); }
-    .perm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: var(--text-sm); }
+    .perm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem; font-size: var(--text-sm); }
     .perm-grid label { display: flex; align-items: center; gap: 0.5rem; padding: 0.4375rem 0.625rem; background: var(--bg-surface-2); border-radius: var(--radius-sm); cursor: pointer; transition: background-color 0.1s; font-weight: var(--fw-regular); color: var(--text-primary); }
     .perm-grid label:hover { background: var(--bg-surface); }
     .perm-grid input { width: 16px; height: 16px; accent-color: var(--primary-500); }
@@ -116,12 +116,12 @@
 </div>
 
 <div class="user-table-wrapper">
-    <table class="data-table" id="usersTable">
+    <div style="overflow-x:auto;"><table class="data-table" id="usersTable">
         <thead>
             <tr><th style="width:60px;">ID</th><th>Kullanıcı Adı</th><th>Rol</th><th>Son Giriş</th><th style="text-align:right;width:120px;">İşlem</th></tr>
         </thead>
         <tbody><tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-tertiary);">Yükleniyor...</td></tr></tbody>
-    </table>
+    </table></div>
 </div>
 
 <div class="modal-overlay" id="userModal">
