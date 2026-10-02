@@ -52,7 +52,7 @@
                 <button id="btnModeLab"><i class="fas fa-network-wired"></i> Toplu (Lab)</button>
             </div>
             <div class="toolbar-actions">
-                <button id="wakeUpBtn" class="btn success"><i class="fas fa-bolt"></i> <span id="wakeUpText">Uyandır (WOL)</span></button>
+                <button id="wakeUpBtn" class="btn success"><i class="fas fa-bolt"></i> <span id="wakeUpText">Uyandır</span></button>
                 <button id="copyTerminalBtn" class="btn secondary"><i class="fas fa-copy"></i> Kopyala</button>
                 <button id="clearTerminalBtn" class="btn secondary"><i class="fas fa-eraser"></i> Temizle</button>
             </div>
@@ -61,7 +61,7 @@
             <div id="areaSingle" class="target-area" style="flex:1;">
                 <div class="search-input-wrap">
                     <i class="fas fa-filter"></i>
-                    <input type="text" id="terminalDeviceSearch" placeholder="Hostname veya IP Ara...">
+                    <input type="text" id="terminalDeviceSearch" placeholder="Ad, sınıf ya da IP ile ara">
                 </div>
                 <select id="terminalDeviceSelect" style="flex:1;max-width:350px;height:36px;">
                     <option value="">Cihaz Seçin...</option>
@@ -72,15 +72,15 @@
         <!-- Hızlı İşlemler -->
         <div class="quick-actions-bar" style="display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap; border-top:1px dashed var(--border-subtle); padding-top:0.75rem;">
             <span style="font-size:0.75rem; color:var(--text-tertiary); display:flex; align-items:center; margin-right:0.25rem;"><i class="fas fa-bolt"></i> Hızlı Komutlar:</span>
-            <button class="lab-btn" onclick="window.runQuickAction('dns')"><i class="fas fa-globe"></i> DNS Temizle</button>
-            <button class="lab-btn" onclick="window.runQuickAction('network')"><i class="fas fa-network-wired"></i> Ağı Yenile</button>
-            <button class="lab-btn" onclick="window.runQuickAction('spooler')"><i class="fas fa-print"></i> Yazıcı Kuyruğu</button>
-            <button class="lab-btn" onclick="window.runQuickAction('temp')"><i class="fas fa-broom"></i> Temp Temizle</button>
-            <button class="lab-btn" onclick="window.runQuickAction('gpupdate')"><i class="fas fa-shield-halved"></i> GPUpdate</button>
+            <button type="button" class="lab-btn" data-quick="dns"><i class="fas fa-globe"></i> DNS Temizle</button>
+            <button type="button" class="lab-btn" data-quick="network"><i class="fas fa-network-wired"></i> Ağı Yenile</button>
+            <button type="button" class="lab-btn" data-quick="spooler"><i class="fas fa-print"></i> Yazıcı Kuyruğu</button>
+            <button type="button" class="lab-btn" data-quick="temp"><i class="fas fa-broom"></i> Temp Temizle</button>
+            <button type="button" class="lab-btn" data-quick="gpupdate"><i class="fas fa-shield-halved"></i> GPUpdate</button>
             <div style="width:1px; background:var(--border-subtle); margin:0 0.25rem;"></div>
-            <button class="lab-btn" onclick="window.promptSingleRename()"><i class="fas fa-tag"></i> Tekil İsimlendir</button>
-            <button class="lab-btn" id="btnQuickAutoRename" style="display:none;" onclick="window.promptAutoRename()"><i class="fas fa-tags"></i> Toplu İsimlendir</button>
-            <button class="lab-btn" onclick="window.promptTaskkill()"><i class="fas fa-skull"></i> Görev Sonlandır</button>
+            <button type="button" class="lab-btn" id="btnQuickSingleRename" onclick="window.promptSingleRename(this)"><i class="fas fa-tag"></i> Yeniden adlandır</button>
+            <button type="button" class="lab-btn" id="btnQuickAutoRename" style="display:none;" onclick="window.promptAutoRename(this)"><i class="fas fa-tags"></i> Toplu adlandır</button>
+            <button type="button" class="lab-btn" onclick="window.promptTaskkill(this)"><i class="fas fa-xmark"></i> Uygulamayı kapat</button>
         </div>
     </div>
 
@@ -95,32 +95,29 @@
 
 <script>
 const TERMINAL_ADMIN = <?php echo json_encode($_SESSION['username'] ?? 'Admin', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
-window.state = window.state || { devices: [], terminalHistory: [] };
 let currentMode = 'single';
 let selectedLab = null;
+let terminalHistory = [];
 const processedResponses = new Set();
+// Windows bilgisayar adı: en çok 15 karakter, harf, rakam ve tire (komut satırına tırnak ya da boşluk girmesin)
+const PC_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,14}$/;
 
-let panelWs = null;
 function initTerminalWebSocket() {
     if (typeof OMYO_API === 'undefined') return;
-    try {
-        panelWs = new WebSocket(OMYO_API.wsUrl('/ws/panel'));
-        panelWs.onmessage = (event) => {
-            try {
-                const payload = JSON.parse(event.data);
-                if (payload.type === 'terminal_output') {
-                    const pcName = payload.pc_name || payload.id || 'Bilinmeyen PC';
-                    const outputText = payload.output || 'Çıktı alınamadı.';
-                    const taskId = payload.task_id || '0';
-                    const hwId = payload.id || 'HW-UNKNOWN';
-                    const uniqueId = `${taskId}_${hwId}`;
-                    if (processedResponses.has(uniqueId)) return;
-                    processedResponses.add(uniqueId);
-                    appendToTerminal(`<div class="cmd-output"><div class="pc">[${escapeHtml(pcName)}]</div><pre style="margin:0;color:#e2e8f0;font-family:var(--font-mono);font-size:0.8125rem;white-space:pre-wrap;word-wrap:break-word;">${escapeHtml((outputText || '').trim())}</pre></div>`);
-                }
-            } catch (e) { console.error('WS parse error', e); }
-        };
-    } catch(e) {}
+    let ws;
+    try { ws = new WebSocket(OMYO_API.wsUrl('/ws/panel')); } catch (e) { return; }
+    ws.onmessage = (event) => {
+        let payload;
+        try { payload = JSON.parse(event.data); } catch (e) { return; }
+        if (payload.type !== 'terminal_output') return;
+        const uniqueId = `${payload.task_id || '0'}_${payload.id || '?'}`;
+        if (processedResponses.has(uniqueId)) return;
+        processedResponses.add(uniqueId);
+        const pcName = payload.pc_name || payload.id || 'Bilinmeyen bilgisayar';
+        appendToTerminal(`<div class="cmd-output"><div class="pc">[${escapeHtml(pcName)}]</div><pre style="margin:0;color:#e2e8f0;font-family:var(--font-mono);font-size:0.8125rem;white-space:pre-wrap;word-wrap:break-word;">${escapeHtml(String(payload.output || 'Çıktı yok.').trim())}</pre></div>`);
+    };
+    // Bağlantı koparsa birkaç saniye sonra yeniden kurulur (sunucu güncellemesi, ağ kesintisi)
+    ws.onclose = () => setTimeout(initTerminalWebSocket, 5000);
 }
 
 // Hızlı komutlar. Ajan her komutu bir .bat dosyasına yazıp cmd.exe /c ile SYSTEM olarak çalıştırır; buradaki
@@ -152,231 +149,248 @@ const QUICK_ACTIONS = {
     gpupdate: { name: 'Grup İlkesi Güncellendi', cmd: 'gpupdate /force' },
 };
 
-window.runQuickAction = function(key) {
-    const action = QUICK_ACTIONS[key];
-    if (action) window.sendQuickAction(action.cmd, action.name);
-};
+function selectedDevice() {
+    const sel = document.getElementById('terminalDeviceSelect');
+    const d = state.devices.find(x => x.hostname === sel.value);
+    return d ? { id: d.hostname, name: POps.deviceName(d) } : null;
+}
 
-window.sendQuickAction = function(cmd, actionName) {
-    const reason = prompt(`'${actionName}' işlemi için bir neden belirtin (Zorunlu):`);
-    if (!reason || reason.trim() === '') return showToast('Neden belirtmek zorunludur!', 'error');
-
+// Hedef: tek bilgisayar ya da seçili sınıf. Yoksa uyarı ve null.
+function currentTarget() {
     if (currentMode === 'single') {
-        const sel = document.getElementById('terminalDeviceSelect').value;
-        if (!sel) return showToast('Lütfen bir cihaz seçin.', 'error');
-        appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Hızlı İşlem: ${escapeHtml(actionName)} (Tekil) - Neden: ${escapeHtml(reason)}</div>`);
-        apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'PC', targets: [sel], taskSequence: [{ name: actionName, type: 'CMD', command: cmd }], reason: reason.trim() }) });
-    } else {
-        if (!selectedLab) return showToast('Lütfen bir laboratuvar seçin.', 'error');
-        appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Hızlı İşlem: ${escapeHtml(actionName)} (Lab: ${escapeHtml(selectedLab)}) - Neden: ${escapeHtml(reason)}</div>`);
-        apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'LAB', targets: [selectedLab], taskSequence: [{ name: actionName, type: 'CMD', command: cmd }], reason: reason.trim() }) });
+        const d = selectedDevice();
+        if (!d) { POps.toast('warning', 'Önce bir bilgisayar seçin.'); return null; }
+        return { mode: 'PC', targets: [d.id], label: d.name };
     }
+    if (!selectedLab) { POps.toast('warning', 'Önce bir sınıf seçin.'); return null; }
+    return { mode: 'LAB', targets: [selectedLab], label: 'Sınıf: ' + selectedLab };
+}
+
+async function sendTasks(target, taskSequence, btn) {
+    try {
+        const r = await POps.busy(btn, () => POps.post('/api/deploy_orchestration', { target_mode: target.mode, targets: target.targets, taskSequence }));
+        const created = (r && r.created) || 0;
+        appendToTerminal(`<div class="info">[i] ${escapeHtml(String(created))} görev kuyruğa eklendi, çıktı bekleniyor…${r && r.skipped_module_closed ? ' (' + escapeHtml(String(r.skipped_module_closed)) + ' bilgisayarda uzak komut kapalı)' : ''}</div>`);
+        return true;
+    } catch (e) {
+        appendToTerminal(`<div class="err">[-] Gönderilemedi: ${escapeHtml(POps.errorMessage(e))}</div>`);
+        POps.toast('error', POps.errorMessage(e));
+        return false;
+    }
+}
+
+window.runQuickAction = async function(key, btn) {
+    const action = QUICK_ACTIONS[key];
+    const target = action && currentTarget();
+    if (!target) return;
+    const reason = await POps.prompt({ title: action.name, message: `${target.label} için çalıştırılacak.`, label: 'Gerekçe (denetim kaydına yazılır)', required: true, maxLength: 300, confirmText: 'Çalıştır' });
+    if (reason === null) return;
+    appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] ${escapeHtml(action.name)} · ${escapeHtml(target.label)} · Gerekçe: ${escapeHtml(reason)}</div>`);
+    await sendTasks(target, [{ name: action.name, type: 'CMD', command: action.cmd }], btn);
 };
 
-window.promptSingleRename = function() {
-    if (currentMode !== 'single') return showToast('Tekil modda olmalısınız.', 'warning');
-    const newName = prompt("Yeni PC ismini girin (Örn: LAB1_PC05):");
-    if (newName) {
-        document.getElementById('terminalCommand').value = `/setname ${newName}`;
-        document.getElementById('terminalCommand').dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter' }));
-    }
+function renameCommand(newName) {
+    // newName PC_NAME_RE ile doğrulanmıştır: tırnak, boşluk ya da $ içermez
+    return `powershell -Command "$newName='${newName}'; (Get-WmiObject Win32_ComputerSystem).Rename($newName); $oldUser=(Get-LocalUser | Where-Object {$_.Enabled -and $_.Name -notmatch 'Administrator|Guest|DefaultAccount|WDAGUtilityAccount|system'} | Select-Object -First 1).Name; if($oldUser){ Rename-LocalUser -Name $oldUser -NewName $newName; Set-LocalUser -Name $newName -FullName $newName; }; $i=1; Get-NetAdapter | Where-Object {$_.Name -notmatch 'Baglanti_'} | ForEach-Object { Rename-NetAdapter -Name $_.Name -NewName ('Baglanti_'+$i); $i++ }; Write-Output 'Isim ${newName} olarak degistirildi.'; shutdown /r /t 5"`;
+}
+
+async function renameSingle(newName, btn) {
+    const d = selectedDevice();
+    if (currentMode !== 'single' || !d) { POps.toast('warning', 'Tek bilgisayar modunda bir bilgisayar seçin.'); return; }
+    if (!PC_NAME_RE.test(newName)) { POps.toast('error', 'Geçersiz ad: en çok 15 karakter; harf, rakam ve tire.'); return; }
+    if (!await POps.confirm({ title: 'Bilgisayar yeniden adlandırılsın mı?', message: `${d.name} → ${newName}. Bilgisayar 5 saniye sonra yeniden başlar; yerel kullanıcı ve ağ bağdaştırıcıları da yeniden adlandırılır.`, confirmText: 'Adlandır ve yeniden başlat', danger: true })) return;
+    appendToTerminal(`<div class="cmd-block" style="margin-top:0.75rem;margin-bottom:0.5rem;"><span class="warn">[*]</span> ${escapeHtml(d.name)} → '${escapeHtml(newName)}'</div>`);
+    await sendTasks({ mode: 'PC', targets: [d.id] }, [{ name: 'Yeniden adlandır', type: 'CMD', command: renameCommand(newName) }], btn);
+}
+
+async function renameLab(baseName, limit, btn) {
+    if (currentMode !== 'lab' || !selectedLab) { POps.toast('warning', 'Sınıf modunda bir sınıf seçin.'); return; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,12}$/.test(baseName)) { POps.toast('error', 'Geçersiz önek: en çok 13 karakter; harf, rakam ve tire (iki haneli numara eklenir).'); return; }
+    let devs = state.devices.filter(d => d.lab === selectedLab)
+        .filter(d => { const n = String(d.real_hostname || '').toUpperCase(); return !(n.includes('PC00') || n.includes('ANA') || n.includes('OGR')); })
+        .sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true, sensitivity: 'base' }));
+    if (limit > 0 && limit < devs.length) devs = devs.slice(0, limit);
+    if (!devs.length) { POps.toast('warning', 'Bu sınıfta adlandırılacak bilgisayar yok.'); return; }
+    const plan = devs.map((d, i) => [d, baseName + String(i + 1).padStart(2, '0')]);
+    if (!await POps.confirm({ title: `${devs.length} bilgisayar yeniden adlandırılsın mı?`, message: plan.slice(0, 6).map(([d, n]) => `${POps.deviceName(d)} → ${n}`).join(', ') + (plan.length > 6 ? ' …' : '') + '. Her bilgisayar 5 saniye sonra yeniden başlar.', confirmText: 'Adlandır', danger: true })) return;
+    appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Toplu adlandırma: ${escapeHtml(String(devs.length))} bilgisayar</div>`);
+    await POps.busy(btn, async () => {
+        for (const [d, n] of plan) {
+            try {
+                await POps.post('/api/deploy_orchestration', { target_mode: 'PC', targets: [d.hostname], taskSequence: [{ name: 'Toplu adlandırma', type: 'CMD', command: renameCommand(n) }] });
+                appendToTerminal(`<div style="color:#4ade80;margin-bottom:0.25rem;">→ ${escapeHtml(POps.deviceName(d))} → ${escapeHtml(n)}</div>`);
+            } catch (e) {
+                appendToTerminal(`<div class="err">[-] ${escapeHtml(POps.deviceName(d))}: ${escapeHtml(POps.errorMessage(e))}</div>`);
+            }
+        }
+    });
+}
+
+window.promptSingleRename = async function(btn) {
+    if (currentMode !== 'single' || !selectedDevice()) { POps.toast('warning', 'Tek bilgisayar modunda bir bilgisayar seçin.'); return; }
+    const name = await POps.prompt({ title: 'Bilgisayarı yeniden adlandır', label: 'Yeni ad', placeholder: 'LAB1-PC05', required: true, maxLength: 15,
+        validate: (v) => PC_NAME_RE.test(v.trim()) ? null : 'En çok 15 karakter; harf, rakam ve tire.' });
+    if (name !== null) renameSingle(name.trim(), btn);
 };
 
-window.promptAutoRename = function() {
-    if (currentMode !== 'lab') return showToast('Toplu (Lab) modunda olmalısınız.', 'warning');
-    const baseName = prompt("Sınıf önekini girin (Örn: LAB1_PC):");
-    if (baseName) {
-        document.getElementById('terminalCommand').value = `/otorename ${baseName}`;
-        document.getElementById('terminalCommand').dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter' }));
-    }
+window.promptAutoRename = async function(btn) {
+    if (currentMode !== 'lab' || !selectedLab) { POps.toast('warning', 'Sınıf modunda bir sınıf seçin.'); return; }
+    const base = await POps.prompt({ title: 'Sınıfı toplu adlandır', message: 'Ada iki haneli sıra numarası eklenir (ör. LAB1-PC01, LAB1-PC02).', label: 'Önek', placeholder: 'LAB1-PC', required: true, maxLength: 13,
+        validate: (v) => /^[A-Za-z0-9][A-Za-z0-9-]{0,12}$/.test(v.trim()) ? null : 'En çok 13 karakter; harf, rakam ve tire.' });
+    if (base !== null) renameLab(base.trim(), 0, btn);
 };
 
-window.promptTaskkill = function() {
-    const exeName = (prompt("Kapatılacak uygulamanın tam adını girin (Örn: msedge.exe):") || '').trim();
-    if (exeName) {
-        // Ad .bat satırında tırnak içinde gider: " ve % satırı bozar
-        if (/["%\r\n]/.test(exeName)) return showToast('Uygulama adında " ve % kullanılamaz.', 'error');
-        window.sendQuickAction(`taskkill /F /IM "${exeName}"`, `Görev Sonlandır: ${exeName}`);
-    }
+window.promptTaskkill = async function(btn) {
+    const target = currentTarget();
+    if (!target) return;
+    const exe = await POps.prompt({ title: 'Uygulamayı kapat', message: `${target.label} üzerinde bu adla çalışan bütün süreçler zorla kapatılır.`, label: 'Program adı', placeholder: 'msedge.exe', required: true, maxLength: 100,
+        validate: (v) => /^[^"%\r\n\\/:*?<>|]+$/.test(v.trim()) ? null : 'Yalnızca program adı yazın (ör. msedge.exe); " % ve yol kullanılamaz.' });
+    if (exe === null) return;
+    const reason = await POps.prompt({ title: 'Gerekçe', label: 'Gerekçe (denetim kaydına yazılır)', required: true, maxLength: 300, confirmText: 'Kapat' });
+    if (reason === null) return;
+    appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Uygulama kapatılıyor: ${escapeHtml(exe.trim())} · ${escapeHtml(target.label)} · Gerekçe: ${escapeHtml(reason)}</div>`);
+    await sendTasks(target, [{ name: 'Uygulamayı kapat: ' + exe.trim(), type: 'CMD', command: `taskkill /F /IM "${exe.trim()}"` }], btn);
 };
 
 function renderTerminal() {
     const select = document.getElementById('terminalDeviceSelect');
-    const search = document.getElementById('terminalDeviceSearch');
+    const term = (document.getElementById('terminalDeviceSearch').value || '').toLowerCase();
+    const list = state.devices.filter(d => [POps.deviceName(d), d.hostname, d.lab, d.ip].join(' ').toLowerCase().includes(term))
+        .sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
+    const current = select.value;
+    select.replaceChildren(POps.el('option', { value: '', text: `Bilgisayar seçin (${list.length})` }),
+        ...list.map(d => POps.el('option', { value: d.hostname, text: `${POps.deviceName(d)} · ${d.lab === 'Atanmamis_Cihazlar' ? 'Atanmamış' : (d.lab || '-')}${POps.isOffline(d) ? ' · çevrimdışı' : ''}` })));
+    if (current && list.some(d => d.hostname === current)) select.value = current;
+
     const labArea = document.getElementById('areaLab');
-    const searchTerm = (search?.value || '').toLowerCase();
-    const filtered = state.devices.filter(d => (d.hostname || '').toLowerCase().includes(searchTerm) || (d.lab || '').toLowerCase().includes(searchTerm));
-    const currentVal = select.value;
-    select.innerHTML = `<option value="">Hedef Cihaz Seçin (${filtered.length})</option>`;
-    filtered.forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d.hostname;
-        opt.dataset.lab = d.lab;
-        opt.textContent = `${d.display_name || d.real_hostname || d.hostname} (${d.lab})`;
-        select.appendChild(opt);
-    });
-    if (currentVal) select.value = currentVal;
+    const labs = [...new Set(state.devices.map(d => d.lab))].filter(l => l && l !== 'Atanmamis_Cihazlar').sort((a, b) => a.localeCompare(b, 'tr'));
+    labArea.replaceChildren(...(labs.length ? labs.map(lab => {
+        const b = POps.el('button', { type: 'button', className: 'lab-btn' + (selectedLab === lab ? ' active' : ''), 'aria-pressed': selectedLab === lab ? 'true' : 'false' },
+            [POps.icon('fa-users'), document.createTextNode(` ${lab} (${state.devices.filter(d => d.lab === lab).length})`)]);
+        b.addEventListener('click', () => { selectedLab = selectedLab === lab ? null : lab; renderTerminal(); });
+        return b;
+    }) : [POps.el('span', { className: 'text-sm text-muted', text: 'Henüz sınıf yok.' })]));
 
-    const labs = [...new Set(state.devices.map(d => d.lab))].filter(l => l && l !== 'Atanmamis_Cihazlar');
-    labArea.innerHTML = '';
-    labs.forEach(lab => {
-        const count = state.devices.filter(d => d.lab === lab).length;
-        const btn = document.createElement('button');
-        btn.className = `lab-btn ${selectedLab === lab ? 'active' : ''}`;
-        btn.innerHTML = `<i class="fas fa-users"></i> ${escapeHtml(lab)} (${count})`;
-        btn.onclick = () => { selectedLab = (selectedLab === lab) ? null : lab; renderTerminal(); };
-        labArea.appendChild(btn);
-    });
-
+    const d = selectedDevice();
     const prefix = document.getElementById('cmdPrefix');
-    const wakeBtn = document.getElementById('wakeUpText');
+    const wake = document.getElementById('wakeUpText');
     if (currentMode === 'single') {
-        const txt = select.options[select.selectedIndex]?.text.split(' ')[0] || select.value;
-        prefix.innerText = select.value ? `${txt}:\\>` : 'POps:\\>';
-        wakeBtn.innerText = select.value ? `Uyandır (${txt})` : 'Uyandır (Seçim Yok)';
+        prefix.textContent = d ? `${d.name}:\\>` : 'POps:\\>';
+        wake.textContent = d ? `Uyandır (${d.name})` : 'Uyandır';
     } else {
-        prefix.innerText = selectedLab ? `LAB-${selectedLab}:\\>` : 'Lab-Secilmedi:\\>';
-        wakeBtn.innerText = selectedLab ? `Lab'ı Uyandır (${selectedLab})` : 'Uyandır (Seçim Yok)';
+        prefix.textContent = selectedLab ? `${selectedLab}:\\>` : 'Sınıf seçin:\\>';
+        wake.textContent = selectedLab ? `Sınıfı uyandır (${selectedLab})` : 'Uyandır';
     }
-
-    const out = document.getElementById('popsTerminalScreen');
-    if (out) out.innerHTML = initTerminalHeader() + state.terminalHistory.join('');
-    const c = document.getElementById('terminalContainer');
-    if (c) c.scrollTop = c.scrollHeight;
-    
-    const btnQuickAuto = document.getElementById('btnQuickAutoRename');
-    if (btnQuickAuto) btnQuickAuto.style.display = (currentMode === 'lab') ? 'inline-flex' : 'none';
+    const auto = document.getElementById('btnQuickAutoRename');
+    if (auto) auto.style.display = currentMode === 'lab' ? 'inline-flex' : 'none';
+    const single = document.getElementById('btnQuickSingleRename');
+    if (single) single.style.display = currentMode === 'single' ? 'inline-flex' : 'none';
 }
 
-function initTerminalHeader() {
+function terminalHeaderHtml() {
     return `<div class="header">
-        <div class="title">POps Command Line Interface [v4.0.0]</div>
-        <div>Yönetici: ${escapeHtml(TERMINAL_ADMIN)} — Güvenli Bağlantı Aktif</div>
-        <div>(c) POps Bilişim Sistemleri. Tüm Hakları Saklıdır.</div>
+        <div class="title">POps komut satırı</div>
+        <div>Yönetici: ${escapeHtml(TERMINAL_ADMIN)} · Komutlar hedefte SYSTEM hesabıyla, cmd.exe ile çalışır.</div>
     </div>
-    <div class="tip">[İPUCU] Aşağıdaki Hızlı İşlem butonlarını kullanarak rutin operasyonları anında gerçekleştirebilirsiniz.</div>`;
+    <div class="tip">[İpucu] Rutin işler için yukarıdaki hızlı komutları kullanabilirsiniz. Ekranı temizlemek için: cls</div>`;
 }
 
 function appendToTerminal(html) {
     const out = document.getElementById('popsTerminalScreen');
     const c = document.getElementById('terminalContainer');
-    state.terminalHistory.push(html);
+    terminalHistory.push(html);
     if (out) { out.insertAdjacentHTML('beforeend', html); c.scrollTop = c.scrollHeight; }
 }
 
-function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+function clearTerminal() {
+    terminalHistory = [];
+    processedResponses.clear();
+    document.getElementById('popsTerminalScreen').innerHTML = terminalHeaderHtml();
+}
+
+async function copyText(txt) {
+    try { await navigator.clipboard.writeText(txt); return true; } catch (e) { /* http bağlantısında pano API'si yok */ }
+    const ta = POps.el('textarea', { style: 'position:fixed;left:-9999px;top:0', 'aria-hidden': 'true' });
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.remove();
+    return ok;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     initTerminalWebSocket();
-    apiRequest('/api/devices').then(data => { if (data) { state.devices = data; renderTerminal(); } }).catch(() => {});
-
-    if (state.terminalHistory.length === 0) document.getElementById('popsTerminalScreen').innerHTML = initTerminalHeader();
+    clearTerminal();
+    POps.watchDevices();
+    let devicesKey = '';
+    document.addEventListener('pops_data_updated', () => {
+        const key = state.devices.map(d => d.hostname + '|' + d.lab + '|' + POps.deviceName(d) + '|' + d.status).join(';');
+        if (key !== devicesKey) { devicesKey = key; renderTerminal(); }
+    });
 
     const btnSingle = document.getElementById('btnModeSingle');
     const btnLab = document.getElementById('btnModeLab');
-    const areaSingle = document.getElementById('areaSingle');
-    const areaLab = document.getElementById('areaLab');
     const termInput = document.getElementById('terminalCommand');
-    const wakeUpBtn = document.getElementById('wakeUpBtn');
-    const copyBtn = document.getElementById('copyTerminalBtn');
-
-    copyBtn.onclick = () => {
-        const txt = document.getElementById('popsTerminalScreen').innerText;
-        navigator.clipboard.writeText(txt).then(() => showToast('Terminal kopyalandı.', 'success')).catch(() => showToast('Kopyalama başarısız.', 'error'));
+    const setMode = (mode) => {
+        currentMode = mode;
+        if (mode === 'single') selectedLab = null;
+        btnSingle.classList.toggle('active', mode === 'single');
+        btnLab.classList.toggle('active', mode === 'lab');
+        document.getElementById('areaSingle').style.display = mode === 'single' ? 'flex' : 'none';
+        document.getElementById('areaLab').style.display = mode === 'lab' ? 'flex' : 'none';
+        renderTerminal();
     };
+    btnSingle.addEventListener('click', () => setMode('single'));
+    btnLab.addEventListener('click', () => setMode('lab'));
+    document.getElementById('terminalDeviceSearch').addEventListener('input', renderTerminal);
+    document.getElementById('terminalDeviceSelect').addEventListener('change', renderTerminal);
 
-    btnSingle.onclick = () => { currentMode = 'single'; selectedLab = null; btnSingle.classList.add('active'); btnLab.classList.remove('active'); areaSingle.style.display = 'flex'; areaLab.style.display = 'none'; renderTerminal(); };
-    btnLab.onclick = () => { currentMode = 'lab'; btnLab.classList.add('active'); btnSingle.classList.remove('active'); areaSingle.style.display = 'none'; areaLab.style.display = 'flex'; renderTerminal(); };
-    document.getElementById('terminalDeviceSearch').oninput = renderTerminal;
-    document.getElementById('terminalDeviceSelect').onchange = renderTerminal;
+    document.getElementById('copyTerminalBtn').addEventListener('click', async () => {
+        const ok = await copyText(document.getElementById('popsTerminalScreen').innerText);
+        POps.toast(ok ? 'success' : 'error', ok ? 'Terminal çıktısı kopyalandı.' : 'Kopyalanamadı; metni seçip elle kopyalayın.');
+    });
+    document.getElementById('clearTerminalBtn').addEventListener('click', () => { clearTerminal(); termInput.focus(); });
 
-    wakeUpBtn.onclick = async () => {
-        if (currentMode === 'lab' && selectedLab) {
-            appendToTerminal('<div class="warn" style="margin:0.75rem 0;">[*] WOL Gönderiliyor: LAB-' + escapeHtml(selectedLab) + '...</div>');
-            try {
-                const res = await apiRequest(`/api/wake_lab/${encodeURIComponent(selectedLab)}`, { method: 'POST' });
-                appendToTerminal(`<div style="color:#4ade80;margin-bottom:0.75rem;">[+] ${escapeHtml(String(res.woken_pcs))} cihaza uyandırma sinyali gönderildi.</div>`);
-            } catch (e) { appendToTerminal('<div class="err" style="margin-bottom:0.75rem;">[-] Hata: Sinyal gönderilemedi.</div>'); }
-        } else { showToast('Toplu uyandırma için lab seçin.', 'warning'); }
-    };
+    document.getElementById('wakeUpBtn').addEventListener('click', (e) => {
+        const btn = e.currentTarget;
+        if (currentMode === 'single') {
+            const d = selectedDevice();
+            if (!d) { POps.toast('warning', 'Uyandırmak için bir bilgisayar seçin.'); return; }
+            window.wakeUpCommand('PC', d.id, btn);
+        } else {
+            if (!selectedLab) { POps.toast('warning', 'Uyandırmak için bir sınıf seçin.'); return; }
+            window.wakeUpCommand('LAB', selectedLab, btn);
+        }
+    });
 
-    if (termInput) {
-        document.getElementById('terminalContainer').onclick = () => termInput.focus();
-        termInput.addEventListener('keypress', async (e) => {
-            if (e.key !== 'Enter') return;
-            const command = termInput.value.trim();
-            let targetMode = currentMode === 'single' ? 'PC' : 'LAB';
-            let deployTargets = [];
-            let prefixText = '';
-
-            if (command.toLowerCase().startsWith('/setname ')) {
-                if (currentMode !== 'single' || !document.getElementById('terminalDeviceSelect').value) return showToast('Tekil mod ve cihaz gerekli.', 'error');
-                const newName = command.split(' ')[1];
-                const targetHwId = document.getElementById('terminalDeviceSelect').value;
-                const displayHost = document.getElementById('terminalDeviceSelect').options[document.getElementById('terminalDeviceSelect').selectedIndex].text.split(' ')[0];
-                const psCmd = `powershell -Command "$newName='${newName}'; (Get-WmiObject Win32_ComputerSystem).Rename($newName); $oldUser=(Get-LocalUser | Where-Object {$_.Enabled -and $_.Name -notmatch 'Administrator|Guest|DefaultAccount|WDAGUtilityAccount|system'} | Select-Object -First 1).Name; if($oldUser){ Rename-LocalUser -Name $oldUser -NewName $newName; Set-LocalUser -Name $newName -FullName $newName; }; $i=1; Get-NetAdapter | Where-Object {$_.Name -notmatch 'Baglanti_'} | ForEach-Object { Rename-NetAdapter -Name $_.Name -NewName ('Baglanti_'+$i); $i++ }; Write-Output 'Isim ${newName} olarak degistirildi.'; shutdown /r /t 5"`;
-                termInput.value = '';
-                appendToTerminal(`<div class="cmd-block" style="margin-top:0.75rem;margin-bottom:0.5rem;"><span class="warn">[*]</span> ${escapeHtml(displayHost)} → '${escapeHtml(newName)}' atanıyor...</div>`);
-                apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'PC', targets: [targetHwId], taskSequence: [{ name: 'Rename Single', type: 'CMD', command: psCmd }] }) });
-                return;
-            }
-
-            if (command.toLowerCase().startsWith('/otorename ')) {
-                if (currentMode !== 'lab' || !selectedLab) return showToast('Lab modunda çalışır.', 'error');
-                const args = command.split(' ');
-                const baseName = args[1];
-                const limitInput = args[2] ? parseInt(args[2]) : null;
-                let labDevices = state.devices.filter(d => d.lab === selectedLab);
-                labDevices = labDevices.filter(d => { const n = (d.real_hostname || '').toUpperCase(); return !(n.includes('PC00') || n.includes('ANA') || n.includes('OGR')); });
-                labDevices.sort((a, b) => (a.display_name || a.real_hostname || a.hostname).localeCompare(b.display_name || b.real_hostname || b.hostname, undefined, { numeric: true, sensitivity: 'base' }));
-                if (limitInput && limitInput > 0 && limitInput <= labDevices.length) labDevices = labDevices.slice(0, limitInput);
-                termInput.value = '';
-                appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] OTO-İSİMLENDİRME: ${labDevices.length} cihaz sırada</div>`);
-                let counter = 1;
-                for (let dev of labDevices) {
-                    const targetHwId = dev.hostname;
-                    const numStr = counter < 10 ? '0' + counter : counter.toString();
-                    const newName = `${baseName}${numStr}`;
-                    const psCmd = `powershell -Command "$newName='${newName}'; (Get-WmiObject Win32_ComputerSystem).Rename($newName); $oldUser=(Get-LocalUser | Where-Object {$_.Enabled -and $_.Name -notmatch 'Administrator|Guest|DefaultAccount|WDAGUtilityAccount|system'} | Select-Object -First 1).Name; if($oldUser){ Rename-LocalUser -Name $oldUser -NewName $newName; Set-LocalUser -Name $newName -FullName $newName; }; $i=1; Get-NetAdapter | Where-Object {$_.Name -notmatch 'Baglanti_'} | ForEach-Object { Rename-NetAdapter -Name $_.Name -NewName ('Baglanti_'+$i); $i++ }; shutdown /r /t 5"`;
-                    apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify({ target_mode: 'PC', targets: [targetHwId], taskSequence: [{ name: 'Oto Rename', type: 'CMD', command: psCmd }] }) });
-                    appendToTerminal(`<div style="color:#4ade80;margin-bottom:0.25rem;">→ ${escapeHtml(dev.real_hostname || dev.hostname)} → ${escapeHtml(newName)}</div>`);
-                    counter++;
-                }
-                return;
-            }
-
-            if (currentMode === 'single') {
-                const host = document.getElementById('terminalDeviceSelect').value;
-                const displayHost = document.getElementById('terminalDeviceSelect').options[document.getElementById('terminalDeviceSelect').selectedIndex]?.text.split(' ')[0];
-                if (!host) return showToast('Cihaz seçin.', 'error');
-                deployTargets.push(host); prefixText = displayHost;
-            } else {
-                if (!selectedLab) return showToast('Lab seçin.', 'error');
-                deployTargets.push(selectedLab); prefixText = `[LAB: ${selectedLab}]`;
-            }
-            if (!command) return;
-            if (command.toLowerCase() === 'cls' || command.toLowerCase() === 'clear') {
-                state.terminalHistory = []; processedResponses.clear();
-                document.getElementById('popsTerminalScreen').innerHTML = initTerminalHeader();
-                termInput.value = ''; return;
-            }
-
-            termInput.value = ''; termInput.disabled = true;
-            try {
-                appendToTerminal(`<div style="margin-top:1rem;margin-bottom:0.5rem;"><span class="warn">${escapeHtml(prefixText)}:\\&gt;</span> <span class="cmd-block">${escapeHtml(command)}</span></div>`);
-                const payload = { target_mode: targetMode, targets: deployTargets, taskSequence: [{ name: 'Terminal', type: 'CMD', command }] };
-                await apiRequest('/api/deploy_orchestration', { method: 'POST', body: JSON.stringify(payload) });
-                appendToTerminal('<div class="info">[i] Komut hedefe fırlatıldı, çıktılar bekleniyor...</div>');
-            } catch (err) { showToast('Sunucu hatası.', 'error'); appendToTerminal('<div class="err">[-] Hata: Komut iletilemedi.</div>'); }
-            finally { termInput.disabled = false; termInput.focus(); }
-        });
-    }
-
-    document.getElementById('clearTerminalBtn').onclick = () => {
-        state.terminalHistory = []; processedResponses.clear();
-        document.getElementById('popsTerminalScreen').innerHTML = initTerminalHeader();
+    document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => window.runQuickAction(b.dataset.quick, b)));
+    document.getElementById('terminalContainer').addEventListener('click', (e) => { if (!window.getSelection().toString()) termInput.focus(); });
+    termInput.addEventListener('keydown', async (e) => {
+        if (e.key !== 'Enter' || e.isComposing) return;
+        e.preventDefault();
+        const command = termInput.value.trim();
+        if (!command) return;
+        const lower = command.toLowerCase();
+        if (lower === 'cls' || lower === 'clear') { termInput.value = ''; clearTerminal(); return; }
+        if (lower.startsWith('/setname ')) { termInput.value = ''; renameSingle(command.split(/\s+/)[1] || '', null); return; }
+        if (lower.startsWith('/otorename ')) {
+            const parts = command.split(/\s+/);
+            termInput.value = '';
+            renameLab(parts[1] || '', parseInt(parts[2], 10) || 0, null);
+            return;
+        }
+        const target = currentTarget();
+        if (!target) return;
+        termInput.value = '';
+        termInput.disabled = true;
+        appendToTerminal(`<div style="margin-top:1rem;margin-bottom:0.5rem;"><span class="warn">${escapeHtml(target.label)}:\\&gt;</span> <span class="cmd-block">${escapeHtml(command)}</span></div>`);
+        await sendTasks(target, [{ name: 'Terminal', type: 'CMD', command }], null);
+        termInput.disabled = false;
         termInput.focus();
-    };
+    });
+    renderTerminal();
 });
 </script>
 

@@ -262,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = page.devices.find(x => x.hostname === id) || { hostname: id };
         const name = await POps.prompt({
             title: 'Cihazın adını değiştir', message: `${id} panelde bu adla görünür. Boş bırakırsanız bilgisayarın kendi adı kullanılır.`,
-            label: 'Görünen ad', defaultValue: d.display_name || nameOf(d), maxLength: 100, confirmText: 'Kaydet'
+            label: 'Görünen ad', defaultValue: d.display_name || nameOf(d), maxLength: 100, required: false, confirmText: 'Kaydet'
         });
         if (name === null) return;
         if (await POps.act(btn, () => POps.post('/api/rename_device', { pc_name: id, display_name: name.trim() }), { success: 'Ad güncellendi.' })) fetchDevices();
