@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Panel: "Son işlemler" stays on "Yükleniyor…" no more.** Clicking another PC while the detail panel was open ran the old PC's close step after the new PC was set, which cleared it, so its recent operations never appeared. The same order cleared the selected job on İşlemler (its retry and cancel buttons then did nothing) and the selected row on Cihazlar, Sınıflar and the hardware tab of Kayıtlar.
+- **Panel: tooltips are no longer cut off and no longer shift the page.** They were drawn inside the element, so inside a table they were clipped and added a scroll bar that moved the rows. They now float above the page and stay inside the window.
+- **Server: a command the PC refused is "Reddedildi", not "Tamamlandı".** An agent with remote commands turned off answers with `[REDDEDİLDİ] …` and no exit code; when its separate refusal message was missing (or the server was older) the task was stored as completed. Such results are now `Denied` with exit code -5, and migration `0020` corrects the tasks stored before.
+
 ## [0.1.16-alpha] - 2026-10-03
 
 The panel is redesigned: one calm layout on every page, one action bar per page instead of buttons on every row and desk, details in a panel that opens on click, and every operation shows who sent it, when, from which page, to which PCs, the result and, when it failed or was refused, why. Anything sent to PCs shows its progress in a job center at the bottom of the sidebar.

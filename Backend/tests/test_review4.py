@@ -283,6 +283,13 @@ async def run(c, admin, superadmin):
     pmsgs = await collect(panel, 2)
     chk([m for m in pmsgs if isinstance(m, dict) and m.get("output") == "r4-kendi"], "kendi sonucu panele yayıldı")
     chk(await wait_for(c, "SELECT status = 'Completed' FROM tasks WHERE id=$1", queued), "kendi görevi tamamlandı")
+    refused = await c.fetchval(
+        "INSERT INTO tasks (target_pc, script_path, status, created_at, dispatched_at) VALUES "
+        "('HW-R4A', 'ping r4', 'Running', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), NOW()) RETURNING id")
+    await ag.send(json.dumps({"type": "result", "task_id": refused,
+                              "output": "[REDDEDİLDİ] Bu cihazda uzaktan terminal kapalı; komut çalıştırılmadı."}))
+    chk(await wait_for(c, "SELECT status = 'Denied' AND exit_code = -5 FROM tasks WHERE id=$1", refused),
+        "çıkış kodsuz ret sonucu 'Denied' oldu (capability_denied gelmese de)")
     await panel.close()
     other = await agent("HW-R4B", secret_heads("HW-R4B"), first("HW-R4B"))
     msgs = await collect(other, 2)

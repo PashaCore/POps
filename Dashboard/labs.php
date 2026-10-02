@@ -235,7 +235,7 @@
         focus = h;
         selected.add(h);
         render(true);
-        dev.open(h, { source: 'labs', onClose: () => { focus = null; render(true); } });
+        dev.open(h, { source: 'labs', onClose: () => { if (focus === h) { focus = null; render(true); } } });
     }
 
     // ---- Etkileşim
