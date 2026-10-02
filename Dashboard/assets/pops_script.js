@@ -6,12 +6,16 @@
 //   POps.busy / act              : düğmeyi istek sürerken kilitler; hata/başarı bildirimini gösterir
 //   openModal / closeModal       : sayfadaki .modal-overlay pencereleri (odak tuzağı, Esc)
 //   POps.watchDevices            : cihaz listesini (state.devices) yalnızca isteyen sayfada yoklar
+//   POps.iconHtml / iconEl       : çizgi simge (assets/pops_icons.svg)
+//   POps.menu(düğme, öğeler)     : açılır menü;  POps.drawer: sağdaki ayrıntı paneli
+//   POps.relTime / timeHtml      : "3 dk önce" (üstüne gelince tam tarih ve saat)
+//   POps.jobs                    : süren işlemler (task_ids) — yan menünün altındaki işlem merkezi
 // Metinler her zaman textContent ile yazılır; sunucudan gelen değer HTML olarak yorumlanmaz.
 // =================================================================
 
 const API_HTTP = (typeof OMYO_API !== 'undefined') ? OMYO_API.HTTP_URL : '';
 
-// Ortak durum (Laboratuvarlar, Dağıtım ve Terminal sayfaları cihaz listesini buradan okur)
+// Ortak durum: cihaz listesi (POps.watchDevices çağıran sayfalar ve POps.dev buradan okur)
 const state = {
     devices: [],
     devicesLoaded: false,
@@ -112,6 +116,11 @@ POps.api = async function (path, opts) {
     if (!res.ok) throw new ApiError(apiErrorText(data, res.status), res.status, data);
     if (data && typeof data === 'object' && !Array.isArray(data) && data.status === 'error') {
         throw new ApiError((typeof data.message === 'string' && data.message) || (typeof data.detail === 'string' && data.detail) || 'İşlem başarısız.', res.status, data);
+    }
+    // Görev oluşturan istekler (task_ids döner) işlem merkezine kendiliğinden eklenir
+    if (data && Array.isArray(data.task_ids) && data.task_ids.length && POps.jobs) {
+        const seq = o.body && typeof o.body === 'object' && Array.isArray(o.body.taskSequence) ? o.body.taskSequence : [];
+        POps.jobs.track(o.jobTitle || (seq[0] && seq[0].name) || 'İşlem', data.task_ids);
     }
     return data;
 };
@@ -644,7 +653,7 @@ async function popsTwofaNudge(enabled) {
     box.className = 'twofa-nudge';
     box.setAttribute('role', 'status');
     box.innerHTML = '<i class="fas fa-shield-halved"></i><span>Hesabınızda iki adımlı doğrulama (2FA) kapalı. Önerilir: '
-        + '<a href="settings.php#twofaCard">Ayarlar → İki Adımlı Doğrulama (2FA)</a> kartından açabilirsiniz.</span>'
+        + '<a href="settings.php#twofaCard">Ayarlar → İki adımlı doğrulama</a> bölümünden açabilirsiniz.</span>'
         + '<button type="button" class="twofa-nudge-close" title="7 gün gösterme" aria-label="Kapat"><i class="fas fa-xmark"></i></button>';
     box.querySelector('button').addEventListener('click', () => {
         try { localStorage.setItem(TWOFA_NUDGE_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000)); } catch (e) { /* özel pencere */ }
@@ -652,3 +661,230 @@ async function popsTwofaNudge(enabled) {
     });
     header.insertAdjacentElement('afterend', box);
 }
+
+
+// ============== SİMGELER ==============
+POps.iconHtml = function (name, cls) {
+    return `<svg class="ico${cls ? ' ' + escapeHtml(cls) : ''}" aria-hidden="true"><use href="${escapeHtml((window.POPS_ICONS || 'assets/pops_icons.svg') + '#i-' + name)}"></use></svg>`;
+};
+POps.iconEl = function (name, cls) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'ico' + (cls ? ' ' + cls : ''));
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(NS, 'use');
+    use.setAttribute('href', (window.POPS_ICONS || 'assets/pops_icons.svg') + '#i-' + name);
+    svg.append(use);
+    return svg;
+};
+
+// ============== ZAMAN ==============
+// Göreli zaman ("şimdi", "5 dk önce", "dün 14:02", "12 Eki 14:02"); tam hali title'da
+function popsDate(v) {
+    if (v == null || v === '' || v === '-') return null;
+    const d = v instanceof Date ? v : new Date(typeof v === 'number' && v < 1e12 ? v * 1000 : v);
+    return isNaN(d.getTime()) ? null : d;
+}
+POps.toDate = popsDate;
+POps.fullTime = function (v) {
+    const d = popsDate(v);
+    return d ? d.toLocaleString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+};
+POps.relTime = function (v) {
+    const d = popsDate(v);
+    if (!d) return '—';
+    const now = new Date();
+    const sec = Math.round((now - d) / 1000);
+    const hm = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    if (sec < 0) return sec > -120 ? 'şimdi' : d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) + ' ' + hm;
+    if (sec < 45) return 'şimdi';
+    if (sec < 3600) return Math.max(1, Math.round(sec / 60)) + ' dk önce';
+    const sameDay = d.toDateString() === now.toDateString();
+    if (sameDay && sec < 6 * 3600) return Math.round(sec / 3600) + ' sa önce';
+    if (sameDay) return 'bugün ' + hm;
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (d.toDateString() === y.toDateString()) return 'dün ' + hm;
+    const opts = { day: 'numeric', month: 'short' };
+    if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+    return d.toLocaleDateString('tr-TR', opts) + ' ' + hm;
+};
+POps.timeHtml = function (v) {
+    const d = popsDate(v);
+    if (!d) return '—';
+    return `<time datetime="${escapeHtml(d.toISOString())}" title="${escapeHtml(POps.fullTime(d))}">${escapeHtml(POps.relTime(d))}</time>`;
+};
+POps.duration = function (sec) {
+    sec = Math.max(0, Math.round(Number(sec) || 0));
+    if (sec < 60) return sec + ' sn';
+    if (sec < 3600) return Math.floor(sec / 60) + ' dk' + (sec % 60 && sec < 600 ? ' ' + (sec % 60) + ' sn' : '');
+    if (sec < 86400) return Math.floor(sec / 3600) + ' sa' + (Math.floor(sec / 60) % 60 ? ' ' + (Math.floor(sec / 60) % 60) + ' dk' : '');
+    return Math.floor(sec / 86400) + ' gün';
+};
+
+// ============== AÇILIR MENÜ ==============
+// POps.menu(düğme, [{ label, icon, danger, disabled, hint, onClick } | '-' | { header }])
+let openMenuEl = null;
+function closeMenu(focusBack) {
+    if (!openMenuEl) return;
+    const m = openMenuEl;
+    openMenuEl = null;
+    m.remove();
+    if (m._anchor) {
+        m._anchor.setAttribute('aria-expanded', 'false');
+        if (focusBack) m._anchor.focus();
+    }
+}
+POps.closeMenu = closeMenu;
+POps.menu = function (anchor, items) {
+    const again = openMenuEl && openMenuEl._anchor === anchor;
+    closeMenu(false);
+    if (again) return;
+    const m = POps.el('div', { className: 'pops-menu', role: 'menu' });
+    m._anchor = anchor;
+    (items || []).forEach(it => {
+        if (!it) return;
+        if (it === '-') { m.append(POps.el('div', { className: 'msep', role: 'separator' })); return; }
+        if (it.header) { m.append(POps.el('div', { className: 'mh', text: it.header })); return; }
+        const b = POps.el('button', { type: 'button', className: 'mi' + (it.danger ? ' danger' : ''), role: 'menuitem' });
+        if (it.disabled) b.disabled = true;
+        if (it.title) b.title = it.title;
+        if (it.icon) b.append(POps.iconEl(it.icon));
+        b.append(POps.el('span', { text: it.label }));
+        if (it.hint) b.append(POps.el('span', { className: 'k', text: it.hint }));
+        b.addEventListener('click', (e) => { e.stopPropagation(); closeMenu(false); if (it.onClick) it.onClick(anchor); });
+        m.append(b);
+    });
+    document.body.append(m);
+    const r = anchor.getBoundingClientRect();
+    const w = m.offsetWidth, h = m.offsetHeight;
+    let left = r.left, top = r.bottom + 6;
+    if (left + w > window.innerWidth - 8) left = Math.max(8, r.right - w);
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+    m.style.left = left + 'px';
+    m.style.top = top + 'px';
+    anchor.setAttribute('aria-expanded', 'true');
+    openMenuEl = m;
+    const first = m.querySelector('.mi:not(:disabled)');
+    if (first) first.focus();
+};
+document.addEventListener('click', (e) => { if (openMenuEl && !openMenuEl.contains(e.target) && !(openMenuEl._anchor && openMenuEl._anchor.contains(e.target))) closeMenu(false); });
+document.addEventListener('keydown', (e) => {
+    if (!openMenuEl) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(true); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const list = [...openMenuEl.querySelectorAll('.mi:not(:disabled)')];
+        if (!list.length) return;
+        const i = list.indexOf(document.activeElement);
+        list[(i + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length].focus();
+    }
+}, true);
+window.addEventListener('resize', () => closeMenu(false));
+window.addEventListener('scroll', () => closeMenu(false), true);
+
+// ============== AYRINTI PANELİ ==============
+// const body = POps.drawer.open('pc:LAB1-PC07', { onClose }) -> sayfa body.innerHTML'i doldurur
+POps.drawer = (function () {
+    let el = null, body = null, key = null, onClose = null, returnFocus = null;
+    function ensure() {
+        if (el) return;
+        el = POps.el('aside', { className: 'drawer', id: 'popsDrawer', 'aria-label': 'Ayrıntılar', tabindex: '-1' });
+        body = POps.el('div', { className: 'drawer-body' });
+        el.append(body);
+        document.body.append(el);
+        // Yakalama evresinde: üstteki pencere (modal, onay, menü, arama) Esc ile kapanırken paneli de kapatmasın
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !e.defaultPrevented && key !== null && !document.querySelector('.pops-dialog-overlay, .modal-overlay.open, .palette-overlay') && !openMenuEl) api.close();
+        }, true);
+    }
+    const api = {
+        open(k, opts) {
+            ensure();
+            const o = opts || {};
+            if (key !== null && key !== k && onClose) { const f = onClose; onClose = null; f(); }
+            if (key === null) returnFocus = document.activeElement;
+            key = k;
+            onClose = o.onClose || null;
+            el.classList.add('open');
+            document.body.classList.add('drawer-open');
+            return body;
+        },
+        close() {
+            if (!el || key === null) return;
+            key = null;
+            el.classList.remove('open');
+            document.body.classList.remove('drawer-open');
+            const f = onClose; onClose = null;
+            if (f) f();
+            if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
+        },
+        isOpen(k) { return k === undefined ? key !== null : key === k; },
+        key() { return key; },
+        body() { ensure(); return body; }
+    };
+    return api;
+})();
+
+// ============== İŞLEM MERKEZİ ==============
+// Görev oluşturan her istek (task_ids) burada izlenir; durum /api/tasks/status'tan okunur.
+// Liste sekme boyunca sessionStorage'da tutulur; biten işler 15 dk sonra düşer.
+const JOB_FINAL_OK = ['Completed', 'Completed (Rebooted)'];
+const JOB_FINAL_BAD = ['Failed', 'Error', 'Cancelled', 'Interrupted', 'Timed Out', 'Denied', 'Unknown', 'Expired'];
+POps.taskState = function (status) {
+    if (JOB_FINAL_OK.includes(status)) return 'ok';
+    if (JOB_FINAL_BAD.includes(status)) return 'bad';
+    return 'run';
+};
+POps.jobs = (function () {
+    const KEY = 'pops_jobs_v1';
+    let jobs = [];
+    let timer = null;
+    try { jobs = JSON.parse(sessionStorage.getItem(KEY) || '[]') || []; } catch (e) { jobs = []; }
+    function save() { try { sessionStorage.setItem(KEY, JSON.stringify(jobs)); } catch (e) { /* özel pencere */ } }
+    function counts(j) {
+        const c = { ok: 0, bad: 0, run: 0, total: j.ids.length };
+        j.ids.forEach(id => { const st = j.items[id]; c[st ? POps.taskState(st.status) : 'run'] += 1; });
+        return c;
+    }
+    function emit() { document.dispatchEvent(new CustomEvent('pops_jobs')); }
+    async function poll() {
+        timer = null;
+        const now = Date.now();
+        jobs = jobs.filter(j => !j.doneAt || now - j.doneAt < 15 * 60 * 1000);
+        const live = jobs.filter(j => !j.doneAt);
+        if (live.length && !document.hidden) {
+            const ids = [...new Set(live.flatMap(j => j.ids))].slice(0, 5000);
+            try {
+                const r = await POps.post('/api/tasks/status', { ids });
+                const map = {};
+                (r.items || []).forEach(t => { map[t.id] = t; });
+                live.forEach(j => {
+                    j.ids.forEach(id => { if (map[id]) j.items[id] = { status: map[id].status, pc: map[id].target_pc, exit: map[id].exit_code }; else if (!j.items[id]) j.items[id] = { status: 'Cancelled', pc: '' }; });
+                    const c = counts(j);
+                    if (!c.run) {
+                        j.doneAt = Date.now();
+                        POps.toast(c.bad ? 'warning' : 'success', c.bad ? `${j.title}: ${c.ok} başarılı, ${c.bad} başarısız.` : `${j.title}: ${c.total} cihazda tamamlandı.`);
+                    }
+                });
+            } catch (e) { /* bir sonraki turda yeniden denenir */ }
+        }
+        save();
+        emit();
+        if (jobs.some(j => !j.doneAt)) timer = setTimeout(poll, document.hidden ? 15000 : 3000);
+    }
+    function kick() { if (timer) clearTimeout(timer); timer = setTimeout(poll, 1200); }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && jobs.some(j => !j.doneAt)) kick(); });
+    return {
+        track(title, ids) {
+            const clean = [...new Set((ids || []).map(Number).filter(n => n > 0))];
+            if (!clean.length) return;
+            jobs.unshift({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), title: String(title || 'İşlem'), ids: clean, items: {}, at: Date.now(), doneAt: null });
+            jobs = jobs.slice(0, 20);
+            save(); emit(); kick();
+        },
+        list() { return jobs.slice(); },
+        counts,
+        clearDone() { jobs = jobs.filter(j => !j.doneAt); save(); emit(); },
+        start() { emit(); if (jobs.some(j => !j.doneAt)) kick(); }
+    };
+})();

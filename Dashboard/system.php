@@ -1,902 +1,1269 @@
 <?php include 'includes/header.php'; ?>
+<?php $sysSuper = ($_SESSION['role'] ?? '') === 'superadmin'; ?>
 
 <style>
-    /* Tam genişlik: geniş ekranda kartlar iki sütuna yerleşir */
-    .sys-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(620px, 100%), 1fr)); gap: var(--space-5); align-items: start; padding: var(--space-2) 0; }
-    .sys-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6); box-shadow: var(--shadow-sm); }
-    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: var(--space-4); }
-    .card-head h2 { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 0.5rem; }
-    .card-head h2 i { color: var(--primary-500); }
-    .card-desc { color: var(--text-tertiary); font-size: var(--text-sm); margin: -0.5rem 0 var(--space-4); line-height: 1.5; }
+    /* Bölümler geniş ekranda iki sütun; sütun sayısı sayfanın gerçek genişliğine göre (ayrıntı paneli açıkken de doğru) */
+    .sys-wrap { container-type: inline-size; }
+    .sys-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; align-items: start; }
+    @container (min-width: 960px) { .sys-grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); } .sys-grid.one { grid-template-columns: minmax(0, 1fr); } }
+    .sys-col { display: flex; flex-direction: column; gap: 32px; min-width: 0; }
+    .sec { container-type: inline-size; min-width: 0; }
+    .sec-h { display: flex; align-items: baseline; gap: 12px; padding: 0 4px 10px; }
+    .sec-h h2 { font-size: var(--text-lg); font-weight: var(--fw-semibold); letter-spacing: -0.01em; }
+    .sec-h .st { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); color: var(--text-tertiary); white-space: nowrap; }
+    .set + .set { margin-top: 12px; }
+    .srow { flex-wrap: wrap; row-gap: 10px; }
+    .srow > .grow { min-width: min(220px, 100%); }
+    .srow .v { font-weight: var(--fw-medium); color: var(--text-primary); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+    .srow .v.mono { font-family: var(--font-mono); font-size: 12.5px; }
+    .srow .acts { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+    .srow .d .lnk, .lnk { color: var(--primary-500); font-size: inherit; }
+    .srow .d .lnk:hover, .lnk:hover { text-decoration: underline; }
+    .srow.click { cursor: pointer; }
+    .srow.click:hover { background: var(--bg-surface-2); }
+    .srow.click:first-child:hover { border-radius: 14px 14px 0 0; }
+    .srow.click:last-child:hover { border-radius: 0 0 14px 14px; }
+    .srow.block { display: block; }
+    .srow.click:focus-visible { outline: 2px solid var(--primary-500); outline-offset: -2px; }
+    .sec-h { flex-wrap: wrap; }
+    .srow .t .word { margin-left: 8px; }
+    .drawer .srow > .grow { min-width: min(180px, 100%); }
+    .srow input[type=number] { width: 88px; text-align: right; }
+    .srow input.wide, .srow select.wide { width: min(320px, 100%); }
+    .srow .num { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+    .srow .unit { color: var(--text-tertiary); font-size: var(--text-sm); }
+    .srow .ico-lead { color: var(--text-tertiary); flex: none; }
+    .set > .act { padding: 12px 16px; border-bottom: 0; border-top: 1px solid var(--border-subtle); }
+    .set > .act:first-child { border-top: 0; }
+    .set .why { margin-top: 8px; padding: 9px 12px; border-radius: 10px; background: var(--danger-bg); color: var(--danger-text); font-size: var(--text-xs); line-height: 1.5; overflow-wrap: anywhere; }
+    .set .why.warn { background: var(--warning-bg); color: var(--warning-text); }
+    .res-spin { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex: none; }
 
-    .section-title { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); margin: var(--space-6) 0 var(--space-3); display: flex; align-items: center; gap: 0.625rem; padding-bottom: 0.625rem; border-bottom: 1px solid var(--border-subtle); }
-    .section-title.first { margin-top: 0; }
-    .step { width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--primary-50); color: var(--primary-500); display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: var(--fw-semibold); }
+    /* Sürüm dağılımı ve ilerleme */
+    .pbar.dist { height: 8px; margin-top: 12px; }
+    .lgd { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: var(--text-sm); color: var(--text-tertiary); }
+    .lgd span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .lgd b { color: var(--text-primary); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+    .pbar.indet > i { width: 32%; animation: sysIndet 1.3s ease-in-out infinite; }
+    @keyframes sysIndet { from { transform: translateX(-100%); } to { transform: translateX(320%); } }
+    .ro-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 6px; flex-wrap: wrap; }
+    .ro-head .grow { flex: 1; min-width: 200px; }
+    .ro-head .cnt { font-size: var(--text-sm); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+    .ro-head .cnt b { color: var(--text-primary); }
+    .ro-bar { padding: 4px 16px 12px; }
+    .ro-list { border-top: 1px solid var(--border-subtle); max-height: 360px; overflow-y: auto; padding: 0 12px; }
+    .ro-list .act { padding: 10px 4px; }
+    .ro-more { padding: 10px 16px; border-top: 1px solid var(--border-subtle); font-size: var(--text-sm); }
 
-    .ver-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); }
-    .ver-tile { background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); }
-    .ver-tile .lbl, .mini-lbl { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: var(--fw-semibold); }
-    .ver-tile .val { font-size: var(--text-lg); font-weight: var(--fw-semibold); color: var(--text-primary); margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
-    .ver-tile .sub { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 0.25rem; }
+    /* Sağlık kutucukları: ince çizgili ızgara */
+    .hstats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--border-subtle); border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 1px var(--border-subtle); }
+    @container (min-width: 520px) { .hstats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .hstat { background: var(--bg-surface); padding: 14px 16px; min-width: 0; }
+    .hstat .l { font-size: var(--text-sm); color: var(--text-tertiary); display: flex; align-items: center; gap: 6px; }
+    .hstat .val { font-size: 18px; font-weight: var(--fw-semibold); letter-spacing: -0.01em; margin-top: 4px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .hstat .s { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; overflow-wrap: anywhere; }
+    .hstats + .set { margin-top: 12px; }
 
-    .badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3rem 0.7rem; border-radius: 999px; font-size: var(--text-xs); font-weight: var(--fw-semibold); white-space: nowrap; }
-    .badge.ok { background: var(--success-bg); color: var(--success-text); }
-    .badge.warn { background: var(--warning-bg); color: var(--warning-text); }
-    .badge.bad { background: var(--danger-bg); color: var(--danger-text); }
-    .badge.muted { background: var(--bg-surface-2); color: var(--text-tertiary); }
+    /* Ayrıntı paneli içerikleri */
+    .notes-sec { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.55; }
+    .notes-sec .ver { font-weight: var(--fw-semibold); color: var(--text-primary); margin: 2px 0 4px; }
+    .notes-sec .intro { margin-bottom: 6px; }
+    .notes-sec .kind { font-size: var(--text-xs); color: var(--text-muted); font-weight: var(--fw-semibold); margin: 10px 0 4px; }
+    .notes-sec ul { margin: 0; padding-left: 1.1rem; }
+    .notes-sec li { margin-bottom: 4px; overflow-wrap: anywhere; }
+    .notes-sec li details summary { list-style: none; cursor: pointer; }
+    .notes-sec li details summary::-webkit-details-marker { display: none; }
+    .notes-sec li details[open] summary .more { display: none; }
+    .notes-sec .more { color: var(--primary-500); white-space: nowrap; }
+    .notes-sec code, .dr-code { font-size: 0.85em; }
+    .notes-old summary { cursor: pointer; font-weight: var(--fw-medium); color: var(--text-primary); font-size: var(--text-sm); padding: 6px 0; }
+    .dr-note { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
+    .dr-list { max-height: 46vh; overflow-y: auto; background: var(--bg-app); border-radius: 12px; padding: 4px 12px; }
+    .dr-list label.check { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-top: 1px solid var(--border-subtle); }
+    .dr-list label.check:first-child { border-top: 0; }
+    .dr-list label.check.off { color: var(--text-muted); cursor: not-allowed; }
+    .dr-list .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .dr-list .vv { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; }
+    .dr-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .faint { color: var(--text-muted); }
+    .dr-sum { font-size: var(--text-sm); color: var(--text-secondary); }
 
-    .btn { padding: 0.625rem 1rem; border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: var(--fw-semibold); cursor: pointer; border: 1px solid var(--border-default); background: var(--bg-surface-2); color: var(--text-primary); display: inline-flex; align-items: center; gap: 0.5rem; transition: all 0.15s; max-width: 100%; text-align: left; }
-    .btn:hover { background: var(--bg-app); }
-    .btn.primary { background: var(--primary-500); color: #fff; border-color: var(--primary-500); }
-    .btn.primary:hover { background: var(--primary-600); }
-    .btn.danger { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border, transparent); }
-    .btn.small { padding: 0.35rem 0.7rem; font-size: var(--text-xs); }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-    .row.between { justify-content: space-between; }
-    .mt { margin-top: var(--space-4); }
-    .muted-text { color: var(--text-tertiary); font-size: var(--text-sm); }
-    .sys-card input[type=checkbox] { width: auto; flex: none; margin: 0; }
-    .sys-card label.muted-text { white-space: nowrap; }
-    .fld { padding: 0.5rem 0.75rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface-2); color: var(--text-primary); font-size: var(--text-sm); }
-
-    .changes { margin-top: var(--space-4); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
-    .changes ul { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
-
-    .option-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--space-3); }
-    .option-card { background: var(--bg-surface-2); border: 2px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; }
-    .option-card:hover { border-color: var(--primary-500); background: var(--bg-surface); }
-    .option-card.active { border-color: var(--primary-500); background: var(--primary-50); }
-    .option-card i { font-size: 1.5rem; color: var(--text-tertiary); }
-    .option-card.active i { color: var(--primary-500); }
-    .option-title { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); }
-    .option-desc { font-size: var(--text-xs); color: var(--text-tertiary); }
-
-    .target-box { margin-top: var(--space-3); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); }
-    .dev-list { display: flex; flex-direction: column; gap: 0.25rem; max-height: 320px; overflow-y: auto; margin-top: 0.75rem; }
-    .dev-row { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 0.625rem; padding: 0.5rem 0.625rem; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid var(--border-subtle); cursor: pointer; }
-    .dev-row.offline { opacity: 0.55; cursor: default; }
-    .dev-name { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); }
-    .dev-meta { font-size: var(--text-xs); color: var(--text-tertiary); }
-    .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--text-muted, #94a3b8); }
-    .dot.on { background: var(--success-solid); }
-    .ver-pill { font-size: var(--text-xs); font-weight: var(--fw-semibold); padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--success-bg); color: var(--success-text); white-space: nowrap; }
-    .ver-pill.old { background: var(--warning-bg); color: var(--warning-text); }
-
-    .summary { margin-top: var(--space-4); font-size: var(--text-sm); color: var(--text-secondary); }
-    .btn-deploy { width: 100%; padding: 0.875rem; background: var(--primary-500); color: #fff; border: none; border-radius: var(--radius-md); font-size: var(--text-md); font-weight: var(--fw-semibold); cursor: pointer; transition: all 0.15s; display: flex; justify-content: center; align-items: center; gap: 0.625rem; margin-top: var(--space-4); }
-    .btn-deploy:hover { background: var(--primary-600); }
-    .btn-deploy:disabled { background: var(--bg-surface-2); color: var(--text-muted, #94a3b8); border: 1px solid var(--border-subtle); cursor: not-allowed; }
-
-    details.offline { margin-top: var(--space-4); border: 1px dashed var(--border-default); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; }
-    details.offline summary { cursor: pointer; font-size: var(--text-sm); color: var(--text-secondary); font-weight: var(--fw-semibold); }
-    .upload-zone { border: 2px dashed var(--border-default); border-radius: var(--radius-md); padding: 1.5rem 1rem; text-align: center; cursor: pointer; position: relative; background: var(--bg-surface-2); margin-top: 0.75rem; transition: all 0.15s; }
+    /* Paketi elle yükle */
+    .upload-zone { border: 1.5px dashed var(--border-default); border-radius: 12px; padding: 22px 16px; text-align: center; cursor: pointer; position: relative; background: var(--bg-surface-2); color: var(--text-tertiary); font-size: var(--text-sm); transition: border-color 0.15s, background-color 0.15s; }
     .upload-zone:hover, .upload-zone.dragover { border-color: var(--primary-500); background: var(--primary-50); }
-    .upload-zone i { font-size: 1.75rem; color: var(--text-tertiary); }
     .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-    .file-list { list-style: none; margin: 0.75rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
-    .file-list li { font-size: var(--text-sm); color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-    .file-list li i { color: var(--text-tertiary); }
-    .enroll-list code { font-size: 0.75rem; word-break: break-all; }
-
-    .status-msg { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: var(--radius-md); display: none; font-weight: var(--fw-semibold); font-size: var(--text-sm); border-left: 4px solid transparent; background: var(--bg-surface-2); color: var(--text-secondary); }
-    .status-msg.show { display: block; }
-    .status-success { background: var(--success-bg); color: var(--success-text); border-color: var(--success-solid); }
-    .status-error { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-solid); }
-    .notes { margin-top: var(--space-4); }
-    .notes > details, .notes .note-sec { background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-top: 0.5rem; }
-    .notes summary { cursor: pointer; font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); }
-    .notes .ver { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); margin: 0.5rem 0 0.25rem; }
-    .notes .intro { font-size: var(--text-sm); color: var(--text-secondary); margin: 0.25rem 0 0.5rem; line-height: 1.5; }
-    .notes .kind { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: var(--fw-semibold); margin: 0.625rem 0 0.25rem; }
-    .notes ul { margin: 0; padding-left: 1.1rem; }
-    .notes li { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; margin-bottom: 0.25rem; }
-    .notes li details summary { font-weight: normal; color: var(--text-secondary); list-style: none; }
-    .notes li details summary::-webkit-details-marker { display: none; }
-    .notes li details[open] summary .more { display: none; }
-    .notes li .more { color: var(--primary-500); font-weight: var(--fw-semibold); white-space: nowrap; }
-    .notes code { font-size: 0.8em; }
-    .notes .lang { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 0.375rem; }
-    .cap-state { margin: 0.75rem 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
-
-    .err-list { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.375rem; }
-    .err-list li { background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
-    .err-list .meta-line { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+    .file-list { list-style: none; margin: 10px 0 0; padding: 0; font-size: var(--text-sm); color: var(--text-secondary); }
+    .file-list li { display: flex; gap: 8px; padding: 3px 0; overflow-wrap: anywhere; }
+    .file-list li span { color: var(--text-muted); white-space: nowrap; }
 </style>
 
-<div class="page-header" style="display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+<div class="page-header">
     <div>
-        <h1><i class="fas fa-server"></i> Sistem &amp; Sürüm</h1>
-        <p>Sunucu ve ajan sürümlerini tek yerden kontrol edin ve güncelleyin</p>
+        <h1>Sistem</h1>
+        <div class="summary" id="sysSummary"><span class="sum">Yükleniyor…</span></div>
     </div>
-    <div class="row">
-        <span class="muted-text" id="last-check"></span>
-        <button class="btn" id="btn-check"><i class="fas fa-arrows-rotate"></i> Güncellemeleri kontrol et</button>
+    <div class="page-header-actions">
+        <button type="button" class="ibtn boxed" id="notesBtn" data-tip="Sürüm notları" aria-label="Sürüm notları"><?php echo pops_icon('file'); ?></button>
+        <button type="button" class="ibtn boxed" id="checkBtn" data-tip="Güncellemeleri denetle" data-tip-pos="left" aria-label="Güncellemeleri denetle"><?php echo pops_icon('refresh'); ?></button>
     </div>
 </div>
 
 <div class="sys-wrap">
+    <div class="sys-grid<?php echo $sysSuper ? '' : ' one'; ?>">
+        <div class="sys-col">
+            <section class="sec" id="secServer" aria-labelledby="hServer">
+                <div class="sec-h"><h2 id="hServer">Sunucu</h2><span class="st" id="srvState"></span></div>
+                <div class="set" id="srvSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
+            </section>
 
-    <!-- ============ SUNUCU ============ -->
-    <div class="sys-card">
-        <div class="card-head">
-            <h2><i class="fas fa-server"></i> Sunucu</h2>
-            <span id="srv-badge"><span class="badge muted">…</span></span>
-        </div>
-        <div class="ver-grid">
-            <div class="ver-tile"><div class="lbl">Çalışan sürüm</div><div class="val" id="srv-version">…</div><div class="sub" id="srv-rev"></div></div>
-            <div class="ver-tile"><div class="lbl" id="srv-main-lbl">Son sürüm (GitHub)</div><div class="val" id="srv-main">…</div><div class="sub" id="srv-main-sub"></div></div>
-        </div>
-        <div class="notes" id="srv-notes"></div>
-        <details class="changes" id="srv-changes" style="display:none;">
-            <summary class="mini-lbl" style="cursor:pointer;">Teknik ayrıntı: gelecek commit'ler</summary>
-            <ul id="srv-commits"></ul>
-        </details>
-        <div class="row mt">
-            <button class="btn" id="btn-selfupdate"><i class="fas fa-download"></i> Sunucuyu güncelle</button>
-            <span class="muted-text">Yayımlanmış son sürümü kurar, geri gitmez. Sağlık kontrolü başarısız olursa önceki koda kendiliğinden döner.</span>
-        </div>
-        <div class="status-msg" id="su-status"></div>
-    </div>
+            <section class="sec" id="secAgents" aria-labelledby="hAgents">
+                <div class="sec-h"><h2 id="hAgents">Ajanlar</h2><span class="st" id="agState"></span></div>
+                <div class="set" id="agSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
+                <div class="set" id="rollout" hidden></div>
+                <?php if (!$sysSuper): ?><div class="set-note">Güncelleme, sağlık, yedek, kayıt ve güvenlik ayarları yalnızca süper admin içindir.</div><?php endif; ?>
+            </section>
 
-    <!-- ============ SUNUCU SAĞLIĞI ============ -->
-    <div class="sys-card">
-        <div class="card-head">
-            <h2><i class="fas fa-heart-pulse"></i> Sunucu sağlığı</h2>
-            <span id="dg-badge"><span class="badge muted">…</span></span>
-        </div>
-        <p class="card-desc">Sunucunun son açılışından bu yana durumu. Hata olursa aşağıda istek kimliğiyle listelenir; sorun bildirirken bu kimliği verin.</p>
-        <div class="ver-grid" id="dg-tiles"></div>
-        <details id="dg-errors-wrap" style="margin-top:var(--space-4);display:none;">
-            <summary class="mini-lbl" style="cursor:pointer;" id="dg-errors-title">Son hatalar</summary>
-            <ul class="err-list" id="dg-errors"></ul>
-        </details>
-        <div class="muted-text" id="dg-foot" style="margin-top:0.75rem;"></div>
-    </div>
+            <?php if ($sysSuper): ?>
+            <section class="sec" id="secEnroll" aria-labelledby="hEnroll">
+                <div class="sec-h"><h2 id="hEnroll">Ajan kaydı ve kimlik</h2><span class="st" id="enState"></span></div>
+                <div class="set" id="enSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
+                <div class="set" id="tokSet" hidden></div>
+            </section>
 
-    <!-- ============ AJAN GÜNCELLEME ============ -->
-    <div class="sys-card">
-        <div class="card-head">
-            <h2><i class="fas fa-laptop"></i> Ajan güncelleme</h2>
-            <span id="ag-badge"><span class="badge muted">…</span></span>
-        </div>
-        <p class="card-desc">Ajanlara yalnızca imzası doğrulanmış paket gönderilir. Ajan MSI'ı sunucudan indirir, imzayı kendisi de doğrular; yeni sürüm açılmazsa önceki sürüme döner.</p>
+            <section class="sec" id="secCaps" aria-labelledby="hCaps">
+                <div class="sec-h"><h2 id="hCaps">Cihaz yetenekleri</h2><span class="st" id="capState"></span></div>
+                <div class="set" id="capSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
+            </section>
 
-        <div class="section-title first"><span class="step">1</span> Paket</div>
-        <div class="ver-grid">
-            <div class="ver-tile"><div class="lbl">GitHub'daki son sürüm</div><div class="val" id="ag-latest">…</div><div class="sub" id="ag-latest-sub"></div></div>
-            <div class="ver-tile"><div class="lbl">Gönderilecek paket (doğrulandı)</div><div class="val" id="ag-staged">…</div><div class="sub" id="ag-staged-sub"></div></div>
-        </div>
-        <div class="notes" id="ag-notes"></div>
-        <div class="row mt" id="fetch-row" style="display:none;">
-            <button class="btn primary" id="btn-fetch"><i class="fas fa-cloud-arrow-down"></i> <span id="btn-fetch-lbl">GitHub'dan indir ve doğrula</span></button>
-            <span class="muted-text">İmza ve özetler doğrulanmadan paket kullanılmaz.</span>
-        </div>
-        <div class="status-msg" id="fetch-status"></div>
-
-        <details class="offline">
-            <summary>İnternetsiz sunucu: paketi elle yükle</summary>
-            <p class="muted-text" style="margin:0.75rem 0 0;">
-                GitHub Release sayfasından <code>manifest.json</code>, <code>manifest.json.sig</code> ve
-                <code>POps-Agent-*-win-x64.msi</code> dosyalarını indirip birlikte seçin. Doğrulama GitHub'dan indirmeyle aynıdır.
-            </p>
-            <div class="upload-zone" id="uz">
-                <i class="fas fa-file-shield"></i>
-                <div class="muted-text" style="margin-top:0.4rem;">Dosyaları seçin veya buraya sürükleyin</div>
-                <input type="file" id="files" multiple>
-            </div>
-            <ul class="file-list" id="file-list"></ul>
-            <div class="row mt">
-                <button class="btn primary" id="btn-upload" disabled><i class="fas fa-upload"></i> Doğrula ve yükle</button>
-                <label class="muted-text" style="display:flex;align-items:center;gap:0.4rem;">
-                    <input type="checkbox" id="force"> aynı ya da eski sürümü zorla
-                </label>
-            </div>
-            <div class="status-msg" id="upload-status"></div>
-        </details>
-
-        <div class="section-title"><span class="step">2</span> Hedef</div>
-        <div class="option-grid">
-            <div class="option-card active" data-mode="ALL"><i class="fas fa-globe"></i><div class="option-title">Tüm ajanlar</div><div class="option-desc" id="opt-all-desc">…</div></div>
-            <div class="option-card" data-mode="LAB"><i class="fas fa-network-wired"></i><div class="option-title">Bir sınıf</div><div class="option-desc">Seçilen laboratuvardaki açık cihazlar</div></div>
-            <div class="option-card" data-mode="PC"><i class="fas fa-laptop"></i><div class="option-title">Seçili cihazlar</div><div class="option-desc">Önce tek cihazda denemek için</div></div>
-        </div>
-        <div class="target-box" id="tgt-lab" style="display:none;">
-            <select id="lab-select" class="fld" style="width:100%;"></select>
-        </div>
-        <div class="target-box" id="tgt-pc" style="display:none;">
-            <div class="row between">
-                <span class="muted-text">Yalnızca açık (online) cihazlar seçilebilir.</span>
-                <button class="btn small" id="btn-select-outdated"><i class="fas fa-check-double"></i> Eski sürümdekileri seç</button>
-            </div>
-            <div class="dev-list" id="dev-list"></div>
-        </div>
-        <div class="summary" id="dep-summary"></div>
-        <button class="btn-deploy" id="btn-deploy" disabled><i class="fas fa-rocket"></i> <span id="btn-deploy-lbl">Gönder</span></button>
-        <div class="status-msg" id="deploy-status"></div>
-    </div>
-
-    <!-- ============ YETENEKLER ============ -->
-    <div class="sys-card">
-        <div class="card-head">
-            <h2><i class="fas fa-shield-halved"></i> Cihaz yetenekleri ve ajan durumu</h2>
-        </div>
-        <p class="card-desc">
-            Bir cihazda uzaktan terminali ve/veya Vision'ı (ekran izleme, uzaktan kontrol) kapatır; sunucu ele geçirilse bile
-            o cihazda çalışmazlar. Kapatma kalıcıdır: çevrimdışı cihaza bağlanınca, eski ajana güncellenince uygulanır.
-            Geri açmak için "İzin ver" kapatma isteğini kaldırır; yetenek ancak ajan kurulumu onu açık bildirirse geri gelir.
-        </p>
-        <select id="cap-device" class="fld" style="width:100%;"><option value="">Cihaz seçin…</option></select>
-        <div class="cap-state" id="cap-state"></div>
-        <div class="row">
-            <button class="btn danger" id="cap-off-terminal"><i class="fas fa-terminal"></i> Terminali kapat</button>
-            <button class="btn" id="cap-on-terminal"><i class="fas fa-unlock"></i> Terminale izin ver</button>
-            <button class="btn danger" id="cap-off-vision"><i class="fas fa-video-slash"></i> Vision'ı kapat</button>
-            <button class="btn" id="cap-on-vision"><i class="fas fa-unlock"></i> Vision'a izin ver</button>
-        </div>
-        <div class="status-msg" id="cap-status"></div>
-    </div>
-
-    <!-- ============ BİLDİRİMLER ============ -->
-    <div class="sys-card">
-        <div class="card-head">
-            <h2><i class="fas fa-bell"></i> Bildirimler</h2>
-            <span id="nt-badge"></span>
-        </div>
-        <p class="card-desc">
-            Önemli olaylar (güncelleme sorunu, kayıtlı cihazın kimliğini ele geçirme girişimi, kural ihlali, karantina, sonucu
-            gelmeyen güncelleme…) üstteki zilde her zaman görünür. Burada ayrıca e-posta ve/veya webhook (Slack, Discord, Teams
-            ya da kendi sisteminiz) ile gönderilmelerini açabilirsiniz. Aynı olay 10 dakika içinde bir kez gönderilir.
-        </p>
-        <div class="row">
-            <label class="muted-text" style="display:flex;align-items:center;gap:0.4rem;"><input type="checkbox" id="nt-enabled"> Dışarıya gönder</label>
-            <label class="muted-text">En az önem
-                <select id="nt-sev" class="fld">
-                    <option value="critical">Kritik</option>
-                    <option value="high">Yüksek</option>
-                    <option value="medium">Orta</option>
-                    <option value="info">Bilgi (her şey)</option>
-                </select>
-            </label>
-        </div>
-        <div class="row mt">
-            <input id="nt-email" class="fld" style="flex:1;min-width:220px;" placeholder="E-posta alıcıları (virgülle)">
-            <input id="nt-webhook" class="fld" style="flex:1;min-width:220px;" placeholder="Webhook adresi (https://…)">
-        </div>
-        <div class="muted-text" id="nt-smtp" style="margin-top:0.5rem;"></div>
-        <div class="row mt">
-            <button class="btn primary" id="nt-save"><i class="fas fa-floppy-disk"></i> Kaydet</button>
-            <button class="btn" id="nt-test"><i class="fas fa-paper-plane"></i> Test gönder</button>
-        </div>
-        <div class="status-msg" id="nt-status"></div>
-    </div>
-
-    <!-- ============ KAYIT VE KİMLİK ============ -->
-    <div class="sys-card">
-        <div class="card-head">
-            <h2><i class="fas fa-key"></i> Ajan kaydı ve kimlik</h2>
-            <span id="enroll-count"></span>
+            <?php endif; ?>
         </div>
 
-        <div class="section-title first"><i class="fas fa-ticket" style="color:var(--primary-500);"></i> Kayıt jetonu</div>
-        <p class="card-desc" style="margin-top:0;">
-            Yeni kurulumda MSI'a <code>ENROLL_TOKEN</code> olarak verilir; ajan ilk bağlanışta kendine özel bir anahtar alır.
-            Çok kullanımlık jeton, bir sınıfa tek MSI ile toplu kurulum içindir.
-        </p>
-        <div class="row">
-            <input id="et-lab" class="fld" style="flex:1;min-width:150px;" placeholder="Sınıf (isteğe bağlı)">
-            <input id="et-note" class="fld" style="flex:1;min-width:150px;" placeholder="Not (isteğe bağlı)">
-            <label class="muted-text">Kullanım <input id="et-uses" class="fld" type="number" min="1" value="1" style="width:70px;"></label>
-            <label class="muted-text">Saat <input id="et-ttl" class="fld" type="number" min="1" value="72" style="width:80px;"></label>
-            <button class="btn primary" id="btn-enroll"><i class="fas fa-plus"></i> Jeton üret</button>
-        </div>
-        <div class="status-msg" id="enroll-status"></div>
-        <ul class="file-list enroll-list" id="enroll-list"></ul>
+        <?php if ($sysSuper): ?>
+        <div class="sys-col">
+            <section class="sec" id="secHealth" aria-labelledby="hHealth">
+                <div class="sec-h"><h2 id="hHealth">Sağlık</h2><span class="st" id="hlState"></span></div>
+                <div id="hlBody"><div class="set"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div></div>
+            </section>
+            <section class="sec" id="secBackup" aria-labelledby="hBackup">
+                <div class="sec-h"><h2 id="hBackup">Yedekler</h2><span class="st" id="bkState"></span></div>
+                <div class="set" id="bkSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
+            </section>
 
-        <div class="section-title"><i class="fas fa-lock" style="color:var(--primary-500);"></i> Kimlik zorlaması</div>
-        <div class="row between">
-            <div class="row"><span id="enforce-badge"></span><span class="muted-text" id="enforce-hint"></span></div>
-            <button class="btn" id="btn-enforce">…</button>
+            <section class="sec" id="secAudit" aria-labelledby="hAudit">
+                <div class="sec-h"><h2 id="hAudit">Kayıt bütünlüğü</h2><span class="st" id="auState"></span></div>
+                <div class="set" id="auSet"></div>
+            </section>
+
+            <section class="sec" id="secNotify" aria-labelledby="hNotify">
+                <div class="sec-h"><h2 id="hNotify">Bildirimler</h2><span class="st" id="ntState"></span></div>
+                <div class="set" id="ntSet">
+                    <div class="srow">
+                        <div class="grow"><div class="t">Dışarıya gönder</div><div class="d">Önemli olaylar Bildirimler'de her zaman görünür; açıkken e-posta ve webhook ile de gönderilir. Aynı olay 10 dakikada bir kez gider.</div></div>
+                        <label class="switch"><input type="checkbox" id="ntEnabled" aria-label="Bildirimleri dışarıya gönder"><span></span></label>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t">En az önem</div><div class="d">Bu ve daha önemli olaylar gönderilir.</div></div>
+                        <select id="ntSev" aria-label="En az önem" style="width:auto">
+                            <option value="critical">Kritik</option>
+                            <option value="high">Yüksek</option>
+                            <option value="medium">Orta</option>
+                            <option value="info">Bilgi (her şey)</option>
+                        </select>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t">E-posta alıcıları</div><div class="d" id="ntSmtp">Virgülle ayırın.</div></div>
+                        <input type="text" id="ntEmail" class="wide" placeholder="ornek@okul.k12.tr" aria-label="E-posta alıcıları" autocomplete="off">
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t">Webhook</div><div class="d">Slack, Discord, Teams ya da kendi sisteminiz.</div></div>
+                        <input type="url" id="ntWebhook" class="wide" placeholder="https://…" aria-label="Webhook adresi" autocomplete="off">
+                    </div>
+                    <div class="srow">
+                        <div class="grow"></div>
+                        <div class="acts">
+                            <button type="button" class="btn secondary" id="ntTest"><?php echo pops_icon('send', 'sm'); ?>Test gönder</button>
+                            <button type="button" class="btn secondary" id="ntSave">Kaydet</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="sec" id="secRetention" aria-labelledby="hRetention">
+                <div class="sec-h"><h2 id="hRetention">Saklama süreleri</h2></div>
+                <div class="set" id="rtSet">
+                    <div class="srow">
+                        <div class="grow"><div class="t">Ajan olay kayıtları</div><div class="d">Oturum açma, kural ihlali ve benzeri olaylar.</div></div>
+                        <span class="num"><input type="number" id="rtLogs" min="0" max="3650" step="1" aria-label="Ajan olay kayıtları, gün"><span class="unit">gün</span></span>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t">Sonuçlanmış görevler</div><div class="d">Bitmiş görevler ve çıktıları; sıradakilere dokunulmaz.</div></div>
+                        <span class="num"><input type="number" id="rtTasks" min="0" max="3650" step="1" aria-label="Sonuçlanmış görevler, gün"><span class="unit">gün</span></span>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t">Okunmuş bildirimler</div></div>
+                        <span class="num"><input type="number" id="rtNotif" min="0" max="3650" step="1" aria-label="Okunmuş bildirimler, gün"><span class="unit">gün</span></span>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="d">0 süresiz saklar. Eski kayıtlar her gece silinir. Denetim zinciri ve uzak ekran oturumları silinmez.</div></div>
+                        <button type="button" class="btn secondary" id="rtSave" disabled>Kaydet</button>
+                    </div>
+                </div>
+            </section>
         </div>
-        <div class="status-msg" id="enforce-status"></div>
+        <?php endif; ?>
     </div>
 </div>
 
-<?php include 'includes/footer.php'; ?>
+<?php if ($sysSuper): ?>
+<div id="uploadModal" class="modal-overlay">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title">Ajan paketini elle yükle</div>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p class="card-desc">İnternetsiz sunucu için. GitHub sürüm sayfasından <code>manifest.json</code>, <code>manifest.json.sig</code> ve <code>POps-Agent-…-win-x64.msi</code> dosyalarını indirip birlikte seçin. İmza GitHub'dan indirmedeki gibi doğrulanır.</p>
+            <div class="upload-zone" id="uz">
+                <?php echo pops_icon('upload'); ?>
+                <div style="margin-top:6px">Dosyaları seçin ya da buraya bırakın</div>
+                <input type="file" id="upFiles" multiple aria-label="Paket dosyaları">
+            </div>
+            <ul class="file-list" id="upList"></ul>
+            <label class="check" style="margin-top:12px"><input type="checkbox" id="upForce"> Aynı ya da daha eski sürümü de kabul et</label>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
+            <button type="button" class="btn" id="upBtn" disabled>Doğrula ve yükle</button>
+        </div>
+    </div>
+</div>
+
+<div id="tokenModal" class="modal-overlay">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title">Kayıt jetonu üret</div>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p class="card-desc">Yeni kurulumda MSI'a <code>ENROLL_TOKEN</code> olarak verilir; ajan ilk bağlanışta kendine özel bir anahtar alır. Çok kullanımlık jeton bir sınıfa tek MSI ile toplu kurulum içindir.</p>
+            <div class="form-grid">
+                <div class="field"><label for="tkLab">Sınıf</label><input type="text" id="tkLab" list="tkLabs" placeholder="Bütün sınıflar" autocomplete="off"><datalist id="tkLabs"></datalist><div class="field-hint">Boş bırakılırsa bilgisayar atanmamış olarak gelir.</div></div>
+                <div class="field"><label for="tkNote">Not</label><input type="text" id="tkNote" maxlength="200" placeholder="İsteğe bağlı" autocomplete="off"></div>
+                <div class="field"><label for="tkUses">Kullanım sayısı</label><input type="number" id="tkUses" min="1" max="10000" value="1"></div>
+                <div class="field"><label for="tkTtl">Geçerlilik (saat)</label><input type="number" id="tkTtl" min="1" max="720" value="72"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
+            <button type="button" class="btn" id="tkCreate">Jeton üret</button>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
 (function () {
+    const dev = POps.dev;
     const $ = (id) => document.getElementById(id);
-    const S = { ver: null, su: null, devices: [], mode: 'ALL' };
+    const IS_SUPER = window.USER_ROLE === 'superadmin';
+    const ME = <?php echo json_encode((string) ($_SESSION['username'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
+    const S = { ver: null, su: null, diag: null, diagErr: null, notes: null, checkedAt: null, fetching: false, suBusy: false, suPoll: null, suBefore: '', tokens: null, notify: null, retention: null };
+    const RKEY = 'pops_agent_rollout_v1', AKEY = 'pops_audit_verify_v1', SKEY = 'pops_selfupdate_req_v1';
 
     const fmtV = (v) => !v ? '—' : (/^v/i.test(v) ? v : 'v' + v);
     const normV = (v) => String(v || '').trim().replace(/^v/i, '');
-    const fmtDate = (iso) => { try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso || ''; } };
-    const badge = (cls, icon, text) => `<span class="badge ${cls}"><i class="fas ${icon}"></i> ${escapeHtml(text)}</span>`;
-    const isOnline = (d) => String(d.status || '').toLowerCase() === 'online';
-    const devName = (d) => d.display_name || d.real_hostname || d.hw_id;
-    function msg(id, cls, html) { const el = $(id); el.className = 'status-msg show' + (cls ? ' ' + cls : ''); el.innerHTML = html; }
-    // Ortak istek yardımcısı: oturum düşerse giriş sayfası, hata metni sunucunun açıklaması
-    const api = (path, opts) => POps.api(path, opts || {});
-    const postJson = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const isOn = (d) => !POps.isOffline(d);
+    const devs = () => state.devices || [];
+    const store = {
+        get(k, ss) { try { return JSON.parse((ss ? sessionStorage : localStorage).getItem(k) || 'null'); } catch (e) { return null; } },
+        set(k, v, ss) { try { const s = ss ? sessionStorage : localStorage; if (v == null) s.removeItem(k); else s.setItem(k, JSON.stringify(v)); } catch (e) { /* özel pencere */ } }
+    };
+    const wordHtml = (k, t) => `<span class="word ${escapeHtml(k)}">${escapeHtml(t)}</span>`;
+    const stateHtml = (k, t) => `<span class="dot ${escapeHtml(k)}"></span>${escapeHtml(t)}`;
+    const fmtBytes = (n) => { n = Number(n) || 0; return n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB'; };
+    const fmtNum = (n) => Number(n || 0).toLocaleString('tr-TR');
+    const ago = (sec) => POps.duration(sec) + ' önce';
+    function setState(id, k, t) { const el = $(id); if (el) el.innerHTML = t ? stateHtml(k, t) : ''; }
+    function sectionError(el, e) { if (el) POps.setError(el, e, { compact: true }); }
 
-    // ================= SUNUCU =================
-    function renderServer() {
-        const v = S.ver, su = S.su;
-        if (!v) return;
-        const srv = v.server || {};
-        $('srv-version').textContent = fmtV(v.running);
-        const rel = (srv.channel || 'release') === 'release';
-        $('srv-main-lbl').textContent = rel ? 'Son sürüm (GitHub)' : 'GitHub (main) · geliştirme kanalı';
-        $('srv-rev').textContent = (srv.deployed_at ? 'güncellendi ' + fmtDate(srv.deployed_at) : 'Henüz panelden güncellenmedi') + (srv.rev ? ` · commit ${srv.rev}` : '');
-
-        const busy = su && (su.pending || (su.status && su.status.state === 'running'));
-        const btn = $('btn-selfupdate');
-        btn.disabled = !(su && su.configured) || busy;
-        btn.classList.toggle('primary', !!srv.update_available);
-        $('srv-changes').style.display = 'none';
-
-        let b, main = '—', sub = '';
-        if (!v.server) {
-            // Eski backend bu sorguyu bilmiyor: sayfanın kendisi sunucu güncellemesi bekliyor
-            b = badge('warn', 'fa-circle-up', 'Güncelleme var');
-            main = '?';
-            sub = 'Güncelleme sorgusu için sunucuyu bir kez güncelleyin.';
-            btn.classList.add('primary');
-        } else if (su && !su.configured) {
-            b = badge('muted', 'fa-plug', 'Self-update kurulu değil');
-            sub = 'bkz. docs/self-update.md';
-        } else if (busy) {
-            b = badge('warn', 'fa-spinner fa-spin', 'Güncelleniyor…');
-        } else if (srv.last_state === 'failed') {
-            b = badge('bad', 'fa-triangle-exclamation', 'Son güncelleme başarısız');
-            sub = 'Önceki kod çalışıyor (otomatik geri dönüldü).';
-        } else if (rel) {
-            // Sürüm kanalı: yalnızca yayımlanmış sürümler sayılır, ara commit'ler değil
-            if (!srv.checked) { b = badge('muted', 'fa-wifi', 'GitHub\'a ulaşılamadı'); main = '?'; }
-            else if (srv.update_available) {
-                b = badge('warn', 'fa-circle-up', `Yeni sürüm: ${fmtV(srv.latest_release)}`);
-                main = fmtV(srv.latest_release);
-                sub = 'Güncelleme bu sürüme geçirir; notlar aşağıda.';
-            } else { b = badge('ok', 'fa-check', 'Güncel'); main = fmtV(srv.latest_release); }
-        } else if (!srv.rev) {
-            b = badge('muted', 'fa-circle-question', 'Durum bilinmiyor');
-            sub = 'Bir kez "Sunucuyu güncelle" ile kurulunca takip edilir.';
-        } else if (!srv.checked) {
-            b = badge('muted', 'fa-wifi', 'GitHub\'a ulaşılamadı');
-            main = '?';
-        } else if (srv.update_available) {
-            b = badge('warn', 'fa-circle-up', 'Güncelleme var');
-            main = `+${srv.ahead_by} değişiklik`;
-            sub = srv.version_changed ? 'Yeni sürüm numarası içeriyor.' : '';
-            $('srv-commits').innerHTML = (srv.commits || []).map(c => `<li>${escapeHtml(c)}</li>`).join('');
-            $('srv-changes').style.display = (srv.commits || []).length ? 'block' : 'none';
-        } else {
-            b = badge('ok', 'fa-check', 'Güncel');
-            main = 'Güncel';
-            if (srv.ahead_by > 0) sub = `main'de ${srv.ahead_by} değişiklik var ama sunucuyu etkilemiyor.`;
+    // ---- Ortak ayrıntı paneli üst kısmı
+    function drawerHeadHtml(title, subHtml, icon, cls) {
+        return `<div class="drawer-head"><div class="drawer-title"><span class="drawer-ico ${escapeHtml(cls || '')}">${POps.iconHtml(icon, 'lg')}</span>`
+            + `<div style="min-width:0"><h2>${escapeHtml(title)}</h2><div class="sub">${subHtml}</div></div></div>`
+            + `<button type="button" class="ibtn sm" data-act="close" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button></div>`;
+    }
+    const DR = {};   // drawer anahtarı önekine göre tıklama işleyicisi
+    let drawerWired = false;
+    function openDrawer(key, handler, onClose) {
+        const body = POps.drawer.open(key, { onClose });
+        DR[key.split(':')[0]] = handler;
+        if (!drawerWired) {
+            drawerWired = true;
+            body.addEventListener('click', (e) => {
+                const k = POps.drawer.key();
+                if (!k || !DR[k.split(':')[0]]) return;
+                const b = e.target.closest('[data-act]');
+                if (!b || b.disabled) return;
+                if (b.dataset.act === 'close') { POps.drawer.close(); return; }
+                DR[k.split(':')[0]](b, e);
+            });
         }
-        $('srv-badge').innerHTML = b;
-        $('srv-main').textContent = main;
-        $('srv-main-sub').textContent = sub;
+        return body;
+    }
+
+    // =================================================================
+    // SUNUCU
+    // =================================================================
+    function serverInfo() {
+        const v = S.ver, su = S.su;
+        const srv = (v && v.server) || null;
+        const rel = !srv || (srv.channel || 'release') === 'release';
+        const st = su && su.status;
+        const busy = !!(S.suBusy || (su && (su.pending || (st && st.state === 'running'))));
+        let latest = '—', latestSub = '', avail = false;
+        if (v && !srv) { latest = '?'; latestSub = 'Güncelleme sorgusu için sunucuyu bir kez güncelleyin.'; avail = true; }
+        else if (srv && rel) {
+            if (!srv.checked) { latest = '?'; latestSub = "GitHub'a ulaşılamadı"; }
+            else { latest = fmtV(srv.latest_release); avail = !!srv.update_available; latestSub = avail ? 'Kurulabilir' : 'Çalışan sürümle aynı'; }
+        } else if (srv) {
+            if (!srv.rev) { latest = '?'; latestSub = 'Bir kez panelden güncellenince izlenir.'; }
+            else if (!srv.checked) { latest = '?'; latestSub = "GitHub'a ulaşılamadı"; }
+            else if (srv.update_available) { latest = `+${srv.ahead_by} değişiklik`; avail = true; latestSub = srv.version_changed ? 'Yeni sürüm numarası içeriyor' : ''; }
+            else { latest = 'Güncel'; latestSub = srv.ahead_by > 0 ? `main'de ${srv.ahead_by} değişiklik var, sunucuyu etkilemiyor` : ''; }
+        }
+        let k, word;
+        if (!v) { k = 'bad'; word = 'Sürüm bilgisi alınamadı'; }
+        else if (busy) { k = 'run'; word = 'Güncelleniyor'; }
+        else if (srv && srv.last_state === 'failed') { k = 'bad'; word = 'Son güncelleme başarısız'; }
+        else if (avail) { k = 'run'; word = 'Yeni sürüm var'; }
+        else if (latest === '?') { k = 'off'; word = srv && !srv.checked ? "GitHub'a ulaşılamadı" : 'Durum bilinmiyor'; }
+        else { k = 'ok'; word = 'Güncel'; }
+        return { v, su, srv, rel, st, busy, latest, latestSub, avail, k, word, configured: !!(su && su.configured) };
+    }
+
+    function lastAttemptHtml(st) {
+        if (!st || !st.state || st.state === 'running') return '';
+        const ok = st.state === 'ok';
+        const metaHtml = POps.timeHtml(st.at) + (st.rev && st.rev !== 'unknown' ? ' · commit ' + escapeHtml(st.rev) : '') + (st.target ? ' · ' + escapeHtml(st.target === 'origin/main' ? 'main' : st.target) : '');
+        return `<div class="act"><div class="res ${ok ? 'ok' : 'bad'}">${POps.iconHtml(ok ? 'check' : 'x')}</div>
+            <div style="min-width:0"><div class="what">Son sunucu güncellemesi</div><div class="meta">${metaHtml}</div>
+            ${ok ? '' : `<div class="why">Güncelleme tamamlanamadı; önceki kod çalışıyor (sağlık kontrolü geri döndü).${st.message ? ' Ayrıntı: ' + escapeHtml(st.message) : ''}</div>`}</div>
+            <div class="side">${wordHtml(ok ? 'ok' : 'bad', ok ? 'Tamamlandı' : 'Başarısız')}</div></div>`;
+    }
+
+    function renderServer() {
+        const I = serverInfo();
+        setState('srvState', I.k, I.word);
+        const box = $('srvSet');
+        if (!I.v) { POps.setError(box, new Error('Sürüm bilgisi alınamadı. Sayfayı yenileyin.'), { compact: true }); return; }
+        const srv = I.srv || {};
+        const deployedHtml = srv.deployed_at ? 'Panelden güncellendi ' + POps.timeHtml(srv.deployed_at) + (srv.rev ? ' · commit ' + escapeHtml(srv.rev) : '') : 'Henüz panelden güncellenmedi';
+        const commitsHtml = !I.rel && (srv.commits || []).length ? ` <button type="button" class="lnk" data-act="commits">Değişiklikleri göster</button>` : '';
+        let actHtml;
+        if (I.busy) {
+            const req = store.get(SKEY, true);
+            const whoHtml = req && req.at && Date.now() - req.at < 30 * 60 * 1000 ? escapeHtml(req.by || '?') + ' · ' + POps.timeHtml(req.at) + ' · ' : '';
+            actHtml = `<div class="srow"><span class="res-spin"><span class="spinner"></span></span>
+                <div class="grow"><div class="t">Sunucu güncelleniyor</div><div class="d">${whoHtml}Birkaç saniye bağlantı kopabilir; sağlık kontrolü geçmezse önceki koda döner.</div>
+                <div class="pbar indet" style="margin-top:10px"><i class="run"></i></div></div></div>`;
+        } else {
+            const what = I.rel ? 'Yayımlanmış son sürümü kurar, geri gitmez.' : "GitHub main'deki kodu kurar.";
+            const title = !I.v.server ? 'Sunucu güncellemesi gerekli' : I.avail ? (I.rel ? `${I.latest} kurulabilir` : `${I.latest} kurulabilir`) : 'Sunucu güncel';
+            const desc = !I.configured ? 'Panelden güncelleme bu sunucuda kurulu değil (docs/self-update.md).' : what + ' Sağlık kontrolü geçmezse önceki koda kendiliğinden döner.';
+            actHtml = `<div class="srow"><div class="grow"><div class="t">${escapeHtml(title)}</div><div class="d">${escapeHtml(desc)}</div></div>
+                ${IS_SUPER ? `<button type="button" class="btn${I.avail ? '' : ' secondary'}" data-act="selfupdate" ${I.configured ? '' : 'disabled'}>${POps.iconHtml('download', 'sm')}Sunucuyu güncelle</button>` : ''}</div>`;
+        }
+        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">Çalışan sürüm</div><div class="d">${deployedHtml}</div></div><div class="v">${escapeHtml(fmtV(I.v.running))}</div></div>
+            <div class="srow"><div class="grow"><div class="t">Güncelleme kanalı</div><div class="d">${I.rel ? 'Yalnızca yayımlanmış sürümler kurulur.' : 'GitHub main dalı; geliştirme sunucusu içindir.'}</div></div><div class="v">${I.rel ? 'Sürüm' : 'Geliştirme (main)'}</div></div>
+            <div class="srow"><div class="grow"><div class="t">${I.rel ? "GitHub'daki son sürüm" : 'GitHub main'}</div><div class="d">${escapeHtml(I.latestSub)}${commitsHtml}</div></div><div class="v">${escapeHtml(I.latest)}</div></div>
+            ${actHtml}${lastAttemptHtml(I.st)}`;
+    }
+
+    $('srvSet').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-act]');
+        if (!b || b.disabled) return;
+        if (b.dataset.act === 'selfupdate') selfUpdate(b);
+        else if (b.dataset.act === 'commits') openCommits();
+    });
+
+    function openCommits() {
+        const srv = (S.ver && S.ver.server) || {};
+        const body = openDrawer('sysc:commits', () => {});
+        const listHtml = (srv.commits || []).map(c => `<li>${escapeHtml(c)}</li>`).join('');
+        body.innerHTML = drawerHeadHtml('Gelecek değişiklikler', escapeHtml(`main dalında ${Number(srv.ahead_by || 0)} değişiklik`), 'list', '')
+            + `<div class="notes-sec"><ul>${listHtml}</ul></div><div class="dr-note">Commit başlıkları GitHub'dan alınır (son 15).</div>`;
     }
 
     async function loadSelfUpdate() {
-        try { S.su = await api('/api/system/self-update/status'); } catch (e) { S.su = null; }
+        try { S.su = await POps.get('/api/system/self-update/status'); } catch (e) { S.su = S.su || null; }
     }
 
-    $('btn-selfupdate').addEventListener('click', async function () {
-        // release kanalı (varsayılan) yayımlanmış son sürümü kurar; main kanalı geliştirme sunucusu içindir
-        const onMain = (((S.ver && S.ver.server) || {}).channel || 'release') === 'main';
-        const what = onMain ? "GitHub main'deki koda" : 'GitHub\'da yayımlanmış son sürüme';
-        if (!await POps.confirm({ title: 'Sunucu güncellensin mi?', message: 'Sunucu ' + what + ' güncellenecek. Birkaç saniye bağlantı kopabilir; sağlık kontrolü başarısız olursa önceki koda kendiliğinden döner.', confirmText: 'Güncelle', icon: 'fa-download' })) return;
-        const before = (S.su && S.su.status && S.su.status.at) || '';
-        this.disabled = true;
-        msg('su-status', '', '<i class="fas fa-spinner fa-spin"></i> Güncelleme başlatılıyor…');
+    async function selfUpdate(btn) {
+        const I = serverInfo();
+        const target = I.rel ? (I.latest && I.latest !== '?' && I.latest !== '—' ? I.latest + ' sürümüne' : 'yayımlanmış son sürüme') : "GitHub main'deki koda";
+        const ok = await POps.confirm({
+            title: `Sunucu ${target} güncellensin mi?`,
+            message: 'Birkaç saniye bağlantı kopabilir. Sağlık kontrolü geçmezse sunucu önceki koda kendiliğinden döner.',
+            confirmText: 'Sunucuyu güncelle', icon: 'fa-download'
+        });
+        if (!ok) return;
+        S.suBefore = (S.su && S.su.status && S.su.status.at) || '';
         try {
-            await api('/api/system/self-update', { method: 'POST' });
-        } catch (e) { msg('su-status', 'status-error', escapeHtml(e.message)); this.disabled = false; return; }
-        let tries = 0;
-        const poll = setInterval(async () => {
-            tries++;
-            await loadSelfUpdate();   // servis yeniden başlarken birkaç istek düşebilir; sorun değil
+            await POps.busy(btn, () => POps.post('/api/system/self-update'));
+        } catch (e) { POps.toast('error', 'Güncelleme başlatılamadı: ' + POps.errorMessage(e)); return; }
+        store.set(SKEY, { at: Date.now(), by: ME }, true);
+        S.suBusy = true;
+        renderServer(); renderSummary();
+        watchSelfUpdate();
+    }
+    // Güncelleme sürerken durum 3 sn'de bir okunur (servis yeniden başlarken birkaç istek düşebilir; sorun değil)
+    function watchSelfUpdate() {
+        if (S.suPoll) return;
+        const started = Date.now();
+        S.suPoll = setInterval(async () => {
+            await loadSelfUpdate();
             const st = S.su && S.su.status;
-            const done = st && st.at !== before && (st.state === 'ok' || st.state === 'failed') && !S.su.pending;
-            if (done || tries > 40) {
-                clearInterval(poll);
-                if (st && st.state === 'ok') msg('su-status', 'status-success', '<i class="fas fa-circle-check"></i> Sunucu güncellendi.');
-                else if (st && st.state === 'failed') msg('su-status', 'status-error', '<i class="fas fa-circle-xmark"></i> Güncelleme başarısız; önceki koda geri dönüldü.');
-                else msg('su-status', 'status-error', 'Sonuç alınamadı; sayfayı yenileyin.');
+            const done = st && st.at !== S.suBefore && (st.state === 'ok' || st.state === 'failed') && !(S.su && S.su.pending);
+            if (done || Date.now() - started > 6 * 60 * 1000) {
+                clearInterval(S.suPoll); S.suPoll = null; S.suBusy = false;
+                store.set(SKEY, null, true);
+                if (st && st.state === 'ok' && done) POps.toast('success', 'Sunucu güncellendi.');
+                else if (st && st.state === 'failed' && done) POps.toast('error', 'Sunucu güncellemesi başarısız; önceki kod çalışıyor.');
+                else POps.toast('warning', 'Güncellemenin sonucu alınamadı; sayfayı birazdan yenileyin.');
                 await loadAll(true);
             } else {
-                renderServer();
+                renderServer(); renderSummary();
             }
         }, 3000);
-    });
+    }
 
-    // ================= SÜRÜM NOTLARI =================
-    // CHANGELOG (Keep a Changelog) maddeleri: **kalın** ve `kod` dışında biçim yok; önce kaçırılır.
+    // =================================================================
+    // SÜRÜM NOTLARI (GitHub'daki CHANGELOG)
+    // =================================================================
+    // CHANGELOG maddeleri: **kalın** ve `kod` dışında biçim yok; önce kaçırılır.
     const KIND = { Added: 'Eklenenler', Changed: 'Değişenler', Fixed: 'Düzeltmeler', Security: 'Güvenlik', Removed: 'Kaldırılanlar', Deprecated: 'Kullanımdan kalkacaklar' };
     const md = (t) => escapeHtml(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
-    function noteItem(t) {
-        const m = t.match(/^\*\*(.+?)\*\*\s*(.*)$/);
-        const head = m ? `<strong>${escapeHtml(m[1])}</strong> ` : '';
-        const rest = m ? m[2] : t;
+    function noteItemHtml(t) {
+        const m = String(t).match(/^\*\*(.+?)\*\*\s*(.*)$/);
+        const headHtml = m ? `<strong>${escapeHtml(m[1])}</strong> ` : '';
+        const rest = m ? m[2] : String(t);
         const first = rest.split(/(?<=\.)\s/)[0];
-        if (first.length >= rest.length - 1 || rest.length < 180) return `<li>${head}${md(rest)}</li>`;
-        return `<li><details><summary>${head}${md(first)} <span class="more">devamı</span></summary>${md(rest.slice(first.length))}</details></li>`;
+        if (first.length >= rest.length - 1 || rest.length < 180) return `<li>${headHtml}${md(rest)}</li>`;
+        return `<li><details><summary>${headHtml}${md(first)} <span class="more">devamı</span></summary>${md(rest.slice(first.length))}</details></li>`;
     }
-    function noteSection(sec, title) {
-        return `<div class="ver">${escapeHtml(title || (sec.version === 'Unreleased' ? 'Henüz sürüm numarası almamış yenilikler' : fmtV(sec.version) + (sec.date ? ' · ' + sec.date : '')))}</div>`
-            + (sec.intro ? `<div class="intro">${md(sec.intro)}</div>` : '')
-            + sec.groups.map(g => `<div class="kind">${escapeHtml(KIND[g.kind] || g.kind)}</div><ul>${g.items.map(noteItem).join('')}</ul>`).join('');
+    function noteSecHtml(sec, title) {
+        const label = title || (sec.version === 'Unreleased' ? 'Henüz sürüm numarası almamış yenilikler' : fmtV(sec.version) + (sec.date ? ' · ' + sec.date : ''));
+        return `<div class="notes-sec"><div class="ver">${escapeHtml(label)}</div>${sec.intro ? `<div class="intro">${md(sec.intro)}</div>` : ''}`
+            + sec.groups.map(g => `<div class="kind">${escapeHtml(KIND[g.kind] || g.kind)}</div><ul>${g.items.map(noteItemHtml).join('')}</ul>`).join('') + '</div>';
     }
-    const LANG = '<div class="lang">Sürüm notları GitHub\'daki CHANGELOG\'dan alınır (İngilizce).</div>';
-    async function loadNotes() {
-        let d;
-        try { d = await api('/api/system/release-notes'); } catch (e) { return; }
-        if (!d.available) { $('srv-notes').innerHTML = ''; $('ag-notes').innerHTML = ''; return; }
-        const srv = (S.ver && S.ver.server) || {};
-        if (srv.update_available && d.incoming.length) {
-            $('srv-notes').innerHTML = `<div class="note-sec"><div class="mini-lbl">Güncellemeyle gelecek yenilikler</div>${d.incoming.map(sec => noteSection(sec)).join('')}${LANG}</div>`;
-        } else if (d.installed.length) {
-            $('srv-notes').innerHTML = `<details><summary>Bu sunucuda neler var (${escapeHtml(fmtV(d.running))}${d.rev ? ' · ' + escapeHtml(d.rev) : ''})</summary>${d.installed.map(sec => noteSection(sec)).join('')}${LANG}</details>`;
-        } else { $('srv-notes').innerHTML = ''; }
-        $('ag-notes').innerHTML = d.agent && d.agent.groups.length
-            ? `<details${S.ver && S.ver.release_available ? ' open' : ''}><summary>${escapeHtml(fmtV(d.agent.version))} sürüm notları</summary>${noteSection(d.agent, ' ')}${LANG}</details>` : '';
-    }
-
-    // ================= AJAN PAKETİ =================
-    function outdated() {
-        const staged = normV(S.ver && S.ver.staged_version);
-        return S.devices.filter(d => staged && normV(d.agent_version) !== staged);
-    }
-
-    function renderAgentPackage() {
-        const v = S.ver;
-        if (!v) return;
-        $('ag-latest').textContent = v.latest ? fmtV(v.latest) : (v.checked_github ? '—' : '?');
-        $('ag-latest-sub').textContent = v.latest ? '' : 'GitHub\'a ulaşılamadı';
-        $('ag-staged').textContent = fmtV(v.staged_version);
-        $('ag-staged-sub').textContent = v.staged_version
-            ? (v.release_available ? 'GitHub\'daki son sürüm değil' : 'GitHub\'daki son sürümle aynı')
-            : 'Henüz paket yok';
-
-        $('fetch-row').style.display = v.release_available ? 'flex' : 'none';
-        $('btn-fetch').dataset.tag = v.latest || '';
-        $('btn-fetch-lbl').textContent = `${fmtV(v.latest)} indir ve doğrula`;
-
-        const old = outdated();
-        let b;
-        if (v.release_available) b = badge('warn', 'fa-circle-up', `Yeni sürüm var: ${fmtV(v.latest)}`);
-        else if (!v.staged_version) b = badge('muted', 'fa-box-open', 'Paket yok');
-        else if (old.length) {
-            const off = old.filter(d => !isOnline(d)).length;
-            // Çevrimdışı olanlar eski sürümdekilerin İÇİNDEN sayılır: "1 ajan eski sürümde (1 çevrimdışı)" iki ayrı cihaz gibi okunuyordu
-            const offTxt = !off ? '' : off === old.length ? (old.length === 1 ? ', çevrimdışı' : ', hepsi çevrimdışı') : `, ${off} tanesi çevrimdışı`;
-            b = badge('warn', 'fa-circle-up', `${old.length} ajan eski sürümde${offTxt}`);
+    async function openNotes() {
+        const body = openDrawer('sysn:notes', () => {});
+        body.innerHTML = drawerHeadHtml('Sürüm notları', 'GitHub’daki değişiklik günlüğü', 'file', '') + '<div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div>';
+        let d = S.notes;
+        if (!d) {
+            try { d = S.notes = await POps.get('/api/system/release-notes'); }
+            catch (e) { if (POps.drawer.isOpen('sysn:notes')) POps.setError(body.lastElementChild, e, { compact: true }); return; }
         }
-        else b = badge('ok', 'fa-check', 'Tüm ajanlar güncel');
-        $('ag-badge').innerHTML = b;
+        if (!POps.drawer.isOpen('sysn:notes')) return;
+        const headHtml = drawerHeadHtml('Sürüm notları', 'GitHub’daki değişiklik günlüğü', 'file', '');
+        if (!d.available) { body.innerHTML = headHtml + '<div class="empty-state compact"><i class="fas fa-wifi"></i><p>GitHub’a ulaşılamadığı için notlar gösterilemiyor.</p></div>'; return; }
+        const srv = (S.ver && S.ver.server) || {};
+        let html = '';
+        if (srv.update_available && (d.incoming || []).length) html += '<div><h3>Güncellemeyle gelecekler</h3>' + d.incoming.map(sec => noteSecHtml(sec)).join('') + '</div>';
+        if ((d.installed || []).length) {
+            const [cur, ...older] = d.installed;
+            html += `<div><h3>Bu sunucuda (${escapeHtml(fmtV(d.running))}${d.rev ? ' · ' + escapeHtml(d.rev) : ''})</h3>${noteSecHtml(cur)}`
+                + (older.length ? `<details class="notes-old"><summary>Önceki ${older.length} sürüm</summary>${older.map(sec => noteSecHtml(sec)).join('')}</details>` : '') + '</div>';
+        }
+        if (d.agent && (d.agent.groups || []).length) html += `<div><h3>Ajan paketi ${escapeHtml(fmtV(d.agent.version))}</h3>${noteSecHtml(d.agent, ' ')}</div>`;
+        body.innerHTML = headHtml + (html || '<div class="empty-state compact"><i class="fas fa-file-lines"></i><p>Gösterilecek not yok.</p></div>')
+            + '<div class="dr-note">Notlar GitHub’daki CHANGELOG’dan alınır (İngilizce).</div>';
+    }
+    $('notesBtn').addEventListener('click', openNotes);
+
+    // =================================================================
+    // AJANLAR: sürüm dağılımı, paket, güncelleme ve ilerleme
+    // =================================================================
+    function agentInfo() {
+        const v = S.ver || {};
+        const staged = v.staged_version || '';
+        const all = devs();
+        const target = staged || v.latest || dev.newestVersion() || '';
+        const groups = new Map();
+        all.forEach(d => { const ver = normV(dev.version(d)); groups.set(ver, (groups.get(ver) || 0) + 1); });
+        const old = staged ? all.filter(d => normV(dev.version(d)) !== normV(staged)) : [];
+        const oldOn = old.filter(isOn);
+        return { v, staged, target, all, groups, old, oldOn };
+    }
+    function distHtml(A) {
+        const total = A.all.length;
+        if (!total) return '<div class="d" style="margin-top:6px">Henüz kayıtlı ajan yok.</div>';
+        const vers = [...A.groups.keys()].sort((a, b) => (!a) - (!b) || dev.cmpVersion(b, a));
+        let oldIdx = 0;
+        const parts = vers.map(ver => {
+            const n = A.groups.get(ver);
+            let cls = 'off', op = 1;
+            if (!ver) cls = 'off';
+            else if (!A.target || dev.cmpVersion(ver, A.target) >= 0) cls = 'ok';
+            else { cls = 'run'; op = Math.max(0.35, 1 - 0.22 * oldIdx++); }
+            return { ver, n, cls, op };
+        });
+        const segHtml = parts.filter(p => p.cls !== 'off').map(p => `<i class="${escapeHtml(p.cls)}" style="width:${(p.n / total * 100).toFixed(2)}%;opacity:${Number(p.op)}"></i>`).join('');
+        const lgdHtml = parts.map(p => `<span><span class="dot ${escapeHtml(p.cls)}" style="opacity:${Number(p.op)}"></span>${escapeHtml(p.ver ? fmtV(p.ver) : 'Bilinmiyor')} <b>${Number(p.n)}</b></span>`).join('');
+        return `<div class="pbar dist" role="img" aria-label="Ajan sürüm dağılımı">${segHtml}</div><div class="lgd">${lgdHtml}</div>`;
+    }
+    let agHash = '';
+    function renderAgents(force) {
+        if (!S.ver) return;
+        const A = agentInfo();
+        const v = A.v;
+        const sig = JSON.stringify([v.staged_version, v.latest, v.release_available, v.checked_github, S.fetching, A.all.map(d => [d.hostname, dev.version(d), d.status])]);
+        if (!force && sig === agHash) return;
+        agHash = sig;
+        // Durum
+        let k, word;
+        if (v.release_available) { k = 'run'; word = `Yeni paket: ${fmtV(v.latest)}`; }
+        else if (!A.staged) { k = 'off'; word = 'Paket yok'; }
+        else if (A.old.length) { k = 'run'; word = `${A.old.length} eski ajan`; }
+        else { k = 'ok'; word = 'Hepsi güncel'; }
+        setState('agState', k, word);
+        // Paket satırı
+        let pkgD;
+        if (S.fetching) pkgD = "GitHub'dan indiriliyor ve imzası doğrulanıyor…";
+        else if (!A.staged) pkgD = v.latest ? `Henüz paket yok. GitHub'da ${fmtV(v.latest)} var.` : (v.checked_github ? 'Henüz paket yok.' : "Henüz paket yok; GitHub'a ulaşılamadı.");
+        else pkgD = `İmzası doğrulandı.${v.release_available ? ` GitHub'da daha yeni ${fmtV(v.latest)} var.` : v.latest ? " GitHub'daki son sürümle aynı." : ''}`;
+        const fetchHtml = IS_SUPER && v.release_available ? `<button type="button" class="btn secondary" data-act="fetch">${POps.iconHtml('download', 'sm')}${escapeHtml(fmtV(v.latest))} paketini indir</button>` : '';
+        const pkgMoreHtml = `<button type="button" class="ibtn sm" data-act="pkgmore" data-tip="Paket işlemleri" data-tip-pos="left" aria-label="Paket işlemleri" aria-haspopup="menu">${POps.iconHtml('more')}</button>`;
+        // Güncelleme satırı
+        let upT, upD, upBtn = '';
+        const offOld = A.old.length - A.oldOn.length;
+        if (!A.staged) { upT = 'Ajan güncellemesi'; upD = 'Önce ajan paketini indirin.'; }
+        else if (v.release_available) { upT = `${A.old.length} ajan ${fmtV(A.staged)} sürümünde değil`; upD = `Gönderilecek paket ${fmtV(A.staged)}; önce ${fmtV(v.latest)} paketini indirin.`; }
+        else if (!A.old.length) { upT = `Bütün ajanlar ${fmtV(A.staged)} sürümünde`; upD = 'Gönderilecek güncelleme yok.'; }
+        else {
+            upT = `${A.old.length} eski ajan`;
+            upD = (A.oldOn.length ? `${A.oldOn.length} açık` : 'Hepsi kapalı') + (offOld && A.oldOn.length ? `, ${offOld} kapalı (kapalılar açılınca gönderilebilir)` : '') + '. Yeni sürüm açılmazsa ajan önceki sürüme kendiliğinden döner.';
+            if (IS_SUPER) upBtn = `<button type="button" class="btn" data-act="deploy-old" ${A.oldOn.length ? '' : 'disabled'}>${POps.iconHtml('arrow-up', 'sm')}${A.oldOn.length} eski ajanı güncelle</button>`;
+        }
+        const upMoreHtml = IS_SUPER && A.staged && !v.release_available ? `<button type="button" class="ibtn sm" data-act="upmore" data-tip="Hedef seç" data-tip-pos="left" aria-label="Başka hedefe gönder" aria-haspopup="menu">${POps.iconHtml('more')}</button>` : '';
+        $('agSet').innerHTML = `<div class="srow block"><div style="display:flex;justify-content:space-between;gap:12px"><div class="t">Sürüm dağılımı</div><div class="v">${A.all.length} ajan</div></div>${distHtml(A)}</div>
+            <div class="srow"><div class="grow"><div class="t">Ajan paketi${A.staged ? ' ' + escapeHtml(fmtV(A.staged)) : ''}</div><div class="d">${escapeHtml(pkgD)}</div></div><div class="acts">${fetchHtml}${IS_SUPER ? pkgMoreHtml : ''}</div></div>
+            <div class="srow"><div class="grow"><div class="t">${escapeHtml(upT)}</div><div class="d">${escapeHtml(upD)}</div></div><div class="acts">${upBtn}${upMoreHtml}</div></div>`;
+        if (S.fetching) { const fb = $('agSet').querySelector('[data-act="fetch"]'); if (fb) { fb.disabled = true; fb.classList.add('is-loading'); } }
     }
 
-    $('btn-fetch').addEventListener('click', async function () {
-        this.disabled = true;
-        msg('fetch-status', '', '<i class="fas fa-spinner fa-spin"></i> GitHub\'dan indiriliyor ve doğrulanıyor…');
-        try {
-            const d = await postJson('/api/system/fetch-release', { tag: this.dataset.tag || null });
-            msg('fetch-status', 'status-success', `<i class="fas fa-circle-check"></i> ${escapeHtml(fmtV(d.version))} indirildi ve doğrulandı. Şimdi aşağıdan hedef seçip gönderebilirsiniz.`);
-            await loadAll(false);
-        } catch (e) {
-            msg('fetch-status', 'status-error', '<i class="fas fa-circle-xmark"></i> ' + escapeHtml(e.message));
-        } finally { this.disabled = false; }
+    $('agSet').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-act]');
+        if (!b || b.disabled) return;
+        const A = agentInfo();
+        switch (b.dataset.act) {
+            case 'fetch': fetchRelease(); break;
+            case 'deploy-old': deploy(A.oldOn.map(d => d.hostname), b, A.old.length - A.oldOn.length); break;
+            case 'pkgmore': POps.menu(b, [
+                { label: 'Paketi elle yükle…', icon: 'upload', onClick: () => openModal('uploadModal') },
+                { label: 'Sürüm notları', icon: 'file', onClick: openNotes }
+            ]); break;
+            case 'upmore': POps.menu(b, [
+                { header: `${fmtV(A.staged)} nereye gönderilsin?` },
+                { label: 'Bir sınıfa…', icon: 'labs', onClick: () => openTarget('lab') },
+                { label: 'Seçili bilgisayarlara…', icon: 'monitor', onClick: () => openTarget('pc') }
+            ]); break;
+        }
     });
 
+    async function fetchRelease() {
+        const tag = (S.ver && S.ver.latest) || null;
+        S.fetching = true; renderAgents(true);
+        try {
+            const d = await POps.post('/api/system/fetch-release', { tag });
+            POps.toast('success', `${fmtV(d.version)} indirildi ve imzası doğrulandı.`);
+            S.fetching = false;
+            await loadAll(false);
+        } catch (e) {
+            POps.toast('error', 'Paket indirilemedi: ' + POps.errorMessage(e));
+        } finally { S.fetching = false; renderAgents(true); }
+    }
+
+    // ---- Paketi elle yükle (internetsiz sunucu)
     let chosen = [];
     function renderFiles() {
-        $('file-list').innerHTML = chosen.map(f => `<li><i class="fas fa-file"></i> ${escapeHtml(f.name)} <span class="muted-text">(${Math.round(f.size / 1024)} KB)</span></li>`).join('');
-        $('btn-upload').disabled = chosen.length === 0;
+        $('upList').innerHTML = chosen.map(f => `<li>${escapeHtml(f.name)} <span>${Math.round(f.size / 1024)} KB</span></li>`).join('');
+        $('upBtn').disabled = !chosen.length;
     }
-    $('files').addEventListener('change', (e) => { chosen = Array.from(e.target.files); renderFiles(); });
-    const uz = $('uz');
-    ['dragover', 'dragenter'].forEach(ev => uz.addEventListener(ev, (e) => { e.preventDefault(); uz.classList.add('dragover'); }));
-    ['dragleave', 'drop'].forEach(ev => uz.addEventListener(ev, () => uz.classList.remove('dragover')));
-    uz.addEventListener('drop', (e) => { e.preventDefault(); chosen = Array.from(e.dataTransfer.files); renderFiles(); });
-    $('btn-upload').addEventListener('click', async function () {
-        this.disabled = true;
-        msg('upload-status', '', '<i class="fas fa-spinner fa-spin"></i> Doğrulanıyor…');
-        const fd = new FormData();
-        chosen.forEach(f => fd.append('files', f));
-        fd.append('force', $('force').checked ? 'true' : 'false');
-        try {
-            const d = await api('/api/system/upload-release', { method: 'POST', body: fd });
-            msg('upload-status', 'status-success', `<i class="fas fa-circle-check"></i> ${escapeHtml(fmtV(d.version))} doğrulandı ve kaydedildi.`);
-            await loadAll(false);
-        } catch (e) {
-            msg('upload-status', 'status-error', '<i class="fas fa-circle-xmark"></i> ' + escapeHtml(e.message));
-        } finally { this.disabled = chosen.length === 0; }
-    });
+    if (IS_SUPER) {
+        const uz = $('uz');
+        $('upFiles').addEventListener('change', (e) => { chosen = Array.from(e.target.files); renderFiles(); });
+        ['dragover', 'dragenter'].forEach(ev => uz.addEventListener(ev, (e) => { e.preventDefault(); uz.classList.add('dragover'); }));
+        ['dragleave', 'drop'].forEach(ev => uz.addEventListener(ev, () => uz.classList.remove('dragover')));
+        uz.addEventListener('drop', (e) => { e.preventDefault(); chosen = Array.from(e.dataTransfer.files); renderFiles(); });
+        $('upBtn').addEventListener('click', async function () {
+            const fd = new FormData();
+            chosen.forEach(f => fd.append('files', f));
+            fd.append('force', $('upForce').checked ? 'true' : 'false');
+            try {
+                const d = await POps.busy(this, () => POps.api('/api/system/upload-release', { method: 'POST', body: fd }));
+                POps.toast('success', `${fmtV(d.version)} doğrulandı ve kaydedildi.`);
+                closeModal('uploadModal');
+                chosen = []; $('upFiles').value = ''; renderFiles();
+                await loadAll(false);
+            } catch (e) { POps.toast('error', 'Paket doğrulanamadı: ' + POps.errorMessage(e)); }
+        });
+    }
 
-    // ================= AJAN HEDEF + GÖNDER =================
-    document.querySelectorAll('.option-card[data-mode]').forEach(c => c.addEventListener('click', () => {
-        S.mode = c.dataset.mode;
-        document.querySelectorAll('.option-card[data-mode]').forEach(x => x.classList.toggle('active', x === c));
-        $('tgt-lab').style.display = S.mode === 'LAB' ? 'block' : 'none';
-        $('tgt-pc').style.display = S.mode === 'PC' ? 'block' : 'none';
-        renderDeploy();
-    }));
+    // ---- Gönder
+    async function deploy(hosts, btn, skippedOff) {
+        const staged = S.ver && S.ver.staged_version;
+        hosts = [...new Set(hosts)];
+        if (!staged || !hosts.length) return POps.toast('warning', 'Güncellenecek açık bilgisayar yok.');
+        const n = hosts.length;
+        const ok = await POps.confirm({
+            title: n === 1 ? `${dev.name(hosts[0])} ${fmtV(staged)} sürümüne güncellensin mi?` : `${n} ajan ${fmtV(staged)} sürümüne güncellensin mi?`,
+            message: (n > 1 ? hosts.slice(0, 5).map(dev.name).join(', ') + (n > 5 ? ` ve ${n - 5} bilgisayar daha` : '') + '\n' : '')
+                + 'Ajan paketi indirip imzasını kendisi doğrular; yeni sürüm açılmazsa önceki sürüme döner. Bilgisayar birkaç dakika bağlantısız kalabilir.',
+            note: skippedOff ? `Kapalı ${skippedOff} bilgisayar atlanacak.` : '',
+            confirmText: n === 1 ? 'Ajanı güncelle' : `${n} ajanı güncelle`, icon: 'fa-arrow-up'
+        });
+        if (!ok) return false;
+        const since = Math.floor(Date.now() / 1000) - 30;
+        let d;
+        try { d = await POps.busy(btn, () => POps.post('/api/system/deploy-update', { target_mode: 'PC', targets: hosts })); }
+        catch (e) { POps.toast('error', 'Güncelleme gönderilemedi: ' + POps.errorMessage(e)); return false; }
+        const sent = d.dispatched || [], off = d.skipped_offline || [];
+        if (!sent.length) { POps.toast('warning', 'Hiçbir bilgisayar bağlı değildi; güncelleme gönderilmedi.'); return false; }
+        POps.toast('success', `${fmtV(d.version)} ${sent.length} bilgisayara gönderildi` + (off.length ? `, ${off.length} kapalı bilgisayar atlandı.` : '.'));
+        rollout = { version: d.version, pcs: sent, skipped: off, since, at: Date.now(), by: ME, doneAt: null };
+        store.set(RKEY, rollout);
+        rItems = null; rShowAll = false;
+        pollRollout();
+        return true;
+    }
 
-    function renderTargets() {
-        const devs = S.devices;
-        const online = devs.filter(isOnline);
-        $('opt-all-desc').textContent = `${devs.length} cihaz · ${online.length} açık`;
+    // ---- Hedef seç (sınıf ya da seçili bilgisayarlar): sağdaki panel
+    const T = { mode: 'lab', lab: '', sel: new Set(), q: '' };
+    function targetList() {
+        if (T.mode === 'lab') return devs().filter(d => T.lab && d.lab === T.lab);
+        return devs().filter(d => T.sel.has(d.hostname));
+    }
+    function renderTarget() {
+        const body = POps.drawer.body();
+        const staged = S.ver && S.ver.staged_version;
+        const labs = dev.labs();
+        if (T.mode === 'lab' && !labs.includes(T.lab)) T.lab = labs[0] || '';
+        const list = targetList();
+        const sendable = list.filter(d => isOn(d) && normV(dev.version(d)) !== normV(staged));
+        const offN = list.filter(d => !isOn(d)).length;
+        const sameN = list.filter(d => isOn(d) && normV(dev.version(d)) === normV(staged)).length;
+        const segHtml = `<div class="segmented block" role="group" aria-label="Hedef"><button type="button" data-act="mode" data-mode="lab" aria-pressed="${T.mode === 'lab'}">Bir sınıf</button><button type="button" data-act="mode" data-mode="pc" aria-pressed="${T.mode === 'pc'}">Seçili bilgisayarlar</button></div>`;
+        let pickHtml;
+        if (T.mode === 'lab') {
+            pickHtml = `<select id="tgLab" aria-label="Sınıf">${labs.map(l => `<option value="${escapeHtml(l)}" ${l === T.lab ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select>`;
+        } else {
+            const q = T.q.toLocaleLowerCase('tr');
+            const rows = devs().filter(d => !q || [POps.deviceName(d), d.hostname, d.lab].some(x => String(x || '').toLocaleLowerCase('tr').includes(q)))
+                .sort((a, b) => (isOn(b) - isOn(a)) || POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
+            const rowsHtml = rows.map(d => {
+                const on = isOn(d), ver = dev.version(d), old = normV(ver) !== normV(staged);
+                return `<label class="check${on ? '' : ' off'}"><input type="checkbox" data-host="${escapeHtml(d.hostname)}" ${on ? '' : 'disabled'} ${T.sel.has(d.hostname) ? 'checked' : ''}>`
+                    + `<span class="dot ${on ? 'on' : 'off'}"></span><span class="nm">${escapeHtml(POps.deviceName(d))}<span class="vv"> · ${escapeHtml(d.lab && d.lab !== dev.UNASSIGNED ? d.lab : 'Atanmamış')}</span></span>`
+                    + `<span class="vv">${escapeHtml(ver ? fmtV(ver) : '—')}${old ? ' ↑' : ''}</span></label>`;
+            }).join('') || '<div class="dr-note" style="padding:10px 0">Süzgece uyan bilgisayar yok.</div>';
+            pickHtml = `<div class="search-field" style="flex:none;min-width:0"><i class="fas fa-search" aria-hidden="true"></i><input type="search" id="tgSearch" value="${escapeHtml(T.q)}" placeholder="Bilgisayar ya da sınıf" aria-label="Bilgisayar ara"></div>`
+                + `<div class="dr-list" id="tgList">${rowsHtml}</div>`
+                + `<div class="dr-actions"><button type="button" class="lnk" data-act="sel-old">Eski sürümdeki açıkları seç</button><span class="faint">·</span><button type="button" class="lnk" data-act="sel-none">Seçimi temizle</button></div>`;
+        }
+        let sum;
+        if (!list.length) sum = T.mode === 'lab' ? 'Bu sınıfta bilgisayar yok.' : 'Yalnızca açık bilgisayarlar seçilebilir. Önce tek bilgisayarda denemek iyi olur.';
+        else if (!sendable.length) sum = offN === list.length ? 'Seçimdeki bilgisayarların hepsi kapalı.' : `Seçimdeki açık bilgisayarlar zaten ${fmtV(staged)} sürümünde.`;
+        else sum = `${sendable.length} açık bilgisayar ${fmtV(staged)} sürümüne güncellenecek.` + (sameN ? ` ${sameN} bilgisayar zaten bu sürümde.` : '') + (offN ? ` ${offN} kapalı bilgisayar atlanacak.` : '');
+        body.innerHTML = drawerHeadHtml('Ajan güncellemesi', escapeHtml(`${fmtV(staged)} paketi`), 'arrow-up', '')
+            + segHtml + pickHtml
+            + `<div class="dr-sum">${escapeHtml(sum)}</div>`
+            + `<div><button type="button" class="btn" data-act="send" ${sendable.length ? '' : 'disabled'}>${sendable.length ? (sendable.length === 1 ? 'Ajanı güncelle' : `${sendable.length} ajanı güncelle`) : 'Güncelle'}</button></div>`;
+        const ls = $('tgLab'); if (ls) ls.addEventListener('change', (e) => { T.lab = e.target.value; renderTarget(); });
+        const sf = $('tgSearch');
+        if (sf) { sf.addEventListener('input', (e) => { T.q = e.target.value; const pos = e.target.selectionStart; renderTarget(); const nf = $('tgSearch'); nf.focus(); try { nf.setSelectionRange(pos, pos); } catch (er) { /* yok */ } }); }
+        const tl = $('tgList'); if (tl) tl.addEventListener('change', (e) => { const h = e.target.dataset.host; if (!h) return; e.target.checked ? T.sel.add(h) : T.sel.delete(h); const st = tl.scrollTop; renderTarget(); const nl = $('tgList'); if (nl) nl.scrollTop = st; });
+    }
+    function openTarget(mode) {
+        T.mode = mode; T.q = '';
+        openDrawer('syst:target', async (b) => {
+            const act = b.dataset.act;
+            if (act === 'mode') { T.mode = b.dataset.mode; renderTarget(); }
+            else if (act === 'sel-old') { const staged = normV(S.ver && S.ver.staged_version); T.sel = new Set(devs().filter(d => isOn(d) && normV(dev.version(d)) !== staged).map(d => d.hostname)); renderTarget(); }
+            else if (act === 'sel-none') { T.sel.clear(); renderTarget(); }
+            else if (act === 'send') {
+                const staged = normV(S.ver && S.ver.staged_version);
+                const list = targetList();
+                const hosts = list.filter(d => isOn(d) && normV(dev.version(d)) !== staged).map(d => d.hostname);
+                if (await deploy(hosts, b, list.filter(d => !isOn(d)).length)) POps.drawer.close();
+            }
+        });
+        renderTarget();
+    }
 
-        const labs = [...new Set(devs.map(d => d.lab).filter(Boolean))].sort();
-        const labSel = $('lab-select');
-        const prevLab = labSel.value;
-        labSel.innerHTML = '<option value="">Sınıf seçin…</option>' + labs.map(l => {
-            const n = devs.filter(d => d.lab === l), on = n.filter(isOnline).length;
-            return `<option value="${escapeHtml(l)}">${escapeHtml(l)} — ${n.length} cihaz, ${on} açık</option>`;
+    // ---- Gönderim ilerlemesi: POST /api/system/update-progress (sayfa yenilense de bu tarayıcıda sürer)
+    let rollout = store.get(RKEY);
+    let rItems = null, rTimer = null, rErr = null, rShowAll = false;
+    const BAD_RES = ['rollback_failed', 'failed', 'reverted_by_freeze', 'error', 'rejected'];
+    function itemState(it) {
+        const r = it.result || null;
+        const s = String((r && r.status) || '');
+        if (it.on_target) return { k: 'ok', w: 'Güncellendi' };
+        if (r && r.agent_state === 'unmanaged') return { k: 'bad', w: 'Elle kurulum gerekli', why: 'Ajan güncellemeden sonra çalışmıyor; bilgisayarda yeniden kurulmalı.' };
+        const more = r && r.detail ? ' Ajanın bildirdiği: ' + r.detail : '';
+        if (r && BAD_RES.includes(s)) return { k: 'bad', w: 'Başarısız', why: (s === 'rollback_failed' ? 'Güncelleme ve geri dönüş başarısız.' : s === 'reverted_by_freeze' ? 'Dondurma yazılımı (Deep Freeze vb.) güncellemeyi geri aldı.' : 'Güncelleme başarısız.') + more };
+        if (r && s === 'rolled_back') return { k: 'warn', w: 'Geri alındı', why: 'Yeni sürüm sağlıklı açılmadı; önceki sürüme dönüldü.' + more };
+        if (r && s === 'install_failed') return { k: 'warn', w: 'Başlatılamadı', why: 'Kurulum başlatılamadı; bilgisayar değişmedi.' + more };
+        if (r && /pending_reboot/.test(s)) return { k: 'run', w: 'Yeniden başlatma bekliyor' };
+        if (!it.known) return { k: 'warn', w: 'Kayıtlı değil' };
+        if (it.pending) return { k: 'run', w: it.online ? 'Kuruluyor' : 'Yeniden bağlanıyor' };
+        if (!it.online) return { k: 'run', w: 'Kapalı' };
+        return { k: 'warn', w: 'Sonuç gelmedi', why: 'Ajan güncellemeyi aldı ama sonuç bildirmedi; sürümü değişmedi.' };
+    }
+    function rCounts() {
+        const c = { ok: 0, bad: 0, warn: 0, run: 0, total: rollout ? rollout.pcs.length : 0 };
+        if (!rItems) { c.run = c.total; return c; }
+        rItems.forEach(it => { c[itemState(it).k] += 1; });
+        return c;
+    }
+    function renderRollout() {
+        const box = $('rollout');
+        if (!rollout) { box.hidden = true; box.innerHTML = ''; return; }
+        box.hidden = false;
+        const c = rCounts();
+        const running = c.run > 0 && !rollout.doneAt;
+        const done = c.ok + c.bad + c.warn;
+        const k = running ? 'run' : c.bad ? 'bad' : c.warn ? 'warn' : 'ok';
+        const word = running ? 'Sürüyor' : c.bad || c.warn ? `${c.bad + c.warn} sorunlu` : 'Tamamlandı';
+        const seg = (cls, n) => n ? `<i class="${escapeHtml(cls)}" style="width:${(n / c.total * 100).toFixed(2)}%"></i>` : '';
+        const metaHtml = escapeHtml(rollout.by || '?') + ' · ' + POps.timeHtml(rollout.at) + ((rollout.skipped || []).length ? ` · ${rollout.skipped.length} kapalı bilgisayar atlandı` : '');
+        const order = { bad: 0, warn: 1, run: 2, ok: 3 };
+        const items = (rItems || rollout.pcs.map(pc => ({ pc, known: true, online: true, pending: true }))).map(it => ({ it, s: itemState(it) }))
+            .sort((a, b) => order[a.s.k] - order[b.s.k] || dev.name(a.it.pc).localeCompare(dev.name(b.it.pc), 'tr', { numeric: true }));
+        const shown = rShowAll ? items : items.slice(0, 6);
+        const rowsHtml = shown.map(({ it, s }) => {
+            const d = dev.find(it.pc);
+            const icon = s.k === 'ok' ? 'check' : s.k === 'bad' ? 'x' : s.k === 'warn' ? 'alert' : 'clock';
+            const metaRow = [d && d.lab && d.lab !== dev.UNASSIGNED ? d.lab : '', it.version ? 'çalışan ' + fmtV(it.version) : ''].filter(Boolean).join(' · ');
+            return `<div class="act"><div class="res ${escapeHtml(s.k)}">${POps.iconHtml(icon)}</div>
+                <div style="min-width:0"><div class="what">${escapeHtml(dev.name(it.pc))}</div><div class="meta">${escapeHtml(metaRow || it.pc)}</div>
+                ${s.why ? `<div class="why${s.k === 'warn' ? ' warn' : ''}">${escapeHtml(s.why)}</div>` : ''}</div>
+                <div class="side">${wordHtml(s.k, s.w)}</div></div>`;
         }).join('');
-        if (labs.includes(prevLab)) labSel.value = prevLab;
-
-        const checked = new Set([...document.querySelectorAll('#dev-list input:checked')].map(i => i.value));
-        const staged = normV(S.ver && S.ver.staged_version);
-        const sorted = [...devs].sort((a, b) => (isOnline(b) - isOnline(a)) || devName(a).localeCompare(devName(b), 'tr', { numeric: true }));
-        $('dev-list').innerHTML = sorted.length ? sorted.map(d => {
-            const on = isOnline(d);
-            const old = staged && normV(d.agent_version) !== staged;
-            return `<label class="dev-row${on ? '' : ' offline'}">
-                <input type="checkbox" value="${escapeHtml(d.hw_id)}" ${on ? '' : 'disabled'} ${on && checked.has(d.hw_id) ? 'checked' : ''}>
-                <span class="dot${on ? ' on' : ''}" title="${on ? 'Açık' : 'Çevrimdışı'}"></span>
-                <span><span class="dev-name">${escapeHtml(devName(d))}</span>
-                    <span class="dev-meta"> · ${escapeHtml(d.lab || 'sınıfsız')} · ${escapeHtml(d.hw_id)}${on ? '' : ' · çevrimdışı'}</span></span>
-                <span class="ver-pill${old ? ' old' : ''}" title="${old ? 'Gönderilecek paketten farklı' : 'Güncel'}">${escapeHtml(fmtV(d.agent_version))}</span>
-            </label>`;
-        }).join('') : '<div class="muted-text">Kayıtlı cihaz yok.</div>';
-        $('dev-list').querySelectorAll('input').forEach(i => i.addEventListener('change', renderDeploy));
+        box.innerHTML = `<div class="ro-head"><div class="res ${escapeHtml(k)}" style="width:28px;height:28px;border-radius:99px;display:flex;align-items:center;justify-content:center">${running ? '<span class="spinner sm"></span>' : POps.iconHtml(k === 'ok' ? 'check' : 'alert', 'sm')}</div>
+                <div class="grow"><div class="t" style="font-weight:var(--fw-medium)">${escapeHtml(fmtV(rollout.version))} gönderimi</div><div class="d" style="font-size:var(--text-xs);color:var(--text-muted)">${metaHtml}</div></div>
+                <span class="cnt"><b>${Number(done)}</b>/${Number(c.total)}</span>${wordHtml(k, word)}
+                <button type="button" class="ibtn sm" data-act="ro-close" data-tip="${running ? 'İzlemeyi bırak' : 'Kapat'}" data-tip-pos="left" aria-label="${running ? 'İzlemeyi bırak' : 'Kapat'}">${POps.iconHtml('x', 'sm')}</button></div>
+            <div class="ro-bar"><div class="pbar">${seg('ok', c.ok)}${seg('warn', c.warn)}${seg('bad', c.bad)}${seg('run', c.run)}</div>${rErr ? `<div class="dr-note" style="margin-top:6px">İlerleme okunamadı: ${escapeHtml(POps.errorMessage(rErr))}</div>` : ''}</div>
+            <div class="ro-list">${rowsHtml}</div>
+            ${items.length > 6 ? `<div class="ro-more"><button type="button" class="lnk" data-act="ro-all">${rShowAll ? 'Daha az göster' : `Tümünü göster (${items.length})`}</button></div>` : ''}`;
     }
-    $('lab-select').addEventListener('change', renderDeploy);
-    $('btn-select-outdated').addEventListener('click', () => {
-        const old = new Set(outdated().filter(isOnline).map(d => d.hw_id));
-        $('dev-list').querySelectorAll('input:not(:disabled)').forEach(i => { i.checked = old.has(i.value); });
-        renderDeploy();
+    $('rollout').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-act]');
+        if (!b) return;
+        if (b.dataset.act === 'ro-all') { rShowAll = !rShowAll; renderRollout(); }
+        else if (b.dataset.act === 'ro-close') { clearTimeout(rTimer); rollout = null; rItems = null; store.set(RKEY, null); renderRollout(); }
     });
-
-    function deployTargets() {
-        if (S.mode === 'ALL') return { body: { target_mode: 'ALL', targets: [] }, list: S.devices };
-        if (S.mode === 'LAB') {
-            const lab = $('lab-select').value;
-            return { body: { target_mode: 'LAB', targets: lab ? [lab] : [] }, list: lab ? S.devices.filter(d => d.lab === lab) : [] };
+    async function pollRollout() {
+        clearTimeout(rTimer);
+        if (!rollout) { renderRollout(); return; }
+        try {
+            const r = await POps.post('/api/system/update-progress', { pcs: rollout.pcs, version: normV(rollout.version), since: rollout.since });
+            rItems = r.items || []; rErr = null;
+        } catch (e) { rErr = e; }
+        if (!rollout) return;
+        const c = rCounts();
+        if (!rErr && !c.run && !rollout.doneAt) {
+            rollout.doneAt = Date.now(); store.set(RKEY, rollout);
+            POps.toast(c.bad || c.warn ? 'warning' : 'success', c.bad || c.warn ? `${fmtV(rollout.version)}: ${c.ok} güncellendi, ${c.bad + c.warn} sorunlu.` : `${fmtV(rollout.version)}: ${c.total} bilgisayar güncellendi.`);
         }
-        const ids = [...document.querySelectorAll('#dev-list input:checked')].map(i => i.value);
-        return { body: { target_mode: 'PC', targets: ids }, list: S.devices.filter(d => ids.includes(d.hw_id)) };
+        renderRollout();
+        // 45 dk sonra (ya da hepsi sonuçlanınca) izleme durur; kapalı bilgisayarlar o zamana dek "Kapalı" görünür
+        if (c.run && Date.now() - rollout.at < 45 * 60 * 1000) rTimer = setTimeout(pollRollout, document.hidden ? 15000 : 4000);
+        else if (c.run && !rollout.doneAt) { rollout.doneAt = Date.now(); store.set(RKEY, rollout); renderRollout(); }
     }
 
-    function renderDeploy() {
-        const staged = S.ver && S.ver.staged_version;
-        const t = deployTargets();
-        const on = t.list.filter(isOnline);
-        const old = on.filter(d => normV(d.agent_version) !== normV(staged));
-        let reason = '';
-        if (!staged) reason = 'Önce 1. adımda bir paket indirin ya da yükleyin.';
-        else if (S.ver.release_available) reason = `Gönderilecek paket (${fmtV(staged)}) GitHub'daki son sürüm değil. Önce 1. adımda ${fmtV(S.ver.latest)} sürümünü indirin.`;
-        else if (S.mode === 'LAB' && !$('lab-select').value) reason = 'Bir sınıf seçin.';
-        else if (S.mode === 'PC' && !t.list.length) reason = 'En az bir cihaz seçin.';
-        else if (!on.length) reason = 'Seçimde açık cihaz yok; çevrimdışı cihazlara gönderilemez.';
-        else if (!old.length) reason = `Seçimdeki açık cihazların hepsi zaten ${fmtV(staged)} sürümünde.`;
-        const same = on.length - old.length, off = t.list.length - on.length;
-        $('dep-summary').innerHTML = reason ? escapeHtml(reason)
-            : `<strong>${old.length}</strong> açık cihaz ${escapeHtml(fmtV(staged))} sürümüne güncellenecek.`
-              + (same ? ` ${same} cihaz zaten bu sürümde.` : '') + (off ? ` ${off} çevrimdışı cihaz atlanacak.` : '');
-        $('btn-deploy').disabled = !!reason;
-        $('btn-deploy-lbl').textContent = staged ? `${fmtV(staged)} sürümünü gönder` : 'Gönder';
-    }
-
-    $('btn-deploy').addEventListener('click', async function () {
-        const staged = S.ver && S.ver.staged_version;
-        const t = deployTargets();
-        const n = t.list.filter(d => isOnline(d) && normV(d.agent_version) !== normV(staged)).length;
-        if (!n) { POps.toast('info', 'Seçilen hedeflerde güncellenecek açık cihaz yok.'); return; }
-        if (!await POps.confirm({ title: 'Ajanlar güncellensin mi?', message: `${n} açık cihaz ${fmtV(staged)} sürümüne güncellenecek. Yeni sürüm açılmazsa ajan önceki sürüme kendiliğinden döner.`, confirmText: 'Gönder', icon: 'fa-paper-plane' })) return;
-        this.disabled = true;
-        msg('deploy-status', '', '<i class="fas fa-spinner fa-spin"></i> Gönderiliyor…');
-        try {
-            const d = await postJson('/api/system/deploy-update', t.body);
-            const off = (d.skipped_offline || []).length;
-            msg('deploy-status', 'status-success', `<i class="fas fa-circle-check"></i> ${escapeHtml(fmtV(d.version))} ${(d.dispatched || []).length} cihaza gönderildi`
-                + (off ? `, ${off} çevrimdışı cihaz atlandı` : '') + '. Ajanlar birkaç dakika içinde yeniden bağlanıp yeni sürümü bildirir; liste kendiliğinden yenilenir.');
-            [30, 90, 180].forEach(s => setTimeout(() => loadAll(false), s * 1000));
-        } catch (e) {
-            msg('deploy-status', 'status-error', '<i class="fas fa-circle-xmark"></i> ' + escapeHtml(e.message));
-        } finally { renderDeploy(); }
-    });
-
-    // ================= YETENEKLER =================
-    function capLabel(v) {
-        if (v === true) return '<span class="badge ok">açık</span>';
-        if (v === false) return '<span class="badge bad">kapalı</span>';
-        return '<span class="badge muted">bildirilmedi</span>';
-    }
-    function renderCapDevices() {
-        const sel = $('cap-device');
-        const prev = sel.value;
-        sel.innerHTML = '<option value="">Cihaz seçin…</option>' + S.devices.map(d =>
-            `<option value="${escapeHtml(d.hw_id)}">${escapeHtml(devName(d))} — ${escapeHtml(d.hw_id)} · ${escapeHtml(fmtV(d.agent_version))}${isOnline(d) ? '' : ' (çevrimdışı)'}</option>`).join('');
-        if (prev && S.devices.some(d => d.hw_id === prev)) sel.value = prev;
-        renderCapState();
-    }
-    function renderCapState() {
-        const d = S.devices.find(x => x.hw_id === $('cap-device').value);
-        const btns = ['cap-off-terminal', 'cap-on-terminal', 'cap-off-vision', 'cap-on-vision'].map($);
-        if (!d) { $('cap-state').innerHTML = ''; btns.forEach(b => b.disabled = true); return; }
-        capButtons('terminal', d.cap_terminal_enabled, d.cap_terminal_disable_requested, btns[0], btns[1]);
-        capButtons('vision', d.cap_vision_enabled, d.cap_vision_disable_requested, btns[2], btns[3]);
-        // Kapalı bir yetenek ya kurulumda (MSI) ya da panelden kapatılmıştır; panelden kapatılan kalıcı kilitlidir
-        const req = (r, v) => r ? ' <span class="muted-text">(panelden kalıcı kapatıldı)</span>'
-            : v === false ? ' <span class="muted-text">(kurulumda kapatılmış)</span>' : '';
-        const caLabel = d.cap_server_ca === 'custom' ? '<span class="badge ok">kurum CA\'sı</span>'
-            : d.cap_server_ca === 'system' ? '<span class="badge muted">sistem deposu</span>'
-            : '<span class="badge muted">bildirilmedi</span>';
-        let html = `Terminal: ${capLabel(d.cap_terminal_enabled)}${req(d.cap_terminal_disable_requested, d.cap_terminal_enabled)} &nbsp;·&nbsp; Vision: ${capLabel(d.cap_vision_enabled)}${req(d.cap_vision_disable_requested, d.cap_vision_enabled)} &nbsp;·&nbsp; Sunucu sertifikası: ${caLabel}`;
-        if (d.cap_terminal_enabled == null && d.cap_vision_enabled == null) {
-            html += `<br><span class="muted-text"><i class="fas fa-circle-info"></i> Bu cihazdaki ajan (${escapeHtml(fmtV(d.agent_version))}) yetenek durumunu bildirmiyor; bildirim v0.1.4-alpha ile geldi. Ajan güncellenince burada görünür. Kapatma şimdi de kaydedilebilir, güncellemeden sonra uygulanır.</span>`;
-        }
-        $('cap-state').innerHTML = html + agentHealthHtml(d);
-    }
-    // Kapat / izin ver düğmeleri: yetenek uzaktan hiçbir zaman AÇILAMAZ. "İzin ver" yalnızca panelden konan kalıcı
-    // kapatmayı kaldırır; kurulumda kapatılmış yetenekte "Kapalı tut" ajan açık kurulsa bile kapalı kalmasını sağlar.
-    function capButtons(which, enabled, requested, off, on) {
-        const flag = which === 'terminal' ? 'TERMINAL_ENABLED=1' : 'VISION_ENABLED=1';
-        const offIcon = which === 'terminal' ? 'fa-terminal' : 'fa-video-slash';
-        off.disabled = !!requested;
-        on.disabled = !requested;
-        const obj = which === 'terminal' ? 'Terminali' : "Vision'ı";
-        off.innerHTML = `<i class="fas ${offIcon}"></i> ${obj} ` + (enabled === false && !requested ? 'kapalı tut' : 'kapat');
-        off.title = requested ? 'Panelden zaten kalıcı kapatılmış.'
-            : enabled === false ? `Kurulumda kapatılmış. Kapalı tut: ajan ${flag} ile yeniden kurulsa bile kapalı kalır.` : '';
-        on.title = requested ? 'Panelden konan kalıcı kapatmayı kaldırır; yetenek ancak ajan kurulumu onu açık bildirirse geri gelir.'
-            : enabled === false ? `Uzaktan açılamaz. Açmak için ajanı ${flag} ile yeniden kurun.` : 'Kaldırılacak bir kapatma yok.';
-    }
-    // Ajanın heartbeat'te bildirdiği durum (0.1.12+) ve çevrimdışı bypass anahtarı
-    function agentHealthHtml(d) {
-        const h = d.agent_health;
-        const ago = (t) => t ? fmtDur(Date.now() / 1000 - t) + ' önce' : 'henüz yok';
-        const bypass = d.bypass_key === 'device' ? '<span class="badge ok">cihaza özel</span>'
-            : d.bypass_key === 'pending' ? '<span class="badge muted">gönderildi, onay bekleniyor</span>'
-            : '<span class="badge muted">ortak anahtar (eski)</span>';
-        let out = `<br>Çevrimdışı bypass anahtarı: ${bypass}`;
-        // Son kopma (0.1.14 sunucu): ne zaman ve neden (WebSocket kapanış kodu)
-        if (d.last_disconnect_reason) {
-            const at = d.last_disconnect_at ? new Date(d.last_disconnect_at).toLocaleString('tr-TR') : '';
-            out += `<br>Son bağlantı kopması: ${escapeHtml(d.last_disconnect_reason)}`
-                + (at ? ` <span class="muted-text">(${escapeHtml(at)})</span>` : '');
-        }
-        if (!h) {
-            return out + `<br><span class="muted-text"><i class="fas fa-circle-info"></i> Bu ajan (${escapeHtml(fmtV(d.agent_version))}) durum bildirmiyor; bildirim v0.1.12-alpha ile geldi.</span>`;
-        }
-        const vision = { off: 'kapalı', idle: 'boşta', connected: 'bağlı' }[h.vision_channel] || 'bilinmiyor';
-        const errs = h.loop_errors_1h || 0;
-        out += `<br>Ajan${isOnline(d) ? '' : ' (son bilinen)'}: açılış ${escapeHtml(ago(h.started_at))} &nbsp;·&nbsp; politika eşitleme ${escapeHtml(ago(h.last_policy_sync))}`
-            + ` &nbsp;·&nbsp; envanter ${escapeHtml(ago(h.last_inventory_upload))}`
-            + ` &nbsp;·&nbsp; tepsi: ${h.tray_connected ? '<span class="badge ok">bağlı</span>' : '<span class="badge bad">bağlı değil</span>'}`
-            + ` &nbsp;·&nbsp; Vision kanalı: ${escapeHtml(vision)}`
-            + `<br>Son 1 saatte hata: ${errs ? `<span class="badge bad">${Number(errs)}</span>` : '<span class="badge ok">0</span>'}`;
-        if (errs && h.last_error) out += ` <span class="muted-text">son hata: ${escapeHtml(h.last_error)}</span>`;
-        // Karantina (0.1.13+): kilit ekranı ve ağ yalıtımı ayrı ayrı
-        if (h.screen_locked) {
-            out += `<br>Karantina: kilit ekranı ${'<span class="badge bad">açık</span>'} &nbsp;·&nbsp; ağ yalıtımı `
-                + (h.network_isolated ? '<span class="badge ok">uygulandı</span>'
-                   : `<span class="badge bad">UYGULANAMADI</span>${h.isolation_error ? ' <span class="muted-text">' + escapeHtml(h.isolation_error) + '</span>' : ''}`);
-        }
-        return out;
-    }
-    async function capSet(which, enabled) {
-        const hw = $('cap-device').value;
-        if (!hw) return;
-        const label = which === 'terminal' ? 'terminali' : "Vision'ı";
-        const dev = S.devices.find(x => x.hw_id === hw) || {};
-        const alreadyOff = (which === 'terminal' ? dev.cap_terminal_enabled : dev.cap_vision_enabled) === false;
-        if (!enabled && !await POps.confirm({ title: alreadyOff ? 'Kapalı tutulsun mu?' : `Bu cihazda ${label} kapatılsın mı?`, danger: true, confirmText: alreadyOff ? 'Kapalı tut' : 'Kapat',
-            message: alreadyOff
-                ? `Bu cihazda ${label} kurulumda kapatılmış. "Kapalı tut" ile ajan açık kurulsa bile kapalı kalır; geri açmak için "İzin ver" ve ajanın yeniden kurulumu gerekir.`
-                : `Kalıcıdır: geri açmak için "İzin ver" ve ajanın bilgisayarda yeniden kurulması gerekir.` })) return;
-        const body = { pc_name: hw };
-        body[which === 'terminal' ? 'terminal_enabled' : 'vision_enabled'] = !!enabled;
-        msg('cap-status', '', 'Gönderiliyor…');
-        try {
-            const d = await postJson('/api/system/set-capabilities', body);
-            msg('cap-status', 'status-success', enabled
-                ? 'Kapatma isteği kaldırıldı. Yetenek, ajan kurulumu onu açık bildirdiğinde geri gelir.'
-                : (d.delivered_online ? 'Kapatma gönderildi.' : 'Kapatma kaydedildi; cihaz bağlanınca uygulanacak.'));
-            setTimeout(() => loadAll(false), 1200);
-        } catch (e) { msg('cap-status', 'status-error', escapeHtml(e.message)); }
-    }
-    $('cap-device').addEventListener('change', renderCapState);
-    $('cap-off-terminal').addEventListener('click', () => capSet('terminal', false));
-    $('cap-on-terminal').addEventListener('click', () => capSet('terminal', true));
-    $('cap-off-vision').addEventListener('click', () => capSet('vision', false));
-    $('cap-on-vision').addEventListener('click', () => capSet('vision', true));
-
-    // ================= KAYIT + ZORLAMA =================
-    async function loadEnroll() {
-        try {
-            const rows = await api('/api/system/enroll-tokens');
-            $('enroll-list').innerHTML = (rows || []).slice(0, 20).map(r => {
-                const state = r.expired ? 'süresi doldu' : (r.is_used ? 'tükendi' : 'geçerli');
-                // Jetonun kendisi saklanmaz: yalnızca ilk karakterleri (tanımak için)
-                return `<li><i class="fas fa-ticket"></i> <code>${escapeHtml(r.token_hint || '')}…</code>
-                    <span class="muted-text">${escapeHtml(r.lab_name || 'tüm sınıflar')} · ${escapeHtml(r.use_count || 0)}/${escapeHtml(r.max_uses || 1)} kullanım · ${state}</span>
-                    <button class="btn small" data-id="${escapeHtml(r.id)}">sil</button></li>`;
-            }).join('') || '<li class="muted-text">Jeton yok.</li>';
-            $('enroll-list').querySelectorAll('button[data-id]').forEach(b => b.addEventListener('click', async () => {
-                if (!await POps.confirm({ title: 'Jeton silinsin mi?', message: 'Bu jetonla henüz kaydolmamış kurulumlar kaydolamaz. Kayıtlı cihazlar etkilenmez.', confirmText: 'Sil', danger: true })) return;
-                if (await POps.act(b, () => POps.del('/api/system/enroll-token/' + encodeURIComponent(b.dataset.id)), { success: 'Jeton silindi.' })) loadEnroll();
-            }));
-        } catch (e) { $('enroll-list').innerHTML = '<li class="muted-text">Jetonlar alınamadı.</li>'; }
-    }
-    $('btn-enroll').addEventListener('click', async () => {
-        msg('enroll-status', '', 'Üretiliyor…');
-        try {
-            const d = await postJson('/api/system/enroll-token', {
-                lab_name: $('et-lab').value || null, note: $('et-note').value || null,
-                ttl_hours: parseInt($('et-ttl').value) || 72, max_uses: parseInt($('et-uses').value) || 1
-            });
-            msg('enroll-status', 'status-success', `<i class="fas fa-circle-check"></i> MSI kurulumunda kullanın: <code>ENROLL_TOKEN=${escapeHtml(d.token)}</code><br><span class="muted-text">Jeton yalnızca şimdi gösterilir, sunucuda saklanmaz; şimdi kopyalayın.</span>`);
-            loadEnroll();
-        } catch (e) { msg('enroll-status', 'status-error', escapeHtml(e.message)); }
-    });
-
-    function renderEnforce() {
-        const v = S.ver;
-        if (!v) return;
-        const on = !!v.enforce_agent_auth, total = v.agents_total || 0, enr = v.agents_enrolled || 0;
-        $('enroll-count').innerHTML = badge(enr === total ? 'ok' : 'muted', 'fa-id-card', `${enr}/${total} ajan kayıtlı`);
-        $('enforce-badge').innerHTML = on ? badge('ok', 'fa-lock', 'Açık') : badge('muted', 'fa-lock-open', 'Kapalı');
-        $('enforce-hint').textContent = on
-            ? 'Anahtarı olmayan ajanlar bağlanamaz.'
-            : (enr < total ? `Geçiş modu: kayıtsız ajanlar da bağlanabilir. Açmadan önce ${total - enr} ajan kaydolmalı.` : 'Tüm ajanlar kayıtlı; açılabilir.');
-        const b = $('btn-enforce');
-        b.textContent = on ? 'Zorlamayı kapat' : 'Zorlamayı aç';
-        b.dataset.on = on ? '1' : '0';
-        b.classList.toggle('primary', !on && enr === total && total > 0);
-    }
-    $('btn-enforce').addEventListener('click', async () => {
-        const turnOn = $('btn-enforce').dataset.on !== '1';
-        const v = S.ver || {};
-        const missing = (v.agents_total || 0) - (v.agents_enrolled || 0);
-        if (turnOn && !await POps.confirm({ title: 'Kimlik zorlaması açılsın mı?', danger: missing > 0, confirmText: 'Aç',
-            message: missing > 0
-                ? `${missing} ajan kayıtlı değil ve zorlama açılınca bağlantısını kaybeder.`
-                : 'Anahtarı olmayan ajan artık bağlanamaz.' })) return;
-        msg('enforce-status', '', '…');
-        try {
-            const d = await postJson('/api/system/enforce-auth', { enabled: turnOn });
-            S.ver.enforce_agent_auth = d.enforce_agent_auth;
-            renderEnforce();
-            msg('enforce-status', 'status-success', d.enforce_agent_auth ? 'Zorlama açıldı.' : 'Zorlama kapatıldı.');
-        } catch (e) { msg('enforce-status', 'status-error', escapeHtml(e.message)); }
-    });
-
-    // ================= BİLDİRİMLER =================
-    const ntBody = () => ({ enabled: $('nt-enabled').checked, min_severity: $('nt-sev').value,
-                            email_to: $('nt-email').value.trim(), webhook_url: $('nt-webhook').value.trim() });
-    function renderNotify(d) {
-        $('nt-enabled').checked = !!d.enabled;
-        $('nt-sev').value = d.min_severity || 'high';
-        $('nt-email').value = d.email_to || '';
-        $('nt-webhook').value = d.webhook_url || '';
-        $('nt-smtp').innerHTML = d.smtp_configured
-            ? '<i class="fas fa-circle-check" style="color:var(--success-solid)"></i> Sunucuda SMTP ayarlı; e-posta gönderilebilir.'
-            : '<i class="fas fa-circle-info"></i> E-posta için sunucunun <code>.env</code> dosyasında <code>SMTP_HOST</code> ve <code>SMTP_FROM</code> tanımlanmalı. Webhook ek ayar gerektirmez.';
-        const on = d.enabled && (d.email_to || d.webhook_url);
-        $('nt-badge').innerHTML = on ? badge('ok', 'fa-bell', 'Açık') : badge('muted', 'fa-bell-slash', 'Yalnızca zil');
-    }
-    async function loadNotify() {
-        try { renderNotify(await api('/api/system/notify-settings')); }
-        catch (e) { $('nt-badge').innerHTML = badge('muted', 'fa-plug', 'Sunucu güncellemesi gerekli'); }
-    }
-    $('nt-save').addEventListener('click', async () => {
-        msg('nt-status', '', 'Kaydediliyor…');
-        try { renderNotify(await postJson('/api/system/notify-settings', ntBody())); msg('nt-status', 'status-success', 'Kaydedildi.'); }
-        catch (e) { msg('nt-status', 'status-error', escapeHtml(e.message)); }
-    });
-    $('nt-test').addEventListener('click', async () => {
-        msg('nt-status', '', '<i class="fas fa-spinner fa-spin"></i> Gönderiliyor…');
-        try {
-            const d = await postJson('/api/system/notify-test', ntBody());
-            if (d.error) msg('nt-status', 'status-error', 'Gönderilemedi: ' + escapeHtml(d.error) + (d.channels.length ? ' (başarılı: ' + escapeHtml(d.channels.join(', ')) + ')' : ''));
-            else msg('nt-status', 'status-success', 'Test bildirimi gönderildi: ' + escapeHtml(d.channels.join(', ')));
-        } catch (e) { msg('nt-status', 'status-error', escapeHtml(e.message)); }
-    });
-
-    // ================= SUNUCU SAĞLIĞI =================
-    function fmtDur(sec) {
-        sec = Math.max(0, Math.round(sec || 0));
-        const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
-        return d ? d + ' gün ' + h + ' sa' : h ? h + ' sa ' + m + ' dk' : m + ' dk';
-    }
-    const tile = (lbl, val, sub) => `<div class="ver-tile"><div class="lbl">${escapeHtml(lbl)}</div><div class="val">${escapeHtml(String(val))}</div><div class="sub">${sub || ''}</div></div>`;
-    function renderDiag(d) {
-        const errs = (d.log_counts && d.log_counts.ERROR || 0) + (d.log_counts && d.log_counts.CRITICAL || 0);
-        const tickAge = d.scheduler_last_tick_age;
-        const tickBad = tickAge === null || tickAge > 120;
-        const pool = d.db_pool || {};
-        const poolBusy = (pool.size || 0) - (pool.idle || 0);
-        const dev = d.devices || {};
-        $('dg-tiles').innerHTML = [
-            tile('Açık kalma süresi', fmtDur(d.uptime_seconds), escapeHtml('Bellek: ' + (d.rss_mb != null ? d.rss_mb + ' MB' : '—'))),
-            tile('Bağlı ajan', d.agents_connected, escapeHtml((dev.online || 0) + ' çevrimiçi / ' + (dev.total || 0) + ' kayıtlı cihaz')),
-            tile('Veritabanı bağlantısı', poolBusy + ' / ' + (pool.max || '—'), 'kullanımda / en çok'),
-            tile('Hata', errs, escapeHtml((d.http_5xx || 0) + ' sunucu hatası yanıtı, ' + (d.log_counts && d.log_counts.WARNING || 0) + ' uyarı')),
-            tile('Zamanlayıcı', tickAge === null ? 'başlamadı' : fmtDur(tickAge) + ' önce', tickBad ? '<span style="color:var(--danger-solid)">30 sn\'de bir çalışmalı</span>' : 'son tur'),
-            backupTile(d.backup),
-        ].join('');
-        const list = d.recent_errors || [];
-        $('dg-errors-wrap').style.display = list.length ? '' : 'none';
-        $('dg-errors-title').textContent = 'Son hatalar (' + list.length + ')';
-        $('dg-errors').innerHTML = list.map(e => `<li><div class="meta-line">${escapeHtml(fmtDate(e.ts))} · ${escapeHtml(e.logger)}${e.request_id ? ' · istek ' + escapeHtml(e.request_id) : ''}</div>${escapeHtml(e.msg)}${e.exc ? '<div class="meta-line">' + escapeHtml(e.exc) + '</div>' : ''}</li>`).join('');
-        const bk = backupState(d.backup);
-        const bad = errs > 0 || tickBad || bk !== 'ok';
-        const why = errs ? errs + ' hata' : tickBad ? 'Zamanlayıcı durdu' : bk === 'none' ? 'Yedek yok' : bk === 'old' ? 'Yedek eski' : 'Yedek başarısız';
-        $('dg-badge').innerHTML = bad ? badge('warn', 'fa-triangle-exclamation', why) : badge('ok', 'fa-circle-check', 'Sağlıklı');
-        $('dg-foot').innerHTML = d.metrics_enabled
-            ? '<i class="fas fa-chart-line"></i> Prometheus <code>/metrics</code> açık.'
-            : '<i class="fas fa-circle-info"></i> Prometheus ile izlemek için sunucunun <code>.env</code> dosyasında <code>METRICS_TOKEN</code> tanımlayın.';
-    }
-    // Son yedek: yok / başarısız / 2 günden eski ise uyarı (gece yedeği pops-backup.timer ile alınır)
+    // =================================================================
+    // SAĞLIK + YEDEK
+    // =================================================================
     function backupState(b) {
         if (!b || !b.at) return 'none';
         if (!b.ok || !b.verified) return 'failed';
         return (Date.now() - Date.parse(b.at)) / 1000 > 2 * 86400 ? 'old' : 'ok';
     }
-    function backupTile(b) {
+    function healthIssues(d) {
+        const out = [];
+        if (!d) return out;
+        const errs = ((d.log_counts || {}).ERROR || 0) + ((d.log_counts || {}).CRITICAL || 0);
+        if (errs) out.push(`${errs} hata`);
+        const tick = d.scheduler_last_tick_age;
+        if (tick === null || tick === undefined || tick > 120) out.push('Zamanlayıcı durdu');
+        (d.disk || []).filter(x => x.level !== 'ok').slice(0, 1).forEach(() => out.push('Disk dolmak üzere'));
+        (d.tls || []).filter(x => x.level === 'high' || x.level === 'critical').slice(0, 1).forEach(() => out.push('Sertifika bitiyor'));
+        return out;
+    }
+    function statHtml(label, val, subHtml, warn) {
+        return `<div class="hstat"><div class="l">${warn ? '<span class="dot warn"></span>' : ''}${escapeHtml(label)}</div><div class="val">${escapeHtml(String(val))}</div><div class="s">${subHtml}</div></div>`;
+    }
+    function renderHealth() {
+        const box = $('hlBody');
+        if (!box) return;
+        const d = S.diag;
+        if (!d) { if (S.diagErr) { setState('hlState', 'off', 'Okunamadı'); POps.setError(box, S.diagErr, { compact: true }); } return; }
+        const issues = healthIssues(d);
+        setState('hlState', issues.length ? 'warn' : 'ok', issues.length ? issues.join(' · ') : 'Sağlıklı');
+        const lc = d.log_counts || {};
+        const errs = (lc.ERROR || 0) + (lc.CRITICAL || 0);
+        const tick = d.scheduler_last_tick_age;
+        const tickBad = tick === null || tick === undefined || tick > 120;
+        const pool = d.db_pool || {};
+        const dv = d.devices || {};
+        const disk = (d.disk || []).slice().sort((a, b) => a.free_percent - b.free_percent)[0];
+        const tiles = [
+            statHtml('Açık kalma', POps.duration(d.uptime_seconds), escapeHtml('Bellek ' + (d.rss_mb != null ? d.rss_mb + ' MB' : '—'))),
+            statHtml('Bağlı ajan', fmtNum(d.agents_connected), escapeHtml(`${fmtNum(dv.online)} çevrimiçi / ${fmtNum(dv.total)} kayıtlı`)),
+            statHtml('Veritabanı', `${(pool.size || 0) - (pool.idle || 0)} / ${pool.max || '—'}`, 'kullanımda / en çok'),
+            statHtml('Hata', fmtNum(errs), escapeHtml(`${fmtNum(d.http_5xx)} sunucu hatası, ${fmtNum(lc.WARNING)} uyarı`), errs > 0),
+            statHtml('Zamanlayıcı', tick === null || tick === undefined ? 'Başlamadı' : ago(tick), tickBad ? '30 sn’de bir çalışmalı' : 'son tur', tickBad),
+            disk ? statHtml('Disk', '%' + disk.free_percent + ' boş', escapeHtml(`${fmtBytes(disk.free_bytes)} / ${fmtBytes(disk.total_bytes)}`), disk.level !== 'ok')
+                 : statHtml('Uzak ekran oturumu', fmtNum(d.vision_sessions), escapeHtml(`${fmtNum(d.panels_connected)} açık panel`))
+        ].join('');
+        const tlsHtml = (d.tls || []).map(c => {
+            const k = c.level === 'ok' ? 'ok' : c.level === 'unknown' ? 'off' : c.level === 'critical' ? 'bad' : 'warn';
+            const w = c.level === 'unknown' ? 'Okunamadı' : `${Math.floor(c.days_left)} gün kaldı`;
+            return `<div class="srow"><div class="grow"><div class="t">Sertifika</div><div class="d">${escapeHtml(c.name)}${c.not_after ? ' · bitiş ' + POps.timeHtml(c.not_after) : ''}</div></div>${wordHtml(k, w)}</div>`;
+        }).join('');
+        const errList = d.recent_errors || [];
+        box.innerHTML = `<div class="hstats">${tiles}</div>
+            <div class="set">${tlsHtml}
+                <div class="srow click" data-act="errors" role="button" tabindex="0"><div class="grow"><div class="t">Son hatalar</div><div class="d">${errList.length ? 'Sorun bildirirken istek kimliğini verin.' : 'Sunucu açıldığından beri hata yok.'}</div></div><span class="v">${Number(errList.length)}</span>${POps.iconHtml('right', 'sm ico-lead')}</div>
+                <div class="srow click" data-act="tech" role="button" tabindex="0"><div class="grow"><div class="t">Teknik ayrıntılar</div><div class="d">Yük, yavaş istekler, disk ve izleme.</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>
+            </div>`;
+    }
+    function renderBackup() {
+        const box = $('bkSet');
+        if (!box) return;
+        if (!S.diag) { if (S.diagErr) { setState('bkState', 'off', 'Okunamadı'); POps.setError(box, S.diagErr, { compact: true }); } return; }
+        const b = S.diag.backup;
         const st = backupState(b);
-        if (st === 'none') return tile('Son yedek', 'yok', '<span style="color:var(--danger-solid)">Gece yedeği kurulu değil (docs/backup.md)</span>');
-        const age = fmtDur((Date.now() - Date.parse(b.at)) / 1000) + ' önce';
-        if (st === 'failed') return tile('Son yedek', age, '<span style="color:var(--danger-solid)">' + escapeHtml(b.message || 'başarısız') + '</span>');
-        const size = b.bytes ? (b.bytes > 1048576 ? (b.bytes / 1048576).toFixed(1) + ' MB' : Math.round(b.bytes / 1024) + ' KB') : '';
-        return tile('Son yedek', age, st === 'old' ? '<span style="color:var(--danger-solid)">2 günden eski</span>' : escapeHtml(size + ' · geri yükleme sınandı'));
+        const K = { ok: ['ok', 'Tamam'], old: ['warn', '2 günden eski'], failed: ['bad', 'Başarısız'], none: ['bad', 'Yedek yok'] }[st];
+        setState('bkState', K[0], K[1]);
+        let rowHtml;
+        if (st === 'none') {
+            rowHtml = `<div class="act"><div class="res bad">${POps.iconHtml('x')}</div><div style="min-width:0"><div class="what">Henüz yedek alınmadı</div><div class="meta">Gece yedeği kurulu değil.</div><div class="why">Veritabanı yedeklenmiyor. Kurulum için docs/backup.md (pops-backup.timer).</div></div><div class="side">${wordHtml('bad', 'Yedek yok')}</div></div>`;
+        } else {
+            const metaHtml = POps.timeHtml(b.at) + (b.bytes ? ' · ' + escapeHtml(fmtBytes(b.bytes)) : '') + (b.verified ? ' · geri yükleme sınandı' : '');
+            const whyHtml = st === 'failed' ? `<div class="why">${escapeHtml(b.message || 'Yedek alınamadı ya da geri yükleme sınaması geçmedi.')}</div>` : st === 'old' ? '<div class="why warn">Son başarılı yedek 2 günden eski; gece yedeği çalışmıyor olabilir.</div>' : '';
+            rowHtml = `<div class="act"><div class="res ${escapeHtml(K[0])}">${POps.iconHtml(st === 'ok' ? 'check' : st === 'old' ? 'clock' : 'x')}</div><div style="min-width:0"><div class="what">Son veritabanı yedeği</div><div class="meta">${metaHtml}</div>${whyHtml}</div><div class="side">${wordHtml(K[0], K[1])}</div></div>`;
+        }
+        box.innerHTML = rowHtml + '<div class="srow"><div class="grow"><div class="d">Yedek her gece alınır ve geri yüklenerek sınanır. Yalnızca son yedeğin sonucu tutulur.</div></div></div>';
     }
     async function loadDiag() {
-        try { renderDiag(await api('/api/system/diagnostics')); }
-        catch (e) { $('dg-badge').innerHTML = badge('muted', 'fa-plug', 'Sunucu güncellemesi gerekli'); }
+        if (!IS_SUPER) return;
+        try { S.diag = await POps.get('/api/system/diagnostics'); S.diagErr = null; }
+        catch (e) { S.diagErr = e; }
+        renderHealth(); renderBackup(); renderSummary();
+    }
+    if ($('hlBody')) $('hlBody').addEventListener('click', (e) => {
+        const r = e.target.closest('[data-act]');
+        if (!r) return;
+        if (r.dataset.act === 'errors') openErrors(); else if (r.dataset.act === 'tech') openTech();
+    });
+    if ($('hlBody')) $('hlBody').addEventListener('keydown', (e) => {
+        const r = e.target.closest('.srow.click[data-act]');
+        if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); r.click(); }
+    });
+    function openErrors() {
+        const list = (S.diag && S.diag.recent_errors) || [];
+        const body = openDrawer('syse:errors', () => {});
+        const rowsHtml = list.map(e => `<div class="act"><div class="res bad">${POps.iconHtml('x')}</div><div style="min-width:0"><div class="what">${escapeHtml(e.msg)}</div>
+            <div class="meta">${POps.timeHtml(e.ts)} · ${escapeHtml(e.logger || '')}${e.request_id ? ' · istek ' + escapeHtml(e.request_id) : ''}</div>${e.exc ? `<div class="out">${escapeHtml(e.exc)}</div>` : ''}</div><div class="side"></div></div>`).join('');
+        body.innerHTML = drawerHeadHtml('Son hatalar', escapeHtml(list.length ? `Sunucu açıldığından beri ${list.length} hata` : 'Hata yok'), 'alert', '')
+            + (list.length ? `<div>${rowsHtml}</div>` : '<div class="empty-state compact"><i class="fas fa-check"></i><p>Sunucu açıldığından beri hata kaydı yok.</p></div>');
+    }
+    function openTech() {
+        const d = S.diag || {};
+        const l = d.load || {};
+        const techRowHtml = (k, v, mono) => v === null || v === undefined || v === '' ? '' : `<div class="grow"><span>${escapeHtml(k)}</span><span${mono ? ' class="mono"' : ''}>${escapeHtml(String(v))}</span></div>`;
+        const factsHtml = [techRowHtml('Sürüm', d.version), techRowHtml('Süreç', d.pid, true), techRowHtml('Bellek', d.rss_mb != null ? d.rss_mb + ' MB' : ''), techRowHtml('Açık panel', d.panels_connected),
+            techRowHtml('Uzak ekran oturumu', d.vision_sessions), techRowHtml('Sonucu beklenen ajan güncellemesi', d.pending_updates), techRowHtml('Karantinadaki cihaz', (d.devices || {}).quarantined),
+            techRowHtml('Yakalanmamış hata', d.unhandled_errors)].join('');
+        const loadHtml = [techRowHtml('Kalp atışı', fmtNum(l.heartbeats)), techRowHtml('Kalp atışı başına sorgu', l.queries_per_heartbeat), techRowHtml('Veritabanı yazma (sn’de, son 1 dk)', l.db_writes_per_second),
+            techRowHtml('Veritabanı okuma / yazma', `${fmtNum(l.db_reads)} / ${fmtNum(l.db_writes)}`), techRowHtml('Görev dağıtımı p95', l.task_dispatch_p95_seconds != null ? l.task_dispatch_p95_seconds + ' sn' : ''),
+            techRowHtml('Komut gönderme p95', l.command_send_p95_ms != null ? l.command_send_p95_ms + ' ms' : '')].join('');
+        const slowHtml = (d.slowest_routes || []).map(r => techRowHtml(`${r.avg_ms} ms · ${fmtNum(r.count)} istek`, r.route, true)).join('');
+        const diskHtml = (d.disk || []).map(x => techRowHtml(`%${x.free_percent} boş · ${fmtBytes(x.free_bytes)} / ${fmtBytes(x.total_bytes)}`, x.path, true)).join('');
+        const body = openDrawer('sysx:tech', () => {});
+        body.innerHTML = drawerHeadHtml('Teknik ayrıntılar', 'Sunucu açıldığından beri', 'cpu', '')
+            + `<div class="glist">${factsHtml}</div>`
+            + (loadHtml ? `<div><h3>Yük</h3><div class="glist">${loadHtml}</div></div>` : '')
+            + (slowHtml ? `<div><h3>En yavaş istekler (ortalama)</h3><div class="glist">${slowHtml}</div></div>` : '')
+            + (diskHtml ? `<div><h3>Disk</h3><div class="glist">${diskHtml}</div></div>` : '')
+            + `<div class="dr-note">${d.metrics_enabled ? 'Prometheus /metrics açık.' : 'Prometheus ile izlemek için sunucunun .env dosyasında METRICS_TOKEN tanımlayın.'} Güncelleme kanalı sunucudaki /etc/pops/selfupdate.conf dosyasından okunur.</div>`;
     }
 
-    // ================= YÜKLE =================
+    // =================================================================
+    // KAYIT BÜTÜNLÜĞÜ (denetim zinciri)
+    // =================================================================
+    function renderAudit() {
+        const box = $('auSet');
+        if (!box) return;
+        const r = store.get(AKEY);
+        let k = 'off', w = 'Doğrulanmadı', resHtml = '';
+        if (r) {
+            k = r.ok ? 'ok' : 'bad'; w = r.ok ? 'Sağlam' : 'Kırık';
+            const metaHtml = escapeHtml(r.by || '?') + ' · ' + POps.timeHtml(r.at) + ' · ' + escapeHtml(`${fmtNum(r.checked)} kayıt denetlendi`);
+            resHtml = `<div class="act"><div class="res ${escapeHtml(k)}">${POps.iconHtml(r.ok ? 'check' : 'x')}</div><div style="min-width:0"><div class="what">${r.ok ? 'Zincir sağlam' : 'Zincir kırık'}</div><div class="meta">${metaHtml}</div>
+                ${r.ok ? '' : `<div class="why">${escapeHtml(`#${r.first_broken_id} numaralı kayıtta zincir kopuyor: bu kayıt ya da öncesi değiştirilmiş veya silinmiş. Veritabanı yedeğiyle karşılaştırın.`)}</div>`}</div><div class="side">${wordHtml(k, w)}</div></div>`;
+        }
+        setState('auState', k, w);
+        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">Denetim zinciri</div><div class="d">Yönetici işlemleri ve güncelleme sonuçları birbirine bağlı kaydedilir; silinen ya da değiştirilen kayıt zinciri bozar.</div></div>
+            <button type="button" class="btn secondary" id="auVerify">${POps.iconHtml('shield', 'sm')}Doğrula</button></div>${resHtml}`;
+        $('auVerify').addEventListener('click', async function () {
+            try {
+                const d = await POps.busy(this, () => POps.get('/api/system/audit-verify'));
+                store.set(AKEY, Object.assign({ at: Date.now(), by: ME }, d));
+                POps.toast(d.ok ? 'success' : 'error', d.ok ? `Denetim zinciri sağlam (${fmtNum(d.checked)} kayıt).` : `Denetim zinciri #${d.first_broken_id} numaralı kayıtta kırık.`);
+                renderAudit(); renderSummary();
+            } catch (e) { POps.toast('error', 'Doğrulanamadı: ' + POps.errorMessage(e)); }
+        });
+    }
+
+    // =================================================================
+    // CİHAZ YETENEKLERİ (uzak komut / uzak ekran kalıcı kapatma)
+    // =================================================================
+    function capWord(enabled, requested) {
+        if (requested) return { k: 'bad', w: 'Kapalı', how: 'Panelden kalıcı kapatıldı' };
+        if (enabled === false) return { k: 'bad', w: 'Kapalı', how: 'Kurulumda kapatılmış' };
+        if (enabled === true) return { k: 'ok', w: 'Açık', how: '' };
+        return { k: 'off', w: 'Bildirilmedi', how: 'Ajan bu bilgiyi göndermiyor (0.1.4 öncesi)' };
+    }
+    let capHash = '';
+    function renderCaps(force) {
+        const box = $('capSet');
+        if (!box || !state.devicesLoaded) return;
+        const list = devs().filter(d => d.cap_terminal_enabled === false || d.cap_vision_enabled === false || d.cap_terminal_disable_requested || d.cap_vision_disable_requested)
+            .sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
+        const sig = JSON.stringify([devs().map(d => [d.hostname, POps.deviceName(d), d.status]), list.map(d => [d.hostname, d.cap_terminal_enabled, d.cap_vision_enabled, d.cap_terminal_disable_requested, d.cap_vision_disable_requested])]);
+        if (!force && sig === capHash) return;
+        capHash = sig;
+        setState('capState', list.length ? 'off' : 'ok', list.length ? `${list.length} bilgisayarda kısıtlı` : 'Hepsinde açık');
+        const opts = devs().slice().sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }))
+            .map(d => `<option value="${escapeHtml(d.hostname)}">${escapeHtml(POps.deviceName(d))}${d.lab && d.lab !== dev.UNASSIGNED ? ' · ' + escapeHtml(d.lab) : ''}</option>`).join('');
+        const rowsHtml = list.map(d => {
+            const t = capWord(d.cap_terminal_enabled, d.cap_terminal_disable_requested), v = capWord(d.cap_vision_enabled, d.cap_vision_disable_requested);
+            const parts = [t.k === 'bad' ? 'Uzak komut kapalı' : '', v.k === 'bad' ? 'Uzak ekran kapalı' : ''].filter(Boolean).join(' · ');
+            const how = d.cap_terminal_disable_requested || d.cap_vision_disable_requested ? 'panelden' : 'kurulumda';
+            return `<div class="srow click" data-host="${escapeHtml(d.hostname)}" role="button" tabindex="0"><span class="dot ${escapeHtml(dev.state(d).cls)}"></span><div class="grow"><div class="t">${escapeHtml(POps.deviceName(d))}</div><div class="d">${escapeHtml(parts + ' (' + how + ')')}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>`;
+        }).join('');
+        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">Uzak komut ve uzak ekran</div><div class="d">Bir bilgisayarda kalıcı kapatılır; sunucu ele geçirilse bile o bilgisayarda çalışmaz.</div></div>
+            <select id="capPick" aria-label="Bilgisayar seç" class="wide" style="width:min(240px,100%)"><option value="">Bilgisayar seç…</option>${opts}</select></div>${rowsHtml}`;
+        $('capPick').addEventListener('change', (e) => { if (e.target.value) { openCap(e.target.value); e.target.value = ''; } });
+    }
+    if ($('capSet')) {
+        $('capSet').addEventListener('click', (e) => { const r = e.target.closest('.srow[data-host]'); if (r) openCap(r.dataset.host); });
+        $('capSet').addEventListener('keydown', (e) => { const r = e.target.closest('.srow[data-host]'); if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openCap(r.dataset.host); } });
+    }
+
+    function capRowHtml(which, d) {
+        const enabled = which === 'terminal' ? d.cap_terminal_enabled : d.cap_vision_enabled;
+        const requested = which === 'terminal' ? d.cap_terminal_disable_requested : d.cap_vision_disable_requested;
+        const c = capWord(enabled, requested);
+        const flag = which === 'terminal' ? 'TERMINAL_ENABLED=1' : 'VISION_ENABLED=1';
+        const name = which === 'terminal' ? 'Uzak komut' : 'Uzak ekran';
+        let btnHtml, hint;
+        if (requested) { btnHtml = `<button type="button" class="btn secondary sm" data-act="cap-on" data-which="${escapeHtml(which)}">İzin ver</button>`; hint = `İzin vermek kalıcı kapatmayı kaldırır; yetenek ancak ajan kurulumu onu açık bildirirse geri gelir.`; }
+        else if (enabled === false) { btnHtml = `<button type="button" class="btn danger-soft sm" data-act="cap-off" data-which="${escapeHtml(which)}">Kapalı tut</button>`; hint = `Uzaktan açılamaz; açmak için ajanı ${flag} ile yeniden kurun. "Kapalı tut" yeniden kurulsa bile kapalı kalmasını sağlar.`; }
+        else { btnHtml = `<button type="button" class="btn danger-soft sm" data-act="cap-off" data-which="${escapeHtml(which)}">Kapat</button>`; hint = 'Kapatma kalıcıdır; çevrimdışı bilgisayara bağlanınca uygulanır.'; }
+        return `<div class="srow"><div class="grow"><div class="t">${escapeHtml(name)}${wordHtml(c.k, c.w)}</div><div class="d">${escapeHtml(c.how ? c.how + '. ' + hint : hint)}</div></div>${btnHtml}</div>`;
+    }
+    let capSig = '';
+    function renderCapDrawer(host, onlyIfChanged) {
+        const d = dev.find(host);
+        const sig = JSON.stringify(d ? [d.status, POps.deviceName(d), d.lab, dev.version(d), d.cap_terminal_enabled, d.cap_vision_enabled, d.cap_terminal_disable_requested, d.cap_vision_disable_requested, d.cap_server_ca, d.bypass_key, d.last_disconnect_reason, d.agent_health] : null);
+        if (onlyIfChanged && sig === capSig) return;
+        capSig = sig;
+        const body = POps.drawer.body();
+        if (!d) { body.innerHTML = drawerHeadHtml(host, 'Bulunamadı', 'monitor', '') ; return; }
+        const st = dev.state(d);
+        const h = d.agent_health;
+        const ag = (t) => t ? ago(Date.now() / 1000 - t) : 'henüz yok';
+        const factHtml = (k, vHtml) => `<div class="grow"><span>${escapeHtml(k)}</span><span>${vHtml}</span></div>`;
+        const ca = d.cap_server_ca === 'custom' ? 'Kurum sertifikası' : d.cap_server_ca === 'system' ? 'Sistem deposu' : 'Bildirilmedi';
+        const bypass = d.bypass_key === 'device' ? 'Cihaza özel' : d.bypass_key === 'pending' ? 'Gönderildi, onay bekleniyor' : 'Ortak anahtar (eski)';
+        let factsHtml = factHtml('Ajan', escapeHtml(fmtV(dev.version(d)))) + factHtml('Sunucu sertifikası', escapeHtml(ca)) + factHtml('Çevrimdışı açma anahtarı', escapeHtml(bypass));
+        if (d.last_disconnect_reason) factsHtml += factHtml('Son bağlantı kopması', escapeHtml(d.last_disconnect_reason) + (d.last_disconnect_at ? ' · ' + POps.timeHtml(d.last_disconnect_at) : ''));
+        let noteHtml = '';
+        if (!h) noteHtml = `<div class="dr-note" style="margin-top:8px">Bu ajan (${escapeHtml(fmtV(dev.version(d)))}) durum bildirmiyor; bildirim 0.1.12 ile geldi.</div>`;
+        else {
+            const vision = { off: 'Kapalı', idle: 'Boşta', connected: 'Bağlı' }[h.vision_channel] || 'Bilinmiyor';
+            const errs = Number(h.loop_errors_1h) || 0;
+            factsHtml += factHtml('Açılış', escapeHtml(ag(h.started_at))) + factHtml('Politika eşitleme', escapeHtml(ag(h.last_policy_sync))) + factHtml('Envanter', escapeHtml(ag(h.last_inventory_upload)))
+                + factHtml('Tepsi uygulaması', wordHtml(h.tray_connected ? 'ok' : 'bad', h.tray_connected ? 'Bağlı' : 'Bağlı değil')) + factHtml('Uzak ekran kanalı', escapeHtml(vision))
+                + factHtml('Son 1 saatte hata', errs ? wordHtml('bad', String(errs)) : escapeHtml('0'));
+            if (h.screen_locked) factsHtml += factHtml('Karantina kilidi', wordHtml('bad', 'Açık')) + factHtml('Ağ yalıtımı', h.network_isolated ? wordHtml('ok', 'Uygulandı') : wordHtml('bad', 'Uygulanamadı'));
+            noteHtml = (errs && h.last_error ? `<div class="issue err" style="margin-top:8px">${escapeHtml('Son hata: ' + h.last_error)}</div>` : '')
+                + (h.screen_locked && !h.network_isolated && h.isolation_error ? `<div class="issue err" style="margin-top:8px">${escapeHtml('Yalıtım hatası: ' + h.isolation_error)}</div>` : '');
+        }
+        const subHtml = `<span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.word)}${d.lab && d.lab !== dev.UNASSIGNED ? ' · ' + escapeHtml(d.lab) : ''}`;
+        body.innerHTML = drawerHeadHtml(POps.deviceName(d), subHtml, 'monitor', st.cls)
+            + `<div><h3>Yetenekler</h3><div class="set">${capRowHtml('terminal', d)}${capRowHtml('vision', d)}</div>`
+            + (d.cap_terminal_enabled == null && d.cap_vision_enabled == null ? `<div class="dr-note" style="margin-top:8px">Bu ajan yetenek durumunu bildirmiyor (bildirim 0.1.4 ile geldi). Kapatma şimdi kaydedilebilir, güncellemeden sonra uygulanır.</div>` : '') + '</div>'
+            + `<div><h3>Ajan durumu${isOn(d) ? '' : ' (son bilinen)'}</h3><div class="glist">${factsHtml}</div>${noteHtml}</div>`
+            + `<a href="devices.php?pc=${encodeURIComponent(d.hostname)}" style="font-size:var(--text-sm)">Cihazlar sayfasında aç</a>`;
+    }
+    let capHost = null;
+    function openCap(host) {
+        capHost = host;
+        openDrawer('syscap:' + host, (b) => {
+            if (b.dataset.act === 'cap-off') capSet(capHost, b.dataset.which, false, b);
+            else if (b.dataset.act === 'cap-on') capSet(capHost, b.dataset.which, true, b);
+        }, () => { capHost = null; });
+        renderCapDrawer(host);
+    }
+    async function capSet(host, which, enable, btn) {
+        const d = dev.find(host) || {};
+        const label = which === 'terminal' ? 'uzak komut' : 'uzak ekran';
+        const alreadyOff = (which === 'terminal' ? d.cap_terminal_enabled : d.cap_vision_enabled) === false;
+        if (!enable && !await POps.confirm({
+            title: alreadyOff ? `${POps.deviceName(d)} bilgisayarında ${label} kapalı tutulsun mu?` : `${POps.deviceName(d)} bilgisayarında ${label} kapatılsın mı?`,
+            message: alreadyOff ? `Kurulumda kapatılmış; ajan açık kurulsa bile kapalı kalır. Geri açmak için "İzin ver" ve ajanın yeniden kurulması gerekir.`
+                : `Kalıcıdır: geri açmak için "İzin ver" ve ajanın bilgisayarda yeniden kurulması gerekir.`,
+            confirmText: alreadyOff ? 'Kapalı tut' : (which === 'terminal' ? 'Uzak komutu kapat' : 'Uzak ekranı kapat'), danger: true, icon: 'fa-lock'
+        })) return;
+        const body = { pc_name: host };
+        body[which === 'terminal' ? 'terminal_enabled' : 'vision_enabled'] = !!enable;
+        try {
+            const r = await POps.busy(btn, () => POps.post('/api/system/set-capabilities', body));
+            POps.toast('success', enable ? 'Kalıcı kapatma kaldırıldı. Yetenek, ajan kurulumu onu açık bildirince geri gelir.'
+                : (r.delivered_online ? 'Kapatma gönderildi.' : 'Kapatma kaydedildi; bilgisayar bağlanınca uygulanacak.'));
+            await POps.loadDevices().catch(() => {});
+        } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+    }
+
+    // =================================================================
+    // AJAN KAYDI VE KİMLİK
+    // =================================================================
+    function renderEnroll() {
+        const box = $('enSet');
+        if (!box || !S.ver) return;
+        const v = S.ver;
+        const on = !!v.enforce_agent_auth, total = v.agents_total || 0, enr = v.agents_enrolled || 0;
+        setState('enState', enr === total ? 'ok' : 'off', `${enr}/${total} ajan kayıtlı`);
+        const hint = on ? 'Açık: anahtarı olmayan ajanlar bağlanamaz.' : (enr < total ? `Geçiş modu: kayıtsız ajanlar da bağlanabilir. Açmadan önce ${total - enr} ajan kaydolmalı.` : 'Kapalı. Bütün ajanlar kayıtlı; açılabilir.');
+        const toks = S.tokens || [];
+        const valid = toks.filter(t => !t.expired && !t.is_used).length;
+        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">Kimlik zorlaması</div><div class="d">${escapeHtml(hint)}</div></div>
+                <label class="switch"><input type="checkbox" id="enforceSw" ${on ? 'checked' : ''} aria-label="Kimlik zorlaması"><span></span></label></div>
+            <div class="srow"><div class="grow"><div class="t">Kayıt jetonları</div><div class="d">${S.tokens === null ? 'Yükleniyor…' : toks.length ? escapeHtml(`${valid} geçerli, ${toks.length - valid} kullanılmış ya da süresi dolmuş`) : 'Henüz jeton yok. Yeni kurulumda MSI’a ENROLL_TOKEN olarak verilir.'}</div></div>
+                <button type="button" class="btn secondary" id="tokNew">${POps.iconHtml('plus', 'sm')}Jeton üret</button></div>`;
+        $('enforceSw').addEventListener('change', (e) => setEnforce(e.target));
+        $('tokNew').addEventListener('click', () => {
+            $('tkLabs').innerHTML = dev.labs().map(l => `<option value="${escapeHtml(l)}"></option>`).join('');
+            openModal('tokenModal');
+        });
+        renderTokens();
+    }
+    function renderTokens() {
+        const box = $('tokSet');
+        if (!box) return;
+        const toks = (S.tokens || []).slice(0, 20);
+        box.hidden = !toks.length;
+        box.innerHTML = toks.map(t => {
+            const k = t.expired ? 'off' : t.is_used ? 'off' : 'ok';
+            const w = t.expired ? 'Süresi doldu' : t.is_used ? 'Tükendi' : 'Geçerli';
+            const metaHtml = escapeHtml(t.lab_name || 'Bütün sınıflar') + ' · ' + escapeHtml(`${Number(t.use_count || 0)}/${Number(t.max_uses || 1)} kullanım`) + ' · ' + POps.timeHtml(t.created_at)
+                + (!t.expired && !t.is_used && t.expires_at ? ' · bitiş ' + POps.timeHtml(t.expires_at) : '') + (t.note ? ' · ' + escapeHtml(t.note) : '');
+            return `<div class="act"><div class="res">${POps.iconHtml('key')}</div><div style="min-width:0"><div class="what"><code>${escapeHtml(t.token_hint || '')}…</code></div><div class="meta">${metaHtml}</div></div>
+                <div class="side" style="flex-direction:row;align-items:center;gap:8px">${wordHtml(k, w)}<button type="button" class="ibtn sm" data-tok="${escapeHtml(t.id)}" data-hint="${escapeHtml(t.token_hint || '')}" data-tip="Jeton işlemleri" data-tip-pos="left" aria-label="Jeton işlemleri" aria-haspopup="menu">${POps.iconHtml('more')}</button></div></div>`;
+        }).join('');
+    }
+    if ($('tokSet')) $('tokSet').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-tok]');
+        if (!b) return;
+        POps.menu(b, [{ label: 'Jetonu sil', icon: 'trash', danger: true, onClick: async () => {
+            if (!await POps.confirm({ title: `${b.dataset.hint}… jetonu silinsin mi?`, message: 'Bu jetonla henüz kaydolmamış kurulumlar kaydolamaz. Kayıtlı bilgisayarlar etkilenmez.', confirmText: 'Jetonu sil', danger: true, icon: 'fa-trash' })) return;
+            if (await POps.act(null, () => POps.del('/api/system/enroll-token/' + encodeURIComponent(b.dataset.tok)), { success: 'Jeton silindi.' })) loadTokens();
+        } }]);
+    });
+    async function loadTokens() {
+        if (!IS_SUPER) return;
+        try { S.tokens = await POps.get('/api/system/enroll-tokens') || []; } catch (e) { S.tokens = []; POps.toast('error', 'Jetonlar alınamadı: ' + POps.errorMessage(e)); }
+        renderEnroll();
+    }
+    if ($('tkCreate')) $('tkCreate').addEventListener('click', async function () {
+        const body = { lab_name: $('tkLab').value.trim() || null, note: $('tkNote').value.trim() || null, ttl_hours: parseInt($('tkTtl').value, 10) || 72, max_uses: parseInt($('tkUses').value, 10) || 1 };
+        let d;
+        try { d = await POps.busy(this, () => POps.post('/api/system/enroll-token', body)); }
+        catch (e) { POps.toast('error', 'Jeton üretilemedi: ' + POps.errorMessage(e)); return; }
+        closeModal('tokenModal');
+        ['tkLab', 'tkNote'].forEach(id => { $(id).value = ''; });
+        loadTokens();
+        await POps.alert({
+            title: 'Kayıt jetonu hazır', icon: 'fa-key', codes: [d.token], confirmText: 'Kapat',
+            message: `${d.lab_name || 'Bütün sınıflar'} · ${d.max_uses} kullanım · ${d.ttl_hours} saat geçerli`,
+            note: 'MSI kurulumunda ENROLL_TOKEN olarak verin. Jeton yalnızca şimdi gösterilir, sunucuda saklanmaz; şimdi kopyalayın.'
+        });
+    });
+    async function setEnforce(sw) {
+        const turnOn = sw.checked;
+        const v = S.ver || {};
+        const missing = (v.agents_total || 0) - (v.agents_enrolled || 0);
+        if (turnOn && !await POps.confirm({
+            title: 'Kimlik zorlaması açılsın mı?', danger: missing > 0, icon: 'fa-lock',
+            message: missing > 0 ? `${missing} ajan kayıtlı değil; zorlama açılınca bağlantılarını kaybederler.` : 'Anahtarı olmayan ajan artık bağlanamaz.',
+            confirmText: missing > 0 ? `Aç, ${missing} ajan kopsun` : 'Zorlamayı aç'
+        })) { sw.checked = false; return; }
+        try {
+            const d = await POps.busy(sw, () => POps.post('/api/system/enforce-auth', { enabled: turnOn }));
+            S.ver.enforce_agent_auth = d.enforce_agent_auth;
+            POps.toast('success', d.enforce_agent_auth ? 'Kimlik zorlaması açıldı.' : 'Kimlik zorlaması kapatıldı.');
+        } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        renderEnroll();
+    }
+
+    // =================================================================
+    // BİLDİRİMLER
+    // =================================================================
+    const ntBody = () => ({ enabled: $('ntEnabled').checked, min_severity: $('ntSev').value, email_to: $('ntEmail').value.trim(), webhook_url: $('ntWebhook').value.trim() });
+    function renderNotify(d) {
+        S.notify = d;
+        $('ntEnabled').checked = !!d.enabled;
+        $('ntSev').value = d.min_severity || 'high';
+        $('ntEmail').value = d.email_to || '';
+        $('ntWebhook').value = d.webhook_url || '';
+        $('ntSmtp').textContent = d.smtp_configured ? 'Virgülle ayırın. Sunucuda SMTP ayarlı.' : 'E-posta için sunucunun .env dosyasında SMTP_HOST ve SMTP_FROM tanımlanmalı. Webhook ek ayar gerektirmez.';
+        const on = d.enabled && (d.email_to || d.webhook_url);
+        setState('ntState', on ? 'ok' : 'off', on ? 'Dışarıya gönderiliyor' : 'Yalnızca panelde');
+        ntDirty();
+    }
+    async function loadNotify() {
+        if (!IS_SUPER) return;
+        try { renderNotify(await POps.get('/api/system/notify-settings')); }
+        catch (e) { setState('ntState', 'off', 'Okunamadı'); }
+    }
+    function ntDirty() {
+        const d = S.notify, b = ntBody();
+        const dirty = !!d && (b.enabled !== !!d.enabled || b.min_severity !== (d.min_severity || 'high') || b.email_to !== (d.email_to || '') || b.webhook_url !== (d.webhook_url || ''));
+        $('ntSave').className = dirty ? 'btn' : 'btn secondary';
+    }
+    if ($('ntSave')) {
+        $('ntSet').addEventListener('input', ntDirty);
+        $('ntSet').addEventListener('change', ntDirty);
+        $('ntSave').addEventListener('click', async function () {
+            try { renderNotify(await POps.busy(this, () => POps.post('/api/system/notify-settings', ntBody()))); POps.toast('success', 'Bildirim ayarları kaydedildi.'); }
+            catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        });
+        $('ntTest').addEventListener('click', async function () {
+            try {
+                const d = await POps.busy(this, () => POps.post('/api/system/notify-test', ntBody()));
+                if (d.error) POps.toast('error', 'Gönderilemedi: ' + d.error + ((d.channels || []).length ? ' (başarılı: ' + d.channels.join(', ') + ')' : ''));
+                else POps.toast('success', 'Test bildirimi gönderildi: ' + (d.channels || []).join(', '));
+            } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        });
+    }
+
+    // =================================================================
+    // SAKLAMA SÜRELERİ
+    // =================================================================
+    const RT = [['rtLogs', 'retention_days_logs', 'ajan olay kayıtları'], ['rtTasks', 'retention_days_tasks', 'sonuçlanmış görevler'], ['rtNotif', 'retention_days_notifications', 'okunmuş bildirimler']];
+    function renderRetention(d) {
+        S.retention = d;
+        RT.forEach(([id, key]) => { $(id).value = d[key]; });
+        $('rtSave').disabled = true; $('rtSave').className = 'btn secondary';
+    }
+    async function loadRetention() {
+        if (!IS_SUPER) return;
+        try { renderRetention(await POps.get('/api/system/retention')); } catch (e) { /* bölüm boş kalır */ }
+    }
+    if ($('rtSet')) {
+        $('rtSet').addEventListener('input', () => {
+            const dirty = S.retention && RT.some(([id, key]) => String(parseInt($(id).value, 10)) !== String(S.retention[key]));
+            $('rtSave').disabled = !dirty; $('rtSave').className = dirty ? 'btn' : 'btn secondary';
+        });
+        $('rtSave').addEventListener('click', async function () {
+            const body = {};
+            for (const [id, key] of RT) {
+                const n = parseInt($(id).value, 10);
+                if (isNaN(n) || n < 0 || n > 3650) { POps.toast('warning', 'Süre 0 ile 3650 gün arasında olmalı.'); $(id).focus(); return; }
+                body[key] = n;
+            }
+            // Kısalan süre bu gece kayıt siler: onay
+            const shorter = RT.filter(([, key]) => body[key] > 0 && (S.retention[key] === 0 || body[key] < S.retention[key]));
+            if (shorter.length && !await POps.confirm({
+                title: 'Saklama süreleri kısaltılsın mı?', icon: 'fa-clock',
+                message: shorter.map(([, key, label]) => `${body[key]} günden eski ${label}`).join(', ') + ' bu gece silinir. Silinen kayıt geri gelmez.',
+                confirmText: 'Kısalt ve kaydet', danger: true
+            })) return;
+            try { renderRetention(await POps.busy(this, () => POps.post('/api/system/retention', body))); POps.toast('success', 'Saklama süreleri kaydedildi.'); }
+            catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        });
+    }
+
+    // =================================================================
+    // ÖZET + YÜKLEME
+    // =================================================================
+    function renderSummary() {
+        if (!S.ver) return;
+        const I = serverInfo();
+        const A = agentInfo();
+        let html = `<span class="sum"><span class="dot ${escapeHtml(I.k)}"></span>Sunucu <b>${escapeHtml(fmtV(S.ver.running))}</b></span>`
+            + `<span class="sum"><b>${A.all.length}</b> ajan</span>`
+            + (A.old.length ? `<span class="sum"><span class="dot run"></span><b>${A.old.length}</b> eski ajan</span>` : '');
+        if (S.diag) {
+            const n = healthIssues(S.diag).length + (backupState(S.diag.backup) === 'ok' ? 0 : 1);
+            html += n ? `<span class="sum"><span class="dot warn"></span><b>${Number(n)}</b> sorun</span>` : '<span class="sum"><span class="dot ok"></span>Sağlıklı</span>';
+        }
+        const au = store.get(AKEY);
+        if (au && !au.ok) html += '<span class="sum"><span class="dot bad"></span>Denetim zinciri kırık</span>';
+        $('sysSummary').innerHTML = html;
+    }
+
     async function loadAll(check) {
-        const [ver, , devs] = await Promise.all([
-            api('/api/system/version' + (check ? '?check=true' : '')).catch(() => null),
-            loadSelfUpdate(),
-            api('/api/devices').catch(() => null),
+        const [ver] = await Promise.all([
+            POps.get('/api/system/version' + (check ? '?check=true' : '')).catch(() => null),
+            loadSelfUpdate()
         ]);
         if (ver) S.ver = ver;
-        if (Array.isArray(devs)) S.devices = devs;
         if (!S.ver) {
-            $('srv-badge').innerHTML = badge('bad', 'fa-triangle-exclamation', 'Sürüm bilgisi alınamadı');
+            const err = new Error('Sürüm bilgisi alınamadı. Sayfayı yenileyin.');
+            renderServer();
+            ['agSet', 'enSet'].forEach(id => { if ($(id)) POps.setError($(id), err, { compact: true }); });
+            $('sysSummary').innerHTML = '<span class="sum"><span class="dot bad"></span>Sürüm bilgisi alınamadı</span>';
             return;
         }
+        if (S.su && (S.su.pending || (S.su.status && S.su.status.state === 'running')) && !S.suPoll) { S.suBusy = true; S.suBefore = ''; watchSelfUpdate(); }
+        S.checkedAt = new Date();
+        $('checkBtn').dataset.tip = 'Güncellemeleri denetle · son ' + S.checkedAt.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
         renderServer();
-        renderAgentPackage();
-        renderTargets();
-        renderDeploy();
-        renderCapDevices();
-        renderEnforce();
-        loadNotes();
-        $('last-check').textContent = 'Son kontrol: ' + new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        renderAgents(true);
+        renderEnroll();
+        renderSummary();
+        if (check) S.notes = null;
     }
 
-    $('btn-check').addEventListener('click', async function () {
-        this.disabled = true;
-        const i = this.querySelector('i'); i.classList.add('fa-spin');
-        await Promise.all([loadAll(true), loadDiag()]);
-        i.classList.remove('fa-spin'); this.disabled = false;
+    $('checkBtn').addEventListener('click', async function () {
+        await POps.busy(this, () => Promise.all([loadAll(true), loadDiag()]));
+        POps.toast('info', 'Güncellemeler denetlendi.');
     });
 
+    document.addEventListener('pops_data_updated', () => {
+        renderAgents(false); renderCaps(false); renderSummary();
+        if (capHost && POps.drawer.isOpen('syscap:' + capHost)) renderCapDrawer(capHost, true);
+        if (POps.drawer.isOpen('syst:target')) { /* seçim panelindeki liste kendi tazelenir (yazarken bozulmasın) */ }
+    });
+
+    POps.watchDevices();
     loadAll(false);
-    loadEnroll();
-    loadNotify();
     loadDiag();
+    loadTokens();
+    loadNotify();
+    loadRetention();
+    renderAudit();
+    if (rollout) pollRollout();
+    if (state.devicesLoaded) { renderCaps(true); }
     popsTwofaNudge();
 })();
 </script>
+
+<?php include 'includes/footer.php'; ?>

@@ -14,8 +14,9 @@ Kurallar
   2. Yer önemlidir: on*="..." içinde escapeHtml yetmez (tarayıcı &#39;'yi JS çalışmadan önce geri
      çözer), jsArg gerekir; href/src değerinin başında yalnızca encodeURIComponent; etiketin içinde
      (nitelik adı yerine) ve tırnaksız nitelik değerinde yalnızca sabit ya da sayı kabul edilir.
-  3. Adı html / ...Html / ...HTML olan değişkenler ve fonksiyonlar hazır (kaçırılmış) HTML sayılır;
-     bu yüzden bu adlara yapılan her atama da aynı kurallarla denetlenir.
+  3. Adı html / ...Html / ...HTML olan değişkenler, fonksiyonlar ve yöntemler (POps.iconHtml(...)) hazır
+     (kaçırılmış) HTML sayılır; bu yüzden bu adlara yapılan her atama (X.fooHtml = ... dahil) aynı kurallarla
+     denetlenir.
   4. PHP: <?= ?>, echo, print ve die/exit çıktısı htmlspecialchars, json_encode(..., JSON_HEX_TAG...),
      intval/(int) ya da sabit olmalı.
   5. Değişken ve fonksiyonlar ad bazında izlenir: bir adın bütün atamaları (fonksiyonun bütün return'leri)
@@ -701,6 +702,8 @@ class Checker(object):
         method = acc[-2][1] if len(acc) >= 2 and acc[-2][0] == 'prop' else None
         if method in NUM_METHODS:
             return NUM
+        if method and HTML_NAME.match(method) and method not in ('innerHTML', 'outerHTML'):
+            return frozenset(['html'])  # POps.iconHtml(...): ...Html adlı yöntem; tanımı (X.fooHtml = ...) denetlenir
         is_date = toks[0].text == 'new' and b.text == 'Date'
         if method in DATE_TEXT and b.kind == 'id' and (b.text == 'Number' or is_date):
             return LIT  # Number(x).toLocaleString() / new Date(x).toLocale...(): yalnızca rakam ve tarih metni
@@ -826,8 +829,9 @@ class Checker(object):
 
 # ---------------------------------------------------------------- PHP
 PHP_OPEN = re.compile(r'<\?(?:php\b|=)', re.I)
+# pops_icon: panelin simge yardımcısı (Dashboard/includes/header.php); bütün parçalarını htmlspecialchars ile yazar
 PHP_SAFE_FUNCS = {'htmlspecialchars', 'htmlentities', 'intval', 'floatval', 'boolval', 'count', 'time', 'date',
-                  'number_format', 'urlencode', 'rawurlencode', 'strlen'}
+                  'number_format', 'urlencode', 'rawurlencode', 'strlen', 'pops_icon'}
 
 
 def php_skip(src, i):

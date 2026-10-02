@@ -126,6 +126,12 @@ class CheckerTests(unittest.TestCase):
         got = self.scan_text(page, '.php')
         self.assertEqual([f.line for f in got], [4])
 
+    def test_html_named_methods(self):
+        # Çağrı hazır HTML sayılır; tanımın kendisi denetlenir
+        self.assertEqual(self.scan_text("el.innerHTML = `<b>${POps.iconHtml('x')}</b>`;\n", '.js'), [])
+        self.assertTrue(self.scan_text("POps.iconHtml = function (n) { return `<i>${n}</i>`; };\n", '.js'))
+        self.assertTrue(self.scan_text("el.innerHTML = `<b>${POps.icon('x')}</b>`;\n", '.js'))
+
     def test_inference_follows_reassignment(self):
         js = "let cls = 'a';\ncls = d.status;\nel.innerHTML = `<i class=\"${cls}\"></i>`;\n"
         self.assertTrue(self.scan_text(js, '.js'))

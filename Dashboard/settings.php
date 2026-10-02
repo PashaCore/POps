@@ -1,406 +1,615 @@
 <?php include 'includes/header.php'; ?>
+<?php
+$isSuper = ($_SESSION['role'] ?? '') === 'superadmin';
+// Kullanıcının açabileceği sayfalar (kontrol merkezi herkese açık, Sistem yalnızca süper admin)
+$permPages = [
+    'devices' => 'Cihazlar', 'labs' => 'Sınıflar', 'tasks' => 'İşlemler', 'terminal' => 'Uzak komut',
+    'vision' => 'Uzak ekran', 'deploy' => 'Dağıtım', 'policies' => 'Politikalar', 'logger' => 'Kayıtlar',
+    'reports' => 'Raporlar', 'helpdesk' => 'Destek talepleri', 'settings' => 'Ayarlar',
+];
+$viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php ile aynı
+?>
 
 <style>
-    .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: var(--space-5); margin-bottom: var(--space-8); align-items: start; }
-    .setting-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5); box-shadow: var(--shadow-xs); }
-    .setting-header { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); margin-bottom: var(--space-4); display: flex; align-items: center; gap: 0.625rem; padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
-    .setting-header i { color: var(--primary-500); }
+    /* Ayar bölümü: solda başlık ve kısa açıklama, sağda ayar satırları; dar ekranda alt alta */
+    .sects > .sect { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); gap: 14px 48px; padding: 28px 0; border-top: 1px solid var(--border-subtle); }
+    .sects > .sect:first-child { border-top: 0; padding-top: 4px; }
+    .sect-head h2 { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); }
+    .sect-head p { font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.55; margin-top: 6px; }
+    .sect-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .srow.block { display: block; }
+    .srow .val { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-secondary); text-align: right; overflow-wrap: anywhere; min-width: 0; max-width: 60%; }
+    .srow .st { display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); color: var(--text-secondary); white-space: nowrap; }
+    .srow input[type=number] { width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
+    .srow .unit { font-size: var(--text-sm); color: var(--text-tertiary); }
+    .faint { color: var(--text-muted); }
 
-    .setting-group { margin-bottom: var(--space-4); }
-    .setting-label { display: block; font-size: 0.75rem; color: var(--text-tertiary); font-weight: var(--fw-semibold); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em; }
-    .setting-input { font-family: var(--font-mono); }
-    .setting-input:disabled { opacity: 0.6; cursor: not-allowed; background: var(--bg-surface-2); }
+    /* Kullanıcılar */
+    .user-table tbody tr { cursor: pointer; }
+    .user-table tbody tr.is-focus { background: var(--primary-50); }
+    .user-table td { padding-top: 11px; padding-bottom: 11px; white-space: nowrap; }
+    body.drawer-open .user-table .col-access { display: none; }   /* panel açıkken tablo daralır; erişim panelde yazar */
+    .user-table .nm { display: flex; align-items: center; gap: 10px; font-weight: var(--fw-semibold); min-width: 0; }
+    .user-table .nm > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .av { width: 28px; height: 28px; border-radius: 99px; background: var(--bg-surface-3); color: var(--text-secondary); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: var(--fw-semibold); flex: none; }
+    .you { font-size: var(--text-xs); color: var(--text-muted); font-weight: var(--fw-regular); margin-left: 6px; }
+    .user-table td.when { color: var(--text-tertiary); white-space: nowrap; }
 
-    .status-box { padding: 0.75rem 1rem; border-radius: var(--radius-md); display: flex; align-items: center; gap: 0.625rem; font-weight: var(--fw-semibold); margin-top: 1rem; font-size: var(--text-sm); }
-    .status-box.online { background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text); }
-    .status-box.offline { background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text); }
-    .status-box.warning { background: var(--warning-bg); border: 1px solid var(--warning-border); color: var(--warning-text); }
+    /* Kullanıcı paneli: işlem listesi */
+    .uact { overflow: hidden; }
+    .uact .srow { width: 100%; text-align: left; font-size: var(--text-sm); color: var(--text-primary); padding: 12px 14px; gap: 12px; }
+    .uact .srow:hover { background: var(--bg-surface-2); }
+    .uact .srow .ico { color: var(--text-tertiary); }
+    .uact .srow .grow { flex: 1; }
+    .uact .srow.danger, .uact .srow.danger .ico { color: var(--danger-text); }
+    .uact .srow.danger:hover { background: var(--danger-bg); }
+    .drawer .dnote { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
 
-    .info-alert { background: var(--info-bg); border-left: 3px solid var(--info-solid); padding: 0.75rem 1rem; border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--info-text); margin-bottom: var(--space-4); display: flex; gap: 0.5rem; align-items: flex-start; line-height: 1.5; }
+    /* 2FA kurulumu */
+    .tf-setup { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px 24px; align-items: start; }
+    .tf-qr { background: #fff; padding: 10px; border-radius: 12px; box-shadow: 0 0 0 1px var(--border-subtle); min-width: 200px; min-height: 200px; display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); color: var(--text-muted); text-align: center; }
+    .tf-steps { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .tf-step { display: flex; gap: 10px; align-items: baseline; font-size: var(--text-sm); color: var(--text-primary); }
+    .tf-step .n { width: 20px; height: 20px; border-radius: 99px; background: var(--bg-surface-3); color: var(--text-secondary); font-size: 11px; font-weight: var(--fw-semibold); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+    .tf-steps .input-group input { font-family: var(--font-mono); }
+    #twofaCode { max-width: 140px; letter-spacing: 0.12em; }
 
-    .user-table-wrapper { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-4); box-shadow: var(--shadow-xs); }
-    .perm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem; font-size: var(--text-sm); }
-    .perm-grid label { display: flex; align-items: center; gap: 0.5rem; padding: 0.4375rem 0.625rem; background: var(--bg-surface-2); border-radius: var(--radius-sm); cursor: pointer; transition: background-color 0.1s; font-weight: var(--fw-regular); color: var(--text-primary); }
-    .perm-grid label:hover { background: var(--bg-surface); }
-    .perm-grid input { width: 16px; height: 16px; accent-color: var(--primary-500); }
+    /* Kullanıcı formu */
+    .perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; }
+    .perm-grid .check { padding: 5px 0; }
+    .perm-grid .check.is-blocked { color: var(--text-muted); cursor: not-allowed; }
 
-    .modal-section { margin-bottom: 1rem; }
-    .modal-section label { display: block; font-size: 0.75rem; color: var(--text-tertiary); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.375rem; }
+    /* Kaydedilmemiş değişiklik çubuğu */
+    .savebar { position: sticky; bottom: 16px; z-index: 50; width: fit-content; max-width: 100%; margin: 24px auto 0; display: flex; align-items: center; gap: 10px; padding: 7px 7px 7px 16px; background: var(--bg-surface); border-radius: 14px; box-shadow: 0 0 0 1px var(--border-subtle), 0 8px 28px rgba(0, 0, 0, 0.10); font-size: var(--text-sm); color: var(--text-primary); }
+    .savebar .btn { margin-left: 2px; }
+    @media (max-width: 960px) { .sects > .sect { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 22px 0; } }
+    @media (max-width: 640px) {
+        .hide-sm { display: none; }
+        .tf-setup { grid-template-columns: minmax(0, 1fr); }
+        .tf-qr { justify-self: center; }
+        .savebar { width: 100%; }
+        .savebar .sb-text { flex: 1; }
+    }
 </style>
 
 <div class="page-header">
     <div>
-        <h1><i class="fas fa-gear"></i> Sistem Ayarları</h1>
-        <p>Merkez sunucu bağlantıları ve orkestrasyon kuralları</p>
+        <h1>Ayarlar</h1>
+        <div class="summary">
+            <span class="sum" id="sumUsers">Yükleniyor…</span>
+            <span class="sum" id="sumConn" hidden></span>
+            <span class="sum" id="sumTwofa" hidden></span>
+        </div>
+    </div>
+    <?php if ($isSuper): ?>
+    <div class="page-header-actions">
+        <button type="button" class="btn" id="addUserBtn"><?php echo pops_icon('plus', 'sm'); ?>Kullanıcı ekle</button>
+    </div>
+    <?php endif; ?>
+</div>
+
+<div class="sects">
+    <section class="sect" aria-labelledby="hUsers">
+        <div class="sect-head">
+            <h2 id="hUsers">Kullanıcılar</h2>
+            <p>Panele kimlerin girebileceği ve hangi sayfaları açabileceği. Ayrıntı ve işlemler için bir kullanıcıya tıklayın.<?php if (!$isSuper): ?> Kullanıcıları yalnızca süper admin ekler, düzenler ve siler.<?php endif; ?></p>
+        </div>
+        <div class="sect-body">
+            <div class="table-wrap">
+                <table class="data-table user-table">
+                    <thead><tr><th>Kullanıcı</th><th>Rol</th><th class="hide-sm col-access">Erişim</th><th>Son giriş</th></tr></thead>
+                    <tbody id="userBody"><tr><td colspan="4"><div class="loading-state" role="status"><span class="spinner"></span>Kullanıcılar yükleniyor…</div></td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="sect" id="twofaCard" aria-labelledby="hTwofa">
+        <div class="sect-head">
+            <h2 id="hTwofa">İki adımlı doğrulama</h2>
+            <p>Girişte şifreye ek olarak doğrulama uygulamasından (Google Authenticator, Authy, Microsoft Authenticator) 6 haneli kod istenir. Yalnızca kendi hesabınız için geçerlidir.</p>
+        </div>
+        <div class="sect-body">
+            <div class="set">
+                <div class="srow">
+                    <div class="grow">
+                        <div class="t">Hesabınızda 2FA</div>
+                        <div class="d" id="twofaDesc">Önerilir, zorunlu değildir.</div>
+                    </div>
+                    <span class="st" id="twofaState"><span class="spinner sm"></span></span>
+                    <button type="button" class="btn secondary sm" id="twofaBtn" hidden></button>
+                </div>
+                <div class="srow block" id="twofaSetup" hidden>
+                    <div class="tf-setup">
+                        <div class="tf-qr" id="twofaQr" aria-label="2FA kurulum QR kodu"></div>
+                        <div class="tf-steps">
+                            <div class="tf-step"><span class="n">1</span><span>Doğrulama uygulamasında yeni hesap ekleyip QR kodu okutun.</span></div>
+                            <div class="field" style="margin:0">
+                                <label for="twofaSecret">QR okutamıyorsanız bu anahtarı elle girin</label>
+                                <div class="input-group">
+                                    <input type="text" id="twofaSecret" readonly spellcheck="false">
+                                    <button type="button" class="ibtn boxed" id="twofaCopy" data-tip="Anahtarı kopyala" data-tip-pos="left" aria-label="Anahtarı kopyala"><?php echo pops_icon('copy'); ?></button>
+                                </div>
+                            </div>
+                            <div class="tf-step"><span class="n">2</span><span>Uygulamanın gösterdiği 6 haneli kodu yazın.</span></div>
+                            <div class="input-group">
+                                <input type="text" id="twofaCode" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" aria-label="6 haneli kod">
+                                <button type="button" class="btn" id="twofaEnableBtn">Etkinleştir</button>
+                                <button type="button" class="btn ghost" id="twofaCancelBtn">Vazgeç</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="sect" aria-labelledby="hQueue">
+        <div class="sect-head">
+            <h2 id="hQueue">Görev kuyruğu</h2>
+            <p>Dosya indirme ve kurulum gibi görevler ağ boğulmasın diye paketler halinde gönderilir.</p>
+        </div>
+        <div class="sect-body">
+            <div class="set">
+                <div class="srow">
+                    <div class="grow">
+                        <div class="t" id="queueLimitLabel">Eşzamanlı görev sınırı</div>
+                        <div class="d">Aynı anda görev alan en çok bilgisayar sayısı. 1 Gbit ağda en çok 15 önerilir.</div>
+                    </div>
+                    <input type="number" id="queueLimit" min="1" max="200" inputmode="numeric" aria-labelledby="queueLimitLabel" disabled>
+                    <span class="unit">bilgisayar</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="sect" aria-labelledby="hServer">
+        <div class="sect-head">
+            <h2 id="hServer">Sunucu bağlantısı</h2>
+            <p>Adresler sunucudaki <code>.env</code> dosyasından okunur (<code>POPS_API_URL</code>, <code>POPS_API_INTERNAL_URL</code>) ve buradan değiştirilemez. Ayrıntı: <code>docs/configuration.md</code></p>
+        </div>
+        <div class="sect-body">
+            <div class="set">
+                <div class="srow">
+                    <div class="grow">
+                        <div class="t">Bağlantı</div>
+                        <div class="d" id="connDesc">Panelin merkez sunucuya ulaşıp ulaşmadığı</div>
+                    </div>
+                    <span class="st" id="connState"><span class="spinner sm"></span>Sınanıyor</span>
+                    <button type="button" class="ibtn sm" id="connRetry" data-tip="Yeniden sına" data-tip-pos="left" aria-label="Bağlantıyı yeniden sına"><?php echo pops_icon('refresh', 'sm'); ?></button>
+                </div>
+                <div class="srow">
+                    <div class="grow"><div class="t">REST API adresi</div></div>
+                    <span class="val" id="dispHttpUrl">—</span>
+                </div>
+                <div class="srow">
+                    <div class="grow"><div class="t">WebSocket adresi</div></div>
+                    <span class="val" id="dispWsUrl">—</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="savebar" id="saveBar" role="region" aria-label="Kaydedilmemiş değişiklikler" hidden>
+        <span class="dot warn" aria-hidden="true"></span>
+        <span class="sb-text">Kaydedilmemiş değişiklik var</span>
+        <button type="button" class="btn secondary sm" id="discardBtn">Vazgeç</button>
+        <button type="button" class="btn sm" id="saveBtn">Kaydet</button>
     </div>
 </div>
 
-<div class="settings-grid">
-    <div class="setting-card">
-        <div class="setting-header">
-            <i class="fas fa-network-wired"></i> Merkez API Bağlantısı
+<?php if ($isSuper): ?>
+<div class="modal-overlay" id="userModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title" id="umTitle">Kullanıcı ekle</div>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x', 'sm'); ?></button>
         </div>
-        <div class="info-alert">
-            <i class="fas fa-shield-halved"></i>
-            <div>Adresler sunucudaki <code>.env</code> dosyasından okunur (<code>POPS_API_URL</code>, <code>POPS_API_INTERNAL_URL</code>); buradan değiştirilemez. Ayrıntı: <code>docs/configuration.md</code>.</div>
-        </div>
-        <div class="setting-group">
-            <label class="setting-label">REST API Adresi (HTTP)</label>
-            <input type="text" class="setting-input" id="dispHttpUrl" disabled value="Yükleniyor...">
-        </div>
-        <div class="setting-group">
-            <label class="setting-label">WebSocket Adresi (WSS)</label>
-            <input type="text" class="setting-input" id="dispWsUrl" disabled value="Yükleniyor...">
-        </div>
-        <div id="apiStatus" class="status-box warning">
-            <i class="fas fa-arrows-rotate fa-spin"></i> Bağlantı sınanıyor...
-        </div>
-    </div>
-
-    <div class="setting-card">
-        <div class="setting-header">
-            <i class="fas fa-rocket" style="color:var(--warning-solid);"></i> Orkestrasyon Performansı
-        </div>
-        <p style="font-size:var(--text-sm);color:var(--text-tertiary);margin-bottom:1rem;line-height:1.5;">
-            POps ağın çökmemesi için görevleri (dosya indirme, kurulum) paketler halinde gönderir.
-        </p>
-        <div class="setting-group">
-            <label class="setting-label">Akıllı Kuyruk Limiti (Eşzamanlı)</label>
-            <div style="display:flex;gap:0.5rem;align-items:center;">
-                <input type="number" class="setting-input" id="queueLimitInput" min="1" max="100" placeholder="Örn: 5">
-                <span style="color:var(--text-tertiary);font-size:var(--text-sm);white-space:nowrap;">cihaz / eşzamanlı</span>
+        <div class="modal-body">
+            <div class="field" id="umNameField">
+                <label for="umName">Kullanıcı adı</label>
+                <input type="text" id="umName" maxlength="64" autocomplete="off" spellcheck="false">
+                <div class="field-error">Kullanıcı adı girin.</div>
             </div>
-            <div style="font-size:0.75rem;color:var(--warning-text);margin-top:0.5rem;"><i class="fas fa-info-circle"></i> 1 Gbit ağlar için maksimum 15 önerilir.</div>
-        </div>
-        <button class="btn" id="saveOrchestrationBtn" style="width:100%;padding:0.75rem;" onclick="saveLimits()">
-            <i class="fas fa-save"></i> Performans Ayarlarını Kaydet
-        </button>
-    </div>
-
-    <div class="setting-card" id="twofaCard">
-        <div class="setting-header">
-            <i class="fas fa-shield-halved" style="color:var(--success-solid);"></i> İki Adımlı Doğrulama (2FA)
-        </div>
-        <p style="font-size:var(--text-sm);color:var(--text-tertiary);margin-bottom:1rem;line-height:1.5;">
-            Girişte şifreye ek olarak authenticator uygulamasından (Google Authenticator, Authy, Microsoft Authenticator) 6 haneli kod ister. Yalnızca <strong>kendi hesabınız</strong> için geçerlidir.
-        </p>
-        <div id="twofaStatus" class="status-box warning"><i class="fas fa-arrows-rotate fa-spin"></i> Durum yükleniyor...</div>
-
-        <div id="twofaSetup" style="display:none;margin-top:1rem;">
-            <div id="twofaQr" style="display:flex;justify-content:center;margin:1rem 0;background:#fff;padding:0.75rem;border-radius:var(--radius-md);"></div>
-            <div class="setting-group">
-                <label class="setting-label">Manuel Anahtar (QR okutamazsanız)</label>
-                <input type="text" class="setting-input" id="twofaSecret" readonly onclick="this.select()" style="font-size:0.8rem;">
+            <div class="field" id="umPassField">
+                <label for="umPass">Şifre</label>
+                <input type="password" id="umPass" autocomplete="new-password">
+                <div class="field-error">Şifre girin.</div>
+                <div class="field-hint">En az 8 karakter önerilir.</div>
             </div>
-            <div class="setting-group">
-                <label class="setting-label">Uygulamadaki 6 Haneli Kod</label>
-                <input type="text" class="setting-input" id="twofaEnableCode" inputmode="numeric" maxlength="6" placeholder="123456">
+            <div class="field">
+                <span class="field-label">Rol</span>
+                <div class="segmented block" id="umRole" role="group" aria-label="Rol">
+                    <button type="button" data-role="viewer" aria-pressed="false">İzleyici</button>
+                    <button type="button" data-role="admin" aria-pressed="false">Yönetici</button>
+                    <button type="button" data-role="superadmin" aria-pressed="false">Süper admin</button>
+                </div>
+                <div class="field-hint" id="umRoleHint"></div>
             </div>
-            <button class="btn" style="width:100%;padding:0.75rem;" onclick="twofaEnable()"><i class="fas fa-check"></i> Etkinleştir</button>
+            <div class="field" id="umPerms">
+                <span class="field-label">Açabileceği sayfalar</span>
+                <div class="perm-grid">
+                    <?php foreach ($permPages as $key => $label): ?>
+                    <label class="check" data-page="<?php echo htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>"><input type="checkbox" class="perm-cb" value="<?php echo htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></label>
+                    <?php endforeach; ?>
+                </div>
+                <div class="field-hint" id="umPermsHint">Kontrol merkezi herkese açıktır.</div>
+            </div>
+            <div class="alert info" id="umSelf" hidden><div>Kendi hesabınızı değiştirince yeniden giriş yapmanız gerekir.</div></div>
         </div>
-
-        <div style="margin-top:1rem;">
-            <button class="btn" id="twofaSetupBtn" style="width:100%;padding:0.75rem;display:none;" onclick="twofaSetup()"><i class="fas fa-plus"></i> 2FA Kur</button>
-            <button class="btn danger" id="twofaDisableBtn" style="width:100%;padding:0.75rem;display:none;" onclick="twofaDisable()"><i class="fas fa-shield-xmark"></i> 2FA'yı Devre Dışı Bırak</button>
+        <div class="modal-footer">
+            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
+            <button type="button" class="btn" id="umSave">Kullanıcıyı ekle</button>
         </div>
     </div>
 </div>
+<?php endif; ?>
 
 <!-- QR üretimi tarayıcıda yapılır (gizli anahtar dışarı gitmez). Kütüphane yerelde
      barındırılır → çevrimdışı okullarda da çalışır, harici CDN'e bağımlı değildir. -->
 <script src="assets/vendor/qrcode.min.js"></script>
 
-<div class="page-header" style="margin-top:var(--space-8);margin-bottom:var(--space-4);">
-    <div><h2 style="font-size:var(--text-2xl);"><i class="fas fa-users" style="color:var(--primary-500);"></i> Kullanıcı Yönetimi</h2></div>
-    <button class="btn" onclick="openUserModal()"><i class="fas fa-user-plus"></i> Yeni Kullanıcı Ekle</button>
-</div>
-
-<div class="user-table-wrapper">
-    <div style="overflow-x:auto;"><table class="data-table" id="usersTable">
-        <thead>
-            <tr><th style="width:60px;">ID</th><th>Kullanıcı Adı</th><th>Rol</th><th>Son Giriş</th><th style="text-align:right;width:120px;">İşlem</th></tr>
-        </thead>
-        <tbody><tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-tertiary);">Yükleniyor...</td></tr></tbody>
-    </table></div>
-</div>
-
-<div class="modal-overlay" id="userModal">
-    <div class="modal-box">
-        <div class="modal-header">
-            <div class="modal-title" id="modalTitle">Yeni Kullanıcı Ekle</div>
-            <button class="modal-close" onclick="closeModal('userModal')"><i class="fas fa-xmark"></i></button>
-        </div>
-        <div class="modal-body">
-            <input type="hidden" id="modalUserId">
-            <div class="modal-section">
-                <label>Kullanıcı Adı</label>
-                <input type="text" id="modalUsername">
-            </div>
-            <div class="modal-section">
-                <label>Şifre <span style="font-size:0.6875rem;color:var(--text-muted);">(Değiştirmek istemiyorsanız boş bırakın)</span></label>
-                <input type="password" id="modalPassword">
-            </div>
-            <div class="modal-section">
-                <label>Yetki Rolü</label>
-                <select id="modalRole" onchange="togglePermissionsDiv()">
-                    <option value="viewer">İzleyici (yalnızca görüntüler)</option>
-                    <option value="admin">Standart Yönetici</option>
-                    <option value="superadmin">Süper Admin (Tüm Yetkiler)</option>
-                </select>
-            </div>
-            <div class="modal-section" id="permissionsDiv">
-                <label>Erişebileceği Sayfalar</label>
-                <div class="perm-grid">
-                    <label><input type="checkbox" class="perm-cb" value="devices"> Cihaz Yönetimi</label>
-                    <label><input type="checkbox" class="perm-cb" value="labs"> Lab Yönetimi</label>
-                    <label><input type="checkbox" class="perm-cb" value="vision"> POpsVision</label>
-                    <label><input type="checkbox" class="perm-cb" value="tasks"> Görev Kuyruğu</label>
-                    <label><input type="checkbox" class="perm-cb" value="deploy"> Dosya Dağıtımı</label>
-                    <label><input type="checkbox" class="perm-cb" value="logger"> Log & Envanter</label>
-                    <label><input type="checkbox" class="perm-cb" value="reports"> Raporlar</label>
-                    <label><input type="checkbox" class="perm-cb" value="helpdesk"> Yardım Masası</label>
-                    <label><input type="checkbox" class="perm-cb" value="policies"> Politikalar</label>
-                    <label><input type="checkbox" class="perm-cb" value="terminal"> Orkestratör</label>
-                    <label><input type="checkbox" class="perm-cb" value="settings"> Sistem Ayarları</label>
-                </div>
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn secondary" onclick="closeModal('userModal')">İptal</button>
-            <button class="btn" onclick="saveUser()">Kaydet</button>
-        </div>
-    </div>
-</div>
-
 <script>
-const apiBase = (typeof OMYO_API !== 'undefined') ? OMYO_API.HTTP_URL : '';
-
-document.addEventListener('DOMContentLoaded', () => {
-    if (typeof OMYO_API !== 'undefined') {
-        document.getElementById('dispHttpUrl').value = OMYO_API.HTTP_URL;
-        document.getElementById('dispWsUrl').value = OMYO_API.WS_URL;
-        testApiConnection();
-        fetchCurrentLimits();
-        loadUsers();
-        loadTwofaStatus();
-    } else {
-        document.getElementById('dispHttpUrl').value = 'HATA: api_config.js okunamadı!';
-        document.getElementById('dispWsUrl').value = 'HATA: api_config.js okunamadı!';
-        document.getElementById('apiStatus').className = 'status-box offline';
-        document.getElementById('apiStatus').innerHTML = '<i class="fas fa-xmark-circle"></i> Sistem Konfigürasyonu Bulunamadı!';
+(function () {
+    const $ = (id) => document.getElementById(id);
+    const IS_SUPER = window.USER_ROLE === 'superadmin';
+    const ME = <?php echo json_encode((string)($_SESSION['username'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+    const PAGES = <?php echo json_encode($permPages, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+    const VIEWER_BLOCKED = <?php echo json_encode($viewerBlocked, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+    const ROLES = {
+        superadmin: { word: 'Süper admin', hint: 'Her şeye erişir: bütün sayfalar, kullanıcılar ve Sistem.' },
+        admin: { word: 'Yönetici', hint: 'Seçilen sayfalarda günlük işleri yapar.' },
+        viewer: { word: 'İzleyici', hint: 'Seçilen sayfaları yalnızca görüntüler; Dağıtım, Uzak komut ve Ayarlar kapalıdır.' }
+    };
+    const roleWord = (r) => (ROLES[r] || { word: r || '—' }).word;
+    const pageName = (k) => PAGES[k] || k;
+    // Sunucunun "YYYY-MM-DD HH:MM:SS" (yerel saat) biçimi her tarayıcıda okunsun
+    const loginDate = (v) => (v ? POps.toDate(String(v).replace(' ', 'T')) : null);
+    function permsOf(u) {
+        try { const p = JSON.parse(u.permissions || '[]'); return Array.isArray(p) ? p.filter(x => typeof x === 'string') : []; } catch (e) { return []; }
     }
-});
 
-async function testApiConnection() {
-    const box = document.getElementById('apiStatus');
-    try {
-        const start = Date.now();
-        const res = await fetch(`${apiBase}/api/devices`, { method: 'GET', cache: 'no-cache' });
-        if (res.ok) {
-            const ms = Date.now() - start;
-            box.className = 'status-box online';
-            box.innerHTML = `<i class="fas fa-check-circle"></i> Sistem Aktif (Gecikme: ${ms}ms)`;
-        } else { throw new Error('HTTP ' + res.status); }
-    } catch (e) {
-        box.className = 'status-box offline';
-        box.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Merkez Sunucuya Ulaşılamıyor!';
+    let users = [];
+    let usersLoaded = false;
+    let focusId = null;
+    let twofaOn = null;
+    let limitSaved = null;
+
+    // ================= KULLANICILAR =================
+    function accessText(u) {
+        if (u.role === 'superadmin') return 'Bütün sayfalar';
+        const n = permsOf(u).filter(k => PAGES[k]).length;
+        return n ? `${n} sayfa` : 'Yalnızca kontrol merkezi';
     }
-}
-
-async function fetchCurrentLimits() {
-    if (!apiBase) return;
-    try {
-        const res = await fetch(`${apiBase}/api/get_concurrent_limit`);
-        if (res.ok) { const data = await res.json(); document.getElementById('queueLimitInput').value = data.limit || 5; }
-    } catch (e) {}
-}
-
-async function saveLimits() {
-    if (!apiBase) return;
-    const btn = document.getElementById('saveOrchestrationBtn');
-    const limitValue = parseInt(document.getElementById('queueLimitInput').value);
-    if (!limitValue || limitValue < 1 || limitValue > 200) return showToast('1-200 arası geçerli bir limit girin.', 'warning');
-    const oldText = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Kaydediliyor...'; btn.disabled = true;
-    try {
-        const res = await fetch(`${apiBase}/api/set_concurrent_limit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: limitValue }) });
-        if (res.ok) showToast('Orkestrasyon kuralları güncellendi.', 'success');
-        else throw new Error();
-    } catch (e) { showToast('Sunucuya ulaşılamadı.', 'error'); }
-    finally { btn.innerHTML = oldText; btn.disabled = false; }
-}
-
-let usersList = [];
-
-async function loadUsers() {
-    try {
-        const res = await fetch(`${apiBase}/api/admin/users`);
-        if (res.ok) { const data = await res.json(); usersList = data.users || []; renderUsersTable(); }
-    } catch (e) { console.error('Kullanıcılar yüklenemedi', e); }
-}
-
-function renderUsersTable() {
-    const tbody = document.querySelector('#usersTable tbody');
-    tbody.innerHTML = '';
-    if (usersList.length === 0) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-tertiary);">Kayıtlı kullanıcı bulunamadı.</td></tr>'; return; }
-    usersList.forEach(u => {
-        const roleStr = u.role === 'superadmin' ? '<span class="badge success">Süper Admin</span>'
-            : u.role === 'viewer' ? '<span class="badge">İzleyici</span>' : '<span class="badge warning">Admin</span>';
-        tbody.innerHTML += `<tr>
-            <td style="color:var(--text-tertiary);">#${escapeHtml(u.id)}</td>
-            <td><strong>${escapeHtml(u.username)}</strong></td>
-            <td>${roleStr}</td>
-            <td style="color:var(--text-tertiary);font-size:var(--text-sm);">${escapeHtml(u.last_login || '-')}</td>
-            <td style="text-align:right;">
-                <button class="btn sm secondary" onclick="editUser(${jsArg(u.id)})" style="padding:0.25rem 0.5rem;"><i class="fas fa-pen"></i></button>
-                ${u.role !== 'superadmin' ? `<button class="btn sm danger" onclick="deleteUser(${jsArg(u.id)})" style="padding:0.25rem 0.5rem;margin-left:0.25rem;"><i class="fas fa-trash"></i></button>` : ''}
-            </td>
+    function rowHtml(u) {
+        const self = u.username === ME;
+        const initial = String(u.username || '?').charAt(0).toLocaleUpperCase('tr');
+        const when = loginDate(u.last_login);
+        const lastHtml = when ? POps.timeHtml(when) : '<span class="faint">Hiç girmedi</span>';
+        return `<tr data-id="${Number(u.id)}" tabindex="0" class="${focusId === u.id ? 'is-focus' : ''}">
+            <td><div class="nm"><span class="av" aria-hidden="true">${escapeHtml(initial)}</span><span>${escapeHtml(u.username)}${self ? '<span class="you">siz</span>' : ''}</span></div></td>
+            <td>${escapeHtml(roleWord(u.role))}</td>
+            <td class="hide-sm col-access" title="${escapeHtml(u.role === 'superadmin' ? '' : permsOf(u).map(pageName).join(', '))}">${escapeHtml(accessText(u))}</td>
+            <td class="when">${lastHtml}</td>
         </tr>`;
-    });
-}
-
-function openUserModal() {
-    document.getElementById('modalTitle').innerText = 'Yeni Kullanıcı Ekle';
-    document.getElementById('modalUserId').value = '';
-    document.getElementById('modalUsername').value = '';
-    document.getElementById('modalPassword').value = '';
-    document.getElementById('modalRole').value = 'admin';
-    document.querySelectorAll('.perm-cb').forEach(cb => cb.checked = false);
-    togglePermissionsDiv();
-    openModal('userModal');
-}
-
-function togglePermissionsDiv() {
-    document.getElementById('permissionsDiv').style.display = document.getElementById('modalRole').value === 'superadmin' ? 'none' : 'block';
-}
-
-function editUser(id) {
-    const user = usersList.find(u => u.id === id);
-    if (!user) return;
-    document.getElementById('modalTitle').innerText = 'Kullanıcı Düzenle';
-    document.getElementById('modalUserId').value = user.id;
-    document.getElementById('modalUsername').value = user.username;
-    document.getElementById('modalPassword').value = '';
-    document.getElementById('modalRole').value = user.role;
-    document.querySelectorAll('.perm-cb').forEach(cb => cb.checked = false);
-    if (user.permissions) {
-        try {
-            const perms = JSON.parse(user.permissions);
-            document.querySelectorAll('.perm-cb').forEach(cb => { if (perms.includes(cb.value)) cb.checked = true; });
-        } catch (e) {}
     }
-    togglePermissionsDiv();
-    openModal('userModal');
-}
-
-async function saveUser() {
-    const id = document.getElementById('modalUserId').value;
-    const username = document.getElementById('modalUsername').value;
-    const password = document.getElementById('modalPassword').value;
-    const role = document.getElementById('modalRole').value;
-    const perms = [];
-    document.querySelectorAll('.perm-cb').forEach(cb => { if (cb.checked) perms.push(cb.value); });
-    if (!username || (!id && !password)) return showToast('Kullanıcı adı ve şifre girin.', 'warning');
-    const payload = { username, password: password || undefined, role, permissions: JSON.stringify(perms) };
-    const method = id ? 'PUT' : 'POST';
-    const url = id ? `${apiBase}/api/admin/users/${encodeURIComponent(id)}` : `${apiBase}/api/admin/users`;
-    try {
-        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (res.ok) { closeModal('userModal'); loadUsers(); showToast('Kullanıcı kaydedildi.', 'success'); }
-        else showToast(await apiErrorMessage(res, 'Kaydedilemedi.'), 'error');
-    } catch (e) { showToast('Bağlantı hatası.', 'error'); }
-}
-
-async function deleteUser(id) {
-    if (!await POps.confirm({ title: 'Kullanıcı silinsin mi?', message: 'Kullanıcının açık oturumları da kapanır. Bu işlem geri alınamaz.', confirmText: 'Sil', danger: true })) return;
-    try {
-        const res = await fetch(`${apiBase}/api/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        if (res.ok) { loadUsers(); showToast('Kullanıcı silindi.', 'success'); }
-        else showToast(await apiErrorMessage(res, 'Silinemedi.'), 'error');
-    } catch (e) { showToast('Silinemedi.', 'error'); }
-}
-
-// ============== İKİ ADIMLI DOĞRULAMA (2FA) ==============
-async function loadTwofaStatus() {
-    try {
-        const res = await fetch(`${apiBase}/api/admin/2fa/status`);
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        renderTwofa(!!data.enabled);
-    } catch (e) {
-        const box = document.getElementById('twofaStatus');
-        box.className = 'status-box offline';
-        box.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Durum alınamadı';
-    }
-}
-
-function renderTwofa(enabled) {
-    const box = document.getElementById('twofaStatus');
-    document.getElementById('twofaSetup').style.display = 'none';
-    document.getElementById('twofaSetupBtn').style.display = enabled ? 'none' : 'block';
-    document.getElementById('twofaDisableBtn').style.display = enabled ? 'block' : 'none';
-    if (typeof popsTwofaNudge === 'function') popsTwofaNudge(enabled);
-    if (enabled) {
-        box.className = 'status-box online';
-        box.innerHTML = '<i class="fas fa-lock"></i> 2FA aktif — girişte kod istenir';
-    } else {
-        box.className = 'status-box warning';
-        box.innerHTML = '<i class="fas fa-lock-open"></i> 2FA kapalı';
-    }
-}
-
-async function twofaSetup() {
-    try {
-        const res = await fetch(`${apiBase}/api/admin/2fa/setup`, { method: 'POST' });
-        if (!res.ok) return showToast(await apiErrorMessage(res, 'Kurulum başlatılamadı.'), 'error');
-        const data = await res.json();
-        document.getElementById('twofaSecret').value = data.secret || '';
-        const qr = document.getElementById('twofaQr');
-        qr.innerHTML = '';
-        if (typeof QRCode !== 'undefined' && data.otpauth_uri) {
-            new QRCode(qr, { text: data.otpauth_uri, width: 180, height: 180 });
-        } else {
-            qr.innerHTML = '<span style="font-size:var(--text-xs);color:#666;">QR yüklenemedi — aşağıdaki manuel anahtarı kullanın.</span>';
+    function renderUsers() {
+        const body = $('userBody');
+        if (!users.length) {
+            POps.setEmpty(body, { tag: 'tr', colspan: 4, icon: 'fa-users', title: 'Kayıtlı kullanıcı yok' });
+            return;
         }
-        document.getElementById('twofaSetup').style.display = 'block';
-        document.getElementById('twofaSetupBtn').style.display = 'none';
-    } catch (e) { showToast('Bağlantı hatası.', 'error'); }
-}
+        body.innerHTML = users.map(rowHtml).join('');
+    }
+    function renderSummary() {
+        if (usersLoaded) {
+            const supers = users.filter(u => u.role === 'superadmin').length;
+            $('sumUsers').innerHTML = `<b>${users.length}</b> kullanıcı` + (supers && supers < users.length ? ` · <b>${Number(supers)}</b> süper admin` : '');
+        }
+    }
+    async function loadUsers() {
+        try {
+            const r = await POps.get('/api/admin/users');
+            users = (r && Array.isArray(r.users)) ? r.users : [];
+            usersLoaded = true;
+        } catch (e) {
+            POps.setError($('userBody'), e, { tag: 'tr', colspan: 4 });
+            $('sumUsers').textContent = 'Kullanıcılar alınamadı';
+            return;
+        }
+        if (focusId !== null && !users.some(u => u.id === focusId)) { focusId = null; POps.drawer.close(); }
+        renderUsers();
+        renderSummary();
+        if (focusId !== null && POps.drawer.isOpen('user:' + focusId)) renderDrawer(users.find(u => u.id === focusId));
+    }
 
-async function twofaEnable() {
-    const code = (document.getElementById('twofaEnableCode').value || '').trim();
-    if (!/^\d{6}$/.test(code)) return showToast('6 haneli kodu girin.', 'warning');
-    try {
-        const res = await fetch(`${apiBase}/api/admin/2fa/enable`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp: code })
+    // ---- Kullanıcı ayrıntı paneli
+    function drawerHtml(u) {
+        const self = u.username === ME;
+        const perms = permsOf(u);
+        const when = loginDate(u.last_login);
+        const pagesText = u.role === 'superadmin' ? 'Bütün sayfalar' : (perms.length ? perms.map(pageName).join(', ') : 'Yalnızca kontrol merkezi');
+        const factsHtml = `<div class="grow"><span>Rol</span><span>${escapeHtml(roleWord(u.role))}</span></div>`
+            + `<div class="grow"><span>Sayfalar</span><span>${escapeHtml(pagesText)}</span></div>`
+            + `<div class="grow"><span>Son giriş</span><span>${when ? POps.timeHtml(when) : 'Hiç girmedi'}</span></div>`
+            + (self && twofaOn !== null ? `<div class="grow"><span>2FA</span><span>${twofaOn ? 'Açık' : 'Kapalı'}</span></div>` : '')
+            + `<div class="grow"><span>Kimlik</span><span>#${Number(u.id)}</span></div>`;
+        const canDelete = u.role !== 'superadmin' && !self;
+        const actionsHtml = IS_SUPER
+            ? `<div class="set uact">
+                <button type="button" class="srow" data-act="edit">${POps.iconHtml('sliders', 'sm')}<span class="grow">Rolü ve yetkileri düzenle</span>${POps.iconHtml('right', 'sm')}</button>
+                <button type="button" class="srow" data-act="password">${POps.iconHtml('key', 'sm')}<span class="grow">Şifreyi sıfırla</span>${POps.iconHtml('right', 'sm')}</button>
+                ${canDelete ? `<button type="button" class="srow danger" data-act="delete">${POps.iconHtml('trash', 'sm')}<span class="grow">Kullanıcıyı sil</span></button>` : ''}
+              </div>`
+              + (canDelete ? '' : `<div class="dnote">${self ? 'Kendi hesabınızı silemezsiniz.' : 'Süper admin hesabı silinemez; silmek için önce rolünü değiştirin.'}</div>`)
+            : '<div class="dnote">Kullanıcıları yalnızca süper admin düzenleyebilir.</div>';
+        return `<div class="drawer-head">
+                <div class="drawer-title">
+                    <span class="drawer-ico">${POps.iconHtml('user', 'lg')}</span>
+                    <div style="min-width:0"><h2>${escapeHtml(u.username)}</h2><div class="sub">${escapeHtml(roleWord(u.role))}${self ? ' · siz' : ''}</div></div>
+                </div>
+                <button type="button" class="ibtn sm" data-act="close" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button>
+            </div>
+            <div class="glist">${factsHtml}</div>
+            ${actionsHtml}`;
+    }
+    function renderDrawer(u) {
+        if (!u) return;
+        const body = POps.drawer.body();
+        body.innerHTML = drawerHtml(u);
+        if (!body.dataset.userWired) {
+            body.dataset.userWired = '1';
+            body.addEventListener('click', (e) => {
+                const b = e.target.closest('[data-act]');
+                const k = POps.drawer.key();
+                if (!b || !k || !String(k).startsWith('user:')) return;
+                const cur = users.find(x => 'user:' + x.id === k);
+                const act = b.dataset.act;
+                if (act === 'close') POps.drawer.close();
+                else if (!cur) return;
+                else if (act === 'edit') openEditor(cur);
+                else if (act === 'password') resetPassword(cur);
+                else if (act === 'delete') deleteUser(cur);
+            });
+        }
+    }
+    function openUser(id) {
+        const u = users.find(x => x.id === id);
+        if (!u) return;
+        // Önce panel açılır: başka bir kullanıcı açıksa onun onClose'u odağı temizler
+        POps.drawer.open('user:' + id, { onClose: () => { focusId = null; renderUsers(); } });
+        focusId = id;
+        renderUsers();
+        renderDrawer(u);
+    }
+    $('userBody').addEventListener('click', (e) => {
+        const tr = e.target.closest('tr[data-id]');
+        if (tr && !e.target.closest('a')) openUser(Number(tr.dataset.id));
+    });
+    $('userBody').addEventListener('keydown', (e) => {
+        const tr = e.target.closest('tr[data-id]');
+        if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openUser(Number(tr.dataset.id)); }
+    });
+
+    // ---- Ekle / düzenle (yalnızca süper admin; sunucu da yalnızca süper admine izin verir)
+    let editing = null;     // düzenlenen kullanıcı; null = yeni
+    let formRole = 'admin';
+    function setRole(r) {
+        formRole = r;
+        $('umRole').querySelectorAll('button').forEach(b => { const on = b.dataset.role === r; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        $('umRoleHint').textContent = ROLES[r].hint;
+        $('umPerms').hidden = r === 'superadmin';
+        // İzleyici bu sayfaları yetki verilse de açamaz (includes/header.php)
+        document.querySelectorAll('#umPerms .check').forEach(l => {
+            const blocked = r === 'viewer' && VIEWER_BLOCKED.includes(l.dataset.page);
+            l.classList.toggle('is-blocked', blocked);
+            l.querySelector('input').disabled = blocked;
+            l.title = blocked ? 'İzleyici bu sayfayı açamaz' : '';
         });
-        if (res.ok) { showToast('2FA etkinleştirildi.', 'success'); loadTwofaStatus(); }
-        else showToast(await apiErrorMessage(res, 'Etkinleştirilemedi.'), 'error');
-    } catch (e) { showToast('Bağlantı hatası.', 'error'); }
-}
-
-async function twofaDisable() {
-    const code = await POps.prompt({ title: "2FA'yı kapat", message: 'Doğrulama uygulamasındaki 6 haneli kodu girin.', label: 'Kod', placeholder: '123456', maxLength: 6, confirmText: 'Kapat', danger: true,
-        validate: (v) => /^\d{6}$/.test(v.trim()) ? null : '6 haneli kodu girin.' });
-    if (code === null) return;
-    try {
-        const res = await fetch(`${apiBase}/api/admin/2fa/disable`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp: (code || '').trim() })
+        $('umPermsHint').textContent = r === 'viewer' ? 'Kontrol merkezi herkese açıktır. İzleyici Dağıtım, Uzak komut ve Ayarlar sayfalarını açamaz.' : 'Kontrol merkezi herkese açıktır.';
+    }
+    function clearErrors() { document.querySelectorAll('#userModal .field.has-error').forEach(f => f.classList.remove('has-error')); }
+    function openEditor(u) {
+        editing = u || null;
+        clearErrors();
+        $('umTitle').textContent = u ? 'Kullanıcıyı düzenle' : 'Kullanıcı ekle';
+        $('umSave').textContent = u ? 'Değişiklikleri kaydet' : 'Kullanıcıyı ekle';
+        $('umName').value = u ? u.username : '';
+        $('umPass').value = '';
+        $('umPassField').hidden = !!u;   // var olan kullanıcının şifresi "Şifreyi sıfırla" ile değişir
+        const perms = u ? permsOf(u) : [];
+        document.querySelectorAll('.perm-cb').forEach(cb => { cb.checked = perms.includes(cb.value); });
+        setRole(u ? (ROLES[u.role] ? u.role : 'admin') : 'admin');
+        $('umSelf').hidden = !(u && u.username === ME);
+        openModal('userModal');
+    }
+    async function saveUser() {
+        clearErrors();
+        const username = $('umName').value.trim();
+        const password = $('umPass').value;
+        let bad = false;
+        if (!username) { $('umNameField').classList.add('has-error'); bad = true; }
+        if (!editing && !password) { $('umPassField').classList.add('has-error'); bad = true; }
+        if (bad) { (username ? $('umPass') : $('umName')).focus(); return; }
+        // Görünmeyen (ör. süper admine geçince gizlenen) seçimler de korunur
+        const perms = [...document.querySelectorAll('.perm-cb')].filter(cb => cb.checked).map(cb => cb.value);
+        if (editing) permsOf(editing).filter(k => !PAGES[k]).forEach(k => perms.push(k));   // panelin bilmediği eski anahtarlar silinmesin
+        const payload = { username, role: formRole, permissions: JSON.stringify(perms) };
+        if (!editing) payload.password = password;
+        const target = editing;
+        const ok = await POps.act($('umSave'), () => target
+            ? POps.api('/api/admin/users/' + encodeURIComponent(target.id), { method: 'PUT', body: payload })
+            : POps.post('/api/admin/users', payload), { success: target ? `${username} güncellendi.` : `${username} eklendi.` });
+        if (!ok) return;
+        closeModal('userModal');
+        await loadUsers();
+        if (!target) { const nu = users.find(x => x.username === username); if (nu) openUser(nu.id); }
+    }
+    async function resetPassword(u) {
+        const self = u.username === ME;
+        const pw = await POps.prompt({
+            title: `${u.username} için yeni şifre`,
+            message: self ? 'Şifreyi değiştirince yeniden giriş yapmanız gerekir.' : 'Kullanıcının açık oturumları kapanır; yeni şifreyle yeniden girer.',
+            label: 'Yeni şifre', inputType: 'password', autocomplete: 'new-password', trim: false,
+            hint: 'En az 8 karakter önerilir.', confirmText: 'Şifreyi değiştir', icon: 'fa-key'
         });
-        if (res.ok) { showToast('2FA devre dışı bırakıldı.', 'success'); loadTwofaStatus(); }
-        else showToast(await apiErrorMessage(res, 'Kapatılamadı.'), 'error');
-    } catch (e) { showToast('Bağlantı hatası.', 'error'); }
-}
+        if (pw === null) return;
+        const payload = { username: u.username, role: u.role, permissions: JSON.stringify(permsOf(u)), password: pw };
+        if (await POps.act(null, () => POps.api('/api/admin/users/' + encodeURIComponent(u.id), { method: 'PUT', body: payload }), { success: `${u.username} için şifre değişti.` })) loadUsers();
+    }
+    async function deleteUser(u) {
+        const ok = await POps.confirm({ title: `${u.username} silinsin mi?`, message: 'Kullanıcının açık oturumları da kapanır. Bu işlem geri alınamaz.', confirmText: 'Kullanıcıyı sil', danger: true, icon: 'fa-trash' });
+        if (!ok) return;
+        if (await POps.act(null, () => POps.del('/api/admin/users/' + encodeURIComponent(u.id)), { success: `${u.username} silindi.` })) {
+            POps.drawer.close();
+            loadUsers();
+        }
+    }
+    if (IS_SUPER) {
+        $('addUserBtn').addEventListener('click', () => openEditor(null));
+        $('umRole').addEventListener('click', (e) => { const b = e.target.closest('button[data-role]'); if (b) setRole(b.dataset.role); });
+        $('umSave').addEventListener('click', saveUser);
+        $('userModal').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { e.preventDefault(); saveUser(); } });
+        ['umName', 'umPass'].forEach(id => $(id).addEventListener('input', (e) => e.target.closest('.field').classList.remove('has-error')));
+    }
 
-// Sunucunun döndürdüğü hata açıklamasını (FastAPI 'detail') gösterir
-async function apiErrorMessage(res, fallback) {
-    try {
-        const body = await res.json();
-        if (typeof body.detail === 'string') return body.detail;
-    } catch (e) {}
-    return fallback;
-}
+    // ================= İKİ ADIMLI DOĞRULAMA =================
+    function renderTwofa(enabled) {
+        twofaOn = enabled;
+        $('twofaSetup').hidden = true;
+        $('twofaState').innerHTML = enabled ? '<span class="dot ok"></span>Açık' : '<span class="dot off"></span>Kapalı';
+        $('twofaDesc').textContent = enabled ? 'Girişte doğrulama kodu istenir.' : 'Önerilir, zorunlu değildir.';
+        const b = $('twofaBtn');
+        b.hidden = false;
+        b.textContent = enabled ? "2FA'yı kapat" : "2FA'yı kur";
+        b.dataset.mode = enabled ? 'disable' : 'setup';
+        $('sumTwofa').hidden = false;
+        $('sumTwofa').innerHTML = enabled ? '<span class="dot ok"></span>2FA açık' : '<span class="dot off"></span>2FA kapalı';
+        if (typeof popsTwofaNudge === 'function') popsTwofaNudge(enabled);
+        const u = focusId !== null && users.find(x => x.id === focusId);
+        if (u && u.username === ME && POps.drawer.isOpen('user:' + u.id)) renderDrawer(u);
+    }
+    async function loadTwofa() {
+        try {
+            const r = await POps.get('/api/admin/2fa/status');
+            renderTwofa(!!(r && r.enabled));
+        } catch (e) {
+            $('twofaState').innerHTML = '<span class="dot bad"></span>Alınamadı';
+            $('twofaDesc').textContent = POps.errorMessage(e);
+        }
+    }
+    async function twofaSetup(btn) {
+        let r;
+        try { r = await POps.busy(btn, () => POps.post('/api/admin/2fa/setup')); }
+        catch (e) { POps.toast('error', 'Kurulum başlatılamadı: ' + POps.errorMessage(e)); return; }
+        $('twofaSecret').value = (r && r.secret) || '';
+        const qr = $('twofaQr');
+        qr.replaceChildren();
+        if (typeof QRCode !== 'undefined' && r && r.otpauth_uri) new QRCode(qr, { text: r.otpauth_uri, width: 180, height: 180 });
+        else qr.textContent = 'QR kodu oluşturulamadı; yandaki anahtarı elle girin.';
+        $('twofaCode').value = '';
+        $('twofaSetup').hidden = false;
+        $('twofaBtn').hidden = true;
+        $('twofaCode').focus();
+    }
+    async function twofaEnable() {
+        const code = $('twofaCode').value.trim();
+        if (!/^\d{6}$/.test(code)) { $('twofaCode').classList.add('is-invalid'); $('twofaCode').focus(); POps.toast('warning', '6 haneli kodu girin.'); return; }
+        if (await POps.act($('twofaEnableBtn'), () => POps.post('/api/admin/2fa/enable', { otp: code }), { success: '2FA açıldı. Bir sonraki girişte kod istenecek.' })) loadTwofa();
+    }
+    async function twofaDisable() {
+        const code = await POps.prompt({ title: "2FA'yı kapatmak istiyor musunuz?", message: 'Doğrulama uygulamasındaki 6 haneli kodu girin.', label: 'Kod', placeholder: '123456', maxLength: 6, inputMode: 'numeric', confirmText: "2FA'yı kapat", danger: true,
+            validate: (v) => /^\d{6}$/.test(v.trim()) ? null : '6 haneli kodu girin.' });
+        if (code === null) return;
+        if (await POps.act($('twofaBtn'), () => POps.post('/api/admin/2fa/disable', { otp: code.trim() }), { success: '2FA kapatıldı.' })) loadTwofa();
+    }
+    $('twofaBtn').addEventListener('click', (e) => { if (e.currentTarget.dataset.mode === 'disable') twofaDisable(); else twofaSetup(e.currentTarget); });
+    $('twofaEnableBtn').addEventListener('click', twofaEnable);
+    $('twofaCode').addEventListener('input', (e) => e.target.classList.remove('is-invalid'));
+    $('twofaCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); twofaEnable(); } });
+    $('twofaCancelBtn').addEventListener('click', () => { $('twofaSetup').hidden = true; $('twofaBtn').hidden = false; });
+    $('twofaCopy').addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText($('twofaSecret').value); POps.toast('success', 'Anahtar kopyalandı.'); }
+        catch (e) { $('twofaSecret').select(); POps.toast('warning', 'Kopyalanamadı; anahtarı seçip elle kopyalayın.'); }
+    });
+    $('twofaSecret').addEventListener('click', (e) => e.target.select());
 
+    // ================= GÖREV KUYRUĞU =================
+    const limitValue = () => $('queueLimit').value.trim();
+    const isDirty = () => limitSaved !== null && limitValue() !== String(limitSaved);
+    function refreshBar() { $('saveBar').hidden = !isDirty(); }
+    async function loadLimit() {
+        try {
+            const r = await POps.get('/api/get_concurrent_limit');
+            limitSaved = (r && r.limit != null) ? r.limit : 5;
+            $('queueLimit').value = limitSaved;
+            $('queueLimit').disabled = false;
+        } catch (e) {
+            $('queueLimit').placeholder = '—';
+            $('queueLimit').title = 'Sınır alınamadı: ' + POps.errorMessage(e);
+        }
+        refreshBar();
+    }
+    async function saveLimit() {
+        if (!isDirty()) return;
+        const v = parseInt(limitValue(), 10);
+        if (!v || v < 1 || v > 200 || String(v) !== limitValue()) {
+            $('queueLimit').classList.add('is-invalid');
+            $('queueLimit').focus();
+            POps.toast('warning', '1 ile 200 arasında bir sayı girin.');
+            return;
+        }
+        if (await POps.act($('saveBtn'), () => POps.post('/api/set_concurrent_limit', { limit: v }), { success: `Eşzamanlı görev sınırı ${v} bilgisayar oldu.` })) {
+            limitSaved = v;
+            $('queueLimit').value = v;
+            refreshBar();
+        }
+    }
+    $('queueLimit').addEventListener('input', (e) => { e.target.classList.remove('is-invalid'); refreshBar(); });
+    $('queueLimit').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveLimit(); } });
+    $('saveBtn').addEventListener('click', saveLimit);
+    $('discardBtn').addEventListener('click', () => { $('queueLimit').value = limitSaved; $('queueLimit').classList.remove('is-invalid'); refreshBar(); });
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S') && isDirty()) { e.preventDefault(); saveLimit(); }
+    });
+    window.addEventListener('beforeunload', (e) => {
+        if (!isDirty()) return;
+        e.preventDefault();
+        e.returnValue = '';
+    });
+
+    // ================= SUNUCU BAĞLANTISI =================
+    async function testConnection() {
+        const st = $('connState');
+        st.innerHTML = '<span class="spinner sm"></span>Sınanıyor';
+        const t0 = performance.now();
+        try {
+            await POps.get('/api/devices');
+            const ms = Math.round(performance.now() - t0);
+            st.innerHTML = `<span class="dot ok"></span>Çalışıyor · ${Number(ms)} ms`;
+            $('connDesc').textContent = 'Panel merkez sunucuya ulaşıyor.';
+            $('sumConn').innerHTML = '<span class="dot ok"></span>Sunucu çalışıyor';
+        } catch (e) {
+            st.innerHTML = '<span class="dot bad"></span>Ulaşılamıyor';
+            $('connDesc').textContent = POps.errorMessage(e);
+            $('sumConn').innerHTML = '<span class="dot bad"></span>Sunucuya ulaşılamıyor';
+        }
+        $('sumConn').hidden = false;
+    }
+    $('connRetry').addEventListener('click', testConnection);
+
+    if (typeof OMYO_API !== 'undefined') {
+        $('dispHttpUrl').textContent = OMYO_API.HTTP_URL;
+        $('dispWsUrl').textContent = OMYO_API.WS_URL;
+    } else {
+        $('dispHttpUrl').textContent = 'pops_config.js okunamadı';
+        $('dispWsUrl').textContent = 'pops_config.js okunamadı';
+    }
+    testConnection();
+    loadUsers();
+    loadTwofa();
+    loadLimit();
+})();
 </script>
 
 <?php include 'includes/footer.php'; ?>

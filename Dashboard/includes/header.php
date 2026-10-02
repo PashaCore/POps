@@ -44,6 +44,21 @@ function pops_asset(string $rel): string
     $mtime = @filemtime(__DIR__ . '/../' . $rel);
     return $rel . '?v=' . ($mtime ?: '0');
 }
+// Çizgi simge (assets/pops_icons.svg): pops_icon('power'), pops_icon('x', 'sm')
+function pops_icon(string $name, string $cls = ''): string
+{
+    static $sprite = null;
+    if ($sprite === null) { $sprite = pops_asset('assets/pops_icons.svg'); }
+    $c = 'ico' . ($cls !== '' ? ' ' . $cls : '');
+    return '<svg class="' . htmlspecialchars($c, ENT_QUOTES, 'UTF-8') . '" aria-hidden="true"><use href="'
+        . htmlspecialchars($sprite . '#i-' . $name, ENT_QUOTES, 'UTF-8') . '"></use></svg>';
+}
+$pops_titles = [
+    'index' => 'Kontrol merkezi', 'devices' => 'Cihazlar', 'labs' => 'Sınıflar', 'tasks' => 'İşlemler',
+    'terminal' => 'Uzak komut', 'vision' => 'Uzak ekran', 'deploy' => 'Dağıtım', 'policies' => 'Politikalar',
+    'logger' => 'Kayıtlar', 'reports' => 'Raporlar', 'helpdesk' => 'Destek talepleri', 'settings' => 'Ayarlar',
+    'system' => 'Sistem',
+];
 $pops_role = $_SESSION['role'] ?? 'admin';
 $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'viewer' => 'İzleyici'][$pops_role] ?? 'Yönetici';
 ?>
@@ -53,7 +68,7 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light">
-    <title>POps | Merkez Komuta</title>
+    <title><?php echo htmlspecialchars(($pops_titles[$current_page] ?? 'POps') . ' · POps', ENT_QUOTES, 'UTF-8'); ?></title>
     <link rel="icon" type="image/png" href="assets/favicon/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon/favicon.svg" />
     <link rel="shortcut icon" href="assets/favicon/favicon.ico" />
@@ -64,7 +79,8 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="<?php echo htmlspecialchars(pops_asset('assets/pops_theme.css'), ENT_QUOTES, 'UTF-8'); ?>">
-    <script>window.USER_ROLE = <?php echo json_encode($pops_role, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
+    <script>window.USER_ROLE = <?php echo json_encode($pops_role, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+    window.POPS_ICONS = <?php echo json_encode(pops_asset('assets/pops_icons.svg'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
     <script>
     // Sayfa yoklama yardımcısı (bütün sayfalar): sekme arka plandayken sunucuya hiç istek atılmaz, sekmeye
     // dönünce hemen bir kez tazelenir; 5 dk boyunca fare/klavye yoksa aralık 4 katına çıkar (açık unutulan
@@ -126,88 +142,89 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
     <!-- Ortak betikler sayfa betiklerinden ÖNCE yüklenir (POps.*, showToast, apiRequest, state) -->
     <script src="<?php echo htmlspecialchars(pops_asset('assets/pops_config.js'), ENT_QUOTES, 'UTF-8'); ?>"></script>
     <script src="<?php echo htmlspecialchars(pops_asset('assets/pops_script.js'), ENT_QUOTES, 'UTF-8'); ?>"></script>
+    <script src="<?php echo htmlspecialchars(pops_asset('assets/pops_devices.js'), ENT_QUOTES, 'UTF-8'); ?>"></script>
     <style>
         /* ============ UYGULAMA İSKELETİ ============ */
         .app-shell { display: flex; min-height: 100vh; }
-        .app-sidebar { width: var(--sidebar-width); background: var(--bg-surface); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0; z-index: var(--z-sidebar); transition: transform 0.25s var(--ease); }
+        .app-sidebar { width: var(--sidebar-width); background: #0b1220; color: #a3acba; display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0; z-index: var(--z-sidebar); transition: transform 0.25s var(--ease); padding: 14px 12px 12px; gap: 14px; }
         .app-main { flex: 1; margin-left: var(--sidebar-width); min-width: 0; display: flex; flex-direction: column; }
-        .app-topbar { height: var(--topbar-height); background: rgba(255, 255, 255, 0.92); backdrop-filter: saturate(1.4) blur(6px); border-bottom: 1px solid var(--border-subtle); padding: 0 var(--space-8); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 40; }
-        .app-content { flex: 1; padding: var(--space-6) var(--space-8); width: 100%; min-width: 0; }
+        .app-content { flex: 1; padding: 28px 32px 48px; width: 100%; min-width: 0; }
+        .app-topbar { display: none; }
 
         /* ============ YAN MENÜ ============ */
-        .sidebar-header { height: var(--topbar-height); padding: 0 var(--space-5); display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
-        .sidebar-header img.brand-icon { width: 32px; height: 32px; object-fit: contain; }
-        .sidebar-header img.brand-name { width: 100%; max-width: 136px; height: auto; object-fit: contain; }
-        .sidebar-nav { padding: var(--space-4) var(--space-3); flex: 1; overflow-y: auto; }
-        .nav-section { margin-bottom: var(--space-5); }
-        .nav-section-title { font-size: 0.6875rem; font-weight: var(--fw-semibold); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; padding: 0 var(--space-3); margin-bottom: 0.375rem; }
-        .nav-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; color: var(--text-secondary); text-decoration: none; border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: var(--fw-medium); margin-bottom: 0.125rem; transition: background-color 0.15s, color 0.15s; position: relative; }
-        .nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
-        .nav-item:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-        .nav-item.active { background: var(--primary-50); color: var(--primary-600); font-weight: var(--fw-semibold); }
-        .nav-item.active::before { content: ''; position: absolute; left: -12px; top: 50%; transform: translateY(-50%); width: 3px; height: 20px; background: var(--primary-500); border-radius: 0 2px 2px 0; }
-        .nav-item i { width: 18px; text-align: center; font-size: 0.95rem; flex-shrink: 0; opacity: 0.85; }
-
-        .sidebar-footer { padding: var(--space-3); border-top: 1px solid var(--border-subtle); }
-        .user-card { display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem; border-radius: var(--radius-md); margin-bottom: 0.5rem; }
-        .user-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-500), var(--primary-700)); color: white; display: flex; align-items: center; justify-content: center; font-weight: var(--fw-semibold); font-size: 0.875rem; flex-shrink: 0; }
+        .sb-brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px; color: #fff; text-decoration: none; }
+        .sb-brand:hover { color: #fff; }
+        .sb-brand img { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; }
+        .sb-brand b { display: block; font-size: 14px; font-weight: 600; line-height: 1.2; }
+        .sb-brand small { display: block; font-size: 11px; color: #6b7587; }
+        .sb-search { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 9px; background: #151e30; color: #7d8798; font-size: 13px; width: 100%; transition: background-color 0.12s, color 0.12s; }
+        .sb-search:hover { background: #1b2539; color: #c9d0db; }
+        .sb-search kbd { margin-left: auto; font-family: inherit; font-size: 11px; color: #5b6577; }
+        .sidebar-nav { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; margin: 0 -4px; padding: 0 4px; scrollbar-color: #26324a transparent; }
+        .nav-section { display: flex; flex-direction: column; gap: 1px; }
+        .nav-section-title { font-size: 11px; font-weight: 600; color: #5b6577; padding: 4px 10px; }
+        .nav-item { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; color: #a3acba; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: 500; transition: background-color 0.12s, color 0.12s; width: 100%; }
+        .nav-item .ico { width: 17px; height: 17px; opacity: 0.9; }
+        .nav-item:hover { background: #151e30; color: #fff; }
+        .nav-item:focus-visible { outline: none; box-shadow: 0 0 0 2px #0a84ff; }
+        .nav-item.active { background: #1c2840; color: #fff; }
+        .nav-item .n { margin-left: auto; font-size: 11px; color: #6b7587; font-variant-numeric: tabular-nums; }
+        .nav-item .n.alert { color: #fff; background: #ff3b30; border-radius: 99px; padding: 0 6px; line-height: 17px; font-weight: 600; }
+        .nav-sub { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 4px; }
+        .nav-sub:empty { display: none; }
+        .nav-sub a { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px 0 37px; border-radius: 8px; color: #8b95a6; font-size: 12.5px; text-decoration: none; position: relative; }
+        .nav-sub a:hover { background: #151e30; color: #fff; }
+        .nav-sub a.active { color: #fff; }
+        .nav-sub a.active::before { content: ''; position: absolute; left: 22px; width: 5px; height: 5px; border-radius: 99px; background: #0a84ff; }
+        .nav-sub a span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .nav-sub a .n { margin-left: auto; font-size: 11px; color: #6b7587; }
+        .nav-sub a .dot { width: 6px; height: 6px; }
+        .sb-foot { display: flex; flex-direction: column; gap: 4px; }
+        .sb-jobs { display: block; width: 100%; text-align: left; background: #151e30; border-radius: 10px; padding: 9px 11px; color: #d6dbe3; font-size: 12px; }
+        .sb-jobs:hover { background: #1b2539; }
+        .sb-jobs .t { display: flex; justify-content: space-between; gap: 8px; }
+        .sb-jobs .t span:last-child { color: #7d8798; font-variant-numeric: tabular-nums; }
+        .sb-jobs .pbar { background: #26324a; height: 4px; margin-top: 7px; }
+        .user-card { display: flex; align-items: center; gap: 10px; padding: 6px 4px 2px 8px; }
+        .user-avatar { width: 28px; height: 28px; border-radius: 99px; background: #26324a; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; flex-shrink: 0; }
         .user-info { flex: 1; min-width: 0; }
-        .user-name { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .user-role { font-size: 0.6875rem; color: var(--text-tertiary); }
-        .sidebar-action-btn { width: 100%; min-height: 34px; padding: 0.4375rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-secondary); font-size: var(--text-sm); font-weight: var(--fw-medium); transition: background-color 0.15s, color 0.15s, border-color 0.15s; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
-        .sidebar-action-btn.danger { color: var(--danger-text); }
-        .sidebar-action-btn.danger:hover { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-text); }
+        .user-name { font-size: 12.5px; font-weight: 500; color: #d6dbe3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-role { font-size: 11px; color: #6b7587; }
+        .user-card .ibtn { color: #7d8798; }
+        .user-card .ibtn:hover { background: #151e30; color: #fff; }
 
-        /* ============ ÜST ÇUBUK ============ */
-        .topbar-left { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
-        .topbar-breadcrumb { display: flex; align-items: center; gap: 0.5rem; font-size: var(--text-sm); color: var(--text-tertiary); min-width: 0; }
-        .topbar-breadcrumb a { color: var(--text-tertiary); display: inline-flex; }
-        .topbar-breadcrumb a:hover { color: var(--text-primary); }
-        .topbar-breadcrumb strong { color: var(--text-primary); font-weight: var(--fw-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .topbar-breadcrumb .separator { color: var(--text-muted); }
-        .topbar-actions { display: flex; align-items: center; gap: 0.5rem; }
-        .topbar-icon-btn { width: 38px; height: 38px; border-radius: var(--radius-md); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; transition: background-color 0.15s, color 0.15s; position: relative; }
-        .topbar-icon-btn:hover, .topbar-icon-btn[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
-        .topbar-icon-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-        /* Bildirim zili */
+        /* Bildirimler (yan menüden açılır) */
         .notif-wrap { position: relative; }
-        .notif-count { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--danger-solid); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; display: none; box-shadow: 0 0 0 2px var(--bg-surface); }
-        .notif-panel { position: absolute; right: 0; top: 46px; width: 380px; max-width: calc(100vw - 24px); max-height: 460px; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); display: none; z-index: 60; }
+        .notif-panel { position: fixed; left: calc(var(--sidebar-width) + 8px); bottom: 12px; width: 380px; max-width: calc(100vw - 24px); max-height: 70vh; overflow-y: auto; background: var(--bg-surface); border-radius: 14px; box-shadow: var(--shadow-xl); display: none; z-index: 960; color: var(--text-primary); }
         .notif-panel.open { display: block; animation: modalIn 0.15s var(--ease); }
-        .notif-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.625rem 0.75rem 0.625rem 1rem; border-bottom: 1px solid var(--border-subtle); font-weight: var(--fw-semibold); font-size: var(--text-sm); position: sticky; top: 0; background: var(--bg-surface); z-index: 1; }
+        .notif-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.625rem 0.75rem 0.625rem 1rem; border-bottom: 1px solid #f0f0f3; font-weight: var(--fw-semibold); font-size: var(--text-sm); position: sticky; top: 0; background: var(--bg-surface); z-index: 1; }
         .notif-head .btn-group { gap: 0.25rem; }
-        .notif-item { display: flex; gap: 0.625rem; padding: 0.625rem 1rem; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm); }
+        .notif-item { display: flex; gap: 0.625rem; padding: 0.625rem 1rem; border-bottom: 1px solid #f0f0f3; font-size: var(--text-sm); }
         .notif-item:last-child { border-bottom: 0; }
         .notif-item.unread { background: var(--primary-50); }
-        .notif-item .sev { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; background: var(--text-muted); }
+        .notif-item .sev { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; background: var(--text-muted); }
         .notif-item .sev.critical { background: var(--danger-solid); } .notif-item .sev.high { background: var(--warning-solid); } .notif-item .sev.medium { background: var(--primary-500); }
         .notif-item .t { color: var(--text-primary); font-weight: var(--fw-medium); }
         .notif-item .m { color: var(--text-tertiary); font-size: var(--text-xs); margin-top: 2px; overflow-wrap: anywhere; }
         .notif-empty { padding: 1.5rem 1rem; text-align: center; color: var(--text-tertiary); font-size: var(--text-sm); }
-        .topbar-clock { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; padding: 0 0.75rem; border-right: 1px solid var(--border-subtle); margin-right: 0.25rem; }
-        .topbar-clock .time { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); font-variant-numeric: tabular-nums; }
-        .topbar-clock .date { font-size: 0.6875rem; color: var(--text-tertiary); }
 
-        .menu-toggle { display: none; width: 38px; height: 38px; border: 1px solid var(--border-default); color: var(--text-primary); font-size: 1rem; border-radius: var(--radius-md); align-items: center; justify-content: center; transition: background-color 0.15s; flex-shrink: 0; }
+        .menu-toggle { width: 36px; height: 36px; color: var(--text-primary); border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .menu-toggle:hover { background: var(--bg-hover); }
-        .menu-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-
-        .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); z-index: calc(var(--z-sidebar) - 1); backdrop-filter: blur(2px); }
+        .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); z-index: calc(var(--z-sidebar) - 1); backdrop-filter: blur(2px); }
 
         /* ============ DAR EKRAN ============ */
         @media (max-width: 1024px) {
             .app-sidebar { transform: translateX(-100%); box-shadow: var(--shadow-xl); }
             .app-sidebar.open { transform: translateX(0); }
             .app-main { margin-left: 0; }
-            .menu-toggle { display: inline-flex; }
+            .app-topbar { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; background: rgba(245, 245, 247, 0.9); backdrop-filter: saturate(1.4) blur(8px); border-bottom: 1px solid var(--border-subtle); position: sticky; top: 0; z-index: 40; font-weight: 600; }
             .sidebar-overlay.open { display: block; animation: fadeIn 0.15s ease; }
-            .app-content { padding: var(--space-6); }
-            .app-topbar { padding: 0 var(--space-6); }
+            .app-content { padding: 20px 20px 40px; }
+            .notif-panel, .jobs-panel { left: 12px; right: 12px; width: auto; }
         }
-        @media (max-width: 768px) {
-            .app-content { padding: var(--space-4); }
-            .app-topbar { padding: 0 var(--space-4); }
-            .topbar-clock { display: none; }
+        @media (max-width: 640px) {
+            .app-content { padding: 16px 16px 32px; }
+            .drawer { width: 100vw; }
         }
     </style>
 </head>
@@ -215,64 +232,44 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
     <a class="sr-only" href="#mainContent">İçeriğe geç</a>
     <div class="app-shell">
         <aside class="app-sidebar" id="appSidebar" aria-label="Ana menü">
-            <div class="sidebar-header">
-                <img class="brand-icon" src="assets/favicon/favicon-96x96.png" alt="">
-                <img class="brand-name" src="assets/favicon/sidemenu.png" alt="POps Operations Platform">
-            </div>
+            <a class="sb-brand" href="index.php">
+                <img src="assets/favicon/favicon-96x96.png" alt="">
+                <span><b>POps</b><small>Yönetim paneli</small></span>
+            </a>
+            <button type="button" class="sb-search" id="paletteOpen" aria-label="Ara (Ctrl+K)"><?php echo pops_icon('search', 'sm'); ?><span>Ara</span><kbd>Ctrl K</kbd></button>
             <nav class="sidebar-nav">
                 <?php include __DIR__ . '/sidebar.php'; ?>
             </nav>
-            <div class="sidebar-footer">
+            <div class="sb-foot">
+                <button type="button" class="sb-jobs" id="jobsBtn" hidden aria-haspopup="true" aria-expanded="false" aria-controls="jobsPanel"></button>
+                <div class="notif-wrap" id="notifWrap" hidden>
+                    <button type="button" class="nav-item" id="notifBtn" aria-haspopup="true" aria-expanded="false" aria-controls="notifPanel"><?php echo pops_icon('bell'); ?><span>Bildirimler</span><span class="n alert" id="notifCount" style="display:none"></span></button>
+                    <div class="notif-panel" id="notifPanel" role="region" aria-label="Bildirimler">
+                        <div class="notif-head">
+                            <span>Bildirimler</span>
+                            <span class="btn-group">
+                                <button type="button" class="btn ghost sm" id="notifReadAll">Tümü okundu</button>
+                                <button type="button" class="btn ghost sm" id="notifClear" title="Okunmuş bildirimleri sil">Okunanları temizle</button>
+                            </span>
+                        </div>
+                        <div id="notifList"><div class="notif-empty">Yükleniyor…</div></div>
+                    </div>
+                </div>
                 <div class="user-card">
-                    <div class="user-avatar" aria-hidden="true"><?php echo htmlspecialchars(strtoupper(substr($_SESSION['username'] ?? 'A', 0, 1)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); ?></div>
+                    <div class="user-avatar" aria-hidden="true"><?php echo htmlspecialchars(mb_strtoupper(mb_substr($_SESSION['username'] ?? 'A', 0, 1)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); ?></div>
                     <div class="user-info">
                         <div class="user-name"><?php echo htmlspecialchars($_SESSION['username'] ?? 'Admin'); ?></div>
                         <div class="user-role"><?php echo htmlspecialchars($pops_role_label, ENT_QUOTES, 'UTF-8'); ?></div>
                     </div>
+                    <a href="logout.php" class="ibtn sm" data-tip="Çıkış yap" data-tip-pos="up" aria-label="Çıkış yap"><?php echo pops_icon('logout', 'sm'); ?></a>
                 </div>
-                <a href="logout.php" class="sidebar-action-btn danger">
-                    <i class="fas fa-right-from-bracket" aria-hidden="true"></i>
-                    <span>Çıkış Yap</span>
-                </a>
             </div>
         </aside>
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
+        <div class="jobs-panel" id="jobsPanel" role="region" aria-label="Süren işlemler"></div>
         <div class="app-main">
             <header class="app-topbar">
-                <div class="topbar-left">
-                    <button type="button" class="menu-toggle" id="menuToggle" aria-label="Menüyü aç" aria-controls="appSidebar" aria-expanded="false"><i class="fas fa-bars"></i></button>
-                    <div class="topbar-breadcrumb">
-                        <a href="index.php" aria-label="Ana sayfa"><i class="fas fa-house" style="opacity:0.6;"></i></a>
-                        <span class="separator">/</span>
-                        <strong id="pageTitle"><?php
-                            $titles = [
-                                'index' => 'Dashboard', 'devices' => 'Cihaz Yönetimi', 'labs' => 'Laboratuvar Yönetimi',
-                                'vision' => 'POpsVision', 'tasks' => 'Görev Kuyruğu', 'deploy' => 'Dosya Dağıtımı',
-                                'logger' => 'Log & Envanter', 'terminal' => 'Terminal',
-                                'settings' => 'Sistem Ayarları', 'system' => 'Sistem & Sürüm', 'reports' => 'Raporlar', 'policies' => 'Politikalar', 'helpdesk' => 'Yardım Masası'
-                            ];
-                            echo htmlspecialchars($titles[$current_page] ?? ucfirst($current_page), ENT_QUOTES, 'UTF-8');
-                        ?></strong>
-                    </div>
-                </div>
-                <div class="topbar-actions">
-                    <div class="topbar-clock" aria-hidden="true">
-                        <span class="time" id="topbarTime">--:--:--</span>
-                        <span class="date" id="topbarDate">--/--/----</span>
-                    </div>
-                    <div class="notif-wrap" id="notifWrap" hidden>
-                        <button type="button" class="topbar-icon-btn" id="notifBtn" title="Bildirimler" aria-label="Bildirimler" aria-haspopup="true" aria-expanded="false" aria-controls="notifPanel"><i class="fas fa-bell"></i><span class="notif-count" id="notifCount"></span></button>
-                        <div class="notif-panel" id="notifPanel" role="region" aria-label="Bildirimler">
-                            <div class="notif-head">
-                                <span>Bildirimler</span>
-                                <span class="btn-group">
-                                    <button type="button" class="btn ghost sm" id="notifReadAll">Tümü okundu</button>
-                                    <button type="button" class="btn ghost sm" id="notifClear" title="Okunmuş bildirimleri sil">Okunanları temizle</button>
-                                </span>
-                            </div>
-                            <div id="notifList"><div class="notif-empty">Yükleniyor…</div></div>
-                        </div>
-                    </div>
-                </div>
+                <button type="button" class="menu-toggle" id="menuToggle" aria-label="Menüyü aç" aria-controls="appSidebar" aria-expanded="false"><?php echo pops_icon('menu'); ?></button>
+                <span id="pageTitle"><?php echo htmlspecialchars($pops_titles[$current_page] ?? ucfirst($current_page), ENT_QUOTES, 'UTF-8'); ?></span>
             </header>
             <main class="app-content" id="mainContent">

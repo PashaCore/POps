@@ -1,360 +1,255 @@
 <?php include 'includes/header.php'; ?>
-<?php
-$devRole = $_SESSION['role'] ?? '';
-$devCanAdmin = in_array($devRole, ['admin', 'superadmin'], true);
-$devIsSuper = $devRole === 'superadmin';
-?>
 
 <style>
-    .dev-name { display: flex; align-items: center; gap: 0.375rem; }
-    .dev-name .btn.icon.sm { width: 24px; min-height: 24px; opacity: 0; transition: opacity 0.15s; }
-    .data-table tbody tr:hover .dev-name .btn.icon.sm, .dev-name .btn.icon.sm:focus-visible { opacity: 1; }
-    .net-cell { font-family: var(--font-mono); font-size: var(--text-xs); }
-    .net-cell .ip { color: var(--info-text); }
-    .net-cell .mac { color: var(--text-tertiary); font-size: 0.6875rem; }
-    .hw-cell .hw-sub { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 0.125rem; }
-    .row-actions .btn.icon.sm.wake:hover:not(:disabled) { background: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
-    .row-actions .btn.icon.sm.reboot:hover:not(:disabled) { background: var(--warning-bg); color: var(--warning-text); border-color: var(--warning-border); }
-    .row-actions .btn.icon.sm.power:hover:not(:disabled), .row-actions .btn.icon.sm.del:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
-
-    .lab-group { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); margin-bottom: 0.75rem; overflow: hidden; box-shadow: var(--shadow-xs); }
-    .lab-group-head { width: 100%; padding: 0.75rem 1.125rem; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; background: transparent; border: none; cursor: pointer; text-align: left; font: inherit; color: var(--text-primary); }
-    .lab-group-head:hover { background: var(--bg-surface-2); }
-    .lab-group-head:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
-    .lab-group.open .lab-group-head { border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface-2); }
-    .lab-group-title { display: flex; align-items: center; gap: 0.625rem; font-weight: var(--fw-semibold); font-size: var(--text-sm); }
-    .lab-group-body { display: none; overflow-x: auto; }
-    .lab-group.open .lab-group-body { display: block; }
-    .lab-group .data-table { border-radius: 0; }
-    .selection-bar { font-size: var(--text-sm); color: var(--text-secondary); }
-    .selection-bar strong { color: var(--primary-600); }
+    .dev-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .dev-bar .grow { flex: 1; }
+    .dev-bar .search-field { flex: 0 1 240px; min-width: 180px; }
+    .dev-bar select { width: auto; min-width: 150px; }
+    .dev-table td { padding-top: 10px; padding-bottom: 10px; }
+    .dev-table tbody tr { cursor: pointer; }
+    .dev-table tbody tr.is-focus { background: #f0f6ff; }
+    .dev-table .nm { display: flex; align-items: center; gap: 8px; font-weight: var(--fw-semibold); }
+    .dev-table .sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: 1px; }
+    .dev-table th.sortable { cursor: pointer; user-select: none; }
+    .dev-table th.sortable:hover { color: var(--text-primary); }
+    .dev-table th .arr { opacity: 0.6; margin-left: 3px; }
+    .dev-table .ver { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .dev-table td.mono { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
 </style>
 
 <div class="page-header">
     <div>
-        <h1><i class="fas fa-server"></i> Cihaz Envanteri</h1>
-        <p>Bilgisayarların durumu, ağ bilgileri ve güç işlemleri</p>
+        <h1>Cihazlar</h1>
+        <div class="summary" id="devSummary"></div>
     </div>
-    <?php if ($devCanAdmin): ?>
     <div class="page-header-actions">
-        <button type="button" class="btn success-soft" data-action="wake-all"><i class="fas fa-bolt"></i> Ağı uyandır</button>
-        <button type="button" class="btn danger-soft" data-action="shutdown-all"><i class="fas fa-power-off"></i> Ağı kapat</button>
+        <button type="button" class="ibtn boxed" id="exportBtn" data-tip="Listeyi dışa aktar (CSV)" data-tip-pos="left" aria-label="Listeyi dışa aktar"><?php echo pops_icon('download'); ?></button>
     </div>
-    <?php endif; ?>
 </div>
 
-<div class="stat-grid">
-    <div class="stat-card"><div class="stat-icon"><i class="fas fa-desktop"></i></div><div><div class="stat-label">Toplam</div><div class="stat-value" id="statTotal">–</div></div></div>
-    <div class="stat-card"><div class="stat-icon success"><i class="fas fa-wifi"></i></div><div><div class="stat-label">Çevrimiçi</div><div class="stat-value" id="statOnline">–</div></div></div>
-    <div class="stat-card"><div class="stat-icon warning"><i class="fas fa-moon"></i></div><div><div class="stat-label">Boşta</div><div class="stat-value" id="statIdle">–</div></div></div>
-    <div class="stat-card"><div class="stat-icon muted"><i class="fas fa-power-off"></i></div><div><div class="stat-label">Erişilemiyor</div><div class="stat-value" id="statOffline">–</div></div></div>
-</div>
-
-<div class="toolbar">
+<div class="dev-bar">
+    <div class="actionbar" id="devBar" role="toolbar" aria-label="Cihaz işlemleri"></div>
+    <span class="grow"></span>
+    <div class="segmented" id="devFilter" role="group" aria-label="Duruma göre süz">
+        <button type="button" data-f="all" class="active" aria-pressed="true">Tümü</button>
+        <button type="button" data-f="on" aria-pressed="false">Açık</button>
+        <button type="button" data-f="off" aria-pressed="false">Kapalı</button>
+        <button type="button" data-f="issue" aria-pressed="false">Sorunlu</button>
+    </div>
+    <select id="devLab" aria-label="Sınıfa göre süz"><option value="">Bütün sınıflar</option></select>
     <div class="search-field">
         <i class="fas fa-search" aria-hidden="true"></i>
-        <input type="search" id="advancedSearch" placeholder="Ad, IP, MAC, sınıf ya da işlemci ile ara" aria-label="Cihaz ara">
-    </div>
-    <div class="segmented" role="group" aria-label="Görünüm">
-        <button type="button" data-view="flat" class="active" aria-pressed="true"><i class="fas fa-list"></i> Düz liste</button>
-        <button type="button" data-view="lab" aria-pressed="false"><i class="fas fa-layer-group"></i> Sınıfa göre</button>
-    </div>
-    <?php if ($devCanAdmin): ?>
-    <div class="spacer"></div>
-    <div class="toolbar-group">
-        <span class="selection-bar" id="selectionBar">Seçili: <strong id="selectedCount">0</strong></span>
-        <button type="button" class="btn secondary sm" data-action="bulk-wake"><i class="fas fa-bolt"></i> Uyandır</button>
-        <button type="button" class="btn secondary sm" data-action="bulk-restart"><i class="fas fa-arrows-rotate"></i> Yeniden başlat</button>
-        <button type="button" class="btn secondary sm" data-action="bulk-shutdown"><i class="fas fa-power-off"></i> Kapat</button>
-        <button type="button" class="btn secondary sm" data-action="bulk-move"><i class="fas fa-right-left"></i> Sınıfa taşı</button>
-    </div>
-    <?php endif; ?>
-</div>
-
-<div id="dataContainer"></div>
-
-<?php if ($devCanAdmin): ?>
-<div id="moveLabModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="moveLabTitle">
-    <div class="modal-box">
-        <div class="modal-header">
-            <div class="modal-title" id="moveLabTitle"><i class="fas fa-right-left"></i> Cihazları başka sınıfa taşı</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
-        </div>
-        <div class="modal-body">
-            <p class="text-secondary text-sm mb-2">Seçili <strong id="moveSelectedCount">0</strong> cihaz seçtiğiniz sınıfa taşınacak.</p>
-            <div class="field">
-                <label for="newLabNameInput">Hedef sınıf</label>
-                <input type="text" id="newLabNameInput" placeholder="Örn: Yazilim_Lab" list="existingLabsList" autocomplete="off">
-                <datalist id="existingLabsList"></datalist>
-                <div class="field-hint">Listede olmayan bir ad yazarsanız yeni sınıf oluşur.</div>
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
-            <button type="button" class="btn" id="confirmMoveLabBtn"><i class="fas fa-check"></i> Taşı</button>
-        </div>
+        <input type="search" id="devSearch" placeholder="Ad, kullanıcı, IP, MAC" aria-label="Cihaz ara">
     </div>
 </div>
-<?php endif; ?>
+
+<div class="table-wrap">
+    <table class="data-table dev-table wide">
+        <thead id="devHead"></thead>
+        <tbody id="devBody"><tr><td colspan="7"><div class="loading-state" role="status"><span class="spinner"></span>Cihazlar yükleniyor…</div></td></tr></tbody>
+    </table>
+</div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    const CAN_ADMIN = <?php echo $devCanAdmin ? 'true' : 'false'; ?>;
-    const IS_SUPERADMIN = <?php echo $devIsSuper ? 'true' : 'false'; ?>;
-    const page = { devices: [], inventory: {}, selected: new Set(), query: '', view: 'flat', expanded: new Set(), lastHtml: '', loaded: false };
-    const container = document.getElementById('dataContainer');
-    POps.setLoading(container, 'Cihazlar yükleniyor…');
+(function () {
+    const dev = POps.dev;
+    const CAN_ADMIN = ['admin', 'superadmin'].includes(window.USER_ROLE);
+    const params = new URLSearchParams(location.search);
+    const ui = { f: params.get('f') || 'all', lab: params.get('lab') || '', q: '', sort: 'name', dir: 1, selected: new Set(), focus: null, hash: '' };
+    const $ = (id) => document.getElementById(id);
+    const body = $('devBody'), bar = $('devBar');
 
-    const nameOf = (d) => d.display_name || (d.real_hostname && !String(d.real_hostname).startsWith('HW-') ? d.real_hostname : '') || d.hostname;
-    const statusOf = (d) => String(d.status || 'Offline').toLowerCase();
-
-    async function fetchDevices() {
-        try {
-            const [devices, inv] = await Promise.all([
-                POps.get('/api/devices'),
-                POps.get('/api/inventory').catch(() => null)
-            ]);
-            if (Array.isArray(inv)) { page.inventory = {}; inv.forEach(r => { page.inventory[r.pc_name] = r; }); }
-            page.devices = (Array.isArray(devices) ? devices : []).map(d => {
-                const hw = page.inventory[d.hostname] || {};
-                return Object.assign({}, d, { ip: hw.ip_address || d.ip_address || '', mac: hw.mac_address && hw.mac_address !== '-' ? hw.mac_address : '', cpu: hw.cpu, ram: hw.ram, os: hw.os_version });
-            });
-            // Silinen ya da kaybolan cihaz seçimde kalmasın
-            const known = new Set(page.devices.map(d => d.hostname));
-            page.selected.forEach(id => { if (!known.has(id)) page.selected.delete(id); });
-            page.loaded = true;
-            updateStats();
-            render();
-        } catch (e) {
-            if (!page.loaded) POps.setError(container, e);
-        }
+    function issuesOf(d, newest) { return dev.issues(d, newest).filter(i => i.kind !== 'lock' || i.icon === 'lock'); }
+    function list() {
+        const newest = dev.newestVersion();
+        const q = ui.q.toLocaleLowerCase('tr');
+        let rows = (state.devices || []).filter(d => {
+            const st = dev.state(d).cls;
+            if (ui.f === 'on' && st === 'off') return false;
+            if (ui.f === 'off' && st !== 'off') return false;
+            if (ui.f === 'issue' && !issuesOf(d, newest).length) return false;
+            if (ui.lab && (ui.lab === dev.UNASSIGNED ? (d.lab && d.lab !== dev.UNASSIGNED) : d.lab !== ui.lab)) return false;
+            if (q && ![POps.deviceName(d), d.hostname, d.ip, d.mac, dev.user(d), d.lab].some(v => String(v || '').toLocaleLowerCase('tr').includes(q))) return false;
+            return true;
+        });
+        const key = {
+            name: (d) => POps.deviceName(d).toLocaleLowerCase('tr'),
+            lab: (d) => String(d.lab || '').toLocaleLowerCase('tr'),
+            status: (d) => ({ on: 0, idle: 1, off: 2 })[dev.state(d).cls],
+            version: (d) => (dev.parseVersion(dev.version(d)) || [0, 0, 0]).map(n => String(n).padStart(4, '0')).join('.'),
+            ip: (d) => String(d.ip || '').split('.').map(n => n.padStart(3, '0')).join('.')
+        }[ui.sort];
+        rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * ui.dir || POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }); });
+        return { rows, newest };
     }
 
-    function updateStats() {
-        const total = page.devices.length;
-        const online = page.devices.filter(d => statusOf(d) === 'online').length;
-        const idle = page.devices.filter(d => statusOf(d) === 'idle').length;
-        document.getElementById('statTotal').textContent = total;
-        document.getElementById('statOnline').textContent = online;
-        document.getElementById('statIdle').textContent = idle;
-        document.getElementById('statOffline').textContent = total - online - idle;
-        const datalist = document.getElementById('existingLabsList');
-        if (datalist) {
-            const labs = [...new Set(page.devices.map(d => d.lab))].filter(l => l && l !== 'Atanmamis_Cihazlar').sort();
-            datalist.replaceChildren(...labs.map(l => POps.el('option', { value: l })));
-        }
+    const COLS = [['name', 'Bilgisayar'], ['lab', 'Sınıf'], ['status', 'Durum'], ['version', 'Ajan'], ['ip', 'IP']];
+    function renderHead(rows) {
+        const all = rows.length && rows.every(d => ui.selected.has(d.hostname));
+        $('devHead').innerHTML = '<tr>' + (CAN_ADMIN ? `<th class="check-col"><input type="checkbox" id="devAll" ${all ? 'checked' : ''} aria-label="Listedekilerin hepsini seç"></th>` : '')
+            + COLS.map(([k, label]) => `<th class="sortable" data-sort="${escapeHtml(k)}" aria-sort="${ui.sort === k ? (ui.dir > 0 ? 'ascending' : 'descending') : 'none'}">${escapeHtml(label)}${ui.sort === k ? `<span class="arr">${ui.dir > 0 ? '↑' : '↓'}</span>` : ''}</th>`).join('')
+            + '</tr>';
     }
-
-    function filtered() {
-        const q = page.query.trim().toLowerCase();
-        return page.devices.filter(d => !q || [nameOf(d), d.hostname, d.ip, d.mac, d.lab, d.cpu].join(' ').toLowerCase().includes(q))
-            .sort((a, b) => nameOf(a).localeCompare(nameOf(b), 'tr', { numeric: true, sensitivity: 'base' }));
-    }
-
-    function rowHtml(d, showLab) {
-        const st = statusOf(d);
-        const cls = st === 'online' ? 'online' : (st === 'idle' ? 'idle' : 'offline');
-        const label = st === 'online' ? 'Çevrimiçi' : (st === 'idle' ? 'Boşta' : 'Çevrimdışı');
-        const idHtml = escapeHtml(d.hostname);
-        const checked = page.selected.has(d.hostname);
-        const actionsHtml = CAN_ADMIN ? `
-            <button type="button" class="btn ghost icon sm wake" data-action="wake" data-id="${escapeHtml(d.hostname)}" title="Uyandır" aria-label="Uyandır"><i class="fas fa-bolt"></i></button>
-            <button type="button" class="btn ghost icon sm reboot" data-action="restart" data-id="${escapeHtml(d.hostname)}" title="Yeniden başlat" aria-label="Yeniden başlat"><i class="fas fa-arrows-rotate"></i></button>
-            <button type="button" class="btn ghost icon sm power" data-action="shutdown" data-id="${escapeHtml(d.hostname)}" title="Kapat" aria-label="Kapat"><i class="fas fa-power-off"></i></button>
-            <button type="button" class="btn ghost icon sm" data-action="bypass" data-id="${escapeHtml(d.hostname)}" title="Çevrimdışı bypass kodu" aria-label="Çevrimdışı bypass kodu"><i class="fas fa-key"></i></button>
-            ${IS_SUPERADMIN ? `<button type="button" class="btn ghost icon sm del" data-action="delete" data-id="${escapeHtml(d.hostname)}" title="Cihazı sil" aria-label="Cihazı sil"><i class="fas fa-trash"></i></button>` : ''}` : '';
-        return `<tr class="${checked ? 'is-selected' : ''}">
-            ${CAN_ADMIN ? `<td class="check-col"><input type="checkbox" class="dev-cb" data-id="${escapeHtml(d.hostname)}" ${checked ? 'checked' : ''} aria-label="Seç"></td>` : ''}
-            <td><span class="status-pill ${cls}"><span class="status-dot ${cls}"></span>${label}</span></td>
-            <td>
-                <div class="dev-name"><span class="cell-title">${escapeHtml(nameOf(d))}</span>
-                    ${CAN_ADMIN ? `<button type="button" class="btn ghost icon sm" data-action="rename" data-id="${escapeHtml(d.hostname)}" title="Adını değiştir" aria-label="Adını değiştir"><i class="fas fa-pen"></i></button>` : ''}</div>
-                <div class="cell-sub mono">${idHtml}</div>
-            </td>
-            ${showLab ? `<td><span class="badge muted">${escapeHtml(d.lab === 'Atanmamis_Cihazlar' ? 'Atanmamış' : (d.lab || 'Atanmamış'))}</span></td>` : ''}
-            <td class="net-cell"><div class="ip">${escapeHtml(d.ip || 'Bilinmiyor')}</div><div class="mac">${escapeHtml(d.mac || '—')}</div></td>
-            <td class="hw-cell"><div>${escapeHtml(d.cpu || '—')}</div><div class="hw-sub">${escapeHtml(d.ram || '—')} · ${escapeHtml(d.os || '—')}</div></td>
-            <td class="actions"><div class="row-actions">${actionsHtml}</div></td>
+    function rowHtml(d, newest) {
+        const st = dev.state(d);
+        const h = d.hostname;
+        const marksHtml = issuesOf(d, newest).slice(0, 2).map(i => dev.markHtml(i)).join('');
+        const statusHtml = `<span class="status-pill ${st.cls === 'on' ? 'online' : st.cls === 'idle' ? 'idle' : 'offline'}"><span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.word)}${st.cls === 'off' && st.since ? ' · ' + POps.timeHtml(st.since) : ''}</span>`;
+        const v = dev.version(d);
+        const old = v && newest && dev.cmpVersion(v, newest) < 0;
+        return `<tr data-host="${escapeHtml(h)}" class="${ui.selected.has(h) ? 'is-selected' : ''}${ui.focus === h ? ' is-focus' : ''}">
+            ${CAN_ADMIN ? `<td class="check-col"><input type="checkbox" class="dev-cb" data-host="${escapeHtml(h)}" ${ui.selected.has(h) ? 'checked' : ''} aria-label="${escapeHtml(POps.deviceName(d))} seç"></td>` : ''}
+            <td><div class="nm">${escapeHtml(POps.deviceName(d))}${marksHtml}</div><div class="sub">${escapeHtml(dev.subline(d))}</div></td>
+            <td>${d.lab && d.lab !== dev.UNASSIGNED ? escapeHtml(d.lab) : '<span class="faint">Atanmamış</span>'}</td>
+            <td>${statusHtml}</td>
+            <td><span class="ver">${escapeHtml(v || '—')}${old ? '<span class="mark old" data-tip="Güncel değil" aria-label="Güncel değil">↑</span>' : ''}</span></td>
+            <td class="mono">${escapeHtml(d.ip || '—')}</td>
         </tr>`;
     }
-
-    function headHtml(showLab, allChecked, lab) {
-        return `<thead><tr>
-            ${CAN_ADMIN ? (lab == null
-                ? `<th class="check-col"><input type="checkbox" id="masterCb" ${allChecked ? 'checked' : ''} aria-label="Hepsini seç"></th>`
-                : `<th class="check-col"><input type="checkbox" class="lab-master" data-lab="${escapeHtml(lab)}" ${allChecked ? 'checked' : ''} aria-label="Sınıftakileri seç"></th>`) : ''}
-            <th>Durum</th><th>Cihaz</th>${showLab ? '<th>Sınıf</th>' : ''}<th>Ağ (IP / MAC)</th><th>Donanım</th><th class="actions">İşlem</th>
-        </tr></thead>`;
+    function renderSummary() {
+        const all = state.devices || [];
+        const newest = dev.newestVersion();
+        const on = all.filter(d => dev.state(d).cls === 'on').length;
+        const idle = all.filter(d => dev.state(d).cls === 'idle').length;
+        const issues = all.filter(d => issuesOf(d, newest).length).length;
+        const sumHtml = `<span class="sum"><b>${all.length}</b> cihaz</span>`
+            + `<span class="sum"><span class="dot on"></span><b>${Number(on)}</b> açık</span>`
+            + (idle ? `<span class="sum"><span class="dot idle"></span><b>${idle}</b> boşta</span>` : '')
+            + `<span class="sum"><span class="dot off"></span><b>${all.length - on - idle}</b> kapalı</span>`
+            + (issues ? `<a href="#" class="sum" data-f="issue"><span class="dot warn"></span><b>${issues}</b> sorunlu</a>` : '');
+        $('devSummary').innerHTML = sumHtml;
     }
-
-    function render() {
-        const list = filtered();
-        const sel = document.getElementById('selectedCount');
-        if (sel) sel.textContent = page.selected.size;
-        if (!list.length) {
-            page.lastHtml = '';
-            POps.setEmpty(container, page.devices.length
-                ? { icon: 'fa-search', title: 'Eşleşen cihaz yok', text: 'Arama ifadesini değiştirin.' }
-                : { icon: 'fa-desktop', title: 'Henüz cihaz yok', text: 'Ajan kurulan bilgisayarlar burada görünür.' });
+    function renderLabs() {
+        const sel = $('devLab');
+        const cur = ui.lab;
+        const labs = dev.labs();
+        const optsHtml = '<option value="">Bütün sınıflar</option>' + labs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('') + `<option value="${escapeHtml(dev.UNASSIGNED)}">Atanmamış</option>`;
+        if (sel.dataset.sig !== labs.join('|')) { sel.innerHTML = optsHtml; sel.dataset.sig = labs.join('|'); }
+        sel.value = cur;
+    }
+    function scope(rows) { return ui.selected.size ? [...ui.selected] : rows.map(d => d.hostname); }
+    function renderBar(rows) {
+        const n = ui.selected.size;
+        const tgt = n ? `${n} bilgisayar` : `listedeki ${rows.length} bilgisayar`;
+        if (!CAN_ADMIN) { bar.innerHTML = `<span class="scope">${rows.length} bilgisayar</span>`; return; }
+        bar.innerHTML = (n
+            ? `<span class="scope sel">${Number(n)} seçili<button type="button" data-act="clear" aria-label="Seçimi temizle" data-tip="Seçimi temizle (Esc)">${POps.iconHtml('x', 'sm')}</button></span>`
+            : `<span class="scope">Listedeki <b>${rows.length}</b></span>`)
+            + '<span class="sep"></span>'
+            + `<button type="button" class="ibtn" data-act="wake" data-tip="Uyandır · ${escapeHtml(tgt)}" aria-label="Uyandır">${POps.iconHtml('zap')}</button>`
+            + `<button type="button" class="ibtn" data-act="restart" data-tip="Yeniden başlat · ${escapeHtml(tgt)}" aria-label="Yeniden başlat">${POps.iconHtml('restart')}</button>`
+            + `<button type="button" class="ibtn danger" data-act="shutdown" data-tip="Kapat · ${escapeHtml(tgt)}" aria-label="Kapat">${POps.iconHtml('power')}</button>`
+            + '<span class="sep"></span>'
+            + `<button type="button" class="ibtn" data-act="screen" data-tip="Ekranları izle" aria-label="Ekranları izle">${POps.iconHtml('eye')}</button>`
+            + `<button type="button" class="ibtn" data-act="command" data-tip="Komut gönder" aria-label="Komut gönder">${POps.iconHtml('terminal')}</button>`
+            + `<button type="button" class="ibtn" data-act="more" data-tip="Diğer işlemler" aria-label="Diğer işlemler" aria-haspopup="menu">${POps.iconHtml('more')}</button>`;
+    }
+    function render(force) {
+        if (!state.devicesLoaded) return;
+        const { rows, newest } = list();
+        const sig = JSON.stringify([ui, [...ui.selected], rows.map(d => [d.hostname, d.status, d.display_name, d.current_user, d.lab, d.ip, d.is_quarantined, d.running_version, d.agent_version, d.last_seen && dev.state(d).cls === 'off' ? d.last_seen : '']), newest]);
+        renderSummary();
+        renderLabs();
+        $('devFilter').querySelectorAll('button').forEach(b => { const on = b.dataset.f === ui.f; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        if (!force && sig === ui.hash) return;
+        ui.hash = sig;
+        ui.selected = new Set([...ui.selected].filter(h => (state.devices || []).some(d => d.hostname === h)));
+        renderHead(rows);
+        renderBar(rows);
+        if (!rows.length) {
+            const filteredOut = (state.devices || []).length > 0;
+            POps.setEmpty(body, filteredOut
+                ? { tag: 'tr', colspan: 7, icon: 'fa-filter', title: 'Süzgece uyan cihaz yok', text: 'Arama ya da süzgeçleri değiştirin.' }
+                : { tag: 'tr', colspan: 7, icon: 'fa-desktop', title: 'Henüz cihaz yok', text: 'Ajan kurulan bilgisayarlar bağlandıkça burada görünür.' });
             return;
         }
-        let html;
-        if (page.view === 'flat') {
-            const all = list.every(d => page.selected.has(d.hostname));
-            html = `<div class="table-wrap"><table class="data-table wide">${headHtml(true, all)}<tbody>${list.map(d => rowHtml(d, true)).join('')}</tbody></table></div>`;
-        } else {
-            const groups = {};
-            list.forEach(d => { const l = d.lab || 'Atanmamis_Cihazlar'; (groups[l] = groups[l] || []).push(d); });
-            html = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'tr')).map(lab => {
-                const pcs = groups[lab];
-                const open = page.query.trim() !== '' || page.expanded.has(lab);
-                const online = pcs.filter(d => statusOf(d) === 'online').length;
-                const all = pcs.every(d => page.selected.has(d.hostname));
-                return `<div class="lab-group ${open ? 'open' : ''}">
-                    <button type="button" class="lab-group-head" data-action="toggle-lab" data-lab="${escapeHtml(lab)}" aria-expanded="${open ? 'true' : 'false'}">
-                        <span class="lab-group-title"><i class="fas fa-network-wired text-muted"></i>${escapeHtml(lab === 'Atanmamis_Cihazlar' ? 'Atanmamış cihazlar' : lab)}
-                            <span class="badge muted">${pcs.length} cihaz</span><span class="badge success">${online} açık</span></span>
-                        <i class="fas fa-chevron-${open ? 'up' : 'down'} text-muted"></i>
-                    </button>
-                    <div class="lab-group-body">${CAN_ADMIN ? `<div class="toolbar" style="margin:0;border:0;border-radius:0;border-bottom:1px solid var(--border-subtle);box-shadow:none;">
-                        <label class="check"><input type="checkbox" class="lab-cb" data-lab="${escapeHtml(lab)}" ${all ? 'checked' : ''}> Bu sınıftakileri seç</label></div>` : ''}
-                        <table class="data-table wide">${headHtml(false, all, lab)}<tbody>${pcs.map(d => rowHtml(d, false)).join('')}</tbody></table></div>
-                </div>`;
-            }).join('');
-        }
-        // Yoklamada değişmeyen tablo yeniden çizilmez (odak ve kaydırma korunur); değişince her zaman çizilir
-        if (html !== page.lastHtml) {
-            page.lastHtml = html;
-            container.innerHTML = html;
-        }
+        body.innerHTML = rows.map(d => rowHtml(d, newest)).join('');
     }
 
-    function selectIds(ids, on) {
-        ids.forEach(id => on ? page.selected.add(id) : page.selected.delete(id));
-        render();
+    function openPc(h) {
+        ui.focus = h;
+        render(true);
+        dev.open(h, { source: 'devices', onClose: () => { ui.focus = null; render(true); } });
     }
 
-    async function runPower(targets, action, btn) {
-        const shutdown = action === 'shutdown';
-        const ok = await POps.confirm({
-            title: shutdown ? 'Cihazlar kapatılsın mı?' : 'Cihazlar yeniden başlatılsın mı?',
-            message: `${targets.length} cihaz 5 saniye içinde ${shutdown ? 'kapatılacak' : 'yeniden başlatılacak'}. Kaydedilmemiş işler kaybolabilir.`,
-            confirmText: shutdown ? 'Kapat' : 'Yeniden başlat', danger: true, icon: 'fa-power-off'
-        });
-        if (!ok) return;
-        await POps.act(btn, () => POps.post('/api/deploy_orchestration', {
-            target_mode: 'PC', targets,
-            taskSequence: [{ name: shutdown ? 'Güç: kapat' : 'Güç: yeniden başlat', type: 'CMD', command: shutdown ? 'shutdown /s /f /t 5' : 'shutdown /r /f /t 5' }]
-        }), { success: (r) => `Komut kuyruğa eklendi (${(r && r.created) || 0} cihaz)` + (r && r.skipped_module_closed ? `; ${r.skipped_module_closed} cihazda uzak komut kapalı.` : '.') });
+    body.addEventListener('click', (e) => {
+        const tr = e.target.closest('tr[data-host]');
+        if (!tr || e.target.closest('input, a, .mark')) return;
+        if (CAN_ADMIN && (e.ctrlKey || e.metaKey)) { toggle(tr.dataset.host); return; }
+        openPc(tr.dataset.host);
+    });
+    function toggle(h, on) {
+        const want = on === undefined ? !ui.selected.has(h) : on;
+        want ? ui.selected.add(h) : ui.selected.delete(h);
+        render(true);
     }
-
-    async function wakeMany(targets, btn) {
-        await POps.busy(btn, async () => {
-            const results = await Promise.allSettled(targets.map(pc => POps.post('/api/wake_pc/' + encodeURIComponent(pc))));
-            const ok = results.filter(r => r.status === 'fulfilled').length;
-            const firstErr = results.find(r => r.status === 'rejected');
-            if (ok === targets.length) POps.toast('success', `${ok} cihaza uyandırma sinyali gönderildi.`);
-            else POps.toast(ok ? 'warning' : 'error', `${ok}/${targets.length} cihaza gönderilebildi.` + (firstErr ? ' ' + POps.errorMessage(firstErr.reason) : ''));
-        });
-    }
-
-    async function rename(id, btn) {
-        const d = page.devices.find(x => x.hostname === id) || { hostname: id };
-        const name = await POps.prompt({
-            title: 'Cihazın adını değiştir', message: `${id} panelde bu adla görünür. Boş bırakırsanız bilgisayarın kendi adı kullanılır.`,
-            label: 'Görünen ad', defaultValue: d.display_name || nameOf(d), maxLength: 100, required: false, confirmText: 'Kaydet'
-        });
-        if (name === null) return;
-        if (await POps.act(btn, () => POps.post('/api/rename_device', { pc_name: id, display_name: name.trim() }), { success: 'Ad güncellendi.' })) fetchDevices();
-    }
-
-    async function remove(id, btn) {
-        const ok = await POps.confirm({
-            title: 'Cihaz silinsin mi?', danger: true, confirmText: 'Sil',
-            message: `${id} bütün kayıtlarıyla (görevler, envanter, anahtar) silinecek. Bilgisayar yeniden bağlanırsa yeniden kayıt gerekir. Bu işlem geri alınamaz.`
-        });
-        if (!ok) return;
-        if (await POps.act(btn, () => POps.del('/api/devices/' + encodeURIComponent(id)), { success: 'Cihaz silindi.' })) fetchDevices();
-    }
-
-    async function bypass(id, btn) {
-        let data;
-        try { data = await POps.busy(btn, () => POps.post('/api/security/bypass_token/' + encodeURIComponent(id))); }
-        catch (e) { POps.toast('error', POps.errorMessage(e)); return; }
-        if (!data) return;
-        const codes = [data.token];
-        if (data.fallback_token) codes.push(data.fallback_token);
-        await POps.alert({
-            title: 'Çevrimdışı bypass kodu', icon: 'fa-key', codes,
-            message: `${id} · geçerli: ${data.valid_for}` + (data.n ? ` · bugünün ${data.n + 1}. kodu` : ''),
-            note: (data.fallback_token ? 'İlk kod kabul edilmezse ikincisini deneyin (cihaz anahtarı henüz onaylanmadı). ' : '')
-                + 'Kullanıcı kodu tepsi simgesi → "Yönetici Müdahalesi (Bypass)" menüsüne girer. Her kod bir kez geçerlidir; yeni kod için yeniden isteyin.'
-        });
-    }
-
-    container.addEventListener('change', (e) => {
-        const t = e.target;
-        if (t.classList.contains('dev-cb')) selectIds([t.dataset.id], t.checked);
-        else if (t.id === 'masterCb') selectIds(filtered().map(d => d.hostname), t.checked);
-        else if (t.classList.contains('lab-cb') || t.classList.contains('lab-master')) selectIds(filtered().filter(d => (d.lab || 'Atanmamis_Cihazlar') === t.dataset.lab).map(d => d.hostname), t.checked);
+    body.addEventListener('change', (e) => { if (e.target.classList.contains('dev-cb')) toggle(e.target.dataset.host, e.target.checked); });
+    $('devHead').addEventListener('change', (e) => { if (e.target.id === 'devAll') { list().rows.forEach(d => e.target.checked ? ui.selected.add(d.hostname) : ui.selected.delete(d.hostname)); render(true); } });
+    $('devHead').addEventListener('click', (e) => {
+        const th = e.target.closest('th[data-sort]');
+        if (!th) return;
+        if (ui.sort === th.dataset.sort) ui.dir = -ui.dir; else { ui.sort = th.dataset.sort; ui.dir = 1; }
+        render(true);
+    });
+    $('devFilter').addEventListener('click', (e) => { const b = e.target.closest('button[data-f]'); if (b) { ui.f = b.dataset.f; render(true); } });
+    $('devSummary').addEventListener('click', (e) => { const a = e.target.closest('[data-f]'); if (a) { e.preventDefault(); ui.f = a.dataset.f; render(true); } });
+    $('devLab').addEventListener('change', (e) => { ui.lab = e.target.value; render(true); });
+    let qt = null;
+    $('devSearch').addEventListener('input', (e) => { clearTimeout(qt); qt = setTimeout(() => { ui.q = e.target.value.trim(); render(true); }, 120); });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && ui.selected.size && !POps.drawer.isOpen() && !document.querySelector('.pops-dialog-overlay, .pops-menu, .palette-overlay')) { ui.selected.clear(); render(true); }
     });
 
-    document.addEventListener('click', (e) => {
-        const b = e.target.closest('[data-action], [data-view]');
-        if (!b || !document.querySelector('.app-content').contains(b)) return;
-        if (b.dataset.view) {
-            page.view = b.dataset.view;
-            document.querySelectorAll('[data-view]').forEach(x => { const on = x.dataset.view === page.view; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on); });
-            render();
-            return;
-        }
-        const id = b.dataset.id;
-        const sel = Array.from(page.selected);
-        const needSel = () => { if (!sel.length) { POps.toast('warning', 'Önce tablodan cihaz seçin.'); return false; } return true; };
-        switch (b.dataset.action) {
-            case 'toggle-lab':
-                page.expanded.has(b.dataset.lab) ? page.expanded.delete(b.dataset.lab) : page.expanded.add(b.dataset.lab);
-                render();
+    bar.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-act]');
+        if (!b) return;
+        const rows = list().rows;
+        const hosts = scope(rows);
+        const label = ui.selected.size ? (ui.selected.size === 1 ? dev.name(hosts[0]) : `${hosts.length} bilgisayar`) : `${hosts.length} bilgisayar`;
+        const o = { btn: b, source: 'devices', scopeLabel: label };
+        const onHosts = () => hosts.filter(h => !POps.isOffline(dev.find(h)));
+        switch (b.dataset.act) {
+            case 'clear': ui.selected.clear(); render(true); break;
+            case 'wake': case 'restart': case 'shutdown': dev.power(b.dataset.act, hosts, o); break;
+            case 'screen': { const on = onHosts(); if (!on.length) return POps.toast('warning', 'Açık bilgisayar yok.'); location.href = dev.screenUrl(on.slice(0, 60)); break; }
+            case 'command': { const on = onHosts(); if (!on.length) return POps.toast('warning', 'Açık bilgisayar yok.'); location.href = dev.commandUrl(on.slice(0, 200)); break; }
+            case 'more': {
+                const anyQ = hosts.some(h => (dev.find(h) || {}).is_quarantined);
+                POps.menu(b, [
+                    { label: 'Mesaj gönder', icon: 'message', onClick: () => dev.message(hosts, o) },
+                    { label: 'Başka sınıfa taşı…', icon: 'move', onClick: () => dev.moveMenu(b, hosts, {}) },
+                    '-',
+                    { label: 'Karantinaya al', icon: 'lock', danger: true, onClick: () => dev.quarantine(hosts, o) },
+                    anyQ ? { label: 'Karantinayı kaldır', icon: 'unlock', onClick: () => dev.unquarantine(hosts.filter(h => (dev.find(h) || {}).is_quarantined), o) } : null
+                ]);
                 break;
-            case 'wake': window.wakeUpCommand('PC', id, b); break;
-            case 'restart': runPower([id], 'restart', b); break;
-            case 'shutdown': runPower([id], 'shutdown', b); break;
-            case 'rename': rename(id, b); break;
-            case 'delete': remove(id, b); break;
-            case 'bypass': bypass(id, b); break;
-            case 'wake-all': window.wakeUpCommand('ALL', null, b); break;
-            case 'shutdown-all': window.powerCommand('ALL', 'shutdown', null, b); break;
-            case 'bulk-wake': if (needSel()) wakeMany(sel, b); break;
-            case 'bulk-restart': if (needSel()) runPower(sel, 'restart', b); break;
-            case 'bulk-shutdown': if (needSel()) runPower(sel, 'shutdown', b); break;
-            case 'bulk-move':
-                if (!needSel()) break;
-                document.getElementById('moveSelectedCount').textContent = sel.length;
-                document.getElementById('newLabNameInput').value = '';
-                openModal('moveLabModal');
-                setTimeout(() => document.getElementById('newLabNameInput').focus(), 50);
-                break;
+            }
         }
     });
 
-    const moveBtn = document.getElementById('confirmMoveLabBtn');
-    if (moveBtn) {
-        const doMove = async () => {
-            const lab = document.getElementById('newLabNameInput').value.trim();
-            if (!lab) { POps.toast('warning', 'Hedef sınıfın adını yazın.'); return; }
-            const ids = Array.from(page.selected);
-            const ok = await POps.act(moveBtn, () => POps.post('/api/move_pcs', { pc_names: ids, new_lab: lab }), { success: `${ids.length} cihaz "${lab}" sınıfına taşındı.` });
-            if (ok) { page.selected.clear(); closeModal('moveLabModal'); fetchDevices(); }
-        };
-        moveBtn.addEventListener('click', doMove);
-        document.getElementById('newLabNameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doMove(); } });
-    }
+    $('exportBtn').addEventListener('click', () => {
+        const { rows } = list();
+        const cell = (v) => { const s = String(v == null ? '' : v); return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+        const lines = [['Ad', 'Kimlik', 'Sınıf', 'Durum', 'Kullanıcı', 'IP', 'MAC', 'Ajan', 'Son görülme'].join(';')]
+            .concat(rows.map(d => [POps.deviceName(d), d.hostname, d.lab, dev.state(d).word, dev.user(d), d.ip, d.mac, dev.version(d), d.last_seen].map(cell).join(';')));
+        const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'pops-cihazlar-' + new Date().toISOString().slice(0, 10) + '.csv';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
 
-    document.getElementById('advancedSearch').addEventListener('input', (e) => { page.query = e.target.value; render(); });
-
-    fetchDevices();
-    popsPoll(fetchDevices, 5000);
-});
+    let opened = false;
+    document.addEventListener('pops_data_updated', (e) => {
+        if (e.detail && e.detail.error && !state.devicesLoaded) { POps.setError(body, e.detail.error, { tag: 'tr', colspan: 7 }); return; }
+        render(false);
+        const want = params.get('pc');
+        if (want && !opened && state.devicesLoaded) { opened = true; openPc(want); }
+    });
+    POps.watchDevices({ inventory: true });
+    if (state.devicesLoaded) render(true);
+})();
 </script>
 
 <?php include 'includes/footer.php'; ?>

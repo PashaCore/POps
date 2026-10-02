@@ -2,141 +2,82 @@
 <?php $tkCanAdmin = in_array($_SESSION['role'] ?? '', ['admin', 'superadmin'], true); ?>
 
 <style>
-    .task-group { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); margin-bottom: var(--space-3); overflow: hidden; box-shadow: var(--shadow-xs); transition: box-shadow 0.15s, border-color 0.15s; }
-    .task-group:hover { border-color: var(--border-default); }
-    .task-group-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5); cursor: pointer; }
-    .task-group-head:hover { background: var(--bg-surface-2); }
-    .task-group.open .task-group-head { border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface-2); }
-    .task-group-info { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; flex: 1; }
-    .task-lab { font-weight: var(--fw-semibold); color: var(--primary-600); font-size: var(--text-sm); display: flex; align-items: center; gap: 0.5rem; }
-    .task-cmd { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .task-group-side { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
-    .task-group .chev { color: var(--text-tertiary); transition: transform 0.2s; }
-    .task-group.open .chev { transform: rotate(180deg); color: var(--primary-500); }
-    .task-group-body { display: none; overflow-x: auto; }
-    .task-group.open .task-group-body { display: block; }
-    .task-status { font-weight: var(--fw-semibold); font-size: var(--text-sm); display: inline-flex; align-items: center; gap: 0.375rem; }
-    .task-status.success { color: var(--success-text); }
-    .task-status.failed { color: var(--danger-text); }
-    .task-status.pending { color: var(--warning-text); }
-    .task-status.paused { color: var(--text-tertiary); }
-    .task-status.running { color: var(--info-text); }
-    .live-indicator { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.625rem; border-radius: var(--radius-full); font-size: 0.75rem; font-weight: var(--fw-semibold); background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
-    .live-indicator .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.5s infinite; }
-
-    .log-list { max-height: 520px; overflow-y: auto; padding: var(--space-3); }
-    .log-line { display: flex; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); margin-bottom: 0.25rem; background: var(--bg-surface-2); align-items: center; border-left: 3px solid transparent; font-size: var(--text-sm); }
-    .log-line:hover { background: var(--bg-hover); }
-    .log-time { color: var(--primary-500); min-width: 64px; font-size: 0.75rem; font-family: var(--font-mono); flex-shrink: 0; }
-    .log-pc { color: var(--text-primary); font-weight: var(--fw-semibold); min-width: 140px; flex-shrink: 0; }
-    .log-msg { color: var(--text-secondary); flex: 1; word-break: break-word; }
-    .log-line.risk-high, .log-line.risk-critical { border-left-color: var(--danger-solid); background: var(--danger-bg); }
-    .log-line.risk-high .log-msg, .log-line.risk-critical .log-msg { color: var(--danger-text); }
-    .log-line.risk-medium { border-left-color: var(--warning-solid); }
-    .log-type { min-width: 96px; justify-content: center; }
-    .card-header .toolbar-group select { width: auto; min-width: 170px; }
-    .card-header .toolbar-group .search-field { flex: 0 1 240px; }
-
-    .code-block { background: var(--bg-app); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; margin-bottom: var(--space-3); }
-    .code-header { background: var(--bg-surface-2); padding: 0.5rem 0.875rem; font-size: 0.75rem; color: var(--text-tertiary); font-weight: var(--fw-semibold); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 0.5rem; }
-    .code-content { padding: 0.875rem; margin: 0; font-family: var(--font-mono); font-size: var(--text-sm); white-space: pre-wrap; word-wrap: break-word; color: var(--text-secondary); overflow-y: auto; max-height: 300px; }
-    .code-content.output { color: var(--success-text); }
-    .code-content.error { color: var(--danger-text); }
-
-    .sched-row { display: grid; grid-template-columns: 1.4fr 1fr 1.2fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm); }
-    .sched-row:hover { background: var(--bg-surface-2); }
-    .sched-row:last-child { border-bottom: none; }
-    .sched-row .n { font-weight: var(--fw-semibold); color: var(--text-primary); }
-    .sched-row .c { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px; }
-    .sched-row .sub { font-size: 0.75rem; color: var(--text-tertiary); margin-top: 0.125rem; }
-    .sched-row.off { opacity: 0.6; }
-    .sched-days { display: flex; gap: 0.375rem; flex-wrap: wrap; }
-    .sched-devs { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.25rem; background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.5rem; }
-    @media (max-width: 860px) { .sched-row { grid-template-columns: 1fr; } }
+    .tk-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .tk-bar .grow { flex: 1; }
+    .tk-bar .search-field { flex: 0 1 260px; min-width: 180px; }
+    .tk-list { padding: 4px 16px; }
+    .tk-list .act { cursor: pointer; padding: 14px 6px; border-radius: 10px; }
+    .tk-list .act:hover { background: var(--bg-surface-2); }
+    .tk-list .act.is-focus { background: #f0f6ff; }
+    .tk-prog { width: 150px; display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+    .tk-prog .row { display: flex; justify-content: space-between; gap: 8px; }
+    .tk-prog .cnt { font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .tk-cmd { font-family: var(--font-mono); font-size: 12px; background: var(--bg-app); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; }
+    .tk-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tk-dev .act { padding: 10px 2px; }
+    .tk-dev .act.has-out { cursor: pointer; }
+    .tk-more { text-align: center; padding: 12px; }
+    .sched-row { cursor: pointer; }
+    .sched-days { gap: 6px; }
+    .sched-days label.chip { cursor: pointer; }
+    .sched-days label.chip input { display: none; }
+    .sched-days label.chip:has(input:checked) { background: var(--text-primary); border-color: var(--text-primary); color: #fff; }
+    .sched-devs { max-height: 220px; overflow-y: auto; border-radius: 10px; background: var(--bg-app); padding: 8px 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 12px; }
+    @media (max-width: 640px) { .tk-prog { width: 96px; } }
 </style>
 
 <div class="page-header">
     <div>
-        <h1><i class="fas fa-list-check"></i> Görev Kuyruğu</h1>
-        <p>Bilgisayarlara gönderilen komutlar, sonuçları ve zamanlanmış görevler</p>
+        <h1>İşlemler</h1>
+        <div class="summary" id="tkSummary"></div>
     </div>
     <div class="page-header-actions">
-        <span class="live-indicator"><span class="dot"></span> Canlı</span>
-    </div>
-</div>
-
-<div class="stat-grid" id="topStats"></div>
-
-<div class="toolbar">
-    <?php if ($tkCanAdmin): ?>
-    <div class="toolbar-group">
-        <button type="button" class="btn warning-soft sm" data-action="bulk" data-op="PAUSE"><i class="fas fa-pause"></i> Bekleyenleri duraklat</button>
-        <button type="button" class="btn success-soft sm" data-action="bulk" data-op="RESUME"><i class="fas fa-play"></i> Devam ettir</button>
-        <button type="button" class="btn danger-soft sm" data-action="clear"><i class="fas fa-trash"></i> Görev geçmişini sil</button>
-    </div>
-    <?php endif; ?>
-    <div class="spacer"></div>
-    <span class="text-sm text-muted" id="syncText" role="status">Eşitleniyor…</span>
-</div>
-
-<div id="groupedTasksContainer"></div>
-
-<div class="card" id="schedCard" style="margin-top:var(--space-6);">
-    <div class="card-header">
-        <div>
-            <h2 class="card-title"><i class="fas fa-calendar-days"></i> Zamanlanmış görevler</h2>
-            <div class="card-subtitle" id="sfTz"></div>
-        </div>
         <?php if ($tkCanAdmin): ?>
-        <button type="button" class="btn sm" data-action="sched-new"><i class="fas fa-plus"></i> Yeni zamanlanmış görev</button>
+        <button type="button" class="btn" id="schedNewBtn" hidden><?php echo pops_icon('plus', 'sm'); ?>Zamanlanmış görev</button>
+        <button type="button" class="ibtn boxed" id="tkLimitBtn" data-tip="Aynı anda çalışacak görev sayısı" data-tip-pos="left" aria-label="Eşzamanlı görev sınırı"><?php echo pops_icon('sliders'); ?></button>
+        <button type="button" class="ibtn boxed" id="tkMenuBtn" data-tip="Kuyruk işlemleri" data-tip-pos="left" aria-label="Kuyruk işlemleri" aria-haspopup="menu"><?php echo pops_icon('more'); ?></button>
         <?php endif; ?>
     </div>
-    <div class="card-body flush" id="schedList"></div>
 </div>
 
-<div class="card" style="margin-top:var(--space-6);">
-    <div class="card-header">
-        <h2 class="card-title"><i class="fas fa-satellite-dish"></i> Ajan etkinliği</h2>
-        <div class="toolbar-group">
-            <select id="logPcFilter" aria-label="Bilgisayar"><option value="ALL">Bütün bilgisayarlar</option></select>
-            <select id="logTypeFilter" aria-label="Kayıt türü"><option value="ALL">Bütün türler</option></select>
-            <div class="search-field" style="min-width:220px;"><i class="fas fa-search" aria-hidden="true"></i><input type="search" id="logSearchInput" placeholder="Mesajda ara" aria-label="Mesajda ara"></div>
-        </div>
+<div class="tk-bar">
+    <div class="segmented" id="tkTab" role="tablist" aria-label="Görünüm">
+        <button type="button" data-tab="jobs" class="active" aria-selected="true">İşler</button>
+        <button type="button" data-tab="sched" aria-selected="false">Zamanlanmış <span class="faint" id="schedCount"></span></button>
     </div>
-    <div class="log-list" id="agentLogsList"></div>
+    <span class="grow"></span>
+    <div class="segmented" id="tkFilter" role="group" aria-label="Duruma göre süz">
+        <button type="button" data-f="all" class="active" aria-pressed="true">Tümü</button>
+        <button type="button" data-f="run" aria-pressed="false">Sürüyor</button>
+        <button type="button" data-f="bad" aria-pressed="false">Sorunlu</button>
+    </div>
+    <div class="search-field">
+        <i class="fas fa-search" aria-hidden="true"></i>
+        <input type="search" id="tkSearch" placeholder="İş, bilgisayar ya da kişi" aria-label="İşlerde ara">
+    </div>
 </div>
 
-<div id="outputModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="outputTitle">
-    <div class="modal-box lg">
-        <div class="modal-header">
-            <div class="modal-title" id="outputTitle"><i class="fas fa-file-lines"></i> Görev sonucu</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
-        </div>
-        <div class="modal-body">
-            <div class="field"><span class="field-label">Bilgisayar</span><div class="cell-title" id="modalPcName">—</div></div>
-            <div class="code-block"><div class="code-header"><i class="fas fa-code"></i> Gönderilen komut</div><pre id="modalCommand" class="code-content"></pre></div>
-            <div class="code-block"><div class="code-header"><i class="fas fa-terminal"></i> Ajanın yanıtı</div><pre id="modalOutput" class="code-content output"></pre></div>
-        </div>
-    </div>
-</div>
+<div class="card" id="jobsCard"><div class="tk-list" id="jobList"></div></div>
+<div class="card" id="schedCard" hidden><div class="card-body flush"><div id="schedList"></div></div></div>
+<div class="set-note" id="tkNote"></div>
 
 <?php if ($tkCanAdmin): ?>
 <div id="schedModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="schedTitle">
     <div class="modal-box lg">
         <div class="modal-header">
-            <div class="modal-title" id="schedTitle"><i class="fas fa-calendar-plus"></i> Yeni zamanlanmış görev</div>
+            <div class="modal-title" id="schedTitle">Yeni zamanlanmış görev</div>
             <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <div class="form-grid">
-                <div class="field"><label for="sfName">Ad</label><input id="sfName" maxlength="100" placeholder="ör. Gece temizliği"></div>
+                <div class="field"><label for="sfName">Ad</label><input id="sfName" maxlength="100" placeholder="Örn. Gece temizliği"></div>
                 <div class="field"><label for="sfType">Zamanlama</label>
                     <select id="sfType"><option value="daily">Her gün</option><option value="weekly">Seçili günler</option><option value="once">Bir kez</option></select></div>
                 <div class="field" id="sfTimeWrap"><label for="sfTime">Saat</label><input id="sfTime" type="time" value="03:00"></div>
                 <div class="field hidden" id="sfAtWrap"><label for="sfAt">Tarih ve saat</label><input id="sfAt" type="datetime-local"></div>
             </div>
             <div class="field hidden" id="sfDaysWrap"><span class="field-label">Günler</span><div class="sched-days chip-row" id="sfDays"></div></div>
-            <div class="field"><label for="sfCmd">Komut</label><textarea id="sfCmd" maxlength="4000" rows="3" class="text-mono" placeholder="ör. cleanmgr /sagerun:1"></textarea>
+            <div class="field"><label for="sfCmd">Komut</label><textarea id="sfCmd" maxlength="4000" rows="3" class="text-mono" placeholder="Örn. cleanmgr /sagerun:1"></textarea>
                 <div class="field-hint">Hedef bilgisayarlarda SYSTEM hesabıyla, cmd.exe ile çalışır.</div></div>
             <div class="form-grid">
                 <div class="field"><label for="sfMode">Hedef</label>
@@ -147,229 +88,307 @@
         </div>
         <div class="modal-footer">
             <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
-            <button type="button" class="btn" id="sfSave"><i class="fas fa-floppy-disk"></i> Kaydet</button>
+            <button type="button" class="btn" id="sfSave">Kaydet</button>
         </div>
     </div>
 </div>
 <?php endif; ?>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+(function () {
     const CAN_ADMIN = <?php echo $tkCanAdmin ? 'true' : 'false'; ?>;
+    const dev = POps.dev;
     const $ = (id) => document.getElementById(id);
-    const mem = { names: {}, groups: {}, expanded: new Set(), tasksKey: null, logs: [], logsKey: null, loaded: false };
-    const FINISHED = ['Completed', 'Completed (Rebooted)', 'Failed', 'Error', 'Cancelled', 'Unknown', 'Interrupted', 'Timed Out', 'Denied', 'Expired'];
-    const ACTION_TEXT = { CANCEL: 'iptal edilecek', RETRY: 'yeniden çalıştırılacak', PAUSE: 'duraklatılacak', RESUME: 'devam ettirilecek' };
-    POps.setLoading($('groupedTasksContainer'), 'Görevler yükleniyor…');
-    POps.setLoading($('agentLogsList'), 'Kayıtlar yükleniyor…');
+    const params = new URLSearchParams(location.search);
+    const ui = { tab: params.get('tab') === 'sched' ? 'sched' : 'jobs', f: 'all', q: '', limit: 60, focus: null, tasks: [], jobs: [], key: null, loaded: false, names: {}, sched: [], schedLoaded: false };
 
-    function statusInfo(s) {
-        if (String(s).includes('Completed')) return ['success', 'fa-check', s === 'Completed (Rebooted)' ? 'Tamamlandı (yeniden başladı)' : 'Tamamlandı'];
-        switch (s) {
-            case 'Running': return ['running', 'fa-spinner fa-spin', 'Çalışıyor'];
-            case 'Pending': return ['pending', 'fa-clock', 'Sırada'];
-            case 'Paused': return ['paused', 'fa-pause', 'Duraklatıldı'];
-            case 'Failed': case 'Error': return ['failed', 'fa-xmark', 'Hata'];
-            case 'Cancelled': return ['paused', 'fa-ban', 'İptal edildi'];
-            case 'Unknown': return ['paused', 'fa-circle-question', 'Sonuç bilinmiyor (bağlantı koptu)'];
-            case 'Interrupted': return ['failed', 'fa-circle-exclamation', 'Yarıda kaldı (ajan yeniden başladı)'];
-            case 'Denied': return ['failed', 'fa-ban', 'Reddedildi (uzak komut bu cihazda kapalı)'];
-            case 'Timed Out': return ['failed', 'fa-hourglass-end', 'Zaman aşımı (35 dk sonuç gelmedi)'];
-            case 'Expired': return ['failed', 'fa-calendar-xmark', 'Süresi doldu (zamanında gönderilemedi)'];
-            default: return ['paused', 'fa-circle-question', String(s || '?')];
-        }
+    const nm = (pc) => ui.names[pc] || pc;
+    const WAITING = ['Pending', 'Paused'];
+
+    // ---- İşler: aynı istekte açılan görevler tek iş (batch_id); eski kayıtlarda zaman + kişi + komut
+    function groupJobs(tasks) {
+        const map = new Map();
+        tasks.forEach(t => {
+            const key = t.batch_id || ['legacy', t.created_at, t.created_by, t.script_path, t.retry_of ? 'r' : ''].join('|');
+            let j = map.get(key);
+            if (!j) { j = { key, tasks: [], title: dev.taskTitle(t), by: t.created_by, at: t.created_at, source: t.source, reason: t.reason, ip: t.client_ip, command: t.script_path, minId: t.id }; map.set(key, j); }
+            j.tasks.push(t);
+            if (t.id < j.minId) { j.minId = t.id; }
+        });
+        const jobs = [...map.values()].map(j => {
+            const c = { ok: 0, bad: 0, run: 0, wait: 0, total: j.tasks.length };
+            j.tasks.forEach(t => { const k = POps.taskState(t.status); c[k] += 1; if (WAITING.includes(t.status)) c.wait += 1; });
+            j.c = c;
+            j.state = c.run ? 'run' : c.bad ? 'bad' : 'ok';
+            j.labs = [...new Set(j.tasks.map(t => t.target_lab).filter(l => l && l !== dev.UNASSIGNED))];
+            return j;
+        });
+        jobs.sort((a, b) => b.minId - a.minId);
+        return jobs;
     }
-
-    function stats(tasks) {
-        const c = (f) => tasks.filter(f).length;
-        const done = c(t => String(t.status).includes('Completed'));
-        const running = c(t => t.status === 'Running');
-        const waiting = c(t => t.status === 'Pending' || t.status === 'Paused');
-        const bad = tasks.length - done - running - waiting;
-        const cardHtml = (icon, cls, label, val) => `<div class="stat-card"><div class="stat-icon ${escapeHtml(cls)}"><i class="fas ${escapeHtml(icon)}"></i></div><div><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${Number(val)}</div></div></div>`;
-        $('topStats').innerHTML = cardHtml('fa-layer-group', '', 'Toplam', tasks.length) + cardHtml('fa-check-double', 'success', 'Tamamlanan', done)
-            + cardHtml('fa-arrows-spin', 'info', 'Çalışan', running) + cardHtml('fa-clock', 'warning', 'Bekleyen', waiting) + cardHtml('fa-triangle-exclamation', 'danger', 'Sorunlu', bad);
+    function jobWord(j) {
+        if (j.c.run) return j.c.wait === j.c.run && !j.tasks.some(t => t.status === 'Running') ? (j.tasks.some(t => t.status === 'Paused') ? 'Duraklatıldı' : 'Sırada') : 'Sürüyor';
+        if (j.c.bad) return j.c.bad === j.c.total ? (j.c.total === 1 ? dev.statusWord(j.tasks[0].status) : 'Başarısız') : `${j.c.bad} başarısız`;
+        return 'Tamamlandı';
+    }
+    function targetText(j) {
+        if (j.c.total === 1) return nm(j.tasks[0].target_pc);
+        return (j.labs.length === 1 ? j.labs[0] + ' · ' : j.labs.length > 1 ? j.labs.length + ' sınıf · ' : '') + j.c.total + ' bilgisayar';
+    }
+    function matches(j) {
+        if (ui.f === 'run' && j.state !== 'run') return false;
+        if (ui.f === 'bad' && !j.c.bad) return false;
+        if (!ui.q) return true;
+        const q = ui.q.toLocaleLowerCase('tr');
+        return [j.title, j.command, j.by, j.reason, ...j.tasks.map(t => nm(t.target_pc)), ...j.labs].some(v => String(v || '').toLocaleLowerCase('tr').includes(q));
+    }
+    function pbarHtml(c) {
+        const segHtml = (cls, n) => n ? `<i class="${escapeHtml(cls)}" style="width:${(n / c.total * 100).toFixed(2)}%"></i>` : '';
+        return `<div class="pbar">${segHtml('ok', c.ok)}${segHtml('bad', c.bad)}${segHtml('run', c.run - c.wait)}</div>`;
+    }
+    function jobRowHtml(j) {
+        const icon = j.state === 'ok' ? 'check' : j.state === 'bad' ? 'x' : 'clock';
+        const metaHtml = escapeHtml(j.by || 'sistem') + ' · ' + POps.timeHtml(j.at) + (j.source ? ' · ' + escapeHtml(dev.sourceText(j.source)) : '') + ' · ' + escapeHtml(targetText(j));
+        const why = j.c.bad && j.c.total === 1 ? dev.failReason(j.tasks[0]) : '';
+        return `<div class="act${ui.focus === j.key ? ' is-focus' : ''}" data-job="${escapeHtml(j.key)}" role="button" tabindex="0">
+            <div class="res ${escapeHtml(j.state)}">${POps.iconHtml(icon)}</div>
+            <div style="min-width:0"><div class="what">${escapeHtml(j.title)}</div><div class="meta">${metaHtml}${j.reason ? ' · gerekçe: ' + escapeHtml(j.reason) : ''}</div>${why ? `<div class="why">${escapeHtml(why)}</div>` : ''}</div>
+            <div class="side tk-prog"><div class="row"><span class="word ${escapeHtml(j.state)}">${escapeHtml(jobWord(j))}</span><span class="cnt">${j.c.bad && j.state === 'run' ? `<span class="word bad">${Number(j.c.bad)} hata</span> · ` : ''}${Number(j.c.ok + j.c.bad)}/${Number(j.c.total)}</span></div>${j.c.total > 1 ? pbarHtml(j.c) : ''}</div>
+        </div>`;
+    }
+    function renderSummary() {
+        const today = new Date().toDateString();
+        const isToday = (j) => { const d = POps.toDate(j.at); return d && d.toDateString() === today; };
+        const run = ui.jobs.filter(j => j.state === 'run').length;
+        const badToday = ui.jobs.filter(j => j.c.bad && isToday(j)).length;
+        const okToday = ui.jobs.filter(j => j.state === 'ok' && isToday(j)).length;
+        $('tkSummary').innerHTML = `<span class="sum"><span class="dot run"></span><b>${Number(run)}</b> sürüyor</span>`
+            + `<a href="#" class="sum" data-f="bad"><span class="dot bad"></span><b>${Number(badToday)}</b> sorunlu (bugün)</a>`
+            + `<span class="sum"><span class="dot ok"></span><b>${Number(okToday)}</b> tamamlandı (bugün)</span>`;
+    }
+    function renderJobs() {
+        renderSummary();
+        const box = $('jobList');
+        const list = ui.jobs.filter(matches);
+        if (!list.length) {
+            POps.setEmpty(box, ui.jobs.length
+                ? { icon: 'fa-filter', title: 'Süzgece uyan iş yok', text: 'Arama ya da süzgeci değiştirin.' }
+                : { icon: 'fa-check', kind: 'success', title: 'Henüz işlem yok', text: 'Sınıflar, Cihazlar, Uzak komut ya da Dağıtım sayfasından gönderilen her iş burada görünür.' });
+            return;
+        }
+        const shown = list.slice(0, ui.limit);
+        box.innerHTML = shown.map(jobRowHtml).join('') + (list.length > shown.length ? `<div class="tk-more"><button type="button" class="btn secondary sm" data-more="1">${Number(list.length - shown.length)} iş daha göster</button></div>` : '');
+        $('tkNote').textContent = 'Son 1000 görev gösterilir.';
     }
 
     async function loadTasks() {
         try {
-            const [devices, tasks] = await Promise.all([POps.get('/api/devices').catch(() => null), POps.get('/api/tasks?limit=500')]);
-            if (Array.isArray(devices)) devices.forEach(d => { mem.names[d.hostname] = POps.deviceName(d); });
+            const [devices, tasks] = await Promise.all([POps.get('/api/devices').catch(() => null), POps.get('/api/tasks?limit=1000')]);
+            if (Array.isArray(devices)) devices.forEach(d => { ui.names[d.hostname] = POps.deviceName(d); });
             const key = JSON.stringify(tasks);
-            $('syncText').textContent = 'Güncel · ' + new Date().toLocaleTimeString('tr-TR');
-            if (key === mem.tasksKey) return;
-            mem.tasksKey = key;
-            mem.loaded = true;
-            renderTasks(Array.isArray(tasks) ? tasks : []);
+            if (key === ui.key) return;
+            ui.key = key;
+            ui.loaded = true;
+            ui.tasks = Array.isArray(tasks) ? tasks : [];
+            ui.jobs = groupJobs(ui.tasks);
+            if (ui.tab === 'jobs') renderJobs();
+            if (ui.focus && POps.drawer.isOpen('job:' + ui.focus)) renderDrawer(ui.focus, true);
+            const want = params.get('job');
+            if (want && !ui.opened) { ui.opened = true; if (ui.jobs.some(j => j.key === want)) openJob(want); }
         } catch (e) {
-            $('syncText').textContent = 'Sunucuya ulaşılamadı';
-            if (!mem.loaded) POps.setError($('groupedTasksContainer'), e);
+            if (!ui.loaded) POps.setError($('jobList'), e);
         }
     }
 
-    function renderTasks(tasks) {
-        stats(tasks);
-        const box = $('groupedTasksContainer');
-        if (!tasks.length) { POps.setEmpty(box, { icon: 'fa-circle-check', kind: 'success', title: 'Kuyruk boş', text: 'Çalışan ya da bekleyen görev yok.' }); return; }
-        mem.groups = {};
-        tasks.forEach(t => {
-            const lab = t.target_lab || 'Tek cihaz';
-            const key = lab + '|' + t.script_path;
-            let h = 0; for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) | 0;
-            const id = 'g' + Math.abs(h);
-            const g = mem.groups[id] = mem.groups[id] || { id, lab, command: t.script_path, done: 0, pcs: [] };
-            if (String(t.status).includes('Completed')) g.done++;
-            g.pcs.push(t);
-        });
-        const nm = (pc) => mem.names[pc] || pc;
-        box.innerHTML = Object.values(mem.groups).map(g => {
-            const open = mem.expanded.has(g.id);
-            const rowsHtml = g.pcs.sort((a, b) => nm(a.target_pc).localeCompare(nm(b.target_pc), 'tr', { numeric: true })).map(t => {
-                const [cls, icon, text] = statusInfo(t.status);
-                const canCancel = !FINISHED.includes(t.status);
-                const name = nm(t.target_pc);
-                return `<tr>
-                    <td><div class="cell-title">${escapeHtml(name)}</div>${name !== t.target_pc ? `<div class="cell-sub mono">${escapeHtml(t.target_pc)}</div>` : ''}</td>
-                    <td><span class="task-status ${escapeHtml(cls)}"><i class="fas ${escapeHtml(icon)}"></i> ${escapeHtml(text)}</span></td>
-                    <td class="mono text-xs text-muted">${escapeHtml(t.created_at || '-')}</td>
-                    <td class="actions"><div class="row-actions">
-                        <button type="button" class="btn secondary sm" data-action="detail" data-task="${escapeHtml(t.id)}" data-group="${escapeHtml(g.id)}"><i class="fas fa-file-lines"></i> Sonuç</button>
-                        ${CAN_ADMIN && FINISHED.includes(t.status) ? `<button type="button" class="btn ghost icon sm" data-action="task" data-op="RETRY" data-mode="TASK" data-target="${escapeHtml(t.id)}" title="Yeniden çalıştır" aria-label="Yeniden çalıştır"><i class="fas fa-rotate-right"></i></button>` : ''}
-                        ${CAN_ADMIN && canCancel ? `<button type="button" class="btn ghost icon sm" data-action="task" data-op="CANCEL" data-mode="TASK" data-target="${escapeHtml(t.id)}" title="İptal et" aria-label="İptal et"><i class="fas fa-xmark"></i></button>` : ''}
-                    </div></td>
-                </tr>`;
-            }).join('');
-            const labActionsHtml = CAN_ADMIN && g.lab !== 'Tek cihaz' ? `
-                <button type="button" class="btn ghost icon sm" data-action="task" data-op="PAUSE" data-mode="LAB" data-target="${escapeHtml(g.lab)}" title="Bu sınıfta bekleyenleri duraklat" aria-label="Duraklat"><i class="fas fa-pause"></i></button>
-                <button type="button" class="btn ghost icon sm" data-action="task" data-op="RESUME" data-mode="LAB" data-target="${escapeHtml(g.lab)}" title="Devam ettir" aria-label="Devam ettir"><i class="fas fa-play"></i></button>
-                <button type="button" class="btn ghost icon sm" data-action="task" data-op="CANCEL" data-mode="LAB" data-target="${escapeHtml(g.lab)}" title="Bu sınıftakileri iptal et" aria-label="İptal et"><i class="fas fa-xmark"></i></button>` : '';
-            return `<div class="task-group ${open ? 'open' : ''}" data-group-id="${escapeHtml(g.id)}">
-                <div class="task-group-head" data-action="toggle" data-group="${escapeHtml(g.id)}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}">
-                    <div class="task-group-info">
-                        <span class="task-lab"><i class="fas fa-layer-group"></i> ${escapeHtml(g.lab)}</span>
-                        <span class="task-cmd" title="${escapeHtml(g.command)}">${escapeHtml(g.command)}</span>
-                    </div>
-                    <div class="task-group-side">
-                        <span class="badge muted"><i class="fas fa-desktop"></i> ${g.pcs.length}</span>
-                        <span class="badge success">${Number(g.done)} tamamlandı</span>
-                        ${labActionsHtml}
-                        <i class="fas fa-chevron-down chev"></i>
-                    </div>
-                </div>
-                <div class="task-group-body"><table class="data-table"><thead><tr><th>Bilgisayar</th><th>Durum</th><th>Eklenme</th><th class="actions">İşlem</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
-            </div>`;
-        }).join('');
+    // ---- İş ayrıntısı
+    function taskRowHtml(t, open) {
+        const k = POps.taskState(t.status);
+        const why = k === 'bad' ? dev.failReason(t) : '';
+        const exitHtml = t.exit_code != null && t.exit_code !== 0 ? ' · çıkış kodu ' + Number(t.exit_code) : '';
+        const startedHtml = t.dispatched_at ? ' · başladı ' + POps.timeHtml(t.dispatched_at) : '';
+        return `<div class="act${t.output ? ' has-out' : ''}" data-task="${Number(t.id)}">
+            <div class="res ${escapeHtml(k)}">${POps.iconHtml(k === 'ok' ? 'check' : k === 'bad' ? 'x' : 'clock')}</div>
+            <div style="min-width:0"><div class="what">${escapeHtml(nm(t.target_pc))}</div><div class="meta">${escapeHtml(t.target_lab && t.target_lab !== dev.UNASSIGNED ? t.target_lab : 'Atanmamış')}${startedHtml}${exitHtml}${t.output ? ' · çıktıyı ' + (open ? 'gizle' : 'göster') : ''}</div>
+                ${why ? `<div class="why">${escapeHtml(why)}</div>` : ''}${open && t.output ? `<div class="out">${escapeHtml(t.output)}</div>` : ''}</div>
+            <div class="side"><span class="word ${escapeHtml(k)}">${escapeHtml(dev.statusWord(t.status))}</span></div>
+        </div>`;
     }
-
-    async function taskAction(btn, op, mode, target) {
-        const scope = mode === 'TASK' ? 'Bu görev' : mode === 'LAB' ? `"${target}" sınıfındaki görevler` : 'Kuyruktaki görevler';
-        const ok = await POps.confirm({ title: 'Emin misiniz?', message: `${scope} ${ACTION_TEXT[op]}.`, confirmText: 'Uygula', danger: op === 'CANCEL' });
-        if (!ok) return;
-        const done = await POps.act(btn, () => POps.post('/api/tasks/action', { action: op, target_mode: mode, target_id: String(target) }),
-            { success: (r) => r && r.changed === 0 ? 'Değişecek görev yoktu.' : `${(r && r.changed) || 0} görev güncellendi.` });
-        if (done) { mem.tasksKey = null; loadTasks(); }
+    const openOutputs = new Set();
+    function renderDrawer(key, keepScroll) {
+        const j = ui.jobs.find(x => x.key === key);
+        const body = POps.drawer.body();
+        if (!j) { body.innerHTML = '<div class="empty-state"><h3>İş bulunamadı</h3><p>Kayıtları silinmiş olabilir.</p></div>'; return; }
+        const scroll = keepScroll ? body.scrollTop : 0;
+        const tasks = j.tasks.slice().sort((a, b) => { const o = { bad: 0, run: 1, ok: 2 }; return o[POps.taskState(a.status)] - o[POps.taskState(b.status)] || nm(a.target_pc).localeCompare(nm(b.target_pc), 'tr', { numeric: true }); });
+        const facts = [['Gönderen', j.by || 'sistem'], ['Kaynak', dev.sourceText(j.source)], ['IP', j.ip], ['Gerekçe', j.reason], ['Hedef', targetText(j)]];
+        const factsHtml = facts.filter(f => f[1]).map(f => `<div class="grow"><span>${escapeHtml(f[0])}</span><span>${escapeHtml(f[1])}</span></div>`).join('')
+            + `<div class="grow"><span>Zaman</span><span>${escapeHtml(POps.fullTime(j.at) || j.at || '—')}</span></div>`;
+        const failed = j.tasks.filter(t => POps.taskState(t.status) === 'bad');
+        const waiting = j.tasks.filter(t => WAITING.includes(t.status) || t.status === 'Running');
+        const pending = j.tasks.filter(t => t.status === 'Pending');
+        const paused = j.tasks.filter(t => t.status === 'Paused');
+        const actionsHtml = CAN_ADMIN ? `<div class="tk-actions">
+            ${failed.length ? `<button type="button" class="btn sm" data-op="RETRY" data-ids="${escapeHtml(failed.map(t => t.id).join(','))}">${POps.iconHtml('restart', 'sm')}Başarısızları yeniden dene (${Number(failed.length)})</button>` : ''}
+            ${pending.length ? `<button type="button" class="btn secondary sm" data-op="PAUSE" data-ids="${escapeHtml(pending.map(t => t.id).join(','))}">${POps.iconHtml('pause', 'sm')}Duraklat</button>` : ''}
+            ${paused.length ? `<button type="button" class="btn secondary sm" data-op="RESUME" data-ids="${escapeHtml(paused.map(t => t.id).join(','))}">${POps.iconHtml('play', 'sm')}Devam ettir</button>` : ''}
+            ${waiting.length ? `<button type="button" class="btn danger-soft sm" data-op="CANCEL" data-ids="${escapeHtml(waiting.map(t => t.id).join(','))}">${POps.iconHtml('x', 'sm')}İptal et (${Number(waiting.length)})</button>` : ''}
+        </div>` : '';
+        body.innerHTML = `<div class="drawer-head">
+                <div class="drawer-title"><span class="drawer-ico ${j.state === 'ok' ? 'on' : j.state === 'run' ? '' : 'idle'}">${POps.iconHtml('jobs', 'lg')}</span>
+                    <div style="min-width:0"><h2>${escapeHtml(j.title)}</h2><div class="sub"><span class="dot ${escapeHtml(j.state)}"></span>${escapeHtml(jobWord(j))} · ${Number(j.c.ok + j.c.bad)}/${Number(j.c.total)}</div></div></div>
+                <button type="button" class="ibtn sm" data-close="1" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button>
+            </div>
+            ${j.c.total > 1 ? pbarHtml(j.c) : ''}
+            ${actionsHtml}
+            <div class="glist">${factsHtml}</div>
+            ${j.command ? `<div><h3>Komut</h3><div class="tk-cmd">${escapeHtml(j.command)}</div></div>` : ''}
+            <div class="tk-dev"><h3>Bilgisayarlar</h3>${tasks.map(t => taskRowHtml(t, openOutputs.has(t.id))).join('')}</div>`;
+        body.scrollTop = scroll;
     }
-
-    function openDetail(taskId, groupId) {
-        const g = mem.groups[groupId];
-        const t = g && g.pcs.find(p => String(p.id) === String(taskId));
-        if (!t) return;
-        $('modalPcName').textContent = mem.names[t.target_pc] || t.target_pc;
-        $('modalCommand').textContent = g.command;
-        const out = $('modalOutput');
-        out.textContent = t.output || 'Bilgisayardan henüz yanıt gelmedi.';
-        const bad = ['Failed', 'Error', 'Denied', 'Interrupted', 'Timed Out', 'Expired'].includes(t.status);
-        out.classList.toggle('error', bad);
-        out.classList.toggle('output', !bad);
-        openModal('outputModal');
-        out.scrollTop = 0;
+    function openJob(key) {
+        ui.focus = key;
+        openOutputs.clear();
+        POps.drawer.open('job:' + key, { onClose: () => { ui.focus = null; renderJobs(); } }).onclick = null;
+        renderDrawer(key);
+        renderJobs();
     }
-
-    // ---- Ajan etkinliği ----
-    async function loadLogs() {
-        try {
-            const logs = await POps.get('/api/logs?limit=200');
-            const key = JSON.stringify(logs);
-            if (key === mem.logsKey) return;
-            mem.logsKey = key;
-            mem.logs = Array.isArray(logs) ? logs : [];
-            const addOptions = (sel, values, label) => {
-                const have = new Set([...sel.options].map(o => o.value));
-                values.filter(v => v && !have.has(v)).forEach(v => sel.append(POps.el('option', { value: v, text: label(v) })));
-            };
-            addOptions($('logPcFilter'), [...new Set(mem.logs.map(l => l.pc_name))], pc => mem.names[pc] || pc);
-            addOptions($('logTypeFilter'), [...new Set(mem.logs.map(logCategory))], c => CATEGORY[c] || c);
-            renderLogs();
-        } catch (e) {
-            if (!mem.logs.length) POps.setError($('agentLogsList'), e);
+    POps.drawer.body().addEventListener('click', async (e) => {
+        if (!POps.drawer.isOpen('job:' + ui.focus)) return;
+        if (e.target.closest('[data-close]')) { POps.drawer.close(); return; }
+        const op = e.target.closest('[data-op]');
+        if (op) {
+            const ids = op.dataset.ids.split(',').filter(Boolean);
+            const verb = { RETRY: 'yeniden denensin', PAUSE: 'duraklatılsın', RESUME: 'devam ettirilsin', CANCEL: 'iptal edilsin' }[op.dataset.op];
+            if (op.dataset.op === 'CANCEL' || op.dataset.op === 'RETRY') {
+                const ok = await POps.confirm({ title: `${ids.length} görev ${verb} mi?`, message: op.dataset.op === 'CANCEL' ? 'Çalışmakta olan komut da durdurulur.' : 'Her biri için yeni bir görev açılır; eski kayıtlar sonuçlarıyla kalır.', confirmText: op.dataset.op === 'CANCEL' ? `${ids.length} görevi iptal et` : `${ids.length} görevi yeniden dene`, danger: op.dataset.op === 'CANCEL' });
+                if (!ok) return;
+            }
+            await POps.busy(op, async () => {
+                const job = ui.jobs.find(x => x.key === ui.focus);
+                const res = await Promise.allSettled(ids.map(id => POps.post('/api/tasks/action', { action: op.dataset.op, target_mode: 'TASK', target_id: String(id) }, op.dataset.op === 'RETRY' ? { jobTitle: (job ? job.title : 'Görev') + ' · yeniden' } : undefined)));
+                const bad = res.filter(r => r.status === 'rejected');
+                if (bad.length) POps.toast('error', `${bad.length} görev güncellenemedi: ${POps.errorMessage(bad[0].reason)}`);
+                else POps.toast('success', `${ids.length} görev güncellendi.`);
+            });
+            ui.key = null;
+            loadTasks();
+            return;
         }
-    }
-    // Kayıtlar (agent_logs_v2) kategori ve risk düzeyiyle gelir; eski şemada log_type vardı
-    const CATEGORY = { security: 'Güvenlik', system_maintenance: 'Bakım', restricted_content: 'Kural ihlali', user_activity: 'Kullanıcı', network: 'Ağ', deployment: 'Dağıtım', hardware: 'Donanım', auth: 'Giriş' };
-    const CATEGORY_ICON = { security: 'fa-shield-halved', system_maintenance: 'fa-screwdriver-wrench', restricted_content: 'fa-ban', user_activity: 'fa-user', network: 'fa-globe', deployment: 'fa-terminal', hardware: 'fa-microchip', auth: 'fa-right-to-bracket' };
-    const RISK_TONE = { critical: 'danger', high: 'danger', medium: 'warning', low: 'info', info: 'muted' };
-    const logCategory = (l) => l.category || l.log_type || 'diger';
-    function renderLogs() {
-        const box = $('agentLogsList');
-        const pc = $('logPcFilter').value, type = $('logTypeFilter').value, q = $('logSearchInput').value.toLowerCase().trim();
-        const list = mem.logs.filter(l => (pc === 'ALL' || l.pc_name === pc) && (type === 'ALL' || logCategory(l) === type) && (!q || String(l.message || '').toLowerCase().includes(q)));
-        if (!list.length) { POps.setEmpty(box, { icon: 'fa-magnifying-glass', title: mem.logs.length ? 'Eşleşen kayıt yok' : 'Henüz kayıt yok', compact: true }); return; }
-        box.innerHTML = list.map(l => `<div class="log-line risk-${escapeHtml(l.risk_level || 'info')}">
-            <span class="log-time">${escapeHtml(l.timestamp ? String(l.timestamp).split(' ')[1] || '' : '')}</span>
-            <span class="badge ${escapeHtml(RISK_TONE[l.risk_level] || 'muted')} log-type"><i class="fas ${escapeHtml(CATEGORY_ICON[logCategory(l)] || 'fa-circle-info')}"></i> ${escapeHtml(CATEGORY[logCategory(l)] || logCategory(l))}</span>
-            <span class="log-pc" title="${escapeHtml(l.pc_name)}">${escapeHtml(mem.names[l.pc_name] || l.pc_name)}</span>
-            <span class="log-msg">${escapeHtml(l.message)}</span>
-        </div>`).join('');
-    }
-    ['logPcFilter', 'logTypeFilter'].forEach(id => $(id).addEventListener('change', renderLogs));
-    $('logSearchInput').addEventListener('input', renderLogs);
+        const row = e.target.closest('.act.has-out[data-task]');
+        if (row) {
+            const id = Number(row.dataset.task);
+            openOutputs.has(id) ? openOutputs.delete(id) : openOutputs.add(id);
+            renderDrawer(ui.focus, true);
+        }
+    });
 
-    // ---- Zamanlanmış görevler ----
+    $('jobList').addEventListener('click', (e) => {
+        if (e.target.closest('[data-more]')) { ui.limit += 60; renderJobs(); return; }
+        const row = e.target.closest('[data-job]');
+        if (row && !e.target.closest('a, time')) openJob(row.dataset.job);
+    });
+    $('jobList').addEventListener('keydown', (e) => { const row = e.target.closest('[data-job]'); if (row && e.key === 'Enter') openJob(row.dataset.job); });
+    $('tkFilter').addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (b) setFilter(b.dataset.f); });
+    $('tkSummary').addEventListener('click', (e) => { const a = e.target.closest('[data-f]'); if (a) { e.preventDefault(); setTab('jobs'); setFilter(a.dataset.f); } });
+    function setFilter(f) {
+        ui.f = f;
+        $('tkFilter').querySelectorAll('button').forEach(b => { const on = b.dataset.f === f; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        renderJobs();
+    }
+    let qt = null;
+    $('tkSearch').addEventListener('input', (e) => { clearTimeout(qt); qt = setTimeout(() => { ui.q = e.target.value.trim(); ui.tab === 'jobs' ? renderJobs() : renderSched(); }, 120); });
+
+    // ---- Sekmeler
+    function setTab(tab) {
+        ui.tab = tab;
+        $('tkTab').querySelectorAll('button').forEach(b => { const on = b.dataset.tab === tab; b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+        $('jobsCard').hidden = tab !== 'jobs';
+        $('schedCard').hidden = tab !== 'sched';
+        $('tkFilter').hidden = tab !== 'jobs';
+        $('tkNote').hidden = tab !== 'jobs';
+        if ($('schedNewBtn')) $('schedNewBtn').hidden = tab !== 'sched';
+        history.replaceState(null, '', tab === 'sched' ? 'tasks.php?tab=sched' : 'tasks.php');
+        tab === 'jobs' ? renderJobs() : renderSched();
+    }
+    $('tkTab').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+
+    // ---- Zamanlanmış görevler
     const DAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
-    const fmt = (iso) => { if (!iso) return '—'; try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return String(iso); } };
-    let schedLoaded = false;
-    async function loadSchedules() {
+    const when = (t) => t.schedule_type === 'once' ? 'Bir kez · ' + (POps.fullTime(t.run_at) || '—') : t.schedule_type === 'daily' ? 'Her gün ' + (t.time_of_day || '') : (t.weekdays || []).map(x => DAYS[x - 1]).join(', ') + ' ' + (t.time_of_day || '');
+    const target = (t) => t.target_mode === 'ALL' ? 'Bütün bilgisayarlar' : t.target_mode === 'LAB' ? (t.targets || []).join(', ') : (t.targets || []).length + ' bilgisayar';
+    async function loadSched() {
         let d;
         try { d = await POps.get('/api/scheduled_tasks'); }
         catch (e) {
-            if (e.status === 403 || e.status === 409) { $('schedCard').classList.add('hidden'); return; }   // yetki yok ya da modül kapalı
-            if (!schedLoaded) POps.setError($('schedList'), e);
+            if (e.status === 403 || e.status === 409) { ui.schedOff = true; $('tkTab').querySelector('[data-tab=sched]').hidden = true; return; }
+            if (!ui.schedLoaded && ui.tab === 'sched') POps.setError($('schedList'), e);
             return;
         }
-        schedLoaded = true;
-        $('schedCard').classList.remove('hidden');
-        $('sfTz').textContent = 'Saatler sunucu saatine göredir (şu an ' + fmt(d.server_time) + ').';
-        const items = d.items || [];
-        if (!items.length) { POps.setEmpty($('schedList'), { icon: 'fa-calendar', title: 'Zamanlanmış görev yok', text: 'Belirli saatlerde tekrar eden komutlar için yeni görev ekleyin.', compact: true }); return; }
-        const when = (t) => t.schedule_type === 'once' ? 'Bir kez · ' + fmt(t.run_at) : t.schedule_type === 'daily' ? 'Her gün ' + (t.time_of_day || '') : (t.weekdays || []).map(x => DAYS[x - 1]).join(', ') + ' ' + (t.time_of_day || '');
-        const target = (t) => t.target_mode === 'ALL' ? 'Bütün bilgisayarlar' : t.target_mode === 'LAB' ? 'Sınıf: ' + (t.targets || []).join(', ') : (t.targets || []).length + ' bilgisayar';
-        $('schedList').innerHTML = items.map(t => `<div class="sched-row${t.enabled ? '' : ' off'}">
-            <div><div class="n">${escapeHtml(t.name)}</div><div class="c" title="${escapeHtml(t.command)}">${escapeHtml(t.command)}</div></div>
-            <div><div>${escapeHtml(when(t))}</div><div class="sub">${escapeHtml(target(t))}</div></div>
-            <div><div>${t.enabled && t.next_run ? 'Sıradaki: ' + escapeHtml(fmt(t.next_run)) : 'Durduruldu'}</div>
-                <div class="sub">${t.last_run ? 'Son: ' + escapeHtml(fmt(t.last_run)) + (t.last_result ? ' · ' + escapeHtml(t.last_result) : '') : 'Henüz çalışmadı'}</div></div>
-            <div class="row-actions">${CAN_ADMIN ? `
-                <button type="button" class="btn secondary sm" data-action="sched-run" data-id="${escapeHtml(t.id)}"><i class="fas fa-play"></i> Şimdi çalıştır</button>
-                <button type="button" class="btn secondary sm" data-action="sched-toggle" data-id="${escapeHtml(t.id)}" data-on="${t.enabled ? 1 : 0}">${t.enabled ? '<i class="fas fa-pause"></i> Durdur' : '<i class="fas fa-play"></i> Başlat'}</button>
-                <button type="button" class="btn ghost icon sm" data-action="sched-del" data-id="${escapeHtml(t.id)}" title="Sil" aria-label="Sil"><i class="fas fa-trash"></i></button>` : ''}
-            </div>
-        </div>`).join('');
+        ui.schedLoaded = true;
+        ui.sched = d.items || [];
+        ui.serverTime = d.server_time;
+        $('schedCount').textContent = ui.sched.length ? String(ui.sched.length) : '';
+        if (ui.tab === 'sched') renderSched();
     }
-
-    async function schedAction(btn) {
-        const id = encodeURIComponent(btn.dataset.id);
-        if (btn.dataset.action === 'sched-run') {
-            if (!await POps.confirm({ title: 'Şimdi çalıştırılsın mı?', message: 'Görev hedef bilgisayarlarda bir kez, hemen çalıştırılacak.', confirmText: 'Çalıştır' })) return;
-            if (await POps.act(btn, () => POps.post(`/api/scheduled_tasks/${id}/run`), { success: (r) => `${(r && r.queued) || 0} bilgisayar için kuyruğa eklendi.` })) { mem.tasksKey = null; loadTasks(); }
-        } else if (btn.dataset.action === 'sched-toggle') {
-            const on = btn.dataset.on !== '1';
-            if (await POps.act(btn, () => POps.post(`/api/scheduled_tasks/${id}/toggle`, { enabled: on }), { success: on ? 'Görev başlatıldı.' : 'Görev durduruldu.' })) loadSchedules();
-        } else {
-            if (!await POps.confirm({ title: 'Zamanlanmış görev silinsin mi?', message: 'Kuyruğa daha önce eklenmiş görevler etkilenmez.', confirmText: 'Sil', danger: true })) return;
-            if (await POps.act(btn, () => POps.del(`/api/scheduled_tasks/${id}`), { success: 'Zamanlanmış görev silindi.' })) loadSchedules();
+    function renderSched() {
+        const box = $('schedList');
+        if (!ui.schedLoaded) { POps.setLoading(box, 'Zamanlanmış görevler yükleniyor…'); return; }
+        const q = ui.q.toLocaleLowerCase('tr');
+        const items = ui.sched.filter(t => !q || [t.name, t.command, target(t)].some(v => String(v || '').toLocaleLowerCase('tr').includes(q)));
+        if (!items.length) {
+            POps.setEmpty(box, ui.sched.length ? { icon: 'fa-filter', title: 'Süzgece uyan görev yok' } : { icon: 'fa-calendar', title: 'Zamanlanmış görev yok', text: 'Belirli saatlerde tekrar eden komutlar için "Zamanlanmış görev" ile ekleyin.' });
+            return;
         }
+        box.innerHTML = `<table class="data-table"><thead><tr><th>Görev</th><th>Zaman</th><th>Hedef</th><th>Sıradaki</th><th>Son çalışma</th></tr></thead><tbody>${items.map(t => `
+            <tr class="sched-row" data-sched="${Number(t.id)}">
+                <td><div class="cell-title">${escapeHtml(t.name)}</div><div class="cell-sub mono">${escapeHtml(String(t.command || '').slice(0, 80))}</div></td>
+                <td>${escapeHtml(when(t))}</td>
+                <td>${escapeHtml(target(t))}</td>
+                <td>${t.enabled && t.next_run ? POps.timeHtml(t.next_run) : '<span class="status-pill offline"><span class="dot off"></span>Durduruldu</span>'}</td>
+                <td>${t.last_run ? POps.timeHtml(t.last_run) + (t.last_result ? ' · ' + escapeHtml(t.last_result) : '') : '<span class="faint">Henüz çalışmadı</span>'}</td>
+            </tr>`).join('')}</tbody></table>`
+            + `<div class="set-note" style="padding:10px 16px">Saatler sunucu saatine göredir${ui.serverTime ? ' (şu an ' + escapeHtml(POps.fullTime(ui.serverTime)) + ')' : ''}.</div>`;
     }
+    $('schedList').addEventListener('click', (e) => {
+        const row = e.target.closest('[data-sched]');
+        if (!row) return;
+        const t = ui.sched.find(x => String(x.id) === row.dataset.sched);
+        if (!t) return;
+        const body = POps.drawer.open('sched:' + t.id);
+        body.innerHTML = `<div class="drawer-head"><div class="drawer-title"><span class="drawer-ico ${t.enabled ? 'on' : ''}">${POps.iconHtml('calendar', 'lg')}</span>
+                <div style="min-width:0"><h2>${escapeHtml(t.name)}</h2><div class="sub"><span class="dot ${t.enabled ? 'on' : 'off'}"></span>${t.enabled ? 'Etkin' : 'Durduruldu'}</div></div></div>
+                <button type="button" class="ibtn sm" data-close="1" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button></div>
+            ${CAN_ADMIN ? `<div class="tk-actions">
+                <button type="button" class="btn sm" data-sact="run">${POps.iconHtml('play', 'sm')}Şimdi çalıştır</button>
+                <button type="button" class="btn secondary sm" data-sact="toggle">${t.enabled ? 'Durdur' : 'Başlat'}</button>
+                <button type="button" class="btn danger-soft sm" data-sact="del">${POps.iconHtml('trash', 'sm')}Sil</button></div>` : ''}
+            <div class="glist">
+                <div class="grow"><span>Zaman</span><span>${escapeHtml(when(t))}</span></div>
+                <div class="grow"><span>Hedef</span><span>${escapeHtml(target(t))}</span></div>
+                <div class="grow"><span>Sıradaki</span><span>${t.enabled && t.next_run ? POps.timeHtml(t.next_run) : '—'}</span></div>
+                <div class="grow"><span>Son çalışma</span><span>${t.last_run ? POps.timeHtml(t.last_run) : '—'}</span></div>
+                ${t.last_result ? `<div class="grow"><span>Son sonuç</span><span>${escapeHtml(t.last_result)}</span></div>` : ''}
+                ${t.created_by ? `<div class="grow"><span>Oluşturan</span><span>${escapeHtml(t.created_by)}</span></div>` : ''}
+            </div>
+            <div><h3>Komut</h3><div class="tk-cmd">${escapeHtml(t.command)}</div></div>`;
+        body.onclick = async (ev) => {
+            if (ev.target.closest('[data-close]')) { POps.drawer.close(); return; }
+            const b = ev.target.closest('[data-sact]');
+            if (!b) return;
+            const id = encodeURIComponent(t.id);
+            if (b.dataset.sact === 'run') {
+                if (!await POps.confirm({ title: `"${t.name}" şimdi çalıştırılsın mı?`, message: 'Görev hedef bilgisayarlarda bir kez, hemen çalışır.', confirmText: 'Şimdi çalıştır' })) return;
+                if (await POps.act(b, () => POps.post(`/api/scheduled_tasks/${id}/run`, {}, { jobTitle: t.name }), { success: (r) => `${(r && r.queued) || 0} bilgisayar için kuyruğa eklendi.` })) { ui.key = null; loadTasks(); }
+            } else if (b.dataset.sact === 'toggle') {
+                if (await POps.act(b, () => POps.post(`/api/scheduled_tasks/${id}/toggle`, { enabled: !t.enabled }), { success: t.enabled ? 'Görev durduruldu.' : 'Görev başlatıldı.' })) { POps.drawer.close(); loadSched(); }
+            } else {
+                if (!await POps.confirm({ title: `"${t.name}" silinsin mi?`, message: 'Kuyruğa daha önce eklenmiş görevler etkilenmez.', confirmText: 'Zamanlanmış görevi sil', danger: true })) return;
+                if (await POps.act(b, () => POps.del(`/api/scheduled_tasks/${id}`), { success: 'Zamanlanmış görev silindi.' })) { POps.drawer.close(); loadSched(); }
+            }
+        };
+    });
 
+    // ---- Zamanlanmış görev formu
     function syncForm() {
         const t = $('sfType').value, m = $('sfMode').value;
         $('sfTimeWrap').classList.toggle('hidden', t === 'once');
@@ -384,11 +403,11 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => $('sfName').focus(), 50);
         let devices = [];
         try { devices = await POps.get('/api/devices'); } catch (e) { POps.toast('error', POps.errorMessage(e)); }
-        const labs = [...new Set(devices.map(d => d.lab).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'));
+        const labs = [...new Set(devices.map(d => d.lab).filter(l => l && l !== dev.UNASSIGNED))].sort((a, b) => a.localeCompare(b, 'tr'));
         $('sfLab').replaceChildren(...(labs.length ? labs.map(l => POps.el('option', { value: l, text: l })) : [POps.el('option', { value: '', text: 'Sınıf yok' })]));
         $('sfDevs').replaceChildren(...(devices.length ? devices.map(d => POps.el('label', { className: 'check' }, [
             POps.el('input', { type: 'checkbox', value: d.hw_id }), document.createTextNode(' ' + POps.deviceName(d) + ' '),
-            POps.el('span', { className: 'text-xs text-muted', text: (d.lab || '') + ' · ' + d.hw_id })
+            POps.el('span', { className: 'text-xs text-muted', text: d.lab && d.lab !== dev.UNASSIGNED ? d.lab : '' })
         ])) : [POps.el('span', { className: 'text-muted text-sm', text: 'Cihaz yok' })]));
     }
     async function saveSchedule(btn) {
@@ -409,50 +428,49 @@ document.addEventListener('DOMContentLoaded', () => {
         if (await POps.act(btn, () => POps.post('/api/scheduled_tasks', body), { success: 'Zamanlanmış görev kaydedildi.' })) {
             closeModal('schedModal');
             $('sfName').value = ''; $('sfCmd').value = '';
-            loadSchedules();
+            loadSched();
         }
     }
+
+    // ---- Kuyruk işlemleri (yönetici)
     if (CAN_ADMIN) {
-        $('sfDays').replaceChildren(...DAYS.map((d, i) => POps.el('label', { className: 'chip' }, [POps.el('input', { type: 'checkbox', value: String(i + 1), checked: i < 5 }), document.createTextNode(' ' + d)])));
+        $('sfDays').replaceChildren(...DAYS.map((d, i) => POps.el('label', { className: 'chip' }, [POps.el('input', { type: 'checkbox', value: String(i + 1), checked: i < 5 }), document.createTextNode(d)])));
         ['sfType', 'sfMode'].forEach(id => $(id).addEventListener('change', syncForm));
         $('sfSave').addEventListener('click', (e) => saveSchedule(e.currentTarget));
+        $('schedNewBtn').addEventListener('click', openSchedForm);
+        $('tkLimitBtn').addEventListener('click', async (e) => {
+            let cur = 5;
+            try { cur = (await POps.get('/api/get_concurrent_limit')).limit; } catch (err) { /* varsayılan */ }
+            const v = await POps.prompt({ title: 'Aynı anda kaç görev çalışsın?', message: 'Sınırın üstündeki görevler sırada bekler; büyük dağıtımlarda ağı korur.', label: 'Görev sayısı', inputType: 'number', inputMode: 'numeric', defaultValue: String(cur), confirmText: 'Kaydet',
+                validate: (x) => { const n = parseInt(x, 10); return n >= 1 && n <= 500 ? '' : '1 ile 500 arasında bir sayı girin.'; } });
+            if (v === null) return;
+            POps.act(e.currentTarget, () => POps.post('/api/set_concurrent_limit', { limit: parseInt(v, 10) }), { success: `Aynı anda en çok ${parseInt(v, 10)} görev çalışacak.` });
+        });
+        $('tkMenuBtn').addEventListener('click', (e) => {
+            const btn = e.currentTarget;
+            const bulk = async (op, title, confirmText) => {
+                if (!await POps.confirm({ title, message: 'Bütün sınıflardaki bekleyen görevlere uygulanır.', confirmText })) return;
+                if (await POps.act(btn, () => POps.post('/api/tasks/action', { action: op, target_mode: 'ALL', target_id: 'GLOBAL' }), { success: (r) => r && r.changed === 0 ? 'Değişecek görev yoktu.' : `${(r && r.changed) || 0} görev güncellendi.` })) { ui.key = null; loadTasks(); }
+            };
+            POps.menu(btn, [
+                { label: 'Bekleyenlerin hepsini duraklat', icon: 'pause', onClick: () => bulk('PAUSE', 'Bekleyen bütün görevler duraklatılsın mı?', 'Hepsini duraklat') },
+                { label: 'Duraklatılanları devam ettir', icon: 'play', onClick: () => bulk('RESUME', 'Duraklatılan bütün görevler devam etsin mi?', 'Devam ettir') },
+                '-',
+                { label: 'Bütün görev kayıtlarını sil', icon: 'trash', danger: true, onClick: async () => {
+                    if (!await POps.confirm({ title: 'Bütün görev kayıtları silinsin mi?', message: 'Bekleyen, çalışan ve biten bütün görevler sonuçlarıyla birlikte silinir. Bilgisayarda çalışmakta olan komut durmaz ama sonucu kaydedilmez. Silme işlemi denetim kaydına yazılır.', confirmText: 'Bütün kayıtları sil', danger: true })) return;
+                    if (await POps.act(btn, () => POps.post('/api/flush_queue'), { success: 'Görev kayıtları silindi.' })) { ui.key = null; POps.drawer.close(); loadTasks(); }
+                } }
+            ]);
+        });
     }
 
-    // ---- Tıklamalar ----
-    document.querySelector('.app-content').addEventListener('click', async (e) => {
-        const b = e.target.closest('[data-action]');
-        if (!b) return;
-        switch (b.dataset.action) {
-            case 'toggle': {
-                if (e.target.closest('button')) return;   // başlıktaki düğmeler grubu açıp kapatmaz
-                const el = b.closest('.task-group');
-                const open = el.classList.toggle('open');
-                b.setAttribute('aria-expanded', open);
-                open ? mem.expanded.add(b.dataset.group) : mem.expanded.delete(b.dataset.group);
-                break;
-            }
-            case 'detail': openDetail(b.dataset.task, b.dataset.group); break;
-            case 'task': taskAction(b, b.dataset.op, b.dataset.mode, b.dataset.target); break;
-            case 'bulk': taskAction(b, b.dataset.op, 'ALL', 'GLOBAL'); break;
-            case 'clear':
-                if (!await POps.confirm({ title: 'Bütün görev kayıtları silinsin mi?', message: 'Bekleyen, çalışan ve biten bütün görevler sonuçlarıyla birlikte silinecek. Bilgisayarda çalışmakta olan komut durmaz ama sonucu kaydedilmez. Silme işlemi denetim kaydına yazılır.', confirmText: 'Hepsini sil', danger: true })) return;
-                if (await POps.act(b, () => POps.post('/api/flush_queue'), { success: 'Görev kayıtları silindi.' })) { mem.tasksKey = null; loadTasks(); }
-                break;
-            case 'sched-new': openSchedForm(); break;
-            case 'sched-run': case 'sched-toggle': case 'sched-del': schedAction(b); break;
-        }
-    });
-    document.querySelector('.app-content').addEventListener('keydown', (e) => {
-        const head = e.target.closest && e.target.closest('.task-group-head');
-        if (head && (e.key === 'Enter' || e.key === ' ') && e.target === head) { e.preventDefault(); head.click(); }
-    });
-
+    POps.setLoading($('jobList'), 'İşler yükleniyor…');
+    setTab(ui.tab);
     loadTasks();
-    loadLogs();
-    loadSchedules();
-    popsPoll(() => Promise.all([loadTasks(), loadLogs()]), 5000);
-    popsPoll(loadSchedules, 30000);
-});
+    loadSched();
+    popsPoll(loadTasks, 4000);
+    popsPoll(loadSched, 30000);
+})();
 </script>
 
 <?php include 'includes/footer.php'; ?>
