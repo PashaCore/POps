@@ -194,15 +194,16 @@
     // ---- CSV ----
     $('rpExport').addEventListener('change', function () {
         if (!this.value) return;
-        window.location.href = '/api/reports/export?kind=' + encodeURIComponent(this.value) + '&days=' + $('rpDays').value;
+        window.location.href = '/api/reports/export?kind=' + encodeURIComponent(this.value) + '&days=' + encodeURIComponent($('rpDays').value);
         this.value = '';
     });
 
     // ---- ÖZET ----
-    function kpi(label, value, sub) { return `<div class="kpi"><div class="l">${label}</div><div class="v">${value}</div><div class="s">${sub || '&nbsp;'}</div></div>`; }
+    // label düz metindir; value ve sub hazır HTML'dir (çağıranlar n() / sabit işaretleme verir)
+    function kpi(label, value, sub) { return `<div class="kpi"><div class="l">${escapeHtml(label)}</div><div class="v">${value}</div><div class="s">${sub || '&nbsp;'}</div></div>`; }
     async function loadSummary() {
         let d;
-        try { d = await api('/api/reports/summary?days=' + $('rpDays').value); }
+        try { d = await api('/api/reports/summary?days=' + encodeURIComponent($('rpDays').value)); }
         catch (e) { $('kpis').innerHTML = `<div class="rp-empty">Rapor alınamadı: ${escapeHtml(e.message)}${e.message.includes('404') ? ' (sunucu güncellemesi gerekli)' : ''}</div>`; return; }
         const dv = d.devices, p = d.patches, sw = d.software, ev = d.events.by_risk || {};
         const notReported = dv.total - p.reporting;
@@ -230,9 +231,9 @@
         const total = days.reduce((a, x) => a + x.v, 0);
         $('dayChart').innerHTML = total ? `
             <div class="daychart" role="img" aria-label="Günlük yüksek ve kritik olay sayısı">
-                ${days.map(x => `<div class="col" data-tip="${x.label}: ${x.v} olay"><div class="bar" style="height:${(x.v / max) * 100}%"></div></div>`).join('')}
+                ${days.map(x => `<div class="col" data-tip="${escapeHtml(x.label)}: ${escapeHtml(x.v)} olay"><div class="bar" style="height:${(x.v / max) * 100}%"></div></div>`).join('')}
             </div>
-            <div class="daychart-axis"><span>${days[0].label}</span><span>en yüksek: ${max}</span><span>${days[days.length - 1].label}</span></div>`
+            <div class="daychart-axis"><span>${escapeHtml(days[0].label)}</span><span>en yüksek: ${escapeHtml(max)}</span><span>${escapeHtml(days[days.length - 1].label)}</span></div>`
             : '<div class="rp-empty"><i class="fas fa-circle-check" style="color:var(--success-solid)"></i> Bu dönemde yüksek ya da kritik olay yok.</div>';
 
         const vmax = Math.max(1, ...d.versions.map(v => v.devices));
@@ -309,7 +310,7 @@
                     <td>${escapeHtml(devName(r))}<div style="color:var(--text-tertiary);font-size:0.75rem;">${escapeHtml(r.lab_name || 'sınıfsız')} · ${on ? 'açık' : 'kapalı'} · ${escapeHtml(r.agent_version || '?')}</div></td>
                     <td>${st}</td><td class="num" title="${escapeHtml(kbs)}">${r.reported ? n(r.pending_count) : '—'}</td><td class="num">${r.reported ? n(r.pending_security) : '—'}</td>
                     <td class="num">${r.reported ? n(r.pending_critical) : '—'}</td><td>${r.reported ? (r.reboot_required ? '<span class="pill warn"><i class="fas fa-power-off"></i> gerekli</span>' : 'hayır') : '—'}</td>
-                    <td>${fmt(r.last_search)}</td><td>${escapeHtml(r.last_result || '—')}</td></tr>`;
+                    <td>${escapeHtml(fmt(r.last_search))}</td><td>${escapeHtml(r.last_result || '—')}</td></tr>`;
             }).join('') || '<tr><td colspan="9" class="rp-empty">Cihaz yok.</td></tr>');
         const boxes = () => [...$('ptTable').querySelectorAll('tbody input[value], tr input[value]')];
         const sync = () => { const any = boxes().some(b => b.checked); ['ptScan', 'ptSec', 'ptAll'].forEach(id => $(id).disabled = !any); };
@@ -344,31 +345,31 @@
         catch (e) { $('licTable').innerHTML = `<tr><td class="rp-empty">Lisanslar alınamadı: ${escapeHtml(e.message)}</td></tr>`; return; }
         licenses = d.items || [];
         const sm = d.summary || {};
-        $('licSummary').innerHTML = ['over', 'expired', 'expiring'].filter(k => sm[k]).map(k => `<span class="pill ${LS[k][0]}"><i class="fas ${LS[k][1]}"></i> ${sm[k]} ${LS[k][2].toLowerCase()}</span>`).join(' ')
+        $('licSummary').innerHTML = ['over', 'expired', 'expiring'].filter(k => sm[k]).map(k => `<span class="pill ${LS[k][0]}"><i class="fas ${LS[k][1]}"></i> ${escapeHtml(sm[k])} ${LS[k][2].toLowerCase()}</span>`).join(' ')
             || (licenses.length ? '<span class="pill ok"><i class="fas fa-circle-check"></i> Tüm lisanslar uygun</span>' : '');
         $('licTable').innerHTML = licenses.length ? `<tr><th>Lisans</th><th>Tür</th><th>Kullanım</th><th>Durum</th><th>Bitiş</th>${canEditLic ? '<th></th>' : ''}</tr>` + licenses.map(l => {
             const st = LS[l.state] || LS.ok;
             const pct = l.seats ? Math.min(100, (l.installed / Math.max(1, l.seats)) * 100) : 0;
-            return `<tr class="click" data-id="${l.id}">
+            return `<tr class="click" data-id="${escapeHtml(l.id)}">
                 <td><strong>${escapeHtml(l.name)}</strong><div style="color:var(--text-tertiary);font-size:0.75rem;">"${escapeHtml(l.match_pattern)}"${l.publisher ? ' · ' + escapeHtml(l.publisher) : ''}${l.notes ? ' · ' + escapeHtml(l.notes.slice(0, 60)) : ''}</div></td>
                 <td>${escapeHtml(LT[l.license_type] || l.license_type)}</td>
                 <td>${l.seats == null ? `${n(l.installed)} kurulu · sınırsız` : `<div class="rp-row" style="flex-wrap:nowrap;"><div class="lic-bar${l.installed > l.seats ? ' over' : ''}"><div style="width:${pct}%"></div></div><span>${n(l.installed)} / ${n(l.seats)}</span></div>`}</td>
                 <td><span class="pill ${st[0]}"><i class="fas ${st[1]}"></i> ${st[2]}</span></td>
                 <td>${l.expires_at ? new Date(l.expires_at).toLocaleDateString('tr-TR') : '—'}</td>
-                ${canEditLic ? `<td style="white-space:nowrap;"><button class="rp-btn" data-edit="${l.id}" title="Düzenle"><i class="fas fa-pen"></i></button> <button class="rp-btn" data-del="${l.id}" title="Sil"><i class="fas fa-trash"></i></button></td>` : ''}
+                ${canEditLic ? `<td style="white-space:nowrap;"><button class="rp-btn" data-edit="${escapeHtml(l.id)}" title="Düzenle"><i class="fas fa-pen"></i></button> <button class="rp-btn" data-del="${escapeHtml(l.id)}" title="Sil"><i class="fas fa-trash"></i></button></td>` : ''}
             </tr>`;
         }).join('') : `<tr><td class="rp-empty">Tanımlı lisans yok.${canEditLic ? ' "Lisans ekle" ile başlayın.' : ''}</td></tr>`;
         $('licTable').querySelectorAll('tr.click').forEach(tr => tr.addEventListener('click', (e) => { if (!e.target.closest('button')) licDevices(tr); }));
         $('licTable').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => licEdit(licenses.find(l => l.id == b.dataset.edit))));
         $('licTable').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
             if (!confirm('Lisans tanımı silinsin mi?')) return;
-            try { await api('/api/licenses/' + b.dataset.del, { method: 'DELETE' }); loadLicenses(); } catch (e) { showToast(e.message, 'error'); }
+            try { await api('/api/licenses/' + encodeURIComponent(b.dataset.del), { method: 'DELETE' }); loadLicenses(); } catch (e) { showToast(e.message, 'error'); }
         }));
     }
     async function licDevices(tr) {
         const next = tr.nextElementSibling;
         if (next && next.classList.contains('sw-dev')) { next.remove(); return; }
-        const rows = await api(`/api/licenses/${tr.dataset.id}/devices`).catch(() => []);
+        const rows = await api(`/api/licenses/${encodeURIComponent(tr.dataset.id)}/devices`).catch(() => []);
         const el = document.createElement('tr'); el.className = 'sw-dev';
         el.innerHTML = `<td colspan="6" style="background:var(--bg-surface-2);">${rows.map(r => `<span class="pill" style="margin:0.15rem;">${escapeHtml(devName(r))} · ${escapeHtml(r.lab_name || 'sınıfsız')} · ${escapeHtml(r.name)} ${escapeHtml(r.version || '')}</span>`).join('') || 'Eşleşen kurulum yok.'}</td>`;
         tr.after(el);
@@ -401,7 +402,7 @@
                            seats: $('lfSeats').value === '' ? null : parseInt($('lfSeats').value), license_type: $('lfType').value,
                            expires_at: $('lfExpires').value || null, notes: $('lfNotes').value || null };
             try {
-                await api(id ? '/api/licenses/' + id : '/api/licenses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                await api(id ? '/api/licenses/' + encodeURIComponent(id) : '/api/licenses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
                 $('licForm').classList.remove('open'); showToast('Lisans kaydedildi.', 'success'); loadLicenses();
             } catch (e) { showToast(e.message, 'error'); }
         });

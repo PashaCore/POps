@@ -38,8 +38,8 @@ foreach ($grouped as $section => $items): ?>
         <?php foreach ($items as $item):
             $isActive = $current_file === $item['page'] . '.php';
         ?>
-            <a href="<?php echo $item['page']; ?>.php" class="nav-item <?php echo $isActive ? 'active' : ''; ?>">
-                <i class="fas <?php echo $item['icon']; ?>"></i>
+            <a href="<?php echo htmlspecialchars($item['page'], ENT_QUOTES, 'UTF-8'); ?>.php" class="nav-item <?php echo $isActive ? 'active' : ''; ?>">
+                <i class="fas <?php echo htmlspecialchars($item['icon'], ENT_QUOTES, 'UTF-8'); ?>"></i>
                 <span><?php echo htmlspecialchars($item['label']); ?></span>
             </a>
         <?php endforeach; ?>

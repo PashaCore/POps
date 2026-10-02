@@ -124,7 +124,9 @@ in the tray yet.
 
 Lab cards, a wall of screen previews per lab, and a focus view for one PC with a live stream, remote control,
 quarantine and the **Teşhis** (diagnostics) dialog. The session and consent rules and the diagnostic commands
-are described in [`vision.md`](vision.md).
+are described in [`vision.md`](vision.md). Remote keyboard input sends the key, the physical key code and the
+Ctrl/Alt/Shift/Win/AltGr state, so the agent can type Turkish layouts and AltGr characters; keys still held
+are released when control is turned off, the page loses focus or the tab is hidden.
 
 ### Dosya Dağıtımı
 
@@ -149,6 +151,17 @@ task and its output appears in the terminal as the agents answer (`terminal_outp
 buttons: **DNS Temizle**, **Ağı Yenile**, **Yazıcı Kuyruğu**, **Temp Temizle**, **GPUpdate**, **Görev Sonlandır**;
 they ask for a reason. `/setname NAME` (one PC) and `/otorename PREFIX` (a lab) rename the computer, its first
 enabled local user and its network adapters, then restart the PC. `cls` clears the screen.
+
+The agent writes every command into a `.bat` file and runs it with `cmd.exe /c` as SYSTEM, so each quick button
+is the exact `cmd` line that ends up in that file (`QUICK_ACTIONS` in `terminal.php`), and a non-zero exit code
+marks the task failed:
+
+- **Ağı Yenile**: `ipconfig /release`, `ipconfig /renew`; succeeds when the PC then has an IPv4 address outside
+  `169.254.*` (adapters with a static or no address do not make it fail).
+- **Yazıcı Kuyruğu**: stops the spooler, deletes `%windir%\System32\spool\PRINTERS\*`, starts the spooler.
+- **Temp Temizle** (PowerShell): empties `C:\Windows\Temp` and every user's `AppData\Local\Temp`, skipping files
+  in use and the running task's own `pops_task_*.bat`; junctions and symbolic links are not followed. It reports
+  how many files it deleted and skipped.
 
 ### Sistem & Sürüm
 
@@ -228,7 +241,8 @@ effect on them. See [`configuration.md`](configuration.md#agent-policy-object).
 - **Merkez API Bağlantısı**: the API and WebSocket addresses in use and a connection test.
 - **Orkestrasyon Performansı**: the task concurrency limit (`concurrent_limit`, 1–200).
 - **İki Adımlı Doğrulama (2FA)**: set up (QR code and manual key), enable with a code, or disable with a code, for
-  your own account.
+  your own account. 2FA is optional but recommended: an admin or superadmin whose own 2FA is off sees a short notice
+  under the title of this page and of **Sistem & Sürüm**; × hides it in that browser for 7 days.
 - **Kullanıcı Yönetimi**: list users; a superadmin can add, edit and delete them and set their page permissions.
   Roles: "İzleyici (yalnızca görüntüler)" (`viewer`), "Standart Yönetici" (`admin`) and "Süper Admin"
   (`superadmin`).
@@ -238,5 +252,6 @@ effect on them. See [`configuration.md`](configuration.md#agent-policy-object).
 - Most pages refresh their data from the API every 3–5 seconds.
 - Every API call from the panel sends `X-Requested-With: XMLHttpRequest`, which the backend requires for
   cookie-authenticated changes (CSRF protection).
-- Values coming from agents (device names, logs, command output) are HTML-escaped before display.
+- Values coming from agents and users (device names, logs, command output, tickets) are HTML-escaped before
+  display; the CI job `Dashboard checks` enforces this (see [`security.md`](security.md#panel-output-xss)).
 - The panel uses a single light theme.

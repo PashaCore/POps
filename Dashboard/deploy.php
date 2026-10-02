@@ -452,8 +452,11 @@ workflowZone.addEventListener('dragover', (e) => { e.preventDefault(); workflowZ
 workflowZone.addEventListener('dragleave', () => workflowZone.classList.remove('drag-over'));
 workflowZone.addEventListener('drop', (e) => {
     e.preventDefault(); workflowZone.classList.remove('drag-over');
-    const data = e.dataTransfer.getData('text/plain');
-    if (data) { workflowSequence.push({ ...JSON.parse(data), instanceId: Date.now() }); renderWorkflow(); }
+    // Yalnızca depodaki modül eklenir: bırakılan metin başka bir sayfadan da gelebilir, komut ondan alınmaz
+    let id = null;
+    try { id = JSON.parse(e.dataTransfer.getData('text/plain') || '{}').id; } catch (err) {}
+    const item = [...repository.packages, ...repository.scripts].find(i => i.id === id);
+    if (item) { workflowSequence.push({ ...item, instanceId: Date.now() }); renderWorkflow(); }
 });
 
 function removeTask(instanceId) { workflowSequence = workflowSequence.filter(t => t.instanceId !== instanceId); renderWorkflow(); }
@@ -480,7 +483,7 @@ function renderWorkflow() {
                         <div style="font-size:0.75rem;color:var(--text-tertiary);">${escapeHtml(task.meta)}</div>
                     </div>
                 </div>
-                <button class="btn-remove-task" onclick="removeTask(${task.instanceId})"><i class="fas fa-xmark"></i></button>
+                <button class="btn-remove-task" onclick="removeTask(${jsArg(task.instanceId)})"><i class="fas fa-xmark"></i></button>
             </div>`;
         workflowZone.appendChild(node);
     });
