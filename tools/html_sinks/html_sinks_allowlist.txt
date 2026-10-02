@@ -20,7 +20,6 @@ Dashboard/system.php  6ba9d334bdb3  badge(): cls ve icon her çağrıda sabit s�
 Dashboard/terminal.php  2094d5a8335b  terminalHistory yalnızca appendToTerminal()'ın yazdığı (denetlenen) HTML'i tutar
 
 # ---- sabit tablolardan seçilen sınıf/ikon/etiket
-Dashboard/assets/pops_script.js  6565c3ff066f  showToast: ikon sabit icons tablosundan; type yalnızca koddaki sabitler
 Dashboard/logger.php  ca17cec2552d  donanım kartı: icon ve label hemen üstteki sabit items dizisinden; değer kaçırılır
 Dashboard/policies.php  3e54627e81e5  c.key sabit CATS tablosundan
 Dashboard/reports.php  1674bf72738e  güncelleme sonucu: u[0]/u[1] sabit U tablosundan ya da sabit varsayılan; u[2] kaçırılır
@@ -33,8 +32,6 @@ Dashboard/tasks.php  b06e7ffa9d06  gün kutuları sabit DAYS dizisinden
 # ---- sayfada hesaplanan sayılar ve sabitler
 Dashboard/deploy.php  c5758fdf21a2  forEach sıra numarası
 Dashboard/devices.php  eaff093cf1c8  isChecked yalnızca 'checked' ya da ''
-Dashboard/index.php  19a5ead6b4db  laboratuvar başına cihaz sayısı (bu fonksiyonda sayılır)
-Dashboard/index.php  6ae8c0abbc38  sürüm başına cihaz sayısı (bu fonksiyonda sayılır)
 Dashboard/policies.php  5a8c80ffed3a  alan adı sayıları (length toplamı)
 Dashboard/policies.php  9ac376eefcf4  quarantine_threshold collect() içinde Math.max/min(parseInt) ile sayı
 Dashboard/system.php  292362ab3ee6  b üstteki her dalda badge(...) ile atanır
