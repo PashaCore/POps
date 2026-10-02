@@ -288,6 +288,7 @@ const App = {
     currentAuditSessionId: null,
     lastFrameTime: {},
     imageCache: {},
+    heldKeys: new Map(),
 
     init: function() {
         this.apiUrl = (typeof OMYO_API !== 'undefined') ? OMYO_API.HTTP_URL : '';
@@ -308,7 +309,12 @@ const App = {
                         keepalive: true
                     });
                 }
-                fetch(`${this.apiUrl}/api/stream/stop/${encodeURIComponent(this.currentPc)}`, { keepalive: true });
+                fetch(`${this.apiUrl}/api/stream/stop`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pc_name: this.currentPc }),
+                    keepalive: true
+                });
             }
         });
     },
@@ -322,6 +328,10 @@ const App = {
         layer.addEventListener('wheel', e => { if (this.isControlMode) this.sendScrollInput(e); });
         layer.addEventListener('keydown', e => { if (this.isControlMode) { e.preventDefault(); this.sendInput('keyboard', 'down', e); } });
         layer.addEventListener('keyup', e => { if (this.isControlMode) { e.preventDefault(); this.sendInput('keyboard', 'up', e); } });
+        // Odak giderse ya da sekme gizlenirse keyup gelmez: basılı kalan tuşlar uzak PC'de bırakılır
+        layer.addEventListener('blur', () => this.releaseHeldKeys());
+        window.addEventListener('blur', () => this.releaseHeldKeys());
+        document.addEventListener('visibilitychange', () => { if (document.hidden) this.releaseHeldKeys(); });
     },
 
     setupSearch: function() {
@@ -575,7 +585,7 @@ const App = {
         document.getElementById('controlToggleWrapper').classList.add('disabled');
         const badge = document.getElementById('hudRecBadge');
         badge.className = 'hud-badge'; badge.style.background = 'transparent'; badge.style.color = 'rgba(255,255,255,0.6)'; badge.style.borderColor = 'rgba(255,255,255,0.3)'; badge.innerHTML = '📷 BEKLEMEDE';
-        try { await fetch(`${this.apiUrl}/api/stream/stop/${encodeURIComponent(this.currentPc)}`); } catch (e) {}
+        try { await fetch(`${this.apiUrl}/api/stream/stop`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pc_name: this.currentPc }) }); } catch (e) {}
         if (this.currentAuditSessionId) {
             try { await fetch(`${this.apiUrl}/api/audit/session/end`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: this.currentAuditSessionId, status: 'Ended' }) }); this.currentAuditSessionId = null; } catch (e) {}
         }
@@ -593,7 +603,7 @@ const App = {
         const badge = document.getElementById('hudRecBadge');
         const inputLayer = document.getElementById('inputLayer');
         if (this.isControlMode) { badge.className = 'hud-badge hud-ctrl'; badge.innerHTML = '🎮 KONTROL AKTİF'; inputLayer.style.display = 'block'; inputLayer.focus(); }
-        else { badge.className = this.isStreamActive ? 'hud-badge hud-rec' : 'hud-badge'; badge.innerHTML = this.isStreamActive ? '● CANLI YAYIN' : '📷 BEKLEMEDE'; inputLayer.style.display = 'none'; }
+        else { this.releaseHeldKeys(); badge.className = this.isStreamActive ? 'hud-badge hud-rec' : 'hud-badge'; badge.innerHTML = this.isStreamActive ? '● CANLI YAYIN' : '📷 BEKLEMEDE'; inputLayer.style.display = 'none'; }
     },
 
     toggleFullscreen: function() {
@@ -644,8 +654,24 @@ const App = {
                 this.ws.send(JSON.stringify({ type: 'remote_input', device: this.currentPc, input_type: 'mouse_click', button: btn, is_down: (action === 'down'), double: false }));
             }
         } else if (type === 'keyboard') {
-            this.ws.send(JSON.stringify({ type: 'remote_input', device: this.currentPc, input_type: 'keyboard', key: e.key, is_down: (action === 'down') }));
+            // code (fiziksel tuş) ve değiştiriciler de gider: ajan Türkçe Q/F düzenindeki karakterleri, AltGr ile
+            // yazılanları (@, €, {) ve kısayolları ayırt edebilsin
+            const id = e.code || e.key;
+            if (action === 'down') this.heldKeys.set(id, { key: e.key, code: e.code });
+            else this.heldKeys.delete(id);
+            this.ws.send(JSON.stringify({ type: 'remote_input', device: this.currentPc, input_type: 'keyboard', key: e.key, code: e.code,
+                ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey,
+                altgr: !!(e.getModifierState && e.getModifierState('AltGraph')), is_down: (action === 'down') }));
         }
+    },
+
+    // Basılı tuşların hepsi için keyup gönderir (son basılan önce): kontrol kapanınca, odak gidince, sekme gizlenince
+    releaseHeldKeys: function() {
+        const held = [...this.heldKeys.values()].reverse();
+        this.heldKeys.clear();
+        if (!held.length || !this.currentPc || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        held.forEach(k => this.ws.send(JSON.stringify({ type: 'remote_input', device: this.currentPc, input_type: 'keyboard', key: k.key, code: k.code,
+            ctrl: false, alt: false, shift: false, meta: false, altgr: false, is_down: false })));
     },
 
     sendScrollInput: function(e) {

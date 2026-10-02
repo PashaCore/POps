@@ -674,7 +674,7 @@
             + ` &nbsp;·&nbsp; envanter ${escapeHtml(ago(h.last_inventory_upload))}`
             + ` &nbsp;·&nbsp; tepsi: ${h.tray_connected ? '<span class="badge ok">bağlı</span>' : '<span class="badge bad">bağlı değil</span>'}`
             + ` &nbsp;·&nbsp; Vision kanalı: ${escapeHtml(vision)}`
-            + `<br>Son 1 saatte hata: ${errs ? `<span class="badge bad">${errs}</span>` : '<span class="badge ok">0</span>'}`;
+            + `<br>Son 1 saatte hata: ${errs ? `<span class="badge bad">${Number(errs)}</span>` : '<span class="badge ok">0</span>'}`;
         if (errs && h.last_error) out += ` <span class="muted-text">son hata: ${escapeHtml(h.last_error)}</span>`;
         // Karantina (0.1.13+): kilit ekranı ve ağ yalıtımı ayrı ayrı
         if (h.screen_locked) {
@@ -718,12 +718,12 @@
                 const state = r.expired ? 'süresi doldu' : (r.is_used ? 'tükendi' : 'geçerli');
                 // Jetonun kendisi saklanmaz: yalnızca ilk karakterleri (tanımak için)
                 return `<li><i class="fas fa-ticket"></i> <code>${escapeHtml(r.token_hint || '')}…</code>
-                    <span class="muted-text">${escapeHtml(r.lab_name || 'tüm sınıflar')} · ${r.use_count || 0}/${r.max_uses || 1} kullanım · ${state}</span>
-                    <button class="btn small" data-id="${r.id}">sil</button></li>`;
+                    <span class="muted-text">${escapeHtml(r.lab_name || 'tüm sınıflar')} · ${escapeHtml(r.use_count || 0)}/${escapeHtml(r.max_uses || 1)} kullanım · ${state}</span>
+                    <button class="btn small" data-id="${escapeHtml(r.id)}">sil</button></li>`;
             }).join('') || '<li class="muted-text">Jeton yok.</li>';
             $('enroll-list').querySelectorAll('button[data-id]').forEach(b => b.addEventListener('click', async () => {
                 if (!confirm('Jeton silinsin mi? Bu jetonla henüz kaydolmamış kurulumlar kaydolamaz.')) return;
-                await fetch('/api/system/enroll-token/' + b.dataset.id, { method: 'DELETE' });
+                await fetch('/api/system/enroll-token/' + encodeURIComponent(b.dataset.id), { method: 'DELETE' });
                 loadEnroll();
             }));
         } catch (e) { $('enroll-list').innerHTML = '<li class="muted-text">Jetonlar alınamadı.</li>'; }
@@ -817,7 +817,7 @@
         const poolBusy = (pool.size || 0) - (pool.idle || 0);
         const dev = d.devices || {};
         $('dg-tiles').innerHTML = [
-            tile('Açık kalma süresi', fmtDur(d.uptime_seconds), 'Bellek: ' + (d.rss_mb != null ? d.rss_mb + ' MB' : '—')),
+            tile('Açık kalma süresi', fmtDur(d.uptime_seconds), escapeHtml('Bellek: ' + (d.rss_mb != null ? d.rss_mb + ' MB' : '—'))),
             tile('Bağlı ajan', d.agents_connected, escapeHtml((dev.online || 0) + ' çevrimiçi / ' + (dev.total || 0) + ' kayıtlı cihaz')),
             tile('Veritabanı bağlantısı', poolBusy + ' / ' + (pool.max || '—'), 'kullanımda / en çok'),
             tile('Hata', errs, escapeHtml((d.http_5xx || 0) + ' sunucu hatası yanıtı, ' + (d.log_counts && d.log_counts.WARNING || 0) + ' uyarı')),
@@ -889,5 +889,6 @@
     loadEnroll();
     loadNotify();
     loadDiag();
+    popsTwofaNudge();
 })();
 </script>

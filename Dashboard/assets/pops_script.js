@@ -134,6 +134,40 @@ function bootstrap() {
 }
 bootstrap();
 
+// ============== 2FA ÖNERİSİ ==============
+// 2FA isteğe bağlıdır (önerilir, zorunlu değil). Kendi 2FA'sı kapalı admin/superadmin'e Ayarlar ve Sistem
+// sayfalarında başlığın altında kapatılabilir bir not gösterilir; kapatılınca bu tarayıcıda 7 gün görünmez.
+// enabled verilmezse durum /api/admin/2fa/status'tan okunur.
+const TWOFA_NUDGE_KEY = 'pops_2fa_nudge_hidden_until';
+async function popsTwofaNudge(enabled) {
+    if (!['admin', 'superadmin'].includes(window.USER_ROLE)) return;
+    if (enabled === undefined) {
+        try {
+            const res = await fetch('/api/admin/2fa/status');
+            if (!res.ok) return;
+            enabled = !!(await res.json()).enabled;
+        } catch (e) { return; }
+    }
+    let box = document.getElementById('twofaNudge');
+    let hiddenUntil = 0;
+    try { hiddenUntil = Number(localStorage.getItem(TWOFA_NUDGE_KEY)) || 0; } catch (e) {}
+    if (enabled || hiddenUntil > Date.now()) { if (box) box.remove(); return; }
+    const header = document.querySelector('.app-content .page-header');
+    if (box || !header) return;
+    box = document.createElement('div');
+    box.id = 'twofaNudge';
+    box.className = 'twofa-nudge';
+    box.setAttribute('role', 'status');
+    box.innerHTML = '<i class="fas fa-shield-halved"></i><span>Hesabınızda iki adımlı doğrulama (2FA) kapalı. Önerilir: '
+        + '<a href="settings.php#twofaCard">Ayarlar → İki Adımlı Doğrulama (2FA)</a> kartından açabilirsiniz.</span>'
+        + '<button type="button" class="twofa-nudge-close" title="7 gün gösterme" aria-label="Kapat"><i class="fas fa-xmark"></i></button>';
+    box.querySelector('button').addEventListener('click', () => {
+        try { localStorage.setItem(TWOFA_NUDGE_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000)); } catch (e) {}
+        box.remove();
+    });
+    header.insertAdjacentElement('afterend', box);
+}
+
 // ============== POWER COMMANDS ==============
 window.powerCommand = async function(targetType, action, targetName = null) {
     if (!API_HTTP) return;
