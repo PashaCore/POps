@@ -49,6 +49,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0012_server_ca.sql` | `clients.cap_server_ca` (how the agent verifies the server certificate: school CA or Windows store). |
 | `0013_agent_health_bypass_keys.sql` | `clients.agent_health` (heartbeat health summary) and `agent_bypass_keys` (per-device offline bypass keys). |
 | `0014_hardening.sql` | Enrollment tokens stored as hashes; `tasks.exit_code` / `dispatched_at`; partial index for the task queue; agent identity enforcement on by default for new installs. |
+| `0015_p1_reliability.sql` | `users.totp_last_step` (a 2FA code works once); `clients.last_disconnect_at` / `last_disconnect_reason`; `pending_updates` and `update_results` (agent update tracking); indexes for reports, device activity, task history and the hardware-fingerprint lookup. |
 
 ## Tables
 
@@ -61,7 +62,7 @@ application code.
 
 | Table | Contents |
 | --- | --- |
-| `clients` | One row per device: host name, display name, lab, `status` (`Online` / `Offline` / last heartbeat status), `last_seen`, active window, boot count, signed-in user (`logged_user`), IP, hardware fingerprint (`dna_uuid`, `dna_bios`, `dna_disk`, `dna_mac`, `dna_ram`, `cap_ram_readable`), `is_quarantined`, capability state (`cap_terminal_enabled`, `cap_vision_enabled`, `cap_terminal_disable_requested`, `cap_vision_disable_requested`), `running_version`, `allow_reenroll`, `agent_health` (health summary from the last heartbeat, agents 0.1.12+; see `Backend/pops/agent_health.py`). New devices land in lab `Atanmamis_Cihazlar` (unassigned). |
+| `clients` | One row per device: host name, display name, lab, `status` (`Online` / `Offline` / last heartbeat status), `last_seen`, active window, boot count, signed-in user (`logged_user`), IP, hardware fingerprint (`dna_uuid`, `dna_bios`, `dna_disk`, `dna_mac`, `dna_ram`, `cap_ram_readable`), `is_quarantined`, capability state (`cap_terminal_enabled`, `cap_vision_enabled`, `cap_terminal_disable_requested`, `cap_vision_disable_requested`), `running_version`, `allow_reenroll`, `agent_health` (health summary from the last heartbeat, agents 0.1.12+; see `Backend/pops/agent_health.py`), `last_disconnect_at` / `last_disconnect_reason` (when and why the last connection closed). New devices land in lab `Atanmamis_Cihazlar` (unassigned). |
 | `hw_inventory` | Hardware inventory per device (CPU, RAM, motherboard, GPU, OS, IP, MAC, disks, last update). |
 | `agent_versions` | Agent version per device, from the `X-Agent-Version` header at connect. |
 | `custom_labs` | Lab names created in the panel. |
@@ -73,7 +74,7 @@ At startup the backend marks every device `Offline`; agents that reconnect are w
 
 | Table | Contents |
 | --- | --- |
-| `tasks` | Command queue: `target_pc`, `target_lab`, `script_path` (the command line the agent runs), `status`, `created_at`, `output`, `created_by`. `exit_code` and `dispatched_at` (migration `0014`). Statuses used by the code: `Pending`, `Running`, `Completed`, `Failed` (non-zero exit code), `Completed (Rebooted)` (a restart command, agent restarted), `Interrupted` (the agent restarted while the command ran), `Unknown` (the connection dropped and the agent cannot resend the result), `Paused`, `Cancelled`. |
+| `tasks` | Command queue: `target_pc`, `target_lab`, `script_path` (the command line the agent runs), `status`, `created_at`, `output`, `created_by`. `exit_code` and `dispatched_at` (migration `0014`). Statuses used by the code: `Pending`, `Running`, `Completed`, `Failed` (non-zero exit code), `Completed (Rebooted)` (a restart command, agent restarted), `Interrupted` (the agent restarted while the command ran), `Unknown` (the connection dropped and the agent cannot resend the result), `Timed Out` (no result 35 minutes after it was sent; a late result still completes it), `Paused`, `Cancelled`. |
 | `packages` | Package and script definitions of the Deployment page (`id`, `name`, `type`, `meta`, `command`, `icon`, `color`). The uploaded files themselves are on disk in `Backend/storage`. |
 | `scheduled_tasks` | Scheduled commands: `name`, `command`, `target_mode` (`ALL` / `LAB` / `PC`), `targets` (JSON list of labs or hardware IDs), `schedule_type` (`once` / `daily` / `weekly`), `run_at` (once), `time_of_day` (`HH:MM`, server time zone), `weekdays` (`1`–`7`, 1 = Monday), `enabled`, `next_run`, `last_run`, `last_result`, `created_by`, `created_at`. When due, the scheduler inserts normal rows into `tasks`. |
 
@@ -100,7 +101,7 @@ Deleting a device also deletes its rows in both tables.
 
 | Table | Contents |
 | --- | --- |
-| `users` | `username`, `password_hash` (bcrypt only), `role` (`superadmin` / `admin` / `viewer`), `permissions` (JSON array of dashboard page names, stored as text), `last_login`, `totp_secret`, `totp_enabled`, `token_version`. |
+| `users` | `username`, `password_hash` (bcrypt only), `role` (`superadmin` / `admin` / `viewer`), `permissions` (JSON array of dashboard page names, stored as text), `last_login`, `totp_secret` (encrypted, `v1:` prefix; see [`security.md`](security.md#two-factor-authentication)), `totp_enabled`, `totp_last_step` (time step of the last accepted code), `token_version`. |
 
 ### Agent authentication
 

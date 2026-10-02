@@ -16,15 +16,29 @@ trustworthy record of it.
   it in the `pops_jwt` cookie (`httpOnly`, `SameSite=Strict`, `Secure` over HTTPS); JavaScript cannot read it.
 - State-changing requests authenticated by the cookie must carry `X-Requested-With: XMLHttpRequest` (CSRF check).
 - Every request re-checks the user in the database. Deleting a user, or editing them (role, password, name),
-  ends their existing sessions immediately. An open `/ws/panel` socket re-checks the session when it sends remote
-  input and more than 10 seconds have passed since the last check, and is closed if the session was revoked.
+  ends their existing sessions immediately. An open `/ws/panel` socket re-checks the session every 10 seconds and
+  is closed if the session was revoked, together with its screen and control grants.
 - Login and the 2FA endpoints allow 10 attempts per minute per client address.
 
 ### Two-factor authentication
 
-Opt-in TOTP (RFC 6238, any authenticator app), per account, off by default. A user enables it on the **Ayarlar**
-page: scan the QR code (generated locally, no external service), then confirm a code; only then is it required.
-Turning it off needs a valid code. If an authenticator is lost, a server administrator can reset it:
+Opt-in TOTP (RFC 6238, any authenticator app), per account, off by default and **recommended for every admin and
+superadmin**. A user enables it on the **Ayarlar** page: scan the QR code (generated locally, no external service),
+then confirm a code; only then is it required. Turning it off needs a valid code.
+
+- **A code works once.** The server stores the time step of the last accepted code per account; that code, and
+  any older one, is refused even while it is still within its ±30-second window.
+- **The second step belongs to the session.** The short-lived challenge issued after the password carries the
+  account's `token_version`; if sessions are revoked, the password is changed or the role edited before the code is
+  entered, the challenge is refused.
+- **Secrets are encrypted in the database** (Fernet, `v1:` prefix). The key is `TOTP_ENCRYPTION_KEY` from `.env`
+  (generate with `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) or,
+  if it is not set, a key derived from `JWT_SECRET`. Decryption tries both, and at startup every secret is
+  re-encrypted with the current key (plain-text secrets from older versions included). **Before changing
+  `JWT_SECRET`, set `TOTP_ENCRYPTION_KEY` and restart once**; otherwise the existing 2FA secrets can no longer be
+  read and those users must have 2FA reset.
+
+If an authenticator is lost, a server administrator can reset it:
 
 ```sql
 UPDATE users SET totp_enabled = false, totp_secret = NULL WHERE username = '<user>';
