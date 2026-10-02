@@ -427,9 +427,11 @@ window.renderAdvancedLabsView = function() {
     const groupedByLab = {};
     state.devices.forEach(d => { const l = d.lab || 'Atanmamış'; if (!groupedByLab[l]) groupedByLab[l] = []; groupedByLab[l].push(d); });
     const allKnownLabs = [...new Set([...Object.keys(state.labsStats || {}), ...(state.customLabs || [])])].filter(l => l && l !== 'Atanmamis_Cihazlar');
-    allKnownLabs.sort().forEach(labName => {
+    const shownLabs = new Set();
+    allKnownLabs.sort((a, b) => a.localeCompare(b, 'tr')).forEach(labName => {
         const pcs = groupedByLab[labName] || [];
         if (query && pcs.length === 0) return;
+        shownLabs.add(labName);
         const wrapperId = `wrapper_${labName.replace(/\s+/g, '_')}`;
         let wrapper = document.getElementById(wrapperId);
         const onlineCount = pcs.filter(p => p.status.toLowerCase() === 'online').length;
@@ -446,7 +448,7 @@ window.renderAdvancedLabsView = function() {
         const dataHash = pcs.map(p => `${p.hostname}-${p.status}`).sort().join('|') + `|Exp:${isExpanded}|Tab:${activeTab}|Main:${teacherPc ? teacherPc.hostname : ''}`;
 
         if (!wrapper || wrapper.dataset.full !== dataHash) {
-            if (!wrapper) { wrapper = document.createElement('div'); wrapper.id = wrapperId; container.appendChild(wrapper); }
+            if (!wrapper) { wrapper = document.createElement('div'); wrapper.id = wrapperId; wrapper.dataset.lab = labName; container.appendChild(wrapper); }
             wrapper.className = `lab-wrapper ${isExpanded ? 'expanded' : ''}`;
             wrapper.dataset.full = dataHash;
 
@@ -578,9 +580,10 @@ window.renderAdvancedLabsView = function() {
                 </div>`;
         }
     });
+    // Görünürlük gerçek sınıf adıyla belirlenir (kutunun kimliğinde boşluklar '_' olur: eskiden adında boşluk olan
+    // her sınıf burada gizleniyordu). Aramada eşleşmeyen ya da silinen sınıf gizlenir, yeniden eşleşince görünür.
     document.querySelectorAll('.lab-wrapper').forEach(w => {
-        const labId = w.id.replace('wrapper_', '');
-        if (!allKnownLabs.includes(labId)) w.style.display = 'none';
+        w.style.display = shownLabs.has(w.dataset.lab) ? '' : 'none';
     });
     
     // SortableJS başlat
