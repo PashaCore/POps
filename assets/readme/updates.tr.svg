@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 370" width="1000" height="370" role="img" aria-label="İmzalı güncelleme, kendiliğinden geri alma">
+<defs>
+<marker id="arr-line" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8c959f"/></marker>
+<marker id="arr-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker>
+<marker id="arr-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+<marker id="arr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b45309"/></marker>
+<marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
+</defs>
+<rect x="0" y="0" width="1000" height="370" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<text x="28" y="38" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="20" font-weight="700" fill="#1f2328" text-anchor="start">İmzalı güncelleme, kendiliğinden geri alma</text>
+<text x="28" y="60" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">İmza anahtarı sunucuya hiç gelmez. Bilgisayar imzayı kendisi denetler.</text>
+<rect x="28" y="86" width="172" height="132" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1"/>
+<text x="40" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#7c3aed" text-anchor="start">1  Derle ve imzala</text>
+<text x="40" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">CI manifesti imzalar</text>
+<text x="40" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">(ed25519, anahtar yalnız</text>
+<text x="40" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">GitHub secret'ında)</text>
+<line x1="201" y1="152" x2="220" y2="152" stroke="#8c959f" stroke-width="1.6" marker-end="url(#arr-line)"/>
+<rect x="221" y="86" width="172" height="132" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1"/>
+<text x="233" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#059669" text-anchor="start">2  Sunucu doğrular</text>
+<text x="233" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">sürümü hazırlamadan</text>
+<text x="233" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">önce imzayı</text>
+<text x="233" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">denetler</text>
+<line x1="394" y1="152" x2="413" y2="152" stroke="#8c959f" stroke-width="1.6" marker-end="url(#arr-line)"/>
+<rect x="414" y="86" width="172" height="132" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1"/>
+<text x="426" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#2563eb" text-anchor="start">3  Gönder</text>
+<text x="426" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">yönetici panelden</text>
+<text x="426" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">bir laba ya da seçili</text>
+<text x="426" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">cihazlara gönderir</text>
+<line x1="587" y1="152" x2="606" y2="152" stroke="#8c959f" stroke-width="1.6" marker-end="url(#arr-line)"/>
+<rect x="607" y="86" width="172" height="132" rx="10" fill="#fffbeb" stroke="#b45309" stroke-width="1"/>
+<text x="619" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#b45309" text-anchor="start">4  Cihaz yine doğrular</text>
+<text x="619" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">gömülü açık anahtar,</text>
+<text x="619" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">boyut, SHA-256,</text>
+<text x="619" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">yalnızca yeni sürüm</text>
+<line x1="780" y1="152" x2="799" y2="152" stroke="#8c959f" stroke-width="1.6" marker-end="url(#arr-line)"/>
+<rect x="800" y="86" width="172" height="132" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1"/>
+<text x="812" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#059669" text-anchor="start">5  Kur</text>
+<text x="812" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">POpsUpdater MSI'ı</text>
+<text x="812" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">kurar, ajan çalışana</text>
+<text x="812" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">kadar bekler</text>
+<rect x="28" y="262" width="672" height="34" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1"/>
+<text x="46" y="284" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#059669" text-anchor="start">✓  Çalışıyor: başarı bildirilir, sunucu onaylayana kadar saklanır</text>
+<rect x="28" y="310" width="672" height="34" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1"/>
+<text x="46" y="332" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#dc2626" text-anchor="start">↺  Çalışmıyor: önceki sürüm kendiliğinden geri yüklenir</text>
+<path d="M886.0,220 L886.0,279 L702,279" fill="none" stroke="#059669" stroke-width="1.6" marker-end="url(#arr-green)"/>
+<path d="M886.0,279 L886.0,327 L702,327" fill="none" stroke="#dc2626" stroke-width="1.6" marker-end="url(#arr-red)"/>
+</svg>

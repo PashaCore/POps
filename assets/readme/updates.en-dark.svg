@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 370" width="1000" height="370" role="img" aria-label="Signed updates with automatic rollback">
+<defs>
+<marker id="arr-line" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6e7681"/></marker>
+<marker id="arr-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#58a6ff"/></marker>
+<marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3fb950"/></marker>
+<marker id="arr-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#bc8cff"/></marker>
+<marker id="arr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e3b341"/></marker>
+<marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ff7b72"/></marker>
+</defs>
+<rect x="0" y="0" width="1000" height="370" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="28" y="38" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="20" font-weight="700" fill="#e6edf3" text-anchor="start">Signed updates with automatic rollback</text>
+<text x="28" y="60" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1" text-anchor="start">The signing key never reaches the server. The PC checks the signature itself.</text>
+<rect x="28" y="86" width="172" height="132" rx="10" fill="#221a3d" stroke="#bc8cff" stroke-width="1"/>
+<text x="40" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#bc8cff" text-anchor="start">1  Build and sign</text>
+<text x="40" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">CI signs the manifest</text>
+<text x="40" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">(ed25519, key only in</text>
+<text x="40" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">a GitHub secret)</text>
+<line x1="201" y1="152" x2="220" y2="152" stroke="#6e7681" stroke-width="1.6" marker-end="url(#arr-line)"/>
+<rect x="221" y="86" width="172" height="132" rx="10" fill="#0f2a1c" stroke="#3fb950" stroke-width="1"/>
+<text x="233" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#3fb950" text-anchor="start">2  Server verifies</text>
+<text x="233" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">checks the signature</text>
+<text x="233" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">before staging the</text>
+<text x="233" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">release</text>
+<line x1="394" y1="152" x2="413" y2="152" stroke="#6e7681" stroke-width="1.6" marker-end="url(#arr-line)"/>
+<rect x="414" y="86" width="172" height="132" rx="10" fill="#0d2242" stroke="#58a6ff" stroke-width="1"/>
+<text x="426" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#58a6ff" text-anchor="start">3  Dispatch</text>
+<text x="426" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">admin sends it to a</text>
+<text x="426" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">lab or chosen PCs</text>
+<text x="426" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">from the panel</text>
+<line x1="587" y1="152" x2="606" y2="152" stroke="#6e7681" stroke-width="1.6" marker-end="url(#arr-line)"/>
+<rect x="607" y="86" width="172" height="132" rx="10" fill="#2b2108" stroke="#e3b341" stroke-width="1"/>
+<text x="619" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#e3b341" text-anchor="start">4  PC verifies again</text>
+<text x="619" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">embedded public key,</text>
+<text x="619" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">size, SHA-256,</text>
+<text x="619" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">newer versions only</text>
+<line x1="780" y1="152" x2="799" y2="152" stroke="#6e7681" stroke-width="1.6" marker-end="url(#arr-line)"/>
+<rect x="800" y="86" width="172" height="132" rx="10" fill="#0f2a1c" stroke="#3fb950" stroke-width="1"/>
+<text x="812" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#3fb950" text-anchor="start">5  Install</text>
+<text x="812" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">POpsUpdater runs the</text>
+<text x="812" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">MSI and waits until</text>
+<text x="812" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">the agent is working</text>
+<rect x="28" y="262" width="672" height="34" rx="8" fill="#0f2a1c" stroke="#3fb950" stroke-width="1"/>
+<text x="46" y="284" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#3fb950" text-anchor="start">✓  Working: success is reported and kept until the server confirms it</text>
+<rect x="28" y="310" width="672" height="34" rx="8" fill="#33161a" stroke="#ff7b72" stroke-width="1"/>
+<text x="46" y="332" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#ff7b72" text-anchor="start">↺  Not working: the previous version is restored automatically</text>
+<path d="M886.0,220 L886.0,279 L702,279" fill="none" stroke="#3fb950" stroke-width="1.6" marker-end="url(#arr-green)"/>
+<path d="M886.0,279 L886.0,327 L702,327" fill="none" stroke="#ff7b72" stroke-width="1.6" marker-end="url(#arr-red)"/>
+</svg>

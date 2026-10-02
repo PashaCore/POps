@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 516" width="1000" height="516" role="img" aria-label="Security in layers">
+<defs>
+<marker id="arr-line" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8c959f"/></marker>
+<marker id="arr-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker>
+<marker id="arr-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+<marker id="arr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b45309"/></marker>
+<marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
+</defs>
+<rect x="0" y="0" width="1000" height="516" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<text x="28" y="38" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="20" font-weight="700" fill="#1f2328" text-anchor="start">Security in layers</text>
+<text x="28" y="60" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">Each layer assumes the one before it may fail.</text>
+<rect x="28" y="82" width="466" height="164" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1"/>
+<text x="46" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#2563eb" text-anchor="start">Panel</text>
+<circle cx="49" cy="136" r="2.8" fill="#2563eb"/>
+<text x="60" y="140" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">bcrypt passwords, rate-limited sign-in</text>
+<circle cx="49" cy="157" r="2.8" fill="#2563eb"/>
+<text x="60" y="161" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Optional TOTP 2FA: each code works once, secrets encrypted</text>
+<circle cx="49" cy="178" r="2.8" fill="#2563eb"/>
+<text x="60" y="182" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Roles: superadmin, admin, viewer</text>
+<circle cx="49" cy="199" r="2.8" fill="#2563eb"/>
+<text x="60" y="203" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Open sessions re-checked every 10 seconds, revoked at once</text>
+<circle cx="49" cy="220" r="2.8" fill="#2563eb"/>
+<text x="60" y="224" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Every value escaped on output, checked in CI</text>
+<rect x="506" y="82" width="466" height="164" rx="12" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1"/>
+<text x="524" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#7c3aed" text-anchor="start">Server</text>
+<circle cx="527" cy="136" r="2.8" fill="#7c3aed"/>
+<text x="538" y="140" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Security audit log in a SHA-256 hash chain</text>
+<circle cx="527" cy="157" r="2.8" fill="#7c3aed"/>
+<text x="538" y="161" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Enrollment in one transaction; tokens stored hashed</text>
+<circle cx="527" cy="178" r="2.8" fill="#7c3aed"/>
+<text x="538" y="182" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">A device's identity is bound to its key</text>
+<circle cx="527" cy="199" r="2.8" fill="#7c3aed"/>
+<text x="538" y="203" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Signed links for deployment files, SHA-256 checked</text>
+<circle cx="527" cy="220" r="2.8" fill="#7c3aed"/>
+<text x="538" y="224" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Self-update from signed release tags, automatic rollback</text>
+<rect x="28" y="258" width="466" height="164" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1"/>
+<text x="46" y="288" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#059669" text-anchor="start">Connection</text>
+<circle cx="49" cy="312" r="2.8" fill="#059669"/>
+<text x="60" y="316" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">TLS only: the agent refuses plain http</text>
+<circle cx="49" cy="333" r="2.8" fill="#059669"/>
+<text x="60" y="337" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Optional pinning to the school's own CA</text>
+<circle cx="49" cy="354" r="2.8" fill="#059669"/>
+<text x="60" y="358" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">A per-device secret on every connection</text>
+<circle cx="49" cy="375" r="2.8" fill="#059669"/>
+<text x="60" y="379" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Vision accepts only the device's own key</text>
+<circle cx="49" cy="396" r="2.8" fill="#059669"/>
+<text x="60" y="400" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Screen frames go only to the admin who holds the session</text>
+<rect x="506" y="258" width="466" height="164" rx="12" fill="#fffbeb" stroke="#b45309" stroke-width="1"/>
+<text x="524" y="288" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#b45309" text-anchor="start">PC</text>
+<circle cx="527" cy="312" r="2.8" fill="#b45309"/>
+<text x="538" y="316" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Terminal and Vision can be turned off per PC; the server cannot turn them on</text>
+<circle cx="527" cy="333" r="2.8" fill="#b45309"/>
+<text x="538" y="337" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Consent prompt, or a countdown with the recorded reason</text>
+<circle cx="527" cy="354" r="2.8" fill="#b45309"/>
+<text x="538" y="358" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Updates verified again on the PC; only newer versions</text>
+<circle cx="527" cy="375" r="2.8" fill="#b45309"/>
+<text x="538" y="379" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Remote actions written to the Windows event log</text>
+<circle cx="527" cy="396" r="2.8" fill="#b45309"/>
+<text x="538" y="400" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Quarantine with lock screen, isolation, per-device bypass codes</text>
+<rect x="28" y="446" width="944" height="46" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+<text x="500" y="474" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#1f2328" text-anchor="middle">Even with the server taken over: no command on a PC with the terminal off, no unsigned agent, no hidden screen view.</text>
+</svg>
