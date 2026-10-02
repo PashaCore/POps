@@ -19,7 +19,7 @@ from slowapi.errors import RateLimitExceeded
 
 from migrate import run_migrations_on
 from pops import db, heartbeats, notify, secretbox, update_tracking
-from pops.logs import setup_logging
+from pops.logs import setup_logging, stop_background_writer
 from pops.metrics import RequestContextMiddleware
 from pops.audit import add_audit_log
 from pops.config import (
@@ -209,6 +209,9 @@ async def shutdown_event():
         except Exception:
             db.db_pool.terminate()
         db.db_pool = None
+    # Sıradaki log satırları şimdi yazılır, kapanışın kalanı doğrudan: uvicorn SIGTERM'ü yeniden gönderip süreci
+    # atexit'siz bitirir (bkz. pops/logs.py)
+    stop_background_writer()
 
 
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)

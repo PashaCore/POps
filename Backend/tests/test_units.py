@@ -10,8 +10,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 # Router modülleri yapılandırmayı içe aktarır; veritabanına bağlanılmaz, değerler yalnızca doğrulamayı geçer
 for _k in ("JWT_SECRET", "DB_USER", "DB_PASS", "DB_NAME"):
     os.environ.setdefault(_k, "unit-test")
+import asyncio  # noqa: E402
 import json  # noqa: E402
 import logging  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
 
 import datetime  # noqa: E402
 
@@ -70,6 +73,82 @@ def test_log_format():
     chk(out["msg"] == "connection open" and out["level"] == "INFO", "temel alanlar")
     chk(out.get("pc_name") == "HW-1", "düz ek alan yazılır")
     chk("websocket" not in out, "nesne ek alanı yazılmaz")
+
+
+class _StuckStream:
+    """Diski takılmış bir log hedefi gibi: kapı açılana kadar write bekler."""
+
+    def __init__(self):
+        self.gate = threading.Event()
+        self.lines = []
+
+    def write(self, text):
+        self.gate.wait()
+        self.lines.append(text)
+
+    def flush(self):
+        pass
+
+
+def test_log_writer():
+    print("== log yazımı olay döngüsünü bekletmez")
+    out = _StuckStream()
+    handler = logs.BackgroundStreamHandler(out, logs.JsonFormatter(), maxsize=3)
+    lg = logging.getLogger("pops.test.writer")
+    lg.propagate = False
+    lg.setLevel(logging.INFO)
+    lg.addHandler(handler)
+
+    async def run():
+        ticks = [0]
+
+        async def ticker():
+            while True:
+                await asyncio.sleep(0.01)
+                ticks[0] += 1
+
+        tick_task = asyncio.create_task(ticker())
+        token = logs.request_id_var.set("rid-unit-1")
+        started = time.monotonic()
+        for i in range(6):
+            lg.info("satır %d", i, extra={"pc_name": "HW-1"})
+            await asyncio.sleep(0.02)
+        elapsed = time.monotonic() - started
+        logs.request_id_var.reset(token)
+        tick_task.cancel()
+        return elapsed, ticks[0]
+
+    # asyncio.run değil: 3.9'da ana iş parçacığının döngüsünü kaldırır, sonraki testlerin içe aktardığı modüller
+    # (asyncio.Lock()) hata verir
+    loop = asyncio.new_event_loop()
+    try:
+        elapsed, ticks = loop.run_until_complete(run())
+    finally:
+        loop.close()
+    chk(elapsed < 1.0 and ticks >= 5, "hedef takılıyken log çağrısı beklemedi, döngü işledi (%.2f sn)" % elapsed)
+    chk(handler.dropped >= 1 and not out.lines, "sıra dolunca satır atıldı, takılı hedefe yazılmadı")
+    out.gate.set()
+    handler.stop()
+    lg.info("kapanışta")  # stop() sonrası doğrudan yazılır (uvicorn SIGTERM'de süreci atexit'siz bitirir)
+    lg.removeHandler(handler)
+    rows = [json.loads(line) for line in out.lines]
+    chk(rows[-1]["msg"] == "kapanışta", "durdurulunca sıradakiler yazıldı, sonraki satır doğrudan yazıldı")
+    rows = rows[:-1]
+    kept = [r for r in rows if r["logger"] == "pops.test.writer"]
+    note = next((r for r in rows if r["logger"] == "pops.logs"), None)
+    chk(all(line.endswith("\n") for line in out.lines) and len(kept) + handler.dropped == 6, "kalan satırlar yazıldı")
+    chk([r["msg"] for r in kept] == sorted(r["msg"] for r in kept) and kept[0]["msg"] == "satır 0", "sıra korundu")
+    chk(all(r.get("request_id") == "rid-unit-1" and r.get("pc_name") == "HW-1" for r in kept),
+        "request_id ve ek alanlar çağıranın bağlamından")
+    chk(note is not None and note.get("dropped") == handler.dropped, "atılan satır sayısı bildirildi")
+
+    stuck = _StuckStream()
+    late = logs.BackgroundStreamHandler(stuck, logs.JsonFormatter())
+    late.handle(logging.LogRecord("x", logging.INFO, __file__, 1, "takılı", None, None))
+    started = time.monotonic()
+    late.stop(timeout=0.2)
+    chk(time.monotonic() - started < 1.0, "takılı yazıcı kapanışı asılı bırakmaz")
+    stuck.gate.set()
 
 
 def test_activity():
@@ -525,6 +604,7 @@ def test_modules():
 def main():
     test_update_notice()
     test_log_format()
+    test_log_writer()
     test_activity()
     test_bypass()
     test_hardening()

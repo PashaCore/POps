@@ -21,6 +21,10 @@ export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<u> DB_PASS=<p> DB_NAME=<empty tes
 COVERAGE=1 bash Backend/tests/run_local.sh   # COVERAGE=1 needs the coverage package; omit it to skip the report
 ```
 
+An integration test that times out once and then passes is often the host, not the code: while the disk stalls, every
+PostgreSQL commit waits (the PostgreSQL log then shows `using stale statistics instead of current ones because stats
+collector is not responding`). Check that log for the time of the failure before chasing it in the code.
+
 ## Coverage
 
 The backend runs under `coverage.py` during the integration suite (config: `Backend/.coveragerc`); the report is

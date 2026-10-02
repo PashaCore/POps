@@ -47,6 +47,9 @@ test database) and `JWT_SECRET` first; never point it at a production database.
   request's `request_id` and any extra fields. `LOG_FORMAT=text` gives readable lines for development;
   `LOG_LEVEL` sets the level (default `INFO`). uvicorn's own lines (access log included) use the same format.
   Find one request: `journalctl -u <service> | grep '"request_id": "<id>"'`.
+  A background thread writes the lines, so a slow destination (stalled disk, journald, Docker log pipe) never
+  holds up requests or agent connections. If 10 000 lines are waiting, new ones are dropped and a
+  `log yazımı yetişemedi` warning with the `dropped` count follows.
 - **Request ID:** every HTTP request and WebSocket connection gets one; it is returned in the `X-Request-ID` response
   header and appears on every log line written while handling it. A safe incoming `X-Request-ID` (8–64 characters of
   `A-Z a-z 0-9 . _ -`) is kept, so a reverse proxy can pass its own.

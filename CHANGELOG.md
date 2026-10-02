@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Server: a deploy whose virtual environment holds files of another user stops before `pip`.** `pops-deploy-backend` checks that every file in the venv belongs to `OWNER` before installing changed requirements; otherwise it changes nothing and prints the `chown` command. On the development server, packages once installed as root made `pip` fail half-way through the 0.1.14 update.
 - **Server: a task result is shown only for the device's own task.** A result whose task ID belongs to another device or no longer exists is still acknowledged (the agent stops resending it) but is no longer broadcast to the panels.
+- **Server: a stalled log destination no longer freezes the server.** Log lines were written to stderr on the event loop, so when the write waited (a stalled disk, journald or a Docker log pipe not reading) every connection waited with it: agent WebSocket handshakes timed out and HTTP requests hung. On the project server a stalled disk held appends to a log file for 5–30 seconds (PostgreSQL commits waited just as long). Lines are still formatted where they are logged (same `request_id`), but one background thread writes them in order. If 10 000 lines are waiting, new ones are dropped, and when the writer catches up it logs one `log yazımı yetişemedi` warning with the `dropped` count.
 - **Panel: the server-update confirmation names what is installed** (the latest published release, or `main` on the development channel); it always said `main`.
 
 ### Agent
