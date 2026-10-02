@@ -372,7 +372,7 @@ async function wakeAllDevicesMistic() {
             const res = await fetch(`${getApiBase()}/api/wake_lab/${encodeURIComponent(lab)}`, { method: 'POST' });
             if (res.ok) { const data = await res.json(); totalWoken += data.woken_pcs || 0; }
         }
-        showToast(totalWoken > 0 ? `Toplam ${totalWoken} cihaza uyanma sinyali gönderildi.` : 'MAC bilinen cihaz bulunamadı.', totalWoken > 0 ? 'success' : 'warning');
+        showToast(totalWoken > 0 ? `${totalWoken} cihaza uyandırma paketi gönderildi; açılanlar ajanları bağlanınca çevrimiçi görünür.` : 'MAC bilinen cihaz bulunamadı.', totalWoken > 0 ? 'success' : 'warning');
     } catch (err) { showToast('Sunucu hatası.', 'error'); }
 }
 

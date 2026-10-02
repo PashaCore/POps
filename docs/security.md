@@ -133,6 +133,10 @@ setting lives on the PC (`C:\POpsData\secure\capabilities.json`, set by the MSI 
 (`POST /api/system/set-capabilities`); a request to switch it on is ignored by the agent. On PCs where these are
 off, even a compromised server cannot use them. It takes effect on agents from 0.1.4-alpha.
 
+Both are on by default so that a fresh install works for a lab. **Turn them off where they are not needed**: on
+teachers' and administration PCs a remote terminal and screen view are rarely necessary, and a PC with both off
+offers nothing to someone who takes over the server or an admin account.
+
 ## Remote control and transparency
 
 - Remote mouse/keyboard input and `execute` sent over the remote-input path need an admin **and** an open

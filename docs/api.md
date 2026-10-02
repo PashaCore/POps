@@ -122,7 +122,7 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/api/wake_pc/{pc_name}` | require_admin | Sends a magic packet to the device's MAC (from its inventory) and asks one online agent in the same lab to send one too. |
-| POST | `/api/wake_lab/{lab_name}` | require_admin | Same for every device in the lab; returns `woken_pcs`. |
+| POST | `/api/wake_lab/{lab_name}` | require_admin | Same for every device in the lab; returns `woken_pcs`, the number of devices a magic packet was **sent** to. Wake-on-LAN has no acknowledgement: whether a PC started shows only when its agent connects. |
 | POST | `/api/wake_all` | require_admin | Same for every device with a known MAC. |
 
 ### Tasks, deployment and packages
