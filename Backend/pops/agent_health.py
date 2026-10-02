@@ -17,12 +17,15 @@ def clean(raw) -> Optional[str]:
     if not isinstance(raw, dict):
         return None
     out = {k: _unix(raw.get(k)) for k in _TIMES}
-    out["tray_connected"] = raw.get("tray_connected") if isinstance(raw.get("tray_connected"), bool) else None
+    for key in ("tray_connected", "screen_locked", "network_isolated"):   # karantina durumu: 0.1.13+
+        out[key] = raw.get(key) if isinstance(raw.get(key), bool) else None
     out["vision_channel"] = raw.get("vision_channel") if raw.get("vision_channel") in _VISION else None
     errors = raw.get("loop_errors_1h")
     out["loop_errors_1h"] = min(int(errors), 100000) if isinstance(errors, int) and errors >= 0 else None
     last_error = raw.get("last_error")
     out["last_error"] = last_error[:200] if isinstance(last_error, str) and last_error else None
+    isolation_error = raw.get("isolation_error")
+    out["isolation_error"] = isolation_error[:200] if isinstance(isolation_error, str) and isolation_error else None
     return json.dumps(out, ensure_ascii=False)
 
 

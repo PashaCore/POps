@@ -140,7 +140,7 @@ are described in [`vision.md`](vision.md).
 - **Hedefleme & Kurallar**: target the whole network, selected labs or selected PCs, then **Dağıtımı Başlat**. The
   panel asks for a reason, and every step becomes one queued task per PC (see Görev Kuyruğu).
 
-Commands run as SYSTEM on the PCs. Files uploaded here are downloadable without a login from `/download/`.
+Commands run as SYSTEM on the PCs. Files uploaded here are downloadable without a login only through the signed link the upload returns (`/download/<file>?sig=…`); the deployment script also checks the file's SHA-256 before running it.
 
 ### Terminal
 

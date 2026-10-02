@@ -204,7 +204,7 @@ restrict database access.
 | `GET /api/health` | Health check (database state and version only). |
 | `POST /api/admin/login`, `/api/admin/login/totp` | Sign-in (rate-limited). |
 | `GET /api/agent_policies` | Agents read the policy; it holds no secrets. |
-| `/download/<file>` | Deployment packages for agents. Do not upload anything confidential on the Deployment page. |
+| `/download/<file>?sig=…` | Deployment packages for agents, only with the signed link returned at upload (wrong or missing signature: 404). Anyone who has a package's link can still download it, so do not upload anything confidential on the Deployment page. |
 | `/updates/<file>` | The agent MSI being distributed (verified by agents against the signed manifest). |
 | `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. The software, Windows Update and helpdesk endpoints always require them. |
 

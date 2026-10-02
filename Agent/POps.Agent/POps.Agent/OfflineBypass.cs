@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using POps.Shared;
@@ -16,6 +19,10 @@ namespace POpsAgent
     // başlaması kilidi sıfırlamaz. Son kilit bittikten (ya da son hatalı denemeden) sonra 24 saat hatalı deneme olmazsa
     // eski hatalar ve kilitlenmeler unutulur (kilit yeniden 15 dakikadan başlar); yoksa aylar önceki denemeler her yeni
     // kilidi uzatırdı. Kilit biter bitmez denemeye devam eden ise kilidi 24 saate kadar büyütmeye devam eder.
+    // Cihaza özel anahtarla (0.1.12+) her kod günde BİR KEZ kabul edilir: kodu gören biri aynı gün yeniden
+    // karantinaya alınan cihazı o kodla açamaz. Panel her istekte günün bir sonraki kodunu verir (en çok
+    // DeviceBypassSecret.MaxDailyCodes). Kullanılan kodlar da sayaç dosyasında tutulur. Eski ortak anahtarın günde
+    // tek kodu olduğu için onda bu sınır yoktur.
     public sealed class OfflineBypass
     {
         public enum Result { Accepted, Rejected, LockedOut, Locked }
@@ -27,6 +34,8 @@ namespace POpsAgent
         private readonly string _statePath;
         private int _failures;
         private int _lockouts;
+        private string _usedDate;
+        private readonly HashSet<int> _usedCodes = new HashSet<int>();
 
         // statePath null ise durum yalnızca bellektedir
         public OfflineBypass(Func<DateTime> utcNow = null, string statePath = null)
@@ -57,12 +66,29 @@ namespace POpsAgent
             }
             if (now < LockedUntilUtc) return Result.Locked;
 
-            if (Matches(token, hwId, legacySecret, deviceSecret, deviceSecretPresent, localDate))
+            bool accepted;
+            if (deviceSecretPresent)
             {
-                bool changed = _failures != 0 || _lockouts != 0;
+                string day = localDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                if (_usedDate != day)
+                {
+                    _usedDate = day;
+                    _usedCodes.Clear();
+                }
+                int n = DeviceBypassSecret.MatchIndex(token, hwId, localDate, deviceSecret, i => _usedCodes.Contains(i));
+                accepted = n >= 0;
+                if (accepted) _usedCodes.Add(n);
+            }
+            else
+            {
+                accepted = Matches(token, hwId, legacySecret, null, false, localDate);
+            }
+
+            if (accepted)
+            {
                 _failures = 0;
                 _lockouts = 0;
-                if (changed) Save();
+                Save();
                 return Result.Accepted;
             }
 
@@ -86,6 +112,8 @@ namespace POpsAgent
             [JsonPropertyName("lockouts")] public int Lockouts { get; set; }
             [JsonPropertyName("locked_until_utc")] public DateTime LockedUntilUtc { get; set; }
             [JsonPropertyName("last_failure_utc")] public DateTime LastFailureUtc { get; set; }
+            [JsonPropertyName("used_date")] public string UsedDate { get; set; }
+            [JsonPropertyName("used_codes")] public int[] UsedCodes { get; set; }
         }
 
         private void Load()
@@ -100,6 +128,9 @@ namespace POpsAgent
                 _lockouts = Math.Clamp(state.Lockouts, 0, 32);
                 LockedUntilUtc = DateTime.SpecifyKind(state.LockedUntilUtc, DateTimeKind.Utc);
                 LastFailureUtc = DateTime.SpecifyKind(state.LastFailureUtc, DateTimeKind.Utc);
+                _usedDate = state.UsedDate;
+                foreach (int n in state.UsedCodes ?? Array.Empty<int>())
+                    if (n >= 0 && n < DeviceBypassSecret.MaxDailyCodes) _usedCodes.Add(n);
             }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Bypass sayaçları okunamadı: {ex.Message}", true); }
         }
@@ -109,7 +140,11 @@ namespace POpsAgent
             if (_statePath == null) return;
             try
             {
-                SecureStore.WriteProtected(_statePath, JsonSerializer.Serialize(new State { Failures = _failures, Lockouts = _lockouts, LockedUntilUtc = LockedUntilUtc, LastFailureUtc = LastFailureUtc }));
+                SecureStore.WriteProtected(_statePath, JsonSerializer.Serialize(new State
+                {
+                    Failures = _failures, Lockouts = _lockouts, LockedUntilUtc = LockedUntilUtc, LastFailureUtc = LastFailureUtc,
+                    UsedDate = _usedDate, UsedCodes = _usedCodes.OrderBy(n => n).ToArray(),
+                }));
             }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Bypass sayaçları yazılamadı: {ex.Message}", true); }
         }

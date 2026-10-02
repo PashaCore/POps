@@ -21,6 +21,45 @@ namespace POps.Tests.Agent
             Assert.Equal("72cd6e8422c407fb", DeviceBypassSecret.Fingerprint(key));
         }
 
+        // Günün sonraki kodları: "HW-TEST|2026-10-01|n" (sunucu Backend/tests/test_units.py ile ortak vektör)
+        [Fact]
+        public void LaterDailyCodes_MatchTheContractVector()
+        {
+            byte[] key = Enumerable.Repeat((byte)1, 32).ToArray();
+            DateTime date = new DateTime(2026, 10, 1);
+            Assert.Equal("D31B3C", DeviceBypassSecret.Code(key, "HW-TEST", date, 1));
+            Assert.Equal("ACA17F", DeviceBypassSecret.Code(key, "HW-TEST", date, 9));
+            Assert.Equal(1, DeviceBypassSecret.MatchIndex("D31B3C", "HW-TEST", date, DeviceSecret, _ => false));
+            Assert.Equal(-1, DeviceBypassSecret.MatchIndex("BA258E", "HW-TEST", date, DeviceSecret, n => n == 0));
+        }
+
+        // Cihaz anahtarlı kod günde bir kez: kodu gören biri aynı gün yeniden kilitlenen cihazı onunla açamaz
+        [Fact]
+        public void DeviceCode_IsAcceptedOncePerDay_AndTheNextCodeStillWorks()
+        {
+            DateTime date = new DateTime(2026, 10, 1);
+            var guard = new OfflineBypass(() => new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc));
+            Assert.Equal(OfflineBypass.Result.Accepted, guard.Attempt("BA258E", "HW-TEST", null, DeviceSecret, true, date));
+            Assert.Equal(OfflineBypass.Result.Rejected, guard.Attempt("BA258E", "HW-TEST", null, DeviceSecret, true, date));
+            Assert.Equal(OfflineBypass.Result.Accepted, guard.Attempt("D31B3C", "HW-TEST", null, DeviceSecret, true, date));
+            // Ertesi gün kullanılanlar sıfırlanır
+            byte[] key = Enumerable.Repeat((byte)1, 32).ToArray();
+            string tomorrow = DeviceBypassSecret.Code(key, "HW-TEST", date.AddDays(1));
+            Assert.Equal(OfflineBypass.Result.Accepted, guard.Attempt(tomorrow, "HW-TEST", null, DeviceSecret, true, date.AddDays(1)));
+        }
+
+        [Fact]
+        public void UsedDeviceCodes_SurviveARestart()
+        {
+            DateTime date = new DateTime(2026, 10, 1);
+            string state = System.IO.Path.Combine(TestEnvironment.NewDir("bypass-used"), OfflineBypass.StateFileName);
+            var first = new OfflineBypass(() => new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc), state);
+            Assert.Equal(OfflineBypass.Result.Accepted, first.Attempt("BA258E", "HW-TEST", null, DeviceSecret, true, date));
+
+            var afterRestart = new OfflineBypass(() => new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc), state);
+            Assert.Equal(OfflineBypass.Result.Rejected, afterRestart.Attempt("BA258E", "HW-TEST", null, DeviceSecret, true, date));
+        }
+
         [Fact]
         public void DeviceFilePresence_DisablesLegacyFallback()
         {

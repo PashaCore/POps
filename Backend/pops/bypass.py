@@ -1,7 +1,9 @@
 """Çevrimdışı bypass kodları: cihaz başına anahtar (ajan 0.1.12+) ve eski ortak anahtar (BYPASS_SECRET).
 
 Karantinadaki cihaz ağa çıkamadığı için kod cihazda yerel olarak doğrulanır; sunucu aynı formülle üretir.
-  cihaz anahtarı: HMAC-SHA256(anahtar, "<hw_id>|yyyy-MM-dd") ilk 6 hex, büyük harf
+  cihaz anahtarı: HMAC-SHA256(anahtar, "<hw_id>|yyyy-MM-dd") ilk 6 hex, büyük harf (günün ilk kodu, n=0)
+                  HMAC-SHA256(anahtar, "<hw_id>|yyyy-MM-dd|<n>"), n=1..MAX_DAILY_CODES-1: aynı günün sonraki kodları
+  Ajan 0.1.13+ bir kodu günde bir kez kabul eder; panel her istekte o günün bir sonraki kodunu verir.
   eski formül:    SHA-256("<hw_id><BYPASS_SECRET>yyyy-MM-dd") ilk 6 hex, büyük harf
 Ajan cihaz anahtarını aldıysa (C:\\POpsData\\secure\\bypass.device) YALNIZCA yeni formülü kabul eder.
 Formüller POps.Shared/DeviceBypassSecret.cs ile aynıdır; ortak test vektörü tests/test_units.py'de.
@@ -12,10 +14,10 @@ import base64
 import datetime
 import hashlib
 import hmac
-import re
 import secrets
 from typing import Optional
 
+from pops import agent_version as agent_version_mod
 from pops.config import BYPASS_SECRET
 from pops.db import execute_query
 
@@ -36,9 +38,15 @@ def fingerprint(key: str) -> str:
     return hashlib.sha256(_decode(key)).hexdigest()[:16]
 
 
-def device_code(key: str, hw_id: str, day: datetime.date) -> str:
-    message = ("%s|%s" % (hw_id, day.strftime("%Y-%m-%d"))).encode("utf-8")
-    return hmac.new(_decode(key), message, hashlib.sha256).hexdigest()[:6].upper()
+# Bir cihazın bir günde kullanabileceği en çok kod (0.1.13 ajanı aynı sınırı uygular)
+MAX_DAILY_CODES = 10
+
+
+def device_code(key: str, hw_id: str, day: datetime.date, n: int = 0) -> str:
+    message = "%s|%s" % (hw_id, day.strftime("%Y-%m-%d"))
+    if n:
+        message += "|%d" % n
+    return hmac.new(_decode(key), message.encode("utf-8"), hashlib.sha256).hexdigest()[:6].upper()
 
 
 def legacy_code(hw_id: str, day: datetime.date) -> Optional[str]:
@@ -49,9 +57,7 @@ def legacy_code(hw_id: str, day: datetime.date) -> Optional[str]:
 
 
 def supports_device_key(agent_version: Optional[str]) -> bool:
-    # Başlıktan gelen değer: kısa tutulur ve basamak sayısı sınırlıdır (uzun girdide düzenli ifade yavaşlamasın)
-    m = re.match(r"v?(\d{1,6})\.(\d{1,6})\.(\d{1,6})", (agent_version or "")[:32].strip())
-    return bool(m) and tuple(int(x) for x in m.groups()) >= MIN_AGENT_VERSION
+    return agent_version_mod.at_least(agent_version, MIN_AGENT_VERSION)
 
 
 async def key_to_send(pc_name: str) -> Optional[str]:
@@ -89,18 +95,21 @@ async def move(old_pc_name: str, new_pc_name: str) -> None:
     )
 
 
-async def codes(pc_name: str, day: datetime.date) -> dict:
+async def codes(pc_name: str, day: datetime.date, n: int = 0) -> dict:
     """Panelde gösterilecek kod(lar). method: device (onaylı cihaz anahtarı), pending (anahtar gönderildi ama
-    onay gelmedi: iki kod da denenebilir), legacy (eski ortak anahtar), none (kod üretilemiyor)."""
+    onay gelmedi: iki kod da denenebilir), legacy (eski ortak anahtar), none (kod üretilemiyor). n: günün kaçıncı
+    cihaz kodu (0'dan); eski formülün günde tek kodu vardır."""
+    n = max(0, min(int(n), MAX_DAILY_CODES - 1))
     rows = await execute_query(
         "SELECT secret, confirmed_at FROM agent_bypass_keys WHERE pc_name = $1", (pc_name,), fetch=True
     )
     legacy = legacy_code(pc_name, day)
     if rows and rows[0]["confirmed_at"] is not None:
-        return {"method": "device", "token": device_code(rows[0]["secret"], pc_name, day)}
+        return {"method": "device", "token": device_code(rows[0]["secret"], pc_name, day, n), "n": n}
     if rows:
         # Ajan anahtarı yazıp onayı gönderemeden bağlantı kopmuş olabilir: önce yeni kod, olmazsa eskisi
-        return {"method": "pending", "token": device_code(rows[0]["secret"], pc_name, day), "fallback_token": legacy}
+        return {"method": "pending", "token": device_code(rows[0]["secret"], pc_name, day, n), "n": n,
+                "fallback_token": legacy}
     if legacy:
         return {"method": "legacy", "token": legacy}
     return {"method": "none", "token": None}

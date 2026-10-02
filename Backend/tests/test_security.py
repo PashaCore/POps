@@ -152,8 +152,9 @@ async def main():
     # 1) enroll -> secret (accept-both)
     await set_enforce("0")
     await conn.execute(
-        "INSERT INTO enroll_tokens (token, lab_name, expires_at, max_uses) "
-        "VALUES ('INTEGTOK1', NULL, NOW()+interval '1 hour', 5) ON CONFLICT (token) DO NOTHING"
+        "INSERT INTO enroll_tokens (token_hash, token_hint, lab_name, expires_at, max_uses) "
+        "VALUES (encode(sha256(convert_to('INTEGTOK1','UTF8')),'hex'), 'INTEGT', NULL, NOW()+interval '1 hour', 5) "
+        "ON CONFLICT (token_hash) DO NOTHING"
     )
     secret = None
     async with websockets.connect(

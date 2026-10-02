@@ -7,7 +7,7 @@ import json
 import secrets
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect, status
 
 from pops.config import JWT_COOKIE_NAME
 from pops.db import execute_query
@@ -20,6 +20,9 @@ from pops.manager import manager
 from pops.notify import notify
 
 router = APIRouter()
+
+# Açık panel soketlerinin oturumu bu aralıkla yeniden doğrulanır (iptal/rol düşürme en geç bu kadar sürede uygulanır)
+PANEL_REVALIDATE_SECONDS = 10
 
 
 @router.post("/api/audit/session/start")
@@ -183,11 +186,26 @@ async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     }
 
 
-@router.get("/api/security/bypass_token/{pc_name}")
-async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
-    # Karantinadaki (çevrimdışı) cihaz için tepsi uygulamasına girilecek kod (formüller: pops/bypass.py)
+@router.post("/api/security/bypass_token/{pc_name}")
+async def get_bypass_token(pc_name: str, response: Response, auth: dict = Depends(require_admin)):
+    # Karantinadaki (çevrimdışı) cihaz için tepsi uygulamasına girilecek kod (formüller: pops/bypass.py). Kod
+    # durumu değiştirir (günün bir sonraki kodu) ve gizlidir: POST, önbelleğe alınmaz.
+    response.headers["Cache-Control"] = "no-store"
     today = datetime.date.today()
-    result = await bypass.codes(pc_name, today)
+    # Ajan (0.1.13+) her kodu günde bir kez kabul eder: her istek o günün bir sonraki kodunu verir
+    used = await execute_query(
+        "SELECT count(*) AS n FROM device_audit_logs WHERE hw_id = $1 AND action = 'bypass_code' "
+        "AND left(\"timestamp\", 10) = $2",
+        (pc_name, today.isoformat()),
+        fetch=True,
+    )
+    n = int(used[0]["n"]) if used else 0
+    if n >= bypass.MAX_DAILY_CODES:
+        return {
+            "status": "error",
+            "message": "Bu cihaz için bugün en fazla %d kod üretilebilir." % bypass.MAX_DAILY_CODES,
+        }
+    result = await bypass.codes(pc_name, today, n)
     if not result["token"]:
         return {
             "status": "error",
@@ -208,13 +226,14 @@ async def get_bypass_token(pc_name: str, auth: dict = Depends(require_admin)):
         pc_name,
         "bypass_code",
         "Çevrimdışı bypass kodu üretildi: %s" % auth.get('sub', 'admin'),
-        {"admin": auth.get('sub')},
+        {"admin": auth.get('sub'), "n": n},
     )
     return {
         "status": "success",
         "token": result["token"],
         "fallback_token": result.get("fallback_token"),
         "method": result["method"],
+        "n": n,
         "valid_for": today.isoformat(),
     }
 
@@ -236,6 +255,29 @@ async def websocket_panel(websocket: WebSocket):
     role = session.get("role")  # DB'den (iptal/rol-düşürme anında geçerli)
     await manager.connect_panel(websocket, username, role)
     last_reverify = time.time()
+
+    async def revalidate():
+        # Açık soket, kullanıcı hiçbir şey göndermese de (yalnız canlı görüntü izlese de) oturum iptaline uyar:
+        # kullanıcı silinir, rolü düşer, parolası değişir ya da jetonun süresi dolarsa soket kapanır ve
+        # görüntü/kontrol yetkileri düşer.
+        while True:
+            await asyncio.sleep(PANEL_REVALIDATE_SECONDS)
+            try:
+                fresh = await verify_session(verify_jwt(websocket.cookies.get(JWT_COOKIE_NAME) or ""))
+            except Exception:
+                continue  # veritabanına geçici olarak ulaşılamıyor: iptal de yazılamaz, bir sonraki turda
+            if not fresh or fresh.get("sub") != username:
+                manager.drop_user_sessions(username)
+                try:
+                    await websocket.close(code=4001, reason="Oturum iptal edildi")
+                except Exception:
+                    pass
+                return
+            manager.panel_roles[websocket] = fresh.get("role")
+            if fresh.get("role") not in ("admin", "superadmin"):
+                manager.drop_user_sessions(username)
+
+    revalidator = asyncio.create_task(revalidate())
     try:
         while True:
             data = await websocket.receive_text()
@@ -275,6 +317,7 @@ async def websocket_panel(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        revalidator.cancel()
         manager.disconnect_panel(websocket)
 
 
@@ -284,8 +327,7 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
     # Vision tüneli yalnızca o cihazın kalıcı anahtarıyla açılır; "Kimlik zorlaması" ayarından bağımsızdır.
     # Kayıt jetonu burada geçmez: jetonu bilen biri başka bir cihazın adına sahte ekran gönderemesin.
     if not await verify_agent_secret(pc_name, websocket.headers.get("X-Agent-Secret")):
-        forwarded = websocket.headers.get("X-Forwarded-For")
-        client_ip = forwarded.split(",")[0] if forwarded else (websocket.client.host if websocket.client else None)
+        client_ip = websocket.client.host if websocket.client else None   # uvicorn ters vekili zaten çözer
         await add_audit_log(
             pc_name, "auth_reject", "Cihaz anahtarı olmayan vision bağlantısı reddedildi", {"ip": client_ip}
         )
@@ -308,8 +350,7 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
         pass
     finally:
         # Yerini yeni bir tünele bırakan eski soket, yeni kaydı silmez
-        if manager.active_vision_ws.get(pc_name) is websocket:
-            manager.disconnect_vision(pc_name)
+        manager.disconnect_vision(pc_name, websocket)
 
 
 # Ekran akışı yalnızca Vision oturumu (rıza/bildirim akışı) üzerinden başlatılır;

@@ -676,6 +676,12 @@
             + ` &nbsp;·&nbsp; Vision kanalı: ${escapeHtml(vision)}`
             + `<br>Son 1 saatte hata: ${errs ? `<span class="badge bad">${errs}</span>` : '<span class="badge ok">0</span>'}`;
         if (errs && h.last_error) out += ` <span class="muted-text">son hata: ${escapeHtml(h.last_error)}</span>`;
+        // Karantina (0.1.13+): kilit ekranı ve ağ yalıtımı ayrı ayrı
+        if (h.screen_locked) {
+            out += `<br>Karantina: kilit ekranı ${'<span class="badge bad">açık</span>'} &nbsp;·&nbsp; ağ yalıtımı `
+                + (h.network_isolated ? '<span class="badge ok">uygulandı</span>'
+                   : `<span class="badge bad">UYGULANAMADI</span>${h.isolation_error ? ' <span class="muted-text">' + escapeHtml(h.isolation_error) + '</span>' : ''}`);
+        }
         return out;
     }
     async function capSet(which, enabled) {
@@ -710,7 +716,8 @@
             const rows = await api('/api/system/enroll-tokens');
             $('enroll-list').innerHTML = (rows || []).slice(0, 20).map(r => {
                 const state = r.expired ? 'süresi doldu' : (r.is_used ? 'tükendi' : 'geçerli');
-                return `<li><i class="fas fa-ticket"></i> <code>${escapeHtml(r.token)}</code>
+                // Jetonun kendisi saklanmaz: yalnızca ilk karakterleri (tanımak için)
+                return `<li><i class="fas fa-ticket"></i> <code>${escapeHtml(r.token_hint || '')}…</code>
                     <span class="muted-text">${escapeHtml(r.lab_name || 'tüm sınıflar')} · ${r.use_count || 0}/${r.max_uses || 1} kullanım · ${state}</span>
                     <button class="btn small" data-id="${r.id}">sil</button></li>`;
             }).join('') || '<li class="muted-text">Jeton yok.</li>';
@@ -728,7 +735,7 @@
                 lab_name: $('et-lab').value || null, note: $('et-note').value || null,
                 ttl_hours: parseInt($('et-ttl').value) || 72, max_uses: parseInt($('et-uses').value) || 1
             });
-            msg('enroll-status', 'status-success', `<i class="fas fa-circle-check"></i> MSI kurulumunda kullanın: <code>ENROLL_TOKEN=${escapeHtml(d.token)}</code>`);
+            msg('enroll-status', 'status-success', `<i class="fas fa-circle-check"></i> MSI kurulumunda kullanın: <code>ENROLL_TOKEN=${escapeHtml(d.token)}</code><br><span class="muted-text">Jeton yalnızca şimdi gösterilir, sunucuda saklanmaz; şimdi kopyalayın.</span>`);
             loadEnroll();
         } catch (e) { msg('enroll-status', 'status-error', escapeHtml(e.message)); }
     });

@@ -56,7 +56,7 @@ async def conn():
 async def setup(c):
     await c.execute("DELETE FROM agent_secrets WHERE pc_name = ANY($1::text[])", ["HW-A", "HW-B", "HW-C", "HW-D"])
     await c.execute("DELETE FROM clients WHERE pc_name = ANY($1::text[])", ["HW-A", "HW-B", "HW-C", "HW-D"])
-    await c.execute("DELETE FROM enroll_tokens WHERE token='TEST-ENROLL'")
+    await c.execute("DELETE FROM enroll_tokens WHERE token_hash=encode(sha256(convert_to('TEST-ENROLL','UTF8')),'hex')")
     # HW-A: HTTP F3 için secret'lı
     await c.execute("INSERT INTO clients (pc_name, status) VALUES ('HW-A','Offline')")
     await c.execute("INSERT INTO agent_secrets (pc_name, secret_hash) VALUES ('HW-A',$1)", _sha("secretA"))
@@ -74,8 +74,10 @@ async def setup(c):
     await c.execute("INSERT INTO agent_secrets (pc_name, secret_hash) VALUES ('HW-D',$1)", _sha("secretD"))
     # Çok-kullanımlık enroll token
     await c.execute(
-        "INSERT INTO enroll_tokens (token, expires_at, max_uses, use_count, is_used) "
-        "VALUES ('TEST-ENROLL', NOW() + interval '1 hour', 100, 0, FALSE)"
+        # Jetonlar yalnızca SHA-256 özetiyle saklanır (migration 0014)
+        "INSERT INTO enroll_tokens (token_hash, token_hint, expires_at, max_uses, use_count, is_used) "
+        "VALUES (encode(sha256(convert_to('TEST-ENROLL','UTF8')),'hex'), 'TEST-E', "
+        "NOW() + interval '1 hour', 100, 0, FALSE)"
     )
 
 

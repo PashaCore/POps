@@ -174,7 +174,7 @@ reason "DNS kural ihlali eşiği" plus isolation, reported as `agent.auto_quaran
 quarantined.
 
 **Offline bypass.** If a quarantined PC cannot reach the server, an admin can get the day's code for it with the
-key button on **Cihaz Yönetimi** (`GET /api/security/bypass_token/{pc}`; every request is logged). The user enters
+key button on **Cihaz Yönetimi** (`POST /api/security/bypass_token/{pc}`; every request is logged). With the per-device key a code works once per day: if the PC was already unlocked with today's code, press the key button again for the next one. The user enters
 it on the lock screen or in the tray menu **Yönetici Müdahalesi (Bypass)**. From 0.1.5-alpha a valid code does what
 `unlock` does: it closes the lock screen and removes the network isolation, and when the server can be reached the
 agent records the use as `agent.offline_bypass`. Older agents only remove the isolation. The server provisions a

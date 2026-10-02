@@ -138,9 +138,10 @@ async def main():
     await cleanup(c)
     await c.execute("INSERT INTO agent_secrets (pc_name, secret_hash) VALUES ('HW-K1',$1)", _sha("k1-secret"))
     await c.execute("INSERT INTO agent_secrets (pc_name, secret_hash) VALUES ('HW-K2',$1)", _sha("k2-secret"))
-    await c.execute("DELETE FROM enroll_tokens WHERE token='K-ENROLL'")
+    await c.execute("DELETE FROM enroll_tokens WHERE token_hash=encode(sha256(convert_to('K-ENROLL','UTF8')),'hex')")
     await c.execute(
-        "INSERT INTO enroll_tokens (token, expires_at, max_uses) VALUES ('K-ENROLL', NOW() + interval '1 hour', 5)"
+        "INSERT INTO enroll_tokens (token_hash, token_hint, expires_at, max_uses) "
+        "VALUES (encode(sha256(convert_to('K-ENROLL','UTF8')),'hex'), 'K-ENRO', NOW() + interval '1 hour', 5)"
     )
     await c.execute(
         "INSERT INTO users (username,password_hash,role,permissions,token_version) "
@@ -189,9 +190,10 @@ async def main():
     row = await c.fetchrow("SELECT fingerprint, confirmed_at FROM agent_bypass_keys WHERE pc_name='HW-K1'")
     chk(row is not None and row["confirmed_at"] is None, "anahtar kaydedildi, onay bekliyor")
 
-    s, b = req("/api/security/bypass_token/HW-K1", admin)
+    s, b = req("/api/security/bypass_token/HW-K1", admin, {})
     chk(s == 200 and b.get("method") == "pending", "onay gelmeden panel 'pending' diyor")
-    chk(key and b.get("token") == bypass.device_code(key, "HW-K1", today), "pending: ilk kod cihaz anahtarıyla")
+    n0 = b.get("n") or 0
+    chk(key and b.get("token") == bypass.device_code(key, "HW-K1", today, n0), "pending: kod cihaz anahtarıyla")
     chk(b.get("fallback_token") == bypass.legacy_code("HW-K1", today), "pending: yedek kod eski formülle")
 
     await agent.send(json.dumps({"type": "bypass_secret_ack", "fingerprint": "0000000000000000"}))
@@ -205,12 +207,13 @@ async def main():
         await wait_for(c, "SELECT confirmed_at FROM agent_bypass_keys WHERE pc_name='HW-K1'") is not None,
         "doğru parmak izi anahtarı onayladı",
     )
-    s, b = req("/api/security/bypass_token/HW-K1", admin)
+    s, b = req("/api/security/bypass_token/HW-K1", admin, {})
     chk(
-        b.get("method") == "device" and b.get("token") == bypass.device_code(key, "HW-K1", today)
+        b.get("method") == "device" and b.get("token") == bypass.device_code(key, "HW-K1", today, n0 + 1)
         and not b.get("fallback_token"),
         "onaydan sonra yalnızca cihaz kodu",
     )
+    chk(b.get("n") == n0 + 1, "her istek günün bir sonraki kodunu verir (0.1.13 ajanı kodu bir kez kabul eder)")
 
     s, b = req("/api/audit/session/start", admin, {"target_pc": "HW-K1", "reason": "k", "is_mandatory": False})
     msgs = await collect(agent, 2)

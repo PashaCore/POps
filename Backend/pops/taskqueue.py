@@ -77,13 +77,20 @@ async def _process_queue_once():
         if limit > 0 and available_slots <= 0:
             break
         pc = task["target_pc"]
-        await execute_query("UPDATE tasks SET status = 'Running' WHERE id = $1", (task["id"],))
+        await execute_query("UPDATE tasks SET status = 'Running', dispatched_at = NOW() WHERE id = $1", (task["id"],))
         # F4(a): komutu KİMİN kuyrukladığını göster (eskiden 'System/Queue' idi, iz yoktu).
         actor = task.get("created_by") or "System/Queue"
         # requested_by: ajan komutu kimin istediğini yerel denetim izine (Windows Olay Günlüğü) yazar (0.1.12+)
-        await manager.send_command(
+        sent = await manager.send_command(
             {"action": "execute", "task_id": task["id"], "script_path": task["script_path"], "requested_by": actor}, pc
         )
+        if not sent:
+            # Bağlantı bu arada koptu: görev ajana ulaşmadı, sıraya geri döner (yeniden bağlanınca gönderilir)
+            await execute_query(
+                "UPDATE tasks SET status = 'Pending', dispatched_at = NULL WHERE id = $1 AND status = 'Running'",
+                (task["id"],),
+            )
+            continue
         await log_audit_event(
             pc,
             "Deploy",

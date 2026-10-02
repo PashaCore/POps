@@ -111,6 +111,9 @@ def test_bypass():
     key = base64.urlsafe_b64encode(bytes([1] * 32)).rstrip(b"=").decode()
     chk(bypass.device_code(key, "HW-TEST", datetime.date(2026, 10, 1)) == "BA258E", "cihaz kodu test vektörü")
     chk(bypass.fingerprint(key) == "72cd6e8422c407fb", "parmak izi test vektörü")
+    # Günün sonraki kodları (n=1..9): "HW-TEST|2026-10-01|n"; ajan testleriyle ortak
+    chk(bypass.device_code(key, "HW-TEST", datetime.date(2026, 10, 1), 1) == "D31B3C", "günün 2. kodu (n=1)")
+    chk(bypass.device_code(key, "HW-TEST", datetime.date(2026, 10, 1), 9) == "ACA17F", "günün 10. kodu (n=9)")
     fresh = bypass.new_key()
     chk(len(fresh) == 43 and "=" not in fresh and len(base64.urlsafe_b64decode(fresh + "=")) == 32,
         "yeni anahtar 32 bayt base64url (dolgusuz)")
@@ -119,12 +122,49 @@ def test_bypass():
         and not bypass.supports_device_key(None), "eski/bilinmeyen sürüme gönderilmez")
 
 
+def test_hardening():
+    print("== 0.1.13 sağlamlaştırma")
+    import asyncio
+    from pops import agent_auth, agent_version, dna
+    from pops.routers import agents as agents_router
+    # Donanım kimliği: okunamayan/üretici varsayılanı değerler puan kazandırmaz (F04)
+    blank = {"uuid": "NULL", "bios_sn": "Default string", "disk_sn": "", "mac": "00:00:00:00:00:00", "ram_sn": "NULL"}
+    rec = {"dna_uuid": "NULL", "dna_bios": "Default string", "dna_disk": "", "dna_mac": "00:00:00:00:00:00",
+           "dna_ram": "NULL"}
+    chk(dna.calculate_dna_score(blank, rec, {}, {}) == (0, 0), "boş/varsayılan donanım değerleri kanıt sayılmaz")
+    real = {"uuid": "U-1", "bios_sn": "B-1", "disk_sn": "D-1", "mac": "AA:BB:CC:DD:EE:01", "ram_sn": "R-1"}
+    same = {"dna_uuid": "u-1", "dna_bios": "B-1", "dna_disk": "D-1", "dna_mac": "aa:bb:cc:dd:ee:01", "dna_ram": "R-1"}
+    chk(dna.calculate_dna_score(real, same, {}, {}) == (11, 11), "aynı donanım tam puan (büyük/küçük harf duyarsız)")
+    # Yeniden başlatma komutu tanıma (görev akıbeti)
+    chk(agents_router._is_reboot_command("shutdown /r /t 15") and agents_router._is_reboot_command("Restart-Computer"),
+        "yeniden başlatma komutu tanınır")
+    chk(not agents_router._is_reboot_command("shutdown /s") and not agents_router._is_reboot_command("echo /r"),
+        "kapatma ya da ilgisiz komut yeniden başlatma sayılmaz")
+    chk(agent_version.at_least("0.1.13-alpha", (0, 1, 13)) and not agent_version.at_least("0.1.12", (0, 1, 13))
+        and agent_version.parse("x" * 10000) is None, "sürüm karşılaştırma (uzun girdide de)")
+    # Kimlik zorlaması ayarı okunamazsa kapı kapalı (R-03)
+
+    async def broken(*a, **k):
+        raise RuntimeError("db down")
+    original = agent_auth.execute_query
+    agent_auth.execute_query = broken
+    try:
+        chk(asyncio.run(agent_auth.enforce_agent_auth_enabled()) is True, "ayar okunamazsa zorlama açık sayılır")
+    finally:
+        agent_auth.execute_query = original
+    chk(agent_auth.hash_enroll_token("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "kayıt jetonu SHA-256 ile saklanır")
+
+
 def test_agent_health():
     print("== agent_health")
     chk(agent_health.clean(None) is None and agent_health.clean("x") is None, "blok yoksa NULL")
     out = json.loads(agent_health.clean({
         "started_at": 1700000000, "last_policy_sync": -5, "last_inventory_upload": True, "tray_connected": "evet",
-        "vision_channel": "connected", "loop_errors_1h": 2, "last_error": "ğ" * 300, "extra": 1}))
+        "vision_channel": "connected", "loop_errors_1h": 2, "last_error": "ğ" * 300, "extra": 1,
+        "screen_locked": True, "network_isolated": False, "isolation_error": "x" * 300}))
+    chk(out["screen_locked"] is True and out["network_isolated"] is False and len(out["isolation_error"]) == 200,
+        "karantina kilit/yalıtım durumu ayrı saklanır")
     chk(out["started_at"] == 1700000000 and out["last_policy_sync"] is None and out["last_inventory_upload"] is None,
         "zaman alanları: negatif ve bool atıldı")
     chk(out["tray_connected"] is None and out["vision_channel"] == "connected", "tür denetimi")
@@ -137,6 +177,7 @@ def main():
     test_log_format()
     test_activity()
     test_bypass()
+    test_hardening()
     test_agent_health()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))

@@ -1,11 +1,16 @@
 """Görev kuyruğu, orkestrasyon, paket deposu ve depolama uçları."""
 
+import base64
 import datetime
+import hashlib
+import hmac
 import logging
 import os
+import secrets
 import shutil
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from werkzeug.utils import secure_filename
 
 from pops.config import LOG_TABLE, UPDATES_DIR, UPLOAD_DIR
@@ -13,6 +18,7 @@ from pops.db import execute_query
 from pops.models import CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput
 from pops.security import require_admin, require_auth
 from pops.audit import add_audit_log
+from pops.manager import manager
 from pops.taskqueue import process_queue, resolve_targets
 
 log = logging.getLogger("pops.tasks")
@@ -39,31 +45,53 @@ async def flush_queue(auth: dict = Depends(require_admin)):
     return {"status": "success"}
 
 
+# Hangi durumdaki görevlere hangi işlem uygulanır. Çalışan bir işlem duraklatılamaz (PAUSE yalnız sıradakiler);
+# RETRY yalnız sonuçlanmış görevleri yeniden sıraya koyar: çalışan bir komut ikinci kez başlatılmaz.
+_ACTION_STATUSES = {
+    "CANCEL": ("Pending", "Running", "Paused", "Unknown"),
+    "PAUSE": ("Pending",),
+    "RESUME": ("Paused",),
+    "RETRY": ("Completed", "Completed (Rebooted)", "Failed", "Error", "Cancelled", "Unknown", "Interrupted"),
+}
+_ACTION_TARGET = {"CANCEL": "Cancelled", "RETRY": "Pending", "PAUSE": "Paused", "RESUME": "Pending"}
+
+
 @router.post("/api/tasks/action")
 async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require_admin)):
     action = data.action.upper()
     mode = data.target_mode.upper()
     tid = data.target_id
-    new_status = {"CANCEL": "Cancelled", "RETRY": "Pending", "PAUSE": "Paused", "RESUME": "Pending"}.get(action)
-    status_condition = "1=1" if action == "RETRY" else "status IN ('Pending', 'Running', 'Paused')"
-
-    if mode == "TASK":
-        await execute_query(
-            f"UPDATE tasks SET status = $1 WHERE id = $2 AND {status_condition}", (new_status, int(tid))
-        )
-    elif mode == "LAB":
-        await execute_query(
-            f"UPDATE tasks SET status = $1 WHERE target_lab = $2 AND {status_condition}", (new_status, tid)
-        )
-    elif mode == "PC":
-        await execute_query(
-            f"UPDATE tasks SET status = $1 WHERE target_pc = $2 AND {status_condition}", (new_status, tid)
-        )
-    elif mode == "ALL":
-        await execute_query(f"UPDATE tasks SET status = $1 WHERE {status_condition}", (new_status,))
+    new_status = _ACTION_TARGET.get(action)
+    if new_status is None:
+        raise HTTPException(status_code=400, detail="Geçersiz işlem")
+    scope = {
+        "TASK": ("id = $3", lambda: int(tid)),
+        "LAB": ("target_lab = $3", lambda: tid),
+        "PC": ("target_pc = $3", lambda: tid),
+        "ALL": ("$3::text IS NULL", lambda: None),
+    }.get(mode)
+    if scope is None:
+        raise HTTPException(status_code=400, detail="Geçersiz hedef")
+    where, value = scope
+    # Önceki durum da döner: çalışmakta olan görev iptal edildiyse ajana da bildirilir
+    changed = await execute_query(
+        "WITH target AS (SELECT id, target_pc, status FROM tasks "
+        f"WHERE {where} AND status = ANY($2::text[]) FOR UPDATE) "
+        "UPDATE tasks t SET status = $1, "
+        "dispatched_at = CASE WHEN $1 = 'Pending' THEN NULL ELSE t.dispatched_at END, "
+        "exit_code = CASE WHEN $1 = 'Pending' THEN NULL ELSE t.exit_code END "
+        "FROM target WHERE t.id = target.id RETURNING target.id, target.target_pc, target.status AS old_status",
+        (new_status, list(_ACTION_STATUSES[action]), value()),
+        fetch=True,
+    )
+    if action == "CANCEL":
+        for row in changed or []:
+            if row["old_status"] in ("Running", "Unknown"):
+                # 0.1.13+ ajan komutun işlemini (alt süreçleriyle) sonlandırır; eskiler mesajı yok sayar
+                await manager.send_command({"action": "cancel_task", "task_id": row["id"]}, row["target_pc"])
     if action in ["RESUME", "RETRY"]:
         await process_queue()
-    return {"status": "success"}
+    return {"status": "success", "changed": len(changed or [])}
 
 
 @router.post("/api/set_concurrent_limit")
@@ -84,6 +112,37 @@ async def get_concurrent_limit(auth: dict = Depends(require_auth)):
     return {"limit": int(row[0]["value"]) if row else 5}
 
 
+# Dağıtım paketlerinin indirme adresi imzalıdır: dosya adını tahmin eden biri paketi indiremez. İmza anahtarı
+# sunucuda üretilir (global_settings.download_link_key); paket komutları haftalar sonra da kuyruğa girebildiği için
+# adresin süresi yoktur. Betik indirdiği dosyanın SHA-256 özetini de doğrular (deploy.php).
+_download_key_cache = None
+
+
+async def _download_key() -> bytes:
+    global _download_key_cache
+    if _download_key_cache is None:
+        await execute_query(
+            "INSERT INTO global_settings (key, value) VALUES ('download_link_key', $1) ON CONFLICT (key) DO NOTHING",
+            (secrets.token_hex(32),),
+        )
+        rows = await execute_query("SELECT value FROM global_settings WHERE key = 'download_link_key'", fetch=True)
+        _download_key_cache = bytes.fromhex(rows[0]["value"])
+    return _download_key_cache
+
+
+def _download_sig(key: bytes, filename: str) -> str:
+    digest = hmac.new(key, ("download|" + filename).encode("utf-8"), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest[:18]).decode("ascii")
+
+
+def _file_sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 @router.post("/api/upload")
 async def upload_file(request: Request, file: UploadFile = File(...), auth: dict = Depends(require_admin)):
     # Dosya adını temizle ("../", mutlak yol, ayraç vb. atılır)
@@ -92,11 +151,35 @@ async def upload_file(request: Request, file: UploadFile = File(...), auth: dict
         raise HTTPException(status_code=400, detail="Geçersiz dosya adı")
     # Son yol mutlaka UPLOAD_DIR'in doğrudan içinde olmalı (path traversal / symlink engeli)
     file_path = os.path.realpath(os.path.join(UPLOAD_DIR, filename))
-    if os.path.dirname(file_path) != UPLOAD_DIR:
+    if not file_path.startswith(UPLOAD_DIR + os.sep) or os.path.dirname(file_path) != UPLOAD_DIR:
         raise HTTPException(status_code=400, detail="Geçersiz dosya yolu")
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    return {"status": "success", "filename": filename, "url": f"{request.base_url}download/{filename}"}
+    sig = _download_sig(await _download_key(), filename)
+    return {
+        "status": "success",
+        "filename": filename,
+        "url": f"{request.base_url}download/{filename}?sig={sig}",
+        "sig": sig,
+        "sha256": _file_sha256(file_path),
+    }
+
+
+@router.get("/download/{filename}")
+async def download_file(filename: str, sig: str = ""):
+    """Dağıtım paketi: yalnızca yükleme sırasında verilen imzalı adresle. Yanlış imza, olmayan dosya ve geçersiz
+    ad aynı 404'ü alır (hangi dosyaların var olduğu anlaşılmasın)."""
+    not_found = HTTPException(status_code=404, detail="Bulunamadı")
+    if not filename or secure_filename(filename) != filename:
+        raise not_found
+    if not hmac.compare_digest(sig.encode("ascii", "ignore"), _download_sig(await _download_key(), filename).encode()):
+        raise not_found
+    file_path = os.path.realpath(os.path.join(UPLOAD_DIR, filename))
+    if not file_path.startswith(UPLOAD_DIR + os.sep):
+        raise not_found
+    if os.path.dirname(file_path) != UPLOAD_DIR or not os.path.isfile(file_path):
+        raise not_found
+    return FileResponse(file_path, filename=filename)
 
 
 @router.post("/api/add_package")

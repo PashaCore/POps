@@ -91,10 +91,17 @@ jobs:
           path: pops-server-*.tar.gz
           if-no-files-found: error
 
+  # Etiketlenen commit'te bütün CI testleri (ajan, sunucu entegrasyon, güvenlik, yedek/geri yükleme...) yeniden
+  # çalışır; biri bile kırılırsa yayın yapılmaz.
+  tests:
+    name: CI tests
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/ci.yml
+
   release:
     name: Publish release
     if: github.ref_type == 'tag'
-    needs: [ agent, server ]
+    needs: [ agent, server, tests ]
     runs-on: ubuntu-latest
     # İmza anahtarına yalnızca bu iş erişir. Anahtarı "release" GitHub Environment'ının
     # secret'ı yapın ve environment'a "required reviewers" koruması ekleyin; böylece

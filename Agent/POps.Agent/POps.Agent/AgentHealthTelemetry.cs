@@ -16,6 +16,10 @@ namespace POpsAgent
         [JsonPropertyName("vision_channel")] public string VisionChannel { get; init; }
         [JsonPropertyName("loop_errors_1h")] public int LoopErrors1h { get; init; }
         [JsonPropertyName("last_error")] public string LastError { get; init; }
+        // Karantina (0.1.13+): kilit ekranı ve ağ yalıtımı ayrı ayrı; yalıtım uygulanamadıysa nedeni
+        [JsonPropertyName("screen_locked")] public bool ScreenLocked { get; init; }
+        [JsonPropertyName("network_isolated")] public bool NetworkIsolated { get; init; }
+        [JsonPropertyName("isolation_error")] public string IsolationError { get; init; }
     }
 
     // Son bir saatin döngü hataları ve son başarılı arka plan işlemleri. Bellek içidir; heartbeat gözlemi içindir.
@@ -59,6 +63,10 @@ namespace POpsAgent
         }
 
         public AgentHealthSnapshot Snapshot(bool trayConnected, bool visionEnabled, bool visionConnected)
+            => Snapshot(trayConnected, visionEnabled, visionConnected, false, false, null);
+
+        public AgentHealthSnapshot Snapshot(bool trayConnected, bool visionEnabled, bool visionConnected,
+            bool screenLocked, bool networkIsolated, string isolationError)
         {
             lock (_sync)
             {
@@ -72,6 +80,9 @@ namespace POpsAgent
                     VisionChannel = VisionState(visionEnabled, visionConnected),
                     LoopErrors1h = _errors.Count,
                     LastError = _lastError,
+                    ScreenLocked = screenLocked,
+                    NetworkIsolated = networkIsolated,
+                    IsolationError = string.IsNullOrEmpty(isolationError) ? null : LogText.Safe(isolationError, 199),
                 };
             }
         }

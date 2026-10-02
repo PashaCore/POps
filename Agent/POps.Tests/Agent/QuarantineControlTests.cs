@@ -52,6 +52,32 @@ namespace POps.Tests.Agent
             return (action, value);
         }
 
+        // F08: kilit ekranı ile ağ yalıtımı ayrı bildirilir; yalıtım uygulanamazsa neden saklanır, tekrar denemede düzelir
+        [Fact]
+        public async Task FailedIsolation_IsReportedSeparatelyFromTheLockScreen()
+        {
+            bool isolationWorks = false;
+            var control = new QuarantineControl(
+                _tray.Add,
+                () =>
+                {
+                    if (isolationWorks) File.WriteAllText(NetworkIsolation.StatePath, "{}");
+                    return Task.FromResult(isolationWorks);
+                },
+                () => Task.FromResult(true),
+                new OfflineBypass(), _audit.Add);
+
+            Assert.False(await control.LockdownAsync("Sınav"));
+            Assert.True(control.ScreenLocked);
+            Assert.False(control.NetworkIsolated);
+            Assert.False(string.IsNullOrEmpty(control.LastIsolationError));
+
+            isolationWorks = true;
+            Assert.True(await control.LockdownAsync(null));
+            Assert.True(control.NetworkIsolated);
+            Assert.Null(control.LastIsolationError);
+        }
+
         [Fact]
         public async Task ValidBypassCode_LiftsIsolationThenClosesLockScreen()
         {

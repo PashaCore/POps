@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -24,31 +25,42 @@ from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.wol import attempt_p2p_wol, send_wol_packet
 
+log = logging.getLogger("pops.devices")
 router = APIRouter()
 
 
 @router.delete("/api/devices/{pc_name}")
 async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
+    # Hepsi tek işlemde (F17): yarıda kalırsa hiçbir şey silinmez. Görev geçmişi kalır; sıradaki ve çalışan
+    # görevler kapatılır (yoksa "çalışıyor" görev eşzamanlı görev sınırını sonsuza dek tutardı).
     try:
-        await execute_query("DELETE FROM clients WHERE pc_name = $1", (pc_name,))
-        await execute_query("DELETE FROM hw_inventory WHERE pc_name = $1", (pc_name,))
-        await execute_query(f"DELETE FROM {LOG_TABLE} WHERE pc_name = $1", (pc_name,))
-        await execute_query("DELETE FROM agent_versions WHERE pc_name = $1", (pc_name,))
-        await execute_query("DELETE FROM agent_secrets WHERE pc_name = $1", (pc_name,))
-        await execute_query("DELETE FROM agent_bypass_keys WHERE pc_name = $1", (pc_name,))
-        await execute_query("DELETE FROM device_software WHERE pc_name = $1", (pc_name,))
-        await execute_query("DELETE FROM device_patch_status WHERE pc_name = $1", (pc_name,))
-        # Cihaz çevrimiçiyse ajan bağlantısını da kapat
-        agent_ws = manager.active_agents.get(pc_name)
-        manager.disconnect_agent(pc_name)
-        if agent_ws:
-            try:
-                await agent_ws.close(code=4000, reason="Cihaz silindi")
-            except Exception:
-                pass
-        return {"status": "success", "message": f"{pc_name} silindi."}
+        async with db.transaction() as conn:
+            for table in (
+                "clients", "hw_inventory", LOG_TABLE, "agent_versions", "agent_secrets", "agent_bypass_keys",
+                "device_software", "device_patch_status",
+            ):
+                await conn.execute(f"DELETE FROM {table} WHERE pc_name = $1", pc_name)
+            running = await conn.fetch(
+                "UPDATE tasks SET status = 'Cancelled' WHERE target_pc = $1 "
+                "AND status IN ('Pending', 'Paused', 'Running', 'Unknown') RETURNING id",
+                pc_name,
+            )
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        log.error("cihaz silinemedi", extra={"pc_name": pc_name, "error": repr(e)[:300]})
+        return {"status": "error", "message": "Cihaz silinemedi; hiçbir kayıt değiştirilmedi. Sunucu günlüğüne bakın."}
+    await add_audit_log(pc_name, "device_deleted", "Cihaz silindi: %s" % auth.get("sub"), {"admin": auth.get("sub")})
+    # Cihaz çevrimiçiyse çalışan komutu durdurması istenir, sonra bağlantı kapatılır
+    agent_ws = manager.active_agents.get(pc_name)
+    if agent_ws:
+        for row in running:
+            await manager.send_command({"action": "cancel_task", "task_id": row["id"]}, pc_name)
+    manager.disconnect_agent(pc_name)
+    if agent_ws:
+        try:
+            await agent_ws.close(code=4000, reason="Cihaz silindi")
+        except Exception:
+            pass
+    return {"status": "success", "message": f"{pc_name} silindi."}
 
 
 @router.post("/api/wake_pc/{pc_name}")

@@ -322,6 +322,9 @@ window.fetchAndRenderTasks = async function() {
                 else if (pc.status === 'Running') { statusClass = 'running'; statusIcon = 'fa-spinner fa-spin'; statusText = 'İşleniyor'; }
                 else if (pc.status === 'Paused') { statusClass = 'paused'; statusIcon = 'fa-pause'; statusText = 'Durduruldu'; }
                 else if (['Failed', 'Error', 'Cancelled'].includes(pc.status)) { statusClass = 'failed'; statusIcon = 'fa-xmark'; statusText = pc.status === 'Cancelled' ? 'İptal Edildi' : 'Hata Alındı'; isCancelable = false; }
+                // Bağlantı koptuğunda sonucu bilinmeyen (Unknown) ya da ajan yeniden başladığı için yarıda kalan (Interrupted) görev
+                else if (pc.status === 'Unknown') { statusClass = 'paused'; statusIcon = 'fa-circle-question'; statusText = 'Sonuç bilinmiyor (bağlantı koptu)'; }
+                else if (pc.status === 'Interrupted') { statusClass = 'failed'; statusIcon = 'fa-circle-exclamation'; statusText = 'Yarıda kaldı (ajan yeniden başladı)'; isCancelable = false; }
                 const displayName = window.POpsMemory.deviceMap[pc.target_pc] || pc.target_pc;
                 const showMac = displayName === pc.target_pc ? '' : `<br><span style="font-family:var(--font-mono);font-size:0.6875rem;color:var(--text-tertiary);">${escapeHtml(pc.target_pc)}</span>`;
                 return `<tr>

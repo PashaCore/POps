@@ -21,14 +21,21 @@ KEEP_DAYS=${KEEP_DAYS:-14}                          # bundan eski yedekler silin
 KEEP_MIN=${KEEP_MIN:-3}                             # ...ama en yeni KEEP_MIN yedek her zaman kalır
 RSYNC_TARGET=${RSYNC_TARGET:-}                      # başka makineye kopya: kullanici@makine:/yol (ssh anahtarıyla)
 VERIFY_RESTORE=${VERIFY_RESTORE:-1}                 # 1: yedeği geçici veritabanına açıp doğrula
-STATUS_FILE=${STATUS_FILE:-/var/lib/pops/backup-status.json}
+STATUS_FILE=${STATUS_FILE:-/var/lib/pops-state/backup-status.json}   # root'a ait dizin (bkz. write_status)
 BACKUP_EXCLUDE_UPDATES=${BACKUP_EXCLUDE_UPDATES:-0} # 1: ajan MSI'larını (GitHub'dan yeniden indirilebilir) alma
 
 log() { echo "[pops-backup] $*"; }
 
 write_status() {   # $1=ok(true/false) $2=mesaj [$3=klasör] [$4=boyut bayt]
-    mkdir -p "$(dirname "$STATUS_FILE")"
-    local tmp="$STATUS_FILE.tmp"
+    # Dizin root'a ait olmalı: başka bir kullanıcının yazabildiği dizinde root, oraya konmuş bir sembolik bağın
+    # gösterdiği dosyaya yazardı. Geçici dosya mktemp ile, aynı dizinde.
+    local dir tmp
+    dir=$(dirname "$STATUS_FILE")
+    [ -L "$dir" ] && { log "UYARI: $dir sembolik bağ; durum yazılmadı"; return 0; }
+    install -d -m 755 "$dir"
+    # Betiği çalıştıran kullanıcıya (üretimde root) ait olmalı
+    [ "$(stat -c %u "$dir")" = "$(id -u)" ] || { log "UYARI: $dir bu kullanıcıya ait değil; durum yazılmadı"; return 0; }
+    tmp=$(mktemp "$dir/.backup-status.XXXXXX")
     printf '{"ok":%s,"at":"%s","message":"%s","path":"%s","bytes":%s,"verified":%s}\n' \
         "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${2//\"/}" "${3:-}" "${4:-0}" "${VERIFIED:-false}" > "$tmp"
     chmod 644 "$tmp"
@@ -80,7 +87,7 @@ add "$POPS_APP/storage"
 [ "$BACKUP_EXCLUDE_UPDATES" = 1 ] || add "$POPS_APP/updates"
 [ -n "$POPS_PANEL_ENV" ] && add "$POPS_PANEL_ENV"
 add /etc/pops
-add /var/lib/pops/deploy-status.json
+add /var/lib/pops-state/deploy-status.json
 log "dosyalar: ${paths[*]:-(yok)}"
 if [ "${#paths[@]}" -gt 0 ]; then
     tar -C / -czf "$OUT/files.tgz" "${paths[@]}" || fail "dosya arşivi oluşturulamadı"
