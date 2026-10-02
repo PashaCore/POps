@@ -28,9 +28,9 @@ jobs:
           - name: POpsTray
             project: Agent/POpsTray/POpsTray.csproj
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Setup .NET
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v4.3.1
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           dotnet-version: 8.0.x
       - name: Build
@@ -42,9 +42,9 @@ jobs:
     # geçici klasörlerde dosya işlemleri (güvenlik duvarı, pipe, servis test edilmez)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Setup .NET
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v4.3.1
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           dotnet-version: 8.0.x
       - name: Test
@@ -76,7 +76,7 @@ jobs:
           print("POpsAgent kapsamı %%%.1f (taban %%%.1f)" % (agent[0], AGENT_FLOOR))
       - name: Upload agent coverage
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: agent-coverage
           path: TestResults/**/coverage.cobertura.xml
@@ -86,10 +86,10 @@ jobs:
     name: Backend (Python 3.9)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
         # Sunucu hedefi AlmaLinux/RHEL 9'un Python 3.9'u
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.9'
           cache: pip
@@ -115,7 +115,7 @@ jobs:
     name: Dashboard checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: PHP syntax
         run: find Dashboard -name '*.php' -print0 | xargs -0 -n1 php -l
       - name: Dark mode stays removed
@@ -135,7 +135,7 @@ jobs:
     name: Version consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Actions pinned to commit SHAs
         # R-09: bir eylemin etiketi (v4 gibi) sonradan başka bir commit'e taşınabilir; iş akışları yalnızca tam
         # commit SHA'sıyla eylem kullanır (yanına sürüm yorumu). Dependabot bu satırları SHA olarak günceller.
@@ -149,7 +149,7 @@ jobs:
             exit 1
           fi
       - name: Setup .NET
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v4.3.1
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           dotnet-version: 8.0.x
       - name: VERSION == CHANGELOG == Directory.Build.props
@@ -196,9 +196,9 @@ jobs:
       DB_PASS: pops
       DB_NAME: pops_ci
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.9"
       - name: Install migrate.py deps
@@ -241,9 +241,9 @@ jobs:
       DB_NAME: pops_ci
       JWT_SECRET: ci-backup-secret
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.9"
       - name: Install deps
@@ -315,7 +315,7 @@ jobs:
     name: TLS tool and nginx template
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: pops-tls init / show / renew, chain and name checks
         run: |
           set -euo pipefail
@@ -357,7 +357,7 @@ jobs:
     # pip / kopyalama hatasında kod ve venv'in birebir geri dönüşü, ayar dosyası, imzalı sürüm etiketleri, DRYRUN.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: shellcheck
         run: |
           set -euo pipefail
@@ -374,9 +374,9 @@ jobs:
     name: Release signing tool
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.11"
       - name: Install cryptography
@@ -414,9 +414,9 @@ jobs:
       # test_ops.py /metrics'i bu jetonla okur (sunucu ile aynı değer)
       METRICS_TOKEN: ci-metrics-token-0123456789
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.9"
       - name: Install backend deps
@@ -457,7 +457,7 @@ jobs:
           python -m coverage report --rcfile=.coveragerc --fail-under=65
       - name: Upload backend coverage
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: backend-coverage
           path: Backend/coverage.xml
