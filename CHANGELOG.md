@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Server: clean shutdown.** The scheduler stops, pending heartbeats are written, notifications being sent get up to 10 seconds, then the database pool closes.
 - **Server: `pops-deploy-backend` and `pops-selfupdate` read their paths from `/etc/pops/deploy.conf`** (`REPO`, `APP`, `SVC`, `OWNER`, `HEALTH_BASE`, `KEEP_BACKUPS`; template `Installer/server/deploy.conf.example`) instead of the project server's hard-coded values. Without the file they use the `install.sh` defaults, and `install.sh` now writes it. Both stop before changing anything when the checkout, the backend folder, the service user or the unit does not exist. **Upgrading:** a server not laid out by `install.sh` needs `/etc/pops/deploy.conf` before the new scripts are installed to `/usr/local/sbin` (by hand, as before).
 - **Release: the server package also contains `Installer/server/` and the Docker files** (`docker-compose.yml`, `docker/`, `.dockerignore`), so a native or Docker install can start from the tarball.
+- **CI: GitHub Actions are pinned to commit SHAs** (R-09), and a check refuses an unpinned `uses:`; Dependabot keeps the pins current.
 - **CI: new "Server scripts" job.** shellcheck on the server scripts, and `Installer/server/tests/test_deploy.sh` (no root, stubbed `systemctl`/`curl`/`sudo`/`pip`): normal deploy, byte-for-byte rollback of code and venv after a health-check, `pip` or copy failure, config checks, and signed-tag self-update including the dry run.
 
 ### Added
@@ -51,9 +52,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Server: disk and certificate alerts.** Free disk space is checked hourly (warning under 10 % or 2 GB, critical under 5 % or 1 GB) and TLS certificates daily (warning 21 days before expiry, critical 7): the `pops-tls` files and the panel's HTTPS address. Both appear as notifications and in `/api/system/diagnostics`.
 - **Server: load figures.** Diagnostics and `/metrics` show queries per heartbeat, database writes per second, the time from queueing a task to sending it and the time to write a command to the agent.
 - **Server: why a device went offline.** The WebSocket close code is stored with the time (`last_disconnect_at`, `last_disconnect_reason`) and returned by `/api/devices`.
+- **Panel:** tasks show `Timed Out` as "Zaman aşımı"; the device card on **Sistem & Sürüm** shows the last disconnect and its reason.
+- **Docs:** supported systems and network prerequisites (outbound 443 with WebSocket), release key rotation, backup consistency, an updated roadmap.
 - **Server: `server_info`.** After registration the server tells the agent its version and the features it supports.
 - **Tests:** `test_p1.py` (20 simultaneous enrollments on real PostgreSQL, agents 0.1.11–0.1.14 against this server, scheduler atomicity, timeouts, retention, batching) and new unit tests.
 
+### Agent
+
+- **Remote keyboard: Turkish and other non-ASCII characters.** Typed characters are sent as Unicode with `SendInput` (`KEYEVENTF_UNICODE`), so İ, ı, ş, ğ, @, €, { } and \ arrive as typed; before, a character was turned into a virtual key by upper-casing it (İ became `0`, ş/ğ/@/€ were wrong or missing). Named keys cover F1–F24, Home/End, PageUp/PageDown, Insert, CapsLock, NumLock, ScrollLock, PrintScreen, Pause and the menu key, with left/right modifiers from `code` and the extended-key flag where Windows needs it. Shortcuts (Ctrl+C, Win+R) use the key from `code` or the foreground window's layout. Keys still held when control ends or the service connection drops are released. Older panels without `code` keep the old behaviour for ASCII letters and digits. Mapping: `POps.Shared.RemoteKeyMap`, with tests.
+- **Update results are kept until the server confirms them.** `update_result` carries a `result_id`; a server that announces `update_result_ack` confirms it, and only then is `update-result.json` set aside (resent at most every 60 s while connected). Servers without `server_info` get the old behaviour after 15 s.
+- **Quarantine follows a server that changes its address.** While quarantined the agent resolves the server name every 5 minutes and after 3 failed connections in a row, and rebuilds the firewall rules when the addresses changed (new rules before old ones are removed). The previous firewall profile state is kept as it was at the first quarantine. New event 1022.
+- **Leftover command files are deleted at start.** `pops_task_<32 hex>.bat` files left in the temp folder by a crash (they may hold an administrator's command) are deleted before the first task; nothing else is touched.
+- **Watchdog:** says plainly what it does (it watches the `POpsAgent` service and the tray) instead of the old "ghost" wording; errors it used to swallow are logged, the same message at most every 10 minutes.
+- **POpsVision removed.** The standalone `POpsVision` project (not shipped since 0.1.2-alpha) is gone, with its CI build and Dependabot entry; screen capture stays in the tray. The MSI and the updater still close a running `POpsVision.exe` when upgrading a very old install.
+- **Tests:** `POpsAgent` line coverage 56 % → 63 %; CI fails below 62 %. Server commands are tested through `Worker.HandleServerMessageAsync` with a fake quarantine and a fake firewall runner.
 
 ## [0.1.13-alpha] - 2026-10-02
 

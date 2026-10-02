@@ -17,4 +17,4 @@ POps is designed as a highly scalable, real-time endpoint management platform.
   - **POpsTray:** The user-facing taskbar application; it also captures the screen for Vision over a named pipe.
   - **POpsWatchdog:** Runs in the user session and restarts the tray if it stops.
   - **POpsUpdater:** Installs signed MSI updates and rolls back if the new version does not come up healthy.
-  - The older standalone `Agent/POpsVision` project is not shipped.
+  - The older standalone `POpsVision.exe` was not shipped since 0.1.2-alpha; its source was removed in 0.1.14-alpha.

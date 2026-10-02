@@ -13,8 +13,8 @@ clearly told, and every session is recorded with its reason.
   in the user's session, asks for consent, captures the screen and applies remote input. The two talk over the
   local named pipe `POpsTrayPipe`, and the service accepts only the installed `POpsTray.exe` on it.
 
-Older releases had a separate `POpsVision.exe`. It is no longer built into releases or installed; the source in
-`Agent/POpsVision` is legacy. Screen capture is done by the tray.
+Older releases had a separate `POpsVision.exe`. It has not been built into releases or installed since 0.1.2-alpha,
+and its source was removed in 0.1.14-alpha. Screen capture is done by the tray.
 
 ## Previews (thumbnails)
 

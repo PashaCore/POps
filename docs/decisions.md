@@ -204,6 +204,9 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   a signed-in user; the watchdog restarts a stopped tray. `Agent/POpsVision` remains as legacy source (still built
   by CI and watched by Dependabot), and the watchdog log text and the MSI and updater close lists still name it.
   Removing it is open cleanup.
+- **0.1.14-alpha:** the source was removed as well (`Agent/POpsVision`, its CI build and Dependabot entry), and
+  the watchdog no longer names it. `POpsVision.exe` stays only in the MSI close list (`Package.wxs`) and the updater's
+  `UserProcesses`: an upgrade from a very old install may still find it running and holding files open.
 
 ## D-14 Native install is the primary path; Docker Compose is optional
 

@@ -2,7 +2,7 @@
 
   <!--
     Tek sürüm kaynağı: repo kökündeki VERSION dosyası.
-    Beş ajan projesi de (POps.Agent, POpsTray, POpsWatchdog, POpsUpdater, POpsVision)
+    Dört ajan projesi de (POps.Agent, POpsTray, POpsWatchdog, POpsUpdater)
     Agent/ altında olduğu için MSBuild proje dizininden yukarı yürürken bu dosyayı bulur
     ve <Version> hepsine buradan gelir. Sürümü değiştirmek için yalnızca kök VERSION
     dosyasını düzenleyin; koda gömülü sürüm sabiti bırakmayın.

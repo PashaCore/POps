@@ -16,7 +16,7 @@ This page is an overview. The detailed references are:
 | --- | --- | --- | --- |
 | `POpsAgent.exe` | Windows service `POpsAgent`, LocalSystem | Windows (automatic start; restarted on failure) | Server connection, heartbeats, commands, inventory, quarantine, update download and verification. |
 | `POpsTray.exe` | the signed-in user | `HKLM\…\Run` for every user; from 0.1.6-alpha also the service and the updater, in the active console session, when no tray runs | Tray icon and notices, consent dialog and countdown for remote sessions, fair-use notice, quarantine lock screen, screen capture, applying remote input, offline bypass code entry, help desk (**Sorun bildir**, **Taleplerim**). |
-| `POpsWatchdog.exe` | the signed-in user | the service (at start and every 30 seconds) and the updater, in the signed-in user's session | Every 10 seconds: restarts the tray if it is not running and starts the `POpsAgent` service if it is stopped. Pauses while an update is in progress. |
+| `POpsWatchdog.exe` | the signed-in user | the service (at start and every 30 seconds) and the updater, in the signed-in user's session | Every 10 seconds: restarts the tray if it is not running and starts the `POpsAgent` service if it is stopped. Pauses while an update is in progress. Errors (for example a user who may not start services) are logged, the same message at most every 10 minutes. |
 | `POpsUpdater.exe` | LocalSystem | the service, from a copy in `C:\POpsData\updater` | Installs a verified MSI, checks the new version's health and rolls back if needed. |
 | `POps.Shared.dll` | – | – | Shared helpers: version, logging, settings lookup, hardware ID. |
 
@@ -24,8 +24,8 @@ The service and the tray talk over the local named pipe `POpsTrayPipe`. The serv
 `POpsTray.exe` running in a user session on it (and, when the tray is Authenticode-signed, a valid signature).
 From 0.1.6-alpha the tray also checks that the pipe's owner is SYSTEM or Administrators before it trusts it.
 
-`Agent/POpsVision` is the source of an older standalone screen-streaming program. It is not part of releases or
-the MSI; screen capture is done by the tray ([`vision.md`](vision.md)).
+Screen capture is done by the tray ([`vision.md`](vision.md)). Older releases had a standalone `POpsVision.exe`; it
+was not shipped since 0.1.2-alpha and its source was removed in 0.1.14-alpha.
 
 Requirements: 64-bit Windows and the .NET 8 Desktop Runtime (x64). The MSI checks for the runtime and refuses to
 install without it.
@@ -89,15 +89,17 @@ What the service does with each server command:
 
 | Command | Effect |
 | --- | --- |
-| `execute` | Runs the command line as a temporary `.bat` through `cmd.exe` as LocalSystem (UTF-8, 30-minute limit) and returns the output as a `result`. Refused when the terminal capability is off. Used by the Deployment and Terminal pages through the task queue. |
+| `execute` | Runs the command line as a temporary `.bat` through `cmd.exe` as LocalSystem (UTF-8, 30-minute limit) and returns the output as a `result`. Refused when the terminal capability is off. Used by the Deployment and Terminal pages through the task queue. The `.bat` (`pops_task_<32 hex>.bat` in the service's temp folder) is deleted when the task ends; from 0.1.14-alpha files left by a crash are deleted at service start, before the first task (only names matching exactly that pattern). |
 | `get_hardware` | Posts the hardware inventory. |
 | `start_vision_session` | Passes the session request to the tray (consent dialog or mandatory countdown). |
 | `stop_stream` | Stops screen capture and closes the Vision connection. |
-| `remote_input` | Screen preview (`get_thumbnail`), frame-rate change (`set_fps`) or mouse/keyboard input, subject to the Vision capability and, for input, an active session. |
+| `remote_input` | Screen preview (`get_thumbnail`), frame-rate change (`set_fps`) or mouse/keyboard input, subject to the Vision capability and, for input, an active session. Keyboard (from 0.1.14-alpha, `SendInput`): named keys (Enter, F1–F24, arrows, Home/End, …) become virtual keys, left/right modifiers from `code`; a single character is sent as Unicode (`KEYEVENTF_UNICODE`), so İ, ş, ğ, @ and € arrive as typed whatever the PC's layout; with Ctrl or Alt (not both, not AltGr) or Win the character becomes the key from `code` (Ctrl+C, Win+R). Keys still held when control ends or the service connection drops are released. |
 | `lockdown` / `unlock` | Quarantine on / off (below). |
 | `wake_peer` | Sends a Wake-on-LAN packet for another PC in the same lab. |
 | `set_identity` | Replaces the stored hardware ID. |
 | `set_secret` | Stores the device secret and deletes the enrollment token. |
+| `server_info` | Sent by the server once the agent is registered; `features` containing `update_result_ack` means the server confirms update results (0.1.14-alpha). |
+| `update_result_ack` | The server stored the update result with this `result_id`; the agent sets `update-result.json` aside. |
 | `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
 | `set_capabilities` | Switches terminal and/or Vision **off**; requests to switch them on are ignored. |
 | `update_agent` | Starts a signed update (below). |
@@ -110,8 +112,9 @@ The agent reports back `result`, `thumbnail`, `stream_frame` (on the Vision sock
 
 High-impact actions also have a server-independent local record in the Windows **Application** event log under
 the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 and length are recorded, never the
-command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1030 update results, 1040 capability changes,
-1050 identity rejection and 1060 receipt of a bypass-key fingerprint. Failure to write an event does not stop the
+command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine allow list refreshed (old and new
+server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection and 1060 receipt of a
+bypass-key fingerprint. Failure to write an event does not stop the
 service.
 
 ## Capability policy
@@ -161,7 +164,13 @@ the current file. How to set up the server side, distribute `pops-ca.pem` and ro
   quarantine by hand*),
 - the service adds Windows Firewall block rules (group `POps Isolation`) for every address except the POps server,
   the DNS and DHCP servers, loopback and IPv6 link-local/multicast, and switches on all firewall profiles. Their
-  previous state is saved in `C:\POpsData\secure\isolation.json`.
+  previous state is saved in `C:\POpsData\secure\isolation.json`,
+- from 0.1.14-alpha, while the quarantine lasts, the service resolves the server name again every 5 minutes and
+  after 3 failed connections in a row (DNS stays open). If the set of addresses changed and is not empty, the rules
+  are rebuilt for the new addresses (new rules first, then the old ones are removed) and event 1022 is written; an
+  empty or failed lookup leaves the rules as they are. The previous profile state in `isolation.json` is kept as it
+  was at the first quarantine, so unlocking restores the right profiles. Before, the addresses were resolved only
+  once, and a server that changed its IP cut the PC off until the bypass code was used.
 
 `unlock` removes the lock screen and the rules and restores the firewall profiles.
 
@@ -254,7 +263,11 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
    from 0.1.11 and older remain valid when an update rolls back to one of those versions.
 4. The result (`success`, `pending_reboot`, `rolled_back`, `rollback_failed`, `install_failed`, `rejected`, …) is
    written to `C:\POpsData\update-result.json` and reported to the server, which records it in the audit log and
-   shows it in the panel.
+   shows it in the panel. From 0.1.14-alpha the message carries `result_id` (first 32 hex digits of the SHA-256 of
+   the file). A server that announces `update_result_ack` in `server_info` confirms it with `update_result_ack`;
+   until then the file stays and the result is sent again at most every 60 seconds while connected, so a server
+   that fails before storing it does not lose it. Without `server_info` within 15 seconds of connecting the agent
+   treats the server as older: it sends the result once and sets the file aside, as before.
 
 The outcomes and the rollback drill are described in [`Agent/README.md`](../Agent/README.md#updates). Agents
 older than 0.1.3-alpha cannot apply signed updates and must be reinstalled once with the MSI.
@@ -270,7 +283,7 @@ older than 0.1.3-alpha cannot apply signed updates and must be reinstalled once 
 | `C:\POpsData\session.json`, `patch-scan.json` | Last reported sign-in; time of the last Windows Update scan and a report not yet delivered (0.1.5-alpha on). |
 | `C:\POpsData\packages\installed.msi`, `updates\`, `updater\` | Rollback package, downloaded update, updater copy. |
 | `C:\POpsLogs\POps_<yyyyMMdd>.log` | Service and updater log (SYSTEM and Administrators only). |
-| `%LOCALAPPDATA%\POps\Logs\` | Per-user logs: `POpsWatchdog_<yyyyMMdd>.log`, `POpsVision_<yyyyMMdd>.log` and the tray's `TrayLog.txt` (message types only, rotated at 1 MB). |
+| `%LOCALAPPDATA%\POps\Logs\` | Per-user logs: `POpsWatchdog_<yyyyMMdd>.log` and the tray's `TrayLog.txt` (message types only, rotated at 1 MB). |
 
 Uninstalling removes the programs, the service, the Run entry and `appsettings.json`, but keeps `C:\POpsData`
 (identity and secret) and `C:\POpsLogs`, so a reinstalled PC returns with the same identity.

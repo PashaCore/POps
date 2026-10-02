@@ -53,7 +53,7 @@ namespace POpsAgent
         private readonly AgentHealthTelemetry _health = new AgentHealthTelemetry();
         // Uzaktan komutlar (iptal ve servis durması işlemi sonlandırır) ve bağlantı yokken gönderilemeyen sonuçlar:
         // sonuç kaybolmasın diye bağlantı yeniden kurulunca gönderilir (en çok MaxPendingResults)
-        private readonly CommandRunner _commandRunner = new CommandRunner();
+        private CommandRunner _commandRunner = new CommandRunner();
         private readonly System.Collections.Concurrent.ConcurrentQueue<object> _pendingResults = new System.Collections.Concurrent.ConcurrentQueue<object>();
         private const int MaxPendingResults = 20;
         private Task _slowInitialization;
@@ -90,12 +90,14 @@ namespace POpsAgent
         private bool _fairUseAcknowledged = false;
 
         // Karantina (lockdown/unlock/çevrimdışı bypass) ve Windows Update: bkz. QuarantineControl, PatchManager
-        private readonly QuarantineControl _quarantine;
+        private QuarantineControl _quarantine;
         private readonly PatchManager _patches;
         // Yardım masası: tepsinin "Sorun bildir" / "Taleplerim" istekleri (bkz. Helpdesk)
         private readonly Helpdesk _helpdesk;
         // "Etkinlik geçmişim": yöneticilerin bu cihazda yaptığı işlemler (bkz. ActivityHistory)
         private readonly ActivityHistory _activity;
+        // update_result: sunucu onay destekliyorsa onaya kadar saklanır (bkz. UpdateResultReporter)
+        internal UpdateResultReporter UpdateResults { get; } = new UpdateResultReporter();
         // Ön plandaki uygulamanın süreç adı (tepsiden, yalnızca ad; bkz. ActiveApp). Bilinmiyorsa null.
         private volatile string _activeApp;
 
@@ -141,6 +143,8 @@ namespace POpsAgent
         // Kimlik önce kurulur; envanter hw_id'yi ondan alır.
         private void InitializeCoreState()
         {
+            // İlk görevden önce: önceki çalışmadan (çökme) kalmış pops_task_*.bat dosyaları (yönetici komutu içerebilir)
+            CommandRunner.CleanupStaleTaskFiles();
             _startupHealth.Run(StartupCheck.Identity, () => _hwId = InitializeIdentity());
             POpsHelpers.Log("AGENT", $"Kimlik Başlatıldı: {_hwId}");
 
@@ -210,6 +214,8 @@ namespace POpsAgent
             _ = Task.Run(() => _patches.ScheduleLoopAsync(stoppingToken));
             _ = Task.Run(() => sessions.RunAsync(stoppingToken));
             _ = Task.Run(() => _helpdesk.PollLoopAsync(stoppingToken, () => _trayPipe?.IsConnected == true));
+            // Karantinada sunucunun adresi değişirse izin listesi yenilenir (bkz. NetworkIsolation)
+            _ = Task.Run(() => IsolationRefreshLoopAsync(stoppingToken));
 
             // Son sağlam bağlantıdan beri art arda başarısız bağlantı sayısı (bkz. ReconnectBackoff)
             int reconnectAttempt = 0;
@@ -229,6 +235,8 @@ namespace POpsAgent
                 {
                     await _commandWs.ConnectAsync(new Uri(commandWsUrl), stoppingToken);
                     POpsHelpers.Log("AGENT", "[+] Ana Komut Tüneli Kuruldu.");
+                    // Sunucunun güncelleme sonucunu onaylayıp onaylamadığı her bağlantıda yeniden öğrenilir (server_info)
+                    UpdateResults.OnConnected();
                     OnCommandChannelConnected();
 
                     await _slowInitialization;
@@ -264,6 +272,9 @@ namespace POpsAgent
                 bool authRejected = _commandWs.CloseStatus == AuthRejectedCloseStatus;
                 TimeSpan wait = ReconnectBackoff.Delay(reconnectAttempt, authRejected, Random.Shared);
                 reconnectAttempt = ReconnectBackoff.NextAttempt(reconnectAttempt);
+                // Karantinada art arda 3 bağlantı hatası: sunucunun adresi değişmiş olabilir, izin listesi beklemeden yenilenir
+                if (reconnectAttempt == NetworkIsolation.RefreshAfterFailures && NetworkIsolation.IsActive)
+                    _ = Task.Run(() => NetworkIsolation.RefreshServerAddressesAsync(_serverUrl, "art arda 3 bağlantı hatası"));
                 if (authRejected)
                 {
                     LocalAudit.Write(LocalAudit.AuthenticationRejected("command"));
@@ -336,6 +347,17 @@ namespace POpsAgent
             else
             {
                 POpsHelpers.Log("AGENT", "Cihaz secret'ı alındı ancak diske yazılamadı; servis yeniden başlayana kadar bellekte tutuluyor.", true);
+            }
+        }
+
+        // Karantina sürerken 5 dakikada bir sunucu adı yeniden çözülür; adres değiştiyse kurallar yenilenir
+        private async Task IsolationRefreshLoopAsync(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try { await Task.Delay(NetworkIsolation.RefreshInterval, token); }
+                catch (OperationCanceledException) { return; }
+                if (NetworkIsolation.IsActive) await NetworkIsolation.RefreshServerAddressesAsync(_serverUrl, "periyodik denetim");
             }
         }
 
@@ -668,152 +690,7 @@ namespace POpsAgent
                 {
                     var (message, messageType) = await WebSocketMessages.ReceiveTextAsync(ws, buffer, MaxCommandMessageBytes, stoppingToken);
                     if (messageType == WebSocketMessageType.Close) break;
-                    using var doc = JsonDocument.Parse(message);
-                    var root = doc.RootElement;
-
-                    if (root.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "remote_input")
-                    {
-                        string targetDevice = root.TryGetProperty("device", out var devProp) ? devProp.GetString() : "";
-                        if (targetDevice != _hwId) continue;
-
-                        string act = root.TryGetProperty("action", out var actProp) ? actProp.GetString() : "";
-                        // Ekran önizlemesi ve uzaktan fare/klavye Vision yeteneğidir
-                        string denial = VisionDenial(IsInputEvent(root));
-                        if (denial != null)
-                        {
-                            await DenyCapabilityAsync(denial, string.IsNullOrEmpty(act) ? "remote_input" : act);
-                            continue;
-                        }
-                        if (act == "get_thumbnail")
-                        {
-                            _ = Task.Run(async () =>
-                            {
-                                byte[] img = await CaptureSnapshotAsync(TimeSpan.FromSeconds(5));
-                                if (img != null && img.Length > 0)
-                                {
-                                    var payload = new { type = "thumbnail", hw_id = _hwId, image = Convert.ToBase64String(img) };
-                                    byte[] b = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
-                                    await _wsCommandLock.WaitAsync();
-                                    try { if (ws.State == WebSocketState.Open) await ws.SendAsync(new ArraySegment<byte>(b), WebSocketMessageType.Text, true, CancellationToken.None); }
-                                    finally { _wsCommandLock.Release(); }
-                                }
-                            });
-                        }
-                        else
-                        {
-                            _trayPipe?.SendCommandToDesktop(message);
-                        }
-                    }
-                    else
-                    {
-                        string action = root.TryGetProperty("action", out var actionProp) ? actionProp.GetString() : "";
-                        CommandPermission commandPermission = action == "execute"
-                            ? CommandExecutionPolicy.Permission(AgentCapabilities.TerminalEnabled) : null;
-                        if (action == "execute" && !commandPermission.Allowed)
-                        {
-                            // Görev "Running"de asılı kalmasın diye sonuç olarak da bildirilir
-                            int tid = root.GetProperty("task_id").GetInt32();
-                            await SendCommandMessageAsync(new { type = "result", pc_name = _hwId, task_id = tid, output = commandPermission.Rejection });
-                            await DenyCapabilityAsync("terminal", "execute", tid);
-                        }
-                        else if (action == "execute")
-                        {
-                            string cmd = root.GetProperty("script_path").GetString();
-                            int tid = root.GetProperty("task_id").GetInt32();
-                            string requestedBy = root.TryGetProperty("requested_by", out var requestedByProperty) && requestedByProperty.ValueKind == JsonValueKind.String
-                                ? requestedByProperty.GetString() : null;
-                            POpsHelpers.Log("AGENT", $"Uzaktan komut çalıştırılıyor (TaskID: {tid})");
-                            LocalAudit.Write(LocalAudit.CommandStarted(tid, cmd, requestedBy));
-                            _ = Task.Run(async () =>
-                            {
-                                CommandExecutionResult execution = await _commandRunner.RunAsync(tid, cmd, stoppingToken);
-                                LocalAudit.Write(LocalAudit.CommandFinished(tid, execution.ExitCode, execution.Duration));
-                                // Sonuç o anki bağlantıdan gider; bağlantı koptuysa sırada bekler (eskiden komutun geldiği
-                                // eski sokete yazılıyor ve bağlantı koptuysa kayboluyordu)
-                                await SendResultAsync(new
-                                {
-                                    type = "result",
-                                    pc_name = _hwId,
-                                    output = execution.Output,
-                                    task_id = tid,
-                                    exit_code = execution.ExitCode,
-                                });
-                            });
-                        }
-                        else if (action == "get_hardware") await SendHardwareInfoAsync();
-                        else if (action == "set_capabilities") await HandleSetCapabilitiesAsync(root);
-                        else if ((action == "start_stream" || action == "start_vision_session") && !AgentCapabilities.VisionEnabled)
-                        {
-                            await DenyCapabilityAsync("vision", action);
-                        }
-                        else if (action == "start_stream") {
-                            if (!_visionAuditActive)
-                            {
-                                _visionSessionId = null;
-                                _visionRequestedBy = null;
-                                _pendingVisionMandatory = true;
-                            }
-                            await ConnectVisionTunnelAsync(stoppingToken); 
-                            int fps = root.TryGetProperty("fps", out var fProp) ? (fProp.ValueKind == JsonValueKind.Number ? fProp.GetInt32() : 2) : 2;
-                            if (_isVisionStreamActive)
-                            {
-                                if (!_visionAuditActive)
-                                {
-                                    _visionUserApproved = false;
-                                    LocalAudit.Write(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, false));
-                                    _visionAuditActive = true;
-                                }
-                                _trayPipe?.SendCommandToDesktop($"START_CAPTURE:{fps}");
-                            }
-                        }
-                        else if (action == "stop_stream") { 
-                            _trayPipe?.SendCommandToDesktop("STOP_CAPTURE"); 
-                            await DisconnectVisionTunnelAsync(); 
-                        }
-                        else if (action == "update_agent")
-                        {
-                            JsonElement command = root.Clone();
-                            _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl));
-                        }
-                        else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
-                        else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
-                        else if (action == "set_secret") { HandleSetSecret(root); }
-                        else if (action == "set_bypass_secret") { await HandleSetBypassSecretAsync(root); }
-                        else if (action == "cancel_task")
-                        {
-                            int cancelId = root.TryGetProperty("task_id", out var cancelProp) && cancelProp.ValueKind == JsonValueKind.Number
-                                && cancelProp.TryGetInt32(out int cancelTaskId) ? cancelTaskId : -1;
-                            if (_commandRunner.Cancel(cancelId))
-                                POpsHelpers.Log("AGENT", $"Uzaktan komut panelden iptal edildi; işlem sonlandırılıyor (TaskID: {cancelId}).");
-                        }
-                        else if (action == "lockdown")
-                        {
-                            string reason = root.TryGetProperty("reason", out var rProp) && rProp.ValueKind == JsonValueKind.String ? rProp.GetString() : null;
-                            await _quarantine.LockdownAsync(reason);
-                        }
-                        else if (action == "unlock")
-                        {
-                            // Panel cihazı açık gösterir; yalıtım kaldırılamadıysa denetim kaydı bunu söyler
-                            if (!await _quarantine.UnlockAsync("server"))
-                                await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId), _hwId, QuarantineControl.UnlockFailedLog(), "Karantina kaldırma hatası");
-                        }
-                        // Windows Update: arka planda yürür, bu döngüyü bekletmez (bkz. PatchManager)
-                        else if (action == "scan_updates") _patches.RequestScan();
-                        else if (action == "install_updates")
-                        {
-                            string scope = root.TryGetProperty("scope", out var scProp) && scProp.ValueKind == JsonValueKind.String ? scProp.GetString() : null;
-                            _patches.RequestInstall(scope);
-                        }
-                        else if (action == "start_vision_session")
-                        {
-                            _visionSessionId = root.TryGetProperty("session_id", out var session) && session.ValueKind == JsonValueKind.String ? session.GetString() : null;
-                            _visionRequestedBy = root.TryGetProperty("requested_by", out var requester) && requester.ValueKind == JsonValueKind.String
-                                ? requester.GetString()
-                                : root.TryGetProperty("admin_name", out var admin) && admin.ValueKind == JsonValueKind.String ? admin.GetString() : null;
-                            _pendingVisionMandatory = root.TryGetProperty("is_mandatory", out var mandatory) && mandatory.ValueKind == JsonValueKind.True;
-                            _trayPipe?.SendCommandToDesktop(message);
-                        }
-                    }
+                    await HandleServerMessageAsync(message, ws, stoppingToken);
                 }
                 catch (WebSocketMessages.TooLargeException ex)
                 {
@@ -828,6 +705,161 @@ namespace POpsAgent
                     POpsHelpers.Log("AGENT", $"Sunucu mesajı işlenemedi: {ex.Message}", true);
                 }
                 catch { }
+            }
+        }
+
+        // Sunucudan gelen tek komut mesajı (ReceiveCommandsAsync; testlerde doğrudan çağrılır). Çözümlenemeyen JSON
+        // çağırana gider. Tanınmayan action yok sayılır.
+        internal async Task HandleServerMessageAsync(string message, ClientWebSocket ws, CancellationToken stoppingToken)
+        {
+            using var doc = JsonDocument.Parse(message);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "remote_input")
+            {
+                string targetDevice = root.TryGetProperty("device", out var devProp) ? devProp.GetString() : "";
+                if (targetDevice != _hwId) return;
+
+                string act = root.TryGetProperty("action", out var actProp) ? actProp.GetString() : "";
+                // Ekran önizlemesi ve uzaktan fare/klavye Vision yeteneğidir
+                string denial = VisionDenial(IsInputEvent(root));
+                if (denial != null)
+                {
+                    await DenyCapabilityAsync(denial, string.IsNullOrEmpty(act) ? "remote_input" : act);
+                    return;
+                }
+                if (act == "get_thumbnail")
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        byte[] img = await CaptureSnapshotAsync(TimeSpan.FromSeconds(5));
+                        if (img != null && img.Length > 0)
+                        {
+                            var payload = new { type = "thumbnail", hw_id = _hwId, image = Convert.ToBase64String(img) };
+                            byte[] b = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+                            await _wsCommandLock.WaitAsync();
+                            try { if (ws.State == WebSocketState.Open) await ws.SendAsync(new ArraySegment<byte>(b), WebSocketMessageType.Text, true, CancellationToken.None); }
+                            finally { _wsCommandLock.Release(); }
+                        }
+                    });
+                }
+                else
+                {
+                    _trayPipe?.SendCommandToDesktop(message);
+                }
+            }
+            else
+            {
+                string action = root.TryGetProperty("action", out var actionProp) ? actionProp.GetString() : "";
+                CommandPermission commandPermission = action == "execute"
+                    ? CommandExecutionPolicy.Permission(AgentCapabilities.TerminalEnabled) : null;
+                if (action == "execute" && !commandPermission.Allowed)
+                {
+                    // Görev "Running"de asılı kalmasın diye sonuç olarak da bildirilir
+                    int tid = root.GetProperty("task_id").GetInt32();
+                    await SendCommandMessageAsync(new { type = "result", pc_name = _hwId, task_id = tid, output = commandPermission.Rejection });
+                    await DenyCapabilityAsync("terminal", "execute", tid);
+                }
+                else if (action == "execute")
+                {
+                    string cmd = root.GetProperty("script_path").GetString();
+                    int tid = root.GetProperty("task_id").GetInt32();
+                    string requestedBy = root.TryGetProperty("requested_by", out var requestedByProperty) && requestedByProperty.ValueKind == JsonValueKind.String
+                        ? requestedByProperty.GetString() : null;
+                    POpsHelpers.Log("AGENT", $"Uzaktan komut çalıştırılıyor (TaskID: {tid})");
+                    LocalAudit.Write(LocalAudit.CommandStarted(tid, cmd, requestedBy));
+                    _ = Task.Run(async () =>
+                    {
+                        CommandExecutionResult execution = await _commandRunner.RunAsync(tid, cmd, stoppingToken);
+                        LocalAudit.Write(LocalAudit.CommandFinished(tid, execution.ExitCode, execution.Duration));
+                        // Sonuç o anki bağlantıdan gider; bağlantı koptuysa sırada bekler (eskiden komutun geldiği
+                        // eski sokete yazılıyor ve bağlantı koptuysa kayboluyordu)
+                        await SendResultAsync(new
+                        {
+                            type = "result",
+                            pc_name = _hwId,
+                            output = execution.Output,
+                            task_id = tid,
+                            exit_code = execution.ExitCode,
+                        });
+                    });
+                }
+                else if (action == "get_hardware") await SendHardwareInfoAsync();
+                else if (action == "set_capabilities") await HandleSetCapabilitiesAsync(root);
+                else if ((action == "start_stream" || action == "start_vision_session") && !AgentCapabilities.VisionEnabled)
+                {
+                    await DenyCapabilityAsync("vision", action);
+                }
+                else if (action == "start_stream") {
+                    if (!_visionAuditActive)
+                    {
+                        _visionSessionId = null;
+                        _visionRequestedBy = null;
+                        _pendingVisionMandatory = true;
+                    }
+                    await ConnectVisionTunnelAsync(stoppingToken); 
+                    int fps = root.TryGetProperty("fps", out var fProp) ? (fProp.ValueKind == JsonValueKind.Number ? fProp.GetInt32() : 2) : 2;
+                    if (_isVisionStreamActive)
+                    {
+                        if (!_visionAuditActive)
+                        {
+                            _visionUserApproved = false;
+                            LocalAudit.Write(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, false));
+                            _visionAuditActive = true;
+                        }
+                        _trayPipe?.SendCommandToDesktop($"START_CAPTURE:{fps}");
+                    }
+                }
+                else if (action == "stop_stream") { 
+                    _trayPipe?.SendCommandToDesktop("STOP_CAPTURE"); 
+                    await DisconnectVisionTunnelAsync(); 
+                }
+                else if (action == "update_agent")
+                {
+                    JsonElement command = root.Clone();
+                    _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl));
+                }
+                else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
+                else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
+                else if (action == "set_secret") { HandleSetSecret(root); }
+                else if (action == "set_bypass_secret") { await HandleSetBypassSecretAsync(root); }
+                else if (action == "cancel_task")
+                {
+                    int cancelId = root.TryGetProperty("task_id", out var cancelProp) && cancelProp.ValueKind == JsonValueKind.Number
+                        && cancelProp.TryGetInt32(out int cancelTaskId) ? cancelTaskId : -1;
+                    if (_commandRunner.Cancel(cancelId))
+                        POpsHelpers.Log("AGENT", $"Uzaktan komut panelden iptal edildi; işlem sonlandırılıyor (TaskID: {cancelId}).");
+                }
+                else if (action == "lockdown")
+                {
+                    string reason = root.TryGetProperty("reason", out var rProp) && rProp.ValueKind == JsonValueKind.String ? rProp.GetString() : null;
+                    await _quarantine.LockdownAsync(reason);
+                }
+                else if (action == "unlock")
+                {
+                    // Panel cihazı açık gösterir; yalıtım kaldırılamadıysa denetim kaydı bunu söyler
+                    if (!await _quarantine.UnlockAsync("server"))
+                        await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId), _hwId, QuarantineControl.UnlockFailedLog(), "Karantina kaldırma hatası");
+                }
+                // Güncelleme sonucu onayı (bkz. UpdateResultReporter). Tanınmayan action'lar yok sayılır.
+                else if (action == "server_info") UpdateResults.OnServerInfo(root);
+                else if (action == "update_result_ack") HandleUpdateResultAck(root);
+                // Windows Update: arka planda yürür, bu döngüyü bekletmez (bkz. PatchManager)
+                else if (action == "scan_updates") _patches.RequestScan();
+                else if (action == "install_updates")
+                {
+                    string scope = root.TryGetProperty("scope", out var scProp) && scProp.ValueKind == JsonValueKind.String ? scProp.GetString() : null;
+                    _patches.RequestInstall(scope);
+                }
+                else if (action == "start_vision_session")
+                {
+                    _visionSessionId = root.TryGetProperty("session_id", out var session) && session.ValueKind == JsonValueKind.String ? session.GetString() : null;
+                    _visionRequestedBy = root.TryGetProperty("requested_by", out var requester) && requester.ValueKind == JsonValueKind.String
+                        ? requester.GetString()
+                        : root.TryGetProperty("admin_name", out var admin) && admin.ValueKind == JsonValueKind.String ? admin.GetString() : null;
+                    _pendingVisionMandatory = root.TryGetProperty("is_mandatory", out var mandatory) && mandatory.ValueKind == JsonValueKind.True;
+                    _trayPipe?.SendCommandToDesktop(message);
+                }
             }
         }
 
@@ -914,11 +946,19 @@ namespace POpsAgent
             await SendCommandMessageAsync(notice);
         }
 
+        // Testler içindir: giden komut mesajları sokete yazılmaz, buraya verilir (dönen: gönderildi mi). Uzaktan komutun
+        // çalıştırıcısı ve karantina denetimi de (gerçek güvenlik duvarına dokunmayan) sahteleriyle değiştirilebilir.
+        internal Func<object, Task<bool>> SendOverride { get; set; }
+        internal CommandRunner CommandRunner { get => _commandRunner; set => _commandRunner = value; }
+        internal QuarantineControl Quarantine { get => _quarantine; set => _quarantine = value; }
+        internal string HwId { get => _hwId; set => _hwId = value; }
+
         private async Task SendCommandMessageAsync(object payload) => await TrySendCommandMessageAsync(payload);
 
         // Dönen: mesaj o anki komut soketine yazıldı mı
         private async Task<bool> TrySendCommandMessageAsync(object payload)
         {
+            if (SendOverride != null) return await SendOverride(payload);
             byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
             await _wsCommandLock.WaitAsync();
             try
@@ -953,26 +993,44 @@ namespace POpsAgent
             }
         }
 
-        // POpsUpdater'ın bıraktığı sonuç (update-result.json) sunucuya bir kez "update_result" olarak iletilir.
-        // Updater sonucu yeni sürüm açıldıktan sonra yazdığı için her heartbeat'te bakılır.
-        private async Task ReportUpdateResultAsync(CancellationToken token)
+        // POpsUpdater'ın bıraktığı sonuç (update-result.json) sunucuya "update_result" olarak iletilir. Updater sonucu
+        // yeni sürüm açıldıktan sonra yazdığı için her heartbeat'te bakılır. Onaylı sunucuda dosya onaya kadar kalır.
+        internal async Task ReportUpdateResultAsync(CancellationToken token)
         {
             Dictionary<string, object> message = AgentUpdate.PendingResultMessage();
             if (message == null) return;
             // Yerel denetim izi (1030) sunucu bağlantısından bağımsız, sonuç ilk görüldüğünde
             LocalAudit.Write(AgentUpdate.PendingResultAudit(message));
 
-            byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message));
-            await _wsCommandLock.WaitAsync(token);
-            try
-            {
-                if (_commandWs == null || _commandWs.State != WebSocketState.Open) return;
-                await _commandWs.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
-            }
-            finally { _wsCommandLock.Release(); }
+            string resultId = message["result_id"] as string;
+            UpdateResultReporter.Step step = UpdateResults.Next(resultId);
+            if (step == UpdateResultReporter.Step.Nothing || step == UpdateResultReporter.Step.Wait) return;
 
-            AgentUpdate.MarkResultReported();
-            POpsHelpers.Log("UPDATE", $"Güncelleme sonucu sunucuya iletildi: {message["status"]}.");
+            if (!await TrySendCommandMessageAsync(message)) return;
+
+            if (step == UpdateResultReporter.Step.SendAndMarkReported)
+            {
+                AgentUpdate.MarkResultReported();
+                POpsHelpers.Log("UPDATE", $"Güncelleme sonucu sunucuya iletildi: {message["status"]}.");
+            }
+            else
+            {
+                UpdateResults.Sent(resultId);
+                POpsHelpers.Log("UPDATE", $"Güncelleme sonucu sunucuya iletildi, onay bekleniyor: {message["status"]} ({resultId}).");
+            }
+        }
+
+        // Sunucu sonucu kaydetti: result_id bekleyen sonuçla eşleşiyorsa dosya kenara alınır; eşleşmiyorsa beklemeye devam
+        internal void HandleUpdateResultAck(JsonElement root)
+        {
+            string pending = AgentUpdate.PendingResultId();
+            if (UpdateResultReporter.Acknowledges(root, pending))
+            {
+                AgentUpdate.MarkResultReported();
+                POpsHelpers.Log("UPDATE", $"Sunucu güncelleme sonucunu onayladı ({pending}).");
+            }
+            else if (pending != null)
+                POpsHelpers.Log("UPDATE", "Sunucunun onayı bekleyen güncelleme sonucuyla eşleşmiyor; sonuç saklanmaya devam ediyor.");
         }
 
         private string InitializeIdentity()

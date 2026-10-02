@@ -144,6 +144,8 @@
     <!-- Kullanıcı oturumundaki süreçler dosyaları kilitler; watchdog tepsiyi yeniden açtığı için önce o kapanır -->
     <util:CloseApplication Id="CloseWatchdog" Target="POpsWatchdog.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
     <util:CloseApplication Id="CloseTray" Target="POpsTray.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
+    <!-- POpsVision.exe artık kurulmuyor (kaynak 0.1.14'te kaldırıldı); eski bir kurulumdan yükseltirken hâlâ çalışıyor
+         olabilir ve dosyaları kilitler. Bu yüzden kapatma listesinde kalır. -->
     <util:CloseApplication Id="CloseVision" Target="POpsVision.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
     <util:CloseApplication Id="CloseLegacyAgent" Target="PashaCoreAgent.exe" CloseMessage="no" TerminateProcess="1" RebootPrompt="no" />
     <!-- POpsUpdater bilerek kapatılmaz: güncellemede msiexec'i o çalıştırır (C:\POpsData\updater'dan) -->

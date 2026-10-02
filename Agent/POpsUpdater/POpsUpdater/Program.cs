@@ -59,6 +59,8 @@ namespace POpsUpdater
             [1638] = "ürünün başka bir sürümü kurulu",
             [1639] = "komut satırı geçersiz",
         };
+        // "POpsVision": 0.1.2 öncesi kurulumlarda ayrı ekran yakalama süreci vardı (kaynak 0.1.14'te kaldırıldı); o
+        // sürümlerden yükseltirken hâlâ çalışıyor olabilir ve dosyaları kilitler, bu yüzden adı listede kalır.
         static readonly string[] UserProcesses = { "POpsWatchdog", "POpsTray", "POpsVision" };
 
         sealed class Options
