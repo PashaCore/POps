@@ -46,7 +46,8 @@ jobs:
           Remove-Item "$out/*.pdb" -ErrorAction SilentlyContinue
           # Koruma: paylaşılan dosyalar tepsinin istediği sürümde mi (yayın sırası bozulursa paket burada durur)
           $drawing = [Reflection.AssemblyName]::GetAssemblyName((Resolve-Path "$out/System.Drawing.dll")).Version
-          if ($drawing.Major -lt 10) { Write-Error "System.Drawing.dll $drawing: tepsi en son yayımlanmamış"; exit 1 }
+          # "$drawing:" yazılmaz: PowerShell onu $env: gibi kapsam öneki sanar ve betik hiç çalışmaz
+          if ($drawing.Major -lt 10) { Write-Error "System.Drawing.dll $($drawing): tepsi en son yayımlanmamış"; exit 1 }
           if (-not (Test-Path "$out/hostfxr.dll") -or -not (Test-Path "$out/coreclr.dll")) { Write-Error "Çalışma zamanı dosyaları yok (self-contained değil)"; exit 1 }
           $files = Get-ChildItem $out -File -Recurse
           "{0} dosya, {1:N1} MB" -f $files.Count, (($files | Measure-Object Length -Sum).Sum / 1MB)

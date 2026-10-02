@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import release_verify
+from pops import agent_version as agent_version_mod
 
 
 class EnrollTokenInput(BaseModel):
@@ -231,7 +232,7 @@ async def _server_update(force: bool = False) -> dict:
         latest = await _github_latest(force=force)
         if latest:
             out.update({"checked": True, "latest_release": latest,
-                        "update_available": _norm(latest) != _norm(_read_version())})
+                        "update_available": _newer(latest, _read_version())})
         return out
     if st.get("state") != "ok" or not _REV_RE.match(rev):
         return out   # canlı commit bilinmiyor (hiç self-update yok ya da son deneme başarısız)
@@ -312,6 +313,18 @@ def _agent_msis(manifest: dict) -> List[str]:
             if str(a.get("name", "")).startswith("POps-Agent-") and str(a.get("name", "")).endswith("-win-x64.msi")]
 
 
+def _newer(candidate: Optional[str], current: Optional[str]) -> bool:
+    """candidate, current'tan yeni mi. GitHub'daki son yayın henüz yayımlanmamışken (etiket var, release yok) sunucu
+    yeni sürümü çalıştırır; o zaman eski sürüm "yeni sürüm var" diye önerilmemeli. Çözümlenemeyen sürümde farklılık
+    yeterli sayılır (eski davranış)."""
+    if not candidate:
+        return False
+    a, b = agent_version_mod.parse(candidate), agent_version_mod.parse(current)
+    if a is not None and b is not None:
+        return a > b
+    return _norm(candidate) != _norm(current)
+
+
 def _norm(v: Optional[str]) -> Optional[str]:
     """Karşılaştırma için baştaki v/V'yi soy (agent_versions'da karışık 'v'li/'v'siz satırlar olabilir)."""
     if not v:
@@ -374,9 +387,9 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         latest = await _github_latest(force=check)
         staged = await _staged_release()
         staged_version = staged.get("version") if staged else None
-        update_available = bool(latest and _norm(latest) != _norm(running))
+        update_available = _newer(latest, running)
         # Doğrulanmış ajan paketi GitHub'daki son sürüm değil: panel "GitHub'dan indir" düğmesini gösterir
-        release_available = bool(latest and _norm(latest) != _norm(staged_version))
+        release_available = _newer(latest, staged_version)
         counts = await execute_query(
             "SELECT count(*) AS total, count(s.pc_name) AS enrolled "
             "FROM clients c LEFT JOIN agent_secrets s ON s.pc_name = c.pc_name", fetch=True)

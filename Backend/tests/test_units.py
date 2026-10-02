@@ -601,6 +601,18 @@ def test_modules():
         "profil varsayılanları tasarımdaki gibi")
 
 
+def test_release_compare():
+    """Yalnızca daha yeni sürüm "güncelleme var" sayılır (GitHub'da henüz yayımlanmamış sürüm çalışırken eskisi
+    önerilmesin)."""
+    import system_routes
+
+    newer = system_routes._newer
+    chk(newer("v0.1.15-alpha", "0.1.14-alpha") and not newer("v0.1.14-alpha", "0.1.15-alpha"), "yeni / eski")
+    chk(not newer("v0.1.15-alpha", "0.1.15-alpha") and not newer(None, "0.1.15-alpha"), "aynı sürüm ya da sürüm yok")
+    chk(newer("v0.1.10-alpha", "0.1.9-alpha"), "sayısal karşılaştırma (0.1.10 > 0.1.9)")
+    chk(newer("v0.1.15-alpha", None), "çalışan sürüm bilinmiyorsa öneri var")
+
+
 def main():
     test_update_notice()
     test_log_format()
@@ -612,6 +624,7 @@ def main():
     test_p1()
     test_review4()
     test_modules()
+    test_release_compare()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)
