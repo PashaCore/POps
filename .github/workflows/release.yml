@@ -126,11 +126,11 @@ jobs:
           fi
           echo "Sürüm tutarlı: v$VER"
       # Yalnızca paketler: "CI tests" işinin kapsam raporları da artifact'tir ve release'e girmemeli
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: agent
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: server
           path: dist
