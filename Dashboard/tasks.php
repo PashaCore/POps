@@ -1,545 +1,457 @@
 <?php include 'includes/header.php'; ?>
+<?php $tkCanAdmin = in_array($_SESSION['role'] ?? '', ['admin', 'superadmin'], true); ?>
 
 <style>
-    .dashboard-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-6); }
-
-    .control-panel { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-5); display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
-    .control-group { display: flex; align-items: center; gap: 0.5rem; }
-
-    .task-group-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); margin-bottom: var(--space-3); overflow: hidden; transition: box-shadow 0.15s, border-color 0.15s; }
-    .task-group-card:hover { box-shadow: var(--shadow-sm); }
-    .task-group-header { padding: var(--space-4) var(--space-5); display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: var(--bg-surface); transition: background-color 0.15s; user-select: none; gap: var(--space-3); }
-    .task-group-header:hover { background: var(--bg-surface-2); }
-    .task-group-card.expanded .task-group-header { border-bottom: 1px solid var(--border-subtle); }
-    .task-info-area { display: flex; flex-direction: column; gap: 0.375rem; flex: 1; min-width: 0; }
+    .task-group { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); margin-bottom: var(--space-3); overflow: hidden; box-shadow: var(--shadow-xs); transition: box-shadow 0.15s, border-color 0.15s; }
+    .task-group:hover { border-color: var(--border-default); }
+    .task-group-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5); cursor: pointer; }
+    .task-group-head:hover { background: var(--bg-surface-2); }
+    .task-group.open .task-group-head { border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface-2); }
+    .task-group-info { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; flex: 1; }
     .task-lab { font-weight: var(--fw-semibold); color: var(--primary-600); font-size: var(--text-sm); display: flex; align-items: center; gap: 0.5rem; }
-    .task-cmd { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 600px; }
+    .task-cmd { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .task-group-side { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+    .task-group .chev { color: var(--text-tertiary); transition: transform 0.2s; }
+    .task-group.open .chev { transform: rotate(180deg); color: var(--primary-500); }
+    .task-group-body { display: none; overflow-x: auto; }
+    .task-group.open .task-group-body { display: block; }
+    .task-status { font-weight: var(--fw-semibold); font-size: var(--text-sm); display: inline-flex; align-items: center; gap: 0.375rem; }
+    .task-status.success { color: var(--success-text); }
+    .task-status.failed { color: var(--danger-text); }
+    .task-status.pending { color: var(--warning-text); }
+    .task-status.paused { color: var(--text-tertiary); }
+    .task-status.running { color: var(--info-text); }
+    .live-indicator { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.625rem; border-radius: var(--radius-full); font-size: 0.75rem; font-weight: var(--fw-semibold); background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+    .live-indicator .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.5s infinite; }
 
-    .task-badges { display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0; }
-    .badge-box { padding: 0.375rem 0.625rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: var(--fw-semibold); display: inline-flex; align-items: center; gap: 0.375rem; border: 1px solid; }
-    .badge-box.total { background: var(--bg-surface-2); color: var(--text-primary); border-color: var(--border-subtle); }
-    .badge-box.success { background: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
-
-    .toggle-icon { color: var(--text-tertiary); transition: transform 0.2s; }
-    .task-group-card.expanded .toggle-icon { transform: rotate(180deg); color: var(--primary-500); }
-    .task-details { display: none; background: var(--bg-surface-2); padding: var(--space-4); }
-    .task-group-card.expanded .task-details { display: block; }
-
-    .status-text { font-weight: var(--fw-semibold); }
-    .status-text.success { color: var(--success-text); }
-    .status-text.failed { color: var(--danger-text); }
-    .status-text.pending { color: var(--warning-text); }
-    .status-text.paused { color: var(--text-tertiary); font-style: italic; }
-    .status-text.running { color: var(--info-text); }
-
-    .btn-action { padding: 0.4375rem 0.75rem; border-radius: var(--radius-sm); font-weight: var(--fw-semibold); cursor: pointer; transition: all 0.15s; border: 1px solid; background: transparent; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.375rem; }
-    .btn-action.stop { color: var(--danger-text); border-color: var(--danger-border); background: var(--danger-bg); }
-    .btn-action.stop:hover { background: var(--danger-solid); color: white; border-color: var(--danger-solid); }
-    .btn-action.pause { color: var(--warning-text); border-color: var(--warning-border); background: var(--warning-bg); }
-    .btn-action.pause:hover { background: var(--warning-solid); color: white; border-color: var(--warning-solid); }
-    .btn-action.resume { color: var(--success-text); border-color: var(--success-border); background: var(--success-bg); }
-    .btn-action.resume:hover { background: var(--success-solid); color: white; border-color: var(--success-solid); }
-    .btn-action.retry { color: var(--info-text); border-color: var(--info-border); background: var(--info-bg); }
-    .btn-action.retry:hover { background: var(--info-solid); color: white; border-color: var(--info-solid); }
-    .btn-action.icon { padding: 0.375rem 0.5rem; }
-
-    .log-toolbar { display: flex; gap: 0.5rem; padding: var(--space-4); background: var(--bg-surface-2); border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; }
-    .log-toolbar select, .log-toolbar input { padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: var(--text-sm); }
-    .log-toolbar input { flex: 1; min-width: 200px; }
-
-    .agent-logs-container { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-xs); }
-    .log-list { max-height: 500px; overflow-y: auto; padding: var(--space-3); }
-    .log-line { display: flex; gap: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-sm); margin-bottom: 0.25rem; background: var(--bg-surface-2); transition: background-color 0.1s; align-items: center; border-left: 3px solid transparent; font-family: var(--font-mono); font-size: 0.8125rem; }
-    .log-line:hover { background: var(--bg-surface); }
-    .log-time { color: var(--primary-500); min-width: 70px; font-size: 0.75rem; flex-shrink: 0; }
-    .log-pc { color: var(--text-primary); font-weight: var(--fw-semibold); min-width: 140px; font-size: 0.8125rem; flex-shrink: 0; font-family: var(--font-sans); }
-    .log-msg { color: var(--text-secondary); flex: 1; word-break: break-word; font-family: var(--font-sans); }
-    .log-line.type-Error { border-left-color: var(--danger-solid); background: var(--danger-bg); }
-    .log-line.type-Error .log-msg { color: var(--danger-text); }
-    .log-line.type-System { border-left-color: var(--text-muted); }
-    .log-line.type-Deploy { border-left-color: var(--info-solid); }
-    .log-line.type-Network { border-left-color: var(--warning-solid); }
-
-    .log-badge { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.6875rem; font-weight: var(--fw-semibold); text-align: center; min-width: 80px; text-transform: uppercase; letter-spacing: 0.05em; }
-    .log-badge.badge-System { background: rgba(107, 114, 128, 0.15); color: var(--text-tertiary); }
-    .log-badge.badge-Deploy { background: var(--info-bg); color: var(--info-text); }
-    .log-badge.badge-AppStart { background: var(--warning-bg); color: var(--warning-text); }
-    .log-badge.badge-File { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
-    .log-badge.badge-USB { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
-    .log-badge.badge-Network { background: var(--warning-bg); color: var(--warning-text); }
-    .log-badge.badge-Error { background: var(--danger-bg); color: var(--danger-text); }
+    .log-list { max-height: 520px; overflow-y: auto; padding: var(--space-3); }
+    .log-line { display: flex; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); margin-bottom: 0.25rem; background: var(--bg-surface-2); align-items: center; border-left: 3px solid transparent; font-size: var(--text-sm); }
+    .log-line:hover { background: var(--bg-hover); }
+    .log-time { color: var(--primary-500); min-width: 64px; font-size: 0.75rem; font-family: var(--font-mono); flex-shrink: 0; }
+    .log-pc { color: var(--text-primary); font-weight: var(--fw-semibold); min-width: 140px; flex-shrink: 0; }
+    .log-msg { color: var(--text-secondary); flex: 1; word-break: break-word; }
+    .log-line.risk-high, .log-line.risk-critical { border-left-color: var(--danger-solid); background: var(--danger-bg); }
+    .log-line.risk-high .log-msg, .log-line.risk-critical .log-msg { color: var(--danger-text); }
+    .log-line.risk-medium { border-left-color: var(--warning-solid); }
+    .log-type { min-width: 96px; justify-content: center; }
+    .card-header .toolbar-group select { width: auto; min-width: 170px; }
+    .card-header .toolbar-group .search-field { flex: 0 1 240px; }
 
     .code-block { background: var(--bg-app); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; margin-bottom: var(--space-3); }
     .code-header { background: var(--bg-surface-2); padding: 0.5rem 0.875rem; font-size: 0.75rem; color: var(--text-tertiary); font-weight: var(--fw-semibold); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 0.5rem; }
-    .code-content { padding: 0.875rem; margin: 0; font-family: var(--font-mono); font-size: var(--text-sm); white-space: pre-wrap; word-wrap: break-word; color: var(--text-secondary); overflow-y: auto; max-height: 280px; }
+    .code-content { padding: 0.875rem; margin: 0; font-family: var(--font-mono); font-size: var(--text-sm); white-space: pre-wrap; word-wrap: break-word; color: var(--text-secondary); overflow-y: auto; max-height: 300px; }
     .code-content.output { color: var(--success-text); }
     .code-content.error { color: var(--danger-text); }
 
-    .live-indicator { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.625rem; border-radius: var(--radius-full); font-size: 0.75rem; font-weight: var(--fw-semibold); background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
-    .live-indicator .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.5s infinite; }
-    /* Zamanlanmış görevler */
-    .sched-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5); margin-top: var(--space-6); }
-    .sched-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-    .sched-head h2 { font-size: var(--text-lg); margin: 0; display: flex; align-items: center; gap: 0.5rem; }
-    .sched-head h2 i { color: var(--primary-500); }
-    .sched-form { display: none; margin-top: var(--space-4); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); }
-    .sched-form.open { display: block; }
-    .sched-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
-    .sched-form label.f { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.75rem; font-weight: var(--fw-semibold); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }
-    .sched-form input, .sched-form select, .sched-form textarea { padding: 0.5rem 0.75rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); color: var(--text-primary); font-size: var(--text-sm); text-transform: none; letter-spacing: 0; font-weight: normal; }
-    .sched-form input[type=checkbox] { width: auto; padding: 0; flex: none; margin: 0; }
-    .sched-devs label { justify-content: flex-start; text-align: left; }
-    .sched-form textarea { font-family: var(--font-mono); min-height: 70px; resize: vertical; }
-    .sched-days { display: flex; gap: 0.375rem; flex-wrap: wrap; }
-    .sched-days label { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--text-sm); color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 0.25rem 0.5rem; }
-    .sched-devs { max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.25rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.5rem; }
-    .sched-devs label { font-size: var(--text-sm); color: var(--text-secondary); display: flex; gap: 0.5rem; align-items: center; }
-    .sched-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm); }
+    .sched-row { display: grid; grid-template-columns: 1.4fr 1fr 1.2fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm); }
+    .sched-row:hover { background: var(--bg-surface-2); }
     .sched-row:last-child { border-bottom: none; }
     .sched-row .n { font-weight: var(--fw-semibold); color: var(--text-primary); }
-    .sched-row .c { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
-    .sched-row .s { color: var(--text-secondary); }
-    .sched-row .sub { font-size: 0.75rem; color: var(--text-tertiary); }
-    .sched-row.off { opacity: 0.55; }
-    .sched-actions { display: flex; gap: 0.375rem; flex-wrap: wrap; justify-content: flex-end; }
-    .sched-btn { padding: 0.35rem 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--bg-surface-2); color: var(--text-primary); font-size: 0.75rem; font-weight: var(--fw-semibold); cursor: pointer; }
-    .sched-btn.primary { background: var(--primary-500); border-color: var(--primary-500); color: #fff; }
-    .sched-btn.danger { color: var(--danger-text); }
-    @media (max-width: 760px) { .sched-row { grid-template-columns: 1fr; } .sched-actions { justify-content: flex-start; } }
+    .sched-row .c { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px; }
+    .sched-row .sub { font-size: 0.75rem; color: var(--text-tertiary); margin-top: 0.125rem; }
+    .sched-row.off { opacity: 0.6; }
+    .sched-days { display: flex; gap: 0.375rem; flex-wrap: wrap; }
+    .sched-devs { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.25rem; background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.5rem; }
+    @media (max-width: 860px) { .sched-row { grid-template-columns: 1fr; } }
 </style>
 
 <div class="page-header">
     <div>
-        <h1><i class="fas fa-tasks"></i> Operasyon ve Görev Yönetimi</h1>
-        <p>Ağdaki komut dağıtımı ve ajan geri dönüşlerinin canlı takibi</p>
+        <h1><i class="fas fa-list-check"></i> Görev Kuyruğu</h1>
+        <p>Bilgisayarlara gönderilen komutlar, sonuçları ve zamanlanmış görevler</p>
     </div>
     <div class="page-header-actions">
-        <span class="live-indicator"><span class="dot"></span> CANLI AKIŞ</span>
+        <span class="live-indicator"><span class="dot"></span> Canlı</span>
     </div>
 </div>
 
-<div class="dashboard-stats" id="topStats"></div>
+<div class="stat-grid" id="topStats"></div>
 
-<div class="control-panel">
-    <div class="control-group">
-        <button class="btn-action pause" onclick="window.bulkControl('PAUSE')"><i class="fas fa-pause"></i> Tümünü Duraklat</button>
-        <button class="btn-action resume" onclick="window.bulkControl('RESUME')"><i class="fas fa-play"></i> Devam Et</button>
-        <button class="btn-action stop" onclick="window.bulkControl('CLEAR')"><i class="fas fa-trash"></i> Geçmişi Temizle</button>
+<div class="toolbar">
+    <?php if ($tkCanAdmin): ?>
+    <div class="toolbar-group">
+        <button type="button" class="btn warning-soft sm" data-action="bulk" data-op="PAUSE"><i class="fas fa-pause"></i> Bekleyenleri duraklat</button>
+        <button type="button" class="btn success-soft sm" data-action="bulk" data-op="RESUME"><i class="fas fa-play"></i> Devam ettir</button>
+        <button type="button" class="btn danger-soft sm" data-action="clear"><i class="fas fa-trash"></i> Görev geçmişini sil</button>
     </div>
-    <div style="margin-left:auto;color:var(--text-tertiary);font-size:var(--text-sm);" id="syncText">
-        <i class="fas fa-arrows-rotate fa-spin" style="color:var(--primary-500);"></i> Eşitleniyor...
-    </div>
+    <?php endif; ?>
+    <div class="spacer"></div>
+    <span class="text-sm text-muted" id="syncText" role="status">Eşitleniyor…</span>
 </div>
 
-<div id="groupedTasksContainer">
-    <div style="text-align:center;padding:3rem;color:var(--text-tertiary);">
-        <i class="fas fa-circle-notch fa-spin" style="font-size:1.5rem;"></i>
-        <div style="margin-top:0.5rem;font-size:var(--text-sm);">Veriler toplanıyor...</div>
+<div id="groupedTasksContainer"></div>
+
+<div class="card" id="schedCard" style="margin-top:var(--space-6);">
+    <div class="card-header">
+        <div>
+            <h2 class="card-title"><i class="fas fa-calendar-days"></i> Zamanlanmış görevler</h2>
+            <div class="card-subtitle" id="sfTz"></div>
+        </div>
+        <?php if ($tkCanAdmin): ?>
+        <button type="button" class="btn sm" data-action="sched-new"><i class="fas fa-plus"></i> Yeni zamanlanmış görev</button>
+        <?php endif; ?>
     </div>
+    <div class="card-body flush" id="schedList"></div>
 </div>
 
-<div class="sched-card" id="schedCard">
-    <div class="sched-head">
-        <h2><i class="fas fa-calendar-days"></i> Zamanlanmış görevler</h2>
-        <button class="sched-btn primary" id="schedNewBtn"><i class="fas fa-plus"></i> Yeni zamanlanmış görev</button>
-    </div>
-    <div class="sched-form" id="schedForm">
-        <div class="sched-grid">
-            <label class="f">Ad<input id="sfName" maxlength="100" placeholder="ör. Gece temizliği"></label>
-            <label class="f">Zamanlama
-                <select id="sfType"><option value="daily">Her gün</option><option value="weekly">Seçili günler</option><option value="once">Bir kez</option></select>
-            </label>
-            <label class="f" id="sfTimeWrap">Saat<input id="sfTime" type="time" value="03:00"></label>
-            <label class="f" id="sfAtWrap" style="display:none;">Tarih ve saat<input id="sfAt" type="datetime-local"></label>
-        </div>
-        <div id="sfDaysWrap" style="display:none;margin-top:var(--space-3);">
-            <div class="sched-days" id="sfDays"></div>
-        </div>
-        <label class="f" style="margin-top:var(--space-3);">Komut (hedef cihazlarda SYSTEM olarak çalışır)<textarea id="sfCmd" maxlength="4000" placeholder="ör. cleanmgr /sagerun:1"></textarea></label>
-        <div class="sched-grid" style="margin-top:var(--space-3);">
-            <label class="f">Hedef
-                <select id="sfMode"><option value="ALL">Tüm cihazlar</option><option value="LAB">Bir sınıf</option><option value="PC">Seçili cihazlar</option></select>
-            </label>
-            <label class="f" id="sfLabWrap" style="display:none;">Sınıf<select id="sfLab"></select></label>
-        </div>
-        <div class="sched-devs" id="sfDevs" style="display:none;margin-top:var(--space-3);"></div>
-        <div style="display:flex;gap:0.5rem;margin-top:var(--space-4);align-items:center;flex-wrap:wrap;">
-            <button class="sched-btn primary" id="sfSave"><i class="fas fa-floppy-disk"></i> Kaydet</button>
-            <button class="sched-btn" id="sfCancel">Vazgeç</button>
-            <span style="font-size:var(--text-xs);color:var(--text-tertiary);" id="sfTz"></span>
+<div class="card" style="margin-top:var(--space-6);">
+    <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-satellite-dish"></i> Ajan etkinliği</h2>
+        <div class="toolbar-group">
+            <select id="logPcFilter" aria-label="Bilgisayar"><option value="ALL">Bütün bilgisayarlar</option></select>
+            <select id="logTypeFilter" aria-label="Kayıt türü"><option value="ALL">Bütün türler</option></select>
+            <div class="search-field" style="min-width:220px;"><i class="fas fa-search" aria-hidden="true"></i><input type="search" id="logSearchInput" placeholder="Mesajda ara" aria-label="Mesajda ara"></div>
         </div>
     </div>
-    <div id="schedList" style="margin-top:var(--space-3);"><div style="color:var(--text-tertiary);font-size:var(--text-sm);">Yükleniyor…</div></div>
+    <div class="log-list" id="agentLogsList"></div>
 </div>
 
-<div style="margin-top:var(--space-8);">
-    <div class="page-header" style="margin-bottom:var(--space-4);">
-        <div><h2 style="font-size:var(--text-2xl);"><i class="fas fa-satellite-dish" style="color:var(--primary-500);"></i> Ajan Aktivite Radarı</h2></div>
-    </div>
-
-    <div class="agent-logs-container">
-        <div class="log-toolbar">
-            <select id="logPcFilter" onchange="window.renderLogs()"><option value="ALL">Tüm Ajanlar</option></select>
-            <select id="logTypeFilter" onchange="window.renderLogs()">
-                <option value="ALL">Tüm Log Tipleri</option>
-                <option value="System">System</option>
-                <option value="Deploy">Deploy</option>
-                <option value="Network">Network</option>
-                <option value="Error">Error</option>
-            </select>
-            <input type="text" id="logSearchInput" oninput="window.renderLogs()" placeholder="Log mesajı ara...">
-        </div>
-        <div class="log-list" id="agentLogsList">
-            <div class="empty-state"><i class="fas fa-satellite-dish"></i><h3>Loglar bekleniyor</h3></div>
-        </div>
-    </div>
-</div>
-
-<div id="outputModal" class="modal-overlay" onclick="if(event.target===this) closeModal('outputModal')">
+<div id="outputModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="outputTitle">
     <div class="modal-box lg">
         <div class="modal-header">
-            <div class="modal-title"><i class="fas fa-microchip modal-title-icon"></i> Operasyon Raporu</div>
-            <button class="modal-close" onclick="closeModal('outputModal')"><i class="fas fa-xmark"></i></button>
+            <div class="modal-title" id="outputTitle"><i class="fas fa-file-lines"></i> Görev sonucu</div>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
-            <div style="display:flex;align-items:center;gap:0.875rem;background:var(--bg-surface-2);padding:var(--space-4);border-radius:var(--radius-md);border:1px solid var(--border-subtle);margin-bottom:var(--space-4);">
-                <i class="fas fa-desktop" style="font-size:1.5rem;color:var(--primary-500);"></i>
-                <div>
-                    <div style="font-size:0.6875rem;color:var(--text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);letter-spacing:0.05em;">Hedef Ajan</div>
-                    <div id="modalPcName" style="font-size:var(--text-md);font-weight:var(--fw-semibold);color:var(--text-primary);">—</div>
-                </div>
-            </div>
-            <div class="code-block">
-                <div class="code-header"><i class="fas fa-code"></i> Gönderilen Komut</div>
-                <pre id="modalCommand" class="code-content"></pre>
-            </div>
-            <div class="code-block">
-                <div class="code-header"><i class="fas fa-terminal"></i> Ajan Yanıtı</div>
-                <pre id="modalOutput" class="code-content output"></pre>
-            </div>
+            <div class="field"><span class="field-label">Bilgisayar</span><div class="cell-title" id="modalPcName">—</div></div>
+            <div class="code-block"><div class="code-header"><i class="fas fa-code"></i> Gönderilen komut</div><pre id="modalCommand" class="code-content"></pre></div>
+            <div class="code-block"><div class="code-header"><i class="fas fa-terminal"></i> Ajanın yanıtı</div><pre id="modalOutput" class="code-content output"></pre></div>
         </div>
     </div>
 </div>
 
+<?php if ($tkCanAdmin): ?>
+<div id="schedModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="schedTitle">
+    <div class="modal-box lg">
+        <div class="modal-header">
+            <div class="modal-title" id="schedTitle"><i class="fas fa-calendar-plus"></i> Yeni zamanlanmış görev</div>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="form-grid">
+                <div class="field"><label for="sfName">Ad</label><input id="sfName" maxlength="100" placeholder="ör. Gece temizliği"></div>
+                <div class="field"><label for="sfType">Zamanlama</label>
+                    <select id="sfType"><option value="daily">Her gün</option><option value="weekly">Seçili günler</option><option value="once">Bir kez</option></select></div>
+                <div class="field" id="sfTimeWrap"><label for="sfTime">Saat</label><input id="sfTime" type="time" value="03:00"></div>
+                <div class="field hidden" id="sfAtWrap"><label for="sfAt">Tarih ve saat</label><input id="sfAt" type="datetime-local"></div>
+            </div>
+            <div class="field hidden" id="sfDaysWrap"><span class="field-label">Günler</span><div class="sched-days chip-row" id="sfDays"></div></div>
+            <div class="field"><label for="sfCmd">Komut</label><textarea id="sfCmd" maxlength="4000" rows="3" class="text-mono" placeholder="ör. cleanmgr /sagerun:1"></textarea>
+                <div class="field-hint">Hedef bilgisayarlarda SYSTEM hesabıyla, cmd.exe ile çalışır.</div></div>
+            <div class="form-grid">
+                <div class="field"><label for="sfMode">Hedef</label>
+                    <select id="sfMode"><option value="ALL">Bütün bilgisayarlar</option><option value="LAB">Bir sınıf</option><option value="PC">Seçili bilgisayarlar</option></select></div>
+                <div class="field hidden" id="sfLabWrap"><label for="sfLab">Sınıf</label><select id="sfLab"></select></div>
+            </div>
+            <div class="field hidden" id="sfDevsWrap"><span class="field-label">Bilgisayarlar</span><div class="sched-devs" id="sfDevs"></div></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
+            <button type="button" class="btn" id="sfSave"><i class="fas fa-floppy-disk"></i> Kaydet</button>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
-window.POpsMemory = {
-    devices: [], tasks: [], logs: [], deviceMap: {}, groupsMap: {},
-    expandedGroups: new Set(), lastTasksHash: '', lastLogsHash: ''
-};
+document.addEventListener('DOMContentLoaded', () => {
+    const CAN_ADMIN = <?php echo $tkCanAdmin ? 'true' : 'false'; ?>;
+    const $ = (id) => document.getElementById(id);
+    const mem = { names: {}, groups: {}, expanded: new Set(), tasksKey: null, logs: [], logsKey: null, loaded: false };
+    const FINISHED = ['Completed', 'Completed (Rebooted)', 'Failed', 'Error', 'Cancelled', 'Unknown', 'Interrupted', 'Timed Out', 'Denied', 'Expired'];
+    const ACTION_TEXT = { CANCEL: 'iptal edilecek', RETRY: 'yeniden çalıştırılacak', PAUSE: 'duraklatılacak', RESUME: 'devam ettirilecek' };
+    POps.setLoading($('groupedTasksContainer'), 'Görevler yükleniyor…');
+    POps.setLoading($('agentLogsList'), 'Kayıtlar yükleniyor…');
 
-window.taskAction = async function(action, targetMode, targetId) {
-    const actionName = { CANCEL: 'İptal', RETRY: 'Yeniden Başlat', PAUSE: 'Duraklat', RESUME: 'Devam Ettir' }[action];
-    if (!confirm(`[${actionName}] işlemi uygulanacak. Onaylıyor musunuz?`)) return;
-    try {
-        await apiRequest('/api/tasks/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, target_mode: targetMode, target_id: targetId.toString() }) });
-        showToast('İşlem iletildi.', 'success');
-        window.fetchAndRenderTasks();
-    } catch (e) { showToast('API yanıt vermedi.', 'error'); }
-};
-
-window.bulkControl = async function(action) {
-    if (action === 'CLEAR') {
-        if (!confirm('Tüm kuyruğu temizlemek istediğinize emin misiniz?')) return;
-        try { await apiRequest('/api/flush_queue', { method: 'POST' }); showToast('Kuyruk temizlendi.', 'success'); window.fetchAndRenderTasks(); } catch (e) { showToast('Hata.', 'error'); }
-    } else { window.taskAction(action, 'ALL', 'GLOBAL'); }
-};
-
-window.openTaskDetail = function(taskId, groupId) {
-    const group = window.POpsMemory.groupsMap[groupId];
-    if (!group) return;
-    const task = group.pcs.find(p => p.id.toString() === taskId.toString());
-    if (!task) return;
-    const dName = window.POpsMemory.deviceMap[task.target_pc] || task.target_pc;
-    document.getElementById('modalPcName').innerText = dName;
-    document.getElementById('modalCommand').textContent = group.command;
-    const out = document.getElementById('modalOutput');
-    out.textContent = task.output || 'Cihazdan henüz yanıt alınamadı.';
-    out.scrollTop = 0;
-    const isErr = (task.status || '').toLowerCase().includes('failed') || (task.status || '').toLowerCase().includes('error');
-    out.classList.toggle('error', isErr);
-    out.classList.toggle('output', !isErr);
-    openModal('outputModal');
-};
-
-window.toggleGroup = function(groupId) {
-    const el = document.getElementById(groupId);
-    if (!el) return;
-    el.classList.toggle('expanded');
-    if (el.classList.contains('expanded')) window.POpsMemory.expandedGroups.add(groupId);
-    else window.POpsMemory.expandedGroups.delete(groupId);
-};
-
-window.fetchAndRenderTasks = async function() {
-    try {
-        const [devices, tasks] = await Promise.all([apiRequest('/api/devices').catch(() => []), apiRequest('/api/tasks?limit=500').catch(() => [])]);
-        if (devices && devices.length > 0) {
-            window.POpsMemory.devices = devices;
-            devices.forEach(d => { if (d.real_hostname && !d.real_hostname.startsWith('HW-')) window.POpsMemory.deviceMap[d.hostname] = d.real_hostname; });
+    function statusInfo(s) {
+        if (String(s).includes('Completed')) return ['success', 'fa-check', s === 'Completed (Rebooted)' ? 'Tamamlandı (yeniden başladı)' : 'Tamamlandı'];
+        switch (s) {
+            case 'Running': return ['running', 'fa-spinner fa-spin', 'Çalışıyor'];
+            case 'Pending': return ['pending', 'fa-clock', 'Sırada'];
+            case 'Paused': return ['paused', 'fa-pause', 'Duraklatıldı'];
+            case 'Failed': case 'Error': return ['failed', 'fa-xmark', 'Hata'];
+            case 'Cancelled': return ['paused', 'fa-ban', 'İptal edildi'];
+            case 'Unknown': return ['paused', 'fa-circle-question', 'Sonuç bilinmiyor (bağlantı koptu)'];
+            case 'Interrupted': return ['failed', 'fa-circle-exclamation', 'Yarıda kaldı (ajan yeniden başladı)'];
+            case 'Denied': return ['failed', 'fa-ban', 'Reddedildi (uzak komut bu cihazda kapalı)'];
+            case 'Timed Out': return ['failed', 'fa-hourglass-end', 'Zaman aşımı (35 dk sonuç gelmedi)'];
+            case 'Expired': return ['failed', 'fa-calendar-xmark', 'Süresi doldu (zamanında gönderilemedi)'];
+            default: return ['paused', 'fa-circle-question', String(s || '?')];
         }
-        const currentHash = JSON.stringify(tasks);
-        if (currentHash === window.POpsMemory.lastTasksHash) {
-            document.getElementById('syncText').innerHTML = '<i class="fas fa-check" style="color:var(--success-text);"></i> Güncel: ' + new Date().toLocaleTimeString();
-            return;
+    }
+
+    function stats(tasks) {
+        const c = (f) => tasks.filter(f).length;
+        const done = c(t => String(t.status).includes('Completed'));
+        const running = c(t => t.status === 'Running');
+        const waiting = c(t => t.status === 'Pending' || t.status === 'Paused');
+        const bad = tasks.length - done - running - waiting;
+        const card = (icon, cls, label, val) => `<div class="stat-card"><div class="stat-icon ${cls}"><i class="fas ${icon}"></i></div><div><div class="stat-label">${label}</div><div class="stat-value">${val}</div></div></div>`;
+        $('topStats').innerHTML = card('fa-layer-group', '', 'Toplam', tasks.length) + card('fa-check-double', 'success', 'Tamamlanan', done)
+            + card('fa-arrows-spin', 'info', 'Çalışan', running) + card('fa-clock', 'warning', 'Bekleyen', waiting) + card('fa-triangle-exclamation', 'danger', 'Sorunlu', bad);
+    }
+
+    async function loadTasks() {
+        try {
+            const [devices, tasks] = await Promise.all([POps.get('/api/devices').catch(() => null), POps.get('/api/tasks?limit=500')]);
+            if (Array.isArray(devices)) devices.forEach(d => { mem.names[d.hostname] = POps.deviceName(d); });
+            const key = JSON.stringify(tasks);
+            $('syncText').textContent = 'Güncel · ' + new Date().toLocaleTimeString('tr-TR');
+            if (key === mem.tasksKey) return;
+            mem.tasksKey = key;
+            mem.loaded = true;
+            renderTasks(Array.isArray(tasks) ? tasks : []);
+        } catch (e) {
+            $('syncText').textContent = 'Sunucuya ulaşılamadı';
+            if (!mem.loaded) POps.setError($('groupedTasksContainer'), e);
         }
-        window.POpsMemory.lastTasksHash = currentHash;
-        window.POpsMemory.tasks = tasks;
+    }
 
-        if (!tasks || tasks.length === 0) {
-            document.getElementById('groupedTasksContainer').innerHTML = '<div class="empty-state"><i class="fas fa-check-circle" style="color:var(--success-solid);"></i><h3>Sistem Stabil</h3><p>Şu an çalışan veya bekleyen bir görev yok.</p></div>';
-            document.getElementById('topStats').innerHTML = statCardsHtml(0, 0, 0, 0);
-            document.getElementById('syncText').innerHTML = '<i class="fas fa-check" style="color:var(--success-text);"></i> Güncellendi: ' + new Date().toLocaleTimeString();
-            return;
-        }
-
-        const total = tasks.length;
-        const success = tasks.filter(t => t.status === 'Completed' || t.status === 'Completed (Rebooted)').length;
-        const running = tasks.filter(t => t.status === 'Running').length;
-        const pending = tasks.filter(t => t.status === 'Pending').length;
-        const paused = tasks.filter(t => t.status === 'Paused').length;
-        const failed = total - success - running - pending - paused;
-
-        document.getElementById('topStats').innerHTML = statCardsHtml(total, success, running, failed + pending + paused);
-
-        window.POpsMemory.groupsMap = {};
+    function renderTasks(tasks) {
+        stats(tasks);
+        const box = $('groupedTasksContainer');
+        if (!tasks.length) { POps.setEmpty(box, { icon: 'fa-circle-check', kind: 'success', title: 'Kuyruk boş', text: 'Çalışan ya da bekleyen görev yok.' }); return; }
+        mem.groups = {};
         tasks.forEach(t => {
-            const labName = t.target_lab || 'Atanmamış / Bireysel';
-            const groupKey = labName + '|' + t.script_path;
-            let h = 0; for (let i = 0; i < groupKey.length; i++) h = ((h << 5) - h) + groupKey.charCodeAt(i);
-            const gId = 'group_' + Math.abs(h);
-            if (!window.POpsMemory.groupsMap[gId]) window.POpsMemory.groupsMap[gId] = { id: gId, lab: labName, command: t.script_path, total: 0, success: 0, pcs: [] };
-            const g = window.POpsMemory.groupsMap[gId];
-            g.total++;
-            if (t.status.includes('Completed')) g.success++;
+            const lab = t.target_lab || 'Tek cihaz';
+            const key = lab + '|' + t.script_path;
+            let h = 0; for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) | 0;
+            const id = 'g' + Math.abs(h);
+            const g = mem.groups[id] = mem.groups[id] || { id, lab, command: t.script_path, done: 0, pcs: [] };
+            if (String(t.status).includes('Completed')) g.done++;
             g.pcs.push(t);
         });
-
-        let html = '';
-        for (const [gId, group] of Object.entries(window.POpsMemory.groupsMap)) {
-            const isExpanded = window.POpsMemory.expandedGroups.has(gId) ? 'expanded' : '';
-            const trHtml = group.pcs.sort((a, b) => (window.POpsMemory.deviceMap[a.target_pc] || a.target_pc).localeCompare(window.POpsMemory.deviceMap[b.target_pc] || b.target_pc, undefined, { numeric: true })).map(pc => {
-                let statusClass = 'pending', statusIcon = 'fa-clock', statusText = 'Sırada', isCancelable = true;
-                if (pc.status.includes('Completed')) { statusClass = 'success'; statusIcon = 'fa-check'; statusText = 'Tamamlandı'; isCancelable = false; }
-                else if (pc.status === 'Running') { statusClass = 'running'; statusIcon = 'fa-spinner fa-spin'; statusText = 'İşleniyor'; }
-                else if (pc.status === 'Paused') { statusClass = 'paused'; statusIcon = 'fa-pause'; statusText = 'Durduruldu'; }
-                else if (['Failed', 'Error', 'Cancelled'].includes(pc.status)) { statusClass = 'failed'; statusIcon = 'fa-xmark'; statusText = pc.status === 'Cancelled' ? 'İptal Edildi' : 'Hata Alındı'; isCancelable = false; }
-                // Bağlantı koptuğunda sonucu bilinmeyen (Unknown) ya da ajan yeniden başladığı için yarıda kalan (Interrupted) görev
-                else if (pc.status === 'Unknown') { statusClass = 'paused'; statusIcon = 'fa-circle-question'; statusText = 'Sonuç bilinmiyor (bağlantı koptu)'; }
-                else if (pc.status === 'Interrupted') { statusClass = 'failed'; statusIcon = 'fa-circle-exclamation'; statusText = 'Yarıda kaldı (ajan yeniden başladı)'; isCancelable = false; }
-                else if (pc.status === 'Denied') { statusClass = 'failed'; statusIcon = 'fa-ban'; statusText = 'Reddedildi (terminal bu cihazda kapalı)'; isCancelable = false; }
-                // Gönderildikten 35 dk sonra hâlâ sonuç yok: ajan geri dönmedi (geç gelen sonuç yine kaydedilir)
-                else if (pc.status === 'Timed Out') { statusClass = 'failed'; statusIcon = 'fa-hourglass-end'; statusText = 'Zaman aşımı (35 dk sonuç gelmedi)'; isCancelable = false; }
-                // Zamanlanmış görev geçerlilik süresi içinde gönderilemedi (cihaz kapalıydı): geç çalıştırılmaz
-                else if (pc.status === 'Expired') { statusClass = 'failed'; statusIcon = 'fa-calendar-xmark'; statusText = 'Süresi doldu (zamanında gönderilemedi)'; isCancelable = false; }
-                const displayName = window.POpsMemory.deviceMap[pc.target_pc] || pc.target_pc;
-                const showMac = displayName === pc.target_pc ? '' : `<br><span style="font-family:var(--font-mono);font-size:0.6875rem;color:var(--text-tertiary);">${escapeHtml(pc.target_pc)}</span>`;
+        const nm = (pc) => mem.names[pc] || pc;
+        box.innerHTML = Object.values(mem.groups).map(g => {
+            const open = mem.expanded.has(g.id);
+            const rows = g.pcs.sort((a, b) => nm(a.target_pc).localeCompare(nm(b.target_pc), 'tr', { numeric: true })).map(t => {
+                const [cls, icon, text] = statusInfo(t.status);
+                const canCancel = !FINISHED.includes(t.status);
+                const name = nm(t.target_pc);
                 return `<tr>
-                    <td><strong>${escapeHtml(displayName)}</strong>${showMac}</td>
-                    <td class="status-text ${statusClass}"><i class="fas ${statusIcon}"></i> ${statusText}</td>
-                    <td style="color:var(--text-tertiary);font-size:0.75rem;font-family:var(--font-mono);">${escapeHtml(pc.created_at || '-')}</td>
-                    <td style="text-align:right;">
-                        <div style="display:inline-flex;gap:0.375rem;">
-                            <button class="btn-action retry icon" onclick="window.taskAction('RETRY', 'TASK', ${jsArg(pc.id)})" title="Yeniden Başlat"><i class="fas fa-rotate"></i></button>
-                            <button class="btn secondary" style="padding:0.375rem 0.625rem;font-size:0.75rem;" onclick="window.openTaskDetail(${jsArg(pc.id)}, ${jsArg(gId)})"><i class="fas fa-magnifying-glass" style="color:var(--primary-500);"></i> Detay</button>
-                            ${isCancelable ? `<button class="btn-action stop icon" onclick="window.taskAction('CANCEL', 'TASK', ${jsArg(pc.id)})" title="İptal"><i class="fas fa-xmark"></i></button>` : ''}
-                        </div>
-                    </td>
+                    <td><div class="cell-title">${escapeHtml(name)}</div>${name !== t.target_pc ? `<div class="cell-sub mono">${escapeHtml(t.target_pc)}</div>` : ''}</td>
+                    <td><span class="task-status ${cls}"><i class="fas ${icon}"></i> ${escapeHtml(text)}</span></td>
+                    <td class="mono text-xs text-muted">${escapeHtml(t.created_at || '-')}</td>
+                    <td class="actions"><div class="row-actions">
+                        <button type="button" class="btn secondary sm" data-action="detail" data-task="${escapeHtml(t.id)}" data-group="${g.id}"><i class="fas fa-file-lines"></i> Sonuç</button>
+                        ${CAN_ADMIN && FINISHED.includes(t.status) ? `<button type="button" class="btn ghost icon sm" data-action="task" data-op="RETRY" data-mode="TASK" data-target="${escapeHtml(t.id)}" title="Yeniden çalıştır" aria-label="Yeniden çalıştır"><i class="fas fa-rotate-right"></i></button>` : ''}
+                        ${CAN_ADMIN && canCancel ? `<button type="button" class="btn ghost icon sm" data-action="task" data-op="CANCEL" data-mode="TASK" data-target="${escapeHtml(t.id)}" title="İptal et" aria-label="İptal et"><i class="fas fa-xmark"></i></button>` : ''}
+                    </div></td>
                 </tr>`;
             }).join('');
-
-            html += `<div class="task-group-card ${isExpanded}" id="${escapeHtml(group.id)}">
-                <div class="task-group-header" onclick="window.toggleGroup(${jsArg(group.id)})">
-                    <div class="task-info-area">
-                        <span class="task-lab"><i class="fas fa-layer-group"></i> ${escapeHtml(group.lab)}</span>
-                        <span class="task-cmd" title="${escapeHtml(group.command)}"><i class="fas fa-code" style="color:var(--text-tertiary);margin-right:0.375rem;"></i>${escapeHtml(group.command)}</span>
+            const labActions = CAN_ADMIN && g.lab !== 'Tek cihaz' ? `
+                <button type="button" class="btn ghost icon sm" data-action="task" data-op="PAUSE" data-mode="LAB" data-target="${escapeHtml(g.lab)}" title="Bu sınıfta bekleyenleri duraklat" aria-label="Duraklat"><i class="fas fa-pause"></i></button>
+                <button type="button" class="btn ghost icon sm" data-action="task" data-op="RESUME" data-mode="LAB" data-target="${escapeHtml(g.lab)}" title="Devam ettir" aria-label="Devam ettir"><i class="fas fa-play"></i></button>
+                <button type="button" class="btn ghost icon sm" data-action="task" data-op="CANCEL" data-mode="LAB" data-target="${escapeHtml(g.lab)}" title="Bu sınıftakileri iptal et" aria-label="İptal et"><i class="fas fa-xmark"></i></button>` : '';
+            return `<div class="task-group ${open ? 'open' : ''}" data-group-id="${g.id}">
+                <div class="task-group-head" data-action="toggle" data-group="${g.id}" role="button" tabindex="0" aria-expanded="${open}">
+                    <div class="task-group-info">
+                        <span class="task-lab"><i class="fas fa-layer-group"></i> ${escapeHtml(g.lab)}</span>
+                        <span class="task-cmd" title="${escapeHtml(g.command)}">${escapeHtml(g.command)}</span>
                     </div>
-                    <div class="task-badges">
-                        <div class="badge-box total"><i class="fas fa-desktop"></i> ${group.total}</div>
-                        <div class="badge-box success">${group.success} başarılı</div>
-                        <div style="display:inline-flex;gap:0.25rem;margin-left:0.5rem;">
-                            <button class="btn-action pause icon" onclick="event.stopPropagation(); window.taskAction('PAUSE', 'LAB', ${jsArg(group.lab)})" title="Labı Duraklat"><i class="fas fa-pause"></i></button>
-                            <button class="btn-action resume icon" onclick="event.stopPropagation(); window.taskAction('RESUME', 'LAB', ${jsArg(group.lab)})" title="Devam Ettir"><i class="fas fa-play"></i></button>
-                            <button class="btn-action stop icon" onclick="event.stopPropagation(); window.taskAction('CANCEL', 'LAB', ${jsArg(group.lab)})" title="İptal"><i class="fas fa-xmark"></i></button>
-                        </div>
-                        <i class="fas fa-chevron-down toggle-icon" style="margin-left:0.5rem;"></i>
+                    <div class="task-group-side">
+                        <span class="badge muted"><i class="fas fa-desktop"></i> ${g.pcs.length}</span>
+                        <span class="badge success">${g.done} tamamlandı</span>
+                        ${labActions}
+                        <i class="fas fa-chevron-down chev"></i>
                     </div>
                 </div>
-                <div class="task-details">
-                    <table class="data-table" style="margin:0;">
-                        <thead><tr><th>Kayıtlı Cihaz</th><th>Durum</th><th>Zaman</th><th style="text-align:right;">İşlem</th></tr></thead>
-                        <tbody>${trHtml}</tbody>
-                    </table>
-                </div>
+                <div class="task-group-body"><table class="data-table"><thead><tr><th>Bilgisayar</th><th>Durum</th><th>Eklenme</th><th class="actions">İşlem</th></tr></thead><tbody>${rows}</tbody></table></div>
             </div>`;
-        }
-        document.getElementById('groupedTasksContainer').innerHTML = html;
-        document.getElementById('syncText').innerHTML = '<i class="fas fa-check" style="color:var(--success-text);"></i> Senkron: ' + new Date().toLocaleTimeString();
-    } catch (error) {
-        document.getElementById('groupedTasksContainer').innerHTML = '<div class="card" style="text-align:center;padding:3rem;color:var(--danger-text);"><i class="fas fa-wifi" style="font-size:2rem;margin-bottom:0.75rem;opacity:0.5;"></i><h3>Sunucu Bağlantısı Koptu</h3><p>Python API (Port 8000) yanıt vermiyor.</p></div>';
+        }).join('');
     }
-};
 
-function statCardsHtml(total, success, running, failed) {
-    return `
-        <div class="stat-card"><div class="stat-icon"><i class="fas fa-layer-group"></i></div><div><div class="stat-label">Toplam İşlem</div><div class="stat-value">${total}</div></div></div>
-        <div class="stat-card"><div class="stat-icon success"><i class="fas fa-check-double"></i></div><div><div class="stat-label">Başarılı</div><div class="stat-value" style="color:var(--success-text);">${success}</div></div></div>
-        <div class="stat-card"><div class="stat-icon" style="background:var(--info-bg);color:var(--info-text);"><i class="fas fa-arrows-spin"></i></div><div><div class="stat-label">Aktif Akış</div><div class="stat-value" style="color:var(--info-text);">${running}</div></div></div>
-        <div class="stat-card"><div class="stat-icon danger"><i class="fas fa-triangle-exclamation"></i></div><div><div class="stat-label">Hata/Bekleyen</div><div class="stat-value" style="color:var(--danger-text);">${failed}</div></div></div>`;
-}
+    async function taskAction(btn, op, mode, target) {
+        const scope = mode === 'TASK' ? 'Bu görev' : mode === 'LAB' ? `"${target}" sınıfındaki görevler` : 'Kuyruktaki görevler';
+        const ok = await POps.confirm({ title: 'Emin misiniz?', message: `${scope} ${ACTION_TEXT[op]}.`, confirmText: 'Uygula', danger: op === 'CANCEL' });
+        if (!ok) return;
+        const done = await POps.act(btn, () => POps.post('/api/tasks/action', { action: op, target_mode: mode, target_id: String(target) }),
+            { success: (r) => r && r.changed === 0 ? 'Değişecek görev yoktu.' : `${(r && r.changed) || 0} görev güncellendi.` });
+        if (done) { mem.tasksKey = null; loadTasks(); }
+    }
 
-window.fetchAgentLogs = async function() {
-    try {
-        const logs = await apiRequest('/api/logs?limit=200');
-        const currentHash = JSON.stringify(logs);
-        if (currentHash === window.POpsMemory.lastLogsHash) return;
-        window.POpsMemory.lastLogsHash = currentHash;
-        window.POpsMemory.logs = logs;
-        const pcSelect = document.getElementById('logPcFilter');
-        if (pcSelect.options.length <= 1 && logs.length > 0) {
-            const uniquePcs = [...new Set(logs.map(l => l.pc_name))];
-            uniquePcs.forEach(pc => { const dName = window.POpsMemory.deviceMap[pc] || pc; pcSelect.innerHTML += `<option value="${escapeHtml(pc)}">${escapeHtml(dName)}</option>`; });
+    function openDetail(taskId, groupId) {
+        const g = mem.groups[groupId];
+        const t = g && g.pcs.find(p => String(p.id) === String(taskId));
+        if (!t) return;
+        $('modalPcName').textContent = mem.names[t.target_pc] || t.target_pc;
+        $('modalCommand').textContent = g.command;
+        const out = $('modalOutput');
+        out.textContent = t.output || 'Bilgisayardan henüz yanıt gelmedi.';
+        const bad = ['Failed', 'Error', 'Denied', 'Interrupted', 'Timed Out', 'Expired'].includes(t.status);
+        out.classList.toggle('error', bad);
+        out.classList.toggle('output', !bad);
+        openModal('outputModal');
+        out.scrollTop = 0;
+    }
+
+    // ---- Ajan etkinliği ----
+    async function loadLogs() {
+        try {
+            const logs = await POps.get('/api/logs?limit=200');
+            const key = JSON.stringify(logs);
+            if (key === mem.logsKey) return;
+            mem.logsKey = key;
+            mem.logs = Array.isArray(logs) ? logs : [];
+            const addOptions = (sel, values, label) => {
+                const have = new Set([...sel.options].map(o => o.value));
+                values.filter(v => v && !have.has(v)).forEach(v => sel.append(POps.el('option', { value: v, text: label(v) })));
+            };
+            addOptions($('logPcFilter'), [...new Set(mem.logs.map(l => l.pc_name))], pc => mem.names[pc] || pc);
+            addOptions($('logTypeFilter'), [...new Set(mem.logs.map(logCategory))], c => CATEGORY[c] || c);
+            renderLogs();
+        } catch (e) {
+            if (!mem.logs.length) POps.setError($('agentLogsList'), e);
         }
-        window.renderLogs();
-    } catch (e) {}
-};
+    }
+    // Kayıtlar (agent_logs_v2) kategori ve risk düzeyiyle gelir; eski şemada log_type vardı
+    const CATEGORY = { security: 'Güvenlik', system_maintenance: 'Bakım', restricted_content: 'Kural ihlali', user_activity: 'Kullanıcı', network: 'Ağ', deployment: 'Dağıtım', hardware: 'Donanım', auth: 'Giriş' };
+    const CATEGORY_ICON = { security: 'fa-shield-halved', system_maintenance: 'fa-screwdriver-wrench', restricted_content: 'fa-ban', user_activity: 'fa-user', network: 'fa-globe', deployment: 'fa-terminal', hardware: 'fa-microchip', auth: 'fa-right-to-bracket' };
+    const RISK_TONE = { critical: 'danger', high: 'danger', medium: 'warning', low: 'info', info: 'muted' };
+    const logCategory = (l) => l.category || l.log_type || 'diger';
+    function renderLogs() {
+        const box = $('agentLogsList');
+        const pc = $('logPcFilter').value, type = $('logTypeFilter').value, q = $('logSearchInput').value.toLowerCase().trim();
+        const list = mem.logs.filter(l => (pc === 'ALL' || l.pc_name === pc) && (type === 'ALL' || logCategory(l) === type) && (!q || String(l.message || '').toLowerCase().includes(q)));
+        if (!list.length) { POps.setEmpty(box, { icon: 'fa-magnifying-glass', title: mem.logs.length ? 'Eşleşen kayıt yok' : 'Henüz kayıt yok', compact: true }); return; }
+        box.innerHTML = list.map(l => `<div class="log-line risk-${escapeHtml(l.risk_level || 'info')}">
+            <span class="log-time">${escapeHtml(l.timestamp ? String(l.timestamp).split(' ')[1] || '' : '')}</span>
+            <span class="badge ${RISK_TONE[l.risk_level] || 'muted'} log-type"><i class="fas ${CATEGORY_ICON[logCategory(l)] || 'fa-circle-info'}"></i> ${escapeHtml(CATEGORY[logCategory(l)] || logCategory(l))}</span>
+            <span class="log-pc" title="${escapeHtml(l.pc_name)}">${escapeHtml(mem.names[l.pc_name] || l.pc_name)}</span>
+            <span class="log-msg">${escapeHtml(l.message)}</span>
+        </div>`).join('');
+    }
+    ['logPcFilter', 'logTypeFilter'].forEach(id => $(id).addEventListener('change', renderLogs));
+    $('logSearchInput').addEventListener('input', renderLogs);
 
-window.renderLogs = function() {
-    const container = document.getElementById('agentLogsList');
-    const pcFilter = document.getElementById('logPcFilter').value;
-    const typeFilter = document.getElementById('logTypeFilter').value;
-    const searchWord = document.getElementById('logSearchInput').value.toLowerCase().trim();
-    let filtered = window.POpsMemory.logs || [];
-    if (pcFilter !== 'ALL') filtered = filtered.filter(l => l.pc_name === pcFilter);
-    if (typeFilter !== 'ALL') filtered = filtered.filter(l => l.log_type === typeFilter);
-    if (searchWord) filtered = filtered.filter(l => l.message.toLowerCase().includes(searchWord));
-    if (!filtered || filtered.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-magnifying-glass"></i><h3>Log bulunamadı</h3><p>Kriterlere uygun kayıt yok.</p></div>'; return; }
-    const icons = { System: 'fa-gear', Deploy: 'fa-terminal', AppStart: 'fa-rocket', File: 'fa-file-code', USB: 'fa-usb', Network: 'fa-globe', Error: 'fa-triangle-exclamation' };
-    container.innerHTML = filtered.map(log => {
-        const iconClass = icons[log.log_type] || 'fa-info-circle';
-        const dName = window.POpsMemory.deviceMap[log.pc_name] || log.pc_name;
-        const timeOnly = log.timestamp ? log.timestamp.split(' ')[1] : '';
-        return `<div class="log-line type-${escapeHtml(log.log_type)}">
-            <span class="log-time">${escapeHtml(timeOnly)}</span>
-            <span class="log-badge badge-${escapeHtml(log.log_type)}"><i class="fas ${iconClass}"></i> ${escapeHtml(log.log_type)}</span>
-            <span class="log-pc" title="${escapeHtml(log.pc_name)}">${escapeHtml(dName)}</span>
-            <span class="log-msg">${escapeHtml(log.message)}</span>
-        </div>`;
-    }).join('');
-};
-
-function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
-
-// ================= Zamanlanmış görevler =================
-(function () {
-    const $ = (id) => document.getElementById(id);
+    // ---- Zamanlanmış görevler ----
     const DAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
-    let devices = [];
-    const fmt = (iso) => { if (!iso) return '—'; try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso || ''; } };
-    async function api(path, opts) {
-        const r = await fetch(path, opts);
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) { const e = new Error(d.detail || ('HTTP ' + r.status)); e.status = r.status; throw e; }
-        return d;
-    }
-    const post = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-
-    $('sfDays').innerHTML = DAYS.map((d, i) => `<label><input type="checkbox" value="${i + 1}" ${i < 5 ? 'checked' : ''}> ${d}</label>`).join('');
-    function syncForm() {
-        const t = $('sfType').value, m = $('sfMode').value;
-        $('sfTimeWrap').style.display = t === 'once' ? 'none' : '';
-        $('sfAtWrap').style.display = t === 'once' ? '' : 'none';
-        $('sfDaysWrap').style.display = t === 'weekly' ? '' : 'none';
-        $('sfLabWrap').style.display = m === 'LAB' ? '' : 'none';
-        $('sfDevs').style.display = m === 'PC' ? 'flex' : 'none';
-    }
-    ['sfType', 'sfMode'].forEach(id => $(id).addEventListener('change', syncForm));
-
-    async function loadDevices() {
-        try { devices = await api('/api/devices'); } catch (e) { devices = []; }
-        const labs = [...new Set(devices.map(d => d.lab).filter(Boolean))].sort();
-        $('sfLab').innerHTML = labs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('') || '<option value="">Sınıf yok</option>';
-        $('sfDevs').innerHTML = devices.map(d => `<label><input type="checkbox" value="${escapeHtml(d.hw_id)}"> ${escapeHtml(d.display_name || d.real_hostname || d.hw_id)} <span style="color:var(--text-tertiary);font-size:0.75rem;">${escapeHtml(d.lab || '')} · ${escapeHtml(d.hw_id)}</span></label>`).join('') || '<span>Cihaz yok</span>';
-    }
-
-    function when(t) {
-        if (t.schedule_type === 'once') return 'Bir kez · ' + escapeHtml(fmt(t.run_at));
-        if (t.schedule_type === 'daily') return 'Her gün ' + escapeHtml(t.time_of_day || '');
-        return escapeHtml((t.weekdays || []).map(d => DAYS[d - 1]).join(', ')) + ' ' + escapeHtml(t.time_of_day || '');
-    }
-    function target(t) {
-        if (t.target_mode === 'ALL') return 'Tüm cihazlar';
-        if (t.target_mode === 'LAB') return 'Sınıf: ' + escapeHtml((t.targets || []).join(', '));
-        return (t.targets || []).length + ' cihaz';
-    }
-    async function loadList() {
+    const fmt = (iso) => { if (!iso) return '—'; try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return String(iso); } };
+    let schedLoaded = false;
+    async function loadSchedules() {
         let d;
-        try { d = await api('/api/scheduled_tasks'); }
+        try { d = await POps.get('/api/scheduled_tasks'); }
         catch (e) {
-            if (e.status === 403) { $('schedCard').style.display = 'none'; return; }
-            $('schedList').innerHTML = `<div style="color:var(--text-tertiary);font-size:var(--text-sm);">Zamanlanmış görevler alınamadı${e.status === 404 ? ' (sunucu güncellemesi gerekli)' : ''}.</div>`;
+            if (e.status === 403 || e.status === 409) { $('schedCard').classList.add('hidden'); return; }   // yetki yok ya da modül kapalı
+            if (!schedLoaded) POps.setError($('schedList'), e);
             return;
         }
-        $('sfTz').textContent = 'Saatler sunucu saatine göredir (şu an: ' + fmt(d.server_time) + ').';
+        schedLoaded = true;
+        $('schedCard').classList.remove('hidden');
+        $('sfTz').textContent = 'Saatler sunucu saatine göredir (şu an ' + fmt(d.server_time) + ').';
         const items = d.items || [];
-        $('schedList').innerHTML = items.length ? items.map(t => `
-            <div class="sched-row${t.enabled ? '' : ' off'}">
-                <div><div class="n">${escapeHtml(t.name)}</div><div class="c" title="${escapeHtml(t.command)}">${escapeHtml(t.command)}</div></div>
-                <div><div class="s">${when(t)}</div><div class="sub">${target(t)}</div></div>
-                <div><div class="s">${t.enabled && t.next_run ? 'Sıradaki: ' + escapeHtml(fmt(t.next_run)) : 'Durduruldu'}</div>
-                     <div class="sub">${t.last_run ? 'Son: ' + escapeHtml(fmt(t.last_run)) + (t.last_result ? ' · ' + escapeHtml(t.last_result) : '') : 'Henüz çalışmadı'}</div></div>
-                <div class="sched-actions">
-                    <button class="sched-btn" data-act="run" data-id="${escapeHtml(t.id)}" title="Şimdi bir kez çalıştır"><i class="fas fa-play"></i> Şimdi</button>
-                    <button class="sched-btn" data-act="toggle" data-id="${escapeHtml(t.id)}" data-on="${t.enabled ? 1 : 0}">${t.enabled ? '<i class="fas fa-pause"></i> Durdur' : '<i class="fas fa-play"></i> Başlat'}</button>
-                    <button class="sched-btn danger" data-act="del" data-id="${escapeHtml(t.id)}"><i class="fas fa-trash"></i></button>
-                </div>
-            </div>`).join('') : '<div style="color:var(--text-tertiary);font-size:var(--text-sm);padding:0.5rem 0;">Zamanlanmış görev yok.</div>';
-        $('schedList').querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', () => act(b)));
+        if (!items.length) { POps.setEmpty($('schedList'), { icon: 'fa-calendar', title: 'Zamanlanmış görev yok', text: 'Belirli saatlerde tekrar eden komutlar için yeni görev ekleyin.', compact: true }); return; }
+        const when = (t) => t.schedule_type === 'once' ? 'Bir kez · ' + fmt(t.run_at) : t.schedule_type === 'daily' ? 'Her gün ' + (t.time_of_day || '') : (t.weekdays || []).map(x => DAYS[x - 1]).join(', ') + ' ' + (t.time_of_day || '');
+        const target = (t) => t.target_mode === 'ALL' ? 'Bütün bilgisayarlar' : t.target_mode === 'LAB' ? 'Sınıf: ' + (t.targets || []).join(', ') : (t.targets || []).length + ' bilgisayar';
+        $('schedList').innerHTML = items.map(t => `<div class="sched-row${t.enabled ? '' : ' off'}">
+            <div><div class="n">${escapeHtml(t.name)}</div><div class="c" title="${escapeHtml(t.command)}">${escapeHtml(t.command)}</div></div>
+            <div><div>${escapeHtml(when(t))}</div><div class="sub">${escapeHtml(target(t))}</div></div>
+            <div><div>${t.enabled && t.next_run ? 'Sıradaki: ' + escapeHtml(fmt(t.next_run)) : 'Durduruldu'}</div>
+                <div class="sub">${t.last_run ? 'Son: ' + escapeHtml(fmt(t.last_run)) + (t.last_result ? ' · ' + escapeHtml(t.last_result) : '') : 'Henüz çalışmadı'}</div></div>
+            <div class="row-actions">${CAN_ADMIN ? `
+                <button type="button" class="btn secondary sm" data-action="sched-run" data-id="${escapeHtml(t.id)}"><i class="fas fa-play"></i> Şimdi çalıştır</button>
+                <button type="button" class="btn secondary sm" data-action="sched-toggle" data-id="${escapeHtml(t.id)}" data-on="${t.enabled ? 1 : 0}">${t.enabled ? '<i class="fas fa-pause"></i> Durdur' : '<i class="fas fa-play"></i> Başlat'}</button>
+                <button type="button" class="btn ghost icon sm" data-action="sched-del" data-id="${escapeHtml(t.id)}" title="Sil" aria-label="Sil"><i class="fas fa-trash"></i></button>` : ''}
+            </div>
+        </div>`).join('');
     }
-    async function act(b) {
-        const id = b.dataset.id;
-        try {
-            if (b.dataset.act === 'run') {
-                if (!confirm('Bu görev şimdi bir kez hedef cihazlarda çalıştırılsın mı?')) return;
-                const r = await post(`/api/scheduled_tasks/${encodeURIComponent(id)}/run`, {});
-                showToast(`${r.queued} cihaz için kuyruğa eklendi.`, 'success');
-                window.fetchAndRenderTasks && window.fetchAndRenderTasks();
-            } else if (b.dataset.act === 'toggle') {
-                await post(`/api/scheduled_tasks/${encodeURIComponent(id)}/toggle`, { enabled: b.dataset.on !== '1' });
-            } else {
-                if (!confirm('Zamanlanmış görev silinsin mi?')) return;
-                await api(`/api/scheduled_tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
-            }
-            loadList();
-        } catch (e) { showToast(e.message, 'error'); }
+
+    async function schedAction(btn) {
+        const id = encodeURIComponent(btn.dataset.id);
+        if (btn.dataset.action === 'sched-run') {
+            if (!await POps.confirm({ title: 'Şimdi çalıştırılsın mı?', message: 'Görev hedef bilgisayarlarda bir kez, hemen çalıştırılacak.', confirmText: 'Çalıştır' })) return;
+            if (await POps.act(btn, () => POps.post(`/api/scheduled_tasks/${id}/run`), { success: (r) => `${(r && r.queued) || 0} bilgisayar için kuyruğa eklendi.` })) { mem.tasksKey = null; loadTasks(); }
+        } else if (btn.dataset.action === 'sched-toggle') {
+            const on = btn.dataset.on !== '1';
+            if (await POps.act(btn, () => POps.post(`/api/scheduled_tasks/${id}/toggle`, { enabled: on }), { success: on ? 'Görev başlatıldı.' : 'Görev durduruldu.' })) loadSchedules();
+        } else {
+            if (!await POps.confirm({ title: 'Zamanlanmış görev silinsin mi?', message: 'Kuyruğa daha önce eklenmiş görevler etkilenmez.', confirmText: 'Sil', danger: true })) return;
+            if (await POps.act(btn, () => POps.del(`/api/scheduled_tasks/${id}`), { success: 'Zamanlanmış görev silindi.' })) loadSchedules();
+        }
     }
-    $('schedNewBtn').addEventListener('click', () => { $('schedForm').classList.add('open'); syncForm(); loadDevices(); });
-    $('sfCancel').addEventListener('click', () => $('schedForm').classList.remove('open'));
-    $('sfSave').addEventListener('click', async () => {
+
+    function syncForm() {
+        const t = $('sfType').value, m = $('sfMode').value;
+        $('sfTimeWrap').classList.toggle('hidden', t === 'once');
+        $('sfAtWrap').classList.toggle('hidden', t !== 'once');
+        $('sfDaysWrap').classList.toggle('hidden', t !== 'weekly');
+        $('sfLabWrap').classList.toggle('hidden', m !== 'LAB');
+        $('sfDevsWrap').classList.toggle('hidden', m !== 'PC');
+    }
+    async function openSchedForm() {
+        syncForm();
+        openModal('schedModal');
+        setTimeout(() => $('sfName').focus(), 50);
+        let devices = [];
+        try { devices = await POps.get('/api/devices'); } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        const labs = [...new Set(devices.map(d => d.lab).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'));
+        $('sfLab').replaceChildren(...(labs.length ? labs.map(l => POps.el('option', { value: l, text: l })) : [POps.el('option', { value: '', text: 'Sınıf yok' })]));
+        $('sfDevs').replaceChildren(...(devices.length ? devices.map(d => POps.el('label', { className: 'check' }, [
+            POps.el('input', { type: 'checkbox', value: d.hw_id }), document.createTextNode(' ' + POps.deviceName(d) + ' '),
+            POps.el('span', { className: 'text-xs text-muted', text: (d.lab || '') + ' · ' + d.hw_id })
+        ])) : [POps.el('span', { className: 'text-muted text-sm', text: 'Cihaz yok' })]));
+    }
+    async function saveSchedule(btn) {
         const mode = $('sfMode').value;
         const body = {
             name: $('sfName').value.trim(), command: $('sfCmd').value.trim(), target_mode: mode,
             targets: mode === 'LAB' ? [$('sfLab').value].filter(Boolean) : mode === 'PC' ? [...$('sfDevs').querySelectorAll('input:checked')].map(i => i.value) : [],
             schedule_type: $('sfType').value, time_of_day: $('sfTime').value, run_at: $('sfAt').value || null,
-            weekdays: [...$('sfDays').querySelectorAll('input:checked')].map(i => parseInt(i.value)),
+            weekdays: [...$('sfDays').querySelectorAll('input:checked')].map(i => parseInt(i.value, 10)),
+            enabled: true
         };
-        if (!confirm(`"${body.command.slice(0, 80)}" komutu zamanlanacak ve hedef cihazlarda SYSTEM olarak çalışacak. Onaylıyor musunuz?`)) return;
-        try {
-            await post('/api/scheduled_tasks', body);
-            showToast('Zamanlanmış görev kaydedildi.', 'success');
-            $('schedForm').classList.remove('open');
+        if (!body.name) { POps.toast('warning', 'Göreve bir ad verin.'); $('sfName').focus(); return; }
+        if (!body.command) { POps.toast('warning', 'Çalıştırılacak komutu yazın.'); $('sfCmd').focus(); return; }
+        if (mode !== 'ALL' && !body.targets.length) { POps.toast('warning', mode === 'LAB' ? 'Bir sınıf seçin.' : 'En az bir bilgisayar seçin.'); return; }
+        if (body.schedule_type === 'weekly' && !body.weekdays.length) { POps.toast('warning', 'En az bir gün seçin.'); return; }
+        const ok = await POps.confirm({ title: 'Görev zamanlansın mı?', message: 'Komut hedef bilgisayarlarda SYSTEM hesabıyla çalışacak:', note: body.command.slice(0, 300), confirmText: 'Zamanla' });
+        if (!ok) return;
+        if (await POps.act(btn, () => POps.post('/api/scheduled_tasks', body), { success: 'Zamanlanmış görev kaydedildi.' })) {
+            closeModal('schedModal');
             $('sfName').value = ''; $('sfCmd').value = '';
-            loadList();
-        } catch (e) { showToast(e.message, 'error'); }
-    });
-    syncForm();
-    loadList();
-    popsPoll(loadList, 30000);
-})();
+            loadSchedules();
+        }
+    }
+    if (CAN_ADMIN) {
+        $('sfDays').replaceChildren(...DAYS.map((d, i) => POps.el('label', { className: 'chip' }, [POps.el('input', { type: 'checkbox', value: String(i + 1), checked: i < 5 }), document.createTextNode(' ' + d)])));
+        ['sfType', 'sfMode'].forEach(id => $(id).addEventListener('change', syncForm));
+        $('sfSave').addEventListener('click', (e) => saveSchedule(e.currentTarget));
+    }
 
-document.addEventListener('DOMContentLoaded', () => {
-    if (typeof window.showToast !== 'function') window.showToast = function(msg) { console.log(msg); };
-    window.fetchAndRenderTasks();
-    window.fetchAgentLogs();
-    popsPoll(() => Promise.all([window.fetchAndRenderTasks(), window.fetchAgentLogs()]), 5000);
+    // ---- Tıklamalar ----
+    document.querySelector('.app-content').addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-action]');
+        if (!b) return;
+        switch (b.dataset.action) {
+            case 'toggle': {
+                if (e.target.closest('button')) return;   // başlıktaki düğmeler grubu açıp kapatmaz
+                const el = b.closest('.task-group');
+                const open = el.classList.toggle('open');
+                b.setAttribute('aria-expanded', open);
+                open ? mem.expanded.add(b.dataset.group) : mem.expanded.delete(b.dataset.group);
+                break;
+            }
+            case 'detail': openDetail(b.dataset.task, b.dataset.group); break;
+            case 'task': taskAction(b, b.dataset.op, b.dataset.mode, b.dataset.target); break;
+            case 'bulk': taskAction(b, b.dataset.op, 'ALL', 'GLOBAL'); break;
+            case 'clear':
+                if (!await POps.confirm({ title: 'Bütün görev kayıtları silinsin mi?', message: 'Bekleyen, çalışan ve biten bütün görevler sonuçlarıyla birlikte silinecek. Bilgisayarda çalışmakta olan komut durmaz ama sonucu kaydedilmez. Silme işlemi denetim kaydına yazılır.', confirmText: 'Hepsini sil', danger: true })) return;
+                if (await POps.act(b, () => POps.post('/api/flush_queue'), { success: 'Görev kayıtları silindi.' })) { mem.tasksKey = null; loadTasks(); }
+                break;
+            case 'sched-new': openSchedForm(); break;
+            case 'sched-run': case 'sched-toggle': case 'sched-del': schedAction(b); break;
+        }
+    });
+    document.querySelector('.app-content').addEventListener('keydown', (e) => {
+        const head = e.target.closest && e.target.closest('.task-group-head');
+        if (head && (e.key === 'Enter' || e.key === ' ') && e.target === head) { e.preventDefault(); head.click(); }
+    });
+
+    loadTasks();
+    loadLogs();
+    loadSchedules();
+    popsPoll(() => Promise.all([loadTasks(), loadLogs()]), 5000);
+    popsPoll(loadSchedules, 30000);
 });
 </script>
 
