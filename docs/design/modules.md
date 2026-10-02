@@ -1,6 +1,6 @@
 # Tasarım taslağı: modüller ve kurulum profilleri
 
-> **Durum: taslak, tartışma için.** Kod yazılmadı. Kararlar netleşince ana noktaları `docs/decisions.md`'ye
+> **Durum: kararlar verildi (bölüm 10), uygulama başlıyor.** Kod yazılmadı. Kararlar netleşince ana noktaları `docs/decisions.md`'ye
 > (İngilizce) geçer, bu dosya uygulama rehberi olarak kalır.
 
 ## 1. Amaç
@@ -34,7 +34,7 @@ ya da kendi ekranımız) sonraki karar; yapı onları da taşıyacak şekilde ku
 | **Çekirdek** | Her kurulumda açık, kapatılamaz: cihazlar ve laboratuvarlar, kayıt ve cihaz kimliği, ajan güncelleme, denetim kaydı, kullanıcılar ve roller, bildirimler, sunucu sağlığı ve yedek. |
 | **Modül** | Açılıp kapanabilen özellik. Bir kimliği, bağımlılıkları, ayarları, izinleri ve (varsa) ajan tarafı vardır. |
 | **Etkinlik** | Modül bu kurumda ya da bu laboratuvarda kullanılıyor mu. Kapsam: kurum geneli → laboratuvar. En özel ayar kazanır. |
-| **İzin** | Kim kullanabilir: rol + modül izni (ör. `vision.izle`, `vision.kontrol`). İlk sürümde kurum geneli, ikinci adımda laboratuvar bazında (P2'deki "lab bazında yetki"). |
+| **İzin** | Kim kullanabilir: rol + modül izni (ör. `vision.izle`, `vision.kontrol`). Yönetici rolleri kurum geneli; **öğretmen** rolü yalnızca atandığı laboratuvarlarda (bölüm 6.1). |
 | **Hazır olma** | Modülün ihtiyaç duyduğu şey kurulu ve çalışıyor mu (dış servis erişilebilir mi, ayarları tamam mı). Hazır olmayan modül panelde "Kurulum gerekli" kartıyla görünür. |
 | **Profil** | Kurulumda seçilen başlangıç ayarları ("Okul laboratuvarı", "Kurum"). Sonradan modül modül değiştirilebilir. |
 
@@ -106,6 +106,28 @@ kod değişikliğidir ve testle gelir.
      **etkin = sunucuda açık VE bilgisayarda izinli**.
    - Ajan kapalı modülün yan işlerini de durdurur (ör. DNS izleme, tepsideki "Sorun bildir").
 
+### 6.1 Öğretmen rolü ve öğretmen bilgisayarı (ilk sürümde)
+
+- **Rol `teacher` (öğretmen):** bir ya da birkaç laboratuvara atanır (`user_labs`: kullanıcı ↔ laboratuvar).
+  Panelde ve API'de yalnızca o laboratuvarların cihazlarını görür.
+- **İzinleri:**
+  - kendi laboratuvarının bilgisayarlarının durumu ve ekran önizlemeleri;
+  - Vision ile **yalnızca izleme** (onay ya da duyuru kuralları aynen geçerli, uzaktan girdi yok);
+  - kendi laboratuvarını uyandırma (Wake-on-LAN).
+- **İzni olmayanlar:** uzak komut, dağıtım, karantina, ayarlar, kullanıcılar, diğer laboratuvarlar. Sunucuda
+  varsayılan "yasak": yönetici gerektiren bütün uçlar öğretmeni zaten reddeder; öğretmen yalnızca açıkça izin
+  verilen ve laboratuvar denetimi yapılan uçlara erişir. Her erişim kendi laboratuvarı için denetlenir (başka
+  laboratuvarın cihaz kimliğini bilmek yetmez).
+- **Öğretmen bilgisayarı (ana cihaz):** her laboratuvarın bir öğretmen bilgisayarı olabilir
+  (`lab_settings.main_pc`).
+  - Bugün bilgisayar adıyla tutuluyor; ad değişince bağ kopuyor. Donanım kimliğine (`HW-…`) geçirilir; migration
+    eşleşen adları dönüştürür.
+  - Laboratuvar planında "Öğretmen bilgisayarı" olarak işaretlenir ve öğretmenin izlediği bilgisayarlar listesine
+    girmez.
+  - İleride öğretmen ekranı bu bilgisayarın tepsisinden açılabilir (öğretmen modu kararıyla birlikte).
+- Öğretmen modülü bağımsız bir modül değildir; `vision` ve `wol` modüllerinin laboratuvardaki etkin ayarına uyar.
+  Vision o laboratuvarda kapalıysa öğretmen de izleyemez.
+
 Eski ajanlar modül listesini bilmez. Sunucu onlar için de 1. katmanda karar verdiği için güvenlik açığı oluşmaz;
 yalnızca tepsideki öğeler ajan güncellenene kadar görünmeye devam eder.
 
@@ -164,7 +186,8 @@ yalnızca tepsideki öğeler ajan güncellenene kadar görünmeye devam eder.
 | Faz | İçerik | Kim |
 | --- | --- | --- |
 | 0 | .NET 10 geçişi (devam ediyor) | LOCAL |
-| 1 | Modül kaydı, `module_settings`, sunucu ve panel uygulaması, Sistem → Modüller, profiller, mevcut özelliklerin modüle bağlanması | Sunucu |
+| 1a | Modül kaydı, `module_settings`, sunucu ve panel uygulaması, Sistem → Modüller, profiller, mevcut özelliklerin modüle bağlanması | Sunucu |
+| 1b | Öğretmen rolü, laboratuvar ataması, öğretmen bilgisayarının donanım kimliğine geçmesi | Sunucu |
 | 1b | Ajanın modül listesini alıp uygulaması (tepsi öğeleri, DNS izleme) | LOCAL |
 | 2 | SIEM'e kayıt gönderme (yalnızca sunucu, en kısa) | Sunucu |
 | 3 | OIDC girişi; ardından LDAP | Sunucu |
@@ -172,14 +195,10 @@ yalnızca tepsideki öğeler ajan güncellenene kadar görünmeye devam eder.
 
 Her faz ayrı PR ve ayrı sürüm. Her biri testle ve belgeyle gelir.
 
-## 10. Senin kararın gereken noktalar
+## 10. Kararlar (2 Ekim 2026)
 
-1. **Gruplar:** İlk sürümde modül kapsamı yalnızca laboratuvar olsun mu? Kurumda "departman" gibi laboratuvardan
-   bağımsız gruplar sonra eklenebilir. Önerim: evet, şimdilik laboratuvar.
-2. **Öğretmen rolü:** "Yalnızca kendi laboratuvarını görür" yetkisi ilk sürüme girsin mi, yoksa laboratuvar bazında
-   yetkiyle birlikte (P2) mi? Önerim: P2 ile birlikte; ilk sürüm kurum geneli roller.
-3. **Mevcut kurulumlar:** Yükseltmede her şey açık başlasın, davranış değişmesin. Önerim: evet.
-4. **Katalog kaynağı:** Önce yalnızca kendi yüklediğimiz paketler mi, winget de mi? Önerim: önce kendi paketlerimiz
-   (internetsiz okulda da çalışır), winget prototipten sonra.
-5. **Kapalı modülün verisi:** Modül kapatılınca geçmiş verisi (ör. yardım masası talepleri) silinmesin, yalnızca
-   gizlensin; silme saklama süresi kurallarına kalsın. Önerim: evet.
+1. **Gruplar:** ilk sürümde modül kapsamı yalnızca laboratuvar. Departman gibi bağımsız gruplar gerekirse sonra.
+2. **Öğretmen rolü ilk sürümde:** laboratuvarın öğretmen bilgisayarı (ana cihaz) kaydı düzeltilerek; bölüm 6.1.
+3. **Mevcut kurulumlar:** yükseltmede bütün modüller açık başlar, davranış değişmez.
+4. **Katalog:** önce yalnızca sunucuya yüklenen kendi paketlerimiz; winget prototipten sonra.
+5. **Kapatılan modülün verisi** silinmez, yalnızca gizlenir; silme saklama süresi kurallarına kalır.
