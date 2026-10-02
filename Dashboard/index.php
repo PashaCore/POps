@@ -601,7 +601,7 @@
         <div class="dash-card-head">
             <div class="dash-card-title">
                 <span class="ti t-success"><i class="fas fa-chart-line"></i></span>
-                Ağdaki PC Sayısı <span class="badge-mini">Canlı</span>
+                Çevrimiçi cihazlar <span class="badge-mini">Son 10 dk</span>
             </div>
         </div>
         <div class="chart-wrap"><canvas id="pcCountChart"></canvas></div>
@@ -699,7 +699,14 @@
 document.addEventListener('DOMContentLoaded', () => {
     let dashboardChart = null, pcCountChart = null, logSizeChart = null, storageChart = null;
     let lastLogsHash = '', lastHistoryHash = '';
+    // Çevrimiçi cihaz sayısı geçmişi: her yenilemede bir nokta, son 10 dakika. Sayfa değişip dönünce kaybolmasın diye
+    // bu sekmenin oturum belleğinde tutulur (yoksa yalnızca bellekte).
+    const HISTORY_KEY = 'pops_online_history', HISTORY_MS = 10 * 60 * 1000;
+    let pcHistory = [];
+    try { pcHistory = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]').filter(p => p && Date.now() - p.t < HISTORY_MS); } catch (e) { pcHistory = []; }
     const pcHistoryData = [], pcHistoryLabels = [];
+    const fmtTime = (t) => new Date(t).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    pcHistory.forEach(p => { pcHistoryLabels.push(fmtTime(p.t)); pcHistoryData.push(p.on); });
     let deviceNames = {};
     const css = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 
@@ -726,9 +733,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ctxLine) {
             pcCountChart = new Chart(ctxLine.getContext('2d'), {
                 type: 'line',
-                data: { labels: pcHistoryLabels, datasets: [{ label: 'Toplam cihaz', data: pcHistoryData, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 2, fill: true, tension: 0.4, pointRadius: 0, pointHoverRadius: 4 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
-                    scales: { x: { display: false }, y: { beginAtZero: false, grid: { color: css('--border-subtle', '#e5e7eb') }, ticks: { precision: 0, color: css('--text-tertiary', '#94a3b8') } } } }
+                data: { labels: pcHistoryLabels, datasets: [{ label: 'Çevrimiçi', data: pcHistoryData, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.12)', borderWidth: 2, fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }] },
+                options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } },
+                    scales: { x: { ticks: { maxTicksLimit: 5, maxRotation: 0, color: css('--text-tertiary', '#94a3b8') }, grid: { display: false } },
+                              y: { beginAtZero: true, grid: { color: css('--border-subtle', '#e5e7eb') }, ticks: { precision: 0, color: css('--text-tertiary', '#94a3b8') } } } }
             });
         }
         const ctxLog = document.getElementById('logSizeChart');
@@ -825,14 +833,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        const now = new Date();
-        pcHistoryLabels.push(now.toLocaleTimeString('tr-TR'));
-        pcHistoryData.push(allDevices.length);
-        if (pcHistoryLabels.length > 30) { pcHistoryLabels.shift(); pcHistoryData.shift(); }
+        const nowMs = Date.now();
+        const onlineNow = allDevices.filter(d => String(d.status || '').toLowerCase() === 'online').length;
+        pcHistory.push({ t: nowMs, on: onlineNow });
+        while (pcHistory.length && nowMs - pcHistory[0].t > HISTORY_MS) pcHistory.shift();
+        try { sessionStorage.setItem(HISTORY_KEY, JSON.stringify(pcHistory)); } catch (e) { /* özel pencere */ }
+        pcHistoryLabels.length = 0; pcHistoryData.length = 0;
+        pcHistory.forEach(p => { pcHistoryLabels.push(fmtTime(p.t)); pcHistoryData.push(p.on); });
         if (pcCountChart) {
-            const minVal = Math.min(...pcHistoryData), maxVal = Math.max(...pcHistoryData);
-            if (minVal === maxVal) { pcCountChart.options.scales.y.min = Math.max(0, minVal - 1); pcCountChart.options.scales.y.max = maxVal + 1; }
-            else { delete pcCountChart.options.scales.y.min; delete pcCountChart.options.scales.y.max; }
+            // Üst sınır kayıtlı cihaz sayısı: çizgi "kaç cihazdan kaçı açık"ı gösterir
+            pcCountChart.options.scales.y.max = Math.max(1, allDevices.length);
             pcCountChart.update('none');
         }
 
