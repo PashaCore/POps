@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using POps.Shared;
 
 #nullable disable
 
@@ -140,22 +142,88 @@ namespace POpsAgent
     }
 
     // "Değişmediyse gönderme, yine de belli aralıkla gönder": son BAŞARIYLA gönderilen özet ve zamanı tutulur.
+    // statePath verilirse kayıt diskte de tutulur (servis yeniden başlayınca da geçerli). Kayıt bir anahtara (cihaz
+    // kimliği) bağlıdır: anahtar değiştiyse gönderilir. Saat geri alındıysa (son gönderim gelecekte) de gönderilir.
     public sealed class ReportGate
     {
         private readonly TimeSpan _maxSilence;
+        private readonly string _statePath;
+        private readonly object _sync = new object();
 
-        public ReportGate(TimeSpan maxSilence) => _maxSilence = maxSilence;
+        public ReportGate(TimeSpan maxSilence, string statePath = null)
+        {
+            _maxSilence = maxSilence;
+            _statePath = statePath;
+            Load();
+        }
 
         public string LastHash { get; private set; }
         public DateTime LastSentUtc { get; private set; } = DateTime.MinValue;
+        public string LastKey { get; private set; }
 
-        public bool ShouldSend(string hash, DateTime utcNow) =>
-            LastHash == null || !string.Equals(hash, LastHash, StringComparison.Ordinal) || utcNow - LastSentUtc >= _maxSilence;
-
-        public void MarkSent(string hash, DateTime utcNow)
+        public bool ShouldSend(string hash, DateTime utcNow, string key = null)
         {
-            LastHash = hash;
-            LastSentUtc = utcNow;
+            lock (_sync)
+                return LastHash == null || !string.Equals(hash, LastHash, StringComparison.Ordinal)
+                    || !string.Equals(key, LastKey, StringComparison.Ordinal)
+                    || utcNow < LastSentUtc || utcNow - LastSentUtc >= _maxSilence;
+        }
+
+        public void MarkSent(string hash, DateTime utcNow, string key = null)
+        {
+            lock (_sync)
+            {
+                LastHash = hash;
+                LastSentUtc = utcNow;
+                LastKey = key;
+            }
+            Save(new GateState { Hash = hash, Key = key, SentAt = new DateTimeOffset(utcNow).ToUnixTimeSeconds() });
+        }
+
+        // Sunucudaki kayıt artık güvenilmez (ör. cihaz yeniden kaydoldu): bir sonraki turda gönderilir
+        public void Forget()
+        {
+            lock (_sync)
+            {
+                LastHash = null;
+                LastSentUtc = DateTime.MinValue;
+                LastKey = null;
+            }
+            if (_statePath == null) return;
+            try { File.Delete(_statePath); }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"{_statePath} silinemedi: {ex.Message}", true); }
+        }
+
+        private sealed class GateState
+        {
+            [JsonPropertyName("sha256")] public string Hash { get; set; }
+            [JsonPropertyName("hw_id")] public string Key { get; set; }
+            [JsonPropertyName("sent_at")] public long SentAt { get; set; }
+        }
+
+        private void Load()
+        {
+            if (_statePath == null || !File.Exists(_statePath)) return;
+            try
+            {
+                var state = JsonSerializer.Deserialize<GateState>(File.ReadAllText(_statePath));
+                if (string.IsNullOrEmpty(state?.Hash)) return;
+                LastSentUtc = DateTimeOffset.FromUnixTimeSeconds(state.SentAt).UtcDateTime;
+                LastHash = state.Hash;
+                LastKey = state.Key;
+            }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"{_statePath} okunamadı, envanter yeniden gönderilecek: {ex.Message}", true); }
+        }
+
+        private void Save(GateState state)
+        {
+            if (_statePath == null) return;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_statePath));
+                File.WriteAllText(_statePath, JsonSerializer.Serialize(state));
+            }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"{_statePath} yazılamadı: {ex.Message}", true); }
         }
     }
 }

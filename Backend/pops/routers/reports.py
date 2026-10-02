@@ -11,6 +11,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
+from pops import modules
 from pops.db import execute_query
 from pops.security import require_auth
 
@@ -25,7 +26,7 @@ def _clamp_days(days: int) -> int:
     return max(1, min(int(days or 30), 365))
 
 
-@router.get("/api/reports/summary")
+@router.get("/api/reports/summary", dependencies=[modules.require("reports")])
 async def report_summary(days: int = 30, auth: dict = Depends(require_auth)):
     days = _clamp_days(days)
     since = _since(days)
@@ -123,7 +124,7 @@ def _cell(v) -> str:
     return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s
 
 
-@router.get("/api/reports/export")
+@router.get("/api/reports/export", dependencies=[modules.require("reports")])
 async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_auth)):
     days = _clamp_days(days)
     if kind == "devices":

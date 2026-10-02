@@ -474,6 +474,54 @@ def test_review4():
             chk(os.listdir(d) == ["paket.bin"], "yarıda kalan yükleme iz bırakmadı")
 
 
+def test_modules():
+    """Modül kararı: laboratuvar istisnası > kurum ayarı > açık; bağımlılıklar; profiller tam."""
+    import asyncio
+    import time
+
+    from pops import modules
+
+    def setting(org, lab):
+        modules._cache.update(at=time.monotonic() + 3600, org=org, lab=lab)
+
+    async def run():
+        setting({}, {})
+        chk(all([await modules.enabled(m.id) for m in modules.MODULES]), "ayar yoksa hepsi açık (mevcut kurulum)")
+        chk(await modules.enabled("cihazlar"), "modül olmayan özellik (çekirdek) her zaman açık")
+        setting({"vision": False}, {("vision", "Lab-1"): True})
+        chk(not await modules.enabled("vision") and await modules.enabled("vision", "Lab-1")
+            and not await modules.enabled("vision", "Lab-2"), "laboratuvar istisnası kurum ayarını ezer")
+        chk(await modules.enabled_anywhere("vision"), "bir laboratuvarda açıksa 'herhangi bir yerde açık'")
+        setting({"vision": True}, {("vision", "Lab-2"): False})
+        chk(await modules.enabled("vision", "Lab-1") and not await modules.enabled("vision", "Lab-2"),
+            "kurumda açık, tek laboratuvarda kapalı")
+        setting({"terminal": False}, {})
+        chk(not await modules.enabled("deploy") and not await modules.enabled("schedules"),
+            "uzak komut kapalıyken dağıtım (depends) ve zamanlanmış görevler (depends_any) de kapalı")
+        chk(not await modules.enabled_anywhere("deploy"), "hiçbir yerde açık değil")
+        setting({"terminal": False}, {("terminal", "Lab-1"): True})
+        chk(await modules.enabled("deploy", "Lab-1") and await modules.enabled_anywhere("deploy"),
+            "bağımlılık laboratuvarda açılınca bağımlı modül de orada açık")
+        setting({"software": False}, {})
+        chk(not await modules.enabled("licenses"), "lisanslar yazılım envanteri olmadan kapalı")
+        try:
+            setting({"vision": False}, {})
+            await modules.check("vision", lab="Lab-9")
+            chk(False, "kapalı modül 409")
+        except Exception as exc:
+            chk(getattr(exc, "status_code", None) == 409 and exc.headers.get("X-POps-Module") == "vision",
+                "kapalı modül 409 + X-POps-Module")
+        modules.invalidate()
+
+    asyncio.run(run())
+    ids = {m.id for m in modules.MODULES}
+    chk(all(set(v) == ids for v in modules.PROFILES.values()), "her profil her modüle karar veriyor")
+    chk(all(d in ids for m in modules.MODULES for d in m.depends + m.depends_any), "bağımlılıklar tanımlı modüller")
+    chk(not modules.PROFILES["org"]["vision"] and modules.PROFILES["school"]["vision"]
+        and modules.PROFILES["org"]["helpdesk"] and not modules.PROFILES["school"]["helpdesk"],
+        "profil varsayılanları tasarımdaki gibi")
+
+
 def main():
     test_update_notice()
     test_log_format()
@@ -483,6 +531,7 @@ def main():
     test_agent_health()
     test_p1()
     test_review4()
+    test_modules()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

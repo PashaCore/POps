@@ -50,12 +50,13 @@ namespace POps.Tests.Agent
             };
 
             Assert.Null(await reporter.ReportOnceAsync());
+            // Değişmedi: gönderilmez, ama sağlık bilgisi "sunucuda güncel" olarak yenilenir
             Assert.Null(await reporter.ReportOnceAsync());
-            Assert.Equal((1, 1), (posts, uploaded));
+            Assert.Equal((1, 2), (posts, uploaded));
 
-            now = now.AddDays(1);
+            now = now.AddDays(7);
             Assert.Null(await reporter.ReportOnceAsync());
-            Assert.Equal((2, 2), (posts, uploaded));
+            Assert.Equal((2, 3), (posts, uploaded));
         }
 
         [Theory]

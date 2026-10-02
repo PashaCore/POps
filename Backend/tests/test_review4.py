@@ -251,9 +251,9 @@ async def run(c, admin, superadmin):
     print("== eşzamanlılık kotası ve gönderimde ajan başlangıç zamanı")
     await c.execute(
         "INSERT INTO clients (pc_name, hostname, status) VALUES ('HW-R4OFF', 'hw-r4off', 'Offline')")
-    await c.execute(
+    offline_task = await c.fetchval(
         "INSERT INTO tasks (target_pc, script_path, status, created_at, dispatched_at) VALUES "
-        "('HW-R4OFF', 'r4 offline running', 'Running', '2000-01-01 00:00:00', NOW())")
+        "('HW-R4OFF', 'r4 offline running', 'Running', '2000-01-01 00:00:00', NOW()) RETURNING id")
     queued = await c.fetchval(
         "INSERT INTO tasks (target_pc, script_path, status, created_at) VALUES "
         "('HW-R4A', 'echo r4', 'Pending', to_char(now(), 'YYYY-MM-DD HH24:MI:SS')) RETURNING id")
@@ -267,7 +267,23 @@ async def run(c, admin, superadmin):
     chk(find(msgs, "task_id", queued) is not None, "çevrimdışı cihazın 'Running' görevi kotayı tutmadı")
     chk(await c.fetchval("SELECT agent_started_at FROM tasks WHERE id=$1", queued) == 4242.0,
         "gönderimde ajanın başlangıç zamanı saklandı")
-    await c.execute("UPDATE tasks SET status='Completed' WHERE id=$1", queued)
+
+    print("== görev sonucu yalnızca kendi görevine yazılır ve panele öyle yayılır")
+    panel = await websockets.connect(WS + "/ws/panel", additional_headers={"Cookie": "pops_jwt=" + admin})
+    await collect(panel, 0.5)
+    await ag.send(json.dumps({"type": "result", "task_id": offline_task, "output": "r4-yabanci", "exit_code": 0}))
+    msgs = await collect(ag, 1.5)
+    chk(find(msgs, "task_id", offline_task) is not None, "başka cihazın görev kimliğiyle gelen sonuç da onaylandı")
+    pmsgs = await collect(panel, 1)
+    chk(not [m for m in pmsgs if isinstance(m, dict) and m.get("output") == "r4-yabanci"],
+        "eşleşmeyen sonuç panele yayılmadı")
+    chk(await c.fetchval("SELECT status FROM tasks WHERE id=$1", offline_task) == "Running",
+        "başka cihazın görevi değişmedi")
+    await ag.send(json.dumps({"type": "result", "task_id": queued, "output": "r4-kendi", "exit_code": 0}))
+    pmsgs = await collect(panel, 2)
+    chk([m for m in pmsgs if isinstance(m, dict) and m.get("output") == "r4-kendi"], "kendi sonucu panele yayıldı")
+    chk(await wait_for(c, "SELECT status = 'Completed' FROM tasks WHERE id=$1", queued), "kendi görevi tamamlandı")
+    await panel.close()
     other = await agent("HW-R4B", secret_heads("HW-R4B"), first("HW-R4B"))
     msgs = await collect(other, 2)
     chk(find(msgs, "task_id", expired) is None and await c.fetchval(
