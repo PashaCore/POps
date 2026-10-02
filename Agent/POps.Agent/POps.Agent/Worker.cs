@@ -51,10 +51,10 @@ namespace POpsAgent
         private readonly HttpClient _httpClient;
         private readonly AgentStartupHealth _startupHealth;
         private readonly AgentHealthTelemetry _health = new AgentHealthTelemetry();
-        // Uzaktan komutlar (iptal ve servis durması işlemi sonlandırır) ve bağlantı yokken gönderilemeyen sonuçlar:
-        // sonuç kaybolmasın diye bağlantı yeniden kurulunca gönderilir (en çok MaxPendingResults)
+        // Uzaktan komutlar (iptal ve servis durması işlemi sonlandırır). Onaysız (eski) sunucuda bağlantı yokken
+        // gönderilemeyen sonuçlar bellekte bekler (en çok MaxPendingResults); onaylı sunucuda diskte (ResultSpool)
         private CommandRunner _commandRunner = new CommandRunner();
-        private readonly System.Collections.Concurrent.ConcurrentQueue<object> _pendingResults = new System.Collections.Concurrent.ConcurrentQueue<object>();
+        private readonly System.Collections.Concurrent.ConcurrentQueue<(int TaskId, object Result)> _pendingResults = new System.Collections.Concurrent.ConcurrentQueue<(int TaskId, object Result)>();
         private const int MaxPendingResults = 20;
         private Task _slowInitialization;
 
@@ -96,8 +96,12 @@ namespace POpsAgent
         private readonly Helpdesk _helpdesk;
         // "Etkinlik geçmişim": yöneticilerin bu cihazda yaptığı işlemler (bkz. ActivityHistory)
         private readonly ActivityHistory _activity;
+        // Sunucunun duyurduğu özellikler (server_info; 15 sn kuralı): update_result ve görev sonucu onayı ortak kullanır
+        internal ServerHandshake Handshake { get; } = new ServerHandshake();
         // update_result: sunucu onay destekliyorsa onaya kadar saklanır (bkz. UpdateResultReporter)
-        internal UpdateResultReporter UpdateResults { get; } = new UpdateResultReporter();
+        internal UpdateResultReporter UpdateResults { get; }
+        // Görev sonuçları: sunucu result_ack destekliyorsa onaya kadar diskte (bkz. ResultSpool)
+        internal ResultSpool Results { get; }
         // Ön plandaki uygulamanın süreç adı (tepsiden, yalnızca ad; bkz. ActiveApp). Bilinmiyorsa null.
         private volatile string _activeApp;
 
@@ -136,6 +140,9 @@ namespace POpsAgent
             // Talebin sahibi konsoldaki değil, isteği yapan tepsinin oturumundaki kullanıcı (hızlı kullanıcı değiştirme, RDP)
             _helpdesk = new Helpdesk(_serverUrl, () => _hwId, () => _trayPipe?.ClientUser, message => _trayPipe?.SendCommandToDesktop(message));
             _activity = new ActivityHistory(_serverUrl, () => _hwId, message => _trayPipe?.SendCommandToDesktop(message));
+            UpdateResults = new UpdateResultReporter(Handshake);
+            // Önceki çalışmadan onay bekleyen sonuçlar okunur
+            Results = new ResultSpool(SecureStore.PathOf(ResultSpool.FileName));
         }
 
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
@@ -235,8 +242,8 @@ namespace POpsAgent
                 {
                     await _commandWs.ConnectAsync(new Uri(commandWsUrl), stoppingToken);
                     POpsHelpers.Log("AGENT", "[+] Ana Komut Tüneli Kuruldu.");
-                    // Sunucunun güncelleme sonucunu onaylayıp onaylamadığı her bağlantıda yeniden öğrenilir (server_info)
-                    UpdateResults.OnConnected();
+                    // Sunucunun sonuçları onaylayıp onaylamadığı her bağlantıda yeniden öğrenilir (server_info)
+                    OnCommandSocketOpened();
                     OnCommandChannelConnected();
 
                     await _slowInitialization;
@@ -291,6 +298,13 @@ namespace POpsAgent
 
         // Komut tüneli kuruldu: DNS politika izleme başlar (yalnızca ilk bağlantıda; sonra açık kalır). Politika ve
         // dns_domains her dakika PolicyPollingLoop'ta yenilenir.
+        // Yeni komut bağlantısı: server_info yeniden beklenir, onaysız sonuçlar bu bağlantıda yeniden gönderilir
+        internal void OnCommandSocketOpened()
+        {
+            UpdateResults.OnConnected();
+            Results.OnConnected();
+        }
+
         internal void OnCommandChannelConnected()
         {
             DnsPolicyMonitor.Configure(_currentPolicy, _hwId, _serverUrl);
@@ -755,9 +769,10 @@ namespace POpsAgent
                     ? CommandExecutionPolicy.Permission(AgentCapabilities.TerminalEnabled) : null;
                 if (action == "execute" && !commandPermission.Allowed)
                 {
-                    // Görev "Running"de asılı kalmasın diye sonuç olarak da bildirilir
+                    // Görev "Running"de asılı kalmasın diye sonuç olarak da bildirilir. Çıkış kodu -5 (reddedildi): eski sunucu
+                    // bunu Completed değil Failed sayar; yeni sunucu capability_denied ile Denied yapar.
                     int tid = root.GetProperty("task_id").GetInt32();
-                    await SendCommandMessageAsync(new { type = "result", pc_name = _hwId, task_id = tid, output = commandPermission.Rejection });
+                    await SendResultAsync(tid, new { type = "result", pc_name = _hwId, task_id = tid, output = commandPermission.Rejection, exit_code = CommandRunner.ExitDenied });
                     await DenyCapabilityAsync("terminal", "execute", tid);
                 }
                 else if (action == "execute")
@@ -766,15 +781,28 @@ namespace POpsAgent
                     int tid = root.GetProperty("task_id").GetInt32();
                     string requestedBy = root.TryGetProperty("requested_by", out var requestedByProperty) && requestedByProperty.ValueKind == JsonValueKind.String
                         ? requestedByProperty.GetString() : null;
+                    // Aynı görev zaten çalışıyorsa (sunucu emri yeniden gönderdi) ikinci kez çalıştırılmaz; sonuç ilk çalıştırmadan
+                    // gelir. Sunucuya ayrıca bir şey gönderilmez: "yinelenen" sonucu çalışan görevin kaydının üzerine yazardı.
+                    if (_commandRunner.IsRunning(tid))
+                    {
+                        POpsHelpers.Log("AGENT", $"Uzaktan komut zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
+                        return;
+                    }
                     POpsHelpers.Log("AGENT", $"Uzaktan komut çalıştırılıyor (TaskID: {tid})");
                     LocalAudit.Write(LocalAudit.CommandStarted(tid, cmd, requestedBy));
+                    // Görev kimliği burada (eşzamanlı olarak) ayrılır: arkasından gelen aynı kimlik ikinci işlem başlatamaz
+                    Task<CommandExecutionResult> run = _commandRunner.RunAsync(tid, cmd, stoppingToken);
                     _ = Task.Run(async () =>
                     {
-                        CommandExecutionResult execution = await _commandRunner.RunAsync(tid, cmd, stoppingToken);
+                        CommandExecutionResult execution = await run;
+                        if (execution.ExitCode == CommandRunner.ExitDuplicate)
+                        {
+                            POpsHelpers.Log("AGENT", $"Uzaktan komut zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
+                            return;
+                        }
                         LocalAudit.Write(LocalAudit.CommandFinished(tid, execution.ExitCode, execution.Duration));
-                        // Sonuç o anki bağlantıdan gider; bağlantı koptuysa sırada bekler (eskiden komutun geldiği
-                        // eski sokete yazılıyor ve bağlantı koptuysa kayboluyordu)
-                        await SendResultAsync(new
+                        // Sonuç o anki bağlantıdan gider; bağlantı koptuysa sırada (onaylı sunucuda diskte) bekler
+                        await SendResultAsync(tid, new
                         {
                             type = "result",
                             pc_name = _hwId,
@@ -842,8 +870,10 @@ namespace POpsAgent
                         await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId), _hwId, QuarantineControl.UnlockFailedLog(), "Karantina kaldırma hatası");
                 }
                 // Güncelleme sonucu onayı (bkz. UpdateResultReporter). Tanınmayan action'lar yok sayılır.
-                else if (action == "server_info") UpdateResults.OnServerInfo(root);
+                else if (action == "server_info") Handshake.OnServerInfo(root);
                 else if (action == "update_result_ack") HandleUpdateResultAck(root);
+                // Görev sonucu sunucuda yazıldı (bkz. ResultSpool)
+                else if (action == "result_ack") HandleResultAck(root);
                 // Windows Update: arka planda yürür, bu döngüyü bekletmez (bkz. PatchManager)
                 else if (action == "scan_updates") _patches.RequestScan();
                 else if (action == "install_updates")
@@ -975,22 +1005,58 @@ namespace POpsAgent
             finally { _wsCommandLock.Release(); }
         }
 
-        // Görev sonucu: gönderilemezse bağlantı yeniden kurulunca gönderilmek üzere sırada bekler
-        private async Task SendResultAsync(object result)
+        // Görev sonucu. Onaylı sunucuda (result_ack; bağlantının ilk saniyelerinde, henüz bilinmiyorken önceki bağlantının
+        // bildiği) önce diske yazılır, gönderilir ve onay gelene kadar kalır. Onaysız sunucuda eski davranış: gönderilemezse
+        // bağlantı yeniden kurulunca gönderilmek üzere bellekte sırada bekler.
+        private async Task SendResultAsync(int taskId, object result)
         {
+            bool durable = Handshake.Supports(ResultSpool.AckFeature) ?? Handshake.LastKnown(ResultSpool.AckFeature) ?? false;
+            if (durable)
+            {
+                Results.Add(taskId, result);
+                if (Handshake.Supports(ResultSpool.AckFeature) == true && await TrySendCommandMessageAsync(result)) Results.MarkSent(taskId);
+                return;
+            }
             if (_pendingResults.IsEmpty && await TrySendCommandMessageAsync(result)) return;
-            _pendingResults.Enqueue(result);
+            _pendingResults.Enqueue((taskId, result));
             while (_pendingResults.Count > MaxPendingResults && _pendingResults.TryDequeue(out _))
                 POpsHelpers.Log("AGENT", "Gönderilemeyen görev sonuçları sınırı aşıldı; en eskisi atıldı.", true);
         }
 
-        private async Task FlushPendingResultsAsync()
+        // Her heartbeat'te: bekleyen sonuçlar gönderilir. Onaylı sunucuda bellekteki kuyruk da diske geçer ve bu bağlantıda
+        // henüz gönderilmemiş (yeniden bağlanınca: hepsi) onaysız sonuçlar gönderilir. Onaysız sunucuda diskte kalmışlar
+        // (önceki sunucudan ya da önceki çalışmadan) gönderilince silinir: o sunucu onay göndermez.
+        internal async Task FlushPendingResultsAsync()
         {
-            while (_pendingResults.TryPeek(out object result))
+            bool? ack = Handshake.Supports(ResultSpool.AckFeature);
+            if (ack == true)
             {
-                if (!await TrySendCommandMessageAsync(result)) return;
+                while (_pendingResults.TryDequeue(out var queued)) Results.Add(queued.TaskId, queued.Result);
+                foreach (ResultSpool.Entry entry in Results.Unsent())
+                {
+                    if (!await TrySendCommandMessageAsync(entry.Result)) return;
+                    Results.MarkSent(entry.TaskId);
+                }
+                return;
+            }
+            while (_pendingResults.TryPeek(out var queued))
+            {
+                if (!await TrySendCommandMessageAsync(queued.Result)) return;
                 _pendingResults.TryDequeue(out _);
             }
+            if (ack == false)
+                foreach (ResultSpool.Entry entry in Results.All())
+                {
+                    if (!await TrySendCommandMessageAsync(entry.Result)) return;
+                    Results.Remove(entry.TaskId);
+                }
+        }
+
+        // {"action":"result_ack","task_id":N}: sonuç sunucuda yazıldı, diskten silinir
+        internal void HandleResultAck(JsonElement root)
+        {
+            if (!root.TryGetProperty("task_id", out JsonElement id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt32(out int taskId)) return;
+            if (Results.Remove(taskId)) POpsHelpers.Log("AGENT", $"Sunucu görev sonucunu onayladı (TaskID: {taskId}).");
         }
 
         // POpsUpdater'ın bıraktığı sonuç (update-result.json) sunucuya "update_result" olarak iletilir. Updater sonucu

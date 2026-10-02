@@ -89,7 +89,7 @@ What the service does with each server command:
 
 | Command | Effect |
 | --- | --- |
-| `execute` | Runs the command line as a temporary `.bat` through `cmd.exe` as LocalSystem (UTF-8, 30-minute limit) and returns the output as a `result`. Refused when the terminal capability is off. Used by the Deployment and Terminal pages through the task queue. The `.bat` (`pops_task_<32 hex>.bat` in the service's temp folder) is deleted when the task ends; from 0.1.14-alpha files left by a crash are deleted at service start, before the first task (only names matching exactly that pattern). |
+| `execute` | Runs the command line as a temporary `.bat` through `cmd.exe` as LocalSystem (UTF-8, 30-minute limit) and returns the output as a `result`. Refused when the terminal capability is off. Used by the Deployment and Terminal pages through the task queue. The `.bat` (`pops_task_<32 hex>.bat` in the service's temp folder) is deleted when the task ends; from 0.1.14-alpha files left by a crash are deleted at service start, before the first task (only names matching exactly that pattern). Output is read in fixed 8192-character chunks, not by line, so even a single line of hundreds of megabytes stays within the 524 288-character (512 Ki) limit (the rest is read and dropped, the pipe never blocks). The same task ID is never run twice at once: a repeated `execute` for a running task is logged and ignored. Exit codes the agent sets itself: -1 time limit, -2 cancelled, -3 agent error, -4 service stopping, -5 refused (terminal capability off). |
 | `get_hardware` | Posts the hardware inventory. |
 | `start_vision_session` | Passes the session request to the tray (consent dialog or mandatory countdown). |
 | `stop_stream` | Stops screen capture and closes the Vision connection. |
@@ -98,7 +98,8 @@ What the service does with each server command:
 | `wake_peer` | Sends a Wake-on-LAN packet for another PC in the same lab. |
 | `set_identity` | Replaces the stored hardware ID. |
 | `set_secret` | Stores the device secret and deletes the enrollment token. |
-| `server_info` | Sent by the server once the agent is registered; `features` containing `update_result_ack` means the server confirms update results (0.1.14-alpha). |
+| `server_info` | Sent by the server once the agent is registered; `features` containing `update_result_ack` / `result_ack` means the server confirms update results / task results (0.1.14-alpha). Without `server_info` within 15 seconds of connecting the agent treats the server as older (same rule for both). |
+| `result_ack` | The server stored the task result for `task_id`; the agent deletes it from `C:\POpsData\secure\pending-results.json`. |
 | `update_result_ack` | The server stored the update result with this `result_id`; the agent sets `update-result.json` aside. |
 | `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
 | `set_capabilities` | Switches terminal and/or Vision **off**; requests to switch them on are ignored. |
@@ -109,6 +110,14 @@ The server may also send `scan_updates` and `install_updates`
 
 The agent reports back `result`, `thumbnail`, `stream_frame` (on the Vision socket), `vision_rejected`,
 `capabilities`, `capability_denied` and `update_result`. The full message list is in [`api.md`](api.md#websockets).
+
+Task results (from 0.1.14-alpha): with a server that announces `result_ack`, every `result` is first written to
+`C:\POpsData\secure\pending-results.json` (SYSTEM and Administrators only; temporary file + rename), sent, and deleted
+only when `result_ack` for its `task_id` arrives. Unacknowledged results are sent again on the next connection, after
+`server_info`, and survive a service restart. At most 20 are kept; when full, the oldest is dropped and logged. With
+an older server the agent keeps the previous behaviour: results wait in memory while disconnected and are dropped
+once sent; results left on disk are sent to such a server once and then deleted. A refused `execute` (terminal off)
+is reported as a `result` with `exit_code` -5 followed by `capability_denied`.
 
 High-impact actions also have a server-independent local record in the Windows **Application** event log under
 the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 and length are recorded, never the

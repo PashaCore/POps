@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -41,6 +42,19 @@ namespace POpsAgent
             }
         }
 
+        // Satır sonu beklemeden okunan parça (CommandRunner): sığmayan kısım atılır, yalnızca sayılır
+        public void Append(char[] buffer, int index, int count)
+        {
+            if (buffer == null || count <= 0) return;
+            lock (_gate)
+            {
+                int room = _maxChars - _text.Length;
+                int take = Math.Clamp(room, 0, count);
+                if (take > 0) _text.Append(buffer, index, take);
+                DroppedChars += count - take;
+            }
+        }
+
         public override string ToString()
         {
             lock (_gate)
@@ -58,6 +72,15 @@ namespace POpsAgent
         public const int ExitCancelled = -2;
         public const int ExitAgentError = -3;
         public const int ExitServiceStopping = -4;
+        // Terminal yeteneği kapalı: görev çalıştırılmadı (Worker gönderir; eski sunucu da Failed sayar)
+        public const int ExitDenied = -5;
+        // Aynı görev kimliği zaten çalışıyor: ikinci çalıştırma başlatılmaz (Worker bu sonucu sunucuya göndermez)
+        public const int ExitDuplicate = -6;
+
+        // Çıktı satır sonu beklemeden bu boyutta parçalarla okunur
+        internal const int ReadChunkChars = 8192;
+        // İşlem bittikten sonra çıktı akışlarının kapanması için en çok beklenen süre (akışı açık tutan alt süreç sonucu bekletmesin)
+        internal static TimeSpan StreamDrainTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
         private readonly ConcurrentDictionary<int, CancellationTokenSource> _running = new ConcurrentDictionary<int, CancellationTokenSource>();
         private readonly string _shell;
@@ -73,6 +96,8 @@ namespace POpsAgent
         }
 
         public int RunningCount => _running.Count;
+
+        public bool IsRunning(int taskId) => _running.ContainsKey(taskId);
 
         // Görev dosyası: Path.GetTempPath() altında pops_task_<32 küçük hex>.bat (Guid "N"). Görev bitince silinir; servis
         // ya da makine çökerse kalır ve içinde yönetici komutu olabilir.
@@ -118,11 +143,22 @@ namespace POpsAgent
             return true;
         }
 
-        public async Task<CommandExecutionResult> RunAsync(int taskId, string command, CancellationToken serviceStopping)
+        // Görev kimliği ÇAĞRI anında ayrılır (TryAdd): aynı kimlik zaten çalışıyorsa ikinci işlem başlatılmaz, ExitDuplicate döner
+        public Task<CommandExecutionResult> RunAsync(int taskId, string command, CancellationToken serviceStopping)
+        {
+            var cancel = new CancellationTokenSource();
+            if (!_running.TryAdd(taskId, cancel))
+            {
+                cancel.Dispose();
+                return Task.FromResult(new CommandExecutionResult(
+                    $"[YİNELENEN]: Görev {taskId} zaten çalışıyor; ikinci kez başlatılmadı.", ExitDuplicate, TimeSpan.Zero));
+            }
+            return RunReservedAsync(taskId, command, cancel, serviceStopping);
+        }
+
+        private async Task<CommandExecutionResult> RunReservedAsync(int taskId, string command, CancellationTokenSource cancel, CancellationToken serviceStopping)
         {
             var stopwatch = Stopwatch.StartNew();
-            using var cancel = new CancellationTokenSource();
-            _running[taskId] = cancel;
             string tempBatPath = null;
             try
             {
@@ -143,11 +179,10 @@ namespace POpsAgent
                 using var process = new Process { StartInfo = info };
                 var stdout = new BoundedOutput(CommandExecutionPolicy.MaxOutputChars);
                 var stderr = new BoundedOutput(CommandExecutionPolicy.MaxOutputChars / 4);
-                process.OutputDataReceived += (_, e) => stdout.AppendLine(e.Data);
-                process.ErrorDataReceived += (_, e) => stderr.AppendLine(e.Data);
                 process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
+                // Satır okuyucu (BeginOutputReadLine) satır sonu içermeyen dev bir çıktıyı sınırdan önce bellekte biriktirirdi:
+                // akışlar sabit parçalarla okunur, sınır dolunca okuma sürer ama atılır (boru tıkanıp işlem asılı kalmaz)
+                Task pumps = Task.WhenAll(PumpAsync(process.StandardOutput, stdout), PumpAsync(process.StandardError, stderr));
 
                 using var timeout = new CancellationTokenSource(_maxDuration);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancel.Token, serviceStopping);
@@ -159,19 +194,21 @@ namespace POpsAgent
                 {
                     try { process.Kill(entireProcessTree: true); } catch { }
                     try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); } catch { }
+                    await DrainAsync(pumps, taskId);
                     (string reason, int code) = cancel.IsCancellationRequested
                         ? ("[İPTAL EDİLDİ]: Görev panelden iptal edildi; işlem sonlandırıldı.", ExitCancelled)
                         : serviceStopping.IsCancellationRequested
                             ? ("[DURDURULDU]: POps Agent servisi durduğu için işlem sonlandırıldı.", ExitServiceStopping)
                             : ($"[HATA]: İşlem {_maxDuration.TotalMinutes:0} dakikadan uzun sürdüğü için zorla sonlandırıldı.", ExitTimeout);
-                    string partial = stdout.ToString().Trim();
+                    string partial = Normalize(stdout.ToString());
                     return new CommandExecutionResult(string.IsNullOrEmpty(partial) ? reason : reason + "\n[ÇIKTI]:\n" + partial,
                         code, stopwatch.Elapsed);
                 }
 
+                await DrainAsync(pumps, taskId);
                 int exitCode = process.ExitCode;
-                string outText = stdout.ToString().Trim();
-                string errText = stderr.ToString().Trim();
+                string outText = Normalize(stdout.ToString());
+                string errText = Normalize(stderr.ToString());
                 string output = exitCode != 0 && !string.IsNullOrWhiteSpace(errText)
                     ? $"[ÇIKIŞ KODU: {exitCode}]\n[HATA]:\n{errText}\n[ÇIKTI]:\n{outText}"
                     : string.IsNullOrWhiteSpace(outText) ? $"Komut çalıştı (Çıkış: {exitCode}) ancak çıktı üretilmedi." : outText;
@@ -183,10 +220,37 @@ namespace POpsAgent
             }
             finally
             {
-                _running.TryRemove(taskId, out _);
+                // Yalnızca bu çalıştırmanın kaydı kaldırılır
+                _running.TryRemove(new KeyValuePair<int, CancellationTokenSource>(taskId, cancel));
+                cancel.Dispose();
                 stopwatch.Stop();
                 if (tempBatPath != null) try { File.Delete(tempBatPath); } catch { }
             }
         }
+
+        private static async Task PumpAsync(StreamReader reader, BoundedOutput sink)
+        {
+            char[] buffer = new char[ReadChunkChars];
+            try
+            {
+                int read;
+                while ((read = await reader.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    sink.Append(buffer, 0, read);
+            }
+            catch (Exception ex) when (ex is IOException || ex is ObjectDisposedException || ex is InvalidOperationException) { }
+        }
+
+        // İşlem bitti: akışların sonuna kadar okunması beklenir, ama akışı açık tutan bir alt süreç sonucu bekletemez
+        private static async Task DrainAsync(Task pumps, int taskId)
+        {
+            try { await pumps.WaitAsync(StreamDrainTimeout); }
+            catch (TimeoutException)
+            {
+                POpsHelpers.Log("AGENT", $"Görev {taskId}: işlem bitti ama çıktı akışı {StreamDrainTimeout.TotalSeconds:0} sn içinde kapanmadı (açık kalan bir alt süreç); okunan çıktıyla devam ediliyor.", true);
+            }
+        }
+
+        // Parçalı okumada satır sonları olduğu gibi gelir; sunucuya eskisi gibi \n ile gider
+        private static string Normalize(string text) => text.Replace("\r\n", "\n").Trim();
     }
 }
