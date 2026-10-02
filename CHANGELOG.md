@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.14-alpha] - 2026-10-02
+
+Reliability and scale work, and the fixes from the third and fourth external reviews. Task results and update results are kept by the agent until the server confirms them, a retry is a new task and a command refused by the PC shows as refused. Scheduled tasks are written in one transaction, expire instead of running hours late and do not queue a second copy for a PC that still has one. Heartbeats are written in batches, each panel has its own send queue and database calls have time limits. A device that has a key must present it, and a clone of an enrolled disk image is refused while the original is connected. 2FA codes work once, and 2FA secrets and bypass keys are encrypted in the database. Self-update can require signed release tags.
+
+Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**; migrations `0015`–`0017`), then send 0.1.14-alpha to the agents. On a native install, after the server update: write `/etc/pops/deploy.conf` (root-owned, mode 644; template `Installer/server/deploy.conf.example`) **before** installing the new `pops-deploy-backend` and `pops-selfupdate` from `Installer/server/`, because they read their paths from that file and fall back to the `install.sh` defaults without it (see [docs/self-update.md](docs/self-update.md)). Before ever changing `JWT_SECRET`, set `TOTP_ENCRYPTION_KEY`. Agents that already have a key keep working; a request without the key under the ID of a keyed device is now refused even with `enforce_agent_auth` off.
+
 ### Security
 
 - **Server: a device that has a key cannot be impersonated without it.** With `enforce_agent_auth` off, agents without a key are still accepted, but a connection or HTTP request under the ID of a device that already has a key must present that key (WebSocket `4401`, HTTP `401`). Before, such a request was accepted as a legacy agent. Refusals are written to the audit log at most every 10 minutes per device and address, with a count of the ones in between.
@@ -482,7 +488,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.13-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.14-alpha...HEAD
+[0.1.14-alpha]: https://github.com/PashaCore/POps/compare/v0.1.13-alpha...v0.1.14-alpha
 [0.1.13-alpha]: https://github.com/PashaCore/POps/compare/v0.1.12-alpha...v0.1.13-alpha
 [0.1.12-alpha]: https://github.com/PashaCore/POps/compare/v0.1.11-alpha...v0.1.12-alpha
 [0.1.11-alpha]: https://github.com/PashaCore/POps/compare/v0.1.10-alpha...v0.1.11-alpha
