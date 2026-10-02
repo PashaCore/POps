@@ -32,7 +32,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
       - name: Build
         run: dotnet build "${{ matrix.project }}" --configuration Release
 
@@ -46,7 +46,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
       - name: Test
         # Kapsam coverlet.collector ile (iki hedef: ajan net8.0-windows ve MSI custom action'ları net472)
         run: dotnet test Agent/POps.Tests/POps.Tests.csproj --configuration Release --logger "console;verbosity=normal" --collect:"XPlat Code Coverage" --results-directory TestResults
@@ -151,7 +151,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
       - name: VERSION == CHANGELOG == Directory.Build.props
         # Tek sürüm kaynağı bozulmasın: kök VERSION, CHANGELOG'un en üst sürüm başlığı ve
         # Directory.Build.props'un ürettiği <Version> birbirini tutmazsa derleme kırılır.

@@ -130,6 +130,9 @@ namespace POpsTray
             };
         }
 
+        // Yalnızca çalışma anında kullanılan bayrak: tasarımcıda görünmez, serileştirilmez (.NET 10 WFO1000)
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public bool AllowClose { get; set; } = false;
 
         private void SubmitBypass()
@@ -218,11 +221,12 @@ namespace POpsTray
         [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-        protected override void OnClosed(EventArgs e)
+        // OnClosed eskidi (WFDEV004); aynı kapanışta OnFormClosed çağrılır
+        protected override void OnFormClosed(FormClosedEventArgs e)
         {
             _statusTimer.Dispose();
             UnhookWindowsHookEx(_hookID);
-            base.OnClosed(e);
+            base.OnFormClosed(e);
         }
 
         private static IntPtr SetHook(LowLevelKeyboardProc proc)
