@@ -66,6 +66,14 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
               f.write("\n".join(lines) + "\n")
           print("%d paket" % len(rows))
+          # Taban: POpsAgent satır kapsamı bunun altına düşerse adım başarısız (docs/testing.md). Yükselince artırın.
+          AGENT_FLOOR = 62.0
+          agent = [rate for name, rate in rows if name == "POpsAgent"]
+          if not agent:
+              raise SystemExit("POpsAgent kapsam raporu yok")
+          if agent[0] < AGENT_FLOOR:
+              raise SystemExit("POpsAgent kapsamı %%%.1f, taban %%%.1f" % (agent[0], AGENT_FLOOR))
+          print("POpsAgent kapsamı %%%.1f (taban %%%.1f)" % (agent[0], AGENT_FLOOR))
       - name: Upload agent coverage
         if: always()
         uses: actions/upload-artifact@v4

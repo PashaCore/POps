@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -49,6 +50,11 @@ namespace POpsAgent
 
         public static LocalAuditEvent QuarantineFinished(string source) =>
             Info(1021, "Karantina bitti", ("source", Safe(source)));
+
+        public static LocalAuditEvent QuarantineAllowListRefreshed(IEnumerable<string> before, IEnumerable<string> after, string reason) =>
+            Info(1022, "Karantina izin listesi yenilendi (sunucu adresi değişti)",
+                ("old", before == null ? "(bilinmiyor)" : string.Join(", ", before)), ("new", string.Join(", ", after ?? Array.Empty<string>())),
+                ("reason", Safe(reason)));
 
         public static LocalAuditEvent UpdateResult(string from, string to, string outcome, string rollback) =>
             Info(1030, "Güncelleme sonucu", ("from", Safe(from)), ("to", Safe(to)),

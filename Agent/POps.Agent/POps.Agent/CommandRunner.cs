@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -72,6 +73,42 @@ namespace POpsAgent
         }
 
         public int RunningCount => _running.Count;
+
+        // Görev dosyası: Path.GetTempPath() altında pops_task_<32 küçük hex>.bat (Guid "N"). Görev bitince silinir; servis
+        // ya da makine çökerse kalır ve içinde yönetici komutu olabilir.
+        private static readonly Regex TaskFileName = new Regex(@"^pops_task_[0-9a-f]{32}\.bat$", RegexOptions.CultureInvariant);
+
+        public static bool IsTaskFile(string fileName) => fileName != null && TaskFileName.IsMatch(fileName);
+
+        // Açılışta, ilk görevden önce: yalnızca bu desene uyan dosyalar silinir. Silinemeyen loglanır, açılış durmaz.
+        public static (int Deleted, int Failed) CleanupStaleTaskFiles(string directory = null)
+        {
+            directory ??= Path.GetTempPath();
+            int deleted = 0, failed = 0;
+            try
+            {
+                foreach (string path in Directory.EnumerateFiles(directory, "pops_task_*.bat", SearchOption.TopDirectoryOnly))
+                {
+                    if (!IsTaskFile(Path.GetFileName(path))) continue;
+                    try
+                    {
+                        File.Delete(path);
+                        deleted++;
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        POpsHelpers.Log("AGENT", $"Yarım kalmış görev dosyası silinemedi ({Path.GetFileName(path)}): {ex.Message}", true);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                POpsHelpers.Log("AGENT", $"Yarım kalmış görev dosyaları taranamadı ({directory}): {ex.Message}", true);
+            }
+            if (deleted > 0) POpsHelpers.Log("AGENT", $"Önceki çalışmadan kalan {deleted} görev dosyası silindi ({directory}).");
+            return (deleted, failed);
+        }
 
         // Görev çalışıyorsa iptal edilir; dönen: böyle bir görev vardı mı
         public bool Cancel(int taskId)

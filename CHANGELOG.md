@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Agent
+
+- **Remote keyboard: Turkish and other non-ASCII characters.** Typed characters are sent as Unicode with `SendInput` (`KEYEVENTF_UNICODE`), so İ, ı, ş, ğ, @, €, { } and \ arrive as typed; before, a character was turned into a virtual key by upper-casing it (İ became `0`, ş/ğ/@/€ were wrong or missing). Named keys cover F1–F24, Home/End, PageUp/PageDown, Insert, CapsLock, NumLock, ScrollLock, PrintScreen, Pause and the menu key, with left/right modifiers from `code` and the extended-key flag where Windows needs it. Shortcuts (Ctrl+C, Win+R) use the key from `code` or the foreground window's layout. Keys still held when control ends or the service connection drops are released. Older panels without `code` keep the old behaviour for ASCII letters and digits. Mapping: `POps.Shared.RemoteKeyMap`, with tests.
+- **Update results are kept until the server confirms them.** `update_result` carries a `result_id`; a server that announces `update_result_ack` confirms it, and only then is `update-result.json` set aside (resent at most every 60 s while connected). Servers without `server_info` get the old behaviour after 15 s.
+- **Quarantine follows a server that changes its address.** While quarantined the agent resolves the server name every 5 minutes and after 3 failed connections in a row, and rebuilds the firewall rules when the addresses changed (new rules before old ones are removed). The previous firewall profile state is kept as it was at the first quarantine. New event 1022.
+- **Leftover command files are deleted at start.** `pops_task_<32 hex>.bat` files left in the temp folder by a crash (they may hold an administrator's command) are deleted before the first task; nothing else is touched.
+- **Watchdog:** says plainly what it does (it watches the `POpsAgent` service and the tray) instead of the old "ghost" wording; errors it used to swallow are logged, the same message at most every 10 minutes.
+- **POpsVision removed.** The standalone `POpsVision` project (not shipped since 0.1.2-alpha) is gone, with its CI build and Dependabot entry; screen capture stays in the tray. The MSI and the updater still close a running `POpsVision.exe` when upgrading a very old install.
+- **Tests:** `POpsAgent` line coverage 56 % → 63 %; CI fails below 62 %. Server commands are tested through `Worker.HandleServerMessageAsync` with a fake quarantine and a fake firewall runner.
+
 ### Security
 
 - **Server: self-update and backups no longer write as root into a directory the backend can write.** `pops-selfupdate` and `pops-backup` kept their status and log files in `/var/lib/pops`, which belongs to the backend user; whoever controlled that account could replace them with symbolic links and make root write or `chown` any file. Root now writes only to the root-owned `/var/lib/pops-state` (created with a temporary file and `rename`, no `chown`), and the backend only reads from there. The dry run no longer fast-forwards the repository or overwrites the status.
