@@ -29,6 +29,8 @@
     .tab-btn { padding: 0.4375rem 0.75rem; background: var(--bg-surface-2); border: 1px solid var(--border-subtle); color: var(--text-tertiary); border-radius: var(--radius-sm); cursor: pointer; font-weight: var(--fw-semibold); transition: all 0.15s; font-size: var(--text-xs); display: inline-flex; align-items: center; gap: 0.375rem; }
     .tab-btn:hover { background: var(--bg-surface); color: var(--text-primary); }
     .tab-btn.active { background: var(--primary-500); color: white; border-color: var(--primary-500); }
+    .tab-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .tab-btn:disabled:hover { background: var(--bg-surface-2); color: var(--text-tertiary); }
 
     .detail-body { flex: 1; overflow-y: auto; padding: var(--space-5); position: relative; }
     .empty-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--text-tertiary); }
@@ -75,8 +77,8 @@
 <div class="logger-container">
     <div class="pc-list-panel">
         <div class="mystic-container">
-            <button class="mystic-btn" onclick="wakeAllDevicesMistic()">
-                <i class="fas fa-bolt"></i> Tüm Cihazları Uyandır (WOL)
+            <button type="button" class="mystic-btn" onclick="window.wakeUpCommand('ALL', null, this)">
+                <i class="fas fa-bolt"></i> Bütün cihazları uyandır
             </button>
         </div>
         <div class="search-box">
@@ -86,13 +88,13 @@
     </div>
 
     <div class="detail-panel">
-        <div class="detail-header" id="detailHeader" style="opacity:0.3;pointer-events:none;">
+        <div class="detail-header" id="detailHeader">
             <div class="selected-pc-title">
                 <i class="fas fa-desktop"></i> <span id="selectedPcName">Cihaz Seçiniz</span>
             </div>
             <div class="detail-tabs">
-                <button class="tab-btn active" onclick="switchTab('logs')" id="tabBtn-logs"><i class="fas fa-clock-rotate-left"></i> Aktivite Logları</button>
-                <button class="tab-btn" onclick="switchTab('hw')" id="tabBtn-hw"><i class="fas fa-microchip"></i> Donanım</button>
+                <button type="button" class="tab-btn active" onclick="switchTab('logs')" id="tabBtn-logs" disabled title="Önce soldan bir cihaz seçin"><i class="fas fa-clock-rotate-left"></i> Etkinlik kayıtları</button>
+                <button type="button" class="tab-btn" onclick="switchTab('hw')" id="tabBtn-hw" disabled title="Önce soldan bir cihaz seçin"><i class="fas fa-microchip"></i> Donanım</button>
             </div>
         </div>
         <div class="detail-body">
@@ -109,12 +111,11 @@
             <div id="logsTab" style="display:none;">
                 <div class="log-controls">
                     <div class="log-filters">
-                        <button class="log-filter-btn active" data-type="All" onclick="filterLogs('All')">Tümü</button>
-                        <button class="log-filter-btn" data-type="System" onclick="filterLogs('System')">Sistem</button>
-                        <button class="log-filter-btn" data-type="AppStart" onclick="filterLogs('AppStart')">Uygulama</button>
-                        <button class="log-filter-btn" data-type="File" onclick="filterLogs('File')">Dosya</button>
-                        <button class="log-filter-btn" data-type="USB" onclick="filterLogs('USB')">USB</button>
-                        <button class="log-filter-btn" data-type="Network" onclick="filterLogs('Network')">Ağ</button>
+                        <button type="button" class="log-filter-btn active" data-type="All" onclick="filterLogs('All')">Tümü</button>
+                        <button type="button" class="log-filter-btn" data-type="risk" onclick="filterLogs('risk')">Yüksek risk</button>
+                        <button type="button" class="log-filter-btn" data-type="security" onclick="filterLogs('security')">Güvenlik</button>
+                        <button type="button" class="log-filter-btn" data-type="restricted_content" onclick="filterLogs('restricted_content')">Kural ihlali</button>
+                        <button type="button" class="log-filter-btn" data-type="system_maintenance" onclick="filterLogs('system_maintenance')">Bakım</button>
                     </div>
                     <div class="log-search">
                         <input type="text" id="searchLogInput" placeholder="Loglarda kelime ara..." oninput="renderLogsTable()">
@@ -138,19 +139,16 @@
 </div>
 
 
-<!-- Inspect Modal -->
-<div id="inspectModal" class="modal-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;">
-    <div style="background:var(--bg-surface-2);border:1px solid var(--border-default);border-radius:var(--radius-lg);width:600px;max-width:90%;box-shadow:0 10px 30px rgba(0,0,0,0.5);display:flex;flex-direction:column;">
-        <div style="padding:1.25rem 1.5rem;border-bottom:1px solid var(--border-default);display:flex;justify-content:space-between;align-items:center;">
-            <h3 style="margin:0;font-size:1.1rem;"><i class="fas fa-search-plus" style="color:var(--primary-500);margin-right:0.5rem;"></i> Log İncelemesi</h3>
-            <button onclick="document.getElementById('inspectModal').style.display='none'" style="background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:1.2rem;"><i class="fas fa-times"></i></button>
+<div id="inspectModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="inspectTitle">
+    <div class="modal-box lg">
+        <div class="modal-header">
+            <div class="modal-title" id="inspectTitle"><i class="fas fa-magnifying-glass-plus"></i> Kayıt ayrıntısı</div>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
         </div>
-        <div style="padding:1.5rem;overflow-y:auto;max-height:60vh;background:var(--bg-app);">
-            <pre id="inspectJsonContent" style="margin:0;color:var(--text-primary);font-family:var(--font-mono);font-size:0.85rem;white-space:pre-wrap;word-break:break-all;"></pre>
+        <div class="modal-body">
+            <pre id="inspectJsonContent" class="text-mono" style="margin:0;font-size:0.8125rem;white-space:pre-wrap;word-break:break-all;background:var(--bg-app);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:var(--space-4);max-height:60vh;overflow:auto;"></pre>
         </div>
-        <div style="padding:1rem 1.5rem;border-top:1px solid var(--border-default);text-align:right;">
-            <button class="mystic-btn" onclick="document.getElementById('inspectModal').style.display='none'">Kapat</button>
-        </div>
+        <div class="modal-footer"><button type="button" class="btn secondary" data-close-modal>Kapat</button></div>
     </div>
 </div>
 
@@ -160,7 +158,7 @@ function showInspectModal(logId) {
     if (!log) return;
     const jsonStr = JSON.stringify(log, null, 4);
     document.getElementById('inspectJsonContent').textContent = jsonStr;
-    document.getElementById('inspectModal').style.display = 'flex';
+    openModal('inspectModal');
 }
 
 let globalDevices = [];
@@ -170,31 +168,29 @@ let selectedPc = null;
 let currentTab = 'logs';
 let currentLogFilter = 'All';
 let openLabs = new Set();
-function getApiBase() { return (typeof OMYO_API !== 'undefined') ? OMYO_API.HTTP_URL : ''; }
-
 let lastSidebarHash = '';
 let lastHwHash = '';
 let lastLogsHash = '';
 
-function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
-
+let loggerLoaded = false;
 async function fetchLoggerData() {
-    if (!getApiBase()) return;
     try {
-        const [devRes, invRes, logRes] = await Promise.all([fetch(`${getApiBase()}/api/devices`), fetch(`${getApiBase()}/api/inventory`), fetch(`${getApiBase()}/api/logs`)]);
-        if (devRes.ok) {
-            const newDevs = await devRes.json();
+        const [newDevs, inv, logs] = await Promise.all([POps.get('/api/devices'), POps.get('/api/inventory').catch(() => null), POps.get('/api/logs').catch(() => null)]);
+        loggerLoaded = true;
+        if (Array.isArray(newDevs)) {
             globalDevices = newDevs.sort((a, b) => {
                 const nA = a.display_name || a.real_hostname || a.hostname, nB = b.display_name || b.real_hostname || b.hostname;
                 if (a.lab === b.lab) return nA.localeCompare(nB, undefined, { numeric: true });
                 return (a.lab || '').localeCompare(b.lab || '');
             });
         }
-        if (invRes.ok) globalInventory = await invRes.json();
-        if (logRes.ok) { const l = await logRes.json(); globalLogs = l.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); }
+        if (Array.isArray(inv)) globalInventory = inv;
+        if (Array.isArray(logs)) globalLogs = logs.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
         renderPcList();
         if (selectedPc) { if (currentTab === 'hw') renderHardware(); if (currentTab === 'logs') renderLogsTable(); }
-    } catch (e) { console.warn('Log verileri bekleniyor...'); }
+    } catch (e) {
+        if (!loggerLoaded) POps.setError(document.getElementById('pcListContainer'), e, { compact: true });
+    }
 }
 
 function renderPcList() {
@@ -247,9 +243,8 @@ function selectPc(hostname) {
     selectedPc = hostname;
     const pc = globalDevices.find(d => d.hostname === hostname);
     const displayName = pc ? (pc.display_name || pc.real_hostname || pc.hostname) : hostname;
-    document.getElementById('detailHeader').style.opacity = '1';
-    document.getElementById('detailHeader').style.pointerEvents = 'all';
-    document.getElementById('selectedPcName').innerText = displayName;
+    ['tabBtn-logs', 'tabBtn-hw'].forEach(id => { const b = document.getElementById(id); b.disabled = false; b.removeAttribute('title'); });
+    document.getElementById('selectedPcName').textContent = displayName;
     document.getElementById('emptyState').style.display = 'none';
     lastSidebarHash = ''; lastHwHash = ''; lastLogsHash = '';
     renderPcList();
@@ -311,13 +306,15 @@ function renderLogsTable() {
     const tbody = document.getElementById('logTableBody');
     const searchWord = document.getElementById('searchLogInput').value.toLowerCase();
     let pcLogs = globalLogs.filter(log => log.pc_name === selectedPc);
-    if (currentLogFilter !== 'All') pcLogs = pcLogs.filter(log => log.log_type === currentLogFilter);
+    // Kayıtlar kategori ve risk düzeyiyle gelir (eski şemada log_type)
+    if (currentLogFilter === 'risk') pcLogs = pcLogs.filter(log => ['high', 'critical'].includes(String(log.risk_level || '').toLowerCase()));
+    else if (currentLogFilter !== 'All') pcLogs = pcLogs.filter(log => (log.category || log.log_type) === currentLogFilter);
     if (searchWord) pcLogs = pcLogs.filter(log => (log.message || '').toLowerCase().includes(searchWord));
     const currentHash = searchWord + '|' + currentLogFilter + '|' + pcLogs.length + '|' + (pcLogs.length > 0 ? pcLogs[0].id : '');
     if (currentHash === lastLogsHash) return;
     lastLogsHash = currentHash;
     if (pcLogs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;padding:2.5rem;color:var(--text-tertiary);"><i class="fas fa-magnifying-glass" style="font-size:1.5rem;display:block;margin-bottom:0.5rem;opacity:0.4;"></i>Kriterlere uygun log bulunamadı.</td></tr>`;
+        POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'fa-magnifying-glass', title: 'Eşleşen kayıt yok', compact: true });
         return;
     }
     tbody.innerHTML = pcLogs.map(log => {
@@ -354,26 +351,6 @@ function renderLogsTable() {
             </td>
         </tr>`;
     }).join('');
-}
-
-// Yanlışlıkla toplu uyandırmayı önleyen onay adımı. Sayfaya şifre gömülmez (her giriş yapan
-// kullanıcı görebiliyordu); asıl yetki kontrolü API'deki admin JWT doğrulamasıdır.
-async function wakeAllDevicesMistic() {
-    if (!getApiBase()) return;
-    const answer = prompt('Tüm laboratuvarlardaki cihazlar uyandırılacak. Onaylamak için TÜMÜ yazın:');
-    if (answer === null) return;
-    if (answer.trim().toLocaleUpperCase('tr-TR') !== 'TÜMÜ') return showToast('Onay metni eşleşmedi, işlem yapılmadı.', 'warning');
-    showToast('Sihirli paketler gönderiliyor...', 'info');
-    try {
-        const labs = [...new Set(globalDevices.map(d => d.lab))];
-        let totalWoken = 0;
-        for (const lab of labs) {
-            if (lab === 'Atanmamis_Cihazlar') continue;
-            const res = await fetch(`${getApiBase()}/api/wake_lab/${encodeURIComponent(lab)}`, { method: 'POST' });
-            if (res.ok) { const data = await res.json(); totalWoken += data.woken_pcs || 0; }
-        }
-        showToast(totalWoken > 0 ? `${totalWoken} cihaza uyandırma paketi gönderildi; açılanlar ajanları bağlanınca çevrimiçi görünür.` : 'MAC bilinen cihaz bulunamadı.', totalWoken > 0 ? 'success' : 'warning');
-    } catch (err) { showToast('Sunucu hatası.', 'error'); }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
