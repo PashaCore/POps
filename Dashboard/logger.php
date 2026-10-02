@@ -535,7 +535,7 @@
         if (!d) return;
         ui.hfocus = h;
         renderHw();
-        const body = POps.drawer.open('hw:' + h, { onClose: () => { ui.hfocus = null; renderHw(); } });
+        const body = POps.drawer.open('hw:' + h, { onClose: () => { if (ui.hfocus === h) { ui.hfocus = null; renderHw(); } } });
         body.innerHTML = hwDrawerHtml(d);
         if (!body.dataset.lgWired) {
             body.dataset.lgWired = '1';

@@ -986,17 +986,11 @@ button:disabled { cursor: not-allowed; }
 .ibtn.danger:hover:not(:disabled) { color: var(--danger-solid); }
 .ibtn.sm { width: 30px; height: 30px; border-radius: 8px; }
 .ibtn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-[data-tip] { position: relative; }
-[data-tip]:hover::after, [data-tip]:focus-visible::after {
-    content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
-    white-space: nowrap; background: #1d1d1f; color: #fff; font-size: 12px; font-weight: 500; line-height: 1.3;
-    padding: 6px 9px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); z-index: 80; pointer-events: none;
-    animation: fadeIn 0.12s ease 0.25s both;
-}
-[data-tip-pos="up"]:hover::after { top: auto; bottom: calc(100% + 8px); }
-[data-tip][aria-expanded="true"]::after, [data-tip]:disabled::after { display: none; }
+/* İpucu: data-tip taşıyan öğenin üstüne gelince sayfanın üstündeki tek bir katmanda gösterilir (POps, pops_script.js);
+   tablo ya da panel içinde kırpılmaz, sayfayı kaydırmaz. data-tip-pos: up | left */
+.pops-tip { position: fixed; z-index: 2500; max-width: min(320px, calc(100vw - 12px)); background: #1d1d1f; color: #fff; font-size: 12px; font-weight: 500; line-height: 1.35; padding: 6px 9px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); pointer-events: none; overflow-wrap: anywhere; animation: fadeIn 0.12s ease; }
+.pops-tip[hidden] { display: none; }
 @media (min-width: 1280px) { body.drawer-open .app-content { padding-right: calc(380px + 32px); } }
-[data-tip-pos="left"]:hover::after { left: auto; right: 0; transform: none; }
 
 /* İşlem çubuğu: sayfanın tek eylem yeri */
 .actionbar { display: inline-flex; align-items: center; gap: 2px; background: var(--bg-surface); border-radius: 14px; padding: 5px; box-shadow: 0 0 0 1px var(--border-subtle), 0 1px 3px rgba(0, 0, 0, 0.04); max-width: 100%; flex-wrap: wrap; }

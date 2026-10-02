@@ -366,8 +366,10 @@
             d = byHost(host);
             if (!d) return POps.toast('warning', 'Cihaz bulunamadı.');
         }
+        // Panel başka bir bilgisayar açıkken açılırsa önce onun kapanışı çalışır; yeni bilgisayar ondan sonra
+        // işaretlenir (eskiden kapanış yenisini de siliyordu ve "Son işlemler" yüklenmiyordu)
+        const body = POps.drawer.open('pc:' + host, { onClose: () => { if (openHost === host) openHost = null; if (o.onClose) o.onClose(); } });
         openHost = host;
-        const body = POps.drawer.open('pc:' + host, { onClose: () => { openHost = null; if (o.onClose) o.onClose(); } });
         render(body, d, false);
         if (!body.dataset.wired) {
             body.dataset.wired = '1';

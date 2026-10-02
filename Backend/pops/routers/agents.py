@@ -31,6 +31,8 @@ from pops import agent_health, agent_version as agent_version_mod, bypass, heart
 from pops import update_tracking
 
 log = logging.getLogger("pops.agents")
+# Ajanın çalıştırmadığı komutun sonucu bu önekle başlar (Agent CommandExecutionPolicy.DisabledMessage)
+REFUSED_PREFIX = "[REDDEDİLDİ]"
 router = APIRouter()
 
 
@@ -444,13 +446,20 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             task_id = pld.get("task_id")
             if not isinstance(task_id, int) or isinstance(task_id, bool):
                 return
+            # Ajanın ret sonucu ("[REDDEDİLDİ] …", eski ajanlarda çıkış kodsuz) görevi "Completed" yapmasın: ayrıca
+            # gelen capability_denied iletisi kaybolsa ya da sunucu eskiyse de görev "Denied" olur.
+            output = pld.get("output")
+            refused = exit_code is None and isinstance(output, str) and output.startswith(REFUSED_PREFIX)
+            if refused:
+                exit_code = -5
             stored = await execute_query(
                 "UPDATE tasks SET output = $1, exit_code = $4, status = CASE "
                 "WHEN status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out') THEN "
-                "(CASE WHEN $4::int IS NULL OR $4::int = 0 THEN 'Completed' ELSE 'Failed' END) ELSE status END "
+                "(CASE WHEN $5 THEN 'Denied' WHEN $4::int IS NULL OR $4::int = 0 THEN 'Completed' ELSE 'Failed' END) "
+                "ELSE status END "
                 "WHERE id = $2 AND target_pc = $3 "
                 "AND status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out', 'Cancelled') RETURNING id",
-                (pld.get("output"), task_id, active_hwid, exit_code),
+                (output, task_id, active_hwid, exit_code, refused),
                 fetch=True,
             )
             # Sonuç veritabanına yazıldı: 0.1.14+ ajan sonucu bu onaya kadar saklar ve yeniden gönderir (aynı sonucun

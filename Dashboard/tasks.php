@@ -248,7 +248,7 @@
     function openJob(key) {
         ui.focus = key;
         openOutputs.clear();
-        POps.drawer.open('job:' + key, { onClose: () => { ui.focus = null; renderJobs(); } }).onclick = null;
+        POps.drawer.open('job:' + key, { onClose: () => { if (ui.focus === key) { ui.focus = null; renderJobs(); } } }).onclick = null;
         renderDrawer(key);
         renderJobs();
     }

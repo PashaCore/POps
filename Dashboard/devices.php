@@ -102,7 +102,7 @@
             <td><div class="nm">${escapeHtml(POps.deviceName(d))}${marksHtml}</div><div class="sub">${escapeHtml(dev.subline(d))}</div></td>
             <td>${d.lab && d.lab !== dev.UNASSIGNED ? escapeHtml(d.lab) : '<span class="faint">Atanmamış</span>'}</td>
             <td>${statusHtml}</td>
-            <td><span class="ver">${escapeHtml(v || '—')}${old ? '<span class="mark old" data-tip="Güncel değil" aria-label="Güncel değil">↑</span>' : ''}</span></td>
+            <td><span class="ver">${escapeHtml(v || '—')}${old ? `<span class="mark old" data-tip="${escapeHtml('Eski sürüm; güncel ' + newest)}" aria-label="Eski sürüm">↑</span>` : ''}</span></td>
             <td class="mono">${escapeHtml(d.ip || '—')}</td>
         </tr>`;
     }
@@ -169,7 +169,7 @@
     function openPc(h) {
         ui.focus = h;
         render(true);
-        dev.open(h, { source: 'devices', onClose: () => { ui.focus = null; render(true); } });
+        dev.open(h, { source: 'devices', onClose: () => { if (ui.focus === h) { ui.focus = null; render(true); } } });
     }
 
     body.addEventListener('click', (e) => {

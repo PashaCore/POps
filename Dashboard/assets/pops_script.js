@@ -721,6 +721,64 @@ POps.duration = function (sec) {
     return Math.floor(sec / 86400) + ' gün';
 };
 
+// ============== İPUCU ==============
+// data-tip="metin" taşıyan her öğe: üstüne gelince (300 ms) ya da klavyeyle odaklanınca, ekranın içinde kalacak
+// biçimde öğenin altında (data-tip-pos="up": üstünde, "left": sağa hizalı) gösterilir. Açık menüsü olan ya da
+// devre dışı öğede gösterilmez.
+(function () {
+    let tipEl = null, cur = null, timer = null;
+    function hide() {
+        clearTimeout(timer);
+        timer = null;
+        cur = null;
+        if (tipEl) tipEl.hidden = true;
+    }
+    function show(el) {
+        const text = el.getAttribute('data-tip');
+        if (!text || el.disabled || el.getAttribute('aria-expanded') === 'true' || !el.isConnected) return;
+        if (!tipEl) {
+            tipEl = POps.el('div', { className: 'pops-tip', role: 'tooltip' });
+            tipEl.hidden = true;
+            document.body.append(tipEl);
+        }
+        tipEl.textContent = text;
+        tipEl.hidden = false;
+        const r = el.getBoundingClientRect();
+        const w = tipEl.offsetWidth, h = tipEl.offsetHeight, gap = 8, pad = 6;
+        const pos = el.getAttribute('data-tip-pos');
+        let top = pos === 'up' ? r.top - h - gap : r.bottom + gap;
+        if (top + h > window.innerHeight - pad) top = r.top - h - gap;
+        if (top < pad) top = r.bottom + gap;
+        let left = pos === 'left' ? r.right - w : r.left + r.width / 2 - w / 2;
+        left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
+        tipEl.style.top = Math.round(top) + 'px';
+        tipEl.style.left = Math.round(left) + 'px';
+    }
+    POps.hideTip = hide;
+    document.addEventListener('mouseover', (e) => {
+        const el = e.target.closest ? e.target.closest('[data-tip]') : null;
+        if (el === cur) return;
+        hide();
+        if (!el) return;
+        cur = el;
+        timer = setTimeout(() => { if (cur === el) show(el); }, 300);
+    });
+    document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) hide(); });
+    document.addEventListener('focusin', (e) => {
+        const el = e.target.closest ? e.target.closest('[data-tip]') : null;
+        if (!el || el === cur) return;
+        hide();
+        let kb = false;
+        try { kb = el.matches(':focus-visible'); } catch (err) { kb = false; }
+        if (kb) { cur = el; show(el); }
+    });
+    document.addEventListener('focusout', hide);
+    document.addEventListener('mousedown', hide, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); }, true);
+    window.addEventListener('scroll', hide, true);
+    window.addEventListener('resize', hide);
+})();
+
 // ============== AÇILIR MENÜ ==============
 // POps.menu(düğme, [{ label, icon, danger, disabled, hint, onClick } | '-' | { header }])
 let openMenuEl = null;
