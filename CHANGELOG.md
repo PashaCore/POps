@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.15-alpha] - 2026-10-02
+
+The agent moves to .NET 10 and ships its own runtime: no .NET prerequisite on the PC. Features can be turned off for the whole organisation or per lab (modules, with "Okul laboratuvarı" and "Kurum" profiles); the server enforces it and agents follow it. A device key stays on the hardware it was issued to, and `POpsAgent.exe --generalize` prepares disk images. The panel has no browser pop-ups any more, shares one design and several buttons that did nothing work. The server keeps running while its disk stalls, and a deploy stops before `pip` when the venv belongs to another user.
+
+Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**; migration `0018`). Then fetch 0.1.15-alpha on **Ajan güncelleme** and send it to **one PC first**: the MSI is about 41 MB (it contains the .NET 10 runtime) and replaces the framework-dependent build; if the new version does not start, the agent rolls back by itself. The .NET 8 runtime stays on the PC. Nothing changes for modules until a superadmin turns one off.
+
 ### Added
 
 - **Server: modules and install profiles (server side).** Vision, remote commands, file deployment, scheduled tasks, Windows Update, software inventory, licences, helpdesk, DNS policy, quarantine, Wake-on-LAN and reports can be turned off for the whole organisation or per lab (`module_settings`, migration `0018`); the most specific setting wins and without a setting everything stays on, so upgrading changes nothing. A superadmin sets them with `POST /api/modules/{id}` or applies the "Okul laboratuvarı" / "Kurum" profile. A module that is off is enforced on the server: its endpoints answer `409` (`X-POps-Module`), the task queue and the scheduler skip its devices, turning Vision off closes open sessions and turning remote commands off denies waiting tasks. Agents that send their key with the policy request also get the module list of their lab. The panel page follows.
 
 ### Fixed
 
+- **Panel: the dashboard chart shows something.** "Ağdaki PC Sayısı" plotted the number of registered PCs from the moment the page opened (one point at first, so the chart looked empty, and the number hardly ever changes). It now shows how many PCs are online over the last 10 minutes, out of the registered total, and keeps the history while you move between pages.
 - **Panel: buttons that did nothing work.** Devices: the flat/by-lab view switch only redrew when the table's HTML length changed by more than 50 characters, so it, status changes and selections often did not show. Labs: every lab whose name contains a space was hidden. Task queue and Logs: the type filters compared a field the server no longer sends (`log_type`; logs carry `category` and `risk_level`), so every filter except "all" was empty. Terminal: "Wake" did nothing for a single PC. Deployment: the live tracker stayed at "queued" forever; it now follows the tasks it created.
 - **Panel: actions report what really happened.** Bulk restart/shutdown, quick commands, quarantine, wake, package delete and other actions no longer say "sent" before the server answered; errors show the server's reason (validation errors included, they used to read "[object Object]"). A Vision session the server refuses no longer leaves the switch on without a picture. Retry is offered only for finished tasks.
 - **Panel: renaming a PC from the Terminal is validated** (Windows rules: at most 15 letters, digits and hyphens); the name used to go into the PowerShell command unchecked.
@@ -523,7 +530,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.14-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.15-alpha...HEAD
+[0.1.15-alpha]: https://github.com/PashaCore/POps/compare/v0.1.14-alpha...v0.1.15-alpha
 [0.1.14-alpha]: https://github.com/PashaCore/POps/compare/v0.1.13-alpha...v0.1.14-alpha
 [0.1.13-alpha]: https://github.com/PashaCore/POps/compare/v0.1.12-alpha...v0.1.13-alpha
 [0.1.12-alpha]: https://github.com/PashaCore/POps/compare/v0.1.11-alpha...v0.1.12-alpha
