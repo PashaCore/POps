@@ -268,7 +268,7 @@ with PHP and HTTPS (a school CA by default, or Let's Encrypt), and prints the pa
 **2. Panel:** open `https://<your-server>/`, sign in as `admin`, change the password and set up 2FA on **Ayarlar**.
 On **Sistem & Sürüm**, create an **enrollment token** for a lab.
 
-**3. Agent** on each Windows PC (with the .NET 8 Desktop Runtime x64), from an elevated prompt:
+**3. Agent** on each Windows PC (no prerequisites: the .NET runtime comes with the agent), from an elevated prompt:
 
 ```
 msiexec /i POps-Agent-<version>-win-x64.msi /qn SERVER_URL=https://<your-server> ENROLL_TOKEN=<token>
@@ -287,7 +287,7 @@ Step by step: [`docs/quick-start.md`](docs/quick-start.md). Docker Compose is av
 | Part | Requirement |
 | :--- | :--- |
 | **Server** | Linux with systemd, PostgreSQL 13+, Python 3.9+, PHP 8 with `curl`, nginx or Apache, a host name with a TLS certificate. A small VM is enough for a school ([sizing](docs/kapasite/README.md)). |
-| **Managed PCs** | Windows 10 or 11, 64-bit, with the .NET 8 Desktop Runtime (x64). |
+| **Managed PCs** | Windows 10 or 11, 64-bit. Nothing else: the agent brings its own .NET 10 runtime. |
 | **Network** | Outbound HTTPS (443) from the PCs to the server, with the WebSocket upgrade allowed through proxies and firewalls. Wake-on-LAN needs UDP broadcasts to the lab subnet. |
 | **Browser** | Any current browser. The panel loads its charts, icons and fonts from public CDNs. |
 
@@ -315,7 +315,7 @@ Every release, with upgrade notes, is in [`CHANGELOG.md`](CHANGELOG.md). Package
 - **Backend:** twelve test suites, eleven of them against a real PostgreSQL and a running server: security invariants,
   2FA, agent authorization, remote-control rules, per-device keys, hardening, 20 simultaneous enrollments, agents
   from 0.1.11 to 0.1.14 against the current server, features, helpdesk and licences, operations. flake8 at zero.
-- **Agent:** about 700 xUnit test runs on .NET 8 and on the .NET Framework 4.7.2 MSI custom actions, with a
+- **Agent:** about 700 xUnit test runs on .NET 10 and on the .NET Framework 4.7.2 MSI custom actions, with a
   coverage floor in CI.
 - **Install and operations:** migrations from an empty database, backup with test-restore, the TLS tool, release
   signing, and the deploy and self-update scripts (rollback, signed tags, unsafe settings) are tested in CI.
@@ -332,7 +332,7 @@ How to run the suites locally: [`docs/testing.md`](docs/testing.md).
 
 | Path | Contents |
 | :--- | :--- |
-| [`Agent/`](Agent) | Windows agent (.NET 8): `POps.Agent` service, `POpsTray`, `POpsWatchdog`, `POpsUpdater`, shared library `POps.Shared`, tests `POps.Tests`. |
+| [`Agent/`](Agent) | Windows agent (.NET 10): `POps.Agent` service, `POpsTray`, `POpsWatchdog`, `POpsUpdater`, shared library `POps.Shared`, tests `POps.Tests`. |
 | [`Backend/`](Backend) | FastAPI backend: `pops/` package, routers, migrations, tests. |
 | [`Dashboard/`](Dashboard) | PHP 8 panel (Turkish UI). |
 | [`Installer/`](Installer) | WiX MSI for the agent; server installer, deploy, self-update, backup and TLS scripts. |

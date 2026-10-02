@@ -7,7 +7,7 @@ Scripts and resources for deploying and installing POps.
 
 ## Agent MSI
 
-The release workflow builds `POps-Agent-<version>-win-x64.msi`, attaches it to every GitHub release and lists it with its SHA-256 in the signed `manifest.json`. It needs the .NET 8 Desktop Runtime (x64) and refuses to start without it.
+The release workflow builds `POps-Agent-<version>-win-x64.msi`, attaches it to every GitHub release and lists it with its SHA-256 in the signed `manifest.json`. It has no prerequisites: from 0.1.15-alpha every component is published self-contained and the .NET 10 runtime is installed with it (about 270 files, a ~41 MB MSI; earlier versions needed the .NET 8 Desktop Runtime). See [`docs/decisions.md`](../docs/decisions.md) D-19.
 
 ### Install
 
@@ -69,11 +69,11 @@ icacls C:\POpsData\secure
 ### Build locally
 
 ```
-dotnet publish Agent/POps.Agent/POps.Agent/POpsAgent.csproj -c Release -r win-x64 --self-contained false -o dist/POps
-dotnet publish Agent/POpsTray/POpsTray.csproj -c Release -r win-x64 --self-contained false -o dist/POps
-dotnet publish Agent/POpsWatchdog/POpsWatchDog/POpsWatchDog.csproj -c Release -r win-x64 --self-contained false -o dist/POps
-dotnet publish Agent/POpsUpdater/POpsUpdater/POpsUpdater.csproj -c Release -r win-x64 --self-contained false -o dist/POps
+dotnet publish Agent/POps.Agent/POps.Agent/POpsAgent.csproj -c Release -r win-x64 --self-contained true -o dist/POps
+dotnet publish Agent/POpsWatchdog/POpsWatchDog/POpsWatchDog.csproj -c Release -r win-x64 --self-contained true -o dist/POps
+dotnet publish Agent/POpsUpdater/POpsUpdater/POpsUpdater.csproj -c Release -r win-x64 --self-contained true -o dist/POps
+dotnet publish Agent/POpsTray/POpsTray.csproj -c Release -r win-x64 --self-contained true -o dist/POps
 dotnet build Installer/agent/POps.Agent.Installer.wixproj -c Release -p:PopsPublishDir=<full path to dist\POps>\ -p:ProductVersion=0.1.2.1
 ```
 
-Without `ProductVersion` the version comes from the root `VERSION` file with `.0` as the fourth field. The WiX toolset and its extensions are NuGet packages pinned in the project files; nothing needs to be installed globally.
+Publish the tray **last**: the four programs share the runtime files in one folder, and the tray (Windows Forms) needs the WindowsDesktop builds of `System.Drawing.dll` and `Microsoft.VisualBasic.dll`; the others accept them, the reverse breaks the tray. The release workflow checks this. Without `ProductVersion` the version comes from the root `VERSION` file with `.0` as the fourth field. The WiX toolset and its extensions are NuGet packages pinned in the project files; nothing needs to be installed globally.

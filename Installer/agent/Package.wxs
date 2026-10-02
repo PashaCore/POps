@@ -11,8 +11,7 @@
   Güncellemede (major upgrade) özellik verilmezse mevcut ayarlar korunur. Ayrıntılar: Installer/README.md
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
-     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <Package Name="POps Agent"
            Manufacturer="PashaCore"
@@ -69,14 +68,9 @@
     <Property Id="BYPASS_SECRET_FILE" Secure="yes" Hidden="yes" />
     <Property Id="PopsConfigure" Hidden="yes" />
 
-    <!-- Ajan framework'e bağımlıdır: .NET 8 Desktop Runtime (x64) yoksa kurulum başlamaz -->
-    <netfx:DotNetCompatibilityCheck Property="DOTNET_DESKTOP8"
-                                    RuntimeType="desktop"
-                                    Platform="x64"
-                                    Version="8.0.0"
-                                    RollForward="minor" />
-    <Launch Condition="Installed OR DOTNET_DESKTOP8 = &quot;0&quot;"
-            Message="POps Agent için .NET 8 Desktop Runtime (x64) gerekli. İndirme: https://dotnet.microsoft.com/download/dotnet/8.0" />
+    <!-- Ön koşul yok: bileşenler self-contained yayımlanır, .NET 10 çalışma zamanı kurulum klasöründe pakete gömülüdür
+         (0.1.15'e kadar .NET 8 Desktop Runtime gerekiyordu; bkz. docs/decisions.md D-19). Çalışma zamanı dosyaları da
+         aşağıdaki klasör toplamasıyla (Files) pakete girer. -->
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="POps" />
