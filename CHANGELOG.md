@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13-alpha] - 2026-10-02
+
+Reliability and security hardening from the second external review. Root no longer writes into a directory the backend can write. A refused enrollment changes nothing, enrollment is one transaction and tokens are stored hashed. A device authenticated with its key keeps its identity. Revoked panel sessions are closed within seconds. Task results say what really happened, and cancelling a task stops the process on the PC. A bypass code works once per day. A failed network isolation is reported as such. The release waits for the full test suite.
+
+Upgrading: update the server first (**Sistem & Sürüm → Sunucuyu güncelle**; migration `0014`), then send 0.1.13-alpha to the agents. On a native install, also install the new `pops-selfupdate`, `pops-backup` and `pops-selfupdate.service` from `Installer/server/` (see [docs/self-update.md](docs/self-update.md)). Enrollment tokens created earlier keep working, but the panel can no longer show their full value.
+
 ### Security
 
 - **Server: self-update and backups no longer write as root into a directory the backend can write.** `pops-selfupdate` and `pops-backup` kept their status and log files in `/var/lib/pops`, which belongs to the backend user; whoever controlled that account could replace them with symbolic links and make root write or `chown` any file. Root now writes only to the root-owned `/var/lib/pops-state` (created with a temporary file and `rename`, no `chown`), and the backend only reads from there. The dry run no longer fast-forwards the repository or overwrites the status.
