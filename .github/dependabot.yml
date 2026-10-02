@@ -14,6 +14,8 @@ updates:
         versions: [">=0.40"]
       - dependency-name: "python-dotenv"
         versions: [">=1.2.2"]
+      - dependency-name: "python-multipart"
+        versions: [">=0.0.21"]
 
   - package-ecosystem: nuget
     directories:
