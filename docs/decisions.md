@@ -279,3 +279,22 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
 - **Consequences:** Defaults keep a school year of history. Shorter periods are a per-school decision recorded in
   its KVKK notice. Until the archive exists the audit table keeps growing (it is small: metadata only).
 
+## D-19 The agent ships its own .NET runtime (self-contained)
+
+**Since:** 0.1.15-alpha.
+
+- **Context:** .NET 8 support ends on 10 November 2026. Up to 0.1.14 the agent was framework-dependent and the MSI
+  refused to install without the .NET 8 Desktop Runtime. The agent updates itself: a framework-dependent .NET 10 MSI
+  cannot install on a PC without the .NET 10 Desktop Runtime, so the update would roll back and the fleet would stay
+  on 0.1.14 until someone installed the runtime on every PC by hand.
+- **Decision:** The service, tray, watchdog and updater target .NET 10 (LTS) and are published self-contained for
+  win-x64 into one folder that shares the runtime files; the MSI collects the folder (`Files`) and has no runtime
+  check. No trimming (Windows Forms does not support it) and no ReadyToRun (9 MB more, no measurable start-up
+  gain). Only Turkish satellite resources are shipped. The tray is published last because it needs the
+  WindowsDesktop builds of `System.Drawing.dll` and `Microsoft.VisualBasic.dll` (the others accept them, the
+  reverse breaks the tray); the release workflow fails if that order is lost.
+- **Consequences:** No prerequisite on the PC. The MSI grows from about 4 MB to about 41 MB (about 270 files,
+  117 MB installed), and each self-update copies the updater with its runtime (about 80 MB) to
+  `C:\POpsData\updater`. .NET security fixes reach PCs only through an agent release, not through Windows Update:
+  a .NET 10 patch means rebuilding and shipping the agent. Rolling back to 0.1.14 or older runs on the .NET 8
+  runtime the PC still has; the MSI never removes it.

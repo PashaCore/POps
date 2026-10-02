@@ -267,7 +267,7 @@ panelin **admin şifresini** yazar.
 **2. Panel:** `https://<sunucunuz>/` adresini açın, `admin` olarak girin, **Ayarlar**'da şifreyi değiştirip 2FA'yı
 kurun. **Sistem & Sürüm** sayfasında bir lab için **kayıt jetonu** üretin.
 
-**3. Ajan:** her Windows bilgisayarda (.NET 8 Desktop Runtime x64 kurulu olarak), yönetici komut isteminde:
+**3. Ajan:** her Windows bilgisayarda (ön koşul yok: .NET çalışma zamanı ajanla birlikte gelir), yönetici komut isteminde:
 
 ```
 msiexec /i POps-Agent-<sürüm>-win-x64.msi /qn SERVER_URL=https://<sunucunuz> ENROLL_TOKEN=<jeton>
@@ -286,7 +286,7 @@ Adım adım (İngilizce): [`docs/quick-start.md`](docs/quick-start.md). Docker C
 | Bölüm | Gereksinim |
 | :--- | :--- |
 | **Sunucu** | systemd'li Linux, PostgreSQL 13+, Python 3.9+, `curl` eklentili PHP 8, nginx ya da Apache, TLS sertifikalı bir alan adı. Bir okul için küçük bir sanal makine yeter ([boyutlandırma](docs/kapasite/README.md)). |
-| **Yönetilen bilgisayarlar** | Windows 10 ya da 11, 64 bit, .NET 8 Desktop Runtime (x64). |
+| **Yönetilen bilgisayarlar** | Windows 10 ya da 11, 64 bit. Başka bir şey gerekmez: ajan kendi .NET 10 çalışma zamanını getirir. |
 | **Ağ** | Bilgisayarlardan sunucuya dışa doğru HTTPS (443); vekil sunucular ve güvenlik duvarları WebSocket yükseltmesine izin vermeli. Wake-on-LAN için sunucudan lab ağına UDP yayını gerekir. |
 | **Tarayıcı** | Güncel herhangi bir tarayıcı. Panel grafik, simge ve yazı tiplerini herkese açık CDN'lerden yükler. |
 
@@ -315,7 +315,7 @@ Her sürüm, yükseltme notlarıyla [`CHANGELOG.md`](CHANGELOG.md) içindedir. P
   değişmezleri, 2FA, ajan yetkilendirme, uzaktan kontrol kuralları, cihaz anahtarları, sağlamlaştırma, 20 eşzamanlı
   kayıt, 0.1.11'den 0.1.14'e ajanların bugünkü sunucuyla uyumu, özellikler, yardım masası ve lisanslar, işletim.
   flake8 sıfır bulgu.
-- **Ajan:** .NET 8 ve .NET Framework 4.7.2 (MSI özel eylemleri) üzerinde yaklaşık 700 xUnit test koşusu; CI'da
+- **Ajan:** .NET 10 ve .NET Framework 4.7.2 (MSI özel eylemleri) üzerinde yaklaşık 700 xUnit test koşusu; CI'da
   kapsam tabanı.
 - **Kurulum ve işletim:** boş veritabanından migration'lar, sınanan yedek ve geri yükleme, TLS aracı, sürüm imzalama,
   dağıtım ve kendini güncelleme betikleri (geri alma, imzalı etiket, güvensiz ayar) CI'da test edilir.
@@ -332,7 +332,7 @@ Testleri yerelde çalıştırmak (İngilizce): [`docs/testing.md`](docs/testing.
 
 | Yol | İçerik |
 | :--- | :--- |
-| [`Agent/`](Agent) | Windows ajanı (.NET 8): `POps.Agent` servisi, `POpsTray`, `POpsWatchdog`, `POpsUpdater`, ortak kütüphane `POps.Shared`, testler `POps.Tests`. |
+| [`Agent/`](Agent) | Windows ajanı (.NET 10): `POps.Agent` servisi, `POpsTray`, `POpsWatchdog`, `POpsUpdater`, ortak kütüphane `POps.Shared`, testler `POps.Tests`. |
 | [`Backend/`](Backend) | FastAPI backend: `pops/` paketi, router'lar, migration'lar, testler. |
 | [`Dashboard/`](Dashboard) | PHP 8 panel (Türkçe arayüz). |
 | [`Installer/`](Installer) | Ajan için WiX MSI; sunucu kurulum, dağıtım, kendini güncelleme, yedek ve TLS betikleri. |

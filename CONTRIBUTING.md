@@ -28,7 +28,7 @@ Useful background before a first change: [`docs/getting-started.md`](docs/gettin
 | --- | --- |
 | `Backend/` | FastAPI backend. `server.py` only builds the app. `pops/` holds configuration, database pool, panel security, agent authentication, audit log, connection manager, models, notifications, scheduler, task queue, hardware-DNA identity and Wake-on-LAN; `pops/routers/` has one router per endpoint group. `system_routes.py` covers releases, enrollment, agent updates, self-update and capabilities; `release_verify.py` checks signed releases. `migrate.py` and `migrations/NNNN_*.sql` own the schema. `setup_env.py` is the server setup script. `tests/` holds the integration tests. `storage/`, `updates/` and `releases/` are runtime data and git-ignored. |
 | `Dashboard/` | PHP 8 panel: one file per page (`index.php`, `devices.php`, `system.php`, ...), `includes/` (`header.php` with the fetch wrapper and escaping helpers, `session.php`, `sidebar.php`, `config.example.php`), `assets/`. |
-| `Agent/` | .NET 8 agent: `POps.Agent` (Windows service), `POpsTray`, `POpsWatchdog`, `POpsUpdater`, `POps.Shared` (helpers shared by the programs), `POps.Tests` (xUnit). `POpsVision` is legacy source and is not shipped. `Directory.Build.props` takes the version from `VERSION`. |
+| `Agent/` | .NET 10 agent: `POps.Agent` (Windows service), `POpsTray`, `POpsWatchdog`, `POpsUpdater`, `POps.Shared` (helpers shared by the programs), `POps.Tests` (xUnit). `POpsVision` is legacy source and is not shipped. `Directory.Build.props` takes the version from `VERSION`. |
 | `Installer/agent/` | WiX 5 MSI (`Package.wxs`, `POps.Agent.Installer.wixproj`) and its custom actions (`CustomActions/`, .NET Framework 4.7.2). |
 | `Installer/server/` | `install.sh` (native install), `nginx.example.conf`, `pops-deploy-backend` (deploy with health check and rollback), `pops-selfupdate` with its systemd `.path` and `.service` units. |
 | `docker/`, `docker-compose.yml` | Optional container setup ([`docs/docker.md`](docs/docker.md)). |
@@ -93,9 +93,9 @@ cp Dashboard/includes/config.example.php Dashboard/includes/config.php   # git-i
 - New pages include `includes/header.php`. It provides `escapeHtml()` and `jsArg()` for API values and wraps
   `fetch` so `/api/` calls send the cookie and the `X-Requested-With` header the backend requires.
 
-### Agent (Windows, .NET 8 SDK)
+### Agent (Windows, .NET 10 SDK)
 
-Needs 64-bit Windows and the .NET 8 SDK. WiX and the other build tools come from NuGet; nothing else has to be
+Needs 64-bit Windows and the .NET 10 SDK. WiX and the other build tools come from NuGet; nothing else has to be
 installed. There is no solution for the whole agent, so build the projects CI builds:
 
 ```powershell
@@ -107,7 +107,7 @@ dotnet test Agent/POps.Tests/POps.Tests.csproj -c Release
 ```
 
 - The tests cover logic only (not the firewall, the pipe or the service), need no administrator rights and run in
-  a temporary folder; they never touch `C:\POps`, `C:\POpsData` or `C:\POpsLogs`. They target `net8.0-windows`
+  a temporary folder; they never touch `C:\POps`, `C:\POpsData` or `C:\POpsLogs`. They target `net10.0-windows`
   (agent) and `net472` (MSI custom actions).
 - To try a change end to end, build the MSI as in [`Installer/README.md`](Installer/README.md#build-locally) and
   install it on a **disposable Windows VM**. The agent runs as SYSTEM, resets folder permissions and can add
@@ -240,8 +240,8 @@ python Backend/migrate.py                    # must apply nothing
   `pops.example.com`. Server secrets come from `.env`, agent secrets live only in `C:\POpsData\secure`. A secret
   that was ever committed must be rotated: deleting it from the tree leaves it in the history.
 - **Dependencies.** Pin exact versions in `Backend/requirements.txt` and prefer the standard library, since servers
-  may have to install offline. Dependabot proposes updates. The agent stays on `net8.0` packages until the move to
-  .NET 10.
+  may have to install offline. Dependabot proposes updates. The agent stays on .NET 10 (LTS) packages; Dependabot
+  ignores major updates (11.x) until the next LTS.
 - **Documentation** changes with the code: endpoints in [`docs/api.md`](docs/api.md), settings in
   [`docs/configuration.md`](docs/configuration.md) and `.env.example`, tables in `docs/database.md`, security
   behaviour in [`docs/security.md`](docs/security.md) and [`SECURITY.md`](SECURITY.md). A new or changed design

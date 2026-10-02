@@ -27,8 +27,8 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     ignore:
-      # Ajan net8.0 hedefliyor; .NET 10 kütüphanelerine (major bump) geçmek build'i kırar.
-      # Minor/patch güncellemeleri gelmeye devam eder; major geçiş .NET 10 migration'ıyla yapılır.
+      # Ajan net10.0 hedefliyor (LTS, self-contained); .NET 11 kütüphanelerine (major bump) geçmek build'i kırar.
+      # Minor/patch (10.0.x) güncellemeleri gelmeye devam eder; büyük sürüm geçişi bir sonraki LTS'yle elle yapılır.
       - dependency-name: "System.*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.Extensions.*"

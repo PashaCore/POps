@@ -50,10 +50,10 @@ Open `https://pops.example.com/`, sign in as `admin` with the password from step
 
 ## 5. Install the agent on a PC
 
-1. Install the **.NET 8 Desktop Runtime (x64)** on the PC.
-2. Download `POps-Agent-<version>-win-x64.msi` from the
-   [GitHub releases](https://github.com/PashaCore/POps/releases).
-3. In an elevated command prompt:
+1. Download `POps-Agent-<version>-win-x64.msi` from the
+   [GitHub releases](https://github.com/PashaCore/POps/releases). Nothing has to be installed first: the .NET runtime
+   comes with the agent (versions before 0.1.15 needed the .NET 8 Desktop Runtime).
+2. In an elevated command prompt:
 
    ```
    msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log SERVER_URL=https://pops.example.com ENROLL_TOKEN=<token>

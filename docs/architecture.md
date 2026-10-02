@@ -61,7 +61,7 @@ PostgreSQL, accessed with asyncpg. The schema is created and upgraded only by nu
 
 ### Agent
 
-Four .NET 8 programs installed by one MSI ([`agent.md`](agent.md)):
+Four .NET 10 programs (self-contained, sharing one runtime) installed by one MSI ([`agent.md`](agent.md)):
 
 - **POpsAgent** (Windows service, LocalSystem): server connection, commands, inventory, quarantine, updates.
 - **POpsTray** (user session): everything the user sees, screen capture and remote input.

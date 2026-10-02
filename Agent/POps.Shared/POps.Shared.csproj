@@ -2,12 +2,12 @@
 
   <!--
     Ajan bileşenlerinin (POpsAgent, POpsTray, POpsWatchdog, POpsUpdater) ortak yardımcıları.
-    net8.0: hem net8.0 (watchdog, updater) hem net8.0-windows (ajan, tepsi) projeler başvurabilsin diye;
+    net10.0: hem net10.0 (watchdog, updater) hem net10.0-windows (ajan, tepsi) projeler başvurabilsin diye;
     Windows'a özgü API'ler [SupportedOSPlatform("windows")] ile işaretlidir. Sürüm, Agent/ altındaki
     Directory.Build.props'tan (kök VERSION) gelir.
   -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>POps.Shared</RootNamespace>

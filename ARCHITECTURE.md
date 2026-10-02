@@ -11,7 +11,7 @@ POps is designed as a highly scalable, real-time endpoint management platform.
 - **Role:** The brain. It keeps one persistent WebSocket connection per endpoint and exposes REST endpoints for the dashboard. A single worker process is required, because connections are tracked in memory (see BENCHMARKS.md for measured capacity).
 
 ## 3. Windows Endpoint (Agent)
-- **Tech:** .NET 8, C#, Windows Forms
+- **Tech:** .NET 10 (self-contained: the runtime ships with the agent), C#, Windows Forms
 - **Role:** The executor. Four shipped programs sharing one helper library (`POps.Shared`):
   - **POpsAgent:** The core Windows service (LocalSystem) maintaining the WebSocket connection and running commands.
   - **POpsTray:** The user-facing taskbar application; it also captures the screen for Vision over a named pipe.

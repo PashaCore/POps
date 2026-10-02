@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Win32;
 
-// Bu dosya hem ajanda (POps.Shared, net8.0) hem MSI custom action'larında (net472, bağlantılı derleme) kullanılır:
+// Bu dosya hem ajanda (POps.Shared, net10.0) hem MSI custom action'larında (net472, bağlantılı derleme) kullanılır:
 // yalnızca iki çerçevede de bulunan API'ler.
 namespace POps.Shared
 {

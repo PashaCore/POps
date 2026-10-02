@@ -12,7 +12,7 @@ tagged release.
 
 ### Foundation (0.1.0-alpha)
 
-- [x] Windows agent (.NET 8): service, tray, watchdog, updater
+- [x] Windows agent (.NET 10, self-contained): service, tray, watchdog, updater
 - [x] Live state over WebSockets: heartbeats, CPU/RAM, hardware inventory
 - [x] Web panel (PHP 8) and FastAPI backend with PostgreSQL
 - [x] Vision: 1-5 FPS screen view and remote control
@@ -206,7 +206,7 @@ Whatever the choice, a second maintainer with review and release rights would re
 
 ## Other open items
 
-- Move the agent to .NET 10 before .NET 8 support ends (10 November 2026).
+- ~~Move the agent to .NET 10 before .NET 8 support ends (10 November 2026).~~ Done in 0.1.15-alpha (self-contained, D-19).
 - Move the backend to Python 3.11 or newer (AlmaLinux/RHEL 9 ship a `python3.11` package). Upstream support for
   3.9 ended in October 2025 (RHEL still backports security fixes), and new FastAPI, uvicorn and python-dotenv
   releases already require 3.10; Dependabot ignores those until then.
