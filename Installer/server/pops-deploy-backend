@@ -5,7 +5,7 @@
 # tek bir geri dönüş yolundan geçer: TÜM kod seti ve requirements değiştiyse venv de yedekten birebir
 # geri yüklenir (server.py artık tek dosya değil; uçlar pops/routers/ altında).
 #
-# Ayarlar: /etc/pops/deploy.conf (REPO, APP, SVC, OWNER, HEALTH_BASE, KEEP_BACKUPS; örnek ve açıklama:
+# Ayarlar: /etc/pops/deploy.conf (REPO, APP, SVC, OWNER, HEALTH_BASE, HEALTH_WAIT, KEEP_BACKUPS; örnek ve açıklama:
 # Installer/server/deploy.conf.example). Dosya yoksa install.sh'in varsayılanları geçerlidir. pops-selfupdate
 # da REPO'yu aynı dosyadan okur.
 #
@@ -29,6 +29,7 @@ SVC=pops
 OWNER=pops
 HEALTH_BASE=http://127.0.0.1:8000
 KEEP_BACKUPS=10
+HEALTH_WAIT=60
 STAMP=$(date +%Y%m%d-%H%M%S)
 
 die() { echo "pops-deploy-backend: $*" >&2; exit 1; }
@@ -59,6 +60,7 @@ if [ -z "$APP" ] || [ ! -d "$APP" ]; then die "APP bulunamadı: '$APP' (ayar: $C
 id -u "$OWNER" >/dev/null 2>&1 || die "OWNER kullanıcısı yok: '$OWNER' (ayar: $CONF). Hiçbir şey değiştirilmedi."
 GROUP=$(id -gn "$OWNER")
 case "$KEEP_BACKUPS" in ''|*[!0-9]*|0) die "KEEP_BACKUPS 1 ya da daha büyük bir sayı olmalı (ayar: $CONF)" ;; esac
+case "$HEALTH_WAIT" in ''|*[!0-9]*) die "HEALTH_WAIT saniye olmalı (ayar: $CONF)" ;; esac
 SVC=${SVC%.service}
 [ "$(systemctl show -p LoadState --value "$SVC.service" 2>/dev/null)" = loaded ] \
     || die "systemd birimi bulunamadı: '$SVC' (ayar: $CONF). Hiçbir şey değiştirilmedi."
@@ -223,13 +225,22 @@ install -d -o "$OWNER" -g "$GROUP" -m 755 "$APP/keys"
 install -o "$OWNER" -g "$GROUP" -m 644 keys/pops_release_ed25519.pub.pem "$APP/keys/pops_release_ed25519.pub.pem"
 
 systemctl restart "$SVC" || rollback "Servis yeniden başlatılamadı"
-sleep 4
 
-ok=1
-systemctl is-active --quiet "$SVC" || ok=0
-[ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/health")" = 200 ] || ok=0
-[ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/agent_policies")" = 200 ] || ok=0
-[ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/devices")" = 401 ] || ok=0
+# Açılış (bekleyen migration'lar, indeks kurulumu dahil) birkaç saniyeden uzun sürebilir: sağlık HEALTH_WAIT
+# saniyeye kadar 2 sn arayla beklenir; servis ayakta ve /api/health 200 olunca diğer uçlar denetlenir.
+ok=0
+for _ in $(seq 1 $(( HEALTH_WAIT > 2 ? HEALTH_WAIT / 2 : 1 ))); do
+    sleep 2
+    if systemctl is-active --quiet "$SVC" \
+        && [ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/health")" = 200 ]; then
+        ok=1
+        break
+    fi
+done
+if [ "$ok" = 1 ]; then
+    [ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/agent_policies")" = 200 ] || ok=0
+    [ "$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_BASE/api/devices")" = 401 ] || ok=0
+fi
 
 if [ "$ok" = 1 ]; then
     CHANGED=0

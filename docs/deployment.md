@@ -166,6 +166,7 @@ alone. Without the file the `install.sh` defaults apply. Template:
 | `SVC` | `pops` | systemd unit |
 | `OWNER` | `pops` | service user; files are installed as this user and its primary group, and `pip` runs as this user |
 | `HEALTH_BASE` | `http://127.0.0.1:8000` | backend address used by the health check |
+| `HEALTH_WAIT` | `60` | seconds to wait for `/api/health` after the restart (pending migrations can slow the start) |
 | `KEEP_BACKUPS` | `10` | rollback points kept (code backup plus its venv snapshot) |
 
 Root sources the file as shell, so it must be owned by root, not writable by group or others and not a symbolic

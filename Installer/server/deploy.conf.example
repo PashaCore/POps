@@ -14,6 +14,8 @@ SVC=pops
 OWNER=pops
 # Backend'in iç adresi: sağlık kontrolü $HEALTH_BASE/api/health, /api/agent_policies ve /api/devices'a bakar
 HEALTH_BASE=http://127.0.0.1:8000
+# Yeniden başlatmadan sonra sağlığın beklendiği en uzun süre (saniye; migration'lar açılışı uzatabilir)
+HEALTH_WAIT=60
 # Saklanan geri dönüş noktası sayısı ($APP/.deploy-backups): kod yedeği + varsa aynı adlı venv görüntüsü
 KEEP_BACKUPS=10
 
