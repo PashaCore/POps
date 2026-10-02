@@ -88,6 +88,7 @@ def _not_after_of_file(path):
 
 def _not_after_of_host(host, port):
     ctx = ssl.create_default_context()
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE  # yalnızca süre okunur; güven zinciri ajan/tarayıcı tarafında doğrulanır
     with socket.create_connection((host, port), timeout=10) as sock:

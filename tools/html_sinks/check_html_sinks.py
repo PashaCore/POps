@@ -985,7 +985,8 @@ def php_findings(src):
 
 
 # ---------------------------------------------------------------- dosyalar
-SCRIPT_RE = re.compile(r'<script\b([^>]*)>(.*?)</script\s*>', re.S | re.I)
+# Kapanış etiketi tarayıcının kabul ettiği biçimlerin hepsi: </script>, </SCRIPT >, </script\t\n foo>
+SCRIPT_RE = re.compile(r'<script\b([^>]*)>(.*?)</script\b[^>]*>', re.S | re.I)
 PHP_IN_JS = re.compile(r'<\?(?:php\b|=).*?\?>', re.S | re.I)
 
 
