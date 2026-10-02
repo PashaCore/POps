@@ -1,5 +1,6 @@
 """Görev kuyruğu, orkestrasyon, paket deposu ve depolama uçları."""
 
+import asyncio
 import base64
 import datetime
 import hashlib
@@ -56,8 +57,11 @@ _ACTION_STATUSES = {
     "RESUME": ("Paused",),
     "RETRY": (
         "Completed", "Completed (Rebooted)", "Failed", "Error", "Cancelled", "Unknown", "Interrupted", "Timed Out",
+        "Denied",
     ),
 }
+# Bir görevin yeniden denemesi sürüyorsa (bu durumlarda) ikinci kopya açılmaz
+_ACTIVE_STATUSES = ["Pending", "Running", "Paused", "Unknown"]
 _ACTION_TARGET = {"CANCEL": "Cancelled", "RETRY": "Pending", "PAUSE": "Paused", "RESUME": "Pending"}
 
 
@@ -70,18 +74,20 @@ async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require
     if new_status is None:
         raise HTTPException(status_code=400, detail="Geçersiz işlem")
     scope = {
-        "TASK": ("id = $3", lambda: int(tid)),
-        "LAB": ("target_lab = $3", lambda: tid),
-        "PC": ("target_pc = $3", lambda: tid),
-        "ALL": ("$3::text IS NULL", lambda: None),
+        "TASK": ("t.id = {v}", lambda: int(tid)),
+        "LAB": ("t.target_lab = {v}", lambda: tid),
+        "PC": ("t.target_pc = {v}", lambda: tid),
+        "ALL": ("{v}::text IS NULL", lambda: None),
     }.get(mode)
     if scope is None:
         raise HTTPException(status_code=400, detail="Geçersiz hedef")
     where, value = scope
+    if action == "RETRY":
+        return await _retry(where, value(), auth.get("sub"))
     # Önceki durum da döner: çalışmakta olan görev iptal edildiyse ajana da bildirilir
     changed = await execute_query(
-        "WITH target AS (SELECT id, target_pc, status FROM tasks "
-        f"WHERE {where} AND status = ANY($2::text[]) FOR UPDATE) "
+        "WITH target AS (SELECT t.id, t.target_pc, t.status FROM tasks t "
+        f"WHERE {where.format(v='$3')} AND t.status = ANY($2::text[]) FOR UPDATE) "
         "UPDATE tasks t SET status = $1, "
         "dispatched_at = CASE WHEN $1 = 'Pending' THEN NULL ELSE t.dispatched_at END, "
         "exit_code = CASE WHEN $1 = 'Pending' THEN NULL ELSE t.exit_code END "
@@ -94,9 +100,27 @@ async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require
             if row["old_status"] in ("Running", "Unknown"):
                 # 0.1.13+ ajan komutun işlemini (alt süreçleriyle) sonlandırır; eskiler mesajı yok sayar
                 await manager.send_command({"action": "cancel_task", "task_id": row["id"]}, row["target_pc"])
-    if action in ["RESUME", "RETRY"]:
+    if action == "RESUME":
         await process_queue()
     return {"status": "success", "changed": len(changed or [])}
+
+
+async def _retry(where: str, value, creator: str) -> dict:
+    """Yeniden deneme YENİ bir görev kaydı açar (retry_of = eski görev); eski kayıt sonucuyla kalır. Eskiden aynı
+    görev kimliği yeniden "Pending" yapılıyordu: iptal edilmiş ama hâlâ süren eski çalıştırmanın geç gelen sonucu
+    yeni çalıştırmayı tamamlanmış gösterebilirdi. Aynı görevin süren bir yeniden denemesi varsa ikincisi açılmaz."""
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    created = await execute_query(
+        "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, retry_of) "
+        "SELECT t.target_pc, t.target_lab, t.script_path, 'Pending', $2, $3, t.id FROM tasks t "
+        f"WHERE {where.format(v='$1')} AND t.status = ANY($4::text[]) "
+        "AND NOT EXISTS (SELECT 1 FROM tasks n WHERE n.retry_of = t.id AND n.status = ANY($5::text[])) "
+        "RETURNING id",
+        (value, now, creator, list(_ACTION_STATUSES["RETRY"]), _ACTIVE_STATUSES),
+        fetch=True,
+    )
+    await process_queue()
+    return {"status": "success", "changed": len(created or [])}
 
 
 @router.post("/api/set_concurrent_limit")
@@ -265,30 +289,36 @@ DUPLICATE_WINDOW_SECONDS = 5.0
 _recent_orchestrations = {}
 
 
-def _orchestration_key(creator: str, data: OrchestrationInput):
-    """Aynı istek birkaç saniye içinde ikinci kez geldiyse None, değilse isteğin anahtarı (kaydedilmiş olarak)."""
+def _orchestration_key(creator: str, data: OrchestrationInput) -> str:
     now = time.monotonic()
-    for key, at in list(_recent_orchestrations.items()):
-        if now - at > DUPLICATE_WINDOW_SECONDS:
+    for key, (at, fut) in list(_recent_orchestrations.items()):
+        if now - at > DUPLICATE_WINDOW_SECONDS and fut.done():
             _recent_orchestrations.pop(key, None)
-    key = hashlib.sha256(
+    return hashlib.sha256(
         json.dumps(
             [creator, data.target_mode, data.targets, [(t.type, t.command) for t in data.taskSequence]],
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
-    if key in _recent_orchestrations:
-        return None
-    _recent_orchestrations[key] = now
-    return key
 
 
 @router.post("/api/deploy_orchestration")
 async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(require_admin)):
     creator = auth.get("sub")  # F4(a): görevi kuyruklayan admin kaydedilir
     key = _orchestration_key(creator, data)
-    if key is None:
-        return {"status": "success", "duplicate": True, "created": 0}
+    first = _recent_orchestrations.get(key)
+    if first is not None:
+        # Aynı istek az önce geldi: ilkinin GERÇEK sonucu beklenir ve aynen döner (ilki başarısız olduysa bu da olur).
+        # Eskiden ilki daha bitmeden "başarılı" dönülüyordu.
+        try:
+            created = await asyncio.wait_for(asyncio.shield(first[1]), 30)
+        except Exception:
+            raise HTTPException(
+                status_code=409, detail="Aynı istek az önce gönderildi ve tamamlanamadı; tekrar deneyin."
+            )
+        return {"status": "success", "duplicate": True, "created": created}
+    outcome = asyncio.get_running_loop().create_future()
+    _recent_orchestrations[key] = (time.monotonic(), outcome)
     try:
         target_pcs = await resolve_targets(data.target_mode, data.targets)
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -305,8 +335,11 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
                     "VALUES ($1, $2, $3, 'Pending', $4, $5)",
                     rows,
                 )
-    except Exception:
+    except Exception as exc:
         _recent_orchestrations.pop(key, None)   # başarısız istek yeniden denenebilsin
+        outcome.set_exception(exc)
+        outcome.exception()   # bekleyen yoksa "alınmamış hata" uyarısı çıkmasın
         raise
+    outcome.set_result(len(rows))
     await process_queue()
     return {"status": "success", "created": len(rows)}

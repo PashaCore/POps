@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Server: two simultaneous enrollments for the same new device give out one key.** The enrollment transaction now locks on the device ID; before, two connections enrolling an ID that had no key yet could both pass and the second key replaced the first.
+- **Server: a retry is a new task.** Retrying opens a new task that points to the old one (`retry_of`, migration `0016`); the old task keeps its result, and a late result from a cancelled run can no longer complete the new one. A task with a retry still pending is not copied again.
+- **Server: a command refused by the PC shows as refused.** When the terminal is off on a PC, the task becomes `Denied` ("Reddedildi") instead of `Completed`.
+- **Server: task results are acknowledged** (`result_ack`) after they are stored, so 0.1.14 agents can keep a result until the server has it.
+- **Server: a device that disconnects while heartbeats are being written stays `Offline`.**
+- **Server: a repeated request gets the first request's real outcome**, including its error; it was answered "success" while the first one was still running.
+- **Server: an update result is acknowledged last,** after the audit entry and the notification; a crash in between now repeats them instead of losing the notification.
+- **Server: a retention run that fails is retried** the same day (at most hourly) instead of waiting for the next day.
 - **Server: a scheduled task is never lost.** Its tasks and the schedule's next run are written in one transaction; if the server or the database stops in between, nothing is written and the next round retries. A schedule with a broken target list is still advanced and its error recorded.
 - **Server: a task that never reports back times out.** 35 minutes after it was sent (the agent's own limit is 30) a `Running` task becomes `Timed Out` and the device's queue moves on; a late result is still stored.
 - **Server: a double click or a retried request creates the task once.** The same user, targets and commands within 5 seconds return `duplicate: true` without a new task; all tasks of one request are written together.

@@ -327,10 +327,92 @@ def test_p1():
         finally:
             notify.execute_query, notify._schedule_retry = real_exec, real_sched
 
+    async def heartbeat_race():
+        from pops import heartbeats
+
+        calls = []
+        real_exec, real_agents = heartbeats.execute_query, dict(heartbeats.manager.active_agents)
+        heartbeats.manager.active_agents.clear()
+        heartbeats.manager.active_agents["HW-RACE"] = object()
+
+        async def fake(query, params=(), fetch=False):
+            calls.append((query, params))
+            if len(calls) == 1:   # toplu yazım sürerken cihaz kopar
+                heartbeats.manager.active_agents.pop("HW-RACE", None)
+            return True
+
+        heartbeats.execute_query = fake
+        try:
+            heartbeats.record("HW-RACE", "2026-10-02 12:00:00", "Online", "-", "h", "1.2.3.4", None)
+            await heartbeats.flush()
+            chk(len(calls) == 2 and "Offline" in calls[1][0] and calls[1][1] == (["HW-RACE"],),
+                "yazım sürerken kopan cihaz yeniden Offline yapıldı")
+        finally:
+            heartbeats.execute_query = real_exec
+            heartbeats.manager.active_agents.clear()
+            heartbeats.manager.active_agents.update(real_agents)
+
+    async def dedupe_waits_for_outcome():
+        from fastapi import HTTPException
+        from pops.models import OrchestrationInput
+        from pops.routers import tasks as tasks_router
+
+        real_resolve = tasks_router.resolve_targets
+        gate = asyncio.Event()
+
+        async def slow_fail(mode, targets):
+            await gate.wait()
+            raise RuntimeError("veritabanı yok")
+
+        tasks_router.resolve_targets = slow_fail
+        data = OrchestrationInput(target_mode="PC", targets=["HW-X"],
+                                  taskSequence=[{"name": "n", "type": "CMD", "command": "echo dedupe"}])
+        try:
+            first = asyncio.ensure_future(tasks_router.deploy_orchestration(data, {"sub": "u"}))
+            await asyncio.sleep(0)
+            second = asyncio.ensure_future(tasks_router.deploy_orchestration(data, {"sub": "u"}))
+            await asyncio.sleep(0)
+            gate.set()
+            r1, r2 = await asyncio.gather(first, second, return_exceptions=True)
+            chk(isinstance(r1, RuntimeError), "ilk istek başarısız")
+            chk(isinstance(r2, HTTPException) and r2.status_code == 409, "ikinci istek yanlışlıkla 'başarılı' dönmedi")
+        finally:
+            tasks_router.resolve_targets = real_resolve
+            tasks_router._recent_orchestrations.clear()
+
+    async def retention_date_after_success():
+        from pops import retention
+
+        written = []
+        real_exec, real_apply = retention.execute_query, retention.apply
+
+        async def fake_exec(query, params=(), fetch=False):
+            if "retention_run_date" in query and query.lstrip().startswith("INSERT"):
+                written.append(params)
+            return [] if fetch else True
+
+        async def failing_apply():
+            raise RuntimeError("silme yarıda kaldı")
+
+        retention.execute_query, retention.apply = fake_exec, failing_apply
+        retention._last_attempt[0] = -3600.0
+        try:
+            try:
+                await retention.apply_daily()
+            except RuntimeError:
+                pass
+            chk(written == [], "başarısız tur günün tarihini yazmadı (aynı gün yeniden denenir)")
+        finally:
+            retention.execute_query, retention.apply = real_exec, real_apply
+            retention._last_attempt[0] = -3600.0
+
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(panel_queue())
         loop.run_until_complete(notify_retry())
+        loop.run_until_complete(heartbeat_race())
+        loop.run_until_complete(dedupe_waits_for_outcome())
+        loop.run_until_complete(retention_date_after_success())
     finally:
         loop.close()
 
