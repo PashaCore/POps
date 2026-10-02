@@ -151,7 +151,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), auth: dict
         raise HTTPException(status_code=400, detail="Geçersiz dosya adı")
     # Son yol mutlaka UPLOAD_DIR'in doğrudan içinde olmalı (path traversal / symlink engeli)
     file_path = os.path.realpath(os.path.join(UPLOAD_DIR, filename))
-    if os.path.dirname(file_path) != UPLOAD_DIR:
+    if not file_path.startswith(UPLOAD_DIR + os.sep) or os.path.dirname(file_path) != UPLOAD_DIR:
         raise HTTPException(status_code=400, detail="Geçersiz dosya yolu")
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -172,10 +172,12 @@ async def download_file(filename: str, sig: str = ""):
     not_found = HTTPException(status_code=404, detail="Bulunamadı")
     if not filename or secure_filename(filename) != filename:
         raise not_found
-    file_path = os.path.realpath(os.path.join(UPLOAD_DIR, filename))
-    if os.path.dirname(file_path) != UPLOAD_DIR or not os.path.isfile(file_path):
-        raise not_found
     if not hmac.compare_digest(sig.encode("ascii", "ignore"), _download_sig(await _download_key(), filename).encode()):
+        raise not_found
+    file_path = os.path.realpath(os.path.join(UPLOAD_DIR, filename))
+    if not file_path.startswith(UPLOAD_DIR + os.sep):
+        raise not_found
+    if os.path.dirname(file_path) != UPLOAD_DIR or not os.path.isfile(file_path):
         raise not_found
     return FileResponse(file_path, filename=filename)
 
