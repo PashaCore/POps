@@ -140,7 +140,7 @@
             </div>
         </div>
 
-        <button class="btn-massive" onclick="executeDeployment()">
+        <button class="btn-massive" onclick="executeDeployment(this)">
             <i class="fas fa-rocket"></i> Dağıtımı Başlat
         </button>
 
@@ -245,29 +245,21 @@ function base64UTF16LEToStr(b64) {
 }
 
 window.loadRepository = async function() {
-    if (!getApiBase()) return;
     try {
-        const [pkgRes, devRes, limRes] = await Promise.all([fetch(getApiBase() + '/api/packages'), fetch(getApiBase() + '/api/devices'), fetch(getApiBase() + '/api/get_concurrent_limit')]);
-        const packages = await pkgRes.json();
-        const devices = await devRes.json();
-        const limData = await limRes.json();
-        devices.forEach(d => { deviceMap[d.hostname] = d.display_name || d.real_hostname || d.hostname; });
-        repository.packages = packages.filter(d => d.type === 'package');
-        repository.scripts = packages.filter(d => d.type === 'script');
+        const [packages, limData] = await Promise.all([POps.get('/api/packages'), POps.get('/api/get_concurrent_limit').catch(() => null)]);
+        repository.packages = (packages || []).filter(d => d.type === 'package');
+        repository.scripts = (packages || []).filter(d => d.type === 'script');
         renderRepoList();
-        document.getElementById('queueLimitInput').value = limData.limit || 5;
-    } catch (e) { console.error('Veriler çekilemedi', e); }
+        if (limData && limData.limit) document.getElementById('queueLimitInput').value = limData.limit;
+    } catch (e) {
+        POps.setError(document.getElementById('repoList'), e, { compact: true });
+    }
 };
 
 window.updateQueueLimit = async function(newLim) {
-    if (!getApiBase()) return;
-    try {
-        const lim = parseInt(newLim);
-        if (!(lim >= 1 && lim <= 100)) { showToast('Limit 1-100 arasında olmalı.', 'warning'); return; }
-        const res = await fetch(getApiBase() + '/api/set_concurrent_limit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: lim }) });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        showToast('Kuyruk limiti ' + lim + ' olarak güncellendi.', 'success');
-    } catch (e) { showToast('Kuyruk limiti kaydedilemedi.', 'error'); }
+    const lim = parseInt(newLim, 10);
+    if (!(lim >= 1 && lim <= 100)) { POps.toast('warning', 'Eşzamanlı kurulum sayısı 1 ile 100 arasında olmalı.'); return; }
+    await POps.act(null, () => POps.post('/api/set_concurrent_limit', { limit: lim }), { success: 'Eşzamanlı kurulum sayısı ' + lim + ' oldu.', error: 'Kaydedilemedi.' });
 }
 
 function openPkgModal(editId = null) {
@@ -344,12 +336,11 @@ function updateFileName(input) {
 }
 
 window.savePackage = async function() {
-    if (!getApiBase()) return;
     const editId = document.getElementById('pkgEditId').value;
     const type = document.getElementById('pkgType').value;
     const name = document.getElementById('pkgName').value.trim();
     const needsReboot = document.getElementById('requireReboot').checked;
-    if (!name) return showToast('Modül ismi girin.', 'warning');
+    if (!name) { POps.toast('warning', 'Modüle bir ad verin.'); document.getElementById('pkgName').focus(); return; }
 
     let finalCommand = '', metaInfo = '';
     const fileInput = document.getElementById('pkgFileInput');
@@ -364,9 +355,7 @@ window.savePackage = async function() {
             if (!editId || isNewFileSelected) {
                 if (!isNewFileSelected) throw new Error('Lütfen kurulum dosyası seçin.');
                 const fd = new FormData(); fd.append('file', fileInput.files[0]);
-                const up = await fetch(`${getApiBase()}/api/upload`, { method: 'POST', body: fd });
-                if (!up.ok) throw new Error('Dosya yüklenemedi.');
-                const upData = await up.json();
+                const upData = await POps.api('/api/upload', { method: 'POST', body: fd });
                 // İmzalı adres (sunucu /download'u imzasız vermez) ve dosyanın SHA-256 özeti
                 fileUrl = OMYO_API.DOWNLOAD_URL + '/' + encodeURIComponent(upData.filename) + '?sig=' + encodeURIComponent(upData.sig);
                 fileHash = upData.sha256 || '';
@@ -393,33 +382,30 @@ window.savePackage = async function() {
         }
 
         const payload = { id: editId ? editId : 'mod-' + Date.now(), name, type, meta: metaInfo, command: finalCommand, icon: type === 'package' ? 'fa-box-open' : 'fa-terminal', color: type === 'package' ? '#3b82f6' : '#f59e0b' };
-        const res = await fetch(`${getApiBase()}/api/add_package`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (!res.ok) throw new Error('Paket kaydedilemedi.');
+        await POps.post('/api/add_package', payload);
         await window.loadRepository();
         workflowSequence.forEach(t => { if (t.id === payload.id) t.name = payload.name; });
         renderWorkflow();
         closePkgModal();
-        showToast(editId ? 'Modül güncellendi.' : `${name} depoya eklendi.`, 'success');
-    } catch (e) { showToast(e.message, 'error'); }
+        POps.toast('success', editId ? 'Modül güncellendi.' : `${name} depoya eklendi.`);
+    } catch (e) { POps.toast('error', POps.errorMessage(e)); }
     finally { btn.innerHTML = oldBtnText; btn.disabled = false; }
 }
 
-window.deletePackage = async function(id, name) {
-    if (!getApiBase()) return;
-    if (!confirm(`'${name}' modülünü silmek istediğinize emin misiniz?`)) return;
-    try {
-        await fetch(getApiBase() + '/api/delete_package', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+window.deletePackage = async function(id, name, btn) {
+    if (!await POps.confirm({ title: 'Modül silinsin mi?', message: `"${name}" depodan silinecek. Daha önce kuyruğa eklenmiş görevler etkilenmez.`, confirmText: 'Sil', danger: true })) return;
+    if (await POps.act(btn, () => POps.post('/api/delete_package', { id }), { success: 'Modül silindi.' })) {
         await window.loadRepository();
         workflowSequence = workflowSequence.filter(t => t.id !== id);
         renderWorkflow();
-    } catch (e) { showToast('Silme başarısız.', 'error'); }
+    }
 };
 
 function renderRepoList() {
     const list = document.getElementById('repoList');
     list.innerHTML = '';
     const items = repository[currentRepoTab];
-    if (!items || items.length === 0) { list.innerHTML = '<div class="empty-state" style="padding:2rem;">Bu depoda henüz öğe yok.</div>'; return; }
+    if (!items || items.length === 0) { POps.setEmpty(list, { icon: currentRepoTab === 'packages' ? 'fa-box-open' : 'fa-terminal', title: 'Bu depoda henüz öğe yok', text: 'Yeni modül ekleyin.', compact: true }); return; }
     items.forEach(item => {
         const div = document.createElement('div');
         div.className = `repo-item ${item.type}`;
@@ -429,7 +415,7 @@ function renderRepoList() {
             <div class="details"><span class="title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span><span class="meta">${escapeHtml(item.meta)}</span></div>
             <div style="display:flex;gap:0.25rem;opacity:0;transition:0.2s;" class="repo-actions">
                 <button class="btn-remove-task" title="Düzenle" onclick="openPkgModal(${jsArg(item.id)})"><i class="fas fa-pen"></i></button>
-                <button class="btn-remove-task" title="Sil" onclick="window.deletePackage(${jsArg(item.id)}, ${jsArg(item.name || '')})"><i class="fas fa-trash"></i></button>
+                <button class="btn-remove-task" title="Sil" onclick="window.deletePackage(${jsArg(item.id)}, ${jsArg(item.name || '')}, this)"><i class="fas fa-trash"></i></button>
             </div>
             <i class="fas fa-grip-vertical" style="color:var(--text-muted);font-size:0.75rem;"></i>`;
         div.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', JSON.stringify(item)); div.style.opacity = '0.5'; });
@@ -501,7 +487,7 @@ function renderTargetList() {
     const listContainer = document.getElementById('targetListContainer');
     const searchTerm = document.getElementById('targetSearchInput').value.toLowerCase();
     listContainer.innerHTML = '';
-    if (typeof state === 'undefined' || !state.devices) return;
+    if (!state.devicesLoaded) { POps.setLoading(listContainer, 'Cihazlar yükleniyor…'); return; }
     if (targetMode === 'LAB') {
         const allLabs = [...new Set(state.devices.map(d => d.lab))];
         const filtered = allLabs.filter(l => l.toLowerCase().includes(searchTerm));
@@ -534,42 +520,63 @@ function renderTargetList() {
     }
 }
 
-window.executeDeployment = async function() {
-    if (!getApiBase()) return;
-    if (targetMode !== 'ALL' && selectedTargetIds.size === 0) return showToast('En az bir hedef seçin.', 'warning');
-    if (workflowSequence.length === 0) return showToast('Görev zinciri boş.', 'warning');
-    
-    const reason = prompt("Bu dağıtım/görev zinciri için bir 'Neden' belirtin (Zorunlu):");
-    if (!reason || reason.trim() === '') return showToast('Neden belirtmek zorunludur!', 'error');
+// Canlı izleme: dağıtımdan önceki en büyük görev kimliğinden sonra bu hedeflere eklenen görevlerin durumu
+let tracking = null;
+const TRACK_TEXT = { Pending: 'Kuyrukta', Paused: 'Duraklatıldı', Running: 'Çalışıyor', Completed: 'Tamamlandı', 'Completed (Rebooted)': 'Tamamlandı', Failed: 'Hata', Error: 'Hata', Cancelled: 'İptal edildi', Denied: 'Reddedildi', Interrupted: 'Yarıda kaldı', Unknown: 'Bilinmiyor', 'Timed Out': 'Zaman aşımı', Expired: 'Süresi doldu' };
+async function refreshTracking() {
+    if (!tracking) return;
+    let tasks;
+    try { tasks = await POps.get('/api/tasks?limit=500'); } catch (e) { return; }
+    const mine = (tasks || []).filter(t => t.id > tracking.afterId && tracking.targets.has(t.target_pc));
+    tracking.targets.forEach(pc => {
+        const list = mine.filter(t => t.target_pc === pc);
+        const done = list.filter(t => !['Pending', 'Paused', 'Running'].includes(t.status)).length;
+        const bad = list.find(t => ['Failed', 'Error', 'Denied', 'Interrupted', 'Timed Out', 'Expired', 'Cancelled'].includes(t.status));
+        const running = list.find(t => t.status === 'Running');
+        const el = document.getElementById('track-status-' + CSS.escape(pc));
+        const bar = document.querySelector('#track-' + CSS.escape(pc) + ' .tracker-progress-fill');
+        if (!el) return;
+        el.textContent = !list.length ? 'Atlandı' : bad ? TRACK_TEXT[bad.status] || bad.status : running ? 'Çalışıyor' : done === list.length ? 'Tamamlandı' : 'Kuyrukta';
+        el.style.color = bad ? 'var(--danger-text)' : done === list.length && list.length ? 'var(--success-text)' : 'var(--text-tertiary)';
+        if (bar) { bar.style.width = (list.length ? Math.round(100 * done / list.length) : 100) + '%'; bar.style.background = bad ? 'var(--danger-solid)' : ''; }
+    });
+}
 
+window.executeDeployment = async function(btn) {
+    if (targetMode !== 'ALL' && selectedTargetIds.size === 0) { POps.toast('warning', 'En az bir hedef seçin.'); return; }
+    if (workflowSequence.length === 0) { POps.toast('warning', 'Görev zinciri boş: depodan modül sürükleyin.'); return; }
+    const reason = await POps.prompt({ title: 'Dağıtımı başlat', message: `${workflowSequence.length} adımlık zincir ${targetMode === 'ALL' ? 'bütün bilgisayarlara' : selectedTargetIds.size + ' hedefe'} gönderilecek ve SYSTEM hesabıyla çalışacak.`, label: 'Gerekçe (denetim kaydına yazılır)', required: true, maxLength: 300, confirmText: 'Başlat' });
+    if (reason === null) return;
     const payload = { target_mode: targetMode, targets: targetMode === 'ALL' ? [] : Array.from(selectedTargetIds), taskSequence: workflowSequence.map(t => ({ name: t.name, type: t.type, command: t.command })), reason: reason.trim() };
-    const btn = document.querySelector('.btn-massive');
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> İletiliyor...'; btn.disabled = true;
-    try {
-        const res = await fetch(getApiBase() + '/api/deploy_orchestration', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (!res.ok) throw new Error('API Hatası');
-        showToast('Görevler kuyruğa eklendi.', 'success');
-        let targets = [];
-        if (targetMode === 'ALL') targets = state.devices.map(d => d.hostname);
-        else if (targetMode === 'LAB') targets = state.devices.filter(d => selectedTargetIds.has(d.lab)).map(d => d.hostname);
-        else targets = Array.from(selectedTargetIds);
-        const trackerArea = document.getElementById('liveTrackerArea');
-        const trackerList = document.getElementById('trackerList');
-        trackerArea.style.display = 'flex';
-        trackerList.innerHTML = '';
-        targets.forEach(pc => {
-            const dName = deviceMap[pc] || pc;
-            trackerList.innerHTML += `<div class="tracker-item" id="track-${escapeHtml(pc)}"><div style="font-weight:var(--fw-semibold);font-size:0.75rem;">${escapeHtml(dName)} <span style="float:right;color:var(--text-tertiary);" id="track-status-${escapeHtml(pc)}">Kuyrukta</span></div><div class="tracker-progress-bg"><div class="tracker-progress-fill"></div></div></div>`;
-        });
-    } catch (e) { showToast('Başlatılamadı.', 'error'); }
-    btn.innerHTML = '<i class="fas fa-rocket"></i> Dağıtımı Başlat'; btn.disabled = false;
+    let afterId = 0;
+    try { afterId = Math.max(0, ...((await POps.get('/api/tasks?limit=1')) || []).map(t => t.id)); } catch (e) { /* izleme kimlik olmadan da başlar */ }
+    let r;
+    try { r = await POps.busy(btn, () => POps.post('/api/deploy_orchestration', payload)); }
+    catch (e) { POps.toast('error', 'Dağıtım başlatılamadı: ' + POps.errorMessage(e)); return; }
+    if (!r) return;
+    POps.toast('success', r.duplicate ? 'Aynı dağıtım az önce gönderilmişti.' : `${r.created || 0} görev kuyruğa eklendi` + (r.skipped_module_closed ? `; ${r.skipped_module_closed} bilgisayarda modül kapalı.` : '.'));
+    let targets;
+    if (targetMode === 'ALL') targets = state.devices.map(d => d.hostname);
+    else if (targetMode === 'LAB') targets = state.devices.filter(d => selectedTargetIds.has(d.lab)).map(d => d.hostname);
+    else targets = Array.from(selectedTargetIds);
+    tracking = { afterId, targets: new Set(targets) };
+    document.getElementById('liveTrackerArea').style.display = 'flex';
+    document.getElementById('trackerList').innerHTML = targets.map(pc => `<div class="tracker-item" id="track-${escapeHtml(pc)}"><div style="font-weight:var(--fw-semibold);font-size:0.75rem;">${escapeHtml(deviceMap[pc] || pc)} <span style="float:right;color:var(--text-tertiary);" id="track-status-${escapeHtml(pc)}">Kuyrukta</span></div><div class="tracker-progress-bg"><div class="tracker-progress-fill" style="width:0%"></div></div></div>`).join('');
+    refreshTracking();
 };
-
-function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 
 document.addEventListener('DOMContentLoaded', () => {
     window.loadRepository();
-    if (typeof state !== 'undefined' && state.devices) window.renderDeployView = function() { if (targetMode !== 'ALL') renderTargetList(); };
+    // Hedef listeleri ortak cihaz listesinden çizilir; bu sayfa listeyi yoklar
+    POps.watchDevices();
+    let devicesKey = '';
+    document.addEventListener('pops_data_updated', () => {
+        state.devices.forEach(d => { deviceMap[d.hostname] = POps.deviceName(d); });
+        // Liste yalnızca cihazlar değişince yeniden çizilir (kaydırma ve seçim yerinde kalsın)
+        const key = state.devices.map(d => d.hostname + '|' + d.lab + '|' + POps.deviceName(d)).join(';');
+        if (key !== devicesKey) { devicesKey = key; if (targetMode !== 'ALL') renderTargetList(); }
+    });
+    popsPoll(refreshTracking, 4000);
 });
 </script>
 

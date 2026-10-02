@@ -121,8 +121,8 @@
         <h1><i class="fas fa-th-large"></i> POpsVision <span style="color:var(--text-tertiary);font-size:var(--text-md);font-weight:var(--fw-regular);margin-left:0.5rem;">| Laboratuvar İzleme Motoru</span></h1>
     </div>
     <div class="page-header-actions">
-        <button class="btn-vision danger" onclick="App.powerCommand('ALL', 'shutdown')"><i class="fas fa-power-off"></i> Tümünü Kapat</button>
-        <button class="btn-vision refresh" onclick="App.wakeUpCommand('ALL')"><i class="fas fa-bolt"></i> Tümünü Uyandır</button>
+        <button class="btn-vision danger" onclick="App.powerCommand('ALL', 'shutdown', this)"><i class="fas fa-power-off"></i> Tümünü Kapat</button>
+        <button class="btn-vision refresh" onclick="App.wakeUpCommand('ALL', this)"><i class="fas fa-bolt"></i> Tümünü Uyandır</button>
     </div>
 </div>
 
@@ -150,8 +150,8 @@
             <span class="wall-title" id="wallLabName"></span>
         </div>
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-            <button class="btn-vision refresh" onclick="App.wakeUpCommand('LAB')"><i class="fas fa-bolt"></i> Sınıfı Aç</button>
-            <button class="btn-vision danger" onclick="App.powerCommand('LAB', 'shutdown')"><i class="fas fa-power-off"></i> Kapat</button>
+            <button class="btn-vision refresh" onclick="App.wakeUpCommand('LAB', this)"><i class="fas fa-bolt"></i> Sınıfı Aç</button>
+            <button class="btn-vision danger" onclick="App.powerCommand('LAB', 'shutdown', this)"><i class="fas fa-power-off"></i> Kapat</button>
             <button class="btn-vision refresh" onclick="App.fetchWallThumbnails()" id="btnRefreshGrid"><i class="fas fa-camera"></i> Ekranları Tazele</button>
         </div>
     </div>
@@ -414,15 +414,13 @@ const App = {
         };
         const item = map[cmdType];
         if (!item) return;
-        if ((cmdType === 'reboot_pc' || cmdType === 'restart_agent') && !confirm(`${item[0]} bu cihaza gönderilsin mi?`)) return;
+        if ((cmdType === 'reboot_pc' || cmdType === 'restart_agent') && !await POps.confirm({ title: item[0] + ' gönderilsin mi?', message: 'Komut bu cihaza gönderilecek; bağlantı kısa süre kopar.', confirmText: 'Gönder', danger: cmdType === 'reboot_pc' })) return;
         const c = document.getElementById('diagConsole');
         c.innerText += `\n> ${item[1]}\n[Kuyruğa eklendi, ajan yanıtı bekleniyor...]`;
         try {
-            const res = await fetch(`${this.apiUrl}/api/deploy_orchestration`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ target_mode: 'PC', targets: [this.currentPc], taskSequence: [{ name: 'Teşhis: ' + item[0], type: 'CMD', command: item[1] }] }) });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
+            await POps.post('/api/deploy_orchestration', { target_mode: 'PC', targets: [this.currentPc], taskSequence: [{ name: 'Teşhis: ' + item[0], type: 'CMD', command: item[1] }] });
             if (cmdType === 'restart_agent' || cmdType === 'reboot_pc') c.innerText += '\n[Bu komut yanıt döndürmez; ajan birkaç saniye içinde yeniden bağlanır.]';
-        } catch (e) { c.innerText += `\n[Gönderilemedi: ${e.message}]`; }
+        } catch (e) { c.innerText += `\n[Gönderilemedi: ${POps.errorMessage(e)}]`; }
         c.scrollTop = c.scrollHeight;
     },
 
@@ -491,17 +489,19 @@ const App = {
     submitAuditSession: async function() {
         const reason = document.getElementById('auditReason').value.trim();
         const type = document.getElementById('auditType').value;
-        if (!reason) return showToast('Gerekçe girin.', 'warning');
-        closeModal('auditModal');
-        document.getElementById('streamModeToggle').checked = true;
+        if (!reason) { POps.toast('warning', 'Bağlanma gerekçesini yazın.'); document.getElementById('auditReason').focus(); return; }
+        const btn = document.querySelector('#auditModal .modal-footer .btn:not(.secondary)');
         try {
-            const res = await fetch(`${this.apiUrl}/api/audit/session/start`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ admin_id: SESSION_ADMIN_ID, admin_name: SESSION_ADMIN_NAME, admin_role: SESSION_ADMIN_ROLE, target_pc: this.currentPc, reason, is_mandatory: type === 'mandatory' })
-            });
-            const data = await res.json();
-            if (data.status === 'success') { this.currentAuditSessionId = data.session_id; this.startLiveStream(data.countdown_seconds); }
-        } catch (e) { showToast('Bağlantı başlatılamadı.', 'error'); document.getElementById('streamModeToggle').checked = false; }
+            const data = await POps.busy(btn, () => POps.post('/api/audit/session/start', { admin_id: SESSION_ADMIN_ID, admin_name: SESSION_ADMIN_NAME, admin_role: SESSION_ADMIN_ROLE, target_pc: this.currentPc, reason, is_mandatory: type === 'mandatory' }));
+            if (!data || !data.session_id) throw new Error('Sunucu oturum açmadı.');
+            closeModal('auditModal');
+            document.getElementById('streamModeToggle').checked = true;
+            this.currentAuditSessionId = data.session_id;
+            this.startLiveStream(data.countdown_seconds);
+        } catch (e) {
+            POps.toast('error', 'Oturum başlatılamadı: ' + POps.errorMessage(e));
+            document.getElementById('streamModeToggle').checked = false;
+        }
     },
 
     openLockdownPrompt: function() { openModal('lockdownModal'); document.getElementById('lockdownReason').value = ''; },
@@ -511,10 +511,10 @@ const App = {
         if (!this.currentPc) return;
         const pcData = this.devices.find(d => d.hostname === this.currentPc);
         if (pcData && pcData.is_quarantined) {
-            if (!confirm('Karantina kaldırılsın mı?')) return;
+            if (!await POps.confirm({ title: 'Karantina kaldırılsın mı?', message: 'Kilit ekranı kapanır ve ağ yalıtımı kaldırılır.', confirmText: 'Kaldır', icon: 'fa-unlock' })) return;
             try {
-                await fetch(`${this.apiUrl}/api/security/unlock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_id: SESSION_ADMIN_ID, admin_name: SESSION_ADMIN_NAME, target_pc: this.currentPc, reason: 'Karantina Kaldırıldı' }) });
-                showToast('Kilit açma sinyali gönderildi!', 'success');
+                await POps.busy(document.getElementById('btnQuarantine'), () => POps.post('/api/security/unlock', { admin_id: SESSION_ADMIN_ID, admin_name: SESSION_ADMIN_NAME, target_pc: this.currentPc, reason: 'Karantina Kaldırıldı' }));
+                POps.toast('success', 'Karantina kaldırma komutu gönderildi.');
                 // Optimistic UI update
                 pcData.is_quarantined = false;
                 const qBtn = document.getElementById('btnQuarantine');
@@ -522,7 +522,7 @@ const App = {
                     qBtn.innerHTML = '<i class="fas fa-biohazard"></i> Karantinaya Al';
                     qBtn.className = 'btn-vision danger';
                 }
-            } catch (e) { showToast('Hata oluştu', 'error'); }
+            } catch (e) { POps.toast('error', POps.errorMessage(e)); }
         } else {
             this.openLockdownPrompt();
         }
@@ -530,11 +530,12 @@ const App = {
 
     submitLockdown: async function() {
         const reason = document.getElementById('lockdownReason').value.trim();
-        if (!reason) return showToast('Gerekçe girmek zorunlu.', 'warning');
-        closeModal('lockdownModal');
+        if (!reason) { POps.toast('warning', 'Karantina gerekçesini yazın.'); document.getElementById('lockdownReason').focus(); return; }
+        const lockBtn = document.querySelector('#lockdownModal .modal-footer .btn:not(.secondary)');
         try {
-            await fetch(`${this.apiUrl}/api/security/lockdown`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_id: SESSION_ADMIN_ID, admin_name: SESSION_ADMIN_NAME, target_pc: this.currentPc, reason }) });
-            showToast('Karantina sinyali gönderildi!', 'warning');
+            await POps.busy(lockBtn, () => POps.post('/api/security/lockdown', { admin_id: SESSION_ADMIN_ID, admin_name: SESSION_ADMIN_NAME, target_pc: this.currentPc, reason }));
+            closeModal('lockdownModal');
+            POps.toast('warning', 'Karantina komutu gönderildi.');
             const pcData = this.devices.find(d => d.hostname === this.currentPc);
             if (pcData) pcData.is_quarantined = true;
             const qBtn = document.getElementById('btnQuarantine');
@@ -542,7 +543,7 @@ const App = {
                 qBtn.innerHTML = '<i class="fas fa-unlock"></i> Karantinayı Kaldır';
                 qBtn.className = 'btn-vision success';
             }
-        } catch (e) {}
+        } catch (e) { POps.toast('error', 'Karantina komutu gönderilemedi: ' + POps.errorMessage(e)); }
     },
 
     startLiveStream: function(countdown = 0) {
@@ -808,36 +809,15 @@ const App = {
         }, 300);
     },
 
-    powerCommand: async function(targetType, action) {
-        if (!this.apiUrl) return;
-        const cmd = action === 'shutdown' ? 'shutdown /s /f /t 5' : 'shutdown /r /f /t 5';
-        const label = targetType === 'ALL' ? 'tüm sistemdeki' : `${this.currentLab} sınıfındaki`;
-        if (!confirm(`${label} açık cihazlara [KAPAT] emri fırlatılacak. Emin misiniz?`)) return;
-        const targets = targetType === 'ALL'
-            ? this.devices.filter(d => d.status.toLowerCase() !== 'offline').map(d => d.hostname)
-            : this.devices.filter(d => d.lab === this.currentLab && d.status.toLowerCase() !== 'offline').map(d => d.hostname);
-        if (targets.length === 0) return showToast('Açık cihaz yok.', 'warning');
-        try {
-            await fetch(`${this.apiUrl}/api/deploy_orchestration`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_mode: 'PC', targets, taskSequence: [{ name: 'Güç Kapat', type: 'CMD', command: cmd }] }) });
-            showToast('Emir gönderildi.', 'success');
-        } catch (e) { showToast('Hata oluştu.', 'error'); }
+    // Ortak güç ve uyandırma komutları (pops_script.js): onay penceresi, sonuç ve hata bildirimi oradadır
+    powerCommand: function(targetType, action, btn) {
+        return window.powerCommand(targetType === 'ALL' ? 'ALL' : 'LAB', action, this.currentLab, btn);
     },
 
-    wakeUpCommand: async function(targetType) {
-        if (!this.apiUrl) return;
-        try {
-            if (targetType === 'ALL') {
-                if (!confirm('Tüm ağı uyandırmak istediğinize emin misiniz?')) return;
-                await fetch(`${this.apiUrl}/api/wake_all`, { method: 'POST' });
-            } else {
-                await fetch(`${this.apiUrl}/api/wake_lab/${encodeURIComponent(this.currentLab)}`, { method: 'POST' });
-            }
-            showToast('WOL sinyali gönderildi.', 'success');
-        } catch (e) { showToast('Hata oluştu.', 'error'); }
+    wakeUpCommand: function(targetType, btn) {
+        return window.wakeUpCommand(targetType === 'ALL' ? 'ALL' : 'LAB', this.currentLab, btn);
     }
 };
-
-function escapeHtml(str) { return String(str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 
 document.addEventListener('DOMContentLoaded', () => { App.init(); });
 </script>

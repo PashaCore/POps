@@ -186,9 +186,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const running = c(t => t.status === 'Running');
         const waiting = c(t => t.status === 'Pending' || t.status === 'Paused');
         const bad = tasks.length - done - running - waiting;
-        const card = (icon, cls, label, val) => `<div class="stat-card"><div class="stat-icon ${cls}"><i class="fas ${icon}"></i></div><div><div class="stat-label">${label}</div><div class="stat-value">${val}</div></div></div>`;
-        $('topStats').innerHTML = card('fa-layer-group', '', 'Toplam', tasks.length) + card('fa-check-double', 'success', 'Tamamlanan', done)
-            + card('fa-arrows-spin', 'info', 'Çalışan', running) + card('fa-clock', 'warning', 'Bekleyen', waiting) + card('fa-triangle-exclamation', 'danger', 'Sorunlu', bad);
+        const cardHtml = (icon, cls, label, val) => `<div class="stat-card"><div class="stat-icon ${escapeHtml(cls)}"><i class="fas ${escapeHtml(icon)}"></i></div><div><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${Number(val)}</div></div></div>`;
+        $('topStats').innerHTML = cardHtml('fa-layer-group', '', 'Toplam', tasks.length) + cardHtml('fa-check-double', 'success', 'Tamamlanan', done)
+            + cardHtml('fa-arrows-spin', 'info', 'Çalışan', running) + cardHtml('fa-clock', 'warning', 'Bekleyen', waiting) + cardHtml('fa-triangle-exclamation', 'danger', 'Sorunlu', bad);
     }
 
     async function loadTasks() {
@@ -224,39 +224,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const nm = (pc) => mem.names[pc] || pc;
         box.innerHTML = Object.values(mem.groups).map(g => {
             const open = mem.expanded.has(g.id);
-            const rows = g.pcs.sort((a, b) => nm(a.target_pc).localeCompare(nm(b.target_pc), 'tr', { numeric: true })).map(t => {
+            const rowsHtml = g.pcs.sort((a, b) => nm(a.target_pc).localeCompare(nm(b.target_pc), 'tr', { numeric: true })).map(t => {
                 const [cls, icon, text] = statusInfo(t.status);
                 const canCancel = !FINISHED.includes(t.status);
                 const name = nm(t.target_pc);
                 return `<tr>
                     <td><div class="cell-title">${escapeHtml(name)}</div>${name !== t.target_pc ? `<div class="cell-sub mono">${escapeHtml(t.target_pc)}</div>` : ''}</td>
-                    <td><span class="task-status ${cls}"><i class="fas ${icon}"></i> ${escapeHtml(text)}</span></td>
+                    <td><span class="task-status ${escapeHtml(cls)}"><i class="fas ${escapeHtml(icon)}"></i> ${escapeHtml(text)}</span></td>
                     <td class="mono text-xs text-muted">${escapeHtml(t.created_at || '-')}</td>
                     <td class="actions"><div class="row-actions">
-                        <button type="button" class="btn secondary sm" data-action="detail" data-task="${escapeHtml(t.id)}" data-group="${g.id}"><i class="fas fa-file-lines"></i> Sonuç</button>
+                        <button type="button" class="btn secondary sm" data-action="detail" data-task="${escapeHtml(t.id)}" data-group="${escapeHtml(g.id)}"><i class="fas fa-file-lines"></i> Sonuç</button>
                         ${CAN_ADMIN && FINISHED.includes(t.status) ? `<button type="button" class="btn ghost icon sm" data-action="task" data-op="RETRY" data-mode="TASK" data-target="${escapeHtml(t.id)}" title="Yeniden çalıştır" aria-label="Yeniden çalıştır"><i class="fas fa-rotate-right"></i></button>` : ''}
                         ${CAN_ADMIN && canCancel ? `<button type="button" class="btn ghost icon sm" data-action="task" data-op="CANCEL" data-mode="TASK" data-target="${escapeHtml(t.id)}" title="İptal et" aria-label="İptal et"><i class="fas fa-xmark"></i></button>` : ''}
                     </div></td>
                 </tr>`;
             }).join('');
-            const labActions = CAN_ADMIN && g.lab !== 'Tek cihaz' ? `
+            const labActionsHtml = CAN_ADMIN && g.lab !== 'Tek cihaz' ? `
                 <button type="button" class="btn ghost icon sm" data-action="task" data-op="PAUSE" data-mode="LAB" data-target="${escapeHtml(g.lab)}" title="Bu sınıfta bekleyenleri duraklat" aria-label="Duraklat"><i class="fas fa-pause"></i></button>
                 <button type="button" class="btn ghost icon sm" data-action="task" data-op="RESUME" data-mode="LAB" data-target="${escapeHtml(g.lab)}" title="Devam ettir" aria-label="Devam ettir"><i class="fas fa-play"></i></button>
                 <button type="button" class="btn ghost icon sm" data-action="task" data-op="CANCEL" data-mode="LAB" data-target="${escapeHtml(g.lab)}" title="Bu sınıftakileri iptal et" aria-label="İptal et"><i class="fas fa-xmark"></i></button>` : '';
-            return `<div class="task-group ${open ? 'open' : ''}" data-group-id="${g.id}">
-                <div class="task-group-head" data-action="toggle" data-group="${g.id}" role="button" tabindex="0" aria-expanded="${open}">
+            return `<div class="task-group ${open ? 'open' : ''}" data-group-id="${escapeHtml(g.id)}">
+                <div class="task-group-head" data-action="toggle" data-group="${escapeHtml(g.id)}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}">
                     <div class="task-group-info">
                         <span class="task-lab"><i class="fas fa-layer-group"></i> ${escapeHtml(g.lab)}</span>
                         <span class="task-cmd" title="${escapeHtml(g.command)}">${escapeHtml(g.command)}</span>
                     </div>
                     <div class="task-group-side">
                         <span class="badge muted"><i class="fas fa-desktop"></i> ${g.pcs.length}</span>
-                        <span class="badge success">${g.done} tamamlandı</span>
-                        ${labActions}
+                        <span class="badge success">${Number(g.done)} tamamlandı</span>
+                        ${labActionsHtml}
                         <i class="fas fa-chevron-down chev"></i>
                     </div>
                 </div>
-                <div class="task-group-body"><table class="data-table"><thead><tr><th>Bilgisayar</th><th>Durum</th><th>Eklenme</th><th class="actions">İşlem</th></tr></thead><tbody>${rows}</tbody></table></div>
+                <div class="task-group-body"><table class="data-table"><thead><tr><th>Bilgisayar</th><th>Durum</th><th>Eklenme</th><th class="actions">İşlem</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
             </div>`;
         }).join('');
     }
@@ -316,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!list.length) { POps.setEmpty(box, { icon: 'fa-magnifying-glass', title: mem.logs.length ? 'Eşleşen kayıt yok' : 'Henüz kayıt yok', compact: true }); return; }
         box.innerHTML = list.map(l => `<div class="log-line risk-${escapeHtml(l.risk_level || 'info')}">
             <span class="log-time">${escapeHtml(l.timestamp ? String(l.timestamp).split(' ')[1] || '' : '')}</span>
-            <span class="badge ${RISK_TONE[l.risk_level] || 'muted'} log-type"><i class="fas ${CATEGORY_ICON[logCategory(l)] || 'fa-circle-info'}"></i> ${escapeHtml(CATEGORY[logCategory(l)] || logCategory(l))}</span>
+            <span class="badge ${escapeHtml(RISK_TONE[l.risk_level] || 'muted')} log-type"><i class="fas ${escapeHtml(CATEGORY_ICON[logCategory(l)] || 'fa-circle-info')}"></i> ${escapeHtml(CATEGORY[logCategory(l)] || logCategory(l))}</span>
             <span class="log-pc" title="${escapeHtml(l.pc_name)}">${escapeHtml(mem.names[l.pc_name] || l.pc_name)}</span>
             <span class="log-msg">${escapeHtml(l.message)}</span>
         </div>`).join('');

@@ -151,36 +151,38 @@ document.addEventListener('DOMContentLoaded', () => {
             .sort((a, b) => nameOf(a).localeCompare(nameOf(b), 'tr', { numeric: true, sensitivity: 'base' }));
     }
 
-    function row(d, showLab) {
+    function rowHtml(d, showLab) {
         const st = statusOf(d);
         const cls = st === 'online' ? 'online' : (st === 'idle' ? 'idle' : 'offline');
         const label = st === 'online' ? 'Çevrimiçi' : (st === 'idle' ? 'Boşta' : 'Çevrimdışı');
-        const id = escapeHtml(d.hostname);
+        const idHtml = escapeHtml(d.hostname);
         const checked = page.selected.has(d.hostname);
-        const actions = CAN_ADMIN ? `
-            <button type="button" class="btn ghost icon sm wake" data-action="wake" data-id="${id}" title="Uyandır" aria-label="Uyandır"><i class="fas fa-bolt"></i></button>
-            <button type="button" class="btn ghost icon sm reboot" data-action="restart" data-id="${id}" title="Yeniden başlat" aria-label="Yeniden başlat"><i class="fas fa-arrows-rotate"></i></button>
-            <button type="button" class="btn ghost icon sm power" data-action="shutdown" data-id="${id}" title="Kapat" aria-label="Kapat"><i class="fas fa-power-off"></i></button>
-            <button type="button" class="btn ghost icon sm" data-action="bypass" data-id="${id}" title="Çevrimdışı bypass kodu" aria-label="Çevrimdışı bypass kodu"><i class="fas fa-key"></i></button>
-            ${IS_SUPERADMIN ? `<button type="button" class="btn ghost icon sm del" data-action="delete" data-id="${id}" title="Cihazı sil" aria-label="Cihazı sil"><i class="fas fa-trash"></i></button>` : ''}` : '';
+        const actionsHtml = CAN_ADMIN ? `
+            <button type="button" class="btn ghost icon sm wake" data-action="wake" data-id="${escapeHtml(d.hostname)}" title="Uyandır" aria-label="Uyandır"><i class="fas fa-bolt"></i></button>
+            <button type="button" class="btn ghost icon sm reboot" data-action="restart" data-id="${escapeHtml(d.hostname)}" title="Yeniden başlat" aria-label="Yeniden başlat"><i class="fas fa-arrows-rotate"></i></button>
+            <button type="button" class="btn ghost icon sm power" data-action="shutdown" data-id="${escapeHtml(d.hostname)}" title="Kapat" aria-label="Kapat"><i class="fas fa-power-off"></i></button>
+            <button type="button" class="btn ghost icon sm" data-action="bypass" data-id="${escapeHtml(d.hostname)}" title="Çevrimdışı bypass kodu" aria-label="Çevrimdışı bypass kodu"><i class="fas fa-key"></i></button>
+            ${IS_SUPERADMIN ? `<button type="button" class="btn ghost icon sm del" data-action="delete" data-id="${escapeHtml(d.hostname)}" title="Cihazı sil" aria-label="Cihazı sil"><i class="fas fa-trash"></i></button>` : ''}` : '';
         return `<tr class="${checked ? 'is-selected' : ''}">
-            ${CAN_ADMIN ? `<td class="check-col"><input type="checkbox" class="dev-cb" data-id="${id}" ${checked ? 'checked' : ''} aria-label="Seç"></td>` : ''}
+            ${CAN_ADMIN ? `<td class="check-col"><input type="checkbox" class="dev-cb" data-id="${escapeHtml(d.hostname)}" ${checked ? 'checked' : ''} aria-label="Seç"></td>` : ''}
             <td><span class="status-pill ${cls}"><span class="status-dot ${cls}"></span>${label}</span></td>
             <td>
                 <div class="dev-name"><span class="cell-title">${escapeHtml(nameOf(d))}</span>
-                    ${CAN_ADMIN ? `<button type="button" class="btn ghost icon sm" data-action="rename" data-id="${id}" title="Adını değiştir" aria-label="Adını değiştir"><i class="fas fa-pen"></i></button>` : ''}</div>
-                <div class="cell-sub mono">${id}</div>
+                    ${CAN_ADMIN ? `<button type="button" class="btn ghost icon sm" data-action="rename" data-id="${escapeHtml(d.hostname)}" title="Adını değiştir" aria-label="Adını değiştir"><i class="fas fa-pen"></i></button>` : ''}</div>
+                <div class="cell-sub mono">${idHtml}</div>
             </td>
             ${showLab ? `<td><span class="badge muted">${escapeHtml(d.lab === 'Atanmamis_Cihazlar' ? 'Atanmamış' : (d.lab || 'Atanmamış'))}</span></td>` : ''}
             <td class="net-cell"><div class="ip">${escapeHtml(d.ip || 'Bilinmiyor')}</div><div class="mac">${escapeHtml(d.mac || '—')}</div></td>
             <td class="hw-cell"><div>${escapeHtml(d.cpu || '—')}</div><div class="hw-sub">${escapeHtml(d.ram || '—')} · ${escapeHtml(d.os || '—')}</div></td>
-            <td class="actions"><div class="row-actions">${actions}</div></td>
+            <td class="actions"><div class="row-actions">${actionsHtml}</div></td>
         </tr>`;
     }
 
-    function head(showLab, allChecked) {
+    function headHtml(showLab, allChecked, lab) {
         return `<thead><tr>
-            ${CAN_ADMIN ? `<th class="check-col"><input type="checkbox" id="masterCb" ${allChecked ? 'checked' : ''} aria-label="Hepsini seç"></th>` : ''}
+            ${CAN_ADMIN ? (lab == null
+                ? `<th class="check-col"><input type="checkbox" id="masterCb" ${allChecked ? 'checked' : ''} aria-label="Hepsini seç"></th>`
+                : `<th class="check-col"><input type="checkbox" class="lab-master" data-lab="${escapeHtml(lab)}" ${allChecked ? 'checked' : ''} aria-label="Sınıftakileri seç"></th>`) : ''}
             <th>Durum</th><th>Cihaz</th>${showLab ? '<th>Sınıf</th>' : ''}<th>Ağ (IP / MAC)</th><th>Donanım</th><th class="actions">İşlem</th>
         </tr></thead>`;
     }
@@ -199,7 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let html;
         if (page.view === 'flat') {
             const all = list.every(d => page.selected.has(d.hostname));
-            html = `<div class="table-wrap"><table class="data-table wide">${head(true, all)}<tbody>${list.map(d => row(d, true)).join('')}</tbody></table></div>`;
+            html = `<div class="table-wrap"><table class="data-table wide">${headHtml(true, all)}<tbody>${list.map(d => rowHtml(d, true)).join('')}</tbody></table></div>`;
         } else {
             const groups = {};
             list.forEach(d => { const l = d.lab || 'Atanmamis_Cihazlar'; (groups[l] = groups[l] || []).push(d); });
@@ -209,14 +211,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const online = pcs.filter(d => statusOf(d) === 'online').length;
                 const all = pcs.every(d => page.selected.has(d.hostname));
                 return `<div class="lab-group ${open ? 'open' : ''}">
-                    <button type="button" class="lab-group-head" data-action="toggle-lab" data-lab="${escapeHtml(lab)}" aria-expanded="${open}">
+                    <button type="button" class="lab-group-head" data-action="toggle-lab" data-lab="${escapeHtml(lab)}" aria-expanded="${open ? 'true' : 'false'}">
                         <span class="lab-group-title"><i class="fas fa-network-wired text-muted"></i>${escapeHtml(lab === 'Atanmamis_Cihazlar' ? 'Atanmamış cihazlar' : lab)}
                             <span class="badge muted">${pcs.length} cihaz</span><span class="badge success">${online} açık</span></span>
                         <i class="fas fa-chevron-${open ? 'up' : 'down'} text-muted"></i>
                     </button>
                     <div class="lab-group-body">${CAN_ADMIN ? `<div class="toolbar" style="margin:0;border:0;border-radius:0;border-bottom:1px solid var(--border-subtle);box-shadow:none;">
                         <label class="check"><input type="checkbox" class="lab-cb" data-lab="${escapeHtml(lab)}" ${all ? 'checked' : ''}> Bu sınıftakileri seç</label></div>` : ''}
-                        <table class="data-table wide">${head(false, all).replace('id="masterCb"', 'class="lab-master" data-lab="' + escapeHtml(lab) + '"')}<tbody>${pcs.map(d => row(d, false)).join('')}</tbody></table></div>
+                        <table class="data-table wide">${headHtml(false, all, lab)}<tbody>${pcs.map(d => rowHtml(d, false)).join('')}</tbody></table></div>
                 </div>`;
             }).join('');
         }
