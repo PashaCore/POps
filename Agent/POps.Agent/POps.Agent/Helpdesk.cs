@@ -94,6 +94,10 @@ namespace POpsAgent
         public const string NotEnrolledMessage = "Bu bilgisayar sunucuya kayıtlı değil; talep gönderilemedi. BT ekibine haber verin.";
         public const string UnreachableMessage = "Sunucuya ulaşılamadı; biraz sonra yeniden deneyin.";
         public const string BusyMessage = "Çok sık istek; birkaç saniye sonra yeniden deneyin.";
+        public const string ModuleDisabledMessage = "Yardım masası bu bilgisayarın laboratuvarında kapalı.";
+
+        // Sunucuda yardım masası modülü (bkz. AgentModules)
+        private static bool Enabled => AgentModules.IsEnabled(AgentModules.Helpdesk);
         public static readonly TimeSpan CreateInterval = TimeSpan.FromSeconds(10);
         // Sunucunun sınırı 5 sn: aynı aralık saat kaymasıyla ara sıra 429 alıyordu
         public static readonly TimeSpan ListInterval = TimeSpan.FromSeconds(6);
@@ -156,6 +160,11 @@ namespace POpsAgent
 
         public async Task CreateAsync(string encoded)
         {
+            if (!Enabled)
+            {
+                Reply("TICKET_RESULT", new TicketResultMessage { Ok = false, Message = ModuleDisabledMessage });
+                return;
+            }
             TicketCreatePayload payload = ParseCreate(encoded, _currentUser(), out string error);
             if (payload == null)
             {
@@ -185,6 +194,11 @@ namespace POpsAgent
         public async Task ListAsync()
         {
             string user = _currentUser();
+            if (!Enabled)
+            {
+                Reply("TICKET_LIST_RESULT", new TicketListMessage { Ok = false, Message = ModuleDisabledMessage });
+                return;
+            }
             if (!AgentHttp.CanReport)
             {
                 Reply("TICKET_LIST_RESULT", new TicketListMessage { Ok = false, Message = NotEnrolledMessage });
@@ -228,7 +242,7 @@ namespace POpsAgent
                 {
                     string user = _currentUser();
                     // Liste sınırını tepsiyle paylaşır; o sırada liste isteniyorsa bu tur atlanır. 429 sessizce geçilir.
-                    if (user != null && trayConnected() && AgentHttp.CanReport && TryEnter(_listGate))
+                    if (user != null && trayConnected() && AgentHttp.CanReport && Enabled && TryEnter(_listGate))
                     {
                         List<TicketView> tickets;
                         try { (tickets, _, _) = await FetchAsync(); }

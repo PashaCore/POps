@@ -174,7 +174,7 @@ the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 
 command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine allow list refreshed (old and new
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
-that partly changed (no decision taken). Failure to write an event does not stop the
+that partly changed (no decision taken), and 1080 a change of the server's modules. Failure to write an event does not stop the
 service.
 
 ## Capability policy
@@ -185,6 +185,36 @@ the server can only switch them off (**Sistem & Sürüm** → "Cihaz yetenekleri
 a `[REDDEDİLDİ]` result and reported as `capability_denied`. Re-enabling needs a local administrator: MSI repair or
 reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; see
 [`Agent/README.md`](../Agent/README.md#capability-policy).
+
+## Modules
+
+From 0.1.15-alpha a server can switch features (modules) on and off per lab. The agent adds its key
+(`X-Agent-Id` + `X-Agent-Secret`) to `GET /api/agent_policies`; the server answers with the lab's DNS settings and
+`"modules": {"<id>": true|false}` for `vision`, `terminal`, `deploy`, `schedules`, `patches`, `software`,
+`licenses`, `helpdesk`, `dns_policy`, `quarantine`, `wol` and `reports`. The policy is fetched every minute, so a
+change applies within a minute.
+
+- **Missing field.** Without `modules` (older server, or an agent without a key, which sends no headers) every
+  module counts as on. If a request fails, the last known state stays.
+- **Memory only.** The state is kept in memory and never written to `capabilities.json`. A feature is available
+  only when the module is on **and** the local capability allows it. The local lock stays separate and wins: a
+  feature locked on the PC stays off when the server turns the module on. A module the server turns back on works
+  again without a restart.
+- **What the agent refuses** while a module is off:
+
+  | Module | Behaviour |
+  | --- | --- |
+  | `terminal` | `execute` is not run. The result is `exit_code` -5 with `[REDDEDİLDİ] Uzak komut modülü …`, followed by `capability_denied` with `"reason": "module_disabled"`. |
+  | `vision` | `start_stream`, `start_vision_session`, the Vision tunnel, previews and remote input are refused with `capability_denied` (`module_disabled`). A Vision session that is open when the module closes is ended. |
+  | `helpdesk` | The tray hides "Sorun bildir" and "Taleplerim" (`HELPDESK_MENU:0` over the pipe) and shows them again when the module opens. Requests that still arrive get "Yardım masası … kapalı", and new replies are not polled. |
+  | `software` | The software inventory is not collected or sent. When the module opens, the last-send record is forgotten, so the list goes out in the next 6-hour round even if it did not change (the server did not store it while the module was off). |
+  | `patches` | The daily Windows Update scan and its report are skipped. `scan_updates` and `install_updates` are refused (`capability_denied`, `module_disabled`). A report finished while the module was off is dropped. |
+  | `wol` | `wake_peer` (waking another PC in the lab) is refused (`capability_denied`, `module_disabled`). |
+  | `dns_policy`, `quarantine` | Nothing extra on the agent. The server sends an empty DNS list and `auto_quarantine: false`. Unlock, offline bypass and the lock screen work as before. |
+
+- **Server only.** `deploy`, `schedules`, `licenses` and `reports` are enforced by the server.
+- **Logging.** A change is logged once and written to the event log as 1080 (closed and opened modules). On the
+  first policy after the service starts, this happens only when a module is off.
 
 ## Server certificate
 

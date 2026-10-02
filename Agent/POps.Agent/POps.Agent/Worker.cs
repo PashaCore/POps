@@ -451,21 +451,7 @@ namespace POpsAgent
             {
                 try
                 {
-                    string apiUrl = _serverUrl.TrimEnd('/') + "/api/agent_policies";
-                    string json = await _httpClient.GetStringAsync(apiUrl, token);
-                    var policy = JsonSerializer.Deserialize<AgentPolicy>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    if (policy != null)
-                    {
-                        _currentPolicy = policy;
-                        DnsPolicyMonitor.Configure(policy, _hwId, _serverUrl);
-                        _health.PolicySynced();
-                        
-                        if (!string.IsNullOrWhiteSpace(policy.fair_use_text) && !_fairUseAcknowledged)
-                        {
-                            string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(policy.fair_use_text));
-                            _trayPipe?.SendCommandToDesktop($"SHOW_FAIR_USE:{b64}");
-                        }
-                    }
+                    ApplyPolicy(await FetchPolicyJsonAsync(token));
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
                 catch (Exception ex)
@@ -476,6 +462,66 @@ namespace POpsAgent
                 await Task.Delay(60000, token); // Poll every minute
             }
         }
+
+        // Anahtarı olan ajan kendini tanıtır (X-Agent-Id + X-Agent-Secret): sunucu cihazın laboratuvarının DNS ayarını ve
+        // modül listesini döner (bkz. AgentModules). Başlıklar yönlendirme izlemeyen istemciyle gider (bkz. AgentHttp).
+        // Anahtar yoksa kurum geneli politika başlıksız istenir.
+        internal async Task<string> FetchPolicyJsonAsync(CancellationToken token)
+        {
+            if (AgentHttp.CanReport && POpsHelpers.IsSecureServerUrl(_serverUrl))
+            {
+                var (status, body) = await AgentHttp.SendAsync(HttpMethod.Get, _serverUrl, "/api/agent_policies", _hwId, null, "Politika");
+                if (status >= 200 && status < 300 && body != null) return body;
+                throw new HttpRequestException(status == null ? "yanıt yok" : $"HTTP {status}");
+            }
+            return await _httpClient.GetStringAsync(_serverUrl.TrimEnd('/') + "/api/agent_policies", token);
+        }
+
+        private static readonly JsonSerializerOptions PolicyJson = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        internal void ApplyPolicy(string json)
+        {
+            var policy = JsonSerializer.Deserialize<AgentPolicy>(json, PolicyJson);
+            if (policy == null) return;
+            using (JsonDocument doc = JsonDocument.Parse(json)) OnModulesChanged(AgentModules.Apply(doc.RootElement));
+            _currentPolicy = policy;
+            DnsPolicyMonitor.Configure(policy, _hwId, _serverUrl);
+            _health.PolicySynced();
+
+            if (!string.IsNullOrWhiteSpace(policy.fair_use_text) && !_fairUseAcknowledged)
+            {
+                string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(policy.fair_use_text));
+                _trayPipe?.SendCommandToDesktop($"SHOW_FAIR_USE:{b64}");
+            }
+        }
+
+        // Modül açıldı/kapandı: bir kez loglanır ve Olay Günlüğüne yazılır (servis açılışındaki ilk yanıtta yalnızca
+        // kapalı modül varsa). Kapanan Vision oturumu kesilir, tepsinin yardım masası menüsü eşitlenir, yeniden açılan
+        // yazılım envanterinin son gönderimi unutulur (kapalıyken sunucu listeyi saklamadı).
+        internal void OnModulesChanged(ModuleChange change)
+        {
+            if (change == null || !change.Any) return;
+            string closed = change.Closed.Count > 0 ? string.Join(", ", change.Closed) : "-";
+            string opened = change.Opened.Count > 0 ? string.Join(", ", change.Opened) : "-";
+            POpsHelpers.Log("AGENT", change.First
+                ? $"Sunucu bu bilgisayarın laboratuvarında şu modülleri kapattı: {closed}."
+                : $"Sunucu modülleri değişti: kapatılan {closed}; açılan {opened}.");
+            LocalAudit.Write(LocalAudit.ModulesChanged(change.Closed, change.Opened));
+
+            if (change.Closed.Contains(AgentModules.Vision) && (_isVisionStreamActive || _visionWs != null))
+            {
+                _visionSessionApproved = false;
+                _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
+                _ = DisconnectVisionTunnelAsync();
+            }
+            if (change.Closed.Contains(AgentModules.Helpdesk) || change.Opened.Contains(AgentModules.Helpdesk)) SyncTrayModules();
+            if (change.Opened.Contains(AgentModules.Software)) _software?.ForgetLastReport();
+        }
+
+        // Tepside "Sorun bildir" ve "Taleplerim" yalnızca yardım masası modülü açıkken görünür
+        internal static string HelpdeskMenuMessage() => "HELPDESK_MENU:" + (AgentModules.IsEnabled(AgentModules.Helpdesk) ? "1" : "0");
+
+        private void SyncTrayModules() => _trayPipe?.SendCommandToDesktop(HelpdeskMenuMessage());
 
         // Boru dinlemeye geçince sağlık kontrolü işaretlenir (bkz. AgentStartupHealth). Bağlantı döngüsü bunu
         // beklemez: boru adı başka bir süreçte kalırsa (ör. yerel bir kullanıcı adı önceden aldıysa) tepsi çalışmaz
@@ -604,7 +650,11 @@ namespace POpsAgent
             };
 
             // Kilit ekranı tepsiyle birlikte kapanmış olabilir: karantina sürüyorsa yeniden gösterilir
-            _trayPipe.OnConnected += () => _quarantine.SyncTray();
+            _trayPipe.OnConnected += () =>
+            {
+                _quarantine.SyncTray();
+                SyncTrayModules();
+            };
 
             _trayPipe.Start().ContinueWith(_ => _startupHealth.Mark(StartupCheck.Pipe), CancellationToken.None,
                 TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
@@ -664,6 +714,11 @@ namespace POpsAgent
                 await DenyCapabilityAsync("vision", "vision_tunnel");
                 return;
             }
+            if (!AgentModules.IsEnabled(AgentModules.Vision))
+            {
+                await DenyCapabilityAsync("vision", "vision_tunnel", reason: AgentModules.DisabledReason);
+                return;
+            }
             // Ekran akışı ve uzaktan girdi yalnızca şifreli kanaldan (bkz. POpsHelpers.IsSecureServerUrl). Tepsi
             // START_VISION_TUNNEL'ı komut tüneli bağlı olmasa da isteyebildiği için burada ayrıca denetlenir.
             if (!POpsHelpers.IsSecureServerUrl(_serverUrl))
@@ -720,8 +775,12 @@ namespace POpsAgent
         // Uzaktan fare/klavye olayı (input_type taşıyan remote_input). Ekran önizlemesi ve FPS ayarı girdi değildir.
         private static bool IsInputEvent(JsonElement root) => root.TryGetProperty("input_type", out _);
 
-        private string VisionDenial(bool isInputEvent) => VisionInputGate.DenialReason(
-            AgentCapabilities.VisionEnabled, _visionSessionApproved, _isVisionStreamActive, isInputEvent);
+        // Reddedilirse capability_denied'ın yeteneği ve nedeni; yerel yetenek kilidi önce, sonra sunucu modülü, sonra onay
+        private (string Capability, string Reason) VisionDenial(bool isInputEvent)
+        {
+            if (AgentCapabilities.VisionEnabled && !AgentModules.IsEnabled(AgentModules.Vision)) return ("vision", AgentModules.DisabledReason);
+            return (VisionInputGate.DenialReason(AgentCapabilities.VisionEnabled, _visionSessionApproved, _isVisionStreamActive, isInputEvent), null);
+        }
 
         private async Task ReceiveVisionInputsAsync(ClientWebSocket ws, CancellationToken token)
         {
@@ -738,8 +797,8 @@ namespace POpsAgent
                     {
                         string targetDevice = root.GetProperty("device").GetString();
                         if (targetDevice != _hwId) continue;
-                        string denial = VisionDenial(IsInputEvent(root));
-                        if (denial != null) { await DenyCapabilityAsync(denial, "remote_input"); continue; }
+                        var (denial, denialReason) = VisionDenial(IsInputEvent(root));
+                        if (denial != null) { await DenyCapabilityAsync(denial, "remote_input", reason: denialReason); continue; }
                         _trayPipe?.SendCommandToDesktop(message);
                     }
                 }
@@ -806,10 +865,10 @@ namespace POpsAgent
 
                 string act = root.TryGetProperty("action", out var actProp) ? actProp.GetString() : "";
                 // Ekran önizlemesi ve uzaktan fare/klavye Vision yeteneğidir
-                string denial = VisionDenial(IsInputEvent(root));
+                var (denial, denialReason) = VisionDenial(IsInputEvent(root));
                 if (denial != null)
                 {
-                    await DenyCapabilityAsync(denial, string.IsNullOrEmpty(act) ? "remote_input" : act);
+                    await DenyCapabilityAsync(denial, string.IsNullOrEmpty(act) ? "remote_input" : act, reason: denialReason);
                     return;
                 }
                 if (act == "get_thumbnail")
@@ -836,14 +895,14 @@ namespace POpsAgent
             {
                 string action = root.TryGetProperty("action", out var actionProp) ? actionProp.GetString() : "";
                 CommandPermission commandPermission = action == "execute"
-                    ? CommandExecutionPolicy.Permission(AgentCapabilities.TerminalEnabled) : null;
+                    ? CommandExecutionPolicy.Permission(AgentCapabilities.TerminalEnabled, AgentModules.IsEnabled(AgentModules.Terminal)) : null;
                 if (action == "execute" && !commandPermission.Allowed)
                 {
                     // Görev "Running"de asılı kalmasın diye sonuç olarak da bildirilir. Çıkış kodu -5 (reddedildi): eski sunucu
                     // bunu Completed değil Failed sayar; yeni sunucu capability_denied ile Denied yapar.
                     int tid = root.GetProperty("task_id").GetInt32();
                     await SendResultAsync(tid, new { type = "result", pc_name = _hwId, task_id = tid, output = commandPermission.Rejection, exit_code = CommandRunner.ExitDenied });
-                    await DenyCapabilityAsync("terminal", "execute", tid);
+                    await DenyCapabilityAsync("terminal", "execute", tid, commandPermission.Reason);
                 }
                 else if (action == "execute")
                 {
@@ -888,6 +947,10 @@ namespace POpsAgent
                 {
                     await DenyCapabilityAsync("vision", action);
                 }
+                else if ((action == "start_stream" || action == "start_vision_session") && !AgentModules.IsEnabled(AgentModules.Vision))
+                {
+                    await DenyCapabilityAsync("vision", action, reason: AgentModules.DisabledReason);
+                }
                 else if (action == "start_stream") {
                     if (!_visionAuditActive)
                     {
@@ -917,6 +980,7 @@ namespace POpsAgent
                     JsonElement command = root.Clone();
                     _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl));
                 }
+                else if (action == "wake_peer" && !AgentModules.IsEnabled(AgentModules.Wol)) await DenyCapabilityAsync("wol", action, reason: AgentModules.DisabledReason);
                 else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
                 else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
                 else if (action == "set_secret") { HandleSetSecret(root); }
@@ -945,6 +1009,8 @@ namespace POpsAgent
                 // Görev sonucu sunucuda yazıldı (bkz. ResultSpool)
                 else if (action == "result_ack") HandleResultAck(root);
                 // Windows Update: arka planda yürür, bu döngüyü bekletmez (bkz. PatchManager)
+                else if ((action == "scan_updates" || action == "install_updates") && !AgentModules.IsEnabled(AgentModules.Patches))
+                    await DenyCapabilityAsync("patches", action, reason: AgentModules.DisabledReason);
                 else if (action == "scan_updates") _patches.RequestScan();
                 else if (action == "install_updates")
                 {
@@ -1040,6 +1106,8 @@ namespace POpsAgent
             }
             if (reason == null)
                 POpsHelpers.Log("POLICY", $"[GÜVENLİK] {action} reddedildi: {capability} bu cihazda kapalı (yetenek politikası).", true);
+            else if (reason == AgentModules.DisabledReason)
+                POpsHelpers.Log("POLICY", $"{action} reddedildi: {capability} modülü bu bilgisayarın laboratuvarında kapalı.", true);
             var notice = new Dictionary<string, object> { ["type"] = "capability_denied", ["capability"] = capability, ["action"] = action };
             if (taskId != null) notice["task_id"] = taskId.Value;
             if (reason != null) notice["reason"] = reason;
@@ -1052,6 +1120,7 @@ namespace POpsAgent
         internal CommandRunner CommandRunner { get => _commandRunner; set => _commandRunner = value; }
         internal QuarantineControl Quarantine { get => _quarantine; set => _quarantine = value; }
         internal string HwId { get => _hwId; set => _hwId = value; }
+        internal SoftwareReporter Software { get => _software; set => _software = value; }
 
         private async Task SendCommandMessageAsync(object payload) => await TrySendCommandMessageAsync(payload);
 
