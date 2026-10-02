@@ -80,6 +80,16 @@ namespace POpsAgent
             Warning(1072, "Donanımın bir kısmı değişti; kopya kararı verilmedi", ("changed", Safe(string.Join(", ", changed ?? Array.Empty<string>()))),
                 ("unchanged", Safe(string.Join(", ", same ?? Array.Empty<string>()))), ("action", "dosyalara dokunulmadı"));
 
+        // Sunucunun laboratuvar modülleri değişti (politika yanıtı; bkz. AgentModules)
+        public static LocalAuditEvent ModulesChanged(IEnumerable<string> closed, IEnumerable<string> opened) =>
+            Info(1080, "Sunucu modülleri değişti", ("closed", Safe(Join(closed))), ("opened", Safe(Join(opened))));
+
+        private static string Join(IEnumerable<string> values)
+        {
+            string text = string.Join(", ", values ?? Array.Empty<string>());
+            return text.Length == 0 ? "-" : text;
+        }
+
         public static LocalAuditEvent CloneRejected(string channel) =>
             Warning(1071, "Sunucu bu kimliği başka bir bilgisayarda bağlı buldu (4409)", ("channel", Safe(channel)));
 

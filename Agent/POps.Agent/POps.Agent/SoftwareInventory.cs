@@ -234,6 +234,8 @@ namespace POpsAgent
         internal async Task<TimeSpan?> ReportOnceAsync()
         {
             if (!AgentHttp.EnsureCanReport()) return WaitForSecret;
+            // Modül sunucuda kapalı: liste toplanmaz, gönderilmez (açılınca son gönderim unutulur, bkz. Worker)
+            if (!AgentModules.IsEnabled(AgentModules.Software)) return null;
             try
             {
                 List<SoftwareItem> items = Collector();

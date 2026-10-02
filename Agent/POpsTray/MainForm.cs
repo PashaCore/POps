@@ -109,6 +109,10 @@ namespace POpsTray
         private const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
         private const uint MOUSEEVENTF_WHEEL = 0x0800;
 
+        // Yardım masası menüleri: sunucuda modül kapalıysa servis gizletir (HELPDESK_MENU)
+        private readonly ToolStripMenuItem _reportItem;
+        private readonly ToolStripMenuItem _ticketsItem;
+
         public MainForm()
         {
             this.ShowInTaskbar = false;
@@ -119,8 +123,10 @@ namespace POpsTray
             // Öğrenci menüsünde tepsiyi kapatan, watchdog'u duraklatan veya yerine getirilmeyen
             // "izlemeyi duraklat" seçenekleri yoktur; kiosk ve rıza pencereleri tepsiyle birlikte kapanırdı.
             trayMenu = new ContextMenuStrip();
-            trayMenu.Items.Add(new ToolStripMenuItem("Sorun bildir", null, (_, _) => OpenReportForm()));
-            trayMenu.Items.Add(new ToolStripMenuItem("Taleplerim", null, (_, _) => OpenTicketsForm()));
+            _reportItem = new ToolStripMenuItem("Sorun bildir", null, (_, _) => OpenReportForm());
+            _ticketsItem = new ToolStripMenuItem("Taleplerim", null, (_, _) => OpenTicketsForm());
+            trayMenu.Items.Add(_reportItem);
+            trayMenu.Items.Add(_ticketsItem);
             trayMenu.Items.Add(new ToolStripMenuItem("Etkinlik geçmişim", null, (_, _) => OpenActivityForm()));
             trayMenu.Items.Add("-");
             trayMenu.Items.Add(new ToolStripMenuItem("Hakkında", null, OnAboutClicked));
@@ -255,6 +261,17 @@ namespace POpsTray
                     return;
                 }
                 if (jsonMsg == "BYPASS_SUCCESS") return;
+                // Yardım masası modülü (sunucuda laboratuvar bazında): kapalıyken talep menüleri gizlenir, açılınca geri gelir
+                if (jsonMsg.StartsWith("HELPDESK_MENU:"))
+                {
+                    bool visible = jsonMsg != "HELPDESK_MENU:0";
+                    this.Invoke(new Action(() =>
+                    {
+                        _reportItem.Visible = visible;
+                        _ticketsItem.Visible = visible;
+                    }));
+                    return;
+                }
                 if (jsonMsg.StartsWith("TICKET_RESULT:") || jsonMsg.StartsWith("TICKET_LIST_RESULT:") || jsonMsg.StartsWith("TICKET_NOTIFY:") || jsonMsg.StartsWith("ACTIVITY_LIST_RESULT:"))
                 {
                     HandleHelpdeskMessage(jsonMsg);

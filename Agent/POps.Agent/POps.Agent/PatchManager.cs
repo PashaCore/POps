@@ -98,7 +98,8 @@ namespace POpsAgent
                 DateTime now = DateTime.UtcNow;
                 DateTime? pendingPost = state.PendingReport != null ? state.NextPostUtc ?? now : null;
                 PatchStep step = PatchSchedule.NextStep(state.LastScanUtc, _lastAttemptUtc, pendingPost, started, now, _hwId());
-                if (step == PatchStep.Wait || !AgentHttp.EnsureCanReport()) continue;
+                // Modül sunucuda kapalı: tarama yapılmaz, sonuç gönderilmez; açılınca sıradaki tur taramayı yapar
+                if (step == PatchStep.Wait || !AgentHttp.EnsureCanReport() || !AgentModules.IsEnabled(AgentModules.Patches)) continue;
                 if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) continue;
                 try
                 {
@@ -197,6 +198,19 @@ namespace POpsAgent
         // Durumu gönderir. Başarısızsa saklar ve yalnızca gönderimi sonra yeniden dener (bkz. PatchSchedule.NextPostUtc).
         internal async Task<PostResult> DeliverAsync(PatchStatusPayload status)
         {
+            if (!AgentModules.IsEnabled(AgentModules.Patches))
+            {
+                // Tarama ya da kurulum sürerken modül kapandı: sonuç gönderilmez, bekleyen gönderim de bırakılır
+                lock (_stateLock)
+                {
+                    PatchState state = LoadState();
+                    state.PendingReport = null;
+                    state.NextPostUtc = null;
+                    SaveState(state);
+                }
+                POpsHelpers.Log("PATCH", "Windows Update modülü bu bilgisayarın laboratuvarında kapalı; durum gönderilmedi.");
+                return PostResult.NotSent;
+            }
             PostResult result = await Poster(status);
             DateTime now = DateTime.UtcNow;
             lock (_stateLock)
