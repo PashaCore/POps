@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.18-alpha] - 2026-10-03
+
+The panel's addresses no longer end in `.php`, and Kontrol merkezi shows the PCs' events next to the jobs, plus the server, agent versions and today's numbers.
+
+Upgrading: update the server (**Sistem → Sunucuyu güncelle**). No migration; the agent code is unchanged. Docker and nginx installs: rebuild the dashboard image or reload nginx with the new template to get the addresses without `.php` (the `.php` addresses keep working until then).
+
 ### Changed
 
 - **Panel: addresses without `.php`.** Pages are `/devices`, `/labs`, `/tasks?job=…` and the overview is `/`. `Dashboard/.htaccess`, the Docker Apache configuration (now with `mod_rewrite`) and the nginx templates map them to the PHP files; old `.php` addresses and bookmarks keep working, and on Apache a `GET` to one is redirected to the address without `.php`.
@@ -575,7 +581,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.17-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.18-alpha...HEAD
+[0.1.18-alpha]: https://github.com/PashaCore/POps/compare/v0.1.17-alpha...v0.1.18-alpha
 [0.1.17-alpha]: https://github.com/PashaCore/POps/compare/v0.1.16-alpha...v0.1.17-alpha
 [0.1.16-alpha]: https://github.com/PashaCore/POps/compare/v0.1.15-alpha...v0.1.16-alpha
 [0.1.15-alpha]: https://github.com/PashaCore/POps/compare/v0.1.14-alpha...v0.1.15-alpha
