@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.19-alpha] - 2026-10-03
+
+Kayıtlar shows the event log in pages with a filter panel and searches a whole date range on the server; Kontrol merkezi is laid out in two balanced columns; the Apache rules for addresses without `.php` ship as an example file.
+
+Upgrading: update the server (**Sistem → Sunucuyu güncelle**). No migration; the agent code is unchanged. On Apache, compare `Dashboard/.htaccess` with `Installer/server/apache-htaccess.example` (docs/deployment.md).
+
 ### Added
 
 - **Panel: Kayıtlar in pages, with more filters.** The event list shows 25, 50, 75 or 100 entries per page (remembered in the browser) with page numbers and "1–25 / 312 kayıt". A **Süzgeçler** panel filters by event type, lab, person and date range; active filters are chips that remove them one by one. A date range or a PC asks the server for that whole range instead of searching only the latest 1000 entries (`GET /api/logs` accepts `pc`, `since` and `until`).
@@ -14,7 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Panel: Kontrol merkezi is balanced.** Two columns that start and end together: **Son etkinlik** takes the height of the cards on the right and scrolls inside, the cards on the right stack (**İlgilenmen gerekenler**, **Bugün**, **Sınıflar**, **Ajan sürümleri**, **Sunucu**) with the same row heights, and a failure reason lines up with the result on its right. The separate bottom row with cards of different heights is gone.
-
 - **Panel: addresses without `.php` on Apache servers.** 0.1.18 changed the panel's links but the rules that map them live in `Dashboard/.htaccess`, which is not tracked in the repository, so an update did not bring them and every link answered "Not Found". The rules are now shipped as `Installer/server/apache-htaccess.example`; on Apache, copy it to `Dashboard/.htaccess` (docs/deployment.md). Docker and nginx installs were not affected.
 
 ## [0.1.18-alpha] - 2026-10-03
@@ -591,7 +596,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.18-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.19-alpha...HEAD
+[0.1.19-alpha]: https://github.com/PashaCore/POps/compare/v0.1.18-alpha...v0.1.19-alpha
 [0.1.18-alpha]: https://github.com/PashaCore/POps/compare/v0.1.17-alpha...v0.1.18-alpha
 [0.1.17-alpha]: https://github.com/PashaCore/POps/compare/v0.1.16-alpha...v0.1.17-alpha
 [0.1.16-alpha]: https://github.com/PashaCore/POps/compare/v0.1.15-alpha...v0.1.16-alpha
