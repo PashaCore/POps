@@ -79,8 +79,11 @@ ProxyPass        /updates/  http://127.0.0.1:8000/updates/
 ProxyPassReverse /updates/  http://127.0.0.1:8000/updates/
 ```
 
-`Dashboard/.htaccess` contains rewrite-proxy rules for `/api/` and `/ws/` only (they need `mod_rewrite`, the proxy
-modules and `AllowOverride`); `/updates/` and `/download/` must still be proxied in the virtual host, as above.
+Copy `Installer/server/apache-htaccess.example` to `Dashboard/.htaccess`. It proxies `/api/` and `/ws/` and maps the
+panel's addresses without `.php` (`/devices` → `devices.php`, and redirects old `.php` addresses); it needs
+`mod_rewrite`, the proxy modules and `AllowOverride FileInfo`. `/updates/` and `/download/` must still be proxied in
+the virtual host, as above. `Dashboard/.htaccess` is not tracked in the repository: each server keeps its own copy and
+updates never touch it, so after an update that changes the example, copy it again (the release notes say so).
 
 ### Panel configuration
 

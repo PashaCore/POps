@@ -1,0 +1,23 @@
+# POps paneli için Apache .htaccess örneği: Dashboard/.htaccess olarak kopyalayın (dosya repoda tutulmaz; her
+# sunucu kendi kopyasını tutar, güncellemeler ona dokunmaz). mod_rewrite, mod_proxy, mod_proxy_http,
+# mod_proxy_wstunnel ve panel klasöründe AllowOverride FileInfo gerekir. /updates/ ve /download/ sanal sunucuda
+# proxy'lenir (bkz. docs/deployment.md).
+RewriteEngine On
+RewriteCond %{REQUEST_URI} ^/api/(.*)$
+RewriteRule ^.*$ http://127.0.0.1:8000/api/%1 [P,L]
+RewriteCond %{REQUEST_URI} ^/ws/(.*)$
+RewriteCond %{HTTP:Upgrade} websocket [NC]
+RewriteRule ^.*$ ws://127.0.0.1:8000/ws/%1 [P,L]
+
+# Temiz adresler: /devices -> devices.php (panelin bağlantıları .php'siz). Eski .php adresleri ve yer imleri
+# GET ile gelince .php'siz adrese yönlendirilir (POST, ör. giriş formu, olduğu gibi işlenir).
+RewriteCond %{REQUEST_METHOD} =GET
+RewriteCond %{THE_REQUEST} \s/+index\.php[\s?]
+RewriteRule ^ / [R=302,L]
+RewriteCond %{REQUEST_METHOD} =GET
+RewriteCond %{THE_REQUEST} \s/+([A-Za-z0-9_-]+)\.php[\s?]
+RewriteRule ^ /%1 [R=302,L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.php -f
+RewriteRule ^([A-Za-z0-9_-]+)$ $1.php [L]
