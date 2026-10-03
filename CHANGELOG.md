@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.21-alpha] - 2026-10-03
+
+Sistem → Genel bakış shows charts for the last 24 hours, 7 days or 30 days: agents, processor and memory, API requests, tasks, events, and database and disk.
+
+Upgrading: update the server (**Sistem → Sunucuyu güncelle**). Migration 0021 adds the `server_metrics` table; the charts fed by the server's own samples start filling within a few minutes. The agent code is unchanged.
+
 ### Added
 
 - **Panel: charts on Sistem → Genel bakış.** Under the status tiles, **Eğilimler** shows the last 24 hours, 7 days or 30 days: connected agents (with the agent updates of the period), processor and memory, API requests with server errors, task results, events by risk level, and database size with disk use. Hovering a point shows its time and values. The server samples itself once a minute into a new `server_metrics` table, kept for 30 days (`GET /api/system/overview`, superadmin).
@@ -618,7 +624,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.20-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.21-alpha...HEAD
+[0.1.21-alpha]: https://github.com/PashaCore/POps/compare/v0.1.20-alpha...v0.1.21-alpha
 [0.1.20-alpha]: https://github.com/PashaCore/POps/compare/v0.1.19-alpha...v0.1.20-alpha
 [0.1.19-alpha]: https://github.com/PashaCore/POps/compare/v0.1.18-alpha...v0.1.19-alpha
 [0.1.18-alpha]: https://github.com/PashaCore/POps/compare/v0.1.17-alpha...v0.1.18-alpha
