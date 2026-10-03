@@ -3,6 +3,7 @@
 import datetime
 import json
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -229,12 +230,42 @@ async def get_all_inventory(auth: dict = Depends(require_auth)):
     return rows if rows else []
 
 
+def _log_day(value: Optional[str], name: str) -> Optional[datetime.date]:
+    if not value:
+        return None
+    try:
+        return datetime.date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"{name} YYYY-AA-GG biçiminde olmalı")
+
+
 @router.get("/api/logs")
-async def get_all_logs(limit: int = 1000, auth: dict = Depends(require_auth)):
-    if USE_V2_SCHEMA:
-        rows = await execute_query("SELECT * FROM agent_logs_v2 ORDER BY id DESC LIMIT $1", (limit,), fetch=True)
-    else:
-        rows = await execute_query("SELECT * FROM agent_logs ORDER BY id DESC LIMIT $1", (limit,), fetch=True)
+async def get_all_logs(
+    limit: int = 1000,
+    pc: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    auth: dict = Depends(require_auth),
+):
+    """Olay kayıtları, yeniden eskiye. İsteğe bağlı süzgeçler: pc (cihaz kimliği), since / until (YYYY-AA-GG, iki
+    gün de dahil); zaman sütunu sunucunun yerel "YYYY-AA-GG SS:DD:ss" metnidir, metin karşılaştırması sırayı korur."""
+    limit = max(1, min(int(limit), 20000))
+    start, end = _log_day(since, "since"), _log_day(until, "until")
+    where, args = [], []
+    if pc:
+        args.append(pc)
+        where.append(f"pc_name = ${len(args)}")
+    if start:
+        args.append(start.isoformat())
+        where.append(f'"timestamp" >= ${len(args)}')
+    if end:
+        args.append((end + datetime.timedelta(days=1)).isoformat())
+        where.append(f'"timestamp" < ${len(args)}')
+    args.append(limit)
+    table = "agent_logs_v2" if USE_V2_SCHEMA else "agent_logs"
+    sql = f"SELECT * FROM {table}" + (" WHERE " + " AND ".join(where) if where else "")
+    sql += f" ORDER BY id DESC LIMIT ${len(args)}"
+    rows = await execute_query(sql, tuple(args), fetch=True)
     return rows if rows else []
 
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Panel: Kayıtlar in pages, with more filters.** The event list shows 25, 50, 75 or 100 entries per page (remembered in the browser) with page numbers and "1–25 / 312 kayıt". A **Süzgeçler** panel filters by event type, lab, person and date range; active filters are chips that remove them one by one. A date range or a PC asks the server for that whole range instead of searching only the latest 1000 entries (`GET /api/logs` accepts `pc`, `since` and `until`).
+
 ### Fixed
 
 - **Panel: Kontrol merkezi is balanced.** Two columns that start and end together: **Son etkinlik** takes the height of the cards on the right and scrolls inside, the cards on the right stack (**İlgilenmen gerekenler**, **Bugün**, **Sınıflar**, **Ajan sürümleri**, **Sunucu**) with the same row heights, and a failure reason lines up with the result on its right. The separate bottom row with cards of different heights is gone.

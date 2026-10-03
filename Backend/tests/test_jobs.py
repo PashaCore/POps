@@ -7,6 +7,7 @@
 - Görev bağlamı: adımın adı, kaynak sayfa, gerekçe, isteğin IP'si ve iş kimliği görevle saklanır; yeniden deneme
   adı ve gerekçeyi taşır. GET /api/devices/{pc}/activity cihazın son işlemlerini bu bağlamla döner.
 - Ajan politikasını kimin, ne zaman değiştirdiği saklanır (GET /api/agent_policies/meta) ve denetim kaydına yazılır.
+- GET /api/logs bilgisayara (pc) ve tarih aralığına (since / until, iki gün de dahil) göre süzer.
 
 Bazı adımlar sunucunun modüllerini bu süreçte, aynı veritabanına bağlanarak çağırır (denetim kaydı).
 Ortam: POPS_TEST_HTTP + DB_* + JWT_SECRET.
@@ -163,6 +164,23 @@ async def run(c, admin, viewer):
     await c.execute("DELETE FROM global_settings WHERE key IN ('agent_policies', 'agent_policies_meta')")
     for r in saved:
         await c.execute("INSERT INTO global_settings (key, value) VALUES ($1, $2)", r["key"], r["value"])
+
+    print("== olay kayıtları: bilgisayar ve tarih süzgeci")
+    for pc, msg, ts in (("HW-JB1", "jb-log-1", "2026-01-10 09:00:00"), ("HW-JB1", "jb-log-2", "2026-01-11 23:59:59"),
+                        ("HW-JB1", "jb-log-3", "2026-01-12 00:00:00"), ("HW-JB2", "jb-log-4", "2026-01-11 10:00:00")):
+        await c.execute(
+            "INSERT INTO agent_logs_v2 (pc_name, event_type, message, \"timestamp\") VALUES ($1, 'auth.login', $2, $3)",
+            pc, msg, ts)
+    s, lg = req("/api/logs?pc=HW-JB1&since=2026-01-10&until=2026-01-11", viewer)
+    got = [x.get("message") for x in lg] if isinstance(lg, list) else lg
+    chk(s == 200 and got == ["jb-log-2", "jb-log-1"], "bilgisayar ve tarih aralığı, iki gün de dahil (%s)" % got)
+    s, lg = req("/api/logs?since=2026-01-11&until=2026-01-11", viewer)
+    chk(s == 200 and sorted(x["message"] for x in lg if x["message"].startswith("jb-log")) == ["jb-log-2", "jb-log-4"],
+        "yalnızca tarih")
+    chk(req("/api/logs?since=11.01.2026", viewer)[0] == 422, "bozuk tarih 422")
+    s, lg = req("/api/logs?pc=HW-JB1&limit=1", viewer)
+    chk(s == 200 and len(lg) == 1, "limit süzgeçle birlikte")
+    await c.execute("DELETE FROM agent_logs_v2 WHERE message LIKE 'jb-log-%'")
 
     print("== ajan güncellemesi ilerlemesi")
     since = time.time() - 5

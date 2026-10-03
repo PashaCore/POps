@@ -6,17 +6,7 @@
     .lg-bar .grow { flex: 1; }
     .lg-bar .search-field { flex: 0 1 260px; min-width: 180px; }
     .lg-bar select { width: auto; min-width: 150px; }
-    .lg-range { display: inline-flex; align-items: center; gap: 2px; height: var(--control-h); padding: 0 4px 0 6px; border: 1px solid var(--input-border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--text-tertiary); }
-    .lg-range:focus-within { border-color: var(--input-focus); box-shadow: var(--focus-ring); }
-    .lg-range input { border: 0; box-shadow: none; background: transparent; width: 124px; min-height: 0 !important; height: 30px; padding: 0 4px; }
-    .lg-range input:focus { box-shadow: none; }
-    .lg-range .x { width: 22px; height: 22px; border-radius: 99px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); }
-    .lg-range .x:hover { background: var(--bg-hover); color: var(--text-primary); }
     .segmented .count { color: var(--text-muted); font-variant-numeric: tabular-nums; font-weight: var(--fw-regular); }
-    .lg-scope { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 12px; font-size: var(--text-sm); color: var(--text-tertiary); }
-    .lg-chip { gap: 6px; padding-right: 5px; }
-    .lg-chip button { width: 20px; height: 20px; border-radius: 99px; display: inline-flex; align-items: center; justify-content: center; color: inherit; background: rgba(255, 255, 255, 0.2); }
-    .lg-chip button:hover { background: rgba(255, 255, 255, 0.35); }
     .lg-list { padding: 4px 16px 8px; }
     .lg-list .act { padding: 13px 6px; outline: none; }
     .lg-list .act:focus-visible { box-shadow: var(--focus-ring); }
@@ -26,10 +16,32 @@
     .lg-links { grid-column: 1 / -1; display: flex; gap: 14px; flex-wrap: wrap; padding-top: 6px; }
     .lg-links button { color: var(--primary-500); font-size: var(--text-xs); font-weight: var(--fw-medium); }
     .lg-links button:hover { text-decoration: underline; }
-    .lg-more { text-align: center; padding: 14px 0 6px; }
     .lg-note { font-size: var(--text-xs); color: var(--text-muted); padding: 10px 4px 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .lg-note button { color: var(--primary-500); font-size: var(--text-xs); font-weight: var(--fw-medium); }
     .lg-note button:hover { text-decoration: underline; }
+    .lg-fbtn .badge { min-width: 18px; justify-content: center; padding: 0 6px; background: var(--primary-500); color: #fff; }
+    .lg-fpanel { position: fixed; z-index: 900; width: 340px; max-width: calc(100vw - 24px); background: var(--bg-surface); border-radius: 14px; box-shadow: var(--shadow-xl); padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; animation: fadeIn 0.12s ease; }
+    .lg-fpanel[hidden] { display: none; }
+    .lg-fpanel label { display: flex; flex-direction: column; gap: 5px; margin: 0; font-size: var(--text-xs); font-weight: var(--fw-medium); color: var(--text-tertiary); }
+    .lg-fpanel .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .lg-fpanel .foot { display: flex; justify-content: space-between; align-items: center; padding-top: 4px; border-top: 1px solid #f0f0f3; }
+    .lg-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -6px 0 12px; }
+    .lg-chips:empty { display: none; }
+    .lg-chips .chip { gap: 6px; padding-right: 5px; cursor: default; }
+    .lg-chips .chip b { font-weight: 600; }
+    .lg-chips .chip button { width: 20px; height: 20px; border-radius: 99px; display: inline-flex; align-items: center; justify-content: center; color: inherit; }
+    .lg-chips .chip button:hover { background: var(--bg-hover); }
+    .lg-chips .clear { font-size: var(--text-sm); color: var(--primary-500); padding: 0 4px; }
+    .lg-chips .clear:hover { text-decoration: underline; }
+    .lg-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 2px 0; font-size: var(--text-sm); color: var(--text-tertiary); }
+    .lg-pager .pages { display: flex; align-items: center; gap: 2px; }
+    .lg-pager .pages button { min-width: 32px; height: 32px; padding: 0 8px; border-radius: 8px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+    .lg-pager .pages button:hover:not(:disabled) { background: var(--bg-hover); }
+    .lg-pager .pages button.on { background: var(--text-primary); color: #fff; }
+    .lg-pager .pages button:disabled { color: var(--text-muted); cursor: default; }
+    .lg-pager .pages .gap { min-width: 24px; text-align: center; }
+    .lg-pager .size { display: flex; align-items: center; gap: 8px; }
+    .lg-pager .size select { width: auto; min-height: 32px; padding-top: 0; padding-bottom: 0; }
     .hw-table tbody tr { cursor: pointer; }
     .hw-table tbody tr.is-focus { background: #f0f6ff; }
     .hw-table .nm { font-weight: var(--fw-semibold); }
@@ -40,9 +52,7 @@
     .lg-dlinks { display: flex; gap: 8px; flex-wrap: wrap; }
     @media (max-width: 640px) {
         .lg-bar select { flex: 1 1 auto; }
-        .lg-range { flex: 1 1 100%; }
-        .lg-range input { flex: 1; width: auto; min-width: 0; }
-        .lg-list { padding: 2px 10px 6px; }
+                .lg-list { padding: 2px 10px 6px; }
         .lg-list .act > .facts { grid-column: 1 / -1; grid-template-columns: 96px minmax(0, 1fr); }
         .lg-bar .search-field { flex: 1 1 100%; }
     }
@@ -71,21 +81,30 @@
             <button type="button" data-f="warn" aria-pressed="false">Uyarılar <span class="count" data-n="warn"></span></button>
             <button type="button" data-f="sec" aria-pressed="false">Güvenlik <span class="count" data-n="sec"></span></button>
         </div>
-        <select id="lgKind" aria-label="Olay türüne göre süz"><option value="">Bütün türler</option></select>
-        <div class="lg-range" role="group" aria-label="Tarih aralığı">
-            <input type="date" id="lgFrom" aria-label="Başlangıç tarihi">
-            <span aria-hidden="true">–</span>
-            <input type="date" id="lgTo" aria-label="Bitiş tarihi">
-            <button type="button" class="x" id="lgRangeClear" aria-label="Tarih süzgecini kaldır" hidden><?php echo pops_icon('x', 'sm'); ?></button>
-        </div>
+        <button type="button" class="btn secondary lg-fbtn" id="lgFiltersBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="lgFPanel"><?php echo pops_icon('filter', 'sm'); ?>Süzgeçler<span class="badge" id="lgFCount" hidden></span></button>
         <span class="grow"></span>
         <div class="search-field">
             <i class="fas fa-search" aria-hidden="true"></i>
             <input type="search" id="lgSearch" placeholder="Olay, bilgisayar ya da kişi" aria-label="Kayıtlarda ara">
         </div>
     </div>
-    <div class="lg-scope" id="lgScope" hidden><span class="chip active lg-chip"><span id="lgPcName"></span><button type="button" id="lgPcClear" aria-label="Bilgisayar süzgecini kaldır" data-tip="Bütün bilgisayarları göster"><?php echo pops_icon('x', 'sm'); ?></button></span><span>bilgisayarının kayıtları gösteriliyor</span></div>
+    <div class="lg-fpanel" id="lgFPanel" role="dialog" aria-label="Süzgeçler" hidden>
+        <label>Tür<select id="lgKind"><option value="">Bütün türler</option></select></label>
+        <label>Sınıf<select id="lgLab"><option value="">Bütün sınıflar</option></select></label>
+        <label>Kişi<select id="lgWho"><option value="">Herkes</option></select></label>
+        <div class="two">
+            <label>Başlangıç<input type="date" id="lgFrom"></label>
+            <label>Bitiş<input type="date" id="lgTo"></label>
+        </div>
+        <div class="foot"><button type="button" class="btn ghost sm" id="lgFClear">Süzgeçleri temizle</button><button type="button" class="btn sm" id="lgFDone">Tamam</button></div>
+    </div>
+    <div class="lg-chips" id="lgChips"></div>
     <div class="card"><div class="lg-list" id="lgList" aria-live="polite"><div class="loading-state" role="status"><span class="spinner"></span>Kayıtlar yükleniyor…</div></div></div>
+    <div class="lg-pager" id="lgPager" hidden>
+        <span id="lgRange"></span>
+        <div class="pages" id="lgPages" role="navigation" aria-label="Sayfalar"></div>
+        <label class="size">Sayfa başına <select id="lgSize" aria-label="Sayfa başına kayıt"><option>25</option><option>50</option><option>75</option><option>100</option></select></label>
+    </div>
     <div class="lg-note" id="lgNote"></div>
 </section>
 
@@ -115,10 +134,12 @@
     const $ = (id) => document.getElementById(id);
     const params = new URLSearchParams(location.search);
     const LIMITS = [1000, 5000, 20000];
-    const PAGE = 150;
+    const SIZES = [25, 50, 75, 100];
+    const savedSize = (() => { try { return Number(localStorage.getItem('pops_log_size')) || 0; } catch (e) { return 0; } })();
     const ui = {
         tab: params.get('tab') === 'hw' ? 'hw' : 'log', f: ['warn', 'sec'].includes(params.get('f')) ? params.get('f') : 'all', kind: '', q: '', pc: params.get('pc') || '', from: '', to: '',
-        show: PAGE, limitIx: 0, open: new Set(), rows: [], byId: new Map(), loaded: false, sig: '',
+        lab: '', who: '', page: 1, size: SIZES.includes(savedSize) ? savedSize : 25,
+        limitIx: 0, open: new Set(), rows: [], byId: new Map(), loaded: false, sig: '',
         inv: null, invAt: 0, hq: '', hlab: '', hfocus: null, hsig: ''
     };
     const list = $('lgList');
@@ -139,6 +160,8 @@
         if (skip !== 'f' && ui.f === 'sec' && !e.security) return false;
         if (ui.kind && e.kind !== ui.kind) return false;
         if (ui.pc && e.pc !== ui.pc) return false;
+        if (ui.lab && (ui.lab === dev.UNASSIGNED ? !!labOf(e.pc) : labOf(e.pc) !== ui.lab)) return false;
+        if (ui.who && e.who !== ui.who) return false;
         if (ui.from && e.day < ui.from) return false;
         if (ui.to && e.day > ui.to) return false;
         if (ui.q && !hay(e).includes(ui.q)) return false;
@@ -218,6 +241,23 @@
             });
             sel.value = ui.kind;
         }
+        const labSel = $('lgLab');
+        const labs = dev.labs();
+        const labSig = labs.join('|') + '|' + ui.lab;
+        if (labSel.dataset.sig !== labSig) {
+            labSel.dataset.sig = labSig;
+            labSel.replaceChildren(POps.el('option', { value: '', text: 'Bütün sınıflar' }), ...labs.map(l => POps.el('option', { value: l, text: l })), POps.el('option', { value: dev.UNASSIGNED, text: 'Atanmamış' }));
+            labSel.value = ui.lab;
+        }
+        const whoSel = $('lgWho');
+        const whos = {};
+        ui.rows.forEach(e => { whos[e.who] = (whos[e.who] || 0) + 1; });
+        const whoSig = JSON.stringify(whos) + ui.who;
+        if (whoSel.dataset.sig !== whoSig) {
+            whoSel.dataset.sig = whoSig;
+            whoSel.replaceChildren(POps.el('option', { value: '', text: 'Herkes' }), ...Object.keys(whos).sort((a, b) => a.localeCompare(b, 'tr')).map(w => POps.el('option', { value: w, text: `${w} (${whos[w]})` })));
+            whoSel.value = ui.who;
+        }
     }
     function renderSummary() {
         const box = $('lgSummary');
@@ -243,21 +283,39 @@
         const note = $('lgNote');
         note.replaceChildren();
         if (!ui.loaded) return;
-        const limit = LIMITS[ui.limitIx];
+        const ranged = !!(ui.from || ui.to || ui.pc);
+        const limit = ranged ? LIMITS[LIMITS.length - 1] : LIMITS[ui.limitIx];
         const full = ui.rows.length >= limit;
-        note.append(POps.el('span', { text: full
-            ? `Son ${limit.toLocaleString('tr-TR')} kayıt yüklendi; süzgeçler ve tarih aralığı bu kayıtlar içinde çalışır.`
-            : `Sunucudaki ${ui.rows.length.toLocaleString('tr-TR')} kaydın hepsi yüklendi.` }));
-        if (full && ui.limitIx < LIMITS.length - 1) {
+        note.append(POps.el('span', { text: ranged
+            ? (full ? `Seçilen bilgisayar ya da tarih aralığındaki son ${limit.toLocaleString('tr-TR')} kayıt sunucudan alındı.` : 'Seçilen bilgisayar ya da tarih aralığındaki bütün kayıtlar sunucudan alındı.')
+            : full ? `Son ${limit.toLocaleString('tr-TR')} kayıt yüklendi; tarih aralığı seçince o aralığın tamamı sunucudan alınır.` : `Sunucudaki ${ui.rows.length.toLocaleString('tr-TR')} kaydın hepsi yüklendi.` }));
+        if (!ranged && full && ui.limitIx < LIMITS.length - 1) {
             const b = POps.el('button', { type: 'button', text: 'Daha eski kayıtları yükle' });
             b.addEventListener('click', () => { ui.limitIx += 1; ui.sig = ''; POps.busy(b, loadLogs).catch(e => POps.toast('error', POps.errorMessage(e))); });
             note.append(b);
         }
     }
+    const fmtDay = (d) => { const x = POps.toDate(d + 'T12:00:00'); return x ? x.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : d; };
+    function activeFilters() {
+        const out = [];
+        if (ui.pc) out.push(['pc', 'Bilgisayar', pcName(ui.pc)]);
+        if (ui.kind) out.push(['kind', 'Tür', KIND_LABEL[ui.kind] || ui.kind]);
+        if (ui.lab) out.push(['lab', 'Sınıf', ui.lab === dev.UNASSIGNED ? 'Atanmamış' : ui.lab]);
+        if (ui.who) out.push(['who', 'Kişi', ui.who]);
+        if (ui.from || ui.to) out.push(['date', 'Tarih', (ui.from ? fmtDay(ui.from) : '…') + ' – ' + (ui.to ? fmtDay(ui.to) : 'bugün')]);
+        return out;
+    }
     function renderPcChip() {
-        $('lgScope').hidden = !ui.pc;
-        $('lgPcName').textContent = ui.pc ? pcName(ui.pc) : '';
-        $('lgRangeClear').hidden = !(ui.from || ui.to);
+        const f = activeFilters();
+        const box = $('lgChips');
+        box.replaceChildren(...f.map(([key, label, value]) => {
+            const x = POps.el('button', { type: 'button', 'aria-label': label + ' süzgecini kaldır', 'data-clear': key });
+            x.append(POps.iconEl('x', 'sm'));
+            return POps.el('span', { className: 'chip' }, [document.createTextNode(label + ': '), POps.el('b', { text: value }), x]);
+        }), ...(f.length > 1 ? [POps.el('button', { type: 'button', className: 'clear', 'data-clear': 'all', text: 'Hepsini temizle' })] : []));
+        const n = f.filter(x => x[0] !== 'pc').length;
+        $('lgFCount').hidden = !n;
+        $('lgFCount').textContent = String(n);
     }
     function render() {
         renderSummary();
@@ -268,32 +326,76 @@
         if (!ui.loaded) return;
         const rows = ui.rows.filter(e => pass(e));
         if (!rows.length) {
+            $('lgPager').hidden = true;
             const filtered = ui.rows.length > 0;
             POps.setEmpty(list, filtered
                 ? { icon: 'fa-filter', title: 'Süzgece uyan kayıt yok', text: 'Arama, tarih ya da süzgeçleri değiştirin.' }
                 : { icon: 'fa-clipboard-list', title: 'Henüz kayıt yok', text: 'Bilgisayarlar olay bildirdikçe burada görünür.' });
             return;
         }
-        const shown = rows.slice(0, ui.show);
+        const pages = Math.max(1, Math.ceil(rows.length / ui.size));
+        if (ui.page > pages) ui.page = pages;
+        const startIx = (ui.page - 1) * ui.size;
+        const shown = rows.slice(startIx, startIx + ui.size);
+        renderPager(rows.length, startIx, shown.length, pages);
         let lastDay = null;
         let bodyHtml = '';
         shown.forEach(e => {
             if (e.day !== lastDay) { lastDay = e.day; bodyHtml += `<div class="lg-day">${escapeHtml(dayLabel(e.day))}</div>`; }
             bodyHtml += rowHtml(e);
         });
-        if (rows.length > shown.length) bodyHtml += `<div class="lg-more"><button type="button" class="btn secondary sm" data-act="more">${Number(Math.min(PAGE, rows.length - shown.length))} kayıt daha göster</button></div>`;
         const focusId = document.activeElement && list.contains(document.activeElement) ? (document.activeElement.closest('.act[data-id]') || {}).dataset : null;
         list.innerHTML = bodyHtml;
         if (focusId && focusId.id) { const el = list.querySelector(`.act[data-id="${CSS.escape(focusId.id)}"]`); if (el) el.focus({ preventScroll: true }); }
     }
 
+    // Sayfa düğmeleri: ilk, son, bulunulan sayfanın iki yanı; aralar "…"
+    function renderPager(total, startIx, count, pages) {
+        $('lgPager').hidden = false;
+        $('lgRange').textContent = `${(startIx + 1).toLocaleString('tr-TR')}–${(startIx + count).toLocaleString('tr-TR')} / ${total.toLocaleString('tr-TR')} kayıt`;
+        $('lgSize').value = String(ui.size);
+        const want = new Set([1, pages, ui.page - 1, ui.page, ui.page + 1].filter(n => n >= 1 && n <= pages));
+        if (ui.page <= 3) [2, 3, 4].forEach(n => n <= pages && want.add(n));
+        if (ui.page >= pages - 2) [pages - 3, pages - 2, pages - 1].forEach(n => n >= 1 && want.add(n));
+        const nums = [...want].sort((a, b) => a - b);
+        const box = $('lgPages');
+        const btn = (label, page, opts) => {
+            const b = POps.el('button', { type: 'button', 'data-page': String(page), 'aria-label': (opts && opts.aria) || ('Sayfa ' + page) });
+            if (opts && opts.icon) b.append(POps.iconEl(opts.icon, 'sm')); else b.textContent = label;
+            if (opts && opts.on) { b.className = 'on'; b.setAttribute('aria-current', 'page'); }
+            if (opts && opts.disabled) b.disabled = true;
+            return b;
+        };
+        const items = [btn('', ui.page - 1, { icon: 'left', aria: 'Önceki sayfa', disabled: ui.page <= 1 })];
+        nums.forEach((n, i) => {
+            if (i && n - nums[i - 1] > 1) items.push(POps.el('span', { className: 'gap', text: '…' }));
+            items.push(btn(String(n), n, { on: n === ui.page }));
+        });
+        items.push(btn('', ui.page + 1, { icon: 'right', aria: 'Sonraki sayfa', disabled: ui.page >= pages }));
+        box.replaceChildren(...items);
+    }
+    function goPage(n) {
+        ui.page = n;
+        render();
+        const top = $('lgList').getBoundingClientRect().top + window.scrollY - 90;
+        if (window.scrollY > top) window.scrollTo({ top, behavior: 'smooth' });
+    }
+
     // ---------------------------------------------------------------- veri
     async function loadLogs() {
         let rows;
-        try { rows = await POps.get('/api/logs?limit=' + LIMITS[ui.limitIx]); }
+        const ranged = !!(ui.from || ui.to || ui.pc);
+        const q = new URLSearchParams({ limit: String(ranged ? LIMITS[LIMITS.length - 1] : LIMITS[ui.limitIx]) });
+        if (ui.pc) q.set('pc', ui.pc);
+        if (ui.from) q.set('since', ui.from);
+        if (ui.to) q.set('until', ui.to);
+        const reqKey = q.toString();
+        ui.reqKey = reqKey;
+        try { rows = await POps.get('/api/logs?' + reqKey); }
         catch (e) { if (!ui.loaded) POps.setError(list, e); throw e; }
+        if (ui.reqKey !== reqKey) return;   // bu sırada süzgeç değişti; yeni istek sonucu yazar
         rows = Array.isArray(rows) ? rows : [];
-        const sig = rows.length + ':' + (rows[0] && rows[0].id) + ':' + (rows[rows.length - 1] && rows[rows.length - 1].id);
+        const sig = reqKey + ':' + rows.length + ':' + (rows[0] && rows[0].id) + ':' + (rows[rows.length - 1] && rows[rows.length - 1].id);
         if (sig === ui.sig && ui.loaded) return;
         ui.sig = sig;
         const byId = new Map();
@@ -321,7 +423,9 @@
     }
     function setPc(pc) {
         ui.pc = pc || '';
-        ui.show = PAGE;
+        ui.page = 1;
+        ui.sig = '';
+        loadLogs().catch(() => {});
         const u = new URL(location.href);
         if (ui.pc) u.searchParams.set('pc', ui.pc); else u.searchParams.delete('pc');
         history.replaceState(null, '', u.pathname + u.search);
@@ -332,8 +436,7 @@
         const row = ev.target.closest('.act[data-id]');
         if (b) {
             const e = row ? ui.byId.get(row.dataset.id) : null;
-            if (b.dataset.act === 'more') { ui.show += PAGE; render(); }
-            else if (b.dataset.act === 'pc' && e) { setPc(e.pc); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+            if (b.dataset.act === 'pc' && e) { setPc(e.pc); window.scrollTo({ top: 0, behavior: 'smooth' }); }
             else if (b.dataset.act === 'device' && e) dev.open(e.pc, { source: 'logger' });
             return;
         }
@@ -345,15 +448,52 @@
         if (!row || ev.target !== row) return;
         if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleRow(row); }
     });
-    $('lgFilter').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-f]'); if (b) { ui.f = b.dataset.f; ui.show = PAGE; render(); } });
-    $('lgSummary').addEventListener('click', (ev) => { const a = ev.target.closest('[data-f]'); if (a) { ev.preventDefault(); setTab('log'); ui.f = a.dataset.f; ui.show = PAGE; render(); } });
-    $('lgKind').addEventListener('change', (ev) => { ui.kind = ev.target.value; ui.show = PAGE; render(); });
-    $('lgFrom').addEventListener('change', (ev) => { ui.from = ev.target.value; ui.show = PAGE; render(); });
-    $('lgTo').addEventListener('change', (ev) => { ui.to = ev.target.value; ui.show = PAGE; render(); });
-    $('lgRangeClear').addEventListener('click', () => { ui.from = ui.to = ''; $('lgFrom').value = $('lgTo').value = ''; render(); });
-    $('lgPcClear').addEventListener('click', () => setPc(''));
+    $('lgFilter').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-f]'); if (b) { ui.f = b.dataset.f; ui.page = 1; render(); } });
+    $('lgSummary').addEventListener('click', (ev) => { const a = ev.target.closest('[data-f]'); if (a) { ev.preventDefault(); setTab('log'); ui.f = a.dataset.f; ui.page = 1; render(); } });
+    // Süzgeç paneli
+    const fpanel = $('lgFPanel'), fbtn = $('lgFiltersBtn');
+    function openPanel(open) {
+        fpanel.hidden = !open;
+        fbtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (!open) return;
+        const r = fbtn.getBoundingClientRect();
+        fpanel.style.top = Math.round(r.bottom + 6) + 'px';
+        fpanel.style.left = Math.round(Math.max(12, Math.min(r.left, window.innerWidth - fpanel.offsetWidth - 12))) + 'px';
+        $('lgKind').focus();
+    }
+    fbtn.addEventListener('click', (ev) => { ev.stopPropagation(); openPanel(fpanel.hidden); });
+    $('lgFDone').addEventListener('click', () => { openPanel(false); fbtn.focus(); });
+    document.addEventListener('mousedown', (ev) => { if (!fpanel.hidden && !fpanel.contains(ev.target) && !fbtn.contains(ev.target)) openPanel(false); });
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !fpanel.hidden) { ev.preventDefault(); openPanel(false); fbtn.focus(); } }, true);
+    window.addEventListener('resize', () => openPanel(false));
+    const dateChanged = () => { ui.page = 1; ui.sig = ''; ui.limitIx = 0; render(); loadLogs().catch(() => {}); };
+    $('lgKind').addEventListener('change', (ev) => { ui.kind = ev.target.value; ui.page = 1; render(); });
+    $('lgLab').addEventListener('change', (ev) => { ui.lab = ev.target.value; ui.page = 1; render(); });
+    $('lgWho').addEventListener('change', (ev) => { ui.who = ev.target.value; ui.page = 1; render(); });
+    $('lgFrom').addEventListener('change', (ev) => { ui.from = ev.target.value; dateChanged(); });
+    $('lgTo').addEventListener('change', (ev) => { ui.to = ev.target.value; dateChanged(); });
+    function clearFilter(key) {
+        if (key === 'pc' || key === 'all') { if (ui.pc) { setPc(''); } }
+        if (key === 'kind' || key === 'all') { ui.kind = ''; $('lgKind').value = ''; }
+        if (key === 'lab' || key === 'all') { ui.lab = ''; $('lgLab').value = ''; }
+        if (key === 'who' || key === 'all') { ui.who = ''; $('lgWho').value = ''; }
+        if ((key === 'date' || key === 'all') && (ui.from || ui.to)) { ui.from = ui.to = ''; $('lgFrom').value = $('lgTo').value = ''; dateChanged(); return; }
+        ui.page = 1;
+        render();
+    }
+    $('lgFClear').addEventListener('click', () => clearFilter('all'));
+    $('lgChips').addEventListener('click', (ev) => { const b = ev.target.closest('[data-clear]'); if (b) clearFilter(b.dataset.clear); });
+    // Sayfalama
+    $('lgPages').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-page]'); if (b && !b.disabled) goPage(Number(b.dataset.page)); });
+    $('lgSize').addEventListener('change', (ev) => {
+        const first = (ui.page - 1) * ui.size;
+        ui.size = Number(ev.target.value) || 25;
+        try { localStorage.setItem('pops_log_size', String(ui.size)); } catch (e) { /* özel pencere */ }
+        ui.page = Math.floor(first / ui.size) + 1;
+        render();
+    });
     let qt = null;
-    $('lgSearch').addEventListener('input', (ev) => { clearTimeout(qt); qt = setTimeout(() => { ui.q = ev.target.value.trim().toLocaleLowerCase('tr'); ui.show = PAGE; render(); }, 150); });
+    $('lgSearch').addEventListener('input', (ev) => { clearTimeout(qt); qt = setTimeout(() => { ui.q = ev.target.value.trim().toLocaleLowerCase('tr'); ui.page = 1; render(); }, 150); });
 
     // ---------------------------------------------------------------- donanım
     const HW_FIELDS = [['cpu', 'İşlemci'], ['ram', 'Bellek'], ['motherboard', 'Anakart'], ['gpu', 'Ekran kartı'], ['disk_info', 'Disk'], ['os_version', 'İşletim sistemi'], ['ip_address', 'IP'], ['mac_address', 'MAC']];
