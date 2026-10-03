@@ -105,7 +105,7 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | GET | `/api/devices/{pc_name}/activity` | require_auth | The latest operations on one device, newest first, `?limit=` (default 15, at most 50): its tasks (`kind: "task"` with `id`, `title`, `command` (first 300 characters), `status`, `exit_code`, `at`, `by`, `source`, `reason`, `ip`, `started_at`, `batch_id`) and its remote-control sessions (`kind: "vision"` with `status`, `at`, `ended_at`, `by`, `reason`, `mandatory`), merged. Returns `{"items": [...]}`. The panel shows it as "Son işlemler" in the PC detail panel. |
 | DELETE | `/api/devices/{pc_name}` | require_admin | Deletes the device, its hardware and software inventory, its Windows Update status, its `agent_logs_v2` rows, its version row and its **device secret**, and closes its socket (code `4000`). |
 | GET | `/api/inventory` | require_auth | Hardware inventory of all devices (`hw_inventory`). |
-| GET | `/api/logs` | require_auth | Latest event log entries (`agent_logs_v2`), `?limit=` (default 1000). |
+| GET | `/api/logs` | require_auth | Latest event log entries (`agent_logs_v2`), newest first. `?limit=` (default 1000, at most 20000), optional `pc` (device ID), `since` and `until` (`YYYY-MM-DD`, both days included; `422` if malformed). |
 | POST | `/api/rename_device` | require_admin | `{pc_name, display_name}`: sets the display name. |
 | POST | `/api/move_pc` | require_admin | `{pc_name, new_lab}`. |
 | POST | `/api/move_pcs` | require_admin | `{pc_names: [...], new_lab}`. |

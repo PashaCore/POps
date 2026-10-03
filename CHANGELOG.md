@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Panel: Kayıtlar in pages, with more filters.** The event list shows 25, 50, 75 or 100 entries per page (remembered in the browser) with page numbers and "1–25 / 312 kayıt". A **Süzgeçler** panel filters by event type, lab, person and date range; active filters are chips that remove them one by one. A date range or a PC asks the server for that whole range instead of searching only the latest 1000 entries (`GET /api/logs` accepts `pc`, `since` and `until`).
+
 ### Fixed
 
 - **Panel: addresses without `.php` on Apache servers.** 0.1.18 changed the panel's links but the rules that map them live in `Dashboard/.htaccess`, which is not tracked in the repository, so an update did not bring them and every link answered "Not Found". The rules are now shipped as `Installer/server/apache-htaccess.example`; on Apache, copy it to `Dashboard/.htaccess` (docs/deployment.md). Docker and nginx installs were not affected.

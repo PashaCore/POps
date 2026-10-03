@@ -289,9 +289,12 @@ Superadmin page, in cards. The header has **Sürüm notları** and **Güncelleme
 
 ### Kayıtlar
 
-Two tabs. **Olaylar** is the event log of the PCs and the administrators, written as readable sentences: the filters
-**Tümü**, **Uyarılar** and **Güvenlik**, an event type (**Bütün türler**), a date range and a search over event, PC
-and person. A click on an entry shows its details (PC, lab, who, source, IP, reason, command, event type, risk
+Two tabs. **Olaylar** is the event log of the PCs and the administrators, written as readable sentences, grouped by
+day and shown in pages (**Sayfa başına** 25, 50, 75 or 100, remembered in the browser; page numbers and "1–25 / 312
+kayıt" under the list). Filters: **Tümü**, **Uyarılar** and **Güvenlik**, a search over event, PC and person, and
+**Süzgeçler** with the event type, lab, person and a date range; active filters appear as chips that remove them one
+by one (**Hepsini temizle**). The latest 1000 entries are loaded; with a date range or a PC chosen, the server returns
+every entry of that range or PC. A click on an entry shows its details (PC, lab, who, source, IP, reason, command, event type, risk
 level, record number and any extra fields); from there you can show only that PC's records or open the PC.
 **Donanım** shows the hardware inventory of every PC (processor, memory, disk, operating system, IP, last update),
 with a lab filter and a search. The download icon exports the current list as CSV. The **Diğer işlemler** menu has
