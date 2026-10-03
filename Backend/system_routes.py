@@ -95,6 +95,7 @@ def _selfupdate_channel() -> str:
 GITHUB_REPO = os.environ.get("POPS_GITHUB_REPO", "PashaCore/POps")
 _GITHUB_TIMEOUT = 5.0
 _GITHUB_TTL = 3600.0  # saniye
+_STALE_RETRY = 120.0  # çalışan sürüm "son sürüm"den yeniyken GitHub en erken bu kadar sonra yeniden sorulur
 _latest_cache = {"at": 0.0, "tag": None, "checked": False}
 _TAG_RE = re.compile(r"^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$")
 _DOWNLOAD_TIMEOUT = 30.0
@@ -160,7 +161,11 @@ def _fetch_github_latest_tag() -> Optional[str]:
 async def _github_latest(force: bool = False) -> Optional[str]:
     now = time.time()
     if not force and _latest_cache["checked"] and (now - _latest_cache["at"]) < _GITHUB_TTL:
-        return _latest_cache["tag"]
+        cached = _latest_cache["tag"]
+        # Çalışan sürüm önbellekteki "son sürüm"den yeniyse önbellek eskidir (GitHub yeni yayımlanan sürümü birkaç
+        # dakika geç gösterebilir; sunucu o arada güncellenmiş olur): en çok 2 dakikada bir yeniden sorulur
+        if not (cached and _newer(_read_version(), cached) and now - _latest_cache["at"] > _STALE_RETRY):
+            return cached
     tag = await asyncio.to_thread(_fetch_github_latest_tag)
     # Sadece başarılı sonucu cache'le; offline'da eski değeri koru, çökme
     if tag is not None:
