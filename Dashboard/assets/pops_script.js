@@ -8,6 +8,7 @@
 //   POps.watchDevices            : cihaz listesini (state.devices) yalnızca isteyen sayfada yoklar
 //   POps.iconHtml / iconEl       : çizgi simge (assets/pops_icons.svg)
 //   POps.menu(düğme, öğeler)     : açılır menü;  POps.drawer: sağdaki ayrıntı paneli
+//   POps.pageTabs(çubuk)          : çok bölümlü sayfaların sekmeleri (?tab=)
 //   POps.relTime / timeHtml      : "3 dk önce" (üstüne gelince tam tarih ve saat)
 //   POps.jobs                    : süren işlemler (task_ids) — yan menünün altındaki işlem merkezi
 // Metinler her zaman textContent ile yazılır; sunucudan gelen değer HTML olarak yorumlanmaz.
@@ -778,6 +779,50 @@ POps.duration = function (sec) {
     window.addEventListener('scroll', hide, true);
     window.addEventListener('resize', hide);
 })();
+
+// ============== SAYFA SEKMELERİ ==============
+// Çok bölümlü sayfalar (Sistem, Ayarlar, Politikalar…): <div class="tabs" id="…"><button class="tab" data-tab="x">
+// ve paneller [data-pane="x"]. Seçili sekme adreste (?tab=x) tutulur; ilk sekme varsayılandır. Ok tuşlarıyla gezilir.
+POps.pageTabs = function (bar, opts) {
+    const o = opts || {};
+    const param = o.param || 'tab';
+    const tabs = [...bar.querySelectorAll('[data-tab]')];
+    const names = tabs.map(t => t.dataset.tab);
+    const def = o.def || names[0];
+    let current = null;
+    bar.setAttribute('role', 'tablist');
+    tabs.forEach(t => t.setAttribute('role', 'tab'));
+    function set(name, opt) {
+        if (!names.includes(name)) name = def;
+        current = name;
+        tabs.forEach(t => {
+            const on = t.dataset.tab === name;
+            t.classList.toggle('active', on);
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+            t.tabIndex = on ? 0 : -1;
+        });
+        document.querySelectorAll(o.panes || '[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== name; });
+        if (!(opt && opt.silent)) {
+            const u = new URL(location.href);
+            if (name === def) u.searchParams.delete(param); else u.searchParams.set(param, name);
+            history.replaceState(null, '', u.pathname + u.search + u.hash);
+            if (opt && opt.scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        if (o.onChange) o.onChange(name);
+        return name;
+    }
+    bar.addEventListener('click', (e) => { const t = e.target.closest('[data-tab]'); if (t) set(t.dataset.tab); });
+    bar.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        e.preventDefault();
+        const i = names.indexOf(current);
+        const n = names[(i + (e.key === 'ArrowRight' ? 1 : names.length - 1)) % names.length];
+        set(n);
+        bar.querySelector(`[data-tab="${n}"]`).focus();
+    });
+    set(new URLSearchParams(location.search).get(param) || def, { silent: true });
+    return { set, current: () => current };
+};
 
 // ============== AÇILIR MENÜ ==============
 // POps.menu(düğme, [{ label, icon, danger, disabled, hint, onClick } | '-' | { header }])

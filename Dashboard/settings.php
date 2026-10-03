@@ -14,6 +14,10 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     /* Ayar bölümü: solda başlık ve kısa açıklama, sağda ayar satırları; dar ekranda alt alta */
     .sects > .sect { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); gap: 14px 48px; padding: 28px 0; border-top: 1px solid var(--border-subtle); }
     .sects > .sect:first-child { border-top: 0; padding-top: 4px; }
+    .set-tabs { margin-bottom: 8px; }
+    .sects > .sect[hidden] { display: none; }
+    /* Sekmede görünen ilk bölüm üst çizgisiz başlar */
+    .sects > .sect.first-visible { border-top: 0; padding-top: 12px; }
     .sect-head h2 { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); }
     .sect-head p { font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.55; margin-top: 6px; }
     .sect-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -88,8 +92,14 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     <?php endif; ?>
 </div>
 
+<div class="tabs set-tabs" id="setTabs" aria-label="Ayarlar bölümleri">
+    <button type="button" class="tab" data-tab="users">Kullanıcılar</button>
+    <button type="button" class="tab" data-tab="security">Güvenlik</button>
+    <button type="button" class="tab" data-tab="general">Genel</button>
+</div>
+
 <div class="sects">
-    <section class="sect" aria-labelledby="hUsers">
+    <section class="sect" data-pane="users" aria-labelledby="hUsers">
         <div class="sect-head">
             <h2 id="hUsers">Kullanıcılar</h2>
             <p>Panele kimlerin girebileceği ve hangi sayfaları açabileceği. Ayrıntı ve işlemler için bir kullanıcıya tıklayın.<?php if (!$isSuper): ?> Kullanıcıları yalnızca süper admin ekler, düzenler ve siler.<?php endif; ?></p>
@@ -104,7 +114,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         </div>
     </section>
 
-    <section class="sect" id="twofaCard" aria-labelledby="hTwofa">
+    <section class="sect" data-pane="security" id="twofaCard" aria-labelledby="hTwofa">
         <div class="sect-head">
             <h2 id="hTwofa">İki adımlı doğrulama</h2>
             <p>Girişte şifreye ek olarak doğrulama uygulamasından (Google Authenticator, Authy, Microsoft Authenticator) 6 haneli kod istenir. Yalnızca kendi hesabınız için geçerlidir.</p>
@@ -144,7 +154,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         </div>
     </section>
 
-    <section class="sect" aria-labelledby="hQueue">
+    <section class="sect" data-pane="general" aria-labelledby="hQueue">
         <div class="sect-head">
             <h2 id="hQueue">Görev kuyruğu</h2>
             <p>Dosya indirme ve kurulum gibi görevler ağ boğulmasın diye paketler halinde gönderilir.</p>
@@ -163,7 +173,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         </div>
     </section>
 
-    <section class="sect" aria-labelledby="hServer">
+    <section class="sect" data-pane="general" aria-labelledby="hServer">
         <div class="sect-head">
             <h2 id="hServer">Sunucu bağlantısı</h2>
             <p>Adresler sunucudaki <code>.env</code> dosyasından okunur (<code>POPS_API_URL</code>, <code>POPS_API_INTERNAL_URL</code>) ve buradan değiştirilemez. Ayrıntı: <code>docs/configuration.md</code></p>
@@ -251,6 +261,15 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 
 <script>
 (function () {
+
+    // ---- Sekmeler: Kullanıcılar / Güvenlik / Genel (2FA önerisindeki #twofaCard bağlantısı Güvenlik'i açar)
+    const markFirst = () => {
+        let first = true;
+        document.querySelectorAll('.sects > .sect').forEach(sec => { sec.classList.toggle('first-visible', !sec.hidden && first); if (!sec.hidden) first = false; });
+    };
+    const setTabs = POps.pageTabs(document.getElementById('setTabs'), { def: 'users', panes: '.sects > [data-pane]', onChange: markFirst });
+    if (location.hash === '#twofaCard') setTabs.set('security');
+    window.addEventListener('hashchange', () => { if (location.hash === '#twofaCard') setTabs.set('security'); });
     const $ = (id) => document.getElementById(id);
     const IS_SUPER = window.USER_ROLE === 'superadmin';
     const ME = <?php echo json_encode((string)($_SESSION['username'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;

@@ -261,7 +261,15 @@ marks the task failed:
 
 ### Sistem
 
-Superadmin page, in cards. The header has **Sürüm notları** and **Güncellemeleri denetle** (asks GitHub again).
+Superadmin page in five tabs; the open tab is kept in the address (`/system?tab=health`). The header has **Sürüm
+notları** and **Güncellemeleri denetle** (asks GitHub again).
+
+- **Genel bakış**: one tile per card below with its current state (Sunucu, Ajanlar, Sağlık, Yedekler, Ajan kaydı ve
+  kimlik, Cihaz yetenekleri, Kayıt bütünlüğü, Bildirimler); a click opens the tab that holds the card.
+- **Güncellemeler**: cards 1 and 2. **Güvenlik**: cards 3 and 4 and **Kayıt bütünlüğü**. **Sağlık ve yedek**:
+  **Sağlık** and **Yedekler**. **Bildirimler ve saklama**: cards 6 and 7.
+
+An admin who is not a superadmin sees only the **Sunucu** and **Ajanlar** cards, without tabs.
 
 1. **Sunucu**: running version, update channel, the latest version on GitHub and **Sunucuyu güncelle** (panel
    self-update, see [`self-update.md`](self-update.md)), with the result of the last attempt. **Sürüm notları**
@@ -348,6 +356,9 @@ Agents up to 0.1.4-alpha do not start their DNS monitoring, so DNS detection and
 effect on them. See [`configuration.md`](configuration.md#agent-policy-object).
 
 ### Ayarlar
+
+Three tabs, kept in the address like on **Sistem**: **Kullanıcılar**, **Güvenlik** (two-step verification) and
+**Genel** (task queue and server connection).
 
 - **Kullanıcılar**: the users with their role, page access and last sign-in; a click opens the user's panel. A
   superadmin can add users (**Kullanıcı ekle**), edit the role and the pages (**Rolü ve yetkileri düzenle**, the

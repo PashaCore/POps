@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Panel: Sistem and Ayarlar in tabs.** Sistem opens on **Genel bakış**, one tile per card with its current state; a click opens the tab that holds it (**Güncellemeler**, **Güvenlik**, **Sağlık ve yedek**, **Bildirimler ve saklama**). Ayarlar has **Kullanıcılar**, **Güvenlik** and **Genel**. The open tab is kept in the address (`?tab=`), so a link opens the same tab.
+
+### Fixed
+
+- **Sistem showed an older GitHub release than the running version** right after an update (for example "v0.1.18 · Çalışan sürümle aynı" on 0.1.19): the server kept the release it had fetched for an hour. A cached release older than the running version is now fetched again (at most every 2 minutes), and the label says "Çalışan sürüm daha yeni" when the running version is ahead.
+
 ## [0.1.19-alpha] - 2026-10-03
 
 Kayıtlar shows the event log in pages with a filter panel and searches a whole date range on the server; Kontrol merkezi is laid out in two balanced columns; the Apache rules for addresses without `.php` ship as an example file.

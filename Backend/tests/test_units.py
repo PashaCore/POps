@@ -612,6 +612,28 @@ def test_release_compare():
     chk(newer("v0.1.10-alpha", "0.1.9-alpha"), "sayısal karşılaştırma (0.1.10 > 0.1.9)")
     chk(newer("v0.1.15-alpha", None), "çalışan sürüm bilinmiyorsa öneri var")
 
+    # Önbellekteki "son sürüm" çalışan sürümden eskiyse (GitHub yeni sürümü geç gösterdi) yeniden sorulur
+    calls = []
+    real_fetch, real_read = system_routes._fetch_github_latest_tag, system_routes._read_version
+    real_cache = dict(system_routes._latest_cache)
+    try:
+        system_routes._read_version = lambda: "0.1.19-alpha"
+        system_routes._fetch_github_latest_tag = lambda: calls.append(1) or "v0.1.19-alpha"
+        now = time.time()
+        system_routes._latest_cache.update({"tag": "v0.1.18-alpha", "at": now - 300, "checked": True})
+        got = asyncio.run(system_routes._github_latest())
+        chk(got == "v0.1.19-alpha" and len(calls) == 1, "eski önbellek yenilendi (%s)" % got)
+        system_routes._latest_cache.update({"tag": "v0.1.18-alpha", "at": time.time() - 30, "checked": True})
+        got = asyncio.run(system_routes._github_latest())
+        chk(got == "v0.1.18-alpha" and len(calls) == 1, "2 dakikadan sık sorulmaz")
+        system_routes._latest_cache.update({"tag": "v0.1.19-alpha", "at": time.time() - 300, "checked": True})
+        got = asyncio.run(system_routes._github_latest())
+        chk(got == "v0.1.19-alpha" and len(calls) == 1, "güncel önbellek saatlik kalır")
+    finally:
+        system_routes._fetch_github_latest_tag, system_routes._read_version = real_fetch, real_read
+        system_routes._latest_cache.clear()
+        system_routes._latest_cache.update(real_cache)
+
 
 def main():
     test_update_notice()

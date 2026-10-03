@@ -93,6 +93,16 @@
     .upload-zone:hover, .upload-zone.dragover { border-color: var(--primary-500); background: var(--primary-50); }
     .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
     .file-list { list-style: none; margin: 10px 0 0; padding: 0; font-size: var(--text-sm); color: var(--text-secondary); }
+    .sys-tabs { margin-bottom: 20px; }
+    .sys-pane[hidden] { display: none !important; }
+    .ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+    .ov { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; padding: 16px 18px; background: var(--bg-surface); border-radius: 16px; box-shadow: 0 0 0 1px var(--border-subtle), 0 1px 2px rgba(0, 0, 0, 0.03); min-height: 112px; transition: box-shadow 0.12s; }
+    .ov:hover { box-shadow: 0 0 0 1px var(--border-default), 0 4px 14px rgba(0, 0, 0, 0.06); }
+    .ov:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+    .ov-t { font-weight: var(--fw-semibold); font-size: var(--text-md); }
+    .ov-s { display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); color: var(--text-primary); min-height: 20px; }
+    .ov-s:empty::before { content: 'Yükleniyor…'; color: var(--text-muted); }
+    .ov-d { font-size: var(--text-xs); color: var(--text-muted); margin-top: auto; }
     .file-list li { display: flex; gap: 8px; padding: 3px 0; overflow-wrap: anywhere; }
     .file-list li span { color: var(--text-muted); white-space: nowrap; }
 </style>
@@ -108,53 +118,82 @@
     </div>
 </div>
 
+<?php if ($sysSuper): ?>
+<div class="tabs sys-tabs" id="sysTabs" aria-label="Sistem bölümleri">
+    <button type="button" class="tab" data-tab="overview">Genel bakış</button>
+    <button type="button" class="tab" data-tab="updates">Güncellemeler</button>
+    <button type="button" class="tab" data-tab="security">Güvenlik</button>
+    <button type="button" class="tab" data-tab="health">Sağlık ve yedek</button>
+    <button type="button" class="tab" data-tab="notify">Bildirimler ve saklama</button>
+</div>
+<?php endif; ?>
+
 <div class="sys-wrap">
-    <div class="sys-grid<?php echo $sysSuper ? '' : ' one'; ?>">
+    <?php if ($sysSuper): ?>
+    <div class="sys-pane" data-pane="overview">
+        <div class="ov-grid" id="ovGrid">
+            <button type="button" class="ov" data-go="updates" data-src="srvState"><span class="ov-t">Sunucu</span><span class="ov-s"></span><span class="ov-d">Sürüm ve sunucu güncellemesi</span></button>
+            <button type="button" class="ov" data-go="updates" data-src="agState"><span class="ov-t">Ajanlar</span><span class="ov-s"></span><span class="ov-d">Sürüm dağılımı, ajan paketi ve gönderim</span></button>
+            <button type="button" class="ov" data-go="health" data-src="hlState"><span class="ov-t">Sağlık</span><span class="ov-s"></span><span class="ov-d">Bağlı ajanlar, veritabanı, hatalar, disk</span></button>
+            <button type="button" class="ov" data-go="health" data-src="bkState"><span class="ov-t">Yedekler</span><span class="ov-s"></span><span class="ov-d">Gece alınan veritabanı yedeği</span></button>
+            <button type="button" class="ov" data-go="security" data-src="enState"><span class="ov-t">Ajan kaydı ve kimlik</span><span class="ov-s"></span><span class="ov-d">Kimlik zorlaması ve kayıt jetonları</span></button>
+            <button type="button" class="ov" data-go="security" data-src="capState"><span class="ov-t">Cihaz yetenekleri</span><span class="ov-s"></span><span class="ov-d">Uzak komut ve uzak ekranın kapatıldığı bilgisayarlar</span></button>
+            <button type="button" class="ov" data-go="security" data-src="auState"><span class="ov-t">Kayıt bütünlüğü</span><span class="ov-s"></span><span class="ov-d">Denetim zincirinin doğrulanması</span></button>
+            <button type="button" class="ov" data-go="notify" data-src="ntState"><span class="ov-t">Bildirimler</span><span class="ov-s"></span><span class="ov-d">E-posta ve webhook, saklama süreleri</span></button>
+        </div>
+    </div>
+    <div class="sys-pane sys-grid" data-pane="updates">
         <div class="sys-col">
-            <section class="sec" id="secServer" aria-labelledby="hServer">
+<section class="sec" id="secServer" aria-labelledby="hServer">
                 <div class="sec-h"><h2 id="hServer">Sunucu</h2><span class="st" id="srvState"></span></div>
                 <div class="set" id="srvSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
             </section>
-
-            <section class="sec" id="secAgents" aria-labelledby="hAgents">
+        </div>
+        <div class="sys-col">
+<section class="sec" id="secAgents" aria-labelledby="hAgents">
                 <div class="sec-h"><h2 id="hAgents">Ajanlar</h2><span class="st" id="agState"></span></div>
                 <div class="set" id="agSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
                 <div class="set" id="rollout" hidden></div>
                 <?php if (!$sysSuper): ?><div class="set-note">Güncelleme, sağlık, yedek, kayıt ve güvenlik ayarları yalnızca süper admin içindir.</div><?php endif; ?>
             </section>
-
-            <?php if ($sysSuper): ?>
-            <section class="sec" id="secEnroll" aria-labelledby="hEnroll">
+        </div>
+    </div>
+    <div class="sys-pane sys-grid" data-pane="security">
+        <div class="sys-col">
+<section class="sec" id="secEnroll" aria-labelledby="hEnroll">
                 <div class="sec-h"><h2 id="hEnroll">Ajan kaydı ve kimlik</h2><span class="st" id="enState"></span></div>
                 <div class="set" id="enSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
                 <div class="set" id="tokSet" hidden></div>
             </section>
-
-            <section class="sec" id="secCaps" aria-labelledby="hCaps">
+        </div>
+        <div class="sys-col">
+<section class="sec" id="secCaps" aria-labelledby="hCaps">
                 <div class="sec-h"><h2 id="hCaps">Cihaz yetenekleri</h2><span class="st" id="capState"></span></div>
                 <div class="set" id="capSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
             </section>
-
-            <?php endif; ?>
-        </div>
-
-        <?php if ($sysSuper): ?>
-        <div class="sys-col">
-            <section class="sec" id="secHealth" aria-labelledby="hHealth">
-                <div class="sec-h"><h2 id="hHealth">Sağlık</h2><span class="st" id="hlState"></span></div>
-                <div id="hlBody"><div class="set"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div></div>
-            </section>
-            <section class="sec" id="secBackup" aria-labelledby="hBackup">
-                <div class="sec-h"><h2 id="hBackup">Yedekler</h2><span class="st" id="bkState"></span></div>
-                <div class="set" id="bkSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
-            </section>
-
-            <section class="sec" id="secAudit" aria-labelledby="hAudit">
+<section class="sec" id="secAudit" aria-labelledby="hAudit">
                 <div class="sec-h"><h2 id="hAudit">Kayıt bütünlüğü</h2><span class="st" id="auState"></span></div>
                 <div class="set" id="auSet"></div>
             </section>
-
-            <section class="sec" id="secNotify" aria-labelledby="hNotify">
+        </div>
+    </div>
+    <div class="sys-pane sys-grid" data-pane="health">
+        <div class="sys-col">
+<section class="sec" id="secHealth" aria-labelledby="hHealth">
+                <div class="sec-h"><h2 id="hHealth">Sağlık</h2><span class="st" id="hlState"></span></div>
+                <div id="hlBody"><div class="set"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div></div>
+            </section>
+        </div>
+        <div class="sys-col">
+<section class="sec" id="secBackup" aria-labelledby="hBackup">
+                <div class="sec-h"><h2 id="hBackup">Yedekler</h2><span class="st" id="bkState"></span></div>
+                <div class="set" id="bkSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
+            </section>
+        </div>
+    </div>
+    <div class="sys-pane sys-grid" data-pane="notify">
+        <div class="sys-col">
+<section class="sec" id="secNotify" aria-labelledby="hNotify">
                 <div class="sec-h"><h2 id="hNotify">Bildirimler</h2><span class="st" id="ntState"></span></div>
                 <div class="set" id="ntSet">
                     <div class="srow">
@@ -187,8 +226,9 @@
                     </div>
                 </div>
             </section>
-
-            <section class="sec" id="secRetention" aria-labelledby="hRetention">
+        </div>
+        <div class="sys-col">
+<section class="sec" id="secRetention" aria-labelledby="hRetention">
                 <div class="sec-h"><h2 id="hRetention">Saklama süreleri</h2></div>
                 <div class="set" id="rtSet">
                     <div class="srow">
@@ -210,8 +250,23 @@
                 </div>
             </section>
         </div>
-        <?php endif; ?>
     </div>
+    <?php else: ?>
+    <div class="sys-grid one">
+        <div class="sys-col">
+<section class="sec" id="secServer" aria-labelledby="hServer">
+                <div class="sec-h"><h2 id="hServer">Sunucu</h2><span class="st" id="srvState"></span></div>
+                <div class="set" id="srvSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
+            </section>
+<section class="sec" id="secAgents" aria-labelledby="hAgents">
+                <div class="sec-h"><h2 id="hAgents">Ajanlar</h2><span class="st" id="agState"></span></div>
+                <div class="set" id="agSet"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
+                <div class="set" id="rollout" hidden></div>
+                <?php if (!$sysSuper): ?><div class="set-note">Güncelleme, sağlık, yedek, kayıt ve güvenlik ayarları yalnızca süper admin içindir.</div><?php endif; ?>
+            </section>
+        </div>
+    </div>
+    <?php endif; ?>
 </div>
 
 <?php if ($sysSuper): ?>
@@ -263,6 +318,20 @@
 
 <script>
 (function () {
+
+    // ---- Sekmeler ve Genel bakış (yalnızca süper admin): kutucuklar bölüm başlıklarındaki durumu aynen gösterir
+    const sysTabs = document.getElementById('sysTabs') ? POps.pageTabs(document.getElementById('sysTabs'), { def: 'overview' }) : null;
+    if (sysTabs) {
+        document.querySelectorAll('#ovGrid .ov').forEach(tile => {
+            const src = document.getElementById(tile.dataset.src);
+            const out = tile.querySelector('.ov-s');
+            if (!src) { tile.hidden = true; return; }
+            const copy = () => out.replaceChildren(...[...src.childNodes].map(n => n.cloneNode(true)));
+            copy();
+            new MutationObserver(copy).observe(src, { childList: true, subtree: true, characterData: true });
+            tile.addEventListener('click', () => sysTabs.set(tile.dataset.go, { scroll: true }));
+        });
+    }
     const dev = POps.dev;
     const $ = (id) => document.getElementById(id);
     const IS_SUPER = window.USER_ROLE === 'superadmin';
@@ -324,7 +393,11 @@
         if (v && !srv) { latest = '?'; latestSub = 'Güncelleme sorgusu için sunucuyu bir kez güncelleyin.'; avail = true; }
         else if (srv && rel) {
             if (!srv.checked) { latest = '?'; latestSub = "GitHub'a ulaşılamadı"; }
-            else { latest = fmtV(srv.latest_release); avail = !!srv.update_available; latestSub = avail ? 'Kurulabilir' : 'Çalışan sürümle aynı'; }
+            else {
+                latest = fmtV(srv.latest_release); avail = !!srv.update_available;
+                const same = String(srv.latest_release || '').replace(/^v/, '') === String((v && v.running) || '').replace(/^v/, '');
+                latestSub = avail ? 'Kurulabilir' : same ? 'Çalışan sürümle aynı' : 'Çalışan sürüm daha yeni';
+            }
         } else if (srv) {
             if (!srv.rev) { latest = '?'; latestSub = 'Bir kez panelden güncellenince izlenir.'; }
             else if (!srv.checked) { latest = '?'; latestSub = "GitHub'a ulaşılamadı"; }
