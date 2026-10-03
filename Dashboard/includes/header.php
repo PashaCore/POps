@@ -2,7 +2,7 @@
 require_once __DIR__ . '/session.php';
 pops_session_start();
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || empty($_SESSION['jwt_token'])) {
-    header('Location: login.php');
+    header('Location: login');
     exit;
 }
 
@@ -32,7 +32,7 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
                 <i class='fas fa-lock' style='font-size:2.5rem;color:#ef4444;margin-bottom:16px;'></i>
                 <h2 style='color:#0f172a;margin-bottom:8px;'>Yetkisiz Erişim</h2>
                 <p style='color:#64748b;margin-bottom:20px;'>Bu sayfayı görüntüleme yetkiniz bulunmuyor.</p>
-                <a href='index.php' style='display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:500;'>Ana Sayfaya Dön</a>
+                <a href='./' style='display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:500;'>Ana Sayfaya Dön</a>
              </div>");
     }
 }
@@ -133,7 +133,7 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
         }
         const response = await originalFetch(resource, config);
         if (response.status === 401) {
-            window.location.href = '/logout.php';
+            window.location.href = '/logout';
             return new Promise(() => {}); // Halt execution
         }
         return response;
@@ -232,7 +232,7 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
     <a class="sr-only" href="#mainContent">İçeriğe geç</a>
     <div class="app-shell">
         <aside class="app-sidebar" id="appSidebar" aria-label="Ana menü">
-            <a class="sb-brand" href="index.php">
+            <a class="sb-brand" href="./">
                 <img src="assets/favicon/favicon-96x96.png" alt="">
                 <span><b>POps</b><small>Yönetim paneli</small></span>
             </a>
@@ -261,7 +261,7 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
                         <div class="user-name"><?php echo htmlspecialchars($_SESSION['username'] ?? 'Admin'); ?></div>
                         <div class="user-role"><?php echo htmlspecialchars($pops_role_label, ENT_QUOTES, 'UTF-8'); ?></div>
                     </div>
-                    <a href="logout.php" class="ibtn sm" data-tip="Çıkış yap" data-tip-pos="up" aria-label="Çıkış yap"><?php echo pops_icon('logout', 'sm'); ?></a>
+                    <a href="logout" class="ibtn sm" data-tip="Çıkış yap" data-tip-pos="up" aria-label="Çıkış yap"><?php echo pops_icon('logout', 'sm'); ?></a>
                 </div>
             </div>
         </aside>

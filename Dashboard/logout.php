@@ -24,6 +24,6 @@ session_destroy();
 pops_clear_jwt_cookie();
 
 // Güvenli bir şekilde giriş ekranına şutla
-header("Location: login.php");
+header("Location: login");
 exit;
 ?>

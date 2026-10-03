@@ -35,9 +35,9 @@ foreach ($grouped as $section => $items): ?>
     <div class="nav-section">
         <?php if ($section !== ''): ?><div class="nav-section-title"><?php echo htmlspecialchars($section, ENT_QUOTES, 'UTF-8'); ?></div><?php endif; ?>
         <?php foreach ($items as $item):
-            $isActive = $current_file === $item['page'] . '.php';
+            $isActive = basename($current_file, '.php') === $item['page'];
         ?>
-            <a href="<?php echo htmlspecialchars($item['page'], ENT_QUOTES, 'UTF-8'); ?>.php" class="nav-item <?php echo $isActive ? 'active' : ''; ?>"<?php echo $isActive ? ' aria-current="page"' : ''; ?> data-page="<?php echo htmlspecialchars($item['page'], ENT_QUOTES, 'UTF-8'); ?>">
+            <a href="<?php echo htmlspecialchars($item['page'] === 'index' ? './' : $item['page'], ENT_QUOTES, 'UTF-8'); ?>" class="nav-item <?php echo $isActive ? 'active' : ''; ?>"<?php echo $isActive ? ' aria-current="page"' : ''; ?> data-page="<?php echo htmlspecialchars($item['page'], ENT_QUOTES, 'UTF-8'); ?>">
                 <?php echo pops_icon($item['icon']); ?>
                 <span><?php echo htmlspecialchars($pops_titles[$item['page']] ?? $item['page'], ENT_QUOTES, 'UTF-8'); ?></span>
                 <span class="n" data-count="<?php echo htmlspecialchars($item['page'], ENT_QUOTES, 'UTF-8'); ?>"></span>

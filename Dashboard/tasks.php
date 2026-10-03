@@ -307,7 +307,7 @@
         $('tkFilter').hidden = tab !== 'jobs';
         $('tkNote').hidden = tab !== 'jobs';
         if ($('schedNewBtn')) $('schedNewBtn').hidden = tab !== 'sched';
-        history.replaceState(null, '', tab === 'sched' ? 'tasks.php?tab=sched' : 'tasks.php');
+        history.replaceState(null, '', tab === 'sched' ? 'tasks?tab=sched' : 'tasks');
         tab === 'jobs' ? renderJobs() : renderSched();
     }
     $('tkTab').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });

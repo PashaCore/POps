@@ -307,13 +307,13 @@
             ? (p.pending_critical ? `<span class="dot bad"></span>${nHtml(p.pending_critical)} kritik` : 'Kritik eksik yok') + (p.reboot_required ? ` · ${nHtml(p.reboot_required)} yeniden başlatma` : '') + (notReported ? ` · ${nHtml(notReported)} bildirmedi` : '')
             : 'Henüz bildiren bilgisayar yok';
         $('kpis').innerHTML = [
-            kpiHtml('Cihaz', nHtml(dv.total), `<span class="dot on"></span>${nHtml(onN)} açık` + (idleN ? ` · ${nHtml(idleN)} boşta` : '') + ` · ${nHtml(off)} kapalı`, { page: 'devices.php' }),
+            kpiHtml('Cihaz', nHtml(dv.total), `<span class="dot on"></span>${nHtml(onN)} açık` + (idleN ? ` · ${nHtml(idleN)} boşta` : '') + ` · ${nHtml(off)} kapalı`, { page: 'devices' }),
             kpiHtml('Kayıtlı ajan', `${nHtml(dv.enrolled)} <small>/ ${nHtml(dv.total)}</small>`,
                 unenrolled ? `<span class="dot warn"></span>${nHtml(unenrolled)} ajan anahtarsız` : '<span class="dot ok"></span>Hepsi anahtarlı', null),
-            kpiHtml('Karantinada', nHtml(dv.quarantined), dv.quarantined ? '<span class="dot bad"></span>Kullanımı kilitli bilgisayar var' : 'Yok', dv.quarantined ? { page: 'devices.php', f: 'issue' } : null),
+            kpiHtml('Karantinada', nHtml(dv.quarantined), dv.quarantined ? '<span class="dot bad"></span>Kullanımı kilitli bilgisayar var' : 'Yok', dv.quarantined ? { page: 'devices', f: 'issue' } : null),
             kpiHtml('Güvenlik güncellemesi bekleyen', nHtml(p.pending_security), secFootHtml, { tab: 'patches' }),
             kpiHtml('Yazılım bildiren bilgisayar', nHtml(sw.reporting_devices), `${nHtml(sw.titles)} farklı program`, { tab: 'software' }),
-            kpiHtml('Yüksek ve kritik olay', nHtml(highCrit), `son ${nHtml(d.days)} gün · ${nHtml(ev.critical || 0)} kritik · ${nHtml(ev.medium || 0)} orta`, { page: 'logger.php', f: 'warn' })
+            kpiHtml('Yüksek ve kritik olay', nHtml(highCrit), `son ${nHtml(d.days)} gün · ${nHtml(ev.critical || 0)} kritik · ${nHtml(ev.medium || 0)} orta`, { page: 'logger', f: 'warn' })
         ].join('');
 
         // Günlük seri: dönemdeki her gün (olay olmayan günler 0)
@@ -356,7 +356,7 @@
         const td = (d.events && d.events.top_devices) || [];
         $('topDevices').innerHTML = td.length ? td.map(r => {
             const lab = (dev.find(r.pc_name) || {}).lab;
-            return `<a class="rp-li" href="logger.php?pc=${encodeURIComponent(r.pc_name)}&amp;f=warn" title="Kayıtlarda göster"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px"><span>${escapeHtml(devName(r))}</span><span class="sub">${escapeHtml(lab ? labName(lab) : r.pc_name)}</span></span><span class="n">${nHtml(r.n)}</span></a>`;
+            return `<a class="rp-li" href="logger?pc=${encodeURIComponent(r.pc_name)}&amp;f=warn" title="Kayıtlarda göster"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px"><span>${escapeHtml(devName(r))}</span><span class="sub">${escapeHtml(lab ? labName(lab) : r.pc_name)}</span></span><span class="n">${nHtml(r.n)}</span></a>`;
         }).join('') : '<div class="rp-calm"><span class="dot ok"></span>Bu dönemde uyarı alan bilgisayar yok.</div>';
     }
     $('rpDays').addEventListener('change', loadSummary);

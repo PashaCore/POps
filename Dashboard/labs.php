@@ -119,10 +119,10 @@
             const pcs = pcsOf(l);
             const on = pcs.filter(d => !POps.isOffline(d)).length;
             const warn = pcs.some(d => d.is_quarantined);
-            return `<a href="labs.php?lab=${encodeURIComponent(l)}" data-lab="${escapeHtml(l)}" class="${l === current ? 'active' : ''}"><span>${escapeHtml(l)}</span>${warn ? '<span class="dot bad" title="Karantinada bilgisayar var"></span>' : ''}<span class="n">${Number(on)}/${pcs.length}</span></a>`;
+            return `<a href="labs?lab=${encodeURIComponent(l)}" data-lab="${escapeHtml(l)}" class="${l === current ? 'active' : ''}"><span>${escapeHtml(l)}</span>${warn ? '<span class="dot bad" title="Karantinada bilgisayar var"></span>' : ''}<span class="n">${Number(on)}/${pcs.length}</span></a>`;
         }).join('');
         const un = pcsOf(UNASSIGNED_KEY).length;
-        const unHtml = un ? `<a href="labs.php?lab=${UNASSIGNED_KEY}" data-lab="${UNASSIGNED_KEY}" class="${current === UNASSIGNED_KEY ? 'active' : ''}"><span>Atanmamış</span><span class="n" style="color:#ff9f0a">${un}</span></a>` : '';
+        const unHtml = un ? `<a href="labs?lab=${UNASSIGNED_KEY}" data-lab="${UNASSIGNED_KEY}" class="${current === UNASSIGNED_KEY ? 'active' : ''}"><span>Atanmamış</span><span class="n" style="color:#ff9f0a">${un}</span></a>` : '';
         box.innerHTML = linksHtml + unHtml;
     }
 
@@ -382,7 +382,7 @@
         selected.clear(); focus = null; editing = false; query = ''; $('labSearch').value = '';
         POps.drawer.close();
         try { localStorage.setItem('pops_lab', lab); } catch (e) { /* özel pencere */ }
-        history.replaceState(null, '', 'labs.php?lab=' + encodeURIComponent(lab));
+        history.replaceState(null, '', 'labs?lab=' + encodeURIComponent(lab));
         render(true);
     }
     window.addEventListener('popstate', () => { const l = new URLSearchParams(location.search).get('lab'); if (l) switchLab(l); });

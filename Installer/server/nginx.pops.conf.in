@@ -63,7 +63,9 @@ server {
         fastcgi_pass unix:@PHP_SOCK@;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
     }
-    location / { try_files $uri $uri/ /index.php; }
+    # Temiz adresler: /devices -> devices.php (panelin bağlantıları .php'siz; .php adresleri de çalışır)
+    location / { try_files $uri $uri/ @pops_page; }
+    location @pops_page { rewrite "^/([A-Za-z0-9_-]+)$" /$1.php last; rewrite ^ /index.php last; }
 }
 
 server {

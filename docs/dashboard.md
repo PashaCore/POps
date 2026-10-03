@@ -6,17 +6,25 @@ origin. The interface is in Turkish; page and button names below are quoted as t
 
 ## Signing in
 
-`login.php` asks for **Kullanıcı Adı** and **Şifre**. If the account has 2FA enabled, a second form asks for the
-**Doğrulama Kodu** from the authenticator app. PHP sends the login to the backend (`POPS_API_INTERNAL_URL`), keeps
+`/login` asks for **Kullanıcı adı** and **Şifre**. If the account has 2FA enabled, a second form asks for the
+**Doğrulama kodu** from the authenticator app. PHP sends the login to the backend (`POPS_API_INTERNAL_URL`), keeps
 the session server-side and sets the `httpOnly` `pops_jwt` cookie that the browser then uses for API and
 WebSocket calls. Sessions end when the browser session ends, when the token expires (`JWT_EXPIRE_HOURS`) or when
 the account is changed or deleted; any `401` from the API returns you to the login page.
+
+## Addresses
+
+Pages have addresses without `.php`: `/devices`, `/labs?lab=…`, `/tasks?job=…`; the overview is `/`. The bundled
+web server configurations map them to the PHP files: `Dashboard/.htaccess` (Apache with `AllowOverride FileInfo`,
+which the `/api` and `/ws` proxy rules already need), `docker/apache-pops.conf` and the nginx templates in
+`Installer/server/`. Old `.php` addresses keep working; on Apache a `GET` to one is redirected to the address
+without `.php`.
 
 ## Who sees which page
 
 | Page (sidebar) | File | Access |
 | --- | --- | --- |
-| Kontrol merkezi | `index.php` | every signed-in user |
+| Kontrol merkezi | `index.php` (`/`) | every signed-in user |
 | Cihazlar | `devices.php` | page permission `devices` |
 | Sınıflar | `labs.php` | `labs` |
 | İşlemler | `tasks.php` | `tasks` |
@@ -99,11 +107,15 @@ The overview. A summary line (server reachable, number of devices and labs, time
 tiles that link to the matching list: **Çevrimiçi** (PCs on, with a bar; opens **Cihazlar**), **Sorunlu cihaz**
 (quarantined PCs, outdated agents and PCs with errors; opens the **Sorunlu** filter), **Süren işlem** (running
 jobs; opens **İşlemler**) and **Güncel ajan** (share of PCs on the newest agent version; opens **Sistem** for a
-superadmin when agents are outdated). Below: **Son etkinlik** (the latest jobs: what, who, when, from which page,
-target, result; a click opens the job on **İşlemler**), **İlgilenmen gerekenler** (quarantined PCs, jobs that
-failed today, outdated agents, new PCs waiting for a lab, PCs that have been off for more than 7 days), **Sınıflar**
-(online PCs per lab) and **Son sinyaller** (the latest event-log entries, with a link to **Kayıtlar**). Refreshes
-by itself, see [Shared behaviour](#shared-behaviour).
+superadmin when agents are outdated). Below: **Son etkinlik**, one feed of the latest jobs (what, who, when, from
+which page, target, result and why it failed; a click opens the job on **İşlemler**) and the latest events from the
+PCs (logons, blocked sites, quarantine, update results, with the same readable titles and honest levels as
+**Kayıtlar**; a click opens that PC's records), filtered with **Tümü / İşlemler / Olaylar**; **İlgilenmen
+gerekenler** (quarantined PCs, jobs that failed today, outdated agents, new PCs waiting for a lab, PCs that have
+been off for more than 7 days) and **Sınıflar** (online PCs per lab). The bottom row: **Sunucu** (running, database,
+version, whether an update is available and how many agents have a device key; admins), **Ajan sürümleri** (how many
+PCs run each agent version, with a bar) and **Bugün** (jobs sent, jobs that ended with a problem, logons, blocked
+sites, warnings). Refreshes by itself, see [Shared behaviour](#shared-behaviour).
 
 ### Cihazlar
 
