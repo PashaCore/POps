@@ -265,7 +265,13 @@ Superadmin page in five tabs; the open tab is kept in the address (`/system?tab=
 notları** and **Güncellemeleri denetle** (asks GitHub again).
 
 - **Genel bakış**: one tile per card below with its current state (Sunucu, Ajanlar, Sağlık, Yedekler, Ajan kaydı ve
-  kimlik, Cihaz yetenekleri, Kayıt bütünlüğü, Bildirimler); a click opens the tab that holds the card.
+  kimlik, Cihaz yetenekleri, Kayıt bütünlüğü, Bildirimler); a click opens the tab that holds the card. Under the
+  tiles, **Eğilimler** draws six charts for the last 24 hours, 7 days or 30 days (the choice is remembered in the
+  browser): **Bağlı ajanlar** (with the agent updates of the period), **İşlemci ve bellek**, **API istekleri** (server
+  errors in red), **İşlemler** (successful, failed, refused, other), **Olaylar** (by risk level) and **Veritabanı ve
+  disk**. Hovering a point shows its time and values. Agents, processor, memory, requests and database size come
+  from a sample the server takes every minute and keeps for 30 days, so after an update the charts start filling
+  within a few minutes and a gap marks the time the server was down; tasks and events come from their records.
 - **Güncellemeler**: cards 1 and 2. **Güvenlik**: cards 3 and 4 and **Kayıt bütünlüğü**. **Sağlık ve yedek**:
   **Sağlık** and **Yedekler**. **Bildirimler ve saklama**: cards 6 and 7.
 

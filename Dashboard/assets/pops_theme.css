@@ -988,8 +988,25 @@ button:disabled { cursor: not-allowed; }
 .ibtn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 /* İpucu: data-tip taşıyan öğenin üstüne gelince sayfanın üstündeki tek bir katmanda gösterilir (POps, pops_script.js);
    tablo ya da panel içinde kırpılmaz, sayfayı kaydırmaz. data-tip-pos: up | left */
-.pops-tip { position: fixed; z-index: 2500; max-width: min(320px, calc(100vw - 12px)); background: #1d1d1f; color: #fff; font-size: 12px; font-weight: 500; line-height: 1.35; padding: 6px 9px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); pointer-events: none; overflow-wrap: anywhere; animation: fadeIn 0.12s ease; }
+.pops-tip { position: fixed; z-index: 2500; max-width: min(320px, calc(100vw - 12px)); background: #1d1d1f; color: #fff; font-size: 12px; font-weight: 500; line-height: 1.35; padding: 6px 9px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); pointer-events: none; overflow-wrap: anywhere; white-space: pre-line; animation: fadeIn 0.12s ease; }
 .pops-tip[hidden] { display: none; }
+
+/* Grafikler (POps.chart, pops_script.js): şekiller viewBox'a gerilir, çizgi kalınlığı sabit kalır. Seri rengi
+   .ch-c1 … .ch-c6 sınıfıyla (aynı sınıf açıklamadaki renk karesine de verilir). */
+.ch-c1 { --ch: var(--primary-500); }
+.ch-c2 { --ch: var(--violet-solid); }
+.ch-c3 { --ch: var(--success-solid); }
+.ch-c4 { --ch: var(--danger-solid); }
+.ch-c5 { --ch: var(--warning-solid); }
+.ch-c6 { --ch: #c7c7cc; }
+.ch-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.ch-rule { stroke: var(--border-subtle); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.ch-line { fill: none; stroke: var(--ch); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
+.ch-area { fill: var(--ch); opacity: 0.1; }
+.ch-bar { fill: var(--ch); }
+.ch-zero { fill: #e5e5ea; }
+.ch-hit { fill: transparent; }
+.ch-hit:hover { fill: rgba(0, 0, 0, 0.045); }
 @media (min-width: 1280px) { body.drawer-open .app-content { padding-right: calc(380px + 32px); } }
 
 /* İşlem çubuğu: sayfanın tek eylem yeri */

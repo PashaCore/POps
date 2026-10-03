@@ -1,4 +1,4 @@
-"""İşletim uçları — entegrasyon testi (CI 'security' job'ı): request_id, /metrics, sağlık özeti.
+"""İşletim uçları — entegrasyon testi (CI 'security' job'ı): request_id, /metrics, sağlık özeti, Genel bakış verisi.
 
 Ortam: POPS_TEST_HTTP + DB_* + JWT_SECRET + METRICS_TOKEN (sunucuyla aynı değer).
 """
@@ -103,6 +103,31 @@ def main():
         chk(key in d, "alan var: %s" % key)
     chk(d.get("metrics_enabled") is True, "metrik ucunun açık olduğu görünüyor")
     chk(isinstance(d.get("recent_errors"), list), "son hatalar liste")
+
+    print("== /api/system/overview")
+    chk(req("/api/system/overview")[0] == 401, "oturumsuz 401")
+    chk(req("/api/system/overview", ad)[0] == 403, "admin 403 (yalnız superadmin)")
+    chk(req("/api/system/overview?span=1y", sa)[0] == 422, "bilinmeyen aralık 422")
+    # 6 saat önceki 15 dakikalık dilimde yalnızca bu ölçüm olsun (dilim başı saat başıdır)
+    slot = "date_trunc('hour', NOW()) - interval '6 hours'"
+    asyncio.run(q("DELETE FROM server_metrics WHERE ts >= %s AND ts < %s + interval '15 minutes'" % (slot, slot)))
+    asyncio.run(q(
+        "INSERT INTO server_metrics (ts, agents, panels, cpu_pct, mem_pct, disk_pct, db_mb, rss_mb, requests, errors) "
+        "VALUES (%s, 7, 1, 12.5, 40, 55, 30, 80, 120, 3)" % slot))
+    s, _, d = req("/api/system/overview", sa)
+    d = d or {}
+    chk(s == 200 and d.get("span") == "24h", "superadmin 200, varsayılan 24 saat")
+    series = d.get("series") or []
+    chk(len(series) == 96, "24 saatte 15 dakikalık 96 nokta (%d)" % len(series))
+    chk(any(p.get("agents") == 7 and p.get("requests") == 120 and p.get("errors") == 3 for p in series),
+        "yazılan ölçüm noktada görünür")
+    chk(len(d.get("tasks") or []) == 24 and len(d.get("events") or []) == 24, "saatlik 24 görev ve olay çubuğu")
+    chk(set((d.get("updates") or {}).keys()) == {"success", "rolled_back", "failed"}, "güncelleme sonuçları")
+    chk("devices" in d and "agents_connected" in d and isinstance(d.get("disk"), list), "anlık değerler")
+    s, _, d = req("/api/system/overview?span=30d", sa)
+    chk(s == 200 and len((d or {}).get("series") or []) == 120 and len((d or {}).get("tasks") or []) == 30,
+        "30 gün: 6 saatlik 120 nokta, günlük 30 çubuk")
+    asyncio.run(q("DELETE FROM server_metrics WHERE ts = %s" % slot))
 
     asyncio.run(q("DELETE FROM users WHERE username = ANY($1::text[])", ["opsuper", "opadmin"]))
     if FAILS:
