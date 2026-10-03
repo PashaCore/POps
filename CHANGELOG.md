@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.20-alpha] - 2026-10-03
+
+Sistem and Ayarlar are grouped into tabs, and Sistem opens on an overview of every card's state; right after an update Sistem no longer shows the previous GitHub release.
+
+Upgrading: update the server (**Sistem → Sunucuyu güncelle**). No migration; the agent code is unchanged.
+
 ### Changed
 
 - **Panel: Sistem and Ayarlar in tabs.** Sistem opens on **Genel bakış**, one tile per card with its current state; a click opens the tab that holds it (**Güncellemeler**, **Güvenlik**, **Sağlık ve yedek**, **Bildirimler ve saklama**). Ayarlar has **Kullanıcılar**, **Güvenlik** and **Genel**. The open tab is kept in the address (`?tab=`), so a link opens the same tab.
@@ -604,7 +610,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.19-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.20-alpha...HEAD
+[0.1.20-alpha]: https://github.com/PashaCore/POps/compare/v0.1.19-alpha...v0.1.20-alpha
 [0.1.19-alpha]: https://github.com/PashaCore/POps/compare/v0.1.18-alpha...v0.1.19-alpha
 [0.1.18-alpha]: https://github.com/PashaCore/POps/compare/v0.1.17-alpha...v0.1.18-alpha
 [0.1.17-alpha]: https://github.com/PashaCore/POps/compare/v0.1.16-alpha...v0.1.17-alpha
