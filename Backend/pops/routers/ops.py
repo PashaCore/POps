@@ -1,4 +1,5 @@
-"""İşletim uçları: Prometheus /metrics ve panel için sunucu sağlık özeti (/api/system/diagnostics).
+"""İşletim uçları: Prometheus /metrics, panel için sunucu sağlık özeti (/api/system/diagnostics) ve Genel bakış
+grafiklerinin verisi (/api/system/overview).
 
 /metrics yalnızca METRICS_TOKEN tanımlıysa açılır ve Bearer jeton ister; tanımlı değilse 404 döner (varsayılan
 kapalı). Sağlık özeti superadmin içindir: okulda Prometheus olmasa da sunucunun durumu ve son hatalar panelden
@@ -15,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from pops import db, health_alerts, logs, metrics, retention, scheduler
+from pops import db, health_alerts, logs, metrics, retention, scheduler, server_metrics
 from pops.config import DB_POOL_MAX, METRICS_TOKEN
 from pops.db import execute_query
 from pops.manager import manager
@@ -48,15 +49,6 @@ def _version():
     from system_routes import _read_version  # system_routes, pops paketine bağımlı değil; döngü yok
 
     return _read_version()
-
-
-def _rss_mb():
-    try:
-        with open("/proc/self/statm") as f:
-            pages = int(f.read().split()[1])
-        return round(pages * os.sysconf("SC_PAGE_SIZE") / 1048576, 1)
-    except (OSError, ValueError, IndexError):
-        return None
 
 
 def _pool_stats():
@@ -98,7 +90,7 @@ async def prometheus_metrics(request: Request):
         ("pops_db_pool_connections", "Veritabani havuzu", [({"state": k}, v) for k, v in pool.items()]),
         ("pops_scheduler_last_tick_age_seconds", "Zamanlayicinin son turundan beri gecen sure",
          [({}, round(time.time() - tick, 1) if tick else -1)]),
-        ("pops_process_resident_memory_mb", "Surecin bellek kullanimi (MB)", [({}, _rss_mb() or 0)]),
+        ("pops_process_resident_memory_mb", "Surecin bellek kullanimi (MB)", [({}, server_metrics.rss_mb() or 0)]),
     ]
     backup = _backup_status()
     if backup and backup.get("at"):
@@ -129,7 +121,7 @@ async def diagnostics(auth: dict = Depends(require_superadmin)):
         "version": _version(),
         "uptime_seconds": round(time.time() - metrics.STARTED_AT),
         "pid": os.getpid(),
-        "rss_mb": _rss_mb(),
+        "rss_mb": server_metrics.rss_mb(),
         "agents_connected": len(manager.active_agents),
         "panels_connected": len(manager.active_panels),
         "vision_sessions": len(manager.vision_sessions),
@@ -173,6 +165,18 @@ def _load_summary():
         "task_dispatch_p95_seconds": p95(metrics.dispatch_latency, metrics.DISPATCH_BUCKETS),
         "command_send_p95_ms": p95(metrics.command_send, metrics.SEND_BUCKETS, 1000),
     }
+
+
+@router.get("/api/system/overview")
+async def overview(span: str = "24h", auth: dict = Depends(require_superadmin)):
+    """Sistem → Genel bakış grafikleri: span (24h, 7d, 30d) boyunca dakikalık ölçümler (bkz. pops/server_metrics.py),
+    görev sonuçları, olaylar ve ajan güncelleme sonuçları; şu anki cihaz ve bağlantı sayıları."""
+    if span not in server_metrics.RANGES:
+        raise HTTPException(status_code=422, detail="span 24h, 7d ya da 30d olmalı")
+    data = await server_metrics.overview(span)
+    data["devices"] = await _device_counts()
+    data["agents_connected"] = len(manager.active_agents)
+    return data
 
 
 class RetentionInput(BaseModel):

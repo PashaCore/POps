@@ -9,6 +9,7 @@
 //   POps.iconHtml / iconEl       : çizgi simge (assets/pops_icons.svg)
 //   POps.menu(düğme, öğeler)     : açılır menü;  POps.drawer: sağdaki ayrıntı paneli
 //   POps.pageTabs(çubuk)          : çok bölümlü sayfaların sekmeleri (?tab=)
+//   POps.chart.line / bars       : bağımlılıksız SVG grafik (Sistem → Genel bakış)
 //   POps.relTime / timeHtml      : "3 dk önce" (üstüne gelince tam tarih ve saat)
 //   POps.jobs                    : süren işlemler (task_ids) — yan menünün altındaki işlem merkezi
 // Metinler her zaman textContent ile yazılır; sunucudan gelen değer HTML olarak yorumlanmaz.
@@ -723,7 +724,7 @@ POps.duration = function (sec) {
 };
 
 // ============== İPUCU ==============
-// data-tip="metin" taşıyan her öğe: üstüne gelince (300 ms) ya da klavyeyle odaklanınca, ekranın içinde kalacak
+// data-tip="metin" taşıyan her öğe: üstüne gelince (300 ms; bir ipucu açıkken beklemeden) ya da klavyeyle odaklanınca, ekranın içinde kalacak
 // biçimde öğenin altında (data-tip-pos="up": üstünde, "left": sağa hizalı) gösterilir. Açık menüsü olan ya da
 // devre dışı öğede gösterilmez.
 (function () {
@@ -759,10 +760,11 @@ POps.duration = function (sec) {
     document.addEventListener('mouseover', (e) => {
         const el = e.target.closest ? e.target.closest('[data-tip]') : null;
         if (el === cur) return;
+        const warm = tipEl && !tipEl.hidden;
         hide();
         if (!el) return;
         cur = el;
-        timer = setTimeout(() => { if (cur === el) show(el); }, 300);
+        timer = setTimeout(() => { if (cur === el) show(el); }, warm ? 0 : 300);
     });
     document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) hide(); });
     document.addEventListener('focusin', (e) => {
@@ -778,6 +780,94 @@ POps.duration = function (sec) {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); }, true);
     window.addEventListener('scroll', hide, true);
     window.addEventListener('resize', hide);
+})();
+
+// ============== GRAFİKLER ==============
+// Bağımlılıksız SVG grafikler (Sistem → Genel bakış). Noktalar eşit aralıklıdır: [{ t, <anahtar>: sayı | null }];
+// null "ölçüm yok" demektir (çizgi orada kesilir, çubuk çizilmez). Her noktanın üstüne gelince tip(nokta) metni
+// ipucu olarak görünür. Renkler seri sınıfıyla verilir (.ch-c1 … .ch-c5, bkz. pops_theme.css).
+//   POps.chart.line(kutu, noktalar, { series: [{ key, cls }], max, area, tip })
+//   POps.chart.bars(kutu, noktalar, { series: [{ key, cls }], tip })
+// Dönen: ölçeğin üst değeri (en az 1; line'da max verildiyse o).
+POps.chart = (function () {
+    const NS = 'http://www.w3.org/2000/svg';
+    const W = 1000, H = 100;
+    function svgEl(tag, attrs) {
+        const e = document.createElementNS(NS, tag);
+        Object.keys(attrs || {}).forEach(k => e.setAttribute(k, attrs[k]));
+        return e;
+    }
+    function niceMax(v) {
+        if (!(v > 0)) return 1;
+        const p = Math.pow(10, Math.floor(Math.log10(v)));
+        for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+        return 10 * p;
+    }
+    const val = (p, k) => (p && typeof p[k] === 'number' && isFinite(p[k]) ? p[k] : null);
+    function frame(box, points, o) {
+        const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', class: 'ch-svg', 'aria-hidden': 'true' });
+        svg.append(svgEl('line', { x1: 0, x2: W, y1: H / 2, y2: H / 2, class: 'ch-rule' }));
+        svg.append(svgEl('line', { x1: 0, x2: W, y1: 0.5, y2: 0.5, class: 'ch-rule' }));
+        box.replaceChildren(svg);
+        return svg;
+    }
+    function hits(svg, points, o) {
+        const w = W / points.length;
+        points.forEach((p, i) => {
+            const r = svgEl('rect', { x: (i * w).toFixed(2), y: 0, width: w.toFixed(2), height: H, class: 'ch-hit' });
+            if (o.tip) { r.setAttribute('data-tip', o.tip(p)); r.setAttribute('data-tip-pos', 'up'); }
+            svg.append(r);
+        });
+    }
+    function line(box, points, o) {
+        const n = points.length || 1, w = W / n;
+        const top = o.max || niceMax(Math.max(0, ...points.flatMap(p => o.series.map(s => val(p, s.key) || 0))));
+        const svg = frame(box, points, o);
+        const y = (v) => (H - 1 - Math.min(v, top) / top * (H - 3)).toFixed(2);
+        o.series.forEach((s, si) => {
+            const segs = [];
+            let cur = null;
+            points.forEach((p, i) => {
+                const v = val(p, s.key);
+                if (v === null) { cur = null; return; }
+                if (!cur) { cur = []; segs.push(cur); }
+                cur.push([i * w + w / 2, y(v)]);
+            });
+            segs.forEach(seg => {
+                if (seg.length === 1) seg = [[seg[0][0] - w / 3, seg[0][1]], [seg[0][0] + w / 3, seg[0][1]]];
+                const d = seg.map((pt, i) => (i ? 'L' : 'M') + pt[0].toFixed(2) + ' ' + pt[1]).join(' ');
+                if (o.area && si === 0) {
+                    svg.append(svgEl('path', { d: `${d} L${seg[seg.length - 1][0].toFixed(2)} ${H} L${seg[0][0].toFixed(2)} ${H} Z`, class: 'ch-area ' + s.cls }));
+                }
+                svg.append(svgEl('path', { d, class: 'ch-line ' + s.cls, 'vector-effect': 'non-scaling-stroke' }));
+            });
+        });
+        hits(svg, points, o);
+        return top;
+    }
+    function bars(box, points, o) {
+        const n = points.length || 1, w = W / n;
+        const sum = (p) => o.series.reduce((a, s) => a + (val(p, s.key) || 0), 0);
+        const top = niceMax(Math.max(0, ...points.map(sum)));
+        const svg = frame(box, points, o);
+        const bw = Math.max(w * 0.62, Math.min(w, 2)), off = (w - bw) / 2;
+        points.forEach((p, i) => {
+            if (o.series.every(s => val(p, s.key) === null)) return;
+            const x = (i * w + off).toFixed(2);
+            if (!sum(p)) { svg.append(svgEl('rect', { x, y: H - 1, width: bw.toFixed(2), height: 1, class: 'ch-zero' })); return; }
+            let base = H;
+            o.series.forEach(s => {
+                const v = val(p, s.key) || 0;
+                if (!v) return;
+                const h = Math.max(1.2, v / top * (H - 2));
+                base -= h;
+                svg.append(svgEl('rect', { x, y: base.toFixed(2), width: bw.toFixed(2), height: h.toFixed(2), class: 'ch-bar ' + s.cls }));
+            });
+        });
+        hits(svg, points, o);
+        return top;
+    }
+    return { line, bars, niceMax };
 })();
 
 // ============== SAYFA SEKMELERİ ==============

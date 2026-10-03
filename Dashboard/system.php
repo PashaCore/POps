@@ -95,7 +95,32 @@
     .file-list { list-style: none; margin: 10px 0 0; padding: 0; font-size: var(--text-sm); color: var(--text-secondary); }
     .sys-tabs { margin-bottom: 20px; }
     .sys-pane[hidden] { display: none !important; }
-    .ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+    /* Genel bakış: kutucuklar dar ekranda 1–2, genişte 4, çok genişte 8 sütun (satırlar hep dolu); grafikler 1–3 sütun */
+    .ov-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    @container (min-width: 520px) { .ov-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @container (min-width: 960px) { .ov-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+    @container (min-width: 1760px) { .ov-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+    .ov-trend { margin-top: 32px; }
+    .ov-trend-h { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 4px 12px; }
+    .ov-trend-h h2 { font-size: var(--text-lg); font-weight: var(--fw-semibold); letter-spacing: -0.01em; }
+    .ov-trend-h .segmented { margin-left: auto; }
+    .ch-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    @container (min-width: 720px) { .ch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @container (min-width: 1200px) { .ch-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .ch { display: flex; flex-direction: column; min-width: 0; padding: 16px 18px 12px; background: var(--bg-surface); border-radius: 16px; box-shadow: 0 0 0 1px var(--border-subtle), 0 1px 2px rgba(0, 0, 0, 0.03); }
+    .ch-h { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .ch-t { font-weight: var(--fw-semibold); font-size: var(--text-md); }
+    .ch-n { margin-left: auto; font-size: var(--text-2xl); font-weight: var(--fw-semibold); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ch-n small { margin-left: 4px; font-size: var(--text-sm); font-weight: var(--fw-regular); letter-spacing: 0; color: var(--text-muted); }
+    .ch-d { display: flex; flex-wrap: wrap; gap: 4px 14px; min-height: 18px; margin-top: 2px; font-size: var(--text-xs); color: var(--text-muted); }
+    .ch-key { display: inline-flex; align-items: center; gap: 6px; }
+    .ch-key i { width: 8px; height: 8px; border-radius: 2px; background: var(--ch); }
+    .ch-key b { font-weight: var(--fw-medium); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .ch-b { position: relative; height: 128px; margin-top: 18px; }
+    .ch-top { position: absolute; right: 0; top: -15px; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; pointer-events: none; }
+    .ch-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 16px; text-align: center; font-size: var(--text-sm); color: var(--text-muted); }
+    .ch-b:empty::before { content: 'Yükleniyor…'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: var(--text-sm); color: var(--text-muted); }
+    .ch-x { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
     .ov { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; padding: 16px 18px; background: var(--bg-surface); border-radius: 16px; box-shadow: 0 0 0 1px var(--border-subtle), 0 1px 2px rgba(0, 0, 0, 0.03); min-height: 112px; transition: box-shadow 0.12s; }
     .ov:hover { box-shadow: 0 0 0 1px var(--border-default), 0 4px 14px rgba(0, 0, 0, 0.06); }
     .ov:focus-visible { outline: none; box-shadow: var(--focus-ring); }
@@ -140,6 +165,24 @@
             <button type="button" class="ov" data-go="security" data-src="capState"><span class="ov-t">Cihaz yetenekleri</span><span class="ov-s"></span><span class="ov-d">Uzak komut ve uzak ekranın kapatıldığı bilgisayarlar</span></button>
             <button type="button" class="ov" data-go="security" data-src="auState"><span class="ov-t">Kayıt bütünlüğü</span><span class="ov-s"></span><span class="ov-d">Denetim zincirinin doğrulanması</span></button>
             <button type="button" class="ov" data-go="notify" data-src="ntState"><span class="ov-t">Bildirimler</span><span class="ov-s"></span><span class="ov-d">E-posta ve webhook, saklama süreleri</span></button>
+        </div>
+        <div class="ov-trend">
+            <div class="ov-trend-h">
+                <h2>Eğilimler</h2>
+                <div class="segmented" id="ovSpan" role="group" aria-label="Zaman aralığı">
+                    <button type="button" data-span="24h">24 saat</button>
+                    <button type="button" data-span="7d">7 gün</button>
+                    <button type="button" data-span="30d">30 gün</button>
+                </div>
+            </div>
+            <div class="ch-grid" id="chGrid">
+            <section class="ch" data-ch="agents" aria-label="Bağlı ajanlar"><div class="ch-h"><span class="ch-t">Bağlı ajanlar</span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b"></div><div class="ch-x"></div></section>
+            <section class="ch" data-ch="load" aria-label="İşlemci ve bellek"><div class="ch-h"><span class="ch-t">İşlemci ve bellek</span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b"></div><div class="ch-x"></div></section>
+            <section class="ch" data-ch="requests" aria-label="API istekleri"><div class="ch-h"><span class="ch-t">API istekleri</span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b"></div><div class="ch-x"></div></section>
+            <section class="ch" data-ch="tasks" aria-label="İşlemler"><div class="ch-h"><span class="ch-t">İşlemler</span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b"></div><div class="ch-x"></div></section>
+            <section class="ch" data-ch="events" aria-label="Olaylar"><div class="ch-h"><span class="ch-t">Olaylar</span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b"></div><div class="ch-x"></div></section>
+            <section class="ch" data-ch="storage" aria-label="Veritabanı ve disk"><div class="ch-h"><span class="ch-t">Veritabanı ve disk</span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b"></div><div class="ch-x"></div></section>
+            </div>
         </div>
     </div>
     <div class="sys-pane sys-grid" data-pane="updates">
@@ -320,7 +363,10 @@
 (function () {
 
     // ---- Sekmeler ve Genel bakış (yalnızca süper admin): kutucuklar bölüm başlıklarındaki durumu aynen gösterir
-    const sysTabs = document.getElementById('sysTabs') ? POps.pageTabs(document.getElementById('sysTabs'), { def: 'overview' }) : null;
+    let ovReady = false;   // grafikler sayfa betiği yüklenince çizilir (sekme açılışta seçilirken henüz değil)
+    const sysTabs = document.getElementById('sysTabs') ? POps.pageTabs(document.getElementById('sysTabs'), {
+        def: 'overview', onChange: (name) => { if (ovReady && name === 'overview') loadOverview(); }
+    }) : null;
     if (sysTabs) {
         document.querySelectorAll('#ovGrid .ov').forEach(tile => {
             const src = document.getElementById(tile.dataset.src);
@@ -335,6 +381,140 @@
     const dev = POps.dev;
     const $ = (id) => document.getElementById(id);
     const IS_SUPER = window.USER_ROLE === 'superadmin';
+
+    // ---- Genel bakış grafikleri: GET /api/system/overview?span=24h|7d|30d. Ölçümler (ajan, işlemci, bellek, istek,
+    // veritabanı) sunucunun dakikalık örneklerinden; işlemler, olaylar ve güncellemeler kayıtlardan. Dakikada bir tazelenir.
+    const SPAN_KEY = 'pops_sys_span_v1';
+    let ovSpan = '24h', ovData = null, ovErr = null, ovSeq = 0;
+    try { const v = localStorage.getItem(SPAN_KEY); if (['24h', '7d', '30d'].includes(v)) ovSpan = v; } catch (e) { /* tarayıcı belleği kapalı */ }
+    const nf = (n, d) => Number(n || 0).toLocaleString('tr-TR', { maximumFractionDigits: d || 0 });
+    const pct = (v) => (typeof v === 'number' ? '%' + nf(v) : '—');
+    const mb = (v) => (typeof v !== 'number' ? '—' : v >= 1024 ? nf(v / 1024, 1) + ' GB' : nf(v, v < 10 ? 1 : 0) + ' MB');
+    const gb = (bytes) => nf(bytes / 1073741824, bytes < 10737418240 ? 1 : 0) + ' GB';
+    const nums = (pts, k) => pts.map(p => p[k]).filter(v => typeof v === 'number');
+    const total = (pts, k) => pts.reduce((a, p) => a + (typeof p[k] === 'number' ? p[k] : 0), 0);
+    function when(t, len, kind) {
+        // kind: 'axis' (eksen), 'tip' (ipucu: aralığın başı ve sonu)
+        const a = new Date(t * 1000), b = new Date((t + len) * 1000);
+        const hm = (x) => x.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        const day = (x) => x.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+        if (kind === 'axis') return ovSpan === '24h' ? hm(a) : day(a);
+        if (len >= 86400) return a.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' });
+        return day(a) + ' ' + hm(a) + '–' + hm(b);
+    }
+    function keysTo(el, keys) {
+        el.replaceChildren(...keys.filter(Boolean).map(k => POps.el('span', { className: 'ch-key' + (k.cls ? ' ' + k.cls : '') }, [
+            k.cls ? POps.el('i') : null, document.createTextNode(k.name + (k.value !== undefined ? ' ' : '')),
+            k.value !== undefined ? POps.el('b', { text: k.value }) : null
+        ])));
+    }
+    function numTo(el, value, unit) { el.replaceChildren(document.createTextNode(value), unit ? POps.el('small', { text: unit }) : ''); }
+    function chartTo(c, kind, points, cfg, topText, emptyText) {
+        const has = points.some(p => cfg.series.some(s => typeof p[s.key] === 'number'));
+        if (!has && emptyText) { c.b.replaceChildren(POps.el('div', { className: 'ch-empty', text: emptyText })); c.x.replaceChildren(); return; }
+        const top = POps.chart[kind](c.b, points, cfg);
+        c.b.append(POps.el('span', { className: 'ch-top', text: topText(top) }));
+        const n = points.length;
+        c.x.replaceChildren(...(n ? [points[0], points[Math.floor((n - 1) / 2)], points[n - 1]] : []).map(p => POps.el('span', { text: when(p.t, 0, 'axis') })));
+    }
+    function renderOverview() {
+        if (!$('chGrid')) return;
+        const card = (k) => { const el = document.querySelector(`#chGrid [data-ch="${k}"]`); return { n: el.querySelector('.ch-n'), d: el.querySelector('.ch-d'), b: el.querySelector('.ch-b'), x: el.querySelector('.ch-x') }; };
+        document.querySelectorAll('#ovSpan [data-span]').forEach(b => { const on = b.dataset.span === ovSpan; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        const d = ovData;
+        if (!d) {
+            if (ovErr) document.querySelectorAll('#chGrid .ch-b').forEach(b => b.replaceChildren(POps.el('div', { className: 'ch-empty', text: 'Grafik verisi alınamadı: ' + POps.errorMessage(ovErr) })));
+            return;
+        }
+        const pts = d.series || [], step = d.step, bar = d.bar;
+        const WAIT = 'Ölçümler toplanıyor. Sunucu dakikada bir ölçüm alır; grafik birkaç dakika içinde dolmaya başlar.';
+        const tipP = (p, text) => when(p.t, step, 'tip') + '\n' + text;
+        const late = d.latest || {};
+
+        // Bağlı ajanlar
+        let c = card('agents');
+        const ag = nums(pts, 'agents');
+        numTo(c.n, nf(d.agents_connected), '/ ' + nf((d.devices || {}).total));
+        const up = d.updates || {}, upN = (up.success || 0) + (up.rolled_back || 0) + (up.failed || 0);
+        keysTo(c.d, [
+            ag.length ? { name: 'en çok', value: nf(Math.max(...ag)) } : null,
+            ag.length ? { name: 'en az', value: nf(Math.min(...ag)) } : null,
+            upN ? { name: 'ajan güncellemesi', value: nf(up.success) + ' başarılı' + (upN - up.success ? ' · ' + nf(upN - up.success) + ' sorunlu' : '') } : null
+        ]);
+        chartTo(c, 'line', pts, { series: [{ key: 'agents', cls: 'ch-c1' }], area: true,
+            tip: p => tipP(p, typeof p.agents === 'number' ? nf(p.agents) + ' ajan bağlı' : 'Ölçüm yok') }, nf, WAIT);
+
+        // İşlemci ve bellek
+        c = card('load');
+        numTo(c.n, pct(late.cpu_pct), 'işlemci');
+        keysTo(c.d, [{ name: 'İşlemci', value: pct(late.cpu_pct), cls: 'ch-c1' }, { name: 'Bellek', value: pct(late.mem_pct), cls: 'ch-c2' },
+            nums(pts, 'cpu').length ? { name: 'en yüksek işlemci', value: pct(Math.max(...nums(pts, 'cpu'))) } : null]);
+        chartTo(c, 'line', pts, { series: [{ key: 'cpu', cls: 'ch-c1' }, { key: 'mem', cls: 'ch-c2' }], max: 100,
+            tip: p => tipP(p, typeof p.cpu === 'number' || typeof p.mem === 'number' ? 'İşlemci ' + pct(p.cpu) + ' · Bellek ' + pct(p.mem) : 'Ölçüm yok') }, pct, WAIT);
+
+        // API istekleri (5xx kırmızı)
+        c = card('requests');
+        const rq = pts.map(p => ({ t: p.t, ok: typeof p.requests === 'number' ? Math.max(0, p.requests - (p.errors || 0)) : null, errors: p.errors, requests: p.requests }));
+        const rqN = total(pts, 'requests'), erN = total(pts, 'errors');
+        numTo(c.n, nf(rqN), 'istek');
+        keysTo(c.d, [{ name: 'Başarılı', value: nf(rqN - erN), cls: 'ch-c1' }, { name: 'Sunucu hatası (5xx)', value: nf(erN), cls: 'ch-c4' }]);
+        chartTo(c, 'bars', rq, { series: [{ key: 'ok', cls: 'ch-c1' }, { key: 'errors', cls: 'ch-c4' }],
+            tip: p => tipP(p, typeof p.requests === 'number' ? nf(p.requests) + ' istek' + (p.errors ? ' · ' + nf(p.errors) + ' hata' : '') : 'Ölçüm yok') }, nf, WAIT);
+
+        // İşlemler (görev sonuçları)
+        c = card('tasks');
+        const tk = d.tasks || [];
+        const TK = [['ok', 'Başarılı', 'ch-c3'], ['failed', 'Başarısız', 'ch-c4'], ['denied', 'Reddedildi', 'ch-c5'], ['other', 'Diğer', 'ch-c6']];
+        const tkN = TK.reduce((a, [k]) => a + total(tk, k), 0);
+        numTo(c.n, nf(tkN), 'işlem');
+        keysTo(c.d, tkN ? TK.filter(([k]) => total(tk, k)).map(([k, name, cls]) => ({ name, value: nf(total(tk, k)), cls })) : [{ name: 'Bu aralıkta işlem yok' }]);
+        chartTo(c, 'bars', tk, { series: TK.map(([key, , cls]) => ({ key, cls })),
+            tip: p => when(p.t, bar, 'tip') + '\n' + (TK.filter(([k]) => p[k]).map(([k, name]) => name + ' ' + nf(p[k])).join(' · ') || 'İşlem yok') }, nf);
+
+        // Olaylar (risk düzeyine göre)
+        c = card('events');
+        const ev = d.events || [];
+        const EV = [['high', 'Yüksek ve kritik', 'ch-c4'], ['medium', 'Orta', 'ch-c5'], ['info', 'Bilgi', 'ch-c6']];
+        const evN = EV.reduce((a, [k]) => a + total(ev, k), 0);
+        numTo(c.n, nf(evN), 'olay');
+        keysTo(c.d, evN ? EV.map(([k, name, cls]) => ({ name, value: nf(total(ev, k)), cls })) : [{ name: 'Bu aralıkta olay yok' }]);
+        chartTo(c, 'bars', ev, { series: EV.map(([key, , cls]) => ({ key, cls })),
+            tip: p => when(p.t, bar, 'tip') + '\n' + (EV.filter(([k]) => p[k]).map(([k, name]) => name + ' ' + nf(p[k])).join(' · ') || 'Olay yok') }, nf);
+
+        // Veritabanı ve disk
+        c = card('storage');
+        numTo(c.n, mb(late.db_mb), 'veritabanı');
+        const disks = (d.disk || []).filter(x => x && x.total_bytes);
+        const fullest = disks.sort((a, b) => a.free_percent - b.free_percent)[0];
+        keysTo(c.d, [{ name: 'Veritabanı', value: mb(late.db_mb), cls: 'ch-c1' },
+            fullest ? { name: 'Disk', value: pct(100 - fullest.free_percent) + ' dolu · ' + gb(fullest.free_bytes) + ' boş' } : null]);
+        chartTo(c, 'line', pts, { series: [{ key: 'db_mb', cls: 'ch-c1' }], area: true,
+            tip: p => tipP(p, typeof p.db_mb === 'number' ? 'Veritabanı ' + mb(p.db_mb) + (typeof p.disk === 'number' ? ' · disk ' + pct(p.disk) + ' dolu' : '') : 'Ölçüm yok') }, mb, WAIT);
+    }
+    async function loadOverview() {
+        if (!$('chGrid')) return;
+        const seq = ++ovSeq;
+        try {
+            const data = await POps.get('/api/system/overview?span=' + encodeURIComponent(ovSpan));
+            if (seq !== ovSeq) return;
+            ovData = data; ovErr = null;
+        } catch (e) {
+            if (seq !== ovSeq) return;
+            ovErr = e;
+            if (ovData && ovData.span !== ovSpan) ovData = null;
+        }
+        renderOverview();
+    }
+    if ($('ovSpan')) $('ovSpan').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-span]');
+        if (!b || b.dataset.span === ovSpan) return;
+        ovSpan = b.dataset.span;
+        try { localStorage.setItem(SPAN_KEY, ovSpan); } catch (err) { /* tarayıcı belleği kapalı */ }
+        ovData = null;
+        document.querySelectorAll('#chGrid .ch-b').forEach(x => x.replaceChildren());
+        renderOverview();
+        loadOverview();
+    });
     const ME = <?php echo json_encode((string) ($_SESSION['username'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
     const S = { ver: null, su: null, diag: null, diagErr: null, notes: null, checkedAt: null, fetching: false, suBusy: false, suPoll: null, suBefore: '', tokens: null, notify: null, retention: null };
     const RKEY = 'pops_agent_rollout_v1', AKEY = 'pops_audit_verify_v1', SKEY = 'pops_selfupdate_req_v1';
@@ -1327,6 +1507,9 @@
     });
 
     POps.watchDevices();
+    ovReady = true;
+    if (sysTabs && sysTabs.current() === 'overview') { renderOverview(); loadOverview(); }
+    if (sysTabs) popsPoll(() => (sysTabs.current() === 'overview' ? loadOverview() : null), 60000);
     loadAll(false);
     loadDiag();
     loadTokens();

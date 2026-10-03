@@ -635,6 +635,33 @@ def test_release_compare():
         system_routes._latest_cache.update(real_cache)
 
 
+def test_server_metrics():
+    """Genel bakış grafikleri: çubuk başlangıçları yerel saate hizalı, kayıt metni doğru çubuğa düşer, işlemci yüzdesi
+    iki ölçümün farkından, güncelleme sonucu gruplanır."""
+    from pops import server_metrics as sm
+
+    now = datetime.datetime(2026, 10, 3, 22, 41, 7)
+    hours = sm.bar_starts(now, 86400, 3600)
+    chk(len(hours) == 24 and hours[-1] == datetime.datetime(2026, 10, 3, 22)
+        and hours[0] == datetime.datetime(2026, 10, 2, 23), "24 saat: 24 saatlik çubuk, sonuncusu şu anki saat")
+    six = sm.bar_starts(now, 7 * 86400, 6 * 3600)
+    chk(len(six) == 28 and six[-1] == datetime.datetime(2026, 10, 3, 18),
+        "7 gün: 6 saatlik 28 çubuk, 00/06/12/18'e hizalı")
+    days = sm.bar_starts(now, 30 * 86400, 86400)
+    chk(len(days) == 30 and days[-1] == datetime.datetime(2026, 10, 3) and days[0] == datetime.datetime(2026, 9, 4),
+        "30 gün: 30 günlük çubuk, gece yarısına hizalı")
+    chk(sm._bar_index(six, "2026-10-03 17:59:59") == 26 and sm._bar_index(six, "2026-10-03 18:00:00") == 27,
+        "kayıt zamanı doğru çubukta")
+    chk(sm._bar_index(six, "2026-09-26 05:00:00") is None and sm._bar_index(six, "bozuk") is None,
+        "aralık dışı ve bozuk zaman sayılmaz")
+    chk(sm.cpu_pct_between((1000, 800), (1200, 900)) == 50.0, "işlemci: 200 jiffy'nin 100'ü boşta = %50")
+    chk(sm.cpu_pct_between(None, (1, 1)) is None and sm.cpu_pct_between((5, 1), (5, 1)) is None,
+        "ilk ölçümde ya da fark yokken işlemci boş")
+    chk(sm.update_group("success") == "success" and sm.update_group("success_pending_reboot") == "success"
+        and sm.update_group("rolled_back") == "rolled_back" and sm.update_group("rollback_failed") == "failed",
+        "güncelleme sonuçları gruplanır")
+
+
 def main():
     test_update_notice()
     test_log_format()
@@ -647,6 +674,7 @@ def main():
     test_review4()
     test_modules()
     test_release_compare()
+    test_server_metrics()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

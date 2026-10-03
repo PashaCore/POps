@@ -14,7 +14,7 @@ import time
 import uuid
 from typing import Optional
 
-from pops import db, health_alerts, modules, retention, update_tracking
+from pops import db, health_alerts, modules, retention, server_metrics, update_tracking
 from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.notify import notify
@@ -268,4 +268,11 @@ async def scheduler_loop() -> None:
             raise
         except Exception:
             log.exception("zamanlayıcı turu başarısız")
+        # Ölçüm yazılamazsa zamanlayıcı durmuş görünmesin (son tur zamanı yukarıda yazıldı)
+        try:
+            await server_metrics.sample()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("sunucu ölçümü yazılamadı")
         await asyncio.sleep(TICK_SECONDS)

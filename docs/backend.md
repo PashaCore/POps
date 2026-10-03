@@ -66,3 +66,9 @@ test database) and `JWT_SECRET` first; never point it at a production database.
   errors (with request IDs), the slowest routes, the load figures as `load` (95th percentiles from the histogram
   buckets) and the last disk (`disk`) and certificate (`tls`) checks; the panel shows them on the **Sistem** page. The error list lives in
   memory and resets when the backend restarts; journald keeps the full history.
+- **History** (`GET /api/system/overview?span=24h|7d|30d`, superadmin) feeds the charts on **Sistem → Genel bakış**.
+  The scheduler writes one row a minute to `server_metrics` (connected agents and panels, processor, memory and disk
+  use in percent, database size and process memory in MB, API requests and 5xx responses in that minute) and
+  deletes rows older than 30 days (`pops/server_metrics.py`). The endpoint returns these samples averaged into
+  equal steps (15 minutes, 2 hours or 6 hours; `null` where there was no sample), task results and events by risk
+  level per hour, 6 hours or day of the server's local time, and the agent update results of the period.
