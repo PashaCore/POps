@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Panel: Kontrol merkezi is balanced.** Two columns that start and end together: **Son etkinlik** takes the height of the cards on the right and scrolls inside, the cards on the right stack (**İlgilenmen gerekenler**, **Bugün**, **Sınıflar**, **Ajan sürümleri**, **Sunucu**) with the same row heights, and a failure reason lines up with the result on its right. The separate bottom row with cards of different heights is gone.
+
 - **Panel: addresses without `.php` on Apache servers.** 0.1.18 changed the panel's links but the rules that map them live in `Dashboard/.htaccess`, which is not tracked in the repository, so an update did not bring them and every link answered "Not Found". The rules are now shipped as `Installer/server/apache-htaccess.example`; on Apache, copy it to `Dashboard/.htaccess` (docs/deployment.md). Docker and nginx installs were not affected.
 
 ## [0.1.18-alpha] - 2026-10-03

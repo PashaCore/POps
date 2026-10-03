@@ -1,42 +1,51 @@
 <?php include 'includes/header.php'; ?>
 
 <style>
-    .home-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(320px, 1fr); gap: 18px; align-items: start; margin-top: 18px; }
-    .home-side { display: flex; flex-direction: column; gap: 18px; }
-    .home-side .card + .card { margin-top: 0; }
-    .home-card { padding: 16px 18px 8px; }
-    .home-card .sect-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+    /* İki dengeli sütun: solda etkinlik akışı (sağ sütunun boyunu alır, fazlası kendi içinde kayar), sağda kartlar */
+    .home-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(340px, 1fr); gap: 16px; align-items: start; margin-top: 18px; }
+    .home-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    .home-side .card + .card, .home-grid .card + .card { margin-top: 0; }
+    .home-card { padding: 12px 18px 6px; }
+    .home-card .sect-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-bottom: 2px; }
     .home-card h2 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-    .home-card .sect-row a { font-size: var(--text-sm); }
+    .home-card .sect-row a, .home-card .sect-row .faint { font-size: var(--text-sm); }
+    .home-card .sect-row .segmented > button { min-height: 26px; padding: 0.1875rem 0.625rem; font-size: var(--text-xs); }
     .kpi .pbar { margin-top: 12px; height: 5px; }
-    .att { display: flex; align-items: center; gap: 12px; padding: 11px 2px; border-bottom: 1px solid #f0f0f3; font-size: var(--text-sm); }
+
+    .home-feed { display: flex; flex-direction: column; padding-bottom: 0; }
+    .home-feed #homeActivity { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -8px; padding: 0 8px; }
+    .home-foot { display: flex; gap: 16px; justify-content: flex-end; align-items: center; min-height: 44px; font-size: var(--text-sm); border-top: 1px solid #f0f0f3; flex: none; }
+    .home-card .act { grid-template-columns: 28px minmax(0, 1fr) auto; padding: 10px 2px; align-items: center; }
+    .home-card .act .side { align-self: start; padding-top: 2px; }
+    .home-card .act .why { grid-column: 2 / -1; margin-top: -4px; }
+    .home-card .act .pbar { grid-column: 2 / -1; max-width: 320px; margin-top: -2px; }
+    .home-card .act.clickable:hover { background: var(--bg-surface-2); }
+    .act .res.neu { background: var(--bg-surface-3); color: var(--text-tertiary); }
+
+    .rows > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; padding: 4px 2px; border-bottom: 1px solid #f0f0f3; font-size: var(--text-sm); }
+    .rows > div:last-child { border-bottom: 0; }
+    .rows > div > span:first-child { color: var(--text-tertiary); }
+    .rows b { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .att { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 6px 2px; border-bottom: 1px solid #f0f0f3; font-size: var(--text-sm); }
     .att:last-child { border-bottom: 0; }
     .att .grow { flex: 1; min-width: 0; }
     .att .t { font-weight: 500; }
     .att .d { font-size: var(--text-xs); color: var(--text-muted); margin-top: 1px; }
-    .att a.btn { flex: none; }
-    .lab-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px 44px; gap: 12px; align-items: center; padding: 9px 2px; border-bottom: 1px solid #f0f0f3; color: inherit; font-size: var(--text-sm); }
+    .att .btn { flex: none; }
+    .lab-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px 44px; gap: 12px; align-items: center; min-height: 34px; padding: 4px 2px; border-bottom: 1px solid #f0f0f3; color: inherit; font-size: var(--text-sm); }
     .lab-row:last-child { border-bottom: 0; }
     .lab-row:hover { color: inherit; background: var(--bg-surface-2); }
     .lab-row .n { text-align: right; color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
-    .home-card .sect-row .segmented > button { min-height: 26px; padding: 0.1875rem 0.625rem; font-size: var(--text-xs); }
-    .home-foot { display: flex; gap: 16px; justify-content: flex-end; padding: 10px 2px 8px; font-size: var(--text-sm); border-top: 1px solid #f0f0f3; }
-    .home-row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 18px; align-items: start; }
-    .home-row3 .card + .card { margin-top: 0; }
-    .mini { display: flex; flex-direction: column; }
-    .mini .grow2 { display: flex; justify-content: space-between; gap: 12px; padding: 9px 2px; border-bottom: 1px solid #f0f0f3; font-size: var(--text-sm); }
-    .mini .grow2:last-child { border-bottom: 0; }
-    .mini .grow2 > span:first-child { color: var(--text-tertiary); }
-    .mini .grow2 b { font-weight: 600; font-variant-numeric: tabular-nums; }
-    .vers .pbar { height: 8px; margin: 10px 0 12px; }
+    .vers .pbar { height: 8px; margin: 8px 0 10px; }
     .vers .leg { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--text-xs); color: var(--text-tertiary); padding-bottom: 8px; }
     .vers .leg span { display: inline-flex; align-items: center; gap: 6px; }
     .vers .sw { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
-    .act .res.neu { background: var(--bg-surface-3); color: var(--text-tertiary); }
-    @media (max-width: 1100px) { .home-row3 { grid-template-columns: minmax(0, 1fr); } }
-    .home-card .act { padding: 12px 2px; }
-    .home-card .act.clickable:hover { background: var(--bg-surface-2); }
-    @media (max-width: 1100px) { .home-grid { grid-template-columns: minmax(0, 1fr); } }
+    .home-card .set-note { padding: 0 2px 10px; }
+    @media (max-width: 1100px) {
+        .home-grid { grid-template-columns: minmax(0, 1fr); }
+        .home-feed { height: auto !important; }
+        .home-feed #homeActivity { overflow: visible; }
+    }
 </style>
 
 <div class="page-header">
@@ -54,7 +63,7 @@
 </div>
 
 <div class="home-grid">
-    <section class="card home-card" aria-labelledby="actTitle">
+    <section class="card home-card home-feed" id="feedCard" aria-labelledby="actTitle">
         <div class="sect-row"><h2 id="actTitle">Son etkinlik</h2>
             <div class="segmented" id="actFilter" role="group" aria-label="Etkinliği süz">
                 <button type="button" data-f="all" class="active" aria-pressed="true">Tümü</button>
@@ -65,31 +74,28 @@
         <div id="homeActivity"></div>
         <div class="home-foot"><a href="tasks">Bütün işlemler</a><a href="logger">Bütün kayıtlar</a></div>
     </section>
-    <div class="home-side">
+    <div class="home-side" id="homeSide">
         <section class="card home-card" aria-labelledby="attTitle">
             <div class="sect-row"><h2 id="attTitle">İlgilenmen gerekenler</h2></div>
             <div id="homeAttention"></div>
+        </section>
+        <section class="card home-card" aria-labelledby="todayTitle">
+            <div class="sect-row"><h2 id="todayTitle">Bugün</h2><span class="faint" id="todayDate"></span></div>
+            <div class="rows" id="homeToday"></div>
         </section>
         <section class="card home-card" aria-labelledby="labsTitle">
             <div class="sect-row"><h2 id="labsTitle">Sınıflar</h2><a href="labs">Sınıflara git</a></div>
             <div id="homeLabs"></div>
         </section>
+        <section class="card home-card vers" aria-labelledby="verTitle">
+            <div class="sect-row"><h2 id="verTitle">Ajan sürümleri</h2><a href="devices">Cihazlar</a></div>
+            <div id="homeVersions"></div>
+        </section>
+        <section class="card home-card" aria-labelledby="srvTitle">
+            <div class="sect-row"><h2 id="srvTitle">Sunucu</h2><a href="system" id="srvLink">Sistem</a></div>
+            <div class="rows" id="homeServer"></div>
+        </section>
     </div>
-</div>
-
-<div class="home-row3">
-    <section class="card home-card" aria-labelledby="srvTitle">
-        <div class="sect-row"><h2 id="srvTitle">Sunucu</h2><a href="system" id="srvLink">Sistem</a></div>
-        <div class="mini" id="homeServer"></div>
-    </section>
-    <section class="card home-card vers" aria-labelledby="verTitle">
-        <div class="sect-row"><h2 id="verTitle">Ajan sürümleri</h2><a href="devices">Cihazlar</a></div>
-        <div id="homeVersions"></div>
-    </section>
-    <section class="card home-card" aria-labelledby="todayTitle">
-        <div class="sect-row"><h2 id="todayTitle">Bugün</h2><span class="faint" id="todayDate" style="font-size:var(--text-xs)"></span></div>
-        <div class="mini" id="homeToday"></div>
-    </section>
 </div>
 
 <script>
@@ -225,9 +231,9 @@
         const whyHtml = why ? `<div class="why">${escapeHtml(why)}${j.c.total > 1 && badNames.length ? ' · ' + escapeHtml(badNames.slice(0, 4).join(', ')) + (badNames.length > 4 ? '…' : '') : ''}</div>` : '';
         return `<a class="act clickable" href="tasks?job=${encodeURIComponent(j.key)}" style="color:inherit">
             <div class="res ${escapeHtml(k)}">${POps.iconHtml(k === 'ok' ? 'check' : k === 'bad' ? 'x' : 'clock')}</div>
-            <div style="min-width:0"><div class="what">${escapeHtml(dev.taskTitle(t))}</div><div class="meta">${metaHtml}${t.reason ? ' · gerekçe: ' + escapeHtml(t.reason) : ''}</div>${whyHtml}
-                ${j.c.total > 1 && k === 'run' ? `<div class="pbar" style="margin-top:8px;max-width:260px">${segHtml('ok', j.c.ok, j.c.total)}${segHtml('bad', j.c.bad, j.c.total)}</div>` : ''}</div>
+            <div style="min-width:0"><div class="what">${escapeHtml(dev.taskTitle(t))}</div><div class="meta">${metaHtml}${t.reason ? ' · gerekçe: ' + escapeHtml(t.reason) : ''}</div></div>
             <div class="side"><span class="word ${escapeHtml(k)}">${escapeHtml(word)}</span>${j.c.total > 1 ? `<span class="when">${Number(j.c.ok + j.c.bad)}/${Number(j.c.total)}</span>` : ''}</div>
+            ${whyHtml}${j.c.total > 1 && k === 'run' ? `<div class="pbar">${segHtml('ok', j.c.ok, j.c.total)}${segHtml('bad', j.c.bad, j.c.total)}</div>` : ''}
         </a>`;
     }
     function logRowHtml(e) {
@@ -237,8 +243,9 @@
         const metaHtml = escapeHtml([e.pc ? dev.name(e.pc) : '', lab, e.who].filter(Boolean).join(' · ')) + ' · ' + POps.timeHtml(e.at);
         return `<a class="act clickable" href="logger${e.pc ? '?pc=' + encodeURIComponent(e.pc) : ''}" style="color:inherit">
             <div class="res ${escapeHtml(res)}">${POps.iconHtml(e.icon)}</div>
-            <div style="min-width:0"><div class="what">${escapeHtml(e.title)}</div><div class="meta">${metaHtml}</div>${e.why && e.sev !== 'info' ? `<div class="why${e.sev === 'warn' ? ' warn' : ''}">${escapeHtml(e.why)}</div>` : ''}</div>
+            <div style="min-width:0"><div class="what">${escapeHtml(e.title)}</div><div class="meta">${metaHtml}</div></div>
             <div class="side"><span class="word ${e.sev === 'bad' ? 'bad' : e.sev === 'warn' ? 'warn' : ''}">${escapeHtml(L.SEV_WORD[e.sev] || 'Bilgi')}</span></div>
+            ${e.why && e.sev !== 'info' ? `<div class="why${e.sev === 'warn' ? ' warn' : ''}">${escapeHtml(e.why)}</div>` : ''}
         </a>`;
     }
     function renderActivity(jobs) {
@@ -252,8 +259,17 @@
             POps.setEmpty(box, { icon: 'fa-clock', title: mem.filter === 'log' ? 'Henüz olay yok' : 'Henüz etkinlik yok', text: 'Gönderilen komutlar, güç işlemleri, dağıtımlar ve bilgisayarlardan gelen olaylar burada görünür.', compact: true });
             return;
         }
-        box.innerHTML = items.slice(0, 10).map(i => i.html).join('');
+        box.innerHTML = items.slice(0, 30).map(i => i.html).join('');
+        syncFeed();
     }
+    // Akış kartı sağ sütunun boyunu alır (en az 480 px); dar ekranda doğal boyunda kalır
+    function syncFeed() {
+        const card = $('feedCard'), side = $('homeSide');
+        if (window.innerWidth <= 1100) { card.style.height = ''; return; }
+        card.style.height = Math.max(side.offsetHeight, 480) + 'px';
+    }
+    if (window.ResizeObserver) new ResizeObserver(syncFeed).observe($('homeSide'));
+    window.addEventListener('resize', syncFeed);
 
     // ---- Alt satır: sunucu, ajan sürümleri, bugün
     function renderServer() {
@@ -261,17 +277,16 @@
         const h = mem.health, v = mem.version;
         if (!h && mem.serverOk === null) return;
         const ok = mem.serverOk !== false && (!h || h.status === 'ok');
+        const dbOk = !h || h.database;
         const rows = [
-            ['Durum', `<span class="st"><span class="dot ${ok ? 'on' : 'bad'}"></span> ${ok ? 'Çalışıyor' : 'Sorunlu'}</span>`],
-            ['Veritabanı', h ? (h.database ? 'Bağlı' : '<span class="word bad">Bağlantı yok</span>') : '—'],
+            ['Durum', `<span class="st"><span class="dot ${ok && dbOk ? 'on' : 'bad'}"></span> ${ok ? 'Çalışıyor' : 'Sorunlu'}${dbOk ? '' : ' · veritabanı yok'}</span>`],
             ['Sürüm', escapeHtml((v && v.running) || (h && h.version) || '—')]
         ];
         if (v) {
             rows.push(['Güncelleme', v.update_available && v.latest ? `<a href="system">${escapeHtml(v.latest)} kurulabilir</a>` : 'Güncel']);
-            rows.push(['Kayıtlı ajan', `${Number(v.agents_enrolled)} / ${Number(v.agents_total)} anahtarlı`]);
+            rows.push(['Cihaz anahtarı', `${Number(v.agents_enrolled)} / ${Number(v.agents_total)} bilgisayarda`]);
         }
-        rows.push(['Son yenileme', mem.lastOk ? escapeHtml(new Date(mem.lastOk).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })) : '—']);
-        box.innerHTML = rows.map(([k, valHtml]) => `<div class="grow2"><span>${escapeHtml(k)}</span><span>${valHtml}</span></div>`).join('');
+        box.innerHTML = rows.map(([k, valHtml]) => `<div><span>${escapeHtml(k)}</span><span>${valHtml}</span></div>`).join('');
         $('srvLink').hidden = window.USER_ROLE !== 'superadmin';
     }
     const VERSION_COLORS = ['#34c759', '#0071e3', '#ff9f0a', '#af52de', '#ff3b30', '#8e8e93'];
@@ -286,8 +301,8 @@
         const color = (i) => escapeHtml(VERSION_COLORS[Math.min(i, VERSION_COLORS.length - 1)]);
         const barHtml = list.map(([v, n], i) => `<i style="width:${(n / total * 100).toFixed(2)}%;background:${color(i)}"></i>`).join('');
         const legHtml = list.map(([v, n], i) => `<span><span class="sw" style="background:${color(i)}"></span>${escapeHtml(v)} <b>${Number(n)}</b></span>`).join('');
-        box.innerHTML = `<div class="mini"><div class="grow2"><span>En yeni</span><span>${escapeHtml(newest || '—')}</span></div>
-            <div class="grow2"><span>Eski ajan</span><span>${old ? `<b>${Number(old)}</b> bilgisayar` : 'Yok'}</span></div></div>
+        box.innerHTML = `<div class="rows"><div><span>En yeni</span><span>${escapeHtml(newest || '—')}</span></div>
+            <div><span>Eski ajan</span><span>${old ? `<b>${Number(old)}</b> bilgisayar` : 'Yok'}</span></div></div>
             <div class="pbar">${barHtml}</div><div class="leg">${legHtml}</div>`;
     }
     function renderToday(jobs) {
@@ -302,6 +317,7 @@
         const policy = evs.filter(e => e.kind === 'policy').length;
         const warn = evs.filter(e => e.sev !== 'info').length;
         $('todayDate').textContent = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' });
+        syncFeed();
         const rows = [
             ['Gönderilen iş', `<b>${Number(tj.length)}</b>${tasksToday > tj.length ? ` <span class="faint">(${Number(tasksToday)} görev)</span>` : ''}`],
             ['Sorunla biten', failed ? `<span class="word bad">${Number(failed)}</span>` : '<b>0</b>'],
@@ -309,8 +325,8 @@
             ['Kural ihlali', policy ? `<span class="word warn">${Number(policy)}</span>` : '<b>0</b>'],
             ['Uyarı ve kritik olay', warn ? `<span class="word warn">${Number(warn)}</span>` : '<b>0</b>']
         ];
-        box.innerHTML = rows.map(([k, valHtml]) => `<div class="grow2"><span>${escapeHtml(k)}</span><span>${valHtml}</span></div>`).join('')
-            + (mem.logs && mem.logs.length >= 60 ? '<div class="set-note">Olay sayıları son 60 kayda göre.</div>' : '');
+        box.innerHTML = rows.map(([k, valHtml]) => `<div><span>${escapeHtml(k)}</span><span>${valHtml}</span></div>`).join('');
+        box.title = mem.logs && mem.logs.length >= 60 ? 'Olay sayıları son 60 kayda göre' : '';
     }
 
     async function loadTasks() {
