@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Panel: addresses without `.php` on Apache servers.** 0.1.18 changed the panel's links but the rules that map them live in `Dashboard/.htaccess`, which is not tracked in the repository, so an update did not bring them and every link answered "Not Found". The rules are now shipped as `Installer/server/apache-htaccess.example`; on Apache, copy it to `Dashboard/.htaccess` (docs/deployment.md). Docker and nginx installs were not affected.
+
 ## [0.1.18-alpha] - 2026-10-03
 
 The panel's addresses no longer end in `.php`, and Kontrol merkezi shows the PCs' events next to the jobs, plus the server, agent versions and today's numbers.

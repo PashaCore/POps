@@ -15,9 +15,9 @@ the account is changed or deleted; any `401` from the API returns you to the log
 ## Addresses
 
 Pages have addresses without `.php`: `/devices`, `/labs?lab=…`, `/tasks?job=…`; the overview is `/`. The bundled
-web server configurations map them to the PHP files: `Dashboard/.htaccess` (Apache with `AllowOverride FileInfo`,
-which the `/api` and `/ws` proxy rules already need), `docker/apache-pops.conf` and the nginx templates in
-`Installer/server/`. Old `.php` addresses keep working; on Apache a `GET` to one is redirected to the address
+web server configurations map them to the PHP files: `Installer/server/apache-htaccess.example` (copied to
+`Dashboard/.htaccess` on Apache, which is not tracked in the repository; see [deployment.md](deployment.md)),
+`docker/apache-pops.conf` and the nginx templates in `Installer/server/`. Old `.php` addresses keep working; on Apache a `GET` to one is redirected to the address
 without `.php`.
 
 ## Who sees which page
