@@ -292,14 +292,14 @@
     function setLab(lab) {
         ui.lab = lab; ui.q = ''; $('vsSearch').value = '';
         try { if (lab !== UN) localStorage.setItem('pops_lab', lab); } catch (e) { /* özel pencere */ }
-        history.replaceState(null, '', 'vision.php?lab=' + encodeURIComponent(lab));
+        history.replaceState(null, '', 'vision?lab=' + encodeURIComponent(lab));
         render(true);
     }
     function showAll() {
         const first = ui.pcs && dev.find(ui.pcs[0]);
         ui.pcs = null;
         if (first && first.lab) ui.lab = first.lab && first.lab !== dev.UNASSIGNED ? first.lab : UN;
-        history.replaceState(null, '', 'vision.php' + (ui.lab ? '?lab=' + encodeURIComponent(ui.lab) : ''));
+        history.replaceState(null, '', 'vision' + (ui.lab ? '?lab=' + encodeURIComponent(ui.lab) : ''));
         $('vsScope').dataset.sig = '';
         render(true);
     }

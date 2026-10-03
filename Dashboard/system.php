@@ -1010,7 +1010,7 @@
             + `<div><h3>Yetenekler</h3><div class="set">${capRowHtml('terminal', d)}${capRowHtml('vision', d)}</div>`
             + (d.cap_terminal_enabled == null && d.cap_vision_enabled == null ? `<div class="dr-note" style="margin-top:8px">Bu ajan yetenek durumunu bildirmiyor (bildirim 0.1.4 ile geldi). Kapatma şimdi kaydedilebilir, güncellemeden sonra uygulanır.</div>` : '') + '</div>'
             + `<div><h3>Ajan durumu${isOn(d) ? '' : ' (son bilinen)'}</h3><div class="glist">${factsHtml}</div>${noteHtml}</div>`
-            + `<a href="devices.php?pc=${encodeURIComponent(d.hostname)}" style="font-size:var(--text-sm)">Cihazlar sayfasında aç</a>`;
+            + `<a href="devices?pc=${encodeURIComponent(d.hostname)}" style="font-size:var(--text-sm)">Cihazlar sayfasında aç</a>`;
     }
     let capHost = null;
     function openCap(host) {

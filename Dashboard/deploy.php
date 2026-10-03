@@ -522,7 +522,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const detailHtml = open
             ? '<div class="dp-detail">' + (failed.length && j.c.total > 1 ? `<div class="why">${escapeHtml(failText)}</div>` : '')
               + `<div class="facts">${facts.filter(f => f[1]).map(f => `<span>${escapeHtml(f[0])}</span><span>${escapeHtml(f[1])}</span>`).join('')}</div>`
-              + `<a class="dp-more" href="tasks.php?job=${encodeURIComponent(j.key)}">İşlemler sayfasında aç</a></div>`
+              + `<a class="dp-more" href="tasks?job=${encodeURIComponent(j.key)}">İşlemler sayfasında aç</a></div>`
             : '';
         return `<div class="act clickable" data-job="${escapeHtml(j.key)}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}">
             <div class="res ${escapeHtml(j.state)}">${POps.iconHtml(icon)}</div>
@@ -558,7 +558,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
             : '';
         const codeHtml = o.type === 'script' ? `<div><h3>Komut</h3><pre class="dp-code">${escapeHtml(o.code)}</pre></div>` : '';
         const depsHtml = deps.length
-            ? deps.slice(0, 8).map(depRowHtml).join('') + (deps.length > 8 ? `<a class="dp-more" href="tasks.php">${Number(deps.length - 8)} dağıtım daha · İşlemler</a>` : '')
+            ? deps.slice(0, 8).map(depRowHtml).join('') + (deps.length > 8 ? `<a class="dp-more" href="tasks">${Number(deps.length - 8)} dağıtım daha · İşlemler</a>` : '')
             : `<div class="dp-empty">${ui.tasksAt ? 'Henüz dağıtılmadı.' : 'Yükleniyor…'}</div>`;
         body.innerHTML = `<div class="drawer-head">
                 <div class="drawer-title"><span class="drawer-ico">${POps.iconHtml(o.type === 'package' ? 'package' : 'terminal', 'lg')}</span>
@@ -680,7 +680,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
             xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(e.loaded / e.total); };
             xhr.onload = () => {
                 up.xhr = null;
-                if (xhr.status === 401) { window.location.href = '/logout.php'; return; }
+                if (xhr.status === 401) { window.location.href = '/logout'; return; }
                 let data = null;
                 try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
                 if (xhr.status >= 200 && xhr.status < 300 && data && data.status !== 'error') { resolve(data); return; }

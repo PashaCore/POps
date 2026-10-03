@@ -4,7 +4,7 @@
 FROM php:8.3-apache
 
 # The panel only needs curl, json and session, all built into the official image.
-RUN a2enmod proxy proxy_http proxy_wstunnel headers remoteip \
+RUN a2enmod proxy proxy_http proxy_wstunnel headers remoteip rewrite \
     && mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
     && printf 'expose_php = Off\n' > "$PHP_INI_DIR/conf.d/zz-pops.ini"
 

@@ -339,7 +339,7 @@
                     ...['high', 'normal', 'low'].map(k => ({ label: PR[k], icon: k === 'high' ? 'alert' : k === 'low' ? 'arrow-down' : 'tag', disabled: k === t.priority, hint: k === t.priority ? 'şu an' : '', onClick: () => update(t, { priority: k }, `Öncelik: ${PR[k].toLocaleLowerCase('tr')}.`) })),
                     t.pc_name ? '-' : null,
                     t.pc_name ? { label: 'Ekranı izle', icon: 'eye', disabled: off, title: off ? 'Bilgisayar kapalı' : '', onClick: () => { location.href = dev.screenUrl([t.pc_name]); } } : null,
-                    t.pc_name ? { label: 'Bilgisayarı aç', icon: 'monitor', onClick: () => { location.href = 'devices.php?pc=' + encodeURIComponent(t.pc_name); } } : null
+                    t.pc_name ? { label: 'Bilgisayarı aç', icon: 'monitor', onClick: () => { location.href = 'devices?pc=' + encodeURIComponent(t.pc_name); } } : null
                 ]);
             }
         });

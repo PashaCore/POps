@@ -104,7 +104,7 @@ POps.api = async function (path, opts) {
     }
     if (res.status === 401) {
         // Oturum bitti: giriş sayfasına; çağıranın devam etmesi beklenmez
-        window.location.href = '/logout.php';
+        window.location.href = '/logout';
         return new Promise(() => {});
     }
     let data = null;
@@ -653,7 +653,7 @@ async function popsTwofaNudge(enabled) {
     box.className = 'twofa-nudge';
     box.setAttribute('role', 'status');
     box.innerHTML = '<i class="fas fa-shield-halved"></i><span>Hesabınızda iki adımlı doğrulama (2FA) kapalı. Önerilir: '
-        + '<a href="settings.php#twofaCard">Ayarlar → İki adımlı doğrulama</a> bölümünden açabilirsiniz.</span>'
+        + '<a href="settings#twofaCard">Ayarlar → İki adımlı doğrulama</a> bölümünden açabilirsiniz.</span>'
         + '<button type="button" class="twofa-nudge-close" title="7 gün gösterme" aria-label="Kapat"><i class="fas fa-xmark"></i></button>';
     box.querySelector('button').addEventListener('click', () => {
         try { localStorage.setItem(TWOFA_NUDGE_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000)); } catch (e) { /* özel pencere */ }

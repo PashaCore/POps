@@ -42,8 +42,8 @@
                 const labSet = new Set((Array.isArray(labs) ? labs : []).map(l => typeof l === 'string' ? l : (l && l.name)).filter(Boolean));
                 (Array.isArray(devs) ? devs : []).forEach(d => { if (d.lab) labSet.add(d.lab); });
                 cache = {
-                    devices: (Array.isArray(devs) ? devs : []).map(d => ({ kind: 'pc', label: POps.deviceName(d), sub: [d.lab, POps.isOnline(d) ? 'çevrimiçi' : 'kapalı'].filter(Boolean).join(' · '), href: 'devices.php?pc=' + encodeURIComponent(d.hostname), icon: 'monitor', key: lc(POps.deviceName(d) + ' ' + d.hostname + ' ' + (d.ip || '')) })),
-                    labs: [...labSet].map(n => ({ kind: 'lab', label: n, sub: 'Sınıf', href: 'labs.php?lab=' + encodeURIComponent(n), icon: 'labs', key: lc(n) }))
+                    devices: (Array.isArray(devs) ? devs : []).map(d => ({ kind: 'pc', label: POps.deviceName(d), sub: [d.lab, POps.isOnline(d) ? 'çevrimiçi' : 'kapalı'].filter(Boolean).join(' · '), href: 'devices?pc=' + encodeURIComponent(d.hostname), icon: 'monitor', key: lc(POps.deviceName(d) + ' ' + d.hostname + ' ' + (d.ip || '')) })),
+                    labs: [...labSet].map(n => ({ kind: 'lab', label: n, sub: 'Sınıf', href: 'labs?lab=' + encodeURIComponent(n), icon: 'labs', key: lc(n) }))
                 };
                 cacheAt = Date.now();
                 return cache;
@@ -138,7 +138,7 @@
                 const clearBtn = POps.el('button', { type: 'button', className: 'btn ghost sm', text: 'Bitenleri temizle' });
                 clearBtn.addEventListener('click', (e) => { e.stopPropagation(); POps.jobs.clearDone(); });
                 const foot = POps.el('div', { className: 'job', style: 'display:flex;justify-content:space-between;align-items:center' }, [
-                    POps.el('a', { href: 'tasks.php', text: 'Bütün işlemler' }),
+                    POps.el('a', { href: 'tasks', text: 'Bütün işlemler' }),
                     clearBtn
                 ]);
                 panel.replaceChildren(...rows, foot);

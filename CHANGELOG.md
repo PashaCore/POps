@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Panel: addresses without `.php`.** Pages are `/devices`, `/labs`, `/tasks?job=…` and the overview is `/`. `Dashboard/.htaccess`, the Docker Apache configuration (now with `mod_rewrite`) and the nginx templates map them to the PHP files; old `.php` addresses and bookmarks keep working, and on Apache a `GET` to one is redirected to the address without `.php`.
+- **Panel: Kontrol merkezi shows more.** **Son etkinlik** is one feed of jobs and events from the PCs (logons, blocked sites, quarantine, update results; filter **Tümü / İşlemler / Olaylar**), using the same readable titles and honest levels as **Kayıtlar** (both pages now share them). A new bottom row shows **Sunucu** (status, database, version, update, device keys), **Ajan sürümleri** (PCs per agent version) and **Bugün** (jobs, failed jobs, logons, blocked sites, warnings). The separate **Son sinyaller** card is folded into the feed.
+
 ## [0.1.17-alpha] - 2026-10-03
 
 Fixes from the first day of the new panel: a PC's recent operations load after switching PCs, tooltips are no longer cut off, and a command the PC refused shows as refused.

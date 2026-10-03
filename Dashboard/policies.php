@@ -106,7 +106,7 @@
                     <span class="unit">ihlal</span>
                 </div>
             </div>
-            <div class="set-note">Karantina <a href="devices.php">Cihazlar</a> sayfasından kaldırılır ya da bilgisayarda çevrimdışı açma koduyla kalkar.</div>
+            <div class="set-note">Karantina <a href="devices">Cihazlar</a> sayfasından kaldırılır ya da bilgisayarda çevrimdışı açma koduyla kalkar.</div>
         </div>
     </section>
 

@@ -250,8 +250,8 @@
         const removing = (state.mainPcs || {})[lab] === host;   // aynı bilgisayar gönderilince sunucu kaldırır
         if (await POps.act(null, () => POps.post('/api/set_main_pc', { lab_name: lab, pc_name: host }), { success: removing ? `${dev.name(host)} artık öğretmen bilgisayarı değil.` : `${dev.name(host)} öğretmen bilgisayarı yapıldı.` })) POps.loadDevices().catch(() => {});
     };
-    dev.screenUrl = (hosts) => 'vision.php?pc=' + hosts.map(encodeURIComponent).join(',');
-    dev.commandUrl = (hosts) => 'terminal.php?pc=' + hosts.map(encodeURIComponent).join(',');
+    dev.screenUrl = (hosts) => 'vision?pc=' + hosts.map(encodeURIComponent).join(',');
+    dev.commandUrl = (hosts) => 'terminal?pc=' + hosts.map(encodeURIComponent).join(',');
 
     // ---- Görev kaydının okunur hali (Son işlemler, Kayıtlar, İşlemler)
     const SOURCE_TEXT = { labs: 'Sınıflar', devices: 'Cihazlar', terminal: 'Uzak komut', deploy: 'Dağıtım', tasks: 'İşlemler', vision: 'Uzak ekran', schedule: 'Zamanlanmış', index: 'Kontrol merkezi', system: 'Sistem' };
@@ -285,6 +285,90 @@
         if ((s === 'Failed' || s === 'Error') && x != null) return `Komut ${x} çıkış koduyla bitti.`;
         return '';
     };
+
+    // ---- Olay sözlüğü (Kayıtlar ve Kontrol merkezi)
+    // Kayıtlar agent_logs_v2'den gelir: event_type / action ham anahtardır; burada okunur cümleye çevrilir.
+    // Önem dürüst: oturum açma/kapama ve yönetici işlemleri "Bilgi"; yalnızca gerçek sorunlar uyarı ya da kritik.
+    const SEV_WORD = { info: 'Bilgi', warn: 'Uyarı', bad: 'Kritik' };
+    const KIND_LABEL = { auth: 'Oturumlar', policy: 'Kural ihlalleri', quarantine: 'Karantina', command: 'Komutlar', agent: 'Ajan ve bakım', other: 'Diğer' };
+    const CAT_LABEL = { security: 'Güvenlik', restricted_content: 'Kural ihlali', system_maintenance: 'Bakım', legacy: 'Eski kayıt' };
+    const RISK_LABEL = { info: 'bilgi', low: 'düşük', medium: 'orta', high: 'yüksek', critical: 'kritik' };
+    const CAP = { terminal: 'uzak komut', vision: 'uzak ekran' };
+    const BY_TYPE = {
+        'auth.login': 'login', 'auth.logout': 'logout', 'auth.failed': 'login_failed', 'policy.alert': 'dns_block',
+        'security.lockdown': 'lockdown', 'security.unlock': 'unlock', 'security.bypass_code': 'bypass_code',
+        'deploy.execution': 'execute_queue', 'agent.update': 'update_problem', 'agent.capability_denied': 'capability_denied',
+        'agent.enroll_denied': 'enroll_denied', 'agent.auto_quarantine': 'auto_quarantine', 'agent.unlock_failed': 'unlock_failed',
+        'agent.offline_bypass': 'offline_bypass'
+    };
+    const commandOf = (r, m) => String(m.raw_command || String(r.message || '').replace(/^G(ö|o)rev:\s*/i, '')).trim();
+    const EVENTS = {
+        login: { title: () => 'Oturum açıldı', icon: 'user', kind: 'auth', sev: 'info' },
+        logout: { title: () => 'Oturum kapatıldı', icon: 'logout', kind: 'auth', sev: 'info' },
+        login_failed: { title: () => 'Hatalı giriş denemesi', icon: 'user', kind: 'auth' },
+        dns_block: { title: (r, m) => m.domain ? 'Yasaklı siteye erişim: ' + m.domain : 'Yasaklı siteye erişim', icon: 'shield', kind: 'policy', quietReason: true },
+        lockdown: { title: () => 'Karantinaya alındı', icon: 'lock', kind: 'quarantine', sev: 'warn', admin: true },
+        unlock: { title: () => 'Karantina kaldırıldı', icon: 'unlock', kind: 'quarantine', sev: 'info', admin: true },
+        auto_quarantine: { title: () => 'Kural ihlali eşiğinde kendini karantinaya aldı', icon: 'lock', kind: 'quarantine' },
+        unlock_failed: { title: () => 'Karantina kaldırılamadı, ağ yalıtımı sürüyor', icon: 'lock', kind: 'quarantine' },
+        offline_bypass: { title: () => 'Çevrimdışı açma koduyla karantinadan çıktı', icon: 'key', kind: 'quarantine' },
+        bypass_code: { title: () => 'Çevrimdışı açma kodu üretildi', icon: 'key', kind: 'quarantine', sev: 'info' },
+        execute_queue: { title: (r, m) => { const c = commandOf(r, m); return c ? 'Komut gönderildi: ' + dev.taskTitle({ command: c }) : 'Komut gönderildi'; }, icon: 'terminal', kind: 'command', sev: 'info' },
+        update_problem: { title: () => 'Ajan güncellemesi sorunlu bitti', icon: 'refresh', kind: 'agent' },
+        capability_denied: { title: (r) => CAP[r.reason] ? `Kapalı ${CAP[r.reason]} istendi, ajan reddetti` : 'Kapalı bir özellik istendi, ajan reddetti', icon: 'eye', kind: 'agent', quietReason: true },
+        enroll_denied: { title: () => 'Kayıtlı bilgisayarın anahtarı yeniden istendi, reddedildi', icon: 'alert', kind: 'other' }
+    };
+
+    function parseMeta(v) {
+        if (v && typeof v === 'object') return v;
+        try { const o = JSON.parse(v || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; }
+    }
+    // Sunucu zamanı yerel saatle "YYYY-AA-GG SS:DD:ss" metnidir; T ile her tarayıcıda yerel saat olarak okunur
+    const isoOf = (ts) => typeof ts === 'string' ? ts.replace(' ', 'T') : ts;
+    const cleanMsg = (s) => String(s || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
+    const cap1 = (s) => s ? s.charAt(0).toLocaleUpperCase('tr') + s.slice(1) : s;
+    function riskSev(r) {
+        const k = String(r.risk_level || '').toLowerCase();
+        if (k === 'critical') return 'bad';
+        if (k === 'high' || k === 'medium') return 'warn';
+        if (!k && r.log_type) return /error|critical/i.test(r.log_type) ? 'bad' : /warning/i.test(r.log_type) ? 'warn' : 'info';
+        return 'info';
+    }
+    function whoOf(r, m) {
+        const a = String(m.created_by || r.actor_id || '').trim();
+        if (!a || a === 'Agent' || a === r.pc_name) return 'Ajan';
+        if (/^system/i.test(a)) return 'Sistem';
+        return a;
+    }
+    function sourceOf(r) {
+        const t = String(r.event_type || '');
+        if (/^security\./.test(t)) return 'Panel';
+        if (/^deploy\./.test(t)) return 'Görev kuyruğu';
+        if (/^(agent|auth|policy)\./.test(t)) return 'Bilgisayardaki ajan';
+        return '';
+    }
+    function norm(r) {
+        const m = parseMeta(r.meta_data);
+        const key = BY_TYPE[r.event_type] || (EVENTS[r.action] ? r.action : '');
+        const def = EVENTS[key] || null;
+        const cat = String(r.category || r.log_type || '').toLowerCase();
+        const sev = def && def.sev ? def.sev : riskSev(r);
+        const reason = String(r.reason || '').trim();
+        let why = '';
+        if (reason && !(def && def.quietReason)) {
+            if (key === 'enroll_denied' && reason === 'already_enrolled') why = 'Bilgisayar zaten kayıtlı; yeni anahtar verilmedi.';
+            else why = def && def.admin ? 'Gerekçe: ' + reason : cap1(reason);
+        }
+        const title = def ? def.title(r, m) : (cleanMsg(r.message).slice(0, 160) || r.event_type || 'Olay');
+        return {
+            id: String(r.id), r, m, key, sev, title, why,
+            kind: def ? def.kind : (cat === 'restricted_content' ? 'policy' : cat === 'system_maintenance' ? 'agent' : 'other'),
+            icon: def ? def.icon : (sev === 'info' ? 'info' : 'alert'),
+            security: cat === 'security' || cat === 'restricted_content' || /^(security|auth|policy)\./.test(String(r.event_type || '')),
+            who: whoOf(r, m), at: isoOf(r.timestamp), day: String(r.timestamp || '').slice(0, 10), pc: r.pc_name || ''
+        };
+    }
+    POps.logs = { SEV_WORD, KIND_LABEL, CAT_LABEL, RISK_LABEL, CAP, BY_TYPE, commandOf, EVENTS, parseMeta, isoOf, cleanMsg, cap1, riskSev, whoOf, sourceOf, norm };
 
     // ---- Ayrıntı paneli
     let openHost = null;
@@ -355,7 +439,7 @@
         const recent = keepRecent ? body.querySelector('#devRecent') : null;
         body.innerHTML = headHtml(d) + circlesHtml(d) + issuesHtml(d) + factsHtml(d)
             + '<div><h3>Son işlemler</h3><div id="devRecent"><div class="faint" style="font-size:var(--text-sm);padding:6px 0">Yükleniyor…</div></div></div>'
-            + `<a href="devices.php?pc=${encodeURIComponent(d.hostname)}" style="font-size:var(--text-sm)">Cihazlar sayfasında aç</a>`;
+            + `<a href="devices?pc=${encodeURIComponent(d.hostname)}" style="font-size:var(--text-sm)">Cihazlar sayfasında aç</a>`;
         if (recent) body.querySelector('#devRecent').replaceWith(recent);
     }
     dev.open = async function (host, opts) {

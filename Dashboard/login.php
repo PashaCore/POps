@@ -4,14 +4,14 @@ require_once __DIR__ . '/includes/session.php';
 pops_session_start();
 
 if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
-    header('Location: index.php');
+    header('Location: ./');
     exit;
 }
 
 // "Baştan giriş yap": bekleyen 2FA challenge'ını temizle.
 if (isset($_GET['reset'])) {
     unset($_SESSION['totp_challenge'], $_SESSION['totp_username']);
-    header('Location: login.php');
+    header('Location: login');
     exit;
 }
 
@@ -60,7 +60,7 @@ function pops_finish_login($responseData, $fallback_username) {
     unset($_SESSION['totp_challenge'], $_SESSION['totp_username']);
     session_regenerate_id(true);
     pops_set_jwt_cookie($_SESSION['jwt_token']);
-    header('Location: index.php');
+    header('Location: ./');
     exit;
 }
 
@@ -222,7 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </p>
                 </div>
                 <button type="submit" class="btn block mt-6" style="padding: 0.875rem;">Doğrula ve giriş yap</button>
-                <a href="login.php?reset=1" style="display:block; text-align:center; margin-top:var(--space-4); font-size:var(--text-sm); color:var(--text-tertiary);">← Baştan giriş yap</a>
+                <a href="login?reset=1" style="display:block; text-align:center; margin-top:var(--space-4); font-size:var(--text-sm); color:var(--text-tertiary);">← Baştan giriş yap</a>
             </form>
             <?php else: ?>
             <form method="POST" action="">

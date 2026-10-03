@@ -73,7 +73,7 @@
 const TERMINAL_ADMIN = <?php echo json_encode($_SESSION['username'] ?? 'Admin', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
 let currentMode = 'single';
 let selectedLab = null;
-// Sınıflar / Cihazlar sayfasından gelen seçim: terminal.php?pc=HW-1,HW-2
+// Sınıflar / Cihazlar sayfasından gelen seçim: terminal?pc=HW-1,HW-2
 const urlHosts = (new URLSearchParams(location.search).get('pc') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 500);
 let multiHosts = urlHosts.length > 1 ? urlHosts : [];
 let terminalHistory = [];
@@ -410,7 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="res ${escapeHtml(k)}">${POps.iconHtml(k === 'ok' ? 'check' : k === 'bad' ? 'x' : 'clock')}</div>
                 <div style="min-width:0"><div class="what mono" style="font-size:12px">${escapeHtml(String(cmd || '').slice(0, 160))}</div>
                 <div class="meta">${escapeHtml(g.t.created_by || '?')} · ${POps.timeHtml(g.t.created_at)} · ${escapeHtml(where)}${g.t.reason ? ' · gerekçe: ' + escapeHtml(g.t.reason) : ''}</div></div>
-                <div class="side"><span class="word ${escapeHtml(k)}">${c.run ? 'Sürüyor' : c.bad ? Number(c.bad) + ' başarısız' : 'Tamam'}</span><a class="when" href="tasks.php?job=${encodeURIComponent(g.key)}">ayrıntı</a></div>
+                <div class="side"><span class="word ${escapeHtml(k)}">${c.run ? 'Sürüyor' : c.bad ? Number(c.bad) + ' başarısız' : 'Tamam'}</span><a class="when" href="tasks?job=${encodeURIComponent(g.key)}">ayrıntı</a></div>
             </div>`;
         }).join('') + '<div class="set-note">Bir satıra tıklayınca komut yeniden yazılır (gönderilmez).</div>';
     });
