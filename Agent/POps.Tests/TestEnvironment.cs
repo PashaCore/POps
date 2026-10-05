@@ -63,6 +63,12 @@ namespace POps.Tests
             return dir;
         }
 
+#if !NETFRAMEWORK
+        // Uzaktan komut çalıştırıcısı: görev dosyaları (pops_task_*.bat) gerçek %TEMP%'e değil, testin kendi klasörüne yazılır
+        public static POpsAgent.CommandRunner NewCommandRunner(TimeSpan? maxDuration = null) =>
+            new POpsAgent.CommandRunner(maxDuration: maxDuration, taskDirectory: NewDir("tasks"));
+#endif
+
         // Depo kökü (VERSION dosyasını arayarak)
         public static string RepoRoot()
         {

@@ -33,6 +33,7 @@ namespace POps.Tests.Agent
                     lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(payload));
                     return Task.FromResult(true);
                 },
+                CommandRunner = TestEnvironment.NewCommandRunner(),
             };
             _worker.Quarantine = new QuarantineControl(
                 _tray.Add,
@@ -433,6 +434,7 @@ namespace POps.Tests.Agent
                     lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(payload));
                     return Task.FromResult(true);
                 },
+                CommandRunner = TestEnvironment.NewCommandRunner(),
             };
             worker.Handshake.UtcNow = () => _now;
             return worker;

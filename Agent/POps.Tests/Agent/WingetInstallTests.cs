@@ -123,7 +123,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task RunProgram_PassesArgumentsWithoutAShell()
         {
-            var runner = new CommandRunner();
+            var runner = TestEnvironment.NewCommandRunner();
             // Bağımsız değişkenler ArgumentList ile tek tek gider (kabuk yorumlamaz)
             CommandExecutionResult result = await runner.RunProgramAsync(1, Path.Combine(Environment.SystemDirectory, "cmd.exe"),
                 new[] { "/d", "/c", "echo", "winget-ok" }, CancellationToken.None);

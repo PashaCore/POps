@@ -85,6 +85,9 @@ namespace POpsAgent
 
         // Karantina (lockdown/unlock/çevrimdışı bypass) ve Windows Update: bkz. QuarantineControl, PatchManager
         private QuarantineControl _quarantine;
+        // DNS eşiğindeki otomatik karantina ve DNS hataları (bkz. BindDnsPolicyMonitor)
+        private readonly Action<string> _dnsQuarantine;
+        private readonly Action<string> _dnsErrorReporter;
         private readonly PatchManager _patches;
         // Yardım masası: tepsinin "Sorun bildir" / "Taleplerim" istekleri (bkz. Helpdesk)
         private readonly Helpdesk _helpdesk;
@@ -136,9 +139,9 @@ namespace POpsAgent
 
             _quarantine = new QuarantineControl(message => _trayPipe?.SendCommandToDesktop(message),
                 EnableNetworkIsolationAsync, DisableNetworkIsolationAsync, audit: LocalAudit.Write);
-            DnsPolicyMonitor.ErrorReporter = message => _health.RecordError("dns", message);
+            _dnsErrorReporter = message => _health.RecordError("dns", message);
             // DNS eşiğindeki otomatik karantina da kilit ekranı + yalıtım yolundan geçer (bkz. AutoQuarantineAsync)
-            DnsPolicyMonitor.Quarantine = reason => _ = AutoQuarantineAsync(reason);
+            _dnsQuarantine = reason => _ = AutoQuarantineAsync(reason);
             _patches = new PatchManager(_serverUrl, () => _hwId);
             // Talebin sahibi konsoldaki değil, isteği yapan tepsinin oturumundaki kullanıcı (hızlı kullanıcı değiştirme, RDP)
             _helpdesk = new Helpdesk(_serverUrl, () => _hwId, () => _trayPipe?.ClientUser, message => _trayPipe?.SendCommandToDesktop(message));
@@ -161,7 +164,7 @@ namespace POpsAgent
         private void InitializeCoreState()
         {
             // İlk görevden önce: önceki çalışmadan (çökme) kalmış pops_task_*.bat dosyaları (yönetici komutu içerebilir)
-            CommandRunner.CleanupStaleTaskFiles();
+            CommandRunner.CleanupStaleTaskFiles(_commandRunner.TaskDirectory);
             // Kopyalanmış kurulum, kimlik ve secret okunmadan önce denetlenir: anahtar bu donanıma ait değilse kenara alınır
             BindingVerdict binding = CheckHardwareBinding();
             _startupHealth.Run(StartupCheck.Identity, () => _hwId = InitializeIdentity());
@@ -290,6 +293,7 @@ namespace POpsAgent
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            BindDnsPolicyMonitor();
             ReportConfigProblem();
             // Tepsi ve watchdog kullanıcı oturumunda yoksa başlatılır (kurulum/güncelleme sonrası, karantinada kilit ekranı).
             // Yavaş WMI açılışını beklemez.
@@ -723,6 +727,18 @@ namespace POpsAgent
         {
             DnsPolicyMonitor.Configure(_currentPolicy, _hwId, _serverUrl);
             DnsPolicyMonitor.Start();
+        }
+
+        // DNS izleme statiktir: otomatik karantina ve DNS hataları yalnızca çalışan Worker'a gider. ExecuteAsync'in
+        // başında bağlanır (izleme ancak komut tüneli kurulunca başlar), Dispose'da yalnızca hâlâ bu Worker'ınsa
+        // bırakılır. Testte kurulup başlatılmayan Worker da, atılmış Worker da hiçbir şey almaz.
+        internal void BindDnsPolicyMonitor() => DnsPolicyMonitor.Bind(_dnsQuarantine, _dnsErrorReporter);
+
+        public override void Dispose()
+        {
+            DnsPolicyMonitor.Release(_dnsQuarantine, _dnsErrorReporter);
+            base.Dispose();
+            GC.SuppressFinalize(this);
         }
 
         // Şifresiz (http/ws) ve yerel olmayan sunucuya bağlanılmaz (bkz. POpsHelpers.IsSecureServerUrl).

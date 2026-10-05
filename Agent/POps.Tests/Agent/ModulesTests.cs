@@ -36,6 +36,7 @@ namespace POps.Tests.Agent
                     lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(payload));
                     return Task.FromResult(true);
                 },
+                CommandRunner = TestEnvironment.NewCommandRunner(),
             };
         }
 

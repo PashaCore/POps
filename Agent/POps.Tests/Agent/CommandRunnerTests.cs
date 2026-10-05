@@ -40,7 +40,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task ExitCode_IsReported()
         {
-            CommandExecutionResult result = await new CommandRunner().RunAsync(1, "echo merhaba\r\nexit /b 3", CancellationToken.None);
+            CommandExecutionResult result = await TestEnvironment.NewCommandRunner().RunAsync(1, "echo merhaba\r\nexit /b 3", CancellationToken.None);
             Assert.Equal(3, result.ExitCode);
             Assert.Contains("merhaba", result.Output);
         }
@@ -48,7 +48,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task Cancel_KillsTheRunningProcess()
         {
-            var runner = new CommandRunner();
+            var runner = TestEnvironment.NewCommandRunner();
             Task<CommandExecutionResult> run = runner.RunAsync(42, "ping -n 30 127.0.0.1 > nul", CancellationToken.None);
             for (int i = 0; i < 100 && runner.RunningCount == 0; i++) await Task.Delay(20);
             await Task.Delay(500);
@@ -67,7 +67,7 @@ namespace POps.Tests.Agent
         public async Task ServiceStop_KillsTheRunningProcess()
         {
             using var stopping = new CancellationTokenSource();
-            Task<CommandExecutionResult> run = new CommandRunner().RunAsync(7, "ping -n 30 127.0.0.1 > nul", stopping.Token);
+            Task<CommandExecutionResult> run = TestEnvironment.NewCommandRunner().RunAsync(7, "ping -n 30 127.0.0.1 > nul", stopping.Token);
             await Task.Delay(700);
             stopping.Cancel();
 
@@ -78,7 +78,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task Timeout_KillsTheRunningProcess()
         {
-            CommandExecutionResult result = await new CommandRunner(maxDuration: TimeSpan.FromSeconds(1))
+            CommandExecutionResult result = await TestEnvironment.NewCommandRunner(TimeSpan.FromSeconds(1))
                 .RunAsync(8, "ping -n 30 127.0.0.1 > nul", CancellationToken.None)
                 .WaitAsync(TimeSpan.FromSeconds(20));
             Assert.Equal(CommandRunner.ExitTimeout, result.ExitCode);
@@ -88,7 +88,7 @@ namespace POps.Tests.Agent
         public async Task FloodingOutput_IsBoundedWhileRunning()
         {
             // ~1 milyon karakter: sınır (512 bin) okunurken uygulanır, sonuç da sınırın altında kalır
-            CommandExecutionResult result = await new CommandRunner()
+            CommandExecutionResult result = await TestEnvironment.NewCommandRunner()
                 .RunAsync(9, "for /L %%i in (1,1,20000) do @echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
                     CancellationToken.None)
                 .WaitAsync(TimeSpan.FromSeconds(120));
@@ -130,7 +130,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task HugeOutputWithoutNewlines_IsBoundedAndTheProcessFinishes()
         {
-            CommandExecutionResult result = await new CommandRunner()
+            CommandExecutionResult result = await TestEnvironment.NewCommandRunner()
                 .RunAsync(11, "powershell -NoProfile -Command \"[Console]::Out.Write('x' * 20000000)\"", CancellationToken.None)
                 .WaitAsync(TimeSpan.FromSeconds(120));
             Assert.Equal(0, result.ExitCode);
@@ -142,14 +142,14 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task LineEndings_AreSentAsNewlines()
         {
-            CommandExecutionResult result = await new CommandRunner().RunAsync(12, "echo bir\r\necho iki", CancellationToken.None);
+            CommandExecutionResult result = await TestEnvironment.NewCommandRunner().RunAsync(12, "echo bir\r\necho iki", CancellationToken.None);
             Assert.Equal("bir\niki", result.Output);
         }
 
         [Fact]
         public async Task StandardError_IsReadInChunksToo()
         {
-            CommandExecutionResult result = await new CommandRunner().RunAsync(13, "echo hata-metni 1>&2\r\nexit /b 4", CancellationToken.None);
+            CommandExecutionResult result = await TestEnvironment.NewCommandRunner().RunAsync(13, "echo hata-metni 1>&2\r\nexit /b 4", CancellationToken.None);
             Assert.Equal(4, result.ExitCode);
             Assert.Contains("[HATA]:\nhata-metni", result.Output);
         }
@@ -157,7 +157,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task SameTaskId_DoesNotStartASecondProcess()
         {
-            var runner = new CommandRunner();
+            var runner = TestEnvironment.NewCommandRunner();
             Task<CommandExecutionResult> first = runner.RunAsync(21, "ping -n 30 127.0.0.1 > nul", CancellationToken.None);
             Assert.True(runner.IsRunning(21));
 
@@ -235,5 +235,31 @@ namespace POps.Tests.Agent
         [Fact]
         public void Cleanup_OfAMissingDirectory_DoesNotThrow() =>
             Assert.Equal((0, 0), CommandRunner.CleanupStaleTaskFiles(Path.Combine(TestEnvironment.Root, "yok-" + Guid.NewGuid().ToString("N"))));
+
+        // Görev dosyası çalıştırıcının klasörüne yazılır, görev bitince silinir; açılış temizliği (Worker) aynı klasöre
+        // bakar. Testler gerçek %TEMP%'e yazmaz.
+        [Fact]
+        public async Task TaskFile_IsWrittenToTheRunnersFolder_AndCleanedUpThere()
+        {
+            CommandRunner runner = TestEnvironment.NewCommandRunner();
+            string dir = runner.TaskDirectory;
+            Assert.StartsWith(TestEnvironment.Root + Path.DirectorySeparatorChar, dir, StringComparison.OrdinalIgnoreCase);
+
+            CommandExecutionResult result = await runner.RunAsync(1, "echo %~f0", CancellationToken.None);
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal(dir, Path.GetDirectoryName(result.Output), ignoreCase: true);
+            Assert.True(CommandRunner.IsTaskFile(Path.GetFileName(result.Output)), result.Output);
+            Assert.Empty(Directory.GetFiles(dir));
+
+            // Çökmeden kalmış görev dosyası
+            File.WriteAllText(Path.Combine(dir, "pops_task_" + Hex + ".bat"), "@echo off");
+            Assert.Equal((1, 0), CommandRunner.CleanupStaleTaskFiles(runner.TaskDirectory));
+            Assert.Empty(Directory.GetFiles(dir));
+        }
+
+        // Ajan değişmedi: klasör verilmezse görev dosyaları Path.GetTempPath() altına yazılır (burada yalnızca okunur)
+        [Fact]
+        public void TaskDirectory_DefaultsToTheTempFolder() =>
+            Assert.Equal(Path.GetTempPath(), new CommandRunner().TaskDirectory);
     }
 }

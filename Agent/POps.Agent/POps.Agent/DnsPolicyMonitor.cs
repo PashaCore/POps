@@ -64,6 +64,27 @@ namespace POpsAgent
         public static Action<string> Quarantine { get; set; } = reason => { _ = NetworkIsolation.EnableAsync(ServerUrl); };
         public static Action<string> ErrorReporter { get; set; } = _ => { };
 
+        // İzleme statik, Worker birden çok olabilir (testler): geri çağrıları yalnızca çalışan Worker bağlar
+        // (Worker.ExecuteAsync) ve kendi geri çağrıları hâlâ bağlıysa bırakır (Worker.Dispose). Bırakılınca otomatik
+        // karantina ve hata bildirimi hiçbir Worker'a gitmez; atılmış bir Worker'a asla.
+        internal static void Bind(Action<string> quarantine, Action<string> errorReporter)
+        {
+            lock (Sync)
+            {
+                Quarantine = quarantine;
+                ErrorReporter = errorReporter;
+            }
+        }
+
+        internal static void Release(Action<string> quarantine, Action<string> errorReporter)
+        {
+            lock (Sync)
+            {
+                if (ReferenceEquals(Quarantine, quarantine)) Quarantine = _ => { };
+                if (ReferenceEquals(ErrorReporter, errorReporter)) ErrorReporter = _ => { };
+            }
+        }
+
         private static string ServerUrl { get { lock (Sync) return _serverUrl; } }
 
         public static bool IsRunning { get { lock (Sync) return _timer != null; } }
