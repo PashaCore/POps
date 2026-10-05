@@ -19,7 +19,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from migrate import run_migrations_on
-from pops import db, heartbeats, notify, secretbox, update_tracking
+from pops import db, devicelist, heartbeats, notify, secretbox, update_tracking
 from pops.apiversion import ApiVersionMiddleware
 from pops.logs import setup_logging, stop_background_writer
 from pops.metrics import RequestContextMiddleware
@@ -179,6 +179,8 @@ async def startup_event():
             app.state.scheduler = asyncio.create_task(scheduler_loop())
             # Heartbeat'ler toplu yazılır (bkz. pops/heartbeats.py)
             app.state.heartbeats = asyncio.create_task(heartbeats.flush_loop())
+            # Cihaz listesi sürümü ve panele "değişti" bildirimi (bkz. pops/devicelist.py)
+            app.state.devicelist = asyncio.create_task(devicelist.run_loop(manager.broadcast_to_panels))
             break
         except Exception as e:
             log.error("veritabanı bağlantı hatası", extra={"attempt": i + 1, "of": 5, "error": repr(e)[:300]})
@@ -201,7 +203,7 @@ async def shutdown_event():
     """Düzgün kapanış. uvicorn bu noktada yeni bağlantı almayı bırakmış, açık WebSocket'leri kapatmış (ajanlar
     "Offline" yazıldı) ve süren HTTP isteklerini beklemiştir. Kalanlar: zamanlayıcı (turu yarıda kalırsa işlemi
     geri alınır), bellekte bekleyen heartbeat'ler, arka plandaki bildirim gönderimleri ve havuz."""
-    for name in ("scheduler", "heartbeats"):
+    for name in ("scheduler", "heartbeats", "devicelist"):
         task = getattr(app.state, name, None)
         if task:
             task.cancel()

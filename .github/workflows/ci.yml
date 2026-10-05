@@ -574,6 +574,7 @@ jobs:
           python Backend/tests/test_ops.py
           python Backend/tests/test_api_tokens.py
           python Backend/tests/test_demo.py
+          python Backend/tests/test_devices_delta.py
       - name: Backend coverage
         # Alt sınır (fail_under) kapsamın fark edilmeden düşmesini engeller; kapsam arttıkça yükseltin.
         # Hangi kritik yolların test edildiği: docs/testing.md

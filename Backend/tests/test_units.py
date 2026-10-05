@@ -839,6 +839,154 @@ def test_api_v1():
         "jeton kimliği ayırt edilir")
 
 
+def _dev_row(pc, **kw):
+    row = {"hostname": pc, "hw_id": pc, "real_hostname": pc.lower(), "pc_name": pc.lower(), "status": "Online",
+           "active_window": "-", "ip": "10.0.0.1", "agent_health": None, "last_seen": "2026-10-05 10:00:00",
+           "display_name": None, "lab": "L1"}
+    row.update(kw)
+    return row
+
+
+def test_devicelist():
+    """Cihaz listesi sürümü (pops/devicelist.py): değişiklik günlüğünün sınırları, ETag karşılaştırması, sürümün
+    yalnızca görünen bir alan değişince artması, last_seen yayımı ve panele bildirimin saniyede en fazla bir kez
+    gitmesi. Veritabanı yerine sahte satır okuyucu kullanılır."""
+    print("== cihaz listesi: değişiklik günlüğü")
+    from pops import devicelist as dl
+
+    log_ = dl.ChangeLog(100, max_entries=5, max_age=600)
+    log_.add(101, 0.0, ["a", "b"])
+    log_.add(102, 1.0, ["c"], ["d"])
+    got = log_.since(100)
+    chk(set(got[0]) == {"a", "b", "c"} and got[1] == ["d"], "since: değişenler ve silinenler (%s)" % (got,))
+    chk(log_.since(102) == ([], []), "güncel sürümden sonra değişiklik yok")
+    chk(log_.since(99) is None, "günlüğün başlangıcından eski since yanıtlanmaz")
+    log_.add(103, 2.0, ["a"])
+    chk(len(log_) == 4 and log_.since(102) == (["a"], []), "aynı cihaz günlükte tek kayıt (en sonuncusu)")
+    log_.add(104, 3.0, ["d"])
+    got = log_.since(101)
+    chk("d" in got[0] and got[1] == [], "silinip yeniden gelen cihaz değişen sayılır")
+    log_.add(105, 4.0, ["e%d" % i for i in range(10)])
+    chk(len(log_) == 5 and log_.floor == 105 and log_.since(104) is None and log_.since(105) == ([], []),
+        "kayıt sınırı: en eskiler düşer, taban sürüm yükselir (floor=%s)" % log_.floor)
+
+    log_ = dl.ChangeLog(0, max_entries=100, max_age=600)
+    log_.add(1, 0.0, ["x"])
+    log_.add(2, 500.0, ["y"])
+    log_.add(3, 700.0, ["z"])
+    chk(log_.floor == 1 and log_.since(0) is None and set(log_.since(1)[0]) == {"y", "z"},
+        "yaş sınırı: 10 dakikadan eski kayıt düşer")
+    log_.trim(1200.0)
+    chk(log_.floor == 2 and log_.since(1) is None and log_.since(2) == (["z"], []), "zaman geçtikçe taban yükselir")
+    big = dl.ChangeLog(0)
+    big.add(1, 0.0, ["pc%d" % i for i in range(dl.LOG_MAX_ENTRIES + 10)])
+    chk(len(big) == dl.LOG_MAX_ENTRIES, "varsayılan sınır %d kayıt" % dl.LOG_MAX_ENTRIES)
+
+    print("== panel soketi konuları")
+    from pops.manager import ConnectionManager
+    m = ConnectionManager()
+    only, plain = object(), object()
+    m.panel_topics[only] = frozenset(t for t in ("devices_changed",))
+    chk(m._wants(only, "devices_changed") and not m._wants(only, "terminal_output")
+        and not m._wants(only, "thumbnail"), "?topics=devices: yalnızca devices_changed")
+    chk(m._wants(plain, "terminal_output") and m._wants(plain, "thumbnail") and not m._wants(plain, "devices_changed"),
+        "konusuz soket: eski mesajların hepsi, isteğe bağlı devices_changed hariç")
+
+    print("== cihaz listesi: ETag")
+    tag = 'W/"d42"'
+    for header, want in (('W/"d42"', True), ('"d42"', True), ('W/"d42-gzip"', True), ('"x", W/"d42"', True),
+                         ("*", True), ('W/"d41"', False), ('W/"d4"', False), ("", False), (None, False),
+                         ('W/"d42-gzipx"', False)):
+        chk(dl.etag_matches(header, tag) is want, "If-None-Match %r -> %s" % (header, want))
+
+    print("== cihaz listesi: sürüm yalnızca görünen alan değişince artar")
+    real_fetch = dl.fetch_rows
+    db_rows = {}
+
+    async def fake_fetch(pcs=None):
+        return [dict(r) for pc, r in sorted(db_rows.items()) if pcs is None or pc in pcs]
+
+    async def scenario():
+        dl.reset()
+        db_rows.update({"HW-1": _dev_row("HW-1"), "HW-2": _dev_row("HW-2", status="Offline")})
+        await dl._init()
+        v0 = dl.S.version
+        empty = {"version": v0, "full": False, "changed": [], "removed": [], "seen": {}}
+        chk(dl.etag() == 'W/"d%d"' % v0 and dl.delta(v0) == empty, "ilk okuma sürüm açmaz")
+        chk(dl.delta(v0 - 1) is None and dl.delta(v0 + 1) is None, "açılıştan eski ya da ileri since: tam liste")
+        # Yalnızca last_seen ilerledi: hedefli okumada sürüm artmaz
+        db_rows["HW-1"]["last_seen"] = "2026-10-05 10:00:05"
+        chk(not dl.heartbeat_differs("HW-1", "Online", "-", "hw-1", "10.0.0.1", None),
+            "değişmeyen heartbeat ön süzgeçten geçmez")
+        await dl.sync(["HW-1"])
+        chk(dl.S.version == v0, "last_seen'i ilerleyen satır sürüm açmaz")
+        chk(dl.heartbeat_differs("HW-1", "Idle", "-", "hw-1", "10.0.0.1", None)
+            and dl.heartbeat_differs("HW-1", "Online", "chrome", "hw-1", "10.0.0.1", None)
+            and dl.heartbeat_differs("HW-1", "Online", "-", "hw-1", "10.0.0.2", None)
+            and dl.heartbeat_differs("HW-1", "Online", "-", "hw-1", "10.0.0.1", '{"loop_errors_1h": 1}')
+            and dl.heartbeat_differs("HW-NEW", "Online", "-", None, "10.0.0.1", None),
+            "durum, uygulama, adres, sağlık özeti değişince ya da yeni cihazda ön süzgeç işaretler")
+        db_rows["HW-1"]["status"] = "Idle"
+        await dl.sync(["HW-1"])
+        d = dl.delta(v0)
+        chk(dl.S.version == v0 + 1 and [r["status"] for r in d["changed"]] == ["Idle"] and d["seen"] == {},
+            "durum değişti: sürüm +1, satır değişenlerde")
+        # Silinen cihaz ve dakikalık tarama (last_seen yayımı)
+        del db_rows["HW-2"]
+        db_rows["HW-3"] = _dev_row("HW-3")
+        db_rows["HW-1"]["last_seen"] = "2026-10-05 10:01:00"
+        await dl._refresh(None, scan=False)
+        d = dl.delta(v0 + 1)
+        chk(d["removed"] == ["HW-2"] and [r["hw_id"] for r in d["changed"]] == ["HW-3"] and d["seen"] == {},
+            "silinen ve yeni cihaz (taramasız okuma last_seen yayımlamaz)")
+        v2 = dl.S.version
+        await dl._refresh(None, scan=True)
+        d = dl.delta(v2)
+        chk(dl.S.version == v2 + 1 and d["changed"] == [] and d["seen"] == {"HW-1": "2026-10-05 10:01:00"},
+            "tarama last_seen'i ilerleyen satırı 'seen' olarak yayımlar")
+        await dl._refresh(None, scan=True)
+        chk(dl.S.version == v2 + 1, "değişiklik yoksa tarama sürüm açmaz")
+        d = dl.delta(v0)
+        chk(d["removed"] == ["HW-2"] and {r["hw_id"] for r in d["changed"]} == {"HW-1", "HW-3"}
+            and "HW-1" not in d["seen"], "eski since: değişen satır tam gider, ayrıca 'seen'de yer almaz")
+
+        # Bildirim: sürekli değişiklikte saniyede en fazla bir yayın, son sürümle
+        pushes = []
+
+        async def broadcast(msg):
+            pushes.append((time.monotonic(), msg))
+
+        task = asyncio.ensure_future(dl.run_loop(broadcast))
+        started = time.monotonic()
+        n = 0
+        while time.monotonic() - started < 2.3:
+            n += 1
+            db_rows["HW-3"]["active_window"] = "app%d" % n
+            dl.touch(["HW-3"])
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(1.2)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        gaps = [b[0] - a[0] for a, b in zip(pushes, pushes[1:])]
+        chk(2 <= len(pushes) <= 4 and all(g >= 0.95 for g in gaps),
+            "yayın saniyede en fazla bir kez (%d yayın, aralıklar %s)" % (len(pushes), [round(g, 2) for g in gaps]))
+        chk(pushes and pushes[-1][1] == {"type": "devices_changed", "version": dl.S.version},
+            "son yayın güncel sürümü taşır")
+        chk(any(r["active_window"] == "app%d" % n for r in dl.delta(v0)["changed"]), "son değişiklik listede")
+
+    dl.SCAN_SECONDS, scan_was = 1000.0, dl.SCAN_SECONDS
+    dl.fetch_rows = fake_fetch
+    try:
+        asyncio.run(scenario())
+    finally:
+        dl.fetch_rows = real_fetch
+        dl.SCAN_SECONDS = scan_was
+        dl.reset()
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -854,6 +1002,7 @@ def main():
     test_release_compare()
     test_server_metrics()
     test_api_v1()
+    test_devicelist()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

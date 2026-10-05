@@ -27,7 +27,8 @@ from pops.manager import manager
 from pops.taskqueue import process_queue
 from pops.dna import check_known_device, reconcile_device
 from pops.notify import notify
-from pops import agent_health, agent_version as agent_version_mod, bypass, heartbeats, metrics, update_notice
+from pops import agent_health, agent_version as agent_version_mod, bypass, devicelist, heartbeats, metrics
+from pops import update_notice
 from pops import update_tracking
 
 log = logging.getLogger("pops.agents")
@@ -50,6 +51,7 @@ async def auth_login(data: AuthEventInput, agent_id: Optional[str] = Depends(age
         risk_level="info",
     )
     await execute_query("UPDATE clients SET logged_user=$1 WHERE pc_name=$2", (data.student_id, data.hw_id))
+    devicelist.touch([data.hw_id])
     return {"status": "success"}
 
 
@@ -84,6 +86,7 @@ async def auth_logout(data: AuthEventInput, agent_id: Optional[str] = Depends(ag
         risk_level="info",
     )
     await execute_query("UPDATE clients SET logged_user='-' WHERE pc_name=$1", (data.hw_id,))
+    devicelist.touch([data.hw_id])
     return {"status": "success"}
 
 
@@ -142,6 +145,7 @@ async def reconcile_quarantine(
                 "pending_quarantine_reason = NULL WHERE pc_name = $2",
                 (reported, pc_name),
             )
+            devicelist.touch([pc_name])
             _quarantine_resent.pop(pc_name, None)
             return
         now = time.time()
@@ -152,6 +156,7 @@ async def reconcile_quarantine(
         return
     if bool(row["is_quarantined"]) != reported:
         await execute_query("UPDATE clients SET is_quarantined = $1 WHERE pc_name = $2", (reported, pc_name))
+        devicelist.touch([pc_name])
         await add_audit_log(
             pc_name,
             "quarantine_state",
@@ -220,6 +225,7 @@ async def _store_update_result(pc_name: str, payload: dict) -> None:
         await execute_query(
             "UPDATE clients SET running_version=$1 WHERE pc_name=$2", (str(payload.get("running_version")), pc_name)
         )
+        devicelist.touch([pc_name])
     # Yalnızca GERÇEKTEN kötü durumlar kritik loglanır (bkz. pops/update_notice.py)
     notice = update_notice.describe(payload)
     if update_notice.is_critical(payload):
@@ -625,6 +631,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         (verified_hwid, active_hwid),
                     )
                     await bypass.move(active_hwid, verified_hwid)
+                    devicelist.touch([active_hwid])
                     active_hwid = verified_hwid
 
             # Kayıt jetonu: jetonun tüketimi, yeniden kayıt izninin tüketimi ve anahtar tek işlemde (F02). Jeton bu
@@ -725,6 +732,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     except Exception:
                         pass
 
+            # Cihaz satırı (durum, sürüm, sınıf, bypass anahtarı) değişti: panel listesi bir sonraki turda okur
+            devicelist.touch([active_hwid])
             hw_exists = await execute_query(
                 "SELECT cpu FROM hw_inventory WHERE pc_name = $1", (active_hwid,), fetch=True
             )
@@ -815,6 +824,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                             resend["vision_enabled"] = False
                         if resend:
                             await manager.send_command({"action": "set_capabilities", **resend}, active_hwid)
+                    devicelist.touch([active_hwid])
                     await manager.broadcast_to_panels(
                         {"type": "capabilities", "pc_name": active_hwid, "terminal_enabled": t, "vision_enabled": v}
                     )
@@ -822,6 +832,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 if payload.get("type") == "bypass_secret_ack":
                     fp = str(payload.get("fingerprint") or "")[:64]
                     if connected_with_secret and await bypass.confirm(active_hwid, fp):
+                        devicelist.touch([active_hwid])
                         await add_audit_log(
                             active_hwid, "bypass_key", "Cihaza özel bypass anahtarı ajana ulaştı", {"fingerprint": fp}
                         )
@@ -911,6 +922,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 "WHERE pc_name = $1",
                 (active_hwid, close_reason[:200]),
             )
+            devicelist.touch([active_hwid])
             log.info(
                 "ajan bağlantısı kapandı",
                 extra={
@@ -971,6 +983,7 @@ async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depend
     if agent_id is not None and data.event_type in ("agent.auto_quarantine", "agent.offline_bypass"):
         quarantined = data.event_type == "agent.auto_quarantine"
         await execute_query("UPDATE clients SET is_quarantined = $1 WHERE pc_name = $2", (quarantined, pc_name))
+        devicelist.touch([pc_name])
         await add_audit_log(
             pc_name,
             "auto_quarantine" if quarantined else "offline_bypass",
@@ -994,6 +1007,7 @@ async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depend
             "UPDATE clients SET is_quarantined = TRUE, pending_quarantine_action = 'unlock' WHERE pc_name = $1",
             (pc_name,),
         )
+        devicelist.touch([pc_name])
         await notify(
             "unlock_failed", "high", "Karantina kaldırılamadı, ağ yalıtımı sürüyor", (data.reason or "")[:300], pc_name
         )

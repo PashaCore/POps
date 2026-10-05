@@ -171,7 +171,7 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/devices` | require_auth | All devices with status, lab, IP, current user, active window, quarantine flag, agent version, running version and capability state. |
+| GET | `/api/devices` | require_auth | All devices with status, lab, IP, current user, active window, quarantine flag, agent version, running version and capability state. Returns a weak `ETag`; `If-None-Match` with it gives `304` without a body. `?since=<version>` returns only what changed since that version. See [Device list: ETag, changes and push](#device-list-etag-changes-and-push). |
 | GET | `/api/devices/{pc_name}/activity` | require_auth | The latest operations on one device, newest first, `?limit=` (default 15, at most 50): its tasks (`kind: "task"` with `id`, `title`, `command` (first 300 characters), `status`, `exit_code`, `at`, `by`, `source`, `reason`, `ip`, `started_at`, `batch_id`) and its remote-control sessions (`kind: "vision"` with `status`, `at`, `ended_at`, `by`, `reason`, `mandatory`), merged. Returns `{"items": [...]}`. The panel shows it as "Son işlemler" in the PC detail panel. |
 | DELETE | `/api/devices/{pc_name}` | require_admin | Deletes the device, its hardware and software inventory, its Windows Update status, its `agent_logs_v2` rows, its version row and its **device secret**, and closes its socket (code `4000`). |
 | GET | `/api/inventory` | require_auth | Hardware inventory of all devices (`hw_inventory`). |
@@ -187,6 +187,42 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | POST | `/api/set_main_pc` | require_admin | `{lab_name, pc_name}`; sets the lab's main PC, or clears it if it is already that PC. **Deprecated:** `PUT` / `DELETE /api/v1/labs/{lab_name}/main-pc` (no toggle). |
 | POST | `/api/save_lab_layout` | require_admin | `{lab_name, layout_json}`. **Deprecated:** `PUT /api/v1/labs/{lab_name}/layout`. |
 | POST | `/api/set_auto_enroll` | require_admin | **Deprecated:** `PUT /api/v1/settings/auto-enroll`. `{target_lab, expire_date: "YYYY-MM-DD"}`. Devices that connect for the first time on or before that date go into `target_lab`; an enrollment token's lab takes precedence. Stored as `auto_enroll_lab` and written to the audit log. `400` for an invalid date or an empty lab. |
+
+#### Device list: ETag, changes and push
+
+The server keeps a **device list version**: an integer that grows by one when a row of `/api/devices` really
+changes (status, lab, name, user, foreground app, address, quarantine, versions, capabilities, health summary,
+disconnect reason, bypass key state) or a device is added or deleted. A heartbeat that only moves `last_seen`
+forward does not change it. How the server tracks it: [`backend.md`](backend.md#device-list-version).
+
+- **ETag.** Every `200` carries `ETag: W/"d<version>"` and `Cache-Control: private, no-cache`. Send the tag back as
+  `If-None-Match`: if the version is unchanged the answer is `304 Not Modified` with no body. The tag with a
+  `-gzip` suffix (Apache's mod_deflate adds one) matches too. In the first second or two after a server start the
+  list has not been read yet; responses then have no ETag and `since` gets the whole list.
+- **Without `since`** the response is the same array as always (same fields, same order of fields).
+- **`?since=<version>`** (a version from an earlier answer) returns the changes after it:
+
+  ```json
+  {"version": 1791204427412, "full": false,
+   "changed": [{"hw_id": "HW-...", "status": "Offline", "...": "same fields as a list row"}],
+   "removed": ["HW-..."],
+   "seen": {"HW-...": "2026-10-05 10:01:00"}}
+  ```
+
+  `changed` holds the whole current row of every device that changed or appeared, `removed` the IDs of deleted
+  devices, and `seen` devices whose only change is `last_seen` (ID → new value). Apply them to a list keyed by
+  `hw_id` and keep `version` for the next call. When the server cannot answer from its change log it returns
+  `{"version": n, "full": true, "devices": [...]}`, the whole list: `since` is older than the log (10 minutes or
+  5,000 device changes), from before a server restart, `0`, or larger than the current version. `since` that is not
+  an integer is `422`. Versions only grow within one server process and start from the start time in milliseconds,
+  so a version from before a restart always gets `full: true`. Compare versions only with each other.
+- **`last_seen`.** An online device's `last_seen` moves with every heartbeat (every 5 seconds) but is sent only with
+  that device's next real change or, at the latest, a minute later in `seen`. The panel shows `last_seen` only for
+  offline devices, whose value no longer moves.
+- **Push.** When the version changes, panel sockets opened with `?topics=devices` get
+  `{"type": "devices_changed", "version": n}`, at most once a second (see [`/ws/panel`](#wspanel--dashboard)). The panel then asks for `?since=` at once, and polls only every
+  30 seconds while its socket is open (every 5 seconds without one).
+- Changes made outside the server (for example by hand in SQL) are noticed within a minute.
 
 ### Wake-on-LAN
 
@@ -562,7 +598,12 @@ stages; the panel then shows the update as before ("Kuruluyor" until the result)
 
 - **Auth:** the `pops_jwt` cookie only (the `Authorization` header and query-string tokens are not accepted).
   An invalid or revoked session is closed with code `4001`.
-- **Panel → server:** `{"type": "ping"}` (answered with `pong`) and `{"type": "remote_input", "device": ..., ...}`.
+- **Topics:** `/ws/panel?topics=devices` opens a socket that receives only `devices_changed` (and `pong`): the
+  panel's device list uses one on every page that shows devices, so those pages do not receive task output or
+  screenshots. A socket without `topics` receives every other message as before, but not `devices_changed`
+  (existing clients do not get a message type they did not ask for).
+- **Panel → server:** `{"type": "ping"}` (answered with `pong`; the panel's device socket sends one every 45 seconds
+  so that a reverse proxy does not close it as idle) and `{"type": "remote_input", "device": ..., ...}`.
   Remote input is ignored for `viewer`. Real mouse/keyboard input (`input_type` set) and `action: "execute"`
   additionally require an open remote-control session for that device. The user's session is re-checked against
   the database every 10 seconds; a revoked session closes the socket (`4001`) and drops its screen and control
@@ -572,7 +613,10 @@ stages; the panel then shows the update as before ("Kuruluyor" until the result)
   10 seconds, is closed with `1013` and the browser reconnects.
 - **Server → panel:** `terminal_output` (task results), `update_result`, `capabilities`, `capability_denied`,
   `vision_rejected`, `ticket_new` (a ticket opened by an agent); `thumbnail` replies go to admin/superadmin panels only; live `stream_frame`s go only to the
-  session holder (see above).
+  session holder (see above). To sockets opened with `?topics=devices` only: `{"type": "devices_changed",
+  "version": n}` when the device list version changes, at most once a second; fetch
+  `/api/devices?since=<your version>` to get the change (see
+  [Device list: ETag, changes and push](#device-list-etag-changes-and-push)).
 
 ## Automation
 
@@ -593,6 +637,9 @@ export POPS_TOKEN=pops_...            # from Ayarlar → Güvenlik → API jeton
 
 # Devices (viewer or admin token)
 curl -s "$POPS/api/v1/devices" -H "Authorization: Bearer $POPS_TOKEN"
+
+# Only what changed since an earlier answer: keep "version" from the previous ?since= reply (0 the first time)
+curl -s "$POPS/api/v1/devices?since=$VERSION" -H "Authorization: Bearer $POPS_TOKEN"
 
 # Queue a command on one PC (admin token); the task is recorded as created by token:<name>
 curl -s "$POPS/api/v1/tasks" -H "Authorization: Bearer $POPS_TOKEN" -H 'Content-Type: application/json' \

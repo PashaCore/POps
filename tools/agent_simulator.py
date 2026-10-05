@@ -13,6 +13,10 @@ Her sahte ajan gerçek ajan gibi /ws/agent'a bağlanır, dna_payload gönderir v
   --reconnect      bağlantı düşerse ya da kurulamazsa gerçek ajan (0.1.8+) gibi yeniden dener: bekleme =
                    rastgele(0, min(60 sn, 2 sn × 2^deneme)), sağlam bağlantıda sayaç sıfırlanır. "Sunucu yeniden
                    başladı, herkes aynı anda geliyor" senaryosu için --ramp 0 ile kullanın; toparlanma süresi ölçülür.
+  --flap K         dakikada (filo genelinde, ortalama) K ajan bağlantıyı kapatır, --flap-down sn sonra yeniden
+                   bağlanır (panelde Çevrimdışı → Çevrimiçi; cihaz listesi değişikliği)
+  --app-churn K    dakikada (filo genelinde, ortalama) K heartbeat'te ön plandaki uygulama değişir
+                   (bkz. tools/bench_devices_delta.py)
 
 Ölçülenler: bağlanan ajan, heartbeat/sn, HTTP istek/sn ve gecikme yüzdelikleri (p50/p95/p99), hatalar,
 panellere düşen mesaj/sn, sunucu CPU/RSS. Vision kare akışı simüle edilmez (açık denetim oturumu ve tepsi
@@ -103,10 +107,21 @@ def backoff(attempt):
     return random.random() * min(60.0, 2.0 * (2 ** min(attempt, 5)))
 
 
+APPS = ("chrome", "msedge", "winword", "excel", "powerpnt", "explorer", "code", "geogebra", "vlc", "notepad")
+
+
+def per_beat(per_minute, args):
+    """Dakikada filo genelinde 'per_minute' olay için bir heartbeat'teki olasılık."""
+    return per_minute / (args.n * 60.0 / args.hb) if per_minute and args.n else 0.0
+
+
 async def agent(i, args, stop_at, stats):
     attempt = 0
     while True:
         ok = await agent_once(i, args, stop_at, stats)
+        if ok == "flap" and time.monotonic() < stop_at:
+            await asyncio.sleep(args.flap_down)
+            continue
         if not args.reconnect or time.monotonic() >= stop_at:
             return
         attempt = 0 if ok else attempt + 1
@@ -137,6 +152,7 @@ async def agent_once(i, args, stop_at, stats):
                     stats["all_at"] = time.monotonic()
             next_sw = time.monotonic() + (i % 10) if args.software else float("inf")
             next_patch = time.monotonic() + 5 + (i % 10) if args.patches else float("inf")
+            app = "sim"
             while time.monotonic() < stop_at:
                 # gelen komutlar: set_secret'ı yakala, gerisini yut
                 try:
@@ -150,7 +166,14 @@ async def agent_once(i, args, stop_at, stats):
                         pass
                 except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
                     pass
-                await ws.send(json.dumps({"status": "Online", "active_window": "sim", "hostname": hwid(i)}))
+                if random.random() < per_beat(args.flap, args):
+                    stats["flaps"] += 1
+                    await ws.close()
+                    return "flap"
+                if random.random() < per_beat(args.app_churn, args):
+                    app = random.choice([a for a in APPS if a != app])
+                    stats["app_changes"] += 1
+                await ws.send(json.dumps({"status": "Online", "active_window": app, "hostname": hwid(i)}))
                 stats["heartbeats"] += 1
                 now = time.monotonic()
                 auth = {"X-Agent-Id": hwid(i), "X-Agent-Secret": secret} if secret else {}
@@ -228,6 +251,9 @@ async def main():
     p.add_argument("--jwt", default=os.environ.get("POPS_SIM_JWT"))
     p.add_argument("--server-pid", type=int, default=None)
     p.add_argument("--reconnect", action="store_true", help="düşen/kurulamayan bağlantıyı ajan gibi yeniden dene")
+    p.add_argument("--flap", type=float, default=0, help="dakikada kopup yeniden bağlanan ajan (filo geneli)")
+    p.add_argument("--flap-down", type=float, default=5.0, help="kopan ajanın yeniden bağlanmadan önce beklediği sn")
+    p.add_argument("--app-churn", type=float, default=0, help="dakikada ön plandaki uygulama değişimi (filo geneli)")
     args = p.parse_args()
     if (args.software or args.patches) and not args.enroll_token:
         p.error("--software/--patches için --enroll-token gerekir (bu uçlar yalnız anahtarlı ajanı kabul eder)")
@@ -235,7 +261,8 @@ async def main():
         p.error("--panels için --jwt (ya da POPS_SIM_JWT) gerekir")
 
     stats = {"connected": 0, "enrolled": 0, "heartbeats": 0, "errors": 0, "last_error": None, "http": {},
-             "panels": 0, "panel_msgs": 0, "panel_errors": 0, "ever": set(), "retries": 0, "all_at": None}
+             "panels": 0, "panel_msgs": 0, "panel_errors": 0, "ever": set(), "retries": 0, "all_at": None,
+             "flaps": 0, "app_changes": 0}
     t0 = time.monotonic()
     stop_at = t0 + 15 + args.duration + args.n * args.ramp
     tasks = [asyncio.ensure_future(panel(k, args, stop_at, stats)) for k in range(args.panels)]
@@ -269,6 +296,8 @@ async def main():
     print("sustained=%d  heartbeat_writes_per_sec=%.0f  panel_msgs_per_sec=%.0f  (window=%ds, hb=%.1fs)"
           % (stats["connected"] - (0 if args.reconnect else stats["errors"]), (stats["heartbeats"] - hb0) / w,
              (stats["panel_msgs"] - msgs0) / w, w, args.hb))
+    if args.flap or args.app_churn:
+        print("churn: flaps=%d  app_changes=%d (toplam)" % (stats["flaps"], stats["app_changes"]))
     for name, v in sorted(stats["http"].items()):
         total = v["ok"] + v["err"]
         print("http %-9s total=%d  in_window=%d  ok=%d  err=%d %s  p50=%.0fms  p95=%.0fms  p99=%.0fms  mean=%.0fms"
