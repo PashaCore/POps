@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Panel: browser configuration object renamed to `window.POPS_API`** (`assets/pops_config.js`). **Upgrading:** the file ships with the panel and is replaced on update; if you edited it locally, rename the global in your copy.
 - **API: the old RPC paths are deprecated but keep working** (`/api/create_lab`, `/api/move_pcs`, `/api/set_concurrent_limit`, `/api/deploy_orchestration`, … — the list is in `docs/api.md`); the panel still uses them. Unlike `/api/set_main_pc`, the REST name does not toggle: `PUT` sets the main PC, `DELETE` clears it.
 - **API: `task_sequence`.** `POST /api/deploy_orchestration` (and `POST /api/v1/tasks`) accepts `task_sequence` as well as `taskSequence`; sending both is `422`.
 - **Server: the large-upload rule of the reverse proxy also covers `/api/v1`.** The nginx and Apache templates match `^/api/(v1/)?(upload|files|system/upload-release)$`. **Upgrading:** an existing server keeps its own site configuration; to upload files over 8 MB through `/api/v1`, change that line to the new pattern. Plain `/api/upload` is unchanged.
