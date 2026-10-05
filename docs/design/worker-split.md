@@ -406,6 +406,8 @@ Steps marked "real PC" also get the manual check on a test machine: enrol, `exec
   [#138 refactor(agent): command dispatcher and simple handlers (split step a1)](https://github.com/PashaCore/POps/pull/138).
 - **a2. Execute.** `ExecuteHandler`, `WingetInstallHandler`, `ResultOutbox`, `CapabilityGate`. Covered by
   `WorkerCommandTests`, `WorkerResultAckTests`, `CommandResultTests`, `WingetInstallTests` and the protocol vectors.
+  **Done** in
+  [#139 refactor(agent): execute, winget and task handlers (split step a2)](https://github.com/PashaCore/POps/pull/139).
 - **a3. Vision.** `VisionSession`, `VisionHandler`, `RemoteInputHandler`, `CapabilitiesHandler`. This is the riskiest
   step, so it is its own PR, checked on a real PC. Covered by `VisionRelayTests`, the vision cases of `ModulesTests`
   and `WorkerCommandTests`, `TrayPipeLifetimeTests` (connection loss stops capture) and the protocol vectors.
