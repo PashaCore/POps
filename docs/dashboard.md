@@ -2,7 +2,8 @@
 
 The panel is a set of PHP pages in `Dashboard/`. PHP handles sign-in and page access; everything else is done in
 the browser with calls to the backend API (`/api/…`) and the panel WebSocket (`/ws/panel`) on the panel's own
-origin. The interface is in Turkish; page and button names below are quoted as they appear.
+origin. The interface is in Turkish, and most pages can also be shown in English (see the sidebar below); page and
+button names below are quoted as they appear in Turkish.
 
 ## Signing in
 
@@ -11,6 +12,11 @@ origin. The interface is in Turkish; page and button names below are quoted as t
 the session server-side and sets the `httpOnly` `pops_jwt` cookie that the browser then uses for API and
 WebSocket calls. Sessions end when the browser session ends, when the token expires (`JWT_EXPIRE_HOURS`) or when
 the account is changed or deleted; any `401` from the API returns you to the login page.
+
+When a superadmin has set them (**Ayarlar → Genel → Kurum**), the sign-in page shows the organisation's name and
+logo instead of "POps", with a small "POps · Pasha Core" line under the form. On a public demo server
+(`POPS_DEMO_LOGIN`, [`configuration.md`](configuration.md#public-demo-read-only-accounts)) it also shows the demo
+account.
 
 ## Addresses
 

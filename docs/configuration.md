@@ -132,8 +132,8 @@ project-root `.env` (two levels above `Dashboard/includes/`):
 `install.sh` writes `POPS_API_INTERNAL_URL` into the backend's `.env` (for example `/opt/pops/.env`), which the panel
 does not read. If you installed with a `PORT` other than 8000, set the variable for PHP as well.
 
-In the browser, the panel always calls the API and WebSockets on **its own origin** (`assets/pops_config.js` uses
-`window.location`): `https://<panel host>/api/…` and `wss://<panel host>/ws/…`. The web server must therefore proxy
+In the browser, the panel always calls the API and WebSockets on **its own origin** (`assets/pops_config.js` sets
+`window.POPS_API` from `window.location`): `https://<panel host>/api/…` and `wss://<panel host>/ws/…`. The web server must therefore proxy
 `/api/` and `/ws/` of the panel's host to the backend; see [`deployment.md`](deployment.md).
 
 The session and JWT cookies are marked `Secure` automatically when the request is HTTPS (directly or through

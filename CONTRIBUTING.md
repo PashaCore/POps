@@ -53,14 +53,16 @@ a change one person can review in one sitting, and add the label.
 | --- | --- |
 | `Backend/` | FastAPI backend. `server.py` only builds the app. `pops/` holds configuration, database pool, panel security, agent authentication, audit log, connection manager, models, notifications, scheduler, task queue, hardware-DNA identity and Wake-on-LAN; `pops/routers/` has one router per endpoint group. `system_routes.py` covers releases, enrollment, agent updates, self-update and capabilities; `release_verify.py` checks signed releases. `migrate.py` and `migrations/NNNN_*.sql` own the schema. `setup_env.py` is the server setup script. `tests/` holds the integration tests. `storage/`, `updates/` and `releases/` are runtime data and git-ignored. |
 | `Dashboard/` | PHP 8 panel: one file per page (`index.php`, `devices.php`, `system.php`, ...), `includes/` (`header.php` with the fetch wrapper and escaping helpers, `session.php`, `sidebar.php`, `config.example.php`), `assets/`. |
-| `Agent/` | .NET 10 agent: `POps.Agent` (Windows service), `POpsTray`, `POpsWatchdog`, `POpsUpdater`, `POps.Shared` (helpers shared by the programs), `POps.Tests` (xUnit). `POpsVision` is legacy source and is not shipped. `Directory.Build.props` takes the version from `VERSION`. |
+| `Agent/` | .NET 10 agent: `POps.Agent` (Windows service), `POpsTray`, `POpsWatchdog`, `POpsUpdater`, `POps.Shared` (helpers shared by the programs), `POps.Tests` (xUnit). `Directory.Build.props` takes the version from `VERSION` and turns on the warnings gate; `.editorconfig` holds the warning baseline. |
 | `Installer/agent/` | WiX 5 MSI (`Package.wxs`, `POps.Agent.Installer.wixproj`) and its custom actions (`CustomActions/`, .NET Framework 4.7.2). |
 | `Installer/server/` | `install.sh` (native install), `nginx.example.conf`, `pops-deploy-backend` (deploy with health check and rollback), `pops-selfupdate` with its systemd `.path` and `.service` units. |
 | `docker/`, `docker-compose.yml` | Optional container setup ([`docs/docker.md`](docs/docker.md)). |
-| `tools/` | `sign_release.py` (sign, verify, generate keys, self-test) and `agent_simulator.py` (load test). |
+| `tools/` | `sign_release.py` (sign, verify, generate keys, self-test), `backend_lock.sh` (`Backend/requirements.lock`), `export_openapi.py` (`docs/openapi.json`), `agent_simulator.py` (load test), `demo_fleet.py` (fake PCs for the demo), `i18n/` and `html_sinks/` (panel checks). |
+| `tests/e2e/` | Panel end-to-end tests (Playwright). |
+| `deploy/demo/` | The public read-only demo ([`deploy/demo/README.md`](deploy/demo/README.md)). |
 | `keys/` | The release **public** key only. Private keys (`*.key.pem`) are git-ignored and never committed. |
-| `docs/` | Operator and developer documentation, including the decision log `decisions.md`. |
-| `.github/` | `workflows/ci.yml`, `release.yml`, `codeql.yml`; `scripts/ci_schema_check.py`; Dependabot; CODEOWNERS; issue and PR templates. |
+| `docs/` | Operator and developer documentation, including the decision log `decisions.md`, the agent protocol in `protocol/` and `openapi.json`. |
+| `.github/` | `workflows/ci.yml`, `release.yml`, `codeql.yml`, `scorecard.yml`, `lock-refresh.yml`; `scripts/ci_schema_check.py`; Dependabot; CODEOWNERS; issue and PR templates. |
 | `VERSION`, `CHANGELOG.md` | The single version source and the changelog. |
 | `Shared/`, `assets/`, `screenshots/` | A placeholder README; images used by the README. |
 
@@ -137,6 +139,11 @@ dotnet build Agent/POpsUpdater/POpsUpdater.sln -c Release
 dotnet test Agent/POps.Tests/POps.Tests.csproj -c Release
 ```
 
+- **Warnings are errors.** The agent, tray, watchdog, updater and `POps.Shared` build with the .NET 10 recommended
+  analyzers (`AnalysisLevel` `10.0-recommended`) and `TreatWarningsAsErrors` (`Agent/Directory.Build.props`;
+  `POps.Tests` is not gated, and NuGet vulnerability warnings stay warnings). The warnings that existed when the
+  gate was added are listed per file and rule in `Agent/.editorconfig`; any other warning fails the build and CI.
+  When a listed file is clean, delete its lines; never add lines.
 - The tests cover logic only (not the firewall, the pipe or the service), need no administrator rights and run in
   a temporary folder; they never touch `C:\POps`, `C:\POpsData` or `C:\POpsLogs`. They target `net10.0-windows`
   (agent) and `net472` (MSI custom actions).
@@ -247,7 +254,8 @@ python Backend/migrate.py                    # must apply nothing
   skipped) and the `<Version>` that `Agent/Directory.Build.props` produces must be equal. `VERSION` changes only
   in a release commit; between releases, changes collect under `## [Unreleased]`.
 - **Migrations** build an empty database, pass the schema check and are idempotent.
-- **Agent** projects build and the unit tests pass.
+- **Agent** projects build without warnings (warnings are errors outside the `Agent/.editorconfig` baseline) and
+  the unit tests pass.
 
 ### Enforced by review
 
