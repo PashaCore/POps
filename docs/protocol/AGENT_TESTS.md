@@ -101,7 +101,7 @@ isolation callbacks, so no firewall rule or real setting is touched.
    MSI. The bytes are the same as `TestData/manifest.json`.
 
 4. **The agent → server vectors stay in step with the agent.** For each message the agent builds in test 2, the
-   example of the same name (for example `examples/agent-to-server/capabilities.default.json`) must have the same
+   example of the same name (for example `examples/agent-to-server/capabilities.files.json`, the message of a current agent) must have the same
    set of top-level keys, so the vectors show what the agent really sends. A key the agent stops sending, or a new
    one, then fails here and the example and schema are updated in the same change.
 
