@@ -53,11 +53,11 @@ a change one person can review in one sitting, and add the label.
 | --- | --- |
 | `Backend/` | FastAPI backend. `server.py` only builds the app. `pops/` holds configuration, database pool, panel security, agent authentication, audit log, connection manager, models, notifications, scheduler, task queue, hardware-DNA identity and Wake-on-LAN; `pops/routers/` has one router per endpoint group. `system_routes.py` covers releases, enrollment, agent updates, self-update and capabilities; `release_verify.py` checks signed releases. `migrate.py` and `migrations/NNNN_*.sql` own the schema. `setup_env.py` is the server setup script. `tests/` holds the integration tests. `storage/`, `updates/` and `releases/` are runtime data and git-ignored. |
 | `Dashboard/` | PHP 8 panel: one file per page (`index.php`, `devices.php`, `system.php`, ...), `includes/` (`header.php` with the fetch wrapper and escaping helpers, `session.php`, `sidebar.php`, `config.example.php`), `assets/`. |
-| `Agent/` | .NET 10 agent: `POps.Agent` (Windows service), `POpsTray`, `POpsWatchdog`, `POpsUpdater`, `POps.Shared` (helpers shared by the programs), `POps.Tests` (xUnit). `POpsVision` is legacy source and is not shipped. `Directory.Build.props` takes the version from `VERSION`. |
+| `Agent/` | .NET 10 agent: `POps.Agent` (Windows service), `POpsTray`, `POpsWatchdog`, `POpsUpdater`, `POps.Shared` (helpers shared by the programs), `POps.Tests` (xUnit). `Directory.Build.props` takes the version from `VERSION`. |
 | `Installer/agent/` | WiX 5 MSI (`Package.wxs`, `POps.Agent.Installer.wixproj`) and its custom actions (`CustomActions/`, .NET Framework 4.7.2). |
 | `Installer/server/` | `install.sh` (native install), `nginx.example.conf`, `pops-deploy-backend` (deploy with health check and rollback), `pops-selfupdate` with its systemd `.path` and `.service` units. |
 | `docker/`, `docker-compose.yml` | Optional container setup ([`docs/docker.md`](docs/docker.md)). |
-| `tools/` | `sign_release.py` (sign, verify, generate keys, self-test) and `agent_simulator.py` (load test). |
+| `tools/` | `sign_release.py` (sign, verify, generate keys, self-test), `agent_simulator.py` (load test), `bench_charts.py` (capacity SVG charts), `html_sinks/check_html_sinks.py` (panel HTML escaping check), and `i18n/check_i18n.py` (translation dictionary check). |
 | `keys/` | The release **public** key only. Private keys (`*.key.pem`) are git-ignored and never committed. |
 | `docs/` | Operator and developer documentation, including the decision log `decisions.md`. |
 | `.github/` | `workflows/ci.yml`, `release.yml`, `codeql.yml`; `scripts/ci_schema_check.py`; Dependabot; CODEOWNERS; issue and PR templates. |
@@ -245,7 +245,7 @@ python Backend/migrate.py                    # must apply nothing
   skipped) and the `<Version>` that `Agent/Directory.Build.props` produces must be equal. `VERSION` changes only
   in a release commit; between releases, changes collect under `## [Unreleased]`.
 - **Migrations** build an empty database, pass the schema check and are idempotent.
-- **Agent** projects build and the unit tests pass.
+- **Agent** build job compiles four agent projects (`POps.Agent`, `POpsUpdater`, `POpsWatchdog`, and `POpsTray`) and unit tests pass.
 
 ### Enforced by review
 
