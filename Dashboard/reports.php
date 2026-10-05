@@ -85,49 +85,49 @@
 
 <div class="page-header">
     <div>
-        <h1>Raporlar</h1>
+        <h1><?php _e('Raporlar'); ?></h1>
         <div class="summary" id="rpSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="rpExport" data-tip="CSV olarak indir" data-tip-pos="left" aria-label="CSV olarak indir" aria-haspopup="menu"><?php echo pops_icon('download'); ?></button>
+        <button type="button" class="ibtn boxed" id="rpExport" data-tip="<?php _e('CSV olarak indir'); ?>" data-tip-pos="left" aria-label="<?php _e('CSV olarak indir'); ?>" aria-haspopup="menu"><?php echo pops_icon('download'); ?></button>
     </div>
 </div>
 
 <div class="rp-head">
-    <div class="tabs" id="rpTabs" role="tablist" aria-label="Raporlar">
-        <button type="button" class="tab active" data-tab="summary" role="tab" aria-selected="true">Özet</button>
-        <button type="button" class="tab" data-tab="software" role="tab" aria-selected="false">Yazılım</button>
-        <button type="button" class="tab" data-tab="patches" role="tab" aria-selected="false">Windows güncellemeleri</button>
-        <button type="button" class="tab" data-tab="licenses" role="tab" aria-selected="false">Lisanslar</button>
+    <div class="tabs" id="rpTabs" role="tablist" aria-label="<?php _e('Raporlar'); ?>">
+        <button type="button" class="tab active" data-tab="summary" role="tab" aria-selected="true"><?php _e('Özet'); ?></button>
+        <button type="button" class="tab" data-tab="software" role="tab" aria-selected="false"><?php _e('Yazılım'); ?></button>
+        <button type="button" class="tab" data-tab="patches" role="tab" aria-selected="false"><?php _e('Windows güncellemeleri'); ?></button>
+        <button type="button" class="tab" data-tab="licenses" role="tab" aria-selected="false"><?php _e('Lisanslar'); ?></button>
     </div>
     <div class="rp-tools" data-for="summary">
-        <select id="rpDays" aria-label="Dönem">
-            <option value="7">Son 7 gün</option>
-            <option value="30" selected>Son 30 gün</option>
-            <option value="90">Son 90 gün</option>
+        <select id="rpDays" aria-label="<?php _e('Dönem'); ?>">
+            <option value="7"><?php _e('Son {n} gün', ['n' => 7]); ?></option>
+            <option value="30" selected><?php _e('Son {n} gün', ['n' => 30]); ?></option>
+            <option value="90"><?php _e('Son {n} gün', ['n' => 90]); ?></option>
         </select>
     </div>
     <?php if ($rpCanEdit): ?>
     <div class="rp-tools" data-for="licenses" hidden>
-        <button type="button" class="btn" id="licNew"><?php echo pops_icon('plus', 'sm'); ?>Lisans ekle</button>
+        <button type="button" class="btn" id="licNew"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Lisans ekle'); ?></button>
     </div>
     <?php endif; ?>
 </div>
 
 <!-- ÖZET -->
 <section class="rp-pane" id="pane-summary">
-    <div class="kpis rp-kpis" id="kpis"><div class="loading-state" role="status"><span class="spinner"></span>Rapor hazırlanıyor…</div></div>
+    <div class="kpis rp-kpis" id="kpis"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Rapor hazırlanıyor…'); ?></div></div>
     <div class="card rp-card">
-        <div class="card-header"><div><div class="card-title">Günlük yüksek ve kritik olaylar</div><div class="card-subtitle" id="dayMeta"></div></div></div>
+        <div class="card-header"><div><div class="card-title"><?php _e('Günlük yüksek ve kritik olaylar'); ?></div><div class="card-subtitle" id="dayMeta"></div></div></div>
         <div class="card-body" id="dayChart"></div>
     </div>
     <div class="rp-grid">
-        <div class="card rp-card"><div class="card-header"><div class="card-title">Ajan sürümleri</div></div><div class="card-body" id="versions"></div></div>
-        <div class="card rp-card"><div class="card-header"><div><div class="card-title">Ajan güncelleme sonuçları</div><div class="card-subtitle" id="updMeta"></div></div></div><div class="card-body" id="updates"></div></div>
+        <div class="card rp-card"><div class="card-header"><div class="card-title"><?php _e('Ajan sürümleri'); ?></div></div><div class="card-body" id="versions"></div></div>
+        <div class="card rp-card"><div class="card-header"><div><div class="card-title"><?php _e('Ajan güncelleme sonuçları'); ?></div><div class="card-subtitle" id="updMeta"></div></div></div><div class="card-body" id="updates"></div></div>
     </div>
     <div class="rp-grid">
-        <div class="card rp-card"><div class="card-header"><div><div class="card-title">En çok engellenen alan adları</div><div class="card-subtitle">Yasaklı siteye erişim denemeleri</div></div></div><div class="card-body" id="topPolicy"></div></div>
-        <div class="card rp-card"><div class="card-header"><div><div class="card-title">En çok uyarı alan bilgisayarlar</div><div class="card-subtitle">Yüksek ve kritik olaylar</div></div></div><div class="card-body" id="topDevices"></div></div>
+        <div class="card rp-card"><div class="card-header"><div><div class="card-title"><?php _e('En çok engellenen alan adları'); ?></div><div class="card-subtitle"><?php _e('Yasaklı siteye erişim denemeleri'); ?></div></div></div><div class="card-body" id="topPolicy"></div></div>
+        <div class="card rp-card"><div class="card-header"><div><div class="card-title"><?php _e('En çok uyarı alan bilgisayarlar'); ?></div><div class="card-subtitle"><?php _e('Yüksek ve kritik olaylar'); ?></div></div></div><div class="card-body" id="topDevices"></div></div>
     </div>
 </section>
 
@@ -136,33 +136,33 @@
     <div class="rp-bar">
         <div class="search-field">
             <?php echo pops_icon('search', 'sm'); ?>
-            <input type="search" id="swQ" placeholder="Program ya da yayıncı (ör. chrome, adobe)" aria-label="Programlarda ara">
+            <input type="search" id="swQ" placeholder="<?php _e('Program ya da yayıncı (ör. chrome, adobe)'); ?>" aria-label="<?php _e('Programlarda ara'); ?>">
         </div>
         <span class="grow"></span>
         <span class="rp-meta" id="swMeta"></span>
     </div>
     <div class="table-wrap">
         <table class="data-table rp-table">
-            <thead><tr><th>Program</th><th>Sürümler</th><th class="num">Bilgisayar</th></tr></thead>
+            <thead><tr><th>Program</th><th><?php _e('Sürümler'); ?></th><th class="num"><?php _ex('Bilgisayar', 'count'); ?></th></tr></thead>
             <tbody id="swBody"></tbody>
         </table>
     </div>
-    <div class="rp-note">Kurulu program listesi 0.1.5 ve sonraki ajanlardan gelir; programa tıklayınca kurulu olduğu bilgisayarlar görünür.</div>
+    <div class="rp-note"><?php _e('Kurulu program listesi 0.1.5 ve sonraki ajanlardan gelir; programa tıklayınca kurulu olduğu bilgisayarlar görünür.'); ?></div>
 </section>
 
 <!-- WINDOWS GÜNCELLEMELERİ -->
 <section class="rp-pane" id="pane-patches" hidden>
     <div class="rp-bar">
-        <div class="actionbar" id="ptBar" role="toolbar" aria-label="Windows güncelleme işlemleri"></div>
+        <div class="actionbar" id="ptBar" role="toolbar" aria-label="<?php _e('Windows güncelleme işlemleri'); ?>"></div>
         <span class="grow"></span>
-        <div class="segmented" id="ptFilter" role="group" aria-label="Duruma göre süz">
-            <button type="button" data-f="all" class="active" aria-pressed="true">Tümü</button>
-            <button type="button" data-f="need" aria-pressed="false">Eksik</button>
-            <button type="button" data-f="none" aria-pressed="false">Bildirmedi</button>
+        <div class="segmented" id="ptFilter" role="group" aria-label="<?php _e('Duruma göre süz'); ?>">
+            <button type="button" data-f="all" class="active" aria-pressed="true"><?php _e('Tümü'); ?></button>
+            <button type="button" data-f="need" aria-pressed="false"><?php _e('Eksik'); ?></button>
+            <button type="button" data-f="none" aria-pressed="false"><?php _e('Bildirmedi'); ?></button>
         </div>
         <div class="search-field">
             <?php echo pops_icon('search', 'sm'); ?>
-            <input type="search" id="ptQ" placeholder="Bilgisayar ya da sınıf" aria-label="Bilgisayar ara">
+            <input type="search" id="ptQ" placeholder="<?php _e('Bilgisayar ya da sınıf'); ?>" aria-label="<?php _e('Bilgisayar ara'); ?>">
         </div>
     </div>
     <div class="table-wrap">
@@ -171,7 +171,7 @@
             <tbody id="ptBody"></tbody>
         </table>
     </div>
-    <div class="rp-note">Durum, Windows güncelleme bildirimini destekleyen ajanlardan (0.1.5 ve sonrası) gelir; eski ajanlar "Bildirmedi" görünür ve komutları yok sayar. Ajan güncellemeleri kurar ama bilgisayarı yeniden başlatmaz; gerekirse Windows kendi ayarına göre, etkin saatler dışında yeniden başlatır.</div>
+    <div class="rp-note"><?php _e('Durum, Windows güncelleme bildirimini destekleyen ajanlardan (0.1.5 ve sonrası) gelir; eski ajanlar "Bildirmedi" görünür ve komutları yok sayar. Ajan güncellemeleri kurar ama bilgisayarı yeniden başlatmaz; gerekirse Windows kendi ayarına göre, etkin saatler dışında yeniden başlatır.'); ?></div>
 </section>
 
 <!-- LİSANSLAR -->
@@ -179,39 +179,39 @@
     <div class="rp-bar"><div class="summary" id="licSummary" style="margin-top:0"></div></div>
     <div class="table-wrap">
         <table class="data-table rp-table wide">
-            <thead><tr><th>Lisans</th><th>Tür</th><th>Kullanım</th><th>Durum</th><th>Bitiş</th></tr></thead>
+            <thead><tr><th><?php _e('Lisans'); ?></th><th><?php _e('Tür'); ?></th><th><?php _e('Kullanım'); ?></th><th><?php _e('Durum'); ?></th><th><?php _e('Bitiş'); ?></th></tr></thead>
             <tbody id="licBody"></tbody>
         </table>
     </div>
-    <div class="rp-note">Kullanım, yazılım envanterinde program adında eşleşme ifadesi geçen bilgisayarlar sayılarak bulunur (0.1.5 ve sonraki ajanlar). Koltuk boşsa sınırsız (site ya da kampüs) lisans sayılır. Aşım ve 30 gün içinde bitecek lisanslar için günde bir bildirim gider.</div>
+    <div class="rp-note"><?php _e('Kullanım, yazılım envanterinde program adında eşleşme ifadesi geçen bilgisayarlar sayılarak bulunur (0.1.5 ve sonraki ajanlar). Koltuk boşsa sınırsız (site ya da kampüs) lisans sayılır. Aşım ve 30 gün içinde bitecek lisanslar için günde bir bildirim gider.'); ?></div>
 </section>
 
 <?php if ($rpCanEdit): ?>
 <div id="licModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="licModalTitle">
     <div class="modal-box lg">
         <div class="modal-header">
-            <div class="modal-title" id="licModalTitle">Lisans ekle</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
+            <div class="modal-title" id="licModalTitle"><?php _e('Lisans ekle'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <input type="hidden" id="lfId">
-            <div class="field"><label for="lfName">Lisans adı</label><input id="lfName" maxlength="200" placeholder="Örn. Office LTSC 2021 okul lisansı"></div>
+            <div class="field"><label for="lfName"><?php _e('Lisans adı'); ?></label><input id="lfName" maxlength="200" placeholder="<?php _e('Örn. Office LTSC 2021 okul lisansı'); ?>"></div>
             <div class="form-grid">
-                <div class="field"><label for="lfPattern">Eşleşme ifadesi</label><input id="lfPattern" maxlength="200" placeholder="Örn. Office LTSC">
-                    <div class="field-hint">Program adında geçen düz metin; kurulumlar bununla sayılır.</div></div>
-                <div class="field"><label for="lfPublisher">Yayıncı (isteğe bağlı)</label><input id="lfPublisher" maxlength="200" placeholder="Örn. Microsoft"></div>
+                <div class="field"><label for="lfPattern"><?php _e('Eşleşme ifadesi'); ?></label><input id="lfPattern" maxlength="200" placeholder="<?php _e('Örn. Office LTSC'); ?>">
+                    <div class="field-hint"><?php _e('Program adında geçen düz metin; kurulumlar bununla sayılır.'); ?></div></div>
+                <div class="field"><label for="lfPublisher"><?php _e('Yayıncı (isteğe bağlı)'); ?></label><input id="lfPublisher" maxlength="200" placeholder="<?php _e('Örn. Microsoft'); ?>"></div>
             </div>
             <div class="field"><div class="rp-preview" id="lfPreview" aria-live="polite"></div></div>
             <div class="form-grid">
-                <div class="field"><label for="lfSeats">Koltuk</label><input id="lfSeats" type="number" min="0" placeholder="Boş bırakılırsa sınırsız"></div>
-                <div class="field"><label for="lfType">Tür</label><select id="lfType"><option value="per_device">Cihaz başına</option><option value="site">Site ya da kampüs</option><option value="subscription">Abonelik</option></select></div>
-                <div class="field"><label for="lfExpires">Bitiş tarihi (isteğe bağlı)</label><input id="lfExpires" type="date"></div>
+                <div class="field"><label for="lfSeats"><?php _e('Koltuk'); ?></label><input id="lfSeats" type="number" min="0" placeholder="<?php _e('Boş bırakılırsa sınırsız'); ?>"></div>
+                <div class="field"><label for="lfType"><?php _e('Tür'); ?></label><select id="lfType"><option value="per_device"><?php _e('Cihaz başına'); ?></option><option value="site"><?php _e('Site ya da kampüs'); ?></option><option value="subscription"><?php _e('Abonelik'); ?></option></select></div>
+                <div class="field"><label for="lfExpires"><?php _e('Bitiş tarihi (isteğe bağlı)'); ?></label><input id="lfExpires" type="date"></div>
             </div>
-            <div class="field"><label for="lfNotes">Notlar</label><textarea id="lfNotes" maxlength="2000" rows="2" placeholder="Sözleşme no, tedarikçi…"></textarea></div>
+            <div class="field"><label for="lfNotes"><?php _e('Notlar'); ?></label><textarea id="lfNotes" maxlength="2000" rows="2" placeholder="<?php _e('Sözleşme no, tedarikçi…'); ?>"></textarea></div>
         </div>
         <div class="modal-footer">
-            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
-            <button type="button" class="btn" id="lfSave">Kaydet</button>
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="lfSave"><?php _e('Kaydet'); ?></button>
         </div>
     </div>
 </div>
@@ -226,10 +226,12 @@
     const params = new URLSearchParams(location.search);
     const TABS = ['summary', 'software', 'patches', 'licenses'];
     const ui = { tab: TABS.includes(params.get('tab')) ? params.get('tab') : 'summary', loaded: {}, focus: null };
-    const fmtN = (v) => Number(v || 0).toLocaleString('tr-TR');
+    const fmtN = (v) => Number(v || 0).toLocaleString(POps.locale);
     const nHtml = (v) => escapeHtml(fmtN(v));
+    // Sayı kalın: yer tutucuya HTML parçası (POps.tHtml'in üçüncü argümanı)
+    const boldHtml = (v) => `<b>${nHtml(v)}</b>`;
     const devName = (r) => r.display_name || r.hostname || r.pc_name || '';
-    const labName = (l) => l && l !== dev.UNASSIGNED ? l : 'Atanmamış';
+    const labName = (l) => l && l !== dev.UNASSIGNED ? l : POps.t('Atanmamış');
     const UNASSIGNED_KEY = dev.UNASSIGNED;
     // Tablo gövdesinde yükleniyor satırı (POps.setLoading tbody'ye div koyar)
     function loadingRow(tbody, cols, text) {
@@ -261,12 +263,12 @@
         const days = $('rpDays').value;
         const go = (kind) => { window.location.href = '/api/reports/export?kind=' + encodeURIComponent(kind) + '&days=' + encodeURIComponent(days); };
         POps.menu(e.currentTarget, [
-            { header: 'CSV olarak indir' },
-            { label: 'Cihazlar', icon: 'devices', onClick: () => go('devices') },
-            { label: 'Yazılımlar', icon: 'package', onClick: () => go('software') },
-            { label: 'Windows güncellemeleri', icon: 'shield', onClick: () => go('patches') },
-            { label: 'Lisanslar', icon: 'key', onClick: () => go('licenses') },
-            { label: `Olaylar (son ${days} gün)`, icon: 'list', onClick: () => go('events') }
+            { header: POps.t('CSV olarak indir') },
+            { label: POps.t('Cihazlar'), icon: 'devices', onClick: () => go('devices') },
+            { label: POps.t('Yazılımlar'), icon: 'package', onClick: () => go('software') },
+            { label: POps.t('Windows güncellemeleri'), icon: 'shield', onClick: () => go('patches') },
+            { label: POps.t('Lisanslar'), icon: 'key', onClick: () => go('licenses') },
+            { label: POps.tn('Olaylar (son {n} gün)', Number(days)), icon: 'list', onClick: () => go('events') }
         ]);
     });
 
@@ -280,9 +282,9 @@
         return `<a class="kpi" href="${encodeURIComponent(go.page)}${go.f ? '?f=' + encodeURIComponent(go.f) : ''}">${innerHtml}</a>`;
     }
     const UPD = {
-        success: ['ok', 'Başarılı'], rolled_back: ['warn', 'Geri alındı'], pending_reboot: ['warn', 'Yeniden başlatma bekliyor'],
-        rollback_pending_reboot: ['warn', 'Geri alma yeniden başlatma bekliyor'], install_failed: ['', 'Başlamadı, değişiklik yok'],
-        rollback_failed: ['bad', 'Geri alma başarısız'], failed: ['bad', 'Başarısız'], error: ['bad', 'Hata'], rejected: ['bad', 'Reddedildi']
+        success: ['ok', POps.t('Başarılı')], rolled_back: ['warn', POps.t('Geri alındı')], pending_reboot: ['warn', POps.t('Yeniden başlatma bekliyor')],
+        rollback_pending_reboot: ['warn', POps.t('Geri alma yeniden başlatma bekliyor')], install_failed: ['', POps.t('Başlamadı, değişiklik yok')],
+        rollback_failed: ['bad', POps.t('Geri alma başarısız')], failed: ['bad', POps.t('Başarısız')], error: ['bad', POps.t('Hata')], rejected: ['bad', POps.t('Reddedildi')]
     };
     function dayKey(t) { return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
     async function loadSummary() {
@@ -291,8 +293,8 @@
         catch (e) { POps.setError($('kpis'), e); $('kpis').firstElementChild.style.gridColumn = '1 / -1'; ['dayChart', 'versions', 'updates', 'topPolicy', 'topDevices'].forEach(id => { $(id).textContent = '—'; }); return; }
         const dv = d.devices || {}, p = d.patches || {}, sw = d.software || {}, ev = (d.events && d.events.by_risk) || {};
         const labs = (dv.labs || []).filter(l => l.lab && l.lab !== UNASSIGNED_KEY).length;
-        $('rpSummary').innerHTML = `<span class="sum"><b>${nHtml(dv.total)}</b> cihaz</span><span class="sum"><b>${nHtml(labs)}</b> sınıf</span>`
-            + `<span class="sum">son <b>${nHtml(d.days)}</b> gün</span><span class="sum">hazırlandı ${POps.timeHtml(d.generated_at)}</span>`;
+        $('rpSummary').innerHTML = `<span class="sum">${POps.tnHtml('{n} cihaz', dv.total, null, { n: boldHtml(dv.total) })}</span><span class="sum">${POps.tnHtml('{n} sınıf', labs, null, { n: boldHtml(labs) })}</span>`
+            + `<span class="sum">${POps.tnHtml('son {n} gün', d.days, null, { n: boldHtml(d.days) })}</span><span class="sum">${POps.tHtml('hazırlandı {time}', null, { time: POps.timeHtml(d.generated_at) })}</span>`;
 
         // Açık/boşta/kapalı sayıları Cihazlar sayfasıyla aynı kuralla (sunucu özeti boştakileri kapalı sayar)
         await devReady;
@@ -303,17 +305,19 @@
         const notReported = (dv.total || 0) - (p.reporting || 0);
         const unenrolled = (dv.total || 0) - (dv.enrolled || 0);
         const highCrit = (ev.high || 0) + (ev.critical || 0);
+        // Sayı yer tutucusu: n çoğul biçimini seçer, gösterilen sayı biçimlenmiş HTML'dir (nHtml)
+        const cntHtml = (text, v) => POps.tnHtml(text, Number(v || 0), null, { n: nHtml(v) });
         const secFootHtml = p.reporting
-            ? (p.pending_critical ? `<span class="dot bad"></span>${nHtml(p.pending_critical)} kritik` : 'Kritik eksik yok') + (p.reboot_required ? ` · ${nHtml(p.reboot_required)} yeniden başlatma` : '') + (notReported ? ` · ${nHtml(notReported)} bildirmedi` : '')
-            : 'Henüz bildiren bilgisayar yok';
+            ? (p.pending_critical ? `<span class="dot bad"></span>${cntHtml('{n} kritik', p.pending_critical)}` : POps.tHtml('Kritik eksik yok')) + (p.reboot_required ? ` · ${cntHtml('{n} yeniden başlatma', p.reboot_required)}` : '') + (notReported ? ` · ${cntHtml('{n} bildirmedi', notReported)}` : '')
+            : POps.tHtml('Henüz bildiren bilgisayar yok');
         $('kpis').innerHTML = [
-            kpiHtml('Cihaz', nHtml(dv.total), `<span class="dot on"></span>${nHtml(onN)} açık` + (idleN ? ` · ${nHtml(idleN)} boşta` : '') + ` · ${nHtml(off)} kapalı`, { page: 'devices' }),
-            kpiHtml('Kayıtlı ajan', `${nHtml(dv.enrolled)} <small>/ ${nHtml(dv.total)}</small>`,
-                unenrolled ? `<span class="dot warn"></span>${nHtml(unenrolled)} ajan anahtarsız` : '<span class="dot ok"></span>Hepsi anahtarlı', null),
-            kpiHtml('Karantinada', nHtml(dv.quarantined), dv.quarantined ? '<span class="dot bad"></span>Kullanımı kilitli bilgisayar var' : 'Yok', dv.quarantined ? { page: 'devices', f: 'issue' } : null),
-            kpiHtml('Güvenlik güncellemesi bekleyen', nHtml(p.pending_security), secFootHtml, { tab: 'patches' }),
-            kpiHtml('Yazılım bildiren bilgisayar', nHtml(sw.reporting_devices), `${nHtml(sw.titles)} farklı program`, { tab: 'software' }),
-            kpiHtml('Yüksek ve kritik olay', nHtml(highCrit), `son ${nHtml(d.days)} gün · ${nHtml(ev.critical || 0)} kritik · ${nHtml(ev.medium || 0)} orta`, { page: 'logger', f: 'warn' })
+            kpiHtml(POps.t('Cihaz'), nHtml(dv.total), `<span class="dot on"></span>${cntHtml('{n} açık', onN)}` + (idleN ? ` · ${cntHtml('{n} boşta', idleN)}` : '') + ` · ${cntHtml('{n} kapalı', off)}`, { page: 'devices' }),
+            kpiHtml(POps.t('Kayıtlı ajan'), `${nHtml(dv.enrolled)} <small>/ ${nHtml(dv.total)}</small>`,
+                unenrolled ? `<span class="dot warn"></span>${cntHtml('{n} ajan anahtarsız', unenrolled)}` : `<span class="dot ok"></span>${POps.tHtml('Hepsi anahtarlı')}`, null),
+            kpiHtml(POps.t('Karantinada'), nHtml(dv.quarantined), dv.quarantined ? `<span class="dot bad"></span>${POps.tHtml('Kullanımı kilitli bilgisayar var')}` : POps.tHtml('Yok'), dv.quarantined ? { page: 'devices', f: 'issue' } : null),
+            kpiHtml(POps.t('Güvenlik güncellemesi bekleyen'), nHtml(p.pending_security), secFootHtml, { tab: 'patches' }),
+            kpiHtml(POps.t('Yazılım bildiren bilgisayar'), nHtml(sw.reporting_devices), cntHtml('{n} farklı program', sw.titles), { tab: 'software' }),
+            kpiHtml(POps.t('Yüksek ve kritik olay'), nHtml(highCrit), `${cntHtml('son {n} gün', d.days)} · ${cntHtml('{n} kritik', ev.critical || 0)} · ${cntHtml('{n} orta', ev.medium || 0)}`, { page: 'logger', f: 'warn' })
         ].join('');
 
         // Günlük seri: dönemdeki her gün (olay olmayan günler 0)
@@ -322,42 +326,42 @@
         const days = [];
         for (let i = d.days - 1; i >= 0; i--) {
             const t = new Date(); t.setDate(t.getDate() - i);
-            days.push({ v: byDay[dayKey(t)] || 0, label: t.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) });
+            days.push({ v: byDay[dayKey(t)] || 0, label: t.toLocaleDateString(POps.locale, { day: 'numeric', month: 'short' }) });
         }
         const max = Math.max(1, ...days.map(x => x.v));
         const total = days.reduce((a, x) => a + x.v, 0);
-        $('dayMeta').textContent = total ? `Son ${d.days} günde ${fmtN(total)} olay · en yoğun gün ${fmtN(max)}` : `Son ${d.days} gün`;
+        $('dayMeta').textContent = total ? POps.tn('Son {days} günde {total} olay · en yoğun gün {max}', total, { days: fmtN(d.days), total: fmtN(total), max: fmtN(max) }) : POps.tn('Son {n} gün', d.days);
         const mid = days[Math.floor(days.length / 2)];
         $('dayChart').innerHTML = total
-            ? `<div class="daychart" role="img" aria-label="Son ${escapeHtml(fmtN(d.days))} günde günlük yüksek ve kritik olay sayısı; toplam ${escapeHtml(fmtN(total))}">
+            ? `<div class="daychart" role="img" aria-label="${escapeHtml(POps.t('Son {days} günde günlük yüksek ve kritik olay sayısı; toplam {total}', { days: fmtN(d.days), total: fmtN(total) }))}">
                 <div class="grid"><span>${nHtml(max)}</span></div>
-                ${days.map(x => `<div class="col${x.v ? '' : ' zero'}" data-tip="${escapeHtml(x.label)} · ${escapeHtml(fmtN(x.v))} olay" data-tip-pos="up"><div class="bar" style="height:${Number((x.v / max) * 100).toFixed(1)}%"></div></div>`).join('')}
+                ${days.map(x => `<div class="col${x.v ? '' : ' zero'}" data-tip="${escapeHtml(POps.tn('{date} · {count} olay', x.v, { date: x.label, count: fmtN(x.v) }))}" data-tip-pos="up"><div class="bar" style="height:${Number((x.v / max) * 100).toFixed(1)}%"></div></div>`).join('')}
                </div>
                <div class="daychart-axis"><span>${escapeHtml(days[0].label)}</span><span>${escapeHtml(mid.label)}</span><span>${escapeHtml(days[days.length - 1].label)}</span></div>`
-            : `<div class="rp-calm"><span class="dot ok"></span>Bu dönemde yüksek ya da kritik olay yok.</div>`;
+            : `<div class="rp-calm"><span class="dot ok"></span>${POps.tHtml('Bu dönemde yüksek ya da kritik olay yok.')}</div>`;
 
         const versions = d.versions || [];
         const vmax = Math.max(1, ...versions.map(v => v.devices));
         $('versions').innerHTML = versions.length ? versions.map(v => `
-            <div class="hbar"><span class="k" title="${escapeHtml(v.version)}">${escapeHtml(v.version === 'bilinmiyor' ? 'Bilinmiyor' : v.version)}</span>
+            <div class="hbar"><span class="k" title="${escapeHtml(v.version)}">${escapeHtml(v.version === 'bilinmiyor' ? POps.t('Bilinmiyor') : v.version)}</span>
             <div class="t"><div class="f" style="width:${Number((v.devices / vmax) * 100).toFixed(1)}%"></div></div><span class="n">${nHtml(v.devices)}</span></div>`).join('')
-            : '<div class="rp-calm">Bilgisayar yok.</div>';
+            : `<div class="rp-calm">${POps.tHtml('Bilgisayar yok.')}</div>`;
 
         const ups = Object.entries(d.updates || {}).sort((a, b) => b[1] - a[1]);
-        $('updMeta').textContent = `Son ${d.days} gün`;
+        $('updMeta').textContent = POps.tn('Son {n} gün', d.days);
         $('updates').innerHTML = ups.length ? ups.map(([k, c]) => {
-            const u = UPD[k] || ['', 'Bilinmeyen sonuç'];
+            const u = UPD[k] || ['', POps.t('Bilinmeyen sonuç')];
             return `<div class="rp-li"><span class="k"><span class="dot ${escapeHtml(u[0])}"></span><span title="${escapeHtml(k)}">${escapeHtml(u[1])}</span></span><span class="n">${nHtml(c)}</span></div>`;
-        }).join('') : '<div class="rp-calm">Bu dönemde ajan güncellemesi olmadı.</div>';
+        }).join('') : `<div class="rp-calm">${POps.tHtml('Bu dönemde ajan güncellemesi olmadı.')}</div>`;
 
         const tp = (d.events && d.events.top_policy) || [];
-        $('topPolicy').innerHTML = tp.length ? tp.map(r => `<div class="rp-li"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px"><span>${escapeHtml(r.domain || '—')}</span><span class="sub">${escapeHtml(r.category || 'kategori yok')}</span></span><span class="n">${nHtml(r.n)}</span></div>`).join('')
-            : '<div class="rp-calm"><span class="dot ok"></span>Bu dönemde engellenen site yok.</div>';
+        $('topPolicy').innerHTML = tp.length ? tp.map(r => `<div class="rp-li"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px"><span>${escapeHtml(r.domain || '—')}</span><span class="sub">${escapeHtml(r.category || POps.t('kategori yok'))}</span></span><span class="n">${nHtml(r.n)}</span></div>`).join('')
+            : `<div class="rp-calm"><span class="dot ok"></span>${POps.tHtml('Bu dönemde engellenen site yok.')}</div>`;
         const td = (d.events && d.events.top_devices) || [];
         $('topDevices').innerHTML = td.length ? td.map(r => {
             const lab = (dev.find(r.pc_name) || {}).lab;
-            return `<a class="rp-li" href="logger?pc=${encodeURIComponent(r.pc_name)}&amp;f=warn" title="Kayıtlarda göster"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px"><span>${escapeHtml(devName(r))}</span><span class="sub">${escapeHtml(lab ? labName(lab) : r.pc_name)}</span></span><span class="n">${nHtml(r.n)}</span></a>`;
-        }).join('') : '<div class="rp-calm"><span class="dot ok"></span>Bu dönemde uyarı alan bilgisayar yok.</div>';
+            return `<a class="rp-li" href="logger?pc=${encodeURIComponent(r.pc_name)}&amp;f=warn" title="${escapeHtml(POps.t('Kayıtlarda göster'))}"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px"><span>${escapeHtml(devName(r))}</span><span class="sub">${escapeHtml(lab ? labName(lab) : r.pc_name)}</span></span><span class="n">${nHtml(r.n)}</span></a>`;
+        }).join('') : `<div class="rp-calm"><span class="dot ok"></span>${POps.tHtml('Bu dönemde uyarı alan bilgisayar yok.')}</div>`;
     }
     $('rpDays').addEventListener('change', loadSummary);
     $('kpis').addEventListener('click', (e) => { const b = e.target.closest('button[data-go]'); if (b) setTab(b.dataset.go); });
@@ -367,7 +371,7 @@
         return `<div class="drawer-head">
             <div class="drawer-title"><span class="drawer-ico">${POps.iconHtml(icon, 'lg')}</span>
                 <div style="min-width:0"><h2>${escapeHtml(title)}</h2>${subText ? `<div class="sub">${dotCls !== null ? `<span class="dot ${escapeHtml(dotCls)}"></span>` : ''}${escapeHtml(subText)}</div>` : ''}</div></div>
-            <button type="button" class="ibtn sm" data-rp="close" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button>
+            <button type="button" class="ibtn sm" data-rp="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button>
         </div>`;
     }
     // facts: [etiket, düz metin]; times: [etiket, zaman] (göreli, üstüne gelince tam tarih)
@@ -400,7 +404,7 @@
         document.querySelectorAll('.rp-table tbody tr[data-key]').forEach(tr => tr.classList.toggle('is-focus', tr.dataset.key === ui.focus));
     }
     function deviceListHtml(rows, lineOf) {
-        if (!rows.length) return '<div class="rp-calm">Eşleşen bilgisayar yok.</div>';
+        if (!rows.length) return `<div class="rp-calm">${POps.tHtml('Eşleşen bilgisayar yok.')}</div>`;
         return `<div class="rp-dlist">${rows.map(r => `<a href="#" class="rp-li" data-rp="pc" data-host="${escapeHtml(r.pc_name)}"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px;white-space:normal"><span>${escapeHtml(devName(r))}</span><span class="sub" style="white-space:normal">${escapeHtml([labName(r.lab_name), lineOf(r)].filter(Boolean).join(' · '))}</span></span>${POps.iconHtml('right', 'sm')}</a>`).join('')}</div>`;
     }
     document.addEventListener('click', (e) => { if (e.target.closest('#popsDrawer a[data-rp="pc"]')) e.preventDefault(); });
@@ -409,40 +413,40 @@
     let swTimer = null, swItems = [], swSeq = 0;
     async function loadSoftware() {
         const body = $('swBody');
-        if (!swItems.length) loadingRow(body, 3, 'Programlar yükleniyor…');
+        if (!swItems.length) loadingRow(body, 3, POps.t('Programlar yükleniyor…'));
         const seq = ++swSeq;
         let d;
         try { d = await POps.get('/api/software?q=' + encodeURIComponent($('swQ').value.trim())); }
         catch (e) { if (seq === swSeq) { POps.setError(body, e, { tag: 'tr', colspan: 3 }); $('swMeta').textContent = ''; } return; }
         if (seq !== swSeq) return;
         swItems = d.items || [];
-        $('swMeta').innerHTML = d.reporting_devices ? `<b>${nHtml(d.reporting_devices)}</b> bilgisayar bildiriyor · <b>${nHtml(swItems.length)}</b> program` : '';
+        $('swMeta').innerHTML = d.reporting_devices ? `${POps.tnHtml('{n} bilgisayar bildiriyor', d.reporting_devices, null, { n: boldHtml(d.reporting_devices) })} · ${POps.tnHtml('{n} program', swItems.length, null, { n: boldHtml(swItems.length) })}` : '';
         if (!d.reporting_devices) {
-            POps.setEmpty(body, { tag: 'tr', colspan: 3, icon: 'package', title: 'Henüz yazılım bildiren bilgisayar yok', text: 'Kurulu programlar 0.1.5 ve sonraki ajanlardan gelir.' });
+            POps.setEmpty(body, { tag: 'tr', colspan: 3, icon: 'package', title: POps.t('Henüz yazılım bildiren bilgisayar yok'), text: POps.t('Kurulu programlar 0.1.5 ve sonraki ajanlardan gelir.') });
             return;
         }
         if (!swItems.length) {
-            POps.setEmpty(body, { tag: 'tr', colspan: 3, icon: 'filter', title: 'Süzgece uyan program yok', text: 'Başka bir ad ya da yayıncı deneyin.' });
+            POps.setEmpty(body, { tag: 'tr', colspan: 3, icon: 'filter', title: POps.t('Süzgece uyan program yok'), text: POps.t('Başka bir ad ya da yayıncı deneyin.') });
             return;
         }
         body.innerHTML = swItems.map((r, i) => {
             const vs = (r.versions || []).filter(Boolean);
             return `<tr data-key="sw:${escapeHtml(r.name)}" data-i="${Number(i)}">
-                <td><div class="nm">${escapeHtml(r.name)}</div><div class="sub">${escapeHtml(r.publisher || 'Yayıncı bilinmiyor')}</div></td>
-                <td class="faint">${escapeHtml(vs.slice(0, 3).join(', '))}${vs.length > 3 ? ` <span class="faint">ve ${Number(vs.length - 3)} sürüm daha</span>` : ''}</td>
+                <td><div class="nm">${escapeHtml(r.name)}</div><div class="sub">${escapeHtml(r.publisher || POps.t('Yayıncı bilinmiyor'))}</div></td>
+                <td class="faint">${escapeHtml(vs.slice(0, 3).join(', '))}${vs.length > 3 ? ` <span class="faint">${POps.tnHtml('ve {n} sürüm daha', vs.length - 3)}</span>` : ''}</td>
                 <td class="num">${nHtml(r.devices)}</td></tr>`;
         }).join('');
         markFocus();
     }
     async function openSoftware(r) {
         const vs = (r.versions || []).filter(Boolean);
-        const headHtml = drawerHeadHtml(r.name, r.publisher || 'Yayıncı bilinmiyor', null, 'package');
-        const factsHtml = glistHtml([['Kurulu olduğu bilgisayar', fmtN(r.devices)], ['Sürüm', vs.length ? vs.join(', ') : '—']]);
-        const body = openDrawer('sw:' + r.name, headHtml + factsHtml + '<div><h3>Bilgisayarlar</h3><div id="rpDList"><div class="rp-calm">Yükleniyor…</div></div></div>');
+        const headHtml = drawerHeadHtml(r.name, r.publisher || POps.t('Yayıncı bilinmiyor'), null, 'package');
+        const factsHtml = glistHtml([[POps.t('Kurulu olduğu bilgisayar'), fmtN(r.devices)], [POps.t('Sürüm'), vs.length ? vs.join(', ') : '—']]);
+        const body = openDrawer('sw:' + r.name, headHtml + factsHtml + `<div><h3>${POps.tHtml('Bilgisayarlar')}</h3><div id="rpDList"><div class="rp-calm">${POps.tHtml('Yükleniyor…')}</div></div></div>`);
         let rows;
         try { rows = await POps.get('/api/software/devices?name=' + encodeURIComponent(r.name)); }
-        catch (e) { if (POps.drawer.isOpen('sw:' + r.name)) body.querySelector('#rpDList').textContent = 'Liste alınamadı: ' + POps.errorMessage(e); return; }
-        if (POps.drawer.isOpen('sw:' + r.name)) body.querySelector('#rpDList').innerHTML = deviceListHtml(rows || [], (x) => x.version || 'sürüm yok');
+        catch (e) { if (POps.drawer.isOpen('sw:' + r.name)) body.querySelector('#rpDList').textContent = POps.t('Liste alınamadı: {error}', { error: POps.errorMessage(e) }); return; }
+        if (POps.drawer.isOpen('sw:' + r.name)) body.querySelector('#rpDList').innerHTML = deviceListHtml(rows || [], (x) => x.version || POps.t('sürüm yok'));
     }
     $('swBody').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-i]'); if (tr && swItems[tr.dataset.i]) openSoftware(swItems[tr.dataset.i]); });
     $('swQ').addEventListener('input', () => { clearTimeout(swTimer); swTimer = setTimeout(loadSoftware, 300); });
@@ -451,11 +455,11 @@
     const pt = { rows: [], f: 'all', q: '', sel: new Set() };
     const isOn = (r) => r && !POps.isOffline(r);
     function ptState(r) {
-        if (!r.reported) return { cls: 'off', word: 'Bildirmedi' };
-        if (r.pending_critical) return { cls: 'bad', word: 'Kritik eksik' };
-        if (r.pending_security) return { cls: 'warn', word: 'Güvenlik eksik' };
-        if (r.pending_count) return { cls: '', word: 'Güncelleme var' };
-        return { cls: 'ok', word: 'Güncel' };
+        if (!r.reported) return { cls: 'off', word: POps.t('Bildirmedi') };
+        if (r.pending_critical) return { cls: 'bad', word: POps.t('Kritik eksik') };
+        if (r.pending_security) return { cls: 'warn', word: POps.t('Güvenlik eksik') };
+        if (r.pending_count) return { cls: '', word: POps.t('Güncelleme var') };
+        return { cls: 'ok', word: POps.t('Güncel') };
     }
     function ptList() {
         const q = pt.q.toLocaleLowerCase('tr');
@@ -469,59 +473,60 @@
     function ptRowHtml(r) {
         const st = ptState(r);
         const k = r.pc_name;
-        const sub = labName(r.lab_name) + ' · ' + (isOn(r) ? 'açık' : 'kapalı') + (r.agent_version ? ' · ' + r.agent_version : '');
+        const sub = labName(r.lab_name) + ' · ' + (isOn(r) ? POps.t('açık') : POps.t('kapalı')) + (r.agent_version ? ' · ' + r.agent_version : '');
         const pendHtml = r.reported
-            ? `${nHtml(r.pending_count)}${r.pending_security || r.pending_critical ? `<div class="sub">${nHtml(r.pending_security)} güvenlik · ${nHtml(r.pending_critical)} kritik</div>` : ''}`
+            ? `${nHtml(r.pending_count)}${r.pending_security || r.pending_critical ? `<div class="sub">${POps.tHtml('{security} güvenlik · {critical} kritik', { security: fmtN(r.pending_security), critical: fmtN(r.pending_critical) })}</div>` : ''}`
             : '<span class="faint">—</span>';
         return `<tr data-key="pt:${escapeHtml(k)}" data-host="${escapeHtml(k)}" class="${pt.sel.has(k) ? 'is-selected' : ''}">
-            ${CAN_ACT ? `<td class="check-col"><input type="checkbox" class="pt-cb" data-host="${escapeHtml(k)}" ${pt.sel.has(k) ? 'checked' : ''} aria-label="${escapeHtml(devName(r))} seç"></td>` : ''}
+            ${CAN_ACT ? `<td class="check-col"><input type="checkbox" class="pt-cb" data-host="${escapeHtml(k)}" ${pt.sel.has(k) ? 'checked' : ''} aria-label="${escapeHtml(POps.t('{name} seç', { name: devName(r) }))}"></td>` : ''}
             <td><div class="nm">${escapeHtml(devName(r))}</div><div class="sub">${escapeHtml(sub)}</div></td>
             <td><span class="st"><span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.word)}</span></td>
             <td class="num">${pendHtml}</td>
-            <td>${r.reported ? (r.reboot_required ? '<span class="st"><span class="dot warn"></span>Gerekli</span>' : '<span class="faint">Hayır</span>') : '<span class="faint">—</span>'}</td>
+            <td>${r.reported ? (r.reboot_required ? `<span class="st"><span class="dot warn"></span>${POps.tHtml('Gerekli')}</span>` : `<span class="faint">${POps.tHtml('Hayır')}</span>`) : '<span class="faint">—</span>'}</td>
             <td>${r.last_search ? POps.timeHtml(r.last_search) : '<span class="faint">—</span>'}</td>
         </tr>`;
     }
     function ptScope(rows) { return pt.sel.size ? [...pt.sel] : rows.map(r => r.pc_name); }
     function renderPtBar(rows) {
         const bar = $('ptBar');
-        if (!CAN_ACT) { bar.innerHTML = `<span class="scope"><b>${rows.length}</b> bilgisayar</span>`; return; }
+        if (!CAN_ACT) { bar.innerHTML = `<span class="scope">${POps.tnHtml('{n} bilgisayar', rows.length, null, { n: `<b>${rows.length}</b>` })}</span>`; return; }
         const n = pt.sel.size;
         const on = ptScope(rows).filter(h => isOn(pt.rows.find(r => r.pc_name === h))).length;
-        const tgt = (n ? `${n} seçili` : `listedeki ${rows.length}`) + ` · ${on} açık`;
+        const tgt = (n ? POps.tn('{n} seçili', n) : POps.tn('listedeki {n}', rows.length)) + ' · ' + POps.tn('{n} açık', on);
+        const tip = (label) => escapeHtml(POps.t(label) + ' · ' + tgt);
         bar.innerHTML = (n
-            ? `<span class="scope sel">${Number(n)} seçili<button type="button" data-act="clear" aria-label="Seçimi temizle" data-tip="Seçimi temizle">${POps.iconHtml('x', 'sm')}</button></span>`
-            : `<span class="scope">Listedeki <b>${rows.length}</b></span>`)
+            ? `<span class="scope sel">${POps.tnHtml('{n} seçili', n)}<button type="button" data-act="clear" aria-label="${escapeHtml(POps.t('Seçimi temizle'))}" data-tip="${escapeHtml(POps.t('Seçimi temizle'))}">${POps.iconHtml('x', 'sm')}</button></span>`
+            : `<span class="scope">${POps.tnHtml('Listedeki {n}', rows.length, null, { n: `<b>${rows.length}</b>` })}</span>`)
             + '<span class="sep"></span>'
-            + `<button type="button" class="ibtn" data-act="scan" data-tip="Güncellemeleri tara · ${escapeHtml(tgt)}" aria-label="Güncellemeleri tara">${POps.iconHtml('refresh')}</button>`
-            + `<button type="button" class="ibtn" data-act="security" data-tip="Güvenlik güncellemelerini kur · ${escapeHtml(tgt)}" aria-label="Güvenlik güncellemelerini kur">${POps.iconHtml('shield')}</button>`
-            + `<button type="button" class="ibtn" data-act="all" data-tip="Bütün güncellemeleri kur · ${escapeHtml(tgt)}" aria-label="Bütün güncellemeleri kur">${POps.iconHtml('download')}</button>`;
+            + `<button type="button" class="ibtn" data-act="scan" data-tip="${tip('Güncellemeleri tara')}" aria-label="${escapeHtml(POps.t('Güncellemeleri tara'))}">${POps.iconHtml('refresh')}</button>`
+            + `<button type="button" class="ibtn" data-act="security" data-tip="${tip('Güvenlik güncellemelerini kur')}" aria-label="${escapeHtml(POps.t('Güvenlik güncellemelerini kur'))}">${POps.iconHtml('shield')}</button>`
+            + `<button type="button" class="ibtn" data-act="all" data-tip="${tip('Bütün güncellemeleri kur')}" aria-label="${escapeHtml(POps.t('Bütün güncellemeleri kur'))}">${POps.iconHtml('download')}</button>`;
     }
     function renderPatches() {
         const rows = ptList();
         pt.sel = new Set([...pt.sel].filter(h => pt.rows.some(r => r.pc_name === h)));
         const all = rows.length && rows.every(r => pt.sel.has(r.pc_name));
-        $('ptHead').innerHTML = '<tr>' + (CAN_ACT ? `<th class="check-col"><input type="checkbox" id="ptAll" ${all ? 'checked' : ''} aria-label="Listedekilerin hepsini seç"></th>` : '')
-            + '<th>Bilgisayar</th><th>Durum</th><th class="num">Bekleyen</th><th>Yeniden başlatma</th><th>Son tarama</th></tr>';
+        $('ptHead').innerHTML = '<tr>' + (CAN_ACT ? `<th class="check-col"><input type="checkbox" id="ptAll" ${all ? 'checked' : ''} aria-label="${escapeHtml(POps.t('Listedekilerin hepsini seç'))}"></th>` : '')
+            + `<th>${POps.tHtml('Bilgisayar')}</th><th>${POps.tHtml('Durum')}</th><th class="num">${POps.tHtml('Bekleyen')}</th><th>${POps.tHtml('Yeniden başlatma')}</th><th>${POps.tHtml('Son tarama')}</th></tr>`;
         const cnt = { all: pt.rows.length, need: pt.rows.filter(r => r.reported && (r.pending_count || r.reboot_required)).length, none: pt.rows.filter(r => !r.reported).length };
         $('ptFilter').querySelectorAll('button[data-f]').forEach(b => {
             const on = b.dataset.f === pt.f;
             b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
-            b.replaceChildren(document.createTextNode(({ all: 'Tümü', need: 'Eksik', none: 'Bildirmedi' })[b.dataset.f] + ' '), POps.el('span', { className: 'count', text: String(cnt[b.dataset.f]) }));
+            b.replaceChildren(document.createTextNode(POps.t(({ all: 'Tümü', need: 'Eksik', none: 'Bildirmedi' })[b.dataset.f]) + ' '), POps.el('span', { className: 'count', text: String(cnt[b.dataset.f]) }));
         });
         renderPtBar(rows);
         const body = $('ptBody');
         if (!rows.length) {
             POps.setEmpty(body, pt.rows.length
-                ? { tag: 'tr', colspan: 6, icon: 'filter', title: 'Süzgece uyan bilgisayar yok', text: 'Arama ya da süzgeci değiştirin.' }
-                : { tag: 'tr', colspan: 6, icon: 'devices', title: 'Henüz bilgisayar yok' });
+                ? { tag: 'tr', colspan: 6, icon: 'filter', title: POps.t('Süzgece uyan bilgisayar yok'), text: POps.t('Arama ya da süzgeci değiştirin.') }
+                : { tag: 'tr', colspan: 6, icon: 'devices', title: POps.t('Henüz bilgisayar yok') });
             return;
         }
         body.innerHTML = rows.map(ptRowHtml).join('');
         markFocus();
     }
     async function loadPatches() {
-        if (!pt.rows.length) loadingRow($('ptBody'), 6, 'Güncelleme durumu yükleniyor…');
+        if (!pt.rows.length) loadingRow($('ptBody'), 6, POps.t('Güncelleme durumu yükleniyor…'));
         try { pt.rows = await POps.get('/api/patches') || []; }
         catch (e) { POps.setError($('ptBody'), e, { tag: 'tr', colspan: 6 }); $('ptBar').textContent = ''; return; }
         renderPatches();
@@ -530,22 +535,29 @@
             if (r) openPatch(r);
         }
     }
+    // Kurulum onayı: tek bilgisayar (ad) ya da çok bilgisayar (sayı) için ayrı cümle
     const PT_TEXT = {
-        scan: { verb: 'tara', job: 'Windows güncelleme taraması' },
-        security: { q: 'güvenlik güncellemeleri kurulsun mu?', btn: 'kur', msg: 'Güvenlik ve kritik güncellemeler kurulur. Bilgisayarlar yeniden başlatılmaz; gerekirse listede "Yeniden başlatma: Gerekli" görünür.' },
-        all: { q: 'bütün güncellemeler kurulsun mu?', btn: 'kur', msg: 'Bekleyen bütün güncellemeler kurulur; isteğe bağlı ve sürüm yükseltme güncellemeleri kurulmaz. Bilgisayarlar yeniden başlatılmaz; gerekirse listede görünür.' }
+        security: {
+            one: (name) => POps.t('{name} için güvenlik güncellemeleri kurulsun mu?', { name }),
+            many: (n) => POps.tn('{n} bilgisayarda güvenlik güncellemeleri kurulsun mu?', n),
+            msg: () => POps.t('Güvenlik ve kritik güncellemeler kurulur. Bilgisayarlar yeniden başlatılmaz; gerekirse listede "Yeniden başlatma: Gerekli" görünür.')
+        },
+        all: {
+            one: (name) => POps.t('{name} için bütün güncellemeler kurulsun mu?', { name }),
+            many: (n) => POps.tn('{n} bilgisayarda bütün güncellemeler kurulsun mu?', n),
+            msg: () => POps.t('Bekleyen bütün güncellemeler kurulur; isteğe bağlı ve sürüm yükseltme güncellemeleri kurulmaz. Bilgisayarlar yeniden başlatılmaz; gerekirse listede görünür.')
+        }
     };
     async function patchCmd(act, hosts, btn) {
         const on = hosts.filter(h => isOn(pt.rows.find(r => r.pc_name === h)));
         const skipped = hosts.length - on.length;
-        if (!on.length) return POps.toast('warning', hosts.length === 1 ? 'Bilgisayar kapalı; komut gönderilmedi.' : 'Açık bilgisayar yok; komut gönderilmedi.');
-        const who = on.length === 1 ? devName(pt.rows.find(r => r.pc_name === on[0])) : `${on.length} bilgisayar`;
+        if (!on.length) return POps.toast('warning', hosts.length === 1 ? POps.t('Bilgisayar kapalı; komut gönderilmedi.') : POps.t('Açık bilgisayar yok; komut gönderilmedi.'));
         if (act !== 'scan') {
             const t = PT_TEXT[act];
             const ok = await POps.confirm({
-                title: (on.length === 1 ? `${who} için ` : `${on.length} bilgisayarda `) + t.q,
-                message: t.msg, note: skipped ? `Kapalı ${skipped} bilgisayar atlanacak.` : '',
-                confirmText: on.length === 1 ? 'Güncellemeleri kur' : `${on.length} bilgisayara kur`, icon: 'shield'
+                title: on.length === 1 ? t.one(devName(pt.rows.find(r => r.pc_name === on[0]))) : t.many(on.length),
+                message: t.msg(), note: skipped ? POps.tn('Kapalı {n} bilgisayar atlanacak.', skipped) : '',
+                confirmText: on.length === 1 ? POps.t('Güncellemeleri kur') : POps.tn('{n} bilgisayara kur', on.length), icon: 'shield'
             });
             if (!ok) return;
         }
@@ -555,9 +567,9 @@
         try { d = await POps.busy(btn, () => POps.post('/api/patches/' + kind, { target_mode: 'PC', targets: on, scope })); }
         catch (e) { POps.toast('error', POps.errorMessage(e)); return; }
         const sent = ((d && d.dispatched) || []).length, off = ((d && d.skipped_offline) || []).length + skipped, closed = ((d && d.skipped_module_closed) || []).length;
-        const rest = (off ? ` Bağlı olmayan ${off} bilgisayar atlandı.` : '') + (closed ? ` ${closed} bilgisayarda Windows güncelleme modülü kapalı.` : '');
-        if (!sent) { POps.toast('warning', 'İstek hiçbir bilgisayara gönderilemedi.' + rest); return; }
-        POps.toast('success', `${act === 'scan' ? 'Tarama' : 'Kurulum'} isteği ${sent} bilgisayara gönderildi; sonuçlar birkaç dakika içinde gelir.` + rest);
+        const rest = (off ? ' ' + POps.tn('Bağlı olmayan {n} bilgisayar atlandı.', off) : '') + (closed ? ' ' + POps.tn('{n} bilgisayarda Windows güncelleme modülü kapalı.', closed) : '');
+        if (!sent) { POps.toast('warning', POps.t('İstek hiçbir bilgisayara gönderilemedi.') + rest); return; }
+        POps.toast('success', (act === 'scan' ? POps.tn('Tarama isteği {n} bilgisayara gönderildi; sonuçlar birkaç dakika içinde gelir.', sent) : POps.tn('Kurulum isteği {n} bilgisayara gönderildi; sonuçlar birkaç dakika içinde gelir.', sent)) + rest);
         setTimeout(loadPatches, 15000);
     }
     $('ptBar').addEventListener('click', (e) => {
@@ -581,21 +593,21 @@
         const st = ptState(r);
         const on = isOn(r);
         const actsHtml = CAN_ACT ? `<div class="circs">
-                <button type="button" class="circ" data-rp="scan" ${on ? '' : 'disabled'} title="Windows güncellemelerini tara"><span>${POps.iconHtml('refresh')}</span>Tara</button>
-                <button type="button" class="circ" data-rp="security" ${on && r.reported ? '' : 'disabled'} title="Güvenlik ve kritik güncellemeleri kur"><span>${POps.iconHtml('shield')}</span>Güvenlik</button>
-                <button type="button" class="circ" data-rp="all" ${on && r.reported ? '' : 'disabled'} title="Bekleyen bütün güncellemeleri kur"><span>${POps.iconHtml('download')}</span>Tümü</button>
+                <button type="button" class="circ" data-rp="scan" ${on ? '' : 'disabled'} title="${escapeHtml(POps.t('Windows güncellemelerini tara'))}"><span>${POps.iconHtml('refresh')}</span>${POps.tHtml('Tara')}</button>
+                <button type="button" class="circ" data-rp="security" ${on && r.reported ? '' : 'disabled'} title="${escapeHtml(POps.t('Güvenlik ve kritik güncellemeleri kur'))}"><span>${POps.iconHtml('shield')}</span>${POps.tHtml('Güvenlik')}</button>
+                <button type="button" class="circ" data-rp="all" ${on && r.reported ? '' : 'disabled'} title="${escapeHtml(POps.t('Bekleyen bütün güncellemeleri kur'))}"><span>${POps.iconHtml('download')}</span>${POps.tHtml('Tümü')}</button>
             </div>` : '';
         const facts = r.reported ? [
-            ['Bekleyen', fmtN(r.pending_count)], ['Güvenlik', fmtN(r.pending_security)], ['Kritik', fmtN(r.pending_critical)],
-            ['Yeniden başlatma', r.reboot_required ? 'Gerekli' : 'Gerekmiyor'], ['Son sonuç', r.last_result || '—'],
-            ['Sınıf', labName(r.lab_name)], ['Ajan', r.agent_version || '—']
-        ] : [['Sınıf', labName(r.lab_name)], ['Ajan', r.agent_version || '—']];
-        const times = r.reported ? [['Son tarama', r.last_search], ['Son kurulum', r.last_install], ['Son bildirim', r.updated_at]] : [];
+            [POps.t('Bekleyen'), fmtN(r.pending_count)], [POps.t('Güvenlik'), fmtN(r.pending_security)], [POps.t('Kritik'), fmtN(r.pending_critical)],
+            [POps.t('Yeniden başlatma'), r.reboot_required ? POps.t('Gerekli') : POps.t('Gerekmiyor')], [POps.t('Son sonuç'), r.last_result || '—'],
+            [POps.t('Sınıf'), labName(r.lab_name)], [POps.t('Ajan'), r.agent_version || '—']
+        ] : [[POps.t('Sınıf'), labName(r.lab_name)], [POps.t('Ajan'), r.agent_version || '—']];
+        const times = r.reported ? [[POps.t('Son tarama'), r.last_search], [POps.t('Son kurulum'), r.last_install], [POps.t('Son bildirim'), r.updated_at]] : [];
         const ups = r.updates || [];
-        const upsHtml = ups.length ? `<div><h3>Bekleyen güncellemeler</h3>${ups.map(u => `<div class="rp-li"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px;white-space:normal"><span style="white-space:normal">${escapeHtml(u.title || 'Adsız güncelleme')}</span><span class="sub">${escapeHtml([u.kb, u.severity, u.is_security ? 'güvenlik' : ''].filter(Boolean).join(' · '))}</span></span></div>`).join('')}</div>` : '';
-        const noteHtml = r.reported ? '' : '<div class="issue lock">Bu bilgisayarın ajanı Windows güncelleme durumunu bildirmiyor (0.1.5 ve sonrası gerekir).</div>';
-        openDrawer('pt:' + r.pc_name, drawerHeadHtml(devName(r), st.word + (on ? '' : ' · kapalı'), st.cls, 'shield') + actsHtml + noteHtml + glistHtml(facts, times) + upsHtml
-            + `<a href="#" data-rp="pc" data-host="${escapeHtml(r.pc_name)}" style="font-size:var(--text-sm)">Bilgisayarın ayrıntıları</a>`, {
+        const upsHtml = ups.length ? `<div><h3>${POps.tHtml('Bekleyen güncellemeler')}</h3>${ups.map(u => `<div class="rp-li"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px;white-space:normal"><span style="white-space:normal">${escapeHtml(u.title || POps.t('Adsız güncelleme'))}</span><span class="sub">${escapeHtml([u.kb, u.severity, u.is_security ? POps.t('güvenlik') : ''].filter(Boolean).join(' · '))}</span></span></div>`).join('')}</div>` : '';
+        const noteHtml = r.reported ? '' : `<div class="issue lock">${POps.tHtml('Bu bilgisayarın ajanı Windows güncelleme durumunu bildirmiyor (0.1.5 ve sonrası gerekir).')}</div>`;
+        openDrawer('pt:' + r.pc_name, drawerHeadHtml(devName(r), st.word + (on ? '' : ' · ' + POps.t('kapalı')), st.cls, 'shield') + actsHtml + noteHtml + glistHtml(facts, times) + upsHtml
+            + `<a href="#" data-rp="pc" data-host="${escapeHtml(r.pc_name)}" style="font-size:var(--text-sm)">${POps.tHtml('Bilgisayarın ayrıntıları')}</a>`, {
             scan: (b) => patchCmd('scan', [r.pc_name], b),
             security: (b) => patchCmd('security', [r.pc_name], b),
             all: (b) => patchCmd('all', [r.pc_name], b)
@@ -603,29 +615,31 @@
     }
 
     // ---------------------------------------------------------------- LİSANSLAR
-    const LT = { per_device: 'Cihaz başına', site: 'Site ya da kampüs', subscription: 'Abonelik' };
-    const LS = { ok: ['ok', 'Uygun'], over: ['bad', 'Aşım'], expiring: ['warn', 'Bitiyor'], expired: ['bad', 'Süresi doldu'] };
+    const LT = { per_device: POps.t('Cihaz başına'), site: POps.t('Site ya da kampüs'), subscription: POps.t('Abonelik') };
+    const LS = { ok: ['ok', POps.t('Uygun')], over: ['bad', POps.t('Aşım')], expiring: ['warn', POps.t('Bitiyor')], expired: ['bad', POps.t('Süresi doldu')] };
+    // Özet satırındaki sayaçlar ("2 aşım")
+    const LS_COUNT = { over: '{n} aşım', expiring: '{n} bitiyor', expired: '{n} süresi doldu' };
     let licenses = [];
-    const fmtDate = (v) => { const d = POps.toDate(v && v.length === 10 ? v + 'T00:00:00' : v); return d ? d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'; };
+    const fmtDate = (v) => { const d = POps.toDate(v && v.length === 10 ? v + 'T00:00:00' : v); return d ? d.toLocaleDateString(POps.locale, { day: 'numeric', month: 'long', year: 'numeric' }) : '—'; };
     function useHtml(l) {
-        if (l.seats == null) return `<span class="faint">${nHtml(l.installed)} kurulu · sınırsız</span>`;
+        if (l.seats == null) return `<span class="faint">${POps.tHtml('{n} kurulu · sınırsız', null, { n: nHtml(l.installed) })}</span>`;
         const pct = Math.min(100, (l.installed / Math.max(1, l.seats)) * 100);
         return `<span class="use"><span class="pbar"><i class="${l.installed > l.seats ? 'bad' : 'ok'}" style="width:${Number(pct).toFixed(1)}%"></i></span><span>${nHtml(l.installed)} / ${nHtml(l.seats)}</span></span>`;
     }
     async function loadLicenses() {
         const body = $('licBody');
-        if (!licenses.length) loadingRow(body, 5, 'Lisanslar yükleniyor…');
+        if (!licenses.length) loadingRow(body, 5, POps.t('Lisanslar yükleniyor…'));
         let d;
         try { d = await POps.get('/api/licenses'); }
         catch (e) { POps.setError(body, e, { tag: 'tr', colspan: 5 }); return; }
         licenses = d.items || [];
         const sm = d.summary || {};
-        const probHtml = ['over', 'expired', 'expiring'].filter(k => sm[k]).map(k => `<span class="sum"><span class="dot ${escapeHtml(LS[k][0])}"></span><b>${nHtml(sm[k])}</b> ${escapeHtml(LS[k][1].toLocaleLowerCase('tr'))}</span>`).join('');
+        const probHtml = ['over', 'expired', 'expiring'].filter(k => sm[k]).map(k => `<span class="sum"><span class="dot ${escapeHtml(LS[k][0])}"></span>${POps.tnHtml(LS_COUNT[k], Number(sm[k]), null, { n: boldHtml(sm[k]) })}</span>`).join('');
         $('licSummary').innerHTML = licenses.length
-            ? `<span class="sum"><b>${licenses.length}</b> lisans</span>` + (probHtml || '<span class="sum"><span class="dot ok"></span>Hepsi uygun</span>')
+            ? `<span class="sum">${POps.tnHtml('{n} lisans', licenses.length, null, { n: `<b>${licenses.length}</b>` })}</span>` + (probHtml || `<span class="sum"><span class="dot ok"></span>${POps.tHtml('Hepsi uygun')}</span>`)
             : '';
         if (!licenses.length) {
-            POps.setEmpty(body, { tag: 'tr', colspan: 5, icon: 'key', title: 'Tanımlı lisans yok', text: CAN_EDIT_LIC ? '"Lisans ekle" ile koltuk ve bitiş tarihini takip etmeye başlayın.' : 'Bir yönetici lisans eklediğinde burada görünür.' });
+            POps.setEmpty(body, { tag: 'tr', colspan: 5, icon: 'key', title: POps.t('Tanımlı lisans yok'), text: CAN_EDIT_LIC ? POps.t('"Lisans ekle" ile koltuk ve bitiş tarihini takip etmeye başlayın.') : POps.t('Bir yönetici lisans eklediğinde burada görünür.') });
             return;
         }
         body.innerHTML = licenses.map(l => {
@@ -647,26 +661,26 @@
     async function openLicense(l) {
         const st = LS[l.state] || LS.ok;
         const actsHtml = CAN_EDIT_LIC ? `<div class="rp-dacts">
-                <button type="button" class="btn secondary sm" data-rp="edit">${POps.iconHtml('edit', 'sm')}Düzenle</button>
-                <button type="button" class="btn danger-soft sm" data-rp="del">${POps.iconHtml('trash', 'sm')}Sil</button>
+                <button type="button" class="btn secondary sm" data-rp="edit">${POps.iconHtml('edit', 'sm')}${POps.tHtml('Düzenle')}</button>
+                <button type="button" class="btn danger-soft sm" data-rp="del">${POps.iconHtml('trash', 'sm')}${POps.tHtml('Sil')}</button>
             </div>` : '';
         const facts = [
-            ['Eşleşme ifadesi', '"' + l.match_pattern + '"'], ['Yayıncı', l.publisher || 'Her yayıncı'], ['Tür', LT[l.license_type] || l.license_type],
-            ['Koltuk', l.seats == null ? 'Sınırsız' : fmtN(l.seats)], ['Kurulu', fmtN(l.installed)],
-            ['Boş koltuk', l.free == null ? '' : (l.free < 0 ? `${fmtN(-l.free)} fazla kurulum` : fmtN(l.free))],
-            ['Bitiş', l.expires_at ? fmtDate(l.expires_at) : 'Yok'], ['Notlar', l.notes || ''], ['Ekleyen', l.created_by || '']
+            [POps.t('Eşleşme ifadesi'), '"' + l.match_pattern + '"'], [POps.t('Yayıncı'), l.publisher || POps.t('Her yayıncı')], [POps.t('Tür'), LT[l.license_type] || l.license_type],
+            [POps.t('Koltuk'), l.seats == null ? POps.t('Sınırsız') : fmtN(l.seats)], [POps.t('Kurulu'), fmtN(l.installed)],
+            [POps.t('Boş koltuk'), l.free == null ? '' : (l.free < 0 ? POps.tn('{count} fazla kurulum', -l.free, { count: fmtN(-l.free) }) : fmtN(l.free))],
+            [POps.t('Bitiş'), l.expires_at ? fmtDate(l.expires_at) : POps.t('Yok')], [POps.t('Notlar'), l.notes || ''], [POps.t('Ekleyen'), l.created_by || '']
         ];
-        const whyHtml = l.state === 'over' ? `<div class="issue err">Koltuk sayısı aşıldı: ${nHtml(l.installed)} kurulum, ${nHtml(l.seats)} koltuk.</div>`
-            : l.state === 'expired' ? '<div class="issue err">Lisansın süresi doldu.</div>'
-            : l.state === 'expiring' ? '<div class="issue upd">Lisans 30 gün içinde bitiyor.</div>' : '';
-        const body = openDrawer('lic:' + l.id, drawerHeadHtml(l.name, st[1], st[0], 'key') + actsHtml + whyHtml + glistHtml(facts, [['Eklenme', l.created_at]])
-            + '<div><h3>Eşleşen kurulumlar</h3><div id="rpDList"><div class="rp-calm">Yükleniyor…</div></div></div>', {
+        const whyHtml = l.state === 'over' ? `<div class="issue err">${POps.tHtml('Koltuk sayısı aşıldı: {installed} kurulum, {seats} koltuk.', { installed: fmtN(l.installed), seats: fmtN(l.seats) })}</div>`
+            : l.state === 'expired' ? `<div class="issue err">${POps.tHtml('Lisansın süresi doldu.')}</div>`
+            : l.state === 'expiring' ? `<div class="issue upd">${POps.tHtml('Lisans 30 gün içinde bitiyor.')}</div>` : '';
+        const body = openDrawer('lic:' + l.id, drawerHeadHtml(l.name, st[1], st[0], 'key') + actsHtml + whyHtml + glistHtml(facts, [[POps.t('Eklenme'), l.created_at]])
+            + `<div><h3>${POps.tHtml('Eşleşen kurulumlar')}</h3><div id="rpDList"><div class="rp-calm">${POps.tHtml('Yükleniyor…')}</div></div></div>`, {
             edit: () => licEdit(l),
             del: (b) => licDelete(l, b)
         });
         let rows;
         try { rows = await POps.get(`/api/licenses/${encodeURIComponent(l.id)}/devices`); }
-        catch (e) { if (POps.drawer.isOpen('lic:' + l.id)) body.querySelector('#rpDList').textContent = 'Liste alınamadı: ' + POps.errorMessage(e); return; }
+        catch (e) { if (POps.drawer.isOpen('lic:' + l.id)) body.querySelector('#rpDList').textContent = POps.t('Liste alınamadı: {error}', { error: POps.errorMessage(e) }); return; }
         if (POps.drawer.isOpen('lic:' + l.id)) body.querySelector('#rpDList').innerHTML = deviceListHtml(rows || [], (x) => [x.name, x.version].filter(Boolean).join(' '));
     }
     $('licBody').addEventListener('click', (e) => {
@@ -676,13 +690,13 @@
         if (l) openLicense(l);
     });
     async function licDelete(l, btn) {
-        const ok = await POps.confirm({ title: `"${l.name}" lisansı silinsin mi?`, message: 'Kurulumlar etkilenmez; yalnızca bu tanım ve koltuk bilgisi silinir.', confirmText: 'Lisansı sil', danger: true, icon: 'trash' });
+        const ok = await POps.confirm({ title: POps.t('"{name}" lisansı silinsin mi?', { name: l.name }), message: POps.t('Kurulumlar etkilenmez; yalnızca bu tanım ve koltuk bilgisi silinir.'), confirmText: POps.t('Lisansı sil'), danger: true, icon: 'trash' });
         if (!ok) return;
-        if (await POps.act(btn, () => POps.del('/api/licenses/' + encodeURIComponent(l.id)), { success: 'Lisans silindi.' })) { POps.drawer.close(); loadLicenses(); }
+        if (await POps.act(btn, () => POps.del('/api/licenses/' + encodeURIComponent(l.id)), { success: POps.t('Lisans silindi.') })) { POps.drawer.close(); loadLicenses(); }
     }
     function licEdit(l) {
         if (!CAN_EDIT_LIC) return;
-        $('licModalTitle').textContent = l ? 'Lisansı düzenle' : 'Lisans ekle';
+        $('licModalTitle').textContent = l ? POps.t('Lisansı düzenle') : POps.t('Lisans ekle');
         $('lfId').value = l ? l.id : '';
         $('lfName').value = l ? l.name : ''; $('lfPattern').value = l ? l.match_pattern : ''; $('lfPublisher').value = l ? (l.publisher || '') : '';
         $('lfSeats').value = l && l.seats != null ? l.seats : ''; $('lfType').value = l ? l.license_type : 'per_device';
@@ -694,13 +708,13 @@
     async function licPreview() {
         const box = $('lfPreview');
         const q = $('lfPattern').value.trim();
-        if (q.length < 2) { box.textContent = 'Eşleşme ifadesi yazınca uyan programlar burada görünür.'; return; }
+        if (q.length < 2) { box.textContent = POps.t('Eşleşme ifadesi yazınca uyan programlar burada görünür.'); return; }
         try {
             const d = await POps.get('/api/software?limit=8&q=' + encodeURIComponent(q));
             if (q !== $('lfPattern').value.trim()) return;
             box.textContent = (d.items || []).length
-                ? 'Uyan programlar: ' + d.items.map(i => `${i.name} (${fmtN(i.devices)} bilgisayar)`).join(', ')
-                : 'Envanterde bu ifadeye uyan program yok (henüz yazılım bildiren ajan olmayabilir).';
+                ? POps.t('Uyan programlar: {list}', { list: d.items.map(i => POps.tn('{name} ({count} bilgisayar)', Number(i.devices || 0), { name: i.name, count: fmtN(i.devices) })).join(', ') })
+                : POps.t('Envanterde bu ifadeye uyan program yok (henüz yazılım bildiren ajan olmayabilir).');
         } catch (e) { box.textContent = ''; }
     }
     if (CAN_EDIT_LIC) {
@@ -713,7 +727,7 @@
                 seats: $('lfSeats').value === '' ? null : parseInt($('lfSeats').value, 10), license_type: $('lfType').value,
                 expires_at: $('lfExpires').value || null, notes: $('lfNotes').value || null
             };
-            if (await POps.act(e.currentTarget, () => POps.post(id ? '/api/licenses/' + encodeURIComponent(id) : '/api/licenses', body), { success: id ? 'Lisans güncellendi.' : 'Lisans eklendi.' })) {
+            if (await POps.act(e.currentTarget, () => POps.post(id ? '/api/licenses/' + encodeURIComponent(id) : '/api/licenses', body), { success: id ? POps.t('Lisans güncellendi.') : POps.t('Lisans eklendi.') })) {
                 closeModal('licModal');
                 loadLicenses();
             }
