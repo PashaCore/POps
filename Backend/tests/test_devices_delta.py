@@ -36,6 +36,8 @@ KEYS = {
     "active_window", "boot_count", "current_user", "is_quarantined", "agent_version", "running_version",
     "cap_terminal_enabled", "cap_vision_enabled", "cap_server_ca", "cap_terminal_disable_requested",
     "cap_vision_disable_requested", "agent_health", "last_disconnect_at", "last_disconnect_reason", "bypass_key",
+    # dosya aktarımı, Linux ajanı ve winget dallarının eklediği alanlar
+    "cap_files_enabled", "platform", "agent_features",
 }
 FAILS = []
 
