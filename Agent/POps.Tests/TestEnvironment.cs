@@ -80,6 +80,9 @@ namespace POps.Tests
             POpsAgent.BitsDownload.Enabled = false;
             // Sunucu modülleri bellekte tutulur: her test hepsi açık başlar
             POpsAgent.AgentModules.Reset();
+            // Testler gerçek winget'i asla çalıştırmaz (ör. paylaşılan protokol vektörlerindeki winget_install); gereken sınıf
+            // kendi sahtesini kurar
+            POpsAgent.WingetInstall.Locator = () => null;
         }
 
         private static bool IsUnderRoot(string path) =>
