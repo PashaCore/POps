@@ -42,7 +42,7 @@ Known limitations of this version:
 - systemd (the service and the self-update use it).
 - Outbound HTTPS to the POps server, with the WebSocket upgrade allowed.
 
-The package is `Architecture: all` (about 45 KB) and works on amd64 and arm64.
+The package is `Architecture: all` (about 45 KB): pure Python, tested on amd64.
 
 ## Install
 

@@ -387,7 +387,7 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   - it is the backend team's language: the same people can read and change both ends of the protocol;
   - it is tested end to end on Linux CI: the unit tests run on the distribution's own `python3` and packages, and an
     integration job enrolls the agent from the source tree against a real backend over TLS;
-  - the package is small and architecture-independent, so one `.deb` covers amd64 and arm64 lab PCs;
+  - the package is small and architecture-independent: one `.deb` for every lab PC (tested on amd64);
   - the first version's scope (inventory and commands) needs no GUI, capture or system API that Python lacks.
 - **Not chosen now:** .NET would reuse the tested protocol code and `POps.Tests`, but the service host, WMI
   inventory, pipe, tray and MSI updater are Windows-specific and would be rewritten anyway, and it needs either the
