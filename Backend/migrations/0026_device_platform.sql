@@ -1,4 +1,4 @@
--- 0024: cihazın işletim sistemi ailesi (ajanın X-Agent-Platform başlığı; Linux ajanı "linux" gönderir).
+-- 0026: cihazın işletim sistemi ailesi (ajanın X-Agent-Platform başlığı; Linux ajanı "linux" gönderir).
 --   windows | linux
 --   NULL: ajan bildirmiyor (Windows ajanı başlığı göndermez); panel ve API bunu "windows" sayar.
 -- Sunucu, bağlanan ajanın değerini her bağlantıda yazar (bkz. routers/agents.py). Ajan güncellemesi her cihaza kendi

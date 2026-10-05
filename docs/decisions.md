@@ -401,4 +401,4 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   `python3 -I`, which ignores `PYTHON*` variables and user site-packages. The agent cannot pin its library versions:
   it is written against websockets 10 to 17 and cryptography 38 and later, and CI runs it on the distribution
   packages. Self-update installs the `.deb` with `dpkg` from a transient systemd unit and rolls back to the previous
-  package; there is no bundled runtime to update. Linux devices are told apart by `clients.platform` (migration 0024).
+  package; there is no bundled runtime to update. Linux devices are told apart by `clients.platform` (migration 0026).

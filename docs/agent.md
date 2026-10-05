@@ -428,7 +428,7 @@ Different on Linux:
 
 | | Linux agent |
 | --- | --- |
-| Identification | Sends `X-Agent-Platform: linux`; the panel shows **Linux** (`clients.platform`, migration 0024). |
+| Identification | Sends `X-Agent-Platform: linux`; the panel shows **Linux** (`clients.platform`, migration 0026). |
 | Commands | `/bin/sh -c` as root in `/`, clean environment, no input. **Uzak komut** says so and does not offer the Windows-only quick commands. The panel's restart and shut-down commands (`shutdown /r|/s /f /t N`) run as `systemctl reboot|poweroff` after N seconds. |
 | Inventory | Hardware from `/proc` and `/sys`; installed packages from `dpkg-query` (library and debug packages left out; `install_date` from the package's file list). No Windows Update data: the panel shows "—". |
 | Signed-in user | From systemd-logind (active local session, graphical first). |

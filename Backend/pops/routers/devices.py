@@ -162,7 +162,7 @@ async def get_devices(auth: dict = Depends(require_auth)):
             "is_quarantined": r.get("is_quarantined", False),
             "agent_version": r.get("agent_version") or "Bilinmiyor",
             "running_version": r.get("running_version"),
-            # İşletim sistemi ailesi (migration 0024): bildirmeyen (Windows) ajan "windows"
+            # İşletim sistemi ailesi (migration 0026): bildirmeyen (Windows) ajan "windows"
             "platform": r.get("platform") or "windows",
             "cap_terminal_enabled": r.get("cap_terminal_enabled"),
             "cap_vision_enabled": r.get("cap_vision_enabled"),

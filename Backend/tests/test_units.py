@@ -840,7 +840,7 @@ def test_api_v1():
 
 
 def test_agent_platform():
-    """Linux ajanı (migration 0024): platform başlıktan, yoksa ilk mesajdan; bildirmeyen ajan Windows."""
+    """Linux ajanı (migration 0026): platform başlıktan, yoksa ilk mesajdan; bildirmeyen ajan Windows."""
     print("== agent_platform")
     from pops.routers import agents as agents_router
 
