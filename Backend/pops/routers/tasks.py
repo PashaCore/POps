@@ -38,7 +38,7 @@ async def get_tasks(limit: int = 1000, auth: dict = Depends(require_auth)):
     return rows if rows else []
 
 
-@router.post("/api/flush_queue")
+@router.post("/api/flush_queue", deprecated=True)
 async def flush_queue(auth: dict = Depends(require_admin)):
     # F4(b): tüm görev geçmişini silmeden ÖNCE, kimin sildiğini + kaç kayıt olduğunu hash-zincirli loga yaz.
     cnt = await execute_query("SELECT COUNT(*) AS c FROM tasks", fetch=True)
@@ -150,7 +150,7 @@ async def task_status(data: TaskStatusInput, auth: dict = Depends(require_auth))
     ]}
 
 
-@router.post("/api/set_concurrent_limit")
+@router.post("/api/set_concurrent_limit", deprecated=True)
 async def set_concurrent_limit(data: SetLimitInput, auth: dict = Depends(require_admin)):
     await execute_query(
         "INSERT INTO global_settings (key, value) "
@@ -162,7 +162,7 @@ async def set_concurrent_limit(data: SetLimitInput, auth: dict = Depends(require
     return {"status": "success"}
 
 
-@router.get("/api/get_concurrent_limit")
+@router.get("/api/get_concurrent_limit", deprecated=True)
 async def get_concurrent_limit(auth: dict = Depends(require_auth)):
     row = await execute_query("SELECT value FROM global_settings WHERE key = 'concurrent_limit'", fetch=True)
     return {"limit": int(row[0]["value"]) if row else 5}
@@ -212,7 +212,7 @@ def _store_upload(src, dest: str) -> str:
     return h.hexdigest()
 
 
-@router.post("/api/upload", dependencies=[modules.require("deploy")])
+@router.post("/api/upload", dependencies=[modules.require("deploy")], deprecated=True)
 async def upload_file(request: Request, file: UploadFile = File(...), auth: dict = Depends(require_admin)):
     # Dosya adını temizle ("../", mutlak yol, ayraç vb. atılır)
     filename = secure_filename(file.filename or "")
@@ -250,7 +250,7 @@ async def download_file(filename: str, sig: str = ""):
     return FileResponse(file_path, filename=filename)
 
 
-@router.post("/api/add_package", dependencies=[modules.require("deploy")])
+@router.post("/api/add_package", dependencies=[modules.require("deploy")], deprecated=True)
 async def add_package(data: CreatePackageInput, auth: dict = Depends(require_admin)):
     await execute_query(
         "INSERT INTO packages (id, name, type, meta, command, icon, color) "
@@ -262,7 +262,7 @@ async def add_package(data: CreatePackageInput, auth: dict = Depends(require_adm
     return {"status": "success"}
 
 
-@router.post("/api/delete_package", dependencies=[modules.require("deploy")])
+@router.post("/api/delete_package", dependencies=[modules.require("deploy")], deprecated=True)
 async def delete_package(data: DeletePackageInput, auth: dict = Depends(require_admin)):
     await execute_query("DELETE FROM packages WHERE id = $1", (data.id,))
     return {"status": "success"}
@@ -335,13 +335,13 @@ def _orchestration_key(creator: str, data: OrchestrationInput) -> str:
             _recent_orchestrations.pop(key, None)
     return hashlib.sha256(
         json.dumps(
-            [creator, data.target_mode, data.targets, [(t.type, t.command) for t in data.taskSequence]],
+            [creator, data.target_mode, data.targets, [(t.type, t.command) for t in data.task_sequence]],
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
 
 
-@router.post("/api/deploy_orchestration")
+@router.post("/api/deploy_orchestration", deprecated=True)
 async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(require_admin), request: Request = None):
     creator = auth.get("sub")  # F4(a): görevi kuyruklayan admin kaydedilir
     key = _orchestration_key(creator, data)
@@ -369,7 +369,7 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
             )
         # Kütüphaneden paket/betik adımı dosya dağıtımı modülüne, serbest komut uzak komut modülüne bağlıdır; her
         # hedef kendi laboratuvarının ayarıyla denetlenir. Hiçbirinde açık değilse istek reddedilir.
-        needed = "deploy" if any((t.type or "").upper() != "CMD" for t in data.taskSequence) else "terminal"
+        needed = "deploy" if any((t.type or "").upper() != "CMD" for t in data.task_sequence) else "terminal"
         allowed, closed = await modules.split_pcs(needed, [t["pc"] for t in target_pcs])
         if target_pcs and not allowed:
             raise modules.closed_error(needed)
@@ -378,7 +378,7 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         rows = [
             (target["pc"], target["lab"], task.command, (task.name or "")[:200] or None)
-            for target in target_pcs for task in data.taskSequence
+            for target in target_pcs for task in data.task_sequence
         ]
         batch_id = uuid.uuid4().hex[:16]
         reason = (data.reason or "").strip() or None

@@ -697,6 +697,148 @@ def test_server_metrics():
         "güncelleme sonuçları gruplanır")
 
 
+async def _asgi(app, method, path, headers=(), body=b"{}"):
+    """Uygulamayı sunucusuz çağırır (lifespan yok, veritabanı yok). Yönlendirmenin seçtiği uç kapsamda kalır."""
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": method, "scheme": "http",
+        "path": path, "raw_path": path.encode(), "query_string": b"", "root_path": "",
+        "headers": [(k.lower().encode(), v.encode()) for k, v in headers],
+        "client": ("127.0.0.1", 50000), "server": ("unit", 80),
+    }
+    sent = []
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    await app(scope, receive, send)
+    status = next(m["status"] for m in sent if m["type"] == "http.response.start")
+    data = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
+    return status, json.loads(data or b"null"), scope
+
+
+def test_api_v1():
+    """/api/v1 aynı uçlara gider (metrik etiketi rota şablonu, istek sınırı ortak), REST adları doğru işleyiciye
+    yönlenir, task_sequence ve taskSequence kabul edilir, API jetonu CSRF başlığı istemez ama çerez ister."""
+    print("== /api/v1, REST adları, API jetonu")
+    from fastapi import FastAPI, Request
+    from pydantic import ValidationError
+    from slowapi import _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
+
+    from pops import apiversion, metrics, security
+    from pops.models import ApiTokenCreateInput, OrchestrationInput
+
+    chk(apiversion.unversioned("/api/v1/devices/HW-1") == "/api/devices/HW-1", "/api/v1/x -> /api/x")
+    chk(apiversion.unversioned("/api/v10/x") == "/api/v10/x" and apiversion.unversioned("/ws/panel") == "/ws/panel",
+        "başka yollar değişmez")
+
+    seen = []
+
+    async def inner(scope, receive, send):
+        seen.append(scope)
+
+    mw = apiversion.ApiVersionMiddleware(inner)
+    original = {"type": "http", "path": "/api/v1/labs/9/A", "raw_path": b"/api/v1/labs/9%2FA"}
+    asyncio.run(mw(original, None, None))
+    chk(seen[0]["path"] == "/api/labs/9/A" and seen[0]["raw_path"] == b"/api/labs/9%2FA"
+        and original["path"] == "/api/v1/labs/9/A", "yol ve ham yol çevrildi, gelen kapsam değişmedi")
+    asyncio.run(mw({"type": "websocket", "path": "/api/v1/x"}, None, None))
+    chk(seen[1]["path"] == "/api/v1/x", "WebSocket yolu sürümlenmez")
+
+    import server
+    from pops.routers import agents, control, devices, rest, tasks, tokens
+
+    routed = {
+        ("DELETE", "/api/labs/9/A/main-pc"): rest.delete_lab_main_pc,   # eğik çizgili sınıf adı (9/A)
+        ("PUT", "/api/labs/9/A/main-pc"): rest.put_lab_main_pc,
+        ("PUT", "/api/labs/9/A/layout"): rest.put_lab_layout,
+        ("POST", "/api/labs/9/A/wake"): devices.wake_lab,
+        ("DELETE", "/api/labs/9/A"): rest.delete_lab,
+        ("PATCH", "/api/labs/Lab 1"): rest.rename_lab,
+        ("GET", "/api/labs"): devices.get_custom_labs,
+        ("POST", "/api/labs"): devices.create_lab,
+        ("POST", "/api/devices/move"): devices.move_pcs,
+        ("PATCH", "/api/devices/HW-1"): rest.update_device,
+        ("DELETE", "/api/devices/HW-1"): devices.delete_device,
+        ("POST", "/api/devices/HW-1/quarantine"): rest.quarantine_device,
+        ("DELETE", "/api/devices/HW-1/quarantine"): rest.release_device,
+        ("POST", "/api/devices/HW-1/bypass-code"): control.get_bypass_token,
+        ("GET", "/api/settings/task-concurrency"): tasks.get_concurrent_limit,
+        ("PUT", "/api/settings/task-concurrency"): tasks.set_concurrent_limit,
+        ("POST", "/api/tasks"): tasks.deploy_orchestration,
+        ("DELETE", "/api/tasks"): tasks.flush_queue,
+        ("PUT", "/api/agent_policies"): agents.save_policies,
+        ("POST", "/api/create_lab"): devices.create_lab,
+        ("POST", "/api/move_pc"): devices.move_pc,
+        ("GET", "/api/tokens"): tokens.list_tokens,
+        ("DELETE", "/api/tokens/3"): tokens.revoke_token,
+    }
+    wrong = []
+    for (method, path), endpoint in routed.items():
+        status, _, scope = asyncio.run(_asgi(server.app, method, path))
+        if status != 401 or scope.get("endpoint") is not endpoint:
+            wrong.append("%s %s -> %s %s" % (method, path, status, getattr(scope.get("endpoint"), "__name__", None)))
+    chk(not wrong, "REST adları ve eski yollar doğru işleyicide, oturumsuz 401 (%s)" % wrong)
+    chk(len(rest.ALIASES) == len({(m, p) for m, p, _, _ in rest.ALIASES}), "her REST adı bir kez")
+
+    metrics.http_requests.clear()
+    status, _, _ = asyncio.run(_asgi(server.app, "GET", "/api/v1/devices/HW-UNIT-METRIC/activity"))
+    labels = [route for _, route, _ in metrics.http_requests]
+    chk(status == 401 and labels == ["/api/devices/{pc_name}/activity"],
+        "/api/v1 isteği rota şablonuyla sayılır, cihaz adı ve v1 etikete girmez (%s)" % labels)
+
+    status, body, _ = asyncio.run(_asgi(server.app, "POST", "/api/v1/labs", [("Cookie", "pops_jwt=x")]))
+    chk(status == 403 and "CSRF" in body["detail"], "çerezle X-Requested-With'siz değişiklik 403 (CSRF)")
+    status, body, _ = asyncio.run(_asgi(server.app, "POST", "/api/v1/labs", [("Authorization", "Bearer pops_x")]))
+    chk(status == 401 and "API jetonu" in body["detail"], "Bearer API jetonu CSRF başlığı istemez (geçersiz jeton 401)")
+    status, body, _ = asyncio.run(_asgi(server.app, "POST", "/api/v1/labs", [("Cookie", "pops_jwt=pops_x"),
+                                                                             ("X-Requested-With", "XMLHttpRequest")]))
+    chk(status == 401 and "API jetonu" not in body["detail"], "çerezdeki API jetonu jeton sayılmaz")
+
+    # İstek sınırı işleyiciye göre sayılır: /api/v1 ayrı kota açmaz
+    mini = FastAPI()
+    mini.state.limiter = security.limiter
+    mini.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    mini.add_middleware(apiversion.ApiVersionMiddleware)
+
+    @mini.post("/api/unit-limited")
+    @security.limiter.limit("2/minute")
+    async def unit_limited(request: Request):
+        return {"ok": True}
+
+    paths = ("/api/unit-limited", "/api/v1/unit-limited", "/api/v1/unit-limited")
+    codes = [asyncio.run(_asgi(mini, "POST", p))[0] for p in paths]
+    chk(codes == [200, 200, 429], "istek sınırı /api ve /api/v1 arasında ortak (%s)" % codes)
+
+    seq = [{"name": "n", "type": "CMD", "command": "echo"}]
+    a = OrchestrationInput.model_validate({"target_mode": "pc", "targets": ["HW-1"], "task_sequence": seq})
+    b = OrchestrationInput.model_validate({"target_mode": "PC", "targets": ["HW-1"], "taskSequence": seq})
+    chk(a.task_sequence == b.task_sequence and a.target_mode == "PC", "task_sequence ve taskSequence kabul edilir")
+    for bad, why in (
+        ({"task_sequence": seq, "taskSequence": seq}, "ikisi birden"),
+        ({"task_sequence": seq, "x": 1}, "tanınmayan alan"),
+    ):
+        try:
+            OrchestrationInput.model_validate(dict({"target_mode": "PC", "targets": []}, **bad))
+            chk(False, "%s reddedilmeli" % why)
+        except ValidationError:
+            chk(True, "%s reddedildi" % why)
+    try:
+        ApiTokenCreateInput(name="x", role="superadmin")
+        chk(False, "superadmin jetonu reddedilmeli")
+    except ValidationError:
+        chk(True, "jeton rolü superadmin olamaz")
+
+    tok = security.new_api_token()
+    chk(tok.startswith("pops_") and len(tok) >= 5 + 43 and security.api_token_hash(tok) == __import__(
+        "hashlib").sha256(tok.encode()).hexdigest(), "jeton biçimi pops_ + 32 bayt, özet SHA-256")
+    chk(security.is_api_token({"api_token_id": 1}) and not security.is_api_token({"sub": "admin"}),
+        "jeton kimliği ayırt edilir")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -711,6 +853,7 @@ def main():
     test_modules()
     test_release_compare()
     test_server_metrics()
+    test_api_v1()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

@@ -66,7 +66,7 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
     return {"status": "success", "message": f"{pc_name} silindi."}
 
 
-@router.post("/api/wake_pc/{pc_name}")
+@router.post("/api/wake_pc/{pc_name}", deprecated=True)
 async def wake_pc(pc_name: str, auth: dict = Depends(require_admin)):
     row = await execute_query(
         "SELECT c.lab_name, h.mac_address FROM clients c "
@@ -87,7 +87,7 @@ async def wake_pc(pc_name: str, auth: dict = Depends(require_admin)):
     return {"status": "success", "message": "WOL gönderildi."}
 
 
-@router.post("/api/wake_lab/{lab_name}")
+@router.post("/api/wake_lab/{lab_name}", deprecated=True)
 async def wake_lab(lab_name: str, auth: dict = Depends(require_admin)):
     await modules.check("wol", lab=lab_name)
     rows = await execute_query(
@@ -107,7 +107,7 @@ async def wake_lab(lab_name: str, auth: dict = Depends(require_admin)):
     return {"status": "success", "woken_pcs": count}
 
 
-@router.post("/api/wake_all", dependencies=[modules.require("wol")])
+@router.post("/api/wake_all", dependencies=[modules.require("wol")], deprecated=True)
 async def wake_all(auth: dict = Depends(require_admin)):
     rows = await execute_query(
         "SELECT c.lab_name, h.mac_address FROM hw_inventory h JOIN clients c ON h.pc_name = c.pc_name", fetch=True
@@ -270,19 +270,19 @@ async def get_all_logs(
     return rows if rows else []
 
 
-@router.post("/api/create_lab")
+@router.post("/api/create_lab", deprecated=True)
 async def create_lab(data: CreateLabInput, auth: dict = Depends(require_admin)):
     await execute_query("INSERT INTO custom_labs (lab_name) VALUES ($1) ON CONFLICT DO NOTHING", (data.lab_name,))
     return {"status": "success"}
 
 
-@router.get("/api/custom_labs")
+@router.get("/api/custom_labs", deprecated=True)
 async def get_custom_labs(auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT lab_name FROM custom_labs", fetch=True)
     return [row["lab_name"] for row in (rows or [])]
 
 
-@router.post("/api/rename_lab")
+@router.post("/api/rename_lab", deprecated=True)
 async def rename_lab(data: RenameLabInput, auth: dict = Depends(require_admin)):
     # Oturma planı (lab_settings) ve görev kayıtları da yeni ada taşınır; hepsi tek işlemde
     async with db.acquire() as conn:
@@ -299,13 +299,13 @@ async def rename_lab(data: RenameLabInput, auth: dict = Depends(require_admin)):
     return {"status": "success"}
 
 
-@router.post("/api/rename_device")
+@router.post("/api/rename_device", deprecated=True)
 async def rename_device(data: RenameDeviceInput, auth: dict = Depends(require_admin)):
     await execute_query("UPDATE clients SET display_name = $1 WHERE pc_name = $2", (data.display_name, data.pc_name))
     return {"status": "success"}
 
 
-@router.post("/api/delete_lab")
+@router.post("/api/delete_lab", deprecated=True)
 async def delete_lab(data: DeleteLabInput, auth: dict = Depends(require_admin)):
     async with db.acquire() as conn:
         async with conn.transaction():
@@ -315,36 +315,46 @@ async def delete_lab(data: DeleteLabInput, auth: dict = Depends(require_admin)):
     return {"status": "success"}
 
 
-@router.post("/api/move_pc")
+@router.post("/api/move_pc", deprecated=True)
 async def move_pc(data: MovePcInput, auth: dict = Depends(require_admin)):
     await execute_query("UPDATE clients SET lab_name = $1 WHERE pc_name = $2", (data.new_lab, data.pc_name))
     return {"status": "success"}
 
 
-@router.post("/api/move_pcs")
+@router.post("/api/move_pcs", deprecated=True)
 async def move_pcs(data: MovePcsInput, auth: dict = Depends(require_admin)):
     for pc in data.pc_names:
         await execute_query("UPDATE clients SET lab_name = $1 WHERE pc_name = $2", (data.new_lab, pc))
     return {"status": "success"}
 
 
-@router.post("/api/set_main_pc")
-async def set_main_pc(data: SetMainPcInput, auth: dict = Depends(require_admin)):
-    current = await execute_query("SELECT main_pc FROM lab_settings WHERE lab_name = $1", (data.lab_name,), fetch=True)
-    if current and current[0]["main_pc"] == data.pc_name:
-        await execute_query("UPDATE lab_settings SET main_pc = NULL WHERE lab_name = $1", (data.lab_name,))
-        return {"status": "success", "message": f"{data.pc_name} ana bilgisayar yetkisi kaldırıldı."}
-
+async def put_main_pc(lab_name: str, pc_name: str) -> dict:
     await execute_query(
         "INSERT INTO lab_settings (lab_name, main_pc) "
         "VALUES ($1, $2) ON CONFLICT (lab_name) DO UPDATE "
         "SET main_pc=EXCLUDED.main_pc",
-        (data.lab_name, data.pc_name),
+        (lab_name, pc_name),
     )
-    return {"status": "success", "message": f"{data.pc_name} ana bilgisayar yapıldı."}
+    return {"status": "success", "message": f"{pc_name} ana bilgisayar yapıldı."}
 
 
-@router.post("/api/save_lab_layout")
+async def clear_main_pc(lab_name: str) -> dict:
+    await execute_query("UPDATE lab_settings SET main_pc = NULL WHERE lab_name = $1", (lab_name,))
+    return {"status": "success", "message": f"{lab_name} sınıfının ana bilgisayarı kaldırıldı."}
+
+
+@router.post("/api/set_main_pc", deprecated=True)
+async def set_main_pc(data: SetMainPcInput, auth: dict = Depends(require_admin)):
+    """Aynı bilgisayar yeniden seçilirse ana bilgisayar kaldırılır (aç/kapa). REST karşılığı aç/kapa yapmaz:
+    PUT ve DELETE /api/v1/labs/{lab_name}/main-pc (bkz. routers/rest.py)."""
+    current = await execute_query("SELECT main_pc FROM lab_settings WHERE lab_name = $1", (data.lab_name,), fetch=True)
+    if current and current[0]["main_pc"] == data.pc_name:
+        await clear_main_pc(data.lab_name)
+        return {"status": "success", "message": f"{data.pc_name} ana bilgisayar yetkisi kaldırıldı."}
+    return await put_main_pc(data.lab_name, data.pc_name)
+
+
+@router.post("/api/save_lab_layout", deprecated=True)
 async def save_lab_layout(data: SaveLabLayoutInput, auth: dict = Depends(require_admin)):
     await execute_query(
         "INSERT INTO lab_settings (lab_name, layout_json) "
@@ -363,7 +373,7 @@ async def get_lab_settings(auth: dict = Depends(require_auth)):
     }
 
 
-@router.post("/api/set_auto_enroll")
+@router.post("/api/set_auto_enroll", deprecated=True)
 async def set_auto_enroll(data: AutoEnrollInput, auth: dict = Depends(require_admin)):
     """Bitiş tarihine kadar (o gün dahil) İLK kez bağlanan cihazlar bu sınıfa atanır (bkz. agents.py).
     Sınıfı belirtilmiş bir enroll jetonu varsa o önceliklidir."""

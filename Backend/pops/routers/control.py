@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebS
 from pops.config import JWT_COOKIE_NAME
 from pops.db import execute_query
 from pops.models import EndAuditSessionInput, LockdownInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
-from pops.security import require_admin, require_superadmin, verify_jwt, verify_session
+from pops.security import require_admin, require_admin_session, require_superadmin, verify_jwt, verify_session
 from pops.agent_auth import verify_agent_secret
 from pops import auditchain, bypass, modules
 from pops.audit import add_audit_log, log_audit_event
@@ -25,8 +25,10 @@ router = APIRouter()
 PANEL_REVALIDATE_SECONDS = 10
 
 
+# Uzak ekran ve uzaktan girdi yalnızca panel oturumuyla (require_admin_session): kareler oturumu açan kişinin panel
+# soketine gider, API jetonunun soketi yoktur ve bu işlemler bir kişiye bağlı kalmalıdır (D-09, D-21).
 @router.post("/api/audit/session/start")
-async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends(require_admin)):
+async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends(require_admin_session)):
     await modules.check("vision", pc_name=data.target_pc)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     session_id = f"SES-{secrets.token_hex(6).upper()}"
@@ -90,7 +92,7 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
 
 
 @router.post("/api/audit/session/end")
-async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(require_admin)):
+async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(require_admin_session)):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     # Oturumu kapatmadan önce hedef+admin'i öğren ki vision-session yetkisini geri alalım (F1/F12).
     srow = await execute_query(
@@ -105,7 +107,7 @@ async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(req
     return {"status": "success"}
 
 
-@router.post("/api/security/lockdown")
+@router.post("/api/security/lockdown", deprecated=True)
 async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     # Kilitlemek karantina modülüne bağlı; kaldırmak (unlock) ve bypass kodu her zaman çalışır
     await modules.check("quarantine", pc_name=data.target_pc)
@@ -149,7 +151,7 @@ async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     }
 
 
-@router.post("/api/security/unlock")
+@router.post("/api/security/unlock", deprecated=True)
 async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
 
     # Karantina logunu yaz
@@ -189,7 +191,7 @@ async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     }
 
 
-@router.post("/api/security/bypass_token/{pc_name}")
+@router.post("/api/security/bypass_token/{pc_name}", deprecated=True)
 async def get_bypass_token(pc_name: str, response: Response, auth: dict = Depends(require_admin)):
     # Karantinadaki (çevrimdışı) cihaz için tepsi uygulamasına girilecek kod (formüller: pops/bypass.py). Kod
     # durumu değiştirir (günün bir sonraki kodu) ve gizlidir: POST, önbelleğe alınmaz.
@@ -380,7 +382,7 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
 # R-10: durum değiştiren bir işlem olduğu için GET değil POST (bağlantı önizleme/önbellek/CSRF ile tetiklenmesin);
 # yalnız admin (Vision zaten yalnız admin'e açık).
 @router.post("/api/stream/stop")
-async def stop_stream(data: StreamStopInput, auth: dict = Depends(require_admin)):
+async def stop_stream(data: StreamStopInput, auth: dict = Depends(require_admin_session)):
     await manager.send_command({"action": "stop_stream"}, data.pc_name)
     return {"status": "stopped"}
 
@@ -405,7 +407,7 @@ def _flat_remote_input(data: RemoteInputData) -> dict:
 
 
 @router.get("/api/thumbnail/{pc_name}")
-async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin)):
+async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin_session)):
     # F1: ekran önizlemesi salt-okur viewer'a kapalı (yalnız admin/superadmin)
     await modules.check("vision", pc_name=pc_name)
     if pc_name not in manager.active_agents:
@@ -427,7 +429,7 @@ async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin)):
 
 
 @router.post("/api/remote_input")
-async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_admin)):
+async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_admin_session)):
     target = data.device
     await modules.check("vision", pc_name=target)
     # F1: uzaktan girdi yalnızca admin + o cihaz için AÇIK denetim oturumu olan kullanıcıdan

@@ -1,9 +1,11 @@
-"""Panel kimlik doğrulaması: JWT (token_version iptali), rol bağımlılıkları, CSRF, TOTP 2FA, rate limiter."""
+"""Panel kimlik doğrulaması: JWT (token_version iptali), API jetonları, rol bağımlılıkları, CSRF, TOTP 2FA, rate
+limiter."""
 
 import base64
 import datetime
 import hashlib
 import hmac
+import logging
 import secrets
 import struct
 import time
@@ -18,6 +20,8 @@ from slowapi.util import get_remote_address
 
 from pops.config import CSRF_SAFE_METHODS, JWT_ALGO, JWT_COOKIE_NAME, JWT_EXPIRE_H, JWT_SECRET
 from pops.db import execute_query
+
+log = logging.getLogger("pops.security")
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -69,10 +73,79 @@ async def verify_session(payload: Optional[dict]) -> Optional[dict]:
     return {'sub': sub, 'role': rows[0].get('role')}
 
 
+# ── API jetonları (otomasyon) ──────────────────────────────────────────────────
+# "pops_" + 32 bayt rastgele (urlsafe). Sunucuda yalnızca SHA-256 özeti saklanır; jeton oluşturulurken bir kez
+# gösterilir. Yalnızca Authorization: Bearer başlığıyla kabul edilir (çerezde gelen jeton JWT sayılır, geçmez).
+# Rolü viewer ya da admin'dir, asla superadmin değildir; süper admin uçlarına, kullanıcı/jeton yönetimine, 2FA'ya
+# ve uzak ekrana (panel oturumu ister) ulaşamaz. İptal ve süre her istekte veritabanından okunur.
+API_TOKEN_PREFIX = "pops_"
+API_TOKEN_ROLES = ("viewer", "admin")
+# last_used_at en çok bu sıklıkta yazılır (her istekte yazma olmasın)
+API_TOKEN_TOUCH_SECONDS = 60
+_API_TOKEN_MAX_LEN = 128
+
+
+def new_api_token() -> str:
+    return API_TOKEN_PREFIX + secrets.token_urlsafe(32)
+
+
+def api_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def is_api_token(payload: Optional[dict]) -> bool:
+    """Kimlik bir API jetonundan mı (panel oturumundan değil)?"""
+    return bool(payload and payload.get('api_token_id'))
+
+
+async def verify_api_token(token: str) -> Optional[dict]:
+    """Geçerli (iptal edilmemiş, süresi dolmamış) jetonun kimliği: sub = "token:<ad>" (görev ve denetim kayıtlarına
+    böyle yazılır), role = viewer | admin. Geçersizse None."""
+    if not token.startswith(API_TOKEN_PREFIX) or len(token) > _API_TOKEN_MAX_LEN:
+        return None
+    try:
+        rows = await execute_query(
+            "SELECT id, name, role, (last_used_at IS NULL OR last_used_at < NOW() - make_interval(secs => $2)) "
+            "AS stale FROM api_tokens WHERE token_hash = $1 AND revoked_at IS NULL "
+            "AND (expires_at IS NULL OR expires_at > NOW())",
+            (api_token_hash(token), float(API_TOKEN_TOUCH_SECONDS)),
+            fetch=True,
+        )
+    except Exception:
+        log.warning("API jetonu doğrulanamadı", exc_info=True)
+        return None
+    if not rows or rows[0]['role'] not in API_TOKEN_ROLES:
+        return None
+    row = rows[0]
+    if row['stale']:
+        try:
+            await execute_query(
+                "UPDATE api_tokens SET last_used_at = NOW() WHERE id = $1 "
+                "AND (last_used_at IS NULL OR last_used_at < NOW() - make_interval(secs => $2))",
+                (row['id'], float(API_TOKEN_TOUCH_SECONDS)),
+            )
+        except Exception:
+            log.warning("API jetonunun son kullanımı yazılamadı", exc_info=True, extra={"token_id": row['id']})
+    return {'sub': 'token:' + row['name'], 'role': row['role'], 'api_token_id': row['id']}
+
+
 async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security_scheme)):
     token = creds.credentials if creds else request.cookies.get(JWT_COOKIE_NAME)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Token gerekli')
+    if creds and token.startswith(API_TOKEN_PREFIX):
+        # API jetonu çerez değildir, tarayıcı onu kendiliğinden göndermez: CSRF başlığı gerekmez
+        principal = await verify_api_token(token)
+        if not principal:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail='Geçersiz, süresi dolmuş ya da iptal edilmiş API jetonu',
+            )
+        if principal['role'] == 'viewer' and request.method not in CSRF_SAFE_METHODS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail='Görüntüleyici jetonu yalnızca okuma (GET) yapabilir.'
+            )
+        return principal
     # Çerezle doğrulanan, durum değiştiren isteklerde CSRF koruması: özel başlık zorunlu
     # (başka bir site bu başlığı CORS izni olmadan gönderemez)
     if (
@@ -96,10 +169,29 @@ async def require_admin(payload: dict = Depends(require_auth)):
 
 
 async def require_superadmin(payload: dict = Depends(require_auth)):
-    if payload.get('role') != 'superadmin':
+    # API jetonunun rolü hiçbir zaman superadmin değildir; yine de açıkça reddedilir
+    if payload.get('role') != 'superadmin' or is_api_token(payload):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Bu islem icin superadmin yetkisi gereklidir."
         )
+    return payload
+
+
+_SESSION_ONLY = "Bu işlem yalnızca panel oturumuyla yapılır; API jetonu kullanılamaz."
+
+
+async def require_user_session(payload: dict = Depends(require_auth)):
+    """Panel kullanıcısının kendi oturumu (her rol); API jetonu reddedilir. Kullanıcının kendi 2FA ayarları gibi."""
+    if is_api_token(payload):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_SESSION_ONLY)
+    return payload
+
+
+async def require_admin_session(payload: dict = Depends(require_admin)):
+    """Panel oturumundaki admin/superadmin; API jetonu reddedilir. Kullanıcı listesi ve uzak ekran/uzaktan girdi
+    (oturumu açan kişinin panel soketine bağlıdır, otomasyonla kullanılmaz)."""
+    if is_api_token(payload):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_SESSION_ONLY)
     return payload
 
 

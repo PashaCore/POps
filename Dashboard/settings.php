@@ -60,6 +60,13 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     .tf-steps .input-group input { font-family: var(--font-mono); }
     #twofaCode { max-width: 140px; letter-spacing: 0.12em; }
 
+    /* API jetonları */
+    .tok-row .ico.lead { color: var(--text-tertiary); flex: none; }
+    .tok-row .t { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .tok-row .t > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tok-row .d code { font-size: 11.5px; }
+    .tok-row.is-off .t > span:first-child { color: var(--text-tertiary); }
+
     /* Kullanıcı formu */
     .perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; }
     .perm-grid .check { padding: 5px 0; }
@@ -155,6 +162,27 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             </div>
         </div>
     </section>
+
+    <?php if ($isSuper): ?>
+    <section class="sect" data-pane="security" aria-labelledby="hTokens">
+        <div class="sect-head">
+            <h2 id="hTokens">API jetonları</h2>
+            <p>Betikler ve dış sistemler panel girişi olmadan <code>/api/v1</code> uçlarını bu jetonlarla kullanır. Jeton yalnızca oluşturulurken bir kez gösterilir; sunucuda özeti saklanır. Görüntüleyici yalnızca okur; Yönetici günlük işleri yapar ama süper admin işlemlerine, kullanıcılara, jetonlara ve uzak ekrana erişemez. Ayrıntı: <code>docs/api.md</code></p>
+        </div>
+        <div class="sect-body">
+            <div class="set">
+                <div class="srow">
+                    <div class="grow">
+                        <div class="t">Jetonlar</div>
+                        <div class="d" id="tokSummary">Yükleniyor…</div>
+                    </div>
+                    <button type="button" class="btn secondary sm" id="tokNew"><?php echo pops_icon('plus', 'sm'); ?>Jeton oluştur</button>
+                </div>
+            </div>
+            <div class="set" id="tokList" hidden></div>
+        </div>
+    </section>
+    <?php endif; ?>
 
     <section class="sect" data-pane="general" aria-labelledby="hOrg">
         <div class="sect-head">
@@ -281,6 +309,41 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         <div class="modal-footer">
             <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
             <button type="button" class="btn" id="umSave">Kullanıcıyı ekle</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="tokModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title">API jetonu oluştur</div>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x', 'sm'); ?></button>
+        </div>
+        <div class="modal-body">
+            <div class="field" id="tkNameField">
+                <label for="tkName">Ad</label>
+                <input type="text" id="tkName" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Örn. envanter-betigi">
+                <div class="field-error">Harf, rakam, boşluk, nokta, alt çizgi ya da tire; en çok 64 karakter.</div>
+                <div class="field-hint">Jetonla yapılan işler kayıtlara <code>token:ad</code> olarak yazılır. Ad tektir.</div>
+            </div>
+            <div class="field">
+                <span class="field-label">Yetki</span>
+                <div class="segmented block" id="tkRole" role="group" aria-label="Yetki">
+                    <button type="button" data-trole="viewer" aria-pressed="false">Görüntüleyici</button>
+                    <button type="button" data-trole="admin" aria-pressed="false">Yönetici</button>
+                </div>
+                <div class="field-hint" id="tkRoleHint"></div>
+            </div>
+            <div class="field" id="tkDaysField">
+                <label for="tkDays">Geçerlilik (gün)</label>
+                <input type="number" id="tkDays" min="1" max="3650" value="90" inputmode="numeric">
+                <div class="field-error">1 ile 3650 arasında bir sayı girin ya da boş bırakın.</div>
+                <div class="field-hint">Boş bırakılırsa süresiz olur.</div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
+            <button type="button" class="btn" id="tkCreate">Jeton oluştur</button>
         </div>
     </div>
 </div>
@@ -583,6 +646,94 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         catch (e) { $('twofaSecret').select(); POps.toast('warning', 'Kopyalanamadı; anahtarı seçip elle kopyalayın.'); }
     });
     $('twofaSecret').addEventListener('click', (e) => e.target.select());
+
+    // ================= API JETONLARI (yalnızca süper admin) =================
+    // Liste ve iptal: /api/tokens. Jeton yalnızca oluşturma yanıtında gelir ve bir kez gösterilir.
+    const TOKEN_ROLES = {
+        viewer: { word: 'Görüntüleyici', hint: 'Yalnızca okur (GET): cihazlar, görevler, raporlar.' },
+        admin: { word: 'Yönetici', hint: 'Günlük işleri yapar (görev, sınıf, karantina). Süper admin işlemleri, kullanıcılar, jetonlar ve uzak ekran kapalıdır.' }
+    };
+    const TOKEN_STATES = { active: ['ok', 'Etkin'], expired: ['off', 'Süresi doldu'], revoked: ['off', 'İptal edildi'] };
+    let apiTokens = [];
+    let tokenRole = 'viewer';
+    function tokenRowHtml(t) {
+        const st = TOKEN_STATES[t.state] || ['off', t.state || '—'];
+        const role = (TOKEN_ROLES[t.role] || { word: t.role || '—' }).word;
+        const metaHtml = `<code>pops_${escapeHtml(t.token_prefix || '')}…</code>`
+            + ' · oluşturuldu ' + POps.timeHtml(t.created_at) + (t.created_by ? ' · ' + escapeHtml(t.created_by) : '')
+            + ' · son kullanım ' + (t.last_used_at ? POps.timeHtml(t.last_used_at) : 'hiç')
+            + (t.revoked_at ? ' · iptal ' + POps.timeHtml(t.revoked_at) : ' · bitiş ' + (t.expires_at ? POps.timeHtml(t.expires_at) : 'süresiz'));
+        return `<div class="srow tok-row${t.state === 'active' ? '' : ' is-off'}">
+            ${POps.iconHtml('key', 'lead')}
+            <div class="grow">
+                <div class="t"><span>${escapeHtml(t.name)}</span><span class="badge muted">${escapeHtml(role)}</span></div>
+                <div class="d">${metaHtml}</div>
+            </div>
+            <span class="st"><span class="dot ${escapeHtml(st[0])}"></span>${escapeHtml(st[1])}</span>
+            ${t.state === 'revoked' ? '' : `<button type="button" class="ibtn sm" data-revoke="${Number(t.id)}" data-tip="Jetonu iptal et" data-tip-pos="left" aria-label="${escapeHtml(t.name)} jetonunu iptal et">${POps.iconHtml('trash', 'sm')}</button>`}
+        </div>`;
+    }
+    function renderApiTokens() {
+        const active = apiTokens.filter(t => t.state === 'active').length;
+        $('tokSummary').textContent = apiTokens.length
+            ? `${active} etkin` + (apiTokens.length > active ? `, ${apiTokens.length - active} iptal edilmiş ya da süresi dolmuş` : '')
+            : 'Henüz jeton yok.';
+        $('tokList').hidden = !apiTokens.length;
+        $('tokList').innerHTML = apiTokens.map(tokenRowHtml).join('');
+    }
+    async function loadApiTokens() {
+        try { apiTokens = (await POps.get('/api/tokens')) || []; }
+        catch (e) { $('tokSummary').textContent = 'Jetonlar alınamadı: ' + POps.errorMessage(e); return; }
+        renderApiTokens();
+    }
+    function setTokenRole(r) {
+        tokenRole = r;
+        $('tkRole').querySelectorAll('button').forEach(b => { const on = b.dataset.trole === r; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        $('tkRoleHint').textContent = TOKEN_ROLES[r].hint;
+    }
+    async function createApiToken() {
+        document.querySelectorAll('#tokModal .field.has-error').forEach(f => f.classList.remove('has-error'));
+        const name = $('tkName').value.trim();
+        const daysText = $('tkDays').value.trim();
+        const days = daysText === '' ? null : Number(daysText);
+        let bad = false;
+        if (!/^[\p{L}\p{N}_ .-]{1,64}$/u.test(name)) { $('tkNameField').classList.add('has-error'); bad = true; }
+        if (days !== null && !(Number.isInteger(days) && days >= 1 && days <= 3650)) { $('tkDaysField').classList.add('has-error'); bad = true; }
+        if (bad) return;
+        let d = null;
+        const ok = await POps.act($('tkCreate'), async () => { d = await POps.post('/api/tokens', { name, role: tokenRole, expires_days: days }); });
+        if (!ok || !d) return;
+        closeModal('tokModal');
+        loadApiTokens();
+        await POps.alert({
+            title: 'API jetonu hazır', icon: 'key', codes: [d.token], confirmText: 'Kopyaladım, kapat',
+            message: `${d.name} · ${(TOKEN_ROLES[d.role] || { word: d.role }).word} · ${d.expires_at ? POps.fullTime(d.expires_at) + ' tarihine kadar' : 'süresiz'}`,
+            note: 'Jeton bir daha gösterilmez; şimdi kopyalayıp güvenli bir yerde saklayın. İsteklerde Authorization: Bearer <jeton> başlığıyla /api/v1 uçlarına gönderin.'
+        });
+    }
+    async function revokeApiToken(id) {
+        const t = apiTokens.find(x => x.id === id);
+        if (!t) return;
+        const ok = await POps.confirm({ title: `${t.name} jetonu iptal edilsin mi?`, message: 'Bu jetonu kullanan betikler hemen erişimini kaybeder. Bu işlem geri alınamaz; jeton listede iptal edilmiş olarak kalır.', confirmText: 'Jetonu iptal et', danger: true, icon: 'trash' });
+        if (!ok) return;
+        if (await POps.act(null, () => POps.del('/api/tokens/' + encodeURIComponent(id)), { success: `${t.name} iptal edildi.` })) loadApiTokens();
+    }
+    if (IS_SUPER && $('tokNew')) {
+        $('tokNew').addEventListener('click', () => {
+            $('tkName').value = '';
+            $('tkDays').value = '90';
+            document.querySelectorAll('#tokModal .field.has-error').forEach(f => f.classList.remove('has-error'));
+            setTokenRole('viewer');
+            openModal('tokModal');
+            setTimeout(() => $('tkName').focus(), 50);
+        });
+        $('tkRole').addEventListener('click', (e) => { const b = e.target.closest('button[data-trole]'); if (b) setTokenRole(b.dataset.trole); });
+        $('tkCreate').addEventListener('click', createApiToken);
+        $('tokModal').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); createApiToken(); } });
+        ['tkName', 'tkDays'].forEach(id => $(id).addEventListener('input', (e) => e.target.closest('.field').classList.remove('has-error')));
+        $('tokList').addEventListener('click', (e) => { const b = e.target.closest('[data-revoke]'); if (b) revokeApiToken(Number(b.dataset.revoke)); });
+        loadApiTokens();
+    }
 
     // ================= KURUM =================
     // Giriş ekranındaki kurum adı ve logosu: GET /api/branding (oturumsuz), değiştirmek yalnızca süper admin

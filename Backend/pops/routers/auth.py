@@ -25,9 +25,9 @@ from pops.security import (
     create_jwt,
     create_totp_challenge,
     limiter,
-    require_admin,
-    require_auth,
+    require_admin_session,
     require_superadmin,
+    require_user_session,
     totp_provisioning_uri,
     verify_totp_challenge,
 )
@@ -129,18 +129,18 @@ async def admin_login_totp(request: Request, data: TotpLoginInput):
     return _login_success(u)
 
 
-# ── 2FA kayıt/yönetim (giriş yapmış kullanıcı kendi 2FA'sını yönetir) ─────────────
+# ── 2FA kayıt/yönetim (giriş yapmış kullanıcı kendi 2FA'sını yönetir; API jetonu kullanamaz) ──
 
 
 @router.get("/api/admin/2fa/status")
-async def totp_status(auth: dict = Depends(require_auth)):
+async def totp_status(auth: dict = Depends(require_user_session)):
     rows = await execute_query("SELECT totp_enabled FROM users WHERE username=$1", (auth['sub'],), fetch=True)
     return {"enabled": bool(rows and rows[0].get('totp_enabled'))}
 
 
 @router.post("/api/admin/2fa/setup")
 @limiter.limit("10/minute")
-async def totp_setup(request: Request, auth: dict = Depends(require_auth)):
+async def totp_setup(request: Request, auth: dict = Depends(require_user_session)):
     """Yeni gizli anahtar üretir (henüz zorunlu DEĞİL; onaylanınca aktifleşir). QR için
     otpauth URI'si + manuel giriş için base32 anahtar döner."""
     rows = await execute_query("SELECT totp_enabled FROM users WHERE username=$1", (auth['sub'],), fetch=True)
@@ -156,7 +156,7 @@ async def totp_setup(request: Request, auth: dict = Depends(require_auth)):
 
 @router.post("/api/admin/2fa/enable")
 @limiter.limit("10/minute")
-async def totp_enable(request: Request, data: TotpEnableInput, auth: dict = Depends(require_auth)):
+async def totp_enable(request: Request, data: TotpEnableInput, auth: dict = Depends(require_user_session)):
     """Kurulumdaki anahtarı bir kod ONAYLAYARAK aktifleştirir. Kod doğrulanmadan aktif
     edilmez → yanlış kurulumla kilitlenme olmaz. OTP doğrulayan bu uç ve /disable brute-force'a
     karşı rate-limitlidir (login-TOTP yoluyla aynı korumada)."""
@@ -175,7 +175,7 @@ async def totp_enable(request: Request, data: TotpEnableInput, auth: dict = Depe
 
 @router.post("/api/admin/2fa/disable")
 @limiter.limit("10/minute")
-async def totp_disable(request: Request, data: TotpDisableInput, auth: dict = Depends(require_auth)):
+async def totp_disable(request: Request, data: TotpDisableInput, auth: dict = Depends(require_user_session)):
     """2FA'yı kapatır. Aktifse geçerli bir kod ister (oturum çalınmışsa saldırgan kapatamasın).
     Kod doğrulaması rate-limitli: çalınmış oturumla bile 6 haneli kod brute-force edilemez."""
     rows = await execute_query(
@@ -192,7 +192,7 @@ async def totp_disable(request: Request, data: TotpDisableInput, auth: dict = De
 
 
 @router.get("/api/admin/users")
-async def get_users(auth=Depends(require_admin)):
+async def get_users(auth=Depends(require_admin_session)):
     users = await execute_query(
         "SELECT id, username, role, last_login, permissions FROM users ORDER BY id ASC", fetch=True
     )
@@ -207,6 +207,11 @@ def _clean_user_fields(username: str, role: str, permissions: str) -> tuple:
     username = (username or '').strip()
     if not username:
         raise HTTPException(status_code=400, detail="Kullanıcı adı boş olamaz.")
+    # "token:<ad>" görev ve denetim kayıtlarında API jetonunu gösterir; bir kullanıcı o adı taşıyamaz
+    if username.lower().startswith('token:'):
+        raise HTTPException(
+            status_code=400, detail="Kullanıcı adı 'token:' ile başlayamaz (API jetonlarına ayrılmıştır)."
+        )
     if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Geçersiz rol.")
     try:

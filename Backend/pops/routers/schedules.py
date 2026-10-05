@@ -119,7 +119,7 @@ async def create_scheduled_task(data: ScheduledTaskInput, auth: dict = Depends(r
     return _row_out(row)
 
 
-@router.post("/api/scheduled_tasks/{task_id}/toggle", dependencies=[modules.require("schedules")])
+@router.post("/api/scheduled_tasks/{task_id}/toggle", dependencies=[modules.require("schedules")], deprecated=True)
 async def toggle_scheduled_task(task_id: int, data: ScheduleToggleInput, auth: dict = Depends(require_admin)):
     rows = await execute_query("SELECT * FROM scheduled_tasks WHERE id = $1", (task_id,), fetch=True)
     if not rows:

@@ -126,7 +126,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/pops.example.com/privkey.pem;
     client_max_body_size 8m;
 
-    location ~ ^/api/(upload|system/upload-release)$ {
+    location ~ ^/api/(v1/)?(upload|files|system/upload-release)$ {
         client_max_body_size 600m;
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;

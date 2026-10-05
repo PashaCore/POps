@@ -18,7 +18,23 @@ trustworthy record of it.
 - Every request re-checks the user in the database. Deleting a user, or editing them (role, password, name),
   ends their existing sessions immediately. An open `/ws/panel` socket re-checks the session every 10 seconds and
   is closed if the session was revoked, together with its screen and control grants.
-- Login and the 2FA endpoints allow 10 attempts per minute per client address.
+- Login and the 2FA endpoints allow 10 attempts per minute per client address (`/api/v1/...` shares the same
+  limit).
+
+### API tokens
+
+Automation uses API tokens instead of a person's login ([`api.md`](api.md#api-tokens-automation), decision D-21):
+
+- Only a superadmin creates, lists and revokes them (**Ayarlar → Güvenlik → API jetonları**); both are written to
+  the hash-chained audit log. A token cannot manage tokens or users.
+- `pops_` + 32 random bytes, shown once; the database keeps only its SHA-256 hash and an 8-character prefix.
+- Role `viewer` (`GET` only) or `admin`; never `superadmin`. Tokens are refused on every superadmin endpoint, on the
+  user list and 2FA, and on remote control and screen previews, which need a person's panel session.
+- Accepted only in the `Authorization: Bearer` header (not as the cookie), so no CSRF header is needed; cookie
+  sessions keep the `X-Requested-With` check.
+- Expiry and revocation take effect on the next request. Everything a token does is recorded as `token:<name>`.
+- An `admin` token can queue commands that run as SYSTEM on managed PCs: store it like an admin password, give it a
+  validity, and revoke it when the script that uses it is retired.
 
 ### Two-factor authentication
 
@@ -77,7 +93,7 @@ an entry.
 | --- | --- |
 | `viewer` | Read devices, labs, inventory, software, Windows Update state, licences, logs, tasks, packages and reports (including CSV exports). Cannot see screen previews or live frames, cannot send remote input, and cannot open the **Dağıtım**, **Uzak komut** or **Ayarlar** pages. |
 | `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, scheduled tasks, Windows Update scan and install, licence definitions, helpdesk tickets, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies, the notification list (**Bildirimler**). |
-| `superadmin` | Additionally: panel users, agent releases and updates, enrollment tokens, agent-auth enforcement, re-enrollment, capability policy, server self-update, audit-chain verification, notification settings. |
+| `superadmin` | Additionally: panel users, API tokens, agent releases and updates, enrollment tokens, agent-auth enforcement, re-enrollment, capability policy, server self-update, audit-chain verification, notification settings. |
 
 Things to keep in mind:
 
@@ -253,6 +269,7 @@ restrict database access.
 | `GET /api/agent_policies` | Agents read the policy; it holds no secrets. |
 | `/download/<file>?sig=…` | Deployment packages for agents, only with the signed link returned at upload (wrong or missing signature: 404). Anyone who has a package's link can still download it, so do not upload anything confidential on the **Dağıtım** page. |
 | `/updates/<file>` | The agent MSI being distributed (verified by agents against the signed manifest). |
+| `/api/v1/...` | The same endpoints as `/api/...` with the same authentication; nothing extra is open. |
 | `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. The software, Windows Update and helpdesk endpoints always require them. |
 
 ## Operator checklist
