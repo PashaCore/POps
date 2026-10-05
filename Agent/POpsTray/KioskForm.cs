@@ -33,7 +33,8 @@ namespace POpsTray
 
         private string _reason;
         // Yönetici bypass kodu servise gönderilir (UNLOCK_BYPASS); servis doğrular, hatalı denemeleri kilitler
-        private readonly Action<string> _submitBypass;
+        // Dönen: kod servise ulaştı mı
+        private readonly Func<string, bool> _submitBypass;
         private TextBox _txtBypass = null!;
         private Label _lblBypassStatus = null!;
         // "Kod doğrulanıyor…" servis yanıt vermezse 10 sn sonra silinir
@@ -41,7 +42,9 @@ namespace POpsTray
 
         public const string CodeFormatHint = "Kod en az 6 karakterdir ve yalnızca 0-9 rakamları ile A-F harflerinden oluşur (O harfi değil 0 rakamı).";
 
-        public KioskForm(string reason, Action<string> submitBypass)
+        public const string ServiceUnreachable = "POps servisine ulaşılamadı; kod gönderilmedi. Birkaç saniye sonra yeniden deneyin.";
+
+        public KioskForm(string reason, Func<string, bool> submitBypass)
         {
             _reason = reason;
             _submitBypass = submitBypass;
@@ -146,8 +149,13 @@ namespace POpsTray
                 return;
             }
             _txtBypass.Clear();
+            // Servis bağlantısı yoksa kod sessizce kaybolmaz: kullanıcı yeniden dener
+            if (_submitBypass?.Invoke(code) != true)
+            {
+                ShowStatus(ServiceUnreachable, Color.Orange);
+                return;
+            }
             ShowStatus("Kod doğrulanıyor…", Color.LightGray, clearAfterTimeout: true);
-            _submitBypass?.Invoke(code);
         }
 
         private void ShowStatus(string text, Color color, bool clearAfterTimeout = false)
