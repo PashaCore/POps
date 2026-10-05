@@ -93,8 +93,8 @@
 
     // ---- Güç
     const POWER = {
-        restart: { verb: 'yeniden başlatılsın', btn: 'yeniden başlat', step: 'Yeniden başlat', cmd: 'shutdown /r /f /t 5', icon: 'fa-rotate-right' },
-        shutdown: { verb: 'kapatılsın', btn: 'kapat', step: 'Kapat', cmd: 'shutdown /s /f /t 5', icon: 'fa-power-off' }
+        restart: { verb: 'yeniden başlatılsın', btn: 'yeniden başlat', step: 'Yeniden başlat', cmd: 'shutdown /r /f /t 5', icon: 'restart' },
+        shutdown: { verb: 'kapatılsın', btn: 'kapat', step: 'Kapat', cmd: 'shutdown /s /f /t 5', icon: 'power' }
     };
     dev.power = async function (action, hosts, opts) {
         const o = opts || {};
@@ -143,7 +143,7 @@
         const text = await POps.prompt({
             title: on.length === 1 ? `${dev.name(on[0])} ekranına mesaj` : `${on.length} bilgisayara mesaj`,
             message: 'Oturumdaki kullanıcının ekranında 2 dakika görünür.',
-            label: 'Mesaj', multiline: true, maxLength: 250, confirmText: 'Gönder', icon: 'fa-message',
+            label: 'Mesaj', multiline: true, maxLength: 250, confirmText: 'Gönder', icon: 'message',
             note: hosts.length > on.length ? `Kapalı ${hosts.length - on.length} bilgisayar atlanacak.` : ''
         });
         if (text === null) return;
@@ -188,7 +188,7 @@
             title: hosts.length === 1 ? `${dev.name(hosts[0])} karantinaya alınsın mı?` : `${hosts.length} bilgisayar karantinaya alınsın mı?`,
             message: 'Kullanıcının ekranı kilitlenir; kaldırana kadar bilgisayar kullanılamaz. Kapalı bilgisayar açılınca kilitlenir.',
             label: 'Gerekçe', placeholder: 'Örn. sınav sırasında yetkisiz kullanım', maxLength: 300,
-            confirmText: hosts.length === 1 ? 'Karantinaya al' : `${hosts.length} bilgisayarı karantinaya al`, danger: true, icon: 'fa-shield-halved'
+            confirmText: hosts.length === 1 ? 'Karantinaya al' : `${hosts.length} bilgisayarı karantinaya al`, danger: true, icon: 'shield'
         });
         if (reason === null) return;
         await POps.busy(o.btn, async () => {
@@ -204,7 +204,7 @@
         o = o || {};
         const reason = await POps.prompt({
             title: hosts.length === 1 ? `${dev.name(hosts[0])} karantinadan çıkarılsın mı?` : `${hosts.length} bilgisayar karantinadan çıkarılsın mı?`,
-            label: 'Gerekçe (isteğe bağlı)', maxLength: 300, required: false, confirmText: 'Karantinayı kaldır', icon: 'fa-unlock'
+            label: 'Gerekçe (isteğe bağlı)', maxLength: 300, required: false, confirmText: 'Karantinayı kaldır', icon: 'unlock'
         });
         if (reason === null) return;
         await POps.busy(o.btn, async () => {
@@ -224,7 +224,7 @@
         if (await POps.act(null, () => POps.post('/api/rename_device', { pc_name: host, display_name: name.trim() }), { success: 'Ad güncellendi.' })) POps.loadDevices().catch(() => {});
     };
     dev.remove = async function (host) {
-        const ok = await POps.confirm({ title: `${dev.name(host)} silinsin mi?`, message: 'Cihaz kaydı, envanteri ve bekleyen görevleri silinir. Ajan çalışıyorsa bir sonraki bağlantıda yeniden kayıt ister.', confirmText: 'Cihazı sil', danger: true, icon: 'fa-trash' });
+        const ok = await POps.confirm({ title: `${dev.name(host)} silinsin mi?`, message: 'Cihaz kaydı, envanteri ve bekleyen görevleri silinir. Ajan çalışıyorsa bir sonraki bağlantıda yeniden kayıt ister.', confirmText: 'Cihazı sil', danger: true, icon: 'trash' });
         if (!ok) return;
         if (await POps.act(null, () => POps.del('/api/devices/' + encodeURIComponent(host)), { success: 'Cihaz silindi.' })) {
             if (POps.drawer.isOpen('pc:' + host)) POps.drawer.close();
@@ -240,7 +240,7 @@
         const codes = [data.token];
         if (data.fallback_token) codes.push(data.fallback_token);
         await POps.alert({
-            title: 'Çevrimdışı açma kodu', icon: 'fa-key', codes,
+            title: 'Çevrimdışı açma kodu', icon: 'key', codes,
             message: `${dev.name(host)} · geçerli: ${data.valid_for}` + (data.n ? ` · bugünün ${data.n + 1}. kodu` : ''),
             note: (data.fallback_token ? 'İlk kod kabul edilmezse ikincisini deneyin (cihaz anahtarı henüz onaylanmadı). ' : '')
                 + 'Kullanıcı kodu tepsi simgesi → "Yönetici Müdahalesi (Bypass)" menüsüne girer. Her kod bir kez geçerlidir.'

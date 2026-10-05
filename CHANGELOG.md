@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Panel: no third-party assets; works without internet.** The fonts (Inter, JetBrains Mono) are bundled with the panel (`Dashboard/assets/vendor/fonts`, SIL OFL, how they were built is in the README there) and every icon comes from the panel's own icon set; Google Fonts and Font Awesome from cdnjs are no longer loaded. On a school network that blocks CDNs, or with no internet at all, the panel looks the same: icons such as the magnifier in search fields, the close buttons of windows and the empty-list icons no longer disappear. The administrator's browser no longer contacts Google or Cloudflare while using the panel, so the admin's IP address is not sent to them. The "Yetkisiz Erişim" page now shows its lock icon.
 - **Compressed JSON.** The nginx and Apache templates and the Docker panel image compress JSON, CSS, JavaScript and SVG. The device list of 2,000 PCs drops from about 1.4 MB to about 50 KB per refresh. **Upgrading:** on an existing server add the `gzip` lines from `Installer/server/nginx.pops.conf.in` to your site, or the `mod_deflate` block from `Installer/server/apache-htaccess.example` to `Dashboard/.htaccess`.
 - CI lints `tools/` and the README figure script with flake8 as well; both are clean.
 

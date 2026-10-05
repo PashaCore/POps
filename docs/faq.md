@@ -19,10 +19,10 @@ runs as a single worker, so plan one server per school.
 No. The panel and most server messages are in Turkish.
 
 **Does POps work without internet access?**
-Mostly. The server checks GitHub for new versions but works without it; agent releases can be uploaded by hand on
-**Sistem**; the self-update redeploys the local checkout when it cannot fetch. The 2FA QR code is generated
-locally. The panel pages load charts, drag-and-drop, icons and fonts from public CDNs, so those parts need
-internet access in the administrator's browser.
+Yes. The server checks GitHub for new versions but works without it; agent releases can be uploaded by hand on
+**Sistem**; the self-update redeploys the local checkout when it cannot fetch. The panel loads nothing from third
+parties: fonts, icons, charts and the 2FA QR code all come from the POps server, so the administrator's browser
+needs no internet access and does not contact a CDN (Google, Cloudflare) while the panel is open.
 
 **Can POps tell me when something goes wrong?**
 Yes. Failed or rolled-back agent updates, takeover attempts, DNS policy violations, quarantines and similar events

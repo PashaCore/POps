@@ -135,7 +135,7 @@
 <section class="rp-pane" id="pane-software" hidden>
     <div class="rp-bar">
         <div class="search-field">
-            <i class="fas fa-search" aria-hidden="true"></i>
+            <?php echo pops_icon('search', 'sm'); ?>
             <input type="search" id="swQ" placeholder="Program ya da yayıncı (ör. chrome, adobe)" aria-label="Programlarda ara">
         </div>
         <span class="grow"></span>
@@ -161,7 +161,7 @@
             <button type="button" data-f="none" aria-pressed="false">Bildirmedi</button>
         </div>
         <div class="search-field">
-            <i class="fas fa-search" aria-hidden="true"></i>
+            <?php echo pops_icon('search', 'sm'); ?>
             <input type="search" id="ptQ" placeholder="Bilgisayar ya da sınıf" aria-label="Bilgisayar ara">
         </div>
     </div>
@@ -191,7 +191,7 @@
     <div class="modal-box lg">
         <div class="modal-header">
             <div class="modal-title" id="licModalTitle">Lisans ekle</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <input type="hidden" id="lfId">
@@ -418,11 +418,11 @@
         swItems = d.items || [];
         $('swMeta').innerHTML = d.reporting_devices ? `<b>${nHtml(d.reporting_devices)}</b> bilgisayar bildiriyor · <b>${nHtml(swItems.length)}</b> program` : '';
         if (!d.reporting_devices) {
-            POps.setEmpty(body, { tag: 'tr', colspan: 3, icon: 'fa-box', title: 'Henüz yazılım bildiren bilgisayar yok', text: 'Kurulu programlar 0.1.5 ve sonraki ajanlardan gelir.' });
+            POps.setEmpty(body, { tag: 'tr', colspan: 3, icon: 'package', title: 'Henüz yazılım bildiren bilgisayar yok', text: 'Kurulu programlar 0.1.5 ve sonraki ajanlardan gelir.' });
             return;
         }
         if (!swItems.length) {
-            POps.setEmpty(body, { tag: 'tr', colspan: 3, icon: 'fa-filter', title: 'Süzgece uyan program yok', text: 'Başka bir ad ya da yayıncı deneyin.' });
+            POps.setEmpty(body, { tag: 'tr', colspan: 3, icon: 'filter', title: 'Süzgece uyan program yok', text: 'Başka bir ad ya da yayıncı deneyin.' });
             return;
         }
         body.innerHTML = swItems.map((r, i) => {
@@ -513,8 +513,8 @@
         const body = $('ptBody');
         if (!rows.length) {
             POps.setEmpty(body, pt.rows.length
-                ? { tag: 'tr', colspan: 6, icon: 'fa-filter', title: 'Süzgece uyan bilgisayar yok', text: 'Arama ya da süzgeci değiştirin.' }
-                : { tag: 'tr', colspan: 6, icon: 'fa-desktop', title: 'Henüz bilgisayar yok' });
+                ? { tag: 'tr', colspan: 6, icon: 'filter', title: 'Süzgece uyan bilgisayar yok', text: 'Arama ya da süzgeci değiştirin.' }
+                : { tag: 'tr', colspan: 6, icon: 'devices', title: 'Henüz bilgisayar yok' });
             return;
         }
         body.innerHTML = rows.map(ptRowHtml).join('');
@@ -545,7 +545,7 @@
             const ok = await POps.confirm({
                 title: (on.length === 1 ? `${who} için ` : `${on.length} bilgisayarda `) + t.q,
                 message: t.msg, note: skipped ? `Kapalı ${skipped} bilgisayar atlanacak.` : '',
-                confirmText: on.length === 1 ? 'Güncellemeleri kur' : `${on.length} bilgisayara kur`, icon: 'fa-shield-halved'
+                confirmText: on.length === 1 ? 'Güncellemeleri kur' : `${on.length} bilgisayara kur`, icon: 'shield'
             });
             if (!ok) return;
         }
@@ -625,7 +625,7 @@
             ? `<span class="sum"><b>${licenses.length}</b> lisans</span>` + (probHtml || '<span class="sum"><span class="dot ok"></span>Hepsi uygun</span>')
             : '';
         if (!licenses.length) {
-            POps.setEmpty(body, { tag: 'tr', colspan: 5, icon: 'fa-certificate', title: 'Tanımlı lisans yok', text: CAN_EDIT_LIC ? '"Lisans ekle" ile koltuk ve bitiş tarihini takip etmeye başlayın.' : 'Bir yönetici lisans eklediğinde burada görünür.' });
+            POps.setEmpty(body, { tag: 'tr', colspan: 5, icon: 'key', title: 'Tanımlı lisans yok', text: CAN_EDIT_LIC ? '"Lisans ekle" ile koltuk ve bitiş tarihini takip etmeye başlayın.' : 'Bir yönetici lisans eklediğinde burada görünür.' });
             return;
         }
         body.innerHTML = licenses.map(l => {
@@ -676,7 +676,7 @@
         if (l) openLicense(l);
     });
     async function licDelete(l, btn) {
-        const ok = await POps.confirm({ title: `"${l.name}" lisansı silinsin mi?`, message: 'Kurulumlar etkilenmez; yalnızca bu tanım ve koltuk bilgisi silinir.', confirmText: 'Lisansı sil', danger: true, icon: 'fa-trash' });
+        const ok = await POps.confirm({ title: `"${l.name}" lisansı silinsin mi?`, message: 'Kurulumlar etkilenmez; yalnızca bu tanım ve koltuk bilgisi silinir.', confirmText: 'Lisansı sil', danger: true, icon: 'trash' });
         if (!ok) return;
         if (await POps.act(btn, () => POps.del('/api/licenses/' + encodeURIComponent(l.id)), { success: 'Lisans silindi.' })) { POps.drawer.close(); loadLicenses(); }
     }

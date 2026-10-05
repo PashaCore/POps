@@ -21,6 +21,8 @@ Backend/releases/
 
 # PHP / Web
 vendor/
+# Panelin kendi dağıttığı üçüncü taraf dosyaları (yazı tipleri, QR betiği) depoda durur
+!Dashboard/assets/vendor/
 node_modules/
 
 # İmza özel anahtarları asla commit'lenmez (yalnızca *.pub.pem repoda durur)

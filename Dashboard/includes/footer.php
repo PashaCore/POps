@@ -182,7 +182,7 @@
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && panel.classList.contains('open') && !document.querySelector('.pops-dialog-overlay')) { setOpen(false); btn.focus(); } });
             document.getElementById('notifClear').addEventListener('click', async function (e) {
                 e.stopPropagation();
-                const ok = await POps.confirm({ title: 'Okunmuş bildirimler silinsin mi?', message: 'Zildeki okunmuş bildirimler silinir. Olayların kendisi denetim kayıtlarında kalır.', confirmText: 'Sil', danger: true, icon: 'fa-trash' });
+                const ok = await POps.confirm({ title: 'Okunmuş bildirimler silinsin mi?', message: 'Zildeki okunmuş bildirimler silinir. Olayların kendisi denetim kayıtlarında kalır.', confirmText: 'Sil', danger: true, icon: 'trash' });
                 if (!ok) return;
                 let deleted = 0;
                 if (await POps.act(this, async () => { deleted = (await POps.post('/api/notifications/clear', { ids: [] })).deleted || 0; })) {

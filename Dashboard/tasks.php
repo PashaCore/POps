@@ -52,7 +52,7 @@
         <button type="button" data-f="bad" aria-pressed="false">Sorunlu</button>
     </div>
     <div class="search-field">
-        <i class="fas fa-search" aria-hidden="true"></i>
+        <?php echo pops_icon('search', 'sm'); ?>
         <input type="search" id="tkSearch" placeholder="İş, bilgisayar ya da kişi" aria-label="İşlerde ara">
     </div>
 </div>
@@ -66,7 +66,7 @@
     <div class="modal-box lg">
         <div class="modal-header">
             <div class="modal-title" id="schedTitle">Yeni zamanlanmış görev</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <div class="form-grid">
@@ -172,8 +172,8 @@
         const list = ui.jobs.filter(matches);
         if (!list.length) {
             POps.setEmpty(box, ui.jobs.length
-                ? { icon: 'fa-filter', title: 'Süzgece uyan iş yok', text: 'Arama ya da süzgeci değiştirin.' }
-                : { icon: 'fa-check', kind: 'success', title: 'Henüz işlem yok', text: 'Sınıflar, Cihazlar, Uzak komut ya da Dağıtım sayfasından gönderilen her iş burada görünür.' });
+                ? { icon: 'filter', title: 'Süzgece uyan iş yok', text: 'Arama ya da süzgeci değiştirin.' }
+                : { icon: 'check', kind: 'success', title: 'Henüz işlem yok', text: 'Sınıflar, Cihazlar, Uzak komut ya da Dağıtım sayfasından gönderilen her iş burada görünür.' });
             return;
         }
         const shown = list.slice(0, ui.limit);
@@ -336,7 +336,7 @@
         const q = ui.q.toLocaleLowerCase('tr');
         const items = ui.sched.filter(t => !q || [t.name, t.command, target(t)].some(v => String(v || '').toLocaleLowerCase('tr').includes(q)));
         if (!items.length) {
-            POps.setEmpty(box, ui.sched.length ? { icon: 'fa-filter', title: 'Süzgece uyan görev yok' } : { icon: 'fa-calendar', title: 'Zamanlanmış görev yok', text: 'Belirli saatlerde tekrar eden komutlar için "Zamanlanmış görev" ile ekleyin.' });
+            POps.setEmpty(box, ui.sched.length ? { icon: 'filter', title: 'Süzgece uyan görev yok' } : { icon: 'calendar', title: 'Zamanlanmış görev yok', text: 'Belirli saatlerde tekrar eden komutlar için "Zamanlanmış görev" ile ekleyin.' });
             return;
         }
         box.innerHTML = `<table class="data-table"><thead><tr><th>Görev</th><th>Zaman</th><th>Hedef</th><th>Sıradaki</th><th>Son çalışma</th></tr></thead><tbody>${items.map(t => `

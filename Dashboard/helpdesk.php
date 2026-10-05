@@ -53,7 +53,7 @@
     <div class="segmented" id="hdFilter" role="group" aria-label="Duruma göre süz"></div>
     <span class="grow"></span>
     <div class="search-field">
-        <i class="fas fa-search" aria-hidden="true"></i>
+        <?php echo pops_icon('search', 'sm'); ?>
         <input type="search" id="hdSearch" placeholder="Konu, açıklama, bildiren ya da bilgisayar" aria-label="Talep ara">
     </div>
 </div>
@@ -153,9 +153,9 @@
         if (!force && sig === ui.sig) return;
         ui.sig = sig;
         if (!ui.items.length) {
-            if (ui.q) POps.setEmpty(list, { icon: 'fa-filter', title: 'Süzgece uyan talep yok', text: 'Aramayı ya da süzgeci değiştirin.' });
-            else if (ui.f === 'open') POps.setEmpty(list, { icon: 'fa-check', kind: 'success', title: 'Açık talep yok', text: 'Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.' });
-            else POps.setEmpty(list, { icon: 'fa-inbox', title: ui.f === 'closed' ? 'Kapalı talep yok' : 'Henüz talep yok', text: 'Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.' });
+            if (ui.q) POps.setEmpty(list, { icon: 'filter', title: 'Süzgece uyan talep yok', text: 'Aramayı ya da süzgeci değiştirin.' });
+            else if (ui.f === 'open') POps.setEmpty(list, { icon: 'check', kind: 'success', title: 'Açık talep yok', text: 'Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.' });
+            else POps.setEmpty(list, { icon: 'inbox', title: ui.f === 'closed' ? 'Kapalı talep yok' : 'Henüz talep yok', text: 'Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.' });
             return;
         }
         list.innerHTML = ui.items.map(rowHtml).join('');
@@ -325,7 +325,7 @@
                 { header: t.assignee ? `Atanan: ${t.assignee}` : 'Kimseye atanmadı' },
                 ME ? { label: 'Bana ata', icon: 'user', disabled: t.assignee === ME, hint: ME, onClick: () => update(t, { assignee: ME }, 'Talep size atandı.') } : null,
                 { label: 'Başkasına ata…', icon: 'users', onClick: async () => {
-                    const who = await POps.prompt({ title: 'Talebi ata', label: 'Atanan kişi', defaultValue: t.assignee || '', maxLength: 100, confirmText: 'Ata', icon: 'fa-user' });
+                    const who = await POps.prompt({ title: 'Talebi ata', label: 'Atanan kişi', defaultValue: t.assignee || '', maxLength: 100, confirmText: 'Ata', icon: 'user' });
                     if (who === null || !who.trim()) return;
                     update(t, { assignee: who.trim() }, `Talep ${who.trim()} kişisine atandı.`);
                 } },

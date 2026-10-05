@@ -84,7 +84,7 @@
         <button type="button" class="btn secondary lg-fbtn" id="lgFiltersBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="lgFPanel"><?php echo pops_icon('filter', 'sm'); ?>Süzgeçler<span class="badge" id="lgFCount" hidden></span></button>
         <span class="grow"></span>
         <div class="search-field">
-            <i class="fas fa-search" aria-hidden="true"></i>
+            <?php echo pops_icon('search', 'sm'); ?>
             <input type="search" id="lgSearch" placeholder="Olay, bilgisayar ya da kişi" aria-label="Kayıtlarda ara">
         </div>
     </div>
@@ -113,7 +113,7 @@
         <select id="hwLab" aria-label="Sınıfa göre süz"><option value="">Bütün sınıflar</option></select>
         <span class="grow"></span>
         <div class="search-field">
-            <i class="fas fa-search" aria-hidden="true"></i>
+            <?php echo pops_icon('search', 'sm'); ?>
             <input type="search" id="hwSearch" placeholder="Bilgisayar, işlemci, IP, MAC" aria-label="Donanımda ara">
         </div>
     </div>
@@ -329,8 +329,8 @@
             $('lgPager').hidden = true;
             const filtered = ui.rows.length > 0;
             POps.setEmpty(list, filtered
-                ? { icon: 'fa-filter', title: 'Süzgece uyan kayıt yok', text: 'Arama, tarih ya da süzgeçleri değiştirin.' }
-                : { icon: 'fa-clipboard-list', title: 'Henüz kayıt yok', text: 'Bilgisayarlar olay bildirdikçe burada görünür.' });
+                ? { icon: 'filter', title: 'Süzgece uyan kayıt yok', text: 'Arama, tarih ya da süzgeçleri değiştirin.' }
+                : { icon: 'list', title: 'Henüz kayıt yok', text: 'Bilgisayarlar olay bildirdikçe burada görünür.' });
             return;
         }
         const pages = Math.max(1, Math.ceil(rows.length / ui.size));
@@ -562,8 +562,8 @@
         const body = $('hwBody');
         if (!rows.length) {
             POps.setEmpty(body, (state.devices || []).length
-                ? { tag: 'tr', colspan: 7, icon: 'fa-filter', title: 'Süzgece uyan bilgisayar yok', text: 'Arama ya da sınıf süzgecini değiştirin.' }
-                : { tag: 'tr', colspan: 7, icon: 'fa-desktop', title: 'Henüz bilgisayar yok', text: 'Ajan kurulan bilgisayarlar bağlandıkça burada görünür.' });
+                ? { tag: 'tr', colspan: 7, icon: 'filter', title: 'Süzgece uyan bilgisayar yok', text: 'Arama ya da sınıf süzgecini değiştirin.' }
+                : { tag: 'tr', colspan: 7, icon: 'devices', title: 'Henüz bilgisayar yok', text: 'Ajan kurulan bilgisayarlar bağlandıkça burada görünür.' });
             return;
         }
         body.innerHTML = rows.map(hwRowHtml).join('');
@@ -661,7 +661,7 @@
         const ok = await POps.confirm({
             title: `Kapalı ${off} bilgisayar uyandırılsın mı?`,
             message: 'MAC adresi bilinen bütün kapalı bilgisayarlara uyandırma (Wake-on-LAN) sinyali gönderilir.',
-            confirmText: `${off} bilgisayarı uyandır`, icon: 'fa-bolt'
+            confirmText: `${off} bilgisayarı uyandır`, icon: 'zap'
         });
         if (!ok) return;
         await POps.act(btn, () => POps.post('/api/wake_all'), { success: (r) => `${(r && r.woken_pcs) || 0} bilgisayara uyandırma sinyali gönderildi.` });
@@ -674,9 +674,9 @@
         const n = Number(r.checked || 0).toLocaleString('tr-TR');
         const note = 'Denetim zinciri yönetici işlemlerini (karantina, açma kodu, güncelleme, lisans) tutar; her kayıt bir öncekinin özetini taşır, araya giren değişiklik zinciri kırar.';
         await POps.alert(r.ok
-            ? { title: 'Denetim zinciri sağlam', tone: 'success', icon: 'fa-shield-halved', confirmText: 'Kapat', note,
+            ? { title: 'Denetim zinciri sağlam', tone: 'success', icon: 'shield', confirmText: 'Kapat', note,
                 message: Number(r.checked) ? `${n} kayıt doğrulandı; hiçbiri değiştirilmemiş ya da silinmemiş.` : 'Zincirde henüz doğrulanacak kayıt yok.' }
-            : { title: 'Denetim zinciri kırık', tone: 'warning', icon: 'fa-triangle-exclamation', confirmText: 'Kapat', note,
+            : { title: 'Denetim zinciri kırık', tone: 'warning', icon: 'alert', confirmText: 'Kapat', note,
                 message: `#${r.first_broken_id} numaralı kayıt değiştirilmiş ya da silinmiş görünüyor. Ondan önceki ${n} kayıt sorunsuz.` });
     }
     const menuItems = () => [

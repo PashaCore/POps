@@ -92,7 +92,7 @@
         <span class="grow"></span>
         <?php if ($vsCanAdmin): ?><div class="actionbar" id="vsActions" role="toolbar" aria-label="Bilgisayar işlemleri"></div><?php endif; ?>
         <div class="search-field">
-            <i class="fas fa-search" aria-hidden="true"></i>
+            <?php echo pops_icon('search', 'sm'); ?>
             <input type="search" id="vsSearch" placeholder="Bilgisayar, kullanıcı ya da IP" aria-label="Bilgisayar, kullanıcı, IP ya da MAC ara">
         </div>
     </div>
@@ -131,7 +131,7 @@
     <div class="modal-box">
         <div class="modal-header">
             <div class="modal-title" id="sessTitle">Canlı izleme oturumu</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <p class="card-desc" id="sessDesc"></p>
@@ -163,7 +163,7 @@
     <div class="modal-box lg">
         <div class="modal-header">
             <div class="modal-title" id="diagTitle">Teşhis</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <div class="diag-out" id="diagOut" aria-live="polite"></div>
@@ -394,9 +394,9 @@
         const grid = $('vsGrid');
         if (!list.length) {
             const any = (state.devices || []).length;
-            POps.setEmpty(grid, ui.q ? { icon: 'fa-filter', title: 'Süzgece uyan bilgisayar yok', text: 'Aramayı değiştirin.' }
-                : !any ? { icon: 'fa-desktop', title: 'Henüz bilgisayar yok', text: 'Ajan kurulan bilgisayarlar bağlandıkça burada görünür.' }
-                : { icon: 'fa-desktop', title: 'Bu sınıfta bilgisayar yok', text: 'Başka bir sınıf seçin.' });
+            POps.setEmpty(grid, ui.q ? { icon: 'filter', title: 'Süzgece uyan bilgisayar yok', text: 'Aramayı değiştirin.' }
+                : !any ? { icon: 'devices', title: 'Henüz bilgisayar yok', text: 'Ajan kurulan bilgisayarlar bağlandıkça burada görünür.' }
+                : { icon: 'devices', title: 'Bu sınıfta bilgisayar yok', text: 'Başka bir sınıf seçin.' });
             return;
         }
         grid.innerHTML = list.map(cardHtml).join('');
@@ -785,8 +785,8 @@
         const b = e.target.closest('[data-cmd]');
         if (!b || !V.pc) return;
         const cmd = b.dataset.cmd, item = DIAG[cmd], pc = V.pc, name = dev.name(pc);
-        if (cmd === 'reboot_pc' && !await POps.confirm({ title: `${name} yeniden başlatılsın mı?`, message: '5 saniye içinde yeniden başlar; kaydedilmemiş işler kaybolabilir. Bağlantı kısa süre kopar.', confirmText: 'Yeniden başlat', danger: true, icon: 'fa-rotate-right' })) return;
-        if (cmd === 'restart_agent' && !await POps.confirm({ title: `${name} üzerindeki ajan yeniden başlatılsın mı?`, message: 'Bağlantı birkaç saniye kopar; Windows hizmeti ajanı kendiliğinden yeniden açar.', confirmText: 'Ajanı yeniden başlat', icon: 'fa-rotate' })) return;
+        if (cmd === 'reboot_pc' && !await POps.confirm({ title: `${name} yeniden başlatılsın mı?`, message: '5 saniye içinde yeniden başlar; kaydedilmemiş işler kaybolabilir. Bağlantı kısa süre kopar.', confirmText: 'Yeniden başlat', danger: true, icon: 'restart' })) return;
+        if (cmd === 'restart_agent' && !await POps.confirm({ title: `${name} üzerindeki ajan yeniden başlatılsın mı?`, message: 'Bağlantı birkaç saniye kopar; Windows hizmeti ajanı kendiliğinden yeniden açar.', confirmText: 'Ajanı yeniden başlat', icon: 'refresh' })) return;
         diagLog(`\n\n> ${item[1]}\nKuyruğa eklendi, ajanın yanıtı bekleniyor…`);
         try {
             await POps.busy(b, () => POps.post('/api/deploy_orchestration', {
@@ -807,7 +807,7 @@
             + `<button type="button" class="ibtn sm" data-vact="close" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button></div>`;
         body.innerHTML = headHtml + '<div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div>';
         const key = POps.drawer.key();
-        if (!hosts.length) { body.innerHTML = headHtml + '<div class="empty-state compact"><i class="fas fa-clock-rotate-left"></i><p>Bu kapsamda bilgisayar yok.</p></div>'; return; }
+        if (!hosts.length) { body.innerHTML = headHtml + '<div class="empty-state compact">' + POps.iconHtml('clock') + '<p>Bu kapsamda bilgisayar yok.</p></div>'; return; }
         const res = await Promise.allSettled(hosts.slice(0, HIST_MAX).map(h => POps.get('/api/devices/' + encodeURIComponent(h) + '/activity?limit=25').then(r => (r.items || []).filter(i => i.kind === 'vision').map(i => Object.assign({ pc: h }, i)))));
         if (POps.drawer.key() !== key) return;
         const items = res.filter(r => r.status === 'fulfilled').flatMap(r => r.value).sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))).slice(0, 60);
@@ -828,7 +828,7 @@
         }).join('');
         const noteHtml = (hosts.length > HIST_MAX ? `<div class="dr-note">İlk ${HIST_MAX} bilgisayarın kayıtları gösteriliyor.</div>` : '')
             + (failed ? `<div class="dr-note">${Number(failed)} bilgisayarın kaydı okunamadı.</div>` : '');
-        body.innerHTML = headHtml + (items.length ? `<div>${rowsHtml}</div>` : '<div class="empty-state compact"><i class="fas fa-eye"></i><p>Bu kapsamda uzak ekran oturumu yok.</p></div>') + noteHtml
+        body.innerHTML = headHtml + (items.length ? `<div>${rowsHtml}</div>` : '<div class="empty-state compact">' + POps.iconHtml('eye') + '<p>Bu kapsamda uzak ekran oturumu yok.</p></div>') + noteHtml
             + '<div class="dr-note" style="font-size:var(--text-xs);color:var(--text-muted)">Her oturum açan kişi, gerekçe ve süreyle denetim kaydına yazılır; bilgisayar başına son 25 kayıt.</div>';
     }
     $('histBtn').addEventListener('click', openHistory);

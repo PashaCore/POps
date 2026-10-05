@@ -153,14 +153,6 @@ POps.el = function (tag, attrs, children) {
     (children || []).forEach(c => { if (c != null) el.append(c); });
     return el;
 };
-function icon(name) {
-    const i = document.createElement('i');
-    i.className = 'fas ' + name;
-    i.setAttribute('aria-hidden', 'true');
-    return i;
-}
-POps.icon = icon;
-
 // Hazır durum blokları (yalnızca sabit metin; değişken değer textContent ile eklenir)
 POps.setLoading = function (el, text) {
     if (!el) return;
@@ -172,7 +164,7 @@ POps.setEmpty = function (el, opts) {
     if (!el) return;
     const o = opts || {};
     const box = POps.el('div', { className: 'empty-state' + (o.compact ? ' compact' : '') + (o.kind ? ' ' + o.kind : '') }, [
-        icon(o.icon || 'fa-inbox'),
+        POps.iconEl(o.icon || 'inbox'),
         o.title ? POps.el('h3', { text: o.title }) : null,
         o.text ? POps.el('p', { text: o.text }) : null
     ]);
@@ -184,11 +176,11 @@ POps.setEmpty = function (el, opts) {
     }
 };
 POps.setError = function (el, err, opts) {
-    POps.setEmpty(el, Object.assign({ icon: 'fa-triangle-exclamation', kind: 'error', title: 'Veriler alınamadı', text: POps.errorMessage(err) }, opts || {}));
+    POps.setEmpty(el, Object.assign({ icon: 'alert', kind: 'error', title: 'Veriler alınamadı', text: POps.errorMessage(err) }, opts || {}));
 };
 
 // ============== BİLDİRİM (TOAST) ==============
-const TOAST_TYPES = { success: 'fa-circle-check', error: 'fa-circle-xmark', warning: 'fa-triangle-exclamation', info: 'fa-circle-info' };
+const TOAST_TYPES = { success: 'check-circle', error: 'x-circle', warning: 'alert', info: 'info' };
 const TOAST_MS = { success: 4000, info: 4500, warning: 6500, error: 8000 };
 function toastContainer() {
     let c = document.getElementById('toastContainer');
@@ -210,8 +202,7 @@ POps.toast = function (type, message, opts) {
     const t = document.createElement('div');
     t.className = 'toast ' + type;
     t.setAttribute('role', type === 'error' ? 'alert' : 'status');
-    const ic = icon(TOAST_TYPES[type]);
-    ic.classList.add('toast-icon');
+    const ic = POps.iconEl(TOAST_TYPES[type], 'toast-icon');
     const msg = document.createElement('div');
     msg.className = 'toast-msg';
     msg.textContent = String(message == null ? '' : message);
@@ -219,7 +210,7 @@ POps.toast = function (type, message, opts) {
     close.type = 'button';
     close.className = 'toast-close';
     close.setAttribute('aria-label', 'Kapat');
-    close.appendChild(icon('fa-xmark'));
+    close.appendChild(POps.iconEl('x', 'sm'));
     t.append(ic, msg, close);
     c.appendChild(t);
     let timer = null;
@@ -342,7 +333,7 @@ function openDialog(kind, opts) {
         body.className = 'pops-dialog-body';
         const ic = document.createElement('div');
         ic.className = 'pops-dialog-icon';
-        ic.appendChild(icon(o.icon || (o.danger ? 'fa-triangle-exclamation' : kind === 'prompt' ? 'fa-pen' : kind === 'alert' ? 'fa-circle-info' : 'fa-circle-question')));
+        ic.appendChild(POps.iconEl(o.icon || (o.danger ? 'alert' : kind === 'prompt' ? 'edit' : kind === 'alert' ? 'info' : 'help')));
         const content = document.createElement('div');
         content.className = 'pops-dialog-content';
         const title = document.createElement('h2');
@@ -367,7 +358,7 @@ function openDialog(kind, opts) {
             const copy = document.createElement('button');
             copy.type = 'button';
             copy.className = 'btn secondary sm';
-            copy.append(icon('fa-copy'), document.createTextNode('Kopyala'));
+            copy.append(POps.iconEl('copy', 'sm'), document.createTextNode('Kopyala'));
             copy.addEventListener('click', async () => {
                 try { await navigator.clipboard.writeText(String(code)); POps.toast('success', 'Kopyalandı.'); }
                 catch (e) { POps.toast('warning', 'Kopyalanamadı; kodu seçip elle kopyalayın.'); }
@@ -613,7 +604,7 @@ window.powerCommand = async function (targetType, action, targetName, btn) {
         message: `${who} 5 saniye içinde ${verb}. Kaydedilmemiş işler kaybolabilir.`,
         confirmText: isShutdown ? 'Kapat' : 'Yeniden başlat',
         danger: true,
-        icon: 'fa-power-off'
+        icon: 'power'
     });
     if (!ok) return;
     await POps.act(btn, () => POps.post('/api/deploy_orchestration', {
@@ -624,7 +615,7 @@ window.powerCommand = async function (targetType, action, targetName, btn) {
 // wakeUpCommand('ALL'|'LAB'|'PC', ad, düğme)
 window.wakeUpCommand = async function (targetType, targetName, btn) {
     if (targetType === 'ALL') {
-        const ok = await POps.confirm({ title: 'Bütün ağ uyandırılsın mı?', message: 'MAC adresi bilinen bütün kapalı cihazlara uyandırma (WOL) sinyali gönderilecek.', confirmText: 'Uyandır', icon: 'fa-bolt' });
+        const ok = await POps.confirm({ title: 'Bütün ağ uyandırılsın mı?', message: 'MAC adresi bilinen bütün kapalı cihazlara uyandırma (WOL) sinyali gönderilecek.', confirmText: 'Uyandır', icon: 'zap' });
         if (!ok) return;
         await POps.act(btn, () => POps.post('/api/wake_all'), { success: (r) => `${(r && r.woken_pcs) || 0} cihaza uyandırma sinyali gönderildi.` });
     } else if (targetType === 'LAB') {
@@ -654,9 +645,9 @@ async function popsTwofaNudge(enabled) {
     box.id = 'twofaNudge';
     box.className = 'twofa-nudge';
     box.setAttribute('role', 'status');
-    box.innerHTML = '<i class="fas fa-shield-halved"></i><span>Hesabınızda iki adımlı doğrulama (2FA) kapalı. Önerilir: '
+    box.innerHTML = POps.iconHtml('shield', 'sm') + '<span>Hesabınızda iki adımlı doğrulama (2FA) kapalı. Önerilir: '
         + '<a href="settings#twofaCard">Ayarlar → İki adımlı doğrulama</a> bölümünden açabilirsiniz.</span>'
-        + '<button type="button" class="twofa-nudge-close" title="7 gün gösterme" aria-label="Kapat"><i class="fas fa-xmark"></i></button>';
+        + '<button type="button" class="twofa-nudge-close" title="7 gün gösterme" aria-label="Kapat">' + POps.iconHtml('x', 'sm') + '</button>';
     box.querySelector('button').addEventListener('click', () => {
         try { localStorage.setItem(TWOFA_NUDGE_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000)); } catch (e) { /* özel pencere */ }
         box.remove();

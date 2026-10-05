@@ -38,7 +38,7 @@
     </div>
     <select id="devLab" aria-label="Sınıfa göre süz"><option value="">Bütün sınıflar</option></select>
     <div class="search-field">
-        <i class="fas fa-search" aria-hidden="true"></i>
+        <?php echo pops_icon('search', 'sm'); ?>
         <input type="search" id="devSearch" placeholder="Ad, kullanıcı, IP, MAC" aria-label="Cihaz ara">
     </div>
 </div>
@@ -159,8 +159,8 @@
         if (!rows.length) {
             const filteredOut = (state.devices || []).length > 0;
             POps.setEmpty(body, filteredOut
-                ? { tag: 'tr', colspan: 7, icon: 'fa-filter', title: 'Süzgece uyan cihaz yok', text: 'Arama ya da süzgeçleri değiştirin.' }
-                : { tag: 'tr', colspan: 7, icon: 'fa-desktop', title: 'Henüz cihaz yok', text: 'Ajan kurulan bilgisayarlar bağlandıkça burada görünür.' });
+                ? { tag: 'tr', colspan: 7, icon: 'filter', title: 'Süzgece uyan cihaz yok', text: 'Arama ya da süzgeçleri değiştirin.' }
+                : { tag: 'tr', colspan: 7, icon: 'devices', title: 'Henüz cihaz yok', text: 'Ajan kurulan bilgisayarlar bağlandıkça burada görünür.' });
             return;
         }
         body.innerHTML = rows.map(d => rowHtml(d, newest)).join('');

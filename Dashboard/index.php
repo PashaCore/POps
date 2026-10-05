@@ -203,7 +203,7 @@
             const longOff = devices.filter(d => { const s = dev.state(d); const t = POps.toDate(s.since); return s.cls === 'off' && t && Date.now() - t > 7 * 864e5; });
             if (longOff.length) items.push(['neu', `${longOff.length} bilgisayar 7 günden uzun süredir kapalı`, longOff.slice(0, 3).map(d => POps.deviceName(d)).join(', '), 'devices?f=off', 'Göster']);
             $('homeAttention').innerHTML = items.length ? items.map(([k, t, d, href, label]) => `<div class="att"><span class="dot ${escapeHtml(k)}"></span><div class="grow"><div class="t">${escapeHtml(t)}</div><div class="d">${escapeHtml(d)}</div></div><button type="button" class="btn secondary sm" data-go="${escapeHtml(href)}">${escapeHtml(label)}</button></div>`).join('')
-                : '<div class="empty-state compact"><i class="fas fa-check"></i><h3>Her şey yolunda</h3></div>';
+                : '<div class="empty-state compact">' + POps.iconHtml('check') + '<h3>Her şey yolunda</h3></div>';
         }
 
         // Sınıflar
@@ -214,7 +214,7 @@
                 const lIdle = pcs.filter(d => dev.state(d).cls === 'idle').length;
                 return `<a class="lab-row" href="labs?lab=${encodeURIComponent(l)}"><span class="truncate">${escapeHtml(l)}</span><div class="pbar">${segHtml('ok', lOn, pcs.length)}${segHtml('warn', lIdle, pcs.length)}</div><span class="n">${Number(lOn + lIdle)}/${Number(pcs.length)}</span></a>`;
             }).join('');
-            $('homeLabs').innerHTML = rowsHtml || '<div class="empty-state compact"><i class="fas fa-table-cells-large"></i><h3>Henüz sınıf yok</h3></div>';
+            $('homeLabs').innerHTML = rowsHtml || '<div class="empty-state compact">' + POps.iconHtml('labs') + '<h3>Henüz sınıf yok</h3></div>';
         }
     }
 
@@ -256,7 +256,7 @@
         if (mem.filter !== 'job') (mem.logs || []).map(L.norm).filter(e => mem.filter === 'log' || e.key !== 'execute_queue').forEach(e => items.push({ at: POps.toDate(e.at), html: logRowHtml(e) }));
         items.sort((a, b) => (b.at ? b.at.getTime() : 0) - (a.at ? a.at.getTime() : 0));
         if (!items.length) {
-            POps.setEmpty(box, { icon: 'fa-clock', title: mem.filter === 'log' ? 'Henüz olay yok' : 'Henüz etkinlik yok', text: 'Gönderilen komutlar, güç işlemleri, dağıtımlar ve bilgisayarlardan gelen olaylar burada görünür.', compact: true });
+            POps.setEmpty(box, { icon: 'clock', title: mem.filter === 'log' ? 'Henüz olay yok' : 'Henüz etkinlik yok', text: 'Gönderilen komutlar, güç işlemleri, dağıtımlar ve bilgisayarlardan gelen olaylar burada görünür.', compact: true });
             return;
         }
         box.innerHTML = items.slice(0, 30).map(i => i.html).join('');
@@ -295,7 +295,7 @@
         const counts = {};
         devices.forEach(d => { const v = dev.version(d) || 'Bilinmiyor'; counts[v] = (counts[v] || 0) + 1; });
         const list = Object.entries(counts).sort((a, b) => dev.cmpVersion(b[0], a[0]) || b[1] - a[1]);
-        if (!list.length) { POps.setEmpty(box, { icon: 'fa-desktop', title: 'Henüz cihaz yok', compact: true }); return; }
+        if (!list.length) { POps.setEmpty(box, { icon: 'devices', title: 'Henüz cihaz yok', compact: true }); return; }
         const total = devices.length;
         const old = devices.filter(d => { const v = dev.version(d); return v && newest && dev.cmpVersion(v, newest) < 0; }).length;
         const color = (i) => escapeHtml(VERSION_COLORS[Math.min(i, VERSION_COLORS.length - 1)]);
