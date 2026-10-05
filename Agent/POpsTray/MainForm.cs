@@ -155,7 +155,7 @@ namespace POpsTray
             trayIcon.Text = "POps - yapılandırma okunamadı";
             if (_configErrorShown) return;
             _configErrorShown = true;
-            if (detail.Length > 150) detail = detail.Substring(0, 150) + "…";
+            if (detail.Length > 150) detail = string.Concat(detail.AsSpan(0, 150), "…");
             ShowNotification("POps: yapılandırma okunamadı",
                 "Ajan sunucuya bağlanamıyor, bu bilgisayar yönetilmiyor. BT ekibine bildirin." + (detail.Length > 0 ? $" ({detail})" : ""));
         }
