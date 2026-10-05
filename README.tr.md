@@ -34,7 +34,13 @@
 > [`SECURITY.md`](SECURITY.md), sıradaki işler için [`ROADMAP.md`](ROADMAP.md) dosyasına bakın.
 
 > [!NOTE]
-> Panelin arayüzü **Türkçedir**. Teknik belgeler ve API İngilizcedir; bu sayfa İngilizce README'nin Türkçesidir.
+> Panelin her sayfası **Türkçe** ve **İngilizce** kullanılabilir; dil tarayıcı başına seçilir. Teknik belgeler ve API
+> İngilizcedir; bu sayfa İngilizce README'nin Türkçesidir.
+
+> [!TIP]
+> **Kurmadan deneyin:** herkese açık, salt okunur bir demo [demo.pashacore.com.tr](https://demo.pashacore.com.tr)
+> adresinde çalışıyor (kullanıcı `demo`, şifre `demo`). 50 bilgisayarlı, iki haftalık geçmişi olan uydurma bir okul
+> gösterir ve her gece sıfırlanır. Orada hiçbir şey değiştirilemez.
 
 ---
 
@@ -118,7 +124,7 @@ için ayrıntılı anlatım: [Neden POps?](docs/tr/neden-pops.md)
 | **Terminal** | Tarayıcıdan SYSTEM olarak komut çalıştırır, çıktıyı gösterir; günlük işler için hızlı butonlar. |
 | **Yazılım dağıtımı** | ZIP/MSI/betik adımlarından bir zincir kurup laba gönderin. Dosyalar imzalı bağlantıyla iner, çalışmadan önce SHA-256 özeti denetlenir. |
 | **Zamanlanmış görevler** | Bir kez, her gün ya da seçili günlerde; tek işlemde yazılır, yarım kalmaz. |
-| **Vision** | Saniyede 1–5 kare canlı ekran, uzaktan fare ve klavye (0.1.14'ten itibaren Türkçe klavye); yalnızca kabul edilmiş ya da duyurulmuş oturumda. |
+| **Vision** | Saniyede 1–5 kare canlı ekran, uzaktan fare ve klavye (0.1.14'ten itibaren Türkçe klavye); yalnızca kabul edilmiş ya da duyurulmuş oturumda. Vision v2'nin ajan tarafı hazır (DXGI ile yakalama, yalnızca değişen bölgeler, birden fazla ekran, bağlantıya göre ayarlanan kalite, kabul edilmiş oturumda pano paylaşımı); sunucu tarafı ve paneldeki görüntüleyici sırada. |
 | **Wake-on-LAN** | MAC adresi bilinen bir bilgisayarı, bir labı ya da hepsini uyandırır. |
 | **Karantina** | Kilit ekranı ve ağ yalıtımı (yalnızca POps sunucusuna erişim kalır). Panelden ya da çevrimdışıyken cihaza özel, bir kez geçen bir kodla kaldırılır. |
 | **DNS politikası** | Kategorilere göre listelenen alan adlarına girişi tespit eder; eşiği aşan bilgisayarı karantinaya alabilir. |
@@ -129,10 +135,13 @@ için ayrıntılı anlatım: [Neden POps?](docs/tr/neden-pops.md)
 | :--- | :--- |
 | **Yardım masası** | Öğrenci ve personel tepsiden talep açar ("Sorun bildir"); BT panelden yanıtlar. |
 | **Bildirimler** | Başarısız güncelleme, ele geçirme denemesi, politika uyarısı, dolan disk ya da süresi biten sertifika zile, e-postaya ya da webhook'a düşer. |
-| **Sunucunun kendini güncellemesi** | Backend panelden en son sürüm etiketine güncellenir; sağlık kontrolü ve kendiliğinden geri alma ile. |
+| **Sunucunun kendini güncellemesi** | Backend panelden güncellenir; sağlık kontrolü ve kendiliğinden geri alma ile. Kararlı kanalda en son sürüm etiketine, test sunucusunda istenirse `main`'in son hâline (önizleme kanalı). |
 | **Yedekler** | Her gece alınan yedek, her seferinde geçici bir veritabanına açılarak sınanır; isteğe bağlı başka makineye kopya. |
-| **Gözlemlenebilirlik** | İstek kimlikli JSON loglar, Prometheus `/metrics` ve yük ölçümlerini gösteren tanılama sayfası. |
-| **Saklama süresi** | Eski olay kayıtları, biten görevler ve okunmuş bildirimler takvime göre silinir; denetim zinciri korunur. |
+| **Gözlemlenebilirlik** | İstek kimlikli JSON loglar, Prometheus `/metrics`, yük ölçümlerini gösteren tanılama sayfası ve **Sistem → Genel bakış**'ta son 24 saatin, 7 günün ya da 30 günün grafikleri (ajanlar, işlemci ve bellek, API istekleri, görevler, olaylar, veritabanı ve disk). |
+| **Saklama süresi** | Eski olay kayıtları, biten görevler ve okunmuş bildirimler takvime göre silinir; denetim zinciri korunur. Her ajan kendi log klasörünü 30 gün ve 200 MB ile sınırlar. |
+| **Otomasyon için API** | Sürümlü `/api/v1` ve REST adları, görüntüleyici ya da yönetici rolünde API jetonları (bir kez gösterilir, yalnızca özeti saklanır) ve depodaki OpenAPI dosyası ([`docs/api.md`](docs/api.md), İngilizce). |
+| **Kurumunuz** | Giriş sayfasında kurumunuzun adı ve logosu (**Ayarlar → Genel → Kurum**). |
+| **İki dil** | Panelin her sayfası Türkçe ve İngilizce, tarayıcı başına seçilir; giriş sayfası siz seçene kadar tarayıcının dilini izler. |
 
 ---
 
@@ -208,8 +217,13 @@ POps **tasarımdan şeffaftır** ([karar D-17](docs/decisions.md)):
 
 Bir güncelleme ancak yeni ajan gerçekten çalışıyorsa başarılı sayılır. Çalışmıyorsa `POpsUpdater`, kimse bilgisayara
 dokunmadan önceki sürümü geri koyar; sonuç panele ve Windows olay günlüğüne düşer. Geri alma yolu gerçek makinelerde
-tatbikatla denendi. Sunucu kendini de aynı şekilde günceller: en yeni imzalı sürüm etiketine, sağlık kontrolü ve
-kendiliğinden geri alma ile ([`docs/self-update.md`](docs/self-update.md)).
+tatbikatla denendi. Güncelleme sürerken **Sistem → Güncellemeler** her bilgisayarın bildirdiği aşamayı (alındı,
+indirildi, doğrulandı, kuruluyor) ya da güncellemeyi neden reddettiğini gösterir. Ajan paketi BITS ile indirir; kesilen
+bir indirme kaldığı yerden sürer.
+
+Sunucu kendini de aynı şekilde, sağlık kontrolü ve kendiliğinden geri alma ile günceller. Kararlı kanalda en yeni
+sürüm etiketine geçer (sürümler haftalık çıkar; etiketler SSH ile imzalıdır). Bir test sunucusu bunun yerine `main`'i
+izleyebilir (önizleme kanalı). Bkz. [`docs/self-update.md`](docs/self-update.md).
 
 ---
 
@@ -300,12 +314,14 @@ Dondurma yazılımları (Deep Freeze, Shadow Defender), ajan dondurmadan önce k
 
 ### Bilinen sınırlar
 
-- **Ekran izleme (Vision)** yalnızca birincil monitörü JPEG kareleriyle gösterir. Uzak Masaüstü ve çok kullanıcılı
-  oturumlar, UAC onay ekranı (güvenli masaüstü), oturum açma ekranı ve %100 dışındaki ekran ölçekleme desteklenmez ya
-  da denenmedi.
+- **Ekran izleme (Vision)** bugünkü panelde yalnızca birincil monitörü tam JPEG kareleriyle gösterir. Ajan birden
+  fazla ekranı, yalnızca değişen bölgeleri ve panoyu (Vision v2) zaten destekliyor; sunucu ve panel tarafı
+  hazırlanıyor. Uzak Masaüstü ve çok kullanıcılı oturumlar, UAC onay ekranı (güvenli masaüstü), oturum açma ekranı ve
+  %100 dışındaki ekran ölçekleme desteklenmez ya da denenmedi.
 - **CI'da değil, elle doğrulanır:** Windows'ta gerçek MSI güncellemesi ve geri alma (her ajan sürümünde gerçek
   bilgisayarlarda), Vision tüneli ve karantina kilit ekranı. CI; ajan birim testlerini, sunucunun entegrasyon
-  testlerini ve dağıtım betiklerini sahte ortamda çalıştırır ([`docs/testing.md`](docs/testing.md)).
+  testlerini, dağıtım betiklerini sahte ortamda ve paneli gerçek bir tarayıcıda çalıştırır
+  ([`docs/testing.md`](docs/testing.md)).
 - **Tek backend süreci.** Henüz yüksek erişilebilirlik yok; tek süreçte 5.000 sanal ajan ölçüldü
   ([kapasite](docs/kapasite/README.md)). Tek sunucuda birden çok okul ya da ilçe denenmiş bir kurulum değildir.
 - **İmzasız Windows dosyaları.** Sürüm manifestleri ed25519 ile imzalanır, sunucu ve bilgisayar doğrular; ama
@@ -314,8 +330,9 @@ Dondurma yazılımları (Deep Freeze, Shadow Defender), ajan dondurmadan önce k
 - **Sürüm etiketleri 0.1.22-alpha'dan itibaren SSH ile imzalıdır**; öncekiler imzasızdır. Kendini güncellemenin
   yalnızca imzalı etikete geçmesi için [`keys/allowed_signers`](keys/allowed_signers) dosyasını
   `/etc/pops/allowed_signers` olarak kurun ([`docs/self-update.md`](docs/self-update.md)).
-- **DNS** yalnızca tespit edip bildirir; engelleme planlı. **API:** yalnızca oturumla; API jetonu henüz yok.
-- **Panel dili:** Türkçe; İngilizce arayüz hazırlanıyor.
+- **DNS** yalnızca tespit edip bildirir; engelleme planlı.
+- **Diller:** panel Türkçe ve İngilizcedir; ama İngilizce karşılığı olmayan sunucu iletileri ve Windows ajanının
+  kendi metinleri (tepsi, onay pencereleri, kilit ekranı) yalnızca Türkçedir.
 
 ---
 
@@ -348,19 +365,22 @@ Her sürüm, yükseltme notlarıyla [`CHANGELOG.md`](CHANGELOG.md) içindedir. P
 
 ## ✅ Kalite ve testler
 
-- **Backend:** on iki test takımı; on biri gerçek bir PostgreSQL ve çalışan bir sunucuya karşı: güvenlik
+- **Backend:** on sekiz test takımı; on altısı gerçek bir PostgreSQL ve çalışan bir sunucuya karşı: güvenlik
   değişmezleri, 2FA, ajan yetkilendirme, uzaktan kontrol kuralları, cihaz anahtarları, sağlamlaştırma, 20 eşzamanlı
-  kayıt, 0.1.11'den 0.1.14'e ajanların bugünkü sunucuyla uyumu, özellikler, yardım masası ve lisanslar, işletim.
-  Ajan protokolü JSON Schema'lara ve ortak test vektörlerine karşı denetlenir
+  kayıt, 0.1.11'den 0.1.14'e ajanların bugünkü sunucuyla uyumu, özellikler, yardım masası ve lisanslar, işletim, API
+  jetonları ve salt okunur demo hesabı. Ajan protokolü JSON Schema'lara ve ortak test vektörlerine karşı denetlenir
   ([`docs/protocol`](docs/protocol/README.md)). flake8 sıfır bulgu.
 - **Ajan:** .NET 10 ve .NET Framework 4.7.2 (MSI özel eylemleri) üzerinde yaklaşık 700 xUnit test koşusu; CI'da
-  kapsam tabanı.
+  kapsam tabanı. Ajan, .NET'in önerilen çözümleyicileriyle derlenir ve uyarıları hata sayar.
 - **Kurulum ve işletim:** boş veritabanından migration'lar, sınanan yedek ve geri yükleme, TLS aracı, sürüm imzalama,
   dağıtım ve kendini güncelleme betikleri (geri alma, imzalı etiket, güvensiz ayar) CI'da test edilir.
-- **Panel:** PHP sözdizimi ve kaçırılmamış HTML çıktısını reddeden bir denetim.
+- **Panel:** PHP sözdizimi, kaçırılmamış HTML çıktısını reddeden bir denetim, çeviri denetimi ve gerçek bir
+  tarayıcıda (Playwright) uçtan uca testler: her sayfa masaüstü ve telefon genişliğinde ve ana akışlar; konsol hatası
+  ve başka adrese istek olmadan.
 - **Tedarik zinciri:** her değişiklikte CodeQL, Dependabot, özetleriyle kilitlenmiş backend bağımlılıkları
   (`pip --require-hashes`), commit SHA'sına sabitlenmiş GitHub Actions, yayın işi bütün testler geçmeden çalışmayan
-  ed25519 imzalı sürümler.
+  ed25519 imzalı sürümler, derleme kaynağı kaydı (provenance) ve SBOM ile yayımlanan Docker imajları ve OpenSSF
+  Scorecard.
 - **Sahada:** gerçek Windows bilgisayarlarda güncelleme ve geri alma tatbikatları ve sürüm saha testleri.
 
 Testleri yerelde çalıştırmak (İngilizce): [`docs/testing.md`](docs/testing.md).
@@ -373,10 +393,12 @@ Testleri yerelde çalıştırmak (İngilizce): [`docs/testing.md`](docs/testing.
 | :--- | :--- |
 | [`Agent/`](Agent) | Windows ajanı (.NET 10): `POps.Agent` servisi, `POpsTray`, `POpsWatchdog`, `POpsUpdater`, ortak kütüphane `POps.Shared`, testler `POps.Tests`. |
 | [`Backend/`](Backend) | FastAPI backend: `pops/` paketi, router'lar, migration'lar, testler. |
-| [`Dashboard/`](Dashboard) | PHP 8 panel (Türkçe arayüz). |
+| [`Dashboard/`](Dashboard) | PHP 8 panel (Türkçe ve İngilizce arayüz). |
 | [`Installer/`](Installer) | Ajan için WiX MSI; sunucu kurulum, dağıtım, kendini güncelleme, yedek ve TLS betikleri. |
-| [`docs/`](docs) | İşletici ve geliştirici belgeleri. |
-| [`tools/`](tools) | Sürüm imzalama, yük testi için ajan simülatörü, panelin HTML çıktı denetimi. |
+| [`docs/`](docs) | İşletici ve geliştirici belgeleri, ajan protokolü ([`docs/protocol`](docs/protocol/README.md)) ve OpenAPI dosyası. |
+| [`tools/`](tools) | Sürüm imzalama, backend bağımlılık kilidi, OpenAPI dışa aktarma, yük testi için ajan simülatörü, demo filosu, panelin HTML çıktı ve çeviri denetimleri. |
+| [`tests/e2e/`](tests/e2e) | Panelin uçtan uca testleri (Playwright). |
+| [`deploy/demo/`](deploy/demo/README.md) | Herkese açık salt okunur demo: Compose yığını, örnek veri ve gece sıfırlama. |
 | [`docker/`](docker), [`docker-compose.yml`](docker-compose.yml) | İsteğe bağlı konteyner kurulumu. |
 | [`keys/`](keys) | Sürüm açık anahtarı ve anahtar prosedürleri. |
 
@@ -406,14 +428,17 @@ Belgelerin çoğu İngilizcedir; Türkçe olanlar işaretlidir.
 | | [Panel](docs/dashboard.md) | [REST ve WebSocket API](docs/api.md) |
 | | [Vision](docs/vision.md) | [Testler](docs/testing.md) |
 | | [KVKK aydınlatma metni (TR)](docs/kvkk-aydinlatma.md) | [Konumlandırma](docs/positioning.md) |
-| | | [Kod imzalama politikası](docs/code-signing.md) |
+| | [Herkese açık demo](deploy/demo/README.md) | [Kod imzalama politikası](docs/code-signing.md) |
+| | | [Ajan protokolü](docs/protocol/README.md) |
+| | | [Panel dilleri](docs/i18n.md) |
 | | | [GLPI aktarımı (tasarım)](docs/integrations/glpi.md) |
 
 ---
 
 ## 🧭 Yol haritası
 
-Sırada bir mimari tur var:
+Üzerinde çalışılanlar: Vision v2'nin sunucu ve panel tarafı ve bir Linux ajanı (önce Pardus). Sırada önce SignPath
+Foundation üzerinden Authenticode kod imzalama var. Ardından bir mimari tur geliyor:
 - görevler için tam durum makinesi;
 - imzalı komutlar ve mTLS;
 - yalnızca ekleme yapılabilen bir denetim rolü;

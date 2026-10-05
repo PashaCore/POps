@@ -108,12 +108,11 @@ Bunları kurulumdan bir iki hafta önce bitirin.
 | 0:45–0:55 | Vision'ı onayla deneyin (aşağıda). | Kabul edilen oturumda ekran görünüyor; reddedilen oturumda hiçbir şey görünmüyor; ikisi de kayıtlarda. |
 | 0:55–1:00 | **Kimlik zorlaması**'nı açın (**Sistem → Güvenlik**), **Zorlamayı aç** ile onaylayın. Dondurma yazılımı varsa bilgisayarları şimdi dondurun. | Sunucu artık kayıtsız ajanları reddediyor. |
 
-Ajan kurulum komutu (okulun kendi sertifika otoritesini kullanıyorsanız `SERVER_CA_CERT` ile). İlk satır, kurulum
-günlüğünün yazılacağı klasörü oluşturur; kurulum bu klasörün izinlerini kendisi daraltır:
+Ajan kurulum komutu (okulun kendi sertifika otoritesini kullanıyorsanız `SERVER_CA_CERT` ile). Kurulum günlüğü her
+Windows'ta bulunan `C:\Windows\Temp` klasörüne yazılır:
 
 ```
-if not exist C:\POpsLogs mkdir C:\POpsLogs
-msiexec /i POps-Agent-<sürüm>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log SERVER_URL=https://pops.okul.local ENROLL_TOKEN=<jeton> SERVER_CA_CERT=D:\pops-ca.pem
+msiexec /i POps-Agent-<sürüm>-win-x64.msi /qn /l*v C:\Windows\Temp\pops-msi-install.log SERVER_URL=https://pops.okul.local ENROLL_TOKEN=<jeton> SERVER_CA_CERT=D:\pops-ca.pem
 ```
 
 Let's Encrypt kullanıyorsanız `SERVER_CA_CERT=…` kısmını çıkarın. Bilgisayar görünmezse:
