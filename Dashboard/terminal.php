@@ -33,24 +33,24 @@
 
 <div class="page-header">
     <div>
-        <h1>Uzak komut</h1>
-        <div class="summary" id="tmSummary"><span class="sum faint">Hedef seçin</span></div>
+        <h1><?php _e('Uzak komut'); ?></h1>
+        <div class="summary" id="tmSummary"><span class="sum faint"><?php _e('Hedef seçin'); ?></span></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="btn secondary" id="quickBtn" aria-haspopup="menu"><?php echo pops_icon('zap', 'sm'); ?>Hızlı komutlar<?php echo pops_icon('chev', 'sm'); ?></button>
-        <button type="button" class="ibtn boxed" id="historyBtn" data-tip="Komut geçmişi" data-tip-pos="left" aria-label="Komut geçmişi"><?php echo pops_icon('clock'); ?></button>
+        <button type="button" class="btn secondary" id="quickBtn" aria-haspopup="menu"><?php echo pops_icon('zap', 'sm'); ?><?php _e('Hızlı komutlar'); ?><?php echo pops_icon('chev', 'sm'); ?></button>
+        <button type="button" class="ibtn boxed" id="historyBtn" data-tip="<?php _e('Komut geçmişi'); ?>" data-tip-pos="left" aria-label="<?php _e('Komut geçmişi'); ?>"><?php echo pops_icon('clock'); ?></button>
     </div>
 </div>
 
 <div class="tm-target">
-    <div class="segmented" id="tmMode" role="group" aria-label="Hedef türü">
-        <button type="button" id="btnModeSingle" data-mode="single" class="active" aria-pressed="true">Bilgisayar</button>
-        <button type="button" id="btnModeLab" data-mode="lab" aria-pressed="false">Sınıf</button>
-        <button type="button" id="btnModeMulti" data-mode="multi" aria-pressed="false" hidden>Seçili</button>
+    <div class="segmented" id="tmMode" role="group" aria-label="<?php _e('Hedef türü'); ?>">
+        <button type="button" id="btnModeSingle" data-mode="single" class="active" aria-pressed="true"><?php _e('Bilgisayar'); ?></button>
+        <button type="button" id="btnModeLab" data-mode="lab" aria-pressed="false"><?php _e('Sınıf'); ?></button>
+        <button type="button" id="btnModeMulti" data-mode="multi" aria-pressed="false" hidden><?php _e('Seçili'); ?></button>
     </div>
     <div id="areaSingle" class="tm-area">
-        <div class="search-field"><?php echo pops_icon('search', 'sm'); ?><input type="search" id="terminalDeviceSearch" placeholder="Ad, sınıf ya da IP" aria-label="Bilgisayar ara"></div>
-        <select id="terminalDeviceSelect" aria-label="Bilgisayar"><option value="">Bilgisayar seçin</option></select>
+        <div class="search-field"><?php echo pops_icon('search', 'sm'); ?><input type="search" id="terminalDeviceSearch" placeholder="<?php _e('Ad, sınıf ya da IP'); ?>" aria-label="<?php _e('Bilgisayar ara'); ?>"></div>
+        <select id="terminalDeviceSelect" aria-label="<?php _e('Bilgisayar'); ?>"><option value=""><?php _e('Bilgisayar seçin'); ?></option></select>
     </div>
     <div id="areaLab" class="tm-area chip-row" hidden></div>
     <div id="areaMulti" class="tm-area chip-row" hidden></div>
@@ -59,13 +59,13 @@
 
 <div class="tm-console" id="terminalContainer">
     <div class="tm-tools">
-        <button type="button" class="ibtn sm" id="copyTerminalBtn" data-tip="Çıktıyı kopyala" data-tip-pos="left" aria-label="Çıktıyı kopyala"><?php echo pops_icon('copy', 'sm'); ?></button>
-        <button type="button" class="ibtn sm" id="clearTerminalBtn" data-tip="Ekranı temizle (cls)" data-tip-pos="left" aria-label="Ekranı temizle"><?php echo pops_icon('trash', 'sm'); ?></button>
+        <button type="button" class="ibtn sm" id="copyTerminalBtn" data-tip="<?php _e('Çıktıyı kopyala'); ?>" data-tip-pos="left" aria-label="<?php _e('Çıktıyı kopyala'); ?>"><?php echo pops_icon('copy', 'sm'); ?></button>
+        <button type="button" class="ibtn sm" id="clearTerminalBtn" data-tip="<?php _e('Ekranı temizle (cls)'); ?>" data-tip-pos="left" aria-label="<?php _e('Ekranı temizle'); ?>"><?php echo pops_icon('trash', 'sm'); ?></button>
     </div>
     <div class="pops-terminal-screen" id="popsTerminalScreen"></div>
     <div class="cmd-input-line" id="cmdInputLine">
         <span id="cmdPrefix" class="cmd-prefix">POps:\&gt;</span>
-        <input type="text" id="terminalCommand" class="cmd-input" autocomplete="off" spellcheck="false" placeholder="Komut yazın ve Enter'a basın" aria-label="Komut">
+        <input type="text" id="terminalCommand" class="cmd-input" autocomplete="off" spellcheck="false" placeholder="<?php _e("Komut yazın ve Enter'a basın"); ?>" aria-label="<?php _e('Komut'); ?>">
     </div>
 </div>
 
@@ -92,8 +92,8 @@ function initTerminalWebSocket() {
         const uniqueId = `${payload.task_id || '0'}_${payload.id || '?'}`;
         if (processedResponses.has(uniqueId)) return;
         processedResponses.add(uniqueId);
-        const pcName = payload.pc_name || payload.id || 'Bilinmeyen bilgisayar';
-        appendToTerminal(`<div class="cmd-output"><div class="pc">[${escapeHtml(pcName)}]</div><pre style="margin:0;color:#e2e8f0;font-family:var(--font-mono);font-size:0.8125rem;white-space:pre-wrap;word-wrap:break-word;">${escapeHtml(String(payload.output || 'Çıktı yok.').trim())}</pre></div>`);
+        const pcName = payload.pc_name || payload.id || POps.t('Bilinmeyen bilgisayar');
+        appendToTerminal(`<div class="cmd-output"><div class="pc">[${escapeHtml(pcName)}]</div><pre style="margin:0;color:#e2e8f0;font-family:var(--font-mono);font-size:0.8125rem;white-space:pre-wrap;word-wrap:break-word;">${escapeHtml(String(payload.output || POps.t('Çıktı yok.')).trim())}</pre></div>`);
     };
     // Bağlantı koparsa birkaç saniye sonra yeniden kurulur (sunucu güncellemesi, ağ kesintisi)
     ws.onclose = () => setTimeout(initTerminalWebSocket, 5000);
@@ -102,7 +102,7 @@ function initTerminalWebSocket() {
 // Hızlı komutlar. Ajan her komutu bir .bat dosyasına yazıp cmd.exe /c ile SYSTEM olarak çalıştırır; buradaki
 // metinler o .bat satırının kendisidir (PowerShell sarmalayıcısı yok). Komutlar '&' ile ayrılır; .bat içinde '%'
 // değişken açar, bu yüzden yalnızca bilerek kullanılan %windir% var. Sıfırdan farklı çıkış kodu görevi Başarısız
-// yapar: son komut işin başarısını söyler.
+// yapar: son komut işin başarısını söyler. name görev adıdır (sunucuya Türkçe gider; panelde POps.taskName ile gösterilir).
 const QUICK_ACTIONS = {
     dns: { name: 'DNS önbelleğini temizle', cmd: 'ipconfig /flushdns' },
     // Sanal/statik IP'li ya da kablosu takılı olmayan bağdaştırıcı yüzünden release/renew hata kodu dönebilir;
@@ -137,16 +137,16 @@ function selectedDevice() {
 // Hedef: tek bilgisayar ya da seçili sınıf. Yoksa uyarı ve null.
 function currentTarget() {
     if (currentMode === 'multi') {
-        if (!multiHosts.length) { POps.toast('warning', 'Seçili bilgisayar yok.'); return null; }
-        return { mode: 'PC', targets: multiHosts.slice(), label: `${multiHosts.length} bilgisayar` };
+        if (!multiHosts.length) { POps.toast('warning', POps.t('Seçili bilgisayar yok.')); return null; }
+        return { mode: 'PC', targets: multiHosts.slice(), label: POps.tn('{n} bilgisayar', multiHosts.length) };
     }
     if (currentMode === 'single') {
         const d = selectedDevice();
-        if (!d) { POps.toast('warning', 'Önce bir bilgisayar seçin.'); return null; }
+        if (!d) { POps.toast('warning', POps.t('Önce bir bilgisayar seçin.')); return null; }
         return { mode: 'PC', targets: [d.id], label: d.name };
     }
-    if (!selectedLab) { POps.toast('warning', 'Önce bir sınıf seçin.'); return null; }
-    return { mode: 'LAB', targets: [selectedLab], label: 'Sınıf: ' + selectedLab };
+    if (!selectedLab) { POps.toast('warning', POps.t('Önce bir sınıf seçin.')); return null; }
+    return { mode: 'LAB', targets: [selectedLab], label: POps.t('Sınıf: {lab}', { lab: selectedLab }) };
 }
 
 async function sendTasks(target, taskSequence, btn, reason) {
@@ -154,12 +154,12 @@ async function sendTasks(target, taskSequence, btn, reason) {
         const title = taskSequence[0] && taskSequence[0].name;
         const r = await POps.busy(btn, () => POps.post('/api/deploy_orchestration',
             { target_mode: target.mode, targets: target.targets, taskSequence, title, source: 'terminal', reason: reason || null },
-            { jobTitle: (title === 'Komut' ? 'Komut: ' + (taskSequence[0].command || '').slice(0, 40) : title) + ' · ' + (target.label || '') }));
+            { jobTitle: (title === 'Komut' ? POps.t('Komut: {command}', { command: (taskSequence[0].command || '').slice(0, 40) }) : POps.taskName(title)) + ' · ' + (target.label || '') }));
         const created = (r && r.created) || 0;
-        appendToTerminal(`<div class="info">[i] ${escapeHtml(String(created))} görev kuyruğa eklendi, çıktı bekleniyor…${r && r.skipped_module_closed ? ' (' + escapeHtml(String(r.skipped_module_closed)) + ' bilgisayarda uzak komut kapalı)' : ''}</div>`);
+        appendToTerminal(`<div class="info">[i] ${POps.tnHtml('{n} görev kuyruğa eklendi, çıktı bekleniyor…', Number(created))}${r && r.skipped_module_closed ? ' ' + POps.tnHtml('({n} bilgisayarda uzak komut kapalı)', Number(r.skipped_module_closed)) : ''}</div>`);
         return true;
     } catch (e) {
-        appendToTerminal(`<div class="err">[-] Gönderilemedi: ${escapeHtml(POps.errorMessage(e))}</div>`);
+        appendToTerminal(`<div class="err">[-] ${POps.tHtml('Gönderilemedi: {error}', { error: POps.errorMessage(e) })}</div>`);
         POps.toast('error', POps.errorMessage(e));
         return false;
     }
@@ -169,9 +169,9 @@ window.runQuickAction = async function(key, btn) {
     const action = QUICK_ACTIONS[key];
     const target = action && currentTarget();
     if (!target) return;
-    const reason = await POps.prompt({ title: action.name, message: `${target.label} için çalıştırılacak.`, label: 'Gerekçe (denetim kaydına yazılır)', required: true, maxLength: 300, confirmText: 'Çalıştır' });
+    const reason = await POps.prompt({ title: POps.taskName(action.name), message: POps.t('{target} için çalıştırılacak.', { target: target.label }), label: POps.t('Gerekçe (denetim kaydına yazılır)'), required: true, maxLength: 300, confirmText: POps.t('Çalıştır') });
     if (reason === null) return;
-    appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] ${escapeHtml(action.name)} · ${escapeHtml(target.label)} · Gerekçe: ${escapeHtml(reason)}</div>`);
+    appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] ${escapeHtml(POps.taskName(action.name))} · ${escapeHtml(target.label)} · ${POps.tHtml('Gerekçe: {reason}', { reason })}</div>`);
     await sendTasks(target, [{ name: action.name, type: 'CMD', command: action.cmd }], btn, reason);
 };
 
@@ -182,28 +182,29 @@ function renameCommand(newName) {
 
 async function renameSingle(newName, btn) {
     const d = selectedDevice();
-    if (currentMode !== 'single' || !d) { POps.toast('warning', 'Tek bilgisayar modunda bir bilgisayar seçin.'); return; }
-    if (!PC_NAME_RE.test(newName)) { POps.toast('error', 'Geçersiz ad: en çok 15 karakter; harf, rakam ve tire.'); return; }
-    if (!await POps.confirm({ title: 'Bilgisayar yeniden adlandırılsın mı?', message: `${d.name} → ${newName}. Bilgisayar 5 saniye sonra yeniden başlar; yerel kullanıcı ve ağ bağdaştırıcıları da yeniden adlandırılır.`, confirmText: 'Adlandır ve yeniden başlat', danger: true })) return;
+    if (currentMode !== 'single' || !d) { POps.toast('warning', POps.t('Tek bilgisayar modunda bir bilgisayar seçin.')); return; }
+    if (!PC_NAME_RE.test(newName)) { POps.toast('error', POps.t('Geçersiz ad: en çok 15 karakter; harf, rakam ve tire.')); return; }
+    if (!await POps.confirm({ title: POps.t('Bilgisayar yeniden adlandırılsın mı?'), message: POps.t('{old} → {name}. Bilgisayar 5 saniye sonra yeniden başlar; yerel kullanıcı ve ağ bağdaştırıcıları da yeniden adlandırılır.', { old: d.name, name: newName }), confirmText: POps.t('Adlandır ve yeniden başlat'), danger: true })) return;
     appendToTerminal(`<div class="cmd-block" style="margin-top:0.75rem;margin-bottom:0.5rem;"><span class="warn">[*]</span> ${escapeHtml(d.name)} → '${escapeHtml(newName)}'</div>`);
     await sendTasks({ mode: 'PC', targets: [d.id], label: d.name }, [{ name: 'Yeniden adlandır', type: 'CMD', command: renameCommand(newName) }], btn);
 }
 
 async function renameLab(baseName, limit, btn) {
-    if (currentMode !== 'lab' || !selectedLab) { POps.toast('warning', 'Sınıf modunda bir sınıf seçin.'); return; }
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,12}$/.test(baseName)) { POps.toast('error', 'Geçersiz önek: en çok 13 karakter; harf, rakam ve tire (iki haneli numara eklenir).'); return; }
+    if (currentMode !== 'lab' || !selectedLab) { POps.toast('warning', POps.t('Sınıf modunda bir sınıf seçin.')); return; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,12}$/.test(baseName)) { POps.toast('error', POps.t('Geçersiz önek: en çok 13 karakter; harf, rakam ve tire (iki haneli numara eklenir).')); return; }
     let devs = state.devices.filter(d => d.lab === selectedLab)
         .filter(d => { const n = String(d.real_hostname || '').toUpperCase(); return !(n.includes('PC00') || n.includes('ANA') || n.includes('OGR')); })
         .sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true, sensitivity: 'base' }));
     if (limit > 0 && limit < devs.length) devs = devs.slice(0, limit);
-    if (!devs.length) { POps.toast('warning', 'Bu sınıfta adlandırılacak bilgisayar yok.'); return; }
+    if (!devs.length) { POps.toast('warning', POps.t('Bu sınıfta adlandırılacak bilgisayar yok.')); return; }
     const plan = devs.map((d, i) => [d, baseName + String(i + 1).padStart(2, '0')]);
-    if (!await POps.confirm({ title: `${devs.length} bilgisayar yeniden adlandırılsın mı?`, message: plan.slice(0, 6).map(([d, n]) => `${POps.deviceName(d)} → ${n}`).join(', ') + (plan.length > 6 ? ' …' : '') + '. Her bilgisayar 5 saniye sonra yeniden başlar.', confirmText: 'Adlandır', danger: true })) return;
-    appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Toplu adlandırma: ${escapeHtml(String(devs.length))} bilgisayar</div>`);
+    const list = plan.slice(0, 6).map(([d, n]) => `${POps.deviceName(d)} → ${n}`).join(', ') + (plan.length > 6 ? ' …' : '');
+    if (!await POps.confirm({ title: POps.tn('{n} bilgisayar yeniden adlandırılsın mı?', devs.length), message: POps.t('{list}. Her bilgisayar 5 saniye sonra yeniden başlar.', { list }), confirmText: POps.t('Adlandır'), danger: true })) return;
+    appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] ${POps.tnHtml('Toplu adlandırma: {n} bilgisayar', devs.length)}</div>`);
     await POps.busy(btn, async () => {
         for (const [d, n] of plan) {
             try {
-                await POps.post('/api/deploy_orchestration', { target_mode: 'PC', targets: [d.hostname], taskSequence: [{ name: 'Toplu adlandırma', type: 'CMD', command: renameCommand(n) }], title: 'Toplu adlandırma', source: 'terminal' }, { jobTitle: 'Adlandırma · ' + n });
+                await POps.post('/api/deploy_orchestration', { target_mode: 'PC', targets: [d.hostname], taskSequence: [{ name: 'Toplu adlandırma', type: 'CMD', command: renameCommand(n) }], title: 'Toplu adlandırma', source: 'terminal' }, { jobTitle: POps.taskName('Toplu adlandırma') + ' · ' + n });
                 appendToTerminal(`<div style="color:#4ade80;margin-bottom:0.25rem;">→ ${escapeHtml(POps.deviceName(d))} → ${escapeHtml(n)}</div>`);
             } catch (e) {
                 appendToTerminal(`<div class="err">[-] ${escapeHtml(POps.deviceName(d))}: ${escapeHtml(POps.errorMessage(e))}</div>`);
@@ -213,28 +214,28 @@ async function renameLab(baseName, limit, btn) {
 }
 
 window.promptSingleRename = async function(btn) {
-    if (currentMode !== 'single' || !selectedDevice()) { POps.toast('warning', 'Tek bilgisayar modunda bir bilgisayar seçin.'); return; }
-    const name = await POps.prompt({ title: 'Bilgisayarı yeniden adlandır', label: 'Yeni ad', placeholder: 'LAB1-PC05', required: true, maxLength: 15,
-        validate: (v) => PC_NAME_RE.test(v.trim()) ? null : 'En çok 15 karakter; harf, rakam ve tire.' });
+    if (currentMode !== 'single' || !selectedDevice()) { POps.toast('warning', POps.t('Tek bilgisayar modunda bir bilgisayar seçin.')); return; }
+    const name = await POps.prompt({ title: POps.t('Bilgisayarı yeniden adlandır'), label: POps.t('Yeni ad'), placeholder: 'LAB1-PC05', required: true, maxLength: 15,
+        validate: (v) => PC_NAME_RE.test(v.trim()) ? null : POps.t('En çok 15 karakter; harf, rakam ve tire.') });
     if (name !== null) renameSingle(name.trim(), btn);
 };
 
 window.promptAutoRename = async function(btn) {
-    if (currentMode !== 'lab' || !selectedLab) { POps.toast('warning', 'Sınıf modunda bir sınıf seçin.'); return; }
-    const base = await POps.prompt({ title: 'Sınıfı toplu adlandır', message: 'Ada iki haneli sıra numarası eklenir (ör. LAB1-PC01, LAB1-PC02).', label: 'Önek', placeholder: 'LAB1-PC', required: true, maxLength: 13,
-        validate: (v) => /^[A-Za-z0-9][A-Za-z0-9-]{0,12}$/.test(v.trim()) ? null : 'En çok 13 karakter; harf, rakam ve tire.' });
+    if (currentMode !== 'lab' || !selectedLab) { POps.toast('warning', POps.t('Sınıf modunda bir sınıf seçin.')); return; }
+    const base = await POps.prompt({ title: POps.t('Sınıfı toplu adlandır'), message: POps.t('Ada iki haneli sıra numarası eklenir (ör. LAB1-PC01, LAB1-PC02).'), label: POps.t('Önek'), placeholder: 'LAB1-PC', required: true, maxLength: 13,
+        validate: (v) => /^[A-Za-z0-9][A-Za-z0-9-]{0,12}$/.test(v.trim()) ? null : POps.t('En çok 13 karakter; harf, rakam ve tire.') });
     if (base !== null) renameLab(base.trim(), 0, btn);
 };
 
 window.promptTaskkill = async function(btn) {
     const target = currentTarget();
     if (!target) return;
-    const exe = await POps.prompt({ title: 'Uygulamayı kapat', message: `${target.label} üzerinde bu adla çalışan bütün süreçler zorla kapatılır.`, label: 'Program adı', placeholder: 'msedge.exe', required: true, maxLength: 100,
-        validate: (v) => /^[^"%\r\n\\/:*?<>|]+$/.test(v.trim()) ? null : 'Yalnızca program adı yazın (ör. msedge.exe); " % ve yol kullanılamaz.' });
+    const exe = await POps.prompt({ title: POps.t('Uygulamayı kapat'), message: POps.t('{target} üzerinde bu adla çalışan bütün süreçler zorla kapatılır.', { target: target.label }), label: POps.t('Program adı'), placeholder: 'msedge.exe', required: true, maxLength: 100,
+        validate: (v) => /^[^"%\r\n\\/:*?<>|]+$/.test(v.trim()) ? null : POps.t('Yalnızca program adı yazın (ör. msedge.exe); " % ve yol kullanılamaz.') });
     if (exe === null) return;
-    const reason = await POps.prompt({ title: 'Gerekçe', label: 'Gerekçe (denetim kaydına yazılır)', required: true, maxLength: 300, confirmText: 'Kapat' });
+    const reason = await POps.prompt({ title: POps.t('Gerekçe'), label: POps.t('Gerekçe (denetim kaydına yazılır)'), required: true, maxLength: 300, confirmText: POps.t('Kapat') });
     if (reason === null) return;
-    appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] Uygulama kapatılıyor: ${escapeHtml(exe.trim())} · ${escapeHtml(target.label)} · Gerekçe: ${escapeHtml(reason)}</div>`);
+    appendToTerminal(`<div class="cmd-block warn" style="margin-top:0.75rem;margin-bottom:0.5rem;">[*] ${POps.tHtml('Uygulama kapatılıyor: {app}', { app: exe.trim() })} · ${escapeHtml(target.label)} · ${POps.tHtml('Gerekçe: {reason}', { reason })}</div>`);
     await sendTasks(target, [{ name: 'Uygulamayı kapat: ' + exe.trim(), type: 'CMD', command: `taskkill /F /IM "${exe.trim()}"` }], btn, reason);
 };
 
@@ -244,8 +245,8 @@ function renderTerminal() {
     const list = state.devices.filter(d => [POps.deviceName(d), d.hostname, d.lab, d.ip].join(' ').toLowerCase().includes(term))
         .sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
     const current = select.value;
-    select.replaceChildren(POps.el('option', { value: '', text: `Bilgisayar seçin (${list.length})` }),
-        ...list.map(d => POps.el('option', { value: d.hostname, text: `${POps.deviceName(d)} · ${d.lab === 'Atanmamis_Cihazlar' ? 'Atanmamış' : (d.lab || '-')}${POps.isOffline(d) ? ' · çevrimdışı' : ''}` })));
+    select.replaceChildren(POps.el('option', { value: '', text: POps.t('Bilgisayar seçin ({n})', { n: list.length }) }),
+        ...list.map(d => POps.el('option', { value: d.hostname, text: `${POps.deviceName(d)} · ${d.lab === 'Atanmamis_Cihazlar' ? POps.t('Atanmamış') : (d.lab || '-')}${POps.isOffline(d) ? ' · ' + POps.t('çevrimdışı') : ''}` })));
     if (current && list.some(d => d.hostname === current)) select.value = current;
 
     const labArea = document.getElementById('areaLab');
@@ -256,7 +257,7 @@ function renderTerminal() {
             [document.createTextNode(lab), POps.el('span', { className: 'count', text: String(pcs.filter(d => !POps.isOffline(d)).length) + '/' + pcs.length })]);
         b.addEventListener('click', () => { selectedLab = selectedLab === lab ? null : lab; renderTerminal(); });
         return b;
-    }) : [POps.el('span', { className: 'text-sm text-muted', text: 'Henüz sınıf yok.' })]));
+    }) : [POps.el('span', { className: 'text-sm text-muted', text: POps.t('Henüz sınıf yok.') })]));
 
     const multiArea = document.getElementById('areaMulti');
     multiArea.replaceChildren(...multiHosts.slice(0, 10).map(h => POps.el('span', { className: 'chip', text: POps.dev.name(h) })),
@@ -269,8 +270,8 @@ function renderTerminal() {
     let label = '';
     if (currentMode === 'single' && d) { hosts = [d.id]; label = d.name; }
     else if (currentMode === 'lab' && selectedLab) { hosts = state.devices.filter(x => x.lab === selectedLab).map(x => x.hostname); label = selectedLab; }
-    else if (currentMode === 'multi') { hosts = multiHosts; label = `${multiHosts.length} bilgisayar`; }
-    prefix.textContent = label ? `${label}:\\>` : 'Hedef seçin:\\>';
+    else if (currentMode === 'multi') { hosts = multiHosts; label = POps.tn('{n} bilgisayar', multiHosts.length); }
+    prefix.textContent = (label || POps.t('Hedef seçin')) + ':\\>';
     const devs = hosts.map(h => POps.dev.find(h)).filter(Boolean);
     const onN = devs.filter(x => !POps.isOffline(x)).length;
     const offN = hosts.length - onN;
@@ -278,27 +279,27 @@ function renderTerminal() {
     const sum = document.getElementById('tmSummary');
     const note = document.getElementById('tmNote');
     if (!hosts.length) {
-        sum.replaceChildren(POps.el('span', { className: 'sum faint', text: currentMode === 'lab' ? 'Bir sınıf seçin' : 'Bir bilgisayar seçin' }));
+        sum.replaceChildren(POps.el('span', { className: 'sum faint', text: currentMode === 'lab' ? POps.t('Bir sınıf seçin') : POps.t('Bir bilgisayar seçin') }));
         note.replaceChildren();
         return;
     }
     const dot = (cls) => POps.el('span', { className: 'dot ' + cls });
     sum.replaceChildren(
-        POps.el('span', { className: 'sum' }, [document.createTextNode('Hedef: '), POps.el('b', { text: label })]),
-        POps.el('span', { className: 'sum' }, [dot('on'), POps.el('b', { text: String(onN) }), document.createTextNode(' açık')]),
-        ...(offN ? [POps.el('span', { className: 'sum' }, [dot('off'), POps.el('b', { text: String(offN) }), document.createTextNode(' kapalı')])] : []));
+        POps.el('span', { className: 'sum' }, POps.tNodes('Hedef: {target}', null, { target: POps.el('b', { text: label }) })),
+        POps.el('span', { className: 'sum' }, [dot('on'), ...POps.tNodes('{n} açık', { n: onN }, { n: POps.el('b', { text: String(onN) }) })]),
+        ...(offN ? [POps.el('span', { className: 'sum' }, [dot('off'), ...POps.tNodes('{n} kapalı', { n: offN }, { n: POps.el('b', { text: String(offN) }) })])] : []));
     const notes = [];
-    if (offN) notes.push(POps.el('span', {}, [dot('warn'), document.createTextNode(`Kapalı ${offN} bilgisayarda komut, açıldığında çalışır.`)]));
-    if (capOff.length) notes.push(POps.el('span', {}, [dot('bad'), document.createTextNode(`Uzak komut kapalı olduğu için reddedilecek: ${capOff.slice(0, 4).map(POps.deviceName).join(', ')}${capOff.length > 4 ? ' +' + (capOff.length - 4) : ''}`)]));
+    if (offN) notes.push(POps.el('span', {}, [dot('warn'), document.createTextNode(POps.tn('Kapalı {n} bilgisayarda komut, açıldığında çalışır.', offN))]));
+    if (capOff.length) notes.push(POps.el('span', {}, [dot('bad'), document.createTextNode(POps.t('Uzak komut kapalı olduğu için reddedilecek: {names}', { names: capOff.slice(0, 4).map(POps.deviceName).join(', ') + (capOff.length > 4 ? ' +' + (capOff.length - 4) : '') }))]));
     note.replaceChildren(...notes);
 }
 
 function terminalHeaderHtml() {
     return `<div class="header">
-        <div class="title">POps komut satırı</div>
-        <div>Yönetici: ${escapeHtml(TERMINAL_ADMIN)} · Komutlar hedefte SYSTEM hesabıyla, cmd.exe ile çalışır.</div>
+        <div class="title">${POps.tHtml('POps komut satırı')}</div>
+        <div>${POps.tHtml('Yönetici: {name}', { name: TERMINAL_ADMIN })} · ${POps.tHtml('Komutlar hedefte SYSTEM hesabıyla, cmd.exe ile çalışır.')}</div>
     </div>
-    <div class="tip">Rutin işler için sağ üstteki Hızlı komutlar menüsünü kullanın. Ekranı temizlemek için: cls</div>`;
+    <div class="tip">${POps.tHtml('Rutin işler için sağ üstteki Hızlı komutlar menüsünü kullanın. Ekranı temizlemek için: cls')}</div>`;
 }
 
 function appendToTerminal(html) {
@@ -350,7 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (multiHosts.length) {
         const mb = document.getElementById('btnModeMulti');
         mb.hidden = false;
-        mb.textContent = `Seçili ${multiHosts.length}`;
+        mb.textContent = POps.t('Seçili {n}', { n: multiHosts.length });
         currentMode = 'multi';
     }
     document.getElementById('terminalDeviceSearch').addEventListener('input', renderTerminal);
@@ -358,7 +359,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('copyTerminalBtn').addEventListener('click', async () => {
         const ok = await copyText(document.getElementById('popsTerminalScreen').innerText);
-        POps.toast(ok ? 'success' : 'error', ok ? 'Terminal çıktısı kopyalandı.' : 'Kopyalanamadı; metni seçip elle kopyalayın.');
+        POps.toast(ok ? 'success' : 'error', ok ? POps.t('Terminal çıktısı kopyalandı.') : POps.t('Kopyalanamadı; metni seçip elle kopyalayın.'));
     });
     document.getElementById('clearTerminalBtn').addEventListener('click', () => { clearTerminal(); termInput.focus(); });
 
@@ -371,20 +372,20 @@ document.addEventListener('DOMContentLoaded', () => {
             else POps.dev.power('wake', t.targets, { btn });
         };
         POps.menu(btn, [
-            ...Object.keys(QUICK_ACTIONS).map(k => ({ label: QUICK_ACTIONS[k].name, icon: { dns: 'wifi', network: 'refresh', spooler: 'file', temp: 'trash', gpupdate: 'shield' }[k], onClick: () => window.runQuickAction(k, btn) })),
+            ...Object.keys(QUICK_ACTIONS).map(k => ({ label: POps.taskName(QUICK_ACTIONS[k].name), icon: { dns: 'wifi', network: 'refresh', spooler: 'file', temp: 'trash', gpupdate: 'shield' }[k], onClick: () => window.runQuickAction(k, btn) })),
             '-',
-            { label: 'Uygulamayı kapat…', icon: 'x', onClick: () => window.promptTaskkill(btn) },
-            currentMode === 'single' ? { label: 'Bilgisayarı yeniden adlandır…', icon: 'edit', onClick: () => window.promptSingleRename(btn) } : null,
-            currentMode === 'lab' ? { label: 'Sınıfı toplu adlandır…', icon: 'edit', onClick: () => window.promptAutoRename(btn) } : null,
+            { label: POps.t('Uygulamayı kapat…'), icon: 'x', onClick: () => window.promptTaskkill(btn) },
+            currentMode === 'single' ? { label: POps.t('Bilgisayarı yeniden adlandır…'), icon: 'edit', onClick: () => window.promptSingleRename(btn) } : null,
+            currentMode === 'lab' ? { label: POps.t('Sınıfı toplu adlandır…'), icon: 'edit', onClick: () => window.promptAutoRename(btn) } : null,
             '-',
-            { label: 'Hedefi uyandır', icon: 'zap', onClick: wake }
+            { label: POps.t('Hedefi uyandır'), icon: 'zap', onClick: wake }
         ]);
     });
 
     // Komut geçmişi: bu sayfadan gönderilen işler (kim, ne zaman, hedef, sonuç)
     document.getElementById('historyBtn').addEventListener('click', async () => {
         const body = POps.drawer.open('terminal-history');
-        body.innerHTML = '<div class="drawer-head"><div class="drawer-title"><span class="drawer-ico">' + POps.iconHtml('clock', 'lg') + '</span><div><h2>Komut geçmişi</h2><div class="sub">Uzak komut sayfasından gönderilenler</div></div></div><button type="button" class="ibtn sm" data-close="1" aria-label="Paneli kapat">' + POps.iconHtml('x', 'sm') + '</button></div><div id="tmHist"></div>';
+        body.innerHTML = '<div class="drawer-head"><div class="drawer-title"><span class="drawer-ico">' + POps.iconHtml('clock', 'lg') + '</span><div><h2>' + POps.tHtml('Komut geçmişi') + '</h2><div class="sub">' + POps.tHtml('Uzak komut sayfasından gönderilenler') + '</div></div></div><button type="button" class="ibtn sm" data-close="1" aria-label="' + escapeHtml(POps.t('Paneli kapat')) + '">' + POps.iconHtml('x', 'sm') + '</button></div><div id="tmHist"></div>';
         body.onclick = (ev) => {
             if (ev.target.closest('[data-close]')) POps.drawer.close();
             const row = ev.target.closest('[data-cmd]');
@@ -398,21 +399,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const groups = new Map();
         mine.forEach(t => { const k = t.batch_id || [t.created_at, t.created_by, t.script_path].join('|'); if (!groups.has(k)) groups.set(k, { key: k, t, list: [] }); groups.get(k).list.push(t); });
         const rows = [...groups.values()].slice(0, 40);
-        if (!rows.length) { POps.setEmpty(box, { icon: 'terminal', title: 'Henüz komut gönderilmedi', compact: true }); return; }
+        if (!rows.length) { POps.setEmpty(box, { icon: 'terminal', title: POps.t('Henüz komut gönderilmedi'), compact: true }); return; }
         box.innerHTML = rows.map(g => {
             const c = { ok: 0, bad: 0, run: 0 };
             g.list.forEach(t => { c[POps.taskState(t.status)] += 1; });
             const k = c.run ? 'run' : c.bad ? 'bad' : 'ok';
-            const where = g.list.length === 1 ? POps.dev.name(g.t.target_pc) : g.list.length + ' bilgisayar';
+            const where = g.list.length === 1 ? POps.dev.name(g.t.target_pc) : POps.tn('{n} bilgisayar', g.list.length);
             const free = !g.t.title || g.t.title === 'Terminal' || g.t.title === 'Komut';
-            const cmd = free ? g.t.script_path : g.t.title;
+            const cmd = free ? g.t.script_path : POps.taskName(g.t.title);
             return `<div class="act clickable" data-cmd="${escapeHtml(free ? g.t.script_path || '' : '')}">
                 <div class="res ${escapeHtml(k)}">${POps.iconHtml(k === 'ok' ? 'check' : k === 'bad' ? 'x' : 'clock')}</div>
                 <div style="min-width:0"><div class="what mono" style="font-size:12px">${escapeHtml(String(cmd || '').slice(0, 160))}</div>
-                <div class="meta">${escapeHtml(g.t.created_by || '?')} · ${POps.timeHtml(g.t.created_at)} · ${escapeHtml(where)}${g.t.reason ? ' · gerekçe: ' + escapeHtml(g.t.reason) : ''}</div></div>
-                <div class="side"><span class="word ${escapeHtml(k)}">${c.run ? 'Sürüyor' : c.bad ? Number(c.bad) + ' başarısız' : 'Tamam'}</span><a class="when" href="tasks?job=${encodeURIComponent(g.key)}">ayrıntı</a></div>
+                <div class="meta">${escapeHtml(POps.tPattern(g.t.created_by || '?'))} · ${POps.timeHtml(g.t.created_at)} · ${escapeHtml(where)}${g.t.reason ? ' · ' + POps.tHtml('gerekçe: {reason}', { reason: g.t.reason }) : ''}</div></div>
+                <div class="side"><span class="word ${escapeHtml(k)}">${c.run ? POps.tHtml('Sürüyor') : c.bad ? POps.tHtml('{n} başarısız', { n: Number(c.bad) }) : POps.tHtml('Tamam')}</span><a class="when" href="tasks?job=${encodeURIComponent(g.key)}">${POps.tHtml('ayrıntı')}</a></div>
             </div>`;
-        }).join('') + '<div class="set-note">Bir satıra tıklayınca komut yeniden yazılır (gönderilmez).</div>';
+        }).join('') + '<div class="set-note">' + POps.tHtml('Bir satıra tıklayınca komut yeniden yazılır (gönderilmez).') + '</div>';
     });
     document.getElementById('terminalContainer').addEventListener('click', (e) => { if (!window.getSelection().toString()) termInput.focus(); });
     termInput.addEventListener('keydown', async (e) => {
