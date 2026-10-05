@@ -12,7 +12,7 @@ The release workflow builds `POps-Agent-<version>-win-x64.msi`, attaches it to e
 ### Install
 
 ```
-msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log SERVER_URL=https://pops.example.com ENROLL_TOKEN=<token from the panel>
+msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\Windows\Temp\pops-msi-install.log SERVER_URL=https://pops.example.com ENROLL_TOKEN=<token from the panel>
 ```
 
 | Property | Needed | Written to |

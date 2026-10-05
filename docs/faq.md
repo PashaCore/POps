@@ -11,9 +11,10 @@ The server runs on Linux with systemd (`install.sh` is tested on AlmaLinux/RHEL/
 PostgreSQL and Python 3.10 or newer (3.12 recommended; the installer adds it on AlmaLinux/RHEL 9). The agent runs on 64-bit Windows 10 or 11 and brings its own .NET runtime; nothing has to be installed first.
 
 **How many PCs can one server handle?**
-The measured numbers are in [`BENCHMARKS.md`](../BENCHMARKS.md): one backend worker held 1000 connected agents with
-no errors; hundreds of agents sending full software lists at the same moment raise latency above a second. The backend
-runs as a single worker, so plan one server per school.
+The measured numbers are in [`BENCHMARKS.md`](../BENCHMARKS.md) and the [capacity report](kapasite/README.md): one
+backend process brought 5,000 simulated agents back within 11 seconds of a restart, at about 40 % of one CPU core and
+69 MB + 0.16 MB per agent of memory. Hundreds of agents sending full software lists at the same moment raise latency
+above a second. The backend runs as a single process, so plan one server per school.
 
 **Is the panel available in English?**
 Partly, and growing: **Türkçe / English** at the bottom of the sidebar switches the interface for your browser. The

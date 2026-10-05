@@ -30,7 +30,9 @@ tagged release.
 - [x] Agent refuses non-TLS servers; secrets in a SYSTEM-only store (0.1.3)
 - [x] Opt-in TOTP 2FA for panel accounts (0.1.3)
 - [x] Hash-chained, agent-unwritable security audit log with a verify endpoint (0.1.3)
-- [x] External penetration test: F1-F8, F10 and F12-F14 closed (0.1.4); F9 and F11 remain open
+- [x] External penetration test: F1-F8, F10 and F12-F14 closed (0.1.4); F9 (diagnostic buttons) closed by the
+  admin-only, session-bound command path (0.1.4), F11 (unauthenticated downloads) by signed deployment links (0.1.13);
+  `/updates` serves only packages that the PC checks against the signed manifest
 - [x] Immediate session revocation (`token_version`) and per-command accountability (0.1.4)
 - [x] Capability policy: a PC can disable the terminal and Vision; the server can only switch them off (0.1.4)
 - [x] Remote input only in an accepted or announced session; frames only to that admin (0.1.4)
@@ -249,7 +251,6 @@ Whatever the choice, a second maintainer with review and release rights would re
 - ~~Move the backend to a newer Python.~~ Done in 0.1.22: Python 3.10+, target 3.12 (D-20).
 - Per-action re-authentication for dangerous panel actions; enforce freshness of signed manifests.
 - Authenticode-sign the agent binaries; the tray pipe check then also requires a valid signature.
-- Close pentest findings F9 and F11.
 - Freeze software (Deep Freeze and similar): thaw before an update and freeze again afterwards. Today: enroll
   before freezing or use `PersistDir` ([`Agent/README.md`](Agent/README.md#machines-with-freeze-software)).
 - ~~A Turkish "Neden POps?" page for school management (terminal and screen off on staff PCs, on in labs).~~ Done:

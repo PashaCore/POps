@@ -21,7 +21,7 @@ them, most of them in Turkish.
 | Log | Contents |
 | --- | --- |
 | `C:\POpsLogs\POps_<yyyyMMdd>.log` | Service and updater. Readable by administrators only. |
-| `C:\POpsLogs\msi-install.log` | MSI log, if you installed with `/l*v C:\POpsLogs\msi-install.log` as in the docs. |
+| `C:\Windows\Temp\pops-msi-install.log` | MSI log, if you installed with `/l*v C:\Windows\Temp\pops-msi-install.log` as in the docs. |
 | `C:\POpsLogs\deploy_trace.txt` | Progress of packages installed from the **Dağıtım** page. |
 | `%LOCALAPPDATA%\POps\Logs\` | Per user: `TrayLog.txt` (tray, message types only) and `POpsWatchdog_<yyyyMMdd>.log`. |
 | `C:\POpsData\update-result.json` | Result of the last update, until the agent has reported it (then renamed to `update-result.reported.json`). |
