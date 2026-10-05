@@ -1573,6 +1573,75 @@ def test_power():
     chk(p == {"length": 100, "preview": "x" * 60 + "…"}, "önizleme: uzunluk ve ilk 60 karakter")
 
 
+def test_peer_cache():
+    print("== peer_cache: başlık, adres ve tohum seçimi")
+    from pops import peer_cache as pc
+    from pops.manager import manager
+
+    a = pc.parse_header("port=8818; ip=10.20.0.11; link=wired")
+    chk((a.port, a.ip, a.link) == (8818, "10.20.0.11", "wired"), "başlık okundu")
+    a = pc.parse_header(" LINK=Wireless ;ip = 192.168.1.5;port=80;x=y")
+    chk((a.port, a.ip, a.link) == (pc.DEFAULT_PORT, "192.168.1.5", "wireless"), "1024 altı port varsayılana döner")
+    a = pc.parse_header(None)
+    chk((a.port, a.ip, a.link) == (8817, None, None), "başlıksız: 8817, adres yok")
+    for bad in ("8.8.8.8", "127.0.0.1", "169.254.1.1", "0.0.0.0", "224.0.0.1", "fd00::1", "10.0.0.300", "", None,
+                "10.0.0.1:80"):
+        chk(pc.lan_ip(bad) is None, "yerel ağ adresi değil: %r" % (bad,))
+    chk(pc.lan_ip(" 172.16.4.2 ") == "172.16.4.2", "özel adres kabul")
+    chk(pc.parse_header("port=99999; ip=8.8.8.8; link=fiber").ip is None, "geçersiz parçalar atılır")
+
+    saved = dict(manager.active_agents)
+    pc.reset()
+    try:
+        for name in ("S1", "S2", "S3", "S4", "S5", "S6"):
+            manager.active_agents[name] = object()
+        pc.connected("S1", ["peer_cache"], "ip=10.0.0.1")
+        pc.connected("S2", ["peer_cache", "winget"], "link=wired")
+        pc.connected("S3", ["peer_cache"], "ip=10.0.0.3; link=wireless")
+        pc.connected("S4", ["winget"], "ip=10.0.0.4; link=wired")   # özellik yok: kaydedilmez
+        pc.connected("S5", ["peer_cache"], "ip=10.0.0.5")
+        pc.connected("S6", ["peer_cache"], "")
+        chk("S4" not in pc._announce, "özelliği duyurmayan ajanın başlığı yok sayılır")
+        rows = [
+            {"pc_name": "S1", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 10:00:01"},
+            {"pc_name": "S2", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 09:00:00",
+             "inv_ip": "10.0.0.2"},
+            {"pc_name": "S3", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 10:00:02"},
+            {"pc_name": "S4", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 10:00:09"},
+            {"pc_name": "S5", "has_feature": True, "version": "v9.9.9", "last_seen": "2026-10-05 10:00:09"},
+            {"pc_name": "S6", "has_feature": True, "version": "0.1.23", "conn_ip": "10.0.0.6"},
+            {"pc_name": "S7", "has_feature": True, "version": "0.1.23", "conn_ip": "10.0.0.6"},
+        ]
+        pc.resolve_ips(rows)
+        ips = {r["pc_name"]: r["ip"] for r in rows}
+        chk(ips["S1"] == "10.0.0.1" and ips["S2"] == "10.0.0.2", "başlıktaki, yoksa envanterdeki adres")
+        chk(ips["S6"] is None, "iki bilgisayarın paylaştığı bağlantı adresi (NAT) kullanılmaz")
+        rows[5]["conn_ip"], rows[6]["conn_ip"] = "10.0.0.6", "10.0.0.7"
+        pc.resolve_ips(rows)
+        chk(rows[5]["ip"] == "10.0.0.6", "paylaşılmayan özel bağlantı adresi kullanılır")
+        seeds = pc.choose_seeds(rows, "9.9.9")
+        chk(seeds == ["S2", "S3", "S1", "S6"],
+            "kablolu önce, sonra en son görülen; özelliksiz, hedef sürümdeki ve bağlı olmayan aday değil: %s" % seeds)
+
+        ro = pc.Rollout(lab="L", version="9.9.9", sha256="ab" * 32, msg={})
+        now = time.time()
+        ro.seed = "S3"
+        ro.ready = {"S1": now - 5, "S3": now - 60, "S5": now - 1, "S6": now - pc.PEER_TTL - 1, "S2": now - 2}
+        peers = pc._live_peers(ro)
+        chk([p["hw_id"] for p in peers] == ["S3", "S5", "S1"],
+            "tohum önce, sonra en yeni; adressiz ve süresi dolan atlanır, en çok 3: %s" % peers)
+        chk(peers[0]["url"] == "http://10.0.0.3:8817/pops-cache/" + "ab" * 32, "eş adresi")
+        rot = [[p["hw_id"] for p in pc._rotate(peers, i)] for i in range(3)]
+        chk(rot == [["S3", "S5", "S1"], ["S5", "S1", "S3"], ["S1", "S3", "S5"]],
+            "eşler bilgisayardan bilgisayara kayar")
+        pc.disconnected("S5")
+        chk([p["hw_id"] for p in pc._live_peers(ro)] == ["S3", "S1"], "bağlantısı kopan eş önerilmez")
+    finally:
+        pc.reset()
+        manager.active_agents.clear()
+        manager.active_agents.update(saved)
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -1596,6 +1665,7 @@ def main():
     test_vision_v2()
     test_devicelist()
     test_power()
+    test_peer_cache()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

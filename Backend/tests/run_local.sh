@@ -17,6 +17,8 @@ export CORS_ALLOWED_ORIGINS=""
 export METRICS_TOKEN="${METRICS_TOKEN:-local-metrics-token-0123456789}"
 # test_demo.py: salt okunur demo hesabı (sunucu ve test aynı değeri okur)
 export POPS_DEMO_USERS="${POPS_DEMO_USERS:-ci_demo}"
+# test_peer_cache.py: tohumun süresi kısa (sunucu ve test aynı değeri okur)
+export PEER_CACHE_SEED_TIMEOUT_SECONDS="${PEER_CACHE_SEED_TIMEOUT_SECONDS:-4}"
 
 if [ "${COVERAGE:-0}" = "1" ]; then
   rm -f .coverage .coverage.*
@@ -65,6 +67,7 @@ python tests/test_exam.py
 python tests/test_winget.py
 python tests/test_devices_delta.py
 python tests/test_power_message.py
+python tests/test_peer_cache.py
 if [ "${COVERAGE:-0}" = "1" ]; then
   kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
   python -m coverage combine --rcfile=.coveragerc >/dev/null

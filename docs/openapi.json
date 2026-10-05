@@ -8294,6 +8294,51 @@
         ]
       }
     },
+    "/api/v1/system/update-peer-cache": {
+      "post": {
+        "description": "Ajan güncellemesinde sınıf içi eş önbelleği (varsayılan açık). Kapatılınca tohum bekleyen bilgisayarlara\ngüncelleme hemen, eşsiz gönderilir; sonraki gönderimler bugünkü gibi hepsine birden gider.",
+        "operationId": "set_update_peer_cache_api_system_update_peer_cache_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnforceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Update Peer Cache",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/api/v1/system/update-progress": {
       "post": {
         "description": "Gönderilmiş bir ajan güncellemesinin cihaz cihaz durumu (panelin işlem merkezi): bağlı mı, çalışan sürüm,\nsonucu beklenen gönderim var mı (ne zaman gönderildi, ajanın bildirdiği son adım) ve gönderimden sonra gelen\ngüncelleme sonucu (başarılı / geri döndü / reddedildi). Zamanlar Unix saniyesi; \"now\" sunucunun saati.",

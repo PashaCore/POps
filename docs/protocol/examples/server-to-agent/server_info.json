@@ -12,6 +12,7 @@
     "vision_binary",
     "vision_clipboard",
     "power",
-    "message"
+    "message",
+    "peer_cache"
   ]
 }

@@ -28,7 +28,7 @@ from pops.taskqueue import process_queue
 from pops.dna import check_known_device, reconcile_device
 from pops.notify import notify
 from pops import agent_health, agent_version as agent_version_mod, bypass, devicelist, heartbeats, metrics
-from pops import power, update_notice, winget
+from pops import peer_cache, power, update_notice, winget
 from pops import update_tracking
 from pops.routers import files as file_transfer
 
@@ -181,9 +181,11 @@ async def reconcile_quarantine(
 # tüneli düşürürdü). vision_clipboard: pano metni aktarılır (bkz. docs/vision.md).
 # power, message: sunucu güç komutlarını "power", kullanıcıya mesajı "user_message" iletisiyle gönderir; yalnızca
 # bunları X-Agent-Features ile duyuran ajana (bkz. pops/power.py).
+# peer_cache: update_agent'te "peers" (sınıf içi eş önbelleği, bkz. pops/peer_cache.py) gönderilebilir; ajan paketi
+# önbellekte tutup yerel ağda sunar (docs/agent.md). Duyurmayan sunucuya karşı ajan önbellek sunmak zorunda değil.
 SERVER_FEATURES = (
     "update_result_ack", "result_ack", "update_progress", "file_transfer", "exam_mode", "winget", "vision_binary",
-    "vision_clipboard", "power", "message",
+    "vision_clipboard", "power", "message", "peer_cache",
 )
 # Ajan protokolünün sürümü (docs/protocol/README.md): yalnızca uyumsuz bir değişiklikte artar. Yeni alan ya da yeni
 # mesaj sürümü değiştirmez; sunucunun yeni davranışları SERVER_FEATURES ile duyurulur.
@@ -267,6 +269,8 @@ async def _store_update_result(pc_name: str, payload: dict) -> None:
             meta_data=detail,
         )
     await update_tracking.forget(pc_name)
+    # Sınıf içi eş önbelleği: başarılı bilgisayar paketi tutan bir eştir; tohumsa sınıfın geri kalanı gönderilir
+    await peer_cache.on_result(pc_name, payload)
     if notice:
         await notify(notice[0], notice[1], notice[2], str(payload.get("detail") or ""), pc_name)
     await manager.broadcast_to_panels({"type": "update_result", "pc_name": pc_name, **detail})
@@ -292,7 +296,8 @@ async def _update_progress(pc_name: str, payload: dict, agent_version: Optional[
             "detail": progress["detail"] or "ajan sebep bildirmedi",
         })
         return
-    await update_tracking.set_stage(pc_name, progress)
+    if await update_tracking.set_stage(pc_name, progress):
+        await peer_cache.on_progress(pc_name, progress)
 
 
 # Ajanın işletim sistemi ailesi (X-Agent-Platform; Linux ajanı gönderir). Başlık yoksa Windows ajanıdır.
@@ -767,6 +772,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 auth_method = "secret"
 
             manager.active_agents[active_hwid] = websocket
+            peer_cache.connected(active_hwid, agent_features, websocket.headers.get(peer_cache.HEADER))
             await _send_server_info(websocket)
 
             # Cihaz başına çevrimdışı bypass anahtarı (0.1.12+, bkz. pops/bypass.py). Ajan parmak iziyle onaylar
@@ -802,6 +808,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 "UPDATE agent_versions SET features = $2 WHERE pc_name = $1", (active_hwid, agent_features)
             )
             manager.active_agents[active_hwid] = websocket
+            peer_cache.connected(active_hwid, agent_features, websocket.headers.get(peer_cache.HEADER))
             await _send_server_info(websocket)
             await _sync_exam(active_hwid)
 
@@ -1001,6 +1008,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
         # cihazın kopması değildir)
         if manager.disconnect_agent(active_hwid, websocket):
             heartbeats.discard(active_hwid)
+            peer_cache.disconnected(active_hwid)
             await execute_query(
                 "UPDATE clients SET status = 'Offline', last_disconnect_at = NOW(), last_disconnect_reason = $2 "
                 "WHERE pc_name = $1",

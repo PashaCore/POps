@@ -221,6 +221,21 @@ def test_examples():
         chk(False, "değiştirilmiş manifest reddediliyor")
     except InvalidSignature:
         chk(True, "değiştirilmiş manifest reddediliyor")
+    peers_msg = example(S2A, "update_agent.peers")
+    msi_sha = [a["sha256"] for a in json.loads(raw)["artifacts"] if a["name"].endswith(".msi")][0]
+    chk(peers_msg["manifest"] == msg["manifest"] and peers_msg["manifest_sig"] == msg["manifest_sig"]
+        and all(p["url"].endswith("/pops-cache/" + msi_sha) for p in peers_msg["peers"]),
+        "peers örneği aynı manifest; eş adresleri MSI'ın SHA-256'sıyla biter")
+    for bad in ("https://10.0.0.1:8817/pops-cache/" + msi_sha, "http://pc12:8817/pops-cache/" + msi_sha,
+                "http://10.0.0.1:8817/pops-cache/" + msi_sha.upper(), "http://10.0.0.1/pops-cache/" + msi_sha,
+                "http://10.0.0.1:8817/pops-cache/" + msi_sha + "/x"):
+        chk(bool(validation_errors(SCHEMAS[S2A]["update_agent"], dict(msg, peers=[{"hw_id": "X", "url": bad}]))),
+            "peers: geçersiz adres reddedilir (%s)" % bad[:40])
+    chk(bool(validation_errors(SCHEMAS[S2A]["update_agent"], dict(peers_msg, peers=peers_msg["peers"] * 2))),
+        "peers: en çok 3")
+    from pops import peer_cache
+
+    chk(peer_cache.DEFAULT_PORT == 8817 and "8817" in README, "varsayılan eş portu README'de")
     verifier_tests = _read(os.path.join(REPO, "Agent", "POps.Tests", "Agent", "ReleaseVerifierTests.cs"))
     chk(TEST_PUBLIC_KEY in verifier_tests and TEST_PUBLIC_KEY in README,
         "test anahtarı ajan testleriyle ve README'yle aynı")
@@ -1094,13 +1109,32 @@ async def server_builders():
             router = system_routes.build_router(lambda: None, lambda: None, sysdb, manager,
                                                 os.path.join(tmp, "updates"), recorder([]))
             endpoints = {r.path: r.endpoint for r in router.routes}
-            await endpoints["/api/system/deploy-update"](system_routes.DeployUpdateInput(target_mode="PC",
-                                                                                         targets=[HW]), auth)
-            manager.pending_updates.pop(HW, None)
+            # Eş önbelleği: önce ayar kapalı (bugünkü gibi), sonra sınıfın hazır eşleri peers ile
+            from pops import peer_cache
+            plans = []
+
+            async def no_plan(online, version, sha256, msg):
+                plans.append(sha256)
+                return peer_cache.Plan()
+
+            async def with_peers(online, version, sha256, msg):
+                return peer_cache.Plan(peers={pc: [{"hw_id": "HW-PEER-%d" % i, "url": peer_cache.peer_url(
+                    "10.20.0.%d" % (10 + i), peer_cache.DEFAULT_PORT + i, sha256)} for i in range(3)]
+                    for pc in online})
+            for plan in (no_plan, with_peers):
+                P.set(peer_cache, "plan", plan)
+                await endpoints["/api/system/deploy-update"](system_routes.DeployUpdateInput(target_mode="PC",
+                                                                                             targets=[HW]), auth)
+                manager.pending_updates.pop(HW, None)
+            msi_sha = [a["sha256"] for a in manifest["artifacts"] if a["name"] == msi][0]
+            chk(plans == [msi_sha], "deploy-update eş planına imzalı manifest'teki MSI özetini verir")
             sent = agent_ws.sent[0] if agent_ws.sent else {}
-            chk(base64.b64decode(sent.get("manifest", "")) == manifest_bytes,
+            chk(base64.b64decode(sent.get("manifest", "")) == manifest_bytes and "peers" not in sent,
                 "update_agent manifest'i baytı bozmadan taşır")
             check_message_manifest(base64.b64decode(sent.get("manifest", "")), "deploy-update")
+            peered = agent_ws.sent[1] if len(agent_ws.sent) > 1 else {}
+            chk(len(peered.get("peers") or []) == 3 and peered.get("manifest") == sent.get("manifest"),
+                "peers'lı update_agent")
             take(agent_ws, "system_routes.deploy_update")
             for fields in ({"terminal_enabled": False}, {"terminal_enabled": False, "vision_enabled": False}):
                 capability = system_routes.CapabilityInput(pc_name=HW, **fields)

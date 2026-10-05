@@ -638,6 +638,8 @@ jobs:
       METRICS_TOKEN: ci-metrics-token-0123456789
       # test_demo.py: bu hesap salt okunur demo hesabıdır (sunucu ve test aynı değeri okur)
       POPS_DEMO_USERS: ci_demo
+      # test_peer_cache.py: tohumun süresi kısa (sunucu ve test aynı değeri okur)
+      PEER_CACHE_SEED_TIMEOUT_SECONDS: "4"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
@@ -682,6 +684,7 @@ jobs:
           python Backend/tests/test_winget.py
           python Backend/tests/test_devices_delta.py
           python Backend/tests/test_power_message.py
+          python Backend/tests/test_peer_cache.py
       - name: Backend coverage
         # Alt sınır (fail_under) kapsamın fark edilmeden düşmesini engeller; kapsam arttıkça yükseltin.
         # Hangi kritik yolların test edildiği: docs/testing.md

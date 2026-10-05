@@ -46,6 +46,7 @@ backend):
 | `X-Agent-Version` | command (the Windows agent sends it on both) | The agent's release version. Stored per device and used for the version gates below. |
 | `X-Agent-Platform` | command | `linux` from the Linux agent ([`Agent-Linux/`](../../Agent-Linux/README.md)); stored in `clients.platform`. Missing = `windows`. |
 | `X-Agent-Features` | command | Optional. Comma-separated features the agent implements (lowercase `[a-z0-9_]`, at most 32 names), for example `winget`. Stored per connection; see [Agent features](#agent-features). |
+| `X-Agent-Peer-Cache` | command | Optional, read only with the `peer_cache` feature. `port=<1024-65535>; ip=<LAN IPv4>; link=wired\|wireless`, every part optional: the port of the agent's cache server (default 8817), the address other PCs in the lab should use, and the link type (wired PCs are preferred as seeds). Kept in memory for that connection. |
 
 An agent may send both `X-Agent-Secret` and `X-Enroll-Token`; the server checks the secret first.
 
@@ -125,6 +126,7 @@ use:
 | `vision_clipboard` | 0.1.23-alpha | The server relays `clipboard` in both directions during a session the PC user accepted. Without it do not send `clipboard`. |
 | `power` | 0.1.23-alpha | The server sends power actions as `power` to an agent that announced `power` in `X-Agent-Features`; without it, shutdown and restart still arrive as `execute` (`shutdown /s\|/r /f /t N`). |
 | `message` | 0.1.23-alpha | The server sends `user_message` to an agent that announced `message`; without it nothing is sent. |
+| `peer_cache` | 0.1.23-alpha | The server stages agent updates per lab and may put `peers` in `update_agent` for an agent that announced `peer_cache`. An agent may skip keeping and serving its package cache when the server does not list it. |
 
 Rules for agents:
 
@@ -146,6 +148,7 @@ and sends such a message only to an agent that announced it. Features in use:
 | `winget` | `winget_install` is sent for WINGET tasks. For an agent without it the task becomes `Denied` (exit code -8, "[REDDEDİLDİ] Bu bilgisayardaki ajan winget kurulumunu desteklemiyor …") and nothing is sent, so an agent that would ignore the message never leaves a task `Running`. |
 | `power` | `power` is sent for power tasks (shutdown, restart, logoff, lock). For an agent without it shutdown and restart go as the old `execute` command (`shutdown /s\|/r /f /t <max(delay,5)>`, on Windows with a `/c` note limited to letters, digits, spaces and `. , : ; ? ' ( ) -`, on Linux without a note); logoff and lock become `Denied` (exit code -8, "[REDDEDİLDİ] Bu bilgisayardaki ajan bunu desteklemiyor …") and nothing is sent. |
 | `message` | `user_message` is sent for message tasks. For an agent without it the task becomes `Denied` (exit code -8) and nothing is sent. |
+| `peer_cache` | Agent updates are staged per lab: one agent with the feature (the seed) gets `update_agent` first; when it reports a successful `update_result`, the other agents with the feature in that lab get `update_agent` with `peers`. Agents without it are updated at once, without `peers`. The agent's duties are in [`../agent.md`, "Peer cache contract"](../agent.md#peer-cache-contract). |
 
 A new message whose effect matters and that old agents would ignore gets a feature name here instead of a version
 threshold.
@@ -220,7 +223,7 @@ a lower or unparsable version only switches these behaviours off.
 | `cancel_task` | task cancelled | Stops the process | [cancel_task](server-to-agent/cancel_task.json) | [example](examples/server-to-agent/cancel_task.json) |
 | `result_ack` | after a `result` | Drops the kept result | [result_ack](server-to-agent/result_ack.json) | [example](examples/server-to-agent/result_ack.json) |
 | `update_result_ack` | after an `update_result` | Drops the kept update result | [update_result_ack](server-to-agent/update_result_ack.json) | [example](examples/server-to-agent/update_result_ack.json) |
-| `update_agent` | agent update deployed | Verifies, downloads, installs; later `update_result` | [update_agent](server-to-agent/update_agent.json) | [example](examples/server-to-agent/update_agent.json) |
+| `update_agent` | agent update deployed; with `peers` after the lab's seed is ready (`peer_cache`) | Verifies, downloads (peers first, then the server), installs; later `update_result` | [update_agent](server-to-agent/update_agent.json) | [example](examples/server-to-agent/update_agent.json), [peers](examples/server-to-agent/update_agent.peers.json) |
 | `set_capabilities` | capability switched off | Applies only `false`; `capabilities` | [set_capabilities](server-to-agent/set_capabilities.json) | [terminal_off](examples/server-to-agent/set_capabilities.terminal_off.json), [both_off](examples/server-to-agent/set_capabilities.both_off.json) |
 | `lockdown` | quarantine on, or re-sent | Lock screen and isolation | [lockdown](server-to-agent/lockdown.json) | [example](examples/server-to-agent/lockdown.json) |
 | `unlock` | quarantine off, or re-sent | Removes both | [unlock](server-to-agent/unlock.json) | [example](examples/server-to-agent/unlock.json) |
@@ -274,10 +277,11 @@ ID); see [`../vision.md`](../vision.md) for the panel side.
 `<type or action>[.<variant>].json`; the part before the first dot names the schema. `examples/unknown/` holds a
 message of each direction that no schema describes, for the "unknown messages are ignored" rule.
 
-The `update_agent` example carries the test manifest `Agent/POps.Tests/TestData/manifest.json` and its signature,
+The `update_agent` examples carry the test manifest `Agent/POps.Tests/TestData/manifest.json` and its signature,
 made with a throwaway key whose raw public key is `9enOkSVQHBXaXoAurkfvUFBqSbfYbJQbMwL0zEIPTqQ=` (the same vector
 as `ReleaseVerifierTests`). It is not the release key, so a real agent refuses this message; tests verify it with
-the test key. The device secret, bypass key and IDs in the examples are made up.
+the test key. The `peers` URLs in `update_agent.peers.json` end in the SHA-256 of that manifest's MSI. The device
+secret, bypass key and IDs in the examples are made up.
 
 `Backend/tests/test_protocol.py` (CI job "Backend") checks that
 
