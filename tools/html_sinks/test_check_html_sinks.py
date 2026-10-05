@@ -83,7 +83,7 @@ class Workspace(object):
     def __init__(self, files, allowlist=''):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
-        os.makedirs(os.path.join(self.root, 'Dashboard', 'assets'))
+        os.makedirs(os.path.join(self.root, 'Dashboard', 'assets', 'pages'))
         for rel, text in files.items():
             with open(os.path.join(self.root, rel), 'w', encoding='utf-8') as f:
                 f.write(text)
@@ -196,6 +196,16 @@ class AllowlistTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn('x.js:2:', out)
             self.assertNotIn('x.js:3:', out)
+        finally:
+            ws.close()
+
+    def test_page_scripts_are_scanned(self):
+        # Sayfa betikleri (assets/pages/*.js) da taranır
+        ws = Workspace({'Dashboard/assets/pages/p.js': "$('x').innerHTML = d.msg;\n"})
+        try:
+            code, out = ws.run()
+            self.assertEqual(code, 1)
+            self.assertIn('Dashboard/assets/pages/p.js:1:', out)
         finally:
             ws.close()
 
