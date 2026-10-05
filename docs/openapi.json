@@ -143,6 +143,21 @@
             "title": "Name",
             "type": "string"
           },
+          "org_scope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Scope"
+          },
           "role": {
             "enum": [
               "viewer",
@@ -338,6 +353,17 @@
           "lab_name": {
             "title": "Lab Name",
             "type": "string"
+          },
+          "org_unit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Unit Id"
           }
         },
         "required": [
@@ -1210,6 +1236,17 @@
             ],
             "title": "Notes"
           },
+          "org_unit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Unit Id"
+          },
           "publisher": {
             "anyOf": [
               {
@@ -1551,6 +1588,29 @@
             ],
             "title": "Client Secret"
           },
+          "default_org_scope": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "const": "all",
+                    "type": "string"
+                  },
+                  {
+                    "items": {
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  }
+                ],
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Org Scope"
+          },
           "default_pages": {
             "items": {
               "type": "string"
@@ -1693,6 +1753,82 @@
         "title": "OrchestrationInput",
         "type": "object"
       },
+      "OrgUnitInput": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "OrgUnitInput",
+        "type": "object"
+      },
+      "OrgUnitLabsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "labs": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "title": "Labs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "labs"
+        ],
+        "title": "OrgUnitLabsInput",
+        "type": "object"
+      },
+      "OrgUnitUpdateInput": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "title": "OrgUnitUpdateInput",
+        "type": "object"
+      },
       "PanelTicketInput": {
         "additionalProperties": false,
         "properties": {
@@ -1719,6 +1855,17 @@
             ],
             "default": "diger",
             "title": "Category"
+          },
+          "org_unit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Unit Id"
           },
           "pc_name": {
             "anyOf": [
@@ -2377,6 +2524,29 @@
             "title": "Group",
             "type": "string"
           },
+          "org_scope": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "const": "all",
+                    "type": "string"
+                  },
+                  {
+                    "items": {
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  }
+                ],
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Scope"
+          },
           "pages": {
             "items": {
               "type": "string"
@@ -2730,6 +2900,21 @@
             "title": "Auth Source",
             "type": "string"
           },
+          "org_scope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Scope"
+          },
           "password": {
             "anyOf": [
               {
@@ -2845,6 +3030,21 @@
               }
             ],
             "title": "Auth Source"
+          },
+          "org_scope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Scope"
           },
           "password": {
             "anyOf": [
@@ -3264,6 +3464,7 @@
     },
     "/api/v1/admin/users": {
       "get": {
+        "description": "Kapsamlı yönetici (pops/tenancy.py) yalnızca kendisini ve kapsamı kendi birimleri içinde kalan kullanıcıları\ngörür; kapsamsız hesaplar ona görünmez.",
         "operationId": "get_users_api_admin_users_get",
         "responses": {
           "200": {
@@ -3861,6 +4062,7 @@
     "/api/v1/create_lab": {
       "post": {
         "deprecated": true,
+        "description": "Sınıf ekler. org_unit_id: bağlanacağı kurum birimi; kapsamlı hesapta verilmezse kendi ilk birimi. Kapsamlı hesap\nbaşka bir birimin (ya da birimsiz) sınıfıyla aynı adı kullanamaz (409).",
         "operationId": "create_lab_api_create_lab_post",
         "requestBody": {
           "content": {
@@ -3931,6 +4133,7 @@
     "/api/v1/delete_lab": {
       "post": {
         "deprecated": true,
+        "description": "Sınıfı siler; cihazları atanmamışlara döner (kapsamlı hesap onları artık görmez).",
         "operationId": "delete_lab_api_delete_lab_post",
         "requestBody": {
           "content": {
@@ -4142,7 +4345,7 @@
     },
     "/api/v1/devices": {
       "get": {
-        "description": "Cihaz listesi. Parametresiz: bütün cihazlar (dizi; biçim değişmez). Yanıtta zayıf ETag (W/\"d<sürüm>\") vardır;\nIf-None-Match tutarsa 304. ?since=<sürüm>: {\"version\", \"full\": false, \"changed\", \"removed\", \"seen\"} ya da günlük\nyetmezse {\"version\", \"full\": true, \"devices\"} (bkz. pops/devicelist.py, docs/api.md).",
+        "description": "Cihaz listesi. Parametresiz: bütün cihazlar (dizi; biçim değişmez). Yanıtta zayıf ETag (W/\"d<sürüm>\") vardır;\nIf-None-Match tutarsa 304. ?since=<sürüm>: {\"version\", \"full\": false, \"changed\", \"removed\", \"seen\"} ya da günlük\nyetmezse {\"version\", \"full\": true, \"devices\"} (bkz. pops/devicelist.py, docs/api.md). Kapsamlı hesap (kurum\nbirimleri) yalnızca kendi sınıflarının cihazlarını alır; sürümü bu satırların özetidir, \"since\" tam liste alır.",
         "operationId": "get_devices_api_devices_get",
         "parameters": [
           {
@@ -5419,6 +5622,7 @@
         ]
       },
       "post": {
+        "description": "Sınıf ekler. org_unit_id: bağlanacağı kurum birimi; kapsamlı hesapta verilmezse kendi ilk birimi. Kapsamlı hesap\nbaşka bir birimin (ya da birimsiz) sınıfıyla aynı adı kullanamaz (409).",
         "operationId": "create_lab_api_labs_post",
         "requestBody": {
           "content": {
@@ -6713,6 +6917,228 @@
         ]
       }
     },
+    "/api/v1/org-units": {
+      "get": {
+        "description": "Birimler (id, ad, üst birim, sınıflar, kapsamında olan kullanıcı sayısı) ve sınıflar. Kapsamlı hesap yalnızca\nkendi birimlerini ve sınıflarını görür; scope isteği yapanın kapsamıdır (null = kapsamsız).",
+        "operationId": "list_org_units_api_org_units_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Org Units",
+        "tags": [
+          "org_units"
+        ]
+      },
+      "post": {
+        "operationId": "create_org_unit_api_org_units_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgUnitInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Org Unit",
+        "tags": [
+          "org_units"
+        ]
+      }
+    },
+    "/api/v1/org-units/{unit_id}": {
+      "delete": {
+        "operationId": "delete_org_unit_api_org_units__unit_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "unit_id",
+            "required": true,
+            "schema": {
+              "title": "Unit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Org Unit",
+        "tags": [
+          "org_units"
+        ]
+      },
+      "patch": {
+        "description": "Ad ve/veya üst birim. Birim kendi altına taşınamaz (döngü).",
+        "operationId": "update_org_unit_api_org_units__unit_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "unit_id",
+            "required": true,
+            "schema": {
+              "title": "Unit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgUnitUpdateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Org Unit",
+        "tags": [
+          "org_units"
+        ]
+      }
+    },
+    "/api/v1/org-units/{unit_id}/labs": {
+      "put": {
+        "description": "Birimin sınıflarının TAMAMI: listedekiler bu birime bağlanır (başka birimdeyse oradan alınır), listede\nolmayan eski sınıfları birimsiz kalır. Yalnızca cihazlarda geçen sınıf da tanımlı sınıf olarak eklenir.",
+        "operationId": "set_org_unit_labs_api_org_units__unit_id__labs_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "unit_id",
+            "required": true,
+            "schema": {
+              "title": "Unit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgUnitLabsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Org Unit Labs",
+        "tags": [
+          "org_units"
+        ]
+      }
+    },
     "/api/v1/packages": {
       "get": {
         "operationId": "get_packages_api_packages_get",
@@ -7714,7 +8140,7 @@
     "/api/v1/set_auto_enroll": {
       "post": {
         "deprecated": true,
-        "description": "Bitiş tarihine kadar (o gün dahil) İLK kez bağlanan cihazlar bu sınıfa atanır (bkz. agents.py).\nSınıfı belirtilmiş bir enroll jetonu varsa o önceliklidir.",
+        "description": "Bitiş tarihine kadar (o gün dahil) İLK kez bağlanan cihazlar bu sınıfa atanır (bkz. agents.py).\nSınıfı belirtilmiş bir enroll jetonu varsa o önceliklidir. Kurum geneli ayar: kapsamlı hesap değiştiremez.",
         "operationId": "set_auto_enroll_api_set_auto_enroll_post",
         "requestBody": {
           "content": {
@@ -7850,7 +8276,7 @@
     },
     "/api/v1/settings/auto-enroll": {
       "put": {
-        "description": "Bitiş tarihine kadar (o gün dahil) İLK kez bağlanan cihazlar bu sınıfa atanır (bkz. agents.py).\nSınıfı belirtilmiş bir enroll jetonu varsa o önceliklidir.",
+        "description": "Bitiş tarihine kadar (o gün dahil) İLK kez bağlanan cihazlar bu sınıfa atanır (bkz. agents.py).\nSınıfı belirtilmiş bir enroll jetonu varsa o önceliklidir. Kurum geneli ayar: kapsamlı hesap değiştiremez.",
         "operationId": "set_auto_enroll_api_settings_auto_enroll_put",
         "requestBody": {
           "content": {

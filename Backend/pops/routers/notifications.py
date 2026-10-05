@@ -1,13 +1,16 @@
 """Bildirim uçları: panel zili (liste, okundu), kanal ayarları ve test gönderimi.
 
 Webhook adresi yalnızca superadmin tarafından, yalnızca http(s) olarak ayarlanabilir. SMTP gizli
-bilgileri .env'dedir; panel yalnızca "yapılandırıldı mı" bilgisini görür."""
+bilgileri .env'dedir; panel yalnızca "yapılandırıldı mı" bilgisini görür.
+
+Kurum birimi kapsamı (pops/tenancy.py): kapsamlı hesap yalnızca kapsamındaki cihazların bildirimlerini görür, okur
+ve siler; cihaza bağlı olmayan (kurum geneli) bildirimler yalnızca kapsamsız hesaplara."""
 
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from pops import notify as notify_mod, timeutil
+from pops import notify as notify_mod, tenancy, timeutil
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.models import NotificationsReadInput, NotifySettingsInput
@@ -22,13 +25,20 @@ _EMAIL_RE = re.compile(r"^[^@\s,;]+@[^@\s,;.]+(?:\.[^@\s,;.]+)+$")
 @router.get("/api/notifications")
 async def list_notifications(limit: int = 30, auth: dict = Depends(require_admin)):
     limit = max(1, min(limit, 200))
+    scope = await tenancy.scope_of(auth)
+    args = [limit]
+    cond = tenancy.device_sql(scope, "pc_name", args)
     rows = await execute_query(
         "SELECT id, created_at, event, severity, pc_name, title, detail, channels, delivery_error, is_read "
-        "FROM notifications ORDER BY id DESC LIMIT $1",
-        (limit,),
+        "FROM notifications WHERE " + cond + " ORDER BY id DESC LIMIT $1",
+        tuple(args),
         fetch=True,
     )
-    unread = await execute_query("SELECT count(*) AS n FROM notifications WHERE NOT is_read", fetch=True)
+    args = []
+    cond = tenancy.device_sql(scope, "pc_name", args)
+    unread = await execute_query(
+        "SELECT count(*) AS n FROM notifications WHERE NOT is_read AND " + cond, tuple(args), fetch=True
+    )
     items = []
     for r in rows or []:
         r = dict(r)
@@ -39,10 +49,10 @@ async def list_notifications(limit: int = 30, auth: dict = Depends(require_admin
 
 @router.post("/api/notifications/read")
 async def mark_notifications_read(data: NotificationsReadInput, auth: dict = Depends(require_admin)):
-    if data.ids:
-        await execute_query("UPDATE notifications SET is_read = TRUE WHERE id = ANY($1::int[])", (data.ids,))
-    else:
-        await execute_query("UPDATE notifications SET is_read = TRUE WHERE NOT is_read")
+    args = [data.ids] if data.ids else []
+    cond = tenancy.device_sql(await tenancy.scope_of(auth), "pc_name", args)
+    which = "id = ANY($1::int[])" if data.ids else "NOT is_read"
+    await execute_query("UPDATE notifications SET is_read = TRUE WHERE %s AND %s" % (which, cond), tuple(args))
     return {"ok": True}
 
 
@@ -50,12 +60,12 @@ async def mark_notifications_read(data: NotificationsReadInput, auth: dict = Dep
 async def clear_notifications(data: NotificationsReadInput, auth: dict = Depends(require_admin)):
     """Zili temizler: verilen kayıtları ya da (ids boşsa) okunmuş olanların hepsini siler. Bildirimler denetim kaydı
     değildir; olayların kendisi hash-zincirli device_audit_logs'ta ve olay günlüğünde kalır."""
-    if data.ids:
-        rows = await execute_query(
-            "DELETE FROM notifications WHERE id = ANY($1::int[]) RETURNING id", (data.ids,), fetch=True
-        )
-    else:
-        rows = await execute_query("DELETE FROM notifications WHERE is_read RETURNING id", fetch=True)
+    args = [data.ids] if data.ids else []
+    cond = tenancy.device_sql(await tenancy.scope_of(auth), "pc_name", args)
+    which = "id = ANY($1::int[])" if data.ids else "is_read"
+    rows = await execute_query(
+        "DELETE FROM notifications WHERE %s AND %s RETURNING id" % (which, cond), tuple(args), fetch=True
+    )
     return {"ok": True, "deleted": len(rows or [])}
 
 

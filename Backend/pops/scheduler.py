@@ -15,8 +15,10 @@ import time
 import uuid
 from typing import Optional
 
-from pops import (db, exams, filestore, glpi, health_alerts, modules, retention, server_metrics, timeutil,
-                  update_tracking)
+from pops import (
+    db, exams, filestore, glpi, health_alerts, modules, retention, server_metrics, tenancy, timeutil,
+    update_tracking,
+)
 from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.notify import notify
@@ -73,7 +75,9 @@ async def enqueue(row: dict, actor_suffix: str, conn=None, expires_at=None) -> i
     if conn is None:
         async with db.transaction() as own:
             return await enqueue(row, actor_suffix, own, expires_at)
-    targets = await resolve_targets(row["target_mode"], json.loads(row["targets"] or "[]"), conn)
+    # Takvim, oluşturanın kurum birimi kapsamını taşır: hedefler her çalışmada o kapsamla çözülür (pops/tenancy.py)
+    scope = await tenancy.scope_for(row.get("org_scope"))
+    targets = await resolve_targets(row["target_mode"], json.loads(row["targets"] or "[]"), conn, scope)
     now = timeutil.now()
     creator = "%s (%s #%s)" % (row.get("created_by") or "?", actor_suffix, row["id"])
     if targets:

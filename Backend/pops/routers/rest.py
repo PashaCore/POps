@@ -64,12 +64,12 @@ alias("POST", "/api/labs/{lab_name:path}/wake", devices.wake_lab)
 async def put_lab_main_pc(lab_name: str, data: MainPcInput, auth: dict = Depends(require_admin)):
     """Sınıfın ana bilgisayarını ayarlar. Eski /api/set_main_pc'nin aksine aç/kapa yapmaz: aynı bilgisayar yeniden
     gönderilince değişmez (kaldırmak için DELETE)."""
-    return await devices.put_main_pc(lab_name, data.pc_name)
+    return await devices.put_main_pc(lab_name, data.pc_name, auth)
 
 
 async def delete_lab_main_pc(lab_name: str, auth: dict = Depends(require_admin)):
     """Sınıfın ana bilgisayarını kaldırır."""
-    return await devices.clear_main_pc(lab_name)
+    return await devices.clear_main_pc(lab_name, auth)
 
 
 alias("PUT", "/api/labs/{lab_name:path}/main-pc", put_lab_main_pc, like=devices.set_main_pc)

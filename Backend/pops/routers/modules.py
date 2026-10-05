@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from pops import exams, modules, power, winget
+from pops import exams, modules, power, tenancy, winget
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.manager import manager
@@ -121,11 +121,13 @@ def _state_changes(before: dict, after: dict) -> List[dict]:
 @router.get("/api/modules")
 async def list_modules(auth: dict = Depends(require_auth)):
     org, lab_rows = await modules._settings()
-    labs = await _labs()
+    # Kapsamlı hesap (pops/tenancy.py) yalnızca kendi laboratuvarlarının ayarını görür
+    scope = await tenancy.scope_of(auth)
+    labs = [lab for lab in await _labs() if scope.allows_lab(lab)]
     profile = await _profile()
     out = []
     for m in modules.MODULES:
-        overrides = {lab: val for (mid, lab), val in lab_rows.items() if mid == m.id}
+        overrides = {lab: val for (mid, lab), val in lab_rows.items() if mid == m.id and scope.allows_lab(lab)}
         out.append({
             "id": m.id,
             "name": m.name,

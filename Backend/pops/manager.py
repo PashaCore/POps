@@ -163,6 +163,11 @@ class ConnectionManager:
         self.vision_clipboard_owner: Dict[str, str] = {}  # pc_name -> rızası tüneli açan oturumun sahibi
         # panel soketi -> alacağı mesaj türleri (?topics=); kaydı olmayan soket isteğe bağlılar dışında hepsini alır
         self.panel_topics: Dict[WebSocket, frozenset] = {}
+        # panel soketi -> kapsamdaki laboratuvarlar (None: kapsamsız, her şey). Cihaza ait yayın yalnızca cihazın
+        # laboratuvarı kapsamda olan panellere gider (bkz. pops/tenancy.py); cihazın laboratuvarı lab_resolver'la
+        # (pc_name -> lab) bulunur, yalnızca kapsamlı bir panel bağlıyken sorulur.
+        self.panel_scopes: Dict[WebSocket, Optional[frozenset]] = {}
+        self.lab_resolver = None
 
     async def connect_agent(self, websocket: WebSocket, pc_name: str):
         self.active_agents[pc_name] = websocket
@@ -272,6 +277,7 @@ class ConnectionManager:
         self.panel_roles.pop(websocket, None)
         self.panel_binary.discard(websocket)
         self.panel_topics.pop(websocket, None)
+        self.panel_scopes.pop(websocket, None)
         sender = self.panel_senders.pop(websocket, None)
         if sender is not None and sender.task is not asyncio.current_task():
             sender.task.cancel()
@@ -333,24 +339,65 @@ class ConnectionManager:
             self.disconnect_agent(pc_name, ws)
             return False
 
-    async def broadcast_to_panels(self, message: dict):
-        text = json.dumps(message)
-        for panel in list(self.active_panels):
-            self._queue_to_panel(panel, text, mtype=message.get("type"))
+    def has_scoped_panels(self) -> bool:
+        return any(self.panel_scopes.get(p) is not None for p in self.active_panels)
 
-    async def broadcast_to_admin_panels(self, message: dict):
+    async def _in_scope(self, device: Optional[str]):
+        """Panel -> bu cihazın yayınını alabilir mi. Kapsamlı panel yoksa sorgu yapılmaz; cihazı belirsiz yayın
+        kapsamlı panele gitmez."""
+        if not self.has_scoped_panels():
+            return lambda _panel: True
+        lab = None
+        if device and self.lab_resolver is not None:
+            try:
+                lab = await self.lab_resolver(device)
+            except Exception:
+                log.warning("yayın için cihazın laboratuvarı okunamadı", exc_info=True)
+
+        def allowed(panel) -> bool:
+            labs = self.panel_scopes.get(panel)
+            return labs is None or (lab is not None and lab in labs)
+
+        return allowed
+
+    async def broadcast_to_panels(self, message: dict, device: Optional[str] = None):
+        """device: yayının ait olduğu cihaz (kapsamlı paneller yalnızca kendi cihazlarınınkini alır; cihazsız yayın
+        kapsamlı panellere gitmez)."""
+        text = json.dumps(message)
+        allowed = await self._in_scope(device)
+        for panel in list(self.active_panels):
+            if allowed(panel):
+                self._queue_to_panel(panel, text, mtype=message.get("type"))
+
+    async def broadcast_devices_changed(self, message: dict, labs) -> None:
+        """Cihaz listesi değişti (pops/devicelist.py): kapsamsız panellere sürümle; kapsamlı panele yalnızca kendi
+        sınıflarından biri değiştiyse ve sürümsüz (sürüm bütün kurumundur, kapsamlı panelin sürümü başkadır)."""
+        text = json.dumps(message)
+        bare = json.dumps({"type": message.get("type")})
+        labs = set(labs or ())
+        for panel in list(self.active_panels):
+            scope = self.panel_scopes.get(panel)
+            if scope is None:
+                self._queue_to_panel(panel, text, mtype=message.get("type"))
+            elif labs & scope:
+                self._queue_to_panel(panel, bare, mtype=message.get("type"))
+
+    async def broadcast_to_admin_panels(self, message: dict, device: Optional[str] = None):
         """Yalnızca admin/superadmin rollü panellere gönderir. Ekran görüntüsü/thumbnail gibi hassas
         içerik salt-okur 'viewer' hesaplarına SIZMAMALI (F1). get_thumbnail yanıtı /ws/agent'tan gelir
         ve bu yolla tüm panellere yayınlanıyordu — artık viewer'a gitmez."""
         text = json.dumps(message)
         frame_key = (message.get("type"), message.get("hw_id")) if message.get("type") in _FRAME_TYPES else None
+        allowed = await self._in_scope(device or message.get("hw_id"))
         for panel in list(self.active_panels):
-            if self.panel_roles.get(panel) in ("admin", "superadmin"):
+            if self.panel_roles.get(panel) in ("admin", "superadmin") and allowed(panel):
                 self._queue_to_panel(panel, text, frame_key, message.get("type"))
 
     def _session_panels(self, pc_name: str, users: Optional[set] = None) -> List[WebSocket]:
         """O cihaz için açık oturumu olan (users verilirse yalnız onlardan) admin kullanıcıların panelleri. Rol,
-        panelin periyodik yeniden doğrulamasıyla güncel tutulur (bkz. control.websocket_panel)."""
+        panelin periyodik yeniden doğrulamasıyla güncel tutulur (bkz. control.websocket_panel). Kurum birimi
+        kapsamı: oturum yalnızca kapsamdaki cihaza açılır (start_audit_session) ve kapsam değişince ya da cihaz
+        kapsam dışına çıkınca panelin yeniden doğrulaması oturumu düşürür; kareler bu yüzden ayrıca sorgulanmaz."""
         allowed = self._live_session_users(pc_name)
         if users is not None:
             allowed &= set(users)

@@ -72,6 +72,7 @@ class RenameDeviceInput(StrictInput):
 
 class CreateLabInput(StrictInput):
     lab_name: str
+    org_unit_id: Optional[int] = None   # kurum birimi (bkz. pops/tenancy.py)
 
 
 class DeleteLabInput(StrictInput):
@@ -260,6 +261,8 @@ class UserCreateInput(StrictInput):
     role: str
     permissions: str
     auth_source: AuthSource = "local"
+    # Kurum birimi kapsamı (bkz. pops/tenancy.py): None = her şey; birim kimlikleri = o birimler ve alt birimleri
+    org_scope: Optional[List[int]] = Field(default=None, max_length=200)
 
 
 class UserUpdateInput(StrictInput):
@@ -268,6 +271,8 @@ class UserUpdateInput(StrictInput):
     role: str
     permissions: str
     auth_source: Optional[AuthSource] = None   # None: değişmez
+    # Gönderilmezse kapsam değişmez; null gönderilirse kapsam kalkar (her şey)
+    org_scope: Optional[List[int]] = Field(default=None, max_length=200)
 
 
 class AgentPoliciesInput(StrictInput):
@@ -366,6 +371,7 @@ class LicenseInput(StrictInput):
     license_type: str = "per_device"  # per_device | site | subscription
     expires_at: Optional[str] = None  # YYYY-MM-DD
     notes: Optional[str] = None
+    org_unit_id: Optional[int] = None  # lisansın kurum birimi; None = kurum geneli (bkz. pops/tenancy.py)
 
 
 # ─── Yardım masası ────────────────────────────────────────────────────────────
@@ -384,6 +390,7 @@ class PanelTicketInput(StrictInput):
     priority: Optional[str] = "normal"
     pc_name: Optional[str] = None
     reporter: Optional[str] = None
+    org_unit_id: Optional[int] = None  # cihazsız talebin kurum birimi (kapsamlı hesapta verilmezse kendi birimi)
 
 
 class TicketUpdateInput(StrictInput):
@@ -423,6 +430,8 @@ class ApiTokenCreateInput(StrictInput):
     name: str = Field(min_length=1, max_length=64)
     role: Literal["viewer", "admin"]
     expires_days: Optional[int] = Field(default=None, ge=1, le=3650)   # None = süresiz
+    # Kurum birimi kapsamı: None = her şey (bkz. pops/tenancy.py)
+    org_scope: Optional[List[int]] = Field(default=None, max_length=200)
 
 
 # ─── Sınav modu (pops/exams.py) ───────────────────────────────────────────────
@@ -438,6 +447,21 @@ class ExamStartInput(StrictInput):
 
 class ExamEndInput(StrictInput):
     reason: str = Field(default="", max_length=1000)
+
+
+# ─── Kurum birimleri (ilçe → okul) ─────────────────────────────────────────────
+class OrgUnitInput(StrictInput):
+    name: str = Field(min_length=1, max_length=100)
+    parent_id: Optional[int] = None   # üst birim (ör. ilçe); None = en üst
+
+
+class OrgUnitUpdateInput(StrictInput):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    parent_id: Optional[int] = None   # gönderilmezse değişmez; null = en üste taşı
+
+
+class OrgUnitLabsInput(StrictInput):
+    labs: List[str] = Field(max_length=5000)   # birime bağlı sınıfların TAMAMI
 
 
 # ─── Güç komutları ve kullanıcıya mesaj (pops/power.py) ───────────────────────
@@ -490,10 +514,16 @@ class UserMessageInput(StrictInput):
 
 
 # ─── Dizin (LDAP / AD) ve OpenID Connect ile giriş (pops/sso.py) ─────────────────
+# Eşlemenin kurum birimi kapsamı (pops/tenancy.py, D-25): None = ayarlanmadı (yeni hesap en dar kapsamı alır),
+# "all" = açıkça bütün kurum, birim kimlikleri = o birimler ve alt birimleri
+SsoScope = Optional[Union[Literal["all"], List[int]]]
+
+
 class SsoGroupMapInput(StrictInput):
     group: str = Field(min_length=1, max_length=512)   # LDAP: grup DN'i; OIDC: grup talebindeki değer
     role: Literal["viewer", "admin", "superadmin"]
     pages: List[str] = Field(default_factory=list, max_length=20)
+    org_scope: SsoScope = Field(default=None, max_length=200)
 
 
 class LdapSettingsInput(StrictInput):
@@ -533,6 +563,7 @@ class OidcSettingsInput(StrictInput):
     allowed_domains: List[str] = Field(default_factory=list, max_length=20)
     default_role: Literal["", "viewer", "admin"] = ""
     default_pages: List[str] = Field(default_factory=list, max_length=20)
+    default_org_scope: SsoScope = Field(default=None, max_length=200)
     ca_pem: str = Field(default="", max_length=65536)
     # Yalnızca testler için (https olmayan sağlayıcı); panelde gösterilmez
     allow_insecure_for_tests: bool = False

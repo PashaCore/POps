@@ -61,7 +61,8 @@ async def verify_session(payload: Optional[dict]) -> Optional[dict]:
     """JWT imza/exp doğrulandıktan SONRA, oturumu DB'ye karşı kontrol eder (F4 iptal):
     - kullanıcı silinmişse (satır yok) reddet;
     - JWT'deki token_version DB'dekiyle uyuşmuyorsa reddet (rol/şifre değişimi eski jetonları geçersizler);
-    - ROLÜ JWT iddiasından DEĞİL, DB'den döndür (rol düşürme anında geçerli olur).
+    - ROLÜ JWT iddiasından DEĞİL, DB'den döndür (rol düşürme anında geçerli olur); kurum birimi kapsamı da
+      (org_scope, bkz. pops/tenancy.py) her istekte DB'den okunur.
     Eski (tv iddiası olmayan) jetonlar tv=0 sayılır (geçiş uyumu)."""
     if not payload:
         return None
@@ -69,14 +70,17 @@ async def verify_session(payload: Optional[dict]) -> Optional[dict]:
     if not sub:
         return None
     try:
-        rows = await execute_query("SELECT role, token_version FROM users WHERE username=$1", (sub,), fetch=True)
+        rows = await execute_query(
+            "SELECT role, token_version, org_scope FROM users WHERE username=$1", (sub,), fetch=True
+        )
     except Exception:
         return None
     if not rows:
         return None
     if int(payload.get('tv', 0)) != int(rows[0].get('token_version') or 0):
         return None
-    return {'sub': sub, 'role': rows[0].get('role')}
+    scope = rows[0].get('org_scope')
+    return {'sub': sub, 'role': rows[0].get('role'), 'org_scope': list(scope) if scope is not None else None}
 
 
 # ── API jetonları (otomasyon) ──────────────────────────────────────────────────
@@ -111,7 +115,8 @@ async def verify_api_token(token: str) -> Optional[dict]:
         return None
     try:
         rows = await execute_query(
-            "SELECT id, name, role, (last_used_at IS NULL OR last_used_at < NOW() - make_interval(secs => $2)) "
+            "SELECT id, name, role, org_scope, "
+            "(last_used_at IS NULL OR last_used_at < NOW() - make_interval(secs => $2)) "
             "AS stale FROM api_tokens WHERE token_hash = $1 AND revoked_at IS NULL "
             "AND (expires_at IS NULL OR expires_at > NOW())",
             (api_token_hash(token), float(API_TOKEN_TOUCH_SECONDS)),
@@ -132,7 +137,11 @@ async def verify_api_token(token: str) -> Optional[dict]:
             )
         except Exception:
             log.warning("API jetonunun son kullanımı yazılamadı", exc_info=True, extra={"token_id": row['id']})
-    return {'sub': 'token:' + row['name'], 'role': row['role'], 'api_token_id': row['id']}
+    scope = row.get('org_scope')
+    return {
+        'sub': 'token:' + row['name'], 'role': row['role'], 'api_token_id': row['id'],
+        'org_scope': list(scope) if scope is not None else None,
+    }
 
 
 async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security_scheme)):

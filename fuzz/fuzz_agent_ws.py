@@ -162,7 +162,10 @@ def audit_recorder(name):
 
 
 def list_recorder(store):
-    async def fake(message, *args):
+    async def fake(message, *args, device=None):
+        # device: yayının ait olduğu cihaz (kurum birimi kapsamı, pops/tenancy.py); her zaman bu bağlantının cihazı
+        if device != HW:
+            S.problems.append("panel yayını cihazsız ya da başka cihaz adına: %r (%s)" % (device, message.get("type")))
         store.append(message)
 
     return fake

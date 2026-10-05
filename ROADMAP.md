@@ -159,7 +159,8 @@ valid signature.
   of the chain kept outside the server, and archiving old rows (decision D-18).
 - **Immutable device id** with foreign keys instead of `pc_name` keys. (Proper timestamps instead of text dates are
   done: migration `0031`.)
-- **Lab-scoped permissions** (an admin limited to some labs) and a server-side owner filter for helpdesk tickets.
+- **Server-side owner filter for helpdesk tickets** (an admin sees the tickets assigned to them). Lab-scoped
+  permissions are done as organisational units (district → school, scope per user and token; D-25).
 - **Device list paging** for large fleets.
 - **High availability:** several backend processes with Redis (see Vision below).
 - **RDP and multi-session PCs (F19):** today the tray assumes one console session.

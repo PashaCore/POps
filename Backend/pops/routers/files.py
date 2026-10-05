@@ -8,6 +8,9 @@ Akış (ajan mesajları ve uçlar: docs/api.md "File transfer"):
         POST /api/files/<id>/upload?t=… ile kendi anahtarıyla yükler -> admin GET /api/files/<id>/content ile indirir
         (her zaman ek olarak, nosniff). Alınan dosya 7 gün saklanır (pops/filestore.py).
 
+Kurum birimi kapsamı (pops/tenancy.py): kapsamlı hesap yalnızca kendi sınıflarındaki bilgisayarlara gönderir ve
+onlardan alır; kapsam dışı bilgisayar "kayıtlı değil" (unknown) sayılır, liste ve indirme de kapsamla süzülür.
+
 Gönderme, alma ve alınan dosyayı indirme yalnızca panel oturumundaki admin içindir (API jetonu kullanılamaz: dosya
 kişisel veri içerebilir, işlemi gerekçesiyle bir kişi yapar). Liste (yalnız üst veri) her oturumla okunur.
 
@@ -33,7 +36,7 @@ from pydantic import Field
 from starlette.datastructures import UploadFile
 from starlette.requests import ClientDisconnect
 
-from pops import db, filestore, modules, timeutil
+from pops import db, filestore, modules, tenancy, timeutil
 from pops.agent_auth import agent_http_auth
 from pops.audit import add_audit_log
 from pops.db import execute_query
@@ -108,18 +111,21 @@ async def _require_agent(agent_id: Optional[str]) -> str:
 async def _broadcast(pc_name: str, transfer_id: str, direction: str, status: str) -> None:
     await manager.broadcast_to_admin_panels(
         {"type": "file_transfer", "pc_name": pc_name, "transfer_id": transfer_id, "direction": direction,
-         "status": status}
+         "status": status},
+        device=pc_name,
     )
 
 
-async def _targets(pcs) -> tuple:
-    """(gönderilebilir bilgisayarlar [(pc, lab)], atlananlar [{pc_name, reason}]). Sebep: unknown (kayıtlı değil),
+async def _targets(pcs, auth: dict) -> tuple:
+    """(gönderilebilir bilgisayarlar [(pc, lab)], atlananlar [{pc_name, reason}]). Sebep: unknown (kayıtlı değil ya da
+    isteyenin kurum birimi kapsamı dışında),
     module_closed (dosya aktarımı modülü kapalı), offline, unsupported (ajan özelliği bilmiyor), disabled (bilgisayarda
     kapatılmış)."""
     rows = await execute_query(
         "SELECT pc_name, lab_name, cap_files_enabled FROM clients WHERE pc_name = ANY($1::text[])", (pcs,), fetch=True
     )
-    known = {r["pc_name"]: r for r in rows or []}
+    scope = await tenancy.scope_of(auth)
+    known = {r["pc_name"]: r for r in rows or [] if scope.allows_lab(r["lab_name"])}
     ok, skipped = [], []
     lab_on = {}
     for pc in pcs:
@@ -222,7 +228,7 @@ async def push_file(request: Request, auth: dict = Depends(require_admin_session
             raise HTTPException(status_code=400, detail="Hedef bilgisayar seçin.")
         if len(pcs) > MAX_TARGETS or any(len(p) > 100 for p in pcs):
             raise HTTPException(status_code=400, detail="En fazla %d bilgisayar seçilebilir." % MAX_TARGETS)
-        targets, skipped = await _targets(pcs)
+        targets, skipped = await _targets(pcs, auth)
         if not targets:
             raise _skip_error(skipped)
         batch_id = _new_id()
@@ -348,7 +354,7 @@ async def pull_file(data: FilePullInput, auth: dict = Depends(require_admin_sess
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     pc = data.pc.strip()
-    targets, skipped = await _targets([pc])
+    targets, skipped = await _targets([pc], auth)
     if not targets:
         raise _skip_error(skipped)
     admin = auth.get("sub")
@@ -511,14 +517,15 @@ async def list_transfers(pc: Optional[str] = None, limit: int = 50, auth: dict =
         "transfer_id, direction, pc_name, batch_id, name, size, sha256, dest, path, max_size, allow_exec, "
         "any_profile, reason, status, detail, created_by, created_at, finished_at, storage_path, purged_at"
     )
+    args = [limit]
+    where = [tenancy.device_sql(await tenancy.scope_of(auth), "pc_name", args)]
     if pc:
-        rows = await execute_query(
-            "SELECT %s FROM file_transfers WHERE pc_name = $1 ORDER BY id DESC LIMIT $2" % cols, (pc, limit), fetch=True
-        )
-    else:
-        rows = await execute_query(
-            "SELECT %s FROM file_transfers ORDER BY id DESC LIMIT $1" % cols, (limit,), fetch=True
-        )
+        args.append(pc)
+        where.append("pc_name = $%d" % len(args))
+    rows = await execute_query(
+        "SELECT %s FROM file_transfers WHERE %s ORDER BY id DESC LIMIT $1" % (cols, " AND ".join(where)),
+        tuple(args), fetch=True,
+    )
     return {"items": [_item(r) for r in rows or []], "push_max_bytes": filestore.PUSH_MAX_BYTES,
             "pull_max_bytes": filestore.PULL_MAX_BYTES, "pull_keep_days": filestore.PULL_KEEP_DAYS}
 
@@ -538,6 +545,8 @@ async def download_content(transfer_id: str, auth: dict = Depends(require_admin_
     if not rows:
         raise _not_found()
     row = rows[0]
+    if not (await tenancy.scope_of(auth)).allows_lab(await tenancy.lab_of(row["pc_name"])):
+        raise _not_found()   # kapsam dışındaki bilgisayarın dosyası (kurum birimleri)
     path = filestore.blob_path(row["storage_path"])
     if not path or not await asyncio.to_thread(os.path.isfile, path):
         raise _not_found()

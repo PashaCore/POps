@@ -179,6 +179,28 @@ Things to keep in mind:
   endpoints. Use the `viewer` role for read-only accounts.
 - The last active superadmin cannot be deleted or demoted, and nobody can delete their own account.
 
+### Organisational units (district and schools)
+
+One server can serve several schools (decision D-25). A superadmin builds units (district → school) on **Ayarlar →
+Birimler**, puts labs into units and gives users and API tokens a scope. A scoped account sees and acts only on the
+devices whose lab is in its units (sub-units included), whatever its role and page permissions:
+
+- The boundary is on the server (`Backend/pops/tenancy.py`), checked on every request from the database, so it
+  holds for API tokens and scripts. Lists are filtered; an out-of-scope device, lab, task, ticket, licence or
+  schedule named by id answers `404`, so ids from other schools cannot be probed.
+- Covered: devices and labs, tasks and deployment, commands, Wake-on-LAN, quarantine and offline bypass codes,
+  Vision (sessions, previews, remote input, live frames), logs, inventory, software, Windows Update, reports and CSV
+  exports, licences, tickets, scheduled tasks and notifications, file transfer, exam mode, winget, power actions and
+  messages, and the update rollout views. The panel WebSocket only delivers a device's messages to panels whose scope
+  includes it, and the device list version a scoped account sees is computed from its own devices only.
+- Unassigned PCs and labs in no unit are visible only to unscoped accounts. A superadmin is always unscoped.
+- Directory and OIDC accounts are never unscoped by accident: a group mapping can set the scope (unit ids, or
+  `"all"` explicitly), and a new account whose mappings set none gets an empty scope while units exist (no devices
+  until a superadmin chooses its units).
+- Organisation-wide settings (agent policy, task concurrency, auto-enroll, the shared package library and uploads)
+  are closed to scoped accounts (`403`); everything on **Sistem** stays superadmin-only.
+- A scoped admin can still run commands as SYSTEM on its own PCs; the scope limits where, not what.
+
 ## Agent identity
 
 - **Enrollment.** A superadmin creates an enrollment token on **Sistem** (lab-bound, expiring, one or

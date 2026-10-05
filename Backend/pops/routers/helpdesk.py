@@ -2,7 +2,8 @@
 
 Ajan uçları yalnızca ANAHTARLI ajanı kabul eder (kimliksiz istemci talep yağdıramasın) ve cihaz başına
 sınırlıdır: en fazla 5 açık talep, saatte en fazla 10 yeni talep. Ajan kendi cihazının taleplerini ve
-panelden verilen yanıtları (iç notlar hariç) okuyabilir. Panel uçları require_admin."""
+panelden verilen yanıtları (iç notlar hariç) okuyabilir. Panel uçları require_admin ve kurum birimi kapsamına göre
+süzülür (pops/tenancy.py): kapsam dışındaki talep 404."""
 
 import time
 from typing import Optional
@@ -10,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops.agent_auth import agent_http_auth, bind_agent
-from pops import modules, timeutil
+from pops import modules, tenancy, timeutil
 from pops.db import execute_query
 from pops.manager import manager
 from pops.models import AgentTicketInput, PanelTicketInput, TicketMessageInput, TicketUpdateInput
@@ -52,6 +53,26 @@ def _iso(r: dict) -> dict:
         if r.get(k):
             r[k] = timeutil.iso(r[k])
     return r
+
+
+def _ticket_sql(scope, args: list) -> str:
+    """Kurum birimi kapsamı (pops/tenancy.py): cihazlı talep cihazın laboratuvarına göre, cihazsız talep kendi
+    birimine (org_unit_id) göre görünür. Birimsiz ve cihazsız talep yalnızca kapsamsız hesaplara."""
+    if scope.is_global:
+        return "TRUE"
+    device = tenancy.device_sql(scope, "t.pc_name", args)
+    unit = tenancy.unit_sql(scope, "t.org_unit_id", args)
+    return "(CASE WHEN t.pc_name IS NULL THEN %s ELSE %s END)" % (unit, device)
+
+
+async def _visible(ticket_id: int, auth: dict) -> dict:
+    args = [ticket_id]
+    cond = _ticket_sql(await tenancy.scope_of(auth), args)
+    rows = await execute_query("SELECT t.status, t.priority, t.assignee FROM tickets t WHERE t.id = $1 AND " + cond,
+                               tuple(args), fetch=True)
+    if not rows:
+        raise HTTPException(status_code=404, detail="Talep bulunamadı.")
+    return rows[0]
 
 
 def _clean(subject: str, body: Optional[str], category: Optional[str]) -> tuple:
@@ -96,7 +117,9 @@ async def agent_create_ticket(pc_name: str, data: AgentTicketInput, agent_id: Op
         ("%s · %s" % (reporter or "?", body[:300])) if body else (reporter or ""),
         pc_name,
     )
-    await manager.broadcast_to_panels({"type": "ticket_new", "id": tid, "pc_name": pc_name, "subject": subject})
+    await manager.broadcast_to_panels(
+        {"type": "ticket_new", "id": tid, "pc_name": pc_name, "subject": subject}, device=pc_name
+    )
     return {"ok": True, "id": tid}
 
 
@@ -140,6 +163,9 @@ async def agent_list_tickets(pc_name: str, agent_id: Optional[str] = Depends(age
 @router.get("/api/tickets", dependencies=[modules.require("helpdesk")])
 async def list_tickets(status: str = "active", q: str = "", auth: dict = Depends(require_admin)):
     where, params = [], []
+    scope = await tenancy.scope_of(auth)
+    if not scope.is_global:
+        where.append(_ticket_sql(scope, params))
     if status == "active":
         where.append("t.status IN ('open','in_progress','waiting')")
     elif status in STATUSES:
@@ -162,12 +188,17 @@ async def list_tickets(status: str = "active", q: str = "", auth: dict = Depends
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END, t.updated_at DESC LIMIT 300"
     rows = await execute_query(sql, tuple(params), fetch=True)
-    counts = await execute_query("SELECT status, count(*) AS n FROM tickets GROUP BY status", fetch=True)
+    cargs = []
+    counts = await execute_query(
+        "SELECT t.status, count(*) AS n FROM tickets t WHERE " + _ticket_sql(scope, cargs) + " GROUP BY t.status",
+        tuple(cargs), fetch=True,
+    )
     return {"items": [_iso(r) for r in rows or []], "counts": {r["status"]: int(r["n"]) for r in counts or []}}
 
 
 @router.get("/api/tickets/{ticket_id}", dependencies=[modules.require("helpdesk")])
 async def get_ticket(ticket_id: int, auth: dict = Depends(require_admin)):
+    await _visible(ticket_id, auth)
     rows = await execute_query(
         "SELECT t.*, c.hostname, c.display_name, c.lab_name, c.status AS device_status, c.logged_user, "
         "c.active_window FROM tickets t LEFT JOIN clients c ON c.pc_name = t.pc_name WHERE t.id = $1",
@@ -188,10 +219,16 @@ async def create_ticket(data: PanelTicketInput, auth: dict = Depends(require_adm
     priority = data.priority if data.priority in PRIORITIES else "normal"
     pc = (data.pc_name or "").strip()[:100] or None
     reporter = (data.reporter or "").strip()[:100] or auth.get("sub")
+    scope = await tenancy.scope_of(auth)
+    unit = data.org_unit_id if data.org_unit_id is not None else scope.default_unit()
+    if pc is not None:
+        await tenancy.check_device(auth, pc)
+    elif unit is not None and not scope.allows_unit(unit):
+        raise HTTPException(status_code=404, detail="Birim bulunamadı.")
     rows = await execute_query(
-        "INSERT INTO tickets (source, pc_name, reporter, category, subject, body, priority) "
-        "VALUES ('panel',$1,$2,$3,$4,$5,$6) RETURNING id",
-        (pc, reporter, category, subject, body, priority),
+        "INSERT INTO tickets (source, pc_name, reporter, category, subject, body, priority, org_unit_id) "
+        "VALUES ('panel',$1,$2,$3,$4,$5,$6,$7) RETURNING id",
+        (pc, reporter, category, subject, body, priority, unit),
         fetch=True,
     )
     return {"ok": True, "id": rows[0]["id"]}
@@ -199,10 +236,7 @@ async def create_ticket(data: PanelTicketInput, auth: dict = Depends(require_adm
 
 @router.post("/api/tickets/{ticket_id}/update", dependencies=[modules.require("helpdesk")], deprecated=True)
 async def update_ticket(ticket_id: int, data: TicketUpdateInput, auth: dict = Depends(require_admin)):
-    rows = await execute_query("SELECT status, priority, assignee FROM tickets WHERE id = $1", (ticket_id,), fetch=True)
-    if not rows:
-        raise HTTPException(status_code=404, detail="Talep bulunamadı.")
-    cur = rows[0]
+    cur = await _visible(ticket_id, auth)
     changes = []
     status, priority, assignee = cur["status"], cur["priority"], cur["assignee"]
     if data.status is not None and data.status != status:
@@ -238,9 +272,7 @@ async def add_ticket_message(ticket_id: int, data: TicketMessageInput, auth: dic
     body = (data.body or "").strip()[:5000]
     if not body:
         raise HTTPException(status_code=400, detail="Mesaj boş olamaz.")
-    rows = await execute_query("SELECT status FROM tickets WHERE id = $1", (ticket_id,), fetch=True)
-    if not rows:
-        raise HTTPException(status_code=404, detail="Talep bulunamadı.")
+    rows = [await _visible(ticket_id, auth)]
     await execute_query(
         "INSERT INTO ticket_messages (ticket_id, author, body, internal) VALUES ($1,$2,$3,$4)",
         (ticket_id, auth.get("sub") or "?", body, bool(data.internal)),

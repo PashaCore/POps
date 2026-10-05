@@ -1005,7 +1005,7 @@ async def server_builders():
         chk(agent_ws.sent == [{"action": "stop_stream"}], "Vision modülü kapanınca stop_stream")
         take(agent_ws, "modules._close_effects")
 
-        async def targets(mode, names):
+        async def targets(mode, names, conn=None, scope=None):
             return [{"pc": HW, "lab": "LAB-A"}]
 
         P.set(inventory, "resolve_targets", targets)

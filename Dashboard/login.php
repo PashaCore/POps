@@ -91,6 +91,12 @@ function pops_finish_login($responseData, $fallback_username) {
         if (is_array($decoded)) $perms = $decoded;
     }
     $_SESSION['permissions'] = $perms;
+    // Kurum birimi kapsamı: yan menüde birim adı gösterilir (kapsamsız hesapta boş)
+    $units = [];
+    foreach ((array) ($responseData['org_units'] ?? []) as $unit) {
+        if (is_array($unit) && isset($unit['name']) && is_string($unit['name'])) $units[] = $unit['name'];
+    }
+    $_SESSION['org_units'] = $units;
     unset($_SESSION['totp_challenge'], $_SESSION['totp_username']);
     $next = pops_sso_take_next();
     session_regenerate_id(true);

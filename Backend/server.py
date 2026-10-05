@@ -19,7 +19,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from migrate import run_migrations_on
-from pops import db, devicelist, glpi, heartbeats, notify, peer_cache, secretbox, timeutil, update_tracking
+from pops import db, devicelist, glpi, heartbeats, notify, peer_cache, secretbox, tenancy, timeutil, update_tracking
 from pops.apiversion import ApiVersionMiddleware
 from pops.logs import setup_logging, stop_background_writer
 from pops.metrics import RequestContextMiddleware
@@ -56,6 +56,7 @@ from pops.routers import (
     modules as modules_router,
     notifications,
     ops,
+    org_units,
     power as power_router,
     reports,
     rest,
@@ -136,6 +137,14 @@ os.makedirs(FILES_DIR, mode=0o750, exist_ok=True)
 app.mount("/updates", StaticFiles(directory=UPDATES_DIR), name="updates")
 
 
+# Kapsamlı (birimle sınırlı) panellere yalnızca kendi cihazlarının yayını gider (bkz. pops/tenancy.py)
+manager.lab_resolver = tenancy.lab_of
+
+
+async def _devices_changed(message: dict) -> None:
+    await manager.broadcast_devices_changed(message, devicelist.take_changed_labs())
+
+
 # NOT: Veritabani semasi artik yalnizca migration'larla (migrate.py + migrations/NNNN_*.sql)
 # kurulur. Yeni tablo/kolon eklerken buraya degil, yeni bir numarali .sql dosyasina yazin.
 
@@ -193,7 +202,7 @@ async def startup_event():
             # Heartbeat'ler toplu yazılır (bkz. pops/heartbeats.py)
             app.state.heartbeats = asyncio.create_task(heartbeats.flush_loop())
             # Cihaz listesi sürümü ve panele "değişti" bildirimi (bkz. pops/devicelist.py)
-            app.state.devicelist = asyncio.create_task(devicelist.run_loop(manager.broadcast_to_panels))
+            app.state.devicelist = asyncio.create_task(devicelist.run_loop(_devices_changed))
             # Ajan güncellemesinin sınıf içi eş gönderimi: süresi dolan tohumun yerine sıradaki (pops/peer_cache.py)
             app.state.peer_cache = asyncio.create_task(peer_cache.loop())
             break
@@ -252,7 +261,7 @@ async def shutdown_event():
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
-    activity, modules_router, branding, tokens, files, power_router, sso_router, integrations,
+    activity, modules_router, branding, tokens, files, power_router, sso_router, integrations, org_units,
     # Sınav modu (/api/labs/{lab_name:path}/exam): rest'in genel /api/labs/{lab_name} yollarından önce
     exams_router,
     # REST adları (/api/v1) eski uçların işleyicilerini çağırır; eskilerden sonra bağlanır

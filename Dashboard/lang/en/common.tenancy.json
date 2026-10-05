@@ -1,0 +1,7 @@
+{
+  "Yetki kapsamı": "Scope",
+  "Sınıf bulunamadı.": "Lab not found.",
+  "Birim bulunamadı.": "Unit not found.",
+  "Bu adla bir sınıf zaten var.": "A lab with this name already exists.",
+  "Bu işlem bütün kurumu etkiler; kapsamı birimlerle sınırlı hesaplar yapamaz.": "This affects the whole organisation; accounts limited to units cannot do it."
+}

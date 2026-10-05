@@ -598,8 +598,13 @@ async def lab_state(lab: str) -> dict:
     }
 
 
-async def history(lab: Optional[str] = None, active: Optional[bool] = None, limit: int = 50) -> List[dict]:
+async def history(lab: Optional[str] = None, active: Optional[bool] = None, limit: int = 50,
+                  labs: Optional[List[str]] = None) -> List[dict]:
+    """labs verilirse yalnızca o sınıfların sınavları (kurum birimi kapsamı, pops/tenancy.py)."""
     where, params = [], []
+    if labs is not None:
+        params.append(list(labs))
+        where.append("e.lab_name = ANY($%d::text[])" % len(params))
     if lab:
         params.append(lab)
         where.append("e.lab_name = $%d" % len(params))

@@ -79,6 +79,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     .smap-top { display: flex; gap: 8px; align-items: center; }
     .smap-top .smap-group { flex: 1; min-width: 0; }
     .smap-top .smap-role { width: auto; flex: none; }
+    .smap-top .smap-scope { width: auto; flex: none; max-width: 210px; }
     .perm-grid.smap-pages { grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); }
     .smap-empty { font-size: var(--text-sm); color: var(--text-tertiary); }
     .sso-test { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -87,6 +88,14 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     .sso-result ul { margin: 6px 0 0 18px; padding: 0; }
     .sso-result code { overflow-wrap: anywhere; }
     @media (max-width: 640px) { .smap-top { flex-wrap: wrap; } .smap-top .smap-group { flex-basis: 100%; } }
+    /* Kurum birimleri (ilçe → okul) */
+    .unit-row .ico.lead { color: var(--text-tertiary); flex: none; }
+    .unit-row .t { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .unit-row .t > span:first-child, .unit-row .d { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .unit-row .grow { min-width: 0; }
+    .scope-list { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto; }
+    .scope-list .check { padding: 5px 0; }
+    .scope-list .check .faint { margin-left: 6px; font-size: var(--text-xs); }
 
     /* Kullanıcı formu */
     .perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; }
@@ -124,6 +133,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 
 <div class="tabs set-tabs" id="setTabs" aria-label="<?php _e('Ayarlar bölümleri'); ?>">
     <button type="button" class="tab" data-tab="users"><?php _e('Kullanıcılar'); ?></button>
+    <?php if ($isSuper): ?><button type="button" class="tab" data-tab="units"><?php _e('Birimler'); ?></button><?php endif; ?>
     <button type="button" class="tab" data-tab="security"><?php _e('Güvenlik'); ?></button>
     <button type="button" class="tab" data-tab="general"><?php _e('Genel'); ?></button>
 </div>
@@ -143,6 +153,28 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             </div>
         </div>
     </section>
+
+    <?php if ($isSuper): ?>
+    <section class="sect" data-pane="units" aria-labelledby="hUnits">
+        <div class="sect-head">
+            <h2 id="hUnits"><?php _e('Kurum birimleri'); ?></h2>
+            <p><?php _e('Bir ilçe birçok okulu bu sunucudan yönetecekse birimleri (ilçe, okul) kurun, sınıfları birimlere bağlayın ve kullanıcılara kapsam verin. Kapsamı olan kullanıcı yalnızca kendi birimlerinin sınıflarını ve bilgisayarlarını görür. Birim kurulmadıkça herkes her şeyi görür.'); ?></p>
+        </div>
+        <div class="sect-body">
+            <div class="set">
+                <div class="srow">
+                    <div class="grow">
+                        <div class="t"><?php _e('Birimler'); ?></div>
+                        <div class="d" id="unitSummary"><?php _e('Yükleniyor…'); ?></div>
+                    </div>
+                    <button type="button" class="btn secondary sm" id="unitNew"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Birim ekle'); ?></button>
+                </div>
+            </div>
+            <div class="set" id="unitTree" hidden></div>
+            <div class="set" id="unitFree" hidden></div>
+        </div>
+    </section>
+    <?php endif; ?>
 
     <section class="sect" data-pane="security" id="twofaCard" aria-labelledby="hTwofa">
         <div class="sect-head">
@@ -363,11 +395,63 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
                 </div>
                 <div class="field-hint" id="umPermsHint"><?php _e('Kontrol merkezi herkese açıktır.'); ?></div>
             </div>
+            <div class="field" id="umScopeField" hidden>
+                <span class="field-label"><?php _e('Kapsam'); ?></span>
+                <div class="segmented block" id="umScopeMode" role="group" aria-label="<?php _e('Kapsam'); ?>">
+                    <button type="button" data-scope="all" aria-pressed="false"><?php _e('Bütün kurum'); ?></button>
+                    <button type="button" data-scope="units" aria-pressed="false"><?php _e('Seçili birimler'); ?></button>
+                </div>
+                <div class="scope-list" id="umScopeUnits" hidden></div>
+                <div class="field-error"><?php _e('En az bir birim seçin.'); ?></div>
+                <div class="field-hint" id="umScopeHint"></div>
+            </div>
             <div class="alert info" id="umSelf" hidden><div><?php _e('Kendi hesabınızı değiştirince yeniden giriş yapmanız gerekir.'); ?></div></div>
         </div>
         <div class="modal-footer">
             <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
             <button type="button" class="btn" id="umSave"><?php _e('Kullanıcıyı ekle'); ?></button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="unitModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title" id="unTitle"><?php _e('Birim ekle'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x', 'sm'); ?></button>
+        </div>
+        <div class="modal-body">
+            <div class="field" id="unNameField">
+                <label for="unName"><?php _e('Ad'); ?></label>
+                <input type="text" id="unName" maxlength="100" autocomplete="off" placeholder="<?php _e('Örn. Merkez İlçe MEM ya da Atatürk Anadolu Lisesi'); ?>">
+                <div class="field-error"><?php _e('Birim adı girin.'); ?></div>
+            </div>
+            <div class="field">
+                <label for="unParent"><?php _e('Üst birim'); ?></label>
+                <select id="unParent"></select>
+                <div class="field-hint"><?php _e('Okul bir ilçenin altına konur; üst birimin kapsamı alt birimleri de içerir.'); ?></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="unSave"><?php _e('Birimi ekle'); ?></button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="unitLabsModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title" id="ulTitle"><?php _e('Sınıflar'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x', 'sm'); ?></button>
+        </div>
+        <div class="modal-body">
+            <div class="scope-list" id="ulList"></div>
+            <div class="field-hint"><?php _e('Başka bir birimdeki sınıfı seçerseniz o birimden alınır. Seçimi kaldırılan sınıf birimsiz kalır: onu yalnızca kapsamı olmayan hesaplar görür.'); ?></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="ulSave"><?php _e('Kaydet'); ?></button>
         </div>
     </div>
 </div>
@@ -392,6 +476,11 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
                     <button type="button" data-trole="admin" aria-pressed="false"><?php _e('Yönetici'); ?></button>
                 </div>
                 <div class="field-hint" id="tkRoleHint"></div>
+            </div>
+            <div class="field" id="tkScopeField" hidden>
+                <label for="tkScope"><?php _e('Kapsam'); ?></label>
+                <select id="tkScope"></select>
+                <div class="field-hint"><?php _e('Bir birim seçilirse jeton yalnızca o birimin (ve alt birimlerinin) bilgisayarlarını görür.'); ?></div>
             </div>
             <div class="field" id="tkDaysField">
                 <label for="tkDays"><?php _e('Geçerlilik (gün)'); ?></label>
@@ -448,6 +537,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             <div class="smap" id="slMap"></div>
             <button type="button" class="btn ghost sm" id="slMapAdd" style="align-self:flex-start;margin-top:8px"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Eşleme ekle'); ?></button>
             <div class="field-hint" style="margin-top:6px"><?php _e('Eşlenen bir grupta olmayan dizin hesabı giremez. Birden çok grup eşleşirse en yüksek rol ve bütün eşleşmelerin sayfaları geçerli olur. Rol ve sayfalar her girişte yeniden yazılır.'); ?></div>
+            <div class="field-hint sso-scope-hint" hidden><?php _e('Kapsam: eşlemeyle açılan hesabın gördüğü birimler. Kapsam seçilmeyen eşlemeyle ilk kez giren hesap hiçbir birimi görmez; birimini siz seçersiniz.'); ?></div>
             <div class="sso-sub"><?php _e('Bağlantıyı sına'); ?></div>
             <div class="sso-test">
                 <input type="text" id="slTestUser" maxlength="256" autocomplete="off" spellcheck="false" placeholder="<?php _e('Kullanıcı adı (isteğe bağlı)'); ?>" aria-label="<?php _e('Sınanacak kullanıcı adı'); ?>">
@@ -493,6 +583,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             <div class="smap" id="soMap"></div>
             <button type="button" class="btn ghost sm" id="soMapAdd" style="align-self:flex-start;margin-top:8px"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Eşleme ekle'); ?></button>
             <div class="field-hint" style="margin-top:6px"><?php _e('Grup talebindeki değer (Entra ID: grup nesne kimliği; Keycloak: /grup-yolu). Birden çok grup eşleşirse en yüksek rol geçerli olur.'); ?></div>
+            <div class="field-hint sso-scope-hint" hidden><?php _e('Kapsam: eşlemeyle açılan hesabın gördüğü birimler. Kapsam seçilmeyen eşlemeyle ilk kez giren hesap hiçbir birimi görmez; birimini siz seçersiniz.'); ?></div>
             <div class="sso-sub"><?php _e('E-posta alan adı'); ?></div>
             <div class="field"><label for="soDomains"><?php _e('İzinli alan adları'); ?></label><input type="text" id="soDomains" class="mono" maxlength="1000" spellcheck="false" placeholder="okul.k12.tr"><div class="field-hint"><?php _e('Virgülle ayırın. Doluysa yalnızca doğrulanmış e-postası bu alan adlarında olanlar girer.'); ?></div></div>
             <div class="field"><span class="field-label"><?php _e('Eşlenen grubu olmayanlara varsayılan rol'); ?></span>
@@ -503,6 +594,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
                 </div>
             </div>
             <div class="perm-grid" id="soDefPages"></div>
+            <div class="field" id="soDefScopeField" hidden style="margin-top:var(--space-3)"><label for="soDefScope"><?php _e('Varsayılan rolün kapsamı'); ?></label><select id="soDefScope"></select></div>
             <div class="sso-sub"><?php _e('Bağlantıyı sına'); ?></div>
             <div class="sso-test"><button type="button" class="btn secondary sm" id="soTest"><?php _e('Bağlantıyı sına'); ?></button></div>
             <div class="sso-result" id="soResult" hidden></div>
@@ -557,12 +649,21 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     let focusId = null;
     let twofaOn = null;
     let limitSaved = null;
+    let orgUnits = [];   // kurum birimleri (yalnızca süper admin yükler)
+    let orgLabs = [];
 
     // ================= KULLANICILAR =================
     function accessText(u) {
         if (u.role === 'superadmin') return POps.t('Bütün sayfalar');
         const n = permsOf(u).filter(k => PAGES[k]).length;
-        return n ? POps.tn('{n} sayfa', n) : POps.t('Yalnızca kontrol merkezi');
+        const pages = n ? POps.tn('{n} sayfa', n) : POps.t('Yalnızca kontrol merkezi');
+        return u.org_scope ? pages + ' · ' + scopeText(u) : pages;
+    }
+    // Kurum birimi kapsamı (Backend/pops/tenancy.py): null = bütün kurum
+    function scopeText(u) {
+        if (!u || u.role === 'superadmin' || !u.org_scope) return POps.t('Bütün kurum');
+        const names = (u.org_units || []).map(x => x.name);
+        return names.length ? names.join(', ') : POps.t('Hiçbir birim (hiçbir şey görmez)');
     }
     function rowHtml(u) {
         const self = u.username === ME;
@@ -616,6 +717,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         const pagesText = u.role === 'superadmin' ? POps.t('Bütün sayfalar') : (perms.length ? perms.map(pageName).join(', ') : POps.t('Yalnızca kontrol merkezi'));
         const factsHtml = `<div class="grow"><span>${POps.tHtml('Rol')}</span><span>${escapeHtml(roleWord(u.role))}</span></div>`
             + `<div class="grow"><span>${POps.tHtml('Sayfalar')}</span><span>${escapeHtml(pagesText)}</span></div>`
+            + `<div class="grow"><span>${POps.tHtml('Kapsam')}</span><span>${escapeHtml(scopeText(u))}</span></div>`
             + `<div class="grow"><span>${POps.tHtml('Son giriş')}</span><span>${when ? POps.timeHtml(when) : POps.tHtml('Hiç girmedi')}</span></div>`
             + (self && twofaOn !== null ? `<div class="grow"><span>2FA</span><span>${twofaOn ? POps.tHtml('Açık') : escapeHtml(POps.tx('Kapalı', 'switch'))}</span></div>` : '')
             + `<div class="grow"><span>${POps.tHtml('Kimlik kaynağı')}</span><span>${escapeHtml(POps.t(SOURCES[u.auth_source] || SOURCES.local))}</span></div>`
@@ -694,6 +796,30 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             l.title = blocked ? POps.t('İzleyici bu sayfayı açamaz') : '';
         });
         $('umPermsHint').textContent = r === 'viewer' ? POps.t('Kontrol merkezi herkese açıktır. İzleyici Dağıtım, Uzak komut ve Ayarlar sayfalarını açamaz.') : POps.t('Kontrol merkezi herkese açıktır.');
+        // Süper admin her zaman bütün kurumu yönetir; kapsam yalnızca birim kurulmuşsa seçilir
+        $('umScopeField').hidden = r === 'superadmin' || !orgUnits.length;
+    }
+    let scopeMode = 'all';
+    function setScopeMode(m) {
+        scopeMode = m;
+        $('umScopeMode').querySelectorAll('button').forEach(b => { const on = b.dataset.scope === m; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        $('umScopeUnits').hidden = m !== 'units';
+        $('umScopeHint').textContent = m === 'units'
+            ? POps.t('Kullanıcı yalnızca seçilen birimlerin (ve alt birimlerinin) sınıflarını ve bilgisayarlarını görür; atanmamış bilgisayarları görmez.')
+            : POps.t('Kullanıcı bütün sınıfları ve bilgisayarları görür.');
+        $('umScopeField').classList.remove('has-error');
+    }
+    function fillScope(u) {
+        const chosen = new Set((u && u.org_scope) || []);
+        const box = $('umScopeUnits');
+        box.replaceChildren(...unitTree().map(({ u: unit, depth }) => {
+            const cb = POps.el('input', { type: 'checkbox', className: 'scope-cb', value: String(unit.id) });
+            cb.checked = chosen.has(unit.id);
+            const label = POps.el('label', { className: 'check' }, [cb, unit.name]);
+            label.style.paddingLeft = (depth * 20) + 'px';
+            return label;
+        }));
+        setScopeMode(u && u.org_scope ? 'units' : 'all');
     }
     let formSrc = 'local';
     // Şifre alanı: yeni yerel hesapta ve dizin/OIDC hesabı yerele dönerken (var olan yerel hesabın şifresi
@@ -721,6 +847,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         const perms = u ? permsOf(u) : [];
         document.querySelectorAll('.perm-cb').forEach(cb => { cb.checked = perms.includes(cb.value); });
         setRole(u ? (ROLES[u.role] ? u.role : 'admin') : 'admin');
+        fillScope(u);
         $('umSelf').hidden = !(u && u.username === ME);
         openModal('userModal');
     }
@@ -737,6 +864,11 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         if (editing) permsOf(editing).filter(k => !PAGES[k]).forEach(k => perms.push(k));   // panelin bilmediği eski anahtarlar silinmesin
         const payload = { username, role: formRole, permissions: JSON.stringify(perms), auth_source: formSrc };
         if (!$('umPassField').hidden) payload.password = password;
+        if (!$('umScopeField').hidden) {
+            const ids = [...document.querySelectorAll('.scope-cb')].filter(cb => cb.checked).map(cb => Number(cb.value));
+            if (scopeMode === 'units' && !ids.length) { $('umScopeField').classList.add('has-error'); return; }
+            payload.org_scope = scopeMode === 'units' ? ids : null;
+        }
         const target = editing;
         const ok = await POps.act($('umSave'), () => target
             ? POps.api('/api/admin/users/' + encodeURIComponent(target.id), { method: 'PUT', body: payload })
@@ -771,8 +903,148 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         $('umRole').addEventListener('click', (e) => { const b = e.target.closest('button[data-role]'); if (b) setRole(b.dataset.role); });
         $('umSrc').addEventListener('click', (e) => { const b = e.target.closest('button[data-src]'); if (b) setSrc(b.dataset.src); });
         $('umSave').addEventListener('click', saveUser);
+        $('umScopeMode').addEventListener('click', (e) => { const b = e.target.closest('button[data-scope]'); if (b) setScopeMode(b.dataset.scope); });
+        $('umScopeUnits').addEventListener('change', () => $('umScopeField').classList.remove('has-error'));
         $('userModal').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { e.preventDefault(); saveUser(); } });
         ['umName', 'umPass'].forEach(id => $(id).addEventListener('input', (e) => e.target.closest('.field').classList.remove('has-error')));
+    }
+
+    // ================= KURUM BİRİMLERİ (yalnızca süper admin) =================
+    // İlçe → okul ağacı ve sınıfların birimleri: /api/org-units. Kapsam kuralları: Backend/pops/tenancy.py
+    function unitTree() {
+        const kids = new Map();
+        orgUnits.forEach(u => { const k = u.parent_id || 0; if (!kids.has(k)) kids.set(k, []); kids.get(k).push(u); });
+        const out = [];
+        const walk = (pid, depth) => (kids.get(pid) || []).forEach(u => { out.push({ u, depth }); walk(u.id, depth + 1); });
+        walk(0, 0);
+        return out;
+    }
+    const unitById = (id) => orgUnits.find(u => u.id === id);
+    function descendants(id) {
+        const ids = new Set([id]);
+        let grew = true;
+        while (grew) { grew = false; orgUnits.forEach(u => { if (u.parent_id && ids.has(u.parent_id) && !ids.has(u.id)) { ids.add(u.id); grew = true; } }); }
+        return ids;
+    }
+    function unitRowHtml({ u, depth }) {
+        const labs = u.labs || [];
+        const labsText = labs.length ? labs.join(', ') : POps.t('Sınıf bağlı değil');
+        return `<div class="srow unit-row" style="padding-left:${14 + depth * 22}px">
+            ${POps.iconHtml(depth ? 'labs' : 'server', 'lead')}
+            <div class="grow">
+                <div class="t"><span>${escapeHtml(u.name)}</span>${u.users ? `<span class="badge muted">${POps.tnHtml('{n} kullanıcı', Number(u.users))}</span>` : ''}</div>
+                <div class="d" title="${escapeHtml(labsText)}">${escapeHtml(labsText)}</div>
+            </div>
+            <button type="button" class="ibtn sm" data-unit-menu="${Number(u.id)}" aria-haspopup="true" aria-label="${escapeHtml(POps.t('{name} işlemleri', { name: u.name }))}">${POps.iconHtml('more', 'sm')}</button>
+        </div>`;
+    }
+    function renderUnits() {
+        const tree = unitTree();
+        const free = orgLabs.filter(l => l.org_unit_id == null);
+        $('unitSummary').textContent = orgUnits.length
+            ? POps.tn('{n} birim', orgUnits.length) + ' · ' + POps.tn('{n} sınıf bir birime bağlı', orgLabs.length - free.length)
+            : POps.t('Birim yok: bütün kullanıcılar her şeyi görür.');
+        $('unitTree').hidden = !tree.length;
+        $('unitTree').innerHTML = tree.map(unitRowHtml).join('');
+        $('unitFree').hidden = !orgUnits.length || !free.length;
+        $('unitFree').innerHTML = `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Birime bağlı olmayan sınıflar')}</div>
+            <div class="d">${escapeHtml(free.map(l => l.lab_name).join(', '))}</div>
+            <div class="d">${POps.tHtml('Bunları ve atanmamış bilgisayarları yalnızca kapsamı olmayan hesaplar görür.')}</div></div></div>`;
+    }
+    async function loadUnits() {
+        try {
+            const r = await POps.get('/api/org-units');
+            orgUnits = (r && r.units) || [];
+            orgLabs = (r && r.labs) || [];
+        } catch (e) {
+            $('unitSummary').textContent = POps.t('Birimler alınamadı: {error}', { error: POps.errorMessage(e) });
+            return;
+        }
+        renderUnits();
+    }
+    let unitEditing = null;   // düzenlenen birim; null = yeni
+    function openUnitEditor(u, parentId) {
+        unitEditing = u || null;
+        $('unNameField').classList.remove('has-error');
+        $('unTitle').textContent = u ? POps.t('Birimi düzenle') : POps.t('Birim ekle');
+        $('unSave').textContent = u ? POps.t('Kaydet') : POps.t('Birimi ekle');
+        $('unName').value = u ? u.name : '';
+        const banned = u ? descendants(u.id) : new Set();   // kendi altına taşınamaz
+        $('unParent').replaceChildren(POps.el('option', { value: '', text: POps.t('Üst birim yok (en üstte)') }),
+            ...unitTree().filter(({ u: x }) => !banned.has(x.id))
+                .map(({ u: x, depth }) => POps.el('option', { value: String(x.id), text: ' '.repeat(depth) + x.name })));
+        $('unParent').value = String((u ? u.parent_id : parentId) || '');
+        openModal('unitModal');
+        setTimeout(() => $('unName').focus(), 50);
+    }
+    async function saveUnit() {
+        const name = $('unName').value.trim();
+        if (!name) { $('unNameField').classList.add('has-error'); $('unName').focus(); return; }
+        const parent = $('unParent').value ? Number($('unParent').value) : null;
+        const target = unitEditing;
+        const ok = await POps.act($('unSave'), () => target
+            ? POps.api('/api/org-units/' + encodeURIComponent(target.id), { method: 'PATCH', body: { name, parent_id: parent } })
+            : POps.post('/api/org-units', { name, parent_id: parent }),
+        { success: target ? POps.t('{name} güncellendi.', { name }) : POps.t('{name} eklendi.', { name }) });
+        if (!ok) return;
+        closeModal('unitModal');
+        loadUnits();
+    }
+    let labsUnit = null;
+    function openUnitLabs(u) {
+        labsUnit = u;
+        $('ulTitle').textContent = POps.t('{name} · sınıflar', { name: u.name });
+        const list = $('ulList');
+        if (!orgLabs.length) { list.replaceChildren(POps.el('div', { className: 'faint', text: POps.t('Henüz sınıf yok.') })); }
+        else list.replaceChildren(...orgLabs.map(l => {
+            const cb = POps.el('input', { type: 'checkbox', className: 'ul-cb', value: l.lab_name });
+            cb.checked = l.org_unit_id === u.id;
+            const other = l.org_unit_id != null && l.org_unit_id !== u.id ? unitById(l.org_unit_id) : null;
+            return POps.el('label', { className: 'check' }, [cb, l.lab_name,
+                POps.el('span', { className: 'faint', text: (other ? POps.t('şu an: {unit}', { unit: other.name }) + ' · ' : '') + POps.tn('{n} bilgisayar', Number(l.devices || 0)) })]);
+        }));
+        openModal('unitLabsModal');
+    }
+    async function saveUnitLabs() {
+        const u = labsUnit;
+        if (!u) return;
+        const labs = [...document.querySelectorAll('.ul-cb')].filter(cb => cb.checked).map(cb => cb.value);
+        const ok = await POps.act($('ulSave'), () => POps.api('/api/org-units/' + encodeURIComponent(u.id) + '/labs', { method: 'PUT', body: { labs } }),
+            { success: POps.t('{name} sınıfları kaydedildi.', { name: u.name }) });
+        if (!ok) return;
+        closeModal('unitLabsModal');
+        loadUnits();
+    }
+    async function deleteUnit(u) {
+        const ok = await POps.confirm({
+            title: POps.t('{name} silinsin mi?', { name: u.name }), icon: 'trash', danger: true, confirmText: POps.t('Birimi sil'),
+            message: POps.t('Sınıfları birimsiz kalır; bu birim kullanıcı ve jeton kapsamlarından çıkarılır (kapsamı boşalan hesap hiçbir şey görmez). Alt birimi olan birim silinemez.')
+        });
+        if (!ok) return;
+        if (await POps.act(null, () => POps.del('/api/org-units/' + encodeURIComponent(u.id)), { success: POps.t('{name} silindi.', { name: u.name }) })) {
+            loadUnits();
+            loadUsers();
+        }
+    }
+    if (IS_SUPER) {
+        $('unitNew').addEventListener('click', () => openUnitEditor(null, null));
+        $('unSave').addEventListener('click', saveUnit);
+        $('unitModal').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); saveUnit(); } });
+        $('unName').addEventListener('input', () => $('unNameField').classList.remove('has-error'));
+        $('ulSave').addEventListener('click', saveUnitLabs);
+        $('unitTree').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-unit-menu]');
+            const u = b && unitById(Number(b.dataset.unitMenu));
+            if (!u) return;
+            POps.menu(b, [
+                { label: POps.t('Sınıfları seç…'), icon: 'labs', onClick: () => openUnitLabs(u) },
+                { label: POps.t('Alt birim ekle…'), icon: 'plus', onClick: () => openUnitEditor(null, u.id) },
+                { label: POps.t('Düzenle…'), icon: 'edit', onClick: () => openUnitEditor(u) },
+                '-',
+                { label: POps.t('Birimi sil'), icon: 'trash', danger: true, onClick: () => deleteUnit(u) }
+            ]);
+        });
+        loadUnits();
     }
 
     // ================= İKİ ADIMLI DOĞRULAMA =================
@@ -856,7 +1128,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         return `<div class="srow tok-row${t.state === 'active' ? '' : ' is-off'}">
             ${POps.iconHtml('key', 'lead')}
             <div class="grow">
-                <div class="t"><span>${escapeHtml(t.name)}</span><span class="badge muted">${escapeHtml(role)}</span></div>
+                <div class="t"><span>${escapeHtml(t.name)}</span><span class="badge muted">${escapeHtml(role)}</span>${t.org_scope ? `<span class="badge muted" title="${escapeHtml(POps.t('Kapsam'))}">${escapeHtml(scopeText(t))}</span>` : ''}</div>
                 <div class="d">${metaHtml}</div>
             </div>
             <span class="st"><span class="dot ${escapeHtml(st[0])}"></span>${escapeHtml(st[1])}</span>
@@ -891,7 +1163,8 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         if (days !== null && !(Number.isInteger(days) && days >= 1 && days <= 3650)) { $('tkDaysField').classList.add('has-error'); bad = true; }
         if (bad) return;
         let d = null;
-        const ok = await POps.act($('tkCreate'), async () => { d = await POps.post('/api/tokens', { name, role: tokenRole, expires_days: days }); });
+        const scope = $('tkScopeField').hidden || !$('tkScope').value ? null : [Number($('tkScope').value)];
+        const ok = await POps.act($('tkCreate'), async () => { d = await POps.post('/api/tokens', { name, role: tokenRole, expires_days: days, org_scope: scope }); });
         if (!ok || !d) return;
         closeModal('tokModal');
         loadApiTokens();
@@ -914,6 +1187,9 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             $('tkDays').value = '90';
             document.querySelectorAll('#tokModal .field.has-error').forEach(f => f.classList.remove('has-error'));
             setTokenRole('viewer');
+            $('tkScopeField').hidden = !orgUnits.length;
+            $('tkScope').replaceChildren(POps.el('option', { value: '', text: POps.t('Bütün kurum') }),
+                ...unitTree().map(({ u, depth }) => POps.el('option', { value: String(u.id), text: '\u2003'.repeat(depth) + u.name })));
             openModal('tokModal');
             setTimeout(() => $('tkName').focus(), 50);
         });
@@ -945,14 +1221,35 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             l.querySelector('input').disabled = blocked;
         });
     }
+    // Eşlemenin kurum birimi kapsamı (D-25): seçilmezse yeni hesap hiçbir birimi görmez; "all" bütün kurum. Panel tek
+    // birim seçtirir; API ile verilmiş çok birimli kapsam "{n} birim" olarak korunur.
+    function ssoScopeHtml(scope) {
+        const multi = Array.isArray(scope) && scope.length > 1;
+        const cur = scope === 'all' ? 'all' : Array.isArray(scope) && scope.length ? (multi ? 'keep' : String(scope[0])) : '';
+        const opt = (v, t) => `<option value="${escapeHtml(v)}"${v === cur ? ' selected' : ''}>${escapeHtml(t)}</option>`;
+        return opt('', POps.t('Kapsam seçilmedi')) + opt('all', POps.t('Bütün kurum'))
+            + (multi ? opt('keep', POps.tn('{n} birim', scope.length)) : '')
+            + unitTree().map(({ u, depth }) => opt(String(u.id), '\u2003'.repeat(depth) + u.name)).join('');
+    }
+    function ssoScopeValue(sel, orig) {
+        if (!sel || sel.hidden || sel.closest('[hidden]') || sel.value === 'keep') return orig;
+        if (sel.value === 'all') return 'all';
+        return sel.value ? [Number(sel.value)] : null;
+    }
+    function ssoRowScope(row) {
+        let orig = null;
+        try { orig = JSON.parse(row.dataset.scope || 'null'); } catch (e) { orig = null; }
+        return ssoScopeValue(row.querySelector('.smap-scope'), orig);
+    }
     function ssoMapRowHtml(m, dn) {
         const role = SSO_ROLES[m.role] ? m.role : 'viewer';
         const opts = Object.keys(SSO_ROLES).map(r => `<option value="${escapeHtml(r)}"${r === role ? ' selected' : ''}>${escapeHtml(POps.t(SSO_ROLES[r]))}</option>`).join('');
         const ph = dn ? 'CN=POps-Yoneticiler,OU=Gruplar,DC=okul,DC=local' : 'pops-admins';
-        return `<div class="smap-row">
+        return `<div class="smap-row" data-scope="${escapeHtml(JSON.stringify(m.org_scope ?? null))}">
             <div class="smap-top">
                 <input type="text" class="smap-group mono" maxlength="512" spellcheck="false" value="${escapeHtml(m.group || '')}" placeholder="${escapeHtml(ph)}" aria-label="${escapeHtml(POps.t('Grup'))}">
                 <select class="smap-role" aria-label="${escapeHtml(POps.t('Rol'))}">${opts}</select>
+                <select class="smap-scope" aria-label="${escapeHtml(POps.t('Kapsam'))}">${ssoScopeHtml(m.org_scope)}</select>
                 <button type="button" class="ibtn sm smap-del" data-tip="${escapeHtml(POps.t('Eşlemeyi kaldır'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Eşlemeyi kaldır'))}">${POps.iconHtml('trash', 'sm')}</button>
             </div>
             <div class="perm-grid smap-pages">${ssoPagesHtml(m.pages || [])}</div>
@@ -960,17 +1257,25 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     }
     function ssoRenderMap(box, rows, dn) {
         box.innerHTML = rows.length ? rows.map(m => ssoMapRowHtml(m, dn)).join('') : `<div class="smap-empty">${POps.tHtml('Henüz eşleme yok: kimse bu yolla giremez.')}</div>`;
-        box.querySelectorAll('.smap-row').forEach(row => ssoPagesFor(row.querySelector('.smap-pages'), row.querySelector('.smap-role').value));
+        box.querySelectorAll('.smap-row').forEach(row => ssoRoleChanged(row));
+        const hint = box.parentElement.querySelector('.sso-scope-hint');
+        if (hint) hint.hidden = !orgUnits.length;
+    }
+    function ssoRoleChanged(row) {
+        const role = row.querySelector('.smap-role').value;
+        ssoPagesFor(row.querySelector('.smap-pages'), role);
+        // Süper admin her zaman kapsamsızdır; birim yoksa kapsam seçilmez
+        row.querySelector('.smap-scope').hidden = role === 'superadmin' || !orgUnits.length;
     }
     function ssoReadMap(box) {
         return [...box.querySelectorAll('.smap-row')].map(row => {
             const role = row.querySelector('.smap-role').value;
             const pages = role === 'superadmin' ? [] : [...row.querySelectorAll('.smap-pages input:checked:not(:disabled)')].map(i => i.value);
-            return { group: row.querySelector('.smap-group').value.trim(), role, pages };
+            return { group: row.querySelector('.smap-group').value.trim(), role, pages, org_scope: role === 'superadmin' ? null : ssoRowScope(row) };
         }).filter(m => m.group);
     }
     function ssoWireMap(box, addBtn, dn) {
-        box.addEventListener('change', (e) => { if (e.target.classList.contains('smap-role')) ssoPagesFor(e.target.closest('.smap-row').querySelector('.smap-pages'), e.target.value); });
+        box.addEventListener('change', (e) => { if (e.target.classList.contains('smap-role')) ssoRoleChanged(e.target.closest('.smap-row')); });
         box.addEventListener('click', (e) => {
             const del = e.target.closest('.smap-del');
             if (!del) return;
@@ -980,8 +1285,8 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             ssoRenderMap(box, rows, dn);
         });
         addBtn.addEventListener('click', () => {
-            const rows = [...box.querySelectorAll('.smap-row')].map(row => ({ group: row.querySelector('.smap-group').value, role: row.querySelector('.smap-role').value, pages: [...row.querySelectorAll('.smap-pages input:checked')].map(i => i.value) }));
-            rows.push({ group: '', role: 'viewer', pages: [] });
+            const rows = [...box.querySelectorAll('.smap-row')].map(row => ({ group: row.querySelector('.smap-group').value, role: row.querySelector('.smap-role').value, pages: [...row.querySelectorAll('.smap-pages input:checked')].map(i => i.value), org_scope: ssoRowScope(row) }));
+            rows.push({ group: '', role: 'viewer', pages: [], org_scope: null });
             ssoRenderMap(box, rows, dn);
             const inputs = box.querySelectorAll('.smap-group');
             inputs[inputs.length - 1].focus();
@@ -1099,6 +1404,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         oidcDefRole = r || '';
         $('soDefRole').querySelectorAll('button').forEach(b => { const on = b.dataset.drole === oidcDefRole; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
         ssoPagesFor($('soDefPages'), oidcDefRole);
+        $('soDefScopeField').hidden = !oidcDefRole || !orgUnits.length;
     }
     function openOidc() {
         const o = sso.oidc;
@@ -1116,6 +1422,8 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         ssoRenderMap($('soMap'), o.group_map || [], false);
         $('soDomains').value = (o.allowed_domains || []).join(', ');
         $('soDefPages').innerHTML = ssoPagesHtml(o.default_pages || []);
+        $('soDefScope').innerHTML = ssoScopeHtml(o.default_org_scope ?? null);
+        $('soDefScope').dataset.scope = JSON.stringify(o.default_org_scope ?? null);
         setOidcDefRole(o.default_role || '');
         $('soResult').hidden = true;
         openModal('ssoOidcModal');
@@ -1128,7 +1436,8 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             group_map: ssoReadMap($('soMap')), ca_pem: $('soCa').value.trim(),
             allowed_domains: $('soDomains').value.split(/[,\s]+/).map(x => x.trim()).filter(Boolean),
             default_role: oidcDefRole,
-            default_pages: oidcDefRole ? [...$('soDefPages').querySelectorAll('input:checked:not(:disabled)')].map(i => i.value) : []
+            default_pages: oidcDefRole ? [...$('soDefPages').querySelectorAll('input:checked:not(:disabled)')].map(i => i.value) : [],
+            default_org_scope: oidcDefRole ? ssoScopeValue($('soDefScope'), JSON.parse($('soDefScope').dataset.scope || 'null')) : null
         };
         if ($('soSecret').value) p.client_secret = $('soSecret').value;
         return p;

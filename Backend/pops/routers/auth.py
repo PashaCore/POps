@@ -9,7 +9,7 @@ import asyncpg
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from pops import secretbox, sso, sso_ldap, timeutil
+from pops import secretbox, sso, sso_ldap, tenancy, timeutil
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.models import (
@@ -56,7 +56,9 @@ async def _hash_password(password: str) -> str:
     return (await asyncio.to_thread(bcrypt.hashpw, password.encode(), bcrypt.gensalt())).decode()
 
 
-def _login_success(u: dict) -> dict:
+async def _login_success(u: dict) -> dict:
+    # Kurum birimi kapsamı (pops/tenancy.py): panel yan menüde birim adını gösterir; kapsamsızda boş
+    scope = await tenancy.principal_info({"sub": u['username'], "role": u['role'], "org_scope": u.get('org_scope')})
     return {
         "status": "success",
         "message": "Giriş Başarılı",
@@ -64,6 +66,7 @@ def _login_success(u: dict) -> dict:
         "username": u['username'],
         "permissions": u.get('permissions', '[]'),
         "token": create_jwt(u['username'], u['role'], u.get('token_version', 0)),
+        **scope,
     }
 
 
@@ -84,7 +87,7 @@ async def finish_login(u: dict, otp: Optional[str] = None) -> dict:
                 "challenge": create_totp_challenge(u['username'], u.get('token_version') or 0),
             }
     await _mark_login(u['id'])
-    return _login_success(u)
+    return await _login_success(u)
 
 
 _BAD_LOGIN = "Geçersiz kullanıcı adı veya şifre"
@@ -133,7 +136,7 @@ async def _ldap_login(username: str, password: str, local: Optional[dict]) -> Op
         raise HTTPException(
             status_code=403, detail="Bu dizin hesabının panele erişimi yok (eşlenen bir grupta değil).")
     try:
-        return await sso.link_user("ldap", res.external_id, res.username, mapped[0], mapped[1])
+        return await sso.link_user("ldap", res.external_id, res.username, mapped[0], mapped[1], mapped[2])
     except sso.SsoRefused as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message)
 
@@ -143,7 +146,7 @@ async def _ldap_login(username: str, password: str, local: Optional[dict]) -> Op
 async def admin_login(request: Request, data: AdminLoginInput):
     rows = await execute_query(
         "SELECT id, username, role, permissions, password_hash, totp_enabled, totp_secret, token_version, "
-        "auth_source, external_id FROM users WHERE lower(username) = lower($1)",
+        "auth_source, external_id, org_scope FROM users WHERE lower(username) = lower($1)",
         (data.username,),
         fetch=True,
     )
@@ -178,7 +181,7 @@ async def admin_login_totp(request: Request, data: TotpLoginInput):
         raise HTTPException(status_code=401, detail="Oturum doğrulaması süresi doldu, tekrar giriş yapın")
     username, challenge_tv = challenge
     user = await execute_query(
-        "SELECT id, username, role, permissions, totp_enabled, totp_secret, token_version "
+        "SELECT id, username, role, permissions, totp_enabled, totp_secret, token_version, org_scope "
         "FROM users WHERE username = $1",
         (username,),
         fetch=True,
@@ -192,7 +195,7 @@ async def admin_login_totp(request: Request, data: TotpLoginInput):
     if not await consume_totp(u['id'], secretbox.unseal(u.get('totp_secret')), data.otp):
         raise HTTPException(status_code=401, detail="Doğrulama kodu geçersiz")
     await _mark_login(u['id'])
-    return _login_success(u)
+    return await _login_success(u)
 
 
 # ── 2FA kayıt/yönetim (giriş yapmış kullanıcı kendi 2FA'sını yönetir; API jetonu kullanamaz) ──
@@ -259,10 +262,23 @@ async def totp_disable(request: Request, data: TotpDisableInput, auth: dict = De
 
 @router.get("/api/admin/users")
 async def get_users(auth=Depends(require_admin_session)):
+    """Kapsamlı yönetici (pops/tenancy.py) yalnızca kendisini ve kapsamı kendi birimleri içinde kalan kullanıcıları
+    görür; kapsamsız hesaplar ona görünmez."""
+    scope = await tenancy.scope_of(auth)
+    args = [auth.get("sub")]
+    cond = tenancy.owned_scope_sql(scope, "org_scope", args)
     users = await execute_query(
-        "SELECT id, username, role, last_login, permissions, auth_source FROM users ORDER BY id ASC", fetch=True
+        "SELECT id, username, role, last_login, permissions, auth_source, org_scope FROM users "
+        "WHERE username = $1 OR " + cond + " ORDER BY id ASC",
+        tuple(args),
+        fetch=True,
     )
-    return {"status": "success", "users": [timeutil.iso_row(u) for u in users or []]}
+    out = []
+    for u in users or []:
+        row = timeutil.iso_row(u)
+        row["org_units"] = await tenancy.unit_names(u["org_scope"])
+        out.append(row)
+    return {"status": "success", "users": out}
 
 
 VALID_ROLES = ('superadmin', 'admin', 'viewer')
@@ -313,6 +329,7 @@ async def _first_local_superadmin() -> Optional[int]:
 @router.post("/api/admin/users")
 async def create_user(data: UserCreateInput, auth=Depends(require_superadmin)):
     username, permissions = _clean_user_fields(data.username, data.role, data.permissions)
+    org_scope = await tenancy.clean_scope(data.org_scope, data.role)
     if data.auth_source == 'local':
         if not data.password:
             raise HTTPException(status_code=400, detail="Şifre boş olamaz.")
@@ -324,8 +341,9 @@ async def create_user(data: UserCreateInput, auth=Depends(require_superadmin)):
         hashed_pw = sso.SSO_PASSWORD_HASH
     try:
         await execute_query(
-            "INSERT INTO users (username, password_hash, role, permissions, auth_source) VALUES ($1, $2, $3, $4, $5)",
-            (username, hashed_pw, data.role, permissions, data.auth_source),
+            "INSERT INTO users (username, password_hash, role, permissions, auth_source, org_scope) "
+            "VALUES ($1, $2, $3, $4, $5, $6)",
+            (username, hashed_pw, data.role, permissions, data.auth_source, org_scope),
         )
     except asyncpg.UniqueViolationError:
         raise HTTPException(status_code=409, detail="Bu kullanıcı adı zaten var.")
@@ -335,9 +353,14 @@ async def create_user(data: UserCreateInput, auth=Depends(require_superadmin)):
 @router.put("/api/admin/users/{user_id}")
 async def update_user(user_id: int, data: UserUpdateInput, auth=Depends(require_superadmin)):
     username, permissions = _clean_user_fields(data.username, data.role, data.permissions)
-    current = await execute_query("SELECT role, auth_source FROM users WHERE id=$1", (user_id,), fetch=True)
+    current = await execute_query("SELECT role, auth_source, org_scope FROM users WHERE id=$1", (user_id,), fetch=True)
     if not current:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+    # Kapsam gönderilmezse değişmez (şifre sıfırlama gibi); süper admine yükseltilen hesabın kapsamı kalkar
+    if "org_scope" in data.model_fields_set:
+        org_scope = await tenancy.clean_scope(data.org_scope, data.role)
+    else:
+        org_scope = None if data.role == 'superadmin' else current[0]["org_scope"]
     if (
         current[0]["role"] == 'superadmin'
         and data.role != 'superadmin'
@@ -358,22 +381,23 @@ async def update_user(user_id: int, data: UserUpdateInput, auth=Depends(require_
             hashed_pw = await _hash_password(data.password) if source == 'local' else sso.SSO_PASSWORD_HASH
             await execute_query(
                 "UPDATE users SET username=$1, password_hash=$2, role=$3, permissions=$4, auth_source=$5, "
-                "external_id=NULL, token_version=token_version+1 WHERE id=$6",
-                (username, hashed_pw, data.role, permissions, source, user_id),
+                "external_id=NULL, org_scope=$7, token_version=token_version+1 WHERE id=$6",
+                (username, hashed_pw, data.role, permissions, source, user_id, org_scope),
             )
             await add_audit_log("*", "user_auth_source", "Kullanıcının kimlik kaynağı değişti: %s" % username, {
                 "user": username, "before": old_source, "after": source, "by": auth.get('sub')})
         elif data.password:
             hashed_pw = await _hash_password(data.password)
             await execute_query(
-                "UPDATE users SET username=$1, password_hash=$2, role=$3, permissions=$4, "
+                "UPDATE users SET username=$1, password_hash=$2, role=$3, permissions=$4, org_scope=$6, "
                 "token_version=token_version+1 WHERE id=$5",
-                (username, hashed_pw, data.role, permissions, user_id),
+                (username, hashed_pw, data.role, permissions, user_id, org_scope),
             )
         else:
             await execute_query(
-                "UPDATE users SET username=$1, role=$2, permissions=$3, token_version=token_version+1 WHERE id=$4",
-                (username, data.role, permissions, user_id),
+                "UPDATE users SET username=$1, role=$2, permissions=$3, org_scope=$5, token_version=token_version+1 "
+                "WHERE id=$4",
+                (username, data.role, permissions, user_id, org_scope),
             )
     except asyncpg.UniqueViolationError:
         raise HTTPException(status_code=409, detail="Bu kullanıcı adı zaten var.")

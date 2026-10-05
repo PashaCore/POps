@@ -60,6 +60,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0029_glpi.sql` | `glpi_links`: the GLPI item each exported POps record is linked to (GLPI export, see [`integrations/glpi.md`](integrations/glpi.md)). |
 | `0030_sso.sql` | `users.auth_source` / `external_id` and the tables `sso_providers` (directory and OpenID Connect settings) and `sso_flows` (short-lived sign-in state and tickets). |
 | `0031_timestamptz.sql` | The text dates of the older tables become `TIMESTAMPTZ`, read in the server's time zone (see [Timestamps](#timestamps)); `global_settings.audit_time_zone`. Rewrites the tables: back up before the update. |
+| `0032_org_units.sql` | `org_units` (district → school), `custom_labs.org_unit_id`, `org_scope` on users, API tokens and scheduled tasks, `org_unit_id` on licences and tickets. See [Organisational units](#organisational-units). |
 | `0020_refused_results.sql` | Tasks the agent refused but an older server stored as `Completed` (output starting with `[REDDEDİLDİ]`, no exit code) become `Denied` with exit code `-5`. |
 | `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
 | `0017_task_expiry.sql` | `tasks.expires_at`, `tasks.schedule_id`, `tasks.agent_started_at` and the pending-by-schedule index. |
@@ -172,6 +173,20 @@ returns the first broken entry. Rows written before migration `0004` have no has
 | `license_check_date` | scheduler | Date (`YYYY-MM-DD`, server date) of the last daily licence check, so the check and its notifications run once a day. |
 
 See [`configuration.md`](configuration.md#runtime-settings-database) for how to change them.
+
+### Organisational units
+
+Migration `0032` (decision D-25, `Backend/pops/tenancy.py`):
+
+| Table / column | Meaning |
+| --- | --- |
+| `org_units` | `id`, `name`, `parent_id` (district → school; `NULL` at the top), `created_at`. Names are unique under one parent, case-insensitive. |
+| `custom_labs.org_unit_id` | The lab's unit; `NULL` = in no unit (only unscoped accounts see it and its PCs). A device belongs to the unit of its lab. |
+| `users.org_scope`, `api_tokens.org_scope` | `NULL` = everything; an array of unit ids = those units and their sub-units. |
+| `scheduled_tasks.org_scope` | The creator's scope; targets are resolved in it on every run. |
+| `licenses.org_unit_id`, `tickets.org_unit_id` | Owner unit of a licence (installations counted on that unit's PCs) and of a ticket without a PC. |
+
+Deleting a unit removes its id from the scope arrays and sets the foreign keys to `NULL`.
 
 ### Timestamps
 

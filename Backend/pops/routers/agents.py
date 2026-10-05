@@ -10,11 +10,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from pops import db, exams, modules, timeutil
+from pops import db, exams, modules, tenancy, timeutil
 from pops.db import execute_query
 from pops.labs import UNASSIGNED_LAB
 from pops.models import AgentPoliciesInput, AuthEventInput, HwInventoryInput, LogInput, PolicyAlertInput
-from pops.security import require_admin, require_auth
+from pops.security import require_auth
 from pops.agent_auth import (
     bind_agent,
     _hash_secret,
@@ -274,7 +274,7 @@ async def _store_update_result(pc_name: str, payload: dict) -> None:
     await peer_cache.on_result(pc_name, payload)
     if notice:
         await notify(notice[0], notice[1], notice[2], str(payload.get("detail") or ""), pc_name)
-    await manager.broadcast_to_panels({"type": "update_result", "pc_name": pc_name, **detail})
+    await manager.broadcast_to_panels({"type": "update_result", "pc_name": pc_name, **detail}, device=pc_name)
 
 
 async def _update_progress(pc_name: str, payload: dict, agent_version: Optional[str]) -> None:
@@ -651,7 +651,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     "pc_name": current_hostname,
                     "output": pld.get("output"),
                     "task_id": pld.get("task_id"),
-                }
+                },
+                device=active_hwid,
             )
             await process_queue()
             return
@@ -873,14 +874,15 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                                 fut.set_result(payload.get("image", ""))
                         manager.pending_thumbnails[hwid] = []
                     # F1 kalıntısı: ekran görüntüsü yalnızca admin panellerine (viewer'a SIZMAZ).
-                    await manager.broadcast_to_admin_panels(payload)
+                    await manager.broadcast_to_admin_panels(payload, device=active_hwid)
                     continue
                 if payload.get("type") == "vision_rejected":
                     # Cihaz bağlantıdan (önizlemedeki gibi): gövdedeki hw_id yetki taşımaz. Panel bu mesajda cihazı
                     # yoksa ya da kendi açık oturumunun cihazıysa uzaktan bağlantıyı kapatır; başka bir ajan böylece
                     # yöneticinin oturumunu kapattırabiliyordu (fuzz/fuzz_agent_ws.py)
                     await manager.broadcast_to_panels(
-                        {"type": "vision_rejected", "session_id": payload.get("session_id"), "hw_id": active_hwid}
+                        {"type": "vision_rejected", "session_id": payload.get("session_id"), "hw_id": active_hwid},
+                        device=active_hwid,
                     )
                     continue
                 if payload.get("type") == "update_result":
@@ -945,7 +947,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     devicelist.touch([active_hwid])
                     await manager.broadcast_to_panels(
                         {"type": "capabilities", "pc_name": active_hwid, "terminal_enabled": t, "vision_enabled": v,
-                         "files_enabled": f}
+                         "files_enabled": f},
+                        device=active_hwid,
                     )
                     continue
                 if payload.get("type") == "bypass_secret_ack":
@@ -1015,7 +1018,9 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     )
                     if payload.get("capability") == "exam":
                         await exams.on_denied(active_hwid)
-                    await manager.broadcast_to_panels({"type": "capability_denied", "pc_name": active_hwid, **_md})
+                    await manager.broadcast_to_panels(
+                        {"type": "capability_denied", "pc_name": active_hwid, **_md}, device=active_hwid
+                    )
                     continue
                 await handle_routine_payload(payload)
             except WebSocketDisconnect:
@@ -1172,7 +1177,8 @@ def _clean_dns_domains(raw: dict) -> dict:
 
 
 @router.post("/api/agent_policies", deprecated=True)
-async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(require_admin)):
+async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(tenancy.require_global_admin)):
+    # Politika kurum genelidir (bütün ajanlar okur): kapsamı birimlerle sınırlı hesap değiştiremez
     if data.dns_domains is None:
         # Alan adı listesini göndermeyen istemci onu silmesin: kayıtlı listeyi koru
         row = await execute_query("SELECT value FROM global_settings WHERE key = 'agent_policies'", fetch=True)

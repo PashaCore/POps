@@ -62,6 +62,7 @@ SCRIPT_ORDER = [
     "test_strict_input.py",
     "test_glpi.py",
     "test_timestamps.py",
+    "test_tenancy.py",
 ]
 
 # Betiklerin kontrol satırları: chk() "  FAIL <mesaj>", check() "  ✘ <mesaj>" basar
