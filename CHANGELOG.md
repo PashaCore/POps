@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sistem: an agent that is installing an update shows as updating, not off.** The agent's service is stopped during the install, so the PC looked offline and the card said "Hepsi kapalı". PCs with an update in flight are now counted as "güncelleniyor", and "eski ajanı güncelle" doesn't send to them again.
+
 ## [0.1.23-alpha] - 2026-10-05
 
 **For operators, in short:**
