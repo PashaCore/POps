@@ -62,8 +62,11 @@ async def end_exam(lab_name: str, data: Optional[ExamEndInput] = None, auth: dic
 
 @router.get("/api/labs/{lab_name:path}/exam")
 async def get_lab_exam(lab_name: str, auth: dict = Depends(require_auth)):
-    """Sınıfın sınav durumu ve her bilgisayarın durumu (sınavda, ayrıldı, ulaşılamıyor, desteklemiyor ...)."""
-    lab = await _lab(lab_name)
+    """Sınıfın sınav durumu ve her bilgisayarın durumu (sınavda, ayrıldı, ulaşılamıyor, desteklemiyor ...). Bilinmeyen
+    sınıfta sınav yoktur (active: false): panel yeni silinen ya da yeniden adlandırılan sınıfı sorarken 404 almasın."""
+    lab = (lab_name or "").strip()
+    if not lab:
+        raise HTTPException(status_code=400, detail="Sınıf adı gerekli.")
     return await exams.lab_state(lab)
 
 

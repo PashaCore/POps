@@ -240,6 +240,8 @@ async def run(c, admin, superadmin, viewer, sockets):
     chk(s == 200 and body.get("active") is False and body.get("module_enabled") is True,
         "izleyici durumu okur; sınav yok (%s %s)" % (s, body))
     chk(req("/api/v1/exams", viewer)[0] == 200, "izleyici geçmişi okur")
+    s, body = req(exam_path("EX-Lab-Yok"), viewer)
+    chk(s == 200 and body.get("active") is False, "bilinmeyen sınıfın durumu: sınav yok (404 değil)")
 
     print("== doğrulama")
     chk(req(exam_path("EX-Lab-Yok"), admin, GOOD)[0] == 404, "bilinmeyen sınıf 404")

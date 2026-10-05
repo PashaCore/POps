@@ -4151,7 +4151,7 @@
         ]
       },
       "get": {
-        "description": "Sınıfın sınav durumu ve her bilgisayarın durumu (sınavda, ayrıldı, ulaşılamıyor, desteklemiyor ...).",
+        "description": "Sınıfın sınav durumu ve her bilgisayarın durumu (sınavda, ayrıldı, ulaşılamıyor, desteklemiyor ...). Bilinmeyen\nsınıfta sınav yoktur (active: false): panel yeni silinen ya da yeniden adlandırılan sınıfı sorarken 404 almasın.",
         "operationId": "get_lab_exam_api_labs__lab_name__exam_get",
         "parameters": [
           {
