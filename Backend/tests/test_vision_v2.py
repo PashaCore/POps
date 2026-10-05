@@ -278,6 +278,22 @@ async def main():
     leaks = [m for p in (other, viewer) for m in await collect(p, 0.5) if jtype("clipboard")(m)]
     chk(not leaks, "pano metni başka admine ve viewer'a gitmedi")
 
+    # Tünel açıkken başlayan ikinci "kullanıcıya sor" oturumu: kullanıcının onu kabul ettiği bilinmez, pano kapalı
+    s, b = http("/api/audit/session/start", body={"target_pc": PC_A, "reason": "ikinci", "is_mandatory": False},
+                token=jwt2)
+    sid_a2 = b.get("session_id")
+    await other.send(ctl(PC_A, "clipboard", text="ikinci oturum"))
+    res = await first(other, jtype("clipboard_result", hw_id=PC_A), 3)
+    chk(res and json.loads(res)["ok"] is False and json.loads(res)["reason"] == "not_accepted",
+        "tünel açıkken başlayan ikinci oturuma pano kapalı (not_accepted)")
+    only_first = "yalniz-ilk-" + secrets.token_hex(4)
+    await vis_a.send(json.dumps({"type": "clipboard", "text": only_first}))
+    got = await first(own, jtype("clipboard"), 3)
+    chk(got and json.loads(got)["text"] == only_first
+        and not [m for m in await collect(other, 0.8) if jtype("clipboard")(m)],
+        "bilgisayarın panosu yalnız rızası tüneli açan oturumun sahibine gitti")
+    http("/api/audit/session/end", body={"session_id": sid_a2, "status": "Completed"}, token=jwt2)
+
     # Zorunlu oturumda pano yok (kullanıcı kabul etmedi); kareler yine gider
     await other.send(ctl(PC_B, "clipboard", text="zorunlu"))
     res = await first(other, jtype("clipboard_result", hw_id=PC_B), 3)
@@ -301,10 +317,11 @@ async def main():
     )
     dirs = sorted((r["hw_id"], json.loads(r["changes"])["direction"], json.loads(r["changes"])["length"])
                   for r in rows)
-    chk(dirs == sorted([(PC_A, "to_pc", len(marker_out)), (PC_A, "from_pc", len(marker_in))]),
-        "pano denetim kaydı: iki yön, uzunluk; zorunlu oturumda kayıt yok")
-    chk(all(marker_out not in r["reason"] + r["changes"] and marker_in not in r["reason"] + r["changes"]
-            for r in rows), "denetim kaydında pano içeriği yok")
+    chk(dirs == sorted([(PC_A, "to_pc", len(marker_out)), (PC_A, "from_pc", len(marker_in)),
+                        (PC_A, "from_pc", len(only_first))]),
+        "pano denetim kaydı: iki yön, uzunluk; reddedilen ve zorunlu oturumdaki aktarım için kayıt yok")
+    chk(all(t not in r["reason"] + r["changes"] for r in rows for t in (marker_out, marker_in, only_first)),
+        "denetim kaydında pano içeriği yok")
 
     # Eski ajan: JSON/base64 stream_frame aynı tünelde çalışır
     await vis_a.send(json.dumps({"type": "stream_frame", "hw_id": PC_A, "image": "LEGACYFRAME"}))

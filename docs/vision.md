@@ -122,7 +122,8 @@ schemas and the frame header are in [`protocol/README.md`](protocol/README.md#vi
   output, a region inside it, a cursor with no size and no image, a JPEG signature. A bad message is dropped without
   an answer and counted in `/metrics` (`pops_events_total{event="vision_frames_malformed"}` and
   `vision_frames_oversize`; valid ones in `vision_frames_binary`); the first one per tunnel is logged. The tunnel
-  stays open.
+  stays open; a message the server fails to process (for example a database error) is logged and skipped, and only
+  20 such failures within a minute close the tunnel (`1011`).
 - **Who receives frames (F12).** Only panel sockets of an admin or superadmin who holds an open, unexpired session
   for that device, and only those that sent `panel_hello`. Viewers, other admins and panels without a session get
   nothing; with no such panel the frame is dropped.
@@ -146,7 +147,8 @@ schemas and the frame header are in [`protocol/README.md`](protocol/README.md#vi
     `{"type": "vision_resync", "hw_id", "monitor"}`;
   - only the latest cursor position.
 
-  A panel whose send takes longer than 10 seconds is closed, as before.
+  A panel whose send takes longer than 10 seconds, or that has more than 16 MB of binary frames waiting in total,
+  is closed and the browser reconnects.
 - **Screens.** `monitors` from the agent is checked, kept for the open tunnel and sent to the session holders as
   `{"type": "monitors", "hw_id", "list"}`. An admin who opens a session while the tunnel is already open gets the
   kept list.
@@ -166,7 +168,7 @@ The agent receives only the contract's fields (`{"action": "select_monitor", "in
 panel's extra fields. `select_monitor` and `set_quality` extend the session's idle timeout like remote input.
 Anything else is dropped silently; a refused clipboard text is answered with
 `{"type": "clipboard_result", "hw_id", "ok": false, "reason"}` (`not_accepted`, `no_stream`, `invalid`, `rate`,
-`module`), a delivered one with `ok: true`.
+`module`, `audit`), a delivered one with `ok: true`.
 
 ### Viewer
 
@@ -177,15 +179,18 @@ Anything else is dropped silently; a refused clipboard text is answered with
   latest frame, so it follows the agent after a screen switch.
 - When regions are missing (a `vision_resync`, a JPEG that failed to decode, or more than 24 frames waiting to
   be decoded because the browser falls behind) the page stops drawing regions of that output and sends the current
-  `select_monitor` again, at most every 3 seconds; the agent answers with a full frame.
+  `select_monitor` again (for a `vision_resync` at once, otherwise at most every 3 seconds); the agent answers with
+  a full frame. If none arrives the request is repeated every 3 seconds, at most five times, while that output is
+  shown.
 - **Controls** (shown when the agent sends binary frames or `monitors`): a screen picker (when there is more than
   one screen; **Tümü** = side by side), the frame rate (1, 2, 5, 10) and **Görüntü ayarları** (quality 30–75,
   scale 50/75/100 %), all sent as `set_quality`; the browser remembers them and sends them when a stream starts if
   they differ from the agent's defaults (60, 100 %, 5). The footer shows frames per second (regions of one capture
   count once) and kbit/s over the last 2 seconds, for old agents too.
 - **Mouse:** positions are converted to pixels of the shown output (the selected screen or the side-by-side image)
-  and sent in `remote_input` as before; the agent maps them to the physical screen. Old agents keep the previous
-  conversion from the 75 % frame.
+  and sent in `remote_input` as before; the agent maps them to the physical screen. After a screen switch, mouse
+  moves wait (up to 3 seconds) until the new screen is shown, because the agent maps them to its new selection.
+  Old agents keep the previous conversion from the 75 % frame.
 - **Pano** (clipboard panel): send text to the PC, and see and copy text the user copied on the PC. It is
   disabled in a mandatory session.
 - Turning **Canlı izle** off keeps the last image as the preview, on the page and on the PC's card.
@@ -194,16 +199,19 @@ Anything else is dropped silently; a refused clipboard text is answered with
 
 - Text only, at most 64 KB (UTF-8). Empty text and anything longer is refused by the panel, the server and the
   agent.
-- Only in a session the **PC user accepted**: the server forwards clipboard text in either direction only for an
-  admin whose session was opened as **Kullanıcıya sor** (not **Zorunlu müdahale**) and whose Vision tunnel opened
-  after that session started, that is, after the user accepted it in the consent dialog. If the tunnel was
-  already open for another admin's session, the server cannot tell that this session was accepted and refuses
-  (`not_accepted`). The agent checks the same on its side and the tray shows "Pano paylaşıldı".
-- Text copied on the PC goes only to the admins whose session the user accepted, never to other admins or
-  viewers.
+- Only in a session the **PC user accepted**. The agent opens the Vision tunnel only after the user accepted a
+  session (or a mandatory session's countdown ended), so when the tunnel opens the server looks at the device's
+  open sessions: if there is exactly one and it was opened as **Kullanıcıya sor** (not **Zorunlu müdahale**), the
+  tunnel belongs to it and its admin may use the clipboard. In every other case nobody may: a mandatory session,
+  several sessions at that moment (the server cannot tell which one the user accepted), or a session that started
+  while the tunnel was already open (refused with `not_accepted`). A reconnecting tunnel is judged the same way,
+  and the right ends with the session or the tunnel. The agent checks consent on its side too and the tray shows
+  "Pano paylaşıldı".
+- Text copied on the PC goes only to that admin, never to other admins or viewers.
 - At most 30 texts per minute per device in each direction.
 - Every transfer is written to the hash-chained `device_audit_logs` as `clipboard` with the direction (`to_pc` or
-  `from_pc`), the length in characters, the admin(s) and the time. The text itself is never logged or stored.
+  `from_pc`), the length in characters, the admin and the time, before the text is passed on; if the entry cannot be
+  written the text is not passed on (`audit`). The text itself is never logged or stored.
 - Frames, monitor lists and clipboard text are kept only in memory while they are forwarded; nothing is written to
   disk.
 

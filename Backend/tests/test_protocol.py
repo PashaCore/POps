@@ -662,6 +662,7 @@ async def vision_channel():
     P.set(manager, "send_frame_to_viewers", to_viewers)
     P.set(manager, "send_binary_frame_to_viewers", to_binary)
     P.set(manager, "send_to_session_holders", holders)
+    P.set(manager, "has_session_panels", lambda pc, users=None: True)
     # Kullanıcının kabul ettiği oturum: tünel oturumdan sonra açılır (pano bu oturumun sahibine gider)
     manager.add_vision_session(HW, "ayse")
     vis = [m for _, m in channel_examples(VIS)]
@@ -675,6 +676,7 @@ async def vision_channel():
     ws = FakeWS(vis + [spoofed, good, bad, unknown], headers={"X-Agent-Secret": SECRET})
     try:
         await control.websocket_vision(ws, HW)
+        await asyncio.gather(*list(control._background))   # pano denetim kaydı ve iletimi arka planda
     finally:
         P.restore()
         manager.remove_vision_session(HW, "ayse")
@@ -707,10 +709,9 @@ async def vision_channel():
 
     P.set(control, "add_audit_log", recorder([]))
     P.set(manager, "send_to_panel", lambda ws_, msg: replies.append(msg))
-    manager.active_vision_ws[HW] = vision_ws
     manager.panel_roles[panel] = "admin"
     manager.add_vision_session(HW, "ayse")
-    manager.vision_tunnel_since[HW] = manager.vision_session_modes[(HW, "ayse")][0]
+    manager.vision_tunnel_opened(HW, vision_ws)
     try:
         for name in ("select_monitor", "select_monitor.all", "set_quality", "clipboard"):
             msg = dict(example(S2A, name), type="vision_control", device=HW)
@@ -719,8 +720,7 @@ async def vision_channel():
     finally:
         P.restore()
         manager.remove_vision_session(HW, "ayse")
-        manager.active_vision_ws.pop(HW, None)
-        manager.vision_tunnel_since.pop(HW, None)
+        manager.disconnect_vision(HW)
         manager.panel_roles.pop(panel, None)
     for m in sent:
         check_message(S2A, m, "sunucu→ajan %s (görüntüleyici)" % message_name(S2A, m))

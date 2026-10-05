@@ -1005,19 +1005,41 @@ def test_vision_v2():
         chk(not m.clipboard_allowed("ali", "HW-1"), "pano: tünel açılmadan kapalı")
         m.vision_tunnel_opened("HW-1", FastWS())
         chk(m.clipboard_allowed("ali", "HW-1") and m.clipboard_users("HW-1") == {"ali"},
-            "pano: oturumdan sonra açılan tünel (kullanıcı kabul etti) → açık")
+            "pano: tüneli tek 'kullanıcıya sor' oturumunun rızası açtı → o oturumun sahibine açık")
+        m.add_vision_session("HW-1", "veli")
+        chk(m.clipboard_users("HW-1") == {"ali"}, "pano: tünel açıkken başlayan ikinci oturuma kapalı")
+        m.vision_tunnel_opened("HW-1", FastWS())
+        chk(not m.clipboard_users("HW-1"),
+            "pano: tünel açılırken iki oturum varsa (hangisi kabul edildi bilinmez) kimseye açılmaz")
+        m.remove_vision_session("HW-1", "veli")
         m.add_vision_session("HW-1", "ali", mandatory=True)
         m.vision_tunnel_opened("HW-1", FastWS())
         chk(not m.clipboard_allowed("ali", "HW-1"), "pano: zorunlu oturumda kapalı")
-        m.vision_tunnel_opened("HW-2", FastWS())
-        time.sleep(0.01)
-        m.add_vision_session("HW-2", "veli")
-        chk(not m.clipboard_allowed("veli", "HW-2"), "pano: tünel bu oturumdan önce açıksa (kabul bilinmiyor) kapalı")
+        m.add_vision_session("HW-1", "ali")
+        m.vision_tunnel_opened("HW-1", FastWS())
+        chk(m.clipboard_allowed("ali", "HW-1"), "pano: yeni 'kullanıcıya sor' oturumu tüneli yeniden açınca açık")
+        m.add_vision_session("HW-1", "ali", mandatory=True)
+        chk(not m.clipboard_allowed("ali", "HW-1"), "pano: oturum zorunluya dönerse kapanır")
         m.remove_vision_session("HW-1", "ali")
-        chk(not m.clipboard_allowed("ali", "HW-1") and ("HW-1", "ali") not in m.vision_session_modes,
-            "oturum bitince pano ve oturum türü düşer")
+        chk(not m.clipboard_allowed("ali", "HW-1") and ("HW-1", "ali") not in m.vision_session_modes
+            and "HW-1" not in m.vision_clipboard_owner, "oturum bitince pano, oturum türü ve pano sahibi düşer")
+        m.vision_tunnel_opened("HW-2", FastWS())
+        chk(m.vision_clipboard_owner.get("HW-2") == "veli", "B cihazında tek oturum: pano sahibi veli")
         m.disconnect_vision("HW-2")
-        chk("HW-2" not in m.vision_tunnel_since, "tünel kapanınca açılış anı silinir")
+        chk("HW-2" not in m.vision_clipboard_owner and not m.clipboard_allowed("veli", "HW-2"),
+            "tünel kapanınca pano sahibi düşer")
+
+        # Yavaş panelde bekleyen ikili kareler toplam sınırı aşarsa panel kapatılır (monitör baytını ajan seçer)
+        dead = []
+        ws = SlowWS()
+        sender = mgr._PanelSender(ws, dead.append)
+        mb2 = b"x" * (2 * 1024 * 1024)
+        sender.put_binary(("HW-9", 0), v.KIND_FULL, b"F")
+        await asyncio.sleep(0)
+        for mon in range(9):
+            sender.put_binary(("HW-9", mon), v.KIND_FULL, mb2)
+        chk(dead == [ws], "bekleyen ikili kareler 16 MB'ı aşınca panel kapatıldı")
+        sender.task.cancel()
         for s in m.panel_senders.values():
             s.task.cancel()
 

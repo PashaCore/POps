@@ -27,5 +27,6 @@
   "Yalnızca metin, en çok 64 KB. Bilgisayardaki kullanıcı pano paylaşımını görür; denetim kaydına yalnızca yön ve uzunluk yazılır, metnin kendisi yazılmaz.": "Text only, at most 64 KB. The user at the computer sees that the clipboard is shared; the audit log records only the direction and the length, never the text.",
   "Gönderiliyor…": "Sending…",
   "Bağlantı yeniden kuruluyor; metin bağlanınca gider.": "Reconnecting; the text is sent once connected.",
-  "Bu bilgisayarın panosuna kopyalandı.": "Copied to this computer's clipboard."
+  "Bu bilgisayarın panosuna kopyalandı.": "Copied to this computer's clipboard.",
+  "Denetim kaydı yazılamadı; metin gönderilmedi.": "The audit log could not be written; the text was not sent."
 }

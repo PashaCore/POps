@@ -33,6 +33,8 @@ _FRAME_TYPES = ("stream_frame", "thumbnail")
 #     ister (select_monitor). Yavaş panel kareleri biriktirmez, düşürür.
 _BIN_KEY_MAX_FRAMES = 32
 _BIN_KEY_MAX_BYTES = 4 * 1024 * 1024
+# Bir panelde bekleyen bütün ikili kareler (monitör baytını ajan seçer: 17 çıktı x 4 MB olmasın); aşan panel kapatılır
+_BIN_PANEL_MAX_BYTES = 16 * 1024 * 1024
 _ADMIN_ROLES = ("admin", "superadmin")
 
 
@@ -89,6 +91,10 @@ class _PanelSender:
             self.bin_bytes[key] = len(data)
             if kind == vision.KIND_FULL:
                 self.stale.discard(key)
+        if sum(self.bin_bytes.values()) > _BIN_PANEL_MAX_BYTES:
+            log.info("panelde bekleyen ikili kareler sınırı aştı, panel kapatılıyor")
+            self._on_dead(self.ws)
+            return False
         self.wake.set()
         return False
 
@@ -142,13 +148,14 @@ class ConnectionManager:
         # yalnızca pending_updates'te olan cihaz için tutulur (bkz. pops/update_tracking.py)
         self.update_stages: Dict[str, dict] = {}
         self.panel_senders: Dict[WebSocket, _PanelSender] = {}
-        # Vision v2: ikili kare alabileceğini bildiren paneller (panel_hello), cihazın son monitör listesi, tünelin
-        # açıldığı an ve oturumların türü. Pano yalnızca kullanıcının onayladığı oturumda çalışır: oturum zorunlu
-        # değilse ve tünel bu oturum açıldıktan SONRA açıldıysa (rıza sorusu kabul edilince açılır).
+        # Vision v2: ikili kare alabileceğini bildiren paneller (panel_hello), cihazın son monitör listesi, oturumların
+        # türü ve panonun sahibi. Pano yalnızca kullanıcının onayladığı oturumda çalışır: tünel açıldığında cihazda
+        # açık TEK oturum vardıysa ve o oturum "kullanıcıya sor" türündeyse, tüneli o oturumun rızası açmıştır; pano
+        # yalnızca o oturumun sahibine açılır (bkz. vision_tunnel_opened).
         self.panel_binary: set = set()
         self.vision_monitors: Dict[str, list] = {}
-        self.vision_tunnel_since: Dict[str, float] = {}
         self.vision_session_modes: Dict[tuple, tuple] = {}  # (pc_name, kullanıcı) -> (açılış anı, zorunlu mu)
+        self.vision_clipboard_owner: Dict[str, str] = {}  # pc_name -> rızası tüneli açan oturumun sahibi
 
     async def connect_agent(self, websocket: WebSocket, pc_name: str):
         self.active_agents[pc_name] = websocket
@@ -177,6 +184,8 @@ class ConnectionManager:
     def remove_vision_session(self, pc_name: str, username: str):
         s = self.vision_sessions.get(pc_name)
         self.vision_session_modes.pop((pc_name, username), None)
+        if self.vision_clipboard_owner.get(pc_name) == username:
+            self.vision_clipboard_owner.pop(pc_name, None)
         if s:
             s.pop(username, None)
             if not s:
@@ -192,6 +201,8 @@ class ConnectionManager:
         for u in expired:  # süresi dolanları tembel temizle
             s.pop(u, None)
             self.vision_session_modes.pop((pc_name, u), None)
+            if self.vision_clipboard_owner.get(pc_name) == u:
+                self.vision_clipboard_owner.pop(pc_name, None)
         if not s:
             self.vision_sessions.pop(pc_name, None)
         return live
@@ -205,21 +216,29 @@ class ConnectionManager:
         return bool(username) and username in self._live_session_users(pc_name)
 
     def clipboard_allowed(self, username: Optional[str], pc_name: str) -> bool:
-        """Pano: açık oturum + kullanıcıya sorulmuş (zorunlu olmayan) oturum + bu oturumdan sonra açılmış tünel.
-        Tünel başka bir oturum için zaten açıksa bu oturumun kabul edildiği bilinemez: pano kapalı kalır."""
-        if not self.user_has_session(username, pc_name):
+        """Pano: açık tünel + o tüneli rızasıyla açan "kullanıcıya sor" oturumunun sahibi. Tünel açılırken cihazda
+        birden çok oturum vardıysa hangisinin kabul edildiği bilinemez: pano kimseye açılmaz (fail-closed)."""
+        if pc_name not in self.active_vision_ws or self.vision_clipboard_owner.get(pc_name) != username:
             return False
         mode = self.vision_session_modes.get((pc_name, username))
-        since = self.vision_tunnel_since.get(pc_name)
-        return bool(mode) and not mode[1] and since is not None and since >= mode[0]
+        return self.user_has_session(username, pc_name) and bool(mode) and not mode[1]
 
     def clipboard_users(self, pc_name: str) -> set:
         return {u for u in self._live_session_users(pc_name) if self.clipboard_allowed(u, pc_name)}
 
     def vision_tunnel_opened(self, pc_name: str, websocket: WebSocket):
+        """Ajan tüneli yalnızca bir oturumun rızası (ya da zorunlu oturumun süresi) dolunca açar. O anda cihazda tek
+        oturum varsa tüneli o açmıştır; "kullanıcıya sor" türündeyse pano onun sahibine açılır. Yeniden bağlanan
+        tünel aynı kuralla yeniden değerlendirilir."""
         self.active_vision_ws[pc_name] = websocket
-        self.vision_tunnel_since[pc_name] = time.time()
         self.vision_monitors.pop(pc_name, None)
+        live = self._live_session_users(pc_name)
+        owner = next(iter(live)) if len(live) == 1 else None
+        mode = self.vision_session_modes.get((pc_name, owner)) if owner else None
+        if mode and not mode[1]:
+            self.vision_clipboard_owner[pc_name] = owner
+        else:
+            self.vision_clipboard_owner.pop(pc_name, None)
 
     async def connect_vision(self, websocket: WebSocket, pc_name: str):
         await websocket.accept()
@@ -273,13 +292,13 @@ class ConnectionManager:
 
     def _forget_vision(self, pc_name: str):
         self.active_vision_ws.pop(pc_name, None)
-        self.vision_tunnel_since.pop(pc_name, None)
+        self.vision_clipboard_owner.pop(pc_name, None)
         self.vision_monitors.pop(pc_name, None)
 
     def rename_agent(self, old_name: str, new_name: str):
         if old_name in self.active_agents:
             self.active_agents[new_name] = self.active_agents.pop(old_name)
-        for table in (self.active_vision_ws, self.vision_tunnel_since, self.vision_monitors):
+        for table in (self.active_vision_ws, self.vision_clipboard_owner, self.vision_monitors):
             if old_name in table:
                 table[new_name] = table.pop(old_name)
 
@@ -335,6 +354,9 @@ class ConnectionManager:
         frame_key = (message.get("type"), pc_name)
         for panel in panels:
             self._queue_to_panel(panel, text, frame_key)
+
+    def has_session_panels(self, pc_name: str, users: Optional[set] = None) -> bool:
+        return bool(self._session_panels(pc_name, users))
 
     async def send_to_session_holders(self, message: dict, pc_name: str, users: Optional[set] = None) -> int:
         """Kare dışındaki Vision mesajları (monitors, clipboard) da yalnızca oturum sahiplerinin panellerine,

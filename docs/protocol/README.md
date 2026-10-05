@@ -174,7 +174,7 @@ a lower or unparsable version only switches these behaviours off.
 | `vision_rejected` | command | Forwarded to panels | [vision_rejected](agent-to-server/vision_rejected.json) | [example](examples/agent-to-server/vision_rejected.json) |
 | `stream_frame` | Vision | Forwarded to session holders | [stream_frame](agent-to-server/stream_frame.json) | [example](examples/agent-to-server/stream_frame.json) |
 | `monitors` | Vision | Stored for the tunnel; forwarded to session holders | [monitors](agent-to-server/monitors.json) | [example](examples/agent-to-server/monitors.json) |
-| `clipboard` | Vision | Forwarded to the holders of an accepted session; audited without the text | [clipboard](agent-to-server/clipboard.json) | [example](examples/agent-to-server/clipboard.json) |
+| `clipboard` | Vision | Audited without the text, then forwarded to the holder of the accepted session | [clipboard](agent-to-server/clipboard.json) | [example](examples/agent-to-server/clipboard.json) |
 
 ### Server → agent
 

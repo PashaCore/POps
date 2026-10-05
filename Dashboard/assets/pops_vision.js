@@ -7,7 +7,8 @@
     'use strict';
     const FULL = 1, REGION = 2, CURSOR = 3, HEADER = 18, PANEL_FRAME = 1;
     const MAX_PENDING = 24;       // çözülmeyi bekleyen kare sınırı: tarayıcı yetişemezse bölgeler düşer, tam kare istenir
-    const FULL_RETRY_MS = 3000;   // aynı çıktı için tam kare isteği en sık bu aralıkla
+    const FULL_RETRY_MS = 3000;   // aynı çıktı için tam kare isteği en sık bu aralıkla; gelmezse bu aralıkla yinelenir
+    const FULL_RETRIES = 5;       // yanıtsız kalan tam kare isteği en çok bu kadar yinelenir
     const STATS_MS = 2000;        // kare hızı ve bant genişliği bu pencereden
     const BURST_MS = 30;          // aynı yakalamanın bölgeleri art arda gelir: aralarında bundan az olanlar tek kare
     const decoder = new TextDecoder();
@@ -54,6 +55,8 @@
     Viewer.prototype.reset = function () {
         if (this.raf) cancelAnimationFrame(this.raf);
         this.raf = 0;
+        (this.retry || new Map()).forEach((t) => clearTimeout(t));
+        this.retry = new Map();       // monitör -> tam kare isteğini yineleme zamanlayıcısı
         this.outs = new Map();       // monitör (0..15, 255) -> birleşik görüntü
         this.shown = null;           // en son çizilen çıktı gösterilir (ajan bir seferde tek çıktı gönderir)
         this.samples = [];           // [zaman, bayt, görüntülü mü]
@@ -113,7 +116,7 @@
             if (f.gen < o.gen || (f.kind === REGION && (o.base === null || before(f.seq, o.base)))) return;
             if (f.kind === FULL) {
                 if (o.canvas.width !== f.fw || o.canvas.height !== f.fh) { o.canvas.width = f.fw; o.canvas.height = f.fh; }
-                o.fw = f.fw; o.fh = f.fh; o.base = f.seq;
+                o.fw = f.fw; o.fh = f.fh; o.base = f.seq; o.retries = 0;
                 o.ctx.drawImage(bmp, 0, 0, f.fw, f.fh);
             } else {
                 if (f.fw !== o.fw || f.fh !== o.fh) return;
@@ -125,17 +128,28 @@
             bmp.close();
         }
     };
-    Viewer.prototype._needFull = function (monitor) {
-        const now = performance.now(), last = this.fullAsked.get(monitor) || 0;
-        if (now - last < FULL_RETRY_MS) return;
+    // force: sınırı beklemeden iste (sunucunun vision_resync'i ya da yineleme)
+    Viewer.prototype._needFull = function (monitor, force) {
+        const now = performance.now(), last = this.fullAsked.has(monitor) ? this.fullAsked.get(monitor) : -Infinity;
+        if (!force && now - last < FULL_RETRY_MS) return;
         this.fullAsked.set(monitor, now);
         if (this.opts.onNeedFull) this.opts.onNeedFull(monitor);
+        // Sunucu bayat çıktının bölgelerini tam kare gelene kadar atar: istek yanıtsız kalırsa yinelenir (yalnızca
+        // gösterilen ya da henüz görüntüsü olmayan çıktı için; ekran değiştiyse eskisi için istenmez)
+        clearTimeout(this.retry.get(monitor));
+        this.retry.set(monitor, setTimeout(() => {
+            const o = this.outs.get(monitor);
+            if (!o || !o.waitFull || (this.shown !== null && this.shown !== monitor)) return;
+            o.retries = (o.retries || 0) + 1;
+            if (o.retries <= FULL_RETRIES) this._needFull(monitor, true);
+        }, FULL_RETRY_MS));
     };
     // Sunucu bu çıktının bölgelerini düşürmeye başladı (panel yavaş): tam kare gelene kadar bölge çizilmez
     Viewer.prototype.resync = function (monitor) {
-        const o = this.outs.get(monitor);
-        if (o) o.waitFull = true;
-        this._needFull(monitor);
+        const o = this._out(monitor);
+        o.waitFull = true;
+        o.retries = 0;
+        this._needFull(monitor, true);
     };
     Viewer.prototype._schedule = function () {
         if (!this.raf) this.raf = requestAnimationFrame(() => this._draw());

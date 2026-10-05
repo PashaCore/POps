@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/clipboard.json",
   "title": "clipboard",
-  "description": "Vision v2 (only to a server that lists `vision_clipboard`): text the PC user copied, sent on the Vision channel only during a session the user accepted in the consent dialog (never in a mandatory session). The server forwards it, under the tunnel's device ID, only to the admins whose session the user accepted and writes the direction and length to the audit log, never the text. Empty text or more than 64 KB of UTF-8 is dropped.",
+  "description": "Vision v2 (only to a server that lists `vision_clipboard`): text the PC user copied, sent on the Vision channel only during a session the user accepted in the consent dialog (never in a mandatory session). The server forwards it, under the tunnel's device ID, only to the admin whose session the user accepted, after writing the direction and length to the audit log (never the text; if the entry cannot be written, the text is dropped). Empty text or more than 64 KB of UTF-8 is dropped.",
   "x-pops-channels": [
     "/ws/vision"
   ],

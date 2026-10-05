@@ -29,6 +29,10 @@ PANEL_REVALIDATE_SECONDS = 10
 # Pano aktarımı her yön için cihaz başına dakikada en çok bu kadar (her aktarım denetim kaydına yazılır)
 CLIPBOARD_PER_MINUTE = 30
 _clipboard_times: dict = {}
+# Vision tünelinde dakikada bu kadar işlenemeyen mesaj tüneli kapatır (tek bir hata kapatmaz; bkz. agents.py B9)
+_VISION_ERROR_LIMIT = 20
+# Kare akışını bekletmesin diye arka planda yapılan işler (pano denetim kaydı); referans tutulur
+_background: set = set()
 
 
 # Uzak ekran ve uzaktan girdi yalnızca panel oturumuyla (require_admin_session): kareler oturumu açan kişinin panel
@@ -385,54 +389,75 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
     # Aynı cihazın yeni tüneli eskisinin yerini alır. Eski soket kapatılmaz (ajan onu zaten bırakmıştır; kapanışı
     # ajanda yeni tüneli de düşürebilir), yalnızca kaydı devreder ve kapanınca yeni kaydı silmez (finally).
     manager.vision_tunnel_opened(pc_name, websocket)
-    bad_logged = False
+    state = {"bad_logged": False}
+    errors = []
     try:
         while True:
             message = await websocket.receive()
             if message.get("type") == "websocket.disconnect":
                 break
-            raw = message.get("bytes")
-            if raw is not None:
-                # Vision v2 ikili kare (ajan yalnızca server_info.features'ta vision_binary görünce gönderir)
-                frame, reason = vision.parse_frame(raw)
-                if frame is None:
-                    metrics.count("vision_frames_oversize" if reason == "oversize" else "vision_frames_malformed")
-                    if not bad_logged:
-                        bad_logged = True
-                        log.info("geçersiz Vision karesi atıldı", extra={"pc_name": pc_name, "reason": reason})
-                    continue
-                metrics.count("vision_frames_binary")
-                # F12 ve kimlik: kare yalnız oturum sahiplerine, öneki her zaman bu tünelin cihazı
-                await manager.send_binary_frame_to_viewers(pc_name, frame, raw)
-                continue
             try:
-                payload = json.loads(message.get("text") or "")
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(payload, dict):
-                continue
-            if payload.get("type") in ["stream_frame", "thumbnail"]:
-                # Kare her zaman bu tünelin kimliği doğrulanmış cihazına aittir: ajanın gönderdiği hw_id
-                # kullanılmaz (aksi halde kayıtlı bir ajan başka cihazın kutusuna kare koyabilirdi)
-                payload["hw_id"] = pc_name
-                # F12: kare yalnızca o cihaz için açık oturumu olan admin panellerine
-                await manager.send_frame_to_viewers(payload, pc_name)
-            elif payload.get("type") == "monitors":
-                monitors = vision.monitors_list(payload)
-                if monitors is None:
-                    metrics.count("vision_messages_malformed")
-                    continue
-                manager.vision_monitors[pc_name] = monitors
-                await manager.send_to_session_holders(
-                    {"type": "monitors", "hw_id": pc_name, "list": monitors}, pc_name
-                )
-            elif payload.get("type") == "clipboard":
-                await _clipboard_from_pc(pc_name, payload)
+                await _from_vision(pc_name, message, state)
+            except Exception as e:
+                # Tek bir işlenemeyen mesaj tüneli (ve canlı oturumu) düşürmez; sürekli hata veren ajan kapatılır
+                now_m = time.monotonic()
+                errors = [t for t in errors if now_m - t < 60.0] + [now_m]
+                log.warning("vision mesajı işlenemedi", extra={"pc_name": pc_name, "error": repr(e)[:300]})
+                if len(errors) >= _VISION_ERROR_LIMIT:
+                    try:
+                        await websocket.close(code=1011)
+                    except Exception:
+                        pass
+                    break
     except WebSocketDisconnect:
         pass
     finally:
         # Yerini yeni bir tünele bırakan eski soket, yeni kaydı silmez
         manager.disconnect_vision(pc_name, websocket)
+
+
+async def _from_vision(pc_name: str, message: dict, state: dict) -> None:
+    """Vision tünelinden gelen tek mesaj: ikili kare (v2) ya da JSON (stream_frame, thumbnail, monitors, clipboard)."""
+    raw = message.get("bytes")
+    if raw is not None:
+        # Vision v2 ikili kare (ajan yalnızca server_info.features'ta vision_binary görünce gönderir)
+        frame, reason = vision.parse_frame(raw)
+        if frame is None:
+            metrics.count("vision_frames_oversize" if reason == "oversize" else "vision_frames_malformed")
+            if not state["bad_logged"]:
+                state["bad_logged"] = True
+                log.info("geçersiz Vision karesi atıldı", extra={"pc_name": pc_name, "reason": reason})
+            return
+        metrics.count("vision_frames_binary")
+        # F12 ve kimlik: kare yalnız oturum sahiplerine, öneki her zaman bu tünelin cihazı
+        await manager.send_binary_frame_to_viewers(pc_name, frame, raw)
+        return
+    try:
+        payload = json.loads(message.get("text") or "")
+    except json.JSONDecodeError:
+        return
+    if not isinstance(payload, dict):
+        return
+    if payload.get("type") in ["stream_frame", "thumbnail"]:
+        # Kare her zaman bu tünelin kimliği doğrulanmış cihazına aittir: ajanın gönderdiği hw_id
+        # kullanılmaz (aksi halde kayıtlı bir ajan başka cihazın kutusuna kare koyabilirdi)
+        payload["hw_id"] = pc_name
+        # F12: kare yalnızca o cihaz için açık oturumu olan admin panellerine
+        await manager.send_frame_to_viewers(payload, pc_name)
+    elif payload.get("type") == "monitors":
+        monitors = vision.monitors_list(payload)
+        if monitors is None:
+            metrics.count("vision_messages_malformed")
+            return
+        manager.vision_monitors[pc_name] = monitors
+        await manager.send_to_session_holders({"type": "monitors", "hw_id": pc_name, "list": monitors}, pc_name)
+    elif payload.get("type") == "clipboard":
+        delivery = _clipboard_from_pc(pc_name, payload)
+        if delivery is not None:
+            # Alıcılar şimdi belirlendi; denetim kaydı veritabanını beklerken kareler durmasın
+            task = asyncio.create_task(delivery)
+            _background.add(task)
+            task.add_done_callback(_background.discard)
 
 
 # Ekran akışı yalnızca Vision oturumu (rıza/bildirim akışı) üzerinden başlatılır;
@@ -466,22 +491,32 @@ def _clipboard_rate_ok(key: tuple) -> bool:
     return True
 
 
-async def _clipboard_from_pc(pc_name: str, payload: dict) -> None:
-    """Bilgisayarda kopyalanan metin: yalnızca kullanıcının kabul ettiği oturumun sahiplerine. Denetim kaydına
-    yalnızca yön, uzunluk ve zaman yazılır, metnin kendisi asla."""
+def _clipboard_from_pc(pc_name: str, payload: dict):
+    """Bilgisayarda kopyalanan metin: yalnızca kullanıcının kabul ettiği oturumun sahibine. Alıcılar mesaj gelince
+    belirlenir; iletimi yapacak eşyordamı döner (atılacaksa None)."""
     text = vision.clipboard_text(payload.get("text"))
     if text is None:
         metrics.count("vision_messages_malformed")
-        return
+        return None
     users = manager.clipboard_users(pc_name)
-    if not users or not _clipboard_rate_ok(("from_pc", pc_name)):
-        return
-    sent = await manager.send_to_session_holders({"type": "clipboard", "hw_id": pc_name, "text": text}, pc_name, users)
-    if sent:
+    if not users or not manager.has_session_panels(pc_name, users) or not _clipboard_rate_ok(("from_pc", pc_name)):
+        return None
+    return _deliver_clipboard(pc_name, text, users)
+
+
+async def _deliver_clipboard(pc_name: str, text: str, users: set) -> None:
+    """Denetim kaydına yalnızca yön, uzunluk, alıcılar ve zaman yazılır, metnin kendisi asla. Önce kayıt: yazılamazsa
+    metin iletilmez."""
+    try:
         await add_audit_log(
             pc_name, "clipboard", "Pano metni bilgisayardan panele aktarıldı",
             {"direction": "from_pc", "length": len(text), "admins": sorted(users)},
         )
+    except Exception as e:
+        log.warning("pano denetim kaydı yazılamadı, metin iletilmedi",
+                    extra={"pc_name": pc_name, "error": type(e).__name__})
+        return
+    await manager.send_to_session_holders({"type": "clipboard", "hw_id": pc_name, "text": text}, pc_name, users)
 
 
 async def _vision_control(websocket: WebSocket, username: str, msg: dict, vision_module_on) -> None:
@@ -518,14 +553,21 @@ async def _vision_control(websocket: WebSocket, username: str, msg: dict, vision
     if not _clipboard_rate_ok(("to_pc", target)):
         answer(False, "rate")
         return
+    # Önce denetim kaydı: yazılamazsa metin gönderilmez
+    try:
+        await add_audit_log(
+            target, "clipboard", "Pano metni panelden bilgisayara aktarıldı: %s" % username,
+            {"direction": "to_pc", "length": len(command["text"]), "admin": username},
+        )
+    except Exception as e:
+        log.warning("pano denetim kaydı yazılamadı, metin gönderilmedi",
+                    extra={"pc_name": target, "error": type(e).__name__})
+        answer(False, "audit")
+        return
     if not await manager.send_remote_input_to_vision(command, target):
         answer(False, "no_stream")
         return
     manager.touch_vision_session(target, username)
-    await add_audit_log(
-        target, "clipboard", "Pano metni panelden bilgisayara aktarıldı: %s" % username,
-        {"direction": "to_pc", "length": len(command["text"]), "admin": username},
-    )
     answer(True)
 
 

@@ -721,7 +721,8 @@
     });
     function startLive(countdown) {
         V.live = true; V.frames = 0; V.startedAt = Date.now();
-        resetV2();
+        // Tünel zaten açıksa sunucu monitör listesini oturum açılırken gönderir: liste korunur
+        resetV2(true);
         clearInterval(V.cd); clearInterval(V.tick);
         if (countdown > 0) {
             let c = countdown;
@@ -786,9 +787,10 @@
         }
         return V.viewer;
     }
-    function resetV2() {
+    function resetV2(keepScreens) {
         if (V.viewer) V.viewer.reset();
-        V.v2 = false; V.mons = []; V.sel = null;
+        V.v2 = false; V.awaitOut = null;
+        if (!keepScreens) { V.mons = []; V.sel = null; }
         if (V.mode === 'canvas') { V.mode = 'img'; $('liveCanvas').hidden = true; }
         $('qualPop').hidden = true;
         $('clipPanel').hidden = true;
@@ -833,7 +835,8 @@
         }
         if (data.type === 'clipboard_result') {
             const why = { not_accepted: POps.t('Pano yalnızca kullanıcının onayladığı oturumda kullanılabilir.'), no_stream: POps.t('Görüntü aktarımı henüz başlamadı.'),
-                invalid: POps.t('Metin en çok 64 KB olabilir.'), rate: POps.t('Çok sık gönderildi; biraz bekleyin.'), module: POps.t('Uzak ekran bu sınıfta kapalı') };
+                invalid: POps.t('Metin en çok 64 KB olabilir.'), rate: POps.t('Çok sık gönderildi; biraz bekleyin.'), module: POps.t('Uzak ekran bu sınıfta kapalı'),
+                audit: POps.t('Denetim kaydı yazılamadı; metin gönderilmedi.') };
             $('clipOutHint').textContent = data.ok ? POps.t('Gönderildi.') : (why[data.reason] || POps.t('Gönderilemedi.'));
             if (!data.ok) POps.toast('warning', POps.t('Pano gönderilemedi: {error}', { error: why[data.reason] || POps.t('Gönderilemedi.') }));
             return true;
@@ -848,7 +851,13 @@
     }
     function selectMonitor(index, again) {
         if (!V.pc || !V.live) return;
-        if (!again) V.sel = index;
+        if (!again) {
+            V.sel = index;
+            // Ajan fareyi yeni seçime göre eşler: yeni çıktının ilk karesi gelene kadar (en çok 3 sn) fare gönderilmez
+            const out = V.viewer && V.viewer.output();
+            const key = index === 'all' ? POpsVision.ALL : index;
+            V.awaitOut = out && out.monitor !== key ? { key, until: Date.now() + 3000 } : null;
+        }
         vcontrol('select_monitor', { index });
         renderV2Controls();
     }
@@ -960,6 +969,10 @@
                 // onu fiziksel ekrana eşler
                 const p = V.viewer && V.viewer.toRemote(e.clientX, e.clientY);
                 if (!p) return;
+                if (V.awaitOut) {
+                    if (p.monitor !== V.awaitOut.key && Date.now() < V.awaitOut.until) return;
+                    V.awaitOut = null;
+                }
                 x = p.x; y = p.y;
             } else {
                 const rect = display.getBoundingClientRect();
