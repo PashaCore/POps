@@ -167,9 +167,10 @@ jobs:
       - name: Distribution packages
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-websockets python3-cryptography python3-pytest >/dev/null
+          # python3-jsonschema yalnızca testler için (docs/protocol şemaları); pakette bağımlılık değil
+          sudo apt-get install -y -qq python3-websockets python3-cryptography python3-pytest python3-jsonschema >/dev/null
           /usr/bin/python3 --version
-          dpkg-query -W -f='${Package} ${Version}\n' python3-websockets python3-cryptography python3-pytest
+          dpkg-query -W -f='${Package} ${Version}\n' python3-websockets python3-cryptography python3-pytest python3-jsonschema
       - name: Unit tests
         run: /usr/bin/python3 -m pytest -v -p no:cacheprovider Agent-Linux/tests
       - name: Build the .deb twice (reproducible)
@@ -236,7 +237,7 @@ jobs:
           python-version: "3.12"
       - name: Install backend deps and the agent's distribution packages
         run: |
-          pip install -r Backend/requirements.txt
+          pip install --require-hashes -r Backend/requirements.lock
           sudo apt-get update -qq
           sudo apt-get install -y -qq python3-websockets python3-cryptography python3-pytest >/dev/null
       - name: Migrate, start the backend over TLS, run the agent test
