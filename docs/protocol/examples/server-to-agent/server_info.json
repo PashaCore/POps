@@ -1,0 +1,10 @@
+{
+  "action": "server_info",
+  "version": "0.1.22-alpha",
+  "protocol": 1,
+  "features": [
+    "update_result_ack",
+    "result_ack",
+    "update_progress"
+  ]
+}

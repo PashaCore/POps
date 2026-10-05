@@ -100,7 +100,8 @@ jobs:
           cache: pip
           cache-dependency-path: Backend/requirements.txt
       - name: Install dependencies
-        run: pip install -r Backend/requirements.txt flake8
+        # jsonschema yalnızca protokol testi için (CI'da; canlı sunucunun venv'ine girmez)
+        run: pip install -r Backend/requirements.txt flake8 jsonschema==4.26.0
       - name: Lint with flake8
         # Tam kapı: repo kökündeki .flake8 (max-line-length 120). Backend ve araçlar (tools/, README çizimleri) temiz tutulur; yeni uyarı CI'ı kırar.
         if: matrix.python == '3.12'
@@ -126,6 +127,10 @@ jobs:
             echo "::error file=docs/openapi.json::docs/openapi.json is out of date. Regenerate it with 'python tools/export_openapi.py' (Python 3.12, Backend/requirements.txt installed) and commit the result."
             exit 1
           }
+      - name: Agent protocol (docs/protocol)
+        # Şemalar, ortak test vektörleri ve sunucunun gerçek kodunun kurduğu / işlediği mesajlar (sahte veritabanı ve
+        # soketlerle); bkz. docs/protocol/README.md
+        run: python Backend/tests/test_protocol.py
 
   dashboard:
     name: Dashboard checks
@@ -511,8 +516,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install backend deps
-        # coverage yalnızca CI'da (canlı sunucunun venv'ine girmez)
-        run: pip install -r Backend/requirements.txt coverage==7.10.7
+        # coverage ve jsonschema yalnızca CI'da (canlı sunucunun venv'ine girmez)
+        run: pip install -r Backend/requirements.txt coverage==7.10.7 jsonschema==4.26.0
       - name: Migrate + start server + run security invariants
         # Enroll->secret, enforce->4401, valid secret ok, unauth HTTP 401, wrong-signature
         # upload rejected — hepsi çalışan sunucuya karşı doğrulanır. Sunucu coverage altında çalışır.
@@ -520,6 +525,7 @@ jobs:
           set -euo pipefail
           python Backend/migrate.py
           ( cd Backend && python -m coverage run --rcfile=.coveragerc tests/test_units.py >/dev/null )
+          ( cd Backend && python -m coverage run --rcfile=.coveragerc tests/test_protocol.py >/dev/null )
           ( cd Backend && exec python -m coverage run --rcfile=.coveragerc -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/uvicorn.log 2>&1 ) &
           echo $! > /tmp/uvicorn.pid
           curl --retry-connrefused --retry 40 --retry-delay 1 -sf http://127.0.0.1:8099/api/health >/dev/null || { echo "server did not start"; cat /tmp/uvicorn.log; exit 1; }

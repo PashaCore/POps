@@ -351,7 +351,8 @@ Every release, with upgrade notes, is in [`CHANGELOG.md`](CHANGELOG.md). Package
 
 - **Backend:** twelve test suites, eleven of them against a real PostgreSQL and a running server: security invariants,
   2FA, agent authorization, remote-control rules, per-device keys, hardening, 20 simultaneous enrollments, agents
-  from 0.1.11 to 0.1.14 against the current server, features, helpdesk and licences, operations. flake8 at zero.
+  from 0.1.11 to 0.1.14 against the current server, features, helpdesk and licences, operations. The agent protocol
+  is checked against JSON Schemas and shared test vectors ([`docs/protocol`](docs/protocol/README.md)). flake8 at zero.
 - **Agent:** about 700 xUnit test runs on .NET 10 and on the .NET Framework 4.7.2 MSI custom actions, with a
   coverage floor in CI.
 - **Install and operations:** migrations from an empty database, backup with test-restore, the TLS tool, release

@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/heartbeat.json",
+  "title": "heartbeat",
+  "description": "Sent every 5 seconds on the command channel. The FIRST message of every connection must be a heartbeat with `dna_payload`: the server reads it before it registers the connection (hardware reconciliation, enrollment, device row, `server_info`). A heartbeat is the one agent message without a `type`: the server recognises it by `status` (any message whose `type` is not one of the listed types and that has `status` is a heartbeat). An agent may send `\"type\": \"heartbeat\"`; every server release ignores it. Heartbeats are written to the database in batches every 2 seconds (Backend/pops/heartbeats.py).",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "status"
+  ],
+  "properties": {
+    "type": {
+      "const": "heartbeat",
+      "description": "Optional. The Windows agent omits it."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Online"
+      ],
+      "description": "Always \"Online\". Stored in `clients.status` as sent; its presence is what makes the message a heartbeat."
+    },
+    "hostname": {
+      "type": "string",
+      "description": "Computer name, shown in the panel. Defaults to the device ID when missing."
+    },
+    "active_window": {
+      "type": "string",
+      "description": "Process name of the foreground application, or \"-\". Never a window title (privacy). Defaults to \"-\"."
+    },
+    "quarantined": {
+      "type": "boolean",
+      "description": "0.1.5+. True while the lock screen and/or network isolation is active. Read only on a connection authenticated with the device secret: the server completes or re-sends (at most every 5 minutes) a pending `lockdown`/`unlock`, or mirrors the agent's state when nothing is pending."
+    },
+    "agent_health": {
+      "type": "object",
+      "description": "0.1.12+. Health summary, stored per device (Backend/pops/agent_health.py keeps only these keys and drops values of the wrong type). `started_at` also decides what happens to tasks still `Running` when the agent reconnects.",
+      "properties": {
+        "started_at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix time (s) the agent process started."
+        },
+        "last_policy_sync": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Unix time (s) of the last successful policy fetch."
+        },
+        "last_inventory_upload": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Unix time (s) of the last hardware inventory upload."
+        },
+        "tray_connected": {
+          "type": "boolean",
+          "description": "The user-session helper is connected."
+        },
+        "vision_channel": {
+          "enum": [
+            "off",
+            "idle",
+            "connected"
+          ],
+          "description": "off = Vision capability disabled; idle = enabled, no stream; connected = the Vision channel is open."
+        },
+        "loop_errors_1h": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Background-loop errors in the last hour (server caps at 100000)."
+        },
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200,
+          "description": "Sanitized last error; the server keeps 200 characters."
+        },
+        "screen_locked": {
+          "type": "boolean",
+          "description": "0.1.13+. Quarantine lock screen shown."
+        },
+        "network_isolated": {
+          "type": "boolean",
+          "description": "0.1.13+. Quarantine network isolation applied. `quarantined: true` with `network_isolated: false` makes the server warn once and resend `lockdown`."
+        },
+        "isolation_error": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200,
+          "description": "0.1.13+. Why isolation could not be applied (200 characters kept)."
+        }
+      }
+    },
+    "dna_payload": {
+      "type": "object",
+      "description": "Hardware fingerprint. Required on the first message of a connection (without it an enrollment-token connection is closed with 4401); the Windows agent sends it on every heartbeat and the server ignores it after the first. Without the device secret the server may answer `set_identity`.",
+      "properties": {
+        "hardware": {
+          "type": "object",
+          "description": "Normalized identifiers; \"NULL\", empty, all-zero or vendor placeholder values count as unknown and score nothing (Backend/pops/dna.py).",
+          "properties": {
+            "uuid": {
+              "type": "string",
+              "description": "SMBIOS system UUID."
+            },
+            "bios_sn": {
+              "type": "string",
+              "description": "BIOS serial number."
+            },
+            "disk_sn": {
+              "type": "string",
+              "description": "System disk serial (the Windows agent falls back to the volume ID)."
+            },
+            "mac": {
+              "type": "string",
+              "description": "Primary MAC address."
+            },
+            "ram_sn": {
+              "type": "string",
+              "description": "Memory module serial numbers."
+            }
+          }
+        },
+        "capabilities": {
+          "type": "object",
+          "description": "What could be read; only `ram_readable` is used by the server.",
+          "properties": {
+            "ram_readable": {
+              "type": "boolean",
+              "description": "False: RAM serials could not be read and are not compared."
+            },
+            "disk_serial_real": {
+              "type": "boolean",
+              "description": "False: `disk_sn` is a volume ID. Not used by the server."
+            },
+            "wmi_healthy": {
+              "type": "boolean",
+              "description": "Not used by the server."
+            }
+          }
+        },
+        "os": {
+          "type": "string",
+          "description": "Operating system name. Not used by the server."
+        }
+      }
+    },
+    "hw_id": {
+      "type": "string",
+      "description": "Sent by the Windows agent; ignored (the URL path is the identity)."
+    },
+    "lab_name": {
+      "type": "string",
+      "description": "Sent by the Windows agent (\"Atanmamis_Cihazlar\"); ignored."
+    }
+  }
+}

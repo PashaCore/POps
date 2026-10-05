@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/remote_input.json",
+  "title": "remote_input",
+  "description": "Panel message forwarded to the agent; the one server-to-agent message that carries `type` instead of `action`. Sent on the Vision channel when it is open, otherwise on the command channel. Two kinds: a preview or stream command in `action` (get_thumbnail from the panel's preview grid, set_fps), and mouse/keyboard input in `input_type`, which the server forwards only for an administrator holding an open session on the device. Messages from the panel socket are forwarded as the panel sent them; POST /api/remote_input forwards only the fields listed here, and only scalars of at most 64 characters; neither path checks the types, so an agent must drop an event with a wrong type. The agent ignores a message whose `device` is not its own ID and refuses (`capability_denied`) when Vision is off or, for input, no session is approved. The panel socket path also gates a legacy `\"action\": \"execute\"` (open session and the terminal module required), but no agent acts on it and it is not part of the protocol.",
+  "x-pops-channels": [
+    "/ws/agent",
+    "/ws/vision"
+  ],
+  "type": "object",
+  "required": [
+    "type",
+    "device"
+  ],
+  "properties": {
+    "type": {
+      "const": "remote_input",
+      "description": "Message type."
+    },
+    "device": {
+      "type": "string",
+      "description": "Target device ID."
+    },
+    "action": {
+      "enum": [
+        "get_thumbnail",
+        "set_fps"
+      ],
+      "description": "get_thumbnail: send a screen preview (on the command channel a `thumbnail`; on the Vision channel the Windows agent's answer is the next `stream_frame`). set_fps: change the frame rate of a running stream to `fps`."
+    },
+    "fps": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "With set_fps."
+    },
+    "input_type": {
+      "enum": [
+        "mouse_move",
+        "mouse_click",
+        "mouse_wheel",
+        "keyboard"
+      ],
+      "description": "Input event."
+    },
+    "x": {
+      "type": "integer",
+      "description": "mouse_move: horizontal position in screen pixels (the panel converts from the scaled frame)."
+    },
+    "y": {
+      "type": "integer",
+      "description": "mouse_move: vertical position in screen pixels."
+    },
+    "relative": {
+      "type": "boolean",
+      "description": "mouse_move: the panel sends false."
+    },
+    "button": {
+      "enum": [
+        "left",
+        "right",
+        "middle"
+      ],
+      "description": "mouse_click."
+    },
+    "is_down": {
+      "type": "boolean",
+      "description": "mouse_click and keyboard: true = press, false = release."
+    },
+    "double": {
+      "type": "boolean",
+      "description": "mouse_click: the panel sends false."
+    },
+    "delta": {
+      "type": "integer",
+      "description": "mouse_wheel: wheel delta (the panel sends 120 or -120)."
+    },
+    "horizontal": {
+      "type": "boolean",
+      "description": "mouse_wheel: the panel sends false."
+    },
+    "key": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "keyboard: KeyboardEvent.key (a character or a named key)."
+    },
+    "code": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "keyboard: KeyboardEvent.code (physical key)."
+    },
+    "ctrl": {
+      "type": "boolean",
+      "description": "keyboard modifier."
+    },
+    "alt": {
+      "type": "boolean",
+      "description": "keyboard modifier."
+    },
+    "shift": {
+      "type": "boolean",
+      "description": "keyboard modifier."
+    },
+    "meta": {
+      "type": "boolean",
+      "description": "keyboard modifier."
+    },
+    "altgr": {
+      "type": "boolean",
+      "description": "keyboard modifier."
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "action"
+      ]
+    },
+    {
+      "required": [
+        "input_type"
+      ]
+    }
+  ]
+}

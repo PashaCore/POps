@@ -1,0 +1,19 @@
+{
+  "type": "heartbeat",
+  "status": "Online",
+  "hostname": "LAB1-PC07",
+  "active_window": "-",
+  "quarantined": true,
+  "agent_health": {
+    "started_at": 1791200000,
+    "last_policy_sync": 1791203580,
+    "last_inventory_upload": 1791200030,
+    "tray_connected": true,
+    "vision_channel": "idle",
+    "loop_errors_1h": 0,
+    "last_error": "",
+    "screen_locked": true,
+    "network_isolated": false,
+    "isolation_error": "Güvenlik duvarı kuralı eklenemedi (0x80070005)"
+  }
+}

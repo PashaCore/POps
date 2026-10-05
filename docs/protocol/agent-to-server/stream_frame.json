@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/stream_frame.json",
+  "title": "stream_frame",
+  "description": "One frame of a live screen stream, sent only on the Vision channel while a session is approved. The server forwards it unchanged to the admin panels that hold an open remote-control session for this device and drops it when there is none. The panel files the frame under `hw_id`, so it must be the agent's own ID.",
+  "x-pops-channels": [
+    "/ws/vision"
+  ],
+  "type": "object",
+  "required": [
+    "type",
+    "image",
+    "hw_id"
+  ],
+  "properties": {
+    "type": {
+      "const": "stream_frame",
+      "description": "Message type."
+    },
+    "image": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "contentMediaType": "image/jpeg",
+      "description": "Base64 JPEG (the Windows tray captures at 75 % scale)."
+    },
+    "hw_id": {
+      "type": "string",
+      "description": "The agent's own device ID; the panel uses it to place the frame."
+    },
+    "hostname": {
+      "type": "string",
+      "description": "Computer name."
+    }
+  }
+}

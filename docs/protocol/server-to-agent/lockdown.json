@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/lockdown.json",
+  "title": "lockdown",
+  "description": "Quarantine on: lock screen and network isolation (only the server stays reachable). Sent by POST /api/security/lockdown and re-sent at most every 5 minutes while the heartbeat does not report the requested state (`quarantined`, `agent_health.network_isolated`).",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "reason"
+  ],
+  "properties": {
+    "action": {
+      "const": "lockdown",
+      "description": "Message type."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Reason entered in the panel, shown on the lock screen. A re-sent command carries the stored reason (cut to 300 characters) or \"\"."
+    }
+  }
+}

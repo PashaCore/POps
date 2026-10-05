@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/start_stream.json",
+  "title": "start_stream",
+  "description": "Deprecated: not sent by this server (the consent-less /api/stream/start endpoint was removed). The Windows agent still handles it like an approved mandatory session (opens the Vision channel and starts capturing), subject to the Vision capability and module. New agents need not implement it; an agent that does not must ignore it like any unknown action.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action"
+  ],
+  "properties": {
+    "action": {
+      "const": "start_stream",
+      "description": "Message type."
+    },
+    "fps": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Frames per second (default 2)."
+    }
+  },
+  "deprecated": true
+}

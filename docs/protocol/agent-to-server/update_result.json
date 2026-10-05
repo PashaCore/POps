@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/update_result.json",
+  "title": "update_result",
+  "description": "Outcome of an agent update, from the updater's `update-result.json`. Sent until acknowledged: the server stores it in the hash-chained audit log, updates the running version, raises a notification for problems and answers `update_result_ack` with the same `result_id` (a `result_id` it already stored is only acknowledged again). Without `result_id` (0.1.13 and older) there is no acknowledgement.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "type",
+    "status"
+  ],
+  "properties": {
+    "type": {
+      "const": "update_result",
+      "description": "Message type."
+    },
+    "status": {
+      "type": "string",
+      "description": "Updater outcome, for example success, rolled_back, rollback_failed, rollback_pending_reboot, pending_reboot, install_failed, rejected, error, failed, reverted_by_freeze; \"unknown\" when the file has none. Backend/pops/update_notice.py maps them to notifications; unknown values raise none."
+    },
+    "result_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "description": "0.1.14+. Identifies this result; the Windows agent sends the first 32 lower-case hex characters of the SHA-256 of `update-result.json`. Other formats are treated as missing."
+    },
+    "from_version": {
+      "type": "string",
+      "description": "Version before the update."
+    },
+    "to_version": {
+      "type": "string",
+      "description": "Version the update installed."
+    },
+    "running_version": {
+      "type": "string",
+      "description": "0.1.3+. Version actually running afterwards (after a rollback: the old one). Stored as the device's running version."
+    },
+    "detail": {
+      "type": "string",
+      "description": "Human-readable detail."
+    },
+    "rollback": {
+      "type": "string",
+      "description": "How the update was rolled back, for example msi or msi_repair."
+    },
+    "agent_state": {
+      "type": "string",
+      "description": "State of the agent service afterwards, for example running, reinstalled or unmanaged (unmanaged is always critical)."
+    },
+    "msi_exit_code": {
+      "type": "integer",
+      "description": "Windows Installer exit code."
+    },
+    "reboot_required": {
+      "type": "boolean",
+      "description": "A restart is needed to finish."
+    }
+  }
+}

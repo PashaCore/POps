@@ -58,6 +58,8 @@ and closes the connection with `4401`.
 
 ## Connection
 
+The wire format of both WebSockets (`/ws/agent`, `/ws/vision`) is specified in [`protocol/`](protocol/README.md).
+
 - The agent reads `ServerUrl` and connects to `wss://<host>/ws/agent/<hw_id>`. A non-loopback `http://` address is
   refused: the agent logs `[GÜVENLİK] ServerUrl şifresiz http ve yerel değil …` every 10 minutes and does not
   connect (the tray and watchdog keep running).
@@ -159,7 +161,9 @@ The server may also send `scan_updates` and `install_updates`
 ([below](#software-inventory-and-windows-updates)); agents up to 0.1.4-alpha ignore them.
 
 The agent reports back `result`, `thumbnail`, `stream_frame` (on the Vision socket), `vision_rejected`,
-`capabilities`, `capability_denied` and `update_result`. The full message list is in [`api.md`](api.md#websockets).
+`capabilities`, `capability_denied` and `update_result`. Every message, with a JSON Schema and test vectors, and
+the protocol versioning rules are in [`protocol/`](protocol/README.md); [`protocol/AGENT_TESTS.md`](protocol/AGENT_TESTS.md)
+describes how the agent tests use the vectors.
 
 Task results (from 0.1.14-alpha): with a server that announces `result_ack`, every `result` is first written to
 `C:\POpsData\secure\pending-results.json` (SYSTEM and Administrators only; temporary file + rename), sent, and deleted

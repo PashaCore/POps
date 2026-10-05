@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/scan_updates.json",
+  "title": "scan_updates",
+  "description": "Search for operating-system updates (POST /api/patches/scan). The agent reports the result with POST /api/patches/{hw_id}. 0.1.5+; older agents ignore it.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action"
+  ],
+  "properties": {
+    "action": {
+      "const": "scan_updates",
+      "description": "Message type."
+    },
+    "scope": {
+      "enum": [
+        "security",
+        "all"
+      ],
+      "description": "Sent by the server; a scan ignores it."
+    }
+  }
+}

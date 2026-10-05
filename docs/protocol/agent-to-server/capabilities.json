@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/capabilities.json",
+  "title": "capabilities",
+  "description": "The agent's local capability state. Sent after the first heartbeat of every connection and after every change (for example after `set_capabilities`). The server stores it and forwards it to the panels; if an administrator asked to switch a capability off and the agent still reports it on, the server re-sends `set_capabilities`.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "type",
+    "terminal_enabled",
+    "vision_enabled"
+  ],
+  "properties": {
+    "type": {
+      "const": "capabilities",
+      "description": "Message type."
+    },
+    "terminal_enabled": {
+      "type": "boolean",
+      "description": "Remote commands (`execute`) allowed on this device."
+    },
+    "vision_enabled": {
+      "type": "boolean",
+      "description": "Screen preview, streaming and remote input allowed on this device."
+    },
+    "server_ca": {
+      "enum": [
+        "custom",
+        "system"
+      ],
+      "description": "0.1.10+. How the agent validates the server certificate: custom = the organisation CA installed with the agent, system = the OS trust store. Other values are ignored."
+    }
+  }
+}

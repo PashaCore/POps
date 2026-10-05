@@ -1,0 +1,7 @@
+{
+  "type": "capability_denied",
+  "capability": "terminal",
+  "action": "execute",
+  "task_id": 1044,
+  "reason": "module_disabled"
+}
