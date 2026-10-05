@@ -51,13 +51,13 @@ tables from Python code at startup and never edit a migration that has already b
 | `0014_hardening.sql` | Enrollment tokens stored as hashes; `tasks.exit_code` / `dispatched_at`; partial index for the task queue; agent identity enforcement on by default for new installs. |
 | `0019_task_context.sql` | `tasks.title`, `source`, `reason`, `client_ip` and `batch_id` (what a task is, which panel page sent it, why, from which address, and which request it belongs to) and indexes on `batch_id` and on `target_pc`. |
 | `0022_api_tokens.sql` | `api_tokens` (API tokens for automation). |
-| `0029_glpi.sql` | `glpi_links`: the GLPI item each exported POps record is linked to (GLPI export, see [`integrations/glpi.md`](integrations/glpi.md)). |
 | `0023_update_progress.sql` | `pending_updates.stage`, `detail`, `attempt`, `attempt_of`, `stage_at`: the last stage the agent reported for a pending update (`update_progress`, see [`api.md`](api.md#update_progress-agent-update-stages)). |
 | `0024_exam_mode.sql` | `exam_sessions` (exam mode per lab, at most one running per lab) and `exam_devices` (per exam and PC: what was sent and what the agent reported). See [`api.md`](api.md#exam-mode). |
 | `0025_file_transfers.sql` | `file_transfers` (files sent to or fetched from PCs) and `clients.cap_files_enabled`. |
 | `0026_device_platform.sql` | `clients.platform` (`windows` / `linux`, from the agent's `X-Agent-Platform`; `NULL` for agents that do not send it, shown as `windows`). |
 | `0027_winget.sql` | `tasks.kind` / `payload` (a winget step: `kind = 'winget'`, `payload = {"id", "version"}`) and `agent_versions.features` (what the agent announced in `X-Agent-Features`). See [`api.md`](api.md#winget-steps). |
 | `0028_power_message.sql` | Power actions and messages to the user: `tasks.kind` `power` / `user_message` with `payload` `{op, delay, message}` / `{title, text, style, requires_ack}`; adds `tasks.kind` / `payload`, `agent_versions.features` and `clients.platform` with `IF NOT EXISTS` (the same columns as `0026` and `0027`). See [`api.md`](api.md#power-actions-and-messages). |
+| `0029_glpi.sql` | `glpi_links`: the GLPI item each exported POps record is linked to (GLPI export, see [`integrations/glpi.md`](integrations/glpi.md)). |
 | `0030_sso.sql` | `users.auth_source` / `external_id` and the tables `sso_providers` (directory and OpenID Connect settings) and `sso_flows` (short-lived sign-in state and tickets). |
 | `0020_refused_results.sql` | Tasks the agent refused but an older server stored as `Completed` (output starting with `[REDDEDİLDİ]`, no exit code) become `Denied` with exit code `-5`. |
 | `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
