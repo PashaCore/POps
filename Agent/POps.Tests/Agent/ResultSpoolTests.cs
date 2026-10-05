@@ -8,7 +8,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // B4: görev sonuçlarının disk kuyruğu (result_ack)
-    public class ResultSpoolTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class ResultSpoolTests : SharedStateTestBase
     {
         private readonly string _path;
 

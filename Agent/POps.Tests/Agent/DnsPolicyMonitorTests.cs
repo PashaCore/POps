@@ -16,7 +16,8 @@ namespace POps.Tests.Agent
 {
     // DNS izleme artık gerçekten başlatılıyor (F8 kodu vardı ama hiç çağrılmıyordu). Önbellek, saat, bildirim ve
     // karantina sahtedir: gerçek DNS önbelleği okunmaz, sunucuya gidilmez, güvenlik duvarına dokunulmaz.
-    public class DnsPolicyMonitorTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class DnsPolicyMonitorTests : SharedStateTestBase, IDisposable
     {
         private readonly List<string> _cache = new List<string>();
         private readonly List<(string Domain, string Category)> _reports = new List<(string, string)>();
@@ -206,7 +207,8 @@ namespace POps.Tests.Agent
         }
     }
 
-    public class DnsDomainIndexTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class DnsDomainIndexTests : SharedStateTestBase, IDisposable
     {
         public void Dispose()
         {
@@ -299,7 +301,8 @@ namespace POps.Tests.Agent
     // İzleme statik, Worker birden çok (testlerde olduğu gibi): otomatik karantina ve DNS hataları yalnızca çalışan
     // Worker'a gider. Kurulan Worker bağlamaz (eskiden son kurulan Worker hepsini alırdı); atılan Worker hiçbir şey almaz
     // ve kendinden sonra bağlanan Worker'ı çözmez. Worker'ların kilidi sahtedir (tepsi listesi, sahte yalıtım), HTTP sahte.
-    public class DnsWorkerBindingTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class DnsWorkerBindingTests : SharedStateTestBase, IDisposable
     {
         // Testten önceki değerler (temel kurucudan sonra okunur: alan başlatıcıları ortam kurulmadan çalışır)
         private readonly string _secureDir;

@@ -6,7 +6,8 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    public class AgentCapabilitiesTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class AgentCapabilitiesTests : SharedStateTestBase
     {
         private static string CapabilitiesPath
         {

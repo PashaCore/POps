@@ -9,7 +9,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Karantinada Ctrl+Alt+Del seçenekleri: uygula / geri al (saf mantık) ve kayıt dosyasıyla açılış temizliği
-    public class KioskPoliciesTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class KioskPoliciesTests : SharedStateTestBase
     {
         private const string User = @"HKU\S-1-5-21-1-2-3-1001";
         private static readonly string TaskMgrUser = FakeKioskRegistry.Path(User, KioskPolicies.SystemKey, "DisableTaskMgr");

@@ -13,7 +13,8 @@ namespace POps.Tests.Agent
 {
     // Kurum sertifikasına güven: server-ca.pem varsa sunucu sertifikası yalnızca o CA'ya zincirlenir ve ana makine adı
     // eşleşirse kabul edilir; dosya yoksa sistem deposu (.NET'in kararı) geçerlidir; bozuk dosya her şeyi reddeder.
-    public class ServerTrustTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class ServerTrustTests : SharedStateTestBase, IDisposable
     {
         private const string Host = "pops.okul.local";
         private readonly string _caPath;

@@ -24,7 +24,8 @@ namespace POps.Tests.Agent
     // Laboratuvar eş önbelleği (docs/agent.md "Peer cache contract", docs/design/peer-cache.md seçenek A): önbellek,
     // sunucunun peer_cache bayrağı, salt okunur sunucu, güvenlik duvarı kuralı (sahte çalıştırıcı), eşlerden indirme,
     // karantina / sınav modu ve yetenek anahtarı. Sunucu yalnızca 127.0.0.1'de rastgele portta açılır.
-    public class PeerCacheTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class PeerCacheTests : SharedStateTestBase, IDisposable
     {
         private const string MsiName = "POps-Agent-9.9.9-win-x64.msi";
         private readonly byte[] _package = RandomNumberGenerator.GetBytes(200_000);

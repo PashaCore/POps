@@ -13,7 +13,8 @@ namespace POps.Tests.Agent
 {
     // Sunucunun komut mesajları (Worker.HandleServerMessageAsync). Giden mesajlar yakalanır; karantina gerçek güvenlik
     // duvarına dokunmayan sahte yalıtımla, uzaktan komut gerçek cmd.exe ile çalışır.
-    public class WorkerCommandTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class WorkerCommandTests : SharedStateTestBase, IDisposable
     {
         private readonly Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();
@@ -284,7 +285,8 @@ namespace POps.Tests.Agent
     }
 
     // Ağ yalıtımı: aç / kapat / sunucu adresini yenile, sahte PowerShell çalıştırıcısıyla
-    public class NetworkIsolationFlowTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class NetworkIsolationFlowTests : SharedStateTestBase, IDisposable
     {
         private readonly List<string> _scripts = new List<string>();
         private int _exit;
@@ -406,7 +408,8 @@ namespace POps.Tests.Agent
     }
 
     // B2-B4 Worker üzerinden: ret çıkış kodu, yinelenen görev, onaylı/onaysız sunucu, yeniden bağlanma, yeniden başlama
-    public class WorkerResultAckTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class WorkerResultAckTests : SharedStateTestBase, IDisposable
     {
         private Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();

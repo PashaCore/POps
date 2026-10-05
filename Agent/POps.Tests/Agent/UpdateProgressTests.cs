@@ -21,7 +21,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // update_progress: update_agent ile update_result arasındaki aşamalar (servis ve updater -> servis dosyası)
-    public class UpdateProgressTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class UpdateProgressTests : SharedStateTestBase, IDisposable
     {
         private const string MsiName = "POps-Agent-9.9.9-win-x64.msi";
         private readonly List<Dictionary<string, object>> _stages = new List<Dictionary<string, object>>();

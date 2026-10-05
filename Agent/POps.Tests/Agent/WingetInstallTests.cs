@@ -13,7 +13,8 @@ namespace POps.Tests.Agent
 {
     // winget_install (docs/agent.md "winget_install contract"): doğrulama, bağımsız değişkenler, winget'in bulunması,
     // kabuksuz çalıştırma, yetenek/modül retleri, -7, çıktının temizlenmesi, X-Agent-Features
-    public class WingetInstallTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class WingetInstallTests : SharedStateTestBase, IDisposable
     {
         private readonly Func<string> _locator = WingetInstall.Locator;
 

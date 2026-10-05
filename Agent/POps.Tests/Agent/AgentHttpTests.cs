@@ -14,7 +14,8 @@ namespace POps.Tests.Agent
 {
     // AgentHttp: yönlendirme izlenmez (L10), 404/405 "uç yok" sayılır (M2). Gerçek bir TCP dinleyicisiyle, yalnızca
     // 127.0.0.1 üzerinde denenir.
-    public class AgentHttpTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class AgentHttpTests : SharedStateTestBase, IDisposable
     {
         private sealed class FakeHttpServer : IDisposable
         {

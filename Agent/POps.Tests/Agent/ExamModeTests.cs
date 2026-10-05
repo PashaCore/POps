@@ -14,7 +14,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Sınav modu: emrin doğrulanması, güvenlik duvarı kuralları (ayrı grup), süresinde bitmesi, uygulama engeli
-    public class ExamModeTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class ExamModeTests : SharedStateTestBase, IDisposable
     {
         private readonly List<string> _scripts = new List<string>();
         private readonly Func<string, Task<(int, string)>> _runner = NetworkIsolation.ScriptRunner;

@@ -14,7 +14,8 @@ namespace POps.Tests.Agent
 {
     // Tepsi borusu sunucu bağlantısından bağımsızdır: sunucuya ulaşılamazken çevrimdışı bypass kodu servise ulaşmalı.
     // Gerçek boru açılır (testlere özel ad); tepsinin yerine istemci doğrulamasını geçen sahte bir istemci bağlanır.
-    public class TrayPipeLifetimeTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class TrayPipeLifetimeTests : SharedStateTestBase, IDisposable
     {
         private const string HwId = "HW-PIPE00000001";
         private const string FleetSecret = "pipe-test-secret";

@@ -15,7 +15,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Sunucu modülleri (0.1.15): politika yanıtındaki "modules" bellekte tutulur; etkin = sunucuda açık VE yerelde izinli
-    public class ModulesTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class ModulesTests : SharedStateTestBase, IDisposable
     {
         private const string Secret = "modules-secret-0123456789abcdefghijkl";
         private readonly Worker _worker;

@@ -10,6 +10,7 @@ namespace POps.Tests.Agent
 {
     // Uzaktan komut çalıştırıcı: çıktı okunurken sınırlanır; iptal, servis durması ve süre sınırı işlemi sonlandırır;
     // çıkış kodu bildirilir. Testler yalnızca cmd.exe ile kısa, zararsız komutlar (echo, ping 127.0.0.1) çalıştırır.
+    [Collection(MachineCollection.Name)]
     public class CommandRunnerTests : TestBase
     {
         [Fact]
@@ -99,6 +100,7 @@ namespace POps.Tests.Agent
     }
 
     // B1: çıktı satır sonu beklemeden sabit parçalarla okunur; B3: aynı görev kimliği iki kez çalışmaz
+    [Collection(MachineCollection.Name)]
     public class CommandOutputChunkTests : TestBase
     {
         [Fact]
@@ -183,6 +185,7 @@ namespace POps.Tests.Agent
     }
 
     // A4: açılışta yarım kalmış görev dosyaları silinir; başka dosyalara dokunulmaz
+    [Collection(MachineCollection.Name)]
     public class StaleTaskFileTests : TestBase
     {
         private const string Hex = "0123456789abcdef0123456789abcdef";

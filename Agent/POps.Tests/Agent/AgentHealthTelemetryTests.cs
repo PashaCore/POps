@@ -5,7 +5,8 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    public class AgentHealthTelemetryTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class AgentHealthTelemetryTests : SharedStateTestBase
     {
         [Fact]
         public void ErrorCounter_UsesASlidingOneHourWindow()

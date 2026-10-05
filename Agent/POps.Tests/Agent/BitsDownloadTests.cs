@@ -15,7 +15,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Güncelleme paketinin BITS ile indirilmesi: betik, sonuçlar ve eski yola düşme; imzalı SHA-256 denetimi iki yolda da
-    public class BitsDownloadTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class BitsDownloadTests : SharedStateTestBase, IDisposable
     {
         private readonly Func<string, TimeSpan, Task<(int, string)>> _runner = BitsDownload.Runner;
         private readonly byte[] _package = RandomNumberGenerator.GetBytes(3000);

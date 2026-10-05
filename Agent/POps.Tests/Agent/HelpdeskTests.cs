@@ -14,7 +14,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // 2) Yardım masası: tepsi isteği, sunucu sözleşmesi, yanıt mesajları, kullanıcıya göre süzme, yeni yanıtlar
-    public class HelpdeskTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class HelpdeskTests : SharedStateTestBase, IDisposable
     {
         private readonly List<string> _tray = new List<string>();
         private readonly List<(HttpMethod Method, string Path, object Payload)> _requests = new List<(HttpMethod, string, object)>();
@@ -178,7 +179,8 @@ namespace POps.Tests.Agent
         }
     }
 
-    public class HelpdeskThrottleTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class HelpdeskThrottleTests : SharedStateTestBase, IDisposable
     {
         private readonly List<string> _tray = new List<string>();
         private int _requests;

@@ -10,9 +10,10 @@ namespace POps.Tests.Agent
     // geçici kökün (TestEnvironment.Root) dışına dönen bir yol bırakırsa sonraki testin temel kurucusu onu geçici klasöre
     // çevirir. Bu, gerçek klasörle değil kökün dışındaki sahte bir yolla sınanır; hiçbir ayar bir an bile gerçek klasörü
     // göstermez.
-    public class TestEnvironmentTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class TestEnvironmentTests : SharedStateTestBase
     {
-        private sealed class NextTest : TestBase { }
+        private sealed class NextTest : SharedStateTestBase { }
 
         [Fact]
         public void APathOutsideTheTestRoot_IsPutBackBeforeTheNextTest()
