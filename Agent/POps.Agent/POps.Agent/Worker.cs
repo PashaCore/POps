@@ -417,14 +417,20 @@ namespace POpsAgent
         }
 
         // ------------------------------------------------------------------ dosya aktarımı (bkz. FileTransfer)
-        // Emir doğrulanır ve iş arka planda yürür (komut döngüsünü bekletmez); sonuç file_result ile bildirilir
+        // Emir doğrulanır ve iş arka planda yürür (komut döngüsünü bekletmez); sonuç file_result ile bildirilir.
+        // Yetenek kapalıysa yalnızca capability_denied gider (transfer_id ile; sunucu aktarımı ondan "rejected" yapar).
+        // transfer_id eksik ya da geçersizse file_result gönderilmez (sunucu bilmediği aktarımı yok sayar), yalnızca loglanır.
         internal async Task HandleFileTransferAsync(string action, JsonElement root, CancellationToken token)
         {
-            string transferId = FileTransfer.TransferIdOf(root) ?? "?";
+            string transferId = FileTransfer.TransferIdOf(root);
             if (!AgentCapabilities.FilesEnabled)
             {
-                await DenyCapabilityAsync("files", action);
-                await SendCommandMessageAsync(FileTransfer.Result(transferId, "rejected", detail: "dosya aktarımı bu bilgisayarda kapalı"));
+                await DenyCapabilityAsync("files", action, transferId: transferId);
+                return;
+            }
+            if (transferId == null)
+            {
+                POpsHelpers.Log("FILES", $"{action} yok sayıldı: transfer_id eksik ya da geçersiz.", true);
                 return;
             }
             if (action == "file_push")
@@ -437,15 +443,15 @@ namespace POpsAgent
                 }
                 FileTransferTask = Task.Run(async () =>
                 {
-                    var (status, path, detail) = await FileTransfer.PushAsync(push, _hwId, DateTime.Now, token);
-                    if (status == "done")
+                    var (outcome, path, detail) = await FileTransfer.PushAsync(push, _hwId, DateTime.Now, token);
+                    if (outcome == "done")
                     {
                         LocalAudit.Write(LocalAudit.FilePushed(push.TransferId, path, push.Size, push.Sha256, push.Reason));
                         POpsHelpers.Log("FILES", $"Yönetici dosya gönderdi: {path} ({push.Size} bayt).");
                         ToTray("FILE_PUSHED:" + Path.GetFileName(path));
                     }
-                    else POpsHelpers.Log("FILES", $"Dosya gönderimi tamamlanmadı ({push.TransferId}, {status}): {detail}.", true);
-                    await SendCommandMessageAsync(FileTransfer.Result(push.TransferId, status, path, detail));
+                    else POpsHelpers.Log("FILES", $"Dosya gönderimi tamamlanmadı ({push.TransferId}, {outcome}): {detail}.", true);
+                    await SendCommandMessageAsync(FileTransfer.Result(push.TransferId, outcome, path, detail));
                 }, CancellationToken.None);
                 return;
             }
@@ -457,15 +463,15 @@ namespace POpsAgent
             }
             FileTransferTask = Task.Run(async () =>
             {
-                var (status, path, detail, size) = await FileTransfer.PullAsync(pull, _hwId, token);
-                if (status == "done")
+                var (outcome, path, detail, size) = await FileTransfer.PullAsync(pull, _hwId, token);
+                if (outcome == "done")
                 {
                     LocalAudit.Write(LocalAudit.FilePulled(pull.TransferId, path, size, pull.Reason));
                     POpsHelpers.Log("FILES", $"Yönetici dosyayı aldı: {path} ({size} bayt).");
                     ToTray("FILE_PULLED:" + path);
                 }
-                else POpsHelpers.Log("FILES", $"Dosya alma tamamlanmadı ({pull.TransferId}, {status}): {detail}.", true);
-                await SendCommandMessageAsync(FileTransfer.Result(pull.TransferId, status, path, detail));
+                else POpsHelpers.Log("FILES", $"Dosya alma tamamlanmadı ({pull.TransferId}, {outcome}): {detail}.", true);
+                await SendCommandMessageAsync(FileTransfer.Result(pull.TransferId, outcome, path, detail));
             }, CancellationToken.None);
         }
 
@@ -1533,15 +1539,16 @@ namespace POpsAgent
         }
 
         // Kapalı bir yeteneğe gelen istek loglanır ve sunucuya "capability_denied" olarak bildirilir. Uzaktan fare
-        // hareketi gibi sık gelen istekler için aynı yetenek/eylem en çok dakikada bir bildirilir.
+        // hareketi gibi sık gelen istekler için aynı yetenek/eylem en çok dakikada bir bildirilir; görev (task_id) ya da
+        // dosya aktarımı (transfer_id) reddi her seferinde gider (sunucu o görevi / aktarımı kapatır).
         private readonly Dictionary<string, DateTime> _lastDenialNotice = new Dictionary<string, DateTime>();
 
-        private async Task DenyCapabilityAsync(string capability, string action, int? taskId = null, string reason = null)
+        private async Task DenyCapabilityAsync(string capability, string action, int? taskId = null, string reason = null, string transferId = null)
         {
             string key = $"{capability}/{action}/{reason}";
             lock (_lastDenialNotice)
             {
-                if (taskId == null && _lastDenialNotice.TryGetValue(key, out DateTime last) && DateTime.UtcNow - last < TimeSpan.FromMinutes(1)) return;
+                if (taskId == null && transferId == null && _lastDenialNotice.TryGetValue(key, out DateTime last) && DateTime.UtcNow - last < TimeSpan.FromMinutes(1)) return;
                 _lastDenialNotice[key] = DateTime.UtcNow;
             }
             if (reason == null)
@@ -1550,6 +1557,7 @@ namespace POpsAgent
                 POpsHelpers.Log("POLICY", $"{action} reddedildi: {capability} modülü bu bilgisayarın laboratuvarında kapalı.", true);
             var notice = new Dictionary<string, object> { ["type"] = "capability_denied", ["capability"] = capability, ["action"] = action };
             if (taskId != null) notice["task_id"] = taskId.Value;
+            if (transferId != null) notice["transfer_id"] = transferId;
             if (reason != null) notice["reason"] = reason;
             await SendCommandMessageAsync(notice);
         }

@@ -200,19 +200,30 @@ reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities
 
 ## File transfer
 
-From 0.1.23-alpha. Capability `files_enabled`: on by default, `FILES_ENABLED=0` switches it off locally, and the
-server can only switch it off. A refused request is answered with `capability_denied` (`files`) and a
-`file_result`. Each transfer is announced in the tray and written to the event log.
+From 0.1.23-alpha a server that lists `file_transfer` in `server_info.features` can send files to a PC and fetch
+files from it. The messages are the server's (`docs/protocol/server-to-agent/file_push.json`, `file_pull.json`,
+`docs/protocol/agent-to-server/file_result.json`). The agent announces `files` in `X-Agent-Features` and reports
+`files_enabled` in `capabilities` (the server sends file commands only to agents that report it).
 
+Capability `files_enabled`: on by default, `FILES_ENABLED=0` switches it off locally, and the server can only
+switch it off. With it off, a request is answered with one `capability_denied` (`capability: files`,
+`action: file_push` or `file_pull`, `transfer_id`) and no `file_result`: the server marks the transfer `rejected`.
+Each transfer is announced in the tray and written to the event log.
+
+- **Transfer ID:** `transfer_id` must match `^[A-Za-z0-9_-]{8,64}$`. A request without a valid ID is only logged
+  locally: no `file_result` (the server ignores unknown transfers). With the capability off, the
+  `capability_denied` is still sent, without `transfer_id`.
 - **Push** (admin → PC):
 
   ```json
   {"action": "file_push", "transfer_id", "name", "size", "sha256", "url", "dest": "public_desktop" | "inbox", "reason", "allow_exec"}
   ```
 
-  - **Source:** The agent downloads only from its own server. `url` is `/api/...` or the same scheme, host and
-    port as `ServerUrl`. The request goes without redirects and with the device key.
-  - **Checks:** The size (at most 1 GB) and the SHA-256 are verified.
+  - **Source:** The agent downloads only from its own server. `url` must have the server's form
+    `/api/files/<id>/download?t=<token>`; it is appended to `ServerUrl` like every other agent request (the token
+    is kept). The request goes without redirects and with the device key (`X-Agent-Id`, `X-Agent-Secret`).
+  - **Checks:** The size (at most 1 GB; the server sends at most 200 MB) and the SHA-256 are verified. A reason
+    of at least 3 characters is required.
   - **Destinations:** `public_desktop` (`C:\Users\Public\Desktop`) or `inbox` (`C:\POpsData\inbox\<yyyy-MM-dd>`,
     readable by Users, full control for SYSTEM and Administrators). No other path is possible.
   - **File name:** No path separators, no `:` (alternate data streams), no wildcards or control characters, no
@@ -228,7 +239,9 @@ server can only switch it off. A refused request is answered with `capability_de
   {"action": "file_pull", "transfer_id", "path", "max_size", "upload", "reason", "any_profile"}
   ```
 
-  - **Request:** A reason is required, and the path must be a local, fully qualified file (no UNC).
+  - **Request:** A reason of at least 3 characters is required. The path must start with a drive letter
+    (`C:\…`), have at most 1024 characters and contain no wildcards and no `:` after the drive (no network,
+    device or alternate-data-stream paths).
   - **Real path:** The checks use the file's real path, with symbolic links and junctions resolved
     (`GetFinalPathNameByHandle`).
   - **Refused:**
@@ -236,12 +249,15 @@ server can only switch it off. A refused request is answered with `capability_de
     - another user's profile, unless `any_profile: true`. Allowed without it are the profile of the user signed
       in at the console and `Public`; with nobody signed in, every profile counts as another user's;
     - files larger than `max_size` (at most 1 GB).
-  - **Upload:** `POST` to `upload` (same rule as `url`), `application/octet-stream`, with the device key.
+  - **Upload:** `POST` to `upload` (form `/api/files/<id>/upload?t=<token>`, same rule as `url`), the raw file as
+    `application/octet-stream`, with the device key. The optional `X-Content-SHA256` header is not sent.
   - **PC user:** The tray says "Yönetici bu dosyayı aldı: <yol>". Event 1121 records the ID, path, size and
     reason.
 - **Result:** `{"type": "file_result", "transfer_id", "outcome": "done" | "rejected" | "failed", "path", "detail"}`.
   The field is `outcome`, not `status`: a server that does not know `file_result` would take a message with
-  `status` for a heartbeat.
+  `status` for a heartbeat. `path` is left out when it is longer than 1024 characters; `detail` is cut at 300.
+  A request that breaks a rule (type, path, profile, size, reason) is `rejected`; a download, checksum, disk or
+  upload error is `failed`.
 
 ## Exam mode
 

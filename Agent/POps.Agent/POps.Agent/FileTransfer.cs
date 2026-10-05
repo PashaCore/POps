@@ -34,11 +34,18 @@ namespace POpsAgent
     public static class FileTransfer
     {
         public const long MaxBytes = 1024L * 1024 * 1024;
-        public const int MaxNameLength = 200, MaxReason = 300;
+        // Sunucu şeması: name en çok 200, reason 3-300, path en çok 1024 karakter
+        public const int MaxNameLength = 200, MinReason = 3, MaxReason = 300, MaxPathLength = 1024;
         private static readonly string[] ExecLike = { ".lnk", ".url", ".scr" };
         private static readonly Regex Reserved = new Regex(@"^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9]|CONIN\$|CONOUT\$)(\..*)?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-        private static readonly Regex TransferIdRegex = new Regex("^[A-Za-z0-9_-]{1,64}$", RegexOptions.Compiled);
-        private static readonly Regex Sha256Regex = new Regex("^[0-9a-f]{64}$", RegexOptions.Compiled);
+        // Sunucunun aktarım kimliği (rastgele, URL'de kullanılabilir)
+        private static readonly Regex TransferIdRegex = new Regex(@"^[A-Za-z0-9_-]{8,64}\z", RegexOptions.Compiled);
+        private static readonly Regex Sha256Regex = new Regex(@"^[0-9a-f]{64}\z", RegexOptions.Compiled);
+        // url / upload: ajanın kendi sunucusunda göreli yol, tek kullanımlık jetonla (sunucu şemasıyla aynı)
+        private static readonly Regex DownloadPath = new Regex(@"^/api/files/[A-Za-z0-9_-]{8,64}/download\?t=[A-Za-z0-9_-]+\z", RegexOptions.Compiled);
+        private static readonly Regex UploadPath = new Regex(@"^/api/files/[A-Za-z0-9_-]{8,64}/upload\?t=[A-Za-z0-9_-]+\z", RegexOptions.Compiled);
+        private static readonly Regex DrivePath = new Regex(@"^[A-Za-z]:\\", RegexOptions.Compiled);
+        private static readonly char[] Wildcards = { '*', '?', '"', '<', '>', '|' };
 
         public sealed class PushRequest
         {
@@ -69,6 +76,7 @@ namespace POpsAgent
         public static string PublicDesktop => PublicDesktopOverride?.Invoke() ?? Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
         public static string InboxRoot => System.IO.Path.Combine(AgentUpdate.DataDir, "inbox");
 
+        // Geçersiz ya da eksik kimlik: null (sunucu bilmediği aktarımın sonucunu yok sayar; böyle emre file_result gitmez)
         public static string TransferIdOf(JsonElement command) =>
             Text(command, "transfer_id") is string id && TransferIdRegex.IsMatch(id) ? id : null;
 
@@ -84,17 +92,18 @@ namespace POpsAgent
             if (size < 0 || size > MaxBytes) { error = $"boyut geçersiz (en çok {MaxBytes / (1024 * 1024)} MB)"; return false; }
             string sha = Text(c, "sha256")?.ToLowerInvariant();
             if (sha == null || !Sha256Regex.IsMatch(sha)) { error = "sha256 geçersiz"; return false; }
-            Uri url = ServerUri(serverUrl, Text(c, "url"));
+            Uri url = ServerUri(serverUrl, Text(c, "url"), upload: false);
             if (url == null) { error = "indirme adresi ajanın sunucusunda değil"; return false; }
             string dest = Text(c, "dest");
             if (dest != "public_desktop" && dest != "inbox") { error = "hedef yalnızca public_desktop ya da inbox olabilir"; return false; }
+            if (!TryReason(c, out string reason, out error)) return false;
             bool allowExec = c.TryGetProperty("allow_exec", out JsonElement ae) && ae.ValueKind == JsonValueKind.True;
             if (!allowExec && ExecLike.Contains(System.IO.Path.GetExtension(name), StringComparer.OrdinalIgnoreCase))
             {
                 error = $"{System.IO.Path.GetExtension(name)} dosyası yalnızca allow_exec ile gönderilebilir";
                 return false;
             }
-            request = new PushRequest { TransferId = id, Name = name, Size = size, Sha256 = sha, Url = url, Dest = dest, Reason = LogText.Safe(Text(c, "reason"), MaxReason), AllowExec = allowExec };
+            request = new PushRequest { TransferId = id, Name = name, Size = size, Sha256 = sha, Url = url, Dest = dest, Reason = reason, AllowExec = allowExec };
             error = null;
             return true;
         }
@@ -104,37 +113,46 @@ namespace POpsAgent
             request = null;
             string id = TransferIdOf(c);
             if (id == null) { error = "transfer_id geçersiz"; return false; }
+            // Sürücü harfli tam yerel yol (ağ ve aygıt yolu yok); joker ve ':' (ADS) yalnızca sürücü harfinden sonra yok
             string path = Text(c, "path");
-            if (string.IsNullOrWhiteSpace(path) || !System.IO.Path.IsPathFullyQualified(path) || path.StartsWith(@"\\", StringComparison.Ordinal))
+            if (string.IsNullOrWhiteSpace(path) || path.Length > MaxPathLength || !DrivePath.IsMatch(path) || !System.IO.Path.IsPathFullyQualified(path)
+                || path.IndexOf(':', 2) >= 0 || path.IndexOfAny(Wildcards) >= 0)
             {
                 error = "yol yerel ve tam olmalı";
                 return false;
             }
             long max = c.TryGetProperty("max_size", out JsonElement m) && m.ValueKind == JsonValueKind.Number && m.TryGetInt64(out long v) ? v : -1;
             if (max <= 0 || max > MaxBytes) { error = "max_size geçersiz"; return false; }
-            Uri upload = ServerUri(serverUrl, Text(c, "upload"));
+            Uri upload = ServerUri(serverUrl, Text(c, "upload"), upload: true);
             if (upload == null) { error = "yükleme adresi ajanın sunucusunda değil"; return false; }
-            string reason = Text(c, "reason");
-            if (string.IsNullOrWhiteSpace(reason)) { error = "gerekçe zorunlu"; return false; }
+            if (!TryReason(c, out string reason, out error)) return false;
             bool any = c.TryGetProperty("any_profile", out JsonElement ap) && ap.ValueKind == JsonValueKind.True;
-            request = new PullRequest { TransferId = id, Path = path, MaxSize = max, Upload = upload, Reason = LogText.Safe(reason, MaxReason), AnyProfile = any };
+            request = new PullRequest { TransferId = id, Path = path, MaxSize = max, Upload = upload, Reason = reason, AnyProfile = any };
             error = null;
             return true;
         }
 
-        // Göreli "/api/..." ya da aynı köken (şema, ana bilgisayar, kapı) mutlak adres; başka her şey null
-        internal static Uri ServerUri(string serverUrl, string value)
+        // Gerekçe zorunlu (sunucu şeması: 3-300 karakter); denetim karakterleri atılır
+        private static bool TryReason(JsonElement c, out string reason, out string error)
         {
-            if (string.IsNullOrWhiteSpace(value) || !POpsHelpers.IsSecureServerUrl(serverUrl)) return null;
-            if (!Uri.TryCreate(serverUrl.TrimEnd('/') + "/", UriKind.Absolute, out Uri server)) return null;
-            Uri target;
-            if (value.StartsWith('/') && !value.StartsWith("//", StringComparison.Ordinal))
+            string text = Text(c, "reason")?.Trim();
+            if (text == null || text.Length < MinReason)
             {
-                if (!Uri.TryCreate(server, value, out target)) return null;
+                reason = null;
+                error = $"gerekçe zorunlu (en az {MinReason} karakter)";
+                return false;
             }
-            else if (!Uri.TryCreate(value, UriKind.Absolute, out target)) return null;
-            bool sameOrigin = target.Scheme == server.Scheme && string.Equals(target.Host, server.Host, StringComparison.OrdinalIgnoreCase) && target.Port == server.Port;
-            return sameOrigin && target.AbsolutePath.StartsWith("/api/", StringComparison.Ordinal) && !target.AbsolutePath.Contains("/../", StringComparison.Ordinal) ? target : null;
+            reason = LogText.Safe(text, MaxReason);
+            error = null;
+            return true;
+        }
+
+        // Yalnızca sunucunun verdiği biçim: "/api/files/<kimlik>/download?t=<jeton>" (upload: ".../upload?t=..."), ajanın
+        // kendi sunucusuna göre (ServerUrl + yol, öteki istekler gibi; sorgu dizisi korunur). Başka her şey null.
+        internal static Uri ServerUri(string serverUrl, string value, bool upload)
+        {
+            if (string.IsNullOrEmpty(value) || !(upload ? UploadPath : DownloadPath).IsMatch(value) || !POpsHelpers.IsSecureServerUrl(serverUrl)) return null;
+            return Uri.TryCreate(serverUrl.TrimEnd('/') + value, UriKind.Absolute, out Uri target) ? target : null;
         }
 
         // Yol ayırıcısı, ':' (ADS), joker ve denetim karakteri yok; ayrılmış ad yok; sondaki nokta/boşluk atılır
@@ -182,17 +200,18 @@ namespace POpsAgent
         }
 
         // ------------------------------------------------------------------ işlemler
-        // Sonuç "outcome" alanındadır, "status" değil: eski sunucu tanımadığı ve status taşıyan her mesajı heartbeat sayar
+        // Sonuç "outcome" alanındadır, "status" değil: eski sunucu tanımadığı ve status taşıyan her mesajı heartbeat sayar.
+        // Sunucu şeması: path en çok 1024 karakter (daha uzun yol gönderilmez), detail en çok 500 (burada 300).
         public static Dictionary<string, object> Result(string transferId, string outcome, string path = null, string detail = null)
         {
             var message = new Dictionary<string, object> { ["type"] = "file_result", ["transfer_id"] = transferId, ["outcome"] = outcome };
-            if (path != null) message["path"] = path;
+            if (path != null && path.Length <= MaxPathLength) message["path"] = path;
             if (detail != null) message["detail"] = LogText.Safe(detail, MaxReason);
             return message;
         }
 
-        // Dönen: (durum, yol, açıklama); durum "done" | "rejected" | "failed"
-        public static async Task<(string Status, string Path, string Detail)> PushAsync(PushRequest request, string hwId, DateTime localNow, CancellationToken token)
+        // Dönen: (sonuç, yol, açıklama); sonuç "done" | "rejected" | "failed"
+        public static async Task<(string Outcome, string Path, string Detail)> PushAsync(PushRequest request, string hwId, DateTime localNow, CancellationToken token)
         {
             string destination = request.Dest == "public_desktop" ? PublicDesktop : InboxFor(localNow);
             if (string.IsNullOrEmpty(destination) || !Directory.Exists(destination)) return ("failed", null, "hedef klasör yok");
@@ -214,13 +233,13 @@ namespace POpsAgent
                     while ((read = await input.ReadAsync(buffer.AsMemory(), token)) > 0)
                     {
                         total += read;
-                        if (total > request.Size) return ("rejected", null, "dosya bildirilen boyuttan büyük");
+                        if (total > request.Size) return ("failed", null, "dosya bildirilen boyuttan büyük");
                         hash.AppendData(buffer, 0, read);
                         await output.WriteAsync(buffer.AsMemory(0, read), token);
                     }
                 }
                 string actual = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
-                if (total != request.Size || actual != request.Sha256) return ("rejected", null, $"boyut ya da SHA-256 uyuşmuyor ({total}/{request.Size})");
+                if (total != request.Size || actual != request.Sha256) return ("failed", null, $"boyut ya da SHA-256 uyuşmuyor ({total}/{request.Size})");
                 // Kopyalanır (taşınmaz): dosya hedef klasörün izinlerini alsın (güvenli klasörün kilidini değil)
                 string target = UniquePath(destination, request.Name);
                 File.Copy(partial, target, false);
@@ -233,7 +252,7 @@ namespace POpsAgent
             finally { TryDelete(partial); }
         }
 
-        public static async Task<(string Status, string Path, string Detail, long Size)> PullAsync(PullRequest request, string hwId, CancellationToken token)
+        public static async Task<(string Outcome, string Path, string Detail, long Size)> PullAsync(PullRequest request, string hwId, CancellationToken token)
         {
             FileStream file;
             try { file = new FileStream(request.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete); }
