@@ -248,7 +248,7 @@ test vectors are in [`protocol/`](protocol/README.md): [`file_push`](protocol/se
  "url": "/api/files/<transfer_id>/download?t=<token>", "dest": "public_desktop", "reason": "…", "allow_exec": false}
 {"action": "file_pull", "transfer_id": "…", "path": "C:\\Users\\Public\\Documents\\rapor.pdf", "max_size": 52428800,
  "upload": "/api/files/<transfer_id>/upload?t=<token>", "reason": "…", "any_profile": false}
-{"type": "file_result", "transfer_id": "…", "status": "done", "path": "C:\\Users\\Public\\Desktop\\Ödev 1.pdf", "detail": null}
+{"type": "file_result", "transfer_id": "…", "outcome": "done", "path": "C:\\Users\\Public\\Desktop\\Ödev 1.pdf", "detail": null}
 ```
 
 - `url` and `upload` are relative: the agent puts its own server address in front and talks to no other host. It

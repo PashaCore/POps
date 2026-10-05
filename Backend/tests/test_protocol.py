@@ -516,7 +516,7 @@ async def agent_session_with_secret():
     chk((True, True, HW, "system", None) in caps and (False, True, HW, "custom", None) in caps
         and (True, True, HW, "custom", True) in caps, "capabilities saklandı (files_enabled yoksa NULL)")
     results = {p[0]: p[2] for p in db.params("UPDATE file_transfers SET status = $3")}
-    file_results = {m["transfer_id"]: m["status"] for f, m in cmd if f.startswith("file_result.")}
+    file_results = {m["transfer_id"]: m["outcome"] for f, m in cmd if f.startswith("file_result.")}
     chk(results == file_results and all(p[1] == HW for p in db.params("UPDATE file_transfers SET status = $3")),
         "file_result yalnızca bağlantının cihazındaki aktarımı güncelledi: %s" % results)
     denied_files = [m for f, m in cmd if f.startswith("capability_denied.") and m.get("capability") == "files"]

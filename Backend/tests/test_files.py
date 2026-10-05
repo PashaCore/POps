@@ -333,12 +333,12 @@ async def run(c, tok, agents):
     chk(http_req("GET", url1, headers=agent_headers("HW-FX1"))[0] == 404, "ikinci indirme 404")
     chk(await c.fetchval("SELECT status FROM file_transfers WHERE transfer_id=$1", sent["HW-FX1"]) == "downloading",
         "durum: downloading")
-    await fx2.send({"type": "file_result", "transfer_id": sent["HW-FX1"], "status": "done", "path": "C:\\x"})
+    await fx2.send({"type": "file_result", "transfer_id": sent["HW-FX1"], "outcome": "done", "path": "C:\\x"})
     await asyncio.sleep(0.5)
     chk(await c.fetchval("SELECT status FROM file_transfers WHERE transfer_id=$1", sent["HW-FX1"]) == "downloading",
         "başka bilgisayarın file_result'ı satırı değiştirmedi")
     dest_path = "C:\\Users\\Public\\POps\\Gelen\\Ödev 1.pdf"
-    await fx1.send({"type": "file_result", "transfer_id": sent["HW-FX1"], "status": "done", "path": dest_path})
+    await fx1.send({"type": "file_result", "transfer_id": sent["HW-FX1"], "outcome": "done", "path": dest_path})
     chk(await wait_for(c, "SELECT status='done' AND path=$2 AND finished_at IS NOT NULL FROM file_transfers "
                           "WHERE transfer_id=$1", sent["HW-FX1"], dest_path), "file_result satırı tamamladı")
     await c.execute("UPDATE file_transfers SET token_expires_at = NOW() - interval '1 second' WHERE transfer_id=$1",
@@ -360,7 +360,7 @@ async def run(c, tok, agents):
                 allow_exec=True)
     m = await fx1.wait(lambda m: m.get("action") == "file_push")
     chk(s == 200 and m and m["allow_exec"] is True and m["name"] == "kisayol.lnk", ".lnk allow_exec ile gönderildi")
-    await fx1.send({"type": "file_result", "transfer_id": m["transfer_id"] if m else "", "status": "failed",
+    await fx1.send({"type": "file_result", "transfer_id": m["transfer_id"] if m else "", "outcome": "failed",
                     "detail": "[REDDEDİLDİ] Kısayol dosyası yazılmadı."})
     chk(await wait_for(c, "SELECT status='rejected' FROM file_transfers WHERE transfer_id=$1",
                        m["transfer_id"] if m else ""), "'[REDDEDİLDİ]' sonucu rejected sayıldı")
@@ -369,7 +369,7 @@ async def run(c, tok, agents):
     chk(s == 200 and m and m["name"] == "evilgnp.exe",
         "yol parçaları ve yön karakteri atıldı (%s)" % (m or {}).get("name"))
     if m:
-        await fx1.send({"type": "file_result", "transfer_id": m["transfer_id"], "status": "rejected",
+        await fx1.send({"type": "file_result", "transfer_id": m["transfer_id"], "outcome": "rejected",
                         "detail": "kullanıcı iptal etti"})
     s, r = push(admin, ["HW-FXOFF"], content)
     chk(s == 409 and "çevrimdışı" in str(r.get("detail")), "yalnız çevrimdışı hedef: 409")
@@ -398,7 +398,7 @@ async def run(c, tok, agents):
     m = await fx2.wait(lambda m: m.get("action") == "file_pull")
     chk(s == 200 and m and m["any_profile"] is True, "superadmin any_profile ile istedi")
     if m:
-        await fx2.send({"type": "file_result", "transfer_id": m["transfer_id"], "status": "rejected",
+        await fx2.send({"type": "file_result", "transfer_id": m["transfer_id"], "outcome": "rejected",
                         "detail": "Dosya bulunamadı"})
         chk(await wait_for(c, "SELECT status='rejected' AND detail='Dosya bulunamadı' FROM file_transfers "
                               "WHERE transfer_id=$1", m["transfer_id"]), "ajanın ret sonucu kaydedildi")
@@ -425,7 +425,7 @@ async def run(c, tok, agents):
     prow = await c.fetchrow("SELECT * FROM file_transfers WHERE transfer_id=$1", pull_id)
     chk(prow["status"] == "done" and prow["size"] == len(data) and prow["sha256"] == _sha(data)
         and blob_exists(prow["storage_path"]) and prow["name"] == "rapor.pdf", "satır tamam, dosya sunucuda")
-    await fx1.send({"type": "file_result", "transfer_id": pull_id, "status": "failed", "detail": "geç gelen"})
+    await fx1.send({"type": "file_result", "transfer_id": pull_id, "outcome": "failed", "detail": "geç gelen"})
     await asyncio.sleep(0.4)
     chk(await c.fetchval("SELECT status FROM file_transfers WHERE transfer_id=$1", pull_id) == "done",
         "yüklenmiş dosyanın durumu sonradan değişmez")

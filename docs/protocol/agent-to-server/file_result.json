@@ -10,7 +10,7 @@
   "required": [
     "type",
     "transfer_id",
-    "status"
+    "outcome"
   ],
   "properties": {
     "type": {
@@ -22,13 +22,13 @@
       "pattern": "^[A-Za-z0-9_-]{8,64}$",
       "description": "Transfer ID (random, URL-safe). Echoed in `file_result`."
     },
-    "status": {
+    "outcome": {
       "enum": [
         "done",
         "rejected",
         "failed"
       ],
-      "description": "done = written (push) or uploaded (pull); rejected = refused by a rule (type not allowed, path outside the allowed folders or profiles, too large, capability off); failed = an error (download, checksum, disk, file not found)."
+      "description": "done = written (push) or uploaded (pull); rejected = refused by a rule (type not allowed, path outside the allowed folders or profiles, too large, capability off); failed = an error (download, checksum, disk, file not found). Named `outcome`, not `status`: a message with a `status` field is a heartbeat to every server."
     },
     "path": {
       "type": [

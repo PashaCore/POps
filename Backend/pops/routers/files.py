@@ -563,12 +563,13 @@ async def download_content(transfer_id: str, auth: dict = Depends(require_admin_
 # ── Ajan WebSocket iletileri (routers/agents.py çağırır) ───────────────────────
 
 async def handle_result(pc_name: str, payload: dict) -> None:
-    """file_result: {transfer_id, status: done|rejected|failed, path?, detail?}. Yalnız bu bilgisayarın açık
+    """file_result: {transfer_id, outcome: done|rejected|failed, path?, detail?} (status değil: status alanı olan ileti
+    her sunucuda kalp atışıdır). Yalnız bu bilgisayarın açık
     aktarımı güncellenir. Gönderilen dosya için "done" ancak dosya indirildikten sonra kabul edilir; alınan dosya
     yükleme ucunda "done" olur (ajanın sonradan gönderdiği sonuç yalnız yolu tamamlar). "[REDDEDİLDİ]" ile başlayan
     açıklama "rejected" sayılır."""
     tid = payload.get("transfer_id")
-    status = payload.get("status")
+    status = payload.get("outcome")
     if not filestore.valid_id(tid) or status not in ("done", "rejected", "failed"):
         log.info("tanınmayan file_result yok sayıldı", extra={"pc_name": pc_name})
         return
