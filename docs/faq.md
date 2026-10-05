@@ -17,10 +17,15 @@ backend process brought 5,000 simulated agents back within 11 seconds of a resta
 above a second. The backend runs as a single process, so plan one server per school.
 
 **Is the panel available in English?**
-Partly, and growing: **Türkçe / English** at the bottom of the sidebar switches the interface for your browser. The
-sidebar, search, notifications, dialogs, device actions and **Kontrol merkezi** are translated; the other pages are
-being converted and show Turkish text until then ([`i18n.md`](i18n.md)). Server messages without an English entry
-stay Turkish.
+Yes, every page: **Türkçe / English** at the bottom of the sidebar or under the sign-in form switches the interface
+for your browser. Until you choose, the sign-in page follows the browser's language. Names people typed (labs,
+devices, packages) stay as they are, and server messages without an English entry stay Turkish
+([`i18n.md`](i18n.md)).
+
+**Can I try POps without installing it?**
+Yes. A public, read-only demo runs at [demo.pashacore.com.tr](https://demo.pashacore.com.tr) (user `demo`,
+password `demo`): a made-up school with 50 PCs that report like real agents but never run anything. It is reset
+every night. How it is built: [`deploy/demo/`](../deploy/demo/README.md).
 
 **Does POps work without internet access?**
 Yes. The server checks GitHub for new versions but works without it; agent releases can be uploaded by hand on
@@ -124,10 +129,14 @@ agent's secrets are in a folder only SYSTEM and Administrators can open. The tra
 **How do I update the server?**
 Run `pops-deploy-backend` from an up-to-date checkout, or enable the panel's one-click self-update. Both check the
 new code and restore the previous code if it fails. Do not re-run `install.sh` on an existing server: it
-regenerates the secrets. See [`deployment.md`](deployment.md#updating-the-server).
+regenerates the secrets. See [`deployment.md`](deployment.md#updating-the-server). The self-update follows the
+stable channel (release tags) by default; a test server can follow `main` instead
+([`self-update.md`](self-update.md)).
 
 **Where is the API documentation?**
-In [`api.md`](api.md). The interactive `/docs` page is disabled on purpose.
+In [`api.md`](api.md), and as an OpenAPI file for `/api/v1` in [`openapi.json`](openapi.json). Scripts and other
+systems use `/api/v1` with an API token (**Ayarlar → Güvenlik → API jetonları**). The interactive `/docs` page is
+disabled on purpose.
 
 **What should I back up?**
 The PostgreSQL database, the backend `.env` and `Backend/storage/` ([`database.md`](database.md#backups)).

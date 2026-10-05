@@ -352,6 +352,7 @@ restrict database access.
 | `GET /api/health` | Health check (database state and version only). |
 | `POST /api/admin/login`, `/api/admin/login/totp` | Sign-in (rate-limited). |
 | `GET /api/agent_policies` | Agents read the policy; it holds no secrets. |
+| `GET /api/branding`, `GET /api/branding/logo` | The organisation name and logo for the sign-in page, set by a superadmin; nothing else. |
 | `/download/<file>?sig=…` | Deployment packages for agents, only with the signed link returned at upload (wrong or missing signature: 404). Anyone who has a package's link can still download it, so do not upload anything confidential on the **Dağıtım** page. |
 | `/updates/<file>` | The agent MSI being distributed (verified by agents against the signed manifest). |
 | `/api/v1/...` | The same endpoints as `/api/...` with the same authentication; nothing extra is open. |

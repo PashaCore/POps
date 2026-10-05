@@ -236,6 +236,10 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
 - **Consequences:** Offline servers only lose the update check, release notes and one-click download. The panel
   still loads Chart.js, SortableJS, Font Awesome and Google Fonts from public CDNs, so the administrator's browser
   needs internet for charts, icons and fonts. New external calls must be optional and fail soft.
+- **0.1.22-alpha:** the panel loads nothing from other hosts. Chart.js and SortableJS had already gone with the new
+  panel; the fonts are now bundled and every icon comes from the panel's own set, so the administrator's browser
+  needs no internet access either. The panel end-to-end tests in CI (added after 0.1.22) fail on any request to
+  another host.
 
 ## D-16 One version source
 

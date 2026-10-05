@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CI: documentation states the current versions.** `tools/check_docs_versions.py` runs in the Version consistency job and fails when README, ROADMAP, `docs/`, SECURITY.md, CONTRIBUTING.md, the issue templates or the release notes call a version other than `VERSION` the latest, call an already released version the next one, or name such a version in README or ROADMAP at all. It also fails when they give a Python or PostgreSQL minimum other than the one in `Backend/requirements.txt` and the CI migrations job, or a .NET runtime requirement that does not fit the self-contained .NET 10 agent. Sentences about already released versions count as history. A line can opt out with `docs-versions: ignore`.
 - **Panel: English for Sistem, Ayarlar, Uzak komut and the sign-in page.** Every panel page can now be shown in English. When no language has been chosen yet, the sign-in page follows the browser's language and stores the choice. A Türkçe / English switch under the form works without JavaScript and keeps a pending 2FA step.
 - **Panel: server texts with values are shown in English too.** Examples: a scheduled task's last result ("Queued for 3 devices"), who created a task from a schedule ("admin (scheduled #1, run by hand)") and notification titles such as agent update results. Stored task titles show their scope in English ("Shut down · 3 selected computers"); lab and computer names stay as typed.
 - **Agent: updates download with BITS.** The update MSI is fetched with BITS and resumes after network drops and restarts. A download still running after 15 minutes continues with the next update command. When BITS is unavailable the agent downloads directly as before. The signed size and SHA-256 are checked either way. A design for a lab-local peer cache (one download per lab) is in `docs/design/peer-cache.md`.
@@ -37,6 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Docs: README and README.tr match `main`.** They link the public read-only demo (demo.pashacore.com.tr, user and password `demo`) and have feature rows for API v1 and API tokens, the organisation's name and logo, both panel languages, the Sistem charts and agent log retention. They also describe the stable and preview self-update channels, agent update stages and BITS downloads, and Vision v2 as agent side only, with the panel viewer still to come. The test and supply-chain summary and the roadmap paragraph are current; the paragraph no longer calls 0.1.14 the next round.
+- **Docs: ROADMAP.** API v1, the panel end-to-end tests, the English interface, the protocol schema, the demo and this week's agent work are listed as done. Code signing through the SignPath Foundation is the first item under Next.
+- **Docs: positioning.**
+  - POps is Apache 2.0 (OSI-approved), while Tactical RMM's licence is source-available and restricts commercial services.
+  - POps works with GLPI instead of competing with it; the export is a design note.
+  - A section on Pardus, ETAP and Lider Ahenk.
+- **Docs: release channels.** `CHANNEL=release` is the stable channel: the newest release tag, weekly releases, SSH-signed tags. `CHANNEL=main` is the preview channel, for test servers. See `docs/self-update.md` and `docs/deployment.md`.
+- **Docs: agent contributors.** CONTRIBUTING describes the agent warnings gate and the `Agent/.editorconfig` baseline.
 - **Panel:** Vision diagnostics and Remote command quick-action titles are translated on every page that lists jobs, not only on the page that sent them.
 - **Agent: warnings gate.** The agent, tray, watchdog, updater and shared library build with the .NET 10 recommended analyzers and treat warnings as errors. The warnings that existed on 5 October are listed per file in `Agent/.editorconfig`, and any new one fails the build. 60 warnings were fixed, including all of them in the service's `Worker.cs` and the tray pipe code.
 - **Panel: browser configuration object renamed to `window.POPS_API`** (`assets/pops_config.js`). **Upgrading:** the file ships with the panel and is replaced on update; if you edited it locally, rename the global in your copy.
@@ -49,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Docs: stale facts.** README no longer says there are no API tokens or that the panel is Turkish only. The FAQ, `docs/dashboard.md` and the Turkish "Neden POps?" guide no longer say English covers part of the panel. Decision D-15 no longer implies the panel loads fonts and icons from CDNs. CONTRIBUTING no longer lists the removed POpsVision source. `docs/security.md` lists the sign-in branding endpoints among those reachable without signing in. The pilot guide writes the MSI log to `C:\Windows\Temp`. Troubleshooting shows the agent's current message for an unreadable configuration.
+- **Docs: agent behaviour that was only in the CHANGELOG** is now in `docs/agent.md` and troubleshooting: update stages and `update-progress.json`, log retention in `C:\POpsLogs`, event 1090 for an unreadable configuration, and the tray pipe that stays open while the server is unreachable. SECURITY.md and the architecture pages mention API tokens and hash-locked dependencies.
 - **Kontrol merkezi: viewers see "Göster", not "Güncelle", for old agents.** A viewer cannot update agents. The tile and the attention item already opened the device list.
 - **Docs: Vision channel authentication.** `docs/api.md` said `/ws/vision` accepts an enrollment token; it accepts only the device secret.
 - **Apache template: WebSocket rule.** `Installer/server/apache-htaccess.example` forwarded `/ws/panel` as `/ws/` because the path came from the wrong condition. **Upgrading:** if your `Dashboard/.htaccess` has the `Upgrade` condition after the `/ws/` path condition, swap them (sites with a vhost `ProxyPass /ws/` were not affected).

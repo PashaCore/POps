@@ -20,11 +20,12 @@ them, most of them in Turkish.
 
 | Log | Contents |
 | --- | --- |
-| `C:\POpsLogs\POps_<yyyyMMdd>.log` | Service and updater. Readable by administrators only. |
+| `C:\POpsLogs\POps_<yyyyMMdd>.log`, `msi-*.log` | Service and updater, and the updater's msiexec logs. Readable by administrators only. Kept for 30 days and 200 MB at most. |
 | `C:\Windows\Temp\pops-msi-install.log` | MSI log, if you installed with `/l*v C:\Windows\Temp\pops-msi-install.log` as in the docs. |
 | `C:\POpsLogs\deploy_trace.txt` | Progress of packages installed from the **Dağıtım** page. |
 | `%LOCALAPPDATA%\POps\Logs\` | Per user: `TrayLog.txt` (tray, message types only) and `POpsWatchdog_<yyyyMMdd>.log`. |
 | `C:\POpsData\update-result.json` | Result of the last update, until the agent has reported it (then renamed to `update-result.reported.json`). |
+| `C:\POpsData\update-progress.json` | Stage of a running update, written by the updater and forwarded by the service. |
 
 Useful checks in an elevated command prompt:
 
@@ -49,8 +50,9 @@ Work through these in order:
    - `[GÜVENLİK] ServerUrl şifresiz http ve yerel değil (…); … sunucuya bağlanılmıyor.` The address is plain
      `http://`. The agent only talks to `https://` servers (or `http://` on `127.0.0.1` / `localhost`). Reinstall or
      repair with `SERVER_URL=https://…`.
-   - `ServerUrl tanımlı değil (…); http://127.0.0.1:8000 kullanılıyor.` No address is configured. Install with
-     `SERVER_URL=`.
+   - `[HATA] Yapılandırma okunamadı: … Son çare http://127.0.0.1:8000 kullanılıyor.` (also Windows event 1090, and
+     the tray shows "POps - yapılandırma okunamadı" with a warning icon). `appsettings.json` is missing, cannot be
+     read, or has no valid `ServerUrl`. Repair or reinstall with `SERVER_URL=https://…`.
 3. **Can the PC reach the server?** Open `https://<server>/api/health` in a browser on the PC. It should return
    `{"status": "ok", …}`. If the browser warns about the certificate, the agent will fail too: it uses the Windows
    certificate checks, so the certificate must be valid for the host name and trusted by the PC.

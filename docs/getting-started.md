@@ -43,6 +43,9 @@ sees, a watchdog and an updater. The server has a FastAPI backend, a PostgreSQL 
 
 ## Path to a working lab
 
+To look around first, use the public read-only demo at [demo.pashacore.com.tr](https://demo.pashacore.com.tr)
+(user `demo`, password `demo`): a made-up school with 50 PCs, reset every night.
+
 1. **Install the server:** [`installation.md`](installation.md) (one script), or with Docker Compose:
    [`docker.md`](docker.md).
 2. **Put the web server and TLS in front of it:** [`deployment.md`](deployment.md).
@@ -79,7 +82,11 @@ sees, a watchdog and an updater. The server has a FastAPI backend, a PostgreSQL 
 | Windows agent | [`agent.md`](agent.md) |
 | Screen view and remote control | [`vision.md`](vision.md) |
 | Backend code layout | [`backend.md`](backend.md) |
-| REST and WebSocket API | [`api.md`](api.md) |
+| REST and WebSocket API | [`api.md`](api.md); OpenAPI file for `/api/v1`: [`openapi.json`](openapi.json) |
+| Agent protocol (JSON Schema, test vectors) | [`protocol/README.md`](protocol/README.md) |
+| Panel languages (Turkish, English) | [`i18n.md`](i18n.md) |
+| Tests and how to run them | [`testing.md`](testing.md) |
+| Public read-only demo (setup) | [`../deploy/demo/README.md`](../deploy/demo/README.md) |
 | Database and migrations | [`database.md`](database.md) |
 | Security controls | [`security.md`](security.md) |
 | Server self-update from the panel | [`self-update.md`](self-update.md) |

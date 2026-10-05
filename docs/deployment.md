@@ -226,6 +226,13 @@ With the systemd path unit installed, a superadmin can run the same deploy from 
 `/usr/local/sbin/pops-deploy-backend`. A tag whose signature cannot be verified is neither merged nor deployed.
 Setup, signing and design: [`self-update.md`](self-update.md).
 
+The channel is set in the root-owned `/etc/pops/selfupdate.conf`; the panel only shows it:
+
+| `CHANNEL=` | Channel | Follows | For |
+| --- | --- | --- | --- |
+| `release` (default) | stable | the newest release tag on `origin/main`. Releases come out weekly; the project's tags are SSH-signed from 0.1.22-alpha on, and with `/etc/pops/allowed_signers` installed an unverified tag is refused. Never moves back to an older release. | school and production servers |
+| `main` | preview | the latest `origin/main`, merged changes before they are released; no signed tags, no signature check | test servers only |
+
 ## Updating the agents
 
 Agent updates are signed MSI packages distributed from **Sistem**: stage a release (download from GitHub
@@ -254,6 +261,11 @@ The signing key exists only as a GitHub secret; the public key is `keys/pops_rel
 servers with `/etc/pops/allowed_signers` then self-update only to tags signed by a listed key
 ([`self-update.md`](self-update.md#sürüm-etiketlerinin-imzası)). The project signs its tags from **0.1.22-alpha** on;
 the line to install is [`keys/allowed_signers`](../keys/allowed_signers).
+
+CI's `version` job runs `tools/check_docs_versions.py`: README, ROADMAP, `docs/` and the release notes must not call
+another version the latest or the next one, and must give the Python and PostgreSQL minimums and the agent's .NET
+runtime as `Backend/requirements.txt`, the `migrations` job and the agent `.csproj` files define them (rules at the
+top of the script).
 
 ## Logs
 

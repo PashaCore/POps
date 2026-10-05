@@ -113,16 +113,38 @@ tagged release.
 - [x] **Release rhythm:** weekly releases with a short operator summary on top; signed release tags (0.1.22)
 - [x] Organisation name and logo on the sign-in page; Docker images on GHCR; OpenSSF Scorecard (0.1.22)
 
+### After 0.1.22 (Unreleased)
+
+- [x] **API for automation:** `/api/v1`, REST names next to the old ones, API tokens, the OpenAPI file in the
+  repository (Unreleased)
+- [x] **Panel end-to-end tests** in CI with a real browser: every page at desktop and phone width, and the main flows
+  (Unreleased)
+- [x] **Agent protocol** as JSON Schema with shared test vectors; hash-locked backend dependencies (Unreleased)
+- [x] **Public read-only demo** with a fake school fleet, reset every night (Unreleased)
+- [x] **Agent:** update stages in the panel, BITS download that resumes, log retention, offline bypass while the
+  server is unreachable, warnings as errors in the build (Unreleased)
+- [x] **Vision v2, agent side:** DXGI capture, changed regions, several screens, adaptive quality, binary frames,
+  clipboard in an accepted session (Unreleased)
+- [x] **English interface:** every page in Turkish and English, chosen per browser (Unreleased)
+
 ## In progress
 
-- [ ] **English interface:** every page in Turkish and English, chosen per browser.
-- [ ] **API for automation:** `/api/v1`, REST names next to the old ones, API tokens, the OpenAPI file in the repository.
-- [ ] **Panel end-to-end tests** in CI with a real browser.
+- [ ] **Vision v2 in the panel:** the server side and the viewer for the agent's new capture.
 - [ ] **Linux agent (Pardus first):** inventory, commands and signed updates.
 
 ## Next
 
 Short design notes. Where options are listed, the choice has not been made.
+
+### Code signing (first)
+
+*Status: next, first priority.*
+
+The agent service and the updater run as SYSTEM, and the tray and watchdog run in the signed-in user's session,
+but the executables and the MSI have no Authenticode signature, so SmartScreen and antivirus products may warn or
+block them. Apply to SignPath Foundation (free Authenticode for open-source projects). The policy that will apply is in
+[`docs/code-signing.md`](docs/code-signing.md). Once the binaries are signed, the tray pipe check also requires a
+valid signature.
 
 ### Architecture round
 
@@ -141,10 +163,8 @@ Short design notes. Where options are listed, the choice has not been made.
 - **High availability:** several backend processes with Redis (see Vision below).
 - **RDP and multi-session PCs (F19):** today the tray assumes one console session.
 - **Measure again:** 5,000 agents on 0.1.12+ over HTTPS with health telemetry, and a Vision load test.
-- **End-to-end tests:** Playwright for the panel in CI and a Windows test machine for the real MSI update and
-  rollback.
-- **Code signing:** apply to SignPath Foundation (free Authenticode for open-source projects). The policy that
-  will apply is in [`docs/code-signing.md`](docs/code-signing.md).
+- **End-to-end tests on Windows:** a Windows test machine for the real MSI update and rollback (the panel's
+  browser tests already run in CI).
 - **Update loop guard:** do not send the same update again to a PC that reported `pending_reboot`.
 
 ### Linux agent (Pardus first)
@@ -265,7 +285,6 @@ Whatever the choice, a second maintainer with review and release rights would re
 - ~~Move the agent to .NET 10 before .NET 8 support ends (10 November 2026).~~ Done in 0.1.15-alpha (self-contained, D-19).
 - ~~Move the backend to a newer Python.~~ Done in 0.1.22: Python 3.10+, target 3.12 (D-20).
 - Per-action re-authentication for dangerous panel actions; enforce freshness of signed manifests.
-- Authenticode-sign the agent binaries; the tray pipe check then also requires a valid signature.
 - Freeze software (Deep Freeze and similar): thaw before an update and freeze again afterwards. Today: enroll
   before freezing or use `PersistDir` ([`Agent/README.md`](Agent/README.md#machines-with-freeze-software)).
 - ~~A Turkish "Neden POps?" page for school management (terminal and screen off on staff PCs, on in labs).~~ Done:

@@ -38,13 +38,17 @@ pops-selfupdate.service (systemd, ROOT, oneshot)
   AlmaLinux/RHEL 9 sunucusunu taşımak: [deployment.md](deployment.md#moving-an-existing-server-to-python-312).
 - Uç noktalar `require_superadmin` (tetikleme) / `require_admin` (durum) ile korunur.
 
-## Kanal: sürüm (varsayılan) ya da main
+## Kanal: kararlı (`release`, varsayılan) ya da önizleme (`main`)
 
-- **`release` (varsayılan):** Sunucu yalnızca **yayımlanmış sürümlere** geçer: `origin/main` üzerindeki en yeni
-  `v*` etiketi (sürüm sırasıyla; `0.1.10` > `0.1.9`). Sunucu zaten o sürümde ya da daha yenisindeyse git adımı
-  atlanır, **geri gidilmez**. Panel "Yeni sürüm: vX" yazar, ara commit'ler sayılmaz. Okullar için doğru ayar.
-- **`main`:** `origin/main`'in son hali (geliştirme sunucusu). Panel commit farkını gösterir. Etiket imzası
-  denetlenmez (logda yazar).
+- **`CHANNEL=release`, kararlı kanal (varsayılan):** Sunucu yalnızca **yayımlanmış sürümlere** geçer: `origin/main`
+  üzerindeki en yeni `v*` etiketi (sürüm sırasıyla; `0.1.10` > `0.1.9`). Sürümler haftalık çıkar. Projenin
+  etiketleri `v0.1.22-alpha`'dan beri SSH ile imzalıdır; `/etc/pops/allowed_signers` kuruluysa imzası doğrulanamayan
+  etikete geçilmez ([aşağıda](#sürüm-etiketlerinin-imzası)). Sunucu zaten o sürümde ya da daha yenisindeyse git
+  adımı atlanır, **geri gidilmez**. Panel "Yeni sürüm: vX" yazar, ara commit'ler sayılmaz. Okullar ve gerçek
+  kullanım için doğru ayar budur.
+- **`CHANNEL=main`, önizleme kanalı:** `origin/main`'in son hali; birleştirilen her değişiklik sürümden önce gelir.
+  İmzalı etiket yoktur, imza denetlenmez (logda yazar). Yalnızca test sunucuları içindir. Panel commit farkını
+  gösterir.
 
 Ayarlar root'a ait `/etc/pops/selfupdate.conf` dosyasındadır (dosya yoksa aşağıdaki varsayılanlar). Panel kanalı
 değiştiremez; backend dosyayı yalnızca kanalı göstermek için okur, bu yüzden 644 kalmalıdır.

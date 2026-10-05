@@ -73,6 +73,7 @@ Four .NET 10 programs (self-contained, sharing one runtime) installed by one MSI
 | From → to | Channel | Authentication | Purpose |
 | --- | --- | --- | --- |
 | Browser → backend | HTTPS `/api/…` | JWT in the `pops_jwt` cookie (+ `X-Requested-With`) or `Authorization: Bearer` | All panel actions. |
+| Script or other system → backend | HTTPS `/api/v1/…` | API token (`Authorization: Bearer pops_…`) | Automation and integrations ([`api.md`](api.md#api-tokens-automation)). |
 | Browser ↔ backend | WSS `/ws/panel` | `pops_jwt` cookie | Task output, update and capability events, screen previews and frames; remote input to PCs. |
 | PHP → backend | HTTP `POPS_API_INTERNAL_URL` | username/password (+ TOTP) | Login only. |
 | Agent ↔ backend | WSS `/ws/agent/{hw_id}` | enrollment token, then per-device secret | Heartbeats every 5 s, commands and their results, update results, capabilities. |

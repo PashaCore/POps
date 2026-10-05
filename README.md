@@ -34,8 +34,13 @@
 > and the risks that remain, and [`ROADMAP.md`](ROADMAP.md) for what comes next.
 
 > [!NOTE]
-> The panel's interface is in **Turkish**. The documentation, the API and this README are in English; a Turkish
-> README is [here](README.tr.md).
+> Every page of the panel is in **Turkish** and **English**, chosen per browser. The documentation, the API and this
+> README are in English; a Turkish README is [here](README.tr.md).
+
+> [!TIP]
+> **Try it without installing:** a public, read-only demo runs at
+> [demo.pashacore.com.tr](https://demo.pashacore.com.tr) (user `demo`, password `demo`). It shows a made-up school
+> with 50 PCs and two weeks of history, and it is reset every night. Nothing can be changed there.
 
 ---
 
@@ -119,7 +124,7 @@ as Veyon; the two can run side by side ([positioning](docs/positioning.md); in T
 | **Terminal** | Run commands as SYSTEM from the browser and see the output, with quick actions for everyday fixes. |
 | **Software deployment** | Build a chain of ZIP/MSI/script steps and send it to a lab. Files are downloaded through signed links and their SHA-256 is checked before anything runs. |
 | **Scheduled tasks** | Once, daily or on chosen weekdays; written atomically so a run is never half-queued. |
-| **Vision** | Live screen at 1–5 FPS with remote mouse and keyboard (Turkish layout from 0.1.14), only in an accepted or announced session. |
+| **Vision** | Live screen at 1–5 FPS with remote mouse and keyboard (Turkish layout from 0.1.14), only in an accepted or announced session. The agent side of Vision v2 is done (DXGI capture, only changed regions, several screens, adaptive quality, clipboard in an accepted session); the server and panel viewer for it are coming. |
 | **Wake-on-LAN** | Wake one PC, a lab or everything with a known MAC address. |
 | **Quarantine** | Lock screen plus network isolation (only the POps server stays reachable). Lifted from the panel or offline with a per-device code that works once. |
 | **DNS policy** | Detects visits to listed domains per category and can quarantine a PC that crosses a threshold. |
@@ -130,10 +135,13 @@ as Veyon; the two can run side by side ([positioning](docs/positioning.md); in T
 | :--- | :--- |
 | **Helpdesk** | Students and staff open tickets from the tray ("Sorun bildir"); IT answers from the panel. |
 | **Notifications** | Failed updates, takeover attempts, policy alerts, a full disk or an expiring certificate reach **Bildirimler** in the panel, e-mail or a webhook. |
-| **Server self-update** | Update the backend from the panel to the latest release tag, with a health check and automatic rollback. |
+| **Server self-update** | Update the backend from the panel, with a health check and automatic rollback: to the latest release tag (stable channel), or to the latest `main` on a test server (preview channel). |
 | **Backups** | A nightly backup that is test-restored into a scratch database every time, with an optional off-site copy. |
-| **Observability** | JSON logs with request IDs, Prometheus `/metrics`, and a diagnostics page with load figures. |
-| **Retention** | Old event logs, finished tasks and read notifications are deleted on a schedule; the audit chain is kept. |
+| **Observability** | JSON logs with request IDs, Prometheus `/metrics`, a diagnostics page with load figures, and charts of the last 24 hours, 7 days or 30 days on **Sistem → Genel bakış** (agents, CPU and memory, API requests, tasks, events, database and disk). |
+| **Retention** | Old event logs, finished tasks and read notifications are deleted on a schedule; the audit chain is kept. Each agent keeps its own log folder to 30 days and 200 MB. |
+| **API for automation** | A versioned `/api/v1` with REST names, API tokens with the viewer or admin role (shown once, stored only as a hash), and the OpenAPI file in the repository ([`docs/api.md`](docs/api.md)). |
+| **Your organisation** | Your organisation's name and logo on the sign-in page (**Ayarlar → Genel → Kurum**). |
+| **Two languages** | Every panel page in Turkish and English, chosen per browser; the sign-in page follows the browser's language until you choose. |
 
 ---
 
@@ -210,8 +218,13 @@ POps is **transparent by design** ([decision D-17](docs/decisions.md)):
 
 An update counts as successful only when the new agent is actually working. If it is not, `POpsUpdater` puts the
 previous version back without anyone touching the PC, and the result reaches the panel and the Windows event log.
-The rollback path has been drilled on real machines. The server updates itself the same way: to the newest signed
-release tag, with a health check and automatic rollback ([`docs/self-update.md`](docs/self-update.md)).
+The rollback path has been drilled on real machines. While an update runs, **Sistem → Güncellemeler** shows the stage
+each PC reports (received, downloaded, verified, installing) or why it refused the update. The agent downloads the
+package with BITS, so a download that is cut off resumes.
+
+The server updates itself the same way, with a health check and automatic rollback. On the stable channel it moves
+to the newest release tag (releases come out weekly; tags are SSH-signed). A test server can follow `main` instead
+(the preview channel). See [`docs/self-update.md`](docs/self-update.md).
 
 ---
 
@@ -302,12 +315,14 @@ Freeze software (Deep Freeze, Shadow Defender) works when the agent is enrolled 
 
 ### Known limitations
 
-- **Screen view (Vision)** captures the primary monitor only, as JPEG frames. Remote Desktop and multi-user sessions,
-  the UAC prompt (secure desktop), the sign-in screen and display scaling other than 100 % are not supported or not
-  tested.
+- **Screen view (Vision)** in today's panel shows the primary monitor only, as full JPEG frames. The agent already
+  supports several screens, changed regions and the clipboard (Vision v2); the server and panel side is in progress.
+  Remote Desktop and multi-user sessions, the UAC prompt (secure desktop), the sign-in screen and display scaling
+  other than 100 % are not supported or not tested.
 - **Checked by hand, not in CI:** the real MSI update and rollback on Windows (run on real PCs for every agent
   release), the Vision tunnel and the quarantine lock screen. CI runs the agent's unit tests, the server's
-  integration tests and the deploy scripts against fakes ([`docs/testing.md`](docs/testing.md)).
+  integration tests, the deploy scripts against fakes and the panel in a real browser
+  ([`docs/testing.md`](docs/testing.md)).
 - **One backend process.** No high availability yet; 5,000 simulated agents were measured on one process
   ([capacity](docs/kapasite/README.md)). Several schools or a district on one server is not a tested setup.
 - **Unsigned Windows binaries.** Release manifests are ed25519-signed and checked by the server and the PC, but the
@@ -316,8 +331,9 @@ Freeze software (Deep Freeze, Shadow Defender) works when the agent is enrolled 
 - **Release tags are SSH-signed from 0.1.22-alpha on**; earlier tags are not. To make self-update accept only signed
   tags, install [`keys/allowed_signers`](keys/allowed_signers) as `/etc/pops/allowed_signers`
   ([`docs/self-update.md`](docs/self-update.md)).
-- **DNS** is detection and reporting only; blocking is planned. **API:** session-based only, no API tokens yet.
-- **Panel language:** Turkish; the English interface is in progress.
+- **DNS** is detection and reporting only; blocking is planned.
+- **Languages:** the panel is in Turkish and English, but server messages without an English entry and the
+  Windows agent's own texts (tray, consent dialogs, lock screen) are Turkish only.
 - **Linux agent (first version):** inventory and remote commands only; screen view, quarantine, the tray, user
   messages and DNS alerts are Windows-only for now. It has run in Debian 12 containers and on CI, not yet in a Pardus
   lab, and a dual-boot PC whose Windows side is enrolled is seen as the same hardware
@@ -354,17 +370,21 @@ Every release, with upgrade notes, is in [`CHANGELOG.md`](CHANGELOG.md). Package
 
 ## ✅ Quality and testing
 
-- **Backend:** twelve test suites, eleven of them against a real PostgreSQL and a running server: security invariants,
-  2FA, agent authorization, remote-control rules, per-device keys, hardening, 20 simultaneous enrollments, agents
-  from 0.1.11 to 0.1.14 against the current server, features, helpdesk and licences, operations. The agent protocol
-  is checked against JSON Schemas and shared test vectors ([`docs/protocol`](docs/protocol/README.md)). flake8 at zero.
+- **Backend:** eighteen test suites, sixteen of them against a real PostgreSQL and a running server: security
+  invariants, 2FA, agent authorization, remote-control rules, per-device keys, hardening, 20 simultaneous
+  enrollments, agents from 0.1.11 to 0.1.14 against the current server, features, helpdesk and licences, operations,
+  API tokens and the read-only demo account. The agent protocol is checked against JSON Schemas and shared test
+  vectors ([`docs/protocol`](docs/protocol/README.md)). flake8 at zero.
 - **Agent:** about 700 xUnit test runs on .NET 10 and on the .NET Framework 4.7.2 MSI custom actions, with a
-  coverage floor in CI.
+  coverage floor in CI. The agent builds with the recommended .NET analyzers and treats warnings as errors.
 - **Install and operations:** migrations from an empty database, backup with test-restore, the TLS tool, release
   signing, and the deploy and self-update scripts (rollback, signed tags, unsafe settings) are tested in CI.
-- **Panel:** PHP syntax and a check that refuses unescaped HTML output.
+- **Panel:** PHP syntax, a check that refuses unescaped HTML output, a translation check, and end-to-end tests in a
+  real browser (Playwright): every page at desktop and phone width and the main flows, with no console errors and
+  no requests to other hosts.
 - **Supply chain:** CodeQL on every change, Dependabot, hash-locked backend dependencies (`pip --require-hashes`),
-  GitHub Actions pinned to commit SHAs, ed25519-signed releases whose CI job waits for the full test suite.
+  GitHub Actions pinned to commit SHAs, ed25519-signed releases whose CI job waits for the full test suite, Docker
+  images with build provenance and an SBOM, and an OpenSSF Scorecard.
 - **In the field:** update and rollback drills and release field tests on real Windows PCs.
 
 How to run the suites locally: [`docs/testing.md`](docs/testing.md).
@@ -378,10 +398,12 @@ How to run the suites locally: [`docs/testing.md`](docs/testing.md).
 | [`Agent/`](Agent) | Windows agent (.NET 10): `POps.Agent` service, `POpsTray`, `POpsWatchdog`, `POpsUpdater`, shared library `POps.Shared`, tests `POps.Tests`. |
 | [`Agent-Linux/`](Agent-Linux) | Linux agent for Pardus/Debian (Python 3): `pops_agent/` package, `.deb` builder, systemd unit, tests. |
 | [`Backend/`](Backend) | FastAPI backend: `pops/` package, routers, migrations, tests. |
-| [`Dashboard/`](Dashboard) | PHP 8 panel (Turkish UI). |
+| [`Dashboard/`](Dashboard) | PHP 8 panel (Turkish and English UI). |
 | [`Installer/`](Installer) | WiX MSI for the agent; server installer, deploy, self-update, backup and TLS scripts. |
-| [`docs/`](docs) | Operator and developer documentation. |
-| [`tools/`](tools) | Release signing, agent simulator for load tests, the panel's HTML output check. |
+| [`docs/`](docs) | Operator and developer documentation, the agent protocol ([`docs/protocol`](docs/protocol/README.md)) and the OpenAPI file. |
+| [`tools/`](tools) | Release signing, the backend dependency lock, OpenAPI export, agent simulator for load tests, the demo fleet, the panel's HTML output and translation checks. |
+| [`tests/e2e/`](tests/e2e) | Panel end-to-end tests (Playwright). |
+| [`deploy/demo/`](deploy/demo/README.md) | The public read-only demo: Compose stack, seed data and nightly reset. |
 | [`docker/`](docker), [`docker-compose.yml`](docker-compose.yml) | Optional container setup. |
 | [`keys/`](keys) | Release public key and the key procedures. |
 
@@ -400,7 +422,9 @@ How to run the suites locally: [`docs/testing.md`](docs/testing.md).
 | | [Dashboard](docs/dashboard.md) | [REST and WebSocket API](docs/api.md) |
 | | [Vision](docs/vision.md) | [Testing](docs/testing.md) |
 | | [KVKK notice (TR)](docs/kvkk-aydinlatma.md) | [Positioning](docs/positioning.md) |
-| | | [Code signing policy](docs/code-signing.md) |
+| | [Public demo](deploy/demo/README.md) | [Code signing policy](docs/code-signing.md) |
+| | | [Agent protocol](docs/protocol/README.md) |
+| | | [Panel languages](docs/i18n.md) |
 | | | [GLPI export (design)](docs/integrations/glpi.md) |
 
 **Turkish guides for schools** (in Turkish): [Why POps?](docs/tr/neden-pops.md) ·
@@ -411,10 +435,11 @@ How to run the suites locally: [`docs/testing.md`](docs/testing.md).
 
 ## 🧭 Roadmap
 
-Next: the 0.1.14 reliability round (database time limits, batched heartbeats, retention, disk and certificate
-alerts, Turkish keyboard in remote control), then an architecture round: a full task state machine, signed commands,
-mTLS, an append-only audit role, lab-scoped permissions, high availability, RDP support, a new 5,000-agent run over
-HTTPS and end-to-end tests on a Windows test machine. The whole list, with design notes: [`ROADMAP.md`](ROADMAP.md).
+In progress: the server and panel side of Vision v2, and a Linux agent (Pardus first). Next: Authenticode code
+signing through the SignPath Foundation comes first, then an architecture round: a full task state machine, signed
+commands, mTLS, an append-only audit role, lab-scoped permissions, high availability, RDP support, a new 5,000-agent
+run over HTTPS and end-to-end tests on a Windows test machine. The whole list, with design notes:
+[`ROADMAP.md`](ROADMAP.md).
 
 ---
 
