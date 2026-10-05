@@ -96,25 +96,28 @@ async def own_setting(module_id: str, lab: Optional[str] = None) -> bool:
     return org.get(module_id, True)
 
 
-async def enabled(module_id: str, lab: Optional[str] = None, _seen=None) -> bool:
+def resolve(org: dict, labs: dict, module_id: str, lab: Optional[str] = None, _seen=frozenset()) -> bool:
+    """Verilen ayarlarla modül açık mı (bağımlılıklarla). Saf hesap: enabled() güncel ayarlarla, etki önizlemesi
+    (routers/modules.py) henüz yazılmamış ayarlarla çağırır."""
     mod = BY_ID.get(module_id)
     if mod is None:
         return True   # modül olmayan (çekirdek) özellik
-    seen = _seen or set()
-    if module_id in seen:
+    if module_id in _seen:
         return False
-    seen = seen | {module_id}
-    if not await own_setting(module_id, lab):
+    seen = _seen | {module_id}
+    own = labs[(module_id, lab)] if lab is not None and (module_id, lab) in labs else org.get(module_id, True)
+    if not own:
         return False
-    for dep in mod.depends:
-        if not await enabled(dep, lab, seen):
-            return False
+    if not all(resolve(org, labs, dep, lab, seen) for dep in mod.depends):
+        return False
     if mod.depends_any:
-        for dep in mod.depends_any:
-            if await enabled(dep, lab, seen):
-                return True
-        return False
+        return any(resolve(org, labs, dep, lab, seen) for dep in mod.depends_any)
     return True
+
+
+async def enabled(module_id: str, lab: Optional[str] = None) -> bool:
+    org, labs = await _settings()
+    return resolve(org, labs, module_id, lab)
 
 
 async def lab_of(pc_name: str) -> Optional[str]:

@@ -206,6 +206,15 @@ async def run(c, admin, superadmin):
     pend = await c.fetchval(
         "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at) VALUES "
         "('HW-MD2', 'MD-Lab2', 'echo md-bekleyen', 'Paused', to_char(now(), 'YYYY-MM-DD HH24:MI:SS')) RETURNING id")
+    s, b, _ = req("/api/modules/terminal/preview?enabled=false&lab=MD-Lab2", superadmin)
+    offs = {(ch["id"], ch["lab"]) for ch in b.get("changes", []) if ch.get("to") is False}
+    chk(s == 200 and b.get("tasks_denied") == 1 and b.get("vision_sessions_closed") == 0
+        and offs == {("terminal", "MD-Lab2"), ("deploy", "MD-Lab2"), ("schedules", "MD-Lab2")},
+        "önizleme: bağımlılarla kapanacaklar ve reddedilecek görev (%s)" % b)
+    chk(await c.fetchval("SELECT status FROM tasks WHERE id=$1", pend) == "Paused", "önizleme hiçbir şey yazmadı")
+    chk(req("/api/modules/terminal/preview?enabled=false", admin)[0] == 403, "önizleme yalnız superadmin")
+    chk(req("/api/modules/terminal/preview?enabled=false&lab=Yok-Lab", superadmin)[0] == 404,
+        "önizlemede bilinmeyen laboratuvar 404")
     s, b, _ = set_module(superadmin, "terminal", False, lab="MD-Lab2")
     chk(s == 200 and b.get("tasks_denied") == 1, "MD-Lab2'de kapatılınca bekleyen görev reddedildi (%s)" % b)
     chk(await c.fetchval("SELECT status FROM tasks WHERE id=$1", pend) == "Denied", "görev 'Denied'")
@@ -304,6 +313,8 @@ async def run(c, admin, superadmin):
     chk(s == 200 and any(ch["id"] == "vision" for ch in b.get("changes", [])) is False
         and b.get("lab_overrides", 0) >= 1, "önizleme: değişecekler ve istisna sayısı (%s)" % b)
     chk(req("/api/system/install-profile/org", admin)[0] == 403, "önizleme yalnız superadmin")
+    s, b, _ = req("/api/system/install-profile/org?reset_labs=true", superadmin)
+    chk(s == 200 and "tasks_denied" in b and "vision_sessions_closed" in b, "profil önizlemesinde etki sayıları")
     chk(req("/api/system/install-profile", superadmin, {"profile": "yok"})[0] == 400, "bilinmeyen profil 400")
     s, b, _ = req("/api/system/install-profile", superadmin, {"profile": "school", "reset_labs": True})
     chk(s == 200 and b.get("profile") == "school", "okul profili uygulandı")

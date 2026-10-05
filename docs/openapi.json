@@ -4618,6 +4618,84 @@
         ]
       }
     },
+    "/api/v1/modules/{module_id}/preview": {
+      "get": {
+        "description": "Ayar değişirse ne olur (hiçbir şey yazmaz): durumu değişecek modüller (bağımlılar dahil, kurum geneli ve\nlaboratuvar bazında) ve kapanacak Vision oturumu ile reddedilecek görev sayısı. enabled yoksa ayar kaldırılır.",
+        "operationId": "preview_module_api_modules__module_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "title": "Module Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lab",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lab"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Module",
+        "tags": [
+          "modules"
+        ]
+      }
+    },
     "/api/v1/move_pc": {
       "post": {
         "deprecated": true,
@@ -6809,7 +6887,7 @@
     },
     "/api/v1/system/install-profile/{name}": {
       "get": {
-        "description": "Profil uygulanırsa kurum genelinde değişecek modüller (laboratuvar istisnaları ayrıca sayılır).",
+        "description": "Profil uygulanırsa kurum genelinde değişecek modüller (laboratuvar istisnaları ayrıca sayılır) ve kapanacak\nVision oturumu ile reddedilecek görev sayısı (reset_labs: istisnalar da silinirse).",
         "operationId": "preview_profile_api_system_install_profile__name__get",
         "parameters": [
           {
@@ -6819,6 +6897,16 @@
             "schema": {
               "title": "Name",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reset_labs",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Reset Labs",
+              "type": "boolean"
             }
           }
         ],

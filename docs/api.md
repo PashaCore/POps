@@ -380,8 +380,9 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/modules` | require_auth | Every module with `setting` (organisation, `null` = none), `enabled` (organisation, with dependencies), `lab_overrides`, `lab_enabled`, dependencies and profile defaults, plus `profile`, `labs`. |
+| GET | `/api/modules/{module_id}/preview` | require_superadmin | Query `enabled` (`true` \| `false`; omitted = remove the setting) and `lab`: what the change would do, without writing anything. `changes` lists every module and lab (`null` = organisation) whose state would change, dependants included (`id`, `name`, `lab`, `from`, `to`); `vision_sessions_closed` and `tasks_denied` count the open Vision sessions that would close and the pending or paused tasks that would be denied. The panel shows it before asking to confirm. |
 | POST | `/api/modules/{module_id}` | require_superadmin | `{enabled: true \| false \| null, lab?}`: sets (or with `null` removes) the organisation or lab setting. Turning `vision` off closes open Vision sessions; turning `terminal` off denies pending and paused tasks there. Returns `vision_sessions_closed`, `tasks_denied`. Audited (`module_setting`); an organisation change sets the profile to `custom`. |
-| GET | `/api/system/install-profile/{name}` | require_superadmin | Preview of `school` or `org`: the organisation settings that would change and the number of lab overrides. |
+| GET | `/api/system/install-profile/{name}` | require_superadmin | Preview of `school` or `org`: the organisation settings that would change, the number of lab overrides, and `vision_sessions_closed` and `tasks_denied` as for a module preview. With `?reset_labs=true` the counts assume the lab overrides are deleted too. |
 | POST | `/api/system/install-profile` | require_superadmin | `{profile: "school" \| "org", reset_labs}`: applies the profile's defaults organisation-wide (and with `reset_labs` deletes lab overrides). Audited (`module_profile`). |
 
 ### Signed releases and agent updates

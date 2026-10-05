@@ -133,7 +133,7 @@ machine and a regression would not be caught by CI.
 | Scheduled tasks, software inventory, patch status, reports and CSV formula escaping | Tested | `test_features.py` |
 | Clone of an enrolled image refused (4409), keyless requests for a keyed device refused, a bad agent message does not drop the connection, scheduled-task expiry / misfire / no duplicates, encrypted bypass keys | Tested | `test_review4.py` |
 | Licences and help desk (panel + agent, throttling) | Tested | `test_helpdesk_licenses.py` |
-| Modules: organisation and lab settings, dependencies, `409` on every module, queue/scheduler/policy enforcement, install profiles | Tested | `test_modules.py`, `test_units.py` |
+| Modules: organisation and lab settings, dependencies, `409` on every module, queue/scheduler/policy enforcement, change and profile previews, install profiles | Tested | `test_modules.py`, `test_units.py` |
 | Request ID, `/metrics` access control, diagnostics, overview history | Tested | `test_ops.py`, `test_units.py` |
 | API tokens (superadmin-only management, hash-only storage, viewer GET-only, admin limits, expiry and revocation, `last_used_at` throttle, `token:<name>` in tasks and audit), `/api/v1` and REST names equal to the old paths, `task_sequence`/`taskSequence`, CSRF for cookie sessions, shared rate limit and metric labels | Tested | `test_api_tokens.py`, `test_units.py` |
 | `docs/openapi.json` matches the code | Tested | CI `backend` job (`tools/export_openapi.py --check`) |

@@ -131,6 +131,14 @@
     .ov-d { font-size: var(--text-xs); color: var(--text-muted); margin-top: auto; }
     .file-list li { display: flex; gap: 8px; padding: 3px 0; overflow-wrap: anywhere; }
     .file-list li span { color: var(--text-muted); white-space: nowrap; }
+
+    /* Modüller */
+    .md-row .switch { margin-left: auto; }
+    .srow .d.md-why { color: var(--warning-text); }
+    .md-foot { margin: 10px 4px 0; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
+    .md-labs .srow .segmented { margin-left: auto; }
+    .md-labs .srow .t { overflow-wrap: anywhere; }
+    .md-find { width: 100%; }
 </style>
 
 <div class="page-header">
@@ -151,6 +159,7 @@
     <button type="button" class="tab" data-tab="security"><?php _e('Güvenlik'); ?></button>
     <button type="button" class="tab" data-tab="health"><?php _e('Sağlık ve yedek'); ?></button>
     <button type="button" class="tab" data-tab="notify"><?php _e('Bildirimler ve saklama'); ?></button>
+    <button type="button" class="tab" data-tab="modules"><?php _e('Modüller'); ?></button>
 </div>
 <?php endif; ?>
 
@@ -292,6 +301,21 @@
                         <button type="button" class="btn secondary" id="rtSave" disabled><?php _e('Kaydet'); ?></button>
                     </div>
                 </div>
+            </section>
+        </div>
+    </div>
+    <div class="sys-pane sys-grid" data-pane="modules">
+        <div class="sys-col">
+<section class="sec" id="secModules" aria-labelledby="hModules">
+                <div class="sec-h"><h2 id="hModules"><?php _e('Modüller'); ?></h2><span class="st" id="mdState"></span></div>
+                <div class="set" id="mdSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+                <p class="md-foot"><?php _e('Kapalı modülün sayfaları ve uçları kullanılamaz; ajanlar değişikliği en geç bir dakikada alır. Cihazlar, sınıflar, kayıt, ajan güncellemesi, denetim kaydı, kullanıcılar, bildirimler ve sunucu sağlığı her zaman açıktır.'); ?></p>
+            </section>
+        </div>
+        <div class="sys-col">
+<section class="sec" id="secProfile" aria-labelledby="hProfile">
+                <div class="sec-h"><h2 id="hProfile"><?php _e('Kurulum profili'); ?></h2><span class="st" id="pfState"></span></div>
+                <div class="set" id="pfSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
             </section>
         </div>
     </div>
@@ -1492,6 +1516,264 @@
     }
 
     // =================================================================
+    // MODÜLLER: kurum geneli ve sınıf bazında açma/kapama, bağımlılıklar, kurulum profilleri (GET /api/modules)
+    // =================================================================
+    // Kapalı modülün çalışan işlere etkisi (docs/api.md "Modules and install profiles", docs/agent.md "Modules")
+    const MOD_OFF = {
+        vision: 'Açık uzak ekran oturumları hemen kapanır; canlı ekran, önizleme ve uzaktan kontrol açılamaz.',
+        terminal: 'Bekleyen ve duraklatılmış komut görevleri reddedilir; kuyruk bu bilgisayarlara komut göndermez, ajan gelen komutu çalıştırmaz.',
+        deploy: 'Paket kitaplığı, dosya yükleme ve dağıtım kullanılamaz.',
+        schedules: 'Zamanlanmış görevler bu bilgisayarlarda çalıştırılmaz.',
+        patches: 'Günlük Windows Update taraması ve sonucu alınmaz; tarama ve kurma istenemez.',
+        software: 'Yazılım listeleri toplanmaz ve saklanmaz.',
+        licenses: 'Lisans sayfası kapanır; aşım ve süre bildirimleri durur.',
+        helpdesk: 'Tepsideki "Sorun bildir" gizlenir; yeni talep açılamaz ve talepler panelde görünmez.',
+        dns_policy: 'Ajana alan adı listesi gönderilmez; DNS uyarıları saklanmaz ve eşikte karantina olmaz.',
+        quarantine: 'Yeni karantina uygulanamaz; kaldırma ve çevrimdışı açma kodu çalışmaya devam eder.',
+        wol: 'Kapalı bilgisayarlar ağdan uyandırılamaz.',
+        reports: 'Raporlar sayfası ve CSV dışa aktarma kapanır.'
+    };
+    const MD = { data: null, err: null, open: null };
+    const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k);
+    const modById = (id) => ((MD.data && MD.data.modules) || []).find(m => m.id === id) || null;
+    const modName = (id) => { const m = modById(id); return POps.t(m ? m.name : id); };
+    const labLabel = (l) => (l === dev.UNASSIGNED ? POps.t('Atanmamış') : l);
+    // Modülün kendi ayarı (bağımlılığa bakmadan): sınıf istisnası > kurum ayarı > açık; etkin durum sunucudan
+    const ownOn = (m, lab) => (lab != null && hasOwn(m.lab_overrides, lab) ? !!m.lab_overrides[lab] : m.setting !== false);
+    const effOn = (m, lab) => (lab == null ? !!m.enabled : !!(m.lab_enabled || {})[lab]);
+    function blockedBy(m, lab) {
+        const off = (ids) => ids.filter(id => { const d = modById(id); return d && !effOn(d, lab); });
+        const all = off(m.depends || []);
+        if (all.length) return all;
+        const any = m.depends_any || [];
+        return any.length && off(any).length === any.length ? any.slice() : [];
+    }
+    function modWord(m, lab) {
+        if (effOn(m, lab)) return { k: 'ok', w: POps.t('Açık'), why: '' };
+        if (!ownOn(m, lab)) return { k: 'bad', w: POps.tx('Kapalı', 'switch'), why: '' };
+        return { k: 'warn', w: POps.tx('Kapalı', 'switch'), why: POps.t('{modules} kapalı olduğu için çalışmaz.', { modules: blockedBy(m, lab).map(modName).join(', ') }) };
+    }
+    function depText(m) {
+        if ((m.depends || []).length) return POps.t('Gerekir: {modules}', { modules: m.depends.map(modName).join(', ') });
+        if ((m.depends_any || []).length > 1) return POps.t('Şunlardan biri gerekir: {modules}', { modules: m.depends_any.map(modName).join(', ') });
+        if ((m.depends_any || []).length) return POps.t('Gerekir: {modules}', { modules: m.depends_any.map(modName).join(', ') });
+        return '';
+    }
+    const dependents = (id) => ((MD.data && MD.data.modules) || []).filter(m => (m.depends || []).includes(id) || (m.depends_any || []).includes(id));
+
+    function renderModules() {
+        const box = $('mdSet');
+        if (!box) return;
+        const d = MD.data;
+        if (!d) { if (MD.err) { sectionError(box, MD.err); sectionError($('pfSet'), MD.err); } return; }
+        const mods = d.modules || [];
+        const offN = mods.filter(m => !m.enabled).length;
+        setState('mdState', offN ? 'off' : 'ok', offN ? POps.t('{on} açık, {off} kapalı', { on: mods.length - offN, off: offN }) : POps.t('Hepsi açık'));
+        box.innerHTML = mods.map(m => {
+            const w = modWord(m, null);
+            const diff = (d.labs || []).filter(l => effOn(m, l) !== !!m.enabled).length;
+            const meta = [depText(m), diff ? (m.enabled ? POps.tn('{n} sınıfta kapalı', diff) : POps.tn('{n} sınıfta açık', diff)) : ''].filter(Boolean).join(' · ');
+            const label = POps.t('{module}, kurum geneli', { module: POps.t(m.name) });
+            return `<div class="srow click md-row" data-mod="${escapeHtml(m.id)}" role="button" tabindex="0">
+                <div class="grow"><div class="t">${escapeHtml(POps.t(m.name))}${wordHtml(w.k, w.w)}</div><div class="d">${escapeHtml(POps.t(m.description))}</div>
+                ${w.why ? `<div class="d md-why">${escapeHtml(w.why)}</div>` : ''}${meta ? `<div class="d">${escapeHtml(meta)}</div>` : ''}</div>
+                <label class="switch"><input type="checkbox" data-sw="${escapeHtml(m.id)}" ${m.setting !== false ? 'checked' : ''} aria-label="${escapeHtml(label)}"><span></span></label></div>`;
+        }).join('');
+        renderProfiles();
+        if (MD.open && POps.drawer.isOpen('sysmod:' + MD.open)) renderModDrawer(MD.open);
+    }
+
+    function renderProfiles() {
+        const box = $('pfSet'), d = MD.data;
+        if (!box || !d) return;
+        const names = d.profile_names || {};
+        const cur = d.profile;
+        let k, desc;
+        if (!cur) { k = 'warn'; desc = POps.t('Yeni kurulum: kurumunuza uyan profili seçin. Seçilene kadar bütün modüller açık.'); }
+        else if (cur === 'custom') { k = 'off'; desc = POps.t('Modüller elle değiştirildi ya da kurulum profilden önce vardı.'); }
+        else { k = 'ok'; desc = POps.t('Profilin modül ayarları uygulandı.'); }
+        const curName = cur ? POps.t(names[cur] || cur) : POps.t('Seçilmedi');
+        setState('pfState', k, curName);
+        const INTRO = { school: POps.t('Sınıfta ders ve sınav: uzak ekran, uzak komut, dağıtım ve DNS politikası.'),
+            org: POps.t('Ofis ve idari bilgisayarlar: envanter, lisanslar, yardım masası ve raporlar.') };
+        const rowsHtml = ['school', 'org'].map(p => {
+            const off = (d.modules || []).filter(m => m.profiles && m.profiles[p] === false).map(m => POps.t(m.name));
+            const text = INTRO[p] + ' ' + (off.length ? POps.t('Kapalı kalanlar: {modules}.', { modules: off.join(', ') }) : POps.t('Bütün modüller açık.'));
+            return `<div class="srow click" data-prof="${escapeHtml(p)}" role="button" tabindex="0"><div class="grow"><div class="t">${escapeHtml(POps.t(names[p] || p))}${cur === p ? wordHtml('ok', POps.t('Uygulandı')) : ''}</div>
+                <div class="d">${escapeHtml(text)}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>`;
+        }).join('');
+        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">${escapeHtml(POps.t('Şu anki profil'))}</div><div class="d">${escapeHtml(desc)}</div></div><div class="v">${escapeHtml(curName)}</div></div>${rowsHtml}`;
+    }
+
+    async function loadModules() {
+        if (!IS_SUPER || !$('mdSet')) return;
+        try { MD.data = await POps.get('/api/modules'); MD.err = null; }
+        catch (e) { MD.err = e; if (MD.data) { POps.toast('error', POps.errorMessage(e)); return; } }
+        renderModules();
+    }
+
+    // Değişikliğin etkisi önce sunucuya sorulur (hiçbir şey yazmaz); bir şey kapanacaksa onay istenir
+    const previewPath = (id, value, lab) => '/api/modules/' + encodeURIComponent(id) + '/preview?'
+        + new URLSearchParams(Object.assign(value === null ? {} : { enabled: String(value) }, lab ? { lab } : {})).toString();
+    function effectNotes(r) {
+        const out = [];
+        if (r.vision_sessions_closed) out.push(POps.tn('Açık {n} uzak ekran oturumu kapanır.', r.vision_sessions_closed));
+        if (r.tasks_denied) out.push(POps.tn('Bekleyen ya da duraklatılmış {n} görev reddedilir.', r.tasks_denied));
+        return out;
+    }
+    function effectDone(r) {
+        const out = [];
+        if (r.vision_sessions_closed) out.push(POps.tn('{n} uzak ekran oturumu kapatıldı.', r.vision_sessions_closed));
+        if (r.tasks_denied) out.push(POps.tn('{n} görev reddedildi.', r.tasks_denied));
+        return out.join(' ');
+    }
+    async function setModule(id, lab, value, ctl) {
+        const name = modName(id);
+        let pv;
+        try { pv = await POps.busy(ctl, () => POps.get(previewPath(id, value, lab))); }
+        catch (e) { POps.toast('error', POps.errorMessage(e)); renderModules(); return false; }
+        const offs = (pv.changes || []).filter(c => !c.to);
+        if (offs.length || pv.vision_sessions_closed || pv.tasks_denied) {
+            const others = [...new Set(offs.map(c => c.id).filter(x => x !== id))];
+            const notes = (others.length ? [POps.t('Bağımlı oldukları için bunlar da kapanır: {modules}.', { modules: others.map(modName).join(', ') })] : []).concat(effectNotes(pv));
+            const ids = [...new Set(offs.map(c => c.id))];
+            const title = value === null
+                ? POps.t('{lab} sınıfı {module} için kurum ayarına dönsün mü?', { lab: labLabel(lab), module: name })
+                : (lab ? POps.t('{module} {lab} sınıfında kapatılsın mı?', { module: name, lab: labLabel(lab) }) : POps.t('{module} kurum genelinde kapatılsın mı?', { module: name }));
+            if (!await POps.confirm({
+                title, icon: 'lock', danger: true,
+                message: ids.map(x => (MOD_OFF[x] ? modName(x) + ': ' + POps.t(MOD_OFF[x]) : '')).filter(Boolean).join(' '),
+                note: notes.concat([POps.t('Ajanlar değişikliği en geç bir dakikada alır.')]).join(' '),
+                confirmText: value === null ? POps.t('Kurum ayarına dön') : POps.t('Modülü kapat')
+            })) { renderModules(); return false; }
+        }
+        try {
+            const r = await POps.busy(ctl, () => POps.post('/api/modules/' + encodeURIComponent(id), { enabled: value, lab: lab || null }));
+            const what = value === null ? POps.t('{module}: {lab} sınıfı kurum ayarına döndü.', { module: name, lab: labLabel(lab) })
+                : value ? (lab ? POps.t('{module} {lab} sınıfında açıldı.', { module: name, lab: labLabel(lab) }) : POps.t('{module} açıldı.', { module: name }))
+                    : (lab ? POps.t('{module} {lab} sınıfında kapatıldı.', { module: name, lab: labLabel(lab) }) : POps.t('{module} kapatıldı.', { module: name }));
+            POps.toast('success', [what, effectDone(r)].filter(Boolean).join(' '));
+        } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        await loadModules();
+        return true;
+    }
+
+    // ---- Modülün ayrıntısı: kurum ayarı, bağımlılıklar, kapalıyken ne olur, sınıf istisnaları
+    function segHtml(group, cur, choices, act, lab) {
+        return `<div class="segmented" role="group" aria-label="${escapeHtml(group)}">` + choices.map(([v, t]) =>
+            `<button type="button" data-act="${escapeHtml(act)}" data-lab="${escapeHtml(lab || '')}" data-val="${escapeHtml(v)}" aria-pressed="${cur === v ? 'true' : 'false'}">${escapeHtml(t)}</button>`).join('') + '</div>';
+    }
+    function renderModDrawer(id) {
+        const m = modById(id), d = MD.data;
+        const body = POps.drawer.body();
+        if (!m || !body) return;
+        const w = modWord(m, null);
+        const find = body.querySelector('.md-find');
+        const q = find ? find.value : '', refocus = !!find && document.activeElement === find;
+        const orgHtml = `<div class="srow"><div class="grow"><div class="t">${escapeHtml(POps.t('Kurum geneli'))}${wordHtml(w.k, w.w)}</div>`
+            + `<div class="d">${escapeHtml(w.why || POps.t('İstisnası olmayan sınıflar bu ayarı izler.'))}</div></div>`
+            + segHtml(POps.t('Kurum geneli'), m.setting === false ? 'off' : 'on', [['on', POps.t('Açık')], ['off', POps.tx('Kapalı', 'switch')]], 'org', '') + '</div>';
+        const deps = depText(m), deb = dependents(id).map(x => POps.t(x.name));
+        const depHtml = deps || deb.length ? `<div><h3>${escapeHtml(POps.t('Bağımlılıklar'))}</h3><div class="glist">`
+            + (deps ? `<div class="grow"><span>${escapeHtml(POps.t('Bu modül'))}</span><span>${escapeHtml(deps)}</span></div>` : '')
+            + (deb.length ? `<div class="grow"><span>${escapeHtml(POps.t('Buna bağlı'))}</span><span>${escapeHtml(deb.join(', '))}</span></div>` : '') + '</div></div>' : '';
+        const labs = d.labs || [];
+        const labRowsHtml = labs.map(l => {
+            const lw = modWord(m, l);
+            const own = hasOwn(m.lab_overrides, l) ? (m.lab_overrides[l] ? 'on' : 'off') : 'inherit';
+            const how = own === 'inherit' ? POps.t('Kurum ayarını izliyor.') : POps.t('Bu sınıfa özel ayar.');
+            const hide = q && !labLabel(l).toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr'));
+            return `<div class="srow" data-labrow="${escapeHtml(l)}"${hide ? ' hidden' : ''}><div class="grow"><div class="t">${escapeHtml(labLabel(l))}${wordHtml(lw.k, lw.w)}</div><div class="d">${escapeHtml(lw.why ? how + ' ' + lw.why : how)}</div></div>`
+                + segHtml(labLabel(l), own, [['inherit', POps.t('Kurum ayarı')], ['on', POps.t('Açık')], ['off', POps.tx('Kapalı', 'switch')]], 'lab', l) + '</div>';
+        }).join('');
+        const labsHtml = `<div class="md-labs"><h3>${escapeHtml(POps.t('Sınıflar'))}</h3>`
+            + (labs.length > 8 ? `<input type="search" class="md-find" placeholder="${escapeHtml(POps.t('Sınıf ara…'))}" aria-label="${escapeHtml(POps.t('Sınıf ara'))}" value="${escapeHtml(q)}" style="margin:6px 0 8px">` : '')
+            + (labs.length ? `<div class="set">${labRowsHtml}</div>` : `<div class="dr-note">${escapeHtml(POps.t('Henüz sınıf yok.'))}</div>`) + '</div>';
+        const subHtml = `<span class="dot ${escapeHtml(w.k === 'ok' ? 'ok' : 'off')}"></span>${escapeHtml(POps.t(m.description))}`;
+        body.innerHTML = drawerHeadHtml(POps.t(m.name), subHtml, 'sliders', w.k === 'ok' ? 'on' : '')
+            + `<div class="set">${orgHtml}</div>`
+            + (MOD_OFF[id] ? `<div><h3>${escapeHtml(POps.t('Kapalıyken'))}</h3><p class="dr-sum">${escapeHtml(POps.t(MOD_OFF[id]))}</p></div>` : '')
+            + depHtml + labsHtml;
+        const f = body.querySelector('.md-find');
+        if (f) {
+            f.addEventListener('input', () => body.querySelectorAll('[data-labrow]').forEach(r => { r.hidden = !!f.value && !labLabel(r.dataset.labrow).toLocaleLowerCase('tr').includes(f.value.toLocaleLowerCase('tr')); }));
+            if (refocus) f.focus();
+        }
+    }
+    function openModule(id) {
+        // Önceki panelin onClose'u açılışta çalışır: MD.open yeni panel açıldıktan sonra yazılır
+        openDrawer('sysmod:' + id, (b) => {
+            if (b.getAttribute('aria-pressed') === 'true') return;
+            const v = b.dataset.val;
+            if (b.dataset.act === 'org') setModule(id, null, v === 'on', b);
+            else if (b.dataset.act === 'lab') setModule(id, b.dataset.lab, v === 'inherit' ? null : v === 'on', b);
+        }, () => { if (MD.open === id) MD.open = null; });
+        MD.open = id;
+        renderModDrawer(id);
+    }
+    if ($('mdSet')) {
+        $('mdSet').addEventListener('change', (e) => {
+            const sw = e.target.closest('[data-sw]');
+            if (sw) setModule(sw.dataset.sw, null, sw.checked, sw);
+        });
+        $('mdSet').addEventListener('click', (e) => {
+            if (e.target.closest('.switch')) return;
+            const r = e.target.closest('[data-mod]');
+            if (r) openModule(r.dataset.mod);
+        });
+        $('mdSet').addEventListener('keydown', (e) => {
+            const r = e.target.closest('[data-mod]');
+            if (r && e.target === r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openModule(r.dataset.mod); }
+        });
+    }
+
+    // ---- Kurulum profili: önizleme (değişecek kurum ayarları, kapanacak oturum ve reddedilecek görevler), sonra uygula
+    async function renderProfDrawer(name, reset) {
+        const d = MD.data, names = (d && d.profile_names) || {};
+        const title = POps.t(names[name] || name);
+        const headHtml = drawerHeadHtml(title, escapeHtml(POps.t('Kurulum profili')), 'sliders', '');
+        const body = POps.drawer.body();
+        let pv;
+        try { pv = await POps.get('/api/system/install-profile/' + encodeURIComponent(name) + (reset ? '?reset_labs=true' : '')); }
+        catch (e) { if (POps.drawer.isOpen('sysprof:' + name)) { body.innerHTML = headHtml + '<div></div>'; POps.setError(body.lastElementChild, e, { compact: true }); } return; }
+        if (!POps.drawer.isOpen('sysprof:' + name)) return;
+        const chHtml = (pv.changes || []).map(c => `<div class="srow"><div class="grow"><div class="t">${escapeHtml(POps.t(c.name))}</div></div>`
+            + `${wordHtml(c.from ? 'ok' : 'bad', c.from ? POps.t('Açık') : POps.tx('Kapalı', 'switch'))}${POps.iconHtml('right', 'sm ico-lead')}${wordHtml(c.to ? 'ok' : 'bad', c.to ? POps.t('Açık') : POps.tx('Kapalı', 'switch'))}</div>`).join('');
+        const notes = effectNotes(pv);
+        const resetHtml = pv.lab_overrides ? `<label class="check"><input type="checkbox" data-act="reset" ${reset ? 'checked' : ''}> ${escapeHtml(POps.tn('{n} sınıf istisnasını da sil', pv.lab_overrides))}</label>`
+            + `<div class="dr-note">${escapeHtml(reset ? POps.t('Bütün sınıflar kurum ayarını izler.') : POps.t('Sınıflara özel ayarlar korunur ve profilden üstün gelir.'))}</div>` : '';
+        body.innerHTML = headHtml
+            + `<p class="dr-sum">${escapeHtml(POps.t('Profilin modül ayarları kurum geneline yazılır; sonra her modül tek tek değiştirilebilir.'))}</p>`
+            + `<div><h3>${escapeHtml(POps.t('Kurum genelinde değişecekler'))}</h3>` + (chHtml ? `<div class="set">${chHtml}</div>` : `<div class="dr-note">${escapeHtml(POps.t('Kurum ayarlarında değişiklik yok.'))}</div>`) + '</div>'
+            + (resetHtml ? `<div>${resetHtml}</div>` : '')
+            + (notes.length ? notes.map(t => `<div class="issue upd">${POps.iconHtml('alert', 'sm')}${escapeHtml(t)}</div>`).join('') : '')
+            + `<div class="dr-actions"><button type="button" class="btn" data-act="apply">${escapeHtml(POps.t('Profili uygula'))}</button><button type="button" class="btn secondary" data-act="close">${escapeHtml(POps.t('Vazgeç'))}</button></div>`;
+    }
+    function openProfile(name) {
+        openDrawer('sysprof:' + name, async (b) => {
+            if (b.dataset.act === 'reset') renderProfDrawer(name, b.checked);
+            else if (b.dataset.act === 'apply') {
+                // Ekranda görünen seçim uygulanır (önizleme yenilenirken tıklansa da)
+                const box = POps.drawer.body().querySelector('[data-act="reset"]');
+                const reset = !!(box && box.checked);
+                try {
+                    const r = await POps.busy(b, () => POps.post('/api/system/install-profile', { profile: name, reset_labs: reset }));
+                    const names = (MD.data && MD.data.profile_names) || {};
+                    POps.toast('success', [POps.t('{profile} profili uygulandı.', { profile: POps.t(names[name] || name) }), effectDone(r)].filter(Boolean).join(' '));
+                    POps.drawer.close();
+                } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+                await loadModules();
+            }
+        });
+        POps.drawer.body().innerHTML = drawerHeadHtml(POps.t('Kurulum profili'), '', 'sliders', '') + '<div class="loading-state" role="status"><span class="spinner"></span>' + POps.tHtml('Yükleniyor…') + '</div>';
+        renderProfDrawer(name, false);
+    }
+    if ($('pfSet')) {
+        $('pfSet').addEventListener('click', (e) => { const r = e.target.closest('[data-prof]'); if (r) openProfile(r.dataset.prof); });
+        $('pfSet').addEventListener('keydown', (e) => { const r = e.target.closest('[data-prof]'); if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openProfile(r.dataset.prof); } });
+    }
+
+    // =================================================================
     // ÖZET + YÜKLEME
     // =================================================================
     function renderSummary() {
@@ -1554,6 +1836,7 @@
     loadTokens();
     loadNotify();
     loadRetention();
+    loadModules();
     renderAudit();
     if (rollout) pollRollout();
     if (state.devicesLoaded) { renderCaps(true); }
