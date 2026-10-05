@@ -3,6 +3,8 @@
 //   POps.api / get / post / del  : tek istek sarmalayıcı (JSON, 401 -> giriş, FastAPI 'detail' hatası)
 //   POps.toast(tür, metin)       : sağ alttaki bildirim (success | error | warning | info)
 //   POps.confirm / prompt / alert: tarayıcı penceresi yerine sayfa içi pencere (Promise döner)
+//   POps.form                    : alanları çağıranın kurduğu pencere (gönderim sürerken açık kalır)
+//   POps.upload                  : FormData yükleme, ilerleme bildirimiyle (XMLHttpRequest)
 //   POps.busy / act              : düğmeyi istek sürerken kilitler; hata/başarı bildirimini gösterir
 //   openModal / closeModal       : sayfadaki .modal-overlay pencereleri (odak tuzağı, Esc)
 //   POps.watchDevices            : cihaz listesini (state.devices) yalnızca isteyen sayfada yoklar
@@ -264,6 +266,35 @@ POps.api = async function (path, opts) {
 POps.get = (path, opts) => POps.api(path, Object.assign({}, opts, { method: 'GET' }));
 POps.post = (path, body, opts) => POps.api(path, Object.assign({}, opts, { method: 'POST', body: body === undefined ? {} : body }));
 POps.del = (path, opts) => POps.api(path, Object.assign({}, opts, { method: 'DELETE' }));
+// FormData yükleme; fetch yükleme ilerlemesini vermediği için XMLHttpRequest. Hata metni ve 401 POps.api ile aynı.
+// POps.upload('/api/…', formData, { onProgress: (oran 0..1) => …, signal })
+POps.upload = function (path, form, opts) {
+    const o = opts || {};
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const abort = () => xhr.abort();
+        xhr.open('POST', /^https?:\/\//.test(path) ? path : API_HTTP + path);
+        xhr.withCredentials = true;
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        if (o.onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable && e.total) o.onProgress(e.loaded / e.total); };
+        const done = () => { if (o.signal) o.signal.removeEventListener('abort', abort); };
+        xhr.onload = () => {
+            done();
+            if (xhr.status === 401) { window.location.href = '/logout'; return; }
+            let data = null;
+            try { data = JSON.parse(xhr.responseText); } catch (e) { data = xhr.responseText || null; }
+            if (xhr.status >= 200 && xhr.status < 300 && !(data && typeof data === 'object' && data.status === 'error')) resolve(data);
+            else reject(new ApiError(apiErrorText(data, xhr.status), xhr.status, data));
+        };
+        xhr.onerror = () => { done(); reject(new ApiError(POps.t('Sunucuya ulaşılamadı. Bağlantınızı kontrol edin.'), 0, null)); };
+        xhr.onabort = () => { done(); const e = new Error('abort'); e.name = 'AbortError'; reject(e); };
+        if (o.signal) {
+            if (o.signal.aborted) { xhr.abort(); return; }
+            o.signal.addEventListener('abort', abort);
+        }
+        xhr.send(form);
+    });
+};
 
 // Eski çağrılar için (endpoint, {method, body: JSON metni})
 async function apiRequest(endpoint, options) {
@@ -458,7 +489,7 @@ function openDialog(kind, opts) {
         overlay.className = 'pops-dialog-overlay';
         const box = document.createElement('div');
         box.className = 'pops-dialog' + (o.danger ? ' danger' : (o.tone ? ' ' + o.tone : ''));
-        box.setAttribute('role', kind === 'prompt' ? 'dialog' : 'alertdialog');
+        box.setAttribute('role', kind === 'prompt' || kind === 'form' ? 'dialog' : 'alertdialog');
         box.setAttribute('aria-modal', 'true');
         box.tabIndex = -1;
         const titleId = 'popsDialogTitle' + n, msgId = 'popsDialogMsg' + n;
@@ -468,7 +499,7 @@ function openDialog(kind, opts) {
         body.className = 'pops-dialog-body';
         const ic = document.createElement('div');
         ic.className = 'pops-dialog-icon';
-        ic.appendChild(POps.iconEl(o.icon || (o.danger ? 'alert' : kind === 'prompt' ? 'edit' : kind === 'alert' ? 'info' : 'help')));
+        ic.appendChild(POps.iconEl(o.icon || (o.danger ? 'alert' : kind === 'prompt' || kind === 'form' ? 'edit' : kind === 'alert' ? 'info' : 'help')));
         const content = document.createElement('div');
         content.className = 'pops-dialog-content';
         const title = document.createElement('h2');
@@ -501,8 +532,9 @@ function openDialog(kind, opts) {
             row.append(c, copy);
             content.appendChild(row);
         });
+        let note = null;
         if (o.note) {
-            const note = document.createElement('p');
+            note = document.createElement('p');
             note.className = 'pops-dialog-note';
             note.textContent = String(o.note);
             content.appendChild(note);
@@ -544,6 +576,17 @@ function openDialog(kind, opts) {
             }
             content.appendChild(field);
         }
+        // form: alanlar çağıranın kurduğu öğe; gönderim hatası en altta
+        let formErr = null;
+        if (kind === 'form') {
+            if (o.content) content.appendChild(o.content);
+            if (note) content.appendChild(note);   // formda not alanların altında, düğmelerin üstünde
+            formErr = document.createElement('div');
+            formErr.className = 'pops-dialog-error';
+            formErr.setAttribute('role', 'alert');
+            formErr.hidden = true;
+            content.appendChild(formErr);
+        }
         body.append(ic, content);
 
         const footer = document.createElement('div');
@@ -559,12 +602,12 @@ function openDialog(kind, opts) {
         const okBtn = document.createElement('button');
         okBtn.type = 'button';
         okBtn.className = 'btn' + (o.danger ? ' danger' : '');
-        okBtn.textContent = o.confirmText || POps.t(kind === 'alert' ? 'Tamam' : kind === 'prompt' ? 'Kaydet' : 'Onayla');
+        okBtn.textContent = o.confirmText || POps.t(kind === 'alert' ? 'Tamam' : kind === 'prompt' || kind === 'form' ? 'Kaydet' : 'Onayla');
         footer.appendChild(okBtn);
         box.append(body, footer);
         overlay.appendChild(box);
 
-        let done = false;
+        let done = false, sending = null;
         function finish(result) {
             if (done) return;
             done = true;
@@ -573,7 +616,33 @@ function openDialog(kind, opts) {
             restoreFocus(prevFocus);
             resolve(result);
         }
-        function cancel() { finish(kind === 'prompt' ? null : false); }
+        function cancel() {
+            if (sending) sending.abort();   // süren gönderim (ör. dosya yüklemesi) durur
+            finish(kind === 'prompt' || kind === 'form' ? null : false);
+        }
+        function showFormError(text) {
+            formErr.textContent = text || '';
+            formErr.hidden = !text;
+        }
+        async function submitForm() {
+            if (sending) return;
+            sending = new AbortController();
+            showFormError('');
+            okBtn.disabled = true;
+            okBtn.classList.add('is-loading');
+            okBtn.setAttribute('aria-busy', 'true');
+            try {
+                const r = await o.submit({ signal: sending.signal, setError: showFormError, box });
+                if (r !== false) finish(r === undefined ? true : r);
+            } catch (e) {
+                if (!(e && e.name === 'AbortError')) showFormError(POps.errorMessage(e));
+            } finally {
+                sending = null;
+                okBtn.disabled = false;
+                okBtn.classList.remove('is-loading');
+                okBtn.removeAttribute('aria-busy');
+            }
+        }
         function showError(text) {
             err.textContent = text;
             input.closest('.field').classList.add('has-error');
@@ -581,6 +650,7 @@ function openDialog(kind, opts) {
             input.focus();
         }
         function accept() {
+            if (kind === 'form') return submitForm();
             if (kind !== 'prompt') return finish(true);
             let v = input.value;
             if (o.trim !== false) v = v.trim();
@@ -600,7 +670,7 @@ function openDialog(kind, opts) {
             if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
             else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
                 const t = e.target;
-                if (t && t.tagName === 'TEXTAREA') return;
+                if (t && (t.tagName === 'TEXTAREA' || t.type === 'file')) return;
                 if (t && t.tagName === 'BUTTON' && t !== okBtn) return;   // Vazgeç / Kopyala kendi işini yapar
                 e.preventDefault();
                 e.stopPropagation();
@@ -610,7 +680,9 @@ function openDialog(kind, opts) {
         document.body.appendChild(overlay);
         syncBodyLock();
         setTimeout(() => {
+            const first = kind === 'form' ? box.querySelector('.pops-dialog-content input:not([type=hidden]):not([disabled]), .pops-dialog-content select, .pops-dialog-content textarea, .pops-dialog-content button') : null;
             if (input) { input.focus(); if (input.select) input.select(); }
+            else if (first) first.focus();
             else okBtn.focus();
         }, 10);
     });
@@ -621,6 +693,11 @@ POps.confirm = (opts) => openDialog('confirm', typeof opts === 'string' ? { mess
 POps.prompt = (opts) => openDialog('prompt', typeof opts === 'string' ? { message: opts } : opts);
 // alert({title, message, code|codes, note}) -> Promise<true>
 POps.alert = (opts) => openDialog('alert', typeof opts === 'string' ? { message: opts } : opts);
+// form({title, message, icon, content: öğe, confirmText, note, submit: async ({ signal, setError, box }) => sonuç})
+//   -> Promise<sonuç | null>. Gönderim sürerken pencere açık kalır ve düğme kilitlenir; submit false dönerse pencere
+//   açık kalır (alan hatası gösterilmiştir), hata fırlatırsa metni pencerenin altında görünür. Vazgeç / Esc süren
+//   gönderimi iptal eder (signal).
+POps.form = (opts) => openDialog('form', opts);
 
 // ============== DÜĞME DURUMU ==============
 // İstek sürerken düğmeyi kilitler ve dönen halka gösterir; ikinci tıklama yok sayılır

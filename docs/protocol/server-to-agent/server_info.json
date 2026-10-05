@@ -32,7 +32,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Feature names; unknown names must be ignored. Today: result_ack, update_result_ack, update_progress."
+      "description": "Feature names; unknown names must be ignored. Today: result_ack, update_result_ack, update_progress, file_transfer."
     }
   }
 }

@@ -1,0 +1,11 @@
+{
+  "action": "file_push",
+  "transfer_id": "Wt3q9xLZr0bYc2VnQ1sT4A",
+  "name": "Ödev föyü 3.pdf",
+  "size": 1500000,
+  "sha256": "9f6e2c1b0a5d4c3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e",
+  "url": "/api/files/Wt3q9xLZr0bYc2VnQ1sT4A/download?t=6sQkR0fY1bV2nC3mX4zL5aP6oI7uY8tR9eW0qA1sD2f",
+  "dest": "inbox",
+  "reason": "9-A ödev dosyası",
+  "allow_exec": false
+}

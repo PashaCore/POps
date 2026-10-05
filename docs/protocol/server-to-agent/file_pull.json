@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/file_pull.json",
+  "title": "file_pull",
+  "description": "An admin asked for a file from this PC (panel **Dosya al**). Sent only to a connected agent that reported `files_enabled: true`, by a server that lists `file_transfer`. The agent reads `path` (applying its own profile rules: without `any_profile` it does not read other users' profile folders), refuses files larger than `max_size`, uploads the file once to `upload` on its own server with its device secret headers and answers with `file_result`. The body of the upload is the raw file (`application/octet-stream`; a multipart field `file` is accepted too); an optional `X-Content-SHA256` header is checked by the server.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "transfer_id",
+    "path",
+    "max_size",
+    "upload",
+    "reason",
+    "any_profile"
+  ],
+  "properties": {
+    "action": {
+      "const": "file_pull",
+      "description": "Message type."
+    },
+    "transfer_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "description": "Transfer ID (random, URL-safe). Echoed in `file_result`."
+    },
+    "path": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 1024,
+      "pattern": "^[A-Za-z]:\\\\",
+      "description": "Full local path with a drive letter. The server never sends network paths, device paths, `.`/`..` parts, wildcards or alternate data streams."
+    },
+    "max_size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 209715200,
+      "description": "Largest accepted size in bytes; a larger upload is cut off with 413 and the transfer fails."
+    },
+    "upload": {
+      "type": "string",
+      "pattern": "^/api/files/[A-Za-z0-9_-]{8,64}/upload\\?t=[A-Za-z0-9_-]+$",
+      "description": "Path on the agent's own server: `POST` with `X-Agent-Id` and `X-Agent-Secret`. The token in `t` works once (it is used up when the upload starts) and for 1 hour."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 300,
+      "description": "The admin's reason."
+    },
+    "any_profile": {
+      "type": "boolean",
+      "description": "Only a superadmin can set it: the file may also come from another user's profile."
+    }
+  }
+}

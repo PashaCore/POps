@@ -541,6 +541,47 @@
         "title": "FetchReleaseInput",
         "type": "object"
       },
+      "FilePullInput": {
+        "additionalProperties": false,
+        "properties": {
+          "any_profile": {
+            "default": false,
+            "title": "Any Profile",
+            "type": "boolean"
+          },
+          "max_size": {
+            "maximum": 209715200.0,
+            "minimum": 1.0,
+            "title": "Max Size",
+            "type": "integer"
+          },
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "pc": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Pc",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pc",
+          "path",
+          "max_size",
+          "reason"
+        ],
+        "title": "FilePullInput",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3554,6 +3595,67 @@
       }
     },
     "/api/v1/files": {
+      "get": {
+        "description": "Aktarımlar, yeniden eskiye (?pc= ile bir bilgisayarın). Yalnız üst veri; dosyanın kendisi /content'ten.",
+        "operationId": "list_transfers_api_files_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pc",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pc"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Transfers",
+        "tags": [
+          "files"
+        ]
+      },
       "post": {
         "operationId": "upload_file_api_files_post",
         "requestBody": {
@@ -3594,6 +3696,294 @@
         "summary": "Upload File",
         "tags": [
           "tasks"
+        ]
+      }
+    },
+    "/api/v1/files/pull": {
+      "post": {
+        "description": "Bilgisayardan dosya ister. Gerekçe zorunlu ve denetim kaydına yazılır. any_profile (başka kullanıcıların\nprofilinden de) yalnızca superadmin içindir.",
+        "operationId": "pull_file_api_files_pull_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilePullInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pull File",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/push": {
+      "post": {
+        "description": "Multipart: file, pcs (bir ya da birçok kez), dest, reason, allow_exec. Gövde yetki denetiminden SONRA okunur\n(oturumsuz biri 200 MB yükleyip sunucuya geçici dosya yazdıramaz).",
+        "operationId": "push_file_api_files_push_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "allow_exec": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "dest": {
+                    "enum": [
+                      "public_desktop",
+                      "inbox"
+                    ],
+                    "type": "string"
+                  },
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "pcs": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 500,
+                    "type": "array"
+                  },
+                  "reason": {
+                    "maxLength": 300,
+                    "minLength": 3,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file",
+                  "pcs",
+                  "dest",
+                  "reason"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Push File",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/{transfer_id}/content": {
+      "get": {
+        "description": "Bilgisayardan alınan dosya: her zaman ek (attachment) olarak, içerik türü tahmin edilmeden (nosniff) ve\nönbelleğe alınmadan. İndirme denetim kaydına yazılır.",
+        "operationId": "download_content_api_files__transfer_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "transfer_id",
+            "required": true,
+            "schema": {
+              "title": "Transfer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download Content",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/{transfer_id}/download": {
+      "get": {
+        "description": "Ajan, kendisine gönderilen dosyayı indirir. Jeton tek kullanımlıktır ve 1 saatte dolar; aktarım bu ajanın\nbilgisayarına ait olmalıdır. Yanlış jeton, başka bilgisayar, kullanılmış/süresi dolmuş jeton: aynı 404 (jeton\ntüketilmez).",
+        "operationId": "agent_download_api_files__transfer_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "transfer_id",
+            "required": true,
+            "schema": {
+              "title": "Transfer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "t",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "T",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Download",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/{transfer_id}/upload": {
+      "post": {
+        "description": "Ajan istenen dosyayı yükler. Gövde ham dosyadır (application/octet-stream; önerilen) ya da multipart 'file'\nalanı. İsteğe bağlı X-Content-SHA256 başlığı verilirse özet tutmalıdır. Jeton tek kullanımlık: yarıda kalan ya da\nboyut sınırını aşan yükleme aktarımı 'failed' yapar.",
+        "operationId": "agent_upload_api_files__transfer_id__upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "transfer_id",
+            "required": true,
+            "schema": {
+              "title": "Transfer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "t",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "T",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Upload",
+        "tags": [
+          "files"
         ]
       }
     },

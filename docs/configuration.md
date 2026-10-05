@@ -56,6 +56,7 @@ Ways to create it:
 | `WOL_BROADCAST_ADDR` | no | `255.255.255.255` | Where the server sends Wake-on-LAN packets. For a routed lab subnet use its broadcast address, e.g. `10.0.5.255`. |
 | `WOL_PORT` | no | `9` | Wake-on-LAN UDP port. |
 | `POPS_GITHUB_REPO` | no | `PashaCore/POps` | GitHub repository used for the release check, the server update check and the agent package download on **Sistem** → **Ajanlar**. |
+| `POPS_FILES_DIR` | no | `Backend/transfers` | Where file transfers are kept on the server (files sent to PCs until they are downloaded, files fetched from PCs for 7 days). Not served over HTTP and not part of `pops-backup`. In Docker it is the `transfers` volume. |
 | `POPS_SELFUPDATE_DIR` | no | `/var/lib/pops` | Spool directory for panel-triggered server self-update. Self-update counts as installed only if the backend user can write here. See [`self-update.md`](self-update.md). |
 | `POPS_VERSION` | no | – | Overrides the version the server reports. Normally unset; the version is read from the `VERSION` file next to the backend (or one level up), then from `CHANGELOG.md`. |
 | `SMTP_HOST` | no | empty | Mail server for e-mail notifications. E-mail is sent only when `SMTP_HOST` and a sender (`SMTP_FROM` or `SMTP_USER`) are set. |

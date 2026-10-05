@@ -39,7 +39,9 @@ Open it in any OpenAPI viewer or client generator.
   `taskSequence`). Sending both is `422`.
 - Uploading large files through `/api/v1` (`POST /api/v1/files`, `/api/v1/upload`,
   `/api/v1/system/upload-release`) needs the larger request body limit of the reverse proxy on those paths too: the
-  nginx and Apache templates in `Installer/server/` and `docker/` match `^/api/(v1/)?(upload|files|system/upload-release)$`.
+  nginx and Apache templates in `Installer/server/` and `docker/` match
+  `^/api/(v1/)?(upload|files|files/push|files/[A-Za-z0-9_-]+/upload|system/upload-release)$` (the last two are the
+  [file transfer](#file-transfer) uploads).
   An existing server keeps its own site configuration: until it is updated, use plain `/api/upload` for files over 8 MB.
 
 ## Authentication
@@ -99,7 +101,7 @@ For scripts and other systems that should not use a person's login. A superadmin
 | `require_admin` | `admin`, `superadmin` (users or `admin` API tokens) | day-to-day operations (devices, labs, tasks and scheduled tasks, quarantine, policies, Windows Update commands, licence definitions, helpdesk tickets, the notification list, release notes) |
 | `require_superadmin` | `superadmin` user (never an API token) | users, API tokens, releases and agent updates, enrollment, enforcement, capabilities, self-update, audit verification, notification settings |
 | `require_user_session` | any signed-in user (login JWT or panel cookie), not an API token | own 2FA settings |
-| `require_admin_session` | `admin`, `superadmin` user, not an API token | the user list, remote-control sessions, screen previews, remote input |
+| `require_admin_session` | `admin`, `superadmin` user, not an API token | the user list, remote-control sessions, screen previews, remote input, file transfer (send, fetch, download a fetched file) |
 
 API tokens have the role `viewer` or `admin` and pass `require_auth` and (as `admin`) `require_admin`; see
 [API tokens](#api-tokens-automation).
@@ -129,7 +131,9 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 ### Rate limits
 
 `POST /api/admin/login`, `POST /api/admin/login/totp` and `POST /api/admin/2fa/setup|enable|disable` are limited to
-10 requests per minute per client address. Exceeding the limit returns `429`.
+10 requests per minute per client address. Exceeding the limit returns `429`. The agent's file transfer endpoints
+(`GET /api/files/{id}/download`, `POST /api/files/{id}/upload`) take at most 30 requests per minute per device and
+endpoint, like the other agent endpoints that are limited per device (helpdesk, activity).
 
 ## Endpoint reference
 
@@ -212,6 +216,52 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | POST | `/api/add_package` | require_admin | `{id, name, type, meta, command, icon, color}`; insert or update. **Deprecated:** `POST /api/v1/packages`. |
 | POST | `/api/delete_package` | require_admin | `{id}`. **Deprecated:** `DELETE /api/v1/packages/{package_id}`. |
 | GET | `/api/storage` | require_auth | Size of uploaded files and update packages, event log table size and a 7-day log trend. |
+
+### File transfer
+
+An admin sends a file to PCs (**push**) or fetches a file from one PC (**pull**). Server side: `Backend/pops/routers/files.py`
+and `Backend/pops/filestore.py`; table `file_transfers` (migration `0025`). Module `files` (on by default). The
+agent side (Windows) is built by the agent team against the messages below.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/files/push` | admin, panel session only | Multipart: `file`, `pcs` (once per PC, at most 500), `dest` (`public_desktop` \| `inbox`), `reason` (3–300 characters), `allow_exec` (`true`/`false`). The body is read only after the role check; `Content-Length` is required (`411`) and a body over 200 MB is refused before it is read (`413`). The file name is cleaned (path parts, characters Windows does not allow, control and direction characters removed; reserved names such as `CON` get a `_` prefix). `.lnk`, `.url` and `.scr` need `allow_exec` (`400`). An empty file is `400`. The file is stored once with its SHA-256; every target that is online and reports `files_enabled: true` gets its own `transfer_id`, a one-time download token (1 hour) and a `file_push`. Returns `{batch_id, name, size, sha256, transfers: [{pc_name, transfer_id}], skipped: [{pc_name, reason}]}`; `reason` is `unknown`, `module_closed`, `offline`, `unsupported` (the agent does not report `files_enabled`), `disabled` (turned off on the PC) or `send_failed`. `409` if no target can receive it. Audited per PC (`file_push`). |
+| POST | `/api/files/pull` | admin, panel session only | `{pc, path, max_size, reason, any_profile = false}`. `path`: a full path with a drive letter (`C:\...`); network (`\\server\share`) and device paths (`\\?\`), `.`/`..` parts, wildcards, `:` after the drive (alternate data streams), control characters and a trailing `\` are `400`. `max_size`: 1 byte – 200 MB (`422` otherwise). `reason` is required (3 characters). `any_profile: true` (also from other users' profiles) needs a superadmin (`403`). The PC must be online with `files_enabled: true` (`409` otherwise). Sends `file_pull` with a one-time upload token (1 hour). Returns `{transfer_id, name}`. Audited (`file_pull`, with path, size limit, `any_profile`, reason, role). |
+| GET | `/api/files` | require_auth | `?pc=&limit=` (default 50, at most 200): transfers, newest first, with `transfer_id`, `direction` (`push` \| `pull`), `pc_name`, `batch_id`, `name`, `size`, `sha256`, `dest`, `path`, `max_size`, `allow_exec`, `any_profile`, `reason`, `status`, `detail`, `created_by`, `created_at`, `finished_at`, `downloadable` (a pulled file that is still on the server), `expires_at` (when it is deleted) and `purged`. Also `push_max_bytes`, `pull_max_bytes`, `pull_keep_days`. Never the token or the server path. |
+| GET | `/api/files/{transfer_id}/content` | admin, panel session only | The pulled file, always `Content-Disposition: attachment`, `Content-Type: application/octet-stream`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`, `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-SHA256`. `404` for a pushed file, a transfer that has not finished or a file already deleted. Audited (`file_content_download`). |
+| GET | `/api/files/{transfer_id}/download?t=<token>` | agent (secret required) | The agent fetches a pushed file. `X-Agent-Id` + `X-Agent-Secret` are required even while `enforce_agent_auth` is off (`401` without). The token is single-use and expires after 1 hour; the transfer must belong to the calling PC. A wrong token, another PC, a used or expired token and an unknown transfer all get the same `404` and do not use up the token. The response carries `X-Content-SHA256` and `nosniff`; the transfer becomes `downloading`. |
+| POST | `/api/files/{transfer_id}/upload?t=<token>` | agent (secret required) | The agent uploads a requested file: the raw file as the body (`application/octet-stream`, recommended) or a multipart field `file`. Same token and device rules as the download. Optional `X-Content-SHA256`: a mismatch is `400`. A body larger than `max_size` is `413` (by `Content-Length` before reading, or while streaming). The token is used up when the upload starts: a failed, cut or too large upload makes the transfer `failed`. On success the transfer is `done`; audited (`file_pull_received`, with size and SHA-256). |
+
+Statuses: `sent` (the agent got the command), `downloading` / `uploading` (the token was used), `done`, `rejected`
+(the agent or the module refused it), `failed`, `expired` (the token ran out unused; checked every 5 minutes). A
+pulled file is kept for 7 days and then deleted (the row stays, `purged: true`); a pushed file is deleted when all
+its tokens are used (10 minutes after the last download) or have expired. Finished rows without a file are removed
+with the task retention setting (`retention_days_tasks`). Files live in `Backend/transfers` (`POPS_FILES_DIR`),
+under names the server makes up; the folder is not served.
+
+Agent messages (on `/ws/agent/{hw_id}`; the server lists `file_transfer` in `server_info.features`). The schemas and
+test vectors are in [`protocol/`](protocol/README.md): [`file_push`](protocol/server-to-agent/file_push.json),
+[`file_pull`](protocol/server-to-agent/file_pull.json), [`file_result`](protocol/agent-to-server/file_result.json).
+
+```json
+{"action": "file_push", "transfer_id": "…", "name": "Ödev 1.pdf", "size": 300026, "sha256": "…",
+ "url": "/api/files/<transfer_id>/download?t=<token>", "dest": "public_desktop", "reason": "…", "allow_exec": false}
+{"action": "file_pull", "transfer_id": "…", "path": "C:\\Users\\Public\\Documents\\rapor.pdf", "max_size": 52428800,
+ "upload": "/api/files/<transfer_id>/upload?t=<token>", "reason": "…", "any_profile": false}
+{"type": "file_result", "transfer_id": "…", "outcome": "done", "path": "C:\\Users\\Public\\Desktop\\Ödev 1.pdf", "detail": null}
+```
+
+- `url` and `upload` are relative: the agent puts its own server address in front and talks to no other host. It
+  checks `size` and `sha256` and writes only to the allowed destinations; it refuses `.lnk`, `.url` and `.scr` unless
+  `allow_exec` is set.
+- `file_result.status` is `done`, `rejected` or `failed`; `path` (at most 1024 characters) and `detail` (at most 500)
+  are optional. Only an open transfer of the same PC is updated; for a push, `done` counts only after the file was
+  downloaded. A pulled file is `done` when the upload is stored; a later `file_result` for it changes nothing. A
+  `detail` starting with `[REDDEDİLDİ]` is stored as `rejected`. Each stored result is audited (`file_result`).
+- The agent reports the capability in its `capabilities` message as `files_enabled` (`true` / `false`). An agent that
+  does not send the field is treated as not supporting file transfer (`cap_files_enabled` stays `NULL`), so the
+  server sends it nothing. `{"type": "capability_denied", "capability": "files", "action": "file_push" | "file_pull",
+  "transfer_id": "…"}` marks the transfer `rejected` and the capability off.
 
 ### Remote control and Vision
 
@@ -365,8 +415,8 @@ off (`401` without, `403` for another device). The subject must have at least 3 
 Features that can be turned off for the whole organisation or per lab. The most
 specific setting wins (lab, then organisation); without a setting a module is on, so an upgrade changes nothing. A
 module whose dependency is off is off too (`deploy` needs `terminal`, `licenses` needs `software`, `schedules` needs
-`terminal`). Modules: `vision`, `terminal`, `deploy`, `schedules`, `patches`, `software`, `licenses`, `helpdesk`,
-`dns_policy`, `quarantine`, `wol`, `reports`. Devices, labs, enrollment, agent updates, the audit log, users,
+`terminal`). Modules: `vision`, `terminal`, `deploy`, `files`, `schedules`, `patches`, `software`, `licenses`,
+`helpdesk`, `dns_policy`, `quarantine`, `wol`, `reports`. Devices, labs, enrollment, agent updates, the audit log, users,
 notifications and server health are core and always on.
 
 When a module is off, its endpoints answer `409` with `detail` "'<name>' modülü kapalı." and the headers
@@ -380,7 +430,7 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/modules` | require_auth | Every module with `setting` (organisation, `null` = none), `enabled` (organisation, with dependencies), `lab_overrides`, `lab_enabled`, dependencies and profile defaults, plus `profile`, `labs`. |
-| POST | `/api/modules/{module_id}` | require_superadmin | `{enabled: true \| false \| null, lab?}`: sets (or with `null` removes) the organisation or lab setting. Turning `vision` off closes open Vision sessions; turning `terminal` off denies pending and paused tasks there. Returns `vision_sessions_closed`, `tasks_denied`. Audited (`module_setting`); an organisation change sets the profile to `custom`. |
+| POST | `/api/modules/{module_id}` | require_superadmin | `{enabled: true \| false \| null, lab?}`: sets (or with `null` removes) the organisation or lab setting. Turning `vision` off closes open Vision sessions; turning `terminal` off denies pending and paused tasks there; turning `files` off rejects file transfers that were sent but not started (their tokens stop working). Returns `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled`. Audited (`module_setting`); an organisation change sets the profile to `custom`. |
 | GET | `/api/system/install-profile/{name}` | require_superadmin | Preview of `school` or `org`: the organisation settings that would change and the number of lab overrides. |
 | POST | `/api/system/install-profile` | require_superadmin | `{profile: "school" \| "org", reset_labs}`: applies the profile's defaults organisation-wide (and with `reset_labs` deletes lab overrides). Audited (`module_profile`). |
 
@@ -495,7 +545,8 @@ The agent channels are specified message by message, with JSON Schemas, test vec
 - **Messages:** the first message is a heartbeat with the hardware fingerprint; the server answers with
   `server_info` (protocol version and features) and then sends commands. Every message in both directions, the
   connection sequence and the close codes (`4401`, `4409`, `4000`, `1011`) are in [`protocol/`](protocol/README.md);
-  the update stages an agent reports are described [below](#update_progress-agent-update-stages).
+  the update stages an agent reports are described [below](#update_progress-agent-update-stages), the file transfer
+  messages (`file_push`, `file_pull`, `file_result`) under [File transfer](#file-transfer).
 - When a registered connection closes, the reason (the close code in words, for example "bağlantı koptu" for
   `1006`) and the time are stored in `clients.last_disconnect_reason` / `last_disconnect_at`.
 
@@ -571,7 +622,8 @@ stages; the panel then shows the update as before ("Kuruluyor" until the result)
   device (a slow panel skips frames); a panel whose queue grows past 500 messages, or whose send takes longer than
   10 seconds, is closed with `1013` and the browser reconnects.
 - **Server → panel:** `terminal_output` (task results), `update_result`, `capabilities`, `capability_denied`,
-  `vision_rejected`, `ticket_new` (a ticket opened by an agent); `thumbnail` replies go to admin/superadmin panels only; live `stream_frame`s go only to the
+  `vision_rejected`, `ticket_new` (a ticket opened by an agent); `file_transfer` (`{pc_name, transfer_id, direction,
+  status}` when a transfer is downloaded, uploaded or answered) goes to admin/superadmin panels only; `thumbnail` replies go to admin/superadmin panels only; live `stream_frame`s go only to the
   session holder (see above).
 
 ## Automation

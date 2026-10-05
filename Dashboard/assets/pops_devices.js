@@ -4,6 +4,7 @@
 //   POps.dev.issues(d)                : cihazın sorunları (işaret + açıklama)
 //   POps.dev.power(eylem, hostlar)    : wake | restart | shutdown (onay, kapalıları atlar, işlem merkezine düşer)
 //   POps.dev.message / move / quarantine / unquarantine / rename / remove
+//   POps.dev.sendFile(hostlar) / pullFile(host): dosya gönder / dosyayı bilgisayardan al (routers/files.py)
 //   POps.dev.open(host)               : sağdaki ayrıntı paneli
 // Hedefler her zaman cihaz kimliğidir (hostname = HW- kimliği).
 // Görünen metinler POps.t ile çevrilir (lang/en/common.json); sunucuya giden görev adları Türkçe kalır.
@@ -73,6 +74,7 @@
         if (Number(h.loop_errors_1h) > 0) out.push({ kind: 'err', glyph: '!', text: POps.tn('Ajan son 1 saatte {n} hata bildirdi', Number(h.loop_errors_1h)) });
         if (d.cap_terminal_enabled === false) out.push({ kind: 'lock', icon: 'terminal', text: POps.t('Uzak komut bu cihazda kapalı') });
         if (d.cap_vision_enabled === false) out.push({ kind: 'lock', icon: 'eye', text: POps.t('Uzak ekran bu cihazda kapalı') });
+        if (d.cap_files_enabled === false) out.push({ kind: 'lock', icon: 'file', text: POps.t('Dosya aktarımı bu cihazda kapalı') });
         return out;
     };
     // Kutucukta gösterilecek tek işaret (en önemlisi)
@@ -268,6 +270,241 @@
     dev.screenUrl = (hosts) => 'vision?pc=' + hosts.map(encodeURIComponent).join(',');
     dev.commandUrl = (hosts) => 'terminal?pc=' + hosts.map(encodeURIComponent).join(',');
 
+    // ---- Dosya aktarımı: admin bilgisayara dosya gönderir ya da bilgisayardan dosya alır. Sunucu yalnızca çevrimiçi
+    // ve dosya aktarımı açık (ajan files_enabled bildirmiş) bilgisayara gönderir; atlananları sebebiyle döner.
+    const MB = 1024 * 1024;
+    const FILE_MAX = 200 * MB;
+    const PULL_SIZES = [10 * MB, 50 * MB, 200 * MB];
+    const PULL_KEEP_DAYS = 7;
+    const EXEC_EXT = /\.(lnk|url|scr)$/i;
+    dev.sizeText = function (n) {
+        n = Number(n) || 0;
+        const f = (v, d) => v.toLocaleString(POps.locale, { maximumFractionDigits: d });
+        if (n >= 1024 * MB) return f(n / (1024 * MB), 1) + ' GB';
+        if (n >= MB) return f(n / MB, n >= 10 * MB ? 0 : 1) + ' MB';
+        if (n >= 1024) return f(n / 1024, 0) + ' KB';
+        return f(n, 0) + ' B';
+    };
+    // ok | offline | disabled (bilgisayarda kapatılmış) | unsupported (ajan bilmiyor)
+    dev.filesState = function (d) {
+        if (!d || POps.isOffline(d)) return 'offline';
+        if (d.cap_files_enabled === true) return 'ok';
+        return d.cap_files_enabled === false ? 'disabled' : 'unsupported';
+    };
+    const FILE_BLOCK = {
+        offline: () => POps.t('Bilgisayar kapalı.'),
+        disabled: () => POps.t('Dosya aktarımı bu bilgisayarda kapalı.'),
+        unsupported: () => POps.t('Bu bilgisayardaki ajan dosya aktarımını desteklemiyor.')
+    };
+    dev.filesBlockText = (d) => { const st = dev.filesState(d); return st === 'ok' ? '' : FILE_BLOCK[st](); };
+
+    // Form öğeleri (POps.form içinde); metinler textContent ile yazılır
+    function fieldEl(label, control, opts) {
+        const o = opts || {};
+        const f = POps.el('div', { className: 'field' });
+        if (label) f.append(o.forId ? POps.el('label', { for: o.forId, text: label }) : POps.el('span', { className: 'field-label', text: label }));
+        f.append(control);
+        if (o.hint) f.append(o.hint.nodeType ? o.hint : POps.el('div', { className: 'field-hint', text: o.hint }));
+        const err = POps.el('div', { className: 'field-error', 'aria-live': 'polite' });
+        f.append(err);
+        f._error = (text) => { err.textContent = text || ''; f.classList.toggle('has-error', !!text); };
+        return f;
+    }
+    function segmentedEl(label, items, value, onChange) {
+        const box = POps.el('div', { className: 'segmented block', role: 'group', 'aria-label': label });
+        const set = (v) => {
+            box.dataset.value = v;
+            box.querySelectorAll('button').forEach(b => { const on = b.dataset.v === String(v); b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+            if (onChange) onChange(v);
+        };
+        items.forEach(([v, text]) => {
+            const b = POps.el('button', { type: 'button', dataset: { v: String(v) }, text });
+            b.addEventListener('click', () => set(String(v)));
+            box.append(b);
+        });
+        set(String(value));
+        return box;
+    }
+    function checkEl(id, text) {
+        const cb = POps.el('input', { type: 'checkbox', id });
+        return { cb, el: POps.el('label', { className: 'check', for: id }, [cb, POps.el('span', { text })]) };
+    }
+    function reasonField(id, placeholder) {
+        const input = POps.el('input', { type: 'text', id, maxlength: '300', autocomplete: 'off', placeholder });
+        const f = fieldEl(POps.t('Gerekçe'), input, { forId: id, hint: POps.t('Denetim kaydına yazılır.') });
+        input.addEventListener('input', () => f._error(''));
+        return { input, f };
+    }
+
+    dev.sendFile = async function (hosts, o) {
+        o = o || {};
+        hosts = [...new Set(hosts || [])];
+        if (!hosts.length) return POps.toast('warning', POps.t('Hedef bilgisayar yok.'));
+        const ready = hosts.filter(h => dev.filesState(byHost(h)) === 'ok');
+        if (!ready.length) {
+            return POps.toast('warning', hosts.length === 1 ? dev.filesBlockText(byHost(hosts[0])) : POps.t('Seçili bilgisayarların hiçbirine dosya gönderilemez (kapalı ya da dosya aktarımı yok).'));
+        }
+        const fileInput = POps.el('input', { type: 'file', id: 'ftFile' });
+        const dropT = POps.el('span', { className: 'drop-t', text: POps.t('Dosya seçin ya da buraya bırakın') });
+        const dropS = POps.el('span', { className: 'drop-s', text: POps.t('En fazla {size}', { size: dev.sizeText(FILE_MAX) }) });
+        const drop = POps.el('label', { className: 'pops-drop', for: 'ftFile' }, [fileInput, POps.iconEl('upload'), dropT, dropS]);
+        const bar = POps.el('i', { className: 'run', style: 'width:0%' });
+        const pct = POps.el('span', { text: POps.pct(0) });
+        const prog = POps.el('div', { className: 'pops-prog', hidden: true }, [POps.el('div', { className: 'pbar' }, [bar]), pct]);
+        const fileF = fieldEl(POps.t('Dosya'), drop);
+        fileF.insertBefore(prog, fileF.lastChild);
+        const pick = () => {
+            const f = fileInput.files && fileInput.files[0];
+            drop.classList.toggle('has', !!f);
+            dropT.textContent = f ? f.name : POps.t('Dosya seçin ya da buraya bırakın');
+            dropS.textContent = f ? dev.sizeText(f.size) : POps.t('En fazla {size}', { size: dev.sizeText(FILE_MAX) });
+            fileF._error('');
+        };
+        fileInput.addEventListener('change', pick);
+        ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, () => drop.classList.add('over')));
+        ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, () => drop.classList.remove('over')));
+
+        const DEST_HINT = {
+            public_desktop: () => POps.t('Bilgisayardaki bütün kullanıcıların masaüstünde görünür.'),
+            inbox: () => POps.t('Ajanın gelen kutusu klasörüne yazılır; masaüstünü doldurmaz.')
+        };
+        const destHint = POps.el('div', { className: 'field-hint' });
+        const dest = segmentedEl(POps.t('Hedef klasör'), [['public_desktop', POps.t('Ortak masaüstü')], ['inbox', POps.t('POps gelen kutusu')]], 'public_desktop', (v) => { destHint.textContent = DEST_HINT[v](); });
+        const destF = fieldEl(POps.t('Hedef klasör'), dest, { hint: destHint });
+        const reason = reasonField('ftReason', POps.t('Örn. 9-A ödev dosyası'));
+        const exec = checkEl('ftExec', POps.t('Çalıştırılabilir dosyaya izin ver'));
+        const execF = fieldEl('', exec.el, { hint: POps.t('Kısayol ve ekran koruyucu dosyaları (.lnk, .url, .scr) yalnızca bu işaretliyse yazılır.') });
+        exec.cb.addEventListener('change', () => execF._error(''));
+        const content = POps.el('div', { className: 'pops-form' }, [fileF, destF, reason.f, execF]);
+
+        const skipped = hosts.length - ready.length;
+        const result = await POps.form({
+            title: POps.t('Dosya gönder'),
+            icon: 'upload',
+            message: (ready.length === 1 ? dev.name(ready[0]) : namesText(ready))
+                + (skipped ? '\n' + POps.tn('{n} bilgisayar atlanacak (kapalı ya da dosya aktarımı yok).', skipped) : ''),
+            content,
+            confirmText: ready.length === 1 ? POps.t('Gönder') : POps.tn('{n} bilgisayara gönder', ready.length),
+            submit: async ({ signal }) => {
+                const file = fileInput.files && fileInput.files[0];
+                let bad = false;
+                if (!file) { fileF._error(POps.t('Bir dosya seçin.')); bad = true; }
+                else if (!file.size) { fileF._error(POps.t('Dosya boş.')); bad = true; }
+                else if (file.size > FILE_MAX) { fileF._error(POps.t('Dosya çok büyük (en fazla {size}).', { size: dev.sizeText(FILE_MAX) })); bad = true; }
+                const why = reason.input.value.trim();
+                if (why.length < 3) { reason.f._error(POps.t('Gerekçe yazın (en az 3 karakter).')); bad = true; }
+                if (file && EXEC_EXT.test(file.name) && !exec.cb.checked) { execF._error(POps.t('Bu dosya türü için kutuyu işaretleyin.')); bad = true; }
+                if (bad) return false;
+                const fd = new FormData();
+                fd.append('file', file);
+                ready.forEach(h => fd.append('pcs', h));
+                fd.append('dest', dest.dataset.value);
+                fd.append('reason', why);
+                fd.append('allow_exec', exec.cb.checked ? 'true' : 'false');
+                prog.hidden = false;
+                const setP = (r) => { const p = Math.round(r * 100); bar.style.width = p + '%'; pct.textContent = POps.pct(p); };
+                setP(0);
+                try {
+                    return await POps.upload('/api/files/push', fd, { signal, onProgress: setP });
+                } catch (e) {
+                    prog.hidden = true;
+                    throw e;
+                }
+            }
+        });
+        if (!result) return;
+        const n = (result.transfers || []).length;
+        POps.toast('success', n === 1 ? POps.t('{file} gönderildi; bilgisayar indiriyor.', { file: result.name }) : POps.tn('{file} {n} bilgisayara gönderildi.', n, { file: result.name }));
+        const left = (result.skipped || []).length;
+        if (left) POps.toast('warning', POps.tn('{n} bilgisayar atlandı (kapalı ya da dosya aktarımı yok).', left));
+        if (openHost && ready.includes(openHost)) loadFiles(openHost);
+    };
+
+    dev.pullFile = async function (host) {
+        const d = byHost(host);
+        if (dev.filesState(d) !== 'ok') return POps.toast('warning', dev.filesBlockText(d));
+        const path = POps.el('input', { type: 'text', id: 'ftPath', className: 'mono', maxlength: '1024', autocomplete: 'off', spellcheck: 'false', placeholder: 'C:\\Users\\Public\\Documents\\rapor.pdf' });
+        const pathF = fieldEl(POps.t('Dosyanın yolu'), path, { forId: 'ftPath', hint: POps.t('Bilgisayardaki tam yol. Ağ yolları kabul edilmez.') });
+        path.addEventListener('input', () => pathF._error(''));
+        const size = segmentedEl(POps.t('En büyük boyut'), PULL_SIZES.map(v => [v, dev.sizeText(v)]), 50 * MB);
+        const sizeF = fieldEl(POps.t('En büyük boyut'), size, { hint: POps.t('Daha büyük dosya alınmaz.') });
+        const reason = reasonField('ftPullReason', POps.t('Örn. sınav dosyasının kontrolü'));
+        const parts = [pathF, sizeF, reason.f];
+        let any = null;
+        if (IS_SUPER) {
+            any = checkEl('ftAny', POps.t('Başka kullanıcıların profilinden de'));
+            parts.push(fieldEl('', any.el, { hint: POps.t('İşaretli değilse başka kullanıcıların profil klasörlerinden dosya alınmaz. Yalnızca süper admin.') }));
+        }
+        const result = await POps.form({
+            title: POps.t('Dosya al'),
+            icon: 'download',
+            message: dev.name(host),
+            note: POps.tn('Alınan dosya {n} gün saklanır, sonra silinir.', PULL_KEEP_DAYS),
+            content: POps.el('div', { className: 'pops-form' }, parts),
+            confirmText: POps.t('Dosyayı iste'),
+            submit: async ({ signal }) => {
+                const p = path.value.trim();
+                const why = reason.input.value.trim();
+                let bad = false;
+                if (!/^[A-Za-z]:[\\/]./.test(p)) { pathF._error(POps.t('Tam yol yazın (ör. C:\\Users\\Public\\Documents\\rapor.pdf).')); bad = true; }
+                if (why.length < 3) { reason.f._error(POps.t('Gerekçe yazın (en az 3 karakter).')); bad = true; }
+                if (bad) return false;
+                return POps.post('/api/files/pull', { pc: host, path: p, max_size: Number(size.dataset.value), reason: why, any_profile: !!(any && any.cb.checked) }, { signal });
+            }
+        });
+        if (!result) return;
+        POps.toast('success', POps.t('İstek gönderildi. Dosya gelince "Dosya aktarımları" listesinde indirme bağlantısı çıkar.'));
+        if (openHost === host) loadFiles(host);
+    };
+
+    // Aktarım listesi (ayrıntı panelinde)
+    const FILE_LIVE = ['sent', 'downloading', 'uploading'];
+    const FILE_STATE = { done: 'ok', rejected: 'bad', failed: 'bad', expired: 'warn' };
+    function fileStatusWord(f) {
+        if (f.status === 'done') return f.direction === 'push' ? POps.t('Teslim edildi') : POps.t('Alındı');
+        const w = { sent: 'Bekliyor', downloading: 'İndiriliyor', uploading: 'Yükleniyor', rejected: 'Reddedildi', failed: 'Başarısız', expired: 'Süresi doldu' }[f.status];
+        return w ? POps.t(w) : f.status;
+    }
+    function fileRowHtml(f) {
+        const k = FILE_STATE[f.status] || 'run';
+        const push = f.direction === 'push';
+        const dirWord = push ? POps.t('Bilgisayara') : POps.t('Bilgisayardan');
+        const meta = [dirWord, f.created_by || '?'];
+        const metaHtml = meta.map(escapeHtml).join(' · ') + ' · ' + POps.timeHtml(f.created_at)
+            + (f.size ? ' · ' + escapeHtml(dev.sizeText(f.size)) : '')
+            + (f.reason ? ' · ' + POps.tHtml('gerekçe: {reason}', { reason: f.reason }) : '');
+        const whyHtml = (k === 'bad' || k === 'warn') && f.detail ? `<div class="why${k === 'warn' ? ' warn' : ''}">${escapeHtml(f.detail)}</div>` : '';
+        const pathHtml = f.path ? `<div class="meta path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}</div>` : '';
+        // Alınan dosya: aynı kökteki API'den, oturum çereziyle; sunucu her zaman ek (attachment) olarak verir
+        let linkHtml = '';
+        if (f.downloadable && CAN_ADMIN) {
+            const tip = f.expires_at ? POps.t('{date} tarihine kadar indirilebilir', { date: POps.fullTime(f.expires_at) }) : '';
+            linkHtml = `<a class="btn secondary sm" href="/api/files/${encodeURIComponent(f.transfer_id)}/content" download data-tip="${escapeHtml(tip)}" data-tip-pos="left">${POps.iconHtml('download', 'sm')}${POps.tHtml('İndir')}</a>`;
+        } else if (f.purged && !push) {
+            linkHtml = `<span class="word">${POps.tHtml('Silindi')}</span>`;
+        }
+        return `<div class="act"><div class="res ${escapeHtml(k)}" aria-label="${escapeHtml(dirWord)}">${POps.iconHtml(push ? 'upload' : 'download')}</div><div style="min-width:0"><div class="what">${escapeHtml(f.name || '—')}</div>
+            <div class="meta">${metaHtml}</div>${pathHtml}${whyHtml}</div>
+            <div class="side"><span class="word ${escapeHtml(k)}">${escapeHtml(fileStatusWord(f))}</span>${linkHtml}</div></div>`;
+    }
+    let filesTimer = null;
+    async function loadFiles(host) {
+        clearTimeout(filesTimer);
+        const box = POps.drawer.isOpen('pc:' + host) ? POps.drawer.body().querySelector('#devFiles') : null;
+        if (!box) return;
+        let items;
+        try {
+            items = (await POps.get('/api/files?pc=' + encodeURIComponent(host) + '&limit=8')).items || [];
+        } catch (e) {
+            if (openHost === host) box.textContent = POps.t('Dosya aktarımları alınamadı: {error}', { error: POps.errorMessage(e) });
+            return;
+        }
+        if (openHost !== host) return;
+        box.innerHTML = items.length ? `<h3>${POps.tHtml('Dosya aktarımları')}</h3>` + items.map(fileRowHtml).join('') : '';
+        // Süren aktarım varsa liste 3 sn'de bir tazelenir (panel kapanınca ya da başka bilgisayar açılınca durur)
+        if (items.some(f => FILE_LIVE.includes(f.status))) filesTimer = setTimeout(() => { if (openHost === host) loadFiles(host); }, 3000);
+    }
+
     // ---- Görev kaydının okunur hali (Son işlemler, Kayıtlar, İşlemler)
     const SOURCE_TEXT = { labs: 'Sınıflar', devices: 'Cihazlar', terminal: 'Uzak komut', deploy: 'Dağıtım', tasks: 'İşlemler', vision: 'Uzak ekran', schedule: 'Zamanlanmış', index: 'Kontrol merkezi', system: 'Sistem' };
     dev.sourceText = (s) => (SOURCE_TEXT[s] ? POps.t(SOURCE_TEXT[s]) : s || '');
@@ -311,7 +548,7 @@
     const KIND_LABEL = tAll({ auth: 'Oturumlar', policy: 'Kural ihlalleri', quarantine: 'Karantina', command: 'Komutlar', agent: 'Ajan ve bakım', other: 'Diğer' });
     const CAT_LABEL = tAll({ security: 'Güvenlik', restricted_content: 'Kural ihlali', system_maintenance: 'Bakım', legacy: 'Eski kayıt' });
     const RISK_LABEL = tAll({ info: 'bilgi', low: 'düşük', medium: 'orta', high: 'yüksek', critical: 'kritik' });
-    const CAP = tAll({ terminal: 'uzak komut', vision: 'uzak ekran' });
+    const CAP = tAll({ terminal: 'uzak komut', vision: 'uzak ekran', files: 'dosya aktarımı' });
     const BY_TYPE = {
         'auth.login': 'login', 'auth.logout': 'logout', 'auth.failed': 'login_failed', 'policy.alert': 'dns_block',
         'security.lockdown': 'lockdown', 'security.unlock': 'unlock', 'security.bypass_code': 'bypass_code',
@@ -456,10 +693,13 @@
     }
     function render(body, d, keepRecent) {
         const recent = keepRecent ? body.querySelector('#devRecent') : null;
+        const files = keepRecent ? body.querySelector('#devFiles') : null;
         body.innerHTML = headHtml(d) + circlesHtml(d) + issuesHtml(d) + factsHtml(d)
             + `<div><h3>${POps.tHtml('Son işlemler')}</h3><div id="devRecent"><div class="faint" style="font-size:var(--text-sm);padding:6px 0">${POps.tHtml('Yükleniyor…')}</div></div></div>`
+            + '<div id="devFiles"></div>'
             + `<a href="devices?pc=${encodeURIComponent(d.hostname)}" style="font-size:var(--text-sm)">${POps.tHtml('Cihazlar sayfasında aç')}</a>`;
         if (recent) body.querySelector('#devRecent').replaceWith(recent);
+        if (files) body.querySelector('#devFiles').replaceWith(files);
     }
     dev.open = async function (host, opts) {
         const o = opts || {};
@@ -471,7 +711,7 @@
         }
         // Panel başka bir bilgisayar açıkken açılırsa önce onun kapanışı çalışır; yeni bilgisayar ondan sonra
         // işaretlenir (eskiden kapanış yenisini de siliyordu ve "Son işlemler" yüklenmiyordu)
-        const body = POps.drawer.open('pc:' + host, { onClose: () => { if (openHost === host) openHost = null; if (o.onClose) o.onClose(); } });
+        const body = POps.drawer.open('pc:' + host, { onClose: () => { if (openHost === host) { openHost = null; clearTimeout(filesTimer); } if (o.onClose) o.onClose(); } });
         openHost = host;
         render(body, d, false);
         if (!body.dataset.wired) {
@@ -491,6 +731,8 @@
                 ]);
                 else if (act === 'more') POps.menu(b, [
                     { label: POps.t('Mesaj gönder'), icon: 'message', disabled: POps.isOffline(cur), onClick: () => dev.message([h], { source: o.source }) },
+                    { label: POps.t('Dosya gönder'), icon: 'upload', disabled: dev.filesState(cur) !== 'ok', title: dev.filesBlockText(cur) || null, onClick: () => dev.sendFile([h]) },
+                    { label: POps.t('Dosya al'), icon: 'download', disabled: dev.filesState(cur) !== 'ok', title: dev.filesBlockText(cur) || null, onClick: () => dev.pullFile(h) },
                     { label: POps.t('Yeniden adlandır'), icon: 'edit', onClick: () => dev.rename(h) },
                     { label: POps.t('Başka sınıfa taşı…'), icon: 'move', onClick: () => dev.moveMenu(b, [h], { currentLab: cur.lab }) },
                     cur.lab && cur.lab !== UNASSIGNED ? { label: (state.mainPcs || {})[cur.lab] === h ? POps.t('Öğretmen bilgisayarı olmaktan çıkar') : POps.t('Öğretmen bilgisayarı yap'), icon: 'crown', onClick: () => dev.setTeacher(cur.lab, h) } : null,
@@ -502,6 +744,7 @@
             });
         }
         loadActivity(host, body.querySelector('#devRecent'));
+        loadFiles(host);
     };
     // Yan menüdeki sayılar (cihaz listesini yoklayan sayfalarda)
     document.addEventListener('pops_data_updated', () => {

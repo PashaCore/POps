@@ -9,6 +9,7 @@ from pops import modules
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.manager import manager
+from pops.routers import files as file_transfer
 from pops.security import require_auth, require_superadmin
 
 router = APIRouter()
@@ -45,11 +46,12 @@ async def _snapshot(labs: List[str]) -> dict:
 
 
 async def _close_effects(before: dict, after: dict) -> dict:
-    """Kapanan modülün açık işleri durur: Vision oturumları kapanır, bekleyen komut görevleri "Denied" olur."""
+    """Kapanan modülün açık işleri durur: Vision oturumları kapanır, bekleyen komut görevleri "Denied" olur, başlamamış
+    dosya aktarımlarının jetonları geçersizleşir."""
     closed = [key for key, was_on in before.items() if was_on and not after[key]]
-    effects = {"vision_sessions_closed": 0, "tasks_denied": 0}
+    effects = {"vision_sessions_closed": 0, "tasks_denied": 0, "transfers_cancelled": 0}
     for mid, lab in closed:
-        if mid not in ("vision", "terminal"):
+        if mid not in ("vision", "terminal", "files"):
             continue
         if lab is None:
             rows = await execute_query("SELECT pc_name FROM clients WHERE lab_name IS NULL", fetch=True)
@@ -58,7 +60,9 @@ async def _close_effects(before: dict, after: dict) -> dict:
         pcs = [r["pc_name"] for r in rows or []]
         if not pcs:
             continue
-        if mid == "vision":
+        if mid == "files":
+            effects["transfers_cancelled"] += await file_transfer.cancel_open(pcs)
+        elif mid == "vision":
             for pc in pcs:
                 if manager.vision_sessions.pop(pc, None):
                     effects["vision_sessions_closed"] += 1

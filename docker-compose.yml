@@ -49,6 +49,7 @@ services:
       - storage:/app/storage
       - updates:/app/updates
       - releases:/app/releases
+      - transfers:/app/transfers
     depends_on:
       db:
         condition: service_healthy
@@ -78,3 +79,4 @@ volumes:
   storage:
   updates:
   releases:
+  transfers:

@@ -1,10 +1,11 @@
 """Cihazın etkinlik geçmişi: tepside "Etkinlik geçmişim" (şeffaflık).
 
 Bilgisayarı kullanan kişi, BT yöneticilerinin bu cihazda son 30 günde ne yaptığını görür: uzaktan izleme
-oturumları, çalıştırılan komutlar, karantina, yetenek değişiklikleri, ajan ve Windows güncellemeleri. Başka
-kullanıcıların kişisel verisi (tarama geçmişi, politika uyarıları) burada YOKTUR: lab bilgisayarları ortak
-kullanılır. Komutların içeriği gösterilmez (içinde yöneticinin gizli bilgisi olabilir); yalnızca kimin ne zaman
-çalıştırdığı gösterilir.
+oturumları, çalıştırılan komutlar, karantina, yetenek değişiklikleri, ajan ve Windows güncellemeleri, bilgisayara
+gönderilen ve bilgisayardan istenen dosyalar. Başka kullanıcıların kişisel verisi (tarama geçmişi, politika
+uyarıları, bilgisayardan istenen dosyanın yolu ve adı) burada YOKTUR: lab bilgisayarları ortak kullanılır.
+Komutların içeriği gösterilmez (içinde yöneticinin gizli bilgisi olabilir); yalnızca kimin ne zaman çalıştırdığı
+gösterilir.
 
 Uç yalnızca ANAHTARLI ajanı kabul eder ve kendi cihazına bağlıdır (başka cihazın geçmişi okunamaz); cihaz başına
 5 sn'de bir istek. Metinler burada Türkçe hazırlanır, tepsi olduğu gibi gösterir.
@@ -29,7 +30,9 @@ _agent_last = {}
 
 # Filo çapında ("*") yazılan ve "dispatched" listesiyle cihazları sayan kayıtlar
 _FLEET_ACTIONS = ("deploy_update", "scan_updates", "install_updates")
-_DEVICE_ACTIONS = ("lockdown", "unlock", "update_result", "set_capabilities", "enroll", "NEW_DEVICE")
+_DEVICE_ACTIONS = (
+    "lockdown", "unlock", "update_result", "set_capabilities", "enroll", "NEW_DEVICE", "file_push", "file_pull",
+)
 
 
 def _throttle(pc_name: str) -> None:
@@ -108,6 +111,12 @@ def build_items(device, sessions, device_audits, fleet_audits, tasks):
             items.append(_item(at, "update", _update_title(c), None, why))
         elif action == "set_capabilities":
             items.append(_item(at, "capability", _capability_title(c), c.get("by")))
+        elif action == "file_push":
+            title = "Bilgisayara dosya gönderildi: %s" % (c.get("name") or "?")
+            items.append(_item(at, "file", title, c.get("admin"), _reason(c.get("reason"))))
+        elif action == "file_pull":
+            # Yol ve dosya adı gösterilmez (başka bir kullanıcının dosyası olabilir); kim, ne zaman, gerekçe
+            items.append(_item(at, "file", "Bu bilgisayardan dosya istendi", c.get("admin"), _reason(c.get("reason"))))
         elif action in ("enroll", "NEW_DEVICE"):
             # NEW_DEVICE'ın ayrıntısında donanım seri numaraları var: gösterilmez
             title = "Cihaz POps'a kaydedildi" if action == "enroll" else "Cihaz sunucuya ilk kez bağlandı"

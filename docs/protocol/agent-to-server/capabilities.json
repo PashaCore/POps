@@ -31,6 +31,10 @@
         "system"
       ],
       "description": "0.1.10+. How the agent validates the server certificate: custom = the organisation CA installed with the agent, system = the OS trust store. Other values are ignored."
+    },
+    "files_enabled": {
+      "type": "boolean",
+      "description": "File transfer (`file_push` / `file_pull`) allowed on this device. Agents that support file transfer always send it; when it is missing the server treats the agent as not supporting it and sends no file commands."
     }
   }
 }
