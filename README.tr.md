@@ -422,6 +422,8 @@ Belgelerin çoğu İngilizcedir; Türkçe olanlar işaretlidir.
 - [Pilot okul kurulumu](docs/tr/pilot-okul.md): 10 bilgisayarlık bir laboratuvar için yaklaşık bir saatlik
   kontrol listesi, ölçüm ve geri bildirim formu.
 - [Vaka çalışması şablonu](docs/tr/vaka-calismasi-sablonu.md): pilottan sonra sonuçları paylaşmak için.
+- [Active Directory ile giriş](docs/tr/active-directory-ile-giris.md): panele okulun AD hesaplarıyla (ya da Entra ID,
+  Google, Keycloak ile) giriş; gruplar, LDAPS sertifikası, sorun giderme.
 
 | Buradan başlayın | İşletin | Anlayın |
 | :--- | :--- | :--- |

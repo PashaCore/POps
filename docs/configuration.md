@@ -216,6 +216,60 @@ SQL is shown for recovery situations.
 UPDATE global_settings SET value = '0' WHERE key = 'enforce_agent_auth';
 ```
 
+### Identity providers
+
+Directory (LDAP / Active Directory) and OpenID Connect sign-in are set by a superadmin on **Ayarlar** → **Güvenlik**
+→ **Kimlik sağlayıcıları** and stored in the `sso_providers` table, one row per kind (`ldap`, `oidc`), not in
+`global_settings`. API: `GET /api/sso/settings`, `PUT /api/sso/settings/ldap`, `PUT /api/sso/settings/oidc`,
+`POST /api/sso/test/ldap`, `POST /api/sso/test/oidc` (superadmin, also under `/api/v1`). The secrets (service-account
+password, client secret) are write-only: leave the field out (or `null`) to keep the stored one, send `""` to delete
+it. When the host, port, connection type, service account or CA certificate (LDAP), or the issuer, client ID or CA
+certificate (OIDC) changes, the secret must be sent again. A provider can be saved switched off with incomplete
+fields; switching it on needs the required ones. Switching a provider off ends the open sessions of its accounts. How the
+sign-in works and what is checked: [`security.md`](security.md#directory-and-single-sign-on).
+
+**LDAP / Active Directory** (users sign in with the normal **Kullanıcı adı** / **Şifre** form):
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | Directory accounts may sign in. |
+| `host`, `port` | `""`, `636` | Directory server (a name or IP address, no `ldap://`). Use the name in the server's certificate. |
+| `security` | `ldaps` | `ldaps` (TLS from the start, usually port 636) or `starttls` (port 389, upgraded before anything is sent). Plain LDAP is refused. |
+| `ca_pem` | `""` | CA certificate(s) in PEM that signed the server's certificate. Empty: the server's system CA store. When set, only this CA is trusted. |
+| `bind_dn`, `bind_password` | | Service account used to find users; read-only rights are enough. Required to switch on. |
+| `base_dn` | | Where users are searched (subtree), e.g. `DC=okul,DC=local`. |
+| `user_filter` | `(sAMAccountName={username})` | LDAP filter with `{username}` (escaped). Example that also skips disabled AD accounts: `(&(objectCategory=person)(sAMAccountName={username})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))`. OpenLDAP: `(uid={username})`. |
+| `username_attribute` | `sAMAccountName` | Attribute that holds the panel user name (`uid` on OpenLDAP); its value is used, so `ALI` and `ali` are the same account. |
+| `group_base_dn`, `group_filter` | `""`, `(\|(member={user_dn})(uniqueMember={user_dn}))` | Optional group search in addition to the user's `memberOf`. `{user_dn}` and `{username}` are escaped. Nested AD groups: `(member:1.2.840.113556.1.4.1941:={user_dn})`. |
+| `group_map` | `[]` | List of `{"group": "<group DN>", "role": "viewer" \| "admin" \| "superadmin", "pages": ["devices", ...]}`. DNs compare case-insensitively and ignore spaces after commas. The highest matching role wins; pages are the union of all matches; `superadmin` gets every page. |
+| `timeout` | `5` | Seconds for connecting and for each answer (1–30). |
+| `allow_insecure_for_tests` | `false` | Allows `security: "plain"`, and only if the backend runs with `POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1` (otherwise `400`). For automated tests only (CI sets the variable); never set it on a real server. The panel never shows or sends the field, so saving from the panel turns it off. |
+
+**OpenID Connect** (the sign-in page shows "*<name>* ile giriş yap"):
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | Show the button and accept sign-ins. |
+| `display_name` | `""` | Name on the button (e.g. "Okul hesabı"); empty: "Kurumsal hesap". |
+| `issuer` | | Provider address; `<issuer>/.well-known/openid-configuration` is read and its `issuer` must be the same. Must be https. Examples: `https://login.microsoftonline.com/<tenant-id>/v2.0`, `https://accounts.google.com`, `https://sso.okul.local/realms/okul`. |
+| `client_id`, `client_secret` | | The panel's registration at the provider. Without a secret the panel is a public client (PKCE only). The secret is sent with HTTP Basic, or in the body if the provider supports only `client_secret_post`. |
+| `redirect_uri` | | `https://<panel address>/api/auth/oidc/callback`; register exactly this at the provider. http is accepted only for a panel on `localhost`/`127.0.0.1`. The panel's login page and the state cookie's path are derived from it. |
+| `scopes` | `openid email profile` | `openid` is added when missing. Add the scope your provider needs for groups, if any. |
+| `username_claim` | `email` | Claim that becomes the panel user name. `email` is lower-cased and accepted only with `email_verified: true` (an unverified address must not take someone else's name); providers that do not send `email_verified`, such as Microsoft Entra ID, need `preferred_username` or `upn` here. |
+| `groups_claim` | `groups` | Claim with the user's groups (a list or one string). Entra ID sends group object IDs; Keycloak sends group paths such as `/pops-admins` with a group mapper. Empty: no groups. |
+| `group_map` | `[]` | As for LDAP, but with claim values, compared case-insensitively. |
+| `allowed_domains` | `[]` | If set, only users whose **verified** e-mail (`email_verified: true`) is in one of these domains can sign in, whatever their groups. |
+| `default_role`, `default_pages` | `""`, `[]` | Role (`viewer` or `admin`, never `superadmin`) and pages for users of an allowed domain who match no group. Empty: they cannot sign in. Needs `allowed_domains`. |
+| `ca_pem` | `""` | CA certificate for a provider with an internal certificate (on-premises Keycloak, AD FS). |
+| `allow_insecure_for_tests` | `false` | Allows an http issuer, only with `POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1` on the backend. For automated tests only; not in the panel. |
+
+To switch both off from the server, for example when a wrong mapping locked the directory accounts out (local
+accounts are not affected):
+
+```sql
+UPDATE sso_providers SET enabled = false;
+```
+
 ### Agent policy object
 
 `POST /api/agent_policies` (admin) stores, and `GET /api/agent_policies` returns:

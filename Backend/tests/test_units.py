@@ -1642,6 +1642,153 @@ def test_peer_cache():
         manager.active_agents.update(saved)
 
 
+def test_sso():
+    print("== sso: dönüş yolu, grup → rol, ayar doğrulaması, kimlik jetonu")
+    import jwt as pyjwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from pydantic import ValidationError
+
+    from pops import sso, sso_ldap, sso_oidc
+    from pops.models import LdapSettingsInput, OidcSettingsInput
+
+    for good in ("/devices", "/tasks?tab=jobs", "/"):
+        chk(sso.safe_next(good) == good, "geçerli dönüş yolu: %s" % good)
+    for bad in ("https://evil.example", "//evil.example", "/\\evil", "javascript:alert(1)", "/a/../b", "devices",
+                "/x\n", "/x\r\nSet-Cookie: a=b", "/" + "a" * 300, "/%2F%2Fevil", None, ""):
+        chk(sso.safe_next(bad) is None, "dönüş yolu reddedildi: %r" % ((bad or "")[:40],))
+    gm = [{"group": "CN=Admins,DC=okul,DC=local", "role": "admin", "pages": ["devices"]},
+          {"group": "cn=view, dc=okul, dc=local", "role": "viewer", "pages": ["logger", "devices"]},
+          {"group": "cn=root,dc=okul,dc=local", "role": "superadmin", "pages": []}]
+    chk(sso.map_role(["cn=admins,dc=okul,dc=local", "CN=VIEW,DC=okul,DC=local"], gm, dn=True)
+        == ("admin", ["devices", "logger"]), "en yüksek rol, sayfaların birleşimi; DN büyük/küçük harf duyarsız")
+    chk(sso.map_role(["cn=other,dc=okul,dc=local"], gm, dn=True) is None, "eşleşmeyen grup: erişim yok")
+    chk(sso.map_role(["cn=root,dc=okul,dc=local", "cn=admins,dc=okul,dc=local"], gm, dn=True) == ("superadmin", []),
+        "süper admin sayfa listesi taşımaz")
+    chk(sso.map_role(["POPS-Admins"], [{"group": "pops-admins", "role": "admin", "pages": []}], dn=False)
+        == ("admin", []), "OIDC grubu büyük/küçük harf duyarsız")
+
+    base = {"host": "dc1.okul.local", "port": 636, "security": "ldaps", "base_dn": "dc=okul,dc=local",
+            "bind_dn": "cn=svc,dc=okul,dc=local", "user_filter": "(sAMAccountName={username})"}
+
+    def refused(fn, cfg):
+        try:
+            fn(cfg)
+            return False
+        except ValueError:
+            return True
+    chk(sso.clean_ldap(base)["security"] == "ldaps", "LDAPS ayarı geçer")
+    chk(refused(sso.clean_ldap, dict(base, security="plain")), "şifresiz LDAP reddedilir")
+    from pops import config as pops_config
+    saved_flag = pops_config.SSO_ALLOW_INSECURE_FOR_TESTS
+    try:
+        pops_config.SSO_ALLOW_INSECURE_FOR_TESTS = False
+        chk(refused(sso.clean_ldap, dict(base, security="plain", allow_insecure_for_tests=True)),
+            "test bayrağı, sunucu ortamında POPS_SSO_ALLOW_INSECURE_FOR_TESTS yokken reddedilir")
+        chk(refused(sso.clean_oidc, {"issuer": "http://idp.test", "allow_insecure_for_tests": True}),
+            "http sağlayıcı da öyle")
+        try:
+            sso_ldap._server(dict(base, security="plain", allow_insecure_for_tests=True))
+            chk(False, "kayıtlı bayrak tek başına şifresiz bağlantıya izin vermemeli")
+        except sso_ldap.LdapError:
+            chk(not sso.insecure_allowed({"allow_insecure_for_tests": True}),
+                "kayıtlı bayrak tek başına şifresiz bağlantıya izin vermez")
+        pops_config.SSO_ALLOW_INSECURE_FOR_TESTS = True
+        chk(sso.clean_ldap(dict(base, security="plain", allow_insecure_for_tests=True))["security"] == "plain",
+            "test bayrağı + ortam değişkeniyle şifresiz LDAP")
+    finally:
+        pops_config.SSO_ALLOW_INSECURE_FOR_TESTS = saved_flag
+    chk(set(sso.SECRET_BOUND["ldap"]) >= {"host", "port", "bind_dn", "security", "ca_pem", "allow_insecure_for_tests"}
+        and set(sso.SECRET_BOUND["oidc"]) >= {"issuer", "client_id", "ca_pem"},
+        "kayıtlı sır sunucu, bağlantı türü ve CA'ya bağlı")
+    chk(refused(sso.clean_ldap, dict(base, user_filter="(uid=x)")), "{username} olmayan filtre reddedilir")
+    chk(refused(sso.clean_ldap, dict(base, user_filter="(uid={username}")), "dengesiz parantez reddedilir")
+    chk(refused(sso.clean_ldap, dict(base, host="ldap://dc1")), "adreste şema reddedilir")
+    chk(refused(sso.clean_ldap, dict(base, ca_pem="not a cert")), "bozuk CA reddedilir")
+    chk(refused(sso.clean_ldap, dict(base, group_map=[{"group": "cn=x", "role": "admin", "pages": ["Bad Page"]}])),
+        "geçersiz sayfa adı reddedilir")
+    try:
+        LdapSettingsInput(host="x", unknown=1)
+        chk(False, "bilinmeyen alan reddedilmeli")
+    except ValidationError:
+        chk(True, "LDAP ayarında bilinmeyen alan 422")
+    try:
+        OidcSettingsInput(default_role="superadmin")
+        chk(False, "alan adına süper admin reddedilmeli")
+    except ValidationError:
+        chk(True, "varsayılan rol süper admin olamaz")
+
+    ob = {"issuer": "https://login.okul.local/realms/okul", "client_id": "pops",
+          "redirect_uri": "https://pops.okul.local/api/auth/oidc/callback", "scopes": "email profile"}
+    c = sso.clean_oidc(ob)
+    chk(c["scopes"] == "openid email profile", "openid kapsamı eklenir")
+    chk(refused(sso.clean_oidc, dict(ob, issuer="http://login.okul.local")), "http sağlayıcı reddedilir")
+    chk(refused(sso.clean_oidc, dict(ob, redirect_uri="https://pops.okul.local/cb")), "yanlış dönüş yolu reddedilir")
+    chk(refused(sso.clean_oidc, dict(ob, redirect_uri="http://pops.okul.local/api/auth/oidc/callback")),
+        "http dönüş adresi (loopback dışı) reddedilir")
+    chk(sso.callback_ok("http://127.0.0.1:8096/api/auth/oidc/callback"), "loopback http dönüş adresi geçer")
+    chk(not sso.callback_ok("https://pops.okul.local/api/auth/oidc/callback?x=1"), "sorgulu dönüş adresi reddedilir")
+    chk(refused(sso.clean_oidc, dict(ob, default_role="viewer")), "alan adı olmadan varsayılan rol reddedilir")
+    chk(sso.clean_oidc(dict(ob, allowed_domains=["@Okul.K12.TR"]))["allowed_domains"] == ["okul.k12.tr"],
+        "alan adı küçük harfe, @ atılır")
+
+    chk(sso_ldap.is_disabled({"userAccountControl": ["514"]}), "AD: ACCOUNTDISABLE")
+    chk(not sso_ldap.is_disabled({"userAccountControl": ["512"]}), "AD: normal hesap")
+    chk(sso_ldap.is_disabled({"nsAccountLock": "TRUE"}), "389-DS/FreeIPA: nsAccountLock")
+    chk(sso_ldap.is_disabled({"pwdAccountLockedTime": ["000001010000Z"]}), "OpenLDAP ppolicy kilidi")
+    chk(sso.normalize_dn(" CN=A , OU=B,DC=c ") == "cn=a,ou=b,dc=c", "DN normalleştirme")
+    chk(sso.valid_username("ayse") and not sso.valid_username("token:x") and not sso.valid_username(" a"),
+        "kullanıcı adı denetimi")
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwk = json.loads(pyjwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
+    jwk.update(kid="k1", use="sig")
+    doc = {"issuer": "https://idp.test", "jwks_uri": "https://idp.test/jwks",
+           "id_token_signing_alg_values_supported": ["RS256"]}
+    cfg = {"client_id": "pops", "issuer": "https://idp.test"}
+    orig = sso_oidc._request
+    sso_oidc._request = lambda _cfg, url, data=None, headers=None: {"keys": [jwk]}
+    sso_oidc.clear_cache()
+    now = int(time.time())
+    claims = {"iss": "https://idp.test", "aud": "pops", "sub": "s1", "iat": now, "exp": now + 300, "nonce": "n1",
+              "email": "Ali@Okul.Test", "email_verified": True, "groups": "pops-admins"}
+
+    def tok(c=None, k=key, alg="RS256", kid="k1"):
+        return pyjwt.encode(dict(claims, **(c or {})), k, algorithm=alg, headers={"kid": kid} if kid else None)
+
+    def bad(t, nonce="n1"):
+        try:
+            sso_oidc.validate_id_token(cfg, doc, t, nonce)
+            return False
+        except sso_oidc.OidcError as e:
+            return e.code == "token"
+    try:
+        got = sso_oidc.validate_id_token(cfg, doc, tok(), "n1")
+        chk(got["sub"] == "s1", "geçerli kimlik jetonu")
+        ident = sso_oidc.identity({"username_claim": "email", "groups_claim": "groups"}, got)
+        chk(ident["username"] == "ali@okul.test" and ident["groups"] == ["pops-admins"]
+            and ident["external_id"] == "https://idp.test|s1", "kimlik: küçük harfli e-posta, tek grup listeye")
+        chk(sso_oidc.domain_allowed({"allowed_domains": ["okul.test"]}, ident), "izinli alan adı")
+        chk(not sso_oidc.domain_allowed({"allowed_domains": ["okul.test"]}, dict(ident, email_verified=False)),
+            "doğrulanmamış e-posta izinli sayılmaz")
+        chk(bad(tok(), nonce="n2"), "yanlış nonce")
+        chk(bad(tok({"exp": now - 600, "iat": now - 900})), "süresi dolmuş")
+        chk(bad(tok({"aud": "other"})), "yanlış aud")
+        chk(bad(tok({"aud": ["pops", "other"], "azp": "other"})), "çok aud, azp başka istemci")
+        chk(not bad(tok({"aud": ["pops", "other"], "azp": "pops"})), "çok aud, azp bu istemci")
+        chk(bad(tok({"iss": "https://evil.test"})), "yanlış iss")
+        chk(bad(tok(k=rsa.generate_private_key(public_exponent=65537, key_size=2048))), "başka anahtarla imza")
+        chk(bad(tok(k="x" * 32, alg="HS256")), "HS256 reddedilir")
+        chk(bad(tok(kid="k2")), "bilinmeyen kid")
+        chk(bad(tok({"sub": None})), "sub zorunlu")
+        none_tok = pyjwt.encode(claims, None, algorithm="none")
+        chk(bad(none_tok), "alg none reddedilir")
+        chk(sso_oidc.pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
+            == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", "PKCE S256 (RFC 7636 örneği)")
+    finally:
+        sso_oidc._request = orig
+        sso_oidc.clear_cache()
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -1666,6 +1813,7 @@ def main():
     test_devicelist()
     test_power()
     test_peer_cache()
+    test_sso()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

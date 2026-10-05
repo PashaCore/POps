@@ -640,6 +640,8 @@ jobs:
       POPS_DEMO_USERS: ci_demo
       # test_peer_cache.py: tohumun süresi kısa (sunucu ve test aynı değeri okur)
       PEER_CACHE_SEED_TIMEOUT_SECONDS: "4"
+      # test_sso.py: şifresiz LDAP'ın test bayrağı yalnızca bununla kabul edilir (üretimde tanımlanmaz)
+      POPS_SSO_ALLOW_INSECURE_FOR_TESTS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
@@ -685,6 +687,9 @@ jobs:
           python Backend/tests/test_devices_delta.py
           python Backend/tests/test_power_message.py
           python Backend/tests/test_peer_cache.py
+          # Dizin (LDAP/AD) ve OIDC girişi: OpenLDAP'ı geçici bir Docker kabında (127.0.0.1) kendisi açar, sahte OIDC
+          # sağlayıcısı test içindedir. Docker yoksa LDAP bölümü atlanır (runner'da vardır).
+          python Backend/tests/test_sso.py
       - name: Backend coverage
         # Alt sınır (fail_under) kapsamın fark edilmeden düşmesini engeller; kapsam arttıkça yükseltin.
         # Hangi kritik yolların test edildiği: docs/testing.md

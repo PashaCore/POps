@@ -132,10 +132,11 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 
 ### Rate limits
 
-`POST /api/admin/login`, `POST /api/admin/login/totp` and `POST /api/admin/2fa/setup|enable|disable` are limited to
-10 requests per minute per client address. Exceeding the limit returns `429`. The agent's file transfer endpoints
-(`GET /api/files/{id}/download`, `POST /api/files/{id}/upload`) take at most 30 requests per minute per device and
-endpoint, like the other agent endpoints that are limited per device (helpdesk, activity).
+`POST /api/admin/login`, `POST /api/admin/login/totp`, `POST /api/auth/sso/redeem` and
+`POST /api/admin/2fa/setup|enable|disable` are limited to 10 requests per minute per client address, the OpenID
+Connect start and callback to 20, `POST /api/sso/test/ldap|oidc` to 10. Exceeding the limit returns `429`. The agent's
+file transfer endpoints (`GET /api/files/{id}/download`, `POST /api/files/{id}/upload`) take at most 30 requests per
+minute per device and endpoint, like the other agent endpoints that are limited per device (helpdesk, activity).
 
 ## Endpoint reference
 
@@ -154,16 +155,33 @@ endpoint, like the other agent endpoints that are limited per device (helpdesk, 
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/admin/login` | none | Password login (bcrypt hashes only). Returns a token, or a 2FA challenge. Rate-limited. |
+| POST | `/api/admin/login` | none | Password login: bcrypt hash for local accounts, the directory for other names when LDAP sign-in is on (`401` wrong credentials, `403` disabled or unmapped directory account, `503` directory unreachable). Returns a token, or a 2FA challenge. Rate-limited. |
 | POST | `/api/admin/login/totp` | none | Second login step: `{challenge, otp}`. Rate-limited. |
 | GET | `/api/admin/2fa/status` | require_user_session | Whether 2FA is enabled for the current user. |
 | POST | `/api/admin/2fa/setup` | require_user_session | Creates a new TOTP secret (not yet enforced); returns `secret` and an `otpauth://` URI. `400` if 2FA is already on. |
 | POST | `/api/admin/2fa/enable` | require_user_session | `{otp}`: confirms a code and turns 2FA on. |
 | POST | `/api/admin/2fa/disable` | require_user_session | `{otp}`: turns 2FA off; a valid code is required while it is on. |
-| GET | `/api/admin/users` | require_admin_session | Lists users (id, username, role, last login, permissions). |
-| POST | `/api/admin/users` | require_superadmin | `{username, password, role, permissions}`. Roles: `superadmin`, `admin`, `viewer`; `permissions` is a JSON array string. `409` if the name exists. |
-| PUT | `/api/admin/users/{user_id}` | require_superadmin | Updates name, role, permissions and optionally password; invalidates the user's tokens. The last superadmin cannot be demoted. |
+| GET | `/api/admin/users` | require_admin_session | Lists users (id, username, role, last login, permissions, `auth_source`). |
+| POST | `/api/admin/users` | require_superadmin | `{username, password, role, permissions, auth_source?}`. Roles: `superadmin`, `admin`, `viewer`; `permissions` is a JSON array string. `auth_source` `local` (default, password required), `ldap` or `oidc` (no password; linked at the first sign-in). `409` if the name exists. |
+| PUT | `/api/admin/users/{user_id}` | require_superadmin | Updates name, role, permissions and optionally password and `auth_source`; invalidates the user's tokens. The last superadmin cannot be demoted. Turning a local account into `ldap`/`oidc` removes its password (refused for the first local superadmin and the last local superadmin); turning it back into `local` needs `password`. |
 | DELETE | `/api/admin/users/{user_id}` | require_superadmin | Deletes a user. You cannot delete yourself or the last superadmin. |
+
+### Directory and single sign-on
+
+The OpenID Connect flow and the settings; see [`security.md`](security.md#directory-and-single-sign-on) and
+[`configuration.md`](configuration.md#identity-providers). LDAP sign-in uses `POST /api/admin/login`.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/auth/sso` | none | `{ldap: bool, oidc: bool, oidc_name}` for the sign-in page. |
+| GET | `/api/auth/oidc/start` | none | Browser redirect to the provider. `b`: 64 hex characters (SHA-256 of the binding the panel keeps in its PHP session); `next`: optional local path (anything else `400`). Sets the `pops_oidc_state` cookie. `404` when OIDC is off. Not in the OpenAPI document. |
+| GET | `/api/auth/oidc/callback` | none | Provider's redirect target: checks state (cookie and server), exchanges the code with PKCE, validates the ID token, maps the role and redirects to `<panel>/login?sso=<ticket>`, or `?sso_error=state\|provider\|token\|access\|conflict\|unavailable`. Not in the OpenAPI document. |
+| POST | `/api/auth/sso/redeem` | none | `{ticket, binding}`: one-time ticket (60 s) plus the binding from the start; returns the same as a password login (token, or a 2FA challenge) and `next`. `401` for an unknown, used, expired or foreign ticket. |
+| GET | `/api/sso/settings` | require_superadmin | Both providers' settings with `has_secret`; never the secrets. |
+| PUT | `/api/sso/settings/ldap` | require_superadmin | Saves the LDAP settings (`bind_password`: omitted or `null` keeps, `""` deletes). `400` for invalid values, plain LDAP, a missing required field when `enabled`, or a changed server, connection type, bind DN or CA without the password. Switching it off ends the sessions of directory accounts. Audit-logged (`sso_settings`). |
+| PUT | `/api/sso/settings/oidc` | require_superadmin | Same for OpenID Connect (`client_secret`). |
+| POST | `/api/sso/test/ldap` | require_superadmin | Tests the posted (unsaved) LDAP settings: TLS connection and service bind, and with `test_username` that user's DN, groups, `disabled` and resulting `role`. `{ok: false, message}` on failure. |
+| POST | `/api/sso/test/oidc` | require_superadmin | Reads the posted provider's discovery document and JWKS: issuer, endpoints, key count, algorithms, PKCE. |
 
 ### API tokens
 

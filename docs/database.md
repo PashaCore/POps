@@ -57,6 +57,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0026_device_platform.sql` | `clients.platform` (`windows` / `linux`, from the agent's `X-Agent-Platform`; `NULL` for agents that do not send it, shown as `windows`). |
 | `0027_winget.sql` | `tasks.kind` / `payload` (a winget step: `kind = 'winget'`, `payload = {"id", "version"}`) and `agent_versions.features` (what the agent announced in `X-Agent-Features`). See [`api.md`](api.md#winget-steps). |
 | `0028_power_message.sql` | Power actions and messages to the user: `tasks.kind` `power` / `user_message` with `payload` `{op, delay, message}` / `{title, text, style, requires_ack}`; adds `tasks.kind` / `payload`, `agent_versions.features` and `clients.platform` with `IF NOT EXISTS` (the same columns as `0026` and `0027`). See [`api.md`](api.md#power-actions-and-messages). |
+| `0030_sso.sql` | `users.auth_source` / `external_id` and the tables `sso_providers` (directory and OpenID Connect settings) and `sso_flows` (short-lived sign-in state and tickets). |
 | `0020_refused_results.sql` | Tasks the agent refused but an older server stored as `Completed` (output starting with `[REDDEDİLDİ]`, no exit code) become `Denied` with exit code `-5`. |
 | `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
 | `0017_task_expiry.sql` | `tasks.expires_at`, `tasks.schedule_id`, `tasks.agent_started_at` and the pending-by-schedule index. |
@@ -117,7 +118,9 @@ Deleting a device also deletes its rows in both tables.
 | Table | Contents |
 | --- | --- |
 | `api_tokens` | API tokens for automation (migration `0022`): `name` (unique, revoked tokens included; actions are recorded as `token:<name>`), `token_hash` (SHA-256; the token itself is shown once and never stored), `token_prefix` (first 8 characters after `pops_`), `role` (`viewer` / `admin`, enforced by a `CHECK`), `created_by`, `created_at`, `expires_at` (`NULL` = no expiry), `last_used_at` (written at most once a minute), `revoked_at` (revoked tokens are kept). See [`api.md`](api.md#api-tokens-automation). |
-| `users` | `username`, `password_hash` (bcrypt only), `role` (`superadmin` / `admin` / `viewer`), `permissions` (JSON array of dashboard page names, stored as text), `last_login`, `totp_secret` (encrypted, `v1:` prefix; see [`security.md`](security.md#two-factor-authentication)), `totp_enabled`, `totp_last_step` (time step of the last accepted code), `token_version`. |
+| `users` | `username`, `password_hash` (bcrypt only; `!sso` for directory and OIDC accounts, which no password matches), `role` (`superadmin` / `admin` / `viewer`), `permissions` (JSON array of dashboard page names, stored as text), `last_login`, `totp_secret` (encrypted, `v1:` prefix; see [`security.md`](security.md#two-factor-authentication)), `totp_enabled`, `totp_last_step` (time step of the last accepted code), `token_version`, `auth_source` (`local` / `ldap` / `oidc`, migration `0030`), `external_id` (directory `guid:`/`uuid:`/`dn:` or OIDC `iss\|sub`; unique per source; set at the first sign-in). |
+| `sso_providers` | Directory and OpenID Connect sign-in settings (migration `0030`): `kind` (`ldap` / `oidc`), `enabled`, `config` (JSONB, no secrets), `secret` (service-account password or client secret, encrypted like the 2FA secrets), `updated_by`, `updated_at`. See [`configuration.md`](configuration.md#identity-providers). |
+| `sso_flows` | Short-lived OpenID Connect state (`oidc_state`, 10 minutes) and sign-in tickets (`ticket`, 60 seconds), keyed by the SHA-256 of the value; a row is deleted when it is read. |
 
 ### Agent authentication
 

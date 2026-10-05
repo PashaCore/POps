@@ -768,6 +768,236 @@
         "title": "LabRenameInput",
         "type": "object"
       },
+      "LdapSettingsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_insecure_for_tests": {
+            "default": false,
+            "title": "Allow Insecure For Tests",
+            "type": "boolean"
+          },
+          "base_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Base Dn",
+            "type": "string"
+          },
+          "bind_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Bind Dn",
+            "type": "string"
+          },
+          "bind_password": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bind Password"
+          },
+          "ca_pem": {
+            "default": "",
+            "maxLength": 65536,
+            "title": "Ca Pem",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "group_base_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Group Base Dn",
+            "type": "string"
+          },
+          "group_filter": {
+            "default": "(|(member={user_dn})(uniqueMember={user_dn}))",
+            "maxLength": 512,
+            "title": "Group Filter",
+            "type": "string"
+          },
+          "group_map": {
+            "items": {
+              "$ref": "#/components/schemas/SsoGroupMapInput"
+            },
+            "maxItems": 50,
+            "title": "Group Map",
+            "type": "array"
+          },
+          "host": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "default": 636,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "security": {
+            "default": "ldaps",
+            "enum": [
+              "ldaps",
+              "starttls",
+              "plain"
+            ],
+            "title": "Security",
+            "type": "string"
+          },
+          "timeout": {
+            "default": 5,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Timeout",
+            "type": "integer"
+          },
+          "user_filter": {
+            "default": "(sAMAccountName={username})",
+            "maxLength": 512,
+            "title": "User Filter",
+            "type": "string"
+          },
+          "username_attribute": {
+            "default": "sAMAccountName",
+            "maxLength": 64,
+            "title": "Username Attribute",
+            "type": "string"
+          }
+        },
+        "title": "LdapSettingsInput",
+        "type": "object"
+      },
+      "LdapTestInput": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_insecure_for_tests": {
+            "default": false,
+            "title": "Allow Insecure For Tests",
+            "type": "boolean"
+          },
+          "base_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Base Dn",
+            "type": "string"
+          },
+          "bind_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Bind Dn",
+            "type": "string"
+          },
+          "bind_password": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bind Password"
+          },
+          "ca_pem": {
+            "default": "",
+            "maxLength": 65536,
+            "title": "Ca Pem",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "group_base_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Group Base Dn",
+            "type": "string"
+          },
+          "group_filter": {
+            "default": "(|(member={user_dn})(uniqueMember={user_dn}))",
+            "maxLength": 512,
+            "title": "Group Filter",
+            "type": "string"
+          },
+          "group_map": {
+            "items": {
+              "$ref": "#/components/schemas/SsoGroupMapInput"
+            },
+            "maxItems": 50,
+            "title": "Group Map",
+            "type": "array"
+          },
+          "host": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "default": 636,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "security": {
+            "default": "ldaps",
+            "enum": [
+              "ldaps",
+              "starttls",
+              "plain"
+            ],
+            "title": "Security",
+            "type": "string"
+          },
+          "test_username": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Username"
+          },
+          "timeout": {
+            "default": 5,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Timeout",
+            "type": "integer"
+          },
+          "user_filter": {
+            "default": "(sAMAccountName={username})",
+            "maxLength": 512,
+            "title": "User Filter",
+            "type": "string"
+          },
+          "username_attribute": {
+            "default": "sAMAccountName",
+            "maxLength": 64,
+            "title": "Username Attribute",
+            "type": "string"
+          }
+        },
+        "title": "LdapTestInput",
+        "type": "object"
+      },
       "LicenseInput": {
         "properties": {
           "expires_at": {
@@ -1098,6 +1328,117 @@
           }
         },
         "title": "NotifySettingsInput",
+        "type": "object"
+      },
+      "OidcSettingsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_insecure_for_tests": {
+            "default": false,
+            "title": "Allow Insecure For Tests",
+            "type": "boolean"
+          },
+          "allowed_domains": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Allowed Domains",
+            "type": "array"
+          },
+          "ca_pem": {
+            "default": "",
+            "maxLength": 65536,
+            "title": "Ca Pem",
+            "type": "string"
+          },
+          "client_id": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Secret"
+          },
+          "default_pages": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Default Pages",
+            "type": "array"
+          },
+          "default_role": {
+            "default": "",
+            "enum": [
+              "",
+              "viewer",
+              "admin"
+            ],
+            "title": "Default Role",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "maxLength": 60,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "group_map": {
+            "items": {
+              "$ref": "#/components/schemas/SsoGroupMapInput"
+            },
+            "maxItems": 50,
+            "title": "Group Map",
+            "type": "array"
+          },
+          "groups_claim": {
+            "default": "groups",
+            "maxLength": 64,
+            "title": "Groups Claim",
+            "type": "string"
+          },
+          "issuer": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Issuer",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Redirect Uri",
+            "type": "string"
+          },
+          "scopes": {
+            "default": "openid email profile",
+            "maxLength": 256,
+            "title": "Scopes",
+            "type": "string"
+          },
+          "username_claim": {
+            "default": "email",
+            "maxLength": 64,
+            "title": "Username Claim",
+            "type": "string"
+          }
+        },
+        "title": "OidcSettingsInput",
         "type": "object"
       },
       "OrchestrationInput": {
@@ -1834,6 +2175,63 @@
         "title": "SoftwareItem",
         "type": "object"
       },
+      "SsoGroupMapInput": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Group",
+            "type": "string"
+          },
+          "pages": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Pages",
+            "type": "array"
+          },
+          "role": {
+            "enum": [
+              "viewer",
+              "admin",
+              "superadmin"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "role"
+        ],
+        "title": "SsoGroupMapInput",
+        "type": "object"
+      },
+      "SsoRedeemInput": {
+        "additionalProperties": false,
+        "properties": {
+          "binding": {
+            "maxLength": 128,
+            "minLength": 20,
+            "title": "Binding",
+            "type": "string"
+          },
+          "ticket": {
+            "maxLength": 128,
+            "minLength": 20,
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "binding"
+        ],
+        "title": "SsoRedeemInput",
+        "type": "object"
+      },
       "StartAuditSessionInput": {
         "properties": {
           "admin_id": {
@@ -2118,9 +2516,26 @@
       },
       "UserCreateInput": {
         "properties": {
-          "password": {
-            "title": "Password",
+          "auth_source": {
+            "default": "local",
+            "enum": [
+              "local",
+              "ldap",
+              "oidc"
+            ],
+            "title": "Auth Source",
             "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
           },
           "permissions": {
             "title": "Permissions",
@@ -2137,7 +2552,6 @@
         },
         "required": [
           "username",
-          "password",
           "role",
           "permissions"
         ],
@@ -2211,6 +2625,22 @@
       },
       "UserUpdateInput": {
         "properties": {
+          "auth_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "local",
+                  "ldap",
+                  "oidc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Source"
+          },
           "password": {
             "anyOf": [
               {
@@ -3122,6 +3552,66 @@
         "summary": "Auth Logout",
         "tags": [
           "agents"
+        ]
+      }
+    },
+    "/api/v1/auth/sso": {
+      "get": {
+        "description": "Giriş sayfası için: hangi yöntemler açık (ayrıntı yok).",
+        "operationId": "sso_info_api_auth_sso_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sso Info",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
+    "/api/v1/auth/sso/redeem": {
+      "post": {
+        "description": "Panelin (login.php) sunucu tarafı: bileti, akışı başlatan PHP oturumunun bağıyla birlikte bozdurur.",
+        "operationId": "sso_redeem_api_auth_sso_redeem_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoRedeemInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sso Redeem",
+        "tags": [
+          "sso"
         ]
       }
     },
@@ -7337,6 +7827,208 @@
         "summary": "Put Software",
         "tags": [
           "inventory"
+        ]
+      }
+    },
+    "/api/v1/sso/settings": {
+      "get": {
+        "description": "İki sağlayıcının ayarları; sırlar dönmez (yalnızca kayıtlı olup olmadıkları).",
+        "operationId": "get_settings_api_sso_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Settings",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
+    "/api/v1/sso/settings/ldap": {
+      "put": {
+        "operationId": "put_ldap_api_sso_settings_ldap_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LdapSettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Ldap",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
+    "/api/v1/sso/settings/oidc": {
+      "put": {
+        "operationId": "put_oidc_api_sso_settings_oidc_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcSettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Oidc",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
+    "/api/v1/sso/test/ldap": {
+      "post": {
+        "description": "Formdaki (kaydedilmemiş olabilir) ayarlarla bağlantıyı sınar. Şifre yazılmadıysa kayıtlı şifre, yalnızca\nsunucu ve hizmet hesabı kayıtlıyla aynıysa kullanılır.",
+        "operationId": "test_ldap_api_sso_test_ldap_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LdapTestInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Ldap",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
+    "/api/v1/sso/test/oidc": {
+      "post": {
+        "operationId": "test_oidc_api_sso_test_oidc_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcSettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Oidc",
+        "tags": [
+          "sso"
         ]
       }
     },

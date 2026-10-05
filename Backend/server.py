@@ -59,6 +59,7 @@ from pops.routers import (
     reports,
     rest,
     schedules,
+    sso as sso_router,
     tasks,
     tokens,
 )
@@ -161,6 +162,7 @@ async def startup_event():
             # (R-12, B14)
             await secretbox.reseal_totp_secrets(execute_query)
             await secretbox.reseal_bypass_keys(execute_query)
+            await secretbox.reseal_sso_secrets(execute_query)
             # Yeniden başlatmadan önce gönderilmiş, sonucu beklenen ajan güncellemeleri (S20)
             await update_tracking.load()
             # Açılışta hiçbir ajan bağlı değil; bağlananlar yeniden Online yazılır
@@ -246,7 +248,7 @@ async def shutdown_event():
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
-    activity, modules_router, branding, tokens, files, power_router,
+    activity, modules_router, branding, tokens, files, power_router, sso_router,
     # Sınav modu (/api/labs/{lab_name:path}/exam): rest'in genel /api/labs/{lab_name} yollarından önce
     exams_router,
     # REST adları (/api/v1) eski uçların işleyicilerini çağırır; eskilerden sonra bağlanır

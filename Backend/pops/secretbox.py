@@ -1,5 +1,6 @@
-"""Veritabanında saklanan gizli değerlerin şifrelenmesi (R-12): panel kullanıcılarının TOTP (2FA) anahtarı ve
-cihazların çevrimdışı bypass anahtarı (B14).
+"""Veritabanında saklanan gizli değerlerin şifrelenmesi (R-12): panel kullanıcılarının TOTP (2FA) anahtarı,
+cihazların çevrimdışı bypass anahtarı (B14) ve kimlik sağlayıcılarının sırları (LDAP hizmet hesabı şifresi, OIDC
+istemci sırrı; D-24).
 
 Amaç: yalnızca veritabanı sızan biri (yedek dosyası, SQL okuma açığı) 2FA anahtarlarını ve bypass kodlarını
 kullanamasın. Anahtar
@@ -116,4 +117,12 @@ async def reseal_bypass_keys(execute_query) -> int:
     changed = await _reseal(execute_query, "agent_bypass_keys", "pc_name", "secret")
     if changed:
         log.info("bypass anahtarları şifrelendi", extra={"count": changed})
+    return changed
+
+
+async def reseal_sso_secrets(execute_query) -> int:
+    """Açılışta: LDAP hizmet hesabı şifresi ve OIDC istemci sırrı için aynısı."""
+    changed = await _reseal(execute_query, "sso_providers", "kind", "secret")
+    if changed:
+        log.info("kimlik sağlayıcısı sırları yeniden şifrelendi", extra={"count": changed})
     return changed
