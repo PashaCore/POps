@@ -136,7 +136,8 @@ Details and limits: [`docs/docker.md`](docs/docker.md).
 ### What CI runs
 
 `.github/workflows/ci.yml` runs on every push and pull request to `main`; `codeql.yml` adds CodeQL for Python,
-JavaScript and C#.
+JavaScript and C#; `scorecard.yml` runs the OpenSSF Scorecard on pushes to `main` and weekly (results under
+Security → Code scanning and on the README badge).
 
 | Job | Checks | Run it locally |
 | --- | --- | --- |

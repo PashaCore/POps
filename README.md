@@ -16,6 +16,7 @@
 
   [![POps CI](https://github.com/PashaCore/POps/actions/workflows/ci.yml/badge.svg)](https://github.com/PashaCore/POps/actions/workflows/ci.yml)
   [![CodeQL](https://github.com/PashaCore/POps/actions/workflows/codeql.yml/badge.svg)](https://github.com/PashaCore/POps/actions/workflows/codeql.yml)
+  [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/PashaCore/POps/badge)](https://scorecard.dev/viewer/?uri=github.com/PashaCore/POps)
 
   ⭐ **Open Source** &nbsp;•&nbsp; 🛡️ **Transparent by Design** &nbsp;•&nbsp; ⚡ **Real-time** &nbsp;•&nbsp; 🏫 **Built for Education & Teams**
 
@@ -278,8 +279,8 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn SERVER_URL=https://<your-server>
 Add `TERMINAL_ENABLED=0` and/or `VISION_ENABLED=0` on PCs that do not need those features. The PC shows up in
 **Cihazlar** within seconds.
 
-Step by step: [`docs/quick-start.md`](docs/quick-start.md). Docker Compose is available as an option
-([`docs/docker.md`](docs/docker.md)).
+Step by step: [`docs/quick-start.md`](docs/quick-start.md). Docker Compose is available as an option, with
+ready-made images on GHCR ([`docs/docker.md`](docs/docker.md)).
 
 ---
 

@@ -240,6 +240,10 @@ A `v*` tag runs `.github/workflows/release.yml`, which builds and attaches:
 | `manifest.json`, `manifest.json.sig` | SHA-256 of every file, version, tag and time, signed with ed25519. |
 | `SHA256SUMS` | Plain checksums. |
 
+After the release is published, the same workflow pushes the Docker images
+`ghcr.io/pashacore/pops-backend` and `ghcr.io/pashacore/pops-dashboard` with the tags `<version>` and `latest`
+([`docker.md`](docker.md#images)).
+
 The signing key exists only as a GitHub secret; the public key is `keys/pops_release_ed25519.pub.pem`
 ([`keys/README.md`](../keys/README.md)). The workflow refuses to publish unless the tag equals `v<VERSION>` and
 `CHANGELOG.md` has a section for that version. The release tag itself is signed with a separate SSH key

@@ -7,8 +7,13 @@ containers:
 | Service     | What it runs                                                                                                               | Volumes                          |
 |-------------|----------------------------------------------------------------------------------------------------------------------------|----------------------------------|
 | `db`        | PostgreSQL (`postgres:17`). No published port.                                                                             | `pgdata`                         |
-| `backend`   | FastAPI/uvicorn on port 8000 as a non-root user (`docker/backend.Dockerfile`). Applies the migrations on every start.      | `storage`, `updates`, `releases` |
-| `dashboard` | PHP panel on Apache (`docker/dashboard.Dockerfile`). Proxies `/api`, `/ws`, `/updates` and `/download` to the backend.     | none                             |
+| `backend`   | FastAPI/uvicorn on port 8000 as a non-root user (`ghcr.io/pashacore/pops-backend`). Applies the migrations on every start. | `storage`, `updates`, `releases` |
+| `dashboard` | PHP panel on Apache (`ghcr.io/pashacore/pops-dashboard`). Proxies `/api`, `/ws`, `/updates` and `/download` to the backend. | none                             |
+
+Every release publishes the backend and dashboard images on GitHub Container Registry, so
+nothing has to be built: Compose pulls them (see [Images](#images)). They are built from
+`docker/backend.Dockerfile` and `docker/dashboard.Dockerfile`, and you can
+[build them from source](#building-from-source) instead.
 
 Only the dashboard publishes a port: plain HTTP on `127.0.0.1:8080` by default. TLS is
 not included; put a reverse proxy in front (see [TLS and agents](#tls-and-agents)).
@@ -21,7 +26,7 @@ cd POps
 cp .env.example .env
 # Fill in at least: JWT_SECRET, BYPASS_SECRET, DB_USER, DB_PASS, DB_NAME, PANEL_ADMIN_PASS
 #   secrets:  openssl rand -hex 32
-docker compose up -d --build
+docker compose up -d                      # pulls the published images, no build
 docker compose ps                         # all three should become "healthy"
 curl http://127.0.0.1:8080/api/health     # {"status":"ok","database":true,...}
 ```
@@ -32,6 +37,53 @@ only if it does not exist yet; changing these values later has no effect (change
 password in the panel).
 
 Values in `.env` are read by Compose, so avoid `$` in them or wrap the value in single quotes.
+
+## Images
+
+| Image                              | Built from                    |
+|------------------------------------|-------------------------------|
+| `ghcr.io/pashacore/pops-backend`   | `docker/backend.Dockerfile`   |
+| `ghcr.io/pashacore/pops-dashboard` | `docker/dashboard.Dockerfile` |
+
+The release tag `v0.1.22-alpha` pushes both images as `0.1.22-alpha` (the version without
+the `v`) and moves `latest` to it; every release does the same. The images are `linux/amd64`, carry the OCI labels
+`org.opencontainers.image.source`, `.version`, `.revision` and `.licenses` (Apache-2.0), and
+come with a build provenance attestation and an SBOM:
+
+```bash
+docker buildx imagetools inspect ghcr.io/pashacore/pops-backend:latest --format '{{ json .Provenance }}'
+docker buildx imagetools inspect ghcr.io/pashacore/pops-backend:latest --format '{{ json .SBOM }}'
+```
+
+### Pinning a version
+
+`docker-compose.yml` uses the tag in `POPS_IMAGE_TAG`, `latest` when it is not set. To stay on
+one release, set it in `.env` and apply it:
+
+```bash
+echo 'POPS_IMAGE_TAG=0.1.22-alpha' >> .env
+docker compose up -d
+```
+
+Both images always use the same tag. Moving forward is safe (the backend applies the new
+migrations on start); moving back to an older tag is not, because the database keeps the
+newer schema: restore a backup taken before the upgrade instead. Do not use `POPS_VERSION`
+for this: that variable overrides the version the backend reports and should stay unset.
+
+### Building from source
+
+```bash
+docker compose up -d --build              # or: docker compose build && docker compose up -d
+```
+
+builds both images from the checkout (build context: the repository root, filtered by the
+`.dockerignore` allowlist) instead of pulling them, for local changes or for a host that is
+not amd64. The result gets the image names from `docker-compose.yml` (with the tag in
+`POPS_IMAGE_TAG`), so later `docker compose up -d` keeps using the local build;
+`docker compose pull` replaces it with the published images. Compose also builds by itself
+when an image cannot be pulled (no network, a tag that does not exist, or a host that is not
+amd64), so keep the whole checkout or the `pops-server-<version>.tar.gz` release package,
+not only `docker-compose.yml`.
 
 ## Configuration
 
@@ -48,6 +100,7 @@ Variables used only by `docker-compose.yml` (put them in `.env`):
 
 | Variable               | Default           | Meaning                                                                                                    |
 |------------------------|-------------------|------------------------------------------------------------------------------------------------------------|
+| `POPS_IMAGE_TAG`       | `latest`          | Tag of both published images, for example `0.1.22-alpha`; see [Pinning a version](#pinning-a-version).     |
 | `POPS_HTTP_PORT`       | `8080`            | Host port of the dashboard.                                                                                |
 | `POPS_HTTP_BIND`       | `127.0.0.1`       | Host address the port binds to. Keep loopback unless the TLS proxy runs on another machine.               |
 | `TZ`                   | `Europe/Istanbul` | Time zone of the backend and database. Must match the agents: timestamps and the daily offline bypass code use local time. |
@@ -135,16 +188,31 @@ addresses because only the dashboard can reach it.
 
 ## Upgrades
 
-Back up first (below), then:
+Back up first (below), then, with the published images (set the new `POPS_IMAGE_TAG` in
+`.env` first if you pinned one):
+
+```bash
+git pull                                       # changes to docker-compose.yml, if any (or unpack the new release package)
+docker compose pull
+docker compose up -d
+docker compose logs backend | grep uygulandi   # migrations applied on this start, if any
+```
+
+When building from source:
 
 ```bash
 git pull
 docker compose up -d --build
-docker compose logs backend | grep uygulandi   # migrations applied on this start, if any
 ```
 
-Migrations run automatically when the backend starts. Add `--pull` to the build
+Migrations run automatically when the backend starts. Published images are rebuilt on fresh
+base images for every release; for source builds add `--pull`
 (`docker compose build --pull && docker compose up -d`) to pick up base image security updates.
+
+Installs set up before the images were published built them locally (`pops-backend`,
+`pops-dashboard`). `docker compose up -d --build` keeps doing that; `docker compose pull`
+followed by `docker compose up -d` switches to the published images, after which the old
+local images can be removed with `docker image rm pops-backend pops-dashboard`.
 
 The PostgreSQL major version is fixed by the `pgdata` volume: do not change the `postgres:17`
 tag on an existing volume. To move to a new major version, dump the database, remove the
@@ -185,3 +253,20 @@ working if the server address stays the same.
   15 seconds after it starts. Once the `db` container is healthy, run `docker compose restart backend`.
 - No admin account: `PANEL_ADMIN_PASS` was empty on the first start. Set it in `.env` and run
   `docker compose up -d` (the account is created only if it does not exist).
+- `docker compose up` reports a failed pull (`denied`, `manifest unknown`, `no matching
+  manifest`) and then builds: the image or tag is not published (yet), or the host is not
+  amd64. The local build works the same way; to use the published images, check
+  `POPS_IMAGE_TAG` and run `docker compose pull`.
+
+## Maintainer notes
+
+- `.github/workflows/release.yml` (job `images`) builds and pushes both images on a `v*` tag,
+  after the GitHub Release has been published, so only when the CI tests, the
+  tag/VERSION/CHANGELOG check and the `release` environment approval have passed. When the
+  workflow changes on `main` it only builds them, without pushing.
+- **New GHCR packages are private.** After the first release that pushes them, make both
+  packages public once: GitHub → PashaCore → **Packages** → `pops-backend` →
+  **Package settings** → **Danger Zone** → **Change visibility** → **Public**, then the same
+  for `pops-dashboard`. If **Public** is not offered, allow public packages in the organisation
+  settings (**Packages** → package creation). Until then pulls fail with `denied` and Compose
+  builds from source.
