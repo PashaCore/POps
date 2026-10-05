@@ -10,12 +10,17 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   analyze:
     name: Analyze ${{ matrix.language }}
     runs-on: ubuntu-latest
+    permissions:
+      # Sonuçları Code scanning'e yüklemek için (yalnızca bu iş)
+      security-events: write
+      # codeql-action çalışmanın bilgisini okur; checkout depoyu okur
+      actions: read
+      contents: read
     strategy:
       fail-fast: false
       matrix:

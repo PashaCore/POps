@@ -147,6 +147,7 @@ jobs:
     # imzalı yayın, elle onay olmadan tetiklenemez. (GitHub → Settings → Environments)
     environment: release
     permissions:
+      # Yalnızca bu iş: GitHub Release'i oluşturup paketleri ona yüklemek (softprops/action-gh-release)
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -230,6 +231,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # İmajları ghcr.io/pashacore'a itmek için (yalnızca etikette push edilir)
       packages: write
     strategy:
       fail-fast: false
