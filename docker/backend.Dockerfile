@@ -32,10 +32,10 @@ COPY Backend/ ./
 COPY keys/ ./keys/
 COPY VERSION ./VERSION
 
-# Runtime data (uploads, agent update packages, verified releases): mounted as volumes.
+# Runtime data (uploads, agent update packages, verified releases, file transfers): mounted as volumes.
 RUN python -m compileall -q /app \
-    && mkdir -p storage updates releases \
-    && chown pops:pops storage updates releases
+    && mkdir -p storage updates releases transfers \
+    && chown pops:pops storage updates releases transfers
 
 USER pops
 EXPOSE 8000

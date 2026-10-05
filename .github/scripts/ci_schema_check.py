@@ -30,6 +30,8 @@ CHECKS = [
     ("tickets", "status"),
     ("ticket_messages", "internal"),
     ("clients", "pending_quarantine_action"),
+    ("file_transfers", "token_hash"),
+    ("clients", "cap_files_enabled"),
 ]
 
 

@@ -57,6 +57,11 @@ UPLOAD_DIR = os.path.realpath(os.path.join(BASE_DIR, "storage"))
 UPDATES_DIR = os.path.join(BASE_DIR, "updates")
 
 
+# Dosya aktarımı (bkz. pops/filestore.py): bilgisayara gönderilen ve bilgisayardan alınan dosyalar. Yükleme
+# klasörünün yanında durur ve statik sunulmaz; dosyaları yalnızca hedef ajan (tek kullanımlık jetonla) ve admin indirir.
+FILES_DIR = os.path.realpath(os.environ.get('POPS_FILES_DIR') or os.path.join(BASE_DIR, "transfers"))
+
+
 USE_V2_SCHEMA = True
 
 

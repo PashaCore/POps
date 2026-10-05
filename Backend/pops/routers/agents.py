@@ -29,6 +29,7 @@ from pops.dna import check_known_device, reconcile_device
 from pops.notify import notify
 from pops import agent_health, agent_version as agent_version_mod, bypass, heartbeats, metrics, update_notice
 from pops import update_tracking
+from pops.routers import files as file_transfer
 
 log = logging.getLogger("pops.agents")
 # Ajanın çalıştırmadığı komutun sonucu bu önekle başlar (Agent CommandExecutionPolicy.DisabledMessage)
@@ -163,8 +164,9 @@ async def reconcile_quarantine(
 # Sunucunun desteklediği, ajanın davranışını değiştiren özellikler (0.1.14+ ajan okur; eskiler bilinmeyen action'ı
 # yok sayar). update_result_ack: güncelleme sonucu kaydedilince onaylanır, ajan onaya kadar sonucu saklar.
 # update_progress: güncellemenin ara adımları okunur (eski sunucu bilinmeyen mesajı zaten yok sayar; ajan isterse
-# yalnızca bunu duyuran sunucuya gönderir).
-SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress")
+# yalnızca bunu duyuran sunucuya gönderir). file_transfer: file_push / file_pull komutları ve file_result iletisi
+# (bkz. routers/files.py); ajan dosya aktarımını yalnızca bunu duyuran sunucudan kabul edebilir.
+SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress", "file_transfer")
 # Ajan protokolünün sürümü (docs/protocol/README.md): yalnızca uyumsuz bir değişiklikte artar. Yeni alan ya da yeni
 # mesaj sürümü değiştirmez; sunucunun yeni davranışları SERVER_FEATURES ile duyurulur.
 PROTOCOL_VERSION = 1
@@ -786,18 +788,25 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 if payload.get("type") == "update_progress":
                     await _update_progress(active_hwid, payload, agent_version)
                     continue
+                if payload.get("type") == "file_result":
+                    # Dosya aktarımının sonucu (gönderilen dosya yazıldı/reddedildi; istenen dosya bulunamadı...)
+                    await file_transfer.handle_result(active_hwid, payload)
+                    continue
                 if payload.get("type") == "capabilities":
                     # Ajan güncel yetenek durumunu bildirir (bağlantıda + her değişimde). Sakla + panele yay.
                     t = payload.get("terminal_enabled")
                     v = payload.get("vision_enabled")
+                    # files_enabled: dosya aktarımı (bilmeyen eski ajanda alan yok -> NULL, sunucu dosya göndermez)
+                    f = payload.get("files_enabled")
                     # server_ca (0.1.10+): custom = cihazdaki kurum CA'sı, system = Windows kök deposu; yoksa eskisi
                     # kalır
                     sc = payload.get("server_ca")
                     sc = sc if sc in ("custom", "system") else None
                     await execute_query(
                         "UPDATE clients SET cap_terminal_enabled=$1, cap_vision_enabled=$2, "
-                        "cap_server_ca=COALESCE($4, cap_server_ca) WHERE pc_name=$3",
-                        (bool(t) if t is not None else None, bool(v) if v is not None else None, active_hwid, sc),
+                        "cap_server_ca=COALESCE($4, cap_server_ca), cap_files_enabled=$5 WHERE pc_name=$3",
+                        (bool(t) if t is not None else None, bool(v) if v is not None else None, active_hwid, sc,
+                         bool(f) if f is not None else None),
                     )
                     # Yönetici daha önce kapatma istediyse ama ajan hâlâ AÇIK bildiriyorsa (ör. istek
                     # çevrimdışıyken verildi) kapatmayı yeniden gönder. Fail-safe: yalnızca kapatırız.
@@ -816,7 +825,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         if resend:
                             await manager.send_command({"action": "set_capabilities", **resend}, active_hwid)
                     await manager.broadcast_to_panels(
-                        {"type": "capabilities", "pc_name": active_hwid, "terminal_enabled": t, "vision_enabled": v}
+                        {"type": "capabilities", "pc_name": active_hwid, "terminal_enabled": t, "vision_enabled": v,
+                         "files_enabled": f}
                     )
                     continue
                 if payload.get("type") == "bypass_secret_ack":
@@ -836,7 +846,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 if payload.get("type") == "capability_denied":
                     # Ajan, kapalı bir yetenek için gelen isteği reddettiğini bildirir. Denetime yaz + panele yay.
                     # reason (0.1.12+): ör. not_enrolled = cihaz anahtarı olmadığı için Vision tüneli açılmadı
-                    _md = {k: payload.get(k) for k in ("capability", "action", "task_id", "reason")}
+                    _md = {k: payload.get(k) for k in ("capability", "action", "task_id", "transfer_id", "reason")}
                     denied_task = payload.get("task_id")
                     if isinstance(denied_task, int) and not isinstance(denied_task, bool):
                         # Komut çalıştırılmadı. Ajanın ret sonucu (0.1.13 ve öncesi çıkış kodsuz) görevi "Completed"
@@ -847,6 +857,9 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                             "AND status IN ('Running', 'Completed', 'Failed', 'Unknown', 'Interrupted', 'Timed Out')",
                             (denied_task, active_hwid),
                         )
+                    if payload.get("capability") == "files":
+                        # Dosya aktarımı bilgisayarda kapalı: yetenek kapalı yazılır, aktarım "rejected"
+                        await file_transfer.handle_denied(active_hwid, payload)
                     await log_audit_event(
                         active_hwid,
                         "Security",

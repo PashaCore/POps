@@ -14,7 +14,7 @@ import time
 import uuid
 from typing import Optional
 
-from pops import db, health_alerts, modules, retention, server_metrics, update_tracking
+from pops import db, filestore, health_alerts, modules, retention, server_metrics, update_tracking
 from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.notify import notify
@@ -266,6 +266,8 @@ async def scheduler_loop() -> None:
             await check_licenses_daily()
             await retention.apply_daily()
             await health_alerts.check()
+            # Dosya aktarımı: süresi dolan jetonlar, gönderilmiş ve 7 günü dolan alınmış dosyalar (5 dk'da bir)
+            await filestore.purge_periodic()
             last_tick[0] = time.time()
         except asyncio.CancelledError:
             raise

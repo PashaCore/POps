@@ -31,6 +31,7 @@ from pops.config import (
     DB_IDLE_IN_TRANSACTION_MS,
     DB_POOL_MAX,
     DB_POOL_MIN,
+    FILES_DIR,
     JWT_ALGO,
     JWT_COOKIE_NAME,
     JWT_SECRET,
@@ -46,6 +47,7 @@ from pops.routers import (
     auth,
     control,
     devices,
+    files,
     helpdesk,
     inventory,
     licenses,
@@ -118,6 +120,10 @@ if not os.path.exists(UPLOAD_DIR):
 
 if not os.path.exists(UPDATES_DIR):
     os.makedirs(UPDATES_DIR)
+
+
+# Dosya aktarımı klasörü: statik bağlanmaz (bkz. routers/files.py)
+os.makedirs(FILES_DIR, mode=0o750, exist_ok=True)
 
 
 # /download artık statik değil: dağıtım paketleri yalnızca imzalı adresle iner (bkz. routers/tasks.py download_file)
@@ -234,7 +240,7 @@ async def shutdown_event():
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
-    activity, modules_router, branding, tokens,
+    activity, modules_router, branding, tokens, files,
     # REST adları (/api/v1) eski uçların işleyicilerini çağırır; eskilerden sonra bağlanır
     rest,
 )

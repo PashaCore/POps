@@ -110,6 +110,7 @@ use:
 | `result_ack` | 0.1.14-alpha | Every `result` with an integer `task_id` is answered with `result_ack` once it is stored. Keep each result (on disk) until its `result_ack` arrives and send unacknowledged results again after a reconnect. |
 | `update_result_ack` | 0.1.14-alpha | An `update_result` with a `result_id` is answered with `update_result_ack` after it is stored. Keep the update result until then. |
 | `update_progress` | 0.1.22-alpha | The server reads `update_progress` stages and shows them in the panel. Send them only to a server that lists this feature (older servers drop them anyway). |
+| `file_transfer` | unreleased | The server sends `file_push` / `file_pull`, reads `file_result` and serves `GET /api/files/{id}/download` and `POST /api/files/{id}/upload` (device secret headers, one-time token). Report `files_enabled` in `capabilities`; a server without this feature never sends file commands. |
 
 Rules for agents:
 
@@ -161,8 +162,9 @@ a lower or unparsable version only switches these behaviours off.
 | --- | --- | --- | --- | --- |
 | *(none)* / `heartbeat` | command | Recorded in batches; quarantine state reconciled | [heartbeat](agent-to-server/heartbeat.json) | [first](examples/agent-to-server/heartbeat.first.json), [minimal](examples/agent-to-server/heartbeat.minimal.json), [typed](examples/agent-to-server/heartbeat.typed.json) |
 | `result` | command | Task output stored; `result_ack` | [result](agent-to-server/result.json) | [completed](examples/agent-to-server/result.completed.json), [failed](examples/agent-to-server/result.failed.json), [denied](examples/agent-to-server/result.denied.json), [legacy](examples/agent-to-server/result.legacy.json) |
-| `capabilities` | command | Stored; a pending switch-off is re-sent | [capabilities](agent-to-server/capabilities.json) | [default](examples/agent-to-server/capabilities.default.json), [terminal_off](examples/agent-to-server/capabilities.terminal_off.json) |
-| `capability_denied` | command | Audited, notified; task `Denied` | [capability_denied](agent-to-server/capability_denied.json) | [execute](examples/agent-to-server/capability_denied.execute.json), [vision](examples/agent-to-server/capability_denied.vision.json), [policy](examples/agent-to-server/capability_denied.policy.json) |
+| `capabilities` | command | Stored; a pending switch-off is re-sent | [capabilities](agent-to-server/capabilities.json) | [default](examples/agent-to-server/capabilities.default.json), [terminal_off](examples/agent-to-server/capabilities.terminal_off.json), [files](examples/agent-to-server/capabilities.files.json) |
+| `capability_denied` | command | Audited, notified; task `Denied`, file transfer `rejected` | [capability_denied](agent-to-server/capability_denied.json) | [execute](examples/agent-to-server/capability_denied.execute.json), [vision](examples/agent-to-server/capability_denied.vision.json), [policy](examples/agent-to-server/capability_denied.policy.json), [files](examples/agent-to-server/capability_denied.files.json) |
+| `file_result` | command | Transfer row updated and audited | [file_result](agent-to-server/file_result.json) | [done](examples/agent-to-server/file_result.done.json), [rejected](examples/agent-to-server/file_result.rejected.json) |
 | `update_result` | command | Audited, notified; `update_result_ack` | [update_result](agent-to-server/update_result.json) | [success](examples/agent-to-server/update_result.success.json), [rolled_back](examples/agent-to-server/update_result.rolled_back.json), [legacy](examples/agent-to-server/update_result.legacy.json) |
 | `update_progress` | command | Latest stage kept for the pending update; `rejected` ends it | [update_progress](agent-to-server/update_progress.json) | [example](examples/agent-to-server/update_progress.json) |
 | `bypass_secret_ack` | command | Bypass key marked delivered | [bypass_secret_ack](agent-to-server/bypass_secret_ack.json) | [example](examples/agent-to-server/bypass_secret_ack.json) |
@@ -193,6 +195,8 @@ a lower or unparsable version only switches these behaviours off.
 | `scan_updates` | panel | Windows Update scan; `POST /api/patches/{hw_id}` | [scan_updates](server-to-agent/scan_updates.json) | [example](examples/server-to-agent/scan_updates.json) |
 | `install_updates` | panel | Installs updates; `POST /api/patches/{hw_id}` | [install_updates](server-to-agent/install_updates.json) | [security](examples/server-to-agent/install_updates.security.json), [all](examples/server-to-agent/install_updates.all.json) |
 | `remote_input` (`type`) | panel preview and remote control | Preview, frame rate, input | [remote_input](server-to-agent/remote_input.json) | [get_thumbnail](examples/server-to-agent/remote_input.get_thumbnail.json), [set_fps](examples/server-to-agent/remote_input.set_fps.json), [mouse_move](examples/server-to-agent/remote_input.mouse_move.json), [mouse_click](examples/server-to-agent/remote_input.mouse_click.json), [mouse_wheel](examples/server-to-agent/remote_input.mouse_wheel.json), [keyboard](examples/server-to-agent/remote_input.keyboard.json) |
+| `file_push` | admin sent a file (feature `file_transfer`) | Downloads once with its secret, checks size and SHA-256, writes to the allowlisted folder; `file_result` | [file_push](server-to-agent/file_push.json) | [example](examples/server-to-agent/file_push.json) |
+| `file_pull` | admin asked for a file (feature `file_transfer`) | Reads the path within its profile rules, uploads once; `file_result` | [file_pull](server-to-agent/file_pull.json) | [example](examples/server-to-agent/file_pull.json) |
 | `start_stream` | never (deprecated) | Windows agent: starts a stream | [start_stream](server-to-agent/start_stream.json) | [example](examples/server-to-agent/start_stream.json) |
 
 ## Test vectors
@@ -216,7 +220,8 @@ the test key. The device secret, bypass key and IDs in the examples are made up.
   handled by the server (except deprecated `start_stream`);
 - the messages the server builds (server_info, set_identity, set_secret, set_bypass_secret, get_hardware,
   execute, cancel_task, result_ack, update_result_ack, update_agent, set_capabilities, lockdown, unlock,
-  start_vision_session, stop_stream, wake_peer, scan_updates, install_updates, remote_input) validate and contain
+  start_vision_session, stop_stream, wake_peer, scan_updates, install_updates, remote_input, file_push, file_pull)
+  validate and contain
   only documented fields: the test runs the real endpoint and queue code with a fake database and fake sockets;
 - the agent examples go through the real `/ws/agent` and `/ws/vision` handlers without an error and have the
   documented effect (stored result, acknowledgement, audit record, forwarded frame), and the unknown message is

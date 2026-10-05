@@ -6,7 +6,8 @@ sağlığı) her zaman açıktır ve burada listelenmez. Modülün ayarı kurum 
 Bağımlı modül, bağımlılığı kapalıysa da kapalı sayılır (ör. lisanslar yazılım envanteri olmadan çalışmaz).
 
 Karar sunucudadır: uçlar `check()` / `require()` ile reddeder, kuyruk ve zamanlayıcı kapalı modülün işini
-başlatmaz. Panel menüyü buna göre çizer; ajan tarafı yerel yetenek kilidi (terminal, Vision) ayrıca son sözdür.
+başlatmaz. Panel menüyü buna göre çizer; ajan tarafı yerel yetenek kilidi (terminal, Vision, dosya aktarımı) ayrıca
+son sözdür.
 """
 
 import time
@@ -40,6 +41,8 @@ MODULES = (
            True, False, page="terminal"),
     Module("deploy", "Dosya dağıtımı", "Paket kitaplığı, dosya yükleme ve dağıtım zinciri.",
            True, False, depends=("terminal",), page="deploy"),
+    Module("files", "Dosya aktarımı",
+           "Bilgisayara dosya gönderme ve bilgisayardan dosya alma (gerekçeli, denetim kaydına yazılır).", True, True),
     Module("schedules", "Zamanlanmış görevler", "Bir kez, her gün ya da seçili günlerde çalışan görevler.",
            True, True, depends_any=("terminal",)),
     Module("patches", "Windows Update yönetimi", "Yama durumu, tarama ve istenince güncelleme kurma.", True, True),

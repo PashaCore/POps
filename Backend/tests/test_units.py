@@ -839,6 +839,84 @@ def test_api_v1():
         "jeton kimliği ayırt edilir")
 
 
+def test_files():
+    print("== dosya aktarımı")
+    import io
+    import tempfile
+
+    from pops import filestore
+
+    chk(filestore.clean_name("Ödev 1.pdf") == "Ödev 1.pdf", "Türkçe ad korunur")
+    chk(filestore.clean_name("..\\..\\Windows\\evil\u202egnp.exe") == "evilgnp.exe", "yol ve yön karakteri atılır")
+    chk(filestore.clean_name("a<b>c:d|e?.txt") == "abcde.txt", "Windows'ta geçersiz karakterler atılır")
+    chk(filestore.clean_name("CON.txt") == "_CON.txt" and filestore.clean_name("nul") == "_nul", "ayrılmış adlar")
+    chk(filestore.clean_name("  rapor.pdf.  ") == "rapor.pdf", "sondaki nokta ve boşluk atılır")
+    chk(filestore.clean_name("..") is None and filestore.clean_name("") is None and filestore.clean_name("/") is None,
+        "kullanılamayan ad: None")
+    long_name = filestore.clean_name("a" * 300 + ".docx")
+    chk(len(long_name) == 200 and long_name.endswith(".docx"), "uzun ad kısalır, uzantı kalır")
+    chk(filestore.needs_exec("x.LNK") and filestore.needs_exec("a.url") and filestore.needs_exec("s.scr")
+        and not filestore.needs_exec("a.exe"), "allow_exec isteyen türler (sözleşme)")
+    chk(filestore.check_pull_path("c:/Users/Public/a.txt") == "c:\\Users\\Public\\a.txt", "/ -> \\")
+    for bad in ("\\\\srv\\share\\a", "a.txt", "C:\\a\\..\\b", "C:\\a.txt:ads", "C:\\d\\", "C:\\a?.txt",
+                "C:\\a\\\\b.txt", "C:\\a\x07.txt", "C:\\" + "a" * 1100):
+        try:
+            filestore.check_pull_path(bad)
+            chk(False, "geçersiz yol kabul edildi: %r" % bad)
+        except ValueError:
+            pass
+    chk(filestore.name_of_path("C:\\Users\\Public\\rapor.pdf") == "rapor.pdf", "yoldan dosya adı")
+    chk(filestore.valid_id("abcDEF12_-x") and not filestore.valid_id("../x") and not filestore.valid_id("a" * 65)
+        and not filestore.valid_id(None), "kimlik biçimi")
+    chk(filestore.blob_path("../etc/passwd") is None and filestore.blob_path("push-abc.bin") is None
+        and filestore.blob_path("pull-abcdefgh.bin") is not None, "depo adı yalnız sunucunun ürettiği biçimde")
+    real_dir = filestore.FILES_DIR
+    with tempfile.TemporaryDirectory() as tmp:
+        filestore.FILES_DIR = os.path.realpath(tmp)
+        try:
+            size, sha = filestore.store_file(io.BytesIO(b"x" * 10), "push-abcdefgh.bin", 10)
+            chk(size == 10 and len(sha) == 64 and os.path.exists(os.path.join(tmp, "push-abcdefgh.bin")),
+                "sınırda dosya yazıldı")
+            try:
+                filestore.store_file(io.BytesIO(b"x" * 11), "push-abcdefgx.bin", 10)
+                chk(False, "sınır aşıldı ama yazıldı")
+            except filestore.TooLarge:
+                chk(sorted(os.listdir(tmp)) == ["push-abcdefgh.bin"], "sınır aşılınca geçici dosya kalmaz")
+
+            async def chunks():
+                for part in (b"a" * 700000, b"b" * 700000):
+                    yield part
+            size, _sha = asyncio.run(filestore.store_stream(chunks(), "pull-abcdefgh.bin", 2000000))
+            chk(size == 1400000 and os.path.getsize(os.path.join(tmp, "pull-abcdefgh.bin")) == 1400000,
+                "akış parça parça yazıldı")
+            try:
+                asyncio.run(filestore.store_stream(chunks(), "pull-abcdefgx.bin", 1000000))
+                chk(False, "akış sınırı aşıldı ama yazıldı")
+            except filestore.TooLarge:
+                chk(not any(n.startswith(".upload-") or n == "pull-abcdefgx.bin" for n in os.listdir(tmp)),
+                    "akış sınırı aşılınca geçici dosya kalmaz")
+            old = os.path.join(tmp, "pull-orphan01.bin")
+            open(old, "wb").close()
+            os.utime(old, (time.time() - 2 * 86400, time.time() - 2 * 86400))
+            removed = filestore._orphans({"push-abcdefgh.bin"})
+            chk(removed == 1 and not os.path.exists(old) and os.path.exists(os.path.join(tmp, "pull-abcdefgh.bin")),
+                "sahipsiz eski dosya silinir, yenisi ve kayıtlı olan kalır")
+        finally:
+            filestore.FILES_DIR = real_dir
+    items = activity.build_items(
+        "HW-F", [],
+        [{"action": "file_push", "timestamp": "2026-10-01 10:00:00",
+          "changes": '{"name": "Ödev.pdf", "admin": "Pasha", "reason": "ders"}'},
+         {"action": "file_pull", "timestamp": "2026-10-01 11:00:00",
+          "changes": '{"path": "C:\\\\Users\\\\ali\\\\gizli.docx", "admin": "Pasha", "reason": "inceleme"}'}],
+        [], [],
+    )
+    chk([i["title"] for i in items] == ["Bu bilgisayardan dosya istendi", "Bilgisayara dosya gönderildi: Ödev.pdf"],
+        "tepsi geçmişinde dosya aktarımları")
+    chk("gizli.docx" not in json.dumps(items, ensure_ascii=False) and items[0]["actor"] == "Pasha",
+        "istenen dosyanın yolu tepside görünmez, yapan görünür")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -854,6 +932,7 @@ def main():
     test_release_compare()
     test_server_metrics()
     test_api_v1()
+    test_files()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

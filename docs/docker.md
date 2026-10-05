@@ -7,7 +7,7 @@ containers:
 | Service     | What it runs                                                                                                               | Volumes                          |
 |-------------|----------------------------------------------------------------------------------------------------------------------------|----------------------------------|
 | `db`        | PostgreSQL (`postgres:17`). No published port.                                                                             | `pgdata`                         |
-| `backend`   | FastAPI/uvicorn on port 8000 as a non-root user (`ghcr.io/pashacore/pops-backend`). Applies the migrations on every start. | `storage`, `updates`, `releases` |
+| `backend`   | FastAPI/uvicorn on port 8000 as a non-root user (`ghcr.io/pashacore/pops-backend`). Applies the migrations on every start. | `storage`, `updates`, `releases`, `transfers` |
 | `dashboard` | PHP panel on Apache (`ghcr.io/pashacore/pops-dashboard`). Proxies `/api`, `/ws`, `/updates` and `/download` to the backend. | none                             |
 
 Every release publishes the backend and dashboard images on GitHub Container Registry, so
@@ -113,8 +113,9 @@ Agents refuse a plain `http://` server address unless it is loopback, so product
 
 - forwards WebSocket upgrades on `/ws/` (agents and the panel keep long-lived connections),
 - preserves the `Host` header and sets `X-Forwarded-For` and `X-Forwarded-Proto: https`,
-- allows large request bodies only on `/api/upload` and `/api/system/upload-release` (deployment packages
-  and signed releases) and keeps the limit small elsewhere.
+- allows large request bodies only on `/api/upload`, `/api/system/upload-release` (deployment packages
+  and signed releases), `/api/files/push` and `/api/files/<id>/upload` (file transfer, at most 200 MB) and keeps
+  the limit small elsewhere.
 
 Example for nginx on the Docker host (add the certificate, e.g. with certbot):
 
@@ -126,7 +127,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/pops.example.com/privkey.pem;
     client_max_body_size 8m;
 
-    location ~ ^/api/(v1/)?(upload|files|system/upload-release)$ {
+    location ~ ^/api/(v1/)?(upload|files|files/push|files/[A-Za-z0-9_-]+/upload|system/upload-release)$ {
         client_max_body_size 600m;
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;

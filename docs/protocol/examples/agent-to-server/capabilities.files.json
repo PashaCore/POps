@@ -1,0 +1,7 @@
+{
+  "type": "capabilities",
+  "terminal_enabled": true,
+  "vision_enabled": true,
+  "server_ca": "custom",
+  "files_enabled": true
+}

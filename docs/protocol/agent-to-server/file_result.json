@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/file_result.json",
+  "title": "file_result",
+  "description": "Outcome of a `file_push` or `file_pull`. Only an open transfer of the sending PC is updated, and each stored result is written to the audit log. For a push, `done` counts only after the file was downloaded; `rejected` and `failed` count before. A pulled file is `done` when the upload is stored; a later `file_result` for it changes nothing. A `detail` starting with `[REDDEDİLDİ]` is stored as `rejected`. Unknown transfers are ignored.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "type",
+    "transfer_id",
+    "status"
+  ],
+  "properties": {
+    "type": {
+      "const": "file_result",
+      "description": "Message type."
+    },
+    "transfer_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "description": "Transfer ID (random, URL-safe). Echoed in `file_result`."
+    },
+    "status": {
+      "enum": [
+        "done",
+        "rejected",
+        "failed"
+      ],
+      "description": "done = written (push) or uploaded (pull); rejected = refused by a rule (type not allowed, path outside the allowed folders or profiles, too large, capability off); failed = an error (download, checksum, disk, file not found)."
+    },
+    "path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024,
+      "description": "Where the file was written (push) or read (pull)."
+    },
+    "detail": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 500,
+      "description": "Reason in words, shown in the panel."
+    }
+  }
+}

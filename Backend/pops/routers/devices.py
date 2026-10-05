@@ -135,7 +135,7 @@ async def get_devices(auth: dict = Depends(require_auth)):
     SELECT
         c.pc_name, c.hostname, c.display_name, c.lab_name, c.last_seen, c.status, c.active_window,
         c.boot_count, c.logged_user, c.ip_address, c.cap_ram_readable, c.is_quarantined,
-        c.cap_terminal_enabled, c.cap_vision_enabled, c.cap_server_ca,
+        c.cap_terminal_enabled, c.cap_vision_enabled, c.cap_server_ca, c.cap_files_enabled,
         c.cap_terminal_disable_requested, c.cap_vision_disable_requested, c.running_version,
         c.agent_health, c.last_disconnect_at, c.last_disconnect_reason,
         bk.pc_name AS bypass_key_issued, bk.confirmed_at AS bypass_key_confirmed,
@@ -165,6 +165,8 @@ async def get_devices(auth: dict = Depends(require_auth)):
             "cap_terminal_enabled": r.get("cap_terminal_enabled"),
             "cap_vision_enabled": r.get("cap_vision_enabled"),
             "cap_server_ca": r.get("cap_server_ca"),
+            # Dosya aktarımı: True açık, False bilgisayarda kapalı, None ajan desteklemiyor (bkz. routers/files.py)
+            "cap_files_enabled": r.get("cap_files_enabled"),
             "cap_terminal_disable_requested": r.get("cap_terminal_disable_requested", False),
             "cap_vision_disable_requested": r.get("cap_vision_disable_requested", False),
             # Ajanın son heartbeat'teki sağlık özeti (0.1.12+; bkz. pops/agent_health.py)

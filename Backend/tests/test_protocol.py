@@ -396,6 +396,7 @@ async def agent_session_with_secret():
     from pops import bypass, heartbeats, secretbox, update_tracking
     from pops.manager import manager
     from pops.routers import agents
+    from pops.routers import files as file_router
 
     P = Patches()
     keys = {}
@@ -416,10 +417,13 @@ async def agent_session_with_secret():
          [{"is_quarantined": True, "act": "lock", "reason": "Sınav"}]),
         ("SELECT cap_terminal_disable_requested", [{"t": True, "v": False}]),
         ("UPDATE tasks SET output", lambda p: [{"id": p[1]}]),
+        ("UPDATE file_transfers SET status = $3", lambda p: [{"direction": "push", "name": "Ödev föyü 3.pdf"}]),
+        ("UPDATE file_transfers SET status = 'rejected'", [{"direction": "pull"}]),
     ])
     audits, events, notes, beats, panels, admin_panels, queue = [], [], [], [], [], [], []
-    for mod in (agents, bypass, update_tracking):
+    for mod in (agents, bypass, update_tracking, file_router):
         P.set(mod, "execute_query", db)
+    P.set(file_router, "add_audit_log", recorder(audits))
 
     async def secret_ok(pc, secret):
         return pc == HW and secret == SECRET
@@ -495,7 +499,9 @@ async def agent_session_with_secret():
     chk(uacks == with_id, "result_id'li update_result'lar onaylandı, result_id'siz onaylanmadı")
     chk({"action": "set_capabilities", "terminal_enabled": False} in ws.sent,
         "kapatılması istenen ama açık bildirilen yetenek için set_capabilities yeniden gönderildi")
-    chk(len(ws.sent) == 3 + 1 + len(acks) + len(uacks) + 1, "başka mesaj gönderilmedi (bilinmeyen type yanıtsız)")
+    # Kapatılması istenen terminali açık bildiren her capabilities örneği için bir set_capabilities
+    resends = sum(1 for f, m in cmd if f.startswith("capabilities.") and m.get("terminal_enabled"))
+    chk(len(ws.sent) == 3 + 1 + len(acks) + len(uacks) + resends, "başka mesaj gönderilmedi (bilinmeyen type yanıtsız)")
 
     hb_count = sum(1 for f, _ in cmd if f.startswith("heartbeat."))
     chk(len(beats) == hb_count, "her heartbeat (type'sız ve type'lı) kaydedildi: %d" % len(beats))
@@ -507,10 +513,21 @@ async def agent_session_with_secret():
         and stored.get(1042, (None,) * 5)[3] == 0, "result çıkış kodları olduğu gibi yazıldı (yoksa NULL)")
     chk(all(p[2] == HW for p in stored.values()), "sonuç yalnızca bağlantının cihazına yazıldı")
     caps = db.params("UPDATE clients SET cap_terminal_enabled")
-    chk((True, True, HW, "system") in caps and (False, True, HW, "custom") in caps, "capabilities saklandı")
+    chk((True, True, HW, "system", None) in caps and (False, True, HW, "custom", None) in caps
+        and (True, True, HW, "custom", True) in caps, "capabilities saklandı (files_enabled yoksa NULL)")
+    results = {p[0]: p[2] for p in db.params("UPDATE file_transfers SET status = $3")}
+    file_results = {m["transfer_id"]: m["status"] for f, m in cmd if f.startswith("file_result.")}
+    chk(results == file_results and all(p[1] == HW for p in db.params("UPDATE file_transfers SET status = $3")),
+        "file_result yalnızca bağlantının cihazındaki aktarımı güncelledi: %s" % results)
+    denied_files = [m for f, m in cmd if f.startswith("capability_denied.") and m.get("capability") == "files"]
+    chk(db.params("UPDATE clients SET cap_files_enabled = FALSE") == [(HW,)] * len(denied_files)
+        and db.params("UPDATE file_transfers SET status = 'rejected'")
+        == [(m["transfer_id"], HW) for m in denied_files],
+        "capability_denied (files): yetenek kapalı, aktarım rejected")
     chk((1044, HW) in db.params("UPDATE tasks SET status = 'Denied'"),
         "capability_denied task_id'li görevi Denied yaptı")
     audit_actions = [a[0][1] for a in audits]
+    chk(audit_actions.count("file_result") == len(file_results), "her file_result denetim kaydına yazıldı")
     chk(audit_actions.count("update_result") == len([f for f, _ in cmd if f.startswith("update_result.")]),
         "her update_result denetim kaydına yazıldı")
     chk("bypass_key" in audit_actions and "bypass_key_mismatch" in audit_actions,
@@ -668,8 +685,11 @@ async def server_builders():
     from pops.manager import manager
     from pops.models import LockdownInput, PatchInstallInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
     from pops.models import TaskActionInput
+    from pops import filestore
     from pops.routers import agents, control, inventory, tasks as tasks_router
+    from pops.routers import files as file_router
     from pops.routers import modules as modules_router
+    from starlette.requests import Request
 
     P = Patches()
     agent_ws, vision_ws = FakeWS(), FakeWS()
@@ -770,6 +790,52 @@ async def server_builders():
         chk([m.get("action") for m in agent_ws.sent] == ["scan_updates", "install_updates"], "Windows Update komutları")
         take(agent_ws, "inventory.scan_patches / install_patches")
 
+        # Dosya aktarımı: gerçek uçlar (çok parçalı yükleme dahil), geçici klasöre yazar
+        async def enabled(*a, **k):
+            return True
+
+        class _Conn:
+            async def executemany(self, query, rows):
+                return None
+
+        @contextlib.asynccontextmanager
+        async def transaction():
+            yield _Conn()
+
+        P.set(modules, "enabled", enabled)
+        P.set(file_router, "execute_query", FakeDB([("FROM clients WHERE pc_name = ANY", [
+            {"pc_name": HW, "lab_name": "LAB-A", "cap_files_enabled": True}])]))
+        P.set(file_router, "add_audit_log", recorder([]))
+        P.set(file_router, "db", SimpleNamespace(transaction=transaction))
+        with tempfile.TemporaryDirectory() as files_dir:
+            P.set(filestore, "FILES_DIR", os.path.realpath(files_dir))
+            boundary = "popsprotocoltest"
+            parts = [("pcs", HW), ("dest", "inbox"), ("reason", "9-A ödev dosyası"), ("allow_exec", "false")]
+            body = b"".join(('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n' % (boundary, k, v))
+                            .encode() for k, v in parts)
+            body += ('--%s\r\nContent-Disposition: form-data; name="file"; filename="Ödev föyü 3.pdf"\r\n'
+                     'Content-Type: application/pdf\r\n\r\n' % boundary).encode() + b"%PDF-1.4 test" + b"\r\n"
+            body += ("--%s--\r\n" % boundary).encode()
+            sent_body = [False]
+
+            async def receive():
+                if sent_body[0]:
+                    return {"type": "http.disconnect"}
+                sent_body[0] = True
+                return {"type": "http.request", "body": body, "more_body": False}
+
+            req = Request({"type": "http", "method": "POST", "path": "/api/files/push", "query_string": b"",
+                           "headers": [(b"content-type", ("multipart/form-data; boundary=" + boundary).encode()),
+                                       (b"content-length", str(len(body)).encode())]}, receive)
+            pushed = await file_router.push_file(req, auth)
+            await file_router.pull_file(file_router.FilePullInput(
+                pc=HW, path="C:\\Users\\Public\\Documents\\rapor.pdf", max_size=10485760,
+                reason="Sınav dosyasının kontrolü"), auth)
+        chk([m.get("action") for m in agent_ws.sent] == ["file_push", "file_pull"]
+            and agent_ws.sent[0]["transfer_id"] == pushed["transfers"][0]["transfer_id"],
+            "dosya aktarımı: file_push ve file_pull")
+        take(agent_ws, "files.push_file / pull_file")
+
         P.set(wol, "execute_query", FakeDB([("SELECT pc_name FROM clients WHERE lab_name", [{"pc_name": HW}])]))
         chk(await wol.attempt_p2p_wol("A4:BB:6D:12:34:57", "LAB-A"), "Wake-on-LAN eş üzerinden")
         take(agent_ws, "wol.attempt_p2p_wol")
@@ -835,7 +901,8 @@ async def server_builders():
         check_message(S2A, msg, origin)
     produced = {message_name(S2A, m) for _, m in built}
     chk({"execute", "cancel_task", "lockdown", "unlock", "start_vision_session", "stop_stream", "remote_input",
-         "scan_updates", "install_updates", "wake_peer", "update_agent", "set_capabilities", "server_info"} <= produced,
+         "scan_updates", "install_updates", "wake_peer", "update_agent", "set_capabilities", "server_info",
+         "file_push", "file_pull"} <= produced,
         "uçlardaki bütün komutlar kuruldu ve denetlendi")
 
 
