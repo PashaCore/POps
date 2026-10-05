@@ -19,10 +19,13 @@ Status: proposed, not built. The code changes start after #97, #99, #100 and #10
   forgets to reset, or resets to the wrong value, changes the result of whatever runs next.
   Examples on main and in open PRs:
   - Worker's constructor assigns the static `DnsPolicyMonitor.Quarantine` and `DnsPolicyMonitor.ErrorReporter`.
-    The last Worker constructed in the process gets every DNS auto-quarantine.
+    The last Worker constructed in the process gets every DNS auto-quarantine. **Fixed** in
+    [#137 test(agent): per-Worker DNS callbacks, no real folders in tests (split prerequisite)](https://github.com/PashaCore/POps/pull/137).
   - `AgentHttp.Client` is swapped for a fake by `ModulesTests`, `ReporterFlowTests` and `AgentHttpFlowTests`, and by
     `FileTransferTests` in #99.
   - `TestIsolationTests.RealFoldersAreNeverUsed` points `AgentUpdate.DataDir` at the real `C:\POpsData` for a moment.
+    **Fixed** in
+    [#137 test(agent): per-Worker DNS callbacks, no real folders in tests (split prerequisite)](https://github.com/PashaCore/POps/pull/137).
   - In #99, `FileTransferTests.Dispose` sets `FileTransfer.ProfileInfo` to `null` instead of back to `ReadProfiles`.
     A later test that reaches `FileTransfer.PullAsync` in the same run would throw. Only the serial order hides it.
 
@@ -476,7 +479,8 @@ This step can land as soon as (a) is done; it does not wait for (b).
 - **Temp folders.** `TestEnvironment.Root` is per process and `NewDir` per test, so they are already safe. The
   exception is `CommandRunner`, which writes its `pops_task_*.bat` files to the real `%TEMP%`, while
   `CleanupStaleTaskFiles()` defaults to `%TEMP%` too. A cleanup in one test could delete another test's running task
-  file. b3 moves the task folder into `AgentPaths` before those classes leave `Machine`.
+  file. b3 moves the task folder into `AgentPaths` before those classes leave `Machine`. **Fixed** in
+  [#137 test(agent): per-Worker DNS callbacks, no real folders in tests (split prerequisite)](https://github.com/PashaCore/POps/pull/137).
 - **Ports.** `AgentHttpTests` and `WebSocketMessagesTests` listen on port 0 (an ephemeral port), and no agent test
   uses a fixed port.
 - **Machine state reached from tests.** `LocalAudit.Write` goes to the real Event Log today; without the source
