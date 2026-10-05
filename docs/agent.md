@@ -63,9 +63,10 @@ The wire format of both WebSockets (`/ws/agent`, `/ws/vision`) is specified in [
 - The agent reads `ServerUrl` and connects to `wss://<host>/ws/agent/<hw_id>`. A non-loopback `http://` address is
   refused: the agent logs `[GÜVENLİK] ServerUrl şifresiz http ve yerel değil …` every 10 minutes and does not
   connect (the tray and watchdog keep running).
-- If `appsettings.json` cannot be read or holds no valid `ServerUrl`, the agent falls back to
-  `http://127.0.0.1:8000` (useful only for a server on the same PC), logs an error, writes event 1090 and the tray
-  shows "POps - yapılandırma okunamadı" with a warning icon, instead of looking healthy.
+- If `appsettings.json` cannot be read (broken JSON, access denied) or no valid `ServerUrl` is found, the agent
+  logs an error, writes event 1090 and the tray shows "POps - yapılandırma okunamadı" with a warning icon, instead
+  of looking healthy. Without a valid address it falls back to `http://127.0.0.1:8000`, which only reaches a server
+  on the same PC.
 - It sends a heartbeat every 5 seconds. After a disconnect it waits a random time between 0 and
   min(60 s, 2 s × 2^n), where n is the number of connections that failed in a row (full jitter; 0.1.7 and older
   waited a fixed 5 s, so all agents came back at once after a server restart). n goes back to 0 once a connection
