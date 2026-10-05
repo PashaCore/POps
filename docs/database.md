@@ -51,7 +51,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0014_hardening.sql` | Enrollment tokens stored as hashes; `tasks.exit_code` / `dispatched_at`; partial index for the task queue; agent identity enforcement on by default for new installs. |
 | `0019_task_context.sql` | `tasks.title`, `source`, `reason`, `client_ip` and `batch_id` (what a task is, which panel page sent it, why, from which address, and which request it belongs to) and indexes on `batch_id` and on `target_pc`. |
 | `0022_api_tokens.sql` | `api_tokens` (API tokens for automation). |
-| `0024_glpi.sql` | `glpi_links`: the GLPI item each exported POps record is linked to (GLPI export, see [`integrations/glpi.md`](integrations/glpi.md)). |
+| `0029_glpi.sql` | `glpi_links`: the GLPI item each exported POps record is linked to (GLPI export, see [`integrations/glpi.md`](integrations/glpi.md)). |
 | `0023_update_progress.sql` | `pending_updates.stage`, `detail`, `attempt`, `attempt_of`, `stage_at`: the last stage the agent reported for a pending update (`update_progress`, see [`api.md`](api.md#update_progress-agent-update-stages)). |
 | `0020_refused_results.sql` | Tasks the agent refused but an older server stored as `Completed` (output starting with `[REDDEDİLDİ]`, no exit code) become `Denied` with exit code `-5`. |
 | `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
@@ -109,7 +109,7 @@ Deleting a device also deletes its rows in both tables.
 
 | Table | Contents |
 | --- | --- |
-| `glpi_links` | One row per POps record sent to GLPI (migration `0024`): `kind` (`computer`: key = device ID; `software_link`: key = `device\|program\|version`, the `Item_SoftwareVersion` POps created; `software_set`: key = device ID, hash of the device's software list; `ticket`: key = ticket ID; `followup`: key = ticket message ID), `glpi_id`, `fingerprint` (hash of the fields last sent, so only changed records are sent again), `state` (`ok`, `broken` = gone from GLPI and not recreated, `ambiguous` = several GLPI computers match), `error`, `synced_at`. Rows of a deleted device are removed at the next run; GLPI is not changed. |
+| `glpi_links` | One row per POps record sent to GLPI (migration `0029`): `kind` (`computer`: key = device ID; `software_link`: key = `device\|program\|version`, the `Item_SoftwareVersion` POps created; `software_set`: key = device ID, hash of the device's software list; `ticket`: key = ticket ID; `followup`: key = ticket message ID), `glpi_id`, `fingerprint` (hash of the fields last sent, so only changed records are sent again), `state` (`ok`, `broken` = gone from GLPI and not recreated, `ambiguous` = several GLPI computers match), `error`, `synced_at`. Rows of a deleted device are removed at the next run; GLPI is not changed. |
 
 ### Panel users
 

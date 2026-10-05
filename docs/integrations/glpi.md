@@ -27,7 +27,7 @@ did not need a choice, the choice is still open. Comments are welcome in an issu
   pinned to the checked address and redirects are not followed. HTTPS with certificate checks is required;
   `GLPI_CA_FILE` adds the school's own certificate authority. Plain `http://` is accepted only when
   `GLPI_ALLOW_PRIVATE=1` and every address of the host is private.
-- **Matching** as designed below, with the link table `glpi_links` (migration `0024`): a linked device is updated
+- **Matching** as designed below, with the link table `glpi_links` (migration `0029`): a linked device is updated
   through its link; an unlinked one is matched by BIOS serial number, then SMBIOS UUID (placeholder serials such as
   "To be filled by O.E.M." are not used); a computer already linked to another POps device is not linked twice; one
   match links it, none creates it, several are listed on **Sistem** and nothing is guessed. Searches are anchored

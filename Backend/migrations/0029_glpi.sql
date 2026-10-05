@@ -1,4 +1,4 @@
--- 0024: GLPI'ye dışa aktarım (bkz. pops/glpi.py, docs/integrations/glpi.md). POps tarafındaki eşleşme tablosu: bir
+-- 0029: GLPI'ye dışa aktarım (bkz. pops/glpi.py, docs/integrations/glpi.md). POps tarafındaki eşleşme tablosu: bir
 -- POps kaydının GLPI'deki karşılığı ve gönderilen alanların özeti (yalnızca değişen kayıt yeniden gönderilir).
 --   computer       pops_key = cihaz kimliği (HW-…)              -> Computer.id
 --   software_link  pops_key = cihaz|program|sürüm               -> Item_SoftwareVersion.id (yalnızca POps'un kurduğu)
