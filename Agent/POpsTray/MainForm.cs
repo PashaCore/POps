@@ -26,6 +26,19 @@ namespace POpsTray
         private DateTime _lastPreviewBalloon = DateTime.MinValue;
         private static readonly TimeSpan PreviewBalloonInterval = TimeSpan.FromMinutes(5);
         private CancellationTokenSource? _captureCts;
+        // Vision v2 (sunucu ikili kareyi destekliyorsa): DXGI/GDI, bölgeler, ekran seçimi, uyarlanır kalite
+        private readonly POpsTray.Vision.VisionStreamer _visionV2;
+        // Pano paylaşımı yalnızca kullanıcının kabul ettiği v2 oturumunda (servis CLIPBOARD_SHARE:1 ile açar)
+        private bool _clipboardShare;
+        private string? _clipboardFromAdmin;
+        private DateTime _lastClipboardNotice = DateTime.MinValue;
+        private const int WM_CLIPBOARDUPDATE = 0x031D;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
         private readonly object _pipeLock = new object();
         // Yardım masası pencereleri (tek kopya) ve son balonun bir talep yanıtı olup olmadığı
         private ReportProblemForm? _reportForm;
@@ -142,6 +155,9 @@ namespace POpsTray
             trayIcon.Visible = true;
             trayIcon.BalloonTipClicked += (_, _) => { if (_lastBalloonIsTicket) OpenTicketsForm(); };
 
+            _visionV2 = new POpsTray.Vision.VisionStreamer(data => SendToServiceBytes(data), text => SendToService(text));
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+
             _ = Task.Run(() => ConnectToServiceAsync(cts.Token));
             _ = Task.Run(() => MonitorActiveAppAsync(cts.Token));
         }
@@ -254,6 +270,9 @@ namespace POpsTray
                 string kind = TrayLog.Describe(jsonMsg);
                 if (!kind.StartsWith("type=remote_input")) TrayLog.Write($"Alındı: {kind}");
 
+                // Vision v2 (eski START_CAPTURE'dan önce: o da "START_CAPTURE" ile başlar)
+                if (HandleVisionV2(jsonMsg)) return;
+
                 if (jsonMsg.StartsWith("START_CAPTURE")) 
                 { 
                     int fps = 2;
@@ -261,7 +280,14 @@ namespace POpsTray
                     StartCaptureLoop(fps); 
                     return; 
                 }
-                if (jsonMsg.Contains("STOP_CAPTURE")) { StopCaptureLoop(); ReleasePressedKeys(); return; }
+                if (jsonMsg.Contains("STOP_CAPTURE"))
+                {
+                    StopCaptureLoop();
+                    _visionV2.Stop();
+                    SetClipboardShare(false);
+                    ReleasePressedKeys();
+                    return;
+                }
                 if (jsonMsg.Contains("CAPTURE_SNAPSHOT")) { SendSnapshot(); NotifyPreviewTaken(); return; }
 
                 // Çevrimdışı bypass kodunun sonucu. Kabul edilirse servis ayrıca "unlock" gönderir (kilit ekranı kapanır).
@@ -469,7 +495,8 @@ namespace POpsTray
                 {
                     int x = root.GetProperty("x").GetInt32();
                     int y = root.GetProperty("y").GetInt32();
-                    SetCursorPos(x, y);
+                    if (_visionV2.Running) MoveCursorV2(x, y);
+                    else SetCursorPos(x, y);
                 }
                 else if (inputType == "mouse_click")
                 {
@@ -825,10 +852,123 @@ namespace POpsTray
             return dialogResult == DialogResult.OK ? textBox.Text : "";
         }
 
+        // ---------------------------------------------------------------- Vision v2
+        // Servis mesajları: START_CAPTURE_V2:fps, VISION_SELECT:n|all, VISION_QUALITY:q,s,fps, VISION_DROPPED,
+        // CLIPBOARD_SHARE:0|1, CLIPBOARD_SET:<base64>. Dönen: mesaj v2'ye aitti.
+        private bool HandleVisionV2(string message)
+        {
+            if (message.StartsWith("START_CAPTURE_V2:", StringComparison.Ordinal))
+            {
+                StopCaptureLoop();
+                _visionV2.Start(int.TryParse(message.AsSpan("START_CAPTURE_V2:".Length), out int fps) ? fps : POps.Shared.VisionQuality.DefaultFps);
+                return true;
+            }
+            if (message.StartsWith("VISION_SELECT:", StringComparison.Ordinal))
+            {
+                if (POps.Shared.VisionFrame.TryParseMonitor(message.Substring("VISION_SELECT:".Length), out byte monitor)) _visionV2.Select(monitor);
+                return true;
+            }
+            if (message.StartsWith("VISION_QUALITY:", StringComparison.Ordinal))
+            {
+                if (POps.Shared.VisionQuality.TryParse(message.Substring("VISION_QUALITY:".Length), out int quality, out double scale, out int fps))
+                    _visionV2.SetQuality(quality, scale, fps);
+                return true;
+            }
+            if (message == "VISION_DROPPED")
+            {
+                _visionV2.OnDropped();
+                return true;
+            }
+            if (message.StartsWith("CLIPBOARD_SHARE:", StringComparison.Ordinal))
+            {
+                SetClipboardShare(message.EndsWith(":1", StringComparison.Ordinal));
+                return true;
+            }
+            if (message.StartsWith("CLIPBOARD_SET:", StringComparison.Ordinal))
+            {
+                string text;
+                try { text = Encoding.UTF8.GetString(Convert.FromBase64String(message.Substring("CLIPBOARD_SET:".Length))); }
+                catch (FormatException) { return true; }
+                this.Invoke(new Action(() =>
+                {
+                    if (!_clipboardShare) return;
+                    try
+                    {
+                        _clipboardFromAdmin = text;
+                        Clipboard.SetText(text);
+                        NotifyClipboard("Yönetici panonuza metin koydu.");
+                    }
+                    catch (ExternalException) { }
+                }));
+                return true;
+            }
+            return false;
+        }
+
+        // Görüntüleyicinin koordinatı seçili ekranın fiziksel pikselidir; imleç per-monitor DPI bağlamında konur
+        private void MoveCursorV2(int x, int y)
+        {
+            IntPtr previous = POpsTray.Vision.Dpi.EnterPerMonitor();
+            try
+            {
+                if (_visionV2.TryMapToScreen(x, y, out Point screen)) SetCursorPos(screen.X, screen.Y);
+            }
+            finally { POpsTray.Vision.Dpi.Restore(previous); }
+        }
+
+        private void SetClipboardShare(bool enabled)
+        {
+            try
+            {
+                this.Invoke(new Action(() =>
+                {
+                    if (enabled == _clipboardShare) return;
+                    _clipboardShare = enabled;
+                    if (enabled) AddClipboardFormatListener(Handle);
+                    else RemoveClipboardFormatListener(Handle);
+                }));
+            }
+            catch (InvalidOperationException) { }
+        }
+
+        // Kullanıcının kopyaladığı metin (yalnızca paylaşım açıkken, en çok 64 KB) yöneticiye gider
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_CLIPBOARDUPDATE && _clipboardShare)
+            {
+                try
+                {
+                    if (Clipboard.ContainsText())
+                    {
+                        string text = Clipboard.GetText();
+                        bool echo = text == _clipboardFromAdmin;
+                        _clipboardFromAdmin = null;
+                        byte[] bytes = Encoding.UTF8.GetBytes(text);
+                        if (!echo && bytes.Length > 0 && bytes.Length <= 64 * 1024 && SendToService("CLIPBOARD:" + Convert.ToBase64String(bytes)))
+                            NotifyClipboard("Kopyaladığınız metin yöneticiye gönderildi.");
+                    }
+                }
+                catch (ExternalException) { }
+            }
+            base.WndProc(ref m);
+        }
+
+        // Kullanıcıya bildirim: "Pano paylaşıldı" (en çok 10 sn'de bir balon)
+        private void NotifyClipboard(string detail)
+        {
+            if (DateTime.Now - _lastClipboardNotice < TimeSpan.FromSeconds(10)) return;
+            _lastClipboardNotice = DateTime.Now;
+            ShowNotification("Pano paylaşıldı", detail);
+        }
+
+        private void OnDisplaySettingsChanged(object? sender, EventArgs e) => _visionV2.OnDisplaySettingsChanged();
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
+                Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+                _visionV2.Dispose();
                 cts.Cancel();
                 pipeClient?.Dispose();
                 trayIcon?.Dispose();

@@ -174,7 +174,8 @@ the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 
 command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine allow list refreshed (old and new
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
-that partly changed (no decision taken), and 1080 a change of the server's modules. Failure to write an event does not stop the
+that partly changed (no decision taken), 1080 a change of the server's modules and 1100 a clipboard shared in a
+Vision session (direction and length only). Failure to write an event does not stop the
 service.
 
 ## Capability policy

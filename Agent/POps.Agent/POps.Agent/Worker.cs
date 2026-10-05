@@ -67,6 +67,8 @@ namespace POpsAgent
         private ClientWebSocket _visionWs;
         private readonly SemaphoreSlim _wsCommandLock = new(1, 1);
         private readonly SemaphoreSlim _wsVisionLock = new(1, 1);
+        // Vision v2: ikili kareler, görüntüleyici denetimi, pano (bkz. VisionRelay)
+        private readonly VisionRelay _visionRelay;
 
         private TrayPipeServer _trayPipe;
         private volatile bool _isVisionStreamActive;
@@ -147,6 +149,7 @@ namespace POpsAgent
             UpdateResults = new UpdateResultReporter(Handshake);
             // Önceki çalışmadan onay bekleyen sonuçlar okunur
             Results = new ResultSpool(SecureStore.PathOf(ResultSpool.FileName));
+            _visionRelay = new VisionRelay(SendVisionBinaryAsync, SendVisionTextAsync, ToTray);
             Binding = new HardwareBinding(_identityFilePath,
                 () => (GetWmiValue("Win32_ComputerSystemProduct", "UUID"), GetWmiValue("Win32_BIOS", "SerialNumber")));
         }
@@ -656,7 +659,7 @@ namespace POpsAgent
                                 LocalAudit.Write(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, _visionUserApproved));
                                 _visionAuditActive = true;
                             }
-                            _trayPipe?.SendCommandToDesktop($"START_CAPTURE:{fps}");
+                            StartCapture(fps);
                         }
                     });
                 }
@@ -684,6 +687,14 @@ namespace POpsAgent
                 else if (message.StartsWith("UNLOCK_BYPASS:"))
                 {
                     _ = HandleBypassAttemptAsync(message.Substring("UNLOCK_BYPASS:".Length));
+                }
+                else if (message.StartsWith("VISION_MONITORS:", StringComparison.Ordinal))
+                {
+                    if (_isVisionStreamActive && BinaryVision) _ = _visionRelay.ForwardMonitorsAsync(message.Substring("VISION_MONITORS:".Length));
+                }
+                else if (message.StartsWith("CLIPBOARD:", StringComparison.Ordinal))
+                {
+                    _ = _visionRelay.ForwardClipboardAsync(message.Substring("CLIPBOARD:".Length), ClipboardAllowed);
                 }
                 else if (message.StartsWith("TICKET_CREATE:"))
                 {
@@ -726,6 +737,12 @@ namespace POpsAgent
                     }
                 }
                 catch { }
+            };
+
+            // Vision v2 karesi (işaretli): yalnızca yayın açıkken ve sunucu ikili kareyi destekliyorsa
+            _trayPipe.OnVisionFrame += data =>
+            {
+                if (_isVisionStreamActive && BinaryVision) _ = _visionRelay.ForwardFrameAsync(data);
             };
 
             _trayPipe.OnDisconnected += () =>
@@ -888,6 +905,10 @@ namespace POpsAgent
                         if (denial != null) { await DenyCapabilityAsync(denial, "remote_input", reason: denialReason); continue; }
                         _trayPipe?.SendCommandToDesktop(message);
                     }
+                    else if (root.TryGetProperty("action", out _))
+                    {
+                        await HandleVisionControlAsync(root);
+                    }
                 }
             }
             catch (WebSocketMessages.TooLargeException ex) { POpsHelpers.Log("AGENT", $"[GÜVENLİK] Vision tüneli kapatıldı: {ex.Message}.", true); }
@@ -897,6 +918,84 @@ namespace POpsAgent
                 ApplyVisionClose(ws.CloseStatus);
                 await DisconnectVisionTunnelAsync();
             }
+        }
+
+        // ------------------------------------------------------------------ Vision v2
+        // Sunucu ikili Vision karesini destekliyor mu (server_info "vision_binary"); desteklemiyorsa eski JSON kareler
+        internal bool BinaryVision => Handshake.Supports(VisionRelay.BinaryFeature) == true;
+
+        // Pano yalnızca kullanıcının kabul ettiği (zorunlu bildirimli değil), açık bir v2 oturumunda
+        private bool ClipboardAllowed => _isVisionStreamActive && _visionSessionApproved && _visionUserApproved && BinaryVision;
+
+        // Testler: tepsiye giden mesajlar
+        internal Action<string> TrayOverride { get; set; }
+
+        private void ToTray(string message)
+        {
+            if (TrayOverride != null) TrayOverride(message);
+            else _trayPipe?.SendCommandToDesktop(message);
+        }
+
+        internal void StartCapture(int fps)
+        {
+            if (!BinaryVision)
+            {
+                ToTray($"START_CAPTURE:{fps}");
+                return;
+            }
+            _visionRelay.Reset();
+            ToTray($"START_CAPTURE_V2:{fps}");
+            if (_visionUserApproved) ToTray("CLIPBOARD_SHARE:1");
+        }
+
+        // Görüntüleyiciden (oturumu tutan yönetici): select_monitor, set_quality, clipboard. Onaylı oturum gerekir.
+        internal async Task HandleVisionControlAsync(JsonElement root)
+        {
+            if (root.TryGetProperty("device", out JsonElement device) && device.ValueKind == JsonValueKind.String && device.GetString() != _hwId) return;
+            string action = root.TryGetProperty("action", out JsonElement a) && a.ValueKind == JsonValueKind.String ? a.GetString() : "vision_control";
+            var (denial, denialReason) = VisionDenial(isInputEvent: true);
+            if (denial != null)
+            {
+                await DenyCapabilityAsync(denial, action, reason: denialReason);
+                return;
+            }
+            string trayMessage = VisionRelay.TrayMessageFor(root, ClipboardAllowed, out LocalAuditEvent audit);
+            if (trayMessage == null)
+            {
+                POpsHelpers.Log("VISION", $"Görüntüleyici mesajı uygulanmadı ({LogText.Safe(action, 40)}): geçersiz, çok büyük ya da pano için kabul edilmiş oturum yok.");
+                return;
+            }
+            if (audit != null) LocalAudit.Write(audit);
+            ToTray(trayMessage);
+        }
+
+        private async Task<bool> SendVisionBinaryAsync(ReadOnlyMemory<byte> frame)
+        {
+            var ws = _visionWs;
+            if (ws == null || ws.State != WebSocketState.Open) return false;
+            if (!await _wsVisionLock.WaitAsync(1500)) return false;
+            try
+            {
+                await ws.SendAsync(frame, WebSocketMessageType.Binary, true, CancellationToken.None);
+                return true;
+            }
+            catch (Exception) { return false; }
+            finally { _wsVisionLock.Release(); }
+        }
+
+        private async Task<bool> SendVisionTextAsync(object payload)
+        {
+            var ws = _visionWs;
+            if (ws == null || ws.State != WebSocketState.Open) return false;
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
+            if (!await _wsVisionLock.WaitAsync(1500)) return false;
+            try
+            {
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+                return true;
+            }
+            catch (Exception) { return false; }
+            finally { _wsVisionLock.Release(); }
         }
 
         private void ApplyVisionClose(WebSocketCloseStatus? status)
@@ -1055,7 +1154,7 @@ namespace POpsAgent
                             LocalAudit.Write(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, false));
                             _visionAuditActive = true;
                         }
-                        _trayPipe?.SendCommandToDesktop($"START_CAPTURE:{fps}");
+                        StartCapture(fps);
                     }
                 }
                 else if (action == "stop_stream") { 
@@ -1641,6 +1740,8 @@ namespace POpsAgent
         private TaskCompletionSource<bool> _listening;
         public event Action<string> OnMessageReceived = delegate { };
         public event Action<byte[]> OnFrameReceived = delegate { };
+        // Vision v2 karesi (POps.Shared.VisionFrame.PipeMagic ile başlar)
+        public event Action<byte[]> OnVisionFrame = delegate { };
         // Tepsi bağlantısı koptuğunda (onaylı Vision oturumu da onunla biter)
         public event Action OnDisconnected = delegate { };
         // Doğrulanmış tepsi bağlandı (servis açılışı, tepsinin yeniden başlaması, oturum değişimi)
@@ -1773,7 +1874,11 @@ namespace POpsAgent
                         }
                         if (total == dLen) 
                         {
-                            if (dLen > 2 && d[0] == 0xFF && d[1] == 0xD8)
+                            if (VisionFrame.HasPipeMagic(d))
+                            {
+                                OnVisionFrame?.Invoke(d);
+                            }
+                            else if (dLen > 2 && d[0] == 0xFF && d[1] == 0xD8)
                             {
                                 OnFrameReceived?.Invoke(d);
                             }
