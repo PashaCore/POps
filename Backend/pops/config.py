@@ -138,3 +138,8 @@ NOTIFY_WEBHOOK_ALLOW_PRIVATE = os.environ.get('NOTIFY_WEBHOOK_ALLOW_PRIVATE', ''
 # Prometheus /metrics ucu yalnızca bu jeton tanımlıysa açılır (en az 16 karakter) ve
 # "Authorization: Bearer <jeton>" ister; tanımlı değilse uç 404 döner.
 METRICS_TOKEN = os.environ.get('METRICS_TOKEN', '').strip()
+
+
+# Yalnızca otomatik testler: kimlik sağlayıcısı ayarındaki allow_insecure_for_tests (şifresiz LDAP, http OIDC
+# sağlayıcısı) ancak sunucu bu değişkenle (1) başlatıldıysa kabul edilir. Üretimde tanımlamayın.
+SSO_ALLOW_INSECURE_FOR_TESTS = os.environ.get('POPS_SSO_ALLOW_INSECURE_FOR_TESTS', '').strip() == '1'

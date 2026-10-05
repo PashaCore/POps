@@ -211,11 +211,15 @@ class LockdownInput(BaseModel):
     admin_name: Optional[str] = None
 
 
+AuthSource = Literal["local", "ldap", "oidc"]
+
+
 class UserCreateInput(BaseModel):
     username: str
-    password: str
+    password: Optional[str] = None   # yerel hesapta zorunlu; dizin ve OIDC hesabının yerel şifresi olmaz
     role: str
     permissions: str
+    auth_source: AuthSource = "local"
 
 
 class UserUpdateInput(BaseModel):
@@ -223,6 +227,7 @@ class UserUpdateInput(BaseModel):
     password: Optional[str] = None
     role: str
     permissions: str
+    auth_source: Optional[AuthSource] = None   # None: değişmez
 
 
 class AgentPoliciesInput(BaseModel):
@@ -372,3 +377,57 @@ class ApiTokenCreateInput(StrictInput):
     name: str = Field(min_length=1, max_length=64)
     role: Literal["viewer", "admin"]
     expires_days: Optional[int] = Field(default=None, ge=1, le=3650)   # None = süresiz
+
+
+# ─── Dizin (LDAP / AD) ve OpenID Connect ile giriş (pops/sso.py) ─────────────────
+class SsoGroupMapInput(StrictInput):
+    group: str = Field(min_length=1, max_length=512)   # LDAP: grup DN'i; OIDC: grup talebindeki değer
+    role: Literal["viewer", "admin", "superadmin"]
+    pages: List[str] = Field(default_factory=list, max_length=20)
+
+
+class LdapSettingsInput(StrictInput):
+    enabled: bool = False
+    host: str = Field(default="", max_length=255)
+    port: int = Field(default=636, ge=1, le=65535)
+    security: Literal["ldaps", "starttls", "plain"] = "ldaps"
+    base_dn: str = Field(default="", max_length=1024)
+    bind_dn: str = Field(default="", max_length=1024)
+    bind_password: Optional[str] = Field(default=None, max_length=1024)   # None: kayıtlı şifre kalır, "": silinir
+    user_filter: str = Field(default="(sAMAccountName={username})", max_length=512)
+    username_attribute: str = Field(default="sAMAccountName", max_length=64)
+    group_base_dn: str = Field(default="", max_length=1024)
+    group_filter: str = Field(default="(|(member={user_dn})(uniqueMember={user_dn}))", max_length=512)
+    group_map: List[SsoGroupMapInput] = Field(default_factory=list, max_length=50)
+    ca_pem: str = Field(default="", max_length=65536)
+    timeout: int = Field(default=5, ge=1, le=30)
+    # Yalnızca testler için (şifresiz LDAP); panelde gösterilmez
+    allow_insecure_for_tests: bool = False
+
+
+class LdapTestInput(LdapSettingsInput):
+    test_username: Optional[str] = Field(default=None, max_length=256)
+
+
+class OidcSettingsInput(StrictInput):
+    enabled: bool = False
+    display_name: str = Field(default="", max_length=60)
+    issuer: str = Field(default="", max_length=512)
+    client_id: str = Field(default="", max_length=512)
+    client_secret: Optional[str] = Field(default=None, max_length=2048)   # None: kayıtlı sır kalır, "": silinir
+    redirect_uri: str = Field(default="", max_length=512)
+    scopes: str = Field(default="openid email profile", max_length=256)
+    username_claim: str = Field(default="email", max_length=64)
+    groups_claim: str = Field(default="groups", max_length=64)
+    group_map: List[SsoGroupMapInput] = Field(default_factory=list, max_length=50)
+    allowed_domains: List[str] = Field(default_factory=list, max_length=20)
+    default_role: Literal["", "viewer", "admin"] = ""
+    default_pages: List[str] = Field(default_factory=list, max_length=20)
+    ca_pem: str = Field(default="", max_length=65536)
+    # Yalnızca testler için (https olmayan sağlayıcı); panelde gösterilmez
+    allow_insecure_for_tests: bool = False
+
+
+class SsoRedeemInput(StrictInput):
+    ticket: str = Field(min_length=20, max_length=128)
+    binding: str = Field(min_length=20, max_length=128)

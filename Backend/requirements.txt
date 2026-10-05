@@ -16,6 +16,9 @@ python-multipart==0.0.32
 werkzeug==3.1.9
 # ed25519 release imza doğrulaması (Faz 2 tüketicisi) ve ileride Fernet (Faz 8) için.
 cryptography==50.0.2
+# Panel girişi için LDAP / Active Directory (saf Python; derleme gerektirmez). pyasn1 onun bağımlılığıdır.
+ldap3==2.9.1
+pyasn1==0.6.4
 # Dolaylı bağımlılıklar (Starlette/uvicorn): güvenlik düzeltmeleri, var olan bir venv'e "pip install -r" ile
 # kurulurken de gelsin diye sabittir (pip, sınırı karşılayan eski sürümü kendiliğinden yükseltmez).
 anyio==4.15.1
