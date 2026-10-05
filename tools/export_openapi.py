@@ -50,8 +50,10 @@ def build_spec() -> dict:
         route = ctx.original_route
         if not isinstance(route, APIRoute) or not route.include_in_schema:
             continue
-        module = route.endpoint.__module__.rsplit(".", 1)[-1]
-        tag = (route.tags or [None])[0] or ("system" if module == "system_routes" else module)
+        module = route.endpoint.__module__
+        # Sistem paketinin (pops/routers/system/) bütün uçları tek grup
+        module = "system" if module.startswith("pops.routers.system.") else module.rsplit(".", 1)[-1]
+        tag = (route.tags or [None])[0] or module
         for method in route.methods or ():
             tags[(ctx.path_format, method.lower())] = tag
 

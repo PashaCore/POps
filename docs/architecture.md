@@ -43,8 +43,7 @@ WebSocket directly from the browser on the same origin. See [`dashboard.md`](das
 
 ### Backend
 
-A FastAPI application (`Backend/server.py`) served by uvicorn, with the code in the `Backend/pops/` package and
-`Backend/system_routes.py`. It provides the REST API, three WebSocket endpoints, the static download folders and
+A FastAPI application (`Backend/server.py`) served by uvicorn, with the code in the `Backend/pops/` package. It provides the REST API, three WebSocket endpoints, the static download folders and
 the task queue, and it applies database migrations at startup. A background loop runs every 30 seconds: it
 queues scheduled tasks that are due and raises a notification for agent updates that were never answered.
 Notifications are stored for the panel's **Bildirimler** and, if configured, sent by e-mail or webhook. Code layout:

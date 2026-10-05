@@ -8,7 +8,7 @@ own origin, for example `https://pops.example.com/api/v1/devices`. The backend i
 The tables below were produced from the running app's route table (162 HTTP routes, among them the 27 REST names
 listed under [REST names and deprecated paths](#rest-names-and-deprecated-paths), 3 WebSocket routes and the
 `/updates` static mount) together with the authentication dependency of each route, and each purpose line was
-checked against the endpoint code in `Backend/pops/routers/` and `Backend/system_routes.py`. The tables list the
+checked against the endpoint code in `Backend/pops/routers/` (the system endpoints in `Backend/pops/routers/system/`). The tables list the
 plain `/api/...` paths; every one of them also answers under `/api/v1/...` (see [Versioning](#versioning)).
 
 ## OpenAPI specification

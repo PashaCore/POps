@@ -26,9 +26,11 @@ database pool, migrations and the scheduler loop) and wires the routers. Everyth
 | `pops/scheduler.py` | Background loop started at startup (every 30 s): queues due scheduled tasks (one process at a time, advisory lock), ends expired exams, alerts on agents that never answered an update, starts a due GLPI sync in the background, and once a day (`license_check_date`) raises notifications for licences that are over their seats, expired or ending within 30 days. |
 | `pops/routers/*.py` | Endpoint groups, one `APIRouter` each: `auth` (login, 2FA, users), `control` (audit sessions, lockdown, bypass codes, panel/vision WebSockets, preview, remote input), `agents` (`/ws/agent` and the agent HTTP endpoints), `devices` (devices, labs, inventory, logs, WoL), `tasks` (queue, orchestration, packages, storage), `schedules` (scheduled tasks), `notifications` (the notification list, channel settings, test), `inventory` (software inventory and Windows update status), `reports` (summary and CSV export), `licenses` (licence definitions counted against the software inventory), `helpdesk` (tickets from the panel and from enrolled agents, with per-device limits), `exams` (exam mode per lab and its history), `integrations` (GLPI export settings, connection test, sync now). |
 
-`Backend/system_routes.py` (version and update checks, release notes from the GitHub `CHANGELOG.md`, signed
-releases from GitHub or upload, enrollment tokens, agent deploy, server self-update, capabilities) is a separate
-router built with injected dependencies. Agent updates
+`Backend/pops/routers/system/` (version and update checks, release notes from the GitHub `CHANGELOG.md`, signed
+releases from GitHub or upload, enrollment tokens, agent deploy, server self-update, capabilities) is a package of
+routers built with injected dependencies: `version.py`, `releases.py`, `updates.py`, `identity.py` and
+`selfupdate.py`, with the shared paths, version reading, GitHub helpers and request models in `common.py`.
+`Backend/system_routes.py` only keeps the old import name working: `import system_routes` gives `common.py`. Agent updates
 are signed only; the old unsigned-zip endpoints (`/api/upload_update`, `/api/update_agent/…`, `/api/broadcast_update`)
 were removed together with the old `update.php` page.
 

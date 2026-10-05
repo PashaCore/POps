@@ -29,7 +29,7 @@ COPY Backend/requirements.lock ./requirements.lock
 RUN pip install --require-hashes -r requirements.lock
 
 # Code stays root-owned (read-only for the service user). keys/ and VERSION sit next to
-# server.py, where system_routes.py looks for them.
+# server.py, where pops/routers/system looks for them.
 COPY Backend/ ./
 COPY keys/ ./keys/
 COPY VERSION ./VERSION

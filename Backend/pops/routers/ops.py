@@ -47,9 +47,9 @@ def _backup_status():
 
 
 def _version():
-    from system_routes import _read_version  # system_routes, pops paketine bağımlı değil; döngü yok
+    from pops.routers.system import common  # sürüm tek yerden okunur (VERSION / POPS_VERSION)
 
-    return _read_version()
+    return common._read_version()
 
 
 def _pool_stats():

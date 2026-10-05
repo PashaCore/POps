@@ -48,7 +48,10 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   wiring). The code lives in `Backend/pops/` (config, db, panel security, agent auth, audit, connection manager,
   models, task queue, DNA, WoL, notifications, scheduler) with one `APIRouter` per endpoint group in
   `pops/routers/`. `system_routes.py` stays a separate router built with injected dependencies. The split did not
-  change behaviour: the route table and responses were compared before and after.
+  change behaviour: the route table and responses were compared before and after. Later the system router became
+  the package `pops/routers/system/` (one module per area, the same injected dependencies; `system_routes` is kept
+  as an alias of its `common.py` for old imports and tests), and `/ws/agent` became small functions with a table
+  from message `type` to handler, again without a change in behaviour or in `docs/openapi.json`.
 - **Consequences:** New endpoints go into a router that `server.py` includes. Modules reach the pool as
   `db.db_pool`, never `from pops.db import db_pool`. `pops/config.py` imports no other `pops` module. flake8
   (`.flake8`, 120 columns) is a full CI gate, so any new finding fails the build.

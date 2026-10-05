@@ -65,9 +65,9 @@ from pops.routers import (
     tasks,
     tokens,
 )
+from pops.routers.system import build_router as _build_system_router
 from pops.scheduler import scheduler_loop
 from pops.security import _totp_code, create_jwt, limiter, require_admin, require_superadmin
-from system_routes import build_router as _build_system_router
 
 # server modülünden dışarıya açılan adlar: uvicorn için 'app'; testler ve geri uyum için JWT/TOTP
 # yardımcıları (eskiden hepsi bu dosyadaydı, artık pops/ altında).
@@ -270,7 +270,7 @@ _ROUTERS = (
 for _r in _ROUTERS:
     app.include_router(_r.router)
 
-# Sistem/sürüm/release uçları (system_routes, bağımlılıklar enjekte edilir) en sonda
+# Sistem/sürüm/release uçları (pops/routers/system, bağımlılıklar enjekte edilir) en sonda
 app.include_router(
     _build_system_router(require_admin, require_superadmin, execute_query, manager, UPDATES_DIR, add_audit_log)
 )

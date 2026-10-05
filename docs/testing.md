@@ -100,7 +100,7 @@ Baseline (2026-09-29): **backend 69.6 %** of statements. Lowest modules, and the
 
 | Module | Coverage | Why it is low |
 |---|---|---|
-| `system_routes.py` | 29 % | GitHub release fetch, agent deploy and self-update paths need network or root; only upload/verify and version are exercised. |
+| `pops/routers/system/` (was `system_routes.py`) | 29 % | GitHub release fetch, agent deploy and self-update paths need network or root; only upload/verify and version are exercised. |
 | `pops/wol.py` | 25 % | Wake-on-LAN sends UDP broadcasts; untested. |
 | `pops/routers/tasks.py` | 38 % | Orchestration, package upload and storage endpoints. |
 | `pops/routers/devices.py` | 41 % | Device edit/delete, labs, hardware inventory views. |
