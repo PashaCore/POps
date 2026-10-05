@@ -66,6 +66,10 @@ dokunmaz, hiçbir şey dağıtmaz).
 
 ## Sürüm etiketlerinin imzası
 
+> **Not:** projenin yayımladığı etiketler henüz SSH ile imzalanmıyor (açıklamalı `git tag -a`). Etiketler imzalanmaya
+> başlayana kadar (sürüm notunda yazılır) sunucuda `allowed_signers` kurmayın; kurarsanız kendini güncelleme yeni
+> etikete geçmez.
+
 `CHANNEL=release`'te, en yeni etikete geçmeden önce:
 
 | Durum | Sonuç |

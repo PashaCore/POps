@@ -242,9 +242,10 @@ A `v*` tag runs `.github/workflows/release.yml`, which builds and attaches:
 
 The signing key exists only as a GitHub secret; the public key is `keys/pops_release_ed25519.pub.pem`
 ([`keys/README.md`](../keys/README.md)). The workflow refuses to publish unless the tag equals `v<VERSION>` and
-`CHANGELOG.md` has a section for that version. The release tag itself is signed with a separate SSH key
-(`git tag -s`); servers with `/etc/pops/allowed_signers` self-update only to tags signed by a listed key
-([`self-update.md`](self-update.md#sürüm-etiketlerinin-imzası)).
+`CHANGELOG.md` has a section for that version. Release tags can be signed with a separate SSH key (`git tag -s`), and
+servers with `/etc/pops/allowed_signers` then self-update only to tags signed by a listed key
+([`self-update.md`](self-update.md#sürüm-etiketlerinin-imzası)). **The project's tags are not signed yet**, so do not
+create `allowed_signers` until the release notes say they are.
 
 ## Logs
 

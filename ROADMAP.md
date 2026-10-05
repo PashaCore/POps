@@ -47,7 +47,8 @@ tagged release.
 - [x] Release notes from the CHANGELOG on the **Sistem & Sürüm** page (0.1.5)
 - [x] Rollback that really restores the previous agent, proven by drills on real PCs (0.1.7, 0.1.8); an update
   counts as successful only once the new agent is operational (0.1.12)
-- [x] Server self-update follows signed release tags; the release waits for the full test suite (0.1.12, 0.1.13)
+- [x] Server self-update follows release tags and can require SSH-signed tags; the release waits for the full test
+  suite (0.1.12, 0.1.13). The project's own tags are not signed yet.
 
 ### Maintainability
 

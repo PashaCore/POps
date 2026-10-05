@@ -49,7 +49,7 @@
 - [Performans](#-performans)
 - [Ekran görüntüleri](#-ekran-görüntüleri)
 - [Hızlı başlangıç](#-hızlı-başlangıç)
-- [Gereksinimler](#-gereksinimler)
+- [Gereksinimler](#-gereksinimler) · [Bilinen sınırlar](#bilinen-sınırlar)
 - [Sürüm geçmişi](#-sürüm-geçmişi)
 - [Kalite ve testler](#-kalite-ve-testler)
 - [Depo yapısı](#-depo-yapısı)
@@ -126,7 +126,7 @@ aynı bilgisayarda yan yana çalışabilir ([konumlandırma](docs/positioning.md
 | :--- | :--- |
 | **Yardım masası** | Öğrenci ve personel tepsiden talep açar ("Sorun bildir"); BT panelden yanıtlar. |
 | **Bildirimler** | Başarısız güncelleme, ele geçirme denemesi, politika uyarısı, dolan disk ya da süresi biten sertifika zile, e-postaya ya da webhook'a düşer. |
-| **Sunucunun kendini güncellemesi** | Backend panelden en son imzalı sürüm etiketine güncellenir; sağlık kontrolü ve kendiliğinden geri alma ile. |
+| **Sunucunun kendini güncellemesi** | Backend panelden en son sürüm etiketine güncellenir; sağlık kontrolü ve kendiliğinden geri alma ile. |
 | **Yedekler** | Her gece alınan yedek, her seferinde geçici bir veritabanına açılarak sınanır; isteğe bağlı başka makineye kopya. |
 | **Gözlemlenebilirlik** | İstek kimlikli JSON loglar, Prometheus `/metrics` ve yük ölçümlerini gösteren tanılama sayfası. |
 | **Saklama süresi** | Eski olay kayıtları, biten görevler ve okunmuş bildirimler takvime göre silinir; denetim zinciri korunur. |
@@ -289,12 +289,28 @@ Adım adım (İngilizce): [`docs/quick-start.md`](docs/quick-start.md). Docker C
 | **Sunucu** | systemd'li Linux, PostgreSQL 13+, Python 3.10+ (önerilen 3.12), `curl` eklentili PHP 8, nginx ya da Apache, TLS sertifikalı bir alan adı. Bir okul için küçük bir sanal makine yeter ([boyutlandırma](docs/kapasite/README.md)). |
 | **Yönetilen bilgisayarlar** | Windows 10 ya da 11, 64 bit. Başka bir şey gerekmez: ajan kendi .NET 10 çalışma zamanını getirir. |
 | **Ağ** | Bilgisayarlardan sunucuya dışa doğru HTTPS (443); vekil sunucular ve güvenlik duvarları WebSocket yükseltmesine izin vermeli. Wake-on-LAN için sunucudan lab ağına UDP yayını gerekir. |
-| **Tarayıcı** | Güncel herhangi bir tarayıcı. Panel grafik, simge ve yazı tiplerini herkese açık CDN'lerden yükler. |
+| **Tarayıcı** | Güncel herhangi bir tarayıcı. Panel başka bir adresten bir şey yüklemez (yazı tipleri ve simgeler içindedir); internetsiz ağda da çalışır. |
 
-**Henüz denenmedi:** Uzak Masaüstü ve çok kullanıcılı oturumlar, uzaktan kontrol sırasında UAC onay ekranı, birden
-fazla monitör ve %100 dışındaki ekran ölçekleme. Dondurma yazılımları (Deep Freeze, Shadow Defender), ajan dondurmadan
-önce kaydedilirse çalışır ([ayrıntı](Agent/README.md#machines-with-freeze-software)). Bkz.
+Dondurma yazılımları (Deep Freeze, Shadow Defender), ajan dondurmadan önce kaydedilirse çalışır
+([ayrıntı](Agent/README.md#machines-with-freeze-software)). Bkz.
 [`docs/getting-started.md`](docs/getting-started.md#supported-systems).
+
+### Bilinen sınırlar
+
+- **Ekran izleme (Vision)** yalnızca birincil monitörü JPEG kareleriyle gösterir. Uzak Masaüstü ve çok kullanıcılı
+  oturumlar, UAC onay ekranı (güvenli masaüstü), oturum açma ekranı ve %100 dışındaki ekran ölçekleme desteklenmez ya
+  da denenmedi.
+- **CI'da değil, elle doğrulanır:** Windows'ta gerçek MSI güncellemesi ve geri alma (her ajan sürümünde gerçek
+  bilgisayarlarda), Vision tüneli ve karantina kilit ekranı. CI; ajan birim testlerini, sunucunun entegrasyon
+  testlerini ve dağıtım betiklerini sahte ortamda çalıştırır ([`docs/testing.md`](docs/testing.md)).
+- **Tek backend süreci.** Henüz yüksek erişilebilirlik yok; tek süreçte 5.000 sanal ajan ölçüldü
+  ([kapasite](docs/kapasite/README.md)). Tek sunucuda birden çok okul ya da ilçe denenmiş bir kurulum değildir.
+- **İmzasız Windows dosyaları.** Sürüm manifestleri ed25519 ile imzalanır, sunucu ve bilgisayar doğrular; ama
+  çalıştırılabilir dosyaların Authenticode imzası henüz yok, SmartScreen ve bazı antivirüsler uyarabilir.
+- **Sürüm etiketleri henüz SSH ile imzalanmıyor.** Kendini güncelleme imzalı etiket isteyebilir
+  ([`docs/self-update.md`](docs/self-update.md)); proje etiketleri imzalayana kadar `allowed_signers` kurmayın.
+- **DNS** yalnızca tespit edip bildirir; engelleme planlı. **API:** yalnızca oturumla; API jetonu henüz yok.
+- **Panel dili:** Türkçe; İngilizce arayüz hazırlanıyor.
 
 ---
 

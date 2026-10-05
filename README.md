@@ -50,7 +50,7 @@
 - [Performance](#-performance)
 - [Screenshots](#-screenshots)
 - [Quick start](#-quick-start)
-- [Requirements](#-requirements)
+- [Requirements](#-requirements) · [Known limitations](#known-limitations)
 - [Release history](#-release-history)
 - [Quality and testing](#-quality-and-testing)
 - [Repository layout](#-repository-layout)
@@ -127,7 +127,7 @@ as Veyon; the two can run side by side ([positioning](docs/positioning.md)).
 | :--- | :--- |
 | **Helpdesk** | Students and staff open tickets from the tray ("Sorun bildir"); IT answers from the panel. |
 | **Notifications** | Failed updates, takeover attempts, policy alerts, a full disk or an expiring certificate reach **Bildirimler** in the panel, e-mail or a webhook. |
-| **Server self-update** | Update the backend from the panel to the latest signed release tag, with a health check and automatic rollback. |
+| **Server self-update** | Update the backend from the panel to the latest release tag, with a health check and automatic rollback. |
 | **Backups** | A nightly backup that is test-restored into a scratch database every time, with an optional off-site copy. |
 | **Observability** | JSON logs with request IDs, Prometheus `/metrics`, and a diagnostics page with load figures. |
 | **Retention** | Old event logs, finished tasks and read notifications are deleted on a schedule; the audit chain is kept. |
@@ -290,12 +290,28 @@ Step by step: [`docs/quick-start.md`](docs/quick-start.md). Docker Compose is av
 | **Server** | Linux with systemd, PostgreSQL 13+, Python 3.10+ (3.12 recommended), PHP 8 with `curl`, nginx or Apache, a host name with a TLS certificate. A small VM is enough for a school ([sizing](docs/kapasite/README.md)). |
 | **Managed PCs** | Windows 10 or 11, 64-bit. Nothing else: the agent brings its own .NET 10 runtime. |
 | **Network** | Outbound HTTPS (443) from the PCs to the server, with the WebSocket upgrade allowed through proxies and firewalls. Wake-on-LAN needs UDP broadcasts to the lab subnet. |
-| **Browser** | Any current browser. The panel loads its charts, icons and fonts from public CDNs. |
+| **Browser** | Any current browser. The panel loads nothing from other hosts (fonts and icons are bundled), so it works on a network without internet. |
 
-**Not tested yet:** Remote Desktop and multi-user sessions, the UAC prompt during remote control, several monitors
-and display scaling other than 100 %. Freeze software (Deep Freeze, Shadow Defender) works when the agent is enrolled
-before freezing ([details](Agent/README.md#machines-with-freeze-software)). See
+Freeze software (Deep Freeze, Shadow Defender) works when the agent is enrolled before freezing
+([details](Agent/README.md#machines-with-freeze-software)). See
 [`docs/getting-started.md`](docs/getting-started.md#supported-systems).
+
+### Known limitations
+
+- **Screen view (Vision)** captures the primary monitor only, as JPEG frames. Remote Desktop and multi-user sessions,
+  the UAC prompt (secure desktop), the sign-in screen and display scaling other than 100 % are not supported or not
+  tested.
+- **Checked by hand, not in CI:** the real MSI update and rollback on Windows (run on real PCs for every agent
+  release), the Vision tunnel and the quarantine lock screen. CI runs the agent's unit tests, the server's
+  integration tests and the deploy scripts against fakes ([`docs/testing.md`](docs/testing.md)).
+- **One backend process.** No high availability yet; 5,000 simulated agents were measured on one process
+  ([capacity](docs/kapasite/README.md)). Several schools or a district on one server is not a tested setup.
+- **Unsigned Windows binaries.** Release manifests are ed25519-signed and checked by the server and the PC, but the
+  executables have no Authenticode signature yet, so SmartScreen and some antivirus products may warn.
+- **Release tags are not SSH-signed yet.** Self-update can require signed tags
+  ([`docs/self-update.md`](docs/self-update.md)); until the project signs them, do not set up `allowed_signers`.
+- **DNS** is detection and reporting only; blocking is planned. **API:** session-based only, no API tokens yet.
+- **Panel language:** Turkish; the English interface is in progress.
 
 ---
 
