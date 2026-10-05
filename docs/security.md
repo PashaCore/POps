@@ -359,7 +359,8 @@ What it does **not** guarantee:
   and quality changes (`select_monitor`, `set_quality`) are forwarded only from the session holder too.
 - On the PC, the user is asked for consent, or, for a mandatory session, sees a full-screen countdown. The agent
   applies remote input only during a session the tray started after that step, even if the server is
-  compromised.
+  compromised. A mandatory session that starts while the PC is locked is not silent: the user sees a notice as soon
+  as their desktop returns, until the session ends, and the PC records event 1150.
 - Screen previews update the tray tooltip and show a notice at most every five minutes.
 - The tray icon is always visible; there is no hidden mode and no keystroke logging.
 

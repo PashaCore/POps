@@ -196,9 +196,10 @@ that partly changed (no decision taken), 1080 a change of the server's modules, 
 be read, 1100 a clipboard shared in a Vision session (direction and length only), 1110/1111/1112 exam mode
 started, ended and an app closed during an exam, 1120/1121 a file pushed to or pulled from the PC, 1130 a
 power action accepted (operation, delay, requester and task; not the note), 1140 a message shown to the user
-(task, title and text length, style, whether a click is required, requester; never the title or text) and 1141
-the end of a message that waited for a click (`acknowledged`, `timeout`, `cancelled` or `service_stopping`).
-Failure to write an event does not stop the
+(task, title and text length, style, whether a click is required, requester; never the title or text), 1141
+the end of a message that waited for a click (`acknowledged`, `timeout`, `cancelled` or `service_stopping`) and
+1150 a Vision session that started while the PC was locked (session, requester, mandatory; see
+[`vision.md`](vision.md#a-session-that-starts-while-the-pc-is-locked)). Failure to write an event does not stop the
 service.
 
 ### `winget_install` contract

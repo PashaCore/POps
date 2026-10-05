@@ -27,6 +27,9 @@ namespace POpsTray.Vision
 
         private readonly Action<byte[]> _send;
         private readonly Action<string> _sendText;
+        // Kullanıcının masaüstü yakalanabilir mi (InputDesktop.IsOwn; kilitliyken başlayan oturumun bildirimi ekrana
+        // gelene kadar false). Yakalama iş parçacığında çağrılır.
+        private readonly Func<bool> _ownDesktop;
         private readonly object _gate = new object();
         private readonly VisionQuality _quality = new VisionQuality();
         private Thread? _thread;
@@ -40,10 +43,11 @@ namespace POpsTray.Vision
         private List<int> _offsets = new List<int>();
         private static readonly ImageCodecInfo? JpegCodec = ImageCodecInfo.GetImageEncoders().FirstOrDefault(c => c.MimeType == "image/jpeg");
 
-        public VisionStreamer(Action<byte[]> send, Action<string> sendText)
+        public VisionStreamer(Action<byte[]> send, Action<string> sendText, Func<bool> ownDesktop)
         {
             _send = send;
             _sendText = sendText;
+            _ownDesktop = ownDesktop;
         }
 
         public bool Running => _running;
@@ -158,7 +162,7 @@ namespace POpsTray.Vision
                     var watch = Stopwatch.StartNew();
                     // Güvenli masaüstü (UAC, kilit, oturum açma ekranı) etkinken yakalanacak bir şey yok: donmuş son kare
                     // yerine bildirim resmi gider, masaüstü geri gelince kaynaklar yeniden açılır ve tam kare gider
-                    VisionDesktopStep step = desktop.Next(InputDesktop.IsOwn(), _forceFull, DateTime.UtcNow);
+                    VisionDesktopStep step = desktop.Next(_ownDesktop(), _forceFull, DateTime.UtcNow);
                     if (step is VisionDesktopStep.Enter or VisionDesktopStep.Notice or VisionDesktopStep.Wait)
                     {
                         if (step == VisionDesktopStep.Enter) TrayLog.Write("Vision v2: kullanıcının masaüstü görünmüyor (güvenli masaüstü); görüntü yerine bildirim gönderiliyor.");

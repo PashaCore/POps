@@ -45,6 +45,12 @@ namespace POpsAgent
             Info(1011, "Vision oturumu bitti", ("session_id", Safe(sessionId)),
                 ("requested_by", Safe(requestedBy)), ("user_approved", userApproved));
 
+        // Oturum başlarken kullanıcının masaüstü ekranda değildi (kilit, oturum açma, UAC ya da Ctrl+Alt+Del ekranı): kullanıcı
+        // geri sayımı görmedi. Tepsi masaüstü geri gelince oturum bildirimini gösterir. Ekran içeriği yazılmaz.
+        public static LocalAuditEvent VisionStartedWhileLocked(string sessionId, string requestedBy, bool mandatory) =>
+            Warning(1150, "Vision oturumu bilgisayar kilitliyken başladı", ("session_id", Safe(sessionId)),
+                ("requested_by", Safe(requestedBy)), ("mandatory", mandatory));
+
         public static LocalAuditEvent QuarantineStarted(string source) =>
             Info(1020, "Karantina başladı", ("source", Safe(source)));
 
