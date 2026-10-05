@@ -387,7 +387,8 @@ open-source redesign of that work, within clear legal and ethical bounds.
 
 ### 🏢 About Pasha Core
 
-POps is developed and maintained by **Pasha Core**.
+POps is developed and maintained by **Pasha Core**. Created by Mehmet Ali Avcı
+([LinkedIn](https://www.linkedin.com/in/p4sha/) · [GitHub](https://github.com/TheP4SHA)).
 
 [🌐 Website](https://pashacore.com.tr) • [🏢 Company LinkedIn](https://www.linkedin.com/company/112521167/) • [👤 Founder LinkedIn](https://www.linkedin.com/in/p4sha/) • [🐙 GitHub](https://github.com/PashaCore)
 

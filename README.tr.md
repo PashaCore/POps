@@ -396,7 +396,8 @@ envanterlerini tutmak ve bunu klavyenin başındaki kişilere açıkça yapmak b
 
 ### 🏢 Pasha Core hakkında
 
-POps, **Pasha Core** tarafından geliştirilir ve sürdürülür.
+POps, **Pasha Core** tarafından geliştirilir ve sürdürülür. Mehmet Ali Avcı tarafından yazıldı
+([LinkedIn](https://www.linkedin.com/in/p4sha/) · [GitHub](https://github.com/TheP4SHA)).
 
 [🌐 Web sitesi](https://pashacore.com.tr) • [🏢 Şirket LinkedIn](https://www.linkedin.com/company/112521167/) • [👤 Kurucu LinkedIn](https://www.linkedin.com/in/p4sha/) • [🐙 GitHub](https://github.com/PashaCore)
 

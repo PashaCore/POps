@@ -45,6 +45,18 @@ function pops_api_post($path, $payload) {
     return [$decoded, $httpcode, ''];
 }
 
+// Kurum adı ve logosu (Ayarlar → Genel → Kurum); sunucuya ulaşılamazsa POps'un kendi görünümü kalır
+function pops_branding() {
+    $ch = curl_init(API_INTERNAL_URL . '/api/branding');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+    $response = curl_exec($ch);
+    $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $data = ($response !== false && $httpcode === 200) ? json_decode($response, true) : null;
+    return is_array($data) ? $data : [];
+}
+
 // Başarılı yanıtı session'a yazıp panele yönlendirir.
 function pops_finish_login($responseData, $fallback_username) {
     $_SESSION['loggedin'] = true;
@@ -179,7 +191,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--text-secondary);
             margin-bottom: 0.375rem;
         }
-        .login-credit .ico { width: 11px; height: 11px; }
+        .login-logo.org { background: var(--bg-surface); box-shadow: 0 0 0 1px var(--border-subtle); padding: 10px; }
+        .login-logo.org img { width: 100%; height: 100%; object-fit: contain; }
+        .login-foot { text-align: center; margin-top: var(--space-6); font-size: var(--text-xs); color: var(--text-muted); }
+        .login-foot a { color: inherit; }
+        .login-foot a:hover { color: var(--primary-500); }
         .error-box {
             background: var(--danger-bg);
             border: 1px solid var(--danger-border);
@@ -193,13 +209,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </style>
 </head>
 <body>
+    <?php
+    $brand = pops_branding();
+    $org_name = trim((string) ($brand['org_name'] ?? ''));
+    $org_logo = !empty($brand['logo']) ? API_URL . '/branding/logo?v=' . rawurlencode((string) ($brand['logo_v'] ?? '')) : '';
+    ?>
     <div class="login-wrapper">
-        <div class="login-logo">
-            <img src="assets/favicon/apple-touch-icon.png" alt="POps Logo" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">
+        <div class="login-logo<?php echo $org_logo ? ' org' : ''; ?>">
+            <?php if ($org_logo): ?>
+            <img src="<?php echo htmlspecialchars($org_logo, ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars($org_name !== '' ? $org_name : 'Kurum logosu', ENT_QUOTES, 'UTF-8'); ?>">
+            <?php else: ?>
+            <img src="assets/favicon/apple-touch-icon.png" alt="POps" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">
+            <?php endif; ?>
         </div>
         <div class="login-header">
-            <h2>POps</h2>
-            <p>Yönetim paneli</p>
+            <h2><?php echo htmlspecialchars($org_name !== '' ? $org_name : 'POps', ENT_QUOTES, 'UTF-8'); ?></h2>
+            <p><?php echo $org_name !== '' ? 'POps yönetim paneli' : 'Yönetim paneli'; ?></p>
         </div>
         
         <div class="card p-6">
@@ -235,14 +260,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
             <?php endif; ?>
         </div>
-        <div style="text-align:center; margin-top: var(--space-6); font-size: var(--text-xs); color: var(--text-muted); line-height: 1.6;">
-            &copy; <?php echo date("Y"); ?> POps CORE<br>
-            <?php $pops_sprite = 'assets/pops_icons.svg?v=' . (int) @filemtime(__DIR__ . '/assets/pops_icons.svg'); ?>
-            <span class="login-credit" style="opacity: 0.8;">
-                Created by Mehmet Ali Avcı
-                <a href="https://www.linkedin.com/in/p4sha" target="_blank" aria-label="LinkedIn" style="color: inherit; margin-left: 4px; transition: color 0.2s;" onmouseover="this.style.color='var(--primary-500)'" onmouseout="this.style.color='inherit'"><svg class="ico" aria-hidden="true"><use href="<?php echo htmlspecialchars($pops_sprite . '#i-linkedin', ENT_QUOTES, 'UTF-8'); ?>"></use></svg></a>
-                <a href="https://github.com/TheP4SHA/TheP4SHA" target="_blank" aria-label="GitHub" style="color: inherit; margin-left: 4px; transition: color 0.2s;" onmouseover="this.style.color='var(--primary-500)'" onmouseout="this.style.color='inherit'"><svg class="ico" aria-hidden="true"><use href="<?php echo htmlspecialchars($pops_sprite . '#i-github', ENT_QUOTES, 'UTF-8'); ?>"></use></svg></a>
-            </span>
+        <div class="login-foot">
+            <a href="https://github.com/PashaCore/POps" target="_blank" rel="noopener">POps</a> · Pasha Core
         </div>
     </div>
 </body>

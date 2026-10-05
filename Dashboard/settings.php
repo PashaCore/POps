@@ -24,6 +24,8 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     .srow.block { display: block; }
     .srow .val { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-secondary); text-align: right; overflow-wrap: anywhere; min-width: 0; max-width: 60%; }
     .srow .st { display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); color: var(--text-secondary); white-space: nowrap; }
+    .srow input.org-name { width: min(280px, 100%); }
+    .org-logo { width: 44px; height: 44px; object-fit: contain; border-radius: 10px; background: var(--bg-surface); box-shadow: 0 0 0 1px var(--border-subtle); padding: 4px; }
     .srow input[type=number] { width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
     .srow .unit { font-size: var(--text-sm); color: var(--text-tertiary); }
     .faint { color: var(--text-muted); }
@@ -149,6 +151,35 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="sect" data-pane="general" aria-labelledby="hOrg">
+        <div class="sect-head">
+            <h2 id="hOrg">Kurum</h2>
+            <p>Giriş ekranında görünen ad ve logo. Yalnızca süper admin değiştirir.</p>
+        </div>
+        <div class="sect-body">
+            <div class="set">
+                <div class="srow">
+                    <div class="grow">
+                        <div class="t" id="orgNameLabel">Kurum adı</div>
+                        <div class="d">Giriş ekranının başlığı olur. Boş bırakılırsa "POps" yazar.</div>
+                    </div>
+                    <input type="text" id="orgName" class="org-name" maxlength="80" autocomplete="organization" aria-labelledby="orgNameLabel" placeholder="Örn. Atatürk Anadolu Lisesi" disabled>
+                    <button type="button" class="btn secondary sm" id="orgSave" disabled>Kaydet</button>
+                </div>
+                <div class="srow">
+                    <div class="grow">
+                        <div class="t">Logo</div>
+                        <div class="d">PNG, JPEG ya da WebP, en çok 256 KB. Kare ya da yatay bir logo en iyi görünür.</div>
+                    </div>
+                    <img id="orgLogo" class="org-logo" alt="Kurum logosu" hidden>
+                    <input type="file" id="orgLogoFile" accept="image/png,image/jpeg,image/webp" hidden>
+                    <button type="button" class="btn secondary sm" id="orgLogoPick" disabled><?php echo pops_icon('upload', 'sm'); ?>Logo yükle</button>
+                    <button type="button" class="ibtn sm" id="orgLogoDel" data-tip="Logoyu kaldır" data-tip-pos="left" aria-label="Logoyu kaldır" hidden><?php echo pops_icon('trash', 'sm'); ?></button>
                 </div>
             </div>
         </div>
@@ -553,6 +584,54 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     });
     $('twofaSecret').addEventListener('click', (e) => e.target.select());
 
+    // ================= KURUM =================
+    // Giriş ekranındaki kurum adı ve logosu: GET /api/branding (oturumsuz), değiştirmek yalnızca süper admin
+    let orgSaved = '';
+    function renderBrand(b) {
+        orgSaved = (b && b.org_name) || '';
+        $('orgName').value = orgSaved;
+        const logo = $('orgLogo');
+        if (b && b.logo) {
+            logo.src = (window.OMYO_API ? window.OMYO_API.HTTP_URL : '') + '/api/branding/logo?v=' + encodeURIComponent(b.logo_v || '');
+            logo.hidden = false;
+        } else {
+            logo.removeAttribute('src');
+            logo.hidden = true;
+        }
+        $('orgLogoDel').hidden = !(b && b.logo) || !IS_SUPER;
+        $('orgSave').disabled = true;
+    }
+    async function loadBrand() {
+        try { renderBrand(await POps.get('/api/branding')); }
+        catch (e) { $('orgName').placeholder = 'Alınamadı: ' + POps.errorMessage(e); return; }
+        $('orgName').disabled = !IS_SUPER;
+        $('orgLogoPick').disabled = !IS_SUPER;
+    }
+    $('orgName').addEventListener('input', () => { $('orgSave').disabled = $('orgName').value.trim() === orgSaved; });
+    $('orgName').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !$('orgSave').disabled) { e.preventDefault(); $('orgSave').click(); } });
+    $('orgSave').addEventListener('click', async function () {
+        const name = $('orgName').value.trim();
+        let r = null;
+        if (await POps.act(this, async () => { r = await POps.post('/api/system/branding', { org_name: name || null }); },
+            { success: name ? 'Kurum adı kaydedildi.' : 'Kurum adı kaldırıldı.' })) renderBrand(r);
+    });
+    $('orgLogoPick').addEventListener('click', () => $('orgLogoFile').click());
+    $('orgLogoFile').addEventListener('change', async function () {
+        const f = this.files && this.files[0];
+        this.value = '';
+        if (!f) return;
+        if (f.size > 256 * 1024) { POps.toast('warning', 'Logo en çok 256 KB olabilir.'); return; }
+        const fd = new FormData();
+        fd.append('file', f);
+        let r = null;
+        if (await POps.act($('orgLogoPick'), async () => { r = await POps.post('/api/system/branding/logo', fd); }, { success: 'Logo yüklendi.' })) renderBrand(r);
+    });
+    $('orgLogoDel').addEventListener('click', async function () {
+        if (!await POps.confirm({ title: 'Logo kaldırılsın mı?', message: 'Giriş ekranında yeniden POps logosu görünür.', confirmText: 'Kaldır', danger: true })) return;
+        let r = null;
+        if (await POps.act(this, async () => { r = await POps.del('/api/system/branding/logo'); }, { success: 'Logo kaldırıldı.' })) renderBrand(r);
+    });
+
     // ================= GÖREV KUYRUĞU =================
     const limitValue = () => $('queueLimit').value.trim();
     const isDirty = () => limitSaved !== null && limitValue() !== String(limitSaved);
@@ -628,6 +707,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     loadUsers();
     loadTwofa();
     loadLimit();
+    loadBrand();
 })();
 </script>
 

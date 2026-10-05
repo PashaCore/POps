@@ -474,6 +474,50 @@ def main():
     )
     asyncio.run(q("DELETE FROM global_settings WHERE key='auto_enroll_lab'"))
 
+    print("== kurum adı ve logosu")
+    saved = asyncio.run(q("SELECT key, value FROM global_settings WHERE key LIKE 'branding_%'"))
+    asyncio.run(q("DELETE FROM global_settings WHERE key LIKE 'branding_%'"))
+    s, b = req("/api/branding")
+    chk(s == 200 and b == {"org_name": None, "logo": False, "logo_v": None}, "oturumsuz okunur, varsayılan boş")
+    chk(req("/api/system/branding", ad, {"org_name": "X"})[0] == 403, "admin değiştiremez")
+    chk(req("/api/system/branding", sa, {"org_name": "x" * 81})[0] == 422, "en çok 80 karakter")
+    chk(req("/api/system/branding", sa, {"name": "X"})[0] == 422, "tanınmayan alan 422")
+    s, b = req("/api/system/branding", sa, {"org_name": "  FT   Okulu  "})
+    chk(s == 200 and b.get("org_name") == "FT Okulu" and req("/api/branding")[1].get("org_name") == "FT Okulu",
+        "ad boşlukları sadeleşip saklandı")
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+
+    def upload(token, data, ctype="image/png"):
+        boundary = "ftbrand0123456789"
+        body = ("--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"logo\"\r\nContent-Type: %s\r\n\r\n"
+                % (boundary, ctype)).encode() + data + ("\r\n--%s--\r\n" % boundary).encode()
+        r = urllib.request.Request(HTTP + "/api/system/branding/logo", data=body, method="POST")
+        r.add_header("Content-Type", "multipart/form-data; boundary=" + boundary)
+        r.add_header("Authorization", "Bearer " + token)
+        try:
+            with urllib.request.urlopen(r, timeout=30) as resp:
+                return resp.status, json.loads(resp.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            return e.code, {}
+
+    chk(upload(ad, png)[0] == 403, "admin logo yükleyemez")
+    chk(upload(sa, b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>", "image/png")[0] == 415,
+        "PNG gibi gönderilen SVG reddedildi (içeriğe bakılır)")
+    chk(upload(sa, png + b"\x00" * (256 * 1024))[0] == 413, "256 KB'tan büyük logo reddedildi")
+    s, b = upload(sa, png)
+    chk(s == 200 and b.get("logo") is True and len(b.get("logo_v") or "") == 12, "PNG logo yüklendi")
+    with urllib.request.urlopen(HTTP + "/api/branding/logo", timeout=30) as r:
+        chk(r.status == 200 and r.read() == png, "logo oturumsuz okunur, baytları aynı")
+        chk(r.headers.get("Content-Type") == "image/png" and r.headers.get("X-Content-Type-Options") == "nosniff",
+            "doğru tür ve nosniff")
+    chk(req("/api/system/branding/logo", sa, method="DELETE")[0] == 200 and req("/api/branding/logo")[0] == 404,
+        "logo kaldırıldı")
+    chk(asyncio.run(q("SELECT count(*) AS n FROM device_audit_logs WHERE action = 'branding'"))[0]["n"] >= 3,
+        "değişiklikler denetim kaydında")
+    asyncio.run(q("DELETE FROM global_settings WHERE key LIKE 'branding_%'"))
+    for r in saved:
+        asyncio.run(q("INSERT INTO global_settings (key, value) VALUES ($1, $2)", r["key"], r["value"]))
+
     # temizlik
     asyncio.run(q("DELETE FROM device_software WHERE pc_name = ANY($1::text[])", PCS))
     asyncio.run(q("DELETE FROM device_patch_status WHERE pc_name = ANY($1::text[])", PCS))
