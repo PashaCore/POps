@@ -11,9 +11,10 @@ cd POps
 sudo POPS_DOMAIN=pops.example.com Installer/server/install.sh
 ```
 
-The script installs everything on one machine: PostgreSQL, Python, the backend with its `.env` (generated secrets)
-and `pops.service` unit, nginx with PHP-FPM for the panel, and HTTPS for `POPS_DOMAIN`. It prints the panel **admin
-password** at the end. Keep it, and keep the clone: the panel is served from its `Dashboard` folder.
+The script installs everything on one machine: PostgreSQL, Python 3.10 or newer (the `python3.12` package on
+AlmaLinux/RHEL 9), the backend with its `.env` (generated secrets) and `pops.service` unit, nginx with PHP-FPM for the
+panel, and HTTPS for `POPS_DOMAIN`. It prints the panel **admin password** at the end. Keep it, and keep the clone:
+the panel is served from its `Dashboard` folder.
 
 HTTPS is chosen with `TLS_MODE`:
 

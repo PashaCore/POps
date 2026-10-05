@@ -220,6 +220,8 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
 - **Consequences:** CI tests the backend on Python 3.9 and migrations on PostgreSQL 13, while Compose uses
   `postgres:17`. In Docker there is no panel self-update, the server's Wake-on-LAN broadcast usually does not reach
   the LAN, TLS is not included, and the backend must stay one container (D-01). Two install paths to document.
+- **0.1.22-alpha:** the backend needs Python 3.10 or newer (D-20); on AlmaLinux/RHEL 9 `install.sh` installs the
+  `python3.12` package, and CI tests 3.12 and 3.10.
 
 ## D-15 Offline-first: the server works without internet access
 
@@ -298,3 +300,31 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   `C:\POpsData\updater`. .NET security fixes reach PCs only through an agent release, not through Windows Update:
   a .NET 10 patch means rebuilding and shipping the agent. Rolling back to 0.1.14 or older runs on the .NET 8
   runtime the PC still has; the MSI never removes it.
+
+## D-20 Python 3.10 or newer; 3.12 is the target
+
+**Since:** 0.1.22-alpha.
+
+- **Context:** The backend ran on the system Python of AlmaLinux/RHEL 9, 3.9, whose upstream support ended in
+  October 2025. The fixes for 17 known vulnerabilities in the live venv were only released for Python 3.10 and newer:
+  python-multipart (multipart and urlencoded denial of service, path traversal; FastAPI parses form bodies before
+  the auth dependencies run, so `/api/upload` was reachable without a token), Starlette (Host-header URL injection,
+  form limits not applied to urlencoded bodies, StaticFiles UNC paths on Windows), and anyio, click, idna and
+  python-dotenv. Dependabot had been told to ignore those releases.
+- **Decision:** The minimum is Python 3.10, so Ubuntu 22.04 keeps working with its own `python3`; the target is 3.12
+  (AlmaLinux/RHEL 9 ship it as the `python3.12` package, Ubuntu 24.04 as `python3`, and the Docker image uses
+  `python:3.12-slim`). `Backend/requirements.txt` states the minimum in a `# requires-python: >=3.10` line that
+  `install.sh` and `pops-deploy-backend` read: `install.sh` uses the newest of `python3.12`, `python3.11`,
+  `python3.10` and `python3` that is new enough (installing `python3.12` with dnf if none is), and
+  `pops-deploy-backend` builds a new venv next to the old one when the live venv's Python is older, swaps it in as
+  part of the same deploy and puts the old one back if the deploy fails. Without a suitable interpreter it stops
+  before changing anything and the self-update status says to install `python3.12`. Starlette and the vulnerable
+  indirect dependencies are pinned in `requirements.txt`, because `pip install -r` does not upgrade an indirect
+  dependency that still satisfies its lower bound.
+- **Consequences:** Existing AlmaLinux/RHEL 9 servers need `dnf install python3.12` and the new deploy scripts in
+  `/usr/local/sbin` before their next update ([`deployment.md`](deployment.md#moving-an-existing-server-to-python-312));
+  without them the update is rolled back and the server stays on the old release. The rebuilt venv is a fresh
+  install, so packages left behind by earlier requirements (for example `python-jose` and `ecdsa`, removed in
+  0.1.2-alpha) disappear. `<app>/venv` becomes a symbolic link to `venv-py<version>-<id>`. CI runs lint, the
+  integration tests and the migrations on 3.12 and the unit tests and import check also on 3.10. Code must not use
+  3.11-only features. Startup and shutdown use a lifespan handler, since Starlette 1.0 removed `on_event`.

@@ -8,7 +8,7 @@ next to a classroom tool. See [`positioning.md`](positioning.md).
 
 **Which systems are supported?**
 The server runs on Linux with systemd (`install.sh` is tested on AlmaLinux/RHEL/Rocky and Debian/Ubuntu) with
-PostgreSQL and Python 3.9 or newer. The agent runs on 64-bit Windows 10 or 11 and brings its own .NET runtime; nothing has to be installed first.
+PostgreSQL and Python 3.10 or newer (3.12 recommended; the installer adds it on AlmaLinux/RHEL 9). The agent runs on 64-bit Windows 10 or 11 and brings its own .NET runtime; nothing has to be installed first.
 
 **How many PCs can one server handle?**
 The measured numbers are in [`BENCHMARKS.md`](../BENCHMARKS.md): one backend worker held 1000 connected agents with
