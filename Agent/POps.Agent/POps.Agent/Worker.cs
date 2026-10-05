@@ -236,11 +236,34 @@ namespace POpsAgent
             }
         }
 
+        // C:\POpsLogs: 30 günden eski loglar ve 200 MB'ı aşan en eskiler silinir; bugünün logu kalır
+        internal static (int Deleted, long FreedBytes) ApplyLogRetention(DateTime nowUtc)
+        {
+            if (POpsHelpers.LogsToUserProfile) return (0, 0);
+            var result = LogRetention.Apply(POpsHelpers.LogDirectory, LogRetention.MachinePatterns, nowUtc, POpsHelpers.LogFilePath(nowUtc.ToLocalTime()));
+            if (result.Deleted > 0)
+                POpsHelpers.Log("AGENT", $"Log saklama: {result.Deleted} eski log silindi ({result.FreedBytes / (1024.0 * 1024.0):0.0} MB boşaldı; sınır {LogRetention.MaxAge.TotalDays:0} gün, {LogRetention.MaxTotalBytes / (1024 * 1024)} MB).");
+            return result;
+        }
+
+        private static async Task LogRetentionLoopAsync(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try { ApplyLogRetention(DateTime.UtcNow); }
+                catch (Exception ex) { POpsHelpers.Log("AGENT", $"Log saklama başarısız: {ex.Message}", true); }
+                try { await Task.Delay(TimeSpan.FromDays(1), token); }
+                catch (OperationCanceledException) { return; }
+            }
+        }
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             // Tepsi ve watchdog kullanıcı oturumunda yoksa başlatılır (kurulum/güncelleme sonrası, karantinada kilit ekranı).
             // Yavaş WMI açılışını beklemez.
             _ = Task.Run(() => new UserSessionApps().RunAsync(stoppingToken));
+            // Log saklama: açılışta ve günde bir (bkz. LogRetention)
+            _ = Task.Run(() => LogRetentionLoopAsync(stoppingToken));
 
             await Task.Run(InitializeCoreState, stoppingToken);
             _slowInitialization = Task.Run(InitializeSlowState, stoppingToken);
