@@ -32,6 +32,9 @@
         return 0;
     };
     dev.version = (d) => d.running_version || (d.agent_version && d.agent_version !== 'Bilinmiyor' ? d.agent_version : '');
+    // İşletim sistemi ailesi (sunucu bildirmeyen eski ajanı Windows sayar); ürün adları çevrilmez
+    dev.isLinux = (d) => !!d && d.platform === 'linux';
+    dev.platform = (d) => dev.isLinux(d) ? 'Linux' : 'Windows';
     // Ağdaki en yeni ajan sürümü: bundan eski olan cihaz "eski ajan" sayılır
     dev.newestVersion = function () {
         let best = '';
@@ -72,7 +75,7 @@
         const h = d.agent_health || {};
         if (Number(h.loop_errors_1h) > 0) out.push({ kind: 'err', glyph: '!', text: POps.tn('Ajan son 1 saatte {n} hata bildirdi', Number(h.loop_errors_1h)) });
         if (d.cap_terminal_enabled === false) out.push({ kind: 'lock', icon: 'terminal', text: POps.t('Uzak komut bu cihazda kapalı') });
-        if (d.cap_vision_enabled === false) out.push({ kind: 'lock', icon: 'eye', text: POps.t('Uzak ekran bu cihazda kapalı') });
+        if (d.cap_vision_enabled === false) out.push({ kind: 'lock', icon: 'eye', text: dev.isLinux(d) ? POps.t('Uzak ekran Linux ajanında henüz yok') : POps.t('Uzak ekran bu cihazda kapalı') });
         return out;
     };
     // Kutucukta gösterilecek tek işaret (en önemlisi)
@@ -418,7 +421,7 @@
         const off = POps.isOffline(d);
         // [etiket, düz metin değer, eşaralıklı mı]; boş değerli satır gösterilmez
         const facts = [
-            ['Kullanıcı', dev.user(d)], ['Uygulama', dev.app(d)], ['Sınıf', d.lab && d.lab !== UNASSIGNED ? d.lab : POps.t('Atanmamış')],
+            ['Kullanıcı', dev.user(d)], ['Uygulama', dev.app(d)], ['Sınıf', d.lab && d.lab !== UNASSIGNED ? d.lab : POps.t('Atanmamış')], ['Sistem', dev.platform(d)],
             ['IP', d.ip, true], ['MAC', d.mac, true], ['Ajan', dev.version(d)], ['Bellek', d.cap_ram_readable],
             ['Son görülme', off ? null : POps.t('şimdi')], ['Son kopuş', off ? d.last_disconnect_reason : null], ['Kimlik', d.hostname, true]
         ];

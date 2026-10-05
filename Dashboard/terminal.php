@@ -80,6 +80,15 @@ let terminalHistory = [];
 const processedResponses = new Set();
 // Windows bilgisayar adı: en çok 15 karakter, harf, rakam ve tire (komut satırına tırnak ya da boşluk girmesin)
 const PC_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,14}$/;
+// Hedefin işletim sistemi: windows (cmd.exe, SYSTEM), linux (/bin/sh, root) ya da ikisi (mixed). Hızlı komutlar,
+// yeniden adlandırma ve uygulama kapatma Windows komutudur; hedefte Linux bilgisayar varsa sunulmaz.
+let targetOs = 'windows';
+const promptMark = () => targetOs === 'linux' ? '#' : targetOs === 'mixed' ? '>' : ':\\>';
+function windowsOnly() {
+    if (targetOs === 'windows') return true;
+    POps.toast('warning', 'Bu komut yalnızca Windows içindir; hedefte Linux bilgisayar var.');
+    return false;
+}
 
 function initTerminalWebSocket() {
     if (typeof POPS_API === 'undefined') return;
@@ -166,6 +175,7 @@ async function sendTasks(target, taskSequence, btn, reason) {
 }
 
 window.runQuickAction = async function(key, btn) {
+    if (!windowsOnly()) return;
     const action = QUICK_ACTIONS[key];
     const target = action && currentTarget();
     if (!target) return;
@@ -181,6 +191,7 @@ function renameCommand(newName) {
 }
 
 async function renameSingle(newName, btn) {
+    if (!windowsOnly()) return;
     const d = selectedDevice();
     if (currentMode !== 'single' || !d) { POps.toast('warning', 'Tek bilgisayar modunda bir bilgisayar seçin.'); return; }
     if (!PC_NAME_RE.test(newName)) { POps.toast('error', 'Geçersiz ad: en çok 15 karakter; harf, rakam ve tire.'); return; }
@@ -191,6 +202,7 @@ async function renameSingle(newName, btn) {
 
 async function renameLab(baseName, limit, btn) {
     if (currentMode !== 'lab' || !selectedLab) { POps.toast('warning', 'Sınıf modunda bir sınıf seçin.'); return; }
+    if (!windowsOnly()) return;
     if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,12}$/.test(baseName)) { POps.toast('error', 'Geçersiz önek: en çok 13 karakter; harf, rakam ve tire (iki haneli numara eklenir).'); return; }
     let devs = state.devices.filter(d => d.lab === selectedLab)
         .filter(d => { const n = String(d.real_hostname || '').toUpperCase(); return !(n.includes('PC00') || n.includes('ANA') || n.includes('OGR')); })
@@ -227,6 +239,7 @@ window.promptAutoRename = async function(btn) {
 };
 
 window.promptTaskkill = async function(btn) {
+    if (!windowsOnly()) return;
     const target = currentTarget();
     if (!target) return;
     const exe = await POps.prompt({ title: 'Uygulamayı kapat', message: `${target.label} üzerinde bu adla çalışan bütün süreçler zorla kapatılır.`, label: 'Program adı', placeholder: 'msedge.exe', required: true, maxLength: 100,
@@ -270,8 +283,10 @@ function renderTerminal() {
     if (currentMode === 'single' && d) { hosts = [d.id]; label = d.name; }
     else if (currentMode === 'lab' && selectedLab) { hosts = state.devices.filter(x => x.lab === selectedLab).map(x => x.hostname); label = selectedLab; }
     else if (currentMode === 'multi') { hosts = multiHosts; label = `${multiHosts.length} bilgisayar`; }
-    prefix.textContent = label ? `${label}:\\>` : 'Hedef seçin:\\>';
     const devs = hosts.map(h => POps.dev.find(h)).filter(Boolean);
+    const linuxN = devs.filter(POps.dev.isLinux).length;
+    targetOs = linuxN && linuxN < devs.length ? 'mixed' : linuxN ? 'linux' : 'windows';
+    prefix.textContent = label ? `${label}${promptMark()}` : 'Hedef seçin:\\>';
     const onN = devs.filter(x => !POps.isOffline(x)).length;
     const offN = hosts.length - onN;
     const capOff = devs.filter(x => x.cap_terminal_enabled === false);
@@ -289,6 +304,8 @@ function renderTerminal() {
         ...(offN ? [POps.el('span', { className: 'sum' }, [dot('off'), POps.el('b', { text: String(offN) }), document.createTextNode(' kapalı')])] : []));
     const notes = [];
     if (offN) notes.push(POps.el('span', {}, [dot('warn'), document.createTextNode(`Kapalı ${offN} bilgisayarda komut, açıldığında çalışır.`)]));
+    if (targetOs === 'linux') notes.push(POps.el('span', {}, [dot('on'), document.createTextNode('Linux: komut root olarak /bin/sh ile çalışır; Windows hızlı komutları gösterilmez.')]));
+    if (targetOs === 'mixed') notes.push(POps.el('span', {}, [dot('warn'), document.createTextNode(`Hedefte ${linuxN} Linux bilgisayar var: komut Windows'ta cmd.exe, Linux'ta sh ile çalışır; ikisinde de geçerli olmalı.`)]));
     if (capOff.length) notes.push(POps.el('span', {}, [dot('bad'), document.createTextNode(`Uzak komut kapalı olduğu için reddedilecek: ${capOff.slice(0, 4).map(POps.deviceName).join(', ')}${capOff.length > 4 ? ' +' + (capOff.length - 4) : ''}`)]));
     note.replaceChildren(...notes);
 }
@@ -296,7 +313,7 @@ function renderTerminal() {
 function terminalHeaderHtml() {
     return `<div class="header">
         <div class="title">POps komut satırı</div>
-        <div>Yönetici: ${escapeHtml(TERMINAL_ADMIN)} · Komutlar hedefte SYSTEM hesabıyla, cmd.exe ile çalışır.</div>
+        <div>Yönetici: ${escapeHtml(TERMINAL_ADMIN)} · Komutlar Windows'ta SYSTEM hesabıyla cmd.exe ile, Linux'ta root olarak /bin/sh ile çalışır.</div>
     </div>
     <div class="tip">Rutin işler için sağ üstteki Hızlı komutlar menüsünü kullanın. Ekranı temizlemek için: cls</div>`;
 }
@@ -370,12 +387,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (t.mode === 'LAB') POps.dev.power('wake', state.devices.filter(d => d.lab === selectedLab).map(d => d.hostname), { btn, lab: selectedLab, wholeLab: true });
             else POps.dev.power('wake', t.targets, { btn });
         };
-        POps.menu(btn, [
+        const windowsItems = targetOs !== 'windows' ? [{ header: 'Hızlı komutlar Windows içindir; hedefte Linux bilgisayar var.' }] : [
             ...Object.keys(QUICK_ACTIONS).map(k => ({ label: QUICK_ACTIONS[k].name, icon: { dns: 'wifi', network: 'refresh', spooler: 'file', temp: 'trash', gpupdate: 'shield' }[k], onClick: () => window.runQuickAction(k, btn) })),
             '-',
             { label: 'Uygulamayı kapat…', icon: 'x', onClick: () => window.promptTaskkill(btn) },
             currentMode === 'single' ? { label: 'Bilgisayarı yeniden adlandır…', icon: 'edit', onClick: () => window.promptSingleRename(btn) } : null,
-            currentMode === 'lab' ? { label: 'Sınıfı toplu adlandır…', icon: 'edit', onClick: () => window.promptAutoRename(btn) } : null,
+            currentMode === 'lab' ? { label: 'Sınıfı toplu adlandır…', icon: 'edit', onClick: () => window.promptAutoRename(btn) } : null
+        ];
+        POps.menu(btn, [
+            ...windowsItems,
             '-',
             { label: 'Hedefi uyandır', icon: 'zap', onClick: wake }
         ]);
@@ -433,7 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!target) return;
         termInput.value = '';
         termInput.disabled = true;
-        appendToTerminal(`<div style="margin-top:1rem;margin-bottom:0.5rem;"><span class="warn">${escapeHtml(target.label)}:\\&gt;</span> <span class="cmd-block">${escapeHtml(command)}</span></div>`);
+        appendToTerminal(`<div style="margin-top:1rem;margin-bottom:0.5rem;"><span class="warn">${escapeHtml(target.label + promptMark())}</span> <span class="cmd-block">${escapeHtml(command)}</span></div>`);
         await sendTasks(target, [{ name: 'Komut', type: 'CMD', command }], null);
         termInput.disabled = false;
         termInput.focus();
