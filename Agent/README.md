@@ -157,10 +157,11 @@ A school can switch off the server features that matter most if the server or a 
 | `files_enabled` | `file_push` / `file_pull`: files sent to or fetched from the PC |
 | `power_enabled` | `power`: remote shutdown, restart, sign-out and lock |
 | `message_enabled` | `user_message`: messages from the panel shown in the tray |
+| `peer_cache_enabled` | the lab-local peer cache for updates: downloading an update package from other PCs in the lab, and keeping and serving it to them (TCP 8817, local subnet) when the server asks for it ([`docs/agent.md`](../docs/agent.md#peer-cache-contract)) |
 
 The state lives in `C:\POpsData\secure\capabilities.json` (SYSTEM and Administrators only):
 
-- **Installer.** `TERMINAL_ENABLED` / `VISION_ENABLED` / `EXAM_ENABLED` / `FILES_ENABLED` / `POWER_ENABLED` / `MESSAGE_ENABLED` (`1` or `0`) set either direction. A flag that is not given keeps its current value, so an update never turns a disabled capability back on; a flag missing from the file (written by an older version) counts as on. A first install without them enables all six.
+- **Installer.** `TERMINAL_ENABLED` / `VISION_ENABLED` / `EXAM_ENABLED` / `FILES_ENABLED` / `POWER_ENABLED` / `MESSAGE_ENABLED` / `PEER_CACHE_ENABLED` (`1` or `0`) set either direction. A flag that is not given keeps its current value, so an update never turns a disabled capability back on; a flag missing from the file (written by an older version) counts as on. A first install without them enables all seven.
 - **Server.** It may only switch a capability **off**: `{"action":"set_capabilities","terminal_enabled":false}`. A request to switch one on is ignored and logged, so turning it back on takes a local administrator (MSI repair or reinstall with `…_ENABLED=1`). A compromised server can therefore not re-enable what the school disabled.
 - **Missing or unreadable file.** An install from before this feature (no file) keeps all of them enabled. A file that exists but cannot be read counts as all disabled.
 

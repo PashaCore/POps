@@ -27,6 +27,7 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\Windows\Temp\pops-msi-in
 | `VISION_ENABLED`   | optional   | same file: `1` / `0` for screen streaming, previews and remote input. |
 | `POWER_ENABLED`    | optional   | same file: `1` / `0` for remote shutdown, restart, sign-out and lock (`power`). |
 | `MESSAGE_ENABLED`  | optional   | same file: `1` / `0` for messages from the panel shown in the tray (`user_message`). |
+| `PEER_CACHE_ENABLED` | optional | same file: `1` / `0` for the lab-local peer cache of update packages (downloading the package from other PCs in the lab, and keeping and serving it to them when the server asks). See [`docs/agent.md`](../docs/agent.md#peer-cache-contract). |
 | `SERVER_CA_CERT` | optional      | path to the school CA's PEM (`pops-ca.pem`, served at `https://<server>/pops-ca.pem`) → `C:\POpsData\secure\server-ca.pem`. The agent then accepts the server certificate only if it chains to that CA. `system` removes the file (Windows trust store). Do **not** pass it for a Let's Encrypt or other public certificate. See [`docs/tls.md`](../docs/tls.md). |
 | `INSTALLFOLDER` | optional      | install folder, default `C:\Program Files\POps`. See *Install folder* below. |
 

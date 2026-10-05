@@ -385,7 +385,8 @@ reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities
 older file counts as on. The `capabilities` message reports all six (`terminal_enabled`, `vision_enabled`,
 `files_enabled`, `exam_enabled`, `power_enabled`, `message_enabled`) with `server_ca`; the last three are optional
 in the schema, so older agents that do not send them stay valid. See
-[`Agent/README.md`](../Agent/README.md#capability-policy).
+[`Agent/README.md`](../Agent/README.md#capability-policy). The same file holds `peer_cache_enabled`
+(`PEER_CACHE_ENABLED`), which switches the lab-local [peer cache](#peer-cache-contract) for updates on or off.
 
 ## File transfer
 
@@ -881,6 +882,7 @@ today; `peers` is read only after that.
 | `C:\POpsData\session.json`, `patch-scan.json` | Last reported sign-in; time of the last Windows Update scan and a report not yet delivered (0.1.5-alpha on). |
 | `C:\POpsData\software-inventory.json` | Last software inventory sent: SHA-256 of the sorted list, device ID and time (0.1.15-alpha on). |
 | `C:\POpsData\packages\installed.msi`, `updates\`, `updater\` | Rollback package, downloaded update, updater copy. |
+| `C:\POpsData\cache\<sha256>` | Verified update package served to other PCs in the lab, for 2 hours at most ([peer cache](#peer-cache-contract); SYSTEM and Administrators only). |
 | `C:\POpsLogs\POps_<yyyyMMdd>.log`, `msi-*.log` | Service and updater log, and the updater's msiexec logs (SYSTEM and Administrators only). At start and once a day the service deletes these logs when they are older than 30 days, and the oldest ones while the folder holds more than 200 MB; today's log is never deleted. |
 | `%LOCALAPPDATA%\POps\Logs\` | Per-user logs: `POpsWatchdog_<yyyyMMdd>.log` and the tray's `TrayLog.txt` (message types only, rotated at 1 MB). |
 

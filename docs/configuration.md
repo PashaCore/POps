@@ -185,11 +185,12 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\Windows\Temp\pops-msi-in
 | `FILES_ENABLED` | same file | `1` / `0`: allow or forbid file push and pull. Default `1`. |
 | `POWER_ENABLED` | same file | `1` / `0`: allow or forbid remote shutdown, restart, sign-out and lock (`power`). Default `1`. |
 | `MESSAGE_ENABLED` | same file | `1` / `0`: allow or forbid messages from the panel shown in the tray (`user_message`). Default `1`. |
+| `PEER_CACHE_ENABLED` | same file | `1` / `0`: allow or forbid the lab-local peer cache for agent updates: downloading an update from the peers the server names, and keeping a verified package for 2 hours and serving it to other PCs in the local subnet on TCP 8817 when the server asks for it. Default `1`. See [agent.md](agent.md#peer-cache-contract). |
 | `INSTALLFOLDER` | – | Install folder, default `C:\Program Files\POps`. |
 
 On an upgrade every property is optional: a property that is not given keeps the installed value. A first
 install without `TERMINAL_ENABLED` / `VISION_ENABLED` / `EXAM_ENABLED` / `FILES_ENABLED` / `POWER_ENABLED` /
-`MESSAGE_ENABLED` enables all six; a capability missing from an older `capabilities.json` counts as enabled. The
+`MESSAGE_ENABLED` / `PEER_CACHE_ENABLED` enables all seven; a capability missing from an older `capabilities.json` counts as enabled. The
 server can switch each of them off, never on (see [`agent.md`](agent.md#capability-policy)).
 
 ### `appsettings.json` keys and environment variables
