@@ -238,9 +238,13 @@ devices whose lab is in its units (sub-units included), whatever its role and pa
 
 Releases are signed in CI with an ed25519 key that exists only as a GitHub secret. The server verifies a release
 before staging it, and each agent verifies it again with the public key compiled into it, refuses anything not
-newer than itself, and downloads the MSI only from its own server, checking size and SHA-256 before anything
-changes. A compromised server can therefore not push a modified agent. Details: [`agent.md`](agent.md#updates),
-[`keys/README.md`](../keys/README.md).
+newer than itself, and checks the MSI's size and SHA-256 before anything changes. The manifest comes only from the
+agent's own server; the MSI comes from that server or from the lab peers the server lists, which supply bytes only.
+A compromised server can therefore not push a modified agent, and neither can a compromised PC in the lab. A PC
+keeps and serves a verified package only when the server's `update_agent` says so (`"peer_cache": true`, sent only
+while the peer cache setting is on; off by default), for at most 2 hours, on TCP 8817 to its own subnet only; the
+peer cache can be switched off per PC (`PEER_CACHE_ENABLED=0`). Details: [`agent.md`](agent.md#updates),
+[`agent.md`](agent.md#peer-cache-contract), [`keys/README.md`](../keys/README.md).
 
 ## Capability policy
 
