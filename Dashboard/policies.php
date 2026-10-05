@@ -40,8 +40,8 @@
 
 <div class="page-header">
     <div>
-        <h1>Politikalar</h1>
-        <div class="summary" id="polSummary"><span class="sum">Yükleniyor…</span></div>
+        <h1><?php _e('Politikalar'); ?></h1>
+        <div class="summary" id="polSummary"><span class="sum"><?php _e('Yükleniyor…'); ?></span></div>
     </div>
 </div>
 
@@ -50,31 +50,31 @@
 <div class="sects" id="polForm" hidden>
     <section class="sect" aria-labelledby="hFair">
         <div class="sect-head">
-            <h2 id="hFair">Aydınlatma metni</h2>
-            <p>Bilgisayarın okulca yönetildiğini, neyin kaydedilip neyin kaydedilmediğini anlatan kısa metin. Ajan açılınca tepside gösterilir; kullanıcı onaylayana kadar dakikada bir sorulur.</p>
+            <h2 id="hFair"><?php _e('Aydınlatma metni'); ?></h2>
+            <p><?php _e('Bilgisayarın okulca yönetildiğini, neyin kaydedilip neyin kaydedilmediğini anlatan kısa metin. Ajan açılınca tepside gösterilir; kullanıcı onaylayana kadar dakikada bir sorulur.'); ?></p>
         </div>
         <div class="sect-body">
             <div class="set">
                 <div class="srow block">
-                    <label for="fairUseText" class="sr-only">Aydınlatma ve adil kullanım metni</label>
-                    <textarea id="fairUseText" rows="5" maxlength="4000" <?= $canEdit ? '' : 'readonly' ?> placeholder="Örn. Bu bilgisayar okul tarafından yönetilmektedir…"></textarea>
+                    <label for="fairUseText" class="sr-only"><?php _e('Aydınlatma ve adil kullanım metni'); ?></label>
+                    <textarea id="fairUseText" rows="5" maxlength="4000" <?= $canEdit ? '' : 'readonly' ?> placeholder="<?php _e('Örn. Bu bilgisayar okul tarafından yönetilmektedir…'); ?>"></textarea>
                     <div class="foot">
-                        <span id="fairCount">Boş bırakılırsa gösterilmez.</span>
+                        <span id="fairCount"><?php _e('Boş bırakılırsa gösterilmez.'); ?></span>
                         <?php if ($canEdit): ?>
-                        <button type="button" class="btn ghost sm" id="fairDefault"><?php echo pops_icon('file', 'sm'); ?>Örnek metni kullan</button>
+                        <button type="button" class="btn ghost sm" id="fairDefault"><?php echo pops_icon('file', 'sm'); ?><?php _e('Örnek metni kullan'); ?></button>
                         <?php endif; ?>
                     </div>
                 </div>
             </div>
-            <div class="set-note">Kurumunuzun KVKK aydınlatma metnine bağlantı vermeniz önerilir. Şablon: <code>docs/kvkk-aydinlatma.md</code></div>
+            <div class="set-note"><?php _e('Kurumunuzun KVKK aydınlatma metnine bağlantı vermeniz önerilir.'); ?> <?php _e('Şablon:'); ?> <code>docs/kvkk-aydinlatma.md</code></div>
         </div>
     </section>
 
     <section class="sect" aria-labelledby="hDns">
         <div class="sect-head">
-            <h2 id="hDns">Yasaklı alan adı tespiti</h2>
-            <p>Açık bir kategorinin listesindeki alan adına girilince ajan ihlal kaydeder ve size bildirir. Engelleme yapmaz; bunun için okulun ağ filtresini kullanın. Sayfa içeriği, arama ve klavye kaydedilmez.</p>
-            <div class="meta" id="fleetNote">0.1.5 ve sonrası ajanlarda çalışır.</div>
+            <h2 id="hDns"><?php _e('Yasaklı alan adı tespiti'); ?></h2>
+            <p><?php _e('Açık bir kategorinin listesindeki alan adına girilince ajan ihlal kaydeder ve size bildirir. Engelleme yapmaz; bunun için okulun ağ filtresini kullanın. Sayfa içeriği, arama ve klavye kaydedilmez.'); ?></p>
+            <div class="meta" id="fleetNote"><?php _e('0.1.5 ve sonrası ajanlarda çalışır.'); ?></div>
         </div>
         <div class="sect-body">
             <div id="dnsNotes"></div>
@@ -84,39 +84,39 @@
 
     <section class="sect" aria-labelledby="hQ">
         <div class="sect-head">
-            <h2 id="hQ">Otomatik karantina</h2>
-            <p>Eşiğe ulaşan bilgisayar kendini ağdan yalıtır: yalnızca POps sunucusuna, DNS ve DHCP'ye erişebilir. Yalnızca DNS tespiti çalışan ajanlarda etkilidir.</p>
+            <h2 id="hQ"><?php _e('Otomatik karantina'); ?></h2>
+            <p><?php _e("Eşiğe ulaşan bilgisayar kendini ağdan yalıtır: yalnızca POps sunucusuna, DNS ve DHCP'ye erişebilir. Yalnızca DNS tespiti çalışan ajanlarda etkilidir."); ?></p>
         </div>
         <div class="sect-body">
             <div id="qNotes"></div>
             <div class="set">
                 <div class="srow">
                     <div class="grow">
-                        <div class="t" id="autoQLabel">Otomatik karantina</div>
-                        <div class="d">Eşikte bilgisayarı kendiliğinden karantinaya al</div>
+                        <div class="t" id="autoQLabel"><?php _e('Otomatik karantina'); ?></div>
+                        <div class="d"><?php _e('Eşikte bilgisayarı kendiliğinden karantinaya al'); ?></div>
                     </div>
                     <label class="switch"><input type="checkbox" id="autoQ" aria-labelledby="autoQLabel" <?= $canEdit ? '' : 'disabled' ?>><span></span></label>
                 </div>
                 <div class="srow" id="qRow">
                     <div class="grow">
-                        <div class="t" id="qThresholdLabel">Eşik</div>
-                        <div class="d">Ajan son açıldığından beri tespit edilen ihlal sayısı</div>
+                        <div class="t" id="qThresholdLabel"><?php _e('Eşik'); ?></div>
+                        <div class="d"><?php _e('Ajan son açıldığından beri tespit edilen ihlal sayısı'); ?></div>
                     </div>
                     <input type="number" id="qThreshold" min="1" max="100" value="3" inputmode="numeric" aria-labelledby="qThresholdLabel" <?= $canEdit ? '' : 'disabled' ?>>
-                    <span class="unit">ihlal</span>
+                    <span class="unit"><?php _e('ihlal'); ?></span>
                 </div>
             </div>
-            <div class="set-note">Karantina <a href="devices">Cihazlar</a> sayfasından kaldırılır ya da bilgisayarda çevrimdışı açma koduyla kalkar.</div>
+            <div class="set-note" id="qReleaseNote"></div>
         </div>
     </section>
 
     <?php if ($canEdit): ?>
-    <div class="savebar" id="saveBar" role="region" aria-label="Kaydedilmemiş değişiklikler" hidden>
+    <div class="savebar" id="saveBar" role="region" aria-label="<?php _e('Kaydedilmemiş değişiklikler'); ?>" hidden>
         <span class="dot warn" aria-hidden="true"></span>
-        <span class="sb-text">Kaydedilmemiş değişiklik var</span>
-        <span class="sb-sub">· ajanlar kaydettikten sonra 1 dakika içinde alır</span>
-        <button type="button" class="btn secondary sm" id="discardBtn">Vazgeç</button>
-        <button type="button" class="btn sm" id="saveBtn">Kaydet</button>
+        <span class="sb-text"><?php _e('Kaydedilmemiş değişiklik var'); ?></span>
+        <span class="sb-sub"><?php _e('· ajanlar kaydettikten sonra 1 dakika içinde alır'); ?></span>
+        <button type="button" class="btn secondary sm" id="discardBtn"><?php _ex('Vazgeç', 'discard'); ?></button>
+        <button type="button" class="btn sm" id="saveBtn"><?php _e('Kaydet'); ?></button>
     </div>
     <?php endif; ?>
 </div>
@@ -126,7 +126,7 @@
 (function () {
     const $ = (id) => document.getElementById(id);
     const canEdit = <?= $canEdit ? 'true' : 'false' ?>;
-    // Kategori anahtarları ajanla ortak sözleşmedir (dns_categories / dns_domains)
+    // Kategori anahtarları ajanla ortak sözleşmedir (dns_categories / dns_domains); t ve d gösterilirken çevrilir
     const CATS = [
         { key: 'pornografi', t: 'Pornografik içerik', d: 'Yetişkinlere yönelik siteler' },
         { key: 'yasadisi_bahis', t: 'Yasadışı bahis ve kumar', d: 'Lisanssız bahis ve kumar siteleri' },
@@ -134,10 +134,9 @@
         { key: 'zararli_yazilim', t: 'Zararlı yazılım ve kimlik avı', d: 'Malware, phishing ve komuta-kontrol alan adları' },
         { key: 'okul_ozel', t: 'Okulun özel listesi', d: 'Okulunuzun ayrıca izlemek istediği alan adları' },
     ];
-    const DEFAULT_TEXT = 'Bu bilgisayar okulumuz tarafından POps ile yönetilmektedir. Bilgisayarın açık/kapalı durumu, ' +
-        'donanım bilgileri ve belirlenen yasaklı alan adlarına erişim kaydedilir. Klavye, şifre ve sayfa içerikleri kaydedilmez. ' +
-        'Yönetici ekranı yalnızca kayıtlı bir oturumda görüntüleyebilir; uzaktan kontrol için ekranda bildirim gösterilir. ' +
-        'Ayrıntılı bilgi için okul yönetiminin KVKK aydınlatma metnine bakınız.';
+    // Örnek metin arayüzün dilinde eklenir; yönetici düzenleyip kaydeder (sözlük anahtarı tek parça olmalı)
+    const DEFAULT_TR = 'Bu bilgisayar okulumuz tarafından POps ile yönetilmektedir. Bilgisayarın açık/kapalı durumu, donanım bilgileri ve belirlenen yasaklı alan adlarına erişim kaydedilir. Klavye, şifre ve sayfa içerikleri kaydedilmez. Yönetici ekranı yalnızca kayıtlı bir oturumda görüntüleyebilir; uzaktan kontrol için ekranda bildirim gösterilir. Ayrıntılı bilgi için okul yönetiminin KVKK aydınlatma metnine bakınız.';
+    const DEFAULT_TEXT = POps.t(DEFAULT_TR);
     let policy = null;      // sunucudaki (kayıtlı) politika
     let savedSig = '';
     let fleet = null;       // { ok, total }: DNS tespitini çalıştırabilen ajan sayısı
@@ -150,17 +149,20 @@
 
     // Satırlar bir kez kurulur; değerler DOM üzerinden yazılır (sunucu verisi HTML'e girmez)
     function buildCats() {
+        const ex = POps.t('ornek.com');
+        const hintHtml = POps.tHtml('Her satıra bir alan adı. Alt alan adları kendiliğinden dahildir: {domain} yazınca {sub} da eşleşir. {scheme}, yol ve {wild} kaydederken temizlenir.', null,
+            { domain: `<code>${escapeHtml(ex)}</code>`, sub: `<code>${escapeHtml('www.' + ex)}</code>`, scheme: '<code>https://</code>', wild: '<code>*.</code>' });
         $('cats').innerHTML = CATS.map(c => `<div class="srow" data-key="${escapeHtml(c.key)}">
                 <button type="button" class="cat-open" aria-expanded="false" aria-controls="cat-${escapeHtml(c.key)}">
-                    <div><div class="t">${escapeHtml(c.t)}</div><div class="d">${escapeHtml(c.d)}<span class="cnt"></span></div></div>
-                    <span class="word warn" data-empty hidden>Liste boş</span>
+                    <div><div class="t">${escapeHtml(POps.t(c.t))}</div><div class="d">${escapeHtml(POps.t(c.d))}<span class="cnt"></span></div></div>
+                    <span class="word warn" data-empty hidden>${POps.tHtml('Liste boş')}</span>
                     ${POps.iconHtml('right', 'sm chev')}
                 </button>
-                <label class="switch"><input type="checkbox" class="cat-on" aria-label="${escapeHtml(c.t)}" ${canEdit ? '' : 'disabled'}><span></span></label>
+                <label class="switch"><input type="checkbox" class="cat-on" aria-label="${escapeHtml(POps.t(c.t))}" ${canEdit ? '' : 'disabled'}><span></span></label>
             </div>
             <div class="cat-body" id="cat-${escapeHtml(c.key)}" hidden>
-                <textarea class="domains" rows="6" spellcheck="false" aria-label="${escapeHtml(c.t)} alan adları" ${canEdit ? '' : 'readonly'} placeholder="ornek-site.com&#10;baska-site.net"></textarea>
-                <div class="hint">Her satıra bir alan adı. Alt alan adları kendiliğinden dahildir: <code>ornek.com</code> yazınca <code>www.ornek.com</code> da eşleşir. <code>https://</code>, yol ve <code>*.</code> kaydederken temizlenir.</div>
+                <textarea class="domains" rows="6" spellcheck="false" aria-label="${escapeHtml(POps.t('{category} alan adları', { category: POps.t(c.t) }))}" ${canEdit ? '' : 'readonly'} placeholder="${escapeHtml(POps.t('ornek-site.com\nbaska-site.net'))}"></textarea>
+                <div class="hint">${hintHtml}</div>
             </div>`).join('');
     }
     function setOpen(key, open) {
@@ -203,14 +205,14 @@
             const row = catRow(c.key);
             const n = p.dns_domains[c.key].length, on = p.dns_categories.includes(c.key);
             // Açık ve boş liste sağda uyarı olarak görünür; aynı bilgi açıklamada tekrarlanmaz
-            row.querySelector('.cnt').textContent = n ? ` · ${n} alan adı` : (on ? '' : ' · liste boş');
+            row.querySelector('.cnt').textContent = n ? ' · ' + POps.tn('{n} alan adı', n) : (on ? '' : ' · ' + POps.t('liste boş'));
             row.querySelector('[data-empty]').hidden = !(on && !n);
             row.classList.toggle('is-off', !on);
         });
         $('qRow').classList.toggle('is-off', !p.auto_quarantine);
         if (canEdit) $('qThreshold').disabled = !p.auto_quarantine;
         const len = $('fairUseText').value.trim().length;
-        $('fairCount').textContent = len ? `${len}/4000 karakter` : 'Boş bırakılırsa gösterilmez.';
+        $('fairCount').textContent = len ? POps.t('{len}/4000 karakter', { len }) : POps.t('Boş bırakılırsa gösterilmez.');
         if (canEdit) $('saveBar').hidden = !isDirty();
     }
 
@@ -222,13 +224,15 @@
         const active = (p.dns_categories || []).filter(k => (dom[k] || []).length);
         const nDomains = active.reduce((a, k) => a + dom[k].length, 0);
         const fair = String(p.fair_use_text || '').trim();
-        const sumHtml = '<span class="sum">Kurum geneli</span>'
-            + (fair ? '<span class="sum"><span class="dot ok"></span>Aydınlatma metni gösteriliyor</span>' : '<span class="sum"><span class="dot off"></span>Aydınlatma metni yok</span>')
-            + (active.length ? `<span class="sum"><span class="dot ok"></span><b>${Number(active.length)}</b> kategori · <b>${Number(nDomains)}</b> alan adı izleniyor</span>` : '<span class="sum"><span class="dot off"></span>DNS tespiti kapalı</span>')
-            + (p.auto_quarantine ? `<span class="sum"><span class="dot ok"></span>Otomatik karantina açık · eşik <b>${Number(p.quarantine_threshold)}</b></span>` : '<span class="sum"><span class="dot off"></span>Otomatik karantina kapalı</span>')
-            + (fleet && fleet.total ? `<span class="sum"><b>${Number(fleet.ok)}/${Number(fleet.total)}</b> ajan destekliyor</span>` : '')
-            + (meta && meta.updated_at ? `<span class="sum faint">Son değişiklik: ${escapeHtml(meta.updated_by || '?')} · ${POps.timeHtml(meta.updated_at)}</span>` : '')
-            + (canEdit ? '' : '<span class="sum">Yalnızca görüntüleme</span>');
+        // Sayı kalın: yer tutucuya HTML parçası (POps.tHtml / tnHtml'in son argümanı)
+        const boldHtml = (n) => `<b>${Number(n)}</b>`;
+        const sumHtml = `<span class="sum">${POps.tHtml('Kurum geneli')}</span>`
+            + (fair ? `<span class="sum"><span class="dot ok"></span>${POps.tHtml('Aydınlatma metni gösteriliyor')}</span>` : `<span class="sum"><span class="dot off"></span>${POps.tHtml('Aydınlatma metni yok')}</span>`)
+            + (active.length ? `<span class="sum"><span class="dot ok"></span>${POps.tnHtml('{n} kategori', active.length, null, { n: boldHtml(active.length) })} · ${POps.tnHtml('{n} alan adı izleniyor', nDomains, null, { n: boldHtml(nDomains) })}</span>` : `<span class="sum"><span class="dot off"></span>${POps.tHtml('DNS tespiti kapalı')}</span>`)
+            + (p.auto_quarantine ? `<span class="sum"><span class="dot ok"></span>${POps.tHtml('Otomatik karantina açık · eşik {n}', null, { n: boldHtml(p.quarantine_threshold) })}</span>` : `<span class="sum"><span class="dot off"></span>${POps.tHtml('Otomatik karantina kapalı')}</span>`)
+            + (fleet && fleet.total ? `<span class="sum">${POps.tHtml('{count} ajan destekliyor', null, { count: `<b>${Number(fleet.ok)}/${Number(fleet.total)}</b>` })}</span>` : '')
+            + (meta && meta.updated_at ? `<span class="sum faint">${POps.tHtml('Son değişiklik: {who} · {time}', { who: meta.updated_by || '?' }, { time: POps.timeHtml(meta.updated_at) })}</span>` : '')
+            + (canEdit ? '' : `<span class="sum">${POps.tHtml('Yalnızca görüntüleme')}</span>`);
         $('polSummary').innerHTML = sumHtml;
     }
 
@@ -270,8 +274,8 @@
             note.replaceChildren();
             if (devs.length && ok < devs.length) note.append(POps.el('span', { className: 'dot warn' }));
             note.append(document.createTextNode(devs.length
-                ? `0.1.5 ve sonrası ajanlarda çalışır · şu an ${ok}/${devs.length} ajan`
-                : '0.1.5 ve sonrası ajanlarda çalışır.'));
+                ? POps.t('0.1.5 ve sonrası ajanlarda çalışır · şu an {ok}/{total} ajan', { ok, total: devs.length })
+                : POps.t('0.1.5 ve sonrası ajanlarda çalışır.')));
             renderSummary();
         } catch (e) { /* sessiz: yalnızca bilgi satırı */ }
     }
@@ -284,34 +288,35 @@
         const mods = {};
         (r && Array.isArray(r.modules) ? r.modules : []).forEach(m => { mods[m.id] = m; });
         const unassigned = (POps.dev && POps.dev.UNASSIGNED) || 'Atanmamis_Cihazlar';
-        const labName = (l) => l === unassigned ? 'Atanmamış' : l;
+        const labName = (l) => l === unassigned ? POps.t('Atanmamış') : l;
         function note(m, offText) {
             if (!m) return null;
             const labs = Object.keys(m.lab_enabled || {});
             const on = labs.filter(l => m.lab_enabled[l]).map(labName);
             const off = labs.filter(l => !m.lab_enabled[l]).map(labName);
             if (!m.enabled && !on.length) return { kind: 'upd', icon: 'alert', text: offText };
-            if (!m.enabled) return { kind: 'lock', icon: 'info', text: `${m.name} modülü yalnızca şu sınıflarda açık: ${on.join(', ')}.` };
-            if (off.length) return { kind: 'lock', icon: 'info', text: `${m.name} modülü şu sınıflarda kapalı: ${off.join(', ')}. Bu sınıflarda politika işlemez.` };
+            // Modül adı sunucudan Türkçe gelir (DNS politikası, Karantina): bilinenler çevrilir
+            if (!m.enabled) return { kind: 'lock', icon: 'info', text: POps.t('{module} modülü yalnızca şu sınıflarda açık: {labs}.', { module: POps.t(m.name), labs: on.join(', ') }) };
+            if (off.length) return { kind: 'lock', icon: 'info', text: POps.t('{module} modülü şu sınıflarda kapalı: {labs}. Bu sınıflarda politika işlemez.', { module: POps.t(m.name), labs: off.join(', ') }) };
             return null;
         }
         function show(box, n) {
             box.replaceChildren();
             if (n) box.append(POps.el('div', { className: 'issue ' + n.kind }, [POps.iconEl(n.icon, 'sm'), POps.el('span', { text: n.text })]));
         }
-        show($('dnsNotes'), note(mods.dns_policy, 'DNS politikası modülü kapalı: listeler ajanlara gönderilmiyor ve tespit yapılmıyor.'));
-        show($('qNotes'), note(mods.quarantine, 'Karantina modülü kapalı: otomatik karantina çalışmıyor.'));
+        show($('dnsNotes'), note(mods.dns_policy, POps.t('DNS politikası modülü kapalı: listeler ajanlara gönderilmiyor ve tespit yapılmıyor.')));
+        show($('qNotes'), note(mods.quarantine, POps.t('Karantina modülü kapalı: otomatik karantina çalışmıyor.')));
     }
 
     async function save() {
         if (saving || !isDirty()) return;
         const p = collect();
         if (p.auto_quarantine && !p.dns_categories.some(k => (p.dns_domains[k] || []).length)) {
-            const ok = await POps.confirm({ title: 'Yine de kaydedilsin mi?', message: 'Otomatik karantina açık ama listesi dolu açık bir kategori yok; karantina hiç tetiklenmez.', confirmText: 'Yine de kaydet' });
+            const ok = await POps.confirm({ title: POps.t('Yine de kaydedilsin mi?'), message: POps.t('Otomatik karantina açık ama listesi dolu açık bir kategori yok; karantina hiç tetiklenmez.'), confirmText: POps.t('Yine de kaydet') });
             if (!ok) return;
         }
         saving = true;
-        const ok = await POps.act($('saveBtn'), () => POps.post('/api/agent_policies', p), { success: 'Politikalar kaydedildi. Ajanlar 1 dakika içinde alır.', error: 'Kaydedilemedi.' });
+        const ok = await POps.act($('saveBtn'), () => POps.post('/api/agent_policies', p), { success: POps.t('Politikalar kaydedildi. Ajanlar 1 dakika içinde alır.'), error: POps.t('Kaydedilemedi.') });
         saving = false;
         if (ok) await load();
         else refresh();
@@ -324,6 +329,9 @@
 
     // ---- Etkileşim
     buildCats();
+    // Bağlantı cümlenin içinde; yeri dile göre değişir
+    $('qReleaseNote').append(...POps.tNodes('Karantina {link} sayfasından kaldırılır ya da bilgisayarda çevrimdışı açma koduyla kalkar.', null,
+        { link: POps.el('a', { href: 'devices', text: POps.t('Cihazlar') }) }));
     $('cats').addEventListener('click', (e) => {
         const b = e.target.closest('.cat-open');
         if (!b) return;
@@ -346,8 +354,9 @@
         $('autoQ').addEventListener('change', refresh);
         $('qThreshold').addEventListener('input', refresh);
         $('fairDefault').addEventListener('click', async () => {
-            if ($('fairUseText').value.trim() && $('fairUseText').value.trim() !== DEFAULT_TEXT
-                && !await POps.confirm({ title: 'Metin örnek metinle değiştirilsin mi?', message: 'Şu anki metnin yerine örnek metin yazılır. Kaydetmeden önce düzenleyebilirsiniz.', confirmText: 'Metni değiştir' })) return;
+            const cur = $('fairUseText').value.trim();
+            if (cur && cur !== DEFAULT_TEXT && cur !== DEFAULT_TR
+                && !await POps.confirm({ title: POps.t('Metin örnek metinle değiştirilsin mi?'), message: POps.t('Şu anki metnin yerine örnek metin yazılır. Kaydetmeden önce düzenleyebilirsiniz.'), confirmText: POps.t('Metni değiştir') })) return;
             $('fairUseText').value = DEFAULT_TEXT;
             refresh();
             $('fairUseText').focus();
