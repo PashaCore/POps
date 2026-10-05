@@ -136,8 +136,8 @@ namespace POps.Tests.Agent
             DnsPolicyMonitor.Reset();
             AgentPolicy Policy(params string[] domains) => new AgentPolicy
             {
-                dns_categories = new List<string> { "bahis" },
-                dns_domains = new Dictionary<string, List<string>> { ["bahis"] = domains.ToList() },
+                DnsCategories = new List<string> { "bahis" },
+                DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = domains.ToList() },
             };
             int before = DnsPolicyMonitor.IndexBuilds;
             DnsPolicyMonitor.Configure(Policy("a.example"), "HW-A", "https://pops.example");
@@ -161,7 +161,7 @@ namespace POps.Tests.Agent
             List<string> cache = Enumerable.Range(0, 2000).Select(i => $"host{i}.cdn{i % 13}.innocent{i}.example").ToList();
             DnsPolicyMonitor.CacheReader = () => cache;
             DnsPolicyMonitor.Reporter = (_, _) => { };
-            DnsPolicyMonitor.Configure(new AgentPolicy { dns_categories = new List<string> { "bahis", "oyun" }, dns_domains = lists }, "HW-A", "https://pops.example");
+            DnsPolicyMonitor.Configure(new AgentPolicy { DnsCategories = new List<string> { "bahis", "oyun" }, DnsDomains = lists }, "HW-A", "https://pops.example");
 
             var clock = Stopwatch.StartNew();
             for (int round = 0; round < 20; round++) Assert.Empty(DnsPolicyMonitor.CheckNow());
@@ -179,8 +179,8 @@ namespace POps.Tests.Agent
             DnsPolicyMonitor.Reporter = (domain, _) => reports.Add(domain);
             DnsPolicyMonitor.Configure(new AgentPolicy
             {
-                dns_categories = new List<string> { "bahis" },
-                dns_domains = new Dictionary<string, List<string>> { ["bahis"] = new List<string> { "bet1.example" } },
+                DnsCategories = new List<string> { "bahis" },
+                DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = new List<string> { "bet1.example" } },
             }, "HW-A", "https://pops.example");
 
             DnsPolicyMonitor.OnUserChanged();          // bet1 önceki kullanıcının

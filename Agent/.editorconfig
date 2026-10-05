@@ -1,0 +1,140 @@
+# Uyarı tabanı (2026-10-05). Ürün projeleri AnalysisLevel=10.0-recommended ve TreatWarningsAsErrors ile
+# derlenir (bkz. Agent/Directory.Build.props). Aşağıdaki dosya + kural çiftleri o gün var olan uyarılardır;
+# derlemede gizlenir (suggestion: IDE'de görünür), başka her yeni uyarı derlemeyi durdurur. Bir dosyadaki
+# uyarıları düzeltince o satırı silin; bu dosyaya yeni satır eklemeyin. Toplam: 87 uyarı, 28 dosya.
+
+# CA1835 x1
+[POps.Agent/POps.Agent/AgentHttp.cs]
+dotnet_diagnostic.CA1835.severity = suggestion
+
+# CA1711 x1, CA1845 x1
+[POps.Agent/POps.Agent/CommandExecutionPolicy.cs]
+dotnet_diagnostic.CA1711.severity = suggestion
+dotnet_diagnostic.CA1845.severity = suggestion
+
+# CA2016 x2
+[POps.Agent/POps.Agent/CommandRunner.cs]
+dotnet_diagnostic.CA2016.severity = suggestion
+
+# CA1859 x1
+[POps.Agent/POps.Agent/Generalizer.cs]
+dotnet_diagnostic.CA1859.severity = suggestion
+
+# CA1068 x1
+[POps.Agent/POps.Agent/Helpdesk.cs]
+dotnet_diagnostic.CA1068.severity = suggestion
+
+# CA1305 x1, CA1310 x2, CA1866 x2
+[POps.Agent/POps.Agent/NetworkIsolation.cs]
+dotnet_diagnostic.CA1305.severity = suggestion
+dotnet_diagnostic.CA1310.severity = suggestion
+dotnet_diagnostic.CA1866.severity = suggestion
+
+# CA1845 x1
+[POps.Agent/POps.Agent/PatchManager.cs]
+dotnet_diagnostic.CA1845.severity = suggestion
+
+# CA1845 x2
+[POps.Agent/POps.Agent/PatchStatus.cs]
+dotnet_diagnostic.CA1845.severity = suggestion
+
+# CA1822 x4
+[POps.Agent/POps.Agent/QuarantineControl.cs]
+dotnet_diagnostic.CA1822.severity = suggestion
+
+# CA1305 x1
+[POps.Agent/POps.Agent/ReleaseVerifier.cs]
+dotnet_diagnostic.CA1305.severity = suggestion
+
+# CA1716 x1
+[POps.Agent/POps.Agent/UpdateResultReporter.cs]
+dotnet_diagnostic.CA1716.severity = suggestion
+
+# CA1846 x1
+[POps.Agent/POps.Agent/WakeOnLan.cs]
+dotnet_diagnostic.CA1846.severity = suggestion
+
+# CA1716 x1
+[POps.Shared/BypassCode.cs]
+dotnet_diagnostic.CA1716.severity = suggestion
+
+# CA1510 x1
+[POps.Shared/HealthCheck.cs]
+dotnet_diagnostic.CA1510.severity = suggestion
+
+# CA1716 x2, CA1845 x1
+[POps.Shared/KioskPolicies.cs]
+dotnet_diagnostic.CA1716.severity = suggestion
+dotnet_diagnostic.CA1845.severity = suggestion
+
+# CA1305 x1, CA1310 x2, CA1866 x1
+[POps.Shared/POpsHelpers.cs]
+dotnet_diagnostic.CA1305.severity = suggestion
+dotnet_diagnostic.CA1310.severity = suggestion
+dotnet_diagnostic.CA1866.severity = suggestion
+
+# CA1051 x1, CA1305 x1
+[POps.Shared/RemoteKeyMap.cs]
+dotnet_diagnostic.CA1051.severity = suggestion
+dotnet_diagnostic.CA1305.severity = suggestion
+
+# CA1051 x8, CA1861 x1, CA1870 x1
+[POps.Shared/UpdaterRollback.cs]
+dotnet_diagnostic.CA1051.severity = suggestion
+dotnet_diagnostic.CA1861.severity = suggestion
+dotnet_diagnostic.CA1870.severity = suggestion
+
+# CA1310 x1, CA1838 x2, CA1866 x1
+[POps.Shared/UserSession.cs]
+dotnet_diagnostic.CA1310.severity = suggestion
+dotnet_diagnostic.CA1838.severity = suggestion
+dotnet_diagnostic.CA1866.severity = suggestion
+
+# CA1305 x2, CS8618 x1
+[POpsTray/CountdownForm.cs]
+dotnet_diagnostic.CA1305.severity = suggestion
+dotnet_diagnostic.CS8618.severity = suggestion
+
+# CS8618 x1, CS8622 x1
+[POpsTray/FairUseForm.cs]
+dotnet_diagnostic.CS8618.severity = suggestion
+dotnet_diagnostic.CS8622.severity = suggestion
+
+# CA1305 x1
+[POpsTray/HelpdeskForms.cs]
+dotnet_diagnostic.CA1305.severity = suggestion
+
+# CA2101 x1
+[POpsTray/KioskForm.cs]
+dotnet_diagnostic.CA2101.severity = suggestion
+
+# CA1310 x5, CA1401 x1, CA1806 x1, CA1822 x2, CA1847 x1, CS8600 x10, CS8602 x1, CS8604 x1, CS8618 x1, CS8625 x1
+[POpsTray/MainForm.cs]
+dotnet_diagnostic.CA1310.severity = suggestion
+dotnet_diagnostic.CA1401.severity = suggestion
+dotnet_diagnostic.CA1806.severity = suggestion
+dotnet_diagnostic.CA1822.severity = suggestion
+dotnet_diagnostic.CA1847.severity = suggestion
+dotnet_diagnostic.CS8600.severity = suggestion
+dotnet_diagnostic.CS8602.severity = suggestion
+dotnet_diagnostic.CS8604.severity = suggestion
+dotnet_diagnostic.CS8618.severity = suggestion
+dotnet_diagnostic.CS8625.severity = suggestion
+
+# CA1805 x1, CS8625 x1
+[POpsTray/Program.cs]
+dotnet_diagnostic.CA1805.severity = suggestion
+dotnet_diagnostic.CS8625.severity = suggestion
+
+# CA1806 x4, CA1838 x1
+[POpsUpdater/POpsUpdater/MsiPackage.cs]
+dotnet_diagnostic.CA1806.severity = suggestion
+dotnet_diagnostic.CA1838.severity = suggestion
+
+# CA1838 x1
+[POpsUpdater/POpsUpdater/Program.cs]
+dotnet_diagnostic.CA1838.severity = suggestion
+
+# CA1852 x1
+[POpsWatchdog/POpsWatchDog/Program.cs]
+dotnet_diagnostic.CA1852.severity = suggestion

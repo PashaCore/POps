@@ -85,11 +85,11 @@ namespace POpsAgent
         public static void Configure(AgentPolicy policy, string hwId, string serverUrl)
         {
             policy ??= new AgentPolicy();
-            string signature = JsonSerializer.Serialize(new object[] { policy.dns_categories, policy.dns_domains });
+            string signature = JsonSerializer.Serialize(new object[] { policy.DnsCategories, policy.DnsDomains });
             string current;
             lock (Sync) current = _indexSignature;
             // Dizin kilit dışında kurulur (büyük listelerde tarama turunu bekletmesin)
-            DnsDomainIndex index = signature != current ? new DnsDomainIndex(policy.dns_categories, policy.dns_domains) : null;
+            DnsDomainIndex index = signature != current ? new DnsDomainIndex(policy.DnsCategories, policy.DnsDomains) : null;
             lock (Sync)
             {
                 _policy = policy;
@@ -182,8 +182,8 @@ namespace POpsAgent
                 AgentPolicy policy;
                 DnsDomainIndex index;
                 lock (Sync) { policy = _policy; index = _index; }
-                if (policy?.dns_categories == null || policy.dns_categories.Count == 0) return found;
-                if (policy.dns_domains == null || policy.dns_domains.Count == 0)
+                if (policy?.DnsCategories == null || policy.DnsCategories.Count == 0) return found;
+                if (policy.DnsDomains == null || policy.DnsDomains.Count == 0)
                 {
                     if (!_listMissingLogged) POpsHelpers.Log("TRACKER", "DNS kategorileri açık ama politikada alan adı listesi (dns_domains) yok; DNS tespiti yapılmıyor.");
                     _listMissingLogged = true;
@@ -213,8 +213,8 @@ namespace POpsAgent
                         DateTime now = UtcNow();
                         Prune(now);
                         Recent.Add((now, category));
-                        int threshold = Math.Max(1, policy.quarantine_threshold);
-                        if (policy.auto_quarantine && !_quarantined && Recent.Count >= threshold)
+                        int threshold = Math.Max(1, policy.QuarantineThreshold);
+                        if (policy.AutoQuarantine && !_quarantined && Recent.Count >= threshold)
                         {
                             _quarantined = true;
                             quarantineReason = $"{Recent.Count} ihlal / {Window.TotalHours:0} saat ({string.Join(", ", Recent.Select(v => v.Category).Distinct())})";
