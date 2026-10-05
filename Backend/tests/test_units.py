@@ -1171,6 +1171,216 @@ def test_winget():
     chk(-1978335135 in winget.OK_EXIT_CODES and 0 in winget.OK_EXIT_CODES, "zaten kurulu = başarı")
 
 
+def test_vision_v2():
+    """Vision v2: ikili kare başlığı, panel öneki, görüntüleyici komutları, yavaş panelde kare düşürme ve kare/pano
+    yetkisi (F12: yalnızca oturum sahibi admin paneli, yalnızca ikili kare bildiren panel)."""
+    print("== vision v2")
+    from pops import vision as v
+    from pops import manager as mgr
+
+    jpeg = b"\xff\xd8\xff\xe0" + b"x" * 60 + b"\xff\xd9"
+    full = v.pack_frame(v.KIND_FULL, 0, 7, 0, 0, 1920, 1080, 1920, 1080, jpeg)
+    f, why = v.parse_frame(full)
+    chk(why is None and f == v.Frame(1, 0, 7, 0, 0, 1920, 1080, 1920, 1080),
+        "tam kare başlığı okunur (18 bayt, BE)")
+    chk(v.HEADER_SIZE == 18 and full[:2] == b"\x01\x00" and full[2:6] == b"\x00\x00\x00\x07"
+        and full[14:16] == (1920).to_bytes(2, "big"), "alan sırası: tür, monitör, sıra, x, y, w, h, tam w, tam h")
+    region = v.pack_frame(v.KIND_REGION, 1, 0xFFFFFFFF, 100, 50, 200, 80, 1280, 1024, jpeg)
+    f, why = v.parse_frame(region)
+    chk(why is None and f.kind == 2 and f.monitor == 1 and f.seq == 0xFFFFFFFF
+        and (f.x, f.y, f.w, f.h) == (100, 50, 200, 80), "bölge karesi okunur (u32 sıra sınırda)")
+    cursor = v.pack_frame(v.KIND_CURSOR, 0, 8, 640, 360, 0, 0, 1920, 1080)
+    f, why = v.parse_frame(cursor)
+    chk(why is None and f.kind == 3 and (f.x, f.y) == (640, 360), "imleç konumu: görüntüsüz 18 bayt")
+    every = v.pack_frame(v.KIND_FULL, v.ALL_MONITORS, 9, 0, 0, 3200, 1080, 3200, 1080, jpeg)
+    chk(v.parse_frame(every)[0].monitor == 0xFF, "monitör 0xFF: bütün ekranlar yan yana tek görüntüde")
+    big = v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 10, 10, 10, 10, jpeg + b"\x00" * v.MAX_FRAME_BYTES)
+    bad = {
+        "short": full[:17],
+        "kind": b"\x07" + full[1:],
+        "monitor": v.pack_frame(v.KIND_FULL, 16, 1, 0, 0, 10, 10, 10, 10, jpeg),
+        "geometry": v.pack_frame(v.KIND_REGION, 0, 1, 1900, 0, 40, 10, 1920, 1080, jpeg),
+        "jpeg": v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 10, 10, 10, 10, b"\x89PNG...."),
+        "cursor_payload": v.pack_frame(v.KIND_CURSOR, 0, 1, 1, 1, 0, 0, 10, 10, jpeg),
+        "oversize": big,
+    }
+    chk(all(v.parse_frame(data) == (None, reason) for reason, data in bad.items()),
+        "bozuk kareler nedeniyle reddedilir: " + ", ".join(bad))
+    geometry = (
+        v.pack_frame(v.KIND_FULL, 0, 1, 5, 0, 10, 10, 10, 10, jpeg),        # tam kare (0,0)'dan
+        v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 5, 10, 10, 10, jpeg),         # tam kare bütün çıktı
+        v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 0, 0, 0, 10, jpeg),           # çıktı boyutu sıfır olamaz
+        v.pack_frame(v.KIND_REGION, 0, 1, 0, 0, 0, 10, 10, 10, jpeg),       # bölge boyutu sıfır olamaz
+        v.pack_frame(v.KIND_CURSOR, 0, 1, 10, 0, 0, 0, 10, 10),             # imleç çıktının içinde
+        v.pack_frame(v.KIND_CURSOR, 0, 1, 1, 1, 4, 4, 10, 10),              # imleçte w = h = 0
+    )
+    chk(all(v.parse_frame(data)[1] == "geometry" for data in geometry),
+        "geometri ajanın kurallarıyla aynı: tam kare bütün çıktı, bölge içinde, imleç w = h = 0")
+    chk(v.parse_frame(v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 10, 10, 10, 10, b"\xff\xd8\xff"))[1] == "jpeg",
+        "JPEG imzası ve en az 4 bayt")
+    exact = v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 10, 10, 10, 10, jpeg)
+    chk(v.parse_frame(exact + b"\x00" * (v.MAX_FRAME_BYTES - len(exact)))[1] is None, "tam 2 MB kabul edilir")
+    chk(v.panel_prefix("HW-ABC") == b"\x01\x06HW-ABC" and v.panel_prefix("") is None
+        and v.panel_prefix("x" * 256) is None and v.panel_prefix("ÇÖ") == b"\x01\x04" + "ÇÖ".encode(),
+        "panel öneki: 0x01, kimliğin bayt uzunluğu, UTF-8 kimlik")
+
+    vc = v.viewer_command
+    chk(vc({"action": "select_monitor", "index": 1, "device": "HW-1", "x": 1})
+        == {"action": "select_monitor", "index": 1}
+        and vc({"action": "select_monitor", "index": "all"}) == {"action": "select_monitor", "index": "all"},
+        "select_monitor: yalnız sözleşmedeki alanlar")
+    chk(vc({"action": "select_monitor", "index": True}) is None
+        and vc({"action": "select_monitor", "index": 16}) is None
+        and vc({"action": "select_monitor", "index": "1"}) is None, "select_monitor: geçersiz dizin atılır")
+    chk(vc({"action": "set_quality", "quality": 50, "scale": 0.75, "fps": 5})
+        == {"action": "set_quality", "quality": 50, "scale": 0.75, "fps": 5}
+        and vc({"action": "set_quality", "quality": 75, "scale": 1, "fps": 10})["scale"] == 1.0,
+        "set_quality: sınırlar içinde iletilir")
+    chk(all(vc(dict({"action": "set_quality", "quality": 50, "scale": 0.75, "fps": 5}, **bad)) is None for bad in (
+        {"quality": 29}, {"quality": 76}, {"scale": 0.4}, {"scale": 1.01}, {"fps": 0}, {"fps": 11},
+        {"fps": 2.5}, {"quality": True}, {"scale": float("nan")}, {"scale": "1"})), "set_quality: sınır dışı atılır")
+    chk(vc({"action": "clipboard", "text": "merhaba"}) == {"action": "clipboard", "text": "merhaba"}
+        and vc({"action": "clipboard", "text": "ğ" * 32768}) is not None
+        and vc({"action": "clipboard", "text": "ğ" * 32769}) is None
+        and vc({"action": "clipboard", "text": ""}) is None
+        and vc({"action": "clipboard", "text": "\ud800"}) is None and vc({"action": "execute"}) is None,
+        "pano: en çok 64 KB UTF-8, boş ve bozuk metin atılır; bilinmeyen komut atılır")
+    ml = v.monitors_list
+    chk(ml({"list": [{"index": 0, "width": 1920, "height": 1080, "primary": True, "name": "x"}]})
+        == [{"index": 0, "width": 1920, "height": 1080, "primary": True}], "monitors: bilinen alanlar")
+    chk(all(ml(p) is None for p in ({"list": []}, {"list": "x"}, {"list": [{"index": 0, "width": 0, "height": 1}]},
+            {"list": [{"index": 0, "width": 9, "height": 9}, {"index": 0, "width": 9, "height": 9}]},
+            {"list": [{"index": 0, "width": 9, "height": 9, "primary": 1}]})), "monitors: bozuk liste atılır")
+
+    class SlowWS:
+        def __init__(self):
+            self.sent, self.gate = [], asyncio.Event()
+
+        async def send_text(self, t):
+            await self.gate.wait()
+            self.sent.append(t)
+
+        async def send_bytes(self, b):
+            await self.gate.wait()
+            self.sent.append(b)
+
+    async def slow_panel():
+        dead = []
+        ws = SlowWS()
+        sender = mgr._PanelSender(ws, dead.append)
+        k0, k1, kc = ("HW-1", 0), ("HW-1", 1), ("HW-1", "cursor")
+        sender.put_binary(k0, v.KIND_FULL, b"F0")
+        await asyncio.sleep(0)  # F0 yazılıyor, panel yavaş: gerisi bekler
+        resync = [sender.put_binary(k0, v.KIND_REGION, b"R%d" % i) for i in range(mgr._BIN_KEY_MAX_FRAMES + 2)]
+        chk(resync.count(True) == 1 and resync[mgr._BIN_KEY_MAX_FRAMES] is True and k0 in sender.stale
+            and len(sender.bins[k0]) == mgr._BIN_KEY_MAX_FRAMES,
+            "yavaş panel: %d bölgeden sonrası düşer, monitör bayatlar (bir kez vision_resync)"
+            % mgr._BIN_KEY_MAX_FRAMES)
+        sender.put_binary(k1, v.KIND_REGION, b"S1")
+        chk(list(sender.bins[k1]) == [b"S1"], "başka monitörün bölgeleri etkilenmez")
+        sender.put_binary(k0, v.KIND_FULL, b"F1")
+        chk(list(sender.bins[k0]) == [b"F1"] and k0 not in sender.stale,
+            "tam kare bekleyenlerin yerini alır, bayatlık biter")
+        sender.put_binary(k0, v.KIND_REGION, b"R99")
+        sender.put_binary(kc, v.KIND_CURSOR, b"C1")
+        sender.put_binary(kc, v.KIND_CURSOR, b"C2")
+        chk(sender.dropped_frames == 2 + mgr._BIN_KEY_MAX_FRAMES + 1, "düşen kareler sayılır")
+        ws.gate.set()
+        for _ in range(20):
+            await asyncio.sleep(0)
+        mine = [b for b in ws.sent if b in (b"F0", b"F1", b"R99")]
+        chk(mine == [b"F0", b"F1", b"R99"] and b"C2" in ws.sent and b"C1" not in ws.sent and b"S1" in ws.sent
+            and not sender.bins and not dead, "panel yetişince sıra korunarak gönderilir, imleçte yalnız sonuncu")
+        ws.gate.clear()
+        sender.put_binary(k0, v.KIND_FULL, b"G0")
+        await asyncio.sleep(0)
+        mb = b"x" * (1024 * 1024)
+        res = [sender.put_binary(k0, v.KIND_REGION, mb) for _ in range(5)]
+        chk(res == [False] * 4 + [True], "bayt sınırı: bekleyen bölgeler 4 MB'ı geçemez")
+        sender.task.cancel()
+
+        # Yönetici: ikili kare yalnız oturum sahibi admin'in ikili kare bildiren paneline, önek tünelin cihazı
+        m = mgr.ConnectionManager()
+
+        class FastWS:
+            def __init__(self):
+                self.sent = []
+
+            async def send_text(self, t):
+                self.sent.append(t)
+
+            async def send_bytes(self, b):
+                self.sent.append(b)
+
+        panels = {}
+        for name, user, role, binary in (("own", "ali", "admin", True), ("own_text", "ali", "admin", False),
+                                         ("other", "veli", "admin", True), ("viewer", "ali", "viewer", True)):
+            ws = FastWS()
+            panels[name] = ws
+            m.active_panels.append(ws)
+            m.panel_users[ws], m.panel_roles[ws] = user, role
+            m.panel_senders[ws] = mgr._PanelSender(ws, lambda w: None)
+            if binary:
+                m.panel_binary.add(ws)
+        m.add_vision_session("HW-1", "ali")
+        m.add_vision_session("HW-2", "veli")
+        frame, _ = v.parse_frame(full)
+        n = await m.send_binary_frame_to_viewers("HW-1", frame, full)
+        await asyncio.sleep(0)
+        chk(n == 1 and panels["own"].sent == [b"\x01\x04HW-1" + full] and not panels["own_text"].sent
+            and not panels["other"].sent and not panels["viewer"].sent,
+            "F12: ikili kare yalnız oturum sahibinin ikili panelinde; önek tünelin cihazı")
+        await m.send_to_session_holders({"type": "monitors", "hw_id": "HW-1", "list": []}, "HW-1")
+        await asyncio.sleep(0)
+        chk(len(panels["own_text"].sent) == 1 and not panels["other"].sent and not panels["viewer"].sent,
+            "monitors yalnız oturum sahibinin panellerine")
+        chk(not m.clipboard_allowed("ali", "HW-1"), "pano: tünel açılmadan kapalı")
+        m.vision_tunnel_opened("HW-1", FastWS())
+        chk(m.clipboard_allowed("ali", "HW-1") and m.clipboard_users("HW-1") == {"ali"},
+            "pano: tüneli tek 'kullanıcıya sor' oturumunun rızası açtı → o oturumun sahibine açık")
+        m.add_vision_session("HW-1", "veli")
+        chk(m.clipboard_users("HW-1") == {"ali"}, "pano: tünel açıkken başlayan ikinci oturuma kapalı")
+        m.vision_tunnel_opened("HW-1", FastWS())
+        chk(not m.clipboard_users("HW-1"),
+            "pano: tünel açılırken iki oturum varsa (hangisi kabul edildi bilinmez) kimseye açılmaz")
+        m.remove_vision_session("HW-1", "veli")
+        m.add_vision_session("HW-1", "ali", mandatory=True)
+        m.vision_tunnel_opened("HW-1", FastWS())
+        chk(not m.clipboard_allowed("ali", "HW-1"), "pano: zorunlu oturumda kapalı")
+        m.add_vision_session("HW-1", "ali")
+        m.vision_tunnel_opened("HW-1", FastWS())
+        chk(m.clipboard_allowed("ali", "HW-1"), "pano: yeni 'kullanıcıya sor' oturumu tüneli yeniden açınca açık")
+        m.add_vision_session("HW-1", "ali", mandatory=True)
+        chk(not m.clipboard_allowed("ali", "HW-1"), "pano: oturum zorunluya dönerse kapanır")
+        m.remove_vision_session("HW-1", "ali")
+        chk(not m.clipboard_allowed("ali", "HW-1") and ("HW-1", "ali") not in m.vision_session_modes
+            and "HW-1" not in m.vision_clipboard_owner, "oturum bitince pano, oturum türü ve pano sahibi düşer")
+        m.vision_tunnel_opened("HW-2", FastWS())
+        chk(m.vision_clipboard_owner.get("HW-2") == "veli", "B cihazında tek oturum: pano sahibi veli")
+        m.disconnect_vision("HW-2")
+        chk("HW-2" not in m.vision_clipboard_owner and not m.clipboard_allowed("veli", "HW-2"),
+            "tünel kapanınca pano sahibi düşer")
+
+        # Yavaş panelde bekleyen ikili kareler toplam sınırı aşarsa panel kapatılır (monitör baytını ajan seçer)
+        dead = []
+        ws = SlowWS()
+        sender = mgr._PanelSender(ws, dead.append)
+        mb2 = b"x" * (2 * 1024 * 1024)
+        sender.put_binary(("HW-9", 0), v.KIND_FULL, b"F")
+        await asyncio.sleep(0)
+        for mon in range(9):
+            sender.put_binary(("HW-9", mon), v.KIND_FULL, mb2)
+        chk(dead == [ws], "bekleyen ikili kareler 16 MB'ı aşınca panel kapatıldı")
+        sender.task.cancel()
+        for s in m.panel_senders.values():
+            s.task.cancel()
+
+    asyncio.run(slow_panel())
+    from pops.routers import agents
+    chk({"vision_binary", "vision_clipboard"} <= set(agents.SERVER_FEATURES),
+        "server_info vision_binary ve vision_clipboard'u duyurur")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -1191,6 +1401,7 @@ def main():
     test_agent_platform()
     test_agent_packages()
     test_winget()
+    test_vision_v2()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

@@ -123,6 +123,7 @@ machine and a regression would not be caught by CI.
 | Panel login, 2FA (TOTP), 2FA bypass attempt | Tested | `test_2fa.py` |
 | Session revocation (token_version), role read from the database | Tested | `test_f4_accountability.py` |
 | Remote input / preview needs admin + an open audit session; frames only to that session | Tested | `test_remote_authz.py` |
+| Vision v2: binary frames only to the session holder's panel under the tunnel's own device ID, malformed and oversize frames dropped and counted, `select_monitor` / `set_quality` / clipboard only from the session holder, clipboard only in a session the user accepted and audited without its text, slow panels drop frames, old JSON frames still relayed | Tested | `test_vision_v2.py`, `test_units.py`; the viewer against a simulated agent by hand (Playwright) |
 | Agent enrollment, per-device secret, enforce mode, cross-device spoofing, enrollment takeover | Tested | `test_security.py`, `test_agent_authz.py` |
 | Signed release: server rejects a wrong key; agent verifies signature, size, hash, downgrade | Tested | `test_security.py`, `ReleaseVerifierTests`, `AgentUpdateTests`, `signing` job |
 | Update result → audit log and notification wording | Tested | `test_units.py` (wording); `test_protocol.py` drives the `/ws/agent` handler: stored and acknowledged, no acknowledgement without `result_id` |
@@ -146,4 +147,4 @@ machine and a regression would not be caught by CI.
 | Migrations from empty and idempotency | Tested | `migrations` job |
 | Server self-update and deploy rollback | Tested (fakes) | `test_deploy.sh`: rollback of code and venv after a failed `pip`, copy or health check; venv rebuilt when its Python is too old (and put back on failure); early stop without a new enough Python; signed release tags. The real systemd path is field-verified (`deploy-status.json` `state=ok`). |
 | Panel pages (PHP) | Tested | End-to-end smoke of every page at desktop and phone width, and the main flows (sign-in, devices, labs, tasks, logs, Sistem, Ayarlar, viewer role) in Chromium: `tests/e2e/`, CI `panel-e2e` job. Not covered: Vision and remote command against a live agent (no agent and no WebSocket proxy in the stack). |
-| Vision screen tunnel | Partly | Frame scoping tested (`test_remote_authz.py`); the tunnel and tray capture are not |
+| Vision screen tunnel | Partly | Frame scoping and the v2 relay tested (`test_remote_authz.py`, `test_vision_v2.py`); tray capture is not |

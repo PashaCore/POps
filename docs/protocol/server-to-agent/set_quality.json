@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/set_quality.json",
+  "title": "set_quality",
+  "description": "Vision v2: upper limits for the stream, from the viewer's settings. Sent on the Vision channel, only for the admin holding a session for the device, always with all three fields. The agent may go below them while frames are dropped.",
+  "x-pops-channels": [
+    "/ws/vision"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "quality",
+    "scale",
+    "fps"
+  ],
+  "properties": {
+    "action": {
+      "const": "set_quality",
+      "description": "Message type."
+    },
+    "quality": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 75,
+      "description": "JPEG quality."
+    },
+    "scale": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 1.0,
+      "description": "Image scale. Frame coordinates stay in real pixels; only the JPEG gets smaller."
+    },
+    "fps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Frames per second."
+    }
+  }
+}

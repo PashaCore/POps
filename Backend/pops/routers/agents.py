@@ -171,7 +171,12 @@ async def reconcile_quarantine(
 # modu gönderilir ve exam_state okunur (pops/exams.py).
 # winget: sunucu winget görevlerini "winget_install" ile gönderir ve ajanın bağlanırken X-Agent-Features ile duyurduğu
 # özellikleri okur (bkz. pops/winget.py); görev yalnızca "winget" duyuran ajana gider.
-SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress", "file_transfer", "exam_mode", "winget")
+# vision_binary: /ws/vision ikili kareleri ve monitors/select_monitor/set_quality'yi bilir (eski sunucu ikili mesajda
+# tüneli düşürürdü). vision_clipboard: pano metni aktarılır (bkz. docs/vision.md).
+SERVER_FEATURES = (
+    "update_result_ack", "result_ack", "update_progress", "file_transfer", "exam_mode", "winget", "vision_binary",
+    "vision_clipboard",
+)
 # Ajan protokolünün sürümü (docs/protocol/README.md): yalnızca uyumsuz bir değişiklikte artar. Yeni alan ya da yeni
 # mesaj sürümü değiştirmez; sunucunun yeni davranışları SERVER_FEATURES ile duyurulur.
 PROTOCOL_VERSION = 1

@@ -55,6 +55,7 @@ isolation callbacks, so no firewall rule or real setting is touched.
    | `exam_mode.off.json` | no exception; exam mode removed if it was applied (then an `exam_state` with `enabled: false`) |
    | `set_capabilities.*.json` | the capabilities are off afterwards and a `capabilities` message is sent |
    | `remote_input.*.json` with Vision off | one `capability_denied` (capability `vision`) |
+   | `select_monitor*.json`, `set_quality.json`, `clipboard.json` | Vision-channel messages: through `Worker.HandleVisionControlAsync` with Vision off, one `capability_denied`; `VisionRelay.TrayMessageFor` gives `VISION_SELECT:1` / `VISION_SELECT:all`, `VISION_QUALITY:…`, and `CLIPBOARD_SET:…` only with `userAccepted` |
    | `scan_updates.json`, `install_updates.*.json`, `wake_peer.json` with the module off (`AgentModules`) | `capability_denied` with `reason` `module_disabled` |
    | `update_agent.json` | refused: the manifest is signed with the test key, not the release key (see 3) |
    | `file_push.json`, `file_pull.json` with file transfer off | a `capability_denied` (capability `files`) or a `file_result` `rejected` with the same `transfer_id`; nothing is downloaded or uploaded (with it on, the URLs point at a test server that does not exist: a `file_result` `failed`) |

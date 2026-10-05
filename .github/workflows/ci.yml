@@ -660,6 +660,7 @@ jobs:
           python Backend/tests/test_2fa.py
           python Backend/tests/test_agent_authz.py
           python Backend/tests/test_remote_authz.py
+          python Backend/tests/test_vision_v2.py
           python Backend/tests/test_device_keys.py
           python Backend/tests/test_hardening.py
           python Backend/tests/test_p1.py
