@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 
 from fastapi import WebSocket
 
-from pops import metrics
+from pops import metrics, vision
 
 log = logging.getLogger("pops.manager")
 
@@ -24,6 +24,16 @@ _VISION_SESSION_TTL = 1800  # denetim oturumu yetkisi: son etkinlikten 30 dk son
 _PANEL_QUEUE_MAX = 500
 _PANEL_SEND_TIMEOUT = 10.0
 _FRAME_TYPES = ("stream_frame", "thumbnail")
+# İkili (Vision v2) kareler parça parça gelir: bölge kareleri ancak tam karenin üzerine sırayla çizilirse doğru
+# görüntü verir, bu yüzden "yalnız en son kare" burada işlemez. Panel başına, cihaz+monitör başına:
+#   * tam kare bekleyenlerin hepsinin yerini alır (eskileri düşer, görüntü yine doğru);
+#   * imleç konumu yalnız en son hâliyle bekler;
+#   * bölge kareleri en çok _BIN_KEY_MAX_FRAMES adet / _BIN_KEY_MAX_BYTES bayt bekler. Taşarsa bölge düşer ve o
+#     monitörün bölgeleri bir sonraki tam kareye kadar atılır; panele vision_resync gider, görüntüleyici tam kare
+#     ister (select_monitor). Yavaş panel kareleri biriktirmez, düşürür.
+_BIN_KEY_MAX_FRAMES = 32
+_BIN_KEY_MAX_BYTES = 4 * 1024 * 1024
+_ADMIN_ROLES = ("admin", "superadmin")
 
 
 class _PanelSender:
@@ -31,6 +41,9 @@ class _PanelSender:
         self.ws = websocket
         self.queue = collections.deque()
         self.frames = collections.OrderedDict()  # (tür, cihaz) -> en son kare
+        self.bins = collections.OrderedDict()  # (cihaz, monitör | "cursor") -> bekleyen ikili kareler
+        self.bin_bytes: Dict[tuple, int] = {}
+        self.stale: set = set()  # bölgesi düşen (cihaz, monitör): tam kare gelene kadar bölgeler atılır
         self.wake = asyncio.Event()
         self.dropped_frames = 0
         self._on_dead = on_dead
@@ -50,14 +63,61 @@ class _PanelSender:
         self.frames[key] = text
         self.wake.set()
 
+    def put_binary(self, key: tuple, kind: int, data: bytes) -> bool:
+        """İkili kareyi sıraya koyar (kurallar yukarıda). Bir bölge düşüp monitör yeni bayatladıysa True döner:
+        çağıran panele vision_resync gönderir."""
+        pending = self.bins.get(key)
+        if kind == vision.KIND_REGION:
+            if key in self.stale:
+                self._drop(1)
+                return False
+            if pending is None:
+                pending = self.bins[key] = collections.deque()
+            if len(pending) >= _BIN_KEY_MAX_FRAMES or self.bin_bytes.get(key, 0) + len(data) > _BIN_KEY_MAX_BYTES:
+                self._drop(1)
+                self.stale.add(key)
+                if not pending:
+                    del self.bins[key]
+                return True
+            pending.append(data)
+            self.bin_bytes[key] = self.bin_bytes.get(key, 0) + len(data)
+        else:
+            # Tam kare (ya da imleç konumu) bekleyen eskilerin hepsini geçersiz kılar
+            if pending:
+                self._drop(len(pending))
+            self.bins[key] = collections.deque((data,))
+            self.bin_bytes[key] = len(data)
+            if kind == vision.KIND_FULL:
+                self.stale.discard(key)
+        self.wake.set()
+        return False
+
+    def _drop(self, n: int) -> None:
+        self.dropped_frames += n
+        metrics.count("vision_frames_dropped_slow", n)
+
+    def _next_binary(self) -> bytes:
+        key, pending = next(iter(self.bins.items()))
+        data = pending.popleft()
+        if pending:
+            self.bin_bytes[key] -= len(data)
+            self.bins.move_to_end(key)  # monitörler sırayla: biri ötekini bekletmesin
+        else:
+            del self.bins[key]
+            self.bin_bytes.pop(key, None)
+        return data
+
     async def _run(self):
         try:
             while True:
                 await self.wake.wait()
                 self.wake.clear()
-                while self.queue or self.frames:
-                    text = self.queue.popleft() if self.queue else self.frames.popitem(last=False)[1]
-                    await asyncio.wait_for(self.ws.send_text(text), _PANEL_SEND_TIMEOUT)
+                while self.queue or self.frames or self.bins:
+                    if self.queue or self.frames:
+                        text = self.queue.popleft() if self.queue else self.frames.popitem(last=False)[1]
+                        await asyncio.wait_for(self.ws.send_text(text), _PANEL_SEND_TIMEOUT)
+                    else:
+                        await asyncio.wait_for(self.ws.send_bytes(self._next_binary()), _PANEL_SEND_TIMEOUT)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -82,6 +142,13 @@ class ConnectionManager:
         # yalnızca pending_updates'te olan cihaz için tutulur (bkz. pops/update_tracking.py)
         self.update_stages: Dict[str, dict] = {}
         self.panel_senders: Dict[WebSocket, _PanelSender] = {}
+        # Vision v2: ikili kare alabileceğini bildiren paneller (panel_hello), cihazın son monitör listesi, tünelin
+        # açıldığı an ve oturumların türü. Pano yalnızca kullanıcının onayladığı oturumda çalışır: oturum zorunlu
+        # değilse ve tünel bu oturum açıldıktan SONRA açıldıysa (rıza sorusu kabul edilince açılır).
+        self.panel_binary: set = set()
+        self.vision_monitors: Dict[str, list] = {}
+        self.vision_tunnel_since: Dict[str, float] = {}
+        self.vision_session_modes: Dict[tuple, tuple] = {}  # (pc_name, kullanıcı) -> (açılış anı, zorunlu mu)
 
     async def connect_agent(self, websocket: WebSocket, pc_name: str):
         self.active_agents[pc_name] = websocket
@@ -98,8 +165,9 @@ class ConnectionManager:
     # ── Uzaktan kontrol/izleme oturumu (F1/F12): girdi ve canlı kare/önizleme, yalnızca o cihaz için
     # AÇIK bir denetim oturumu olan admin'e verilir. Oturum start/end_audit_session ile yönetilir; ayrıca
     # süreli — son etkinlikten _VISION_SESSION_TTL sonra kendiliğinden düşer (end çağrılmasa da fail-closed).
-    def add_vision_session(self, pc_name: str, username: str):
+    def add_vision_session(self, pc_name: str, username: str, mandatory: bool = False):
         self.vision_sessions.setdefault(pc_name, {})[username] = time.time() + _VISION_SESSION_TTL
+        self.vision_session_modes[(pc_name, username)] = (time.time(), bool(mandatory))
 
     def touch_vision_session(self, pc_name: str, username: str):
         s = self.vision_sessions.get(pc_name)
@@ -108,6 +176,7 @@ class ConnectionManager:
 
     def remove_vision_session(self, pc_name: str, username: str):
         s = self.vision_sessions.get(pc_name)
+        self.vision_session_modes.pop((pc_name, username), None)
         if s:
             s.pop(username, None)
             if not s:
@@ -122,6 +191,7 @@ class ConnectionManager:
         expired = set(s) - live
         for u in expired:  # süresi dolanları tembel temizle
             s.pop(u, None)
+            self.vision_session_modes.pop((pc_name, u), None)
         if not s:
             self.vision_sessions.pop(pc_name, None)
         return live
@@ -134,6 +204,23 @@ class ConnectionManager:
     def user_has_session(self, username: Optional[str], pc_name: str) -> bool:
         return bool(username) and username in self._live_session_users(pc_name)
 
+    def clipboard_allowed(self, username: Optional[str], pc_name: str) -> bool:
+        """Pano: açık oturum + kullanıcıya sorulmuş (zorunlu olmayan) oturum + bu oturumdan sonra açılmış tünel.
+        Tünel başka bir oturum için zaten açıksa bu oturumun kabul edildiği bilinemez: pano kapalı kalır."""
+        if not self.user_has_session(username, pc_name):
+            return False
+        mode = self.vision_session_modes.get((pc_name, username))
+        since = self.vision_tunnel_since.get(pc_name)
+        return bool(mode) and not mode[1] and since is not None and since >= mode[0]
+
+    def clipboard_users(self, pc_name: str) -> set:
+        return {u for u in self._live_session_users(pc_name) if self.clipboard_allowed(u, pc_name)}
+
+    def vision_tunnel_opened(self, pc_name: str, websocket: WebSocket):
+        self.active_vision_ws[pc_name] = websocket
+        self.vision_tunnel_since[pc_name] = time.time()
+        self.vision_monitors.pop(pc_name, None)
+
     async def connect_vision(self, websocket: WebSocket, pc_name: str):
         await websocket.accept()
         self.active_vision_ws[pc_name] = websocket
@@ -145,7 +232,7 @@ class ConnectionManager:
         if websocket is not None and self.active_agents.get(pc_name) is not websocket:
             return False
         removed = self.active_agents.pop(pc_name, None) is not None
-        self.active_vision_ws.pop(pc_name, None)
+        self._forget_vision(pc_name)
         return removed
 
     def disconnect_panel(self, websocket: WebSocket):
@@ -153,6 +240,7 @@ class ConnectionManager:
             self.active_panels.remove(websocket)
         self.panel_users.pop(websocket, None)
         self.panel_roles.pop(websocket, None)
+        self.panel_binary.discard(websocket)
         sender = self.panel_senders.pop(websocket, None)
         if sender is not None and sender.task is not asyncio.current_task():
             sender.task.cancel()
@@ -173,17 +261,27 @@ class ConnectionManager:
             log.info("panel gönderim sırası doldu, panel kapatılıyor")
             self._drop_slow_panel(panel)
 
+    def send_to_panel(self, panel: WebSocket, message: dict):
+        """Tek bir panele (o panelin sırasıyla) mesaj."""
+        self._queue_to_panel(panel, json.dumps(message))
+
     def disconnect_vision(self, pc_name: str, websocket: Optional[WebSocket] = None):
         """websocket verilirse yalnızca kayıtlı tünel o ise silinir (bkz. disconnect_agent)."""
         if websocket is not None and self.active_vision_ws.get(pc_name) is not websocket:
             return
+        self._forget_vision(pc_name)
+
+    def _forget_vision(self, pc_name: str):
         self.active_vision_ws.pop(pc_name, None)
+        self.vision_tunnel_since.pop(pc_name, None)
+        self.vision_monitors.pop(pc_name, None)
 
     def rename_agent(self, old_name: str, new_name: str):
         if old_name in self.active_agents:
             self.active_agents[new_name] = self.active_agents.pop(old_name)
-        if old_name in self.active_vision_ws:
-            self.active_vision_ws[new_name] = self.active_vision_ws.pop(old_name)
+        for table in (self.active_vision_ws, self.vision_tunnel_since, self.vision_monitors):
+            if old_name in table:
+                table[new_name] = table.pop(old_name)
 
     async def send_command(self, message: dict, pc_name: str) -> bool:
         """Mesaj sokete yazıldıysa True. Hata olursa YALNIZCA bu soket kayıttan düşer: gönderim beklerken aynı
@@ -215,19 +313,53 @@ class ConnectionManager:
             if self.panel_roles.get(panel) in ("admin", "superadmin"):
                 self._queue_to_panel(panel, text, frame_key)
 
+    def _session_panels(self, pc_name: str, users: Optional[set] = None) -> List[WebSocket]:
+        """O cihaz için açık oturumu olan (users verilirse yalnız onlardan) admin kullanıcıların panelleri. Rol,
+        panelin periyodik yeniden doğrulamasıyla güncel tutulur (bkz. control.websocket_panel)."""
+        allowed = self._live_session_users(pc_name)
+        if users is not None:
+            allowed &= set(users)
+        if not allowed:
+            return []
+        return [p for p in self.active_panels
+                if self.panel_users.get(p) in allowed and self.panel_roles.get(p) in _ADMIN_ROLES]
+
     async def send_frame_to_viewers(self, message: dict, pc_name: str):
         """Canlı ekran karesi/önizlemesi YALNIZCA o cihaz için açık (süresi dolmamış) denetim oturumu
         olan admin panellerine gider (F12: tüm panellere yayınlama sızıntısı kapandı). Oturumu olan
         panel yoksa kare düşer."""
-        allowed = self._live_session_users(pc_name)
-        if not allowed:
+        panels = self._session_panels(pc_name)
+        if not panels:
             return
         text = json.dumps(message)
         frame_key = (message.get("type"), pc_name)
-        for panel in list(self.active_panels):
-            # Rol, panelin periyodik yeniden doğrulamasıyla güncel tutulur (bkz. control.websocket_panel)
-            if self.panel_users.get(panel) in allowed and self.panel_roles.get(panel) in ("admin", "superadmin"):
-                self._queue_to_panel(panel, text, frame_key)
+        for panel in panels:
+            self._queue_to_panel(panel, text, frame_key)
+
+    async def send_to_session_holders(self, message: dict, pc_name: str, users: Optional[set] = None) -> int:
+        """Kare dışındaki Vision mesajları (monitors, clipboard) da yalnızca oturum sahiplerinin panellerine,
+        sırayla gider. Mesaj kaç panele kondu, onu döner."""
+        panels = self._session_panels(pc_name, users)
+        text = json.dumps(message)
+        for panel in panels:
+            self._queue_to_panel(panel, text)
+        return len(panels)
+
+    async def send_binary_frame_to_viewers(self, pc_name: str, frame: vision.Frame, data: bytes) -> int:
+        """İkili kare (Vision v2): F12 kuralı aynı, ayrıca yalnız ikili kare alabileceğini bildiren panellere.
+        Öneki sunucu yazar (tünelin doğrulanmış kimliği); ajanın mesajı olduğu gibi arkasına eklenir."""
+        panels = [p for p in self._session_panels(pc_name) if p in self.panel_binary]
+        prefix = vision.panel_prefix(pc_name) if panels else None
+        if prefix is None:
+            return 0
+        message = prefix + data
+        key = (pc_name, "cursor" if frame.kind == vision.KIND_CURSOR else frame.monitor)
+        for panel in panels:
+            sender = self.panel_senders.get(panel)
+            if sender is not None and sender.put_binary(key, frame.kind, message):
+                self._queue_to_panel(panel, json.dumps({"type": "vision_resync", "hw_id": pc_name,
+                                                        "monitor": frame.monitor}))
+        return len(panels)
 
     async def send_remote_input_to_vision(self, message: dict, pc_name: str):
         ws = self.active_vision_ws.get(pc_name)

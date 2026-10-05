@@ -2,8 +2,10 @@
 önizleme ve uzaktan girdi, audit zinciri doğrulaması."""
 
 import asyncio
+import collections
 import datetime
 import json
+import logging
 import secrets
 import time
 
@@ -14,15 +16,19 @@ from pops.db import execute_query
 from pops.models import EndAuditSessionInput, LockdownInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
 from pops.security import require_admin, require_admin_session, require_superadmin, verify_jwt, verify_session
 from pops.agent_auth import verify_agent_secret
-from pops import auditchain, bypass, modules
+from pops import auditchain, bypass, metrics, modules, vision
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 from pops.notify import notify
 
 router = APIRouter()
+log = logging.getLogger("pops.vision")
 
 # Açık panel soketlerinin oturumu bu aralıkla yeniden doğrulanır (iptal/rol düşürme en geç bu kadar sürede uygulanır)
 PANEL_REVALIDATE_SECONDS = 10
+# Pano aktarımı her yön için cihaz başına dakikada en çok bu kadar (her aktarım denetim kaydına yazılır)
+CLIPBOARD_PER_MINUTE = 30
+_clipboard_times: dict = {}
 
 
 # Uzak ekran ve uzaktan girdi yalnızca panel oturumuyla (require_admin_session): kareler oturumu açan kişinin panel
@@ -48,8 +54,15 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
     """,
         (session_id, admin_id, admin_name, admin_role, data.target_pc, now, data.reason, data.is_mandatory),
     )
-    # F1/F12: bu oturum, uzaktan girdi ve canlı kare almanın ÖN KOŞULU. Oturumu aç (admin, cihaz).
-    manager.add_vision_session(data.target_pc, admin_name)
+    # F1/F12: bu oturum, uzaktan girdi ve canlı kare almanın ÖN KOŞULU. Oturumu aç (admin, cihaz). Türü (zorunlu
+    # mu) panoyu belirler: pano yalnızca kullanıcının kabul ettiği oturumda çalışır.
+    manager.add_vision_session(data.target_pc, admin_name, mandatory=data.is_mandatory)
+    # Tünel başka bir oturum için zaten açıksa yeni görüntüleyici monitör listesini buradan alır
+    if data.target_pc in manager.vision_monitors:
+        await manager.send_to_session_holders(
+            {"type": "monitors", "hw_id": data.target_pc, "list": manager.vision_monitors[data.target_pc]},
+            data.target_pc, {admin_name},
+        )
     # Hesap verebilirlik (F4): kontrol oturumunu ajanların yazamadığı hash-zincirli loga META olarak
     # yaz (ham tuş/koordinat DEĞİL — sadece kim, hangi cihaz, gerekçe, zorunlu mu).
     await add_audit_log(
@@ -288,13 +301,30 @@ async def websocket_panel(websocket: WebSocket):
             if fresh.get("role") not in ("admin", "superadmin"):
                 manager.drop_user_sessions(username)
 
+    async def vision_module_on(target: str) -> bool:
+        # Cihazın laboratuvarı 10 sn önbellekte (fare hareketi başına sorgu atılmasın)
+        cached = target_labs.get(target)
+        if cached is None or time.time() - cached[1] > 10:
+            cached = (await modules.lab_of(target), time.time())
+            target_labs[target] = cached
+        return await modules.enabled("vision", cached[0])
+
     revalidator = asyncio.create_task(revalidate())
     try:
         while True:
             data = await websocket.receive_text()
             try:
                 msg = json.loads(data)
-                if msg.get("type") == "remote_input":
+                if not isinstance(msg, dict):
+                    continue
+                if msg.get("type") == "panel_hello":
+                    # Vision v2: bu panel ikili kare alabilir (bkz. pops/vision.py, docs/vision.md)
+                    features = msg.get("features")
+                    if isinstance(features, list) and "vision_binary" in features:
+                        manager.panel_binary.add(websocket)
+                elif msg.get("type") == "vision_control":
+                    await _vision_control(websocket, username, msg, vision_module_on)
+                elif msg.get("type") == "remote_input":
                     target = msg.get("device")
                     # F4: açık soket için de iptal geçerli olsun — kontrol yolunda periyodik (≤10 sn)
                     # yeniden doğrula; kullanıcı silinmiş/rolü düşmüş/token_version artmışsa soketi kapat.
@@ -314,16 +344,13 @@ async def websocket_panel(websocket: WebSocket):
                     is_control = bool(msg.get("input_type")) or msg.get("action") == "execute"
                     if is_control and not manager.user_has_session(username, target):
                         continue
-                    # Modül: önizleme ve girdi Vision'a, SYSTEM komutu ayrıca uzak komut modülüne bağlı. Cihazın
-                    # laboratuvarı 10 sn önbellekte (fare hareketi başına sorgu atılmasın)
+                    # Modül: önizleme ve girdi Vision'a, SYSTEM komutu ayrıca uzak komut modülüne bağlı
                     if target:
-                        cached = target_labs.get(target)
-                        if cached is None or time.time() - cached[1] > 10:
-                            cached = (await modules.lab_of(target), time.time())
-                            target_labs[target] = cached
-                        if not await modules.enabled("vision", cached[0]):
+                        if not await vision_module_on(target):
                             continue
-                        if msg.get("action") == "execute" and not await modules.enabled("terminal", cached[0]):
+                        if msg.get("action") == "execute" and not await modules.enabled(
+                            "terminal", target_labs[target][0]
+                        ):
                             continue
                     if is_control:
                         # etkinlik oturum süresini uzatır (idle-timeout)
@@ -357,20 +384,51 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
         return
     # Aynı cihazın yeni tüneli eskisinin yerini alır. Eski soket kapatılmaz (ajan onu zaten bırakmıştır; kapanışı
     # ajanda yeni tüneli de düşürebilir), yalnızca kaydı devreder ve kapanınca yeni kaydı silmez (finally).
-    manager.active_vision_ws[pc_name] = websocket
+    manager.vision_tunnel_opened(pc_name, websocket)
+    bad_logged = False
     try:
         while True:
-            data = await websocket.receive_text()
+            message = await websocket.receive()
+            if message.get("type") == "websocket.disconnect":
+                break
+            raw = message.get("bytes")
+            if raw is not None:
+                # Vision v2 ikili kare (ajan yalnızca server_info.features'ta vision_binary görünce gönderir)
+                frame, reason = vision.parse_frame(raw)
+                if frame is None:
+                    metrics.count("vision_frames_oversize" if reason == "oversize" else "vision_frames_malformed")
+                    if not bad_logged:
+                        bad_logged = True
+                        log.info("geçersiz Vision karesi atıldı", extra={"pc_name": pc_name, "reason": reason})
+                    continue
+                metrics.count("vision_frames_binary")
+                # F12 ve kimlik: kare yalnız oturum sahiplerine, öneki her zaman bu tünelin cihazı
+                await manager.send_binary_frame_to_viewers(pc_name, frame, raw)
+                continue
             try:
-                payload = json.loads(data)
-                if payload.get("type") in ["stream_frame", "thumbnail"]:
-                    # Kare her zaman bu tünelin kimliği doğrulanmış cihazına aittir: ajanın gönderdiği hw_id
-                    # kullanılmaz (aksi halde kayıtlı bir ajan başka cihazın kutusuna kare koyabilirdi)
-                    payload["hw_id"] = pc_name
-                    # F12: kare yalnızca o cihaz için açık oturumu olan admin panellerine
-                    await manager.send_frame_to_viewers(payload, pc_name)
+                payload = json.loads(message.get("text") or "")
             except json.JSONDecodeError:
-                pass
+                continue
+            if not isinstance(payload, dict):
+                continue
+            mtype = payload.get("type")
+            if mtype in ["stream_frame", "thumbnail"]:
+                # Kare her zaman bu tünelin kimliği doğrulanmış cihazına aittir: ajanın gönderdiği hw_id
+                # kullanılmaz (aksi halde kayıtlı bir ajan başka cihazın kutusuna kare koyabilirdi)
+                payload["hw_id"] = pc_name
+                # F12: kare yalnızca o cihaz için açık oturumu olan admin panellerine
+                await manager.send_frame_to_viewers(payload, pc_name)
+            elif mtype == "monitors":
+                monitors = vision.monitors_list(payload)
+                if monitors is None:
+                    metrics.count("vision_messages_malformed")
+                    continue
+                manager.vision_monitors[pc_name] = monitors
+                await manager.send_to_session_holders(
+                    {"type": "monitors", "hw_id": pc_name, "list": monitors}, pc_name
+                )
+            elif mtype == "clipboard":
+                await _clipboard_from_pc(pc_name, payload)
     except WebSocketDisconnect:
         pass
     finally:
@@ -396,6 +454,80 @@ _INPUT_FIELDS = {
     "x", "y", "relative", "button", "is_down", "double", "delta", "horizontal",
     "key", "code", "ctrl", "alt", "shift", "meta", "altgr",
 }
+
+
+def _clipboard_rate_ok(key: tuple) -> bool:
+    now = time.time()
+    times = _clipboard_times.setdefault(key, collections.deque())
+    while times and now - times[0] > 60:
+        times.popleft()
+    if len(times) >= CLIPBOARD_PER_MINUTE:
+        return False
+    times.append(now)
+    return True
+
+
+async def _clipboard_from_pc(pc_name: str, payload: dict) -> None:
+    """Bilgisayarda kopyalanan metin: yalnızca kullanıcının kabul ettiği oturumun sahiplerine. Denetim kaydına
+    yalnızca yön, uzunluk ve zaman yazılır, metnin kendisi asla."""
+    text = vision.clipboard_text(payload.get("text"))
+    if text is None:
+        metrics.count("vision_messages_malformed")
+        return
+    users = manager.clipboard_users(pc_name)
+    if not users or not _clipboard_rate_ok(("from_pc", pc_name)):
+        return
+    sent = await manager.send_to_session_holders({"type": "clipboard", "hw_id": pc_name, "text": text}, pc_name, users)
+    if sent:
+        await add_audit_log(
+            pc_name, "clipboard", "Pano metni bilgisayardan panele aktarıldı",
+            {"direction": "from_pc", "length": len(text), "admins": sorted(users)},
+        )
+
+
+async def _vision_control(websocket: WebSocket, username: str, msg: dict, vision_module_on) -> None:
+    """Görüntüleyicinin ajana komutları (select_monitor, set_quality, clipboard): yalnızca o cihazda oturumu olan
+    admin'den; pano ayrıca kullanıcının kabul ettiği oturumda. Ajana sözleşmedeki alanlar dışında bir şey gitmez."""
+    target, action = msg.get("device"), msg.get("action")
+    if not isinstance(target, str) or manager.panel_roles.get(websocket) not in ("admin", "superadmin"):
+        return
+    if not manager.user_has_session(username, target):
+        return
+    command = vision.viewer_command(msg)
+
+    def answer(ok: bool, reason: str = ""):
+        reply = {"type": "clipboard_result", "hw_id": target, "ok": ok}
+        if reason:
+            reply["reason"] = reason
+        manager.send_to_panel(websocket, reply)
+
+    if command is None:
+        if action == "clipboard":
+            answer(False, "invalid")
+        return
+    if not await vision_module_on(target):
+        if action == "clipboard":
+            answer(False, "module")
+        return
+    if action != "clipboard":
+        manager.touch_vision_session(target, username)
+        await manager.send_remote_input_to_vision(command, target)
+        return
+    if not manager.clipboard_allowed(username, target):
+        answer(False, "not_accepted" if target in manager.active_vision_ws else "no_stream")
+        return
+    if not _clipboard_rate_ok(("to_pc", target)):
+        answer(False, "rate")
+        return
+    if not await manager.send_remote_input_to_vision(command, target):
+        answer(False, "no_stream")
+        return
+    manager.touch_vision_session(target, username)
+    await add_audit_log(
+        target, "clipboard", "Pano metni panelden bilgisayara aktarıldı: %s" % username,
+        {"direction": "to_pc", "length": len(command["text"]), "admin": username},
+    )
+    answer(True)
 
 
 def _flat_remote_input(data: RemoteInputData) -> dict:

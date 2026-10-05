@@ -163,8 +163,10 @@ async def reconcile_quarantine(
 # Sunucunun desteklediği, ajanın davranışını değiştiren özellikler (0.1.14+ ajan okur; eskiler bilinmeyen action'ı
 # yok sayar). update_result_ack: güncelleme sonucu kaydedilince onaylanır, ajan onaya kadar sonucu saklar.
 # update_progress: güncellemenin ara adımları okunur (eski sunucu bilinmeyen mesajı zaten yok sayar; ajan isterse
-# yalnızca bunu duyuran sunucuya gönderir).
-SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress")
+# yalnızca bunu duyuran sunucuya gönderir). vision_binary: /ws/vision ikili kareleri ve monitors/select_monitor/
+# set_quality'yi bilir (eski sunucu ikili mesajda tüneli düşürürdü). vision_clipboard: pano metni aktarılır
+# (bkz. docs/vision.md).
+SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress", "vision_binary", "vision_clipboard")
 # Ajan protokolünün sürümü (docs/protocol/README.md): yalnızca uyumsuz bir değişiklikte artar. Yeni alan ya da yeni
 # mesaj sürümü değiştirmez; sunucunun yeni davranışları SERVER_FEATURES ile duyurulur.
 PROTOCOL_VERSION = 1

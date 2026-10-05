@@ -47,6 +47,7 @@ python tests/test_security.py
 python tests/test_2fa.py
 python tests/test_agent_authz.py
 python tests/test_remote_authz.py
+python tests/test_vision_v2.py
 python tests/test_device_keys.py
 python tests/test_hardening.py
 python tests/test_p1.py
