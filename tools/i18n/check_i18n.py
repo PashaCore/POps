@@ -12,8 +12,9 @@ Denetlenen
   4. Anahtarın Türkçe metni kaynakta (Dashboard/ ya da sunucu iletileri için Backend/) bir dize sabiti olarak birebir
      geçiyor: harfi harfine yazılmamış anahtar hiçbir zaman eşleşmez, sessizce Türkçe kalır.
 
---missing <ad>: o sayfanın (ya da common için includes/ ve assets/'in) koddaki sabit anahtarlarından sözlükte
-karşılığı olmayanları JSON satırı olarak yazar (bilgi amaçlı; çıkış kodu 0). Ayrıntı: docs/i18n.md
+--missing <ad>: o sayfanın (sayfa betiği assets/pages/<ad>.js dahil; common için includes/ ve assets/'in) koddaki
+sabit anahtarlarından sözlükte karşılığı olmayanları JSON satırı olarak yazar (bilgi amaçlı; çıkış kodu 0).
+Ayrıntı: docs/i18n.md
 """
 import argparse
 import json
@@ -74,7 +75,9 @@ def source_files(root, page=None):
             out += [os.path.join(d, n) for n in sorted(os.listdir(d)) if n.endswith(ext)]
         return out
     if page:
-        return [os.path.join(dash, page + '.php')]
+        # Sayfa ve varsa sayfa betiği (assets/pages/<ad>.js)
+        js = os.path.join(dash, 'assets', 'pages', page + '.js')
+        return [os.path.join(dash, page + '.php')] + ([js] if os.path.exists(js) else [])
     out = []
     for base, exts in ((dash, ('.php', '.js')), (os.path.join(root, 'Backend'), ('.py',))):
         for d, dirs, files in os.walk(base):

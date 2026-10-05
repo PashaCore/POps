@@ -413,3 +413,51 @@ a superadmin, API tokens) and **Genel** (organisation, task queue and server con
 - Values coming from agents and users (device names, logs, command output, tickets) are HTML-escaped before
   display; the CI job `Dashboard checks` enforces this (see [`security.md`](security.md#panel-output-xss)).
 - The panel uses a single light theme.
+
+## Page scripts
+
+A page's JavaScript lives in its own file, `Dashboard/assets/pages/<page>.js`, not inline in the PHP. **Raporlar**
+(`reports.js`) and **Kayıtlar** (`logger.js`) work this way so far; the other pages still have inline `<script>`
+blocks and move over one at a time.
+
+- **Loading.** The page includes its script at the end, before `footer.php`:
+  `<script src="<?php echo htmlspecialchars(pops_asset('assets/pages/reports.js'), ENT_QUOTES, 'UTF-8'); ?>" defer></script>`.
+  `pops_asset()` adds the file's modification time, so browsers fetch the new file after an update. The shared
+  scripts (`pops_config.js`, `pops_script.js`, `pops_devices.js`) load in `<head>` without `defer`, so `POps.*`,
+  `POps.dev` and `state` exist when the page script runs; `defer` runs it once the whole page is parsed.
+- **No inline JavaScript.** No `<script>` blocks with code and no `on…=""` attributes in the page; handlers are
+  attached with `addEventListener`. This keeps the pages usable under a Content Security Policy without
+  `'unsafe-inline'` for scripts (the shared `header.php`/`footer.php` blocks are still inline).
+- **Data from PHP** goes into one JSON block that the script reads, never into the script itself:
+  ```php
+  <script type="application/json" id="rpData"><?php echo json_encode(['canEditLic' => $rpCanEdit],
+      JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?></script>
+  ```
+  ```js
+  const PAGE = JSON.parse(document.getElementById('rpData').textContent);
+  ```
+  A single value can also be a `data-` attribute printed with `htmlspecialchars`. The user's role is already in
+  `window.USER_ROLE` (from `header.php`).
+- **Text** in the script uses `POps.t` / `POps.tn` / `POps.tx` / `POps.tHtml` with the Turkish text as the key, exactly
+  as in an inline script (see [i18n.md](i18n.md)). The English entries stay in `Dashboard/lang/en/<page>.json`:
+  `header.php` sends the page's dictionary to the browser whichever file the text is in.
+  `tools/i18n/check_i18n.py` and `tools/html_sinks/check_html_sinks.py` scan `assets/pages/*.js` too.
+- **Pure helpers** (formatting, CSV cells, page numbers, status words) sit at the top of the file, before the page is
+  set up, and touch no DOM. When the file is loaded with a `module` object (the unit tests do this), it exports
+  those helpers and returns without setting up the page; in the browser there is no `module` and the page starts
+  as usual.
+
+### Unit tests
+
+`tests/unit-js/` tests the pure helpers of `pops_script.js` (`POps.t` and plurals, `escapeHtml`, time and duration
+formatting, error texts, …) and of the page scripts with Node's built-in test runner. There are no dependencies and
+no `package.json`; any Node 18 or later runs them:
+
+```bash
+node --test tests/unit-js/*.test.mjs
+```
+
+`tests/unit-js/harness.mjs` loads the real files into a `node:vm` context with an empty fake `window`/`document`
+(and `escapeHtml`/`jsArg` taken from `includes/header.php`). The CI job `Dashboard checks` runs the same command.
+Anything that needs the DOM or the API belongs in the Playwright tests in `tests/e2e/` (see
+[testing.md](testing.md)).
