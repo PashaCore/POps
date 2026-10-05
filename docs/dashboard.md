@@ -89,16 +89,34 @@ where they are sent is set on **Sistem** → **Bildirimler**.
   a row.
 - **Actions.** Wake, restart and shut down (restart and shut down ask for confirmation and skip PCs that are
   off), screen and command (these hand the online PCs over to **Uzak ekran** and **Uzak komut**), and a **Diğer
-  işlemler** menu: message, move to another lab, quarantine and lift quarantine. Quarantine asks for a reason.
+  işlemler** menu: message, **Dosya gönder** (send a file, see below), move to another lab, quarantine and lift
+  quarantine. Quarantine asks for a reason.
 - **Detail panel.** Clicking a PC opens a panel on the right: status and signed-in user, round buttons for
   **Ekran**, **Komut**, **Güç** and **Diğer** (disabled when the PC is off or the capability is turned off for
-  it), its issues (quarantine, outdated agent, errors reported by the agent, remote command or screen turned off on it),
+  it), its issues (quarantine, outdated agent, errors reported by the agent, remote command, screen or file transfer
+  turned off on it),
   the facts (user, application, lab,
   IP, MAC, agent version, memory, last seen, reason of the last disconnect, ID) and **Son işlemler**: the latest
   tasks and remote-screen sessions on the PC with what was done, who did it, when, from which page, the reason
-  and the result (a failed task says why). The list comes from `GET /api/devices/{pc}/activity`. **Diğer** has
-  message, rename, move, make or unmake teacher PC, quarantine or lift it, the offline unlock code (only for a
-  quarantined PC) and, for a superadmin, delete.
+  and the result (a failed task says why). The list comes from `GET /api/devices/{pc}/activity`. Below it,
+  **Dosya aktarımları** (only when the PC has any): the latest files sent to and fetched from the PC with direction
+  ("Bilgisayara" / "Bilgisayardan"), name, size, status, who, when, reason and the path; a fetched file has an
+  **İndir** button while it is kept (7 days). The list refreshes every 3 seconds while a transfer is running.
+  **Diğer** has message, **Dosya gönder**, **Dosya al**, rename, move, make or unmake teacher PC, quarantine or lift
+  it, the offline unlock code (only for a quarantined PC) and, for a superadmin, delete.
+- **Dosya gönder** (admins): pick or drop a file (at most 200 MB), choose **Ortak masaüstü** (the public desktop,
+  seen by every user of the PC) or **POps gelen kutusu** (the agent's inbox folder), write a reason and, for
+  shortcuts and screen savers (`.lnk`, `.url`, `.scr`), tick **Çalıştırılabilir dosyaya izin ver**. The dialog shows
+  upload progress; Vazgeç stops the upload. From the action bar of **Cihazlar** and **Sınıflar** the same dialog
+  sends one file to all selected PCs (or the whole list or lab): PCs that are off or have no file transfer are listed
+  as skipped and get nothing. Each PC downloads the file once; the row turns **Teslim edildi** when the agent has
+  written it.
+- **Dosya al** (admins, one PC): the full path on the PC (`C:\...`; network paths are refused), the largest size to
+  accept (10, 50 or 200 MB), a reason and, for a superadmin only, **Başka kullanıcıların profilinden de**. When the
+  file arrives the row shows **Alındı** and an **İndir** button; the download is always a file (never opened in the
+  browser) and is audit-logged. Both entries are disabled, with the reason as a tooltip, when the PC is off, its
+  agent does not support file transfer, or file transfer is turned off on it; viewers do not get them.
+  Server side: [`api.md`](api.md#file-transfer); threat notes: [`security.md`](security.md#file-transfer).
 - **Who did it.** Every task records its title, the page it was sent from, the reason, the caller's IP address and a
   job ID shared by the tasks of one request. **İşlemler**, **Kontrol merkezi** and the detail panel show them.
 

@@ -92,8 +92,8 @@ an entry.
 | Role | Can |
 | --- | --- |
 | `viewer` | Read devices, labs, inventory, software, Windows Update state, licences, logs, tasks, packages and reports (including CSV exports). Cannot see screen previews or live frames, cannot send remote input, and cannot open the **Dağıtım**, **Uzak komut** or **Ayarlar** pages. |
-| `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, scheduled tasks, Windows Update scan and install, licence definitions, helpdesk tickets, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies, the notification list (**Bildirimler**). |
-| `superadmin` | Additionally: panel users, API tokens, agent releases and updates, enrollment tokens, agent-auth enforcement, re-enrollment, capability policy, server self-update, audit-chain verification, notification settings. |
+| `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, scheduled tasks, Windows Update scan and install, licence definitions, helpdesk tickets, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies, the notification list (**Bildirimler**), sending files to PCs and fetching files from them (panel session only). |
+| `superadmin` | Additionally: fetching files from other users' profiles on a PC, panel users, API tokens, agent releases and updates, enrollment tokens, agent-auth enforcement, re-enrollment, capability policy, server self-update, audit-chain verification, notification settings. |
 
 Things to keep in mind:
 
@@ -162,6 +162,46 @@ off, even a compromised server cannot use them. It takes effect on agents from 0
 Both are on by default so that a fresh install works for a lab. **Turn them off where they are not needed**: on
 teachers' and administration PCs a remote terminal and screen view are rarely necessary, and a PC with both off
 offers nothing to someone who takes over the server or an admin account.
+
+## File transfer
+
+An admin can send a file to PCs and fetch a file from a PC (**Dosya gönder** / **Dosya al**; protocol in
+[`api.md`](api.md#file-transfer)). What protects it:
+
+- **Who.** Sending, fetching and downloading a fetched file need an admin in a **panel session**; API tokens are
+  refused (`403`), so files are never moved by automation without a person. Viewers can only see the list (names,
+  sizes, reasons, who and when). Fetching from **other users' profiles** (`any_profile`) needs a superadmin. A reason
+  is required for both directions (3–300 characters).
+- **Audit.** Every send (per PC), every request, every received file, every download of a fetched file and every
+  result from the agent goes into the hash-chained audit log with metadata only: transfer ID, name, size,
+  SHA-256, destination or path, size limit, `any_profile`, reason, who. The file content is never logged or stored in
+  the database. The tray's **Etkinlik geçmişim** shows the PC's users that a file was sent or requested (who, when,
+  reason) but not the path or name of a fetched file, which may belong to another user.
+- **One-time tokens bound to one PC.** Each PC gets its own transfer ID and a random token (32 bytes, stored as
+  SHA-256 only) valid for one use and 1 hour. The agent endpoints always need the device secret (`X-Agent-Id` +
+  `X-Agent-Secret`), also while `enforce_agent_auth` is off. A wrong token, another PC's secret, a used or expired
+  token and an unknown ID all return the same `404`, and failed attempts do not use the token up. The token travels
+  only on the PC's own authenticated WebSocket. The agent downloads and uploads only from the server it is enrolled
+  with (the URLs are relative).
+- **Destinations and file types.** The server sends only `public_desktop` or `inbox`, never a path; the agent writes
+  only to its allowlisted folders and refuses `.lnk`, `.url` and `.scr` unless the admin ticked "çalıştırılabilir
+  dosyaya izin ver" (the server refuses them too without it). File names are cleaned on the server (no path parts,
+  no characters Windows does not allow, no control or direction characters such as U+202E that could make an `.exe`
+  look like a `.png`, no reserved names). The agent checks size and SHA-256 before it writes.
+- **Paths.** A fetch request must be a full local path with a drive letter. Network paths
+  (`\\server\share`, which would make the agent connect to another host with the PC's machine account), device
+  paths (`\\?\`), `..`, wildcards and alternate data streams are refused by the server; the agent applies its own
+  profile rules on top.
+- **Size and storage.** At most 200 MB each way. An oversized request is refused before its body is read, and an
+  agent upload is cut off at the requested `max_size`. Files are stored under server-made names in
+  `Backend/transfers` (not served, mode `0750`/`0640`); a fetched file is downloaded only through
+  `GET /api/files/{id}/content`, always as an attachment with `nosniff` and a sandboxing CSP, so a fetched HTML or SVG
+  file cannot run in the panel's origin. Fetched files are deleted after 7 days, sent files once all tokens are used
+  or expired; transfers are not in backups.
+- **Off switches.** The `files` module turns the feature off for the organisation or a lab (open transfers are
+  rejected and their tokens stop working). On the PC, file transfer can be switched off locally; the agent reports
+  `files_enabled: false`, and the server sends it nothing. An agent that does not report the capability gets no
+  file commands.
 
 ## Remote control and transparency
 
@@ -270,7 +310,7 @@ restrict database access.
 | `/download/<file>?sig=…` | Deployment packages for agents, only with the signed link returned at upload (wrong or missing signature: 404). Anyone who has a package's link can still download it, so do not upload anything confidential on the **Dağıtım** page. |
 | `/updates/<file>` | The agent MSI being distributed (verified by agents against the signed manifest). |
 | `/api/v1/...` | The same endpoints as `/api/...` with the same authentication; nothing extra is open. |
-| `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. The software, Windows Update and helpdesk endpoints always require them. |
+| `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. The software, Windows Update, helpdesk and file transfer endpoints always require them. |
 
 ## Operator checklist
 
