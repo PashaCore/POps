@@ -12,6 +12,7 @@ from starlette.websockets import WebSocketState
 
 from pops import db, modules
 from pops.db import execute_query
+from pops.labs import UNASSIGNED_LAB
 from pops.models import AgentPoliciesInput, AuthEventInput, HwInventoryInput, LogInput, PolicyAlertInput
 from pops.security import require_admin, require_auth
 from pops.agent_auth import (
@@ -653,7 +654,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             await _settle_running_tasks(active_hwid, payload.get("agent_health"), agent_version)
             # Oto-kayıt: bitiş tarihine kadar İLK kez bağlanan cihaz o sınıfa (yalnız yeni satırda; mevcut
             # cihazın sınıfı değişmez). Eski biçimdeki (tarihsiz) kayıt etkisizdir.
-            new_lab = "Atanmamis_Cihazlar"
+            new_lab = UNASSIGNED_LAB
             ae = await execute_query("SELECT value FROM global_settings WHERE key = 'auto_enroll_lab'", fetch=True)
             if ae:
                 try:

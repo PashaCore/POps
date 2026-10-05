@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pops.config import LOG_TABLE, USE_V2_SCHEMA
 from pops import agent_health, db, modules
 from pops.db import execute_query
+from pops.labs import UNASSIGNED_LAB
 from pops.models import (
     AutoEnrollInput,
     CreateLabInput,
@@ -82,7 +83,7 @@ async def wake_pc(pc_name: str, auth: dict = Depends(require_admin)):
     mac = row[0]["mac_address"]
     lab_name = row[0]["lab_name"]
     send_wol_packet(mac)
-    if lab_name and lab_name != "Atanmamis_Cihazlar":
+    if lab_name and lab_name != UNASSIGNED_LAB:
         await attempt_p2p_wol(mac, lab_name)
     return {"status": "success", "message": "WOL gönderildi."}
 
@@ -123,7 +124,7 @@ async def wake_all(auth: dict = Depends(require_admin)):
             continue
         if mac and mac != "-":
             send_wol_packet(mac)
-            if lab and lab != "Atanmamis_Cihazlar":
+            if lab and lab != UNASSIGNED_LAB:
                 await attempt_p2p_wol(mac, lab)
             count += 1
     return {"status": "success", "woken_pcs": count}
@@ -310,7 +311,7 @@ async def delete_lab(data: DeleteLabInput, auth: dict = Depends(require_admin)):
     async with db.acquire() as conn:
         async with conn.transaction():
             await conn.execute("DELETE FROM custom_labs WHERE lab_name = $1", data.lab_name)
-            await conn.execute("UPDATE clients SET lab_name = 'Atanmamis_Cihazlar' WHERE lab_name = $1", data.lab_name)
+            await conn.execute("UPDATE clients SET lab_name = $2 WHERE lab_name = $1", data.lab_name, UNASSIGNED_LAB)
             await conn.execute("DELETE FROM lab_settings WHERE lab_name = $1", data.lab_name)
     return {"status": "success"}
 

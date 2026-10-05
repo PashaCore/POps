@@ -246,11 +246,11 @@ function renderTerminal() {
         .sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
     const current = select.value;
     select.replaceChildren(POps.el('option', { value: '', text: POps.t('Bilgisayar seçin ({n})', { n: list.length }) }),
-        ...list.map(d => POps.el('option', { value: d.hostname, text: `${POps.deviceName(d)} · ${d.lab === 'Atanmamis_Cihazlar' ? POps.t('Atanmamış') : (d.lab || '-')}${POps.isOffline(d) ? ' · ' + POps.t('çevrimdışı') : ''}` })));
+        ...list.map(d => POps.el('option', { value: d.hostname, text: `${POps.deviceName(d)} · ${d.lab === POps.dev.UNASSIGNED ? POps.t('Atanmamış') : (d.lab || '-')}${POps.isOffline(d) ? ' · ' + POps.t('çevrimdışı') : ''}` })));
     if (current && list.some(d => d.hostname === current)) select.value = current;
 
     const labArea = document.getElementById('areaLab');
-    const labs = [...new Set(state.devices.map(d => d.lab))].filter(l => l && l !== 'Atanmamis_Cihazlar').sort((a, b) => a.localeCompare(b, 'tr'));
+    const labs = [...new Set(state.devices.map(d => d.lab))].filter(l => l && l !== POps.dev.UNASSIGNED).sort((a, b) => a.localeCompare(b, 'tr'));
     labArea.replaceChildren(...(labs.length ? labs.map(lab => {
         const pcs = state.devices.filter(d => d.lab === lab);
         const b = POps.el('button', { type: 'button', className: 'chip' + (selectedLab === lab ? ' active' : ''), 'aria-pressed': selectedLab === lab ? 'true' : 'false' },

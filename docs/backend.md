@@ -16,6 +16,7 @@ database pool, migrations and the scheduler loop) and wires the routers. Everyth
 | `pops/audit.py` | `agent_logs_v2` event log and the agent-unwritable, hash-chained `device_audit_logs`. |
 | `pops/manager.py` | WebSocket connection manager (agents, panels, vision) and time-limited remote-control session grants. |
 | `pops/models.py` | Pydantic request models. |
+| `pops/labs.py` | `UNASSIGNED_LAB`, the `clients.lab_name` value of a device in no lab (`Atanmamis_Cihazlar`). It is stored and returned by the API as it is, so it is kept and only defined here; the panel's copy is `POps.dev.UNASSIGNED` in `assets/pops_devices.js`. |
 | `pops/taskqueue.py`, `pops/dna.py`, `pops/wol.py` | Task queue dispatch and target resolution, hardware-DNA identity reconciliation, Wake-on-LAN. |
 | `pops/notify.py` | Notifications: the `notifications` table behind the panel's **Bildirimler**, optional e-mail (SMTP from `.env`) and webhook delivery in the background, dedupe and send cap. The webhook target is resolved and must be a public address (unless `NOTIFY_WEBHOOK_ALLOW_PRIVATE`); the connection is pinned to the checked address and redirects are not followed. |
 | `pops/scheduler.py` | Background loop started at startup (every 30 s): queues due scheduled tasks (one process at a time, advisory lock), alerts on agents that never answered an update, and once a day (`license_check_date`) raises notifications for licences that are over their seats, expired or ending within 30 days. |

@@ -10,6 +10,8 @@
 // =================================================================
 (function () {
     const dev = POps.dev = {};
+    // Sınıfa atanmamış cihazın lab değeri: veritabanında ve API'de saklanan bir değerdir, değiştirilmez (gösterilen ad
+    // "Atanmamış"). Sunucudaki karşılığı Backend/pops/labs.py UNASSIGNED_LAB; sayfalar bunu POps.dev.UNASSIGNED olarak okur.
     const UNASSIGNED = 'Atanmamis_Cihazlar';
     const CAN_ADMIN = ['admin', 'superadmin'].includes(window.USER_ROLE);
     const IS_SUPER = window.USER_ROLE === 'superadmin';
