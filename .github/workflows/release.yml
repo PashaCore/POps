@@ -147,6 +147,7 @@ jobs:
     # imzalı yayın, elle onay olmadan tetiklenemez. (GitHub → Settings → Environments)
     environment: release
     permissions:
+      # Yalnızca bu iş: GitHub Release'i oluşturup paketleri ona yüklemek (softprops/action-gh-release)
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -194,7 +195,7 @@ jobs:
             echo "Kurulum: 'python tools/sign_release.py genkey --out-dir keys' ile üretilen özel PEM'i bu secret'a ekleyin (açık anahtar keys/pops_release_ed25519.pub.pem repoda)."
             exit 1
           fi
-          python -m pip install --quiet 'cryptography==43.0.3'
+          python -m pip install --quiet --require-hashes -r .github/requirements/signing.lock
           VER=$(tr -d '[:space:]' < VERSION)
           python tools/sign_release.py sign --dir dist --version "$VER" --tag "$GITHUB_REF_NAME"
           python tools/sign_release.py verify --dir dist --pub-pem keys/pops_release_ed25519.pub.pem
@@ -230,6 +231,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # İmajları ghcr.io/pashacore'a itmek için (yalnızca etikette push edilir)
       packages: write
     strategy:
       fail-fast: false
@@ -279,7 +281,8 @@ jobs:
             org.opencontainers.image.licenses=Apache-2.0
       - name: Build and push
         # Önbellek kullanılmaz (yayın imajı başka iş akışlarının bıraktığı katmanlara dayanmasın); taban imajlar
-        # her seferinde güncel çekilir. Provenance (SLSA) ve SBOM kayıtları imajla birlikte GHCR'a gider.
+        # Dockerfile'daki özetle (sha256) çekilir, özetleri Dependabot haftalık günceller. Provenance (SLSA) ve SBOM
+        # kayıtları imajla birlikte GHCR'a gider.
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .

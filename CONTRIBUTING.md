@@ -188,6 +188,7 @@ Security → Code scanning and on the README badge).
 | Version consistency | `VERSION` == top CHANGELOG release heading == built `<Version>` | compare by hand |
 | Migrations (PostgreSQL 13) | fresh `migrate.py`, `ci_schema_check.py`, second run applies nothing | see below |
 | Release signing tool | `tools/sign_release.py selftest` (temporary key, no secret needed) | same command |
+| Fuzzing (Atheris) | each target in `fuzz/` (agent WebSocket messages, request models, release manifest, notification settings) for 60 s; flake8 also lints `fuzz/` | `fuzz/run.sh` with Python 3.12 ([docs/fuzzing.md](docs/fuzzing.md)) |
 | Security invariants | the integration tests against a running backend | see below |
 
 ### Lint and formatting

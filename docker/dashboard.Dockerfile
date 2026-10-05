@@ -1,7 +1,9 @@
 # POps dashboard: PHP panel on Apache, which also reverse-proxies /api, /ws, /updates and
 # /download to the backend container. Built by docker-compose.yml from the repository
 # root; see docs/docker.md. TLS is terminated in front of this container.
-FROM php:8.3-apache
+# The base image is pinned by digest (multi-arch index); Dependabot proposes the new digest
+# of the same tag weekly (.github/dependabot.yml).
+FROM php:8.3-apache@sha256:c2c73159da2f7a19167a2849bd9785ca9ad4f5eeff01f85295ef861a5e9bcf4d
 
 # The panel only needs curl, json and session, all built into the official image.
 RUN a2enmod proxy proxy_http proxy_wstunnel headers remoteip rewrite deflate \

@@ -2,21 +2,28 @@
 denetlenerek saklanır; ajandan gelen metin panelde gösterildiği için kısaltılır."""
 
 import json
+import math
 from typing import Optional
 
 _TIMES = ("started_at", "last_policy_sync", "last_inventory_upload")
 _VISION = ("off", "idle", "connected")
 
 
-def _unix(value) -> Optional[int]:
-    return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0 else None
+def unix_time(value) -> Optional[int]:
+    """Ajanın bildirdiği Unix zamanı (saniye) ya da None. JSON'daki 1e999 Python'da sonsuzdur (int() hata verir);
+    çok büyük tam sayı da float'la karşılaştırılırken hata verir: ikisi de yanlış türdeki alan gibi yok sayılır."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return int(value) if 0 <= value <= 2**53 else None
 
 
 def clean(raw) -> Optional[str]:
     """Ham bloğu JSONB'ye yazılacak metne çevirir; blok yoksa ya da bozuksa None."""
     if not isinstance(raw, dict):
         return None
-    out = {k: _unix(raw.get(k)) for k in _TIMES}
+    out = {k: unix_time(raw.get(k)) for k in _TIMES}
     for key in ("tray_connected", "screen_locked", "network_isolated"):   # karantina durumu: 0.1.13+
         out[key] = raw.get(key) if isinstance(raw.get(key), bool) else None
     out["vision_channel"] = raw.get("vision_channel") if raw.get("vision_channel") in _VISION else None

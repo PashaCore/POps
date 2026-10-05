@@ -1,0 +1,18 @@
+{
+  "artifacts": [
+    {
+      "name": "POps-Agent-0.1.3-alpha-win-x64.msi",
+      "sha256": "4d638345368583f56cdb74ef6a59fd5f7d5857eae4279fd5127f86ae34c83beb",
+      "size": 300000
+    },
+    {
+      "name": "POps-Agent-0.1.3-alpha-win-x64.zip",
+      "sha256": "d7c3630971ec4e2d49e35189307a72ada39d816e0f76c0dd381400a61a68a972",
+      "size": 5000
+    }
+  ],
+  "released_at": 1790444495,
+  "schema": "pops-manifest/1",
+  "tag": "v0.1.3-alpha",
+  "version": "0.1.3-alpha"
+}
