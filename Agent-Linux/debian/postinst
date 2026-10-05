@@ -21,13 +21,20 @@ CONF_EOF
         fi
         chown root:root "$CONF"
         chmod 0600 "$CONF"
+        # Servis açılışta başlasın (chroot'ta ve imaj hazırlarken de: yalnızca bağlantı oluşturulur)
+        if command -v deb-systemd-helper >/dev/null 2>&1; then
+            deb-systemd-helper unmask pops-agent.service >/dev/null || true
+            deb-systemd-helper enable pops-agent.service >/dev/null || true
+        fi
         if [ -d /run/systemd/system ]; then
-            systemctl daemon-reload >/dev/null 2>&1 || true
-            systemctl enable pops-agent.service >/dev/null 2>&1 || true
-            if [ -n "$2" ]; then
-                systemctl restart pops-agent.service || true
+            systemctl --system daemon-reload >/dev/null 2>&1 || true
+            if [ -n "$2" ]; then action=restart; else action=start; fi
+            # deb-systemd-invoke /usr/sbin/policy-rc.d'ye uyar (imaj ve CI ortamında servis başlatılmaz)
+            if command -v deb-systemd-invoke >/dev/null 2>&1; then
+                deb-systemd-invoke "$action" pops-agent.service || true
             else
-                systemctl start pops-agent.service || true
+                systemctl enable pops-agent.service >/dev/null 2>&1 || true
+                systemctl "$action" pops-agent.service || true
             fi
         fi
         ;;

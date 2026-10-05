@@ -4,8 +4,11 @@ set -e
 case "$1" in
     remove|deconfigure)
         if [ -d /run/systemd/system ]; then
-            systemctl stop pops-agent.service >/dev/null 2>&1 || true
-            systemctl disable pops-agent.service >/dev/null 2>&1 || true
+            if command -v deb-systemd-invoke >/dev/null 2>&1; then
+                deb-systemd-invoke stop pops-agent.service >/dev/null || true
+            else
+                systemctl stop pops-agent.service >/dev/null 2>&1 || true
+            fi
         fi
         ;;
     upgrade|failed-upgrade)
