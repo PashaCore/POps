@@ -135,9 +135,10 @@ The wire format of both WebSockets (`/ws/agent`, `/ws/vision`) is specified in [
 - **Authentication.** Before it has a device secret the agent sends the enrollment token (`X-Enroll-Token`); the
   server answers with `set_secret`. From then on it sends `X-Agent-Secret`. Secrets live in `C:\POpsData\secure`
   (SYSTEM and Administrators only) and are never written to a log. See [`security.md`](security.md#agent-identity).
-- **Features.** The command connection also carries `X-Agent-Features: power,message`, the optional server actions
-  this agent implements. The server sends `power` and `user_message` only to agents that list them; older agents
-  never receive them and older servers ignore the header.
+- **Features.** The command connection also carries `X-Agent-Features: exam,files,winget,power,message`, the
+  optional server actions this agent implements. The server sends `exam_mode`, file transfers, `winget_install`,
+  `power` and `user_message` only to agents that list them; older agents never receive them and older servers ignore
+  the header.
 - **Vision authentication.** The command socket may use the enrollment token for first registration, but the
   Vision socket never sends it: Vision requires the device's `X-Agent-Secret` and stays closed before enrollment.
   A Vision `4401` rejection clears the stream and local approval without an automatic retry.
@@ -167,7 +168,7 @@ What the service does with each server command:
 | `result_ack` | The server stored the task result for `task_id`; the agent deletes it from `C:\POpsData\secure\pending-results.json`. |
 | `update_result_ack` | The server stored the update result with this `result_id`; the agent sets `update-result.json` aside. |
 | `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
-| `set_capabilities` | Switches terminal, Vision, power actions and/or user messages **off**; requests to switch them on are ignored. |
+| `set_capabilities` | Switches capabilities **off**: the server sends `terminal_enabled` / `vision_enabled`; the agent also applies `exam_enabled`, `files_enabled`, `power_enabled` and `message_enabled`. Requests to switch one on are ignored. |
 | `update_agent` | Starts a signed update (below). |
 
 The server may also send `scan_updates` and `install_updates`
@@ -378,8 +379,10 @@ them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`, `EXAM_ENABL
 `POWER_ENABLED`, `MESSAGE_ENABLED`, `1` / `0`; all on by default);
 the server can only switch them off (**Sistem** → "Cihaz yetenekleri"). A refused command is closed with
 a `[REDDEDİLDİ]` result and reported as `capability_denied`. Re-enabling needs a local administrator: MSI repair or
-reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; a file written before power
-actions and messages existed counts them as on. The `capabilities` message reports terminal and Vision only. See
+reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; a capability missing from an
+older file counts as on. The `capabilities` message reports all six (`terminal_enabled`, `vision_enabled`,
+`files_enabled`, `exam_enabled`, `power_enabled`, `message_enabled`) with `server_ca`; the last three are optional
+in the schema, so older agents that do not send them stay valid. See
 [`Agent/README.md`](../Agent/README.md#capability-policy).
 
 ## File transfer
@@ -482,8 +485,8 @@ connects.
     never as the first message of a connection. A change while the server is unknown or unreachable is reported
     after the next `server_info`.
 - **Capability:** `exam_enabled` in `capabilities.json`, on by default; `EXAM_ENABLED=0` switches it off locally.
-  The agent also applies `exam_enabled: false` from `set_capabilities` (and ignores `true`). It is not part of the
-  `capabilities` message (the server's schema has no such field). With it off, `exam_mode` with `enabled: true`
+  The agent also applies `exam_enabled: false` from `set_capabilities` (and ignores `true`) and reports it as
+  `exam_enabled` in the `capabilities` message. With it off, `exam_mode` with `enabled: true`
   is answered with one `capability_denied` (`capability: exam`, `action: exam_mode`) and nothing is applied. If it
   is switched off while exam mode runs (reinstall with `EXAM_ENABLED=0`, or `set_capabilities`), the agent leaves
   exam mode within 2 seconds and sends `exam_state` with `enabled: false`.
@@ -492,31 +495,50 @@ connects.
 
 ## Power actions and user messages
 
-Two server actions reach the person at the PC. The agent announces them as `power` and `message` in
-`X-Agent-Features`, and the server sends them only to agents that do. Each task gets exactly one `result`, kept
-until `result_ack` like the result of `execute`.
+How the Windows agent implements the [`power` and `user_message` contract](#power-and-user_message-contract). It
+announces `power` and `message` in `X-Agent-Features`, and the server sends the two actions only to agents that do.
+Each task gets exactly one `result`, kept until `result_ack` like the result of `execute`. The agent checks every
+field again against the server's schemas ([`power.json`](protocol/server-to-agent/power.json),
+[`user_message.json`](protocol/server-to-agent/user_message.json)).
 
-**`power`** (`op` `shutdown`, `restart`, `logoff` or `lock`; `delay` 0–600 seconds; optional `message` of up to 200
-characters):
+**Text.** The server cleans the note, title and text before sending them; the agent repeats the same cleaning, so a
+message that bypassed the server still reaches the screen as plain text:
+
+- `\r\n` and `\r` become `\n`; U+2028 and U+2029 count as line breaks too;
+- control characters other than `\n` (C0, DEL, C1) are removed, a tab becomes a space;
+- text-direction controls (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), zero-width and invisible format characters
+  (U+200B–U+200D, U+2060–U+2065) and U+FEFF are removed;
+- the power note and the title are one line: every line break becomes a space;
+- the message text keeps its line breaks, without spaces at the end of a line and with at most one empty line in a
+  row;
+- leading and trailing white space is removed.
+
+Lengths are counted in Unicode characters, as JSON Schema and the server do (an emoji is one character), on the value
+that arrived.
+
+**`power`** (`op` `shutdown`, `restart`, `logoff` or `lock`; `delay` 0–600 seconds; `message` up to 200 characters or
+`null`):
 
 - **Checks, in this order.** No integer `task_id`: ignored (nothing to report to). The `power` capability is off:
   exit code -5, `[REDDEDİLDİ] Bu cihazda uzaktan güç işlemleri kapalı …` and `capability_denied`. A field is invalid
-  (unknown `op`, `delay` not an integer from 0 to 600, `message` too long or not text): -5, `[REDDEDİLDİ] Geçersiz güç
-  isteği: …`, without `capability_denied`. `logoff` or `lock` while nobody is signed in at the console: -6,
-  `[REDDEDİLDİ] oturum açık kullanıcı yok`. Otherwise the request is accepted and event 1130 is written.
+  (`op` missing or unknown, `delay` missing, `null` or not an integer from 0 to 600, `message` too long or neither
+  text nor `null`): -5, `[REDDEDİLDİ] Geçersiz güç isteği: …`, without `capability_denied`. `logoff` or `lock` while
+  nobody is signed in at the console: -6, `[REDDEDİLDİ] oturum açık kullanıcı yok`. Otherwise the request is accepted
+  and event 1130 is written. A `message` that is missing, `null` or empty once cleaned means no note.
 - **Countdown.** With a delay the tray shows a window on top of the others: "Bilgisayar 60 sn içinde yeniden
   başlatılacak" (… kapatılacak, "Oturumunuz … kapatılacak", … kilitlenecek), the note, and "Açık çalışmalarınızı
   şimdi kaydedin; kaydedilmemiş değişiklikler kaybolur." (for a lock: "Kilit açıldığında programlarınız açık
   kalır."). It does not take the keyboard focus, and the user may close it: the action happens anyway. The service
   owns the timer, so the action also happens without a tray; a tray that connects during the countdown shows the
-  remaining seconds.
+  remaining seconds. With `delay` 0 the agent acts at once, without a window.
 - **Acting.** When the time is up the agent sends the result first (0, `[TAMAM] Bilgisayar kapatılıyor.` /
   `… yeniden başlatılıyor.` / `[TAMAM] Kullanıcının oturumu kapatılıyor.` / `[TAMAM] Bilgisayar kilitleniyor.`) and
   then acts; after a shutdown or restart the server receives it on the next connection if it did not arrive before.
   A `logoff` or `lock` whose user signed out during the countdown ends with -6 instead. An action that fails after
   the result was sent is only logged (`[HATA] Güç işlemi uygulanamadı`).
   - Shutdown and restart: `%SystemRoot%\System32\shutdown.exe /s` or `/r` with `/t 0 /f /d p:0:0`. Running programs
-    are closed without asking; the countdown is the warning.
+    are closed without asking (lab PCs must not hang on a "save changes?" dialog); the countdown and the note are the
+    warning.
   - Sign-out: `WTSLogoffSession` on the console session, from the service.
   - Lock: a service running as LocalSystem cannot lock the user's desktop, so the tray calls `LockWorkStation` when it
     runs in the console session; the session stays the console session and the user unlocks as usual. When the tray
@@ -529,20 +551,25 @@ characters):
   "Güç işlemi iptal edildi". `set_capabilities` with `power_enabled` `false` stops it the same way. If the service
   stops during the countdown the result is -4.
 
-**`user_message`** (`title` up to 80 characters, `text` up to 1000, `style` `info` or `warning`, `requires_ack`):
+**`user_message`** (`title` 1–80 characters, `text` 1–1000, `style` `info` or `warning`, `requires_ack`; all four are
+required):
 
 - **Checks.** The same order: integer `task_id`, the `message` capability (-5 and `capability_denied`), the fields
-  (-5; a text that is empty once control characters are removed is invalid too). Only the tray in the user's session
-  can show a message, so without a connected tray the result is -6: `[REDDEDİLDİ] oturum açık kullanıcı yok`, followed
-  by "(POps tepsisi bu bilgisayarda çalışmıyor; mesaj gösterilmedi)" when someone is signed in. Messages are not
-  queued for later.
-- **Window.** On top of the others, without taking the keyboard focus: the title ("Bilgi İşlem mesajı" when empty),
-  the text with its line breaks (other control characters and text-direction overrides are removed) and an
-  information or warning icon. It has no default button, so Enter typed in another program cannot acknowledge it.
+  (-5, `[REDDEDİLDİ] Geçersiz mesaj: …`; a title or text that is empty once cleaned is invalid too). Only the tray in
+  the user's session can show a message:
+  - no tray connected and nobody signed in at the console: -6, `[REDDEDİLDİ] oturum açık kullanıcı yok`;
+  - no tray connected but someone signed in: -3, `[HATA]: POps tepsisi bu bilgisayarda çalışmıyor; mesaj
+    gösterilmedi.` (the server marks the task `Failed`; -6 on the wire means only that nobody is signed in).
+
+  A connected tray counts as a user who can read it, so a message also reaches a Remote Desktop user. Messages are
+  not queued for later.
+- **Window.** On top of the others, without taking the keyboard focus: the title, the text with its line breaks and
+  an information or warning icon. It has no default button, so Enter typed in another program cannot acknowledge it.
 - **Result.** Without `requires_ack` the window has a "Kapat" button and the result is sent at once: `[TAMAM]
   gösterildi`. With `requires_ack` it has only "Tamam" (with the hint "Okuduğunuzu bildirmek için Tamam'a basın.";
   Alt+F4 does not close it) and the result waits: `[TAMAM] okundu` when the user clicks, `[TAMAM] gösterildi,
-  onaylanmadı` after 30 minutes or when the service stops. While it waits, a tray that reconnects shows it again,
+  onaylanmadı` after 30 minutes or when the service stops. There is no earlier `[TAMAM] gösterildi` for such a
+  message: the server keeps only the first result of a task. While it waits, a tray that reconnects shows it again,
   the same `task_id` is ignored and `cancel_task` closes the window (-2).
 - **Privacy.** Event 1140 records the task, the lengths of title and text, style, `requires_ack` and the requester;
   1141 how a message that waited ended. Neither the event log nor the agent's logs contain the title or text.

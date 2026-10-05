@@ -146,22 +146,24 @@ Windows always handles Ctrl+Alt+Del itself; no program can block it. From 0.1.11
 
 ## Capability policy
 
-A school can switch off the two server features that matter most if the server or a panel account is compromised (threat #4 in `SECURITY.md`):
+A school can switch off the server features that matter most if the server or a panel account is compromised (threat #4 in `SECURITY.md`):
 
 | Capability | Covers |
 | --- | --- |
 | `terminal_enabled` | `execute`: commands the agent runs as SYSTEM |
 | `vision_enabled` | screen streaming, screen previews (`get_thumbnail`) and remote mouse/keyboard |
+| `exam_enabled` | `exam_mode`: network limited to an allow list, apps closed |
+| `files_enabled` | `file_push` / `file_pull`: files sent to or fetched from the PC |
 | `power_enabled` | `power`: remote shutdown, restart, sign-out and lock |
 | `message_enabled` | `user_message`: messages from the panel shown in the tray |
 
 The state lives in `C:\POpsData\secure\capabilities.json` (SYSTEM and Administrators only):
 
-- **Installer.** `TERMINAL_ENABLED` / `VISION_ENABLED` / `POWER_ENABLED` / `MESSAGE_ENABLED` (`1` or `0`) set either direction. A flag that is not given keeps its current value, so an update never turns a disabled capability back on; a flag missing from the file (written before power actions and messages existed) counts as on. A first install without them enables all four.
+- **Installer.** `TERMINAL_ENABLED` / `VISION_ENABLED` / `EXAM_ENABLED` / `FILES_ENABLED` / `POWER_ENABLED` / `MESSAGE_ENABLED` (`1` or `0`) set either direction. A flag that is not given keeps its current value, so an update never turns a disabled capability back on; a flag missing from the file (written by an older version) counts as on. A first install without them enables all six.
 - **Server.** It may only switch a capability **off**: `{"action":"set_capabilities","terminal_enabled":false}`. A request to switch one on is ignored and logged, so turning it back on takes a local administrator (MSI repair or reinstall with `…_ENABLED=1`). A compromised server can therefore not re-enable what the school disabled.
-- **Missing or unreadable file.** An install from before this feature (no file) keeps both enabled. A file that exists but cannot be read counts as both disabled.
+- **Missing or unreadable file.** An install from before this feature (no file) keeps all of them enabled. A file that exists but cannot be read counts as all disabled.
 
-A disabled capability is refused on the agent, not merely hidden in the panel. `execute` does not run; the task is closed with a `[REDDEDİLDİ]` result, and the server receives `{"type":"capability_denied","capability":"terminal","action":"execute","task_id":…}`. Vision requests are refused in the same way, and a stream that is already running is stopped when Vision is switched off. On every connection, and after every change, the agent reports its state as `{"type":"capabilities","terminal_enabled":…,"vision_enabled":…}`. `power_enabled` and `message_enabled` are refused the same way (`capability` `power` / `message`), and `set_capabilities` can switch them off, but the `capabilities` message does not report them yet (the server schema has no field for them).
+A disabled capability is refused on the agent, not merely hidden in the panel. `execute` does not run; the task is closed with a `[REDDEDİLDİ]` result, and the server receives `{"type":"capability_denied","capability":"terminal","action":"execute","task_id":…}`. Vision requests are refused in the same way, and a stream that is already running is stopped when Vision is switched off. `power` and `user_message` are refused like `execute` (`capability` `power` / `message`). On every connection, and after every change, the agent reports its state as `{"type":"capabilities","terminal_enabled":…,"vision_enabled":…,"server_ca":…,"files_enabled":…,"exam_enabled":…,"power_enabled":…,"message_enabled":…}`.
 
 ## Updates
 
