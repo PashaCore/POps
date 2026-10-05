@@ -315,7 +315,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     function renderUsers() {
         const body = $('userBody');
         if (!users.length) {
-            POps.setEmpty(body, { tag: 'tr', colspan: 4, icon: 'fa-users', title: 'Kayıtlı kullanıcı yok' });
+            POps.setEmpty(body, { tag: 'tr', colspan: 4, icon: 'users', title: 'Kayıtlı kullanıcı yok' });
             return;
         }
         body.innerHTML = users.map(rowHtml).join('');
@@ -470,14 +470,14 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             title: `${u.username} için yeni şifre`,
             message: self ? 'Şifreyi değiştirince yeniden giriş yapmanız gerekir.' : 'Kullanıcının açık oturumları kapanır; yeni şifreyle yeniden girer.',
             label: 'Yeni şifre', inputType: 'password', autocomplete: 'new-password', trim: false,
-            hint: 'En az 8 karakter önerilir.', confirmText: 'Şifreyi değiştir', icon: 'fa-key'
+            hint: 'En az 8 karakter önerilir.', confirmText: 'Şifreyi değiştir', icon: 'key'
         });
         if (pw === null) return;
         const payload = { username: u.username, role: u.role, permissions: JSON.stringify(permsOf(u)), password: pw };
         if (await POps.act(null, () => POps.api('/api/admin/users/' + encodeURIComponent(u.id), { method: 'PUT', body: payload }), { success: `${u.username} için şifre değişti.` })) loadUsers();
     }
     async function deleteUser(u) {
-        const ok = await POps.confirm({ title: `${u.username} silinsin mi?`, message: 'Kullanıcının açık oturumları da kapanır. Bu işlem geri alınamaz.', confirmText: 'Kullanıcıyı sil', danger: true, icon: 'fa-trash' });
+        const ok = await POps.confirm({ title: `${u.username} silinsin mi?`, message: 'Kullanıcının açık oturumları da kapanır. Bu işlem geri alınamaz.', confirmText: 'Kullanıcıyı sil', danger: true, icon: 'trash' });
         if (!ok) return;
         if (await POps.act(null, () => POps.del('/api/admin/users/' + encodeURIComponent(u.id)), { success: `${u.username} silindi.` })) {
             POps.drawer.close();

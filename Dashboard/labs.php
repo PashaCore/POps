@@ -43,7 +43,7 @@
 <div class="labs-bar" id="labsBar" hidden>
     <div class="actionbar" id="labBar" role="toolbar" aria-label="Sınıf işlemleri"></div>
     <div class="search-field">
-        <i class="fas fa-search" aria-hidden="true"></i>
+        <?php echo pops_icon('search', 'sm'); ?>
         <input type="search" id="labSearch" placeholder="Bilgisayar, kullanıcı ya da IP" aria-label="Bu sınıfta ara">
     </div>
 </div>
@@ -192,7 +192,7 @@
             $('labSummary').textContent = '';
             $('labsBar').hidden = true;
             $('editLayoutBtn').hidden = true;
-            map.innerHTML = `<div class="empty-state"><i class="fas fa-table-cells-large"></i><h3>Henüz sınıf yok</h3><p>Bilgisayarları yerleştirmek için önce bir sınıf oluşturun.</p>${CAN_ADMIN ? '<button type="button" class="btn" id="firstLabBtn">Sınıf ekle</button>' : ''}</div>`;
+            map.innerHTML = `<div class="empty-state">${POps.iconHtml('labs')}<h3>Henüz sınıf yok</h3><p>Bilgisayarları yerleştirmek için önce bir sınıf oluşturun.</p>${CAN_ADMIN ? '<button type="button" class="btn" id="firstLabBtn">Sınıf ekle</button>' : ''}</div>`;
             if (CAN_ADMIN) $('firstLabBtn').addEventListener('click', addLab);
             return;
         }
@@ -210,8 +210,8 @@
 
         if (!pcs.length) {
             map.innerHTML = current === UNASSIGNED_KEY
-                ? '<div class="empty-state"><i class="fas fa-check"></i><h3>Atanmamış bilgisayar yok</h3></div>'
-                : '<div class="empty-state"><i class="fas fa-desktop"></i><h3>Bu sınıfta bilgisayar yok</h3><p>Atanmamış bilgisayarları ya da başka sınıftakileri buraya taşıyabilirsiniz.</p></div>';
+                ? '<div class="empty-state">' + POps.iconHtml('check') + '<h3>Atanmamış bilgisayar yok</h3></div>'
+                : '<div class="empty-state">' + POps.iconHtml('devices') + '<h3>Bu sınıfta bilgisayar yok</h3><p>Atanmamış bilgisayarları ya da başka sınıftakileri buraya taşıyabilirsiniz.</p></div>';
             return;
         }
         if (current === UNASSIGNED_KEY) {
@@ -307,14 +307,14 @@
             } } : null,
             real ? { label: 'Otomatik kayıt…', icon: 'calendar', onClick: async () => {
                 const d = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
-                const date = await POps.prompt({ title: `Otomatik kayıt: ${current}`, message: 'Bu tarihe kadar ağa ilk kez bağlanan bilgisayarlar doğrudan bu sınıfa eklenir.', label: 'Bitiş tarihi', inputType: 'date', defaultValue: d, confirmText: 'Başlat', icon: 'fa-calendar' });
+                const date = await POps.prompt({ title: `Otomatik kayıt: ${current}`, message: 'Bu tarihe kadar ağa ilk kez bağlanan bilgisayarlar doğrudan bu sınıfa eklenir.', label: 'Bitiş tarihi', inputType: 'date', defaultValue: d, confirmText: 'Başlat', icon: 'calendar' });
                 if (!date) return;
                 POps.act(null, () => POps.post('/api/set_auto_enroll', { target_lab: current, expire_date: date }), { success: `Otomatik kayıt ${date} tarihine kadar açık.` });
             } } : null,
             real ? '-' : null,
             real ? { label: 'Sınıfı sil', icon: 'trash', danger: true, onClick: async () => {
                 const n = pcsOf(current).length;
-                const ok = await POps.confirm({ title: `${current} silinsin mi?`, message: n ? `İçindeki ${n} bilgisayar atanmamış bilgisayarlara taşınır.` : 'Sınıf boş.', confirmText: 'Sınıfı sil', danger: true, icon: 'fa-trash' });
+                const ok = await POps.confirm({ title: `${current} silinsin mi?`, message: n ? `İçindeki ${n} bilgisayar atanmamış bilgisayarlara taşınır.` : 'Sınıf boş.', confirmText: 'Sınıfı sil', danger: true, icon: 'trash' });
                 if (!ok) return;
                 if (await POps.act(null, () => POps.post('/api/delete_lab', { lab_name: current }), { success: `${current} silindi.` })) { current = ''; POps.loadDevices().catch(() => {}); }
             } } : null

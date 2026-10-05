@@ -126,10 +126,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="shortcut icon" href="assets/favicon/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon/apple-touch-icon.png" />
     <link rel="manifest" href="assets/favicon/site.webmanifest" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="assets/pops_theme.css?v=<?php echo time(); ?>">
     <script>
         try { localStorage.removeItem('pops_theme'); } catch (e) {}
@@ -183,6 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--text-secondary);
             margin-bottom: 0.375rem;
         }
+        .login-credit .ico { width: 11px; height: 11px; }
         .error-box {
             background: var(--danger-bg);
             border: 1px solid var(--danger-border);
@@ -240,10 +237,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
         <div style="text-align:center; margin-top: var(--space-6); font-size: var(--text-xs); color: var(--text-muted); line-height: 1.6;">
             &copy; <?php echo date("Y"); ?> POps CORE<br>
-            <span style="opacity: 0.8;">
+            <?php $pops_sprite = 'assets/pops_icons.svg?v=' . (int) @filemtime(__DIR__ . '/assets/pops_icons.svg'); ?>
+            <span class="login-credit" style="opacity: 0.8;">
                 Created by Mehmet Ali Avcı
-                <a href="https://www.linkedin.com/in/p4sha" target="_blank" style="color: inherit; margin-left: 4px; transition: color 0.2s;" onmouseover="this.style.color='var(--primary-500)'" onmouseout="this.style.color='inherit'"><i class="fab fa-linkedin"></i></a>
-                <a href="https://github.com/TheP4SHA/TheP4SHA" target="_blank" style="color: inherit; margin-left: 4px; transition: color 0.2s;" onmouseover="this.style.color='var(--primary-500)'" onmouseout="this.style.color='inherit'"><i class="fab fa-github"></i></a>
+                <a href="https://www.linkedin.com/in/p4sha" target="_blank" aria-label="LinkedIn" style="color: inherit; margin-left: 4px; transition: color 0.2s;" onmouseover="this.style.color='var(--primary-500)'" onmouseout="this.style.color='inherit'"><svg class="ico" aria-hidden="true"><use href="<?php echo htmlspecialchars($pops_sprite . '#i-linkedin', ENT_QUOTES, 'UTF-8'); ?>"></use></svg></a>
+                <a href="https://github.com/TheP4SHA/TheP4SHA" target="_blank" aria-label="GitHub" style="color: inherit; margin-left: 4px; transition: color 0.2s;" onmouseover="this.style.color='var(--primary-500)'" onmouseout="this.style.color='inherit'"><svg class="ico" aria-hidden="true"><use href="<?php echo htmlspecialchars($pops_sprite . '#i-github', ENT_QUOTES, 'UTF-8'); ?>"></use></svg></a>
             </span>
         </div>
     </div>

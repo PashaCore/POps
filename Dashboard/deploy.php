@@ -131,7 +131,7 @@
     <div class="segmented" id="depFilter" role="group" aria-label="Türe göre süz"></div>
     <span class="grow"></span>
     <div class="search-field">
-        <i class="fas fa-search" aria-hidden="true"></i>
+        <?php echo pops_icon('search', 'sm'); ?>
         <input type="search" id="depSearch" placeholder="Ad, dosya, özet ya da yükleyen" aria-label="Paket ara">
     </div>
 </div>
@@ -228,7 +228,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                     </div>
                 </div>
                 <div class="search-field" style="max-width:none">
-                    <i class="fas fa-search" aria-hidden="true"></i>
+                    <?php echo pops_icon('search', 'sm'); ?>
                     <input type="search" id="runSearch" placeholder="Sınıf ya da bilgisayar ara" aria-label="Hedef ara" autofocus>
                 </div>
                 <div class="run-list" id="runList"></div>
@@ -460,9 +460,9 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         ui.sig = sig;
         if (!rows.length) {
             if (ui.pkgs.length) {
-                POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'fa-filter', title: 'Süzgece uyan paket yok', text: 'Arama ya da süzgeci değiştirin.' });
+                POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'filter', title: 'Süzgece uyan paket yok', text: 'Arama ya da süzgeci değiştirin.' });
             } else {
-                POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'fa-box-open', title: 'Henüz paket yok', text: 'Kurulum dosyası ya da betik ekleyin; buradan sınıflara dağıtılır.' });
+                POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'package', title: 'Henüz paket yok', text: 'Kurulum dosyası ya da betik ekleyin; buradan sınıflara dağıtılır.' });
                 const b = POps.el('button', { type: 'button', className: 'btn', text: 'Paket yükle' });
                 b.addEventListener('click', () => openPkgModal(null, 'package'));
                 tbody.querySelector('.empty-state').append(b);
@@ -619,7 +619,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const ok = await POps.confirm({
             title: `${o.name} silinsin mi?`,
             message: 'Kütüphaneden kaldırılır. Gönderilmiş görevler ve dağıtım geçmişi etkilenmez.',
-            confirmText: o.type === 'package' ? 'Paketi sil' : 'Betiği sil', danger: true, icon: 'fa-trash'
+            confirmText: o.type === 'package' ? 'Paketi sil' : 'Betiği sil', danger: true, icon: 'trash'
         });
         if (!ok) return;
         if (await POps.act(null, () => POps.post('/api/delete_package', { id: o.id }), { success: `${o.name} silindi.` })) {
@@ -735,7 +735,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                 }
                 await POps.post('/api/add_package', {
                     id: o ? o.id : 'mod-' + Date.now(), name, type, meta, command,
-                    icon: type === 'package' ? 'fa-box-open' : 'fa-terminal', color: type === 'package' ? '#3b82f6' : '#f59e0b'
+                    icon: type === 'package' ? 'package' : 'terminal', color: type === 'package' ? '#3b82f6' : '#f59e0b'
                 });
             });
         } catch (e) {
@@ -938,7 +938,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const v = await POps.prompt({
             title: 'Eşzamanlı kurulum sınırı',
             message: 'Aynı anda en çok kaç bilgisayarda görev çalışsın? Fazlası sırada bekler; büyük dağıtımlar ağı ve sunucuyu tıkamaz.',
-            label: 'Bilgisayar sayısı', inputType: 'number', inputMode: 'numeric', defaultValue: ui.limit || 5, confirmText: 'Kaydet', icon: 'fa-sliders',
+            label: 'Bilgisayar sayısı', inputType: 'number', inputMode: 'numeric', defaultValue: ui.limit || 5, confirmText: 'Kaydet', icon: 'sliders',
             validate: (s) => { const n = Number(s); return Number.isInteger(n) && n >= 1 && n <= 100 ? '' : '1 ile 100 arasında bir sayı girin.'; }
         });
         if (v === null) return;

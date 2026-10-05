@@ -317,7 +317,7 @@
     <div class="modal-box">
         <div class="modal-header">
             <div class="modal-title">Ajan paketini elle yükle</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <p class="card-desc">İnternetsiz sunucu için. GitHub sürüm sayfasından <code>manifest.json</code>, <code>manifest.json.sig</code> ve <code>POps-Agent-…-win-x64.msi</code> dosyalarını indirip birlikte seçin. İmza GitHub'dan indirmedeki gibi doğrulanır.</p>
@@ -340,7 +340,7 @@
     <div class="modal-box">
         <div class="modal-header">
             <div class="modal-title">Kayıt jetonu üret</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><i class="fas fa-xmark"></i></button>
+            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <p class="card-desc">Yeni kurulumda MSI'a <code>ENROLL_TOKEN</code> olarak verilir; ajan ilk bağlanışta kendine özel bir anahtar alır. Çok kullanımlık jeton bir sınıfa tek MSI ile toplu kurulum içindir.</p>
@@ -657,7 +657,7 @@
         const ok = await POps.confirm({
             title: `Sunucu ${target} güncellensin mi?`,
             message: 'Birkaç saniye bağlantı kopabilir. Sağlık kontrolü geçmezse sunucu önceki koda kendiliğinden döner.',
-            confirmText: 'Sunucuyu güncelle', icon: 'fa-download'
+            confirmText: 'Sunucuyu güncelle', icon: 'download'
         });
         if (!ok) return;
         S.suBefore = (S.su && S.su.status && S.su.status.at) || '';
@@ -719,7 +719,7 @@
         }
         if (!POps.drawer.isOpen('sysn:notes')) return;
         const headHtml = drawerHeadHtml('Sürüm notları', 'GitHub’daki değişiklik günlüğü', 'file', '');
-        if (!d.available) { body.innerHTML = headHtml + '<div class="empty-state compact"><i class="fas fa-wifi"></i><p>GitHub’a ulaşılamadığı için notlar gösterilemiyor.</p></div>'; return; }
+        if (!d.available) { body.innerHTML = headHtml + '<div class="empty-state compact">' + POps.iconHtml('wifi') + '<p>GitHub’a ulaşılamadığı için notlar gösterilemiyor.</p></div>'; return; }
         const srv = (S.ver && S.ver.server) || {};
         let html = '';
         if (srv.update_available && (d.incoming || []).length) html += '<div><h3>Güncellemeyle gelecekler</h3>' + d.incoming.map(sec => noteSecHtml(sec)).join('') + '</div>';
@@ -729,7 +729,7 @@
                 + (older.length ? `<details class="notes-old"><summary>Önceki ${older.length} sürüm</summary>${older.map(sec => noteSecHtml(sec)).join('')}</details>` : '') + '</div>';
         }
         if (d.agent && (d.agent.groups || []).length) html += `<div><h3>Ajan paketi ${escapeHtml(fmtV(d.agent.version))}</h3>${noteSecHtml(d.agent, ' ')}</div>`;
-        body.innerHTML = headHtml + (html || '<div class="empty-state compact"><i class="fas fa-file-lines"></i><p>Gösterilecek not yok.</p></div>')
+        body.innerHTML = headHtml + (html || '<div class="empty-state compact">' + POps.iconHtml('file') + '<p>Gösterilecek not yok.</p></div>')
             + '<div class="dr-note">Notlar GitHub’daki CHANGELOG’dan alınır (İngilizce).</div>';
     }
     $('notesBtn').addEventListener('click', openNotes);
@@ -874,7 +874,7 @@
             message: (n > 1 ? hosts.slice(0, 5).map(dev.name).join(', ') + (n > 5 ? ` ve ${n - 5} bilgisayar daha` : '') + '\n' : '')
                 + 'Ajan paketi indirip imzasını kendisi doğrular; yeni sürüm açılmazsa önceki sürüme döner. Bilgisayar birkaç dakika bağlantısız kalabilir.',
             note: skippedOff ? `Kapalı ${skippedOff} bilgisayar atlanacak.` : '',
-            confirmText: n === 1 ? 'Ajanı güncelle' : `${n} ajanı güncelle`, icon: 'fa-arrow-up'
+            confirmText: n === 1 ? 'Ajanı güncelle' : `${n} ajanı güncelle`, icon: 'arrow-up'
         });
         if (!ok) return false;
         const since = Math.floor(Date.now() / 1000) - 30;
@@ -920,7 +920,7 @@
                     + `<span class="dot ${on ? 'on' : 'off'}"></span><span class="nm">${escapeHtml(POps.deviceName(d))}<span class="vv"> · ${escapeHtml(d.lab && d.lab !== dev.UNASSIGNED ? d.lab : 'Atanmamış')}</span></span>`
                     + `<span class="vv">${escapeHtml(ver ? fmtV(ver) : '—')}${old ? ' ↑' : ''}</span></label>`;
             }).join('') || '<div class="dr-note" style="padding:10px 0">Süzgece uyan bilgisayar yok.</div>';
-            pickHtml = `<div class="search-field" style="flex:none;min-width:0"><i class="fas fa-search" aria-hidden="true"></i><input type="search" id="tgSearch" value="${escapeHtml(T.q)}" placeholder="Bilgisayar ya da sınıf" aria-label="Bilgisayar ara"></div>`
+            pickHtml = `<div class="search-field" style="flex:none;min-width:0">${POps.iconHtml('search', 'sm')}<input type="search" id="tgSearch" value="${escapeHtml(T.q)}" placeholder="Bilgisayar ya da sınıf" aria-label="Bilgisayar ara"></div>`
                 + `<div class="dr-list" id="tgList">${rowsHtml}</div>`
                 + `<div class="dr-actions"><button type="button" class="lnk" data-act="sel-old">Eski sürümdeki açıkları seç</button><span class="faint">·</span><button type="button" class="lnk" data-act="sel-none">Seçimi temizle</button></div>`;
         }
@@ -1132,7 +1132,7 @@
         const rowsHtml = list.map(e => `<div class="act"><div class="res bad">${POps.iconHtml('x')}</div><div style="min-width:0"><div class="what">${escapeHtml(e.msg)}</div>
             <div class="meta">${POps.timeHtml(e.ts)} · ${escapeHtml(e.logger || '')}${e.request_id ? ' · istek ' + escapeHtml(e.request_id) : ''}</div>${e.exc ? `<div class="out">${escapeHtml(e.exc)}</div>` : ''}</div><div class="side"></div></div>`).join('');
         body.innerHTML = drawerHeadHtml('Son hatalar', escapeHtml(list.length ? `Sunucu açıldığından beri ${list.length} hata` : 'Hata yok'), 'alert', '')
-            + (list.length ? `<div>${rowsHtml}</div>` : '<div class="empty-state compact"><i class="fas fa-check"></i><p>Sunucu açıldığından beri hata kaydı yok.</p></div>');
+            + (list.length ? `<div>${rowsHtml}</div>` : '<div class="empty-state compact">' + POps.iconHtml('check') + '<p>Sunucu açıldığından beri hata kaydı yok.</p></div>');
     }
     function openTech() {
         const d = S.diag || {};
@@ -1282,7 +1282,7 @@
             title: alreadyOff ? `${POps.deviceName(d)} bilgisayarında ${label} kapalı tutulsun mu?` : `${POps.deviceName(d)} bilgisayarında ${label} kapatılsın mı?`,
             message: alreadyOff ? `Kurulumda kapatılmış; ajan açık kurulsa bile kapalı kalır. Geri açmak için "İzin ver" ve ajanın yeniden kurulması gerekir.`
                 : `Kalıcıdır: geri açmak için "İzin ver" ve ajanın bilgisayarda yeniden kurulması gerekir.`,
-            confirmText: alreadyOff ? 'Kapalı tut' : (which === 'terminal' ? 'Uzak komutu kapat' : 'Uzak ekranı kapat'), danger: true, icon: 'fa-lock'
+            confirmText: alreadyOff ? 'Kapalı tut' : (which === 'terminal' ? 'Uzak komutu kapat' : 'Uzak ekranı kapat'), danger: true, icon: 'lock'
         })) return;
         const body = { pc_name: host };
         body[which === 'terminal' ? 'terminal_enabled' : 'vision_enabled'] = !!enable;
@@ -1335,7 +1335,7 @@
         const b = e.target.closest('[data-tok]');
         if (!b) return;
         POps.menu(b, [{ label: 'Jetonu sil', icon: 'trash', danger: true, onClick: async () => {
-            if (!await POps.confirm({ title: `${b.dataset.hint}… jetonu silinsin mi?`, message: 'Bu jetonla henüz kaydolmamış kurulumlar kaydolamaz. Kayıtlı bilgisayarlar etkilenmez.', confirmText: 'Jetonu sil', danger: true, icon: 'fa-trash' })) return;
+            if (!await POps.confirm({ title: `${b.dataset.hint}… jetonu silinsin mi?`, message: 'Bu jetonla henüz kaydolmamış kurulumlar kaydolamaz. Kayıtlı bilgisayarlar etkilenmez.', confirmText: 'Jetonu sil', danger: true, icon: 'trash' })) return;
             if (await POps.act(null, () => POps.del('/api/system/enroll-token/' + encodeURIComponent(b.dataset.tok)), { success: 'Jeton silindi.' })) loadTokens();
         } }]);
     });
@@ -1353,7 +1353,7 @@
         ['tkLab', 'tkNote'].forEach(id => { $(id).value = ''; });
         loadTokens();
         await POps.alert({
-            title: 'Kayıt jetonu hazır', icon: 'fa-key', codes: [d.token], confirmText: 'Kapat',
+            title: 'Kayıt jetonu hazır', icon: 'key', codes: [d.token], confirmText: 'Kapat',
             message: `${d.lab_name || 'Bütün sınıflar'} · ${d.max_uses} kullanım · ${d.ttl_hours} saat geçerli`,
             note: 'MSI kurulumunda ENROLL_TOKEN olarak verin. Jeton yalnızca şimdi gösterilir, sunucuda saklanmaz; şimdi kopyalayın.'
         });
@@ -1363,7 +1363,7 @@
         const v = S.ver || {};
         const missing = (v.agents_total || 0) - (v.agents_enrolled || 0);
         if (turnOn && !await POps.confirm({
-            title: 'Kimlik zorlaması açılsın mı?', danger: missing > 0, icon: 'fa-lock',
+            title: 'Kimlik zorlaması açılsın mı?', danger: missing > 0, icon: 'lock',
             message: missing > 0 ? `${missing} ajan kayıtlı değil; zorlama açılınca bağlantılarını kaybederler.` : 'Anahtarı olmayan ajan artık bağlanamaz.',
             confirmText: missing > 0 ? `Aç, ${missing} ajan kopsun` : 'Zorlamayı aç'
         })) { sw.checked = false; return; }
@@ -1444,7 +1444,7 @@
             // Kısalan süre bu gece kayıt siler: onay
             const shorter = RT.filter(([, key]) => body[key] > 0 && (S.retention[key] === 0 || body[key] < S.retention[key]));
             if (shorter.length && !await POps.confirm({
-                title: 'Saklama süreleri kısaltılsın mı?', icon: 'fa-clock',
+                title: 'Saklama süreleri kısaltılsın mı?', icon: 'clock',
                 message: shorter.map(([, key, label]) => `${body[key]} günden eski ${label}`).join(', ') + ' bu gece silinir. Silinen kayıt geri gelmez.',
                 confirmText: 'Kısalt ve kaydet', danger: true
             })) return;

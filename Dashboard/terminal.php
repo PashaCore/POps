@@ -49,7 +49,7 @@
         <button type="button" id="btnModeMulti" data-mode="multi" aria-pressed="false" hidden>Seçili</button>
     </div>
     <div id="areaSingle" class="tm-area">
-        <div class="search-field"><i class="fas fa-search" aria-hidden="true"></i><input type="search" id="terminalDeviceSearch" placeholder="Ad, sınıf ya da IP" aria-label="Bilgisayar ara"></div>
+        <div class="search-field"><?php echo pops_icon('search', 'sm'); ?><input type="search" id="terminalDeviceSearch" placeholder="Ad, sınıf ya da IP" aria-label="Bilgisayar ara"></div>
         <select id="terminalDeviceSelect" aria-label="Bilgisayar"><option value="">Bilgisayar seçin</option></select>
     </div>
     <div id="areaLab" class="tm-area chip-row" hidden></div>
@@ -398,7 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const groups = new Map();
         mine.forEach(t => { const k = t.batch_id || [t.created_at, t.created_by, t.script_path].join('|'); if (!groups.has(k)) groups.set(k, { key: k, t, list: [] }); groups.get(k).list.push(t); });
         const rows = [...groups.values()].slice(0, 40);
-        if (!rows.length) { POps.setEmpty(box, { icon: 'fa-terminal', title: 'Henüz komut gönderilmedi', compact: true }); return; }
+        if (!rows.length) { POps.setEmpty(box, { icon: 'terminal', title: 'Henüz komut gönderilmedi', compact: true }); return; }
         box.innerHTML = rows.map(g => {
             const c = { ok: 0, bad: 0, run: 0 };
             g.list.forEach(t => { c[POps.taskState(t.status)] += 1; });

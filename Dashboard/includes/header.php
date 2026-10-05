@@ -28,8 +28,9 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
     }
 
     if ($is_unauthorized) {
+        // Tema ve simge dosyası bu sayfada yüklenmez: kilit simgesi satır içi (pops_icons.svg'deki i-lock)
         die("<div style='max-width:480px;margin:80px auto;text-align:center;font-family:Inter,sans-serif;padding:32px;background:#fff;border-radius:12px;border:1px solid #e5e7eb;'>
-                <i class='fas fa-lock' style='font-size:2.5rem;color:#ef4444;margin-bottom:16px;'></i>
+                <svg width='40' height='40' viewBox='0 0 24 24' fill='none' stroke='#ef4444' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' style='display:block;margin:0 auto 16px;' aria-hidden='true'><rect x='4' y='11' width='16' height='10' rx='2'/><path d='M8 11V7a4 4 0 0 1 8 0v4'/></svg>
                 <h2 style='color:#0f172a;margin-bottom:8px;'>Yetkisiz Erişim</h2>
                 <p style='color:#64748b;margin-bottom:20px;'>Bu sayfayı görüntüleme yetkiniz bulunmuyor.</p>
                 <a href='./' style='display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:500;'>Ana Sayfaya Dön</a>
@@ -74,10 +75,8 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
     <link rel="shortcut icon" href="assets/favicon/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon/apple-touch-icon.png" />
     <link rel="manifest" href="assets/favicon/site.webmanifest" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <?php /* Yazı tipi, simge ve betiklerin hepsi panelden gelir; dış adres (CDN) eklenmez: panel internetsiz ağda
+             çalışır ve yöneticinin tarayıcısı üçüncü taraflara istek atmaz */ ?>
     <link rel="stylesheet" href="<?php echo htmlspecialchars(pops_asset('assets/pops_theme.css'), ENT_QUOTES, 'UTF-8'); ?>">
     <script>window.USER_ROLE = <?php echo json_encode($pops_role, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
     window.POPS_ICONS = <?php echo json_encode(pops_asset('assets/pops_icons.svg'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
