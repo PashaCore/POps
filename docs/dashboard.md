@@ -12,6 +12,19 @@ the session server-side and sets the `httpOnly` `pops_jwt` cookie that the brows
 WebSocket calls. Sessions end when the browser session ends, when the token expires (`JWT_EXPIRE_HOURS`) or when
 the account is changed or deleted; any `401` from the API returns you to the login page.
 
+When a superadmin has set up an identity provider (**Ayarlar** → **Güvenlik** → **Kimlik sağlayıcıları**):
+
+- **Active Directory / LDAP**: directory users sign in with the same **Kullanıcı adı** / **Şifre** form, with their
+  directory password. Their role and pages come from their directory groups at every sign-in. A local account with
+  the same name always signs in locally.
+- **OpenID Connect**: under the form, after "ya da", a button "*<name>* ile giriş yap" (for example "Okul hesabı ile
+  giriş yap") takes you to the provider (Microsoft, Google, Keycloak …) and back. `/login?next=/devices` opens that
+  page after an OIDC sign-in. If the provider refuses, the account has no mapped group or the request expired, the
+  form shows why.
+
+If the account has 2FA enabled, the code is asked after either method too. Local accounts keep working when the
+directory or the provider cannot be reached.
+
 ## Addresses
 
 Pages have addresses without `.php`: `/devices`, `/labs?lab=…`, `/tasks?job=…`; the overview is `/`. The bundled
@@ -372,13 +385,18 @@ effect on them. See [`configuration.md`](configuration.md#agent-policy-object).
 ### Ayarlar
 
 Three tabs, kept in the address like on **Sistem**: **Kullanıcılar**, **Güvenlik** (two-step verification and, for
-a superadmin, API tokens) and **Genel** (organisation, task queue and server connection).
+a superadmin, API tokens and identity providers) and **Genel** (organisation, task queue and server connection).
 
 - **Kullanıcılar**: the users with their role, page access and last sign-in; a click opens the user's panel. A
   superadmin can add users (**Kullanıcı ekle**), edit the role and the pages (**Rolü ve yetkileri düzenle**, the
   list **Açabileceği sayfalar**), reset a password (**Şifreyi sıfırla**) and delete a user. Roles: **İzleyici**
   (`viewer`; only looks at the chosen pages, **Dağıtım**, **Uzak komut** and **Ayarlar** stay closed),
-  **Yönetici** (`admin`) and **Süper admin** (`superadmin`).
+  **Yönetici** (`admin`) and **Süper admin** (`superadmin`). Directory and OIDC accounts carry a **Dizin (LDAP)** or
+  **OpenID Connect** badge; they have no **Şifreyi sıfırla**, and their role and pages are rewritten from the group
+  mapping at their next sign-in. Once a provider is set up, the user form also asks for the **Kimlik kaynağı**
+  (**Yerel**, **Dizin (LDAP)**, **OpenID Connect**): a directory or OIDC account created here has no password and is
+  linked to the person with the same name at the first sign-in; turning such an account back into a local one asks for
+  a new password. The first local superadmin cannot be turned into a directory or OIDC account.
 - **İki adımlı doğrulama**: set up (QR code and manual key), enable with a code (**Etkinleştir**), or disable with a
   code, for your own account. 2FA is optional but recommended: an admin or superadmin whose own 2FA is off sees a
   short notice under the title of this page and of **Sistem**; × hides it in that browser for 7 days.
@@ -388,6 +406,17 @@ a superadmin, API tokens) and **Genel** (organisation, task queue and server con
   a name, the role (**Görüntüleyici**: read only; **Yönetici**: daily operations, without superadmin functions, users,
   tokens and remote screen) and the validity in days (empty: no expiry), then shows the token once with a copy
   button. The trash icon revokes a token after a confirmation; it stops working at once and stays in the list.
+- **Kimlik sağlayıcıları** (superadmin only): sign-in with **Active Directory / LDAP** and **OpenID Connect**. Each row
+  shows whether it is on (**Etkin** / **Devre dışı**), the server or provider and the number of group mappings;
+  **Ayarla** opens its form. LDAP: server, port, **LDAPS** or **StartTLS**, an optional CA certificate, the service
+  account and its password, search base, user filter, user name attribute and an optional group search. OIDC: the
+  button name, provider address (issuer), client ID and secret, redirect URI (prefilled with this panel's address),
+  scopes, user name and groups claims, an optional CA certificate, allowed e-mail domains and a default role for
+  them. Both have **Grup → rol**: one row per group with a role (**İzleyici**, **Yönetici**, **Süper admin**) and the
+  pages it opens (pages a viewer cannot open are greyed out). **Bağlantıyı sına** tries the values in the form
+  before saving: for LDAP the TLS connection and the service account, and with a user name, that user's DN, groups
+  and resulting role; for OIDC the discovery document and signing keys. Password fields stay empty: leave them empty
+  to keep the saved secret. Fields and values: [`configuration.md`](configuration.md#identity-providers).
 - **Kurum**: the organisation name and logo shown on the sign-in page instead of "POps" (PNG, JPEG or WebP, at most
   256 KB; SVG is not accepted). A small "POps · Pasha Core" line stays under the form. Only a superadmin changes them;
   every change goes to the audit log.

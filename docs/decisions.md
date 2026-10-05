@@ -368,3 +368,56 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   SYSTEM), so it must be treated like an admin password; the audit trail shows which token did what. Uploads over
   8 MB through `/api/v1` need the updated reverse-proxy rule on existing servers. Endpoint and model changes must
   commit the regenerated schema.
+
+## D-22 Directory (LDAP/AD) and OpenID Connect sign-in next to local accounts
+
+**Since:** Unreleased (after 0.1.22-alpha).
+
+- **Context:** A reviewer listed "AD/LDAP/SSO" as missing. Schools keep their staff in Active Directory, or in a
+  cloud directory (Microsoft Entra ID, Google Workspace) reachable through OpenID Connect, and do not want a second
+  set of passwords for the panel. A directory is also a new way to lock everyone out (an outage, a wrong group) and a
+  new way in (an account with a familiar name, a forged token, an open redirect).
+- **Decision:**
+  - **Local accounts stay** and never consult the directory: a user name that exists locally with
+    `auth_source='local'` is checked against its bcrypt hash only. The lowest-id local superadmin cannot be turned
+    into a directory or OIDC account, and the last local superadmin must stay local, so a directory outage never
+    locks everyone out. A directory login with the same name as a local account is refused, not linked; a name that
+    matches a local account in another letter case is not sent to the directory at all.
+  - Accounts carry `auth_source` (`local`, `ldap`, `oidc`) and `external_id` (LDAP `objectGUID`/`entryUUID`, else the
+    DN; OIDC `iss|sub`), migration `0024`. Directory and OIDC accounts have no local password (`!sso`, which no
+    password matches). On the first sign-in the account is created, or linked to a not-yet-linked record of the same
+    source that a superadmin created in advance. Role and pages are written from the group mapping at every sign-in;
+    a change bumps `token_version`. No mapped group, a disabled account (`userAccountControl`, `nsAccountLock`,
+    `pwdAccountLockedTime`) or one removed from the directory cannot sign in, and its open sessions end when it tries
+    (only after the directory confirmed the password, or confirmed by GUID/UUID that the account is gone). Switching a
+    provider off ends its accounts' sessions.
+  - **LDAP/AD** through the normal user name/password form (`/api/admin/login`): a service-account bind, a search by
+    a configurable filter (`(sAMAccountName={username})`, the value escaped), then a bind as the found DN with the
+    user's password; an empty password is never sent (it would be an anonymous bind). LDAPS or StartTLS only, with
+    POps's own SSL context (TLS 1.2+, chain and host name always verified; ldap3's default does not verify), the
+    system CA store or a pasted CA certificate. Plain LDAP needs `allow_insecure_for_tests`, which the panel never
+    shows and which the backend accepts only when it runs with `POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1` (CI). Library:
+    `ldap3` (pure Python).
+  - **OIDC**: authorization code flow with PKCE (S256), `state` and `nonce`, no new library (urllib + PyJWT +
+    cryptography). The ID token is verified against the provider's JWKS with asymmetric algorithms only, and `iss`
+    (from discovery), `aud` (`azp` when there are several), `exp`, `iat` and `nonce` are checked. Role from a groups
+    claim with the same mapping, or a default role (viewer or admin, never superadmin) for verified e-mail addresses
+    in allowed domains. An e-mail address used as the user name must be verified (`email_verified`). Provider URLs must
+    be https.
+  - The OIDC flow ends in PHP, which owns the panel session: `login.php` puts a random binding in the PHP session and
+    sends its hash to `/api/auth/oidc/start`; state, nonce and verifier are kept server-side (10 minutes, single use)
+    and the state is also in an `HttpOnly`, `SameSite=Lax` cookie. The callback hands the browser a one-time ticket
+    (60 seconds) on the panel's login page, and PHP redeems it with the binding, so a ticket from another browser is
+    useless (no login CSRF). Every redirect target comes from the configured redirect URI; the optional `next` must be
+    a local path and anything else is refused with `400`. Local 2FA still applies after both methods.
+  - Settings (**Ayarlar → Güvenlik → Kimlik sağlayıcıları**, superadmin only) live in `sso_providers`; the service
+    password and the client secret are encrypted like the 2FA keys and never returned. A stored secret is not reused
+    when the server, port, connection type, bind DN, CA certificate, issuer or client ID changes (a stolen session
+    cannot send it elsewhere or over a weaker connection). Every
+    change is audit-logged without secrets, as are accounts created and roles changed by a sign-in.
+- **Consequences:** Schools can sign in with their existing accounts and manage panel access with directory groups,
+  while the panel still works without the directory. Sign-in now depends on a directory or provider being reachable
+  for those accounts (`503` when it is not), and on correct group mappings. Directory changes take effect at the next
+  sign-in attempt; a running session lasts until it expires (`JWT_EXPIRE_HOURS`) unless a superadmin deletes the
+  account. IdPs that do not send `email_verified` cannot use the domain rule and need group mappings. The LDAP
+  integration test needs Docker.

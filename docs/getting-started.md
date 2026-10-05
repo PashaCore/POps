@@ -87,6 +87,6 @@ sees, a watchdog and an updater. The server has a FastAPI backend, a PostgreSQL 
 | Common questions | [`faq.md`](faq.md) |
 | POps compared with classroom tools | [`positioning.md`](positioning.md) |
 | KVKK notice template (Turkish) | [`kvkk-aydinlatma.md`](kvkk-aydinlatma.md) |
-| Turkish guides for schools: why POps, POps with Veyon, pilot setup, case study template | [`tr/neden-pops.md`](tr/neden-pops.md), [`tr/veyon-ile-birlikte.md`](tr/veyon-ile-birlikte.md), [`tr/pilot-okul.md`](tr/pilot-okul.md), [`tr/vaka-calismasi-sablonu.md`](tr/vaka-calismasi-sablonu.md) |
+| Turkish guides for schools: why POps, POps with Veyon, pilot setup, case study template, sign-in with Active Directory | [`tr/neden-pops.md`](tr/neden-pops.md), [`tr/veyon-ile-birlikte.md`](tr/veyon-ile-birlikte.md), [`tr/pilot-okul.md`](tr/pilot-okul.md), [`tr/vaka-calismasi-sablonu.md`](tr/vaka-calismasi-sablonu.md), [`tr/active-directory-ile-giris.md`](tr/active-directory-ile-giris.md) |
 | Code signing policy | [`code-signing.md`](code-signing.md) |
 | GLPI export (design, not implemented) | [`integrations/glpi.md`](integrations/glpi.md) |

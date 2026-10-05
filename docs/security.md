@@ -11,7 +11,9 @@ trustworthy record of it.
 
 ### Sign-in and sessions
 
-- Passwords are stored as bcrypt hashes; login accepts nothing else.
+- Passwords are stored as bcrypt hashes; login accepts nothing else. Accounts can also come from a directory
+  (LDAP / Active Directory) or an OpenID Connect provider; see
+  [Directory and single sign-on](#directory-and-single-sign-on).
 - A successful login returns a JWT (HS256, `JWT_SECRET`, lifetime `JWT_EXPIRE_HOURS`, default 12 h). The panel keeps
   it in the `pops_jwt` cookie (`httpOnly`, `SameSite=Strict`, `Secure` over HTTPS); JavaScript cannot read it.
 - State-changing requests authenticated by the cookie must carry `X-Requested-With: XMLHttpRequest` (CSRF check).
@@ -19,7 +21,7 @@ trustworthy record of it.
   ends their existing sessions immediately. An open `/ws/panel` socket re-checks the session every 10 seconds and
   is closed if the session was revoked, together with its screen and control grants.
 - Login and the 2FA endpoints allow 10 attempts per minute per client address (`/api/v1/...` shares the same
-  limit).
+  limit). The OpenID Connect start and callback allow 20 per minute, the ticket redemption 10.
 
 ### API tokens
 
@@ -69,6 +71,73 @@ UPDATE users SET totp_enabled = false, totp_secret = NULL WHERE username = '<use
 
 Viewers cannot open **Ayarlar**, and an admin needs the `settings` page permission to reach it; such accounts can
 still use the `/api/admin/2fa/*` endpoints directly.
+
+### Directory and single sign-on
+
+A superadmin can let people sign in with the school's directory accounts or a single sign-on provider
+(**Ayarlar → Güvenlik → Kimlik sağlayıcıları**; settings in [`configuration.md`](configuration.md#identity-providers),
+decision D-22). What protects what:
+
+- **Local accounts stay in charge.** A user name that exists as a local account is only ever checked against its
+  bcrypt hash; it never reaches the directory. The first local superadmin cannot be converted to a directory or OIDC
+  account and the last local superadmin must stay local, so a directory or provider outage does not lock everyone
+  out: directory accounts then get `503`, local accounts sign in as usual. A name that matches a local account even
+  with different letter case is not sent to the directory either, so a local password never leaves the server. A
+  directory or OIDC account whose name matches an existing local account is refused instead of being linked, so a
+  directory entry called `admin` cannot take over the local `admin`. When a directory sign-in fails, the server
+  spends the same bcrypt time as for a local account, so response times do not tell which local names exist.
+- **No local password.** Directory and OIDC accounts are stored with `auth_source` `ldap` or `oidc`, an
+  `external_id` (directory GUID/UUID or DN, OIDC `iss|sub`) and no usable password hash. OIDC accounts cannot use the
+  password form; directory accounts use it, but their password is checked by the directory.
+- **Roles come from groups.** Directory group DNs (or OIDC group claim values) map to `viewer`, `admin` or
+  `superadmin` and to page permissions; the highest matching role wins. Role and pages are rewritten at every
+  sign-in and a change ends the account's other sessions. An account in no mapped group cannot sign in. A default role
+  for e-mail domains (OIDC) can be `viewer` or `admin`, never `superadmin`, and needs `email_verified`. When the OIDC
+  user name is the e-mail address, it is accepted only with `email_verified: true`, so an unverified address cannot
+  take another person's name or a superadmin's prepared account.
+- **Disabled or removed accounts** (AD `userAccountControl` ACCOUNTDISABLE, `nsAccountLock`, OpenLDAP
+  `pwdAccountLockedTime`, or no longer found) are refused, and their open panel sessions end at that attempt. Sessions
+  are only ended after the directory confirmed the password (disabled, no mapped group) or confirmed that the linked
+  account no longer exists (searched by its GUID/UUID), so typing someone's name cannot log them out. A failed
+  directory search (permissions, referral, time limit) is reported as `503`, not as a wrong password. A session that
+  is never used for a new sign-in lasts until it expires (`JWT_EXPIRE_HOURS`); delete the panel account to end it at
+  once. Switching a provider off ends the sessions of all its accounts.
+- **LDAP transport.** LDAPS or StartTLS only, TLS 1.2 or newer, with the certificate chain and the host name always
+  verified against the system CA store or the pasted CA certificate. Plain LDAP is refused (an
+  `allow_insecure_for_tests` switch exists for automated tests; it is not offered in the panel and is refused unless
+  the backend itself runs with `POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1`, so a stolen superadmin session cannot turn
+  encryption off). The user name is
+  escaped before it goes into the search filter, an empty password is refused before any bind (an empty simple bind
+  is an anonymous bind), and referrals are not followed.
+- **OIDC checks.** Authorization code flow with PKCE (S256), `state` and `nonce`. The ID token signature is verified
+  against the provider's JWKS with RS/PS/ES/EdDSA algorithms only (`HS*` and `none` are refused); `iss` must equal the
+  discovery document's issuer, `aud` the client ID (with several audiences, `azp` too), and `exp`, `iat` and `nonce`
+  are checked. Provider endpoints must be https; redirects from the provider's endpoints are not followed and
+  responses are capped at 1 MB.
+- **No login CSRF, no open redirect.** The state is single-use, expires after 10 minutes and must match the
+  `pops_oidc_state` cookie (`HttpOnly`, `SameSite=Lax`, path `/api/auth/oidc`, `Secure` with an https redirect URI).
+  The callback does not set the session itself: it sends the browser back to the panel's `/login` with a one-time
+  ticket valid for 60 seconds, which PHP redeems together with a random binding it stored in that browser's PHP
+  session before the flow started. All redirect targets are derived from the configured redirect URI, never from
+  the request; the optional return path (`next`) must be a local panel path and anything else is refused with `400`.
+- **2FA still applies.** If the panel account has TOTP enabled, both a directory login and an OIDC login ask for the
+  code before a session is issued.
+- **Secrets.** The LDAP service-account password and the OIDC client secret are encrypted at rest with the same key
+  as the 2FA secrets (`v1:` prefix; re-encrypted at startup like them), never returned by the API and never logged.
+  When the server, port, connection type, service account, CA certificate, issuer or client ID changes, the stored
+  secret is not reused until it is typed again, so a stolen superadmin session cannot send it to another server, to
+  a server with another CA's certificate or over a weaker connection. **Bağlantıyı sına** follows the same
+  rule.
+- **Audit.** Every settings change (changed field names and values, a hash for the CA certificate, whether the secret
+  changed, who), every account created by a first sign-in, every role change caused by a group change and every
+  change of an account's identity source is written to the hash-chained audit log. Tokens, codes and passwords are
+  never logged.
+- **What to watch:** a directory group mapped to `superadmin` gives its members full control of every managed PC;
+  map it to a small, dedicated group. Use a read-only service account. Wrong passwords typed on the panel count
+  towards the directory's lockout policy like any other failed logon; the panel's limit of 10 attempts per minute
+  per address slows guessing but does not stop someone from locking a known account out. "Bağlantıyı sına" can make the server open
+  connections to the host a superadmin types (as the webhook can), so only superadmins can use it and it is
+  rate-limited.
 
 ### Panel output (XSS)
 
@@ -266,6 +335,8 @@ restrict database access.
 | --- | --- |
 | `GET /api/health` | Health check (database state and version only). |
 | `POST /api/admin/login`, `/api/admin/login/totp` | Sign-in (rate-limited). |
+| `GET /api/auth/sso` | Which sign-in methods are on and the provider's button name (no other settings). |
+| `GET /api/auth/oidc/start`, `/api/auth/oidc/callback`, `POST /api/auth/sso/redeem` | OpenID Connect flow, only when it is enabled (otherwise `404`); single-use state, ticket bound to the starting browser, rate-limited. |
 | `GET /api/agent_policies` | Agents read the policy; it holds no secrets. |
 | `/download/<file>?sig=…` | Deployment packages for agents, only with the signed link returned at upload (wrong or missing signature: 404). Anyone who has a package's link can still download it, so do not upload anything confidential on the **Dağıtım** page. |
 | `/updates/<file>` | The agent MSI being distributed (verified by agents against the signed manifest). |
@@ -280,6 +351,8 @@ restrict database access.
 - [ ] Change the initial admin password; enable 2FA on every admin and superadmin account (recommended; the panel
       reminds accounts that have not).
 - [ ] Give people the lowest role they need; use `viewer` for read-only access.
+- [ ] With directory or OIDC sign-in: keep a local superadmin with a strong password and 2FA, map `superadmin` only to
+      a small dedicated group, and use a read-only service account.
 - [ ] Enroll every PC, then turn on agent-auth enforcement.
 - [ ] Revoke enrollment tokens you no longer need; prefer short lifetimes.
 - [ ] Install the MSI with `TERMINAL_ENABLED=0` and/or `VISION_ENABLED=0` on PCs that do not need those features.
