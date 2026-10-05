@@ -334,7 +334,8 @@ namespace POps.Tests.Agent
         public async Task AgentExamples_HaveTheKeysTheAgentSends()
         {
             Assert.Equal(Keys(Example("agent-to-server", "heartbeat.first.json")), Keys(Heartbeat(withDna: true)));
-            // Bugünkü ajan files_enabled da bildirir (dosya aktarımı); capabilities.default.json daha eski ajanların iletisidir
+            // Bugünkü ajan files_enabled, exam_enabled, power_enabled ve message_enabled da bildirir;
+            // capabilities.default.json daha eski ajanların (ve Linux ajanının) iletisidir
             Assert.Equal(Keys(Example("agent-to-server", "capabilities.files.json")), Keys(JsonSerializer.SerializeToElement(AgentCapabilities.StatusMessage())));
             Assert.Equal(Keys(Example("agent-to-server", "update_result.success.json")), Keys(UpdateResult()));
             Assert.Equal(Keys(Example("agent-to-server", "update_progress.json")), Keys(Progress()));

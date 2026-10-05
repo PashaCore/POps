@@ -105,14 +105,24 @@ namespace POpsAgent
             return (disabled, ignored);
         }
 
-        // Sunucuya bildirilen durum ({"type":"capabilities", ...}); server_ca: sunucu sertifikası kurum sertifikasıyla
-        // ("custom", server-ca.pem) mı, sistem deposuyla ("system") mı doğrulanıyor (bkz. ServerTrust). exam_enabled
-        // sunucunun capabilities şemasında yok, gönderilmez: kapalı sınav yeteneği exam_mode'a capability_denied ile,
-        // süren sınavda kapanırsa exam_state (enabled:false) ile bildirilir.
+        // Sunucuya bildirilen durum ({"type":"capabilities", ...}; docs/protocol/agent-to-server/capabilities.json);
+        // server_ca: sunucu sertifikası kurum sertifikasıyla ("custom", server-ca.pem) mı, sistem deposuyla ("system")
+        // mı doğrulanıyor (bkz. ServerTrust). Altı yeteneğin hepsi bildirilir; exam_enabled, power_enabled ve
+        // message_enabled şemada isteğe bağlıdır (eski ajan göndermez).
         public static Dictionary<string, object> StatusMessage()
         {
             lock (Gate)
-                return new Dictionary<string, object> { ["type"] = "capabilities", [Terminal] = State[Terminal], [Vision] = State[Vision], ["server_ca"] = ServerTrust.Mode, [Files] = State[Files] };
+                return new Dictionary<string, object>
+                {
+                    ["type"] = "capabilities",
+                    [Terminal] = State[Terminal],
+                    [Vision] = State[Vision],
+                    ["server_ca"] = ServerTrust.Mode,
+                    [Files] = State[Files],
+                    [Exam] = State[Exam],
+                    [Power] = State[Power],
+                    [Message] = State[Message],
+                };
         }
 
         public static string Describe()

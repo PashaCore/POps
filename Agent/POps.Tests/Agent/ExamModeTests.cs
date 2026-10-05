@@ -228,8 +228,8 @@ namespace POps.Tests.Agent
             Assert.Empty(_scripts);
             Assert.False(ExamMode.IsActive);
             lock (_sent) Assert.Equal("capability_denied", Assert.Single(_sent).GetProperty("type").GetString());
-            // exam_enabled sunucunun capabilities şemasında yok: kapalıyken de gönderilmez
-            Assert.False(AgentCapabilities.StatusMessage().ContainsKey(AgentCapabilities.Exam));
+            // capabilities mesajı sınav yeteneğinin kapalı olduğunu bildirir (exam_enabled, şemada isteğe bağlı)
+            Assert.Equal(false, AgentCapabilities.StatusMessage()[AgentCapabilities.Exam]);
         }
 
         // Geçersiz emir: uygulanmaz, neden yalnızca yerel loga yazılır; sunucuya şemadaki alanlarla o anki durum gider
@@ -472,7 +472,7 @@ namespace POps.Tests.Agent
             Assert.False(AgentCapabilities.ExamEnabled);
             Assert.False(ExamMode.IsActive);
             JsonElement capabilities = Assert.Single(Sent("capabilities"));
-            Assert.False(capabilities.TryGetProperty("exam_enabled", out _));
+            Assert.False(capabilities.GetProperty("exam_enabled").GetBoolean());
             Assert.False(LastState().GetProperty("enabled").GetBoolean());
 
             // Ardından gelen exam_mode reddedilir, uygulanmaz

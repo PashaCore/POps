@@ -387,7 +387,7 @@ namespace POps.Tests.Agent
         }
 
         [Fact]
-        public async Task SetCapabilities_SwitchesPowerAndMessageOff_StatusKeepsTheContract()
+        public async Task SetCapabilities_SwitchesPowerAndMessageOff_AndReportsIt()
         {
             await Handle("{\"action\":\"set_capabilities\",\"power_enabled\":false,\"message_enabled\":false}");
             Assert.False(AgentCapabilities.PowerEnabled);
@@ -397,6 +397,10 @@ namespace POps.Tests.Agent
             JsonElement status = Sent("capabilities").Last();
             JsonElement example = JsonDocument.Parse(File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot(), "docs", "protocol", "examples", "agent-to-server", "capabilities.files.json"))).RootElement;
             Assert.Equal(example.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal), status.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal));
+            Assert.False(status.GetProperty("power_enabled").GetBoolean());
+            Assert.False(status.GetProperty("message_enabled").GetBoolean());
+            Assert.True(status.GetProperty("exam_enabled").GetBoolean());
+            Assert.True(status.GetProperty("terminal_enabled").GetBoolean());
 
             // Sunucu yeniden açamaz; kapatma diske yazıldı
             await Handle("{\"action\":\"set_capabilities\",\"power_enabled\":true}");
