@@ -174,6 +174,7 @@ Security → Code scanning and on the README badge).
 | Agent unit tests | `dotnet test Agent/POps.Tests/POps.Tests.csproj` | same |
 | Backend (Python 3.12, 3.10) | `flake8 Backend/ tools/ assets/readme/` (3.12); importing `server` and `setup_env`; `test_units.py` | `flake8 Backend/ tools/ assets/readme/` |
 | Dashboard checks | `php -l` on every PHP file; dark mode stays removed | `find Dashboard -name '*.php' -print0 \| xargs -0 -n1 php -l` |
+| Panel end-to-end | Playwright (Chromium) on the real panel and backend: every page at 1440 and 390 px, main flows, no console errors or outside requests | `cd tests/e2e && npm ci && npx playwright test` with an empty `DB_NAME` ([docs/testing.md](docs/testing.md#panel-end-to-end-tests)) |
 | Version consistency | `VERSION` == top CHANGELOG release heading == built `<Version>` | compare by hand |
 | Migrations (PostgreSQL 13) | fresh `migrate.py`, `ci_schema_check.py`, second run applies nothing | see below |
 | Release signing tool | `tools/sign_release.py selftest` (temporary key, no secret needed) | same command |

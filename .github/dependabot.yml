@@ -26,6 +26,13 @@ updates:
       - dependency-name: "Microsoft.Win32.*"
         update-types: ["version-update:semver-major"]
 
+  - package-ecosystem: npm
+    # Yalnızca panelin uçtan uca testleri (Playwright, tam sürüm + package-lock.json); panelin kendisi npm kullanmaz
+    directory: /tests/e2e
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

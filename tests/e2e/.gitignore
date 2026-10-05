@@ -1,0 +1,5 @@
+node_modules/
+# Test yığınının çalışma klasörü (günlükler, panel kopyası, oturum dosyası) ve Playwright çıktıları
+.stack/
+test-results/
+playwright-report/

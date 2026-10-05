@@ -100,7 +100,7 @@
     const dev = POps.dev;
     const $ = (id) => document.getElementById(id);
     const params = new URLSearchParams(location.search);
-    const ui = { tab: params.get('tab') === 'sched' ? 'sched' : 'jobs', f: 'all', q: '', limit: 60, focus: null, tasks: [], jobs: [], key: null, loaded: false, names: {}, sched: [], schedLoaded: false };
+    const ui = { tab: CAN_ADMIN && params.get('tab') === 'sched' ? 'sched' : 'jobs', f: 'all', q: '', limit: 60, focus: null, tasks: [], jobs: [], key: null, loaded: false, names: {}, sched: [], schedLoaded: false };
 
     const nm = (pc) => ui.names[pc] || pc;
     const WAITING = ['Pending', 'Paused'];
@@ -467,9 +467,14 @@
     POps.setLoading($('jobList'), 'İşler yükleniyor…');
     setTab(ui.tab);
     loadTasks();
-    loadSched();
     popsPoll(loadTasks, 4000);
-    popsPoll(loadSched, 30000);
+    // Zamanlanmış görevler yalnızca yöneticiye açık: izleyici için istenmez (sunucu 403 döner), sekme gizlenir
+    if (CAN_ADMIN) {
+        loadSched();
+        popsPoll(loadSched, 30000);
+    } else {
+        $('tkTab').querySelector('[data-tab=sched]').hidden = true;
+    }
 })();
 </script>
 
