@@ -51,6 +51,7 @@
 - [Ekran görüntüleri](#-ekran-görüntüleri)
 - [Hızlı başlangıç](#-hızlı-başlangıç)
 - [Gereksinimler](#-gereksinimler) · [Bilinen sınırlar](#bilinen-sınırlar)
+- [Linux ve Pardus](#-linux-ve-pardus)
 - [Sürüm geçmişi](#-sürüm-geçmişi)
 - [Kalite ve testler](#-kalite-ve-testler)
 - [Depo yapısı](#-depo-yapısı)
@@ -91,7 +92,8 @@ tek bir web panelinde toplar; şeffaflığı sonradan eklemek yerine baştan tas
 > **Yöneticilerin güçlü araçları olmalı. Kullanıcılar da bu araçlar kullanıldığında her zaman bilmeli.**
 
 POps sınıfın *altındaki* işletim katmanıdır. Veyon gibi ders yönetim yazılımlarının yerini almaya çalışmaz; ikisi
-aynı bilgisayarda yan yana çalışabilir ([konumlandırma](docs/positioning.md), İngilizce).
+aynı bilgisayarda yan yana çalışabilir: [POps ve Veyon birlikte](docs/tr/veyon-ile-birlikte.md). Okul yönetimi ve BT
+için ayrıntılı anlatım: [Neden POps?](docs/tr/neden-pops.md)
 
 ---
 
@@ -307,12 +309,28 @@ Dondurma yazılımları (Deep Freeze, Shadow Defender), ajan dondurmadan önce k
 - **Tek backend süreci.** Henüz yüksek erişilebilirlik yok; tek süreçte 5.000 sanal ajan ölçüldü
   ([kapasite](docs/kapasite/README.md)). Tek sunucuda birden çok okul ya da ilçe denenmiş bir kurulum değildir.
 - **İmzasız Windows dosyaları.** Sürüm manifestleri ed25519 ile imzalanır, sunucu ve bilgisayar doğrular; ama
-  çalıştırılabilir dosyaların Authenticode imzası henüz yok, SmartScreen ve bazı antivirüsler uyarabilir.
+  çalıştırılabilir dosyaların Authenticode imzası henüz yok, SmartScreen ve bazı antivirüsler uyarabilir
+  ([kod imzalama politikası](docs/code-signing.md), İngilizce).
 - **Sürüm etiketleri 0.1.22-alpha'dan itibaren SSH ile imzalıdır**; öncekiler imzasızdır. Kendini güncellemenin
   yalnızca imzalı etikete geçmesi için [`keys/allowed_signers`](keys/allowed_signers) dosyasını
   `/etc/pops/allowed_signers` olarak kurun ([`docs/self-update.md`](docs/self-update.md)).
 - **DNS** yalnızca tespit edip bildirir; engelleme planlı. **API:** yalnızca oturumla; API jetonu henüz yok.
 - **Panel dili:** Türkçe; İngilizce arayüz hazırlanıyor.
+
+---
+
+## 🐧 Linux ve Pardus
+
+**Durum: yol haritasında (üzerinde çalışılıyor), henüz yok.** POps bugün Windows 10 ve 11 bilgisayarları yönetir.
+İlk Linux sürümü yalnızca envanteri ve komutları kapsar: Windows ajanıyla aynı protokolü, kaydı, cihaza özel
+anahtarı, yetenek politikasını ve imzalı güncellemeyi kullanan bir systemd servisi. Ekran izleme daha sonra gelir.
+Hangi dille yazılacağı (.NET, Go ya da Python) henüz kararlaştırılmadı; seçenekler
+[yol haritasında](ROADMAP.md#linux-agent-pardus-first) karşılaştırılıyor (İngilizce).
+
+**Türkiye'deki okullar için neden önemli:** pek çok devlet okulu, TÜBİTAK ULAKBİM'in geliştirdiği Debian tabanlı
+Pardus'u kullanıyor; sınıflardaki etkileşimli tahtaların birçoğunda da Pardus ETAP çalışıyor. Bu makineler yine
+TÜBİTAK ULAKBİM'in geliştirdiği Lider Ahenk ile merkezden yönetilebiliyor. Bir Linux ajanı yazmak yerine ya da ondan
+önce POps'u Lider Ahenk ile bütünleştirmek de bir seçenek; henüz değerlendirilmedi. Tarih verilmiyor.
 
 ---
 
@@ -366,6 +384,15 @@ Testleri yerelde çalıştırmak (İngilizce): [`docs/testing.md`](docs/testing.
 
 Belgelerin çoğu İngilizcedir; Türkçe olanlar işaretlidir.
 
+**Okullar için Türkçe rehberler:**
+
+- [Neden POps?](docs/tr/neden-pops.md): okul yönetimi ve BT için; neyi çözer, neyi çözmez, KVKK, maliyet,
+  internetsiz çalışma.
+- [POps ve Veyon birlikte](docs/tr/veyon-ile-birlikte.md): kim ne yapar, aynı bilgisayara kurulum, tipik bir gün.
+- [Pilot okul kurulumu](docs/tr/pilot-okul.md): 10 bilgisayarlık bir laboratuvar için yaklaşık bir saatlik
+  kontrol listesi, ölçüm ve geri bildirim formu.
+- [Vaka çalışması şablonu](docs/tr/vaka-calismasi-sablonu.md): pilottan sonra sonuçları paylaşmak için.
+
 | Buradan başlayın | İşletin | Anlayın |
 | :--- | :--- | :--- |
 | [Başlarken](docs/getting-started.md) | [Yapılandırma](docs/configuration.md) | [Mimari](docs/architecture.md) |
@@ -377,6 +404,8 @@ Belgelerin çoğu İngilizcedir; Türkçe olanlar işaretlidir.
 | | [Panel](docs/dashboard.md) | [REST ve WebSocket API](docs/api.md) |
 | | [Vision](docs/vision.md) | [Testler](docs/testing.md) |
 | | [KVKK aydınlatma metni (TR)](docs/kvkk-aydinlatma.md) | [Konumlandırma](docs/positioning.md) |
+| | | [Kod imzalama politikası](docs/code-signing.md) |
+| | | [GLPI aktarımı (tasarım)](docs/integrations/glpi.md) |
 
 ---
 

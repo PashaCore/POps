@@ -52,6 +52,7 @@
 - [Screenshots](#-screenshots)
 - [Quick start](#-quick-start)
 - [Requirements](#-requirements) · [Known limitations](#known-limitations)
+- [Linux and Pardus](#-linux-and-pardus)
 - [Release history](#-release-history)
 - [Quality and testing](#-quality-and-testing)
 - [Repository layout](#-repository-layout)
@@ -92,7 +93,8 @@ behind one web panel, and builds transparency in rather than bolting it on:
 > **Administrators should have powerful tools. Users should always know when those tools are being used.**
 
 POps is the operations layer *under* the classroom. It does not try to replace classroom-management software such
-as Veyon; the two can run side by side ([positioning](docs/positioning.md)).
+as Veyon; the two can run side by side ([positioning](docs/positioning.md); in Turkish:
+[POps ve Veyon birlikte](docs/tr/veyon-ile-birlikte.md)).
 
 ---
 
@@ -308,12 +310,28 @@ Freeze software (Deep Freeze, Shadow Defender) works when the agent is enrolled 
 - **One backend process.** No high availability yet; 5,000 simulated agents were measured on one process
   ([capacity](docs/kapasite/README.md)). Several schools or a district on one server is not a tested setup.
 - **Unsigned Windows binaries.** Release manifests are ed25519-signed and checked by the server and the PC, but the
-  executables have no Authenticode signature yet, so SmartScreen and some antivirus products may warn.
+  executables have no Authenticode signature yet, so SmartScreen and some antivirus products may warn
+  ([code signing policy](docs/code-signing.md)).
 - **Release tags are SSH-signed from 0.1.22-alpha on**; earlier tags are not. To make self-update accept only signed
   tags, install [`keys/allowed_signers`](keys/allowed_signers) as `/etc/pops/allowed_signers`
   ([`docs/self-update.md`](docs/self-update.md)).
 - **DNS** is detection and reporting only; blocking is planned. **API:** session-based only, no API tokens yet.
 - **Panel language:** Turkish; the English interface is in progress.
+
+---
+
+## 🐧 Linux and Pardus
+
+**Status: on the roadmap (in progress), not available yet.** POps manages Windows 10 and 11 PCs today. A first
+Linux version covers inventory and commands only: a systemd service with the same protocol, enrollment, per-device
+secret, capability policy and signed updates as the Windows agent. Screen view comes later. Which language it is
+written in (.NET, Go or Python) is still open; the options are compared in the
+[roadmap](ROADMAP.md#linux-agent-pardus-first).
+
+**Why it matters for schools in Türkiye:** many public schools use Pardus, the Debian-based distribution developed
+by TÜBİTAK ULAKBİM, and many classroom interactive boards run Pardus ETAP. Those machines can be managed centrally
+with Lider Ahenk, also developed by TÜBİTAK ULAKBİM. Integrating POps with Lider Ahenk, instead of or before writing
+a Linux agent, is an alternative path that has not been evaluated yet. There are no dates.
 
 ---
 
@@ -375,6 +393,12 @@ How to run the suites locally: [`docs/testing.md`](docs/testing.md).
 | | [Dashboard](docs/dashboard.md) | [REST and WebSocket API](docs/api.md) |
 | | [Vision](docs/vision.md) | [Testing](docs/testing.md) |
 | | [KVKK notice (TR)](docs/kvkk-aydinlatma.md) | [Positioning](docs/positioning.md) |
+| | | [Code signing policy](docs/code-signing.md) |
+| | | [GLPI export (design)](docs/integrations/glpi.md) |
+
+**Turkish guides for schools** (in Turkish): [Why POps?](docs/tr/neden-pops.md) ·
+[POps and Veyon together](docs/tr/veyon-ile-birlikte.md) · [Pilot school setup](docs/tr/pilot-okul.md) ·
+[Case study template](docs/tr/vaka-calismasi-sablonu.md)
 
 ---
 

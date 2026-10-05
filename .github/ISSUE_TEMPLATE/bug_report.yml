@@ -1,0 +1,82 @@
+name: Bug report
+description: Something in POps does not work as documented.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Before you start:
+        - **Security problems** do not belong here. Follow [SECURITY.md](https://github.com/PashaCore/POps/blob/main/SECURITY.md).
+        - **Questions** are answered faster in [Discussions](https://github.com/PashaCore/POps/discussions/categories/q-a).
+        - [docs/troubleshooting.md](https://github.com/PashaCore/POps/blob/main/docs/troubleshooting.md) lists common problems and where the logs are.
+
+        Remove host names, IP addresses, user names, tokens and secrets from anything you paste.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Where does the problem show up?
+      options:
+        - Windows agent (service, tray, watchdog, updater)
+        - Agent MSI installer
+        - Backend / API
+        - Panel (web interface)
+        - Server installer, deploy or self-update scripts
+        - Docker Compose setup
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Backend and agent versions. The panel's **Sistem** page shows both.
+      placeholder: "backend 0.1.21-alpha, agent 0.1.21-alpha"
+    validations:
+      required: true
+  - type: input
+    id: server-os
+    attributes:
+      label: Server operating system
+      placeholder: "AlmaLinux 9.6, Python 3.12, PostgreSQL 16, nginx"
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version (agent problems)
+      placeholder: "Windows 11 23H2, 64-bit"
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. On **Cihazlar**, select ...
+        2. Click ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: From `journalctl -u pops`, `C:\POpsLogs\POps_<date>.log` or the browser console. Remove secrets first.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: This is not a security vulnerability (those go to SECURITY.md).
+          required: true
+        - label: I removed host names, IP addresses, tokens and secrets from what I pasted.
+          required: true

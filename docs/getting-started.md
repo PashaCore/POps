@@ -15,7 +15,7 @@ POps is alpha software. Read [`../SECURITY.md`](../SECURITY.md) before you run i
 | Server | Linux with systemd (tested: AlmaLinux/RHEL/Rocky, Debian/Ubuntu), PostgreSQL, Python 3.10+ (3.12 recommended), PHP 8 with `curl`, nginx or Apache, a host name with a TLS certificate. |
 | Managed PCs | Windows 10 or 11, 64-bit. No prerequisites: the .NET runtime comes with the agent. See *Supported systems* below. |
 | Network | Each PC opens outbound connections to the server on port 443 (HTTPS) and keeps two WebSocket connections open (commands and Vision). Proxies and firewalls must allow the WebSocket upgrade (`Upgrade: websocket`) and long-lived connections; TLS inspection must either be off for the POps host or use a CA the agents trust. There is no HTTP polling fallback. Wake-on-LAN needs UDP broadcasts from the server to the lab subnet. |
-| Administrators | A browser. The panel loads its charts, icons and fonts from public CDNs. |
+| Administrators | A browser. From 0.1.22 the panel loads nothing from third parties; 0.1.21 and earlier load fonts and icons from public CDNs. |
 
 ### Supported systems
 
@@ -87,3 +87,6 @@ sees, a watchdog and an updater. The server has a FastAPI backend, a PostgreSQL 
 | Common questions | [`faq.md`](faq.md) |
 | POps compared with classroom tools | [`positioning.md`](positioning.md) |
 | KVKK notice template (Turkish) | [`kvkk-aydinlatma.md`](kvkk-aydinlatma.md) |
+| Turkish guides for schools: why POps, POps with Veyon, pilot setup, case study template | [`tr/neden-pops.md`](tr/neden-pops.md), [`tr/veyon-ile-birlikte.md`](tr/veyon-ile-birlikte.md), [`tr/pilot-okul.md`](tr/pilot-okul.md), [`tr/vaka-calismasi-sablonu.md`](tr/vaka-calismasi-sablonu.md) |
+| Code signing policy | [`code-signing.md`](code-signing.md) |
+| GLPI export (design, not implemented) | [`integrations/glpi.md`](integrations/glpi.md) |
