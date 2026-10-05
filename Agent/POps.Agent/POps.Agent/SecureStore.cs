@@ -38,17 +38,6 @@ namespace POpsAgent
             if (tightened) POpsHelpers.Log("SECURE", FolderSettings.TightenedNote(Dir, usersRead: false));
         }
 
-        // Devralmayan, yalnızca SYSTEM ve Administrators'a (alt klasör ve dosyalara da) tam yetki veren klasör ACL'i
-        public static DirectorySecurity ProtectedDirectorySecurity()
-        {
-            var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-            var sec = new DirectorySecurity();
-            sec.SetAccessRuleProtection(true, false);
-            sec.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-            sec.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-            return sec;
-        }
-
         public static FileSecurity ProtectedFileSecurity()
         {
             var sec = new FileSecurity();

@@ -395,11 +395,13 @@ Get-NetFirewallRule -Group {BitsDownload.Quote(RuleGroup)} -ErrorAction Silently
         }
 
         // ------------------------------------------------------------------------------------------
+        // Veri klasörünün diğer korumalı klasörleri gibi (bkz. FolderSettings.Secure): yalnızca SYSTEM ve Administrators,
+        // sahibi güvenilir değilse SYSTEM yapılır
         private static void EnsureDirectory()
         {
-            var dir = new DirectoryInfo(Dir);
-            if (dir.Exists) dir.SetAccessControl(SecureStore.ProtectedDirectorySecurity());
-            else dir.Create(SecureStore.ProtectedDirectorySecurity());
+            string? error = POps.Shared.FolderSettings.Secure(Dir, usersRead: false, out bool tightened);
+            if (error != null) throw new IOException($"{Dir} kilitlenemedi: {error}");
+            if (tightened) POpsHelpers.Log("PEERCACHE", POps.Shared.FolderSettings.TightenedNote(Dir, usersRead: false));
         }
 
         private static void TryDeleteEmptyDirectory()
