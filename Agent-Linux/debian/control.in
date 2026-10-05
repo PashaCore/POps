@@ -1,0 +1,15 @@
+Package: pops-agent
+Version: @DEB_VERSION@
+Architecture: all
+Maintainer: PashaCore <security@pashacore.com.tr>
+Depends: python3 (>= 3.9), python3-websockets (>= 10), python3-cryptography
+Recommends: systemd
+Section: admin
+Priority: optional
+Homepage: https://github.com/PashaCore/POps
+Installed-Size: @INSTALLED_SIZE@
+Description: POps agent for school lab PCs (Linux)
+ Connects the PC to a POps server over TLS: hardware and package inventory,
+ remote commands run as root (can be switched off on the PC) and signed
+ self-updates. Screen view, quarantine and the tray are not part of this
+ version.

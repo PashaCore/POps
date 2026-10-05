@@ -46,7 +46,7 @@
 <div class="table-wrap">
     <table class="data-table dev-table wide">
         <thead id="devHead"></thead>
-        <tbody id="devBody"><tr><td colspan="7"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Cihazlar yükleniyor…'); ?></div></td></tr></tbody>
+        <tbody id="devBody"><tr><td colspan="8"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Cihazlar yükleniyor…'); ?></div></td></tr></tbody>
     </table>
 </div>
 
@@ -69,12 +69,13 @@
             if (ui.f === 'off' && st !== 'off') return false;
             if (ui.f === 'issue' && !issuesOf(d, newest).length) return false;
             if (ui.lab && (ui.lab === dev.UNASSIGNED ? (d.lab && d.lab !== dev.UNASSIGNED) : d.lab !== ui.lab)) return false;
-            if (q && ![POps.deviceName(d), d.hostname, d.ip, d.mac, dev.user(d), d.lab].some(v => String(v || '').toLocaleLowerCase('tr').includes(q))) return false;
+            if (q && ![POps.deviceName(d), d.hostname, d.ip, d.mac, dev.user(d), d.lab, dev.platform(d)].some(v => String(v || '').toLocaleLowerCase('tr').includes(q))) return false;
             return true;
         });
         const key = {
             name: (d) => POps.deviceName(d).toLocaleLowerCase('tr'),
             lab: (d) => String(d.lab || '').toLocaleLowerCase('tr'),
+            platform: (d) => dev.platform(d),
             status: (d) => ({ on: 0, idle: 1, off: 2 })[dev.state(d).cls],
             version: (d) => (dev.parseVersion(dev.version(d)) || [0, 0, 0]).map(n => String(n).padStart(4, '0')).join('.'),
             ip: (d) => String(d.ip || '').split('.').map(n => n.padStart(3, '0')).join('.')
@@ -83,7 +84,7 @@
         return { rows, newest };
     }
 
-    const COLS = [['name', POps.t('Bilgisayar')], ['lab', POps.t('Sınıf')], ['status', POps.t('Durum')], ['version', POps.t('Ajan')], ['ip', 'IP']];
+    const COLS = [['name', POps.t('Bilgisayar')], ['lab', POps.t('Sınıf')], ['status', POps.t('Durum')], ['platform', POps.t('Sistem')], ['version', POps.t('Ajan')], ['ip', 'IP']];
     function renderHead(rows) {
         const all = rows.length && rows.every(d => ui.selected.has(d.hostname));
         $('devHead').innerHTML = '<tr>' + (CAN_ADMIN ? `<th class="check-col"><input type="checkbox" id="devAll" ${all ? 'checked' : ''} aria-label="${escapeHtml(POps.t('Listedekilerin hepsini seç'))}"></th>` : '')
@@ -102,6 +103,7 @@
             <td><div class="nm">${escapeHtml(POps.deviceName(d))}${marksHtml}</div><div class="sub">${escapeHtml(dev.subline(d))}</div></td>
             <td>${d.lab && d.lab !== dev.UNASSIGNED ? escapeHtml(d.lab) : `<span class="faint">${POps.tHtml('Atanmamış')}</span>`}</td>
             <td>${statusHtml}</td>
+            <td>${escapeHtml(dev.platform(d))}</td>
             <td><span class="ver">${escapeHtml(v || '—')}${old ? `<span class="mark old" data-tip="${escapeHtml(POps.t('Eski sürüm; güncel {version}', { version: newest }))}" aria-label="${escapeHtml(POps.t('Eski sürüm'))}">↑</span>` : ''}</span></td>
             <td class="mono">${escapeHtml(d.ip || '—')}</td>
         </tr>`;
@@ -151,7 +153,7 @@
     function render(force) {
         if (!state.devicesLoaded) return;
         const { rows, newest } = list();
-        const sig = JSON.stringify([ui, [...ui.selected], rows.map(d => [d.hostname, d.status, d.display_name, d.current_user, d.lab, d.ip, d.is_quarantined, d.running_version, d.agent_version, d.last_seen && dev.state(d).cls === 'off' ? d.last_seen : '']), newest]);
+        const sig = JSON.stringify([ui, [...ui.selected], rows.map(d => [d.hostname, d.status, d.display_name, d.current_user, d.lab, d.ip, d.is_quarantined, d.running_version, d.agent_version, d.platform, d.last_seen && dev.state(d).cls === 'off' ? d.last_seen : '']), newest]);
         renderSummary();
         renderLabs();
         $('devFilter').querySelectorAll('button').forEach(b => { const on = b.dataset.f === ui.f; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
@@ -163,8 +165,8 @@
         if (!rows.length) {
             const filteredOut = (state.devices || []).length > 0;
             POps.setEmpty(body, filteredOut
-                ? { tag: 'tr', colspan: 7, icon: 'filter', title: POps.t('Süzgece uyan cihaz yok'), text: POps.t('Arama ya da süzgeçleri değiştirin.') }
-                : { tag: 'tr', colspan: 7, icon: 'devices', title: POps.t('Henüz cihaz yok'), text: POps.t('Ajan kurulan bilgisayarlar bağlandıkça burada görünür.') });
+                ? { tag: 'tr', colspan: 8, icon: 'filter', title: POps.t('Süzgece uyan cihaz yok'), text: POps.t('Arama ya da süzgeçleri değiştirin.') }
+                : { tag: 'tr', colspan: 8, icon: 'devices', title: POps.t('Henüz cihaz yok'), text: POps.t('Ajan kurulan bilgisayarlar bağlandıkça burada görünür.') });
             return;
         }
         body.innerHTML = rows.map(d => rowHtml(d, newest)).join('');
@@ -236,8 +238,8 @@
     $('exportBtn').addEventListener('click', () => {
         const { rows } = list();
         const cell = (v) => { const s = String(v == null ? '' : v); return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-        const lines = [[POps.t('Ad'), POps.t('Kimlik'), POps.t('Sınıf'), POps.t('Durum'), POps.t('Kullanıcı'), 'IP', 'MAC', POps.t('Ajan'), POps.t('Son görülme')].join(';')]
-            .concat(rows.map(d => [POps.deviceName(d), d.hostname, d.lab, dev.state(d).word, dev.user(d), d.ip, d.mac, dev.version(d), d.last_seen].map(cell).join(';')));
+        const lines = [[POps.t('Ad'), POps.t('Kimlik'), POps.t('Sınıf'), POps.t('Durum'), POps.t('Sistem'), POps.t('Kullanıcı'), 'IP', 'MAC', POps.t('Ajan'), POps.t('Son görülme')].join(';')]
+            .concat(rows.map(d => [POps.deviceName(d), d.hostname, d.lab, dev.state(d).word, dev.platform(d), dev.user(d), d.ip, d.mac, dev.version(d), d.last_seen].map(cell).join(';')));
         const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -248,7 +250,7 @@
 
     let opened = false;
     document.addEventListener('pops_data_updated', (e) => {
-        if (e.detail && e.detail.error && !state.devicesLoaded) { POps.setError(body, e.detail.error, { tag: 'tr', colspan: 7 }); return; }
+        if (e.detail && e.detail.error && !state.devicesLoaded) { POps.setError(body, e.detail.error, { tag: 'tr', colspan: 8 }); return; }
         render(false);
         const want = params.get('pc');
         if (want && !opened && state.devicesLoaded) { opened = true; openPc(want); }

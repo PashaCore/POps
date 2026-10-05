@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    remove|deconfigure)
+        if [ -d /run/systemd/system ]; then
+            if command -v deb-systemd-invoke >/dev/null 2>&1; then
+                deb-systemd-invoke stop pops-agent.service >/dev/null || true
+            else
+                systemctl stop pops-agent.service >/dev/null 2>&1 || true
+            fi
+        fi
+        ;;
+    upgrade|failed-upgrade)
+        # Yükseltmede servis durdurulmaz: postinst yeni sürümle yeniden başlatır
+        ;;
+esac
+
+find /usr/lib/pops-agent -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
+exit 0

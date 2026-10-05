@@ -12,6 +12,8 @@ A high test count says little on its own; the table below is the honest list.
 | Backend lock file | `tools/backend_lock.sh --check`: `Backend/requirements.lock` regenerated from `requirements.txt` must be unchanged. | CI `backend-lock` job |
 | `Backend/tests/test_*.py` (others) | Integration tests against a running backend and an empty PostgreSQL database. | CI `security` job, `Backend/tests/run_local.sh` |
 | `Agent/POps.Tests` | xUnit tests for the agent, updater logic, shared code and the MSI custom actions (pure logic and temp-folder file operations; no firewall, pipe or service). | CI `test-agent` job (Windows) |
+| `Agent-Linux/tests` | pytest for the Linux agent on the distribution's own `python3` and packages, without root: identity/DNA, manifest verification, command limits and refusals, result spool, inventory parsers, update selection and the installer's rollback paths (fake `dpkg`/`systemctl`), the shared protocol vectors, a mock server; the `.deb` built twice must be byte-identical and is installed with `dpkg -i` (service not started). | CI `linux-agent` job |
+| `Agent-Linux/tests/test_integration.py` | The Linux agent from the source tree against a running backend over TLS (`pops-tls` CA): enrollment, platform, inventory, commands with exit codes, acknowledged results, refusal when the terminal is off. | CI `linux-agent-backend` job |
 | Migrations | Fresh migrate, schema check, second run must apply nothing. | CI `migrations` job (PostgreSQL 13) |
 | Release signing | `tools/sign_release.py selftest`: sign/verify with a temporary key, tampered manifest and artefact rejected. | CI `signing` job |
 | Panel syntax and escaping | `php -l` on every page; the HTML-sink scanner (`tools/html_sinks`). | CI `dashboard` job |

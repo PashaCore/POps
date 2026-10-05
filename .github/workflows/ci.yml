@@ -106,9 +106,9 @@ jobs:
           pip install --require-hashes -r Backend/requirements.lock
           pip install flake8 jsonschema==4.26.0
       - name: Lint with flake8
-        # Tam kapı: repo kökündeki .flake8 (max-line-length 120). Backend ve araçlar (tools/, README çizimleri) temiz tutulur; yeni uyarı CI'ı kırar.
+        # Tam kapı: repo kökündeki .flake8 (max-line-length 120). Backend, Linux ajanı ve araçlar (tools/, README çizimleri) temiz tutulur; yeni uyarı CI'ı kırar.
         if: matrix.python == '3.12'
-        run: flake8 Backend/ tools/ assets/readme/ --count --show-source --statistics
+        run: flake8 Backend/ Agent-Linux/ tools/ assets/readme/ --count --show-source --statistics
       - name: Import smoke test
         # Modül yüklenirken zorunlu ortam değişkenleri okunur; veritabanına bağlanılmaz. (FastAPI dahil edilen
         # router'ları artık iç içe tutar; app.routes uç sayısını vermez.)
@@ -155,6 +155,104 @@ jobs:
             echo "::error file=Backend/requirements.lock::Backend/requirements.lock, requirements.txt ile uyumlu değil. Yeniden üretip commit'leyin: pip install uv==0.12.23 && tools/backend_lock.sh"
             exit 1
           }
+
+  linux-agent:
+    name: Linux agent
+    # Pardus/Debian ajanı (Agent-Linux, docs/decisions.md D-22): bilgisayardakiyle aynı yığın, yani dağıtımın kendi
+    # python3'ü ve python3-websockets / python3-cryptography paketleri. Birim testleri (root gerekmez), .deb'in iki
+    # kez derlenip aynı baytları vermesi, dpkg -i (servis başlatılmaz: policy-rc.d), dosya izinleri ve purge.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Distribution packages
+        run: |
+          sudo apt-get update -qq
+          # python3-jsonschema yalnızca testler için (docs/protocol şemaları); pakette bağımlılık değil
+          sudo apt-get install -y -qq python3-websockets python3-cryptography python3-pytest python3-jsonschema >/dev/null
+          /usr/bin/python3 --version
+          dpkg-query -W -f='${Package} ${Version}\n' python3-websockets python3-cryptography python3-pytest python3-jsonschema
+      - name: Unit tests
+        run: /usr/bin/python3 -m pytest -v -p no:cacheprovider Agent-Linux/tests
+      - name: Build the .deb twice (reproducible)
+        run: |
+          set -euo pipefail
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          /usr/bin/python3 Agent-Linux/build_deb.py --out "$RUNNER_TEMP/a"
+          /usr/bin/python3 Agent-Linux/build_deb.py --out "$RUNNER_TEMP/b"
+          cmp "$RUNNER_TEMP"/a/pops-agent_*_all.deb "$RUNNER_TEMP"/b/pops-agent_*_all.deb
+          dpkg-deb --info "$RUNNER_TEMP"/a/pops-agent_*_all.deb
+          dpkg-deb --contents "$RUNNER_TEMP"/a/pops-agent_*_all.deb
+      - name: dpkg -i without starting the service, then purge
+        run: |
+          set -euo pipefail
+          # deb-systemd-invoke policy-rc.d'ye uyar: paket kurulur, servis etkinleştirilir ama başlatılmaz
+          printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d >/dev/null
+          sudo chmod 755 /usr/sbin/policy-rc.d
+          sudo dpkg -i "$RUNNER_TEMP"/a/pops-agent_*_all.deb
+          dpkg-query -W -f='${Status} ${Version}\n' pops-agent | grep '^install ok installed '
+          systemctl is-enabled pops-agent.service
+          if systemctl is-active -q pops-agent.service; then echo "::error::servis başlatılmamalıydı"; exit 1; fi
+          test "$(sudo stat -c '%a %U' /etc/pops-agent/agent.conf)" = "600 root"
+          test "$(sudo stat -c '%a' /var/lib/pops-agent)" = 700
+          test "$(stat -c '%a' /usr/bin/pops-agent)" = 755
+          test "$(pops-agent version)" = "$(tr -d '[:space:]' < VERSION)"
+          sudo pops-agent status
+          sudo dpkg --verify pops-agent
+          sudo dpkg --purge pops-agent
+          test ! -e /etc/pops-agent && test ! -e /var/lib/pops-agent && test ! -e /usr/lib/pops-agent
+          sudo rm -f /usr/sbin/policy-rc.d
+
+  linux-agent-backend:
+    name: Linux agent against the backend
+    # Uçtan uca: kaynak ağacındaki ajan (dağıtımın python3'ü) TLS'li arka uca (pops-tls ile kurum CA'sı, ajan yalnızca
+    # bu CA'ya güvenir) bağlanır, kaydolur, panel cihazı Linux gösterir, komut çıkış koduyla döner, onaylanan sonuç
+    # diskten silinir, kapatılan uzak komut reddedilir (Agent-Linux/tests/test_integration.py).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: pops
+          POSTGRES_PASSWORD: pops
+          POSTGRES_DB: pops_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USER: pops
+      DB_PASS: pops
+      DB_NAME: pops_ci
+      JWT_SECRET: ci-linux-agent-secret-0123456789abcdef
+      PANEL_ADMIN_USER: admin
+      PANEL_ADMIN_PASS: ci-linux-agent-admin
+      CORS_ALLOWED_ORIGINS: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Set up Python (backend)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install backend deps and the agent's distribution packages
+        run: |
+          pip install --require-hashes -r Backend/requirements.lock
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-websockets python3-cryptography python3-pytest >/dev/null
+      - name: Migrate, start the backend over TLS, run the agent test
+        run: |
+          set -euo pipefail
+          python Backend/migrate.py
+          export POPS_CA_DIR="$RUNNER_TEMP/ca" POPS_TLS_DIR="$RUNNER_TEMP/tls" POPS_TLS_ALLOW_NONROOT=1
+          Installer/server/pops-tls init localhost 127.0.0.1
+          ( cd Backend && exec python -m uvicorn server:app --host 127.0.0.1 --port 8443 \
+              --ssl-certfile "$POPS_TLS_DIR/server.crt" --ssl-keyfile "$POPS_TLS_DIR/server.key" >"$RUNNER_TEMP/uvicorn.log" 2>&1 ) &
+          curl --retry-connrefused --retry 40 --retry-delay 1 -sf --cacert "$POPS_CA_DIR/pops-ca.pem" \
+            https://127.0.0.1:8443/api/health >/dev/null || { echo "server did not start"; cat "$RUNNER_TEMP/uvicorn.log"; exit 1; }
+          POPS_IT_URL=https://127.0.0.1:8443 POPS_IT_CA="$POPS_CA_DIR/pops-ca.pem" POPS_IT_ADMIN_PASS="$PANEL_ADMIN_PASS" \
+            POPS_IT_AGENT_PYTHON=/usr/bin/python3 /usr/bin/python3 -m pytest -v -p no:cacheprovider Agent-Linux/tests/test_integration.py \
+            || { tail -50 "$RUNNER_TEMP/uvicorn.log"; exit 1; }
 
   dashboard:
     name: Dashboard checks

@@ -7202,7 +7202,7 @@
     },
     "/api/v1/system/deploy-update": {
       "post": {
-        "description": "Staged (yüklenip doğrulanmış) imzalı release'i hedef ajanlara dağıtır. Ajana\n{\"action\":\"update_agent\",\"manifest\":<b64>,\"manifest_sig\":<sig>} gönderilir; ajan MSI'ı\nkendi ServerUrl'inin /updates/<ad>'ından indirip imza + SHA-256'yı kendisi doğrular.",
+        "description": "Staged (yüklenip doğrulanmış) imzalı release'i hedef ajanlara dağıtır. Ajana\n{\"action\":\"update_agent\",\"manifest\":<b64>,\"manifest_sig\":<sig>} gönderilir; ajan kendi paketini (Windows MSI,\nLinux .deb) imzalı manifest'ten seçer, kendi ServerUrl'inin /updates/<ad>'ından indirip imza + SHA-256'yı\nkendisi doğrular. Release'te kendi platformunun paketi olmayan cihazlar atlanır (skipped_no_package).",
         "operationId": "deploy_update_api_system_deploy_update_post",
         "requestBody": {
           "content": {
@@ -7429,7 +7429,7 @@
     },
     "/api/v1/system/fetch-release": {
       "post": {
-        "description": "İnternetli kurulum yolu: imzalı release'i (manifest.json + .sig + ajan MSI'ı) GitHub'dan\nindirir ve upload-release ile AYNI doğrulamadan geçirip stage eder. Güven imzadan gelir,\nindirme kaynağından değil. Önce manifest indirilip doğrulanır; MSI'ın adını ve özetini\nimzalı manifest belirler. Ajanlara göndermek yine ayrı adımdır (deploy-update).",
+        "description": "İnternetli kurulum yolu: imzalı release'i (manifest.json + .sig + ajan paketleri: Windows MSI'ı ve varsa\nLinux .deb'i) GitHub'dan indirir ve upload-release ile AYNI doğrulamadan geçirip stage eder. Güven imzadan\ngelir, indirme kaynağından değil. Önce manifest indirilip doğrulanır; paketlerin adını ve özetini imzalı\nmanifest belirler. Ajanlara göndermek yine ayrı adımdır (deploy-update).",
         "operationId": "fetch_release_api_system_fetch_release_post",
         "requestBody": {
           "content": {

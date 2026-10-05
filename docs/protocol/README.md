@@ -42,6 +42,7 @@ backend):
 | `X-Agent-Secret` | both | Device secret received in `set_secret`. The server stores only its SHA-256. |
 | `X-Enroll-Token` | command | Enrollment token from the panel, until the agent has a device secret. Never on the Vision channel. |
 | `X-Agent-Version` | command (the Windows agent sends it on both) | The agent's release version. Stored per device and used for the version gates below. |
+| `X-Agent-Platform` | command | `linux` from the Linux agent ([`Agent-Linux/`](../../Agent-Linux/README.md)); stored in `clients.platform`. Missing = `windows`. |
 
 An agent may send both `X-Agent-Secret` and `X-Enroll-Token`; the server checks the secret first.
 
@@ -164,10 +165,10 @@ a lower or unparsable version only switches these behaviours off.
 
 | `type` | Channel | Server reaction | Schema | Examples |
 | --- | --- | --- | --- | --- |
-| *(none)* / `heartbeat` | command | Recorded in batches; quarantine state reconciled | [heartbeat](agent-to-server/heartbeat.json) | [first](examples/agent-to-server/heartbeat.first.json), [minimal](examples/agent-to-server/heartbeat.minimal.json), [typed](examples/agent-to-server/heartbeat.typed.json) |
+| *(none)* / `heartbeat` | command | Recorded in batches; quarantine state reconciled | [heartbeat](agent-to-server/heartbeat.json) | [first](examples/agent-to-server/heartbeat.first.json), [minimal](examples/agent-to-server/heartbeat.minimal.json), [typed](examples/agent-to-server/heartbeat.typed.json), [linux](examples/agent-to-server/heartbeat.linux.json) |
 | `result` | command | Task output stored; `result_ack` | [result](agent-to-server/result.json) | [completed](examples/agent-to-server/result.completed.json), [failed](examples/agent-to-server/result.failed.json), [denied](examples/agent-to-server/result.denied.json), [legacy](examples/agent-to-server/result.legacy.json) |
 | `capabilities` | command | Stored; a pending switch-off is re-sent | [capabilities](agent-to-server/capabilities.json) | [default](examples/agent-to-server/capabilities.default.json), [terminal_off](examples/agent-to-server/capabilities.terminal_off.json), [files](examples/agent-to-server/capabilities.files.json) |
-| `capability_denied` | command | Audited, notified; task `Denied`, file transfer `rejected`, exam marked refused | [capability_denied](agent-to-server/capability_denied.json) | [execute](examples/agent-to-server/capability_denied.execute.json), [vision](examples/agent-to-server/capability_denied.vision.json), [policy](examples/agent-to-server/capability_denied.policy.json), [files](examples/agent-to-server/capability_denied.files.json), [exam](examples/agent-to-server/capability_denied.exam.json) |
+| `capability_denied` | command | Audited, notified; task `Denied`, file transfer `rejected`, exam marked refused; Linux `not_supported` quarantine clears the pending lock | [capability_denied](agent-to-server/capability_denied.json) | [execute](examples/agent-to-server/capability_denied.execute.json), [vision](examples/agent-to-server/capability_denied.vision.json), [policy](examples/agent-to-server/capability_denied.policy.json), [files](examples/agent-to-server/capability_denied.files.json), [exam](examples/agent-to-server/capability_denied.exam.json), [not_supported](examples/agent-to-server/capability_denied.not_supported.json) |
 | `file_result` | command | Transfer row updated and audited | [file_result](agent-to-server/file_result.json) | [done](examples/agent-to-server/file_result.done.json), [rejected](examples/agent-to-server/file_result.rejected.json) |
 | `update_result` | command | Audited, notified; `update_result_ack` | [update_result](agent-to-server/update_result.json) | [success](examples/agent-to-server/update_result.success.json), [rolled_back](examples/agent-to-server/update_result.rolled_back.json), [legacy](examples/agent-to-server/update_result.legacy.json) |
 | `update_progress` | command | Latest stage kept for the pending update; `rejected` ends it | [update_progress](agent-to-server/update_progress.json) | [example](examples/agent-to-server/update_progress.json) |

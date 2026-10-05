@@ -291,6 +291,7 @@ imajlarla: [`docs/docker.md`](docs/docker.md).
 | :--- | :--- |
 | **Sunucu** | systemd'li Linux, PostgreSQL 13+, Python 3.10+ (önerilen 3.12), `curl` eklentili PHP 8, nginx ya da Apache, TLS sertifikalı bir alan adı. Bir okul için küçük bir sanal makine yeter ([boyutlandırma](docs/kapasite/README.md)). |
 | **Yönetilen bilgisayarlar** | Windows 10 ya da 11, 64 bit. Başka bir şey gerekmez: ajan kendi .NET 10 çalışma zamanını getirir. |
+| **Linux bilgisayarlar (ilk sürüm)** | Pardus 23 / Debian 12 ve sonrası, Ubuntu 24.04: dağıtımın `python3`, `python3-websockets` ve `python3-cryptography` paketleriyle çalışan 45 KB'lık bir `.deb` (`apt` bunları kurar). Envanter ve uzak komut; ekran görüntüleme, karantina ve tepsi henüz yok ([`Agent-Linux/README.md`](Agent-Linux/README.md)). |
 | **Ağ** | Bilgisayarlardan sunucuya dışa doğru HTTPS (443); vekil sunucular ve güvenlik duvarları WebSocket yükseltmesine izin vermeli. Wake-on-LAN için sunucudan lab ağına UDP yayını gerekir. |
 | **Tarayıcı** | Güncel herhangi bir tarayıcı. Panel başka bir adresten bir şey yüklemez (yazı tipleri ve simgeler içindedir); internetsiz ağda da çalışır. |
 
@@ -316,6 +317,10 @@ Dondurma yazılımları (Deep Freeze, Shadow Defender), ajan dondurmadan önce k
   `/etc/pops/allowed_signers` olarak kurun ([`docs/self-update.md`](docs/self-update.md)).
 - **DNS** yalnızca tespit edip bildirir; engelleme planlı. **API:** yalnızca oturumla; API jetonu henüz yok.
 - **Panel dili:** Türkçe; İngilizce arayüz hazırlanıyor.
+- **Linux ajanı (ilk sürüm):** yalnızca envanter ve uzak komut; ekran izleme, karantina, tepsi, kullanıcıya mesaj ve
+  DNS uyarıları şimdilik yalnızca Windows'ta. Debian 12 kapsayıcılarında ve CI'da çalıştı, henüz bir Pardus
+  laboratuvarında denenmedi; Windows tarafı kayıtlı çift önyüklemeli bir bilgisayar aynı donanım olarak görülür
+  ([`Agent-Linux/README.md`](Agent-Linux/README.md)).
 
 ---
 
@@ -372,6 +377,7 @@ Testleri yerelde çalıştırmak (İngilizce): [`docs/testing.md`](docs/testing.
 | Yol | İçerik |
 | :--- | :--- |
 | [`Agent/`](Agent) | Windows ajanı (.NET 10): `POps.Agent` servisi, `POpsTray`, `POpsWatchdog`, `POpsUpdater`, ortak kütüphane `POps.Shared`, testler `POps.Tests`. |
+| [`Agent-Linux/`](Agent-Linux) | Pardus/Debian için Linux ajanı (Python 3): `pops_agent/` paketi, `.deb` derleyici, systemd birimi, testler. |
 | [`Backend/`](Backend) | FastAPI backend: `pops/` paketi, router'lar, migration'lar, testler. |
 | [`Dashboard/`](Dashboard) | PHP 8 panel (Türkçe arayüz). |
 | [`Installer/`](Installer) | Ajan için WiX MSI; sunucu kurulum, dağıtım, kendini güncelleme, yedek ve TLS betikleri. |

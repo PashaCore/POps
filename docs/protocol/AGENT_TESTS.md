@@ -3,7 +3,8 @@
 The files in [`examples/`](examples/) are shared test vectors. The backend checks them in
 `Backend/tests/test_protocol.py`; every agent implementation should check them too, so that a change on either side
 shows up as a failing test instead of a field the other side silently ignores. This page describes the tests for
-the Windows agent (`Agent/POps.Tests`, xUnit). The Linux agent can follow the same list.
+the Windows agent (`Agent/POps.Tests`, xUnit). The Linux agent runs the same checks in
+`Agent-Linux/tests/test_protocol_vectors.py` (pytest; the schema checks need `python3-jsonschema`).
 
 ## Finding the files
 
