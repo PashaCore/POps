@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Kontrol merkezi: viewers see "Göster", not "Güncelle", for old agents.** A viewer cannot update agents. The tile and the attention item already opened the device list.
 - **Docs: Vision channel authentication.** `docs/api.md` said `/ws/vision` accepts an enrollment token; it accepts only the device secret.
 - **Apache template: WebSocket rule.** `Installer/server/apache-htaccess.example` forwarded `/ws/panel` as `/ws/` because the path came from the wrong condition. **Upgrading:** if your `Dashboard/.htaccess` has the `Upgrade` condition after the `/ws/` path condition, swap them (sites with a vhost `ProxyPass /ws/` were not affected).
 - **Agent: an unreadable configuration is reported.** When `appsettings.json` cannot be read or has no valid `ServerUrl`, the agent still falls back to `http://127.0.0.1:8000`, but now logs an error, writes Windows event 1090 and shows "POps - yapılandırma okunamadı" with a warning icon in the tray instead of looking healthy.
