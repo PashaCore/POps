@@ -49,10 +49,20 @@ def verify_manifest(manifest_bytes: bytes, sig_b64: bytes, pubkey_pem_path: str)
         manifest = json.loads(manifest_bytes)
     except Exception:
         raise ReleaseVerifyError("manifest gecerli JSON degil")
+    if not isinstance(manifest, dict):
+        raise ReleaseVerifyError("manifest bir JSON nesnesi degil")
     if manifest.get("schema") != MANIFEST_SCHEMA:
         raise ReleaseVerifyError("bilinmeyen manifest semasi: %r" % manifest.get("schema"))
     if not isinstance(manifest.get("artifacts"), list) or not manifest.get("version"):
         raise ReleaseVerifyError("manifest eksik alan (artifacts/version)")
+    # İmzalı ama biçimi bozuk manifest de reddedilir: çağıranlar bu alanların türüne güvenir (docs/protocol/
+    # release-manifest.json); yoksa yükleme 400 yerine 500 ile düşüyordu (fuzz/fuzz_release_manifest.py)
+    released_at = manifest.get("released_at", 0)
+    if not isinstance(manifest["version"], str) or not isinstance(released_at, int) or isinstance(released_at, bool):
+        raise ReleaseVerifyError("manifest alan turu gecersiz (version/released_at)")
+    for art in manifest["artifacts"]:
+        if not isinstance(art, dict) or not isinstance(art.get("name"), str) or not isinstance(art.get("sha256"), str):
+            raise ReleaseVerifyError("manifest artefakt kaydi gecersiz (name/sha256)")
     return manifest
 
 

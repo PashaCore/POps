@@ -1142,17 +1142,19 @@ async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depend
 
 def _clean_dns_domains(raw: dict) -> dict:
     """kategori -> tam alan adları. Küçük harf, baştaki '*.' / '.' ve sondaki '.' atılır, http(s):// ve yol
-    temizlenir, tekrarlar birleşir. Kategori başına en fazla 5000 alan adı."""
+    temizlenir, tekrarlar birleşir. Kategori başına en fazla 5000 alan adı. Boşluk, denetim ya da biçim karakteri
+    (sekme, NUL, U+202E...) içeren ad ve denetim karakterli kategori atılır: ajanda hiçbir zaman eşleşmez, NUL'u
+    PostgreSQL saklayamaz (fuzz/fuzz_request_models.py)."""
     out = {}
     for cat, domains in (raw or {}).items():
         cat = str(cat).strip()[:60]
-        if not cat or not isinstance(domains, list):
+        if not cat or not cat.isprintable() or not isinstance(domains, list):
             continue
         seen = []
         for d in domains[:5000]:
             d = str(d).strip().lower()
             d = d.split("://", 1)[-1].split("/", 1)[0].lstrip("*.").rstrip(".")
-            if d and " " not in d and len(d) <= 253 and d not in seen:
+            if d and " " not in d and d.isprintable() and len(d) <= 253 and d not in seen:
                 seen.append(d)
         out[cat] = seen
     return out

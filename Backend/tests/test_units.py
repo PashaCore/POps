@@ -1537,6 +1537,13 @@ def test_devicelist():
 def test_fuzz_findings():
     """fuzz/ hedeflerinin bulduğu hatalar (docs/fuzzing.md)."""
     print("== fuzz bulguları")
+    import base64
+    import tempfile
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    import release_verify
     from pops import dna
     from pops.routers import agents
 
@@ -1554,6 +1561,26 @@ def test_fuzz_findings():
     chk(msg == {"type": "result", "output": "ab\ufffd", "k": [""]},
         "ajan mesajı: NUL silinir, eşi olmayan vekil karakter U+FFFD olur")
     chk(agents._parse_agent_message('{"e": "\\ud83d\\ude00"}') == {"e": "\U0001F600"}, "ajan mesajı: emoji korunur")
+    chk(agents._clean_dns_domains({"bahis": ["bet.example", "a\tb.example", "c\x00.example", "\u202emoc.example"],
+                                   "x\x00": ["d.example"]}) == {"bahis": ["bet.example"]},
+        "politika: boşluk ya da denetim karakterli alan adı ve kategori atılır")
+
+    key = Ed25519PrivateKey.generate()
+    with tempfile.NamedTemporaryFile("wb", suffix=".pem", delete=False) as f:
+        f.write(key.public_key().public_bytes(serialization.Encoding.PEM,
+                                              serialization.PublicFormat.SubjectPublicKeyInfo))
+    try:
+        for body in (b"39", b'{"schema": "pops-manifest/1", "version": "1.0", "artifacts": [1]}',
+                     b'{"schema": "pops-manifest/1", "version": 1, "artifacts": []}',
+                     b'{"schema": "pops-manifest/1", "version": "1.0", "released_at": "x", "artifacts": []}'):
+            try:
+                release_verify.verify_manifest(body, base64.b64encode(key.sign(body)), f.name)
+                ok = False
+            except release_verify.ReleaseVerifyError:
+                ok = True
+            chk(ok, "imzalı ama biçimi bozuk manifest reddedilir: %s" % body[:50].decode())
+    finally:
+        os.unlink(f.name)
 
 
 def main():
