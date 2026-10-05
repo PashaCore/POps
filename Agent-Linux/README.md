@@ -14,7 +14,7 @@ capability policy and signed releases, and appears in the panel as a **Linux** d
 | Hardware inventory (CPU, RAM, board, GPU, OS, IP, MAC, disks) | Tray icon, notices to the user, fair-use notice, help desk |
 | Installed packages from `dpkg` (libraries left out) | Windows Update (the panel shows "—") |
 | Remote commands as root with `/bin/sh`, timeout, cancel, exit code | DNS policy alerts |
-| The panel's restart and shut-down buttons, also from schedules | The panel's **Mesaj gönder** (it sends the Windows `msg` command) |
+| The panel's restart and shut-down buttons, also from schedules | The panel's **Mesaj gönder**, **Oturumu kapat** and **Kilitle** (refused with -8: the agent does not announce `message` or `power`) |
 | Capability policy (terminal on/off, the server can only switch off) | |
 | Wake-on-LAN relay for other PCs | |
 | Signed self-update with rollback | |
@@ -34,7 +34,9 @@ Known limitations of this version:
   moves the identity). Use one agent per physical PC for now.
 - The heartbeat carries a `system` block (CPU, memory and root disk use, uptime, load) that the server does not store
   yet; the active window is not reported (`-`).
-- The panel's **Mesaj gönder** sends Windows' `msg` command, which fails on Linux.
+- The panel's **Mesaj gönder**, **Oturumu kapat** and **Kilitle** are refused by the server with -8, and nothing is
+  sent to the PC: this agent does not announce `message` or `power` in `X-Agent-Features`. **Kapat** and
+  **Yeniden başlat** still work through the old shutdown command.
 
 ## Requirements
 
