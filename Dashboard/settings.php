@@ -37,7 +37,8 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     .user-table td { padding-top: 11px; padding-bottom: 11px; white-space: nowrap; }
     body.drawer-open .user-table .col-access { display: none; }   /* panel açıkken tablo daralır; erişim panelde yazar */
     .user-table .nm { display: flex; align-items: center; gap: 10px; font-weight: var(--fw-semibold); min-width: 0; }
-    .user-table .nm > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .user-table .nm > span:not(.av):not(.badge) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .user-table .nm > .badge { flex: none; }
     .av { width: 28px; height: 28px; border-radius: 99px; background: var(--bg-surface-3); color: var(--text-secondary); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: var(--fw-semibold); flex: none; }
     .you { font-size: var(--text-xs); color: var(--text-muted); font-weight: var(--fw-regular); margin-left: 6px; }
     .user-table td.when { color: var(--text-tertiary); white-space: nowrap; }
@@ -67,6 +68,25 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     .tok-row .t > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tok-row .d code { font-size: 11.5px; }
     .tok-row.is-off .t > span:first-child { color: var(--text-tertiary); }
+
+    /* Kimlik sağlayıcıları (LDAP / OIDC) */
+    .sso-form .form-grid { margin-bottom: var(--space-4); }
+    .sso-form textarea.mono, .sso-form input.mono { font-family: var(--font-mono); font-size: 12.5px; }
+    .sso-form .sso-sub { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); margin: var(--space-5) 0 var(--space-2); }
+    .sso-form .sso-sub:first-child { margin-top: 0; }
+    .smap { display: flex; flex-direction: column; gap: 8px; }
+    .smap-row { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .smap-top { display: flex; gap: 8px; align-items: center; }
+    .smap-top .smap-group { flex: 1; min-width: 0; }
+    .smap-top .smap-role { width: auto; flex: none; }
+    .perm-grid.smap-pages { grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); }
+    .smap-empty { font-size: var(--text-sm); color: var(--text-tertiary); }
+    .sso-test { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .sso-test input { flex: 1; min-width: 160px; }
+    .sso-result { margin-top: var(--space-3); }
+    .sso-result ul { margin: 6px 0 0 18px; padding: 0; }
+    .sso-result code { overflow-wrap: anywhere; }
+    @media (max-width: 640px) { .smap-top { flex-wrap: wrap; } .smap-top .smap-group { flex-basis: 100%; } }
 
     /* Kullanıcı formu */
     .perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; }
@@ -185,6 +205,35 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     </section>
     <?php endif; ?>
 
+    <?php if ($isSuper): ?>
+    <section class="sect" data-pane="security" aria-labelledby="hSso">
+        <div class="sect-head">
+            <h2 id="hSso"><?php _e('Kimlik sağlayıcıları'); ?></h2>
+            <p><?php _e('Okulun dizin hesaplarıyla (Active Directory / LDAP) ya da tek oturum açma sağlayıcısıyla (OpenID Connect: Microsoft Entra ID, Google, Keycloak) panele giriş. Rol ve sayfalar dizindeki gruplardan gelir. Yerel hesaplar her zaman çalışır: dizine ulaşılamasa da yerel süper admin girer.'); ?> <code>docs/security.md</code></p>
+        </div>
+        <div class="sect-body">
+            <div class="set">
+                <div class="srow">
+                    <div class="grow">
+                        <div class="t">Active Directory / LDAP</div>
+                        <div class="d" id="ssoLdapDesc"><?php _e('Yükleniyor…'); ?></div>
+                    </div>
+                    <span class="st" id="ssoLdapState"></span>
+                    <button type="button" class="btn secondary sm" id="ssoLdapEdit" disabled><?php _e('Ayarla'); ?></button>
+                </div>
+                <div class="srow">
+                    <div class="grow">
+                        <div class="t">OpenID Connect</div>
+                        <div class="d" id="ssoOidcDesc"><?php _e('Yükleniyor…'); ?></div>
+                    </div>
+                    <span class="st" id="ssoOidcState"></span>
+                    <button type="button" class="btn secondary sm" id="ssoOidcEdit" disabled><?php _e('Ayarla'); ?></button>
+                </div>
+            </div>
+        </div>
+    </section>
+    <?php endif; ?>
+
     <section class="sect" data-pane="general" aria-labelledby="hOrg">
         <div class="sect-head">
             <h2 id="hOrg"><?php _e('Kurum'); ?></h2>
@@ -281,6 +330,15 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
                 <input type="text" id="umName" maxlength="64" autocomplete="off" spellcheck="false">
                 <div class="field-error"><?php _e('Kullanıcı adı girin.'); ?></div>
             </div>
+            <div class="field" id="umSrcField" hidden>
+                <span class="field-label"><?php _e('Kimlik kaynağı'); ?></span>
+                <div class="segmented block" id="umSrc" role="group" aria-label="<?php _e('Kimlik kaynağı'); ?>">
+                    <button type="button" data-src="local" aria-pressed="false"><?php _e('Yerel'); ?></button>
+                    <button type="button" data-src="ldap" aria-pressed="false"><?php _e('Dizin (LDAP)'); ?></button>
+                    <button type="button" data-src="oidc" aria-pressed="false">OpenID Connect</button>
+                </div>
+                <div class="field-hint" id="umSrcHint"></div>
+            </div>
             <div class="field" id="umPassField">
                 <label for="umPass"><?php _e('Şifre'); ?></label>
                 <input type="password" id="umPass" autocomplete="new-password">
@@ -348,6 +406,113 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         </div>
     </div>
 </div>
+<div class="modal-overlay" id="ssoLdapModal">
+    <div class="modal-box lg">
+        <div class="modal-header">
+            <div class="modal-title">Active Directory / LDAP</div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x', 'sm'); ?></button>
+        </div>
+        <div class="modal-body sso-form">
+            <label class="switch-field" style="margin-bottom:var(--space-4)"><span class="switch"><input type="checkbox" id="slEnabled"><span></span></span><?php _e('Dizin hesaplarıyla girişe izin ver'); ?></label>
+            <div class="sso-sub"><?php _e('Sunucu'); ?></div>
+            <div class="form-grid">
+                <div class="field"><label for="slHost"><?php _e('Sunucu adı'); ?></label><input type="text" id="slHost" class="mono" maxlength="255" spellcheck="false" placeholder="dc1.okul.local"></div>
+                <div class="field"><label for="slPort">Port</label><input type="number" id="slPort" min="1" max="65535" inputmode="numeric"></div>
+                <div class="field"><span class="field-label"><?php _e('Bağlantı'); ?></span>
+                    <div class="segmented block" id="slSec" role="group" aria-label="<?php _e('Bağlantı'); ?>">
+                        <button type="button" data-sec="ldaps" aria-pressed="false">LDAPS</button>
+                        <button type="button" data-sec="starttls" aria-pressed="false">StartTLS</button>
+                    </div>
+                </div>
+            </div>
+            <div class="field"><label for="slCa"><?php _e('CA sertifikası (PEM, isteğe bağlı)'); ?></label>
+                <textarea id="slCa" class="mono" rows="3" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+                <div class="field-hint"><?php _e('Dizin sunucusunun sertifikasını imzalayan kurum CA\'sı. Boşsa sunucunun sistem CA deposu kullanılır. Sertifika ve sunucu adı her zaman doğrulanır; şifresiz LDAP kabul edilmez.'); ?></div>
+            </div>
+            <div class="sso-sub"><?php _e('Hizmet hesabı ve arama'); ?></div>
+            <div class="form-grid">
+                <div class="field"><label for="slBindDn"><?php _e('Hizmet hesabı (DN)'); ?></label><input type="text" id="slBindDn" class="mono" maxlength="1024" spellcheck="false" placeholder="CN=pops-svc,OU=Servis,DC=okul,DC=local"></div>
+                <div class="field"><label for="slBindPw"><?php _e('Hizmet hesabının şifresi'); ?></label><input type="password" id="slBindPw" maxlength="1024" autocomplete="new-password"><div class="field-hint" id="slBindPwHint"></div></div>
+            </div>
+            <div class="field"><label for="slBase"><?php _e('Arama kökü (base DN)'); ?></label><input type="text" id="slBase" class="mono" maxlength="1024" spellcheck="false" placeholder="DC=okul,DC=local"></div>
+            <div class="form-grid">
+                <div class="field"><label for="slFilter"><?php _e('Kullanıcı filtresi'); ?></label><input type="text" id="slFilter" class="mono" maxlength="512" spellcheck="false"><div class="field-hint"><?php _e('{username} girilen kullanıcı adıdır (filtre için kaçırılır).'); ?></div></div>
+                <div class="field"><label for="slUserAttr"><?php _e('Kullanıcı adı özniteliği'); ?></label><input type="text" id="slUserAttr" class="mono" maxlength="64" spellcheck="false"></div>
+            </div>
+            <div class="form-grid">
+                <div class="field"><label for="slGroupBase"><?php _e('Grup arama kökü (isteğe bağlı)'); ?></label><input type="text" id="slGroupBase" class="mono" maxlength="1024" spellcheck="false" placeholder="OU=Gruplar,DC=okul,DC=local"></div>
+                <div class="field"><label for="slGroupFilter"><?php _e('Grup filtresi'); ?></label><input type="text" id="slGroupFilter" class="mono" maxlength="512" spellcheck="false"></div>
+            </div>
+            <div class="field-hint" style="margin:-8px 0 0"><?php _e('Gruplar kullanıcının memberOf özniteliğinden okunur; grup arama kökü verilirse bu filtreyle de aranır ({user_dn}, {username}). İç içe AD grupları için: (member:1.2.840.113556.1.4.1941:={user_dn})'); ?></div>
+            <div class="sso-sub"><?php _e('Grup → rol'); ?></div>
+            <div class="smap" id="slMap"></div>
+            <button type="button" class="btn ghost sm" id="slMapAdd" style="align-self:flex-start;margin-top:8px"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Eşleme ekle'); ?></button>
+            <div class="field-hint" style="margin-top:6px"><?php _e('Eşlenen bir grupta olmayan dizin hesabı giremez. Birden çok grup eşleşirse en yüksek rol ve bütün eşleşmelerin sayfaları geçerli olur. Rol ve sayfalar her girişte yeniden yazılır.'); ?></div>
+            <div class="sso-sub"><?php _e('Bağlantıyı sına'); ?></div>
+            <div class="sso-test">
+                <input type="text" id="slTestUser" maxlength="256" autocomplete="off" spellcheck="false" placeholder="<?php _e('Kullanıcı adı (isteğe bağlı)'); ?>" aria-label="<?php _e('Sınanacak kullanıcı adı'); ?>">
+                <button type="button" class="btn secondary sm" id="slTest"><?php _e('Bağlantıyı sına'); ?></button>
+            </div>
+            <div class="sso-result" id="slResult" hidden></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="slSave"><?php _e('Kaydet'); ?></button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="ssoOidcModal">
+    <div class="modal-box lg">
+        <div class="modal-header">
+            <div class="modal-title">OpenID Connect</div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x', 'sm'); ?></button>
+        </div>
+        <div class="modal-body sso-form">
+            <label class="switch-field" style="margin-bottom:var(--space-4)"><span class="switch"><input type="checkbox" id="soEnabled"><span></span></span><?php _e('Giriş ekranında sağlayıcı düğmesini göster'); ?></label>
+            <div class="sso-sub"><?php _e('Sağlayıcı'); ?></div>
+            <div class="form-grid">
+                <div class="field"><label for="soName"><?php _e('Düğmedeki ad'); ?></label><input type="text" id="soName" maxlength="60" placeholder="<?php _e('Örn. Okul hesabı'); ?>"></div>
+                <div class="field"><label for="soIssuer"><?php _e('Sağlayıcı adresi (issuer)'); ?></label><input type="text" id="soIssuer" class="mono" maxlength="512" spellcheck="false" placeholder="https://login.microsoftonline.com/…/v2.0"></div>
+            </div>
+            <div class="form-grid">
+                <div class="field"><label for="soClient"><?php _e('İstemci kimliği (client ID)'); ?></label><input type="text" id="soClient" class="mono" maxlength="512" spellcheck="false"></div>
+                <div class="field"><label for="soSecret"><?php _e('İstemci sırrı'); ?></label><input type="password" id="soSecret" maxlength="2048" autocomplete="new-password"><div class="field-hint" id="soSecretHint"></div></div>
+            </div>
+            <div class="field"><label for="soRedirect"><?php _e('Dönüş adresi (redirect URI)'); ?></label><input type="text" id="soRedirect" class="mono" maxlength="512" spellcheck="false"><div class="field-hint"><?php _e('Sağlayıcıya bu adresi kaydedin. Panelin https adresi ve /api/auth/oidc/callback olmalı.'); ?></div></div>
+            <div class="form-grid">
+                <div class="field"><label for="soScopes"><?php _e('Kapsamlar (scopes)'); ?></label><input type="text" id="soScopes" class="mono" maxlength="256" spellcheck="false"></div>
+                <div class="field"><label for="soUserClaim"><?php _e('Kullanıcı adı talebi'); ?></label><input type="text" id="soUserClaim" class="mono" maxlength="64" spellcheck="false" placeholder="email"><div class="field-hint"><?php _e('E-posta yalnızca doğrulanmışsa kabul edilir. Entra ID: preferred_username'); ?></div></div>
+                <div class="field"><label for="soGroupClaim"><?php _e('Grup talebi'); ?></label><input type="text" id="soGroupClaim" class="mono" maxlength="64" spellcheck="false" placeholder="groups"></div>
+            </div>
+            <div class="field"><label for="soCa"><?php _e('CA sertifikası (PEM, isteğe bağlı)'); ?></label>
+                <textarea id="soCa" class="mono" rows="3" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+                <div class="field-hint"><?php _e('Yalnızca sağlayıcı kurum içi bir CA ile imzalıysa (ör. kurum içi Keycloak, AD FS).'); ?></div>
+            </div>
+            <div class="sso-sub"><?php _e('Grup → rol'); ?></div>
+            <div class="smap" id="soMap"></div>
+            <button type="button" class="btn ghost sm" id="soMapAdd" style="align-self:flex-start;margin-top:8px"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Eşleme ekle'); ?></button>
+            <div class="field-hint" style="margin-top:6px"><?php _e('Grup talebindeki değer (Entra ID: grup nesne kimliği; Keycloak: /grup-yolu). Birden çok grup eşleşirse en yüksek rol geçerli olur.'); ?></div>
+            <div class="sso-sub"><?php _e('E-posta alan adı'); ?></div>
+            <div class="field"><label for="soDomains"><?php _e('İzinli alan adları'); ?></label><input type="text" id="soDomains" class="mono" maxlength="1000" spellcheck="false" placeholder="okul.k12.tr"><div class="field-hint"><?php _e('Virgülle ayırın. Doluysa yalnızca doğrulanmış e-postası bu alan adlarında olanlar girer.'); ?></div></div>
+            <div class="field"><span class="field-label"><?php _e('Eşlenen grubu olmayanlara varsayılan rol'); ?></span>
+                <div class="segmented block" id="soDefRole" role="group" aria-label="<?php _e('Varsayılan rol'); ?>">
+                    <button type="button" data-drole="" aria-pressed="false"><?php _e('Yok (giremez)'); ?></button>
+                    <button type="button" data-drole="viewer" aria-pressed="false"><?php _e('İzleyici'); ?></button>
+                    <button type="button" data-drole="admin" aria-pressed="false"><?php _e('Yönetici'); ?></button>
+                </div>
+            </div>
+            <div class="perm-grid" id="soDefPages"></div>
+            <div class="sso-sub"><?php _e('Bağlantıyı sına'); ?></div>
+            <div class="sso-test"><button type="button" class="btn secondary sm" id="soTest"><?php _e('Bağlantıyı sına'); ?></button></div>
+            <div class="sso-result" id="soResult" hidden></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="soSave"><?php _e('Kaydet'); ?></button>
+        </div>
+    </div>
+</div>
 <?php endif; ?>
 
 <!-- QR üretimi tarayıcıda yapılır (gizli anahtar dışarı gitmez). Kütüphane yerelde
@@ -377,6 +542,9 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         viewer: { word: 'İzleyici', hint: 'Seçilen sayfaları yalnızca görüntüler; Dağıtım, Uzak komut ve Ayarlar kapalıdır.' }
     };
     const roleWord = (r) => (ROLES[r] ? POps.t(ROLES[r].word) : r || '—');
+    // Kimlik kaynağı: yerel şifre ya da dizin / OpenID Connect (bkz. Güvenlik → Kimlik sağlayıcıları)
+    const SOURCES = { local: 'Yerel', ldap: 'Dizin (LDAP)', oidc: 'OpenID Connect' };
+    const isSso = (u) => !!(u && u.auth_source && u.auth_source !== 'local');
     const pageName = (k) => PAGES[k] || k;
     // Sunucunun "YYYY-MM-DD HH:MM:SS" (yerel saat) biçimi her tarayıcıda okunsun
     const loginDate = (v) => (v ? POps.toDate(String(v).replace(' ', 'T')) : null);
@@ -402,7 +570,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         const when = loginDate(u.last_login);
         const lastHtml = when ? POps.timeHtml(when) : '<span class="faint">' + POps.tHtml('Hiç girmedi') + '</span>';
         return `<tr data-id="${Number(u.id)}" tabindex="0" class="${focusId === u.id ? 'is-focus' : ''}">
-            <td><div class="nm"><span class="av" aria-hidden="true">${escapeHtml(initial)}</span><span>${escapeHtml(u.username)}${self ? '<span class="you">' + POps.tHtml('siz') + '</span>' : ''}</span></div></td>
+            <td><div class="nm"><span class="av" aria-hidden="true">${escapeHtml(initial)}</span><span>${escapeHtml(u.username)}${self ? '<span class="you">' + POps.tHtml('siz') + '</span>' : ''}</span>${isSso(u) ? `<span class="badge muted">${escapeHtml(POps.t(SOURCES[u.auth_source] || u.auth_source))}</span>` : ''}</div></td>
             <td>${escapeHtml(roleWord(u.role))}</td>
             <td class="hide-sm col-access" title="${escapeHtml(u.role === 'superadmin' ? '' : permsOf(u).map(pageName).join(', '))}">${escapeHtml(accessText(u))}</td>
             <td class="when">${lastHtml}</td>
@@ -450,15 +618,17 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             + `<div class="grow"><span>${POps.tHtml('Sayfalar')}</span><span>${escapeHtml(pagesText)}</span></div>`
             + `<div class="grow"><span>${POps.tHtml('Son giriş')}</span><span>${when ? POps.timeHtml(when) : POps.tHtml('Hiç girmedi')}</span></div>`
             + (self && twofaOn !== null ? `<div class="grow"><span>2FA</span><span>${twofaOn ? POps.tHtml('Açık') : escapeHtml(POps.tx('Kapalı', 'switch'))}</span></div>` : '')
+            + `<div class="grow"><span>${POps.tHtml('Kimlik kaynağı')}</span><span>${escapeHtml(POps.t(SOURCES[u.auth_source] || SOURCES.local))}</span></div>`
             + `<div class="grow"><span>${POps.tHtml('Kimlik')}</span><span>#${Number(u.id)}</span></div>`;
         const canDelete = u.role !== 'superadmin' && !self;
         const actionsHtml = IS_SUPER
             ? `<div class="set uact">
                 <button type="button" class="srow" data-act="edit">${POps.iconHtml('sliders', 'sm')}<span class="grow">${POps.tHtml('Rolü ve yetkileri düzenle')}</span>${POps.iconHtml('right', 'sm')}</button>
-                <button type="button" class="srow" data-act="password">${POps.iconHtml('key', 'sm')}<span class="grow">${POps.tHtml('Şifreyi sıfırla')}</span>${POps.iconHtml('right', 'sm')}</button>
+                ${isSso(u) ? '' : `<button type="button" class="srow" data-act="password">${POps.iconHtml('key', 'sm')}<span class="grow">${POps.tHtml('Şifreyi sıfırla')}</span>${POps.iconHtml('right', 'sm')}</button>`}
                 ${canDelete ? `<button type="button" class="srow danger" data-act="delete">${POps.iconHtml('trash', 'sm')}<span class="grow">${POps.tHtml('Kullanıcıyı sil')}</span></button>` : ''}
               </div>`
               + (canDelete ? '' : `<div class="dnote">${self ? POps.tHtml('Kendi hesabınızı silemezsiniz.') : POps.tHtml('Süper admin hesabı silinemez; silmek için önce rolünü değiştirin.')}</div>`)
+              + (isSso(u) ? `<div class="dnote">${POps.tHtml('Yerel şifresi yoktur. Rol ve sayfalar her girişte dizindeki gruplardan yeniden yazılır.')}</div>` : '')
             : '<div class="dnote">' + POps.tHtml('Kullanıcıları yalnızca süper admin düzenleyebilir.') + '</div>';
         return `<div class="drawer-head">
                 <div class="drawer-title">
@@ -525,6 +695,18 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         });
         $('umPermsHint').textContent = r === 'viewer' ? POps.t('Kontrol merkezi herkese açıktır. İzleyici Dağıtım, Uzak komut ve Ayarlar sayfalarını açamaz.') : POps.t('Kontrol merkezi herkese açıktır.');
     }
+    let formSrc = 'local';
+    // Şifre alanı: yeni yerel hesapta ve dizin/OIDC hesabı yerele dönerken (var olan yerel hesabın şifresi
+    // "Şifreyi sıfırla" ile değişir)
+    function setSrc(src) {
+        formSrc = SOURCES[src] ? src : 'local';
+        $('umSrc').querySelectorAll('button').forEach(b => { const on = b.dataset.src === formSrc; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        const back = isSso(editing) && formSrc === 'local';
+        $('umPassField').hidden = !(formSrc === 'local' && (!editing || back));
+        $('umSrcHint').textContent = formSrc === 'local'
+            ? (back ? POps.t('Yerel hesaba dönen kullanıcıya yeni bir şifre verin.') : '')
+            : POps.t('Yerel şifresi olmaz. İlk girişte dizindeki ya da sağlayıcıdaki aynı adlı hesaba bağlanır; rol ve sayfalar o zaman grup eşlemesinden yazılır.');
+    }
     function clearErrors() { document.querySelectorAll('#userModal .field.has-error').forEach(f => f.classList.remove('has-error')); }
     function openEditor(u) {
         editing = u || null;
@@ -533,7 +715,9 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         $('umSave').textContent = u ? POps.t('Değişiklikleri kaydet') : POps.t('Kullanıcıyı ekle');
         $('umName').value = u ? u.username : '';
         $('umPass').value = '';
-        $('umPassField').hidden = !!u;   // var olan kullanıcının şifresi "Şifreyi sıfırla" ile değişir
+        // Kimlik kaynağı yalnızca bir sağlayıcı ayarlıysa ya da hesap zaten dizin/OIDC hesabıysa sorulur
+        $('umSrcField').hidden = !(isSso(u) || (sso && (sso.ldap.host || sso.oidc.issuer)));
+        setSrc(u ? (u.auth_source || 'local') : 'local');
         const perms = u ? permsOf(u) : [];
         document.querySelectorAll('.perm-cb').forEach(cb => { cb.checked = perms.includes(cb.value); });
         setRole(u ? (ROLES[u.role] ? u.role : 'admin') : 'admin');
@@ -546,13 +730,13 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         const password = $('umPass').value;
         let bad = false;
         if (!username) { $('umNameField').classList.add('has-error'); bad = true; }
-        if (!editing && !password) { $('umPassField').classList.add('has-error'); bad = true; }
+        if (!$('umPassField').hidden && !password) { $('umPassField').classList.add('has-error'); bad = true; }
         if (bad) { (username ? $('umPass') : $('umName')).focus(); return; }
         // Görünmeyen (ör. süper admine geçince gizlenen) seçimler de korunur
         const perms = [...document.querySelectorAll('.perm-cb')].filter(cb => cb.checked).map(cb => cb.value);
         if (editing) permsOf(editing).filter(k => !PAGES[k]).forEach(k => perms.push(k));   // panelin bilmediği eski anahtarlar silinmesin
-        const payload = { username, role: formRole, permissions: JSON.stringify(perms) };
-        if (!editing) payload.password = password;
+        const payload = { username, role: formRole, permissions: JSON.stringify(perms), auth_source: formSrc };
+        if (!$('umPassField').hidden) payload.password = password;
         const target = editing;
         const ok = await POps.act($('umSave'), () => target
             ? POps.api('/api/admin/users/' + encodeURIComponent(target.id), { method: 'PUT', body: payload })
@@ -585,6 +769,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     if (IS_SUPER) {
         $('addUserBtn').addEventListener('click', () => openEditor(null));
         $('umRole').addEventListener('click', (e) => { const b = e.target.closest('button[data-role]'); if (b) setRole(b.dataset.role); });
+        $('umSrc').addEventListener('click', (e) => { const b = e.target.closest('button[data-src]'); if (b) setSrc(b.dataset.src); });
         $('umSave').addEventListener('click', saveUser);
         $('userModal').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { e.preventDefault(); saveUser(); } });
         ['umName', 'umPass'].forEach(id => $(id).addEventListener('input', (e) => e.target.closest('.field').classList.remove('has-error')));
@@ -738,6 +923,250 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         ['tkName', 'tkDays'].forEach(id => $(id).addEventListener('input', (e) => e.target.closest('.field').classList.remove('has-error')));
         $('tokList').addEventListener('click', (e) => { const b = e.target.closest('[data-revoke]'); if (b) revokeApiToken(Number(b.dataset.revoke)); });
         loadApiTokens();
+    }
+
+    // ================= KİMLİK SAĞLAYICILARI (yalnızca süper admin) =================
+    // LDAP / AD ve OpenID Connect: /api/sso/settings. Sırlar sunucudan dönmez; şifre alanı boş bırakılırsa kayıtlı
+    // sır kalır. Sunucu ya da hesap değişirse sunucu sırrın yeniden yazılmasını ister. Ayrıntı: docs/security.md
+    const SSO_ROLES = { viewer: 'İzleyici', admin: 'Yönetici', superadmin: 'Süper admin' };
+    const SSO_SEC = { ldaps: 'LDAPS', starttls: 'StartTLS', plain: 'LDAP' };
+    let sso = null;
+    let ldapSec = 'ldaps';
+    let oidcDefRole = '';
+    function ssoPagesHtml(selected) {
+        return Object.keys(PAGES).map(k => `<label class="check" data-page="${escapeHtml(k)}"><input type="checkbox" value="${escapeHtml(k)}"${selected.includes(k) ? ' checked' : ''}>${escapeHtml(POps.t(PAGES[k]))}</label>`).join('');
+    }
+    // İzleyici Dağıtım, Uzak komut ve Ayarlar'ı açamaz; süper admin her sayfayı açar (sayfa listesi gizlenir)
+    function ssoPagesFor(grid, role) {
+        grid.hidden = !role || role === 'superadmin';
+        grid.querySelectorAll('.check').forEach(l => {
+            const blocked = role === 'viewer' && VIEWER_BLOCKED.includes(l.dataset.page);
+            l.classList.toggle('is-blocked', blocked);
+            l.querySelector('input').disabled = blocked;
+        });
+    }
+    function ssoMapRowHtml(m, dn) {
+        const role = SSO_ROLES[m.role] ? m.role : 'viewer';
+        const opts = Object.keys(SSO_ROLES).map(r => `<option value="${escapeHtml(r)}"${r === role ? ' selected' : ''}>${escapeHtml(POps.t(SSO_ROLES[r]))}</option>`).join('');
+        const ph = dn ? 'CN=POps-Yoneticiler,OU=Gruplar,DC=okul,DC=local' : 'pops-admins';
+        return `<div class="smap-row">
+            <div class="smap-top">
+                <input type="text" class="smap-group mono" maxlength="512" spellcheck="false" value="${escapeHtml(m.group || '')}" placeholder="${escapeHtml(ph)}" aria-label="${escapeHtml(POps.t('Grup'))}">
+                <select class="smap-role" aria-label="${escapeHtml(POps.t('Rol'))}">${opts}</select>
+                <button type="button" class="ibtn sm smap-del" data-tip="${escapeHtml(POps.t('Eşlemeyi kaldır'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Eşlemeyi kaldır'))}">${POps.iconHtml('trash', 'sm')}</button>
+            </div>
+            <div class="perm-grid smap-pages">${ssoPagesHtml(m.pages || [])}</div>
+        </div>`;
+    }
+    function ssoRenderMap(box, rows, dn) {
+        box.innerHTML = rows.length ? rows.map(m => ssoMapRowHtml(m, dn)).join('') : `<div class="smap-empty">${POps.tHtml('Henüz eşleme yok: kimse bu yolla giremez.')}</div>`;
+        box.querySelectorAll('.smap-row').forEach(row => ssoPagesFor(row.querySelector('.smap-pages'), row.querySelector('.smap-role').value));
+    }
+    function ssoReadMap(box) {
+        return [...box.querySelectorAll('.smap-row')].map(row => {
+            const role = row.querySelector('.smap-role').value;
+            const pages = role === 'superadmin' ? [] : [...row.querySelectorAll('.smap-pages input:checked:not(:disabled)')].map(i => i.value);
+            return { group: row.querySelector('.smap-group').value.trim(), role, pages };
+        }).filter(m => m.group);
+    }
+    function ssoWireMap(box, addBtn, dn) {
+        box.addEventListener('change', (e) => { if (e.target.classList.contains('smap-role')) ssoPagesFor(e.target.closest('.smap-row').querySelector('.smap-pages'), e.target.value); });
+        box.addEventListener('click', (e) => {
+            const del = e.target.closest('.smap-del');
+            if (!del) return;
+            const rows = ssoReadMap(box);
+            const all = [...box.querySelectorAll('.smap-row')];
+            rows.splice(all.indexOf(del.closest('.smap-row')), 1);
+            ssoRenderMap(box, rows, dn);
+        });
+        addBtn.addEventListener('click', () => {
+            const rows = [...box.querySelectorAll('.smap-row')].map(row => ({ group: row.querySelector('.smap-group').value, role: row.querySelector('.smap-role').value, pages: [...row.querySelectorAll('.smap-pages input:checked')].map(i => i.value) }));
+            rows.push({ group: '', role: 'viewer', pages: [] });
+            ssoRenderMap(box, rows, dn);
+            const inputs = box.querySelectorAll('.smap-group');
+            inputs[inputs.length - 1].focus();
+        });
+    }
+    function ssoResult(box, ok, lines) {
+        box.hidden = false;
+        box.className = 'sso-result alert ' + (ok ? 'success' : 'danger');
+        const ul = POps.el('ul');
+        lines.slice(1).forEach(t => ul.append(POps.el('li', { text: t })));
+        box.replaceChildren(POps.el('div', null, [POps.el('div', { text: lines[0] }), lines.length > 1 ? ul : null]));
+    }
+    function ssoStateHtml(on) {
+        return on ? `<span class="dot ok"></span>${POps.tHtml('Etkin')}` : `<span class="dot off"></span>${POps.tHtml('Devre dışı')}`;
+    }
+    function ssoHost(url) {
+        try { return new URL(url).host; } catch (e) { return url; }
+    }
+    function renderSso() {
+        const l = sso.ldap, o = sso.oidc;
+        $('ssoLdapState').innerHTML = ssoStateHtml(l.enabled);
+        $('ssoLdapDesc').textContent = l.host
+            ? `${l.host}:${l.port} · ${SSO_SEC[l.security] || l.security} · ` + POps.tn('{n} grup eşlemesi', (l.group_map || []).length)
+            : POps.t('Ayarlanmadı. Okulun Active Directory ya da LDAP sunucusuyla giriş.');
+        $('ssoOidcState').innerHTML = ssoStateHtml(o.enabled);
+        $('ssoOidcDesc').textContent = o.issuer
+            ? `${o.display_name || 'OpenID Connect'} · ${ssoHost(o.issuer)} · ` + POps.tn('{n} grup eşlemesi', (o.group_map || []).length)
+              + ((o.allowed_domains || []).length ? ' · ' + o.allowed_domains.join(', ') : '')
+            : POps.t('Ayarlanmadı. Microsoft Entra ID, Google Workspace, Keycloak gibi bir sağlayıcıyla giriş.');
+        $('ssoLdapEdit').disabled = false;
+        $('ssoOidcEdit').disabled = false;
+    }
+    async function loadSso() {
+        try { sso = await POps.get('/api/sso/settings'); }
+        catch (e) {
+            $('ssoLdapDesc').textContent = POps.t('Ayarlar alınamadı: {error}', { error: POps.errorMessage(e) });
+            $('ssoOidcDesc').textContent = '';
+            return;
+        }
+        renderSso();
+    }
+    function secretHint(has, word) {
+        return has ? POps.t('Kayıtlı. Değiştirmek için yazın; boş bırakılırsa kayıtlı {what} kalır.', { what: word }) : POps.t('Henüz kaydedilmedi.');
+    }
+
+    // ---- LDAP / AD
+    function setLdapSec(sec, keepPort) {
+        const old = ldapSec;
+        ldapSec = SSO_SEC[sec] && sec !== 'plain' ? sec : 'ldaps';
+        $('slSec').querySelectorAll('button').forEach(b => { const on = b.dataset.sec === ldapSec; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        // Varsayılan port bağlantı türüyle birlikte değişir (elle yazılmış port kalır)
+        const port = $('slPort').value.trim();
+        if (!keepPort && old !== ldapSec && (port === '' || port === (old === 'ldaps' ? '636' : '389'))) $('slPort').value = ldapSec === 'ldaps' ? '636' : '389';
+    }
+    function openLdap() {
+        const l = sso.ldap;
+        $('slEnabled').checked = !!l.enabled;
+        $('slHost').value = l.host || '';
+        $('slPort').value = l.port || 636;
+        setLdapSec(l.security, true);
+        $('slCa').value = l.ca_pem || '';
+        $('slBindDn').value = l.bind_dn || '';
+        $('slBindPw').value = '';
+        $('slBindPwHint').textContent = secretHint(l.has_secret, POps.t('şifre'));
+        $('slBase').value = l.base_dn || '';
+        $('slFilter').value = l.user_filter || '';
+        $('slUserAttr').value = l.username_attribute || '';
+        $('slGroupBase').value = l.group_base_dn || '';
+        $('slGroupFilter').value = l.group_filter || '';
+        ssoRenderMap($('slMap'), l.group_map || [], true);
+        $('slTestUser').value = '';
+        $('slResult').hidden = true;
+        openModal('ssoLdapModal');
+    }
+    function ldapPayload() {
+        const p = {
+            enabled: $('slEnabled').checked, host: $('slHost').value.trim(), port: Number($('slPort').value) || 636,
+            security: ldapSec, base_dn: $('slBase').value.trim(), bind_dn: $('slBindDn').value.trim(),
+            user_filter: $('slFilter').value.trim(), username_attribute: $('slUserAttr').value.trim(),
+            group_base_dn: $('slGroupBase').value.trim(), group_filter: $('slGroupFilter').value.trim(),
+            group_map: ssoReadMap($('slMap')), ca_pem: $('slCa').value.trim(), timeout: sso.ldap.timeout || 5
+        };
+        if ($('slBindPw').value) p.bind_password = $('slBindPw').value;
+        return p;
+    }
+    async function saveLdap() {
+        let r = null;
+        if (!await POps.act($('slSave'), async () => { r = await POps.api('/api/sso/settings/ldap', { method: 'PUT', body: ldapPayload() }); },
+            { success: POps.t('Dizin ayarları kaydedildi.') })) return;
+        sso.ldap = r;
+        renderSso();
+        closeModal('ssoLdapModal');
+    }
+    async function testLdap() {
+        const box = $('slResult');
+        const user = $('slTestUser').value.trim();
+        let r;
+        try { r = await POps.busy($('slTest'), () => POps.post('/api/sso/test/ldap', Object.assign(ldapPayload(), { test_username: user || null }))); }
+        catch (e) { ssoResult(box, false, [POps.errorMessage(e)]); return; }
+        if (!r || !r.ok) { ssoResult(box, false, [POps.t((r && r.message) || 'Sınama başarısız.')]); return; }
+        const lines = [POps.t('Bağlantı ve hizmet hesabı çalışıyor ({security}).', { security: SSO_SEC[r.security] || r.security })];
+        let ok = true;
+        if (r.user_dn) {
+            lines.push(POps.t('Kullanıcı: {dn}', { dn: r.user_dn }));
+            lines.push((r.groups || []).length ? POps.t('Gruplar: {groups}', { groups: r.groups.join('; ') }) : POps.t('Grup bulunamadı.'));
+            if (r.disabled) { ok = false; lines.push(POps.t('Hesap dizinde devre dışı: giremez.')); }
+            else if (r.role) lines.push(POps.t('Girişteki rolü: {role}', { role: POps.t(SSO_ROLES[r.role] || r.role) }));
+            else { ok = false; lines.push(POps.t('Eşlenen bir grupta değil: giremez.')); }
+        }
+        ssoResult(box, ok, lines);
+    }
+
+    // ---- OpenID Connect
+    function setOidcDefRole(r) {
+        oidcDefRole = r || '';
+        $('soDefRole').querySelectorAll('button').forEach(b => { const on = b.dataset.drole === oidcDefRole; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        ssoPagesFor($('soDefPages'), oidcDefRole);
+    }
+    function openOidc() {
+        const o = sso.oidc;
+        $('soEnabled').checked = !!o.enabled;
+        $('soName').value = o.display_name || '';
+        $('soIssuer').value = o.issuer || '';
+        $('soClient').value = o.client_id || '';
+        $('soSecret').value = '';
+        $('soSecretHint').textContent = secretHint(o.has_secret, POps.t('sır'));
+        $('soRedirect').value = o.redirect_uri || (location.origin + '/api/auth/oidc/callback');
+        $('soScopes').value = o.scopes || 'openid email profile';
+        $('soUserClaim').value = o.username_claim || '';
+        $('soGroupClaim').value = o.groups_claim || '';
+        $('soCa').value = o.ca_pem || '';
+        ssoRenderMap($('soMap'), o.group_map || [], false);
+        $('soDomains').value = (o.allowed_domains || []).join(', ');
+        $('soDefPages').innerHTML = ssoPagesHtml(o.default_pages || []);
+        setOidcDefRole(o.default_role || '');
+        $('soResult').hidden = true;
+        openModal('ssoOidcModal');
+    }
+    function oidcPayload() {
+        const p = {
+            enabled: $('soEnabled').checked, display_name: $('soName').value.trim(), issuer: $('soIssuer').value.trim(),
+            client_id: $('soClient').value.trim(), redirect_uri: $('soRedirect').value.trim(), scopes: $('soScopes').value.trim(),
+            username_claim: $('soUserClaim').value.trim() || 'email', groups_claim: $('soGroupClaim').value.trim(),
+            group_map: ssoReadMap($('soMap')), ca_pem: $('soCa').value.trim(),
+            allowed_domains: $('soDomains').value.split(/[,\s]+/).map(x => x.trim()).filter(Boolean),
+            default_role: oidcDefRole,
+            default_pages: oidcDefRole ? [...$('soDefPages').querySelectorAll('input:checked:not(:disabled)')].map(i => i.value) : []
+        };
+        if ($('soSecret').value) p.client_secret = $('soSecret').value;
+        return p;
+    }
+    async function saveOidc() {
+        let r = null;
+        if (!await POps.act($('soSave'), async () => { r = await POps.api('/api/sso/settings/oidc', { method: 'PUT', body: oidcPayload() }); },
+            { success: POps.t('OpenID Connect ayarları kaydedildi.') })) return;
+        sso.oidc = r;
+        renderSso();
+        closeModal('ssoOidcModal');
+    }
+    async function testOidc() {
+        const box = $('soResult');
+        let r;
+        try { r = await POps.busy($('soTest'), () => POps.post('/api/sso/test/oidc', oidcPayload())); }
+        catch (e) { ssoResult(box, false, [POps.errorMessage(e)]); return; }
+        if (!r || !r.ok) { ssoResult(box, false, [POps.t((r && r.message) || 'Sınama başarısız.')]); return; }
+        ssoResult(box, true, [
+            POps.t('Sağlayıcının keşif belgesi okundu: {issuer}', { issuer: r.issuer }),
+            POps.tn('{n} imza anahtarı', r.keys || 0) + ' · ' + (r.algorithms || []).join(', '),
+            r.pkce ? POps.t('PKCE (S256) destekleniyor.') : POps.t('Sağlayıcı PKCE (S256) bildirmiyor; yine de gönderilir.'),
+            POps.t('İstemci sırrı ilk girişte sınanır.')
+        ]);
+    }
+    if (IS_SUPER && $('ssoLdapEdit')) {
+        $('ssoLdapEdit').addEventListener('click', openLdap);
+        $('ssoOidcEdit').addEventListener('click', openOidc);
+        $('slSec').addEventListener('click', (e) => { const b = e.target.closest('button[data-sec]'); if (b) setLdapSec(b.dataset.sec); });
+        $('soDefRole').addEventListener('click', (e) => { const b = e.target.closest('button[data-drole]'); if (b) setOidcDefRole(b.dataset.drole); });
+        ssoWireMap($('slMap'), $('slMapAdd'), true);
+        ssoWireMap($('soMap'), $('soMapAdd'), false);
+        $('slSave').addEventListener('click', saveLdap);
+        $('soSave').addEventListener('click', saveOidc);
+        $('slTest').addEventListener('click', testLdap);
+        $('soTest').addEventListener('click', testOidc);
+        $('slTestUser').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); testLdap(); } });
+        loadSso();
     }
 
     // ================= KURUM =================
