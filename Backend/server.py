@@ -19,7 +19,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from migrate import run_migrations_on
-from pops import db, heartbeats, notify, secretbox, update_tracking
+from pops import db, glpi, heartbeats, notify, secretbox, update_tracking
 from pops.apiversion import ApiVersionMiddleware
 from pops.logs import setup_logging, stop_background_writer
 from pops.metrics import RequestContextMiddleware
@@ -47,6 +47,7 @@ from pops.routers import (
     control,
     devices,
     helpdesk,
+    integrations,
     inventory,
     licenses,
     modules as modules_router,
@@ -209,6 +210,7 @@ async def shutdown_event():
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
+    await glpi.stop()   # süren GLPI eşitlemesi (havuz kapanmadan)
     if db.db_pool:
         try:
             await asyncio.wait_for(heartbeats.flush(), SHUTDOWN_DRAIN_SECONDS)
@@ -234,7 +236,7 @@ async def shutdown_event():
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
-    activity, modules_router, branding, tokens,
+    activity, modules_router, branding, tokens, integrations,
     # REST adları (/api/v1) eski uçların işleyicilerini çağırır; eskilerden sonra bağlanır
     rest,
 )

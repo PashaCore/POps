@@ -552,6 +552,169 @@
         "title": "FetchReleaseInput",
         "type": "object"
       },
+      "GlpiSettingsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "app_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Token"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "entity": {
+            "default": 0,
+            "maximum": 1000000000.0,
+            "minimum": 0.0,
+            "title": "Entity",
+            "type": "integer"
+          },
+          "interval_hours": {
+            "default": 24,
+            "title": "Interval Hours",
+            "type": "integer"
+          },
+          "locations": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locations"
+          },
+          "sync": {
+            "$ref": "#/components/schemas/GlpiSyncInput",
+            "default": {
+              "computers": true,
+              "software": true,
+              "ticket_reporter": false,
+              "tickets": true
+            }
+          },
+          "tickets_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tickets Since"
+          },
+          "url": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Token"
+          }
+        },
+        "title": "GlpiSettingsInput",
+        "type": "object"
+      },
+      "GlpiSyncInput": {
+        "additionalProperties": false,
+        "properties": {
+          "computers": {
+            "default": true,
+            "title": "Computers",
+            "type": "boolean"
+          },
+          "software": {
+            "default": true,
+            "title": "Software",
+            "type": "boolean"
+          },
+          "ticket_reporter": {
+            "default": false,
+            "title": "Ticket Reporter",
+            "type": "boolean"
+          },
+          "tickets": {
+            "default": true,
+            "title": "Tickets",
+            "type": "boolean"
+          }
+        },
+        "title": "GlpiSyncInput",
+        "type": "object"
+      },
+      "GlpiTestInput": {
+        "additionalProperties": false,
+        "description": "Formdaki değerlerle sınama (kaydetmeden); verilmeyen değer kayıtlı olandan alınır.",
+        "properties": {
+          "app_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Token"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "user_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Token"
+          }
+        },
+        "title": "GlpiTestInput",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -6880,6 +7043,209 @@
         "summary": "Fetch Release",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/v1/system/glpi": {
+      "get": {
+        "operationId": "get_glpi_api_system_glpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Glpi",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "operationId": "save_glpi_api_system_glpi_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlpiSettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Glpi",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/v1/system/glpi/links/{pc_name}": {
+      "delete": {
+        "description": "Cihazın GLPI bağlantısını unutur (GLPI'ye dokunmaz); sonraki eşitlemede yeniden aranır ya da oluşturulur.",
+        "operationId": "forget_glpi_link_api_system_glpi_links__pc_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pc_name",
+            "required": true,
+            "schema": {
+              "title": "Pc Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Forget Glpi Link",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/v1/system/glpi/sync": {
+      "post": {
+        "description": "Şimdi eşitle: tur arka planda başlar (sürüyorsa yenisi başlamaz). wait=true turun sonucunu bekler (en çok 120\nsn; betikler ve testler için).",
+        "operationId": "sync_glpi_api_system_glpi_sync_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Wait",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sync Glpi",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/v1/system/glpi/test": {
+      "post": {
+        "operationId": "test_glpi_api_system_glpi_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlpiTestInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Glpi",
+        "tags": [
+          "integrations"
         ]
       }
     },

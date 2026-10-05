@@ -431,7 +431,7 @@ Belgelerin çoğu İngilizcedir; Türkçe olanlar işaretlidir.
 | | [Herkese açık demo](deploy/demo/README.md) | [Kod imzalama politikası](docs/code-signing.md) |
 | | | [Ajan protokolü](docs/protocol/README.md) |
 | | | [Panel dilleri](docs/i18n.md) |
-| | | [GLPI aktarımı (tasarım)](docs/integrations/glpi.md) |
+| | | [GLPI aktarımı](docs/integrations/glpi.md) |
 
 ---
 

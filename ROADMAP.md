@@ -191,11 +191,13 @@ yet; the choice between the options above and this path is open.
 
 ### Integrations
 
-*Status: design, not implemented.*
+*Status: first version implemented.*
 
-- **GLPI export:** send POps inventory (hardware, installed software) and helpdesk tickets to GLPI through its REST
-  API, with POps as the source of truth for what agents report. Design note with mappings, sync direction, conflicts
-  and authentication: [`docs/integrations/glpi.md`](docs/integrations/glpi.md).
+- **GLPI export:** send POps inventory (computers, installed software) and helpdesk tickets to GLPI through its REST
+  API, with POps as the source of truth for what agents report. Implemented: computers, software, tickets and public
+  replies, on a schedule or on demand (**Sistem** → **Entegrasyonlar**). Next: hardware components, the operating
+  system and network ports, ticket categories, a dry run and a test against a real GLPI. Mappings, sync direction,
+  conflicts and authentication: [`docs/integrations/glpi.md`](docs/integrations/glpi.md).
 
 ### Vision beyond one school
 

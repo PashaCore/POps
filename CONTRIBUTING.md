@@ -206,7 +206,7 @@ steps below mirror the `security` job in `ci.yml`, which is the reference for th
 ```bash
 createdb pops_test                          # empty database your role owns
 export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<user> DB_PASS=<password> DB_NAME=pops_test
-export JWT_SECRET=ci-test-secret CORS_ALLOWED_ORIGINS= NOTIFY_WEBHOOK_ALLOW_PRIVATE=1
+export JWT_SECRET=ci-test-secret CORS_ALLOWED_ORIGINS= NOTIFY_WEBHOOK_ALLOW_PRIVATE=1 GLPI_ALLOW_PRIVATE=1
 export POPS_TEST_HTTP=http://127.0.0.1:8099
 cd Backend
 python migrate.py
@@ -226,7 +226,8 @@ kill "$SERVER_PID"
 - Export every `DB_*` variable and `JWT_SECRET` yourself. A value missing from the environment is read from `.env`,
   which may point at another database. The server and the tests must use the same `JWT_SECRET`, because the tests
   create their own tokens.
-- `NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` lets `test_features.py` send webhooks to its own receiver on `127.0.0.1`.
+- `NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` lets `test_features.py` send webhooks to its own receiver on `127.0.0.1`, and
+  `GLPI_ALLOW_PRIVATE=1` lets `test_glpi.py` reach its fake GLPI there.
 - `Backend/tests/run_local.sh` runs the first five scripts the same way and stops the server when it exits.
 - Each script prints its checks and exits non-zero on failure. Add a new test file to the `security` job.
 

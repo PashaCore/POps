@@ -71,8 +71,9 @@ district that wants to run the tool for several schools.
 
 Many schools and public institutions keep their asset register and service desk in GLPI. POps does not try to
 replace it. POps knows the live state of each Windows PC because its agent reports it; GLPI keeps the register,
-loans, contracts and the wider service desk. The plan is an export of POps inventory and helpdesk tickets to GLPI,
-so a school does not need a second inventory agent. It is a design note, not a feature yet:
+loans, contracts and the wider service desk. POps exports its inventory (computers and installed software) and its
+helpdesk tickets to GLPI (**Sistem** → **Entegrasyonlar**), so a school does not need a second inventory agent. The
+first version has been tested against a simulated GLPI, not yet against a real installation:
 [`integrations/glpi.md`](integrations/glpi.md).
 
 ## Pardus, ETAP and Lider Ahenk
@@ -88,5 +89,5 @@ it has not been evaluated yet. See the [roadmap](../ROADMAP.md#linux-agent-pardu
 - Do not put a device/agent count in marketing until it is measured — see `BENCHMARKS.md`.
 - Do not present transparency as only a slogan; it is a concrete, demoable feature set
   (consent banner, per-user activity history, capability policy).
-- Do not claim a GLPI export, a Linux or Pardus agent or a Lider Ahenk integration exists; none of
-  them does yet.
+- Do not claim a Linux or Pardus agent or a Lider Ahenk integration exists; neither does yet. The GLPI export
+  exists, but say that it has not been tried against a real GLPI yet.

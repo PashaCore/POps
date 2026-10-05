@@ -540,6 +540,8 @@ jobs:
       METRICS_TOKEN: ci-metrics-token-0123456789
       # test_demo.py: bu hesap salt okunur demo hesabıdır (sunucu ve test aynı değeri okur)
       POPS_DEMO_USERS: ci_demo
+      # test_glpi.py kendi sahte GLPI sunucusunu 127.0.0.1'de açar
+      GLPI_ALLOW_PRIVATE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
@@ -579,6 +581,7 @@ jobs:
           python Backend/tests/test_api_tokens.py
           python Backend/tests/test_demo.py
           python Backend/tests/test_strict_input.py
+          python Backend/tests/test_glpi.py
       - name: Backend coverage
         # Alt sınır (fail_under) kapsamın fark edilmeden düşmesini engeller; kapsam arttıkça yükseltin.
         # Hangi kritik yolların test edildiği: docs/testing.md

@@ -65,6 +65,8 @@ Ways to create it:
 | `SMTP_PASS` | no | empty | Password for `SMTP_USER`. |
 | `SMTP_FROM` | no | `SMTP_USER` | Sender address. |
 | `NOTIFY_WEBHOOK_ALLOW_PRIVATE` | no | off | By default the notification webhook may only point at public internet addresses: its host is resolved and loopback, private ranges, link-local (including `169.254.169.254`), CGNAT and reserved addresses are refused. `1` (or `true` / `yes`) also allows those, for a webhook receiver inside the school network. Multicast and unspecified addresses stay refused. |
+| `GLPI_ALLOW_PRIVATE` | no | off | Like `NOTIFY_WEBHOOK_ALLOW_PRIVATE`, for the GLPI export ([`integrations/glpi.md`](integrations/glpi.md)): `1` allows a GLPI on a private, loopback or link-local address, the usual case for a GLPI on the school network. With it, plain `http://` is accepted for a host whose addresses are all private; a GLPI on the internet always needs `https://`. |
+| `GLPI_CA_FILE` | no | empty | Path to a PEM file with the certificate authority that signed the GLPI server's certificate, when it is not one the system trusts (a school's own CA). |
 | `LOG_LEVEL` | no | `INFO` | Backend log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | `LOG_FORMAT` | no | `json` | `json`: one JSON object per line (for journald and log collectors). `text`: readable lines for development. |
 | `METRICS_TOKEN` | no | unset | Turns on the Prometheus `/metrics` endpoint; at least 16 characters, sent as `Authorization: Bearer <token>`. Unset: the endpoint returns 404. See [`backend.md`](backend.md#logs-metrics-and-diagnostics). |

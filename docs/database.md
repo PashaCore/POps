@@ -51,6 +51,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0014_hardening.sql` | Enrollment tokens stored as hashes; `tasks.exit_code` / `dispatched_at`; partial index for the task queue; agent identity enforcement on by default for new installs. |
 | `0019_task_context.sql` | `tasks.title`, `source`, `reason`, `client_ip` and `batch_id` (what a task is, which panel page sent it, why, from which address, and which request it belongs to) and indexes on `batch_id` and on `target_pc`. |
 | `0022_api_tokens.sql` | `api_tokens` (API tokens for automation). |
+| `0024_glpi.sql` | `glpi_links`: the GLPI item each exported POps record is linked to (GLPI export, see [`integrations/glpi.md`](integrations/glpi.md)). |
 | `0023_update_progress.sql` | `pending_updates.stage`, `detail`, `attempt`, `attempt_of`, `stage_at`: the last stage the agent reported for a pending update (`update_progress`, see [`api.md`](api.md#update_progress-agent-update-stages)). |
 | `0020_refused_results.sql` | Tasks the agent refused but an older server stored as `Completed` (output starting with `[REDDEDİLDİ]`, no exit code) become `Denied` with exit code `-5`. |
 | `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
@@ -104,6 +105,12 @@ Deleting a device also deletes its rows in both tables.
 | `tickets` | Helpdesk tickets: `source` (`agent` / `panel`), `pc_name` (optional), `reporter`, `category`, `subject`, `body`, `status` (`open` / `in_progress` / `waiting` / `resolved` / `closed`), `priority` (`low` / `normal` / `high`), `assignee`, `created_at`, `updated_at`, `resolved_at`. |
 | `ticket_messages` | Thread of a ticket: `ticket_id` (foreign key, deleted with the ticket), `author`, `body`, `internal` (panel-only note; never returned to agents), `created_at`. Status, priority and assignee changes are recorded here as internal notes. |
 
+### Integrations
+
+| Table | Contents |
+| --- | --- |
+| `glpi_links` | One row per POps record sent to GLPI (migration `0024`): `kind` (`computer`: key = device ID; `software_link`: key = `device\|program\|version`, the `Item_SoftwareVersion` POps created; `software_set`: key = device ID, hash of the device's software list; `ticket`: key = ticket ID; `followup`: key = ticket message ID), `glpi_id`, `fingerprint` (hash of the fields last sent, so only changed records are sent again), `state` (`ok`, `broken` = gone from GLPI and not recreated, `ambiguous` = several GLPI computers match), `error`, `synced_at`. Rows of a deleted device are removed at the next run; GLPI is not changed. |
+
 ### Panel users
 
 | Table | Contents |
@@ -147,6 +154,8 @@ returns the first broken entry. Rows written before migration `0004` have no has
 | `verified_release_manifest` | release upload / GitHub fetch | The staged release's manifest (JSON); `deploy-update` sends this release. |
 | `auto_enroll_lab` | **Sınıflar** page ("Otomatik kayıt…") | JSON `{"lab": ..., "until": "YYYY-MM-DD"}`: lab for devices connecting for the first time up to that date. |
 | `notify_enabled`, `notify_min_severity`, `notify_email_to`, `notify_webhook_url` | **Sistem** → Bildirimler | Whether and where notifications are sent out. |
+| `glpi_enabled`, `glpi_url`, `glpi_app_token`, `glpi_user_token`, `glpi_entity`, `glpi_interval_hours`, `glpi_sync`, `glpi_tickets_since`, `glpi_locations` | **Sistem** → Entegrasyonlar | GLPI export settings. The two tokens are encrypted (`v1:` prefix, the key of the 2FA secrets) and never returned by the API. `glpi_sync` is JSON (`computers`, `software`, `tickets`, `ticket_reporter`), `glpi_locations` JSON lab → GLPI location ID. |
+| `glpi_last_run` | GLPI export | JSON: time, trigger, result, counts and errors of the last run, and the number of failed runs in a row. |
 | `license_check_date` | scheduler | Date (`YYYY-MM-DD`, server date) of the last daily licence check, so the check and its notifications run once a day. |
 
 See [`configuration.md`](configuration.md#runtime-settings-database) for how to change them.

@@ -53,6 +53,8 @@ görünür, gizli mod yoktur.
 > **Saklama süresi:** [X gün/ay]. Süre sonunda veriler silinir/anonimleştirilir.
 >
 > **Aktarım:** veriler kurum içinde tutulur; [üçüncü taraf aktarımı var/yok].
+> *(POps'un GLPI'ye dışa aktarımı açıksa: bilgisayar adı, seri numarası, kurulu yazılımlar ve destek talepleri
+> kurumun GLPI sunucusuna da aktarılır; talebi bildirenin adı yalnızca bu seçenek açıksa gider.)*
 >
 > **Haklarınız (KVKK m.11):** verilerinize erişme, düzeltilmesini/silinmesini isteme,
 > işlemeye itiraz etme. Başvuru: **[KVKK başvuru adresi]**.

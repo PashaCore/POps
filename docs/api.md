@@ -398,6 +398,19 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | GET | `/api/system/install-profile/{name}` | require_superadmin | Preview of `school` or `org`: the organisation settings that would change, the number of lab overrides, and `vision_sessions_closed` and `tasks_denied` as for a module preview. With `?reset_labs=true` the counts assume the lab overrides are deleted too. |
 | POST | `/api/system/install-profile` | require_superadmin | `{profile: "school" \| "org", reset_labs}`: applies the profile's defaults organisation-wide (and with `reset_labs` deletes lab overrides). Audited (`module_profile`). |
 
+### Integrations (GLPI export)
+
+Superadmin only. See [`integrations/glpi.md`](integrations/glpi.md). The tokens are never returned: responses say
+only whether one is saved.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/system/glpi` | require_superadmin | Settings (`enabled`, `url`, `app_token_set`, `user_token_set`, `entity`, `interval_hours`, `sync`, `tickets_since`, `locations`), `last_run` (time, trigger, `ok`, `counts`, `error`, `errors`, `failures`), `running`, `links` (linked computers and tickets, problems), `problems` (devices with several matches or gone from GLPI) and `allow_private` (`GLPI_ALLOW_PRIVATE`). |
+| POST | `/api/system/glpi` | require_superadmin | `{enabled, url, app_token?, user_token?, entity, interval_hours: 0 \| 6 \| 12 \| 24, sync: {computers, software, tickets, ticket_reporter}, tickets_since?, locations?}`. A token that is omitted or `null` is kept, `""` deletes it. Turning on needs an address and a user token (`400`). When the address changes, saved tokens must be sent again (`400`), so they never go to another host by themselves. `tickets_since` defaults to the day ticket export is first turned on. Audit-logged with the names of the changed settings. Returns the same as GET. |
+| POST | `/api/system/glpi/test` | require_superadmin | `{url?, app_token?, user_token?}` (missing values come from the saved settings; saved tokens are used only for the saved address): opens a GLPI session, reads the user and entity, closes it. `{ok: true, user, entity, plain_http}` or `{ok: false, error}` with a readable reason (for example "GLPI kullanıcı jetonunu kabul etmedi …"). |
+| POST | `/api/system/glpi/sync` | require_superadmin | Starts a run in the background (`started: false` if one is running). `?wait=true` waits up to 120 seconds and returns the run's `result`. `400` while the export is off. Audit-logged. |
+| DELETE | `/api/system/glpi/links/{pc_name}` | require_superadmin | Forgets a device's GLPI links (GLPI is not changed); the next run looks it up again. `404` if it has none. |
+
 ### Signed releases and agent updates
 
 | Method | Path | Auth | Purpose |

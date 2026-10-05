@@ -135,6 +135,17 @@ NOTIFY_WEBHOOK_ALLOW_PRIVATE = os.environ.get('NOTIFY_WEBHOOK_ALLOW_PRIVATE', ''
 )
 
 
+# GLPI dışa aktarımı (pops/glpi.py): hedef adres webhook gibi denetlenir; iç ağ, loopback ve link-local adresler
+# reddedilir. Okul ağındaki bir GLPI için bilerek açın: 1. Açıkken, adresin hepsi iç ağdaysa http:// da kabul edilir
+# (internetteki bir GLPI'ye her zaman https:// ile, sertifikası doğrulanarak bağlanılır).
+GLPI_ALLOW_PRIVATE = os.environ.get('GLPI_ALLOW_PRIVATE', '').strip().lower() in ('1', 'true', 'yes')
+
+
+# GLPI'nin sertifikası kurumun kendi sertifika otoritesinden ise o otoritenin sertifikası (PEM dosyasının yolu);
+# boşsa sistemin güvendiği sertifikalar kullanılır.
+GLPI_CA_FILE = os.environ.get('GLPI_CA_FILE', '').strip()
+
+
 # Prometheus /metrics ucu yalnızca bu jeton tanımlıysa açılır (en az 16 karakter) ve
 # "Authorization: Bearer <jeton>" ister; tanımlı değilse uç 404 döner.
 METRICS_TOKEN = os.environ.get('METRICS_TOKEN', '').strip()

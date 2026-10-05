@@ -886,6 +886,52 @@ def test_strict_inputs():
     chk(inv.cpu == "i5" and not inv.model_extra, "ajanın envanteri 'dna' ile kabul edilir, alan atılır")
 
 
+def test_glpi():
+    print("== GLPI dışa aktarımı: adres, eşleme")
+    from pops import config, glpi
+
+    chk(glpi.api_url("https://glpi.okul.k12.tr/") == "https://glpi.okul.k12.tr/apirest.php"
+        and glpi.api_url("https://glpi.okul.k12.tr/glpi/apirest.php") == "https://glpi.okul.k12.tr/glpi/apirest.php",
+        "apirest.php adresi")
+    old = config.GLPI_ALLOW_PRIVATE
+    try:
+        config.GLPI_ALLOW_PRIVATE = False
+        for url, why in (("https://127.0.0.1", "loopback"), ("https://10.0.0.5", "iç ağ"),
+                         ("https://169.254.169.254", "bulut metadata"), ("ftp://glpi.example", "şema")):
+            try:
+                glpi.resolve(url)
+                chk(False, "%s reddedilmeli" % why)
+            except glpi.GlpiError:
+                chk(True, "%s reddedildi (GLPI_ALLOW_PRIVATE kapalı)" % why)
+        config.GLPI_ALLOW_PRIVATE = True
+        chk(glpi.resolve("http://10.0.0.5")[1] == "10.0.0.5", "izinle iç ağdaki GLPI'ye http olur")
+        try:
+            glpi.resolve("http://1.1.1.1")
+            chk(False, "internete http reddedilmeli")
+        except glpi.GlpiError as exc:
+            chk("https" in str(exc), "internetteki GLPI'ye yalnızca https")
+    finally:
+        config.GLPI_ALLOW_PRIVATE = old
+    row = {"pc_name": "HW-1", "hostname": "pc-1", "lab_name": "Lab-1", "dna_bios": "To be filled by O.E.M.",
+           "dna_uuid": "ABC-1"}
+    f = glpi.computer_fields(row, {"Lab-1": 4})
+    chk(f == {"name": "pc-1", "uuid": "ABC-1", "locations_id": 4}, "anlamsız seri gönderilmez, konum eşlenir (%s)" % f)
+    chk("locations_id" not in glpi.computer_fields(row, {}), "eşlenmemiş sınıfın konumuna dokunulmaz")
+    chk(glpi.install_date("20260131") == "2026-01-31" and glpi.install_date("2026-13-01") is None
+        and glpi.install_date("") is None, "kurulum tarihi")
+    t = glpi.ticket_input({"subject": "a", "body": "x<b>\ny", "priority": "high", "status": "waiting",
+                           "source": "panel", "reporter": "ali", "created_at": None}, 3, False)
+    chk(t["priority"] == 4 and t["status"] == 4 and t["entities_id"] == 3 and "ali" not in t["content"]
+        and "x&lt;b&gt;<br>y" in t["content"], "talep eşlemesi; metin kaçırılır, bildiren varsayılan olarak yok")
+    chk("Bildiren: ali" in glpi.ticket_input({"subject": "a", "reporter": "ali"}, 0, True)["content"],
+        "ayar açıkken bildiren yazılır")
+    err = glpi.error(401, ["ERROR_GLPI_LOGIN_USER_TOKEN", "x"])
+    chk(isinstance(err, glpi.GlpiFatal) and "kullanıcı jetonunu" in str(err), "yanlış jeton: anlaşılır, tur durur")
+    chk(not isinstance(glpi.error(400, ["ERROR_GLPI_ADD", "x"]), glpi.GlpiFatal), "öğe hatası turu durdurmaz")
+    view = glpi.public({"app_token": "a", "user_token": "", "url": "u"})
+    chk(view == {"url": "u", "app_token_set": True, "user_token_set": False}, "panele jeton gitmez")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -902,6 +948,7 @@ def main():
     test_server_metrics()
     test_api_v1()
     test_strict_inputs()
+    test_glpi()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

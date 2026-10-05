@@ -9,6 +9,7 @@ const TABS = [
     ['health', 'Sağlık ve yedek'],
     ['notify', 'Bildirimler ve saklama'],
     ['modules', 'Modüller'],
+    ['integrations', 'Entegrasyonlar'],
 ];
 
 test('sekmeler değişir ve ?tab= adreste kalır', async ({ page }) => {

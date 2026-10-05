@@ -139,6 +139,8 @@
     .md-labs .srow .segmented { margin-left: auto; }
     .md-labs .srow .t { overflow-wrap: anywhere; }
     .md-find { width: 100%; }
+    .gl-checks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: var(--text-sm); }
+    .gl-loc .srow input { width: 96px; text-align: right; }
 </style>
 
 <div class="page-header">
@@ -160,6 +162,7 @@
     <button type="button" class="tab" data-tab="health"><?php _e('Sağlık ve yedek'); ?></button>
     <button type="button" class="tab" data-tab="notify"><?php _e('Bildirimler ve saklama'); ?></button>
     <button type="button" class="tab" data-tab="modules"><?php _e('Modüller'); ?></button>
+    <button type="button" class="tab" data-tab="integrations"><?php _e('Entegrasyonlar'); ?></button>
 </div>
 <?php endif; ?>
 
@@ -316,6 +319,72 @@
 <section class="sec" id="secProfile" aria-labelledby="hProfile">
                 <div class="sec-h"><h2 id="hProfile"><?php _e('Kurulum profili'); ?></h2><span class="st" id="pfState"></span></div>
                 <div class="set" id="pfSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+            </section>
+        </div>
+    </div>
+    <div class="sys-pane sys-grid" data-pane="integrations">
+        <div class="sys-col">
+<section class="sec" id="secGlpi" aria-labelledby="hGlpi">
+                <div class="sec-h"><h2 id="hGlpi">GLPI</h2><span class="st" id="glState"></span></div>
+                <div class="set" id="glSet">
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Dışa aktarım'); ?></div><div class="d"><?php _e('Açıkken bilgisayarlar, kurulu yazılımlar ve destek talepleri GLPI\'ye gönderilir; kapalıyken hiçbir şey gönderilmez. GLPI\'den POps\'a bir şey alınmaz.'); ?></div></div>
+                        <label class="switch"><input type="checkbox" id="glEnabled" aria-label="<?php _e('GLPI\'ye dışa aktarım'); ?>"><span></span></label>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('GLPI adresi'); ?></div><div class="d"><?php _e('GLPI\'nin adresi; apirest.php kendiliğinden eklenir.'); ?></div></div>
+                        <input type="url" id="glUrl" class="wide" placeholder="https://glpi.okul.k12.tr" aria-label="<?php _e('GLPI adresi'); ?>" autocomplete="off" spellcheck="false">
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Uygulama jetonu'); ?></div><div class="d"><?php _e('GLPI\'de Kurulum → Genel → API → API istemcisi.'); ?></div></div>
+                        <input type="password" id="glApp" class="wide" aria-label="<?php _e('Uygulama jetonu'); ?>" autocomplete="new-password" spellcheck="false">
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Kullanıcı jetonu'); ?></div><div class="d"><?php _e('Yalnızca gereken yetkileri olan bir GLPI kullanıcısının API jetonu.'); ?></div></div>
+                        <input type="password" id="glUser" class="wide" aria-label="<?php _e('Kullanıcı jetonu'); ?>" autocomplete="new-password" spellcheck="false">
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Varlık'); ?></div><div class="d"><?php _e('Kayıtların oluşturulacağı GLPI varlığının kimliği (0: kök varlık).'); ?></div></div>
+                        <span class="num"><input type="number" id="glEntity" min="0" step="1" aria-label="<?php _e('Varlık kimliği'); ?>"></span>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Eşitleme aralığı'); ?></div><div class="d"><?php _e('Yalnızca değişen bilgisayarlar ve yeni talepler gönderilir.'); ?></div></div>
+                        <select id="glInterval" aria-label="<?php _e('Eşitleme aralığı'); ?>" style="width:auto">
+                            <option value="24"><?php _e('Günde bir'); ?></option>
+                            <option value="12"><?php _e('12 saatte bir'); ?></option>
+                            <option value="6"><?php _e('6 saatte bir'); ?></option>
+                            <option value="0"><?php _e('Yalnızca elle'); ?></option>
+                        </select>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Gönderilecekler'); ?></div>
+                            <div class="gl-checks">
+                                <label class="check"><input type="checkbox" id="glComp"> <?php _e('Bilgisayarlar'); ?></label>
+                                <label class="check"><input type="checkbox" id="glSoft"> <?php _e('Kurulu yazılımlar'); ?></label>
+                                <label class="check"><input type="checkbox" id="glTick"> <?php _e('Destek talepleri'); ?></label>
+                                <label class="check"><input type="checkbox" id="glRep"> <?php _e('Talebi bildirenin adı'); ?></label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Talepler'); ?></div><div class="d"><?php _e('Bu tarihten itibaren açılan talepler bir kez gönderilir; sonraki açık yanıtlar takip olarak eklenir.'); ?></div></div>
+                        <input type="date" id="glSince" aria-label="<?php _e('Taleplerin başlangıç tarihi'); ?>" style="width:auto">
+                    </div>
+                    <div class="srow">
+                        <div class="grow"></div>
+                        <div class="acts">
+                            <button type="button" class="btn secondary" id="glTest"><?php echo pops_icon('zap', 'sm'); ?><?php _e('Bağlantıyı sına'); ?></button>
+                            <button type="button" class="btn secondary" id="glSave"><?php _e('Kaydet'); ?></button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+        <div class="sys-col">
+<section class="sec" id="secGlpiRun" aria-labelledby="hGlpiRun">
+                <div class="sec-h"><h2 id="hGlpiRun"><?php _e('Eşitleme'); ?></h2></div>
+                <div class="set" id="glRun"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+                <p class="md-foot"><?php _e('GLPI\'ye gönderim yeni bir kişisel veri aktarımıdır; okulun KVKK aydınlatma metninde belirtilmelidir. Oturumdaki kullanıcı, ekran görüntüsü ve olay kayıtları gönderilmez. GLPI\'deki bir kayıt POps\'tan silinmez.'); ?></p>
             </section>
         </div>
     </div>
@@ -1774,6 +1843,190 @@
     }
 
     // =================================================================
+    // ENTEGRASYONLAR: GLPI'ye dışa aktarım (GET/POST /api/system/glpi, /test, /sync). Jetonlar sunucudan hiç gelmez:
+    // kayıtlıysa alan boş kalır ve "kayıtlı" yazar; yalnızca yazılırsa gönderilir.
+    // =================================================================
+    const GL = { d: null, poll: null };
+    const glSaved = (d) => ({ enabled: !!d.enabled, url: d.url || '', entity: Number(d.entity) || 0, interval_hours: Number(d.interval_hours) || 0,
+        sync: Object.assign({}, d.sync), tickets_since: d.tickets_since || null });
+    function glBody() {
+        const b = {
+            enabled: $('glEnabled').checked, url: $('glUrl').value.trim(), entity: Math.max(0, parseInt($('glEntity').value, 10) || 0),
+            interval_hours: parseInt($('glInterval').value, 10) || 0,
+            sync: { computers: $('glComp').checked, software: $('glSoft').checked, tickets: $('glTick').checked, ticket_reporter: $('glRep').checked },
+            tickets_since: $('glSince').value || null
+        };
+        if ($('glApp').value) b.app_token = $('glApp').value;
+        if ($('glUser').value) b.user_token = $('glUser').value;
+        return b;
+    }
+    function glDirty() {
+        if (!GL.d) return;
+        const b = glBody(), s = glSaved(GL.d);
+        const dirty = !!(b.app_token || b.user_token) || JSON.stringify([b.enabled, b.url, b.entity, b.interval_hours, b.sync, b.tickets_since])
+            !== JSON.stringify([s.enabled, s.url, s.entity, s.interval_hours, s.sync, s.tickets_since]);
+        $('glSave').className = dirty ? 'btn' : 'btn secondary';
+        $('glSoft').disabled = !$('glComp').checked;
+        $('glRep').disabled = !$('glTick').checked;
+    }
+    function glStateWord(d) {
+        const r = d.last_run || {};
+        if (d.running) return ['run', POps.t('Eşitleniyor')];
+        if (!d.enabled) return ['off', POps.tx('Kapalı', 'switch')];
+        if (!r.at) return ['off', POps.t('Henüz eşitlenmedi')];
+        return r.ok ? ['ok', POps.t('Açık')] : ['bad', POps.t('Son eşitleme başarısız')];
+    }
+    function glCountsText(n) {
+        const parts = [];
+        const add = (k, text) => { if (n[k]) parts.push(POps.tn(text, n[k])); };
+        add('computers_created', '{n} bilgisayar oluşturuldu'); add('computers_linked', '{n} bilgisayar bağlandı');
+        add('computers_updated', '{n} bilgisayar güncellendi'); add('software_added', '{n} yazılım bağlantısı eklendi');
+        add('software_removed', '{n} yazılım bağlantısı kaldırıldı'); add('tickets_created', '{n} talep gönderildi');
+        add('followups_created', '{n} yanıt gönderildi'); add('deferred', '{n} kayıt süre dolduğu için sonraki tura kaldı');
+        return parts.length ? parts.join(' · ') : POps.t('Gönderilecek değişiklik yoktu.');
+    }
+    function renderGlpi(d, keepForm) {
+        GL.d = d;
+        if (!keepForm) {
+            $('glEnabled').checked = !!d.enabled;
+            $('glUrl').value = d.url || '';
+            $('glEntity').value = Number(d.entity) || 0;
+            $('glInterval').value = String(d.interval_hours);
+            $('glComp').checked = !!d.sync.computers; $('glSoft').checked = !!d.sync.software;
+            $('glTick').checked = !!d.sync.tickets; $('glRep').checked = !!d.sync.ticket_reporter;
+            $('glSince').value = d.tickets_since || '';
+            $('glApp').value = ''; $('glUser').value = '';
+        }
+        $('glApp').placeholder = d.app_token_set ? POps.t('Kayıtlı · değiştirmek için yazın') : POps.t('Gerekmiyorsa boş');
+        $('glUser').placeholder = d.user_token_set ? POps.t('Kayıtlı · değiştirmek için yazın') : '';
+        const [k, w] = glStateWord(d);
+        setState('glState', k, w);
+        glDirty();
+        const r = d.last_run || {};
+        let lastHtml;
+        if (d.running) {
+            lastHtml = `<div class="srow"><span class="res-spin"><span class="spinner"></span></span><div class="grow"><div class="t">${POps.tHtml('Eşitleniyor')}</div>`
+                + `<div class="d">${POps.tHtml('Yalnızca değişenler gönderilir; büyük bir ilk eşitleme birkaç dakika sürebilir.')}</div></div></div>`;
+        } else if (r.at) {
+            const how = r.trigger === 'manual' ? POps.t('elle') : POps.t('zamanlanmış');
+            const metaHtml = POps.timeHtml(r.at) + ' · ' + escapeHtml(how) + (typeof r.duration === 'number' ? ' · ' + escapeHtml(POps.t('{s} sn', { s: r.duration })) : '');
+            const errsHtml = (r.errors || []).length ? `<div class="why warn">${escapeHtml(POps.tn('{n} kayıt gönderilemedi', (r.counts || {}).item_errors || r.errors.length) + ': ' + r.errors.join(' · '))}</div>` : '';
+            lastHtml = `<div class="act"><div class="res ${r.ok ? 'ok' : 'bad'}">${POps.iconHtml(r.ok ? 'check' : 'x')}</div><div style="min-width:0"><div class="what">${POps.tHtml('Son eşitleme')}</div>`
+                + `<div class="meta">${metaHtml}</div>`
+                + (r.ok ? `<div class="meta">${escapeHtml(glCountsText(r.counts || {}))}</div>` : `<div class="why">${escapeHtml(POps.t(r.error || 'Bilinmeyen hata'))}</div>`)
+                + `${errsHtml}</div><div class="side">${wordHtml(r.ok ? 'ok' : 'bad', r.ok ? POps.t('Başarılı') : POps.t('Başarısız'))}</div></div>`;
+        } else {
+            lastHtml = `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Henüz eşitlenmedi')}</div><div class="d">${POps.tHtml('Ayarları kaydedip bağlantıyı sınayın, sonra ilk eşitlemeyi başlatın.')}</div></div></div>`;
+        }
+        const links = d.links || {};
+        const locN = Object.keys(d.locations || {}).length;
+        const probs = d.problems || [];
+        $('glRun').innerHTML = lastHtml
+            + `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Şimdi eşitle')}</div><div class="d">${escapeHtml(POps.t('GLPI\'de bağlı: {c} bilgisayar, {t} talep.', { c: Number(links.computers) || 0, t: Number(links.tickets) || 0 }))}</div></div>`
+            + `<button type="button" class="btn secondary" data-act="sync" ${d.running || !d.enabled ? 'disabled' : ''}>${POps.iconHtml('refresh', 'sm')}${POps.tHtml('Şimdi eşitle')}</button></div>`
+            + `<div class="srow click" data-act="loc" role="button" tabindex="0"><div class="grow"><div class="t">${POps.tHtml('Sınıf → GLPI konumu')}</div>`
+            + `<div class="d">${escapeHtml(locN ? POps.tn('{n} sınıf eşlendi; eşlenmemiş sınıfın konumuna dokunulmaz.', locN) : POps.t('Eşleme yok: bilgisayarların GLPI konumuna dokunulmaz.'))}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>`
+            + (probs.length ? `<div class="srow click" data-act="probs" role="button" tabindex="0"><div class="grow"><div class="t">${escapeHtml(POps.tn('{n} bilgisayar eşleşmedi', probs.length))}${wordHtml('warn', POps.t('Bakılmalı'))}</div>`
+                + `<div class="d">${POps.tHtml('GLPI\'de birden çok eşleşen ya da GLPI\'den silinmiş bilgisayarlar.')}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>` : '');
+        if (POps.drawer.isOpen('sysglp:list')) renderGlProblems();
+    }
+    async function loadGlpi(quiet) {
+        if (!IS_SUPER || !$('glSet')) return;
+        let d;
+        try { d = await POps.get('/api/system/glpi'); }
+        catch (e) { if (!quiet) { setState('glState', 'off', POps.t('Okunamadı')); sectionError($('glRun'), e); } return; }
+        renderGlpi(d, !!GL.d);
+        if (d.running) glWatch();
+    }
+    function glWatch() {
+        if (GL.poll) return;
+        GL.poll = setInterval(async () => {
+            let d;
+            try { d = await POps.get('/api/system/glpi'); } catch (e) { return; }
+            if (!d.running) {
+                clearInterval(GL.poll); GL.poll = null;
+                const r = d.last_run || {};
+                POps.toast(r.ok ? 'success' : 'error', r.ok ? POps.t('GLPI eşitlemesi bitti: {what}', { what: glCountsText(r.counts || {}) }) : POps.t('GLPI eşitlemesi başarısız: {error}', { error: POps.t(r.error || '') }));
+            }
+            renderGlpi(d, true);
+        }, 2500);
+    }
+    function renderGlProblems() {
+        const body = POps.drawer.body();
+        const probs = (GL.d && GL.d.problems) || [];
+        const rowsHtml = probs.map(p => `<div class="act"><div class="res warn">${POps.iconHtml('alert')}</div><div style="min-width:0"><div class="what">${escapeHtml(p.display_name || p.hostname || p.pc_name)}</div>`
+            + `<div class="meta">${escapeHtml(p.pc_name)}${p.glpi_id ? ' · GLPI #' + Number(p.glpi_id) : ''}</div><div class="why warn">${escapeHtml(p.error || '')}</div></div>`
+            + `<div class="side"><button type="button" class="btn secondary sm" data-act="forget" data-pc="${escapeHtml(p.pc_name)}">${POps.tHtml('Bağlantıyı unut')}</button></div></div>`).join('');
+        body.innerHTML = drawerHeadHtml(POps.t('Eşleşmeyen bilgisayarlar'), POps.tHtml('GLPI ile eşleşme sorunları'), 'alert', '')
+            + `<p class="dr-sum">${POps.tHtml('Birden çok eşleşmede POps tahmin yapmaz: GLPI\'de kopyaları birleştirin ya da silin. GLPI\'den silinmiş bir bilgisayar kendiliğinden yeniden oluşturulmaz. "Bağlantıyı unut" sonraki eşitlemede cihazı yeniden aratır.')}</p>`
+            + (rowsHtml ? `<div class="set" style="padding:0 12px">${rowsHtml}</div>` : `<div class="dr-note">${POps.tHtml('Sorun yok.')}</div>`);
+    }
+    function renderGlLocations() {
+        const body = POps.drawer.body();
+        const map = (GL.d && GL.d.locations) || {};
+        const labs = dev.labs();
+        const rowsHtml = labs.map(l => `<div class="srow"><div class="grow"><div class="t">${escapeHtml(l)}</div></div>`
+            + `<input type="number" min="1" step="1" data-lab="${escapeHtml(l)}" value="${map[l] ? Number(map[l]) : ''}" placeholder="—" aria-label="${escapeHtml(POps.t('{lab} için GLPI konum kimliği', { lab: l }))}"></div>`).join('');
+        body.innerHTML = drawerHeadHtml(POps.t('Sınıf → GLPI konumu'), POps.tHtml('GLPI\'deki konumun kimliği'), 'labs', '')
+            + `<p class="dr-sum">${POps.tHtml('Eşlenen sınıftaki bilgisayarların konumu GLPI\'de bu konum olur. Eşlenmemiş sınıfın konumuna dokunulmaz; GLPI\'de konum oluşturulmaz.')}</p>`
+            + (labs.length ? `<div class="set gl-loc">${rowsHtml}</div>` : `<div class="dr-note">${POps.tHtml('Henüz sınıf yok.')}</div>`)
+            + `<div class="dr-actions"><button type="button" class="btn" data-act="locsave">${POps.tHtml('Kaydet')}</button><button type="button" class="btn secondary" data-act="close">${POps.tHtml('Vazgeç')}</button></div>`;
+    }
+    async function glSaveLocations(btn) {
+        const locations = {};
+        POps.drawer.body().querySelectorAll('input[data-lab]').forEach(i => { const n = parseInt(i.value, 10); if (n > 0) locations[i.dataset.lab] = n; });
+        try {
+            renderGlpi(await POps.busy(btn, () => POps.post('/api/system/glpi', Object.assign(glSaved(GL.d), { locations }))), true);
+            POps.toast('success', POps.t('Konum eşlemesi kaydedildi.'));
+            POps.drawer.close();
+        } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+    }
+    if ($('glSet')) {
+        $('glSet').addEventListener('input', glDirty);
+        $('glSet').addEventListener('change', glDirty);
+        $('glSave').addEventListener('click', async function () {
+            try {
+                renderGlpi(await POps.busy(this, () => POps.post('/api/system/glpi', glBody())));
+                POps.toast('success', POps.t('GLPI ayarları kaydedildi.'));
+            } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        });
+        $('glTest').addEventListener('click', async function () {
+            const b = glBody(), t = { url: b.url };
+            if (b.app_token) t.app_token = b.app_token;
+            if (b.user_token) t.user_token = b.user_token;
+            try {
+                const r = await POps.busy(this, () => POps.post('/api/system/glpi/test', t));
+                if (r.ok) POps.toast('success', POps.t('GLPI\'ye bağlanıldı: {user} · {entity}', { user: r.user || '?', entity: r.entity || '?' }) + (r.plain_http ? ' ' + POps.t('Bağlantı şifresiz (http).') : ''));
+                else POps.toast('error', POps.t('GLPI\'ye bağlanılamadı: {error}', { error: POps.t(r.error || '') }));
+            } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        });
+        $('glRun').addEventListener('click', async (e) => {
+            const b = e.target.closest('[data-act]');
+            if (!b || b.disabled) return;
+            if (b.dataset.act === 'sync') {
+                try {
+                    const r = await POps.busy(b, () => POps.post('/api/system/glpi/sync', {}));
+                    if (!r.started) POps.toast('info', POps.t('Bir eşitleme zaten sürüyor.'));
+                    GL.d.running = true; renderGlpi(GL.d, true); glWatch();
+                } catch (err) { POps.toast('error', POps.errorMessage(err)); }
+            } else if (b.dataset.act === 'loc') {
+                openDrawer('sysgll:map', (x) => { if (x.dataset.act === 'locsave') glSaveLocations(x); });
+                renderGlLocations();
+            } else if (b.dataset.act === 'probs') {
+                openDrawer('sysglp:list', async (x) => {
+                    if (x.dataset.act !== 'forget') return;
+                    if (await POps.act(x, () => POps.del('/api/system/glpi/links/' + encodeURIComponent(x.dataset.pc)), { success: POps.t('Bağlantı unutuldu; sonraki eşitlemede yeniden aranır.') })) loadGlpi(true);
+                });
+                renderGlProblems();
+            }
+        });
+        $('glRun').addEventListener('keydown', (e) => {
+            const r = e.target.closest('.srow.click[data-act]');
+            if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); r.click(); }
+        });
+    }
+
+    // =================================================================
     // ÖZET + YÜKLEME
     // =================================================================
     function renderSummary() {
@@ -1837,6 +2090,7 @@
     loadNotify();
     loadRetention();
     loadModules();
+    loadGlpi();
     renderAudit();
     if (rollout) pollRollout();
     if (state.devicesLoaded) { renderCaps(true); }

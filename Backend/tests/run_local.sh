@@ -13,6 +13,7 @@ export POPS_TEST_HTTP="${POPS_TEST_HTTP:-http://127.0.0.1:8099}"
 # CI ile aynı: test_features.py kendi webhook alıcısını 127.0.0.1'de açar, bu yüzden sunucu iç adrese
 # webhook göndermeye izin vermeli. Boş CORS listesi .env'deki değeri ezer.
 export NOTIFY_WEBHOOK_ALLOW_PRIVATE=1
+export GLPI_ALLOW_PRIVATE=1   # test_glpi.py'nin sahte GLPI sunucusu da 127.0.0.1'de
 export CORS_ALLOWED_ORIGINS=""
 export METRICS_TOKEN="${METRICS_TOKEN:-local-metrics-token-0123456789}"
 # test_demo.py: salt okunur demo hesabı (sunucu ve test aynı değeri okur)
@@ -60,6 +61,7 @@ python tests/test_ops.py
 python tests/test_api_tokens.py
 python tests/test_demo.py
 python tests/test_strict_input.py
+python tests/test_glpi.py
 if [ "${COVERAGE:-0}" = "1" ]; then
   kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
   python -m coverage combine --rcfile=.coveragerc >/dev/null
