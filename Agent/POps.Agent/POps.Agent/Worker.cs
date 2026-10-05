@@ -416,6 +416,62 @@ namespace POpsAgent
             await DisconnectVisionTunnelAsync();
         }
 
+        // ------------------------------------------------------------------ dosya aktarımı (bkz. FileTransfer)
+        // Emir doğrulanır ve iş arka planda yürür (komut döngüsünü bekletmez); sonuç file_result ile bildirilir
+        internal async Task HandleFileTransferAsync(string action, JsonElement root, CancellationToken token)
+        {
+            string transferId = FileTransfer.TransferIdOf(root) ?? "?";
+            if (!AgentCapabilities.FilesEnabled)
+            {
+                await DenyCapabilityAsync("files", action);
+                await SendCommandMessageAsync(FileTransfer.Result(transferId, "rejected", detail: "dosya aktarımı bu bilgisayarda kapalı"));
+                return;
+            }
+            if (action == "file_push")
+            {
+                if (!FileTransfer.TryParsePush(root, _serverUrl, out FileTransfer.PushRequest push, out string error))
+                {
+                    POpsHelpers.Log("FILES", $"Dosya gönderimi reddedildi ({transferId}): {error}.", true);
+                    await SendCommandMessageAsync(FileTransfer.Result(transferId, "rejected", detail: error));
+                    return;
+                }
+                FileTransferTask = Task.Run(async () =>
+                {
+                    var (status, path, detail) = await FileTransfer.PushAsync(push, _hwId, DateTime.Now, token);
+                    if (status == "done")
+                    {
+                        LocalAudit.Write(LocalAudit.FilePushed(push.TransferId, path, push.Size, push.Sha256, push.Reason));
+                        POpsHelpers.Log("FILES", $"Yönetici dosya gönderdi: {path} ({push.Size} bayt).");
+                        ToTray("FILE_PUSHED:" + Path.GetFileName(path));
+                    }
+                    else POpsHelpers.Log("FILES", $"Dosya gönderimi tamamlanmadı ({push.TransferId}, {status}): {detail}.", true);
+                    await SendCommandMessageAsync(FileTransfer.Result(push.TransferId, status, path, detail));
+                }, CancellationToken.None);
+                return;
+            }
+            if (!FileTransfer.TryParsePull(root, _serverUrl, out FileTransfer.PullRequest pull, out string pullError))
+            {
+                POpsHelpers.Log("FILES", $"Dosya alma reddedildi ({transferId}): {pullError}.", true);
+                await SendCommandMessageAsync(FileTransfer.Result(transferId, "rejected", detail: pullError));
+                return;
+            }
+            FileTransferTask = Task.Run(async () =>
+            {
+                var (status, path, detail, size) = await FileTransfer.PullAsync(pull, _hwId, token);
+                if (status == "done")
+                {
+                    LocalAudit.Write(LocalAudit.FilePulled(pull.TransferId, path, size, pull.Reason));
+                    POpsHelpers.Log("FILES", $"Yönetici dosyayı aldı: {path} ({size} bayt).");
+                    ToTray("FILE_PULLED:" + path);
+                }
+                else POpsHelpers.Log("FILES", $"Dosya alma tamamlanmadı ({pull.TransferId}, {status}): {detail}.", true);
+                await SendCommandMessageAsync(FileTransfer.Result(pull.TransferId, status, path, detail));
+            }, CancellationToken.None);
+        }
+
+        // Testler: son başlatılan aktarım
+        internal Task FileTransferTask { get; private set; } = Task.CompletedTask;
+
         // ------------------------------------------------------------------ sınav modu (bkz. ExamMode)
         private readonly HashSet<string> _examStoppedLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private volatile bool _examNetworkChanged;
@@ -1355,6 +1411,7 @@ namespace POpsAgent
                 else if (action == "set_secret") { HandleSetSecret(root); }
                 else if (action == "set_bypass_secret") { await HandleSetBypassSecretAsync(root); }
                 else if (action == "exam_mode") { await HandleExamModeAsync(root); }
+                else if (action == "file_push" || action == "file_pull") { await HandleFileTransferAsync(action, root, stoppingToken); }
                 else if (action == "cancel_task")
                 {
                     int cancelId = root.TryGetProperty("task_id", out var cancelProp) && cancelProp.ValueKind == JsonValueKind.Number

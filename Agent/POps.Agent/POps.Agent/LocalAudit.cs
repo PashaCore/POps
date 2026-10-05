@@ -112,6 +112,14 @@ namespace POpsAgent
         public static LocalAuditEvent ExamAppStopped(string app, int processId) =>
             Info(1112, "Sınav modunda uygulama kapatıldı", ("app", Safe(app)), ("pid", processId));
 
+        // Dosya aktarımı (bkz. FileTransfer): yönetici bir dosya gönderdi / bir dosyayı aldı
+        public static LocalAuditEvent FilePushed(string transferId, string path, long size, string sha256, string reason) =>
+            Warning(1120, "Yönetici bir dosya gönderdi", ("transfer_id", Safe(transferId)), ("path", Safe(path)), ("size", size),
+                ("sha256", Safe(sha256)), ("reason", Safe(reason)));
+
+        public static LocalAuditEvent FilePulled(string transferId, string path, long size, string reason) =>
+            Warning(1121, "Yönetici bir dosyayı aldı", ("transfer_id", Safe(transferId)), ("path", Safe(path)), ("size", size), ("reason", Safe(reason)));
+
         public static void Write(LocalAuditEvent item)
         {
             if (item == null) return;
