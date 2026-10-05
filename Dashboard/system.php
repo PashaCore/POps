@@ -51,6 +51,9 @@
     .ro-head .cnt { font-size: var(--text-sm); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
     .ro-head .cnt b { color: var(--text-primary); }
     .ro-bar { padding: 4px 16px 12px; }
+    .ro-peer { display: grid; gap: 4px; padding: 0 16px 12px; }
+    .ro-peer .d { display: flex; gap: 6px; align-items: flex-start; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
+    .ro-peer .d > svg { flex: none; margin-top: 1px; color: var(--text-tertiary); }
     .ro-list { border-top: 1px solid var(--border-subtle); max-height: 360px; overflow-y: auto; padding: 0 12px; }
     .ro-list .act { padding: 10px 4px; }
     .ro-list .note { margin-top: 4px; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
@@ -773,7 +776,7 @@
         if (!S.ver) return;
         const A = agentInfo();
         const v = A.v;
-        const sig = JSON.stringify([v.staged_version, v.latest, v.release_available, v.checked_github, S.fetching, A.all.map(d => [d.hostname, dev.version(d), d.status])]);
+        const sig = JSON.stringify([v.staged_version, v.latest, v.release_available, v.checked_github, v.update_peer_cache, S.fetching, A.all.map(d => [d.hostname, dev.version(d), d.status])]);
         if (!force && sig === agHash) return;
         agHash = sig;
         // Durum
@@ -805,9 +808,28 @@
         const upMoreHtml = IS_SUPER && A.staged && !v.release_available ? `<button type="button" class="ibtn sm" data-act="upmore" data-tip="${escapeHtml(POps.t('Hedef seç'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Başka hedefe gönder'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>` : '';
         $('agSet').innerHTML = `<div class="srow block"><div style="display:flex;justify-content:space-between;gap:12px"><div class="t">${POps.tHtml('Sürüm dağılımı')}</div><div class="v">${POps.tnHtml('{n} ajan', A.all.length)}</div></div>${distHtml(A)}</div>
             <div class="srow"><div class="grow"><div class="t">${A.staged ? POps.tHtml('Ajan paketi {version}', { version: fmtV(A.staged) }) : POps.tHtml('Ajan paketi')}</div><div class="d">${escapeHtml(pkgD)}</div></div><div class="acts">${fetchHtml}${IS_SUPER ? pkgMoreHtml : ''}</div></div>
-            <div class="srow"><div class="grow"><div class="t">${escapeHtml(upT)}</div><div class="d">${escapeHtml(upD)}</div></div><div class="acts">${upBtn}${upMoreHtml}</div></div>`;
+            <div class="srow"><div class="grow"><div class="t">${escapeHtml(upT)}</div><div class="d">${escapeHtml(upD)}</div></div><div class="acts">${upBtn}${upMoreHtml}</div></div>${peerRowHtml(v)}`;
         if (S.fetching) { const fb = $('agSet').querySelector('[data-act="fetch"]'); if (fb) { fb.disabled = true; fb.classList.add('is-loading'); } }
     }
+
+    // Sınıf içi eş önbelleği (ajan 0.1.23+ peer_cache): sınıfta önce bir bilgisayar (tohum) güncellenir, diğerleri
+    // paketi ondan alır. İmza ve SHA-256 her bilgisayarda yine doğrulanır.
+    function peerRowHtml(v) {
+        if (!IS_SUPER || typeof v.update_peer_cache !== 'boolean') return '';
+        const on = v.update_peer_cache;
+        return `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Sınıf içinde eşten dağıt')}</div><div class="d">${POps.tHtml(on ? 'Her sınıfta önce bir bilgisayar paketi sunucudan indirir, diğerleri onun güncellemesi bitince paketi yerel ağdan alır. Paketin imzası ve özeti her bilgisayarda yine doğrulanır.' : 'Kapalı: bütün bilgisayarlar paketi sunucudan aynı anda indirir.')}</div></div>
+                <label class="switch"><input type="checkbox" id="peerSw" ${on ? 'checked' : ''} aria-label="${escapeHtml(POps.t('Sınıf içinde eşten dağıt'))}"><span></span></label></div>`;
+    }
+    $('agSet').addEventListener('change', async (e) => {
+        if (e.target.id !== 'peerSw') return;
+        const sw = e.target, turnOn = sw.checked;
+        try {
+            const d = await POps.busy(sw, () => POps.post('/api/system/update-peer-cache', { enabled: turnOn }));
+            S.ver.update_peer_cache = d.update_peer_cache;
+            POps.toast('success', POps.t(d.update_peer_cache ? 'Eşten dağıtım açıldı.' : 'Eşten dağıtım kapatıldı; bekleyen bilgisayarlara güncelleme gönderildi.'));
+        } catch (err) { sw.checked = !turnOn; POps.toast('error', POps.errorMessage(err)); }
+        renderAgents(true);
+    });
 
     $('agSet').addEventListener('click', (e) => {
         const b = e.target.closest('[data-act]');
@@ -887,16 +909,17 @@
         try { d = await POps.busy(btn, () => POps.post('/api/system/deploy-update', { target_mode: 'PC', targets: hosts })); }
         catch (e) { POps.toast('error', POps.t('Güncelleme gönderilemedi: {error}', { error: POps.errorMessage(e) })); return false; }
         // already_pending: aynı sürüm son 15 dk içinde gönderilmiş, kurulum sürüyor; yeniden gönderilmedi ama izlenir
-        const sent = d.dispatched || [], off = d.skipped_offline || [], dup = d.already_pending || [];
-        if (!sent.length && !dup.length) { POps.toast('warning', POps.t('Hiçbir bilgisayar bağlı değildi; güncelleme gönderilmedi.')); return false; }
+        const sent = d.dispatched || [], off = d.skipped_offline || [], dup = d.already_pending || [], wait = d.waiting_for_seed || [];
+        if (!sent.length && !dup.length && !wait.length) { POps.toast('warning', POps.t('Hiçbir bilgisayar bağlı değildi; güncelleme gönderilmedi.')); return false; }
         const said = [];
         if (sent.length) said.push(POps.tn('{version} {n} bilgisayara gönderildi.', sent.length, { version: fmtV(d.version) }));
         if (dup.length) said.push(POps.tn('{n} bilgisayara zaten gönderildi, kurulum sürüyor.', dup.length));
         if (off.length) said.push(POps.tn('{n} kapalı bilgisayar atlandı.', off.length));
+        if (wait.length) said.push(POps.tn('{n} bilgisayar sınıfının tohumunu bekliyor.', wait.length));
         POps.toast(sent.length ? 'success' : 'info', said.join(' '));
-        rollout = { version: d.version, pcs: [...sent, ...dup], skipped: off, since, at: Date.now(), by: ME, doneAt: null };
+        rollout = { version: d.version, pcs: [...sent, ...dup, ...wait], skipped: off, since, at: Date.now(), by: ME, doneAt: null };
         store.set(RKEY, rollout);
-        rItems = null; rShowAll = false;
+        rItems = null; rPeer = []; rShowAll = false;
         pollRollout();
         return true;
     }
@@ -967,7 +990,7 @@
 
     // ---- Gönderim ilerlemesi: POST /api/system/update-progress (sayfa yenilense de bu tarayıcıda sürer)
     let rollout = store.get(RKEY);
-    let rItems = null, rTimer = null, rErr = null, rShowAll = false, rNow = null;
+    let rItems = null, rTimer = null, rErr = null, rShowAll = false, rNow = null, rPeer = [];
     const BAD_RES = ['rollback_failed', 'failed', 'reverted_by_freeze', 'error', 'rejected'];
     // Ajanın bildirdiği adım (update_progress, 0.1.22+). 0.1.21 ve öncesi adım bildirmez; onlarda eski davranış sürer.
     // Değerler Türkçe anahtardır; gösterilirken POps.t ile çevrilir.
@@ -982,6 +1005,12 @@
         return notes.join(' ');
     }
     function itemState(it) {
+        const st = baseState(it);
+        // Sınıfın tohumu: paketi sunucudan ilk o indirir, sınıfın geri kalanı ondan alır
+        if (it.peer && it.peer.role === 'seed' && st.k === 'run') st.note = [POps.t('Sınıfın tohumu: diğerleri paketi bundan alacak.'), st.note].filter(Boolean).join(' ');
+        return st;
+    }
+    function baseState(it) {
         const r = it.result || null;
         const s = String((r && r.status) || '');
         if (it.on_target) return { k: 'ok', w: POps.t('Güncellendi') };
@@ -993,6 +1022,7 @@
         if (r && s === 'install_failed') return { k: 'warn', w: POps.t('Başlatılamadı'), why: POps.t('Kurulum başlatılamadı; bilgisayar değişmedi.') + more };
         if (r && /pending_reboot/.test(s)) return { k: 'run', w: POps.t('Yeniden başlatma bekliyor') };
         if (!it.known) return { k: 'warn', w: POps.t('Kayıtlı değil') };
+        if (!it.pending && it.peer && it.peer.role === 'waiting') return { k: 'run', w: POps.t('Tohum bekleniyor'), note: it.online ? '' : POps.t('Ajan şu an bağlı değil; tohum hazır olunca bağlıysa gönderilir.') };
         if (it.pending && STAGE_WORDS.has(it.stage)) return { k: 'run', w: POps.t(STAGE_WORDS.get(it.stage)), at: it.stage_at, note: stageNote(it) };
         if (it.pending && it.online) {
             const quiet = rNow != null && it.sent_at != null && rNow - it.sent_at > QUIET_AFTER;
@@ -1007,6 +1037,21 @@
         if (!rItems) { c.run = c.total; return c; }
         rItems.forEach(it => { c[itemState(it).k] += 1; });
         return c;
+    }
+    // Sınıf başına eş gönderimi (update-progress peer_labs): tohum, adımı ve eşten dağıtılan bilgisayar sayısı
+    function peerLabLine(L) {
+        const seed = L.seed ? dev.name(L.seed) : '';
+        if (L.state === 'fallback') return POps.tn('tohum bulunamadı; {n} bilgisayara sunucudan gönderildi', L.without_peers);
+        if (L.state === 'released') {
+            return L.via_peers ? POps.tn('tohum: {seed}, doğrulandı; {n} bilgisayara eşten dağıtılıyor', L.via_peers, { seed })
+                : POps.t('tohum: {seed}, doğrulandı', { seed });
+        }
+        const stage = L.seed_stage && STAGE_WORDS.has(L.seed_stage) ? POps.t(STAGE_WORDS.get(L.seed_stage)).toLocaleLowerCase(POps.locale) : POps.t('gönderildi');
+        return POps.tn('tohum: {seed}, {stage}; {n} bilgisayar bekliyor', L.waiting, { seed, stage });
+    }
+    function peerLabsHtml() {
+        if (!rPeer.length) return '';
+        return `<div class="ro-peer">${rPeer.map(L => `<div class="d">${POps.iconHtml('labs', 'sm')}<span><b>${escapeHtml(L.lab)}</b> · ${escapeHtml(peerLabLine(L))}</span></div>`).join('')}</div>`;
     }
     function renderRollout() {
         const box = $('rollout');
@@ -1038,6 +1083,7 @@
                 <span class="cnt"><b>${Number(done)}</b>/${Number(c.total)}</span>${wordHtml(k, word)}
                 <button type="button" class="ibtn sm" data-act="ro-close" data-tip="${escapeHtml(POps.t(running ? 'İzlemeyi bırak' : 'Kapat'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t(running ? 'İzlemeyi bırak' : 'Kapat'))}">${POps.iconHtml('x', 'sm')}</button></div>
             <div class="ro-bar"><div class="pbar">${seg('ok', c.ok)}${seg('warn', c.warn)}${seg('bad', c.bad)}${seg('run', c.run)}</div>${rErr ? `<div class="dr-note" style="margin-top:6px">${POps.tHtml('İlerleme okunamadı: {error}', { error: POps.errorMessage(rErr) })}</div>` : ''}</div>
+            ${peerLabsHtml()}
             <div class="ro-list">${rowsHtml}</div>
             ${items.length > 6 ? `<div class="ro-more"><button type="button" class="lnk" data-act="ro-all">${rShowAll ? POps.tHtml('Daha az göster') : POps.tHtml('Tümünü göster ({n})', { n: items.length })}</button></div>` : ''}`;
     }
@@ -1045,14 +1091,14 @@
         const b = e.target.closest('[data-act]');
         if (!b) return;
         if (b.dataset.act === 'ro-all') { rShowAll = !rShowAll; renderRollout(); }
-        else if (b.dataset.act === 'ro-close') { clearTimeout(rTimer); rollout = null; rItems = null; store.set(RKEY, null); renderRollout(); }
+        else if (b.dataset.act === 'ro-close') { clearTimeout(rTimer); rollout = null; rItems = null; rPeer = []; store.set(RKEY, null); renderRollout(); }
     });
     async function pollRollout() {
         clearTimeout(rTimer);
         if (!rollout) { renderRollout(); return; }
         try {
             const r = await POps.post('/api/system/update-progress', { pcs: rollout.pcs, version: normV(rollout.version), since: rollout.since });
-            rItems = r.items || []; rErr = null; rNow = typeof r.now === 'number' ? r.now : null;
+            rItems = r.items || []; rErr = null; rNow = typeof r.now === 'number' ? r.now : null; rPeer = r.peer_labs || [];
         } catch (e) { rErr = e; }
         if (!rollout) return;
         const c = rCounts();
