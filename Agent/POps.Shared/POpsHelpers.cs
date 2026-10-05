@@ -129,16 +129,64 @@ namespace POps.Shared
             @"C:\POps\appsettings.json",
         };
 
-        public static string GetServerUrl()
+        // Sunucu adresi okunamazsa son çare (yalnızca aynı makinedeki sunucu için anlamlı)
+        public const string FallbackServerUrl = "http://127.0.0.1:8000";
+
+        public static string GetServerUrl() => ResolveServerUrl().Url;
+
+        // Sunucu adresi ve yapılandırmanın sorunu (null: sorun yok). Adres koda gömülmez: önce POPS_SERVER_URL ortam
+        // değişkeni, sonra ConfigPaths'teki ilk dolu ServerUrl. Okunamayan (bozuk JSON, erişim) bir dosya, adres başka
+        // bir dosyadan gelse de sorun sayılır. Adres bulunamaz ya da geçerli bir http(s) adresi değilse son çare kullanılır.
+        // Eskiden bu durum yalnızca loga yazılıyordu; ajan sağlıklı görünüp hiçbir sunucuya bağlanmıyordu.
+        public static (string Url, string Problem) ResolveServerUrl()
         {
-            string defaultUrl = "http://127.0.0.1:8000"; // Son çare (Fallback)
+            var problems = new List<string>();
+            string url = null, source = null;
+            string env = Environment.GetEnvironmentVariable("POPS_SERVER_URL");
+            if (!string.IsNullOrWhiteSpace(env))
+            {
+                url = env.Trim();
+                source = "POPS_SERVER_URL";
+            }
+            bool anyFile = false;
+            foreach (string path in ConfigPaths)
+            {
+                if (!File.Exists(path)) continue;
+                anyFile = true;
+                try
+                {
+                    using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
+                    if (url == null && doc.RootElement.ValueKind == JsonValueKind.Object
+                        && doc.RootElement.TryGetProperty("ServerUrl", out JsonElement element) && element.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrWhiteSpace(element.GetString()))
+                    {
+                        url = element.GetString().Trim();
+                        source = path;
+                    }
+                }
+                catch (Exception ex) when (ex is JsonException || ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    problems.Add($"{path} okunamadı: {ex.Message}");
+                }
+            }
 
-            // Sunucu adresi koda gömülmez: önce POPS_SERVER_URL ortam değişkeni, sonra appsettings.json
-            string url = GetSetting("ServerUrl", "POPS_SERVER_URL");
-            if (url != null) return url.TrimEnd('/');
+            if (url != null && !(Uri.TryCreate(url, UriKind.Absolute, out Uri uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)))
+            {
+                problems.Add($"ServerUrl geçerli bir http(s) adresi değil ({source}: {LogText.Safe(url, 100)})");
+                url = null;
+            }
+            if (url == null && problems.Count == 0)
+                problems.Add(anyFile
+                    ? $"ServerUrl tanımlı değil ({string.Join(" | ", ConfigPaths)})"
+                    : $"appsettings.json bulunamadı ({string.Join(" | ", ConfigPaths)})");
 
-            Log("HELPERS", $"ServerUrl tanımlı değil ({string.Join(" | ", ConfigPaths)}); {defaultUrl} kullanılıyor.", true);
-            return defaultUrl;
+            string problem = problems.Count > 0 ? string.Join("; ", problems) : null;
+            if (url == null)
+            {
+                Log("HELPERS", $"[HATA] Yapılandırma okunamadı: {problem}. Son çare {FallbackServerUrl} kullanılıyor.", true);
+                return (FallbackServerUrl, problem);
+            }
+            return (url.TrimEnd('/'), problem);
         }
 
         // Cihaz secret'ı, enroll jetonu ve sunucunun gönderdiği komutlar (execute, set_secret, set_identity)
