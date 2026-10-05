@@ -18,8 +18,9 @@ database pool, migrations and the scheduler loop) and wires the routers. Everyth
 | `pops/models.py` | Pydantic request models. |
 | `pops/taskqueue.py`, `pops/dna.py`, `pops/wol.py` | Task queue dispatch and target resolution, hardware-DNA identity reconciliation, Wake-on-LAN. |
 | `pops/notify.py` | Notifications: the `notifications` table behind the panel's **Bildirimler**, optional e-mail (SMTP from `.env`) and webhook delivery in the background, dedupe and send cap. The webhook target is resolved and must be a public address (unless `NOTIFY_WEBHOOK_ALLOW_PRIVATE`); the connection is pinned to the checked address and redirects are not followed. |
-| `pops/scheduler.py` | Background loop started at startup (every 30 s): queues due scheduled tasks (one process at a time, advisory lock), alerts on agents that never answered an update, and once a day (`license_check_date`) raises notifications for licences that are over their seats, expired or ending within 30 days. |
-| `pops/routers/*.py` | Endpoint groups, one `APIRouter` each: `auth` (login, 2FA, users), `control` (audit sessions, lockdown, bypass codes, panel/vision WebSockets, preview, remote input), `agents` (`/ws/agent` and the agent HTTP endpoints), `devices` (devices, labs, inventory, logs, WoL), `tasks` (queue, orchestration, packages, storage), `schedules` (scheduled tasks), `notifications` (the notification list, channel settings, test), `inventory` (software inventory and Windows update status), `reports` (summary and CSV export), `licenses` (licence definitions counted against the software inventory), `helpdesk` (tickets from the panel and from enrolled agents, with per-device limits). |
+| `pops/exams.py` | Exam mode: one running exam per lab (`exam_sessions`), allow-list and program-list validation, delivery of `exam_mode` on start, (re)connect and PC moves, `enabled: false` on end, the agents' `exam_state` reports (left-early notification) and per-PC state. |
+| `pops/scheduler.py` | Background loop started at startup (every 30 s): queues due scheduled tasks (one process at a time, advisory lock), ends expired exams, alerts on agents that never answered an update, and once a day (`license_check_date`) raises notifications for licences that are over their seats, expired or ending within 30 days. |
+| `pops/routers/*.py` | Endpoint groups, one `APIRouter` each: `auth` (login, 2FA, users), `control` (audit sessions, lockdown, bypass codes, panel/vision WebSockets, preview, remote input), `agents` (`/ws/agent` and the agent HTTP endpoints), `devices` (devices, labs, inventory, logs, WoL), `tasks` (queue, orchestration, packages, storage), `schedules` (scheduled tasks), `notifications` (the notification list, channel settings, test), `inventory` (software inventory and Windows update status), `reports` (summary and CSV export), `licenses` (licence definitions counted against the software inventory), `helpdesk` (tickets from the panel and from enrolled agents, with per-device limits), `exams` (exam mode per lab and its history). |
 
 `Backend/system_routes.py` (version and update checks, release notes from the GitHub `CHANGELOG.md`, signed
 releases from GitHub or upload, enrollment tokens, agent deploy, server self-update, capabilities) is a separate
@@ -67,7 +68,7 @@ The endpoint list is in [`api.md`](api.md) and the schema in [`database.md`](dat
 `Backend/tests/` holds integration tests that run against a live backend and an empty PostgreSQL database. CI's
 `security` job runs them in this order: `test_security.py`, `test_2fa.py`, `test_agent_authz.py`,
 `test_remote_authz.py`, `test_f4_accountability.py`, `test_features.py`, `test_helpdesk_licenses.py`, `test_ops.py`,
-`test_api_tokens.py`.
+`test_api_tokens.py`, `test_exam.py`.
 `test_units.py` and `test_protocol.py` (the agent protocol in [`protocol/`](protocol/README.md); it needs
 `pip install jsonschema==4.26.0`, which is not a runtime dependency) need no server. `Backend/tests/run_local.sh`
 does the same locally: it applies the migrations, starts a temporary backend on `127.0.0.1:8099` and runs the

@@ -5,7 +5,7 @@ endpoints under plain `/api/`) and WebSockets under `/ws/`. Behind the reverse p
 own origin, for example `https://pops.example.com/api/v1/devices`. The backend itself listens on `127.0.0.1:8000`
 (see [`installation.md`](installation.md)).
 
-The tables below were produced from the running app's route table (153 HTTP routes, among them the 27 REST names
+The tables below were produced from the running app's route table (157 HTTP routes, among them the 27 REST names
 listed under [REST names and deprecated paths](#rest-names-and-deprecated-paths), 3 WebSocket routes and the
 `/updates` static mount) together with the authentication dependency of each route, and each purpose line was
 checked against the endpoint code in `Backend/pops/routers/` and `Backend/system_routes.py`. The tables list the
@@ -283,6 +283,35 @@ See [`vision.md`](vision.md) for the session rules.
 | POST | `/api/security/unlock` | require_admin | `{target_pc, reason}`: clears quarantine and sends `unlock`. **Deprecated:** `DELETE /api/v1/devices/{pc_name}/quarantine` `{reason}`. |
 | POST | `/api/security/bypass_token/{pc_name}` | require_admin | **Deprecated:** `POST /api/v1/devices/{pc_name}/bypass-code`. The device's next offline bypass code for today (per-device key; the legacy `BYPASS_SECRET` code for older agents). Each request returns the next of up to 10 daily codes (`n`), because 0.1.13+ agents accept each code once. Logged, `Cache-Control: no-store`. |
 
+### Exam mode
+
+Exam mode restricts the network of every PC in one lab for a limited time: the agents block all traffic except
+the POps server, DNS, DHCP and an allow list, show a message in the tray, optionally block programs, and leave exam
+mode on their own at the end time, even when they are offline. It is a network restriction and a notice, not
+proctoring; see [`security.md`](security.md#exam-mode). The paths are resource-style already and answer under
+`/api/v1` like every route; a lab name with a slash is written as it is (`/api/v1/labs/9/A/exam`). The module
+`exam` (on by default; off in the "Kurum" profile) gates starting an exam.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/labs/{lab_name}/exam` | require_admin | Starts exam mode in the lab and sends `exam_mode` to its connected agents; PCs that are off get it when they connect. Body: `{allow: [...], until?: <unix seconds>, duration_minutes?: 1–480, message?, block_apps?: [...], reason}`. Give exactly one of `until` and `duration_minutes`; the end must be at least one minute and at most 8 hours ahead. `allow`: domain names (a pasted URL is reduced to its host, Turkish letters become punycode, no `*` wildcards), IP addresses or CIDR networks (IPv4 at least `/8`, IPv6 at least `/32`); duplicates merge, at most 50. `block_apps`: program file names (`cmd.exe`; a path is reduced to the file name, `.exe` is added when missing, at most 50); the agent's own processes and Windows session processes (`explorer.exe`, `winlogon.exe`, …) are refused. `message`: tray text, at most 200 characters (empty: "Sınav modu: yalnızca izin verilen adresler açık."). `reason` is required. `400` names the first invalid entry; `404` unknown lab; `400` for `Atanmamis_Cihazlar`; `409` when the lab already has an exam or the `exam` module is off for it; `422` for an unknown field. Returns `exam`, `devices` (PCs in the lab) and `delivered` (agents the message was written to). Audit-logged (`exam_start`). |
+| DELETE | `/api/labs/{lab_name}/exam` | require_admin | Ends the lab's exam and sends `{"action": "exam_mode", "enabled": false}` to its connected agents and to every connected PC that got the exam (also those moved out); the others get it when they connect. Optional body `{reason}`. `404` when the lab has no exam. Returns `exam` and `delivered`. Audit-logged (`exam_end`). |
+| GET | `/api/labs/{lab_name}/exam` | require_auth | `{lab, module_enabled, active, exam, devices, counts}`; a lab without an exam (also a lab name that does not exist) gives `active: false`. `devices` (only while an exam runs): one row per PC in the lab with `pc_name`, `name`, `online`, `state`, `agent_version`, the agent's last `exam_state` (`enabled`, `since`, `until` as unix seconds, `reported_at`) and `sent_at`, `entered_at`, `left_at`, `denied_at`. `state`: `in_exam`, `left` (said "not in exam" while the exam runs), `unreachable` (not connected), `unsupported` (connected but never answered within 20 seconds: an agent without exam mode), `pending` (sent less than 20 seconds ago) or `denied` (exam capability switched off locally). `counts` has every state. |
+| GET | `/api/exams` | require_auth | Exam history, newest first: `{"items": [...]}`. `?lab=` one lab, `?active=true` only running exams (each with `counts`), `?active=false` only ended ones, `?limit=` 1–500 (default 50). Each item also has `devices_sent`, `devices_entered` and `devices_left`. |
+
+An exam object has `id`, `lab`, `allow`, `until` (unix seconds), `until_at` (ISO 8601), `message`, `block_apps`,
+`reason`, `started_by`, `started_at`, `ended_by`, `ended_at`, `end_reason` (`admin`, `expired`, `lab_deleted`,
+`module_off`), `active` and `remaining_seconds`.
+
+- **One exam per lab.** A partial unique index allows one running exam per lab; of two simultaneous starts one gets
+  `409`.
+- **End time.** The scheduler ends expired exams every 30 seconds (`ended_by` `system`, `end_reason` `expired`,
+  audit `exam_auto_end`) and sends `enabled: false`; reading an exam (or starting one) ends an expired one first.
+  Agents leave exam mode at `until` themselves.
+- **Moving PCs.** A connected PC moved into a lab with a running exam gets it at once; one moved out of it gets
+  `enabled: false`. Renaming a lab keeps its running exam; deleting a lab ends it (`lab_deleted`); switching the
+  `exam` module off for a lab ends it (`module_off`; `exams_ended` in the reply of `POST /api/modules/exam`).
+
 ### Agent policies
 
 | Method | Path | Auth | Purpose |
@@ -416,7 +445,7 @@ Features that can be turned off for the whole organisation or per lab. The most
 specific setting wins (lab, then organisation); without a setting a module is on, so an upgrade changes nothing. A
 module whose dependency is off is off too (`deploy` needs `terminal`, `licenses` needs `software`, `schedules` needs
 `terminal`). Modules: `vision`, `terminal`, `deploy`, `files`, `schedules`, `patches`, `software`, `licenses`,
-`helpdesk`, `dns_policy`, `quarantine`, `wol`, `reports`. Devices, labs, enrollment, agent updates, the audit log, users,
+`helpdesk`, `dns_policy`, `quarantine`, `wol`, `exam`, `reports`. Devices, labs, enrollment, agent updates, the audit log, users,
 notifications and server health are core and always on.
 
 When a module is off, its endpoints answer `409` with `detail` "'<name>' modülü kapalı." and the headers
@@ -430,7 +459,7 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/modules` | require_auth | Every module with `setting` (organisation, `null` = none), `enabled` (organisation, with dependencies), `lab_overrides`, `lab_enabled`, dependencies and profile defaults, plus `profile`, `labs`. |
-| POST | `/api/modules/{module_id}` | require_superadmin | `{enabled: true \| false \| null, lab?}`: sets (or with `null` removes) the organisation or lab setting. Turning `vision` off closes open Vision sessions; turning `terminal` off denies pending and paused tasks there; turning `files` off rejects file transfers that were sent but not started (their tokens stop working). Returns `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled`. Audited (`module_setting`); an organisation change sets the profile to `custom`. |
+| POST | `/api/modules/{module_id}` | require_superadmin | `{enabled: true \| false \| null, lab?}`: sets (or with `null` removes) the organisation or lab setting. Turning `vision` off closes open Vision sessions; turning `terminal` off denies pending and paused tasks there; turning `files` off rejects file transfers that were sent but not started (their tokens stop working); turning `exam` off ends the running exams there. Returns `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled`, `exams_ended`. Audited (`module_setting`); an organisation change sets the profile to `custom`. |
 | GET | `/api/system/install-profile/{name}` | require_superadmin | Preview of `school` or `org`: the organisation settings that would change and the number of lab overrides. |
 | POST | `/api/system/install-profile` | require_superadmin | `{profile: "school" \| "org", reset_labs}`: applies the profile's defaults organisation-wide (and with `reset_labs` deletes lab overrides). Audited (`module_profile`). |
 
@@ -546,7 +575,8 @@ The agent channels are specified message by message, with JSON Schemas, test vec
   `server_info` (protocol version and features) and then sends commands. Every message in both directions, the
   connection sequence and the close codes (`4401`, `4409`, `4000`, `1011`) are in [`protocol/`](protocol/README.md);
   the update stages an agent reports are described [below](#update_progress-agent-update-stages), the file transfer
-  messages (`file_push`, `file_pull`, `file_result`) under [File transfer](#file-transfer).
+  messages (`file_push`, `file_pull`, `file_result`) under [File transfer](#file-transfer), exam mode
+  (`exam_mode`, `exam_state`) [further down](#exam_mode-and-exam_state).
 - When a registered connection closes, the reason (the close code in words, for example "bağlantı koptu" for
   `1006`) and the time are stored in `clients.last_disconnect_reason` / `last_disconnect_at`.
 
@@ -595,10 +625,45 @@ stages; the panel then shows the update as before ("Kuruluyor" until the result)
   stage, whichever is later) closes the pending update and clears its stage. A new dispatch clears it too.
 - **Older servers** ignore the message. The agent loop in `Backend/pops/routers/agents.py` handles the types it
   knows (`thumbnail`, `vision_rejected`, `update_result`, `capabilities`, `bypass_secret_ack`,
-  `capability_denied`) and passes everything else to the routine handler, which acts only on `type: "result"`
+  `capability_denied`, `exam_state`) and passes everything else to the routine handler, which acts only on `type: "result"`
   and on messages with a `status` field; anything else is dropped without an error, and the connection stays
   open. A server that handles `update_progress` lists it in `server_info.features`; an agent may skip the
   messages when the feature is missing, but does not have to.
+
+#### `exam_mode` and `exam_state`
+
+The server sends a lab's running exam to each of its agents when the exam starts, after every (re)connect and when
+a connected PC is moved into the lab:
+
+```json
+{"action": "exam_mode", "enabled": true, "allow": ["sinav.meb.gov.tr", "10.0.0.5", "10.1.0.0/24"], "until": 1791207689, "message": "Sınav modu: yalnızca sınav sitesi açık", "block_apps": ["cmd.exe"]}
+```
+
+and `{"action": "exam_mode", "enabled": false}` when it ends (by an admin or at `until`), when the PC is moved out of
+the lab, and on reconnect when the exam ended early while the PC was off. A new `exam_mode` replaces the previous
+one. `until` is unix seconds and always set by this server (the contract allows `null` for "no end"); `allow` holds
+normalised domain names, IP addresses and CIDR networks; `block_apps` lower-case file names (may be empty).
+
+The agent reports its state, on connect and whenever it changes:
+
+```json
+{"type": "exam_state", "enabled": true, "since": 1791205289, "until": 1791207689}
+```
+
+- `enabled` is required (anything else is ignored); `since` and `until` are unix seconds, kept only when they lie
+  between 2000 and 2100.
+- `enabled: true` while the lab has no running exam (it ended, the PC was moved, the module was switched off): the
+  server sends `enabled: false` again, at most once a minute per PC. `enabled: true` with an `until` more than 5
+  seconds off the running exam's: the exam is sent again (same limit).
+- `enabled: false` while the lab's exam runs, more than 20 seconds after the last `exam_mode` sent to the PC and
+  more than a minute before `until`: the PC **left early** (exam mode switched off locally, or tampering). The
+  first time per exam and PC this writes `left_at`, the audit entry `exam_left` and the notification `exam_left`
+  (high). A report within the 20 seconds is the agent's state before it applied the exam and is not counted.
+- The capability `exam` can be switched off on the PC. The agent then answers `exam_mode` with
+  `{"type": "capability_denied", "capability": "exam", "action": "exam_mode"}`: logged and notified like every
+  refusal, and the PC's state becomes `denied`.
+- Agents without exam mode ignore `exam_mode` (unknown action) and send no `exam_state`; the PC shows as
+  `unsupported`. The server announces the feature as `exam_mode` in `server_info.features`.
 
 ### `/ws/vision/{hw_id}` — agent screen stream
 

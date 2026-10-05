@@ -1,8 +1,8 @@
 """İstek gövdeleri için Pydantic modelleri."""
 
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, StrictFloat, StrictInt, field_validator
 
 TargetMode = Literal["ALL", "LAB", "PC"]
 
@@ -372,3 +372,18 @@ class ApiTokenCreateInput(StrictInput):
     name: str = Field(min_length=1, max_length=64)
     role: Literal["viewer", "admin"]
     expires_days: Optional[int] = Field(default=None, ge=1, le=3650)   # None = süresiz
+
+
+# ─── Sınav modu (pops/exams.py) ───────────────────────────────────────────────
+class ExamStartInput(StrictInput):
+    # Girişlerin biçimi ve sayısı (en çok 50, tekrarlar birleşir) uçta denetlenir: hatalı girişin adı 400'de yazar
+    allow: List[str] = Field(default_factory=list, max_length=200)
+    until: Optional[Union[StrictInt, StrictFloat]] = None            # unix saniye; ya bu ya duration_minutes
+    duration_minutes: Optional[StrictInt] = Field(default=None, ge=1, le=480)
+    message: str = Field(default="", max_length=1000)
+    block_apps: List[str] = Field(default_factory=list, max_length=200)
+    reason: str = Field(max_length=1000)
+
+
+class ExamEndInput(StrictInput):
+    reason: str = Field(default="", max_length=1000)

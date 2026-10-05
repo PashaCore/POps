@@ -917,6 +917,116 @@ def test_files():
         "istenen dosyanın yolu tepside görünmez, yapan görünür")
 
 
+def test_exam():
+    """Sınav modu: izin listesi (alan adı, IP, CIDR) ve program listesi doğrulaması, bitiş zamanı, bilgisayar durumu,
+    ajan mesajının biçimi ve eğik çizgili sınıf adıyla yönlendirme."""
+    print("== sınav modu")
+    from pops import exams
+
+    good = {
+        "sinav.meb.gov.tr": "sinav.meb.gov.tr", "https://Sinav.MEB.gov.tr/giris?x=1": "sinav.meb.gov.tr",
+        "10.0.0.5": "10.0.0.5", "10.1.0.7/24": "10.1.0.0/24", "10.0.0.5/32": "10.0.0.5", "2001:db8::1": "2001:db8::1",
+        "http://[2001:db8::1]:8080/a": "2001:db8::1", "example.com.": "example.com", "meb.gov.tr/a/b": "meb.gov.tr",
+        "sınav.meb.gov.tr": "xn--snav-lza.meb.gov.tr",
+    }
+    got = {raw: exams.clean_allow_entry(raw) for raw in good}
+    chk(got == good, "izin girişleri normalleşir (%s)" % {k: v for k, v in got.items() if good[k] != v})
+    bad = ["", "*.meb.gov.tr", "localhost", "0.0.0.0/0", "::/8", "10.0.0", "foo bar", "a..b", "-a.com", "10.0.0.5:80",
+           "1.2.3.4/abc", "x" * 301]
+    passed = []
+    for raw in bad:
+        try:
+            passed.append((raw, exams.clean_allow_entry(raw)))
+        except ValueError:
+            pass
+    chk(not passed, "geçersiz girişler reddedilir (%s)" % passed)
+    chk(exams.clean_allow(["a.com", "A.com", "10.0.0.1"]) == ["a.com", "10.0.0.1"], "tekrarlar birleşir, sıra korunur")
+    try:
+        exams.clean_allow(["n%d.example.com" % i for i in range(51)])
+        chk(False, "51 giriş reddedilmeli")
+    except ValueError as exc:
+        chk("50" in str(exc), "en fazla 50 giriş")
+    try:
+        exams.clean_allow(["ok.com", "kötü giriş"])
+        chk(False, "geçersiz giriş reddedilmeli")
+    except ValueError as exc:
+        chk("kötü giriş" in str(exc), "hata mesajı geçersiz girişi adıyla yazar")
+
+    chk(exams.clean_apps(["cmd", "C:\\Windows\\System32\\CMD.EXE", "PowerShell.exe"]) == ["cmd.exe", "powershell.exe"],
+        "program adı: yol atılır, küçük harf, .exe eklenir, tekrarsız")
+    for apps in (["explorer.exe"], ["POpsAgent.exe"], ["bad*.exe"], ["n%d.exe" % i for i in range(51)]):
+        try:
+            exams.clean_apps(apps)
+            chk(False, "reddedilmeli: %s" % apps[:1])
+        except ValueError:
+            chk(True, "reddedildi: %s" % apps[0])
+
+    now = 1_800_000_000.0
+    chk(exams.resolve_until(None, 40, now) == int(now) + 2400, "süre (dakika) bitişe çevrilir")
+    chk(exams.resolve_until(now + 3600, None, now) == int(now) + 3600, "bitiş zamanı olduğu gibi")
+    late = now + 8 * 3600 + 1
+    for until, minutes in ((None, None), (now + 600, 10), (now - 5, None), (now + 30, None), (late, None)):
+        try:
+            exams.resolve_until(until, minutes, now)
+            chk(False, "bitiş reddedilmeli: %s %s" % (until, minutes))
+        except ValueError:
+            chk(True, "bitiş reddedildi: until=%s duration=%s" % (until and until - now, minutes))
+
+    t = datetime.datetime.fromtimestamp
+    utc = datetime.timezone.utc
+    sent = t(now - 60, utc)
+
+    def st(online, row, at=now):
+        return exams.device_state(online, row, at)
+
+    chk(st(False, {"sent_at": sent, "reported_at": sent, "enabled": True}) == "unreachable", "çevrimdışı: ulaşılamıyor")
+    chk(st(True, None) == "pending", "gönderilmemiş: bekleniyor")
+    chk(st(True, {"sent_at": t(now - 5, utc)}) == "pending", "yeni gönderildi, yanıt yok: bekleniyor")
+    chk(st(True, {"sent_at": sent}) == "unsupported", "yanıt yok (eski ajan): desteklemiyor")
+    chk(st(True, {"sent_at": sent, "reported_at": t(now - 50, utc), "enabled": True}) == "in_exam", "sınavda")
+    chk(st(True, {"sent_at": sent, "reported_at": t(now - 10, utc), "enabled": False}) == "left", "ayrıldı")
+    chk(st(True, {"sent_at": t(now - 3, utc), "reported_at": t(now - 2, utc), "enabled": False}) == "pending",
+        "gönderimden hemen sonraki 'sınavda değil' henüz ayrılma sayılmaz")
+    chk(st(True, {"sent_at": sent, "reported_at": t(now - 50, utc), "enabled": False,
+                  "denied_at": t(now - 40, utc)}) == "denied", "yerel yetenek kapalı: reddetti")
+    chk(st(True, {"sent_at": sent, "reported_at": t(now - 30, utc), "enabled": True,
+                  "denied_at": t(now - 40, utc)}) == "in_exam", "retten sonra sınava giren: sınavda")
+    chk(exams.counts([{"state": "in_exam"}, {"state": "left"}, {"state": "in_exam"}])
+        == {"in_exam": 2, "left": 1, "unreachable": 0, "unsupported": 0, "pending": 0, "denied": 0}, "durum sayıları")
+
+    row = {"id": 7, "lab_name": "9/A", "allow_list": '["sinav.meb.gov.tr"]', "until_at": t(now + 600, utc),
+           "message": "m", "block_apps": "[]", "reason": "r", "started_by": "admin", "started_at": t(now, utc),
+           "ended_by": None, "ended_at": None, "end_reason": None}
+    exam = exams.public(row, now)
+    chk(exam["active"] and exam["remaining_seconds"] == 600 and exam["until"] == int(now) + 600
+        and exam["allow"] == ["sinav.meb.gov.tr"], "kaydın API biçimi")
+    msg = exams.agent_message(exam)
+    chk(msg == {"action": "exam_mode", "enabled": True, "allow": ["sinav.meb.gov.tr"], "until": int(now) + 600,
+                "message": "m", "block_apps": []}, "ajan mesajı sözleşmedeki biçimde")
+    chk(exams.DISABLE == {"action": "exam_mode", "enabled": False}, "kapatma mesajı")
+    chk(exams._ts(True) is None and exams._ts("1") is None and exams._ts(1) is None
+        and exams._ts(now).timestamp() == now, "ajanın zamanı yalnızca makul unix sayısı")
+
+    import server
+    from pops.routers import agents, devices, exams as exams_router, rest
+
+    routed = {
+        ("POST", "/api/labs/9/A/exam"): exams_router.start_exam,
+        ("DELETE", "/api/labs/9/A/exam"): exams_router.end_exam,
+        ("GET", "/api/labs/Lab 1/exam"): exams_router.get_lab_exam,
+        ("GET", "/api/exams"): exams_router.list_exams,
+        ("DELETE", "/api/labs/9/A"): rest.delete_lab,
+        ("POST", "/api/labs/9/A/wake"): devices.wake_lab,
+    }
+    wrong = []
+    for (method, path), endpoint in routed.items():
+        status, _, scope = asyncio.run(_asgi(server.app, method, path))
+        if status != 401 or scope.get("endpoint") is not endpoint:
+            wrong.append("%s %s -> %s %s" % (method, path, status, getattr(scope.get("endpoint"), "__name__", None)))
+    chk(not wrong, "sınav yolları (eğik çizgili sınıf adıyla) doğru işleyicide, oturumsuz 401 (%s)" % wrong)
+    chk("exam_mode" in agents.SERVER_FEATURES, "server_info exam_mode'u duyurur")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -933,6 +1043,7 @@ def main():
     test_server_metrics()
     test_api_v1()
     test_files()
+    test_exam()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

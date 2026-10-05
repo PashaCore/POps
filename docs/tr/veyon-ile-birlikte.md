@@ -105,6 +105,10 @@ ekler (aşağıya bakın). POps tarafındaki ayrıntılar: [`docs/agent.md`](../
 - **Karantina Veyon'u da keser.** POps karantinası kilit ekranı açar ve Windows Güvenlik Duvarı'na kurallar ekler:
   bilgisayar yalnızca POps sunucusuna, DNS'e ve DHCP'ye erişebilir. Bu sırada öğretmen o bilgisayara Veyon ile
   bağlanamaz. Karantina kalkınca kurallar silinir ve güvenlik duvarının önceki durumu geri yüklenir.
+- **Sınav modu da Veyon'u kesebilir.** POps sınav modu karantinanın ağ yalıtımını kullanır: sınav süresince
+  bilgisayar yalnızca POps sunucusuna, DNS'e, DHCP'ye ve izin listesindeki adreslere erişir. Sınav sırasında öğretmen
+  Veyon ile izlemek istiyorsa öğretmen bilgisayarının IP adresini izin listesine ekleyin ve sınavdan önce bir
+  bilgisayarda deneyin. Sınav modu ekranı izlemez; ders içi izleme yine Veyon'un işidir.
 - **İki ayrı kilit, iki ayrı amaç.** Veyon'un ekran kilidi ders içindir. POps karantinası bir güvenlik olayı içindir
   (örneğin zararlı yazılım şüphesi); denetim kaydına gerekçesiyle yazılır. Karantinayı ders disiplini için
   kullanmayın.

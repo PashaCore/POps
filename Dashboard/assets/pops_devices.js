@@ -6,6 +6,7 @@
 //   POps.dev.message / move / quarantine / unquarantine / rename / remove
 //   POps.dev.sendFile(hostlar) / pullFile(host): dosya gönder / dosyayı bilgisayardan al (routers/files.py)
 //   POps.dev.open(host)               : sağdaki ayrıntı paneli
+//   POps.dev.exam                     : sınav modu (sınıfın durumu, kalan süre, bilgisayar durumları)
 // Hedefler her zaman cihaz kimliğidir (hostname = HW- kimliği).
 // Görünen metinler POps.t ile çevrilir (lang/en/common.json); sunucuya giden görev adları Türkçe kalır.
 // =================================================================
@@ -267,6 +268,59 @@
         const removing = (state.mainPcs || {})[lab] === host;   // aynı bilgisayar gönderilince sunucu kaldırır
         if (await POps.act(null, () => POps.post('/api/set_main_pc', { lab_name: lab, pc_name: host }), { success: removing ? POps.t('{name} artık öğretmen bilgisayarı değil.', { name: dev.name(host) }) : POps.t('{name} öğretmen bilgisayarı yapıldı.', { name: dev.name(host) }) })) POps.loadDevices().catch(() => {});
     };
+    // ---- Sınav modu (bkz. docs/dashboard.md "Sınıflar"): sınıfın süren sınavı ve her bilgisayarın durumu.
+    // Kalan süre sunucunun verdiği remaining_seconds'tan yerel saatle sayılır (tarayıcının saati kaymış olabilir).
+    const exam = dev.exam = { byLab: {}, active: {}, activeAt: 0 };
+    // Sınıf adı "9/A" gibi eğik çizgi içerebilir: bölümler ayrı kodlanır (Apache kodlanmış %2F'yi reddeder)
+    exam.path = (lab) => '/api/labs/' + String(lab).split('/').map(encodeURIComponent).join('/') + '/exam';
+    const EXAM_STATE = {
+        in_exam: { cls: 'ok', word: 'Sınavda', tip: 'Bilgisayar sınav modunda.' },
+        left: { cls: 'bad', word: 'Ayrıldı', tip: 'Sınav bitmeden sınav modundan çıktı: yerel olarak kapatılmış ya da kurcalanmış olabilir.' },
+        unreachable: { cls: 'muted', word: 'Ulaşılamıyor', tip: 'Bilgisayar kapalı ya da bağlı değil; bağlanınca sınavı alır.' },
+        unsupported: { cls: 'warn', word: 'Desteklemiyor (eski ajan)', tip: 'Ajan sınav modunu tanımıyor; ajan güncellenmeli.' },
+        pending: { cls: 'run', word: 'Bekleniyor', tip: 'Sınav gönderildi, ajanın yanıtı bekleniyor.' },
+        denied: { cls: 'bad', word: 'Reddetti', tip: 'Sınav modu bu bilgisayarda yerel olarak kapalı.' }
+    };
+    exam.state = (key) => { const s = EXAM_STATE[key] || EXAM_STATE.pending; return { cls: s.cls, word: POps.t(s.word), tip: POps.t(s.tip) }; };
+    function stampExam(e) {
+        if (e && e.active) e.endsAt = Date.now() + Number(e.remaining_seconds || 0) * 1000;
+        return e;
+    }
+    exam.secondsLeft = (e) => (e && e.endsAt ? Math.max(0, Math.round((e.endsAt - Date.now()) / 1000)) : 0);
+    exam.leftText = function (e) {
+        const sec = exam.secondsLeft(e);
+        if (sec < 60) return POps.t('1 dakikadan az kaldı');
+        const min = Math.ceil(sec / 60);
+        if (min < 60) return POps.tn('{n} dk kaldı', min);
+        return POps.t('{h} sa {m} dk kaldı', { h: Math.floor(min / 60), m: min % 60 });
+    };
+    exam.shortLeft = function (e) {
+        const min = Math.ceil(exam.secondsLeft(e) / 60);
+        return min < 60 ? POps.tn('{n} dk', Math.max(min, 1)) : POps.t('{h} sa {m} dk', { h: Math.floor(min / 60), m: min % 60 });
+    };
+    exam.badgeText = (e) => POps.t('Sınav modu · {left}', { left: exam.leftText(e) });
+    // Sınıfın durumu (sınav, bilgisayarlar); kısa süre önbellekte. Hata çağırana gider.
+    exam.load = async function (lab, maxAgeMs) {
+        const hit = exam.byLab[lab];
+        if (hit && Date.now() - hit.at < (maxAgeMs == null ? 5000 : maxAgeMs)) return hit.data;
+        const data = await POps.get(exam.path(lab));
+        stampExam(data.exam);
+        data.byPc = {};
+        (data.devices || []).forEach(d => { data.byPc[d.pc_name] = d; });
+        exam.byLab[lab] = { at: Date.now(), data };
+        return data;
+    };
+    // Süren bütün sınavlar (sınıf -> sınav): yan menü ve sınıf başlığı
+    exam.loadActive = async function () {
+        const r = await POps.get('/api/exams?active=true');
+        const map = {};
+        (r.items || []).forEach(e => { map[e.lab] = stampExam(e); });
+        exam.active = map;
+        exam.activeAt = Date.now();
+        return map;
+    };
+    exam.forget = (lab) => { delete exam.byLab[lab]; exam.activeAt = 0; };
+
     dev.screenUrl = (hosts) => 'vision?pc=' + hosts.map(encodeURIComponent).join(',');
     dev.commandUrl = (hosts) => 'terminal?pc=' + hosts.map(encodeURIComponent).join(',');
 
@@ -548,7 +602,7 @@
     const KIND_LABEL = tAll({ auth: 'Oturumlar', policy: 'Kural ihlalleri', quarantine: 'Karantina', command: 'Komutlar', agent: 'Ajan ve bakım', other: 'Diğer' });
     const CAT_LABEL = tAll({ security: 'Güvenlik', restricted_content: 'Kural ihlali', system_maintenance: 'Bakım', legacy: 'Eski kayıt' });
     const RISK_LABEL = tAll({ info: 'bilgi', low: 'düşük', medium: 'orta', high: 'yüksek', critical: 'kritik' });
-    const CAP = tAll({ terminal: 'uzak komut', vision: 'uzak ekran', files: 'dosya aktarımı' });
+    const CAP = tAll({ terminal: 'uzak komut', vision: 'uzak ekran', files: 'dosya aktarımı', exam: 'sınav modu' });
     const BY_TYPE = {
         'auth.login': 'login', 'auth.logout': 'logout', 'auth.failed': 'login_failed', 'policy.alert': 'dns_block',
         'security.lockdown': 'lockdown', 'security.unlock': 'unlock', 'security.bypass_code': 'bypass_code',
@@ -681,6 +735,31 @@
             ${why ? `<div class="why">${escapeHtml(why)}</div>` : ''}</div>
             <div class="side"><span class="word ${escapeHtml(k)}">${escapeHtml(dev.statusWord(a.status))}</span></div></div>`;
     }
+    // Sınav modu: bilgisayarın sınıfında süren sınav varsa durumu (önbellekten; panel açılınca tazelenir)
+    function examHtml(d) {
+        const hit = d.lab && exam.byLab[d.lab];
+        const data = hit && hit.data;
+        if (!data || !data.active || !data.exam) return '';
+        const e = data.exam;
+        const row = data.byPc[d.hostname];
+        const st = exam.state(row ? row.state : 'pending');
+        const allow = (e.allow || []).length ? e.allow.join(', ') : POps.t('yalnızca POps sunucusu');
+        const rowHtml = (label, valueHtml) => `<div class="grow"><span>${escapeHtml(label)}</span><span>${valueHtml}</span></div>`;
+        const rowsHtml = rowHtml(POps.t('Durum'), `<span class="badge ${escapeHtml(st.cls)}" data-tip="${escapeHtml(st.tip)}">${escapeHtml(st.word)}</span>`)
+            + rowHtml(POps.t('Kalan süre'), escapeHtml(exam.leftText(e)))
+            + rowHtml(POps.t('İzin verilen'), escapeHtml(allow))
+            + ((e.block_apps || []).length ? rowHtml(POps.t('Engellenen programlar'), escapeHtml(e.block_apps.join(', '))) : '')
+            + rowHtml(POps.t('Başlatan'), escapeHtml(e.started_by || '?') + ' · ' + POps.timeHtml(e.started_at));
+        return `<div><h3>${POps.tHtml('Sınav modu')}</h3><div class="glist">${rowsHtml}</div></div>`;
+    }
+    async function refreshExam(host, lab) {
+        if (!lab || lab === UNASSIGNED) return;
+        const had = exam.byLab[lab];
+        try { await exam.load(lab, 10000); } catch (e) { return; }
+        if (openHost !== host || exam.byLab[lab] === had || !POps.drawer.isOpen('pc:' + host)) return;
+        const d = byHost(host);
+        if (d) render(POps.drawer.body(), d, true);
+    }
     async function loadActivity(host, box) {
         try {
             const r = await POps.get('/api/devices/' + encodeURIComponent(host) + '/activity?limit=8');
@@ -694,7 +773,7 @@
     function render(body, d, keepRecent) {
         const recent = keepRecent ? body.querySelector('#devRecent') : null;
         const files = keepRecent ? body.querySelector('#devFiles') : null;
-        body.innerHTML = headHtml(d) + circlesHtml(d) + issuesHtml(d) + factsHtml(d)
+        body.innerHTML = headHtml(d) + circlesHtml(d) + issuesHtml(d) + examHtml(d) + factsHtml(d)
             + `<div><h3>${POps.tHtml('Son işlemler')}</h3><div id="devRecent"><div class="faint" style="font-size:var(--text-sm);padding:6px 0">${POps.tHtml('Yükleniyor…')}</div></div></div>`
             + '<div id="devFiles"></div>'
             + `<a href="devices?pc=${encodeURIComponent(d.hostname)}" style="font-size:var(--text-sm)">${POps.tHtml('Cihazlar sayfasında aç')}</a>`;
@@ -745,6 +824,7 @@
         }
         loadActivity(host, body.querySelector('#devRecent'));
         loadFiles(host);
+        refreshExam(host, d.lab);
     };
     // Yan menüdeki sayılar (cihaz listesini yoklayan sayfalarda)
     document.addEventListener('pops_data_updated', () => {
@@ -756,6 +836,6 @@
     document.addEventListener('pops_data_updated', () => {
         if (!openHost || !POps.drawer.isOpen('pc:' + openHost)) return;
         const d = byHost(openHost);
-        if (d) render(POps.drawer.body(), d, true);
+        if (d) { render(POps.drawer.body(), d, true); refreshExam(openHost, d.lab); }
     });
 })();

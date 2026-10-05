@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from pops import db, modules
+from pops import db, exams, modules
 from pops.db import execute_query
 from pops.models import AgentPoliciesInput, AuthEventInput, HwInventoryInput, LogInput, PolicyAlertInput
 from pops.security import require_admin, require_auth
@@ -165,8 +165,9 @@ async def reconcile_quarantine(
 # yok sayar). update_result_ack: güncelleme sonucu kaydedilince onaylanır, ajan onaya kadar sonucu saklar.
 # update_progress: güncellemenin ara adımları okunur (eski sunucu bilinmeyen mesajı zaten yok sayar; ajan isterse
 # yalnızca bunu duyuran sunucuya gönderir). file_transfer: file_push / file_pull komutları ve file_result iletisi
-# (bkz. routers/files.py); ajan dosya aktarımını yalnızca bunu duyuran sunucudan kabul edebilir.
-SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress", "file_transfer")
+# (bkz. routers/files.py); ajan dosya aktarımını yalnızca bunu duyuran sunucudan kabul edebilir. exam_mode: sınav
+# modu gönderilir ve exam_state okunur (pops/exams.py).
+SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress", "file_transfer", "exam_mode")
 # Ajan protokolünün sürümü (docs/protocol/README.md): yalnızca uyumsuz bir değişiklikte artar. Yeni alan ya da yeni
 # mesaj sürümü değiştirmez; sunucunun yeni davranışları SERVER_FEATURES ile duyurulur.
 PROTOCOL_VERSION = 1
@@ -192,6 +193,15 @@ async def _send_server_info(websocket: WebSocket) -> None:
         await websocket.send_text(json.dumps(server_info_message()))
     except Exception:
         pass
+
+
+async def _sync_exam(pc_name: str) -> None:
+    """Bağlanan ajanı sınıfının sınav durumuna getirir. Hata bağlantıyı düşürmez: ajan bir sonraki bağlanışında ya da
+    exam_state bildirdiğinde yeniden eşitlenir."""
+    try:
+        await exams.sync_pc(pc_name)
+    except Exception as exc:
+        log.warning("sınav durumu eşitlenemedi", extra={"pc_name": pc_name, "error": repr(exc)[:300]})
 
 
 async def _ack_update_result(pc_name: str, result_id: str) -> None:
@@ -733,6 +743,9 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             if not hw_exists or hw_exists[0]["cpu"] == "-":
                 await manager.send_command({"action": "get_hardware"}, active_hwid)
             await process_queue()
+            # Sınıfın süren sınavı (yeniden bağlanan ya da sınav sürerken sınıfa taşınmış bilgisayar); sınav bu
+            # bilgisayarda bitmeden kapandıysa enabled:false (bkz. pops/exams.py, docs/protocol/README.md sırası)
+            await _sync_exam(active_hwid)
         else:
             if auth_method == "enroll":
                 # Kayıt, donanım bilgisini taşıyan ilk mesajla yapılır
@@ -743,6 +756,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 return
             manager.active_agents[active_hwid] = websocket
             await _send_server_info(websocket)
+            await _sync_exam(active_hwid)
 
         await handle_routine_payload(payload)
 
@@ -791,6 +805,11 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 if payload.get("type") == "file_result":
                     # Dosya aktarımının sonucu (gönderilen dosya yazıldı/reddedildi; istenen dosya bulunamadı...)
                     await file_transfer.handle_result(active_hwid, payload)
+                    continue
+                if payload.get("type") == "exam_state":
+                    # Ajanın sınav modu durumu: sınav yokken "sınavda" ise kapatma yeniden gider, sınav sürerken
+                    # "sınavda değil" ise erken çıkış bildirilir (pops/exams.py)
+                    await exams.on_agent_state(active_hwid, payload)
                     continue
                 if payload.get("type") == "capabilities":
                     # Ajan güncel yetenek durumunu bildirir (bağlantıda + her değişimde). Sakla + panele yay.
@@ -881,6 +900,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         str(payload.get("action") or ""),
                         active_hwid,
                     )
+                    if payload.get("capability") == "exam":
+                        await exams.on_denied(active_hwid)
                     await manager.broadcast_to_panels({"type": "capability_denied", "pc_name": active_hwid, **_md})
                     continue
                 await handle_routine_payload(payload)

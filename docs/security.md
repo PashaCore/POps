@@ -203,6 +203,39 @@ An admin can send a file to PCs and fetch a file from a PC (**Dosya gönder** / 
   `files_enabled: false`, and the server sends it nothing. An agent that does not report the capability gets no
   file commands.
 
+## Exam mode
+
+Exam mode (**Sınıflar → Sınıf işlemleri → Sınav modu…**, `POST /api/labs/{lab}/exam`) restricts a lab's PCs for the
+length of an exam. What it does:
+
+- **Network isolation with an allow list.** The agent uses the quarantine isolation: outbound traffic is blocked
+  except to the POps server, DNS, DHCP and the allowed domain names, IP addresses and networks (domain names are
+  resolved by the agent). The server validates the list (no wildcards, no network wider than `/8`, at most 50
+  entries).
+- **A notice.** The tray shows the admin's message for the whole exam.
+- **Optional program block.** Listed programs (`cmd.exe`, …) are blocked while the exam runs. POps's own
+  processes and the Windows session processes cannot be listed.
+- **A fixed end.** Every exam has an end time at most 8 hours ahead. The agent leaves exam mode at that time on its
+  own, also when it is offline; the server ends the exam too and tells connected agents.
+- **Accountability.** Starting, ending and the automatic end are written to the hash-chained audit log
+  (`exam_start`, `exam_end`, `exam_auto_end`) with who, the lab, the reason and the lists. A PC that reports it left
+  exam mode while the exam runs gets an audit entry (`exam_left`) and a notification; a PC whose agent refuses
+  (`capability_denied`, capability `exam`) is logged and notified, and the panel shows both.
+
+What it does **not** guarantee:
+
+- **A local administrator can switch it off.** The `exam` capability can be switched off on the PC, and an
+  administrator of the PC can stop the agent or change the firewall. Exam mode is meant for students with standard
+  accounts. The panel shows such a PC as **Ayrıldı** or **Reddetti** and raises a notification, but only after the
+  agent reports it, and only if it still can.
+- **It is not proctoring.** POps does not watch, record or analyse the screen, the camera, keystrokes or the
+  student during an exam. Remote screen (Vision) keeps its own rules (consent or a recorded mandatory session).
+- **It does not stop other devices.** Phones, a second network card the agent does not manage, or a USB modem are
+  outside its reach. It also does not change what the allowed sites themselves permit.
+- **Older agents ignore it.** An agent without exam mode drops the command; the panel shows it as
+  **Desteklemiyor (eski ajan)**, and that PC is not restricted.
+- **Offline PCs** get the exam when they connect. A PC that never connects during the exam is not restricted.
+
 ## Remote control and transparency
 
 - Remote mouse/keyboard input and `execute` sent over the remote-input path need an admin **and** an open

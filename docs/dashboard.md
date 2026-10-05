@@ -94,8 +94,8 @@ where they are sent is set on **Sistem** → **Bildirimler**.
 - **Detail panel.** Clicking a PC opens a panel on the right: status and signed-in user, round buttons for
   **Ekran**, **Komut**, **Güç** and **Diğer** (disabled when the PC is off or the capability is turned off for
   it), its issues (quarantine, outdated agent, errors reported by the agent, remote command, screen or file transfer
-  turned off on it),
-  the facts (user, application, lab,
+  turned off on it), the exam state while the PC's lab is in exam mode (**Sınav modu**: the PC's state, time left,
+  allowed addresses, blocked programs, who started it), the facts (user, application, lab,
   IP, MAC, agent version, memory, last seen, reason of the last disconnect, ID) and **Son işlemler**: the latest
   tasks and remote-screen sessions on the PC with what was done, who did it, when, from which page, the reason
   and the result (a failed task says why). The list comes from `GET /api/devices/{pc}/activity`. Below it,
@@ -166,6 +166,22 @@ tiles that do not match. Select tiles and use the action bar, or click a tile fo
   and an enrollment token created for a lab takes precedence. Setting the rule is written to the audit log; only
   one rule is active at a time.
 - The lab's teacher PC is set in the detail panel (**Diğer** → **Öğretmen bilgisayarı yap**).
+- **Sınav modu…** (in **Sınıf işlemleri**, admins) restricts the network of every PC in the lab for an exam. The
+  dialog asks for the allowed addresses (one domain name, IP address or CIDR network per line, at most 50; the POps
+  server, DNS and DHCP are always open), the duration (**40 dk**, **80 dk**, **120 dk** or **Saat seç** for an end
+  time today, at most 8 hours), the message shown in the tray (empty: a default text), programs to block
+  (optional, comma separated, for example `cmd.exe`) and a reason. The last allow list of a lab is remembered in the
+  browser. Invalid entries are named in the dialog. The menu item is greyed out when the `exam` module is off for
+  the lab.
+- **While an exam runs** the lab shows a bar under the title: **Sınav modu · 23 dk kaldı**, the PC counts by state,
+  the allowed addresses and, for admins, **Sınavı bitir** (with a confirmation; also in **Sınıf işlemleri**). The
+  lab's entry in the sidebar gets a clock icon. Every tile shows the PC's state: **Sınavda · 23 dk**, **Ayrıldı**
+  (it left exam mode before the end: switched off locally or tampered with; a notification is raised),
+  **Ulaşılamıyor** (off or not connected; it gets the exam when it connects), **Desteklemiyor (eski ajan)** (the
+  agent did not answer within 20 seconds: it has no exam mode), **Bekleniyor** (just sent) or **Reddetti** (exam
+  mode is switched off locally on the PC). The page refreshes the exam every 5 seconds. Exam mode ends by itself at
+  the end time, also on PCs that are offline; PCs that were off when an exam ended early leave it when they
+  connect. What exam mode does and does not guarantee: [`security.md`](security.md#exam-mode).
 
 Devices can also be placed in a lab at enrollment by creating the enrollment token for that lab (**Sistem**).
 

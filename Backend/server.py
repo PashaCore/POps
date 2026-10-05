@@ -48,6 +48,7 @@ from pops.routers import (
     control,
     devices,
     files,
+    exams as exams_router,
     helpdesk,
     inventory,
     licenses,
@@ -241,6 +242,8 @@ async def shutdown_event():
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
     activity, modules_router, branding, tokens, files,
+    # Sınav modu (/api/labs/{lab_name:path}/exam): rest'in genel /api/labs/{lab_name} yollarından önce
+    exams_router,
     # REST adları (/api/v1) eski uçların işleyicilerini çağırır; eskilerden sonra bağlanır
     rest,
 )

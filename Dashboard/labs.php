@@ -22,6 +22,22 @@
     .edit-note { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
     .edit-note .alert { flex: 1; margin: 0; }
     @media (max-width: 900px) { .lab-cols { grid-template-columns: minmax(0, 1fr); } }
+    /* Sınav modu: sınıf çubuğu, kutucuktaki durum, yan menüdeki işaret, başlatma penceresi */
+    .exam-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: -6px 0 20px; padding: 10px 12px 10px 14px; border-radius: 12px; background: var(--bg-surface); box-shadow: 0 0 0 1px var(--border-subtle); font-size: var(--text-sm); }
+    .exam-bar .badge .ico { width: 13px; height: 13px; }
+    .exam-bar .exam-sum, .exam-bar .exam-allow { color: var(--text-secondary); min-width: 0; overflow-wrap: anywhere; }
+    .exam-bar .exam-allow { color: var(--text-tertiary); }
+    .exam-bar .btn { margin-left: auto; }
+    .tile .tex { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: var(--text-xs); font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile .tex .ico { width: 12px; height: 12px; flex: none; }
+    .tile .tex.ok { color: var(--success-text); } .tile .tex.bad { color: var(--danger-text); } .tile .tex.warn { color: var(--warning-text); }
+    .tile .tex.run { color: var(--primary-600); } .tile .tex.muted { color: var(--text-muted); }
+    .nav-sub a .exam-ico { display: inline-flex; color: #0a84ff; }
+    .nav-sub a .exam-ico .ico { width: 12px; height: 12px; }
+    #examModal textarea { min-height: 96px; }
+    #examModal .segmented { margin-bottom: 2px; }
+    .exam-time { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .exam-time input[type=time] { width: auto; }
 </style>
 
 <div class="page-header">
@@ -34,6 +50,8 @@
         <button type="button" class="ibtn boxed" id="labMenuBtn" data-tip="<?php _e('Sınıf işlemleri'); ?>" data-tip-pos="left" aria-label="<?php _e('Sınıf işlemleri'); ?>" aria-haspopup="menu"><?php echo pops_icon('more'); ?></button>
     </div>
 </div>
+
+<div class="exam-bar" id="examBar" role="status" hidden></div>
 
 <div class="edit-note" id="editNote" hidden>
     <div class="alert info"><div><?php _e('Bilgisayarları sürükleyip sütunlara ya da öğretmen yerine bırakın. Her bırakış hemen kaydedilir.'); ?></div></div>
@@ -49,6 +67,55 @@
 </div>
 
 <div id="labMap" class="lab-map"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+
+<div class="modal-overlay" id="examModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title" id="exTitle"><?php _e('Sınav modu'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x'); ?></button>
+        </div>
+        <div class="modal-body">
+            <div class="alert info" style="margin-bottom:var(--space-4)"><div><?php _e('Sınav süresince sınıftaki bilgisayarlar yalnızca POps sunucusuna ve izin verdiğiniz adreslere erişir; tepside mesajınız görünür. Bu bir ağ kısıtlamasıdır, gözetim değildir: bilgisayardaki yerel yönetici sınav modunu kapatabilir.'); ?> <span id="exCount"></span></div></div>
+            <div class="field" id="exAllowField">
+                <label for="exAllow"><?php _e('İzin verilen adresler'); ?></label>
+                <textarea id="exAllow" rows="4" class="text-mono" spellcheck="false" placeholder="sinav.meb.gov.tr&#10;10.0.0.5&#10;10.1.0.0/24"></textarea>
+                <div class="field-hint"><?php _e('Her satıra bir alan adı, IP adresi ya da ağ (CIDR). En fazla 50. POps sunucusu, DNS ve DHCP her zaman açıktır; boş bırakılırsa yalnızca onlar açık kalır.'); ?></div>
+            </div>
+            <div class="field">
+                <span class="field-label" id="exDurLabel"><?php _e('Süre'); ?></span>
+                <div class="exam-time">
+                    <div class="segmented" id="exDur" role="group" aria-labelledby="exDurLabel">
+                        <button type="button" data-min="40" aria-pressed="true" class="active"><?php _e('40 dk'); ?></button>
+                        <button type="button" data-min="80" aria-pressed="false"><?php _e('80 dk'); ?></button>
+                        <button type="button" data-min="120" aria-pressed="false"><?php _e('120 dk'); ?></button>
+                        <button type="button" data-min="time" aria-pressed="false"><?php _e('Saat seç'); ?></button>
+                    </div>
+                    <input type="time" id="exTime" aria-label="<?php _e('Bitiş saati'); ?>" hidden>
+                </div>
+                <div class="field-hint" id="exEnd"></div>
+            </div>
+            <div class="field">
+                <label for="exMessage"><?php _e('Tepside görünen mesaj'); ?></label>
+                <input type="text" id="exMessage" maxlength="200" autocomplete="off" placeholder="<?php _e('Sınav modu: yalnızca izin verilen adresler açık.'); ?>">
+            </div>
+            <div class="field">
+                <label for="exApps"><?php _e('Engellenecek programlar (isteğe bağlı)'); ?></label>
+                <input type="text" id="exApps" autocomplete="off" spellcheck="false" placeholder="cmd.exe, powershell.exe">
+                <div class="field-hint"><?php _e('Virgülle ayırın. Sınav süresince bu programlar açılamaz.'); ?></div>
+            </div>
+            <div class="field" id="exReasonField">
+                <label for="exReason"><?php _e('Gerekçe'); ?></label>
+                <input type="text" id="exReason" maxlength="300" autocomplete="off" placeholder="<?php _e('Örn. 9/A matematik yazılısı'); ?>">
+                <div class="field-error"><?php _e('Gerekçe yazın.'); ?></div>
+            </div>
+            <div class="alert danger" id="exError" hidden><div id="exErrorText"></div></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="exStart"><?php _e('Sınavı başlat'); ?></button>
+        </div>
+    </div>
+</div>
 
 <script>
 (function () {
@@ -99,6 +166,41 @@
         return [POps.deviceName(d), d.hostname, d.ip, d.mac, dev.user(d)].some(v => String(v || '').toLocaleLowerCase('tr').includes(q));
     }
 
+    // ---- Sınav modu: sınıfın süren sınavı (yan menü ve çubuk) ve bilgisayar durumları (kutucuklar)
+    const EXAM = dev.exam;
+    const examOf = (lab) => EXAM.active[lab] || null;
+    function examData(lab) { const hit = EXAM.byLab[lab]; return hit && hit.data && hit.data.active ? hit.data : null; }
+    function examTileHtml(d) {
+        const e = examOf(current);
+        const data = e && examData(current);
+        if (!e || !data) return '';
+        const row = data.byPc[d.hostname];
+        const st = EXAM.state(row ? row.state : 'pending');
+        const word = row && row.state === 'in_exam' ? st.word + ' · ' + EXAM.shortLeft(e) : st.word;
+        return `<span class="tex ${escapeHtml(st.cls)}" data-tip="${escapeHtml(st.tip)}" data-tip-pos="left">${POps.iconHtml('clock', 'sm')}${escapeHtml(word)}</span>`;
+    }
+    function examKey() {
+        const e = examOf(current), data = e && examData(current);
+        if (!e) return null;
+        return [e.id, EXAM.shortLeft(e), data ? data.devices.map(x => x.pc_name + ':' + x.state) : null];
+    }
+    function renderExamBar() {
+        const box = $('examBar');
+        const e = current !== UNASSIGNED_KEY ? examOf(current) : null;
+        if (!e) { box.hidden = true; box.textContent = ''; return; }
+        const data = examData(current);
+        const c = data ? data.counts : null;
+        const parts = c ? [['in_exam', '{n} sınavda'], ['left', '{n} ayrıldı'], ['denied', '{n} reddetti'], ['unreachable', '{n} ulaşılamıyor'], ['unsupported', '{n} desteklemiyor'], ['pending', '{n} bekleniyor']]
+            .filter(([k]) => c[k]).map(([k, text]) => POps.tn(text, c[k])) : [];
+        const allow = (e.allow || []).length ? e.allow.slice(0, 3).join(', ') + (e.allow.length > 3 ? ' +' + (e.allow.length - 3) : '') : POps.t('yalnızca POps sunucusu');
+        box.innerHTML = `<span class="badge primary">${POps.iconHtml('clock', 'sm')}${escapeHtml(EXAM.badgeText(e))}</span>`
+            + (parts.length ? `<span class="exam-sum">${escapeHtml(parts.join(' · '))}</span>` : '')
+            + `<span class="exam-allow">${POps.tHtml('İzin verilen: {list}', { list: allow })}</span>`
+            + (CAN_ADMIN ? `<button type="button" class="btn sm danger-soft" id="examEndBtn">${POps.iconHtml('stop', 'sm')}${POps.tHtml('Sınavı bitir')}</button>` : '');
+        box.hidden = false;
+        if (CAN_ADMIN) $('examEndBtn').addEventListener('click', (ev) => endExam(ev.currentTarget));
+    }
+
     function tileHtml(d, isTeacher, newest) {
         const st = dev.state(d);
         const h = d.hostname;
@@ -106,7 +208,7 @@
         const cls = ['tile', st.cls === 'off' ? 'off' : '', isTeacher ? 'teacher' : '', selected.has(h) ? 'sel' : '', focus === h ? 'focus' : '', matches(d) ? '' : 'dim'].filter(Boolean).join(' ');
         return `<div class="${escapeHtml(cls)}" role="button" tabindex="0" data-host="${escapeHtml(h)}" draggable="${editing ? 'true' : 'false'}" aria-pressed="${selected.has(h) ? 'true' : 'false'}">
             <span class="chk" data-act="toggle" aria-hidden="true">${POps.iconHtml('check')}</span>
-            <span class="tx"><span class="tn">${isTeacher ? POps.iconHtml('crown', 'sm crown') : ''}${escapeHtml(POps.deviceName(d))}</span><span class="ts">${escapeHtml(dev.subline(d))}</span></span>
+            <span class="tx"><span class="tn">${isTeacher ? POps.iconHtml('crown', 'sm crown') : ''}${escapeHtml(POps.deviceName(d))}</span><span class="ts">${escapeHtml(dev.subline(d))}</span>${examTileHtml(d)}</span>
             ${dev.markHtml(dev.mark(d, newest))}
             <span class="st ${escapeHtml(st.cls)}" data-tip="${escapeHtml(st.word)}" data-tip-pos="left">${POps.iconHtml(stIcon)}</span>
         </div>`;
@@ -119,7 +221,9 @@
             const pcs = pcsOf(l);
             const on = pcs.filter(d => !POps.isOffline(d)).length;
             const warn = pcs.some(d => d.is_quarantined);
-            return `<a href="labs?lab=${encodeURIComponent(l)}" data-lab="${escapeHtml(l)}" class="${l === current ? 'active' : ''}"><span>${escapeHtml(l)}</span>${warn ? `<span class="dot bad" title="${escapeHtml(POps.t('Karantinada bilgisayar var'))}"></span>` : ''}<span class="n">${Number(on)}/${pcs.length}</span></a>`;
+            const e = examOf(l);
+            const examIcoHtml = e ? `<span class="exam-ico" title="${escapeHtml(EXAM.badgeText(e))}">${POps.iconHtml('clock', 'sm')}</span>` : '';
+            return `<a href="labs?lab=${encodeURIComponent(l)}" data-lab="${escapeHtml(l)}" class="${l === current ? 'active' : ''}"><span>${escapeHtml(l)}</span>${examIcoHtml}${warn ? `<span class="dot bad" title="${escapeHtml(POps.t('Karantinada bilgisayar var'))}"></span>` : ''}<span class="n">${Number(on)}/${pcs.length}</span></a>`;
         }).join('');
         const un = pcsOf(UNASSIGNED_KEY).length;
         const unHtml = un ? `<a href="labs?lab=${UNASSIGNED_KEY}" data-lab="${UNASSIGNED_KEY}" class="${current === UNASSIGNED_KEY ? 'active' : ''}"><span>${POps.tHtml('Atanmamış')}</span><span class="n" style="color:#ff9f0a">${un}</span></a>` : '';
@@ -189,7 +293,7 @@
         renderNav();
         const pcs = pcsOf(current);
         const newest = dev.newestVersion();
-        const hash = JSON.stringify([current, editing, query, [...selected], focus, pcs.map(d => [d.hostname, d.status, d.display_name, d.current_user, d.is_quarantined, d.running_version, d.agent_version, d.cap_terminal_enabled, d.cap_vision_enabled]), state.mainPcs && state.mainPcs[current], state.labLayouts && state.labLayouts[current], newest]);
+        const hash = JSON.stringify([current, editing, query, [...selected], focus, pcs.map(d => [d.hostname, d.status, d.display_name, d.current_user, d.is_quarantined, d.running_version, d.agent_version, d.cap_terminal_enabled, d.cap_vision_enabled]), state.mainPcs && state.mainPcs[current], state.labLayouts && state.labLayouts[current], newest, examKey(), Object.keys(EXAM.active)]);
         if (!force && hash === lastHash) return;
         lastHash = hash;
         // seçimde artık bu sınıfta olmayanlar düşer
@@ -197,6 +301,7 @@
         if (focus && !pcs.some(d => d.hostname === focus)) focus = null;
 
         if (!current) {
+            renderExamBar();
             $('labTitle').textContent = POps.t('Sınıflar');
             $('labSummary').textContent = '';
             $('labsBar').hidden = true;
@@ -211,6 +316,7 @@
         $('labsBar').hidden = !pcs.length;
         $('editLayoutBtn').hidden = !CAN_ADMIN || current === UNASSIGNED_KEY || !pcs.length;
         renderSummary(pcs);
+        renderExamBar();
         renderBar();
         map.classList.toggle('is-selecting', selected.size > 0);
         map.classList.toggle('is-editing', editing);
@@ -321,6 +427,10 @@
                 if (!date) return;
                 POps.act(null, () => POps.post('/api/set_auto_enroll', { target_lab: current, expire_date: date }), { success: POps.t('Otomatik kayıt {date} tarihine kadar açık.', { date }) });
             } } : null,
+            real && examOf(current) ? { label: POps.t('Sınavı bitir'), icon: 'stop', danger: true, onClick: () => endExam(null) } : null,
+            real && !examOf(current) ? (examModuleOff(current)
+                ? { label: POps.t('Sınav modu (modül kapalı)'), icon: 'clock', disabled: true }
+                : { label: POps.t('Sınav modu…'), icon: 'clock', onClick: openExam }) : null,
             real ? '-' : null,
             real ? { label: POps.t('Sınıfı sil'), icon: 'trash', danger: true, onClick: async () => {
                 const n = pcsOf(current).length;
@@ -330,6 +440,102 @@
             } } : null
         ]);
     });
+
+    // ---- Sınav modu: başlatma penceresi, bitirme ve yoklama
+    function examModuleOff(lab) { const hit = EXAM.byLab[lab]; return !!(hit && hit.data && hit.data.module_enabled === false); }
+    const examForm = { minutes: 40, lab: null };
+    const allowKey = (lab) => 'pops_exam_allow:' + lab;
+    function setDuration(min) {
+        examForm.minutes = min;
+        $('exDur').querySelectorAll('button').forEach(b => { const on = b.dataset.min === String(min); b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        $('exTime').hidden = min !== 'time';
+        if (min === 'time' && !$('exTime').value) { const d = new Date(Date.now() + 60 * 60000); $('exTime').value = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+        updateEnd();
+    }
+    // Saat seçildiyse bugünün o saati (geçtiyse null); süre seçildiyse şimdi + süre
+    function examEnd() {
+        if (examForm.minutes !== 'time') return new Date(Date.now() + examForm.minutes * 60000);
+        const m = /^(\d{1,2}):(\d{2})$/.exec($('exTime').value || '');
+        if (!m) return null;
+        const d = new Date();
+        d.setHours(Number(m[1]), Number(m[2]), 0, 0);
+        return d > new Date() ? d : null;
+    }
+    function updateEnd() {
+        const end = examEnd();
+        $('exEnd').textContent = end ? POps.t('Bitiş: {time}', { time: end.toLocaleTimeString(POps.locale, { hour: '2-digit', minute: '2-digit' }) }) : POps.t('Bitiş saati geçmiş; bugün için ileri bir saat seçin.');
+    }
+    function examError(text) {
+        $('exError').hidden = !text;
+        $('exErrorText').textContent = text || '';
+    }
+    function openExam() {
+        examForm.lab = current;
+        $('exTitle').textContent = POps.t('Sınav modu: {lab}', { lab: current });
+        const n = pcsOf(current).length, off = pcsOf(current).filter(d => POps.isOffline(d)).length;
+        $('exCount').textContent = off ? POps.tn('Sınıfta {n} bilgisayar var; kapalı olanlar açılınca sınavı alır.', n) : POps.tn('Sınıfta {n} bilgisayar var.', n);
+        let saved = '';
+        try { saved = localStorage.getItem(allowKey(current)) || ''; } catch (e) { saved = ''; }
+        $('exAllow').value = saved;
+        $('exMessage').value = '';
+        $('exApps').value = '';
+        $('exReason').value = '';
+        $('exReasonField').classList.remove('has-error');
+        examError('');
+        setDuration(40);
+        openModal('examModal');
+    }
+    $('exDur').addEventListener('click', (e) => { const b = e.target.closest('button[data-min]'); if (b) setDuration(b.dataset.min === 'time' ? 'time' : Number(b.dataset.min)); });
+    $('exTime').addEventListener('input', updateEnd);
+    $('exReason').addEventListener('input', () => $('exReasonField').classList.remove('has-error'));
+    $('exStart').addEventListener('click', async (ev) => {
+        const lab = examForm.lab;
+        const reason = $('exReason').value.trim();
+        if (!reason) { $('exReasonField').classList.add('has-error'); $('exReason').focus(); return; }
+        const end = examEnd();
+        if (!end) { examError(POps.t('Bitiş saati geçmiş; bugün için ileri bir saat seçin.')); return; }
+        const allow = $('exAllow').value.split(/[\r\n,]+/).map(x => x.trim()).filter(Boolean);
+        const body = {
+            allow,
+            message: $('exMessage').value.trim(),
+            block_apps: $('exApps').value.split(/[\r\n,;]+/).map(x => x.trim()).filter(Boolean),
+            reason
+        };
+        if (examForm.minutes === 'time') body.until = Math.floor(end.getTime() / 1000); else body.duration_minutes = examForm.minutes;
+        examError('');
+        let r;
+        try { r = await POps.busy(ev.currentTarget, () => POps.post(EXAM.path(lab), body)); }
+        catch (e) { examError(POps.errorMessage(e)); return; }
+        if (!r) return;
+        try { localStorage.setItem(allowKey(lab), allow.join('\n')); } catch (e) { /* özel pencere */ }
+        closeModal('examModal');
+        const offline = Number(r.devices || 0) - Number(r.delivered || 0);
+        POps.toast('success', POps.tn('Sınav modu başladı: {n} bilgisayara gönderildi.', Number(r.delivered || 0)) + (offline > 0 ? ' ' + POps.tn('Kapalı {n} bilgisayar açılınca alır.', offline) : ''));
+        EXAM.forget(lab);
+        pollExams().catch(() => {});
+    });
+    async function endExam(btn) {
+        const lab = current;
+        const ok = await POps.confirm({
+            title: POps.t('{lab} sınavı bitirilsin mi?', { lab }),
+            message: POps.t('Bilgisayarlar hemen sınav modundan çıkar; kapalı olanlar açılınca çıkar.'),
+            confirmText: POps.t('Sınavı bitir'), danger: true, icon: 'stop'
+        });
+        if (!ok) return;
+        if (await POps.act(btn, () => POps.del(EXAM.path(lab)), { success: POps.t('Sınav bitirildi.') })) {
+            EXAM.forget(lab);
+            pollExams().catch(() => {});
+        }
+    }
+    // Süren sınavlar (yan menü, çubuk); seçili sınıfta sınav varsa bilgisayar durumları. Sınav yoksa sınıfın durumu
+    // (modül açık mı) seyrek okunur.
+    async function pollExams() {
+        await EXAM.loadActive();
+        if (current && current !== UNASSIGNED_KEY && labNames().includes(current)) {
+            await EXAM.load(current, examOf(current) ? 0 : 60000).catch(() => {});
+        }
+        render(false);
+    }
 
     // ---- Yerleşim düzenleme (sürükle-bırak; her bırakış kaydedilir)
     function setEditing(on) { editing = on; if (on) { selected.clear(); POps.drawer.close(); } render(true); }
@@ -394,6 +600,7 @@
         try { localStorage.setItem('pops_lab', lab); } catch (e) { /* özel pencere */ }
         history.replaceState(null, '', 'labs?lab=' + encodeURIComponent(lab));
         render(true);
+        pollExams().catch(() => {});
     }
     window.addEventListener('popstate', () => { const l = new URLSearchParams(location.search).get('lab'); if (l) switchLab(l); });
     let qt = null;
@@ -404,6 +611,8 @@
         render(false);
     });
     POps.watchDevices({ inventory: true });
+    pollExams().catch(() => {});
+    window.popsPoll(pollExams, 5000);
     if (state.devicesLoaded) render(true);
 })();
 </script>
