@@ -142,7 +142,7 @@ JavaScript and C#.
 | --- | --- | --- |
 | Build (5 agent projects) | `dotnet build -c Release` of the agent, tray, watchdog, updater and legacy Vision | see [Agent](#agent-windows-net-8-sdk) |
 | Agent unit tests | `dotnet test Agent/POps.Tests/POps.Tests.csproj` | same |
-| Backend (Python 3.12, 3.10) | `flake8 Backend/` (3.12); importing `server` and `setup_env`; `test_units.py` | `flake8 Backend/` |
+| Backend (Python 3.12, 3.10) | `flake8 Backend/ tools/ assets/readme/` (3.12); importing `server` and `setup_env`; `test_units.py` | `flake8 Backend/ tools/ assets/readme/` |
 | Dashboard checks | `php -l` on every PHP file; dark mode stays removed | `find Dashboard -name '*.php' -print0 \| xargs -0 -n1 php -l` |
 | Version consistency | `VERSION` == top CHANGELOG release heading == built `<Version>` | compare by hand |
 | Migrations (PostgreSQL 13) | fresh `migrate.py`, `ci_schema_check.py`, second run applies nothing | see below |
@@ -151,7 +151,7 @@ JavaScript and C#.
 
 ### Lint and formatting
 
-- `flake8 Backend/` must report nothing. The configuration is the repository-root `.flake8`: line length 120,
+- `flake8 Backend/ tools/ assets/readme/` must report nothing. The configuration is the repository-root `.flake8`: line length 120,
   E203 ignored.
 - Formatting follows black with `-l 120 -S` (line length 120, quotes left as written). CI runs flake8 only, not
   black.
