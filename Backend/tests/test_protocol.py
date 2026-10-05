@@ -475,7 +475,9 @@ async def agent_session_with_secret():
         manager.pending_updates.pop(HW, None)
 
     chk(ws.closed is None and not ws.incoming, "bağlantı kapatılmadı, bütün mesajlar okundu")
-    chk(not log.records, "hiçbir mesaj 'işlenemedi' uyarısı vermedi %s" % [r.getMessage() for r in log.records][:3])
+    # Kayıtların metni basılmaz (içinde gizli değer olabilir): yalnızca sayı ve yer
+    chk(not log.records, "hiçbir mesaj 'işlenemedi' uyarısı vermedi (%d kayıt: %s)"
+        % (len(log.records), ["%s:%d" % (r.module, r.lineno) for r in log.records][:3]))
     for m in ws.sent:
         check_message(S2A, m, "sunucu→ajan %s" % message_name(S2A, m))
     actions = [m.get("action") for m in ws.sent]
