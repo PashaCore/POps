@@ -358,8 +358,8 @@ Every release, with upgrade notes, is in [`CHANGELOG.md`](CHANGELOG.md). Package
 - **Install and operations:** migrations from an empty database, backup with test-restore, the TLS tool, release
   signing, and the deploy and self-update scripts (rollback, signed tags, unsafe settings) are tested in CI.
 - **Panel:** PHP syntax and a check that refuses unescaped HTML output.
-- **Supply chain:** CodeQL on every change, Dependabot, GitHub Actions pinned to commit SHAs, ed25519-signed
-  releases whose CI job waits for the full test suite.
+- **Supply chain:** CodeQL on every change, Dependabot, hash-locked backend dependencies (`pip --require-hashes`),
+  GitHub Actions pinned to commit SHAs, ed25519-signed releases whose CI job waits for the full test suite.
 - **In the field:** update and rollback drills and release field tests on real Windows PCs.
 
 How to run the suites locally: [`docs/testing.md`](docs/testing.md).

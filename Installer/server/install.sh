@@ -4,7 +4,8 @@
 #     sudo Installer/server/install.sh
 #
 # Yaptıkları: PostgreSQL + Python kur (yoksa) -> servis kullanıcısı -> DB + rol (parola üret)
-# -> venv + pip install -> .env (secret'lar üretilir) -> migrate -> systemd birimi -> sağlık kontrolü.
+# -> venv + pip install (Backend/requirements.lock, özet denetimli) -> .env (secret'lar üretilir) -> migrate
+# -> systemd birimi -> sağlık kontrolü.
 # Backend Python 3.10+ ister (Backend/requirements.txt, "requires-python"): venv için python3.12, python3.11,
 # python3.10, python3 sırasıyla ilk uyan kullanılır; dnf'li sistemde (AlmaLinux/RHEL 9'un python3'ü 3.9) uyan yoksa
 # python3.12 paketi kurulur. Daha eski bir Python'la kurulum yapılmaz.
@@ -118,7 +119,13 @@ cp -a "$SRC/Backend/." "$APP_DIR/"
 rm -rf "$APP_DIR/__pycache__" "$APP_DIR/tests/__pycache__" 2>/dev/null || true
 "$PY" -m venv --upgrade-deps "$APP_DIR/venv" \
     || { echo "!!! $PY ile venv kurulamadı (Debian/Ubuntu: apt install python$PY_VER-venv)"; exit 1; }
-"$APP_DIR/venv/bin/pip" install -q --disable-pip-version-check -r "$APP_DIR/requirements.txt"
+# Kilit dosyası (bütün bağımlılıklar, SHA-256 özetleriyle; tools/backend_lock.sh) varsa pip özetleri denetler: PyPI'den
+# gelen bir dosya değişmişse hiçbir şey kurmadan durur. Kilidi olmayan eski checkout'ta requirements.txt kullanılır.
+if [ -f "$APP_DIR/requirements.lock" ]; then
+    "$APP_DIR/venv/bin/pip" install -q --disable-pip-version-check --require-hashes -r "$APP_DIR/requirements.lock"
+else
+    "$APP_DIR/venv/bin/pip" install -q --disable-pip-version-check -r "$APP_DIR/requirements.txt"
+fi
 
 echo "==> Yapılandırma (.env)"
 JWT=$(python3 -c "import secrets;print(secrets.token_hex(32))")

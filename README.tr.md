@@ -358,8 +358,9 @@ Her sürüm, yükseltme notlarıyla [`CHANGELOG.md`](CHANGELOG.md) içindedir. P
 - **Kurulum ve işletim:** boş veritabanından migration'lar, sınanan yedek ve geri yükleme, TLS aracı, sürüm imzalama,
   dağıtım ve kendini güncelleme betikleri (geri alma, imzalı etiket, güvensiz ayar) CI'da test edilir.
 - **Panel:** PHP sözdizimi ve kaçırılmamış HTML çıktısını reddeden bir denetim.
-- **Tedarik zinciri:** her değişiklikte CodeQL, Dependabot, commit SHA'sına sabitlenmiş GitHub Actions, yayın işi
-  bütün testler geçmeden çalışmayan ed25519 imzalı sürümler.
+- **Tedarik zinciri:** her değişiklikte CodeQL, Dependabot, özetleriyle kilitlenmiş backend bağımlılıkları
+  (`pip --require-hashes`), commit SHA'sına sabitlenmiş GitHub Actions, yayın işi bütün testler geçmeden çalışmayan
+  ed25519 imzalı sürümler.
 - **Sahada:** gerçek Windows bilgisayarlarda güncelleme ve geri alma tatbikatları ve sürüm saha testleri.
 
 Testleri yerelde çalıştırmak (İngilizce): [`docs/testing.md`](docs/testing.md).

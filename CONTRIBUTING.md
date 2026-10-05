@@ -78,7 +78,8 @@ CI tests migrations on PostgreSQL 13.
 ```bash
 python3.12 -m venv venv                     # any 3.10+; venv/ is git-ignored
 . venv/bin/activate
-pip install -r Backend/requirements.txt flake8 jsonschema==4.26.0   # jsonschema: the protocol test only
+pip install --require-hashes -r Backend/requirements.lock
+pip install flake8 jsonschema==4.26.0     # lint and the protocol test only
 
 # a development role and database (as the PostgreSQL superuser)
 sudo -u postgres createuser --pwprompt pops_dev
@@ -173,6 +174,7 @@ Security → Code scanning and on the README badge).
 | Build (5 agent projects) | `dotnet build -c Release` of the agent, tray, watchdog, updater and legacy Vision | see [Agent](#agent-windows-net-10-sdk) |
 | Agent unit tests | `dotnet test Agent/POps.Tests/POps.Tests.csproj` | same |
 | Backend (Python 3.12, 3.10) | `flake8 Backend/ tools/ assets/readme/` (3.12); importing `server` and `setup_env`; `test_units.py`; `test_protocol.py` | `flake8 Backend/ tools/ assets/readme/`, `python Backend/tests/test_protocol.py` |
+| Backend lock file | `Backend/requirements.lock` matches `requirements.txt` | `tools/backend_lock.sh --check` (uv 0.12.23) |
 | Dashboard checks | `php -l` on every PHP file; dark mode stays removed | `find Dashboard -name '*.php' -print0 \| xargs -0 -n1 php -l` |
 | Panel end-to-end | Playwright (Chromium) on the real panel and backend: every page at 1440 and 390 px, main flows, no console errors or outside requests | `cd tests/e2e && npm ci && npx playwright test` with an empty `DB_NAME` ([docs/testing.md](docs/testing.md#panel-end-to-end-tests)) |
 | Version consistency | `VERSION` == top CHANGELOG release heading == built `<Version>` | compare by hand |
@@ -274,7 +276,9 @@ python Backend/migrate.py                    # must apply nothing
   `pops.example.com`. Server secrets come from `.env`, agent secrets live only in `C:\POpsData\secure`. A secret
   that was ever committed must be rotated: deleting it from the tree leaves it in the history.
 - **Dependencies.** Pin exact versions in `Backend/requirements.txt` and prefer the standard library, since servers
-  may have to install offline. Dependabot proposes updates. The agent stays on .NET 10 (LTS) packages; Dependabot
+  may have to install offline. After every change run `tools/backend_lock.sh` and commit `Backend/requirements.lock`
+  with it (hash-locked; see [`docs/backend.md`](docs/backend.md#dependencies)). Dependabot proposes updates; the
+  `lock-refresh` workflow adds the lock to its PRs. The agent stays on .NET 10 (LTS) packages; Dependabot
   ignores major updates (11.x) until the next LTS.
 - **Agent protocol.** A new or changed WebSocket message starts in [`docs/protocol/`](docs/protocol/README.md):
   schema and example first, then the code; `Backend/tests/test_protocol.py` fails on anything undocumented.

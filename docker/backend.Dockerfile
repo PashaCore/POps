@@ -21,8 +21,10 @@ RUN groupadd --gid 10001 pops \
 
 WORKDIR /app
 
-COPY Backend/requirements.txt ./requirements.txt
-RUN pip install -r requirements.txt
+# Every dependency (indirect ones too) pinned with its SHA-256 (tools/backend_lock.sh): pip refuses a
+# file from the index whose hash differs.
+COPY Backend/requirements.lock ./requirements.lock
+RUN pip install --require-hashes -r requirements.lock
 
 # Code stays root-owned (read-only for the service user). keys/ and VERSION sit next to
 # server.py, where system_routes.py looks for them.

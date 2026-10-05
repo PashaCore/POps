@@ -98,10 +98,13 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-          cache-dependency-path: Backend/requirements.txt
+          cache-dependency-path: Backend/requirements.lock
       - name: Install dependencies
-        # jsonschema yalnızca protokol testi için (CI'da; canlı sunucunun venv'ine girmez)
-        run: pip install -r Backend/requirements.txt flake8 jsonschema==4.26.0
+        # Sunucu bağımlılıkları canlıdaki gibi kilitten, SHA-256 özetleri denetlenerek. flake8 ve jsonschema (protokol
+        # testi) yalnızca CI'da; canlı sunucunun venv'ine girmez.
+        run: |
+          pip install --require-hashes -r Backend/requirements.lock
+          pip install flake8 jsonschema==4.26.0
       - name: Lint with flake8
         # Tam kapı: repo kökündeki .flake8 (max-line-length 120). Backend ve araçlar (tools/, README çizimleri) temiz tutulur; yeni uyarı CI'ı kırar.
         if: matrix.python == '3.12'
@@ -131,6 +134,27 @@ jobs:
         # Şemalar, ortak test vektörleri ve sunucunun gerçek kodunun kurduğu / işlediği mesajlar (sahte veritabanı ve
         # soketlerle); bkz. docs/protocol/README.md
         run: python Backend/tests/test_protocol.py
+
+  backend-lock:
+    name: Backend lock file
+    # Backend/requirements.lock, requirements.txt'ten yeniden üretilince aynı çıkmalı (kilitteki öteki sürümler
+    # korunur; yalnızca requirements.txt'in gerektirdiği değişir). Dependabot PR'larında lock-refresh.yml kilidi
+    # yeniler.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv==0.12.23
+      - name: requirements.lock is in sync with requirements.txt
+        run: |
+          tools/backend_lock.sh --check || {
+            echo "::error file=Backend/requirements.lock::Backend/requirements.lock, requirements.txt ile uyumlu değil. Yeniden üretip commit'leyin: pip install uv==0.12.23 && tools/backend_lock.sh"
+            exit 1
+          }
 
   dashboard:
     name: Dashboard checks
@@ -296,8 +320,8 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
-      - name: Install migrate.py deps
-        run: pip install asyncpg python-dotenv
+      - name: Install backend deps
+        run: pip install --require-hashes -r Backend/requirements.lock
       - name: Fresh migrate + schema check + idempotency
         # Boş bir veritabanında migrate.py tüm şemayı kurmalı, şema kontrolünü geçmeli
         # ve ikinci çalıştırma hiçbir şey uygulamamalı (idempotent).
@@ -343,7 +367,7 @@ jobs:
           python-version: "3.12"
       - name: Install deps
         run: |
-          pip install -r Backend/requirements.txt
+          pip install --require-hashes -r Backend/requirements.lock
           sudo apt-get install -y -qq postgresql-client >/dev/null
           pg_dump --version
       - name: Migrate and write audit entries
@@ -460,6 +484,7 @@ jobs:
           command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck >/dev/null; }
           shellcheck --version | head -2
           mapfile -t scripts < <(find Installer/server -maxdepth 1 -type f -name 'pops-*' ! -name '*.*' | sort)
+          scripts+=(tools/backend_lock.sh)
           # Uyarı ve hatalar kırar; "info" ve "style" notları (ör. SC2015, sürüme göre değişir) yalnızca raporlanır
           shellcheck --severity=info Installer/server/install.sh Installer/server/tests/*.sh "${scripts[@]}" docker/dashboard-entrypoint.sh Backend/tests/run_local.sh || true
           shellcheck --severity=warning Installer/server/install.sh Installer/server/tests/*.sh "${scripts[@]}" docker/dashboard-entrypoint.sh Backend/tests/run_local.sh
@@ -517,7 +542,9 @@ jobs:
           python-version: "3.12"
       - name: Install backend deps
         # coverage ve jsonschema yalnızca CI'da (canlı sunucunun venv'ine girmez)
-        run: pip install -r Backend/requirements.txt coverage==7.10.7 jsonschema==4.26.0
+        run: |
+          pip install --require-hashes -r Backend/requirements.lock
+          pip install coverage==7.10.7 jsonschema==4.26.0
       - name: Migrate + start server + run security invariants
         # Enroll->secret, enforce->4401, valid secret ok, unauth HTTP 401, wrong-signature
         # upload rejected — hepsi çalışan sunucuya karşı doğrulanır. Sunucu coverage altında çalışır.

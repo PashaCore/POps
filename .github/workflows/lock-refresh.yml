@@ -1,0 +1,68 @@
+name: Backend lock refresh
+
+# Dependabot yalnızca Backend/requirements.txt'i günceller, özetli kilidi (Backend/requirements.lock) bilmez. Bu iş
+# akışı Dependabot'un requirements.txt PR'larında kilidi tools/backend_lock.sh ile yeniden üretir ve aynı PR dalına
+# commit'ler. GITHUB_TOKEN'la yapılan push yeni bir iş akışı başlatmaz: kilit commit'i geldikten sonra CI'ın o commit'te
+# çalışması için PR'ı kapatıp yeniden açın (docs/backend.md, "Dependencies").
+#
+# Yazma yetkisi yalnızca bu işte ve yalnızca Dependabot'un bu depodaki dalı için. Kod çalıştırma yüzeyi dar tutulur:
+# checkout kimlik bilgisini diske yazmaz, uv sabit sürümdür ve kaynak dağıtımı derlemez (--no-build), jeton yalnızca
+# push adımının ortamında, git kancaları kapalı.
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - Backend/requirements.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lock-refresh-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    name: Regenerate Backend/requirements.lock
+    # Dependabot'un açtığı ve Dependabot'un tetiklediği çalışma (dala bir insanın push'u değil), bu depodaki dal (fork değil)
+    if: >-
+      github.actor == 'dependabot[bot]'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv==0.12.23
+      - name: Regenerate the lock
+        run: tools/backend_lock.sh
+      - name: Commit and push to the Dependabot branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Backend/requirements.lock; then
+            echo "Backend/requirements.lock zaten güncel."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -c core.hooksPath=/dev/null commit -q -m "chore(deps): regenerate Backend/requirements.lock" -- Backend/requirements.lock
+          git -c core.hooksPath=/dev/null push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+          {
+            echo "### Backend/requirements.lock yenilendi"
+            echo
+            echo "Kilit commit'i \`${BRANCH}\` dalına gönderildi. CI bu commit'te kendiliğinden çalışmaz (GITHUB_TOKEN push'u);"
+            echo "PR'ı kapatıp yeniden açın."
+          } >> "$GITHUB_STEP_SUMMARY"

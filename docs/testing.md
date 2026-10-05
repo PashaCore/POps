@@ -9,6 +9,7 @@ A high test count says little on its own; the table below is the honest list.
 |---|---|---|
 | `Backend/tests/test_units.py` | Pure unit tests, no database or server. | CI `backend` job (Python 3.12 and 3.10) |
 | `Backend/tests/test_protocol.py` | Agent protocol ([`protocol/`](protocol/README.md)): every schema and example, and the real `/ws/agent` and `/ws/vision` handlers, task queue and endpoints run with a fake database and fake sockets; every message they send or accept must match its schema. Needs `jsonschema` (CI installs it). | CI `backend` job (Python 3.12 and 3.10), `security` job under coverage |
+| Backend lock file | `tools/backend_lock.sh --check`: `Backend/requirements.lock` regenerated from `requirements.txt` must be unchanged. | CI `backend-lock` job |
 | `Backend/tests/test_*.py` (others) | Integration tests against a running backend and an empty PostgreSQL database. | CI `security` job, `Backend/tests/run_local.sh` |
 | `Agent/POps.Tests` | xUnit tests for the agent, updater logic, shared code and the MSI custom actions (pure logic and temp-folder file operations; no firewall, pipe or service). | CI `test-agent` job (Windows) |
 | Migrations | Fresh migrate, schema check, second run must apply nothing. | CI `migrations` job (PostgreSQL 13) |
