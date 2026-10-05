@@ -285,6 +285,7 @@
             const anyQ = hosts.some(h => (dev.find(h) || {}).is_quarantined);
             POps.menu(b, [
                 { label: POps.t('Mesaj gönder'), icon: 'message', onClick: () => dev.message(hosts, o) },
+                { label: POps.t('Dosya gönder'), icon: 'upload', onClick: () => dev.sendFile(hosts, o) },
                 { label: POps.t('Başka sınıfa taşı…'), icon: 'move', onClick: () => dev.moveMenu(b, hosts, { currentLab: current === UNASSIGNED_KEY ? UNASSIGNED : current }) },
                 selected.size ? null : { label: POps.t('Tümünü seç'), icon: 'check', hint: 'Ctrl A', onClick: () => { selected = new Set(pcsOf(current).filter(matches).map(d => d.hostname)); render(true); } },
                 '-',
