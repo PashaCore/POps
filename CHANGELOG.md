@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Agent: offline bypass works while the server is unreachable.** The tray pipe stays open for the whole life of the service; before, it was closed after every lost server connection until the next attempt, and an offline code typed in the lock screen during that wait (up to a minute, 10 minutes after a `4409`) was dropped silently. The lock screen now says when a code could not reach the service. Needs the agent from the next release.
 - **Docs:** a broken link to the agent setup section in CONTRIBUTING; getting-started no longer says the panel loads fonts and icons from CDNs.
-
 
 ## [0.1.22-alpha] - 2026-10-05
 
