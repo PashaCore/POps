@@ -171,7 +171,7 @@
                 issueDevs.length ? `<span>${quarantined ? POps.tHtml('{n} karantina', { n: quarantined }) + ' · ' : ''}${POps.tnHtml('{n} eski ajan', oldAgents.length)}</span><span class="go">${POps.tHtml('Göster')}</span>` : `<span>${POps.tHtml('Sorun yok')}</span>`, '');
             const agentOk = total - oldAgents.length;
             kpi('kAgents', escapeHtml(POps.pct(pctOf(agentOk, total))),
-                `<span>${newest ? POps.tHtml('sürüm {version}', { version: newest }) : '—'}${oldAgents.length ? ' · ' + POps.tHtml('{n} eski', { n: oldAgents.length }) : ''}</span><span class="go">${oldAgents.length ? POps.tHtml('Güncelle') : POps.tHtml('Cihazlar')}</span>`,
+                `<span>${newest ? POps.tHtml('sürüm {version}', { version: newest }) : '—'}${oldAgents.length ? ' · ' + POps.tHtml('{n} eski', { n: oldAgents.length }) : ''}</span><span class="go">${oldAgents.length ? (IS_ADMIN ? POps.tHtml('Güncelle') : POps.tHtml('Göster')) : POps.tHtml('Cihazlar')}</span>`,
                 `<div class="pbar">${segHtml('ok', agentOk, total)}${segHtml('run', oldAgents.length, total)}</div>`);
             $('kAgents').href = oldAgents.length && window.USER_ROLE === 'superadmin' ? 'system' : 'devices';
         }
@@ -200,7 +200,7 @@
             const failedToday = failedJobs.filter(j => (POps.toDate(j.first.created_at) || new Date(0)).toDateString() === new Date().toDateString());
             if (quarantined) items.push(['bad', POps.tn('{n} bilgisayar karantinada', quarantined), POps.t('Kullanıcı ekranı kilitli; kaldırana kadar kullanılamaz.'), 'devices?f=issue', POps.t('Göster')]);
             if (failedToday.length) items.push(['bad', POps.tn('{n} iş bugün sorunla bitti', failedToday.length), failedToday.slice(0, 2).map(j => dev.taskTitle(j.first)).join(', '), 'tasks', POps.t('İncele')]);
-            if (oldAgents.length) items.push(['warn', POps.tn('{n} bilgisayarda eski ajan', oldAgents.length), POps.t('Güncel sürüm {version}.', { version: newest }) + ' ' + oldAgents.slice(0, 3).map(d => POps.deviceName(d)).join(', ') + (oldAgents.length > 3 ? '…' : ''), window.USER_ROLE === 'superadmin' ? 'system' : 'devices?f=issue', POps.t('Güncelle')]);
+            if (oldAgents.length) items.push(['warn', POps.tn('{n} bilgisayarda eski ajan', oldAgents.length), POps.t('Güncel sürüm {version}.', { version: newest }) + ' ' + oldAgents.slice(0, 3).map(d => POps.deviceName(d)).join(', ') + (oldAgents.length > 3 ? '…' : ''), window.USER_ROLE === 'superadmin' ? 'system' : 'devices?f=issue', IS_ADMIN ? POps.t('Güncelle') : POps.t('Göster')]);
             if (unassigned) items.push(['warn', POps.tn('{n} yeni bilgisayar sınıf bekliyor', unassigned), POps.t('Atanmamış bilgisayarları bir sınıfa yerleştirin.'), 'labs?lab=__atanmamis', POps.t('Yerleştir')]);
             const longOff = devices.filter(d => { const s = dev.state(d); const t = POps.toDate(s.since); return s.cls === 'off' && t && Date.now() - t > 7 * 864e5; });
             if (longOff.length) items.push(['neu', POps.tn('{n} bilgisayar 7 günden uzun süredir kapalı', longOff.length), longOff.slice(0, 3).map(d => POps.deviceName(d)).join(', '), 'devices?f=off', POps.t('Göster')]);
