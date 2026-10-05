@@ -1,7 +1,7 @@
 name: Release
 
-# v* etiketi push edildiğinde kurulum dosyalarını (sunucu paketi, ajan MSI'ı ve ajan zip'i) derler
-# ve tek bir GitHub Release olarak yayımlar; ardından backend ve panel Docker imajlarını GHCR'a iter.
+# v* etiketi push edildiğinde kurulum dosyalarını (sunucu paketi, Windows ajanının MSI'ı ve zip'i, Linux ajanının
+# .deb'i) derler ve tek bir GitHub Release olarak yayımlar; ardından backend ve panel Docker imajlarını GHCR'a iter.
 # Bu dosya main'de değiştiğinde paketler ve imajlar yalnızca derlenir (yayımlanmaz), böylece iş akışı
 # etiket atılmadan denenebilir.
 on:
@@ -82,6 +82,31 @@ jobs:
             POps-Agent-*-win-x64.zip
           if-no-files-found: error
 
+  linux-agent:
+    name: Linux agent package (.deb)
+    # Pardus/Debian ajanı: dpkg gerektirmeyen, tekrarlanabilir derleme (Agent-Linux/build_deb.py). Etikette paket adı
+    # pops-agent_<VERSION>_all.deb; imzalı manifest'e girer ve Linux ajanları kendini bununla günceller. Etiketsiz
+    # derlemede sürüm VERSION+dev.<sha> olur (yalnızca derlenir, yayımlanmaz).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Build
+        run: |
+          set -euo pipefail
+          VER=$(tr -d '[:space:]' < VERSION)
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then VER="$VER+dev.${GITHUB_SHA::7}"; fi
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          python3 Agent-Linux/build_deb.py --version "$VER" --out deb-out
+          python3 Agent-Linux/build_deb.py --version "$VER" --out deb-check
+          cmp deb-out/*.deb deb-check/*.deb
+          dpkg-deb --info deb-out/*.deb
+          mv deb-out/*.deb .
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: linux-agent
+          path: pops-agent_*_all.deb
+          if-no-files-found: error
+
   server:
     name: Server package
     runs-on: ubuntu-latest
@@ -115,7 +140,7 @@ jobs:
   release:
     name: Publish release
     if: github.ref_type == 'tag'
-    needs: [ agent, server, tests ]
+    needs: [ agent, linux-agent, server, tests ]
     runs-on: ubuntu-latest
     # İmza anahtarına yalnızca bu iş erişir. Anahtarı "release" GitHub Environment'ının
     # secret'ı yapın ve environment'a "required reviewers" koruması ekleyin; böylece
@@ -146,6 +171,10 @@ jobs:
           path: dist
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
+          name: linux-agent
+          path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
           name: server
           path: dist
       - name: Set up Python
@@ -153,8 +182,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Sign release manifest (ed25519)
-        # Tüm paketlerin SHA-256'sını + sürüm + tag + zaman damgasını içeren manifest'i
-        # imzalar ve depodaki açık anahtarla doğrular. Özel anahtar yalnızca bu secret'tan gelir.
+        # Tüm paketlerin (MSI, zip, .deb, sunucu paketi) SHA-256'sını + sürüm + tag + zaman damgasını içeren
+        # manifest'i imzalar ve depodaki açık anahtarla doğrular. Özel anahtar yalnızca bu secret'tan gelir. Her ajan
+        # manifest'ten yalnızca kendi paketini seçer (Windows: POps-Agent-*-win-x64.msi, Linux: pops-agent_*_all.deb).
         env:
           POPS_RELEASE_PRIVATE_KEY: ${{ secrets.POPS_RELEASE_PRIVATE_KEY }}
         run: |
@@ -168,12 +198,14 @@ jobs:
           VER=$(tr -d '[:space:]' < VERSION)
           python tools/sign_release.py sign --dir dist --version "$VER" --tag "$GITHUB_REF_NAME"
           python tools/sign_release.py verify --dir dist --pub-pem keys/pops_release_ed25519.pub.pem
+          # Linux ajanı tam olarak bu adı arar (Agent-Linux/pops_agent/release.py select_deb)
+          grep -q '"pops-agent_'"$VER"'_all.deb"' dist/manifest.json || { echo "::error::manifest'te pops-agent_${VER}_all.deb yok"; exit 1; }
       - name: Checksums and release notes
         run: |
           (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
           VER="${GITHUB_REF_NAME#v}"
           {
-            echo "> **İmzalı sürüm (ed25519).** \`manifest.json\` ve \`manifest.json.sig\` release'e dahildir; açık anahtar depoda \`keys/pops_release_ed25519.pub.pem\`. Doğrulama için bkz. \`keys/README.md\`. Ajan için \`POps-Agent-*-win-x64.msi\` önerilir (sessiz kurulum ve özellikleri: \`Installer/README.md\`); zip eski elle kurulum yoludur. Ajan paketleri Windows'ta SmartScreen uyarısı verebilir (Authenticode imzası henüz yok). MSI kendi .NET 10 çalışma zamanını getirir; uç noktada önceden bir şey kurmak gerekmez."
+            echo "> **İmzalı sürüm (ed25519).** \`manifest.json\` ve \`manifest.json.sig\` release'e dahildir; açık anahtar depoda \`keys/pops_release_ed25519.pub.pem\`. Doğrulama için bkz. \`keys/README.md\`. Ajan için \`POps-Agent-*-win-x64.msi\` önerilir (sessiz kurulum ve özellikleri: \`Installer/README.md\`); zip eski elle kurulum yoludur. Ajan paketleri Windows'ta SmartScreen uyarısı verebilir (Authenticode imzası henüz yok). MSI kendi .NET 10 çalışma zamanını getirir; uç noktada önceden bir şey kurmak gerekmez. Pardus/Debian için \`pops-agent_*_all.deb\` (Debian 12 / Pardus 23 ve sonrası; kurulum: \`Agent-Linux/README.md\`)."
             echo
             awk -v v="$VER" 'index($0, "## [" v "]") == 1 {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md
           } > notes.md
