@@ -11,5 +11,6 @@
       "hw_id": "HW-LAB1-PC03",
       "url": "http://10.20.0.3:8817/pops-cache/4d638345368583f56cdb74ef6a59fd5f7d5857eae4279fd5127f86ae34c83beb"
     }
-  ]
+  ],
+  "peer_cache": true
 }
