@@ -226,6 +226,13 @@ With the systemd path unit installed, a superadmin can run the same deploy from 
 `/usr/local/sbin/pops-deploy-backend`. A tag whose signature cannot be verified is neither merged nor deployed.
 Setup, signing and design: [`self-update.md`](self-update.md).
 
+The channel is set in the root-owned `/etc/pops/selfupdate.conf`; the panel only shows it:
+
+| `CHANNEL=` | Channel | Follows | For |
+| --- | --- | --- | --- |
+| `release` (default) | stable | the newest release tag on `origin/main`. Releases come out weekly; the project's tags are SSH-signed from 0.1.22-alpha on, and with `/etc/pops/allowed_signers` installed an unverified tag is refused. Never moves back to an older release. | school and production servers |
+| `main` | preview | the latest `origin/main`, merged changes before they are released; no signed tags, no signature check | test servers only |
+
 ## Updating the agents
 
 Agent updates are signed MSI packages distributed from **Sistem**: stage a release (download from GitHub
