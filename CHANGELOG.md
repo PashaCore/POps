@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Docs: README and README.tr describe 0.1.23.**
+  - **Features and how it works:** new feature rows for exam mode, file transfer, winget, power actions and messages, Vision v2, organisational units, directory and OIDC sign-in, modules, the GLPI export and several workers with Redis. "How it works" covers the Redis workers, the Linux agent and `X-Agent-Features`.
+  - **Security and transparency:** the SSO safeguards, tenancy, file transfer tokens, exam mode as a notice (not proctoring), the notices for power actions and messages, the locked-PC Vision banner and every capability switch.
+  - **Also:** the lab peer cache, updated requirements and known limitations, the Linux and Pardus status, 0.1.22 and 0.1.23 in the release history, test counts from the release CI run, and new screenshots from the public demo (`screenshots/v0.1.23/`).
+- **Docs: SECURITY.md** lists the 0.1.23 controls and four new residual risks: the peer cache port when enabled, Redis inside the trust boundary in multi-worker mode, trust in the directory or SSO provider, and fetched files kept for 7 days.
+- **Docs: CONTRIBUTING.md**'s repository layout and CI tables match `ci.yml` (Linux agent jobs, the Redis job, fuzzing, the lock check, JavaScript unit tests, pytest).
+
 ### Fixed
 
+- **Docs: stale facts after 0.1.23.** Getting started, the Turkish "Neden POps?" guide and the positioning page no longer say there is no Linux agent or no directory sign-in. The Veyon guide lists the peer cache port and points to Sistem → Modüller. The quick start shows the language switch, every capability property and the Linux `.deb`. The Linux agent README no longer says Mesaj gönder sends the Windows `msg` command. ROADMAP no longer lists directory sign-in under Later.
 - **Sistem: an agent that is installing an update shows as updating, not off.** The agent's service is stopped during the install, so the PC looked offline and the card said "Hepsi kapalı". PCs with an update in flight are now counted as "güncelleniyor", and "eski ajanı güncelle" doesn't send to them again.
 
 ## [0.1.23-alpha] - 2026-10-05
