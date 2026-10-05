@@ -1,6 +1,6 @@
 """Veritabanında saklanan gizli değerlerin şifrelenmesi (R-12): panel kullanıcılarının TOTP (2FA) anahtarı,
 cihazların çevrimdışı bypass anahtarı (B14) ve kimlik sağlayıcılarının sırları (LDAP hizmet hesabı şifresi, OIDC
-istemci sırrı; D-22).
+istemci sırrı; D-24).
 
 Amaç: yalnızca veritabanı sızan biri (yedek dosyası, SQL okuma açığı) 2FA anahtarlarını ve bypass kodlarını
 kullanamasın. Anahtar

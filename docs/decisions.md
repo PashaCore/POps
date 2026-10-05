@@ -369,7 +369,7 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   8 MB through `/api/v1` need the updated reverse-proxy rule on existing servers. Endpoint and model changes must
   commit the regenerated schema.
 
-## D-22 Directory (LDAP/AD) and OpenID Connect sign-in next to local accounts
+## D-24 Directory (LDAP/AD) and OpenID Connect sign-in next to local accounts
 
 **Since:** Unreleased (after 0.1.22-alpha).
 
@@ -384,7 +384,7 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
     locks everyone out. A directory login with the same name as a local account is refused, not linked; a name that
     matches a local account in another letter case is not sent to the directory at all.
   - Accounts carry `auth_source` (`local`, `ldap`, `oidc`) and `external_id` (LDAP `objectGUID`/`entryUUID`, else the
-    DN; OIDC `iss|sub`), migration `0024`. Directory and OIDC accounts have no local password (`!sso`, which no
+    DN; OIDC `iss|sub`), migration `0030`. Directory and OIDC accounts have no local password (`!sso`, which no
     password matches). On the first sign-in the account is created, or linked to a not-yet-linked record of the same
     source that a superadmin created in advance. Role and pages are written from the group mapping at every sign-in;
     a change bumps `token_version`. No mapped group, a disabled account (`userAccountControl`, `nsAccountLock`,

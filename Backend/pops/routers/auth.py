@@ -384,7 +384,7 @@ async def update_user(user_id: int, data: UserUpdateInput, auth=Depends(require_
 
 async def _check_source_change(user_id: int, role: str, old: str, new: str, password: Optional[str]) -> None:
     """Yerel ↔ dizin/OIDC geçişi. İlk yerel süper admin yerel kalır: dizine ya da sağlayıcıya ulaşılamadığında da
-    biri girebilsin (D-22). Yerele dönen hesaba yeni şifre gerekir."""
+    biri girebilsin (D-24). Yerele dönen hesaba yeni şifre gerekir."""
     if old == 'local':
         if user_id == await _first_local_superadmin():
             raise HTTPException(

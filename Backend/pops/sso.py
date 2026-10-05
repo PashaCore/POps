@@ -2,7 +2,7 @@
 yerel kullanıcıya bağlanması, kısa ömürlü akış kayıtları.
 
 Protokoller pops/sso_ldap.py ve pops/sso_oidc.py'de; uçlar routers/sso.py ile routers/auth.py'dedir (LDAP girişi
-şifre formundan, aynı /api/admin/login ucundan geçer). Kurallar (D-22):
+şifre formundan, aynı /api/admin/login ucundan geçer). Kurallar (D-24):
   * Yerel hesaplar kalır ve dizine hiç sorulmaz. Dizine ya da sağlayıcıya ulaşılamasa da yerel süper admin girer;
     ilk yerel süper admin dizin/OIDC hesabına çevrilemez.
   * Dizin/OIDC hesabının yerel şifresi yoktur (password_hash '!sso'). Kimlik external_id ile bağlanır; aynı adlı

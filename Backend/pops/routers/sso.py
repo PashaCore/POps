@@ -1,7 +1,7 @@
 """Dizin (LDAP / AD) ve OpenID Connect ile giriş: OIDC akışının uçları, giriş biletinin bozdurulması, sağlayıcı
 ayarları (yalnızca süper admin) ve "Bağlantıyı sına". LDAP girişinin kendisi /api/admin/login'dedir (routers/auth.py).
 
-OIDC akışı (D-22):
+OIDC akışı (D-24):
   1. Panel (login.php) bir bağ (binding) üretip PHP oturumuna yazar, tarayıcıyı /api/auth/oidc/start?b=<özeti>
      adresine gönderir.
   2. start: state, nonce ve PKCE doğrulayıcısı üretir, sunucuda saklar (10 dk), state'i HttpOnly + SameSite=Lax

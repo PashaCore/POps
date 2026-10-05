@@ -76,7 +76,7 @@ still use the `/api/admin/2fa/*` endpoints directly.
 
 A superadmin can let people sign in with the school's directory accounts or a single sign-on provider
 (**Ayarlar → Güvenlik → Kimlik sağlayıcıları**; settings in [`configuration.md`](configuration.md#identity-providers),
-decision D-22). What protects what:
+decision D-24). What protects what:
 
 - **Local accounts stay in charge.** A user name that exists as a local account is only ever checked against its
   bcrypt hash; it never reaches the directory. The first local superadmin cannot be converted to a directory or OIDC

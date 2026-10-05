@@ -1,4 +1,4 @@
--- 0024: panel girişi için dizin (LDAP / Active Directory) ve OpenID Connect (bkz. pops/sso.py, D-22).
+-- 0030: panel girişi için dizin (LDAP / Active Directory) ve OpenID Connect (bkz. pops/sso.py, D-24).
 --
 -- users.auth_source: hesabın kimliğini kim doğrular. 'local' (varsayılan, mevcut bütün hesaplar) bcrypt şifresiyle
 -- girer; 'ldap' ve 'oidc' hesaplarının yerel şifresi yoktur (password_hash '!sso', bcrypt değildir, hiçbir şifre
