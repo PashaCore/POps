@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "AdminLoginInput": {
+        "additionalProperties": false,
         "properties": {
           "otp": {
             "anyOf": [
@@ -31,6 +32,7 @@
         "type": "object"
       },
       "AgentPoliciesInput": {
+        "additionalProperties": false,
         "properties": {
           "auto_quarantine": {
             "title": "Auto Quarantine",
@@ -193,6 +195,7 @@
         "type": "object"
       },
       "AutoEnrollInput": {
+        "additionalProperties": false,
         "properties": {
           "expire_date": {
             "title": "Expire Date",
@@ -294,6 +297,7 @@
         "type": "object"
       },
       "CapabilityInput": {
+        "additionalProperties": false,
         "properties": {
           "pc_name": {
             "title": "Pc Name",
@@ -329,6 +333,7 @@
         "type": "object"
       },
       "CreateLabInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -342,6 +347,7 @@
         "type": "object"
       },
       "CreatePackageInput": {
+        "additionalProperties": false,
         "properties": {
           "color": {
             "title": "Color",
@@ -385,6 +391,7 @@
         "type": "object"
       },
       "DeleteLabInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -398,6 +405,7 @@
         "type": "object"
       },
       "DeletePackageInput": {
+        "additionalProperties": false,
         "properties": {
           "id": {
             "title": "Id",
@@ -450,6 +458,7 @@
         "type": "object"
       },
       "EndAuditSessionInput": {
+        "additionalProperties": false,
         "properties": {
           "session_id": {
             "title": "Session Id",
@@ -468,6 +477,7 @@
         "type": "object"
       },
       "EnforceInput": {
+        "additionalProperties": false,
         "properties": {
           "enabled": {
             "title": "Enabled",
@@ -597,6 +607,7 @@
         "type": "object"
       },
       "FetchReleaseInput": {
+        "additionalProperties": false,
         "properties": {
           "force": {
             "default": false,
@@ -657,6 +668,169 @@
           "reason"
         ],
         "title": "FilePullInput",
+        "type": "object"
+      },
+      "GlpiSettingsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "app_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Token"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "entity": {
+            "default": 0,
+            "maximum": 1000000000.0,
+            "minimum": 0.0,
+            "title": "Entity",
+            "type": "integer"
+          },
+          "interval_hours": {
+            "default": 24,
+            "title": "Interval Hours",
+            "type": "integer"
+          },
+          "locations": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locations"
+          },
+          "sync": {
+            "$ref": "#/components/schemas/GlpiSyncInput",
+            "default": {
+              "computers": true,
+              "software": true,
+              "ticket_reporter": false,
+              "tickets": true
+            }
+          },
+          "tickets_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tickets Since"
+          },
+          "url": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Token"
+          }
+        },
+        "title": "GlpiSettingsInput",
+        "type": "object"
+      },
+      "GlpiSyncInput": {
+        "additionalProperties": false,
+        "properties": {
+          "computers": {
+            "default": true,
+            "title": "Computers",
+            "type": "boolean"
+          },
+          "software": {
+            "default": true,
+            "title": "Software",
+            "type": "boolean"
+          },
+          "ticket_reporter": {
+            "default": false,
+            "title": "Ticket Reporter",
+            "type": "boolean"
+          },
+          "tickets": {
+            "default": true,
+            "title": "Tickets",
+            "type": "boolean"
+          }
+        },
+        "title": "GlpiSyncInput",
+        "type": "object"
+      },
+      "GlpiTestInput": {
+        "additionalProperties": false,
+        "description": "Formdaki değerlerle sınama (kaydetmeden); verilmeyen değer kayıtlı olandan alınır.",
+        "properties": {
+          "app_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Token"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "user_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Token"
+          }
+        },
+        "title": "GlpiTestInput",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -999,6 +1173,7 @@
         "type": "object"
       },
       "LicenseInput": {
+        "additionalProperties": false,
         "properties": {
           "expires_at": {
             "anyOf": [
@@ -1066,6 +1241,7 @@
         "type": "object"
       },
       "LockdownInput": {
+        "additionalProperties": false,
         "properties": {
           "admin_name": {
             "anyOf": [
@@ -1224,6 +1400,7 @@
         "type": "object"
       },
       "ModuleSettingInput": {
+        "additionalProperties": false,
         "properties": {
           "enabled": {
             "anyOf": [
@@ -1252,6 +1429,7 @@
         "type": "object"
       },
       "MovePcInput": {
+        "additionalProperties": false,
         "properties": {
           "new_lab": {
             "title": "New Lab",
@@ -1270,6 +1448,7 @@
         "type": "object"
       },
       "MovePcsInput": {
+        "additionalProperties": false,
         "properties": {
           "new_lab": {
             "title": "New Lab",
@@ -1291,6 +1470,7 @@
         "type": "object"
       },
       "NotificationsReadInput": {
+        "additionalProperties": false,
         "properties": {
           "ids": {
             "default": [],
@@ -1305,6 +1485,7 @@
         "type": "object"
       },
       "NotifySettingsInput": {
+        "additionalProperties": false,
         "properties": {
           "email_to": {
             "default": "",
@@ -1513,6 +1694,7 @@
         "type": "object"
       },
       "PanelTicketInput": {
+        "additionalProperties": false,
         "properties": {
           "body": {
             "anyOf": [
@@ -1584,6 +1766,7 @@
         "type": "object"
       },
       "PatchInstallInput": {
+        "additionalProperties": false,
         "properties": {
           "scope": {
             "default": "security",
@@ -1828,6 +2011,7 @@
         "type": "object"
       },
       "ProfileInput": {
+        "additionalProperties": false,
         "properties": {
           "profile": {
             "title": "Profile",
@@ -1860,6 +2044,7 @@
         "type": "object"
       },
       "ReenrollInput": {
+        "additionalProperties": false,
         "properties": {
           "allow": {
             "default": true,
@@ -1915,6 +2100,7 @@
         "type": "object"
       },
       "RenameDeviceInput": {
+        "additionalProperties": false,
         "properties": {
           "display_name": {
             "title": "Display Name",
@@ -1933,6 +2119,7 @@
         "type": "object"
       },
       "RenameLabInput": {
+        "additionalProperties": false,
         "properties": {
           "new_name": {
             "title": "New Name",
@@ -1951,6 +2138,7 @@
         "type": "object"
       },
       "RetentionInput": {
+        "additionalProperties": false,
         "properties": {
           "retention_days_logs": {
             "maximum": 3650.0,
@@ -1980,6 +2168,7 @@
         "type": "object"
       },
       "SaveLabLayoutInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -1998,6 +2187,7 @@
         "type": "object"
       },
       "ScheduleToggleInput": {
+        "additionalProperties": false,
         "properties": {
           "enabled": {
             "title": "Enabled",
@@ -2011,6 +2201,7 @@
         "type": "object"
       },
       "ScheduledTaskInput": {
+        "additionalProperties": false,
         "properties": {
           "command": {
             "title": "Command",
@@ -2082,6 +2273,7 @@
         "type": "object"
       },
       "SetLimitInput": {
+        "additionalProperties": false,
         "properties": {
           "limit": {
             "maximum": 10000.0,
@@ -2097,6 +2289,7 @@
         "type": "object"
       },
       "SetMainPcInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -2233,6 +2426,7 @@
         "type": "object"
       },
       "StartAuditSessionInput": {
+        "additionalProperties": false,
         "properties": {
           "admin_id": {
             "anyOf": [
@@ -2289,6 +2483,7 @@
         "type": "object"
       },
       "StreamStopInput": {
+        "additionalProperties": false,
         "properties": {
           "pc_name": {
             "title": "Pc Name",
@@ -2302,6 +2497,7 @@
         "type": "object"
       },
       "TaskActionInput": {
+        "additionalProperties": false,
         "properties": {
           "action": {
             "title": "Action",
@@ -2365,6 +2561,7 @@
         "type": "object"
       },
       "TaskStatusInput": {
+        "additionalProperties": false,
         "properties": {
           "ids": {
             "items": {
@@ -2382,6 +2579,7 @@
         "type": "object"
       },
       "TicketMessageInput": {
+        "additionalProperties": false,
         "properties": {
           "body": {
             "title": "Body",
@@ -2400,6 +2598,7 @@
         "type": "object"
       },
       "TicketUpdateInput": {
+        "additionalProperties": false,
         "properties": {
           "assignee": {
             "anyOf": [
@@ -2439,6 +2638,7 @@
         "type": "object"
       },
       "TotpDisableInput": {
+        "additionalProperties": false,
         "properties": {
           "otp": {
             "anyOf": [
@@ -2456,6 +2656,7 @@
         "type": "object"
       },
       "TotpEnableInput": {
+        "additionalProperties": false,
         "properties": {
           "otp": {
             "title": "Otp",
@@ -2469,6 +2670,7 @@
         "type": "object"
       },
       "TotpLoginInput": {
+        "additionalProperties": false,
         "properties": {
           "challenge": {
             "title": "Challenge",
@@ -2487,6 +2689,7 @@
         "type": "object"
       },
       "UpdateProgressInput": {
+        "additionalProperties": false,
         "properties": {
           "pcs": {
             "items": {
@@ -2515,6 +2718,7 @@
         "type": "object"
       },
       "UserCreateInput": {
+        "additionalProperties": false,
         "properties": {
           "auth_source": {
             "default": "local",
@@ -2624,6 +2828,7 @@
         "type": "object"
       },
       "UserUpdateInput": {
+        "additionalProperties": false,
         "properties": {
           "auth_source": {
             "anyOf": [
@@ -6205,6 +6410,84 @@
         ]
       }
     },
+    "/api/v1/modules/{module_id}/preview": {
+      "get": {
+        "description": "Ayar değişirse ne olur (hiçbir şey yazmaz): durumu değişecek modüller (bağımlılar dahil, kurum geneli ve\nlaboratuvar bazında) ve kapanacak Vision oturumu ile reddedilecek görev sayısı. enabled yoksa ayar kaldırılır.",
+        "operationId": "preview_module_api_modules__module_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "title": "Module Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lab",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lab"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Module",
+        "tags": [
+          "modules"
+        ]
+      }
+    },
     "/api/v1/move_pc": {
       "post": {
         "deprecated": true,
@@ -8552,6 +8835,209 @@
         ]
       }
     },
+    "/api/v1/system/glpi": {
+      "get": {
+        "operationId": "get_glpi_api_system_glpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Glpi",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "operationId": "save_glpi_api_system_glpi_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlpiSettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Glpi",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/v1/system/glpi/links/{pc_name}": {
+      "delete": {
+        "description": "Cihazın GLPI bağlantısını unutur (GLPI'ye dokunmaz); sonraki eşitlemede yeniden aranır ya da oluşturulur.",
+        "operationId": "forget_glpi_link_api_system_glpi_links__pc_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pc_name",
+            "required": true,
+            "schema": {
+              "title": "Pc Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Forget Glpi Link",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/v1/system/glpi/sync": {
+      "post": {
+        "description": "Şimdi eşitle: tur arka planda başlar (sürüyorsa yenisi başlamaz). wait=true turun sonucunu bekler (en çok 120\nsn; betikler ve testler için).",
+        "operationId": "sync_glpi_api_system_glpi_sync_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Wait",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sync Glpi",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/v1/system/glpi/test": {
+      "post": {
+        "operationId": "test_glpi_api_system_glpi_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlpiTestInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Glpi",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/v1/system/install-profile": {
       "post": {
         "operationId": "apply_profile_api_system_install_profile_post",
@@ -8598,7 +9084,7 @@
     },
     "/api/v1/system/install-profile/{name}": {
       "get": {
-        "description": "Profil uygulanırsa kurum genelinde değişecek modüller (laboratuvar istisnaları ayrıca sayılır).",
+        "description": "Profil uygulanırsa kurum genelinde değişecek modüller (laboratuvar istisnaları ayrıca sayılır) ve kapanacak\nVision oturumu ile reddedilecek görev sayısı (reset_labs: istisnalar da silinirse).",
         "operationId": "preview_profile_api_system_install_profile__name__get",
         "parameters": [
           {
@@ -8608,6 +9094,16 @@
             "schema": {
               "title": "Name",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reset_labs",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Reset Labs",
+              "type": "boolean"
             }
           }
         ],

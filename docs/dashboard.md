@@ -340,7 +340,7 @@ marks the task failed:
 
 ### Sistem
 
-Superadmin page in five tabs; the open tab is kept in the address (`/system?tab=health`). The header has **Sürüm
+Superadmin page in seven tabs; the open tab is kept in the address (`/system?tab=health`). The header has **Sürüm
 notları** and **Güncellemeleri denetle** (asks GitHub again).
 
 - **Genel bakış**: one tile per card below with its current state (Sunucu, Ajanlar, Sağlık, Yedekler, Ajan kaydı ve
@@ -352,7 +352,7 @@ notları** and **Güncellemeleri denetle** (asks GitHub again).
   from a sample the server takes every minute and keeps for 30 days, so after an update the charts start filling
   within a few minutes and a gap marks the time the server was down; tasks and events come from their records.
 - **Güncellemeler**: cards 1 and 2. **Güvenlik**: cards 3 and 4 and **Kayıt bütünlüğü**. **Sağlık ve yedek**:
-  **Sağlık** and **Yedekler**. **Bildirimler ve saklama**: cards 6 and 7.
+  **Sağlık** and **Yedekler**. **Bildirimler ve saklama**: cards 6 and 7. **Modüller**: cards 8 and 9. **Entegrasyonlar**: card 10.
 
 An admin who is not a superadmin sees only the **Sunucu** and **Ajanlar** cards, without tabs.
 
@@ -389,6 +389,27 @@ An admin who is not a superadmin sees only the **Sunucu** and **Ajanlar** cards,
    (`SMTP_FROM`, or `SMTP_USER`) in the server's `.env`; the card says whether SMTP is configured. See [`configuration.md`](configuration.md#notification-settings).
 7. **Saklama süreleri**: how many days to keep agent event records, finished tasks and read notifications (0 keeps
    them for ever). The audit chain and remote-screen sessions are never deleted.
+8. **Modüller**: one row per module (see [`api.md`](api.md#modules-and-install-profiles)) with its
+   organisation-wide state, its dependencies and the number of labs that differ, and a switch for the
+   organisation setting. A module that is on but whose dependency is off shows **Kapalı** with the reason
+   ("Uzak komut kapalı olduğu için çalışmaz"). A click opens the module: the organisation setting, what stops while
+   it is off, its dependencies and the modules that depend on it, and one row per lab with **Kurum ayarı**,
+   **Açık** or **Kapalı** (a lab-specific setting wins over the organisation setting). Before anything is turned
+   off the panel asks the server what would change (`GET /api/modules/{id}/preview`) and asks to confirm, naming
+   the modules that turn off with it, the open remote-screen sessions that close and the pending tasks that are
+   denied; the result is shown after the change.
+9. **Kurulum profili**: the current profile (**Okul laboratuvarı**, **Kurum**, **Özel** after a manual change, or
+   **Seçilmedi** on a new installation) and the two profiles with the modules they leave off. A profile opens a
+   preview of the organisation settings it changes and of its effect, with the option to delete the lab-specific
+   settings too, and **Profili uygula**.
+10. **GLPI**: export of computers, installed software and helpdesk tickets to GLPI
+    ([`integrations/glpi.md`](integrations/glpi.md)): **Dışa aktarım** on or off, the GLPI address, app token and
+    user token (a saved token is never shown; the field says "Kayıtlı"), the entity, the interval (once a day, every
+    12 or 6 hours, manual only), what to send (computers, installed software, tickets, the reporter's name) and the
+    date from which tickets are sent, **Bağlantıyı sına** and **Kaydet**. **Eşitleme** shows the last run (when,
+    manual or scheduled, what was created, linked, updated or sent, and errors), **Şimdi eşitle**, the lab → GLPI
+    location mapping and the devices that could not be matched (several matches, or deleted from GLPI), each with
+    **Bağlantıyı unut**.
 
 ### Kayıtlar
 

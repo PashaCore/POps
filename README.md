@@ -425,7 +425,7 @@ How to run the suites locally: [`docs/testing.md`](docs/testing.md).
 | | [Public demo](deploy/demo/README.md) | [Code signing policy](docs/code-signing.md) |
 | | | [Agent protocol](docs/protocol/README.md) |
 | | | [Panel languages](docs/i18n.md) |
-| | | [GLPI export (design)](docs/integrations/glpi.md) |
+| | | [GLPI export](docs/integrations/glpi.md) |
 
 **Turkish guides for schools** (in Turkish): [Why POps?](docs/tr/neden-pops.md) ·
 [POps and Veyon together](docs/tr/veyon-ile-birlikte.md) · [Pilot school setup](docs/tr/pilot-okul.md) ·

@@ -15,7 +15,7 @@ import time
 import uuid
 from typing import Optional
 
-from pops import db, exams, filestore, health_alerts, modules, retention, server_metrics, update_tracking
+from pops import db, exams, filestore, glpi, health_alerts, modules, retention, server_metrics, update_tracking
 from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.notify import notify
@@ -271,6 +271,7 @@ async def scheduler_loop() -> None:
             await health_alerts.check()
             # Dosya aktarımı: süresi dolan jetonlar, gönderilmiş ve 7 günü dolan alınmış dosyalar (5 dk'da bir)
             await filestore.purge_periodic()
+            await glpi.maybe_start()   # vakti gelen GLPI eşitlemesi arka planda başlar, turu bekletmez
             last_tick[0] = time.time()
         except asyncio.CancelledError:
             raise

@@ -138,6 +138,19 @@ Connect start and callback to 20, `POST /api/sso/test/ldap|oidc` to 10. Exceedin
 file transfer endpoints (`GET /api/files/{id}/download`, `POST /api/files/{id}/upload`) take at most 30 requests per
 minute per device and endpoint, like the other agent endpoints that are limited per device (helpdesk, activity).
 
+### Unknown fields
+
+A JSON body with a field the endpoint does not know is refused with `422` and nothing is changed: the error list
+has an entry with `"type": "extra_forbidden"` and the field in `loc` (for example `["body", "lab"]`). A misspelt
+field therefore fails instead of running with a default value. Two kinds of body are the exception, on purpose:
+
+- The bodies agents send (`/api/inventory/{hw_id}`, `/api/software/{hw_id}`, `/api/patches/{hw_id}`,
+  `/api/tickets/agent/{hw_id}`, `/api/logs/{hw_id}`, `/api/auth/login|failed|logout`, `/api/policy_alert`) ignore
+  unknown fields. Agents of many versions run at the same time, and a field a newer agent adds must not make an
+  older server drop the data (the agent sends `dna` with its inventory, for example, which the server does not read).
+- `/api/remote_input` takes the input fields (`x`, `y`, `key`, `is_down` ...) at the top level of the body and
+  forwards only the ones it knows.
+
 ## Endpoint reference
 
 `Auth` is the dependency attached to the route. `none` means the route is reachable without credentials.
@@ -578,9 +591,23 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/modules` | require_auth | Every module with `setting` (organisation, `null` = none), `enabled` (organisation, with dependencies), `lab_overrides`, `lab_enabled`, dependencies and profile defaults, plus `profile`, `labs`. |
-| POST | `/api/modules/{module_id}` | require_superadmin | `{enabled: true \| false \| null, lab?}`: sets (or with `null` removes) the organisation or lab setting. Turning `vision` off closes open Vision sessions; turning `terminal` off denies pending and paused tasks there; turning `files` off rejects file transfers that were sent but not started (their tokens stop working); turning `exam` off ends the running exams there. Returns `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled`, `exams_ended`. Audited (`module_setting`); an organisation change sets the profile to `custom`. |
-| GET | `/api/system/install-profile/{name}` | require_superadmin | Preview of `school` or `org`: the organisation settings that would change and the number of lab overrides. |
+| GET | `/api/modules/{module_id}/preview` | require_superadmin | Query `enabled` (`true` \| `false`; omitted = remove the setting) and `lab`: what the change would do, without writing anything. `changes` lists every module and lab (`null` = organisation) whose state would change, dependants included (`id`, `name`, `lab`, `from`, `to`); `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled` and `exams_ended` count the open Vision sessions that would close, the pending or paused tasks that would be denied, the file transfers that would be rejected and the running exams that would end. The panel shows it before asking to confirm. |
+| POST | `/api/modules/{module_id}` | require_superadmin | `{enabled: true \| false \| null, lab?}`: sets (or with `null` removes) the organisation or lab setting. Turning `vision` off closes open Vision sessions; turning `terminal` off denies pending and paused tasks there (power actions and messages stay); turning `deploy` off denies pending winget steps; turning `files` off rejects file transfers that were sent but not started (their tokens stop working); turning `exam` off ends the running exams there. Returns `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled`, `exams_ended`. Audited (`module_setting`); an organisation change sets the profile to `custom`. |
+| GET | `/api/system/install-profile/{name}` | require_superadmin | Preview of `school` or `org`: the organisation settings that would change, the number of lab overrides, and `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled` and `exams_ended` as for a module preview. With `?reset_labs=true` the counts assume the lab overrides are deleted too. |
 | POST | `/api/system/install-profile` | require_superadmin | `{profile: "school" \| "org", reset_labs}`: applies the profile's defaults organisation-wide (and with `reset_labs` deletes lab overrides). Audited (`module_profile`). |
+
+### Integrations (GLPI export)
+
+Superadmin only. See [`integrations/glpi.md`](integrations/glpi.md). The tokens are never returned: responses say
+only whether one is saved.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/system/glpi` | require_superadmin | Settings (`enabled`, `url`, `app_token_set`, `user_token_set`, `entity`, `interval_hours`, `sync`, `tickets_since`, `locations`), `last_run` (time, trigger, `ok`, `counts`, `error`, `errors`, `failures`), `running`, `links` (linked computers and tickets, problems), `problems` (devices with several matches or gone from GLPI) and `allow_private` (`GLPI_ALLOW_PRIVATE`). |
+| POST | `/api/system/glpi` | require_superadmin | `{enabled, url, app_token?, user_token?, entity, interval_hours: 0 \| 6 \| 12 \| 24, sync: {computers, software, tickets, ticket_reporter}, tickets_since?, locations?}`. A token that is omitted or `null` is kept, `""` deletes it. Turning on needs an address and a user token (`400`). When the address changes, saved tokens must be sent again (`400`), so they never go to another host by themselves. `tickets_since` defaults to the day ticket export is first turned on. Audit-logged with the names of the changed settings. Returns the same as GET. |
+| POST | `/api/system/glpi/test` | require_superadmin | `{url?, app_token?, user_token?}` (missing values come from the saved settings; saved tokens are used only for the saved address): opens a GLPI session, reads the user and entity, closes it. `{ok: true, user, entity, plain_http}` or `{ok: false, error}` with a readable reason (for example "GLPI kullanıcı jetonunu kabul etmedi …"). |
+| POST | `/api/system/glpi/sync` | require_superadmin | Starts a run in the background (`started: false` if one is running). `?wait=true` waits up to 120 seconds and returns the run's `result`. `400` while the export is off. Audit-logged. |
+| DELETE | `/api/system/glpi/links/{pc_name}` | require_superadmin | Forgets a device's GLPI links (GLPI is not changed); the next run looks it up again. `404` if it has none. |
 
 ### Signed releases and agent updates
 

@@ -361,6 +361,7 @@ and/or a webhook.
 | Enrolled agent quarantined itself at the DNS violation threshold | high |
 | Scheduled task could not be queued | high |
 | Licence over its seats, or expired (checked once a day) | high |
+| GLPI export failed three runs in a row (`glpi_failed`) | high |
 | Update did not start (machine unchanged), or waits for a restart | medium |
 | Agent refused a disabled capability | medium |
 | Quarantine lifted on the PC with an offline bypass code (enrolled agent) | medium |
@@ -390,6 +391,22 @@ settings are saved or tested and again before each delivery. The connection is t
 (so a DNS answer that changes in between does not help), TLS is still verified against the host name, and
 redirects are not followed. A school that wants to post to a system inside its own network opts in with
 `NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` in `.env`; multicast and unspecified addresses stay refused even then.
+
+## GLPI export
+
+- Off by default; only a superadmin configures it, tests the connection or starts a run, and these actions are
+  audit-logged (the names of changed settings, never their values).
+- The GLPI app token and user token are stored encrypted (`v1:`, the key of the 2FA secrets), are never returned by
+  the API, and never appear in a log, an error message or the audit log. When the address changes, the saved tokens
+  are not used until they are entered again, and a connection test against another address uses only the tokens
+  typed in the form, so a saved token is never sent to a new host by itself.
+- The GLPI host gets the same guard as the webhook: every resolved address must be public unless
+  `GLPI_ALLOW_PRIVATE=1`; the connection is pinned to the checked address, TLS is verified against the host name
+  (`GLPI_CA_FILE` for a school CA) and redirects are not followed. Plain `http://` is refused unless the opt-in is set
+  and the host is on a private address.
+- Data minimisation: no signed-in user, screen images, foreground program or event log content is sent; the reporter
+  of a ticket and internal notes are not sent unless the school turns the reporter on (internal notes never).
+  Nothing is read back from GLPI into POps.
 
 ## Helpdesk
 

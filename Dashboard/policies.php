@@ -287,7 +287,7 @@
         try { r = await POps.get('/api/modules'); } catch (e) { return; }
         const mods = {};
         (r && Array.isArray(r.modules) ? r.modules : []).forEach(m => { mods[m.id] = m; });
-        const unassigned = (POps.dev && POps.dev.UNASSIGNED) || 'Atanmamis_Cihazlar';
+        const unassigned = POps.dev.UNASSIGNED;
         const labName = (l) => l === unassigned ? POps.t('Atanmamış') : l;
         function note(m, offText) {
             if (!m) return null;

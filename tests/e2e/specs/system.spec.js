@@ -8,6 +8,8 @@ const TABS = [
     ['security', 'Güvenlik'],
     ['health', 'Sağlık ve yedek'],
     ['notify', 'Bildirimler ve saklama'],
+    ['modules', 'Modüller'],
+    ['integrations', 'Entegrasyonlar'],
 ];
 
 test('sekmeler değişir ve ?tab= adreste kalır', async ({ page }) => {
@@ -26,11 +28,12 @@ test('sekmeler değişir ve ?tab= adreste kalır', async ({ page }) => {
         await expect(pane('overview')).toBeHidden();
     }
 
-    // Yenileyince seçili sekme korunur
+    // Yenileyince seçili sekme (son tıklanan) korunur
+    const [lastName, lastLabel] = TABS[TABS.length - 1];
     await page.reload();
     await settled(page);
-    await expect(bar.getByRole('tab', { name: 'Bildirimler ve saklama' })).toHaveAttribute('aria-selected', 'true');
-    await expect(pane('notify')).toBeVisible();
+    await expect(bar.getByRole('tab', { name: lastLabel })).toHaveAttribute('aria-selected', 'true');
+    await expect(pane(lastName)).toBeVisible();
 
     // Doğrudan adresle açılır; varsayılan sekme adresten ?tab= kaldırır
     await page.goto('/system?tab=health');
