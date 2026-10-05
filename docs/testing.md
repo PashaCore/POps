@@ -8,6 +8,8 @@ A high test count says little on its own; the table below is the honest list.
 | Suite | What it is | Where it runs |
 |---|---|---|
 | `Backend/tests/test_units.py` | Pure unit tests, no database or server. | CI `backend` job (Python 3.12 and 3.10) |
+| `Backend/tests/test_protocol.py` | Agent protocol ([`protocol/`](protocol/README.md)): every schema and example, and the real `/ws/agent` and `/ws/vision` handlers, task queue and endpoints run with a fake database and fake sockets; every message they send or accept must match its schema. Needs `jsonschema` (CI installs it). | CI `backend` job (Python 3.12 and 3.10), `security` job under coverage |
+| Backend lock file | `tools/backend_lock.sh --check`: `Backend/requirements.lock` regenerated from `requirements.txt` must be unchanged. | CI `backend-lock` job |
 | `Backend/tests/test_*.py` (others) | Integration tests against a running backend and an empty PostgreSQL database. | CI `security` job, `Backend/tests/run_local.sh` |
 | `Agent/POps.Tests` | xUnit tests for the agent, updater logic, shared code and the MSI custom actions (pure logic and temp-folder file operations; no firewall, pipe or service). | CI `test-agent` job (Windows) |
 | Migrations | Fresh migrate, schema check, second run must apply nothing. | CI `migrations` job (PostgreSQL 13) |
@@ -121,7 +123,8 @@ machine and a regression would not be caught by CI.
 | Remote input / preview needs admin + an open audit session; frames only to that session | Tested | `test_remote_authz.py` |
 | Agent enrollment, per-device secret, enforce mode, cross-device spoofing, enrollment takeover | Tested | `test_security.py`, `test_agent_authz.py` |
 | Signed release: server rejects a wrong key; agent verifies signature, size, hash, downgrade | Tested | `test_security.py`, `ReleaseVerifierTests`, `AgentUpdateTests`, `signing` job |
-| Update result → audit log and notification wording | Tested (logic) | `test_units.py`; the WebSocket handler path itself is not exercised |
+| Update result → audit log and notification wording | Tested | `test_units.py` (wording); `test_protocol.py` drives the `/ws/agent` handler: stored and acknowledged, no acknowledgement without `result_id` |
+| Agent ↔ server message formats (server side) | Tested | `test_protocol.py` against `docs/protocol`; the agent side is described in `docs/protocol/AGENT_TESTS.md` and not yet implemented |
 | **Agent update + rollback on a real machine (updater, MSI downgrade)** | **Manual** | Rollback drill on a real machine (see [agent.md](agent.md)). The drill decision logic is unit-tested (`RollbackDrillTests`); the MSI downgrade is not. The September 2026 false `rollback_failed` came from exactly this gap. |
 | Quarantine delivery, resend and reconciliation | Tested | `test_features.py`; agent-side isolation logic in `NetworkIsolationTests`, `QuarantineControlTests` |
 | Kiosk lock screen cannot be bypassed | Not tested | Known gap: Ctrl+Alt+Del still reaches Task Manager / sign-out (roadmap) |

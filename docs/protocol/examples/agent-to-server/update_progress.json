@@ -1,0 +1,8 @@
+{
+  "type": "update_progress",
+  "stage": "waiting_installer",
+  "to_version": "0.1.22-alpha",
+  "attempt": 2,
+  "of": 5,
+  "detail": "msiexec 1618: başka bir Windows Installer kurulumu sürüyor"
+}

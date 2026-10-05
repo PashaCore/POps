@@ -1,0 +1,11 @@
+{
+  "type": "update_result",
+  "status": "success",
+  "result_id": "5c1e0a9b7d3f42e8a6b1c0d9e8f7a6b5",
+  "from_version": "0.1.20-alpha",
+  "to_version": "0.1.21-alpha",
+  "running_version": "0.1.21-alpha",
+  "agent_state": "running",
+  "msi_exit_code": 0,
+  "reboot_required": false
+}

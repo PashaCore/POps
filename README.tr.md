@@ -351,14 +351,16 @@ Her sürüm, yükseltme notlarıyla [`CHANGELOG.md`](CHANGELOG.md) içindedir. P
 - **Backend:** on iki test takımı; on biri gerçek bir PostgreSQL ve çalışan bir sunucuya karşı: güvenlik
   değişmezleri, 2FA, ajan yetkilendirme, uzaktan kontrol kuralları, cihaz anahtarları, sağlamlaştırma, 20 eşzamanlı
   kayıt, 0.1.11'den 0.1.14'e ajanların bugünkü sunucuyla uyumu, özellikler, yardım masası ve lisanslar, işletim.
-  flake8 sıfır bulgu.
+  Ajan protokolü JSON Schema'lara ve ortak test vektörlerine karşı denetlenir
+  ([`docs/protocol`](docs/protocol/README.md)). flake8 sıfır bulgu.
 - **Ajan:** .NET 10 ve .NET Framework 4.7.2 (MSI özel eylemleri) üzerinde yaklaşık 700 xUnit test koşusu; CI'da
   kapsam tabanı.
 - **Kurulum ve işletim:** boş veritabanından migration'lar, sınanan yedek ve geri yükleme, TLS aracı, sürüm imzalama,
   dağıtım ve kendini güncelleme betikleri (geri alma, imzalı etiket, güvensiz ayar) CI'da test edilir.
 - **Panel:** PHP sözdizimi ve kaçırılmamış HTML çıktısını reddeden bir denetim.
-- **Tedarik zinciri:** her değişiklikte CodeQL, Dependabot, commit SHA'sına sabitlenmiş GitHub Actions, yayın işi
-  bütün testler geçmeden çalışmayan ed25519 imzalı sürümler.
+- **Tedarik zinciri:** her değişiklikte CodeQL, Dependabot, özetleriyle kilitlenmiş backend bağımlılıkları
+  (`pip --require-hashes`), commit SHA'sına sabitlenmiş GitHub Actions, yayın işi bütün testler geçmeden çalışmayan
+  ed25519 imzalı sürümler.
 - **Sahada:** gerçek Windows bilgisayarlarda güncelleme ve geri alma tatbikatları ve sürüm saha testleri.
 
 Testleri yerelde çalıştırmak (İngilizce): [`docs/testing.md`](docs/testing.md).

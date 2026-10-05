@@ -364,6 +364,9 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
             try:
                 payload = json.loads(data)
                 if payload.get("type") in ["stream_frame", "thumbnail"]:
+                    # Kare her zaman bu tünelin kimliği doğrulanmış cihazına aittir: ajanın gönderdiği hw_id
+                    # kullanılmaz (aksi halde kayıtlı bir ajan başka cihazın kutusuna kare koyabilirdi)
+                    payload["hw_id"] = pc_name
                     # F12: kare yalnızca o cihaz için açık oturumu olan admin panellerine
                     await manager.send_frame_to_viewers(payload, pc_name)
             except json.JSONDecodeError:

@@ -165,6 +165,9 @@ async def reconcile_quarantine(
 # update_progress: güncellemenin ara adımları okunur (eski sunucu bilinmeyen mesajı zaten yok sayar; ajan isterse
 # yalnızca bunu duyuran sunucuya gönderir).
 SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress")
+# Ajan protokolünün sürümü (docs/protocol/README.md): yalnızca uyumsuz bir değişiklikte artar. Yeni alan ya da yeni
+# mesaj sürümü değiştirmez; sunucunun yeni davranışları SERVER_FEATURES ile duyurulur.
+PROTOCOL_VERSION = 1
 
 
 def _server_version() -> str:
@@ -173,11 +176,18 @@ def _server_version() -> str:
     return system_routes._read_version()
 
 
+def server_info_message() -> dict:
+    return {
+        "action": "server_info",
+        "version": _server_version(),
+        "protocol": PROTOCOL_VERSION,
+        "features": list(SERVER_FEATURES),
+    }
+
+
 async def _send_server_info(websocket: WebSocket) -> None:
     try:
-        await websocket.send_text(
-            json.dumps({"action": "server_info", "version": _server_version(), "features": list(SERVER_FEATURES)})
-        )
+        await websocket.send_text(json.dumps(server_info_message()))
     except Exception:
         pass
 

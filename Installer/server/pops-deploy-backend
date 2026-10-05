@@ -12,6 +12,11 @@
 # de yerine koyar. Uygun yorumlayıcı yoksa hiçbir şeye dokunmadan çıkış kodu 3 ile durur (pops-selfupdate panelde
 # "Python kurun" der).
 #
+# Bağımlılıklar: Backend/requirements.lock varsa (bütün bağımlılıklar, SHA-256 özetleriyle; tools/backend_lock.sh)
+# pip "--require-hashes -r requirements.lock" ile kurar: PyPI'den gelen dosyanın özeti tutmazsa pip hiçbir şey
+# kurmadan durur ve deploy geri döner. Kilidi olmayan eski bir checkout'ta requirements.txt kullanılır. "Requirements
+# değişti" kararı ikisini de karşılaştırır.
+#
 # Ayarlar: /etc/pops/deploy.conf (REPO, APP, SVC, OWNER, HEALTH_BASE, HEALTH_WAIT, KEEP_BACKUPS; örnek ve açıklama:
 # Installer/server/deploy.conf.example). Dosya yoksa install.sh'in varsayılanları geçerlidir. pops-selfupdate
 # da REPO'yu aynı dosyadan okur.
@@ -91,7 +96,7 @@ CHANGED=0                                       # 1: canlıda bir şey değişti
 # Deploy'un canlıda tek tek yönettiği dosyalar (pops/ paketi ayrıca bütün olarak silinip açılır)
 managed_files() {
     local f
-    ( cd "$APP" && for f in ./*.py ./migrations/*.sql ./keys/* ./requirements.txt ./VERSION; do
+    ( cd "$APP" && for f in ./*.py ./migrations/*.sql ./keys/* ./requirements.txt ./requirements.lock ./VERSION; do
         if [ -e "$f" ]; then printf '%s\n' "$f"; fi
     done )
 }
@@ -168,11 +173,11 @@ find_python() {   # MIN_PY'yi karşılayan ilk aday: NEW_PY ve NEW_PY_VER'i dold
 build_venv() {   # NEW_VENV'e OWNER olarak venv + requirements; herhangi bir adım başarısızsa 1
     install -d -o "$OWNER" -g "$GROUP" -m 755 "$NEW_VENV" || return 1
     sudo -H -u "$OWNER" "$NEW_PY" -m venv --upgrade-deps "$NEW_VENV" || return 1
-    # Servis kullanıcısı repo klasörünü okuyamaz: requirements yeni venv'in içine kopyalanıp oradan kurulur
-    install -o "$OWNER" -g "$GROUP" -m 644 Backend/requirements.txt "$NEW_VENV/pops-requirements.txt" || return 1
+    # Servis kullanıcısı repo klasörünü okuyamaz: kilit (ya da requirements) yeni venv'in içine kopyalanıp oradan kurulur
+    install -o "$OWNER" -g "$GROUP" -m 644 "Backend/$REQ_FILE" "$NEW_VENV/pops-$REQ_FILE" || return 1
     sudo -H -u "$OWNER" "$NEW_VENV/bin/pip" install -q --disable-pip-version-check \
-        -r "$NEW_VENV/pops-requirements.txt" || return 1
-    rm -f "$NEW_VENV/pops-requirements.txt"
+        "${PIP_REQ[@]}" "$NEW_VENV/pops-$REQ_FILE" || return 1
+    rm -f "$NEW_VENV/pops-$REQ_FILE"
 }
 trap 'on_error $LINENO' ERR
 trap on_signal INT TERM HUP
@@ -187,6 +192,13 @@ if ! git diff --quiet HEAD -- Backend || [ -n "$(git ls-files --others --exclude
 fi
 REV=$(git rev-parse --short HEAD)
 
+# pip'in kurduğu dosya: kilit varsa özetler zorunlu; yoksa (kilidi olmayan eski checkout) requirements.txt
+if [ -f Backend/requirements.lock ]; then
+    REQ_FILE=requirements.lock; PIP_REQ=(--require-hashes -r)
+else
+    REQ_FILE=requirements.txt; PIP_REQ=(-r)
+fi
+
 # Dağıtılan kod seti = git'te İZLENEN Backend altındaki .py'ler (server.py, migrate.py, pops/ paketi...;
 # testler hariç). git pathspec'te '*' alt dizinleri de kapsar.
 mapfile -t CODE < <(git ls-files 'Backend/*.py' | grep -v '^Backend/tests/' | sort)
@@ -197,6 +209,9 @@ manifest_src() {
     for f in "${CODE[@]}"; do printf '%s %s\n' "${f#Backend/}" "$(sha256sum < "$f" | cut -d' ' -f1)"; done
     for f in Backend/migrations/*.sql; do printf 'migrations/%s %s\n' "$(basename "$f")" "$(sha256sum < "$f" | cut -d' ' -f1)"; done
     printf 'requirements.txt %s\n' "$(sha256sum < Backend/requirements.txt | cut -d' ' -f1)"
+    if [ -f Backend/requirements.lock ]; then
+        printf 'requirements.lock %s\n' "$(sha256sum < Backend/requirements.lock | cut -d' ' -f1)"
+    fi
     printf 'VERSION %s\n' "$(sha256sum < VERSION | cut -d' ' -f1)"
     printf 'keys/pops_release_ed25519.pub.pem %s\n' "$(sha256sum < keys/pops_release_ed25519.pub.pem | cut -d' ' -f1)"
 }
@@ -241,7 +256,7 @@ fi
 # Geri dönüş için mevcut canlı kod setinin TAMAMINI yedekle
 install -d -o "$(id -u)" -g "$(id -g)" -m 700 "$BACKUPS"   # üretimde root:root
 managed_files > "$PRE_LIST"
-mapfile -t ITEMS < <(cd "$APP" && for f in ./*.py pops migrations keys requirements.txt VERSION; do
+mapfile -t ITEMS < <(cd "$APP" && for f in ./*.py pops migrations keys requirements.txt requirements.lock VERSION; do
     if [ -e "$f" ]; then printf '%s\n' "$f"; fi
 done)
 tar czf "$BACKUP" -C "$APP" --exclude='__pycache__' -- "${ITEMS[@]}"
@@ -251,6 +266,8 @@ tar czf "$BACKUP" -C "$APP" --exclude='__pycache__' -- "${ITEMS[@]}"
 # kuruluyorsa eski venv'e dokunulmaz; görüntü yalnızca sonradan elle geri dönüş içindir (eski dizin silinir).
 REQ_CHANGED=0
 cmp -s Backend/requirements.txt "$APP/requirements.txt" || REQ_CHANGED=1
+# Yalnızca kilit değiştiyse de (ör. dolaylı bir bağımlılığın sürümü ya da özeti) pip çalışır
+if [ -f Backend/requirements.lock ] && ! cmp -s Backend/requirements.lock "$APP/requirements.lock"; then REQ_CHANGED=1; fi
 if [ "$REBUILD" = 1 ]; then
     VENV_REAL=$(readlink -f "$VENV")
     VENV_BACKUP="$BACKUPS/venv-$ID.tgz"
@@ -295,9 +312,13 @@ CHANGED=1   # buradan sonra her hata (ERR, sinyal ya da açık denetim) rollback
 # Servis kullanıcısı repo klasörünü okuyamaz; dosyalar $APP'e kopyalanır. Yeni venv'e requirements zaten kuruldu.
 if [ "$REQ_CHANGED" = 1 ] || [ "$REBUILD" = 1 ]; then
     install -o "$OWNER" -g "$GROUP" -m 644 Backend/requirements.txt "$APP/requirements.txt"
+    if [ "$REQ_FILE" = requirements.lock ]; then
+        install -o "$OWNER" -g "$GROUP" -m 644 Backend/requirements.lock "$APP/requirements.lock"
+    fi
 fi
 if [ "$REBUILD" = 0 ] && [ "$REQ_CHANGED" = 1 ]; then
-    sudo -H -u "$OWNER" "$VENV/bin/pip" install -q --disable-pip-version-check -r "$APP/requirements.txt" \
+    # --require-hashes: bir dosyanın özeti tutmazsa pip venv'e dokunmadan durur; deploy yine geri döner
+    sudo -H -u "$OWNER" "$VENV/bin/pip" install -q --disable-pip-version-check "${PIP_REQ[@]}" "$APP/$REQ_FILE" \
         || rollback "pip install başarısız"
 fi
 

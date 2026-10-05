@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/result_ack.json",
+  "title": "result_ack",
+  "description": "Feature `result_ack`: the `result` for this task is stored (or the task is unknown). The agent can delete the kept result. Sent for every `result` with an integer `task_id`.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "task_id"
+  ],
+  "properties": {
+    "action": {
+      "const": "result_ack",
+      "description": "Message type."
+    },
+    "task_id": {
+      "type": "integer",
+      "description": "`task_id` of the acknowledged `result`."
+    }
+  }
+}

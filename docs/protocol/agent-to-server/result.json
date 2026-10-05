@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/result.json",
+  "title": "result",
+  "description": "Output of an `execute` task. The server stores it only for a task of this device that is `Running`, `Unknown`, `Interrupted`, `Timed Out` or `Cancelled` (a cancelled task keeps its status), sets the status from `exit_code` and forwards the output to the panels. It always answers `result_ack` for an integer `task_id`, also when the task does not exist or belongs to another device, so the agent can drop it. A message without an integer `task_id` is ignored.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "type",
+    "task_id"
+  ],
+  "properties": {
+    "type": {
+      "const": "result",
+      "description": "Message type."
+    },
+    "task_id": {
+      "type": "integer",
+      "description": "The `task_id` of the `execute` command."
+    },
+    "output": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 524288,
+      "description": "Combined output. Agents truncate it to 524 288 characters (the Windows agent appends a note). A result without `exit_code` whose output starts with \"[REDDEDİLDİ]\" marks the task `Denied`."
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "0.1.13+. 0 = `Completed`, anything else = `Failed`; missing or null = `Completed`. Codes set by the agent itself: -1 time limit (30 min), -2 cancelled, -3 agent error, -4 service stopping, -5 refused (terminal capability or module off), -6 duplicate (never sent)."
+    },
+    "pc_name": {
+      "type": "string",
+      "description": "Sent by the Windows agent (its device ID); ignored, the connection decides."
+    }
+  }
+}

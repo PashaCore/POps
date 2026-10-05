@@ -1,0 +1,8 @@
+{
+  "action": "server_info",
+  "version": "0.1.21-alpha",
+  "features": [
+    "update_result_ack",
+    "result_ack"
+  ]
+}

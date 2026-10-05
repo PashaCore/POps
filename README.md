@@ -351,14 +351,15 @@ Every release, with upgrade notes, is in [`CHANGELOG.md`](CHANGELOG.md). Package
 
 - **Backend:** twelve test suites, eleven of them against a real PostgreSQL and a running server: security invariants,
   2FA, agent authorization, remote-control rules, per-device keys, hardening, 20 simultaneous enrollments, agents
-  from 0.1.11 to 0.1.14 against the current server, features, helpdesk and licences, operations. flake8 at zero.
+  from 0.1.11 to 0.1.14 against the current server, features, helpdesk and licences, operations. The agent protocol
+  is checked against JSON Schemas and shared test vectors ([`docs/protocol`](docs/protocol/README.md)). flake8 at zero.
 - **Agent:** about 700 xUnit test runs on .NET 10 and on the .NET Framework 4.7.2 MSI custom actions, with a
   coverage floor in CI.
 - **Install and operations:** migrations from an empty database, backup with test-restore, the TLS tool, release
   signing, and the deploy and self-update scripts (rollback, signed tags, unsafe settings) are tested in CI.
 - **Panel:** PHP syntax and a check that refuses unescaped HTML output.
-- **Supply chain:** CodeQL on every change, Dependabot, GitHub Actions pinned to commit SHAs, ed25519-signed
-  releases whose CI job waits for the full test suite.
+- **Supply chain:** CodeQL on every change, Dependabot, hash-locked backend dependencies (`pip --require-hashes`),
+  GitHub Actions pinned to commit SHAs, ed25519-signed releases whose CI job waits for the full test suite.
 - **In the field:** update and rollback drills and release field tests on real Windows PCs.
 
 How to run the suites locally: [`docs/testing.md`](docs/testing.md).

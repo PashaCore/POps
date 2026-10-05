@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/stop_stream.json",
+  "title": "stop_stream",
+  "description": "Stop screen capture and close the Vision channel (POST /api/stream/stop, or the Vision module was switched off for the device's lab).",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action"
+  ],
+  "properties": {
+    "action": {
+      "const": "stop_stream",
+      "description": "Message type."
+    }
+  }
+}

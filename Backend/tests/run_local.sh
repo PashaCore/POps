@@ -24,6 +24,16 @@ if [ "${COVERAGE:-0}" = "1" ]; then
 else
   python tests/test_units.py
 fi
+# Protokol testi jsonschema ister (yalnızca test bağımlılığı; CI kurar)
+if python -c "import jsonschema" 2>/dev/null; then
+  if [ "${COVERAGE:-0}" = "1" ]; then
+    python -m coverage run --rcfile=.coveragerc tests/test_protocol.py
+  else
+    python tests/test_protocol.py
+  fi
+else
+  echo "test_protocol.py atlandı: pip install jsonschema==4.26.0"
+fi
 python migrate.py
 if [ "${COVERAGE:-0}" = "1" ]; then
   python -m coverage run --rcfile=.coveragerc -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/pops-test-uvicorn.log 2>&1 &

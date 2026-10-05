@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/server_info.json",
+  "title": "server_info",
+  "description": "Sent once per connection, right after the server registered it (after `set_identity`/`set_secret` if any, before everything else). Announces the protocol version and the optional server behaviours (`features`) the agent may rely on for this connection. An agent that has not received it within 15 seconds of connecting must treat the server as one without any feature (servers before 0.1.14 do not send it).",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "version",
+    "features"
+  ],
+  "properties": {
+    "action": {
+      "const": "server_info",
+      "description": "Message type."
+    },
+    "version": {
+      "type": "string",
+      "description": "POps release the server runs (VERSION)."
+    },
+    "protocol": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Protocol version (docs/protocol/README.md). Sent from 0.1.22-alpha; a missing value means 1."
+    },
+    "features": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      },
+      "description": "Feature names; unknown names must be ignored. Today: result_ack, update_result_ack, update_progress."
+    }
+  }
+}

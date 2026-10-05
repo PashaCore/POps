@@ -27,6 +27,37 @@ router built with injected dependencies. Agent updates
 are signed only; the old unsigned-zip endpoints (`/api/upload_update`, `/api/update_agent/…`, `/api/broadcast_update`)
 were removed together with the old `update.php` page.
 
+## Dependencies
+
+`Backend/requirements.txt` pins the direct dependencies (and a few indirect ones that carry security fixes) with
+`==` and holds the `# requires-python: >=3.10` line the installer and the deploy script read; Dependabot updates it.
+`Backend/requirements.lock` is generated from it: every package the backend installs, indirect ones included,
+pinned with the SHA-256 hashes of its files, in one file that is valid for Python 3.10 and newer on every platform
+(uv's universal resolution). `install.sh`, `pops-deploy-backend`, the Docker image and CI install with
+`pip install --require-hashes -r Backend/requirements.lock`, so pip refuses a file from the package index whose hash
+differs from the lock, before it installs anything. A checkout without the lock (older releases) falls back to
+`requirements.txt`.
+
+Regenerate the lock whenever `requirements.txt` changes, and commit both:
+
+```bash
+pip install uv==0.12.23            # the version CI uses; another version may format the file differently
+tools/backend_lock.sh              # keeps every other pin; only what requirements.txt needs changes
+tools/backend_lock.sh --upgrade    # also moves indirect dependencies to their newest allowed versions
+tools/backend_lock.sh --check      # what CI's "Backend lock file" job runs
+pip-audit -r Backend/requirements.lock    # with Python 3.10 or newer
+```
+
+Indirect dependencies change only in the lock and Dependabot does not see them: run `--upgrade` from time to time
+and whenever `pip-audit` reports one of them.
+
+**Dependabot PRs.** `.github/workflows/lock-refresh.yml` regenerates the lock on a Dependabot PR that changes
+`requirements.txt` and pushes it to the PR branch (the only job with write access; it runs only for Dependabot's own
+branches). A push made with the workflow token does not start another workflow run, so CI does not run on the new
+commit by itself: close and reopen the PR, then review the green run. Until then the Dependabot commit shows a
+failing "Backend lock file" check, which is expected. If the job cannot push (for example when branch rules require
+signed commits), regenerate the lock locally and push it to the Dependabot branch.
+
 Lint: `flake8 Backend/ tools/ assets/readme/` must stay clean (config in the repo-root `.flake8`, max line length 120); CI enforces it.
 
 The endpoint list is in [`api.md`](api.md) and the schema in [`database.md`](database.md).
@@ -37,10 +68,12 @@ The endpoint list is in [`api.md`](api.md) and the schema in [`database.md`](dat
 `security` job runs them in this order: `test_security.py`, `test_2fa.py`, `test_agent_authz.py`,
 `test_remote_authz.py`, `test_f4_accountability.py`, `test_features.py`, `test_helpdesk_licenses.py`, `test_ops.py`,
 `test_api_tokens.py`.
-`test_units.py` needs no server. `Backend/tests/run_local.sh` does the same locally: it applies the migrations,
-starts a temporary backend on `127.0.0.1:8099` and runs the scripts (`COVERAGE=1` adds a coverage report). What is
-and is not covered: [`testing.md`](testing.md). Export `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME` (an empty
-test database) and `JWT_SECRET` first; never point it at a production database.
+`test_units.py` and `test_protocol.py` (the agent protocol in [`protocol/`](protocol/README.md); it needs
+`pip install jsonschema==4.26.0`, which is not a runtime dependency) need no server. `Backend/tests/run_local.sh`
+does the same locally: it applies the migrations, starts a temporary backend on `127.0.0.1:8099` and runs the
+scripts (`COVERAGE=1` adds a coverage report). What is and is not covered: [`testing.md`](testing.md). Export
+`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME` (an empty test database) and `JWT_SECRET` first; never point it
+at a production database.
 
 ## Logs, metrics and diagnostics
 

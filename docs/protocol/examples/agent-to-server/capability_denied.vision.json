@@ -1,0 +1,6 @@
+{
+  "type": "capability_denied",
+  "capability": "vision",
+  "action": "vision_tunnel",
+  "reason": "not_enrolled"
+}

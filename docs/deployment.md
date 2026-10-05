@@ -140,11 +140,15 @@ rollback:
    built, it stops with nothing changed (exit code 3 for a missing interpreter, which the self-update status in
    **Sistem** turns into "install python3.12"),
 4. backs up the complete live code set to `<app>/.deploy-backups/code-<timestamp>-<pid>.tgz`; when
-   `requirements.txt` changed or the venv is rebuilt, it also snapshots the whole venv to
+   `requirements.txt` or `requirements.lock` changed or the venv is rebuilt, it also snapshots the whole venv to
    `venv-<timestamp>-<pid>.tgz` next to it before `pip` touches it (about 25 MB for the default requirements). If
    the snapshot fails, for example on a full disk, it stops without changing anything,
 5. copies the tracked `Backend/*.py` files (including the `pops/` package, excluding tests), `migrations/`,
-   `requirements.txt` (and runs `pip install` into the live venv if it changed), `VERSION` and the release public key;
+   `requirements.txt` and `requirements.lock` (and runs `pip install --require-hashes -r requirements.lock` into the
+   live venv if either changed; a checkout without the lock installs `requirements.txt`), `VERSION` and the release
+   public key. pip checks every downloaded file against the lock's SHA-256 hashes and stops before installing
+   anything if one differs; the deploy then rolls back like any other failure. The new venv of a rebuild is installed
+   the same way;
    after a rebuild it moves the old venv aside and makes `<app>/venv` a symbolic link to the new one, so the
    unit's `<app>/venv/bin/uvicorn` stays the same,
 6. restarts the service and checks `/api/health` (200), `/api/agent_policies` (200) and `/api/devices` (401),

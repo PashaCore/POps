@@ -480,38 +480,24 @@ Not renamed, on purpose:
 
 ## WebSockets
 
+The agent channels are specified message by message, with JSON Schemas, test vectors and the versioning rules, in
+[`protocol/`](protocol/README.md). In short:
+
 ### `/ws/agent/{hw_id}` — agent command channel
 
 - **Auth:** `X-Agent-Secret` matching the stored hash for `{hw_id}`, or a valid `X-Enroll-Token`. With neither, the
-  connection is accepted while `enforce_agent_auth` is off; when it is on, the rejection is written to
-  `device_audit_logs` and the socket is closed with code `4401`.
+  connection is accepted while `enforce_agent_auth` is off (and the device has no secret); otherwise the rejection
+  is written to `device_audit_logs` and the socket is closed with code `4401`.
 - **Enrollment:** on a connection that used an enrollment token, the server creates a device secret, stores its
-  SHA-256, counts one use of the token, moves the device to the token's lab and sends
-  `{"action": "set_secret", "secret": "..."}`. If the device already has a secret, this is refused (critical
-  audit entry, close `4401`) unless a superadmin allowed re-enrollment for it.
-- **Heartbeat:** the agent sends a heartbeat every 5 seconds: an object without `type` that carries `status`,
-  `hostname` and the hardware fingerprint `dna_payload`. On the first message of a connection the server
-  reconciles the fingerprint with the known devices and may answer with `set_identity` to give the agent a
-  different `HW-…` ID (clone detection or identity recovery).
-- **Other agent → server messages:** `result` (task output), `thumbnail`, `vision_rejected`, `update_result`,
-  `update_progress` (see [below](#update_progress-agent-update-stages)), `capabilities`, `capability_denied`.
-  Heartbeats are written to the database in batches every 2 seconds.
-- **Update results:** from 0.1.14 an `update_result` carries `result_id` (the first 32 hex characters of the
-  SHA-256 of the agent's `update-result.json`). After the result is stored the server answers
-  `{"action": "update_result_ack", "result_id": ...}`; a result it already stored is acknowledged without a second
-  record. The agent keeps the result and sends it again until it is acknowledged.
-- **Task results:** after a `result` is stored the server answers `{"action": "result_ack", "task_id": ...}`, so
-  an agent that keeps results until they are acknowledged (0.1.14+) can send them again after a lost connection. A
-  `capability_denied` with a `task_id` marks that task `Denied`.
-- **Server → agent actions:** `server_info` (right after registration: `{"version", "features":
-  ["update_result_ack", "result_ack", "update_progress"]}`; older agents ignore it), `update_result_ack`, `result_ack`, `execute`, `cancel_task`, `get_hardware`,
-  `set_secret`, `set_bypass_secret`, `set_identity`, `update_agent`,
-  `set_capabilities`, `lockdown`, `unlock`, `start_vision_session`, `stop_stream`, `wake_peer`,
-  `scan_updates` and `install_updates` (`{"scope": "security" | "all"}`; handled by agents from 0.1.5-alpha on),
-  and `remote_input` messages forwarded from the panel (for example `get_thumbnail`).
-- **Other close codes:** `4000` when the device is deleted in the panel, `1011` after a malformed message or
-  server error. When a registered connection closes, the reason (the close code in words, for example "bağlantı
-  koptu" for `1006`) and the time are stored in `clients.last_disconnect_reason` / `last_disconnect_at`.
+  SHA-256, counts one use of the token, moves the device to the token's lab and sends `set_secret`. If the device
+  already has a secret, this is refused (critical audit entry, close `4401`) unless a superadmin allowed
+  re-enrollment for it.
+- **Messages:** the first message is a heartbeat with the hardware fingerprint; the server answers with
+  `server_info` (protocol version and features) and then sends commands. Every message in both directions, the
+  connection sequence and the close codes (`4401`, `4409`, `4000`, `1011`) are in [`protocol/`](protocol/README.md);
+  the update stages an agent reports are described [below](#update_progress-agent-update-stages).
+- When a registered connection closes, the reason (the close code in words, for example "bağlantı koptu" for
+  `1006`) and the time are stored in `clients.last_disconnect_reason` / `last_disconnect_at`.
 
 #### `update_progress`: agent update stages
 
@@ -565,11 +551,12 @@ stages; the panel then shows the update as before ("Kuruluyor" until the result)
 
 ### `/ws/vision/{hw_id}` — agent screen stream
 
-- **Auth:** same rule as `/ws/agent` (`X-Agent-Secret` or `X-Enroll-Token`; close `4401` when enforcement is on and
-  neither is valid).
-- The agent sends `stream_frame` and `thumbnail` messages. Each frame is forwarded **only** to the panel sockets of
-  admins who hold an open, unexpired remote-control session for that device; with no such panel the frame is
-  dropped. Remote mouse/keyboard input from the panel reaches the agent over this socket when it is open.
+- **Auth:** only the device's `X-Agent-Secret` (an enrollment token is not accepted here, whatever
+  `enforce_agent_auth` says); otherwise close `4401`.
+- The agent sends `stream_frame` (and `thumbnail`) messages. Each frame is forwarded **only** to the panel sockets
+  of admins who hold an open, unexpired remote-control session for that device; with no such panel the frame is
+  dropped. Remote mouse/keyboard input from the panel reaches the agent over this socket when it is open. Message
+  formats: [`protocol/`](protocol/README.md).
 
 ### `/ws/panel` — dashboard
 

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/update_agent.json",
+  "title": "update_agent",
+  "description": "Install a signed agent release (POST /api/system/deploy-update, online targets only). The agent verifies the ed25519 signature over the exact decoded `manifest` bytes with its built-in release public key, parses the manifest (release-manifest.json), requires a version newer than its own and exactly one agent package, downloads it from `<ServerUrl>/updates/<name>` and checks its size and SHA-256 before installing. Nothing in this message is trusted without the signature. The result comes back later as `update_result`.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "manifest",
+    "manifest_sig"
+  ],
+  "properties": {
+    "action": {
+      "const": "update_agent",
+      "description": "Message type."
+    },
+    "manifest": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "contentMediaType": "application/json",
+      "description": "Standard base64 of the signed manifest.json bytes, unchanged. The decoded bytes follow release-manifest.json."
+    },
+    "manifest_sig": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]{86}==$",
+      "description": "Base64 ed25519 signature (64 bytes) of the decoded `manifest` bytes (manifest.json.sig)."
+    }
+  }
+}
