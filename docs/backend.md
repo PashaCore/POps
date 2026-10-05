@@ -27,7 +27,7 @@ router built with injected dependencies. Agent updates
 are signed only; the old unsigned-zip endpoints (`/api/upload_update`, `/api/update_agent/…`, `/api/broadcast_update`)
 were removed together with the old `update.php` page.
 
-Lint: `flake8 Backend/` must stay clean (config in the repo-root `.flake8`, max line length 120); CI enforces it.
+Lint: `flake8 Backend/ tools/ assets/readme/` must stay clean (config in the repo-root `.flake8`, max line length 120); CI enforces it.
 
 The endpoint list is in [`api.md`](api.md) and the schema in [`database.md`](database.md).
 

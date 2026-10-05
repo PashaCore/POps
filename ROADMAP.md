@@ -1,6 +1,7 @@
 # POps Roadmap
 
-POps is alpha software; the latest release is **0.1.13-alpha**. This page lists what is done, what is being built
+POps is alpha software; the current version is on the [releases page](https://github.com/PashaCore/POps/releases/latest).
+This page lists what is done, what is being built
 and what is planned. Items under **Next** and **Later** are plans, not features: nothing there is available until
 it appears in [`CHANGELOG.md`](CHANGELOG.md). There are no dates. The reasons behind existing designs are in
 [`docs/decisions.md`](docs/decisions.md).
@@ -85,20 +86,34 @@ tagged release.
   with hashed tokens, identity bound to the device key, revoked panel sessions closed, honest task states with exit
   codes and cancel, bounded command output, once-per-day bypass codes, signed deployment links
 
-## In progress (0.1.14)
+### Reliability, modules and the new panel (0.1.14–0.1.21)
 
-- [ ] **Reliability:** atomic scheduled tasks, stuck-task timeout, duplicate-task guard, database time limits,
-  batched heartbeats, per-panel send queues, retention, disk and certificate alerts, load figures.
-- [ ] **Security:** 2FA codes work once and are encrypted at rest; signed release tags for server self-update;
-  deploy settings from a root-owned file with venv rollback; actions pinned to commit SHAs; XSS check in CI.
-- [ ] **Agent:** Turkish keyboard in remote control, update results kept until the server confirms them,
-  quarantine follows a server address change, leftover command files removed, standalone POpsVision removed.
+- [x] **Reliability:** atomic scheduled tasks, stuck-task timeout, duplicate-task guard, database time limits,
+  batched heartbeats, per-panel send queues, retention, disk and certificate alerts, load figures (0.1.14)
+- [x] **Security:** 2FA codes work once and are encrypted at rest; deploy settings from a root-owned file with venv
+  rollback; actions pinned to commit SHAs; XSS check in CI (0.1.14)
+- [x] **Agent:** Turkish keyboard in remote control, update results kept until the server confirms them,
+  quarantine follows a server address change, leftover command files removed, standalone POpsVision removed (0.1.14)
+- [x] Agent on .NET 10 with its own runtime, no prerequisite on the PC; modules per organisation and per lab with
+  install profiles (0.1.15)
+- [x] New panel: one layout on every page, one action bar, details on click, and who / when / from where / result /
+  reason on every operation (0.1.16, 0.1.17)
+- [x] Addresses without `.php`, event log in pages with filters, Sistem and Ayarlar in tabs, server charts on
+  **Sistem → Genel bakış** (0.1.18–0.1.21)
+
+## In progress
+
+- [ ] **Dependencies:** Python 3.10+ (3.12 on AlmaLinux 9) so the backend can take the current FastAPI, Starlette
+  and python-multipart with their security fixes; existing servers get a new virtual environment during the update.
+- [ ] **Offline panel:** fonts and icons bundled with the panel, no requests to third-party hosts.
+- [ ] **API input checks:** unknown fields and unknown target modes refused instead of ignored.
+- [ ] **Release rhythm:** fewer, larger releases with a short operator summary at the top of each.
 
 ## Next
 
 Short design notes. Where options are listed, the choice has not been made.
 
-### Architecture round (after 0.1.14)
+### Architecture round
 
 *Status: planned, in this order of value.*
 

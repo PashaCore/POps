@@ -1,8 +1,21 @@
 """İstek gövdeleri için Pydantic modelleri."""
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+TargetMode = Literal["ALL", "LAB", "PC"]
+
+
+class StrictInput(BaseModel):
+    """Tanınmayan alanı reddeder (422). Yazılan alan adı yanlışsa istek sessizce varsayılanlarla çalışmasın diye
+    (ör. enroll-token'a lab_name yerine lab gönderilince sınıfsız bir jeton üretiliyordu)."""
+    model_config = ConfigDict(extra="forbid")
+
+
+def upper_mode(value):
+    """target_mode büyük/küçük harf duyarsız: "lab" -> "LAB". Geçersiz değeri Literal reddeder."""
+    return value.strip().upper() if isinstance(value, str) else value
 
 
 class AdminLoginInput(BaseModel):
@@ -78,20 +91,22 @@ class SetLimitInput(BaseModel):
     limit: int = Field(ge=0, le=10000)
 
 
-class TaskSequenceItem(BaseModel):
+class TaskSequenceItem(StrictInput):
     name: str
     type: str
     command: str
 
 
-class OrchestrationInput(BaseModel):
-    target_mode: str
+class OrchestrationInput(StrictInput):
+    target_mode: TargetMode
     targets: List[str]
     taskSequence: List[TaskSequenceItem]
     # Bağlam (isteğe bağlı): işin okunur adı, isteğin geldiği panel sayfası ve gerekçe görev kaydında saklanır
     title: Optional[str] = Field(default=None, max_length=200)
     source: Optional[str] = Field(default=None, max_length=40)
     reason: Optional[str] = Field(default=None, max_length=500)
+
+    _mode = field_validator("target_mode", mode="before")(upper_mode)
 
 
 class CreatePackageInput(BaseModel):

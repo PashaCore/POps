@@ -360,6 +360,13 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
     _recent_orchestrations[key] = (time.monotonic(), outcome)
     try:
         target_pcs = await resolve_targets(data.target_mode, data.targets)
+        unknown = [t["pc"] for t in target_pcs if t.get("unknown")]
+        if unknown:
+            # Kayıtlı olmayan bilgisayara açılan görev hiçbir zaman gönderilemez ve süresiz bekler
+            raise HTTPException(
+                status_code=422,
+                detail="Kayıtlı olmayan bilgisayar: %s" % ", ".join(unknown[:10]) + (" …" if len(unknown) > 10 else ""),
+            )
         # Kütüphaneden paket/betik adımı dosya dağıtımı modülüne, serbest komut uzak komut modülüne bağlıdır; her
         # hedef kendi laboratuvarının ayarıyla denetlenir. Hiçbirinde açık değilse istek reddedilir.
         needed = "deploy" if any((t.type or "").upper() != "CMD" for t in data.taskSequence) else "terminal"

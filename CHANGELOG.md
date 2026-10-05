@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **API: `target_mode` and unknown fields are checked.** `POST /api/deploy_orchestration` took `"lab"` (lower case) as a PC name and opened a task for a PC that does not exist, which then waited for ever. The target mode is now case-insensitive and must be `ALL`, `LAB` or `PC`; a PC ID that is not registered is refused with `422` and nothing is created. `/api/deploy_orchestration`, `/api/system/enroll-token` and `/api/system/deploy-update` refuse fields they do not know (`422`) instead of ignoring them: `{"lab": …, "expires_hours": …}` used to create a 72-hour token for no lab.
+- **Docs: version and install facts.** README, README.tr and ROADMAP no longer name an old release as the latest (they link to the releases page), the release timeline goes up to 0.1.21, ROADMAP lists 0.1.14–0.1.21 as done, the quick start says what `install.sh` really sets up (nginx, PHP-FPM and HTTPS by default; `TLS_MODE=none` for your own web server), the release page no longer asks for the .NET 8 Desktop Runtime (the MSI carries .NET 10 since 0.1.15), and the review claims say what they are: code-level reviews requested by the maintainer, reports not published.
+
+### Changed
+
+- **Compressed JSON.** The nginx and Apache templates and the Docker panel image compress JSON, CSS, JavaScript and SVG. The device list of 2,000 PCs drops from about 1.4 MB to about 50 KB per refresh. **Upgrading:** on an existing server add the `gzip` lines from `Installer/server/nginx.pops.conf.in` to your site, or the `mod_deflate` block from `Installer/server/apache-htaccess.example` to `Dashboard/.htaccess`.
+- CI lints `tools/` and the README figure script with flake8 as well; both are clean.
+
 ## [0.1.21-alpha] - 2026-10-03
 
 Sistem → Genel bakış shows charts for the last 24 hours, 7 days or 30 days: agents, processor and memory, API requests, tasks, events, and database and disk.

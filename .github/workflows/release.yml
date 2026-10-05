@@ -172,7 +172,7 @@ jobs:
           (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
           VER="${GITHUB_REF_NAME#v}"
           {
-            echo "> **İmzalı sürüm (ed25519).** \`manifest.json\` ve \`manifest.json.sig\` release'e dahildir; açık anahtar depoda \`keys/pops_release_ed25519.pub.pem\`. Doğrulama için bkz. \`keys/README.md\`. Ajan için \`POps-Agent-*-win-x64.msi\` önerilir (sessiz kurulum ve özellikleri: \`Installer/README.md\`); zip eski elle kurulum yoludur. Ajan paketleri Windows'ta SmartScreen uyarısı verebilir (Authenticode ayrı); uç noktalarda .NET 8 Desktop Runtime (x64) gerekir."
+            echo "> **İmzalı sürüm (ed25519).** \`manifest.json\` ve \`manifest.json.sig\` release'e dahildir; açık anahtar depoda \`keys/pops_release_ed25519.pub.pem\`. Doğrulama için bkz. \`keys/README.md\`. Ajan için \`POps-Agent-*-win-x64.msi\` önerilir (sessiz kurulum ve özellikleri: \`Installer/README.md\`); zip eski elle kurulum yoludur. Ajan paketleri Windows'ta SmartScreen uyarısı verebilir (Authenticode imzası henüz yok). MSI kendi .NET 10 çalışma zamanını getirir; uç noktada önceden bir şey kurmak gerekmez."
             echo
             awk -v v="$VER" 'index($0, "## [" v "]") == 1 {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md
           } > notes.md

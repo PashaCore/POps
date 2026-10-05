@@ -26,8 +26,9 @@
 <br />
 
 > [!WARNING]
-> **Alfa yazılım.** Son sürüm **0.1.13-alpha**. Kayıttan imzalı güncellemeye ve kendiliğinden geri almaya kadar bütün
-> yol gerçek Windows bilgisayarlarda denendi; üç dış inceleme madde madde kapatıldı. Yine de POps **büyük ölçekli ya
+> **Alfa yazılım.** Güncel sürüm [sürümler sayfasındadır](https://github.com/PashaCore/POps/releases/latest).
+> Kayıttan imzalı güncellemeye ve kendiliğinden geri almaya kadar bütün yol gerçek Windows bilgisayarlarda denendi; dış
+> incelemelerin bulguları madde madde kapatıldı. Yine de POps **büyük ölçekli ya
 > da kurumsal üretim ortamı için henüz sağlamlaştırılmış değil**: tehdit modeli ve kalan riskler için
 > [`SECURITY.md`](SECURITY.md), sıradaki işler için [`ROADMAP.md`](ROADMAP.md) dosyasına bakın.
 
@@ -68,7 +69,7 @@
 | **Kendini geri alan güncelleme** | Ajan sürümleri CI'da ed25519 ile imzalanır, sunucu *ve bilgisayarın kendisi* imzayı doğrular; yeni sürüm ayağa kalkmazsa önceki sürüm kendiliğinden geri gelir. |
 | **Kim ne yaptı, kanıtıyla** | Güvenlikle ilgili işlemler sunucudaki SHA-256 hash zincirli denetim kaydına ve bilgisayarın kendi Windows olay günlüğüne yazılır. |
 | **Kapalı demek kapalı** | Okul, uzaktan terminali ve ekran izlemeyi bilgisayar bazında kapatabilir. Sunucu bunları kapatabilir, asla geri açamaz. |
-| **Açıkta incelendi** | Bir sızma testi ve iki dış inceleme (R-01…R-20, F01…F21) [`CHANGELOG.md`](CHANGELOG.md) içinde bulgu bulgu izlenir. |
+| **Açıkta incelendi** | Proje sahibinin istediği kod düzeyindeki güvenlik incelemelerinin bulguları (F1…F14, R-01…R-20, F01…F21) ve her birinin düzeltmesi [`CHANGELOG.md`](CHANGELOG.md) içinde izlenir; raporların kendisi yayımlanmadı. |
 
 ---
 
@@ -301,7 +302,7 @@ fazla monitör ve %100 dışındaki ekran ölçekleme. Dondurma yazılımları (
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/timeline.tr-dark.svg">
-  <img alt="0.1.0'dan (Ağustos 2026) 0.1.13'e (Ekim 2026) ve sıradaki 0.1.14'e zaman çizelgesi." src="assets/readme/timeline.tr.svg" width="100%">
+  <img alt="0.1.0'dan (Ağustos 2026) 0.1.21'e (Ekim 2026) ve sıradaki işlere zaman çizelgesi." src="assets/readme/timeline.tr.svg" width="100%">
 </picture>
 
 Her sürüm, yükseltme notlarıyla [`CHANGELOG.md`](CHANGELOG.md) içindedir. Paketler ve imzalı manifestler
