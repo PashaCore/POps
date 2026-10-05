@@ -15,7 +15,7 @@
                 sidebar.classList.toggle('open', open);
                 overlay.classList.toggle('open', open);
                 toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-                toggle.setAttribute('aria-label', open ? 'Menüyü kapat' : 'Menüyü aç');
+                toggle.setAttribute('aria-label', open ? POps.t('Menüyü kapat') : POps.t('Menüyü aç'));
                 document.body.style.overflow = open ? 'hidden' : '';
                 if (open) { const first = sidebar.querySelector('.nav-item'); if (first) first.focus(); }
             }
@@ -27,12 +27,18 @@
             });
         })();
 
+        // Dil seçimi (yan menünün altı): bu tarayıcı için çereze yazılır, sayfa yeni dille yeniden yüklenir
+        document.querySelectorAll('[data-set-lang]').forEach(b => b.addEventListener('click', () => {
+            if (b.dataset.setLang !== POps.lang) POps.setLang(b.dataset.setLang);
+        }));
+
         // Komut paleti (Ctrl+K): sayfa, cihaz ve sınıf arar
         (function () {
             const openBtn = document.getElementById('paletteOpen');
             if (!openBtn) return;
             let overlay = null, input = null, list = null, results = [], cur = 0, cache = null, cacheAt = 0;
-            const lc = (t) => String(t || '').toLocaleLowerCase('tr');
+            // Türkçe küçültme ("I" -> "ı") İngilizce sayfa adlarında eşleşmeyi bozmasın: ı ile i aynı sayılır
+            const lc = (t) => String(t || '').toLocaleLowerCase('tr').replace(/ı/g, 'i');
             const pages = [...document.querySelectorAll('.sidebar-nav .nav-item')].map(a => ({
                 kind: 'page', label: a.querySelector('span').textContent.trim(), href: a.getAttribute('href'), icon: (a.querySelector('use') || { getAttribute: () => '' }).getAttribute('href').split('#i-')[1] || 'right'
             }));
@@ -42,8 +48,8 @@
                 const labSet = new Set((Array.isArray(labs) ? labs : []).map(l => typeof l === 'string' ? l : (l && l.name)).filter(Boolean));
                 (Array.isArray(devs) ? devs : []).forEach(d => { if (d.lab) labSet.add(d.lab); });
                 cache = {
-                    devices: (Array.isArray(devs) ? devs : []).map(d => ({ kind: 'pc', label: POps.deviceName(d), sub: [d.lab, POps.isOnline(d) ? 'çevrimiçi' : 'kapalı'].filter(Boolean).join(' · '), href: 'devices?pc=' + encodeURIComponent(d.hostname), icon: 'monitor', key: lc(POps.deviceName(d) + ' ' + d.hostname + ' ' + (d.ip || '')) })),
-                    labs: [...labSet].map(n => ({ kind: 'lab', label: n, sub: 'Sınıf', href: 'labs?lab=' + encodeURIComponent(n), icon: 'labs', key: lc(n) }))
+                    devices: (Array.isArray(devs) ? devs : []).map(d => ({ kind: 'pc', label: POps.deviceName(d), sub: [d.lab, POps.isOnline(d) ? POps.t('çevrimiçi') : POps.t('kapalı')].filter(Boolean).join(' · '), href: 'devices?pc=' + encodeURIComponent(d.hostname), icon: 'monitor', key: lc(POps.deviceName(d) + ' ' + d.hostname + ' ' + (d.ip || '')) })),
+                    labs: [...labSet].map(n => ({ kind: 'lab', label: n, sub: POps.t('Sınıf'), href: 'labs?lab=' + encodeURIComponent(n), icon: 'labs', key: lc(n) }))
                 };
                 cacheAt = Date.now();
                 return cache;
@@ -54,11 +60,11 @@
             }
             async function render() {
                 const q = lc(input.value.trim());
-                const groups = [['Sayfalar', rank(pages.map(p => Object.assign({ key: lc(p.label) }, p)), q, q ? 6 : 13)]];
+                const groups = [[POps.t('Sayfalar'), rank(pages.map(p => Object.assign({ key: lc(p.label) }, p)), q, q ? 6 : 13)]];
                 if (q) {
                     const d = await data();
                     if (lc(input.value.trim()) !== q) return;
-                    groups.push(['Cihazlar', rank(d.devices, q, 8)], ['Sınıflar', rank(d.labs, q, 5)]);
+                    groups.push([POps.t('Cihazlar'), rank(d.devices, q, 8)], [POps.t('Sınıflar'), rank(d.labs, q, 5)]);
                 }
                 results = [];
                 list.replaceChildren();
@@ -74,7 +80,7 @@
                         results.push({ it, b });
                     });
                 });
-                if (!results.length) list.append(POps.el('div', { className: 'palette-empty', text: 'Sonuç yok.' }));
+                if (!results.length) list.append(POps.el('div', { className: 'palette-empty', text: POps.t('Sonuç yok.') }));
                 select(0);
             }
             function select(i) {
@@ -87,9 +93,9 @@
             function close() { if (overlay) { overlay.remove(); overlay = null; openBtn.focus(); } }
             function open() {
                 if (overlay) return;
-                input = POps.el('input', { type: 'text', placeholder: 'Sayfa, cihaz ya da sınıf ara', 'aria-label': 'Ara', autocomplete: 'off', spellcheck: 'false' });
+                input = POps.el('input', { type: 'text', placeholder: POps.t('Sayfa, cihaz ya da sınıf ara'), 'aria-label': POps.t('Ara'), autocomplete: 'off', spellcheck: 'false' });
                 list = POps.el('div', { className: 'palette-list', role: 'listbox' });
-                const box = POps.el('div', { className: 'palette', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Ara' }, [POps.el('div', { className: 'palette-in' }, [POps.iconEl('search'), input]), list]);
+                const box = POps.el('div', { className: 'palette', role: 'dialog', 'aria-modal': 'true', 'aria-label': POps.t('Ara') }, [POps.el('div', { className: 'palette-in' }, [POps.iconEl('search'), input]), list]);
                 overlay = POps.el('div', { className: 'palette-overlay' }, [box]);
                 overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
                 let t = null;
@@ -123,22 +129,22 @@
                 const pct = total ? Math.round(done / total * 100) : 0;
                 const bar = POps.el('div', { className: 'pbar' }, [POps.el('i', { className: running ? 'run' : 'ok' })]);
                 bar.firstChild.style.width = (running ? pct : 100) + '%';
-                btn.replaceChildren(POps.el('div', { className: 't' }, [POps.el('span', { text: running ? `${running} işlem sürüyor` : 'İşlemler tamamlandı' }), POps.el('span', { text: running ? '%' + pct : '' })]), bar);
+                btn.replaceChildren(POps.el('div', { className: 't' }, [POps.el('span', { text: running ? POps.tn('{n} işlem sürüyor', running) : POps.t('İşlemler tamamlandı') }), POps.el('span', { text: running ? POps.pct(pct) : '' })]), bar);
                 const rows = jobs.map(j => {
                     const c = POps.jobs.counts(j);
                     const parts = [['ok', c.ok], ['bad', c.bad], ['run', c.run]].filter(x => x[1]).map(([k, n]) => { const i = POps.el('i', { className: k }); i.style.width = (n / c.total * 100) + '%'; return i; });
                     const bad = j.ids.map(id => j.items[id]).filter(t => t && POps.taskState(t.status) === 'bad').map(t => t.pc).filter(Boolean);
-                    const word = j.doneAt ? (c.bad ? `${c.bad} başarısız` : 'Tamamlandı') : `${c.ok + c.bad}/${c.total}`;
+                    const word = j.doneAt ? (c.bad ? POps.tn('{n} başarısız', c.bad) : POps.t('Tamamlandı')) : `${c.ok + c.bad}/${c.total}`;
                     return POps.el('div', { className: 'job' }, [
                         POps.el('div', { className: 'jt' }, [POps.el('b', { text: j.title }), POps.el('span', { className: 'word ' + (j.doneAt ? (c.bad ? 'bad' : 'ok') : 'run'), text: word })]),
-                        POps.el('div', { className: 'jm', text: `${c.total} cihaz · ${POps.relTime(j.at)}` + (bad.length ? ' · başarısız: ' + bad.slice(0, 4).join(', ') + (bad.length > 4 ? ` +${bad.length - 4}` : '') : '') }),
+                        POps.el('div', { className: 'jm', text: POps.tn('{n} cihaz', c.total) + ' · ' + POps.relTime(j.at) + (bad.length ? ' · ' + POps.t('başarısız: {names}', { names: bad.slice(0, 4).join(', ') + (bad.length > 4 ? ` +${bad.length - 4}` : '') }) : '') }),
                         POps.el('div', { className: 'pbar' }, parts)
                     ]);
                 });
-                const clearBtn = POps.el('button', { type: 'button', className: 'btn ghost sm', text: 'Bitenleri temizle' });
+                const clearBtn = POps.el('button', { type: 'button', className: 'btn ghost sm', text: POps.t('Bitenleri temizle') });
                 clearBtn.addEventListener('click', (e) => { e.stopPropagation(); POps.jobs.clearDone(); });
                 const foot = POps.el('div', { className: 'job', style: 'display:flex;justify-content:space-between;align-items:center' }, [
-                    POps.el('a', { href: 'tasks', text: 'Bütün işlemler' }),
+                    POps.el('a', { href: 'tasks', text: POps.t('Bütün işlemler') }),
                     clearBtn
                 ]);
                 panel.replaceChildren(...rows, foot);
@@ -159,34 +165,34 @@
             wrap.hidden = false;
             const btn = document.getElementById('notifBtn'), panel = document.getElementById('notifPanel');
             const list = document.getElementById('notifList'), count = document.getElementById('notifCount');
-            const when = (iso) => { try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } };
+            const when = (iso) => { try { return new Date(iso).toLocaleString(POps.locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } };
             async function load() {
                 const d = await POps.get('/api/notifications?limit=30');
                 count.textContent = d.unread > 99 ? '99+' : d.unread;
                 count.style.display = d.unread ? 'inline-block' : 'none';
-                btn.setAttribute('aria-label', d.unread ? `Bildirimler (${d.unread} okunmamış)` : 'Bildirimler');
+                btn.setAttribute('aria-label', d.unread ? POps.tn('Bildirimler ({n} okunmamış)', d.unread) : POps.t('Bildirimler'));
                 list.innerHTML = (d.items || []).length ? d.items.map(n => `
                     <div class="notif-item${n.is_read ? '' : ' unread'}">
                         <span class="sev ${escapeHtml(n.severity)}"></span>
                         <div><div class="t">${escapeHtml(n.title)}</div>
-                        <div class="m">${escapeHtml(when(n.created_at))}${n.pc_name ? ' · ' + escapeHtml(n.pc_name) : ''}${n.detail ? ' · ' + escapeHtml(n.detail) : ''}${n.delivery_error ? ` · <span title="${escapeHtml(n.delivery_error)}" style="color:var(--danger-text);">gönderilemedi</span>` : ''}</div></div>
-                    </div>`).join('') : '<div class="notif-empty">Bildirim yok.</div>';
+                        <div class="m">${escapeHtml(when(n.created_at))}${n.pc_name ? ' · ' + escapeHtml(n.pc_name) : ''}${n.detail ? ' · ' + escapeHtml(n.detail) : ''}${n.delivery_error ? ` · <span title="${escapeHtml(n.delivery_error)}" style="color:var(--danger-text);">${POps.tHtml('gönderilemedi')}</span>` : ''}</div></div>
+                    </div>`).join('') : `<div class="notif-empty">${POps.tHtml('Bildirim yok.')}</div>`;
             }
             function setOpen(open) {
                 panel.classList.toggle('open', open);
                 btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-                if (open) load().catch(e => { list.innerHTML = '<div class="notif-empty">Bildirimler alınamadı.</div>'; });
+                if (open) load().catch(e => { list.innerHTML = `<div class="notif-empty">${POps.tHtml('Bildirimler alınamadı.')}</div>`; });
             }
             btn.addEventListener('click', (e) => { e.stopPropagation(); setOpen(!panel.classList.contains('open')); });
             document.addEventListener('click', (e) => { if (!wrap.contains(e.target) && !e.target.closest('.pops-dialog-overlay')) setOpen(false); });
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && panel.classList.contains('open') && !document.querySelector('.pops-dialog-overlay')) { setOpen(false); btn.focus(); } });
             document.getElementById('notifClear').addEventListener('click', async function (e) {
                 e.stopPropagation();
-                const ok = await POps.confirm({ title: 'Okunmuş bildirimler silinsin mi?', message: 'Zildeki okunmuş bildirimler silinir. Olayların kendisi denetim kayıtlarında kalır.', confirmText: 'Sil', danger: true, icon: 'trash' });
+                const ok = await POps.confirm({ title: POps.t('Okunmuş bildirimler silinsin mi?'), message: POps.t('Zildeki okunmuş bildirimler silinir. Olayların kendisi denetim kayıtlarında kalır.'), confirmText: POps.t('Sil'), danger: true, icon: 'trash' });
                 if (!ok) return;
                 let deleted = 0;
                 if (await POps.act(this, async () => { deleted = (await POps.post('/api/notifications/clear', { ids: [] })).deleted || 0; })) {
-                    POps.toast('success', deleted ? `${deleted} bildirim silindi.` : 'Silinecek okunmuş bildirim yok.');
+                    POps.toast('success', deleted ? POps.tn('{n} bildirim silindi.', deleted) : POps.t('Silinecek okunmuş bildirim yok.'));
                     load().catch(() => {});
                 }
             });

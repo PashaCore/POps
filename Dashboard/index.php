@@ -50,49 +50,49 @@
 
 <div class="page-header">
     <div>
-        <h1>Kontrol merkezi</h1>
-        <div class="summary" id="homeSummary"><span class="sum"><span class="spinner sm"></span> Bağlanıyor</span></div>
+        <h1><?php _e('Kontrol merkezi'); ?></h1>
+        <div class="summary" id="homeSummary"><span class="sum"><span class="spinner sm"></span> <?php _e('Bağlanıyor'); ?></span></div>
     </div>
 </div>
 
 <div class="kpis" id="homeKpis">
-    <a class="kpi" href="devices?f=on" id="kOnline"><div class="l">Çevrimiçi</div><div class="v">—</div><div class="f"><span>&nbsp;</span></div></a>
-    <a class="kpi" href="devices?f=issue" id="kIssues"><div class="l">Sorunlu cihaz</div><div class="v">—</div><div class="f"><span>&nbsp;</span></div></a>
-    <a class="kpi" href="tasks" id="kJobs"><div class="l">Süren işlem</div><div class="v">—</div><div class="f"><span>&nbsp;</span></div></a>
-    <a class="kpi" href="devices" id="kAgents"><div class="l">Güncel ajan</div><div class="v">—</div><div class="f"><span>&nbsp;</span></div></a>
+    <a class="kpi" href="devices?f=on" id="kOnline"><div class="l"><?php _e('Çevrimiçi'); ?></div><div class="v">—</div><div class="f"><span>&nbsp;</span></div></a>
+    <a class="kpi" href="devices?f=issue" id="kIssues"><div class="l"><?php _e('Sorunlu cihaz'); ?></div><div class="v">—</div><div class="f"><span>&nbsp;</span></div></a>
+    <a class="kpi" href="tasks" id="kJobs"><div class="l"><?php _e('Süren işlem'); ?></div><div class="v">—</div><div class="f"><span>&nbsp;</span></div></a>
+    <a class="kpi" href="devices" id="kAgents"><div class="l"><?php _e('Güncel ajan'); ?></div><div class="v">—</div><div class="f"><span>&nbsp;</span></div></a>
 </div>
 
 <div class="home-grid">
     <section class="card home-card home-feed" id="feedCard" aria-labelledby="actTitle">
-        <div class="sect-row"><h2 id="actTitle">Son etkinlik</h2>
-            <div class="segmented" id="actFilter" role="group" aria-label="Etkinliği süz">
-                <button type="button" data-f="all" class="active" aria-pressed="true">Tümü</button>
-                <button type="button" data-f="job" aria-pressed="false">İşlemler</button>
-                <button type="button" data-f="log" aria-pressed="false">Olaylar</button>
+        <div class="sect-row"><h2 id="actTitle"><?php _e('Son etkinlik'); ?></h2>
+            <div class="segmented" id="actFilter" role="group" aria-label="<?php _e('Etkinliği süz'); ?>">
+                <button type="button" data-f="all" class="active" aria-pressed="true"><?php _e('Tümü'); ?></button>
+                <button type="button" data-f="job" aria-pressed="false"><?php _e('İşlemler'); ?></button>
+                <button type="button" data-f="log" aria-pressed="false"><?php _e('Olaylar'); ?></button>
             </div>
         </div>
         <div id="homeActivity"></div>
-        <div class="home-foot"><a href="tasks">Bütün işlemler</a><a href="logger">Bütün kayıtlar</a></div>
+        <div class="home-foot"><a href="tasks"><?php _e('Bütün işlemler'); ?></a><a href="logger"><?php _e('Bütün kayıtlar'); ?></a></div>
     </section>
     <div class="home-side" id="homeSide">
         <section class="card home-card" aria-labelledby="attTitle">
-            <div class="sect-row"><h2 id="attTitle">İlgilenmen gerekenler</h2></div>
+            <div class="sect-row"><h2 id="attTitle"><?php _e('İlgilenmen gerekenler'); ?></h2></div>
             <div id="homeAttention"></div>
         </section>
         <section class="card home-card" aria-labelledby="todayTitle">
-            <div class="sect-row"><h2 id="todayTitle">Bugün</h2><span class="faint" id="todayDate"></span></div>
+            <div class="sect-row"><h2 id="todayTitle"><?php _e('Bugün'); ?></h2><span class="faint" id="todayDate"></span></div>
             <div class="rows" id="homeToday"></div>
         </section>
         <section class="card home-card" aria-labelledby="labsTitle">
-            <div class="sect-row"><h2 id="labsTitle">Sınıflar</h2><a href="labs">Sınıflara git</a></div>
+            <div class="sect-row"><h2 id="labsTitle"><?php _e('Sınıflar'); ?></h2><a href="labs"><?php _e('Sınıflara git'); ?></a></div>
             <div id="homeLabs"></div>
         </section>
         <section class="card home-card vers" aria-labelledby="verTitle">
-            <div class="sect-row"><h2 id="verTitle">Ajan sürümleri</h2><a href="devices">Cihazlar</a></div>
+            <div class="sect-row"><h2 id="verTitle"><?php _e('Ajan sürümleri'); ?></h2><a href="devices"><?php _e('Cihazlar'); ?></a></div>
             <div id="homeVersions"></div>
         </section>
         <section class="card home-card" aria-labelledby="srvTitle">
-            <div class="sect-row"><h2 id="srvTitle">Sunucu</h2><a href="system" id="srvLink">Sistem</a></div>
+            <div class="sect-row"><h2 id="srvTitle"><?php _e('Sunucu'); ?></h2><a href="system" id="srvLink"><?php _e('Sistem'); ?></a></div>
             <div class="rows" id="homeServer"></div>
         </section>
     </div>
@@ -105,7 +105,7 @@
     const mem = { tasks: null, tasksKey: '', logs: null, logsKey: '', serverOk: null, lastOk: null, filter: 'all', health: null, version: null };
     const L = POps.logs;
     const IS_ADMIN = ['admin', 'superadmin'].includes(window.USER_ROLE);
-    POps.setLoading($('homeActivity'), 'Etkinlik yükleniyor…');
+    POps.setLoading($('homeActivity'), POps.t('Etkinlik yükleniyor…'));
     POps.setLoading($('homeAttention'));
     POps.setLoading($('homeLabs'));
     ['homeServer', 'homeVersions', 'homeToday'].forEach(id => POps.setLoading($(id)));
@@ -155,21 +155,23 @@
 
         // Özet satırı
         const serverHtml = mem.serverOk === false
-            ? '<span class="sum"><span class="dot bad"></span>Sunucuya ulaşılamıyor</span>'
-            : '<span class="sum"><span class="dot on"></span>Sunucu bağlı</span>';
+            ? `<span class="sum"><span class="dot bad"></span>${POps.tHtml('Sunucuya ulaşılamıyor')}</span>`
+            : `<span class="sum"><span class="dot on"></span>${POps.tHtml('Sunucu bağlı')}</span>`;
+        // Sayı kalın: yer tutucuya HTML parçası (POps.tHtml'in üçüncü argümanı)
+        const boldHtml = (n) => `<b>${Number(n)}</b>`;
         $('homeSummary').innerHTML = serverHtml
-            + (loaded ? `<span class="sum"><b>${Number(total)}</b> cihaz</span><span class="sum"><b>${Number(labs.length)}</b> sınıf</span>` : '')
-            + (mem.lastOk ? `<span class="sum faint">güncellendi ${escapeHtml(new Date(mem.lastOk).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}</span>` : '');
+            + (loaded ? `<span class="sum">${POps.tnHtml('{n} cihaz', total, null, { n: boldHtml(total) })}</span><span class="sum">${POps.tnHtml('{n} sınıf', labs.length, null, { n: boldHtml(labs.length) })}</span>` : '')
+            + (mem.lastOk ? `<span class="sum faint">${POps.tHtml('güncellendi {time}', { time: new Date(mem.lastOk).toLocaleTimeString(POps.locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' }) })}</span>` : '');
 
         if (loaded) {
             kpi('kOnline', `${Number(on + idle)}<small> / ${Number(total)}</small>`,
-                `<span>%${pctOf(on + idle, total)} açık${idle ? ' · ' + Number(idle) + ' boşta' : ''}</span><span class="go">Cihazlar</span>`,
+                `<span>${POps.tHtml('{pct} açık', { pct: POps.pct(pctOf(on + idle, total)) })}${idle ? ' · ' + POps.tHtml('{n} boşta', { n: idle }) : ''}</span><span class="go">${POps.tHtml('Cihazlar')}</span>`,
                 `<div class="pbar">${segHtml('ok', on, total)}${segHtml('warn', idle, total)}</div>`);
             kpi('kIssues', `${Number(issueDevs.length)}`,
-                issueDevs.length ? `<span>${quarantined ? Number(quarantined) + ' karantina · ' : ''}${Number(oldAgents.length)} eski ajan</span><span class="go">Göster</span>` : '<span>Sorun yok</span>', '');
+                issueDevs.length ? `<span>${quarantined ? POps.tHtml('{n} karantina', { n: quarantined }) + ' · ' : ''}${POps.tnHtml('{n} eski ajan', oldAgents.length)}</span><span class="go">${POps.tHtml('Göster')}</span>` : `<span>${POps.tHtml('Sorun yok')}</span>`, '');
             const agentOk = total - oldAgents.length;
-            kpi('kAgents', `%${pctOf(agentOk, total)}`,
-                `<span>${newest ? 'sürüm ' + escapeHtml(newest) : '—'}${oldAgents.length ? ' · ' + Number(oldAgents.length) + ' eski' : ''}</span><span class="go">${oldAgents.length ? 'Güncelle' : 'Cihazlar'}</span>`,
+            kpi('kAgents', escapeHtml(POps.pct(pctOf(agentOk, total))),
+                `<span>${newest ? POps.tHtml('sürüm {version}', { version: newest }) : '—'}${oldAgents.length ? ' · ' + POps.tHtml('{n} eski', { n: oldAgents.length }) : ''}</span><span class="go">${oldAgents.length ? POps.tHtml('Güncelle') : POps.tHtml('Cihazlar')}</span>`,
                 `<div class="pbar">${segHtml('ok', agentOk, total)}${segHtml('run', oldAgents.length, total)}</div>`);
             $('kAgents').href = oldAgents.length && window.USER_ROLE === 'superadmin' ? 'system' : 'devices';
         }
@@ -183,7 +185,7 @@
             const runTasks = running.reduce((a, j) => a + j.c.total, 0);
             const runDone = running.reduce((a, j) => a + j.c.ok + j.c.bad, 0);
             kpi('kJobs', `${Number(running.length)}`,
-                `<span>${running.length ? Number(runDone) + '/' + Number(runTasks) + ' görev bitti' : 'Şu an iş yok'}${badToday.length ? ' · ' + Number(badToday.length) + ' sorunlu' : ''}</span><span class="go">İşlemler</span>`,
+                `<span>${running.length ? POps.tHtml('{done}/{total} görev bitti', { done: runDone, total: runTasks }) : POps.tHtml('Şu an iş yok')}${badToday.length ? ' · ' + POps.tHtml('{n} sorunlu', { n: badToday.length }) : ''}</span><span class="go">${POps.tHtml('İşlemler')}</span>`,
                 running.length ? `<div class="pbar">${segHtml('ok', runDone, runTasks)}${segHtml('run', runTasks - runDone, runTasks)}</div>` : '');
             renderActivity(jobs);
             renderToday(jobs);
@@ -196,14 +198,14 @@
             const items = [];
             const failedJobs = jobs.filter(j => j.c.bad && !j.c.run).slice(0, 20);
             const failedToday = failedJobs.filter(j => (POps.toDate(j.first.created_at) || new Date(0)).toDateString() === new Date().toDateString());
-            if (quarantined) items.push(['bad', `${quarantined} bilgisayar karantinada`, 'Kullanıcı ekranı kilitli; kaldırana kadar kullanılamaz.', 'devices?f=issue', 'Göster']);
-            if (failedToday.length) items.push(['bad', `${failedToday.length} iş bugün sorunla bitti`, failedToday.slice(0, 2).map(j => dev.taskTitle(j.first)).join(', '), 'tasks', 'İncele']);
-            if (oldAgents.length) items.push(['warn', `${oldAgents.length} bilgisayarda eski ajan`, `Güncel sürüm ${newest}. ` + oldAgents.slice(0, 3).map(d => POps.deviceName(d)).join(', ') + (oldAgents.length > 3 ? '…' : ''), window.USER_ROLE === 'superadmin' ? 'system' : 'devices?f=issue', 'Güncelle']);
-            if (unassigned) items.push(['warn', `${unassigned} yeni bilgisayar sınıf bekliyor`, 'Atanmamış bilgisayarları bir sınıfa yerleştirin.', 'labs?lab=__atanmamis', 'Yerleştir']);
+            if (quarantined) items.push(['bad', POps.tn('{n} bilgisayar karantinada', quarantined), POps.t('Kullanıcı ekranı kilitli; kaldırana kadar kullanılamaz.'), 'devices?f=issue', POps.t('Göster')]);
+            if (failedToday.length) items.push(['bad', POps.tn('{n} iş bugün sorunla bitti', failedToday.length), failedToday.slice(0, 2).map(j => dev.taskTitle(j.first)).join(', '), 'tasks', POps.t('İncele')]);
+            if (oldAgents.length) items.push(['warn', POps.tn('{n} bilgisayarda eski ajan', oldAgents.length), POps.t('Güncel sürüm {version}.', { version: newest }) + ' ' + oldAgents.slice(0, 3).map(d => POps.deviceName(d)).join(', ') + (oldAgents.length > 3 ? '…' : ''), window.USER_ROLE === 'superadmin' ? 'system' : 'devices?f=issue', POps.t('Güncelle')]);
+            if (unassigned) items.push(['warn', POps.tn('{n} yeni bilgisayar sınıf bekliyor', unassigned), POps.t('Atanmamış bilgisayarları bir sınıfa yerleştirin.'), 'labs?lab=__atanmamis', POps.t('Yerleştir')]);
             const longOff = devices.filter(d => { const s = dev.state(d); const t = POps.toDate(s.since); return s.cls === 'off' && t && Date.now() - t > 7 * 864e5; });
-            if (longOff.length) items.push(['neu', `${longOff.length} bilgisayar 7 günden uzun süredir kapalı`, longOff.slice(0, 3).map(d => POps.deviceName(d)).join(', '), 'devices?f=off', 'Göster']);
+            if (longOff.length) items.push(['neu', POps.tn('{n} bilgisayar 7 günden uzun süredir kapalı', longOff.length), longOff.slice(0, 3).map(d => POps.deviceName(d)).join(', '), 'devices?f=off', POps.t('Göster')]);
             $('homeAttention').innerHTML = items.length ? items.map(([k, t, d, href, label]) => `<div class="att"><span class="dot ${escapeHtml(k)}"></span><div class="grow"><div class="t">${escapeHtml(t)}</div><div class="d">${escapeHtml(d)}</div></div><button type="button" class="btn secondary sm" data-go="${escapeHtml(href)}">${escapeHtml(label)}</button></div>`).join('')
-                : '<div class="empty-state compact">' + POps.iconHtml('check') + '<h3>Her şey yolunda</h3></div>';
+                : '<div class="empty-state compact">' + POps.iconHtml('check') + `<h3>${POps.tHtml('Her şey yolunda')}</h3></div>`;
         }
 
         // Sınıflar
@@ -214,7 +216,7 @@
                 const lIdle = pcs.filter(d => dev.state(d).cls === 'idle').length;
                 return `<a class="lab-row" href="labs?lab=${encodeURIComponent(l)}"><span class="truncate">${escapeHtml(l)}</span><div class="pbar">${segHtml('ok', lOn, pcs.length)}${segHtml('warn', lIdle, pcs.length)}</div><span class="n">${Number(lOn + lIdle)}/${Number(pcs.length)}</span></a>`;
             }).join('');
-            $('homeLabs').innerHTML = rowsHtml || '<div class="empty-state compact">' + POps.iconHtml('labs') + '<h3>Henüz sınıf yok</h3></div>';
+            $('homeLabs').innerHTML = rowsHtml || '<div class="empty-state compact">' + POps.iconHtml('labs') + `<h3>${POps.tHtml('Henüz sınıf yok')}</h3></div>`;
         }
     }
 
@@ -222,16 +224,16 @@
     function jobRowHtml(j) {
         const t = j.first;
         const k = j.state;
-        const where = j.c.total === 1 ? dev.name(t.target_pc) : ((t.target_lab && j.tasks.every(x => x.target_lab === t.target_lab) && t.target_lab !== dev.UNASSIGNED) ? t.target_lab + ' · ' : '') + j.c.total + ' bilgisayar';
+        const where = j.c.total === 1 ? dev.name(t.target_pc) : ((t.target_lab && j.tasks.every(x => x.target_lab === t.target_lab) && t.target_lab !== dev.UNASSIGNED) ? t.target_lab + ' · ' : '') + POps.tn('{n} bilgisayar', j.c.total);
         const badTask = j.tasks.find(x => POps.taskState(x.status) === 'bad');
         const why = badTask ? dev.failReason(badTask) : '';
         const badNames = j.tasks.filter(x => POps.taskState(x.status) === 'bad').map(x => dev.name(x.target_pc));
-        const word = k === 'run' ? 'Sürüyor' : k === 'bad' ? (j.c.total === 1 ? dev.statusWord(t.status) : `${j.c.bad}/${j.c.total} başarısız`) : 'Tamamlandı';
-        const metaHtml = escapeHtml(t.created_by || 'sistem') + ' · ' + POps.timeHtml(t.created_at) + (t.source ? ' · ' + escapeHtml(dev.sourceText(t.source)) : '') + ' · ' + escapeHtml(where);
+        const word = k === 'run' ? POps.t('Sürüyor') : k === 'bad' ? (j.c.total === 1 ? dev.statusWord(t.status) : POps.t('{bad}/{total} başarısız', { bad: j.c.bad, total: j.c.total })) : POps.t('Tamamlandı');
+        const metaHtml = escapeHtml(t.created_by || POps.t('sistem')) + ' · ' + POps.timeHtml(t.created_at) + (t.source ? ' · ' + escapeHtml(dev.sourceText(t.source)) : '') + ' · ' + escapeHtml(where);
         const whyHtml = why ? `<div class="why">${escapeHtml(why)}${j.c.total > 1 && badNames.length ? ' · ' + escapeHtml(badNames.slice(0, 4).join(', ')) + (badNames.length > 4 ? '…' : '') : ''}</div>` : '';
         return `<a class="act clickable" href="tasks?job=${encodeURIComponent(j.key)}" style="color:inherit">
             <div class="res ${escapeHtml(k)}">${POps.iconHtml(k === 'ok' ? 'check' : k === 'bad' ? 'x' : 'clock')}</div>
-            <div style="min-width:0"><div class="what">${escapeHtml(dev.taskTitle(t))}</div><div class="meta">${metaHtml}${t.reason ? ' · gerekçe: ' + escapeHtml(t.reason) : ''}</div></div>
+            <div style="min-width:0"><div class="what">${escapeHtml(dev.taskTitle(t))}</div><div class="meta">${metaHtml}${t.reason ? ' · ' + POps.tHtml('gerekçe: {reason}', { reason: t.reason }) : ''}</div></div>
             <div class="side"><span class="word ${escapeHtml(k)}">${escapeHtml(word)}</span>${j.c.total > 1 ? `<span class="when">${Number(j.c.ok + j.c.bad)}/${Number(j.c.total)}</span>` : ''}</div>
             ${whyHtml}${j.c.total > 1 && k === 'run' ? `<div class="pbar">${segHtml('ok', j.c.ok, j.c.total)}${segHtml('bad', j.c.bad, j.c.total)}</div>` : ''}
         </a>`;
@@ -244,7 +246,7 @@
         return `<a class="act clickable" href="logger${e.pc ? '?pc=' + encodeURIComponent(e.pc) : ''}" style="color:inherit">
             <div class="res ${escapeHtml(res)}">${POps.iconHtml(e.icon)}</div>
             <div style="min-width:0"><div class="what">${escapeHtml(e.title)}</div><div class="meta">${metaHtml}</div></div>
-            <div class="side"><span class="word ${e.sev === 'bad' ? 'bad' : e.sev === 'warn' ? 'warn' : ''}">${escapeHtml(L.SEV_WORD[e.sev] || 'Bilgi')}</span></div>
+            <div class="side"><span class="word ${e.sev === 'bad' ? 'bad' : e.sev === 'warn' ? 'warn' : ''}">${escapeHtml(L.SEV_WORD[e.sev] || POps.t('Bilgi'))}</span></div>
             ${e.why && e.sev !== 'info' ? `<div class="why${e.sev === 'warn' ? ' warn' : ''}">${escapeHtml(e.why)}</div>` : ''}
         </a>`;
     }
@@ -256,7 +258,7 @@
         if (mem.filter !== 'job') (mem.logs || []).map(L.norm).filter(e => mem.filter === 'log' || e.key !== 'execute_queue').forEach(e => items.push({ at: POps.toDate(e.at), html: logRowHtml(e) }));
         items.sort((a, b) => (b.at ? b.at.getTime() : 0) - (a.at ? a.at.getTime() : 0));
         if (!items.length) {
-            POps.setEmpty(box, { icon: 'clock', title: mem.filter === 'log' ? 'Henüz olay yok' : 'Henüz etkinlik yok', text: 'Gönderilen komutlar, güç işlemleri, dağıtımlar ve bilgisayarlardan gelen olaylar burada görünür.', compact: true });
+            POps.setEmpty(box, { icon: 'clock', title: mem.filter === 'log' ? POps.t('Henüz olay yok') : POps.t('Henüz etkinlik yok'), text: POps.t('Gönderilen komutlar, güç işlemleri, dağıtımlar ve bilgisayarlardan gelen olaylar burada görünür.'), compact: true });
             return;
         }
         box.innerHTML = items.slice(0, 30).map(i => i.html).join('');
@@ -279,30 +281,30 @@
         const ok = mem.serverOk !== false && (!h || h.status === 'ok');
         const dbOk = !h || h.database;
         const rows = [
-            ['Durum', `<span class="st"><span class="dot ${ok && dbOk ? 'on' : 'bad'}"></span> ${ok ? 'Çalışıyor' : 'Sorunlu'}${dbOk ? '' : ' · veritabanı yok'}</span>`],
+            ['Durum', `<span class="st"><span class="dot ${ok && dbOk ? 'on' : 'bad'}"></span> ${ok ? POps.tHtml('Çalışıyor') : POps.tHtml('Sorunlu')}${dbOk ? '' : ' · ' + POps.tHtml('veritabanı yok')}</span>`],
             ['Sürüm', escapeHtml((v && v.running) || (h && h.version) || '—')]
         ];
         if (v) {
-            rows.push(['Güncelleme', v.update_available && v.latest ? `<a href="system">${escapeHtml(v.latest)} kurulabilir</a>` : 'Güncel']);
-            rows.push(['Cihaz anahtarı', `${Number(v.agents_enrolled)} / ${Number(v.agents_total)} bilgisayarda`]);
+            rows.push(['Güncelleme', v.update_available && v.latest ? `<a href="system">${POps.tHtml('{version} kurulabilir', { version: v.latest })}</a>` : POps.tHtml('Güncel')]);
+            rows.push(['Cihaz anahtarı', POps.tHtml('{enrolled} / {total} bilgisayarda', { enrolled: Number(v.agents_enrolled), total: Number(v.agents_total) })]);
         }
-        box.innerHTML = rows.map(([k, valHtml]) => `<div><span>${escapeHtml(k)}</span><span>${valHtml}</span></div>`).join('');
+        box.innerHTML = rows.map(([k, valHtml]) => `<div><span>${POps.tHtml(k)}</span><span>${valHtml}</span></div>`).join('');
         $('srvLink').hidden = window.USER_ROLE !== 'superadmin';
     }
     const VERSION_COLORS = ['#34c759', '#0071e3', '#ff9f0a', '#af52de', '#ff3b30', '#8e8e93'];
     function renderVersions(devices, newest) {
         const box = $('homeVersions');
         const counts = {};
-        devices.forEach(d => { const v = dev.version(d) || 'Bilinmiyor'; counts[v] = (counts[v] || 0) + 1; });
+        devices.forEach(d => { const v = dev.version(d) || POps.t('Bilinmiyor'); counts[v] = (counts[v] || 0) + 1; });
         const list = Object.entries(counts).sort((a, b) => dev.cmpVersion(b[0], a[0]) || b[1] - a[1]);
-        if (!list.length) { POps.setEmpty(box, { icon: 'devices', title: 'Henüz cihaz yok', compact: true }); return; }
+        if (!list.length) { POps.setEmpty(box, { icon: 'devices', title: POps.t('Henüz cihaz yok'), compact: true }); return; }
         const total = devices.length;
         const old = devices.filter(d => { const v = dev.version(d); return v && newest && dev.cmpVersion(v, newest) < 0; }).length;
         const color = (i) => escapeHtml(VERSION_COLORS[Math.min(i, VERSION_COLORS.length - 1)]);
         const barHtml = list.map(([v, n], i) => `<i style="width:${(n / total * 100).toFixed(2)}%;background:${color(i)}"></i>`).join('');
         const legHtml = list.map(([v, n], i) => `<span><span class="sw" style="background:${color(i)}"></span>${escapeHtml(v)} <b>${Number(n)}</b></span>`).join('');
-        box.innerHTML = `<div class="rows"><div><span>En yeni</span><span>${escapeHtml(newest || '—')}</span></div>
-            <div><span>Eski ajan</span><span>${old ? `<b>${Number(old)}</b> bilgisayar` : 'Yok'}</span></div></div>
+        box.innerHTML = `<div class="rows"><div><span>${POps.tHtml('En yeni')}</span><span>${escapeHtml(newest || '—')}</span></div>
+            <div><span>${POps.tHtml('Eski ajan')}</span><span>${old ? POps.tnHtml('{n} bilgisayar', old, null, { n: `<b>${Number(old)}</b>` }) : POps.tHtml('Yok')}</span></div></div>
             <div class="pbar">${barHtml}</div><div class="leg">${legHtml}</div>`;
     }
     function renderToday(jobs) {
@@ -316,17 +318,18 @@
         const logins = evs.filter(e => e.key === 'login').length;
         const policy = evs.filter(e => e.kind === 'policy').length;
         const warn = evs.filter(e => e.sev !== 'info').length;
-        $('todayDate').textContent = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' });
+        $('todayDate').textContent = new Date().toLocaleDateString(POps.locale, { day: 'numeric', month: 'long', weekday: 'long' });
         syncFeed();
+        // "Kural ihlali" burada sayaç adıdır (İngilizcede çoğul): 'count' bağlamı
         const rows = [
-            ['Gönderilen iş', `<b>${Number(tj.length)}</b>${tasksToday > tj.length ? ` <span class="faint">(${Number(tasksToday)} görev)</span>` : ''}`],
-            ['Sorunla biten', failed ? `<span class="word bad">${Number(failed)}</span>` : '<b>0</b>'],
-            ['Oturum açma', `<b>${Number(logins)}</b>`],
-            ['Kural ihlali', policy ? `<span class="word warn">${Number(policy)}</span>` : '<b>0</b>'],
-            ['Uyarı ve kritik olay', warn ? `<span class="word warn">${Number(warn)}</span>` : '<b>0</b>']
+            [POps.t('Gönderilen iş'), `<b>${Number(tj.length)}</b>${tasksToday > tj.length ? ` <span class="faint">(${POps.tnHtml('{n} görev', tasksToday)})</span>` : ''}`],
+            [POps.t('Sorunla biten'), failed ? `<span class="word bad">${Number(failed)}</span>` : '<b>0</b>'],
+            [POps.t('Oturum açma'), `<b>${Number(logins)}</b>`],
+            [POps.tx('Kural ihlali', 'count'), policy ? `<span class="word warn">${Number(policy)}</span>` : '<b>0</b>'],
+            [POps.t('Uyarı ve kritik olay'), warn ? `<span class="word warn">${Number(warn)}</span>` : '<b>0</b>']
         ];
         box.innerHTML = rows.map(([k, valHtml]) => `<div><span>${escapeHtml(k)}</span><span>${valHtml}</span></div>`).join('');
-        box.title = mem.logs && mem.logs.length >= 60 ? 'Olay sayıları son 60 kayda göre' : '';
+        box.title = mem.logs && mem.logs.length >= 60 ? POps.t('Olay sayıları son 60 kayda göre') : '';
     }
 
     async function loadTasks() {

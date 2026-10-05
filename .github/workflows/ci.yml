@@ -137,6 +137,9 @@ jobs:
         run: |
           python3 tools/html_sinks/test_check_html_sinks.py
           python3 tools/html_sinks/check_html_sinks.py
+      - name: Translations (i18n)
+        # Dashboard/lang/*/*.json: geçerli JSON, yer tutucular anahtarla aynı, her Türkçe anahtar kaynakta birebir var
+        run: python3 tools/i18n/check_i18n.py
 
   version:
     name: Version consistency

@@ -30,6 +30,11 @@ BAD_JS = [
     "let html = 'Durum: ' + d.status;",
     "el.innerHTML = cond ? '<i>a</i>' : d.detail;",
     "el.innerHTML = list.map(x => x.name).join(', ');",
+    # dil: POps.t düz metin döndürür; tHtml'in html parçaları HTML olarak yazılır
+    "el.innerHTML = `<b>${POps.t('Cihazlar')}</b>`;",
+    "el.innerHTML = POps.tHtml('{n} cihaz', null, { n: `<b>${d.count}</b>` });",
+    "el.innerHTML = POps.tnHtml('{n} cihaz', n, null, { n: d.name });",
+    "el.innerHTML = POps.tHtml('{link} aç', null, frags);",
 ]
 
 GOOD_JS = [
@@ -47,6 +52,9 @@ GOOD_JS = [
     "const label = (v) => Number(v || 0).toLocaleString('tr-TR'); el.innerHTML = `<b>${label(x)}</b>`;",
     "showToast(`${name} kaydedildi`);",
     "const re = /[&<>\"']/g; el.innerHTML = `<i>${escapeHtml(s)}</i>`;",
+    "el.innerHTML = `<b>${POps.tHtml('Cihazlar')}</b><i>${escapeHtml(POps.t('{n} cihaz', { n }))}</i>`;",
+    "el.innerHTML = POps.tnHtml('{n} cihaz', n, null, { n: `<b>${Number(n)}</b>` });",
+    "el.innerHTML = POps.tHtml('{a} ve {b}', { a: d.name }, { b: POps.iconHtml('x'), c: '<i>x</i>' });",
 ]
 
 BAD_PHP = [
@@ -54,6 +62,8 @@ BAD_PHP = [
     "<div><?php echo $row['name']; ?></div>",
     "<script>const x = <?= json_encode($x) ?>;</script>",
     "<a href=\"<?php echo $page; ?>.php\">x</a>",
+    "<span><?php echo __('Cihazlar'); ?></span>",
+    "<span><?= __x('Kapat', 'power') ?></span>",
 ]
 
 GOOD_PHP = [
@@ -62,6 +72,8 @@ GOOD_PHP = [
     "<script>const x = <?= json_encode($x, JSON_HEX_TAG | JSON_HEX_AMP) ?>;</script>",
     "<input <?= $canEdit ? '' : 'disabled' ?>>",
     "<p>&copy; <?php echo date('Y'); ?></p>",
+    "<span title=\"<?php _e('Ara'); ?>\"><?php _ex('Kapat', 'power'); ?></span>",
+    "<span><?php echo htmlspecialchars(__('{n} cihaz', ['n' => $n]), ENT_QUOTES, 'UTF-8'); ?></span>",
 ]
 
 

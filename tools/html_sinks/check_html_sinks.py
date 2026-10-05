@@ -18,7 +18,9 @@ Kurallar
      (kaçırılmış) HTML sayılır; bu yüzden bu adlara yapılan her atama (X.fooHtml = ... dahil) aynı kurallarla
      denetlenir.
   4. PHP: <?= ?>, echo, print ve die/exit çıktısı htmlspecialchars, json_encode(..., JSON_HEX_TAG...),
-     intval/(int) ya da sabit olmalı.
+     intval/(int) ya da sabit olmalı. Dil yardımcılarından _e/_ex kaçırarak yazar; __() / __x() düz metin döndürür.
+  4b. Dil: POps.tHtml(metin, params, html) ve POps.tnHtml(metin, n, params, html) metni ve params'ı kaçırır;
+     html nesnesinin değerleri olduğu gibi yazılır, bu yüzden her değeri innerHTML gibi denetlenir.
   5. Değişken ve fonksiyonlar ad bazında izlenir: bir adın bütün atamaları (fonksiyonun bütün return'leri)
      güvenliyse ad da güvenli sayılır. Parametreler, döngü değişkenleri ve aynı adın başka yerde böyle
      kullanıldığı durumlar bilinmez sayılır.
@@ -87,6 +89,8 @@ WHY = {
     'unquoted': 'tırnaksız nitelik değeri',
 }
 URL_ATTRS = {'href', 'src', 'action', 'formaction', 'xlink:href', 'poster', 'background'}
+# POps.tHtml / tnHtml: HTML parçalarının (html nesnesi) argüman sırası (bkz. Dashboard/assets/pops_script.js)
+I18N_HTML_ARG = {'tHtml': 2, 'tnHtml': 3}
 
 
 class Tok(object):
@@ -785,6 +789,11 @@ class Checker(object):
                 for k in sorted(self.sinks[t.text]):
                     if len(args) > k:
                         self.add(self.check(args[k], ''))
+            elif dotted and t.text in I18N_HTML_ARG and nxt.p('(') and i + 1 in m:
+                args = split_args(toks[i + 2:m[i + 1]])
+                if len(args) > I18N_HTML_ARG[t.text]:
+                    self.sink_count += 1
+                    self.check_html_arg(args[I18N_HTML_ARG[t.text]])
             elif HTML_NAME.match(t.text) and t.text not in ('innerHTML', 'outerHTML') and nxt.p('=', '+='):
                 rhs = toks[i + 2:stmt_end(toks, i + 2, m)]
                 fn = as_function(rhs)
@@ -793,6 +802,17 @@ class Checker(object):
                 else:
                     self.add(self.check(rhs, ''))
         self.scan_concat(toks, m)
+
+    def check_html_arg(self, arg):
+        """POps.tHtml(..., { ad: html }) nesnesinin her değeri HTML olarak yazılır."""
+        toks = strip_parens(list(arg))
+        if len(toks) >= 2 and toks[0].p('{') and bmatch(toks).get(0) == len(toks) - 1:
+            for prop in split_args(toks[1:-1]):
+                pm = bmatch(prop)
+                colon = [i for i in top_level(prop, pm) if prop[i].p(':')]
+                self.add(self.check(prop[colon[0] + 1:] if colon else prop, ''))
+        else:
+            self.add(self.check(toks, ''))
 
     def scan_concat(self, toks, m):
         """HTML etiketi içeren dize sabitiyle yapılan + birleştirmeleri (her parantez düzeyinde)."""
@@ -829,9 +849,10 @@ class Checker(object):
 
 # ---------------------------------------------------------------- PHP
 PHP_OPEN = re.compile(r'<\?(?:php\b|=)', re.I)
-# pops_icon: panelin simge yardımcısı (Dashboard/includes/header.php); bütün parçalarını htmlspecialchars ile yazar
+# pops_icon: panelin simge yardımcısı (Dashboard/includes/header.php); bütün parçalarını htmlspecialchars ile yazar.
+# _e/_ex: dil yardımcıları (Dashboard/includes/i18n.php) metni htmlspecialchars ile kendileri yazar, değer döndürmez.
 PHP_SAFE_FUNCS = {'htmlspecialchars', 'htmlentities', 'intval', 'floatval', 'boolval', 'count', 'time', 'date',
-                  'number_format', 'urlencode', 'rawurlencode', 'strlen', 'pops_icon'}
+                  'number_format', 'urlencode', 'rawurlencode', 'strlen', 'pops_icon', '_e', '_ex'}
 
 
 def php_skip(src, i):
