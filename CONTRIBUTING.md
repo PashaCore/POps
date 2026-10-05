@@ -144,7 +144,11 @@ dotnet test Agent/POps.Tests/POps.Tests.csproj -c Release
   analyzers (`AnalysisLevel` `10.0-recommended`) and `TreatWarningsAsErrors` (`Agent/Directory.Build.props`;
   `POps.Tests` is not gated, and NuGet vulnerability warnings stay warnings). The warnings that existed when the
   gate was added are listed per file and rule in `Agent/.editorconfig`; any other warning fails the build and CI.
-  When a listed file is clean, delete its lines; never add lines.
+  When a listed file is clean, delete its lines; never add lines. Nullable reference types are on in every product
+  project, the MSI custom actions included. Files that were not nullable-clean carry a `#nullable disable` line and
+  are listed in `tools/nullable_baseline.txt`; `tools/check_nullable_baseline.py` (CI) fails when any other file
+  turns nullable off or a listed file no longer does. When you clean a file, delete the line and its list entry; new
+  files must be nullable-clean.
 - The tests cover logic only (not the firewall, the pipe or the service), need no administrator rights and run in
   a temporary folder; they never touch `C:\POps`, `C:\POpsData` or `C:\POpsLogs`. They target `net10.0-windows`
   (agent) and `net472` (MSI custom actions).
@@ -275,8 +279,9 @@ python Backend/migrate.py                    # must apply nothing
   skipped) and the `<Version>` that `Agent/Directory.Build.props` produces must be equal. `VERSION` changes only
   in a release commit; between releases, changes collect under `## [Unreleased]`.
 - **Migrations** build an empty database, pass the schema check and are idempotent.
-- **Agent** projects build without warnings (warnings are errors outside the `Agent/.editorconfig` baseline) and
-  the unit tests pass.
+- **Agent** projects build without warnings (warnings are errors outside the `Agent/.editorconfig` baseline), only
+  the files in `tools/nullable_baseline.txt` turn nullable off (`tools/check_nullable_baseline.py`) and the unit
+  tests pass.
 
 ### Enforced by review
 

@@ -1,0 +1,58 @@
+# check_nullable_baseline.py'nin tabanı: nullable'ı "#nullable disable" ile kapatan ajan dosyaları (bkz. betiğin başı ve
+# Agent/Directory.Build.props). Liste yalnızca küçülür: dosyayı temizleyince "#nullable disable" satırını ve buradaki
+# satırını silin. Yeni dosya nullable açısından temiz olmalı; yalnızca listedeki bir dosyadan taşınan kod (ad
+# değişikliği, Worker.cs bölme adımı) yeni yoluyla buraya yazılır.
+# Biçim: depo köküne göre yol, ileri eğik çizgiyle; sıralı (LC_ALL=C sort), her yol bir kez. # ile başlayan satır yorum.
+Agent/POps.Agent/POps.Agent/ActivityHistory.cs
+Agent/POps.Agent/POps.Agent/AgentCapabilities.cs
+Agent/POps.Agent/POps.Agent/AgentCredentials.cs
+Agent/POps.Agent/POps.Agent/AgentHealthTelemetry.cs
+Agent/POps.Agent/POps.Agent/AgentHttp.cs
+Agent/POps.Agent/POps.Agent/AgentModules.cs
+Agent/POps.Agent/POps.Agent/AgentPolicy.cs
+Agent/POps.Agent/POps.Agent/AgentStartupHealth.cs
+Agent/POps.Agent/POps.Agent/AgentUpdate.cs
+Agent/POps.Agent/POps.Agent/BitsDownload.cs
+Agent/POps.Agent/POps.Agent/BypassSecretCommand.cs
+Agent/POps.Agent/POps.Agent/CommandExecutionPolicy.cs
+Agent/POps.Agent/POps.Agent/CommandExecutionResult.cs
+Agent/POps.Agent/POps.Agent/CommandRunner.cs
+Agent/POps.Agent/POps.Agent/DnsPolicyMonitor.cs
+Agent/POps.Agent/POps.Agent/DnsWatch.cs
+Agent/POps.Agent/POps.Agent/Generalizer.cs
+Agent/POps.Agent/POps.Agent/HardwareBinding.cs
+Agent/POps.Agent/POps.Agent/HardwareInfo.cs
+Agent/POps.Agent/POps.Agent/Helpdesk.cs
+Agent/POps.Agent/POps.Agent/KioskMode.cs
+Agent/POps.Agent/POps.Agent/LocalAudit.cs
+Agent/POps.Agent/POps.Agent/NetworkIsolation.cs
+Agent/POps.Agent/POps.Agent/OfflineBypass.cs
+Agent/POps.Agent/POps.Agent/PatchManager.cs
+Agent/POps.Agent/POps.Agent/PatchStatus.cs
+Agent/POps.Agent/POps.Agent/PipeClientVerifier.cs
+Agent/POps.Agent/POps.Agent/QuarantineControl.cs
+Agent/POps.Agent/POps.Agent/ReleaseVerifier.cs
+Agent/POps.Agent/POps.Agent/ResultSpool.cs
+Agent/POps.Agent/POps.Agent/SecureStore.cs
+Agent/POps.Agent/POps.Agent/ServerHandshake.cs
+Agent/POps.Agent/POps.Agent/SessionWatch.cs
+Agent/POps.Agent/POps.Agent/SoftwareInventory.cs
+Agent/POps.Agent/POps.Agent/UpdateResultReporter.cs
+Agent/POps.Agent/POps.Agent/UserSessionApps.cs
+Agent/POps.Agent/POps.Agent/VisionRelay.cs
+Agent/POps.Agent/POps.Agent/WakeOnLan.cs
+Agent/POps.Agent/POps.Agent/WebSocketMessages.cs
+Agent/POps.Agent/POps.Agent/WindowsUpdateAgent.cs
+Agent/POps.Agent/POps.Agent/Worker.cs
+Agent/POps.Shared/DeviceBypassSecret.cs
+Agent/POps.Shared/KioskPolicies.cs
+Agent/POps.Shared/POpsHelpers.cs
+Agent/POps.Shared/RemoteKeyMap.cs
+Agent/POps.Shared/ServerTrust.cs
+Agent/POps.Shared/UpdateProgress.cs
+Agent/POps.Shared/UpdaterRollback.cs
+Agent/POps.Shared/UserSession.cs
+Agent/POps.Shared/VisionChannel.cs
+Agent/POpsUpdater/POpsUpdater/MsiPackage.cs
+Agent/POpsUpdater/POpsUpdater/Program.cs
+Installer/agent/CustomActions/CustomActions.cs
