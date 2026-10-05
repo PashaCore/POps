@@ -47,6 +47,10 @@
     "message_enabled": {
       "type": "boolean",
       "description": "Messages to the signed-in user (`user_message`) allowed on this device. Sent by agents that announce `message` in `X-Agent-Features`; when it is missing the server does not know the state."
+    },
+    "peer_cache_enabled": {
+      "type": "boolean",
+      "description": "Lab-local peer cache for agent updates allowed on this device (local switch `PEER_CACHE_ENABLED`): downloading the package from the `peers` in `update_agent`, and keeping and serving it when `update_agent` carries `peer_cache: true`. When it is false the agent does not announce `peer_cache` in `X-Agent-Features`. Sent by the Windows agent from the version after 0.1.22-alpha; when it is missing the server does not know the state."
     }
   }
 }

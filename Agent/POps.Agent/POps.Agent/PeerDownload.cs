@@ -22,14 +22,20 @@ namespace POpsAgent
     //    bu bilgisayarın yerel alt ağında olmalıdır (eşin güvenlik duvarı kuralı da yalnızca yerel alt ağa açıktır).
     //    Ad, https, başka yol, sorgu, kullanıcı bilgisi, genel ya da geri döngü adresi reddedilir; en çok 5 eş.
     //  * Eşe hiçbir başlık (cihaz secret'ı, sürüm, çerez) gitmez; vekil sunucu kullanılmaz, yönlendirme izlenmez.
-    //  * Bağlantı için 3 sn, yanıt başlığı için 10 sn, eş başına toplam 5 dk.
+    //  * Bağlantı için 3 sn. Yanıt başlığı için 75 sn: meşgul eş isteği boş aktarım yeri için 60 sn sıraya alır (bkz.
+    //    PeerCacheServer). Yanıt 200 ve Content-Length imzalı boyut olmalı; aktarımda 15 sn veri gelmezse ya da eş
+    //    başına toplam 5 dk dolarsa sıradaki kaynağa geçilir.
     [SupportedOSPlatform("windows")]
     public static class PeerDownload
     {
         public const int MaxPeers = 5;
         public static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
-        public static readonly TimeSpan HeaderTimeout = TimeSpan.FromSeconds(10);
         public static readonly TimeSpan PeerTimeout = TimeSpan.FromMinutes(5);
+        // Testler: yanıt başlığı ve veri bekleme süreleri kısaltılır
+        internal static TimeSpan HeaderTimeout { get; set; } = DefaultHeaderTimeout;
+        internal static TimeSpan StallTimeout { get; set; } = DefaultStallTimeout;
+        internal static readonly TimeSpan DefaultHeaderTimeout = TimeSpan.FromSeconds(75);
+        internal static readonly TimeSpan DefaultStallTimeout = TimeSpan.FromSeconds(15);
         private const int MaxUrlLength = 256;
 
         private static readonly Regex HwIdRegex = new Regex("^[A-Za-z0-9_-]{1,64}$", RegexOptions.Compiled);
@@ -135,18 +141,22 @@ namespace POpsAgent
                 using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
                 if (response.StatusCode != HttpStatusCode.OK) return $"HTTP {(int)response.StatusCode}";
                 long? announced = response.Content.Headers.ContentLength;
-                if (announced != null && announced != expected.Size) return $"boyut {announced}, imzalı boyut {expected.Size}";
+                if (announced != expected.Size) return $"Content-Length {announced?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "yok"}, imzalı boyut {expected.Size}";
 
                 cts.CancelAfter(PeerTimeout);
+                // Veri gelmeden geçen süre: her okumada yeniden başlar
+                using var stall = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
                 using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
                 long total = 0;
                 await using (Stream input = await response.Content.ReadAsStreamAsync(cts.Token))
                 await using (var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
                     byte[] buffer = new byte[81920];
-                    int read;
-                    while ((read = await input.ReadAsync(buffer, cts.Token)) > 0)
+                    while (true)
                     {
+                        stall.CancelAfter(StallTimeout);
+                        int read = await input.ReadAsync(buffer, stall.Token);
+                        if (read == 0) break;
                         total += read;
                         if (total > expected.Size) return "imzalı boyuttan büyük";
                         hash.AppendData(buffer, 0, read);
@@ -157,7 +167,7 @@ namespace POpsAgent
                     return $"imzalı manifest'le uyuşmuyor (boyut {total}/{expected.Size} ya da SHA-256)";
                 return null;
             }
-            catch (OperationCanceledException) { return "süre doldu"; }
+            catch (OperationCanceledException) { return "süre doldu (yanıt ya da veri gelmedi)"; }
             catch (HttpRequestException ex) { return ex.Message; }
             catch (IOException ex) { return ex.Message; }
         }

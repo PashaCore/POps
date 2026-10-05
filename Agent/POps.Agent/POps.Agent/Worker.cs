@@ -543,6 +543,8 @@ namespace POpsAgent
         {
             // Uygulanamazsa neden ExamMode'da yerel loga yazılır; sunucuya o anki durum gider
             if (!await ExamMode.EnableAsync(settings, _serverUrl)) return;
+            // Sınav modunda eş önbelleği sunulmaz; arka planda yeniden denetlenir (bkz. PeerCache)
+            _ = Task.Run(PeerCache.SyncAsync);
             lock (_examStoppedLogged) _examStoppedLogged.Clear();
             LocalAudit.Write(LocalAudit.ExamStarted(settings));
             POpsHelpers.Log("EXAM", $"SINAV MODU AKTİF: {settings.Allow.Count} izinli kayıt, bitiş {(settings.Until == null ? "yok" : DateTimeOffset.FromUnixTimeSeconds(settings.Until.Value).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture))}, {settings.BlockApps.Count} engelli uygulama.");
@@ -563,6 +565,7 @@ namespace POpsAgent
         {
             // Kaldırılamazsa neden ExamMode'da loglanır; sunucuya "hâlâ sınavda" gider
             if (!ExamMode.IsActive || !await ExamMode.DisableAsync()) return;
+            _ = Task.Run(PeerCache.SyncAsync);
             Interlocked.Exchange(ref _examLeftAt, ExamClock().ToUnixTimeSeconds());
             LocalAudit.Write(LocalAudit.ExamEnded(source));
             POpsHelpers.Log("EXAM", $"Sınav modu bitti ({source}).");

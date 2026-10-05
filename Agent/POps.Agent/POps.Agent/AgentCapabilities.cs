@@ -110,8 +110,8 @@ namespace POpsAgent
 
         // Sunucuya bildirilen durum ({"type":"capabilities", ...}; docs/protocol/agent-to-server/capabilities.json);
         // server_ca: sunucu sertifikası kurum sertifikasıyla ("custom", server-ca.pem) mı, sistem deposuyla ("system")
-        // mı doğrulanıyor (bkz. ServerTrust). Altı yeteneğin hepsi bildirilir; exam_enabled, power_enabled ve
-        // message_enabled şemada isteğe bağlıdır (eski ajan göndermez).
+        // mı doğrulanıyor (bkz. ServerTrust). Yedi yeteneğin hepsi bildirilir; exam_enabled, power_enabled,
+        // message_enabled ve peer_cache_enabled şemada isteğe bağlıdır (eski ajan göndermez).
         public static Dictionary<string, object> StatusMessage()
         {
             lock (Gate)
@@ -125,6 +125,7 @@ namespace POpsAgent
                     [Exam] = State[Exam],
                     [Power] = State[Power],
                     [Message] = State[Message],
+                    [PeerCacheKey] = State[PeerCacheKey],
                 };
         }
 

@@ -127,8 +127,10 @@ namespace POps.Tests
             POpsAgent.PeerCache.ListenEndpoint = () => new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0);
             POpsAgent.PeerCache.Clock = () => DateTime.UtcNow;
             POpsAgent.PeerCache.IsLocalSubnet = POpsAgent.PeerCache.InLocalSubnet;
-            POpsAgent.PeerCache.IsIsolated = () => POpsAgent.NetworkIsolation.IsActive;
+            POpsAgent.PeerCache.IsIsolated = POpsAgent.PeerCache.DefaultIsolated;
             POpsAgent.PeerDownload.AllowLoopbackPeers = false;
+            POpsAgent.PeerDownload.HeaderTimeout = POpsAgent.PeerDownload.DefaultHeaderTimeout;
+            POpsAgent.PeerDownload.StallTimeout = POpsAgent.PeerDownload.DefaultStallTimeout;
         }
 
         private static bool IsUnderRoot(string path) =>

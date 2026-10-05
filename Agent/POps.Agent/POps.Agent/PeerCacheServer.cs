@@ -15,15 +15,19 @@ namespace POpsAgent
 {
     // Eş önbelleğinin salt okunur HTTP sunucusu (bkz. PeerCache). HttpListener yerine TcpListener: http.sys trafiği
     // System sürecine ait sayılır, güvenlik duvarı kuralı POpsAgent.exe'ye bağlanamazdı; burada soket ajanın kendisinde.
-    //  * Yalnızca "GET /pops-cache/<sha256> HTTP/1.x", <sha256> önbellekteki paket: 200, application/octet-stream,
-    //    Content-Length. Başka yöntem 405, başka yol (liste, başka dosya, sorgu, büyük harf) 404, bozuk istek 400.
+    //  * Yalnızca "GET /pops-cache/<sha256> HTTP/1.x" (ve gövdesiz HEAD), <sha256> önbellekteki paket: 200,
+    //    application/octet-stream, Content-Length. Başka yöntem 405, başka yol (liste, başka dosya, sorgu, büyük harf)
+    //    404, bozuk istek 400.
     //  * Bağlanan adres bu bilgisayarın yerel alt ağlarından birinde değilse 403 (güvenlik duvarına ek savunma).
-    //  * En çok MaxClients eşzamanlı bağlantı (fazlası 503 ile kapatılır), istek başlığı için 10 sn, aktarım için
-    //    10 dk süre; kalıcı bağlantı, Range ve sıkıştırma yok.
+    //  * En çok MaxClients eşzamanlı aktarım; fazlası boş yer için en çok 60 sn bekler, sonra 503 alır (40 PC'lik bir
+    //    sınıf, tohum birkaç saniye meşgul diye sunucuya dönmesin). Bekleyenlerle birlikte en çok MaxConnections bağlantı
+    //    (fazlası hemen 503). İstek başlığı için 10 sn, aktarım için 10 dk süre; kalıcı bağlantı, Range ve sıkıştırma yok.
     [SupportedOSPlatform("windows")]
     internal sealed class PeerCacheServer : IDisposable
     {
         private const int MaxHeaderBytes = 8192;
+        // Aktarım bekleyenler dahil açık bağlantı sınırı (bir sınıfın hepsi aynı anda sorabilir)
+        internal const int MaxConnections = 128;
         private static readonly byte[] BusyResponse = Encoding.ASCII.GetBytes(StatusResponse(503));
 
         private readonly string _path;
@@ -34,13 +38,15 @@ namespace POpsAgent
         private readonly List<Task> _handlers = new List<Task>();
         private readonly TimeSpan _headerTimeout;
         private readonly TimeSpan _transferTimeout;
+        private readonly TimeSpan _slotWait;
         private Task? _acceptLoop;
         private int _active;
+        private int _connections;
         private DateTime _lastRefusalLog = DateTime.MinValue;
         private int _suppressedRefusals;
 
         public PeerCacheServer(string sha256, string path, IPEndPoint endpoint, Func<IPAddress, bool> isLocal, int maxClients,
-            TimeSpan? headerTimeout = null, TimeSpan? transferTimeout = null)
+            TimeSpan? headerTimeout = null, TimeSpan? transferTimeout = null, TimeSpan? slotWait = null)
         {
             Sha256 = sha256;
             _path = path;
@@ -48,6 +54,7 @@ namespace POpsAgent
             _slots = new SemaphoreSlim(maxClients, maxClients);
             _headerTimeout = headerTimeout ?? TimeSpan.FromSeconds(10);
             _transferTimeout = transferTimeout ?? TimeSpan.FromMinutes(10);
+            _slotWait = slotWait ?? TimeSpan.FromSeconds(60);
             _listener = new TcpListener(endpoint);
             // Başka bir süreç aynı portu paylaşıp istekleri kapamasın
             _listener.ExclusiveAddressUse = true;
@@ -57,7 +64,12 @@ namespace POpsAgent
 
         public string Sha256 { get; }
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+        // Aktarımdaki istemciler (yer tutanlar) ve açık bağlantılar (yer bekleyenler dahil)
         public int ActiveClients => Volatile.Read(ref _active);
+        public int Connections => Volatile.Read(ref _connections);
+
+        // Testler: yer alındıktan sonra, yanıt yazılmadan önce çağrılır (aktarımı tutmak için)
+        internal Func<Task>? TransferStarting { get; set; }
 
         public void Start()
         {
@@ -102,12 +114,12 @@ namespace POpsAgent
                     continue;
                 }
 
-                if (!_slots.Wait(0))
+                if (Interlocked.Increment(ref _connections) > MaxConnections)
                 {
+                    Interlocked.Decrement(ref _connections);
                     Refuse(socket);
                     continue;
                 }
-                Interlocked.Increment(ref _active);
                 Task handler = Task.Run(() => HandleAsync(socket));
                 lock (_handlers)
                 {
@@ -117,7 +129,7 @@ namespace POpsAgent
             }
         }
 
-        // Dolu: kısa 503 (yeni soketin gönderme tamponu boştur, beklemez) ve kapatma
+        // Bağlantı sınırı dolu: kısa 503 (yeni soketin gönderme tamponu boştur, beklemez) ve kapatma
         private static void Refuse(Socket socket)
         {
             try
@@ -133,6 +145,7 @@ namespace POpsAgent
         private async Task HandleAsync(Socket socket)
         {
             IPAddress? remote = null;
+            bool slot = false;
             var watch = Stopwatch.StartNew();
             using var stream = new NetworkStream(socket, ownsSocket: true);
             try
@@ -150,6 +163,21 @@ namespace POpsAgent
                     return;
                 }
 
+                // Boş aktarım yeri beklenir (en çok _slotWait; başlık süresi bu sırada işlemez); gelmezse 503, indiren
+                // sıradaki kaynağa geçer
+                cts.CancelAfter(Timeout.InfiniteTimeSpan);
+                slot = await _slots.WaitAsync(_slotWait, _stop.Token);
+                cts.CancelAfter(_headerTimeout);
+                if (!slot)
+                {
+                    await WriteAsync(stream, StatusResponse(503), cts.Token);
+                    LogRefusal(503, remote, head);
+                    return;
+                }
+                Interlocked.Increment(ref _active);
+                if (TransferStarting != null) await TransferStarting();
+                bool headOnly = head!.StartsWith("HEAD ", StringComparison.Ordinal);
+
                 FileStream file;
                 try { file = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan); }
                 catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
@@ -163,10 +191,11 @@ namespace POpsAgent
                     await WriteAsync(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
                         + $"Content-Length: {file.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)}\r\n"
                         + "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n", cts.Token);
-                    await file.CopyToAsync(stream, 81920, cts.Token);
+                    if (!headOnly) await file.CopyToAsync(stream, 81920, cts.Token);
                     await stream.FlushAsync(cts.Token);
                     socket.Shutdown(SocketShutdown.Send);
-                    POpsHelpers.Log("PEERCACHE", $"Paket eşe gönderildi: {Describe(remote)} ({file.Length} bayt, {watch.Elapsed.TotalSeconds:0.0} sn).");
+                    if (!headOnly)
+                        POpsHelpers.Log("PEERCACHE", $"Paket eşe gönderildi: {Describe(remote)} ({Sha256.Substring(0, 12)}…, {file.Length} bayt, {watch.Elapsed.TotalSeconds:0.0} sn).");
                 }
             }
             catch (OperationCanceledException)
@@ -180,9 +209,13 @@ namespace POpsAgent
             }
             finally
             {
-                Interlocked.Decrement(ref _active);
-                try { _slots.Release(); }
-                catch (ObjectDisposedException) { }
+                Interlocked.Decrement(ref _connections);
+                if (slot)
+                {
+                    Interlocked.Decrement(ref _active);
+                    try { _slots.Release(); }
+                    catch (ObjectDisposedException) { }
+                }
             }
         }
 
@@ -194,7 +227,7 @@ namespace POpsAgent
             int end = head.IndexOf("\r\n", StringComparison.Ordinal);
             string[] parts = (end < 0 ? head : head.Substring(0, end)).Split(' ');
             if (parts.Length != 3 || (parts[2] != "HTTP/1.1" && parts[2] != "HTTP/1.0")) return 400;
-            if (parts[0] != "GET") return 405;
+            if (parts[0] != "GET" && parts[0] != "HEAD") return 405;
             if (!string.Equals(parts[1], PeerCache.PathPrefix + Sha256, StringComparison.Ordinal)) return 404;
             return 200;
         }
@@ -231,7 +264,7 @@ namespace POpsAgent
                 503 => "Service Unavailable",
                 _ => "Error",
             };
-            string extra = status == 405 ? "Allow: GET\r\n" : status == 503 ? "Retry-After: 30\r\n" : "";
+            string extra = status == 405 ? "Allow: GET, HEAD\r\n" : status == 503 ? "Retry-After: 30\r\n" : "";
             return $"HTTP/1.1 {status.ToString(System.Globalization.CultureInfo.InvariantCulture)} {reason}\r\nContent-Length: 0\r\n{extra}Connection: close\r\n\r\n";
         }
 

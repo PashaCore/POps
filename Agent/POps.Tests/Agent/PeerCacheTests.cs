@@ -21,8 +21,9 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    // Laboratuvar eş önbelleği (docs/design/peer-cache.md seçenek A): önbellek, salt okunur sunucu, güvenlik duvarı
-    // kuralı (sahte çalıştırıcı), eşlerden indirme ve yetenek anahtarı. Sunucu yalnızca 127.0.0.1'de rastgele portta açılır.
+    // Laboratuvar eş önbelleği (docs/agent.md "Peer cache contract", docs/design/peer-cache.md seçenek A): önbellek,
+    // sunucunun peer_cache bayrağı, salt okunur sunucu, güvenlik duvarı kuralı (sahte çalıştırıcı), eşlerden indirme,
+    // karantina / sınav modu ve yetenek anahtarı. Sunucu yalnızca 127.0.0.1'de rastgele portta açılır.
     public class PeerCacheTests : TestBase, IDisposable
     {
         private const string MsiName = "POps-Agent-9.9.9-win-x64.msi";
@@ -31,8 +32,11 @@ namespace POps.Tests.Agent
         private readonly List<Dictionary<string, object>> _stages = new List<Dictionary<string, object>>();
         private readonly List<PeerCacheServer> _peers = new List<PeerCacheServer>();
         private readonly Ed25519PrivateKeyParameters _key;
+        private readonly List<TcpListener> _rawPeers = new List<TcpListener>();
         private DateTime _now = new DateTime(2026, 10, 5, 9, 0, 0, DateTimeKind.Utc);
         private bool _isolated;
+        // Eş önbelleği sunucusu kaç kez dinlemeye başladı (ListenEndpoint sahtesi)
+        private int _listens;
 
         public PeerCacheTests()
         {
@@ -47,6 +51,11 @@ namespace POps.Tests.Agent
             PeerCache.Clock = () => _now;
             PeerCache.IsIsolated = () => _isolated;
             PeerCache.IsLocalSubnet = _ => true;
+            PeerCache.ListenEndpoint = () =>
+            {
+                Interlocked.Increment(ref _listens);
+                return new IPEndPoint(IPAddress.Loopback, 0);
+            };
 
             var generator = new Ed25519KeyPairGenerator();
             generator.Init(new Ed25519KeyGenerationParameters(new SecureRandom()));
@@ -64,6 +73,7 @@ namespace POps.Tests.Agent
                 peer.StopAsync().GetAwaiter().GetResult();
                 peer.Dispose();
             }
+            foreach (TcpListener raw in _rawPeers) raw.Stop();
             PeerCache.ResetState();
             AgentUpdate.TrustedKeyOverride = null;
             AgentUpdate.InstalledVersionOverride = null;
@@ -83,7 +93,8 @@ namespace POps.Tests.Agent
 
         private string CachePath(byte[] bytes = null) => Path.Combine(PeerCache.Dir, Sha(bytes ?? _package));
 
-        private JsonElement Command(byte[] bytes = null, object peers = null)
+        // peerCache: sunucunun "peer_cache": true bayrağı (paketi tut ve sun); false ise alan hiç yok
+        private JsonElement Command(byte[] bytes = null, object peers = null, bool peerCache = true)
         {
             bytes ??= _package;
             byte[] manifest = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
@@ -94,14 +105,15 @@ namespace POps.Tests.Agent
             var signer = new Ed25519Signer();
             signer.Init(true, _key);
             signer.BlockUpdate(manifest, 0, manifest.Length);
-            string json = JsonSerializer.Serialize(new
+            var message = new Dictionary<string, object>
             {
-                action = "update_agent",
-                manifest = Convert.ToBase64String(manifest),
-                manifest_sig = Convert.ToBase64String(signer.GenerateSignature()),
-                peers,
-            });
-            return JsonDocument.Parse(json).RootElement.Clone();
+                ["action"] = "update_agent",
+                ["manifest"] = Convert.ToBase64String(manifest),
+                ["manifest_sig"] = Convert.ToBase64String(signer.GenerateSignature()),
+            };
+            if (peers != null) message["peers"] = peers;
+            if (peerCache) message["peer_cache"] = true;
+            return JsonDocument.Parse(JsonSerializer.Serialize(message)).RootElement.Clone();
         }
 
         private sealed class Server : HttpMessageHandler
@@ -149,11 +161,11 @@ namespace POps.Tests.Agent
         }
 
         // Testteki "başka bir PC": verilen dosyayı 127.0.0.1'de sunan ayrı bir sunucu
-        private PeerCacheServer StartPeer(byte[] content, string sha256, Func<IPAddress, bool> isLocal = null, int maxClients = 4)
+        private PeerCacheServer StartPeer(byte[] content, string sha256, Func<IPAddress, bool> isLocal = null, int maxClients = 4, TimeSpan? slotWait = null)
         {
             string file = Path.Combine(TestEnvironment.NewDir("peer-remote"), sha256);
             File.WriteAllBytes(file, content);
-            var peer = new PeerCacheServer(sha256, file, new IPEndPoint(IPAddress.Loopback, 0), isLocal ?? (_ => true), maxClients);
+            var peer = new PeerCacheServer(sha256, file, new IPEndPoint(IPAddress.Loopback, 0), isLocal ?? (_ => true), maxClients, slotWait: slotWait);
             peer.Start();
             _peers.Add(peer);
             return peer;
@@ -201,6 +213,30 @@ namespace POps.Tests.Agent
         }
 
         private static string Get(string path) => $"GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+
+        // Kurallara uymayan bir eş: tek bağlantı kabul eder, isteği okur, respond'u çalıştırır, sonra kapatır
+        private int RawPeer(Func<NetworkStream, Task> respond)
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            _rawPeers.Add(listener);
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using TcpClient client = await listener.AcceptTcpClientAsync();
+                    using NetworkStream stream = client.GetStream();
+                    var head = new MemoryStream();
+                    byte[] one = new byte[1];
+                    while (!head.ToArray().AsSpan().EndsWith("\r\n\r\n"u8) && await stream.ReadAsync(one) == 1) head.WriteByte(one[0]);
+                    await respond(stream);
+                }
+                catch (IOException) { }
+                catch (SocketException) { }
+                catch (ObjectDisposedException) { }
+            });
+            return ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
 
         private static async Task<bool> PortClosedAsync(int port)
         {
@@ -397,7 +433,6 @@ namespace POps.Tests.Agent
         [InlineData("GET http://127.0.0.1/pops-cache/{sha} HTTP/1.1", 404)]
         [InlineData("GET /updates/POps-Agent-9.9.9-win-x64.msi HTTP/1.1", 404)]
         [InlineData("POST /pops-cache/{sha} HTTP/1.1", 405)]
-        [InlineData("HEAD /pops-cache/{sha} HTTP/1.1", 405)]
         [InlineData("PUT /pops-cache/{sha} HTTP/1.1", 405)]
         [InlineData("DELETE /pops-cache/{sha} HTTP/1.1", 405)]
         [InlineData("GET /pops-cache/{sha} HTTP/2.0", 400)]
@@ -412,7 +447,19 @@ namespace POps.Tests.Agent
             RawResponse response = await RawAsync(PeerCache.ServingPort.Value, line + "\r\nHost: 127.0.0.1\r\n\r\n");
             Assert.Equal(expected, response.Status);
             Assert.Empty(response.Body);
-            if (expected == 405) Assert.Equal("GET", response.Headers["Allow"]);
+            if (expected == 405) Assert.Equal("GET, HEAD", response.Headers["Allow"]);
+        }
+
+        [Fact]
+        public async Task Server_AnswersHead_WithoutABody()
+        {
+            await StoreAsync();
+            await PeerCache.SyncAsync();
+            RawResponse head = await RawAsync(PeerCache.ServingPort.Value, $"HEAD {PeerCache.PathPrefix}{Sha(_package)} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+            Assert.Equal(200, head.Status);
+            Assert.Equal("application/octet-stream", head.Headers["Content-Type"]);
+            Assert.Equal(_package.Length.ToString(), head.Headers["Content-Length"]);
+            Assert.Empty(head.Body);
         }
 
         [Fact]
@@ -430,30 +477,57 @@ namespace POps.Tests.Agent
         }
 
         [Fact]
-        public async Task Server_LimitsConcurrentClients()
+        public async Task Server_BusyRequestWaitsForASlot_ThenGetsThePackage()
         {
-            PeerCacheServer peer = StartPeer(_package, Sha(_package), maxClients: 2);
-            using var first = new TcpClient();
-            using var second = new TcpClient();
-            await first.ConnectAsync(IPAddress.Loopback, peer.Port);
-            await second.ConnectAsync(IPAddress.Loopback, peer.Port);
-            for (int i = 0; i < 200 && peer.ActiveClients < 2; i++) await Task.Delay(10);
-            Assert.Equal(2, peer.ActiveClients);
+            var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            PeerCacheServer peer = StartPeer(_package, Sha(_package), maxClients: 1);
+            int transfers = 0;
+            peer.TransferStarting = () => Interlocked.Increment(ref transfers) == 1 ? hold.Task : Task.CompletedTask;
 
-            // Üçüncü istemci reddedilir (503 ya da bağlantı kapanır), paketi alamaz
-            using (var http = new HttpClient())
-            {
-                bool refused;
-                try { refused = (await http.GetAsync(PeerUrl(peer.Port, Sha(_package)))).StatusCode == HttpStatusCode.ServiceUnavailable; }
-                catch (HttpRequestException) { refused = true; }
-                Assert.True(refused);
-            }
+            Task<RawResponse> first = RawAsync(peer.Port, Get(PeerCache.PathPrefix + Sha(_package)));
+            for (int i = 0; i < 500 && peer.ActiveClients < 1; i++) await Task.Delay(10);
+            Assert.Equal(1, peer.ActiveClients);
 
-            first.Close();
-            second.Close();
-            for (int i = 0; i < 1000 && peer.ActiveClients > 0; i++) await Task.Delay(10);
-            using var after = new HttpClient();
-            Assert.Equal(_package, await after.GetByteArrayAsync(PeerUrl(peer.Port, Sha(_package))));
+            // İkinci istek hemen 503 almaz: boş yer için bekler
+            Task<RawResponse> second = RawAsync(peer.Port, Get(PeerCache.PathPrefix + Sha(_package)));
+            for (int i = 0; i < 500 && peer.Connections < 2; i++) await Task.Delay(10);
+            await Task.Delay(300);
+            Assert.False(second.IsCompleted);
+            Assert.Equal(1, peer.ActiveClients);
+
+            hold.SetResult();
+            Assert.Equal(_package, (await first).Body);
+            RawResponse later = await second;
+            Assert.Equal(200, later.Status);
+            Assert.Equal(_package, later.Body);
+            Assert.Equal(2, transfers);
+        }
+
+        [Fact]
+        public async Task Server_AnswersBusy_WhenNoSlotFreesInTime()
+        {
+            var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            PeerCacheServer peer = StartPeer(_package, Sha(_package), maxClients: 1, slotWait: TimeSpan.FromMilliseconds(200));
+            peer.TransferStarting = () => hold.Task;
+
+            Task<RawResponse> first = RawAsync(peer.Port, Get(PeerCache.PathPrefix + Sha(_package)));
+            for (int i = 0; i < 500 && peer.ActiveClients < 1; i++) await Task.Delay(10);
+
+            RawResponse busy = await RawAsync(peer.Port, Get(PeerCache.PathPrefix + Sha(_package)));
+            Assert.Equal(503, busy.Status);
+            Assert.Equal("30", busy.Headers["Retry-After"]);
+            Assert.Empty(busy.Body);
+
+            // İndiren ajan meşgul eşi atlayıp sıradaki kaynağa geçer
+            Server server = Serving(_package);
+            string path = Path.Combine(AgentUpdate.DataDir, MsiName);
+            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
+                new[] { Peer("HW-000000000001", peer.Port, Sha(_package)) }));
+            Assert.Equal(1, server.Requests);
+            Assert.Equal(AgentUpdate.SourceServer, Detail("downloaded"));
+
+            hold.SetResult();
+            Assert.Equal(_package, (await first).Body);
         }
 
         [Fact]
@@ -612,6 +686,58 @@ namespace POps.Tests.Agent
         }
 
         [Fact]
+        public async Task Download_PeerThatNeverAnswers_IsLeftAfterTheHeaderTimeout()
+        {
+            PeerDownload.HeaderTimeout = TimeSpan.FromMilliseconds(300);
+            int silent = RawPeer(_ => Task.Delay(TimeSpan.FromSeconds(5)));
+            Server server = Serving(_package);
+            string path = Path.Combine(AgentUpdate.DataDir, MsiName);
+
+            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
+                new[] { Peer("HW-000000000001", silent, Sha(_package)) }));
+            Assert.Equal(1, server.Requests);
+            Assert.Equal(AgentUpdate.SourceServer, Detail("downloaded"));
+        }
+
+        [Fact]
+        public async Task Download_PeerThatStalls_IsLeftAfterTheStallTimeout()
+        {
+            PeerDownload.StallTimeout = TimeSpan.FromMilliseconds(300);
+            int stalling = RawPeer(async stream =>
+            {
+                await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {_package.Length}\r\nConnection: close\r\n\r\n"));
+                await stream.WriteAsync(_package.AsMemory(0, 1000));
+                await Task.Delay(TimeSpan.FromSeconds(5));
+            });
+            Server server = Serving(_package);
+            string path = Path.Combine(AgentUpdate.DataDir, MsiName);
+
+            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
+                new[] { Peer("HW-000000000001", stalling, Sha(_package)) }));
+            Assert.Equal(1, server.Requests);
+            Assert.Equal(_package, File.ReadAllBytes(path));
+            Assert.False(File.Exists(path + ".peer"));
+        }
+
+        [Fact]
+        public async Task Download_PeerWithoutTheExpectedContentLength_IsSkipped()
+        {
+            // Doğru baytlar, ama Content-Length yok (sözleşme: 200 ve beklenen Content-Length değilse sıradaki kaynak)
+            int noLength = RawPeer(async stream =>
+            {
+                await stream.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n"));
+                await stream.WriteAsync(_package);
+            });
+            Server server = Serving(_package);
+            string path = Path.Combine(AgentUpdate.DataDir, MsiName);
+
+            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + MsiName, path, Artifact(), Update(),
+                new[] { Peer("HW-000000000001", noLength, Sha(_package)) }));
+            Assert.Equal(1, server.Requests);
+            Assert.Equal(AgentUpdate.SourceServer, Detail("downloaded"));
+        }
+
+        [Fact]
         public async Task UpdateCommand_WithPeers_DownloadsFromThePeer_AndCachesIt()
         {
             PeerDownload.AllowLoopbackPeers = true;
@@ -624,7 +750,7 @@ namespace POps.Tests.Agent
 
             Assert.Equal(0, server.Requests);
             Assert.Equal(new[] { "received", "downloaded", "verified", "updater_started" }, Stages());
-            Assert.Equal("source: peer HW-3F9A1C7B2E4D", Detail("downloaded"));
+            Assert.Equal("peer HW-3F9A1C7B2E4D", Detail("downloaded"));
             Assert.Equal(_package, File.ReadAllBytes(CachePath()));
         }
 
@@ -654,6 +780,113 @@ namespace POps.Tests.Agent
             Assert.Equal(1, server.Requests);
             Assert.Equal(0, asked);
             Assert.Equal(AgentUpdate.SourceServer, Detail("downloaded"));
+        }
+
+        // ---------------------------------------------------------------------------------------- sunucunun bayrağı
+        [Fact]
+        public async Task UpdateWithoutThePeerCacheFlag_KeepsNoPackage_OpensNoPort_AddsNoRule()
+        {
+            await Run(Command(peerCache: false), Serving(_package));
+
+            Assert.Equal(new[] { "received", "downloaded", "verified", "updater_started" }, Stages());
+            Assert.False(Directory.Exists(PeerCache.Dir));
+            await PeerCache.SyncAsync(); // dakikalık denetim de bir şey açmaz
+            Assert.Null(PeerCache.ServingPort);
+            Assert.Equal(0, Volatile.Read(ref _listens));
+            Assert.Empty(Firewall());
+            Assert.False(Directory.Exists(PeerCache.Dir));
+        }
+
+        [Fact]
+        public async Task UpdateWithoutThePeerCacheFlag_StillTriesThePeers()
+        {
+            PeerDownload.AllowLoopbackPeers = true;
+            PeerCacheServer peer = StartPeer(_package, Sha(_package));
+            Server server = Serving(_package);
+            await Run(Command(peers: new object[] { new { hw_id = "HW-3F9A1C7B2E4D", url = PeerUrl(peer.Port, Sha(_package)) } }, peerCache: false), server);
+
+            Assert.Equal(0, server.Requests);
+            Assert.Equal("peer HW-3F9A1C7B2E4D", Detail("downloaded"));
+            Assert.False(Directory.Exists(PeerCache.Dir));
+            Assert.Equal(0, Volatile.Read(ref _listens));
+            Assert.Empty(Firewall());
+        }
+
+        [Fact]
+        public async Task UpdateWithoutThePeerCacheFlag_EmptiesAnEarlierCache_AndStopsServing()
+        {
+            await StoreAsync();
+            await PeerCache.SyncAsync();
+            int port = Assert.IsType<int>(PeerCache.ServingPort);
+
+            // Aynı paket bile: sunucu tutulmasını istemiyor, önbellekten alınmaz, silinir
+            Server server = Serving(_package);
+            bool goneAtDownload = false;
+            server.OnRequest = () => goneAtDownload = !File.Exists(CachePath()) && PeerCache.ServingPort == null;
+            await Run(Command(peerCache: false), server);
+
+            Assert.True(goneAtDownload);
+            Assert.Equal(1, server.Requests);
+            Assert.Equal(AgentUpdate.SourceServer, Detail("downloaded"));
+            Assert.True(await PortClosedAsync(port));
+            Assert.Contains("Remove-NetFirewallRule", Firewall().Last());
+            await PeerCache.SyncAsync();
+            Assert.Null(PeerCache.ServingPort);
+            Assert.False(Directory.Exists(PeerCache.Dir));
+            Assert.Equal(1, Volatile.Read(ref _listens));
+            Assert.Single(Firewall(), f => f.Contains("New-NetFirewallRule", StringComparison.Ordinal));
+        }
+
+        [Theory]
+        [InlineData("{\"action\":\"update_agent\",\"peer_cache\":true}", true)]
+        [InlineData("{\"action\":\"update_agent\"}", false)]
+        [InlineData("{\"action\":\"update_agent\",\"peer_cache\":false}", false)]
+        [InlineData("{\"action\":\"update_agent\",\"peer_cache\":\"true\"}", false)]
+        [InlineData("{\"action\":\"update_agent\",\"peer_cache\":1}", false)]
+        [InlineData("{\"action\":\"update_agent\",\"peer_cache\":null}", false)]
+        [InlineData("[true]", false)]
+        public void PeerCacheFlag_OnlyJsonTrueCounts(string json, bool expected) =>
+            Assert.Equal(expected, PeerCache.Requested(JsonDocument.Parse(json).RootElement));
+
+        [Fact]
+        public void PeerCacheFlag_IsInTheProtocolVector()
+        {
+            JsonElement vector = JsonDocument.Parse(File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot(), "docs", "protocol", "examples", "server-to-agent", "update_agent.peers.json"))).RootElement;
+            Assert.True(PeerCache.Requested(vector));
+            Assert.False(PeerCache.Requested(JsonDocument.Parse(File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot(), "docs", "protocol", "examples", "server-to-agent", "update_agent.json"))).RootElement));
+        }
+
+        // ---------------------------------------------------------------------------------------- sınav modu
+        [Fact]
+        public async Task ExamMode_StopsServing_SkipsPeers_AndServingResumesAfterwards()
+        {
+            PeerCache.IsIsolated = PeerCache.DefaultIsolated;
+            await StoreAsync();
+            await PeerCache.SyncAsync();
+            Assert.NotNull(PeerCache.ServingPort);
+
+            SecureStore.WriteProtected(ExamMode.StatePath, "{}");
+            Assert.True(ExamMode.IsActive);
+            await PeerCache.SyncAsync();
+            Assert.Null(PeerCache.ServingPort);
+            Assert.Contains("Remove-NetFirewallRule", Firewall().Last());
+
+            // Sınav sürerken emirdeki eşlere gidilmez; yeni paket sunucudan iner ve önbelleğe alınır ama sunulmaz
+            PeerDownload.AllowLoopbackPeers = true;
+            byte[] next = RandomNumberGenerator.GetBytes(150_000);
+            int asked = 0;
+            PeerCacheServer peer = StartPeer(next, Sha(next), isLocal: _ => { Interlocked.Increment(ref asked); return true; });
+            Server server = Serving(next);
+            await Run(Command(next, peers: new object[] { new { hw_id = "HW-3F9A1C7B2E4D", url = PeerUrl(peer.Port, Sha(next)) } }), server);
+            Assert.Equal(1, server.Requests);
+            Assert.Equal(0, asked);
+            Assert.True(File.Exists(CachePath(next)));
+            await PeerCache.SyncAsync();
+            Assert.Null(PeerCache.ServingPort);
+
+            File.Delete(ExamMode.StatePath);
+            await PeerCache.SyncAsync();
+            Assert.Equal(Sha(next), PeerCache.ServingSha256);
         }
 
         public static IEnumerable<object[]> RefusedUrls()
@@ -789,7 +1022,7 @@ namespace POps.Tests.Agent
         }
 
         [Fact]
-        public void Capability_ServerCanOnlySwitchItOff_AndItIsNotReported()
+        public void Capability_ServerCanOnlySwitchItOff_AndItIsReported()
         {
             AgentCapabilities.Load();
             var (disabled, _) = AgentCapabilities.ApplyServerRequest(JsonDocument.Parse("{\"action\":\"set_capabilities\",\"peer_cache_enabled\":false}").RootElement);
@@ -800,10 +1033,10 @@ namespace POps.Tests.Agent
             Assert.Equal(new[] { AgentCapabilities.PeerCacheKey }, ignored);
             Assert.False(AgentCapabilities.PeerCacheEnabled);
 
-            // Kalıcı; "capabilities" mesajı yalnızca şemadaki anahtarları taşır
+            // Kalıcı; "capabilities" mesajı peer_cache_enabled'ı da taşır (şemada isteğe bağlı)
             AgentCapabilities.Load();
             Assert.False(AgentCapabilities.PeerCacheEnabled);
-            Assert.False(AgentCapabilities.StatusMessage().ContainsKey(AgentCapabilities.PeerCacheKey));
+            Assert.Equal(false, AgentCapabilities.StatusMessage()[AgentCapabilities.PeerCacheKey]);
         }
 
         [Fact]
@@ -825,10 +1058,18 @@ namespace POps.Tests.Agent
 
         // ---------------------------------------------------------------------------------------- duyuru
         [Fact]
-        public void AgentFeatures_AnnouncePeerCache()
+        public void AgentFeatures_AnnouncePeerCache_OnlyWhileTheCapabilityIsOn()
         {
             Assert.Equal("X-Agent-Features", AgentFeatures.HeaderName);
             Assert.Contains("peer_cache", AgentFeatures.All);
+            Assert.Matches("^[a-z0-9_]+(,[a-z0-9_]+)*$", AgentFeatures.Header);
+            Assert.Contains("peer_cache", AgentFeatures.Header.Split(','));
+
+            // Kapalı yetenekle duyurulmaz: sunucu bu PC'yi tohum ya da eş seçmesin
+            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"peer_cache_enabled\":false}");
+            AgentCapabilities.Load();
+            Assert.DoesNotContain("peer_cache", AgentFeatures.Header.Split(','));
+            Assert.Contains("power", AgentFeatures.Header.Split(','));
             Assert.Matches("^[a-z0-9_]+(,[a-z0-9_]+)*$", AgentFeatures.Header);
 
             // Komut bağlantısı başlığı X-Agent-Version'dan hemen sonra ekler

@@ -21,7 +21,8 @@ namespace POpsAgent
     //  2. İmza gömülü ed25519 anahtarla doğrulanır; sürüm kurulu sürümden büyük olmalıdır (downgrade yok).
     //  3. MSI'ın adı, boyutu ve SHA-256'sı yalnızca imzalı manifest'ten alınır. Dosya emirdeki laboratuvar eşlerinden
     //     ("peers", bkz. PeerDownload) ya da bu ajanın bağlı olduğu sunucunun /updates dizininden indirilir; boyut ya da
-    //     özet tutmazsa uygulanmaz. Doğrulanan paketin kopyası eşler için önbelleğe alınır (bkz. PeerCache).
+    //     özet tutmazsa uygulanmaz. Emir "peer_cache": true taşıyorsa doğrulanan paketin kopyası eşler için önbelleğe
+    //     alınır (bkz. PeerCache).
     //  4. Doğrulanan MSI C:\POpsData\updates'e konur (öğrenciler yazamaz) ve POpsUpdater, kurulum klasörü
     //     dışına kopyalanıp başlatılır: msiexec kurulum klasörünü değiştirirken kendi dosyasını kilitlemesin.
     // Doğrulamaların hepsi geçmeden hiçbir süreç durdurulmaz, hiçbir dosya değiştirilmez.
@@ -378,9 +379,11 @@ namespace POpsAgent
                 }
                 POpsHelpers.Log("UPDATE", $"[GÜVENLİK] İmzalı manifest doğrulandı: {InstalledVersion} -> {manifest.Version} ({msi.Name}, {manifest.Tag}).");
 
-                // Eş önbelleği (bkz. PeerCache, PeerDownload): yeni güncelleme önbellekteki başka paketi siler; emirdeki
-                // eşler yalnızca özellik açıkken ve karantina yokken denenir
-                await PeerCache.OnUpdateStartingAsync(msi.Sha256);
+                // Eş önbelleği (bkz. PeerCache, PeerDownload): yeni güncelleme önbellekteki başka paketi siler; paket yalnızca
+                // emir "peer_cache": true taşıyorsa tutulup sunulur (yoksa önbellek boşaltılır, port açılmaz). Emirdeki eşler
+                // yalnızca yetenek açıkken ve karantina / sınav modu yokken denenir.
+                bool keepForPeers = PeerCache.Requested(command);
+                await PeerCache.OnUpdateStartingAsync(msi.Sha256, keepForPeers);
                 List<PeerDownload.Peer> peers = AgentCapabilities.PeerCacheEnabled && !PeerCache.IsIsolated()
                     ? PeerDownload.Parse(command, msi.Sha256)
                     : new List<PeerDownload.Peer>();
@@ -390,8 +393,8 @@ namespace POpsAgent
                 packagePath = Path.Combine(UpdatesDir, msi.Name);
                 string url = $"{serverUrl.TrimEnd('/')}/updates/{Uri.EscapeDataString(msi.Name)}";
                 if (!await DownloadVerifiedAsync(http, url, packagePath, msi, update, peers)) return;
-                // Doğrulanmış paketin kopyası eşler için saklanır (paket updater için yerinde kalır)
-                await PeerCache.StoreAsync(packagePath, msi.Sha256, msi.Size);
+                // Doğrulanmış paketin kopyası, sunucu istediyse eşler için saklanır (paket updater için yerinde kalır)
+                if (keepForPeers) await PeerCache.StoreAsync(packagePath, msi.Sha256, msi.Size);
 
                 launched = LaunchOverride != null
                     ? LaunchOverride(packagePath, msi.Sha256, manifest.Version)
@@ -415,10 +418,11 @@ namespace POpsAgent
         // update.lock'taki hedef sürüm (yoksa null)
         private static string LockedVersion() => ReadJson<UpdateRun>(LockPath)?.ToVersion;
 
-        // "downloaded" aşamasının detail'i: paketin kaynağı (docs/agent.md#lab-local-peer-cache)
-        public const string SourceServer = "source: server";
-        public const string SourceCache = "source: cache";
-        public const string SourcePeerPrefix = "source: peer ";
+        // "downloaded" aşamasının detail'i: paketin kaynağı (docs/agent.md#peer-cache-contract: "peer <hw_id>", "server";
+        // ajanın kendi önbelleğindeki aynı paket "cache")
+        public const string SourceServer = "server";
+        public const string SourceCache = "cache";
+        public const string SourcePeerPrefix = "peer ";
 
         // Kaynak sırası: aynı paket yerel önbellekte (önceki bir çalışmada doğrulanmış), emirdeki eşler, sunucu (BITS, sonra
         // HttpClient). Her kaynak imzalı manifest'teki boyut ve SHA-256'yla denetlenir.

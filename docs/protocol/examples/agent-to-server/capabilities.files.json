@@ -6,5 +6,6 @@
   "files_enabled": true,
   "exam_enabled": true,
   "power_enabled": true,
-  "message_enabled": false
+  "message_enabled": false,
+  "peer_cache_enabled": true
 }

@@ -97,7 +97,7 @@ namespace POps.Tests.Agent
             AgentCapabilities.Load();
             AgentCapabilities.ApplyServerRequest(Request("{\"vision_enabled\":false}"));
             Assert.Equal("{\"type\":\"capabilities\",\"terminal_enabled\":true,\"vision_enabled\":false,\"server_ca\":\"system\",\"files_enabled\":true,"
-                + "\"exam_enabled\":true,\"power_enabled\":true,\"message_enabled\":true}", JsonSerializer.Serialize(AgentCapabilities.StatusMessage()));
+                + "\"exam_enabled\":true,\"power_enabled\":true,\"message_enabled\":true,\"peer_cache_enabled\":true}", JsonSerializer.Serialize(AgentCapabilities.StatusMessage()));
         }
     }
 }

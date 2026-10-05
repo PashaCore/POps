@@ -8,6 +8,7 @@ using System.Net.Sockets;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,16 +17,22 @@ using System.Threading.Tasks;
 
 namespace POpsAgent
 {
-    // Laboratuvar içi eş önbelleği, ajan tarafı (docs/design/peer-cache.md, seçenek A; X-Agent-Features: peer_cache).
+    // Laboratuvar içi eş önbelleği, ajan tarafı (docs/agent.md "Peer cache contract", docs/design/peer-cache.md seçenek A;
+    // X-Agent-Features: peer_cache).
+    //  * Paket yalnızca sunucu isteyince tutulur: update_agent emrinde "peer_cache": true (sunucunun eş önbelleği ayarı
+    //    açık, bilgisayar aşamalı dağıtıma katılıyor). Bayraksız emirde önbellek boşaltılır; paket tutulmaz, port
+    //    açılmaz, güvenlik duvarı kuralı eklenmez.
     //  * İmzalı manifest'le doğrulanmış güncelleme paketi C:\POpsData\cache\<sha256> olarak KOPYALANIR (updater'ın
-    //    kullandığı paket yerinde kalır). En çok bir paket tutulur; 2 saat sonra ya da başka bir paketle yeni bir
-    //    güncelleme başlayınca silinir. Klasör yalnızca SYSTEM/Administrators'a açıktır.
+    //    kullandığı paket yerinde kalır). En çok bir paket tutulur; 2 saat sonra ya da başka bir paketle (ya da
+    //    bayraksız) yeni bir güncelleme başlayınca silinir. Klasör yalnızca SYSTEM/Administrators'a açıktır.
     //  * Paket varken servis TCP 8817'de salt okunur bir HTTP sunucusu açar (bkz. PeerCacheServer): yalnızca
-    //    GET /pops-cache/<sha256>, en çok 4 eşzamanlı istemci, yalnızca yerel alt ağdan. Güvenlik duvarına
-    //    "POps Peer Cache" grubunda, yalnızca yerel alt ağdan (LocalSubnet) POpsAgent.exe'ye gelen TCP 8817 için bir izin
-    //    kuralı eklenir; sunucu durunca (önbellek boşaldı, karantina, servis duruyor) kural kaldırılır.
-    //  * Ağ karantinasında sunulmaz (yalıtım kuralları gelen bağlantıyı zaten engeller). peer_cache_enabled kapalıysa
-    //    önbellek silinir, sunulmaz ve eşlerden indirilmez (bkz. AgentCapabilities, PeerDownload).
+    //    GET/HEAD /pops-cache/<sha256>, en çok 4 eşzamanlı aktarım (fazlası 60 sn sıra bekler), yalnızca yerel alt ağdan.
+    //    Güvenlik duvarına "POps Peer Cache" grubunda, yalnızca yerel alt ağdan (LocalSubnet) POpsAgent.exe'ye gelen
+    //    TCP 8817 için bir izin kuralı eklenir; sunucu durunca (önbellek boşaldı, karantina, sınav, servis duruyor) kural
+    //    kaldırılır.
+    //  * Ağ karantinasında ve sınav modunda sunulmaz ve eşlerden indirilmez (yalıtım kuralları gelen bağlantıyı zaten
+    //    engeller). peer_cache_enabled kapalıysa önbellek silinir, sunulmaz, eşlerden indirilmez ve özellik duyurulmaz
+    //    (bkz. AgentCapabilities, AgentFeatures, PeerDownload).
     // Önbellekteki dosyaya kimse güvenmek zorunda değildir: indiren her ajan boyutu ve SHA-256'yı imzalı manifest'le
     // denetler. Bir eşe dosya göndermek yönetici işlemi değildir; yalnızca POps loguna yazılır.
     [SupportedOSPlatform("windows")]
@@ -51,7 +58,16 @@ namespace POpsAgent
         internal static Func<string, Task<(int Exit, string Output)>> FirewallRunner { get; set; } = RunPowerShellAsync;
         internal static Func<IPEndPoint> ListenEndpoint { get; set; } = () => new IPEndPoint(IPAddress.IPv6Any, Port);
         internal static Func<IPAddress, bool> IsLocalSubnet { get; set; } = InLocalSubnet;
-        internal static Func<bool> IsIsolated { get; set; } = () => NetworkIsolation.IsActive;
+        internal static Func<bool> IsIsolated { get; set; } = DefaultIsolated;
+
+        // Ağ karantinası ya da sınav modu: ikisinin kuralları da gelen bağlantıyı engeller, giden bağlantıyı izin listesine
+        // sınırlar; bu sırada sunulmaz ve eşlere gidilmez
+        internal static bool DefaultIsolated() => NetworkIsolation.IsActive || ExamMode.IsActive;
+
+        // update_agent'ta "peer_cache": true: sunucu bu paketin tutulup sunulmasını istiyor (yalnızca JSON true; başka
+        // her değer, alanın yokluğu gibi, "tutma" demektir)
+        public static bool Requested(JsonElement command) =>
+            command.ValueKind == JsonValueKind.Object && command.TryGetProperty("peer_cache", out JsonElement flag) && flag.ValueKind == JsonValueKind.True;
 
         private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
         private static PeerCacheServer? _server;
@@ -100,17 +116,18 @@ namespace POpsAgent
             finally { Gate.Release(); }
         }
 
-        // Yeni bir güncelleme başlıyor (manifest doğrulandı, sürüm yeni): başka bir paket silinir. Aynı paket yerinde kalır,
-        // yerel kaynak olarak kullanılır (bkz. TryCopyToAsync).
-        public static async Task OnUpdateStartingAsync(string sha256)
+        // Yeni bir güncelleme başlıyor (manifest doğrulandı, sürüm yeni): başka bir paket silinir. keep (emirde
+        // "peer_cache": true) ise aynı paket yerinde kalır, yerel kaynak olarak kullanılır (bkz. TryCopyToAsync); değilse
+        // önbellek tümüyle boşaltılır ve sunum durur (sunucu bu PC'nin paket tutmasını istemiyor).
+        public static async Task OnUpdateStartingAsync(string sha256, bool keep)
         {
             await Gate.WaitAsync();
             try
             {
                 if (Directory.Exists(Dir))
                     foreach (string file in Directory.GetFiles(Dir))
-                        if (!string.Equals(Path.GetFileName(file), sha256, StringComparison.Ordinal))
-                            Delete(file, "yeni güncelleme başladı");
+                        if (!keep) Delete(file, "sunucu önbellek istemedi");
+                        else if (!string.Equals(Path.GetFileName(file), sha256, StringComparison.Ordinal)) Delete(file, "yeni güncelleme başladı");
                 await SyncLockedAsync();
             }
             catch (Exception ex) { POpsHelpers.Log("PEERCACHE", $"Eş önbelleği temizlenemedi: {ex.Message}", true); }
@@ -196,7 +213,7 @@ namespace POpsAgent
 
             if (package == null) await StopServingAsync("önbellek boş");
             else if (_shutdown) await StopServingAsync("servis duruyor", force: true);
-            else if (IsIsolated()) await StopServingAsync("ağ karantinası sürüyor");
+            else if (IsIsolated()) await StopServingAsync("ağ karantinası ya da sınav modu sürüyor");
             else await StartServingAsync(package);
 
             if (package == null && _ruleMayExist == false) TryDeleteEmptyDirectory();
