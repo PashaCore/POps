@@ -77,12 +77,12 @@
 
 <div class="page-header">
     <div>
-        <h1>Uzak ekran</h1>
+        <h1><?php _e('Uzak ekran'); ?></h1>
         <div class="summary" id="vsSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="histBtn" data-tip="Oturum geçmişi" aria-label="Oturum geçmişi"><?php echo pops_icon('clock'); ?></button>
-        <button type="button" class="ibtn boxed" id="refreshBtn" data-tip="Ekranları tazele" data-tip-pos="left" aria-label="Ekranları tazele"><?php echo pops_icon('refresh'); ?></button>
+        <button type="button" class="ibtn boxed" id="histBtn" data-tip="<?php _e('Oturum geçmişi'); ?>" aria-label="<?php _e('Oturum geçmişi'); ?>"><?php echo pops_icon('clock'); ?></button>
+        <button type="button" class="ibtn boxed" id="refreshBtn" data-tip="<?php _e('Ekranları tazele'); ?>" data-tip-pos="left" aria-label="<?php _e('Ekranları tazele'); ?>"><?php echo pops_icon('refresh'); ?></button>
     </div>
 </div>
 
@@ -90,39 +90,39 @@
     <div class="vs-bar">
         <div class="vs-scope" id="vsScope"></div>
         <span class="grow"></span>
-        <?php if ($vsCanAdmin): ?><div class="actionbar" id="vsActions" role="toolbar" aria-label="Bilgisayar işlemleri"></div><?php endif; ?>
+        <?php if ($vsCanAdmin): ?><div class="actionbar" id="vsActions" role="toolbar" aria-label="<?php _e('Bilgisayar işlemleri'); ?>"></div><?php endif; ?>
         <div class="search-field">
             <?php echo pops_icon('search', 'sm'); ?>
-            <input type="search" id="vsSearch" placeholder="Bilgisayar, kullanıcı ya da IP" aria-label="Bilgisayar, kullanıcı, IP ya da MAC ara">
+            <input type="search" id="vsSearch" placeholder="<?php _e('Bilgisayar, kullanıcı ya da IP'); ?>" aria-label="<?php _e('Bilgisayar, kullanıcı, IP ya da MAC ara'); ?>">
         </div>
     </div>
-    <div class="vs-grid" id="vsGrid"><div class="loading-state" role="status" style="grid-column:1/-1"><span class="spinner"></span>Yükleniyor…</div></div>
+    <div class="vs-grid" id="vsGrid"><div class="loading-state" role="status" style="grid-column:1/-1"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
 </div>
 
 <div class="card vw" id="viewer" hidden>
     <div class="vw-head">
-        <button type="button" class="ibtn" data-act="back" data-tip="Ekranlara dön (Esc)" aria-label="Ekranlara dön"><?php echo pops_icon('left'); ?></button>
+        <button type="button" class="ibtn" data-act="back" data-tip="<?php _e('Ekranlara dön (Esc)'); ?>" aria-label="<?php _e('Ekranlara dön'); ?>"><?php echo pops_icon('left'); ?></button>
         <div class="vw-title"><h2 id="vwName"></h2><div class="sub" id="vwSub"></div></div>
         <div class="vw-ctrl">
-            <label class="switch-field" id="liveField"><span class="switch success"><input type="checkbox" id="liveSw"><span></span></span>Canlı izle</label>
-            <label class="switch-field off" id="ctrlField"><span class="switch warning"><input type="checkbox" id="ctrlSw" disabled><span></span></span>Kontrol</label>
-            <select id="fpsSel" aria-label="Kare hızı" hidden>
-                <option value="1">1 kare/sn</option>
-                <option value="2" selected>2 kare/sn</option>
-                <option value="5">5 kare/sn</option>
+            <label class="switch-field" id="liveField"><span class="switch success"><input type="checkbox" id="liveSw"><span></span></span><?php _e('Canlı izle'); ?></label>
+            <label class="switch-field off" id="ctrlField"><span class="switch warning"><input type="checkbox" id="ctrlSw" disabled><span></span></span><?php _e('Kontrol'); ?></label>
+            <select id="fpsSel" aria-label="<?php _e('Kare hızı'); ?>" hidden>
+                <option value="1"><?php _e('{n} kare/sn', ['n' => 1]); ?></option>
+                <option value="2" selected><?php _e('{n} kare/sn', ['n' => 2]); ?></option>
+                <option value="5"><?php _e('{n} kare/sn', ['n' => 5]); ?></option>
             </select>
             <div class="ibtns">
-                <button type="button" class="ibtn" data-act="snap" data-tip="Görüntüyü tazele" aria-label="Görüntüyü tazele"><?php echo pops_icon('refresh'); ?></button>
-                <button type="button" class="ibtn" data-act="full" data-tip="Tam ekran" aria-label="Tam ekran"><?php echo pops_icon('expand'); ?></button>
-                <button type="button" class="ibtn" data-act="more" data-tip="Diğer işlemler" data-tip-pos="left" aria-label="Diğer işlemler" aria-haspopup="menu"><?php echo pops_icon('more'); ?></button>
+                <button type="button" class="ibtn" data-act="snap" data-tip="<?php _e('Görüntüyü tazele'); ?>" aria-label="<?php _e('Görüntüyü tazele'); ?>"><?php echo pops_icon('refresh'); ?></button>
+                <button type="button" class="ibtn" data-act="full" data-tip="<?php _e('Tam ekran'); ?>" aria-label="<?php _e('Tam ekran'); ?>"><?php echo pops_icon('expand'); ?></button>
+                <button type="button" class="ibtn" data-act="more" data-tip="<?php _e('Diğer işlemler'); ?>" data-tip-pos="left" aria-label="<?php _e('Diğer işlemler'); ?>" aria-haspopup="menu"><?php echo pops_icon('more'); ?></button>
             </div>
         </div>
     </div>
     <div class="vw-stage" id="vwStage">
         <img id="liveImg" alt="" draggable="false" hidden>
         <div class="vw-wait solid" id="vwWait"></div>
-        <div id="inputLayer" tabindex="0" aria-label="Uzak bilgisayar ekranı; fare ve klavye bu bilgisayara gider" hidden></div>
-        <span class="vw-badge" id="vwBadge"><span class="dot"></span><span id="vwBadgeT">Önizleme</span></span>
+        <div id="inputLayer" tabindex="0" aria-label="<?php _e('Uzak bilgisayar ekranı; fare ve klavye bu bilgisayara gider'); ?>" hidden></div>
+        <span class="vw-badge" id="vwBadge"><span class="dot"></span><span id="vwBadgeT"><?php _e('Önizleme'); ?></span></span>
     </div>
     <div class="vw-foot" id="vwFoot"></div>
 </div>
@@ -130,30 +130,30 @@
 <div id="sessModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-header">
-            <div class="modal-title" id="sessTitle">Canlı izleme oturumu</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
+            <div class="modal-title" id="sessTitle"><?php _e('Canlı izleme oturumu'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <p class="card-desc" id="sessDesc"></p>
             <?php if ($vsRole !== 'viewer'): ?>
             <div class="field">
-                <label>Bağlantı türü</label>
-                <div class="segmented block" id="sessType" role="group" aria-label="Bağlantı türü">
-                    <button type="button" data-type="routine" class="active" aria-pressed="true">Kullanıcıya sor</button>
-                    <button type="button" data-type="mandatory" aria-pressed="false">Zorunlu müdahale</button>
+                <label><?php _e('Bağlantı türü'); ?></label>
+                <div class="segmented block" id="sessType" role="group" aria-label="<?php _e('Bağlantı türü'); ?>">
+                    <button type="button" data-type="routine" class="active" aria-pressed="true"><?php _e('Kullanıcıya sor'); ?></button>
+                    <button type="button" data-type="mandatory" aria-pressed="false"><?php _e('Zorunlu müdahale'); ?></button>
                 </div>
                 <div class="field-hint" id="sessHint"></div>
             </div>
             <?php endif; ?>
             <div class="field">
-                <label for="sessReason">Gerekçe</label>
-                <input type="text" id="sessReason" maxlength="300" placeholder="Örn. ağ bağlantı sorununa bakılacak" autocomplete="off">
-                <div class="field-error" id="sessErr">Gerekçeyi yazın.</div>
+                <label for="sessReason"><?php _e('Gerekçe'); ?></label>
+                <input type="text" id="sessReason" maxlength="300" placeholder="<?php _e('Örn. ağ bağlantı sorununa bakılacak'); ?>" autocomplete="off">
+                <div class="field-error" id="sessErr"><?php _e('Gerekçeyi yazın.'); ?></div>
             </div>
         </div>
         <div class="modal-footer">
-            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
-            <button type="button" class="btn" id="sessStart">Oturumu başlat</button>
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="sessStart"><?php _e('Oturumu başlat'); ?></button>
         </div>
     </div>
 </div>
@@ -162,20 +162,20 @@
 <div id="diagModal" class="modal-overlay">
     <div class="modal-box lg">
         <div class="modal-header">
-            <div class="modal-title" id="diagTitle">Teşhis</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
+            <div class="modal-title" id="diagTitle"><?php _e('Teşhis'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <div class="diag-out" id="diagOut" aria-live="polite"></div>
             <div class="diag-cmds" id="diagCmds">
-                <button type="button" class="btn secondary" data-cmd="check_process"><?php echo pops_icon('list', 'sm'); ?>POps süreçlerini listele</button>
-                <button type="button" class="btn secondary" data-cmd="check_logs"><?php echo pops_icon('file', 'sm'); ?>Son ajan günlüğünü oku</button>
-                <button type="button" class="btn secondary" data-cmd="restart_capture"><?php echo pops_icon('eye', 'sm'); ?>Ekran yakalamayı yeniden başlat</button>
-                <button type="button" class="btn secondary" data-cmd="sync_time"><?php echo pops_icon('clock', 'sm'); ?>Saati eşitle</button>
-                <button type="button" class="btn secondary" data-cmd="restart_agent"><?php echo pops_icon('restart', 'sm'); ?>Ajanı yeniden başlat</button>
-                <button type="button" class="btn danger-soft" data-cmd="reboot_pc"><?php echo pops_icon('power', 'sm'); ?>Bilgisayarı yeniden başlat</button>
+                <button type="button" class="btn secondary" data-cmd="check_process"><?php echo pops_icon('list', 'sm'); ?><?php _e('POps süreçlerini listele'); ?></button>
+                <button type="button" class="btn secondary" data-cmd="check_logs"><?php echo pops_icon('file', 'sm'); ?><?php _e('Son ajan günlüğünü oku'); ?></button>
+                <button type="button" class="btn secondary" data-cmd="restart_capture"><?php echo pops_icon('eye', 'sm'); ?><?php _e('Ekran yakalamayı yeniden başlat'); ?></button>
+                <button type="button" class="btn secondary" data-cmd="sync_time"><?php echo pops_icon('clock', 'sm'); ?><?php _e('Saati eşitle'); ?></button>
+                <button type="button" class="btn secondary" data-cmd="restart_agent"><?php echo pops_icon('restart', 'sm'); ?><?php _e('Ajanı yeniden başlat'); ?></button>
+                <button type="button" class="btn danger-soft" data-cmd="reboot_pc"><?php echo pops_icon('power', 'sm'); ?><?php _e('Bilgisayarı yeniden başlat'); ?></button>
             </div>
-            <p class="field-hint" style="margin-top:12px">Komutlar görev kuyruğundan SYSTEM olarak çalışır; kimin gönderdiği kaydedilir. Bilgisayarda uzak komut kapalıysa ajan reddeder.</p>
+            <p class="field-hint" style="margin-top:12px"><?php _e('Komutlar görev kuyruğundan SYSTEM olarak çalışır; kimin gönderdiği kaydedilir. Bilgisayarda uzak komut kapalıysa ajan reddeder.'); ?></p>
         </div>
     </div>
 </div>
@@ -219,11 +219,11 @@
     }
     // Ekran neden gösterilemiyor (boşsa gösterilebilir)
     function blocked(d) {
-        if (!d || d.missing) return { icon: 'alert', text: 'Kayıtlı bilgisayar değil' };
-        if (POps.isOffline(d)) return { icon: 'power', text: 'Kapalı' };
-        if (d.cap_vision_enabled === false) return { icon: 'lock', text: 'Uzak ekran bu bilgisayarda kapalı' };
-        if (!visionOn(d.lab || dev.UNASSIGNED)) return { icon: 'lock', text: 'Uzak ekran bu sınıfta kapalı' };
-        if (IS_VIEWER) return { icon: 'eye', text: 'Ekran görüntüleri yalnızca yöneticilere gösterilir' };
+        if (!d || d.missing) return { icon: 'alert', text: POps.t('Kayıtlı bilgisayar değil') };
+        if (POps.isOffline(d)) return { icon: 'power', text: POps.t('Kapalı') };
+        if (d.cap_vision_enabled === false) return { icon: 'lock', text: POps.t('Uzak ekran bu bilgisayarda kapalı') };
+        if (!visionOn(d.lab || dev.UNASSIGNED)) return { icon: 'lock', text: POps.t('Uzak ekran bu sınıfta kapalı') };
+        if (IS_VIEWER) return { icon: 'eye', text: POps.t('Ekran görüntüleri yalnızca yöneticilere gösterilir') };
         return null;
     }
     const unassigned = () => (state.devices || []).filter(d => !d.lab || d.lab === dev.UNASSIGNED);
@@ -249,6 +249,7 @@
         if (ui.q) list = list.filter(d => !d.missing && matches(d));
         return list.sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
     }
+    // Güç işlemlerinde görev başlığının parçası olarak sunucuya gider (veri): Türkçe kalır
     function scopeName() {
         if (ui.pcs) return ui.pcs.length === 1 ? dev.name(ui.pcs[0]) : `seçili ${ui.pcs.length} bilgisayar`;
         if (ui.q) return 'süzgece uyanlar';
@@ -263,23 +264,23 @@
             const psig = 'pcs:' + ui.pcs.length + ':' + missing;
             if (box.dataset.sig === psig) return;
             box.dataset.sig = psig;
-            box.innerHTML = `<span>Seçili <b>${ui.pcs.length}</b> bilgisayar${missing ? ` (${Number(missing)} tanesi kayıtlı değil)` : ''}</span><span class="faint">·</span><button type="button" class="lnk" data-act="all">Tümünü göster</button>`;
+            box.innerHTML = `<span>${POps.tnHtml('Seçili {n} bilgisayar', ui.pcs.length, null, { n: `<b>${Number(ui.pcs.length)}</b>` })}${missing ? ' ' + POps.tnHtml('({n} tanesi kayıtlı değil)', missing) : ''}</span><span class="faint">·</span><button type="button" class="lnk" data-act="all">${POps.tHtml('Tümünü göster')}</button>`;
             return;
         }
         const ls = labs();
         const items = ls.map(l => [l, l, (state.devices || []).filter(d => d.lab === l).length]);
-        if (unassigned().length) items.push([UN, 'Atanmamış', unassigned().length]);
+        if (unassigned().length) items.push([UN, POps.t('Atanmamış'), unassigned().length]);
         if (!items.length) { box.innerHTML = ''; return; }
         const sig = JSON.stringify([items, ui.lab, !!ui.q]);
         if (box.dataset.sig === sig) return;
         box.dataset.sig = sig;
         if (items.length <= 5) {
-            box.innerHTML = `<div class="segmented" role="group" aria-label="Sınıf">${items.map(([k, label, n]) => {
+            box.innerHTML = `<div class="segmented" role="group" aria-label="${escapeHtml(POps.t('Sınıf'))}">${items.map(([k, label, n]) => {
                 const on = !ui.q && k === ui.lab;
                 return `<button type="button" data-lab="${escapeHtml(k)}" class="${on ? 'active' : ''}" aria-pressed="${on ? 'true' : 'false'}">${escapeHtml(label)} <span class="n">${Number(n)}</span></button>`;
             }).join('')}</div>`;
         } else {
-            box.innerHTML = `<select id="vsLab" aria-label="Sınıf">${items.map(([k, label, n]) => `<option value="${escapeHtml(k)}" ${k === ui.lab ? 'selected' : ''}>${escapeHtml(label)} (${Number(n)})</option>`).join('')}</select>`;
+            box.innerHTML = `<select id="vsLab" aria-label="${escapeHtml(POps.t('Sınıf'))}">${items.map(([k, label, n]) => `<option value="${escapeHtml(k)}" ${k === ui.lab ? 'selected' : ''}>${escapeHtml(label)} (${Number(n)})</option>`).join('')}</select>`;
         }
     }
     $('vsScope').addEventListener('click', (e) => {
@@ -308,24 +309,27 @@
         const real = list.filter(d => !d.missing);
         const on = real.filter(d => !POps.isOffline(d)).length;
         const capOff = real.filter(d => !POps.isOffline(d) && blocked(d)).length;
-        $('vsSummary').innerHTML = `<span class="sum"><b>${list.length}</b> ekran</span>`
-            + `<span class="sum"><span class="dot on"></span><b>${Number(on)}</b> açık</span>`
-            + `<span class="sum"><span class="dot off"></span><b>${Number(real.length - on)}</b> kapalı</span>`
-            + (capOff && !IS_VIEWER ? `<span class="sum"><span class="dot"></span><b>${Number(capOff)}</b> izlenemiyor</span>` : '')
-            + (V.live ? `<span class="sum"><span class="dot bad"></span>${escapeHtml(dev.name(V.pc))} canlı izleniyor</span>` : '');
+        // Sayı kalın: yer tutucuya HTML parçası (POps.tnHtml'in son argümanı)
+        const boldHtml = (n) => `<b>${Number(n)}</b>`;
+        $('vsSummary').innerHTML = `<span class="sum">${POps.tnHtml('{n} ekran', list.length, null, { n: boldHtml(list.length) })}</span>`
+            + `<span class="sum"><span class="dot on"></span>${POps.tnHtml('{n} açık', on, null, { n: boldHtml(on) })}</span>`
+            + `<span class="sum"><span class="dot off"></span>${POps.tnHtml('{n} kapalı', real.length - on, null, { n: boldHtml(real.length - on) })}</span>`
+            + (capOff && !IS_VIEWER ? `<span class="sum"><span class="dot"></span>${POps.tnHtml('{n} izlenemiyor', capOff, null, { n: boldHtml(capOff) })}</span>` : '')
+            + (V.live ? `<span class="sum"><span class="dot bad"></span>${POps.tHtml('{name} canlı izleniyor', { name: dev.name(V.pc) })}</span>` : '');
     }
 
     function renderActions(list) {
         const bar = $('vsActions');
         if (!bar) return;
         const n = list.filter(d => !d.missing).length;
-        const label = ui.pcs ? 'Seçili' : ui.q ? 'Süzgeçteki' : (ui.lab === UN ? 'Atanmamış' : 'Bu sınıf');
-        const tgt = `${n} bilgisayar`;
+        const label = ui.pcs ? POps.t('Seçili') : ui.q ? POps.t('Süzgeçteki') : (ui.lab === UN ? POps.t('Atanmamış') : POps.t('Bu sınıf'));
+        const tgt = POps.tn('{n} bilgisayar', n);
+        const wake = POps.t('Uyandır'), restart = POps.t('Yeniden başlat'), shut = POps.tx('Kapat', 'power'), more = POps.t('Diğer işlemler');
         bar.innerHTML = `<span class="scope">${escapeHtml(label)} <b>${Number(n)}</b></span><span class="sep"></span>`
-            + `<button type="button" class="ibtn" data-act="wake" data-tip="Uyandır · ${escapeHtml(tgt)}" aria-label="Uyandır">${POps.iconHtml('zap')}</button>`
-            + `<button type="button" class="ibtn" data-act="restart" data-tip="Yeniden başlat · ${escapeHtml(tgt)}" aria-label="Yeniden başlat">${POps.iconHtml('restart')}</button>`
-            + `<button type="button" class="ibtn danger" data-act="shutdown" data-tip="Kapat · ${escapeHtml(tgt)}" aria-label="Kapat">${POps.iconHtml('power')}</button>`
-            + `<span class="sep"></span><button type="button" class="ibtn" data-act="more" data-tip="Diğer işlemler" data-tip-pos="left" aria-label="Diğer işlemler" aria-haspopup="menu">${POps.iconHtml('more')}</button>`;
+            + `<button type="button" class="ibtn" data-act="wake" data-tip="${escapeHtml(wake + ' · ' + tgt)}" aria-label="${escapeHtml(wake)}">${POps.iconHtml('zap')}</button>`
+            + `<button type="button" class="ibtn" data-act="restart" data-tip="${escapeHtml(restart + ' · ' + tgt)}" aria-label="${escapeHtml(restart)}">${POps.iconHtml('restart')}</button>`
+            + `<button type="button" class="ibtn danger" data-act="shutdown" data-tip="${escapeHtml(shut + ' · ' + tgt)}" aria-label="${escapeHtml(shut)}">${POps.iconHtml('power')}</button>`
+            + `<span class="sep"></span><button type="button" class="ibtn" data-act="more" data-tip="${escapeHtml(more)}" data-tip-pos="left" aria-label="${escapeHtml(more)}" aria-haspopup="menu">${POps.iconHtml('more')}</button>`;
     }
     if ($('vsActions')) $('vsActions').addEventListener('click', (e) => {
         const b = e.target.closest('[data-act]');
@@ -337,12 +341,12 @@
         else if (act === 'more') {
             const all = (state.devices || []).map(d => d.hostname);
             POps.menu(b, [
-                { label: 'Mesaj gönder', icon: 'message', onClick: () => dev.message(hosts, o) },
-                { label: 'Uzak komut', icon: 'terminal', onClick: () => { const on = hosts.filter(h => !POps.isOffline(dev.find(h))); if (!on.length) return POps.toast('warning', 'Açık bilgisayar yok.'); location.href = dev.commandUrl(on.slice(0, 200)); } },
+                { label: POps.t('Mesaj gönder'), icon: 'message', onClick: () => dev.message(hosts, o) },
+                { label: POps.t('Uzak komut'), icon: 'terminal', onClick: () => { const on = hosts.filter(h => !POps.isOffline(dev.find(h))); if (!on.length) return POps.toast('warning', POps.t('Açık bilgisayar yok.')); location.href = dev.commandUrl(on.slice(0, 200)); } },
                 '-',
-                { header: 'Bütün ağ' },
-                { label: 'Ağdaki hepsini uyandır', icon: 'zap', onClick: () => window.wakeUpCommand('ALL', null, b) },
-                { label: 'Ağdaki hepsini kapat', icon: 'power', danger: true, onClick: () => dev.power('shutdown', all, { btn: b, source: 'vision', scopeLabel: 'bütün ağ' }) }
+                { header: POps.t('Bütün ağ') },
+                { label: POps.t('Ağdaki hepsini uyandır'), icon: 'zap', onClick: () => window.wakeUpCommand('ALL', null, b) },
+                { label: POps.t('Ağdaki hepsini kapat'), icon: 'power', danger: true, onClick: () => dev.power('shutdown', all, { btn: b, source: 'vision', scopeLabel: 'bütün ağ' }) }
             ]);
         }
     });
@@ -350,15 +354,15 @@
     // ---- Ekran kartları
     function cardHtml(d) {
         const r = blocked(d);
-        const st = d.missing ? { cls: 'off', word: 'Bulunamadı' } : dev.state(d);
+        const st = d.missing ? { cls: 'off', word: POps.t('Bulunamadı') } : dev.state(d);
         const name = d.missing ? d.hostname : POps.deviceName(d);
         let sub;
-        if (d.missing) sub = 'Kayıtlı değil';
-        else if (st.cls === 'off') sub = st.since ? 'Son görülme ' + POps.relTime(st.since) : 'Kapalı';
-        else sub = dev.user(d) || (st.cls === 'idle' ? 'Boşta' : 'Oturum yok');
-        if ((ui.pcs || ui.q) && !d.missing) sub += ' · ' + (d.lab && d.lab !== dev.UNASSIGNED ? d.lab : 'Atanmamış');
-        const phHtml = r ? `${POps.iconHtml(r.icon)}<span>${escapeHtml(r.text)}</span>` : `${POps.iconHtml('monitor')}<span class="pt">Görüntü bekleniyor</span>`;
-        const markHtml = d.is_quarantined ? `<span class="mk">${dev.markHtml({ kind: 'lock', icon: 'lock', text: 'Karantinada: kullanıcı ekranı kilitli' })}</span>` : '';
+        if (d.missing) sub = POps.t('Kayıtlı değil');
+        else if (st.cls === 'off') sub = st.since ? POps.t('Son görülme {time}', { time: POps.relTime(st.since) }) : POps.t('Kapalı');
+        else sub = dev.user(d) || (st.cls === 'idle' ? POps.t('Boşta') : POps.t('Oturum yok'));
+        if ((ui.pcs || ui.q) && !d.missing) sub += ' · ' + (d.lab && d.lab !== dev.UNASSIGNED ? d.lab : POps.t('Atanmamış'));
+        const phHtml = r ? `${POps.iconHtml(r.icon)}<span>${escapeHtml(r.text)}</span>` : `${POps.iconHtml('monitor')}<span class="pt">${POps.tHtml('Görüntü bekleniyor')}</span>`;
+        const markHtml = d.is_quarantined ? `<span class="mk">${dev.markHtml({ kind: 'lock', icon: 'lock', text: POps.t('Karantinada: kullanıcı ekranı kilitli') })}</span>` : '';
         return `<div class="scr${r ? ' dim' : ''}" data-host="${escapeHtml(d.hostname)}" role="button" tabindex="0" aria-label="${escapeHtml(name + ' · ' + (r ? r.text : st.word))}">
             <div class="thumb"><img alt="" hidden><div class="ph">${phHtml}</div>${markHtml}<span class="age" hidden></span></div>
             <div class="cap"><div class="nm"><span class="dot ${escapeHtml(st.cls)}" title="${escapeHtml(st.word)}"></span><span class="t">${escapeHtml(name)}</span></div><div class="sub">${escapeHtml(sub)}</div></div>
@@ -376,7 +380,7 @@
             if (sec >= 60) age.textContent = POps.relTime(c.at);
         } else {
             const pt = ph.querySelector('.pt');
-            if (pt) pt.textContent = asked[h] && Date.now() - asked[h] > 10000 ? 'Görüntü gelmedi' : 'Görüntü bekleniyor';
+            if (pt) pt.textContent = asked[h] && Date.now() - asked[h] > 10000 ? POps.t('Görüntü gelmedi') : POps.t('Görüntü bekleniyor');
         }
     }
     function applyImages() { document.querySelectorAll('#vsGrid .scr[data-host]').forEach(applyImage); }
@@ -394,9 +398,9 @@
         const grid = $('vsGrid');
         if (!list.length) {
             const any = (state.devices || []).length;
-            POps.setEmpty(grid, ui.q ? { icon: 'filter', title: 'Süzgece uyan bilgisayar yok', text: 'Aramayı değiştirin.' }
-                : !any ? { icon: 'devices', title: 'Henüz bilgisayar yok', text: 'Ajan kurulan bilgisayarlar bağlandıkça burada görünür.' }
-                : { icon: 'devices', title: 'Bu sınıfta bilgisayar yok', text: 'Başka bir sınıf seçin.' });
+            POps.setEmpty(grid, ui.q ? { icon: 'filter', title: POps.t('Süzgece uyan bilgisayar yok'), text: POps.t('Aramayı değiştirin.') }
+                : !any ? { icon: 'devices', title: POps.t('Henüz bilgisayar yok'), text: POps.t('Ajan kurulan bilgisayarlar bağlandıkça burada görünür.') }
+                : { icon: 'devices', title: POps.t('Bu sınıfta bilgisayar yok'), text: POps.t('Başka bir sınıf seçin.') });
             return;
         }
         grid.innerHTML = list.map(cardHtml).join('');
@@ -418,7 +422,7 @@
     function openCard(c) {
         const h = c.dataset.host;
         const d = dev.find(h);
-        if (!d) return POps.toast('warning', 'Bu bilgisayar kayıtlı değil.');
+        if (!d) return POps.toast('warning', POps.t('Bu bilgisayar kayıtlı değil.'));
         if (blocked(d)) { dev.open(h, { source: 'vision' }); return; }
         openViewer(h);
     }
@@ -452,7 +456,7 @@
             diagLog('\n' + String(data.output == null ? '' : data.output));
         } else if (data.type === 'vision_rejected') {
             const who = data.hw_id || data.pc_name || data.device;
-            if (V.live && (!who || who === V.pc)) { POps.toast('warning', 'Kullanıcı bağlantıyı reddetti; oturum kapatıldı.'); stopLive(); }
+            if (V.live && (!who || who === V.pc)) { POps.toast('warning', POps.t('Kullanıcı bağlantıyı reddetti; oturum kapatıldı.')); stopLive(); }
         } else if ((data.type === 'thumbnail' || data.type === 'stream_frame') && data.hw_id && typeof data.image === 'string' && B64.test(data.image.slice(0, 200))) {
             cache[data.hw_id] = { img: data.image, at: Date.now() };
             const card = document.querySelector(`#vsGrid .scr[data-host="${CSS.escape(data.hw_id)}"]`);
@@ -490,9 +494,9 @@
     $('refreshBtn').addEventListener('click', function () {
         if (V.pc) { snapshot(); return; }
         const list = scopeDevices();
-        if (!list.filter(d => !blocked(d)).length) return POps.toast('info', 'İzlenebilecek açık bilgisayar yok.');
+        if (!list.filter(d => !blocked(d)).length) return POps.toast('info', POps.t('İzlenebilecek açık bilgisayar yok.'));
         requestThumbs(list);
-        POps.toast('info', 'Ekran görüntüleri istendi.');
+        POps.toast('info', POps.t('Ekran görüntüleri istendi.'));
     });
 
     // =================================================================
@@ -519,7 +523,7 @@
         const st = dev.state(d);
         $('vwName').textContent = POps.deviceName(d);
         const subHtml = `<span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.word)}` + (dev.user(d) ? ' · ' + escapeHtml(dev.user(d)) : '')
-            + (d.lab && d.lab !== dev.UNASSIGNED ? ' · ' + escapeHtml(d.lab) : '') + (d.is_quarantined ? ' · karantinada' : '');
+            + (d.lab && d.lab !== dev.UNASSIGNED ? ' · ' + escapeHtml(d.lab) : '') + (d.is_quarantined ? ' · ' + POps.tHtml('karantinada') : '');
         $('vwSub').innerHTML = subHtml;
     }
     function renderViewerState() {
@@ -533,7 +537,7 @@
         $('inputLayer').hidden = !V.ctrl;
         const badge = $('vwBadge');
         badge.className = 'vw-badge' + (V.ctrl ? ' ctrl' : V.live ? ' live' : '');
-        $('vwBadgeT').textContent = V.ctrl ? 'Kontrol açık' : V.live ? 'Canlı' : 'Önizleme';
+        $('vwBadgeT').textContent = V.ctrl ? POps.t('Kontrol açık') : V.live ? POps.t('Canlı') : POps.t('Önizleme');
         renderFoot();
     }
     function renderFoot() {
@@ -541,12 +545,12 @@
         if (V.live) {
             const sec = Math.max(0, Math.round((Date.now() - V.startedAt) / 1000));
             const mm = String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
-            foot.innerHTML = `<span class="dot bad"></span><b>${V.mandatory ? 'Zorunlu müdahale' : 'Canlı izleme'}</b><span>· ${escapeHtml(ME.name || '?')}</span><span>· gerekçe: ${escapeHtml(V.reason)}</span><span class="tm">· ${escapeHtml(mm)}</span>`;
+            foot.innerHTML = `<span class="dot bad"></span><b>${V.mandatory ? POps.tHtml('Zorunlu müdahale') : POps.tHtml('Canlı izleme')}</b><span>· ${escapeHtml(ME.name || '?')}</span><span>· ${POps.tHtml('gerekçe: {reason}', { reason: V.reason })}</span><span class="tm">· ${escapeHtml(mm)}</span>`;
         } else if (IS_VIEWER) {
-            foot.textContent = 'Canlı izleme ve kontrol yalnızca yöneticilere açıktır.';
+            foot.textContent = POps.t('Canlı izleme ve kontrol yalnızca yöneticilere açıktır.');
         } else {
             const c = cache[V.pc];
-            foot.textContent = (c ? 'Önizleme · son görüntü ' + POps.relTime(c.at) + '. ' : 'Önizleme. ') + 'Canlı izlemek için oturum açılır; kim, ne zaman ve hangi gerekçeyle bağlandığı kaydedilir.';
+            foot.textContent = (c ? POps.t('Önizleme · son görüntü {time}.', { time: POps.relTime(c.at) }) : POps.t('Önizleme.')) + ' ' + POps.t('Canlı izlemek için oturum açılır; kim, ne zaman ve hangi gerekçeyle bağlandığı kaydedilir.');
         }
     }
     function openViewer(h) {
@@ -556,7 +560,7 @@
         renderViewerHead();
         const c = cache[h];
         if (c) showFrame(c.img, false);
-        else { $('liveImg').hidden = true; setWait('Görüntü bekleniyor…', '', true); }
+        else { $('liveImg').hidden = true; setWait(POps.t('Görüntü bekleniyor…'), '', true); }
         renderViewerState();
         snapshot();
         window.scrollTo(0, 0);
@@ -571,12 +575,12 @@
         if (wsOpen()) wsSend({ type: 'remote_input', device: h, action: 'get_thumbnail' });
         else POps.get('/api/thumbnail/' + encodeURIComponent(h)).then(r => {
             if (r && typeof r.image === 'string' && r.image) onMessage({ data: JSON.stringify({ type: 'thumbnail', hw_id: h, image: r.image }) });
-            else if (V.pc === h && !cache[h] && !V.live) setWait('Görüntü alınamadı', 'Bilgisayardaki ajan önizleme göndermedi. Biraz sonra tazeleyin.');
+            else if (V.pc === h && !cache[h] && !V.live) setWait(POps.t('Görüntü alınamadı'), POps.t('Bilgisayardaki ajan önizleme göndermedi. Biraz sonra tazeleyin.'));
         }).catch((e) => {
             // Sunucu 200 + status:error döner: ajan şu an bağlı değil
-            if (V.pc === h && !cache[h] && !V.live) setWait('Görüntü alınamadı', e && e.status === 200 ? 'Bilgisayardaki ajan şu an sunucuya bağlı değil.' : POps.errorMessage(e));
+            if (V.pc === h && !cache[h] && !V.live) setWait(POps.t('Görüntü alınamadı'), e && e.status === 200 ? POps.t('Bilgisayardaki ajan şu an sunucuya bağlı değil.') : POps.errorMessage(e));
         });
-        setTimeout(() => { if (V.pc === h && !cache[h] && !V.live && !$('vwWait').hidden && $('liveImg').hidden && $('vwWait').textContent.startsWith('Görüntü bekleniyor')) setWait('Görüntü gelmedi', 'Bilgisayardaki ajan önizleme göndermedi. Biraz sonra tazeleyin.'); }, 10000);
+        setTimeout(() => { if (V.pc === h && !cache[h] && !V.live && !$('vwWait').hidden && $('liveImg').hidden && $('vwWait').textContent.startsWith(POps.t('Görüntü bekleniyor…'))) setWait(POps.t('Görüntü gelmedi'), POps.t('Bilgisayardaki ajan önizleme göndermedi. Biraz sonra tazeleyin.')); }, 10000);
     }
     async function closeViewer() {
         if (!V.pc) return;
@@ -597,13 +601,13 @@
         if (seg) seg.querySelectorAll('button').forEach(b => { const on = b.dataset.type === t; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
         const hint = $('sessHint');
         if (hint) hint.textContent = t === 'mandatory'
-            ? 'Kullanıcıya kısa bir uyarı gösterilir, süre dolunca onay beklemeden bağlanılır. Gerekçe zorunludur.'
-            : 'Kullanıcının ekranında onay sorulur; kabul edince görüntü başlar.';
+            ? POps.t('Kullanıcıya kısa bir uyarı gösterilir, süre dolunca onay beklemeden bağlanılır. Gerekçe zorunludur.')
+            : POps.t('Kullanıcının ekranında onay sorulur; kabul edince görüntü başlar.');
     }
     function openSession() {
         if (!V.pc || IS_VIEWER) return;
         exitFull();
-        $('sessDesc').textContent = `${dev.name(V.pc)} ekranı canlı izlenecek. Oturum kim, ne zaman ve hangi gerekçeyle açıldığıyla birlikte denetim kaydına yazılır.`;
+        $('sessDesc').textContent = POps.t('{name} ekranı canlı izlenecek. Oturum kim, ne zaman ve hangi gerekçeyle açıldığıyla birlikte denetim kaydına yazılır.', { name: dev.name(V.pc) });
         $('sessReason').value = '';
         $('sessReason').closest('.field').classList.remove('has-error');
         setSessType('routine');
@@ -622,8 +626,8 @@
             data = await POps.busy(this, () => POps.post('/api/audit/session/start', {
                 admin_id: ME.id, admin_name: ME.name, admin_role: ME.role, target_pc: pc, reason, is_mandatory: V.type === 'mandatory'
             }));
-            if (!data || !data.session_id) throw new Error('Sunucu oturum açmadı.');
-        } catch (e) { POps.toast('error', 'Oturum başlatılamadı: ' + POps.errorMessage(e)); return; }
+            if (!data || !data.session_id) throw new Error(POps.t('Sunucu oturum açmadı.'));
+        } catch (e) { POps.toast('error', POps.t('Oturum başlatılamadı: {error}', { error: POps.errorMessage(e) })); return; }
         closeModal('sessModal');
         if (V.pc !== pc) { endSession(pc, data.session_id); return; }
         V.sid = data.session_id; V.reason = reason; V.mandatory = V.type === 'mandatory';
@@ -634,15 +638,15 @@
         clearInterval(V.cd); clearInterval(V.tick);
         if (countdown > 0) {
             let c = countdown;
-            const show = () => setWait('Zorunlu müdahale başlatıldı', `Kullanıcıya ${c} saniye süre verildi.`, true);
+            const show = () => setWait(POps.t('Zorunlu müdahale başlatıldı'), POps.tn('Kullanıcıya {n} saniye süre verildi.', c), true);
             show();
             V.cd = setInterval(() => {
                 c -= 1;
                 if (!V.live || V.frames) { clearInterval(V.cd); return; }
-                if (c <= 0) { clearInterval(V.cd); setWait('Görüntü aktarımı başlıyor…', '', true); } else show();
+                if (c <= 0) { clearInterval(V.cd); setWait(POps.t('Görüntü aktarımı başlıyor…'), '', true); } else show();
             }, 1000);
         } else {
-            setWait('Kullanıcının onayı bekleniyor…', 'Kullanıcı kabul edince görüntü başlar.', true);
+            setWait(POps.t('Kullanıcının onayı bekleniyor…'), POps.t('Kullanıcı kabul edince görüntü başlar.'), true);
         }
         V.tick = setInterval(() => { if (V.live) { renderFoot(); } }, 1000);
         renderViewerState();
@@ -660,7 +664,7 @@
         if (V.ctrl) setCtrl(false);
         V.live = false; V.sid = null; V.frames = 0;
         clearInterval(V.cd); clearInterval(V.tick);
-        if (!$('liveImg').hidden) setWait(''); else if (wasLive) setWait('Görüntü bekleniyor…', '', true);
+        if (!$('liveImg').hidden) setWait(''); else if (wasLive) setWait(POps.t('Görüntü bekleniyor…'), '', true);
         renderViewerState();
         render(false);
         if (wasLive || sid) await endSession(pc, sid);
@@ -754,60 +758,61 @@
         else if (act === 'more') {
             const h = V.pc, d = dev.find(h) || {};
             POps.menu(b, [
-                { label: 'Bilgisayar ayrıntıları', icon: 'info', onClick: () => { exitFull(); dev.open(h, { source: 'vision' }); } },
-                CAN_ADMIN ? { label: 'Teşhis komutları', icon: 'terminal', onClick: openDiag } : null,
-                { label: 'Oturum geçmişi', icon: 'clock', onClick: () => { exitFull(); openHistory(); } },
+                { label: POps.t('Bilgisayar ayrıntıları'), icon: 'info', onClick: () => { exitFull(); dev.open(h, { source: 'vision' }); } },
+                CAN_ADMIN ? { label: POps.t('Teşhis komutları'), icon: 'terminal', onClick: openDiag } : null,
+                { label: POps.t('Oturum geçmişi'), icon: 'clock', onClick: () => { exitFull(); openHistory(); } },
                 CAN_ADMIN ? '-' : null,
-                CAN_ADMIN && d.is_quarantined ? { label: 'Karantinayı kaldır', icon: 'unlock', onClick: () => { exitFull(); dev.unquarantine([h], { source: 'vision' }); } } : null,
-                CAN_ADMIN && !d.is_quarantined ? { label: 'Karantinaya al', icon: 'lock', danger: true, onClick: () => { exitFull(); dev.quarantine([h], { source: 'vision' }); } } : null
+                CAN_ADMIN && d.is_quarantined ? { label: POps.t('Karantinayı kaldır'), icon: 'unlock', onClick: () => { exitFull(); dev.unquarantine([h], { source: 'vision' }); } } : null,
+                CAN_ADMIN && !d.is_quarantined ? { label: POps.t('Karantinaya al'), icon: 'lock', danger: true, onClick: () => { exitFull(); dev.quarantine([h], { source: 'vision' }); } } : null
             ]);
         }
     });
 
     // ---- Teşhis: görev kuyruğundan (Vision oturumu gerekmez; kimin gönderdiği kaydedilir), çıktı terminal_output ile döner
+    // [görev adı, komut]. Görev adı sunucuya Türkçe gider (veri); panelde POps.taskName ile "…|task" girdisinden çevrilir
     const DIAG = {
-        check_process: ['POps süreçleri', 'tasklist /FI "IMAGENAME eq POps*"'],
-        check_logs: ['Son ajan günlüğü', `powershell.exe -NoProfile -Command "$log = Get-ChildItem 'C:\\POpsLogs\\*.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if($log){ Get-Content $log.FullName -Tail 20 }else{ 'Log bulunamadi.' }"`],
-        restart_capture: ['Ekran yakalamayı yeniden başlat', 'taskkill /F /IM POpsTray.exe'],
-        sync_time: ['Saati eşitle', 'w32tm /resync'],
-        restart_agent: ['Ajanı yeniden başlat', 'taskkill /F /IM POpsAgent.exe'],
-        reboot_pc: ['Yeniden başlat', 'shutdown /r /t 5']
+        check_process: ['Teşhis: POps süreçleri', 'tasklist /FI "IMAGENAME eq POps*"'],
+        check_logs: ['Teşhis: Son ajan günlüğü', `powershell.exe -NoProfile -Command "$log = Get-ChildItem 'C:\\POpsLogs\\*.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if($log){ Get-Content $log.FullName -Tail 20 }else{ 'Log bulunamadi.' }"`],
+        restart_capture: ['Teşhis: Ekran yakalamayı yeniden başlat', 'taskkill /F /IM POpsTray.exe'],
+        sync_time: ['Teşhis: Saati eşitle', 'w32tm /resync'],
+        restart_agent: ['Teşhis: Ajanı yeniden başlat', 'taskkill /F /IM POpsAgent.exe'],
+        reboot_pc: ['Teşhis: Yeniden başlat', 'shutdown /r /t 5']
     };
     function diagLog(text) { const o = $('diagOut'); o.textContent += text; o.scrollTop = o.scrollHeight; }
     function openDiag() {
         if (!V.pc) return;
         exitFull();
-        $('diagTitle').textContent = 'Teşhis · ' + dev.name(V.pc);
-        $('diagOut').textContent = 'Konsol hazır. Çıktılar geldikçe burada görünür.';
+        $('diagTitle').textContent = POps.t('Teşhis · {name}', { name: dev.name(V.pc) });
+        $('diagOut').textContent = POps.t('Konsol hazır. Çıktılar geldikçe burada görünür.');
         openModal('diagModal');
     }
     if ($('diagCmds')) $('diagCmds').addEventListener('click', async (e) => {
         const b = e.target.closest('[data-cmd]');
         if (!b || !V.pc) return;
         const cmd = b.dataset.cmd, item = DIAG[cmd], pc = V.pc, name = dev.name(pc);
-        if (cmd === 'reboot_pc' && !await POps.confirm({ title: `${name} yeniden başlatılsın mı?`, message: '5 saniye içinde yeniden başlar; kaydedilmemiş işler kaybolabilir. Bağlantı kısa süre kopar.', confirmText: 'Yeniden başlat', danger: true, icon: 'restart' })) return;
-        if (cmd === 'restart_agent' && !await POps.confirm({ title: `${name} üzerindeki ajan yeniden başlatılsın mı?`, message: 'Bağlantı birkaç saniye kopar; Windows hizmeti ajanı kendiliğinden yeniden açar.', confirmText: 'Ajanı yeniden başlat', icon: 'refresh' })) return;
-        diagLog(`\n\n> ${item[1]}\nKuyruğa eklendi, ajanın yanıtı bekleniyor…`);
+        if (cmd === 'reboot_pc' && !await POps.confirm({ title: POps.t('{name} yeniden başlatılsın mı?', { name }), message: POps.t('5 saniye içinde yeniden başlar; kaydedilmemiş işler kaybolabilir. Bağlantı kısa süre kopar.'), confirmText: POps.t('Yeniden başlat'), danger: true, icon: 'restart' })) return;
+        if (cmd === 'restart_agent' && !await POps.confirm({ title: POps.t('{name} üzerindeki ajan yeniden başlatılsın mı?', { name }), message: POps.t('Bağlantı birkaç saniye kopar; Windows hizmeti ajanı kendiliğinden yeniden açar.'), confirmText: POps.t('Ajanı yeniden başlat'), icon: 'refresh' })) return;
+        diagLog(`\n\n> ${item[1]}\n` + POps.t('Kuyruğa eklendi, ajanın yanıtı bekleniyor…'));
         try {
             await POps.busy(b, () => POps.post('/api/deploy_orchestration', {
-                target_mode: 'PC', targets: [pc], taskSequence: [{ name: 'Teşhis: ' + item[0], type: 'CMD', command: item[1] }],
-                title: 'Teşhis: ' + item[0], source: 'vision'
-            }, { jobTitle: 'Teşhis: ' + item[0] + ' · ' + name }));
-            if (cmd === 'restart_agent' || cmd === 'reboot_pc') diagLog('\nBu komut çıktı döndürmez; ajan birkaç saniye içinde yeniden bağlanır.');
-        } catch (err) { diagLog('\nGönderilemedi: ' + POps.errorMessage(err)); }
+                target_mode: 'PC', targets: [pc], taskSequence: [{ name: item[0], type: 'CMD', command: item[1] }],
+                title: item[0], source: 'vision'
+            }, { jobTitle: POps.taskName(item[0]) + ' · ' + name }));
+            if (cmd === 'restart_agent' || cmd === 'reboot_pc') diagLog('\n' + POps.t('Bu komut çıktı döndürmez; ajan birkaç saniye içinde yeniden bağlanır.'));
+        } catch (err) { diagLog('\n' + POps.t('Gönderilemedi: {error}', { error: POps.errorMessage(err) })); }
     });
 
     // ---- Oturum geçmişi (kim, ne zaman, ne kadar, gerekçe): cihaz başına /api/devices/{pc}/activity
     const HIST_MAX = 40;
     async function openHistory() {
         const hosts = V.pc ? [V.pc] : scopeDevices().filter(d => !d.missing).map(d => d.hostname);
-        const scope = V.pc ? dev.name(V.pc) : (ui.pcs ? `Seçili ${hosts.length} bilgisayar` : ui.q ? `Süzgeçteki ${hosts.length} bilgisayar` : `${ui.lab === UN ? 'Atanmamış' : ui.lab} · ${hosts.length} bilgisayar`);
+        const scope = V.pc ? dev.name(V.pc) : (ui.pcs ? POps.tn('Seçili {n} bilgisayar', hosts.length) : ui.q ? POps.tn('Süzgeçteki {n} bilgisayar', hosts.length) : (ui.lab === UN ? POps.t('Atanmamış') : ui.lab) + ' · ' + POps.tn('{n} bilgisayar', hosts.length));
         const body = POps.drawer.open('vhist:' + hosts.join(',').slice(0, 200));
-        const headHtml = `<div class="drawer-head"><div class="drawer-title"><span class="drawer-ico">${POps.iconHtml('clock', 'lg')}</span><div style="min-width:0"><h2>Oturum geçmişi</h2><div class="sub">${escapeHtml(scope)}</div></div></div>`
-            + `<button type="button" class="ibtn sm" data-vact="close" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button></div>`;
-        body.innerHTML = headHtml + '<div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div>';
+        const headHtml = `<div class="drawer-head"><div class="drawer-title"><span class="drawer-ico">${POps.iconHtml('clock', 'lg')}</span><div style="min-width:0"><h2>${POps.tHtml('Oturum geçmişi')}</h2><div class="sub">${escapeHtml(scope)}</div></div></div>`
+            + `<button type="button" class="ibtn sm" data-vact="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button></div>`;
+        body.innerHTML = headHtml + `<div class="loading-state" role="status"><span class="spinner"></span>${POps.tHtml('Yükleniyor…')}</div>`;
         const key = POps.drawer.key();
-        if (!hosts.length) { body.innerHTML = headHtml + '<div class="empty-state compact">' + POps.iconHtml('clock') + '<p>Bu kapsamda bilgisayar yok.</p></div>'; return; }
+        if (!hosts.length) { body.innerHTML = headHtml + '<div class="empty-state compact">' + POps.iconHtml('clock') + `<p>${POps.tHtml('Bu kapsamda bilgisayar yok.')}</p></div>`; return; }
         const res = await Promise.allSettled(hosts.slice(0, HIST_MAX).map(h => POps.get('/api/devices/' + encodeURIComponent(h) + '/activity?limit=25').then(r => (r.items || []).filter(i => i.kind === 'vision').map(i => Object.assign({ pc: h }, i)))));
         if (POps.drawer.key() !== key) return;
         const items = res.filter(r => r.status === 'fulfilled').flatMap(r => r.value).sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))).slice(0, 60);
@@ -817,19 +822,19 @@
             const open = !end;
             const stale = open && start && Date.now() - start > 2 * 3600 * 1000;
             const k = open ? (stale ? 'warn' : 'run') : '';
-            const w = open ? (stale ? 'Kapatılmadı' : 'Sürüyor') : 'Bitti';
+            const w = open ? (stale ? POps.t('Kapatılmadı') : POps.t('Sürüyor')) : POps.t('Bitti');
             const dur = start && end ? POps.duration((end - start) / 1000) : '';
-            const metaHtml = escapeHtml(a.by || '?') + ' · ' + POps.timeHtml(a.at) + (dur ? ' · ' + escapeHtml(dur) : '') + ' · ' + escapeHtml(a.mandatory ? 'zorunlu müdahale' : 'kullanıcıya soruldu');
+            const metaHtml = escapeHtml(a.by || '?') + ' · ' + POps.timeHtml(a.at) + (dur ? ' · ' + escapeHtml(dur) : '') + ' · ' + escapeHtml(a.mandatory ? POps.t('zorunlu müdahale') : POps.t('kullanıcıya soruldu'));
             return `<div class="act"><div class="res${k ? ' ' + escapeHtml(k) : ''}">${POps.iconHtml('eye')}</div>
                 <div style="min-width:0"><div class="what">${escapeHtml(dev.name(a.pc))}</div><div class="meta">${metaHtml}</div>
-                ${a.reason ? `<div class="meta">Gerekçe: ${escapeHtml(a.reason)}</div>` : ''}
-                ${stale ? '<div class="why warn">Oturum panelden kapatılmadı (sekme kapandı ya da bağlantı koptu); izleme yetkisi sunucuda süre dolunca düşer.</div>' : ''}</div>
+                ${a.reason ? `<div class="meta">${POps.tHtml('Gerekçe: {reason}', { reason: a.reason })}</div>` : ''}
+                ${stale ? `<div class="why warn">${POps.tHtml('Oturum panelden kapatılmadı (sekme kapandı ya da bağlantı koptu); izleme yetkisi sunucuda süre dolunca düşer.')}</div>` : ''}</div>
                 <div class="side"><span class="word${k ? ' ' + escapeHtml(k) : ''}" title="${escapeHtml(POps.fullTime(a.ended_at))}">${escapeHtml(w)}</span></div></div>`;
         }).join('');
-        const noteHtml = (hosts.length > HIST_MAX ? `<div class="dr-note">İlk ${HIST_MAX} bilgisayarın kayıtları gösteriliyor.</div>` : '')
-            + (failed ? `<div class="dr-note">${Number(failed)} bilgisayarın kaydı okunamadı.</div>` : '');
-        body.innerHTML = headHtml + (items.length ? `<div>${rowsHtml}</div>` : '<div class="empty-state compact">' + POps.iconHtml('eye') + '<p>Bu kapsamda uzak ekran oturumu yok.</p></div>') + noteHtml
-            + '<div class="dr-note" style="font-size:var(--text-xs);color:var(--text-muted)">Her oturum açan kişi, gerekçe ve süreyle denetim kaydına yazılır; bilgisayar başına son 25 kayıt.</div>';
+        const noteHtml = (hosts.length > HIST_MAX ? `<div class="dr-note">${POps.tHtml('İlk {n} bilgisayarın kayıtları gösteriliyor.', { n: HIST_MAX })}</div>` : '')
+            + (failed ? `<div class="dr-note">${POps.tnHtml('{n} bilgisayarın kaydı okunamadı.', failed)}</div>` : '');
+        body.innerHTML = headHtml + (items.length ? `<div>${rowsHtml}</div>` : '<div class="empty-state compact">' + POps.iconHtml('eye') + `<p>${POps.tHtml('Bu kapsamda uzak ekran oturumu yok.')}</p></div>`) + noteHtml
+            + `<div class="dr-note" style="font-size:var(--text-xs);color:var(--text-muted)">${POps.tHtml('Her oturum açan kişi, gerekçe ve süreyle denetim kaydına yazılır; bilgisayar başına son 25 kayıt.')}</div>`;
     }
     $('histBtn').addEventListener('click', openHistory);
     document.addEventListener('click', (e) => {
@@ -858,7 +863,7 @@
         if (V.pc) {
             renderViewerHead();
             const d = dev.find(V.pc);
-            if (V.live && d && POps.isOffline(d)) { POps.toast('warning', `${POps.deviceName(d)} bağlantısı koptu; oturum kapatıldı.`); stopLive(); }
+            if (V.live && d && POps.isOffline(d)) { POps.toast('warning', POps.t('{name} bağlantısı koptu; oturum kapatıldı.', { name: POps.deviceName(d) })); stopLive(); }
         }
     });
     async function loadModules() {

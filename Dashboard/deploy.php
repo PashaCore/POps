@@ -117,29 +117,29 @@
 
 <div class="page-header">
     <div>
-        <h1>Dağıtım</h1>
+        <h1><?php _e('Dağıtım'); ?></h1>
         <div class="summary" id="depSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="chainBtn" data-tip="Görev zinciri oluştur" aria-label="Görev zinciri oluştur"><?php echo pops_icon('list'); ?></button>
-        <button type="button" class="ibtn boxed" id="limitBtn" data-tip="Eşzamanlı kurulum sınırı" aria-label="Eşzamanlı kurulum sınırı"><?php echo pops_icon('sliders'); ?></button>
-        <button type="button" class="btn" id="uploadBtn"><?php echo pops_icon('upload', 'sm'); ?>Paket yükle</button>
+        <button type="button" class="ibtn boxed" id="chainBtn" data-tip="<?php _e('Görev zinciri oluştur'); ?>" aria-label="<?php _e('Görev zinciri oluştur'); ?>"><?php echo pops_icon('list'); ?></button>
+        <button type="button" class="ibtn boxed" id="limitBtn" data-tip="<?php _e('Eşzamanlı kurulum sınırı'); ?>" aria-label="<?php _e('Eşzamanlı kurulum sınırı'); ?>"><?php echo pops_icon('sliders'); ?></button>
+        <button type="button" class="btn" id="uploadBtn"><?php echo pops_icon('upload', 'sm'); ?><?php _e('Paket yükle'); ?></button>
     </div>
 </div>
 
 <div class="dep-bar">
-    <div class="segmented" id="depFilter" role="group" aria-label="Türe göre süz"></div>
+    <div class="segmented" id="depFilter" role="group" aria-label="<?php _e('Türe göre süz'); ?>"></div>
     <span class="grow"></span>
     <div class="search-field">
         <?php echo pops_icon('search', 'sm'); ?>
-        <input type="search" id="depSearch" placeholder="Ad, dosya, özet ya da yükleyen" aria-label="Paket ara">
+        <input type="search" id="depSearch" placeholder="<?php _e('Ad, dosya, özet ya da yükleyen'); ?>" aria-label="<?php _e('Paket ara'); ?>">
     </div>
 </div>
 
 <div class="table-wrap">
     <table class="data-table dep-table">
-        <thead><tr><th>Ad</th><th class="c-size">Boyut</th><th class="c-hash">SHA-256</th><th class="c-added">Eklendi</th><th class="c-last">Son dağıtım</th></tr></thead>
-        <tbody id="depBody"><tr><td colspan="5"><div class="loading-state" role="status"><span class="spinner"></span>Paketler yükleniyor…</div></td></tr></tbody>
+        <thead><tr><th><?php _e('Ad'); ?></th><th class="c-size"><?php _e('Boyut'); ?></th><th class="c-hash">SHA-256</th><th class="c-added"><?php _e('Eklendi'); ?></th><th class="c-last"><?php _e('Son dağıtım'); ?></th></tr></thead>
+        <tbody id="depBody"><tr><td colspan="5"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Paketler yükleniyor…'); ?></div></td></tr></tbody>
     </table>
 </div>
 
@@ -147,61 +147,61 @@
 <div class="modal-overlay" id="pkgModal">
     <div class="modal-box">
         <div class="modal-header">
-            <div class="modal-title" id="pkgTitle">Paket yükle</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
+            <div class="modal-title" id="pkgTitle"><?php _e('Paket yükle'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
-            <div class="segmented block" id="pkgType" role="group" aria-label="Tür" style="margin-bottom:18px">
-                <button type="button" data-t="package" class="active" aria-pressed="true">Kurulum paketi</button>
-                <button type="button" data-t="script" aria-pressed="false">Betik</button>
+            <div class="segmented block" id="pkgType" role="group" aria-label="<?php _e('Tür'); ?>" style="margin-bottom:18px">
+                <button type="button" data-t="package" class="active" aria-pressed="true"><?php _e('Kurulum paketi'); ?></button>
+                <button type="button" data-t="script" aria-pressed="false"><?php _e('Betik'); ?></button>
             </div>
             <div class="field">
-                <label for="pkgName">Ad</label>
-                <input type="text" id="pkgName" maxlength="120" placeholder="Örn. SumatraPDF" autocomplete="off">
+                <label for="pkgName"><?php _e('Ad'); ?></label>
+                <input type="text" id="pkgName" maxlength="120" placeholder="<?php _e('Örn. SumatraPDF'); ?>" autocomplete="off">
             </div>
             <div id="pkgFileArea">
                 <div class="field">
-                    <span class="field-label">Kurulum dosyası</span>
+                    <span class="field-label"><?php _e('Kurulum dosyası'); ?></span>
                     <label class="drop" id="pkgDrop">
-                        <input type="file" id="pkgFile" aria-label="Kurulum dosyası">
+                        <input type="file" id="pkgFile" aria-label="<?php _e('Kurulum dosyası'); ?>">
                         <span class="drop-ico"><?php echo pops_icon('upload'); ?></span>
-                        <span class="drop-t" id="pkgDropT">Dosya seçin ya da buraya bırakın</span>
-                        <span class="drop-s" id="pkgDropS">.exe, .msi ya da install.bat içeren .zip</span>
+                        <span class="drop-t" id="pkgDropT"><?php _e('Dosya seçin ya da buraya bırakın'); ?></span>
+                        <span class="drop-s" id="pkgDropS"><?php _e('.exe, .msi ya da install.bat içeren .zip'); ?></span>
                     </label>
-                    <div class="up-prog" id="pkgProg" hidden><div class="pbar"><i class="run" id="pkgProgBar" style="width:0%"></i></div><span id="pkgProgTxt">%0</span></div>
+                    <div class="up-prog" id="pkgProg" hidden><div class="pbar"><i class="run" id="pkgProgBar" style="width:0%"></i></div><span id="pkgProgTxt"><?php _e('%{n}', ['n' => 0]); ?></span></div>
                 </div>
                 <div class="field">
-                    <label for="pkgArgs">Sessiz kurulum parametreleri</label>
+                    <label for="pkgArgs"><?php _e('Sessiz kurulum parametreleri'); ?></label>
                     <input type="text" id="pkgArgs" class="mono" placeholder="/S" autocomplete="off" spellcheck="false">
-                    <div class="field-hint">MSI için /qn /norestart kendiliğinden eklenir. Kurulum adımları hedefte C:\POpsLogs\deploy_trace.txt dosyasına yazılır.</div>
+                    <div class="field-hint"><?php _e('MSI için /qn /norestart kendiliğinden eklenir. Kurulum adımları hedefte {path} dosyasına yazılır.', ['path' => 'C:\POpsLogs\deploy_trace.txt']); ?></div>
                 </div>
                 <details class="zip-help">
-                    <summary>ZIP paketi nasıl hazırlanır?</summary>
+                    <summary><?php _e('ZIP paketi nasıl hazırlanır?'); ?></summary>
                     <ul>
-                        <li>ZIP'in ana dizininde (alt klasörde değil) install.bat bulunmalı.</li>
-                        <li>POps ZIP'i hedefte açar ve install.bat'ı yukarıdaki parametrelerle yönetici olarak çalıştırır.</li>
-                        <li>Kurulum pencere açmadan bitsin diye install.bat içindeki komutlara sessiz kurulum parametrelerini (/S, /qn, /quiet) ekleyin.</li>
+                        <li><?php _e("ZIP'in ana dizininde (alt klasörde değil) install.bat bulunmalı."); ?></li>
+                        <li><?php _e("POps ZIP'i hedefte açar ve install.bat'ı yukarıdaki parametrelerle yönetici olarak çalıştırır."); ?></li>
+                        <li><?php _e('Kurulum pencere açmadan bitsin diye install.bat içindeki komutlara sessiz kurulum parametrelerini (/S, /qn, /quiet) ekleyin.'); ?></li>
                     </ul>
-                    <pre>:: install.bat örneği
+                    <pre>:: <?php _e('install.bat örneği'); echo "\n"; ?>
 setup.exe /S
 msiexec.exe /i program.msi /qn /norestart</pre>
                 </details>
             </div>
             <div id="pkgCodeArea" hidden>
                 <div class="field">
-                    <label for="pkgCode">Komut</label>
-                    <textarea id="pkgCode" rows="7" class="mono" spellcheck="false" placeholder="Örn. w32tm /resync"></textarea>
-                    <div class="field-hint">PowerShell ya da CMD komutları; hedefte SYSTEM hesabıyla çalışır.</div>
+                    <label for="pkgCode"><?php _e('Komut'); ?></label>
+                    <textarea id="pkgCode" rows="7" class="mono" spellcheck="false" placeholder="<?php _e('Örn. w32tm /resync'); ?>"></textarea>
+                    <div class="field-hint"><?php _e('PowerShell ya da CMD komutları; hedefte SYSTEM hesabıyla çalışır.'); ?></div>
                 </div>
             </div>
             <div class="opt-row">
-                <div class="grow"><div class="t">Bitince yeniden başlat</div><div class="d" id="pkgRebootHint">Başarılı kurulumdan 15 saniye sonra bilgisayar yeniden başlar.</div></div>
-                <label class="switch"><input type="checkbox" id="pkgReboot" aria-label="Bitince yeniden başlat"><span></span></label>
+                <div class="grow"><div class="t"><?php _e('Bitince yeniden başlat'); ?></div><div class="d" id="pkgRebootHint"><?php _e('Başarılı kurulumdan 15 saniye sonra bilgisayar yeniden başlar.'); ?></div></div>
+                <label class="switch"><input type="checkbox" id="pkgReboot" aria-label="<?php _e('Bitince yeniden başlat'); ?>"><span></span></label>
             </div>
         </div>
         <div class="modal-footer">
-            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
-            <button type="button" class="btn" id="pkgSave">Yükle ve ekle</button>
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="pkgSave"><?php _e('Yükle ve ekle'); ?></button>
         </div>
     </div>
 </div>
@@ -210,40 +210,40 @@ msiexec.exe /i program.msi /qn /norestart</pre>
 <div class="modal-overlay" id="runModal">
     <div class="modal-box lg">
         <div class="modal-header">
-            <div class="modal-title" id="runTitle">Dağıt</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
+            <div class="modal-title" id="runTitle"><?php _e('Dağıt'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <section class="run-sec">
-                <div class="run-h"><span>Adımlar</span><span class="faint" id="runStepsNote">Hedefte sırayla çalışır</span></div>
+                <div class="run-h"><span><?php _e('Adımlar'); ?></span><span class="faint" id="runStepsNote"><?php _e('Hedefte sırayla çalışır'); ?></span></div>
                 <div class="run-steps" id="runSteps"></div>
-                <select id="runAdd" class="run-add" aria-label="Adım ekle"></select>
+                <select id="runAdd" class="run-add" aria-label="<?php _e('Adım ekle'); ?>"></select>
             </section>
             <section class="run-sec">
                 <div class="run-h">
-                    <span>Hedef</span>
-                    <div class="segmented" id="runMode" role="group" aria-label="Hedef türü">
-                        <button type="button" data-m="lab" class="active" aria-pressed="true">Sınıflar</button>
-                        <button type="button" data-m="pc" aria-pressed="false">Bilgisayarlar</button>
+                    <span><?php _e('Hedef'); ?></span>
+                    <div class="segmented" id="runMode" role="group" aria-label="<?php _e('Hedef türü'); ?>">
+                        <button type="button" data-m="lab" class="active" aria-pressed="true"><?php _e('Sınıflar'); ?></button>
+                        <button type="button" data-m="pc" aria-pressed="false"><?php _e('Bilgisayarlar'); ?></button>
                     </div>
                 </div>
                 <div class="search-field" style="max-width:none">
                     <?php echo pops_icon('search', 'sm'); ?>
-                    <input type="search" id="runSearch" placeholder="Sınıf ya da bilgisayar ara" aria-label="Hedef ara" autofocus>
+                    <input type="search" id="runSearch" placeholder="<?php _e('Sınıf ya da bilgisayar ara'); ?>" aria-label="<?php _e('Hedef ara'); ?>" autofocus>
                 </div>
                 <div class="run-list" id="runList"></div>
                 <div class="run-sum" id="runSum" aria-live="polite"></div>
             </section>
             <div class="field">
-                <label for="runReason">Gerekçe <span class="faint">(isteğe bağlı)</span></label>
-                <input type="text" id="runReason" maxlength="300" placeholder="Örn. bilişim dersi için PDF okuyucu" autocomplete="off">
-                <div class="field-hint">İşlem geçmişine ve denetim kaydına yazılır.</div>
+                <label for="runReason"><?php _e('Gerekçe'); ?> <span class="faint"><?php _e('(isteğe bağlı)'); ?></span></label>
+                <input type="text" id="runReason" maxlength="300" placeholder="<?php _e('Örn. bilişim dersi için PDF okuyucu'); ?>" autocomplete="off">
+                <div class="field-hint"><?php _e('İşlem geçmişine ve denetim kaydına yazılır.'); ?></div>
             </div>
         </div>
         <div class="modal-footer">
-            <span class="run-foot-note">Adımlar SYSTEM hesabıyla çalışır.</span>
-            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
-            <button type="button" class="btn" id="runGo" disabled>Dağıt</button>
+            <span class="run-foot-note"><?php _e('Adımlar SYSTEM hesabıyla çalışır.'); ?></span>
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="runGo" disabled><?php _e('Dağıt'); ?></button>
         </div>
     </div>
 </div>
@@ -296,12 +296,13 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         if (type === 'package') return `${file} | ${size}${rb}` + (by ? ` | ${by}` : '');
         return `Sistem Betiği${rb}` + (by ? ` | Betik | ${by}` : '');
     }
+    // Türkçe anahtarlar; info() POps.t ile çevirir (tür yalnızca gösterilir ve aramada kullanılır)
     const KIND = { msi: 'MSI paketi', exe: 'Kurulum (EXE)', zip: 'ZIP · install.bat' };
     function info(p) {
         const meta = String(p.meta || '');
         const parts = meta.replace(/\s*\(Reboot\)/g, '').split('|').map(s => s.trim());
         const o = {
-            id: String(p.id || ''), name: p.name || '(adsız)', type: p.type === 'script' ? 'script' : 'package', command: String(p.command || ''),
+            id: String(p.id || ''), name: p.name || POps.t('(adsız)'), type: p.type === 'script' ? 'script' : 'package', command: String(p.command || ''),
             reboot: meta.includes('(Reboot)'), file: '', size: '', by: parts[2] || '', hash: '', args: '', url: '', path: '', code: '', at: null, payload: null, meta
         };
         const m = /^mod-(\d{12,14})$/.exec(o.id);
@@ -319,10 +320,10 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                 if (Number(j.R) === 1) o.reboot = true;
                 if (!o.file && o.path) o.file = o.path.split('\\').pop();
             }
-            o.kind = KIND[(o.file.split('.').pop() || '').toLowerCase()] || 'Kurulum dosyası';
+            o.kind = POps.t(KIND[(o.file.split('.').pop() || '').toLowerCase()] || 'Kurulum dosyası');
         } else {
             o.code = scriptCode(o.command);
-            o.kind = 'Betik';
+            o.kind = POps.t('Betik');
         }
         return o;
     }
@@ -330,7 +331,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     const firstLine = (s) => { const l = String(s || '').split('\n').find(x => x.trim()) || ''; return l.length > 70 ? l.slice(0, 67) + '…' : l; };
     function sizeText(bytes) {
         const n = Number(bytes) || 0;
-        const fmt = (v, d) => v.toLocaleString('tr-TR', { maximumFractionDigits: d, minimumFractionDigits: d });
+        const fmt = (v, d) => v.toLocaleString(POps.locale, { maximumFractionDigits: d, minimumFractionDigits: d });
         if (n >= 1024 * 1024 * 1024) return fmt(n / (1024 * 1024 * 1024), 2) + ' GB';
         if (n >= 1024 * 1024) return fmt(n / (1024 * 1024), 1) + ' MB';
         return Math.max(1, Math.round(n / 1024)) + ' KB';
@@ -345,12 +346,12 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         ta.remove();
         return ok;
     }
-    async function copyText(text, what) {
+    async function copyText(text, okText) {
         let ok = false;
         try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); ok = true; } } catch (e) { ok = false; }
         if (!ok) ok = legacyCopy(text);
-        if (ok) POps.toast('success', `${what} kopyalandı.`);
-        else POps.toast('warning', 'Kopyalanamadı; metni seçip elle kopyalayın.');
+        if (ok) POps.toast('success', okText);
+        else POps.toast('warning', POps.t('Kopyalanamadı; metni seçip elle kopyalayın.'));
     }
 
     // ================= Dağıtım geçmişi (görev kayıtlarından) =================
@@ -387,13 +388,13 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         ui.pkgs.forEach(o => ui.deps.set(o.id, groupJobs(ui.tasks.filter(t => belongs(t, o)))));
     }
     function jobWord(j) {
-        if (j.c.run) return j.c.wait === j.c.run && !j.tasks.some(t => t.status === 'Running') ? (j.tasks.some(t => t.status === 'Paused') ? 'Duraklatıldı' : 'Sırada') : 'Sürüyor';
-        if (j.c.bad) return j.c.bad === j.c.total ? (j.c.total === 1 ? dev.statusWord(j.tasks[0].status) : 'Başarısız') : `${j.c.bad} başarısız`;
-        return 'Tamamlandı';
+        if (j.c.run) return j.c.wait === j.c.run && !j.tasks.some(t => t.status === 'Running') ? (j.tasks.some(t => t.status === 'Paused') ? POps.t('Duraklatıldı') : POps.t('Sırada')) : POps.t('Sürüyor');
+        if (j.c.bad) return j.c.bad === j.c.total ? (j.c.total === 1 ? dev.statusWord(j.tasks[0].status) : POps.t('Başarısız')) : POps.t('{n} başarısız', { n: j.c.bad });
+        return POps.t('Tamamlandı');
     }
     function targetText(j) {
         if (j.c.total === 1) return dev.name(j.tasks[0].target_pc);
-        return (j.labs.length === 1 ? j.labs[0] + ' · ' : j.labs.length > 1 ? j.labs.length + ' sınıf · ' : '') + j.c.total + ' bilgisayar';
+        return (j.labs.length === 1 ? j.labs[0] + ' · ' : j.labs.length > 1 ? POps.tn('{n} sınıf', j.labs.length) + ' · ' : '') + POps.tn('{n} bilgisayar', j.c.total);
     }
     function pbarHtml(c) {
         const segHtml = (cls, n) => n ? `<i class="${escapeHtml(cls)}" style="width:${(n / c.total * 100).toFixed(2)}%"></i>` : '';
@@ -412,15 +413,15 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     }
     function rowHtml(o) {
         const j = (ui.deps.get(o.id) || [])[0];
-        const subText = (o.type === 'package' ? [o.kind, o.file].filter(Boolean).join(' · ') : 'Betik · ' + firstLine(o.code)) + (o.reboot ? ' · yeniden başlatır' : '');
-        const markHtml = o.type === 'package' && !o.hash ? dev.markHtml({ kind: 'upd', glyph: '!', text: 'Dosya özeti yok: indirilen dosya doğrulanmaz' }) : '';
+        const subText = (o.type === 'package' ? [o.kind, o.file].filter(Boolean).join(' · ') : o.kind + ' · ' + firstLine(o.code)) + (o.reboot ? ' · ' + POps.t('yeniden başlatır') : '');
+        const markHtml = o.type === 'package' && !o.hash ? dev.markHtml({ kind: 'upd', glyph: '!', text: POps.t('Dosya özeti yok: indirilen dosya doğrulanmaz') }) : '';
         const hashHtml = o.hash
-            ? `<button type="button" class="hash" data-copy="${escapeHtml(o.hash)}" title="Tam özeti kopyala" aria-label="SHA-256 özetini kopyala">${escapeHtml(shortHash(o.hash))}${POps.iconHtml('copy')}</button>`
+            ? `<button type="button" class="hash" data-copy="${escapeHtml(o.hash)}" title="${escapeHtml(POps.t('Tam özeti kopyala'))}" aria-label="${escapeHtml(POps.t('SHA-256 özetini kopyala'))}">${escapeHtml(shortHash(o.hash))}${POps.iconHtml('copy')}</button>`
             : '<span class="faint">—</span>';
         const addedHtml = o.at || o.by ? (o.by ? escapeHtml(o.by) + (o.at ? ' · ' : '') : '') + (o.at ? POps.timeHtml(o.at) : '') : '<span class="faint">—</span>';
         const lastHtml = j
             ? `<span class="word ${escapeHtml(j.state)}">${escapeHtml(jobWord(j))}${j.state === 'run' ? ' · ' + Number(j.c.ok + j.c.bad) + '/' + Number(j.c.total) : ''}</span><div class="cell-sub">${POps.timeHtml(tsOf(j.at))} · ${escapeHtml(targetText(j))}</div>${j.state === 'run' && j.c.total > 1 ? pbarHtml(j.c) : ''}`
-            : '<span class="faint">Henüz dağıtılmadı</span>';
+            : `<span class="faint">${POps.tHtml('Henüz dağıtılmadı')}</span>`;
         return `<tr data-id="${escapeHtml(o.id)}" tabindex="0" class="${ui.focus === o.id ? 'is-focus' : ''}">
             <td><div class="dep-name"><span class="dep-ico">${POps.iconHtml(o.type === 'package' ? 'package' : 'terminal')}</span><div class="tx"><div class="t">${escapeHtml(o.name)}${markHtml}</div><div class="s" title="${escapeHtml(subText)}">${escapeHtml(subText)}</div></div></div></td>
             <td class="c-size">${o.size ? escapeHtml(o.size) : '<span class="faint">—</span>'}</td>
@@ -432,7 +433,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     function renderFilter() {
         const n = { all: ui.pkgs.length, package: ui.pkgs.filter(o => o.type === 'package').length, script: ui.pkgs.filter(o => o.type === 'script').length };
         const btnHtml = (k, label) => `<button type="button" data-f="${escapeHtml(k)}" class="${ui.f === k ? 'active' : ''}" aria-pressed="${ui.f === k ? 'true' : 'false'}">${escapeHtml(label)} <span class="n">${Number(n[k])}</span></button>`;
-        $('depFilter').innerHTML = btnHtml('all', 'Tümü') + btnHtml('package', 'Paketler') + btnHtml('script', 'Betikler');
+        $('depFilter').innerHTML = btnHtml('all', POps.t('Tümü')) + btnHtml('package', POps.t('Paketler')) + btnHtml('script', POps.t('Betikler'));
     }
     function renderSummary() {
         const nPkg = ui.pkgs.filter(o => o.type === 'package').length;
@@ -442,12 +443,14 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const jobs = [...seen.values()];
         const run = jobs.filter(j => j.state === 'run').length;
         const badToday = jobs.filter(j => j.c.bad && isToday(j.at)).length;
+        // Sayı kalın: yer tutucuya HTML parçası (POps.tnHtml'in son argümanı)
+        const boldHtml = (n) => `<b>${Number(n)}</b>`;
         const limitHtml = ui.limit === null ? '' : ui.limit === 0
-            ? '<span class="sum"><b>Sınırsız</b> eşzamanlı kurulum</span>'
-            : `<span class="sum"><b>${Number(ui.limit)}</b> eşzamanlı kurulum</span>`;
-        $('depSummary').innerHTML = `<span class="sum"><b>${Number(nPkg)}</b> paket</span><span class="sum"><b>${Number(nScr)}</b> betik</span>`
-            + (run ? `<span class="sum"><span class="dot run"></span><b>${Number(run)}</b> dağıtım sürüyor</span>` : '')
-            + (badToday ? `<span class="sum"><span class="dot bad"></span><b>${Number(badToday)}</b> sorunlu dağıtım (bugün)</span>` : '')
+            ? `<span class="sum">${POps.tHtml('{limit} eşzamanlı kurulum', null, { limit: `<b>${POps.tHtml('Sınırsız')}</b>` })}</span>`
+            : `<span class="sum">${POps.tnHtml('{n} eşzamanlı kurulum', ui.limit, null, { n: boldHtml(ui.limit) })}</span>`;
+        $('depSummary').innerHTML = `<span class="sum">${POps.tnHtml('{n} paket', nPkg, null, { n: boldHtml(nPkg) })}</span><span class="sum">${POps.tnHtml('{n} betik', nScr, null, { n: boldHtml(nScr) })}</span>`
+            + (run ? `<span class="sum"><span class="dot run"></span>${POps.tnHtml('{n} dağıtım sürüyor', run, null, { n: boldHtml(run) })}</span>` : '')
+            + (badToday ? `<span class="sum"><span class="dot bad"></span>${POps.tnHtml('{n} sorunlu dağıtım (bugün)', badToday, null, { n: boldHtml(badToday) })}</span>` : '')
             + limitHtml;
     }
     function renderTable(force) {
@@ -460,10 +463,10 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         ui.sig = sig;
         if (!rows.length) {
             if (ui.pkgs.length) {
-                POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'filter', title: 'Süzgece uyan paket yok', text: 'Arama ya da süzgeci değiştirin.' });
+                POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'filter', title: POps.t('Süzgece uyan paket yok'), text: POps.t('Arama ya da süzgeci değiştirin.') });
             } else {
-                POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'package', title: 'Henüz paket yok', text: 'Kurulum dosyası ya da betik ekleyin; buradan sınıflara dağıtılır.' });
-                const b = POps.el('button', { type: 'button', className: 'btn', text: 'Paket yükle' });
+                POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'package', title: POps.t('Henüz paket yok'), text: POps.t('Kurulum dosyası ya da betik ekleyin; buradan sınıflara dağıtılır.') });
+                const b = POps.el('button', { type: 'button', className: 'btn', text: POps.t('Paket yükle') });
                 b.addEventListener('click', () => openPkgModal(null, 'package'));
                 tbody.querySelector('.empty-state').append(b);
             }
@@ -486,7 +489,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
             if (want && !ui.openedFromUrl) { ui.openedFromUrl = true; if (ui.pkgs.some(o => o.id === want)) openPkg(want); }
         } catch (e) {
             if (!ui.loaded) POps.setError(tbody, e, { tag: 'tr', colspan: 5 });
-            else POps.toast('error', 'Paketler alınamadı: ' + POps.errorMessage(e));
+            else POps.toast('error', POps.t('Paketler alınamadı: {error}', { error: POps.errorMessage(e) }));
         }
     }
     async function loadTasks() {
@@ -517,17 +520,17 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const icon = j.state === 'ok' ? 'check' : j.state === 'bad' ? 'x' : 'clock';
         const failed = j.tasks.filter(t => POps.taskState(t.status) === 'bad');
         const singleWhy = j.c.total === 1 && failed.length ? dev.failReason(failed[0]) : '';
-        const failText = failed.slice(0, 6).map(t => dev.name(t.target_pc) + ': ' + (dev.failReason(t) || dev.statusWord(t.status))).join('\n') + (failed.length > 6 ? `\n+${failed.length - 6} bilgisayar daha` : '');
-        const facts = [['Gönderen', j.by || 'sistem'], ['Kaynak', dev.sourceText(j.source)], ['Zaman', POps.fullTime(tsOf(j.at))], ['IP', j.ip], ['Gerekçe', j.reason], ['Hedef', targetText(j)]];
+        const failText = failed.slice(0, 6).map(t => dev.name(t.target_pc) + ': ' + (dev.failReason(t) || dev.statusWord(t.status))).join('\n') + (failed.length > 6 ? '\n' + POps.tn('+{n} bilgisayar daha', failed.length - 6) : '');
+        const facts = [[POps.t('Gönderen'), j.by || POps.t('sistem')], [POps.t('Kaynak'), dev.sourceText(j.source)], [POps.t('Zaman'), POps.fullTime(tsOf(j.at))], ['IP', j.ip], [POps.t('Gerekçe'), j.reason], [POps.t('Hedef'), targetText(j)]];
         const detailHtml = open
             ? '<div class="dp-detail">' + (failed.length && j.c.total > 1 ? `<div class="why">${escapeHtml(failText)}</div>` : '')
               + `<div class="facts">${facts.filter(f => f[1]).map(f => `<span>${escapeHtml(f[0])}</span><span>${escapeHtml(f[1])}</span>`).join('')}</div>`
-              + `<a class="dp-more" href="tasks?job=${encodeURIComponent(j.key)}">İşlemler sayfasında aç</a></div>`
+              + `<a class="dp-more" href="tasks?job=${encodeURIComponent(j.key)}">${POps.tHtml('İşlemler sayfasında aç')}</a></div>`
             : '';
         return `<div class="act clickable" data-job="${escapeHtml(j.key)}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}">
             <div class="res ${escapeHtml(j.state)}">${POps.iconHtml(icon)}</div>
             <div style="min-width:0"><div class="what">${escapeHtml(targetText(j))}</div>
-                <div class="meta">${escapeHtml(j.by || 'sistem')} · ${POps.timeHtml(tsOf(j.at))}${j.reason ? ' · gerekçe: ' + escapeHtml(j.reason) : ''}</div>
+                <div class="meta">${escapeHtml(j.by || POps.t('sistem'))} · ${POps.timeHtml(tsOf(j.at))}${j.reason ? ' · ' + POps.tHtml('gerekçe: {reason}', { reason: j.reason }) : ''}</div>
                 ${singleWhy ? `<div class="why">${escapeHtml(singleWhy)}</div>` : ''}</div>
             <div class="side"><span class="word ${escapeHtml(j.state)}">${escapeHtml(jobWord(j))}</span><span class="when">${Number(j.c.ok + j.c.bad)}/${Number(j.c.total)}</span>${j.c.total > 1 ? pbarHtml(j.c) : ''}</div>
             ${detailHtml}
@@ -538,41 +541,42 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const body = POps.drawer.body();
         const o = ui.pkgs.find(x => x.id === id);
         if (!o) {
-            body.innerHTML = `<div class="drawer-head"><div class="drawer-title"><h2>Paket bulunamadı</h2></div><button type="button" class="ibtn sm" data-act="close" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button></div><p class="dp-empty">Silinmiş olabilir.</p>`;
+            body.innerHTML = `<div class="drawer-head"><div class="drawer-title"><h2>${POps.tHtml('Paket bulunamadı')}</h2></div><button type="button" class="ibtn sm" data-act="close" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button></div><p class="dp-empty">${POps.tHtml('Silinmiş olabilir.')}</p>`;
             return;
         }
         const scroll = keep ? body.scrollTop : 0;
         const deps = ui.deps.get(id) || [];
         const subText = o.kind + (o.size ? ' · ' + o.size : '');
+        const rebootText = o.reboot ? POps.t('Yeniden başlatır') : POps.t('Yeniden başlatmaz');
         const facts = o.type === 'package'
-            ? [['Dosya', o.file, 'mono'], ['Boyut', o.size], ['Sessiz kurulum', o.payload ? (o.args || 'yok') : '', o.args ? 'mono' : ''], ['Bitince', o.reboot ? 'Yeniden başlatır' : 'Yeniden başlatmaz'], ['Yükleyen', o.by]]
-            : [['Bitince', o.reboot ? 'Yeniden başlatır' : 'Yeniden başlatmaz'], ['Ekleyen', o.by]];
+            ? [[POps.t('Dosya'), o.file, 'mono'], [POps.t('Boyut'), o.size], [POps.t('Sessiz kurulum'), o.payload ? (o.args || POps.t('yok')) : '', o.args ? 'mono' : ''], [POps.t('Bitince'), rebootText], [POps.t('Yükleyen'), o.by]]
+            : [[POps.t('Bitince'), rebootText], [POps.t('Ekleyen'), o.by]];
         const factsHtml = '<div class="glist">'
             + facts.filter(f => f[1]).map(f => `<div class="grow"><span>${escapeHtml(f[0])}</span><span class="${escapeHtml(f[2] || '')}">${escapeHtml(f[1])}</span></div>`).join('')
-            + (o.at ? `<div class="grow"><span>Eklendi</span><span>${POps.timeHtml(o.at)}</span></div>` : '')
-            + (o.hash ? `<div class="grow stack"><span>SHA-256</span><button type="button" class="hash full" data-copy="${escapeHtml(o.hash)}" title="Kopyala" aria-label="SHA-256 özetini kopyala">${escapeHtml(o.hash)}${POps.iconHtml('copy')}</button></div>` : '')
-            + `<div class="grow"><span>Kimlik</span><span class="mono">${escapeHtml(o.id)}</span></div>`
+            + (o.at ? `<div class="grow"><span>${POps.tHtml('Eklendi')}</span><span>${POps.timeHtml(o.at)}</span></div>` : '')
+            + (o.hash ? `<div class="grow stack"><span>SHA-256</span><button type="button" class="hash full" data-copy="${escapeHtml(o.hash)}" title="${escapeHtml(POps.t('Kopyala'))}" aria-label="${escapeHtml(POps.t('SHA-256 özetini kopyala'))}">${escapeHtml(o.hash)}${POps.iconHtml('copy')}</button></div>` : '')
+            + `<div class="grow"><span>${POps.tHtml('Kimlik')}</span><span class="mono">${escapeHtml(o.id)}</span></div>`
             + '</div>';
         const issueHtml = o.type === 'package' && !o.hash
-            ? `<div class="issue upd">${POps.iconHtml('alert', 'sm')}<span style="flex:1">${o.payload ? 'Dosya özeti kayıtlı değil: bilgisayarlar indirdikleri dosyayı doğrulamadan çalıştırır. Dosyayı yeniden yükleyin.' : 'Paketin dosya bilgisi okunamadı. Düzenleyip dosyayı yeniden yükleyin.'}</span></div>`
+            ? `<div class="issue upd">${POps.iconHtml('alert', 'sm')}<span style="flex:1">${o.payload ? POps.tHtml('Dosya özeti kayıtlı değil: bilgisayarlar indirdikleri dosyayı doğrulamadan çalıştırır. Dosyayı yeniden yükleyin.') : POps.tHtml('Paketin dosya bilgisi okunamadı. Düzenleyip dosyayı yeniden yükleyin.')}</span></div>`
             : '';
-        const codeHtml = o.type === 'script' ? `<div><h3>Komut</h3><pre class="dp-code">${escapeHtml(o.code)}</pre></div>` : '';
+        const codeHtml = o.type === 'script' ? `<div><h3>${POps.tHtml('Komut')}</h3><pre class="dp-code">${escapeHtml(o.code)}</pre></div>` : '';
         const depsHtml = deps.length
-            ? deps.slice(0, 8).map(depRowHtml).join('') + (deps.length > 8 ? `<a class="dp-more" href="tasks">${Number(deps.length - 8)} dağıtım daha · İşlemler</a>` : '')
-            : `<div class="dp-empty">${ui.tasksAt ? 'Henüz dağıtılmadı.' : 'Yükleniyor…'}</div>`;
+            ? deps.slice(0, 8).map(depRowHtml).join('') + (deps.length > 8 ? `<a class="dp-more" href="tasks">${POps.tnHtml('{n} dağıtım daha', deps.length - 8)} · ${POps.tHtml('İşlemler')}</a>` : '')
+            : `<div class="dp-empty">${ui.tasksAt ? POps.tHtml('Henüz dağıtılmadı.') : POps.tHtml('Yükleniyor…')}</div>`;
         body.innerHTML = `<div class="drawer-head">
                 <div class="drawer-title"><span class="drawer-ico">${POps.iconHtml(o.type === 'package' ? 'package' : 'terminal', 'lg')}</span>
                     <div style="min-width:0"><h2>${escapeHtml(o.name)}</h2><div class="sub">${escapeHtml(subText)}</div></div></div>
-                <button type="button" class="ibtn sm" data-act="close" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button>
+                <button type="button" class="ibtn sm" data-act="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button>
             </div>
             <div class="dp-actions">
-                <button type="button" class="btn" data-act="deploy">${POps.iconHtml('send', 'sm')}Dağıt</button>
-                <button type="button" class="btn secondary" data-act="edit">${POps.iconHtml('edit', 'sm')}Düzenle</button>
+                <button type="button" class="btn" data-act="deploy">${POps.iconHtml('send', 'sm')}${POps.tHtml('Dağıt')}</button>
+                <button type="button" class="btn secondary" data-act="edit">${POps.iconHtml('edit', 'sm')}${POps.tHtml('Düzenle')}</button>
                 <span class="grow"></span>
-                <button type="button" class="ibtn" data-act="more" data-tip="Diğer işlemler" data-tip-pos="left" aria-label="Diğer işlemler" aria-haspopup="menu">${POps.iconHtml('more')}</button>
+                <button type="button" class="ibtn" data-act="more" data-tip="${escapeHtml(POps.t('Diğer işlemler'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Diğer işlemler'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>
             </div>
             ${issueHtml}${factsHtml}${codeHtml}
-            <div><h3>Son dağıtımlar</h3><div class="dp-deps">${depsHtml}</div></div>`;
+            <div><h3>${POps.tHtml('Son dağıtımlar')}</h3><div class="dp-deps">${depsHtml}</div></div>`;
         body.scrollTop = scroll;
     }
     function wireDrawer(body) {
@@ -588,7 +592,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
             if (!key.startsWith('pkg:')) return;
             const o = ui.pkgs.find(x => x.id === key.slice(4));
             const copy = e.target.closest('[data-copy]');
-            if (copy) { copyText(copy.dataset.copy, 'Özet'); return; }
+            if (copy) { copyText(copy.dataset.copy, POps.t('Özet kopyalandı.')); return; }
             const b = e.target.closest('[data-act]');
             if (b) {
                 const act = b.dataset.act;
@@ -597,12 +601,12 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                 else if (act === 'deploy') openRun([o]);
                 else if (act === 'edit') openPkgModal(o);
                 else if (act === 'more') POps.menu(b, [
-                    o.hash ? { label: 'Özeti kopyala', icon: 'copy', onClick: () => copyText(o.hash, 'Özet') } : null,
-                    o.url ? { label: 'İndirme adresini kopyala', icon: 'download', onClick: () => copyText(o.url, 'Adres') } : null,
-                    o.type === 'script' ? { label: 'Komutu kopyala', icon: 'copy', onClick: () => copyText(o.code, 'Komut') } : null,
-                    { label: 'Görev zincirine ekle', icon: 'list', onClick: () => openRun([o], true) },
+                    o.hash ? { label: POps.t('Özeti kopyala'), icon: 'copy', onClick: () => copyText(o.hash, POps.t('Özet kopyalandı.')) } : null,
+                    o.url ? { label: POps.t('İndirme adresini kopyala'), icon: 'download', onClick: () => copyText(o.url, POps.t('Adres kopyalandı.')) } : null,
+                    o.type === 'script' ? { label: POps.t('Komutu kopyala'), icon: 'copy', onClick: () => copyText(o.code, POps.t('Komut kopyalandı.')) } : null,
+                    { label: POps.t('Görev zincirine ekle'), icon: 'list', onClick: () => openRun([o], true) },
                     '-',
-                    { label: o.type === 'package' ? 'Paketi sil' : 'Betiği sil', icon: 'trash', danger: true, onClick: () => removePkg(o) }
+                    { label: o.type === 'package' ? POps.t('Paketi sil') : POps.t('Betiği sil'), icon: 'trash', danger: true, onClick: () => removePkg(o) }
                 ]);
                 return;
             }
@@ -617,12 +621,12 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     }
     async function removePkg(o) {
         const ok = await POps.confirm({
-            title: `${o.name} silinsin mi?`,
-            message: 'Kütüphaneden kaldırılır. Gönderilmiş görevler ve dağıtım geçmişi etkilenmez.',
-            confirmText: o.type === 'package' ? 'Paketi sil' : 'Betiği sil', danger: true, icon: 'trash'
+            title: POps.t('{name} silinsin mi?', { name: o.name }),
+            message: POps.t('Kütüphaneden kaldırılır. Gönderilmiş görevler ve dağıtım geçmişi etkilenmez.'),
+            confirmText: o.type === 'package' ? POps.t('Paketi sil') : POps.t('Betiği sil'), danger: true, icon: 'trash'
         });
         if (!ok) return;
-        if (await POps.act(null, () => POps.post('/api/delete_package', { id: o.id }), { success: `${o.name} silindi.` })) {
+        if (await POps.act(null, () => POps.post('/api/delete_package', { id: o.id }), { success: POps.t('{name} silindi.', { name: o.name }) })) {
             if (POps.drawer.isOpen('pkg:' + o.id)) POps.drawer.close();
             run.steps = run.steps.filter(s => s.id !== o.id);
             loadPackages();
@@ -636,16 +640,16 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         $('pkgType').querySelectorAll('button').forEach(b => { const on = b.dataset.t === t; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
         $('pkgFileArea').hidden = t !== 'package';
         $('pkgCodeArea').hidden = t !== 'script';
-        $('pkgRebootHint').textContent = t === 'package' ? 'Başarılı kurulumdan 15 saniye sonra bilgisayar yeniden başlar.' : 'Komut bittikten 15 saniye sonra bilgisayar yeniden başlar.';
-        if (!up.edit) $('pkgTitle').textContent = t === 'package' ? 'Paket yükle' : 'Betik ekle';
+        $('pkgRebootHint').textContent = t === 'package' ? POps.t('Başarılı kurulumdan 15 saniye sonra bilgisayar yeniden başlar.') : POps.t('Komut bittikten 15 saniye sonra bilgisayar yeniden başlar.');
+        if (!up.edit) $('pkgTitle').textContent = t === 'package' ? POps.t('Paket yükle') : POps.t('Betik ekle');
     }
     function showFile() {
         const f = $('pkgFile').files && $('pkgFile').files[0];
         const drop = $('pkgDrop');
         drop.classList.toggle('has', !!f);
-        if (f) { $('pkgDropT').textContent = f.name; $('pkgDropS').textContent = sizeText(f.size) + ' · değiştirmek için yeniden seçin'; }
-        else if (up.edit && up.edit.type === 'package' && up.edit.file) { $('pkgDropT').textContent = up.edit.file; $('pkgDropS').textContent = (up.edit.size ? up.edit.size + ' · ' : '') + 'sunucuda kayıtlı; değiştirmek için yeni dosya seçin'; }
-        else { $('pkgDropT').textContent = 'Dosya seçin ya da buraya bırakın'; $('pkgDropS').textContent = '.exe, .msi ya da install.bat içeren .zip'; }
+        if (f) { $('pkgDropT').textContent = f.name; $('pkgDropS').textContent = sizeText(f.size) + ' · ' + POps.t('değiştirmek için yeniden seçin'); }
+        else if (up.edit && up.edit.type === 'package' && up.edit.file) { $('pkgDropT').textContent = up.edit.file; $('pkgDropS').textContent = (up.edit.size ? up.edit.size + ' · ' : '') + POps.t('sunucuda kayıtlı; değiştirmek için yeni dosya seçin'); }
+        else { $('pkgDropT').textContent = POps.t('Dosya seçin ya da buraya bırakın'); $('pkgDropS').textContent = POps.t('.exe, .msi ya da install.bat içeren .zip'); }
     }
     function setProgress(frac) {
         const p = $('pkgProg');
@@ -653,7 +657,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         p.hidden = false;
         const pct = Math.max(0, Math.min(100, Math.round(frac * 100)));
         $('pkgProgBar').style.width = pct + '%';
-        $('pkgProgTxt').textContent = pct >= 100 ? 'Özet hesaplanıyor…' : '%' + pct;
+        $('pkgProgTxt').textContent = pct >= 100 ? POps.t('Özet hesaplanıyor…') : POps.pct(pct);
     }
     function openPkgModal(o, type) {
         up.edit = o || null;
@@ -664,8 +668,8 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         $('pkgFile').value = '';
         setProgress(null);
         setType(o ? o.type : (type || 'package'));
-        if (o) $('pkgTitle').textContent = o.type === 'package' ? 'Paketi düzenle' : 'Betiği düzenle';
-        $('pkgSave').textContent = o ? 'Kaydet' : 'Yükle ve ekle';
+        if (o) $('pkgTitle').textContent = o.type === 'package' ? POps.t('Paketi düzenle') : POps.t('Betiği düzenle');
+        $('pkgSave').textContent = o ? POps.t('Kaydet') : POps.t('Yükle ve ekle');
         showFile();
         openModal('pkgModal');
     }
@@ -685,10 +689,10 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                 try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
                 if (xhr.status >= 200 && xhr.status < 300 && data && data.status !== 'error') { resolve(data); return; }
                 const d = data && data.detail;
-                const msg = typeof d === 'string' ? d : (data && data.message) || ({ 413: 'Dosya çok büyük.', 403: 'Bu işlem için yetkiniz yok.' }[xhr.status]) || `Sunucu hatası (HTTP ${xhr.status}).`;
+                const msg = typeof d === 'string' ? POps.t(d) : (data && data.message) || ({ 413: POps.t('Dosya çok büyük.'), 403: POps.t('Bu işlem için yetkiniz yok.') }[xhr.status]) || POps.t('Sunucu hatası (HTTP {status}).', { status: xhr.status });
                 reject(new POps.ApiError(msg, xhr.status, data));
             };
-            xhr.onerror = () => { up.xhr = null; reject(new POps.ApiError('Sunucuya ulaşılamadı. Bağlantınızı kontrol edin.', 0, null)); };
+            xhr.onerror = () => { up.xhr = null; reject(new POps.ApiError(POps.t('Sunucuya ulaşılamadı. Bağlantınızı kontrol edin.'), 0, null)); };
             xhr.onabort = () => { up.xhr = null; const e = new Error('abort'); e.name = 'AbortError'; reject(e); };
             const fd = new FormData();
             fd.append('file', file);
@@ -702,7 +706,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const name = $('pkgName').value.trim();
         const reboot = $('pkgReboot').checked;
         const file = $('pkgFile').files && $('pkgFile').files[0];
-        if (!name) { POps.toast('warning', 'Bir ad verin.'); $('pkgName').focus(); return; }
+        if (!name) { POps.toast('warning', POps.t('Bir ad verin.')); $('pkgName').focus(); return; }
         let command, meta;
         try {
             await POps.busy(btn, async () => {
@@ -723,13 +727,13 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                         U = old.U; F = old.F; H = old.H || '';
                         fileName = o.file; size = o.size; by = o.by;
                     } else {
-                        throw new Error(o && o.type === 'package' ? 'Bu paketin dosya bilgisi okunamadı; kurulum dosyasını yeniden seçin.' : 'Kurulum dosyasını seçin.');
+                        throw new Error(o && o.type === 'package' ? POps.t('Bu paketin dosya bilgisi okunamadı; kurulum dosyasını yeniden seçin.') : POps.t('Kurulum dosyasını seçin.'));
                     }
                     command = packageCommand({ U, F, A: $('pkgArgs').value.trim(), R: reboot ? 1 : 0, H });
                     meta = buildMeta('package', fileName, size, reboot, by);
                 } else {
                     const code = $('pkgCode').value.trim();
-                    if (!code) throw new Error('Çalıştırılacak komutu yazın.');
+                    if (!code) throw new Error(POps.t('Çalıştırılacak komutu yazın.'));
                     command = code + (reboot ? SCRIPT_REBOOT : '');
                     meta = buildMeta('script', '', '', reboot, o && o.type === 'script' ? o.by : ME);
                 }
@@ -747,7 +751,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         if (!command) return;   // düğme zaten meşguldü
         setProgress(null);
         closeModal('pkgModal');
-        POps.toast('success', o ? `${name} güncellendi.` : `${name} eklendi.`);
+        POps.toast('success', o ? POps.t('{name} güncellendi.', { name }) : POps.t('{name} eklendi.', { name }));
         await loadPackages();
         // Açık dağıtım penceresindeki adımlar yeni haliyle gider
         run.steps = run.steps.map(s => ui.pkgs.find(x => x.id === s.id) || s);
@@ -763,7 +767,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     // ================= Dağıtım penceresi =================
     const run = { steps: [], mode: 'lab', q: '', all: false, labs: new Set(), pcs: new Set(), incOff: false, sig: '' };
     const labOf = (d) => (d.lab && d.lab !== dev.UNASSIGNED ? d.lab : dev.UNASSIGNED);
-    const labName = (l) => (l === dev.UNASSIGNED ? 'Atanmamış' : l);
+    const labName = (l) => (l === dev.UNASSIGNED ? POps.t('Atanmamış') : l);
     function runLabs() {
         const devs = state.devices || [];
         return dev.labs().concat(devs.some(d => labOf(d) === dev.UNASSIGNED) ? [dev.UNASSIGNED] : []);
@@ -776,9 +780,14 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         });
         return { on, off, send: run.incOff ? on.concat(off) : on };
     }
+    // İşlemin başlığı sunucuya Türkçe gider (veri); pencerede ve bildirimlerde stepsLabel gösterilir
     function stepsTitle() {
         if (!run.steps.length) return '';
         return run.steps.length === 1 ? run.steps[0].name : `${run.steps[0].name} +${run.steps.length - 1} adım`;
+    }
+    function stepsLabel() {
+        if (!run.steps.length) return '';
+        return run.steps.length === 1 ? run.steps[0].name : POps.tn('{name} +{n} adım', run.steps.length - 1, { name: run.steps[0].name });
     }
     function openRun(steps, chain) {
         run.steps = steps.slice();
@@ -792,24 +801,24 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     function renderSteps() {
         const n = run.steps.length;
         const multi = n > 1;
-        $('runTitle').textContent = !n || run.chain || multi ? 'Görev zinciri' : 'Dağıt · ' + run.steps[0].name;
-        $('runStepsNote').textContent = multi ? 'Hedefte bu sırayla çalışır' : n ? 'Zincir için adım ekleyebilirsiniz' : '';
+        $('runTitle').textContent = !n || run.chain || multi ? POps.t('Görev zinciri') : POps.t('Dağıt · {name}', { name: run.steps[0].name });
+        $('runStepsNote').textContent = multi ? POps.t('Hedefte bu sırayla çalışır') : n ? POps.t('Zincir için adım ekleyebilirsiniz') : '';
         $('runSteps').innerHTML = n
             ? run.steps.map((s, i) => `<div class="step"><span class="n">${Number(i + 1)}</span>
-                <span class="tx"><b>${escapeHtml(s.name)}</b><small>${escapeHtml(s.kind + (s.size ? ' · ' + s.size : '') + (s.reboot ? ' · yeniden başlatır' : ''))}</small></span>
-                ${multi ? `<button type="button" class="ibtn sm" data-step="up" data-i="${Number(i)}" title="Yukarı taşı" aria-label="Yukarı taşı" ${i === 0 ? 'disabled' : ''}>${POps.iconHtml('arrow-up', 'sm')}</button><button type="button" class="ibtn sm" data-step="down" data-i="${Number(i)}" title="Aşağı taşı" aria-label="Aşağı taşı" ${i === n - 1 ? 'disabled' : ''}>${POps.iconHtml('arrow-down', 'sm')}</button>` : ''}
-                <button type="button" class="ibtn sm danger" data-step="rm" data-i="${Number(i)}" title="Adımı çıkar" aria-label="Adımı çıkar">${POps.iconHtml('x', 'sm')}</button></div>`).join('')
-            : '<div class="step empty">Henüz adım yok. Aşağıdan paket ya da betik ekleyin.</div>';
+                <span class="tx"><b>${escapeHtml(s.name)}</b><small>${escapeHtml(s.kind + (s.size ? ' · ' + s.size : '') + (s.reboot ? ' · ' + POps.t('yeniden başlatır') : ''))}</small></span>
+                ${multi ? `<button type="button" class="ibtn sm" data-step="up" data-i="${Number(i)}" title="${escapeHtml(POps.t('Yukarı taşı'))}" aria-label="${escapeHtml(POps.t('Yukarı taşı'))}" ${i === 0 ? 'disabled' : ''}>${POps.iconHtml('arrow-up', 'sm')}</button><button type="button" class="ibtn sm" data-step="down" data-i="${Number(i)}" title="${escapeHtml(POps.t('Aşağı taşı'))}" aria-label="${escapeHtml(POps.t('Aşağı taşı'))}" ${i === n - 1 ? 'disabled' : ''}>${POps.iconHtml('arrow-down', 'sm')}</button>` : ''}
+                <button type="button" class="ibtn sm danger" data-step="rm" data-i="${Number(i)}" title="${escapeHtml(POps.t('Adımı çıkar'))}" aria-label="${escapeHtml(POps.t('Adımı çıkar'))}">${POps.iconHtml('x', 'sm')}</button></div>`).join('')
+            : `<div class="step empty">${POps.tHtml('Henüz adım yok. Aşağıdan paket ya da betik ekleyin.')}</div>`;
         const optHtml = (list) => list.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)}</option>`).join('');
         const pk = ui.pkgs.filter(o => o.type === 'package'), sc = ui.pkgs.filter(o => o.type === 'script');
-        $('runAdd').innerHTML = `<option value="">${n ? 'Adım ekle…' : 'Paket ya da betik seçin…'}</option>`
-            + (pk.length ? `<optgroup label="Paketler">${optHtml(pk)}</optgroup>` : '')
-            + (sc.length ? `<optgroup label="Betikler">${optHtml(sc)}</optgroup>` : '');
+        $('runAdd').innerHTML = `<option value="">${n ? POps.tHtml('Adım ekle…') : POps.tHtml('Paket ya da betik seçin…')}</option>`
+            + (pk.length ? `<optgroup label="${escapeHtml(POps.t('Paketler'))}">${optHtml(pk)}</optgroup>` : '')
+            + (sc.length ? `<optgroup label="${escapeHtml(POps.t('Betikler'))}">${optHtml(sc)}</optgroup>` : '');
     }
     function renderRunList(force) {
         const box = $('runList');
         $('runMode').querySelectorAll('button').forEach(b => { const on = b.dataset.m === run.mode; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
-        if (!state.devicesLoaded) { POps.setLoading(box, 'Bilgisayarlar yükleniyor…'); return; }
+        if (!state.devicesLoaded) { POps.setLoading(box, POps.t('Bilgisayarlar yükleniyor…')); return; }
         const devs = state.devices || [];
         const sig = JSON.stringify([run.mode, run.q, run.all, [...run.labs], [...run.pcs], devs.map(d => [d.hostname, d.lab, d.status, POps.deviceName(d), d.current_user])]);
         if (!force && sig === run.sig) return;
@@ -819,8 +828,8 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const labs = runLabs();
         let html = '';
         if (run.mode === 'lab') {
-            const countText = (list) => { const on = list.filter(d => !POps.isOffline(d)).length; return list.length ? `${on} açık · ${list.length - on} kapalı` : 'boş'; };
-            if (!q) html += `<label class="pick all"><input type="checkbox" data-all="1" ${run.all ? 'checked' : ''}><span class="tx"><b>Bütün ağ</b><small>${escapeHtml(countText(devs))}</small></span></label>`;
+            const countText = (list) => { const on = list.filter(d => !POps.isOffline(d)).length; return list.length ? POps.t('{on} açık · {off} kapalı', { on, off: list.length - on }) : POps.t('boş'); };
+            if (!q) html += `<label class="pick all"><input type="checkbox" data-all="1" ${run.all ? 'checked' : ''}><span class="tx"><b>${POps.tHtml('Bütün ağ')}</b><small>${escapeHtml(countText(devs))}</small></span></label>`;
             // Boş sınıf hedef olamaz; listede gösterilmez
             html += labs.filter(l => hit(labName(l))).map(l => [l, devs.filter(d => labOf(d) === l)]).filter(x => x[1].length).map(([l, list]) =>
                 `<label class="pick"><input type="checkbox" data-lab="${escapeHtml(l)}" ${run.all || run.labs.has(l) ? 'checked' : ''} ${run.all ? 'disabled' : ''}><span class="tx"><b>${escapeHtml(labName(l))}</b><small>${escapeHtml(countText(list))}</small></span></label>`
@@ -832,33 +841,34 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                 if (!list.length) return;
                 const viaLab = run.all || run.labs.has(l);
                 const allSel = viaLab || list.every(d => run.pcs.has(d.hostname));
-                html += `<div class="pick-h"><span>${escapeHtml(labName(l))}</span>${viaLab ? '<span>sınıfla seçili</span>' : `<button type="button" class="linkbtn" data-group="${escapeHtml(l)}">${allSel ? 'Hiçbirini seçme' : 'Hepsini seç'}</button>`}</div>`;
+                html += `<div class="pick-h"><span>${escapeHtml(labName(l))}</span>${viaLab ? `<span>${POps.tHtml('sınıfla seçili')}</span>` : `<button type="button" class="linkbtn" data-group="${escapeHtml(l)}">${allSel ? POps.tHtml('Hiçbirini seçme') : POps.tHtml('Hepsini seç')}</button>`}</div>`;
                 html += list.map(d => {
                     const st = dev.state(d);
                     const on = viaLab || run.pcs.has(d.hostname);
                     return `<label class="pick${st.cls === 'off' ? ' off' : ''}"><input type="checkbox" data-pc="${escapeHtml(d.hostname)}" data-g="${escapeHtml(l)}" ${on ? 'checked' : ''} ${viaLab ? 'disabled' : ''}>
                         <span class="tx"><b>${escapeHtml(POps.deviceName(d))}</b><small>${escapeHtml(dev.subline(d))}</small></span>
-                        <span class="st"><span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.cls === 'off' ? 'Kapalı' : st.word)}</span></label>`;
+                        <span class="st"><span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.cls === 'off' ? POps.t('Kapalı') : st.word)}</span></label>`;
                 }).join('');
             });
         }
         const top = box.scrollTop;
         if (html) box.innerHTML = html;
-        else box.innerHTML = `<div class="run-none">${q ? 'Aramaya uyan hedef yok.' : 'Henüz bilgisayar yok.'}</div>`;
+        else box.innerHTML = `<div class="run-none">${q ? POps.tHtml('Aramaya uyan hedef yok.') : POps.tHtml('Henüz bilgisayar yok.')}</div>`;
         box.scrollTop = top;
     }
     function renderRunSum() {
         const t = runTargets();
         const total = t.on.length + t.off.length;
         const n = t.send.length;
+        const boldHtml = (x) => `<b>${Number(x)}</b>`;
         $('runSum').innerHTML = total
-            ? `<span class="sum"><b>${Number(total)}</b> bilgisayar seçildi</span>`
-              + (t.off.length ? `<span class="sum"><span class="dot off"></span><b>${Number(t.off.length)}</b> kapalı · ${run.incOff ? 'açılınca kuracak' : 'atlanacak'}</span>`
-                + `<label class="switch-field"><span class="switch"><input type="checkbox" id="runIncOff" ${run.incOff ? 'checked' : ''}><span></span></span>Kapalılar açılınca kursun</label>` : '')
-            : '<span>Hedef seçilmedi.</span>';
+            ? `<span class="sum">${POps.tnHtml('{n} bilgisayar seçildi', total, null, { n: boldHtml(total) })}</span>`
+              + (t.off.length ? `<span class="sum"><span class="dot off"></span>${POps.tnHtml('{n} kapalı', t.off.length, null, { n: boldHtml(t.off.length) })} · ${run.incOff ? POps.tHtml('açılınca kuracak') : POps.tHtml('atlanacak')}</span>`
+                + `<label class="switch-field"><span class="switch"><input type="checkbox" id="runIncOff" ${run.incOff ? 'checked' : ''}><span></span></span>${POps.tHtml('Kapalılar açılınca kursun')}</label>` : '')
+            : `<span>${POps.tHtml('Hedef seçilmedi.')}</span>`;
         const go = $('runGo');
         go.disabled = !n || !run.steps.length;
-        go.textContent = n ? `${n} bilgisayara dağıt` : 'Dağıt';
+        go.textContent = n ? POps.tn('{n} bilgisayara dağıt', n) : POps.t('Dağıt');
     }
     function renderRun() { renderSteps(); renderRunList(true); renderRunSum(); }
 
@@ -906,9 +916,10 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     $('runGo').addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         const t = runTargets();
-        if (!run.steps.length) { POps.toast('warning', 'Önce bir adım ekleyin.'); return; }
-        if (!t.send.length) { POps.toast('warning', t.off.length ? 'Seçilen bilgisayarların hepsi kapalı.' : 'En az bir hedef seçin.'); return; }
+        if (!run.steps.length) { POps.toast('warning', POps.t('Önce bir adım ekleyin.')); return; }
+        if (!t.send.length) { POps.toast('warning', t.off.length ? POps.t('Seçilen bilgisayarların hepsi kapalı.') : POps.t('En az bir hedef seçin.')); return; }
         const title = stepsTitle();
+        const label = stepsLabel();
         const n = t.send.length;
         const reason = $('runReason').value.trim();
         const steps = run.steps.slice();
@@ -918,32 +929,32 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                 target_mode: 'PC', targets: t.send,
                 taskSequence: steps.map(s => ({ name: s.name, type: s.type, command: s.command })),
                 title: title.slice(0, 200), source: 'deploy', reason: reason || null
-            }, { jobTitle: `${title} · ${n} bilgisayar` }));
-        } catch (err) { POps.toast('error', 'Dağıtım başlatılamadı: ' + POps.errorMessage(err)); return; }
+            }, { jobTitle: label + ' · ' + POps.tn('{n} bilgisayar', n) }));
+        } catch (err) { POps.toast('error', POps.t('Dağıtım başlatılamadı: {error}', { error: POps.errorMessage(err) })); return; }
         if (!r) return;
         closeModal('runModal');
         const pcs = Math.round((r.created || 0) / steps.length);
-        const closed = r.skipped_module_closed ? ` ${r.skipped_module_closed} bilgisayarda dosya dağıtımı modülü kapalı; atlandı.` : '';
-        POps.toast(r.duplicate ? 'info' : 'success', (r.duplicate ? 'Aynı dağıtım az önce gönderilmişti.' : `${title} ${pcs} bilgisayara gönderildi.`) + closed);
+        const closed = r.skipped_module_closed ? ' ' + POps.tn('{n} bilgisayarda dosya dağıtımı modülü kapalı; atlandı.', r.skipped_module_closed) : '';
+        POps.toast(r.duplicate ? 'info' : 'success', (r.duplicate ? POps.t('Aynı dağıtım az önce gönderilmişti.') : POps.tn('{title} {n} bilgisayara gönderildi.', pcs, { title: label })) + closed);
         loadTasks();
     });
     $('chainBtn').addEventListener('click', () => {
         if (!ui.loaded) return;
-        if (!ui.pkgs.length) { POps.toast('info', 'Önce bir paket ya da betik ekleyin.'); return; }
+        if (!ui.pkgs.length) { POps.toast('info', POps.t('Önce bir paket ya da betik ekleyin.')); return; }
         openRun([], true);
     });
 
     // ================= Eşzamanlı kurulum sınırı =================
     $('limitBtn').addEventListener('click', async () => {
         const v = await POps.prompt({
-            title: 'Eşzamanlı kurulum sınırı',
-            message: 'Aynı anda en çok kaç bilgisayarda görev çalışsın? Fazlası sırada bekler; büyük dağıtımlar ağı ve sunucuyu tıkamaz.',
-            label: 'Bilgisayar sayısı', inputType: 'number', inputMode: 'numeric', defaultValue: ui.limit || 5, confirmText: 'Kaydet', icon: 'sliders',
-            validate: (s) => { const n = Number(s); return Number.isInteger(n) && n >= 1 && n <= 100 ? '' : '1 ile 100 arasında bir sayı girin.'; }
+            title: POps.t('Eşzamanlı kurulum sınırı'),
+            message: POps.t('Aynı anda en çok kaç bilgisayarda görev çalışsın? Fazlası sırada bekler; büyük dağıtımlar ağı ve sunucuyu tıkamaz.'),
+            label: POps.t('Bilgisayar sayısı'), inputType: 'number', inputMode: 'numeric', defaultValue: ui.limit || 5, confirmText: POps.t('Kaydet'), icon: 'sliders',
+            validate: (s) => { const n = Number(s); return Number.isInteger(n) && n >= 1 && n <= 100 ? '' : POps.t('1 ile 100 arasında bir sayı girin.'); }
         });
         if (v === null) return;
         const lim = Number(v);
-        if (await POps.act(null, () => POps.post('/api/set_concurrent_limit', { limit: lim }), { success: `Aynı anda en çok ${lim} bilgisayarda görev çalışacak.`, error: 'Kaydedilemedi.' })) {
+        if (await POps.act(null, () => POps.post('/api/set_concurrent_limit', { limit: lim }), { success: POps.tn('Aynı anda en çok {n} bilgisayarda görev çalışacak.', lim), error: POps.t('Kaydedilemedi.') })) {
             ui.limit = lim;
             renderSummary();
         }
@@ -952,7 +963,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     // ================= Liste etkileşimi =================
     tbody.addEventListener('click', (e) => {
         const copy = e.target.closest('[data-copy]');
-        if (copy) { e.stopPropagation(); copyText(copy.dataset.copy, 'Özet'); return; }
+        if (copy) { e.stopPropagation(); copyText(copy.dataset.copy, POps.t('Özet kopyalandı.')); return; }
         const tr = e.target.closest('tr[data-id]');
         if (tr && !e.target.closest('a, .mark')) openPkg(tr.dataset.id);
     });
