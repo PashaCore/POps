@@ -336,6 +336,7 @@ namespace POpsAgent
                 _commandWs = new ClientWebSocket();
                 _commandWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(commandWsUrl));
                 _commandWs.Options.SetRequestHeader("X-Agent-Version", AppVersion);
+                _commandWs.Options.SetRequestHeader(AgentFeatures.HeaderName, AgentFeatures.Header);
                 string authMode = ApplyAuthHeaders(_commandWs);
                 POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({AppVersion}, kimlik: {authMode})");
                 _startupHealth.Mark(StartupCheck.Loop);
@@ -360,7 +361,6 @@ namespace POpsAgent
                         if (!capabilitiesReported)
                         {
                             await SendCommandMessageAsync(AgentCapabilities.StatusMessage());
-                            if (ExamMode.IsActive) await SendExamStateAsync();
                             capabilitiesReported = true;
                         }
                         await ForwardUpdateProgressAsync();
@@ -428,58 +428,91 @@ namespace POpsAgent
                 ["until"] = settings?.Until,
             }));
 
+        // Sınava giriş ve çıkış birbirini beklemez olmasın (dönemsel tur, sunucu emri, set_capabilities aynı anda gelebilir)
+        private readonly SemaphoreSlim _examGate = new SemaphoreSlim(1, 1);
+        // Bu çalışmada sınav modundan çıkılan an (unix sn; 0: bu çalışmada çıkılmadı). exam_state.since için bellekte tutulur.
+        private long _examLeftAt;
+        // Bu bağlantıda bağlantı sonrası exam_state gönderildi mi (server_info'dan sonra bir kez; bkz. ReportExamStateOnConnectAsync)
+        private volatile bool _examStateReported;
+        // Testler: emrin doğrulandığı ve sınavdan çıkılan an
+        internal Func<DateTimeOffset> ExamClock { get; set; } = () => DateTimeOffset.UtcNow;
+
         internal async Task HandleExamModeAsync(JsonElement root)
         {
             bool enable = root.TryGetProperty("enabled", out JsonElement e) && e.ValueKind == JsonValueKind.True;
             if (!enable)
             {
-                await EndExamAsync("server");
+                await EndExamAsync("server", reply: true);
                 return;
             }
             if (!AgentCapabilities.ExamEnabled)
             {
+                // Yerel olarak kapalı: hiçbir şey uygulanmaz; önceden kalan bir sınav sürüyorsa biter (exam_state ile)
                 await DenyCapabilityAsync("exam", "exam_mode");
-                await SendExamStateAsync();
+                if (ExamMode.IsActive) await EndExamAsync("capability", reply: true);
                 return;
             }
-            if (!ExamMode.TryParse(root, DateTimeOffset.UtcNow, out ExamSettings settings, out string error))
+            if (!ExamMode.TryParse(root, ExamClock(), out ExamSettings settings, out string error))
             {
                 POpsHelpers.Log("EXAM", $"Sınav modu emri uygulanmadı: {error}.", true);
-                await SendExamStateAsync(error);
+                await SendExamStateAsync(reply: true);
                 return;
             }
-            if (!await ExamMode.EnableAsync(settings, _serverUrl))
-            {
-                await SendExamStateAsync("ağ kuralları uygulanamadı");
-                return;
-            }
+            await _examGate.WaitAsync();
+            try { await EnterExamAsync(settings); }
+            finally { _examGate.Release(); }
+            await SendExamStateAsync(reply: true);
+        }
+
+        private async Task EnterExamAsync(ExamSettings settings)
+        {
+            // Uygulanamazsa neden ExamMode'da yerel loga yazılır; sunucuya o anki durum gider
+            if (!await ExamMode.EnableAsync(settings, _serverUrl)) return;
             lock (_examStoppedLogged) _examStoppedLogged.Clear();
             LocalAudit.Write(LocalAudit.ExamStarted(settings));
             POpsHelpers.Log("EXAM", $"SINAV MODU AKTİF: {settings.Allow.Count} izinli kayıt, bitiş {(settings.Until == null ? "yok" : DateTimeOffset.FromUnixTimeSeconds(settings.Until.Value).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture))}, {settings.BlockApps.Count} engelli uygulama.");
             ToTray(ExamTrayMessage(ExamMode.Load()));
-            await SendExamStateAsync();
         }
 
-        // source: "server", "until" (süre doldu; sunucuya ulaşılamasa da)
-        internal async Task EndExamAsync(string source)
+        // source: "server", "until" (süre doldu; sunucuya ulaşılamasa da), "capability" (sınav yeteneği yerel olarak
+        // kapalı: MSI EXAM_ENABLED=0 ile yeniden kurulum ya da set_capabilities). reply: exam_mode emrine yanıt.
+        internal async Task EndExamAsync(string source, bool reply = false)
         {
-            if (!ExamMode.IsActive)
-            {
-                await SendExamStateAsync();
-                return;
-            }
-            if (!await ExamMode.DisableAsync())
-            {
-                await SendExamStateAsync("ağ kuralları kaldırılamadı");
-                return;
-            }
+            await _examGate.WaitAsync();
+            try { await LeaveExamAsync(source); }
+            finally { _examGate.Release(); }
+            await SendExamStateAsync(reply);
+        }
+
+        private async Task LeaveExamAsync(string source)
+        {
+            // Kaldırılamazsa neden ExamMode'da loglanır; sunucuya "hâlâ sınavda" gider
+            if (!ExamMode.IsActive || !await ExamMode.DisableAsync()) return;
+            Interlocked.Exchange(ref _examLeftAt, ExamClock().ToUnixTimeSeconds());
             LocalAudit.Write(LocalAudit.ExamEnded(source));
             POpsHelpers.Log("EXAM", $"Sınav modu bitti ({source}).");
             ToTray("EXAM_OFF");
-            await SendExamStateAsync();
         }
 
-        private Task SendExamStateAsync(string detail = null) => SendCommandMessageAsync(ExamMode.StateMessage(detail));
+        // exam_state hiçbir zaman bağlantının ilk mesajı değildir: exam_mode emrine yanıt (reply) emri gönderen sunucuya
+        // gider; kendiliğinden değişiklik (until, yetenek kapandı) yalnızca server_info'da exam_mode duyuran sunucuya.
+        // server_info henüz gelmediyse gönderilmez: bağlantı sonrası bildirim (ReportExamStateOnConnectAsync) o anki
+        // durumu zaten taşır.
+        private async Task SendExamStateAsync(bool reply)
+        {
+            if (!reply && Handshake.Supports(ExamMode.Feature) != true) return;
+            long left = Interlocked.Read(ref _examLeftAt);
+            await SendCommandMessageAsync(ExamMode.StateMessage(left == 0 ? null : left));
+        }
+
+        // Her bağlantıda server_info'dan sonra bir kez (sunucu exam_mode duyurduysa): sunucu sınav durumunu bağlantı
+        // başında öğrenir (sınavda değilken de).
+        internal async Task ReportExamStateOnConnectAsync()
+        {
+            if (_examStateReported || Handshake.Supports(ExamMode.Feature) != true) return;
+            _examStateReported = true;
+            await SendExamStateAsync(reply: false);
+        }
 
         // 2 sn'de bir: süre doldu mu, engelli uygulamalar; 2 dk'da bir ve ağ adresi değişince: izin listesi çözümü
         private async Task ExamLoopAsync(CancellationToken token)
@@ -504,15 +537,17 @@ namespace POpsAgent
             }
         }
 
-        // Bir tur: süre dolduysa (sunucuya ulaşılamasa da) biter; yoksa engelli uygulamalar kapatılır, refreshReason
-        // verilmişse izin listesi yeniden çözülür. Dönen: sınav bu turda bitti mi.
+        // Bir tur: sınav yeteneği yerel olarak kapalıysa (EXAM_ENABLED=0 ile yeniden kurulum) ya da süre dolduysa
+        // (sunucuya ulaşılamasa da) biter; yoksa engelli uygulamalar kapatılır, refreshReason verilmişse izin listesi
+        // yeniden çözülür. Dönen: sınav bu turda bitti mi.
         internal async Task<bool> ExamTickAsync(DateTimeOffset now, string refreshReason)
         {
             ExamSettings settings = ExamMode.IsActive ? ExamMode.Load() : null;
             if (settings == null) return false;
-            if (ExamMode.Expired(settings, now))
+            bool allowed = AgentCapabilities.ExamEnabled;
+            if (!allowed || ExamMode.Expired(settings, now))
             {
-                await EndExamAsync("until");
+                await EndExamAsync(allowed ? "until" : "capability");
                 return !ExamMode.IsActive;
             }
             StopBlockedApps(settings);
@@ -537,7 +572,7 @@ namespace POpsAgent
                     string app = candidates.First(c => c.Pid == pid).Name + ".exe";
                     try
                     {
-                        process.Kill();
+                        ExamMode.StopProcess(process);
                         bool first;
                         lock (_examStoppedLogged) first = _examStoppedLogged.Add(app);
                         if (first)
@@ -576,6 +611,8 @@ namespace POpsAgent
             // update_progress: ilk mesaj heartbeat olana kadar gönderilmez; son aşama yeni bağlantıda bir kez daha gider
             _heartbeatSent = false;
             _forwardedProgress = null;
+            // exam_state bu bağlantıda server_info'dan sonra yeniden bildirilir
+            _examStateReported = false;
         }
 
         // Bu bağlantıda ilk heartbeat gitti mi (sunucu cihazı ilk mesajın dna_payload'ından kaydeder)
@@ -1337,7 +1374,11 @@ namespace POpsAgent
                         await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId), _hwId, QuarantineControl.UnlockFailedLog(), "Karantina kaldırma hatası");
                 }
                 // Güncelleme sonucu onayı (bkz. UpdateResultReporter). Tanınmayan action'lar yok sayılır.
-                else if (action == "server_info") Handshake.OnServerInfo(root);
+                else if (action == "server_info")
+                {
+                    Handshake.OnServerInfo(root);
+                    await ReportExamStateOnConnectAsync();
+                }
                 else if (action == "update_result_ack") HandleUpdateResultAck(root);
                 // Görev sonucu sunucuda yazıldı (bkz. ResultSpool)
                 else if (action == "result_ack") HandleResultAck(root);
@@ -1418,7 +1459,8 @@ namespace POpsAgent
         }
 
         // Sunucunun "set_capabilities" isteği: yalnızca kapatma uygulanır (bkz. AgentCapabilities). Vision kapandıysa
-        // süren yayın hemen durdurulur. Son durum sunucuya "capabilities" olarak bildirilir.
+        // süren yayın hemen durdurulur. Son durum sunucuya "capabilities" olarak bildirilir. Sınav yeteneği kapandıysa
+        // süren sınav biter (exam_state ile).
         private async Task HandleSetCapabilitiesAsync(JsonElement request)
         {
             var changed = AgentCapabilities.ApplyServerRequest(request);
@@ -1430,6 +1472,7 @@ namespace POpsAgent
                 await DisconnectVisionTunnelAsync();
             }
             await SendCommandMessageAsync(AgentCapabilities.StatusMessage());
+            if (!AgentCapabilities.ExamEnabled && ExamMode.IsActive) await EndExamAsync("capability");
         }
 
         // Kapalı bir yeteneğe gelen istek loglanır ve sunucuya "capability_denied" olarak bildirilir. Uzaktan fare

@@ -93,11 +93,13 @@ namespace POpsAgent
         }
 
         // Sunucuya bildirilen durum ({"type":"capabilities", ...}); server_ca: sunucu sertifikası kurum sertifikasıyla
-        // ("custom", server-ca.pem) mı, sistem deposuyla ("system") mı doğrulanıyor (bkz. ServerTrust)
+        // ("custom", server-ca.pem) mı, sistem deposuyla ("system") mı doğrulanıyor (bkz. ServerTrust). exam_enabled
+        // sunucunun capabilities şemasında yok, gönderilmez: kapalı sınav yeteneği exam_mode'a capability_denied ile,
+        // süren sınavda kapanırsa exam_state (enabled:false) ile bildirilir.
         public static Dictionary<string, object> StatusMessage()
         {
             lock (Gate)
-                return new Dictionary<string, object> { ["type"] = "capabilities", [Terminal] = State[Terminal], [Vision] = State[Vision], [Exam] = State[Exam], ["server_ca"] = ServerTrust.Mode };
+                return new Dictionary<string, object> { ["type"] = "capabilities", [Terminal] = State[Terminal], [Vision] = State[Vision], ["server_ca"] = ServerTrust.Mode };
         }
 
         public static string Describe()

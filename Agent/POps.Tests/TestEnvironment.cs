@@ -84,6 +84,8 @@ namespace POps.Tests
             // vektörlerindeki exam_mode); bunları sınayan sınıflar kendi sahtelerini kurar
             POpsAgent.NetworkIsolation.ScriptRunner = _ => System.Threading.Tasks.Task.FromResult((1, "testlerde güvenlik duvarına dokunulmaz"));
             POpsAgent.ExamMode.Resolver = _ => System.Threading.Tasks.Task.FromResult(Array.Empty<System.Net.IPAddress>());
+            // Sınav modunun uygulama engeli bu bilgisayardaki gerçek süreçleri (cmd.exe, powershell.exe) kapatmaz
+            POpsAgent.ExamMode.StopProcess = _ => { };
         }
 
         private static bool IsUnderRoot(string path) =>

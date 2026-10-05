@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -40,7 +41,10 @@ namespace POpsAgent
     public static class ExamMode
     {
         public const string StateFileName = "exam.json";
-        public const int MaxAllow = 64, MaxApps = 32, MaxMessage = 300;
+        // server_info.features: sunucu exam_mode gönderir ve exam_state okur
+        public const string Feature = "exam_mode";
+        // Sunucu şeması: allow ve block_apps en çok 50 kayıt (sunucunun mesajı en çok 200 karakter)
+        public const int MaxAllow = 50, MaxApps = 50, MaxMessage = 300;
         public static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(2);
         private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
         private static readonly JsonSerializerOptions Json = new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
@@ -62,6 +66,8 @@ namespace POpsAgent
 
         // Testler: alan adı çözümü
         internal static Func<string, Task<IPAddress[]>> Resolver { get; set; } = host => Dns.GetHostAddressesAsync(host);
+        // Testler: engelli uygulamanın kapatılması (testlerde gerçek süreçlere dokunulmaz)
+        internal static Action<Process> StopProcess { get; set; } = process => process.Kill();
 
         public static ExamSettings Load()
         {
@@ -74,7 +80,7 @@ namespace POpsAgent
         public static bool Expired(ExamSettings settings, DateTimeOffset now) =>
             settings?.Until != null && now.ToUnixTimeSeconds() >= settings.Until.Value;
 
-        // Emir doğrulanır: izin listesi (alan adı, IPv4/IPv6, CIDR; en çok 64), mesaj (en çok 300 karakter, denetim
+        // Emir doğrulanır: izin listesi (alan adı, IPv4/IPv6, CIDR; en çok 50), mesaj (en çok 300 karakter, denetim
         // karakterleri atılır), until (gelecekte ya da yok), block_apps (yalnızca "ad.exe"; korunan süreçler düşer).
         public static bool TryParse(JsonElement command, DateTimeOffset now, out ExamSettings settings, out string error)
         {
@@ -260,14 +266,17 @@ namespace POpsAgent
             return disabled.Where(n => n != null).ToList();
         }
 
-        // Sunucuya {"type":"exam_state","enabled","since","until"}; detail yalnızca uygulanamadığında
-        public static Dictionary<string, object> StateMessage(string detail = null)
+        // Sunucuya {"type":"exam_state","enabled","since","until"}; sunucu şemasında başka alan yok (uygulanamama nedeni
+        // yalnızca yerel loga yazılır). since: o anki durumun başladığı an (unix sn): sınavdayken giriş zamanı, sınavda
+        // değilken bu çalışmada sınavdan çıkıldıysa çıkış zamanı (leftAt); bilinmiyorsa gönderilmez. until: sınavdayken
+        // sınavın bitişi, değilken null.
+        public static Dictionary<string, object> StateMessage(long? leftAt)
         {
             ExamSettings s = Load();
             var message = new Dictionary<string, object> { ["type"] = "exam_state", ["enabled"] = s != null };
             if (s != null) message["since"] = s.Since;
-            if (s?.Until != null) message["until"] = s.Until.Value;
-            if (detail != null) message["detail"] = detail;
+            else if (leftAt != null) message["since"] = leftAt.Value;
+            message["until"] = s?.Until;
             return message;
         }
 

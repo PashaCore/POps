@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using POpsAgent;
@@ -77,8 +78,23 @@ namespace POps.Tests.Agent
         [Fact]
         public void TooManyAllowEntries_AreRefused()
         {
-            string json = JsonSerializer.Serialize(new { allow = Enumerable.Range(1, ExamMode.MaxAllow + 1).Select(i => $"10.0.{i / 250}.{i % 250 + 1}") });
-            Assert.False(ExamMode.TryParse(Json(json), Now, out _, out string error));
+            Assert.Equal(50, ExamMode.MaxAllow);   // sunucu şeması: maxItems 50
+            string json = JsonSerializer.Serialize(new { allow = Enumerable.Range(1, ExamMode.MaxAllow).Select(i => $"10.0.{i / 250}.{i % 250 + 1}") });
+            Assert.True(ExamMode.TryParse(Json(json), Now, out _, out string error), error);
+            json = JsonSerializer.Serialize(new { allow = Enumerable.Range(1, ExamMode.MaxAllow + 1).Select(i => $"10.0.{i / 250}.{i % 250 + 1}") });
+            Assert.False(ExamMode.TryParse(Json(json), Now, out _, out error));
+            Assert.Contains("en çok", error);
+        }
+
+        [Fact]
+        public void TooManyBlockedApps_AreRefused()
+        {
+            Assert.Equal(50, ExamMode.MaxApps);   // sunucu şeması: maxItems 50
+            string json = JsonSerializer.Serialize(new { block_apps = Enumerable.Range(1, ExamMode.MaxApps).Select(i => $"app{i}.exe") });
+            Assert.True(ExamMode.TryParse(Json(json), Now, out ExamSettings s, out string error), error);
+            Assert.Equal(50, s.BlockApps.Count);
+            json = JsonSerializer.Serialize(new { block_apps = Enumerable.Range(1, ExamMode.MaxApps + 1).Select(i => $"app{i}.exe") });
+            Assert.False(ExamMode.TryParse(Json(json), Now, out _, out error));
             Assert.Contains("en çok", error);
         }
 
@@ -184,6 +200,7 @@ namespace POps.Tests.Agent
             long until = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600;
             await worker.HandleExamModeAsync(Json(Command(until)));
             JsonElement state = LastState();
+            AssertExamStateShape(state);
             Assert.True(state.GetProperty("enabled").GetBoolean());
             Assert.Equal(until, state.GetProperty("until").GetInt64());
             Assert.True(state.TryGetProperty("since", out _));
@@ -205,24 +222,272 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task LocallyDisabledCapability_RefusesTheExam()
         {
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":true,\"vision_enabled\":true,\"exam_enabled\":false}");
-            AgentCapabilities.Load();
-            Assert.False(AgentCapabilities.ExamEnabled);
+            DisableExamCapabilityLocally();
             using Worker worker = NewWorker();
             await worker.HandleExamModeAsync(Json(Command(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600)));
             Assert.Empty(_scripts);
-            lock (_sent) Assert.Contains(_sent, m => m.GetProperty("type").GetString() == "capability_denied" && m.GetProperty("capability").GetString() == "exam");
-            Assert.False(LastState().GetProperty("enabled").GetBoolean());
-            Assert.Equal(false, AgentCapabilities.StatusMessage()[AgentCapabilities.Exam]);
+            Assert.False(ExamMode.IsActive);
+            lock (_sent) Assert.Equal("capability_denied", Assert.Single(_sent).GetProperty("type").GetString());
+            // exam_enabled sunucunun capabilities şemasında yok: kapalıyken de gönderilmez
+            Assert.False(AgentCapabilities.StatusMessage().ContainsKey(AgentCapabilities.Exam));
         }
 
+        // Geçersiz emir: uygulanmaz, neden yalnızca yerel loga yazılır; sunucuya şemadaki alanlarla o anki durum gider
         [Fact]
-        public async Task InvalidCommand_IsReportedWithTheReason()
+        public async Task InvalidCommand_IsNotApplied_AndTheStateIsReported()
         {
             using Worker worker = NewWorker();
             await worker.HandleExamModeAsync(Json("{\"action\":\"exam_mode\",\"enabled\":true,\"allow\":[\"bad entry\"]}"));
             Assert.Empty(_scripts);
-            Assert.Contains("geçersiz", LastState().GetProperty("detail").GetString());
+            JsonElement state = LastState();
+            AssertExamStateShape(state);
+            Assert.False(state.GetProperty("enabled").GetBoolean());
+            Assert.False(state.TryGetProperty("detail", out _));
+            Assert.False(state.TryGetProperty("since", out _));   // bu çalışmada sınavdan çıkılmadı
+            Assert.Equal(JsonValueKind.Null, state.GetProperty("until").ValueKind);
+        }
+
+        // ------------------------------------------------------------------ sunucunun ortak test vektörleri
+        // Sunucunun docs/protocol/examples dosyalarının metni: exam_mode.json, exam_mode.off.json, exam_state.json,
+        // exam_state.off.json, capability_denied.exam.json, server_info.json, server_info.0_1_21.json
+        private const string VectorExamMode = @"{
+  ""action"": ""exam_mode"",
+  ""enabled"": true,
+  ""allow"": [
+    ""sinav.meb.gov.tr"",
+    ""10.0.0.5"",
+    ""10.1.0.0/24""
+  ],
+  ""until"": 1791207689,
+  ""message"": ""Sınav modu: yalnızca sınav sitesi açık"",
+  ""block_apps"": [
+    ""cmd.exe"",
+    ""powershell.exe""
+  ]
+}";
+        private const string VectorExamModeOff = @"{
+  ""action"": ""exam_mode"",
+  ""enabled"": false
+}";
+        private const string VectorExamState = @"{
+  ""type"": ""exam_state"",
+  ""enabled"": true,
+  ""since"": 1791205289,
+  ""until"": 1791207689
+}";
+        private const string VectorExamStateOff = @"{
+  ""type"": ""exam_state"",
+  ""enabled"": false,
+  ""since"": 1791205409,
+  ""until"": null
+}";
+        private const string VectorCapabilityDeniedExam = @"{
+  ""type"": ""capability_denied"",
+  ""capability"": ""exam"",
+  ""action"": ""exam_mode""
+}";
+        private const string VectorServerInfo = @"{
+  ""action"": ""server_info"",
+  ""version"": ""0.1.23-alpha"",
+  ""protocol"": 1,
+  ""features"": [
+    ""update_result_ack"",
+    ""result_ack"",
+    ""update_progress"",
+    ""file_transfer"",
+    ""exam_mode"",
+    ""winget"",
+    ""vision_binary"",
+    ""vision_clipboard""
+  ]
+}";
+        private const string VectorServerInfoOld = @"{
+  ""action"": ""server_info"",
+  ""version"": ""0.1.21-alpha"",
+  ""features"": [
+    ""update_result_ack"",
+    ""result_ack""
+  ]
+}";
+
+        // Vektördeki until (2026-10-05 13:41:29Z) sabittir: emir, örnek exam_state'in since anında gelmiş sayılır
+        private static readonly DateTimeOffset VectorNow = DateTimeOffset.FromUnixTimeSeconds(1791205289);
+
+        private static Task Handle(Worker worker, string json) => worker.HandleServerMessageAsync(json, null, CancellationToken.None);
+
+        private List<JsonElement> Sent(string type) { lock (_sent) return _sent.Where(m => m.TryGetProperty("type", out JsonElement t) && t.GetString() == type).ToList(); }
+
+        private static void DisableExamCapabilityLocally()
+        {
+            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":true,\"vision_enabled\":true,\"exam_enabled\":false}");
+            AgentCapabilities.Load();
+            Assert.False(AgentCapabilities.ExamEnabled);
+        }
+
+        // Sunucunun exam_state şeması: type ve enabled zorunlu; since ve until sayı ya da null; başka alan yok
+        private static void AssertExamStateShape(JsonElement state)
+        {
+            Assert.All(state.EnumerateObject(), p => Assert.Contains(p.Name, new[] { "type", "enabled", "since", "until" }));
+            Assert.Equal("exam_state", state.GetProperty("type").GetString());
+            Assert.True(state.GetProperty("enabled").ValueKind is JsonValueKind.True or JsonValueKind.False);
+            foreach (string name in new[] { "since", "until" })
+                if (state.TryGetProperty(name, out JsonElement value)) Assert.True(value.ValueKind is JsonValueKind.Number or JsonValueKind.Null, name);
+        }
+
+        private static void AssertSameJson(string expected, JsonElement actual) =>
+            Assert.Equal(JsonSerializer.Serialize(Json(expected)), JsonSerializer.Serialize(actual));
+
+        [Fact]
+        public async Task Vector_ExamMode_IsApplied_AndReportedAsTheExampleState()
+        {
+            using Worker worker = NewWorker();
+            worker.ExamClock = () => VectorNow;
+            await Handle(worker, VectorExamMode);
+            Assert.True(ExamMode.IsActive);
+            ExamSettings applied = ExamMode.Load();
+            Assert.Equal(new[] { "sinav.meb.gov.tr", "10.0.0.5", "10.1.0.0/24" }, applied.Allow);
+            Assert.Equal("Sınav modu: yalnızca sınav sitesi açık", applied.Message);
+            Assert.Equal(new[] { "cmd.exe", "powershell.exe" }, applied.BlockApps);
+            Assert.Equal(1791207689, applied.Until);
+            JsonElement state = Assert.Single(Sent("exam_state"));
+            AssertExamStateShape(state);
+            AssertSameJson(VectorExamState, state);
+
+            // exam_mode.off.json: sınav kalkar, exam_state enabled:false (since: çıkış anı, until: null)
+            worker.ExamClock = () => DateTimeOffset.FromUnixTimeSeconds(1791205409);
+            await Handle(worker, VectorExamModeOff);
+            Assert.False(ExamMode.IsActive);
+            Assert.Contains("Get-NetFirewallRule -Group 'POps Exam' -ErrorAction SilentlyContinue | Remove-NetFirewallRule", _scripts.Last());
+            state = LastState();
+            AssertExamStateShape(state);
+            AssertSameJson(VectorExamStateOff, state);
+        }
+
+        [Fact]
+        public async Task Vector_ExamMode_WithTheCapabilityOff_IsDeniedOnce_AndNothingIsApplied()
+        {
+            DisableExamCapabilityLocally();
+            using Worker worker = NewWorker();
+            worker.ExamClock = () => VectorNow;
+            await Handle(worker, VectorExamMode);
+            Assert.Empty(_scripts);
+            Assert.False(ExamMode.IsActive);
+            Assert.Empty(_tray);
+            JsonElement denied;
+            lock (_sent) denied = Assert.Single(_sent);
+            AssertSameJson(VectorCapabilityDeniedExam, denied);
+        }
+
+        [Fact]
+        public async Task Vector_ExamModeOff_WithoutAnExam_ChangesNothing()
+        {
+            using Worker worker = NewWorker();
+            await Handle(worker, VectorExamModeOff);
+            Assert.Empty(_scripts);
+            Assert.Empty(_tray);
+            JsonElement state = Assert.Single(Sent("exam_state"));
+            AssertExamStateShape(state);
+            Assert.False(state.GetProperty("enabled").GetBoolean());
+        }
+
+        // Her bağlantıda server_info'dan sonra bir kez; yalnızca exam_mode duyuran sunucuya; ilk mesaj olarak asla
+        [Fact]
+        public async Task State_IsReportedOncePerConnection_AfterServerInfo_ToServersWithExamMode()
+        {
+            using Worker worker = NewWorker();
+            worker.OnCommandSocketOpened();
+            await worker.ReportExamStateOnConnectAsync();   // server_info henüz yok
+            Assert.Empty(Sent("exam_state"));
+
+            await Handle(worker, VectorServerInfo);
+            JsonElement state = Assert.Single(Sent("exam_state"));
+            AssertExamStateShape(state);
+            Assert.False(state.GetProperty("enabled").GetBoolean());
+            Assert.False(state.TryGetProperty("since", out _));
+            await Handle(worker, VectorServerInfo);          // aynı bağlantıda ikinci kez gönderilmez
+            Assert.Single(Sent("exam_state"));
+
+            // Yeni bağlantı: yeniden; sınavdayken giriş zamanı ve bitişle
+            worker.ExamClock = () => VectorNow;
+            await worker.HandleExamModeAsync(Json(VectorExamMode));
+            worker.OnCommandSocketOpened();
+            await Handle(worker, VectorServerInfo);
+            Assert.Equal(3, Sent("exam_state").Count);
+            AssertSameJson(VectorExamState, LastState());
+
+            // exam_mode duyurmayan (eski) sunucu: gönderilmez
+            worker.OnCommandSocketOpened();
+            await Handle(worker, VectorServerInfoOld);
+            Assert.Equal(3, Sent("exam_state").Count);
+        }
+
+        // Süre dolması gibi kendiliğinden değişiklik server_info gelmeden gönderilmez (bağlantı sonrası bildirim taşır)
+        [Fact]
+        public async Task SpontaneousChange_WaitsForServerInfo()
+        {
+            using Worker worker = NewWorker();
+            long until = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 60;
+            await worker.HandleExamModeAsync(Json(Command(until)));
+            int before = Sent("exam_state").Count;
+            worker.OnCommandSocketOpened();
+            Assert.True(await worker.ExamTickAsync(DateTimeOffset.FromUnixTimeSeconds(until), null));
+            Assert.Equal(before, Sent("exam_state").Count);
+
+            await Handle(worker, VectorServerInfo);
+            JsonElement state = LastState();
+            Assert.Equal(before + 1, Sent("exam_state").Count);
+            Assert.False(state.GetProperty("enabled").GetBoolean());
+            Assert.True(state.TryGetProperty("since", out JsonElement since) && since.GetInt64() > 0);   // çıkış anı
+            Assert.Equal(JsonValueKind.Null, state.GetProperty("until").ValueKind);
+        }
+
+        // Sınav sürerken yetenek yerelde kapandı (EXAM_ENABLED=0 ile yeniden kurulum): dönemsel turda sınav biter
+        [Fact]
+        public async Task CapabilityOffLocally_EndsTheRunningExam_OnTheNextTick()
+        {
+            using Worker worker = NewWorker();
+            await Handle(worker, VectorServerInfo);
+            await worker.HandleExamModeAsync(Json(Command(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600)));
+            Assert.True(ExamMode.IsActive);
+            DisableExamCapabilityLocally();
+
+            Assert.True(await worker.ExamTickAsync(DateTimeOffset.UtcNow, null));
+            Assert.False(ExamMode.IsActive);
+            Assert.Equal("EXAM_OFF", _tray.Last());
+            JsonElement state = LastState();
+            AssertExamStateShape(state);
+            Assert.False(state.GetProperty("enabled").GetBoolean());
+        }
+
+        // Sınav sürerken sunucu set_capabilities ile sınav yeteneğini kapattı: capabilities ve hemen ardından sınav biter
+        [Fact]
+        public async Task SetCapabilitiesExamOff_EndsTheRunningExam()
+        {
+            using Worker worker = NewWorker();
+            await Handle(worker, VectorServerInfo);
+            await worker.HandleExamModeAsync(Json(Command(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600)));
+            Assert.True(ExamMode.IsActive);
+
+            await Handle(worker, "{\"action\":\"set_capabilities\",\"exam_enabled\":false}");
+            Assert.False(AgentCapabilities.ExamEnabled);
+            Assert.False(ExamMode.IsActive);
+            JsonElement capabilities = Assert.Single(Sent("capabilities"));
+            Assert.False(capabilities.TryGetProperty("exam_enabled", out _));
+            Assert.False(LastState().GetProperty("enabled").GetBoolean());
+
+            // Ardından gelen exam_mode reddedilir, uygulanmaz
+            int scripts = _scripts.Count;
+            await worker.HandleExamModeAsync(Json(Command(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600)));
+            Assert.Equal(scripts, _scripts.Count);
+            Assert.Single(Sent("capability_denied"));
+        }
+
+        [Fact]
+        public void AgentFeatures_AnnounceExam()
+        {
+            Assert.Equal("X-Agent-Features", AgentFeatures.HeaderName);
+            Assert.Contains("exam", AgentFeatures.All);
+            Assert.Matches("^[a-z0-9_]+(,[a-z0-9_]+)*$", AgentFeatures.Header);
         }
 
         // Sunucuya ulaşılamasa da süre dolunca biter
