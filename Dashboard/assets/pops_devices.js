@@ -155,9 +155,9 @@
     }));
     dev.messageItem = (hosts, o) => featureItem(hosts, 'message', { label: POps.t('Mesaj gönder'), icon: 'message', onClick: () => dev.message(hosts, o) });
 
-    // Form parçaları (POps.form içinde)
+    // Güç ve mesaj pencerelerinin form parçaları (POps.form içinde; dosya aktarımının fieldEl/segmentedEl'i ayrı)
     let fieldSeq = 0;
-    function fieldEl(label, control, hint) {
+    function powerField(label, control, hint) {
         const id = control.id || ('popsPw' + (++fieldSeq));
         if (!control.id && control.tagName !== 'DIV') control.id = id;
         const kids = [control.tagName === 'DIV' ? POps.el('div', { className: 'field-label', id: id + 'L', text: label }) : POps.el('label', { for: id, text: label }), control];
@@ -165,7 +165,7 @@
         if (hint) kids.push(hint.nodeType ? hint : POps.el('div', { className: 'field-hint', text: hint }));
         return POps.el('div', { className: 'field' }, kids);
     }
-    function segmentedEl(options, value, onChange) {
+    function powerSegmented(options, value, onChange) {
         const box = POps.el('div', { className: 'segmented block', role: 'group' });
         options.forEach(([v, text]) => {
             const b = POps.el('button', { type: 'button', 'aria-pressed': String(v === value), dataset: { v: String(v) }, text: POps.t(text) });
@@ -211,8 +211,8 @@
         let delay = 0;
         const note = POps.el('input', { type: 'text', maxlength: '200', autocomplete: 'off', placeholder: POps.t('Örn. Ders bitti; çalışmanızı kaydedin.') });
         const content = POps.el('div', { className: 'pops-form' }, [
-            fieldEl(POps.t('Gecikme'), segmentedEl(DELAYS, 0, (v) => { delay = v; }), POps.t('Kullanıcı geri sayımı ve notu ekranında görür.')),
-            fieldEl(POps.t('Kullanıcıya not (isteğe bağlı)'), note, counterEl(note, 200))
+            powerField(POps.t('Gecikme'), powerSegmented(DELAYS, 0, (v) => { delay = v; }), POps.t('Kullanıcı geri sayımı ve notu ekranında görür.')),
+            powerField(POps.t('Kullanıcıya not (isteğe bağlı)'), note, counterEl(note, 200))
         ]);
         const jobTitle = o.scopeLabel ? POps.taskName(p.step + ' · ' + o.scopeLabel) : p.label() + ' · ' + count(on.length);
         const r = await POps.form({
@@ -257,8 +257,8 @@
         const title = POps.el('input', { type: 'text', maxlength: '80', autocomplete: 'off', placeholder: POps.t('Örn. Sınav başlıyor') });
         const text = POps.el('textarea', { rows: '4', maxlength: '1000', placeholder: POps.t('Kullanıcının göreceği metin') });
         const ack = POps.el('input', { type: 'checkbox' });
-        const titleField = fieldEl(POps.t('Başlık'), title);
-        const textField = fieldEl(POps.t('Metin'), text, counterEl(text, 1000));
+        const titleField = powerField(POps.t('Başlık'), title);
+        const textField = powerField(POps.t('Metin'), text, counterEl(text, 1000));
         [title, text].forEach(i => i.addEventListener('input', () => {
             i.closest('.field').classList.remove('has-error');
             const err = i.closest('.pops-dialog') && i.closest('.pops-dialog').querySelector('.pops-dialog-error');
@@ -266,7 +266,7 @@
         }));
         const content = POps.el('div', { className: 'pops-form' }, [
             titleField, textField,
-            fieldEl(POps.t('Tür'), segmentedEl([['info', 'Bilgi'], ['warning', 'Uyarı']], 'info', (v) => { style = v; })),
+            powerField(POps.t('Tür'), powerSegmented([['info', 'Bilgi'], ['warning', 'Uyarı']], 'info', (v) => { style = v; })),
             POps.el('label', { className: 'check' }, [ack, POps.el('span', { text: POps.t('Okundu onayı iste (kullanıcı Tamam’a basana kadar ekranda kalır)') })])
         ]);
         const r = await POps.form({
