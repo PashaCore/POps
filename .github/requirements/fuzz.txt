@@ -1,0 +1,4 @@
+# Bulanık test (fuzz/, docs/fuzzing.md): ci.yml'nin fuzz işinde Backend/requirements.lock'un yanına kurulur.
+# atheris'in tekerlekleri CPython 3.12+ içindir; iş Python 3.12 kullanır. Özetli kilidi (fuzz.lock)
+# tools/backend_lock.sh üretir.
+atheris==3.1.0

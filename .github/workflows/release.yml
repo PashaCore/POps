@@ -194,7 +194,7 @@ jobs:
             echo "Kurulum: 'python tools/sign_release.py genkey --out-dir keys' ile üretilen özel PEM'i bu secret'a ekleyin (açık anahtar keys/pops_release_ed25519.pub.pem repoda)."
             exit 1
           fi
-          python -m pip install --quiet 'cryptography==43.0.3'
+          python -m pip install --quiet --require-hashes -r .github/requirements/signing.lock
           VER=$(tr -d '[:space:]' < VERSION)
           python tools/sign_release.py sign --dir dist --version "$VER" --tag "$GITHUB_REF_NAME"
           python tools/sign_release.py verify --dir dist --pub-pem keys/pops_release_ed25519.pub.pem

@@ -40,11 +40,19 @@ pinned with the SHA-256 hashes of its files, in one file that is valid for Pytho
 differs from the lock, before it installs anything. A checkout without the lock (older releases) falls back to
 `requirements.txt`.
 
-Regenerate the lock whenever `requirements.txt` changes, and commit both:
+CI's own tools are locked the same way. `.github/requirements/<name>.txt` pins them (Dependabot updates these
+files) and `<name>.lock` is generated with hashes: `backend-ci` (flake8, coverage, jsonschema), `pytest` (the
+backend test runner), `signing` (cryptography for `tools/sign_release.py`), `lock-tools` (uv) and `fuzz` (Atheris,
+see [fuzzing.md](fuzzing.md)).
+Workflows install only with `pip install --require-hashes -r <lock>`. Tools that CI installs next to the backend
+are resolved against `Backend/requirements.lock`, so shared packages keep the backend's versions. uv is upgraded by
+hand: change `lock-tools.txt`, then regenerate every lock.
+
+Regenerate the locks whenever `requirements.txt` or a file in `.github/requirements/` changes, and commit them:
 
 ```bash
-pip install uv==0.12.23            # the version CI uses; another version may format the file differently
-tools/backend_lock.sh              # keeps every other pin; only what requirements.txt needs changes
+pip install --require-hashes -r .github/requirements/lock-tools.lock   # the uv CI uses; another version may format the files differently
+tools/backend_lock.sh              # keeps every other pin; only what the inputs need changes
 tools/backend_lock.sh --upgrade    # also moves indirect dependencies to their newest allowed versions
 tools/backend_lock.sh --check      # what CI's "Backend lock file" job runs
 pip-audit -r Backend/requirements.lock    # with Python 3.10 or newer
@@ -53,10 +61,10 @@ pip-audit -r Backend/requirements.lock    # with Python 3.10 or newer
 Indirect dependencies change only in the lock and Dependabot does not see them: run `--upgrade` from time to time
 and whenever `pip-audit` reports one of them.
 
-**Dependabot PRs.** `.github/workflows/lock-refresh.yml` regenerates the lock on a Dependabot PR that changes
-`requirements.txt` and pushes it to the PR branch (the only job with write access; it runs only for Dependabot's own
-branches). A push made with the workflow token does not start another workflow run, so CI does not run on the new
-commit by itself: close and reopen the PR, then review the green run. Until then the Dependabot commit shows a
+**Dependabot PRs.** `.github/workflows/lock-refresh.yml` regenerates the locks on a Dependabot PR that changes
+`requirements.txt` or `.github/requirements/*.txt` and pushes them to the PR branch (the only job with write access;
+it runs only for Dependabot's own branches). A push made with the workflow token does not start another workflow
+run, so CI does not run on the new commit by itself: close and reopen the PR, then review the green run. Until then the Dependabot commit shows a
 failing "Backend lock file" check, which is expected. If the job cannot push (for example when branch rules require
 signed commits), regenerate the lock locally and push it to the Dependabot branch.
 

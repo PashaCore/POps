@@ -7,6 +7,20 @@ updates:
     # Backend Python 3.10+ ister (D-20); 3.10'u bırakan bir sürüm gelirse CI'ın 3.10 işi kırılır, önce o karar verilir.
     open-pull-requests-limit: 5
 
+  - package-ecosystem: pip
+    # CI araçları (.github/requirements/*.txt); özetli kilitlerini Dependabot PR'ında lock-refresh.yml yeniler. Haftada
+    # tek PR.
+    directory: /.github/requirements
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      ci-tools:
+        patterns: [ "*" ]
+    ignore:
+      # uv elle yükseltilir: kilitlerin biçimi uv sürümüne bağlı (lock-tools.txt)
+      - dependency-name: uv
+
   - package-ecosystem: nuget
     directories:
       - /Agent/POps.Agent/POps.Agent
