@@ -1,0 +1,16 @@
+{
+  "name": "pops-panel-e2e",
+  "private": true,
+  "description": "End-to-end tests for the POps panel (Dashboard/) in headless Chromium",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -141,6 +141,77 @@ jobs:
         # Dashboard/lang/*/*.json: geçerli JSON, yer tutucular anahtarla aynı, her Türkçe anahtar kaynakta birebir var
         run: python3 tools/i18n/check_i18n.py
 
+  panel-e2e:
+    name: Panel end-to-end
+    # Panelin sayfaları gerçek tarayıcıda (Playwright, yalnızca Chromium): her sayfa 1440 ve 390 piksel genişlikte
+    # açılır; giriş/çıkış, Cihazlar, Sınıflar, İşlemler, Kayıtlar, Sistem, Ayarlar ve izleyici yetkisi akışları. Konsol
+    # hatası, panelin kendi kökeni dışına istek ve PHP uyarısı testi düşürür. Yığını tests/e2e/global-setup.js kurar:
+    # migrate.py, uvicorn (8099), seed.sql, php -S (8098) + router.php. Bkz. docs/testing.md.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: pops
+          POSTGRES_PASSWORD: pops
+          POSTGRES_DB: pops_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_USER: pops
+      DB_PASS: pops
+      DB_NAME: pops_e2e
+      E2E_PYTHON: python
+    defaults:
+      run:
+        working-directory: tests/e2e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Backend/requirements.txt
+      - name: Install backend deps
+        run: pip install -r ../../Backend/requirements.txt
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240  # 2.37.2
+        with:
+          php-version: "8.3"
+          extensions: curl
+          coverage: none
+          tools: none
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+      - name: Install Playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run end-to-end tests
+        run: npx playwright test
+      - name: Upload report and traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: panel-e2e-report
+          path: |
+            tests/e2e/playwright-report/
+            tests/e2e/test-results/
+            tests/e2e/.stack/*.log
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: ignore
+
   version:
     name: Version consistency
     runs-on: ubuntu-latest

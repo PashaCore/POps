@@ -12,7 +12,8 @@ A high test count says little on its own; the table below is the honest list.
 | `Agent/POps.Tests` | xUnit tests for the agent, updater logic, shared code and the MSI custom actions (pure logic and temp-folder file operations; no firewall, pipe or service). | CI `test-agent` job (Windows) |
 | Migrations | Fresh migrate, schema check, second run must apply nothing. | CI `migrations` job (PostgreSQL 13) |
 | Release signing | `tools/sign_release.py selftest`: sign/verify with a temporary key, tampered manifest and artefact rejected. | CI `signing` job |
-| Panel | `php -l` on every page only. | CI `dashboard` job |
+| Panel syntax and escaping | `php -l` on every page; the HTML-sink scanner (`tools/html_sinks`). | CI `dashboard` job |
+| `tests/e2e/` (panel end to end) | Playwright in headless Chromium against the real panel (`php -S`) and backend on a seeded throwaway database: every page at 1440×900 and 390×844, and the main flows (below). | CI `panel-e2e` job, [locally](#panel-end-to-end-tests) |
 | Server scripts | `Installer/server/tests/test_deploy.sh`: `pops-deploy-backend` and `pops-selfupdate` in a temporary folder with fake `systemctl`, `curl`, `sudo`, `pip` and Python interpreters, without root. | CI `server-scripts` job |
 
 Run the backend suite locally (never against a production database):
@@ -21,6 +22,58 @@ Run the backend suite locally (never against a production database):
 export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<u> DB_PASS=<p> DB_NAME=<empty test db> JWT_SECRET=dev
 COVERAGE=1 bash Backend/tests/run_local.sh   # COVERAGE=1 needs the coverage package; omit it to skip the report
 ```
+
+### Panel end-to-end tests
+
+`tests/e2e/` sits at the repository root, not under `Dashboard/`, so the panel's web root never serves the test
+router, the seed data or `node_modules`. `npx playwright test` starts its own stack (`global-setup.js`) and stops it
+afterwards; CI and a local run do the same steps:
+
+1. `db.py prepare`: `DB_NAME` must be empty (or left over from an earlier e2e run, recognised by the
+   `pops_e2e_marker` table, which is then wiped). Any other database is refused: the tests delete labs and change
+   settings.
+2. `python Backend/migrate.py`, then the backend with uvicorn on `127.0.0.1:8099`. The admin password
+   (`PANEL_ADMIN_PASS`) and `JWT_SECRET` are generated per run. The backend's outbound requests (GitHub release
+   check) go to a closed proxy port, so the stack is offline and the panel's "could not check" path is what runs.
+3. `db.py seed seed.sql`: made-up PCs, labs, tasks, 126 log entries, tickets, licences. Two rows carry HTML-like
+   text that must stay text.
+4. A copy of `Dashboard/` (with `config.php` from `config.example.php`) served by
+   `php -S 127.0.0.1:8098 router.php`. The router does the clean addresses (`/devices` → `devices.php`) and forwards
+   `/api/`, `/download/` and `/updates/` to the backend, like nginx/Apache in production. `php -S` cannot proxy
+   WebSockets, so `/ws/` gets a 404.
+
+Every test fails on: an uncaught page error or a console error (failed requests included; the only exception is the
+WebSocket handshake to the panel's own `/ws/`), a request to any origin other than the panel's own (the panel must
+work offline), an unexpected `alert`/`confirm`, and a PHP warning, notice or error in the `php -S` log.
+
+| Spec | What it checks |
+|---|---|
+| `smoke.spec.js` | Sign-in page and all 13 pages at 1440×900 and 390×844: HTTP 200 without a redirect to sign-in, `<title>`, `h1`, the active menu entry, loading indicators gone, no horizontal overflow (`scrollWidth <= innerWidth + 1`). |
+| `auth.spec.js` | A protected page redirects to sign-in; sign in, sign out (the session is really gone); a wrong password shows the error. |
+| `devices.spec.js` | Search by name and IP filters the list, HTML-like names render as text, the empty state; a row opens the detail drawer (IP, lab, ID, recent tasks) and it closes. |
+| `labs.spec.js` | Create a lab, rename it, delete it through the lab menu and its dialogs; each step survives a reload. |
+| `tasks.spec.js` | A task created with `POST /api/deploy_orchestration` appears as "Sırada" with its target; the drawer shows command and PC; after an API cancel the list updates by polling; the filters. |
+| `logger.spec.js` | Kayıtlar: 25 → 50 per page, next/last/first page, the choice survives a reload; the filter panel (lab, person), its badge and chips, clearing. |
+| `system.spec.js` | Sistem: every tab sets `?tab=`, survives a reload and opens from the address; overview tiles; task and event charts draw, metric charts draw or say "Ölçümler toplanıyor"; the 7-day range. |
+| `settings.spec.js` | Ayarlar → Genel: the organisation name saves and the sign-in page shows it; the queue limit rejects 0, saves and survives a reload (both restored afterwards). |
+| `roles.spec.js` | A viewer created through the API (with deploy, terminal and settings in its permission list) sees only its pages in the menu, gets "Yetkisiz Erişim" on admin pages, has no selection, bulk actions, lab menu, queue buttons or scheduled tasks, and the API refuses its writes. |
+
+Run them locally (PHP 8 CLI with `curl`, Node 20+, Python 3.10+ with `Backend/requirements.txt`, and an empty
+database your role owns; ports 8098/8099 free or moved with `E2E_PANEL_PORT` / `E2E_API_PORT`):
+
+```bash
+createdb pops_e2e
+export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<user> DB_PASS=<password> DB_NAME=pops_e2e
+export E2E_PYTHON=venv/bin/python            # default: python3; E2E_PHP defaults to php
+cd tests/e2e
+npm ci
+npx playwright install chromium               # once; --with-deps on a fresh Linux machine
+npx playwright test                           # about 35 s; the same database can be reused
+npx playwright show-report                    # after a failure: steps, screenshots, traces
+```
+
+The stack's logs (`backend.log`, `php.log`, `migrate.log`, `seed.log`) are in `tests/e2e/.stack/`; CI uploads them
+with the HTML report and the traces as the `panel-e2e-report` artifact when the job fails.
 
 An integration test that times out once and then passes is often the host, not the code: while the disk stalls, every
 PostgreSQL commit waits (the PostgreSQL log then shows `using stale statistics instead of current ones because stats
@@ -81,5 +134,5 @@ machine and a regression would not be caught by CI.
 | Request ID, `/metrics` access control, diagnostics, overview history | Tested | `test_ops.py`, `test_units.py` |
 | Migrations from empty and idempotency | Tested | `migrations` job |
 | Server self-update and deploy rollback | Tested (fakes) | `test_deploy.sh`: rollback of code and venv after a failed `pip`, copy or health check; venv rebuilt when its Python is too old (and put back on failure); early stop without a new enough Python; signed release tags. The real systemd path is field-verified (`deploy-status.json` `state=ok`). |
-| Panel pages (PHP) | Not tested | Syntax only; the headless-browser end-to-end setup exists locally but not in CI |
+| Panel pages (PHP) | Tested | End-to-end smoke of every page at desktop and phone width, and the main flows (sign-in, devices, labs, tasks, logs, Sistem, Ayarlar, viewer role) in Chromium: `tests/e2e/`, CI `panel-e2e` job. Not covered: Vision and remote command against a live agent (no agent and no WebSocket proxy in the stack). |
 | Vision screen tunnel | Partly | Frame scoping tested (`test_remote_authz.py`); the tunnel and tray capture are not |

@@ -6,7 +6,11 @@ $current_file = basename($_SERVER['PHP_SELF']);
 $role = $_SESSION['role'] ?? 'admin';
 $perms = $_SESSION['permissions'] ?? [];
 function can_view($page) {
-    global $role, $perms;
+    global $role, $perms, $viewer_blocked;
+    // header.php'nin izleyiciye kapattığı sayfalar menüde de görünmez (yetki listesinde olsalar bile)
+    if ($role === 'viewer' && in_array($page, (array) ($viewer_blocked ?? []), true)) {
+        return false;
+    }
     return ($role === 'superadmin' || in_array($page, $perms));
 }
 

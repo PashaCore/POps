@@ -13,16 +13,16 @@ if (($_COOKIE[POPS_JWT_COOKIE] ?? '') !== $_SESSION['jwt_token']) {
 }
 
 // Yetki Kontrolü
+// İzleyici bu sayfaları yetki listesinde olsa da açamaz (yönetici iken bu yetkileri olan biri izleyiciye düşürülünce
+// liste böyle kalır); yan menü de aynı listeyle gizler (sidebar.php)
+$viewer_blocked = ['deploy', 'settings', 'terminal'];
 $current_page = basename($_SERVER['PHP_SELF'], '.php');
 // Arayüz dili: ortak sözlük + bu sayfanın sözlüğü (lang/en/<sayfa>.json)
 pops_i18n_init($current_page);
 if ($current_page !== 'index' && $current_page !== 'logout') {
     $role = $_SESSION['role'] ?? 'admin';
     $permissions = $_SESSION['permissions'] ?? [];
-    
-    // Viewer can never access these pages regardless of permissions
-    $viewer_blocked = ['deploy', 'settings', 'terminal'];
-    
+
     $is_unauthorized = false;
     if ($role === 'viewer' && in_array($current_page, $viewer_blocked)) {
         $is_unauthorized = true;
