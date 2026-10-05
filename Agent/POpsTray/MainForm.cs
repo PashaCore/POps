@@ -646,21 +646,43 @@ namespace POpsTray
             if (fps < 1) fps = 1;
             if (fps > 5) fps = 5;
             int delayMs = 1000 / fps;
+            CancellationToken token = _captureCts.Token;
 
             _ = Task.Run(async () =>
             {
+                var desktop = new POps.Shared.VisionDesktopGate();
                 try
                 {
-                    while (!_captureCts.Token.IsCancellationRequested)
+                    while (!token.IsCancellationRequested)
                     {
-                        byte[] jpeg = CaptureScreenToJpeg();
+                        byte[]? jpeg = NextLegacyFrame(desktop);
                         if (jpeg != null) SendToServiceBytes(jpeg);
-                        await Task.Delay(delayMs, _captureCts.Token);
+                        await Task.Delay(delayMs, token);
                     }
                 }
                 catch (TaskCanceledException) { }
                 catch { }
-            }, _captureCts.Token);
+            }, token);
+        }
+
+        // Eski yayın (JSON stream_frame): güvenli masaüstü (UAC onayı, kilit, oturum açma ekranı) etkinken GDI yakalaması
+        // başarısız olur ve eskiden hiç kare gitmiyordu (panelde donmuş son görüntü). Artık o sırada bildirim resmi gider:
+        // ilk seferde ve 5 sn'de bir. Masaüstü geri gelince yakalama sürer.
+        private byte[]? NextLegacyFrame(POps.Shared.VisionDesktopGate desktop)
+        {
+            POps.Shared.VisionDesktopStep step = desktop.Next(POpsTray.Vision.InputDesktop.IsOwn(), needFull: false, DateTime.UtcNow);
+            if (step == POps.Shared.VisionDesktopStep.Enter)
+                TrayLog.Write("Vision: kullanıcının masaüstü görünmüyor (güvenli masaüstü); görüntü yerine bildirim gönderiliyor.");
+            else if (step == POps.Shared.VisionDesktopStep.Resume)
+                TrayLog.Write("Vision: kullanıcının masaüstü geri geldi; yakalama sürüyor.");
+
+            if (step is POps.Shared.VisionDesktopStep.Enter or POps.Shared.VisionDesktopStep.Notice)
+            {
+                Rectangle bounds = Screen.PrimaryScreen?.Bounds ?? new Rectangle(0, 0, 1280, 720);
+                return POpsTray.Vision.SecureDesktopNotice.Jpeg(bounds.Width, bounds.Height, 40L);
+            }
+            if (step == POps.Shared.VisionDesktopStep.Wait) return null;
+            return CaptureScreenToJpeg();
         }
 
         private void StopCaptureLoop()
