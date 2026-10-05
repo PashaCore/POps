@@ -44,11 +44,11 @@
     },
     "x": {
       "type": "integer",
-      "description": "mouse_move: horizontal position in screen pixels (the panel converts from the scaled frame)."
+      "description": "mouse_move: horizontal position in screen pixels (the panel converts from the scaled frame). While a Vision v2 stream runs: pixels of the shown output, that is the selected screen or the side-by-side image of all screens (the frames' coordinate space); the agent maps them to the physical screen."
     },
     "y": {
       "type": "integer",
-      "description": "mouse_move: vertical position in screen pixels."
+      "description": "mouse_move: vertical position in screen pixels (Vision v2: as for x)."
     },
     "relative": {
       "type": "boolean",

@@ -51,6 +51,7 @@ isolation callbacks, so no firewall rule or real setting is touched.
    | `lockdown.json` | the fake isolation is applied (`NetworkIsolation.StatePath` exists) |
    | `set_capabilities.*.json` | the capabilities are off afterwards and a `capabilities` message is sent |
    | `remote_input.*.json` with Vision off | one `capability_denied` (capability `vision`) |
+   | `select_monitor*.json`, `set_quality.json`, `clipboard.json` | Vision-channel messages: through `Worker.HandleVisionControlAsync` with Vision off, one `capability_denied`; `VisionRelay.TrayMessageFor` gives `VISION_SELECT:1` / `VISION_SELECT:all`, `VISION_QUALITY:…`, and `CLIPBOARD_SET:…` only with `userAccepted` |
    | `scan_updates.json`, `install_updates.*.json`, `wake_peer.json` with the module off (`AgentModules`) | `capability_denied` with `reason` `module_disabled` |
    | `update_agent.json` | refused: the manifest is signed with the test key, not the release key (see 3) |
    | `unknown/server-to-agent.json` | ignored: no exception, nothing sent |

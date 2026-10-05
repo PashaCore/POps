@@ -411,14 +411,13 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
                 continue
             if not isinstance(payload, dict):
                 continue
-            mtype = payload.get("type")
-            if mtype in ["stream_frame", "thumbnail"]:
+            if payload.get("type") in ["stream_frame", "thumbnail"]:
                 # Kare her zaman bu tünelin kimliği doğrulanmış cihazına aittir: ajanın gönderdiği hw_id
                 # kullanılmaz (aksi halde kayıtlı bir ajan başka cihazın kutusuna kare koyabilirdi)
                 payload["hw_id"] = pc_name
                 # F12: kare yalnızca o cihaz için açık oturumu olan admin panellerine
                 await manager.send_frame_to_viewers(payload, pc_name)
-            elif mtype == "monitors":
+            elif payload.get("type") == "monitors":
                 monitors = vision.monitors_list(payload)
                 if monitors is None:
                     metrics.count("vision_messages_malformed")
@@ -427,7 +426,7 @@ async def websocket_vision(websocket: WebSocket, pc_name: str):
                 await manager.send_to_session_holders(
                     {"type": "monitors", "hw_id": pc_name, "list": monitors}, pc_name
                 )
-            elif mtype == "clipboard":
+            elif payload.get("type") == "clipboard":
                 await _clipboard_from_pc(pc_name, payload)
     except WebSocketDisconnect:
         pass

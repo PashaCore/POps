@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/monitors.json",
+  "title": "monitors",
+  "description": "Vision v2 (only to a server that lists `vision_binary`): the PC's screens, sent on the Vision channel when the stream starts and after a display change. The server checks the list (1 to 16 screens, unique `index`, sizes 1 to 65535) and drops it otherwise, keeps the last one for the open tunnel and forwards it, under the tunnel's device ID, only to the panels of the admins holding a session for the device.",
+  "x-pops-channels": [
+    "/ws/vision"
+  ],
+  "type": "object",
+  "required": [
+    "type",
+    "list"
+  ],
+  "properties": {
+    "type": {
+      "const": "monitors",
+      "description": "Message type."
+    },
+    "list": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "description": "One entry per screen, in Windows order.",
+      "items": {
+        "type": "object",
+        "required": [
+          "index",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "Screen number: the value for select_monitor and the monitor byte of the frames of this screen. Unique in the list."
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "Width in physical pixels."
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "Height in physical pixels."
+          },
+          "primary": {
+            "type": "boolean",
+            "description": "The Windows primary screen, streamed until the viewer selects another. Missing means false."
+          }
+        }
+      }
+    }
+  }
+}

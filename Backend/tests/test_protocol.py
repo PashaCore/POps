@@ -271,7 +271,7 @@ def test_code_matches_schemas():
 
     agents_src = _read(os.path.join(BACKEND, "pops", "routers", "agents.py"))
     control_src = _read(os.path.join(BACKEND, "pops", "routers", "control.py"))
-    handled = set(re.findall(r'(?:payload|pld)\.get\("type"\) == "([a-z_]+)"', agents_src))
+    handled = set(re.findall(r'(?:payload|pld)\.get\("type"\) == "([a-z_]+)"', agents_src + control_src))
     for group in re.findall(r'payload\.get\("type"\) in \[([^\]]*)\]', control_src):
         handled |= set(re.findall(r'"([a-z_]+)"', group))
     handled.add("heartbeat")   # type'sız; status ile tanınır (agents.py handle_routine_payload)
@@ -355,6 +355,17 @@ class FakeWS:
         item = self.incoming.pop(0)
         item = item() if callable(item) else item
         return item if isinstance(item, str) else json.dumps(item, ensure_ascii=False)
+
+    async def receive(self):
+        """ASGI biçimi (ikili mesaj da alan /ws/vision için): bytes ikili mesaj olur, bitince disconnect."""
+        if self.closed is not None or not self.incoming:
+            return {"type": "websocket.disconnect", "code": 1000}
+        item = self.incoming.pop(0)
+        item = item() if callable(item) else item
+        if isinstance(item, bytes):
+            return {"type": "websocket.receive", "bytes": item}
+        return {"type": "websocket.receive",
+                "text": item if isinstance(item, str) else json.dumps(item, ensure_ascii=False)}
 
     async def send_text(self, text):
         msg = json.loads(text)
@@ -625,11 +636,12 @@ async def identity_reassignment():
 
 async def vision_channel():
     print("== /ws/vision: kareler oturum sahiplerine bu cihazın kimliğiyle iletilir")
+    from pops import vision
     from pops.manager import manager
     from pops.routers import control
 
     P = Patches()
-    forwarded = []
+    forwarded, binary, to_holders, audits = [], [], [], []
 
     async def secret_ok(pc, secret):
         return pc == HW and secret == SECRET
@@ -637,25 +649,84 @@ async def vision_channel():
     async def to_viewers(message, pc):
         forwarded.append((message, pc))
 
+    async def to_binary(pc, frame, data):
+        binary.append((pc, frame, data))
+        return 1
+
+    async def holders(message, pc, users=None):
+        to_holders.append((message, pc, users))
+        return 1
+
     P.set(control, "verify_agent_secret", secret_ok)
-    P.set(control, "add_audit_log", recorder([]))
+    P.set(control, "add_audit_log", recorder(audits))
     P.set(manager, "send_frame_to_viewers", to_viewers)
+    P.set(manager, "send_binary_frame_to_viewers", to_binary)
+    P.set(manager, "send_to_session_holders", holders)
+    # Kullanıcının kabul ettiği oturum: tünel oturumdan sonra açılır (pano bu oturumun sahibine gider)
+    manager.add_vision_session(HW, "ayse")
     vis = [m for _, m in channel_examples(VIS)]
+    frames = [m for m in vis if m.get("type") in ("stream_frame", "thumbnail")]
     unknown = _load(os.path.join(PROTO, "examples", "unknown", A2S + ".json"))
     # Başka bir cihazın kimliğiyle gönderilen kare de bu tünelin cihazına yazılmalı
-    spoofed = dict(vis[0], hw_id="HW-BASKACIHAZ1")
-    ws = FakeWS(vis + [spoofed, unknown], headers={"X-Agent-Secret": SECRET})
+    spoofed = dict(frames[0], hw_id="HW-BASKACIHAZ1")
+    jpeg = base64.b64decode(example(A2S, "stream_frame")["image"])
+    good = vision.pack_frame(vision.KIND_FULL, 0xFF, 7, 0, 0, 3200, 1080, 3200, 1080, jpeg)
+    bad = vision.pack_frame(vision.KIND_REGION, 0, 8, 3100, 0, 200, 10, 3200, 1080, jpeg)
+    ws = FakeWS(vis + [spoofed, good, bad, unknown], headers={"X-Agent-Secret": SECRET})
     try:
         await control.websocket_vision(ws, HW)
     finally:
         P.restore()
+        manager.remove_vision_session(HW, "ayse")
         manager.active_vision_ws.pop(HW, None)
-    expected = [dict(m, hw_id=HW) for m in vis]
-    chk([m for m, _ in forwarded][:len(vis)] == expected and all(pc == HW for _, pc in forwarded),
+    expected = [dict(m, hw_id=HW) for m in frames]
+    chk([m for m, _ in forwarded][:len(frames)] == expected and all(pc == HW for _, pc in forwarded),
         "stream_frame ve thumbnail bu cihazın kimliğiyle iletildi, bilinmeyen type atıldı")
-    chk(len(forwarded) == len(vis) + 1 and forwarded[-1][0].get("hw_id") == HW,
+    chk(len(forwarded) == len(frames) + 1 and forwarded[-1][0].get("hw_id") == HW,
         "başka cihaz kimliğiyle gelen kare bu tünelin cihazına yazıldı (sahte kutu yok)")
+    chk(len(binary) == 1 and binary[0][0] == HW and binary[0][2] == good and binary[0][1].monitor == 0xFF,
+        "geçerli ikili kare bu cihaz için iletildi, kuralları bozan atıldı")
+    mons = example(A2S, "monitors")
+    clip = example(A2S, "clipboard")
+    chk(({"type": "monitors", "hw_id": HW, "list": mons["list"]}, HW, None) in to_holders,
+        "monitors oturum sahiplerine bu cihazın kimliğiyle iletildi")
+    chk(({"type": "clipboard", "hw_id": HW, "text": clip["text"]}, HW, {"ayse"}) in to_holders,
+        "pano metni kabul edilmiş oturumun sahibine iletildi")
+    chk([a[0][1] for a in audits] == ["clipboard"] and clip["text"] not in json.dumps(audits[0][0], ensure_ascii=False)
+        and audits[0][0][3] == {"direction": "from_pc", "length": len(clip["text"]), "admins": ["ayse"]},
+        "pano denetim kaydında yön ve uzunluk var, metin yok")
     chk(ws.closed is None and not ws.sent, "Vision kanalında sunucu yanıt göndermez")
+
+    print("== görüntüleyici komutları (select_monitor, set_quality, clipboard) ajana")
+    P = Patches()
+    sent, replies = [], []
+    vision_ws, panel = FakeWS(), object()
+
+    async def module_on(target):
+        return True
+
+    P.set(control, "add_audit_log", recorder([]))
+    P.set(manager, "send_to_panel", lambda ws_, msg: replies.append(msg))
+    manager.active_vision_ws[HW] = vision_ws
+    manager.panel_roles[panel] = "admin"
+    manager.add_vision_session(HW, "ayse")
+    manager.vision_tunnel_since[HW] = manager.vision_session_modes[(HW, "ayse")][0]
+    try:
+        for name in ("select_monitor", "select_monitor.all", "set_quality", "clipboard"):
+            msg = dict(example(S2A, name), type="vision_control", device=HW)
+            await control._vision_control(panel, "ayse", msg, module_on)
+        sent = list(vision_ws.sent)
+    finally:
+        P.restore()
+        manager.remove_vision_session(HW, "ayse")
+        manager.active_vision_ws.pop(HW, None)
+        manager.vision_tunnel_since.pop(HW, None)
+        manager.panel_roles.pop(panel, None)
+    for m in sent:
+        check_message(S2A, m, "sunucu→ajan %s (görüntüleyici)" % message_name(S2A, m))
+    chk(sent == [example(S2A, n) for n in ("select_monitor", "select_monitor.all", "set_quality", "clipboard")],
+        "komutlar ajana örneklerle aynı biçimde gitti (cihaz ve type alanı eklenmedi)")
+    chk(replies == [{"type": "clipboard_result", "hw_id": HW, "ok": True}], "panele pano sonucu döndü")
 
 
 # ------------------------------------------------------------------------- sunucunun kurduğu komutlar (gerçek kod)

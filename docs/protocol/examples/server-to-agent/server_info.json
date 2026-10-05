@@ -1,10 +1,12 @@
 {
   "action": "server_info",
-  "version": "0.1.22-alpha",
+  "version": "0.1.23-alpha",
   "protocol": 1,
   "features": [
     "update_result_ack",
     "result_ack",
-    "update_progress"
+    "update_progress",
+    "vision_binary",
+    "vision_clipboard"
   ]
 }

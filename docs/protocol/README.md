@@ -26,13 +26,15 @@ backend):
 | Channel | URL | Open | Carries |
 | --- | --- | --- | --- |
 | Command | `wss://<server>/ws/agent/<hw_id>` | always; reconnects with backoff | heartbeats, commands, results |
-| Vision | `wss://<server>/ws/vision/<hw_id>` | only during an approved remote-control session | `stream_frame` up; `remote_input` down |
+| Vision | `wss://<server>/ws/vision/<hw_id>` | only during an approved remote-control session | `stream_frame` or binary frames, `monitors`, `clipboard` up; `remote_input`, `select_monitor`, `set_quality`, `clipboard` down |
 
 - `<hw_id>` is the device ID (`HW-` and 12 characters). The ID in the URL is the identity of the connection;
   IDs inside messages never authorize anything.
-- Each WebSocket text frame holds exactly one JSON object, UTF-8. Binary frames are not used. The server accepts
-  messages up to 16 MiB (uvicorn's default); the Windows agent accepts up to 8 MiB on the command channel and 1 MiB
-  on the Vision channel.
+- Each WebSocket text frame holds exactly one JSON object, UTF-8. Binary WebSocket messages are used only for
+  screen frames on the Vision channel, and only by an agent whose server lists `vision_binary` (see
+  [Vision v2 binary frames](#vision-v2-binary-frames)). The server accepts messages up to 16 MiB (uvicorn's
+  default; a binary frame at most 2 MB); the Windows agent accepts up to 8 MiB on the command channel and 1 MiB on
+  the Vision channel.
 - An agent must not connect over plain `ws://` to a non-loopback server: the device secret travels in a header.
 
 ### Headers
@@ -110,6 +112,8 @@ use:
 | `result_ack` | 0.1.14-alpha | Every `result` with an integer `task_id` is answered with `result_ack` once it is stored. Keep each result (on disk) until its `result_ack` arrives and send unacknowledged results again after a reconnect. |
 | `update_result_ack` | 0.1.14-alpha | An `update_result` with a `result_id` is answered with `update_result_ack` after it is stored. Keep the update result until then. |
 | `update_progress` | 0.1.22-alpha | The server reads `update_progress` stages and shows them in the panel. Send them only to a server that lists this feature (older servers drop them anyway). |
+| `vision_binary` | 0.1.23-alpha | The Vision channel takes binary frames (below) and `monitors`, and forwards `select_monitor` and `set_quality` from the viewer. Without it send only JSON `stream_frame`s: an older server closes the Vision channel on a binary message. |
+| `vision_clipboard` | 0.1.23-alpha | The server relays `clipboard` in both directions during a session the PC user accepted. Without it do not send `clipboard`. |
 
 Rules for agents:
 
@@ -169,6 +173,8 @@ a lower or unparsable version only switches these behaviours off.
 | `thumbnail` | command, Vision | Preview to admin panels | [thumbnail](agent-to-server/thumbnail.json) | [example](examples/agent-to-server/thumbnail.json) |
 | `vision_rejected` | command | Forwarded to panels | [vision_rejected](agent-to-server/vision_rejected.json) | [example](examples/agent-to-server/vision_rejected.json) |
 | `stream_frame` | Vision | Forwarded to session holders | [stream_frame](agent-to-server/stream_frame.json) | [example](examples/agent-to-server/stream_frame.json) |
+| `monitors` | Vision | Stored for the tunnel; forwarded to session holders | [monitors](agent-to-server/monitors.json) | [example](examples/agent-to-server/monitors.json) |
+| `clipboard` | Vision | Forwarded to the holders of an accepted session; audited without the text | [clipboard](agent-to-server/clipboard.json) | [example](examples/agent-to-server/clipboard.json) |
 
 ### Server → agent
 
@@ -193,7 +199,40 @@ a lower or unparsable version only switches these behaviours off.
 | `scan_updates` | panel | Windows Update scan; `POST /api/patches/{hw_id}` | [scan_updates](server-to-agent/scan_updates.json) | [example](examples/server-to-agent/scan_updates.json) |
 | `install_updates` | panel | Installs updates; `POST /api/patches/{hw_id}` | [install_updates](server-to-agent/install_updates.json) | [security](examples/server-to-agent/install_updates.security.json), [all](examples/server-to-agent/install_updates.all.json) |
 | `remote_input` (`type`) | panel preview and remote control | Preview, frame rate, input | [remote_input](server-to-agent/remote_input.json) | [get_thumbnail](examples/server-to-agent/remote_input.get_thumbnail.json), [set_fps](examples/server-to-agent/remote_input.set_fps.json), [mouse_move](examples/server-to-agent/remote_input.mouse_move.json), [mouse_click](examples/server-to-agent/remote_input.mouse_click.json), [mouse_wheel](examples/server-to-agent/remote_input.mouse_wheel.json), [keyboard](examples/server-to-agent/remote_input.keyboard.json) |
+| `select_monitor` | viewer picks a screen or needs a full frame (Vision channel) | Streams that screen, or all side by side, starting with a full frame | [select_monitor](server-to-agent/select_monitor.json) | [screen](examples/server-to-agent/select_monitor.json), [all](examples/server-to-agent/select_monitor.all.json) |
+| `set_quality` | viewer changes quality, scale or frame rate (Vision channel) | New upper limits | [set_quality](server-to-agent/set_quality.json) | [example](examples/server-to-agent/set_quality.json) |
+| `clipboard` | viewer sends text, accepted session only (Vision channel) | Sets the clipboard; refuses outside an accepted session | [clipboard](server-to-agent/clipboard.json) | [example](examples/server-to-agent/clipboard.json) |
 | `start_stream` | never (deprecated) | Windows agent: starts a stream | [start_stream](server-to-agent/start_stream.json) | [example](examples/server-to-agent/start_stream.json) |
+
+### Vision v2 binary frames
+
+With `vision_binary` the agent sends screen frames as binary WebSocket messages on the Vision channel instead of
+`stream_frame`. A message is an 18-byte big-endian header followed by the JPEG:
+
+| Offset | Size | Field |
+| --- | --- | --- |
+| 0 | 1 | kind: `0x01` full frame, `0x02` region, `0x03` cursor position (no image) |
+| 1 | 1 | monitor: the screen `index` from `monitors`, or `0xFF` for all screens side by side in one image |
+| 2 | 4 | sequence number (u32, wraps) |
+| 6 | 2 + 2 | x, y: the region's top left (`0, 0` for a full frame; the cursor position for `0x03`) |
+| 10 | 2 + 2 | w, h: the region's size (the whole output for a full frame; `0, 0` for `0x03`) |
+| 14 | 2 + 2 | width and height of the whole output |
+| 18 | rest | JPEG (absent for `0x03`) |
+
+Coordinates are always the output's real pixels. At a scale below 1 the JPEG is smaller than (w, h) and the viewer
+draws it into that rectangle. The server drops, without an answer, a message that breaks these rules and counts it
+in `/metrics` (`pops_events_total{event="vision_frames_malformed"}`, `vision_frames_oversize`):
+
+- longer than 2 MB (2,097,152 bytes, header included) or shorter than 18 bytes;
+- an unknown kind, a monitor byte from 16 to 254, or an output width or height of 0;
+- a full frame that does not start at `0, 0` or does not cover the whole output; a region of size 0 or outside the
+  output; a cursor with a size, outside the output or with a payload;
+- an image that is not a JPEG (fewer than 4 bytes, or not starting with `FF D8`).
+
+After a full frame of an output the agent may send regions of it; it sends a full frame first after the stream
+starts, after `select_monitor`, after a scale change and after it dropped a frame. Valid frames go only to the panels
+of the admins holding a session for the device, prefixed with the tunnel's device ID (the frame itself carries no
+ID); see [`../vision.md`](../vision.md) for the panel side.
 
 ## Test vectors
 
@@ -216,11 +255,12 @@ the test key. The device secret, bypass key and IDs in the examples are made up.
   handled by the server (except deprecated `start_stream`);
 - the messages the server builds (server_info, set_identity, set_secret, set_bypass_secret, get_hardware,
   execute, cancel_task, result_ack, update_result_ack, update_agent, set_capabilities, lockdown, unlock,
-  start_vision_session, stop_stream, wake_peer, scan_updates, install_updates, remote_input) validate and contain
-  only documented fields: the test runs the real endpoint and queue code with a fake database and fake sockets;
+  start_vision_session, stop_stream, wake_peer, scan_updates, install_updates, remote_input, select_monitor,
+  set_quality, clipboard) validate and contain only documented fields: the test runs the real endpoint and queue
+  code with a fake database and fake sockets;
 - the agent examples go through the real `/ws/agent` and `/ws/vision` handlers without an error and have the
-  documented effect (stored result, acknowledgement, audit record, forwarded frame), and the unknown message is
-  ignored;
+  documented effect (stored result, acknowledgement, audit record, forwarded frame, monitor list or clipboard
+  text), valid binary frames are forwarded and broken ones dropped, and the unknown message is ignored;
 - the first message of the load simulator (`tools/agent_simulator.py`) validates.
 
 Agent test projects use the same files: see [`AGENT_TESTS.md`](AGENT_TESTS.md).

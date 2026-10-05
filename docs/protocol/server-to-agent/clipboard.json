@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/clipboard.json",
+  "title": "clipboard",
+  "description": "Vision v2 (`vision_clipboard`): text for the PC's clipboard. Sent on the Vision channel, only for the admin holding a session that the PC user accepted (not a mandatory session) and whose tunnel opened after that session started; the agent refuses it otherwise (`capability_denied`). The server audits the direction and length, never the text.",
+  "x-pops-channels": [
+    "/ws/vision"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "text"
+  ],
+  "properties": {
+    "action": {
+      "const": "clipboard",
+      "description": "Message type."
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 65536,
+      "description": "Text only, at most 64 KB (65536 bytes) as UTF-8."
+    }
+  }
+}
