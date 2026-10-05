@@ -3,7 +3,8 @@
 - Görev oluşturan istek görev kimliklerini döner (yinelenen istek aynı kimlikleri), yeniden deneme de yeni kimlikleri.
 - POST /api/tasks/status verilen görevlerin durumunu döner; silinmiş ya da olmayan görev listede yoktur.
 - POST /api/system/update-progress ajan güncellemesinin cihaz cihaz durumunu döner: sürüm hedefte mi, bekleyen
-  gönderim, gönderimden sonraki güncelleme sonucu; yalnızca yönetici.
+  gönderim (ve ajanın bildirdiği son adım; adımların kendisi test_p1.py'de), gönderimden sonraki güncelleme
+  sonucu; yalnızca yönetici.
 - Görev bağlamı: adımın adı, kaynak sayfa, gerekçe, isteğin IP'si ve iş kimliği görevle saklanır; yeniden deneme
   adı ve gerekçeyi taşır. GET /api/devices/{pc}/activity cihazın son işlemlerini bu bağlamla döner.
 - Ajan politikasını kimin, ne zaman değiştirdiği saklanır (GET /api/agent_policies/meta) ve denetim kaydına yazılır.
@@ -214,6 +215,9 @@ async def run(c, admin, viewer):
     chk(not items["HW-JB2"]["on_target"] and not items["HW-JB2"]["online"] and items["HW-JB2"]["result"] is None,
         "eski sürümde, çevrimdışı, sonuç yok")
     chk(items["HW-YOK"]["known"] is False, "bilinmeyen cihaz işaretli")
+    chk(all(items[pc]["pending"] is False and items[pc]["sent_at"] is None and items[pc]["stage"] is None
+            and items[pc]["stage_at"] is None for pc in items) and abs(p.get("now", 0) - time.time()) < 60,
+        "bekleyen gönderim yokken adım alanları boş, sunucu saati döner")
     s, p = req("/api/system/update-progress", admin, {"pcs": ["HW-JB1"], "version": "0.1.15-alpha",
                                                       "since": time.time() + 3600})
     chk(s == 200 and p["items"][0]["result"] is None, "gönderimden önceki sonuç sayılmaz")

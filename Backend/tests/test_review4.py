@@ -293,8 +293,9 @@ async def run(c, admin, superadmin):
     await panel.close()
     other = await agent("HW-R4B", secret_heads("HW-R4B"), first("HW-R4B"))
     msgs = await collect(other, 2)
+    # Zamanlayıcı bu arada görevi "Expired" yapmış olabilir (30 sn'lik tur); önemli olan ajana gönderilmemesi
     chk(find(msgs, "task_id", expired) is None and await c.fetchval(
-        "SELECT status FROM tasks WHERE id=$1", expired) == "Pending", "süresi dolmuş görev gönderilmedi")
+        "SELECT status FROM tasks WHERE id=$1", expired) in ("Pending", "Expired"), "süresi dolmuş görev gönderilmedi")
     await scheduler.reap_stuck_tasks()
     chk(await c.fetchval("SELECT status FROM tasks WHERE id=$1", expired) == "Expired", "süresi dolan görev Expired")
     s, b = req("/api/tasks/action", admin, {"action": "RETRY", "target_mode": "TASK", "target_id": str(expired)})

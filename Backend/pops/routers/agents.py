@@ -162,7 +162,9 @@ async def reconcile_quarantine(
 
 # Sunucunun desteklediği, ajanın davranışını değiştiren özellikler (0.1.14+ ajan okur; eskiler bilinmeyen action'ı
 # yok sayar). update_result_ack: güncelleme sonucu kaydedilince onaylanır, ajan onaya kadar sonucu saklar.
-SERVER_FEATURES = ("update_result_ack", "result_ack")
+# update_progress: güncellemenin ara adımları okunur (eski sunucu bilinmeyen mesajı zaten yok sayar; ajan isterse
+# yalnızca bunu duyuran sunucuya gönderir).
+SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress")
 
 
 def _server_version() -> str:
@@ -182,6 +184,75 @@ async def _send_server_info(websocket: WebSocket) -> None:
 
 async def _ack_update_result(pc_name: str, result_id: str) -> None:
     await manager.send_command({"action": "update_result_ack", "result_id": result_id}, pc_name)
+
+
+_RESULT_FIELDS = (
+    "status",
+    "from_version",
+    "to_version",
+    "detail",
+    "rollback",
+    "agent_state",
+    "msi_exit_code",
+    "reboot_required",
+    "running_version",
+)
+
+
+async def _store_update_result(pc_name: str, payload: dict) -> None:
+    """Güncelleme sonucunun kaydı: ajanların yazamadığı device_audit_logs, çalışan sürüm, kritikse güvenlik kaydı,
+    sonucu beklenen gönderimin (ve son adımının) kapanması, bildirim ve panele yayın. update_result ve ajanın
+    "rejected" adımı (sonuç dosyası yazılmadan biten ret) aynı yoldan geçer."""
+    detail = {k: payload.get(k) for k in _RESULT_FIELDS}
+    await add_audit_log(pc_name, "update_result", f"Ajan guncelleme sonucu: {payload.get('status', '?')}", detail)
+    # Güncelleme/rollback sonrası GERÇEKTEN çalışan sürümü sakla (v0.1.3+ ajan gönderir).
+    if payload.get("running_version"):
+        await execute_query(
+            "UPDATE clients SET running_version=$1 WHERE pc_name=$2", (str(payload.get("running_version")), pc_name)
+        )
+    # Yalnızca GERÇEKTEN kötü durumlar kritik loglanır (bkz. pops/update_notice.py)
+    notice = update_notice.describe(payload)
+    if update_notice.is_critical(payload):
+        _reason = str(payload.get("agent_state") or "") or str(payload.get("status") or "")
+        await log_audit_event(
+            pc_name,
+            "Critical Security",
+            f"Ajan guncelleme sorunu: {_reason}",
+            actor_id="System/Update",
+            event_type="agent.update",
+            category="system_maintenance",
+            action="update_problem",
+            risk_level="critical",
+            reason=_reason,
+            meta_data=detail,
+        )
+    await update_tracking.forget(pc_name)
+    if notice:
+        await notify(notice[0], notice[1], notice[2], str(payload.get("detail") or ""), pc_name)
+    await manager.broadcast_to_panels({"type": "update_result", "pc_name": pc_name, **detail})
+
+
+async def _update_progress(pc_name: str, payload: dict, agent_version: Optional[str]) -> None:
+    """Ajanın güncelleme adımı (update_progress, bkz. docs/api.md ve pops/update_tracking.py). Bilinmeyen adım,
+    sonucu beklenmeyen cihazın ya da başka bir gönderimin adımı yok sayılır; bağlantı sürer. "rejected" güncellemeyi
+    bitirir: ajan sonuç dosyası yazmadan durduğu için sebep "rejected" sonucu olarak kaydedilir."""
+    progress = update_tracking.clean_progress(payload)
+    if progress is None:
+        log.info("tanınmayan güncelleme adımı yok sayıldı",
+                 extra={"pc_name": pc_name, "stage": str(payload.get("stage"))[:40]})
+        return
+    if not update_tracking.accepts(pc_name, progress):
+        log.info("beklenmeyen güncelleme adımı yok sayıldı", extra={"pc_name": pc_name, "stage": progress["stage"]})
+        return
+    if progress["stage"] == "rejected":
+        await _store_update_result(pc_name, {
+            "status": "rejected",
+            "from_version": agent_version[:64] if agent_version and agent_version != "unknown" else None,
+            "to_version": progress["to_version"] or update_tracking.pending_version(pc_name),
+            "detail": progress["detail"] or "ajan sebep bildirmedi",
+        })
+        return
+    await update_tracking.set_stage(pc_name, progress)
 
 
 # WebSocket kapanış kodları (RFC 6455) → panelde ve günlükte okunur sebep
@@ -688,62 +759,22 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     await manager.broadcast_to_panels(payload)
                     continue
                 if payload.get("type") == "update_result":
-                    # Ajanın güncelleme sonucu (POpsUpdater update-result.json'ından). Ajanların yazamadığı
-                    # device_audit_logs'a düşür + panele bildir. 0.1.14+ ajan result_id gönderir ve sonucu onay
-                    # (update_result_ack) gelene kadar saklayıp yeniden gönderir: aynı sonuç ikinci kez kaydedilmez,
-                    # yalnızca onaylanır. Onay kayıt yazıldıktan SONRA gider (S20).
+                    # Ajanın güncelleme sonucu (POpsUpdater update-result.json'ından). 0.1.14+ ajan result_id gönderir
+                    # ve sonucu onay (update_result_ack) gelene kadar saklayıp yeniden gönderir: aynı sonuç ikinci kez
+                    # kaydedilmez, yalnızca onaylanır. Onay kayıt yazıldıktan SONRA gider (S20).
                     result_id = update_tracking.clean_result_id(payload.get("result_id"))
                     if result_id and await update_tracking.seen(active_hwid, result_id):
                         await _ack_update_result(active_hwid, result_id)
                         continue
-                    detail = {
-                        k: payload.get(k)
-                        for k in (
-                            "status",
-                            "from_version",
-                            "to_version",
-                            "detail",
-                            "rollback",
-                            "agent_state",
-                            "msi_exit_code",
-                            "reboot_required",
-                            "running_version",
-                        )
-                    }
-                    await add_audit_log(
-                        active_hwid, "update_result", f"Ajan guncelleme sonucu: {payload.get('status', '?')}", detail
-                    )
-                    # Güncelleme/rollback sonrası GERÇEKTEN çalışan sürümü sakla (v0.1.3+ ajan gönderir).
-                    if payload.get("running_version"):
-                        await execute_query(
-                            "UPDATE clients SET running_version=$1 WHERE pc_name=$2",
-                            (str(payload.get("running_version")), active_hwid),
-                        )
-                    # Yalnızca GERÇEKTEN kötü durumlar kritik loglanır (bkz. pops/update_notice.py)
-                    notice = update_notice.describe(payload)
-                    if update_notice.is_critical(payload):
-                        _reason = str(payload.get("agent_state") or "") or str(payload.get("status") or "")
-                        await log_audit_event(
-                            active_hwid,
-                            "Critical Security",
-                            f"Ajan guncelleme sorunu: {_reason}",
-                            actor_id="System/Update",
-                            event_type="agent.update",
-                            category="system_maintenance",
-                            action="update_problem",
-                            risk_level="critical",
-                            reason=_reason,
-                            meta_data=detail,
-                        )
-                    await update_tracking.forget(active_hwid)
-                    if notice:
-                        await notify(notice[0], notice[1], notice[2], str(payload.get("detail") or ""), active_hwid)
-                    await manager.broadcast_to_panels({"type": "update_result", "pc_name": active_hwid, **detail})
+                    await _store_update_result(active_hwid, payload)
                     # Onay en sonda: arada sunucu çökerse ajan sonucu yeniden gönderir ve kayıt/bildirim tekrarlanır (en
                     # az bir kez). Önce onaylanırsa çökmede bildirim hiç oluşmazdı.
                     if result_id:
                         await update_tracking.remember(active_hwid, result_id)
                         await _ack_update_result(active_hwid, result_id)
+                    continue
+                if payload.get("type") == "update_progress":
+                    await _update_progress(active_hwid, payload, agent_version)
                     continue
                 if payload.get("type") == "capabilities":
                     # Ajan güncel yetenek durumunu bildirir (bağlantıda + her değişimde). Sakla + panele yay.

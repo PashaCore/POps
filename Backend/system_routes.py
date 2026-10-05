@@ -31,6 +31,7 @@ from pydantic import BaseModel, field_validator
 
 import release_verify
 from pops import agent_version as agent_version_mod
+from pops import update_tracking
 from pops.models import StrictInput, TargetMode, UpdateProgressInput, upper_mode
 
 
@@ -614,7 +615,8 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
     @router.post("/api/system/update-progress")
     async def update_progress(data: UpdateProgressInput, auth: dict = Depends(require_admin)):
         """Gönderilmiş bir ajan güncellemesinin cihaz cihaz durumu (panelin işlem merkezi): bağlı mı, çalışan sürüm,
-        sonucu beklenen gönderim var mı ve gönderimden sonra gelen güncelleme sonucu (başarılı / geri döndü)."""
+        sonucu beklenen gönderim var mı (ne zaman gönderildi, ajanın bildirdiği son adım) ve gönderimden sonra gelen
+        güncelleme sonucu (başarılı / geri döndü / reddedildi). Zamanlar Unix saniyesi; "now" sunucunun saati."""
         pcs = list(dict.fromkeys(str(p) for p in data.pcs))[:5000]
         if not pcs:
             return {"items": []}
@@ -641,16 +643,25 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         for pc in pcs:
             r = known.get(pc)
             version = (r and (r["running_version"] or r["agent_version"])) or None
+            sent = manager.pending_updates.get(pc)
+            # Ajanın bildirdiği son adım (0.1.22+; eski ajanda hep boş). Yalnızca sonucu beklenen gönderimde olur.
+            stage = (manager.update_stages.get(pc) or {}) if sent else {}
             items.append({
                 "pc": pc,
                 "known": r is not None,
                 "online": bool(r and str(r["status"] or "").lower() != "offline"),
                 "version": version,
                 "on_target": bool(version) and _norm(version) == _norm(data.version),
-                "pending": pc in manager.pending_updates,
+                "pending": sent is not None,
+                "sent_at": sent[1] if sent else None,
+                "stage": stage.get("stage"),
+                "detail": stage.get("detail"),
+                "attempt": stage.get("attempt"),
+                "of": stage.get("of"),
+                "stage_at": stage.get("stage_at"),
                 "result": last.get(pc),
             })
-        return {"items": items}
+        return {"items": items, "now": time.time()}
 
     @router.post("/api/system/deploy-update")
     async def deploy_update(data: DeployUpdateInput, auth: dict = Depends(require_superadmin)):
@@ -689,6 +700,10 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         msg = {"action": "update_agent", "manifest": manifest_b64, "manifest_sig": sig}
 
         targets = await _resolve_targets(data)
+        # Aynı sürüm son 15 dk içinde gönderildiyse (ya da ajan o sürede adım bildirdiyse) yeniden gönderilmez: ajan
+        # kurulum sürerken gelen ikinci emri zaten yok sayar. Kurulum sırasında bağlantısız görünen cihaz da burada.
+        already = sorted(await update_tracking.recently_sent(targets, version))
+        targets = {t for t in targets if t not in already}
         online = []
         offline = sorted(t for t in targets if t not in manager.active_agents)
         for pc in sorted(t for t in targets if t in manager.active_agents):
@@ -696,17 +711,14 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
                 offline.append(pc)   # bağlantı bu arada koptu
                 continue
             online.append(pc)
-            # Sonucu beklenen güncelleme; tabloda da tutulur, sunucu yeniden başlasa da izlenir
-            # (bkz. pops/update_tracking.py)
-            manager.pending_updates[pc] = (version, time.time())
-            await execute_query(
-                "INSERT INTO pending_updates (pc_name, version, sent_at) VALUES ($1, $2, NOW()) "
-                "ON CONFLICT (pc_name) DO UPDATE SET version = $2, sent_at = NOW()", (pc, version))
+            # Sonucu beklenen güncelleme; tabloda da tutulur, sunucu yeniden başlasa da izlenir; önceki gönderimin
+            # adımı silinir (bkz. pops/update_tracking.py)
+            await update_tracking.mark_sent(pc, version)
         await add_audit_log("*", "deploy_update", "İmzalı güncelleme dağıtıldı: %s" % version,
                             {"version": version, "msi": msi_name, "dispatched": online, "offline": offline,
-                             "by": auth.get("sub")})
+                             "already_pending": already, "by": auth.get("sub")})
         return {"ok": True, "version": version, "msi": msi_name,
-                "dispatched": online, "skipped_offline": offline}
+                "dispatched": online, "skipped_offline": offline, "already_pending": already}
 
     @router.post("/api/system/enforce-auth")
     async def set_enforce(data: EnforceInput, auth: dict = Depends(require_superadmin)):

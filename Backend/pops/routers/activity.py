@@ -71,6 +71,8 @@ def _update_title(c):
         return "%s güncellemesi başlatılamadı, cihaz değişmedi" % to
     if status in ("pending_reboot", "rollback_pending_reboot"):
         return "Ajan güncellemesi yeniden başlatmayı bekliyor"
+    if status == "rejected":
+        return "Ajan %s güncellemesini reddetti" % to
     return "Ajan güncellemesi sorunlu bitti (%s)" % (status or "?")
 
 
@@ -101,7 +103,9 @@ def build_items(device, sessions, device_audits, fleet_audits, tasks):
         elif action == "unlock":
             items.append(_item(at, "quarantine", "Karantina kaldırıldı", c.get("admin"), _reason(c.get("reason"))))
         elif action == "update_result":
-            items.append(_item(at, "update", _update_title(c)))
+            # Reddin sebebi (imza, sürüm, indirme...) ayrıntıda
+            why = str(c.get("detail") or "")[:300] if c.get("status") == "rejected" else None
+            items.append(_item(at, "update", _update_title(c), None, why))
         elif action == "set_capabilities":
             items.append(_item(at, "capability", _capability_title(c), c.get("by")))
         elif action in ("enroll", "NEW_DEVICE"):

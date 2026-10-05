@@ -289,6 +289,11 @@ An admin who is not a superadmin sees only the **Sunucu** and **Ajanlar** cards,
 2. **Ajanlar**: the version distribution and the agent package: download and verify the latest GitHub release, or
    **Paketi elle yükle…** (`manifest.json`, `manifest.json.sig` and the MSI) on an offline server. Then update the
    outdated online agents with one button, or choose a lab or selected PCs; the progress of the update is shown.
+   Per PC it shows the last stage the agent reported and how long ago: **Alındı**, **İndirildi**, **Doğrulandı**,
+   **Kurulum başladı**, "Windows Installer meşgul, bekleniyor (2/5)", **Kuruluyor** or **Reddedildi** with the
+   reason. Agents up to 0.1.21 report no stages: they show **Kuruluyor** until the result, and after 3 minutes
+   "Ajan ilerleme bildirmiyor (eski sürüm olabilir)". A PC whose update to the same version is still running is
+   not sent it again; the notice says "N bilgisayara zaten gönderildi, kurulum sürüyor" and the box follows it.
 3. **Ajan kaydı ve kimlik**: the **Kimlik zorlaması** switch (agent-auth enforcement; the card shows how many
    agents are enrolled) and **Kayıt jetonları**: **Jeton üret** (**Sınıf**, **Not**, **Kullanım sayısı**,
    **Geçerlilik (saat)**), the list of tokens and revoking them.

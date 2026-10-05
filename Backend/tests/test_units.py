@@ -18,7 +18,7 @@ import time  # noqa: E402
 
 import datetime  # noqa: E402
 
-from pops import agent_health, bypass, logs, update_notice  # noqa: E402
+from pops import agent_health, bypass, logs, update_notice, update_tracking  # noqa: E402
 from pops.routers import activity  # noqa: E402
 
 FAILS = []
@@ -62,6 +62,36 @@ def test_update_notice():
     chk(update_notice.describe({"status": "success", "to_version": "0.1.8", "running_version": "0.1.8"})
         == ("update_ok", "info", "Ajan güncellendi: 0.1.8"), "başarı")
     chk(update_notice.describe({"status": "something-new"}) is None, "bilinmeyen durum bildirim üretmez")
+    rejected = {"status": "rejected", "to_version": "0.1.22-alpha", "detail": "manifest imzası geçersiz"}
+    chk(update_notice.describe(rejected) == ("update_problem", "critical", "Ajan 0.1.22-alpha güncellemesini reddetti")
+        and update_notice.is_critical(rejected), "ret kritik, başlık sürümü söylüyor")
+
+
+def test_update_progress():
+    print("== güncelleme adımı (update_progress)")
+    clean = update_tracking.clean_progress
+    for stage in update_tracking.STAGES:
+        chk((clean({"type": "update_progress", "stage": stage}) or {}).get("stage") == stage, "adım: %s" % stage)
+    chk(clean({"stage": "teleporting"}) is None and clean({"stage": ["received"]}) is None and clean({}) is None
+        and clean("received") is None, "bilinmeyen ya da bozuk adım yok sayılır")
+    got = clean({"stage": "waiting_installer", "to_version": "0.1.22-alpha", "attempt": 2, "of": 5})
+    chk(got == {"stage": "waiting_installer", "to_version": "0.1.22-alpha", "attempt": 2, "of": 5, "detail": None},
+        "deneme sayısı ve sürüm saklanır: %s" % got)
+    got = clean({"stage": "waiting_installer", "attempt": True, "of": 5})
+    chk(got["attempt"] is None and got["of"] == 5, "bool deneme sayısı değildir")
+    got = clean({"stage": "waiting_installer", "attempt": 6, "of": 5})
+    chk(got["attempt"] is None and got["of"] is None, "deneme sınırı aşılamaz")
+    chk(clean({"stage": "installing", "attempt": 0, "of": 101})["of"] is None, "sayılar 1–100")
+    got = clean({"stage": "rejected", "to_version": "<b>x</b>", "detail": "imza\x00 geçersiz\r\n\u202esahte\t "})
+    chk(got["to_version"] is None and got["detail"] == "imza geçersiz sahte",
+        "kontrol ve yön karakterleri silinir, bozuk sürüm atılır: %r" % got["detail"])
+    chk(len(clean({"stage": "rejected", "detail": "ç" * 1000})["detail"]) == update_tracking.DETAIL_MAX == 300,
+        "ayrıntı en çok 300 karakter")
+    chk(clean({"stage": "installing", "detail": 42})["detail"] is None
+        and clean({"stage": "installing", "detail": " \x01 "})["detail"] is None, "metin olmayan ya da boş ayrıntı yok")
+    chk(update_tracking.same_version("v0.1.22-Alpha", "0.1.22-alpha")
+        and not update_tracking.same_version("0.1.2", "0.1.22"),
+        "sürüm karşılaştırması baştaki v'yi ve büyük harfi saymaz")
 
 
 def test_log_format():
@@ -162,6 +192,8 @@ def test_activity():
          {"action": "update_result", "timestamp": "2026-09-29 20:31:29",
           "changes": '{"status": "rolled_back", "to_version": "0.1.8-alpha", "running_version": "0.1.7-alpha"}'},
          {"action": "NEW_DEVICE", "timestamp": "2026-09-20 10:00:00", "changes": '{"bios_sn": "GIZLI-SERI"}'},
+         {"action": "update_result", "timestamp": "2026-09-19 10:00:00",
+          "changes": '{"status": "rejected", "to_version": "0.1.22-alpha", "detail": "imza geçersiz"}'},
          {"action": "set_capabilities", "timestamp": "2026-09-21 10:00:00",
           "changes": '{"vision_enabled": false, "by": "Pasha"}'}],
         [{"action": "install_updates", "timestamp": "2026-09-27 18:00:05",
@@ -171,7 +203,7 @@ def test_activity():
         [{"created_at": "2026-09-26 19:44:40", "created_by": "Pasha", "status": "Completed"}],
     )
     chk([i["at"] for i in items] == sorted([i["at"] for i in items], reverse=True), "en yeni başta")
-    chk(len(items) == 7, "başka cihaza gönderilen işlem dahil değil (%d kayıt)" % len(items))
+    chk(len(items) == 8, "başka cihaza gönderilen işlem dahil değil (%d kayıt)" % len(items))
     chk(items[0]["title"] == "0.1.8-alpha güncellemesi geri alındı, 0.1.7-alpha çalışıyor", "güncelleme başlığı")
     chk("GIZLI-SERI" not in json.dumps(items, ensure_ascii=False), "donanım seri numarası sızmıyor")
     kinds = {i["kind"] for i in items}
@@ -181,6 +213,9 @@ def test_activity():
     chk(cap["title"] == "Uzaktan izleme kapatıldı" and cap["actor"] == "Pasha", "yetenek değişikliği ve yapan")
     cmd = [i for i in items if i["kind"] == "command"][0]
     chk(cmd["detail"] == "Durum: Completed" and cmd["actor"] == "Pasha", "komut içeriği yok, yapan var")
+    rej = items[-1]
+    chk(rej["title"] == "Ajan 0.1.22-alpha güncellemesini reddetti" and rej["detail"] == "imza geçersiz",
+        "reddedilen güncelleme sebebiyle")
 
 
 def test_bypass():
@@ -664,6 +699,7 @@ def test_server_metrics():
 
 def main():
     test_update_notice()
+    test_update_progress()
     test_log_format()
     test_log_writer()
     test_activity()

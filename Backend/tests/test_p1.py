@@ -5,6 +5,9 @@
 - Sürüm uyumluluğu: 0.1.11, 0.1.12, 0.1.13, 0.1.14 ve sürümsüz ajan bağlanır, heartbeat ve sonuç gönderir; her
   birine yalnızca anladığı mesajlar gider (cihaz bypass anahtarı 0.1.12+); server_info herkese gider.
 - Güncelleme sonucu onayı (S20): result_id'li sonuç kaydedilip onaylanır, ikinci gönderim yeni kayıt açmaz.
+- Güncelleme adımları (update_progress): her adım saklanır ve update-progress'te döner; bilinmeyen adım yok sayılır,
+  bağlantı sürer; "rejected" gönderimi sebebiyle bitirir; sonuç adımı siler; aynı sürüm 15 dk içinde yeniden
+  gönderilmez (already_pending), süre dolunca gider.
 - Heartbeat'ler toplu yazılır; kopan cihazın "Offline" kaydı geç heartbeat'le ezilmez; kopma sebebi saklanır.
 - Yayın durdurma POST + admin (R-10); çift istek tek görev; eksi eşzamanlılık sınırı reddedilir (F21).
 - Zamanlanmış görev ya hep ya hiç yazılır (F07); takılı görev zaman aşımına düşer, geç sonuç yine kaydedilir.
@@ -28,7 +31,9 @@ import asyncpg  # noqa: E402
 import websockets  # noqa: E402
 
 import server  # noqa: E402  (create_jwt)
+import system_routes  # noqa: E402  (RELEASES_DIR)
 from pops import db, retention, scheduler, update_tracking  # noqa: E402
+from pops.config import UPDATES_DIR  # noqa: E402
 from pops.manager import manager as local_manager  # noqa: E402
 
 HTTP = os.environ["POPS_TEST_HTTP"]
@@ -37,7 +42,9 @@ CONC = ["HW-PC%02d" % i for i in range(20)]
 MULTI = ["HW-PM%02d" % i for i in range(20)]
 COMPAT = {"HW-PV11": "0.1.11-alpha", "HW-PV12": "0.1.12-alpha", "HW-PV13": "0.1.13-alpha",
           "HW-PV14": "0.1.14-alpha", "HW-PVXX": None}
-OTHER = ["HW-PHB", "HW-PDUP", "HW-PS1", "HW-PS2", "HW-PR1", "HW-PRTMP", "HW-PSAME"]
+UPD = ["HW-PUP1", "HW-PUP2"]
+UPV = "9.9.1-p1test"   # sahte staged sürüm (deploy-update için)
+OTHER = ["HW-PHB", "HW-PDUP", "HW-PS1", "HW-PS2", "HW-PR1", "HW-PRTMP", "HW-PSAME", "HW-PUPOFF"] + UPD
 PCS = CONC + MULTI + list(COMPAT) + OTHER
 FAILS = []
 
@@ -299,6 +306,8 @@ async def run(c, admin, superadmin, viewer):
     for ws in agents.values():
         await ws.close()
 
+    await update_progress_flow(c, admin, superadmin)
+
     print("== heartbeat'ler toplu yazılır; kopma sebebi")
     hb = await agent("HW-PHB", {"X-Agent-Secret": "HW-PHB-s", "X-Agent-Version": "0.1.14-alpha"}, dna("HW-PHB"))
     await collect(hb, 1)
@@ -444,6 +453,190 @@ async def run(c, admin, superadmin, viewer):
     chk(ident is not None and ident.get("new_hw_id") == "HW-PR1", "kimlik kurtarıldı (büyük/küçük harf, boşluk farkı)")
     await tmp.close()
     await c.execute("UPDATE global_settings SET value='1' WHERE key='enforce_agent_auth'")
+
+
+async def stage_release(c):
+    """deploy-update'in okuduğu staged release: imzalı manifest'in kaydı, manifest, imza ve MSI. İçerikleri
+    denetlenmez (imzayı ve özeti ajan doğrular); simüle ajan yalnızca update_agent'in geldiğini görür."""
+    msi = "POps-Agent-%s-win-x64.msi" % UPV
+    manifest = {"version": UPV, "tag": "v" + UPV, "artifacts": [{"name": msi, "sha256": "0" * 64, "size": 4}]}
+    rel = os.path.join(system_routes.RELEASES_DIR, UPV)
+    os.makedirs(rel, exist_ok=True)
+    with open(os.path.join(rel, "manifest.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f)
+    with open(os.path.join(rel, "manifest.json.sig"), "w", encoding="utf-8") as f:
+        f.write("p1-test-sig")
+    with open(os.path.join(rel, msi), "wb") as f:
+        f.write(b"p1t\n")
+    old = await c.fetchval("SELECT value FROM global_settings WHERE key='verified_release_manifest'")
+    await c.execute("INSERT INTO global_settings (key, value) VALUES ('verified_release_manifest', $1) "
+                    "ON CONFLICT (key) DO UPDATE SET value = $1", json.dumps(manifest))
+    return old, rel, os.path.join(UPDATES_DIR, msi)
+
+
+async def unstage_release(c, saved):
+    old, rel, copied = saved
+    if old is None:
+        await c.execute("DELETE FROM global_settings WHERE key='verified_release_manifest'")
+    else:
+        await c.execute("UPDATE global_settings SET value=$1 WHERE key='verified_release_manifest'", old)
+    for name in os.listdir(rel):
+        os.remove(os.path.join(rel, name))
+    os.rmdir(rel)
+    if os.path.exists(copied):
+        os.remove(copied)
+
+
+def progress_items(admin, since):
+    s, p = req("/api/system/update-progress", admin, {"pcs": UPD, "version": UPV, "since": since})
+    return {i["pc"]: i for i in (p.get("items") or [])} if s == 200 else {}
+
+
+async def wait_progress(admin, since, pc, cond, timeout=6):
+    item = {}
+    for _ in range(int(timeout / 0.25)):
+        item = progress_items(admin, since).get(pc) or {}
+        if cond(item):
+            return item
+        await asyncio.sleep(0.25)
+    return item
+
+
+async def update_progress_flow(c, admin, superadmin):
+    print("== güncelleme adımları (update_progress) ve yinelenen gönderim")
+    for pc in UPD:
+        await c.execute("INSERT INTO agent_secrets (pc_name, secret_hash) VALUES ($1,$2)", pc, _sha(pc + "-s"))
+    socks = {}
+    for pc in UPD:
+        socks[pc] = await agent(pc, {"X-Agent-Secret": pc + "-s", "X-Agent-Version": "0.1.22-alpha"}, dna(pc))
+    a1, a2 = socks["HW-PUP1"], socks["HW-PUP2"]
+    first = {pc: await collect(ws, 1.5) for pc, ws in socks.items()}
+    info = find(first["HW-PUP1"], "action", "server_info")
+    chk(info is not None and "update_progress" in info.get("features", []), "server_info update_progress'i duyurur")
+    saved = await stage_release(c)
+    try:
+        since = time.time() - 5
+        s, d = req("/api/system/deploy-update", superadmin, {"target_mode": "PC", "targets": UPD + ["HW-PUPOFF"]})
+        chk(s == 200 and d.get("dispatched") == UPD and d.get("skipped_offline") == ["HW-PUPOFF"]
+            and d.get("already_pending") == [], "ilk gönderim iki bağlı cihaza (%s %s)" % (s, d))
+        got = {pc: find(await collect(ws, 1.5), "action", "update_agent") for pc, ws in socks.items()}
+        chk(all(got.values()), "iki ajan da update_agent aldı")
+        item = progress_items(admin, since).get("HW-PUP1") or {}
+        chk(item.get("pending") and item.get("sent_at") and item.get("stage") is None and item.get("stage_at") is None
+            and "detail" in item and "attempt" in item and "of" in item, "gönderildi, henüz adım yok: %s" % item)
+
+        steps = [("received", {}), ("downloaded", {}), ("verified", {}), ("updater_started", {}),
+                 ("waiting_installer", {"attempt": 2, "of": 5}), ("installing", {}),
+                 ("ignored_busy", {"to_version": "9.9.0-baska", "detail": "update.lock taze"})]
+        for stage, extra in steps:
+            await a1.send(json.dumps(dict({"type": "update_progress", "stage": stage, "to_version": UPV}, **extra)))
+            item = await wait_progress(admin, since, "HW-PUP1", lambda i, st=stage: i.get("stage") == st)
+            ok = item.get("stage") == stage and item.get("pending") and isinstance(item.get("stage_at"), float)
+            if stage == "waiting_installer":
+                row = await c.fetchrow("SELECT stage, attempt, attempt_of, stage_at FROM pending_updates "
+                                       "WHERE pc_name='HW-PUP1'")
+                ok = ok and item.get("attempt") == 2 and item.get("of") == 5 and row["stage"] == stage \
+                    and row["attempt"] == 2 and row["attempt_of"] == 5 and row["stage_at"] is not None
+            if stage == "ignored_busy":
+                ok = ok and item.get("detail") == "update.lock taze"
+            chk(ok, "adım saklandı ve döndü: %s (%s)" % (stage, item))
+
+        # Bilinmeyen adım, bozuk mesaj ve başka sürümün adımı yok sayılır; bağlantı sürer
+        for junk in ({"type": "update_progress", "stage": "teleporting"}, {"type": "update_progress"},
+                     {"type": "update_progress", "stage": {"x": 1}},
+                     {"type": "update_progress", "stage": "downloaded", "to_version": "0.0.1-alpha"}):
+            await a1.send(json.dumps(junk))
+        msgs = await collect(a1, 1)
+        item = progress_items(admin, since).get("HW-PUP1") or {}
+        chk(item.get("stage") == "ignored_busy" and not any(m == ("closed", 1011) for m in msgs),
+            "bilinmeyen/başka sürümün adımı yok sayıldı, bağlantı açık (%s)" % item.get("stage"))
+        await a1.send(json.dumps({"type": "update_progress", "stage": "installing", "to_version": UPV,
+                                  "detail": "kurulum\x00 sürüyor\r\n\u202e" + "x" * 400}))
+        item = await wait_progress(admin, since, "HW-PUP1", lambda i: i.get("stage") == "installing")
+        detail = item.get("detail") or ""
+        chk(len(detail) == 300 and detail.startswith("kurulum sürüyor x") and "\x00" not in detail
+            and "\u202e" not in detail, "ayrıntı 300 karaktere kısaldı, kontrol karakteri yok")
+        first_at = item.get("stage_at")
+        await asyncio.sleep(1.1)
+        await a1.send(json.dumps({"type": "update_progress", "stage": "installing", "to_version": UPV,
+                                  "detail": "kurulum\x00 sürüyor\r\n\u202e" + "x" * 400}))
+        await collect(a1, 0.8)
+        chk((progress_items(admin, since).get("HW-PUP1") or {}).get("stage_at") == first_at,
+            "aynı adım yeniden gelince zamanı değişmez")
+
+        print("== aynı sürüm 15 dk içinde yeniden gönderilmez")
+        s, d = req("/api/system/deploy-update", superadmin, {"target_mode": "PC", "targets": UPD})
+        chk(s == 200 and d.get("dispatched") == [] and d.get("already_pending") == UPD,
+            "yeniden gönderim reddedildi: already_pending (%s)" % d)
+        again = [find(await collect(ws, 1), "action", "update_agent") for ws in socks.values()]
+        chk(not any(again), "ajanlara ikinci update_agent gitmedi")
+        audit = await c.fetchval("SELECT changes FROM device_audit_logs WHERE action='deploy_update' "
+                                 "ORDER BY id DESC LIMIT 1")
+        chk(json.loads(audit).get("already_pending") == UPD, "denetim kaydında already_pending")
+
+        # Süre gönderimden ya da son adımdan sayılır: PUP1'in gönderimi eskidi ama adımı yeni; PUP2'nin ikisi de eski
+        await a2.send(json.dumps({"type": "update_progress", "stage": "received", "to_version": UPV}))
+        await wait_progress(admin, since, "HW-PUP2", lambda i: i.get("stage") == "received")
+        await c.execute("UPDATE pending_updates SET sent_at = NOW() - interval '16 minutes' "
+                        "WHERE pc_name = ANY($1::text[])", UPD)
+        await c.execute("UPDATE pending_updates SET stage_at = NOW() - interval '16 minutes' WHERE pc_name='HW-PUP2'")
+        s, d = req("/api/system/deploy-update", superadmin, {"target_mode": "PC", "targets": UPD})
+        chk(s == 200 and d.get("dispatched") == ["HW-PUP2"] and d.get("already_pending") == ["HW-PUP1"],
+            "süresi dolan gönderim yeniden gitti, adımı yeni olan beklemede (%s)" % d)
+        chk(find(await collect(a2, 1.5), "action", "update_agent") is not None, "PUP2 update_agent'i yeniden aldı")
+        item = progress_items(admin, since).get("HW-PUP2") or {}
+        row = await c.fetchrow("SELECT stage, extract(epoch FROM NOW() - sent_at) AS age FROM pending_updates "
+                               "WHERE pc_name='HW-PUP2'")
+        chk(item.get("pending") and item.get("stage") is None and row["stage"] is None and row["age"] < 60,
+            "yeni gönderim önceki adımı sildi, gönderim zamanı yenilendi")
+
+        print("== sonuç adımı siler; sonuç beklenmeyen cihazın adımı yok sayılır")
+        rid = "abcdef0123456789abcdef0123456789"
+        await a1.send(json.dumps({"type": "update_result", "status": "success", "from_version": "0.1.22-alpha",
+                                  "to_version": UPV, "running_version": UPV, "result_id": rid}))
+        chk(find(await collect(a1, 1.5), "action", "update_result_ack") is not None, "sonuç onaylandı")
+        item = await wait_progress(admin, since, "HW-PUP1", lambda i: not i.get("pending"))
+        chk(not item.get("pending") and item.get("stage") is None and item.get("stage_at") is None
+            and (item.get("result") or {}).get("status") == "success" and item.get("on_target"),
+            "sonuç geldi: bekleyen gönderim ve adım silindi (%s)" % item)
+        chk(await c.fetchval("SELECT count(*) FROM pending_updates WHERE pc_name='HW-PUP1'") == 0,
+            "tablodan da silindi")
+        await a1.send(json.dumps({"type": "update_progress", "stage": "installing", "to_version": UPV}))
+        await collect(a1, 1)
+        chk((progress_items(admin, since).get("HW-PUP1") or {}).get("stage") is None
+            and await c.fetchval("SELECT count(*) FROM pending_updates WHERE pc_name='HW-PUP1'") == 0,
+            "sonucu beklenmeyen cihazın adımı saklanmadı")
+
+        print("== rejected gönderimi sebebiyle bitirir")
+        await a2.send(json.dumps({"type": "update_progress", "stage": "rejected", "to_version": "0.0.1-alpha",
+                                  "detail": "başka sürüm"}))
+        await collect(a2, 1)
+        chk((progress_items(admin, since).get("HW-PUP2") or {}).get("pending"),
+            "başka sürümün reddi gönderimi bitirmez")
+        await a2.send(json.dumps({"type": "update_progress", "stage": "rejected", "to_version": UPV,
+                                  "detail": "manifest imzası geçersiz (kurcalanmış ya da başka anahtarla imzalanmış)"}))
+        item = await wait_progress(admin, since, "HW-PUP2", lambda i: not i.get("pending"))
+        res = item.get("result") or {}
+        chk(not item.get("pending") and item.get("stage") is None and res.get("status") == "rejected"
+            and res.get("to_version") == UPV and res.get("detail", "").startswith("manifest imzası geçersiz"),
+            "ret sonucu sebebiyle döndü, gönderim bitti (%s)" % item)
+        chk(await c.fetchval("SELECT count(*) FROM pending_updates WHERE pc_name='HW-PUP2'") == 0, "tablodan silindi")
+        n = await c.fetchval("SELECT count(*) FROM device_audit_logs WHERE hw_id='HW-PUP2' AND action='update_result' "
+                             "AND changes::jsonb->>'status' = 'rejected' AND changes::jsonb->>'from_version' = "
+                             "'0.1.22-alpha'")
+        chk(n == 1, "denetim kaydı yazıldı (%s)" % n)
+        chk(await wait_for(c, "SELECT count(*) FROM notifications WHERE pc_name='HW-PUP2' AND event='update_problem' "
+                              "AND title LIKE '%reddetti%'"), "bildirim üretildi")
+        await a2.send(json.dumps({"type": "update_progress", "stage": "rejected", "to_version": UPV,
+                                  "detail": "tekrar"}))
+        await collect(a2, 1)
+        chk(await c.fetchval("SELECT count(*) FROM device_audit_logs WHERE hw_id='HW-PUP2' AND action='update_result'")
+            == 1, "bekleyen gönderim yokken ret yeni kayıt açmaz")
+    finally:
+        await unstage_release(c, saved)
+        for ws in socks.values():
+            await ws.close()
+        await c.execute("DELETE FROM notifications WHERE pc_name = ANY($1::text[])", UPD)
 
 
 if __name__ == "__main__":
