@@ -24,6 +24,7 @@ import json  # noqa: E402
 import logging  # noqa: E402
 import re  # noqa: E402
 import tempfile  # noqa: E402
+import time  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 
 from jsonschema import Draft202012Validator  # noqa: E402
@@ -384,6 +385,28 @@ class Captured(logging.Handler):
         self.records.append(record)
 
 
+def exam_row(ended=False):
+    """examples/server-to-agent/exam_mode.json'daki sınavın exam_sessions satırı (sahte veritabanı için)."""
+    import datetime
+
+    on = example(S2A, "exam_mode")
+    utc = datetime.timezone.utc
+    return {
+        "id": 31, "lab_name": "LAB-A", "allow_list": json.dumps(on["allow"]),
+        "until_at": datetime.datetime.fromtimestamp(on["until"], utc), "message": on["message"],
+        "block_apps": json.dumps(on["block_apps"]), "reason": "Matematik yazılısı", "started_by": "admin",
+        "started_at": datetime.datetime.fromtimestamp(on["until"] - 2400, utc),
+        "ended_by": "admin" if ended else None,
+        "ended_at": datetime.datetime.fromtimestamp(on["until"] - 600, utc) if ended else None,
+        "end_reason": "admin" if ended else None,
+    }
+
+
+def exam_clock():
+    """Sınav örneklerinin anı: exam_state örneğinden 2 dakika sonra (sınav sürüyor, bitişe 38 dakika var)."""
+    return SimpleNamespace(time=lambda: example(A2S, "exam_state")["since"] + 120, monotonic=time.monotonic)
+
+
 def channel_examples(channel):
     return [(f, m) for f, m in examples(A2S) if channel in SCHEMAS[A2S][f.split(".")[0]]["x-pops-channels"]]
 
@@ -393,7 +416,9 @@ def channel_examples(channel):
 
 async def agent_session_with_secret():
     print("== /ws/agent: cihaz anahtarıyla bağlantı, bütün ajan örnekleri gerçek işleyiciden geçer")
-    from pops import bypass, heartbeats, secretbox, update_tracking
+    import datetime
+
+    from pops import bypass, exams, heartbeats, modules, secretbox, update_tracking
     from pops.manager import manager
     from pops.routers import agents
 
@@ -416,10 +441,22 @@ async def agent_session_with_secret():
          [{"is_quarantined": True, "act": "lock", "reason": "Sınav"}]),
         ("SELECT cap_terminal_disable_requested", [{"t": True, "v": False}]),
         ("UPDATE tasks SET output", lambda p: [{"id": p[1]}]),
+        # Cihazın sınıfında örnekteki sınav sürüyor; son gönderim 30 sn önce (erken çıkış sayılır)
+        ("SELECT lab_name FROM clients WHERE pc_name = $1", [{"lab_name": "LAB-A"}]),
+        ("FROM exam_sessions WHERE lab_name = $1 AND ended_at IS NULL", [exam_row()]),
+        ("INSERT INTO exam_devices (exam_id, pc_name, reported_at", lambda p: [{
+            "sent_at": datetime.datetime.fromtimestamp(exam_clock().time() - 30, datetime.timezone.utc),
+            "denied_at": None, "since_sent": 30.0}]),
+        ("UPDATE exam_devices SET left_at", [{"left_at": None}]),
     ])
     audits, events, notes, beats, panels, admin_panels, queue = [], [], [], [], [], [], []
-    for mod in (agents, bypass, update_tracking):
+    for mod in (agents, bypass, update_tracking, exams, modules):
         P.set(mod, "execute_query", db)
+    P.set(exams, "time", exam_clock())
+    P.set(exams, "add_audit_log", recorder(audits))
+    P.set(exams, "notify", recorder(notes))
+    exams._resent.pop(HW, None)
+    modules.invalidate()
 
     async def secret_ok(pc, secret):
         return pc == HW and secret == SECRET
@@ -471,6 +508,7 @@ async def agent_session_with_secret():
     finally:
         logging.getLogger("pops.agents").removeHandler(log)
         P.restore()
+        modules.invalidate()
         manager.active_agents.pop(HW, None)
         manager.pending_updates.pop(HW, None)
 
@@ -495,7 +533,11 @@ async def agent_session_with_secret():
     chk(uacks == with_id, "result_id'li update_result'lar onaylandı, result_id'siz onaylanmadı")
     chk({"action": "set_capabilities", "terminal_enabled": False} in ws.sent,
         "kapatılması istenen ama açık bildirilen yetenek için set_capabilities yeniden gönderildi")
-    chk(len(ws.sent) == 3 + 1 + len(acks) + len(uacks) + 1, "başka mesaj gönderilmedi (bilinmeyen type yanıtsız)")
+    exam_msgs = [m for m in ws.sent if m.get("action") == "exam_mode"]
+    chk(exam_msgs == [example(S2A, "exam_mode")],
+        "sınıfında sınav süren cihaz bağlanınca exam_mode'u aldı (örnekle aynı); exam_state'ler yanıtsız")
+    chk(actions.index("exam_mode") == 3, "exam_mode bekleyen komutlardan sonra: %s" % actions[:5])
+    chk(len(ws.sent) == 3 + 1 + len(acks) + len(uacks) + 1 + 1, "başka mesaj gönderilmedi (bilinmeyen type yanıtsız)")
 
     hb_count = sum(1 for f, _ in cmd if f.startswith("heartbeat."))
     chk(len(beats) == hb_count, "her heartbeat (type'sız ve type'lı) kaydedildi: %d" % len(beats))
@@ -516,6 +558,12 @@ async def agent_session_with_secret():
     chk("bypass_key" in audit_actions and "bypass_key_mismatch" in audit_actions,
         "doğru parmak izi anahtarı onayladı, yanlışı (örnek) uyumsuzluk olarak kaydedildi")
     chk("quarantine_partial" in audit_actions, "yalıtımsız karantina bildirimi (heartbeat.typed) kaydedildi")
+    chk("exam_left" in audit_actions and any(n[0][0] == "exam_left" for n in notes),
+        "sınav sürerken 'sınavda değil' (exam_state.off) denetlendi ve bildirildi")
+    chk([p[2] for p in db.params("INSERT INTO exam_devices (exam_id, pc_name, reported_at")] == [True, False],
+        "exam_state'ler sınavın cihaz satırına yazıldı")
+    chk(bool(db.params("INSERT INTO exam_devices (exam_id, pc_name, denied_at)")),
+        "capability_denied (exam) cihazı 'reddetti' yaptı")
     denied = [e for e in events if e[1].get("event_type") == "agent.capability_denied"]
     chk(len(denied) == len([f for f, _ in cmd if f.startswith("capability_denied.")]),
         "her capability_denied denetlendi")
@@ -530,6 +578,7 @@ async def agent_session_with_secret():
 async def agent_session_with_enroll_token():
     print("== /ws/agent: kayıt jetonuyla ilk bağlantı (set_secret)")
     from pops import db as dbmod
+    from pops import exams, modules
     from pops.manager import manager
     from pops.routers import agents
 
@@ -565,7 +614,8 @@ async def agent_session_with_enroll_token():
     async def same_id(claimed, dna, ip, ws):
         return claimed
 
-    P.set(agents, "execute_query", db)
+    for mod in (agents, exams, modules):
+        P.set(mod, "execute_query", db)
     P.set(dbmod, "transaction", transaction)
     P.set(agents, "verify_agent_secret", no_secret)
     P.set(agents, "valid_enroll_token", token)
@@ -575,10 +625,12 @@ async def agent_session_with_enroll_token():
         P.set(agents, name, recorder([]))
     ws = FakeWS([example(A2S, "heartbeat.first")],
                 headers={"X-Enroll-Token": "enroll-token-0123", "X-Agent-Version": "0.1.21-alpha"})
+    modules.invalidate()
     try:
         await agents.websocket_agent(ws, HW)
     finally:
         P.restore()
+        modules.invalidate()
         manager.active_agents.pop(HW, None)
     for m in ws.sent:
         check_message(S2A, m, "sunucu→ajan %s" % message_name(S2A, m))
@@ -664,7 +716,7 @@ async def vision_channel():
 async def server_builders():
     print("== sunucunun kurduğu komutlar")
     import system_routes
-    from pops import modules, taskqueue, wol
+    from pops import exams, modules, taskqueue, wol
     from pops.manager import manager
     from pops.models import LockdownInput, PatchInstallInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
     from pops.models import TaskActionInput
@@ -770,6 +822,20 @@ async def server_builders():
         chk([m.get("action") for m in agent_ws.sent] == ["scan_updates", "install_updates"], "Windows Update komutları")
         take(agent_ws, "inventory.scan_patches / install_patches")
 
+        P.set(exams, "execute_query", FakeDB([
+            ("INSERT INTO exam_sessions", [exam_row()]),
+            ("UPDATE exam_sessions SET ended_at = NOW(), ended_by = $2", [exam_row(ended=True)]),
+            ("SELECT pc_name FROM clients WHERE lab_name", [{"pc_name": HW}]),
+        ]))
+        P.set(exams, "add_audit_log", recorder([]))
+        P.set(exams, "time", exam_clock())
+        on = example(S2A, "exam_mode")
+        await exams.start("LAB-A", on["allow"], on["until"], on["message"], on["block_apps"], "Matematik yazılısı",
+                          "admin")
+        await exams.end("LAB-A", "admin")
+        chk(agent_ws.sent == [on, example(S2A, "exam_mode.off")], "sınav modu: başlatınca exam_mode, bitince kapatma")
+        take(agent_ws, "exams.start / end")
+
         P.set(wol, "execute_query", FakeDB([("SELECT pc_name FROM clients WHERE lab_name", [{"pc_name": HW}])]))
         chk(await wol.attempt_p2p_wol("A4:BB:6D:12:34:57", "LAB-A"), "Wake-on-LAN eş üzerinden")
         take(agent_ws, "wol.attempt_p2p_wol")
@@ -835,7 +901,8 @@ async def server_builders():
         check_message(S2A, msg, origin)
     produced = {message_name(S2A, m) for _, m in built}
     chk({"execute", "cancel_task", "lockdown", "unlock", "start_vision_session", "stop_stream", "remote_input",
-         "scan_updates", "install_updates", "wake_peer", "update_agent", "set_capabilities", "server_info"} <= produced,
+         "scan_updates", "install_updates", "wake_peer", "update_agent", "set_capabilities", "server_info",
+         "exam_mode"} <= produced,
         "uçlardaki bütün komutlar kuruldu ve denetlendi")
 
 

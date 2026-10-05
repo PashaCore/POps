@@ -1,0 +1,5 @@
+{
+  "type": "capability_denied",
+  "capability": "exam",
+  "action": "exam_mode"
+}

@@ -5,6 +5,7 @@
   "features": [
     "update_result_ack",
     "result_ack",
-    "update_progress"
+    "update_progress",
+    "exam_mode"
   ]
 }

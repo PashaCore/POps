@@ -734,16 +734,15 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     except Exception:
                         pass
 
-            # Sınıfın süren sınavı (yeniden bağlanan ya da sınav sürerken sınıfa taşınmış bilgisayar); sınav bu
-            # bilgisayarda bitmeden kapandıysa enabled:false (bkz. pops/exams.py)
-            await _sync_exam(active_hwid)
-
             hw_exists = await execute_query(
                 "SELECT cpu FROM hw_inventory WHERE pc_name = $1", (active_hwid,), fetch=True
             )
             if not hw_exists or hw_exists[0]["cpu"] == "-":
                 await manager.send_command({"action": "get_hardware"}, active_hwid)
             await process_queue()
+            # Sınıfın süren sınavı (yeniden bağlanan ya da sınav sürerken sınıfa taşınmış bilgisayar); sınav bu
+            # bilgisayarda bitmeden kapandıysa enabled:false (bkz. pops/exams.py, docs/protocol/README.md sırası)
+            await _sync_exam(active_hwid)
         else:
             if auth_method == "enroll":
                 # Kayıt, donanım bilgisini taşıyan ilk mesajla yapılır

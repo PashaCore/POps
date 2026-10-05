@@ -66,7 +66,10 @@ An agent may send both `X-Agent-Secret` and `X-Enroll-Token`; the server checks 
    3. `server_info` (always; from here on the connection is registered and receives commands),
    4. `set_bypass_secret` (secret connections, agent version 0.1.12 or newer, until acknowledged),
    5. `get_hardware` (when the server has no hardware inventory for the device),
-   6. queued commands (`execute`) and a re-sent `lockdown`/`unlock` if one is pending.
+   6. queued commands (`execute`),
+   7. `exam_mode` when the device's lab has a running exam, or `exam_mode` with `enabled: false` when an exam the
+      device may still apply ended early or the device left its lab,
+   8. a re-sent `lockdown`/`unlock` if one is pending.
 3. The first message is then also handled like any other heartbeat.
 4. From then on the agent sends a heartbeat every 5 seconds, `capabilities` after the first heartbeat and after
    every change, results when they are ready and `update_result` while one is unacknowledged.
@@ -110,6 +113,7 @@ use:
 | `result_ack` | 0.1.14-alpha | Every `result` with an integer `task_id` is answered with `result_ack` once it is stored. Keep each result (on disk) until its `result_ack` arrives and send unacknowledged results again after a reconnect. |
 | `update_result_ack` | 0.1.14-alpha | An `update_result` with a `result_id` is answered with `update_result_ack` after it is stored. Keep the update result until then. |
 | `update_progress` | 0.1.22-alpha | The server reads `update_progress` stages and shows them in the panel. Send them only to a server that lists this feature (older servers drop them anyway). |
+| `exam_mode` | 0.1.23-alpha | The server sends `exam_mode` for the device's lab and reads `exam_state`. Report `exam_state` after connecting and on every change; older servers send no `exam_mode` and drop `exam_state`. |
 
 Rules for agents:
 
@@ -162,9 +166,10 @@ a lower or unparsable version only switches these behaviours off.
 | *(none)* / `heartbeat` | command | Recorded in batches; quarantine state reconciled | [heartbeat](agent-to-server/heartbeat.json) | [first](examples/agent-to-server/heartbeat.first.json), [minimal](examples/agent-to-server/heartbeat.minimal.json), [typed](examples/agent-to-server/heartbeat.typed.json) |
 | `result` | command | Task output stored; `result_ack` | [result](agent-to-server/result.json) | [completed](examples/agent-to-server/result.completed.json), [failed](examples/agent-to-server/result.failed.json), [denied](examples/agent-to-server/result.denied.json), [legacy](examples/agent-to-server/result.legacy.json) |
 | `capabilities` | command | Stored; a pending switch-off is re-sent | [capabilities](agent-to-server/capabilities.json) | [default](examples/agent-to-server/capabilities.default.json), [terminal_off](examples/agent-to-server/capabilities.terminal_off.json) |
-| `capability_denied` | command | Audited, notified; task `Denied` | [capability_denied](agent-to-server/capability_denied.json) | [execute](examples/agent-to-server/capability_denied.execute.json), [vision](examples/agent-to-server/capability_denied.vision.json), [policy](examples/agent-to-server/capability_denied.policy.json) |
+| `capability_denied` | command | Audited, notified; task `Denied`; exam marked refused | [capability_denied](agent-to-server/capability_denied.json) | [execute](examples/agent-to-server/capability_denied.execute.json), [vision](examples/agent-to-server/capability_denied.vision.json), [policy](examples/agent-to-server/capability_denied.policy.json), [exam](examples/agent-to-server/capability_denied.exam.json) |
 | `update_result` | command | Audited, notified; `update_result_ack` | [update_result](agent-to-server/update_result.json) | [success](examples/agent-to-server/update_result.success.json), [rolled_back](examples/agent-to-server/update_result.rolled_back.json), [legacy](examples/agent-to-server/update_result.legacy.json) |
 | `update_progress` | command | Latest stage kept for the pending update; `rejected` ends it | [update_progress](agent-to-server/update_progress.json) | [example](examples/agent-to-server/update_progress.json) |
+| `exam_state` | command | Kept per exam and device; corrected with `exam_mode` when it differs; leaving a running exam is audited and notified | [exam_state](agent-to-server/exam_state.json) | [in exam](examples/agent-to-server/exam_state.json), [off](examples/agent-to-server/exam_state.off.json) |
 | `bypass_secret_ack` | command | Bypass key marked delivered | [bypass_secret_ack](agent-to-server/bypass_secret_ack.json) | [example](examples/agent-to-server/bypass_secret_ack.json) |
 | `thumbnail` | command, Vision | Preview to admin panels | [thumbnail](agent-to-server/thumbnail.json) | [example](examples/agent-to-server/thumbnail.json) |
 | `vision_rejected` | command | Forwarded to panels | [vision_rejected](agent-to-server/vision_rejected.json) | [example](examples/agent-to-server/vision_rejected.json) |
@@ -187,6 +192,7 @@ a lower or unparsable version only switches these behaviours off.
 | `set_capabilities` | capability switched off | Applies only `false`; `capabilities` | [set_capabilities](server-to-agent/set_capabilities.json) | [terminal_off](examples/server-to-agent/set_capabilities.terminal_off.json), [both_off](examples/server-to-agent/set_capabilities.both_off.json) |
 | `lockdown` | quarantine on, or re-sent | Lock screen and isolation | [lockdown](server-to-agent/lockdown.json) | [example](examples/server-to-agent/lockdown.json) |
 | `unlock` | quarantine off, or re-sent | Removes both | [unlock](server-to-agent/unlock.json) | [example](examples/server-to-agent/unlock.json) |
+| `exam_mode` | exam started or ended, (re)connect, device moved, state differs | Isolation with the allow list, tray banner, program block, own end at `until`; `exam_state` | [exam_mode](server-to-agent/exam_mode.json) | [on](examples/server-to-agent/exam_mode.json), [off](examples/server-to-agent/exam_mode.off.json) |
 | `start_vision_session` | remote-control session opened | Consent or countdown; Vision channel | [start_vision_session](server-to-agent/start_vision_session.json) | [consent](examples/server-to-agent/start_vision_session.consent.json), [mandatory](examples/server-to-agent/start_vision_session.mandatory.json) |
 | `stop_stream` | stream stopped, Vision module off | Stops capture, closes Vision | [stop_stream](server-to-agent/stop_stream.json) | [example](examples/server-to-agent/stop_stream.json) |
 | `wake_peer` | Wake-on-LAN | Sends a magic packet | [wake_peer](server-to-agent/wake_peer.json) | [example](examples/server-to-agent/wake_peer.json) |
@@ -215,7 +221,7 @@ the test key. The device secret, bypass key and IDs in the examples are made up.
 - every `action` the server code sends and every `type` it handles has a schema, and every schema is sent or
   handled by the server (except deprecated `start_stream`);
 - the messages the server builds (server_info, set_identity, set_secret, set_bypass_secret, get_hardware,
-  execute, cancel_task, result_ack, update_result_ack, update_agent, set_capabilities, lockdown, unlock,
+  execute, cancel_task, result_ack, update_result_ack, update_agent, set_capabilities, lockdown, unlock, exam_mode,
   start_vision_session, stop_stream, wake_peer, scan_updates, install_updates, remote_input) validate and contain
   only documented fields: the test runs the real endpoint and queue code with a fake database and fake sockets;
 - the agent examples go through the real `/ws/agent` and `/ws/vision` handlers without an error and have the
