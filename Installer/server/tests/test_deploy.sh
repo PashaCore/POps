@@ -4,8 +4,9 @@
 # yalnızca bu koşullarda okunan değişkenler shellcheck'e kullanılmıyor görünür (SC2034).
 # shellcheck disable=SC2016,SC2034
 # Root GEREKMEZ ve root olarak ÇALIŞMAZ: her yol geçici bir dizindedir; systemctl, curl, sudo, journalctl,
-# sleep ve install PATH'in önüne konan taklitlerdir (install gerçek install'a geçer, istenince hata verir),
-# pip ise sahte venv'deki bir betiktir. Sistemde hiçbir şeye dokunulmaz.
+# sleep ve install PATH'in önüne konan taklitlerdir (install gerçek install'a geçer, istenince hata verir);
+# pip sahte venv'deki bir betik, Python yorumlayıcıları (venv'inki ve "sunucudaki" python3.X'ler) sürümünü
+# söyleyen ve sahte venv kuran bir betiktir. Sistemde hiçbir şeye dokunulmaz.
 #     bash Installer/server/tests/test_deploy.sh
 # KEEP_TMP=1: geçici dizin silinmez (yolu yazılır). POPS_TEST_TMP: geçici dizinin açılacağı yer.
 set -euo pipefail
@@ -24,7 +25,7 @@ REAL_INSTALL=$(command -v install)
 export PT="$T" PT_INSTALL="$REAL_INSTALL" HOME="$T/home" GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=POps GIT_AUTHOR_EMAIL=ci@pops.test GIT_COMMITTER_NAME=POps GIT_COMMITTER_EMAIL=ci@pops.test
 export POPS_DEPLOY_ALLOW_NONROOT=1 POPS_SELFUPDATE_ALLOW_NONROOT=1
-mkdir -p "$HOME" "$T/bin" "$T/ctl" "$T/calls" "$T/etc"
+mkdir -p "$HOME" "$T/bin" "$T/ctl" "$T/calls" "$T/etc" "$T/pybin"
 
 PASS=0; FAIL=0
 check() {   # $1=açıklama $2=bash koşulu
@@ -78,21 +79,42 @@ EOF
 cat > "$T/pip-stub" <<'EOF'
 #!/usr/bin/env bash
 V=$(cd "$(dirname "$0")/.." && pwd)
-SP="$V/lib/python3.9/site-packages"
-echo "$*" >> "$PT/calls/pip"
-mkdir -p "$SP/newpkg"; echo "new" > "$SP/newpkg/__init__.py"
+sps=("$V"/lib/python*/site-packages); SP=${sps[0]}
+echo "$V: $*" >> "$PT/calls/pip"
+mkdir -p "$SP/newpkg" "$SP/oldpkg"; echo "new" > "$SP/newpkg/__init__.py"
 echo "2.0" > "$SP/oldpkg/version.txt"
 if [ -e "$PT/ctl/pip_fail" ]; then echo "ERROR: taklit pip hatası" >&2; exit 1; fi
 rm -f "$SP/gone.txt"
 printf '#!%s/bin/python3\n' "$V" > "$V/bin/newtool"; chmod 755 "$V/bin/newtool"
+[ -e "$V/bin/uvicorn" ] || { printf '#!%s/bin/python3\nimport uvicorn\n' "$V" > "$V/bin/uvicorn"; chmod 755 "$V/bin/uvicorn"; }
+EOF
+# Python: sürüm venv'in içindeyse pyvenv.cfg'den, değilse adından (python3.12 -> 3.12.0). "-m venv [--upgrade-deps]
+# DİZİN" sahte bir venv kurar (ctl/venv_fail: hata); diğer çağrılar (deploy'un "-I -S -c ..." sorusu) "X.Y" yazar.
+cat > "$T/fakepy" <<'EOF'
+#!/usr/bin/env bash
+cfg="$(dirname "$0")/../pyvenv.cfg"
+if [ -f "$cfg" ]; then full=$(sed -n 's/^version = //p' "$cfg"); else n=${0##*/}; full="${n#python}.0"; fi
+if [ "${1:-}" = -m ] && [ "${2:-}" = venv ]; then
+    shift 2; [ "${1:-}" != --upgrade-deps ] || shift
+    echo "$full $1" >> "$PT/calls/venv"
+    if [ -e "$PT/ctl/venv_fail" ]; then echo "Error: taklit venv hatası" >&2; exit 1; fi
+    mkdir -p "$1/bin" "$1/lib/python${full%.*}/site-packages"
+    printf 'home = %s\nversion = %s\n' "$(dirname "$0")" "$full" > "$1/pyvenv.cfg"
+    cp "$PT/fakepy" "$1/bin/python3"; ln -s python3 "$1/bin/python"; cp "$PT/pip-stub" "$1/bin/pip"
+    exit 0
+fi
+echo "${full%.*}"
 EOF
 # selfupdate'in çağırdığı deploy (yalnızca çağrıldığını ve o anki HEAD'i kaydeder)
 cat > "$T/deploy-stub" <<'EOF'
 #!/usr/bin/env bash
 git -C "$PT/surepo" rev-parse HEAD >> "$PT/calls/deploy"
 EOF
-chmod 755 "$T/bin/"* "$T/pip-stub" "$T/deploy-stub"
+chmod 755 "$T/bin/"* "$T/pip-stub" "$T/deploy-stub" "$T/fakepy"
+for v in 3.9 3.10 3.12 3.13; do cp "$T/fakepy" "$T/pybin/python$v"; done
 export PATH="$T/bin:$PATH"
+# Deploy'un yeni venv için aradığı yorumlayıcılar (sistemdekiler değil); durumlar kendi listesini verir
+export POPS_DEPLOY_PYTHONS="$T/pybin/python3.12"
 
 # --- Yardımcılar ----------------------------------------------------------------------------------------
 write_v() {   # $1=çalışma kopyası $2=sürüm: POps deposunun deploy'un okuduğu kısmı
@@ -109,23 +131,24 @@ write_v() {   # $1=çalışma kopyası $2=sürüm: POps deposunun deploy'un okud
     echo "# test" > "$d/Backend/tests/test_x.py"
 }
 commit() { git -C "$1" add -A && git -C "$1" commit -qm "$2"; }
-make_venv() {   # $1=APP: konsol betiklerinin #! satırı venv'in mutlak yolunu içerir (gerçek venv gibi)
-    local v="$1/venv" sp="$1/venv/lib/python3.9/site-packages"
+make_venv() {   # $1=APP [$2=Python sürümü, 3.12.4]: konsol betiklerinin #! satırı venv'in mutlak yolunu içerir
+    local ver=${2:-3.12.4}
+    local v="$1/venv" sp="$1/venv/lib/python${ver%.*}/site-packages"
     mkdir -p "$v/bin" "$sp/oldpkg"
-    ln -s lib "$v/lib64"; ln -s /usr/bin/python3 "$v/bin/python3"; ln -s python3 "$v/bin/python"
-    printf 'home = /usr/bin\n' > "$v/pyvenv.cfg"
+    ln -s lib "$v/lib64"; cp "$T/fakepy" "$v/bin/python3"; ln -s python3 "$v/bin/python"
+    printf 'home = /usr/bin\nversion = %s\n' "$ver" > "$v/pyvenv.cfg"
     printf '#!%s/bin/python3\nimport uvicorn\n' "$v" > "$v/bin/uvicorn"; chmod 755 "$v/bin/uvicorn"
     echo "1.0" > "$sp/oldpkg/version.txt"; echo "old" > "$sp/oldpkg/__init__.py"; echo "silinecek" > "$sp/gone.txt"
     cp "$T/pip-stub" "$v/bin/pip"
 }
-install_like() {   # $1=repo $2=APP: install.sh'in yaptığı gibi Backend'in kopyası + VERSION + anahtar + venv
-    mkdir -p "$2"; cp -a "$1/Backend/." "$2/"; cp -a "$1/keys" "$2/keys"; cp "$1/VERSION" "$2/VERSION"; make_venv "$2"
+install_like() {   # $1=repo $2=APP [$3=venv Python sürümü]: install.sh gibi Backend'in kopyası + VERSION + anahtar + venv
+    mkdir -p "$2"; cp -a "$1/Backend/." "$2/"; cp -a "$1/keys" "$2/keys"; cp "$1/VERSION" "$2/VERSION"; make_venv "$2" "${3:-}"
 }
 snap() {   # $1=dizin: dosya listesi (tür, izin, yol, bağ hedefi) + içerik özetleri; .deploy-backups hariç
     ( cd "$1" && find . -path ./.deploy-backups -prune -o -printf '%y %m %p %l\n' | LC_ALL=C sort
       find . -path ./.deploy-backups -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum )
 }
-reset_calls() { for f in systemctl curl sudo pip deploy; do : > "$T/calls/$f"; done; }
+reset_calls() { for f in systemctl curl sudo pip deploy venv; do : > "$T/calls/$f"; done; }
 run_deploy() {   # [$1=ayar dosyası]; çıktı $T/out, dönüş kodu RC
     reset_calls; RC=0
     POPS_DEPLOY_CONF="${1:-$T/etc/deploy.conf}" bash "$DEPLOY_SH" > "$T/out" 2>&1 || RC=$?
@@ -255,8 +278,83 @@ run_deploy
 check "çıkış 0, venv görüntüsü raporlandı" '[ "$RC" = 0 ] && has "(venv:" "$T/out"'
 check "yeni kod ve migration geldi, silinen modül gitti" \
     '[ -f "$A/extra.py" ] && [ -f "$A/migrations/0002_c.sql" ] && [ ! -e "$A/pops/routers/b.py" ]'
-check "pip'in değişikliği kaldı" '[ -f "$A/venv/lib/python3.9/site-packages/newpkg/__init__.py" ]'
+check "pip'in değişikliği kaldı" '[ -f "$A/venv/lib/python3.12/site-packages/newpkg/__init__.py" ]'
 check "kenara alınmış venv kopyası bırakılmadı" '[ -z "$(find "$A" -maxdepth 1 -name ".venv.failed-*")" ]'
+check "venv'in Python'u yeterli: yeni venv kurulmadı" '[ ! -s "$T/calls/venv" ] && [ ! -L "$A/venv" ]'
+
+# =========================================================================================================
+echo "== pops-deploy-backend: venv'in Python'u eski (3.9 kurulumu, yeni sürüm >=3.11 ister)"
+R3="$T/repo3"; A3="$T/app3"; C3="$T/etc/deploy3.conf"
+git init -q -b main "$R3"; write_v "$R3" 0.0.1; commit "$R3" v0.0.1
+install_like "$R3" "$A3" 3.9.25
+printf 'REPO=%s\nAPP=%s\nSVC=popstest\nOWNER=%s\nHEALTH_BASE=http://127.0.0.1:18123\nKEEP_BACKUPS=3\n' "$R3" "$A3" "$ME" > "$C3"
+chmod 644 "$C3"
+printf '# requires-python: >=3.11\nfastapi==3\n' > "$R3/Backend/requirements.txt"; write_v "$R3" 0.0.2; commit "$R3" v0.0.2
+venv_extras() { find "$A3" -maxdepth 1 \( -name 'venv-py*' -o -name '.venv.old-*' -o -name '.venv.failed-*' \) | sort; }
+
+echo "-- (e) uygun yorumlayıcı yok: erken ve açık hata, hiçbir şey değişmez"
+BEFORE=$(snap "$A3")
+POPS_DEPLOY_PYTHONS="$T/yok/python3.12 $T/pybin/python3.10" run_deploy "$C3"
+check "çıkış 3, gereken sürüm ve kurulum komutu söylendi" \
+    '[ "$RC" = 3 ] && has "Python 3.11 ya da daha yenisi gerekli" "$T/out" && has "dnf install python3.12" "$T/out" && has "Hiçbir şey değiştirilmedi" "$T/out"'
+check "venv'in sürümü raporlandı (3.9)" 'has "venv'"'"'in Python'"'"'u (3.9)" "$T/out"'
+check "pip, venv kurulumu ve restart yok" '[ ! -s "$T/calls/pip" ] && [ ! -s "$T/calls/venv" ] && ! has restart "$T/calls/systemctl"'
+check "APP birebir aynı, yedek klasörü bile açılmadı" '[ "$BEFORE" = "$(snap "$A3")" ] && [ ! -e "$A3/.deploy-backups" ]'
+[ "$RC" = 3 ] || show_out
+
+echo "-- (e) yeni venv kurulamadı (pip hatası): canlıya dokunulmadan durur"
+BEFORE=$(snap "$A3"); touch "$T/ctl/pip_fail"
+POPS_DEPLOY_PYTHONS="$T/pybin/python3.12" run_deploy "$C3"; rm -f "$T/ctl/pip_fail"
+check "çıkış 1, 'yeni venv kurulamadı ... Hiçbir şey değiştirilmedi'" \
+    '[ "$RC" = 1 ] && has "yeni venv kurulamadı" "$T/out" && has "Hiçbir şey değiştirilmedi" "$T/out"'
+check "restart yok, yarım venv silindi, APP birebir aynı" \
+    '! has restart "$T/calls/systemctl" && [ -z "$(venv_extras)" ] && [ "$BEFORE" = "$(snap "$A3")" ]'
+
+echo "-- (e) yeni venv kuruldu ama sağlık kontrolü başarısız: kod VE eski venv geri"
+BEFORE=$(snap "$A3"); touch "$T/ctl/health_fail"
+POPS_DEPLOY_PYTHONS="$T/yok/python3.12 $T/pybin/python3.10 $T/pybin/python3.12" run_deploy "$C3"; rm -f "$T/ctl/health_fail"
+check "3.10 atlandı (>=3.11 isteniyor), python3.12 ile venv kuruldu, pip yeni venv'e kurdu" \
+    'has "3.12.0 $A3/venv-py3.12-" "$T/calls/venv" && [ "$(wc -l < "$T/calls/venv")" = 1 ] && has "$A3/venv-py3.12-" "$T/calls/pip"'
+check "çıkış 1, 'Sağlık kontrolü başarısız', 'eski venv geri konuyor'" \
+    '[ "$RC" != 0 ] && has "Sağlık kontrolü başarısız" "$T/out" && has "eski venv geri konuyor" "$T/out"'
+check "APP birebir aynı: venv yine gerçek dizin (3.9), yeni venv ve kenardaki kopya yok" \
+    '[ "$BEFORE" = "$(snap "$A3")" ] && [ ! -L "$A3/venv" ] && [ -z "$(venv_extras)" ]'
+check "iki restart (deploy + geri dönüş)" '[ "$(count "restart popstest" "$T/calls/systemctl")" = 2 ]'
+[ "$BEFORE" = "$(snap "$A3")" ] || { show_out; diff <(echo "$BEFORE") <(snap "$A3") | head -20 || true; }
+
+echo "-- (e) yeni venv kuruldu ve yerine kondu"
+POPS_DEPLOY_PYTHONS="$T/pybin/python3.12" run_deploy "$C3"
+NV=$(readlink -f "$A3/venv")
+check "çıkış 0, 'yeniden kuruldu' ve 'canlıda'" '[ "$RC" = 0 ] && has "Python 3.12 ile yeniden kuruldu" "$T/out" && has canlıda "$T/out"'
+check "\$APP/venv artık venv-py3.12-* dizinine göreli bağ" \
+    '[ -L "$A3/venv" ] && case "$(readlink "$A3/venv")" in venv-py3.12-*) true ;; *) false ;; esac'
+check "yeni venv 3.12, paketler orada; uvicorn'un #! satırı yeni dizinin gerçek yolu" \
+    'grep -qx "version = 3.12.0" "$NV/pyvenv.cfg" && [ -f "$NV/lib/python3.12/site-packages/newpkg/__init__.py" ] && [ "$(head -1 "$A3/venv/bin/uvicorn")" = "#!$NV/bin/python3" ]'
+check "eski 3.9 venv silindi, yalnızca görüntüsünde (venv-*.tgz)" \
+    '[ "$(venv_extras)" = "$NV" ] && tar tzf "$(find "$A3/.deploy-backups" -name "venv-*.tgz" -newer "$C3" | sort | tail -1)" | grep -q "^venv/lib/python3.9/"'
+check "yeni kod, requirements ve VERSION canlıda; tek restart" \
+    'cmp -s "$R3/Backend/requirements.txt" "$A3/requirements.txt" && [ "$(cat "$A3/VERSION")" = 0.0.2 ] && [ "$(count "restart popstest" "$T/calls/systemctl")" = 1 ]'
+[ "$RC" = 0 ] || show_out
+
+echo "-- (e) bağlı venv'de yerinde pip + sağlık hatası: gerçek dizin geri, bağ aynı"
+printf '# requires-python: >=3.11\nfastapi==4\n' > "$R3/Backend/requirements.txt"; write_v "$R3" 0.0.3; commit "$R3" v0.0.3
+BEFORE=$(snap "$A3"); touch "$T/ctl/health_fail"
+run_deploy "$C3"; rm -f "$T/ctl/health_fail"
+check "yeni venv kurulmadı, pip bağlı venv'e kurdu, geri dönüşte venv görüntüsü açıldı" \
+    '[ ! -s "$T/calls/venv" ] && has "$A3/venv: install" "$T/calls/pip" && has "venv de geri yükleniyor" "$T/out"'
+check "APP birebir aynı (bağ + gerçek dizin)" '[ "$BEFORE" = "$(snap "$A3")" ] && [ -L "$A3/venv" ]'
+[ "$BEFORE" = "$(snap "$A3")" ] || { show_out; diff <(echo "$BEFORE") <(snap "$A3") | head -20 || true; }
+
+echo "-- (e) ikinci yeniden kurulum (bağlı venv, >=3.13): hata olursa eski bağ geri, sonra başarılı"
+printf '# requires-python: >=3.13\nfastapi==5\n' > "$R3/Backend/requirements.txt"; write_v "$R3" 0.0.4; commit "$R3" v0.0.4
+BEFORE=$(snap "$A3"); OLDNV=$(readlink -f "$A3/venv"); touch "$T/ctl/health_fail"
+POPS_DEPLOY_PYTHONS="$T/pybin/python3.12 $T/pybin/python3.13" run_deploy "$C3"; rm -f "$T/ctl/health_fail"
+check "geri dönüş: bağ eski venv'i gösteriyor, APP birebir aynı" \
+    '[ "$RC" != 0 ] && [ "$(readlink -f "$A3/venv")" = "$OLDNV" ] && [ "$BEFORE" = "$(snap "$A3")" ]'
+POPS_DEPLOY_PYTHONS="$T/pybin/python3.12 $T/pybin/python3.13" run_deploy "$C3"
+check "python3.13 ile kuruldu, bağ yeni dizinde, önceki venv-py3.12 dizini silindi" \
+    '[ "$RC" = 0 ] && case "$(readlink "$A3/venv")" in venv-py3.13-*) true ;; *) false ;; esac && [ ! -e "$OLDNV" ] && [ "$(venv_extras)" = "$(readlink -f "$A3/venv")" ]'
+[ "$RC" = 0 ] || show_out
 
 # =========================================================================================================
 echo "== pops-selfupdate (CHANNEL=release, imzalı etiketler)"
@@ -368,6 +466,17 @@ SU_DEPLOY="$DEPLOY_SH" run_su
 check "imzalı v0.1.0 dağıtıldı: durum ok, APP'te VERSION 0.1.0" \
     '[ "$RC" = 0 ] && has "\"state\":\"ok\"" "$STATUS" && [ "$(cat "$A2/VERSION")" = 0.1.0 ]'
 check "deploy çıktısı deploy.log'da" 'has "Backend $(git -C "$S" rev-parse --short HEAD) canlıda" "$T/newlog"'
+
+echo "-- uçtan uca: venv'in Python'u eski ve sunucuda yeni Python yok (deploy çıkış 3)"
+A4="$T/app4"; install_like "$S" "$A4" 3.9.25
+printf 'REPO=%s\nAPP=%s\nSVC=popstest\nOWNER=%s\nHEALTH_BASE=http://127.0.0.1:18123\n' "$S" "$A4" "$ME" > "$E/deploy.conf"
+printf '# requires-python: >=3.10\nfastapi==9\n' > "$D/Backend/requirements.txt"; release v0.1.1 A
+BEFORE=$(snap "$A4")
+POPS_DEPLOY_PYTHONS="$T/yok/python3.12" SU_DEPLOY="$DEPLOY_SH" run_su
+check "durum failed, panel mesajı 'python3.12 kurun', ASCII ve geçerli JSON" \
+    'has "\"state\":\"failed\"" "$STATUS" && has "python3.12 kurun (EL9: dnf install python3.12)" "$STATUS" && ! LC_ALL=C grep -q "[^ -~]" "$STATUS" && python3 -c "import json, sys; json.load(open(sys.argv[1]))" "$STATUS"'
+check "deploy.log'da deploy'un Türkçe açıklaması, APP birebir aynı" \
+    'has "Hiçbir şey değiştirilmedi" "$T/newlog" && [ "$BEFORE" = "$(snap "$A4")" ]'
 
 echo
 echo "== Sonuç: $PASS geçti, $FAIL başarısız"

@@ -201,9 +201,14 @@ if [ "$DRYRUN" = 1 ]; then
     echo "DRYRUN kanal=$CHANNEL hedef=${TARGET:-yok} imza=${SIG:-yok} HEAD=$(git -C "$REPO" rev-parse --short HEAD)"; exit 0
 fi
 
-if "$DEPLOY" >>"$LOG" 2>&1; then
+# Çıkış 3: pops-deploy-backend başlamadan durdu, sunucuda yeni venv için uygun Python yok (bkz. o betik)
+rc=0; "$DEPLOY" >>"$LOG" 2>&1 || rc=$?
+if [ "$rc" = 0 ]; then
     write_status ok true "guncelleme tamamlandi"
     echo "self-update OK" >> "$LOG"
+elif [ "$rc" = 3 ]; then
+    write_status failed false "bu surum venv icin daha yeni bir Python ister, sunucuda yok: root olarak python3.12 kurun (EL9: dnf install python3.12) ve tekrar guncelleyin; hicbir sey degistirilmedi (bkz deploy.log)"
+    echo "self-update BAŞARISIZ (Python gerekli)" >> "$LOG"
 else
     write_status failed false "deploy basarisiz (bkz deploy.log); saglik kontrolu otomatik geri dondu"
     echo "self-update BAŞARISIZ" >> "$LOG"

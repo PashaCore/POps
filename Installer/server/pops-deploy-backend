@@ -5,6 +5,13 @@
 # tek bir geri dönüş yolundan geçer: TÜM kod seti ve requirements değiştiyse venv de yedekten birebir
 # geri yüklenir (server.py artık tek dosya değil; uçlar pops/routers/ altında).
 #
+# Python sürümü: requirements.txt'teki "# requires-python: >=X.Y" satırı venv'in Python'undan yeniyse (ör. 3.9'la
+# kurulmuş eski bir sunucu) pip yerinde kuramaz. Bu durumda sunucudaki en uygun yorumlayıcıyla (python3.12,
+# python3.11, python3.10, python3) $APP/venv-py<sürüm>-<kimlik> altında YENİ bir venv kurulur, requirements oraya
+# yüklenir ve $APP/venv bu dizine sembolik bağ olur (eski venv kenara alınır). Hata olursa geri dönüş eski venv'i
+# de yerine koyar. Uygun yorumlayıcı yoksa hiçbir şeye dokunmadan çıkış kodu 3 ile durur (pops-selfupdate panelde
+# "Python kurun" der).
+#
 # Ayarlar: /etc/pops/deploy.conf (REPO, APP, SVC, OWNER, HEALTH_BASE, HEALTH_WAIT, KEEP_BACKUPS; örnek ve açıklama:
 # Installer/server/deploy.conf.example). Dosya yoksa install.sh'in varsayılanları geçerlidir. pops-selfupdate
 # da REPO'yu aynı dosyadan okur.
@@ -15,7 +22,8 @@
 # host'takini de elle güncelleyin:  sudo install -m 755 Installer/server/pops-deploy-backend /usr/local/sbin/
 #
 # Test kancaları (Installer/server/tests/test_deploy.sh): POPS_DEPLOY_CONF ayar dosyasının yolu,
-# POPS_DEPLOY_ALLOW_NONROOT=1 root olmadan çalışma. Üretimde ikisi de verilmez.
+# POPS_DEPLOY_ALLOW_NONROOT=1 root olmadan çalışma, POPS_DEPLOY_PYTHONS yeni venv için aranan yorumlayıcılar.
+# Üretimde hiçbiri verilmez.
 set -Eeuo pipefail
 
 CONF=${POPS_DEPLOY_CONF:-/etc/pops/deploy.conf}
@@ -31,6 +39,8 @@ HEALTH_BASE=http://127.0.0.1:8000
 KEEP_BACKUPS=10
 HEALTH_WAIT=60
 STAMP=$(date +%Y%m%d-%H%M%S)
+# Venv'in Python'u eskiyse yeni venv için sırayla denenen yorumlayıcılar (ilk uyan seçilir)
+PY_CANDIDATES=${POPS_DEPLOY_PYTHONS:-python3.12 python3.11 python3.10 python3}
 
 die() { echo "pops-deploy-backend: $*" >&2; exit 1; }
 
@@ -70,8 +80,12 @@ BACKUPS="$APP/.deploy-backups"
 ID="$STAMP-$$"                                  # PID: aynı saniyedeki iki deploy birbirinin yedeğini ezmesin
 BACKUP="$BACKUPS/code-$ID.tgz"
 PRE_LIST="$BACKUPS/code-$ID.list"               # kurulum ÖNCESİ dosyalar: geri dönüşte yeni eklenenler silinir
-VENV_BACKUP=""                                  # yalnızca requirements değiştiyse: $BACKUPS/venv-$ID.tgz
+VENV_BACKUP=""                                  # requirements değiştiyse ya da venv yeniden kuruluyorsa: $BACKUPS/venv-$ID.tgz
 VENV_REAL=""
+REBUILD=0                                       # 1: venv'in Python'u eski; yeni venv kurulup yerine konur
+NEW_VENV=""                                     # yeni venv'in gerçek dizini ($APP/venv-py<sürüm>-$ID)
+NEW_VENV_TEMP=0                                 # 1: yeni venv henüz canlı değil; hata olursa silinir
+VENV_ASIDE="$APP/.venv.old-$ID"                 # yeniden kurulumda eski venv (dizin ya da bağ) burada bekler
 CHANGED=0                                       # 1: canlıda bir şey değişti; bundan sonraki her hata geri döner
 
 # Deploy'un canlıda tek tek yönettiği dosyalar (pops/ paketi ayrıca bütün olarak silinip açılır)
@@ -93,7 +107,15 @@ rollback() {   # $1=neden. Kod setini ve (değiştiyse) venv'i yedekten geri yü
     # root olarak açılan arşiv dosyaların sahibini ve iznini de geri getirir; ayrıca chown yapılmaz (APP'te root'a
     # ait yönetim betikleri olabilir, servis kullanıcısına geçmemeli)
     tar xzf "$BACKUP" -C "$APP" || echo "UYARI: kod yedeği açılamadı: $BACKUP"
-    if [ -n "$VENV_BACKUP" ]; then
+    if [ "$REBUILD" = 1 ]; then
+        # Eski venv'e hiç dokunulmadı, yalnızca kenara alındı: geri konur, yeni venv silinir
+        if [ -e "$VENV_ASIDE" ] || [ -L "$VENV_ASIDE" ]; then
+            echo "eski venv geri konuyor ($VENV_ASIDE -> $VENV)."
+            if [ -L "$VENV" ]; then rm -f "$VENV"; fi
+            mv -T "$VENV_ASIDE" "$VENV" || echo "UYARI: eski venv geri konamadı; elle:  rm $VENV; mv $VENV_ASIDE $VENV"
+        fi
+        if [ "$NEW_VENV_TEMP" = 1 ]; then rm -rf "$NEW_VENV"; fi
+    elif [ -n "$VENV_BACKUP" ]; then
         # pip'in yarım bıraktığı venv kenara alınır, anlık görüntü AYNI mutlak yola açılır
         # (konsol betiklerinin #! satırları venv'in yolunu içerir).
         echo "venv de geri yükleniyor ($VENV_BACKUP)."
@@ -111,15 +133,46 @@ rollback() {   # $1=neden. Kod setini ve (değiştiyse) venv'i yedekten geri yü
     exit 1
 }
 
+drop_new_venv() {   # canlıya alınmamış yeni venv'i siler (değişiklik öncesi hata/sinyal)
+    if [ "$NEW_VENV_TEMP" = 1 ]; then rm -rf "$NEW_VENV"; fi
+}
 on_error() {   # set -e'nin yakaladığı her hata buradan geçer
     [ "$BASHPID" = "$$" ] || return 0   # alt kabuk / komut ikamesi: hatayı ana kabuk ayrıca görür
     if [ "$CHANGED" = 1 ]; then rollback "Hata (satır $1)"; fi
+    drop_new_venv
     echo "pops-deploy-backend: hata (satır $1); canlıda hiçbir şey değiştirilmedi." >&2
     exit 1
 }
 on_signal() {
     if [ "$CHANGED" = 1 ]; then rollback "Deploy kesildi"; fi
+    drop_new_venv
     exit 1
+}
+
+# --- Python sürümü ---------------------------------------------------------------------------------------
+ver_num() { echo $(( 10#${1%%.*} * 1000 + 10#${1#*.} )); }   # "3.10" -> 3010 (yalnızca X.Y biçimi)
+ver_ok() {   # $1=sürüm (X.Y); MIN_PY ya da daha yeniyse 0
+    [[ "$1" =~ ^[0-9]+\.[0-9]+$ ]] && [ "$(ver_num "$1")" -ge "$(ver_num "$MIN_PY")" ]
+}
+# Yorumlayıcının X.Y sürümü; çalışmazsa boş. -I -S: ortam, site-packages ve .pth dosyaları okunmaz.
+py_ver() { "$@" -I -S -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true; }
+find_python() {   # MIN_PY'yi karşılayan ilk aday: NEW_PY ve NEW_PY_VER'i doldurur
+    local c p v
+    for c in $PY_CANDIDATES; do
+        p=$(command -v "$c" 2>/dev/null) || continue
+        v=$(py_ver "$p")
+        if ver_ok "$v"; then NEW_PY=$p; NEW_PY_VER=$v; return 0; fi
+    done
+    return 1
+}
+build_venv() {   # NEW_VENV'e OWNER olarak venv + requirements; herhangi bir adım başarısızsa 1
+    install -d -o "$OWNER" -g "$GROUP" -m 755 "$NEW_VENV" || return 1
+    sudo -H -u "$OWNER" "$NEW_PY" -m venv --upgrade-deps "$NEW_VENV" || return 1
+    # Servis kullanıcısı repo klasörünü okuyamaz: requirements yeni venv'in içine kopyalanıp oradan kurulur
+    install -o "$OWNER" -g "$GROUP" -m 644 Backend/requirements.txt "$NEW_VENV/pops-requirements.txt" || return 1
+    sudo -H -u "$OWNER" "$NEW_VENV/bin/pip" install -q --disable-pip-version-check \
+        -r "$NEW_VENV/pops-requirements.txt" || return 1
+    rm -f "$NEW_VENV/pops-requirements.txt"
 }
 trap 'on_error $LINENO' ERR
 trap on_signal INT TERM HUP
@@ -161,6 +214,30 @@ if [ "$same" = 1 ]; then
     exit 0
 fi
 
+# Venv'in Python'u bu sürümün istediğinden eskiyse (requirements.txt: "# requires-python: >=X.Y"; satır yoksa 3.10)
+# yerinde pip install yapılamaz: yeni venv kurulacak. Uygun yorumlayıcı yoksa hiçbir şeye dokunmadan dur (çıkış 3).
+MIN_PY=$(sed -n 's/^#[[:space:]]*requires-python:[[:space:]]*>=[[:space:]]*\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' \
+    Backend/requirements.txt | head -1)
+MIN_PY=${MIN_PY:-3.10}
+if [ -d "$VENV" ]; then
+    # Venv servis kullanıcısına aittir: yorumlayıcısı root olarak çalıştırılmaz
+    VENV_VER=$(py_ver sudo -H -u "$OWNER" "$VENV/bin/python")
+    if ! ver_ok "$VENV_VER"; then
+        if ! find_python; then
+            echo "pops-deploy-backend: venv'in Python'u (${VENV_VER:-çalışmıyor}) bu sürüm için eski; Python $MIN_PY ya da daha yenisi gerekli, sunucuda bulunamadı (aranan: $PY_CANDIDATES). Root olarak python3.12 kurun (AlmaLinux/RHEL/Rocky 9: dnf install python3.12; Ubuntu 22.04: apt install python3.12 python3.12-venv, deadsnakes PPA) ve güncellemeyi yeniden başlatın; deploy yeni bir venv kurar. Hiçbir şey değiştirilmedi." >&2
+            exit 3
+        fi
+        REBUILD=1
+        NEW_VENV="$APP/venv-py$NEW_PY_VER-$ID"
+        echo "venv'in Python'u (${VENV_VER:-çalışmıyor}) eski (gereken: >=$MIN_PY): $NEW_PY ($NEW_PY_VER) ile yeni venv kuruluyor: $NEW_VENV"
+        NEW_VENV_TEMP=1
+        if ! build_venv; then
+            drop_new_venv
+            die "yeni venv kurulamadı ($NEW_PY; Debian/Ubuntu'da python$NEW_PY_VER-venv paketi gerekir; pip hatası yukarıda). Hiçbir şey değiştirilmedi."
+        fi
+    fi
+fi
+
 # Geri dönüş için mevcut canlı kod setinin TAMAMINI yedekle
 install -d -o "$(id -u)" -g "$(id -g)" -m 700 "$BACKUPS"   # üretimde root:root
 managed_files > "$PRE_LIST"
@@ -170,10 +247,19 @@ done)
 tar czf "$BACKUP" -C "$APP" --exclude='__pycache__' -- "${ITEMS[@]}"
 
 # requirements değiştiyse pip, çalışan venv'e kurar: önce venv'in TAMAMININ anlık görüntüsü (geri dönüşte
-# aynı mutlak yola açılır). Görüntü alınamazsa (disk dolu vb.) hiçbir şeye dokunmadan dur.
+# aynı mutlak yola açılır). Görüntü alınamazsa (disk dolu vb.) hiçbir şeye dokunmadan dur. Venv yeniden
+# kuruluyorsa eski venv'e dokunulmaz; görüntü yalnızca sonradan elle geri dönüş içindir (eski dizin silinir).
 REQ_CHANGED=0
 cmp -s Backend/requirements.txt "$APP/requirements.txt" || REQ_CHANGED=1
-if [ "$REQ_CHANGED" = 1 ]; then
+if [ "$REBUILD" = 1 ]; then
+    VENV_REAL=$(readlink -f "$VENV")
+    VENV_BACKUP="$BACKUPS/venv-$ID.tgz"
+    rc=0; tar czf "$VENV_BACKUP" -C "$(dirname "$VENV_REAL")" "$(basename "$VENV_REAL")" || rc=$?
+    if [ "$rc" -gt 1 ]; then
+        rm -f "$VENV_BACKUP" "$BACKUP" "$PRE_LIST"; drop_new_venv
+        die "venv yedeklenemedi ($VENV_BACKUP; disk dolu mu?). Hiçbir şey değiştirilmedi."
+    fi
+elif [ "$REQ_CHANGED" = 1 ]; then
     [ -x "$VENV/bin/pip" ] || { rm -f "$BACKUP" "$PRE_LIST"; die "$VENV/bin/pip yok (venv bulunamadı). Hiçbir şey değiştirilmedi."; }
     VENV_REAL=$(readlink -f "$VENV")
     # pip OWNER olarak çalışır: venv'de başka bir kullanıcıya ait dosya (ör. bir zamanlar root'la kurulmuş paket)
@@ -206,9 +292,11 @@ done
 
 CHANGED=1   # buradan sonra her hata (ERR, sinyal ya da açık denetim) rollback'ten geçer
 
-# Servis kullanıcısı repo klasörünü okuyamaz; dosyalar $APP'e kopyalanır.
-if [ "$REQ_CHANGED" = 1 ]; then
+# Servis kullanıcısı repo klasörünü okuyamaz; dosyalar $APP'e kopyalanır. Yeni venv'e requirements zaten kuruldu.
+if [ "$REQ_CHANGED" = 1 ] || [ "$REBUILD" = 1 ]; then
     install -o "$OWNER" -g "$GROUP" -m 644 Backend/requirements.txt "$APP/requirements.txt"
+fi
+if [ "$REBUILD" = 0 ] && [ "$REQ_CHANGED" = 1 ]; then
     sudo -H -u "$OWNER" "$VENV/bin/pip" install -q --disable-pip-version-check -r "$APP/requirements.txt" \
         || rollback "pip install başarısız"
 fi
@@ -233,6 +321,13 @@ install -o "$OWNER" -g "$GROUP" -m 644 VERSION "$APP/VERSION"
 install -d -o "$OWNER" -g "$GROUP" -m 755 "$APP/keys"
 install -o "$OWNER" -g "$GROUP" -m 644 keys/pops_release_ed25519.pub.pem "$APP/keys/pops_release_ed25519.pub.pem"
 
+# Yeni venv yerine konur: eski venv (dizin ya da önceki yeniden kurulumun bağı) kenara, $APP/venv yeni dizine bağ.
+# Konsol betiklerinin #! satırları yeni dizinin gerçek yolunu içerir; systemd'nin $APP/venv/bin/uvicorn'u değişmez.
+if [ "$REBUILD" = 1 ]; then
+    mv -T "$VENV" "$VENV_ASIDE"
+    ln -s "$(basename "$NEW_VENV")" "$VENV"
+fi
+
 systemctl restart "$SVC" || rollback "Servis yeniden başlatılamadı"
 
 # Açılış (bekleyen migration'lar, indeks kurulumu dahil) birkaç saniyeden uzun sürebilir: sağlık HEALTH_WAIT
@@ -253,6 +348,16 @@ fi
 
 if [ "$ok" = 1 ]; then
     CHANGED=0
+    if [ "$REBUILD" = 1 ]; then
+        NEW_VENV_TEMP=0
+        # Eski venv artık yalnızca görüntüde: kenara alınan dizin (ya da bağ ve onun gösterdiği, bu betiğin
+        # önceden kurduğu venv-py* dizini) silinir. Silinemezse deploy yine başarılıdır.
+        rm -rf "$VENV_ASIDE" || echo "UYARI: eski venv silinemedi: $VENV_ASIDE"
+        case "$VENV_REAL" in
+            "$(readlink -f "$APP")"/venv-py*) rm -rf "$VENV_REAL" || echo "UYARI: eski venv silinemedi: $VENV_REAL" ;;
+        esac
+        echo "venv Python $NEW_PY_VER ile yeniden kuruldu: $VENV -> $NEW_VENV"
+    fi
     echo "Backend $REV canlıda. Yedek: $BACKUP${VENV_BACKUP:+ (venv: $VENV_BACKUP)}"
 else
     journalctl -u "$SVC" -n 20 --no-pager || true
