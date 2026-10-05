@@ -139,7 +139,7 @@ async def get_devices(auth: dict = Depends(require_auth)):
         c.cap_terminal_disable_requested, c.cap_vision_disable_requested, c.running_version,
         c.agent_health, c.last_disconnect_at, c.last_disconnect_reason, c.platform,
         bk.pc_name AS bypass_key_issued, bk.confirmed_at AS bypass_key_confirmed,
-        av.version AS agent_version
+        av.version AS agent_version, av.features AS agent_features
     FROM clients c
     LEFT JOIN agent_versions av ON c.pc_name = av.pc_name
     LEFT JOIN agent_bypass_keys bk ON c.pc_name = bk.pc_name
@@ -161,6 +161,8 @@ async def get_devices(auth: dict = Depends(require_auth)):
             "current_user": r.get("logged_user", "-"),
             "is_quarantined": r.get("is_quarantined", False),
             "agent_version": r.get("agent_version") or "Bilinmiyor",
+            # Ajanın bağlanırken duyurduğu özellikler (X-Agent-Features, ör. "winget"); eski ajanda boş
+            "agent_features": list(r.get("agent_features") or []),
             "running_version": r.get("running_version"),
             # İşletim sistemi ailesi (migration 0026): bildirmeyen (Windows) ajan "windows"
             "platform": r.get("platform") or "windows",
@@ -200,7 +202,7 @@ async def device_activity(pc_name: str, limit: int = 15, auth: dict = Depends(re
     limit = max(1, min(int(limit), 50))
     tasks = await execute_query(
         "SELECT id, title, script_path, status, exit_code, created_at, created_by, source, reason, client_ip, "
-        "dispatched_at, batch_id FROM tasks WHERE target_pc = $1 ORDER BY id DESC LIMIT $2",
+        "dispatched_at, batch_id, kind FROM tasks WHERE target_pc = $1 ORDER BY id DESC LIMIT $2",
         (pc_name, limit),
         fetch=True,
     )
@@ -216,6 +218,7 @@ async def device_activity(pc_name: str, limit: int = 15, auth: dict = Depends(re
             "status": r["status"], "exit_code": r["exit_code"], "at": _iso(r["created_at"]),
             "by": r["created_by"], "source": r["source"], "reason": r["reason"], "ip": r["client_ip"],
             "started_at": _iso(r["dispatched_at"]), "batch_id": r["batch_id"],
+            "task_kind": r["kind"],   # winget görevi: "winget" (bkz. pops/winget.py), komut: null
         }
         for r in tasks or []
     ] + [

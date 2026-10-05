@@ -122,6 +122,7 @@ Agents do not use JWTs. They authenticate with headers:
 | `X-Agent-Id` | agent HTTP endpoints | The device's hardware ID (`HW-…`). Checked together with `X-Agent-Secret`. |
 | `X-Agent-Version` | `/ws/agent/…` | Agent version, stored in `agent_versions`. |
 | `X-Agent-Platform` | `/ws/agent/…` (and agent HTTP endpoints) | `linux` from the Linux agent; stored in `clients.platform` on every connection. Windows agents do not send it and count as `windows`. |
+| `X-Agent-Features` | `/ws/agent/…` | Comma-separated features the agent implements (lowercase `[a-z0-9_]`, at most 32), for example `winget`. Stored per connection in `agent_versions.features` (empty when the header is missing); the server sends `winget_install` only to agents that announce `winget`. |
 
 On the agent HTTP endpoints (`agent_http_auth` in the tables below) a valid `X-Agent-Id` + `X-Agent-Secret` pair
 binds the request to that device: writing data for another device returns `403`. Requests without valid
@@ -176,8 +177,8 @@ endpoint, like the other agent endpoints that are limited per device (helpdesk, 
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/devices` | require_auth | All devices with status, lab, IP, current user, active window, quarantine flag, agent version, running version, capability state and `platform` (`windows` or `linux`). |
-| GET | `/api/devices/{pc_name}/activity` | require_auth | The latest operations on one device, newest first, `?limit=` (default 15, at most 50): its tasks (`kind: "task"` with `id`, `title`, `command` (first 300 characters), `status`, `exit_code`, `at`, `by`, `source`, `reason`, `ip`, `started_at`, `batch_id`) and its remote-control sessions (`kind: "vision"` with `status`, `at`, `ended_at`, `by`, `reason`, `mandatory`), merged. Returns `{"items": [...]}`. The panel shows it as "Son işlemler" in the PC detail panel. |
+| GET | `/api/devices` | require_auth | All devices with status, lab, IP, current user, active window, quarantine flag, agent version, running version, capability state, `platform` (`windows` or `linux`) and `agent_features` (what the agent announced in `X-Agent-Features`, for example `["winget"]`; empty for older agents). |
+| GET | `/api/devices/{pc_name}/activity` | require_auth | The latest operations on one device, newest first, `?limit=` (default 15, at most 50): its tasks (`kind: "task"` with `id`, `title`, `command` (first 300 characters), `status`, `exit_code`, `at`, `by`, `source`, `reason`, `ip`, `started_at`, `batch_id`, `task_kind`: `"winget"` for a winget step, else `null`) and its remote-control sessions (`kind: "vision"` with `status`, `at`, `ended_at`, `by`, `reason`, `mandatory`), merged. Returns `{"items": [...]}`. The panel shows it as "Son işlemler" in the PC detail panel. |
 | DELETE | `/api/devices/{pc_name}` | require_admin | Deletes the device, its hardware and software inventory, its Windows Update status, its `agent_logs_v2` rows, its version row and its **device secret**, and closes its socket (code `4000`). |
 | GET | `/api/inventory` | require_auth | Hardware inventory of all devices (`hw_inventory`). |
 | GET | `/api/logs` | require_auth | Latest event log entries (`agent_logs_v2`), newest first. `?limit=` (default 1000, at most 20000), optional `pc` (device ID), `since` and `until` (`YYYY-MM-DD`, both days included; `422` if malformed). |
@@ -205,8 +206,9 @@ endpoint, like the other agent endpoints that are limited per device (helpdesk, 
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/deploy_orchestration` | require_admin | **Deprecated:** `POST /api/v1/tasks` (same body). `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], task_sequence: [{name, type, command}], title?, source?, reason?}` (`taskSequence` is accepted too; not both). Queues one task per target and step in one transaction, recording the requesting user, then starts the queue. `title` (at most 200 characters), `source` (the panel page the request comes from, at most 40) and `reason` (at most 500) are optional; they are stored on every created task together with the caller's IP address and a `batch_id` shared by the tasks of the request. A task's title is the step's `name`, or `title` when the step has none. Returns `created` (number of tasks) and `task_ids`. The same request from the same user within 5 seconds (double click, retry) creates nothing and returns `duplicate: true`. `target_mode` is not case-sensitive (`"lab"` is `LAB`). `422` for an unknown `target_mode`, a field the endpoint does not know (also inside `task_sequence`), or a PC ID that is not registered (nothing is created). |
-| GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). Besides the queue columns each row has `title`, `source`, `reason`, `client_ip` and `batch_id` (empty on tasks created before migration `0019`); the panel groups the tasks of one `batch_id` into one job. |
+| POST | `/api/deploy_orchestration` | require_admin | **Deprecated:** `POST /api/v1/tasks` (same body). `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], task_sequence: [{name, type, command}], title?, source?, reason?}` (`taskSequence` is accepted too; not both). A step of `type` `WINGET` (any case) carries `winget: {id, version}` instead of `command` (see [winget steps](#winget-steps)); any other step needs `command` and may not have `winget`. Queues one task per target and step in one transaction, recording the requesting user, then starts the queue. `title` (at most 200 characters), `source` (the panel page the request comes from, at most 40) and `reason` (at most 500) are optional; they are stored on every created task together with the caller's IP address and a `batch_id` shared by the tasks of the request. A task's title is the step's `name`, or `title` when the step has none. Returns `created` (number of tasks) and `task_ids`. The same request from the same user within 5 seconds (double click, retry) creates nothing and returns `duplicate: true`. `target_mode` is not case-sensitive (`"lab"` is `LAB`). `422` for an unknown `target_mode`, a field the endpoint does not know (also inside `task_sequence`), or a PC ID that is not registered (nothing is created). |
+| GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). Besides the queue columns each row has `title`, `source`, `reason`, `client_ip` and `batch_id` (empty on tasks created before migration `0019`); the panel groups the tasks of one `batch_id` into one job. `kind` is `"winget"` for a winget step (`null` for a command) and `payload` its package `{id, version}`. |
+| GET | `/api/deploy/winget/catalog` | require_auth, module `deploy` | The winget catalog of the **Dağıtım** page (see [winget steps](#winget-steps)). `?q=` (at most 100 characters; every word must appear in the id, name, publisher, category or description; Turkish letters and case do not matter), `?category=`, `?limit=` (1–500, default 200). `{"items": [{id, name, publisher, category, description, description_en, note?, note_en?}], "matched", "total", "categories": [{id, label, count}], "updated", "source"}`. Ids that start with or equal the query come first. |
 | POST | `/api/tasks/status` | require_auth | `{ids: [...]}` (at most 5000): `{"items": [{id, target_pc, target_lab, status, exit_code, dispatched_at}]}` for the tasks that still exist. The panel's job center polls it for the progress of what was sent. |
 | POST | `/api/tasks/action` | require_admin | `{action: CANCEL \| RETRY \| PAUSE \| RESUME, target_mode: TASK \| LAB \| PC \| ALL, target_id}`. RETRY opens a **new** task for each finished task (`retry_of` = the old one) unless a retry of it is still pending or running; the old task keeps its result. A retry keeps the title and reason, gets `source` `tasks` and a new `batch_id`, and the reply lists `task_ids`. |
 | POST | `/api/flush_queue` | require_admin | **Deprecated:** `DELETE /api/v1/tasks`. Deletes all task records; the deletion (who, how many) is written to the hash-chained audit log first. |
@@ -263,6 +265,33 @@ test vectors are in [`protocol/`](protocol/README.md): [`file_push`](protocol/se
   does not send the field is treated as not supporting file transfer (`cap_files_enabled` stays `NULL`), so the
   server sends it nothing. `{"type": "capability_denied", "capability": "files", "action": "file_push" | "file_pull",
   "transfer_id": "…"}` marks the transfer `rejected` and the capability off.
+
+### winget steps
+
+A `WINGET` step installs a package from the winget community source on the target, as SYSTEM, silently and for all
+users:
+
+```json
+{"name": "winget: Mozilla Firefox", "type": "WINGET", "winget": {"id": "Mozilla.Firefox", "version": null}}
+```
+
+- `id` must match `^[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}$`, `version` (optional; `null` or missing = latest) must match
+  `^[0-9A-Za-z.+_-]{1,40}$`. Anything else, a `command` on a `WINGET` step or an unknown field in `winget` is `422`.
+  These sets leave out spaces, quotes and every shell character, and the agent passes the id and version as
+  separate arguments without a shell (see [`agent.md`](agent.md#winget_install-contract)).
+- Like package steps, it needs the `deploy` module in the target's lab.
+- The task is stored with `kind = "winget"`, `payload = {"id", "version"}` and, as `script_path`, the command line
+  the agent runs (`winget install --id Mozilla.Firefox -e --silent --scope machine --accept-package-agreements
+  --accept-source-agreements --disable-interactivity [--version …]`), for display only. Without a `name` the title
+  is `winget: <id>`.
+- The queue sends `{"action": "winget_install", "task_id", "id", "version", "requested_by"}` only to an agent whose
+  connection announced `winget` (`X-Agent-Features`). Pending winget tasks of other online PCs become `Denied` with
+  exit code -8 and an explanation in `output`; nothing is sent to them. With the `deploy` module off in the lab they
+  become `Denied` with `[MODÜL KAPALI]`, and closing the module denies pending and paused winget tasks at once.
+- Results: exit code 0, and winget's "already installed / up to date" (-1978335189, -1978335135) and "installed,
+  restart pending" (-1978334967, -1978334965) are `Completed`. `[REDDEDİLDİ] …` with -5 (refused) or -7 (no
+  winget on the PC) is `Denied`. Any other code is `Failed`. A retry stays a winget task.
+- `GET /api/devices` returns `agent_features` per device; the panel uses it to warn before deploying.
 
 ### Remote control and Vision
 

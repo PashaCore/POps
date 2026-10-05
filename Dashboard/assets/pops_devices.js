@@ -584,8 +584,40 @@
         if (/^POPS_UPDATE_AGENT/i.test(c) || /agent.?update/i.test(c)) return POps.taskName('Ajan güncellemesi');
         return c.length > 60 ? c.slice(0, 57) + '…' : (c || POps.t('Görev'));
     };
+    // winget görevinin (kind / task_kind = "winget") sonucu: ajanın ve sunucunun ret kodları ve winget'in bilinen
+    // çıkış kodları (HRESULT, ajan int32 olarak iletir; bkz. Backend/pops/winget.py ve docs/agent.md)
+    const WINGET_EXIT = {
+        '-1978335212': 'winget kaynağında bu kimlikle paket bulunamadı.',
+        '-1978335216': 'Paketin bu bilgisayara uygun kurulum dosyası yok.',
+        '-1978335215': 'İndirilen kurulum dosyasının özeti katalogla uyuşmadı; kurulmadı.',
+        '-1978335224': 'Kurulum dosyası indirilemedi.',
+        '-1978335210': 'Bu kimlikle birden çok paket bulundu.',
+        '-1978335163': 'winget kaynağı açılamadı (internet bağlantısını denetleyin).',
+        '-1978335157': 'winget kaynağı açılamadı (internet bağlantısını denetleyin).',
+        '-1978335174': 'Kurulum grup ilkesiyle engellenmiş.',
+        '-1978334961': 'Kurulum grup ilkesiyle engellenmiş.',
+        '-1978334975': 'Uygulama açık olduğu için kurulamadı; kapatıp yeniden deneyin.',
+        '-1978334974': 'Bilgisayarda başka bir kurulum sürüyor; sonra yeniden deneyin.',
+        '-1978334972': 'Paketin gerektirdiği bir bileşen eksik.',
+        '-1978334971': 'Diskte yer yok.',
+        '-1978334969': 'Kurulum internet bağlantısı istiyor.',
+        '-1978334966': 'Kurulumdan önce bilgisayarın yeniden başlatılması gerekiyor.',
+        '-1978334963': 'Uygulamanın başka bir sürümü zaten kurulu.',
+        '-1978334962': 'Uygulamanın daha yeni bir sürümü zaten kurulu.',
+        '-1978334957': 'Paket bu sistemi desteklemiyor.'
+    };
+    function wingetReason(t) {
+        const s = t.status, x = t.exit_code;
+        if (s === 'Denied' && x === -8) return POps.t('Bu bilgisayardaki ajan winget kurulumunu desteklemiyor; görev gönderilmedi. Ajanı güncelleyin.');
+        if (s === 'Denied' && x === -7) return POps.t('Bu bilgisayarda winget (Uygulama Yükleyicisi) yok.');
+        if (s === 'Denied' && x === -5) return POps.t('Cihazdaki ajan winget kurulumunu yetki politikası gereği çalıştırmadı (uzak komut ya da dosya dağıtımı bu cihazda kapalı olabilir).');
+        if ((s === 'Failed' || s === 'Error') && x != null && WINGET_EXIT[String(x)]) return POps.t(WINGET_EXIT[String(x)]);
+        if ((s === 'Failed' || s === 'Error') && x != null && x < -1000000) return POps.t('winget {code} koduyla bitti.', { code: '0x' + (x >>> 0).toString(16).toUpperCase() });
+        return '';
+    }
     // Reddedildi / başarısız için açık neden
     dev.failReason = function (t) {
+        if ((t.task_kind || t.kind) === 'winget') { const w = wingetReason(t); if (w) return w; }
         const s = t.status, x = t.exit_code;
         if (s === 'Denied') return x === -5 ? POps.t('Cihazdaki ajan bu komutu yetki politikası gereği çalıştırmadı (uzak komut bu cihazda kapalı olabilir).') : POps.t('Cihaz komutu reddetti.');
         if (s === 'Timed Out') return POps.t('Komut süre sınırını aştı ve durduruldu.');
@@ -605,7 +637,7 @@
     const KIND_LABEL = tAll({ auth: 'Oturumlar', policy: 'Kural ihlalleri', quarantine: 'Karantina', command: 'Komutlar', agent: 'Ajan ve bakım', other: 'Diğer' });
     const CAT_LABEL = tAll({ security: 'Güvenlik', restricted_content: 'Kural ihlali', system_maintenance: 'Bakım', legacy: 'Eski kayıt' });
     const RISK_LABEL = tAll({ info: 'bilgi', low: 'düşük', medium: 'orta', high: 'yüksek', critical: 'kritik' });
-    const CAP = tAll({ terminal: 'uzak komut', vision: 'uzak ekran', files: 'dosya aktarımı', exam: 'sınav modu' });
+    const CAP = tAll({ terminal: 'uzak komut', vision: 'uzak ekran', files: 'dosya aktarımı', exam: 'sınav modu', deploy: 'dosya dağıtımı' });
     const BY_TYPE = {
         'auth.login': 'login', 'auth.logout': 'logout', 'auth.failed': 'login_failed', 'policy.alert': 'dns_block',
         'security.lockdown': 'lockdown', 'security.unlock': 'unlock', 'security.bypass_code': 'bypass_code',

@@ -48,6 +48,7 @@ isolation callbacks, so no firewall rule or real setting is touched.
    | `set_identity.json` | `HwId` is `HW-9B41D07E5A2C` |
    | `set_bypass_secret.json` | ignored, nothing stored or sent (the test worker has no device-secret connection); `BypassSecretCommand.Process(secret, true, …)` with the vector's `secret` stores it and returns the `fingerprint` of `examples/agent-to-server/bypass_secret_ack.json` |
    | `execute*.json` with the terminal capability off | a `result` with `exit_code` -5 and a `capability_denied` with the same `task_id` |
+   | `winget_install*.json` | agents that do not implement it (and do not send `X-Agent-Features: winget`): ignored, nothing sent. Agents that do, with the terminal capability off: a `result` with `exit_code` -5 and a `capability_denied` with the same `task_id`; with the `deploy` module off: the same with `capability` `deploy` and `reason` `module_disabled` |
    | `cancel_task.json`, `result_ack.json`, `update_result_ack.json`, `unlock.json` | no exception; nothing sent |
    | `lockdown.json` | the fake isolation is applied (`NetworkIsolation.StatePath` exists) |
    | `exam_mode.json` | exam mode applied with the vector's allow list, message, program list and `until`; an `exam_state` with `enabled: true` is sent. With the `exam` capability off: one `capability_denied` (`capability` `exam`, `action` `exam_mode`) and nothing applied |

@@ -1,0 +1,23 @@
+{
+  "Bu bilgisayardaki ajan winget kurulumunu desteklemiyor; görev gönderilmedi. Ajanı güncelleyin.": "The agent on this computer does not support winget installs; the task was not sent. Update the agent.",
+  "Bu bilgisayarda winget (Uygulama Yükleyicisi) yok.": "winget (App Installer) is not available on this computer.",
+  "Cihazdaki ajan winget kurulumunu yetki politikası gereği çalıştırmadı (uzak komut ya da dosya dağıtımı bu cihazda kapalı olabilir).": "The agent did not run the winget install because of its capability policy (remote command or file deployment may be off on this device).",
+  "winget {code} koduyla bitti.": "winget ended with code {code}.",
+  "winget kaynağında bu kimlikle paket bulunamadı.": "No package with this ID in the winget source.",
+  "Paketin bu bilgisayara uygun kurulum dosyası yok.": "The package has no installer for this computer.",
+  "İndirilen kurulum dosyasının özeti katalogla uyuşmadı; kurulmadı.": "The downloaded installer's hash did not match the catalog; not installed.",
+  "Kurulum dosyası indirilemedi.": "The installer could not be downloaded.",
+  "Bu kimlikle birden çok paket bulundu.": "More than one package matches this ID.",
+  "winget kaynağı açılamadı (internet bağlantısını denetleyin).": "The winget source could not be opened (check the internet connection).",
+  "Kurulum grup ilkesiyle engellenmiş.": "The install is blocked by Group Policy.",
+  "Uygulama açık olduğu için kurulamadı; kapatıp yeniden deneyin.": "The app is running, so it could not be installed; close it and try again.",
+  "Bilgisayarda başka bir kurulum sürüyor; sonra yeniden deneyin.": "Another install is running on the computer; try again later.",
+  "Paketin gerektirdiği bir bileşen eksik.": "A component the package needs is missing.",
+  "Diskte yer yok.": "The disk is full.",
+  "Kurulum internet bağlantısı istiyor.": "The install needs an internet connection.",
+  "Kurulumdan önce bilgisayarın yeniden başlatılması gerekiyor.": "The computer must be restarted before the install.",
+  "Uygulamanın başka bir sürümü zaten kurulu.": "Another version of the app is already installed.",
+  "Uygulamanın daha yeni bir sürümü zaten kurulu.": "A newer version of the app is already installed.",
+  "Paket bu sistemi desteklemiyor.": "The package does not support this system.",
+  "dosya dağıtımı": "file deployment"
+}

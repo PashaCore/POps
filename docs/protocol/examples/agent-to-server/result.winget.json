@@ -1,0 +1,7 @@
+{
+  "type": "result",
+  "pc_name": "HW-3F9A1C7B2E4D",
+  "task_id": 1050,
+  "output": "Found an existing package already installed. Trying to upgrade the installed package...\nNo available upgrade found.\nNo newer package versions are available from the configured sources.",
+  "exit_code": -1978335189
+}

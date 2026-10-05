@@ -61,6 +61,7 @@ python tests/test_api_tokens.py
 python tests/test_demo.py
 python tests/test_files.py
 python tests/test_exam.py
+python tests/test_winget.py
 if [ "${COVERAGE:-0}" = "1" ]; then
   kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
   python -m coverage combine --rcfile=.coveragerc >/dev/null

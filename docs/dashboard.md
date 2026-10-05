@@ -250,10 +250,10 @@ are released when control is turned off, the page loses focus or the tab is hidd
 
 ### Dağıtım
 
-A library of packages and scripts (a table with size, SHA-256, date added and last deployment; filter **Tümü** /
-**Paketler** / **Betikler**, search) and the place where they are sent to PCs.
+A library of packages, scripts and winget packages (a table with size, SHA-256, date added and last deployment;
+filter **Tümü** / **Paketler** / **Betikler** / **winget**, search) and the place where they are sent to PCs.
 
-- **Paket yükle** adds an item, in two types:
+- **Paket yükle** adds an item, in three types:
   - **Kurulum paketi** (`.exe`, `.msi`, or a `.zip` that contains `install.bat`): the file is uploaded to the server
     (`/api/upload`) and the item stores a PowerShell command that downloads it from `/download/<file>` into
     `C:\POpsLogs\` on the PC and installs it: `.msi` with `msiexec /i … /qn /norestart` plus your parameters
@@ -261,14 +261,28 @@ A library of packages and scripts (a table with size, SHA-256, date added and la
     else by running the file with your parameters (for example `/S`). Exit codes 0 and 3010 count as success.
     Progress is written to `C:\POpsLogs\deploy_trace.txt` on the PC.
   - **Betik** (PowerShell, CMD): the text is run as is.
-  - Both can reboot the PC afterwards (**Bitince yeniden başlat**).
+  - **winget paketi**: a package from the winget community source, installed by winget as SYSTEM, silently and for
+    all users. Pick it from the catalog (69 common school and office apps, searchable by name, publisher and
+    category, with a category filter; ids checked against `microsoft/winget-pkgs`) or type any winget id
+    (**winget kimliği**, for example `Mozilla.Firefox`; find others with `winget search`). **Sürüm** is optional;
+    empty means the latest. The id and version are checked as you type (letters, digits and `. + _ -`); nothing
+    is uploaded. The PC needs winget (App Installer), internet access to the winget source and an agent that
+    supports winget.
+  - Packages and scripts can reboot the PC afterwards (**Bitince yeniden başlat**).
 - Click an item for its panel: **Dağıt**, **Düzenle**, copy the hash, the download address or the command,
-  **Görev zincirine ekle**, delete, and its latest deployments.
+  **Görev zincirine ekle**, delete, and its latest deployments. A winget package shows its id, version,
+  publisher, category, the exact command the agent runs, licence notes from the catalog (WinRAR, PyCharm, Teams)
+  and how many PCs run an agent without winget support.
 - **Dağıt** opens the deployment dialog: the steps (a chain of several items runs in the order shown; the
   **Görev zinciri oluştur** button starts with an empty chain), the target (**Bütün ağ**, selected labs under
   **Sınıflar**, or selected PCs under **Bilgisayarlar**), an optional reason and **Dağıt**. PCs that are off are
   skipped unless **Kapalılar açılınca kursun** is on. Every step becomes one queued task per PC (see **İşlemler**),
-  with the page and the reason recorded.
+  with the page and the reason recorded. **Adım ekle** also lists winget packages and offers **winget kataloğundan
+  ekle…**, which adds a package to the library and to the chain without leaving the dialog. When the chain has a
+  winget step, the dialog warns how many selected PCs run an agent without winget support: the step is refused
+  there (**Reddedildi**, "Bu bilgisayardaki ajan winget kurulumunu desteklemiyor"). winget steps appear in the
+  history and on **İşlemler** as "winget: <name>"; failure reasons name common winget results (package not
+  found, app in use, another install running, no winget on the PC …).
 - The sliders button sets how many PCs install at the same time (**Eşzamanlı kurulum sınırı**, 1–100).
 
 Commands run as SYSTEM on the PCs. Files uploaded here are downloadable without a login only through the signed link the upload returns (`/download/<file>?sig=…`); the deployment script also checks the file's SHA-256 before running it.

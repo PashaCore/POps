@@ -66,6 +66,27 @@
     .opt-row .d { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
     textarea.mono, input.mono { font-family: var(--font-mono); font-size: 12.5px; }
 
+    /* winget paketi */
+    .wg-search { display: flex; gap: 8px; }
+    .wg-search .search-field { flex: 1; min-width: 0; max-width: none; }
+    .wg-search select { width: auto; flex: none; max-width: 46%; }
+    .wg-list { margin-top: 8px; max-height: 236px; overflow-y: auto; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--border-subtle); }
+    .wg-list .empty-state { padding: 18px 12px; }
+    .wg-item { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 9px 12px; border-top: 1px solid var(--border-subtle); }
+    .wg-item:first-child { border-top: 0; }
+    .wg-item:hover { background: var(--bg-surface-2); }
+    .wg-item.on { background: var(--primary-50); }
+    .wg-item:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
+    .wg-item .tx { flex: 1; min-width: 0; }
+    .wg-item b { display: block; font-weight: var(--fw-medium); font-size: var(--text-sm); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wg-item small { display: block; font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wg-item small.note { color: var(--warning-text); }
+    .wg-item .id { flex: none; max-width: 40%; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 2px; }
+    .wg-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px 12px; margin-bottom: 14px; }
+    .wg-grid > .field { margin-bottom: 0; }
+    .wg-grid .field.has-error .field-hint { display: none; }
+    .wg-foot { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; margin: 0; }
+
     /* Dağıtım penceresi */
     .run-sec { margin-bottom: 22px; }
     .run-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); flex-wrap: wrap; }
@@ -112,6 +133,10 @@
         .dep-table .c-last .cell-sub { white-space: normal; }
         .dep-table .pbar { width: 72px; }
         .run-foot-note { display: none; }
+        .wg-grid { grid-template-columns: 1fr; }
+        .wg-search { flex-direction: column; }
+        .wg-search select { width: 100%; max-width: none; }
+        .wg-item .id { display: none; }
     }
 </style>
 
@@ -154,6 +179,7 @@
             <div class="segmented block" id="pkgType" role="group" aria-label="<?php _e('Tür'); ?>" style="margin-bottom:18px">
                 <button type="button" data-t="package" class="active" aria-pressed="true"><?php _e('Kurulum paketi'); ?></button>
                 <button type="button" data-t="script" aria-pressed="false"><?php _e('Betik'); ?></button>
+                <button type="button" data-t="winget" aria-pressed="false"><?php _e('winget paketi'); ?></button>
             </div>
             <div class="field">
                 <label for="pkgName"><?php _e('Ad'); ?></label>
@@ -194,7 +220,34 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                     <div class="field-hint"><?php _e('PowerShell ya da CMD komutları; hedefte SYSTEM hesabıyla çalışır.'); ?></div>
                 </div>
             </div>
-            <div class="opt-row">
+            <div id="pkgWingetArea" hidden>
+                <div class="field">
+                    <span class="field-label"><?php _e('winget kataloğu'); ?></span>
+                    <div class="wg-search">
+                        <div class="search-field">
+                            <?php echo pops_icon('search', 'sm'); ?>
+                            <input type="search" id="wgSearch" placeholder="<?php _e('Ad, yayıncı ya da kategori'); ?>" aria-label="<?php _e('winget kataloğunda ara'); ?>" autocomplete="off">
+                        </div>
+                        <select id="wgCat" aria-label="<?php _e('Kategori'); ?>"><option value=""><?php _e('Tüm kategoriler'); ?></option></select>
+                    </div>
+                    <div class="wg-list" id="wgList" role="listbox" aria-label="<?php _e('winget paketleri'); ?>"></div>
+                </div>
+                <div class="wg-grid">
+                    <div class="field" id="wgIdField">
+                        <label for="wgId"><?php _e('winget kimliği'); ?></label>
+                        <input type="text" id="wgId" class="mono" maxlength="128" placeholder="<?php _e('Örn. Mozilla.Firefox'); ?>" autocomplete="off" spellcheck="false" aria-describedby="wgIdErr wgIdHint">
+                        <div class="field-error" id="wgIdErr"><?php _e('Harf ya da rakamla başlamalı; yalnızca harf, rakam ve . + _ - (2-128 karakter).'); ?></div>
+                        <div class="field-hint" id="wgIdHint"><?php _e('Katalogda olmayan paketin kimliğini de yazabilirsiniz (winget search ile bulunur).'); ?></div>
+                    </div>
+                    <div class="field" id="wgVerField">
+                        <label for="wgVer"><?php _e('Sürüm'); ?> <span class="faint"><?php _e('(isteğe bağlı)'); ?></span></label>
+                        <input type="text" id="wgVer" class="mono" maxlength="40" placeholder="<?php _e('En son sürüm'); ?>" autocomplete="off" spellcheck="false" aria-describedby="wgVerErr">
+                        <div class="field-error" id="wgVerErr"><?php _e('Yalnızca harf, rakam ve . + _ - (en çok 40 karakter).'); ?></div>
+                    </div>
+                </div>
+                <p class="wg-foot"><?php _e('Hedefte winget ile SYSTEM hesabıyla, sessiz ve bütün kullanıcılar için kurulur. Bilgisayarda winget (Uygulama Yükleyicisi) ve winget destekleyen bir POps ajanı gerekir.'); ?></p>
+            </div>
+            <div class="opt-row" id="pkgRebootRow">
                 <div class="grow"><div class="t"><?php _e('Bitince yeniden başlat'); ?></div><div class="d" id="pkgRebootHint"><?php _e('Başarılı kurulumdan 15 saniye sonra bilgisayar yeniden başlar.'); ?></div></div>
                 <label class="switch"><input type="checkbox" id="pkgReboot" aria-label="<?php _e('Bitince yeniden başlat'); ?>"><span></span></label>
             </div>
@@ -284,6 +337,35 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         return 'powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -EncodedCommand ' + strToBase64UTF16LE(psCode);
     }
     const SCRIPT_REBOOT = '\n\nping 127.0.0.1 -n 3 > nul\nshutdown -r -t 15';
+
+    // ================= winget =================
+    // Kimlik ve sürüm sunucudaki denetimle aynı (Backend/pops/winget.py): boşluk, tırnak, kabuk karakteri geçmez.
+    // Kitaplıktaki winget kaydının komutu, ajanın çalıştırdığı komutun okunur hâlidir (sunucu görev kaydına da bunu
+    // yazar); dağıtımda ajana komut değil, kimlik ve sürüm gider.
+    const WG_ID = /^[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}$/;
+    const WG_VER = /^[0-9A-Za-z.+_-]{1,40}$/;
+    const WG_ARGS = ' -e --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity';
+    const wingetCommand = (id, ver) => 'winget install --id ' + id + WG_ARGS + (ver ? ' --version ' + ver : '');
+    function wingetOf(command) {
+        const c = String(command || '');
+        const id = (/--id (\S+)/.exec(c) || [])[1] || '';
+        const ver = (/--version (\S+)/.exec(c) || [])[1] || '';
+        return { id: WG_ID.test(id) ? id : '', ver: WG_VER.test(ver) ? ver : '' };
+    }
+    // Kategori adları (sunucudaki kimlikler, Backend/pops/winget.py CATEGORY_LABELS)
+    const WG_CAT = { browser: 'Tarayıcılar', office: 'Ofis ve PDF', education: 'Eğitim', programming: 'Yazılım geliştirme', graphics: 'Grafik ve tasarım', media: 'Ses ve video', communication: 'İletişim', utility: 'Araçlar', runtime: 'Çalışma ortamları' };
+    const wgCatName = (c) => (WG_CAT[c] ? POps.t(WG_CAT[c]) : String(c || ''));
+    const wgText = (p, key) => String((POps.lang === 'en' && p[key + '_en']) || p[key] || '');
+    const wg = { all: null, byId: new Map(), cats: [], q: '', cat: '', items: null, seq: 0, sel: '', auto: '' };
+    async function loadCatalog() {
+        if (wg.all) return wg.all;
+        const r = await POps.get('/api/deploy/winget/catalog?limit=500');
+        wg.all = Array.isArray(r && r.items) ? r.items : [];
+        wg.byId = new Map(wg.all.map(p => [String(p.id).toLowerCase(), p]));
+        wg.cats = Array.isArray(r && r.categories) ? r.categories : [];
+        return wg.all;
+    }
+    const wgInfo = (id) => wg.byId.get(String(id || '').toLowerCase()) || null;
     function scriptCode(command) {
         const c = String(command || '');
         return c.includes('ping 127.0.0.1 -n 3') ? c.split('ping 127.0.0.1 -n 3')[0].trim() : c;
@@ -302,12 +384,17 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const meta = String(p.meta || '');
         const parts = meta.replace(/\s*\(Reboot\)/g, '').split('|').map(s => s.trim());
         const o = {
-            id: String(p.id || ''), name: p.name || POps.t('(adsız)'), type: p.type === 'script' ? 'script' : 'package', command: String(p.command || ''),
+            id: String(p.id || ''), name: p.name || POps.t('(adsız)'), type: p.type === 'script' || p.type === 'winget' ? p.type : 'package', command: String(p.command || ''),
             reboot: meta.includes('(Reboot)'), file: '', size: '', by: parts[2] || '', hash: '', args: '', url: '', path: '', code: '', at: null, payload: null, meta
         };
         const m = /^mod-(\d{12,14})$/.exec(o.id);
         if (m) o.at = Number(m[1]);
-        if (o.type === 'package') {
+        if (o.type === 'winget') {
+            const w = wingetOf(o.command);
+            o.wid = w.id;
+            o.wver = w.ver;
+            o.kind = POps.t('winget paketi');
+        } else if (o.type === 'package') {
             o.file = parts[0] || '';
             o.size = parts[1] || '';
             const j = payloadOf(o.command);
@@ -328,6 +415,9 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         return o;
     }
     const shortHash = (h) => h.length > 16 ? h.slice(0, 8) + '…' + h.slice(-6) : h;
+    const typeIcon = (t) => (t === 'package' ? 'package' : t === 'winget' ? 'download' : 'terminal');
+    // Görev başlığı (sunucuya giden veri): winget adımı "winget: <ad>" olarak görünür
+    const stepName = (o) => (o.type === 'winget' ? 'winget: ' + o.name : o.name);
     const firstLine = (s) => { const l = String(s || '').split('\n').find(x => x.trim()) || ''; return l.length > 70 ? l.slice(0, 67) + '…' : l; };
     function sizeText(bytes) {
         const n = Number(bytes) || 0;
@@ -361,7 +451,13 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     const WAITING = ['Pending', 'Paused'];
     // Görev pakete komutuyla bağlanır; aynı komutlu iki paket varsa görevin başlığı (adımın adı) ayırır. Paket yeniden
     // yüklenince komut değişir: Dağıtım sayfasından açılmış görev adıyla da eşleşir.
+    // winget görevi kitaplık kaydına paketle (kimlik + sürüm) bağlanır; aynı paket iki kez kayıtlıysa başlık ayırır.
     function belongs(t, o) {
+        if (o.type === 'winget' || t.kind === 'winget') {
+            const w = t.kind === 'winget' && t.payload && typeof t.payload === 'object' ? t.payload : null;
+            if (o.type !== 'winget' || !w || !o.wid || String(w.id || '').toLowerCase() !== o.wid.toLowerCase() || String(w.version || '') !== o.wver) return false;
+            return !t.title || t.title === stepName(o) || !ui.pkgs.some(p => p !== o && p.type === 'winget' && p.wid.toLowerCase() === o.wid.toLowerCase() && p.wver === o.wver && stepName(p) === t.title);
+        }
         if (t.script_path === o.command) return !t.title || t.title === o.name || !ui.pkgs.some(p => p !== o && p.command === o.command && p.name === t.title);
         return t.source === 'deploy' && !!t.title && t.title === o.name;
     }
@@ -408,12 +504,13 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         return ui.pkgs.filter(o => {
             if (ui.f !== 'all' && o.type !== ui.f) return false;
             if (!q) return true;
-            return [o.name, o.file, o.hash, o.args, o.code, o.by, o.kind].some(v => String(v || '').toLocaleLowerCase('tr').includes(q));
+            return [o.name, o.file, o.hash, o.args, o.code, o.by, o.kind, o.wid].some(v => String(v || '').toLocaleLowerCase('tr').includes(q));
         });
     }
     function rowHtml(o) {
         const j = (ui.deps.get(o.id) || [])[0];
-        const subText = (o.type === 'package' ? [o.kind, o.file].filter(Boolean).join(' · ') : o.kind + ' · ' + firstLine(o.code)) + (o.reboot ? ' · ' + POps.t('yeniden başlatır') : '');
+        const subText = o.type === 'winget' ? [o.kind, o.wid, o.wver].filter(Boolean).join(' · ')
+            : (o.type === 'package' ? [o.kind, o.file].filter(Boolean).join(' · ') : o.kind + ' · ' + firstLine(o.code)) + (o.reboot ? ' · ' + POps.t('yeniden başlatır') : '');
         const markHtml = o.type === 'package' && !o.hash ? dev.markHtml({ kind: 'upd', glyph: '!', text: POps.t('Dosya özeti yok: indirilen dosya doğrulanmaz') }) : '';
         const hashHtml = o.hash
             ? `<button type="button" class="hash" data-copy="${escapeHtml(o.hash)}" title="${escapeHtml(POps.t('Tam özeti kopyala'))}" aria-label="${escapeHtml(POps.t('SHA-256 özetini kopyala'))}">${escapeHtml(shortHash(o.hash))}${POps.iconHtml('copy')}</button>`
@@ -423,7 +520,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
             ? `<span class="word ${escapeHtml(j.state)}">${escapeHtml(jobWord(j))}${j.state === 'run' ? ' · ' + Number(j.c.ok + j.c.bad) + '/' + Number(j.c.total) : ''}</span><div class="cell-sub">${POps.timeHtml(tsOf(j.at))} · ${escapeHtml(targetText(j))}</div>${j.state === 'run' && j.c.total > 1 ? pbarHtml(j.c) : ''}`
             : `<span class="faint">${POps.tHtml('Henüz dağıtılmadı')}</span>`;
         return `<tr data-id="${escapeHtml(o.id)}" tabindex="0" class="${ui.focus === o.id ? 'is-focus' : ''}">
-            <td><div class="dep-name"><span class="dep-ico">${POps.iconHtml(o.type === 'package' ? 'package' : 'terminal')}</span><div class="tx"><div class="t">${escapeHtml(o.name)}${markHtml}</div><div class="s" title="${escapeHtml(subText)}">${escapeHtml(subText)}</div></div></div></td>
+            <td><div class="dep-name"><span class="dep-ico">${POps.iconHtml(typeIcon(o.type))}</span><div class="tx"><div class="t">${escapeHtml(o.name)}${markHtml}</div><div class="s" title="${escapeHtml(subText)}">${escapeHtml(subText)}</div></div></div></td>
             <td class="c-size">${o.size ? escapeHtml(o.size) : '<span class="faint">—</span>'}</td>
             <td class="c-hash">${hashHtml}</td>
             <td class="c-added">${addedHtml}</td>
@@ -431,13 +528,15 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         </tr>`;
     }
     function renderFilter() {
-        const n = { all: ui.pkgs.length, package: ui.pkgs.filter(o => o.type === 'package').length, script: ui.pkgs.filter(o => o.type === 'script').length };
+        const n = { all: ui.pkgs.length, package: ui.pkgs.filter(o => o.type === 'package').length, script: ui.pkgs.filter(o => o.type === 'script').length, winget: ui.pkgs.filter(o => o.type === 'winget').length };
         const btnHtml = (k, label) => `<button type="button" data-f="${escapeHtml(k)}" class="${ui.f === k ? 'active' : ''}" aria-pressed="${ui.f === k ? 'true' : 'false'}">${escapeHtml(label)} <span class="n">${Number(n[k])}</span></button>`;
-        $('depFilter').innerHTML = btnHtml('all', POps.t('Tümü')) + btnHtml('package', POps.t('Paketler')) + btnHtml('script', POps.t('Betikler'));
+        $('depFilter').innerHTML = btnHtml('all', POps.t('Tümü')) + btnHtml('package', POps.t('Paketler')) + btnHtml('script', POps.t('Betikler'))
+            + btnHtml('winget', 'winget');
     }
     function renderSummary() {
         const nPkg = ui.pkgs.filter(o => o.type === 'package').length;
-        const nScr = ui.pkgs.length - nPkg;
+        const nScr = ui.pkgs.filter(o => o.type === 'script').length;
+        const nWg = ui.pkgs.length - nPkg - nScr;
         const seen = new Map();
         ui.deps.forEach(list => list.forEach(j => seen.set(j.key, j)));
         const jobs = [...seen.values()];
@@ -449,6 +548,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
             ? `<span class="sum">${POps.tHtml('{limit} eşzamanlı kurulum', null, { limit: `<b>${POps.tHtml('Sınırsız')}</b>` })}</span>`
             : `<span class="sum">${POps.tnHtml('{n} eşzamanlı kurulum', ui.limit, null, { n: boldHtml(ui.limit) })}</span>`;
         $('depSummary').innerHTML = `<span class="sum">${POps.tnHtml('{n} paket', nPkg, null, { n: boldHtml(nPkg) })}</span><span class="sum">${POps.tnHtml('{n} betik', nScr, null, { n: boldHtml(nScr) })}</span>`
+            + (nWg ? `<span class="sum">${POps.tnHtml('{n} winget paketi', nWg, null, { n: boldHtml(nWg) })}</span>` : '')
             + (run ? `<span class="sum"><span class="dot run"></span>${POps.tnHtml('{n} dağıtım sürüyor', run, null, { n: boldHtml(run) })}</span>` : '')
             + (badToday ? `<span class="sum"><span class="dot bad"></span>${POps.tnHtml('{n} sorunlu dağıtım (bugün)', badToday, null, { n: boldHtml(badToday) })}</span>` : '')
             + limitHtml;
@@ -546,9 +646,13 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         }
         const scroll = keep ? body.scrollTop : 0;
         const deps = ui.deps.get(id) || [];
-        const subText = o.kind + (o.size ? ' · ' + o.size : '');
+        const cat = o.type === 'winget' ? wgInfo(o.wid) : null;
+        const subText = o.type === 'winget' ? [o.kind, cat && cat.publisher].filter(Boolean).join(' · ') : o.kind + (o.size ? ' · ' + o.size : '');
         const rebootText = o.reboot ? POps.t('Yeniden başlatır') : POps.t('Yeniden başlatmaz');
-        const facts = o.type === 'package'
+        const facts = o.type === 'winget'
+            ? [[POps.t('winget kimliği'), o.wid || POps.t('okunamadı'), 'mono'], [POps.t('Sürüm'), o.wver || POps.t('en son sürüm'), o.wver ? 'mono' : ''],
+                [POps.t('Yayıncı'), cat ? cat.publisher : ''], [POps.t('Kategori'), cat ? wgCatName(cat.category) : POps.t('katalogda yok')], [POps.t('Ekleyen'), o.by]]
+            : o.type === 'package'
             ? [[POps.t('Dosya'), o.file, 'mono'], [POps.t('Boyut'), o.size], [POps.t('Sessiz kurulum'), o.payload ? (o.args || POps.t('yok')) : '', o.args ? 'mono' : ''], [POps.t('Bitince'), rebootText], [POps.t('Yükleyen'), o.by]]
             : [[POps.t('Bitince'), rebootText], [POps.t('Ekleyen'), o.by]];
         const factsHtml = '<div class="glist">'
@@ -557,15 +661,20 @@ msiexec.exe /i program.msi /qn /norestart</pre>
             + (o.hash ? `<div class="grow stack"><span>SHA-256</span><button type="button" class="hash full" data-copy="${escapeHtml(o.hash)}" title="${escapeHtml(POps.t('Kopyala'))}" aria-label="${escapeHtml(POps.t('SHA-256 özetini kopyala'))}">${escapeHtml(o.hash)}${POps.iconHtml('copy')}</button></div>` : '')
             + `<div class="grow"><span>${POps.tHtml('Kimlik')}</span><span class="mono">${escapeHtml(o.id)}</span></div>`
             + '</div>';
+        const wgOld = o.type === 'winget' ? wingetGap((state.devices || []).map(d => d.hostname)) : 0;
         const issueHtml = o.type === 'package' && !o.hash
             ? `<div class="issue upd">${POps.iconHtml('alert', 'sm')}<span style="flex:1">${o.payload ? POps.tHtml('Dosya özeti kayıtlı değil: bilgisayarlar indirdikleri dosyayı doğrulamadan çalıştırır. Dosyayı yeniden yükleyin.') : POps.tHtml('Paketin dosya bilgisi okunamadı. Düzenleyip dosyayı yeniden yükleyin.')}</span></div>`
-            : '';
-        const codeHtml = o.type === 'script' ? `<div><h3>${POps.tHtml('Komut')}</h3><pre class="dp-code">${escapeHtml(o.code)}</pre></div>` : '';
+            : o.type === 'winget' && !o.wid
+            ? `<div class="issue upd">${POps.iconHtml('alert', 'sm')}<span style="flex:1">${POps.tHtml('winget kimliği okunamadı. Düzenleyip kimliği yeniden yazın.')}</span></div>`
+            : (cat && wgText(cat, 'note') ? `<div class="issue old">${POps.iconHtml('info', 'sm')}<span style="flex:1">${escapeHtml(wgText(cat, 'note'))}</span></div>` : '')
+              + (wgOld ? `<div class="issue upd">${POps.iconHtml('alert', 'sm')}<span style="flex:1">${POps.tnHtml('{n} bilgisayarın ajanı winget desteklemiyor; bu pakete orada kurulmaz. Ajanı güncelleyin.', wgOld)}</span></div>` : '');
+        const codeHtml = o.type === 'script' ? `<div><h3>${POps.tHtml('Komut')}</h3><pre class="dp-code">${escapeHtml(o.code)}</pre></div>`
+            : o.type === 'winget' && o.wid ? `<div><h3>${POps.tHtml('Hedefte çalışan komut')}</h3><pre class="dp-code">${escapeHtml(o.command)}</pre><p class="wg-foot" style="margin-top:6px">${POps.tHtml('Ajan winget\'i SYSTEM hesabıyla, kabuk kullanmadan çalıştırır; kimlik ve sürüm ayrı argüman olarak gider.')}</p></div>` : '';
         const depsHtml = deps.length
             ? deps.slice(0, 8).map(depRowHtml).join('') + (deps.length > 8 ? `<a class="dp-more" href="tasks">${POps.tnHtml('{n} dağıtım daha', deps.length - 8)} · ${POps.tHtml('İşlemler')}</a>` : '')
             : `<div class="dp-empty">${ui.tasksAt ? POps.tHtml('Henüz dağıtılmadı.') : POps.tHtml('Yükleniyor…')}</div>`;
         body.innerHTML = `<div class="drawer-head">
-                <div class="drawer-title"><span class="drawer-ico">${POps.iconHtml(o.type === 'package' ? 'package' : 'terminal', 'lg')}</span>
+                <div class="drawer-title"><span class="drawer-ico">${POps.iconHtml(typeIcon(o.type), 'lg')}</span>
                     <div style="min-width:0"><h2>${escapeHtml(o.name)}</h2><div class="sub">${escapeHtml(subText)}</div></div></div>
                 <button type="button" class="ibtn sm" data-act="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button>
             </div>
@@ -604,9 +713,10 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                     o.hash ? { label: POps.t('Özeti kopyala'), icon: 'copy', onClick: () => copyText(o.hash, POps.t('Özet kopyalandı.')) } : null,
                     o.url ? { label: POps.t('İndirme adresini kopyala'), icon: 'download', onClick: () => copyText(o.url, POps.t('Adres kopyalandı.')) } : null,
                     o.type === 'script' ? { label: POps.t('Komutu kopyala'), icon: 'copy', onClick: () => copyText(o.code, POps.t('Komut kopyalandı.')) } : null,
+                    o.type === 'winget' && o.wid ? { label: POps.t('winget kimliğini kopyala'), icon: 'copy', onClick: () => copyText(o.wid, POps.t('Kimlik kopyalandı.')) } : null,
                     { label: POps.t('Görev zincirine ekle'), icon: 'list', onClick: () => openRun([o], true) },
                     '-',
-                    { label: o.type === 'package' ? POps.t('Paketi sil') : POps.t('Betiği sil'), icon: 'trash', danger: true, onClick: () => removePkg(o) }
+                    { label: o.type === 'script' ? POps.t('Betiği sil') : POps.t('Paketi sil'), icon: 'trash', danger: true, onClick: () => removePkg(o) }
                 ]);
                 return;
             }
@@ -623,7 +733,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const ok = await POps.confirm({
             title: POps.t('{name} silinsin mi?', { name: o.name }),
             message: POps.t('Kütüphaneden kaldırılır. Gönderilmiş görevler ve dağıtım geçmişi etkilenmez.'),
-            confirmText: o.type === 'package' ? POps.t('Paketi sil') : POps.t('Betiği sil'), danger: true, icon: 'trash'
+            confirmText: o.type === 'script' ? POps.t('Betiği sil') : POps.t('Paketi sil'), danger: true, icon: 'trash'
         });
         if (!ok) return;
         if (await POps.act(null, () => POps.post('/api/delete_package', { id: o.id }), { success: POps.t('{name} silindi.', { name: o.name }) })) {
@@ -634,15 +744,99 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     }
 
     // ================= Paket / betik ekleme ve düzenleme =================
-    const up = { edit: null, type: 'package', xhr: null };
+    // toRun: pencere dağıtım penceresinden açıldı; kaydedilen winget paketi açık zincire adım olarak eklenir
+    const up = { edit: null, type: 'package', xhr: null, toRun: false };
     function setType(t) {
         up.type = t;
         $('pkgType').querySelectorAll('button').forEach(b => { const on = b.dataset.t === t; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
         $('pkgFileArea').hidden = t !== 'package';
         $('pkgCodeArea').hidden = t !== 'script';
+        $('pkgWingetArea').hidden = t !== 'winget';
+        $('pkgRebootRow').hidden = t === 'winget';
         $('pkgRebootHint').textContent = t === 'package' ? POps.t('Başarılı kurulumdan 15 saniye sonra bilgisayar yeniden başlar.') : POps.t('Komut bittikten 15 saniye sonra bilgisayar yeniden başlar.');
-        if (!up.edit) $('pkgTitle').textContent = t === 'package' ? POps.t('Paket yükle') : POps.t('Betik ekle');
+        if (!up.edit) $('pkgTitle').textContent = t === 'package' ? POps.t('Paket yükle') : t === 'winget' ? POps.t('winget paketi ekle') : POps.t('Betik ekle');
+        if (!up.edit) $('pkgSave').textContent = t === 'winget' ? POps.t('Ekle') : POps.t('Yükle ve ekle');
+        if (t === 'winget') wgSearch();
     }
+
+    // ---- winget kataloğu (paket penceresi)
+    function wgSetError(field, on) { $(field).classList.toggle('has-error', on); $(field).querySelector('input').setAttribute('aria-invalid', on ? 'true' : 'false'); }
+    function wgValidate(show) {
+        const id = $('wgId').value.trim(), ver = $('wgVer').value.trim();
+        const idOk = WG_ID.test(id), verOk = !ver || WG_VER.test(ver);
+        wgSetError('wgIdField', !!show && !idOk && (!!id || show === 'save'));
+        wgSetError('wgVerField', !!show && !verOk);
+        return idOk && verOk;
+    }
+    function renderWgCats() {
+        const sel = $('wgCat');
+        if (sel.options.length > 1 || !wg.cats.length) return;
+        wg.cats.forEach(c => sel.append(POps.el('option', { value: c.id, text: wgCatName(c.id) + ' (' + Number(c.count) + ')' })));
+        sel.value = wg.cat;
+    }
+    function wgItemHtml(p) {
+        const on = wg.sel && p.id.toLowerCase() === wg.sel.toLowerCase();
+        const note = wgText(p, 'note');
+        return `<button type="button" class="wg-item${on ? ' on' : ''}" role="option" aria-selected="${on ? 'true' : 'false'}" data-wg="${escapeHtml(p.id)}">
+            <span class="tx"><b>${escapeHtml(p.name)}</b><small>${escapeHtml([p.publisher, wgCatName(p.category)].filter(Boolean).join(' · '))}</small><small title="${escapeHtml(wgText(p, 'description'))}">${escapeHtml(wgText(p, 'description'))}</small>${note ? `<small class="note">${escapeHtml(note)}</small>` : ''}</span>
+            <span class="id">${escapeHtml(p.id)}</span></button>`;
+    }
+    function renderWgList() {
+        const box = $('wgList');
+        const items = wg.items || [];
+        if (!items.length) {
+            POps.setEmpty(box, { compact: true, icon: 'search', title: POps.t('Katalogda eşleşen paket yok'), text: POps.t('Paketin winget kimliğini aşağıya yazabilirsiniz.') });
+            return;
+        }
+        const top = box.scrollTop;
+        box.innerHTML = items.map(wgItemHtml).join('');
+        box.scrollTop = top;
+    }
+    // Arama sunucuda yapılır (Türkçe harf ve büyük/küçük harf farkı yok sayılır); yalnızca son isteğin yanıtı çizilir
+    async function wgSearch() {
+        const n = ++wg.seq;
+        const box = $('wgList');
+        if (!wg.all) POps.setLoading(box, POps.t('Katalog yükleniyor…'));
+        try {
+            await loadCatalog();
+            renderWgCats();
+            let items = wg.all;
+            if (wg.q || wg.cat) {
+                const qs = new URLSearchParams({ limit: '500' });
+                if (wg.q) qs.set('q', wg.q);
+                if (wg.cat) qs.set('category', wg.cat);
+                const r = await POps.get('/api/deploy/winget/catalog?' + qs.toString());
+                items = Array.isArray(r && r.items) ? r.items : [];
+            }
+            if (n !== wg.seq) return;
+            wg.items = items;
+            renderWgList();
+        } catch (e) {
+            if (n === wg.seq) POps.setError(box, e, { compact: true, title: POps.t('Katalog alınamadı') });
+        }
+    }
+    function wgPick(id) {
+        const p = wgInfo(id) || (wg.items || []).find(x => x.id === id);
+        if (!p) return;
+        wg.sel = p.id;
+        $('wgId').value = p.id;
+        // Ad boşsa ya da önceki seçimden geldiyse katalogdaki adla doldurulur; elle yazılmış ad korunur
+        const name = $('pkgName').value.trim();
+        if (!name || name === wg.auto) { $('pkgName').value = p.name; wg.auto = p.name; }
+        wgValidate(false);
+        renderWgList();
+    }
+    let wq = null;
+    $('wgSearch').addEventListener('input', (e) => { clearTimeout(wq); wq = setTimeout(() => { wg.q = e.target.value.trim().slice(0, 100); wgSearch(); }, 150); });
+    $('wgCat').addEventListener('change', (e) => { wg.cat = e.target.value; wgSearch(); });
+    $('wgList').addEventListener('click', (e) => { const b = e.target.closest('[data-wg]'); if (b) wgPick(b.dataset.wg); });
+    $('wgId').addEventListener('input', () => {
+        const id = $('wgId').value.trim();
+        wg.sel = wgInfo(id) ? wgInfo(id).id : '';
+        if (!$('wgList').querySelector('.empty-state, .loading-state')) renderWgList();
+        wgValidate(true);
+    });
+    $('wgVer').addEventListener('input', () => wgValidate(true));
     function showFile() {
         const f = $('pkgFile').files && $('pkgFile').files[0];
         const drop = $('pkgDrop');
@@ -659,17 +853,24 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         $('pkgProgBar').style.width = pct + '%';
         $('pkgProgTxt').textContent = pct >= 100 ? POps.t('Özet hesaplanıyor…') : POps.pct(pct);
     }
-    function openPkgModal(o, type) {
+    function openPkgModal(o, type, toRun) {
         up.edit = o || null;
+        up.toRun = !!toRun;
         $('pkgName').value = o ? o.name : '';
+        $('wgId').value = o && o.type === 'winget' ? o.wid : '';
+        $('wgVer').value = o && o.type === 'winget' ? o.wver : '';
+        $('wgSearch').value = '';
+        wg.q = ''; wg.cat = ''; wg.sel = o && o.type === 'winget' ? o.wid : ''; wg.auto = '';
+        $('wgCat').value = '';
+        wgSetError('wgIdField', false); wgSetError('wgVerField', false);
         $('pkgArgs').value = o ? o.args : '';
         $('pkgCode').value = o && o.type === 'script' ? o.code : '';
         $('pkgReboot').checked = !!(o && o.reboot);
         $('pkgFile').value = '';
         setProgress(null);
         setType(o ? o.type : (type || 'package'));
-        if (o) $('pkgTitle').textContent = o.type === 'package' ? POps.t('Paketi düzenle') : POps.t('Betiği düzenle');
-        $('pkgSave').textContent = o ? POps.t('Kaydet') : POps.t('Yükle ve ekle');
+        if (o) $('pkgTitle').textContent = o.type === 'script' ? POps.t('Betiği düzenle') : POps.t('Paketi düzenle');
+        if (o) $('pkgSave').textContent = POps.t('Kaydet');
         showFile();
         openModal('pkgModal');
     }
@@ -706,11 +907,18 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const name = $('pkgName').value.trim();
         const reboot = $('pkgReboot').checked;
         const file = $('pkgFile').files && $('pkgFile').files[0];
+        const savedId = o ? o.id : 'mod-' + Date.now();
+        if (type === 'winget' && !wgValidate('save')) { (WG_ID.test($('wgId').value.trim()) ? $('wgVer') : $('wgId')).focus(); return; }
         if (!name) { POps.toast('warning', POps.t('Bir ad verin.')); $('pkgName').focus(); return; }
         let command, meta;
         try {
             await POps.busy(btn, async () => {
-                if (type === 'package') {
+                if (type === 'winget') {
+                    // Komut yalnızca gösterim içindir; dağıtımda kimlik ve sürüm gider (bkz. runGo)
+                    const wid = $('wgId').value.trim();
+                    command = wingetCommand(wid, $('wgVer').value.trim());
+                    meta = `${wid} | winget | ${o && o.type === 'winget' ? o.by : ME}`;
+                } else if (type === 'package') {
                     let U, F, H, fileName, size, by;
                     const old = o && o.type === 'package' ? o.payload : null;
                     if (file) {
@@ -738,8 +946,8 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                     meta = buildMeta('script', '', '', reboot, o && o.type === 'script' ? o.by : ME);
                 }
                 await POps.post('/api/add_package', {
-                    id: o ? o.id : 'mod-' + Date.now(), name, type, meta, command,
-                    icon: type === 'package' ? 'package' : 'terminal', color: type === 'package' ? '#3b82f6' : '#f59e0b'
+                    id: savedId, name, type, meta, command,
+                    icon: typeIcon(type), color: type === 'package' ? '#3b82f6' : type === 'winget' ? '#10b981' : '#f59e0b'
                 });
             });
         } catch (e) {
@@ -753,8 +961,11 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         closeModal('pkgModal');
         POps.toast('success', o ? POps.t('{name} güncellendi.', { name }) : POps.t('{name} eklendi.', { name }));
         await loadPackages();
-        // Açık dağıtım penceresindeki adımlar yeni haliyle gider
+        // Açık dağıtım penceresindeki adımlar yeni haliyle gider; pencereden eklenen winget paketi zincire girer
         run.steps = run.steps.map(s => ui.pkgs.find(x => x.id === s.id) || s);
+        const added = up.toRun && ui.pkgs.find(x => x.id === savedId);
+        if (added && $('runModal').classList.contains('open')) run.steps.push(added);
+        if ($('runModal').classList.contains('open')) { renderSteps(); renderRunSum(); }
     }
     $('pkgType').addEventListener('click', (e) => { const b = e.target.closest('button[data-t]'); if (b) setType(b.dataset.t); });
     $('pkgFile').addEventListener('change', showFile);
@@ -766,6 +977,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
 
     // ================= Dağıtım penceresi =================
     const run = { steps: [], mode: 'lab', q: '', all: false, labs: new Set(), pcs: new Set(), incOff: false, sig: '' };
+    const WG_NEW = '__winget_new';   // adım listesinde "winget kataloğundan ekle…"
     const labOf = (d) => (d.lab && d.lab !== dev.UNASSIGNED ? d.lab : dev.UNASSIGNED);
     const labName = (l) => (l === dev.UNASSIGNED ? POps.t('Atanmamış') : l);
     function runLabs() {
@@ -783,11 +995,17 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     // İşlemin başlığı sunucuya Türkçe gider (veri); pencerede ve bildirimlerde stepsLabel gösterilir
     function stepsTitle() {
         if (!run.steps.length) return '';
-        return run.steps.length === 1 ? run.steps[0].name : `${run.steps[0].name} +${run.steps.length - 1} adım`;
+        return run.steps.length === 1 ? stepName(run.steps[0]) : `${stepName(run.steps[0])} +${run.steps.length - 1} adım`;
     }
     function stepsLabel() {
         if (!run.steps.length) return '';
-        return run.steps.length === 1 ? run.steps[0].name : POps.tn('{name} +{n} adım', run.steps.length - 1, { name: run.steps[0].name });
+        return run.steps.length === 1 ? stepName(run.steps[0]) : POps.tn('{name} +{n} adım', run.steps.length - 1, { name: stepName(run.steps[0]) });
+    }
+    // Seçilen hedeflerden ajanı winget'i duyurmayanlar (X-Agent-Features; eski ajan): winget adımı orada reddedilir
+    const wingetReady = (d) => Array.isArray(d.agent_features) && d.agent_features.includes('winget');
+    function wingetGap(hosts) {
+        const want = new Set(hosts);
+        return (state.devices || []).filter(d => want.has(d.hostname) && !wingetReady(d)).length;
     }
     function openRun(steps, chain) {
         run.steps = steps.slice();
@@ -805,15 +1023,16 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         $('runStepsNote').textContent = multi ? POps.t('Hedefte bu sırayla çalışır') : n ? POps.t('Zincir için adım ekleyebilirsiniz') : '';
         $('runSteps').innerHTML = n
             ? run.steps.map((s, i) => `<div class="step"><span class="n">${Number(i + 1)}</span>
-                <span class="tx"><b>${escapeHtml(s.name)}</b><small>${escapeHtml(s.kind + (s.size ? ' · ' + s.size : '') + (s.reboot ? ' · ' + POps.t('yeniden başlatır') : ''))}</small></span>
+                <span class="tx"><b>${escapeHtml(s.name)}</b><small>${escapeHtml(s.type === 'winget' ? [s.kind, s.wid, s.wver].filter(Boolean).join(' · ') : s.kind + (s.size ? ' · ' + s.size : '') + (s.reboot ? ' · ' + POps.t('yeniden başlatır') : ''))}</small></span>
                 ${multi ? `<button type="button" class="ibtn sm" data-step="up" data-i="${Number(i)}" title="${escapeHtml(POps.t('Yukarı taşı'))}" aria-label="${escapeHtml(POps.t('Yukarı taşı'))}" ${i === 0 ? 'disabled' : ''}>${POps.iconHtml('arrow-up', 'sm')}</button><button type="button" class="ibtn sm" data-step="down" data-i="${Number(i)}" title="${escapeHtml(POps.t('Aşağı taşı'))}" aria-label="${escapeHtml(POps.t('Aşağı taşı'))}" ${i === n - 1 ? 'disabled' : ''}>${POps.iconHtml('arrow-down', 'sm')}</button>` : ''}
                 <button type="button" class="ibtn sm danger" data-step="rm" data-i="${Number(i)}" title="${escapeHtml(POps.t('Adımı çıkar'))}" aria-label="${escapeHtml(POps.t('Adımı çıkar'))}">${POps.iconHtml('x', 'sm')}</button></div>`).join('')
             : `<div class="step empty">${POps.tHtml('Henüz adım yok. Aşağıdan paket ya da betik ekleyin.')}</div>`;
         const optHtml = (list) => list.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)}</option>`).join('');
-        const pk = ui.pkgs.filter(o => o.type === 'package'), sc = ui.pkgs.filter(o => o.type === 'script');
+        const pk = ui.pkgs.filter(o => o.type === 'package'), sc = ui.pkgs.filter(o => o.type === 'script'), wl = ui.pkgs.filter(o => o.type === 'winget' && o.wid);
         $('runAdd').innerHTML = `<option value="">${n ? POps.tHtml('Adım ekle…') : POps.tHtml('Paket ya da betik seçin…')}</option>`
             + (pk.length ? `<optgroup label="${escapeHtml(POps.t('Paketler'))}">${optHtml(pk)}</optgroup>` : '')
-            + (sc.length ? `<optgroup label="${escapeHtml(POps.t('Betikler'))}">${optHtml(sc)}</optgroup>` : '');
+            + (sc.length ? `<optgroup label="${escapeHtml(POps.t('Betikler'))}">${optHtml(sc)}</optgroup>` : '')
+            + `<optgroup label="${escapeHtml(POps.t('winget paketleri'))}">${optHtml(wl)}<option value="${WG_NEW}">${POps.tHtml('winget kataloğundan ekle…')}</option></optgroup>`;
     }
     function renderRunList(force) {
         const box = $('runList');
@@ -866,6 +1085,8 @@ msiexec.exe /i program.msi /qn /norestart</pre>
               + (t.off.length ? `<span class="sum"><span class="dot off"></span>${POps.tnHtml('{n} kapalı', t.off.length, null, { n: boldHtml(t.off.length) })} · ${run.incOff ? POps.tHtml('açılınca kuracak') : POps.tHtml('atlanacak')}</span>`
                 + `<label class="switch-field"><span class="switch"><input type="checkbox" id="runIncOff" ${run.incOff ? 'checked' : ''}><span></span></span>${POps.tHtml('Kapalılar açılınca kursun')}</label>` : '')
             : `<span>${POps.tHtml('Hedef seçilmedi.')}</span>`;
+        const gap = run.steps.some(s => s.type === 'winget') ? wingetGap(t.send) : 0;
+        if (gap) $('runSum').insertAdjacentHTML('beforeend', `<span class="sum"><span class="dot warn"></span>${POps.tnHtml('{n} bilgisayarın ajanı winget desteklemiyor; winget adımı orada reddedilir', gap, null, { n: boldHtml(gap) })}</span>`);
         const go = $('runGo');
         go.disabled = !n || !run.steps.length;
         go.textContent = n ? POps.tn('{n} bilgisayara dağıt', n) : POps.t('Dağıt');
@@ -887,6 +1108,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         if (again && !again.disabled) again.focus();
     });
     $('runAdd').addEventListener('change', (e) => {
+        if (e.target.value === WG_NEW) { e.target.value = ''; openPkgModal(null, 'winget', true); return; }
         const o = ui.pkgs.find(x => x.id === e.target.value);
         if (o) { run.steps.push(o); renderSteps(); renderRunSum(); }
         e.target.value = '';
@@ -927,7 +1149,9 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         try {
             r = await POps.busy(btn, () => POps.post('/api/deploy_orchestration', {
                 target_mode: 'PC', targets: t.send,
-                taskSequence: steps.map(s => ({ name: s.name, type: s.type, command: s.command })),
+                taskSequence: steps.map(s => (s.type === 'winget'
+                    ? { name: stepName(s), type: 'WINGET', winget: { id: s.wid, version: s.wver || null } }
+                    : { name: s.name, type: s.type, command: s.command })),
                 title: title.slice(0, 200), source: 'deploy', reason: reason || null
             }, { jobTitle: label + ' · ' + POps.tn('{n} bilgisayar', n) }));
         } catch (err) { POps.toast('error', POps.t('Dağıtım başlatılamadı: {error}', { error: POps.errorMessage(err) })); return; }
@@ -979,7 +1203,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     // Esc'yi görüp kapanıyordu (pops_script.js). Pencere açıkken Esc burada yakalanır.
     window.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape' || document.querySelector('.pops-dialog-overlay, .pops-menu, .palette-overlay')) return;
-        const m = ['runModal', 'pkgModal'].map(id => document.getElementById(id)).find(x => x && x.classList.contains('open'));
+        const m = ['pkgModal', 'runModal'].map(id => document.getElementById(id)).find(x => x && x.classList.contains('open'));
         if (!m) return;
         e.preventDefault();
         e.stopImmediatePropagation();

@@ -1065,6 +1065,112 @@ def test_agent_packages():
         == [], "benzer ama geçersiz adlar paket sayılmaz")
 
 
+def test_winget():
+    """winget adımı: kimlik ve sürüm doğrulaması (kabuk karakteri ve satır sonu geçmez), sabit argüman listesi, adım
+    modeli (WINGET paket ister, komut taşımaz), ajana giden ileti, X-Agent-Features ve katalog araması."""
+    print("== winget")
+    from pydantic import ValidationError
+
+    from pops import agent_version, winget, winget_catalog
+    from pops.models import OrchestrationInput, TaskSequenceItem
+
+    for good in ("Mozilla.Firefox", "Notepad++.Notepad++", "Microsoft.VCRedist.2015+.x64", "7zip.7zip",
+                 "Adobe.Acrobat.Reader.64-bit", "a_" + "b" * 126):
+        chk(winget.clean_id(good) == good, "geçerli kimlik: %s" % good[:40])
+    for bad in ("", "x", ".Mozilla", "-Firefox", "Mozilla Firefox", "Mozilla.Firefox\n", "Mozilla.Firefox\r",
+                "Mozilla.Firefox & calc", "a;b", "a|b", "a\"b", "a'b", "a`b", "$(x)", "a>b", "a%PATH%",
+                "a/b", "a\\b", "a" * 129, "Mozilla.Firefox\x00", "Mözilla.Firefox", None, 5, ["x"]):
+        try:
+            winget.clean_id(bad)
+            chk(False, "geçersiz kimlik reddedilmeli: %r" % (bad,))
+        except ValueError:
+            chk(True, "geçersiz kimlik reddedildi: %r" % (str(bad)[:30],))
+    chk(winget.clean_version(None) is None and winget.clean_version("") is None, "sürüm yok: en son sürüm")
+    for good in ("1.2", "124.0.1", "3.12.10", "1.0-beta+2", "x" * 40):
+        chk(winget.clean_version(good) == good, "geçerli sürüm: %s" % good[:20])
+    for bad in ("1.2 ", "1.2\n", "1;2", "1 2", "x" * 41, "--force", 1.2):
+        try:
+            v = winget.clean_version(bad)
+            # "--force" yalnızca izinli karakterlerden oluşur ama ayrı argüman olarak --version'ın değeridir
+            chk(bad == "--force" and v == "--force", "sürüm %r" % (bad,))
+        except ValueError:
+            chk(True, "geçersiz sürüm reddedildi: %r" % (str(bad)[:20],))
+
+    args = winget.arguments("Mozilla.Firefox", "124.0")
+    chk(args == ["install", "--id", "Mozilla.Firefox", "-e", "--silent", "--scope", "machine",
+                 "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
+                 "--version", "124.0"], "argüman listesi sözleşmedeki gibi (%s)" % args)
+    chk(winget.arguments("7zip.7zip")[-1] == "--disable-interactivity", "sürümsüz: --version yok")
+    chk(winget.command_line("7zip.7zip").startswith("winget install --id 7zip.7zip -e --silent"), "okunur komut")
+
+    task = {"id": 7, "payload": winget.payload("Mozilla.Firefox", None)}
+    chk(winget.message(task, "admin") == {"action": "winget_install", "task_id": 7, "id": "Mozilla.Firefox",
+                                          "version": None, "requested_by": "admin"}, "ajana giden ileti")
+    for broken in ('{"id": "a b"}', '{"id": "Mozilla.Firefox", "version": "1 2"}', "[]", "null", None, "{"):
+        try:
+            winget.message({"id": 8, "payload": broken}, "admin")
+            chk(False, "bozuk paket bilgisi gönderilmemeli: %r" % (broken,))
+        except (ValueError, TypeError):
+            chk(True, "bozuk paket bilgisi gönderilmedi: %r" % (broken,))
+
+    ok = TaskSequenceItem(name="Firefox", type="WINGET", winget={"id": "Mozilla.Firefox", "version": None})
+    chk(ok.is_winget and ok.winget.id == "Mozilla.Firefox" and ok.command is None, "WINGET adımı")
+    chk(TaskSequenceItem(name="x", type="winget", winget={"id": "7zip.7zip"}).is_winget,
+        "tür büyük/küçük harf duyarsız")
+    for bad, why in (
+        ({"type": "WINGET"}, "paketsiz WINGET"),
+        ({"type": "WINGET", "winget": {"id": "Mozilla.Firefox"}, "command": "calc"}, "komutlu WINGET"),
+        ({"type": "WINGET", "winget": {"id": "Mozilla.Firefox & calc"}}, "kabuk karakterli kimlik"),
+        ({"type": "WINGET", "winget": {"id": "Mozilla.Firefox", "version": "1.0 & calc"}}, "kabuk karakterli sürüm"),
+        ({"type": "WINGET", "winget": {"id": "Mozilla.Firefox", "args": "--force"}}, "tanınmayan paket alanı"),
+        ({"type": "CMD", "command": "echo", "winget": {"id": "Mozilla.Firefox"}}, "winget alanlı CMD"),
+        ({"type": "CMD"}, "komutsuz CMD"),
+    ):
+        try:
+            TaskSequenceItem.model_validate(dict({"name": "t"}, **bad))
+            chk(False, "%s reddedilmeli" % why)
+        except ValidationError:
+            chk(True, "%s reddedildi" % why)
+    chk(TaskSequenceItem(name="t", type="CMD", command="").command == "", "boş komutlu CMD eskisi gibi geçer")
+    chk(len(OrchestrationInput.model_validate({"target_mode": "pc", "targets": ["HW-1"], "taskSequence": [
+        {"name": "a", "type": "package", "command": "x"}, {"name": "b", "type": "WINGET", "winget": {"id": "Git.Git"}},
+    ]}).task_sequence) == 2, "karışık zincir")
+
+    chk(agent_version.features("winget") == ["winget"], "X-Agent-Features: winget")
+    chk(agent_version.features(" Winget , foo_bar,winget,,bad name,x;y,") == ["foo_bar", "winget"],
+        "özellik listesi temizlenir")
+    chk(agent_version.features(None) == [] and agent_version.features("") == [], "başlık yoksa boş")
+    chk(len(agent_version.features(",".join("f%d" % i for i in range(100)))) == 32, "en çok 32 özellik")
+    chk(winget.supports(["winget"]) and not winget.supports(None) and not winget.supports([]), "özellik denetimi")
+
+    ids = [p["id"] for p in winget_catalog.PACKAGES]
+    chk(len(ids) == len(set(ids)) and len(ids) >= 60, "katalog: %d tekil paket" % len(ids))
+    bad_entries = []
+    for p in winget_catalog.PACKAGES:
+        try:
+            winget.clean_id(p["id"])
+        except ValueError:
+            bad_entries.append(p["id"])
+        if p["category"] not in winget.CATEGORY_LABELS or not all(p.get(k) for k in (
+                "name", "publisher", "description", "description_en")):
+            bad_entries.append(p["id"])
+    chk(not bad_entries, "katalog kayıtları eksiksiz ve kimlikleri geçerli (%s)" % bad_entries)
+    r = winget.search("TARAYICI")
+    chk(r["matched"] >= 4 and all(p["category"] == "browser" for p in r["items"]),
+        "Türkçe büyük harf / ı farkı yok sayılır (%d)" % r["matched"])
+    chk([p["id"] for p in winget.search("firefox")["items"]][:2] == ["Mozilla.Firefox", "Mozilla.Firefox.tr"],
+        "adı aramayla başlayan önce")
+    chk(winget.search("mozilla.firefox")["items"][0]["id"] == "Mozilla.Firefox", "tam kimlik en üstte")
+    chk(winget.search("python dil")["matched"] == 2, "sözcüklerin hepsi geçmeli")
+    r = winget.search("", "education")
+    chk(r["items"] and all(p["category"] == "education" for p in r["items"]) and r["total"] == len(ids),
+        "kategori süzgeci")
+    chk(sum(c["count"] for c in r["categories"]) == len(ids), "kategori sayıları")
+    chk(winget.search("yok-boyle-bir-paket")["items"] == [], "eşleşme yoksa boş")
+    chk(len(winget.search("", limit=3)["items"]) == 3, "limit")
+    chk(-1978335135 in winget.OK_EXIT_CODES and 0 in winget.OK_EXIT_CODES, "zaten kurulu = başarı")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -1084,6 +1190,7 @@ def main():
     test_exam()
     test_agent_platform()
     test_agent_packages()
+    test_winget()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

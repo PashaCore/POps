@@ -19,15 +19,15 @@
     },
     "capability": {
       "type": "string",
-      "description": "terminal, vision, patches, wol, files or exam (Windows agent); terminal, vision, quarantine, patches or wol (Linux agent)."
+      "description": "terminal, vision, patches, wol, files or exam (Windows agent); terminal, vision, quarantine, patches or wol (Linux agent); deploy for a `winget_install` refused because the lab's deploy module is off."
     },
     "action": {
       "type": "string",
-      "description": "What was refused: a server action (execute, start_vision_session, start_stream, wake_peer, scan_updates, install_updates, file_push, file_pull, exam_mode; lockdown and unlock from the Linux agent), a remote_input sub-command (get_thumbnail, set_fps, remote_input) or vision_tunnel (the tray asked for the Vision channel)."
+      "description": "What was refused: a server action (execute, winget_install, start_vision_session, start_stream, wake_peer, scan_updates, install_updates, file_push, file_pull, exam_mode; lockdown and unlock from the Linux agent), a remote_input sub-command (get_thumbnail, set_fps, remote_input) or vision_tunnel (the tray asked for the Vision channel)."
     },
     "task_id": {
       "type": "integer",
-      "description": "Only for a refused `execute`."
+      "description": "Only for a refused `execute` or `winget_install`."
     },
     "transfer_id": {
       "type": "string",

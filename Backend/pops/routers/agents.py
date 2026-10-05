@@ -27,13 +27,15 @@ from pops.manager import manager
 from pops.taskqueue import process_queue
 from pops.dna import check_known_device, reconcile_device
 from pops.notify import notify
-from pops import agent_health, agent_version as agent_version_mod, bypass, heartbeats, metrics, update_notice
+from pops import agent_health, agent_version as agent_version_mod, bypass, heartbeats, metrics, update_notice, winget
 from pops import update_tracking
 from pops.routers import files as file_transfer
 
 log = logging.getLogger("pops.agents")
-# Ajanın çalıştırmadığı komutun sonucu bu önekle başlar (Agent CommandExecutionPolicy.DisabledMessage)
+# Ajanın çalıştırmadığı komutun sonucu bu önekle başlar (Agent CommandExecutionPolicy.DisabledMessage). Çıkış kodu
+# eski ajanlarda yoktur, 0.1.13+ ajanlarda -5 (reddedildi); winget_install'da -7 = bilgisayarda winget yok.
 REFUSED_PREFIX = "[REDDEDİLDİ]"
+REFUSED_EXIT_CODES = (None, winget.EXIT_DENIED, winget.EXIT_UNAVAILABLE)
 router = APIRouter()
 
 
@@ -167,7 +169,9 @@ async def reconcile_quarantine(
 # yalnızca bunu duyuran sunucuya gönderir). file_transfer: file_push / file_pull komutları ve file_result iletisi
 # (bkz. routers/files.py); ajan dosya aktarımını yalnızca bunu duyuran sunucudan kabul edebilir. exam_mode: sınav
 # modu gönderilir ve exam_state okunur (pops/exams.py).
-SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress", "file_transfer", "exam_mode")
+# winget: sunucu winget görevlerini "winget_install" ile gönderir ve ajanın bağlanırken X-Agent-Features ile duyurduğu
+# özellikleri okur (bkz. pops/winget.py); görev yalnızca "winget" duyuran ajana gider.
+SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress", "file_transfer", "exam_mode", "winget")
 # Ajan protokolünün sürümü (docs/protocol/README.md): yalnızca uyumsuz bir değişiklikte artar. Yeni alan ya da yeni
 # mesaj sürümü değiştirmez; sunucunun yeni davranışları SERVER_FEATURES ile duyurulur.
 PROTOCOL_VERSION = 1
@@ -507,6 +511,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
     agent_version = websocket.headers.get("X-Agent-Version", "unknown")
     platform_header = websocket.headers.get("X-Agent-Platform")
     platform = agent_platform(platform_header)
+    agent_features = agent_version_mod.features(websocket.headers.get("X-Agent-Features"))
     connected_at = time.monotonic()
     close_reason = "bilinmiyor"
 
@@ -553,20 +558,24 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             task_id = pld.get("task_id")
             if not isinstance(task_id, int) or isinstance(task_id, bool):
                 return
-            # Ajanın ret sonucu ("[REDDEDİLDİ] …", eski ajanlarda çıkış kodsuz) görevi "Completed" yapmasın: ayrıca
-            # gelen capability_denied iletisi kaybolsa ya da sunucu eskiyse de görev "Denied" olur.
+            # Ajanın ret sonucu ("[REDDEDİLDİ] …", eski ajanlarda çıkış kodsuz, yenilerde -5; winget yoksa -7) görevi
+            # "Completed" ya da "Failed" yapmasın: ayrıca gelen capability_denied iletisi kaybolsa ya da sunucu eskiyse
+            # de görev "Denied" olur.
             output = pld.get("output")
-            refused = exit_code is None and isinstance(output, str) and output.startswith(REFUSED_PREFIX)
-            if refused:
+            refused = (exit_code in REFUSED_EXIT_CODES and isinstance(output, str)
+                       and output.startswith(REFUSED_PREFIX))
+            if refused and exit_code is None:
                 exit_code = -5
+            # winget görevinde "zaten kurulu" ve "kuruldu, yeniden başlatma bekliyor" kodları da başarıdır
             stored = await execute_query(
                 "UPDATE tasks SET output = $1, exit_code = $4, status = CASE "
                 "WHEN status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out') THEN "
-                "(CASE WHEN $5 THEN 'Denied' WHEN $4::int IS NULL OR $4::int = 0 THEN 'Completed' ELSE 'Failed' END) "
+                "(CASE WHEN $5 THEN 'Denied' WHEN $4::int IS NULL OR $4::int = 0 THEN 'Completed' "
+                "WHEN kind = $6 AND $4::int = ANY($7::int[]) THEN 'Completed' ELSE 'Failed' END) "
                 "ELSE status END "
                 "WHERE id = $2 AND target_pc = $3 "
                 "AND status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out', 'Cancelled') RETURNING id",
-                (output, task_id, active_hwid, exit_code, refused),
+                (output, task_id, active_hwid, exit_code, refused, winget.KIND, list(winget.OK_EXIT_CODES)),
                 fetch=True,
             )
             # Sonuç veritabanına yazıldı: 0.1.14+ ajan sonucu bu onaya kadar saklar ve yeniden gönderir (aynı sonucun
@@ -720,11 +729,13 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 ),
             )
 
+            # Sürüm ve ajanın duyurduğu özellikler (X-Agent-Features, ör. winget) her bağlantıda yazılır: kuyruk winget
+            # görevini yalnızca o özelliği duyuran ajana gönderir. Başlığı göndermeyen ajanda boş liste.
             await execute_query(
-                "INSERT INTO agent_versions (pc_name, version, last_update) "
-                "VALUES ($1, $2, $3) ON CONFLICT (pc_name) DO UPDATE "
-                "SET version=$2, last_update=$3",
-                (active_hwid, agent_version, now),
+                "INSERT INTO agent_versions (pc_name, version, last_update, features) "
+                "VALUES ($1, $2, $3, $4) ON CONFLICT (pc_name) DO UPDATE "
+                "SET version=$2, last_update=$3, features=$4",
+                (active_hwid, agent_version, now, agent_features),
             )
 
             if new_secret:
@@ -770,6 +781,9 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 except Exception:
                     pass
                 return
+            await execute_query(
+                "UPDATE agent_versions SET features = $2 WHERE pc_name = $1", (active_hwid, agent_features)
+            )
             manager.active_agents[active_hwid] = websocket
             await _send_server_info(websocket)
             await _sync_exam(active_hwid)
