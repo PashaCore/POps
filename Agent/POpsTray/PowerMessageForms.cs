@@ -110,7 +110,17 @@ public partial class MainForm
             && id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out taskId) && taskId > 0;
     }
 
-    private static string Shorten(string text, int max) => text.Length <= max ? text : text.Substring(0, max);
+    // Sınır servisteki gibi Unicode karakteriyle sayılır (emoji 1 karakter); vekil çifti bölünmez
+    private static string Shorten(string text, int max)
+    {
+        int count = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])) i++;
+            if (++count == max) return text.Substring(0, i + 1);
+        }
+        return text;
+    }
 }
 
 // Geri sayım metinleri ("Bilgisayar 60 sn içinde yeniden başlatılacak")

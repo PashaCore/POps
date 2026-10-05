@@ -166,6 +166,23 @@ namespace POps.Tests.Agent
         private static string Message(int taskId, string text, bool requiresAck, string extra = "") =>
             $"{{\"action\":\"user_message\",\"task_id\":{taskId},\"title\":\"Duyuru\",\"text\":{JsonSerializer.Serialize(text)},\"style\":\"info\",\"requires_ack\":{(requiresAck ? "true" : "false")}{extra},\"requested_by\":\"Pasha\"}}";
 
+        // Sunucunun gönderdiği biçimde geçerli bir mesaj; field verilirse o alan value ile değiştirilir (value null: alan yok)
+        private static string MessageWith(int taskId, string field, string value)
+        {
+            var fields = new List<(string Name, string Json)>
+            {
+                ("action", "\"user_message\""), ("task_id", taskId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                ("title", "\"Duyuru\""), ("text", "\"Merhaba\""), ("style", "\"info\""), ("requires_ack", "false"), ("requested_by", "\"Pasha\""),
+            };
+            int index = fields.FindIndex(f => f.Name == field);
+            if (index >= 0)
+            {
+                if (value == null) fields.RemoveAt(index);
+                else fields[index] = (field, value);
+            }
+            return "{" + string.Join(",", fields.Select(f => $"\"{f.Name}\":{f.Json}")) + "}";
+        }
+
         // ------------------------------------------------------------------ özellik duyurusu
 
         [Fact]
@@ -195,14 +212,22 @@ namespace POps.Tests.Agent
 
         [Theory]
         [InlineData("{\"action\":\"power\",\"task_id\":7}")]
-        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"hibernate\"}")]
-        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"Shutdown\"}")]
-        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":1}")]
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"delay\":0}")]
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"hibernate\",\"delay\":0}")]
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"Shutdown\",\"delay\":0}")]
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":1,\"delay\":0}")]
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":null,\"delay\":0}")]
+        // delay zorunlu (şema): yok ya da null da geçersiz
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\"}")]
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\",\"delay\":null}")]
         [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\",\"delay\":601}")]
         [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\",\"delay\":-1}")]
         [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\",\"delay\":1.5}")]
         [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\",\"delay\":\"60\"}")]
-        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\",\"message\":42}")]
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\",\"delay\":true}")]
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\",\"delay\":0,\"message\":42}")]
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\",\"delay\":0,\"message\":[\"a\"]}")]
+        [InlineData("{\"action\":\"power\",\"task_id\":7,\"op\":\"restart\",\"delay\":0,\"message\":\"\\ud800\"}")]
         public async Task Power_InvalidFields_AreRefusedWithoutCapabilityDenied(string json)
         {
             await Handle(json);
@@ -240,19 +265,32 @@ namespace POps.Tests.Agent
         }
 
         [Theory]
-        [InlineData("{\"action\":\"user_message\",\"task_id\":7,\"title\":\"t\"}")]
-        [InlineData("{\"action\":\"user_message\",\"task_id\":7,\"text\":null}")]
-        [InlineData("{\"action\":\"user_message\",\"task_id\":7,\"text\":\"   \"}")]
-        [InlineData("{\"action\":\"user_message\",\"task_id\":7,\"text\":\"\\u0007\\u0001\"}")]
-        [InlineData("{\"action\":\"user_message\",\"task_id\":7,\"text\":5}")]
-        [InlineData("{\"action\":\"user_message\",\"task_id\":7,\"text\":\"x\",\"title\":5}")]
-        [InlineData("{\"action\":\"user_message\",\"task_id\":7,\"text\":\"x\",\"style\":\"error\"}")]
-        [InlineData("{\"action\":\"user_message\",\"task_id\":7,\"text\":\"x\",\"style\":\"INFO\"}")]
-        [InlineData("{\"action\":\"user_message\",\"task_id\":7,\"text\":\"x\",\"requires_ack\":\"yes\"}")]
-        [InlineData("{\"action\":\"user_message\",\"task_id\":7,\"text\":\"x\",\"requires_ack\":1}")]
-        public async Task UserMessage_InvalidFields_AreRefusedWithoutCapabilityDenied(string json)
+        // Zorunlu alanlar (şema): title, text, style, requires_ack; yok ya da null geçersiz
+        [InlineData("title", null)]
+        [InlineData("title", "null")]
+        [InlineData("text", null)]
+        [InlineData("text", "null")]
+        [InlineData("style", null)]
+        [InlineData("style", "null")]
+        [InlineData("requires_ack", null)]
+        [InlineData("requires_ack", "null")]
+        // Tür, boyut ve değer
+        [InlineData("title", "\"\"")]
+        [InlineData("title", "5")]
+        [InlineData("title", "\"\\u200B\\u202E \\u0007\"")]
+        [InlineData("text", "\"\"")]
+        [InlineData("text", "\"   \"")]
+        [InlineData("text", "\"\\u0007\\u0001\\uFEFF\"")]
+        [InlineData("text", "\"\\n\\n\"")]
+        [InlineData("text", "5")]
+        [InlineData("text", "\"\\ud800\"")]
+        [InlineData("style", "\"error\"")]
+        [InlineData("style", "\"INFO\"")]
+        [InlineData("requires_ack", "\"yes\"")]
+        [InlineData("requires_ack", "1")]
+        public async Task UserMessage_InvalidFields_AreRefusedWithoutCapabilityDenied(string field, string value)
         {
-            await Handle(json);
+            await Handle(MessageWith(7, field, value));
             JsonElement result = Assert.Single(Results(7));
             Assert.Equal(CommandRunner.ExitDenied, result.GetProperty("exit_code").GetInt32());
             Assert.StartsWith("[REDDEDİLDİ] Geçersiz mesaj", result.GetProperty("output").GetString());
@@ -264,23 +302,59 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task UserMessage_TitleAndTextLimits_CountUnicodeCharacters()
         {
-            await Handle($"{{\"action\":\"user_message\",\"task_id\":11,\"title\":\"{new string('b', 81)}\",\"text\":\"x\"}}");
-            await Handle($"{{\"action\":\"user_message\",\"task_id\":12,\"text\":\"{new string('c', 1001)}\"}}");
+            await Handle(MessageWith(11, "title", $"\"{new string('b', 81)}\""));
+            await Handle(MessageWith(12, "text", $"\"{new string('c', 1001)}\""));
             Assert.Equal(CommandRunner.ExitDenied, Assert.Single(Results(11)).GetProperty("exit_code").GetInt32());
             Assert.Equal(CommandRunner.ExitDenied, Assert.Single(Results(12)).GetProperty("exit_code").GetInt32());
 
             string title = string.Concat(Enumerable.Repeat("ğ😀", 40));   // 80 karakter, 120 UTF-16 birimi
-            await Handle($"{{\"action\":\"user_message\",\"task_id\":13,\"title\":\"{title}\",\"text\":\"{new string('ş', 1000)}\"}}");
+            await Handle(MessageWith(13, "title", $"\"{title}\"").Replace("\"Merhaba\"", $"\"{new string('ş', 1000)}\"", StringComparison.Ordinal));
             Assert.Equal(UserMessages.ShownOutput, Assert.Single(Results(13)).GetProperty("output").GetString());
+            JsonElement shown = Decode(Assert.Single(Tray(UserMessages.ShowPrefix)), UserMessages.ShowPrefix);
+            Assert.Equal(title, shown.GetProperty("title").GetString());
+            Assert.Equal(1000, shown.GetProperty("text").GetString().Length);
         }
 
         [Fact]
-        public void TextCleaning_StripsControlAndDirectionCharacters()
+        public void TextCleaning_FollowsTheServerRules()
         {
-            Assert.Equal("Satır 1\nSatır 2 sekme", SessionTasks.Clean("Satır 1\r\nSatır 2\tsekme\u0007", keepLineBreaks: true));
-            Assert.Equal("Başlık iki satır", SessionTasks.Clean("Başlık\niki ‮satır\u0000", keepLineBreaks: false));
-            Assert.Equal("abc", SessionTasks.Clean("⁦a⁩b‪c\u001B", keepLineBreaks: true));
+            // Metin: \r\n ve \r -> \n, sekme -> boşluk, kontrol karakterleri atılır, satır sonundaki boşluk silinir,
+            // art arda en çok bir boş satır
+            Assert.Equal("Satır 1\nSatır 2 sekme\nSatır 3", SessionTasks.Clean("Satır 1\r\nSatır 2\tsekme\u0007\rSatır 3", keepLineBreaks: true));
+            Assert.Equal("a\n\nb\n\nc", SessionTasks.Clean("a   \n\n\n\n  \nb\n\nc", keepLineBreaks: true));
+            Assert.Equal("a\nb", SessionTasks.Clean("\n\n a\u2028b \n\n", keepLineBreaks: true));
+            // Tek satır (başlık, güç notu): her satır sonu boşluk olur
+            Assert.Equal("Başlık iki satır", SessionTasks.Clean("Başlık\r\niki \u202Esatır\u0000", keepLineBreaks: false));
+            Assert.Equal("a b c d", SessionTasks.Clean("a\nb\rc\u2029d", keepLineBreaks: false));
+            // Yön, sıfır genişlik ve görünmez biçim karakterleri, BOM, C1 kontrol karakterleri
+            Assert.Equal("abcdefghij", SessionTasks.Clean("\u2066a\u2069b\u202Ac\u200Ed\u200Fe\u200Bf\u200Cg\u200Dh\u2060i\uFEFF\u0085j\u001B\u2063", keepLineBreaks: true));
+            // Görünen karakterlere dokunulmaz (Türkçe, emoji, birleşik karakter)
+            Assert.Equal("Çğİöşü 😀 e\u0301", SessionTasks.Clean("Çğİöşü 😀 e\u0301", keepLineBreaks: false));
             Assert.Equal(2, SessionTasks.Length("ğ😀"));
+        }
+
+        [Fact]
+        public async Task Power_NoteIsOneLine_AndNullMeansNoNote()
+        {
+            UseManualDelay();
+            await Handle(Power(14, "restart", 60, ",\"message\":\"Ders\\nbitti\\u200B\\u202E kaydedin\\r\\n\""));
+            Assert.Equal("Ders bitti kaydedin", Decode(Assert.Single(Tray(PowerActions.CountdownPrefix)), PowerActions.CountdownPrefix).GetProperty("message").GetString());
+            await Handle("{\"action\":\"cancel_task\",\"task_id\":14}");
+            await WaitUntilPowerIdle();
+            lock (_timeline) _tray.Clear();
+
+            await Handle(Power(15, "restart", 60, ",\"message\":null"));
+            Assert.Equal("", Decode(Assert.Single(Tray(PowerActions.CountdownPrefix)), PowerActions.CountdownPrefix).GetProperty("message").GetString());
+            Assert.Empty(Results(15));
+        }
+
+        [Fact]
+        public async Task UserMessage_TextKeepsLineBreaks_TitleIsOneLine()
+        {
+            await Handle(MessageWith(16, "title", "\"Sınav\\nbaşlıyor\\u202E\"").Replace("\"Merhaba\"", "\"Kaydedin.\\r\\n\\r\\n\\r\\nSınav 10 dakika sonra.\\u200B\"", StringComparison.Ordinal));
+            JsonElement shown = Decode(Assert.Single(Tray(UserMessages.ShowPrefix)), UserMessages.ShowPrefix);
+            Assert.Equal("Sınav başlıyor", shown.GetProperty("title").GetString());
+            Assert.Equal("Kaydedin.\n\nSınav 10 dakika sonra.", shown.GetProperty("text").GetString());
         }
 
         // ------------------------------------------------------------------ yetenek kapalı
@@ -319,9 +393,10 @@ namespace POps.Tests.Agent
             Assert.False(AgentCapabilities.PowerEnabled);
             Assert.False(AgentCapabilities.MessageEnabled);
             Assert.True(AgentCapabilities.TerminalEnabled);
-            // capabilities mesajına sunucu şemasında olmayan alan eklenmez
+            // capabilities mesajı bugünkü ajanın örneğiyle (capabilities.files.json) aynı alanları taşır
             JsonElement status = Sent("capabilities").Last();
-            Assert.Equal(new[] { "server_ca", "terminal_enabled", "type", "vision_enabled" }, status.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal));
+            JsonElement example = JsonDocument.Parse(File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot(), "docs", "protocol", "examples", "agent-to-server", "capabilities.files.json"))).RootElement;
+            Assert.Equal(example.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal), status.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal));
 
             // Sunucu yeniden açamaz; kapatma diske yazıldı
             await Handle("{\"action\":\"set_capabilities\",\"power_enabled\":true}");
@@ -400,16 +475,18 @@ namespace POps.Tests.Agent
             Assert.Empty(_audit);
         }
 
+        // -6 sunucuda yalnızca "kimse oturum açmamış" demektir: kullanıcı varken tepsi yoksa ajan hatası (-3, Failed)
         [Fact]
-        public async Task UserMessage_UserButNoTray_IsMinusSixWithTheReason()
+        public async Task UserMessage_UserButNoTray_IsAnAgentErrorNotMinusSix()
         {
             _trayConnected = false;
             await Handle(Message(34, "Merhaba", false));
             JsonElement result = Assert.Single(Results(34));
-            Assert.Equal(SessionTasks.ExitNoUser, result.GetProperty("exit_code").GetInt32());
-            Assert.StartsWith(SessionTasks.NoUserOutput, result.GetProperty("output").GetString());
-            Assert.Contains("tepsi", result.GetProperty("output").GetString());
+            Assert.Equal(CommandRunner.ExitAgentError, result.GetProperty("exit_code").GetInt32());
+            Assert.Equal(UserMessages.NoTrayOutput, result.GetProperty("output").GetString());
+            Assert.StartsWith("[HATA]", result.GetProperty("output").GetString());
             Assert.Empty(_tray);
+            Assert.Empty(_audit);
         }
 
         // ------------------------------------------------------------------ güç: geri sayım
@@ -451,7 +528,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task Power_WithoutDelay_ActsAtOnce_WithoutCountdown()
         {
-            await Handle("{\"action\":\"power\",\"task_id\":42,\"op\":\"logoff\"}");
+            await Handle("{\"action\":\"power\",\"task_id\":42,\"op\":\"logoff\",\"delay\":0,\"message\":null}");
             await WaitUntilPowerIdle();
             Assert.Empty(Tray(PowerActions.CountdownPrefix));
             Assert.Empty(Delays());
@@ -652,12 +729,13 @@ namespace POps.Tests.Agent
             Assert.Empty(Audits(1141));
         }
 
+        // requested_by isteğe bağlıdır (şemada zorunlu değil)
         [Fact]
-        public async Task UserMessage_DefaultsForMissingOptionalFields()
+        public async Task UserMessage_WithoutRequestedBy_IsShown()
         {
-            await Handle("{\"action\":\"user_message\",\"task_id\":62,\"text\":\"Merhaba\"}");
+            await Handle(MessageWith(62, "requested_by", null));
             JsonElement shown = Decode(Assert.Single(Tray(UserMessages.ShowPrefix)), UserMessages.ShowPrefix);
-            Assert.Equal("", shown.GetProperty("title").GetString());
+            Assert.Equal("Duyuru", shown.GetProperty("title").GetString());
             Assert.Equal("info", shown.GetProperty("style").GetString());
             Assert.False(shown.GetProperty("requires_ack").GetBoolean());
             Assert.Equal(UserMessages.ShownOutput, Assert.Single(Results(62)).GetProperty("output").GetString());

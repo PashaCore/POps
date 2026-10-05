@@ -15,8 +15,10 @@ namespace POpsAgent
 {
     public enum PowerOperation { Shutdown, Restart, Logoff, Lock }
 
-    // {"action":"power","task_id":n,"op":"shutdown"|"restart"|"logoff"|"lock","delay":0..600,"message":"...","requested_by":"..."}
-    // Sunucu doğrulamış olsa da her alan burada yeniden denetlenir.
+    // {"action":"power","task_id":n,"op":"shutdown"|"restart"|"logoff"|"lock","delay":0..600,"message":"..."|null,"requested_by":"..."}
+    // Sunucunun şeması (docs/protocol/server-to-agent/power.json): op ve delay zorunlu; message en çok 200 karakterlik
+    // tek satırlık metin ya da null (sunucu her zaman gönderir; yoksa da not yok sayılır). Sunucu doğrulamış olsa da her
+    // alan burada yeniden denetlenir.
     public sealed class PowerRequest
     {
         public const int MaxDelaySeconds = 600;
@@ -48,8 +50,7 @@ namespace POpsAgent
         {
             request = null;
             PowerOperation operation;
-            string? op = root.TryGetProperty("op", out JsonElement opValue) && opValue.ValueKind == JsonValueKind.String ? opValue.GetString() : null;
-            switch (op)
+            switch (SessionTasks.RequiredString(root, "op").Value)
             {
                 case "shutdown": operation = PowerOperation.Shutdown; break;
                 case "restart": operation = PowerOperation.Restart; break;
@@ -59,19 +60,20 @@ namespace POpsAgent
             }
 
             int delay = 0;
-            if (root.TryGetProperty("delay", out JsonElement delayValue) && delayValue.ValueKind != JsonValueKind.Null
-                && (delayValue.ValueKind != JsonValueKind.Number || !delayValue.TryGetInt32(out delay) || delay < 0 || delay > MaxDelaySeconds))
+            if (!root.TryGetProperty("delay", out JsonElement delayValue) || delayValue.ValueKind != JsonValueKind.Number
+                || !delayValue.TryGetInt32(out delay) || delay < 0 || delay > MaxDelaySeconds)
                 return $"delay 0 ile {MaxDelaySeconds} arasında bir tamsayı (saniye) olmalı";
 
             var (messageValid, message) = SessionTasks.OptionalString(root, "message");
             if (!messageValid || (message != null && SessionTasks.Length(message) > MaxMessageLength))
-                return $"message en çok {MaxMessageLength} karakterlik bir metin olmalı";
+                return $"message en çok {MaxMessageLength} karakterlik bir metin ya da null olmalı";
 
             request = new PowerRequest
             {
                 TaskId = taskId,
                 Operation = operation,
                 DelaySeconds = delay,
+                // Tek satır: satır sonları boşluk olur; temizlikten sonra boş kalan not yok sayılır
                 Message = message == null ? "" : SessionTasks.Clean(message, keepLineBreaks: false),
                 RequestedBy = SessionTasks.RequestedBy(root),
             };

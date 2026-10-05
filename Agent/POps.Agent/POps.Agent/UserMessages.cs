@@ -11,9 +11,10 @@ using System.Threading.Tasks;
 
 namespace POpsAgent
 {
-    // {"action":"user_message","task_id":n,"title":"<=80","text":"<=1000","style":"info"|"warning","requires_ack":bool,"requested_by":"..."}
-    // Sunucu doğrulamış olsa da her alan burada yeniden denetlenir. title, style ve requires_ack isteğe bağlıdır (boş
-    // başlık, "info", false); varsa türü ve değeri doğru olmalıdır.
+    // {"action":"user_message","task_id":n,"title":"1..80","text":"1..1000","style":"info"|"warning","requires_ack":bool,"requested_by":"..."}
+    // Sunucunun şeması (docs/protocol/server-to-agent/user_message.json): title, text, style ve requires_ack zorunlu.
+    // Sunucu doğrulamış olsa da her alan burada yeniden denetlenir; temizlikten sonra boş kalan başlık ya da metin de
+    // geçersizdir (sunucu da kabul etmez).
     public sealed class UserMessageRequest
     {
         public const int MaxTitleLength = 80;
@@ -31,34 +32,32 @@ namespace POpsAgent
         public static string? Parse(JsonElement root, int taskId, out UserMessageRequest? request)
         {
             request = null;
-            var (titleValid, title) = SessionTasks.OptionalString(root, "title");
-            if (!titleValid || (title != null && SessionTasks.Length(title) > MaxTitleLength))
-                return $"title en çok {MaxTitleLength} karakterlik bir metin olmalı";
+            var (titleValid, title) = SessionTasks.RequiredString(root, "title");
+            if (!titleValid || title == null || title.Length == 0 || SessionTasks.Length(title) > MaxTitleLength)
+                return $"title 1 ile {MaxTitleLength} karakter arasında bir metin olmalı";
+            string cleanTitle = SessionTasks.Clean(title, keepLineBreaks: false);
+            if (cleanTitle.Length == 0) return "title boş";
 
-            string? text = root.TryGetProperty("text", out JsonElement textValue) && textValue.ValueKind == JsonValueKind.String ? textValue.GetString() : null;
-            if (text == null || SessionTasks.Length(text) > MaxTextLength)
-                return $"text en çok {MaxTextLength} karakterlik bir metin olmalı";
+            var (textValid, text) = SessionTasks.RequiredString(root, "text");
+            if (!textValid || text == null || text.Length == 0 || SessionTasks.Length(text) > MaxTextLength)
+                return $"text 1 ile {MaxTextLength} karakter arasında bir metin olmalı";
             string cleanText = SessionTasks.Clean(text, keepLineBreaks: true);
             if (cleanText.Length == 0) return "text boş";
 
-            var (styleValid, style) = SessionTasks.OptionalString(root, "style");
-            if (!styleValid || (style != null && style != "info" && style != "warning"))
+            string? style = SessionTasks.RequiredString(root, "style").Value;
+            if (style != "info" && style != "warning")
                 return "style info ya da warning olmalı";
 
-            bool requiresAck = false;
-            if (root.TryGetProperty("requires_ack", out JsonElement ack) && ack.ValueKind != JsonValueKind.Null)
-            {
-                if (ack.ValueKind != JsonValueKind.True && ack.ValueKind != JsonValueKind.False) return "requires_ack true ya da false olmalı";
-                requiresAck = ack.ValueKind == JsonValueKind.True;
-            }
+            if (!root.TryGetProperty("requires_ack", out JsonElement ack) || (ack.ValueKind != JsonValueKind.True && ack.ValueKind != JsonValueKind.False))
+                return "requires_ack true ya da false olmalı";
 
             request = new UserMessageRequest
             {
                 TaskId = taskId,
-                Title = title == null ? "" : SessionTasks.Clean(title, keepLineBreaks: false),
+                Title = cleanTitle,
                 Text = cleanText,
-                Style = style ?? "info",
-                RequiresAck = requiresAck,
+                Style = style,
+                RequiresAck = ack.ValueKind == JsonValueKind.True,
                 RequestedBy = SessionTasks.RequestedBy(root),
             };
             return null;
@@ -67,8 +66,9 @@ namespace POpsAgent
 
     // Kullanıcıya mesaj: tepsi başlık, metin ve simgeyle (info/warning) üstte bir pencere gösterir.
     //  * Sıra: task_id -> yetenek (message_enabled; kapalıysa -5 + capability_denied) -> alanlar (geçersizse -5, yalnızca
-    //    result) -> tepsi bağlı mı (değilse -6: konsolda kullanıcı yoksa "oturum açık kullanıcı yok", varsa aynı metin ve
-    //    "tepsi çalışmıyor" açıklaması; mesaj sıraya alınmaz) -> gösterilir (Olay Günlüğü 1140, yalnızca üst veri).
+    //    result) -> tepsi bağlı mı (değilse ve konsolda kullanıcı yoksa -6 "oturum açık kullanıcı yok"; kullanıcı varsa
+    //    -3 "[HATA] ... tepsi çalışmıyor": -6 sunucuda yalnızca "kimse oturum açmamış" demektir; mesaj sıraya alınmaz)
+    //    -> gösterilir (Olay Günlüğü 1140, yalnızca üst veri).
     //  * requires_ack yoksa sonuç hemen: "[TAMAM] gösterildi". Varsa sonuç tek ve sonra gelir: kullanıcı Tamam'a basınca
     //    "[TAMAM] okundu", 30 dakikada basılmazsa (ya da servis durursa) "[TAMAM] gösterildi, onaylanmadı" (1141).
     //    Beklerken tepsi yeniden bağlanırsa mesaj yeniden gösterilir; aynı task_id yeniden gelirse yok sayılır;
@@ -84,7 +84,8 @@ namespace POpsAgent
         public const string NotAcknowledgedOutput = "[TAMAM] gösterildi, onaylanmadı";
         public const string CancelledOutput = "[İPTAL EDİLDİ]: Mesaj panelden geri çekildi; pencere kapatıldı.";
         public const string DisabledMessage = "[REDDEDİLDİ] Bu cihazda kullanıcı mesajları kapalı (yetenek politikası); mesaj gösterilmedi.";
-        public const string NoTrayOutput = SessionTasks.NoUserOutput + " (POps tepsisi bu bilgisayarda çalışmıyor; mesaj gösterilmedi)";
+        // Konsolda kullanıcı var ama tepsi bağlı değil: ajan hatası (-3), sunucuda Failed
+        public const string NoTrayOutput = "[HATA]: POps tepsisi bu bilgisayarda çalışmıyor; mesaj gösterilmedi.";
         // Boru mesajları: servis -> tepsi
         public const string ShowPrefix = "USER_MESSAGE:";
         public const string ClosePrefix = "USER_MESSAGE_CLOSE:";
@@ -148,7 +149,8 @@ namespace POpsAgent
             {
                 bool user = SessionTasks.HasConsoleUser();
                 POpsHelpers.Log("AGENT", $"Mesaj gösterilmedi: {(user ? "tepsi bağlı değil" : "oturum açık kullanıcı yok")} (TaskID: {taskId}).");
-                await _sendResult(taskId, user ? NoTrayOutput : SessionTasks.NoUserOutput, SessionTasks.ExitNoUser);
+                if (user) await _sendResult(taskId, NoTrayOutput, CommandRunner.ExitAgentError);
+                else await _sendResult(taskId, SessionTasks.NoUserOutput, SessionTasks.ExitNoUser);
                 return;
             }
 
@@ -158,10 +160,11 @@ namespace POpsAgent
                 pending = new Pending(request, serviceStopping);
                 lock (_gate) _waiting[taskId] = pending;
             }
-            _toTray(ShowMessage(request));
+            // Kayıt gösterimden önce: tepsi hemen onaylarsa 1141, 1140'tan sonra gelir
             Audit(LocalAudit.UserMessageShown(taskId, SessionTasks.Length(request.Title), SessionTasks.Length(request.Text),
                 request.Style, request.RequiresAck, request.RequestedBy));
-            POpsHelpers.Log("AGENT", $"Kullanıcıya mesaj gösterildi ({request.Style}{(request.RequiresAck ? ", okundu onayı bekleniyor" : "")}; TaskID: {taskId}).");
+            POpsHelpers.Log("AGENT", $"Kullanıcıya mesaj gösteriliyor ({request.Style}{(request.RequiresAck ? ", okundu onayı bekleniyor" : "")}; TaskID: {taskId}).");
+            _toTray(ShowMessage(request));
             if (pending == null)
             {
                 await _sendResult(taskId, ShownOutput, 0);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -71,6 +72,12 @@ namespace POps.Tests.Agent
         private static void ModulesOff() =>
             AgentModules.Apply(JsonDocument.Parse("{\"modules\":{\"patches\":false,\"wol\":false}}").RootElement);
 
+        private static void PowerAndMessageOff()
+        {
+            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"power_enabled\":false,\"message_enabled\":false}");
+            AgentCapabilities.Load();
+        }
+
         // ------------------------------------------------------------------ 1. sunucu -> ajan vektörleri
         [Theory]
         [MemberData(nameof(ServerVectors))]
@@ -79,6 +86,11 @@ namespace POps.Tests.Agent
             string text = File.ReadAllText(Protocol("examples", "server-to-agent", file));
             JsonElement vector = JsonDocument.Parse(text).RootElement.Clone();
             string kind = file.Split('.')[0];
+            if (kind is "power" or "user_message")
+            {
+                await PowerOrMessageVector(kind, text, vector.GetProperty("task_id").GetInt32());
+                return;
+            }
             if (kind is "execute" or "remote_input" or "start_stream" or "start_vision_session") CapabilitiesOff();
             if (kind is "scan_updates" or "install_updates" or "wake_peer") ModulesOff();
             if (kind is "update_agent")
@@ -136,6 +148,62 @@ namespace POps.Tests.Agent
                     Assert.Empty(Sent("update_result"));
                     break;
             }
+        }
+
+        // power*.json ve user_message.json (AGENT_TESTS.md): bilgisayar kapanmaz, kilitlenmez, gerçek pencere açılmaz.
+        // Güç vektörü yalnızca yerel yetenek kapalıyken ya da (logoff/lock) oturum açık kullanıcı yokken işlenir;
+        // TestEnvironment güç API'sinin yerine her çağrıda hata veren sahteyi ve "konsolda kullanıcı yok"u koyar. Mesajı
+        // borudaki tepsi yerine TrayOverride alır; Olay Günlüğüne yazılmaz.
+        private async Task PowerOrMessageVector(string kind, string text, int taskId)
+        {
+            List<JsonElement> Results() => Sent("result").Where(m => m.GetProperty("task_id").GetInt32() == taskId).ToList();
+            void Clear() { lock (_sent) _sent.Clear(); }
+            _worker.Power.Audit = _ => { };
+            _worker.Messages.Audit = _ => { };
+            string op = kind == "power" ? JsonDocument.Parse(text).RootElement.GetProperty("op").GetString() : null;
+
+            if (kind == "user_message" || op is "logoff" or "lock")
+            {
+                // Oturum açık kullanıcı yok (tepsi de bağlı değil): -6
+                await _worker.HandleServerMessageAsync(text, null, CancellationToken.None);
+                JsonElement noUser = Assert.Single(Results());
+                Assert.Equal(SessionTasks.ExitNoUser, noUser.GetProperty("exit_code").GetInt32());
+                Assert.StartsWith("[REDDEDİLDİ]", noUser.GetProperty("output").GetString());
+                Assert.Empty(Sent("capability_denied"));
+                Assert.Null(_worker.Power.CurrentTaskId);
+                Clear();
+            }
+            if (kind == "user_message")
+            {
+                // Okundu onayı veren sahte tepsi: tek sonuç, "[TAMAM] okundu"
+                _worker.TrayConnectedOverride = () => true;
+                _worker.TrayOverride = message =>
+                {
+                    if (message.StartsWith(UserMessages.ShowPrefix, StringComparison.Ordinal))
+                        _ = _worker.OnTrayReplyAsync(UserMessages.AckPrefix + taskId.ToString(CultureInfo.InvariantCulture));
+                };
+                await _worker.HandleServerMessageAsync(text, null, CancellationToken.None);
+                JsonElement read = await WaitFor(m => m.GetProperty("type").GetString() == "result");
+                Assert.Equal(0, read.GetProperty("exit_code").GetInt32());
+                Assert.Equal("[TAMAM] okundu", read.GetProperty("output").GetString());
+                Assert.False(_worker.Messages.IsWaiting(taskId));
+                Assert.Single(Results());
+                Clear();
+            }
+
+            // Yerel yetenek kapalı: -5 ve capability_denied (capability power / message)
+            PowerAndMessageOff();
+            await _worker.HandleServerMessageAsync(text, null, CancellationToken.None);
+            JsonElement refused = Assert.Single(Results());
+            Assert.Equal(CommandRunner.ExitDenied, refused.GetProperty("exit_code").GetInt32());
+            Assert.StartsWith("[REDDEDİLDİ]", refused.GetProperty("output").GetString());
+            JsonElement denied = Assert.Single(Sent("capability_denied"));
+            Assert.Equal(kind == "power" ? "power" : "message", denied.GetProperty("capability").GetString());
+            Assert.Equal(kind, denied.GetProperty("action").GetString());
+            Assert.Equal(taskId, denied.GetProperty("task_id").GetInt32());
+            AssertMatches("result", refused);
+            AssertMatches("capability_denied", denied);
+            Assert.Null(_worker.Power.CurrentTaskId);
         }
 
         private async Task<JsonElement> WaitFor(Func<JsonElement, bool> match)
