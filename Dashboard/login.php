@@ -213,6 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $brand = pops_branding();
     $org_name = trim((string) ($brand['org_name'] ?? ''));
     $org_logo = !empty($brand['logo']) ? API_URL . '/branding/logo?v=' . rawurlencode((string) ($brand['logo_v'] ?? '')) : '';
+    $demo = explode(':', defined('POPS_DEMO_LOGIN') ? POPS_DEMO_LOGIN : '', 2);   // herkese açık demo: [kullanıcı, şifre]
     ?>
     <div class="login-wrapper">
         <div class="login-logo<?php echo $org_logo ? ' org' : ''; ?>">
@@ -248,9 +249,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
             <?php else: ?>
             <form method="POST" action="">
+                <?php if (count($demo) === 2): ?><div class="alert info" style="margin-bottom: var(--space-5);"><div>Demo: kullanıcı <b><?php echo htmlspecialchars($demo[0], ENT_QUOTES, 'UTF-8'); ?></b>, şifre <b><?php echo htmlspecialchars($demo[1], ENT_QUOTES, 'UTF-8'); ?></b> (salt okunur)</div></div><?php endif; ?>
                 <div class="input-wrapper">
                     <label>Kullanıcı adı</label>
-                    <input type="text" name="username" placeholder="admin" required autofocus>
+                    <input type="text" name="username" placeholder="admin" value="<?php echo htmlspecialchars($demo[0], ENT_QUOTES, 'UTF-8'); ?>" required autofocus>
                 </div>
                 <div class="input-wrapper">
                     <label>Şifre</label>

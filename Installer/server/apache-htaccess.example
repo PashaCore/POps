@@ -10,8 +10,9 @@
 RewriteEngine On
 RewriteCond %{REQUEST_URI} ^/api/(.*)$
 RewriteRule ^.*$ http://127.0.0.1:8000/api/%1 [P,L]
-RewriteCond %{REQUEST_URI} ^/ws/(.*)$
+# %1 son eşleşen koşuldan gelir: yol koşulu sonda olmalı (yoksa /ws/panel, /ws/ olarak iletilir)
 RewriteCond %{HTTP:Upgrade} websocket [NC]
+RewriteCond %{REQUEST_URI} ^/ws/(.*)$
 RewriteRule ^.*$ ws://127.0.0.1:8000/ws/%1 [P,L]
 
 # Temiz adresler: /devices -> devices.php (panelin bağlantıları .php'siz). Eski .php adresleri ve yer imleri

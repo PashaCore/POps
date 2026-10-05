@@ -38,6 +38,11 @@ JWT_COOKIE_NAME = 'pops_jwt'
 CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
+# Salt okunur demo hesapları (virgülle ayrılmış kullanıcı adları, ör. "demo"): bu hesaplar oturum açar ve okur, ama
+# hiçbir şeyi değiştiremez (şifre, 2FA, ayar, komut). Bkz. security.require_auth ve docs/configuration.md.
+DEMO_USERS = frozenset(u.strip() for u in os.environ.get('POPS_DEMO_USERS', '').split(',') if u.strip())
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 
 
