@@ -308,8 +308,9 @@ Freeze software (Deep Freeze, Shadow Defender) works when the agent is enrolled 
   ([capacity](docs/kapasite/README.md)). Several schools or a district on one server is not a tested setup.
 - **Unsigned Windows binaries.** Release manifests are ed25519-signed and checked by the server and the PC, but the
   executables have no Authenticode signature yet, so SmartScreen and some antivirus products may warn.
-- **Release tags are not SSH-signed yet.** Self-update can require signed tags
-  ([`docs/self-update.md`](docs/self-update.md)); until the project signs them, do not set up `allowed_signers`.
+- **Release tags are SSH-signed from 0.1.22-alpha on**; earlier tags are not. To make self-update accept only signed
+  tags, install [`keys/allowed_signers`](keys/allowed_signers) as `/etc/pops/allowed_signers`
+  ([`docs/self-update.md`](docs/self-update.md)).
 - **DNS** is detection and reporting only; blocking is planned. **API:** session-based only, no API tokens yet.
 - **Panel language:** Turkish; the English interface is in progress.
 

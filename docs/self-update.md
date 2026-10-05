@@ -66,9 +66,10 @@ dokunmaz, hiçbir şey dağıtmaz).
 
 ## Sürüm etiketlerinin imzası
 
-> **Not:** projenin yayımladığı etiketler henüz SSH ile imzalanmıyor (açıklamalı `git tag -a`). Etiketler imzalanmaya
-> başlayana kadar (sürüm notunda yazılır) sunucuda `allowed_signers` kurmayın; kurarsanız kendini güncelleme yeni
-> etikete geçmez.
+> **Projenin etiketleri:** `v0.1.22-alpha`'dan itibaren SSH ile imzalıdır (anahtar `SHA256:wBv1/5TQgllT+gLzCicQC5DFIxKQYKXLflLfb7MEB8w`).
+> Sunucuya kurulacak satır depoda: [`keys/allowed_signers`](../keys/allowed_signers). Kurmak için:
+> `sudo install -o root -g root -m 644 keys/allowed_signers /etc/pops/allowed_signers`. Önceki etiketler imzasızdır;
+> `allowed_signers` kurulu bir sunucu onlara geri dönmez.
 
 `CHANNEL=release`'te, en yeni etikete geçmeden önce:
 

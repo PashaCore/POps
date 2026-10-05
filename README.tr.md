@@ -307,8 +307,9 @@ Dondurma yazılımları (Deep Freeze, Shadow Defender), ajan dondurmadan önce k
   ([kapasite](docs/kapasite/README.md)). Tek sunucuda birden çok okul ya da ilçe denenmiş bir kurulum değildir.
 - **İmzasız Windows dosyaları.** Sürüm manifestleri ed25519 ile imzalanır, sunucu ve bilgisayar doğrular; ama
   çalıştırılabilir dosyaların Authenticode imzası henüz yok, SmartScreen ve bazı antivirüsler uyarabilir.
-- **Sürüm etiketleri henüz SSH ile imzalanmıyor.** Kendini güncelleme imzalı etiket isteyebilir
-  ([`docs/self-update.md`](docs/self-update.md)); proje etiketleri imzalayana kadar `allowed_signers` kurmayın.
+- **Sürüm etiketleri 0.1.22-alpha'dan itibaren SSH ile imzalıdır**; öncekiler imzasızdır. Kendini güncellemenin
+  yalnızca imzalı etikete geçmesi için [`keys/allowed_signers`](keys/allowed_signers) dosyasını
+  `/etc/pops/allowed_signers` olarak kurun ([`docs/self-update.md`](docs/self-update.md)).
 - **DNS** yalnızca tespit edip bildirir; engelleme planlı. **API:** yalnızca oturumla; API jetonu henüz yok.
 - **Panel dili:** Türkçe; İngilizce arayüz hazırlanıyor.
 
