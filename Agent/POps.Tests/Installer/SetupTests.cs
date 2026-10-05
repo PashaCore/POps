@@ -302,6 +302,8 @@ namespace POps.Tests.Installer
         [InlineData("VISION_ENABLED", "2", "VISION_ENABLED")]
         [InlineData("EXAM_ENABLED", "evetmi", "EXAM_ENABLED")]
         [InlineData("FILES_ENABLED", "x", "FILES_ENABLED")]
+        [InlineData("POWER_ENABLED", "belki", "POWER_ENABLED")]
+        [InlineData("MESSAGE_ENABLED", "3", "MESSAGE_ENABLED")]
         public void InvalidProperty_FailsTheInstall(string key, string value, string expected)
         {
             Layout layout = NewLayout();
@@ -342,6 +344,8 @@ namespace POps.Tests.Installer
             Assert.Equal(true, caps["terminal_enabled"]);
             Assert.Equal(true, caps["vision_enabled"]);
             Assert.Equal(true, caps["exam_enabled"]);
+            Assert.Equal(true, caps["power_enabled"]);
+            Assert.Equal(true, caps["message_enabled"]);
             Assert.True(LockedDown(File.GetAccessControl(Secure(layout, "capabilities.json"))));
         }
 
@@ -361,6 +365,57 @@ namespace POps.Tests.Installer
             Assert.Equal(false, caps["terminal_enabled"]);
             Assert.Equal(true, caps["exam_enabled"]);
             Assert.Equal(true, caps["files_enabled"]);
+        }
+
+        // ---- güç işlemleri ve kullanıcı mesajları (POWER_ENABLED, MESSAGE_ENABLED) ----
+        [Fact]
+        public void Capabilities_PowerAndMessage_CanBeSwitchedOffAndOnLocally()
+        {
+            Layout layout = NewLayout();
+            Assert.Null(Configure(layout, ("SERVER_URL", "https://pops.example"), ("POWER_ENABLED", "0"), ("MESSAGE_ENABLED", "0")));
+            var caps = Json(Secure(layout, "capabilities.json"));
+            Assert.Equal(false, caps["power_enabled"]);
+            Assert.Equal(false, caps["message_enabled"]);
+            Assert.Equal(true, caps["terminal_enabled"]);
+            Assert.Equal(true, caps["vision_enabled"]);
+
+            Assert.Null(Configure(layout, ("POWER_ENABLED", "1")));
+            caps = Json(Secure(layout, "capabilities.json"));
+            Assert.Equal(true, caps["power_enabled"]);
+            Assert.Equal(false, caps["message_enabled"]); // verilmeyen bayrak korunur
+            Assert.Contains(_log, l => l.Contains("power=açık") && l.Contains("message=kapalı"));
+        }
+
+        [Fact]
+        public void Capabilities_FileFromBeforePowerAndMessage_KeepsThemOnAndKeepsTheServerSwitchOff()
+        {
+            Layout layout = NewLayout();
+            Assert.Null(Configure(layout, ("SERVER_URL", "https://pops.example")));
+            // Eski sürümün dosyası: yalnızca terminal ve Vision; sunucu Vision'ı kapatmış
+            Write(Secure(layout, "capabilities.json"), "{\"terminal_enabled\":true,\"vision_enabled\":false,\"source\":\"server\"}");
+
+            Assert.Null(Configure(layout)); // güncelleme, özellik yok: dosyaya dokunulmaz
+            Assert.False(Json(Secure(layout, "capabilities.json")).ContainsKey("power_enabled"));
+
+            Assert.Null(Configure(layout, ("MESSAGE_ENABLED", "0")));
+            var caps = Json(Secure(layout, "capabilities.json"));
+            Assert.Equal(true, caps["power_enabled"]);    // dosyada yoktu: açık (ajan da öyle sayar)
+            Assert.Equal(false, caps["message_enabled"]);
+            Assert.Equal(false, caps["vision_enabled"]);  // sunucunun kapattığı kalır
+        }
+
+        [Fact]
+        public void Package_DeclaresAndPassesEveryCapabilityProperty()
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "TestData", "AgentPackage.wxs");
+            System.Xml.Linq.XDocument package = System.Xml.Linq.XDocument.Load(path);
+            string configure = package.Descendants().Where(e => e.Name.LocalName == "SetProperty" && (string)e.Attribute("Id") == "PopsConfigure")
+                .Select(e => (string)e.Attribute("Value")).Single();
+            foreach (string property in new[] { "TERMINAL_ENABLED", "VISION_ENABLED", "EXAM_ENABLED", "FILES_ENABLED", "POWER_ENABLED", "MESSAGE_ENABLED" })
+            {
+                Assert.Contains(package.Descendants(), e => e.Name.LocalName == "Property" && (string)e.Attribute("Id") == property && (string)e.Attribute("Secure") == "yes");
+                Assert.Contains($"{property}=[{property}]", configure);
+            }
         }
 
         [Fact]

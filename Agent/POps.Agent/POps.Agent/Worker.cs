@@ -68,9 +68,12 @@ namespace POpsAgent
         private volatile bool _visionSessionApproved;
         private string _visionSessionId;
         private string _visionRequestedBy;
+        private string _visionReason;
         private bool _visionUserApproved;
         private bool _visionAuditActive;
         private bool _pendingVisionMandatory;
+        // Bu oturumda tepsinin oturum bildirimi kuruldu (oturum bilgisayar kilitliyken başladı; bkz. OnVisionStartedLocked)
+        private bool _visionNoticeArmed;
         private TaskCompletionSource<byte[]> _thumbnailTcs;
 
 
@@ -100,6 +103,9 @@ namespace POpsAgent
         // Yazılım envanteri (yeni secret alınınca son gönderim unutulur)
         private SoftwareReporter _software;
         private bool _cloneRejectedAudited;
+        // Uzaktan güç işlemleri ve kullanıcı mesajları (bkz. PowerActions, UserMessages)
+        internal PowerActions Power { get; }
+        internal UserMessages Messages { get; }
 
         public Worker(ILogger<Worker> logger) : this(logger, new AgentStartupHealth(false)) { }
 
@@ -141,6 +147,10 @@ namespace POpsAgent
             // Önceki çalışmadan onay bekleyen sonuçlar okunur
             Results = new ResultSpool(SecureStore.PathOf(ResultSpool.FileName));
             _visionRelay = new VisionRelay(SendVisionBinaryAsync, SendVisionTextAsync, ToTray);
+            Power = new PowerActions(SendTaskResultAsync, taskId => DenyCapabilityAsync(PowerActions.Capability, PowerActions.ActionName, taskId),
+                ToTray, TrayInConsoleSession);
+            Messages = new UserMessages(SendTaskResultAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
+                ToTray, TrayConnected);
             Binding = new HardwareBinding(_identityFilePath,
                 () => (HardwareInfo.GetWmiValue("Win32_ComputerSystemProduct", "UUID"), HardwareInfo.GetWmiValue("Win32_BIOS", "SerialNumber")));
         }
@@ -255,11 +265,23 @@ namespace POpsAgent
         // Yapılandırma sorunu (appsettings.json okunamadı, ServerUrl yok ya da geçersiz); null: sorun yok
         internal string ConfigProblem { get; private set; }
 
+        // Klasör ayarının sorunu (LogDirectory / DataDirectory geçersiz ya da kilitlenemedi; varsayılan klasör kullanılıyor,
+        // bkz. AgentDirectories); null: sorun yok
+        internal string FolderProblem { get; set; } = AgentDirectories.Problem;
+
         internal void ReportConfigProblem()
         {
-            if (ConfigProblem == null) return;
-            POpsHelpers.Log("AGENT", $"[HATA] Yapılandırma okunamadı: {ConfigProblem}. Sunucu adresi olarak {_serverUrl} kullanılıyor; ajan yönetilemez durumda.", true);
-            LocalAudit.Write(LocalAudit.ConfigUnreadable(ConfigProblem, _serverUrl));
+            if (ConfigProblem != null)
+            {
+                POpsHelpers.Log("AGENT", $"[HATA] Yapılandırma okunamadı: {ConfigProblem}. Sunucu adresi olarak {_serverUrl} kullanılıyor; ajan yönetilemez durumda.", true);
+                LocalAudit.Write(LocalAudit.ConfigUnreadable(ConfigProblem, _serverUrl));
+            }
+            // Ajan varsayılan klasörle yönetilmeye devam eder: tepside gösterilmez, yalnızca log ve Olay Günlüğü
+            if (FolderProblem != null)
+            {
+                POpsHelpers.Log("AGENT", $"[HATA] Yapılandırma: {FolderProblem}.", true);
+                LocalAudit.Write(LocalAudit.ConfigUnreadable(FolderProblem, _serverUrl));
+            }
         }
 
         // Tepsi uyarı simgesi ve "yapılandırma okunamadı" gösterir (bkz. POpsTray CONFIG_ERROR)
@@ -874,27 +896,9 @@ namespace POpsAgent
                 {
                     // Eski tepsi pencere başlığı gönderir: KVKK gereği sunucuya iletilmez (bkz. ActiveApp)
                 }
-                else if (message.StartsWith("START_VISION_TUNNEL", StringComparison.Ordinal))
+                else if (message.StartsWith(VisionSessionStart.TunnelPrefix, StringComparison.Ordinal))
                 {
-                    int fps = 2;
-                    if (message.Contains(':') && !int.TryParse(message.Split(':')[1], out fps)) fps = 2;
-                    _ = Task.Run(async () =>
-                    {
-                        await ConnectVisionTunnelAsync(CancellationToken.None);
-                        // Tünel açılmadıysa (Vision kapalı, şifresiz sunucu, bağlantı hatası) ekran yakalanmaz.
-                        // İstek doğrulanmış tepsiden, kullanıcı onayından sonra geldiği için oturum onaylıdır.
-                        if (_isVisionStreamActive)
-                        {
-                            _visionSessionApproved = true;
-                            _visionUserApproved = !_pendingVisionMandatory;
-                            if (!_visionAuditActive)
-                            {
-                                LocalAudit.Write(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, _visionUserApproved));
-                                _visionAuditActive = true;
-                            }
-                            StartCapture(fps);
-                        }
-                    });
+                    _ = Task.Run(() => StartVisionFromTrayAsync(message));
                 }
                 else if (message.StartsWith("REJECT_VISION_TUNNEL:", StringComparison.Ordinal))
                 {
@@ -940,6 +944,10 @@ namespace POpsAgent
                 else if (message == "ACTIVITY_LIST")
                 {
                     _ = _activity.ListAsync();
+                }
+                else if (message.StartsWith(UserMessages.AckPrefix, StringComparison.Ordinal) || message.StartsWith(PowerActions.LockResultPrefix, StringComparison.Ordinal))
+                {
+                    _ = OnTrayReplyAsync(message);
                 }
             };
 
@@ -992,6 +1000,9 @@ namespace POpsAgent
                 SyncTrayModules();
                 string configError = ConfigErrorMessage();
                 if (configError != null) _trayPipe?.SendCommandToDesktop(configError);
+                // Süren geri sayım ve okundu onayı bekleyen mesajlar yeniden gösterilir
+                Power.SyncTray();
+                Messages.SyncTray();
             };
 
             _trayPipe.Start().ContinueWith(_ => _startupHealth.Mark(StartupCheck.Pipe), CancellationToken.None,
@@ -1044,6 +1055,73 @@ namespace POpsAgent
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Otomatik karantina uygulanamadı: {ex.Message}", true); }
         }
 
+        // Testler: Vision tünelinin açılması (gerçek sunucuya bağlanılmaz; true: tünel açıldı), Vision olaylarının Olay
+        // Günlüğü kaydı ve sunucunun olay günlüğüne giden kayıt (POST /api/logs)
+        internal Func<Task<bool>> VisionTunnelOverride { get; set; }
+        internal Action<LocalAuditEvent> AuditOverride { get; set; }
+        internal Func<AgentLogPayload, Task> DeviceLogOverride { get; set; }
+
+        private void Audit(LocalAuditEvent item)
+        {
+            if (AuditOverride != null) AuditOverride(item);
+            else LocalAudit.Write(item);
+        }
+
+        // Tepsi oturumu başlattı (kullanıcı kabul etti ya da zorunlu oturumun geri sayımı bitti). Tünel açılmadıysa (Vision
+        // kapalı, şifresiz sunucu, bağlantı hatası) ekran yakalanmaz. İstek doğrulanmış tepsiden, kullanıcı onayından sonra
+        // geldiği için oturum onaylıdır.
+        internal async Task StartVisionFromTrayAsync(string message)
+        {
+            (int fps, bool lockedAtStart) = VisionSessionStart.ParseTunnelMessage(message);
+            await ConnectVisionTunnelAsync(CancellationToken.None);
+            if (!_isVisionStreamActive) return;
+            _visionSessionApproved = true;
+            _visionUserApproved = !_pendingVisionMandatory;
+            if (!_visionAuditActive)
+            {
+                Audit(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, _visionUserApproved));
+                _visionAuditActive = true;
+            }
+            // Bildirim yakalamadan önce kurulur: tepsi kullanıcının masaüstünü ancak bildirim ekrandayken yakalar
+            if (lockedAtStart) OnVisionStartedLocked();
+            StartCapture(fps);
+        }
+
+        // Karar: docs/vision.md "Secure desktop", karar 5. Oturum başlarken kullanıcının masaüstü ekranda değildi (kilit,
+        // oturum açma, UAC ya da Ctrl+Alt+Del ekranı; geri sayım görünmedi). Sessiz oturum olmasın: Olay Günlüğüne 1150,
+        // sunucunun olay günlüğüne kayıt (mevcut POST /api/logs, protokol değişmedi) ve tepside oturum bildirimi; tepsi onu
+        // kullanıcının masaüstü geri gelince gösterir, oturum bitene kadar (DisconnectVisionTunnelAsync) açık tutar.
+        // Her kilitli başlatma için bir kez (tepsi yeniden bağlanmış olabilir, bildirimi yeniden kurulmalı).
+        private void OnVisionStartedLocked()
+        {
+            bool mandatory = _pendingVisionMandatory;
+            POpsHelpers.Log("VISION", "Vision oturumu bilgisayar kilitliyken başladı; kullanıcının masaüstü geri gelince oturum bildirimi gösterilecek.");
+            Audit(LocalAudit.VisionStartedWhileLocked(_visionSessionId, _visionRequestedBy, mandatory));
+            _visionNoticeArmed = true;
+            ToTray(VisionSessionNotice.OnMessage(new VisionNoticeInfo(_visionSessionId, _visionRequestedBy, _visionReason, mandatory)));
+            AgentLogPayload log = VisionLockedStartLog(_visionSessionId, _visionRequestedBy, mandatory);
+            _ = DeviceLogOverride != null
+                ? DeviceLogOverride(log)
+                : AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId), _hwId, log, "Kilitliyken başlayan Vision oturumu kaydı");
+        }
+
+        // Sunucuda sıradan bir olay günlüğü kaydı (agent_logs_v2); sunucu bu türe özel bir şey yapmaz
+        internal static AgentLogPayload VisionLockedStartLog(string sessionId, string requestedBy, bool mandatory) => new AgentLogPayload
+        {
+            LogType = "Security",
+            Message = "Vision oturumu bilgisayar kilitliyken başladı; kullanıcı masaüstüne dönünce oturum bildirimi gösterilir",
+            EventType = "agent.vision_locked_start",
+            Category = "vision",
+            Action = "vision_started_while_locked",
+            RiskLevel = "medium",
+            MetaData = new Dictionary<string, object>
+            {
+                ["session_id"] = LogText.Safe(sessionId, 100),
+                ["requested_by"] = LogText.Safe(requestedBy, 100),
+                ["mandatory"] = mandatory,
+            },
+        };
+
         private async Task ConnectVisionTunnelAsync(CancellationToken token)
         {
             if (_visionWs != null && _visionWs.State == WebSocketState.Open) return;
@@ -1055,6 +1133,11 @@ namespace POpsAgent
             if (!AgentModules.IsEnabled(AgentModules.Vision))
             {
                 await DenyCapabilityAsync("vision", "vision_tunnel", reason: AgentModules.DisabledReason);
+                return;
+            }
+            if (VisionTunnelOverride != null)
+            {
+                _isVisionStreamActive = await VisionTunnelOverride();
                 return;
             }
             // Ekran akışı ve uzaktan girdi yalnızca şifreli kanaldan (bkz. POpsHelpers.IsSecureServerUrl). Tepsi
@@ -1101,8 +1184,15 @@ namespace POpsAgent
             if (ws != null) { try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Yayın Kesildi", CancellationToken.None); } catch { } ws.Dispose(); }
             if (_visionAuditActive)
             {
-                LocalAudit.Write(LocalAudit.VisionFinished(_visionSessionId, _visionRequestedBy, _visionUserApproved));
+                Audit(LocalAudit.VisionFinished(_visionSessionId, _visionRequestedBy, _visionUserApproved));
                 _visionAuditActive = false;
+            }
+            // Oturum bitti: kilitliyken başlayan oturumun bildirimi kapanır (tepsi STOP_CAPTURE'da da kapatır; bu yol
+            // sunucunun tüneli kapattığı durumu da kapsar)
+            if (_visionNoticeArmed)
+            {
+                _visionNoticeArmed = false;
+                ToTray(VisionSessionNotice.Off);
             }
         }
 
@@ -1163,12 +1253,44 @@ namespace POpsAgent
 
         // Testler: tepsiye giden mesajlar
         internal Action<string> TrayOverride { get; set; }
+        // Testler: tepsi bağlı mı / etkin konsol oturumunda mı (null: gerçek boru)
+        internal Func<bool> TrayConnectedOverride { get; set; }
+        internal Func<bool> TrayInConsoleOverride { get; set; }
 
         private void ToTray(string message)
         {
             if (TrayOverride != null) TrayOverride(message);
             else _trayPipe?.SendCommandToDesktop(message);
         }
+
+        private bool TrayConnected() => TrayConnectedOverride != null ? TrayConnectedOverride() : _trayPipe?.IsConnected == true;
+
+        // Kilitleme tepsiden yalnızca tepsi etkin konsol oturumundaysa (RDP oturumundaki tepsi konsolu kilitleyemez)
+        private bool TrayInConsoleSession()
+        {
+            if (TrayInConsoleOverride != null) return TrayInConsoleOverride();
+            TrayPipeServer pipe = _trayPipe;
+            return pipe != null && pipe.IsConnected && pipe.ClientSession != UserSessionLauncher.NoSession && pipe.ClientSession == SessionTasks.ConsoleSession();
+        }
+
+        // Tepsinin güç/mesaj yanıtları: "USER_MESSAGE_ACK:<task_id>" (kullanıcı Tamam'a bastı),
+        // "POWER_LOCK_RESULT:<task_id>:1|0" (LockWorkStation). Dönen: bekleyen bir göreve aitti.
+        internal async Task<bool> OnTrayReplyAsync(string message)
+        {
+            try
+            {
+                if (message.StartsWith(UserMessages.AckPrefix, StringComparison.Ordinal))
+                    return await Messages.OnAcknowledgedAsync(message.Substring(UserMessages.AckPrefix.Length));
+                if (message.StartsWith(PowerActions.LockResultPrefix, StringComparison.Ordinal))
+                    return Power.OnTrayLockResult(message.Substring(PowerActions.LockResultPrefix.Length));
+            }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"Tepsi yanıtı işlenemedi: {ex.Message}", true); }
+            return false;
+        }
+
+        // Güç işlemi ve kullanıcı mesajı sonucu (execute'un result'ıyla aynı biçim ve aynı saklama/onay yolu)
+        private Task SendTaskResultAsync(int taskId, string output, int exitCode) =>
+            SendResultAsync(taskId, new { type = "result", pc_name = _hwId, task_id = taskId, output, exit_code = exitCode });
 
         internal void StartCapture(int fps)
         {
@@ -1199,7 +1321,7 @@ namespace POpsAgent
                 POpsHelpers.Log("VISION", $"Görüntüleyici mesajı uygulanmadı ({LogText.Safe(action, 40)}): geçersiz, çok büyük ya da pano için kabul edilmiş oturum yok.");
                 return;
             }
-            if (audit != null) LocalAudit.Write(audit);
+            if (audit != null) Audit(audit);
             ToTray(trayMessage);
         }
 
@@ -1385,7 +1507,7 @@ namespace POpsAgent
                         if (!_visionAuditActive)
                         {
                             _visionUserApproved = false;
-                            LocalAudit.Write(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, false));
+                            Audit(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, false));
                             _visionAuditActive = true;
                         }
                         StartCapture(fps);
@@ -1414,7 +1536,14 @@ namespace POpsAgent
                         && cancelProp.TryGetInt32(out int cancelTaskId) ? cancelTaskId : -1;
                     if (_commandRunner.Cancel(cancelId))
                         POpsHelpers.Log("AGENT", $"Uzaktan komut panelden iptal edildi; işlem sonlandırılıyor (TaskID: {cancelId}).");
+                    // Güç işleminin geri sayımı ya da okundu onayı beklenen mesaj (sonuç -2)
+                    else if (Power.Cancel(cancelId))
+                        POpsHelpers.Log("AGENT", $"Güç işlemi panelden iptal edildi; geri sayım durduruldu (TaskID: {cancelId}).");
+                    else await Messages.CancelAsync(cancelId);
                 }
+                // Uzaktan güç işlemi ve kullanıcıya mesaj (yalnızca X-Agent-Features'ta duyurulduğu için gelir)
+                else if (action == "power") await Power.HandleAsync(root, stoppingToken);
+                else if (action == "user_message") await Messages.HandleAsync(root, stoppingToken);
                 else if (action == "lockdown")
                 {
                     string reason = root.TryGetProperty("reason", out var rProp) && rProp.ValueKind == JsonValueKind.String ? rProp.GetString() : null;
@@ -1451,7 +1580,9 @@ namespace POpsAgent
                         ? requester.GetString()
                         : root.TryGetProperty("admin_name", out var admin) && admin.ValueKind == JsonValueKind.String ? admin.GetString() : null;
                     _pendingVisionMandatory = root.TryGetProperty("is_mandatory", out var mandatory) && mandatory.ValueKind == JsonValueKind.True;
-                    _trayPipe?.SendCommandToDesktop(message);
+                    _visionReason = root.TryGetProperty("reason", out var reasonProp) && reasonProp.ValueKind == JsonValueKind.String ? reasonProp.GetString() : null;
+                    // Onay ya da geri sayım tepsidedir; oturum yalnızca tepsinin START_VISION_TUNNEL'ı ile başlar
+                    ToTray(message);
                 }
             }
         }
@@ -1525,6 +1656,9 @@ namespace POpsAgent
                 _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
                 await DisconnectVisionTunnelAsync();
             }
+            // Güç işlemleri kapandıysa süren geri sayım da durur
+            if (!AgentCapabilities.PowerEnabled && Power.CancelForDisabledCapability())
+                POpsHelpers.Log("AGENT", "Güç işlemleri kapatıldı; süren geri sayım durduruldu.");
             await SendCommandMessageAsync(AgentCapabilities.StatusMessage());
             if (!AgentCapabilities.ExamEnabled && ExamMode.IsActive) await EndExamAsync("capability");
         }
@@ -1892,6 +2026,8 @@ namespace POpsAgent
 
         // Bağlı tepsinin oturumundaki kullanıcı (bağlantı yoksa null)
         public string ClientUser { get; private set; }
+        // Bağlı tepsinin oturumu (bağlantı yoksa ya da bilinmiyorsa NoSession)
+        public uint ClientSession { get; private set; } = UserSessionLauncher.NoSession;
 
         public bool IsConnected
         {
@@ -1969,7 +2105,8 @@ namespace POpsAgent
                         await Task.Delay(2000, token);
                         continue;
                     }
-                    ClientUser = clientPid == 0 ? null : UserSessionLauncher.SessionUser(UserSessionLauncher.SessionOf((int)clientPid));
+                    ClientSession = clientPid == 0 ? UserSessionLauncher.NoSession : UserSessionLauncher.SessionOf((int)clientPid);
+                    ClientUser = UserSessionLauncher.SessionUser(ClientSession);
                     _lastPipeError = null;
                     POpsHelpers.Log("PIPE", "🟢 Tepsi bağlandı (doğrulandı).");
                     try { OnConnected?.Invoke(); } catch (Exception ex) { POpsHelpers.Log("PIPE", $"Bağlantı sonrası eşitleme başarısız: {ex.Message}", true); }
@@ -2031,6 +2168,7 @@ namespace POpsAgent
                 {
                     _pipeServer?.Dispose();
                     ClientUser = null;
+                    ClientSession = UserSessionLauncher.NoSession;
                     OnDisconnected?.Invoke();
                 }
             }

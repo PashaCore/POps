@@ -33,6 +33,13 @@ namespace POpsTray
         private string? _clipboardFromAdmin;
         private DateTime _lastClipboardNotice = DateTime.MinValue;
         private const int WM_CLIPBOARDUPDATE = 0x031D;
+        // Bilgisayar kilitliyken başlayan oturumun bildirimi (docs/vision.md, karar 5): servis kurar (VISION_NOTICE_ON),
+        // kullanıcının masaüstü geri gelince şerit ve balon gösterilir, oturum bitene kadar kalır. O zamana kadar
+        // yakalama bekletilir (bkz. POps.Shared.VisionSessionNotice).
+        private readonly POps.Shared.VisionSessionNotice _sessionNotice = new POps.Shared.VisionSessionNotice();
+        private POps.Shared.VisionNoticeInfo? _sessionNoticeInfo;
+        private POpsTray.Vision.SessionBanner? _sessionBanner;
+        private System.Windows.Forms.Timer? _sessionNoticeTimer;
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool AddClipboardFormatListener(IntPtr hwnd);
@@ -155,7 +162,7 @@ namespace POpsTray
             trayIcon.Visible = true;
             trayIcon.BalloonTipClicked += (_, _) => { if (_lastBalloonIsTicket) OpenTicketsForm(); };
 
-            _visionV2 = new POpsTray.Vision.VisionStreamer(data => SendToServiceBytes(data), text => SendToService(text));
+            _visionV2 = new POpsTray.Vision.VisionStreamer(data => SendToServiceBytes(data), text => SendToService(text), CapturableDesktop);
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
 
             _ = Task.Run(() => ConnectToServiceAsync(cts.Token));
@@ -258,6 +265,9 @@ namespace POpsTray
                     pipeClient?.Dispose();
                     // Servis bağlantısı koptu: uzaktan basılmış tuş kalmasın
                     ReleasePressedKeys();
+                    // Onaylı oturum da bitti (servis tepsi kopunca uzaktan girdiyi keser): yakalama durur, oturum bildirimi
+                    // kapanır. Yeniden bağlanınca eski oturum bildirimsiz sürmesin.
+                    if (_captureCts != null || _visionV2.Running || _sessionNotice.Armed) EndCapture();
                 }
             }
         }
@@ -270,8 +280,12 @@ namespace POpsTray
                 string kind = TrayLog.Describe(jsonMsg);
                 if (!kind.StartsWith("type=remote_input")) TrayLog.Write($"Alındı: {kind}");
 
+                // Kilitliyken başlayan oturumun bildirimi (yakalama başlamadan önce gelir)
+                if (HandleSessionNotice(jsonMsg)) return;
                 // Vision v2 (eski START_CAPTURE'dan önce: o da "START_CAPTURE" ile başlar)
                 if (HandleVisionV2(jsonMsg)) return;
+                // Uzaktan güç işlemi geri sayımı ve kullanıcı mesajı (bkz. PowerMessageForms.cs)
+                if (HandlePowerAndMessages(jsonMsg)) return;
 
                 if (jsonMsg.StartsWith("START_CAPTURE")) 
                 { 
@@ -282,10 +296,7 @@ namespace POpsTray
                 }
                 if (jsonMsg.Contains("STOP_CAPTURE"))
                 {
-                    StopCaptureLoop();
-                    _visionV2.Stop();
-                    SetClipboardShare(false);
-                    ReleasePressedKeys();
+                    EndCapture();
                     return;
                 }
                 if (jsonMsg.Contains("CAPTURE_SNAPSHOT")) { SendSnapshot(); NotifyPreviewTaken(); return; }
@@ -413,25 +424,25 @@ namespace POpsTray
                         int fps = root.TryGetProperty("fps", out var fpsProp) ? (fpsProp.ValueKind == JsonValueKind.Number ? fpsProp.GetInt32() : 2) : 2;
                         int countdownSec = root.TryGetProperty("countdown_seconds", out var cdProp) ? (cdProp.ValueKind == JsonValueKind.Number ? cdProp.GetInt32() : 0) : 0;
                         bool isQuarantined = root.TryGetProperty("is_quarantined", out var iqProp) && iqProp.ValueKind == JsonValueKind.True;
+                        // Onay isteği her zaman kullanıcıya sorulur; bilgisayar kilitliyken gelirse pencere kullanıcının
+                        // masaüstünde yanıt bekler, oturum yalnızca "Evet" ile başlar (sessiz başlama yok)
+                        POps.Shared.VisionStartPlan plan = POps.Shared.VisionSessionStart.Plan(isMandatory, countdownSec);
                         
                         this.Invoke(new Action(() => 
                         {
-                            if (isMandatory)
+                            if (plan == POps.Shared.VisionStartPlan.Countdown)
                             {
-                                if (countdownSec > 0)
+                                CountdownForm cf = new CountdownForm(countdownSec, reason, isQuarantined, () =>
                                 {
-                                    CountdownForm cf = new CountdownForm(countdownSec, reason, isQuarantined, () => 
-                                    {
-                                        ShowNotification("Kurumsal Bildirim", $"Bilgi İşlem yetkilisi {adminName} cihazınıza bağlandı.\nİşlem No: {sessionId}");
-                                        SendToService($"START_VISION_TUNNEL:{fps}");
-                                    });
-                                    cf.Show();
-                                }
-                                else
-                                {
-                                    ShowNotification("Kurumsal Bildirim", $"Bilgi İşlem yetkilisi {adminName} bakım/güvenlik amacıyla bu cihaza uzaktan bağlanacaktır.\nİşlem No: {sessionId}\nBu işlem kayıt altına alınacaktır.");
-                                    SendToService($"START_VISION_TUNNEL:{fps}");
-                                }
+                                    ShowNotification("Kurumsal Bildirim", $"Bilgi İşlem yetkilisi {adminName} cihazınıza bağlandı.\nİşlem No: {sessionId}");
+                                    StartVisionTunnel(fps);
+                                });
+                                cf.Show();
+                            }
+                            else if (plan == POps.Shared.VisionStartPlan.Immediate)
+                            {
+                                ShowNotification("Kurumsal Bildirim", $"Bilgi İşlem yetkilisi {adminName} bakım/güvenlik amacıyla bu cihaza uzaktan bağlanacaktır.\nİşlem No: {sessionId}\nBu işlem kayıt altına alınacaktır.");
+                                StartVisionTunnel(fps);
                             }
                             else
                             {
@@ -453,7 +464,7 @@ namespace POpsTray
 
                                 if (res == DialogResult.Yes)
                                 {
-                                    SendToService($"START_VISION_TUNNEL:{fps}");
+                                    StartVisionTunnel(fps);
                                 }
                                 else
                                 {
@@ -673,7 +684,7 @@ namespace POpsTray
         // ilk seferde ve 5 sn'de bir. Masaüstü geri gelince yakalama sürer.
         private byte[]? NextLegacyFrame(POps.Shared.VisionDesktopGate desktop)
         {
-            POps.Shared.VisionDesktopStep step = desktop.Next(POpsTray.Vision.InputDesktop.IsOwn(), needFull: false, DateTime.UtcNow);
+            POps.Shared.VisionDesktopStep step = desktop.Next(CapturableDesktop(), needFull: false, DateTime.UtcNow);
             if (step == POps.Shared.VisionDesktopStep.Enter)
                 TrayLog.Write("Vision: kullanıcının masaüstü görünmüyor (güvenli masaüstü); görüntü yerine bildirim gönderiliyor.");
             else if (step == POps.Shared.VisionDesktopStep.Resume)
@@ -692,6 +703,117 @@ namespace POpsTray
         {
             _captureCts?.Cancel();
             _captureCts = null;
+        }
+
+        // Oturum bitti (STOP_CAPTURE ya da servis bağlantısı koptu): yakalama, pano paylaşımı, uzak tuşlar ve oturum bildirimi
+        private void EndCapture()
+        {
+            StopCaptureLoop();
+            _visionV2.Stop();
+            SetClipboardShare(false);
+            ReleasePressedKeys();
+            EndSessionNotice();
+        }
+
+        // Yakalama döngüleri (eski JPEG ve v2) her kareden önce sorar: kullanıcının masaüstü ekranda mı ve kilitliyken
+        // başlayan oturumun bildirimi gösterildi mi. Bildirim bekliyorsa masaüstü görünmüyor sayılır (bildirim resmi gider).
+        private bool CapturableDesktop() => _sessionNotice.Capturable(POpsTray.Vision.InputDesktop.IsOwn());
+
+        // ---------------------------------------------------------------- kilitliyken başlayan oturum
+        // Oturumu başlat. Kullanıcının masaüstü o an ekranda değilse (kilit, oturum açma, UAC ya da Ctrl+Alt+Del ekranı)
+        // kullanıcı geri sayımı görmedi: servis 1150 yazar ve oturum bildirimini kurdurur (VISION_NOTICE_ON).
+        private void StartVisionTunnel(int fps)
+        {
+            bool locked = !POpsTray.Vision.InputDesktop.IsOwn();
+            if (locked) TrayLog.Write("Vision: oturum kullanıcının masaüstü görünmüyorken başladı (kilit ya da güvenli masaüstü); bildirim masaüstü geri gelince gösterilecek.");
+            SendToService(POps.Shared.VisionSessionStart.TunnelMessage(fps, locked));
+        }
+
+        // VISION_NOTICE_ON:<base64 JSON>, VISION_NOTICE_OFF. Dönen: mesaj bildirime aitti.
+        private bool HandleSessionNotice(string message)
+        {
+            POps.Shared.VisionNoticeInfo? info = POps.Shared.VisionSessionNotice.ParseOn(message);
+            if (info != null)
+            {
+                try { this.Invoke(new Action(() => ArmSessionNotice(info))); }
+                catch (InvalidOperationException) { }
+                return true;
+            }
+            if (message == POps.Shared.VisionSessionNotice.Off)
+            {
+                EndSessionNotice();
+                return true;
+            }
+            return false;
+        }
+
+        // UI iş parçacığında. Masaüstü zaten görünüyorsa hemen, değilse geri gelince (yarım saniyede bir bakılır) gösterilir.
+        private void ArmSessionNotice(POps.Shared.VisionNoticeInfo info)
+        {
+            _sessionNoticeInfo = info;
+            _sessionNotice.Arm();
+            if (_sessionBanner != null)
+            {
+                _sessionBanner.ShowMessage(SessionBannerText(info));
+                return;
+            }
+            if (_sessionNoticeTimer == null)
+            {
+                _sessionNoticeTimer = new System.Windows.Forms.Timer { Interval = 500 };
+                _sessionNoticeTimer.Tick += (_, _) => CheckSessionNotice();
+            }
+            CheckSessionNotice();
+            if (_sessionNotice.Waiting) _sessionNoticeTimer.Start();
+        }
+
+        // UI iş parçacığında: masaüstü geri geldiyse şerit ekrana konur, sonra yakalama serbest kalır (önce bildirim, sonra
+        // görüntü)
+        private void CheckSessionNotice()
+        {
+            if (!_sessionNotice.Due(POpsTray.Vision.InputDesktop.IsOwn())) return;
+            _sessionNoticeTimer?.Stop();
+            POps.Shared.VisionNoticeInfo info = _sessionNoticeInfo ?? new POps.Shared.VisionNoticeInfo(null, null, null, false);
+            _sessionBanner ??= new POpsTray.Vision.SessionBanner();
+            _sessionBanner.ShowMessage(SessionBannerText(info));
+            _sessionNotice.MarkShown();
+            string admin = info.RequestedBy == null ? "" : $" yetkilisi {POps.Shared.LogText.Safe(info.RequestedBy, 80)}";
+            string id = info.SessionId == null ? "" : $"\nİşlem No: {POps.Shared.LogText.Safe(info.SessionId, 40)}";
+            ShowNotification("Kurumsal Bildirim", $"Bilgisayarınız kilitliyken Bilgi İşlem{admin} ekranınıza bağlandı. Oturum sürdükçe ekranın altında bildirim görünür.{id}");
+            TrayLog.Write("Vision: kullanıcının masaüstü geri geldi; kilitliyken başlayan oturumun bildirimi gösterildi.");
+        }
+
+        private static string SessionBannerText(POps.Shared.VisionNoticeInfo info)
+        {
+            var details = new List<string>();
+            if (info.RequestedBy != null) details.Add("Yetkili: " + POps.Shared.LogText.Safe(info.RequestedBy, 80));
+            if (!string.IsNullOrWhiteSpace(info.Reason)) details.Add("Gerekçe: " + POps.Shared.LogText.Safe(info.Reason, 120));
+            if (info.SessionId != null) details.Add("İşlem No: " + POps.Shared.LogText.Safe(info.SessionId, 40));
+            string first = "Ekranınız Bilgi İşlem tarafından izleniyor (oturum bilgisayarınız kilitliyken başladı)";
+            return details.Count == 0 ? first : first + "\n" + string.Join("  ·  ", details);
+        }
+
+        // Oturum bitti: şerit kapanır, gösterilmişse kullanıcıya söylenir
+        private void EndSessionNotice()
+        {
+            if (!_sessionNotice.Armed && _sessionBanner == null) return;
+            try
+            {
+                this.Invoke(new Action(() =>
+                {
+                    bool shown = _sessionNotice.End();
+                    _sessionNoticeTimer?.Stop();
+                    _sessionNoticeInfo = null;
+                    if (_sessionBanner != null)
+                    {
+                        _sessionBanner.AllowClose = true;
+                        _sessionBanner.Close();
+                        _sessionBanner.Dispose();
+                        _sessionBanner = null;
+                    }
+                    if (shown) ShowNotification("Kurumsal Bildirim", "Bilgi İşlem oturumu sona erdi.");
+                }));
+            }
+            catch (InvalidOperationException) { }
         }
 
         // Yalnızca açık bir yakalama varsa hızını değiştirir; kendiliğinden yakalama başlatmaz
@@ -1062,6 +1184,8 @@ namespace POpsTray
                 Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
                 _visionV2.Dispose();
                 _examBanner?.Dispose();
+                _sessionBanner?.Dispose();
+                _sessionNoticeTimer?.Dispose();
                 cts.Cancel();
                 pipeClient?.Dispose();
                 trayIcon?.Dispose();

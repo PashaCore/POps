@@ -20,20 +20,13 @@ namespace POpsAgent
     [SupportedOSPlatform("windows")]
     internal static class HardwareInfo
     {
-        // Yalnızca SYSTEM ve Administrators yazabilir; kullanıcı oturumunda çalışan watchdog kimliği okuyabilir.
+        // Yalnızca SYSTEM ve Administrators yazabilir; kullanıcı oturumunda çalışan watchdog update.lock'u okuyabilir.
+        // Sahibi güvenilir değilse SYSTEM yapılır (bkz. FolderSettings.Secure).
         internal static void SecureDataDirectory(string dir)
         {
-            try
-            {
-                var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-                var sec = new DirectorySecurity();
-                sec.SetAccessRuleProtection(true, false);
-                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null), FileSystemRights.ReadAndExecute, inherit, PropagationFlags.None, AccessControlType.Allow));
-                new DirectoryInfo(dir).SetAccessControl(sec);
-            }
-            catch (Exception ex) { POpsHelpers.Log("AGENT", $"POpsData izinleri ayarlanamadı: {ex.Message}", true); }
+            string error = FolderSettings.Secure(dir, usersRead: true, out bool tightened);
+            if (error != null) POpsHelpers.Log("AGENT", $"Veri klasörünün ({dir}) izinleri ayarlanamadı: {error}", true);
+            else if (tightened) POpsHelpers.Log("AGENT", FolderSettings.TightenedNote(dir, usersRead: true));
         }
 
         // appsettings.json yalnızca SYSTEM ve Administrators'a açıktır; izin üst klasörden devralınmaz

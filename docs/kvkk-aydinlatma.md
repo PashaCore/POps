@@ -27,7 +27,8 @@ belirli bir dosyayı gerekçe yazarak açıkça istediğinde (Dosya al) ve yaln�
 dosya taraması yapılmaz. Başka kullanıcıların profilinden dosya almak süper admin işidir. Dosya aktarımı modülü
 kapatılabilir; bilgisayarda da kapatılabilir. Ekran görüntüsü **gizlice** alınmaz — her önizleme tepsi
 ipucunu günceller ve en fazla 5 dakikada bir bildirim gösterir; canlı oturum onay
-ister ya da zorunlu oturumda geri sayım + gerekçe gösterir; tepsi simgesi her zaman
+ister ya da zorunlu oturumda geri sayım + gerekçe gösterir (bilgisayar kilitliyken başlayan oturumda kullanıcı
+döner dönmez oturum bitene kadar bildirim gösterilir); tepsi simgesi her zaman
 görünür, gizli mod yoktur.
 
 ---

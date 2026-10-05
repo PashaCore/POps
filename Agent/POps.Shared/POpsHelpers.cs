@@ -1,22 +1,23 @@
 #nullable disable
 using System.Reflection;
 using System.Runtime.Versioning;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Text.Json;
 
 namespace POps.Shared
 {
-    // Ajan bileşenlerinin ortak yardımcıları: sürüm, log, ayar okuma, cihaz kimliği.
+    // Ajan bileşenlerinin ortak yardımcıları: sürüm, log, ayar okuma.
     // Eskiden her bileşende ayrı bir kopya vardı ve kopyalar ayrışmıştı: örneğin ayarı önce
     // kurulum klasöründen okuyan düzeltme yalnızca ajandaydı; watchdog, updater ve vision yalnızca C:\POps'a
     // bakıyor, MSI kurulumunda (C:\Program Files\POps) sunucu adresini bulamayıp 127.0.0.1'e düşebiliyordu.
     [SupportedOSPlatform("windows")]
     public static class POpsHelpers
     {
-        public const string MachineLogDir = @"C:\POpsLogs";
-        public const string IdentityPath = @"C:\POpsData\identity.key";
+        // SYSTEM olarak çalışanların log klasörü: appsettings.json "LogDirectory" (servis açılışta seçer, updater komut
+        // satırından alır; bkz. FolderSettings), verilmezse C:\POpsLogs
+        public static string MachineLogDir { get; set; } = FolderSettings.DefaultLogDirectory;
         private static readonly object LogLock = new object();
+        // Log klasörü kilitlenirken yazılan hata logu klasörü yeniden kilitlemeye çalışmasın (sonsuz özyineleme)
+        [ThreadStatic] private static bool _securingLogDirectory;
 
         // ==========================================
         // 0. BİLEŞEN VE SÜRÜM
@@ -62,25 +63,23 @@ namespace POps.Shared
         public static string LogFilePath(DateTime day) =>
             Path.Combine(LogDirectory, LogsToUserProfile ? $"POps{Component}_{day:yyyyMMdd}.log" : $"POps_{day:yyyyMMdd}.log");
 
-        // C:\POpsLogs yalnızca SYSTEM ve Administrators'a açıktır (izin devralınmaz). C:\ altındaki varsayılan izinle
-        // oturum açan her kullanıcı buraya dosya ya da bağlantı (hardlink/junction) bırakabiliyor, SYSTEM olarak
-        // yazılan logu başka bir dosyaya yönlendirebiliyor ve logları okuyabiliyordu. Kullanıcı oturumundaki
-        // bileşenler için (kendi klasörleri) bir şey yapmaz.
+        // C:\POpsLogs (ya da LogDirectory) yalnızca SYSTEM ve Administrators'a açıktır (izin devralınmaz). C:\ altındaki
+        // varsayılan izinle oturum açan her kullanıcı buraya dosya ya da bağlantı (hardlink/junction) bırakabiliyor, SYSTEM
+        // olarak yazılan logu başka bir dosyaya yönlendirebiliyor ve logları okuyabiliyordu. Sahibi güvenilir değilse
+        // (klasörü bir kullanıcı önceden açtıysa) sahibi SYSTEM yapılır. Kullanıcı oturumundaki bileşenler için (kendi
+        // klasörleri) bir şey yapmaz.
         public static void SecureLogDirectory()
         {
-            if (LogsToUserProfile || LogDirectoryOverride != null) return;
+            if (LogsToUserProfile || LogDirectoryOverride != null || _securingLogDirectory) return;
+            _securingLogDirectory = true;
             try
             {
-                var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-                var sec = new DirectorySecurity();
-                sec.SetAccessRuleProtection(true, false);
-                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-                var dir = new DirectoryInfo(MachineLogDir);
-                if (dir.Exists) dir.SetAccessControl(sec);
-                else dir.Create(sec);
+                string dir = MachineLogDir;
+                string error = FolderSettings.Secure(dir, usersRead: false, out bool tightened);
+                if (error != null) Log("HELPERS", $"{dir} izinleri ayarlanamadı: {error}", true);
+                else if (tightened) Log("HELPERS", FolderSettings.TightenedNote(dir, usersRead: false));
             }
-            catch (Exception ex) { Log("HELPERS", $"{MachineLogDir} izinleri ayarlanamadı: {ex.Message}", true); }
+            finally { _securingLogDirectory = false; }
         }
 
         public static void Log(string component, string message, bool isError = false)
@@ -204,6 +203,32 @@ namespace POps.Shared
             return !string.IsNullOrWhiteSpace(env) ? env.Trim() : ReadConfigValue(key);
         }
 
+        // Klasör ayarı (LogDirectory, DataDirectory): ConfigPaths'teki ilk dolu metin değeri. Log yazmaz (log klasörü henüz
+        // seçilmedi); okunamayan dosya atlanır (ResolveServerUrl onu sorun olarak bildirir). Metin olmayan değer problem'e yazılır.
+        public static string ReadConfigText(string key, out string problem)
+        {
+            problem = null;
+            foreach (string path in ConfigPaths)
+            {
+                try
+                {
+                    if (!File.Exists(path)) continue;
+                    using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
+                    if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty(key, out JsonElement element)
+                        || element.ValueKind == JsonValueKind.Null) continue;
+                    if (element.ValueKind != JsonValueKind.String)
+                    {
+                        problem = $"{key} bir metin (klasör yolu) değil ({path})";
+                        return null;
+                    }
+                    string value = element.GetString();
+                    if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
+                }
+                catch (Exception ex) when (ex is JsonException || ex is IOException || ex is UnauthorizedAccessException) { }
+            }
+            return null;
+        }
+
         // Bir ayarı sırayla ConfigPaths içindeki dosyalarda arar; hiçbirinde dolu değilse null döner.
         public static string ReadConfigValue(string key) => ReadConfigValue(key, ConfigPaths);
 
@@ -227,24 +252,6 @@ namespace POps.Shared
                 }
             }
             return null;
-        }
-
-        // ==========================================
-        // 3. CİHAZ KİMLİĞİ (HW_ID)
-        // ==========================================
-        public static string GetHardwareId()
-        {
-            try
-            {
-                if (File.Exists(IdentityPath))
-                {
-                    string savedId = File.ReadAllText(IdentityPath).Trim();
-                    if (!string.IsNullOrEmpty(savedId) && savedId.StartsWith("HW-")) return savedId;
-                }
-            }
-            catch { }
-
-            return "HW-UNKNOWN";
         }
     }
 }

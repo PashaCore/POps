@@ -15,9 +15,11 @@ namespace POps.Tests.Agent
         {
             AgentUpdate.DataDir = @"C:\POpsData";
             SecureStore.Dir = @"C:\POpsData\secure";
+            POps.Shared.POpsHelpers.MachineLogDir = @"C:\POpsLogs";
             _ = new NextTest();
             Assert.Equal(TestEnvironment.DefaultDataDir, AgentUpdate.DataDir);
             Assert.Equal(TestEnvironment.DefaultSecureDir, SecureStore.Dir);
+            Assert.Equal(TestEnvironment.DefaultMachineLogDir, POps.Shared.POpsHelpers.MachineLogDir);
             Assert.StartsWith(System.IO.Path.GetTempPath(), AgentUpdate.DataDir, StringComparison.OrdinalIgnoreCase);
         }
     }

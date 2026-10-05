@@ -33,6 +33,7 @@ The agent reads its settings from `appsettings.json` in its install folder first
 | ---------------------- | -------------------- | ----------- |
 | `ServerUrl`            | `POPS_SERVER_URL`    | POps backend URL, e.g. `https://pops.example.com`. Must be `https://`: over plain `ws://` anyone on the network could read the device secret and send commands the agent runs as SYSTEM, so with an `http://` address the agent does not connect at all and logs why. Plain `http://` is accepted only for a server on the same machine (`127.0.0.1`, `localhost`); that is also the fallback when unset. |
 | `PersistDir`           | `POPS_PERSIST_DIR`   | Optional. A local NTFS folder that freeze software (Deep Freeze ThawSpace, a thawed drive, …) does not roll back. The device secret and the hardware binding (`hw.bind`) are mirrored there so they survive a reboot on a frozen machine. |
+| `DataDirectory`, `LogDirectory` | – (file only) | Optional. Move the data folder (`C:\POpsData`) and the log folder (`C:\POpsLogs`), e.g. to `D:\POpsData`. Full local paths only; an invalid value falls back to the default with an error in the log and event 1090. Nothing is moved when they change. Rules: [`docs/configuration.md`](../docs/configuration.md#log-and-data-folders). |
 
 ### Secrets
 
@@ -146,20 +147,24 @@ Windows always handles Ctrl+Alt+Del itself; no program can block it. From 0.1.11
 
 ## Capability policy
 
-A school can switch off the two server features that matter most if the server or a panel account is compromised (threat #4 in `SECURITY.md`):
+A school can switch off the server features that matter most if the server or a panel account is compromised (threat #4 in `SECURITY.md`):
 
 | Capability | Covers |
 | --- | --- |
 | `terminal_enabled` | `execute`: commands the agent runs as SYSTEM |
 | `vision_enabled` | screen streaming, screen previews (`get_thumbnail`) and remote mouse/keyboard |
+| `exam_enabled` | `exam_mode`: network limited to an allow list, apps closed |
+| `files_enabled` | `file_push` / `file_pull`: files sent to or fetched from the PC |
+| `power_enabled` | `power`: remote shutdown, restart, sign-out and lock |
+| `message_enabled` | `user_message`: messages from the panel shown in the tray |
 
 The state lives in `C:\POpsData\secure\capabilities.json` (SYSTEM and Administrators only):
 
-- **Installer.** `TERMINAL_ENABLED` / `VISION_ENABLED` (`1` or `0`) set either direction. A flag that is not given keeps its current value, so an update never turns a disabled capability back on. A first install without them enables both.
+- **Installer.** `TERMINAL_ENABLED` / `VISION_ENABLED` / `EXAM_ENABLED` / `FILES_ENABLED` / `POWER_ENABLED` / `MESSAGE_ENABLED` (`1` or `0`) set either direction. A flag that is not given keeps its current value, so an update never turns a disabled capability back on; a flag missing from the file (written by an older version) counts as on. A first install without them enables all six.
 - **Server.** It may only switch a capability **off**: `{"action":"set_capabilities","terminal_enabled":false}`. A request to switch one on is ignored and logged, so turning it back on takes a local administrator (MSI repair or reinstall with `…_ENABLED=1`). A compromised server can therefore not re-enable what the school disabled.
-- **Missing or unreadable file.** An install from before this feature (no file) keeps both enabled. A file that exists but cannot be read counts as both disabled.
+- **Missing or unreadable file.** An install from before this feature (no file) keeps all of them enabled. A file that exists but cannot be read counts as all disabled.
 
-A disabled capability is refused on the agent, not merely hidden in the panel. `execute` does not run; the task is closed with a `[REDDEDİLDİ]` result, and the server receives `{"type":"capability_denied","capability":"terminal","action":"execute","task_id":…}`. Vision requests are refused in the same way, and a stream that is already running is stopped when Vision is switched off. On every connection, and after every change, the agent reports its state as `{"type":"capabilities","terminal_enabled":…,"vision_enabled":…}`.
+A disabled capability is refused on the agent, not merely hidden in the panel. `execute` does not run; the task is closed with a `[REDDEDİLDİ]` result, and the server receives `{"type":"capability_denied","capability":"terminal","action":"execute","task_id":…}`. Vision requests are refused in the same way, and a stream that is already running is stopped when Vision is switched off. `power` and `user_message` are refused like `execute` (`capability` `power` / `message`). On every connection, and after every change, the agent reports its state as `{"type":"capabilities","terminal_enabled":…,"vision_enabled":…,"server_ca":…,"files_enabled":…,"exam_enabled":…,"power_enabled":…,"message_enabled":…}`.
 
 ## Updates
 
