@@ -20,6 +20,10 @@ namespace POps.Tests.Agent
         private const string Server = "https://pops.example";
         private const string Secret = "files-secret-0123456789abcdefghijklm";
         private readonly HttpClient _client = AgentHttp.Client;
+        // Testin değiştirdiği FileTransfer kancalarının önceki değerleri (Dispose'da geri konur; null bırakılmaz)
+        private readonly Func<string> _publicDesktopOverride = FileTransfer.PublicDesktopOverride;
+        private readonly Func<(string ProfilesDirectory, string CurrentProfile)> _profileInfo = FileTransfer.ProfileInfo;
+        private readonly HttpClient _testClient;
         private readonly string _desktop = TestEnvironment.NewDir("public-desktop");
         private readonly string _profiles = TestEnvironment.NewDir("users");
         private readonly byte[] _content = RandomNumberGenerator.GetBytes(5000);
@@ -37,14 +41,16 @@ namespace POps.Tests.Agent
             Directory.CreateDirectory(Path.Combine(_profiles, "ayse"));
             Directory.CreateDirectory(Path.Combine(_profiles, "Public"));
             FileTransfer.ProfileInfo = () => (_profiles, Path.Combine(_profiles, "ali"));
-            AgentHttp.Client = new HttpClient(new Handler(this));
+            _testClient = new HttpClient(new Handler(this));
+            AgentHttp.Client = _testClient;
         }
 
         public void Dispose()
         {
             AgentHttp.Client = _client;
-            FileTransfer.PublicDesktopOverride = null;
-            FileTransfer.ProfileInfo = null;
+            _testClient.Dispose();
+            FileTransfer.PublicDesktopOverride = _publicDesktopOverride;
+            FileTransfer.ProfileInfo = _profileInfo;
             SecureStore.Dir = TestEnvironment.DefaultSecureDir;
             AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
             AgentCapabilities.Load();
@@ -452,6 +458,18 @@ namespace POps.Tests.Agent
             lock (_sent) denied = Assert.Single(_sent);
             Assert.Equal("capability_denied", denied.GetProperty("type").GetString());
             Assert.False(denied.TryGetProperty("transfer_id", out _));
+        }
+
+        // Test sınıfı FileTransfer kancalarını önceki değerlerine döndürür (null bırakmaz: sonraki çekme NullReference'la düşerdi)
+        [Fact]
+        public void Dispose_RestoresTheSeams()
+        {
+            var desktop = FileTransfer.PublicDesktopOverride;
+            var profiles = FileTransfer.ProfileInfo;
+            new FileTransferTests().Dispose();
+            Assert.Same(desktop, FileTransfer.PublicDesktopOverride);
+            Assert.Same(profiles, FileTransfer.ProfileInfo);
+            Assert.NotNull(_profileInfo);
         }
 
         [Fact]
