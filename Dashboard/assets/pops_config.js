@@ -1,5 +1,5 @@
 // Bu dosya kurulum sihirbazi tarafindan otomatik uretilmistir.
-window.OMYO_API = {
+window.POPS_API = {
     HTTP_URL: window.location.origin,
     WS_URL: window.location.protocol === 'https:' ? 'wss://' + window.location.host : 'ws://' + window.location.host,
     DOWNLOAD_URL: window.location.origin + '/download',

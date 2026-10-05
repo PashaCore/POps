@@ -743,7 +743,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         $('orgName').value = orgSaved;
         const logo = $('orgLogo');
         if (b && b.logo) {
-            logo.src = (window.OMYO_API ? window.OMYO_API.HTTP_URL : '') + '/api/branding/logo?v=' + encodeURIComponent(b.logo_v || '');
+            logo.src = (window.POPS_API ? window.POPS_API.HTTP_URL : '') + '/api/branding/logo?v=' + encodeURIComponent(b.logo_v || '');
             logo.hidden = false;
         } else {
             logo.removeAttribute('src');
@@ -847,9 +847,9 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     }
     $('connRetry').addEventListener('click', testConnection);
 
-    if (typeof OMYO_API !== 'undefined') {
-        $('dispHttpUrl').textContent = OMYO_API.HTTP_URL;
-        $('dispWsUrl').textContent = OMYO_API.WS_URL;
+    if (typeof POPS_API !== 'undefined') {
+        $('dispHttpUrl').textContent = POPS_API.HTTP_URL;
+        $('dispWsUrl').textContent = POPS_API.WS_URL;
     } else {
         $('dispHttpUrl').textContent = 'pops_config.js okunamadı';
         $('dispWsUrl').textContent = 'pops_config.js okunamadı';

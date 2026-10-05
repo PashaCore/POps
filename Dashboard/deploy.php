@@ -678,7 +678,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             up.xhr = xhr;
-            xhr.open('POST', ((typeof OMYO_API !== 'undefined') ? OMYO_API.HTTP_URL : '') + '/api/upload');
+            xhr.open('POST', ((typeof POPS_API !== 'undefined') ? POPS_API.HTTP_URL : '') + '/api/upload');
             xhr.withCredentials = true;
             xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
             xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(e.loaded / e.total); };
@@ -717,7 +717,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                         setProgress(0);
                         const r = await uploadFile(file);
                         // İmzalı adres (sunucu /download'u imzasız vermez) ve dosyanın SHA-256 özeti
-                        U = OMYO_API.DOWNLOAD_URL + '/' + encodeURIComponent(r.filename) + '?sig=' + encodeURIComponent(r.sig);
+                        U = POPS_API.DOWNLOAD_URL + '/' + encodeURIComponent(r.filename) + '?sig=' + encodeURIComponent(r.sig);
                         F = 'C:\\POpsLogs\\' + r.filename;
                         H = r.sha256 || '';
                         fileName = r.filename;
