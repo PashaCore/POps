@@ -137,7 +137,7 @@ async def get_devices(auth: dict = Depends(require_auth)):
         c.boot_count, c.logged_user, c.ip_address, c.cap_ram_readable, c.is_quarantined,
         c.cap_terminal_enabled, c.cap_vision_enabled, c.cap_server_ca,
         c.cap_terminal_disable_requested, c.cap_vision_disable_requested, c.running_version,
-        c.agent_health, c.last_disconnect_at, c.last_disconnect_reason,
+        c.agent_health, c.last_disconnect_at, c.last_disconnect_reason, c.platform,
         bk.pc_name AS bypass_key_issued, bk.confirmed_at AS bypass_key_confirmed,
         av.version AS agent_version
     FROM clients c
@@ -162,6 +162,8 @@ async def get_devices(auth: dict = Depends(require_auth)):
             "is_quarantined": r.get("is_quarantined", False),
             "agent_version": r.get("agent_version") or "Bilinmiyor",
             "running_version": r.get("running_version"),
+            # İşletim sistemi ailesi (migration 0024): bildirmeyen (Windows) ajan "windows"
+            "platform": r.get("platform") or "windows",
             "cap_terminal_enabled": r.get("cap_terminal_enabled"),
             "cap_vision_enabled": r.get("cap_vision_enabled"),
             "cap_server_ca": r.get("cap_server_ca"),

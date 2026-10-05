@@ -839,6 +839,19 @@ def test_api_v1():
         "jeton kimliği ayırt edilir")
 
 
+def test_agent_platform():
+    """Linux ajanı (migration 0024): platform başlıktan, yoksa ilk mesajdan; bildirmeyen ajan Windows."""
+    print("== agent_platform")
+    from pops.routers import agents as agents_router
+
+    chk(agents_router.agent_platform("linux") == "linux" and agents_router.agent_platform(" Linux ") == "linux",
+        "X-Agent-Platform: linux")
+    chk(agents_router.agent_platform(None) == "windows" and agents_router.agent_platform("") == "windows",
+        "başlık yoksa (Windows ajanı) windows")
+    chk(agents_router.agent_platform(None, "linux") == "linux", "başlık yoksa ilk mesajdaki platform")
+    chk(agents_router.agent_platform("beos", "haiku") == "windows", "bilinmeyen değer windows sayılır")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -854,6 +867,7 @@ def main():
     test_release_compare()
     test_server_metrics()
     test_api_v1()
+    test_agent_platform()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)
