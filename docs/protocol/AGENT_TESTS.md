@@ -53,7 +53,6 @@ isolation callbacks, so no firewall rule or real setting is touched.
    | `remote_input.*.json` with Vision off | one `capability_denied` (capability `vision`) |
    | `scan_updates.json`, `install_updates.*.json`, `wake_peer.json` with the module off (`AgentModules`) | `capability_denied` with `reason` `module_disabled` |
    | `update_agent.json` | refused: the manifest is signed with the test key, not the release key (see 3) |
-   | `exam_mode.*.json` with the exam capability off (`exam_enabled`) | `exam_mode.start.json`: one `capability_denied` (capability `exam`) and an `exam_state` with `enabled` false; `exam_mode.end.json`: an `exam_state` with `enabled` false. No firewall rule is touched (the test environment replaces `NetworkIsolation.ScriptRunner`) |
    | `unknown/server-to-agent.json` | ignored: no exception, nothing sent |
 
    Running `execute` for real is already covered by `WorkerCommandTests`; here it is enough to refuse it, so the

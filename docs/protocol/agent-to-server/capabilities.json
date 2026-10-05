@@ -25,10 +25,6 @@
       "type": "boolean",
       "description": "Screen preview, streaming and remote input allowed on this device."
     },
-    "exam_enabled": {
-      "type": "boolean",
-      "description": "0.1.23+. Exam mode (`exam_mode`) allowed on this device. Missing = an older agent that does not know exam mode."
-    },
     "server_ca": {
       "enum": [
         "custom",

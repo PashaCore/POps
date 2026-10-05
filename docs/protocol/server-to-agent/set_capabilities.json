@@ -22,10 +22,6 @@
     "vision_enabled": {
       "type": "boolean",
       "description": "false = refuse previews, streams and remote input; a running stream stops."
-    },
-    "exam_enabled": {
-      "type": "boolean",
-      "description": "0.1.23+. false = refuse `exam_mode` from now on; a running exam goes on until it ends. Older agents ignore it."
     }
   },
   "anyOf": [
@@ -37,11 +33,6 @@
     {
       "required": [
         "vision_enabled"
-      ]
-    },
-    {
-      "required": [
-        "exam_enabled"
       ]
     }
   ]

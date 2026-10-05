@@ -19,11 +19,11 @@
     },
     "capability": {
       "type": "string",
-      "description": "terminal, vision, exam, patches or wol (Windows agent)."
+      "description": "terminal, vision, patches or wol (Windows agent)."
     },
     "action": {
       "type": "string",
-      "description": "What was refused: a server action (execute, start_vision_session, start_stream, wake_peer, scan_updates, install_updates, exam_mode), a remote_input sub-command (get_thumbnail, set_fps, remote_input) or vision_tunnel (the tray asked for the Vision channel)."
+      "description": "What was refused: a server action (execute, start_vision_session, start_stream, wake_peer, scan_updates, install_updates), a remote_input sub-command (get_thumbnail, set_fps, remote_input) or vision_tunnel (the tray asked for the Vision channel)."
     },
     "task_id": {
       "type": "integer",
