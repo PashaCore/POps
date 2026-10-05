@@ -1,7 +1,17 @@
 <?php
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/session.php';
+require_once __DIR__ . '/includes/i18n.php';
 pops_session_start();
+
+// Dil seçici (Türkçe / English): seçim çereze yazılır, sayfa yeniden açılır (bekleyen 2FA adımı oturumda kalır)
+if (isset($_GET['lang']) && ($_GET['lang'] === 'tr' || $_GET['lang'] === 'en')) {
+    pops_set_lang_cookie($_GET['lang']);
+    header('Location: login');
+    exit;
+}
+// Çerez yoksa tarayıcının dili (Accept-Language) seçilir ve çereze yazılır; panel girişten sonra aynı dilde açılır
+pops_i18n_init('login', true);
 
 if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     header('Location: ./');
@@ -36,11 +46,11 @@ function pops_api_post($path, $payload) {
     $curl_error = curl_error($ch);
     curl_close($ch);
     if ($response === false) {
-        return [null, 0, 'API Sunucusuna Ulaşılamıyor! (Detay: ' . $curl_error . ')'];
+        return [null, 0, __('API Sunucusuna Ulaşılamıyor! (Detay: {detail})', ['detail' => $curl_error])];
     }
     $decoded = json_decode($response, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
-        return [null, $httpcode, "API Yanıt Hatası (HTTP $httpcode): " . strip_tags(substr($response, 0, 150))];
+        return [null, $httpcode, __('API Yanıt Hatası (HTTP {code}): {body}', ['code' => $httpcode, 'body' => strip_tags(substr($response, 0, 150))])];
     }
     return [$decoded, $httpcode, ''];
 }
@@ -55,6 +65,12 @@ function pops_branding() {
     curl_close($ch);
     $data = ($response !== false && $httpcode === 200) ? json_decode($response, true) : null;
     return is_array($data) ? $data : [];
+}
+
+// Sunucunun Türkçe hata iletisi (detail / message) gösterilecek dilde; ileti yoksa $fallback
+function pops_login_error($responseData, $fallback) {
+    $msg = $responseData['detail'] ?? $responseData['message'] ?? null;
+    return is_string($msg) && $msg !== '' ? __($msg) : $fallback;
 }
 
 // Başarılı yanıtı session'a yazıp panele yönlendirir.
@@ -92,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (($responseData['status'] ?? '') === 'success') {
             pops_finish_login($responseData, $_SESSION['totp_username'] ?? '');
         } else {
-            $error = $responseData['detail'] ?? $responseData['message'] ?? "Kod doğrulanamadı (HTTP $httpcode)";
+            $error = pops_login_error($responseData, __('Kod doğrulanamadı (HTTP {code})', ['code' => $httpcode]));
             $show_otp = true;   // aynı ekranda kal, tekrar denesin
         }
 
@@ -101,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $username = trim($_POST['username'] ?? '');
         $password = $_POST['password'] ?? '';
         if (empty($username) || empty($password)) {
-            $error = 'Kullanıcı adı ve şifre boş bırakılamaz.';
+            $error = __('Kullanıcı adı ve şifre boş bırakılamaz.');
         } else {
             list($responseData, $httpcode, $err) = pops_api_post('/api/admin/login', [
                 'username' => $username,
@@ -117,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['totp_username'] = $username;
                 $show_otp = true;
             } else {
-                $error = $responseData['detail'] ?? $responseData['message'] ?? "Giriş reddedildi (HTTP $httpcode)";
+                $error = pops_login_error($responseData, __('Giriş reddedildi (HTTP {code})', ['code' => $httpcode]));
             }
         }
     }
@@ -127,12 +143,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?>
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="<?php echo htmlspecialchars(pops_lang(), ENT_QUOTES, 'UTF-8'); ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light">
-    <title>POps | Yönetici Girişi</title>
+    <title>POps | <?php _e('Yönetici Girişi'); ?></title>
     <link rel="icon" type="image/png" href="assets/favicon/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon/favicon.svg" />
     <link rel="shortcut icon" href="assets/favicon/favicon.ico" />
@@ -196,6 +212,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .login-foot { text-align: center; margin-top: var(--space-6); font-size: var(--text-xs); color: var(--text-muted); }
         .login-foot a { color: inherit; }
         .login-foot a:hover { color: var(--primary-500); }
+        .login-lang { display: flex; justify-content: center; gap: 2px; width: fit-content; margin: var(--space-4) auto 0; padding: 2px; border-radius: 8px; background: var(--bg-surface-2); box-shadow: 0 0 0 1px var(--border-subtle); }
+        .login-lang a { padding: 3px 12px; border-radius: 6px; font-size: var(--text-xs); color: var(--text-tertiary); text-decoration: none; }
+        .login-lang a:hover { color: var(--text-primary); }
+        .login-lang a[aria-current="true"] { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
         .error-box {
             background: var(--danger-bg);
             border: 1px solid var(--danger-border);
@@ -218,14 +238,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="login-wrapper">
         <div class="login-logo<?php echo $org_logo ? ' org' : ''; ?>">
             <?php if ($org_logo): ?>
-            <img src="<?php echo htmlspecialchars($org_logo, ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars($org_name !== '' ? $org_name : 'Kurum logosu', ENT_QUOTES, 'UTF-8'); ?>">
+            <img src="<?php echo htmlspecialchars($org_logo, ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars($org_name !== '' ? $org_name : __('Kurum logosu'), ENT_QUOTES, 'UTF-8'); ?>">
             <?php else: ?>
             <img src="assets/favicon/apple-touch-icon.png" alt="POps" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">
             <?php endif; ?>
         </div>
         <div class="login-header">
             <h2><?php echo htmlspecialchars($org_name !== '' ? $org_name : 'POps', ENT_QUOTES, 'UTF-8'); ?></h2>
-            <p><?php echo $org_name !== '' ? 'POps yönetim paneli' : 'Yönetim paneli'; ?></p>
+            <p><?php $org_name !== '' ? _e('POps yönetim paneli') : _e('Yönetim paneli'); ?></p>
         </div>
         
         <div class="card p-6">
@@ -236,35 +256,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php if ($show_otp): ?>
             <form method="POST" action="">
                 <div class="input-wrapper">
-                    <label>Doğrulama kodu</label>
+                    <label><?php _e('Doğrulama kodu'); ?></label>
                     <input type="text" name="otp" inputmode="numeric" autocomplete="one-time-code"
                            pattern="[0-9]*" maxlength="6" placeholder="123456" required autofocus
                            style="letter-spacing:0.4em; text-align:center; font-size:1.25rem;">
                     <p style="margin-top:0.5rem; font-size:var(--text-xs); color:var(--text-tertiary);">
-                        Authenticator uygulamanızdaki 6 haneli kodu girin.
+                        <?php _e('Authenticator uygulamanızdaki 6 haneli kodu girin.'); ?>
                     </p>
                 </div>
-                <button type="submit" class="btn block mt-6" style="padding: 0.875rem;">Doğrula ve giriş yap</button>
-                <a href="login?reset=1" style="display:block; text-align:center; margin-top:var(--space-4); font-size:var(--text-sm); color:var(--text-tertiary);">← Baştan giriş yap</a>
+                <button type="submit" class="btn block mt-6" style="padding: 0.875rem;"><?php _e('Doğrula ve giriş yap'); ?></button>
+                <a href="login?reset=1" style="display:block; text-align:center; margin-top:var(--space-4); font-size:var(--text-sm); color:var(--text-tertiary);">← <?php _e('Baştan giriş yap'); ?></a>
             </form>
             <?php else: ?>
             <form method="POST" action="">
-                <?php if (count($demo) === 2): ?><div class="alert info" style="margin-bottom: var(--space-5);"><div>Demo: kullanıcı <b><?php echo htmlspecialchars($demo[0], ENT_QUOTES, 'UTF-8'); ?></b>, şifre <b><?php echo htmlspecialchars($demo[1], ENT_QUOTES, 'UTF-8'); ?></b> (salt okunur)</div></div><?php endif; ?>
+                <?php if (count($demo) === 2): ?><div class="alert info" style="margin-bottom: var(--space-5);"><div><?php _e('Demo (salt okunur):'); ?> <?php _e('kullanıcı'); ?> <b><?php echo htmlspecialchars($demo[0], ENT_QUOTES, 'UTF-8'); ?></b>, <?php _e('şifre'); ?> <b><?php echo htmlspecialchars($demo[1], ENT_QUOTES, 'UTF-8'); ?></b></div></div><?php endif; ?>
                 <div class="input-wrapper">
-                    <label>Kullanıcı adı</label>
+                    <label><?php _e('Kullanıcı adı'); ?></label>
                     <input type="text" name="username" placeholder="admin" value="<?php echo htmlspecialchars($demo[0], ENT_QUOTES, 'UTF-8'); ?>" required autofocus>
                 </div>
                 <div class="input-wrapper">
-                    <label>Şifre</label>
+                    <label><?php _e('Şifre'); ?></label>
                     <input type="password" name="password" placeholder="••••••••" required>
                 </div>
-                <button type="submit" class="btn block mt-6" style="padding: 0.875rem;">Giriş yap</button>
+                <button type="submit" class="btn block mt-6" style="padding: 0.875rem;"><?php _e('Giriş yap'); ?></button>
             </form>
             <?php endif; ?>
         </div>
         <div class="login-foot">
             <a href="https://github.com/PashaCore/POps" target="_blank" rel="noopener">POps</a> · Pasha Core
         </div>
+        <nav class="login-lang" aria-label="Dil / Language">
+            <a href="login?lang=tr" lang="tr" aria-current="<?php echo pops_lang() === 'tr' ? 'true' : 'false'; ?>">Türkçe</a>
+            <a href="login?lang=en" lang="en" aria-current="<?php echo pops_lang() === 'en' ? 'true' : 'false'; ?>">English</a>
+        </nav>
     </div>
 </body>
 </html>
