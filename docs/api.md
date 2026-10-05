@@ -557,6 +557,12 @@ stages; the panel then shows the update as before ("Kuruluyor" until the result)
   of admins who hold an open, unexpired remote-control session for that device; with no such panel the frame is
   dropped. Remote mouse/keyboard input from the panel reaches the agent over this socket when it is open. Message
   formats: [`protocol/`](protocol/README.md).
+- **Vision v2** (agents that see `vision_binary` in `server_info.features`): binary frames (18-byte header + JPEG,
+  at most 2 MB), `monitors` and `clipboard` up; `select_monitor`, `set_quality` and `clipboard` down. Invalid
+  binary frames are dropped and counted (`vision_frames_malformed`, `vision_frames_oversize` in
+  `pops_events_total`). Frames, `monitors` and `clipboard` are forwarded under the tunnel's own device ID, never an
+  ID the agent sends. Clipboard text travels only in a session the PC user accepted. Details:
+  [`vision.md`](vision.md#vision-v2-server-relay-and-viewer).
 
 ### `/ws/panel` — dashboard
 
@@ -567,12 +573,20 @@ stages; the panel then shows the update as before ("Kuruluyor" until the result)
   additionally require an open remote-control session for that device. The user's session is re-checked against
   the database every 10 seconds; a revoked session closes the socket (`4001`) and drops its screen and control
   grants.
+  - `{"type": "panel_hello", "features": ["vision_binary"]}`: this socket decodes binary Vision frames.
+  - `{"type": "vision_control", "device": ..., "action": "select_monitor" | "set_quality" | "clipboard", ...}`:
+    forwarded to the agent only from an admin holding a session for the device (clipboard only in a session the
+    PC user accepted); see [`vision.md`](vision.md#viewer-commands).
 - **Delivery:** each panel socket has its own send queue. Screen frames and previews keep only the newest one per
   device (a slow panel skips frames); a panel whose queue grows past 500 messages, or whose send takes longer than
-  10 seconds, is closed with `1013` and the browser reconnects.
+  10 seconds, is closed with `1013` and the browser reconnects. Binary Vision frames: a full frame replaces what is
+  waiting for its output, regions beyond 32 or 4 MB are dropped until the next full frame (the panel gets
+  `vision_resync`), and only the latest cursor position waits.
 - **Server → panel:** `terminal_output` (task results), `update_result`, `capabilities`, `capability_denied`,
   `vision_rejected`, `ticket_new` (a ticket opened by an agent); `thumbnail` replies go to admin/superadmin panels only; live `stream_frame`s go only to the
-  session holder (see above).
+  session holder (see above). To session holders only: `monitors`, `clipboard` (accepted sessions only),
+  `clipboard_result`, `vision_resync`, and binary Vision frames (sockets that sent `panel_hello`): `0x01`, the
+  device ID's length in bytes, the device ID (UTF-8), then the agent's frame unchanged.
 
 ## Automation
 

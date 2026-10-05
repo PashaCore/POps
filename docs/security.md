@@ -168,7 +168,17 @@ offers nothing to someone who takes over the server or an admin account.
 - Remote mouse/keyboard input and `execute` sent over the remote-input path need an admin **and** an open
   remote-control session for that device, opened with a recorded reason. A session grant expires after 30
   minutes without activity.
-- Live frames go only to the admin who opened the session, never to viewers or other panels.
+- Live frames go only to the admin who opened the session, never to viewers or other panels. The server files every
+  frame (JSON or Vision v2 binary), monitor list and clipboard text under the device whose secret opened the Vision
+  tunnel; a device ID inside the message is ignored, so one enrolled agent cannot show its screen in another
+  device's view. Binary frames that break the header rules or exceed 2 MB are dropped and counted in `/metrics`.
+- **Clipboard (Vision v2).** Text only, at most 64 KB, both directions, and only in a session the PC user
+  accepted: the session was opened as "ask the user" (never a mandatory session, which only shows a notice) and its
+  Vision tunnel opened after the session started. Only the admin holding that session can send text to the PC or
+  receive text copied there; at most 30 texts per minute per device and direction. The server writes the direction,
+  length, admin and time to the hash-chained audit log, never the text, and keeps no copy; the agent refuses
+  clipboard outside an accepted session as well and its event log also records only direction and length. Screen
+  selection and quality changes (`select_monitor`, `set_quality`) are forwarded only from the session holder too.
 - On the PC, the user is asked for consent, or, for a mandatory session, sees a full-screen countdown. The agent
   applies remote input only during a session the tray started after that step, even if the server is
   compromised.

@@ -66,7 +66,7 @@ The endpoint list is in [`api.md`](api.md) and the schema in [`database.md`](dat
 
 `Backend/tests/` holds integration tests that run against a live backend and an empty PostgreSQL database. CI's
 `security` job runs them in this order: `test_security.py`, `test_2fa.py`, `test_agent_authz.py`,
-`test_remote_authz.py`, `test_f4_accountability.py`, `test_features.py`, `test_helpdesk_licenses.py`, `test_ops.py`,
+`test_remote_authz.py`, `test_vision_v2.py`, `test_f4_accountability.py`, `test_features.py`, `test_helpdesk_licenses.py`, `test_ops.py`,
 `test_api_tokens.py`.
 `test_units.py` and `test_protocol.py` (the agent protocol in [`protocol/`](protocol/README.md); it needs
 `pip install jsonschema==4.26.0`, which is not a runtime dependency) need no server. `Backend/tests/run_local.sh`
