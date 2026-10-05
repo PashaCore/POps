@@ -52,6 +52,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0019_task_context.sql` | `tasks.title`, `source`, `reason`, `client_ip` and `batch_id` (what a task is, which panel page sent it, why, from which address, and which request it belongs to) and indexes on `batch_id` and on `target_pc`. |
 | `0022_api_tokens.sql` | `api_tokens` (API tokens for automation). |
 | `0023_update_progress.sql` | `pending_updates.stage`, `detail`, `attempt`, `attempt_of`, `stage_at`: the last stage the agent reported for a pending update (`update_progress`, see [`api.md`](api.md#update_progress-agent-update-stages)). |
+| `0024_exam_mode.sql` | `exam_sessions` (exam mode per lab, at most one running per lab) and `exam_devices` (per exam and PC: what was sent and what the agent reported). See [`api.md`](api.md#exam-mode). |
 | `0020_refused_results.sql` | Tasks the agent refused but an older server stored as `Completed` (output starting with `[REDDEDİLDİ]`, no exit code) become `Denied` with exit code `-5`. |
 | `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
 | `0017_task_expiry.sql` | `tasks.expires_at`, `tasks.schedule_id`, `tasks.agent_started_at` and the pending-by-schedule index. |
@@ -61,8 +62,8 @@ tables from Python code at startup and never edit a migration that has already b
 ## Tables
 
 Device-related tables are keyed by `pc_name`, which holds the device's hardware ID (`HW-…`), not its Windows
-host name. The host name is a separate column. Apart from `ticket_messages` → `tickets`, there are no foreign
-keys between tables; consistency (for example when a lab is renamed or a device deleted) is kept by the
+host name. The host name is a separate column. Apart from `ticket_messages` → `tickets` and `exam_devices` →
+`exam_sessions`, there are no foreign keys between tables; consistency (for example when a lab is renamed or a device deleted) is kept by the
 application code.
 
 ### Devices and labs
@@ -74,6 +75,8 @@ application code.
 | `agent_versions` | Agent version per device, from the `X-Agent-Version` header at connect. |
 | `custom_labs` | Lab names created in the panel. |
 | `lab_settings` | Per lab: main PC and seating layout (`layout_json`). |
+| `exam_sessions` | Exam mode (migration `0024`): `lab_name`, `allow_list` and `block_apps` (JSON arrays), `until_at`, `message`, `reason`, `started_by` / `started_at`, `ended_by` / `ended_at` / `end_reason` (`admin`, `expired`, `lab_deleted`, `module_off`). A partial unique index allows one running exam (`ended_at` `NULL`) per lab. Rows are kept as the exam history. |
+| `exam_devices` | Per exam and PC (foreign key to `exam_sessions`, deleted with it): `first_sent_at` / `sent_at` (first and last `exam_mode` sent), `released_at` (`enabled: false` delivered, or the agent reported it is out), the agent's last `exam_state` (`reported_at`, `enabled`, `agent_since`, `agent_until`), `entered_at` (first "in exam"), `left_at` (left while the exam ran) and `denied_at` (capability switched off locally). |
 
 At startup the backend marks every device `Offline`; agents that reconnect are written `Online` again.
 
