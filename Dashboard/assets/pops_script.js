@@ -41,6 +41,7 @@ const POps = window.POps = window.POps || {};
 //   POps.tx('Kapat', 'power')                aynı Türkçe metnin başka anlamı (sözlükte "Kapat|power"; yoksa Türkçe)
 //   POps.tHtml(metin, params, html)          kaçırılmış HTML; html: { ad: '<b>…</b>' } yer tutucuya çağıranın kurduğu HTML
 //   POps.tNodes('… {link} …', null, { link }) yer tutucuya DOM öğesi; dizi döner: el.append(...dizi)
+//   POps.tPattern(metin)                     sunucunun değer katarak yazdığı Türkçe metin (aşağıdaki I18N_PATTERNS)
 // Sunucuya giden değerler (görev adı, gerekçe…) çevrilmez; yalnızca gösterilen metin çevrilir.
 POps.lang = window.POPS_LANG === 'en' ? 'en' : 'tr';
 POps.locale = POps.lang === 'en' ? 'en-GB' : 'tr-TR';
@@ -82,6 +83,82 @@ POps.tNodes = function (text, params, nodes) {
 };
 // Yüzde: Türkçede "%40", İngilizcede "40%"
 POps.pct = (n) => POps.t('%{n}', { n });
+
+// ---- Değer taşıyan metinler (kalıp çevirisi)
+// Sunucunun değer katarak yazdığı Türkçe metinler veridir: zamanlanmış görevin son sonucu ("3 cihaz için kuyruğa
+// eklendi"), görevi oluşturan ("admin (zamanlanmış #4)"), bildirim başlıkları ("Ajan güncellendi: 0.1.12"). Biçimleri
+// burada sunucudakiyle aynı Türkçe kalıp olarak durur ({ad} herhangi bir değer, {n} yalnızca sayı); İngilizcesi her
+// metin gibi sözlüktedir (lang/en/common.json). Sunucu yeni bir biçim yazarsa kalıbı buraya, karşılığını common.json'a
+// ekleyin (docs/i18n.md). Değerin kendisi (sürüm, ad, hata metni) çevrilmez.
+const I18N_PATTERNS = [
+    // scheduler.py run_due: scheduled_tasks.last_result
+    '{n} cihaz için kuyruğa eklendi',
+    'kaçırıldı: planlanan {at}, {n} dk geç fark edildi',
+    'hata: {error}',
+    // scheduler.py enqueue: tasks.created_by (routers/schedules.py "Şimdi çalıştır")
+    '{user} (elle çalıştırılan zamanlanmış #{id})',
+    '{user} (zamanlanmış #{id})',
+    // update_notice.py describe: ajan güncellemesinin sonucu (bildirim başlığı)
+    'Ajan çalışmıyor: {version} güncellemesinden sonra elle kurulum gerekli',
+    'Geri dönüş çalışmadı; son çare kurulum ajanı {version} sürümünde geri getirdi',
+    '{version} güncellemesi ve geri dönüş başarısız',
+    'Ajan {version} güncellemesini reddetti',
+    'Ajan güncellemesi başarısız ({status}): {version}',
+    '{version} sağlıklı açılmadı, geri alındı (onarımla); çalışan sürüm {running}',
+    '{version} sağlıklı açılmadı, geri alındı; çalışan sürüm {running}',
+    '{version} sağlıklı açılmadı; geri dönüş yeniden başlatmada tamamlanacak',
+    'Ajan güncellendi: {version}',
+    // scheduler.py: öteki bildirim başlıkları
+    'Güncelleme ({version}) gönderildi, ajan 20 dakikadır sonuç bildirmedi',
+    'Zamanlanmış görev kaçırıldı: {name}',
+    'Zamanlanmış görev çalıştırılamadı: {name}',
+    'Lisans aşımı: {name} ({installed} kurulu / {seats} izinli)',
+    'Lisansın süresi doldu: {name} ({date})',
+    'Lisans 30 gün içinde bitiyor: {name} ({date})',
+    // health_alerts.py, routers/helpdesk.py, routers/control.py, routers/agents.py
+    'Sunucuda disk dolmak üzere: {path} (%{free} boş)',
+    'TLS sertifikasının süresi bitiyor: {name} ({days} gün)',
+    'Yeni destek talebi #{id}: {subject}',
+    'Cihaz karantinaya alındı ({user})',
+    'Kapalı yetenek istendi, ajan reddetti: {capability}',
+    'Kural ihlali: {category}'
+];
+// Panelin görev başlığına eklediği kapsam ("Kapat · 3 bilgisayar"; devices, labs, vision). Sınıf ve bilgisayar adı veridir.
+const TASK_SCOPES = ['{n} bilgisayar', 'seçili {n} bilgisayar', 'bütün ağ', 'atanmamışlar', 'süzgece uyanlar'];
+// Değer taşıyan görev adları (Uzak komut: "Uygulamayı kapat: msedge.exe")
+const TASK_PATTERNS = ['Uygulamayı kapat: {app}'];
+function i18nCompile(list) {
+    return list.map(tpl => {
+        const names = [];
+        const src = tpl.split(/(\{\w+\})/).filter(Boolean).map(part => {
+            const m = /^\{(\w+)\}$/.exec(part);
+            if (!m) return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            names.push(m[1]);
+            return m[1] === 'n' ? '(\\d+)' : '(.+?)';
+        }).join('');
+        return { tpl, names, re: new RegExp('^' + src + '$') };
+    });
+}
+let i18nCompiled = null;   // ilk kullanımda derlenir (Türkçede hiç)
+// Kalıplardan birine uyan metnin çevirisi; uymazsa null
+function i18nMatch(text, which) {
+    if (!i18nCompiled) i18nCompiled = { text: i18nCompile(I18N_PATTERNS), scope: i18nCompile(TASK_SCOPES), task: i18nCompile(TASK_PATTERNS) };
+    for (const p of i18nCompiled[which]) {
+        const m = p.re.exec(text);
+        if (!m) continue;
+        const params = {};
+        p.names.forEach((k, i) => { params[k] = m[i + 1]; });
+        return POps.t(p.tpl, params);
+    }
+    return null;
+}
+// Sunucunun yazdığı metin: sözlükte birebir varsa o, yoksa uyan kalıbın çevirisi, o da yoksa olduğu gibi
+POps.tPattern = function (text) {
+    const s = String(text == null ? '' : text);
+    if (POps.lang === 'tr' || !s) return s;
+    if (i18nHas(I18N_DICT, s)) return POps.t(s);
+    return i18nMatch(s, 'text') || s;
+};
 // Dil seçimi bu tarayıcıda 1 yıl tutulur; sayfa yeni dille yeniden yüklenir
 POps.setLang = function (lang) {
     const v = lang === 'en' ? 'en' : 'tr';
@@ -1079,12 +1156,15 @@ POps.taskState = function (status) {
     if (JOB_FINAL_BAD.includes(status)) return 'bad';
     return 'run';
 };
-// Panelin sunucuya Türkçe yazdığı görev adlarının (veri) görünen hali: "Kapat · LAB1" -> "Shut down · LAB1".
-// Yalnızca ilk parça ve yalnızca sözlükteki "…|task" girdileri çevrilir; kullanıcının yazdığı ad olduğu gibi kalır.
+// Panelin sunucuya Türkçe yazdığı görev adlarının (veri) görünen hali: "Kapat · 3 bilgisayar" -> "Shut down · 3 computers".
+// İlk parça sözlükteki "…|task" girdisinden (ya da TASK_PATTERNS'tan), sonraki parçalar yalnızca TASK_SCOPES'a
+// uyarsa çevrilir; kullanıcının yazdığı ad, sınıf ve bilgisayar adı olduğu gibi kalır.
 POps.taskName = function (title) {
     const t = String(title == null ? '' : title);
-    const i = t.indexOf(' · ');
-    return i < 0 ? POps.tx(t, 'task') : POps.tx(t.slice(0, i), 'task') + t.slice(i);
+    if (POps.lang === 'tr') return t;
+    const [head, ...rest] = t.split(' · ');
+    const name = i18nHas(I18N_DICT, head + '|task') ? POps.tx(head, 'task') : (i18nMatch(head, 'task') || head);
+    return [name, ...rest.map(part => i18nMatch(part, 'scope') || part)].join(' · ');
 };
 POps.jobs = (function () {
     const KEY = 'pops_jobs_v1';
