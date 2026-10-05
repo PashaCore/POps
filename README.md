@@ -405,8 +405,7 @@ How to run the suites locally: [`docs/testing.md`](docs/testing.md).
 
 ## 🧭 Roadmap
 
-Next: the 0.1.14 reliability round (database time limits, batched heartbeats, retention, disk and certificate
-alerts, Turkish keyboard in remote control), then an architecture round: a full task state machine, signed commands,
+Next: an architecture round: a full task state machine, signed commands,
 mTLS, an append-only audit role, lab-scoped permissions, high availability, RDP support, a new 5,000-agent run over
 HTTPS and end-to-end tests on a Windows test machine. The whole list, with design notes: [`ROADMAP.md`](ROADMAP.md).
 

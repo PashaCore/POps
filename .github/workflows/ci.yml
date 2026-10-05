@@ -293,6 +293,10 @@ jobs:
             exit 1
           fi
           echo "Sürüm tutarlı: $VER"
+      - name: Docs state the current versions
+        # Belgeler (README, ROADMAP, docs/, sürüm notu) sürümü, Python/PostgreSQL alt sınırını ve ajanın .NET'ini
+        # tek kaynaklardan (VERSION, requirements.txt, migrations işi, csproj) farklı söylemesin. setup-python gerekmez.
+        run: python3 tools/check_docs_versions.py
 
   migrations:
     name: Migrations (PostgreSQL 13)

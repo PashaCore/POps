@@ -413,8 +413,7 @@ Belgelerin çoğu İngilizcedir; Türkçe olanlar işaretlidir.
 
 ## 🧭 Yol haritası
 
-Sırada 0.1.14 güvenilirlik turu var: veritabanı süre sınırları, toplu sinyal yazımı, saklama süreleri, disk ve
-sertifika uyarıları, uzaktan kontrolde Türkçe klavye. Ardından bir mimari tur geliyor:
+Sırada bir mimari tur var:
 - görevler için tam durum makinesi;
 - imzalı komutlar ve mTLS;
 - yalnızca ekleme yapılabilen bir denetim rolü;

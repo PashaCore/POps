@@ -255,6 +255,11 @@ servers with `/etc/pops/allowed_signers` then self-update only to tags signed by
 ([`self-update.md`](self-update.md#sürüm-etiketlerinin-imzası)). The project signs its tags from **0.1.22-alpha** on;
 the line to install is [`keys/allowed_signers`](../keys/allowed_signers).
 
+CI's `version` job runs `tools/check_docs_versions.py`: README, ROADMAP, `docs/` and the release notes must not call
+another version the latest or the next one, and must give the Python and PostgreSQL minimums and the agent's .NET
+runtime as `Backend/requirements.txt`, the `migrations` job and the agent `.csproj` files define them (rules at the
+top of the script).
+
 ## Logs
 
 | What | Where |
