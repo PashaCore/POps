@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/session.php';
+require_once __DIR__ . '/i18n.php';
 pops_session_start();
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || empty($_SESSION['jwt_token'])) {
     header('Location: login');
@@ -13,6 +14,8 @@ if (($_COOKIE[POPS_JWT_COOKIE] ?? '') !== $_SESSION['jwt_token']) {
 
 // Yetki Kontrolü
 $current_page = basename($_SERVER['PHP_SELF'], '.php');
+// Arayüz dili: ortak sözlük + bu sayfanın sözlüğü (lang/en/<sayfa>.json)
+pops_i18n_init($current_page);
 if ($current_page !== 'index' && $current_page !== 'logout') {
     $role = $_SESSION['role'] ?? 'admin';
     $permissions = $_SESSION['permissions'] ?? [];
@@ -29,12 +32,19 @@ if ($current_page !== 'index' && $current_page !== 'logout') {
 
     if ($is_unauthorized) {
         // Tema ve simge dosyası bu sayfada yüklenmez: kilit simgesi satır içi (pops_icons.svg'deki i-lock)
-        die("<div style='max-width:480px;margin:80px auto;text-align:center;font-family:Inter,sans-serif;padding:32px;background:#fff;border-radius:12px;border:1px solid #e5e7eb;'>
+        echo "<div style='max-width:480px;margin:80px auto;text-align:center;font-family:Inter,sans-serif;padding:32px;background:#fff;border-radius:12px;border:1px solid #e5e7eb;'>
                 <svg width='40' height='40' viewBox='0 0 24 24' fill='none' stroke='#ef4444' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' style='display:block;margin:0 auto 16px;' aria-hidden='true'><rect x='4' y='11' width='16' height='10' rx='2'/><path d='M8 11V7a4 4 0 0 1 8 0v4'/></svg>
-                <h2 style='color:#0f172a;margin-bottom:8px;'>Yetkisiz Erişim</h2>
-                <p style='color:#64748b;margin-bottom:20px;'>Bu sayfayı görüntüleme yetkiniz bulunmuyor.</p>
-                <a href='./' style='display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:500;'>Ana Sayfaya Dön</a>
-             </div>");
+                <h2 style='color:#0f172a;margin-bottom:8px;'>",
+            htmlspecialchars(__('Yetkisiz Erişim'), ENT_QUOTES, 'UTF-8'),
+            "</h2>
+                <p style='color:#64748b;margin-bottom:20px;'>",
+            htmlspecialchars(__('Bu sayfayı görüntüleme yetkiniz bulunmuyor.'), ENT_QUOTES, 'UTF-8'),
+            "</p>
+                <a href='./' style='display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:500;'>",
+            htmlspecialchars(__('Ana Sayfaya Dön'), ENT_QUOTES, 'UTF-8'),
+            "</a>
+             </div>";
+        exit;
     }
 }
 ?>
@@ -55,16 +65,17 @@ function pops_icon(string $name, string $cls = ''): string
         . htmlspecialchars($sprite . '#i-' . $name, ENT_QUOTES, 'UTF-8') . '"></use></svg>';
 }
 $pops_titles = [
-    'index' => 'Kontrol merkezi', 'devices' => 'Cihazlar', 'labs' => 'Sınıflar', 'tasks' => 'İşlemler',
-    'terminal' => 'Uzak komut', 'vision' => 'Uzak ekran', 'deploy' => 'Dağıtım', 'policies' => 'Politikalar',
-    'logger' => 'Kayıtlar', 'reports' => 'Raporlar', 'helpdesk' => 'Destek talepleri', 'settings' => 'Ayarlar',
-    'system' => 'Sistem',
+    'index' => __('Kontrol merkezi'), 'devices' => __('Cihazlar'), 'labs' => __('Sınıflar'),
+    'tasks' => __('İşlemler'), 'terminal' => __('Uzak komut'), 'vision' => __('Uzak ekran'),
+    'deploy' => __('Dağıtım'), 'policies' => __('Politikalar'), 'logger' => __('Kayıtlar'),
+    'reports' => __('Raporlar'), 'helpdesk' => __('Destek talepleri'), 'settings' => __('Ayarlar'),
+    'system' => __('Sistem'),
 ];
 $pops_role = $_SESSION['role'] ?? 'admin';
-$pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'viewer' => 'İzleyici'][$pops_role] ?? 'Yönetici';
+$pops_role_label = ['superadmin' => __('Süper Admin'), 'admin' => __('Yönetici'), 'viewer' => __('İzleyici')][$pops_role] ?? __('Yönetici');
 ?>
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="<?php echo htmlspecialchars(pops_lang(), ENT_QUOTES, 'UTF-8'); ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -79,7 +90,11 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
              çalışır ve yöneticinin tarayıcısı üçüncü taraflara istek atmaz */ ?>
     <link rel="stylesheet" href="<?php echo htmlspecialchars(pops_asset('assets/pops_theme.css'), ENT_QUOTES, 'UTF-8'); ?>">
     <script>window.USER_ROLE = <?php echo json_encode($pops_role, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
-    window.POPS_ICONS = <?php echo json_encode(pops_asset('assets/pops_icons.svg'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
+    window.POPS_ICONS = <?php echo json_encode(pops_asset('assets/pops_icons.svg'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+    window.POPS_LANG = <?php echo json_encode(pops_lang(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+    <?php if (pops_lang() !== 'tr'): /* Türkçede sözlük yok: metinler koddaki anahtarın kendisi */ ?>
+    window.POPS_I18N = <?php echo json_encode((object) pops_i18n_dict(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+    <?php endif; ?></script>
     <script>
     // Sayfa yoklama yardımcısı (bütün sayfalar): sekme arka plandayken sunucuya hiç istek atılmaz, sekmeye
     // dönünce hemen bir kez tazelenir; 5 dk boyunca fare/klavye yoksa aralık 4 katına çıkar (açık unutulan
@@ -191,6 +206,11 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
         .user-role { font-size: 11px; color: #6b7587; }
         .user-card .ibtn { color: #7d8798; }
         .user-card .ibtn:hover { background: #151e30; color: #fff; }
+        .sb-lang { display: flex; gap: 2px; margin: 4px 4px 0 8px; padding: 2px; border-radius: 8px; background: #151e30; }
+        .sb-lang button { flex: 1; height: 24px; border-radius: 6px; color: #7d8798; font-size: 11.5px; font-weight: 500; text-align: center; transition: background-color 0.12s, color 0.12s; }
+        .sb-lang button:hover { color: #fff; }
+        .sb-lang button[aria-pressed="true"] { background: #26324a; color: #fff; }
+        .sb-lang button:focus-visible { outline: none; box-shadow: 0 0 0 2px #0a84ff; }
 
         /* Bildirimler (yan menüden açılır) */
         .notif-wrap { position: relative; }
@@ -228,30 +248,30 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
     </style>
 </head>
 <body>
-    <a class="sr-only" href="#mainContent">İçeriğe geç</a>
+    <a class="sr-only" href="#mainContent"><?php _e('İçeriğe geç'); ?></a>
     <div class="app-shell">
-        <aside class="app-sidebar" id="appSidebar" aria-label="Ana menü">
+        <aside class="app-sidebar" id="appSidebar" aria-label="<?php _e('Ana menü'); ?>">
             <a class="sb-brand" href="./">
                 <img src="assets/favicon/favicon-96x96.png" alt="">
-                <span><b>POps</b><small>Yönetim paneli</small></span>
+                <span><b>POps</b><small><?php _e('Yönetim paneli'); ?></small></span>
             </a>
-            <button type="button" class="sb-search" id="paletteOpen" aria-label="Ara (Ctrl+K)"><?php echo pops_icon('search', 'sm'); ?><span>Ara</span><kbd>Ctrl K</kbd></button>
+            <button type="button" class="sb-search" id="paletteOpen" aria-label="<?php _e('Ara (Ctrl+K)'); ?>"><?php echo pops_icon('search', 'sm'); ?><span><?php _e('Ara'); ?></span><kbd>Ctrl K</kbd></button>
             <nav class="sidebar-nav">
                 <?php include __DIR__ . '/sidebar.php'; ?>
             </nav>
             <div class="sb-foot">
                 <button type="button" class="sb-jobs" id="jobsBtn" hidden aria-haspopup="true" aria-expanded="false" aria-controls="jobsPanel"></button>
                 <div class="notif-wrap" id="notifWrap" hidden>
-                    <button type="button" class="nav-item" id="notifBtn" aria-haspopup="true" aria-expanded="false" aria-controls="notifPanel"><?php echo pops_icon('bell'); ?><span>Bildirimler</span><span class="n alert" id="notifCount" style="display:none"></span></button>
-                    <div class="notif-panel" id="notifPanel" role="region" aria-label="Bildirimler">
+                    <button type="button" class="nav-item" id="notifBtn" aria-haspopup="true" aria-expanded="false" aria-controls="notifPanel"><?php echo pops_icon('bell'); ?><span><?php _e('Bildirimler'); ?></span><span class="n alert" id="notifCount" style="display:none"></span></button>
+                    <div class="notif-panel" id="notifPanel" role="region" aria-label="<?php _e('Bildirimler'); ?>">
                         <div class="notif-head">
-                            <span>Bildirimler</span>
+                            <span><?php _e('Bildirimler'); ?></span>
                             <span class="btn-group">
-                                <button type="button" class="btn ghost sm" id="notifReadAll">Tümü okundu</button>
-                                <button type="button" class="btn ghost sm" id="notifClear" title="Okunmuş bildirimleri sil">Okunanları temizle</button>
+                                <button type="button" class="btn ghost sm" id="notifReadAll"><?php _e('Tümü okundu'); ?></button>
+                                <button type="button" class="btn ghost sm" id="notifClear" title="<?php _e('Okunmuş bildirimleri sil'); ?>"><?php _e('Okunanları temizle'); ?></button>
                             </span>
                         </div>
-                        <div id="notifList"><div class="notif-empty">Yükleniyor…</div></div>
+                        <div id="notifList"><div class="notif-empty"><?php _e('Yükleniyor…'); ?></div></div>
                     </div>
                 </div>
                 <div class="user-card">
@@ -260,15 +280,20 @@ $pops_role_label = ['superadmin' => 'Süper Admin', 'admin' => 'Yönetici', 'vie
                         <div class="user-name"><?php echo htmlspecialchars($_SESSION['username'] ?? 'Admin'); ?></div>
                         <div class="user-role"><?php echo htmlspecialchars($pops_role_label, ENT_QUOTES, 'UTF-8'); ?></div>
                     </div>
-                    <a href="logout" class="ibtn sm" data-tip="Çıkış yap" data-tip-pos="up" aria-label="Çıkış yap"><?php echo pops_icon('logout', 'sm'); ?></a>
+                    <a href="logout" class="ibtn sm" data-tip="<?php _e('Çıkış yap'); ?>" data-tip-pos="up" aria-label="<?php _e('Çıkış yap'); ?>"><?php echo pops_icon('logout', 'sm'); ?></a>
+                </div>
+                <?php /* Dil seçimi: dil adları kendi dilinde yazılır, çevrilmez (footer.php'deki betik çerezi yazar) */ ?>
+                <div class="sb-lang" role="group" aria-label="Dil / Language">
+                    <button type="button" data-set-lang="tr" lang="tr" aria-pressed="<?php echo pops_lang() === 'tr' ? 'true' : 'false'; ?>">Türkçe</button>
+                    <button type="button" data-set-lang="en" lang="en" aria-pressed="<?php echo pops_lang() === 'en' ? 'true' : 'false'; ?>">English</button>
                 </div>
             </div>
         </aside>
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
-        <div class="jobs-panel" id="jobsPanel" role="region" aria-label="Süren işlemler"></div>
+        <div class="jobs-panel" id="jobsPanel" role="region" aria-label="<?php _e('Süren işlemler'); ?>"></div>
         <div class="app-main">
             <header class="app-topbar">
-                <button type="button" class="menu-toggle" id="menuToggle" aria-label="Menüyü aç" aria-controls="appSidebar" aria-expanded="false"><?php echo pops_icon('menu'); ?></button>
+                <button type="button" class="menu-toggle" id="menuToggle" aria-label="<?php _e('Menüyü aç'); ?>" aria-controls="appSidebar" aria-expanded="false"><?php echo pops_icon('menu'); ?></button>
                 <span id="pageTitle"><?php echo htmlspecialchars($pops_titles[$current_page] ?? ucfirst($current_page), ENT_QUOTES, 'UTF-8'); ?></span>
             </header>
             <main class="app-content" id="mainContent">

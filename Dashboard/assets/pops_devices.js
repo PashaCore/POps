@@ -6,6 +6,7 @@
 //   POps.dev.message / move / quarantine / unquarantine / rename / remove
 //   POps.dev.open(host)               : sağdaki ayrıntı paneli
 // Hedefler her zaman cihaz kimliğidir (hostname = HW- kimliği).
+// Görünen metinler POps.t ile çevrilir (lang/en/common.json); sunucuya giden görev adları Türkçe kalır.
 // =================================================================
 (function () {
     const dev = POps.dev = {};
@@ -40,9 +41,9 @@
 
     dev.state = function (d) {
         const s = String((d && d.status) || '').toLowerCase();
-        if (s === 'online') return { cls: 'on', word: 'Çevrimiçi', since: '' };
-        if (s === 'idle') return { cls: 'idle', word: 'Boşta', since: '' };
-        return { cls: 'off', word: 'Kapalı', since: d && (d.last_disconnect_at || d.last_seen) };
+        if (s === 'online') return { cls: 'on', word: POps.t('Çevrimiçi'), since: '' };
+        if (s === 'idle') return { cls: 'idle', word: POps.t('Boşta'), since: '' };
+        return { cls: 'off', word: POps.t('Kapalı'), since: d && (d.last_disconnect_at || d.last_seen) };
     };
     dev.user = function (d) {
         const u = d && d.current_user;
@@ -56,22 +57,22 @@
     // Tile/satır alt yazısı: kim oturuyor; yoksa durum
     dev.subline = function (d) {
         const st = dev.state(d);
-        if (st.cls === 'off') return 'kapalı';
-        return dev.user(d) || (st.cls === 'idle' ? 'boşta' : 'oturum yok');
+        if (st.cls === 'off') return POps.t('kapalı');
+        return dev.user(d) || (st.cls === 'idle' ? POps.t('boşta') : POps.t('oturum yok'));
     };
 
     // Sorunlar: { kind: err|upd|old|lock, glyph, text }
     dev.issues = function (d, newest) {
         const out = [];
         if (!d) return out;
-        if (d.is_quarantined) out.push({ kind: 'lock', icon: 'lock', text: 'Karantinada: kullanıcı ekranı kilitli' });
+        if (d.is_quarantined) out.push({ kind: 'lock', icon: 'lock', text: POps.t('Karantinada: kullanıcı ekranı kilitli') });
         const v = dev.version(d);
         const top = newest === undefined ? dev.newestVersion() : newest;
-        if (v && top && dev.cmpVersion(v, top) < 0) out.push({ kind: 'old', glyph: '↑', text: `Ajan eski: ${v} (güncel ${top})` });
+        if (v && top && dev.cmpVersion(v, top) < 0) out.push({ kind: 'old', glyph: '↑', text: POps.t('Ajan eski: {version} (güncel {latest})', { version: v, latest: top }) });
         const h = d.agent_health || {};
-        if (Number(h.loop_errors_1h) > 0) out.push({ kind: 'err', glyph: '!', text: `Ajan son 1 saatte ${Number(h.loop_errors_1h)} hata bildirdi` });
-        if (d.cap_terminal_enabled === false) out.push({ kind: 'lock', icon: 'terminal', text: 'Uzak komut bu cihazda kapalı' });
-        if (d.cap_vision_enabled === false) out.push({ kind: 'lock', icon: 'eye', text: 'Uzak ekran bu cihazda kapalı' });
+        if (Number(h.loop_errors_1h) > 0) out.push({ kind: 'err', glyph: '!', text: POps.tn('Ajan son 1 saatte {n} hata bildirdi', Number(h.loop_errors_1h)) });
+        if (d.cap_terminal_enabled === false) out.push({ kind: 'lock', icon: 'terminal', text: POps.t('Uzak komut bu cihazda kapalı') });
+        if (d.cap_vision_enabled === false) out.push({ kind: 'lock', icon: 'eye', text: POps.t('Uzak ekran bu cihazda kapalı') });
         return out;
     };
     // Kutucukta gösterilecek tek işaret (en önemlisi)
@@ -87,30 +88,43 @@
 
     const namesText = (hosts) => {
         const names = hosts.map(dev.name);
-        return names.slice(0, 5).join(', ') + (names.length > 5 ? ` ve ${names.length - 5} bilgisayar daha` : '');
+        const head = names.slice(0, 5).join(', ');
+        return names.length > 5 ? POps.tn('{names} ve {n} bilgisayar daha', names.length - 5, { names: head }) : head;
     };
-    const count = (n) => n === 1 ? 'bilgisayar' : `${n} bilgisayar`;
+    const count = (n) => POps.tn('{n} bilgisayar', n);
 
     // ---- Güç
+    // step: sunucuya giden görev adı (Türkçe veri); görünen metinler cümle cümle çevrilir
     const POWER = {
-        restart: { verb: 'yeniden başlatılsın', btn: 'yeniden başlat', step: 'Yeniden başlat', cmd: 'shutdown /r /f /t 5', icon: 'restart' },
-        shutdown: { verb: 'kapatılsın', btn: 'kapat', step: 'Kapat', cmd: 'shutdown /s /f /t 5', icon: 'power' }
+        restart: {
+            step: 'Yeniden başlat', cmd: 'shutdown /r /f /t 5', icon: 'restart',
+            label: () => POps.t('Yeniden başlat'),
+            title1: (name) => POps.t('{name} yeniden başlatılsın mı?', { name }),
+            titleN: (n) => POps.tn('{n} bilgisayar yeniden başlatılsın mı?', n),
+            btnN: (n) => POps.tn('{n} bilgisayarı yeniden başlat', n)
+        },
+        shutdown: {
+            step: 'Kapat', cmd: 'shutdown /s /f /t 5', icon: 'power',
+            label: () => POps.tx('Kapat', 'power'),
+            title1: (name) => POps.t('{name} kapatılsın mı?', { name }),
+            titleN: (n) => POps.tn('{n} bilgisayar kapatılsın mı?', n),
+            btnN: (n) => POps.tn('{n} bilgisayarı kapat', n)
+        }
     };
     dev.power = async function (action, hosts, opts) {
         const o = opts || {};
         hosts = [...new Set(hosts || [])];
-        if (!hosts.length) return POps.toast('warning', 'Hedef bilgisayar yok.');
+        if (!hosts.length) return POps.toast('warning', POps.t('Hedef bilgisayar yok.'));
         if (action === 'wake') return dev.wake(hosts, o);
         const p = POWER[action];
         const on = hosts.filter(h => { const d = byHost(h); return d && !POps.isOffline(d); });
         const skipped = hosts.length - on.length;
-        if (!on.length) return POps.toast('warning', hosts.length === 1 ? 'Bilgisayar kapalı; komut gönderilmedi.' : 'Seçili bilgisayarların hiçbiri açık değil; komut gönderilmedi.');
-        const title = on.length === 1 ? `${dev.name(on[0])} ${p.verb} mı?` : `${on.length} bilgisayar ${p.verb} mı?`;
+        if (!on.length) return POps.toast('warning', hosts.length === 1 ? POps.t('Bilgisayar kapalı; komut gönderilmedi.') : POps.t('Seçili bilgisayarların hiçbiri açık değil; komut gönderilmedi.'));
         const ok = await POps.confirm({
-            title,
-            message: (on.length > 1 ? namesText(on) + '\n' : '') + '5 saniye içinde uygulanır; kaydedilmemiş işler kaybolabilir.',
-            note: skipped ? `Kapalı ${skipped} bilgisayar atlanacak.` : '',
-            confirmText: on.length === 1 ? (p.btn.charAt(0).toUpperCase() + p.btn.slice(1)) : `${on.length} bilgisayarı ${p.btn}`,
+            title: on.length === 1 ? p.title1(dev.name(on[0])) : p.titleN(on.length),
+            message: (on.length > 1 ? namesText(on) + '\n' : '') + POps.t('5 saniye içinde uygulanır; kaydedilmemiş işler kaybolabilir.'),
+            note: skipped ? POps.tn('Kapalı {n} bilgisayar atlanacak.', skipped) : '',
+            confirmText: on.length === 1 ? p.label() : p.btnN(on.length),
             danger: true,
             icon: p.icon
         });
@@ -118,20 +132,20 @@
         await POps.act(o.btn, () => POps.post('/api/deploy_orchestration', {
             target_mode: 'PC', targets: on, taskSequence: [{ name: p.step, type: 'CMD', command: p.cmd }],
             title: p.step + (o.scopeLabel ? ' · ' + o.scopeLabel : ''), source: o.source || null
-        }, { jobTitle: p.step + ' · ' + (o.scopeLabel || count(on.length)) }), { success: (r) => `Komut ${(r && r.created) || on.length} bilgisayara gönderildi.` });
+        }, { jobTitle: p.label() + ' · ' + (o.scopeLabel || count(on.length)) }), { success: (r) => POps.tn('Komut {n} bilgisayara gönderildi.', (r && r.created) || on.length) });
     };
     dev.wake = async function (hosts, o) {
         const off = hosts.filter(h => { const d = byHost(h); return !d || POps.isOffline(d); });
-        if (!off.length) return POps.toast('info', hosts.length === 1 ? 'Bilgisayar zaten açık.' : 'Seçili bilgisayarların hepsi zaten açık.');
+        if (!off.length) return POps.toast('info', hosts.length === 1 ? POps.t('Bilgisayar zaten açık.') : POps.t('Seçili bilgisayarların hepsi zaten açık.'));
         if (o.lab && off.length === hosts.length && o.wholeLab) {
-            return POps.act(o.btn, () => POps.post('/api/wake_lab/' + encodeURIComponent(o.lab)), { success: (r) => `${o.lab}: ${(r && r.woken_pcs) || 0} bilgisayara uyandırma sinyali gönderildi.` });
+            return POps.act(o.btn, () => POps.post('/api/wake_lab/' + encodeURIComponent(o.lab)), { success: (r) => POps.tn('{lab}: {n} bilgisayara uyandırma sinyali gönderildi.', (r && r.woken_pcs) || 0, { lab: o.lab }) });
         }
         await POps.busy(o.btn, async () => {
             const res = await Promise.allSettled(off.map(h => POps.post('/api/wake_pc/' + encodeURIComponent(h))));
             const okN = res.filter(r => r.status === 'fulfilled').length;
             const bad = off.filter((h, i) => res[i].status === 'rejected');
-            if (okN) POps.toast('success', `${okN} bilgisayara uyandırma sinyali gönderildi.`);
-            if (bad.length) POps.toast('warning', `${bad.length} bilgisayar uyandırılamadı (MAC adresi bilinmiyor olabilir): ${namesText(bad)}`);
+            if (okN) POps.toast('success', POps.tn('{n} bilgisayara uyandırma sinyali gönderildi.', okN));
+            if (bad.length) POps.toast('warning', POps.tn('{n} bilgisayar uyandırılamadı (MAC adresi bilinmiyor olabilir): {names}', bad.length, { names: namesText(bad) }));
         });
     };
 
@@ -139,12 +153,12 @@
     dev.message = async function (hosts, o) {
         o = o || {};
         const on = hosts.filter(h => { const d = byHost(h); return d && !POps.isOffline(d); });
-        if (!on.length) return POps.toast('warning', 'Açık bilgisayar yok; mesaj gönderilmedi.');
+        if (!on.length) return POps.toast('warning', POps.t('Açık bilgisayar yok; mesaj gönderilmedi.'));
         const text = await POps.prompt({
-            title: on.length === 1 ? `${dev.name(on[0])} ekranına mesaj` : `${on.length} bilgisayara mesaj`,
-            message: 'Oturumdaki kullanıcının ekranında 2 dakika görünür.',
-            label: 'Mesaj', multiline: true, maxLength: 250, confirmText: 'Gönder', icon: 'message',
-            note: hosts.length > on.length ? `Kapalı ${hosts.length - on.length} bilgisayar atlanacak.` : ''
+            title: on.length === 1 ? POps.t('{name} ekranına mesaj', { name: dev.name(on[0]) }) : POps.tn('{n} bilgisayara mesaj', on.length),
+            message: POps.t('Oturumdaki kullanıcının ekranında 2 dakika görünür.'),
+            label: POps.t('Mesaj'), multiline: true, maxLength: 250, confirmText: POps.t('Gönder'), icon: 'message',
+            note: hosts.length > on.length ? POps.tn('Kapalı {n} bilgisayar atlanacak.', hosts.length - on.length) : ''
         });
         if (text === null) return;
         const clean = text.replace(/[\r\n\t]+/g, ' ').replace(/["%^]/g, "'").replace(/[\u0000-\u001f]/g, '').trim();
@@ -152,7 +166,7 @@
         await POps.act(o.btn, () => POps.post('/api/deploy_orchestration', {
             target_mode: 'PC', targets: on, taskSequence: [{ name: 'Mesaj', type: 'CMD', command: `msg * /TIME:120 "${clean}"` }],
             title: 'Mesaj', source: o.source || null
-        }, { jobTitle: 'Mesaj · ' + (o.scopeLabel || count(on.length)) }), { success: `Mesaj ${on.length} bilgisayara gönderildi.` });
+        }, { jobTitle: POps.taskName('Mesaj') + ' · ' + (o.scopeLabel || count(on.length)) }), { success: POps.tn('Mesaj {n} bilgisayara gönderildi.', on.length) });
     };
 
     // ---- Taşı
@@ -162,22 +176,22 @@
     dev.moveTo = async function (hosts, lab, o) {
         o = o || {};
         if (await POps.act(o.btn, () => POps.post('/api/move_pcs', { pc_names: hosts, new_lab: lab }), {
-            success: lab === UNASSIGNED ? `${count(hosts.length)} sınıftan çıkarıldı.` : `${count(hosts.length)} ${lab} sınıfına taşındı.`
+            success: lab === UNASSIGNED ? POps.tn('{n} bilgisayar sınıftan çıkarıldı.', hosts.length) : POps.tn('{n} bilgisayar {lab} sınıfına taşındı.', hosts.length, { lab })
         })) { POps.loadDevices().catch(() => {}); return true; }
         return false;
     };
     dev.moveMenu = function (anchor, hosts, o) {
         o = o || {};
         const current = o.currentLab;
-        const items = [{ header: hosts.length === 1 ? `${dev.name(hosts[0])} nereye taşınsın?` : `${hosts.length} bilgisayar nereye taşınsın?` }];
+        const items = [{ header: hosts.length === 1 ? POps.t('{name} nereye taşınsın?', { name: dev.name(hosts[0]) }) : POps.tn('{n} bilgisayar nereye taşınsın?', hosts.length) }];
         dev.labs().filter(l => l !== current).forEach(l => items.push({ label: l, icon: 'labs', onClick: () => dev.moveTo(hosts, l, o) }));
-        items.push('-', { label: 'Yeni sınıf…', icon: 'plus', onClick: async () => {
-            const name = await POps.prompt({ title: 'Yeni sınıf', label: 'Sınıf adı', maxLength: 60, confirmText: 'Oluştur ve taşı' });
+        items.push('-', { label: POps.t('Yeni sınıf…'), icon: 'plus', onClick: async () => {
+            const name = await POps.prompt({ title: POps.t('Yeni sınıf'), label: POps.t('Sınıf adı'), maxLength: 60, confirmText: POps.t('Oluştur ve taşı') });
             if (!name || !name.trim()) return;
             try { await POps.post('/api/create_lab', { lab_name: name.trim() }); } catch (e) { return POps.toast('error', POps.errorMessage(e)); }
             dev.moveTo(hosts, name.trim(), o);
         } });
-        if (current && current !== UNASSIGNED) items.push({ label: 'Sınıftan çıkar', icon: 'x', onClick: () => dev.moveTo(hosts, UNASSIGNED, o) });
+        if (current && current !== UNASSIGNED) items.push({ label: POps.t('Sınıftan çıkar'), icon: 'x', onClick: () => dev.moveTo(hosts, UNASSIGNED, o) });
         POps.menu(anchor, items);
     };
 
@@ -185,17 +199,17 @@
     dev.quarantine = async function (hosts, o) {
         o = o || {};
         const reason = await POps.prompt({
-            title: hosts.length === 1 ? `${dev.name(hosts[0])} karantinaya alınsın mı?` : `${hosts.length} bilgisayar karantinaya alınsın mı?`,
-            message: 'Kullanıcının ekranı kilitlenir; kaldırana kadar bilgisayar kullanılamaz. Kapalı bilgisayar açılınca kilitlenir.',
-            label: 'Gerekçe', placeholder: 'Örn. sınav sırasında yetkisiz kullanım', maxLength: 300,
-            confirmText: hosts.length === 1 ? 'Karantinaya al' : `${hosts.length} bilgisayarı karantinaya al`, danger: true, icon: 'shield'
+            title: hosts.length === 1 ? POps.t('{name} karantinaya alınsın mı?', { name: dev.name(hosts[0]) }) : POps.tn('{n} bilgisayar karantinaya alınsın mı?', hosts.length),
+            message: POps.t('Kullanıcının ekranı kilitlenir; kaldırana kadar bilgisayar kullanılamaz. Kapalı bilgisayar açılınca kilitlenir.'),
+            label: POps.t('Gerekçe'), placeholder: POps.t('Örn. sınav sırasında yetkisiz kullanım'), maxLength: 300,
+            confirmText: hosts.length === 1 ? POps.t('Karantinaya al') : POps.tn('{n} bilgisayarı karantinaya al', hosts.length), danger: true, icon: 'shield'
         });
         if (reason === null) return;
         await POps.busy(o.btn, async () => {
             const res = await Promise.allSettled(hosts.map(h => POps.post('/api/security/lockdown', { target_pc: h, reason: reason.trim() })));
             const okN = res.filter(r => r.status === 'fulfilled').length;
             const failed = res.map((r, i) => r.status === 'rejected' ? `${dev.name(hosts[i])}: ${POps.errorMessage(r.reason)}` : null).filter(Boolean);
-            if (okN) POps.toast('success', `${count(okN)} karantinaya alındı.`);
+            if (okN) POps.toast('success', POps.tn('{n} bilgisayar karantinaya alındı.', okN));
             if (failed.length) POps.toast('error', failed.slice(0, 3).join('\n'));
         });
         POps.loadDevices().catch(() => {});
@@ -203,30 +217,30 @@
     dev.unquarantine = async function (hosts, o) {
         o = o || {};
         const reason = await POps.prompt({
-            title: hosts.length === 1 ? `${dev.name(hosts[0])} karantinadan çıkarılsın mı?` : `${hosts.length} bilgisayar karantinadan çıkarılsın mı?`,
-            label: 'Gerekçe (isteğe bağlı)', maxLength: 300, required: false, confirmText: 'Karantinayı kaldır', icon: 'unlock'
+            title: hosts.length === 1 ? POps.t('{name} karantinadan çıkarılsın mı?', { name: dev.name(hosts[0]) }) : POps.tn('{n} bilgisayar karantinadan çıkarılsın mı?', hosts.length),
+            label: POps.t('Gerekçe (isteğe bağlı)'), maxLength: 300, required: false, confirmText: POps.t('Karantinayı kaldır'), icon: 'unlock'
         });
         if (reason === null) return;
         await POps.busy(o.btn, async () => {
             const res = await Promise.allSettled(hosts.map(h => POps.post('/api/security/unlock', { target_pc: h, reason: reason.trim() })));
             const okN = res.filter(r => r.status === 'fulfilled').length;
-            if (okN) POps.toast('success', `${count(okN)} karantinadan çıkarıldı.`);
+            if (okN) POps.toast('success', POps.tn('{n} bilgisayar karantinadan çıkarıldı.', okN));
             const bad = res.length - okN;
-            if (bad) POps.toast('error', `${bad} bilgisayarda kaldırılamadı.`);
+            if (bad) POps.toast('error', POps.tn('{n} bilgisayarda kaldırılamadı.', bad));
         });
         POps.loadDevices().catch(() => {});
     };
 
     dev.rename = async function (host) {
         const d = byHost(host) || { hostname: host };
-        const name = await POps.prompt({ title: 'Bilgisayarın adını değiştir', message: 'Panelde bu adla görünür. Boş bırakırsanız bilgisayarın kendi adı kullanılır.', label: 'Görünen ad', defaultValue: POps.deviceName(d), maxLength: 100, required: false, confirmText: 'Kaydet' });
+        const name = await POps.prompt({ title: POps.t('Bilgisayarın adını değiştir'), message: POps.t('Panelde bu adla görünür. Boş bırakırsanız bilgisayarın kendi adı kullanılır.'), label: POps.t('Görünen ad'), defaultValue: POps.deviceName(d), maxLength: 100, required: false, confirmText: POps.t('Kaydet') });
         if (name === null) return;
-        if (await POps.act(null, () => POps.post('/api/rename_device', { pc_name: host, display_name: name.trim() }), { success: 'Ad güncellendi.' })) POps.loadDevices().catch(() => {});
+        if (await POps.act(null, () => POps.post('/api/rename_device', { pc_name: host, display_name: name.trim() }), { success: POps.t('Ad güncellendi.') })) POps.loadDevices().catch(() => {});
     };
     dev.remove = async function (host) {
-        const ok = await POps.confirm({ title: `${dev.name(host)} silinsin mi?`, message: 'Cihaz kaydı, envanteri ve bekleyen görevleri silinir. Ajan çalışıyorsa bir sonraki bağlantıda yeniden kayıt ister.', confirmText: 'Cihazı sil', danger: true, icon: 'trash' });
+        const ok = await POps.confirm({ title: POps.t('{name} silinsin mi?', { name: dev.name(host) }), message: POps.t('Cihaz kaydı, envanteri ve bekleyen görevleri silinir. Ajan çalışıyorsa bir sonraki bağlantıda yeniden kayıt ister.'), confirmText: POps.t('Cihazı sil'), danger: true, icon: 'trash' });
         if (!ok) return;
-        if (await POps.act(null, () => POps.del('/api/devices/' + encodeURIComponent(host)), { success: 'Cihaz silindi.' })) {
+        if (await POps.act(null, () => POps.del('/api/devices/' + encodeURIComponent(host)), { success: POps.t('Cihaz silindi.') })) {
             if (POps.drawer.isOpen('pc:' + host)) POps.drawer.close();
             POps.loadDevices().catch(() => {});
         }
@@ -239,61 +253,65 @@
         if (!data) return;
         const codes = [data.token];
         if (data.fallback_token) codes.push(data.fallback_token);
+        // "Yönetici Müdahalesi (Bypass)": ajanın tepsi menüsündeki ad (ajan arayüzü Türkçe), çeviride de aynı kalır
         await POps.alert({
-            title: 'Çevrimdışı açma kodu', icon: 'key', codes,
-            message: `${dev.name(host)} · geçerli: ${data.valid_for}` + (data.n ? ` · bugünün ${data.n + 1}. kodu` : ''),
-            note: (data.fallback_token ? 'İlk kod kabul edilmezse ikincisini deneyin (cihaz anahtarı henüz onaylanmadı). ' : '')
-                + 'Kullanıcı kodu tepsi simgesi → "Yönetici Müdahalesi (Bypass)" menüsüne girer. Her kod bir kez geçerlidir.'
+            title: POps.t('Çevrimdışı açma kodu'), icon: 'key', codes,
+            message: [dev.name(host), POps.t('geçerli: {valid}', { valid: data.valid_for }), data.n ? POps.t('bugünün {n}. kodu', { n: data.n + 1 }) : ''].filter(Boolean).join(' · '),
+            note: (data.fallback_token ? POps.t('İlk kod kabul edilmezse ikincisini deneyin (cihaz anahtarı henüz onaylanmadı).') + ' ' : '')
+                + POps.t('Kullanıcı kodu tepsi simgesi → "Yönetici Müdahalesi (Bypass)" menüsüne girer. Her kod bir kez geçerlidir.')
         });
     };
     dev.setTeacher = async function (lab, host) {
         const removing = (state.mainPcs || {})[lab] === host;   // aynı bilgisayar gönderilince sunucu kaldırır
-        if (await POps.act(null, () => POps.post('/api/set_main_pc', { lab_name: lab, pc_name: host }), { success: removing ? `${dev.name(host)} artık öğretmen bilgisayarı değil.` : `${dev.name(host)} öğretmen bilgisayarı yapıldı.` })) POps.loadDevices().catch(() => {});
+        if (await POps.act(null, () => POps.post('/api/set_main_pc', { lab_name: lab, pc_name: host }), { success: removing ? POps.t('{name} artık öğretmen bilgisayarı değil.', { name: dev.name(host) }) : POps.t('{name} öğretmen bilgisayarı yapıldı.', { name: dev.name(host) }) })) POps.loadDevices().catch(() => {});
     };
     dev.screenUrl = (hosts) => 'vision?pc=' + hosts.map(encodeURIComponent).join(',');
     dev.commandUrl = (hosts) => 'terminal?pc=' + hosts.map(encodeURIComponent).join(',');
 
     // ---- Görev kaydının okunur hali (Son işlemler, Kayıtlar, İşlemler)
     const SOURCE_TEXT = { labs: 'Sınıflar', devices: 'Cihazlar', terminal: 'Uzak komut', deploy: 'Dağıtım', tasks: 'İşlemler', vision: 'Uzak ekran', schedule: 'Zamanlanmış', index: 'Kontrol merkezi', system: 'Sistem' };
-    dev.sourceText = (s) => SOURCE_TEXT[s] || s || '';
+    dev.sourceText = (s) => (SOURCE_TEXT[s] ? POps.t(SOURCE_TEXT[s]) : s || '');
     const STATUS_WORD = {
         Pending: 'Sırada', Running: 'Çalışıyor', Paused: 'Duraklatıldı', Completed: 'Tamamlandı', 'Completed (Rebooted)': 'Tamamlandı',
         Failed: 'Başarısız', Error: 'Hata', Cancelled: 'İptal edildi', Interrupted: 'Yarıda kaldı', 'Timed Out': 'Zaman aşımı',
         Denied: 'Reddedildi', Unknown: 'Bilinmiyor', Expired: 'Süresi doldu'
     };
-    dev.statusWord = (s) => STATUS_WORD[s] || s || '—';
+    dev.statusWord = (s) => (STATUS_WORD[s] ? POps.t(STATUS_WORD[s]) : s || '—');
     // Bilinen komutları okunur ada çevirir (eski kayıtlarda başlık yok)
     dev.taskTitle = function (t) {
         const c = String(t.command || t.script_path || '');
         // Uzak komut sayfasından yazılan serbest komut: adı "Komut" (eskiden "Terminal"), komutun kendisi gösterilir
-        if (t.title === 'Komut' || t.title === 'Terminal') return 'Komut: ' + (c.length > 50 ? c.slice(0, 47) + '…' : c);
-        if (t.title) return String(t.title);
-        if (/^shutdown \/r/i.test(c)) return 'Yeniden başlat';
-        if (/^shutdown \/s/i.test(c)) return 'Kapat';
-        if (/^msg \*/i.test(c)) return 'Mesaj';
-        if (/^POPS_UPDATE_AGENT/i.test(c) || /agent.?update/i.test(c)) return 'Ajan güncellemesi';
-        return c.length > 60 ? c.slice(0, 57) + '…' : (c || 'Görev');
+        if (t.title === 'Komut' || t.title === 'Terminal') return POps.t('Komut: {command}', { command: c.length > 50 ? c.slice(0, 47) + '…' : c });
+        // Başlık sunucudaki veridir (panel Türkçe yazar): bilinen adlar POps.taskName ile çevrilir
+        if (t.title) return POps.taskName(t.title);
+        if (/^shutdown \/r/i.test(c)) return POps.taskName('Yeniden başlat');
+        if (/^shutdown \/s/i.test(c)) return POps.taskName('Kapat');
+        if (/^msg \*/i.test(c)) return POps.taskName('Mesaj');
+        if (/^POPS_UPDATE_AGENT/i.test(c) || /agent.?update/i.test(c)) return POps.taskName('Ajan güncellemesi');
+        return c.length > 60 ? c.slice(0, 57) + '…' : (c || POps.t('Görev'));
     };
     // Reddedildi / başarısız için açık neden
     dev.failReason = function (t) {
         const s = t.status, x = t.exit_code;
-        if (s === 'Denied') return x === -5 ? 'Cihazdaki ajan bu komutu yetki politikası gereği çalıştırmadı (uzak komut bu cihazda kapalı olabilir).' : 'Cihaz komutu reddetti.';
-        if (s === 'Timed Out') return 'Komut süre sınırını aştı ve durduruldu.';
-        if (s === 'Expired') return 'Cihaz zamanında bağlanmadığı için görev başlatılmadı.';
-        if (s === 'Interrupted') return 'Komut çalışırken bağlantı koptu ya da cihaz yeniden başladı.';
-        if (s === 'Cancelled') return 'İşlem iptal edildi.';
-        if ((s === 'Failed' || s === 'Error') && x != null) return `Komut ${x} çıkış koduyla bitti.`;
+        if (s === 'Denied') return x === -5 ? POps.t('Cihazdaki ajan bu komutu yetki politikası gereği çalıştırmadı (uzak komut bu cihazda kapalı olabilir).') : POps.t('Cihaz komutu reddetti.');
+        if (s === 'Timed Out') return POps.t('Komut süre sınırını aştı ve durduruldu.');
+        if (s === 'Expired') return POps.t('Cihaz zamanında bağlanmadığı için görev başlatılmadı.');
+        if (s === 'Interrupted') return POps.t('Komut çalışırken bağlantı koptu ya da cihaz yeniden başladı.');
+        if (s === 'Cancelled') return POps.t('İşlem iptal edildi.');
+        if ((s === 'Failed' || s === 'Error') && x != null) return POps.t('Komut {code} çıkış koduyla bitti.', { code: x });
         return '';
     };
 
     // ---- Olay sözlüğü (Kayıtlar ve Kontrol merkezi)
     // Kayıtlar agent_logs_v2'den gelir: event_type / action ham anahtardır; burada okunur cümleye çevrilir.
     // Önem dürüst: oturum açma/kapama ve yönetici işlemleri "Bilgi"; yalnızca gerçek sorunlar uyarı ya da kritik.
-    const SEV_WORD = { info: 'Bilgi', warn: 'Uyarı', bad: 'Kritik' };
-    const KIND_LABEL = { auth: 'Oturumlar', policy: 'Kural ihlalleri', quarantine: 'Karantina', command: 'Komutlar', agent: 'Ajan ve bakım', other: 'Diğer' };
-    const CAT_LABEL = { security: 'Güvenlik', restricted_content: 'Kural ihlali', system_maintenance: 'Bakım', legacy: 'Eski kayıt' };
-    const RISK_LABEL = { info: 'bilgi', low: 'düşük', medium: 'orta', high: 'yüksek', critical: 'kritik' };
-    const CAP = { terminal: 'uzak komut', vision: 'uzak ekran' };
+    // Tablolar sayfa yüklenirken bir kez çevrilir (dil sayfa boyunca değişmez); anahtarları ham değerlerdir.
+    const tAll = (o) => { Object.keys(o).forEach(k => { o[k] = POps.t(o[k]); }); return o; };
+    const SEV_WORD = tAll({ info: 'Bilgi', warn: 'Uyarı', bad: 'Kritik' });
+    const KIND_LABEL = tAll({ auth: 'Oturumlar', policy: 'Kural ihlalleri', quarantine: 'Karantina', command: 'Komutlar', agent: 'Ajan ve bakım', other: 'Diğer' });
+    const CAT_LABEL = tAll({ security: 'Güvenlik', restricted_content: 'Kural ihlali', system_maintenance: 'Bakım', legacy: 'Eski kayıt' });
+    const RISK_LABEL = tAll({ info: 'bilgi', low: 'düşük', medium: 'orta', high: 'yüksek', critical: 'kritik' });
+    const CAP = tAll({ terminal: 'uzak komut', vision: 'uzak ekran' });
     const BY_TYPE = {
         'auth.login': 'login', 'auth.logout': 'logout', 'auth.failed': 'login_failed', 'policy.alert': 'dns_block',
         'security.lockdown': 'lockdown', 'security.unlock': 'unlock', 'security.bypass_code': 'bypass_code',
@@ -303,20 +321,20 @@
     };
     const commandOf = (r, m) => String(m.raw_command || String(r.message || '').replace(/^G(ö|o)rev:\s*/i, '')).trim();
     const EVENTS = {
-        login: { title: () => 'Oturum açıldı', icon: 'user', kind: 'auth', sev: 'info' },
-        logout: { title: () => 'Oturum kapatıldı', icon: 'logout', kind: 'auth', sev: 'info' },
-        login_failed: { title: () => 'Hatalı giriş denemesi', icon: 'user', kind: 'auth' },
-        dns_block: { title: (r, m) => m.domain ? 'Yasaklı siteye erişim: ' + m.domain : 'Yasaklı siteye erişim', icon: 'shield', kind: 'policy', quietReason: true },
-        lockdown: { title: () => 'Karantinaya alındı', icon: 'lock', kind: 'quarantine', sev: 'warn', admin: true },
-        unlock: { title: () => 'Karantina kaldırıldı', icon: 'unlock', kind: 'quarantine', sev: 'info', admin: true },
-        auto_quarantine: { title: () => 'Kural ihlali eşiğinde kendini karantinaya aldı', icon: 'lock', kind: 'quarantine' },
-        unlock_failed: { title: () => 'Karantina kaldırılamadı, ağ yalıtımı sürüyor', icon: 'lock', kind: 'quarantine' },
-        offline_bypass: { title: () => 'Çevrimdışı açma koduyla karantinadan çıktı', icon: 'key', kind: 'quarantine' },
-        bypass_code: { title: () => 'Çevrimdışı açma kodu üretildi', icon: 'key', kind: 'quarantine', sev: 'info' },
-        execute_queue: { title: (r, m) => { const c = commandOf(r, m); return c ? 'Komut gönderildi: ' + dev.taskTitle({ command: c }) : 'Komut gönderildi'; }, icon: 'terminal', kind: 'command', sev: 'info' },
-        update_problem: { title: () => 'Ajan güncellemesi sorunlu bitti', icon: 'refresh', kind: 'agent' },
-        capability_denied: { title: (r) => CAP[r.reason] ? `Kapalı ${CAP[r.reason]} istendi, ajan reddetti` : 'Kapalı bir özellik istendi, ajan reddetti', icon: 'eye', kind: 'agent', quietReason: true },
-        enroll_denied: { title: () => 'Kayıtlı bilgisayarın anahtarı yeniden istendi, reddedildi', icon: 'alert', kind: 'other' }
+        login: { title: () => POps.t('Oturum açıldı'), icon: 'user', kind: 'auth', sev: 'info' },
+        logout: { title: () => POps.t('Oturum kapatıldı'), icon: 'logout', kind: 'auth', sev: 'info' },
+        login_failed: { title: () => POps.t('Hatalı giriş denemesi'), icon: 'user', kind: 'auth' },
+        dns_block: { title: (r, m) => m.domain ? POps.t('Yasaklı siteye erişim: {domain}', { domain: m.domain }) : POps.t('Yasaklı siteye erişim'), icon: 'shield', kind: 'policy', quietReason: true },
+        lockdown: { title: () => POps.t('Karantinaya alındı'), icon: 'lock', kind: 'quarantine', sev: 'warn', admin: true },
+        unlock: { title: () => POps.t('Karantina kaldırıldı'), icon: 'unlock', kind: 'quarantine', sev: 'info', admin: true },
+        auto_quarantine: { title: () => POps.t('Kural ihlali eşiğinde kendini karantinaya aldı'), icon: 'lock', kind: 'quarantine' },
+        unlock_failed: { title: () => POps.t('Karantina kaldırılamadı, ağ yalıtımı sürüyor'), icon: 'lock', kind: 'quarantine' },
+        offline_bypass: { title: () => POps.t('Çevrimdışı açma koduyla karantinadan çıktı'), icon: 'key', kind: 'quarantine' },
+        bypass_code: { title: () => POps.t('Çevrimdışı açma kodu üretildi'), icon: 'key', kind: 'quarantine', sev: 'info' },
+        execute_queue: { title: (r, m) => { const c = commandOf(r, m); return c ? POps.t('Komut gönderildi: {command}', { command: dev.taskTitle({ command: c }) }) : POps.t('Komut gönderildi'); }, icon: 'terminal', kind: 'command', sev: 'info' },
+        update_problem: { title: () => POps.t('Ajan güncellemesi sorunlu bitti'), icon: 'refresh', kind: 'agent' },
+        capability_denied: { title: (r) => CAP[r.reason] ? POps.t('Kapalı {feature} istendi, ajan reddetti', { feature: CAP[r.reason] }) : POps.t('Kapalı bir özellik istendi, ajan reddetti'), icon: 'eye', kind: 'agent', quietReason: true },
+        enroll_denied: { title: () => POps.t('Kayıtlı bilgisayarın anahtarı yeniden istendi, reddedildi'), icon: 'alert', kind: 'other' }
     };
 
     function parseMeta(v) {
@@ -336,15 +354,15 @@
     }
     function whoOf(r, m) {
         const a = String(m.created_by || r.actor_id || '').trim();
-        if (!a || a === 'Agent' || a === r.pc_name) return 'Ajan';
-        if (/^system/i.test(a)) return 'Sistem';
+        if (!a || a === 'Agent' || a === r.pc_name) return POps.t('Ajan');
+        if (/^system/i.test(a)) return POps.t('Sistem');
         return a;
     }
     function sourceOf(r) {
         const t = String(r.event_type || '');
-        if (/^security\./.test(t)) return 'Panel';
-        if (/^deploy\./.test(t)) return 'Görev kuyruğu';
-        if (/^(agent|auth|policy)\./.test(t)) return 'Bilgisayardaki ajan';
+        if (/^security\./.test(t)) return POps.t('Panel');
+        if (/^deploy\./.test(t)) return POps.t('Görev kuyruğu');
+        if (/^(agent|auth|policy)\./.test(t)) return POps.t('Bilgisayardaki ajan');
         return '';
     }
     function norm(r) {
@@ -356,10 +374,11 @@
         const reason = String(r.reason || '').trim();
         let why = '';
         if (reason && !(def && def.quietReason)) {
-            if (key === 'enroll_denied' && reason === 'already_enrolled') why = 'Bilgisayar zaten kayıtlı; yeni anahtar verilmedi.';
-            else why = def && def.admin ? 'Gerekçe: ' + reason : cap1(reason);
+            if (key === 'enroll_denied' && reason === 'already_enrolled') why = POps.t('Bilgisayar zaten kayıtlı; yeni anahtar verilmedi.');
+            else why = def && def.admin ? POps.t('Gerekçe: {reason}', { reason }) : cap1(reason);
         }
-        const title = def ? def.title(r, m) : (cleanMsg(r.message).slice(0, 160) || r.event_type || 'Olay');
+        // Ajanın yazdığı serbest ileti (veri) çevrilmez
+        const title = def ? def.title(r, m) : (cleanMsg(r.message).slice(0, 160) || r.event_type || POps.t('Olay'));
         return {
             id: String(r.id), r, m, key, sev, title, why,
             kind: def ? def.kind : (cat === 'restricted_content' ? 'policy' : cat === 'system_maintenance' ? 'agent' : 'other'),
@@ -374,13 +393,13 @@
     let openHost = null;
     function headHtml(d) {
         const st = dev.state(d);
-        const sub = st.cls === 'off' ? `Kapalı${st.since ? ' · ' + POps.timeHtml(st.since) : ''}` : escapeHtml(st.word) + (dev.user(d) ? ' · ' + escapeHtml(dev.user(d)) : '');
+        const sub = st.cls === 'off' ? `${escapeHtml(st.word)}${st.since ? ' · ' + POps.timeHtml(st.since) : ''}` : escapeHtml(st.word) + (dev.user(d) ? ' · ' + escapeHtml(dev.user(d)) : '');
         return `<div class="drawer-head">
             <div class="drawer-title">
                 <span class="drawer-ico ${escapeHtml(st.cls)}">${POps.iconHtml('monitor', 'lg')}</span>
                 <div style="min-width:0"><h2>${escapeHtml(POps.deviceName(d))}</h2><div class="sub"><span class="dot ${escapeHtml(st.cls)}"></span>${sub}</div></div>
             </div>
-            <button type="button" class="ibtn sm" data-act="close" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button>
+            <button type="button" class="ibtn sm" data-act="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button>
         </div>`;
     }
     function circlesHtml(d) {
@@ -389,22 +408,22 @@
         const visionOff = d.cap_vision_enabled === false || off;
         const termOff = d.cap_terminal_enabled === false || off;
         return `<div class="circs">
-            <button type="button" class="circ" data-act="screen" ${visionOff ? 'disabled' : ''}><span>${POps.iconHtml('eye')}</span>Ekran</button>
-            <button type="button" class="circ" data-act="command" ${termOff ? 'disabled' : ''}><span>${POps.iconHtml('terminal')}</span>Komut</button>
-            <button type="button" class="circ" data-act="power" aria-haspopup="menu"><span>${POps.iconHtml('power')}</span>Güç</button>
-            <button type="button" class="circ" data-act="more" aria-haspopup="menu"><span>${POps.iconHtml('more')}</span>Diğer</button>
+            <button type="button" class="circ" data-act="screen" ${visionOff ? 'disabled' : ''}><span>${POps.iconHtml('eye')}</span>${POps.tHtml('Ekran')}</button>
+            <button type="button" class="circ" data-act="command" ${termOff ? 'disabled' : ''}><span>${POps.iconHtml('terminal')}</span>${POps.tHtml('Komut')}</button>
+            <button type="button" class="circ" data-act="power" aria-haspopup="menu"><span>${POps.iconHtml('power')}</span>${POps.tHtml('Güç')}</button>
+            <button type="button" class="circ" data-act="more" aria-haspopup="menu"><span>${POps.iconHtml('more')}</span>${escapeHtml(POps.tx('Diğer', 'menu'))}</button>
         </div>`;
     }
     function factsHtml(d) {
         const off = POps.isOffline(d);
         // [etiket, düz metin değer, eşaralıklı mı]; boş değerli satır gösterilmez
         const facts = [
-            ['Kullanıcı', dev.user(d)], ['Uygulama', dev.app(d)], ['Sınıf', d.lab && d.lab !== UNASSIGNED ? d.lab : 'Atanmamış'],
+            ['Kullanıcı', dev.user(d)], ['Uygulama', dev.app(d)], ['Sınıf', d.lab && d.lab !== UNASSIGNED ? d.lab : POps.t('Atanmamış')],
             ['IP', d.ip, true], ['MAC', d.mac, true], ['Ajan', dev.version(d)], ['Bellek', d.cap_ram_readable],
-            ['Son görülme', off ? null : 'şimdi'], ['Son kopuş', off ? d.last_disconnect_reason : null], ['Kimlik', d.hostname, true]
+            ['Son görülme', off ? null : POps.t('şimdi')], ['Son kopuş', off ? d.last_disconnect_reason : null], ['Kimlik', d.hostname, true]
         ];
-        const seenHtml = off ? `<div class="grow"><span>Son görülme</span><span>${POps.timeHtml(d.last_seen)}</span></div>` : '';
-        const rowsHtml = facts.filter(f => f[1]).map(f => `<div class="grow"><span>${escapeHtml(f[0])}</span><span${f[2] ? ' class="mono"' : ''}>${escapeHtml(f[1])}</span></div>`).join('');
+        const seenHtml = off ? `<div class="grow"><span>${POps.tHtml('Son görülme')}</span><span>${POps.timeHtml(d.last_seen)}</span></div>` : '';
+        const rowsHtml = facts.filter(f => f[1]).map(f => `<div class="grow"><span>${POps.tHtml(f[0])}</span><span${f[2] ? ' class="mono"' : ''}>${escapeHtml(f[1])}</span></div>`).join('');
         return `<div class="glist">${rowsHtml}${seenHtml}</div>`;
     }
     function issuesHtml(d) {
@@ -413,15 +432,15 @@
     function activityRowHtml(a) {
         if (a.kind === 'vision') {
             const dur = a.ended_at && a.at ? POps.duration((POps.toDate(a.ended_at) - POps.toDate(a.at)) / 1000) : '';
-            return `<div class="act"><div class="res">${POps.iconHtml('eye')}</div><div style="min-width:0"><div class="what">Uzak ekran${a.mandatory ? ' (zorunlu)' : ''}</div>
+            return `<div class="act"><div class="res">${POps.iconHtml('eye')}</div><div style="min-width:0"><div class="what">${a.mandatory ? POps.tHtml('Uzak ekran (zorunlu)') : POps.tHtml('Uzak ekran')}</div>
                 <div class="meta">${escapeHtml(a.by || '?')} · ${POps.timeHtml(a.at)}${dur ? ' · ' + escapeHtml(dur) : ''}${a.reason ? ' · ' + escapeHtml(a.reason) : ''}</div></div>
-                <div class="side"><span class="word">${a.ended_at ? 'Bitti' : 'Sürüyor'}</span></div></div>`;
+                <div class="side"><span class="word">${a.ended_at ? POps.tHtml('Bitti') : POps.tHtml('Sürüyor')}</span></div></div>`;
         }
         const k = POps.taskState(a.status);
         const why = k === 'bad' ? dev.failReason(a) : '';
         const metaHtml = escapeHtml(a.by || '?') + ' · ' + POps.timeHtml(a.at) + (a.source ? ' · ' + escapeHtml(dev.sourceText(a.source)) : '');
         return `<div class="act"><div class="res ${escapeHtml(k)}">${POps.iconHtml(k === 'ok' ? 'check' : k === 'bad' ? 'x' : 'clock')}</div><div style="min-width:0"><div class="what">${escapeHtml(dev.taskTitle(a))}</div>
-            <div class="meta">${metaHtml}${a.reason ? ' · gerekçe: ' + escapeHtml(a.reason) : ''}</div>
+            <div class="meta">${metaHtml}${a.reason ? ' · ' + POps.tHtml('gerekçe: {reason}', { reason: a.reason }) : ''}</div>
             ${why ? `<div class="why">${escapeHtml(why)}</div>` : ''}</div>
             <div class="side"><span class="word ${escapeHtml(k)}">${escapeHtml(dev.statusWord(a.status))}</span></div></div>`;
     }
@@ -430,16 +449,16 @@
             const r = await POps.get('/api/devices/' + encodeURIComponent(host) + '/activity?limit=8');
             if (openHost !== host) return;
             const items = r.items || [];
-            box.innerHTML = items.length ? items.map(activityRowHtml).join('') : '<div class="faint" style="font-size:var(--text-sm);padding:6px 0">Bu cihazda henüz işlem yok.</div>';
+            box.innerHTML = items.length ? items.map(activityRowHtml).join('') : `<div class="faint" style="font-size:var(--text-sm);padding:6px 0">${POps.tHtml('Bu cihazda henüz işlem yok.')}</div>`;
         } catch (e) {
-            if (openHost === host) box.textContent = 'Son işlemler alınamadı: ' + POps.errorMessage(e);
+            if (openHost === host) box.textContent = POps.t('Son işlemler alınamadı: {error}', { error: POps.errorMessage(e) });
         }
     }
     function render(body, d, keepRecent) {
         const recent = keepRecent ? body.querySelector('#devRecent') : null;
         body.innerHTML = headHtml(d) + circlesHtml(d) + issuesHtml(d) + factsHtml(d)
-            + '<div><h3>Son işlemler</h3><div id="devRecent"><div class="faint" style="font-size:var(--text-sm);padding:6px 0">Yükleniyor…</div></div></div>'
-            + `<a href="devices?pc=${encodeURIComponent(d.hostname)}" style="font-size:var(--text-sm)">Cihazlar sayfasında aç</a>`;
+            + `<div><h3>${POps.tHtml('Son işlemler')}</h3><div id="devRecent"><div class="faint" style="font-size:var(--text-sm);padding:6px 0">${POps.tHtml('Yükleniyor…')}</div></div></div>`
+            + `<a href="devices?pc=${encodeURIComponent(d.hostname)}" style="font-size:var(--text-sm)">${POps.tHtml('Cihazlar sayfasında aç')}</a>`;
         if (recent) body.querySelector('#devRecent').replaceWith(recent);
     }
     dev.open = async function (host, opts) {
@@ -448,7 +467,7 @@
         if (!d) {
             try { await POps.loadDevices(); } catch (e) { return POps.toast('error', POps.errorMessage(e)); }
             d = byHost(host);
-            if (!d) return POps.toast('warning', 'Cihaz bulunamadı.');
+            if (!d) return POps.toast('warning', POps.t('Cihaz bulunamadı.'));
         }
         // Panel başka bir bilgisayar açıkken açılırsa önce onun kapanışı çalışır; yeni bilgisayar ondan sonra
         // işaretlenir (eskiden kapanış yenisini de siliyordu ve "Son işlemler" yüklenmiyordu)
@@ -466,19 +485,19 @@
                 else if (act === 'screen') window.location.href = dev.screenUrl([h]);
                 else if (act === 'command') window.location.href = dev.commandUrl([h]);
                 else if (act === 'power') POps.menu(b, [
-                    { label: 'Uyandır', icon: 'zap', disabled: !POps.isOffline(cur), onClick: () => dev.power('wake', [h], { source: o.source }) },
-                    { label: 'Yeniden başlat', icon: 'restart', disabled: POps.isOffline(cur), onClick: () => dev.power('restart', [h], { source: o.source }) },
-                    { label: 'Kapat', icon: 'power', danger: true, disabled: POps.isOffline(cur), onClick: () => dev.power('shutdown', [h], { source: o.source }) }
+                    { label: POps.t('Uyandır'), icon: 'zap', disabled: !POps.isOffline(cur), onClick: () => dev.power('wake', [h], { source: o.source }) },
+                    { label: POps.t('Yeniden başlat'), icon: 'restart', disabled: POps.isOffline(cur), onClick: () => dev.power('restart', [h], { source: o.source }) },
+                    { label: POps.tx('Kapat', 'power'), icon: 'power', danger: true, disabled: POps.isOffline(cur), onClick: () => dev.power('shutdown', [h], { source: o.source }) }
                 ]);
                 else if (act === 'more') POps.menu(b, [
-                    { label: 'Mesaj gönder', icon: 'message', disabled: POps.isOffline(cur), onClick: () => dev.message([h], { source: o.source }) },
-                    { label: 'Yeniden adlandır', icon: 'edit', onClick: () => dev.rename(h) },
-                    { label: 'Başka sınıfa taşı…', icon: 'move', onClick: () => dev.moveMenu(b, [h], { currentLab: cur.lab }) },
-                    cur.lab && cur.lab !== UNASSIGNED ? { label: (state.mainPcs || {})[cur.lab] === h ? 'Öğretmen bilgisayarı olmaktan çıkar' : 'Öğretmen bilgisayarı yap', icon: 'crown', onClick: () => dev.setTeacher(cur.lab, h) } : null,
+                    { label: POps.t('Mesaj gönder'), icon: 'message', disabled: POps.isOffline(cur), onClick: () => dev.message([h], { source: o.source }) },
+                    { label: POps.t('Yeniden adlandır'), icon: 'edit', onClick: () => dev.rename(h) },
+                    { label: POps.t('Başka sınıfa taşı…'), icon: 'move', onClick: () => dev.moveMenu(b, [h], { currentLab: cur.lab }) },
+                    cur.lab && cur.lab !== UNASSIGNED ? { label: (state.mainPcs || {})[cur.lab] === h ? POps.t('Öğretmen bilgisayarı olmaktan çıkar') : POps.t('Öğretmen bilgisayarı yap'), icon: 'crown', onClick: () => dev.setTeacher(cur.lab, h) } : null,
                     '-',
-                    cur.is_quarantined ? { label: 'Karantinayı kaldır', icon: 'unlock', onClick: () => dev.unquarantine([h]) } : { label: 'Karantinaya al', icon: 'lock', danger: true, onClick: () => dev.quarantine([h]) },
-                    cur.is_quarantined ? { label: 'Çevrimdışı açma kodu', icon: 'key', onClick: () => dev.bypass(h) } : null,
-                    IS_SUPER ? { label: 'Cihazı sil', icon: 'trash', danger: true, onClick: () => dev.remove(h) } : null
+                    cur.is_quarantined ? { label: POps.t('Karantinayı kaldır'), icon: 'unlock', onClick: () => dev.unquarantine([h]) } : { label: POps.t('Karantinaya al'), icon: 'lock', danger: true, onClick: () => dev.quarantine([h]) },
+                    cur.is_quarantined ? { label: POps.t('Çevrimdışı açma kodu'), icon: 'key', onClick: () => dev.bypass(h) } : null,
+                    IS_SUPER ? { label: POps.t('Cihazı sil'), icon: 'trash', danger: true, onClick: () => dev.remove(h) } : null
                 ]);
             });
         }

@@ -59,6 +59,9 @@ the menu button).
   the entry (online/total PCs per lab, a red dot when a PC of the lab is quarantined); **Atanmamış** appears there
   while new PCs have no lab.
 - At the bottom: the job center, **Bildirimler** and the signed-in user with the sign-out button.
+- **Türkçe / English** under the user switches the interface language for this browser (kept for a year in the
+  `pops_lang` cookie). The English interface is being completed page by page; untranslated text stays Turkish
+  ([`i18n.md`](i18n.md)).
 
 **Job center.** As soon as this browser tab has sent something to PCs (a power command, a message, a command, a
 deployment, a retry), a card "N işlem sürüyor" with a progress bar appears. It opens a list with

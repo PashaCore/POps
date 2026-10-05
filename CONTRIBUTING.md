@@ -39,7 +39,8 @@ Useful background before a first change: [`docs/getting-started.md`](docs/gettin
 | `VERSION`, `CHANGELOG.md` | The single version source and the changelog. |
 | `Shared/`, `assets/`, `screenshots/` | A placeholder README; images used by the README. |
 
-The panel's text is Turkish. `CHANGELOG.md` and most of `docs/` are in English; code comments are mostly Turkish.
+The panel's text is Turkish, with an English interface in progress ([`docs/i18n.md`](docs/i18n.md)). `CHANGELOG.md`
+and most of `docs/` are in English; code comments are mostly Turkish.
 
 ## Local setup
 
@@ -93,6 +94,9 @@ cp Dashboard/includes/config.example.php Dashboard/includes/config.php   # git-i
 - Plain `http://` works on a development machine; the cookies are marked `Secure` only over HTTPS.
 - New pages include `includes/header.php`. It provides `escapeHtml()` and `jsArg()` for API values and wraps
   `fetch` so `/api/` calls send the cookie and the `X-Requested-With` header the backend requires.
+- Interface text is written in Turkish and wrapped for translation (`_e('…')` / `__('…')` in PHP, `POps.t('…')` in
+  JavaScript); the English goes into `Dashboard/lang/en/<page>.json`. How to convert a page, the rules and the
+  glossary: [`docs/i18n.md`](docs/i18n.md).
 
 ### Agent (Windows, .NET 10 SDK)
 
@@ -209,6 +213,8 @@ python Backend/migrate.py                    # must apply nothing
 - **PHP syntax:** every file under `Dashboard/` passes `php -l`.
 - **Dark mode must not come back.** The panel has one light theme since 0.1.2-alpha. Any `data-theme` or
   `toggleTheme` under `Dashboard/` fails the build.
+- **Translations:** every `Dashboard/lang/*/*.json` parses, uses the same placeholders as its Turkish key and only
+  has keys that exist in the code (`tools/i18n/check_i18n.py`, see [`docs/i18n.md`](docs/i18n.md)).
 - **Version consistency:** `VERSION`, the top release heading in `CHANGELOG.md` (the `Unreleased` heading is
   skipped) and the `<Version>` that `Agent/Directory.Build.props` produces must be equal. `VERSION` changes only
   in a release commit; between releases, changes collect under `## [Unreleased]`.

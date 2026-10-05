@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Panel: English interface (in progress).** **Türkçe / English** at the bottom of the sidebar switches the panel language for this browser (cookie `pops_lang`, kept for a year; the default stays Turkish). Translated so far: the sidebar, search, job center and notifications, page titles, dialogs, toasts and error messages (including the most frequent server messages), relative times and dates, the device actions and the device detail panel, task states and failure reasons, the event wording shown on **Kayıtlar**, and **Kontrol merkezi**. Other pages are being converted and show Turkish text until then. Translations live in `Dashboard/lang/en/` (one file per page); CI checks them with `tools/i18n/check_i18n.py`. How it works and how to convert a page: [`docs/i18n.md`](docs/i18n.md).
+
 ## [0.1.22-alpha] - 2026-10-05
 
 **For operators, in short:**

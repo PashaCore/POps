@@ -17,3 +17,6 @@ Dashboard/terminal.php  sink:appendToTerminal/0  terminal geçmişine insertAdja
 
 # ---- ortak simge yardımcısı
 Dashboard/assets/pops_script.js  d2808b22b01c  POps.iconHtml: href sunucunun verdiği sabit sprite yolu (window.POPS_ICONS) + sabit simge adı; değer escapeHtml ile kaçırılır
+
+# ---- dil yardımcısı
+Dashboard/assets/pops_script.js  deb050cde09d  POps.tHtml'in html parçaları: çağıranın kurduğu HTML (şablon/birleştirme olarak çağrı yerinde denetlenir); metin ve params escapeHtml'den geçer

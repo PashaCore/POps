@@ -16,7 +16,10 @@ no errors; hundreds of agents sending full software lists at the same moment rai
 runs as a single worker, so plan one server per school.
 
 **Is the panel available in English?**
-No. The panel and most server messages are in Turkish.
+Partly, and growing: **Türkçe / English** at the bottom of the sidebar switches the interface for your browser. The
+sidebar, search, notifications, dialogs, device actions and **Kontrol merkezi** are translated; the other pages are
+being converted and show Turkish text until then ([`i18n.md`](i18n.md)). Server messages without an English entry
+stay Turkish.
 
 **Does POps work without internet access?**
 Yes. The server checks GitHub for new versions but works without it; agent releases can be uploaded by hand on

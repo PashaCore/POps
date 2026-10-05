@@ -1,5 +1,6 @@
 <?php
 // Yan menü: etkin sayfa ve yetkiye göre. Sınıflar sayfasındayken sınıf listesi #navSub-labs'a sayfa betiğiyle dolar.
+// Bölüm adları Türkçe anahtardır, yazılırken çevrilir ('nav' bağlamı: "İşlem" bölümü İşlemler sayfası değildir).
 $current_file = basename($_SERVER['PHP_SELF']);
 
 $role = $_SESSION['role'] ?? 'admin';
@@ -33,7 +34,7 @@ foreach ($nav_items as $item) {
 
 foreach ($grouped as $section => $items): ?>
     <div class="nav-section">
-        <?php if ($section !== ''): ?><div class="nav-section-title"><?php echo htmlspecialchars($section, ENT_QUOTES, 'UTF-8'); ?></div><?php endif; ?>
+        <?php if ($section !== ''): ?><div class="nav-section-title"><?php echo htmlspecialchars(__x($section, 'nav'), ENT_QUOTES, 'UTF-8'); ?></div><?php endif; ?>
         <?php foreach ($items as $item):
             $isActive = basename($current_file, '.php') === $item['page'];
         ?>

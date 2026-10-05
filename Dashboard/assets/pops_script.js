@@ -12,6 +12,7 @@
 //   POps.chart.line / bars       : bağımlılıksız SVG grafik (Sistem → Genel bakış)
 //   POps.relTime / timeHtml      : "3 dk önce" (üstüne gelince tam tarih ve saat)
 //   POps.jobs                    : süren işlemler (task_ids) — yan menünün altındaki işlem merkezi
+//   POps.t / tn / tx / tHtml     : arayüz dili (Türkçe metin anahtardır; bkz. docs/i18n.md), POps.locale
 // Metinler her zaman textContent ile yazılır; sunucudan gelen değer HTML olarak yorumlanmaz.
 // =================================================================
 
@@ -31,7 +32,65 @@ const state = {
 
 const POps = window.POps = window.POps || {};
 
+// ============== DİL ==============
+// Türkçe metin anahtardır (gettext gibi). İngilizce arayüzde header.php ortak sözlükle sayfanın sözlüğünü
+// (lang/en/common.json + lang/en/<sayfa>.json) window.POPS_I18N olarak basar; karşılığı olmayan metin Türkçe kalır.
+//   POps.t('Cihazlar')                       düz metin (textContent; HTML'e escapeHtml(...) ile)
+//   POps.t('{name} silinsin mi?', { name })  yer tutucular
+//   POps.tn('{n} bilgisayar', n)             çoğul: İngilizce değer {"one": "{n} computer", "other": "{n} computers"} olabilir
+//   POps.tx('Kapat', 'power')                aynı Türkçe metnin başka anlamı (sözlükte "Kapat|power"; yoksa Türkçe)
+//   POps.tHtml(metin, params, html)          kaçırılmış HTML; html: { ad: '<b>…</b>' } yer tutucuya çağıranın kurduğu HTML
+//   POps.tNodes('… {link} …', null, { link }) yer tutucuya DOM öğesi; dizi döner: el.append(...dizi)
+// Sunucuya giden değerler (görev adı, gerekçe…) çevrilmez; yalnızca gösterilen metin çevrilir.
+POps.lang = window.POPS_LANG === 'en' ? 'en' : 'tr';
+POps.locale = POps.lang === 'en' ? 'en-GB' : 'tr-TR';
+const I18N_DICT = POps.lang !== 'tr' && window.POPS_I18N && typeof window.POPS_I18N === 'object' ? window.POPS_I18N : {};
+const i18nHas = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+// Sözlükteki karşılık (çoğulda params.n'ye göre "one"/"other"); yoksa Türkçe anahtar
+function i18nTemplate(key, fallback, params) {
+    let v = i18nHas(I18N_DICT, key) ? I18N_DICT[key] : null;
+    if (v && typeof v === 'object') v = (params && Math.abs(Number(params.n)) === 1 && v.one) || v.other;
+    return typeof v === 'string' && v ? v : fallback;
+}
+// Metni yer tutucularına böler; her parça için fn(parça, ad|''); yer tutucu değerleri metne sonradan katılmaz
+function i18nParts(template, fn) {
+    return template.split(/(\{\w+\})/).filter(Boolean).map(part => fn(part, /^\{\w+\}$/.test(part) ? part.slice(1, -1) : ''));
+}
+const i18nValue = (params, k) => (k && params && i18nHas(params, k) && params[k] != null ? String(params[k]) : null);
+const i18nFill = (template, params) => i18nParts(template, (part, k) => { const v = i18nValue(params, k); return v === null ? part : v; }).join('');
+// Metin ve değerler kaçırılır; html'deki parçalar çağıranın kurduğu HTML'dir (çağrı yerinde denetlenir) ve olduğu gibi girer
+function i18nFillHtml(template, params, html) {
+    return template.split(/(\{\w+\})/).filter(Boolean).map(part => {
+        const k = /^\{\w+\}$/.test(part) ? part.slice(1, -1) : '';
+        if (k && html && i18nHas(html, k)) return String(html[k]);
+        const v = i18nValue(params, k);
+        return escapeHtml(v === null ? part : v);
+    }).join('');
+}
+const i18nKey = (text) => String(text == null ? '' : text);
+POps.t = (text, params) => i18nFill(i18nTemplate(i18nKey(text), i18nKey(text), params), params);
+POps.tn = (text, n, params) => POps.t(text, Object.assign({}, params, { n }));
+POps.tx = (text, context, params) => i18nFill(i18nTemplate(i18nKey(text) + '|' + context, i18nKey(text), params), params);
+POps.tHtml = (text, params, html) => i18nFillHtml(i18nTemplate(i18nKey(text), i18nKey(text), params), params, html);
+POps.tnHtml = (text, n, params, html) => POps.tHtml(text, Object.assign({}, params, { n }), html);
+POps.tNodes = function (text, params, nodes) {
+    return i18nParts(i18nTemplate(i18nKey(text), i18nKey(text), params), (part, k) => {
+        if (k && nodes && i18nHas(nodes, k)) return nodes[k];
+        const v = i18nValue(params, k);
+        return v === null ? part : v;
+    });
+};
+// Yüzde: Türkçede "%40", İngilizcede "40%"
+POps.pct = (n) => POps.t('%{n}', { n });
+// Dil seçimi bu tarayıcıda 1 yıl tutulur; sayfa yeni dille yeniden yüklenir
+POps.setLang = function (lang) {
+    const v = lang === 'en' ? 'en' : 'tr';
+    document.cookie = 'pops_lang=' + v + '; Path=/; Max-Age=31536000; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
+    location.reload();
+};
+
 // ============== İSTEK SARMALAYICI ==============
+// Türkçe anahtarlar; gösterilirken POps.t ile çevrilir (sunucunun Türkçe "detail" metinleri de: common.json)
 const STATUS_TEXT = {
     400: 'İstek geçersiz.',
     403: 'Bu işlem için yetkiniz yok.',
@@ -61,7 +120,7 @@ POps.ApiError = ApiError;
 function apiErrorText(data, status) {
     if (data && typeof data === 'object') {
         const d = data.detail;
-        if (typeof d === 'string' && d.trim()) return d.trim();
+        if (typeof d === 'string' && d.trim()) return POps.t(d.trim());
         if (Array.isArray(d) && d.length) {
             return d.map(x => {
                 if (!x || typeof x !== 'object') return String(x);
@@ -69,20 +128,19 @@ function apiErrorText(data, status) {
                 return (loc ? loc + ': ' : '') + (x.msg || '');
             }).join('; ');
         }
-        if (d && typeof d === 'object' && typeof d.message === 'string') return d.message;
-        if (typeof data.message === 'string' && data.message.trim()) return data.message.trim();
-        if (typeof data.error === 'string' && data.error.trim()) return data.error.trim();
+        if (d && typeof d === 'object' && typeof d.message === 'string') return POps.t(d.message);
+        if (typeof data.message === 'string' && data.message.trim()) return POps.t(data.message.trim());
+        if (typeof data.error === 'string' && data.error.trim()) return POps.t(data.error.trim());
     } else if (typeof data === 'string') {
         const t = data.trim();
-        if (t && t.length < 300 && !/<[a-z!]/i.test(t)) return t;
+        if (t && t.length < 300 && !/<[a-z!]/i.test(t)) return POps.t(t);
     }
-    return STATUS_TEXT[status] || ('Sunucu hatası (HTTP ' + status + ').');
+    return STATUS_TEXT[status] ? POps.t(STATUS_TEXT[status]) : POps.t('Sunucu hatası (HTTP {status}).', { status });
 }
 
+// Hata metni; sunucunun ya da sayfanın Türkçe metni sözlükte varsa çevrilir
 POps.errorMessage = function (err, fallback) {
-    if (!err) return fallback || 'Beklenmeyen hata.';
-    if (err instanceof ApiError) return err.message;
-    return (err && err.message) || fallback || 'Beklenmeyen hata.';
+    return POps.t((err && err.message) || fallback || 'Beklenmeyen hata.');
 };
 
 POps.api = async function (path, opts) {
@@ -102,7 +160,7 @@ POps.api = async function (path, opts) {
         res = await fetch(url, { method: o.method, headers, body, credentials: 'same-origin', signal: o.signal, keepalive: !!o.keepalive, cache: o.cache || 'no-store' });
     } catch (e) {
         if (e && e.name === 'AbortError') throw e;
-        throw new ApiError('Sunucuya ulaşılamadı. Bağlantınızı kontrol edin.', 0, null);
+        throw new ApiError(POps.t('Sunucuya ulaşılamadı. Bağlantınızı kontrol edin.'), 0, null);
     }
     if (res.status === 401) {
         // Oturum bitti: giriş sayfasına; çağıranın devam etmesi beklenmez
@@ -117,12 +175,12 @@ POps.api = async function (path, opts) {
     }
     if (!res.ok) throw new ApiError(apiErrorText(data, res.status), res.status, data);
     if (data && typeof data === 'object' && !Array.isArray(data) && data.status === 'error') {
-        throw new ApiError((typeof data.message === 'string' && data.message) || (typeof data.detail === 'string' && data.detail) || 'İşlem başarısız.', res.status, data);
+        throw new ApiError(POps.t((typeof data.message === 'string' && data.message) || (typeof data.detail === 'string' && data.detail) || 'İşlem başarısız.'), res.status, data);
     }
     // Görev oluşturan istekler (task_ids döner) işlem merkezine kendiliğinden eklenir
     if (data && Array.isArray(data.task_ids) && data.task_ids.length && POps.jobs) {
         const seq = o.body && typeof o.body === 'object' && Array.isArray(o.body.taskSequence) ? o.body.taskSequence : [];
-        POps.jobs.track(o.jobTitle || (seq[0] && seq[0].name) || 'İşlem', data.task_ids);
+        POps.jobs.track(o.jobTitle || (seq[0] && seq[0].name ? POps.taskName(seq[0].name) : POps.t('İşlem')), data.task_ids);
     }
     return data;
 };
@@ -157,7 +215,7 @@ POps.el = function (tag, attrs, children) {
 POps.setLoading = function (el, text) {
     if (!el) return;
     el.replaceChildren(POps.el('div', { className: 'loading-state', role: 'status' }, [
-        POps.el('span', { className: 'spinner', 'aria-hidden': 'true' }), document.createTextNode(text || 'Yükleniyor…')
+        POps.el('span', { className: 'spinner', 'aria-hidden': 'true' }), document.createTextNode(text || POps.t('Yükleniyor…'))
     ]));
 };
 POps.setEmpty = function (el, opts) {
@@ -176,7 +234,7 @@ POps.setEmpty = function (el, opts) {
     }
 };
 POps.setError = function (el, err, opts) {
-    POps.setEmpty(el, Object.assign({ icon: 'alert', kind: 'error', title: 'Veriler alınamadı', text: POps.errorMessage(err) }, opts || {}));
+    POps.setEmpty(el, Object.assign({ icon: 'alert', kind: 'error', title: POps.t('Veriler alınamadı'), text: POps.errorMessage(err) }, opts || {}));
 };
 
 // ============== BİLDİRİM (TOAST) ==============
@@ -209,7 +267,7 @@ POps.toast = function (type, message, opts) {
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'toast-close';
-    close.setAttribute('aria-label', 'Kapat');
+    close.setAttribute('aria-label', POps.t('Kapat'));
     close.appendChild(POps.iconEl('x', 'sm'));
     t.append(ic, msg, close);
     c.appendChild(t);
@@ -339,7 +397,7 @@ function openDialog(kind, opts) {
         const title = document.createElement('h2');
         title.className = 'pops-dialog-title';
         title.id = titleId;
-        title.textContent = o.title || (kind === 'confirm' ? 'Emin misiniz?' : kind === 'prompt' ? 'Bilgi girin' : 'Bilgi');
+        title.textContent = o.title || POps.t(kind === 'confirm' ? 'Emin misiniz?' : kind === 'prompt' ? 'Bilgi girin' : 'Bilgi');
         content.appendChild(title);
         if (o.message) {
             const p = document.createElement('p');
@@ -358,10 +416,10 @@ function openDialog(kind, opts) {
             const copy = document.createElement('button');
             copy.type = 'button';
             copy.className = 'btn secondary sm';
-            copy.append(POps.iconEl('copy', 'sm'), document.createTextNode('Kopyala'));
+            copy.append(POps.iconEl('copy', 'sm'), document.createTextNode(POps.t('Kopyala')));
             copy.addEventListener('click', async () => {
-                try { await navigator.clipboard.writeText(String(code)); POps.toast('success', 'Kopyalandı.'); }
-                catch (e) { POps.toast('warning', 'Kopyalanamadı; kodu seçip elle kopyalayın.'); }
+                try { await navigator.clipboard.writeText(String(code)); POps.toast('success', POps.t('Kopyalandı.')); }
+                catch (e) { POps.toast('warning', POps.t('Kopyalanamadı; kodu seçip elle kopyalayın.')); }
             });
             row.append(c, copy);
             content.appendChild(row);
@@ -418,13 +476,13 @@ function openDialog(kind, opts) {
             cancelBtn = document.createElement('button');
             cancelBtn.type = 'button';
             cancelBtn.className = 'btn secondary';
-            cancelBtn.textContent = o.cancelText || 'Vazgeç';
+            cancelBtn.textContent = o.cancelText || POps.t('Vazgeç');
             footer.appendChild(cancelBtn);
         }
         const okBtn = document.createElement('button');
         okBtn.type = 'button';
         okBtn.className = 'btn' + (o.danger ? ' danger' : '');
-        okBtn.textContent = o.confirmText || (kind === 'alert' ? 'Tamam' : kind === 'prompt' ? 'Kaydet' : 'Onayla');
+        okBtn.textContent = o.confirmText || POps.t(kind === 'alert' ? 'Tamam' : kind === 'prompt' ? 'Kaydet' : 'Onayla');
         footer.appendChild(okBtn);
         box.append(body, footer);
         overlay.appendChild(box);
@@ -449,7 +507,7 @@ function openDialog(kind, opts) {
             if (kind !== 'prompt') return finish(true);
             let v = input.value;
             if (o.trim !== false) v = v.trim();
-            if (o.required !== false && !v) return showError(o.requiredText || 'Bu alan boş bırakılamaz.');
+            if (o.required !== false && !v) return showError(o.requiredText || POps.t('Bu alan boş bırakılamaz.'));
             if (typeof o.validate === 'function') {
                 const msg = o.validate(v);
                 if (msg) return showError(msg);
@@ -593,35 +651,36 @@ window.powerCommand = async function (targetType, action, targetName, btn) {
         const pool = targetType === 'LAB' ? state.devices.filter(d => d.lab === targetName) : state.devices;
         targets = pool.filter(d => !POps.isOffline(d)).map(d => d.hostname);
     }
-    if (!targets.length) return POps.toast('warning', 'Açık cihaz yok; komut gönderilmedi.');
-    const verb = isShutdown ? 'kapatılacak' : 'yeniden başlatılacak';
+    if (!targets.length) return POps.toast('warning', POps.t('Açık cihaz yok; komut gönderilmedi.'));
     const dev = targetType === 'PC' ? (state.devices.find(d => d.hostname === targetName) || { hostname: targetName }) : null;
-    const who = targetType === 'ALL' ? `Ağdaki açık ${targets.length} cihaz`
-        : targetType === 'LAB' ? `${targetName} sınıfındaki açık ${targets.length} cihaz`
+    const who = targetType === 'ALL' ? POps.tn('Ağdaki açık {n} cihaz', targets.length)
+        : targetType === 'LAB' ? POps.tn('{lab} sınıfındaki açık {n} cihaz', targets.length, { lab: targetName })
         : `${POps.deviceName(dev)} (${targetName})`;
     const ok = await POps.confirm({
-        title: isShutdown ? 'Cihazlar kapatılsın mı?' : 'Cihazlar yeniden başlatılsın mı?',
-        message: `${who} 5 saniye içinde ${verb}. Kaydedilmemiş işler kaybolabilir.`,
-        confirmText: isShutdown ? 'Kapat' : 'Yeniden başlat',
+        title: isShutdown ? POps.t('Cihazlar kapatılsın mı?') : POps.t('Cihazlar yeniden başlatılsın mı?'),
+        message: isShutdown ? POps.t('{who} 5 saniye içinde kapatılacak. Kaydedilmemiş işler kaybolabilir.', { who })
+            : POps.t('{who} 5 saniye içinde yeniden başlatılacak. Kaydedilmemiş işler kaybolabilir.', { who }),
+        confirmText: isShutdown ? POps.tx('Kapat', 'power') : POps.t('Yeniden başlat'),
         danger: true,
         icon: 'power'
     });
     if (!ok) return;
+    // Görev adı sunucuya Türkçe gider (veri); panelde POps.taskName ile çevrilir
     await POps.act(btn, () => POps.post('/api/deploy_orchestration', {
         target_mode: 'PC', targets, taskSequence: [{ name: isShutdown ? 'Güç: kapat' : 'Güç: yeniden başlat', type: 'CMD', command: cmd }]
-    }), { success: (r) => `Komut kuyruğa eklendi (${(r && r.created) || targets.length} cihaz).` });
+    }), { success: (r) => POps.tn('Komut kuyruğa eklendi ({n} cihaz).', (r && r.created) || targets.length) });
 };
 
 // wakeUpCommand('ALL'|'LAB'|'PC', ad, düğme)
 window.wakeUpCommand = async function (targetType, targetName, btn) {
     if (targetType === 'ALL') {
-        const ok = await POps.confirm({ title: 'Bütün ağ uyandırılsın mı?', message: 'MAC adresi bilinen bütün kapalı cihazlara uyandırma (WOL) sinyali gönderilecek.', confirmText: 'Uyandır', icon: 'zap' });
+        const ok = await POps.confirm({ title: POps.t('Bütün ağ uyandırılsın mı?'), message: POps.t('MAC adresi bilinen bütün kapalı cihazlara uyandırma (WOL) sinyali gönderilecek.'), confirmText: POps.t('Uyandır'), icon: 'zap' });
         if (!ok) return;
-        await POps.act(btn, () => POps.post('/api/wake_all'), { success: (r) => `${(r && r.woken_pcs) || 0} cihaza uyandırma sinyali gönderildi.` });
+        await POps.act(btn, () => POps.post('/api/wake_all'), { success: (r) => POps.tn('{n} cihaza uyandırma sinyali gönderildi.', (r && r.woken_pcs) || 0) });
     } else if (targetType === 'LAB') {
-        await POps.act(btn, () => POps.post('/api/wake_lab/' + encodeURIComponent(targetName)), { success: (r) => `${targetName}: ${(r && r.woken_pcs) || 0} cihaza uyandırma sinyali gönderildi.` });
+        await POps.act(btn, () => POps.post('/api/wake_lab/' + encodeURIComponent(targetName)), { success: (r) => POps.tn('{lab}: {n} cihaza uyandırma sinyali gönderildi.', (r && r.woken_pcs) || 0, { lab: targetName }) });
     } else if (targetType === 'PC') {
-        await POps.act(btn, () => POps.post('/api/wake_pc/' + encodeURIComponent(targetName)), { success: 'Uyandırma sinyali gönderildi.' });
+        await POps.act(btn, () => POps.post('/api/wake_pc/' + encodeURIComponent(targetName)), { success: POps.t('Uyandırma sinyali gönderildi.') });
     }
 };
 
@@ -645,10 +704,10 @@ async function popsTwofaNudge(enabled) {
     box.id = 'twofaNudge';
     box.className = 'twofa-nudge';
     box.setAttribute('role', 'status');
-    box.innerHTML = POps.iconHtml('shield', 'sm') + '<span>Hesabınızda iki adımlı doğrulama (2FA) kapalı. Önerilir: '
-        + '<a href="settings#twofaCard">Ayarlar → İki adımlı doğrulama</a> bölümünden açabilirsiniz.</span>'
-        + '<button type="button" class="twofa-nudge-close" title="7 gün gösterme" aria-label="Kapat">' + POps.iconHtml('x', 'sm') + '</button>';
-    box.querySelector('button').addEventListener('click', () => {
+    const link = POps.el('a', { href: 'settings#twofaCard', text: POps.t('Ayarlar → İki adımlı doğrulama') });
+    const close = POps.el('button', { type: 'button', className: 'twofa-nudge-close', title: POps.t('7 gün gösterme'), 'aria-label': POps.t('Kapat') }, [POps.iconEl('x', 'sm')]);
+    box.append(POps.iconEl('shield', 'sm'), POps.el('span', null, POps.tNodes('Hesabınızda iki adımlı doğrulama (2FA) kapalı. Önerilir: {link} bölümünden açabilirsiniz.', null, { link })), close);
+    close.addEventListener('click', () => {
         try { localStorage.setItem(TWOFA_NUDGE_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000)); } catch (e) { /* özel pencere */ }
         box.remove();
     });
@@ -672,7 +731,7 @@ POps.iconEl = function (name, cls) {
 };
 
 // ============== ZAMAN ==============
-// Göreli zaman ("şimdi", "5 dk önce", "dün 14:02", "12 Eki 14:02"); tam hali title'da
+// Göreli zaman ("şimdi", "5 dk önce", "dün 14:02", "12 Eki 14:02"); tam hali title'da. Tarih biçimi POps.locale'e göre.
 function popsDate(v) {
     if (v == null || v === '' || v === '-') return null;
     const d = v instanceof Date ? v : new Date(typeof v === 'number' && v < 1e12 ? v * 1000 : v);
@@ -681,25 +740,25 @@ function popsDate(v) {
 POps.toDate = popsDate;
 POps.fullTime = function (v) {
     const d = popsDate(v);
-    return d ? d.toLocaleString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+    return d ? d.toLocaleString(POps.locale, { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
 };
 POps.relTime = function (v) {
     const d = popsDate(v);
     if (!d) return '—';
     const now = new Date();
     const sec = Math.round((now - d) / 1000);
-    const hm = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-    if (sec < 0) return sec > -120 ? 'şimdi' : d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) + ' ' + hm;
-    if (sec < 45) return 'şimdi';
-    if (sec < 3600) return Math.max(1, Math.round(sec / 60)) + ' dk önce';
+    const hm = d.toLocaleTimeString(POps.locale, { hour: '2-digit', minute: '2-digit' });
+    if (sec < 0) return sec > -120 ? POps.t('şimdi') : d.toLocaleDateString(POps.locale, { day: 'numeric', month: 'short' }) + ' ' + hm;
+    if (sec < 45) return POps.t('şimdi');
+    if (sec < 3600) return POps.tn('{n} dk önce', Math.max(1, Math.round(sec / 60)));
     const sameDay = d.toDateString() === now.toDateString();
-    if (sameDay && sec < 6 * 3600) return Math.round(sec / 3600) + ' sa önce';
-    if (sameDay) return 'bugün ' + hm;
+    if (sameDay && sec < 6 * 3600) return POps.tn('{n} sa önce', Math.round(sec / 3600));
+    if (sameDay) return POps.t('bugün {time}', { time: hm });
     const y = new Date(now); y.setDate(now.getDate() - 1);
-    if (d.toDateString() === y.toDateString()) return 'dün ' + hm;
+    if (d.toDateString() === y.toDateString()) return POps.t('dün {time}', { time: hm });
     const opts = { day: 'numeric', month: 'short' };
     if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
-    return d.toLocaleDateString('tr-TR', opts) + ' ' + hm;
+    return d.toLocaleDateString(POps.locale, opts) + ' ' + hm;
 };
 POps.timeHtml = function (v) {
     const d = popsDate(v);
@@ -708,10 +767,11 @@ POps.timeHtml = function (v) {
 };
 POps.duration = function (sec) {
     sec = Math.max(0, Math.round(Number(sec) || 0));
-    if (sec < 60) return sec + ' sn';
-    if (sec < 3600) return Math.floor(sec / 60) + ' dk' + (sec % 60 && sec < 600 ? ' ' + (sec % 60) + ' sn' : '');
-    if (sec < 86400) return Math.floor(sec / 3600) + ' sa' + (Math.floor(sec / 60) % 60 ? ' ' + (Math.floor(sec / 60) % 60) + ' dk' : '');
-    return Math.floor(sec / 86400) + ' gün';
+    const s = (n) => POps.tn('{n} sn', n), m = (n) => POps.tn('{n} dk', n), h = (n) => POps.tn('{n} sa', n);
+    if (sec < 60) return s(sec);
+    if (sec < 3600) return m(Math.floor(sec / 60)) + (sec % 60 && sec < 600 ? ' ' + s(sec % 60) : '');
+    if (sec < 86400) return h(Math.floor(sec / 3600)) + (Math.floor(sec / 60) % 60 ? ' ' + m(Math.floor(sec / 60) % 60) : '');
+    return POps.tn('{n} gün', Math.floor(sec / 86400));
 };
 
 // ============== İPUCU ==============
@@ -972,7 +1032,7 @@ POps.drawer = (function () {
     let el = null, body = null, key = null, onClose = null, returnFocus = null;
     function ensure() {
         if (el) return;
-        el = POps.el('aside', { className: 'drawer', id: 'popsDrawer', 'aria-label': 'Ayrıntılar', tabindex: '-1' });
+        el = POps.el('aside', { className: 'drawer', id: 'popsDrawer', 'aria-label': POps.t('Ayrıntılar'), tabindex: '-1' });
         body = POps.el('div', { className: 'drawer-body' });
         el.append(body);
         document.body.append(el);
@@ -1019,6 +1079,13 @@ POps.taskState = function (status) {
     if (JOB_FINAL_BAD.includes(status)) return 'bad';
     return 'run';
 };
+// Panelin sunucuya Türkçe yazdığı görev adlarının (veri) görünen hali: "Kapat · LAB1" -> "Shut down · LAB1".
+// Yalnızca ilk parça ve yalnızca sözlükteki "…|task" girdileri çevrilir; kullanıcının yazdığı ad olduğu gibi kalır.
+POps.taskName = function (title) {
+    const t = String(title == null ? '' : title);
+    const i = t.indexOf(' · ');
+    return i < 0 ? POps.tx(t, 'task') : POps.tx(t.slice(0, i), 'task') + t.slice(i);
+};
 POps.jobs = (function () {
     const KEY = 'pops_jobs_v1';
     let jobs = [];
@@ -1047,7 +1114,8 @@ POps.jobs = (function () {
                     const c = counts(j);
                     if (!c.run) {
                         j.doneAt = Date.now();
-                        POps.toast(c.bad ? 'warning' : 'success', c.bad ? `${j.title}: ${c.ok} başarılı, ${c.bad} başarısız.` : `${j.title}: ${c.total} cihazda tamamlandı.`);
+                        POps.toast(c.bad ? 'warning' : 'success', c.bad ? POps.t('{title}: {ok} başarılı, {bad} başarısız.', { title: j.title, ok: c.ok, bad: c.bad })
+                            : POps.tn('{title}: {n} cihazda tamamlandı.', c.total, { title: j.title }));
                     }
                 });
             } catch (e) { /* bir sonraki turda yeniden denenir */ }
@@ -1062,7 +1130,7 @@ POps.jobs = (function () {
         track(title, ids) {
             const clean = [...new Set((ids || []).map(Number).filter(n => n > 0))];
             if (!clean.length) return;
-            jobs.unshift({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), title: String(title || 'İşlem'), ids: clean, items: {}, at: Date.now(), doneAt: null });
+            jobs.unshift({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), title: String(title || POps.t('İşlem')), ids: clean, items: {}, at: Date.now(), doneAt: null });
             jobs = jobs.slice(0, 20);
             save(); emit(); kick();
         },
