@@ -121,6 +121,10 @@ namespace POps.Tests.Agent
             Assert.Contains("$name = 'POps update abc'", script);
             Assert.Contains("AddSeconds(900)", script);
             Assert.Equal("'a''b'", BitsDownload.Quote("a'b"));
+            // PowerShell'in kapatan öbür tırnakları da ikilenir: dizgiden çıkılamaz
+            Assert.Equal("'a\u2019\u2019; calc; \u2018\u2018b'", BitsDownload.Quote("a\u2019; calc; \u2018b"));
+            Assert.Equal("'\u201A\u201A\u201B\u201B'", BitsDownload.Quote("\u201A\u201B"));
+            Assert.Equal("''", BitsDownload.Quote(null));
             Assert.Equal("POps update 0123456789abcdef", BitsDownload.JobName("0123456789abcdef" + new string('0', 48)));
         }
 

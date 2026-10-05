@@ -79,8 +79,17 @@ while ($true) {{
 }}
 ";
 
-        // PowerShell tek tırnaklı değişmez: ' -> ''
-        internal static string Quote(string value) => "'" + (value ?? "").Replace("'", "''", StringComparison.Ordinal) + "'";
+        // PowerShell tek tırnaklı değişmez. PowerShell dizgiyi ' yanında ‘ ’ ‚ ‛ ile de kapatır: hepsi ikilenir
+        internal static string Quote(string value)
+        {
+            var sb = new StringBuilder("'");
+            foreach (char c in value ?? "")
+            {
+                if (c is '\'' or '\u2018' or '\u2019' or '\u201A' or '\u201B') sb.Append(c);
+                sb.Append(c);
+            }
+            return sb.Append('\'').ToString();
+        }
 
         private static string LastLine(string output)
         {
