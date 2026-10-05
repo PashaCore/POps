@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.22-alpha] - 2026-10-05
+
+**For operators, in short:**
+1. **Security:** the backend moves to Python 3.10+ (3.12 recommended) with current FastAPI, Starlette and python-multipart; 17 known vulnerabilities in the old dependency set are closed. On an existing AlmaLinux/RHEL 9 server, run the root block below first, then **Sistem → Sunucuyu güncelle**; the deploy builds a new virtual environment and rolls back on any failure.
+2. **Offline panel:** fonts and icons are bundled; the panel loads nothing from other hosts and works without internet.
+3. **Sign-in page:** your organisation's name and logo (**Ayarlar → Genel → Kurum**).
+4. **API:** a wrong `target_mode`, an unregistered PC or an unknown field is now refused with `422` instead of being ignored.
+5. **Agents:** unchanged; no agent update is needed. This is the first release with an SSH-signed tag (`keys/allowed_signers`).
+
 The backend needs Python 3.10 or newer (3.12 recommended). The fixes for 17 known vulnerabilities in its dependencies, among them a multipart denial of service that `/api/upload` exposed without a token, are released only for newer Python versions.
 
 **Upgrading** a native server on AlmaLinux/RHEL 9, whose backend venv uses the system Python 3.9: **first** install Python 3.12 and the new deploy scripts as root, **then** update the server (**Sistem → Sunucuyu güncelle**). The deploy then builds a new venv with `python3.12`, swaps it in and rolls back to the old one if the health check fails:
@@ -667,7 +676,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.21-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.22-alpha...HEAD
+[0.1.22-alpha]: https://github.com/PashaCore/POps/compare/v0.1.21-alpha...v0.1.22-alpha
 [0.1.21-alpha]: https://github.com/PashaCore/POps/compare/v0.1.20-alpha...v0.1.21-alpha
 [0.1.20-alpha]: https://github.com/PashaCore/POps/compare/v0.1.19-alpha...v0.1.20-alpha
 [0.1.19-alpha]: https://github.com/PashaCore/POps/compare/v0.1.18-alpha...v0.1.19-alpha

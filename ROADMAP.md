@@ -102,13 +102,21 @@ tagged release.
 - [x] Addresses without `.php`, event log in pages with filters, Sistem and Ayarlar in tabs, server charts on
   **Sistem → Genel bakış** (0.1.18–0.1.21)
 
+### After the 0.1.21 reviews (0.1.22)
+
+- [x] **Dependencies:** Python 3.10+ (3.12 on AlmaLinux 9) with the current FastAPI, Starlette and python-multipart;
+  existing servers get a new virtual environment during the update (0.1.22)
+- [x] **Offline panel:** fonts and icons bundled with the panel, no requests to third-party hosts (0.1.22)
+- [x] **API input checks:** unknown fields and unknown target modes refused instead of ignored (0.1.22)
+- [x] **Release rhythm:** weekly releases with a short operator summary on top; signed release tags (0.1.22)
+- [x] Organisation name and logo on the sign-in page; Docker images on GHCR; OpenSSF Scorecard (0.1.22)
+
 ## In progress
 
-- [ ] **Dependencies:** Python 3.10+ (3.12 on AlmaLinux 9) so the backend can take the current FastAPI, Starlette
-  and python-multipart with their security fixes; existing servers get a new virtual environment during the update.
-- [ ] **Offline panel:** fonts and icons bundled with the panel, no requests to third-party hosts.
-- [ ] **API input checks:** unknown fields and unknown target modes refused instead of ignored.
-- [ ] **Release rhythm:** fewer, larger releases with a short operator summary at the top of each.
+- [ ] **English interface:** every page in Turkish and English, chosen per browser.
+- [ ] **API for automation:** `/api/v1`, REST names next to the old ones, API tokens, the OpenAPI file in the repository.
+- [ ] **Panel end-to-end tests** in CI with a real browser.
+- [ ] **Linux agent (Pardus first):** inventory, commands and signed updates.
 
 ## Next
 
