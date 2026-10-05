@@ -97,7 +97,8 @@ reduce the number of downloads.
 ### Work
 - **Agent (done):** the feature announcement, cache directory and cleanup, the peer server with its firewall rule,
   `peers` handling in `DownloadVerifiedAsync`, and tests with a fake peer (`PeerCache`, `PeerCacheServer`,
-  `PeerDownload`, `PeerCacheTests`). Contract: [`../agent.md`](../agent.md#peer-cache-contract).
+  `PeerDownload`, `PeerCacheTests`). Contract: [`../agent.md`](../agent.md#peer-cache-contract); where the agent
+  differs from points 2 and 3 (one package, `TcpListener` instead of HttpListener) is in its point 6.
 - **Server (done):** `Backend/pops/peer_cache.py` (staged dispatch per lab, seed choice and fallback), `peers` in
   `update_agent` from `POST /api/system/deploy-update`, peer state in `update-progress`, the setting
   (`POST /api/system/update-peer-cache`), the protocol schema and example, the panel's per-lab line ("tohum:

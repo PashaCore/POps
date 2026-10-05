@@ -168,7 +168,7 @@ What the service does with each server command:
 | `result_ack` | The server stored the task result for `task_id`; the agent deletes it from `C:\POpsData\secure\pending-results.json`. |
 | `update_result_ack` | The server stored the update result with this `result_id`; the agent sets `update-result.json` aside. |
 | `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
-| `set_capabilities` | Switches capabilities **off**: the server sends `terminal_enabled` / `vision_enabled`; the agent also applies `exam_enabled`, `files_enabled`, `power_enabled` and `message_enabled`. Requests to switch one on are ignored. |
+| `set_capabilities` | Switches capabilities **off**: the server sends `terminal_enabled` / `vision_enabled`; the agent also applies `exam_enabled`, `files_enabled`, `power_enabled`, `message_enabled` and `peer_cache_enabled`. Requests to switch one on are ignored. |
 | `update_agent` | Starts a signed update (below). |
 
 The server may also send `scan_updates` and `install_updates`
@@ -376,17 +376,17 @@ desteklemiyor …"). The old command is an `execute`, so it still needs the term
 ## Capability policy
 
 Terminal (`execute`), Vision (streaming, previews, remote input), exam mode, file transfer, power actions
-(`power`) and user messages (`user_message`) can be disabled per PC, so that even a compromised server cannot use
-them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`, `EXAM_ENABLED`, `FILES_ENABLED`,
-`POWER_ENABLED`, `MESSAGE_ENABLED`, `1` / `0`; all on by default);
+(`power`), user messages (`user_message`) and the lab-local [peer cache](#peer-cache-contract) for updates can be
+disabled per PC, so that even a compromised server cannot use them there. The MSI sets them (`TERMINAL_ENABLED`,
+`VISION_ENABLED`, `EXAM_ENABLED`, `FILES_ENABLED`, `POWER_ENABLED`, `MESSAGE_ENABLED`, `PEER_CACHE_ENABLED`, `1` /
+`0`; all on by default);
 the server can only switch them off (**Sistem** → "Cihaz yetenekleri"). A refused command is closed with
 a `[REDDEDİLDİ]` result and reported as `capability_denied`. Re-enabling needs a local administrator: MSI repair or
 reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; a capability missing from an
-older file counts as on. The `capabilities` message reports all six (`terminal_enabled`, `vision_enabled`,
-`files_enabled`, `exam_enabled`, `power_enabled`, `message_enabled`) with `server_ca`; the last three are optional
-in the schema, so older agents that do not send them stay valid. See
-[`Agent/README.md`](../Agent/README.md#capability-policy). The same file holds `peer_cache_enabled`
-(`PEER_CACHE_ENABLED`), which switches the lab-local [peer cache](#peer-cache-contract) for updates on or off.
+older file counts as on. The `capabilities` message reports all seven (`terminal_enabled`, `vision_enabled`,
+`files_enabled`, `exam_enabled`, `power_enabled`, `message_enabled`, `peer_cache_enabled`) with `server_ca`; all but
+the first two are optional in the schema, so older agents that do not send them stay valid. See
+[`Agent/README.md`](../Agent/README.md#capability-policy).
 
 ## File transfer
 
@@ -773,9 +773,9 @@ older than 0.1.3-alpha cannot apply signed updates and must be reinstalled once 
 ### Peer cache contract
 
 Lab-local peer cache for update packages ([`design/peer-cache.md`](design/peer-cache.md), option A). The server
-side is built (after 0.1.22-alpha); the agent part is not built yet, and this is the contract it must follow. The
-message schema and a test vector are in [`protocol/`](protocol/README.md) (`server-to-agent/update_agent.json`,
-`examples/server-to-agent/update_agent.peers.json`).
+side is built (after 0.1.22-alpha); the Windows agent follows this contract from the version after 0.1.22-alpha
+(what it does beyond it is in point 6). The message schema and a test vector are in [`protocol/`](protocol/README.md)
+(`server-to-agent/update_agent.json`, `examples/server-to-agent/update_agent.peers.json`).
 
 **1. Announce the feature.** On the `/ws/agent` connection, next to `X-Agent-Version`:
 
@@ -871,6 +871,44 @@ today; `peers` is read only after that.
 - Log start and stop of the cache server and each served transfer (peer address, SHA-256 prefix, bytes) to the
   local log; no event log entry per transfer.
 
+**6. The Windows agent** (`PeerCache.cs`, `PeerCacheServer.cs`, `PeerDownload.cs`). What it does where points 1–5
+leave a choice or where it differs:
+
+- **Announcement.** `peer_cache` is in `X-Agent-Features` only while the local capability `peer_cache_enabled` is on
+  (MSI `PEER_CACHE_ENABLED`, on by default), so a PC that switched it off is never chosen as a seed or listed as a
+  peer. `capabilities` reports `peer_cache_enabled`. The agent sends no `X-Agent-Peer-Cache`: the server uses the
+  inventory address and port 8817.
+- **The flag.** Only a JSON `true` in `peer_cache` keeps the package. An `update_agent` without it empties the cache
+  when the update starts (the same package included), stops serving and removes the firewall rule; it creates no
+  folder, listener or rule. `peers` are tried with or without the flag.
+- **One package, not two.** The cache is emptied when an update with a different package starts; an older package
+  is never listed as a peer. With the flag, the same package sent again (for example after a rollback) is taken from
+  the cache and checked like any source; `downloaded` then says `cache`.
+- **Expiry.** Checked at service start and every minute: 2 hours after caching (a file dated in the future counts as
+  expired), a file whose content no longer matches its name (hashed once per process), or the capability off.
+- **When serving starts.** At service start or within a minute of caching, not at `verified`: right after
+  `verified` the updater stops the service for the install anyway.
+- **Server.** A `TcpListener` on `[::]:8817` (IPv4 and IPv6) instead of `HttpListener`: traffic to an HttpListener
+  belongs to http.sys (the `System` process), so a firewall rule for `POpsAgent.exe` would not match it. It answers
+  `GET` and `HEAD` for `/pops-cache/<sha256>`; other methods get `405` (`Allow: GET, HEAD`), other paths `404`, a
+  malformed request `400`, and clients outside the PC's local subnets `403` (on top of the firewall rule). 10 seconds
+  to send the request, 10 minutes per transfer, `Connection: close`, no Range. At most 4 transfers; further requests
+  wait up to 60 seconds for a slot, then get `503` with `Retry-After: 30`; beyond 128 open connections a new one gets
+  `503` at once.
+- **Firewall.** Rule group `POps Peer Cache`: inbound allow, TCP 8817, `LocalSubnet`, program `POpsAgent.exe`, all
+  profiles, added with PowerShell when serving starts and removed when it stops (cache empty, quarantine, exam mode,
+  service stop). A failed script is retried after 15 minutes. At service start a leftover rule is removed only if
+  the cache folder exists. The quarantine and exam rule groups are not touched.
+- **Quarantine and exam mode.** While either is active the agent neither serves nor tries peers (their rules block
+  that traffic anyway); serving resumes when both end.
+- **Downloading.** A peer is used only inside one of the PC's local subnets (stricter than "private": the serving
+  side's rule is LocalSubnet-only); private and link-local IPv6 addresses are accepted too, and at most 5 entries are
+  read. Connect timeout 3 seconds, up to 75 seconds for the response headers (a busy peer queues the request for up
+  to 60 seconds), then 15 seconds without data or 5 minutes in all ends the attempt. No proxy, redirects, cookies or
+  headers: the device secret never goes to a peer. The `downloaded` detail is `peer <hw_id>`, `server` or `cache`.
+- **Logs.** Start and stop of serving, each transfer (address, SHA-256 prefix, bytes, seconds) and refusals (at most
+  one line every 10 seconds) go to the POps log (`PEERCACHE`); no event log entry.
+
 ## Files and logs
 
 | Path | Contents |
@@ -882,7 +920,7 @@ today; `peers` is read only after that.
 | `C:\POpsData\session.json`, `patch-scan.json` | Last reported sign-in; time of the last Windows Update scan and a report not yet delivered (0.1.5-alpha on). |
 | `C:\POpsData\software-inventory.json` | Last software inventory sent: SHA-256 of the sorted list, device ID and time (0.1.15-alpha on). |
 | `C:\POpsData\packages\installed.msi`, `updates\`, `updater\` | Rollback package, downloaded update, updater copy. |
-| `C:\POpsData\cache\<sha256>` | Verified update package served to other PCs in the lab, for 2 hours at most ([peer cache](#peer-cache-contract); SYSTEM and Administrators only). |
+| `C:\POpsData\cache\<sha256>` | Verified update package kept for other PCs in the lab when `update_agent` carried `"peer_cache": true`, for 2 hours at most ([peer cache](#peer-cache-contract); SYSTEM and Administrators only). |
 | `C:\POpsLogs\POps_<yyyyMMdd>.log`, `msi-*.log` | Service and updater log, and the updater's msiexec logs (SYSTEM and Administrators only). At start and once a day the service deletes these logs when they are older than 30 days, and the oldest ones while the folder holds more than 200 MB; today's log is never deleted. |
 | `%LOCALAPPDATA%\POps\Logs\` | Per-user logs: `POpsWatchdog_<yyyyMMdd>.log` and the tray's `TrayLog.txt` (message types only, rotated at 1 MB). |
 
