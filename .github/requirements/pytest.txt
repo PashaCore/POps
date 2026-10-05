@@ -1,0 +1,6 @@
+# Backend testlerinin koşucusu (Backend/tests, docs/testing.md): CI'da Backend/requirements.lock'un yanına kurulur,
+# canlı sunucunun venv'ine girmez. Özetli kilit (pytest.lock) bu dosyadan üretilir; ortak paketler Backend
+# kilidindeki sürümde kalır:
+#   uv pip compile .github/requirements/pytest.txt -c Backend/requirements.lock --universal --python-version 3.10 \
+#     --generate-hashes --no-build -o .github/requirements/pytest.lock      (uv 0.12.23)
+pytest==9.1.1

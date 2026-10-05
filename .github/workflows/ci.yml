@@ -104,6 +104,7 @@ jobs:
         # testi) yalnızca CI'da; canlı sunucunun venv'ine girmez.
         run: |
           pip install --require-hashes -r Backend/requirements.lock
+          pip install --require-hashes -r .github/requirements/pytest.lock
           pip install flake8 jsonschema==4.26.0
       - name: Lint with flake8
         # Tam kapı: repo kökündeki .flake8 (max-line-length 120). Backend, Linux ajanı ve araçlar (tools/, README çizimleri) temiz tutulur; yeni uyarı CI'ı kırar.
@@ -120,7 +121,7 @@ jobs:
           DB_NAME: ci
         run: python -c "import server, setup_env; print('ok')"
       - name: Unit tests (no server)
-        run: python Backend/tests/test_units.py
+        run: python -m pytest Backend/tests/test_units.py
       - name: OpenAPI spec is up to date
         # docs/openapi.json koddan üretilir (çalışan sunucu şemayı sunmaz). Uç ya da istek modeli değişince yeniden
         # üretilip commit'lenmeli; betik farkı görürse nasıl üretileceğini yazar ve iş kırılır.
@@ -133,7 +134,7 @@ jobs:
       - name: Agent protocol (docs/protocol)
         # Şemalar, ortak test vektörleri ve sunucunun gerçek kodunun kurduğu / işlediği mesajlar (sahte veritabanı ve
         # soketlerle); bkz. docs/protocol/README.md
-        run: python Backend/tests/test_protocol.py
+        run: python -m pytest Backend/tests/test_protocol.py
 
   backend-lock:
     name: Backend lock file
@@ -651,6 +652,7 @@ jobs:
         # coverage ve jsonschema yalnızca CI'da (canlı sunucunun venv'ine girmez)
         run: |
           pip install --require-hashes -r Backend/requirements.lock
+          pip install --require-hashes -r .github/requirements/pytest.lock
           pip install coverage==7.10.7 jsonschema==4.26.0
       - name: Migrate + start server + run security invariants
         # Enroll->secret, enforce->4401, valid secret ok, unauth HTTP 401, wrong-signature
@@ -658,32 +660,12 @@ jobs:
         run: |
           set -euo pipefail
           python Backend/migrate.py
-          ( cd Backend && python -m coverage run --rcfile=.coveragerc tests/test_units.py >/dev/null )
-          ( cd Backend && python -m coverage run --rcfile=.coveragerc tests/test_protocol.py >/dev/null )
+          ( cd Backend && POPS_TEST_COVERAGE=1 python -m coverage run --rcfile=.coveragerc -m pytest -q -m "not integration" tests )
           ( cd Backend && exec python -m coverage run --rcfile=.coveragerc -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/uvicorn.log 2>&1 ) &
           echo $! > /tmp/uvicorn.pid
           curl --retry-connrefused --retry 40 --retry-delay 1 -sf http://127.0.0.1:8099/api/health >/dev/null || { echo "server did not start"; cat /tmp/uvicorn.log; exit 1; }
-          python Backend/tests/test_security.py
-          python Backend/tests/test_2fa.py
-          python Backend/tests/test_agent_authz.py
-          python Backend/tests/test_remote_authz.py
-          python Backend/tests/test_vision_v2.py
-          python Backend/tests/test_device_keys.py
-          python Backend/tests/test_hardening.py
-          python Backend/tests/test_p1.py
-          python Backend/tests/test_review4.py
-          python Backend/tests/test_modules.py
-          python Backend/tests/test_jobs.py
-          python Backend/tests/test_f4_accountability.py
-          python Backend/tests/test_features.py
-          python Backend/tests/test_helpdesk_licenses.py
-          python Backend/tests/test_ops.py
-          python Backend/tests/test_api_tokens.py
-          python Backend/tests/test_demo.py
-          python Backend/tests/test_files.py
-          python Backend/tests/test_exam.py
-          python Backend/tests/test_winget.py
-          python Backend/tests/test_devices_delta.py
+          # Backend/tests'teki betikler (conftest.py): bilinen sırayla, her biri ayrı süreçte
+          python -m pytest -v -m integration
       - name: Backend coverage
         # Alt sınır (fail_under) kapsamın fark edilmeden düşmesini engeller; kapsam arttıkça yükseltin.
         # Hangi kritik yolların test edildiği: docs/testing.md

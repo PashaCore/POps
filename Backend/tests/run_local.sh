@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# POps entegrasyon testlerini yerelde çalıştırır (CI'daki 'security' job'ının eşi): test betikleri
-# CI ile aynı sırada, geçici olarak başlatılan sunucuya karşı. COVERAGE=1 ile sunucu coverage altında
-# çalışır ve sonunda kapsam raporu basılır (coverage paketi gerekir; canlı venv'e kurmayın).
+# POps entegrasyon testlerini yerelde çalıştırır (CI'daki 'security' job'ının eşi): önce sunucusuz testler,
+# sonra test betikleri CI ile aynı sırada, geçici olarak başlatılan sunucuya karşı (pytest; bkz. tests/conftest.py).
+# COVERAGE=1 ile sunucu coverage altında çalışır ve sonunda kapsam raporu basılır. pytest ve coverage gerekir;
+# canlı venv'e kurmayın:
+#   pip install --require-hashes -r ../.github/requirements/pytest.lock && pip install coverage==7.10.7
 #
 # Önce şunları export edin — DB_NAME BOŞ bir test veritabanı olmalı (migrate.py şemayı kurar):
 #   export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<u> DB_PASS=<p> DB_NAME=pops_sec_test JWT_SECRET=dev
@@ -18,21 +20,17 @@ export METRICS_TOKEN="${METRICS_TOKEN:-local-metrics-token-0123456789}"
 # test_demo.py: salt okunur demo hesabı (sunucu ve test aynı değeri okur)
 export POPS_DEMO_USERS="${POPS_DEMO_USERS:-ci_demo}"
 
+# Sunucusuz testler. Protokol testi jsonschema ister (yalnızca test bağımlılığı; CI kurar)
+skip=()
+if ! python -c "import jsonschema" 2>/dev/null; then
+  echo "test_protocol.py atlandı: pip install jsonschema==4.26.0"
+  skip=(--deselect tests/test_protocol.py::test_protocol)
+fi
 if [ "${COVERAGE:-0}" = "1" ]; then
   rm -f .coverage .coverage.*
-  python -m coverage run --rcfile=.coveragerc tests/test_units.py
+  POPS_TEST_COVERAGE=1 python -m coverage run --rcfile=.coveragerc -m pytest -q -m "not integration" ${skip[@]+"${skip[@]}"} tests
 else
-  python tests/test_units.py
-fi
-# Protokol testi jsonschema ister (yalnızca test bağımlılığı; CI kurar)
-if python -c "import jsonschema" 2>/dev/null; then
-  if [ "${COVERAGE:-0}" = "1" ]; then
-    python -m coverage run --rcfile=.coveragerc tests/test_protocol.py
-  else
-    python tests/test_protocol.py
-  fi
-else
-  echo "test_protocol.py atlandı: pip install jsonschema==4.26.0"
+  python -m pytest -q -m "not integration" ${skip[@]+"${skip[@]}"} tests
 fi
 python migrate.py
 if [ "${COVERAGE:-0}" = "1" ]; then
@@ -43,29 +41,12 @@ fi
 UP=$!
 trap 'kill "$UP" 2>/dev/null || true' EXIT
 for _ in $(seq 1 40); do curl -sf "$POPS_TEST_HTTP/api/health" >/dev/null 2>&1 && break; sleep 1; done
-python tests/test_security.py
-python tests/test_2fa.py
-python tests/test_agent_authz.py
-python tests/test_remote_authz.py
-python tests/test_vision_v2.py
-python tests/test_device_keys.py
-python tests/test_hardening.py
-python tests/test_p1.py
-python tests/test_review4.py
-python tests/test_modules.py
-python tests/test_jobs.py
-python tests/test_f4_accountability.py
-python tests/test_features.py
-python tests/test_helpdesk_licenses.py
-python tests/test_ops.py
-python tests/test_api_tokens.py
-python tests/test_demo.py
-python tests/test_files.py
-python tests/test_exam.py
-python tests/test_winget.py
-python tests/test_devices_delta.py
+# Sunucu isteyen betikler; sonuç sunucu kapatıldıktan sonra bildirilir (kapsam raporu yine basılır)
+rc=0
+python -m pytest -v -m integration tests || rc=$?
 if [ "${COVERAGE:-0}" = "1" ]; then
   kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
   python -m coverage combine --rcfile=.coveragerc >/dev/null
   python -m coverage report --rcfile=.coveragerc
 fi
+exit "$rc"
