@@ -130,7 +130,8 @@ namespace POpsAgent
             _httpClient = new HttpClient(ServerTrust.NewHandler());
 
             // 🚀 IP'Yİ CONFIG DOSYASINDAN AL
-            _serverUrl = POpsHelpers.GetServerUrl();
+            // Yapılandırma okunamadıysa adres son çaredir; sorun açılışta Olay Günlüğüne yazılır, tepside gösterilir
+            (_serverUrl, ConfigProblem) = POpsHelpers.ResolveServerUrl();
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor (Hedef: {_serverUrl})");
             foreach (string configPath in POpsHelpers.ConfigPaths) SecureConfigFile(configPath);
 
@@ -257,8 +258,23 @@ namespace POpsAgent
             }
         }
 
+        // Yapılandırma sorunu (appsettings.json okunamadı, ServerUrl yok ya da geçersiz); null: sorun yok
+        internal string ConfigProblem { get; private set; }
+
+        internal void ReportConfigProblem()
+        {
+            if (ConfigProblem == null) return;
+            POpsHelpers.Log("AGENT", $"[HATA] Yapılandırma okunamadı: {ConfigProblem}. Sunucu adresi olarak {_serverUrl} kullanılıyor; ajan yönetilemez durumda.", true);
+            LocalAudit.Write(LocalAudit.ConfigUnreadable(ConfigProblem, _serverUrl));
+        }
+
+        // Tepsi uyarı simgesi ve "yapılandırma okunamadı" gösterir (bkz. POpsTray CONFIG_ERROR)
+        internal string ConfigErrorMessage() =>
+            ConfigProblem == null ? null : "CONFIG_ERROR:" + Convert.ToBase64String(Encoding.UTF8.GetBytes(ConfigProblem));
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            ReportConfigProblem();
             // Tepsi ve watchdog kullanıcı oturumunda yoksa başlatılır (kurulum/güncelleme sonrası, karantinada kilit ekranı).
             // Yavaş WMI açılışını beklemez.
             _ = Task.Run(() => new UserSessionApps().RunAsync(stoppingToken));
@@ -723,6 +739,8 @@ namespace POpsAgent
             {
                 _quarantine.SyncTray();
                 SyncTrayModules();
+                string configError = ConfigErrorMessage();
+                if (configError != null) _trayPipe?.SendCommandToDesktop(configError);
             };
 
             _trayPipe.Start().ContinueWith(_ => _startupHealth.Mark(StartupCheck.Pipe), CancellationToken.None,

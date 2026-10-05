@@ -146,6 +146,20 @@ namespace POpsTray
             _ = Task.Run(() => MonitorActiveAppAsync(cts.Token));
         }
 
+        private bool _configErrorShown;
+
+        // Simge uyarıya döner; bildirim tepsi oturumu başına bir kez
+        private void ShowConfigError(string detail)
+        {
+            trayIcon.Icon = SystemIcons.Warning;
+            trayIcon.Text = "POps - yapılandırma okunamadı";
+            if (_configErrorShown) return;
+            _configErrorShown = true;
+            if (detail.Length > 150) detail = detail.Substring(0, 150) + "…";
+            ShowNotification("POps: yapılandırma okunamadı",
+                "Ajan sunucuya bağlanamıyor, bu bilgisayar yönetilmiyor. BT ekibine bildirin." + (detail.Length > 0 ? $" ({detail})" : ""));
+        }
+
         public void ShowNotification(string title, string message)
         {
             _lastBalloonIsTicket = false;
@@ -288,6 +302,16 @@ namespace POpsTray
                     return;
                 }
                 
+                // Servis yapılandırmasını okuyamadı (sunucu adresi yok ya da geçersiz): sağlıklı görünmesin
+                if (jsonMsg.StartsWith("CONFIG_ERROR:"))
+                {
+                    string detail = "";
+                    try { detail = Encoding.UTF8.GetString(Convert.FromBase64String(jsonMsg.Substring("CONFIG_ERROR:".Length))); }
+                    catch (FormatException) { }
+                    this.Invoke(new Action(() => ShowConfigError(detail)));
+                    return;
+                }
+
                 if (jsonMsg.StartsWith("SHOW_FAIR_USE:"))
                 {
                     string b64 = jsonMsg.Substring("SHOW_FAIR_USE:".Length);

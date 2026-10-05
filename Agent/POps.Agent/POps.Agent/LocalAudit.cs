@@ -10,7 +10,7 @@ using POps.Shared;
 
 namespace POpsAgent
 {
-    public enum LocalAuditLevel { Information, Warning }
+    public enum LocalAuditLevel { Information, Warning, Error }
 
     public sealed class LocalAuditEvent
     {
@@ -93,13 +93,18 @@ namespace POpsAgent
         public static LocalAuditEvent CloneRejected(string channel) =>
             Warning(1071, "Sunucu bu kimliği başka bir bilgisayarda bağlı buldu (4409)", ("channel", Safe(channel)));
 
+        // Ajanın yapılandırması (appsettings.json, POPS_SERVER_URL) okunamadı: sunucu adresi son çaredir
+        public static LocalAuditEvent ConfigUnreadable(string problem, string serverUrl) =>
+            Build(1090, LocalAuditLevel.Error, "Yapılandırma okunamadı", ("problem", Safe(problem)), ("server_url", Safe(serverUrl)));
+
         public static void Write(LocalAuditEvent item)
         {
             if (item == null) return;
             try
             {
                 EventLog.WriteEntry(Source, item.Message,
-                    item.Level == LocalAuditLevel.Warning ? EventLogEntryType.Warning : EventLogEntryType.Information,
+                    item.Level == LocalAuditLevel.Error ? EventLogEntryType.Error
+                    : item.Level == LocalAuditLevel.Warning ? EventLogEntryType.Warning : EventLogEntryType.Information,
                     item.EventId);
             }
             catch (Exception ex)
