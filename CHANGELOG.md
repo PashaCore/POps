@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Panel sign-in with Active Directory / LDAP and OpenID Connect** (Microsoft Entra ID, Google, Keycloak …). A superadmin sets it up under **Ayarlar → Güvenlik → Kimlik sağlayıcıları**.
+  - Directory users sign in with the usual form; with OIDC the sign-in page shows "*<name>* ile giriş yap".
+  - Directory groups (or OIDC group claims) map to İzleyici, Yönetici or Süper admin and to pages, and the mapping is rewritten at every sign-in. **Bağlantıyı sına** checks the connection and a user's resulting role before saving.
+  - Users can be created as, or switched to, directory or OIDC accounts. Local accounts keep working when the directory is down.
+  - Turkish how-to: `docs/tr/active-directory-ile-giris.md`. Migration `0030`; new dependency `ldap3` (pure Python). Decision D-24.
+- **Power actions and messages to the user as their own agent messages** (`power`, `user_message`), for agents that announce `X-Agent-Features: power,message`.
+  - `POST /api/devices/power`: shut down, restart, sign out or lock, with a delay of 0–600 s and an optional note of up to 200 characters.
+  - `POST /api/devices/message`: title, text, Bilgi/Uyarı and an optional read receipt.
+  - Both are also under `/api/v1`. Migration `0028`.
+- **Panel: power and message actions.**
+  - New **Oturumu kapat** and **Kilitle** actions.
+  - **Kapat** and **Yeniden başlat** get a **Gecikme** choice (Hemen / 1 dk / 5 dk / 10 dk) and a "Kullanıcıya not" field.
+  - New **Mesaj gönder** dialog with a character counter, Bilgi/Uyarı and "Okundu onayı iste".
+  - The task drawer explains -6 (nobody signed in) and -8 (the agent does not support it).
+- **Lab-local peer cache for agent updates, server side.** Agents that announce `peer_cache` (`X-Agent-Features`) are updated one PC per lab first: the seed, an online PC with a known LAN address, wired and most recently seen first.
+  - When the seed reports a successful update on its new version, the rest of the lab gets `update_agent` with `peers`: 1–3 PCs of the lab that hold the package, at `http://<LAN IP>:<port>/pops-cache/<sha256>`. The port is 8817, or the one announced in `X-Agent-Peer-Cache`.
+  - A seed that does not reach `verified` or a result within 10 minutes, or fails, is replaced by the next one; with no seed left, the lab is updated without peers.
+  - Agents without the feature, PCs without a lab, labs without a candidate and Linux agents are updated as before. Agents check the signed size and SHA-256 whatever the source.
+- **Sistem → Ajanlar: peer cache switch and progress.** "Sınıf içinde eşten dağıt" (off by default: while on, a PC holding a package opens a port to its local subnet; `POST /api/system/update-peer-cache`) and per-lab lines in the update progress ("tohum: PC-12, doğrulandı; 38 bilgisayara eşten dağıtılıyor"). PCs waiting for their lab's seed show "Tohum bekleniyor".
+- **API and protocol for the peer cache.**
+  - `deploy-update` returns `seeds`, `waiting_for_seed` and `with_peers`, and `update-progress` returns each device's peer role and a per-lab summary. New setting `PEER_CACHE_SEED_TIMEOUT_SECONDS` (600).
+  - Optional `peers` in `update_agent`, an `X-Agent-Peer-Cache` header and `peer_cache` in `server_info.features`. The agent's peer cache contract is in `docs/agent.md`.
+- **Panel: Sistem → Modüller** (superadmin).
+  - Each module shows its organisation state, its dependencies and the labs that differ, with a switch for the organisation setting. A module whose dependency is off shows as off, with the reason.
+  - Each module has a drawer with the organisation setting, what stops while it is off, and Kurum ayarı / Açık / Kapalı for every lab.
+  - Before anything turns off, the panel shows what will happen and asks to confirm: dependent modules that turn off too, remote-screen sessions that close, and pending tasks that are denied.
+  - **Kurulum profili** shows the current profile and applies Okul laboratuvarı or Kurum from a preview, optionally deleting lab-specific settings.
+  - API: new `GET /api/modules/{id}/preview`. `GET /api/system/install-profile/{name}` also returns `vision_sessions_closed` and `tasks_denied` and takes `reset_labs`.
+- **GLPI export** (**Sistem → Entegrasyonlar**, superadmin; `docs/integrations/glpi.md`).
+  - Sends computers (name, serial number, UUID, mapped location), installed software, helpdesk tickets and their public replies to GLPI's REST API. It runs on a schedule (daily, every 12 or 6 hours) or with **Şimdi eşitle**.
+  - Off by default. The app and user tokens are stored encrypted and never returned.
+  - Records are matched through a link table, then by BIOS serial number and SMBIOS UUID. POps never guesses between several matches, sends only changed records, and never deletes GLPI items except the software links it created.
+  - New `.env` settings `GLPI_ALLOW_PRIVATE` and `GLPI_CA_FILE`; migration `0029` (`glpi_links`); endpoints under `/api/system/glpi`.
 - **Agent: exam mode.**
   - `exam_mode` limits the PC's network to the POps server, DNS/DHCP and an allow list of host names, addresses and CIDR ranges (at most 50). It uses its own firewall rule group, independent of quarantine.
   - The tray shows a banner with the message and the end time. Up to 50 listed apps are closed. The exam ends at `until` even without the server.
@@ -85,6 +118,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **New agents get Kapat and Yeniden başlat as `power` messages,** not as a `shutdown` command; older Windows and Linux agents still get the old command. Sign-out, lock and messages are refused with -8 for agents without the feature, and nothing is sent to them.
+- **Power and message tasks are queued apart from commands.** They don't use up the concurrency limit, don't depend on the remote command module, and expire after 15 minutes if they are not sent. Mesaj gönder no longer uses the Windows `msg` command.
+- **API: unknown fields in a request body are refused** (`422`, `extra_forbidden` with the field name) on every panel and integration endpoint.
+  - Before, most endpoints dropped them silently and ran with defaults: a misspelt `lab` on `POST /api/modules/{id}` turned the module off for the whole organisation.
+  - Bodies sent by agents still ignore unknown fields, so an older server keeps a newer agent's data.
+  - `/api/remote_input` still accepts its top-level input fields.
+- **Audit log:** module changes also record the previous setting, and install-profile changes record the modules they changed and the lab settings they deleted.
 - **Agent: nullable reference types.** The agent service, the shared library and the MSI custom actions now build with nullable reference types on, as the tray, watchdog and updater already did.
   - The 49 files that were not nullable-clean on 5 October keep a `#nullable disable` line: a baseline that only shrinks, like the warnings list in `Agent/.editorconfig`.
   - New files must be nullable-clean: a nullable warning fails the build, now also in the custom actions. No behaviour change.
@@ -145,6 +185,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Directory and OIDC sign-in are verified end to end.**
+  - Directory sign-in works only over LDAPS or StartTLS, with the certificate and host name verified.
+  - OIDC uses the code flow with PKCE, state and nonce. The ID token's signature (asymmetric algorithms only), issuer, audience, expiry and nonce are checked.
+  - A one-time ticket bound to the starting browser prevents login CSRF, and redirect targets come only from the configured redirect URI.
+- **Local accounts are protected from directory and OIDC identities.** Local accounts never reach the directory, the first local superadmin stays local, and a directory or OIDC identity cannot take over a local account. Disabled, removed or unmapped directory accounts are refused and their sessions end.
+- **Provider secrets stay secret.** They are encrypted at rest, never returned, and not reused when the server, connection or CA changes. Every change is audit-logged without secrets, and 2FA still applies.
+- **Notes and message texts never reach a shell.** They go as JSON fields. The server strips control and bidirectional characters, and the note for old agents keeps only characters that are safe inside quotes.
+- **Messages need a person.** They require a panel session (API tokens get 403), and audit records store only the length and first 60 characters of a note or message.
 - **CI installs every Python tool from hash-locked files** (`.github/requirements/*.lock`, generated and checked with `tools/backend_lock.sh`, refreshed on Dependabot PRs). No unpinned `pip install` is left in the workflows.
 - **The Docker base images are pinned by digest** (`python:3.12-slim`, `php:8.3-apache`). Dependabot proposes the new digest of the same tag weekly.
 - **Workflow tokens are read-only at the top level.** CodeQL's `security-events: write` moved into its job, and the remaining write grants say why they are needed.
