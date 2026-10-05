@@ -292,7 +292,7 @@ off (`401` without, `403` for another device). The subject must have at least 3 
 
 ### Modules and install profiles
 
-Features that can be turned off for the whole organisation or per lab (design: `docs/design/modules.md`). The most
+Features that can be turned off for the whole organisation or per lab. The most
 specific setting wins (lab, then organisation); without a setting a module is on, so an upgrade changes nothing. A
 module whose dependency is off is off too (`deploy` needs `terminal`, `licenses` needs `software`, `schedules` needs
 `terminal`). Modules: `vision`, `terminal`, `deploy`, `schedules`, `patches`, `software`, `licenses`, `helpdesk`,

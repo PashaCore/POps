@@ -63,7 +63,7 @@ Open `https://pops.example.com/`, sign in as `admin` with the password from step
 2. In an elevated command prompt:
 
    ```
-   msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log SERVER_URL=https://pops.example.com ENROLL_TOKEN=<token>
+   msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\Windows\Temp\pops-msi-install.log SERVER_URL=https://pops.example.com ENROLL_TOKEN=<token>
    ```
 
 Optional properties: `BYPASS_SECRET=<the BYPASS_SECRET from the server's .env>` for offline quarantine bypass,

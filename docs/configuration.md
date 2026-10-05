@@ -145,7 +145,7 @@ The Windows agent is configured by the MSI at install time. Full details are in
 ### MSI properties
 
 ```
-msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log SERVER_URL=https://pops.example.com ENROLL_TOKEN=<token>
+msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\Windows\Temp\pops-msi-install.log SERVER_URL=https://pops.example.com ENROLL_TOKEN=<token>
 ```
 
 | Property | Written to | Notes |

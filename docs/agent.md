@@ -39,7 +39,7 @@ copied to `C:\POpsData\updater` together with every runtime file its `POpsUpdate
 2. Install the MSI from the GitHub release on each PC:
 
    ```
-   msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\POpsLogs\msi-install.log SERVER_URL=https://pops.example.com ENROLL_TOKEN=<token>
+   msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\Windows\Temp\pops-msi-install.log SERVER_URL=https://pops.example.com ENROLL_TOKEN=<token>
    ```
 
 3. The PC appears on **Cihazlar** within seconds, in the token's lab (or in `Atanmamis_Cihazlar` if the token
