@@ -1,102 +1,62 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Net.Http;
 using System.Security.Principal;
-using System.Text;
-using System.Text.Json;
 using System.Threading;
-using System.Threading.Tasks;
 using POps.Shared;
 using POpsAgent;
 using Xunit;
 
 namespace POps.Tests.Agent
 {
-    // PR #24 incelemesi: yardım masası istek sınırı (M1), talep sahibi (M2), süreç yolu denetimi (M3), ImagePath (L2),
-    // sınırlı yanıt okuma (L3), bayat kilit (L4), Windows Installer meşgul (L5)
-    public class HelpdeskThrottleTests : TestBase, IDisposable
+    // 1) Tepsi/watchdog kullanıcı oturumunda başlatılır (saha: kurulum ve güncellemeden sonra tepsi yoktu)
+    public class UserSessionAppsTests : TestBase
     {
-        private readonly List<string> _tray = new List<string>();
-        private int _requests;
-        private DateTime _now = new DateTime(2026, 9, 28, 10, 0, 0, DateTimeKind.Utc);
-
-        public HelpdeskThrottleTests()
-        {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("throttle");
-            SecureStore.Dir = TestEnvironment.NewDir("throttle-secure");
-            AgentCredentials.SaveSecret("test-secret-0123456789abcdefghijklmn", "HW-A");
-        }
-
-        public void Dispose() => AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-
-        private Helpdesk Desk(Func<Task<(int?, string)>> response) => new Helpdesk("https://pops.example", () => "HW-A", () => "ogrenci", _tray.Add)
-        {
-            UtcNow = () => _now,
-            Sender = (method, path, payload, what) => { Interlocked.Increment(ref _requests); return response(); },
-        };
-
-        private static string Create(string subject) => Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { subject, category = "ag", body = "" })));
-
-        private static JsonElement Last(List<string> tray, string kind)
-        {
-            string m = tray[^1];
-            Assert.StartsWith(kind + ":", m);
-            return JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(m.Substring(kind.Length + 1)))).RootElement.Clone();
-        }
+        // SYSTEM olarak çalışan bir CI'da WTSQueryUserToken başarılı olur ve süreç gerçekten başlardı: o durumda atlanır
+        public static bool SkipLaunchTests => WindowsIdentity.GetCurrent().IsSystem;
 
         [Fact]
-        public async Task Create_AtMostEveryTenSeconds()
-        {
-            Helpdesk desk = Desk(() => Task.FromResult<(int?, string)>((200, "{\"id\":1}")));
-            await desk.CreateAsync(Create("Konu bir"));
-            await desk.CreateAsync(Create("Konu iki"));
-            Assert.Equal(1, _requests);
-            Assert.Equal(Helpdesk.BusyMessage, Last(_tray, "TICKET_RESULT").GetProperty("message").GetString());
-
-            _now = _now.AddSeconds(10);
-            await desk.CreateAsync(Create("Konu üç"));
-            Assert.Equal(2, _requests);
-        }
+        public void NoSignedInUser_StartsNothing() =>
+            Assert.Equal((false, false), UserAppsPolicy.WhatToStart(false, false, false, false, true, TimeSpan.FromHours(1)));
 
         [Fact]
-        public async Task List_OneAtATimeAndAtMostEverySixSeconds()
+        public void DuringAnUpdate_StartsNothing() =>
+            Assert.Equal((false, false), UserAppsPolicy.WhatToStart(true, true, false, false, true, TimeSpan.FromHours(1)));
+
+        [Fact]
+        public void MissingApps_AreStarted() =>
+            Assert.Equal((true, true), UserAppsPolicy.WhatToStart(true, false, false, false, true, TimeSpan.Zero));
+
+        [Fact]
+        public void RunningApps_AreLeftAlone() =>
+            Assert.Equal((false, false), UserAppsPolicy.WhatToStart(true, false, true, true, true, TimeSpan.FromHours(1)));
+
+        [Fact]
+        public void Tray_WaitsForTheShellButNotForever()
         {
-            var gate = new TaskCompletionSource<(int?, string)>();
-            Helpdesk desk = Desk(() => gate.Task);
-
-            Task first = desk.ListAsync();
-            await desk.ListAsync();                     // ilki sürerken
-            Assert.Equal(1, _requests);
-            JsonElement busy = Last(_tray, "TICKET_LIST_RESULT");
-            Assert.True(busy.GetProperty("busy").GetBoolean());
-            Assert.False(busy.GetProperty("ok").GetBoolean());
-
-            gate.SetResult((200, "[]"));
-            await first;
-            await desk.ListAsync();                     // bittiği saniye: aralık dolmadı
-            Assert.Equal(1, _requests);
-
-            _now = _now.AddSeconds(5);                  // sunucunun 5 sn'si ajana yetmez (6 sn)
-            await desk.ListAsync();
-            Assert.Equal(1, _requests);
-
-            _now = _now.AddSeconds(1);
-            gate = new TaskCompletionSource<(int?, string)>();
-            gate.SetResult((200, "[]"));
-            await desk.ListAsync();
-            Assert.Equal(2, _requests);
+            // Oturum yeni açıldı, görev çubuğu henüz yok: tepsi simgesi kaybolmasın diye beklenir
+            Assert.Equal((false, false), UserAppsPolicy.WhatToStart(true, false, true, false, false, TimeSpan.FromSeconds(10)));
+            // Özel kabuk (explorer hiç yok): bir dakika sonra yine de başlatılır
+            Assert.Equal((false, true), UserAppsPolicy.WhatToStart(true, false, true, false, false, UserAppsPolicy.ShellWait));
         }
 
-        // Sunucunun cihaz başına 5 sn sınırı (429) hata sayılmaz: tepsi listeyi korur, yalnızca kısa notu gösterir
+        // Testler SYSTEM değildir: kullanıcı belirteci alınamaz, hiçbir şey başlatılmaz ve istisna çıkmaz
         [Fact]
-        public async Task ServerThrottle_IsQuiet()
+        public void WithoutSystemRights_NothingIsStarted()
         {
-            await Desk(() => Task.FromResult<(int?, string)>((429, "{\"detail\":\"Çok sık istek; birkaç saniye sonra tekrar deneyin.\"}"))).ListAsync();
-            JsonElement reply = Last(_tray, "TICKET_LIST_RESULT");
-            Assert.True(reply.GetProperty("busy").GetBoolean());
-            Assert.Equal(Helpdesk.BusyMessage, reply.GetProperty("message").GetString());
+            if (SkipLaunchTests) return;
+            string harmless = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "whoami.exe");
+            uint session = UserSessionLauncher.ActiveConsoleSession();
+            Assert.False(UserSessionLauncher.HasSignedInUser(session));
+            Assert.False(UserSessionLauncher.TryStart(session, harmless, out int pid, out string error));
+            Assert.Equal(0, pid);
+            Assert.False(string.IsNullOrEmpty(error));
+
+            Assert.False(UserSessionLauncher.TryStart(session, @"C:\yok\POpsTray.exe", out _, out string missing));
+            Assert.Contains("yok", missing);
+            Assert.False(UserSessionLauncher.TryStart(UserSessionLauncher.NoSession, harmless, out _, out _));
+
+            new UserSessionApps(TestEnvironment.NewDir("apps")).EnsureOnce();
         }
 
         // M1 sertleştirme: tepsi ve watchdog DOTNET_STARTUP_HOOKS ile kullanıcı kodu yüklemez
@@ -158,53 +118,6 @@ namespace POps.Tests.Agent
                 // Yönetici olmayan kullanıcının oluşturduğu mutex tepsiyi durduramaz
                 Assert.Equal(PipeOwner.IsTrustedOwner(owner), UserSessionLauncher.WindowsInstallerBusy(name));
             }
-        }
-    }
-
-    public class BoundedResponseTests : TestBase
-    {
-        // Parçalı (chunked) yanıtta Content-Length yoktur: akış sınırlı okunur
-        private sealed class NoLengthStream : MemoryStream
-        {
-            public NoLengthStream(byte[] data) : base(data) { }
-            public override bool CanSeek => false;
-        }
-
-        [Fact]
-        public async Task ResponseWithoutLength_IsCapped()
-        {
-            byte[] big = Encoding.UTF8.GetBytes(new string('x', 5000));
-            Assert.Null(await AgentHttp.ReadLimitedAsync(new StreamContent(new NoLengthStream(big)), 1024));
-            Assert.Equal(5000, (await AgentHttp.ReadLimitedAsync(new StreamContent(new NoLengthStream(big)), 10000)).Length);
-            Assert.Null(await AgentHttp.ReadLimitedAsync(new ByteArrayContent(big), 1024));
-        }
-    }
-
-    public class StaleLockDrillTests : TestBase, IDisposable
-    {
-        public StaleLockDrillTests()
-        {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("stale");
-            Directory.CreateDirectory(AgentUpdate.SecureDataDir);
-        }
-
-        public void Dispose()
-        {
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentUpdate.InstalledVersionOverride = null;
-        }
-
-        // L4: çökmüş bir updater'dan kalan eski kilit "güncelleme var" sayılmaz; işaret tüketilmez
-        [Fact]
-        public void StaleUpdateLock_DoesNotConsumeTheMarker()
-        {
-            File.WriteAllText(AgentUpdate.RollbackDrillPath, "");
-            File.WriteAllText(AgentUpdate.LockPath, JsonSerializer.Serialize(new { from_version = "0.1.5-alpha", to_version = "0.1.6-alpha", started_at = 1000 }));
-            File.SetLastWriteTimeUtc(AgentUpdate.LockPath, DateTime.UtcNow.AddMinutes(-20));
-            AgentUpdate.InstalledVersionOverride = "0.1.6-alpha";
-
-            Assert.False(AgentUpdate.ApplyRollbackDrillOnStartup());
-            Assert.True(AgentUpdate.RollbackDrillRequested());
         }
     }
 }

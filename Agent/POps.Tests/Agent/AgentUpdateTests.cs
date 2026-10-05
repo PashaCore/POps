@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -223,6 +224,128 @@ namespace POps.Tests.Agent
             string install = TestEnvironment.NewDir("install");
             foreach (string name in UpdaterClosure.Where(n => n != "POps.Shared.dll")) File.WriteAllText(Path.Combine(install, name), name == "POpsUpdater.deps.json" ? DepsJson : "x");
             Assert.Throws<FileNotFoundException>(() => AgentUpdate.UpdaterFiles(install).ToList());
+        }
+    }
+
+    // A5: update_result sunucu onaylayana kadar saklanır
+    public class UpdateResultAckTests : TestBase
+    {
+        private DateTime _now = new DateTime(2026, 10, 2, 10, 0, 0, DateTimeKind.Utc);
+
+        private UpdateResultReporter NewReporter()
+        {
+            var r = new UpdateResultReporter { UtcNow = () => _now };
+            r.OnConnected();
+            return r;
+        }
+
+        private static JsonElement Json(string text) => JsonDocument.Parse(text).RootElement.Clone();
+
+        private static readonly JsonElement AckServer = Json("{\"action\":\"server_info\",\"version\":\"0.1.14\",\"features\":[\"update_result_ack\"]}");
+
+        [Fact]
+        public void OldServer_WaitsFor15Seconds_ThenOldBehaviour()
+        {
+            UpdateResultReporter r = NewReporter();
+            Assert.Equal(UpdateResultReporter.Step.Wait, r.Next("abc"));
+            _now += TimeSpan.FromSeconds(14);
+            Assert.Equal(UpdateResultReporter.Step.Wait, r.Next("abc"));
+            _now += TimeSpan.FromSeconds(1);
+            Assert.Equal(UpdateResultReporter.Step.SendAndMarkReported, r.Next("abc"));
+        }
+
+        [Fact]
+        public void ServerInfoWithoutTheFeature_IsAnOldServer()
+        {
+            UpdateResultReporter r = NewReporter();
+            r.OnServerInfo(Json("{\"action\":\"server_info\",\"version\":\"0.1.13\",\"features\":[\"other\"]}"));
+            Assert.False(r.AckSupported);
+            Assert.Equal(UpdateResultReporter.Step.SendAndMarkReported, r.Next("abc"));
+        }
+
+        [Fact]
+        public void AckServer_KeepsTheResult_ResendsEvery60Seconds()
+        {
+            UpdateResultReporter r = NewReporter();
+            r.OnServerInfo(AckServer);
+            Assert.True(r.AckSupported);
+            Assert.Equal(UpdateResultReporter.Step.SendAndKeep, r.Next("abc"));
+            r.Sent("abc");
+            _now += TimeSpan.FromSeconds(59);
+            Assert.Equal(UpdateResultReporter.Step.Nothing, r.Next("abc"));
+            _now += TimeSpan.FromSeconds(1);
+            Assert.Equal(UpdateResultReporter.Step.SendAndKeep, r.Next("abc"));
+            // Yeni bir sonuç beklemeden gönderilir
+            Assert.Equal(UpdateResultReporter.Step.SendAndKeep, r.Next("def"));
+        }
+
+        [Fact]
+        public void Reconnect_ResetsTheFlag()
+        {
+            UpdateResultReporter r = NewReporter();
+            r.OnServerInfo(AckServer);
+            r.OnConnected();
+            Assert.False(r.AckSupported);
+            Assert.Equal(UpdateResultReporter.Step.Wait, r.Next("abc"));
+        }
+
+        [Fact]
+        public void NoResult_NothingToDo() => Assert.Equal(UpdateResultReporter.Step.Nothing, NewReporter().Next(null));
+
+        [Theory]
+        [InlineData("{\"action\":\"update_result_ack\",\"result_id\":\"abc\"}", "abc", true)]
+        [InlineData("{\"action\":\"update_result_ack\",\"result_id\":\"xyz\"}", "abc", false)]
+        [InlineData("{\"action\":\"update_result_ack\"}", "abc", false)]
+        [InlineData("{\"action\":\"update_result_ack\",\"result_id\":1}", "abc", false)]
+        [InlineData("{\"action\":\"update_result_ack\",\"result_id\":\"abc\"}", null, false)]
+        [InlineData("[]", "abc", false)]
+        public void Ack_MatchesOnlyThePendingResult(string ack, string pending, bool match) =>
+            Assert.Equal(match, UpdateResultReporter.Acknowledges(Json(ack), pending));
+
+        [Fact]
+        public void ResultId_IsSha256OfTheRawFile_First32LowercaseHex()
+        {
+            AgentUpdate.DataDir = TestEnvironment.NewDir("result-id");
+            Assert.Null(AgentUpdate.PendingResultId());
+            byte[] raw = Encoding.UTF8.GetBytes("{\"outcome\":\"success\",\"to_version\":\"0.1.14-alpha\"}");
+            File.WriteAllBytes(AgentUpdate.ResultPath, raw);
+
+            string expected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(raw)).ToLowerInvariant().Substring(0, 32);
+            Assert.Equal(expected, AgentUpdate.PendingResultId());
+            Assert.Equal(expected, AgentUpdate.PendingResultMessage()["result_id"]);
+            Assert.Equal(32, expected.Length);
+            // Aynı sonuç için hep aynı değer
+            Assert.Equal(AgentUpdate.PendingResultId(), AgentUpdate.PendingResultId());
+        }
+
+        [Fact]
+        public void ResultFile_StaysUntilAMatchingAck()
+        {
+            AgentUpdate.DataDir = TestEnvironment.NewDir("result-ack");
+            File.WriteAllText(AgentUpdate.ResultPath, "{\"outcome\":\"success\"}");
+            UpdateResultReporter r = NewReporter();
+            r.OnServerInfo(AckServer);
+            string id = (string)AgentUpdate.PendingResultMessage()["result_id"];
+            Assert.Equal(UpdateResultReporter.Step.SendAndKeep, r.Next(id));
+            r.Sent(id);
+
+            // Yanlış kimlik: dosya kalır
+            Assert.False(UpdateResultReporter.Acknowledges(Json("{\"action\":\"update_result_ack\",\"result_id\":\"0000\"}"), AgentUpdate.PendingResultId()));
+            Assert.True(File.Exists(AgentUpdate.ResultPath));
+
+            // Doğru kimlik: kenara alınır
+            Assert.True(UpdateResultReporter.Acknowledges(Json("{\"action\":\"update_result_ack\",\"result_id\":\"" + id + "\"}"), AgentUpdate.PendingResultId()));
+            AgentUpdate.MarkResultReported();
+            Assert.False(File.Exists(AgentUpdate.ResultPath));
+            Assert.Null(AgentUpdate.PendingResultId());
+        }
+
+        [Fact]
+        public void ResultWithBom_IsStillRead()
+        {
+            AgentUpdate.DataDir = TestEnvironment.NewDir("result-bom");
+            File.WriteAllText(AgentUpdate.ResultPath, "{\"outcome\":\"success\"}", new UTF8Encoding(true));
+            Assert.Equal("success", AgentUpdate.PendingResultMessage()["status"]);
         }
     }
 }

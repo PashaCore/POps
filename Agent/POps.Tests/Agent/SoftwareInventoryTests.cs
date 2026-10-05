@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using POpsAgent;
 using Xunit;
 
@@ -155,6 +157,151 @@ namespace POps.Tests.Agent
             // h2 gönderilemedi (MarkSent çağrılmadı): sonraki turda yine gönderilmeli
             Assert.True(gate.ShouldSend("h2", T0.AddHours(6)));
             Assert.True(gate.ShouldSend("h2", T0.AddHours(12)));
+        }
+    }
+
+    // L11: kayıt defteri alanları ajanda da sunucunun sütun sınırlarına kısaltılır
+    public class SoftwareClipTests : TestBase
+    {
+        [Fact]
+        public void LongRegistryValues_AreClipped()
+        {
+            var entry = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["DisplayName"] = new string('n', 500),
+                ["DisplayVersion"] = new string('v', 150),
+                ["Publisher"] = new string('p', 250),
+                ["InstallDate"] = new string('9', 30),
+            };
+            SoftwareItem item = SoftwareInventory.FromEntry(entry);
+            Assert.Equal(SoftwareInventory.MaxName, item.Name.Length);
+            Assert.Equal(SoftwareInventory.MaxVersion, item.Version.Length);
+            Assert.Equal(SoftwareInventory.MaxPublisher, item.Publisher.Length);
+            Assert.Equal(SoftwareInventory.MaxInstallDate, item.InstallDate.Length);
+        }
+    }
+
+    // Yazılım envanteri: açılışta rastgele gecikme, değişmeyen listeyi 7 gün göndermeme
+    public class InventoryLoadTests : TestBase, IDisposable
+    {
+        private static readonly DateTime T0 = new DateTime(2026, 10, 2, 8, 0, 0, DateTimeKind.Utc);
+        private int _posts, _uploaded;
+        private DateTime _now = T0;
+        private string _hwId = "HW-I";
+        private List<SoftwareItem> _items = Items("1");
+
+        public InventoryLoadTests()
+        {
+            AgentUpdate.DataDir = TestEnvironment.NewDir("inventory-data");
+            SecureStore.Dir = TestEnvironment.NewDir("inventory-secure");
+            AgentCredentials.SaveSecret("inventory-secret-0123456789abcdefghij", "HW-I");
+        }
+
+        public void Dispose()
+        {
+            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
+            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
+        }
+
+        private static List<SoftwareItem> Items(string version) => new List<SoftwareItem>
+        {
+            new SoftwareItem { Name = "7-Zip", Version = "24.08" },
+            new SoftwareItem { Name = "POps Test", Version = version },
+        };
+
+        // Her çağrı yeni bir raporlayıcı: servis yeniden başlamış gibi
+        private SoftwareReporter Reporter() => new SoftwareReporter("https://pops.example", () => _hwId, () => _uploaded++)
+        {
+            Collector = () => _items,
+            UtcNow = () => _now,
+            Poster = (_, _) => { _posts++; return Task.FromResult(PostResult.Sent); },
+        };
+
+        [Fact]
+        public void FirstReport_IsSpreadOverThirtyMinutesAfterTheFirstMinute()
+        {
+            Assert.Equal(TimeSpan.FromMinutes(1), SoftwareReporter.FirstDelay(0));
+            Assert.Equal(TimeSpan.FromMinutes(16), SoftwareReporter.FirstDelay(0.5));
+            Assert.InRange(SoftwareReporter.FirstDelay(0.99999), TimeSpan.FromMinutes(30.99), TimeSpan.FromMinutes(31));
+            Assert.Equal(TimeSpan.FromMinutes(31), SoftwareReporter.FirstDelay(5));
+            Assert.Equal(TimeSpan.FromMinutes(1), SoftwareReporter.FirstDelay(-1));
+        }
+
+        [Fact]
+        public async Task UnchangedList_IsNotResentAfterRestart_ForSevenDays()
+        {
+            Assert.Null(await Reporter().ReportOnceAsync());
+            Assert.Equal((1, 1), (_posts, _uploaded));
+            Assert.True(File.Exists(SoftwareReporter.StatePath));
+
+            _now = T0.AddDays(6.9);
+            Assert.Null(await Reporter().ReportOnceAsync());
+            // Gönderilmedi, ama last_inventory_upload yenilendi (panelde eski görünmez)
+            Assert.Equal((1, 2), (_posts, _uploaded));
+
+            _now = T0.AddDays(7);
+            Assert.Null(await Reporter().ReportOnceAsync());
+            Assert.Equal((2, 3), (_posts, _uploaded));
+        }
+
+        [Fact]
+        public async Task ChangedListOrIdentity_IsSentAtOnce()
+        {
+            await Reporter().ReportOnceAsync();
+            _items = Items("2");
+            await Reporter().ReportOnceAsync();
+            Assert.Equal(2, _posts);
+            _hwId = "HW-J";
+            await Reporter().ReportOnceAsync();
+            Assert.Equal(3, _posts);
+        }
+
+        [Fact]
+        public async Task FailedSend_IsNotRemembered()
+        {
+            var reporter = Reporter();
+            reporter.Poster = (_, _) => Task.FromResult(PostResult.Failed);
+            Assert.Equal(SoftwareReporter.RetryDelay, await reporter.ReportOnceAsync());
+            Assert.False(File.Exists(SoftwareReporter.StatePath));
+            Assert.Equal(0, _uploaded);
+            await Reporter().ReportOnceAsync();
+            Assert.Equal(1, _posts);
+        }
+
+        [Fact]
+        public async Task ForgetLastReport_SendsAgain()
+        {
+            var reporter = Reporter();
+            await reporter.ReportOnceAsync();
+            reporter.ForgetLastReport();
+            Assert.False(File.Exists(SoftwareReporter.StatePath));
+            await reporter.ReportOnceAsync();
+            Assert.Equal(2, _posts);
+        }
+
+        [Fact]
+        public async Task CorruptState_IsIgnored()
+        {
+            File.WriteAllText(SoftwareReporter.StatePath, "{bozuk");
+            await Reporter().ReportOnceAsync();
+            Assert.Equal(1, _posts);
+        }
+
+        [Fact]
+        public void ClockMovedBack_Sends()
+        {
+            var gate = new ReportGate(TimeSpan.FromDays(7));
+            gate.MarkSent("h", T0, "HW-I");
+            Assert.False(gate.ShouldSend("h", T0.AddDays(1), "HW-I"));
+            Assert.True(gate.ShouldSend("h", T0.AddMinutes(-1), "HW-I"));
+        }
+
+        // Yazılım envanteri: uç yoksa bir gün beklenir, 15 dk'da bir boşuna denenmez
+        [Fact]
+        public void SoftwareReporter_BacksOffOnMissingEndpoint()
+        {
+            Assert.Equal(SoftwareReporter.EndpointMissingDelay, SoftwareReporter.DelayAfter(PostResult.EndpointMissing));
+            Assert.Equal(SoftwareReporter.RetryDelay, SoftwareReporter.DelayAfter(PostResult.Failed));
         }
     }
 }

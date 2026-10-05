@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using POpsAgent;
@@ -94,5 +96,144 @@ namespace POps.Tests.Agent
             Assert.True(result.Output.Length <= CommandExecutionPolicy.MaxOutputChars);
             Assert.Contains("KISALTILDI", result.Output);
         }
+    }
+
+    // B1: çıktı satır sonu beklemeden sabit parçalarla okunur; B3: aynı görev kimliği iki kez çalışmaz
+    public class CommandOutputChunkTests : TestBase
+    {
+        [Fact]
+        public void Append_StopsAtTheLimit_AndCountsTheRest()
+        {
+            var output = new BoundedOutput(10);
+            output.Append("12345678".ToCharArray(), 0, 8);
+            output.Append("xxabcdefxx".ToCharArray(), 2, 6);
+            Assert.Equal(4, output.DroppedChars);
+            Assert.StartsWith("12345678ab", output.ToString());
+            Assert.Contains("[ÇIKTI KISALTILDI: 4 karakter atıldı]", output.ToString());
+
+            output.Append(null, 0, 5);
+            output.Append("abc".ToCharArray(), 0, 0);
+            Assert.Equal(4, output.DroppedChars);
+        }
+
+        [Fact]
+        public void Append_And_AppendLine_ShareTheLimit()
+        {
+            var output = new BoundedOutput(6);
+            output.AppendLine("ab");
+            output.Append("cdefgh".ToCharArray(), 0, 6);
+            Assert.StartsWith("ab\ncde", output.ToString());
+            Assert.Equal(3, output.DroppedChars);
+        }
+
+        // 20 milyon karakter, hiç satır sonu yok: eskiden .NET'in satır okuyucusunda bütünüyle birikiyordu
+        [Fact]
+        public async Task HugeOutputWithoutNewlines_IsBoundedAndTheProcessFinishes()
+        {
+            CommandExecutionResult result = await new CommandRunner()
+                .RunAsync(11, "powershell -NoProfile -Command \"[Console]::Out.Write('x' * 20000000)\"", CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(120));
+            Assert.Equal(0, result.ExitCode);
+            Assert.True(result.Output.Length <= CommandExecutionPolicy.MaxOutputChars, result.Output.Length.ToString());
+            Assert.Contains("KISALTILDI", result.Output);
+            Assert.StartsWith("xxxx", result.Output);
+        }
+
+        [Fact]
+        public async Task LineEndings_AreSentAsNewlines()
+        {
+            CommandExecutionResult result = await new CommandRunner().RunAsync(12, "echo bir\r\necho iki", CancellationToken.None);
+            Assert.Equal("bir\niki", result.Output);
+        }
+
+        [Fact]
+        public async Task StandardError_IsReadInChunksToo()
+        {
+            CommandExecutionResult result = await new CommandRunner().RunAsync(13, "echo hata-metni 1>&2\r\nexit /b 4", CancellationToken.None);
+            Assert.Equal(4, result.ExitCode);
+            Assert.Contains("[HATA]:\nhata-metni", result.Output);
+        }
+
+        [Fact]
+        public async Task SameTaskId_DoesNotStartASecondProcess()
+        {
+            var runner = new CommandRunner();
+            Task<CommandExecutionResult> first = runner.RunAsync(21, "ping -n 30 127.0.0.1 > nul", CancellationToken.None);
+            Assert.True(runner.IsRunning(21));
+
+            CommandExecutionResult second = await runner.RunAsync(21, "echo ikinci", CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(CommandRunner.ExitDuplicate, second.ExitCode);
+            Assert.Equal(1, runner.RunningCount);
+
+            Assert.True(runner.Cancel(21));
+            Assert.Equal(CommandRunner.ExitCancelled, (await first.WaitAsync(TimeSpan.FromSeconds(20))).ExitCode);
+            Assert.False(runner.IsRunning(21));
+
+            // Bittikten sonra aynı kimlik yeniden çalışabilir
+            Assert.Equal(0, (await runner.RunAsync(21, "echo yeniden", CancellationToken.None)).ExitCode);
+        }
+
+        [Fact]
+        public void ExitCodes_AreDistinct()
+        {
+            int[] codes = { CommandRunner.ExitTimeout, CommandRunner.ExitCancelled, CommandRunner.ExitAgentError, CommandRunner.ExitServiceStopping, CommandRunner.ExitDenied, CommandRunner.ExitDuplicate };
+            Assert.Equal(codes.Length, codes.Distinct().Count());
+            Assert.Equal((-5, -6), (CommandRunner.ExitDenied, CommandRunner.ExitDuplicate));
+        }
+    }
+
+    // A4: açılışta yarım kalmış görev dosyaları silinir; başka dosyalara dokunulmaz
+    public class StaleTaskFileTests : TestBase
+    {
+        private const string Hex = "0123456789abcdef0123456789abcdef";
+
+        [Theory]
+        [InlineData("pops_task_" + Hex + ".bat", true)]
+        [InlineData("pops_task_" + Hex + ".BAT", false)]
+        [InlineData("pops_task_0123456789ABCDEF0123456789ABCDEF.bat", false)]
+        [InlineData("pops_task_0123.bat", false)]
+        [InlineData("pops_task_" + Hex + ".bat.txt", false)]
+        [InlineData("x_pops_task_" + Hex + ".bat", false)]
+        [InlineData("pops_task_" + Hex + "0.bat", false)]
+        [InlineData(null, false)]
+        public void Pattern(string name, bool match) => Assert.Equal(match, CommandRunner.IsTaskFile(name));
+
+        [Fact]
+        public void Cleanup_DeletesOnlyTaskFiles()
+        {
+            string dir = TestEnvironment.NewDir("stale-bat");
+            string a = Path.Combine(dir, "pops_task_" + Hex + ".bat");
+            string b = Path.Combine(dir, "pops_task_" + Hex.Replace('0', 'f') + ".bat");
+            string keep1 = Path.Combine(dir, "pops_task_notes.bat");
+            string keep2 = Path.Combine(dir, "other.bat");
+            string keep3 = Path.Combine(dir, "pops_task_" + Hex + ".bat.bak");
+            foreach (string f in new[] { a, b, keep1, keep2, keep3 }) File.WriteAllText(f, "@echo off");
+
+            var (deleted, failed) = CommandRunner.CleanupStaleTaskFiles(dir);
+            Assert.Equal((2, 0), (deleted, failed));
+            Assert.False(File.Exists(a));
+            Assert.False(File.Exists(b));
+            Assert.True(File.Exists(keep1) && File.Exists(keep2) && File.Exists(keep3));
+        }
+
+        [Fact]
+        public void Cleanup_ReportsAFileThatCannotBeDeleted_AndGoesOn()
+        {
+            string dir = TestEnvironment.NewDir("stale-bat-locked");
+            string locked = Path.Combine(dir, "pops_task_" + Hex + ".bat");
+            string free = Path.Combine(dir, "pops_task_" + Hex.Replace('1', 'e') + ".bat");
+            File.WriteAllText(locked, "x");
+            File.WriteAllText(free, "x");
+            using (new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                var (deleted, failed) = CommandRunner.CleanupStaleTaskFiles(dir);
+                Assert.Equal((1, 1), (deleted, failed));
+            }
+            Assert.True(File.Exists(locked));
+        }
+
+        [Fact]
+        public void Cleanup_OfAMissingDirectory_DoesNotThrow() =>
+            Assert.Equal((0, 0), CommandRunner.CleanupStaleTaskFiles(Path.Combine(TestEnvironment.Root, "yok-" + Guid.NewGuid().ToString("N"))));
     }
 }

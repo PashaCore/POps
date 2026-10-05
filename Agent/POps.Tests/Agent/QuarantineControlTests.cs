@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using POpsAgent;
 using Xunit;
 
@@ -282,6 +283,66 @@ namespace POps.Tests.Agent
             first.Attempt("000000", HwId, Secret, Day);
             first.Attempt("000000", HwId, Secret, Day);
             Assert.Equal(2, new OfflineBypass(statePath: path).Failures);
+        }
+    }
+
+    // HB: heartbeat karantina durumunu taşır; kilit/açma idempotenttir
+    public class QuarantineHeartbeatTests : TestBase, IDisposable
+    {
+        private readonly List<string> _tray = new List<string>();
+        private int _enabled, _disabled;
+
+        public QuarantineHeartbeatTests() => SecureStore.Dir = TestEnvironment.NewDir("hb");
+
+        public void Dispose() => DnsPolicyMonitor.Quarantine = _ => { };
+
+        private QuarantineControl Control() => new QuarantineControl(
+            _tray.Add,
+            () => { _enabled++; File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
+            () => { _disabled++; File.Delete(NetworkIsolation.StatePath); return Task.FromResult(true); },
+            new OfflineBypass());
+
+        private static JsonElement Heartbeat(Worker worker) =>
+            JsonDocument.Parse(JsonSerializer.Serialize(worker.HeartbeatPayload())).RootElement;
+
+        [Fact]
+        public void Heartbeat_ReportsTheLockState()
+        {
+            using var worker = new Worker(NullLogger<Worker>.Instance);
+            Assert.Equal(JsonValueKind.False, Heartbeat(worker).GetProperty("quarantined").ValueKind);
+
+            File.WriteAllText(QuarantineControl.LockPath, "{\"reason\":\"Sınav\"}");
+            JsonElement hb = Heartbeat(worker);
+            Assert.Equal(JsonValueKind.True, hb.GetProperty("quarantined").ValueKind);
+            Assert.Equal("Online", hb.GetProperty("status").GetString());
+            Assert.True(hb.TryGetProperty("active_window", out _));
+        }
+
+        [Fact]
+        public async Task RepeatedLockdown_DoesNotRebuildIsolation()
+        {
+            QuarantineControl control = Control();
+            await control.LockdownAsync("Sınav");
+            Assert.True(await control.LockdownAsync("Sınav"));
+            // Sunucunun yeniden gönderdiği nedensiz kilit kayıtlı nedeni silmez
+            await control.LockdownAsync(null);
+            Assert.Equal(1, _enabled);
+            Assert.Equal("Sınav", control.LockReason);
+            Assert.True(control.IsLocked);
+        }
+
+        [Fact]
+        public async Task RepeatedUnlock_IsQuiet()
+        {
+            QuarantineControl control = Control();
+            await control.LockdownAsync("Sınav");
+            Assert.True(await control.UnlockAsync("server"));
+            _tray.Clear();
+
+            Assert.True(await control.UnlockAsync("server"));
+            Assert.Equal(1, _disabled);
+            using JsonDocument doc = JsonDocument.Parse(_tray.Single());
+            Assert.Equal("sync", doc.RootElement.GetProperty("source").GetString());
         }
     }
 }

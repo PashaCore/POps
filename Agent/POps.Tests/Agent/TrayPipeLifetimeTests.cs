@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Pipes;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using POpsAgent;
@@ -125,6 +126,61 @@ namespace POps.Tests.Agent
             // Bekleme sırasında (sunucuya bağlanılmıyorken) tepsi bağlanabilir
             using NamedPipeClientStream tray = await ConnectTrayAsync();
             Assert.True(await WaitUntilAsync(() => pipe.IsConnected));
+        }
+    }
+
+    // L12: tepsiye giden mesajlar birden çok thread'den yazılsa da çerçeveler karışmaz
+    public class PipeFrameTests : TestBase
+    {
+        // Her baytı ayrı yazan ve araya diğer thread'leri sokan akış: kilit yoksa çerçeveler iç içe geçer
+        private sealed class TricklingStream : Stream
+        {
+            private readonly List<byte> _data = new List<byte>();
+            public byte[] Data { get { lock (_data) return _data.ToArray(); } }
+            public override void Write(byte[] buffer, int offset, int count)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    lock (_data) _data.Add(buffer[offset + i]);
+                    if (i % 3 == 0) Thread.Yield();
+                }
+            }
+            public override void Flush() { }
+            public override bool CanRead => false;
+            public override bool CanSeek => false;
+            public override bool CanWrite => true;
+            public override long Length => throw new NotSupportedException();
+            public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+            public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+        }
+
+        [Fact]
+        public void ConcurrentWrites_KeepFramesIntact()
+        {
+            var stream = new TricklingStream();
+            var gate = new object();
+            const int threads = 8, perThread = 60;
+            Parallel.For(0, threads, new ParallelOptions { MaxDegreeOfParallelism = threads }, t =>
+            {
+                for (int i = 0; i < perThread; i++)
+                    TrayPipeServer.WriteFrame(stream, gate, Encoding.UTF8.GetBytes($"{{\"action\":\"t{t}\",\"n\":{i},\"pad\":\"{new string('x', 20 + t)}\"}}"));
+            });
+
+            byte[] data = stream.Data;
+            var seen = new HashSet<string>();
+            int pos = 0;
+            while (pos < data.Length)
+            {
+                int length = BitConverter.ToInt32(data, pos);
+                Assert.InRange(length, 1, 200);
+                string message = Encoding.UTF8.GetString(data, pos + 4, length);
+                Assert.Matches("^\\{\"action\":\"t\\d\",\"n\":\\d+,\"pad\":\"x+\"\\}$", message);
+                seen.Add(message);
+                pos += 4 + length;
+            }
+            Assert.Equal(threads * perThread, seen.Count);
         }
     }
 }
