@@ -1236,7 +1236,8 @@ namespace POpsAgent
 
         // Ön plandaki uygulamanın adı (tepsiden; pencere başlığı gönderilmez) ve karantina durumu. Sunucu (anahtarlı
         // bağlantıda) "quarantined" ile bekleyen kilit/açma isteğini tamamlar ya da yeniden gönderir; bekleyen istek
-        // yoksa panel ajanın gerçek durumunu gösterir.
+        // yoksa panel ajanın gerçek durumunu gösterir. Donanım bilgisi okunamadıysa dna_payload boş nesnedir (null
+        // değil; şema nesne ister, sunucu ikisini de boş sayar).
         internal object HeartbeatPayload() => new
         {
             hw_id = _hwId,
@@ -1245,7 +1246,7 @@ namespace POpsAgent
             status = "Online",
             active_window = _activeApp ?? "-",
             quarantined = _quarantine.IsLocked,
-            dna_payload = _cachedDna,
+            dna_payload = _cachedDna ?? new object(),
             agent_health = _health.Snapshot(
                 _trayPipe?.IsConnected == true,
                 AgentCapabilities.VisionEnabled,

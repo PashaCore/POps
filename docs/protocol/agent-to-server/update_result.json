@@ -43,7 +43,7 @@
     },
     "rollback": {
       "type": "string",
-      "description": "How the update was rolled back, for example msi or msi_repair."
+      "description": "How the update was rolled back, for example msi, msi_transaction or msi_repair; \"none\" when it was not (the updater writes it on success)."
     },
     "agent_state": {
       "type": "string",
