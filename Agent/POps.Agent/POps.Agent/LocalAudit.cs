@@ -100,6 +100,18 @@ namespace POpsAgent
         public static LocalAuditEvent ClipboardShared(string direction, int length) =>
             Info(1100, "Pano paylaşıldı", ("direction", Safe(direction)), ("length", length));
 
+        // Sınav modu (bkz. ExamMode): başladı / bitti / uygulama kapatıldı
+        public static LocalAuditEvent ExamStarted(ExamSettings settings) =>
+            Warning(1110, "Sınav modu başladı", ("allow", Safe(string.Join(", ", settings?.Allow ?? new List<string>()))),
+                ("until", settings?.Until?.ToString(CultureInfo.InvariantCulture) ?? "-"),
+                ("block_apps", Safe(string.Join(", ", settings?.BlockApps ?? new List<string>()))));
+
+        public static LocalAuditEvent ExamEnded(string source) =>
+            Info(1111, "Sınav modu bitti", ("source", Safe(source)));
+
+        public static LocalAuditEvent ExamAppStopped(string app, int processId) =>
+            Info(1112, "Sınav modunda uygulama kapatıldı", ("app", Safe(app)), ("pid", processId));
+
         public static void Write(LocalAuditEvent item)
         {
             if (item == null) return;

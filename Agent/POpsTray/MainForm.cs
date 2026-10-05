@@ -338,6 +338,9 @@ namespace POpsTray
                     return;
                 }
 
+                // Sınav modu: bant, bildirim ve engellenen uygulama
+                if (HandleExamMessage(jsonMsg)) return;
+
                 if (jsonMsg.StartsWith("SHOW_FAIR_USE:"))
                 {
                     string b64 = jsonMsg.Substring("SHOW_FAIR_USE:".Length);
@@ -905,6 +908,60 @@ namespace POpsTray
             return false;
         }
 
+        // ---------------------------------------------------------------- sınav modu
+        private ExamBanner? _examBanner;
+        private DateTime _lastExamAppNotice = DateTime.MinValue;
+
+        // EXAM_ON:<base64 {"message","until"}>, EXAM_OFF, EXAM_APP_BLOCKED:<ad.exe>. Dönen: mesaj sınav moduna aitti.
+        private bool HandleExamMessage(string message)
+        {
+            if (message.StartsWith("EXAM_ON:", StringComparison.Ordinal))
+            {
+                string text = "Sınav modu";
+                long? until = null;
+                try
+                {
+                    using JsonDocument doc = JsonDocument.Parse(Convert.FromBase64String(message.Substring("EXAM_ON:".Length)));
+                    if (doc.RootElement.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String) text = m.GetString() ?? text;
+                    if (doc.RootElement.TryGetProperty("until", out JsonElement u) && u.ValueKind == JsonValueKind.Number) until = u.GetInt64();
+                }
+                catch (Exception ex) when (ex is FormatException || ex is JsonException) { }
+                this.Invoke(new Action(() =>
+                {
+                    bool first = _examBanner == null;
+                    _examBanner ??= new ExamBanner();
+                    _examBanner.ShowMessage(text, until);
+                    if (first) ShowNotification("Sınav modu", text);
+                }));
+                return true;
+            }
+            if (message == "EXAM_OFF")
+            {
+                this.Invoke(new Action(() =>
+                {
+                    if (_examBanner == null) return;
+                    _examBanner.AllowClose = true;
+                    _examBanner.Close();
+                    _examBanner.Dispose();
+                    _examBanner = null;
+                    ShowNotification("Sınav modu bitti", "İnternet erişimi normale döndü.");
+                }));
+                return true;
+            }
+            if (message.StartsWith("EXAM_APP_BLOCKED:", StringComparison.Ordinal))
+            {
+                string app = message.Substring("EXAM_APP_BLOCKED:".Length);
+                this.Invoke(new Action(() =>
+                {
+                    if (DateTime.Now - _lastExamAppNotice < TimeSpan.FromSeconds(10)) return;
+                    _lastExamAppNotice = DateTime.Now;
+                    ShowNotification("Sınav modu", $"{app} sınav sırasında kullanılamaz.");
+                }));
+                return true;
+            }
+            return false;
+        }
+
         // Görüntüleyicinin koordinatı seçili ekranın fiziksel pikselidir; imleç per-monitor DPI bağlamında konur
         private void MoveCursorV2(int x, int y)
         {
@@ -969,6 +1026,7 @@ namespace POpsTray
             {
                 Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
                 _visionV2.Dispose();
+                _examBanner?.Dispose();
                 cts.Cancel();
                 pipeClient?.Dispose();
                 trayIcon?.Dispose();

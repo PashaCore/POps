@@ -187,7 +187,8 @@ command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine 
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
 that partly changed (no decision taken), 1080 a change of the server's modules, 1090 a configuration that could not
-be read and 1100 a clipboard shared in a Vision session (direction and length only). Failure to write an event does not stop the
+be read, 1100 a clipboard shared in a Vision session (direction and length only), and 1110/1111/1112 exam mode
+started, ended and an app closed during an exam. Failure to write an event does not stop the
 service.
 
 ### `winget_install` contract
@@ -280,12 +281,60 @@ command (the package id and version may be recorded in clear).
 
 ## Capability policy
 
-Terminal (`execute`) and Vision (streaming, previews, remote input) can be disabled per PC, so that even a
-compromised server cannot use them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`, `1` / `0`);
+Terminal (`execute`), Vision (streaming, previews, remote input) and exam mode can be disabled per PC, so that even
+a compromised server cannot use them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`, `EXAM_ENABLED`,
+`1` / `0`);
 the server can only switch them off (**Sistem** → "Cihaz yetenekleri"). A refused command is closed with
 a `[REDDEDİLDİ]` result and reported as `capability_denied`. Re-enabling needs a local administrator: MSI repair or
 reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; see
 [`Agent/README.md`](../Agent/README.md#capability-policy).
+
+## Exam mode
+
+From 0.1.23-alpha a server that lists `exam_mode` in `server_info.features` can put a lab into exam mode. The
+messages are the server's (`docs/protocol/server-to-agent/exam_mode.json`,
+`docs/protocol/agent-to-server/exam_state.json`):
+
+```json
+{"action": "exam_mode", "enabled": true, "allow": ["sinav.meb.gov.tr", "10.0.0.5", "10.1.0.0/24"],
+ "until": 1791207689, "message": "Sınav modu: yalnızca sınav sitesi açık", "block_apps": ["cmd.exe", "powershell.exe"]}
+```
+
+`{"action": "exam_mode", "enabled": false}` ends it. The agent announces `exam` in `X-Agent-Features` when it
+connects.
+
+- **Network:** The PC can reach only the POps server, DNS/DHCP and the allow list (host names, IPv4/IPv6
+  addresses, CIDR ranges from /8 for IPv4 and /16 for IPv6).
+  - It uses the quarantine isolation engine with its own firewall rule group (`POps Exam`). Exam mode and
+    quarantine are independent; if both run, quarantine (the stricter one) wins.
+  - Firewall profiles that were off before are turned off again only when neither group is active.
+  - Host names are resolved again every 2 minutes and whenever a network address changes.
+- **Validation:** At most 50 allow entries and 50 apps (the server's limits); a message of at most 300 characters
+  (control characters removed; the server sends at most 200); `until` must be in the future. Processes that would
+  break the session or POps (explorer, svchost, winlogon, the POps programs, …) are never closed. A command that is
+  refused or cannot be applied is answered with `exam_state` showing the unchanged state; the reason is only in
+  the local log.
+- **PC user:** The tray shows a red banner at the top of the primary screen with the message and the end time.
+  It cannot be closed. The listed apps are closed in user sessions every 2 seconds, and the tray says so.
+- **End:** Exam mode ends at `until` even when the server cannot be reached. It survives a restart (state in
+  `C:\POpsData\secure\exam.json`).
+- **Reporting:** `{"type": "exam_state", "enabled", "since", "until"}`, no other field.
+  - `since` is when the current state began: the entry time while in exam mode; when not in exam mode, the time
+    it was left if that happened since the service started, otherwise absent. `until` is the exam's end while in
+    exam mode and `null` otherwise.
+  - Sent as the answer to every `exam_mode`, after every change (end at `until`, capability switched off) and
+    once on every connection after `server_info`, also when no exam runs.
+  - Only to servers that list `exam_mode` in `server_info.features` (an answer to `exam_mode` always goes back),
+    never as the first message of a connection. A change while the server is unknown or unreachable is reported
+    after the next `server_info`.
+- **Capability:** `exam_enabled` in `capabilities.json`, on by default; `EXAM_ENABLED=0` switches it off locally.
+  The agent also applies `exam_enabled: false` from `set_capabilities` (and ignores `true`). It is not part of the
+  `capabilities` message (the server's schema has no such field). With it off, `exam_mode` with `enabled: true`
+  is answered with one `capability_denied` (`capability: exam`, `action: exam_mode`) and nothing is applied. If it
+  is switched off while exam mode runs (reinstall with `EXAM_ENABLED=0`, or `set_capabilities`), the agent leaves
+  exam mode within 2 seconds and sends `exam_state` with `enabled: false`.
+- **Events:** 1110 exam started (allow list, end time, apps), 1111 ended (`server`, `until` or `capability`),
+  1112 app closed (once per app and exam).
 
 ## Modules
 
