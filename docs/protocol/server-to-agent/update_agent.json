@@ -54,6 +54,11 @@
           }
         }
       }
+    },
+    "peer_cache": {
+      "type": "boolean",
+      "const": true,
+      "description": "Optional (lab-local peer cache). Present only when the server's peer cache setting is on and this agent announced `peer_cache`: the agent may keep this package after `verified` and serve it to its lab (cache server on the local subnet). Without it the agent keeps no cache and opens no port, whatever it announced. Agents without the feature ignore the field."
     }
   }
 }

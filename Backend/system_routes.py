@@ -760,7 +760,10 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         offline = sorted(t for t in targets if t not in manager.active_agents)
         for pc in sorted(t for t in targets if t in manager.active_agents and t not in staging.hold):
             peers = staging.peers.get(pc)
-            if not await manager.send_command(dict(msg, peers=peers) if peers else msg, pc):
+            message = dict(msg, peers=peers) if peers else msg
+            if pc in staging.cache:
+                message = dict(message, peer_cache=True)   # bu bilgisayar paketi saklar ve sınıfına sunar
+            if not await manager.send_command(message, pc):
                 offline.append(pc)   # bağlantı bu arada koptu
                 await peer_cache.not_sent(pc)
                 continue

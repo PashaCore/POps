@@ -198,6 +198,7 @@ class Plan:
     hold: Set[str] = field(default_factory=set)            # tohumu bekleyecekler: şimdi gönderilmez
     seeds: Dict[str, str] = field(default_factory=dict)   # tohum -> sınıf
     peers: Dict[str, List[dict]] = field(default_factory=dict)   # şimdi peers ile gönderilecekler
+    cache: Set[str] = field(default_factory=set)          # update_agent'ta peer_cache: true alacaklar (önbellek tutar)
 
 
 def _live_peers(ro: Rollout, exclude: str = "") -> List[dict]:
@@ -249,6 +250,9 @@ async def plan(online: Iterable[str], version: str, sha256: str, msg: dict) -> P
     now = time.time()
     for lab, lab_rows in sorted(labs.items()):
         pcs = sorted(r["pc_name"] for r in lab_rows)
+        # Eş önbelleğine katılan bilgisayar paketi saklar ve sunar (yerel alt ağa port açar); yalnızca ayar açıkken ve
+        # özelliği duyuran ajana, update_agent'taki peer_cache: true ile söylenir. Bayraksız emirde ajan port açmaz.
+        out.cache.update(pcs)
         ro = _rollouts.get(lab)
         if ro and ro.state == "seeding":
             # Aynı sürüm bu sınıfta zaten aşamalanıyor: yeni hedefler de tohumu bekler
@@ -318,7 +322,7 @@ async def _next_seed(ro: Rollout, why: str) -> None:
         # Bekleyenlerden biri tohum olur
         ro.waiting.discard(pc)
         ro.seed, ro.deadline = pc, time.time() + SEED_TIMEOUT
-        if await _send(pc, ro.msg, ro.version):
+        if await _send(pc, dict(ro.msg, peer_cache=True), ro.version):   # yeni tohum da önbellek tutar
             log.info("yeni tohum", extra={"lab": ro.lab, "pc_name": pc})
             return
         ro.tried.append(pc)
@@ -344,6 +348,8 @@ async def _release(ro: Rollout, why: str, use_peers: bool = True) -> None:
             continue
         own = [p for p in peers if p["hw_id"] != pc]
         message = dict(ro.msg, peers=_rotate(own, i)) if own else ro.msg
+        if use_peers:   # ayar kapatıldıysa (use_peers=False) önbellek tutulmaz, port açılmaz
+            message = dict(message, peer_cache=True)
         if await _send(pc, message, ro.version):
             (ro.via_peers if own else ro.without_peers).add(pc)
             i += 1

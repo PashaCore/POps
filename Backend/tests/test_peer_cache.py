@@ -280,6 +280,7 @@ async def run(c, sup, socks):
         "tohum, eski ajan, özelliksiz sınıf ve sınıfsız hemen gönderildi (%s)" % d.get("dispatched"))
     got = await inbox(socks)
     chk(len(got["HW-PCA1"]) == 1 and "peers" not in got["HW-PCA1"][0], "tohum peers'sız update_agent aldı")
+    chk(got["HW-PCA1"][0].get("peer_cache") is True, "tohuma peer_cache: true (önbellek tutar)")
     chk(all(len(got[pc]) == 1 and "peers" not in got[pc][0] for pc in ("HW-PCA4", "HW-PCB1", "HW-PCB2", "HW-PCN1")),
         "özelliksiz ve sınıfsız bilgisayarlar bugünkü gibi aldı")
     chk(not any(got[pc] for pc in ("HW-PCA2", "HW-PCA3", "HW-PCA5")), "bekleyenlere henüz gitmedi")
@@ -371,12 +372,14 @@ async def run(c, sup, socks):
     got = await inbox({pc: socks[pc] for pc in d_lab}, 1.2)
     chk(len(got["HW-PCD2"]) == 1 and "peers" not in got["HW-PCD2"][0] and not got["HW-PCD1"],
         "kapatılınca tohum bekleyen hemen ve peers'sız aldı")
+    chk("peer_cache" not in got["HW-PCD2"][0], "kapatılınca bekleyene peer_cache gitmedi")
     chk(req("/api/system/version", sup)[1].get("update_peer_cache") is False, "sürüm ucunda kapalı")
     s, d = deploy(sup, d_lab)
     chk(s == 200 and d.get("dispatched") == ["HW-PCD3"] and d.get("seeds") == [] and d.get("waiting_for_seed") == []
         and d.get("with_peers") == [], "kapalıyken bugünkü gibi (%s)" % d)
     got = await inbox({"HW-PCD3": socks["HW-PCD3"]}, 1)
     chk(len(got["HW-PCD3"]) == 1 and "peers" not in got["HW-PCD3"][0], "peers yok")
+    chk("peer_cache" not in got["HW-PCD3"][0], "ayar kapalıyken peer_cache yok: ajan port açmaz")
     admin_status = req("/api/system/update-peer-cache", server.create_jwt("peeradmin", "admin", 0),
                        {"enabled": True})[0]
     chk(admin_status == 403, "ayarı yalnız süper admin değiştirir (%s)" % admin_status)

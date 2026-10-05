@@ -697,10 +697,15 @@ X-Agent-Peer-Cache: port=8817; ip=10.20.0.12; link=wired
   - `link`: `wired` or `wireless`. Wired PCs are preferred as seeds.
 - The server announces `peer_cache` in `server_info.features`. Against a server that does not, the agent need not
   keep a cache or listen.
+- **Keep a cache and listen only when told.** The server adds `"peer_cache": true` to `update_agent` only while its
+  setting "Sınıf içinde eşten dağıt" is on (it is **off by default**) and only for PCs that take part in a staged
+  rollout. Without that field the agent keeps no package in `C:\POpsData\cache`, starts no cache server and adds
+  no firewall rule, even if it announced the feature. This keeps "no inbound ports on PCs" true unless an admin turns
+  the peer cache on.
 
 **2. What the server does** (`Backend/pops/peer_cache.py`), so the agent knows what to expect:
 
-- When the update setting "Sınıf içinde eşten dağıt" is on (the default), for every lab with at least two online
+- When the update setting "Sınıf içinde eşten dağıt" is on (it is off by default), for every lab with at least two online
   target PCs that announce the feature, the server picks one **seed** (online, feature, a usable address, not
   already on the target version; wired first, then the most recently seen). The seed gets a normal
   `update_agent` (no `peers`). The other feature PCs in that lab wait.
