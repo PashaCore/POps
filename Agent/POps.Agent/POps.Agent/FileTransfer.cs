@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -17,7 +18,7 @@ using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 using POps.Shared;
 
-#nullable disable
+#nullable enable
 
 namespace POpsAgent
 {
@@ -49,54 +50,54 @@ namespace POpsAgent
 
         public sealed class PushRequest
         {
-            public string TransferId { get; init; }
-            public string Name { get; init; }
+            public required string TransferId { get; init; }
+            public required string Name { get; init; }
             public long Size { get; init; }
-            public string Sha256 { get; init; }
-            public Uri Url { get; init; }
-            public string Dest { get; init; }
-            public string Reason { get; init; }
+            public required string Sha256 { get; init; }
+            public required Uri Url { get; init; }
+            public required string Dest { get; init; }
+            public required string Reason { get; init; }
             public bool AllowExec { get; init; }
         }
 
         public sealed class PullRequest
         {
-            public string TransferId { get; init; }
-            public string Path { get; init; }
+            public required string TransferId { get; init; }
+            public required string Path { get; init; }
             public long MaxSize { get; init; }
-            public Uri Upload { get; init; }
-            public string Reason { get; init; }
+            public required Uri Upload { get; init; }
+            public required string Reason { get; init; }
             public bool AnyProfile { get; init; }
         }
 
         // Testler: yollar ve kullanıcının profili
-        internal static Func<string> PublicDesktopOverride { get; set; }
-        internal static Func<(string ProfilesDirectory, string CurrentProfile)> ProfileInfo { get; set; } = ReadProfiles;
+        internal static Func<string>? PublicDesktopOverride { get; set; }
+        internal static Func<(string ProfilesDirectory, string? CurrentProfile)> ProfileInfo { get; set; } = ReadProfiles;
 
         public static string PublicDesktop => PublicDesktopOverride?.Invoke() ?? Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
         public static string InboxRoot => System.IO.Path.Combine(AgentUpdate.DataDir, "inbox");
 
         // Geçersiz ya da eksik kimlik: null (sunucu bilmediği aktarımın sonucunu yok sayar; böyle emre file_result gitmez)
-        public static string TransferIdOf(JsonElement command) =>
+        public static string? TransferIdOf(JsonElement command) =>
             Text(command, "transfer_id") is string id && TransferIdRegex.IsMatch(id) ? id : null;
 
         // ------------------------------------------------------------------ doğrulama
-        public static bool TryParsePush(JsonElement c, string serverUrl, out PushRequest request, out string error)
+        public static bool TryParsePush(JsonElement c, string serverUrl, [NotNullWhen(true)] out PushRequest? request, [NotNullWhen(false)] out string? error)
         {
             request = null;
-            string id = TransferIdOf(c);
+            string? id = TransferIdOf(c);
             if (id == null) { error = "transfer_id geçersiz"; return false; }
-            string name = SanitizeName(Text(c, "name"));
+            string? name = SanitizeName(Text(c, "name"));
             if (name == null) { error = "dosya adı geçersiz"; return false; }
             long size = c.TryGetProperty("size", out JsonElement s) && s.ValueKind == JsonValueKind.Number && s.TryGetInt64(out long v) ? v : -1;
             if (size < 0 || size > MaxBytes) { error = $"boyut geçersiz (en çok {MaxBytes / (1024 * 1024)} MB)"; return false; }
-            string sha = Text(c, "sha256")?.ToLowerInvariant();
+            string? sha = Text(c, "sha256")?.ToLowerInvariant();
             if (sha == null || !Sha256Regex.IsMatch(sha)) { error = "sha256 geçersiz"; return false; }
-            Uri url = ServerUri(serverUrl, Text(c, "url"), upload: false);
+            Uri? url = ServerUri(serverUrl, Text(c, "url"), upload: false);
             if (url == null) { error = "indirme adresi ajanın sunucusunda değil"; return false; }
-            string dest = Text(c, "dest");
+            string? dest = Text(c, "dest");
             if (dest != "public_desktop" && dest != "inbox") { error = "hedef yalnızca public_desktop ya da inbox olabilir"; return false; }
-            if (!TryReason(c, out string reason, out error)) return false;
+            if (!TryReason(c, out string? reason, out error)) return false;
             bool allowExec = c.TryGetProperty("allow_exec", out JsonElement ae) && ae.ValueKind == JsonValueKind.True;
             if (!allowExec && ExecLike.Contains(System.IO.Path.GetExtension(name), StringComparer.OrdinalIgnoreCase))
             {
@@ -108,13 +109,13 @@ namespace POpsAgent
             return true;
         }
 
-        public static bool TryParsePull(JsonElement c, string serverUrl, out PullRequest request, out string error)
+        public static bool TryParsePull(JsonElement c, string serverUrl, [NotNullWhen(true)] out PullRequest? request, [NotNullWhen(false)] out string? error)
         {
             request = null;
-            string id = TransferIdOf(c);
+            string? id = TransferIdOf(c);
             if (id == null) { error = "transfer_id geçersiz"; return false; }
             // Sürücü harfli tam yerel yol (ağ ve aygıt yolu yok); joker ve ':' (ADS) yalnızca sürücü harfinden sonra yok
-            string path = Text(c, "path");
+            string? path = Text(c, "path");
             if (string.IsNullOrWhiteSpace(path) || path.Length > MaxPathLength || !DrivePath.IsMatch(path) || !System.IO.Path.IsPathFullyQualified(path)
                 || path.IndexOf(':', 2) >= 0 || path.IndexOfAny(Wildcards) >= 0)
             {
@@ -123,9 +124,9 @@ namespace POpsAgent
             }
             long max = c.TryGetProperty("max_size", out JsonElement m) && m.ValueKind == JsonValueKind.Number && m.TryGetInt64(out long v) ? v : -1;
             if (max <= 0 || max > MaxBytes) { error = "max_size geçersiz"; return false; }
-            Uri upload = ServerUri(serverUrl, Text(c, "upload"), upload: true);
+            Uri? upload = ServerUri(serverUrl, Text(c, "upload"), upload: true);
             if (upload == null) { error = "yükleme adresi ajanın sunucusunda değil"; return false; }
-            if (!TryReason(c, out string reason, out error)) return false;
+            if (!TryReason(c, out string? reason, out error)) return false;
             bool any = c.TryGetProperty("any_profile", out JsonElement ap) && ap.ValueKind == JsonValueKind.True;
             request = new PullRequest { TransferId = id, Path = path, MaxSize = max, Upload = upload, Reason = reason, AnyProfile = any };
             error = null;
@@ -133,9 +134,9 @@ namespace POpsAgent
         }
 
         // Gerekçe zorunlu (sunucu şeması: 3-300 karakter); denetim karakterleri atılır
-        private static bool TryReason(JsonElement c, out string reason, out string error)
+        private static bool TryReason(JsonElement c, [NotNullWhen(true)] out string? reason, [NotNullWhen(false)] out string? error)
         {
-            string text = Text(c, "reason")?.Trim();
+            string? text = Text(c, "reason")?.Trim();
             if (text == null || text.Length < MinReason)
             {
                 reason = null;
@@ -149,14 +150,14 @@ namespace POpsAgent
 
         // Yalnızca sunucunun verdiği biçim: "/api/files/<kimlik>/download?t=<jeton>" (upload: ".../upload?t=..."), ajanın
         // kendi sunucusuna göre (ServerUrl + yol, öteki istekler gibi; sorgu dizisi korunur). Başka her şey null.
-        internal static Uri ServerUri(string serverUrl, string value, bool upload)
+        internal static Uri? ServerUri(string serverUrl, string? value, bool upload)
         {
             if (string.IsNullOrEmpty(value) || !(upload ? UploadPath : DownloadPath).IsMatch(value) || !POpsHelpers.IsSecureServerUrl(serverUrl)) return null;
-            return Uri.TryCreate(serverUrl.TrimEnd('/') + value, UriKind.Absolute, out Uri target) ? target : null;
+            return Uri.TryCreate(serverUrl.TrimEnd('/') + value, UriKind.Absolute, out Uri? target) ? target : null;
         }
 
         // Yol ayırıcısı, ':' (ADS), joker ve denetim karakteri yok; ayrılmış ad yok; sondaki nokta/boşluk atılır
-        public static string SanitizeName(string name)
+        public static string? SanitizeName(string? name)
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
             string trimmed = name.Trim().TrimEnd('.', ' ');
@@ -180,7 +181,7 @@ namespace POpsAgent
         }
 
         // Çekilecek dosyanın gerçek yolu: secure klasörü asla; başka kullanıcının profili yalnızca anyProfile ile
-        public static string CheckPullPath(string finalPath, string secureDir, string profilesDirectory, string currentProfile, bool anyProfile)
+        public static string? CheckPullPath(string finalPath, string secureDir, string profilesDirectory, string? currentProfile, bool anyProfile)
         {
             if (Under(finalPath, secureDir)) return "POps güvenli klasöründen dosya alınamaz";
             if (!anyProfile && Under(finalPath, profilesDirectory))
@@ -192,7 +193,7 @@ namespace POpsAgent
             return null;
         }
 
-        private static bool Under(string path, string directory)
+        private static bool Under(string path, string? directory)
         {
             if (string.IsNullOrEmpty(directory)) return false;
             string dir = System.IO.Path.GetFullPath(directory).TrimEnd('\\') + "\\";
@@ -202,7 +203,7 @@ namespace POpsAgent
         // ------------------------------------------------------------------ işlemler
         // Sonuç "outcome" alanındadır, "status" değil: eski sunucu tanımadığı ve status taşıyan her mesajı heartbeat sayar.
         // Sunucu şeması: path en çok 1024 karakter (daha uzun yol gönderilmez), detail en çok 500 (burada 300).
-        public static Dictionary<string, object> Result(string transferId, string outcome, string path = null, string detail = null)
+        public static Dictionary<string, object> Result(string transferId, string outcome, string? path = null, string? detail = null)
         {
             var message = new Dictionary<string, object> { ["type"] = "file_result", ["transfer_id"] = transferId, ["outcome"] = outcome };
             if (path != null && path.Length <= MaxPathLength) message["path"] = path;
@@ -211,7 +212,7 @@ namespace POpsAgent
         }
 
         // Dönen: (sonuç, yol, açıklama); sonuç "done" | "rejected" | "failed"
-        public static async Task<(string Outcome, string Path, string Detail)> PushAsync(PushRequest request, string hwId, DateTime localNow, CancellationToken token)
+        public static async Task<(string Outcome, string? Path, string? Detail)> PushAsync(PushRequest request, string hwId, DateTime localNow, CancellationToken token)
         {
             string destination = request.Dest == "public_desktop" ? PublicDesktop : InboxFor(localNow);
             if (string.IsNullOrEmpty(destination) || !Directory.Exists(destination)) return ("failed", null, "hedef klasör yok");
@@ -252,7 +253,7 @@ namespace POpsAgent
             finally { TryDelete(partial); }
         }
 
-        public static async Task<(string Outcome, string Path, string Detail, long Size)> PullAsync(PullRequest request, string hwId, CancellationToken token)
+        public static async Task<(string Outcome, string? Path, string? Detail, long Size)> PullAsync(PullRequest request, string hwId, CancellationToken token)
         {
             FileStream file;
             try { file = new FileStream(request.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete); }
@@ -261,7 +262,7 @@ namespace POpsAgent
             {
                 string finalPath = FinalPath(file.SafeFileHandle) ?? System.IO.Path.GetFullPath(request.Path);
                 var (profiles, current) = ProfileInfo();
-                string refusal = CheckPullPath(finalPath, SecureStore.Dir, profiles, current, request.AnyProfile);
+                string? refusal = CheckPullPath(finalPath, SecureStore.Dir, profiles, current, request.AnyProfile);
                 if (refusal != null) return ("rejected", finalPath, refusal, 0);
                 long size = file.Length;
                 if (size > request.MaxSize) return ("rejected", finalPath, $"dosya max_size'dan büyük ({size} bayt)", size);
@@ -299,7 +300,7 @@ namespace POpsAgent
             return dir;
         }
 
-        private static string Text(JsonElement e, string name) =>
+        private static string? Text(JsonElement e, string name) =>
             e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
         private static void TryDelete(string path)
@@ -318,7 +319,7 @@ namespace POpsAgent
         private static extern bool CloseHandle(IntPtr handle);
 
         // Bağlantılar (symlink, junction) çözülmüş gerçek yol; "\\?\" öneki atılır
-        internal static string FinalPath(SafeFileHandle handle)
+        internal static string? FinalPath(SafeFileHandle handle)
         {
             char[] buffer = new char[1024];
             uint length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Length, 0);
@@ -329,18 +330,18 @@ namespace POpsAgent
         }
 
         // Profil kökü (ProfileList\ProfilesDirectory) ve konsoldaki kullanıcının profili (yoksa null)
-        private static (string, string) ReadProfiles()
+        private static (string, string?) ReadProfiles()
         {
-            using RegistryKey list = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList");
+            using RegistryKey? list = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList");
             string profiles = Environment.ExpandEnvironmentVariables(list?.GetValue("ProfilesDirectory") as string ?? @"%SystemDrive%\Users");
-            string current = null;
+            string? current = null;
             if (WTSQueryUserToken(UserSessionLauncher.ActiveConsoleSession(), out IntPtr token))
             {
                 try
                 {
                     using var identity = new WindowsIdentity(token);
-                    string sid = identity.User?.Value;
-                    using RegistryKey profile = sid == null ? null : list?.OpenSubKey(sid);
+                    string? sid = identity.User?.Value;
+                    using RegistryKey? profile = sid == null ? null : list?.OpenSubKey(sid);
                     if (profile?.GetValue("ProfileImagePath") is string image) current = Environment.ExpandEnvironmentVariables(image);
                 }
                 finally { CloseHandle(token); }
