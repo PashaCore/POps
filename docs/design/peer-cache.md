@@ -63,7 +63,7 @@ reduce the number of downloads.
      candidate left the rest gets `update_agent` without `peers`.
    - Agents without the feature, PCs without a lab and labs without a candidate are sent the update at once, as
      before. Old agents ignore the field anyway.
-   - The setting `update_peer_cache` (Sistem → Ajanlar → "Sınıf içinde eşten dağıt", on by default) switches it
+   - The setting `update_peer_cache` (Sistem → Ajanlar → "Sınıf içinde eşten dağıt", off by default) switches it
      off; switching it off sends the update to the PCs still waiting for a seed.
    - The rollout state is kept in memory. After a server restart the PCs that were still waiting are not sent the
      update; the next deploy stages them again (PCs already sent are tracked in `pending_updates` as before).

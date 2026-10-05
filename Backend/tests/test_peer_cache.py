@@ -263,7 +263,9 @@ async def run(c, sup, socks):
                      ("HW-PCD1", "2099-01-01 00:00:02"), ("HW-PCD2", "2099-01-01 00:00:01")):
         await c.execute("UPDATE clients SET last_seen=$2 WHERE pc_name=$1", pc, seen)
     s, v = req("/api/system/version", sup)
-    chk(s == 200 and v.get("update_peer_cache") is True, "ayar varsayılan açık")
+    chk(s == 200 and v.get("update_peer_cache") is False, "ayar varsayılan kapalı (bilgisayarlarda port açar)")
+    s, r = req("/api/system/update-peer-cache", sup, {"enabled": True})
+    chk(s == 200 and r.get("update_peer_cache") is True, "süper yönetici açtı")
 
     print("== aşamalı gönderim: tohum önce, geri kalan bekler")
     a_lab = [pc for pc in AGENTS if AGENTS[pc][0] == LAB_A]

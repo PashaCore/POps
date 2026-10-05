@@ -73,7 +73,7 @@
 | | |
 | :--- | :--- |
 | **Tek sunucu, çok laboratuvar** | Tek bir backend süreci, yeniden başladıktan sonra **5.000 sanal ajanı 11 saniyede** geri bağladı; hiçbir deneme başarısız olmadı ([rapor](docs/kapasite/README.md)). |
-| **Bilgisayarlarda açık port yok** | Her bilgisayar sunucuya TLS üzerinden (443) iki bağlantıyı kendisi açar. Yönetilen bilgisayarda dinleyen bir şey yoktur. |
+| **Bilgisayarlarda açık port yok** | Her bilgisayar sunucuya TLS üzerinden (443) iki bağlantıyı kendisi açar. Yönetici güncellemeler için isteğe bağlı sınıf içi eş önbelleği açmadıkça (varsayılan kapalı; yalnızca yerel alt ağ) yönetilen bilgisayarda dinleyen bir şey yoktur. |
 | **Kendini geri alan güncelleme** | Ajan sürümleri CI'da ed25519 ile imzalanır, sunucu *ve bilgisayarın kendisi* imzayı doğrular; yeni sürüm ayağa kalkmazsa önceki sürüm kendiliğinden geri gelir. |
 | **Kim ne yaptı, kanıtıyla** | Güvenlikle ilgili işlemler sunucudaki SHA-256 hash zincirli denetim kaydına ve bilgisayarın kendi Windows olay günlüğüne yazılır. |
 | **Kapalı demek kapalı** | Okul, uzaktan terminali ve ekran izlemeyi bilgisayar bazında kapatabilir. Sunucu bunları kapatabilir, asla geri açamaz. |

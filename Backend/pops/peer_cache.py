@@ -38,7 +38,7 @@ log = logging.getLogger("pops.peer_cache")
 
 FEATURE = "peer_cache"          # X-Agent-Features'ta ajanın duyurduğu ad (server_info'da sunucu da duyurur)
 HEADER = "X-Agent-Peer-Cache"    # isteğe bağlı: "port=8817; ip=10.0.5.12; link=wired"
-SETTING = "update_peer_cache"    # global_settings; "0" kapalı, yoksa açık
+SETTING = "update_peer_cache"    # global_settings; "1" açık, yoksa kapalı (bilgisayarlarda gelen port açar)
 DEFAULT_PORT = 8817
 MAX_PEERS = 3
 SEED_TRIES = 3                   # bir sınıfta en çok kaç tohum denenir
@@ -161,7 +161,8 @@ def resolve_ips(rows: List[dict]) -> None:
 
 async def enabled() -> bool:
     rows = await execute_query("SELECT value FROM global_settings WHERE key = $1", (SETTING,), fetch=True)
-    return not (rows and str(rows[0]["value"]) == "0")
+    # Varsayılan kapalı: açıkken paketi tutan bilgisayar yerel alt ağa bir port açar; yönetici bilerek açar
+    return bool(rows and str(rows[0]["value"]) == "1")
 
 
 async def set_enabled(on: bool) -> None:
