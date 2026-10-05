@@ -15,7 +15,8 @@ import time
 import uuid
 from typing import Optional
 
-from pops import db, exams, filestore, glpi, health_alerts, modules, retention, server_metrics, update_tracking
+from pops import (db, exams, filestore, glpi, health_alerts, modules, retention, server_metrics, timeutil,
+                  update_tracking)
 from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.notify import notify
@@ -35,7 +36,7 @@ _SCHEDULER_LOCK = 0x504F5053  # "POPS"
 
 
 def _now() -> datetime.datetime:
-    return datetime.datetime.now().astimezone()
+    return datetime.datetime.now(timeutil.zone())
 
 
 def compute_next_run(
@@ -53,7 +54,7 @@ def compute_next_run(
     except ValueError:
         return None
     days = {int(d) for d in (weekdays or "").split(",") if d.strip().isdigit()} if schedule_type == "weekly" else None
-    base = after.astimezone()
+    base = after.astimezone(timeutil.zone())
     for add in range(0, 8):
         cand = (base + datetime.timedelta(days=add)).replace(hour=hh, minute=mm, second=0, microsecond=0)
         if cand <= after:
@@ -73,7 +74,7 @@ async def enqueue(row: dict, actor_suffix: str, conn=None, expires_at=None) -> i
         async with db.transaction() as own:
             return await enqueue(row, actor_suffix, own, expires_at)
     targets = await resolve_targets(row["target_mode"], json.loads(row["targets"] or "[]"), conn)
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = timeutil.now()
     creator = "%s (%s #%s)" % (row.get("created_by") or "?", actor_suffix, row["id"])
     if targets:
         # Zamanlanmış görevler modülü kapalı laboratuvarlardaki cihazlar atlanır (uzak komut ayrıca kuyrukta denetlenir)
@@ -128,7 +129,7 @@ async def run_due() -> int:
                 if late > SCHEDULE_MISFIRE_MINUTES:
                     # Sunucu kapalıydı ya da zamanlayıcı durmuştu: planlanan saatten çok sonra çalıştırılmaz
                     result = "kaçırıldı: planlanan %s, %d dk geç fark edildi" % (
-                        r["next_run"].astimezone().strftime("%Y-%m-%d %H:%M"), late)
+                        timeutil.local_text(r["next_run"])[:16], late)
                     missed.append(r)
                 else:
                     try:
@@ -224,7 +225,7 @@ async def check_licenses_daily() -> None:
     if not await modules.enabled("licenses"):
         return   # lisanslar modülü kapalı: aşım/süre bildirimi yok
 
-    today = datetime.date.today().isoformat()
+    today = timeutil.today().isoformat()
     rows = await db.execute_query("SELECT value FROM global_settings WHERE key = 'license_check_date'", fetch=True)
     if rows and rows[0]["value"] == today:
         return

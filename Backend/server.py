@@ -19,7 +19,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from migrate import run_migrations_on
-from pops import db, devicelist, glpi, heartbeats, notify, peer_cache, secretbox, update_tracking
+from pops import db, devicelist, glpi, heartbeats, notify, peer_cache, secretbox, timeutil, update_tracking
 from pops.apiversion import ApiVersionMiddleware
 from pops.logs import setup_logging, stop_background_writer
 from pops.metrics import RequestContextMiddleware
@@ -148,6 +148,8 @@ async def startup_event():
             mig = await asyncpg.connect(**DB_CONFIG, timeout=DB_CONNECT_TIMEOUT)
             try:
                 applied = await run_migrations_on(mig, verbose=False)
+                # Sunucunun saat dilimi ve denetim zincirinin sabit saat dilimi (bkz. pops/timeutil.py)
+                tz_name = await timeutil.configure_from_db(mig)
             finally:
                 await mig.close()
             db.db_pool = await asyncpg.create_pool(
@@ -158,7 +160,7 @@ async def startup_event():
                 command_timeout=DB_COMMAND_TIMEOUT,
                 server_settings={"idle_in_transaction_session_timeout": str(DB_IDLE_IN_TRANSACTION_MS)},
             )
-            log.info("veritabanı hazır", extra={"migrations_applied": applied})
+            log.info("veritabanı hazır", extra={"migrations_applied": applied, "time_zone": tz_name})
             # Düz metin ya da eski anahtarla şifreli 2FA ve bypass anahtarları birincil anahtarla şifrelenir
             # (R-12, B14)
             await secretbox.reseal_totp_secrets(execute_query)

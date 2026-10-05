@@ -38,12 +38,10 @@ async def resolve_targets(target_mode: str, targets, conn=None) -> list:
 
 
 def _seconds_since(created_at) -> float:
-    # created_at yerel saatte 'YYYY-MM-DD HH:MM:SS' metni
-    try:
-        created = datetime.datetime.strptime(str(created_at), "%Y-%m-%d %H:%M:%S")
-        return (datetime.datetime.now() - created).total_seconds()
-    except ValueError:
+    # created_at TIMESTAMPTZ (asyncpg saat dilimli datetime döner)
+    if not isinstance(created_at, datetime.datetime) or created_at.tzinfo is None:
         return 0.0
+    return (datetime.datetime.now(datetime.timezone.utc) - created_at).total_seconds()
 
 
 # Eşzamanlı çağrılar birleştirilir: bir tur sürerken gelen çağrılar üst üste yığılmaz, tur bitince bir kez

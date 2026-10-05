@@ -18,7 +18,7 @@ import sys
 import asyncpg
 from dotenv import load_dotenv
 
-from pops import auditchain
+from pops import auditchain, timeutil
 
 
 async def _run():
@@ -35,6 +35,8 @@ async def _run():
         print(json.dumps({"ok": False, "error": "bağlanılamadı: %r" % exc}, ensure_ascii=False))
         return 2
     try:
+        # Zaman özete denetim saat diliminde (veritabanında sabit) metin olarak girer
+        await timeutil.configure_from_db(conn)
         result = await auditchain.verify_batched(conn.fetch)
         migrations = await conn.fetchval("SELECT count(*) FROM schema_migrations")
     finally:

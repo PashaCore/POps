@@ -21,6 +21,7 @@ gönderimde yeniden aşamalanır (gönderilenler pending_updates'te izlenmeye de
 """
 
 import asyncio
+import datetime
 import ipaddress
 import logging
 import os
@@ -138,7 +139,9 @@ def choose_seeds(rows: List[dict], version: str) -> List[str]:
                 and r.get("ip") and not update_tracking.same_version(r.get("version"), version))
     picked = [r for r in rows if ok(r)]
     picked.sort(key=lambda r: r["pc_name"])
-    picked.sort(key=lambda r: str(r.get("last_seen") or ""), reverse=True)
+    # last_seen TIMESTAMPTZ (0031); hiç görülmemiş en sona
+    picked.sort(key=lambda r: r["last_seen"].timestamp() if isinstance(r.get("last_seen"), datetime.datetime) else 0.0,
+                reverse=True)
     picked.sort(key=lambda r: 0 if _announce[r["pc_name"]].link == "wired" else 1)
     return [r["pc_name"] for r in picked]
 

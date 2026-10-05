@@ -7,7 +7,7 @@ import datetime
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops.audit import add_audit_log
-from pops import modules
+from pops import modules, timeutil
 from pops.db import execute_query
 from pops.models import LicenseInput
 from pops.security import require_admin, require_auth
@@ -28,7 +28,7 @@ _USAGE_SQL = (
 
 def license_state(row: dict, today: datetime.date = None) -> dict:
     """Bir lisans satırına durum ekler: ok | over | expiring | expired (öncelik: süresi dolmuş > aşım > yaklaşan)."""
-    today = today or datetime.date.today()
+    today = today or timeutil.today()
     r = dict(row)
     seats, installed, exp = r.get("seats"), int(r.get("installed") or 0), r.get("expires_at")
     r["installed"] = installed
@@ -43,7 +43,7 @@ def license_state(row: dict, today: datetime.date = None) -> dict:
         r["state"] = "ok"
     for k in ("expires_at", "created_at"):
         if r.get(k):
-            r[k] = r[k].isoformat()
+            r[k] = timeutil.iso(r[k])
     return r
 
 

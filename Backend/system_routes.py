@@ -31,7 +31,7 @@ from pydantic import field_validator
 
 import release_verify
 from pops import agent_version as agent_version_mod
-from pops import devicelist, peer_cache, update_tracking
+from pops import devicelist, peer_cache, timeutil, update_tracking
 from pops.models import StrictInput, TargetMode, UpdateProgressInput, upper_mode
 
 
@@ -631,10 +631,11 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
 
     @router.get("/api/system/enroll-tokens")
     async def list_enroll_tokens(auth: dict = Depends(require_superadmin)):
-        return await execute_query(
+        rows = await execute_query(
             "SELECT id, token_hint, lab_name, note, created_at, expires_at, is_used, used_by, used_at, "
             "max_uses, use_count, (expires_at < NOW() AND NOT is_used) AS expired "
             "FROM enroll_tokens ORDER BY id DESC LIMIT 200", fetch=True)
+        return [timeutil.iso_row(r) for r in rows or []]
 
     @router.delete("/api/system/enroll-token/{token_id}")
     async def revoke_enroll_token(token_id: int, auth: dict = Depends(require_superadmin)):
@@ -649,7 +650,7 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         pcs = list(dict.fromkeys(str(p) for p in data.pcs))[:5000]
         if not pcs:
             return {"items": []}
-        since = datetime.datetime.fromtimestamp(max(0.0, data.since)).strftime("%Y-%m-%d %H:%M:%S")
+        since = datetime.datetime.fromtimestamp(max(0.0, data.since), datetime.timezone.utc)
         rows = await execute_query(
             "SELECT c.pc_name, c.status, c.running_version, av.version AS agent_version FROM clients c "
             "LEFT JOIN agent_versions av ON av.pc_name = c.pc_name WHERE c.pc_name = ANY($1::text[])",

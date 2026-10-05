@@ -11,13 +11,13 @@ Uç yalnızca ANAHTARLI ajanı kabul eder ve kendi cihazına bağlıdır (başka
 5 sn'de bir istek. Metinler burada Türkçe hazırlanır, tepsi olduğu gibi gösterir.
 """
 
-import datetime
 import json
 import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from pops import timeutil
 from pops.agent_auth import agent_http_auth, bind_agent
 from pops.db import execute_query
 
@@ -151,8 +151,7 @@ async def agent_activity(pc_name: str, agent_id: Optional[str] = Depends(agent_h
         raise HTTPException(status_code=401, detail="Bu uç yalnızca kayıtlı (anahtarlı) ajanları kabul eder.")
     await bind_agent(agent_id, pc_name)
     _throttle(pc_name)
-    # Zaman damgaları yerel saatte 'YYYY-MM-DD HH:MM:SS' metni: metin karşılaştırması tarih sırasıyla aynıdır
-    since = (datetime.datetime.now() - datetime.timedelta(days=DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    since = timeutil.ago(days=DAYS)
     sessions = await execute_query(
         "SELECT start_time, end_time, admin_name, reason, is_mandatory FROM enterprise_audit_logs "
         "WHERE target_pc = $1 AND start_time >= $2 ORDER BY start_time DESC LIMIT $3",
@@ -178,5 +177,12 @@ async def agent_activity(pc_name: str, agent_id: Optional[str] = Depends(agent_h
         (pc_name, since, MAX_ITEMS),
         fetch=True,
     )
-    rows = [[dict(r) for r in (x or [])] for x in (sessions, device_audits, fleet_audits, tasks)]
+    # Tepsi zamanı olduğu gibi gösterir: sunucunun saat diliminde 'YYYY-AA-GG SS:DD:ss' (0.1.x ajanları bu biçimi
+    # bekler); bu biçimde metin sırası zaman sırasıdır
+    rows = [[_local(r) for r in (x or [])] for x in (sessions, device_audits, fleet_audits, tasks)]
     return {"device": pc_name, "days": DAYS, "items": build_items(pc_name, *rows)}
+
+
+def _local(row) -> dict:
+    return {k: (timeutil.local_text(v) if k in ("start_time", "end_time", "timestamp", "created_at") else v)
+            for k, v in dict(row).items()}

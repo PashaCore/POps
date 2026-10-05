@@ -1,7 +1,8 @@
 """Raporlar: filo özeti (cihaz, sürüm, kayıt, yama, yazılım, olaylar, güncellemeler) ve CSV dışa aktarma.
 
 CSV'de hücreler formül olarak yorumlanmasın diye =, +, -, @ ile başlayan değerlerin önüne ' eklenir:
-yazılım adları ve olay metinleri ajandan gelir (CSV/formül enjeksiyonu)."""
+yazılım adları ve olay metinleri ajandan gelir (CSV/formül enjeksiyonu). CSV'deki zamanlar sunucunun saat
+diliminde okunur 'YYYY-AA-GG SS:DD:ss' metnidir; günlük gruplar da o dilime göredir."""
 
 import csv
 import datetime
@@ -11,15 +12,15 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
-from pops import modules
+from pops import modules, timeutil
 from pops.db import execute_query
 from pops.security import require_auth
 
 router = APIRouter()
 
 
-def _since(days: int) -> str:
-    return (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+def _since(days: int) -> datetime.datetime:
+    return timeutil.ago(days=days)
 
 
 def _clamp_days(days: int) -> int:
@@ -70,12 +71,12 @@ async def report_summary(days: int = 30, auth: dict = Depends(require_auth)):
         "SELECT risk_level, count(*) AS n FROM agent_logs_v2 WHERE timestamp >= $1 GROUP BY 1", (since,), fetch=True
     )
     by_day = await execute_query(
-        "SELECT substr(timestamp, 1, 10) AS day, "
+        "SELECT to_char(timestamp AT TIME ZONE $2, 'YYYY-MM-DD') AS day, "
         "count(*) FILTER (WHERE risk_level = 'critical') AS critical, "
         "count(*) FILTER (WHERE risk_level = 'high') AS high, "
         "count(*) FILTER (WHERE risk_level = 'medium') AS medium "
         "FROM agent_logs_v2 WHERE timestamp >= $1 GROUP BY 1 ORDER BY 1",
-        (since,),
+        (since, timeutil.zone_name()),
         fetch=True,
     )
     top_policy = await execute_query(
@@ -104,7 +105,7 @@ async def report_summary(days: int = 30, auth: dict = Depends(require_auth)):
 
     return {
         "days": days,
-        "generated_at": datetime.datetime.now().astimezone().isoformat(),
+        "generated_at": timeutil.iso(timeutil.now()),
         "devices": {**{k: int(v) for k, v in dev.items()}, "labs": [dict(r) for r in labs or []]},
         "versions": [dict(r) for r in versions or []],
         "patches": {k: int(v) for k, v in patch.items()},
@@ -120,6 +121,8 @@ async def report_summary(days: int = 30, auth: dict = Depends(require_auth)):
 
 
 def _cell(v) -> str:
+    if isinstance(v, datetime.datetime):
+        v = timeutil.local_text(v)
     s = "" if v is None else str(v)
     return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s
 
@@ -220,7 +223,7 @@ async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_
     w.writerow(header)
     for r in rows or []:
         w.writerow([_cell(v) for v in r.values()])
-    name = "pops-%s-%s.csv" % (kind, datetime.date.today().isoformat())
+    name = "pops-%s-%s.csv" % (kind, timeutil.today().isoformat())
     # BOM: Excel Türkçe karakterleri doğru açsın
     return Response(
         content="﻿" + buf.getvalue(),

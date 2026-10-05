@@ -19,13 +19,21 @@ if [ "$(id -u)" -eq 0 ]; then echo "Bu test root olarak çalıştırılmaz (yanl
 for c in git ssh-keygen tar sha256sum; do command -v "$c" >/dev/null || { echo "$c gerekli"; exit 1; }; done
 
 T=$(mktemp -d "${POPS_TEST_TMP:-${TMPDIR:-/tmp}}/pops-deploy-test.XXXXXX")
-if [ "${KEEP_TMP:-0}" = 1 ]; then echo "geçici dizin: $T"; else trap 'rm -rf "$T"' EXIT; fi
+set -u
+# Taklitler (systemctl, pg_dump, ...) yalnızca bu geçici dizine yazılır. T boş ya da /tmp dışında olursa
+# "$T/bin/pg_dump" gerçek /bin/pg_dump olur: dur. Betiğin parçaları elle çalıştırılmaz; yalnızca bütünü.
+case "$T" in
+    /tmp/?*|"${TMPDIR:-/tmp}"/?*|"${POPS_TEST_TMP:-/tmp}"/?*) ;;
+    *) echo "güvensiz geçici dizin: T=$T"; exit 1 ;;
+esac
+if [ "${KEEP_TMP:-0}" = 1 ]; then echo "geçici dizin: $T"; else trap 'rm -rf "${T:?}"' EXIT; fi
 ME=$(id -un)
 REAL_INSTALL=$(command -v install)
 export PT="$T" PT_INSTALL="$REAL_INSTALL" HOME="$T/home" GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=POps GIT_AUTHOR_EMAIL=ci@pops.test GIT_COMMITTER_NAME=POps GIT_COMMITTER_EMAIL=ci@pops.test
 export POPS_DEPLOY_ALLOW_NONROOT=1 POPS_SELFUPDATE_ALLOW_NONROOT=1
-mkdir -p "$HOME" "$T/bin" "$T/ctl" "$T/calls" "$T/etc" "$T/pybin"
+mkdir -p "$HOME" "${T:?}/bin" "${T:?}/ctl" "${T:?}/calls" "${T:?}/etc" "${T:?}/pybin"
+[ -d "${T:?}/bin" ] || exit 1
 
 PASS=0; FAIL=0
 check() {   # $1=açıklama $2=bash koşulu
@@ -35,7 +43,7 @@ has() { grep -qF -- "$1" "$2"; }                  # $1=metin $2=dosya
 count() { grep -cF -- "$1" "$2" || true; }
 
 # --- Taklitler ------------------------------------------------------------------------------------------
-cat > "$T/bin/systemctl" <<'EOF'
+cat > "${T:?}/bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$PT/calls/systemctl"
 case "$1" in
@@ -44,7 +52,7 @@ case "$1" in
     restart) [ ! -e "$PT/ctl/restart_fail" ] ;;
 esac
 EOF
-cat > "$T/bin/curl" <<'EOF'
+cat > "${T:?}/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 url=${!#}
 echo "$url" >> "$PT/calls/curl"
@@ -55,18 +63,38 @@ case "$url" in
     *) printf 000; exit 7 ;;
 esac
 EOF
-cat > "$T/bin/sudo" <<'EOF'
+cat > "${T:?}/bin/sudo" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$PT/calls/sudo"
 while [ $# -gt 0 ]; do case "$1" in -u) shift 2 ;; -*) shift ;; *) break ;; esac; done
 exec "$@"
 EOF
-cat > "$T/bin/journalctl" <<'EOF'
+cat > "${T:?}/bin/journalctl" <<'EOF'
 #!/usr/bin/env bash
 echo "(journalctl taklidi) $*"
 EOF
-printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/sleep"
-cat > "$T/bin/install" <<'EOF'
+printf '#!/usr/bin/env bash\nexit 0\n' > "${T:?}/bin/sleep"
+# psql: schema_migrations sorgusuna ctl/applied'deki sürümler, boyut sorgusuna 2048 (KB); ctl/psql_fail: bağlanamadı
+cat > "${T:?}/bin/psql" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >> "$PT/calls/psql"
+if [ -e "$PT/ctl/psql_fail" ]; then echo "psql: taklit bağlantı hatası" >&2; exit 2; fi
+case "$*" in
+    *schema_migrations*) cat "$PT/ctl/applied" 2>/dev/null || true ;;
+    *pg_database_size*) echo 2048 ;;
+esac
+EOF
+# pg_dump: -f dosyasını yazar; servis o anda yeniden başlatılmış mı, onu da kaydeder (yedek restart'tan ÖNCE olmalı)
+cat > "${T:?}/bin/pg_dump" <<'EOF'
+#!/usr/bin/env bash
+out=""; prev=""
+for a in "$@"; do if [ "$prev" = -f ]; then out=$a; fi; prev=$a; done
+if grep -q restart "$PT/calls/systemctl" 2>/dev/null; then when=after; else when=before; fi
+echo "$when PGPASSWORD=${PGPASSWORD:-} $*" >> "$PT/calls/pg_dump"
+if [ -e "$PT/ctl/pg_dump_fail" ]; then echo "pg_dump: taklit hata" >&2; exit 1; fi
+echo "dump" > "$out"
+EOF
+cat > "${T:?}/bin/install" <<'EOF'
 #!/usr/bin/env bash
 # ctl/install_fail içindeki desene uyan hedefte hata verir; gerisi gerçek install
 if [ -e "$PT/ctl/install_fail" ]; then
@@ -78,7 +106,7 @@ EOF
 # pip: venv'i gerçekten değiştirir (paket ekler, dosya değiştirir, siler); ctl/pip_fail varsa yarıda keser.
 # --require-hashes ile gerçek pip gibi davranır: -r dosyasındaki her paket == ile sabit olmalı ve "PyPI"deki dosyanın
 # özeti (burada sha256("ad==sürüm")) o paketin --hash'leri arasında olmalı; değilse venv'e dokunmadan durur.
-cat > "$T/pip-stub" <<'EOF'
+cat > "${T:?}/pip-stub" <<'EOF'
 #!/usr/bin/env bash
 V=$(cd "$(dirname "$0")/.." && pwd)
 sps=("$V"/lib/python*/site-packages); SP=${sps[0]}
@@ -110,7 +138,7 @@ printf '#!%s/bin/python3\n' "$V" > "$V/bin/newtool"; chmod 755 "$V/bin/newtool"
 EOF
 # Python: sürüm venv'in içindeyse pyvenv.cfg'den, değilse adından (python3.12 -> 3.12.0). "-m venv [--upgrade-deps]
 # DİZİN" sahte bir venv kurar (ctl/venv_fail: hata); diğer çağrılar (deploy'un "-I -S -c ..." sorusu) "X.Y" yazar.
-cat > "$T/fakepy" <<'EOF'
+cat > "${T:?}/fakepy" <<'EOF'
 #!/usr/bin/env bash
 cfg="$(dirname "$0")/../pyvenv.cfg"
 if [ -f "$cfg" ]; then full=$(sed -n 's/^version = //p' "$cfg"); else n=${0##*/}; full="${n#python}.0"; fi
@@ -126,12 +154,12 @@ fi
 echo "${full%.*}"
 EOF
 # selfupdate'in çağırdığı deploy (yalnızca çağrıldığını ve o anki HEAD'i kaydeder)
-cat > "$T/deploy-stub" <<'EOF'
+cat > "${T:?}/deploy-stub" <<'EOF'
 #!/usr/bin/env bash
 git -C "$PT/surepo" rev-parse HEAD >> "$PT/calls/deploy"
 EOF
-chmod 755 "$T/bin/"* "$T/pip-stub" "$T/deploy-stub" "$T/fakepy"
-for v in 3.9 3.10 3.12 3.13; do cp "$T/fakepy" "$T/pybin/python$v"; done
+chmod 755 "${T:?}/bin/"* "${T:?}/pip-stub" "${T:?}/deploy-stub" "${T:?}/fakepy"
+for v in 3.9 3.10 3.12 3.13; do cp "${T:?}/fakepy" "${T:?}/pybin/python$v"; done
 export PATH="$T/bin:$PATH"
 # Deploy'un yeni venv için aradığı yorumlayıcılar (sistemdekiler değil); durumlar kendi listesini verir
 export POPS_DEPLOY_PYTHONS="$T/pybin/python3.12"
@@ -180,7 +208,7 @@ snap() {   # $1=dizin: dosya listesi (tür, izin, yol, bağ hedefi) + içerik ö
     ( cd "$1" && find . -path ./.deploy-backups -prune -o -printf '%y %m %p %l\n' | LC_ALL=C sort
       find . -path ./.deploy-backups -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum )
 }
-reset_calls() { for f in systemctl curl sudo pip deploy venv; do : > "$T/calls/$f"; done; }
+reset_calls() { for f in systemctl curl sudo pip deploy venv psql pg_dump; do : > "$T/calls/$f"; done; }
 run_deploy() {   # [$1=ayar dosyası]; çıktı $T/out, dönüş kodu RC
     reset_calls; RC=0
     POPS_DEPLOY_CONF="${1:-$T/etc/deploy.conf}" bash "$DEPLOY_SH" > "$T/out" 2>&1 || RC=$?
@@ -192,7 +220,7 @@ echo "== pops-deploy-backend"
 R="$T/repo"; A="$T/app"
 git init -q -b main "$R"; write_v "$R" 0.0.1; commit "$R" v0.0.1
 install_like "$R" "$A"
-cat > "$T/etc/deploy.conf" <<EOF
+cat > "${T:?}/etc/deploy.conf" <<EOF
 REPO=$R
 APP=$A
 SVC=popstest
@@ -315,6 +343,46 @@ check "yeni kod ve migration geldi, silinen modül gitti" \
 check "pip'in değişikliği kaldı" '[ -f "$A/venv/lib/python3.12/site-packages/newpkg/__init__.py" ]'
 check "kenara alınmış venv kopyası bırakılmadı" '[ -z "$(find "$A" -maxdepth 1 -name ".venv.failed-*")" ]'
 check "venv'in Python'u yeterli: yeni venv kurulmadı" '[ ! -s "$T/calls/venv" ] && [ ! -L "$A/venv" ]'
+
+echo "-- (e) veritabanını dönüştüren migration: restart'tan önce pg_dump"
+printf 'DB_HOST=127.0.0.1\nDB_PORT=5433\nDB_USER=pops\nDB_PASS="gizli parola"\nDB_NAME=popsdb\n' > "$A/.env"
+heavy_migration() {   # $1=sürüm adı: başında işaret satırı olan migration
+    printf -- '-- pops: dump-before\nALTER TABLE t ALTER c TYPE bigint;\n' > "$R/Backend/migrations/$1.sql"
+    commit "$R" "$1"
+}
+echo "ALTER TABLE t ADD d int;" > "$R/Backend/migrations/0003_d.sql"; commit "$R" 0003
+run_deploy
+check "işaretsiz migration: yedek yok, pg_dump çağrılmadı" '[ "$RC" = 0 ] && [ ! -s "$T/calls/pg_dump" ] && ! has "veritabanı:" "$T/out"'
+heavy_migration 0004_tip
+run_deploy
+check "işaretli migration: pg_dump restart'tan ÖNCE, .env'deki bağlantıyla" \
+    '[ "$RC" = 0 ] && has "before PGPASSWORD=gizli parola -Fc -h 127.0.0.1 -p 5433 -U pops -d popsdb" "$T/calls/pg_dump"'
+dump=$(find "$A/.deploy-backups" -name "db-*.dump" | head -1)
+check "yedek dosyası 600 izinle, çıktıda adı" '[ -n "$dump" ] && [ "$(stat -c %a "$dump")" = 600 ] && has "(veritabanı: $dump)" "$T/out"'
+run_deploy
+check "aynı migration yeniden: yeni yedek yok (artık APP'te)" '[ ! -s "$T/calls/pg_dump" ]'
+heavy_migration 0005_tip; echo 0005_tip > "$T/ctl/applied"
+run_deploy; rm -f "$T/ctl/applied"
+check "veritabanında zaten uygulanmış: yedek yok" '[ "$RC" = 0 ] && [ ! -s "$T/calls/pg_dump" ]'
+for n in 6 7 8; do heavy_migration "000${n}_tip"; run_deploy; done
+check "en çok 3 veritabanı yedeği saklanır" '[ "$(find "$A/.deploy-backups" -name "db-*.dump" | wc -l)" = 3 ]'
+heavy_migration 0009_tip
+BEFORE=$(snap "$A")
+POPS_DEPLOY_FREE_KB=1000 run_deploy
+check "yer yetmezse dur: hiçbir şey değişmedi, restart yok" \
+    '[ "$RC" != 0 ] && has "yer yok" "$T/out" && has "Hiçbir şey değiştirilmedi" "$T/out" && ! has restart "$T/calls/systemctl" && [ "$BEFORE" = "$(snap "$A")" ]'
+touch "$T/ctl/pg_dump_fail"; run_deploy; rm -f "$T/ctl/pg_dump_fail"
+check "pg_dump hatası: dur, hiçbir şey değişmedi" \
+    '[ "$RC" != 0 ] && has "pg_dump başarısız" "$T/out" && ! has restart "$T/calls/systemctl" && [ "$BEFORE" = "$(snap "$A")" ]'
+touch "$T/ctl/psql_fail"; run_deploy; rm -f "$T/ctl/psql_fail"
+check "veritabanına bağlanılamazsa dur" '[ "$RC" != 0 ] && has "veritabanına bağlanılamadı" "$T/out" && [ "$BEFORE" = "$(snap "$A")" ]'
+touch "$T/ctl/health_fail"; run_deploy; rm -f "$T/ctl/health_fail"
+check "sonra sağlık kontrolü başarısız: kod geri, yedeği eski kodla geri yükleme komutu yazıldı" \
+    '[ "$RC" != 0 ] && has "pg_restore --clean --if-exists" "$T/out" && has "db-" "$T/out" && [ "$BEFORE" = "$(snap "$A")" ]'
+run_deploy
+check "son olarak başarılı deploy" '[ "$RC" = 0 ] && [ -s "$T/calls/pg_dump" ]'
+git -C "$R" rm -q Backend/migrations/000[3-9]_*.sql; commit "$R" "migration'lar geri"
+rm -f "$A/.env"
 
 # =========================================================================================================
 echo "== pops-deploy-backend: venv'in Python'u eski (3.9 kurulumu, yeni sürüm >=3.11 ister)"

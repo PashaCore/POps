@@ -4,14 +4,13 @@ Ajan uçları yalnızca ANAHTARLI ajanı kabul eder (kimliksiz istemci talep ya�
 sınırlıdır: en fazla 5 açık talep, saatte en fazla 10 yeni talep. Ajan kendi cihazının taleplerini ve
 panelden verilen yanıtları (iç notlar hariç) okuyabilir. Panel uçları require_admin."""
 
-import datetime
 import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops.agent_auth import agent_http_auth, bind_agent
-from pops import modules
+from pops import modules, timeutil
 from pops.db import execute_query
 from pops.manager import manager
 from pops.models import AgentTicketInput, PanelTicketInput, TicketMessageInput, TicketUpdateInput
@@ -51,7 +50,7 @@ def _iso(r: dict) -> dict:
     r = dict(r)
     for k in ("created_at", "updated_at", "resolved_at"):
         if r.get(k):
-            r[k] = r[k].astimezone().isoformat()
+            r[k] = timeutil.iso(r[k])
     return r
 
 
@@ -249,4 +248,4 @@ async def add_ticket_message(ticket_id: int, data: TicketMessageInput, auth: dic
     # Kullanıcıya yanıt verildiyse ve talep açıksa "yanıt bekleniyor"a çek; iç not durumu değiştirmez
     new_status = "waiting" if (not data.internal and rows[0]["status"] == "open") else rows[0]["status"]
     await execute_query("UPDATE tickets SET updated_at = now(), status = $1 WHERE id = $2", (new_status, ticket_id))
-    return {"ok": True, "at": datetime.datetime.now().astimezone().isoformat()}
+    return {"ok": True, "at": timeutil.iso(timeutil.now())}

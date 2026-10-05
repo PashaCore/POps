@@ -27,7 +27,7 @@ from typing import Dict, Iterable, List, Optional
 
 import asyncpg
 
-from pops import modules
+from pops import modules, timeutil
 from pops.labs import UNASSIGNED_LAB
 from pops.audit import add_audit_log
 from pops.db import execute_query
@@ -184,7 +184,7 @@ def _epoch(dt) -> Optional[float]:
 
 
 def _iso(dt) -> Optional[str]:
-    return dt.isoformat() if dt is not None else None
+    return timeutil.iso(dt)   # API biçimi: sunucunun saat diliminde ofsetli ISO 8601 (bkz. pops/timeutil.py)
 
 
 def device_state(online: bool, row: Optional[dict], now: float) -> str:

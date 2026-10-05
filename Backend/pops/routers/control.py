@@ -16,7 +16,7 @@ from pops.db import execute_query
 from pops.models import EndAuditSessionInput, LockdownInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
 from pops.security import require_admin, require_admin_session, require_superadmin, verify_jwt, verify_session
 from pops.agent_auth import verify_agent_secret
-from pops import auditchain, bypass, devicelist, metrics, modules, vision
+from pops import auditchain, bypass, devicelist, metrics, modules, timeutil, vision
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 from pops.notify import notify
@@ -40,7 +40,7 @@ _background: set = set()
 @router.post("/api/audit/session/start")
 async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends(require_admin_session)):
     await modules.check("vision", pc_name=data.target_pc)
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = timeutil.now()
     session_id = f"SES-{secrets.token_hex(6).upper()}"
     # Rıza sorulmadan açılan (zorunlu) oturum için gerekçe şarttır
     if data.is_mandatory and not data.reason.strip():
@@ -110,7 +110,7 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
 
 @router.post("/api/audit/session/end")
 async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(require_admin_session)):
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = timeutil.now()
     # Oturumu kapatmadan önce hedef+admin'i öğren ki vision-session yetkisini geri alalım (F1/F12).
     srow = await execute_query(
         "SELECT target_pc, admin_name FROM enterprise_audit_logs WHERE session_id = $1", (data.session_id,), fetch=True
@@ -219,12 +219,12 @@ async def get_bypass_token(pc_name: str, response: Response, auth: dict = Depend
     # Karantinadaki (çevrimdışı) cihaz için tepsi uygulamasına girilecek kod (formüller: pops/bypass.py). Kod
     # durumu değiştirir (günün bir sonraki kodu) ve gizlidir: POST, önbelleğe alınmaz.
     response.headers["Cache-Control"] = "no-store"
-    today = datetime.date.today()
+    today = timeutil.today()
     # Ajan (0.1.13+) her kodu günde bir kez kabul eder: her istek o günün bir sonraki kodunu verir
     used = await execute_query(
         "SELECT count(*) AS n FROM device_audit_logs WHERE hw_id = $1 AND action = 'bypass_code' "
-        "AND left(\"timestamp\", 10) = $2",
-        (pc_name, today.isoformat()),
+        "AND \"timestamp\" >= $2 AND \"timestamp\" < $3",
+        (pc_name, timeutil.day_start(today), timeutil.day_start(today + datetime.timedelta(days=1))),
         fetch=True,
     )
     n = int(used[0]["n"]) if used else 0

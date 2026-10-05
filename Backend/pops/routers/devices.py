@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from pops.config import LOG_TABLE, USE_V2_SCHEMA
-from pops import db, devicelist, exams, metrics, modules
+from pops import db, devicelist, exams, metrics, modules, timeutil
 from pops.db import execute_query
 from pops.labs import UNASSIGNED_LAB
 from pops.models import (
@@ -166,14 +166,6 @@ async def get_devices(
     return {"version": version, "full": True, "devices": rows}
 
 
-def _iso(v):
-    if v is None:
-        return None
-    if isinstance(v, (datetime.datetime, datetime.date)):
-        return v.isoformat()
-    return str(v)
-
-
 @router.get("/api/devices/{pc_name}/activity")
 async def device_activity(pc_name: str, limit: int = 15, auth: dict = Depends(require_auth)):
     """Bir cihazın son işlemleri (görevler ve uzak ekran oturumları), yeniden eskiye. Panelin cihaz ayrıntı
@@ -194,15 +186,16 @@ async def device_activity(pc_name: str, limit: int = 15, auth: dict = Depends(re
     items = [
         {
             "kind": "task", "id": r["id"], "title": r["title"], "command": (r["script_path"] or "")[:300],
-            "status": r["status"], "exit_code": r["exit_code"], "at": _iso(r["created_at"]),
+            "status": r["status"], "exit_code": r["exit_code"], "at": timeutil.iso(r["created_at"]),
             "by": r["created_by"], "source": r["source"], "reason": r["reason"], "ip": r["client_ip"],
-            "started_at": _iso(r["dispatched_at"]), "batch_id": r["batch_id"],
+            "started_at": timeutil.iso(r["dispatched_at"]), "batch_id": r["batch_id"],
             "task_kind": r["kind"],   # winget görevi: "winget" (bkz. pops/winget.py), komut: null
         }
         for r in tasks or []
     ] + [
         {
-            "kind": "vision", "status": r["status"], "at": _iso(r["start_time"]), "ended_at": _iso(r["end_time"]),
+            "kind": "vision", "status": r["status"], "at": timeutil.iso(r["start_time"]),
+            "ended_at": timeutil.iso(r["end_time"]),
             "by": r["admin_name"], "reason": r["reason"], "mandatory": bool(r["is_mandatory"]),
         }
         for r in sessions or []
@@ -214,7 +207,7 @@ async def device_activity(pc_name: str, limit: int = 15, auth: dict = Depends(re
 @router.get("/api/inventory")
 async def get_all_inventory(auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT * FROM hw_inventory", fetch=True)
-    return rows if rows else []
+    return [timeutil.iso_row(r) for r in rows or []]
 
 
 def _log_day(value: Optional[str], name: str) -> Optional[datetime.date]:
@@ -235,7 +228,7 @@ async def get_all_logs(
     auth: dict = Depends(require_auth),
 ):
     """Olay kayıtları, yeniden eskiye. İsteğe bağlı süzgeçler: pc (cihaz kimliği), since / until (YYYY-AA-GG, iki
-    gün de dahil); zaman sütunu sunucunun yerel "YYYY-AA-GG SS:DD:ss" metnidir, metin karşılaştırması sırayı korur."""
+    gün de dahil; günler sunucunun saat dilimine göre)."""
     limit = max(1, min(int(limit), 20000))
     start, end = _log_day(since, "since"), _log_day(until, "until")
     where, args = [], []
@@ -243,17 +236,17 @@ async def get_all_logs(
         args.append(pc)
         where.append(f"pc_name = ${len(args)}")
     if start:
-        args.append(start.isoformat())
+        args.append(timeutil.day_start(start))
         where.append(f'"timestamp" >= ${len(args)}')
     if end:
-        args.append((end + datetime.timedelta(days=1)).isoformat())
+        args.append(timeutil.day_start(end + datetime.timedelta(days=1)))
         where.append(f'"timestamp" < ${len(args)}')
     args.append(limit)
     table = "agent_logs_v2" if USE_V2_SCHEMA else "agent_logs"
     sql = f"SELECT * FROM {table}" + (" WHERE " + " AND ".join(where) if where else "")
     sql += f" ORDER BY id DESC LIMIT ${len(args)}"
     rows = await execute_query(sql, tuple(args), fetch=True)
-    return rows if rows else []
+    return [timeutil.iso_row(r) for r in rows or []]
 
 
 @router.post("/api/create_lab", deprecated=True)

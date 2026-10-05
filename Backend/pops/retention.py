@@ -18,6 +18,7 @@ import datetime
 import logging
 import time
 
+from pops import timeutil
 from pops.db import execute_query
 
 log = logging.getLogger("pops.retention")
@@ -71,23 +72,22 @@ async def _delete_in_batches(table: str, where: str, params: tuple) -> int:
             return total
 
 
-def _cutoff_text(days: int) -> str:
-    # Zaman damgaları yerel saatte 'YYYY-MM-DD HH:MM:SS' metni; metin karşılaştırması tarih sırasıyla aynıdır
-    return (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+def _cutoff(days: int) -> datetime.datetime:
+    return timeutil.ago(days=days)
 
 
 async def apply() -> dict:
     cfg = await settings()
     removed = {}
     if cfg["retention_days_logs"]:
-        cutoff = _cutoff_text(cfg["retention_days_logs"])
+        cutoff = _cutoff(cfg["retention_days_logs"])
         removed["agent_logs"] = await _delete_in_batches("agent_logs_v2", '"timestamp" < $1', (cutoff,))
         removed["agent_logs"] += await _delete_in_batches("agent_logs", '"timestamp" < $1', (cutoff,))
     if cfg["retention_days_tasks"]:
         removed["tasks"] = await _delete_in_batches(
             "tasks",
             "created_at < $1 AND status = ANY($2::text[])",
-            (_cutoff_text(cfg["retention_days_tasks"]), _FINISHED_TASKS),
+            (_cutoff(cfg["retention_days_tasks"]), _FINISHED_TASKS),
         )
         removed["file_transfers"] = await _delete_in_batches(
             "file_transfers",
@@ -111,7 +111,7 @@ _last_attempt = [-3600.0]
 
 async def apply_daily() -> None:
     """Günde bir kez (zamanlayıcı her turda çağırır; aynı gün ikinci kez çalışmaz)."""
-    today = datetime.date.today().isoformat()
+    today = timeutil.today().isoformat()
     rows = await execute_query("SELECT value FROM global_settings WHERE key = 'retention_run_date'", fetch=True)
     if rows and rows[0]["value"] == today:
         return

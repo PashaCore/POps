@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from pops import db, modules
+from pops import db, modules, timeutil
 from pops.agent_auth import agent_http_auth, bind_agent
 from pops.audit import add_audit_log
 from pops.db import execute_query
@@ -35,7 +35,7 @@ def _parse_ts(v: Optional[str]) -> Optional[datetime.datetime]:
         return None
     try:
         ts = datetime.datetime.fromisoformat(v.replace("Z", "+00:00"))
-        return ts if ts.tzinfo else ts.astimezone()
+        return ts if ts.tzinfo else ts.replace(tzinfo=timeutil.zone())
     except ValueError:
         return None
 
@@ -190,7 +190,7 @@ async def device_software(pc_name: str, auth: dict = Depends(require_auth)):
     out = []
     for r in rows or []:
         r = dict(r)
-        r["updated_at"] = r["updated_at"].astimezone().isoformat()
+        r["updated_at"] = timeutil.iso(r["updated_at"])
         out.append(r)
     return out
 
@@ -211,7 +211,7 @@ async def list_patch_status(auth: dict = Depends(require_auth)):
         r = dict(r)
         for k in ("last_search", "last_install", "updated_at"):
             if r.get(k):
-                r[k] = r[k].astimezone().isoformat()
+                r[k] = timeutil.iso(r[k])
         r["updates"] = json.loads(r["updates"]) if r.get("updates") else []
         r["reported"] = r.get("updated_at") is not None
         out.append(r)

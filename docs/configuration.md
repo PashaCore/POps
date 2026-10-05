@@ -41,6 +41,7 @@ Ways to create it:
 | `DB_CONNECT_TIMEOUT` | no | `10` | Seconds to open a database connection. |
 | `DB_COMMAND_TIMEOUT` | no | `30` | Longest single query, in seconds. Migrations run on a separate connection without this limit. |
 | `DB_IDLE_IN_TRANSACTION_MS` | no | `60000` | PostgreSQL closes a session that sits idle inside a transaction this long, so it cannot hold locks. |
+| `POPS_TZ` | no | the process time zone | Server time zone as an IANA name, for example `Europe/Istanbul`. Used for day boundaries (log and report filters, "today"), the readable times in CSV exports and the offset of the times the API returns. Unset: the backend process's own time zone (`TZ`, `/etc/localtime`), then the database's `TimeZone` setting. Migration `0031` read the old text timestamps in this zone; set it before that update only if the backend ran in a different zone than the one detected now. |
 | `HEARTBEAT_FLUSH_SECONDS` | no | `2` | Agent heartbeats are collected and written in one statement this often. |
 | `PEER_CACHE_SEED_TIMEOUT_SECONDS` | no | `600` | Lab-local peer cache: how long a lab's seed PC has to report `verified`, and then a successful result, before the next PC becomes the seed (see [`agent.md`](agent.md#peer-cache-contract)). Tests use `4`. |
 | `SCHEDULE_VALID_MINUTES` | no | `60` | A scheduled run that could not be sent within this many minutes of its time becomes `Expired`. |

@@ -5,13 +5,12 @@ ve cihazın Son işlemler'inde görünür. Yalnızca çevrimiçi hedeflere göre
 saatler sonra kapanmasın ya da eski bir mesaj görmesin diye görev 15 dakika içinde gönderilemezse süresi dolar.
 """
 
-import datetime
 import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from pops import db, power
+from pops import db, power, timeutil
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.manager import manager
@@ -64,7 +63,7 @@ async def _queue(kind: str, spec: dict, title: str, data, auth: dict, request: R
     batch_id = uuid.uuid4().hex[:16]
     ids = []
     if online:
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = timeutil.now()
         async with db.transaction() as conn:
             created = await conn.fetch(
                 "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, title, source, "

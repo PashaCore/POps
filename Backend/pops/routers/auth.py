@@ -1,7 +1,6 @@
 """Panel girişi (şifre + opsiyonel TOTP), 2FA yönetimi ve kullanıcı yönetimi uçları."""
 
 import asyncio
-import datetime
 import json
 import logging
 from typing import Optional
@@ -10,7 +9,7 @@ import asyncpg
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from pops import secretbox, sso, sso_ldap
+from pops import secretbox, sso, sso_ldap, timeutil
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.models import (
@@ -69,8 +68,7 @@ def _login_success(u: dict) -> dict:
 
 
 async def _mark_login(user_id: int):
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    await execute_query("UPDATE users SET last_login=$1 WHERE id=$2", (now, user_id))
+    await execute_query("UPDATE users SET last_login=$1 WHERE id=$2", (timeutil.now(), user_id))
 
 
 async def finish_login(u: dict, otp: Optional[str] = None) -> dict:
@@ -264,7 +262,7 @@ async def get_users(auth=Depends(require_admin_session)):
     users = await execute_query(
         "SELECT id, username, role, last_login, permissions, auth_source FROM users ORDER BY id ASC", fetch=True
     )
-    return {"status": "success", "users": users}
+    return {"status": "success", "users": [timeutil.iso_row(u) for u in users or []]}
 
 
 VALID_ROLES = ('superadmin', 'admin', 'viewer')

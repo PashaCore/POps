@@ -188,7 +188,7 @@ async def main():
     print("== bypass anahtarı + requested_by (0.1.12 ajan)")
     await c.execute(
         "INSERT INTO tasks (target_pc, script_path, status, created_at, created_by) "
-        "VALUES ('HW-K1', 'echo k', 'Pending', NOW()::text, 'kadmin')"
+        "VALUES ('HW-K1', 'echo k', 'Pending', NOW(), 'kadmin')"
     )
     headers = {"X-Agent-Secret": "k1-secret", "X-Agent-Version": "0.1.12-alpha"}
     agent = await websockets.connect("%s/ws/agent/HW-K1" % WS, additional_headers=headers)

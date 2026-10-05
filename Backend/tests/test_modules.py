@@ -205,7 +205,7 @@ async def run(c, admin, superadmin):
     await collect(ag, 1)
     pend = await c.fetchval(
         "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at) VALUES "
-        "('HW-MD2', 'MD-Lab2', 'echo md-bekleyen', 'Paused', to_char(now(), 'YYYY-MM-DD HH24:MI:SS')) RETURNING id")
+        "('HW-MD2', 'MD-Lab2', 'echo md-bekleyen', 'Paused', now()) RETURNING id")
     s, b, _ = req("/api/modules/terminal/preview?enabled=false&lab=MD-Lab2", superadmin)
     offs = {(ch["id"], ch["lab"]) for ch in b.get("changes", []) if ch.get("to") is False}
     chk(s == 200 and b.get("tasks_denied") == 1 and b.get("vision_sessions_closed") == 0
@@ -232,7 +232,7 @@ async def run(c, admin, superadmin):
     # Kapalı laboratuvara arada düşen görev (ör. eski yeniden deneme) kuyrukta reddedilir
     late = await c.fetchval(
         "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at) VALUES "
-        "('HW-MD2', 'MD-Lab2', 'echo md-gec', 'Pending', to_char(now(), 'YYYY-MM-DD HH24:MI:SS')) RETURNING id")
+        "('HW-MD2', 'MD-Lab2', 'echo md-gec', 'Pending', now()) RETURNING id")
     req("/api/set_concurrent_limit", admin, {"limit": 5})
     msgs = await collect(ag, 1.5)
     chk(not [m for m in msgs if m.get("action") == "execute" and m.get("task_id") == late], "ajana gönderilmedi")

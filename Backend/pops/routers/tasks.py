@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 from werkzeug.utils import secure_filename
 
 from pops.config import LOG_TABLE, UPDATES_DIR, UPLOAD_DIR
-from pops import db, modules, winget
+from pops import db, modules, timeutil, winget
 from pops.db import execute_query
 from pops.models import (
     CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput, TaskStatusInput,
@@ -43,7 +43,7 @@ async def get_tasks(limit: int = 1000, auth: dict = Depends(require_auth)):
                 r["payload"] = json.loads(r["payload"])
             except ValueError:
                 r["payload"] = None
-    return rows if rows else []
+    return [timeutil.iso_row(r) for r in rows or []]
 
 
 @router.post("/api/flush_queue", deprecated=True)
@@ -126,7 +126,7 @@ async def _retry(where: str, value, creator: str, client_ip=None) -> dict:
     görev kimliği yeniden "Pending" yapılıyordu: iptal edilmiş ama hâlâ süren eski çalıştırmanın geç gelen sonucu
     yeni çalıştırmayı tamamlanmış gösterebilirdi. Aynı görevin süren bir yeniden denemesi varsa ikincisi açılmaz.
     Görevin türü (kind) ve paketi (payload) de kopyalanır: winget görevi komut olarak yeniden çalıştırılmaz."""
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = timeutil.now()
     created = await execute_query(
         "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, retry_of, "
         "title, source, reason, client_ip, batch_id, kind, payload) "
@@ -154,7 +154,7 @@ async def task_status(data: TaskStatusInput, auth: dict = Depends(require_auth))
     )
     return {"items": [
         {"id": r["id"], "target_pc": r["target_pc"], "target_lab": r["target_lab"], "status": r["status"],
-         "exit_code": r["exit_code"], "dispatched_at": r["dispatched_at"].isoformat() if r["dispatched_at"] else None}
+         "exit_code": r["exit_code"], "dispatched_at": timeutil.iso(r["dispatched_at"])}
         for r in rows or []
     ]}
 
@@ -318,14 +318,16 @@ async def api_storage(auth: dict = Depends(require_auth)):
         size_row = await execute_query(f"SELECT pg_total_relation_size('{LOG_TABLE}') as size", fetch=True)
         log_bytes = size_row[0]['size'] if size_row else 0
 
+        # Gün, sunucunun saat dilimine göre (son 7 gün, bugün dahil)
         trend_rows = await execute_query(
             f"""
-            SELECT SUBSTRING(timestamp FROM 1 FOR 10) as day, COUNT(*) as c
+            SELECT to_char("timestamp" AT TIME ZONE $1, 'YYYY-MM-DD') as day, COUNT(*) as c
             FROM {LOG_TABLE}
-            WHERE timestamp >= to_char(current_date - interval '6 days', 'YYYY-MM-DD')
-            GROUP BY SUBSTRING(timestamp FROM 1 FOR 10)
+            WHERE "timestamp" >= $2
+            GROUP BY 1
             ORDER BY day ASC
         """,
+            (timeutil.zone_name(), timeutil.day_start(timeutil.today() - datetime.timedelta(days=6))),
             fetch=True,
         )
         log_trend = [{"day": r['day'], "count": r['c']} for r in trend_rows] if trend_rows else []
@@ -408,7 +410,7 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
             raise modules.closed_error(needed)
         allowed = set(allowed)
         target_pcs = [t for t in target_pcs if t["pc"] in allowed]
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = timeutil.now()
         # Adım -> (komut, başlık, tür, paket). winget adımının komutu ajanın çalıştıracağı komut satırının okunur
         # hâlidir (ajana gitmez); ajan paketi "winget_install" iletisiyle alır (bkz. pops/winget.py).
         steps = [_step_row(task) for task in data.task_sequence]

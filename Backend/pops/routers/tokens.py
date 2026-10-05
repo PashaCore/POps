@@ -11,6 +11,7 @@ import re
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 
+from pops import timeutil
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.models import ApiTokenCreateInput
@@ -31,7 +32,8 @@ _COLUMNS = (
 @router.get("/api/tokens")
 async def list_tokens(auth: dict = Depends(require_superadmin)):
     """Bütün jetonlar, yeniden eskiye (iptal edilmiş ve süresi dolmuşlar da). Jetonun kendisi hiçbir zaman dönmez."""
-    return await execute_query("SELECT %s FROM api_tokens ORDER BY id DESC LIMIT 500" % _COLUMNS, fetch=True)
+    rows = await execute_query("SELECT %s FROM api_tokens ORDER BY id DESC LIMIT 500" % _COLUMNS, fetch=True)
+    return [timeutil.iso_row(r) for r in rows or []]
 
 
 @router.post("/api/tokens")
@@ -64,11 +66,11 @@ async def create_token(data: ApiTokenCreateInput, auth: dict = Depends(require_s
         "API jetonu oluşturuldu: %s (%s)" % (name, data.role),
         {
             "id": row["id"], "name": name, "role": data.role, "prefix": prefix, "by": auth.get("sub"),
-            "expires_at": row["expires_at"].isoformat() if row["expires_at"] else None,
+            "expires_at": timeutil.iso(row["expires_at"]),
         },
     )
     # Jeton yalnızca bu yanıtta görünür
-    return {"status": "success", "token": token, **row}
+    return {"status": "success", "token": token, **timeutil.iso_row(row)}
 
 
 @router.delete("/api/tokens/{token_id}")

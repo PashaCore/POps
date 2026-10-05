@@ -33,7 +33,7 @@ from pydantic import Field
 from starlette.datastructures import UploadFile
 from starlette.requests import ClientDisconnect
 
-from pops import db, filestore, modules
+from pops import db, filestore, modules, timeutil
 from pops.agent_auth import agent_http_auth
 from pops.audit import add_audit_log
 from pops.db import execute_query
@@ -471,7 +471,7 @@ async def agent_upload(
 # ── Panel: liste ve alınan dosyayı indirme ─────────────────────────────────────
 
 def _iso(v):
-    return v.isoformat() if isinstance(v, (datetime.datetime, datetime.date)) else v
+    return timeutil.iso(v) if isinstance(v, (datetime.datetime, datetime.date)) else v
 
 
 def _item(r: dict) -> dict:

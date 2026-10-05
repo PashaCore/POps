@@ -6188,7 +6188,7 @@
     },
     "/api/v1/logs": {
       "get": {
-        "description": "Olay kayıtları, yeniden eskiye. İsteğe bağlı süzgeçler: pc (cihaz kimliği), since / until (YYYY-AA-GG, iki\ngün de dahil); zaman sütunu sunucunun yerel \"YYYY-AA-GG SS:DD:ss\" metnidir, metin karşılaştırması sırayı korur.",
+        "description": "Olay kayıtları, yeniden eskiye. İsteğe bağlı süzgeçler: pc (cihaz kimliği), since / until (YYYY-AA-GG, iki\ngün de dahil; günler sunucunun saat dilimine göre).",
         "operationId": "get_all_logs_api_logs_get",
         "parameters": [
           {

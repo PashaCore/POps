@@ -240,7 +240,7 @@
         const { rows } = list();
         const cell = (v) => { const s = String(v == null ? '' : v); return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
         const lines = [[POps.t('Ad'), POps.t('Kimlik'), POps.t('Sınıf'), POps.t('Durum'), POps.t('Sistem'), POps.t('Kullanıcı'), 'IP', 'MAC', POps.t('Ajan'), POps.t('Son görülme')].join(';')]
-            .concat(rows.map(d => [POps.deviceName(d), d.hostname, d.lab, dev.state(d).word, dev.platform(d), dev.user(d), d.ip, d.mac, dev.version(d), d.last_seen].map(cell).join(';')));
+            .concat(rows.map(d => [POps.deviceName(d), d.hostname, d.lab, dev.state(d).word, dev.platform(d), dev.user(d), d.ip, d.mac, dev.version(d), POps.csvTime(d.last_seen)].map(cell).join(';')));
         const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);

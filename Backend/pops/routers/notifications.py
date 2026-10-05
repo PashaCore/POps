@@ -7,7 +7,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from pops import notify as notify_mod
+from pops import notify as notify_mod, timeutil
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.models import NotificationsReadInput, NotifySettingsInput
@@ -32,7 +32,7 @@ async def list_notifications(limit: int = 30, auth: dict = Depends(require_admin
     items = []
     for r in rows or []:
         r = dict(r)
-        r["created_at"] = r["created_at"].astimezone().isoformat()
+        r["created_at"] = timeutil.iso(r["created_at"])
         items.append(r)
     return {"items": items, "unread": int(unread[0]["n"]) if unread else 0}
 

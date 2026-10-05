@@ -256,10 +256,10 @@ async def run(c, admin, superadmin):
         "('HW-R4OFF', 'r4 offline running', 'Running', '2000-01-01 00:00:00', NOW()) RETURNING id")
     queued = await c.fetchval(
         "INSERT INTO tasks (target_pc, script_path, status, created_at) VALUES "
-        "('HW-R4A', 'echo r4', 'Pending', to_char(now(), 'YYYY-MM-DD HH24:MI:SS')) RETURNING id")
+        "('HW-R4A', 'echo r4', 'Pending', now()) RETURNING id")
     expired = await c.fetchval(
         "INSERT INTO tasks (target_pc, script_path, status, created_at, expires_at) VALUES "
-        "('HW-R4B', 'echo r4 expired', 'Pending', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), NOW() - interval "
+        "('HW-R4B', 'echo r4 expired', 'Pending', now(), NOW() - interval "
         "'1 minute') RETURNING id")
     # Sınır 1 ve tek "Running" görev bağlı olmayan cihazda: bağlı cihazın görevi yine de gönderilmeli
     chk(req("/api/set_concurrent_limit", admin, {"limit": 1})[0] == 200, "sınır 1")
@@ -285,7 +285,7 @@ async def run(c, admin, superadmin):
     chk(await wait_for(c, "SELECT status = 'Completed' FROM tasks WHERE id=$1", queued), "kendi görevi tamamlandı")
     refused = await c.fetchval(
         "INSERT INTO tasks (target_pc, script_path, status, created_at, dispatched_at) VALUES "
-        "('HW-R4A', 'ping r4', 'Running', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), NOW()) RETURNING id")
+        "('HW-R4A', 'ping r4', 'Running', now(), NOW()) RETURNING id")
     await ag.send(json.dumps({"type": "result", "task_id": refused,
                               "output": "[REDDEDİLDİ] Bu cihazda uzaktan terminal kapalı; komut çalıştırılmadı."}))
     chk(await wait_for(c, "SELECT status = 'Denied' AND exit_code = -5 FROM tasks WHERE id=$1", refused),

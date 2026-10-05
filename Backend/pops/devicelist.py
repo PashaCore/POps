@@ -27,7 +27,7 @@ import logging
 import time
 from typing import Iterable, Optional
 
-from pops import agent_health, metrics
+from pops import agent_health, metrics, timeutil
 from pops.db import execute_query
 
 log = logging.getLogger("pops.devicelist")
@@ -63,7 +63,7 @@ def api_row(r: dict) -> dict:
         "ip": r["ip_address"],
         "lab": r["lab_name"],
         "status": r["status"],
-        "last_seen": r["last_seen"],
+        "last_seen": timeutil.iso(r["last_seen"]),
         "active_window": r["active_window"],
         "boot_count": r["boot_count"],
         "current_user": r.get("logged_user", "-"),
@@ -84,7 +84,7 @@ def api_row(r: dict) -> dict:
         # Ajanın son heartbeat'teki sağlık özeti (0.1.12+; bkz. pops/agent_health.py)
         "agent_health": agent_health.parse(r.get("agent_health")),
         # Son kopuş: ne zaman, neden (WebSocket kapanış kodu)
-        "last_disconnect_at": r["last_disconnect_at"].isoformat() if r.get("last_disconnect_at") else None,
+        "last_disconnect_at": timeutil.iso(r.get("last_disconnect_at")),
         "last_disconnect_reason": r.get("last_disconnect_reason"),
         # Çevrimdışı bypass: device = cihaza özel anahtar onaylı, pending = gönderildi/onay bekliyor, None = eski
         "bypass_key": (

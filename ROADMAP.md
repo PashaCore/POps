@@ -157,7 +157,8 @@ valid signature.
 - **mTLS for agents**, or pinning the server certificate through the enrollment token for self-signed setups.
 - **Audit log hardening (R-07):** a separate database role that can only insert into the audit table, an anchor
   of the chain kept outside the server, and archiving old rows (decision D-18).
-- **Immutable device id** with foreign keys and proper timestamps instead of text dates and `pc_name` keys.
+- **Immutable device id** with foreign keys instead of `pc_name` keys. (Proper timestamps instead of text dates are
+  done: migration `0031`.)
 - **Lab-scoped permissions** (an admin limited to some labs) and a server-side owner filter for helpdesk tickets.
 - **Device list paging** for large fleets.
 - **High availability:** several backend processes with Redis (see Vision below).

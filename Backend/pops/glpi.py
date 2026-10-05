@@ -34,7 +34,7 @@ import time
 import urllib.parse
 from typing import Dict, List, Optional, Tuple
 
-from pops import config, db, secretbox
+from pops import config, db, secretbox, timeutil
 from pops.db import execute_query
 
 log = logging.getLogger("pops.glpi")
@@ -441,7 +441,8 @@ def ticket_input(t: dict, entity: int, reporter: bool) -> dict:
     intro = "POps'ta tepsiden açıldı." if t.get("source") == "agent" else "POps'ta panelden açıldı."
     if reporter and t.get("reporter"):
         intro += " Bildiren: %s." % t["reporter"]
-    created = t["created_at"].astimezone() if t.get("created_at") else None
+    # GLPI tarihleri dilimsiz 'YYYY-AA-GG SS:DD:ss' bekler: sunucunun saat diliminde (pops/timeutil.py)
+    created = timeutil.local_text(t.get("created_at"))
     out = {
         "name": (t.get("subject") or "")[:255],
         "content": _html(intro) + _html(t.get("body") or ""),
@@ -451,7 +452,7 @@ def ticket_input(t: dict, entity: int, reporter: bool) -> dict:
         "entities_id": entity,
     }
     if created:
-        out["date"] = created.strftime("%Y-%m-%d %H:%M:%S")
+        out["date"] = created
     return out
 
 
@@ -498,7 +499,7 @@ async def problems(limit: int = 50) -> List[dict]:
         "WHERE l.kind = 'computer' AND l.state <> 'ok' ORDER BY l.synced_at DESC LIMIT $1",
         (limit,), fetch=True,
     )
-    return [dict(r, synced_at=r["synced_at"].isoformat() if r.get("synced_at") else None) for r in rows or []]
+    return [dict(r, synced_at=timeutil.iso(r.get("synced_at"))) for r in rows or []]
 
 
 async def counts() -> dict:
@@ -762,7 +763,7 @@ class _Run:
 
     # -- destek talepleri (seçenek A: bir kez gönderilir; sonraki açık yanıtlar takip olarak eklenir)
     async def tickets(self) -> None:
-        since = self.s.get("tickets_since") or datetime.date.today().isoformat()
+        since = self.s.get("tickets_since") or timeutil.today().isoformat()
         rows = await execute_query(
             "SELECT t.* FROM tickets t WHERE t.created_at >= $1::date AND NOT EXISTS (SELECT 1 FROM glpi_links l "
             "WHERE l.kind = 'ticket' AND l.pops_key = t.id::text) ORDER BY t.id LIMIT 500",
@@ -800,7 +801,7 @@ class _Run:
                 fid = await self.create("ITILFollowup", {
                     "itemtype": "Ticket", "items_id": m["glpi_id"], "is_private": 0,
                     "content": _html("%s (POps): %s" % (m["author"], m["body"])),
-                    "date": m["created_at"].astimezone().strftime("%Y-%m-%d %H:%M:%S"),
+                    "date": timeutil.local_text(m["created_at"]),
                 })
                 await _link("followup", str(m["id"]), fid)
                 self.n["followups_created"] += 1
@@ -816,7 +817,7 @@ async def run(trigger: str = "schedule") -> dict:
     """Bir eşitleme turu. Sonucu glpi_last_run'a yazar ve döner: {ok, at, trigger, duration, counts, error, errors}."""
     s = await load()
     started = time.monotonic()
-    result = {"ok": False, "at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+    result = {"ok": False, "at": timeutil.iso(timeutil.now()),
               "trigger": trigger, "counts": {}, "error": None, "errors": []}
     _progress.clear()
     _progress.update(started_at=result["at"], trigger=trigger)

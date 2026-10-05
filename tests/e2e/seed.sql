@@ -2,8 +2,8 @@
 -- uydurmadır. Sunucu açıldıktan SONRA yüklenir: açılışta bütün cihazlar "Offline" yazılır, buradaki durumlar kalsın.
 -- İki kayıt HTML'e benzer metin taşır (cihaz adı ve olay mesajı): panel bunları kaçırmalı, test hiçbir pencere
 -- (alert) açılmadığını denetler.
-CREATE OR REPLACE FUNCTION pg_temp.ts(i interval) RETURNS text LANGUAGE sql AS
-$$ SELECT to_char(now() - i, 'YYYY-MM-DD HH24:MI:SS') $$;
+CREATE OR REPLACE FUNCTION pg_temp.ts(i interval) RETURNS timestamptz LANGUAGE sql AS
+$$ SELECT now() - i $$;
 
 INSERT INTO custom_labs (lab_name) VALUES ('Lab-1 Yazılım'), ('Lab-2 Donanım'), ('Kütüphane'), ('Boş Sınıf') ON CONFLICT DO NOTHING;
 

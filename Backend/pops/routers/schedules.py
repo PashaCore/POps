@@ -9,7 +9,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops.audit import add_audit_log
-from pops import modules
+from pops import modules, timeutil
 from pops.db import execute_query
 from pops.models import ScheduledTaskInput, ScheduleToggleInput
 from pops.scheduler import _now, compute_next_run, enqueue
@@ -25,7 +25,7 @@ def _row_out(r: dict) -> dict:
     out = dict(r)
     for k in ("run_at", "next_run", "last_run", "created_at"):
         if out.get(k):
-            out[k] = out[k].astimezone().isoformat()
+            out[k] = timeutil.iso(out[k])
     out["targets"] = json.loads(out.get("targets") or "[]")
     out["weekdays"] = [int(d) for d in (out.get("weekdays") or "").split(",") if d.strip().isdigit()]
     return out
@@ -52,7 +52,7 @@ def _validate(data: ScheduledTaskInput):
         except ValueError:
             raise HTTPException(status_code=400, detail="Tarih/saat geçersiz.")
         if run_at.tzinfo is None:
-            run_at = run_at.astimezone()  # sunucunun saat dilimi
+            run_at = run_at.replace(tzinfo=timeutil.zone())  # sunucunun saat dilimi
         if run_at <= _now():
             raise HTTPException(status_code=400, detail="Tek seferlik görevin zamanı gelecekte olmalı.")
     elif data.schedule_type in ("daily", "weekly"):
@@ -74,7 +74,7 @@ async def list_scheduled_tasks(auth: dict = Depends(require_admin)):
     rows = await execute_query(
         "SELECT * FROM scheduled_tasks ORDER BY enabled DESC, next_run NULLS LAST, id", fetch=True
     )
-    return {"items": [_row_out(r) for r in (rows or [])], "server_time": _now().isoformat()}
+    return {"items": [_row_out(r) for r in (rows or [])], "server_time": timeutil.iso(_now())}
 
 
 @router.post("/api/scheduled_tasks", dependencies=[modules.require("schedules")])
@@ -113,7 +113,7 @@ async def create_scheduled_task(data: ScheduledTaskInput, auth: dict = Depends(r
             "schedule": data.schedule_type,
             "time_of_day": time_of_day,
             "weekdays": weekdays,
-            "run_at": run_at.isoformat() if run_at else None,
+            "run_at": timeutil.iso(run_at),
         },
     )
     return _row_out(row)
@@ -141,7 +141,7 @@ async def toggle_scheduled_task(task_id: int, data: ScheduleToggleInput, auth: d
         "Zamanlanmış görev %s: %s" % ("açıldı" if data.enabled else "durduruldu", r["name"]),
         {"id": task_id, "by": auth.get("sub"), "enabled": data.enabled},
     )
-    return {"ok": True, "enabled": data.enabled, "next_run": next_run.isoformat() if next_run else None}
+    return {"ok": True, "enabled": data.enabled, "next_run": timeutil.iso(next_run)}
 
 
 @router.post("/api/scheduled_tasks/{task_id}/run", dependencies=[modules.require("schedules")])

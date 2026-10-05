@@ -96,6 +96,8 @@ _CLIENT_COLUMNS = {
     "pc_name": (str,), "hostname": (str,), "dna_uuid": (str, type(None)), "dna_bios": (str, type(None)),
     "dna_disk": (str, type(None)), "dna_mac": (str, type(None)), "dna_ram": (str, type(None)),
     "cap_ram_readable": (bool,),
+    # Zaman damgası sütunları TIMESTAMPTZ (migration 0031): saat dilimli datetime, metin değil
+    "last_seen": (datetime.datetime,),
 }
 
 # Sorgu metni -> cihaz kimliğinin parametre sırası (özellik 4)
@@ -303,6 +305,7 @@ def session(frames):
         check_sent(msg)
     for pc, row in S.beats:
         assert pc == HW, "heartbeat başka cihaz adına: %s" % pc
+        assert isinstance(row[0], datetime.datetime) and row[0].tzinfo, "heartbeat last_seen: %r" % (row[0],)
         S.bad(row, "heartbeat")
     for query, params in S.db:
         if "INSERT INTO clients" in query:
@@ -310,6 +313,10 @@ def session(frames):
             assert set(_CLIENT_COLUMNS) <= set(columns), "clients sütunları bulunamadı: %s" % sorted(columns)
             for col, types in _CLIENT_COLUMNS.items():
                 assert isinstance(params[columns[col]], types), "clients.%s: %r" % (col, params[columns[col]])
+            assert params[columns["last_seen"]].tzinfo is not None, "clients.last_seen saat dilimsiz"
+        if "INSERT INTO agent_versions" in query:
+            stamp = params[insert_params(query)["last_update"]]
+            assert isinstance(stamp, datetime.datetime) and stamp.tzinfo, "agent_versions.last_update: %r" % stamp
         for needle, pos in _DEVICE_PARAM.items():
             if needle in query:
                 # Tek cihaz ya da cihaz listesi (ör. sınavın toplu gönderimi)

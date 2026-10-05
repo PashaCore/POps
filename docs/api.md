@@ -34,6 +34,11 @@ Open it in any OpenAPI viewer or client generator.
 - Rate limits and metrics count both forms together: `/api/v1/admin/login` shares the login limit with
   `/api/admin/login`, and `pops_http_requests_total` labels both with the same route template (no separate `v1`
   series).
+- Times are ISO 8601 with the server's UTC offset and whole seconds, for example `"2026-10-05T11:58:11+03:00"`
+  (the server's time zone: `POPS_TZ`, see [`configuration.md`](configuration.md#variables)). Dates without a time
+  stay `YYYY-MM-DD`; day filters such as `since` / `until` count days in the server's time zone. Exceptions: CSV
+  exports write `YYYY-MM-DD HH:MM:SS` in the server's time zone, and the agent's tray history
+  (`GET /api/activity/agent/{hw_id}`) keeps that text form for the agent to show as is.
 - Field names are snake_case. The one camelCase request field, `taskSequence` of `POST /api/deploy_orchestration`,
   is also accepted as `task_sequence`; new clients should use `task_sequence` (the panel still sends
   `taskSequence`). Sending both is `422`.
@@ -245,7 +250,7 @@ forward does not change it. How the server tracks it: [`backend.md`](backend.md#
   {"version": 1791204427412, "full": false,
    "changed": [{"hw_id": "HW-...", "status": "Offline", "...": "same fields as a list row"}],
    "removed": ["HW-..."],
-   "seen": {"HW-...": "2026-10-05 10:01:00"}}
+   "seen": {"HW-...": "2026-10-05T10:01:00+03:00"}}
   ```
 
   `changed` holds the whole current row of every device that changed or appeared, `removed` the IDs of deleted
