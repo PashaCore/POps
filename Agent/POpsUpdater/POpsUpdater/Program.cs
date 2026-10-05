@@ -38,6 +38,12 @@ namespace POpsUpdater
         static readonly string LockPath = Path.Combine(DataDir, "update.lock");
         static readonly string HealthPath = Path.Combine(DataDir, "health.json");
         static readonly string ResultPath = Path.Combine(DataDir, "update-result.json");
+        // Kurulumun aşaması servise (o da sunucuya "update_progress" olarak) gider; bkz. POps.Shared.UpdateProgressFile
+        static readonly string ProgressPath = Path.Combine(DataDir, UpdateProgressFile.FileName);
+        const int MsiexecAttempts = 5;
+        // Bu çalışma: update.lock'taki started_at ve hedef sürüm (aşama dosyasına yazılır)
+        static long _run;
+        static string _toVersion;
         // MSI her kurulumda kendi paketini buraya installed.msi olarak bırakır (geri dönüş kaynağı)
         static readonly string PackagesDir = Path.Combine(DataDir, "packages");
         static readonly string BackupRoot = Path.Combine(DataDir, "backup");
@@ -92,6 +98,9 @@ namespace POpsUpdater
             {
                 Log($"Güncelleme başladı: {opt.From} -> {opt.To} ({opt.Msi})");
                 TouchLock();
+                _toVersion = opt.To;
+                _run = LockStartedAt(opt);
+                UpdateProgressFile.Delete(ProgressPath);
 
                 if (!HashMatches(opt.Msi, opt.Sha256))
                 {
@@ -108,7 +117,7 @@ namespace POpsUpdater
                 string installFolderArg = IsMsiManaged() ? $" INSTALLFOLDER=\"{opt.InstallDir.TrimEnd('\\')}\"" : "";
 
                 DateTime installStart = DateTime.UtcNow;
-                int exit = RunMsiexec($"/i \"{opt.Msi}\" /qn /norestart REBOOT=ReallySuppress{installFolderArg}", "install-" + opt.To);
+                int exit = RunMsiexec($"/i \"{opt.Msi}\" /qn /norestart REBOOT=ReallySuppress{installFolderArg}", "install-" + opt.To, reportProgress: true);
                 result["msi_exit_code"] = exit;
                 result["reboot_required"] = exit == 3010;
 
@@ -167,6 +176,8 @@ namespace POpsUpdater
                 // Tatbikat işareti tek seferliktir: bir sonraki güncelleme normal ilerler
                 ClearRollbackDrill("güncelleme sonunda");
                 result["finished_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                // Aşama dosyası sonuçtan önce gider: servis sonucu gördüğünde eski aşamayı iletmez
+                UpdateProgressFile.Delete(ProgressPath);
                 WriteAtomic(ResultPath, JsonSerializer.Serialize(result));
                 Log($"Güncelleme bitti: {outcome} ({JsonSerializer.Serialize(result)})", outcome != "success");
                 try { File.Delete(LockPath); } catch { }
@@ -348,8 +359,12 @@ namespace POpsUpdater
                 }
         }
 
-        // Başka bir kurulum sürüyorsa (1618) bir süre beklenip yeniden denenir
-        static int RunMsiexec(string arguments, string logName)
+        // Geri dönüş ve son çare onarımı aşama bildirmez
+        static int RunMsiexec(string arguments, string logName) => RunMsiexec(arguments, logName, reportProgress: false);
+
+        // Başka bir kurulum sürüyorsa (1618) bir süre beklenip yeniden denenir. reportProgress: ana kurulum; her
+        // denemeden önce "installing", 1618 beklemesinde "waiting_installer" yazılır.
+        static int RunMsiexec(string arguments, string logName, bool reportProgress)
         {
             // msiexec log klasörünü oluşturmaz; yoksa kurulum 1622 ile düşer
             Directory.CreateDirectory(LogDir);
@@ -357,6 +372,7 @@ namespace POpsUpdater
             for (int attempt = 1; ; attempt++)
             {
                 TouchLock();
+                if (reportProgress) WriteProgress(UpdateProgressFile.Installing, attempt, null);
                 Log($"msiexec {arguments} (log: {log})");
                 using Process p = Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe"), $"{arguments} /l*v \"{log}\"")
                 {
@@ -365,8 +381,9 @@ namespace POpsUpdater
                 });
                 p.WaitForExit();
                 Log($"msiexec çıkış kodu: {p.ExitCode}");
-                if (p.ExitCode != 1618 || attempt == 5) return p.ExitCode;
+                if (p.ExitCode != 1618 || attempt == MsiexecAttempts) return p.ExitCode;
                 Log("Başka bir Windows Installer işlemi sürüyor (1618); 60 sn sonra yeniden denenecek.");
+                if (reportProgress) WriteProgress(UpdateProgressFile.WaitingInstaller, attempt, "msiexec 1618: başka bir Windows Installer kurulumu sürüyor");
                 Thread.Sleep(TimeSpan.FromSeconds(60));
             }
         }
@@ -547,6 +564,39 @@ namespace POpsUpdater
         }
 
         // ------------------------------------------------------------------------------------------
+        static void WriteProgress(string stage, int attempt, string detail)
+        {
+            try
+            {
+                UpdateProgressFile.Write(ProgressPath, new UpdateProgressRecord
+                {
+                    Run = _run,
+                    ToVersion = _toVersion,
+                    Stage = stage,
+                    Attempt = attempt,
+                    Of = MsiexecAttempts,
+                    Detail = detail,
+                    At = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                });
+            }
+            catch (Exception ex) { Log($"{ProgressPath} yazılamadı: {ex.Message}", true); }
+        }
+
+        // update.lock'taki started_at (servis yazar). Yoksa updater'ın kendi başlangıç anı kilide yazılır.
+        static long LockStartedAt(Options opt)
+        {
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(LockPath));
+                if (doc.RootElement.TryGetProperty("started_at", out JsonElement started) && started.TryGetInt64(out long value) && value > 0)
+                    return value;
+            }
+            catch (Exception ex) when (ex is IOException || ex is JsonException || ex is UnauthorizedAccessException || ex is InvalidOperationException) { }
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            WriteAtomic(LockPath, JsonSerializer.Serialize(new { from_version = opt.From, to_version = opt.To, started_at = now }));
+            return now;
+        }
+
         static void TouchLock()
         {
             try
