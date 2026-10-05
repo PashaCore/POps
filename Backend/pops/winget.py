@@ -1,4 +1,4 @@
-"""winget ile paket dağıtımı (docs/decisions.md D-22, ajan sözleşmesi docs/agent.md "winget_install").
+"""winget ile paket dağıtımı (docs/decisions.md D-23, ajan sözleşmesi docs/agent.md "winget_install").
 
 Dağıtım zincirinin WINGET adımı kurulacak paketi ({"id", "version"}) taşır, komut taşımaz. Görev kaydında
 kind = 'winget', paket payload'dadır; kuyruk ajana "execute" yerine "winget_install" iletisi gönderir. Ajan winget'i

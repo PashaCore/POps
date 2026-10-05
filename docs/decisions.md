@@ -369,7 +369,7 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   8 MB through `/api/v1` need the updated reverse-proxy rule on existing servers. Endpoint and model changes must
   commit the regenerated schema.
 
-## D-22 winget packages as their own agent action
+## D-23 winget packages as their own agent action
 
 **Since:** after 0.1.22-alpha (server and panel; the agent side follows).
 
@@ -384,7 +384,7 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   - (b) A new action, `winget_install`, with the package as data, answered with the normal `result`.
 - **Decision:** (b).
   - The step type is `WINGET` with `{"id", "version"}`. The task row gets `kind = 'winget'` and the package in
-    `payload` (migration `0024`); `script_path` holds the readable command line for the panel and the audit log and
+    `payload` (migration `0027`); `script_path` holds the readable command line for the panel and the audit log and
     is never sent. Retries copy `kind` and `payload`, so a winget task can never become an `execute`.
   - Old agents must not receive it at all: they would ignore it and leave the task `Running` until the 35-minute
     timeout. An agent that implements it says so with `X-Agent-Features: winget` when it connects; the server

@@ -1,4 +1,4 @@
--- 0024: winget ile paket dağıtımı (pops/winget.py, docs/decisions.md D-22).
+-- 0027: winget ile paket dağıtımı (pops/winget.py, docs/decisions.md D-23).
 -- tasks.kind: görevin ajana nasıl gönderileceği. NULL = komut ("execute", script_path çalıştırılır); 'winget' =
 -- "winget_install" iletisi, kurulacak paket payload'da ({"id", "version"}). winget görevinin script_path'i ajanın
 -- çalıştıracağı komut satırının okunur hâlidir (panelde ve denetim kaydında gösterilir); ajana gönderilmez.
