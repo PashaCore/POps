@@ -27,7 +27,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
 
 import release_verify
 from pops import agent_version as agent_version_mod
@@ -49,22 +49,22 @@ class DeployUpdateInput(StrictInput):
     _mode = field_validator("target_mode", mode="before")(upper_mode)
 
 
-class EnforceInput(BaseModel):
+class EnforceInput(StrictInput):
     enabled: bool
 
 
-class CapabilityInput(BaseModel):
+class CapabilityInput(StrictInput):
     pc_name: str
     terminal_enabled: Optional[bool] = None   # yalnızca False anlamlı (fail-safe kapatma)
     vision_enabled: Optional[bool] = None
 
 
-class ReenrollInput(BaseModel):
+class ReenrollInput(StrictInput):
     pc_name: str
     allow: bool = True
 
 
-class FetchReleaseInput(BaseModel):
+class FetchReleaseInput(StrictInput):
     tag: Optional[str] = None   # boşsa GitHub'daki son release
     force: bool = False
 

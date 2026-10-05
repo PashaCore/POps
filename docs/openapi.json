@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "AdminLoginInput": {
+        "additionalProperties": false,
         "properties": {
           "otp": {
             "anyOf": [
@@ -31,6 +32,7 @@
         "type": "object"
       },
       "AgentPoliciesInput": {
+        "additionalProperties": false,
         "properties": {
           "auto_quarantine": {
             "title": "Auto Quarantine",
@@ -193,6 +195,7 @@
         "type": "object"
       },
       "AutoEnrollInput": {
+        "additionalProperties": false,
         "properties": {
           "expire_date": {
             "title": "Expire Date",
@@ -294,6 +297,7 @@
         "type": "object"
       },
       "CapabilityInput": {
+        "additionalProperties": false,
         "properties": {
           "pc_name": {
             "title": "Pc Name",
@@ -329,6 +333,7 @@
         "type": "object"
       },
       "CreateLabInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -342,6 +347,7 @@
         "type": "object"
       },
       "CreatePackageInput": {
+        "additionalProperties": false,
         "properties": {
           "color": {
             "title": "Color",
@@ -385,6 +391,7 @@
         "type": "object"
       },
       "DeleteLabInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -398,6 +405,7 @@
         "type": "object"
       },
       "DeletePackageInput": {
+        "additionalProperties": false,
         "properties": {
           "id": {
             "title": "Id",
@@ -450,6 +458,7 @@
         "type": "object"
       },
       "EndAuditSessionInput": {
+        "additionalProperties": false,
         "properties": {
           "session_id": {
             "title": "Session Id",
@@ -468,6 +477,7 @@
         "type": "object"
       },
       "EnforceInput": {
+        "additionalProperties": false,
         "properties": {
           "enabled": {
             "title": "Enabled",
@@ -520,6 +530,7 @@
         "type": "object"
       },
       "FetchReleaseInput": {
+        "additionalProperties": false,
         "properties": {
           "force": {
             "default": false,
@@ -651,6 +662,7 @@
         "type": "object"
       },
       "LicenseInput": {
+        "additionalProperties": false,
         "properties": {
           "expires_at": {
             "anyOf": [
@@ -718,6 +730,7 @@
         "type": "object"
       },
       "LockdownInput": {
+        "additionalProperties": false,
         "properties": {
           "admin_name": {
             "anyOf": [
@@ -876,6 +889,7 @@
         "type": "object"
       },
       "ModuleSettingInput": {
+        "additionalProperties": false,
         "properties": {
           "enabled": {
             "anyOf": [
@@ -904,6 +918,7 @@
         "type": "object"
       },
       "MovePcInput": {
+        "additionalProperties": false,
         "properties": {
           "new_lab": {
             "title": "New Lab",
@@ -922,6 +937,7 @@
         "type": "object"
       },
       "MovePcsInput": {
+        "additionalProperties": false,
         "properties": {
           "new_lab": {
             "title": "New Lab",
@@ -943,6 +959,7 @@
         "type": "object"
       },
       "NotificationsReadInput": {
+        "additionalProperties": false,
         "properties": {
           "ids": {
             "default": [],
@@ -957,6 +974,7 @@
         "type": "object"
       },
       "NotifySettingsInput": {
+        "additionalProperties": false,
         "properties": {
           "email_to": {
             "default": "",
@@ -1054,6 +1072,7 @@
         "type": "object"
       },
       "PanelTicketInput": {
+        "additionalProperties": false,
         "properties": {
           "body": {
             "anyOf": [
@@ -1125,6 +1144,7 @@
         "type": "object"
       },
       "PatchInstallInput": {
+        "additionalProperties": false,
         "properties": {
           "scope": {
             "default": "security",
@@ -1287,6 +1307,7 @@
         "type": "object"
       },
       "ProfileInput": {
+        "additionalProperties": false,
         "properties": {
           "profile": {
             "title": "Profile",
@@ -1319,6 +1340,7 @@
         "type": "object"
       },
       "ReenrollInput": {
+        "additionalProperties": false,
         "properties": {
           "allow": {
             "default": true,
@@ -1374,6 +1396,7 @@
         "type": "object"
       },
       "RenameDeviceInput": {
+        "additionalProperties": false,
         "properties": {
           "display_name": {
             "title": "Display Name",
@@ -1392,6 +1415,7 @@
         "type": "object"
       },
       "RenameLabInput": {
+        "additionalProperties": false,
         "properties": {
           "new_name": {
             "title": "New Name",
@@ -1410,6 +1434,7 @@
         "type": "object"
       },
       "RetentionInput": {
+        "additionalProperties": false,
         "properties": {
           "retention_days_logs": {
             "maximum": 3650.0,
@@ -1439,6 +1464,7 @@
         "type": "object"
       },
       "SaveLabLayoutInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -1457,6 +1483,7 @@
         "type": "object"
       },
       "ScheduleToggleInput": {
+        "additionalProperties": false,
         "properties": {
           "enabled": {
             "title": "Enabled",
@@ -1470,6 +1497,7 @@
         "type": "object"
       },
       "ScheduledTaskInput": {
+        "additionalProperties": false,
         "properties": {
           "command": {
             "title": "Command",
@@ -1541,6 +1569,7 @@
         "type": "object"
       },
       "SetLimitInput": {
+        "additionalProperties": false,
         "properties": {
           "limit": {
             "maximum": 10000.0,
@@ -1556,6 +1585,7 @@
         "type": "object"
       },
       "SetMainPcInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -1635,6 +1665,7 @@
         "type": "object"
       },
       "StartAuditSessionInput": {
+        "additionalProperties": false,
         "properties": {
           "admin_id": {
             "anyOf": [
@@ -1691,6 +1722,7 @@
         "type": "object"
       },
       "StreamStopInput": {
+        "additionalProperties": false,
         "properties": {
           "pc_name": {
             "title": "Pc Name",
@@ -1704,6 +1736,7 @@
         "type": "object"
       },
       "TaskActionInput": {
+        "additionalProperties": false,
         "properties": {
           "action": {
             "title": "Action",
@@ -1751,6 +1784,7 @@
         "type": "object"
       },
       "TaskStatusInput": {
+        "additionalProperties": false,
         "properties": {
           "ids": {
             "items": {
@@ -1768,6 +1802,7 @@
         "type": "object"
       },
       "TicketMessageInput": {
+        "additionalProperties": false,
         "properties": {
           "body": {
             "title": "Body",
@@ -1786,6 +1821,7 @@
         "type": "object"
       },
       "TicketUpdateInput": {
+        "additionalProperties": false,
         "properties": {
           "assignee": {
             "anyOf": [
@@ -1825,6 +1861,7 @@
         "type": "object"
       },
       "TotpDisableInput": {
+        "additionalProperties": false,
         "properties": {
           "otp": {
             "anyOf": [
@@ -1842,6 +1879,7 @@
         "type": "object"
       },
       "TotpEnableInput": {
+        "additionalProperties": false,
         "properties": {
           "otp": {
             "title": "Otp",
@@ -1855,6 +1893,7 @@
         "type": "object"
       },
       "TotpLoginInput": {
+        "additionalProperties": false,
         "properties": {
           "challenge": {
             "title": "Challenge",
@@ -1873,6 +1912,7 @@
         "type": "object"
       },
       "UpdateProgressInput": {
+        "additionalProperties": false,
         "properties": {
           "pcs": {
             "items": {
@@ -1901,6 +1941,7 @@
         "type": "object"
       },
       "UserCreateInput": {
+        "additionalProperties": false,
         "properties": {
           "password": {
             "title": "Password",
@@ -1929,6 +1970,7 @@
         "type": "object"
       },
       "UserUpdateInput": {
+        "additionalProperties": false,
         "properties": {
           "password": {
             "anyOf": [

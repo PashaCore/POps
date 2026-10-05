@@ -3,23 +3,23 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from pops import modules
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.manager import manager
+from pops.models import StrictInput
 from pops.security import require_auth, require_superadmin
 
 router = APIRouter()
 
 
-class ModuleSettingInput(BaseModel):
+class ModuleSettingInput(StrictInput):
     enabled: Optional[bool] = None   # None: ayarı kaldır (laboratuvarda kurum ayarına, kurumda "açık"a döner)
     lab: Optional[str] = None        # verilirse laboratuvar istisnası
 
 
-class ProfileInput(BaseModel):
+class ProfileInput(StrictInput):
     profile: str                     # school | org
     reset_labs: bool = False         # laboratuvar istisnaları da silinsin mi
 

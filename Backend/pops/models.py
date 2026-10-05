@@ -9,8 +9,17 @@ TargetMode = Literal["ALL", "LAB", "PC"]
 
 class StrictInput(BaseModel):
     """Tanınmayan alanı reddeder (422). Yazılan alan adı yanlışsa istek sessizce varsayılanlarla çalışmasın diye
-    (ör. enroll-token'a lab_name yerine lab gönderilince sınıfsız bir jeton üretiliyordu)."""
+    (ör. enroll-token'a lab_name yerine lab gönderilince sınıfsız bir jeton üretiliyordu). Panelin ve entegrasyonların
+    gönderdiği her gövde modeli bundan türer; bilerek gevşek bırakılanlar aşağıda AGENT_INPUT ile işaretlidir."""
     model_config = ConfigDict(extra="forbid")
+
+
+# Ajanın gönderdiği gövdeler (envanter, yazılım, Windows Update, olay kaydı, oturum olayları, DNS uyarısı, yardım
+# masası talebi) tanınmayan alanı yok sayar: sahada her sürümden ajan çalışır ve yeni bir ajanın eklediği alan eski
+# sunucuda 422 alırsa o veri kaybolur (ör. ajan envanterle "dna" gönderir, sunucu okumaz). Bu modeller
+# "class X(BaseModel)" olarak kalır: ajanın sözleşme testleri (Agent/POps.Tests, ServerContractTests) alanları buradan
+# bu başlıkla okur. Hangi modellerin gevşek olduğunu test_units.py denetler (yeni model varsayılan olarak katıdır).
+AGENT_INPUT = ConfigDict(extra="ignore")
 
 
 def upper_mode(value):
@@ -18,75 +27,69 @@ def upper_mode(value):
     return value.strip().upper() if isinstance(value, str) else value
 
 
-class AdminLoginInput(BaseModel):
+class AdminLoginInput(StrictInput):
     username: str
     password: str
     otp: Optional[str] = None
 
 
-class TotpLoginInput(BaseModel):
+class TotpLoginInput(StrictInput):
     challenge: str
     otp: str
 
 
-class TotpEnableInput(BaseModel):
+class TotpEnableInput(StrictInput):
     otp: str
 
 
-class TotpDisableInput(BaseModel):
+class TotpDisableInput(StrictInput):
     otp: Optional[str] = None
 
 
-class TaskInput(BaseModel):
-    target_pc: str
-    target_lab: str
-    script_path: str
-
-
-class MovePcInput(BaseModel):
+class MovePcInput(StrictInput):
     pc_name: str
     new_lab: str
 
 
-class MovePcsInput(BaseModel):
+class MovePcsInput(StrictInput):
     pc_names: List[str]
     new_lab: str
 
 
-class RenameLabInput(BaseModel):
+class RenameLabInput(StrictInput):
     old_name: str
     new_name: str
 
 
-class RenameDeviceInput(BaseModel):
+class RenameDeviceInput(StrictInput):
     pc_name: str
     display_name: str
 
 
-class CreateLabInput(BaseModel):
+class CreateLabInput(StrictInput):
     lab_name: str
 
 
-class DeleteLabInput(BaseModel):
+class DeleteLabInput(StrictInput):
     lab_name: str
 
 
-class SetMainPcInput(BaseModel):
+class SetMainPcInput(StrictInput):
     lab_name: str
     pc_name: str
 
 
-class SaveLabLayoutInput(BaseModel):
+class SaveLabLayoutInput(StrictInput):
     lab_name: str
     layout_json: str
 
 
-class AutoEnrollInput(BaseModel):
+class AutoEnrollInput(StrictInput):
     target_lab: str
     expire_date: str
 
 
-class SetLimitInput(BaseModel):
+class SetLimitInput(StrictInput):
     # 0 = sınırsız; eksi değer kuyruğu sessizce durdururdu (F21)
     limit: int = Field(ge=0, le=10000)
 
@@ -111,7 +114,7 @@ class OrchestrationInput(StrictInput):
     _mode = field_validator("target_mode", mode="before")(upper_mode)
 
 
-class CreatePackageInput(BaseModel):
+class CreatePackageInput(StrictInput):
     id: str
     name: str
     type: str
@@ -121,11 +124,12 @@ class CreatePackageInput(BaseModel):
     color: str
 
 
-class DeletePackageInput(BaseModel):
+class DeletePackageInput(StrictInput):
     id: str
 
 
 class LogInput(BaseModel):
+    model_config = AGENT_INPUT
     log_type: Optional[str] = "System"
     message: Optional[str] = ""
     actor_id: Optional[str] = "Agent"
@@ -138,23 +142,24 @@ class LogInput(BaseModel):
 
 
 class AuthEventInput(BaseModel):
+    model_config = AGENT_INPUT
     hw_id: str
     hostname: str
     student_id: str
     message: Optional[str] = ""
 
 
-class TaskStatusInput(BaseModel):
+class TaskStatusInput(StrictInput):
     ids: List[int] = Field(..., max_length=5000)
 
 
-class UpdateProgressInput(BaseModel):
+class UpdateProgressInput(StrictInput):
     pcs: List[str] = Field(..., max_length=5000)
     version: str = Field(..., max_length=64)
     since: float = 0   # gönderim anı (Unix saniye); öncesindeki güncelleme sonuçları sayılmaz
 
 
-class TaskActionInput(BaseModel):
+class TaskActionInput(StrictInput):
     action: str
     target_mode: str
     target_id: str
@@ -164,6 +169,8 @@ class RemoteInputData(BaseModel):
     """HTTP uzaktan girdi. Tepsi alanları mesajın kökünde okur (panelin WebSocket yolu gibi): x, y, key, is_down...
     Eski istemciler bunları "data" altında gönderiyordu (F13); ikisi de kabul edilir, tepsiye düz iletilir."""
 
+    # Bilerek extra="allow": girdi alanları (x, y, key, is_down, ctrl ...) gövdenin kökünde gelir ve model_extra'dan
+    # okunur; uç (control.py) yalnızca bilinen girdi alanlarını tepsiye iletir, gerisini atar.
     model_config = ConfigDict(extra="allow")
     type: str = "remote_input"
     device: str
@@ -171,11 +178,12 @@ class RemoteInputData(BaseModel):
     data: Optional[dict] = None
 
 
-class StreamStopInput(BaseModel):
+class StreamStopInput(StrictInput):
     pc_name: str
 
 
 class HwInventoryInput(BaseModel):
+    model_config = AGENT_INPUT
     hw_id: Optional[str] = None
     hostname: Optional[str] = None
     cpu: str = "-"
@@ -191,7 +199,7 @@ class HwInventoryInput(BaseModel):
 # admin_id/admin_name/admin_role geriye uyumluluk için kabul edilir ama kullanılmaz; kimlik JWT'den alınır
 
 
-class StartAuditSessionInput(BaseModel):
+class StartAuditSessionInput(StrictInput):
     target_pc: str
     reason: str
     is_mandatory: bool
@@ -200,32 +208,32 @@ class StartAuditSessionInput(BaseModel):
     admin_role: Optional[str] = None
 
 
-class EndAuditSessionInput(BaseModel):
+class EndAuditSessionInput(StrictInput):
     session_id: str
     status: str
 
 
-class LockdownInput(BaseModel):
+class LockdownInput(StrictInput):
     target_pc: str
     reason: str
     admin_name: Optional[str] = None
 
 
-class UserCreateInput(BaseModel):
+class UserCreateInput(StrictInput):
     username: str
     password: str
     role: str
     permissions: str
 
 
-class UserUpdateInput(BaseModel):
+class UserUpdateInput(StrictInput):
     username: str
     password: Optional[str] = None
     role: str
     permissions: str
 
 
-class AgentPoliciesInput(BaseModel):
+class AgentPoliciesInput(StrictInput):
     fair_use_text: str
     dns_categories: list
     auto_quarantine: bool
@@ -236,13 +244,14 @@ class AgentPoliciesInput(BaseModel):
 
 
 class PolicyAlertInput(BaseModel):
+    model_config = AGENT_INPUT
     hw_id: str
     domain: str
     category: str
 
 
 # ─── Zamanlanmış görevler ─────────────────────────────────────────────────────
-class ScheduledTaskInput(BaseModel):
+class ScheduledTaskInput(StrictInput):
     name: str
     command: str
     target_mode: str  # ALL | LAB | PC
@@ -254,24 +263,25 @@ class ScheduledTaskInput(BaseModel):
     enabled: bool = True
 
 
-class ScheduleToggleInput(BaseModel):
+class ScheduleToggleInput(StrictInput):
     enabled: bool
 
 
 # ─── Bildirimler ──────────────────────────────────────────────────────────────
-class NotifySettingsInput(BaseModel):
+class NotifySettingsInput(StrictInput):
     enabled: bool = False
     min_severity: str = "high"  # info | medium | high | critical
     email_to: str = ""  # virgülle ayrılmış adresler
     webhook_url: str = ""
 
 
-class NotificationsReadInput(BaseModel):
+class NotificationsReadInput(StrictInput):
     ids: List[int] = []  # boşsa hepsi okundu
 
 
 # ─── Yazılım envanteri ve Windows güncelleme durumu (ajan gönderir) ───────────
 class SoftwareItem(BaseModel):
+    model_config = AGENT_INPUT
     name: str
     version: Optional[str] = ""
     publisher: Optional[str] = None
@@ -279,10 +289,12 @@ class SoftwareItem(BaseModel):
 
 
 class SoftwareInventoryInput(BaseModel):
+    model_config = AGENT_INPUT
     items: List[SoftwareItem] = []
 
 
 class PatchUpdateItem(BaseModel):
+    model_config = AGENT_INPUT
     kb: Optional[str] = None
     title: str
     severity: Optional[str] = None  # Critical | Important | Moderate | Low | None (MSRC)
@@ -291,6 +303,7 @@ class PatchUpdateItem(BaseModel):
 
 
 class PatchStatusInput(BaseModel):
+    model_config = AGENT_INPUT
     pending_count: int = 0
     pending_security: int = 0
     pending_critical: int = 0
@@ -301,14 +314,14 @@ class PatchStatusInput(BaseModel):
     last_result: Optional[str] = None
 
 
-class PatchInstallInput(BaseModel):
+class PatchInstallInput(StrictInput):
     target_mode: str = "PC"  # ALL | LAB | PC
     targets: List[str] = []
     scope: str = "security"  # security | all
 
 
 # ─── Lisans takibi ────────────────────────────────────────────────────────────
-class LicenseInput(BaseModel):
+class LicenseInput(StrictInput):
     name: str
     match_pattern: str
     publisher: Optional[str] = None
@@ -320,13 +333,14 @@ class LicenseInput(BaseModel):
 
 # ─── Yardım masası ────────────────────────────────────────────────────────────
 class AgentTicketInput(BaseModel):
+    model_config = AGENT_INPUT
     subject: str
     body: Optional[str] = ""
     category: Optional[str] = "diger"
     reporter: Optional[str] = None  # oturumdaki kullanıcı adı (ajan doldurur)
 
 
-class PanelTicketInput(BaseModel):
+class PanelTicketInput(StrictInput):
     subject: str
     body: Optional[str] = ""
     category: Optional[str] = "diger"
@@ -335,13 +349,13 @@ class PanelTicketInput(BaseModel):
     reporter: Optional[str] = None
 
 
-class TicketUpdateInput(BaseModel):
+class TicketUpdateInput(StrictInput):
     status: Optional[str] = None
     priority: Optional[str] = None
     assignee: Optional[str] = None  # "" = atamayı kaldır
 
 
-class TicketMessageInput(BaseModel):
+class TicketMessageInput(StrictInput):
     body: str
     internal: bool = False
 

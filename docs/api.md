@@ -131,6 +131,19 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 `POST /api/admin/login`, `POST /api/admin/login/totp` and `POST /api/admin/2fa/setup|enable|disable` are limited to
 10 requests per minute per client address. Exceeding the limit returns `429`.
 
+### Unknown fields
+
+A JSON body with a field the endpoint does not know is refused with `422` and nothing is changed: the error list
+has an entry with `"type": "extra_forbidden"` and the field in `loc` (for example `["body", "lab"]`). A misspelt
+field therefore fails instead of running with a default value. Two kinds of body are the exception, on purpose:
+
+- The bodies agents send (`/api/inventory/{hw_id}`, `/api/software/{hw_id}`, `/api/patches/{hw_id}`,
+  `/api/tickets/agent/{hw_id}`, `/api/logs/{hw_id}`, `/api/auth/login|failed|logout`, `/api/policy_alert`) ignore
+  unknown fields. Agents of many versions run at the same time, and a field a newer agent adds must not make an
+  older server drop the data (the agent sends `dna` with its inventory, for example, which the server does not read).
+- `/api/remote_input` takes the input fields (`x`, `y`, `key`, `is_down` ...) at the top level of the body and
+  forwards only the ones it knows.
+
 ## Endpoint reference
 
 `Auth` is the dependency attached to the route. `none` means the route is reachable without credentials.

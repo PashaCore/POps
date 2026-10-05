@@ -839,6 +839,53 @@ def test_api_v1():
         "jeton kimliği ayırt edilir")
 
 
+def test_strict_inputs():
+    print("== istek gövdeleri tanınmayan alanı reddeder")
+    import server
+    from pydantic import ValidationError
+    from pops import models
+
+    # Bilerek gevşek olanlar (gerekçe models.py'de): ajanın gönderdiği gövdeler yok sayar, uzaktan girdi kabul eder.
+    # Buraya eklemek bir karardır; yeni bir panel ya da entegrasyon modeli StrictInput'tan türemeli.
+    lenient = {"LogInput", "AuthEventInput", "HwInventoryInput", "PolicyAlertInput", "SoftwareItem",
+               "SoftwareInventoryInput", "PatchUpdateItem", "PatchStatusInput", "AgentTicketInput"}
+    allow = {"RemoteInputData"}
+    spec = server.app.openapi()
+    schemas = spec["components"]["schemas"]
+
+    def refs(node, out):
+        if isinstance(node, dict):
+            name = node.get("$ref", "").rsplit("/", 1)[-1]
+            if name and name not in out:
+                out.add(name)
+                refs(schemas[name], out)
+            for v in node.values():
+                refs(v, out)
+        elif isinstance(node, list):
+            for v in node:
+                refs(v, out)
+
+    bodies = set()
+    for ops in spec["paths"].values():
+        for op in ops.values():
+            if isinstance(op, dict) and "requestBody" in op:
+                refs(op["requestBody"].get("content", {}).get("application/json", {}).get("schema", {}), bodies)
+    chk(len(bodies) >= 60 and lenient | allow <= bodies, "JSON gövdesi olan bütün uçların modelleri bulundu (%d)"
+        % len(bodies))
+    loose = sorted(n for n in bodies - lenient - allow if schemas[n].get("additionalProperties") is not False)
+    chk(not loose, "panel ve entegrasyon modelleri katı (extra=forbid): %s" % (loose or "hepsi"))
+    chk(all("additionalProperties" not in schemas[n] for n in lenient), "ajan modelleri bilinmeyen alanı yok sayar")
+    chk(all(schemas[n].get("additionalProperties") is True for n in allow), "uzaktan girdi ek alanları kabul eder")
+    try:
+        models.CreateLabInput.model_validate({"lab_name": "x", "lab": "y"})
+        chk(False, "bilinmeyen alan reddedilmeli")
+    except ValidationError as e:
+        chk(e.errors()[0]["type"] == "extra_forbidden" and e.errors()[0]["loc"] == ("lab",),
+            "bilinmeyen alan 422 (extra_forbidden, alanın adıyla)")
+    inv = models.HwInventoryInput.model_validate({"hostname": "pc", "cpu": "i5", "dna": {"hardware": {"uuid": "u"}}})
+    chk(inv.cpu == "i5" and not inv.model_extra, "ajanın envanteri 'dna' ile kabul edilir, alan atılır")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -854,6 +901,7 @@ def main():
     test_release_compare()
     test_server_metrics()
     test_api_v1()
+    test_strict_inputs()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)
