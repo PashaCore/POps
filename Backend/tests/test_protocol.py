@@ -622,7 +622,7 @@ async def identity_reassignment():
 
 
 async def vision_channel():
-    print("== /ws/vision: kareler oturum sahiplerine olduğu gibi iletilir")
+    print("== /ws/vision: kareler oturum sahiplerine bu cihazın kimliğiyle iletilir")
     from pops.manager import manager
     from pops.routers import control
 
@@ -640,14 +640,19 @@ async def vision_channel():
     P.set(manager, "send_frame_to_viewers", to_viewers)
     vis = [m for _, m in channel_examples(VIS)]
     unknown = _load(os.path.join(PROTO, "examples", "unknown", A2S + ".json"))
-    ws = FakeWS(vis + [unknown], headers={"X-Agent-Secret": SECRET})
+    # Başka bir cihazın kimliğiyle gönderilen kare de bu tünelin cihazına yazılmalı
+    spoofed = dict(vis[0], hw_id="HW-BASKACIHAZ1")
+    ws = FakeWS(vis + [spoofed, unknown], headers={"X-Agent-Secret": SECRET})
     try:
         await control.websocket_vision(ws, HW)
     finally:
         P.restore()
         manager.active_vision_ws.pop(HW, None)
-    chk([m for m, _ in forwarded] == vis and all(pc == HW for _, pc in forwarded),
-        "stream_frame ve thumbnail değişmeden iletildi, bilinmeyen type atıldı")
+    expected = [dict(m, hw_id=HW) for m in vis]
+    chk([m for m, _ in forwarded][:len(vis)] == expected and all(pc == HW for _, pc in forwarded),
+        "stream_frame ve thumbnail bu cihazın kimliğiyle iletildi, bilinmeyen type atıldı")
+    chk(len(forwarded) == len(vis) + 1 and forwarded[-1][0].get("hw_id") == HW,
+        "başka cihaz kimliğiyle gelen kare bu tünelin cihazına yazıldı (sahte kutu yok)")
     chk(ws.closed is None and not ws.sent, "Vision kanalında sunucu yanıt göndermez")
 
 
@@ -789,7 +794,7 @@ async def server_builders():
             with open(os.path.join(reldir, msi), "wb") as f:
                 f.write(b"MSI")
             P.set(system_routes, "RELEASES_DIR", os.path.join(tmp, "releases"))
-            # Gönderim kaydı (pending_updates) veritabanına yazılmaz; aynı sürümün yeniden gönderilmesi denetimi boş döner
+            # Gönderim kaydı (pending_updates) veritabanına yazılmaz; yeniden gönderim denetimi boş döner
             from pops import update_tracking
 
             async def none_recent(pcs, version, seconds=0):
