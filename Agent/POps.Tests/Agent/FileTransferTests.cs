@@ -249,11 +249,12 @@ namespace POps.Tests.Agent
             await worker.HandleFileTransferAsync("file_push", Push(), CancellationToken.None);
             await worker.FileTransferTask;
             JsonElement result = Assert.Single(sent);
-            Assert.Equal(("file_result", "t-7", "done"), (result.GetProperty("type").GetString(), result.GetProperty("transfer_id").GetString(), result.GetProperty("status").GetString()));
+            Assert.Equal(("file_result", "t-7", "done"), (result.GetProperty("type").GetString(), result.GetProperty("transfer_id").GetString(), result.GetProperty("outcome").GetString()));
+            Assert.False(result.TryGetProperty("status", out _));
             Assert.Equal("FILE_PUSHED:ödev.pdf", Assert.Single(tray));
 
             await worker.HandleFileTransferAsync("file_push", Push(name: "CON"), CancellationToken.None);
-            Assert.Equal("rejected", sent.Last().GetProperty("status").GetString());
+            Assert.Equal("rejected", sent.Last().GetProperty("outcome").GetString());
         }
 
         [Fact]
@@ -269,7 +270,7 @@ namespace POps.Tests.Agent
             };
             await worker.HandleFileTransferAsync("file_pull", Pull("C:\\x.txt"), CancellationToken.None);
             Assert.Contains(sent, m => m.GetProperty("type").GetString() == "capability_denied" && m.GetProperty("capability").GetString() == "files");
-            Assert.Contains(sent, m => m.GetProperty("type").GetString() == "file_result" && m.GetProperty("status").GetString() == "rejected");
+            Assert.Contains(sent, m => m.GetProperty("type").GetString() == "file_result" && m.GetProperty("outcome").GetString() == "rejected");
             Assert.Null(_seen);
         }
 

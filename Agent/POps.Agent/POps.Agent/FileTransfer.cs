@@ -182,9 +182,10 @@ namespace POpsAgent
         }
 
         // ------------------------------------------------------------------ işlemler
-        public static Dictionary<string, object> Result(string transferId, string status, string path = null, string detail = null)
+        // Sonuç "outcome" alanındadır, "status" değil: eski sunucu tanımadığı ve status taşıyan her mesajı heartbeat sayar
+        public static Dictionary<string, object> Result(string transferId, string outcome, string path = null, string detail = null)
         {
-            var message = new Dictionary<string, object> { ["type"] = "file_result", ["transfer_id"] = transferId, ["status"] = status };
+            var message = new Dictionary<string, object> { ["type"] = "file_result", ["transfer_id"] = transferId, ["outcome"] = outcome };
             if (path != null) message["path"] = path;
             if (detail != null) message["detail"] = LogText.Safe(detail, MaxReason);
             return message;

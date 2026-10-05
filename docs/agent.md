@@ -239,7 +239,9 @@ server can only switch it off. A refused request is answered with `capability_de
   - **Upload:** `POST` to `upload` (same rule as `url`), `application/octet-stream`, with the device key.
   - **PC user:** The tray says "Yönetici bu dosyayı aldı: <yol>". Event 1121 records the ID, path, size and
     reason.
-- **Result:** `{"type": "file_result", "transfer_id", "status": "done" | "rejected" | "failed", "path", "detail"}`.
+- **Result:** `{"type": "file_result", "transfer_id", "outcome": "done" | "rejected" | "failed", "path", "detail"}`.
+  The field is `outcome`, not `status`: a server that does not know `file_result` would take a message with
+  `status` for a heartbeat.
 
 ## Exam mode
 
