@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Panel: English interface — Kayıtlar, Raporlar and Destek talepleri** (Logs, Reports, Help desk), including filters, drawers, dialogs, licences and Windows updates. The Logs and Hardware CSV exports use the interface language for column headers and the file name; the server's report CSVs keep their language-neutral column names.
+- **Panel: English interface — Cihazlar, Sınıflar and İşlemler** (Devices, Labs, Jobs): the device list and its CSV export, the lab map and layout editor, lab actions, and jobs and scheduled tasks with their drawers, dialogs and messages. Lab names, task titles and other data sent to the server stay as entered.
 - **Panel: end-to-end tests in a real browser** (Playwright, Chromium), run by the new CI job "Panel end-to-end". Every page is opened at desktop (1440×900) and phone (390×844) width and must load without console errors, without requests to any other host and without horizontal scrolling on a phone. The main flows are covered too: sign-in and sign-out, device search and details, creating, renaming and deleting labs, task status, paging and filters on Kayıtlar, the Sistem tabs and charts, the organisation name and queue limit in Ayarlar, and what a viewer may see. The tests start their own backend and panel on an empty test database; see `docs/testing.md` to run them locally.
 - **Agent: log retention.** The service deletes `C:\POpsLogs\POps_*.log` and `msi-*.log` older than 30 days, and the oldest ones while the folder holds more than 200 MB, at start and daily. Today's log is never deleted; the folder's permissions are unchanged.
 - **Agent: reports update stages** (`update_progress`): received, downloaded, verified, updater started, "Windows Installer busy, waiting (n/5)" and installing, plus the reason when it refuses an update. The updater writes its stages to `C:\POpsData\update-progress.json` and the service forwards them; only servers that list the feature receive them. The panel shows them under **Sistem → Güncellemeler** (server side in this release).
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Panel: on phones the scheduled tasks table scrolls inside its card** instead of widening the page.
 - **Panel: viewers no longer see pages they cannot open.** A viewer whose permission list still contained Dağıtım, Uzak komut or Ayarlar (for example an admin demoted to viewer) saw those pages in the menu and the Ctrl+K search but got "Yetkisiz Erişim". They are now hidden for viewers.
 - **Panel: İşlemler no longer asks for the admin-only scheduled-task list as a viewer** every 30 seconds (it only produced 403 errors in the browser console); the Zamanlanmış tab is hidden for viewers.
 - **Docs: stale facts.** ROADMAP no longer lists pentest findings F9 and F11 as open (closed in 0.1.4 and 0.1.13); the FAQ gives the measured capacity (5,000 agents on one process) instead of 1,000; the MSI install examples write their log to `C:\Windows\Temp`, which always exists, instead of `C:\POpsLogs`, which a fresh PC does not have yet (msiexec would refuse with 1622); `docs/api.md` no longer links a design note that is not in the repository.
