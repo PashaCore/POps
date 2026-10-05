@@ -183,11 +183,12 @@ def test_startup_drill_consumes_marker(tmp_path):
     assert health["version"] == "0.1.22-alpha" and health["phase"] == "operational"
 
 
-def test_prune_packages_keeps_two_newest(tmp_path):
-    for v in ("0.1.9", "0.1.21-alpha", "0.1.22-alpha", "0.1.10"):
+def test_prune_packages_keeps_installed_and_previous(tmp_path):
+    for v in ("0.1.9", "0.1.10", "0.1.21-alpha", "0.1.22-alpha", "0.1.23-alpha"):
         write(str(tmp_path / release.deb_name(v)), b"x")
     write(str(tmp_path / "pops-agent_bozuk_all.deb"), b"x")
-    update.prune_packages(str(tmp_path))
+    # 0.1.23 kuruldu, sağlıklı açılmadı, 0.1.22'ye dönüldü: 0.1.23 ve eskiler silinir, bir önceki (0.1.21) kalır
+    update.prune_packages(str(tmp_path), "0.1.22-alpha")
     assert sorted(os.listdir(str(tmp_path))) == ["pops-agent_0.1.21-alpha_all.deb", "pops-agent_0.1.22-alpha_all.deb",
                                                  "pops-agent_bozuk_all.deb"]
 

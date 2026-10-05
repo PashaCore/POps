@@ -314,13 +314,19 @@ def decide_drill(marker: bool, consumed: Optional[dict], run: Optional[dict], ow
     return decision
 
 
-def prune_packages(packages_dir: str, keep: int = 2) -> None:
-    """packages/'ta en yeni iki sürüm (kurulu ve önceki) kalır."""
-    debs = []
+def prune_packages(packages_dir: str, installed: str) -> None:
+    """packages/'ta kurulu sürümün paketi ve ondan eski en yeni paket (bir sonraki geri dönüş için) kalır. Kurulu
+    sürümden yeni paketler (geri alınmış, sağlıksız bir güncelleme) ve daha eskiler silinir."""
+    older = []
     for path in glob.glob(os.path.join(packages_dir, "pops-agent_*_all.deb")):
         version = os.path.basename(path)[len("pops-agent_"):-len("_all.deb")]
-        if release.parse_semver(version):
-            debs.append((version, path))
-    debs.sort(key=functools.cmp_to_key(lambda a, b: release.compare_versions(a[0], b[0])), reverse=True)
-    for _version, path in debs[keep:]:
+        if not release.parse_semver(version) or release.parse_semver(installed) is None:
+            continue
+        order = release.compare_versions(version, installed)
+        if order < 0:
+            older.append((version, path))
+        elif order > 0:
+            store.delete(path)
+    older.sort(key=functools.cmp_to_key(lambda a, b: release.compare_versions(a[0], b[0])), reverse=True)
+    for _version, path in older[1:]:
         store.delete(path)

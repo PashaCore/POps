@@ -190,7 +190,7 @@ class Agent:
         checks["loop"] = True
         if not self.update.startup_skip_health():
             self.update.write_health(checks)
-        update.prune_packages(self.paths.packages_dir)
+        update.prune_packages(self.paths.packages_dir, self.version)
         last = store.read_text(self.paths.update_result)
         if last:
             log.info("Son güncelleme sonucu: %s", last.strip()[:500])
@@ -533,7 +533,7 @@ class Agent:
         pending = self.update.pending_result_id()
         if protocol.UpdateResultReporter.acknowledges(msg, pending):
             self.update.mark_reported()
-            update.prune_packages(self.paths.packages_dir)
+            update.prune_packages(self.paths.packages_dir, self.version)
             log.info("Sunucu güncelleme sonucunu onayladı (%s).", pending)
         elif pending:
             log.info("Sunucunun onayı bekleyen güncelleme sonucuyla eşleşmiyor; sonuç saklanmaya devam ediyor.")
