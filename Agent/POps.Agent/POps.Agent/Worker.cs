@@ -417,16 +417,8 @@ namespace POpsAgent
         }
 
         // ------------------------------------------------------------------ sınav modu (bkz. ExamMode)
-        // Testler: tepsiye giden sınav mesajları
-        internal Action<string> ExamTrayOverride { get; set; }
         private readonly HashSet<string> _examStoppedLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private volatile bool _examNetworkChanged;
-
-        private void ExamToTray(string message)
-        {
-            if (ExamTrayOverride != null) ExamTrayOverride(message);
-            else _trayPipe?.SendCommandToDesktop(message);
-        }
 
         // Tepsi bandı: mesaj ve bitiş zamanı
         internal static string ExamTrayMessage(ExamSettings settings) =>
@@ -464,7 +456,7 @@ namespace POpsAgent
             lock (_examStoppedLogged) _examStoppedLogged.Clear();
             LocalAudit.Write(LocalAudit.ExamStarted(settings));
             POpsHelpers.Log("EXAM", $"SINAV MODU AKTİF: {settings.Allow.Count} izinli kayıt, bitiş {(settings.Until == null ? "yok" : DateTimeOffset.FromUnixTimeSeconds(settings.Until.Value).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture))}, {settings.BlockApps.Count} engelli uygulama.");
-            ExamToTray(ExamTrayMessage(ExamMode.Load()));
+            ToTray(ExamTrayMessage(ExamMode.Load()));
             await SendExamStateAsync();
         }
 
@@ -483,7 +475,7 @@ namespace POpsAgent
             }
             LocalAudit.Write(LocalAudit.ExamEnded(source));
             POpsHelpers.Log("EXAM", $"Sınav modu bitti ({source}).");
-            ExamToTray("EXAM_OFF");
+            ToTray("EXAM_OFF");
             await SendExamStateAsync();
         }
 
@@ -553,7 +545,7 @@ namespace POpsAgent
                             LocalAudit.Write(LocalAudit.ExamAppStopped(app, pid));
                             POpsHelpers.Log("EXAM", $"Sınav modunda {app} kapatıldı (PID {pid}).");
                         }
-                        ExamToTray("EXAM_APP_BLOCKED:" + app);
+                        ToTray("EXAM_APP_BLOCKED:" + app);
                     }
                     catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception) { }
                 }
@@ -908,7 +900,7 @@ namespace POpsAgent
             _trayPipe.OnConnected += () =>
             {
                 _quarantine.SyncTray();
-                if (ExamMode.IsActive) ExamToTray(ExamTrayMessage(ExamMode.Load()));
+                if (ExamMode.IsActive) ToTray(ExamTrayMessage(ExamMode.Load()));
                 SyncTrayModules();
                 string configError = ConfigErrorMessage();
                 if (configError != null) _trayPipe?.SendCommandToDesktop(configError);

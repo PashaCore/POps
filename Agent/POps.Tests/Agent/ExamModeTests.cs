@@ -172,7 +172,7 @@ namespace POps.Tests.Agent
         {
             HwId = "HW-EXAM",
             SendOverride = p => { lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(p)); return Task.FromResult(online); },
-            ExamTrayOverride = m => { lock (_tray) _tray.Add(m); },
+            TrayOverride = m => { lock (_tray) _tray.Add(m); },
         };
 
         private JsonElement LastState() { lock (_sent) return _sent.Last(m => m.GetProperty("type").GetString() == "exam_state"); }
