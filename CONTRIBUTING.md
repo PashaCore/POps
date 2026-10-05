@@ -238,7 +238,7 @@ COVERAGE=1 bash Backend/tests/run_local.sh  # COVERAGE=1 needs coverage==7.10.7;
 By hand, against a server you started yourself on 8099:
 
 ```bash
-export POPS_TEST_HTTP=http://127.0.0.1:8099 CORS_ALLOWED_ORIGINS= NOTIFY_WEBHOOK_ALLOW_PRIVATE=1
+export POPS_TEST_HTTP=http://127.0.0.1:8099 CORS_ALLOWED_ORIGINS= NOTIFY_WEBHOOK_ALLOW_PRIVATE=1 GLPI_ALLOW_PRIVATE=1
 python -m pytest -v -m integration                       # all of them, in order
 python -m pytest -v Backend/tests/test_security.py       # one script
 ```
@@ -246,8 +246,10 @@ python -m pytest -v Backend/tests/test_security.py       # one script
 - Export every `DB_*` variable and `JWT_SECRET` yourself. A value missing from the environment is read from `.env`,
   which may point at another database. The server and the tests must use the same `JWT_SECRET`, because the tests
   create their own tokens.
-- `NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` lets `test_features.py` send webhooks to its own receiver on `127.0.0.1`.
-  `run_local.sh` sets it, and the other variables the scripts expect (`METRICS_TOKEN`, `POPS_DEMO_USERS`).
+- `NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` lets `test_features.py` send webhooks to its own receiver on `127.0.0.1`, and
+  `GLPI_ALLOW_PRIVATE=1` lets `test_glpi.py` reach its fake GLPI there. `run_local.sh` sets them, and the other
+  variables the scripts expect (`METRICS_TOKEN`, `POPS_DEMO_USERS`, `PEER_CACHE_SEED_TIMEOUT_SECONDS`,
+  `POPS_SSO_ALLOW_INSECURE_FOR_TESTS`). `test_sso.py` starts OpenLDAP with Docker and skips that part without it.
 
 ### Migration check
 

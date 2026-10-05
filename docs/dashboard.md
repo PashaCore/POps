@@ -19,6 +19,19 @@ logo instead of "POps", with a small "POps · Pasha Core" line under the form. O
 account. **Türkçe / English** under the form switches the language; until one is chosen, the page follows the
 browser's language.
 
+When a superadmin has set up an identity provider (**Ayarlar** → **Güvenlik** → **Kimlik sağlayıcıları**):
+
+- **Active Directory / LDAP**: directory users sign in with the same **Kullanıcı adı** / **Şifre** form, with their
+  directory password. Their role and pages come from their directory groups at every sign-in. A local account with
+  the same name always signs in locally.
+- **OpenID Connect**: under the form, after "ya da", a button "*<name>* ile giriş yap" (for example "Okul hesabı ile
+  giriş yap") takes you to the provider (Microsoft, Google, Keycloak …) and back. `/login?next=/devices` opens that
+  page after an OIDC sign-in. If the provider refuses, the account has no mapped group or the request expired, the
+  form shows why.
+
+If the account has 2FA enabled, the code is asked after either method too. Local accounts keep working when the
+directory or the provider cannot be reached.
+
 ## Addresses
 
 Pages have addresses without `.php`: `/devices`, `/labs?lab=…`, `/tasks?job=…`; the overview is `/`. The bundled
@@ -153,9 +166,17 @@ lab selector (**Bütün sınıflar**, **Atanmamış**) and a search over name, u
 exports the list as CSV. Click a PC for its detail panel; the action bar and the selection work as described under
 [Working with PCs](#working-with-pcs).
 
-Restart and shut down are queued as commands (`shutdown /r /f /t 5` / `shutdown /s /f /t 5`) through the task
-queue. Wake-on-LAN needs the MAC address from the hardware inventory. A **Mesaj gönder** note is shown to the
-signed-in user with the Windows `msg` command. Deleting a device also deletes its device secret; see
+**Güç** (detail panel) and the action bar offer **Yeniden başlat**, **Kapat**, **Oturumu kapat** and **Kilitle**;
+the dialog has **Gecikme** (**Hemen**, **1 dk**, **5 dk**, **10 dk**) and an optional **Kullanıcıya not** (at most
+200 characters) that the user sees with a countdown in the tray. **Mesaj gönder** (detail panel → **Diğer**, action
+bar → more) opens a dialog with **Başlık**, **Metin** (with a counter, at most 1000 characters), **Bilgi** /
+**Uyarı** and **Okundu onayı iste**; the result says when the message was shown or read. These go through
+`/api/devices/power` and `/api/devices/message` and appear on **İşlemler**. **Oturumu kapat**, **Kilitle** and
+**Mesaj gönder** need an agent that supports them: they are disabled, with the reason on hover, when no selected
+PC's agent does, and the dialog says how many selected PCs will be skipped. On older agents **Kapat** and **Yeniden
+başlat** still work (as the old `shutdown` command). The task drawer explains a refusal: nobody signed in, the
+agent does not support it (update the agent) or the feature is turned off on the PC. Wake-on-LAN needs the MAC
+address from the hardware inventory. Deleting a device also deletes its device secret; see
 [`troubleshooting.md`](troubleshooting.md).
 
 ### Sınıflar
@@ -319,7 +340,7 @@ marks the task failed:
 
 ### Sistem
 
-Superadmin page in five tabs; the open tab is kept in the address (`/system?tab=health`). The header has **Sürüm
+Superadmin page in seven tabs; the open tab is kept in the address (`/system?tab=health`). The header has **Sürüm
 notları** and **Güncellemeleri denetle** (asks GitHub again).
 
 - **Genel bakış**: one tile per card below with its current state (Sunucu, Ajanlar, Sağlık, Yedekler, Ajan kaydı ve
@@ -331,7 +352,7 @@ notları** and **Güncellemeleri denetle** (asks GitHub again).
   from a sample the server takes every minute and keeps for 30 days, so after an update the charts start filling
   within a few minutes and a gap marks the time the server was down; tasks and events come from their records.
 - **Güncellemeler**: cards 1 and 2. **Güvenlik**: cards 3 and 4 and **Kayıt bütünlüğü**. **Sağlık ve yedek**:
-  **Sağlık** and **Yedekler**. **Bildirimler ve saklama**: cards 6 and 7.
+  **Sağlık** and **Yedekler**. **Bildirimler ve saklama**: cards 6 and 7. **Modüller**: cards 8 and 9. **Entegrasyonlar**: card 10.
 
 An admin who is not a superadmin sees only the **Sunucu** and **Ajanlar** cards, without tabs.
 
@@ -349,6 +370,11 @@ An admin who is not a superadmin sees only the **Sunucu** and **Ajanlar** cards,
    reason. Agents up to 0.1.21 report no stages: they show **Kuruluyor** until the result, and after 3 minutes
    "Ajan ilerleme bildirmiyor (eski sürüm olabilir)". A PC whose update to the same version is still running is
    not sent it again; the notice says "N bilgisayara zaten gönderildi, kurulum sürüyor" and the box follows it.
+   **Sınıf içinde eşten dağıt** (superadmin, on by default) stages the update per lab for agents that support the
+   lab-local peer cache ([`agent.md`](agent.md#peer-cache-contract)): the progress box then has one line per lab
+   ("tohum: PC-12, doğrulandı; 38 bilgisayara eşten dağıtılıyor", "… 7 bilgisayar bekliyor", "tohum bulunamadı; …
+   sunucudan gönderildi"), the seed's row says it is the lab's seed and the PCs waiting for it show **Tohum
+   bekleniyor**.
 3. **Ajan kaydı ve kimlik**: the **Kimlik zorlaması** switch (agent-auth enforcement; the card shows how many
    agents are enrolled) and **Kayıt jetonları**: **Jeton üret** (**Sınıf**, **Not**, **Kullanım sayısı**,
    **Geçerlilik (saat)**), the list of tokens and revoking them.
@@ -363,6 +389,27 @@ An admin who is not a superadmin sees only the **Sunucu** and **Ajanlar** cards,
    (`SMTP_FROM`, or `SMTP_USER`) in the server's `.env`; the card says whether SMTP is configured. See [`configuration.md`](configuration.md#notification-settings).
 7. **Saklama süreleri**: how many days to keep agent event records, finished tasks and read notifications (0 keeps
    them for ever). The audit chain and remote-screen sessions are never deleted.
+8. **Modüller**: one row per module (see [`api.md`](api.md#modules-and-install-profiles)) with its
+   organisation-wide state, its dependencies and the number of labs that differ, and a switch for the
+   organisation setting. A module that is on but whose dependency is off shows **Kapalı** with the reason
+   ("Uzak komut kapalı olduğu için çalışmaz"). A click opens the module: the organisation setting, what stops while
+   it is off, its dependencies and the modules that depend on it, and one row per lab with **Kurum ayarı**,
+   **Açık** or **Kapalı** (a lab-specific setting wins over the organisation setting). Before anything is turned
+   off the panel asks the server what would change (`GET /api/modules/{id}/preview`) and asks to confirm, naming
+   the modules that turn off with it, the open remote-screen sessions that close and the pending tasks that are
+   denied; the result is shown after the change.
+9. **Kurulum profili**: the current profile (**Okul laboratuvarı**, **Kurum**, **Özel** after a manual change, or
+   **Seçilmedi** on a new installation) and the two profiles with the modules they leave off. A profile opens a
+   preview of the organisation settings it changes and of its effect, with the option to delete the lab-specific
+   settings too, and **Profili uygula**.
+10. **GLPI**: export of computers, installed software and helpdesk tickets to GLPI
+    ([`integrations/glpi.md`](integrations/glpi.md)): **Dışa aktarım** on or off, the GLPI address, app token and
+    user token (a saved token is never shown; the field says "Kayıtlı"), the entity, the interval (once a day, every
+    12 or 6 hours, manual only), what to send (computers, installed software, tickets, the reporter's name) and the
+    date from which tickets are sent, **Bağlantıyı sına** and **Kaydet**. **Eşitleme** shows the last run (when,
+    manual or scheduled, what was created, linked, updated or sent, and errors), **Şimdi eşitle**, the lab → GLPI
+    location mapping and the devices that could not be matched (several matches, or deleted from GLPI), each with
+    **Bağlantıyı unut**.
 
 ### Kayıtlar
 
@@ -427,13 +474,18 @@ effect on them. See [`configuration.md`](configuration.md#agent-policy-object).
 ### Ayarlar
 
 Three tabs, kept in the address like on **Sistem**: **Kullanıcılar**, **Güvenlik** (two-step verification and, for
-a superadmin, API tokens) and **Genel** (organisation, task queue and server connection).
+a superadmin, API tokens and identity providers) and **Genel** (organisation, task queue and server connection).
 
 - **Kullanıcılar**: the users with their role, page access and last sign-in; a click opens the user's panel. A
   superadmin can add users (**Kullanıcı ekle**), edit the role and the pages (**Rolü ve yetkileri düzenle**, the
   list **Açabileceği sayfalar**), reset a password (**Şifreyi sıfırla**) and delete a user. Roles: **İzleyici**
   (`viewer`; only looks at the chosen pages, **Dağıtım**, **Uzak komut** and **Ayarlar** stay closed),
-  **Yönetici** (`admin`) and **Süper admin** (`superadmin`).
+  **Yönetici** (`admin`) and **Süper admin** (`superadmin`). Directory and OIDC accounts carry a **Dizin (LDAP)** or
+  **OpenID Connect** badge; they have no **Şifreyi sıfırla**, and their role and pages are rewritten from the group
+  mapping at their next sign-in. Once a provider is set up, the user form also asks for the **Kimlik kaynağı**
+  (**Yerel**, **Dizin (LDAP)**, **OpenID Connect**): a directory or OIDC account created here has no password and is
+  linked to the person with the same name at the first sign-in; turning such an account back into a local one asks for
+  a new password. The first local superadmin cannot be turned into a directory or OIDC account.
 - **İki adımlı doğrulama**: set up (QR code and manual key), enable with a code (**Etkinleştir**), or disable with a
   code, for your own account. 2FA is optional but recommended: an admin or superadmin whose own 2FA is off sees a
   short notice under the title of this page and of **Sistem**; × hides it in that browser for 7 days.
@@ -443,6 +495,17 @@ a superadmin, API tokens) and **Genel** (organisation, task queue and server con
   a name, the role (**Görüntüleyici**: read only; **Yönetici**: daily operations, without superadmin functions, users,
   tokens and remote screen) and the validity in days (empty: no expiry), then shows the token once with a copy
   button. The trash icon revokes a token after a confirmation; it stops working at once and stays in the list.
+- **Kimlik sağlayıcıları** (superadmin only): sign-in with **Active Directory / LDAP** and **OpenID Connect**. Each row
+  shows whether it is on (**Etkin** / **Devre dışı**), the server or provider and the number of group mappings;
+  **Ayarla** opens its form. LDAP: server, port, **LDAPS** or **StartTLS**, an optional CA certificate, the service
+  account and its password, search base, user filter, user name attribute and an optional group search. OIDC: the
+  button name, provider address (issuer), client ID and secret, redirect URI (prefilled with this panel's address),
+  scopes, user name and groups claims, an optional CA certificate, allowed e-mail domains and a default role for
+  them. Both have **Grup → rol**: one row per group with a role (**İzleyici**, **Yönetici**, **Süper admin**) and the
+  pages it opens (pages a viewer cannot open are greyed out). **Bağlantıyı sına** tries the values in the form
+  before saving: for LDAP the TLS connection and the service account, and with a user name, that user's DN, groups
+  and resulting role; for OIDC the discovery document and signing keys. Password fields stay empty: leave them empty
+  to keep the saved secret. Fields and values: [`configuration.md`](configuration.md#identity-providers).
 - **Kurum**: the organisation name and logo shown on the sign-in page instead of "POps" (PNG, JPEG or WebP, at most
   256 KB; SVG is not accepted). A small "POps · Pasha Core" line stays under the form. Only a superadmin changes them;
   every change goes to the audit log.

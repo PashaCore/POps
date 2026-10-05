@@ -3,7 +3,7 @@
 import asyncio
 import datetime
 
-from pops import metrics, modules, winget
+from pops import metrics, modules, power, winget
 from pops.db import execute_query
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
@@ -80,46 +80,72 @@ async def _process_queue_once():
         return
     # Eşzamanlılık kotasını yalnızca BAĞLI cihazlardaki çalışan görevler tutar: bağlantısı kopmuş cihazın "Running"
     # görevi (sonucu bekleniyor ya da zaman aşımına gidiyor) bütün filonun kuyruğunu bekletmesin
+    # Güç komutu ve kullanıcıya mesaj (pops/power.py) kotayı tutmaz ve kota doluyken de gönderilir: kısa sürer, iş
+    # yükü değildir. Okundu onayı bekleyen mesaj (30 dakikaya kadar "Running") cihazın kuyruğunu da bekletmez.
+    light = list(power.KINDS)
     running_row = await execute_query(
-        "SELECT COUNT(DISTINCT target_pc) as c FROM tasks WHERE status = 'Running' AND target_pc = ANY($1::text[])",
-        (online_pcs,),
+        "SELECT COUNT(DISTINCT target_pc) as c FROM tasks WHERE status = 'Running' AND target_pc = ANY($1::text[]) "
+        "AND (kind IS NULL OR kind <> ALL($2::text[]))",
+        (online_pcs, light),
         fetch=True,
     )
     running_pcs_count = running_row[0]["c"] if running_row else 0
     available_slots = limit - running_pcs_count
-    if not (available_slots > 0 or limit == 0):
+    if not (available_slots > 0 or limit == 0) and not await execute_query(
+        "SELECT 1 FROM tasks WHERE status = 'Pending' AND kind = ANY($2::text[]) AND target_pc = ANY($1::text[]) "
+        "LIMIT 1",
+        (online_pcs, light),
+        fetch=True,
+    ):
         return
     await _refuse_winget(online_pcs)
-    # Çevrimiçi ve şu an görev çalıştırmayan her cihazın en eski bekleyen görevi, tek sorguda; en eski görev önce
+    await _refuse_power(online_pcs)
+    # Çevrimiçi ve şu an görev çalıştırmayan her cihazın en eski bekleyen görevi, tek sorguda; en eski görev önce.
+    # Ajanın duyurduğu özellikler ve platformu güç/mesaj görevinin nasıl gönderileceğini belirler (pops/power.py).
     tasks = await execute_query(
         """
         SELECT * FROM (
-            SELECT DISTINCT ON (t.target_pc) t.* FROM tasks t
+            SELECT DISTINCT ON (t.target_pc) t.*, av.features AS agent_features, c.platform AS agent_platform
+            FROM tasks t
+            LEFT JOIN agent_versions av ON av.pc_name = t.target_pc
+            LEFT JOIN clients c ON c.pc_name = t.target_pc
             WHERE t.status = 'Pending' AND t.target_pc = ANY($1::text[])
               AND (t.expires_at IS NULL OR t.expires_at > NOW())
-              AND NOT EXISTS (SELECT 1 FROM tasks r WHERE r.status = 'Running' AND r.target_pc = t.target_pc)
+              AND NOT EXISTS (SELECT 1 FROM tasks r WHERE r.status = 'Running' AND r.target_pc = t.target_pc
+                              AND r.kind IS DISTINCT FROM $2)
             ORDER BY t.target_pc, t.id ASC
         ) oldest ORDER BY id ASC
         """,
-        (online_pcs,),
+        (online_pcs, power.KIND_MESSAGE),
         fetch=True,
     )
     # Uzak komut modülü cihazın laboratuvarında kapalıysa görev gönderilmez: "Denied" olur (modül kapatılırken
-    # bekleyenler zaten reddedilir; bu, arada kuyruğa girenler ve yeniden denemeler içindir)
+    # bekleyenler zaten reddedilir; bu, arada kuyruğa girenler ve yeniden denemeler içindir). Güç komutu ve mesaj
+    # komut değildir, bu modüle bağlı değildir (eski ajandaki execute karşılığı _refuse_power'da denetlenir).
     _allowed, closed = await modules.split_pcs("terminal", [t["target_pc"] for t in tasks or []])
     if closed:
         await execute_query(
             "UPDATE tasks SET status = 'Denied', output = COALESCE(NULLIF(output, ''), '') || '[MODÜL KAPALI]: Uzak "
             "komut modülü bu cihazın laboratuvarında kapalı; görev çalıştırılmadı.' "
-            "WHERE status = 'Pending' AND target_pc = ANY($1::text[])",
-            (closed,),
+            "WHERE status = 'Pending' AND target_pc = ANY($1::text[]) AND (kind IS NULL OR kind <> ALL($2::text[]))",
+            (closed, light),
         )
     for task in tasks or []:
-        if limit > 0 and available_slots <= 0:
-            break
         pc = task["target_pc"]
-        if pc in closed:
+        is_light = task.get("kind") in power.KINDS
+        if limit > 0 and available_slots <= 0 and not is_light:
             continue
+        if pc in closed and not is_light:
+            continue
+        if is_light:
+            try:
+                message = power.message(task, task.get("created_by") or "System/Queue", task.get("agent_features"),
+                                        task.get("agent_platform"))
+            except (ValueError, TypeError):
+                # Arada ajan değişti ya da kayıt bozuk: bir sonraki turda _refuse_power karar verir
+                continue
+            if message["action"] == "execute" and pc in closed:
+                continue
         # agent_started_at: o anki ajan sürecinin (heartbeat'teki) başlangıç değeri; yeniden bağlanınca değiştiyse ajan
         # yeniden başlamıştır (bkz. routers/agents.py _settle_running_tasks; saatler karşılaştırılmaz)
         await execute_query(
@@ -131,7 +157,9 @@ async def _process_queue_once():
         # F4(a): komutu KİMİN kuyrukladığını göster (eskiden 'System/Queue' idi, iz yoktu).
         actor = task.get("created_by") or "System/Queue"
         is_winget = task.get("kind") == winget.KIND
-        if is_winget:
+        if is_light:
+            pass   # ileti yukarıda kuruldu
+        elif is_winget:
             try:
                 message = winget.message(task, actor)
             except (ValueError, TypeError):
@@ -153,6 +181,9 @@ async def _process_queue_once():
                 "UPDATE tasks SET status = 'Pending', dispatched_at = NULL WHERE id = $1 AND status = 'Running'",
                 (task["id"],),
             )
+            continue
+        if is_light:
+            await _audit_power_dispatch(pc, task, message, actor)
             continue
         meta = {"raw_command": task["script_path"], "created_by": task.get("created_by")}
         if is_winget:
@@ -220,3 +251,83 @@ async def _refuse_winget(online_pcs: list) -> None:
             "WHERE status = 'Pending' AND kind = $2 AND target_pc = ANY($1::text[])",
             (old_agents, winget.KIND, winget.EXIT_UNSUPPORTED, winget.UNSUPPORTED_OUTPUT),
         )
+
+
+async def _refuse_power(online_pcs: list) -> None:
+    """Çevrimiçi cihazların bekleyen güç ve mesaj görevlerinden gönderilemeyecek olanlar (kuyruğun seçiminden ÖNCE):
+      - ajan "power"/"message" duyurmadı ve eski komutla karşılığı yok (oturumu kapat, kilitle, mesaj; Linux'ta da):
+        gönderilmeden "Denied", çıkış kodu -8 (eski ajan bilinmeyen iletiyi yok sayıp görevi "Running"de bırakırdı);
+      - eski komutla gidecek kapatma/yeniden başlatma, uzak komut modülü kapalı bir laboratuvarda: "Denied";
+      - ayrıntısı doğrulanamayan kayıt (elle bozulmadıkça olmaz): "Error"."""
+    rows = await execute_query(
+        "SELECT t.id, t.kind, t.payload, t.target_pc, av.features, c.platform FROM tasks t "
+        "LEFT JOIN agent_versions av ON av.pc_name = t.target_pc LEFT JOIN clients c ON c.pc_name = t.target_pc "
+        "WHERE t.status = 'Pending' AND t.kind = ANY($2::text[]) AND t.target_pc = ANY($1::text[])",
+        (online_pcs, list(power.KINDS)),
+        fetch=True,
+    )
+    if not rows:
+        return
+    unsupported, invalid, fallback = [], [], []
+    for r in rows:
+        try:
+            spec = power.read_payload(r["kind"], r["payload"])
+        except (ValueError, TypeError):
+            invalid.append(r["id"])
+            continue
+        how = power.plan(r["kind"], spec, r["features"], r["platform"])
+        if how == "unsupported":
+            unsupported.append(r["id"])
+        elif how == "fallback":
+            fallback.append(r)
+    if fallback:
+        _allowed, closed = await modules.split_pcs("terminal", sorted({r["target_pc"] for r in fallback}))
+        closed_ids = [r["id"] for r in fallback if r["target_pc"] in closed]
+        if closed_ids:
+            await execute_query(
+                "UPDATE tasks SET status = 'Denied', output = $2 WHERE id = ANY($1::int[]) AND status = 'Pending'",
+                (closed_ids, power.MODULE_CLOSED_OUTPUT),
+            )
+    if unsupported:
+        await execute_query(
+            "UPDATE tasks SET status = 'Denied', exit_code = $2, output = $3 WHERE id = ANY($1::int[]) "
+            "AND status = 'Pending'",
+            (unsupported, power.EXIT_UNSUPPORTED, power.UNSUPPORTED_OUTPUT),
+        )
+    if invalid:
+        await execute_query(
+            "UPDATE tasks SET status = 'Error', output = $2 WHERE id = ANY($1::int[]) AND status = 'Pending'",
+            (invalid, power.INVALID_OUTPUT),
+        )
+
+
+async def _audit_power_dispatch(pc: str, task: dict, message: dict, actor: str) -> None:
+    """Gönderilen güç komutu / mesaj: cihazın Kayıtlar'ına ve hash zincirli denetim kaydına. Mesaj metni ve not
+    yazılmaz, uzunluğu ve ilk 60 karakteri yazılır."""
+    spec = power.read_payload(task["kind"], task.get("payload"))
+    is_power = task["kind"] == power.KIND_POWER
+    via = "fallback" if message["action"] == "execute" else "native"
+    if is_power:
+        meta = {"task_id": task["id"], "created_by": task.get("created_by"), "op": spec["op"], "delay": spec["delay"],
+                "via": via, "note": power.preview(spec["message"])}
+        if via == "fallback":
+            meta["raw_command"] = power.fallback_command(dict(spec, message=None), task.get("agent_platform"))
+        label = "Güç komutu gönderildi: %s" % power.OP_TITLES[spec["op"]]
+    else:
+        meta = {"task_id": task["id"], "created_by": task.get("created_by"), "style": spec["style"],
+                "requires_ack": spec["requires_ack"], "title": power.preview(spec["title"]),
+                "text": power.preview(spec["text"])}
+        label = "Kullanıcıya mesaj gönderildi"
+    action = "power_command" if is_power else "user_message"
+    await log_audit_event(
+        pc,
+        "Power" if is_power else "Message",
+        label,
+        actor_id=actor,
+        event_type="device.power" if is_power else "device.message",
+        category="system_maintenance",
+        action=action,
+        risk_level="info",
+        meta_data=meta,
+    )
+    await add_audit_log(pc, action, "%s (kuyruk: %s)" % (label, actor), meta)

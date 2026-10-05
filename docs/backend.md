@@ -12,16 +12,19 @@ database pool, migrations and the scheduler loop) and wires the routers. Everyth
 | `pops/config.py` | Environment/config constants (`.env`, JWT, database connection and pool size, paths, Wake-on-LAN, SMTP, `NOTIFY_WEBHOOK_ALLOW_PRIVATE`). No dependency on other `pops` modules. |
 | `pops/db.py` | PostgreSQL pool and `execute_query`. The pool is created at startup; other modules reach it as `db.db_pool` (never `from pops.db import db_pool`, which would bind `None` at import time). |
 | `pops/security.py` | Panel auth: JWT with `token_version` revocation, role dependencies, CSRF, TOTP 2FA, rate limiter. |
+| `pops/sso.py`, `pops/sso_ldap.py`, `pops/sso_oidc.py` | Directory (LDAP / AD, `ldap3`) and OpenID Connect sign-in: settings and their validation, group → role mapping, linking a directory identity to a panel account, short-lived flow state and tickets; the LDAP bind/search with strict TLS; the OIDC code flow with PKCE and ID-token validation (urllib + PyJWT). Endpoints in `routers/sso.py`; LDAP sign-in goes through `routers/auth.py`. See decision D-24. |
 | `pops/agent_auth.py` | Agent auth: enrollment tokens, per-device secrets, identity-to-target binding on agent HTTP endpoints. |
 | `pops/audit.py` | `agent_logs_v2` event log and the agent-unwritable, hash-chained `device_audit_logs`. |
 | `pops/manager.py` | WebSocket connection manager (agents, panels, vision) and time-limited remote-control session grants. |
 | `pops/models.py` | Pydantic request models. |
 | `pops/devicelist.py` | The device list version behind `GET /api/devices` (ETag, `?since=` changes) and the `devices_changed` push to panel sockets; see [Device list version](#device-list-version). |
+| `pops/labs.py` | `UNASSIGNED_LAB`, the `clients.lab_name` value of a device in no lab (`Atanmamis_Cihazlar`). It is stored and returned by the API as it is, so it is kept and only defined here; the panel's copy is `POps.dev.UNASSIGNED` in `assets/pops_devices.js`. |
 | `pops/taskqueue.py`, `pops/dna.py`, `pops/wol.py` | Task queue dispatch and target resolution, hardware-DNA identity reconciliation, Wake-on-LAN. |
 | `pops/notify.py` | Notifications: the `notifications` table behind the panel's **Bildirimler**, optional e-mail (SMTP from `.env`) and webhook delivery in the background, dedupe and send cap. The webhook target is resolved and must be a public address (unless `NOTIFY_WEBHOOK_ALLOW_PRIVATE`); the connection is pinned to the checked address and redirects are not followed. |
 | `pops/exams.py` | Exam mode: one running exam per lab (`exam_sessions`), allow-list and program-list validation, delivery of `exam_mode` on start, (re)connect and PC moves, `enabled: false` on end, the agents' `exam_state` reports (left-early notification) and per-PC state. |
-| `pops/scheduler.py` | Background loop started at startup (every 30 s): queues due scheduled tasks (one process at a time, advisory lock), ends expired exams, alerts on agents that never answered an update, and once a day (`license_check_date`) raises notifications for licences that are over their seats, expired or ending within 30 days. |
-| `pops/routers/*.py` | Endpoint groups, one `APIRouter` each: `auth` (login, 2FA, users), `control` (audit sessions, lockdown, bypass codes, panel/vision WebSockets, preview, remote input), `agents` (`/ws/agent` and the agent HTTP endpoints), `devices` (devices, labs, inventory, logs, WoL), `tasks` (queue, orchestration, packages, storage), `schedules` (scheduled tasks), `notifications` (the notification list, channel settings, test), `inventory` (software inventory and Windows update status), `reports` (summary and CSV export), `licenses` (licence definitions counted against the software inventory), `helpdesk` (tickets from the panel and from enrolled agents, with per-device limits), `exams` (exam mode per lab and its history). |
+| `pops/glpi.py` | GLPI export: settings (tokens encrypted with `secretbox`), the REST client (address guard like the webhook, pinned connection, no redirects, 15 s per request), matching through `glpi_links` and the sync run (computers, software, tickets), started by the scheduler or **Şimdi eşitle**. See [`integrations/glpi.md`](integrations/glpi.md). |
+| `pops/scheduler.py` | Background loop started at startup (every 30 s): queues due scheduled tasks (one process at a time, advisory lock), ends expired exams, alerts on agents that never answered an update, starts a due GLPI sync in the background, and once a day (`license_check_date`) raises notifications for licences that are over their seats, expired or ending within 30 days. |
+| `pops/routers/*.py` | Endpoint groups, one `APIRouter` each: `auth` (login, 2FA, users), `control` (audit sessions, lockdown, bypass codes, panel/vision WebSockets, preview, remote input), `agents` (`/ws/agent` and the agent HTTP endpoints), `devices` (devices, labs, inventory, logs, WoL), `tasks` (queue, orchestration, packages, storage), `schedules` (scheduled tasks), `notifications` (the notification list, channel settings, test), `inventory` (software inventory and Windows update status), `reports` (summary and CSV export), `licenses` (licence definitions counted against the software inventory), `helpdesk` (tickets from the panel and from enrolled agents, with per-device limits), `exams` (exam mode per lab and its history), `integrations` (GLPI export settings, connection test, sync now). |
 
 `Backend/system_routes.py` (version and update checks, release notes from the GitHub `CHANGELOG.md`, signed
 releases from GitHub or upload, enrollment tokens, agent deploy, server self-update, capabilities) is a separate
@@ -75,9 +78,9 @@ The endpoint list is in [`api.md`](api.md) and the schema in [`database.md`](dat
 ## Tests
 
 `Backend/tests/` holds integration tests that run against a live backend and an empty PostgreSQL database. CI's
-`security` job runs them in this order: `test_security.py`, `test_2fa.py`, `test_agent_authz.py`,
-`test_remote_authz.py`, `test_vision_v2.py`, `test_f4_accountability.py`, `test_features.py`, `test_helpdesk_licenses.py`,
-`test_ops.py`, `test_api_tokens.py`, `test_exam.py`, `test_devices_delta.py`.
+`security` job runs them with `python -m pytest -m integration`, in the order of `SCRIPT_ORDER` in
+`Backend/tests/conftest.py` (`test_security.py` first, then the other scripts; new scripts after them by name).
+`test_sso.py`'s LDAP part starts an OpenLDAP container with Docker and is skipped without it.
 `test_units.py` and `test_protocol.py` (the agent protocol in [`protocol/`](protocol/README.md); it needs
 `pip install jsonschema==4.26.0`, which is not a runtime dependency) need no server. `Backend/tests/run_local.sh`
 does the same locally: it applies the migrations, starts a temporary backend on `127.0.0.1:8099` and runs the

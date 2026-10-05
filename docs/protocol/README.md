@@ -46,6 +46,7 @@ backend):
 | `X-Agent-Version` | command (the Windows agent sends it on both) | The agent's release version. Stored per device and used for the version gates below. |
 | `X-Agent-Platform` | command | `linux` from the Linux agent ([`Agent-Linux/`](../../Agent-Linux/README.md)); stored in `clients.platform`. Missing = `windows`. |
 | `X-Agent-Features` | command | Optional. Comma-separated features the agent implements (lowercase `[a-z0-9_]`, at most 32 names), for example `winget`. Stored per connection; see [Agent features](#agent-features). |
+| `X-Agent-Peer-Cache` | command | Optional, read only with the `peer_cache` feature. `port=<1024-65535>; ip=<LAN IPv4>; link=wired\|wireless`, every part optional: the port of the agent's cache server (default 8817), the address other PCs in the lab should use, and the link type (wired PCs are preferred as seeds). Kept in memory for that connection. |
 
 An agent may send both `X-Agent-Secret` and `X-Enroll-Token`; the server checks the secret first.
 
@@ -70,7 +71,8 @@ An agent may send both `X-Agent-Secret` and `X-Enroll-Token`; the server checks 
    3. `server_info` (always; from here on the connection is registered and receives commands),
    4. `set_bypass_secret` (secret connections, agent version 0.1.12 or newer, until acknowledged),
    5. `get_hardware` (when the server has no hardware inventory for the device),
-   6. queued commands (`execute`, or `winget_install` for an agent that announced `winget`),
+   6. queued commands (`execute`; `winget_install`, `power` and `user_message` for an agent that announced
+      `winget`, `power` and `message`),
    7. `exam_mode` when the device's lab has a running exam, or `exam_mode` with `enabled: false` when an exam the
       device may still apply ended early or the device left its lab,
    8. a re-sent `lockdown`/`unlock` if one is pending.
@@ -122,6 +124,9 @@ use:
 | `winget` | 0.1.23-alpha | The server may send `winget_install` to an agent that announced `winget` in `X-Agent-Features`, and reads that header. Nothing for the agent to wait for: it is sent `winget_install` only if it announced the feature. |
 | `vision_binary` | 0.1.23-alpha | The Vision channel takes binary frames (below) and `monitors`, and forwards `select_monitor` and `set_quality` from the viewer. Without it send only JSON `stream_frame`s: an older server closes the Vision channel on a binary message. |
 | `vision_clipboard` | 0.1.23-alpha | The server relays `clipboard` in both directions during a session the PC user accepted. Without it do not send `clipboard`. |
+| `power` | 0.1.23-alpha | The server sends power actions as `power` to an agent that announced `power` in `X-Agent-Features`; without it, shutdown and restart still arrive as `execute` (`shutdown /s\|/r /f /t N`). |
+| `message` | 0.1.23-alpha | The server sends `user_message` to an agent that announced `message`; without it nothing is sent. |
+| `peer_cache` | 0.1.23-alpha | The server stages agent updates per lab and may put `peers` in `update_agent` for an agent that announced `peer_cache`. An agent may skip keeping and serving its package cache when the server does not list it. |
 
 Rules for agents:
 
@@ -141,6 +146,9 @@ and sends such a message only to an agent that announced it. Features in use:
 | Feature | Server behaviour |
 | --- | --- |
 | `winget` | `winget_install` is sent for WINGET tasks. For an agent without it the task becomes `Denied` (exit code -8, "[REDDEDİLDİ] Bu bilgisayardaki ajan winget kurulumunu desteklemiyor …") and nothing is sent, so an agent that would ignore the message never leaves a task `Running`. |
+| `power` | `power` is sent for power tasks (shutdown, restart, logoff, lock). For an agent without it shutdown and restart go as the old `execute` command (`shutdown /s\|/r /f /t <max(delay,5)>`, on Windows with a `/c` note limited to letters, digits, spaces and `. , : ; ? ' ( ) -`, on Linux without a note); logoff and lock become `Denied` (exit code -8, "[REDDEDİLDİ] Bu bilgisayardaki ajan bunu desteklemiyor …") and nothing is sent. |
+| `message` | `user_message` is sent for message tasks. For an agent without it the task becomes `Denied` (exit code -8) and nothing is sent. |
+| `peer_cache` | Agent updates are staged per lab: one agent with the feature (the seed) gets `update_agent` first; when it reports a successful `update_result`, the other agents with the feature in that lab get `update_agent` with `peers`. Agents without it are updated at once, without `peers`. The agent's duties are in [`../agent.md`, "Peer cache contract"](../agent.md#peer-cache-contract). |
 | `exam` | Informational: exam mode is gated by the `exam_state` answer (no answer within 20 s = not supported), not by the header. |
 | `files` | Informational: file transfer is gated by `files_enabled` in `capabilities`. |
 
@@ -187,9 +195,9 @@ a lower or unparsable version only switches these behaviours off.
 | `type` | Channel | Server reaction | Schema | Examples |
 | --- | --- | --- | --- | --- |
 | *(none)* / `heartbeat` | command | Recorded in batches; quarantine state reconciled | [heartbeat](agent-to-server/heartbeat.json) | [first](examples/agent-to-server/heartbeat.first.json), [minimal](examples/agent-to-server/heartbeat.minimal.json), [typed](examples/agent-to-server/heartbeat.typed.json), [linux](examples/agent-to-server/heartbeat.linux.json) |
-| `result` | command | Task output stored; `result_ack` | [result](agent-to-server/result.json) | [completed](examples/agent-to-server/result.completed.json), [failed](examples/agent-to-server/result.failed.json), [denied](examples/agent-to-server/result.denied.json), [legacy](examples/agent-to-server/result.legacy.json), [winget](examples/agent-to-server/result.winget.json), [winget_missing](examples/agent-to-server/result.winget_missing.json) |
+| `result` | command | Task output stored; `result_ack` | [result](agent-to-server/result.json) | [completed](examples/agent-to-server/result.completed.json), [failed](examples/agent-to-server/result.failed.json), [denied](examples/agent-to-server/result.denied.json), [legacy](examples/agent-to-server/result.legacy.json), [winget](examples/agent-to-server/result.winget.json), [winget_missing](examples/agent-to-server/result.winget_missing.json), [power](examples/agent-to-server/result.power.json), [no_session](examples/agent-to-server/result.no_session.json), [user_message](examples/agent-to-server/result.user_message.json) |
 | `capabilities` | command | Stored; a pending switch-off is re-sent | [capabilities](agent-to-server/capabilities.json) | [default](examples/agent-to-server/capabilities.default.json), [terminal_off](examples/agent-to-server/capabilities.terminal_off.json), [files](examples/agent-to-server/capabilities.files.json) |
-| `capability_denied` | command | Audited, notified; task `Denied`, file transfer `rejected`, exam marked refused; Linux `not_supported` quarantine clears the pending lock | [capability_denied](agent-to-server/capability_denied.json) | [execute](examples/agent-to-server/capability_denied.execute.json), [vision](examples/agent-to-server/capability_denied.vision.json), [policy](examples/agent-to-server/capability_denied.policy.json), [files](examples/agent-to-server/capability_denied.files.json), [exam](examples/agent-to-server/capability_denied.exam.json), [not_supported](examples/agent-to-server/capability_denied.not_supported.json), [winget](examples/agent-to-server/capability_denied.winget.json) |
+| `capability_denied` | command | Audited, notified; task `Denied`, file transfer `rejected`, exam marked refused; Linux `not_supported` quarantine clears the pending lock | [capability_denied](agent-to-server/capability_denied.json) | [execute](examples/agent-to-server/capability_denied.execute.json), [vision](examples/agent-to-server/capability_denied.vision.json), [policy](examples/agent-to-server/capability_denied.policy.json), [files](examples/agent-to-server/capability_denied.files.json), [exam](examples/agent-to-server/capability_denied.exam.json), [not_supported](examples/agent-to-server/capability_denied.not_supported.json), [winget](examples/agent-to-server/capability_denied.winget.json), [power](examples/agent-to-server/capability_denied.power.json), [message](examples/agent-to-server/capability_denied.message.json) |
 | `file_result` | command | Transfer row updated and audited | [file_result](agent-to-server/file_result.json) | [done](examples/agent-to-server/file_result.done.json), [rejected](examples/agent-to-server/file_result.rejected.json) |
 | `update_result` | command | Audited, notified; `update_result_ack` | [update_result](agent-to-server/update_result.json) | [success](examples/agent-to-server/update_result.success.json), [rolled_back](examples/agent-to-server/update_result.rolled_back.json), [legacy](examples/agent-to-server/update_result.legacy.json) |
 | `update_progress` | command | Latest stage kept for the pending update; `rejected` ends it | [update_progress](agent-to-server/update_progress.json) | [example](examples/agent-to-server/update_progress.json) |
@@ -212,10 +220,12 @@ a lower or unparsable version only switches these behaviours off.
 | `get_hardware` | inventory missing | `POST /api/inventory/{hw_id}` | [get_hardware](server-to-agent/get_hardware.json) | [example](examples/server-to-agent/get_hardware.json) |
 | `execute` | task queue | Runs it; `result` | [execute](server-to-agent/execute.json) | [panel](examples/server-to-agent/execute.json), [queue](examples/server-to-agent/execute.queue.json) |
 | `winget_install` | task queue, WINGET step, agent announced `winget` | Installs the package with winget; `result` | [winget_install](server-to-agent/winget_install.json) | [latest](examples/server-to-agent/winget_install.json), [version](examples/server-to-agent/winget_install.version.json) |
+| `power` | task queue, power action, agent announced `power` | Tray countdown with the note, `result` just before acting, then shuts down, restarts, signs out or locks | [power](server-to-agent/power.json) | [shutdown](examples/server-to-agent/power.json), [lock](examples/server-to-agent/power.lock.json) |
+| `user_message` | task queue, Mesaj gönder, agent announced `message` | Shows the message in the tray; `result` when shown or acknowledged | [user_message](server-to-agent/user_message.json) | [example](examples/server-to-agent/user_message.json) |
 | `cancel_task` | task cancelled | Stops the process | [cancel_task](server-to-agent/cancel_task.json) | [example](examples/server-to-agent/cancel_task.json) |
 | `result_ack` | after a `result` | Drops the kept result | [result_ack](server-to-agent/result_ack.json) | [example](examples/server-to-agent/result_ack.json) |
 | `update_result_ack` | after an `update_result` | Drops the kept update result | [update_result_ack](server-to-agent/update_result_ack.json) | [example](examples/server-to-agent/update_result_ack.json) |
-| `update_agent` | agent update deployed | Verifies, downloads, installs; later `update_result` | [update_agent](server-to-agent/update_agent.json) | [example](examples/server-to-agent/update_agent.json) |
+| `update_agent` | agent update deployed; with `peers` after the lab's seed is ready (`peer_cache`) | Verifies, downloads (peers first, then the server), installs; later `update_result` | [update_agent](server-to-agent/update_agent.json) | [example](examples/server-to-agent/update_agent.json), [peers](examples/server-to-agent/update_agent.peers.json) |
 | `set_capabilities` | capability switched off | Applies only `false`; `capabilities` | [set_capabilities](server-to-agent/set_capabilities.json) | [terminal_off](examples/server-to-agent/set_capabilities.terminal_off.json), [both_off](examples/server-to-agent/set_capabilities.both_off.json) |
 | `lockdown` | quarantine on, or re-sent | Lock screen and isolation | [lockdown](server-to-agent/lockdown.json) | [example](examples/server-to-agent/lockdown.json) |
 | `unlock` | quarantine off, or re-sent | Removes both | [unlock](server-to-agent/unlock.json) | [example](examples/server-to-agent/unlock.json) |
@@ -269,10 +279,11 @@ ID); see [`../vision.md`](../vision.md) for the panel side.
 `<type or action>[.<variant>].json`; the part before the first dot names the schema. `examples/unknown/` holds a
 message of each direction that no schema describes, for the "unknown messages are ignored" rule.
 
-The `update_agent` example carries the test manifest `Agent/POps.Tests/TestData/manifest.json` and its signature,
+The `update_agent` examples carry the test manifest `Agent/POps.Tests/TestData/manifest.json` and its signature,
 made with a throwaway key whose raw public key is `9enOkSVQHBXaXoAurkfvUFBqSbfYbJQbMwL0zEIPTqQ=` (the same vector
 as `ReleaseVerifierTests`). It is not the release key, so a real agent refuses this message; tests verify it with
-the test key. The device secret, bypass key and IDs in the examples are made up.
+the test key. The `peers` URLs in `update_agent.peers.json` end in the SHA-256 of that manifest's MSI. The device
+secret, bypass key and IDs in the examples are made up.
 
 `Backend/tests/test_protocol.py` (CI job "Backend") checks that
 
@@ -283,9 +294,9 @@ the test key. The device secret, bypass key and IDs in the examples are made up.
 - every `action` the server code sends and every `type` it handles has a schema, and every schema is sent or
   handled by the server (except deprecated `start_stream`);
 - the messages the server builds (server_info, set_identity, set_secret, set_bypass_secret, get_hardware,
-  execute, winget_install, cancel_task, result_ack, update_result_ack, update_agent, set_capabilities, lockdown, unlock,
-  exam_mode, start_vision_session, stop_stream, wake_peer, scan_updates, install_updates, remote_input, file_push,
-  file_pull, select_monitor, set_quality, clipboard) validate and contain
+  execute, winget_install, power, user_message, cancel_task, result_ack, update_result_ack, update_agent,
+  set_capabilities, lockdown, unlock, exam_mode, start_vision_session, stop_stream, wake_peer, scan_updates,
+  install_updates, remote_input, file_push, file_pull, select_monitor, set_quality, clipboard) validate and contain
   only documented fields: the test runs the real endpoint and queue code with a fake database and fake sockets;
 - the agent examples go through the real `/ws/agent` and `/ws/vision` handlers without an error and have the
   documented effect (stored result, acknowledgement, audit record, forwarded frame, monitor list or clipboard

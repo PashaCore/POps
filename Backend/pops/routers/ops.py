@@ -14,12 +14,13 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from pops import db, health_alerts, logs, metrics, retention, scheduler, server_metrics
 from pops.config import DB_POOL_MAX, METRICS_TOKEN
 from pops.db import execute_query
 from pops.manager import manager
+from pops.models import StrictInput
 from pops.audit import add_audit_log
 from pops.security import require_superadmin
 
@@ -179,7 +180,7 @@ async def overview(span: str = "24h", auth: dict = Depends(require_superadmin)):
     return data
 
 
-class RetentionInput(BaseModel):
+class RetentionInput(StrictInput):
     # Gün; 0 = süresiz sakla
     retention_days_logs: int = Field(ge=0, le=retention.MAX_DAYS)
     retention_days_tasks: int = Field(ge=0, le=retention.MAX_DAYS)

@@ -12,6 +12,8 @@
 // =================================================================
 (function () {
     const dev = POps.dev = {};
+    // Sınıfa atanmamış cihazın lab değeri: veritabanında ve API'de saklanan bir değerdir, değiştirilmez (gösterilen ad
+    // "Atanmamış"). Sunucudaki karşılığı Backend/pops/labs.py UNASSIGNED_LAB; sayfalar bunu POps.dev.UNASSIGNED olarak okur.
     const UNASSIGNED = 'Atanmamis_Cihazlar';
     const CAN_ADMIN = ['admin', 'superadmin'].includes(window.USER_ROLE);
     const IS_SUPER = window.USER_ROLE === 'superadmin';
@@ -100,45 +102,133 @@
     const count = (n) => POps.tn('{n} bilgisayar', n);
 
     // ---- Güç
-    // step: sunucuya giden görev adı (Türkçe veri); görünen metinler cümle cümle çevrilir
+    // step: sunucuya giden görev adı (Türkçe veri); görünen metinler cümle cümle çevrilir. session: oturumu kapat ve
+    // kilitle yalnızca "power" duyuran ajanda yapılır (eski ajanda karşılığı yok; sunucu görevi -8 ile reddeder).
+    // Kapat ve yeniden başlat eski ajana eski komutla gider (bkz. Backend/pops/power.py).
     const POWER = {
         restart: {
-            step: 'Yeniden başlat', cmd: 'shutdown /r /f /t 5', icon: 'restart',
+            step: 'Yeniden başlat', icon: 'restart',
             label: () => POps.t('Yeniden başlat'),
             title1: (name) => POps.t('{name} yeniden başlatılsın mı?', { name }),
             titleN: (n) => POps.tn('{n} bilgisayar yeniden başlatılsın mı?', n),
-            btnN: (n) => POps.tn('{n} bilgisayarı yeniden başlat', n)
+            btnN: (n) => POps.tn('{n} bilgisayarı yeniden başlat', n),
+            warn: () => POps.t('Kaydedilmemiş işler kaybolabilir.')
         },
         shutdown: {
-            step: 'Kapat', cmd: 'shutdown /s /f /t 5', icon: 'power',
+            step: 'Kapat', icon: 'power',
             label: () => POps.tx('Kapat', 'power'),
             title1: (name) => POps.t('{name} kapatılsın mı?', { name }),
             titleN: (n) => POps.tn('{n} bilgisayar kapatılsın mı?', n),
-            btnN: (n) => POps.tn('{n} bilgisayarı kapat', n)
+            btnN: (n) => POps.tn('{n} bilgisayarı kapat', n),
+            warn: () => POps.t('Kaydedilmemiş işler kaybolabilir.')
+        },
+        logoff: {
+            step: 'Oturumu kapat', icon: 'logout', session: true,
+            label: () => POps.t('Oturumu kapat'),
+            title1: (name) => POps.t('{name} bilgisayarında oturum kapatılsın mı?', { name }),
+            titleN: (n) => POps.tn('{n} bilgisayarda oturum kapatılsın mı?', n),
+            btnN: (n) => POps.tn('{n} bilgisayarda oturumu kapat', n),
+            warn: () => POps.t('Açık uygulamalar kapanır; kaydedilmemiş işler kaybolabilir.')
+        },
+        lock: {
+            step: 'Kilitle', icon: 'lock', session: true,
+            label: () => POps.t('Kilitle'),
+            title1: (name) => POps.t('{name} kilitlensin mi?', { name }),
+            titleN: (n) => POps.tn('{n} bilgisayar kilitlensin mi?', n),
+            btnN: (n) => POps.tn('{n} bilgisayarı kilitle', n),
+            warn: () => POps.t('Kullanıcı parolasıyla yeniden açar; açık işler kaybolmaz.')
         }
     };
+    const DELAYS = [[0, 'Hemen'], [60, '1 dk'], [300, '5 dk'], [600, '10 dk']];
+    // Ajanın bağlanırken duyurduğu özellik (X-Agent-Features): power, message
+    dev.supports = (d, feature) => !!(d && Array.isArray(d.agent_features) && d.agent_features.includes(feature));
+    const onlineOf = (hosts) => hosts.filter(h => { const d = byHost(h); return d && !POps.isOffline(d); });
+    const NO_POWER = () => POps.t('Seçili bilgisayarlardaki ajan bunu desteklemiyor; ajanı güncelleyin.');
+    // Menü öğesi: hiçbir açık bilgisayarın ajanı desteklemiyorsa kapalı ve nedeni üstünde (title)
+    function featureItem(hosts, feature, item) {
+        const on = onlineOf(hosts);
+        const ok = on.some(h => dev.supports(byHost(h), feature));
+        return Object.assign(item, { disabled: item.disabled || !on.length || !ok, title: on.length && !ok ? NO_POWER() : undefined });
+    }
+    dev.sessionItems = (hosts, o) => ['logoff', 'lock'].map(a => featureItem(hosts, 'power', {
+        label: POWER[a].label(), icon: POWER[a].icon, onClick: () => dev.power(a, hosts, o)
+    }));
+    dev.messageItem = (hosts, o) => featureItem(hosts, 'message', { label: POps.t('Mesaj gönder'), icon: 'message', onClick: () => dev.message(hosts, o) });
+
+    // Güç ve mesaj pencerelerinin form parçaları (POps.form içinde; dosya aktarımının fieldEl/segmentedEl'i ayrı)
+    let fieldSeq = 0;
+    function powerField(label, control, hint) {
+        const id = control.id || ('popsPw' + (++fieldSeq));
+        if (!control.id && control.tagName !== 'DIV') control.id = id;
+        const kids = [control.tagName === 'DIV' ? POps.el('div', { className: 'field-label', id: id + 'L', text: label }) : POps.el('label', { for: id, text: label }), control];
+        if (control.tagName === 'DIV') control.setAttribute('aria-labelledby', id + 'L');
+        if (hint) kids.push(hint.nodeType ? hint : POps.el('div', { className: 'field-hint', text: hint }));
+        return POps.el('div', { className: 'field' }, kids);
+    }
+    function powerSegmented(options, value, onChange) {
+        const box = POps.el('div', { className: 'segmented block', role: 'group' });
+        options.forEach(([v, text]) => {
+            const b = POps.el('button', { type: 'button', 'aria-pressed': String(v === value), dataset: { v: String(v) }, text: POps.t(text) });
+            b.addEventListener('click', () => {
+                box.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+                onChange(v);
+            });
+            box.appendChild(b);
+        });
+        return box;
+    }
+    function counterEl(input, max) {
+        const c = POps.el('div', { className: 'field-hint', 'aria-live': 'polite', style: 'text-align:right;font-variant-numeric:tabular-nums' });
+        const upd = () => { c.textContent = POps.t('{n} / {max}', { n: input.value.length, max }); };
+        input.addEventListener('input', upd);
+        upd();
+        return c;
+    }
+    function skipNote(hosts, on, unsupported) {
+        const parts = [];
+        if (hosts.length > on.length) parts.push(POps.tn('Kapalı {n} bilgisayar atlanacak.', hosts.length - on.length));
+        if (unsupported) parts.push(POps.tn('{n} bilgisayarın ajanı bunu desteklemiyor; onlara gönderilmez (ajanı güncelleyin).', unsupported));
+        return parts.join(' ');
+    }
+
+    // Sunucu yalnızca o an bağlı bilgisayarlara görev açar (created); arada kapananlar atlanır
+    function sentToast(r, on, text) {
+        const n = typeof r.created === 'number' ? r.created : on.length;
+        if (n) POps.toast('success', POps.tn(text, n));
+        else POps.toast('warning', POps.t('Bilgisayarlar bu arada kapandı; gönderilmedi.'));
+    }
     dev.power = async function (action, hosts, opts) {
         const o = opts || {};
         hosts = [...new Set(hosts || [])];
         if (!hosts.length) return POps.toast('warning', POps.t('Hedef bilgisayar yok.'));
         if (action === 'wake') return dev.wake(hosts, o);
         const p = POWER[action];
-        const on = hosts.filter(h => { const d = byHost(h); return d && !POps.isOffline(d); });
-        const skipped = hosts.length - on.length;
+        if (!p) return;
+        const on = onlineOf(hosts);
         if (!on.length) return POps.toast('warning', hosts.length === 1 ? POps.t('Bilgisayar kapalı; komut gönderilmedi.') : POps.t('Seçili bilgisayarların hiçbiri açık değil; komut gönderilmedi.'));
-        const ok = await POps.confirm({
+        const unsupported = p.session ? on.filter(h => !dev.supports(byHost(h), 'power')).length : 0;
+        if (unsupported === on.length) return POps.toast('warning', NO_POWER());
+        let delay = 0;
+        const note = POps.el('input', { type: 'text', maxlength: '200', autocomplete: 'off', placeholder: POps.t('Örn. Ders bitti; çalışmanızı kaydedin.') });
+        const content = POps.el('div', { className: 'pops-form' }, [
+            powerField(POps.t('Gecikme'), powerSegmented(DELAYS, 0, (v) => { delay = v; }), POps.t('Kullanıcı geri sayımı ve notu ekranında görür.')),
+            powerField(POps.t('Kullanıcıya not (isteğe bağlı)'), note, counterEl(note, 200))
+        ]);
+        const jobTitle = o.scopeLabel ? POps.taskName(p.step + ' · ' + o.scopeLabel) : p.label() + ' · ' + count(on.length);
+        const r = await POps.form({
             title: on.length === 1 ? p.title1(dev.name(on[0])) : p.titleN(on.length),
-            message: (on.length > 1 ? namesText(on) + '\n' : '') + POps.t('5 saniye içinde uygulanır; kaydedilmemiş işler kaybolabilir.'),
-            note: skipped ? POps.tn('Kapalı {n} bilgisayar atlanacak.', skipped) : '',
+            message: (on.length > 1 ? namesText(on) + '\n' : '') + p.warn(),
+            note: skipNote(hosts, on, unsupported),
             confirmText: on.length === 1 ? p.label() : p.btnN(on.length),
-            danger: true,
-            icon: p.icon
+            danger: action !== 'lock',
+            icon: p.icon,
+            content,
+            submit: () => POps.post('/api/devices/power', {
+                target_mode: 'PC', targets: on, op: action, delay, message: note.value.trim() || null,
+                title: p.step + (o.scopeLabel ? ' · ' + o.scopeLabel : ''), source: o.source || null
+            }, { jobTitle })
         });
-        if (!ok) return;
-        await POps.act(o.btn, () => POps.post('/api/deploy_orchestration', {
-            target_mode: 'PC', targets: on, taskSequence: [{ name: p.step, type: 'CMD', command: p.cmd }],
-            title: p.step + (o.scopeLabel ? ' · ' + o.scopeLabel : ''), source: o.source || null
-        }, { jobTitle: o.scopeLabel ? POps.taskName(p.step + ' · ' + o.scopeLabel) : p.label() + ' · ' + count(on.length) }), { success: (r) => POps.tn('Komut {n} bilgisayara gönderildi.', (r && r.created) || on.length) });
+        if (r) sentToast(r, on, 'Komut {n} bilgisayara gönderildi.');
     };
     dev.wake = async function (hosts, o) {
         const off = hosts.filter(h => { const d = byHost(h); return !d || POps.isOffline(d); });
@@ -155,24 +245,50 @@
         });
     };
 
-    // ---- Mesaj: Windows'un msg komutuyla oturumdaki kullanıcılara kısa not
+    // ---- Mesaj: oturumdaki kullanıcıya tepside (ajan "message" duyurmalı; eski ajana gönderilmez, -8)
     dev.message = async function (hosts, o) {
         o = o || {};
-        const on = hosts.filter(h => { const d = byHost(h); return d && !POps.isOffline(d); });
+        hosts = [...new Set(hosts || [])];
+        const on = onlineOf(hosts);
         if (!on.length) return POps.toast('warning', POps.t('Açık bilgisayar yok; mesaj gönderilmedi.'));
-        const text = await POps.prompt({
+        const unsupported = on.filter(h => !dev.supports(byHost(h), 'message')).length;
+        if (unsupported === on.length) return POps.toast('warning', NO_POWER());
+        let style = 'info';
+        const title = POps.el('input', { type: 'text', maxlength: '80', autocomplete: 'off', placeholder: POps.t('Örn. Sınav başlıyor') });
+        const text = POps.el('textarea', { rows: '4', maxlength: '1000', placeholder: POps.t('Kullanıcının göreceği metin') });
+        const ack = POps.el('input', { type: 'checkbox' });
+        const titleField = powerField(POps.t('Başlık'), title);
+        const textField = powerField(POps.t('Metin'), text, counterEl(text, 1000));
+        [title, text].forEach(i => i.addEventListener('input', () => {
+            i.closest('.field').classList.remove('has-error');
+            const err = i.closest('.pops-dialog') && i.closest('.pops-dialog').querySelector('.pops-dialog-error');
+            if (err) { err.hidden = true; err.textContent = ''; }
+        }));
+        const content = POps.el('div', { className: 'pops-form' }, [
+            titleField, textField,
+            powerField(POps.t('Tür'), powerSegmented([['info', 'Bilgi'], ['warning', 'Uyarı']], 'info', (v) => { style = v; })),
+            POps.el('label', { className: 'check' }, [ack, POps.el('span', { text: POps.t('Okundu onayı iste (kullanıcı Tamam’a basana kadar ekranda kalır)') })])
+        ]);
+        const r = await POps.form({
             title: on.length === 1 ? POps.t('{name} ekranına mesaj', { name: dev.name(on[0]) }) : POps.tn('{n} bilgisayara mesaj', on.length),
-            message: POps.t('Oturumdaki kullanıcının ekranında 2 dakika görünür.'),
-            label: POps.t('Mesaj'), multiline: true, maxLength: 250, confirmText: POps.t('Gönder'), icon: 'message',
-            note: hosts.length > on.length ? POps.tn('Kapalı {n} bilgisayar atlanacak.', hosts.length - on.length) : ''
+            message: POps.t('Oturumdaki kullanıcı mesajı tepsi bildiriminde görür. Sonuç İşlemler’de görünür.'),
+            note: skipNote(hosts, on, unsupported),
+            confirmText: POps.t('Gönder'), icon: 'message', content,
+            submit: async ({ setError }) => {
+                const missing = !title.value.trim() ? title : !text.value.trim() ? text : null;
+                if (missing) {
+                    missing.closest('.field').classList.add('has-error');
+                    missing.focus();
+                    setError(POps.t('Başlık ve metin boş bırakılamaz.'));
+                    return false;
+                }
+                return POps.post('/api/devices/message', {
+                    target_mode: 'PC', targets: on, title: title.value.trim(), text: text.value.trim(), style,
+                    requires_ack: ack.checked, source: o.source || null
+                }, { jobTitle: o.scopeLabel ? POps.taskName(['Mesaj', o.scopeLabel].join(' · ')) : POps.taskName('Mesaj') + ' · ' + count(on.length) });
+            }
         });
-        if (text === null) return;
-        const clean = text.replace(/[\r\n\t]+/g, ' ').replace(/["%^]/g, "'").replace(/[\u0000-\u001f]/g, '').trim();
-        if (!clean) return;
-        await POps.act(o.btn, () => POps.post('/api/deploy_orchestration', {
-            target_mode: 'PC', targets: on, taskSequence: [{ name: 'Mesaj', type: 'CMD', command: `msg * /TIME:120 "${clean}"` }],
-            title: 'Mesaj', source: o.source || null
-        }, { jobTitle: o.scopeLabel ? POps.taskName(['Mesaj', o.scopeLabel].join(' · ')) : POps.taskName('Mesaj') + ' · ' + count(on.length) }), { success: POps.tn('Mesaj {n} bilgisayara gönderildi.', on.length) });
+        if (r) sentToast(r, on, 'Mesaj {n} bilgisayara gönderildi.');
     };
 
     // ---- Taşı
@@ -615,9 +731,19 @@
         if ((s === 'Failed' || s === 'Error') && x != null && x < -1000000) return POps.t('winget {code} koduyla bitti.', { code: '0x' + (x >>> 0).toString(16).toUpperCase() });
         return '';
     }
+    // Güç komutu ve mesaj (kind power / user_message): ajanın ve sunucunun ret kodları (Backend/pops/power.py)
+    function powerReason(t, kind) {
+        const s = t.status, x = t.exit_code;
+        if (s === 'Denied' && x === -8) return POps.t('Bu bilgisayardaki ajan bunu desteklemiyor; görev gönderilmedi. Ajanı güncelleyin.');
+        if (s === 'Denied' && x === -6) return POps.t('Bilgisayarda oturum açmış kullanıcı yok.');
+        if (s === 'Denied' && x === -5) return kind === 'user_message' ? POps.t('Kullanıcıya mesaj bu cihazda kapalı (yerel yetenek politikası).') : POps.t('Güç komutları bu cihazda kapalı (yerel yetenek politikası).');
+        if (s === 'Expired') return POps.t('Bilgisayar 15 dakika içinde hazır olmadığı için gönderilmedi.');
+        return '';
+    }
     // Reddedildi / başarısız için açık neden
     dev.failReason = function (t) {
         if ((t.task_kind || t.kind) === 'winget') { const w = wingetReason(t); if (w) return w; }
+        if (['power', 'user_message'].includes(t.task_kind || t.kind)) { const w = powerReason(t, t.task_kind || t.kind); if (w) return w; }
         const s = t.status, x = t.exit_code;
         if (s === 'Denied') return x === -5 ? POps.t('Cihazdaki ajan bu komutu yetki politikası gereği çalıştırmadı (uzak komut bu cihazda kapalı olabilir).') : POps.t('Cihaz komutu reddetti.');
         if (s === 'Timed Out') return POps.t('Komut süre sınırını aştı ve durduruldu.');
@@ -643,7 +769,7 @@
         'security.lockdown': 'lockdown', 'security.unlock': 'unlock', 'security.bypass_code': 'bypass_code',
         'deploy.execution': 'execute_queue', 'agent.update': 'update_problem', 'agent.capability_denied': 'capability_denied',
         'agent.enroll_denied': 'enroll_denied', 'agent.auto_quarantine': 'auto_quarantine', 'agent.unlock_failed': 'unlock_failed',
-        'agent.offline_bypass': 'offline_bypass'
+        'agent.offline_bypass': 'offline_bypass', 'device.power': 'power_command', 'device.message': 'user_message'
     };
     const commandOf = (r, m) => String(m.raw_command || String(r.message || '').replace(/^G(ö|o)rev:\s*/i, '')).trim();
     const EVENTS = {
@@ -660,7 +786,9 @@
         execute_queue: { title: (r, m) => { const c = commandOf(r, m); return c ? POps.t('Komut gönderildi: {command}', { command: dev.taskTitle({ command: c }) }) : POps.t('Komut gönderildi'); }, icon: 'terminal', kind: 'command', sev: 'info' },
         update_problem: { title: () => POps.t('Ajan güncellemesi sorunlu bitti'), icon: 'refresh', kind: 'agent' },
         capability_denied: { title: (r) => CAP[r.reason] ? POps.t('Kapalı {feature} istendi, ajan reddetti', { feature: CAP[r.reason] }) : POps.t('Kapalı bir özellik istendi, ajan reddetti'), icon: 'eye', kind: 'agent', quietReason: true },
-        enroll_denied: { title: () => POps.t('Kayıtlı bilgisayarın anahtarı yeniden istendi, reddedildi'), icon: 'alert', kind: 'other' }
+        enroll_denied: { title: () => POps.t('Kayıtlı bilgisayarın anahtarı yeniden istendi, reddedildi'), icon: 'alert', kind: 'other' },
+        power_command: { title: (r, m) => POWER[m.op] ? POps.t('Güç komutu gönderildi: {action}', { action: POWER[m.op].label() }) : POps.t('Güç komutu gönderildi'), icon: 'power', kind: 'command', sev: 'info' },
+        user_message: { title: () => POps.t('Kullanıcıya mesaj gönderildi'), icon: 'message', kind: 'command', sev: 'info' }
     };
 
     function parseMeta(v) {
@@ -841,10 +969,12 @@
                 else if (act === 'power') POps.menu(b, [
                     { label: POps.t('Uyandır'), icon: 'zap', disabled: !POps.isOffline(cur), onClick: () => dev.power('wake', [h], { source: o.source }) },
                     { label: POps.t('Yeniden başlat'), icon: 'restart', disabled: POps.isOffline(cur), onClick: () => dev.power('restart', [h], { source: o.source }) },
-                    { label: POps.tx('Kapat', 'power'), icon: 'power', danger: true, disabled: POps.isOffline(cur), onClick: () => dev.power('shutdown', [h], { source: o.source }) }
+                    { label: POps.tx('Kapat', 'power'), icon: 'power', danger: true, disabled: POps.isOffline(cur), onClick: () => dev.power('shutdown', [h], { source: o.source }) },
+                    '-',
+                    ...dev.sessionItems([h], { source: o.source })
                 ]);
                 else if (act === 'more') POps.menu(b, [
-                    { label: POps.t('Mesaj gönder'), icon: 'message', disabled: POps.isOffline(cur), onClick: () => dev.message([h], { source: o.source }) },
+                    dev.messageItem([h], { source: o.source }),
                     { label: POps.t('Dosya gönder'), icon: 'upload', disabled: dev.filesState(cur) !== 'ok', title: dev.filesBlockText(cur) || null, onClick: () => dev.sendFile([h]) },
                     { label: POps.t('Dosya al'), icon: 'download', disabled: dev.filesState(cur) !== 'ok', title: dev.filesBlockText(cur) || null, onClick: () => dev.pullFile(h) },
                     { label: POps.t('Yeniden adlandır'), icon: 'edit', onClick: () => dev.rename(h) },

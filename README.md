@@ -73,7 +73,7 @@
 | | |
 | :--- | :--- |
 | **One server, many labs** | A single backend process brought **5,000 simulated agents** back within **11 seconds** of a restart, with no failed attempt ([report](docs/kapasite/README.md)). |
-| **No inbound ports on PCs** | Each PC keeps two outbound connections to the server over TLS (port 443). Nothing listens on the managed computer. |
+| **No inbound ports on PCs** | Each PC keeps two outbound connections to the server over TLS (port 443). Nothing listens on the managed computer, unless an admin turns on the optional lab peer cache for updates (off by default; local subnet only). |
 | **Updates that undo themselves** | Agent releases are ed25519-signed in CI, verified by the server *and again by the PC*, and rolled back automatically if the new version does not come up. |
 | **Proof of who did what** | Security-relevant actions go to a SHA-256 hash-chained audit log on the server and to the Windows event log on the PC itself. |
 | **Off means off** | A school can turn the remote terminal and screen view off per PC. The server can switch them off, never back on. |
@@ -425,7 +425,7 @@ How to run the suites locally: [`docs/testing.md`](docs/testing.md).
 | | [Public demo](deploy/demo/README.md) | [Code signing policy](docs/code-signing.md) |
 | | | [Agent protocol](docs/protocol/README.md) |
 | | | [Panel languages](docs/i18n.md) |
-| | | [GLPI export (design)](docs/integrations/glpi.md) |
+| | | [GLPI export](docs/integrations/glpi.md) |
 
 **Turkish guides for schools** (in Turkish): [Why POps?](docs/tr/neden-pops.md) ·
 [POps and Veyon together](docs/tr/veyon-ile-birlikte.md) · [Pilot school setup](docs/tr/pilot-okul.md) ·

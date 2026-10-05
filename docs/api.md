@@ -122,7 +122,7 @@ Agents do not use JWTs. They authenticate with headers:
 | `X-Agent-Id` | agent HTTP endpoints | The device's hardware ID (`HW-…`). Checked together with `X-Agent-Secret`. |
 | `X-Agent-Version` | `/ws/agent/…` | Agent version, stored in `agent_versions`. |
 | `X-Agent-Platform` | `/ws/agent/…` (and agent HTTP endpoints) | `linux` from the Linux agent; stored in `clients.platform` on every connection. Windows agents do not send it and count as `windows`. |
-| `X-Agent-Features` | `/ws/agent/…` | Comma-separated features the agent implements (lowercase `[a-z0-9_]`, at most 32), for example `winget`. Stored per connection in `agent_versions.features` (empty when the header is missing); the server sends `winget_install` only to agents that announce `winget`. |
+| `X-Agent-Features` | `/ws/agent/…` | Comma-separated features the agent implements (lowercase `[a-z0-9_]`, at most 32), for example `winget`. Stored per connection in `agent_versions.features` (empty when the header is missing); the server sends `winget_install` only to agents that announce `winget`, `power` only to `power` and `user_message` only to `message`. |
 
 On the agent HTTP endpoints (`agent_http_auth` in the tables below) a valid `X-Agent-Id` + `X-Agent-Secret` pair
 binds the request to that device: writing data for another device returns `403`. Requests without valid
@@ -132,10 +132,24 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 
 ### Rate limits
 
-`POST /api/admin/login`, `POST /api/admin/login/totp` and `POST /api/admin/2fa/setup|enable|disable` are limited to
-10 requests per minute per client address. Exceeding the limit returns `429`. The agent's file transfer endpoints
-(`GET /api/files/{id}/download`, `POST /api/files/{id}/upload`) take at most 30 requests per minute per device and
-endpoint, like the other agent endpoints that are limited per device (helpdesk, activity).
+`POST /api/admin/login`, `POST /api/admin/login/totp`, `POST /api/auth/sso/redeem` and
+`POST /api/admin/2fa/setup|enable|disable` are limited to 10 requests per minute per client address, the OpenID
+Connect start and callback to 20, `POST /api/sso/test/ldap|oidc` to 10. Exceeding the limit returns `429`. The agent's
+file transfer endpoints (`GET /api/files/{id}/download`, `POST /api/files/{id}/upload`) take at most 30 requests per
+minute per device and endpoint, like the other agent endpoints that are limited per device (helpdesk, activity).
+
+### Unknown fields
+
+A JSON body with a field the endpoint does not know is refused with `422` and nothing is changed: the error list
+has an entry with `"type": "extra_forbidden"` and the field in `loc` (for example `["body", "lab"]`). A misspelt
+field therefore fails instead of running with a default value. Two kinds of body are the exception, on purpose:
+
+- The bodies agents send (`/api/inventory/{hw_id}`, `/api/software/{hw_id}`, `/api/patches/{hw_id}`,
+  `/api/tickets/agent/{hw_id}`, `/api/logs/{hw_id}`, `/api/auth/login|failed|logout`, `/api/policy_alert`) ignore
+  unknown fields. Agents of many versions run at the same time, and a field a newer agent adds must not make an
+  older server drop the data (the agent sends `dna` with its inventory, for example, which the server does not read).
+- `/api/remote_input` takes the input fields (`x`, `y`, `key`, `is_down` ...) at the top level of the body and
+  forwards only the ones it knows.
 
 ## Endpoint reference
 
@@ -146,7 +160,7 @@ endpoint, like the other agent endpoints that are limited per device (helpdesk, 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/health` | none | Database reachability and running version: `{"status": "ok" \| "degraded", "database": bool, "version": "..."}`. Used by the deploy health check. |
-| GET | `/api/system/version` | require_admin | Running version, latest GitHub release, staged (verified) agent release, server update status (commits on GitHub `main` since the last self-update), enrolled/total agent counts, `enforce_agent_auth`. `?check=true` bypasses the hourly GitHub cache. Offline-safe: GitHub failures give `latest: null`. |
+| GET | `/api/system/version` | require_admin | Running version, latest GitHub release, staged (verified) agent release, server update status (commits on GitHub `main` since the last self-update), enrolled/total agent counts, `enforce_agent_auth`, `update_peer_cache`. `?check=true` bypasses the hourly GitHub cache. Offline-safe: GitHub failures give `latest: null`. |
 | GET | `/api/system/release-notes` | require_admin | Release notes parsed from `CHANGELOG.md` on GitHub: `installed` (the running version and Unreleased entries of the installed commit), `incoming` (entries on GitHub `main` that the installed commit does not have; needs a successful self-update so the installed commit is known) and `agent` (notes of the latest GitHub release). `{"available": false}` when GitHub cannot be reached. The `main` copy is cached for 10 minutes. |
 | GET | `/api/system/audit-verify` | require_superadmin | Walks the hash chain of `device_audit_logs`; returns `{"ok": true, "checked": n}` or the first broken entry id. |
 
@@ -154,16 +168,33 @@ endpoint, like the other agent endpoints that are limited per device (helpdesk, 
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/admin/login` | none | Password login (bcrypt hashes only). Returns a token, or a 2FA challenge. Rate-limited. |
+| POST | `/api/admin/login` | none | Password login: bcrypt hash for local accounts, the directory for other names when LDAP sign-in is on (`401` wrong credentials, `403` disabled or unmapped directory account, `503` directory unreachable). Returns a token, or a 2FA challenge. Rate-limited. |
 | POST | `/api/admin/login/totp` | none | Second login step: `{challenge, otp}`. Rate-limited. |
 | GET | `/api/admin/2fa/status` | require_user_session | Whether 2FA is enabled for the current user. |
 | POST | `/api/admin/2fa/setup` | require_user_session | Creates a new TOTP secret (not yet enforced); returns `secret` and an `otpauth://` URI. `400` if 2FA is already on. |
 | POST | `/api/admin/2fa/enable` | require_user_session | `{otp}`: confirms a code and turns 2FA on. |
 | POST | `/api/admin/2fa/disable` | require_user_session | `{otp}`: turns 2FA off; a valid code is required while it is on. |
-| GET | `/api/admin/users` | require_admin_session | Lists users (id, username, role, last login, permissions). |
-| POST | `/api/admin/users` | require_superadmin | `{username, password, role, permissions}`. Roles: `superadmin`, `admin`, `viewer`; `permissions` is a JSON array string. `409` if the name exists. |
-| PUT | `/api/admin/users/{user_id}` | require_superadmin | Updates name, role, permissions and optionally password; invalidates the user's tokens. The last superadmin cannot be demoted. |
+| GET | `/api/admin/users` | require_admin_session | Lists users (id, username, role, last login, permissions, `auth_source`). |
+| POST | `/api/admin/users` | require_superadmin | `{username, password, role, permissions, auth_source?}`. Roles: `superadmin`, `admin`, `viewer`; `permissions` is a JSON array string. `auth_source` `local` (default, password required), `ldap` or `oidc` (no password; linked at the first sign-in). `409` if the name exists. |
+| PUT | `/api/admin/users/{user_id}` | require_superadmin | Updates name, role, permissions and optionally password and `auth_source`; invalidates the user's tokens. The last superadmin cannot be demoted. Turning a local account into `ldap`/`oidc` removes its password (refused for the first local superadmin and the last local superadmin); turning it back into `local` needs `password`. |
 | DELETE | `/api/admin/users/{user_id}` | require_superadmin | Deletes a user. You cannot delete yourself or the last superadmin. |
+
+### Directory and single sign-on
+
+The OpenID Connect flow and the settings; see [`security.md`](security.md#directory-and-single-sign-on) and
+[`configuration.md`](configuration.md#identity-providers). LDAP sign-in uses `POST /api/admin/login`.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/auth/sso` | none | `{ldap: bool, oidc: bool, oidc_name}` for the sign-in page. |
+| GET | `/api/auth/oidc/start` | none | Browser redirect to the provider. `b`: 64 hex characters (SHA-256 of the binding the panel keeps in its PHP session); `next`: optional local path (anything else `400`). Sets the `pops_oidc_state` cookie. `404` when OIDC is off. Not in the OpenAPI document. |
+| GET | `/api/auth/oidc/callback` | none | Provider's redirect target: checks state (cookie and server), exchanges the code with PKCE, validates the ID token, maps the role and redirects to `<panel>/login?sso=<ticket>`, or `?sso_error=state\|provider\|token\|access\|conflict\|unavailable`. Not in the OpenAPI document. |
+| POST | `/api/auth/sso/redeem` | none | `{ticket, binding}`: one-time ticket (60 s) plus the binding from the start; returns the same as a password login (token, or a 2FA challenge) and `next`. `401` for an unknown, used, expired or foreign ticket. |
+| GET | `/api/sso/settings` | require_superadmin | Both providers' settings with `has_secret`; never the secrets. |
+| PUT | `/api/sso/settings/ldap` | require_superadmin | Saves the LDAP settings (`bind_password`: omitted or `null` keeps, `""` deletes). `400` for invalid values, plain LDAP, a missing required field when `enabled`, or a changed server, connection type, bind DN or CA without the password. Switching it off ends the sessions of directory accounts. Audit-logged (`sso_settings`). |
+| PUT | `/api/sso/settings/oidc` | require_superadmin | Same for OpenID Connect (`client_secret`). |
+| POST | `/api/sso/test/ldap` | require_superadmin | Tests the posted (unsaved) LDAP settings: TLS connection and service bind, and with `test_username` that user's DN, groups, `disabled` and resulting `role`. `{ok: false, message}` on failure. |
+| POST | `/api/sso/test/oidc` | require_superadmin | Reads the posted provider's discovery document and JWKS: issuer, endpoints, key count, algorithms, PKCE. |
 
 ### API tokens
 
@@ -178,7 +209,9 @@ endpoint, like the other agent endpoints that are limited per device (helpdesk, 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/devices` | require_auth | All devices with status, lab, IP, current user, active window, quarantine flag, agent version, running version, capability state, `platform` (`windows` or `linux`) and `agent_features` (what the agent announced in `X-Agent-Features`, for example `["winget"]`; empty for older agents). Returns a weak `ETag`; `If-None-Match` with it gives `304` without a body. `?since=<version>` returns only what changed since that version. See [Device list: ETag, changes and push](#device-list-etag-changes-and-push). |
-| GET | `/api/devices/{pc_name}/activity` | require_auth | The latest operations on one device, newest first, `?limit=` (default 15, at most 50): its tasks (`kind: "task"` with `id`, `title`, `command` (first 300 characters), `status`, `exit_code`, `at`, `by`, `source`, `reason`, `ip`, `started_at`, `batch_id`, `task_kind`: `"winget"` for a winget step, else `null`) and its remote-control sessions (`kind: "vision"` with `status`, `at`, `ended_at`, `by`, `reason`, `mandatory`), merged. Returns `{"items": [...]}`. The panel shows it as "Son işlemler" in the PC detail panel. |
+| GET | `/api/devices/{pc_name}/activity` | require_auth | The latest operations on one device, newest first, `?limit=` (default 15, at most 50): its tasks (`kind: "task"` with `id`, `title`, `command` (first 300 characters), `status`, `exit_code`, `at`, `by`, `source`, `reason`, `ip`, `started_at`, `batch_id`, `task_kind`: `"winget"` for a winget step, `"power"` / `"user_message"` for a power action or message, else `null`) and its remote-control sessions (`kind: "vision"` with `status`, `at`, `ended_at`, `by`, `reason`, `mandatory`), merged. Returns `{"items": [...]}`. The panel shows it as "Son işlemler" in the PC detail panel. |
+| POST | `/api/devices/power` | require_admin (API tokens allowed) | Power action, see [Power actions and messages](#power-actions-and-messages). |
+| POST | `/api/devices/message` | require_admin_session (no API tokens) | Message to the signed-in user, see [Power actions and messages](#power-actions-and-messages). |
 | DELETE | `/api/devices/{pc_name}` | require_admin | Deletes the device, its hardware and software inventory, its Windows Update status, its `agent_logs_v2` rows, its version row and its **device secret**, and closes its socket (code `4000`). |
 | GET | `/api/inventory` | require_auth | Hardware inventory of all devices (`hw_inventory`). |
 | GET | `/api/logs` | require_auth | Latest event log entries (`agent_logs_v2`), newest first. `?limit=` (default 1000, at most 20000), optional `pc` (device ID), `since` and `until` (`YYYY-MM-DD`, both days included; `422` if malformed). |
@@ -230,6 +263,39 @@ forward does not change it. How the server tracks it: [`backend.md`](backend.md#
   30 seconds while its socket is open (every 5 seconds without one).
 - Changes made outside the server (for example by hand in SQL) are noticed within a minute.
 
+### Power actions and messages
+
+Both endpoints (also under `/api/v1`) queue one task per **online** target and start the queue; offline targets are
+skipped and listed. Targets follow the task conventions: `target_mode` `PC` (default; device IDs), `LAB` (lab names)
+or `ALL` (`targets` ignored); a PC ID that is not registered, or no target, is `422` and creates nothing.
+
+`POST /api/devices/power`: `{target_mode?, targets, op: "shutdown" | "restart" | "logoff" | "lock", delay?: 0-600,
+message?: string, source?, title?}`. `message` is a note for the user: control characters, line breaks and
+bidirectional formatting characters are removed, then it may have at most 200 characters (`422` otherwise).
+Admins and admin API tokens.
+
+`POST /api/devices/message`: `{target_mode?, targets, title, text, style?: "info" | "warning", requires_ack?: bool,
+source?}`. `title` (1–80) and `text` (1–1000, line breaks kept) are cleaned the same way and are required. Admins
+with a panel session only: an API token gets `403` (a person writes the message).
+
+Response: `{"status": "success", "created", "task_ids", "batch_id", "skipped_offline": [...], "native": [...],
+"fallback": [...], "unsupported": [...]}`. `native`: the agent announced `power` / `message` and gets the new
+message; `fallback`: shutdown or restart for an older (or Linux) agent, sent as the old `shutdown` command;
+`unsupported`: the task becomes `Denied` with exit code -8 and nothing is sent. These lists are a preview from the
+agents' current features; the queue decides when it sends.
+
+Tasks are stored with `kind` `power` (`payload` `{op, delay, message}`) or `user_message` (`payload` `{title, text,
+style, requires_ack}`), title `Kapat` / `Yeniden başlat` / `Oturumu kapat` / `Kilitle` / `Mesaj`, a readable
+`script_path` without the text (`power shutdown delay=60`, `user_message warning ack`) and an expiry of 15 minutes.
+They do not count against the concurrency limit, a message waiting for its acknowledgement does not hold the
+device's queue, and they do not depend on the `terminal` module (the old command for an older agent does). Results:
+0 `Completed`; -5 (capability off), -6 (nobody signed in) and -8 (not supported) `Denied`. Agent side:
+[`agent.md`](agent.md#power-and-user_message-contract).
+
+Audit: one `power_command` / `user_message` record per request (op or style, delay or acknowledgement, target
+count, offline / fallback / unsupported counts, requesting user) and one per device when sent. The note, title and
+text are recorded only as their length and first 60 characters.
+
 ### Wake-on-LAN
 
 | Method | Path | Auth | Purpose |
@@ -243,7 +309,7 @@ forward does not change it. How the server tracks it: [`backend.md`](backend.md#
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/api/deploy_orchestration` | require_admin | **Deprecated:** `POST /api/v1/tasks` (same body). `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], task_sequence: [{name, type, command}], title?, source?, reason?}` (`taskSequence` is accepted too; not both). A step of `type` `WINGET` (any case) carries `winget: {id, version}` instead of `command` (see [winget steps](#winget-steps)); any other step needs `command` and may not have `winget`. Queues one task per target and step in one transaction, recording the requesting user, then starts the queue. `title` (at most 200 characters), `source` (the panel page the request comes from, at most 40) and `reason` (at most 500) are optional; they are stored on every created task together with the caller's IP address and a `batch_id` shared by the tasks of the request. A task's title is the step's `name`, or `title` when the step has none. Returns `created` (number of tasks) and `task_ids`. The same request from the same user within 5 seconds (double click, retry) creates nothing and returns `duplicate: true`. `target_mode` is not case-sensitive (`"lab"` is `LAB`). `422` for an unknown `target_mode`, a field the endpoint does not know (also inside `task_sequence`), or a PC ID that is not registered (nothing is created). |
-| GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). Besides the queue columns each row has `title`, `source`, `reason`, `client_ip` and `batch_id` (empty on tasks created before migration `0019`); the panel groups the tasks of one `batch_id` into one job. `kind` is `"winget"` for a winget step (`null` for a command) and `payload` its package `{id, version}`. |
+| GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). Besides the queue columns each row has `title`, `source`, `reason`, `client_ip` and `batch_id` (empty on tasks created before migration `0019`); the panel groups the tasks of one `batch_id` into one job. `kind` is `"winget"` for a winget step, `"power"` / `"user_message"` for a power action or message (`null` for a command), and `payload` its details (`{id, version}` for winget). |
 | GET | `/api/deploy/winget/catalog` | require_auth, module `deploy` | The winget catalog of the **Dağıtım** page (see [winget steps](#winget-steps)). `?q=` (at most 100 characters; every word must appear in the id, name, publisher, category or description; Turkish letters and case do not matter), `?category=`, `?limit=` (1–500, default 200). `{"items": [{id, name, publisher, category, description, description_en, note?, note_en?}], "matched", "total", "categories": [{id, label, count}], "updated", "source"}`. Ids that start with or equal the query come first. |
 | POST | `/api/tasks/status` | require_auth | `{ids: [...]}` (at most 5000): `{"items": [{id, target_pc, target_lab, status, exit_code, dispatched_at}]}` for the tasks that still exist. The panel's job center polls it for the progress of what was sent. |
 | POST | `/api/tasks/action` | require_admin | `{action: CANCEL \| RETRY \| PAUSE \| RESUME, target_mode: TASK \| LAB \| PC \| ALL, target_id}`. RETRY opens a **new** task for each finished task (`retry_of` = the old one) unless a retry of it is still pending or running; the old task keeps its result. A retry keeps the title and reason, gets `source` `tasks` and a new `batch_id`, and the reply lists `task_ids`. |
@@ -525,9 +591,23 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/modules` | require_auth | Every module with `setting` (organisation, `null` = none), `enabled` (organisation, with dependencies), `lab_overrides`, `lab_enabled`, dependencies and profile defaults, plus `profile`, `labs`. |
-| POST | `/api/modules/{module_id}` | require_superadmin | `{enabled: true \| false \| null, lab?}`: sets (or with `null` removes) the organisation or lab setting. Turning `vision` off closes open Vision sessions; turning `terminal` off denies pending and paused tasks there; turning `files` off rejects file transfers that were sent but not started (their tokens stop working); turning `exam` off ends the running exams there. Returns `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled`, `exams_ended`. Audited (`module_setting`); an organisation change sets the profile to `custom`. |
-| GET | `/api/system/install-profile/{name}` | require_superadmin | Preview of `school` or `org`: the organisation settings that would change and the number of lab overrides. |
+| GET | `/api/modules/{module_id}/preview` | require_superadmin | Query `enabled` (`true` \| `false`; omitted = remove the setting) and `lab`: what the change would do, without writing anything. `changes` lists every module and lab (`null` = organisation) whose state would change, dependants included (`id`, `name`, `lab`, `from`, `to`); `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled` and `exams_ended` count the open Vision sessions that would close, the pending or paused tasks that would be denied, the file transfers that would be rejected and the running exams that would end. The panel shows it before asking to confirm. |
+| POST | `/api/modules/{module_id}` | require_superadmin | `{enabled: true \| false \| null, lab?}`: sets (or with `null` removes) the organisation or lab setting. Turning `vision` off closes open Vision sessions; turning `terminal` off denies pending and paused tasks there (power actions and messages stay); turning `deploy` off denies pending winget steps; turning `files` off rejects file transfers that were sent but not started (their tokens stop working); turning `exam` off ends the running exams there. Returns `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled`, `exams_ended`. Audited (`module_setting`); an organisation change sets the profile to `custom`. |
+| GET | `/api/system/install-profile/{name}` | require_superadmin | Preview of `school` or `org`: the organisation settings that would change, the number of lab overrides, and `vision_sessions_closed`, `tasks_denied`, `transfers_cancelled` and `exams_ended` as for a module preview. With `?reset_labs=true` the counts assume the lab overrides are deleted too. |
 | POST | `/api/system/install-profile` | require_superadmin | `{profile: "school" \| "org", reset_labs}`: applies the profile's defaults organisation-wide (and with `reset_labs` deletes lab overrides). Audited (`module_profile`). |
+
+### Integrations (GLPI export)
+
+Superadmin only. See [`integrations/glpi.md`](integrations/glpi.md). The tokens are never returned: responses say
+only whether one is saved.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/system/glpi` | require_superadmin | Settings (`enabled`, `url`, `app_token_set`, `user_token_set`, `entity`, `interval_hours`, `sync`, `tickets_since`, `locations`), `last_run` (time, trigger, `ok`, `counts`, `error`, `errors`, `failures`), `running`, `links` (linked computers and tickets, problems), `problems` (devices with several matches or gone from GLPI) and `allow_private` (`GLPI_ALLOW_PRIVATE`). |
+| POST | `/api/system/glpi` | require_superadmin | `{enabled, url, app_token?, user_token?, entity, interval_hours: 0 \| 6 \| 12 \| 24, sync: {computers, software, tickets, ticket_reporter}, tickets_since?, locations?}`. A token that is omitted or `null` is kept, `""` deletes it. Turning on needs an address and a user token (`400`). When the address changes, saved tokens must be sent again (`400`), so they never go to another host by themselves. `tickets_since` defaults to the day ticket export is first turned on. Audit-logged with the names of the changed settings. Returns the same as GET. |
+| POST | `/api/system/glpi/test` | require_superadmin | `{url?, app_token?, user_token?}` (missing values come from the saved settings; saved tokens are used only for the saved address): opens a GLPI session, reads the user and entity, closes it. `{ok: true, user, entity, plain_http}` or `{ok: false, error}` with a readable reason (for example "GLPI kullanıcı jetonunu kabul etmedi …"). |
+| POST | `/api/system/glpi/sync` | require_superadmin | Starts a run in the background (`started: false` if one is running). `?wait=true` waits up to 120 seconds and returns the run's `result`. `400` while the export is off. Audit-logged. |
+| DELETE | `/api/system/glpi/links/{pc_name}` | require_superadmin | Forgets a device's GLPI links (GLPI is not changed); the next run looks it up again. `404` if it has none. |
 
 ### Signed releases and agent updates
 
@@ -535,8 +615,9 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | --- | --- | --- | --- |
 | POST | `/api/system/upload-release` | require_superadmin | Multipart `files` (`manifest.json`, `manifest.json.sig` and packages) and form field `force`. Verifies the ed25519 signature against `keys/pops_release_ed25519.pub.pem` and every file's SHA-256, then stages the release under `Backend/releases/<version>/`. `409` if it is not newer than the staged release (unless `force`). |
 | POST | `/api/system/fetch-release` | require_superadmin | `{tag?, force}`: downloads `manifest.json`, its signature and the agent packages the manifest lists (the Windows MSI and, from releases that have it, the Linux `pops-agent_<version>_all.deb`) from a GitHub release (latest if `tag` is empty) and runs the same verification as an upload. `502` if GitHub cannot be reached or a listed package is missing. |
-| POST | `/api/system/deploy-update` | require_superadmin | `{target_mode: "ALL" \| "LAB" \| "PC", targets}`: copies the staged agent packages (at most one MSI and one `.deb`) to `/updates/` and sends `update_agent` with the signed manifest to the **online** targets; each agent picks its own package from the manifest. Targets whose platform (`clients.platform`) has no package in the staged release are skipped (`skipped_no_package`). A target that already has a pending update to the same version, sent less than 15 minutes ago or with a stage reported in the last 15 minutes, is not sent again (the agent ignores a second command while its update lock is fresh): it is listed in `already_pending`, online or not. Returns `msi`, `deb`, `dispatched`, `skipped_offline`, `skipped_no_package` and `already_pending`. `target_mode` is not case-sensitive; an unknown mode or field is `422`. |
-| POST | `/api/system/update-progress` | require_admin | `{pcs: [...], version, since}` (`since` = Unix time of the dispatch; at most 5000 devices): per device `known`, `online`, `version`, `on_target` (running `version`), `pending` (an update was sent and not answered yet), `sent_at` (when it was sent), the last stage the agent reported for it (`stage`, `detail`, `attempt`, `of`, `stage_at`; all `null` when there is none, see [`update_progress`](#update_progress-agent-update-stages)) and `result` (the update result received since `since`: `status`, `rollback`, `to_version`, `detail`, `agent_state`). `now` is the server's time. Times are Unix seconds. The panel follows an agent update with it. |
+| POST | `/api/system/deploy-update` | require_superadmin | `{target_mode: "ALL" \| "LAB" \| "PC", targets}`: copies the staged agent packages (at most one MSI and one `.deb`) to `/updates/` and sends `update_agent` with the signed manifest to the **online** targets; each agent picks its own package from the manifest. Targets whose platform (`clients.platform`) has no package in the staged release are skipped (`skipped_no_package`). A target that already has a pending update to the same version, sent less than 15 minutes ago or with a stage reported in the last 15 minutes, is not sent again (the agent ignores a second command while its update lock is fresh): it is listed in `already_pending`, online or not. Returns `msi`, `deb`, `dispatched`, `skipped_offline`, `skipped_no_package` and `already_pending`. With the lab-local peer cache on (`update_peer_cache`, default), Windows agents that announce `peer_cache` are staged per lab ([`agent.md`](agent.md#peer-cache-contract)): `seeds` (sent now, one per lab), `waiting_for_seed` (not sent yet: they get `update_agent` with `peers` when their lab's seed reports a successful update, or without `peers` if no seed succeeds) and `with_peers` (sent now with `peers`, because their lab already has PCs holding the package). Agents without the feature, Linux agents and PCs without a lab are sent at once, as before. `target_mode` is not case-sensitive; an unknown mode or field is `422`. |
+| POST | `/api/system/update-peer-cache` | require_superadmin | `{enabled}`: turns the lab-local peer cache for agent updates on or off (`update_peer_cache`, default on). Turning it off sends the update at once, without `peers`, to the PCs still waiting for a seed. Audited as `update_peer_cache`. |
+| POST | `/api/system/update-progress` | require_admin | `{pcs: [...], version, since}` (`since` = Unix time of the dispatch; at most 5000 devices): per device `known`, `online`, `version`, `on_target` (running `version`), `pending` (an update was sent and not answered yet), `sent_at` (when it was sent), the last stage the agent reported for it (`stage`, `detail`, `attempt`, `of`, `stage_at`; all `null` when there is none, see [`update_progress`](#update_progress-agent-update-stages)) and `result` (the update result received since `since`: `status`, `rollback`, `to_version`, `detail`, `agent_state`), and `peer` (`null`, or `{lab, role}` with role `seed`, `waiting`, `via_peers`, `without_peers` or `former_seed` when the device is part of a staged lab rollout). `peer_labs` summarises each staged lab of these devices: `lab`, `version`, `state` (`seeding`, `released` = sent with peers, `fallback` = sent without peers), `seed`, `seed_stage` (last stage of the seed, `ready` after its successful result), `seed_online`, `tried` (seeds given up), `waiting`, `via_peers`, `without_peers` and `peers` (PCs currently offered as peers). `now` is the server's time. Times are Unix seconds. The panel follows an agent update with it. |
 
 ### Enrollment, identity and capabilities
 

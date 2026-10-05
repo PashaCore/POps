@@ -49,6 +49,8 @@ isolation callbacks, so no firewall rule or real setting is touched.
    | `set_bypass_secret.json` | ignored, nothing stored or sent (the test worker has no device-secret connection); `BypassSecretCommand.Process(secret, true, …)` with the vector's `secret` stores it and returns the `fingerprint` of `examples/agent-to-server/bypass_secret_ack.json` |
    | `execute*.json` with the terminal capability off | a `result` with `exit_code` -5 and a `capability_denied` with the same `task_id` |
    | `winget_install*.json` | agents that do not implement it (and do not send `X-Agent-Features: winget`): ignored, nothing sent. Agents that do, with the terminal capability off: a `result` with `exit_code` -5 and a `capability_denied` with the same `task_id`; with the `deploy` module off: the same with `capability` `deploy` and `reason` `module_disabled` |
+   | `power*.json` | agents that do not implement it (and do not send `X-Agent-Features: power`): ignored, nothing sent. Agents that do, with the local `power` capability off: a `result` with `exit_code` -5 and a `capability_denied` (capability `power`) with the same `task_id`; `power.lock.json` with nobody signed in: a `result` with `exit_code` -6 and output starting "[REDDEDİLDİ]". Use a fake power backend: the test machine must not shut down |
+   | `user_message.json` | agents that do not implement it (no `message` feature): ignored, nothing sent. Agents that do, with the `message` capability off: `result` -5 and `capability_denied` (capability `message`); with nobody signed in: `result` -6; with a fake tray that acknowledges: `result` with `exit_code` 0 and output "[TAMAM] okundu" |
    | `cancel_task.json`, `result_ack.json`, `update_result_ack.json`, `unlock.json` | no exception; nothing sent |
    | `lockdown.json` | the fake isolation is applied (`NetworkIsolation.StatePath` exists) |
    | `exam_mode.json` | exam mode applied with the vector's allow list, message, program list and `until` (a fixed past time: load it with a test clock set before `until`, e.g. `until` − 1 h); an `exam_state` with `enabled: true` is sent. With the `exam` capability off: one `capability_denied` (`capability` `exam`, `action` `exam_mode`) and nothing applied |
@@ -59,6 +61,7 @@ isolation callbacks, so no firewall rule or real setting is touched.
    | `scan_updates.json`, `install_updates.*.json`, `wake_peer.json` with the module off (`AgentModules`) | `capability_denied` with `reason` `module_disabled` |
    | `update_agent.json` | refused: the manifest is signed with the test key, not the release key (see 3) |
    | `file_push.json`, `file_pull.json` with file transfer off | a `capability_denied` (capability `files`) or a `file_result` `rejected` with the same `transfer_id`; nothing is downloaded or uploaded (with it on, the URLs point at a test server that does not exist: a `file_result` `failed`) |
+   | `update_agent.peers.json` | the same as `update_agent.json`: `peers` changes nothing before the signature check, and an agent without `peer_cache` ignores the field |
    | `unknown/server-to-agent.json` | ignored: no exception, nothing sent |
 
    Running `execute` for real is already covered by `WorkerCommandTests`; here it is enough to refuse it, so the

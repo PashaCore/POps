@@ -1534,6 +1534,357 @@ def test_devicelist():
         dl.reset()
 
 
+def test_power():
+    """Güç komutu ve mesaj: metin temizliği (kontrol ve yön karakterleri), sınırlar, eski ajan için güvenli not ve
+    Linux kalıbı, plan (native / fallback / unsupported), denetim önizlemesi."""
+    print("== güç komutu ve mesaj")
+    import re
+
+    from pops import power
+
+    chk(power.clean_text("a\u0000b\tc\u202ed\r\ne", 50) == "ab cd e", "tek satır: kontrol ve yön karakterleri")
+    chk(power.clean_text("x\r\n\r\n\r\n\u0007y  \nz", 50, multiline=True) == "x\n\ny\nz",
+        "çok satır: \\n kalır, en çok bir boş satır")
+    chk(power.clean_text("Öğrenci ŞIİ çğü", 20) == "Öğrenci ŞIİ çğü", "Türkçe korunur")
+    for bad, why in ((lambda: power.clean_text("x" * 201, 200), "uzun not"),
+                     (lambda: power.power_payload("hibernate", 0), "bilinmeyen op"),
+                     (lambda: power.power_payload("lock", 601), "uzun gecikme"),
+                     (lambda: power.power_payload("lock", True), "bool gecikme"),
+                     (lambda: power.message_payload(" ", "metin"), "boş başlık"),
+                     (lambda: power.message_payload("b", "m", "danger"), "bilinmeyen stil")):
+        try:
+            bad()
+            chk(False, "%s reddedilir" % why)
+        except ValueError:
+            chk(True, "%s reddedilir" % why)
+    spec = power.power_payload("shutdown", 0, 'Not: %TEMP% & "x" ^ | < > ! `$(id)` ğ')
+    cmd = power.fallback_command(spec, None)
+    chk(cmd == 'shutdown /s /f /t 5 /c "Not: TEMP x (id) ğ"', "eski Windows: güvenli not, en az 5 sn: %s" % cmd)
+    note = cmd.split("/c ", 1)[1][1:-1]
+    chk(not set(note) & set('%"^&|<>!`$\n'), "notta kabuk karakteri yok")
+    linux = power.fallback_command(power.power_payload("restart", 90, "not"), "linux")
+    chk(re.fullmatch(r"shutdown\s+/([rs])\s+/f\s+/t\s+(\d{1,4})", linux) is not None and linux.endswith("/t 90"),
+        "Linux: notsuz kalıp")
+    chk(power.fallback_command(power.power_payload("restart", 0, "%%"), None) == "shutdown /r /f /t 5",
+        "boş kalan not eklenmez")
+    lock = power.power_payload("lock", 0)
+    chk(power.plan("power", lock, ["power"], None) == "native" and power.plan("power", lock, [], None) == "unsupported"
+        and power.plan("power", spec, None, "linux") == "fallback"
+        and power.plan("user_message", power.message_payload("a", "b"), ["power"], None) == "unsupported",
+        "plan: native / fallback / unsupported")
+    p = power.preview("x" * 100)
+    chk(p == {"length": 100, "preview": "x" * 60 + "…"}, "önizleme: uzunluk ve ilk 60 karakter")
+
+
+def test_peer_cache():
+    print("== peer_cache: başlık, adres ve tohum seçimi")
+    from pops import peer_cache as pc
+    from pops.manager import manager
+
+    a = pc.parse_header("port=8818; ip=10.20.0.11; link=wired")
+    chk((a.port, a.ip, a.link) == (8818, "10.20.0.11", "wired"), "başlık okundu")
+    a = pc.parse_header(" LINK=Wireless ;ip = 192.168.1.5;port=80;x=y")
+    chk((a.port, a.ip, a.link) == (pc.DEFAULT_PORT, "192.168.1.5", "wireless"), "1024 altı port varsayılana döner")
+    a = pc.parse_header(None)
+    chk((a.port, a.ip, a.link) == (8817, None, None), "başlıksız: 8817, adres yok")
+    for bad in ("8.8.8.8", "127.0.0.1", "169.254.1.1", "0.0.0.0", "224.0.0.1", "fd00::1", "10.0.0.300", "", None,
+                "10.0.0.1:80"):
+        chk(pc.lan_ip(bad) is None, "yerel ağ adresi değil: %r" % (bad,))
+    chk(pc.lan_ip(" 172.16.4.2 ") == "172.16.4.2", "özel adres kabul")
+    chk(pc.parse_header("port=99999; ip=8.8.8.8; link=fiber").ip is None, "geçersiz parçalar atılır")
+
+    saved = dict(manager.active_agents)
+    pc.reset()
+    try:
+        for name in ("S1", "S2", "S3", "S4", "S5", "S6"):
+            manager.active_agents[name] = object()
+        pc.connected("S1", ["peer_cache"], "ip=10.0.0.1")
+        pc.connected("S2", ["peer_cache", "winget"], "link=wired")
+        pc.connected("S3", ["peer_cache"], "ip=10.0.0.3; link=wireless")
+        pc.connected("S4", ["winget"], "ip=10.0.0.4; link=wired")   # özellik yok: kaydedilmez
+        pc.connected("S5", ["peer_cache"], "ip=10.0.0.5")
+        pc.connected("S6", ["peer_cache"], "")
+        chk("S4" not in pc._announce, "özelliği duyurmayan ajanın başlığı yok sayılır")
+        rows = [
+            {"pc_name": "S1", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 10:00:01"},
+            {"pc_name": "S2", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 09:00:00",
+             "inv_ip": "10.0.0.2"},
+            {"pc_name": "S3", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 10:00:02"},
+            {"pc_name": "S4", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 10:00:09"},
+            {"pc_name": "S5", "has_feature": True, "version": "v9.9.9", "last_seen": "2026-10-05 10:00:09"},
+            {"pc_name": "S6", "has_feature": True, "version": "0.1.23", "conn_ip": "10.0.0.6"},
+            {"pc_name": "S7", "has_feature": True, "version": "0.1.23", "conn_ip": "10.0.0.6"},
+        ]
+        pc.resolve_ips(rows)
+        ips = {r["pc_name"]: r["ip"] for r in rows}
+        chk(ips["S1"] == "10.0.0.1" and ips["S2"] == "10.0.0.2", "başlıktaki, yoksa envanterdeki adres")
+        chk(ips["S6"] is None, "iki bilgisayarın paylaştığı bağlantı adresi (NAT) kullanılmaz")
+        rows[5]["conn_ip"], rows[6]["conn_ip"] = "10.0.0.6", "10.0.0.7"
+        pc.resolve_ips(rows)
+        chk(rows[5]["ip"] == "10.0.0.6", "paylaşılmayan özel bağlantı adresi kullanılır")
+        seeds = pc.choose_seeds(rows, "9.9.9")
+        chk(seeds == ["S2", "S3", "S1", "S6"],
+            "kablolu önce, sonra en son görülen; özelliksiz, hedef sürümdeki ve bağlı olmayan aday değil: %s" % seeds)
+
+        ro = pc.Rollout(lab="L", version="9.9.9", sha256="ab" * 32, msg={})
+        now = time.time()
+        ro.seed = "S3"
+        ro.ready = {"S1": now - 5, "S3": now - 60, "S5": now - 1, "S6": now - pc.PEER_TTL - 1, "S2": now - 2}
+        peers = pc._live_peers(ro)
+        chk([p["hw_id"] for p in peers] == ["S3", "S5", "S1"],
+            "tohum önce, sonra en yeni; adressiz ve süresi dolan atlanır, en çok 3: %s" % peers)
+        chk(peers[0]["url"] == "http://10.0.0.3:8817/pops-cache/" + "ab" * 32, "eş adresi")
+        rot = [[p["hw_id"] for p in pc._rotate(peers, i)] for i in range(3)]
+        chk(rot == [["S3", "S5", "S1"], ["S5", "S1", "S3"], ["S1", "S3", "S5"]],
+            "eşler bilgisayardan bilgisayara kayar")
+        pc.disconnected("S5")
+        chk([p["hw_id"] for p in pc._live_peers(ro)] == ["S3", "S1"], "bağlantısı kopan eş önerilmez")
+    finally:
+        pc.reset()
+        manager.active_agents.clear()
+        manager.active_agents.update(saved)
+
+
+def test_sso():
+    print("== sso: dönüş yolu, grup → rol, ayar doğrulaması, kimlik jetonu")
+    import jwt as pyjwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from pydantic import ValidationError
+
+    from pops import sso, sso_ldap, sso_oidc
+    from pops.models import LdapSettingsInput, OidcSettingsInput
+
+    for good in ("/devices", "/tasks?tab=jobs", "/"):
+        chk(sso.safe_next(good) == good, "geçerli dönüş yolu: %s" % good)
+    for bad in ("https://evil.example", "//evil.example", "/\\evil", "javascript:alert(1)", "/a/../b", "devices",
+                "/x\n", "/x\r\nSet-Cookie: a=b", "/" + "a" * 300, "/%2F%2Fevil", None, ""):
+        chk(sso.safe_next(bad) is None, "dönüş yolu reddedildi: %r" % ((bad or "")[:40],))
+    gm = [{"group": "CN=Admins,DC=okul,DC=local", "role": "admin", "pages": ["devices"]},
+          {"group": "cn=view, dc=okul, dc=local", "role": "viewer", "pages": ["logger", "devices"]},
+          {"group": "cn=root,dc=okul,dc=local", "role": "superadmin", "pages": []}]
+    chk(sso.map_role(["cn=admins,dc=okul,dc=local", "CN=VIEW,DC=okul,DC=local"], gm, dn=True)
+        == ("admin", ["devices", "logger"]), "en yüksek rol, sayfaların birleşimi; DN büyük/küçük harf duyarsız")
+    chk(sso.map_role(["cn=other,dc=okul,dc=local"], gm, dn=True) is None, "eşleşmeyen grup: erişim yok")
+    chk(sso.map_role(["cn=root,dc=okul,dc=local", "cn=admins,dc=okul,dc=local"], gm, dn=True) == ("superadmin", []),
+        "süper admin sayfa listesi taşımaz")
+    chk(sso.map_role(["POPS-Admins"], [{"group": "pops-admins", "role": "admin", "pages": []}], dn=False)
+        == ("admin", []), "OIDC grubu büyük/küçük harf duyarsız")
+
+    base = {"host": "dc1.okul.local", "port": 636, "security": "ldaps", "base_dn": "dc=okul,dc=local",
+            "bind_dn": "cn=svc,dc=okul,dc=local", "user_filter": "(sAMAccountName={username})"}
+
+    def refused(fn, cfg):
+        try:
+            fn(cfg)
+            return False
+        except ValueError:
+            return True
+    chk(sso.clean_ldap(base)["security"] == "ldaps", "LDAPS ayarı geçer")
+    chk(refused(sso.clean_ldap, dict(base, security="plain")), "şifresiz LDAP reddedilir")
+    from pops import config as pops_config
+    saved_flag = pops_config.SSO_ALLOW_INSECURE_FOR_TESTS
+    try:
+        pops_config.SSO_ALLOW_INSECURE_FOR_TESTS = False
+        chk(refused(sso.clean_ldap, dict(base, security="plain", allow_insecure_for_tests=True)),
+            "test bayrağı, sunucu ortamında POPS_SSO_ALLOW_INSECURE_FOR_TESTS yokken reddedilir")
+        chk(refused(sso.clean_oidc, {"issuer": "http://idp.test", "allow_insecure_for_tests": True}),
+            "http sağlayıcı da öyle")
+        try:
+            sso_ldap._server(dict(base, security="plain", allow_insecure_for_tests=True))
+            chk(False, "kayıtlı bayrak tek başına şifresiz bağlantıya izin vermemeli")
+        except sso_ldap.LdapError:
+            chk(not sso.insecure_allowed({"allow_insecure_for_tests": True}),
+                "kayıtlı bayrak tek başına şifresiz bağlantıya izin vermez")
+        pops_config.SSO_ALLOW_INSECURE_FOR_TESTS = True
+        chk(sso.clean_ldap(dict(base, security="plain", allow_insecure_for_tests=True))["security"] == "plain",
+            "test bayrağı + ortam değişkeniyle şifresiz LDAP")
+    finally:
+        pops_config.SSO_ALLOW_INSECURE_FOR_TESTS = saved_flag
+    chk(set(sso.SECRET_BOUND["ldap"]) >= {"host", "port", "bind_dn", "security", "ca_pem", "allow_insecure_for_tests"}
+        and set(sso.SECRET_BOUND["oidc"]) >= {"issuer", "client_id", "ca_pem"},
+        "kayıtlı sır sunucu, bağlantı türü ve CA'ya bağlı")
+    chk(refused(sso.clean_ldap, dict(base, user_filter="(uid=x)")), "{username} olmayan filtre reddedilir")
+    chk(refused(sso.clean_ldap, dict(base, user_filter="(uid={username}")), "dengesiz parantez reddedilir")
+    chk(refused(sso.clean_ldap, dict(base, host="ldap://dc1")), "adreste şema reddedilir")
+    chk(refused(sso.clean_ldap, dict(base, ca_pem="not a cert")), "bozuk CA reddedilir")
+    chk(refused(sso.clean_ldap, dict(base, group_map=[{"group": "cn=x", "role": "admin", "pages": ["Bad Page"]}])),
+        "geçersiz sayfa adı reddedilir")
+    try:
+        LdapSettingsInput(host="x", unknown=1)
+        chk(False, "bilinmeyen alan reddedilmeli")
+    except ValidationError:
+        chk(True, "LDAP ayarında bilinmeyen alan 422")
+    try:
+        OidcSettingsInput(default_role="superadmin")
+        chk(False, "alan adına süper admin reddedilmeli")
+    except ValidationError:
+        chk(True, "varsayılan rol süper admin olamaz")
+
+    ob = {"issuer": "https://login.okul.local/realms/okul", "client_id": "pops",
+          "redirect_uri": "https://pops.okul.local/api/auth/oidc/callback", "scopes": "email profile"}
+    c = sso.clean_oidc(ob)
+    chk(c["scopes"] == "openid email profile", "openid kapsamı eklenir")
+    chk(refused(sso.clean_oidc, dict(ob, issuer="http://login.okul.local")), "http sağlayıcı reddedilir")
+    chk(refused(sso.clean_oidc, dict(ob, redirect_uri="https://pops.okul.local/cb")), "yanlış dönüş yolu reddedilir")
+    chk(refused(sso.clean_oidc, dict(ob, redirect_uri="http://pops.okul.local/api/auth/oidc/callback")),
+        "http dönüş adresi (loopback dışı) reddedilir")
+    chk(sso.callback_ok("http://127.0.0.1:8096/api/auth/oidc/callback"), "loopback http dönüş adresi geçer")
+    chk(not sso.callback_ok("https://pops.okul.local/api/auth/oidc/callback?x=1"), "sorgulu dönüş adresi reddedilir")
+    chk(refused(sso.clean_oidc, dict(ob, default_role="viewer")), "alan adı olmadan varsayılan rol reddedilir")
+    chk(sso.clean_oidc(dict(ob, allowed_domains=["@Okul.K12.TR"]))["allowed_domains"] == ["okul.k12.tr"],
+        "alan adı küçük harfe, @ atılır")
+
+    chk(sso_ldap.is_disabled({"userAccountControl": ["514"]}), "AD: ACCOUNTDISABLE")
+    chk(not sso_ldap.is_disabled({"userAccountControl": ["512"]}), "AD: normal hesap")
+    chk(sso_ldap.is_disabled({"nsAccountLock": "TRUE"}), "389-DS/FreeIPA: nsAccountLock")
+    chk(sso_ldap.is_disabled({"pwdAccountLockedTime": ["000001010000Z"]}), "OpenLDAP ppolicy kilidi")
+    chk(sso.normalize_dn(" CN=A , OU=B,DC=c ") == "cn=a,ou=b,dc=c", "DN normalleştirme")
+    chk(sso.valid_username("ayse") and not sso.valid_username("token:x") and not sso.valid_username(" a"),
+        "kullanıcı adı denetimi")
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwk = json.loads(pyjwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
+    jwk.update(kid="k1", use="sig")
+    doc = {"issuer": "https://idp.test", "jwks_uri": "https://idp.test/jwks",
+           "id_token_signing_alg_values_supported": ["RS256"]}
+    cfg = {"client_id": "pops", "issuer": "https://idp.test"}
+    orig = sso_oidc._request
+    sso_oidc._request = lambda _cfg, url, data=None, headers=None: {"keys": [jwk]}
+    sso_oidc.clear_cache()
+    now = int(time.time())
+    claims = {"iss": "https://idp.test", "aud": "pops", "sub": "s1", "iat": now, "exp": now + 300, "nonce": "n1",
+              "email": "Ali@Okul.Test", "email_verified": True, "groups": "pops-admins"}
+
+    def tok(c=None, k=key, alg="RS256", kid="k1"):
+        return pyjwt.encode(dict(claims, **(c or {})), k, algorithm=alg, headers={"kid": kid} if kid else None)
+
+    def bad(t, nonce="n1"):
+        try:
+            sso_oidc.validate_id_token(cfg, doc, t, nonce)
+            return False
+        except sso_oidc.OidcError as e:
+            return e.code == "token"
+    try:
+        got = sso_oidc.validate_id_token(cfg, doc, tok(), "n1")
+        chk(got["sub"] == "s1", "geçerli kimlik jetonu")
+        ident = sso_oidc.identity({"username_claim": "email", "groups_claim": "groups"}, got)
+        chk(ident["username"] == "ali@okul.test" and ident["groups"] == ["pops-admins"]
+            and ident["external_id"] == "https://idp.test|s1", "kimlik: küçük harfli e-posta, tek grup listeye")
+        chk(sso_oidc.domain_allowed({"allowed_domains": ["okul.test"]}, ident), "izinli alan adı")
+        chk(not sso_oidc.domain_allowed({"allowed_domains": ["okul.test"]}, dict(ident, email_verified=False)),
+            "doğrulanmamış e-posta izinli sayılmaz")
+        chk(bad(tok(), nonce="n2"), "yanlış nonce")
+        chk(bad(tok({"exp": now - 600, "iat": now - 900})), "süresi dolmuş")
+        chk(bad(tok({"aud": "other"})), "yanlış aud")
+        chk(bad(tok({"aud": ["pops", "other"], "azp": "other"})), "çok aud, azp başka istemci")
+        chk(not bad(tok({"aud": ["pops", "other"], "azp": "pops"})), "çok aud, azp bu istemci")
+        chk(bad(tok({"iss": "https://evil.test"})), "yanlış iss")
+        chk(bad(tok(k=rsa.generate_private_key(public_exponent=65537, key_size=2048))), "başka anahtarla imza")
+        chk(bad(tok(k="x" * 32, alg="HS256")), "HS256 reddedilir")
+        chk(bad(tok(kid="k2")), "bilinmeyen kid")
+        chk(bad(tok({"sub": None})), "sub zorunlu")
+        none_tok = pyjwt.encode(claims, None, algorithm="none")
+        chk(bad(none_tok), "alg none reddedilir")
+        chk(sso_oidc.pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
+            == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", "PKCE S256 (RFC 7636 örneği)")
+    finally:
+        sso_oidc._request = orig
+        sso_oidc.clear_cache()
+
+
+def test_strict_inputs():
+    print("== istek gövdeleri tanınmayan alanı reddeder")
+    import server
+    from pydantic import ValidationError
+    from pops import models
+
+    # Bilerek gevşek olanlar (gerekçe models.py'de): ajanın gönderdiği gövdeler yok sayar, uzaktan girdi kabul eder.
+    # Buraya eklemek bir karardır; yeni bir panel ya da entegrasyon modeli StrictInput'tan türemeli.
+    lenient = {"LogInput", "AuthEventInput", "HwInventoryInput", "PolicyAlertInput", "SoftwareItem",
+               "SoftwareInventoryInput", "PatchUpdateItem", "PatchStatusInput", "AgentTicketInput"}
+    allow = {"RemoteInputData"}
+    spec = server.app.openapi()
+    schemas = spec["components"]["schemas"]
+
+    def refs(node, out):
+        if isinstance(node, dict):
+            name = node.get("$ref", "").rsplit("/", 1)[-1]
+            if name and name not in out:
+                out.add(name)
+                refs(schemas[name], out)
+            for v in node.values():
+                refs(v, out)
+        elif isinstance(node, list):
+            for v in node:
+                refs(v, out)
+
+    bodies = set()
+    for ops in spec["paths"].values():
+        for op in ops.values():
+            if isinstance(op, dict) and "requestBody" in op:
+                refs(op["requestBody"].get("content", {}).get("application/json", {}).get("schema", {}), bodies)
+    chk(len(bodies) >= 60 and lenient | allow <= bodies, "JSON gövdesi olan bütün uçların modelleri bulundu (%d)"
+        % len(bodies))
+    loose = sorted(n for n in bodies - lenient - allow if schemas[n].get("additionalProperties") is not False)
+    chk(not loose, "panel ve entegrasyon modelleri katı (extra=forbid): %s" % (loose or "hepsi"))
+    chk(all("additionalProperties" not in schemas[n] for n in lenient), "ajan modelleri bilinmeyen alanı yok sayar")
+    chk(all(schemas[n].get("additionalProperties") is True for n in allow), "uzaktan girdi ek alanları kabul eder")
+    try:
+        models.CreateLabInput.model_validate({"lab_name": "x", "lab": "y"})
+        chk(False, "bilinmeyen alan reddedilmeli")
+    except ValidationError as e:
+        chk(e.errors()[0]["type"] == "extra_forbidden" and e.errors()[0]["loc"] == ("lab",),
+            "bilinmeyen alan 422 (extra_forbidden, alanın adıyla)")
+    inv = models.HwInventoryInput.model_validate({"hostname": "pc", "cpu": "i5", "dna": {"hardware": {"uuid": "u"}}})
+    chk(inv.cpu == "i5" and not inv.model_extra, "ajanın envanteri 'dna' ile kabul edilir, alan atılır")
+
+
+def test_glpi():
+    print("== GLPI dışa aktarımı: adres, eşleme")
+    from pops import config, glpi
+
+    chk(glpi.api_url("https://glpi.okul.k12.tr/") == "https://glpi.okul.k12.tr/apirest.php"
+        and glpi.api_url("https://glpi.okul.k12.tr/glpi/apirest.php") == "https://glpi.okul.k12.tr/glpi/apirest.php",
+        "apirest.php adresi")
+    old = config.GLPI_ALLOW_PRIVATE
+    try:
+        config.GLPI_ALLOW_PRIVATE = False
+        for url, why in (("https://127.0.0.1", "loopback"), ("https://10.0.0.5", "iç ağ"),
+                         ("https://169.254.169.254", "bulut metadata"), ("ftp://glpi.example", "şema")):
+            try:
+                glpi.resolve(url)
+                chk(False, "%s reddedilmeli" % why)
+            except glpi.GlpiError:
+                chk(True, "%s reddedildi (GLPI_ALLOW_PRIVATE kapalı)" % why)
+        config.GLPI_ALLOW_PRIVATE = True
+        chk(glpi.resolve("http://10.0.0.5")[1] == "10.0.0.5", "izinle iç ağdaki GLPI'ye http olur")
+        try:
+            glpi.resolve("http://1.1.1.1")
+            chk(False, "internete http reddedilmeli")
+        except glpi.GlpiError as exc:
+            chk("https" in str(exc), "internetteki GLPI'ye yalnızca https")
+    finally:
+        config.GLPI_ALLOW_PRIVATE = old
+    row = {"pc_name": "HW-1", "hostname": "pc-1", "lab_name": "Lab-1", "dna_bios": "To be filled by O.E.M.",
+           "dna_uuid": "ABC-1"}
+    f = glpi.computer_fields(row, {"Lab-1": 4})
+    chk(f == {"name": "pc-1", "uuid": "ABC-1", "locations_id": 4}, "anlamsız seri gönderilmez, konum eşlenir (%s)" % f)
+    chk("locations_id" not in glpi.computer_fields(row, {}), "eşlenmemiş sınıfın konumuna dokunulmaz")
+    chk(glpi.install_date("20260131") == "2026-01-31" and glpi.install_date("2026-13-01") is None
+        and glpi.install_date("") is None, "kurulum tarihi")
+    t = glpi.ticket_input({"subject": "a", "body": "x<b>\ny", "priority": "high", "status": "waiting",
+                           "source": "panel", "reporter": "ali", "created_at": None}, 3, False)
+    chk(t["priority"] == 4 and t["status"] == 4 and t["entities_id"] == 3 and "ali" not in t["content"]
+        and "x&lt;b&gt;<br>y" in t["content"], "talep eşlemesi; metin kaçırılır, bildiren varsayılan olarak yok")
+    chk("Bildiren: ali" in glpi.ticket_input({"subject": "a", "reporter": "ali"}, 0, True)["content"],
+        "ayar açıkken bildiren yazılır")
+    err = glpi.error(401, ["ERROR_GLPI_LOGIN_USER_TOKEN", "x"])
+    chk(isinstance(err, glpi.GlpiFatal) and "kullanıcı jetonunu" in str(err), "yanlış jeton: anlaşılır, tur durur")
+    chk(not isinstance(glpi.error(400, ["ERROR_GLPI_ADD", "x"]), glpi.GlpiFatal), "öğe hatası turu durdurmaz")
+    view = glpi.public({"app_token": "a", "user_token": "", "url": "u"})
+    chk(view == {"url": "u", "app_token_set": True, "user_token_set": False}, "panele jeton gitmez")
+
+
 def test_fuzz_findings():
     """fuzz/ hedeflerinin bulduğu hatalar (docs/fuzzing.md)."""
     print("== fuzz bulguları")
@@ -1605,6 +1956,11 @@ def main():
     test_winget()
     test_vision_v2()
     test_devicelist()
+    test_power()
+    test_peer_cache()
+    test_sso()
+    test_strict_inputs()
+    test_glpi()
     test_fuzz_findings()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))

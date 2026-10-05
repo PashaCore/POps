@@ -405,7 +405,8 @@
         else if (act === 'more') {
             const all = (state.devices || []).map(d => d.hostname);
             POps.menu(b, [
-                { label: POps.t('Mesaj gönder'), icon: 'message', onClick: () => dev.message(hosts, o) },
+                dev.messageItem(hosts, o),
+                ...dev.sessionItems(hosts, o),
                 { label: POps.t('Uzak komut'), icon: 'terminal', onClick: () => { const on = hosts.filter(h => !POps.isOffline(dev.find(h))); if (!on.length) return POps.toast('warning', POps.t('Açık bilgisayar yok.')); location.href = dev.commandUrl(on.slice(0, 200)); } },
                 '-',
                 { header: POps.t('Bütün ağ') },

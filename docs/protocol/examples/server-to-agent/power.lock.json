@@ -1,0 +1,8 @@
+{
+  "action": "power",
+  "task_id": 1062,
+  "op": "lock",
+  "delay": 0,
+  "message": null,
+  "requested_by": "admin"
+}

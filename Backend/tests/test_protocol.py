@@ -221,6 +221,21 @@ def test_examples():
         chk(False, "değiştirilmiş manifest reddediliyor")
     except InvalidSignature:
         chk(True, "değiştirilmiş manifest reddediliyor")
+    peers_msg = example(S2A, "update_agent.peers")
+    msi_sha = [a["sha256"] for a in json.loads(raw)["artifacts"] if a["name"].endswith(".msi")][0]
+    chk(peers_msg["manifest"] == msg["manifest"] and peers_msg["manifest_sig"] == msg["manifest_sig"]
+        and all(p["url"].endswith("/pops-cache/" + msi_sha) for p in peers_msg["peers"]),
+        "peers örneği aynı manifest; eş adresleri MSI'ın SHA-256'sıyla biter")
+    for bad in ("https://10.0.0.1:8817/pops-cache/" + msi_sha, "http://pc12:8817/pops-cache/" + msi_sha,
+                "http://10.0.0.1:8817/pops-cache/" + msi_sha.upper(), "http://10.0.0.1/pops-cache/" + msi_sha,
+                "http://10.0.0.1:8817/pops-cache/" + msi_sha + "/x"):
+        chk(bool(validation_errors(SCHEMAS[S2A]["update_agent"], dict(msg, peers=[{"hw_id": "X", "url": bad}]))),
+            "peers: geçersiz adres reddedilir (%s)" % bad[:40])
+    chk(bool(validation_errors(SCHEMAS[S2A]["update_agent"], dict(peers_msg, peers=peers_msg["peers"] * 2))),
+        "peers: en çok 3")
+    from pops import peer_cache
+
+    chk(peer_cache.DEFAULT_PORT == 8817 and "8817" in README, "varsayılan eş portu README'de")
     verifier_tests = _read(os.path.join(REPO, "Agent", "POps.Tests", "Agent", "ReleaseVerifierTests.cs"))
     chk(TEST_PUBLIC_KEY in verifier_tests and TEST_PUBLIC_KEY in README,
         "test anahtarı ajan testleriyle ve README'yle aynı")
@@ -813,7 +828,7 @@ async def vision_channel():
 async def server_builders():
     print("== sunucunun kurduğu komutlar")
     import system_routes
-    from pops import exams, modules, taskqueue, winget, wol
+    from pops import exams, modules, power, taskqueue, winget, wol
     from pops.manager import manager
     from pops.models import LockdownInput, PatchInstallInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
     from pops.models import TaskActionInput
@@ -879,6 +894,62 @@ async def server_builders():
         await taskqueue._process_queue_once()
         chk(not agent_ws.sent and any(p[2] == winget.EXIT_UNSUPPORTED for p in old_agent.params("exit_code = $3")),
             "winget duyurmayan ajana gönderilmedi, görev -8 ile reddedildi")
+
+        # Güç komutu ve mesaj: "power"/"message" duyuran ajana kendi iletisi; duyurmayan Windows ajanına kapatma ve
+        # yeniden başlatma eski execute komutuyla (güvenli not), Linux'a notsuz kalıpla; kilit, oturumu kapatma ve
+        # mesaj duyurmayana hiç gitmez (-8 ile Denied). Kuyruğun seçimi görevi döndürse de gönderilmez.
+        def power_queue(kind, spec, features, platform=None):
+            payload = json.dumps(spec, ensure_ascii=False)
+            return FakeDB([
+                ("SELECT 1 FROM tasks WHERE status = 'Pending' LIMIT 1", [{"x": 1}]),
+                ("COUNT(DISTINCT target_pc)", [{"c": 0}]),
+                ("SELECT t.id, t.kind, t.payload", [{"id": 1060, "kind": kind, "payload": payload, "target_pc": HW,
+                                                    "features": features, "platform": platform}]),
+                ("SELECT * FROM (", [{"id": 1060, "target_pc": HW, "kind": kind, "created_by": "admin",
+                                      "payload": payload, "script_path": power.summary(kind, spec),
+                                      "created_at": "2026-10-05 10:00:00", "agent_features": features,
+                                      "agent_platform": platform}]),
+            ])
+        note = 'Ders bitti; 5 dakika içinde kaydedin. %PATH% & "x"'
+        shutdown = power.power_payload("shutdown", 300, note)
+        lock = power.power_payload("lock", 0)
+        msg = power.message_payload("Sınav başlıyor", "Kaydedin.\nSınav 10 dakika sonra.", "warning", True)
+        for kind, spec, features, platform, expected, what in (
+            ("power", shutdown, ["power", "message"], None,
+             {"action": "power", "task_id": 1060, "op": "shutdown", "delay": 300,
+              "message": 'Ders bitti; 5 dakika içinde kaydedin. %PATH% & "x"', "requested_by": "admin"},
+             "power, notuyla"),
+            ("power", lock, ["power"], "windows",
+             {"action": "power", "task_id": 1060, "op": "lock", "delay": 0, "message": None, "requested_by": "admin"},
+             "power lock"),
+            ("user_message", msg, ["message"], None,
+             {"action": "user_message", "task_id": 1060, "title": "Sınav başlıyor",
+              "text": "Kaydedin.\nSınav 10 dakika sonra.", "style": "warning", "requires_ack": True,
+              "requested_by": "admin"}, "user_message"),
+            ("power", shutdown, [], None,
+             {"action": "execute", "task_id": 1060,
+              "script_path": 'shutdown /s /f /t 300 /c "Ders bitti; 5 dakika içinde kaydedin. PATH x"',
+              "requested_by": "admin"}, "eski Windows ajanına execute, tırnaklanabilen notla"),
+            ("power", power.power_payload("restart", 0, note), None, "linux",
+             {"action": "execute", "task_id": 1060, "script_path": "shutdown /r /f /t 5", "requested_by": "admin"},
+             "Linux ajanına notsuz kalıp, en az 5 sn"),
+        ):
+            P.set(taskqueue, "execute_query", power_queue(kind, spec, features, platform))
+            await taskqueue._process_queue_once()
+            chk(agent_ws.sent == [expected], "taskqueue: %s (%s)" % (what, agent_ws.sent))
+            take(agent_ws, "taskqueue._process_queue_once (%s)" % what)
+        for kind, spec, features, platform, what in (
+            ("power", lock, ["message", "winget"], None, "kilit, power duyurmayan ajan"),
+            ("power", power.power_payload("logoff", 60), None, "linux", "oturumu kapatma, Linux"),
+            ("user_message", msg, ["power"], None, "mesaj, message duyurmayan ajan"),
+        ):
+            fake = power_queue(kind, spec, features, platform)
+            P.set(taskqueue, "execute_query", fake)
+            await taskqueue._process_queue_once()
+            denied = fake.params("UPDATE tasks SET status = 'Denied', exit_code = $2")
+            chk(not agent_ws.sent and [p[1:] for p in denied] == [(power.EXIT_UNSUPPORTED, power.UNSUPPORTED_OUTPUT)],
+                "%s: hiçbir şey gönderilmedi, görev -8 ile reddedildi" % what)
+            agent_ws.sent.clear()
 
         P.set(tasks_router, "execute_query", FakeDB([("WITH target AS", [
             {"id": 1042, "target_pc": HW, "old_status": "Running"}])]))
@@ -1043,13 +1114,32 @@ async def server_builders():
             router = system_routes.build_router(lambda: None, lambda: None, sysdb, manager,
                                                 os.path.join(tmp, "updates"), recorder([]))
             endpoints = {r.path: r.endpoint for r in router.routes}
-            await endpoints["/api/system/deploy-update"](system_routes.DeployUpdateInput(target_mode="PC",
-                                                                                         targets=[HW]), auth)
-            manager.pending_updates.pop(HW, None)
+            # Eş önbelleği: önce ayar kapalı (bugünkü gibi), sonra sınıfın hazır eşleri peers ile
+            from pops import peer_cache
+            plans = []
+
+            async def no_plan(online, version, sha256, msg):
+                plans.append(sha256)
+                return peer_cache.Plan()
+
+            async def with_peers(online, version, sha256, msg):
+                return peer_cache.Plan(peers={pc: [{"hw_id": "HW-PEER-%d" % i, "url": peer_cache.peer_url(
+                    "10.20.0.%d" % (10 + i), peer_cache.DEFAULT_PORT + i, sha256)} for i in range(3)]
+                    for pc in online})
+            for plan in (no_plan, with_peers):
+                P.set(peer_cache, "plan", plan)
+                await endpoints["/api/system/deploy-update"](system_routes.DeployUpdateInput(target_mode="PC",
+                                                                                             targets=[HW]), auth)
+                manager.pending_updates.pop(HW, None)
+            msi_sha = [a["sha256"] for a in manifest["artifacts"] if a["name"] == msi][0]
+            chk(plans == [msi_sha], "deploy-update eş planına imzalı manifest'teki MSI özetini verir")
             sent = agent_ws.sent[0] if agent_ws.sent else {}
-            chk(base64.b64decode(sent.get("manifest", "")) == manifest_bytes,
+            chk(base64.b64decode(sent.get("manifest", "")) == manifest_bytes and "peers" not in sent,
                 "update_agent manifest'i baytı bozmadan taşır")
             check_message_manifest(base64.b64decode(sent.get("manifest", "")), "deploy-update")
+            peered = agent_ws.sent[1] if len(agent_ws.sent) > 1 else {}
+            chk(len(peered.get("peers") or []) == 3 and peered.get("manifest") == sent.get("manifest"),
+                "peers'lı update_agent")
             take(agent_ws, "system_routes.deploy_update")
             for fields in ({"terminal_enabled": False}, {"terminal_enabled": False, "vision_enabled": False}):
                 capability = system_routes.CapabilityInput(pc_name=HW, **fields)
@@ -1067,9 +1157,9 @@ async def server_builders():
     for origin, msg in built:
         check_message(S2A, msg, origin)
     produced = {message_name(S2A, m) for _, m in built}
-    chk({"execute", "winget_install", "cancel_task", "lockdown", "unlock", "start_vision_session", "stop_stream",
-         "remote_input", "scan_updates", "install_updates", "wake_peer", "update_agent", "set_capabilities",
-         "server_info", "file_push", "file_pull", "exam_mode"} <= produced,
+    chk({"execute", "winget_install", "power", "user_message", "cancel_task", "lockdown", "unlock",
+         "start_vision_session", "stop_stream", "remote_input", "scan_updates", "install_updates", "wake_peer",
+         "update_agent", "set_capabilities", "server_info", "file_push", "file_pull", "exam_mode"} <= produced,
         "uçlardaki bütün komutlar kuruldu ve denetlendi")
 
 

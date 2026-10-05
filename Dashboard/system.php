@@ -51,6 +51,9 @@
     .ro-head .cnt { font-size: var(--text-sm); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
     .ro-head .cnt b { color: var(--text-primary); }
     .ro-bar { padding: 4px 16px 12px; }
+    .ro-peer { display: grid; gap: 4px; padding: 0 16px 12px; }
+    .ro-peer .d { display: flex; gap: 6px; align-items: flex-start; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
+    .ro-peer .d > svg { flex: none; margin-top: 1px; color: var(--text-tertiary); }
     .ro-list { border-top: 1px solid var(--border-subtle); max-height: 360px; overflow-y: auto; padding: 0 12px; }
     .ro-list .act { padding: 10px 4px; }
     .ro-list .note { margin-top: 4px; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
@@ -131,6 +134,16 @@
     .ov-d { font-size: var(--text-xs); color: var(--text-muted); margin-top: auto; }
     .file-list li { display: flex; gap: 8px; padding: 3px 0; overflow-wrap: anywhere; }
     .file-list li span { color: var(--text-muted); white-space: nowrap; }
+
+    /* Modüller */
+    .md-row .switch { margin-left: auto; }
+    .srow .d.md-why { color: var(--warning-text); }
+    .md-foot { margin: 10px 4px 0; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
+    .md-labs .srow .segmented { margin-left: auto; }
+    .md-labs .srow .t { overflow-wrap: anywhere; }
+    .md-find { width: 100%; }
+    .gl-checks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: var(--text-sm); }
+    .gl-loc .srow input { width: 96px; text-align: right; }
 </style>
 
 <div class="page-header">
@@ -151,6 +164,8 @@
     <button type="button" class="tab" data-tab="security"><?php _e('Güvenlik'); ?></button>
     <button type="button" class="tab" data-tab="health"><?php _e('Sağlık ve yedek'); ?></button>
     <button type="button" class="tab" data-tab="notify"><?php _e('Bildirimler ve saklama'); ?></button>
+    <button type="button" class="tab" data-tab="modules"><?php _e('Modüller'); ?></button>
+    <button type="button" class="tab" data-tab="integrations"><?php _e('Entegrasyonlar'); ?></button>
 </div>
 <?php endif; ?>
 
@@ -292,6 +307,87 @@
                         <button type="button" class="btn secondary" id="rtSave" disabled><?php _e('Kaydet'); ?></button>
                     </div>
                 </div>
+            </section>
+        </div>
+    </div>
+    <div class="sys-pane sys-grid" data-pane="modules">
+        <div class="sys-col">
+<section class="sec" id="secModules" aria-labelledby="hModules">
+                <div class="sec-h"><h2 id="hModules"><?php _e('Modüller'); ?></h2><span class="st" id="mdState"></span></div>
+                <div class="set" id="mdSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+                <p class="md-foot"><?php _e('Kapalı modülün sayfaları ve uçları kullanılamaz; ajanlar değişikliği en geç bir dakikada alır. Cihazlar, sınıflar, kayıt, ajan güncellemesi, denetim kaydı, kullanıcılar, bildirimler ve sunucu sağlığı her zaman açıktır.'); ?></p>
+            </section>
+        </div>
+        <div class="sys-col">
+<section class="sec" id="secProfile" aria-labelledby="hProfile">
+                <div class="sec-h"><h2 id="hProfile"><?php _e('Kurulum profili'); ?></h2><span class="st" id="pfState"></span></div>
+                <div class="set" id="pfSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+            </section>
+        </div>
+    </div>
+    <div class="sys-pane sys-grid" data-pane="integrations">
+        <div class="sys-col">
+<section class="sec" id="secGlpi" aria-labelledby="hGlpi">
+                <div class="sec-h"><h2 id="hGlpi">GLPI</h2><span class="st" id="glState"></span></div>
+                <div class="set" id="glSet">
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Dışa aktarım'); ?></div><div class="d"><?php _e('Açıkken bilgisayarlar, kurulu yazılımlar ve destek talepleri GLPI\'ye gönderilir; kapalıyken hiçbir şey gönderilmez. GLPI\'den POps\'a bir şey alınmaz.'); ?></div></div>
+                        <label class="switch"><input type="checkbox" id="glEnabled" aria-label="<?php _e('GLPI\'ye dışa aktarım'); ?>"><span></span></label>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('GLPI adresi'); ?></div><div class="d"><?php _e('GLPI\'nin adresi; apirest.php kendiliğinden eklenir.'); ?></div></div>
+                        <input type="url" id="glUrl" class="wide" placeholder="https://glpi.okul.k12.tr" aria-label="<?php _e('GLPI adresi'); ?>" autocomplete="off" spellcheck="false">
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Uygulama jetonu'); ?></div><div class="d"><?php _e('GLPI\'de Kurulum → Genel → API → API istemcisi.'); ?></div></div>
+                        <input type="password" id="glApp" class="wide" aria-label="<?php _e('Uygulama jetonu'); ?>" autocomplete="new-password" spellcheck="false">
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Kullanıcı jetonu'); ?></div><div class="d"><?php _e('Yalnızca gereken yetkileri olan bir GLPI kullanıcısının API jetonu.'); ?></div></div>
+                        <input type="password" id="glUser" class="wide" aria-label="<?php _e('Kullanıcı jetonu'); ?>" autocomplete="new-password" spellcheck="false">
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Varlık'); ?></div><div class="d"><?php _e('Kayıtların oluşturulacağı GLPI varlığının kimliği (0: kök varlık).'); ?></div></div>
+                        <span class="num"><input type="number" id="glEntity" min="0" step="1" aria-label="<?php _e('Varlık kimliği'); ?>"></span>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Eşitleme aralığı'); ?></div><div class="d"><?php _e('Yalnızca değişen bilgisayarlar ve yeni talepler gönderilir.'); ?></div></div>
+                        <select id="glInterval" aria-label="<?php _e('Eşitleme aralığı'); ?>" style="width:auto">
+                            <option value="24"><?php _e('Günde bir'); ?></option>
+                            <option value="12"><?php _e('12 saatte bir'); ?></option>
+                            <option value="6"><?php _e('6 saatte bir'); ?></option>
+                            <option value="0"><?php _e('Yalnızca elle'); ?></option>
+                        </select>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Gönderilecekler'); ?></div>
+                            <div class="gl-checks">
+                                <label class="check"><input type="checkbox" id="glComp"> <?php _e('Bilgisayarlar'); ?></label>
+                                <label class="check"><input type="checkbox" id="glSoft"> <?php _e('Kurulu yazılımlar'); ?></label>
+                                <label class="check"><input type="checkbox" id="glTick"> <?php _e('Destek talepleri'); ?></label>
+                                <label class="check"><input type="checkbox" id="glRep"> <?php _e('Talebi bildirenin adı'); ?></label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="srow">
+                        <div class="grow"><div class="t"><?php _e('Talepler'); ?></div><div class="d"><?php _e('Bu tarihten itibaren açılan talepler bir kez gönderilir; sonraki açık yanıtlar takip olarak eklenir.'); ?></div></div>
+                        <input type="date" id="glSince" aria-label="<?php _e('Taleplerin başlangıç tarihi'); ?>" style="width:auto">
+                    </div>
+                    <div class="srow">
+                        <div class="grow"></div>
+                        <div class="acts">
+                            <button type="button" class="btn secondary" id="glTest"><?php echo pops_icon('zap', 'sm'); ?><?php _e('Bağlantıyı sına'); ?></button>
+                            <button type="button" class="btn secondary" id="glSave"><?php _e('Kaydet'); ?></button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+        <div class="sys-col">
+<section class="sec" id="secGlpiRun" aria-labelledby="hGlpiRun">
+                <div class="sec-h"><h2 id="hGlpiRun"><?php _e('Eşitleme'); ?></h2></div>
+                <div class="set" id="glRun"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+                <p class="md-foot"><?php _e('GLPI\'ye gönderim yeni bir kişisel veri aktarımıdır; okulun KVKK aydınlatma metninde belirtilmelidir. Oturumdaki kullanıcı, ekran görüntüsü ve olay kayıtları gönderilmez. GLPI\'deki bir kayıt POps\'tan silinmez.'); ?></p>
             </section>
         </div>
     </div>
@@ -773,7 +869,7 @@
         if (!S.ver) return;
         const A = agentInfo();
         const v = A.v;
-        const sig = JSON.stringify([v.staged_version, v.latest, v.release_available, v.checked_github, S.fetching, A.all.map(d => [d.hostname, dev.version(d), d.status])]);
+        const sig = JSON.stringify([v.staged_version, v.latest, v.release_available, v.checked_github, v.update_peer_cache, S.fetching, A.all.map(d => [d.hostname, dev.version(d), d.status])]);
         if (!force && sig === agHash) return;
         agHash = sig;
         // Durum
@@ -805,9 +901,28 @@
         const upMoreHtml = IS_SUPER && A.staged && !v.release_available ? `<button type="button" class="ibtn sm" data-act="upmore" data-tip="${escapeHtml(POps.t('Hedef seç'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Başka hedefe gönder'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>` : '';
         $('agSet').innerHTML = `<div class="srow block"><div style="display:flex;justify-content:space-between;gap:12px"><div class="t">${POps.tHtml('Sürüm dağılımı')}</div><div class="v">${POps.tnHtml('{n} ajan', A.all.length)}</div></div>${distHtml(A)}</div>
             <div class="srow"><div class="grow"><div class="t">${A.staged ? POps.tHtml('Ajan paketi {version}', { version: fmtV(A.staged) }) : POps.tHtml('Ajan paketi')}</div><div class="d">${escapeHtml(pkgD)}</div></div><div class="acts">${fetchHtml}${IS_SUPER ? pkgMoreHtml : ''}</div></div>
-            <div class="srow"><div class="grow"><div class="t">${escapeHtml(upT)}</div><div class="d">${escapeHtml(upD)}</div></div><div class="acts">${upBtn}${upMoreHtml}</div></div>`;
+            <div class="srow"><div class="grow"><div class="t">${escapeHtml(upT)}</div><div class="d">${escapeHtml(upD)}</div></div><div class="acts">${upBtn}${upMoreHtml}</div></div>${peerRowHtml(v)}`;
         if (S.fetching) { const fb = $('agSet').querySelector('[data-act="fetch"]'); if (fb) { fb.disabled = true; fb.classList.add('is-loading'); } }
     }
+
+    // Sınıf içi eş önbelleği (ajan 0.1.23+ peer_cache): sınıfta önce bir bilgisayar (tohum) güncellenir, diğerleri
+    // paketi ondan alır. İmza ve SHA-256 her bilgisayarda yine doğrulanır.
+    function peerRowHtml(v) {
+        if (!IS_SUPER || typeof v.update_peer_cache !== 'boolean') return '';
+        const on = v.update_peer_cache;
+        return `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Sınıf içinde eşten dağıt')}</div><div class="d">${POps.tHtml(on ? 'Her sınıfta önce bir bilgisayar paketi sunucudan indirir, diğerleri onun güncellemesi bitince paketi yerel ağdan alır. Paketin imzası ve özeti her bilgisayarda yine doğrulanır.' : 'Kapalı: bütün bilgisayarlar paketi sunucudan aynı anda indirir.')}</div></div>
+                <label class="switch"><input type="checkbox" id="peerSw" ${on ? 'checked' : ''} aria-label="${escapeHtml(POps.t('Sınıf içinde eşten dağıt'))}"><span></span></label></div>`;
+    }
+    $('agSet').addEventListener('change', async (e) => {
+        if (e.target.id !== 'peerSw') return;
+        const sw = e.target, turnOn = sw.checked;
+        try {
+            const d = await POps.busy(sw, () => POps.post('/api/system/update-peer-cache', { enabled: turnOn }));
+            S.ver.update_peer_cache = d.update_peer_cache;
+            POps.toast('success', POps.t(d.update_peer_cache ? 'Eşten dağıtım açıldı.' : 'Eşten dağıtım kapatıldı; bekleyen bilgisayarlara güncelleme gönderildi.'));
+        } catch (err) { sw.checked = !turnOn; POps.toast('error', POps.errorMessage(err)); }
+        renderAgents(true);
+    });
 
     $('agSet').addEventListener('click', (e) => {
         const b = e.target.closest('[data-act]');
@@ -887,16 +1002,17 @@
         try { d = await POps.busy(btn, () => POps.post('/api/system/deploy-update', { target_mode: 'PC', targets: hosts })); }
         catch (e) { POps.toast('error', POps.t('Güncelleme gönderilemedi: {error}', { error: POps.errorMessage(e) })); return false; }
         // already_pending: aynı sürüm son 15 dk içinde gönderilmiş, kurulum sürüyor; yeniden gönderilmedi ama izlenir
-        const sent = d.dispatched || [], off = d.skipped_offline || [], dup = d.already_pending || [];
-        if (!sent.length && !dup.length) { POps.toast('warning', POps.t('Hiçbir bilgisayar bağlı değildi; güncelleme gönderilmedi.')); return false; }
+        const sent = d.dispatched || [], off = d.skipped_offline || [], dup = d.already_pending || [], wait = d.waiting_for_seed || [];
+        if (!sent.length && !dup.length && !wait.length) { POps.toast('warning', POps.t('Hiçbir bilgisayar bağlı değildi; güncelleme gönderilmedi.')); return false; }
         const said = [];
         if (sent.length) said.push(POps.tn('{version} {n} bilgisayara gönderildi.', sent.length, { version: fmtV(d.version) }));
         if (dup.length) said.push(POps.tn('{n} bilgisayara zaten gönderildi, kurulum sürüyor.', dup.length));
         if (off.length) said.push(POps.tn('{n} kapalı bilgisayar atlandı.', off.length));
+        if (wait.length) said.push(POps.tn('{n} bilgisayar sınıfının tohumunu bekliyor.', wait.length));
         POps.toast(sent.length ? 'success' : 'info', said.join(' '));
-        rollout = { version: d.version, pcs: [...sent, ...dup], skipped: off, since, at: Date.now(), by: ME, doneAt: null };
+        rollout = { version: d.version, pcs: [...sent, ...dup, ...wait], skipped: off, since, at: Date.now(), by: ME, doneAt: null };
         store.set(RKEY, rollout);
-        rItems = null; rShowAll = false;
+        rItems = null; rPeer = []; rShowAll = false;
         pollRollout();
         return true;
     }
@@ -967,7 +1083,7 @@
 
     // ---- Gönderim ilerlemesi: POST /api/system/update-progress (sayfa yenilense de bu tarayıcıda sürer)
     let rollout = store.get(RKEY);
-    let rItems = null, rTimer = null, rErr = null, rShowAll = false, rNow = null;
+    let rItems = null, rTimer = null, rErr = null, rShowAll = false, rNow = null, rPeer = [];
     const BAD_RES = ['rollback_failed', 'failed', 'reverted_by_freeze', 'error', 'rejected'];
     // Ajanın bildirdiği adım (update_progress, 0.1.22+). 0.1.21 ve öncesi adım bildirmez; onlarda eski davranış sürer.
     // Değerler Türkçe anahtardır; gösterilirken POps.t ile çevrilir.
@@ -982,6 +1098,12 @@
         return notes.join(' ');
     }
     function itemState(it) {
+        const st = baseState(it);
+        // Sınıfın tohumu: paketi sunucudan ilk o indirir, sınıfın geri kalanı ondan alır
+        if (it.peer && it.peer.role === 'seed' && st.k === 'run') st.note = [POps.t('Sınıfın tohumu: diğerleri paketi bundan alacak.'), st.note].filter(Boolean).join(' ');
+        return st;
+    }
+    function baseState(it) {
         const r = it.result || null;
         const s = String((r && r.status) || '');
         if (it.on_target) return { k: 'ok', w: POps.t('Güncellendi') };
@@ -993,6 +1115,7 @@
         if (r && s === 'install_failed') return { k: 'warn', w: POps.t('Başlatılamadı'), why: POps.t('Kurulum başlatılamadı; bilgisayar değişmedi.') + more };
         if (r && /pending_reboot/.test(s)) return { k: 'run', w: POps.t('Yeniden başlatma bekliyor') };
         if (!it.known) return { k: 'warn', w: POps.t('Kayıtlı değil') };
+        if (!it.pending && it.peer && it.peer.role === 'waiting') return { k: 'run', w: POps.t('Tohum bekleniyor'), note: it.online ? '' : POps.t('Ajan şu an bağlı değil; tohum hazır olunca bağlıysa gönderilir.') };
         if (it.pending && STAGE_WORDS.has(it.stage)) return { k: 'run', w: POps.t(STAGE_WORDS.get(it.stage)), at: it.stage_at, note: stageNote(it) };
         if (it.pending && it.online) {
             const quiet = rNow != null && it.sent_at != null && rNow - it.sent_at > QUIET_AFTER;
@@ -1007,6 +1130,21 @@
         if (!rItems) { c.run = c.total; return c; }
         rItems.forEach(it => { c[itemState(it).k] += 1; });
         return c;
+    }
+    // Sınıf başına eş gönderimi (update-progress peer_labs): tohum, adımı ve eşten dağıtılan bilgisayar sayısı
+    function peerLabLine(L) {
+        const seed = L.seed ? dev.name(L.seed) : '';
+        if (L.state === 'fallback') return POps.tn('tohum bulunamadı; {n} bilgisayara sunucudan gönderildi', L.without_peers);
+        if (L.state === 'released') {
+            return L.via_peers ? POps.tn('tohum: {seed}, doğrulandı; {n} bilgisayara eşten dağıtılıyor', L.via_peers, { seed })
+                : POps.t('tohum: {seed}, doğrulandı', { seed });
+        }
+        const stage = L.seed_stage && STAGE_WORDS.has(L.seed_stage) ? POps.t(STAGE_WORDS.get(L.seed_stage)).toLocaleLowerCase(POps.locale) : POps.t('gönderildi');
+        return POps.tn('tohum: {seed}, {stage}; {n} bilgisayar bekliyor', L.waiting, { seed, stage });
+    }
+    function peerLabsHtml() {
+        if (!rPeer.length) return '';
+        return `<div class="ro-peer">${rPeer.map(L => `<div class="d">${POps.iconHtml('labs', 'sm')}<span><b>${escapeHtml(L.lab)}</b> · ${escapeHtml(peerLabLine(L))}</span></div>`).join('')}</div>`;
     }
     function renderRollout() {
         const box = $('rollout');
@@ -1038,6 +1176,7 @@
                 <span class="cnt"><b>${Number(done)}</b>/${Number(c.total)}</span>${wordHtml(k, word)}
                 <button type="button" class="ibtn sm" data-act="ro-close" data-tip="${escapeHtml(POps.t(running ? 'İzlemeyi bırak' : 'Kapat'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t(running ? 'İzlemeyi bırak' : 'Kapat'))}">${POps.iconHtml('x', 'sm')}</button></div>
             <div class="ro-bar"><div class="pbar">${seg('ok', c.ok)}${seg('warn', c.warn)}${seg('bad', c.bad)}${seg('run', c.run)}</div>${rErr ? `<div class="dr-note" style="margin-top:6px">${POps.tHtml('İlerleme okunamadı: {error}', { error: POps.errorMessage(rErr) })}</div>` : ''}</div>
+            ${peerLabsHtml()}
             <div class="ro-list">${rowsHtml}</div>
             ${items.length > 6 ? `<div class="ro-more"><button type="button" class="lnk" data-act="ro-all">${rShowAll ? POps.tHtml('Daha az göster') : POps.tHtml('Tümünü göster ({n})', { n: items.length })}</button></div>` : ''}`;
     }
@@ -1045,14 +1184,14 @@
         const b = e.target.closest('[data-act]');
         if (!b) return;
         if (b.dataset.act === 'ro-all') { rShowAll = !rShowAll; renderRollout(); }
-        else if (b.dataset.act === 'ro-close') { clearTimeout(rTimer); rollout = null; rItems = null; store.set(RKEY, null); renderRollout(); }
+        else if (b.dataset.act === 'ro-close') { clearTimeout(rTimer); rollout = null; rItems = null; rPeer = []; store.set(RKEY, null); renderRollout(); }
     });
     async function pollRollout() {
         clearTimeout(rTimer);
         if (!rollout) { renderRollout(); return; }
         try {
             const r = await POps.post('/api/system/update-progress', { pcs: rollout.pcs, version: normV(rollout.version), since: rollout.since });
-            rItems = r.items || []; rErr = null; rNow = typeof r.now === 'number' ? r.now : null;
+            rItems = r.items || []; rErr = null; rNow = typeof r.now === 'number' ? r.now : null; rPeer = r.peer_labs || [];
         } catch (e) { rErr = e; }
         if (!rollout) return;
         const c = rCounts();
@@ -1492,6 +1631,454 @@
     }
 
     // =================================================================
+    // MODÜLLER: kurum geneli ve sınıf bazında açma/kapama, bağımlılıklar, kurulum profilleri (GET /api/modules)
+    // =================================================================
+    // Kapalı modülün çalışan işlere etkisi (docs/api.md "Modules and install profiles", docs/agent.md "Modules")
+    const MOD_OFF = {
+        vision: 'Açık uzak ekran oturumları hemen kapanır; canlı ekran, önizleme ve uzaktan kontrol açılamaz.',
+        terminal: 'Bekleyen ve duraklatılmış komut görevleri reddedilir; kuyruk bu bilgisayarlara komut göndermez, ajan gelen komutu çalıştırmaz. Güç komutları ve mesajlar etkilenmez.',
+        deploy: 'Paket kitaplığı, dosya yükleme ve dağıtım kullanılamaz; bekleyen winget kurulumları reddedilir.',
+        files: 'Dosya gönderilemez ve alınamaz; başlamamış aktarımlar iptal edilir.',
+        exam: 'Sınav modu başlatılamaz; süren sınavlar biter.',
+        schedules: 'Zamanlanmış görevler bu bilgisayarlarda çalıştırılmaz.',
+        patches: 'Günlük Windows Update taraması ve sonucu alınmaz; tarama ve kurma istenemez.',
+        software: 'Yazılım listeleri toplanmaz ve saklanmaz.',
+        licenses: 'Lisans sayfası kapanır; aşım ve süre bildirimleri durur.',
+        helpdesk: 'Tepsideki "Sorun bildir" gizlenir; yeni talep açılamaz ve talepler panelde görünmez.',
+        dns_policy: 'Ajana alan adı listesi gönderilmez; DNS uyarıları saklanmaz ve eşikte karantina olmaz.',
+        quarantine: 'Yeni karantina uygulanamaz; kaldırma ve çevrimdışı açma kodu çalışmaya devam eder.',
+        wol: 'Kapalı bilgisayarlar ağdan uyandırılamaz.',
+        reports: 'Raporlar sayfası ve CSV dışa aktarma kapanır.'
+    };
+    const MD = { data: null, err: null, open: null };
+    const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k);
+    const modById = (id) => ((MD.data && MD.data.modules) || []).find(m => m.id === id) || null;
+    const modName = (id) => { const m = modById(id); return POps.t(m ? m.name : id); };
+    const labLabel = (l) => (l === dev.UNASSIGNED ? POps.t('Atanmamış') : l);
+    // Modülün kendi ayarı (bağımlılığa bakmadan): sınıf istisnası > kurum ayarı > açık; etkin durum sunucudan
+    const ownOn = (m, lab) => (lab != null && hasOwn(m.lab_overrides, lab) ? !!m.lab_overrides[lab] : m.setting !== false);
+    const effOn = (m, lab) => (lab == null ? !!m.enabled : !!(m.lab_enabled || {})[lab]);
+    function blockedBy(m, lab) {
+        const off = (ids) => ids.filter(id => { const d = modById(id); return d && !effOn(d, lab); });
+        const all = off(m.depends || []);
+        if (all.length) return all;
+        const any = m.depends_any || [];
+        return any.length && off(any).length === any.length ? any.slice() : [];
+    }
+    function modWord(m, lab) {
+        if (effOn(m, lab)) return { k: 'ok', w: POps.t('Açık'), why: '' };
+        if (!ownOn(m, lab)) return { k: 'bad', w: POps.tx('Kapalı', 'switch'), why: '' };
+        return { k: 'warn', w: POps.tx('Kapalı', 'switch'), why: POps.t('{modules} kapalı olduğu için çalışmaz.', { modules: blockedBy(m, lab).map(modName).join(', ') }) };
+    }
+    function depText(m) {
+        if ((m.depends || []).length) return POps.t('Gerekir: {modules}', { modules: m.depends.map(modName).join(', ') });
+        if ((m.depends_any || []).length > 1) return POps.t('Şunlardan biri gerekir: {modules}', { modules: m.depends_any.map(modName).join(', ') });
+        if ((m.depends_any || []).length) return POps.t('Gerekir: {modules}', { modules: m.depends_any.map(modName).join(', ') });
+        return '';
+    }
+    const dependents = (id) => ((MD.data && MD.data.modules) || []).filter(m => (m.depends || []).includes(id) || (m.depends_any || []).includes(id));
+
+    function renderModules() {
+        const box = $('mdSet');
+        if (!box) return;
+        const d = MD.data;
+        if (!d) { if (MD.err) { sectionError(box, MD.err); sectionError($('pfSet'), MD.err); } return; }
+        const mods = d.modules || [];
+        const offN = mods.filter(m => !m.enabled).length;
+        setState('mdState', offN ? 'off' : 'ok', offN ? POps.t('{on} açık, {off} kapalı', { on: mods.length - offN, off: offN }) : POps.t('Hepsi açık'));
+        box.innerHTML = mods.map(m => {
+            const w = modWord(m, null);
+            const diff = (d.labs || []).filter(l => effOn(m, l) !== !!m.enabled).length;
+            const meta = [depText(m), diff ? (m.enabled ? POps.tn('{n} sınıfta kapalı', diff) : POps.tn('{n} sınıfta açık', diff)) : ''].filter(Boolean).join(' · ');
+            const label = POps.t('{module}, kurum geneli', { module: POps.t(m.name) });
+            return `<div class="srow click md-row" data-mod="${escapeHtml(m.id)}" role="button" tabindex="0">
+                <div class="grow"><div class="t">${escapeHtml(POps.t(m.name))}${wordHtml(w.k, w.w)}</div><div class="d">${escapeHtml(POps.t(m.description))}</div>
+                ${w.why ? `<div class="d md-why">${escapeHtml(w.why)}</div>` : ''}${meta ? `<div class="d">${escapeHtml(meta)}</div>` : ''}</div>
+                <label class="switch"><input type="checkbox" data-sw="${escapeHtml(m.id)}" ${m.setting !== false ? 'checked' : ''} aria-label="${escapeHtml(label)}"><span></span></label></div>`;
+        }).join('');
+        renderProfiles();
+        if (MD.open && POps.drawer.isOpen('sysmod:' + MD.open)) renderModDrawer(MD.open);
+    }
+
+    function renderProfiles() {
+        const box = $('pfSet'), d = MD.data;
+        if (!box || !d) return;
+        const names = d.profile_names || {};
+        const cur = d.profile;
+        let k, desc;
+        if (!cur) { k = 'warn'; desc = POps.t('Yeni kurulum: kurumunuza uyan profili seçin. Seçilene kadar bütün modüller açık.'); }
+        else if (cur === 'custom') { k = 'off'; desc = POps.t('Modüller elle değiştirildi ya da kurulum profilden önce vardı.'); }
+        else { k = 'ok'; desc = POps.t('Profilin modül ayarları uygulandı.'); }
+        const curName = cur ? POps.t(names[cur] || cur) : POps.t('Seçilmedi');
+        setState('pfState', k, curName);
+        const INTRO = { school: POps.t('Sınıfta ders ve sınav: uzak ekran, uzak komut, dağıtım ve DNS politikası.'),
+            org: POps.t('Ofis ve idari bilgisayarlar: envanter, lisanslar, yardım masası ve raporlar.') };
+        const rowsHtml = ['school', 'org'].map(p => {
+            const off = (d.modules || []).filter(m => m.profiles && m.profiles[p] === false).map(m => POps.t(m.name));
+            const text = INTRO[p] + ' ' + (off.length ? POps.t('Kapalı kalanlar: {modules}.', { modules: off.join(', ') }) : POps.t('Bütün modüller açık.'));
+            return `<div class="srow click" data-prof="${escapeHtml(p)}" role="button" tabindex="0"><div class="grow"><div class="t">${escapeHtml(POps.t(names[p] || p))}${cur === p ? wordHtml('ok', POps.t('Uygulandı')) : ''}</div>
+                <div class="d">${escapeHtml(text)}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>`;
+        }).join('');
+        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">${escapeHtml(POps.t('Şu anki profil'))}</div><div class="d">${escapeHtml(desc)}</div></div><div class="v">${escapeHtml(curName)}</div></div>${rowsHtml}`;
+    }
+
+    async function loadModules() {
+        if (!IS_SUPER || !$('mdSet')) return;
+        try { MD.data = await POps.get('/api/modules'); MD.err = null; }
+        catch (e) { MD.err = e; if (MD.data) { POps.toast('error', POps.errorMessage(e)); return; } }
+        renderModules();
+    }
+
+    // Değişikliğin etkisi önce sunucuya sorulur (hiçbir şey yazmaz); bir şey kapanacaksa onay istenir
+    const previewPath = (id, value, lab) => '/api/modules/' + encodeURIComponent(id) + '/preview?'
+        + new URLSearchParams(Object.assign(value === null ? {} : { enabled: String(value) }, lab ? { lab } : {})).toString();
+    function effectNotes(r) {
+        const out = [];
+        if (r.vision_sessions_closed) out.push(POps.tn('Açık {n} uzak ekran oturumu kapanır.', r.vision_sessions_closed));
+        if (r.tasks_denied) out.push(POps.tn('Bekleyen ya da duraklatılmış {n} görev reddedilir.', r.tasks_denied));
+        if (r.transfers_cancelled) out.push(POps.tn('Başlamamış {n} dosya aktarımı iptal edilir.', r.transfers_cancelled));
+        if (r.exams_ended) out.push(POps.tn('Süren {n} sınav biter.', r.exams_ended));
+        return out;
+    }
+    function effectDone(r) {
+        const out = [];
+        if (r.vision_sessions_closed) out.push(POps.tn('{n} uzak ekran oturumu kapatıldı.', r.vision_sessions_closed));
+        if (r.tasks_denied) out.push(POps.tn('{n} görev reddedildi.', r.tasks_denied));
+        if (r.transfers_cancelled) out.push(POps.tn('{n} dosya aktarımı iptal edildi.', r.transfers_cancelled));
+        if (r.exams_ended) out.push(POps.tn('{n} sınav bitirildi.', r.exams_ended));
+        return out.join(' ');
+    }
+    async function setModule(id, lab, value, ctl) {
+        const name = modName(id);
+        let pv;
+        try { pv = await POps.busy(ctl, () => POps.get(previewPath(id, value, lab))); }
+        catch (e) { POps.toast('error', POps.errorMessage(e)); renderModules(); return false; }
+        const offs = (pv.changes || []).filter(c => !c.to);
+        if (offs.length || pv.vision_sessions_closed || pv.tasks_denied || pv.transfers_cancelled || pv.exams_ended) {
+            const others = [...new Set(offs.map(c => c.id).filter(x => x !== id))];
+            const notes = (others.length ? [POps.t('Bağımlı oldukları için bunlar da kapanır: {modules}.', { modules: others.map(modName).join(', ') })] : []).concat(effectNotes(pv));
+            const ids = [...new Set(offs.map(c => c.id))];
+            const title = value === null
+                ? POps.t('{lab} sınıfı {module} için kurum ayarına dönsün mü?', { lab: labLabel(lab), module: name })
+                : (lab ? POps.t('{module} {lab} sınıfında kapatılsın mı?', { module: name, lab: labLabel(lab) }) : POps.t('{module} kurum genelinde kapatılsın mı?', { module: name }));
+            if (!await POps.confirm({
+                title, icon: 'lock', danger: true,
+                message: ids.map(x => (MOD_OFF[x] ? modName(x) + ': ' + POps.t(MOD_OFF[x]) : '')).filter(Boolean).join(' '),
+                note: notes.concat([POps.t('Ajanlar değişikliği en geç bir dakikada alır.')]).join(' '),
+                confirmText: value === null ? POps.t('Kurum ayarına dön') : POps.t('Modülü kapat')
+            })) { renderModules(); return false; }
+        }
+        try {
+            const r = await POps.busy(ctl, () => POps.post('/api/modules/' + encodeURIComponent(id), { enabled: value, lab: lab || null }));
+            const what = value === null ? POps.t('{module}: {lab} sınıfı kurum ayarına döndü.', { module: name, lab: labLabel(lab) })
+                : value ? (lab ? POps.t('{module} {lab} sınıfında açıldı.', { module: name, lab: labLabel(lab) }) : POps.t('{module} açıldı.', { module: name }))
+                    : (lab ? POps.t('{module} {lab} sınıfında kapatıldı.', { module: name, lab: labLabel(lab) }) : POps.t('{module} kapatıldı.', { module: name }));
+            POps.toast('success', [what, effectDone(r)].filter(Boolean).join(' '));
+        } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        await loadModules();
+        return true;
+    }
+
+    // ---- Modülün ayrıntısı: kurum ayarı, bağımlılıklar, kapalıyken ne olur, sınıf istisnaları
+    function segHtml(group, cur, choices, act, lab) {
+        return `<div class="segmented" role="group" aria-label="${escapeHtml(group)}">` + choices.map(([v, t]) =>
+            `<button type="button" data-act="${escapeHtml(act)}" data-lab="${escapeHtml(lab || '')}" data-val="${escapeHtml(v)}" aria-pressed="${cur === v ? 'true' : 'false'}">${escapeHtml(t)}</button>`).join('') + '</div>';
+    }
+    function renderModDrawer(id) {
+        const m = modById(id), d = MD.data;
+        const body = POps.drawer.body();
+        if (!m || !body) return;
+        const w = modWord(m, null);
+        const find = body.querySelector('.md-find');
+        const q = find ? find.value : '', refocus = !!find && document.activeElement === find;
+        const orgHtml = `<div class="srow"><div class="grow"><div class="t">${escapeHtml(POps.t('Kurum geneli'))}${wordHtml(w.k, w.w)}</div>`
+            + `<div class="d">${escapeHtml(w.why || POps.t('İstisnası olmayan sınıflar bu ayarı izler.'))}</div></div>`
+            + segHtml(POps.t('Kurum geneli'), m.setting === false ? 'off' : 'on', [['on', POps.t('Açık')], ['off', POps.tx('Kapalı', 'switch')]], 'org', '') + '</div>';
+        const deps = depText(m), deb = dependents(id).map(x => POps.t(x.name));
+        const depHtml = deps || deb.length ? `<div><h3>${escapeHtml(POps.t('Bağımlılıklar'))}</h3><div class="glist">`
+            + (deps ? `<div class="grow"><span>${escapeHtml(POps.t('Bu modül'))}</span><span>${escapeHtml(deps)}</span></div>` : '')
+            + (deb.length ? `<div class="grow"><span>${escapeHtml(POps.t('Buna bağlı'))}</span><span>${escapeHtml(deb.join(', '))}</span></div>` : '') + '</div></div>' : '';
+        const labs = d.labs || [];
+        const labRowsHtml = labs.map(l => {
+            const lw = modWord(m, l);
+            const own = hasOwn(m.lab_overrides, l) ? (m.lab_overrides[l] ? 'on' : 'off') : 'inherit';
+            const how = own === 'inherit' ? POps.t('Kurum ayarını izliyor.') : POps.t('Bu sınıfa özel ayar.');
+            const hide = q && !labLabel(l).toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr'));
+            return `<div class="srow" data-labrow="${escapeHtml(l)}"${hide ? ' hidden' : ''}><div class="grow"><div class="t">${escapeHtml(labLabel(l))}${wordHtml(lw.k, lw.w)}</div><div class="d">${escapeHtml(lw.why ? how + ' ' + lw.why : how)}</div></div>`
+                + segHtml(labLabel(l), own, [['inherit', POps.t('Kurum ayarı')], ['on', POps.t('Açık')], ['off', POps.tx('Kapalı', 'switch')]], 'lab', l) + '</div>';
+        }).join('');
+        const labsHtml = `<div class="md-labs"><h3>${escapeHtml(POps.t('Sınıflar'))}</h3>`
+            + (labs.length > 8 ? `<input type="search" class="md-find" placeholder="${escapeHtml(POps.t('Sınıf ara…'))}" aria-label="${escapeHtml(POps.t('Sınıf ara'))}" value="${escapeHtml(q)}" style="margin:6px 0 8px">` : '')
+            + (labs.length ? `<div class="set">${labRowsHtml}</div>` : `<div class="dr-note">${escapeHtml(POps.t('Henüz sınıf yok.'))}</div>`) + '</div>';
+        const subHtml = `<span class="dot ${escapeHtml(w.k === 'ok' ? 'ok' : 'off')}"></span>${escapeHtml(POps.t(m.description))}`;
+        body.innerHTML = drawerHeadHtml(POps.t(m.name), subHtml, 'sliders', w.k === 'ok' ? 'on' : '')
+            + `<div class="set">${orgHtml}</div>`
+            + (MOD_OFF[id] ? `<div><h3>${escapeHtml(POps.t('Kapalıyken'))}</h3><p class="dr-sum">${escapeHtml(POps.t(MOD_OFF[id]))}</p></div>` : '')
+            + depHtml + labsHtml;
+        const f = body.querySelector('.md-find');
+        if (f) {
+            f.addEventListener('input', () => body.querySelectorAll('[data-labrow]').forEach(r => { r.hidden = !!f.value && !labLabel(r.dataset.labrow).toLocaleLowerCase('tr').includes(f.value.toLocaleLowerCase('tr')); }));
+            if (refocus) f.focus();
+        }
+    }
+    function openModule(id) {
+        // Önceki panelin onClose'u açılışta çalışır: MD.open yeni panel açıldıktan sonra yazılır
+        openDrawer('sysmod:' + id, (b) => {
+            if (b.getAttribute('aria-pressed') === 'true') return;
+            const v = b.dataset.val;
+            if (b.dataset.act === 'org') setModule(id, null, v === 'on', b);
+            else if (b.dataset.act === 'lab') setModule(id, b.dataset.lab, v === 'inherit' ? null : v === 'on', b);
+        }, () => { if (MD.open === id) MD.open = null; });
+        MD.open = id;
+        renderModDrawer(id);
+    }
+    if ($('mdSet')) {
+        $('mdSet').addEventListener('change', (e) => {
+            const sw = e.target.closest('[data-sw]');
+            if (sw) setModule(sw.dataset.sw, null, sw.checked, sw);
+        });
+        $('mdSet').addEventListener('click', (e) => {
+            if (e.target.closest('.switch')) return;
+            const r = e.target.closest('[data-mod]');
+            if (r) openModule(r.dataset.mod);
+        });
+        $('mdSet').addEventListener('keydown', (e) => {
+            const r = e.target.closest('[data-mod]');
+            if (r && e.target === r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openModule(r.dataset.mod); }
+        });
+    }
+
+    // ---- Kurulum profili: önizleme (değişecek kurum ayarları, kapanacak oturum ve reddedilecek görevler), sonra uygula
+    async function renderProfDrawer(name, reset) {
+        const d = MD.data, names = (d && d.profile_names) || {};
+        const title = POps.t(names[name] || name);
+        const headHtml = drawerHeadHtml(title, escapeHtml(POps.t('Kurulum profili')), 'sliders', '');
+        const body = POps.drawer.body();
+        let pv;
+        try { pv = await POps.get('/api/system/install-profile/' + encodeURIComponent(name) + (reset ? '?reset_labs=true' : '')); }
+        catch (e) { if (POps.drawer.isOpen('sysprof:' + name)) { body.innerHTML = headHtml + '<div></div>'; POps.setError(body.lastElementChild, e, { compact: true }); } return; }
+        if (!POps.drawer.isOpen('sysprof:' + name)) return;
+        const chHtml = (pv.changes || []).map(c => `<div class="srow"><div class="grow"><div class="t">${escapeHtml(POps.t(c.name))}</div></div>`
+            + `${wordHtml(c.from ? 'ok' : 'bad', c.from ? POps.t('Açık') : POps.tx('Kapalı', 'switch'))}${POps.iconHtml('right', 'sm ico-lead')}${wordHtml(c.to ? 'ok' : 'bad', c.to ? POps.t('Açık') : POps.tx('Kapalı', 'switch'))}</div>`).join('');
+        const notes = effectNotes(pv);
+        const resetHtml = pv.lab_overrides ? `<label class="check"><input type="checkbox" data-act="reset" ${reset ? 'checked' : ''}> ${escapeHtml(POps.tn('{n} sınıf istisnasını da sil', pv.lab_overrides))}</label>`
+            + `<div class="dr-note">${escapeHtml(reset ? POps.t('Bütün sınıflar kurum ayarını izler.') : POps.t('Sınıflara özel ayarlar korunur ve profilden üstün gelir.'))}</div>` : '';
+        body.innerHTML = headHtml
+            + `<p class="dr-sum">${escapeHtml(POps.t('Profilin modül ayarları kurum geneline yazılır; sonra her modül tek tek değiştirilebilir.'))}</p>`
+            + `<div><h3>${escapeHtml(POps.t('Kurum genelinde değişecekler'))}</h3>` + (chHtml ? `<div class="set">${chHtml}</div>` : `<div class="dr-note">${escapeHtml(POps.t('Kurum ayarlarında değişiklik yok.'))}</div>`) + '</div>'
+            + (resetHtml ? `<div>${resetHtml}</div>` : '')
+            + (notes.length ? notes.map(t => `<div class="issue upd">${POps.iconHtml('alert', 'sm')}${escapeHtml(t)}</div>`).join('') : '')
+            + `<div class="dr-actions"><button type="button" class="btn" data-act="apply">${escapeHtml(POps.t('Profili uygula'))}</button><button type="button" class="btn secondary" data-act="close">${escapeHtml(POps.t('Vazgeç'))}</button></div>`;
+    }
+    function openProfile(name) {
+        openDrawer('sysprof:' + name, async (b) => {
+            if (b.dataset.act === 'reset') renderProfDrawer(name, b.checked);
+            else if (b.dataset.act === 'apply') {
+                // Ekranda görünen seçim uygulanır (önizleme yenilenirken tıklansa da)
+                const box = POps.drawer.body().querySelector('[data-act="reset"]');
+                const reset = !!(box && box.checked);
+                try {
+                    const r = await POps.busy(b, () => POps.post('/api/system/install-profile', { profile: name, reset_labs: reset }));
+                    const names = (MD.data && MD.data.profile_names) || {};
+                    POps.toast('success', [POps.t('{profile} profili uygulandı.', { profile: POps.t(names[name] || name) }), effectDone(r)].filter(Boolean).join(' '));
+                    POps.drawer.close();
+                } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+                await loadModules();
+            }
+        });
+        POps.drawer.body().innerHTML = drawerHeadHtml(POps.t('Kurulum profili'), '', 'sliders', '') + '<div class="loading-state" role="status"><span class="spinner"></span>' + POps.tHtml('Yükleniyor…') + '</div>';
+        renderProfDrawer(name, false);
+    }
+    if ($('pfSet')) {
+        $('pfSet').addEventListener('click', (e) => { const r = e.target.closest('[data-prof]'); if (r) openProfile(r.dataset.prof); });
+        $('pfSet').addEventListener('keydown', (e) => { const r = e.target.closest('[data-prof]'); if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openProfile(r.dataset.prof); } });
+    }
+
+    // =================================================================
+    // ENTEGRASYONLAR: GLPI'ye dışa aktarım (GET/POST /api/system/glpi, /test, /sync). Jetonlar sunucudan hiç gelmez:
+    // kayıtlıysa alan boş kalır ve "kayıtlı" yazar; yalnızca yazılırsa gönderilir.
+    // =================================================================
+    const GL = { d: null, poll: null };
+    const glSaved = (d) => ({ enabled: !!d.enabled, url: d.url || '', entity: Number(d.entity) || 0, interval_hours: Number(d.interval_hours) || 0,
+        sync: Object.assign({}, d.sync), tickets_since: d.tickets_since || null });
+    function glBody() {
+        const b = {
+            enabled: $('glEnabled').checked, url: $('glUrl').value.trim(), entity: Math.max(0, parseInt($('glEntity').value, 10) || 0),
+            interval_hours: parseInt($('glInterval').value, 10) || 0,
+            sync: { computers: $('glComp').checked, software: $('glSoft').checked, tickets: $('glTick').checked, ticket_reporter: $('glRep').checked },
+            tickets_since: $('glSince').value || null
+        };
+        if ($('glApp').value) b.app_token = $('glApp').value;
+        if ($('glUser').value) b.user_token = $('glUser').value;
+        return b;
+    }
+    function glDirty() {
+        if (!GL.d) return;
+        const b = glBody(), s = glSaved(GL.d);
+        const dirty = !!(b.app_token || b.user_token) || JSON.stringify([b.enabled, b.url, b.entity, b.interval_hours, b.sync, b.tickets_since])
+            !== JSON.stringify([s.enabled, s.url, s.entity, s.interval_hours, s.sync, s.tickets_since]);
+        $('glSave').className = dirty ? 'btn' : 'btn secondary';
+        $('glSoft').disabled = !$('glComp').checked;
+        $('glRep').disabled = !$('glTick').checked;
+    }
+    function glStateWord(d) {
+        const r = d.last_run || {};
+        if (d.running) return ['run', POps.t('Eşitleniyor')];
+        if (!d.enabled) return ['off', POps.tx('Kapalı', 'switch')];
+        if (!r.at) return ['off', POps.t('Henüz eşitlenmedi')];
+        return r.ok ? ['ok', POps.t('Açık')] : ['bad', POps.t('Son eşitleme başarısız')];
+    }
+    function glCountsText(n) {
+        const parts = [];
+        const add = (k, text) => { if (n[k]) parts.push(POps.tn(text, n[k])); };
+        add('computers_created', '{n} bilgisayar oluşturuldu'); add('computers_linked', '{n} bilgisayar bağlandı');
+        add('computers_updated', '{n} bilgisayar güncellendi'); add('software_added', '{n} yazılım bağlantısı eklendi');
+        add('software_removed', '{n} yazılım bağlantısı kaldırıldı'); add('tickets_created', '{n} talep gönderildi');
+        add('followups_created', '{n} yanıt gönderildi'); add('deferred', '{n} kayıt süre dolduğu için sonraki tura kaldı');
+        return parts.length ? parts.join(' · ') : POps.t('Gönderilecek değişiklik yoktu.');
+    }
+    function renderGlpi(d, keepForm) {
+        GL.d = d;
+        if (!keepForm) {
+            $('glEnabled').checked = !!d.enabled;
+            $('glUrl').value = d.url || '';
+            $('glEntity').value = Number(d.entity) || 0;
+            $('glInterval').value = String(d.interval_hours);
+            $('glComp').checked = !!d.sync.computers; $('glSoft').checked = !!d.sync.software;
+            $('glTick').checked = !!d.sync.tickets; $('glRep').checked = !!d.sync.ticket_reporter;
+            $('glSince').value = d.tickets_since || '';
+            $('glApp').value = ''; $('glUser').value = '';
+        }
+        $('glApp').placeholder = d.app_token_set ? POps.t('Kayıtlı · değiştirmek için yazın') : POps.t('Gerekmiyorsa boş');
+        $('glUser').placeholder = d.user_token_set ? POps.t('Kayıtlı · değiştirmek için yazın') : '';
+        const [k, w] = glStateWord(d);
+        setState('glState', k, w);
+        glDirty();
+        const r = d.last_run || {};
+        let lastHtml;
+        if (d.running) {
+            lastHtml = `<div class="srow"><span class="res-spin"><span class="spinner"></span></span><div class="grow"><div class="t">${POps.tHtml('Eşitleniyor')}</div>`
+                + `<div class="d">${POps.tHtml('Yalnızca değişenler gönderilir; büyük bir ilk eşitleme birkaç dakika sürebilir.')}</div></div></div>`;
+        } else if (r.at) {
+            const how = r.trigger === 'manual' ? POps.t('elle') : POps.t('zamanlanmış');
+            const metaHtml = POps.timeHtml(r.at) + ' · ' + escapeHtml(how) + (typeof r.duration === 'number' ? ' · ' + escapeHtml(POps.t('{s} sn', { s: r.duration })) : '');
+            const errsHtml = (r.errors || []).length ? `<div class="why warn">${escapeHtml(POps.tn('{n} kayıt gönderilemedi', (r.counts || {}).item_errors || r.errors.length) + ': ' + r.errors.join(' · '))}</div>` : '';
+            lastHtml = `<div class="act"><div class="res ${r.ok ? 'ok' : 'bad'}">${POps.iconHtml(r.ok ? 'check' : 'x')}</div><div style="min-width:0"><div class="what">${POps.tHtml('Son eşitleme')}</div>`
+                + `<div class="meta">${metaHtml}</div>`
+                + (r.ok ? `<div class="meta">${escapeHtml(glCountsText(r.counts || {}))}</div>` : `<div class="why">${escapeHtml(POps.t(r.error || 'Bilinmeyen hata'))}</div>`)
+                + `${errsHtml}</div><div class="side">${wordHtml(r.ok ? 'ok' : 'bad', r.ok ? POps.t('Başarılı') : POps.t('Başarısız'))}</div></div>`;
+        } else {
+            lastHtml = `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Henüz eşitlenmedi')}</div><div class="d">${POps.tHtml('Ayarları kaydedip bağlantıyı sınayın, sonra ilk eşitlemeyi başlatın.')}</div></div></div>`;
+        }
+        const links = d.links || {};
+        const locN = Object.keys(d.locations || {}).length;
+        const probs = d.problems || [];
+        $('glRun').innerHTML = lastHtml
+            + `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Şimdi eşitle')}</div><div class="d">${escapeHtml(POps.t('GLPI\'de bağlı: {c} bilgisayar, {t} talep.', { c: Number(links.computers) || 0, t: Number(links.tickets) || 0 }))}</div></div>`
+            + `<button type="button" class="btn secondary" data-act="sync" ${d.running || !d.enabled ? 'disabled' : ''}>${POps.iconHtml('refresh', 'sm')}${POps.tHtml('Şimdi eşitle')}</button></div>`
+            + `<div class="srow click" data-act="loc" role="button" tabindex="0"><div class="grow"><div class="t">${POps.tHtml('Sınıf → GLPI konumu')}</div>`
+            + `<div class="d">${escapeHtml(locN ? POps.tn('{n} sınıf eşlendi; eşlenmemiş sınıfın konumuna dokunulmaz.', locN) : POps.t('Eşleme yok: bilgisayarların GLPI konumuna dokunulmaz.'))}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>`
+            + (probs.length ? `<div class="srow click" data-act="probs" role="button" tabindex="0"><div class="grow"><div class="t">${escapeHtml(POps.tn('{n} bilgisayar eşleşmedi', probs.length))}${wordHtml('warn', POps.t('Bakılmalı'))}</div>`
+                + `<div class="d">${POps.tHtml('GLPI\'de birden çok eşleşen ya da GLPI\'den silinmiş bilgisayarlar.')}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>` : '');
+        if (POps.drawer.isOpen('sysglp:list')) renderGlProblems();
+    }
+    async function loadGlpi(quiet) {
+        if (!IS_SUPER || !$('glSet')) return;
+        let d;
+        try { d = await POps.get('/api/system/glpi'); }
+        catch (e) { if (!quiet) { setState('glState', 'off', POps.t('Okunamadı')); sectionError($('glRun'), e); } return; }
+        renderGlpi(d, !!GL.d);
+        if (d.running) glWatch();
+    }
+    function glWatch() {
+        if (GL.poll) return;
+        GL.poll = setInterval(async () => {
+            let d;
+            try { d = await POps.get('/api/system/glpi'); } catch (e) { return; }
+            if (!d.running) {
+                clearInterval(GL.poll); GL.poll = null;
+                const r = d.last_run || {};
+                POps.toast(r.ok ? 'success' : 'error', r.ok ? POps.t('GLPI eşitlemesi bitti: {what}', { what: glCountsText(r.counts || {}) }) : POps.t('GLPI eşitlemesi başarısız: {error}', { error: POps.t(r.error || '') }));
+            }
+            renderGlpi(d, true);
+        }, 2500);
+    }
+    function renderGlProblems() {
+        const body = POps.drawer.body();
+        const probs = (GL.d && GL.d.problems) || [];
+        const rowsHtml = probs.map(p => `<div class="act"><div class="res warn">${POps.iconHtml('alert')}</div><div style="min-width:0"><div class="what">${escapeHtml(p.display_name || p.hostname || p.pc_name)}</div>`
+            + `<div class="meta">${escapeHtml(p.pc_name)}${p.glpi_id ? ' · GLPI #' + Number(p.glpi_id) : ''}</div><div class="why warn">${escapeHtml(p.error || '')}</div></div>`
+            + `<div class="side"><button type="button" class="btn secondary sm" data-act="forget" data-pc="${escapeHtml(p.pc_name)}">${POps.tHtml('Bağlantıyı unut')}</button></div></div>`).join('');
+        body.innerHTML = drawerHeadHtml(POps.t('Eşleşmeyen bilgisayarlar'), POps.tHtml('GLPI ile eşleşme sorunları'), 'alert', '')
+            + `<p class="dr-sum">${POps.tHtml('Birden çok eşleşmede POps tahmin yapmaz: GLPI\'de kopyaları birleştirin ya da silin. GLPI\'den silinmiş bir bilgisayar kendiliğinden yeniden oluşturulmaz. "Bağlantıyı unut" sonraki eşitlemede cihazı yeniden aratır.')}</p>`
+            + (rowsHtml ? `<div class="set" style="padding:0 12px">${rowsHtml}</div>` : `<div class="dr-note">${POps.tHtml('Sorun yok.')}</div>`);
+    }
+    function renderGlLocations() {
+        const body = POps.drawer.body();
+        const map = (GL.d && GL.d.locations) || {};
+        const labs = dev.labs();
+        const rowsHtml = labs.map(l => `<div class="srow"><div class="grow"><div class="t">${escapeHtml(l)}</div></div>`
+            + `<input type="number" min="1" step="1" data-lab="${escapeHtml(l)}" value="${map[l] ? Number(map[l]) : ''}" placeholder="—" aria-label="${escapeHtml(POps.t('{lab} için GLPI konum kimliği', { lab: l }))}"></div>`).join('');
+        body.innerHTML = drawerHeadHtml(POps.t('Sınıf → GLPI konumu'), POps.tHtml('GLPI\'deki konumun kimliği'), 'labs', '')
+            + `<p class="dr-sum">${POps.tHtml('Eşlenen sınıftaki bilgisayarların konumu GLPI\'de bu konum olur. Eşlenmemiş sınıfın konumuna dokunulmaz; GLPI\'de konum oluşturulmaz.')}</p>`
+            + (labs.length ? `<div class="set gl-loc">${rowsHtml}</div>` : `<div class="dr-note">${POps.tHtml('Henüz sınıf yok.')}</div>`)
+            + `<div class="dr-actions"><button type="button" class="btn" data-act="locsave">${POps.tHtml('Kaydet')}</button><button type="button" class="btn secondary" data-act="close">${POps.tHtml('Vazgeç')}</button></div>`;
+    }
+    async function glSaveLocations(btn) {
+        const locations = {};
+        POps.drawer.body().querySelectorAll('input[data-lab]').forEach(i => { const n = parseInt(i.value, 10); if (n > 0) locations[i.dataset.lab] = n; });
+        try {
+            renderGlpi(await POps.busy(btn, () => POps.post('/api/system/glpi', Object.assign(glSaved(GL.d), { locations }))), true);
+            POps.toast('success', POps.t('Konum eşlemesi kaydedildi.'));
+            POps.drawer.close();
+        } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+    }
+    if ($('glSet')) {
+        $('glSet').addEventListener('input', glDirty);
+        $('glSet').addEventListener('change', glDirty);
+        $('glSave').addEventListener('click', async function () {
+            try {
+                renderGlpi(await POps.busy(this, () => POps.post('/api/system/glpi', glBody())));
+                POps.toast('success', POps.t('GLPI ayarları kaydedildi.'));
+            } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        });
+        $('glTest').addEventListener('click', async function () {
+            const b = glBody(), t = { url: b.url };
+            if (b.app_token) t.app_token = b.app_token;
+            if (b.user_token) t.user_token = b.user_token;
+            try {
+                const r = await POps.busy(this, () => POps.post('/api/system/glpi/test', t));
+                if (r.ok) POps.toast('success', POps.t('GLPI\'ye bağlanıldı: {user} · {entity}', { user: r.user || '?', entity: r.entity || '?' }) + (r.plain_http ? ' ' + POps.t('Bağlantı şifresiz (http).') : ''));
+                else POps.toast('error', POps.t('GLPI\'ye bağlanılamadı: {error}', { error: POps.t(r.error || '') }));
+            } catch (e) { POps.toast('error', POps.errorMessage(e)); }
+        });
+        $('glRun').addEventListener('click', async (e) => {
+            const b = e.target.closest('[data-act]');
+            if (!b || b.disabled) return;
+            if (b.dataset.act === 'sync') {
+                try {
+                    const r = await POps.busy(b, () => POps.post('/api/system/glpi/sync', {}));
+                    if (!r.started) POps.toast('info', POps.t('Bir eşitleme zaten sürüyor.'));
+                    GL.d.running = true; renderGlpi(GL.d, true); glWatch();
+                } catch (err) { POps.toast('error', POps.errorMessage(err)); }
+            } else if (b.dataset.act === 'loc') {
+                openDrawer('sysgll:map', (x) => { if (x.dataset.act === 'locsave') glSaveLocations(x); });
+                renderGlLocations();
+            } else if (b.dataset.act === 'probs') {
+                openDrawer('sysglp:list', async (x) => {
+                    if (x.dataset.act !== 'forget') return;
+                    if (await POps.act(x, () => POps.del('/api/system/glpi/links/' + encodeURIComponent(x.dataset.pc)), { success: POps.t('Bağlantı unutuldu; sonraki eşitlemede yeniden aranır.') })) loadGlpi(true);
+                });
+                renderGlProblems();
+            }
+        });
+        $('glRun').addEventListener('keydown', (e) => {
+            const r = e.target.closest('.srow.click[data-act]');
+            if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); r.click(); }
+        });
+    }
+
+    // =================================================================
     // ÖZET + YÜKLEME
     // =================================================================
     function renderSummary() {
@@ -1554,6 +2141,8 @@
     loadTokens();
     loadNotify();
     loadRetention();
+    loadModules();
+    loadGlpi();
     renderAudit();
     if (rollout) pollRollout();
     if (state.devicesLoaded) { renderCaps(true); }

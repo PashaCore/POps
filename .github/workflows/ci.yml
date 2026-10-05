@@ -680,6 +680,12 @@ jobs:
       METRICS_TOKEN: ci-metrics-token-0123456789
       # test_demo.py: bu hesap salt okunur demo hesabıdır (sunucu ve test aynı değeri okur)
       POPS_DEMO_USERS: ci_demo
+      # test_peer_cache.py: tohumun süresi kısa (sunucu ve test aynı değeri okur)
+      PEER_CACHE_SEED_TIMEOUT_SECONDS: "4"
+      # test_sso.py: şifresiz LDAP'ın test bayrağı yalnızca bununla kabul edilir (üretimde tanımlanmaz)
+      POPS_SSO_ALLOW_INSECURE_FOR_TESTS: "1"
+      # test_glpi.py kendi sahte GLPI sunucusunu 127.0.0.1'de açar
+      GLPI_ALLOW_PRIVATE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
@@ -702,7 +708,8 @@ jobs:
           ( cd Backend && exec python -m coverage run --rcfile=.coveragerc -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/uvicorn.log 2>&1 ) &
           echo $! > /tmp/uvicorn.pid
           curl --retry-connrefused --retry 40 --retry-delay 1 -sf http://127.0.0.1:8099/api/health >/dev/null || { echo "server did not start"; cat /tmp/uvicorn.log; exit 1; }
-          # Backend/tests'teki betikler (conftest.py): bilinen sırayla, her biri ayrı süreçte
+          # Backend/tests'teki betikler (conftest.py): bilinen sırayla, her biri ayrı süreçte. test_sso.py OpenLDAP'ı
+          # geçici bir Docker kabında (127.0.0.1) kendisi açar; Docker yoksa LDAP bölümü atlanır (runner'da vardır).
           python -m pytest -v -m integration
       - name: Backend coverage
         # Alt sınır (fail_under) kapsamın fark edilmeden düşmesini engeller; kapsam arttıkça yükseltin.

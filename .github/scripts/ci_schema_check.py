@@ -32,6 +32,8 @@ CHECKS = [
     ("clients", "pending_quarantine_action"),
     ("file_transfers", "token_hash"),
     ("clients", "cap_files_enabled"),
+    ("users", "auth_source"),
+    ("sso_providers", "secret"),
 ]
 
 

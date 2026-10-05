@@ -73,7 +73,7 @@
 | | |
 | :--- | :--- |
 | **Tek sunucu, çok laboratuvar** | Tek bir backend süreci, yeniden başladıktan sonra **5.000 sanal ajanı 11 saniyede** geri bağladı; hiçbir deneme başarısız olmadı ([rapor](docs/kapasite/README.md)). |
-| **Bilgisayarlarda açık port yok** | Her bilgisayar sunucuya TLS üzerinden (443) iki bağlantıyı kendisi açar. Yönetilen bilgisayarda dinleyen bir şey yoktur. |
+| **Bilgisayarlarda açık port yok** | Her bilgisayar sunucuya TLS üzerinden (443) iki bağlantıyı kendisi açar. Yönetici güncellemeler için isteğe bağlı sınıf içi eş önbelleği açmadıkça (varsayılan kapalı; yalnızca yerel alt ağ) yönetilen bilgisayarda dinleyen bir şey yoktur. |
 | **Kendini geri alan güncelleme** | Ajan sürümleri CI'da ed25519 ile imzalanır, sunucu *ve bilgisayarın kendisi* imzayı doğrular; yeni sürüm ayağa kalkmazsa önceki sürüm kendiliğinden geri gelir. |
 | **Kim ne yaptı, kanıtıyla** | Güvenlikle ilgili işlemler sunucudaki SHA-256 hash zincirli denetim kaydına ve bilgisayarın kendi Windows olay günlüğüne yazılır. |
 | **Kapalı demek kapalı** | Okul, uzaktan terminali ve ekran izlemeyi bilgisayar bazında kapatabilir. Sunucu bunları kapatabilir, asla geri açamaz. |
@@ -422,6 +422,8 @@ Belgelerin çoğu İngilizcedir; Türkçe olanlar işaretlidir.
 - [Pilot okul kurulumu](docs/tr/pilot-okul.md): 10 bilgisayarlık bir laboratuvar için yaklaşık bir saatlik
   kontrol listesi, ölçüm ve geri bildirim formu.
 - [Vaka çalışması şablonu](docs/tr/vaka-calismasi-sablonu.md): pilottan sonra sonuçları paylaşmak için.
+- [Active Directory ile giriş](docs/tr/active-directory-ile-giris.md): panele okulun AD hesaplarıyla (ya da Entra ID,
+  Google, Keycloak ile) giriş; gruplar, LDAPS sertifikası, sorun giderme.
 
 | Buradan başlayın | İşletin | Anlayın |
 | :--- | :--- | :--- |
@@ -437,7 +439,7 @@ Belgelerin çoğu İngilizcedir; Türkçe olanlar işaretlidir.
 | | [Herkese açık demo](deploy/demo/README.md) | [Kod imzalama politikası](docs/code-signing.md) |
 | | | [Ajan protokolü](docs/protocol/README.md) |
 | | | [Panel dilleri](docs/i18n.md) |
-| | | [GLPI aktarımı (tasarım)](docs/integrations/glpi.md) |
+| | | [GLPI aktarımı](docs/integrations/glpi.md) |
 
 ---
 

@@ -19,7 +19,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from migrate import run_migrations_on
-from pops import db, devicelist, heartbeats, notify, secretbox, update_tracking
+from pops import db, devicelist, glpi, heartbeats, notify, peer_cache, secretbox, update_tracking
 from pops.apiversion import ApiVersionMiddleware
 from pops.logs import setup_logging, stop_background_writer
 from pops.metrics import RequestContextMiddleware
@@ -50,14 +50,17 @@ from pops.routers import (
     files,
     exams as exams_router,
     helpdesk,
+    integrations,
     inventory,
     licenses,
     modules as modules_router,
     notifications,
     ops,
+    power as power_router,
     reports,
     rest,
     schedules,
+    sso as sso_router,
     tasks,
     tokens,
 )
@@ -160,6 +163,7 @@ async def startup_event():
             # (R-12, B14)
             await secretbox.reseal_totp_secrets(execute_query)
             await secretbox.reseal_bypass_keys(execute_query)
+            await secretbox.reseal_sso_secrets(execute_query)
             # Yeniden başlatmadan önce gönderilmiş, sonucu beklenen ajan güncellemeleri (S20)
             await update_tracking.load()
             # Açılışta hiçbir ajan bağlı değil; bağlananlar yeniden Online yazılır
@@ -188,6 +192,8 @@ async def startup_event():
             app.state.heartbeats = asyncio.create_task(heartbeats.flush_loop())
             # Cihaz listesi sürümü ve panele "değişti" bildirimi (bkz. pops/devicelist.py)
             app.state.devicelist = asyncio.create_task(devicelist.run_loop(manager.broadcast_to_panels))
+            # Ajan güncellemesinin sınıf içi eş gönderimi: süresi dolan tohumun yerine sıradaki (pops/peer_cache.py)
+            app.state.peer_cache = asyncio.create_task(peer_cache.loop())
             break
         except Exception as e:
             log.error("veritabanı bağlantı hatası", extra={"attempt": i + 1, "of": 5, "error": repr(e)[:300]})
@@ -210,7 +216,7 @@ async def shutdown_event():
     """Düzgün kapanış. uvicorn bu noktada yeni bağlantı almayı bırakmış, açık WebSocket'leri kapatmış (ajanlar
     "Offline" yazıldı) ve süren HTTP isteklerini beklemiştir. Kalanlar: zamanlayıcı (turu yarıda kalırsa işlemi
     geri alınır), bellekte bekleyen heartbeat'ler, arka plandaki bildirim gönderimleri ve havuz."""
-    for name in ("scheduler", "heartbeats", "devicelist"):
+    for name in ("scheduler", "heartbeats", "devicelist", "peer_cache"):
         task = getattr(app.state, name, None)
         if task:
             task.cancel()
@@ -218,6 +224,7 @@ async def shutdown_event():
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
+    await glpi.stop()   # süren GLPI eşitlemesi (havuz kapanmadan)
     if db.db_pool:
         try:
             await asyncio.wait_for(heartbeats.flush(), SHUTDOWN_DRAIN_SECONDS)
@@ -243,7 +250,7 @@ async def shutdown_event():
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
-    activity, modules_router, branding, tokens, files,
+    activity, modules_router, branding, tokens, files, power_router, sso_router, integrations,
     # Sınav modu (/api/labs/{lab_name:path}/exam): rest'in genel /api/labs/{lab_name} yollarından önce
     exams_router,
     # REST adları (/api/v1) eski uçların işleyicilerini çağırır; eskilerden sonra bağlanır

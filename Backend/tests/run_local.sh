@@ -15,10 +15,15 @@ export POPS_TEST_HTTP="${POPS_TEST_HTTP:-http://127.0.0.1:8099}"
 # CI ile aynı: test_features.py kendi webhook alıcısını 127.0.0.1'de açar, bu yüzden sunucu iç adrese
 # webhook göndermeye izin vermeli. Boş CORS listesi .env'deki değeri ezer.
 export NOTIFY_WEBHOOK_ALLOW_PRIVATE=1
+export GLPI_ALLOW_PRIVATE=1   # test_glpi.py'nin sahte GLPI sunucusu da 127.0.0.1'de
 export CORS_ALLOWED_ORIGINS=""
 export METRICS_TOKEN="${METRICS_TOKEN:-local-metrics-token-0123456789}"
 # test_demo.py: salt okunur demo hesabı (sunucu ve test aynı değeri okur)
 export POPS_DEMO_USERS="${POPS_DEMO_USERS:-ci_demo}"
+# test_peer_cache.py: tohumun süresi kısa (sunucu ve test aynı değeri okur)
+export PEER_CACHE_SEED_TIMEOUT_SECONDS="${PEER_CACHE_SEED_TIMEOUT_SECONDS:-4}"
+# test_sso.py: şifresiz LDAP'ın test bayrağı yalnızca bununla kabul edilir (CI ile aynı; üretimde tanımlanmaz)
+export POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1
 
 # Sunucusuz testler. Protokol testi jsonschema ister (yalnızca test bağımlılığı; CI kurar)
 skip=()

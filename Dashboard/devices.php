@@ -223,7 +223,8 @@
             case 'more': {
                 const anyQ = hosts.some(h => (dev.find(h) || {}).is_quarantined);
                 POps.menu(b, [
-                    { label: POps.t('Mesaj gönder'), icon: 'message', onClick: () => dev.message(hosts, o) },
+                    dev.messageItem(hosts, o),
+                    ...dev.sessionItems(hosts, o),
                     { label: POps.t('Dosya gönder'), icon: 'upload', onClick: () => dev.sendFile(hosts, o) },
                     { label: POps.t('Başka sınıfa taşı…'), icon: 'move', onClick: () => dev.moveMenu(b, hosts, {}) },
                     '-',

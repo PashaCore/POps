@@ -46,5 +46,6 @@
   },
   "{lab} sınavı bitirilsin mi?": "End the exam in {lab}?",
   "Bilgisayarlar hemen sınav modundan çıkar; kapalı olanlar açılınca çıkar.": "The computers leave exam mode now; those that are off leave it when they start.",
-  "Sınav bitirildi.": "Exam ended."
+  "Sınav bitirildi.": "Exam ended.",
+  "Sınav modu: yalnızca izin verilen adresler açık.": "Exam mode: only the allowed addresses are open."
 }

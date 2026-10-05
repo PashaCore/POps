@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "AdminLoginInput": {
+        "additionalProperties": false,
         "properties": {
           "otp": {
             "anyOf": [
@@ -31,6 +32,7 @@
         "type": "object"
       },
       "AgentPoliciesInput": {
+        "additionalProperties": false,
         "properties": {
           "auto_quarantine": {
             "title": "Auto Quarantine",
@@ -193,6 +195,7 @@
         "type": "object"
       },
       "AutoEnrollInput": {
+        "additionalProperties": false,
         "properties": {
           "expire_date": {
             "title": "Expire Date",
@@ -294,6 +297,7 @@
         "type": "object"
       },
       "CapabilityInput": {
+        "additionalProperties": false,
         "properties": {
           "pc_name": {
             "title": "Pc Name",
@@ -329,6 +333,7 @@
         "type": "object"
       },
       "CreateLabInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -342,6 +347,7 @@
         "type": "object"
       },
       "CreatePackageInput": {
+        "additionalProperties": false,
         "properties": {
           "color": {
             "title": "Color",
@@ -385,6 +391,7 @@
         "type": "object"
       },
       "DeleteLabInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -398,6 +405,7 @@
         "type": "object"
       },
       "DeletePackageInput": {
+        "additionalProperties": false,
         "properties": {
           "id": {
             "title": "Id",
@@ -450,6 +458,7 @@
         "type": "object"
       },
       "EndAuditSessionInput": {
+        "additionalProperties": false,
         "properties": {
           "session_id": {
             "title": "Session Id",
@@ -468,6 +477,7 @@
         "type": "object"
       },
       "EnforceInput": {
+        "additionalProperties": false,
         "properties": {
           "enabled": {
             "title": "Enabled",
@@ -597,6 +607,7 @@
         "type": "object"
       },
       "FetchReleaseInput": {
+        "additionalProperties": false,
         "properties": {
           "force": {
             "default": false,
@@ -657,6 +668,169 @@
           "reason"
         ],
         "title": "FilePullInput",
+        "type": "object"
+      },
+      "GlpiSettingsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "app_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Token"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "entity": {
+            "default": 0,
+            "maximum": 1000000000.0,
+            "minimum": 0.0,
+            "title": "Entity",
+            "type": "integer"
+          },
+          "interval_hours": {
+            "default": 24,
+            "title": "Interval Hours",
+            "type": "integer"
+          },
+          "locations": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locations"
+          },
+          "sync": {
+            "$ref": "#/components/schemas/GlpiSyncInput",
+            "default": {
+              "computers": true,
+              "software": true,
+              "ticket_reporter": false,
+              "tickets": true
+            }
+          },
+          "tickets_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tickets Since"
+          },
+          "url": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Token"
+          }
+        },
+        "title": "GlpiSettingsInput",
+        "type": "object"
+      },
+      "GlpiSyncInput": {
+        "additionalProperties": false,
+        "properties": {
+          "computers": {
+            "default": true,
+            "title": "Computers",
+            "type": "boolean"
+          },
+          "software": {
+            "default": true,
+            "title": "Software",
+            "type": "boolean"
+          },
+          "ticket_reporter": {
+            "default": false,
+            "title": "Ticket Reporter",
+            "type": "boolean"
+          },
+          "tickets": {
+            "default": true,
+            "title": "Tickets",
+            "type": "boolean"
+          }
+        },
+        "title": "GlpiSyncInput",
+        "type": "object"
+      },
+      "GlpiTestInput": {
+        "additionalProperties": false,
+        "description": "Formdaki değerlerle sınama (kaydetmeden); verilmeyen değer kayıtlı olandan alınır.",
+        "properties": {
+          "app_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Token"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "user_token": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "pattern": "^[!-~]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Token"
+          }
+        },
+        "title": "GlpiTestInput",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -768,7 +942,238 @@
         "title": "LabRenameInput",
         "type": "object"
       },
+      "LdapSettingsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_insecure_for_tests": {
+            "default": false,
+            "title": "Allow Insecure For Tests",
+            "type": "boolean"
+          },
+          "base_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Base Dn",
+            "type": "string"
+          },
+          "bind_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Bind Dn",
+            "type": "string"
+          },
+          "bind_password": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bind Password"
+          },
+          "ca_pem": {
+            "default": "",
+            "maxLength": 65536,
+            "title": "Ca Pem",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "group_base_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Group Base Dn",
+            "type": "string"
+          },
+          "group_filter": {
+            "default": "(|(member={user_dn})(uniqueMember={user_dn}))",
+            "maxLength": 512,
+            "title": "Group Filter",
+            "type": "string"
+          },
+          "group_map": {
+            "items": {
+              "$ref": "#/components/schemas/SsoGroupMapInput"
+            },
+            "maxItems": 50,
+            "title": "Group Map",
+            "type": "array"
+          },
+          "host": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "default": 636,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "security": {
+            "default": "ldaps",
+            "enum": [
+              "ldaps",
+              "starttls",
+              "plain"
+            ],
+            "title": "Security",
+            "type": "string"
+          },
+          "timeout": {
+            "default": 5,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Timeout",
+            "type": "integer"
+          },
+          "user_filter": {
+            "default": "(sAMAccountName={username})",
+            "maxLength": 512,
+            "title": "User Filter",
+            "type": "string"
+          },
+          "username_attribute": {
+            "default": "sAMAccountName",
+            "maxLength": 64,
+            "title": "Username Attribute",
+            "type": "string"
+          }
+        },
+        "title": "LdapSettingsInput",
+        "type": "object"
+      },
+      "LdapTestInput": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_insecure_for_tests": {
+            "default": false,
+            "title": "Allow Insecure For Tests",
+            "type": "boolean"
+          },
+          "base_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Base Dn",
+            "type": "string"
+          },
+          "bind_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Bind Dn",
+            "type": "string"
+          },
+          "bind_password": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bind Password"
+          },
+          "ca_pem": {
+            "default": "",
+            "maxLength": 65536,
+            "title": "Ca Pem",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "group_base_dn": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Group Base Dn",
+            "type": "string"
+          },
+          "group_filter": {
+            "default": "(|(member={user_dn})(uniqueMember={user_dn}))",
+            "maxLength": 512,
+            "title": "Group Filter",
+            "type": "string"
+          },
+          "group_map": {
+            "items": {
+              "$ref": "#/components/schemas/SsoGroupMapInput"
+            },
+            "maxItems": 50,
+            "title": "Group Map",
+            "type": "array"
+          },
+          "host": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "default": 636,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "security": {
+            "default": "ldaps",
+            "enum": [
+              "ldaps",
+              "starttls",
+              "plain"
+            ],
+            "title": "Security",
+            "type": "string"
+          },
+          "test_username": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Username"
+          },
+          "timeout": {
+            "default": 5,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Timeout",
+            "type": "integer"
+          },
+          "user_filter": {
+            "default": "(sAMAccountName={username})",
+            "maxLength": 512,
+            "title": "User Filter",
+            "type": "string"
+          },
+          "username_attribute": {
+            "default": "sAMAccountName",
+            "maxLength": 64,
+            "title": "Username Attribute",
+            "type": "string"
+          }
+        },
+        "title": "LdapTestInput",
+        "type": "object"
+      },
       "LicenseInput": {
+        "additionalProperties": false,
         "properties": {
           "expires_at": {
             "anyOf": [
@@ -836,6 +1241,7 @@
         "type": "object"
       },
       "LockdownInput": {
+        "additionalProperties": false,
         "properties": {
           "admin_name": {
             "anyOf": [
@@ -994,6 +1400,7 @@
         "type": "object"
       },
       "ModuleSettingInput": {
+        "additionalProperties": false,
         "properties": {
           "enabled": {
             "anyOf": [
@@ -1022,6 +1429,7 @@
         "type": "object"
       },
       "MovePcInput": {
+        "additionalProperties": false,
         "properties": {
           "new_lab": {
             "title": "New Lab",
@@ -1040,6 +1448,7 @@
         "type": "object"
       },
       "MovePcsInput": {
+        "additionalProperties": false,
         "properties": {
           "new_lab": {
             "title": "New Lab",
@@ -1061,6 +1470,7 @@
         "type": "object"
       },
       "NotificationsReadInput": {
+        "additionalProperties": false,
         "properties": {
           "ids": {
             "default": [],
@@ -1075,6 +1485,7 @@
         "type": "object"
       },
       "NotifySettingsInput": {
+        "additionalProperties": false,
         "properties": {
           "email_to": {
             "default": "",
@@ -1098,6 +1509,117 @@
           }
         },
         "title": "NotifySettingsInput",
+        "type": "object"
+      },
+      "OidcSettingsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_insecure_for_tests": {
+            "default": false,
+            "title": "Allow Insecure For Tests",
+            "type": "boolean"
+          },
+          "allowed_domains": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Allowed Domains",
+            "type": "array"
+          },
+          "ca_pem": {
+            "default": "",
+            "maxLength": 65536,
+            "title": "Ca Pem",
+            "type": "string"
+          },
+          "client_id": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Secret"
+          },
+          "default_pages": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Default Pages",
+            "type": "array"
+          },
+          "default_role": {
+            "default": "",
+            "enum": [
+              "",
+              "viewer",
+              "admin"
+            ],
+            "title": "Default Role",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "maxLength": 60,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "group_map": {
+            "items": {
+              "$ref": "#/components/schemas/SsoGroupMapInput"
+            },
+            "maxItems": 50,
+            "title": "Group Map",
+            "type": "array"
+          },
+          "groups_claim": {
+            "default": "groups",
+            "maxLength": 64,
+            "title": "Groups Claim",
+            "type": "string"
+          },
+          "issuer": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Issuer",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Redirect Uri",
+            "type": "string"
+          },
+          "scopes": {
+            "default": "openid email profile",
+            "maxLength": 256,
+            "title": "Scopes",
+            "type": "string"
+          },
+          "username_claim": {
+            "default": "email",
+            "maxLength": 64,
+            "title": "Username Claim",
+            "type": "string"
+          }
+        },
+        "title": "OidcSettingsInput",
         "type": "object"
       },
       "OrchestrationInput": {
@@ -1172,6 +1694,7 @@
         "type": "object"
       },
       "PanelTicketInput": {
+        "additionalProperties": false,
         "properties": {
           "body": {
             "anyOf": [
@@ -1243,6 +1766,7 @@
         "type": "object"
       },
       "PatchInstallInput": {
+        "additionalProperties": false,
         "properties": {
           "scope": {
             "default": "security",
@@ -1404,7 +1928,90 @@
         "title": "PolicyAlertInput",
         "type": "object"
       },
+      "PowerCommandInput": {
+        "additionalProperties": false,
+        "description": "Hedef: target_mode PC (cihaz kimlikleri), LAB (sınıf adları) ya da ALL. Yalnızca çevrimiçi hedeflere görev\naçılır.",
+        "properties": {
+          "delay": {
+            "default": 0,
+            "maximum": 600.0,
+            "minimum": 0.0,
+            "title": "Delay",
+            "type": "integer"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "op": {
+            "enum": [
+              "shutdown",
+              "restart",
+              "logoff",
+              "lock"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "target_mode": {
+            "default": "PC",
+            "enum": [
+              "ALL",
+              "LAB",
+              "PC"
+            ],
+            "title": "Target Mode",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "title": "Targets",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "title": "PowerCommandInput",
+        "type": "object"
+      },
       "ProfileInput": {
+        "additionalProperties": false,
         "properties": {
           "profile": {
             "title": "Profile",
@@ -1437,6 +2044,7 @@
         "type": "object"
       },
       "ReenrollInput": {
+        "additionalProperties": false,
         "properties": {
           "allow": {
             "default": true,
@@ -1492,6 +2100,7 @@
         "type": "object"
       },
       "RenameDeviceInput": {
+        "additionalProperties": false,
         "properties": {
           "display_name": {
             "title": "Display Name",
@@ -1510,6 +2119,7 @@
         "type": "object"
       },
       "RenameLabInput": {
+        "additionalProperties": false,
         "properties": {
           "new_name": {
             "title": "New Name",
@@ -1528,6 +2138,7 @@
         "type": "object"
       },
       "RetentionInput": {
+        "additionalProperties": false,
         "properties": {
           "retention_days_logs": {
             "maximum": 3650.0,
@@ -1557,6 +2168,7 @@
         "type": "object"
       },
       "SaveLabLayoutInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -1575,6 +2187,7 @@
         "type": "object"
       },
       "ScheduleToggleInput": {
+        "additionalProperties": false,
         "properties": {
           "enabled": {
             "title": "Enabled",
@@ -1588,6 +2201,7 @@
         "type": "object"
       },
       "ScheduledTaskInput": {
+        "additionalProperties": false,
         "properties": {
           "command": {
             "title": "Command",
@@ -1659,6 +2273,7 @@
         "type": "object"
       },
       "SetLimitInput": {
+        "additionalProperties": false,
         "properties": {
           "limit": {
             "maximum": 10000.0,
@@ -1674,6 +2289,7 @@
         "type": "object"
       },
       "SetMainPcInput": {
+        "additionalProperties": false,
         "properties": {
           "lab_name": {
             "title": "Lab Name",
@@ -1752,7 +2368,65 @@
         "title": "SoftwareItem",
         "type": "object"
       },
+      "SsoGroupMapInput": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Group",
+            "type": "string"
+          },
+          "pages": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Pages",
+            "type": "array"
+          },
+          "role": {
+            "enum": [
+              "viewer",
+              "admin",
+              "superadmin"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "role"
+        ],
+        "title": "SsoGroupMapInput",
+        "type": "object"
+      },
+      "SsoRedeemInput": {
+        "additionalProperties": false,
+        "properties": {
+          "binding": {
+            "maxLength": 128,
+            "minLength": 20,
+            "title": "Binding",
+            "type": "string"
+          },
+          "ticket": {
+            "maxLength": 128,
+            "minLength": 20,
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "binding"
+        ],
+        "title": "SsoRedeemInput",
+        "type": "object"
+      },
       "StartAuditSessionInput": {
+        "additionalProperties": false,
         "properties": {
           "admin_id": {
             "anyOf": [
@@ -1809,6 +2483,7 @@
         "type": "object"
       },
       "StreamStopInput": {
+        "additionalProperties": false,
         "properties": {
           "pc_name": {
             "title": "Pc Name",
@@ -1822,6 +2497,7 @@
         "type": "object"
       },
       "TaskActionInput": {
+        "additionalProperties": false,
         "properties": {
           "action": {
             "title": "Action",
@@ -1885,6 +2561,7 @@
         "type": "object"
       },
       "TaskStatusInput": {
+        "additionalProperties": false,
         "properties": {
           "ids": {
             "items": {
@@ -1902,6 +2579,7 @@
         "type": "object"
       },
       "TicketMessageInput": {
+        "additionalProperties": false,
         "properties": {
           "body": {
             "title": "Body",
@@ -1920,6 +2598,7 @@
         "type": "object"
       },
       "TicketUpdateInput": {
+        "additionalProperties": false,
         "properties": {
           "assignee": {
             "anyOf": [
@@ -1959,6 +2638,7 @@
         "type": "object"
       },
       "TotpDisableInput": {
+        "additionalProperties": false,
         "properties": {
           "otp": {
             "anyOf": [
@@ -1976,6 +2656,7 @@
         "type": "object"
       },
       "TotpEnableInput": {
+        "additionalProperties": false,
         "properties": {
           "otp": {
             "title": "Otp",
@@ -1989,6 +2670,7 @@
         "type": "object"
       },
       "TotpLoginInput": {
+        "additionalProperties": false,
         "properties": {
           "challenge": {
             "title": "Challenge",
@@ -2007,6 +2689,7 @@
         "type": "object"
       },
       "UpdateProgressInput": {
+        "additionalProperties": false,
         "properties": {
           "pcs": {
             "items": {
@@ -2035,10 +2718,28 @@
         "type": "object"
       },
       "UserCreateInput": {
+        "additionalProperties": false,
         "properties": {
-          "password": {
-            "title": "Password",
+          "auth_source": {
+            "default": "local",
+            "enum": [
+              "local",
+              "ldap",
+              "oidc"
+            ],
+            "title": "Auth Source",
             "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
           },
           "permissions": {
             "title": "Permissions",
@@ -2055,15 +2756,96 @@
         },
         "required": [
           "username",
-          "password",
           "role",
           "permissions"
         ],
         "title": "UserCreateInput",
         "type": "object"
       },
-      "UserUpdateInput": {
+      "UserMessageInput": {
+        "additionalProperties": false,
         "properties": {
+          "requires_ack": {
+            "default": false,
+            "title": "Requires Ack",
+            "type": "boolean"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "style": {
+            "default": "info",
+            "enum": [
+              "info",
+              "warning"
+            ],
+            "title": "Style",
+            "type": "string"
+          },
+          "target_mode": {
+            "default": "PC",
+            "enum": [
+              "ALL",
+              "LAB",
+              "PC"
+            ],
+            "title": "Target Mode",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "title": "Targets",
+            "type": "array"
+          },
+          "text": {
+            "maxLength": 2000,
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 160,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "text"
+        ],
+        "title": "UserMessageInput",
+        "type": "object"
+      },
+      "UserUpdateInput": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "local",
+                  "ldap",
+                  "oidc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Source"
+          },
           "password": {
             "anyOf": [
               {
@@ -2978,6 +3760,66 @@
         ]
       }
     },
+    "/api/v1/auth/sso": {
+      "get": {
+        "description": "Giriş sayfası için: hangi yöntemler açık (ayrıntı yok).",
+        "operationId": "sso_info_api_auth_sso_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sso Info",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
+    "/api/v1/auth/sso/redeem": {
+      "post": {
+        "description": "Panelin (login.php) sunucu tarafı: bileti, akışı başlatan PHP oturumunun bağıyla birlikte bozdurur.",
+        "operationId": "sso_redeem_api_auth_sso_redeem_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoRedeemInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sso Redeem",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
     "/api/v1/branding": {
       "get": {
         "operationId": "get_branding_api_branding_get",
@@ -3354,6 +4196,51 @@
         ]
       }
     },
+    "/api/v1/devices/message": {
+      "post": {
+        "description": "Oturumdaki kullanıcıya tepside mesaj (başlık, metin, bilgi/uyarı, isteğe bağlı okundu onayı). Mesajı bir kişi\nyazar: API jetonu kullanılamaz. \"message\" duyurmayan ajanda görev gönderilmeden reddedilir (-8).",
+        "operationId": "user_message_api_devices_message_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserMessageInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "User Message",
+        "tags": [
+          "power"
+        ]
+      }
+    },
     "/api/v1/devices/move": {
       "post": {
         "operationId": "move_pcs_api_devices_move_post",
@@ -3395,6 +4282,51 @@
         "summary": "Move Pcs",
         "tags": [
           "devices"
+        ]
+      }
+    },
+    "/api/v1/devices/power": {
+      "post": {
+        "description": "Kapat, yeniden başlat, oturumu kapat ya da kilitle; isteğe bağlı gecikme (0-600 sn) ve kullanıcıya not.\n\"power\" duyurmayan ajana kapatma/yeniden başlatma eski komutla gider, diğerleri gönderilmeden reddedilir (-8).\nAPI jetonuyla da kullanılabilir (admin rolü).",
+        "operationId": "power_command_api_devices_power_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PowerCommandInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Power Command",
+        "tags": [
+          "power"
         ]
       }
     },
@@ -5478,6 +6410,84 @@
         ]
       }
     },
+    "/api/v1/modules/{module_id}/preview": {
+      "get": {
+        "description": "Ayar değişirse ne olur (hiçbir şey yazmaz): durumu değişecek modüller (bağımlılar dahil, kurum geneli ve\nlaboratuvar bazında) ve kapanacak Vision oturumu ile reddedilecek görev sayısı. enabled yoksa ayar kaldırılır.",
+        "operationId": "preview_module_api_modules__module_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "title": "Module Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lab",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lab"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Module",
+        "tags": [
+          "modules"
+        ]
+      }
+    },
     "/api/v1/move_pc": {
       "post": {
         "deprecated": true,
@@ -7103,6 +8113,208 @@
         ]
       }
     },
+    "/api/v1/sso/settings": {
+      "get": {
+        "description": "İki sağlayıcının ayarları; sırlar dönmez (yalnızca kayıtlı olup olmadıkları).",
+        "operationId": "get_settings_api_sso_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Settings",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
+    "/api/v1/sso/settings/ldap": {
+      "put": {
+        "operationId": "put_ldap_api_sso_settings_ldap_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LdapSettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Ldap",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
+    "/api/v1/sso/settings/oidc": {
+      "put": {
+        "operationId": "put_oidc_api_sso_settings_oidc_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcSettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Oidc",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
+    "/api/v1/sso/test/ldap": {
+      "post": {
+        "description": "Formdaki (kaydedilmemiş olabilir) ayarlarla bağlantıyı sınar. Şifre yazılmadıysa kayıtlı şifre, yalnızca\nsunucu ve hizmet hesabı kayıtlıyla aynıysa kullanılır.",
+        "operationId": "test_ldap_api_sso_test_ldap_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LdapTestInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Ldap",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
+    "/api/v1/sso/test/oidc": {
+      "post": {
+        "operationId": "test_oidc_api_sso_test_oidc_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcSettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Oidc",
+        "tags": [
+          "sso"
+        ]
+      }
+    },
     "/api/v1/storage": {
       "get": {
         "operationId": "api_storage_api_storage_get",
@@ -7623,6 +8835,209 @@
         ]
       }
     },
+    "/api/v1/system/glpi": {
+      "get": {
+        "operationId": "get_glpi_api_system_glpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Glpi",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "operationId": "save_glpi_api_system_glpi_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlpiSettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Glpi",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/v1/system/glpi/links/{pc_name}": {
+      "delete": {
+        "description": "Cihazın GLPI bağlantısını unutur (GLPI'ye dokunmaz); sonraki eşitlemede yeniden aranır ya da oluşturulur.",
+        "operationId": "forget_glpi_link_api_system_glpi_links__pc_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pc_name",
+            "required": true,
+            "schema": {
+              "title": "Pc Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Forget Glpi Link",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/v1/system/glpi/sync": {
+      "post": {
+        "description": "Şimdi eşitle: tur arka planda başlar (sürüyorsa yenisi başlamaz). wait=true turun sonucunu bekler (en çok 120\nsn; betikler ve testler için).",
+        "operationId": "sync_glpi_api_system_glpi_sync_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Wait",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sync Glpi",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/v1/system/glpi/test": {
+      "post": {
+        "operationId": "test_glpi_api_system_glpi_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlpiTestInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Glpi",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/v1/system/install-profile": {
       "post": {
         "operationId": "apply_profile_api_system_install_profile_post",
@@ -7669,7 +9084,7 @@
     },
     "/api/v1/system/install-profile/{name}": {
       "get": {
-        "description": "Profil uygulanırsa kurum genelinde değişecek modüller (laboratuvar istisnaları ayrıca sayılır).",
+        "description": "Profil uygulanırsa kurum genelinde değişecek modüller (laboratuvar istisnaları ayrıca sayılır) ve kapanacak\nVision oturumu ile reddedilecek görev sayısı (reset_labs: istisnalar da silinirse).",
         "operationId": "preview_profile_api_system_install_profile__name__get",
         "parameters": [
           {
@@ -7679,6 +9094,16 @@
             "schema": {
               "title": "Name",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reset_labs",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Reset Labs",
+              "type": "boolean"
             }
           }
         ],
@@ -8052,6 +9477,51 @@
           }
         ],
         "summary": "Set Capabilities",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/system/update-peer-cache": {
+      "post": {
+        "description": "Ajan güncellemesinde sınıf içi eş önbelleği (varsayılan açık). Kapatılınca tohum bekleyen bilgisayarlara\ngüncelleme hemen, eşsiz gönderilir; sonraki gönderimler bugünkü gibi hepsine birden gider.",
+        "operationId": "set_update_peer_cache_api_system_update_peer_cache_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnforceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Update Peer Cache",
         "tags": [
           "system"
         ]

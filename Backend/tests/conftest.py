@@ -56,6 +56,11 @@ SCRIPT_ORDER = [
     "test_exam.py",
     "test_winget.py",
     "test_devices_delta.py",
+    "test_power_message.py",
+    "test_peer_cache.py",
+    "test_sso.py",
+    "test_strict_input.py",
+    "test_glpi.py",
 ]
 
 # Betiklerin kontrol satırları: chk() "  FAIL <mesaj>", check() "  ✘ <mesaj>" basar

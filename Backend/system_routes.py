@@ -27,11 +27,11 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
 
 import release_verify
 from pops import agent_version as agent_version_mod
-from pops import devicelist, update_tracking
+from pops import devicelist, peer_cache, update_tracking
 from pops.models import StrictInput, TargetMode, UpdateProgressInput, upper_mode
 
 
@@ -49,22 +49,22 @@ class DeployUpdateInput(StrictInput):
     _mode = field_validator("target_mode", mode="before")(upper_mode)
 
 
-class EnforceInput(BaseModel):
+class EnforceInput(StrictInput):
     enabled: bool
 
 
-class CapabilityInput(BaseModel):
+class CapabilityInput(StrictInput):
     pc_name: str
     terminal_enabled: Optional[bool] = None   # yalnızca False anlamlı (fail-safe kapatma)
     vision_enabled: Optional[bool] = None
 
 
-class ReenrollInput(BaseModel):
+class ReenrollInput(StrictInput):
     pc_name: str
     allow: bool = True
 
 
-class FetchReleaseInput(BaseModel):
+class FetchReleaseInput(StrictInput):
     tag: Optional[str] = None   # boşsa GitHub'daki son release
     force: bool = False
 
@@ -438,6 +438,7 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             "staged_tag": staged.get("tag") if staged else None,
             "release_available": release_available,
             "enforce_agent_auth": await _enforce_enabled(),
+            "update_peer_cache": await peer_cache.enabled(),
         }
 
     @router.get("/api/system/release-notes")
@@ -667,6 +668,8 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
                 ch = {}
             last[r["hw_id"]] = {k: ch.get(k) for k in ("status", "rollback", "to_version", "detail", "agent_state")}
         known = {r["pc_name"]: r for r in rows or []}
+        # Sınıf içi eş gönderimi: bilgisayarın rolü (tohum, tohumu bekliyor, eşten) ve sınıf başına özet
+        peer = peer_cache.status_for(pcs)
         items = []
         for pc in pcs:
             r = known.get(pc)
@@ -688,8 +691,9 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
                 "of": stage.get("of"),
                 "stage_at": stage.get("stage_at"),
                 "result": last.get(pc),
+                "peer": peer["items"].get(pc),
             })
-        return {"items": items, "now": time.time()}
+        return {"items": items, "now": time.time(), "peer_labs": peer["labs"]}
 
     @router.post("/api/system/deploy-update")
     async def deploy_update(data: DeployUpdateInput, auth: dict = Depends(require_superadmin)):
@@ -735,6 +739,7 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         with open(spath, "r", encoding="utf-8") as f:
             sig = f.read().strip()
         msg = {"action": "update_agent", "manifest": manifest_b64, "manifest_sig": sig}
+        msi_sha = str((release_verify.artifact_entry(staged, msi_name) or {}).get("sha256") or "").lower()
 
         targets = await _resolve_targets(data)
         rows = await execute_query(
@@ -746,22 +751,44 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         # kurulum sürerken gelen ikinci emri zaten yok sayar. Kurulum sırasında bağlantısız görünen cihaz da burada.
         already = sorted(await update_tracking.recently_sent(targets, version))
         targets = {t for t in targets if t not in already}
+        # Sınıf içi eş önbelleği (pops/peer_cache.py): sınıfın tohumu şimdi, geri kalanı tohum hazır olunca "peers"
+        # ile gider; hazır eşi olan sınıfa hemen peers ile; özelliği olmayanlara bugünkü gibi. Eşler MSI'ı paylaşır
+        # (msi_sha): yalnızca Windows cihazlar; .deb alan Linux cihazlar bugünkü gibi doğrudan gönderilir
+        staging = await peer_cache.plan([t for t in targets if t in manager.active_agents
+                                         and platform_of.get(t, "windows") == "windows"], version, msi_sha, msg)
         online = []
         offline = sorted(t for t in targets if t not in manager.active_agents)
-        for pc in sorted(t for t in targets if t in manager.active_agents):
-            if not await manager.send_command(msg, pc):
+        for pc in sorted(t for t in targets if t in manager.active_agents and t not in staging.hold):
+            peers = staging.peers.get(pc)
+            if not await manager.send_command(dict(msg, peers=peers) if peers else msg, pc):
                 offline.append(pc)   # bağlantı bu arada koptu
+                await peer_cache.not_sent(pc)
                 continue
             online.append(pc)
             # Sonucu beklenen güncelleme; tabloda da tutulur, sunucu yeniden başlasa da izlenir; önceki gönderimin
             # adımı silinir (bkz. pops/update_tracking.py)
             await update_tracking.mark_sent(pc, version)
+        waiting = sorted(pc for pc in staging.hold if peer_cache.is_waiting(pc))
+        seeds = sorted(pc for pc in staging.seeds if pc in online)
+        with_peers = sorted(pc for pc in staging.peers if pc in online)
         await add_audit_log("*", "deploy_update", "İmzalı güncelleme dağıtıldı: %s" % version,
                             {"version": version, "msi": msi_name, "deb": deb_name, "dispatched": online,
                              "offline": offline, "no_package": no_package, "already_pending": already,
+                             "seeds": seeds, "waiting_for_seed": waiting, "with_peers": with_peers,
                              "by": auth.get("sub")})
         return {"ok": True, "version": version, "msi": msi_name, "deb": deb_name, "dispatched": online,
-                "skipped_offline": offline, "skipped_no_package": no_package, "already_pending": already}
+                "skipped_offline": offline, "skipped_no_package": no_package, "already_pending": already,
+                "seeds": seeds, "waiting_for_seed": waiting, "with_peers": with_peers}
+
+    @router.post("/api/system/update-peer-cache")
+    async def set_update_peer_cache(data: EnforceInput, auth: dict = Depends(require_superadmin)):
+        """Ajan güncellemesinde sınıf içi eş önbelleği (varsayılan açık). Kapatılınca tohum bekleyen bilgisayarlara
+        güncelleme hemen, eşsiz gönderilir; sonraki gönderimler bugünkü gibi hepsine birden gider."""
+        await peer_cache.set_enabled(data.enabled)
+        await add_audit_log("*", "update_peer_cache",
+                            "Güncellemede eş önbelleği %s" % ("açıldı" if data.enabled else "kapatıldı"),
+                            {"enabled": data.enabled, "by": auth.get("sub")})
+        return {"ok": True, "update_peer_cache": data.enabled}
 
     @router.post("/api/system/enforce-auth")
     async def set_enforce(data: EnforceInput, auth: dict = Depends(require_superadmin)):

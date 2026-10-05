@@ -28,6 +28,7 @@ from typing import Dict, Iterable, List, Optional
 import asyncpg
 
 from pops import modules
+from pops.labs import UNASSIGNED_LAB
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.manager import manager
@@ -35,7 +36,7 @@ from pops.notify import notify
 
 log = logging.getLogger("pops.exams")
 
-UNASSIGNED = "Atanmamis_Cihazlar"
+UNASSIGNED = UNASSIGNED_LAB
 MAX_ALLOW = 50
 MAX_BLOCK_APPS = 50
 MAX_SECONDS = 8 * 3600

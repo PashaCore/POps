@@ -42,6 +42,7 @@ Ways to create it:
 | `DB_COMMAND_TIMEOUT` | no | `30` | Longest single query, in seconds. Migrations run on a separate connection without this limit. |
 | `DB_IDLE_IN_TRANSACTION_MS` | no | `60000` | PostgreSQL closes a session that sits idle inside a transaction this long, so it cannot hold locks. |
 | `HEARTBEAT_FLUSH_SECONDS` | no | `2` | Agent heartbeats are collected and written in one statement this often. |
+| `PEER_CACHE_SEED_TIMEOUT_SECONDS` | no | `600` | Lab-local peer cache: how long a lab's seed PC has to report `verified`, and then a successful result, before the next PC becomes the seed (see [`agent.md`](agent.md#peer-cache-contract)). Tests use `4`. |
 | `SCHEDULE_VALID_MINUTES` | no | `60` | A scheduled run that could not be sent within this many minutes of its time becomes `Expired`. |
 | `SCHEDULE_MISFIRE_MINUTES` | no | `60` | If the server was down longer than this past a run time, that run is skipped and reported as missed. |
 | `TOTP_ENCRYPTION_KEY` | no | derived from `JWT_SECRET` | Fernet key that encrypts the 2FA secrets and the per-device bypass keys in the database. Set it before ever changing `JWT_SECRET`; see [`security.md`](security.md#two-factor-authentication). |
@@ -66,6 +67,8 @@ Ways to create it:
 | `SMTP_PASS` | no | empty | Password for `SMTP_USER`. |
 | `SMTP_FROM` | no | `SMTP_USER` | Sender address. |
 | `NOTIFY_WEBHOOK_ALLOW_PRIVATE` | no | off | By default the notification webhook may only point at public internet addresses: its host is resolved and loopback, private ranges, link-local (including `169.254.169.254`), CGNAT and reserved addresses are refused. `1` (or `true` / `yes`) also allows those, for a webhook receiver inside the school network. Multicast and unspecified addresses stay refused. |
+| `GLPI_ALLOW_PRIVATE` | no | off | Like `NOTIFY_WEBHOOK_ALLOW_PRIVATE`, for the GLPI export ([`integrations/glpi.md`](integrations/glpi.md)): `1` allows a GLPI on a private, loopback or link-local address, the usual case for a GLPI on the school network. With it, plain `http://` is accepted for a host whose addresses are all private; a GLPI on the internet always needs `https://`. |
+| `GLPI_CA_FILE` | no | empty | Path to a PEM file with the certificate authority that signed the GLPI server's certificate, when it is not one the system trusts (a school's own CA). |
 | `LOG_LEVEL` | no | `INFO` | Backend log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | `LOG_FORMAT` | no | `json` | `json`: one JSON object per line (for journald and log collectors). `text`: readable lines for development. |
 | `METRICS_TOKEN` | no | unset | Turns on the Prometheus `/metrics` endpoint; at least 16 characters, sent as `Authorization: Bearer <token>`. Unset: the endpoint returns 404. See [`backend.md`](backend.md#logs-metrics-and-diagnostics). |
@@ -207,6 +210,7 @@ SQL is shown for recovery situations.
 | --- | --- | --- |
 | `concurrent_limit` | **Ayarlar** → "Görev kuyruğu" → "Eşzamanlı görev sınırı" (1–200), **Dağıtım** → "Eşzamanlı kurulum sınırı" (1–100) or the limit button on **İşlemler** (1–500) | How many devices run a queued task at the same time. Default `5`. The backend treats `0` as no limit (API or SQL only). |
 | `enforce_agent_auth` | **Sistem** → "Kimlik zorlaması" | `1`: agents without a valid secret or enrollment token are rejected (WebSocket `4401`, HTTP `401`). Default off (accept-both). |
+| `update_peer_cache` | **Sistem** → **Ajanlar** → "Sınıf içinde eşten dağıt" | Default off (`1` turns it on): while on, a PC that holds a package opens a port to its local subnet. Agents that support the lab-local peer cache are updated one PC per lab first, the rest of the lab fetch the package from it ([`agent.md`](agent.md#peer-cache-contract)). Off: every PC downloads from the server at once, as before. |
 | `agent_policies` | **Politikalar** | JSON policy read by agents every 60 seconds (below). |
 | `verified_release_version`, `verified_release_manifest` | **Sistem** → **Ajanlar** | The staged, verified agent release. Set only by a successful upload or GitHub download. |
 | `auto_enroll_lab` | **Sınıflar** → **Sınıf işlemleri** → **Otomatik kayıt…** | JSON `{"lab": "<lab>", "until": "YYYY-MM-DD"}`. Devices that connect for the **first time** on or before `until` (server date) are put into that lab. A lab from the enrollment token takes precedence, devices that are already known keep their lab, and a value without `until` (from older versions) is ignored. |
@@ -215,6 +219,60 @@ SQL is shown for recovery situations.
 ```sql
 -- Emergency: turn agent-auth enforcement off (for example if a lab was enforced before it enrolled)
 UPDATE global_settings SET value = '0' WHERE key = 'enforce_agent_auth';
+```
+
+### Identity providers
+
+Directory (LDAP / Active Directory) and OpenID Connect sign-in are set by a superadmin on **Ayarlar** → **Güvenlik**
+→ **Kimlik sağlayıcıları** and stored in the `sso_providers` table, one row per kind (`ldap`, `oidc`), not in
+`global_settings`. API: `GET /api/sso/settings`, `PUT /api/sso/settings/ldap`, `PUT /api/sso/settings/oidc`,
+`POST /api/sso/test/ldap`, `POST /api/sso/test/oidc` (superadmin, also under `/api/v1`). The secrets (service-account
+password, client secret) are write-only: leave the field out (or `null`) to keep the stored one, send `""` to delete
+it. When the host, port, connection type, service account or CA certificate (LDAP), or the issuer, client ID or CA
+certificate (OIDC) changes, the secret must be sent again. A provider can be saved switched off with incomplete
+fields; switching it on needs the required ones. Switching a provider off ends the open sessions of its accounts. How the
+sign-in works and what is checked: [`security.md`](security.md#directory-and-single-sign-on).
+
+**LDAP / Active Directory** (users sign in with the normal **Kullanıcı adı** / **Şifre** form):
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | Directory accounts may sign in. |
+| `host`, `port` | `""`, `636` | Directory server (a name or IP address, no `ldap://`). Use the name in the server's certificate. |
+| `security` | `ldaps` | `ldaps` (TLS from the start, usually port 636) or `starttls` (port 389, upgraded before anything is sent). Plain LDAP is refused. |
+| `ca_pem` | `""` | CA certificate(s) in PEM that signed the server's certificate. Empty: the server's system CA store. When set, only this CA is trusted. |
+| `bind_dn`, `bind_password` | | Service account used to find users; read-only rights are enough. Required to switch on. |
+| `base_dn` | | Where users are searched (subtree), e.g. `DC=okul,DC=local`. |
+| `user_filter` | `(sAMAccountName={username})` | LDAP filter with `{username}` (escaped). Example that also skips disabled AD accounts: `(&(objectCategory=person)(sAMAccountName={username})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))`. OpenLDAP: `(uid={username})`. |
+| `username_attribute` | `sAMAccountName` | Attribute that holds the panel user name (`uid` on OpenLDAP); its value is used, so `ALI` and `ali` are the same account. |
+| `group_base_dn`, `group_filter` | `""`, `(\|(member={user_dn})(uniqueMember={user_dn}))` | Optional group search in addition to the user's `memberOf`. `{user_dn}` and `{username}` are escaped. Nested AD groups: `(member:1.2.840.113556.1.4.1941:={user_dn})`. |
+| `group_map` | `[]` | List of `{"group": "<group DN>", "role": "viewer" \| "admin" \| "superadmin", "pages": ["devices", ...]}`. DNs compare case-insensitively and ignore spaces after commas. The highest matching role wins; pages are the union of all matches; `superadmin` gets every page. |
+| `timeout` | `5` | Seconds for connecting and for each answer (1–30). |
+| `allow_insecure_for_tests` | `false` | Allows `security: "plain"`, and only if the backend runs with `POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1` (otherwise `400`). For automated tests only (CI sets the variable); never set it on a real server. The panel never shows or sends the field, so saving from the panel turns it off. |
+
+**OpenID Connect** (the sign-in page shows "*<name>* ile giriş yap"):
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | Show the button and accept sign-ins. |
+| `display_name` | `""` | Name on the button (e.g. "Okul hesabı"); empty: "Kurumsal hesap". |
+| `issuer` | | Provider address; `<issuer>/.well-known/openid-configuration` is read and its `issuer` must be the same. Must be https. Examples: `https://login.microsoftonline.com/<tenant-id>/v2.0`, `https://accounts.google.com`, `https://sso.okul.local/realms/okul`. |
+| `client_id`, `client_secret` | | The panel's registration at the provider. Without a secret the panel is a public client (PKCE only). The secret is sent with HTTP Basic, or in the body if the provider supports only `client_secret_post`. |
+| `redirect_uri` | | `https://<panel address>/api/auth/oidc/callback`; register exactly this at the provider. http is accepted only for a panel on `localhost`/`127.0.0.1`. The panel's login page and the state cookie's path are derived from it. |
+| `scopes` | `openid email profile` | `openid` is added when missing. Add the scope your provider needs for groups, if any. |
+| `username_claim` | `email` | Claim that becomes the panel user name. `email` is lower-cased and accepted only with `email_verified: true` (an unverified address must not take someone else's name); providers that do not send `email_verified`, such as Microsoft Entra ID, need `preferred_username` or `upn` here. |
+| `groups_claim` | `groups` | Claim with the user's groups (a list or one string). Entra ID sends group object IDs; Keycloak sends group paths such as `/pops-admins` with a group mapper. Empty: no groups. |
+| `group_map` | `[]` | As for LDAP, but with claim values, compared case-insensitively. |
+| `allowed_domains` | `[]` | If set, only users whose **verified** e-mail (`email_verified: true`) is in one of these domains can sign in, whatever their groups. |
+| `default_role`, `default_pages` | `""`, `[]` | Role (`viewer` or `admin`, never `superadmin`) and pages for users of an allowed domain who match no group. Empty: they cannot sign in. Needs `allowed_domains`. |
+| `ca_pem` | `""` | CA certificate for a provider with an internal certificate (on-premises Keycloak, AD FS). |
+| `allow_insecure_for_tests` | `false` | Allows an http issuer, only with `POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1` on the backend. For automated tests only; not in the panel. |
+
+To switch both off from the server, for example when a wrong mapping locked the directory accounts out (local
+accounts are not affected):
+
+```sql
+UPDATE sso_providers SET enabled = false;
 ```
 
 ### Agent policy object

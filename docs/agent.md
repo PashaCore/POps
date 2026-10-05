@@ -150,6 +150,7 @@ What the service does with each server command:
 | --- | --- |
 | `execute` | Runs the command line as a temporary `.bat` through `cmd.exe` as LocalSystem (UTF-8, 30-minute limit) and returns the output as a `result`. Refused when the terminal capability is off. Used by **Dağıtım**, **Uzak komut** and the PC actions on **Cihazlar** and **Sınıflar** through the task queue. The `.bat` (`pops_task_<32 hex>.bat` in the service's temp folder) is deleted when the task ends; from 0.1.14-alpha files left by a crash are deleted at service start, before the first task (only names matching exactly that pattern). Output is read in fixed 8192-character chunks, not by line, so even a single line of hundreds of megabytes stays within the 524 288-character (512 Ki) limit (the rest is read and dropped, the pipe never blocks). The same task ID is never run twice at once: a repeated `execute` for a running task is logged and ignored. Exit codes the agent sets itself: -1 time limit, -2 cancelled, -3 agent error, -4 service stopping, -5 refused (terminal capability off). |
 | `winget_install` | Installs a winget package as LocalSystem; see [below](#winget_install-contract). Sent only to agents that announce `winget` in `X-Agent-Features`. Agents without it never receive it (the server marks the task `Denied` instead). |
+| `power` / `user_message` | Shut down, restart, sign out or lock with a tray countdown and note; show a message to the signed-in user. See [below](#power-and-user_message-contract). Sent only to agents that announce `power` / `message` in `X-Agent-Features`. |
 | `get_hardware` | Posts the hardware inventory. |
 | `start_vision_session` | Passes the session request to the tray (consent dialog or mandatory countdown). |
 | `stop_stream` | Stops screen capture and closes the Vision connection. |
@@ -158,7 +159,7 @@ What the service does with each server command:
 | `wake_peer` | Sends a Wake-on-LAN packet for another PC in the same lab. |
 | `set_identity` | Replaces the stored hardware ID. |
 | `set_secret` | Stores the device secret and deletes the enrollment token. |
-| `server_info` | Sent by the server once the agent is registered; `features` containing `update_result_ack` / `result_ack` means the server confirms update results / task results (0.1.14-alpha); `winget` means the server may send `winget_install` and reads `X-Agent-Features`. Without `server_info` within 15 seconds of connecting the agent treats the server as older (same rule for both). |
+| `server_info` | Sent by the server once the agent is registered; `features` containing `update_result_ack` / `result_ack` means the server confirms update results / task results (0.1.14-alpha); `winget` means the server may send `winget_install` and reads `X-Agent-Features`; `power` and `message` mean the same for `power` and `user_message`. Without `server_info` within 15 seconds of connecting the agent treats the server as older (same rule for both). |
 | `result_ack` | The server stored the task result for `task_id`; the agent deletes it from `C:\POpsData\secure\pending-results.json`. |
 | `update_result_ack` | The server stored the update result with this `result_id`; the agent sets `update-result.json` aside. |
 | `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
@@ -279,6 +280,88 @@ command (the package id and version may be recorded in clear).
 | anything else | Failed | The panel names common winget codes (package not found, installer hash mismatch, app in use, another install running, disk full, blocked by policy …). |
 
 -8 is set by the server only (agent without the feature).
+
+### `power` and `user_message` contract
+
+Power actions (**Kapat**, **Yeniden başlat**, **Oturumu kapat**, **Kilitle**) and **Mesaj gönder** used to be
+`execute` commands (`shutdown /s /f /t 5`, `msg *`). From the server version after 0.1.22-alpha they are their own
+messages. Schemas and test vectors: [`protocol/server-to-agent/power.json`](protocol/server-to-agent/power.json),
+[`user_message.json`](protocol/server-to-agent/user_message.json), `examples/server-to-agent/power*.json`,
+`examples/server-to-agent/user_message.json`, `examples/agent-to-server/result.power.json`,
+`result.no_session.json`, `result.user_message.json`, `capability_denied.power.json`, `capability_denied.message.json`.
+
+**1. Announce the features.** An agent that implements them sends, on the `/ws/agent` connection (together with
+any other feature, comma-separated):
+
+```
+X-Agent-Features: power,message
+```
+
+The server stores the list per connection (`agent_versions.features`, `agent_features` in `/api/devices`) and sends
+`power` only to an agent that announced `power`, `user_message` only to one that announced `message`. The server
+lists `power` and `message` in `server_info.features`.
+
+**2. `power`.**
+
+```json
+{"action": "power", "task_id": 61, "op": "shutdown", "delay": 300, "message": "Ders bitti; kaydedin.", "requested_by": "ogretmen"}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `op` | `shutdown` \| `restart` \| `logoff` \| `lock` | Forced power off, forced restart, sign out the interactive user, lock the interactive session. |
+| `delay` | integer 0–600 | Seconds before acting. |
+| `message` | string ≤ 200 or null | Note for the user, one line; the server has removed control characters, line breaks and bidirectional formatting characters. |
+| `requested_by` | string | Panel user or API token; write it to the local audit log as for `execute`. |
+
+- Local capability `power` (on by default, can be switched off locally like terminal and Vision): when it is off,
+  answer `result` with `exit_code` -5 and `[REDDEDİLDİ] …`, then `capability_denied` with `"capability": "power"`,
+  `"action": "power"` and the `task_id`.
+- `logoff` and `lock` with nobody signed in: `result` with `exit_code` -6 and `[REDDEDİLDİ] oturum açık kullanıcı yok`.
+- Otherwise show a tray countdown of `delay` seconds with `message`, send `result` with `exit_code` 0 and an output
+  that starts with `[TAMAM]` (for example `[TAMAM] 300 saniye sonra kapanıyor`) just before acting, then act. The
+  result must leave before a shutdown or restart, so the task does not stay `Running`.
+
+**3. `user_message`.**
+
+```json
+{"action": "user_message", "task_id": 63, "title": "Sınav başlıyor", "text": "Kaydedin.\nSınav 10 dakika sonra.", "style": "warning", "requires_ack": true, "requested_by": "ogretmen"}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `title` | string 1–80 | One line. |
+| `text` | string 1–1000 | May contain `\n` line breaks (never more than one empty line in a row); no other control characters. |
+| `style` | `info` \| `warning` | Bilgi or Uyarı look. |
+| `requires_ack` | boolean | Keep it on screen until the user clicks Tamam. |
+| `requested_by` | string | Always a panel user (API tokens cannot send messages). |
+
+- Local capability `message` (on by default): off → `result` -5 and `capability_denied` with
+  `"capability": "message"`, `"action": "user_message"`.
+- Nobody signed in: `result` -6 `[REDDEDİLDİ] oturum açık kullanıcı yok`.
+- Shown: `result` 0 `[TAMAM] gösterildi` right away; with `requires_ack`, `[TAMAM] okundu` when the user clicks Tamam,
+  or `[TAMAM] gösterildi, onaylanmadı` after 30 minutes without a click. The server does not hold the device's task
+  queue while a message waits for its acknowledgement.
+- Title and text are plain text: never HTML, never a shell argument.
+
+**4. Results.**
+
+| Exit code | Task status | Meaning |
+| --- | --- | --- |
+| `0` with `[TAMAM] …` | Completed | Done (or shown / read). |
+| -5 with `[REDDEDİLDİ] …` | Denied | Local capability off. |
+| -6 with `[REDDEDİLDİ] oturum açık kullanıcı yok` | Denied | Nobody signed in (logoff, lock, message). |
+| -8 | Denied | Set by the server only: the agent did not announce the feature and there is no fallback; nothing was sent. |
+
+On the wire -6 now means "nobody signed in"; the Windows agent's internal duplicate code -6 is never sent.
+
+**5. Agents without the features.** The server sends `shutdown` and `restart` as the old `execute` command,
+`shutdown /s|/r /f /t <max(delay, 5)>`, on Windows with `/c "<note>"` when the note has characters left after keeping
+only letters, digits, spaces and `. , : ; ? ' ( ) -` (safe inside the quoted `.bat` line). Linux agents
+(`clients.platform = 'linux'`) get exactly `shutdown /s|/r /f /t N`, which they map to `systemctl poweroff|reboot`.
+`logoff`, `lock` and messages are not sent: the task becomes `Denied` with -8 ("Bu bilgisayardaki ajan bunu
+desteklemiyor …"). The old command is an `execute`, so it still needs the terminal capability and the lab's
+`terminal` module; `power` and `user_message` themselves do not depend on that module.
 
 ## Capability policy
 
@@ -563,7 +646,8 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
    that is not newer than its own, downloads the MSI from `<ServerUrl>/updates/<name>` and checks its size and
    SHA-256. From 0.1.23-alpha the download uses BITS: it resumes after a network drop or a restart, and a download
    that is still running after 15 minutes continues with the next update command. When BITS cannot be used, the
-   agent downloads directly as before. See [`design/peer-cache.md`](design/peer-cache.md).
+   agent downloads directly as before. See [`design/peer-cache.md`](design/peer-cache.md). With the lab-local peer
+   cache (below) the server sends `update_agent` to one PC per lab first and to the rest with `peers`.
 3. `POpsUpdater` installs it, waits up to 90 seconds for the new version to report `phase: "operational"`
    in `C:\POpsData\health.json`, and otherwise rolls back to the previous MSI. Operational means the agent's
    identity, credentials, capabilities, quarantine/TLS state and tray pipe are ready and its first connection
@@ -586,6 +670,102 @@ service forwards them. **Sistem → Güncellemeler** shows them per PC
 
 The outcomes and the rollback drill are described in [`Agent/README.md`](../Agent/README.md#updates). Agents
 older than 0.1.3-alpha cannot apply signed updates and must be reinstalled once with the MSI.
+
+### Peer cache contract
+
+Lab-local peer cache for update packages ([`design/peer-cache.md`](design/peer-cache.md), option A). The server
+side is built (after 0.1.22-alpha); the agent part is not built yet, and this is the contract it must follow. The
+message schema and a test vector are in [`protocol/`](protocol/README.md) (`server-to-agent/update_agent.json`,
+`examples/server-to-agent/update_agent.peers.json`).
+
+**1. Announce the feature.** On the `/ws/agent` connection, next to `X-Agent-Version`:
+
+```
+X-Agent-Features: peer_cache
+X-Agent-Peer-Cache: port=8817; ip=10.20.0.12; link=wired
+```
+
+- `peer_cache` in `X-Agent-Features` (comma-separated with the other features, for example `winget,peer_cache`)
+  is what makes the server stage updates for this PC and send it `peers`. Without it the PC is updated as today.
+- `X-Agent-Peer-Cache` is optional and every part of it is optional, in any order, separated by `;`:
+  - `port`: the TCP port of the cache server, 1024–65535. Default **8817**.
+  - `ip`: the IPv4 address other PCs in the lab should use, a private address (10/8, 172.16/12, 192.168/16).
+    Send the address of the interface that routes to the POps server. Without it the server uses the address
+    the agent reported in its hardware inventory (`ip_address`), and only as a last resort the address the
+    connection came from (only when it is private and no other PC shares it, that is no NAT in between). A PC
+    with no usable address is never a seed or a peer.
+  - `link`: `wired` or `wireless`. Wired PCs are preferred as seeds.
+- The server announces `peer_cache` in `server_info.features`. Against a server that does not, the agent need not
+  keep a cache or listen.
+
+**2. What the server does** (`Backend/pops/peer_cache.py`), so the agent knows what to expect:
+
+- When the update setting "Sınıf içinde eşten dağıt" is on (the default), for every lab with at least two online
+  target PCs that announce the feature, the server picks one **seed** (online, feature, a usable address, not
+  already on the target version; wired first, then the most recently seen). The seed gets a normal
+  `update_agent` (no `peers`). The other feature PCs in that lab wait.
+- The seed downloads from the server, verifies, installs and restarts as today. When it reports
+  `update_result` with `status: "success"` for that version **on its new connection**, the server sends
+  `update_agent` to the waiting PCs with `peers`. The server waits for the result and not for `verified` because
+  the seed's service is stopped while `POpsUpdater` installs, so its cache server is down at exactly that time.
+- Stages the server listens to: `update_progress` `verified` from the seed (shown in the panel; it restarts the
+  seed's time limit for the install), `update_progress` `rejected` and any `update_result` other than `success`
+  (the seed failed: the next candidate becomes the seed), and `update_result` `success` (the PC holds the package
+  and becomes a peer). A seed that does not reach `verified` within 10 minutes, or a result within 10 minutes after
+  `verified`, is replaced by the next candidate. After three seeds, or when no candidate is left, the waiting PCs get
+  `update_agent` without `peers`.
+- `peers` lists 1–3 PCs of the same lab that reported success for this package less than 110 minutes ago and are
+  online with the feature: the seed first, the order rotated from PC to PC so that not every PC starts with the
+  same peer. A later `update_agent` for the same version (a PC that was off comes online and is sent the update)
+  gets `peers` at once, without a new seed.
+- PCs without a lab, agents without the feature and labs with no candidate are updated as today, without `peers`.
+
+**3. The message.** `update_agent` with an optional `peers` array:
+
+```json
+{"action": "update_agent", "manifest": "…", "manifest_sig": "…",
+ "peers": [{"hw_id": "HW-LAB1-PC12", "url": "http://10.20.0.12:8817/pops-cache/4d638345…3beb"}]}
+```
+
+`url` is always `http://<IPv4>:<port>/pops-cache/<sha256>`, the SHA-256 of the agent MSI from the signed manifest in
+lowercase hex. Agents without `peer_cache` ignore the field (the Windows agent reads `update_agent` by property name;
+unknown fields are ignored).
+
+**4. Downloading with peers.** Nothing about the signature check changes: verify the manifest first, exactly as
+today; `peers` is read only after that.
+
+- Ignore a peer whose `url` does not match the pattern above, whose path SHA-256 is not the manifest's MSI
+  SHA-256, or whose host is not a private IPv4 address.
+- Try the peers in the order given, one at a time: connect timeout 3 seconds; if no data arrives for 15 seconds, or
+  the answer is anything but `200` with the expected `Content-Length`, go to the next peer. After the last peer,
+  download from `<ServerUrl>/updates/<name>` as today (BITS or HttpClient).
+- Check the size and SHA-256 against the signed manifest **whatever the source**. A mismatch from a peer deletes
+  the file and moves on to the next source (log the peer's `hw_id`); it never fails the update and never installs.
+- Report `update_progress` as today (`received`, `downloaded`, `verified`, …). Optionally put the source in
+  `detail` of `downloaded` (for example `peer HW-LAB1-PC12` or `server`); the server stores it but does not depend
+  on it.
+
+**5. The seed's (and every peer's) cache.** After `verified`, keep the package for others:
+
+- Store it as `C:\POpsData\cache\<sha256>` (the file name is the lowercase SHA-256, no extension; SYSTEM and
+  Administrators only). Copy it there before `POpsUpdater` starts, so it survives the install.
+- Keep it for **2 hours** after `verified`, or until the next update is verified, whichever comes first. Keep at
+  most two packages; delete the oldest. Delete expired files at service start and every 10 minutes.
+- **The cache server.** While at least one package is in the cache, the service listens on the port
+  (`HttpListener`, `http://+:<port>/pops-cache/`) and answers only `GET` (and `HEAD`) for
+  `/pops-cache/<sha256>` with a file it holds: `200`, `Content-Type: application/octet-stream`,
+  `Content-Length`. Anything else is `404` (`405` for other methods); no directory listing, no other path, no
+  query strings, no redirects. Read-only: it never writes, deletes or uploads anything because of a request.
+- At most 4 transfers at a time. Further requests wait for a free slot for up to 60 seconds, then get `503`
+  (a lab of 40 PCs must not fall back to the server because the seed was busy for a few seconds).
+- It starts at service start when the cache holds a package (so that it is already listening when the new version
+  sends its `update_result`) and stops when the cache becomes empty.
+- Firewall: one inbound rule for the program, the TCP port, remote address `LocalSubnet` only, all profiles, added
+  when the server starts and removed when it stops (and at service start if no package is cached).
+- A PC that reports `success` for an update also keeps its package and serves it the same way: the server may
+  list it as a peer for PCs updated later.
+- Log start and stop of the cache server and each served transfer (peer address, SHA-256 prefix, bytes) to the
+  local log; no event log entry per transfer.
 
 ## Files and logs
 

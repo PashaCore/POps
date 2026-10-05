@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/i18n.php';
+require_once __DIR__ . '/includes/sso.php';
 pops_session_start();
 
 // Dil seçici (Türkçe / English): seçim çereze yazılır, sayfa yeniden açılır (bekleyen 2FA adımı oturumda kalır)
@@ -20,9 +21,14 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
 
 // "Baştan giriş yap": bekleyen 2FA challenge'ını temizle.
 if (isset($_GET['reset'])) {
-    unset($_SESSION['totp_challenge'], $_SESSION['totp_username']);
+    unset($_SESSION['totp_challenge'], $_SESSION['totp_username'], $_SESSION['sso_next']);
     header('Location: login');
     exit;
+}
+
+// Kurumsal giriş (OpenID Connect): sağlayıcıya git (includes/sso.php)
+if (($_GET['sso'] ?? '') === 'start') {
+    pops_sso_start($_GET['next'] ?? '');
 }
 
 // API'ye JSON POST atan yardımcı; [$responseData, $httpcode, $error] döner.
@@ -86,15 +92,32 @@ function pops_finish_login($responseData, $fallback_username) {
     }
     $_SESSION['permissions'] = $perms;
     unset($_SESSION['totp_challenge'], $_SESSION['totp_username']);
+    $next = pops_sso_take_next();
     session_regenerate_id(true);
     pops_set_jwt_cookie($_SESSION['jwt_token']);
-    header('Location: ./');
+    header('Location: ' . $next);
     exit;
 }
 
 $error = '';
 $show_otp = false;   // true ise şifre doğrulandı, 2. adım (kod) formunu göster
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['sso_error'])) {
+    $error = pops_sso_error_text($_GET['sso_error']);
+} elseif ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['sso'])) {
+    // Sağlayıcıdan dönüş: tek kullanımlık bilet bu oturumun bağıyla bozdurulur
+    list($responseData, $httpcode, $err) = pops_sso_redeem($_GET['sso']);
+    if ($err) {
+        $error = $err;
+    } elseif (($responseData['status'] ?? '') === 'success') {
+        pops_finish_login($responseData, '');
+    } elseif (($responseData['status'] ?? '') === 'totp_required') {
+        $_SESSION['totp_challenge'] = $responseData['challenge'] ?? '';
+        $_SESSION['totp_username'] = '';
+        $show_otp = true;
+    } else {
+        $error = pops_login_error($responseData, __('Kurumsal giriş tamamlanamadı.'));
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $otp = trim($_POST['otp'] ?? '');
 
     // 2. ADIM: şifre zaten doğrulandı, elimizde challenge var; sadece kodu doğrula.
@@ -209,6 +232,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .login-logo.org { background: var(--bg-surface); box-shadow: 0 0 0 1px var(--border-subtle); padding: 10px; }
         .login-logo.org img { width: 100%; height: 100%; object-fit: contain; }
+        .sso-sep { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0; font-size: var(--text-xs); color: var(--text-muted); }
+        .sso-sep::before, .sso-sep::after { content: ''; flex: 1; border-top: 1px solid var(--border-subtle); }
+        .sso-btn { padding: 0.875rem; text-align: center; }
         .login-foot { text-align: center; margin-top: var(--space-6); font-size: var(--text-xs); color: var(--text-muted); }
         .login-foot a { color: inherit; }
         .login-foot a:hover { color: var(--primary-500); }
@@ -280,6 +306,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <button type="submit" class="btn block mt-6" style="padding: 0.875rem;"><?php _e('Giriş yap'); ?></button>
             </form>
+            <?php $sso = pops_sso_info(); if (!empty($sso['oidc'])): ?>
+            <div class="sso-sep"><span><?php _e('ya da'); ?></span></div>
+            <a class="btn secondary block sso-btn" href="login?<?php echo htmlspecialchars(http_build_query(array_filter(['sso' => 'start', 'next' => pops_sso_safe_next($_GET['next'] ?? '')])), ENT_QUOTES, 'UTF-8'); ?>"><?php _e('{name} ile giriş yap', ['name' => trim((string) ($sso['oidc_name'] ?? '')) ?: __('Kurumsal hesap')]); ?></a>
+            <?php endif; ?>
             <?php endif; ?>
         </div>
         <div class="login-foot">

@@ -1,0 +1,15 @@
+{
+  "action": "update_agent",
+  "manifest": "ewogICJhcnRpZmFjdHMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBPcHMtQWdlbnQtMC4xLjMtYWxwaGEtd2luLXg2NC5tc2kiLAogICAgICAic2hhMjU2IjogIjRkNjM4MzQ1MzY4NTgzZjU2Y2RiNzRlZjZhNTlmZDVmN2Q1ODU3ZWFlNDI3OWZkNTEyN2Y4NmFlMzRjODNiZWIiLAogICAgICAic2l6ZSI6IDMwMDAwMAogICAgfSwKICAgIHsKICAgICAgIm5hbWUiOiAiUE9wcy1BZ2VudC0wLjEuMy1hbHBoYS13aW4teDY0LnppcCIsCiAgICAgICJzaGEyNTYiOiAiZDdjMzYzMDk3MWVjNGUyZDQ5ZTM1MTg5MzA3YTcyYWRhMzlkODE2ZTBmNzZjMGRkMzgxNDAwYTYxYTY4YTk3MiIsCiAgICAgICJzaXplIjogNTAwMAogICAgfQogIF0sCiAgInJlbGVhc2VkX2F0IjogMTc5MDQ0NDQ5NSwKICAic2NoZW1hIjogInBvcHMtbWFuaWZlc3QvMSIsCiAgInRhZyI6ICJ2MC4xLjMtYWxwaGEiLAogICJ2ZXJzaW9uIjogIjAuMS4zLWFscGhhIgp9Cg==",
+  "manifest_sig": "PP3RKzvcwEkYewp2w8fSQvj1RsfoMImNP18qq300h9BZUjxYN2W0nns3ZXcvcrgdpswL5I7cl4/QutH5mGdODg==",
+  "peers": [
+    {
+      "hw_id": "HW-LAB1-PC12",
+      "url": "http://10.20.0.12:8817/pops-cache/4d638345368583f56cdb74ef6a59fd5f7d5857eae4279fd5127f86ae34c83beb"
+    },
+    {
+      "hw_id": "HW-LAB1-PC03",
+      "url": "http://10.20.0.3:8817/pops-cache/4d638345368583f56cdb74ef6a59fd5f7d5857eae4279fd5127f86ae34c83beb"
+    }
+  ]
+}

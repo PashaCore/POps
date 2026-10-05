@@ -1,0 +1,8 @@
+{
+  "action": "power",
+  "task_id": 1061,
+  "op": "shutdown",
+  "delay": 300,
+  "message": "Ders bitti; 5 dakika içinde kaydedin.",
+  "requested_by": "ogretmen"
+}

@@ -882,10 +882,9 @@ POps.isOffline = (d) => String((d && d.status) || '').toLowerCase() === 'offline
 POps.deviceName = (d) => (d && (d.display_name || d.real_hostname || d.hostname || d.hw_id)) || '';
 
 // ============== GÜÇ KOMUTLARI ==============
-// powerCommand('ALL'|'LAB'|'PC', 'shutdown'|'restart', ad, düğme)
+// powerCommand('ALL'|'LAB'|'PC', 'shutdown'|'restart'|'logoff'|'lock', ad, düğme): açık cihazlara POps.dev.power
+// (gecikme ve kullanıcıya not penceresi, POST /api/devices/power)
 window.powerCommand = async function (targetType, action, targetName, btn) {
-    const isShutdown = action === 'shutdown';
-    const cmd = isShutdown ? 'shutdown /s /f /t 5' : 'shutdown /r /f /t 5';
     let targets;
     if (targetType === 'PC') {
         targets = [targetName];
@@ -895,23 +894,9 @@ window.powerCommand = async function (targetType, action, targetName, btn) {
         targets = pool.filter(d => !POps.isOffline(d)).map(d => d.hostname);
     }
     if (!targets.length) return POps.toast('warning', POps.t('Açık cihaz yok; komut gönderilmedi.'));
-    const dev = targetType === 'PC' ? (state.devices.find(d => d.hostname === targetName) || { hostname: targetName }) : null;
-    const who = targetType === 'ALL' ? POps.tn('Ağdaki açık {n} cihaz', targets.length)
-        : targetType === 'LAB' ? POps.tn('{lab} sınıfındaki açık {n} cihaz', targets.length, { lab: targetName })
-        : `${POps.deviceName(dev)} (${targetName})`;
-    const ok = await POps.confirm({
-        title: isShutdown ? POps.t('Cihazlar kapatılsın mı?') : POps.t('Cihazlar yeniden başlatılsın mı?'),
-        message: isShutdown ? POps.t('{who} 5 saniye içinde kapatılacak. Kaydedilmemiş işler kaybolabilir.', { who })
-            : POps.t('{who} 5 saniye içinde yeniden başlatılacak. Kaydedilmemiş işler kaybolabilir.', { who }),
-        confirmText: isShutdown ? POps.tx('Kapat', 'power') : POps.t('Yeniden başlat'),
-        danger: true,
-        icon: 'power'
-    });
-    if (!ok) return;
-    // Görev adı sunucuya Türkçe gider (veri); panelde POps.taskName ile çevrilir
-    await POps.act(btn, () => POps.post('/api/deploy_orchestration', {
-        target_mode: 'PC', targets, taskSequence: [{ name: isShutdown ? 'Güç: kapat' : 'Güç: yeniden başlat', type: 'CMD', command: cmd }]
-    }), { success: (r) => POps.tn('Komut kuyruğa eklendi ({n} cihaz).', (r && r.created) || targets.length) });
+    // scopeLabel sunucuya giden görev başlığına girer (veri, Türkçe)
+    const scopeLabel = targetType === 'ALL' ? 'bütün ağ' : targetType === 'LAB' ? targetName : null;
+    return POps.dev.power(action, targets, { btn, scopeLabel });
 };
 
 // wakeUpCommand('ALL'|'LAB'|'PC', ad, düğme)
@@ -1325,6 +1310,8 @@ POps.taskState = function (status) {
 // Panelin sunucuya Türkçe yazdığı görev adlarının (veri) görünen hali: "Kapat · 3 bilgisayar" -> "Shut down · 3 computers".
 // İlk parça sözlükteki "…|task" girdisinden (ya da TASK_PATTERNS'tan), sonraki parçalar yalnızca TASK_SCOPES'a
 // uyarsa çevrilir; kullanıcının yazdığı ad, sınıf ve bilgisayar adı olduğu gibi kalır.
+// Eski kayıtlardaki görev adları (sunucudaki veri; panel artık bunları yazmıyor, sözlükte çevirileri kalır)
+POps.LEGACY_TASK_NAMES = ['Güç: kapat', 'Güç: yeniden başlat'];
 POps.taskName = function (title) {
     const t = String(title == null ? '' : title);
     if (POps.lang === 'tr') return t;
