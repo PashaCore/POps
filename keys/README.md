@@ -62,3 +62,18 @@ gerekir. Sahadaki ajanları yeni anahtara taşımanın iki yolu var: yukarıdaki
 iptal edilmeden önce son kez onunla imzalayarak) dağıtmak ya da yeni anahtarlı MSI'ı elle/GPO ile yeniden kurmak.
 Sunucunun kendini güncellemesi etiket imzasına bağlıysa (`/etc/pops/allowed_signers`, bkz.
 [`docs/self-update.md`](../docs/self-update.md)) etiket anahtarı bundan ayrıdır ve ayrıca değiştirilir.
+
+## Sürüm etiketlerinin imzası (SSH)
+
+`v0.1.22-alpha`'dan itibaren sürüm etiketleri ayrı bir SSH anahtarıyla imzalanır (`git tag -s`, `gpg.format=ssh`).
+
+- `pops_tag_signing.pub`: etiket imza anahtarının **açık** hali
+  (`SHA256:wBv1/5TQgllT+gLzCicQC5DFIxKQYKXLflLfb7MEB8w`).
+- `allowed_signers`: sunucuda `/etc/pops/allowed_signers` olarak kurulacak satır. Kurulunca kendini güncelleme
+  yalnızca bu anahtarla imzalı etikete geçer (bkz. [`docs/self-update.md`](../docs/self-update.md)).
+
+Özel anahtar repoda tutulmaz; proje sunucusunda root'a ait (0600) durur. Anahtar değişirse bu iki dosya ve
+sunuculardaki `allowed_signers` birlikte güncellenir, sürüm notunda yazılır.
+
+Bir etiketi doğrulamak için: `git -c gpg.ssh.allowedSignersFile=keys/allowed_signers verify-tag v0.1.22-alpha`.
+
