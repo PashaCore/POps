@@ -1398,10 +1398,8 @@ namespace POpsAgent
             new SecretsHandler(() => _hwId, () => Binding, () => _software, () => _commandUsesDeviceSecret, TrySendCommandMessageAsync, LocalAudit.Write),
             new InventoryHandler(() => _cachedInventory, _serverUrl, () => _hwId, _health),
             new QuarantineHandler(() => _quarantine, _serverUrl, () => _hwId),
-            // a2: ExecuteHandler, WingetInstallHandler
-            new DelegateHandler(HandleExecuteAsync, "execute"),
-            new DelegateHandler(HandleCancelTaskAsync, "cancel_task"),
-            new DelegateHandler(command => HandleWingetInstallAsync(command.Root, command.Stopping), WingetInstall.Action),
+            new ExecuteHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, Power, Messages),
+            new WingetInstallHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write),
             // a3: CapabilitiesHandler, VisionHandler (RemoteInputHandler aşağıda)
             new DelegateHandler(command => HandleSetCapabilitiesAsync(command.Root), "set_capabilities"),
             new DelegateHandler(HandleVisionCommandAsync, "start_stream", "start_vision_session", "stop_stream"),
@@ -1452,73 +1450,6 @@ namespace POpsAgent
             {
                 _trayPipe?.SendCommandToDesktop(message);
             }
-        }
-
-        // execute: yerel terminal yeteneği ve sınıfın terminal modülü açıksa komut arka planda çalışır, sonuç result ile
-        private async Task HandleExecuteAsync(ServerCommand command)
-        {
-            JsonElement root = command.Root;
-            CancellationToken stoppingToken = command.Stopping;
-            CommandPermission commandPermission = CommandExecutionPolicy.Permission(AgentCapabilities.TerminalEnabled, AgentModules.IsEnabled(AgentModules.Terminal));
-            if (!commandPermission.Allowed)
-            {
-                // Görev "Running"de asılı kalmasın diye sonuç olarak da bildirilir. Çıkış kodu -5 (reddedildi): eski sunucu
-                // bunu Completed değil Failed sayar; yeni sunucu capability_denied ile Denied yapar.
-                int tid = root.GetProperty("task_id").GetInt32();
-                await SendResultAsync(tid, new { type = "result", pc_name = _hwId, task_id = tid, output = commandPermission.Rejection, exit_code = CommandRunner.ExitDenied });
-                await DenyCapabilityAsync("terminal", "execute", tid, commandPermission.Reason);
-            }
-            else
-            {
-                string cmd = root.GetProperty("script_path").GetString();
-                int tid = root.GetProperty("task_id").GetInt32();
-                string requestedBy = root.TryGetProperty("requested_by", out var requestedByProperty) && requestedByProperty.ValueKind == JsonValueKind.String
-                    ? requestedByProperty.GetString() : null;
-                // Aynı görev zaten çalışıyorsa (sunucu emri yeniden gönderdi) ikinci kez çalıştırılmaz; sonuç ilk çalıştırmadan
-                // gelir. Sunucuya ayrıca bir şey gönderilmez: "yinelenen" sonucu çalışan görevin kaydının üzerine yazardı.
-                if (_commandRunner.IsRunning(tid))
-                {
-                    POpsHelpers.Log("AGENT", $"Uzaktan komut zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
-                    return;
-                }
-                POpsHelpers.Log("AGENT", $"Uzaktan komut çalıştırılıyor (TaskID: {tid})");
-                LocalAudit.Write(LocalAudit.CommandStarted(tid, cmd, requestedBy));
-                // Görev kimliği burada (eşzamanlı olarak) ayrılır: arkasından gelen aynı kimlik ikinci işlem başlatamaz
-                Task<CommandExecutionResult> run = _commandRunner.RunAsync(tid, cmd, stoppingToken);
-                _ = Task.Run(async () =>
-                {
-                    CommandExecutionResult execution = await run;
-                    if (execution.ExitCode == CommandRunner.ExitDuplicate)
-                    {
-                        POpsHelpers.Log("AGENT", $"Uzaktan komut zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
-                        return;
-                    }
-                    LocalAudit.Write(LocalAudit.CommandFinished(tid, execution.ExitCode, execution.Duration));
-                    // Sonuç o anki bağlantıdan gider; bağlantı koptuysa sırada (onaylı sunucuda diskte) bekler
-                    await SendResultAsync(tid, new
-                    {
-                        type = "result",
-                        pc_name = _hwId,
-                        output = execution.Output,
-                        task_id = tid,
-                        exit_code = execution.ExitCode,
-                    });
-                }, CancellationToken.None);
-            }
-        }
-
-        // cancel_task: çalışan komut, güç işleminin geri sayımı ya da okundu onayı beklenen mesaj
-        private async Task HandleCancelTaskAsync(ServerCommand command)
-        {
-            JsonElement root = command.Root;
-            int cancelId = root.TryGetProperty("task_id", out var cancelProp) && cancelProp.ValueKind == JsonValueKind.Number
-                && cancelProp.TryGetInt32(out int cancelTaskId) ? cancelTaskId : -1;
-            if (_commandRunner.Cancel(cancelId))
-                POpsHelpers.Log("AGENT", $"Uzaktan komut panelden iptal edildi; işlem sonlandırılıyor (TaskID: {cancelId}).");
-            // Güç işleminin geri sayımı ya da okundu onayı beklenen mesaj (sonuç -2)
-            else if (Power.Cancel(cancelId))
-                POpsHelpers.Log("AGENT", $"Güç işlemi panelden iptal edildi; geri sayım durduruldu (TaskID: {cancelId}).");
-            else await Messages.CancelAsync(cancelId);
         }
 
         // start_stream (eski), start_vision_session, stop_stream: önce Vision yeteneği, sonra Vision modülü
@@ -1649,73 +1580,6 @@ namespace POpsAgent
                 POpsHelpers.Log("AGENT", "Güç işlemleri kapatıldı; süren geri sayım durduruldu.");
             await SendCommandMessageAsync(AgentCapabilities.StatusMessage());
             if (!AgentCapabilities.ExamEnabled && ExamMode.IsActive) await EndExamAsync("capability");
-        }
-
-        // ------------------------------------------------------------------ winget_install (bkz. WingetInstall)
-        // Retler "result" olarak bildirilir (-5; winget yoksa -7) ve hiçbir şey çalıştırılmaz. Yerel terminal yeteneği ya da
-        // sınıfın deploy modülü kapalıysa ardından capability_denied gider (execute ile aynı sıra). Çalıştırma execute gibi:
-        // aynı görev iki kez başlamaz, süre sınırı, cancel_task, sonuç result_ack'e kadar saklanır.
-        internal async Task HandleWingetInstallAsync(JsonElement root, CancellationToken stoppingToken)
-        {
-            if (!root.TryGetProperty("task_id", out JsonElement taskProp) || taskProp.ValueKind != JsonValueKind.Number || !taskProp.TryGetInt32(out int tid))
-            {
-                POpsHelpers.Log("AGENT", "winget_install emrinde geçerli task_id yok; yok sayıldı.", true);
-                return;
-            }
-            string requestedBy = root.TryGetProperty("requested_by", out JsonElement by) && by.ValueKind == JsonValueKind.String ? by.GetString() : null;
-            if (_commandRunner.IsRunning(tid))
-            {
-                POpsHelpers.Log("AGENT", $"winget kurulumu zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
-                return;
-            }
-            string rejection = null, deniedCapability = null, deniedReason = null, wingetPath = null, id = null, version = null;
-            int exitCode = CommandRunner.ExitDenied;
-            if (!AgentCapabilities.TerminalEnabled)
-            {
-                rejection = WingetInstall.TerminalOffMessage;
-                deniedCapability = "terminal";
-            }
-            else if (!AgentModules.IsEnabled(AgentModules.Deploy))
-            {
-                rejection = WingetInstall.DeployOffMessage;
-                deniedCapability = AgentModules.Deploy;
-                deniedReason = AgentModules.DisabledReason;
-            }
-            else if (!WingetInstall.TryParse(root, out id, out version)) rejection = WingetInstall.InvalidMessage;
-            else if ((wingetPath = WingetInstall.Locator()) == null)
-            {
-                rejection = WingetInstall.MissingMessage;
-                exitCode = WingetInstall.ExitMissing;
-            }
-            if (rejection != null)
-            {
-                POpsHelpers.Log("AGENT", $"{rejection} (TaskID: {tid})", true);
-                await SendResultAsync(tid, new { type = "result", pc_name = _hwId, task_id = tid, output = rejection, exit_code = exitCode });
-                if (deniedCapability != null) await DenyCapabilityAsync(deniedCapability, WingetInstall.Action, tid, deniedReason);
-                return;
-            }
-            POpsHelpers.Log("AGENT", $"winget kurulumu başlıyor: {WingetInstall.Describe(id, version)} (TaskID: {tid})");
-            LocalAudit.Write(LocalAudit.CommandStarted(tid, WingetInstall.Describe(id, version), requestedBy));
-            // Görev kimliği burada (eşzamanlı olarak) ayrılır: arkasından gelen aynı kimlik ikinci işlem başlatamaz
-            Task<CommandExecutionResult> run = _commandRunner.RunProgramAsync(tid, wingetPath, WingetInstall.Arguments(id, version), stoppingToken);
-            _ = Task.Run(async () =>
-            {
-                CommandExecutionResult execution = await run;
-                if (execution.ExitCode == CommandRunner.ExitDuplicate)
-                {
-                    POpsHelpers.Log("AGENT", $"winget kurulumu zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
-                    return;
-                }
-                LocalAudit.Write(LocalAudit.CommandFinished(tid, execution.ExitCode, execution.Duration));
-                await SendResultAsync(tid, new
-                {
-                    type = "result",
-                    pc_name = _hwId,
-                    output = WingetInstall.CleanOutput(execution.Output),
-                    task_id = tid,
-                    exit_code = execution.ExitCode,
-                });
-            }, CancellationToken.None);
         }
 
         // capability_denied (bkz. CapabilityGate; dakikada bir sınırı tüm eylemlerde ortak)
