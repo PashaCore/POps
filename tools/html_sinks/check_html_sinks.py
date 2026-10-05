@@ -2,7 +2,8 @@
 """Panelde HTML'e yazılan yerleri kaçırılmamış veri için tarar (CI: dashboard işi). Yalnızca standart
 kütüphane, Python 3.9+.
 
-Taranan: Dashboard/*.php, Dashboard/includes/*.php, Dashboard/assets/*.js (assets/vendor hariç);
+Taranan: Dashboard/*.php, Dashboard/includes/*.php, Dashboard/assets/*.js ve sayfa betikleri
+Dashboard/assets/pages/*.js (assets/vendor hariç);
 PHP dosyalarında yalnızca <script> blokları JS olarak okunur.
 
 Kurallar
@@ -1059,7 +1060,8 @@ def scan_file(path, funcs=None, sinks=None, allowed_keys=()):
 def collect_files(root):
     dash = os.path.join(root, 'Dashboard')
     files = []
-    for sub, exts in (('', ('.php',)), ('includes', ('.php',)), ('assets', ('.js',))):
+    dirs = (('', ('.php',)), ('includes', ('.php',)), ('assets', ('.js',)), (os.path.join('assets', 'pages'), ('.js',)))
+    for sub, exts in dirs:
         d = os.path.join(dash, sub)
         if not os.path.isdir(d):
             continue
