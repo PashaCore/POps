@@ -27,23 +27,25 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 import release_verify
 from pops import agent_version as agent_version_mod
-from pops.models import UpdateProgressInput
+from pops.models import StrictInput, TargetMode, UpdateProgressInput, upper_mode
 
 
-class EnrollTokenInput(BaseModel):
+class EnrollTokenInput(StrictInput):
     lab_name: Optional[str] = None
     note: Optional[str] = None
     ttl_hours: int = 72
     max_uses: int = 1
 
 
-class DeployUpdateInput(BaseModel):
-    target_mode: str = "PC"          # "ALL" | "LAB" | "PC"
+class DeployUpdateInput(StrictInput):
+    target_mode: TargetMode = "PC"
     targets: List[str] = []
+
+    _mode = field_validator("target_mode", mode="before")(upper_mode)
 
 
 class EnforceInput(BaseModel):

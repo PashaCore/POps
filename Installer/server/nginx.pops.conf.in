@@ -14,6 +14,13 @@ server {
     ssl_session_timeout 1d;
     add_header Strict-Transport-Security "max-age=31536000" always;
 
+    # Sıkıştırma: cihaz listesi gibi JSON yanıtları (2.000 cihazda ~1,4 MB) gzip'le ~30'da birine iner. Yanıtlarda
+    # gizli değer ile kullanıcı girdisi yan yana yansıtılmadığı için (BREACH) güvenlidir.
+    gzip on;
+    gzip_proxied any;
+    gzip_min_length 1024;
+    gzip_types application/json text/css application/javascript image/svg+xml;
+
     # Gövde sınırı küçük; büyük gövde yalnızca aşağıdaki iki yükleme adresinde kabul edilir (B4)
     client_max_body_size 8m;
 

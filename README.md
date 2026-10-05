@@ -26,8 +26,9 @@
 <br />
 
 > [!WARNING]
-> **Alpha software.** The latest release is **0.1.13-alpha**. The whole path from enrollment to a signed update with
-> automatic rollback has been run on real Windows PCs, and three external reviews have been worked through. POps is
+> **Alpha software.** The current version is on the [releases page](https://github.com/PashaCore/POps/releases/latest).
+> The whole path from enrollment to a signed update with automatic rollback has been run on real Windows PCs, and the
+> findings of external reviews have been worked through one by one. POps is
 > still **not hardened for large or enterprise production**: read [`SECURITY.md`](SECURITY.md) for the threat model
 > and the risks that remain, and [`ROADMAP.md`](ROADMAP.md) for what comes next.
 
@@ -69,7 +70,7 @@
 | **Updates that undo themselves** | Agent releases are ed25519-signed in CI, verified by the server *and again by the PC*, and rolled back automatically if the new version does not come up. |
 | **Proof of who did what** | Security-relevant actions go to a SHA-256 hash-chained audit log on the server and to the Windows event log on the PC itself. |
 | **Off means off** | A school can turn the remote terminal and screen view off per PC. The server can switch them off, never back on. |
-| **Reviewed in the open** | A penetration test and two external reviews (R-01…R-20, F01…F21) are tracked finding by finding in [`CHANGELOG.md`](CHANGELOG.md). |
+| **Reviewed in the open** | Code-level security reviews requested by the maintainer (the reports themselves are not published) are tracked finding by finding (F1…F14, R-01…R-20, F01…F21) in [`CHANGELOG.md`](CHANGELOG.md), with the fix for each. |
 
 ---
 
@@ -302,7 +303,7 @@ before freezing ([details](Agent/README.md#machines-with-freeze-software)). See
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/timeline.en-dark.svg">
-  <img alt="Timeline from 0.1.0 (August 2026) to 0.1.13 (October 2026) and the upcoming 0.1.14." src="assets/readme/timeline.en.svg" width="100%">
+  <img alt="Timeline from 0.1.0 (August 2026) to 0.1.21 (October 2026) and what comes next." src="assets/readme/timeline.en.svg" width="100%">
 </picture>
 
 Every release, with upgrade notes, is in [`CHANGELOG.md`](CHANGELOG.md). Packages and signed manifests are on the

@@ -8,30 +8,35 @@ the details. Replace `pops.example.com` with your server's host name.
 ```bash
 git clone https://github.com/PashaCore/POps.git
 cd POps
-sudo Installer/server/install.sh
+sudo POPS_DOMAIN=pops.example.com Installer/server/install.sh
 ```
 
-The script installs PostgreSQL and Python if needed, creates the database, the `.env` with generated secrets and
-the `pops.service` unit, and prints the panel **admin password** at the end. Keep it, and keep the clone: the
-panel is served from its `Dashboard` folder. Details: [`installation.md`](installation.md).
+The script installs everything on one machine: PostgreSQL, Python, the backend with its `.env` (generated secrets)
+and `pops.service` unit, nginx with PHP-FPM for the panel, and HTTPS for `POPS_DOMAIN`. It prints the panel **admin
+password** at the end. Keep it, and keep the clone: the panel is served from its `Dashboard` folder.
 
-## 2. Web server and TLS (installed by `install.sh`; this section is for a manual setup)
+HTTPS is chosen with `TLS_MODE`:
 
-The backend listens on `127.0.0.1:8000`. Serve the panel and proxy the backend under one HTTPS host name. The
-script does not install the web server or PHP; install nginx and PHP 8 with PHP-FPM and the `curl` extension
-from your distribution first.
+- `internal` (default): a school CA made on the server (`pops-tls`); works without internet. Agents are pinned to
+  this CA when they enroll.
+- `letsencrypt`: a public certificate; needs the name to resolve to this server from the internet
+  (`LE_EMAIL=` for expiry mail).
+- `existing`: your own certificate (`TLS_CERT=` and `TLS_KEY=`).
+- `none`: only the backend; you set up the web server yourself (step 2).
+
+Check from any machine: `curl https://pops.example.com/api/health` should return `{"status":"ok",…}` (with
+`internal`, add `--cacert pops-ca.pem`, the CA from `/etc/pops/ca/pops-ca.pem` on the server). Details: [`installation.md`](installation.md).
+
+## 2. Your own web server (only with `TLS_MODE=none`)
+
+The backend listens on `127.0.0.1:8000`. Serve the panel and proxy the backend under one HTTPS host name. Install
+nginx and PHP 8 with PHP-FPM and the `curl` extension from your distribution first.
 
 1. Start from [`Installer/server/nginx.example.conf`](../Installer/server/nginx.example.conf): set `server_name`,
    set `root` to the `Dashboard` folder of your clone, and set the PHP-FPM socket. (Apache: see
    [`deployment.md`](deployment.md#apache).)
 2. Get a certificate, for example `sudo certbot --nginx -d pops.example.com`.
-3. Create the panel configuration:
-
-   ```bash
-   cp Dashboard/includes/config.example.php Dashboard/includes/config.php
-   ```
-
-4. Check from any machine: `curl https://pops.example.com/api/health` should return `{"status":"ok",…}`.
+3. Check from any machine: `curl https://pops.example.com/api/health` should return `{"status":"ok",…}`.
 
 ## 3. Sign in
 

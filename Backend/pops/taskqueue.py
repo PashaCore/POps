@@ -32,7 +32,9 @@ async def resolve_targets(target_mode: str, targets, conn=None) -> list:
         return [{"pc": r["pc_name"], "lab": r["lab_name"]} for r in res]
     res = await fetch("SELECT pc_name, lab_name FROM clients WHERE pc_name = ANY($1::text[])", names)
     labs = {r["pc_name"]: r["lab_name"] for r in res}
-    return [{"pc": pc, "lab": labs[pc] if pc in labs else "Bilinmeyen Lab"} for pc in names]
+    # unknown: kayıtlı olmayan kimlik. Panelden gelen istekte reddedilir; zamanlanmış görevde o arada silinen cihazın
+    # görevi eskisi gibi açılır ve geçerlilik süresi dolunca kapanır.
+    return [{"pc": pc, "lab": labs.get(pc, "Bilinmeyen Lab"), "unknown": pc not in labs} for pc in names]
 
 
 def _seconds_since(created_at) -> float:

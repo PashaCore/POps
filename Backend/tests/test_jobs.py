@@ -131,6 +131,7 @@ async def run(c, admin, viewer):
     batch = await c.fetch("SELECT DISTINCT batch_id FROM tasks WHERE id = ANY($1::int[])", ids)
     chk(len(batch) == 1 and batch[0]["batch_id"], "aynı istekteki görevler tek iş kimliğinde")
     chk(req("/api/deploy_orchestration", admin, dict(ctx, reason="x" * 501))[0] == 422, "gerekçe en çok 500 karakter")
+
     await c.execute("UPDATE tasks SET status = 'Denied', exit_code = -5 WHERE id = $1", cid)
     s, r = req("/api/tasks/action", admin, {"action": "RETRY", "target_mode": "TASK", "target_id": str(cid)})
     rid = (r.get("task_ids") or [None])[0]
@@ -146,6 +147,25 @@ async def run(c, admin, viewer):
     chk(denied.get("status") == "Denied" and denied.get("exit_code") == -5 and denied.get("reason") == "ders bitti"
         and denied.get("ip") == "127.0.0.1", "reddedilen görev nedeniyle")
     chk(req("/api/devices/HW-JB1/activity", None)[0] == 401, "son işlemler: oturumsuz 401")
+
+    print("== istek doğrulaması: hedef türü, bilinmeyen bilgisayar, tanınmayan alan")
+    seq = [{"name": "v", "type": "CMD", "command": "echo jb-valid"}]
+    s, b = req("/api/deploy_orchestration", admin, {"target_mode": "pc", "targets": ["HW-JB1"], "taskSequence": seq})
+    chk(s == 200 and b.get("created") == 1, "küçük harfli hedef türü kabul edilir (%s)" % s)
+    s, b = req("/api/deploy_orchestration", admin, {"target_mode": "lab", "targets": ["JB-Lab"], "taskSequence": seq})
+    made = await c.fetch("SELECT target_pc FROM tasks WHERE id = ANY($1::int[])", (b or {}).get("task_ids") or [])
+    chk(s == 200 and sorted(r["target_pc"] for r in made) == ["HW-JB1", "HW-JB2"],
+        "\"lab\" sınıf olarak çözülür, bilgisayar adı sanılmaz")
+    chk(req("/api/deploy_orchestration", admin, {"target_mode": "GROUP", "targets": ["x"], "taskSequence": seq})[0]
+        == 422, "bilinmeyen hedef türü 422")
+    unknown = {"target_mode": "PC", "targets": ["HW-JB1", "HW-JB-YOK"], "taskSequence": seq}
+    s, b = req("/api/deploy_orchestration", admin, unknown)
+    n = await c.fetchval("SELECT count(*) FROM tasks WHERE target_pc = 'HW-JB-YOK'")
+    chk(s == 422 and n == 0, "kayıtlı olmayan bilgisayar 422, hiç görev açılmadı (%s)" % s)
+    chk(req("/api/deploy_orchestration", admin, {"target_mode": "PC", "targets": ["HW-JB1"], "taskSequence": seq,
+                                                 "priority": 1})[0] == 422, "tanınmayan alan 422")
+    chk(req("/api/deploy_orchestration", admin, {"target_mode": "PC", "targets": ["HW-JB1"], "taskSequence": [
+        dict(seq[0], timeout=5)]})[0] == 422, "adımda tanınmayan alan 422")
 
     print("== politika: son değiştiren")
     # CI'da aynı veritabanını kullanan sonraki testler politikayı değişmemiş bulsun: önce saklanır, sonra geri yazılır

@@ -183,6 +183,8 @@ async def conn():
 
 async def run(c, admin, superadmin, viewer):
     print("== eşzamanlı kayıt: tek kullanımlık jeton, 20 bağlantı")
+    chk(req("/api/system/enroll-token", superadmin, {"lab": "P1-Lab", "expires_hours": 1})[0] == 422,
+        "yanlış adlı alanla jeton üretilmez (422)")
     s, created = req("/api/system/enroll-token", superadmin, {"max_uses": 1, "ttl_hours": 1})
     token = created["token"]
     heads = {"X-Enroll-Token": token, "X-Agent-Version": "0.1.14-alpha"}
@@ -333,6 +335,9 @@ async def run(c, admin, superadmin, viewer):
     chk(b.get("changed") == 0, "süren yeniden deneme varken ikinci kopya açılmadı")
 
     print("== çift istek tek görev; eksi sınır")
+    # Görev yalnızca kayıtlı bilgisayara açılır
+    await c.execute("INSERT INTO clients (pc_name, hostname, status) VALUES ('HW-PDUP', 'hw-pdup', 'Offline') "
+                    "ON CONFLICT (pc_name) DO NOTHING")
     body = {"target_mode": "PC", "targets": ["HW-PDUP"],
             "taskSequence": [{"name": "p1", "type": "CMD", "command": "echo p1-dup"}]}
     s1, b1 = req("/api/deploy_orchestration", admin, body)

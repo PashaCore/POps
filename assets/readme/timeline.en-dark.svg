@@ -9,7 +9,7 @@
 </defs>
 <rect x="0" y="0" width="1000" height="262" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
 <text x="28" y="38" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="20" font-weight="700" fill="#e6edf3" text-anchor="start">From first release to hardened alpha</text>
-<text x="28" y="60" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1" text-anchor="start">Fourteen releases. Every one is in CHANGELOG.md with upgrade notes.</text>
+<text x="28" y="60" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1" text-anchor="start">Every release is in CHANGELOG.md with upgrade notes.</text>
 <line x1="62" y1="128" x2="938" y2="128" stroke="#30363d" stroke-width="3"/>
 <circle cx="92.0" cy="128" r="9" fill="#58a6ff" stroke="#58a6ff" stroke-width="2.5"/>
 <text x="92.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#58a6ff" text-anchor="middle">0.1.0</text>
@@ -17,39 +17,41 @@
 <text x="92.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">First public</text>
 <text x="92.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">release</text>
 <circle cx="228.0" cy="128" r="9" fill="#58a6ff" stroke="#58a6ff" stroke-width="2.5"/>
-<text x="228.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#58a6ff" text-anchor="middle">0.1.1–0.1.4</text>
+<text x="228.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#58a6ff" text-anchor="middle">0.1.1–0.1.6</text>
 <text x="228.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">25–27 Sep</text>
-<text x="228.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">Enrollment, device</text>
-<text x="228.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">secrets, 2FA, audit</text>
-<text x="228.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">chain, signed</text>
-<text x="228.0" y="213" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">updates</text>
+<text x="228.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">Enrollment, 2FA,</text>
+<text x="228.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">audit chain, signed</text>
+<text x="228.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">updates, inventory,</text>
+<text x="228.0" y="213" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">helpdesk</text>
 <circle cx="364.0" cy="128" r="9" fill="#58a6ff" stroke="#58a6ff" stroke-width="2.5"/>
-<text x="364.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#58a6ff" text-anchor="middle">0.1.5–0.1.6</text>
-<text x="364.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">27 Sep</text>
-<text x="364.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">Inventory, Windows</text>
-<text x="364.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">Update, helpdesk,</text>
-<text x="364.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">licences, schedules</text>
+<text x="364.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#58a6ff" text-anchor="middle">0.1.7–0.1.11</text>
+<text x="364.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">29 Sep</text>
+<text x="364.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">Rollback drills,</text>
+<text x="364.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">TLS installer,</text>
+<text x="364.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">kiosk lock, 5,000</text>
+<text x="364.0" y="213" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">agent test</text>
 <circle cx="500.0" cy="128" r="9" fill="#58a6ff" stroke="#58a6ff" stroke-width="2.5"/>
-<text x="500.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#58a6ff" text-anchor="middle">0.1.7–0.1.11</text>
-<text x="500.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">29 Sep</text>
-<text x="500.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">Rollback drills,</text>
-<text x="500.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">TLS installer,</text>
-<text x="500.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">kiosk lock, 5,000</text>
-<text x="500.0" y="213" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">agent test</text>
+<text x="500.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#58a6ff" text-anchor="middle">0.1.12–0.1.14</text>
+<text x="500.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">30 Sep–2 Oct</text>
+<text x="500.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">External reviews</text>
+<text x="500.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">R-01 … R-20,</text>
+<text x="500.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">F01 … F21;</text>
+<text x="500.0" y="213" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">reliability</text>
 <circle cx="636.0" cy="128" r="9" fill="#3fb950" stroke="#3fb950" stroke-width="2.5"/>
-<text x="636.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#3fb950" text-anchor="middle">0.1.12</text>
-<text x="636.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">30 Sep</text>
-<text x="636.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">Security audit</text>
-<text x="636.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">R-01 … R-20</text>
+<text x="636.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#3fb950" text-anchor="middle">0.1.15</text>
+<text x="636.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">2 Oct</text>
+<text x="636.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">.NET 10 built in,</text>
+<text x="636.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">modules per lab</text>
 <circle cx="772.0" cy="128" r="9" fill="#3fb950" stroke="#3fb950" stroke-width="2.5"/>
-<text x="772.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#3fb950" text-anchor="middle">0.1.13</text>
-<text x="772.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">2 Oct</text>
-<text x="772.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">Second review</text>
-<text x="772.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">F01 … F21</text>
+<text x="772.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#3fb950" text-anchor="middle">0.1.16–0.1.21</text>
+<text x="772.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">3 Oct</text>
+<text x="772.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">New panel: one</text>
+<text x="772.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">layout, details,</text>
+<text x="772.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="middle">charts</text>
 <circle cx="908.0" cy="128" r="9" fill="#0d1117" stroke="#6e7681" stroke-width="2.5" stroke-dasharray="3 3"/>
-<text x="908.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#9198a1" text-anchor="middle">0.1.14</text>
-<text x="908.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">next</text>
-<text x="908.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle" font-style="italic">Reliability:</text>
-<text x="908.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle" font-style="italic">timeouts, batching,</text>
-<text x="908.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle" font-style="italic">retention, alerts</text>
+<text x="908.0" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#9198a1" text-anchor="middle">next</text>
+<text x="908.0" y="111" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle"></text>
+<text x="908.0" y="162" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle" font-style="italic">Python 3.12,</text>
+<text x="908.0" y="179" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle" font-style="italic">offline panel,</text>
+<text x="908.0" y="196" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle" font-style="italic">fewer releases</text>
 </svg>

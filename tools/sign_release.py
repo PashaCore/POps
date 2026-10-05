@@ -203,11 +203,16 @@ def cmd_selftest(args) -> int:
                                    serialization.NoEncryption()))
     with open(pub_pem, "wb") as f:
         f.write(priv.public_key().public_bytes(serialization.Encoding.PEM,
-                                                serialization.PublicFormat.SubjectPublicKeyInfo))
+                                               serialization.PublicFormat.SubjectPublicKeyInfo))
 
     class NS:
         pass
-    s = NS(); s.dir = d; s.version = "9.9.9"; s.tag = "v9.9.9"; s.released_at = 1700000000; s.key_pem = priv_pem
+    s = NS()
+    s.dir = d
+    s.version = "9.9.9"
+    s.tag = "v9.9.9"
+    s.released_at = 1700000000
+    s.key_pem = priv_pem
     cmd_sign(s)
     verify_manifest(d, pub_pem)  # geçmeli
     print("selftest: temiz imza doğrulandı")
@@ -249,7 +254,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(description="POps release imzalayıcı/doğrulayıcı (ed25519)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    g = sub.add_parser("genkey"); g.add_argument("--out-dir", required=True); g.set_defaults(fn=cmd_genkey)
+    g = sub.add_parser("genkey")
+    g.add_argument("--out-dir", required=True)
+    g.set_defaults(fn=cmd_genkey)
 
     s = sub.add_parser("sign")
     s.add_argument("--dir", required=True)
@@ -265,7 +272,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     v.add_argument("--no-hashes", action="store_true")
     v.set_defaults(fn=cmd_verify)
 
-    t = sub.add_parser("selftest"); t.set_defaults(fn=cmd_selftest)
+    t = sub.add_parser("selftest")
+    t.set_defaults(fn=cmd_selftest)
 
     args = p.parse_args(argv)
     return args.fn(args)

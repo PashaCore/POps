@@ -50,7 +50,8 @@ def frame(t, title, subtitle, xlab, ylab, xs, ymax, xlabels=None):
     out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d" role="img" '
            'aria-label="%s">' % (W, H, W, H, esc(title)),
            '<rect width="%d" height="%d" rx="8" fill="%s"/>' % (W, H, t["surface"]),
-           '<text x="%d" y="24" %s font-size="15" font-weight="600" fill="%s">%s</text>' % (L, FONT, t["text"], esc(title)),
+           '<text x="%d" y="24" %s font-size="15" font-weight="600" fill="%s">%s</text>'
+           % (L, FONT, t["text"], esc(title)),
            '<text x="%d" y="42" %s font-size="12" fill="%s">%s</text>' % (L, FONT, t["text2"], esc(subtitle))]
     for i in range(5):
         v = ymax * i / 4
@@ -59,8 +60,8 @@ def frame(t, title, subtitle, xlab, ylab, xs, ymax, xlabels=None):
                    % (L, L + pw, y, y, t["grid"] if i else t["axis"]))
         out.append('<text x="%d" y="%.1f" %s font-size="11" text-anchor="end" fill="%s">%s</text>'
                    % (L - 8, y + 4, FONT, t["text2"], fmt(v)))
-    out.append('<text x="16" y="%d" %s font-size="11" fill="%s" transform="rotate(-90 16 %d)" text-anchor="middle">%s</text>'
-               % (T + ph / 2, FONT, t["text2"], T + ph / 2, esc(ylab)))
+    out.append('<text x="16" y="%d" %s font-size="11" fill="%s" transform="rotate(-90 16 %d)" '
+               'text-anchor="middle">%s</text>' % (T + ph / 2, FONT, t["text2"], T + ph / 2, esc(ylab)))
     out.append('<text x="%d" y="%d" %s font-size="11" text-anchor="middle" fill="%s">%s</text>'
                % (L + pw / 2, H - 16, FONT, t["text2"], esc(xlab)))
     return out, pw, ph
@@ -90,7 +91,8 @@ def line_chart(t, title, subtitle, xlab, ylab, xs, series, unit="", ymax=None, f
     if fit:
         a, b, lab = fit
         x0, x1 = min(xs), max(xs)
-        out.append('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" stroke-width="1.5" stroke-dasharray="5 4"/>'
+        out.append('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" stroke-width="1.5" '
+                   'stroke-dasharray="5 4"/>'
                    % (xpos(x0, xs, pw), Y(a + b * x0), xpos(x1, xs, pw), Y(a + b * x1), t["text2"]))
         xm = x0 + (x1 - x0) * 0.62   # etiket çizginin altında, ortaya yakın (uç etiketleriyle çakışmasın)
         out.append('<text x="%.1f" y="%.1f" %s font-size="11" fill="%s">%s</text>'
@@ -129,10 +131,9 @@ def bar_chart(t, title, subtitle, xlab, ylab, groups, series, unit=""):
             x = x0 + si * (bw + 2)
             h = max(ph * v / ymax, 1.5)
             r = min(4, h / 2)
-            y = T + ph - h
             # yalnızca üst köşeler yuvarlak, taban düz (çubuk tabana oturur)
-            out.append('<path d="M%.1f,%.1f v%.1f a%.1f,%.1f 0 0 1 %.1f,-%.1f h%.1f a%.1f,%.1f 0 0 1 %.1f,%.1f v%.1f z" '
-                       'fill="%s"><title>%s, %s cihaz: %s%s</title></path>'
+            out.append('<path d="M%.1f,%.1f v%.1f a%.1f,%.1f 0 0 1 %.1f,-%.1f h%.1f a%.1f,%.1f 0 0 1 %.1f,%.1f '
+                       'v%.1f z" fill="%s"><title>%s, %s cihaz: %s%s</title></path>'
                        % (x, T + ph, -(h - r), r, r, r, r, bw - 2 * r, r, r, r, r, h - r, t[key],
                           esc(name), fmt(g), fmt(v), unit))
             out.append('<text x="%.1f" y="%.1f" %s font-size="11" text-anchor="middle" fill="%s">%s%s</text>'
@@ -142,7 +143,8 @@ def bar_chart(t, title, subtitle, xlab, ylab, groups, series, unit=""):
     for si, (name, _, key) in enumerate(series):
         ly = T + 8 + si * 22
         out.append('<rect x="%d" y="%d" width="12" height="12" rx="3" fill="%s"/>' % (lx, ly, t[key]))
-        out.append('<text x="%d" y="%d" %s font-size="12" fill="%s">%s</text>' % (lx + 18, ly + 10, FONT, t["text"], esc(name)))
+        out.append('<text x="%d" y="%d" %s font-size="12" fill="%s">%s</text>'
+                   % (lx + 18, ly + 10, FONT, t["text"], esc(name)))
     out.append("</svg>")
     return "\n".join(out)
 

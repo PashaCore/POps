@@ -4,7 +4,8 @@
 Her sahte ajan gerçek ajan gibi /ws/agent'a bağlanır, dna_payload gönderir ve periyodik heartbeat atar.
 İsteğe bağlı gerçekçi yük profili:
   --enroll-token   ajanlar jetonla kaydolur ve sunucunun verdiği anahtarı (set_secret) alır; sonraki HTTP
-                   istekleri X-Agent-Id + X-Agent-Secret ile gider (yazılım/yama uçları yalnız anahtarlı ajanı kabul eder)
+                   istekleri X-Agent-Id + X-Agent-Secret ile gider (yazılım/yama uçları yalnız anahtarlı ajanı
+                   kabul eder)
   --software N     bağlandıktan sonra N kayıtlık yazılım listesi gönderir (--software-every ile tekrar)
   --patches        Windows Update durumu gönderir (--patch-every ile tekrar)
   --panels K       K panel WebSocket'i açar (--jwt ile) ve yayın (broadcast) yükünü sayar
@@ -46,11 +47,10 @@ def hwid(i):
 
 def dna(i):
     h = hwid(i)
+    mac = "AA:BB:%02X:%02X:%02X:%02X" % (i >> 24 & 255, i >> 16 & 255, i >> 8 & 255, i & 255)
     return json.dumps({
         "dna_payload": {"hardware": {"uuid": "%s-U" % h, "bios_sn": "%s-B" % h, "disk_sn": "%s-D" % h,
-                                     "mac": "AA:BB:%02X:%02X:%02X:%02X" % (i >> 24 & 255, i >> 16 & 255,
-                                                                         i >> 8 & 255, i & 255),
-                                     "ram_sn": "%s-R" % h},
+                                     "mac": mac, "ram_sn": "%s-R" % h},
                         "capabilities": {"ram_readable": True}},
         "hostname": h, "status": "Online"})
 
@@ -159,7 +159,8 @@ async def agent_once(i, args, stop_at, stats):
                                     software_payload(i, args.software), auth)
                     next_sw = now + args.software_every if args.software_every else float("inf")
                 if now >= next_patch and secret:
-                    await http_post(stats, "patches", "%s/api/patches/%s" % (http_base, hwid(i)), patch_payload(i), auth)
+                    await http_post(stats, "patches", "%s/api/patches/%s" % (http_base, hwid(i)), patch_payload(i),
+                                    auth)
                     next_patch = now + args.patch_every if args.patch_every else float("inf")
                 await asyncio.sleep(args.hb)
         return True
@@ -252,7 +253,8 @@ async def main():
              stats["last_error"] or ""))
     if args.reconnect:
         print("reconnect: all_connected_after=%s  failed_attempts=%d  retries=%d"
-              % ("%.1fs" % (stats["all_at"] - t0) if stats["all_at"] else "henüz değil", stats["errors"], stats["retries"]))
+              % ("%.1fs" % (stats["all_at"] - t0) if stats["all_at"] else "henüz değil", stats["errors"],
+                 stats["retries"]))
 
     # Isınma: ilk yazılım/yama gönderimleri bağlanmayla çakışmasın diye pencereden önce kısa bekle
     await asyncio.sleep(min(10.0, args.hb * 2))
@@ -275,7 +277,8 @@ async def main():
                  (statistics.mean(v["lat"]) * 1000) if v["lat"] else 0))
     if s0 and s1:
         hz = os.sysconf("SC_CLK_TCK")
-        print("server cpu=%.0f%% (bir çekirdeğin yüzdesi)  rss=%.0f MB" % ((s1[0] - s0[0]) / hz / w * 100, s1[1] / 1024))
+        cpu = (s1[0] - s0[0]) / hz / w * 100
+        print("server cpu=%.0f%% (bir çekirdeğin yüzdesi)  rss=%.0f MB" % (cpu, s1[1] / 1024))
     for t in tasks:
         t.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)

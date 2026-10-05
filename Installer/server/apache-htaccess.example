@@ -2,6 +2,11 @@
 # sunucu kendi kopyasını tutar, güncellemeler ona dokunmaz). mod_rewrite, mod_proxy, mod_proxy_http,
 # mod_proxy_wstunnel ve panel klasöründe AllowOverride FileInfo gerekir. /updates/ ve /download/ sanal sunucuda
 # proxy'lenir (bkz. docs/deployment.md).
+# JSON yanıtlarını sıkıştır (cihaz listesi 2.000 cihazda ~1,4 MB → ~50 KB); mod_deflate yoksa atlanır
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/json text/css application/javascript image/svg+xml
+</IfModule>
+
 RewriteEngine On
 RewriteCond %{REQUEST_URI} ^/api/(.*)$
 RewriteRule ^.*$ http://127.0.0.1:8000/api/%1 [P,L]
