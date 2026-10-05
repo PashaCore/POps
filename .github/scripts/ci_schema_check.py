@@ -30,6 +30,8 @@ CHECKS = [
     ("tickets", "status"),
     ("ticket_messages", "internal"),
     ("clients", "pending_quarantine_action"),
+    ("users", "auth_source"),
+    ("sso_providers", "secret"),
 ]
 
 

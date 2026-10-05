@@ -17,6 +17,8 @@ export CORS_ALLOWED_ORIGINS=""
 export METRICS_TOKEN="${METRICS_TOKEN:-local-metrics-token-0123456789}"
 # test_demo.py: salt okunur demo hesabı (sunucu ve test aynı değeri okur)
 export POPS_DEMO_USERS="${POPS_DEMO_USERS:-ci_demo}"
+# test_sso.py: şifresiz LDAP'ın test bayrağı yalnızca bununla kabul edilir (CI ile aynı; üretimde tanımlanmaz)
+export POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1
 
 if [ "${COVERAGE:-0}" = "1" ]; then
   rm -f .coverage .coverage.*
@@ -59,6 +61,8 @@ python tests/test_helpdesk_licenses.py
 python tests/test_ops.py
 python tests/test_api_tokens.py
 python tests/test_demo.py
+# LDAP bölümü Docker ister (osixia/openldap kabı); yoksa atlanır. POPS_TEST_SKIP_DOCKER=1 ile de atlanır.
+python tests/test_sso.py
 if [ "${COVERAGE:-0}" = "1" ]; then
   kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
   python -m coverage combine --rcfile=.coveragerc >/dev/null
