@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from pops import modules
+from pops import exams, modules
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.manager import manager
@@ -45,9 +45,12 @@ async def _snapshot(labs: List[str]) -> dict:
 
 
 async def _close_effects(before: dict, after: dict) -> dict:
-    """Kapanan modülün açık işleri durur: Vision oturumları kapanır, bekleyen komut görevleri "Denied" olur."""
+    """Kapanan modülün açık işleri durur: Vision oturumları kapanır, bekleyen komut görevleri "Denied" olur, süren
+    sınavlar biter."""
     closed = [key for key, was_on in before.items() if was_on and not after[key]]
-    effects = {"vision_sessions_closed": 0, "tasks_denied": 0}
+    effects = {"vision_sessions_closed": 0, "tasks_denied": 0, "exams_ended": 0}
+    if any(mid == "exam" for mid, _lab in closed):
+        effects["exams_ended"] = await exams.end_where_module_off()
     for mid, lab in closed:
         if mid not in ("vision", "terminal"):
             continue

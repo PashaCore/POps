@@ -53,6 +53,9 @@ MODULES = (
     Module("quarantine", "Karantina", "Kilit ekranı ve ağ yalıtımı; kaldırma ve bypass kodu her zaman çalışır.",
            True, True),
     Module("wol", "Uyandırma (Wake-on-LAN)", "Kapalı bilgisayarları ağdan açma.", True, True),
+    Module("exam", "Sınav modu",
+           "Sınıfta süreli ağ kısıtlaması: yalnızca izin verilen adresler açık, tepside mesaj, isteğe bağlı program "
+           "engeli.", True, False),
     Module("reports", "Raporlar", "Filo, güvenlik olayları, yazılım ve güncelleme raporları, CSV.", True, True,
            page="reports"),
 )

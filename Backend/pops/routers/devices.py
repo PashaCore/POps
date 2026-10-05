@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from pops.config import LOG_TABLE, USE_V2_SCHEMA
-from pops import agent_health, db, modules
+from pops import agent_health, db, exams, modules
 from pops.db import execute_query
 from pops.models import (
     AutoEnrollInput,
@@ -296,6 +296,13 @@ async def rename_lab(data: RenameLabInput, auth: dict = Depends(require_admin)):
                 data.old_name,
             )
             await conn.execute("UPDATE tasks SET target_lab = $1 WHERE target_lab = $2", data.new_name, data.old_name)
+            # Süren sınav sınıfla birlikte taşınır (yeni adda süren bir sınav yoksa; geçmiş eski adla kalır)
+            await conn.execute(
+                "UPDATE exam_sessions SET lab_name = $1 WHERE lab_name = $2 AND ended_at IS NULL "
+                "AND NOT EXISTS (SELECT 1 FROM exam_sessions WHERE lab_name = $1 AND ended_at IS NULL)",
+                data.new_name,
+                data.old_name,
+            )
     return {"status": "success"}
 
 
@@ -312,12 +319,15 @@ async def delete_lab(data: DeleteLabInput, auth: dict = Depends(require_admin)):
             await conn.execute("DELETE FROM custom_labs WHERE lab_name = $1", data.lab_name)
             await conn.execute("UPDATE clients SET lab_name = 'Atanmamis_Cihazlar' WHERE lab_name = $1", data.lab_name)
             await conn.execute("DELETE FROM lab_settings WHERE lab_name = $1", data.lab_name)
+    # Süren sınav biter; bilgisayarları (artık atanmamış) enabled:false alır
+    await exams.end(data.lab_name, auth.get("sub"), "lab_deleted")
     return {"status": "success"}
 
 
 @router.post("/api/move_pc", deprecated=True)
 async def move_pc(data: MovePcInput, auth: dict = Depends(require_admin)):
     await execute_query("UPDATE clients SET lab_name = $1 WHERE pc_name = $2", (data.new_lab, data.pc_name))
+    await exams.sync_pcs([data.pc_name], data.new_lab)
     return {"status": "success"}
 
 
@@ -325,6 +335,8 @@ async def move_pc(data: MovePcInput, auth: dict = Depends(require_admin)):
 async def move_pcs(data: MovePcsInput, auth: dict = Depends(require_admin)):
     for pc in data.pc_names:
         await execute_query("UPDATE clients SET lab_name = $1 WHERE pc_name = $2", (data.new_lab, pc))
+    # Sınav sürerken sınıfa taşınan bağlı bilgisayar sınavı hemen alır; sınavdaki sınıftan çıkan enabled:false alır
+    await exams.sync_pcs(data.pc_names, data.new_lab)
     return {"status": "success"}
 
 

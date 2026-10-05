@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from pops import db, modules
+from pops import db, exams, modules
 from pops.db import execute_query
 from pops.models import AgentPoliciesInput, AuthEventInput, HwInventoryInput, LogInput, PolicyAlertInput
 from pops.security import require_admin, require_auth
@@ -163,8 +163,8 @@ async def reconcile_quarantine(
 # Sunucunun desteklediği, ajanın davranışını değiştiren özellikler (0.1.14+ ajan okur; eskiler bilinmeyen action'ı
 # yok sayar). update_result_ack: güncelleme sonucu kaydedilince onaylanır, ajan onaya kadar sonucu saklar.
 # update_progress: güncellemenin ara adımları okunur (eski sunucu bilinmeyen mesajı zaten yok sayar; ajan isterse
-# yalnızca bunu duyuran sunucuya gönderir).
-SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress")
+# yalnızca bunu duyuran sunucuya gönderir). exam_mode: sınav modu gönderilir ve exam_state okunur (pops/exams.py).
+SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress", "exam_mode")
 # Ajan protokolünün sürümü (docs/protocol/README.md): yalnızca uyumsuz bir değişiklikte artar. Yeni alan ya da yeni
 # mesaj sürümü değiştirmez; sunucunun yeni davranışları SERVER_FEATURES ile duyurulur.
 PROTOCOL_VERSION = 1
@@ -190,6 +190,15 @@ async def _send_server_info(websocket: WebSocket) -> None:
         await websocket.send_text(json.dumps(server_info_message()))
     except Exception:
         pass
+
+
+async def _sync_exam(pc_name: str) -> None:
+    """Bağlanan ajanı sınıfının sınav durumuna getirir. Hata bağlantıyı düşürmez: ajan bir sonraki bağlanışında ya da
+    exam_state bildirdiğinde yeniden eşitlenir."""
+    try:
+        await exams.sync_pc(pc_name)
+    except Exception as exc:
+        log.warning("sınav durumu eşitlenemedi", extra={"pc_name": pc_name, "error": repr(exc)[:300]})
 
 
 async def _ack_update_result(pc_name: str, result_id: str) -> None:
@@ -725,6 +734,10 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     except Exception:
                         pass
 
+            # Sınıfın süren sınavı (yeniden bağlanan ya da sınav sürerken sınıfa taşınmış bilgisayar); sınav bu
+            # bilgisayarda bitmeden kapandıysa enabled:false (bkz. pops/exams.py)
+            await _sync_exam(active_hwid)
+
             hw_exists = await execute_query(
                 "SELECT cpu FROM hw_inventory WHERE pc_name = $1", (active_hwid,), fetch=True
             )
@@ -741,6 +754,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 return
             manager.active_agents[active_hwid] = websocket
             await _send_server_info(websocket)
+            await _sync_exam(active_hwid)
 
         await handle_routine_payload(payload)
 
@@ -785,6 +799,11 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     continue
                 if payload.get("type") == "update_progress":
                     await _update_progress(active_hwid, payload, agent_version)
+                    continue
+                if payload.get("type") == "exam_state":
+                    # Ajanın sınav modu durumu: sınav yokken "sınavda" ise kapatma yeniden gider, sınav sürerken
+                    # "sınavda değil" ise erken çıkış bildirilir (pops/exams.py)
+                    await exams.on_agent_state(active_hwid, payload)
                     continue
                 if payload.get("type") == "capabilities":
                     # Ajan güncel yetenek durumunu bildirir (bağlantıda + her değişimde). Sakla + panele yay.
@@ -868,6 +887,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         str(payload.get("action") or ""),
                         active_hwid,
                     )
+                    if payload.get("capability") == "exam":
+                        await exams.on_denied(active_hwid)
                     await manager.broadcast_to_panels({"type": "capability_denied", "pc_name": active_hwid, **_md})
                     continue
                 await handle_routine_payload(payload)

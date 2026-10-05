@@ -519,6 +519,83 @@
         "title": "EnrollTokenInput",
         "type": "object"
       },
+      "ExamEndInput": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "ExamEndInput",
+        "type": "object"
+      },
+      "ExamStartInput": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Allow",
+            "type": "array"
+          },
+          "block_apps": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Block Apps",
+            "type": "array"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "maximum": 480.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Message",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ExamStartInput",
+        "type": "object"
+      },
       "FetchReleaseInput": {
         "properties": {
           "force": {
@@ -3553,6 +3630,87 @@
         ]
       }
     },
+    "/api/v1/exams": {
+      "get": {
+        "description": "Sınav geçmişi, yeniden eskiye. active=true yalnızca sürenleri (bilgisayar durum sayılarıyla) verir.",
+        "operationId": "list_exams_api_exams_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lab",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lab"
+            }
+          },
+          {
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Active"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Exams",
+        "tags": [
+          "exams"
+        ]
+      }
+    },
     "/api/v1/files": {
       "post": {
         "operationId": "upload_file_api_files_post",
@@ -3927,6 +4085,167 @@
         "summary": "Rename Lab",
         "tags": [
           "devices"
+        ]
+      }
+    },
+    "/api/v1/labs/{lab_name}/exam": {
+      "delete": {
+        "description": "Sınıfın süren sınavını bitirir ve bağlı ajanlara enabled:false gönderir. Gövde isteğe bağlı: {reason}.",
+        "operationId": "end_exam_api_labs__lab_name__exam_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lab_name",
+            "required": true,
+            "schema": {
+              "title": "Lab Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ExamEndInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "End Exam",
+        "tags": [
+          "exams"
+        ]
+      },
+      "get": {
+        "description": "Sınıfın sınav durumu ve her bilgisayarın durumu (sınavda, ayrıldı, ulaşılamıyor, desteklemiyor ...).",
+        "operationId": "get_lab_exam_api_labs__lab_name__exam_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lab_name",
+            "required": true,
+            "schema": {
+              "title": "Lab Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Lab Exam",
+        "tags": [
+          "exams"
+        ]
+      },
+      "post": {
+        "description": "Sınıfta sınav modunu başlatır ve bağlı ajanlara gönderir; çevrimdışı olanlar bağlanınca alır.",
+        "operationId": "start_exam_api_labs__lab_name__exam_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lab_name",
+            "required": true,
+            "schema": {
+              "title": "Lab Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExamStartInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Exam",
+        "tags": [
+          "exams"
         ]
       }
     },
