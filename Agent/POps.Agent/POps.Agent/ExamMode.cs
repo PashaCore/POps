@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -15,7 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using POps.Shared;
 
-#nullable disable
+#nullable enable
 
 namespace POpsAgent
 {
@@ -69,20 +70,20 @@ namespace POpsAgent
         // Testler: engelli uygulamanın kapatılması (testlerde gerçek süreçlere dokunulmaz)
         internal static Action<Process> StopProcess { get; set; } = process => process.Kill();
 
-        public static ExamSettings Load()
+        public static ExamSettings? Load()
         {
-            string text = SecureStore.Read(StatePath);
+            string? text = SecureStore.Read(StatePath);
             if (text == null) return null;
             try { return JsonSerializer.Deserialize<ExamSettings>(text, Json); }
             catch (JsonException) { return null; }
         }
 
-        public static bool Expired(ExamSettings settings, DateTimeOffset now) =>
+        public static bool Expired(ExamSettings? settings, DateTimeOffset now) =>
             settings?.Until != null && now.ToUnixTimeSeconds() >= settings.Until.Value;
 
         // Emir doğrulanır: izin listesi (alan adı, IPv4/IPv6, CIDR; en çok 50), mesaj (en çok 300 karakter, denetim
         // karakterleri atılır), until (gelecekte ya da yok), block_apps (yalnızca "ad.exe"; korunan süreçler düşer).
-        public static bool TryParse(JsonElement command, DateTimeOffset now, out ExamSettings settings, out string error)
+        public static bool TryParse(JsonElement command, DateTimeOffset now, [NotNullWhen(true)] out ExamSettings? settings, [NotNullWhen(false)] out string? error)
         {
             settings = null;
             error = null;
@@ -91,7 +92,7 @@ namespace POpsAgent
             {
                 foreach (JsonElement entry in allow.EnumerateArray())
                 {
-                    string value = entry.ValueKind == JsonValueKind.String ? entry.GetString()?.Trim().TrimEnd('.').ToLowerInvariant() : null;
+                    string? value = entry.ValueKind == JsonValueKind.String ? entry.GetString()?.Trim().TrimEnd('.').ToLowerInvariant() : null;
                     if (string.IsNullOrEmpty(value) || !IsValidAllowEntry(value)) { error = $"izin listesinde geçersiz kayıt: {LogText.Safe(value, 60)}"; return false; }
                     if (!s.Allow.Contains(value)) s.Allow.Add(value);
                 }
@@ -108,7 +109,7 @@ namespace POpsAgent
             {
                 foreach (JsonElement app in apps.EnumerateArray())
                 {
-                    string name = app.ValueKind == JsonValueKind.String ? app.GetString()?.Trim() : null;
+                    string? name = app.ValueKind == JsonValueKind.String ? app.GetString()?.Trim() : null;
                     if (string.IsNullOrEmpty(name) || !AppRegex.IsMatch(name)) { error = $"uygulama adı geçersiz: {LogText.Safe(name, 60)}"; return false; }
                     if (ProtectedApps.Contains(name)) continue;
                     if (!s.BlockApps.Contains(name, StringComparer.OrdinalIgnoreCase)) s.BlockApps.Add(name.ToLowerInvariant());
@@ -127,7 +128,7 @@ namespace POpsAgent
         {
             range = default;
             int slash = text.IndexOf('/', StringComparison.Ordinal);
-            if (slash <= 0 || !IPAddress.TryParse(text.AsSpan(0, slash), out IPAddress network)) return false;
+            if (slash <= 0 || !IPAddress.TryParse(text.AsSpan(0, slash), out IPAddress? network)) return false;
             bool v6 = network.AddressFamily == AddressFamily.InterNetworkV6;
             if (!int.TryParse(text.AsSpan(slash + 1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int prefix)
                 || prefix < (v6 ? 16 : 8) || prefix > (v6 ? 128 : 32)) return false;   // çok geniş aralık sınavı anlamsızlaştırır
@@ -139,7 +140,7 @@ namespace POpsAgent
         }
 
         // Kurallara girecek adresler: sunucu (zorunlu), DNS/DHCP, izin listesindeki IP'ler ve çözülen alan adları
-        internal static async Task<(List<(BigInteger Start, BigInteger End, bool V6)> Ranges, List<string> Addresses)> AllowedAsync(ExamSettings settings, string serverUrl)
+        internal static async Task<(List<(BigInteger Start, BigInteger End, bool V6)>? Ranges, List<string>? Addresses)> AllowedAsync(ExamSettings settings, string serverUrl)
         {
             List<IPAddress> server = await NetworkIsolation.ResolveServerAsync(serverUrl);
             if (server.Count == 0) return (null, null);
@@ -148,7 +149,7 @@ namespace POpsAgent
             foreach (string entry in settings.Allow)
             {
                 if (TryParseCidr(entry, out var cidr)) cidrs.Add(cidr);
-                else if (IPAddress.TryParse(entry, out IPAddress ip)) addresses.Add(ip);
+                else if (IPAddress.TryParse(entry, out IPAddress? ip)) addresses.Add(ip);
                 else
                 {
                     try { addresses.AddRange(await Resolver(entry)); }
@@ -168,7 +169,7 @@ namespace POpsAgent
             try
             {
                 var (ranges, addresses) = await AllowedAsync(settings, serverUrl);
-                if (ranges == null)
+                if (ranges == null || addresses == null)
                 {
                     POpsHelpers.Log("EXAM", $"[GÜVENLİK] Sunucu adresi çözülemedi ({serverUrl}); sınav modu uygulanmadı.", true);
                     return false;
@@ -179,7 +180,7 @@ namespace POpsAgent
                     POpsHelpers.Log("EXAM", $"Sınav modu uygulanamadı (çıkış {exit}): {output}", true);
                     return false;
                 }
-                ExamSettings previous = Load();
+                ExamSettings? previous = Load();
                 settings.Addresses = addresses;
                 // Zaten sınavdaysa (ayar değişti) ilk başlangıç ve sınav öncesi profiller korunur
                 settings.Since = previous?.Since ?? settings.Since;
@@ -201,10 +202,10 @@ namespace POpsAgent
             await Gate.WaitAsync();
             try
             {
-                ExamSettings settings = Load();
+                ExamSettings? settings = Load();
                 if (settings == null) return false;
                 var (ranges, addresses) = await AllowedAsync(settings, serverUrl);
-                if (ranges == null || addresses.SequenceEqual(settings.Addresses ?? new List<string>(), StringComparer.Ordinal)) return false;
+                if (ranges == null || addresses == null || addresses.SequenceEqual(settings.Addresses ?? new List<string>(), StringComparer.Ordinal)) return false;
                 (int exit, string output) = await NetworkIsolation.ScriptRunner(NetworkIsolation.BuildEnableScript(ranges, NetworkIsolation.ExamRuleGroup));
                 if (exit != 0)
                 {
@@ -229,7 +230,7 @@ namespace POpsAgent
             await Gate.WaitAsync();
             try
             {
-                ExamSettings settings = Load();
+                ExamSettings? settings = Load();
                 (int exit, string output) = await NetworkIsolation.ScriptRunner(
                     NetworkIsolation.BuildDisableScript(settings?.PreviousDisabledProfiles ?? new List<string>(), NetworkIsolation.ExamRuleGroup));
                 if (exit != 0)
@@ -251,29 +252,29 @@ namespace POpsAgent
         private static void Save(ExamSettings settings) => SecureStore.WriteProtected(StatePath, JsonSerializer.Serialize(settings, Json));
 
         // Etkinleştirme betiğinin son satırı: önceki profil durumları; kapalı olanların adları
-        internal static List<string> DisabledProfiles(string output)
+        internal static List<string> DisabledProfiles(string? output)
         {
-            var disabled = new List<string>();
-            string json = output?.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.StartsWith('[') || l.StartsWith('{'));
-            if (json == null) return disabled;
+            var disabled = new List<string?>();
+            string? json = output?.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.StartsWith('[') || l.StartsWith('{'));
+            if (json == null) return new List<string>();
             try
             {
-                JsonNode node = JsonNode.Parse(json.StartsWith('{') ? "[" + json + "]" : json);
-                foreach (JsonNode p in node.AsArray())
-                    if (p?["Enabled"]?.GetValue<string>() == "False") disabled.Add(p["Name"]?.GetValue<string>());
+                if (JsonNode.Parse(json.StartsWith('{') ? "[" + json + "]" : json) is JsonArray profiles)
+                    foreach (JsonNode? p in profiles)
+                        if (p?["Enabled"]?.GetValue<string>() == "False") disabled.Add(p["Name"]?.GetValue<string>());
             }
             catch (Exception ex) when (ex is JsonException || ex is InvalidOperationException) { }
-            return disabled.Where(n => n != null).ToList();
+            return disabled.OfType<string>().ToList();
         }
 
         // Sunucuya {"type":"exam_state","enabled","since","until"}; sunucu şemasında başka alan yok (uygulanamama nedeni
         // yalnızca yerel loga yazılır). since: o anki durumun başladığı an (unix sn): sınavdayken giriş zamanı, sınavda
         // değilken bu çalışmada sınavdan çıkıldıysa çıkış zamanı (leftAt); bilinmiyorsa gönderilmez. until: sınavdayken
         // sınavın bitişi, değilken null.
-        public static Dictionary<string, object> StateMessage(long? leftAt)
+        public static Dictionary<string, object?> StateMessage(long? leftAt)
         {
-            ExamSettings s = Load();
-            var message = new Dictionary<string, object> { ["type"] = "exam_state", ["enabled"] = s != null };
+            ExamSettings? s = Load();
+            var message = new Dictionary<string, object?> { ["type"] = "exam_state", ["enabled"] = s != null };
             if (s != null) message["since"] = s.Since;
             else if (leftAt != null) message["since"] = leftAt.Value;
             message["until"] = s?.Until;
@@ -281,7 +282,7 @@ namespace POpsAgent
         }
 
         // Kapatılacak süreçler: kullanıcı oturumunda (oturum 0 değil) ve listede
-        public static List<int> ProcessesToStop(IEnumerable<(int Pid, string Name, int Session)> processes, ICollection<string> blocked) =>
+        public static List<int> ProcessesToStop(IEnumerable<(int Pid, string? Name, int Session)> processes, ICollection<string> blocked) =>
             processes.Where(p => p.Session != 0 && p.Name != null && blocked.Contains((p.Name + ".exe").ToLowerInvariant()) && !ProtectedApps.Contains(p.Name + ".exe"))
                      .Select(p => p.Pid).ToList();
     }
