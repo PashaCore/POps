@@ -301,6 +301,8 @@ namespace POpsAgent
             // Sınav modu sunucuya ulaşılamasa da süresinde biter; uygulama engeli ve izin listesi yenilemesi burada
             _ = Task.Run(() => ExamLoopAsync(stoppingToken), stoppingToken);
             _slowInitialization = Task.Run(InitializeSlowState, stoppingToken);
+            // Eş önbelleği: açılışta ve dakikada bir süre/yetenek/karantina denetimi, paket varken sunum (bkz. PeerCache)
+            _ = Task.Run(() => PeerCache.RunAsync(stoppingToken), stoppingToken);
             AgentUpdate.LogLastResult();
             // Güncelleme sürmüyorsa önceki çalışmadan kalan aşama dosyası silinir
             AgentUpdate.CleanupStaleProgress();
@@ -541,6 +543,8 @@ namespace POpsAgent
         {
             // Uygulanamazsa neden ExamMode'da yerel loga yazılır; sunucuya o anki durum gider
             if (!await ExamMode.EnableAsync(settings, _serverUrl)) return;
+            // Sınav modunda eş önbelleği sunulmaz; arka planda yeniden denetlenir (bkz. PeerCache)
+            _ = Task.Run(PeerCache.SyncAsync);
             lock (_examStoppedLogged) _examStoppedLogged.Clear();
             LocalAudit.Write(LocalAudit.ExamStarted(settings));
             POpsHelpers.Log("EXAM", $"SINAV MODU AKTİF: {settings.Allow.Count} izinli kayıt, bitiş {(settings.Until == null ? "yok" : DateTimeOffset.FromUnixTimeSeconds(settings.Until.Value).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture))}, {settings.BlockApps.Count} engelli uygulama.");
@@ -561,6 +565,7 @@ namespace POpsAgent
         {
             // Kaldırılamazsa neden ExamMode'da loglanır; sunucuya "hâlâ sınavda" gider
             if (!ExamMode.IsActive || !await ExamMode.DisableAsync()) return;
+            _ = Task.Run(PeerCache.SyncAsync);
             Interlocked.Exchange(ref _examLeftAt, ExamClock().ToUnixTimeSeconds());
             LocalAudit.Write(LocalAudit.ExamEnded(source));
             POpsHelpers.Log("EXAM", $"Sınav modu bitti ({source}).");
@@ -1651,6 +1656,8 @@ namespace POpsAgent
             var changed = AgentCapabilities.ApplyServerRequest(request);
             foreach (string capability in changed.Disabled)
                 LocalAudit.Write(LocalAudit.CapabilityChanged(capability.Replace("_enabled", "", StringComparison.Ordinal), true, false));
+            // Eş önbelleği kapandıysa önbellek silinir, sunum durur
+            if (changed.Disabled.Contains(AgentCapabilities.PeerCacheKey)) await PeerCache.SyncAsync();
             if (!AgentCapabilities.VisionEnabled && _isVisionStreamActive)
             {
                 _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
@@ -1984,10 +1991,29 @@ namespace POpsAgent
             return "-";
         }
 
-        // Ağ karantinası: bkz. NetworkIsolation (eski uygulama güvenlik duvarında hiçbir kural oluşturamıyordu)
-        private Task<bool> EnableNetworkIsolationAsync() => NetworkIsolation.EnableAsync(_serverUrl);
+        // Ağ karantinası: bkz. NetworkIsolation (eski uygulama güvenlik duvarında hiçbir kural oluşturamıyordu). Karantinada
+        // eş önbelleği sunulmaz; değişiklikten sonra arka planda yeniden denetlenir (bkz. PeerCache).
+        private async Task<bool> EnableNetworkIsolationAsync()
+        {
+            bool applied = await NetworkIsolation.EnableAsync(_serverUrl);
+            _ = Task.Run(PeerCache.SyncAsync);
+            return applied;
+        }
 
-        private Task<bool> DisableNetworkIsolationAsync() => NetworkIsolation.DisableAsync();
+        private async Task<bool> DisableNetworkIsolationAsync()
+        {
+            bool removed = await NetworkIsolation.DisableAsync();
+            _ = Task.Run(PeerCache.SyncAsync);
+            return removed;
+        }
+
+        // Servis dururken eş önbelleği sunucusu kapanır, güvenlik duvarı kuralı kaldırılır (önbellek dosyası kalır;
+        // güncellemeyle açılan yeni sürüm sunmayı sürdürür)
+        public override async Task StopAsync(CancellationToken cancellationToken)
+        {
+            await base.StopAsync(cancellationToken);
+            await PeerCache.ShutdownAsync();
+        }
     }
 
     public sealed class TrayPipeServer : IDisposable

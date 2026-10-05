@@ -19,8 +19,10 @@ namespace POpsAgent
     //  1. Sunucu "update_agent" emrinde imzalı manifest'i gönderir: "manifest" = manifest.json'un baytları
     //     (base64), "manifest_sig" = manifest.json.sig içeriği.
     //  2. İmza gömülü ed25519 anahtarla doğrulanır; sürüm kurulu sürümden büyük olmalıdır (downgrade yok).
-    //  3. MSI'ın adı, boyutu ve SHA-256'sı yalnızca imzalı manifest'ten alınır. Dosya yalnızca bu ajanın
-    //     bağlı olduğu sunucunun /updates dizininden indirilir; boyut ya da özet tutmazsa uygulanmaz.
+    //  3. MSI'ın adı, boyutu ve SHA-256'sı yalnızca imzalı manifest'ten alınır. Dosya emirdeki laboratuvar eşlerinden
+    //     ("peers", bkz. PeerDownload) ya da bu ajanın bağlı olduğu sunucunun /updates dizininden indirilir; boyut ya da
+    //     özet tutmazsa uygulanmaz. Emir "peer_cache": true taşıyorsa doğrulanan paketin kopyası eşler için önbelleğe
+    //     alınır (bkz. PeerCache).
     //  4. Doğrulanan MSI C:\POpsData\updates'e konur (öğrenciler yazamaz) ve POpsUpdater, kurulum klasörü
     //     dışına kopyalanıp başlatılır: msiexec kurulum klasörünü değiştirirken kendi dosyasını kilitlemesin.
     // Doğrulamaların hepsi geçmeden hiçbir süreç durdurulmaz, hiçbir dosya değiştirilmez.
@@ -377,11 +379,22 @@ namespace POpsAgent
                 }
                 POpsHelpers.Log("UPDATE", $"[GÜVENLİK] İmzalı manifest doğrulandı: {InstalledVersion} -> {manifest.Version} ({msi.Name}, {manifest.Tag}).");
 
+                // Eş önbelleği (bkz. PeerCache, PeerDownload): yeni güncelleme önbellekteki başka paketi siler; paket yalnızca
+                // emir "peer_cache": true taşıyorsa tutulup sunulur (yoksa önbellek boşaltılır, port açılmaz). Emirdeki eşler
+                // yalnızca yetenek açıkken ve karantina / sınav modu yokken denenir.
+                bool keepForPeers = PeerCache.Requested(command);
+                await PeerCache.OnUpdateStartingAsync(msi.Sha256, keepForPeers);
+                List<PeerDownload.Peer> peers = AgentCapabilities.PeerCacheEnabled && !PeerCache.IsIsolated()
+                    ? PeerDownload.Parse(command, msi.Sha256)
+                    : new List<PeerDownload.Peer>();
+
                 Directory.CreateDirectory(UpdatesDir);
                 foreach (string old in Directory.GetFiles(UpdatesDir)) TryDelete(old);
                 packagePath = Path.Combine(UpdatesDir, msi.Name);
                 string url = $"{serverUrl.TrimEnd('/')}/updates/{Uri.EscapeDataString(msi.Name)}";
-                if (!await DownloadVerifiedAsync(http, url, packagePath, msi, update)) return;
+                if (!await DownloadVerifiedAsync(http, url, packagePath, msi, update, peers)) return;
+                // Doğrulanmış paketin kopyası, sunucu istediyse eşler için saklanır (paket updater için yerinde kalır)
+                if (keepForPeers) await PeerCache.StoreAsync(packagePath, msi.Sha256, msi.Size);
 
                 launched = LaunchOverride != null
                     ? LaunchOverride(packagePath, msi.Sha256, manifest.Version)
@@ -405,14 +418,47 @@ namespace POpsAgent
         // update.lock'taki hedef sürüm (yoksa null)
         private static string LockedVersion() => ReadJson<UpdateRun>(LockPath)?.ToVersion;
 
+        // "downloaded" aşamasının detail'i: paketin kaynağı (docs/agent.md#peer-cache-contract: "peer <hw_id>", "server";
+        // ajanın kendi önbelleğindeki aynı paket "cache")
+        public const string SourceServer = "server";
+        public const string SourceCache = "cache";
+        public const string SourcePeerPrefix = "peer ";
+
+        // Kaynak sırası: aynı paket yerel önbellekte (önceki bir çalışmada doğrulanmış), emirdeki eşler, sunucu (BITS, sonra
+        // HttpClient). Her kaynak imzalı manifest'teki boyut ve SHA-256'yla denetlenir.
         internal static async Task<bool> DownloadVerifiedAsync(HttpClient http, string url, string path, ReleaseVerifier.Artifact expected,
-            UpdateCommand update = null)
+            UpdateCommand update = null, IReadOnlyList<PeerDownload.Peer> peers = null)
         {
             void Reject(string reason)
             {
                 if (update != null) update.Reject(reason);
                 else AgentUpdate.Reject(reason);
             }
+
+            string local = path + ".peer";
+            TryDelete(local);
+            string source = null;
+            if (await PeerCache.TryCopyToAsync(expected.Sha256, local))
+            {
+                if (Matches(local, expected)) source = SourceCache;
+                else POpsHelpers.Log("UPDATE", "Önbellekteki paket imzalı manifest'le uyuşmadı; indiriliyor.", true);
+            }
+            if (source == null && AgentCapabilities.PeerCacheEnabled)
+            {
+                TryDelete(local);
+                PeerDownload.Peer peer = await PeerDownload.DownloadAsync(peers, expected, local);
+                if (peer != null) source = SourcePeerPrefix + peer.HwId;
+            }
+            if (source != null)
+            {
+                File.Move(local, path, true);
+                POpsHelpers.Log("UPDATE", $"Paket indirildi ({source}).");
+                if (update != null) await update.StageAsync("downloaded", source);
+                POpsHelpers.Log("UPDATE", "[GÜVENLİK] Paket boyutu ve SHA-256'sı imzalı manifest'le eşleşti.");
+                if (update != null) await update.StageAsync("verified");
+                return true;
+            }
+            TryDelete(local);
 
             POpsHelpers.Log("UPDATE", $"İndiriliyor: {url}");
 
@@ -462,7 +508,8 @@ namespace POpsAgent
             // İki yol için aynı: imzalı manifest'teki boyut ve SHA-256 tutmazsa dosya silinir, emir reddedilir
             async Task<bool> AcceptAsync(string downloaded, long total, byte[] actual)
             {
-                if (update != null) await update.StageAsync("downloaded");
+                POpsHelpers.Log("UPDATE", $"Paket indirildi ({SourceServer}).");
+                if (update != null) await update.StageAsync("downloaded", SourceServer);
                 if (total != expected.Size || !CryptographicOperations.FixedTimeEquals(actual, Convert.FromHexString(expected.Sha256)))
                 {
                     TryDelete(downloaded);
@@ -480,6 +527,12 @@ namespace POpsAgent
         {
             using FileStream stream = File.OpenRead(path);
             return (stream.Length, SHA256.HashData(stream));
+        }
+
+        private static bool Matches(string path, ReleaseVerifier.Artifact expected)
+        {
+            (long size, byte[] digest) = HashFile(path);
+            return size == expected.Size && CryptographicOperations.FixedTimeEquals(digest, Convert.FromHexString(expected.Sha256));
         }
 
         private static bool LaunchUpdater(string msiPath, string sha256, string toVersion, UpdateCommand update)

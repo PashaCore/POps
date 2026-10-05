@@ -250,7 +250,7 @@ namespace POps.Tests.Agent
         public void Capabilities_HaveTheServerKeys()
         {
             AgentCapabilities.Load();
-            Assert.Equal(new[] { "type", "terminal_enabled", "vision_enabled", "server_ca", "files_enabled", "exam_enabled", "power_enabled", "message_enabled" },
+            Assert.Equal(new[] { "type", "terminal_enabled", "vision_enabled", "server_ca", "files_enabled", "exam_enabled", "power_enabled", "message_enabled", "peer_cache_enabled" },
                 AgentCapabilities.StatusMessage().Keys);
             Assert.Equal(true, AgentCapabilities.StatusMessage()[AgentCapabilities.Files]);
         }

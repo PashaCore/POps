@@ -1,7 +1,7 @@
 # Package downloads: resume and a lab-local peer cache
 
-Status: step 1 done (agent 0.1.23, BITS); step 2 server side built (after 0.1.22-alpha), agent side not built yet.
-The agent's part is specified in [`../agent.md`, "Peer cache contract"](../agent.md#peer-cache-contract).
+Status: step 1 done (agent 0.1.23, BITS); step 2 built: server side after 0.1.22-alpha, Windows agent side
+after 0.1.22-alpha. The agent's part is specified in [`../agent.md`, "Peer cache contract"](../agent.md#peer-cache-contract).
 
 ## Problem
 
@@ -95,8 +95,10 @@ reduce the number of downloads.
 - **Rollout time:** Staged dispatch adds one download time per lab before the rest of the lab starts.
 
 ### Work
-- **Agent (to do):** the header, cache directory and cleanup, the peer server with its firewall rule, `peers`
-  handling in `DownloadVerifiedAsync`, and tests with a fake peer. Contract: [`../agent.md`](../agent.md#peer-cache-contract).
+- **Agent (done):** the feature announcement, cache directory and cleanup, the peer server with its firewall rule,
+  `peers` handling in `DownloadVerifiedAsync`, and tests with a fake peer (`PeerCache`, `PeerCacheServer`,
+  `PeerDownload`, `PeerCacheTests`). Contract: [`../agent.md`](../agent.md#peer-cache-contract); where the agent
+  differs from points 2 and 3 (one package, `TcpListener` instead of HttpListener) is in its point 6.
 - **Server (done):** `Backend/pops/peer_cache.py` (staged dispatch per lab, seed choice and fallback), `peers` in
   `update_agent` from `POST /api/system/deploy-update`, peer state in `update-progress`, the setting
   (`POST /api/system/update-peer-cache`), the protocol schema and example, the panel's per-lab line ("tohum:

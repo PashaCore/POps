@@ -57,8 +57,9 @@ ajanlar reddeder.
 5. Bir sonraki sürümde eski açık anahtarı ajandan ve sunucudan kaldırın.
 
 **Anahtar sızarsa:** secret'ı hemen silin (yeni sürüm çıkmasın) ve yeni anahtar üretin. Sızan anahtarla imzalanmış
-bir paket yine de yalnızca ajanın kendi sunucusundan indirilir, yani saldırganın ayrıca sunucuyu da ele geçirmesi
-gerekir. Sahadaki ajanları yeni anahtara taşımanın iki yolu var: yukarıdaki iki anahtarlı sürümü (sızan anahtar
+bir manifest yine de yalnızca ajanın kendi sunucusunun emriyle gelir (paket o sunucudan ya da sunucunun bildirdiği
+laboratuvar eşlerinden iner ve manifest'teki SHA-256'yla denetlenir), yani saldırganın ayrıca sunucuyu da ele
+geçirmesi gerekir. Sahadaki ajanları yeni anahtara taşımanın iki yolu var: yukarıdaki iki anahtarlı sürümü (sızan anahtar
 iptal edilmeden önce son kez onunla imzalayarak) dağıtmak ya da yeni anahtarlı MSI'ı elle/GPO ile yeniden kurmak.
 Sunucunun kendini güncellemesi etiket imzasına bağlıysa (`/etc/pops/allowed_signers`, bkz.
 [`docs/self-update.md`](../docs/self-update.md)) etiket anahtarı bundan ayrıdır ve ayrıca değiştirilir.
