@@ -1,0 +1,36 @@
+#!/bin/sh
+set -e
+
+CONF=/etc/pops-agent/agent.conf
+
+case "$1" in
+    configure)
+        install -d -m 0700 -o root -g root /etc/pops-agent /var/lib/pops-agent /var/lib/pops-agent/packages
+        install -d -m 0750 -o root -g adm /var/log/pops-agent 2>/dev/null || install -d -m 0750 -o root -g root /var/log/pops-agent
+        if [ ! -e "$CONF" ]; then
+            umask 077
+            cat > "$CONF" <<'CONF_EOF'
+# POps ajanı ayarları (yalnızca root okuyabilir: 0600). Kolay yol:
+#   sudo pops-agent configure --server https://pops.okul.local --token <kayıt jetonu> [--ca /yol/server-ca.pem]
+# SERVER_URL: panelin adresi, https:// ile.
+# ENROLL_TOKEN: panelden alınan kayıt jetonu; cihaz anahtarı alınınca ajan bu satırı siler.
+# SERVER_CA_CERT: kurum sertifikası (özel CA) kullanılıyorsa PEM dosyasının yolu.
+SERVER_URL=
+ENROLL_TOKEN=
+CONF_EOF
+        fi
+        chown root:root "$CONF"
+        chmod 0600 "$CONF"
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+            systemctl enable pops-agent.service >/dev/null 2>&1 || true
+            if [ -n "$2" ]; then
+                systemctl restart pops-agent.service || true
+            else
+                systemctl start pops-agent.service || true
+            fi
+        fi
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,14 @@
+#!/usr/bin/python3 -I
+"""pops-agent başlatıcısı. Kaynak ağacında kendi klasöründeki pops_agent'ı, kurulu pakette /usr/lib/pops-agent'ı
+kullanır (build_deb.py paketteki kopyada yolu sabitler). -I: PYTHON* ortam değişkenleri ve kullanıcı site-packages'ı
+yok sayılır (servis root olarak çalışır)."""
+import os
+import sys
+
+sys.dont_write_bytecode = True
+LIB = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, LIB)
+
+from pops_agent.cli import main  # noqa: E402
+
+sys.exit(main())
