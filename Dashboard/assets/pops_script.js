@@ -16,7 +16,7 @@
 // Metinler her zaman textContent ile yazılır; sunucudan gelen değer HTML olarak yorumlanmaz.
 // =================================================================
 
-const API_HTTP = (typeof OMYO_API !== 'undefined') ? OMYO_API.HTTP_URL : '';
+const API_HTTP = (typeof POPS_API !== 'undefined') ? POPS_API.HTTP_URL : '';
 
 // Ortak durum: cihaz listesi (POps.watchDevices çağıran sayfalar ve POps.dev buradan okur)
 const state = {

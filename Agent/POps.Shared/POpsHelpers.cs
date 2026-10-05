@@ -7,7 +7,7 @@ using System.Text.Json;
 namespace POps.Shared
 {
     // Ajan bileşenlerinin ortak yardımcıları: sürüm, log, ayar okuma, cihaz kimliği.
-    // Eskiden her bileşende ayrı bir kopya (OmyoHelpers.cs) vardı ve kopyalar ayrışmıştı: örneğin ayarı önce
+    // Eskiden her bileşende ayrı bir kopya vardı ve kopyalar ayrışmıştı: örneğin ayarı önce
     // kurulum klasöründen okuyan düzeltme yalnızca ajandaydı; watchdog, updater ve vision yalnızca C:\POps'a
     // bakıyor, MSI kurulumunda (C:\Program Files\POps) sunucu adresini bulamayıp 127.0.0.1'e düşebiliyordu.
     [SupportedOSPlatform("windows")]

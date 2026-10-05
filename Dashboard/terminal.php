@@ -82,9 +82,9 @@ const processedResponses = new Set();
 const PC_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,14}$/;
 
 function initTerminalWebSocket() {
-    if (typeof OMYO_API === 'undefined') return;
+    if (typeof POPS_API === 'undefined') return;
     let ws;
-    try { ws = new WebSocket(OMYO_API.wsUrl('/ws/panel')); } catch (e) { return; }
+    try { ws = new WebSocket(POPS_API.wsUrl('/ws/panel')); } catch (e) { return; }
     ws.onmessage = (event) => {
         let payload;
         try { payload = JSON.parse(event.data); } catch (e) { return; }

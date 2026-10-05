@@ -192,7 +192,7 @@
         name: <?php echo json_encode((string) ($_SESSION['username'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>,
         role: <?php echo json_encode((string) $vsRole, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>
     };
-    const WS_URL = (typeof OMYO_API !== 'undefined') ? OMYO_API.wsUrl('/ws/panel') : '';
+    const WS_URL = (typeof POPS_API !== 'undefined') ? POPS_API.wsUrl('/ws/panel') : '';
     const UN = '__atanmamis';
     const IMG = 'data:image/jpeg;base64,';
     const B64 = /^[A-Za-z0-9+/=\s]+$/;
