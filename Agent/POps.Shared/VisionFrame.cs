@@ -158,14 +158,14 @@ namespace POps.Shared
             }
 
             public bool Equals(Rect other) => X == other.X && Y == other.Y && Width == other.Width && Height == other.Height;
-            public override bool Equals(object obj) => obj is Rect r && Equals(r);
+            public override bool Equals(object? obj) => obj is Rect r && Equals(r);
             public override int GetHashCode() => HashCode.Combine(X, Y, Width, Height);
             public static bool operator ==(Rect a, Rect b) => a.Equals(b);
             public static bool operator !=(Rect a, Rect b) => !a.Equals(b);
         }
 
         // Dönen null: tam kare gönderilmeli. Boş liste: değişiklik yok.
-        public static List<Rect> Merge(IEnumerable<Rect> dirty, int width, int height)
+        public static List<Rect>? Merge(IEnumerable<Rect> dirty, int width, int height)
         {
             var merged = new List<Rect>();
             foreach (Rect rect in dirty)

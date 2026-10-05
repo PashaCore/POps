@@ -24,6 +24,14 @@
     dışındaki her yeni uyarı derlemeyi ve CI'ı durdurur. AnalysisLevel sabittir (latest değil): bir SDK güncellemesi
     yeni kurallarla derlemeyi kendiliğinden bozmasın; yükseltmek ayrı bir iştir. NuGet güvenlik uyarıları (NU1901-NU1904)
     hata sayılmaz: yeni yayımlanan bir açık ilgisiz değişiklikleri durdurmasın (Dependabot ayrıca bildirir).
+
+    Nullable: her ürün projesinin csproj'unda <Nullable>enable</Nullable> var (Agent/ dışındaki MSI custom action
+    projesi Installer/agent/CustomActions dahil; orada nullable uyarıları ayrıca hata sayılır). Nullable uyarıları da bu
+    kapıya girer. Temiz olmayan eski dosyalarda "#nullable disable" satırı vardır (yeniler ilk satırda, eskiler
+    using'lerin altında); bu da .editorconfig gibi bir tabandır ve yalnızca küçülür: dosya temizlenince satırı silin,
+    yeni dosyaya bu satırı koymayın, yeni dosya nullable açısından temiz olmalı. Tabandaki dosyalar (2026-10-05):
+    POps.Agent 37, POps.Shared 9 (KioskPolicies.cs custom action'larda da derlenir), POpsUpdater 2, custom action'lar 1,
+    POpsTray 0, POpsWatchdog 0.
   -->
   <PropertyGroup Condition="'$(MSBuildProjectName)' != 'POps.Tests'">
     <AnalysisLevel>10.0-recommended</AnalysisLevel>
