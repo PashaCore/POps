@@ -1,0 +1,6 @@
+# CI'ın backend ve security işlerinde Backend/requirements.lock'un yanına kurulan araçlar (lint, kapsam, protokol
+# testi); canlı sunucunun venv'ine girmez. Sürümleri Dependabot günceller; özetli kilidi (backend-ci.lock)
+# tools/backend_lock.sh üretir, ortak paketler Backend kilidindeki sürümde kalır.
+flake8==7.4.1
+coverage==7.10.7
+jsonschema==4.26.0

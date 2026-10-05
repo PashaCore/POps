@@ -520,6 +520,7 @@ async def agent_session_with_secret():
     first = example(A2S, "heartbeat.first")
     rest = [m for f, m in cmd if f != "heartbeat.first.json"]
     other_thumb = dict(example(A2S, "thumbnail"), hw_id="HW-000000000000")
+    other_reject = dict(example(A2S, "vision_rejected"), hw_id="HW-000000000000")
     future_result = dict(example(A2S, "result.completed"), task_id=1099, future_field={"nested": [1, 2]})
     sent_key = {}
 
@@ -531,7 +532,7 @@ async def agent_session_with_secret():
             sent_key["secret"] = msg["secret"]
 
     unknown = _load(os.path.join(PROTO, "examples", "unknown", A2S + ".json"))
-    ws = FakeWS([first] + rest + [other_thumb, future_result, dynamic_ack, unknown],
+    ws = FakeWS([first] + rest + [other_thumb, other_reject, future_result, dynamic_ack, unknown],
                 headers={"X-Agent-Secret": SECRET, "X-Agent-Version": "0.1.21-alpha",
                          "X-Agent-Features": "winget, Bilinmeyen Ad"}, on_send=remember_key)
     try:
@@ -617,6 +618,10 @@ async def agent_session_with_secret():
     thumbs = [a[0][0] for a in admin_panels if a[0][0].get("type") == "thumbnail"]
     chk(len(thumbs) == 2 and all(t["hw_id"] == HW for t in thumbs),
         "thumbnail yalnızca admin panellerine, hw_id bağlantının cihazıyla değiştirilerek")
+    rejects = [a[0][0] for a in panels if a[0][0].get("type") == "vision_rejected"]
+    chk(len(rejects) == 2 and all(r == {"type": "vision_rejected", "session_id": "SES-5D2C9A1B7E30", "hw_id": HW}
+                                  for r in rejects),
+        "vision_rejected panellere bağlantının cihazıyla gider (gövdedeki hw_id yetki taşımaz)")
     kinds = [a[0][0].get("type") for a in panels]
     chk({"terminal_output", "update_result", "capabilities", "capability_denied", "vision_rejected"} <= set(kinds),
         "sonuç, güncelleme, yetenek, ret ve vision_rejected panellere iletildi")

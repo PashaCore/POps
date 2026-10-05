@@ -206,9 +206,10 @@ git pull
 docker compose up -d --build
 ```
 
-Migrations run automatically when the backend starts. Published images are rebuilt on fresh
-base images for every release; for source builds add `--pull`
-(`docker compose build --pull && docker compose up -d`) to pick up base image security updates.
+Migrations run automatically when the backend starts. Published images are rebuilt for every
+release. The Dockerfiles pin their base images (`python:3.12-slim`, `php:8.3-apache`) by digest,
+and Dependabot moves each digest to the newest build of the same tag every week, so base image
+security updates arrive with each release, and with `git pull` for source builds.
 
 Installs set up before the images were published built them locally (`pops-backend`,
 `pops-dashboard`). `docker compose up -d --build` keeps doing that; `docker compose pull`

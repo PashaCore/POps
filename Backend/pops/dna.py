@@ -28,6 +28,23 @@ def _same(a, b) -> bool:
     return _known(a) and _known(b) and a.strip().lower() == b.strip().lower()
 
 
+_HW_FIELDS = ("uuid", "bios_sn", "disk_sn", "mac", "ram_sn")
+
+
+def clean_payload(raw) -> dict:
+    """İlk mesajın dna_payload'ı: hardware ve capabilities nesne, donanım kimlikleri metin, ram_readable true/false
+    olmalı. Yanlış türdeki blok ya da alan yok sayılır (docs/protocol/README.md, "Rules for both sides"); eskiden el
+    sıkışmayı hatayla (1011) kapatıyordu. Öteki alanlar olduğu gibi kalır."""
+    raw = raw if isinstance(raw, dict) else {}
+    hw = raw.get("hardware") if isinstance(raw.get("hardware"), dict) else {}
+    caps = raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else {}
+    return dict(
+        raw,
+        hardware={k: v for k, v in hw.items() if k not in _HW_FIELDS or isinstance(v, str)},
+        capabilities={k: v for k, v in caps.items() if k != "ram_readable" or isinstance(v, bool)},
+    )
+
+
 def calculate_dna_score(incoming_hw, db_hw, incoming_caps, db_caps):
     """(puan, en yüksek puan). Yalnızca iki tarafta da bilinen değerler karşılaştırılır; hiçbir alan
     karşılaştırılamıyorsa (0, 0) döner: kanıt yok (benzerlik de farklılık da sayılmaz)."""

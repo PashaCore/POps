@@ -1,0 +1,3 @@
+# Sürüm imzalama aracı (tools/sign_release.py): ci.yml'nin signing işi ve release.yml'nin yayın işi. Özetli kilidi
+# (signing.lock) tools/backend_lock.sh üretir.
+cryptography==43.0.3

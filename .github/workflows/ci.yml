@@ -98,18 +98,20 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-          cache-dependency-path: Backend/requirements.lock
+          cache-dependency-path: |
+            Backend/requirements.lock
+            .github/requirements/backend-ci.lock
       - name: Install dependencies
         # Sunucu bağımlılıkları canlıdaki gibi kilitten, SHA-256 özetleri denetlenerek. flake8 ve jsonschema (protokol
-        # testi) yalnızca CI'da; canlı sunucunun venv'ine girmez.
+        # testi) yalnızca CI'da, onlar da özetli kilitten (.github/requirements); canlı sunucunun venv'ine girmez.
         run: |
           pip install --require-hashes -r Backend/requirements.lock
           pip install --require-hashes -r .github/requirements/pytest.lock
-          pip install flake8 jsonschema==4.26.0
+          pip install --require-hashes -r .github/requirements/backend-ci.lock
       - name: Lint with flake8
         # Tam kapı: repo kökündeki .flake8 (max-line-length 120). Backend, Linux ajanı ve araçlar (tools/, README çizimleri) temiz tutulur; yeni uyarı CI'ı kırar.
         if: matrix.python == '3.12'
-        run: flake8 Backend/ Agent-Linux/ tools/ assets/readme/ --count --show-source --statistics
+        run: flake8 Backend/ Agent-Linux/ tools/ assets/readme/ fuzz/ --count --show-source --statistics
       - name: Import smoke test
         # Modül yüklenirken zorunlu ortam değişkenleri okunur; veritabanına bağlanılmaz. (FastAPI dahil edilen
         # router'ları artık iç içe tutar; app.routes uç sayısını vermez.)
@@ -138,9 +140,9 @@ jobs:
 
   backend-lock:
     name: Backend lock file
-    # Backend/requirements.lock, requirements.txt'ten yeniden üretilince aynı çıkmalı (kilitteki öteki sürümler
-    # korunur; yalnızca requirements.txt'in gerektirdiği değişir). Dependabot PR'larında lock-refresh.yml kilidi
-    # yeniler.
+    # Backend/requirements.lock ve CI araçlarının kilitleri (.github/requirements/*.lock) girdilerinden yeniden
+    # üretilince aynı çıkmalı (kilitteki öteki sürümler korunur; yalnızca girdinin gerektirdiği değişir). Dependabot
+    # PR'larında lock-refresh.yml kilitleri yeniler.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -149,11 +151,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install uv
-        run: pip install uv==0.12.23
-      - name: requirements.lock is in sync with requirements.txt
+        run: pip install --require-hashes -r .github/requirements/lock-tools.lock
+      - name: Lock files are in sync with their inputs
         run: |
           tools/backend_lock.sh --check || {
-            echo "::error file=Backend/requirements.lock::Backend/requirements.lock, requirements.txt ile uyumlu değil. Yeniden üretip commit'leyin: pip install uv==0.12.23 && tools/backend_lock.sh"
+            echo "::error::Kilit dosyaları (Backend/requirements.lock, .github/requirements/*.lock) girdileriyle uyumlu değil. Yeniden üretip commit'leyin: pip install --require-hashes -r .github/requirements/lock-tools.lock && tools/backend_lock.sh"
             exit 1
           }
 
@@ -317,9 +319,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: Backend/requirements.txt
+          cache-dependency-path: Backend/requirements.lock
       - name: Install backend deps
-        run: pip install -r ../../Backend/requirements.txt
+        run: pip install --require-hashes -r ../../Backend/requirements.lock
       - name: Set up PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240  # 2.37.2
         with:
@@ -607,11 +609,47 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install cryptography
-        run: pip install 'cryptography==43.0.3'
+        run: pip install --require-hashes -r .github/requirements/signing.lock
       - name: sign_release selftest
         # Geçici anahtarla imzala/doğrula, kurcalanmış manifest ve bozuk artefakt reddedilmeli.
         # Gerçek imza anahtarı (secret) gerekmez.
         run: python tools/sign_release.py selftest
+
+  fuzz:
+    name: Fuzzing (Atheris)
+    # fuzz/ hedefleri (docs/fuzzing.md): ajanın /ws/agent mesajları, HTTP istek modelleri, imzalı sürüm manifest'i,
+    # bildirim ayarları. Her hedef 60 sn, depodaki tohumlardan başlar; hata bulan girdi artifact olarak yüklenir.
+    # Sürüm etiketinde çalışmaz (yayın, main'de zaten bulanık test edilmiş commit'i rastgeleliğe bağlamasın).
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          # atheris'in tekerlekleri CPython 3.12+ içindir
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            Backend/requirements.lock
+            .github/requirements/fuzz.lock
+      - name: Install dependencies
+        run: |
+          pip install --require-hashes -r Backend/requirements.lock
+          pip install --require-hashes -r .github/requirements/fuzz.lock
+      - name: Fuzz each target for 60 seconds
+        env:
+          FUZZ_ARTIFACTS: ${{ runner.temp }}/fuzz-artifacts
+        run: fuzz/run.sh 60
+      - name: Upload failing inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: fuzz-failures
+          path: ${{ runner.temp }}/fuzz-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
 
   security:
     name: Security invariants (integration)
@@ -655,11 +693,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install backend deps
-        # coverage ve jsonschema yalnızca CI'da (canlı sunucunun venv'ine girmez)
+        # coverage ve jsonschema yalnızca CI'da, özetli kilitten (canlı sunucunun venv'ine girmez)
         run: |
           pip install --require-hashes -r Backend/requirements.lock
           pip install --require-hashes -r .github/requirements/pytest.lock
-          pip install coverage==7.10.7 jsonschema==4.26.0
+          pip install --require-hashes -r .github/requirements/backend-ci.lock
       - name: Migrate + start server + run security invariants
         # Enroll->secret, enforce->4401, valid secret ok, unauth HTTP 401, wrong-signature
         # upload rejected — hepsi çalışan sunucuya karşı doğrulanır. Sunucu coverage altında çalışır.
