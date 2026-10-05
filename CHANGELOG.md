@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The backend needs Python 3.10 or newer (3.12 recommended). The fixes for 17 known vulnerabilities in its dependencies, among them a multipart denial of service that `/api/upload` exposed without a token, are released only for newer Python versions.
+
+**Upgrading** a native server on AlmaLinux/RHEL 9, whose backend venv uses the system Python 3.9: **first** install Python 3.12 and the new deploy scripts as root, **then** update the server (**Sistem → Sunucuyu güncelle**). The deploy then builds a new venv with `python3.12`, swaps it in and rolls back to the old one if the health check fails:
+
+```bash
+dnf install -y python3.12
+REPO=$(. /etc/pops/deploy.conf; echo "$REPO")
+git -C "$REPO" fetch --tags origin
+TAG=v0.1.22-alpha
+for s in pops-deploy-backend pops-selfupdate; do
+    git -C "$REPO" show "$TAG:Installer/server/$s" > "/tmp/$s" && install -m 755 "/tmp/$s" "/usr/local/sbin/$s"
+done
+```
+
+If you update without these steps, nothing breaks but the server stays on the previous release: the old deploy script runs `pip` in the 3.9 venv, finds no matching versions and rolls back ("deploy basarisiz"). With the new scripts but without `python3.12`, the deploy stops before changing anything and **Sistem** says to install it. Ubuntu 22.04, Debian 12 and Ubuntu 24.04 already have a new enough `python3` and only need the new scripts. Docker: rebuild the backend image. Details: [docs/deployment.md](docs/deployment.md#moving-an-existing-server-to-python-312). The agent code is unchanged.
+
+### Security
+
+- **Backend dependencies updated to releases that fix known vulnerabilities.** python-multipart 0.0.20 → 0.0.32 (multipart denial of service CVE-2026-40347 and CVE-2026-42561, unchecked `Content-Length` CVE-2026-53540, urlencoded field splitting CVE-2026-53538 and CVE-2026-53539, path traversal with non-default options CVE-2026-24486; FastAPI parses a form body before the auth dependencies run, so the denial of service on `/api/upload` needed no token); Starlette 0.49.3 → 1.7.0, now pinned (Host-header URL injection CVE-2026-48710 and CVE-2026-54282, form limits not applied to urlencoded bodies CVE-2026-54283, `HTTPEndpoint` method lookup CVE-2026-48817, StaticFiles UNC paths on Windows CVE-2026-48818); anyio 4.12.1 → 4.15.1 (CVE-2026-63374, CVE-2026-64847), click 8.1.8 → 8.5.0 (CVE-2026-7246), idna 3.13 → 3.20 (CVE-2026-45409) and python-dotenv 1.2.1 → 1.2.4 (CVE-2026-28684). FastAPI 0.128.8 → 0.142.2, uvicorn 0.39.0 → 0.54.0 and cryptography 50.0.1 → 50.0.2 come along. `pip-audit` reports no known vulnerability for the new requirements on Python 3.10 and 3.12, including the venv's own `pip`.
+- **`ecdsa` (CVE-2024-23342, no fix) is not a backend dependency.** It and `python-jose` were left in old venvs when 0.1.2-alpha replaced `python-jose` with PyJWT; nothing imports them. The venv rebuilt for Python 3.12 is a fresh install without them.
+
 ### Fixed
 
 - **API: `target_mode` and unknown fields are checked.** `POST /api/deploy_orchestration` took `"lab"` (lower case) as a PC name and opened a task for a PC that does not exist, which then waited for ever. The target mode is now case-insensitive and must be `ALL`, `LAB` or `PC`; a PC ID that is not registered is refused with `422` and nothing is created. `/api/deploy_orchestration`, `/api/system/enroll-token` and `/api/system/deploy-update` refuse fields they do not know (`422`) instead of ignoring them: `{"lab": …, "expires_hours": …}` used to create a 72-hour token for no lab.
@@ -14,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Backend: Python 3.10 or newer; 3.12 is the target** (decision D-20). `Backend/requirements.txt` states the minimum in a `# requires-python: >=3.10` line and pins Starlette and the indirect dependencies above, because `pip install -r` does not upgrade an indirect dependency that still satisfies its lower bound. Startup and shutdown run in a lifespan handler: Starlette 1.0 removed `on_event`.
+- **Server: `pops-deploy-backend` rebuilds the venv when its Python is too old.** It builds a new venv next to the old one with the first of `python3.12`, `python3.11`, `python3.10` and `python3` that is new enough (`<app>/venv-py<version>-<id>`, with current `pip`), installs the requirements there while the service keeps running, and makes `<app>/venv` a symbolic link to it. On any later failure the rollback puts the old venv back; after a successful health check the old venv is deleted and its snapshot stays with the code backup. Without a suitable interpreter it stops with exit code 3 before changing anything, and `pops-selfupdate` writes "python3.12 kurun" to the status shown in **Sistem**.
+- **Server: `install.sh` picks Python 3.10 or newer** (the newest of `python3.12`, `python3.11`, `python3.10`, then `python3`), installs `python3.12` with dnf when none is present (AlmaLinux/RHEL 9), and refuses older versions with instructions.
+- **CI:** the backend, migration, backup, integration and signing jobs run on Python 3.12; the backend job also runs the import check and unit tests on 3.10, the minimum. The release workflow signs on 3.12. Dependabot no longer holds back releases that need Python 3.10.
 - **Panel: no third-party assets; works without internet.** The fonts (Inter, JetBrains Mono) are bundled with the panel (`Dashboard/assets/vendor/fonts`, SIL OFL, how they were built is in the README there) and every icon comes from the panel's own icon set; Google Fonts and Font Awesome from cdnjs are no longer loaded. On a school network that blocks CDNs, or with no internet at all, the panel looks the same: icons such as the magnifier in search fields, the close buttons of windows and the empty-list icons no longer disappear. The administrator's browser no longer contacts Google or Cloudflare while using the panel, so the admin's IP address is not sent to them. The "Yetkisiz Erişim" page now shows its lock icon.
 - **Compressed JSON.** The nginx and Apache templates and the Docker panel image compress JSON, CSS, JavaScript and SVG. The device list of 2,000 PCs drops from about 1.4 MB to about 50 KB per refresh. **Upgrading:** on an existing server add the `gzip` lines from `Installer/server/nginx.pops.conf.in` to your site, or the `mod_deflate` block from `Installer/server/apache-htaccess.example` to `Dashboard/.htaccess`.
 - CI lints `tools/` and the README figure script with flake8 as well; both are clean.

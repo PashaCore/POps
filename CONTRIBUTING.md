@@ -43,13 +43,14 @@ The panel's text is Turkish. `CHANGELOG.md` and most of `docs/` are in English; 
 
 ## Local setup
 
-### Backend (Python 3.9+, PostgreSQL)
+### Backend (Python 3.10+, PostgreSQL)
 
-CI and the reference server (AlmaLinux/RHEL 9) use **Python 3.9**, so do not use syntax or libraries that need a
-newer version. CI tests migrations on PostgreSQL 13.
+CI and the reference server use **Python 3.12**; CI also runs the unit tests on **3.10**, the minimum (Ubuntu
+22.04), so do not use syntax or libraries that need 3.11 or newer (`tomllib`, `except*`, `typing.Self`, ...).
+CI tests migrations on PostgreSQL 13.
 
 ```bash
-python3 -m venv venv                        # venv/ is git-ignored
+python3.12 -m venv venv                     # any 3.10+; venv/ is git-ignored
 . venv/bin/activate
 pip install -r Backend/requirements.txt flake8
 
@@ -141,7 +142,7 @@ JavaScript and C#.
 | --- | --- | --- |
 | Build (5 agent projects) | `dotnet build -c Release` of the agent, tray, watchdog, updater and legacy Vision | see [Agent](#agent-windows-net-8-sdk) |
 | Agent unit tests | `dotnet test Agent/POps.Tests/POps.Tests.csproj` | same |
-| Backend (Python 3.9) | `flake8 Backend/`; importing `server` and `setup_env` | `flake8 Backend/` |
+| Backend (Python 3.12, 3.10) | `flake8 Backend/ tools/ assets/readme/` (3.12); importing `server` and `setup_env`; `test_units.py` | `flake8 Backend/ tools/ assets/readme/` |
 | Dashboard checks | `php -l` on every PHP file; dark mode stays removed | `find Dashboard -name '*.php' -print0 \| xargs -0 -n1 php -l` |
 | Version consistency | `VERSION` == top CHANGELOG release heading == built `<Version>` | compare by hand |
 | Migrations (PostgreSQL 13) | fresh `migrate.py`, `ci_schema_check.py`, second run applies nothing | see below |
@@ -150,7 +151,7 @@ JavaScript and C#.
 
 ### Lint and formatting
 
-- `flake8 Backend/` must report nothing. The configuration is the repository-root `.flake8`: line length 120,
+- `flake8 Backend/ tools/ assets/readme/` must report nothing. The configuration is the repository-root `.flake8`: line length 120,
   E203 ignored.
 - Formatting follows black with `-l 120 -S` (line length 120, quotes left as written). CI runs flake8 only, not
   black.
@@ -203,7 +204,7 @@ python Backend/migrate.py                    # must apply nothing
 
 ### Enforced by CI
 
-- **flake8 clean** and importable on Python 3.9.
+- **flake8 clean** and importable on Python 3.10 and 3.12.
 - **PHP syntax:** every file under `Dashboard/` passes `php -l`.
 - **Dark mode must not come back.** The panel has one light theme since 0.1.2-alpha. Any `data-theme` or
   `toggleTheme` under `Dashboard/` fails the build.

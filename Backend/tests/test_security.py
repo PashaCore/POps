@@ -12,7 +12,7 @@ http://127.0.0.1:8099) ve onun DB'sine karşı şunları doğrular:
 
 Ortam: DB_HOST/PORT/USER/PASS/NAME (test DB), JWT_SECRET (sunucuyla aynı),
 POPS_TEST_HTTP (varsayılan http://127.0.0.1:8099). Sunucu ayrıca çalışıyor olmalı.
-Python 3.9 uyumlu. Bkz. tests/run_local.sh (yerel) ve .github/workflows/ci.yml (CI).
+Bkz. tests/run_local.sh (yerel) ve .github/workflows/ci.yml (CI).
 """
 import asyncio
 import json

@@ -2,12 +2,13 @@
 
 Uç noktalar pops/routers/ altında gruplanmıştır (auth, control, agents, devices, tasks, updates);
 çekirdek yardımcılar pops/ altındadır. Bu dosya yalnızca FastAPI uygulamasını kurar: rate limiter,
-CORS, statik dosya bağlamaları, açılış/kapanış (DB havuzu + migration'lar) ve router'ların bağlanması.
+CORS, statik dosya bağlamaları, açılış/kapanış (lifespan: DB havuzu + migration'lar) ve router'ların bağlanması.
 """
 
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 
 import asyncpg
 import bcrypt
@@ -65,8 +66,18 @@ __all__ = ["app", "create_jwt", "_totp_code", "JWT_SECRET", "JWT_ALGO", "JWT_COO
 setup_logging()
 log = logging.getLogger("pops.server")
 
+
+@asynccontextmanager
+async def lifespan(_app):
+    """Açılış ve kapanış (aşağıdaki startup_event / shutdown_event). Starlette 1.0 on_event'i kaldırdı, FastAPI'de
+    de kullanımdan kalktı. Açılış başarısız olursa uvicorn başlamaz; kapanış yalnızca açılış tamamlandıysa çalışır."""
+    await startup_event()
+    yield
+    await shutdown_event()
+
+
 # API şeması ve etkileşimli dokümantasyon (/docs, /redoc, /openapi.json) dışarıya sunulmaz
-app = FastAPI(title="POps Merkez API", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="POps Merkez API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 # Rate limiter hata yöneticisi
@@ -111,7 +122,6 @@ app.mount("/updates", StaticFiles(directory=UPDATES_DIR), name="updates")
 # kurulur. Yeni tablo/kolon eklerken buraya degil, yeni bir numarali .sql dosyasina yazin.
 
 
-@app.on_event("startup")
 async def startup_event():
     log.info("veritabanına bağlanılıyor")
     for i in range(5):
@@ -179,7 +189,6 @@ async def startup_event():
 SHUTDOWN_DRAIN_SECONDS = 10
 
 
-@app.on_event("shutdown")
 async def shutdown_event():
     """Düzgün kapanış. uvicorn bu noktada yeni bağlantı almayı bırakmış, açık WebSocket'leri kapatmış (ajanlar
     "Offline" yazıldı) ve süren HTTP isteklerini beklemiştir. Kalanlar: zamanlayıcı (turu yarıda kalırsa işlemi

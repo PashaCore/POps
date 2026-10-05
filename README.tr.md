@@ -286,7 +286,7 @@ Adım adım (İngilizce): [`docs/quick-start.md`](docs/quick-start.md). Docker C
 
 | Bölüm | Gereksinim |
 | :--- | :--- |
-| **Sunucu** | systemd'li Linux, PostgreSQL 13+, Python 3.9+, `curl` eklentili PHP 8, nginx ya da Apache, TLS sertifikalı bir alan adı. Bir okul için küçük bir sanal makine yeter ([boyutlandırma](docs/kapasite/README.md)). |
+| **Sunucu** | systemd'li Linux, PostgreSQL 13+, Python 3.10+ (önerilen 3.12), `curl` eklentili PHP 8, nginx ya da Apache, TLS sertifikalı bir alan adı. Bir okul için küçük bir sanal makine yeter ([boyutlandırma](docs/kapasite/README.md)). |
 | **Yönetilen bilgisayarlar** | Windows 10 ya da 11, 64 bit. Başka bir şey gerekmez: ajan kendi .NET 10 çalışma zamanını getirir. |
 | **Ağ** | Bilgisayarlardan sunucuya dışa doğru HTTPS (443); vekil sunucular ve güvenlik duvarları WebSocket yükseltmesine izin vermeli. Wake-on-LAN için sunucudan lab ağına UDP yayını gerekir. |
 | **Tarayıcı** | Güncel herhangi bir tarayıcı. Panel grafik, simge ve yazı tiplerini herkese açık CDN'lerden yükler. |

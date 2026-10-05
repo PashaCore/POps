@@ -5,6 +5,9 @@
 #
 # Yaptıkları: PostgreSQL + Python kur (yoksa) -> servis kullanıcısı -> DB + rol (parola üret)
 # -> venv + pip install -> .env (secret'lar üretilir) -> migrate -> systemd birimi -> sağlık kontrolü.
+# Backend Python 3.10+ ister (Backend/requirements.txt, "requires-python"): venv için python3.12, python3.11,
+# python3.10, python3 sırasıyla ilk uyan kullanılır; dnf'li sistemde (AlmaLinux/RHEL 9'un python3'ü 3.9) uyan yoksa
+# python3.12 paketi kurulur. Daha eski bir Python'la kurulum yapılmaz.
 # -> nginx + php-fpm + TLS: varsayılan olarak KURUM İÇİ sertifika (pops-tls; internetsiz de çalışır), istenirse
 #    Let's Encrypt (TLS_MODE=letsencrypt LE_EMAIL=...) ya da elde var olan sertifika (TLS_MODE=existing TLS_CERT= TLS_KEY=).
 #    Panel ve ajanlar yalnızca https://POPS_DOMAIN üzerinden konuşur; ajan http'yi zaten reddeder.
@@ -54,6 +57,35 @@ else
     echo "Desteklenmeyen dağıtım (dnf/apt yok). PostgreSQL + python3-venv'i elle kurup tekrar deneyin."; exit 1
 fi
 
+# Backend'in Python'u: requirements.txt'teki en düşük sürümü karşılayan ilk yorumlayıcı (pops-deploy-backend de
+# aynı satırı okur ve venv eskiyse yenisini kurar)
+MIN_PY=$(sed -n 's/^#[[:space:]]*requires-python:[[:space:]]*>=[[:space:]]*\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' \
+    "$SRC/Backend/requirements.txt" | head -1)
+MIN_PY=${MIN_PY:-3.10}
+ver_num() { echo $(( 10#${1%%.*} * 1000 + 10#${1#*.} )); }   # "3.10" -> 3010
+pick_python() {   # PY ve PY_VER'i doldurur; uyan yoksa 1
+    local c v
+    for c in python3.12 python3.11 python3.10 python3; do
+        command -v "$c" >/dev/null 2>&1 || continue
+        v=$("$c" -I -S -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null) || continue
+        if [[ "$v" =~ ^[0-9]+\.[0-9]+$ ]] && [ "$(ver_num "$v")" -ge "$(ver_num "$MIN_PY")" ]; then
+            PY=$(command -v "$c"); PY_VER=$v; return 0
+        fi
+    done
+    return 1
+}
+if ! pick_python && command -v dnf >/dev/null 2>&1; then
+    echo "==> python3.12 kuruluyor (sistemin python3'ü $MIN_PY'den eski)"
+    dnf install -y python3.12 >/dev/null || true
+fi
+pick_python || {
+    echo "Python $MIN_PY ya da daha yenisi bulunamadı (python3: $(python3 --version 2>&1))."
+    echo "Kurun ve tekrar deneyin: AlmaLinux/RHEL/Rocky 9: dnf install python3.12; Ubuntu 20.04/22.04: deadsnakes PPA'dan"
+    echo "apt install python3.12 python3.12-venv; Debian 12 ve Ubuntu 24.04'ün python3'ü yeterlidir (python3-venv)."
+    exit 1
+}
+echo "==> Backend Python'u: $PY ($PY_VER)"
+
 echo "==> Servis kullanıcısı: $SVC_USER"
 id "$SVC_USER" >/dev/null 2>&1 || useradd -r -s /usr/sbin/nologin "$SVC_USER" 2>/dev/null || useradd -r -s /sbin/nologin "$SVC_USER"
 
@@ -84,7 +116,8 @@ cp -a "$SRC/Backend/." "$APP_DIR/"
 [ -d "$SRC/keys" ] && cp -a "$SRC/keys" "$APP_DIR/keys"
 [ -f "$SRC/VERSION" ] && cp -a "$SRC/VERSION" "$APP_DIR/VERSION"
 rm -rf "$APP_DIR/__pycache__" "$APP_DIR/tests/__pycache__" 2>/dev/null || true
-python3 -m venv "$APP_DIR/venv"
+"$PY" -m venv --upgrade-deps "$APP_DIR/venv" \
+    || { echo "!!! $PY ile venv kurulamadı (Debian/Ubuntu: apt install python$PY_VER-venv)"; exit 1; }
 "$APP_DIR/venv/bin/pip" install -q --disable-pip-version-check -r "$APP_DIR/requirements.txt"
 
 echo "==> Yapılandırma (.env)"

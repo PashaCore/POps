@@ -4,18 +4,8 @@ updates:
     directory: /Backend
     schedule:
       interval: weekly
+    # Backend Python 3.10+ ister (D-20); 3.10'u bırakan bir sürüm gelirse CI'ın 3.10 işi kırılır, önce o karar verilir.
     open-pull-requests-limit: 5
-    ignore:
-      # Backend Python 3.9'u (AlmaLinux/RHEL 9'un sistem Python'u; canlı sunucu ve install.sh) destekler. Bu sürümler
-      # Python 3.10 ister; backend daha yeni bir Python'a geçince (ROADMAP) kaldırılır.
-      - dependency-name: "fastapi"
-        versions: [">=0.129"]
-      - dependency-name: "uvicorn"
-        versions: [">=0.40"]
-      - dependency-name: "python-dotenv"
-        versions: [">=1.2.2"]
-      - dependency-name: "python-multipart"
-        versions: [">=0.0.21"]
 
   - package-ecosystem: nuget
     directories:

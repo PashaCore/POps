@@ -7,12 +7,13 @@ A high test count says little on its own; the table below is the honest list.
 
 | Suite | What it is | Where it runs |
 |---|---|---|
-| `Backend/tests/test_units.py` | Pure unit tests, no database or server. | CI `backend` job |
+| `Backend/tests/test_units.py` | Pure unit tests, no database or server. | CI `backend` job (Python 3.12 and 3.10) |
 | `Backend/tests/test_*.py` (others) | Integration tests against a running backend and an empty PostgreSQL database. | CI `security` job, `Backend/tests/run_local.sh` |
 | `Agent/POps.Tests` | xUnit tests for the agent, updater logic, shared code and the MSI custom actions (pure logic and temp-folder file operations; no firewall, pipe or service). | CI `test-agent` job (Windows) |
 | Migrations | Fresh migrate, schema check, second run must apply nothing. | CI `migrations` job (PostgreSQL 13) |
 | Release signing | `tools/sign_release.py selftest`: sign/verify with a temporary key, tampered manifest and artefact rejected. | CI `signing` job |
 | Panel | `php -l` on every page only. | CI `dashboard` job |
+| Server scripts | `Installer/server/tests/test_deploy.sh`: `pops-deploy-backend` and `pops-selfupdate` in a temporary folder with fake `systemctl`, `curl`, `sudo`, `pip` and Python interpreters, without root. | CI `server-scripts` job |
 
 Run the backend suite locally (never against a production database):
 
@@ -79,6 +80,6 @@ machine and a regression would not be caught by CI.
 | Modules: organisation and lab settings, dependencies, `409` on every module, queue/scheduler/policy enforcement, install profiles | Tested | `test_modules.py`, `test_units.py` |
 | Request ID, `/metrics` access control, diagnostics, overview history | Tested | `test_ops.py`, `test_units.py` |
 | Migrations from empty and idempotency | Tested | `migrations` job |
-| Server self-update and deploy rollback | Manual | Field-verified (`deploy-status.json` `state=ok`); needs root and systemd |
+| Server self-update and deploy rollback | Tested (fakes) | `test_deploy.sh`: rollback of code and venv after a failed `pip`, copy or health check; venv rebuilt when its Python is too old (and put back on failure); early stop without a new enough Python; signed release tags. The real systemd path is field-verified (`deploy-status.json` `state=ok`). |
 | Panel pages (PHP) | Not tested | Syntax only; the headless-browser end-to-end setup exists locally but not in CI |
 | Vision screen tunnel | Partly | Frame scoping tested (`test_remote_authz.py`); the tunnel and tray capture are not |

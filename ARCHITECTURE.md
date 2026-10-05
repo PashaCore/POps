@@ -7,7 +7,7 @@ POps is designed as a highly scalable, real-time endpoint management platform.
 - **Role:** The control center. It communicates entirely via the REST API provided by the Central Server.
 
 ## 2. Central Server (Backend)
-- **Tech:** Python 3.9+, FastAPI, WebSockets, Uvicorn, PostgreSQL
+- **Tech:** Python 3.10+ (target 3.12), FastAPI, WebSockets, Uvicorn, PostgreSQL
 - **Role:** The brain. It keeps one persistent WebSocket connection per endpoint and exposes REST endpoints for the dashboard. A single worker process is required, because connections are tracked in memory (see BENCHMARKS.md for measured capacity).
 
 ## 3. Windows Endpoint (Agent)

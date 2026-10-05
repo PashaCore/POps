@@ -32,6 +32,10 @@ pops-selfupdate.service (systemd, ROOT, oneshot)
 - `pops-deploy-backend` sağlık kontrolü yapar; ilk değişiklikten sonraki her hatada (pip, dosya kopyalama, restart,
   sağlık kontrolü) önceki kod setine ve requirements değiştiyse pip öncesi venv'e (tarball yedekleri) birebir
   döner; self-update bunu değiştirmez.
+- Venv'in Python'u yeni sürümün istediğinden (`requirements.txt`, `# requires-python`) eskiyse deploy sunucudaki
+  `python3.12`/`python3.11`/`python3.10` ile yeni bir venv kurar ve yerine koyar; hata olursa eski venv geri gelir.
+  Uygun Python yoksa hiçbir şeye dokunmadan durur (çıkış 3) ve paneldeki durum "python3.12 kurun" der. Mevcut bir
+  AlmaLinux/RHEL 9 sunucusunu taşımak: [deployment.md](deployment.md#moving-an-existing-server-to-python-312).
 - Uç noktalar `require_superadmin` (tetikleme) / `require_admin` (durum) ile korunur.
 
 ## Kanal: sürüm (varsayılan) ya da main

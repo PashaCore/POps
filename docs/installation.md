@@ -1,6 +1,6 @@
 # Installing the POps Server
 
-Native install, **no Docker required** — the server uses your system's Python and
+Native install, **no Docker required** — the server uses your distribution's Python (3.10 or newer) and
 PostgreSQL. Tested on AlmaLinux/RHEL/Rocky (`dnf`) and Debian/Ubuntu (`apt`).
 Docker is optional: to run the server with Docker Compose instead, see [`docker.md`](docker.md).
 
@@ -14,7 +14,9 @@ sudo Installer/server/install.sh
 
 That script:
 
-1. installs PostgreSQL and Python if missing,
+1. installs PostgreSQL and Python if missing; the backend's venv uses the first of `python3.12`, `python3.11`,
+   `python3.10` and `python3` that is 3.10 or newer. On AlmaLinux/RHEL 9 (`python3` is 3.9) it installs the
+   `python3.12` package; on an apt system without one (Ubuntu 20.04) it stops and says what to install,
 2. creates a service user, a database and a role (with a generated password),
 3. creates a virtualenv and installs the backend dependencies,
 4. writes `/opt/pops/.env` with freshly generated `JWT_SECRET` / `BYPASS_SECRET` and a random panel-admin password,

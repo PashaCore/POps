@@ -10,7 +10,7 @@ GitHub kontrolü OFFLINE-GÜVENLİDİR: kısa zaman aşımlı, event loop'u blok
 Ek bağımlılık yoktur (internetsiz okullarda pip gerektirmez). Sonuç saatte bir cache'lenir.
 
 server.py bunu `build_router(require_admin, execute_query)` ile kurar; böylece bu modül
-server.py'yi import etmez (döngüsel import yok). Python 3.9 uyumlu.
+server.py'yi import etmez (döngüsel import yok).
 """
 import asyncio
 import base64

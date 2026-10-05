@@ -287,7 +287,7 @@ Step by step: [`docs/quick-start.md`](docs/quick-start.md). Docker Compose is av
 
 | Part | Requirement |
 | :--- | :--- |
-| **Server** | Linux with systemd, PostgreSQL 13+, Python 3.9+, PHP 8 with `curl`, nginx or Apache, a host name with a TLS certificate. A small VM is enough for a school ([sizing](docs/kapasite/README.md)). |
+| **Server** | Linux with systemd, PostgreSQL 13+, Python 3.10+ (3.12 recommended), PHP 8 with `curl`, nginx or Apache, a host name with a TLS certificate. A small VM is enough for a school ([sizing](docs/kapasite/README.md)). |
 | **Managed PCs** | Windows 10 or 11, 64-bit. Nothing else: the agent brings its own .NET 10 runtime. |
 | **Network** | Outbound HTTPS (443) from the PCs to the server, with the WebSocket upgrade allowed through proxies and firewalls. Wake-on-LAN needs UDP broadcasts to the lab subnet. |
 | **Browser** | Any current browser. The panel loads its charts, icons and fonts from public CDNs. |

@@ -28,8 +28,10 @@ Windows PCs (POpsAgent)              Browsers (admins)
 | Panel | the web server's PHP (PHP 8 with the `curl` extension) | Served straight from the checkout's `Dashboard/` folder. |
 | Web server | nginx or Apache | Terminates TLS and proxies four paths to the backend. |
 
-Requirements: Linux with systemd, PostgreSQL, Python 3.9 or newer, PHP 8, and a web server that can proxy
-WebSockets. `install.sh` is tested on AlmaLinux/RHEL/Rocky and Debian/Ubuntu.
+Requirements: Linux with systemd, PostgreSQL, Python 3.10 or newer (3.12 recommended), PHP 8, and a web server that
+can proxy WebSockets. `install.sh` is tested on AlmaLinux/RHEL/Rocky and Debian/Ubuntu. AlmaLinux/RHEL 9's own
+`python3` is 3.9; `install.sh` installs the `python3.12` package there. Ubuntu 22.04 (3.10), Debian 12 (3.11) and
+Ubuntu 24.04 (3.12) need nothing extra. Why 3.9 was dropped: [`decisions.md`](decisions.md) D-20.
 
 ### One worker
 
@@ -130,17 +132,28 @@ rollback:
    systemd unit does not exist, or if `Backend/` has uncommitted or untracked files (only committed code is
    deployed),
 2. exits if the live code already matches the checkout,
-3. backs up the complete live code set to `<app>/.deploy-backups/code-<timestamp>-<pid>.tgz`; when
-   `requirements.txt` changed, it also snapshots the whole venv to `venv-<timestamp>-<pid>.tgz` next to it before
-   `pip` touches it (about 25 MB for the default requirements). If the snapshot fails, for example on a full disk,
-   it stops without changing anything,
-4. copies the tracked `Backend/*.py` files (including the `pops/` package, excluding tests), `migrations/`,
-   `requirements.txt` (and runs `pip install` into the live venv if it changed), `VERSION` and the release public key,
-5. restarts the service and checks `/api/health` (200), `/api/agent_policies` (200) and `/api/devices` (401),
-6. on **any** failure after the first change (`pip`, copying a file, the restart or the health check) restores the
+3. compares the venv's Python with the minimum in the new `requirements.txt` (the `# requires-python: >=3.10`
+   line). When the venv is older, for example a server installed with Python 3.9, `pip` cannot install the new
+   requirements into it, so the script builds a **new venv** with the first of `python3.12`, `python3.11`,
+   `python3.10` and `python3` that is new enough, in `<app>/venv-py<version>-<timestamp>-<pid>`, and installs the
+   requirements there while the service keeps running. If no interpreter is new enough, or the new venv cannot be
+   built, it stops with nothing changed (exit code 3 for a missing interpreter, which the self-update status in
+   **Sistem** turns into "install python3.12"),
+4. backs up the complete live code set to `<app>/.deploy-backups/code-<timestamp>-<pid>.tgz`; when
+   `requirements.txt` changed or the venv is rebuilt, it also snapshots the whole venv to
+   `venv-<timestamp>-<pid>.tgz` next to it before `pip` touches it (about 25 MB for the default requirements). If
+   the snapshot fails, for example on a full disk, it stops without changing anything,
+5. copies the tracked `Backend/*.py` files (including the `pops/` package, excluding tests), `migrations/`,
+   `requirements.txt` (and runs `pip install` into the live venv if it changed), `VERSION` and the release public key;
+   after a rebuild it moves the old venv aside and makes `<app>/venv` a symbolic link to the new one, so the
+   unit's `<app>/venv/bin/uvicorn` stays the same,
+6. restarts the service and checks `/api/health` (200), `/api/agent_policies` (200) and `/api/devices` (401),
+7. on **any** failure after the first change (`pip`, copying a file, the restart or the health check) restores the
    previous code set exactly (also removing files the failed deploy added) and, if it was snapshotted, the venv at
-   the same absolute path, so the `#!` lines of its console scripts stay valid; then restarts the service. The
-   restore itself is never cut short by an error or a signal.
+   the same absolute path, so the `#!` lines of its console scripts stay valid; after a rebuild it puts the old
+   venv back in place and deletes the new one. Then it restarts the service. The restore itself is never cut short
+   by an error or a signal. After a successful rebuild the old venv is deleted; its snapshot stays with the code
+   backup.
 
 The last `KEEP_BACKUPS` (10) rollback points are kept; a venv snapshot is deleted together with its code backup.
 Database migrations are not rolled back (see [`decisions.md`](decisions.md)).
@@ -154,6 +167,30 @@ sudo install -m 755 Installer/server/pops-deploy-backend /usr/local/sbin/pops-de
 
 The script deploys the **backend** only. The panel is served directly from the checkout's `Dashboard/` folder, so
 updating the checkout (`git pull`) updates the panel.
+
+### Moving an existing server to Python 3.12
+
+Servers installed before 0.1.22 on AlmaLinux/RHEL 9 run the backend in a Python 3.9 venv, and the backend now needs
+3.10 or newer. Before the first update to 0.1.22 or later, as root:
+
+```bash
+dnf install -y python3.12
+REPO=$(. /etc/pops/deploy.conf; echo "$REPO")      # the checkout; /etc/pops/deploy.conf names it
+git -C "$REPO" fetch --tags origin
+TAG=v0.1.22-alpha                                  # the release you update to
+for s in pops-deploy-backend pops-selfupdate; do
+    git -C "$REPO" show "$TAG:Installer/server/$s" > "/tmp/$s" && install -m 755 "/tmp/$s" "/usr/local/sbin/$s"
+done
+```
+
+Then update from **Sistem → Sunucuyu güncelle** (or run `pops-deploy-backend` after checking out the tag). The deploy
+builds the new venv with `python3.12`, swaps it in and keeps the health check and rollback. If git refuses the
+checkout as "dubious ownership", add `-c safe.directory="$REPO"` after `git`.
+
+Without these steps nothing breaks, but the server stays on the old release: the old `pops-deploy-backend` runs
+`pip` in the 3.9 venv, `pip` finds no matching versions, and the deploy rolls back (status "deploy basarisiz"). The
+new scripts without `python3.12` stop before changing anything and the status says to install it. Ubuntu 22.04,
+Debian 12 and Ubuntu 24.04 servers already have a new enough `python3`; they only need the new scripts.
 
 ### `/etc/pops/deploy.conf`
 
