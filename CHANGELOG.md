@@ -185,6 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The peer cache is off by default, and a PC listens only when told.** `update_agent` carries `"peer_cache": true` only while the setting is on, and only to the PCs that take part in a staged rollout. Without it the agent keeps no package, starts no cache server and opens no port. The README's "no inbound ports on PCs" holds unless an admin turns the peer cache on.
 - **Directory and OIDC sign-in are verified end to end.**
   - Directory sign-in works only over LDAPS or StartTLS, with the certificate and host name verified.
   - OIDC uses the code flow with PKCE, state and nonce. The ID token's signature (asymmetric algorithms only), issuer, audience, expiry and nonce are checked.
