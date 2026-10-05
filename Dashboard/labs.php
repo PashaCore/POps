@@ -26,29 +26,29 @@
 
 <div class="page-header">
     <div>
-        <h1 id="labTitle">Sınıflar</h1>
+        <h1 id="labTitle"><?php _e('Sınıflar'); ?></h1>
         <div class="summary" id="labSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="editLayoutBtn" data-tip="Yerleşimi düzenle" aria-label="Yerleşimi düzenle" hidden><?php echo pops_icon('grid-edit'); ?></button>
-        <button type="button" class="ibtn boxed" id="labMenuBtn" data-tip="Sınıf işlemleri" data-tip-pos="left" aria-label="Sınıf işlemleri" aria-haspopup="menu"><?php echo pops_icon('more'); ?></button>
+        <button type="button" class="ibtn boxed" id="editLayoutBtn" data-tip="<?php _e('Yerleşimi düzenle'); ?>" aria-label="<?php _e('Yerleşimi düzenle'); ?>" hidden><?php echo pops_icon('grid-edit'); ?></button>
+        <button type="button" class="ibtn boxed" id="labMenuBtn" data-tip="<?php _e('Sınıf işlemleri'); ?>" data-tip-pos="left" aria-label="<?php _e('Sınıf işlemleri'); ?>" aria-haspopup="menu"><?php echo pops_icon('more'); ?></button>
     </div>
 </div>
 
 <div class="edit-note" id="editNote" hidden>
-    <div class="alert info"><div>Bilgisayarları sürükleyip sütunlara ya da öğretmen yerine bırakın. Her bırakış hemen kaydedilir.</div></div>
-    <button type="button" class="btn" id="editDoneBtn">Bitti</button>
+    <div class="alert info"><div><?php _e('Bilgisayarları sürükleyip sütunlara ya da öğretmen yerine bırakın. Her bırakış hemen kaydedilir.'); ?></div></div>
+    <button type="button" class="btn" id="editDoneBtn"><?php _ex('Bitti', 'edit'); ?></button>
 </div>
 
 <div class="labs-bar" id="labsBar" hidden>
-    <div class="actionbar" id="labBar" role="toolbar" aria-label="Sınıf işlemleri"></div>
+    <div class="actionbar" id="labBar" role="toolbar" aria-label="<?php _e('Sınıf işlemleri'); ?>"></div>
     <div class="search-field">
         <?php echo pops_icon('search', 'sm'); ?>
-        <input type="search" id="labSearch" placeholder="Bilgisayar, kullanıcı ya da IP" aria-label="Bu sınıfta ara">
+        <input type="search" id="labSearch" placeholder="<?php _e('Bilgisayar, kullanıcı ya da IP'); ?>" aria-label="<?php _e('Bu sınıfta ara'); ?>">
     </div>
 </div>
 
-<div id="labMap" class="lab-map"><div class="loading-state" role="status"><span class="spinner"></span>Yükleniyor…</div></div>
+<div id="labMap" class="lab-map"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
 
 <script>
 (function () {
@@ -119,10 +119,10 @@
             const pcs = pcsOf(l);
             const on = pcs.filter(d => !POps.isOffline(d)).length;
             const warn = pcs.some(d => d.is_quarantined);
-            return `<a href="labs?lab=${encodeURIComponent(l)}" data-lab="${escapeHtml(l)}" class="${l === current ? 'active' : ''}"><span>${escapeHtml(l)}</span>${warn ? '<span class="dot bad" title="Karantinada bilgisayar var"></span>' : ''}<span class="n">${Number(on)}/${pcs.length}</span></a>`;
+            return `<a href="labs?lab=${encodeURIComponent(l)}" data-lab="${escapeHtml(l)}" class="${l === current ? 'active' : ''}"><span>${escapeHtml(l)}</span>${warn ? `<span class="dot bad" title="${escapeHtml(POps.t('Karantinada bilgisayar var'))}"></span>` : ''}<span class="n">${Number(on)}/${pcs.length}</span></a>`;
         }).join('');
         const un = pcsOf(UNASSIGNED_KEY).length;
-        const unHtml = un ? `<a href="labs?lab=${UNASSIGNED_KEY}" data-lab="${UNASSIGNED_KEY}" class="${current === UNASSIGNED_KEY ? 'active' : ''}"><span>Atanmamış</span><span class="n" style="color:#ff9f0a">${un}</span></a>` : '';
+        const unHtml = un ? `<a href="labs?lab=${UNASSIGNED_KEY}" data-lab="${UNASSIGNED_KEY}" class="${current === UNASSIGNED_KEY ? 'active' : ''}"><span>${POps.tHtml('Atanmamış')}</span><span class="n" style="color:#ff9f0a">${un}</span></a>` : '';
         box.innerHTML = linksHtml + unHtml;
     }
 
@@ -130,6 +130,7 @@
         if (selected.size) return [...selected];
         return pcsOf(current).map(d => d.hostname);
     }
+    // Görev başlığına girer ("Kapat · LAB1", sunucuya giden veri): Türkçe kalır
     function scopeLabel() {
         if (selected.size) return selected.size === 1 ? dev.name([...selected][0]) : `${selected.size} bilgisayar`;
         return current === UNASSIGNED_KEY ? 'atanmamışlar' : current;
@@ -137,21 +138,27 @@
 
     function renderBar() {
         const n = selected.size;
-        if (!CAN_ADMIN) { bar.innerHTML = `<span class="scope">${current === UNASSIGNED_KEY ? 'Atanmamış' : 'Sınıfta'} <b>${pcsOf(current).length}</b> bilgisayar</span>`; return; }
+        const boldHtml = (x) => `<b>${Number(x)}</b>`;
+        if (!CAN_ADMIN) {
+            const cnt = pcsOf(current).length;
+            bar.innerHTML = `<span class="scope">${current === UNASSIGNED_KEY ? POps.tnHtml('Atanmamış {n} bilgisayar', cnt, null, { n: boldHtml(cnt) }) : POps.tnHtml('Sınıfta {n} bilgisayar', cnt, null, { n: boldHtml(cnt) })}</span>`;
+            return;
+        }
         const all = pcsOf(current).length;
-        const tgt = n ? `${n} bilgisayar` : (current === UNASSIGNED_KEY ? 'atanmamışların hepsi' : 'tüm sınıf');
+        const tgt = n ? POps.tn('{n} bilgisayar', n) : (current === UNASSIGNED_KEY ? POps.t('atanmamışların hepsi') : POps.t('tüm sınıf'));
+        const wake = POps.t('Uyandır'), restart = POps.t('Yeniden başlat'), shutdown = POps.tx('Kapat', 'power'), screen = POps.t('Ekranları izle'), command = POps.t('Komut gönder');
         const scopeHtml = n
-            ? `<span class="scope sel">${n} seçili<button type="button" data-act="clear" aria-label="Seçimi temizle" data-tip="Seçimi temizle (Esc)">${POps.iconHtml('x', 'sm')}</button></span>`
-            : `<span class="scope">${current === UNASSIGNED_KEY ? 'Hepsi' : 'Tüm sınıf'} <b>${all}</b></span>`;
-        const moveHtml = current === UNASSIGNED_KEY ? `<span class="sep"></span><button type="button" class="btn sm" data-act="move" style="margin:0 4px">${POps.iconHtml('move', 'sm')}Sınıfa taşı</button>` : '';
+            ? `<span class="scope sel">${POps.tHtml('{n} seçili', { n: Number(n) })}<button type="button" data-act="clear" aria-label="${escapeHtml(POps.t('Seçimi temizle'))}" data-tip="${escapeHtml(POps.t('Seçimi temizle (Esc)'))}">${POps.iconHtml('x', 'sm')}</button></span>`
+            : `<span class="scope">${current === UNASSIGNED_KEY ? POps.tHtml('Hepsi {n}', null, { n: boldHtml(all) }) : POps.tHtml('Tüm sınıf {n}', null, { n: boldHtml(all) })}</span>`;
+        const moveHtml = current === UNASSIGNED_KEY ? `<span class="sep"></span><button type="button" class="btn sm" data-act="move" style="margin:0 4px">${POps.iconHtml('move', 'sm')}${POps.tHtml('Sınıfa taşı')}</button>` : '';
         bar.innerHTML = scopeHtml + '<span class="sep"></span>'
-            + `<button type="button" class="ibtn" data-act="wake" data-tip="Uyandır · ${escapeHtml(tgt)}" aria-label="Uyandır">${POps.iconHtml('zap')}</button>`
-            + `<button type="button" class="ibtn" data-act="restart" data-tip="Yeniden başlat · ${escapeHtml(tgt)}" aria-label="Yeniden başlat">${POps.iconHtml('restart')}</button>`
-            + `<button type="button" class="ibtn danger" data-act="shutdown" data-tip="Kapat · ${escapeHtml(tgt)}" aria-label="Kapat">${POps.iconHtml('power')}</button>`
+            + `<button type="button" class="ibtn" data-act="wake" data-tip="${escapeHtml(wake + ' · ' + tgt)}" aria-label="${escapeHtml(wake)}">${POps.iconHtml('zap')}</button>`
+            + `<button type="button" class="ibtn" data-act="restart" data-tip="${escapeHtml(restart + ' · ' + tgt)}" aria-label="${escapeHtml(restart)}">${POps.iconHtml('restart')}</button>`
+            + `<button type="button" class="ibtn danger" data-act="shutdown" data-tip="${escapeHtml(shutdown + ' · ' + tgt)}" aria-label="${escapeHtml(shutdown)}">${POps.iconHtml('power')}</button>`
             + '<span class="sep"></span>'
-            + `<button type="button" class="ibtn" data-act="screen" data-tip="Ekranları izle · ${escapeHtml(tgt)}" aria-label="Ekranları izle">${POps.iconHtml('eye')}</button>`
-            + `<button type="button" class="ibtn" data-act="command" data-tip="Komut gönder · ${escapeHtml(tgt)}" aria-label="Komut gönder">${POps.iconHtml('terminal')}</button>`
-            + `<button type="button" class="ibtn" data-act="more" data-tip="Diğer işlemler" aria-label="Diğer işlemler" aria-haspopup="menu">${POps.iconHtml('more')}</button>`
+            + `<button type="button" class="ibtn" data-act="screen" data-tip="${escapeHtml(screen + ' · ' + tgt)}" aria-label="${escapeHtml(screen)}">${POps.iconHtml('eye')}</button>`
+            + `<button type="button" class="ibtn" data-act="command" data-tip="${escapeHtml(command + ' · ' + tgt)}" aria-label="${escapeHtml(command)}">${POps.iconHtml('terminal')}</button>`
+            + `<button type="button" class="ibtn" data-act="more" data-tip="${escapeHtml(POps.t('Diğer işlemler'))}" aria-label="${escapeHtml(POps.t('Diğer işlemler'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>`
             + moveHtml;
     }
 
@@ -161,13 +168,15 @@
         const off = pcs.length - on - idle;
         const quarantined = pcs.filter(d => d.is_quarantined).length;
         const old = pcs.filter(d => { const m = dev.mark(d); return m && m.kind === 'old'; }).length;
-        const partsHtml = `<span class="sum"><span class="dot on"></span><b>${Number(on)}</b> açık</span>`
-            + (idle ? `<span class="sum"><span class="dot idle"></span><b>${idle}</b> boşta</span>` : '')
-            + `<span class="sum"><span class="dot off"></span><b>${off}</b> kapalı</span>`
-            + (quarantined ? `<span class="sum"><span class="dot bad"></span><b>${Number(quarantined)}</b> karantinada</span>` : '')
-            + (old ? `<span class="sum"><span class="dot run"></span><b>${Number(old)}</b> eski ajan</span>` : '');
+        // Sayı kalın: yer tutucuya HTML parçası (POps.tHtml'in üçüncü argümanı)
+        const boldHtml = (n) => `<b>${Number(n)}</b>`;
+        const partsHtml = `<span class="sum"><span class="dot on"></span>${POps.tHtml('{n} açık', null, { n: boldHtml(on) })}</span>`
+            + (idle ? `<span class="sum"><span class="dot idle"></span>${POps.tHtml('{n} boşta', null, { n: boldHtml(idle) })}</span>` : '')
+            + `<span class="sum"><span class="dot off"></span>${POps.tHtml('{n} kapalı', null, { n: boldHtml(off) })}</span>`
+            + (quarantined ? `<span class="sum"><span class="dot bad"></span>${POps.tHtml('{n} karantinada', null, { n: boldHtml(quarantined) })}</span>` : '')
+            + (old ? `<span class="sum"><span class="dot run"></span>${POps.tnHtml('{n} eski ajan', old, null, { n: boldHtml(old) })}</span>` : '');
         $('labSummary').innerHTML = current === UNASSIGNED_KEY
-            ? `<span class="sum"><b>${pcs.length}</b> bilgisayar yeni bağlandı; bir sınıfa taşıyın.</span>`
+            ? `<span class="sum">${POps.tnHtml('{n} bilgisayar yeni bağlandı; bir sınıfa taşıyın.', pcs.length, null, { n: boldHtml(pcs.length) })}</span>`
             : partsHtml;
     }
 
@@ -188,15 +197,15 @@
         if (focus && !pcs.some(d => d.hostname === focus)) focus = null;
 
         if (!current) {
-            $('labTitle').textContent = 'Sınıflar';
+            $('labTitle').textContent = POps.t('Sınıflar');
             $('labSummary').textContent = '';
             $('labsBar').hidden = true;
             $('editLayoutBtn').hidden = true;
-            map.innerHTML = `<div class="empty-state">${POps.iconHtml('labs')}<h3>Henüz sınıf yok</h3><p>Bilgisayarları yerleştirmek için önce bir sınıf oluşturun.</p>${CAN_ADMIN ? '<button type="button" class="btn" id="firstLabBtn">Sınıf ekle</button>' : ''}</div>`;
+            map.innerHTML = `<div class="empty-state">${POps.iconHtml('labs')}<h3>${POps.tHtml('Henüz sınıf yok')}</h3><p>${POps.tHtml('Bilgisayarları yerleştirmek için önce bir sınıf oluşturun.')}</p>${CAN_ADMIN ? `<button type="button" class="btn" id="firstLabBtn">${POps.tHtml('Sınıf ekle')}</button>` : ''}</div>`;
             if (CAN_ADMIN) $('firstLabBtn').addEventListener('click', addLab);
             return;
         }
-        $('labTitle').textContent = current === UNASSIGNED_KEY ? 'Atanmamış bilgisayarlar' : current;
+        $('labTitle').textContent = current === UNASSIGNED_KEY ? POps.t('Atanmamış bilgisayarlar') : current;
         try { localStorage.setItem('pops_lab', current); } catch (e) { /* özel pencere */ }
         document.title = $('labTitle').textContent + ' · POps';
         $('labsBar').hidden = !pcs.length;
@@ -210,8 +219,8 @@
 
         if (!pcs.length) {
             map.innerHTML = current === UNASSIGNED_KEY
-                ? '<div class="empty-state">' + POps.iconHtml('check') + '<h3>Atanmamış bilgisayar yok</h3></div>'
-                : '<div class="empty-state">' + POps.iconHtml('devices') + '<h3>Bu sınıfta bilgisayar yok</h3><p>Atanmamış bilgisayarları ya da başka sınıftakileri buraya taşıyabilirsiniz.</p></div>';
+                ? '<div class="empty-state">' + POps.iconHtml('check') + `<h3>${POps.tHtml('Atanmamış bilgisayar yok')}</h3></div>`
+                : '<div class="empty-state">' + POps.iconHtml('devices') + `<h3>${POps.tHtml('Bu sınıfta bilgisayar yok')}</h3><p>${POps.tHtml('Atanmamış bilgisayarları ya da başka sınıftakileri buraya taşıyabilirsiniz.')}</p></div>`;
             return;
         }
         if (current === UNASSIGNED_KEY) {
@@ -220,10 +229,10 @@
         }
         const teacher = teacherOf(current, pcs);
         const cols = columnsOf(current, pcs.filter(d => d !== teacher));
-        const teacherHtml = teacher ? tileHtml(teacher, true, newest) : (editing ? '<div class="tile empty">Öğretmen bilgisayarını buraya sürükleyin</div>' : '');
+        const teacherHtml = teacher ? tileHtml(teacher, true, newest) : (editing ? `<div class="tile empty">${POps.tHtml('Öğretmen bilgisayarını buraya sürükleyin')}</div>` : '');
         const colHtml = (key, label) => `<div class="lab-col" data-col="${escapeHtml(key)}"><div class="cap">${escapeHtml(label)}</div>${cols[key].map(d => tileHtml(d, false, newest)).join('')}</div>`;
-        map.innerHTML = (teacherHtml ? `<div class="lab-teacher" data-col="teacher"><div class="cap">Öğretmen</div>${teacherHtml}</div>` : '')
-            + `<div class="lab-cols">${colHtml('left', 'Sol sütun')}${colHtml('center', 'Orta sütun')}${colHtml('right', 'Sağ sütun')}</div>`;
+        map.innerHTML = (teacherHtml ? `<div class="lab-teacher" data-col="teacher"><div class="cap">${POps.tHtml('Öğretmen')}</div>${teacherHtml}</div>` : '')
+            + `<div class="lab-cols">${colHtml('left', POps.t('Sol sütun'))}${colHtml('center', POps.t('Orta sütun'))}${colHtml('right', POps.t('Sağ sütun'))}</div>`;
     }
 
     function select(h, mode) {
@@ -269,27 +278,27 @@
         const act = b.dataset.act;
         if (act === 'clear') { selected.clear(); render(true); }
         else if (act === 'wake' || act === 'restart' || act === 'shutdown') dev.power(act, hosts, o);
-        else if (act === 'screen') { const on = hosts.filter(h => !POps.isOffline(dev.find(h))); if (!on.length) return POps.toast('warning', 'Açık bilgisayar yok.'); location.href = dev.screenUrl(on); }
-        else if (act === 'command') { const on = hosts.filter(h => !POps.isOffline(dev.find(h))); if (!on.length) return POps.toast('warning', 'Açık bilgisayar yok.'); location.href = dev.commandUrl(on); }
+        else if (act === 'screen') { const on = hosts.filter(h => !POps.isOffline(dev.find(h))); if (!on.length) return POps.toast('warning', POps.t('Açık bilgisayar yok.')); location.href = dev.screenUrl(on); }
+        else if (act === 'command') { const on = hosts.filter(h => !POps.isOffline(dev.find(h))); if (!on.length) return POps.toast('warning', POps.t('Açık bilgisayar yok.')); location.href = dev.commandUrl(on); }
         else if (act === 'move') dev.moveMenu(b, hosts, { currentLab: current === UNASSIGNED_KEY ? UNASSIGNED : current });
         else if (act === 'more') {
             const anyQ = hosts.some(h => (dev.find(h) || {}).is_quarantined);
             POps.menu(b, [
-                { label: 'Mesaj gönder', icon: 'message', onClick: () => dev.message(hosts, o) },
-                { label: 'Başka sınıfa taşı…', icon: 'move', onClick: () => dev.moveMenu(b, hosts, { currentLab: current === UNASSIGNED_KEY ? UNASSIGNED : current }) },
-                selected.size ? null : { label: 'Tümünü seç', icon: 'check', hint: 'Ctrl A', onClick: () => { selected = new Set(pcsOf(current).filter(matches).map(d => d.hostname)); render(true); } },
+                { label: POps.t('Mesaj gönder'), icon: 'message', onClick: () => dev.message(hosts, o) },
+                { label: POps.t('Başka sınıfa taşı…'), icon: 'move', onClick: () => dev.moveMenu(b, hosts, { currentLab: current === UNASSIGNED_KEY ? UNASSIGNED : current }) },
+                selected.size ? null : { label: POps.t('Tümünü seç'), icon: 'check', hint: 'Ctrl A', onClick: () => { selected = new Set(pcsOf(current).filter(matches).map(d => d.hostname)); render(true); } },
                 '-',
-                { label: 'Karantinaya al', icon: 'lock', danger: true, onClick: () => dev.quarantine(hosts, o) },
-                anyQ ? { label: 'Karantinayı kaldır', icon: 'unlock', onClick: () => dev.unquarantine(hosts.filter(h => (dev.find(h) || {}).is_quarantined), o) } : null
+                { label: POps.t('Karantinaya al'), icon: 'lock', danger: true, onClick: () => dev.quarantine(hosts, o) },
+                anyQ ? { label: POps.t('Karantinayı kaldır'), icon: 'unlock', onClick: () => dev.unquarantine(hosts.filter(h => (dev.find(h) || {}).is_quarantined), o) } : null
             ]);
         }
     });
 
     // ---- Sınıf işlemleri
     async function addLab() {
-        const name = await POps.prompt({ title: 'Yeni sınıf', label: 'Sınıf adı', placeholder: 'Örn. Lab-4 Bilişim', maxLength: 60, confirmText: 'Oluştur' });
+        const name = await POps.prompt({ title: POps.t('Yeni sınıf'), label: POps.t('Sınıf adı'), placeholder: POps.t('Örn. Lab-4 Bilişim'), maxLength: 60, confirmText: POps.t('Oluştur') });
         if (!name || !name.trim()) return;
-        if (await POps.act(null, () => POps.post('/api/create_lab', { lab_name: name.trim() }), { success: `${name.trim()} oluşturuldu.` })) {
+        if (await POps.act(null, () => POps.post('/api/create_lab', { lab_name: name.trim() }), { success: POps.t('{name} oluşturuldu.', { name: name.trim() }) })) {
             current = name.trim();
             await POps.loadDevices().catch(() => {});
             render(true);
@@ -299,24 +308,24 @@
     $('labMenuBtn').addEventListener('click', (e) => {
         const real = current && current !== UNASSIGNED_KEY;
         POps.menu(e.currentTarget, [
-            { label: 'Yeni sınıf…', icon: 'plus', onClick: addLab },
-            real ? { label: 'Yeniden adlandır…', icon: 'edit', onClick: async () => {
-                const name = await POps.prompt({ title: 'Sınıfı yeniden adlandır', label: 'Yeni ad', defaultValue: current, maxLength: 60, confirmText: 'Kaydet' });
+            { label: POps.t('Yeni sınıf…'), icon: 'plus', onClick: addLab },
+            real ? { label: POps.t('Yeniden adlandır…'), icon: 'edit', onClick: async () => {
+                const name = await POps.prompt({ title: POps.t('Sınıfı yeniden adlandır'), label: POps.t('Yeni ad'), defaultValue: current, maxLength: 60, confirmText: POps.t('Kaydet') });
                 if (!name || !name.trim() || name.trim() === current) return;
-                if (await POps.act(null, () => POps.post('/api/rename_lab', { old_name: current, new_name: name.trim() }), { success: 'Sınıf adı güncellendi.' })) { current = name.trim(); POps.loadDevices().catch(() => {}); }
+                if (await POps.act(null, () => POps.post('/api/rename_lab', { old_name: current, new_name: name.trim() }), { success: POps.t('Sınıf adı güncellendi.') })) { current = name.trim(); POps.loadDevices().catch(() => {}); }
             } } : null,
-            real ? { label: 'Otomatik kayıt…', icon: 'calendar', onClick: async () => {
+            real ? { label: POps.t('Otomatik kayıt…'), icon: 'calendar', onClick: async () => {
                 const d = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
-                const date = await POps.prompt({ title: `Otomatik kayıt: ${current}`, message: 'Bu tarihe kadar ağa ilk kez bağlanan bilgisayarlar doğrudan bu sınıfa eklenir.', label: 'Bitiş tarihi', inputType: 'date', defaultValue: d, confirmText: 'Başlat', icon: 'calendar' });
+                const date = await POps.prompt({ title: POps.t('Otomatik kayıt: {lab}', { lab: current }), message: POps.t('Bu tarihe kadar ağa ilk kez bağlanan bilgisayarlar doğrudan bu sınıfa eklenir.'), label: POps.t('Bitiş tarihi'), inputType: 'date', defaultValue: d, confirmText: POps.t('Başlat'), icon: 'calendar' });
                 if (!date) return;
-                POps.act(null, () => POps.post('/api/set_auto_enroll', { target_lab: current, expire_date: date }), { success: `Otomatik kayıt ${date} tarihine kadar açık.` });
+                POps.act(null, () => POps.post('/api/set_auto_enroll', { target_lab: current, expire_date: date }), { success: POps.t('Otomatik kayıt {date} tarihine kadar açık.', { date }) });
             } } : null,
             real ? '-' : null,
-            real ? { label: 'Sınıfı sil', icon: 'trash', danger: true, onClick: async () => {
+            real ? { label: POps.t('Sınıfı sil'), icon: 'trash', danger: true, onClick: async () => {
                 const n = pcsOf(current).length;
-                const ok = await POps.confirm({ title: `${current} silinsin mi?`, message: n ? `İçindeki ${n} bilgisayar atanmamış bilgisayarlara taşınır.` : 'Sınıf boş.', confirmText: 'Sınıfı sil', danger: true, icon: 'trash' });
+                const ok = await POps.confirm({ title: POps.t('{name} silinsin mi?', { name: current }), message: n ? POps.tn('İçindeki {n} bilgisayar atanmamış bilgisayarlara taşınır.', n) : POps.t('Sınıf boş.'), confirmText: POps.t('Sınıfı sil'), danger: true, icon: 'trash' });
                 if (!ok) return;
-                if (await POps.act(null, () => POps.post('/api/delete_lab', { lab_name: current }), { success: `${current} silindi.` })) { current = ''; POps.loadDevices().catch(() => {}); }
+                if (await POps.act(null, () => POps.post('/api/delete_lab', { lab_name: current }), { success: POps.t('{name} silindi.', { name: current }) })) { current = ''; POps.loadDevices().catch(() => {}); }
             } } : null
         ]);
     });
@@ -366,7 +375,7 @@
         try {
             await POps.post('/api/save_lab_layout', { lab_name: current, layout_json: JSON.stringify(layout) });
             if (wasTeacher) await POps.post('/api/set_main_pc', { lab_name: current, pc_name: host }).catch(() => {});  // aynı ad gönderilince kaldırılır
-        } catch (err) { POps.toast('error', 'Yerleşim kaydedilemedi: ' + POps.errorMessage(err)); POps.loadDevices().catch(() => {}); }
+        } catch (err) { POps.toast('error', POps.t('Yerleşim kaydedilemedi: {error}', { error: POps.errorMessage(err) })); POps.loadDevices().catch(() => {}); }
     });
 
     // ---- Gezinme: sınıflar arasında sayfa yenilenmeden

@@ -19,34 +19,34 @@
 
 <div class="page-header">
     <div>
-        <h1>Cihazlar</h1>
+        <h1><?php _e('Cihazlar'); ?></h1>
         <div class="summary" id="devSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="exportBtn" data-tip="Listeyi dışa aktar (CSV)" data-tip-pos="left" aria-label="Listeyi dışa aktar"><?php echo pops_icon('download'); ?></button>
+        <button type="button" class="ibtn boxed" id="exportBtn" data-tip="<?php _e('Listeyi dışa aktar (CSV)'); ?>" data-tip-pos="left" aria-label="<?php _e('Listeyi dışa aktar'); ?>"><?php echo pops_icon('download'); ?></button>
     </div>
 </div>
 
 <div class="dev-bar">
-    <div class="actionbar" id="devBar" role="toolbar" aria-label="Cihaz işlemleri"></div>
+    <div class="actionbar" id="devBar" role="toolbar" aria-label="<?php _e('Cihaz işlemleri'); ?>"></div>
     <span class="grow"></span>
-    <div class="segmented" id="devFilter" role="group" aria-label="Duruma göre süz">
-        <button type="button" data-f="all" class="active" aria-pressed="true">Tümü</button>
-        <button type="button" data-f="on" aria-pressed="false">Açık</button>
-        <button type="button" data-f="off" aria-pressed="false">Kapalı</button>
-        <button type="button" data-f="issue" aria-pressed="false">Sorunlu</button>
+    <div class="segmented" id="devFilter" role="group" aria-label="<?php _e('Duruma göre süz'); ?>">
+        <button type="button" data-f="all" class="active" aria-pressed="true"><?php _e('Tümü'); ?></button>
+        <button type="button" data-f="on" aria-pressed="false"><?php _e('Açık'); ?></button>
+        <button type="button" data-f="off" aria-pressed="false"><?php _e('Kapalı'); ?></button>
+        <button type="button" data-f="issue" aria-pressed="false"><?php _e('Sorunlu'); ?></button>
     </div>
-    <select id="devLab" aria-label="Sınıfa göre süz"><option value="">Bütün sınıflar</option></select>
+    <select id="devLab" aria-label="<?php _e('Sınıfa göre süz'); ?>"><option value=""><?php _e('Bütün sınıflar'); ?></option></select>
     <div class="search-field">
         <?php echo pops_icon('search', 'sm'); ?>
-        <input type="search" id="devSearch" placeholder="Ad, kullanıcı, IP, MAC" aria-label="Cihaz ara">
+        <input type="search" id="devSearch" placeholder="<?php _e('Ad, kullanıcı, IP, MAC'); ?>" aria-label="<?php _e('Cihaz ara'); ?>">
     </div>
 </div>
 
 <div class="table-wrap">
     <table class="data-table dev-table wide">
         <thead id="devHead"></thead>
-        <tbody id="devBody"><tr><td colspan="7"><div class="loading-state" role="status"><span class="spinner"></span>Cihazlar yükleniyor…</div></td></tr></tbody>
+        <tbody id="devBody"><tr><td colspan="7"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Cihazlar yükleniyor…'); ?></div></td></tr></tbody>
     </table>
 </div>
 
@@ -83,10 +83,10 @@
         return { rows, newest };
     }
 
-    const COLS = [['name', 'Bilgisayar'], ['lab', 'Sınıf'], ['status', 'Durum'], ['version', 'Ajan'], ['ip', 'IP']];
+    const COLS = [['name', POps.t('Bilgisayar')], ['lab', POps.t('Sınıf')], ['status', POps.t('Durum')], ['version', POps.t('Ajan')], ['ip', 'IP']];
     function renderHead(rows) {
         const all = rows.length && rows.every(d => ui.selected.has(d.hostname));
-        $('devHead').innerHTML = '<tr>' + (CAN_ADMIN ? `<th class="check-col"><input type="checkbox" id="devAll" ${all ? 'checked' : ''} aria-label="Listedekilerin hepsini seç"></th>` : '')
+        $('devHead').innerHTML = '<tr>' + (CAN_ADMIN ? `<th class="check-col"><input type="checkbox" id="devAll" ${all ? 'checked' : ''} aria-label="${escapeHtml(POps.t('Listedekilerin hepsini seç'))}"></th>` : '')
             + COLS.map(([k, label]) => `<th class="sortable" data-sort="${escapeHtml(k)}" aria-sort="${ui.sort === k ? (ui.dir > 0 ? 'ascending' : 'descending') : 'none'}">${escapeHtml(label)}${ui.sort === k ? `<span class="arr">${ui.dir > 0 ? '↑' : '↓'}</span>` : ''}</th>`).join('')
             + '</tr>';
     }
@@ -98,11 +98,11 @@
         const v = dev.version(d);
         const old = v && newest && dev.cmpVersion(v, newest) < 0;
         return `<tr data-host="${escapeHtml(h)}" class="${ui.selected.has(h) ? 'is-selected' : ''}${ui.focus === h ? ' is-focus' : ''}">
-            ${CAN_ADMIN ? `<td class="check-col"><input type="checkbox" class="dev-cb" data-host="${escapeHtml(h)}" ${ui.selected.has(h) ? 'checked' : ''} aria-label="${escapeHtml(POps.deviceName(d))} seç"></td>` : ''}
+            ${CAN_ADMIN ? `<td class="check-col"><input type="checkbox" class="dev-cb" data-host="${escapeHtml(h)}" ${ui.selected.has(h) ? 'checked' : ''} aria-label="${escapeHtml(POps.t('{name} seç', { name: POps.deviceName(d) }))}"></td>` : ''}
             <td><div class="nm">${escapeHtml(POps.deviceName(d))}${marksHtml}</div><div class="sub">${escapeHtml(dev.subline(d))}</div></td>
-            <td>${d.lab && d.lab !== dev.UNASSIGNED ? escapeHtml(d.lab) : '<span class="faint">Atanmamış</span>'}</td>
+            <td>${d.lab && d.lab !== dev.UNASSIGNED ? escapeHtml(d.lab) : `<span class="faint">${POps.tHtml('Atanmamış')}</span>`}</td>
             <td>${statusHtml}</td>
-            <td><span class="ver">${escapeHtml(v || '—')}${old ? `<span class="mark old" data-tip="${escapeHtml('Eski sürüm; güncel ' + newest)}" aria-label="Eski sürüm">↑</span>` : ''}</span></td>
+            <td><span class="ver">${escapeHtml(v || '—')}${old ? `<span class="mark old" data-tip="${escapeHtml(POps.t('Eski sürüm; güncel {version}', { version: newest }))}" aria-label="${escapeHtml(POps.t('Eski sürüm'))}">↑</span>` : ''}</span></td>
             <td class="mono">${escapeHtml(d.ip || '—')}</td>
         </tr>`;
     }
@@ -112,37 +112,41 @@
         const on = all.filter(d => dev.state(d).cls === 'on').length;
         const idle = all.filter(d => dev.state(d).cls === 'idle').length;
         const issues = all.filter(d => issuesOf(d, newest).length).length;
-        const sumHtml = `<span class="sum"><b>${all.length}</b> cihaz</span>`
-            + `<span class="sum"><span class="dot on"></span><b>${Number(on)}</b> açık</span>`
-            + (idle ? `<span class="sum"><span class="dot idle"></span><b>${idle}</b> boşta</span>` : '')
-            + `<span class="sum"><span class="dot off"></span><b>${all.length - on - idle}</b> kapalı</span>`
-            + (issues ? `<a href="#" class="sum" data-f="issue"><span class="dot warn"></span><b>${issues}</b> sorunlu</a>` : '');
+        const off = all.length - on - idle;
+        // Sayı kalın: yer tutucuya HTML parçası (POps.tHtml'in üçüncü argümanı)
+        const boldHtml = (n) => `<b>${Number(n)}</b>`;
+        const sumHtml = `<span class="sum">${POps.tnHtml('{n} cihaz', all.length, null, { n: boldHtml(all.length) })}</span>`
+            + `<span class="sum"><span class="dot on"></span>${POps.tHtml('{n} açık', null, { n: boldHtml(on) })}</span>`
+            + (idle ? `<span class="sum"><span class="dot idle"></span>${POps.tHtml('{n} boşta', null, { n: boldHtml(idle) })}</span>` : '')
+            + `<span class="sum"><span class="dot off"></span>${POps.tHtml('{n} kapalı', null, { n: boldHtml(off) })}</span>`
+            + (issues ? `<a href="#" class="sum" data-f="issue"><span class="dot warn"></span>${POps.tHtml('{n} sorunlu', null, { n: boldHtml(issues) })}</a>` : '');
         $('devSummary').innerHTML = sumHtml;
     }
     function renderLabs() {
         const sel = $('devLab');
         const cur = ui.lab;
         const labs = dev.labs();
-        const optsHtml = '<option value="">Bütün sınıflar</option>' + labs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('') + `<option value="${escapeHtml(dev.UNASSIGNED)}">Atanmamış</option>`;
+        const optsHtml = `<option value="">${POps.tHtml('Bütün sınıflar')}</option>` + labs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('') + `<option value="${escapeHtml(dev.UNASSIGNED)}">${POps.tHtml('Atanmamış')}</option>`;
         if (sel.dataset.sig !== labs.join('|')) { sel.innerHTML = optsHtml; sel.dataset.sig = labs.join('|'); }
         sel.value = cur;
     }
     function scope(rows) { return ui.selected.size ? [...ui.selected] : rows.map(d => d.hostname); }
     function renderBar(rows) {
         const n = ui.selected.size;
-        const tgt = n ? `${n} bilgisayar` : `listedeki ${rows.length} bilgisayar`;
-        if (!CAN_ADMIN) { bar.innerHTML = `<span class="scope">${rows.length} bilgisayar</span>`; return; }
+        const tgt = n ? POps.tn('{n} bilgisayar', n) : POps.tn('listedeki {n} bilgisayar', rows.length);
+        if (!CAN_ADMIN) { bar.innerHTML = `<span class="scope">${POps.tnHtml('{n} bilgisayar', rows.length)}</span>`; return; }
+        const wake = POps.t('Uyandır'), restart = POps.t('Yeniden başlat'), shutdown = POps.tx('Kapat', 'power');
         bar.innerHTML = (n
-            ? `<span class="scope sel">${Number(n)} seçili<button type="button" data-act="clear" aria-label="Seçimi temizle" data-tip="Seçimi temizle (Esc)">${POps.iconHtml('x', 'sm')}</button></span>`
-            : `<span class="scope">Listedeki <b>${rows.length}</b></span>`)
+            ? `<span class="scope sel">${POps.tHtml('{n} seçili', { n: Number(n) })}<button type="button" data-act="clear" aria-label="${escapeHtml(POps.t('Seçimi temizle'))}" data-tip="${escapeHtml(POps.t('Seçimi temizle (Esc)'))}">${POps.iconHtml('x', 'sm')}</button></span>`
+            : `<span class="scope">${POps.tHtml('Listedeki {n}', null, { n: `<b>${Number(rows.length)}</b>` })}</span>`)
             + '<span class="sep"></span>'
-            + `<button type="button" class="ibtn" data-act="wake" data-tip="Uyandır · ${escapeHtml(tgt)}" aria-label="Uyandır">${POps.iconHtml('zap')}</button>`
-            + `<button type="button" class="ibtn" data-act="restart" data-tip="Yeniden başlat · ${escapeHtml(tgt)}" aria-label="Yeniden başlat">${POps.iconHtml('restart')}</button>`
-            + `<button type="button" class="ibtn danger" data-act="shutdown" data-tip="Kapat · ${escapeHtml(tgt)}" aria-label="Kapat">${POps.iconHtml('power')}</button>`
+            + `<button type="button" class="ibtn" data-act="wake" data-tip="${escapeHtml(wake + ' · ' + tgt)}" aria-label="${escapeHtml(wake)}">${POps.iconHtml('zap')}</button>`
+            + `<button type="button" class="ibtn" data-act="restart" data-tip="${escapeHtml(restart + ' · ' + tgt)}" aria-label="${escapeHtml(restart)}">${POps.iconHtml('restart')}</button>`
+            + `<button type="button" class="ibtn danger" data-act="shutdown" data-tip="${escapeHtml(shutdown + ' · ' + tgt)}" aria-label="${escapeHtml(shutdown)}">${POps.iconHtml('power')}</button>`
             + '<span class="sep"></span>'
-            + `<button type="button" class="ibtn" data-act="screen" data-tip="Ekranları izle" aria-label="Ekranları izle">${POps.iconHtml('eye')}</button>`
-            + `<button type="button" class="ibtn" data-act="command" data-tip="Komut gönder" aria-label="Komut gönder">${POps.iconHtml('terminal')}</button>`
-            + `<button type="button" class="ibtn" data-act="more" data-tip="Diğer işlemler" aria-label="Diğer işlemler" aria-haspopup="menu">${POps.iconHtml('more')}</button>`;
+            + `<button type="button" class="ibtn" data-act="screen" data-tip="${escapeHtml(POps.t('Ekranları izle'))}" aria-label="${escapeHtml(POps.t('Ekranları izle'))}">${POps.iconHtml('eye')}</button>`
+            + `<button type="button" class="ibtn" data-act="command" data-tip="${escapeHtml(POps.t('Komut gönder'))}" aria-label="${escapeHtml(POps.t('Komut gönder'))}">${POps.iconHtml('terminal')}</button>`
+            + `<button type="button" class="ibtn" data-act="more" data-tip="${escapeHtml(POps.t('Diğer işlemler'))}" aria-label="${escapeHtml(POps.t('Diğer işlemler'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>`;
     }
     function render(force) {
         if (!state.devicesLoaded) return;
@@ -159,8 +163,8 @@
         if (!rows.length) {
             const filteredOut = (state.devices || []).length > 0;
             POps.setEmpty(body, filteredOut
-                ? { tag: 'tr', colspan: 7, icon: 'filter', title: 'Süzgece uyan cihaz yok', text: 'Arama ya da süzgeçleri değiştirin.' }
-                : { tag: 'tr', colspan: 7, icon: 'devices', title: 'Henüz cihaz yok', text: 'Ajan kurulan bilgisayarlar bağlandıkça burada görünür.' });
+                ? { tag: 'tr', colspan: 7, icon: 'filter', title: POps.t('Süzgece uyan cihaz yok'), text: POps.t('Arama ya da süzgeçleri değiştirin.') }
+                : { tag: 'tr', colspan: 7, icon: 'devices', title: POps.t('Henüz cihaz yok'), text: POps.t('Ajan kurulan bilgisayarlar bağlandıkça burada görünür.') });
             return;
         }
         body.innerHTML = rows.map(d => rowHtml(d, newest)).join('');
@@ -205,22 +209,23 @@
         if (!b) return;
         const rows = list().rows;
         const hosts = scope(rows);
+        // scopeLabel sunucuya giden görev başlığına girer ("Kapat · 3 bilgisayar"): veri, Türkçe kalır
         const label = ui.selected.size ? (ui.selected.size === 1 ? dev.name(hosts[0]) : `${hosts.length} bilgisayar`) : `${hosts.length} bilgisayar`;
         const o = { btn: b, source: 'devices', scopeLabel: label };
         const onHosts = () => hosts.filter(h => !POps.isOffline(dev.find(h)));
         switch (b.dataset.act) {
             case 'clear': ui.selected.clear(); render(true); break;
             case 'wake': case 'restart': case 'shutdown': dev.power(b.dataset.act, hosts, o); break;
-            case 'screen': { const on = onHosts(); if (!on.length) return POps.toast('warning', 'Açık bilgisayar yok.'); location.href = dev.screenUrl(on.slice(0, 60)); break; }
-            case 'command': { const on = onHosts(); if (!on.length) return POps.toast('warning', 'Açık bilgisayar yok.'); location.href = dev.commandUrl(on.slice(0, 200)); break; }
+            case 'screen': { const on = onHosts(); if (!on.length) return POps.toast('warning', POps.t('Açık bilgisayar yok.')); location.href = dev.screenUrl(on.slice(0, 60)); break; }
+            case 'command': { const on = onHosts(); if (!on.length) return POps.toast('warning', POps.t('Açık bilgisayar yok.')); location.href = dev.commandUrl(on.slice(0, 200)); break; }
             case 'more': {
                 const anyQ = hosts.some(h => (dev.find(h) || {}).is_quarantined);
                 POps.menu(b, [
-                    { label: 'Mesaj gönder', icon: 'message', onClick: () => dev.message(hosts, o) },
-                    { label: 'Başka sınıfa taşı…', icon: 'move', onClick: () => dev.moveMenu(b, hosts, {}) },
+                    { label: POps.t('Mesaj gönder'), icon: 'message', onClick: () => dev.message(hosts, o) },
+                    { label: POps.t('Başka sınıfa taşı…'), icon: 'move', onClick: () => dev.moveMenu(b, hosts, {}) },
                     '-',
-                    { label: 'Karantinaya al', icon: 'lock', danger: true, onClick: () => dev.quarantine(hosts, o) },
-                    anyQ ? { label: 'Karantinayı kaldır', icon: 'unlock', onClick: () => dev.unquarantine(hosts.filter(h => (dev.find(h) || {}).is_quarantined), o) } : null
+                    { label: POps.t('Karantinaya al'), icon: 'lock', danger: true, onClick: () => dev.quarantine(hosts, o) },
+                    anyQ ? { label: POps.t('Karantinayı kaldır'), icon: 'unlock', onClick: () => dev.unquarantine(hosts.filter(h => (dev.find(h) || {}).is_quarantined), o) } : null
                 ]);
                 break;
             }
@@ -230,12 +235,12 @@
     $('exportBtn').addEventListener('click', () => {
         const { rows } = list();
         const cell = (v) => { const s = String(v == null ? '' : v); return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-        const lines = [['Ad', 'Kimlik', 'Sınıf', 'Durum', 'Kullanıcı', 'IP', 'MAC', 'Ajan', 'Son görülme'].join(';')]
+        const lines = [[POps.t('Ad'), POps.t('Kimlik'), POps.t('Sınıf'), POps.t('Durum'), POps.t('Kullanıcı'), 'IP', 'MAC', POps.t('Ajan'), POps.t('Son görülme')].join(';')]
             .concat(rows.map(d => [POps.deviceName(d), d.hostname, d.lab, dev.state(d).word, dev.user(d), d.ip, d.mac, dev.version(d), d.last_seen].map(cell).join(';')));
         const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'pops-cihazlar-' + new Date().toISOString().slice(0, 10) + '.csv';
+        a.download = POps.t('pops-cihazlar-{date}.csv', { date: new Date().toISOString().slice(0, 10) });
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     });
