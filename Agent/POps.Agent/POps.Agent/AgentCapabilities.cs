@@ -16,9 +16,10 @@ namespace POpsAgent
     //  * files_enabled:    dosya gönderme ve alma (bkz. FileTransfer)
     //  * power_enabled:    "power" (kapatma, yeniden başlatma, oturum kapatma, kilitleme; bkz. PowerActions)
     //  * message_enabled:  "user_message" (tepside kullanıcıya mesaj; bkz. UserMessages)
+    //  * peer_cache_enabled: laboratuvar eş önbelleği; güncelleme paketini eşlere sunma ve eşlerden indirme (bkz. PeerCache)
     // Kaynak C:\POpsData\secure\capabilities.json (yalnızca SYSTEM/Administrators). Kurulum (MSI TERMINAL_ENABLED /
-    // VISION_ENABLED / EXAM_ENABLED / FILES_ENABLED / POWER_ENABLED / MESSAGE_ENABLED) iki yönde de yazar; sunucu yalnızca
-    // KAPATABİLİR ("set_capabilities" ... false). Sunucudan
+    // VISION_ENABLED / EXAM_ENABLED / FILES_ENABLED / POWER_ENABLED / MESSAGE_ENABLED / PEER_CACHE_ENABLED) iki yönde de
+    // yazar; sunucu yalnızca KAPATABİLİR ("set_capabilities" ... false). Sunucudan
     // gelen "aç" isteği yok sayılır: yeniden açmak yerel yöneticinin işidir (MSI yeniden kurulum / onarım).
     // Dosya yoksa (bu özellikten önceki kurulum) hepsi açıktır; dosyada olmayan yetenek (eski dosya) açıktır; dosya
     // okunamıyorsa hepsi kapalı sayılır.
@@ -32,12 +33,13 @@ namespace POpsAgent
         public const string Files = "files_enabled";
         public const string Power = "power_enabled";
         public const string Message = "message_enabled";
-        private static readonly string[] Names = { Terminal, Vision, Exam, Files, Power, Message };
+        public const string PeerCacheKey = "peer_cache_enabled";
+        private static readonly string[] Names = { Terminal, Vision, Exam, Files, Power, Message, PeerCacheKey };
 
         private static readonly object Gate = new object();
         private static readonly Dictionary<string, bool> State = new Dictionary<string, bool>
         {
-            [Terminal] = true, [Vision] = true, [Exam] = true, [Files] = true, [Power] = true, [Message] = true,
+            [Terminal] = true, [Vision] = true, [Exam] = true, [Files] = true, [Power] = true, [Message] = true, [PeerCacheKey] = true,
         };
 
         public static bool TerminalEnabled { get { lock (Gate) return State[Terminal]; } }
@@ -46,6 +48,7 @@ namespace POpsAgent
         public static bool FilesEnabled { get { lock (Gate) return State[Files]; } }
         public static bool PowerEnabled { get { lock (Gate) return State[Power]; } }
         public static bool MessageEnabled { get { lock (Gate) return State[Message]; } }
+        public static bool PeerCacheEnabled { get { lock (Gate) return State[PeerCacheKey]; } }
 
         public static void Load()
         {
@@ -128,7 +131,7 @@ namespace POpsAgent
         public static string Describe()
         {
             lock (Gate)
-                return $"terminal={OnOff(Terminal)}, vision={OnOff(Vision)}, sınav={OnOff(Exam)}, dosya={OnOff(Files)}, güç={OnOff(Power)}, mesaj={OnOff(Message)}";
+                return $"terminal={OnOff(Terminal)}, vision={OnOff(Vision)}, sınav={OnOff(Exam)}, dosya={OnOff(Files)}, güç={OnOff(Power)}, mesaj={OnOff(Message)}, eş önbelleği={OnOff(PeerCacheKey)}";
         }
 
         private static string OnOff(string name) => State[name] ? "açık" : "kapalı";

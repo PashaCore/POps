@@ -234,6 +234,8 @@ namespace POps.Installer
                     return "POWER_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
                 if (!TryParseFlag(Prop("MESSAGE_ENABLED"), out bool? message))
                     return "MESSAGE_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
+                if (!TryParseFlag(Prop("PEER_CACHE_ENABLED"), out bool? peerCache))
+                    return "PEER_CACHE_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
                 // Bozuk sertifika hiçbir şey yazılmadan reddedilir
                 string caError = ReadServerCa(Prop("SERVER_CA_CERT"), out string caPem, out bool removeCa, out string caSubject);
                 if (caError != null) return caError;
@@ -254,6 +256,7 @@ namespace POps.Installer
                     ["files_enabled"] = files,
                     ["power_enabled"] = power,
                     ["message_enabled"] = message,
+                    ["peer_cache_enabled"] = peerCache,
                 }, log);
                 WriteServerCa(layout, caPem, removeCa, caSubject, log);
                 WriteSecret(Path.Combine(layout.SecureDir, BypassSecretFile), bypassSecret, Existing("BypassSecret"), "BypassSecret", log);
@@ -385,9 +388,9 @@ namespace POps.Installer
         private static bool SamePath(string a, string b) =>
             string.Equals(Path.GetFullPath(a).TrimEnd('\\'), Path.GetFullPath(b).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
 
-        // Yetenek politikası (ajanda AgentCapabilities): terminal, Vision, sınav modu, dosya aktarımı, güç işlemleri ve
-        // kullanıcı mesajları (TERMINAL_ENABLED, VISION_ENABLED, EXAM_ENABLED, FILES_ENABLED, POWER_ENABLED,
-        // MESSAGE_ENABLED). Kurulum iki yönde de yazabilir; sunucu yalnızca kapatabilir. Özellik verilmeyen bayrak mevcut dosyadan korunur, böylece sunucunun kapattığı yetenek
+        // Yetenek politikası (ajanda AgentCapabilities): terminal, Vision, sınav modu, dosya aktarımı, güç işlemleri,
+        // kullanıcı mesajları ve eş önbelleği (TERMINAL_ENABLED, VISION_ENABLED, EXAM_ENABLED, FILES_ENABLED, POWER_ENABLED,
+        // MESSAGE_ENABLED, PEER_CACHE_ENABLED). Kurulum iki yönde de yazabilir; sunucu yalnızca kapatabilir. Özellik verilmeyen bayrak mevcut dosyadan korunur, böylece sunucunun kapattığı yetenek
         // bir güncellemeyle kendiliğinden açılmaz; dosyada olmayan bayrak (eski kurulum) açık sayılır. Dosya yoksa hepsi
         // açık başlar; var ama okunamıyorsa (ajan da öyle sayar) verilmeyen bayrak kapalı kalır.
         private static void WriteCapabilities(Layout layout, IDictionary<string, bool?> flags, Action<string> log)

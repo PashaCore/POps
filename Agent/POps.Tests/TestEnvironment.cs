@@ -51,6 +51,7 @@ namespace POps.Tests
             // Karantina testleri gerçek Görev Yöneticisi / oturum politikalarına dokunmasın
             POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
             IsolatePowerAndSessions();
+            IsolatePeerCache();
 #endif
         }
 
@@ -86,6 +87,7 @@ namespace POps.Tests
             if (!(POpsAgent.KioskMode.Registry is FakeKioskRegistry)) POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
             // Güncelleme indirmeleri testlerde BITS'e gitmez (BITS testleri sahte çalıştırıcıyla açar)
             POpsAgent.BitsDownload.Enabled = false;
+            IsolatePeerCache();
             // Sunucu modülleri bellekte tutulur: her test hepsi açık başlar
             POpsAgent.AgentModules.Reset();
             // Güvenlik duvarı betikleri ve sınav izin listesinin ad çözümü gerçek sisteme gitmez (ör. paylaşılan protokol
@@ -114,6 +116,19 @@ namespace POps.Tests
             POpsAgent.SessionTasks.ConsoleSession = () => POps.Shared.UserSessionLauncher.NoSession;
             POpsAgent.SessionTasks.Delay = System.Threading.Tasks.Task.Delay;
             POpsAgent.UserMessages.AckTimeout = TimeSpan.FromMinutes(30);
+        }
+
+        // Eş önbelleği: önceki testin sunucusu kapanır; güvenlik duvarına asla dokunulmaz (betik reddedilir), sunucu
+        // yalnızca 127.0.0.1'de rastgele bir portta açılır (8817'de, bütün arabirimlerde değil); saat ve denetimler gerçek
+        private static void IsolatePeerCache()
+        {
+            POpsAgent.PeerCache.ResetState();
+            POpsAgent.PeerCache.FirewallRunner = _ => System.Threading.Tasks.Task.FromResult((1, "testlerde güvenlik duvarına dokunulmaz"));
+            POpsAgent.PeerCache.ListenEndpoint = () => new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0);
+            POpsAgent.PeerCache.Clock = () => DateTime.UtcNow;
+            POpsAgent.PeerCache.IsLocalSubnet = POpsAgent.PeerCache.InLocalSubnet;
+            POpsAgent.PeerCache.IsIsolated = () => POpsAgent.NetworkIsolation.IsActive;
+            POpsAgent.PeerDownload.AllowLoopbackPeers = false;
         }
 
         private static bool IsUnderRoot(string path) =>

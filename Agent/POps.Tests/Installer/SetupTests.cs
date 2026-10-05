@@ -304,6 +304,7 @@ namespace POps.Tests.Installer
         [InlineData("FILES_ENABLED", "x", "FILES_ENABLED")]
         [InlineData("POWER_ENABLED", "belki", "POWER_ENABLED")]
         [InlineData("MESSAGE_ENABLED", "3", "MESSAGE_ENABLED")]
+        [InlineData("PEER_CACHE_ENABLED", "belki", "PEER_CACHE_ENABLED")]
         public void InvalidProperty_FailsTheInstall(string key, string value, string expected)
         {
             Layout layout = NewLayout();
@@ -459,6 +460,62 @@ namespace POps.Tests.Installer
             var caps = Json(Secure(layout, "capabilities.json"));
             Assert.Equal(false, caps["terminal_enabled"]);
             Assert.Equal(true, caps["vision_enabled"]);
+        }
+
+        // ---- eş önbelleği yeteneği (PEER_CACHE_ENABLED) ----
+        [Fact]
+        public void PeerCache_FirstInstallEnablesIt_AndThePropertyCanSwitchItOff()
+        {
+            Layout layout = NewLayout();
+            Assert.Null(Configure(layout, ("SERVER_URL", "https://pops.example")));
+            Assert.Equal(true, Json(Secure(layout, "capabilities.json"))["peer_cache_enabled"]);
+
+            Assert.Null(Configure(layout, ("PEER_CACHE_ENABLED", "0")));
+            var caps = Json(Secure(layout, "capabilities.json"));
+            Assert.Equal(false, caps["peer_cache_enabled"]);
+            Assert.Equal(true, caps["terminal_enabled"]);
+            Assert.Equal(true, caps["vision_enabled"]);
+            Assert.True(LockedDown(File.GetAccessControl(Secure(layout, "capabilities.json"))));
+        }
+
+        [Fact]
+        public void PeerCache_OffStaysOff_WhenAnUpdateSetsAnotherFlag()
+        {
+            Layout layout = NewLayout();
+            Assert.Null(Configure(layout, ("SERVER_URL", "https://pops.example"), ("PEER_CACHE_ENABLED", "0")));
+
+            Assert.Null(Configure(layout, ("TERMINAL_ENABLED", "0")));
+            var caps = Json(Secure(layout, "capabilities.json"));
+            Assert.Equal(false, caps["terminal_enabled"]);
+            Assert.Equal(false, caps["peer_cache_enabled"]); // verilmeyen bayrak korunur
+
+            Assert.Null(Configure(layout)); // güncelleme: özellik yok
+            Assert.Equal(false, Json(Secure(layout, "capabilities.json"))["peer_cache_enabled"]);
+
+            Assert.Null(Configure(layout, ("PEER_CACHE_ENABLED", "1"))); // yerel yönetici yeniden açabilir
+            Assert.Equal(true, Json(Secure(layout, "capabilities.json"))["peer_cache_enabled"]);
+        }
+
+        [Fact]
+        public void PeerCache_FileFromAnOlderInstall_WithoutTheKey_KeepsItOn()
+        {
+            Layout layout = NewLayout();
+            Assert.Null(Configure(layout, ("SERVER_URL", "https://pops.example")));
+            Write(Secure(layout, "capabilities.json"), "{\"terminal_enabled\":false,\"vision_enabled\":true,\"source\":\"server\"}");
+
+            Assert.Null(Configure(layout, ("VISION_ENABLED", "0")));
+            var caps = Json(Secure(layout, "capabilities.json"));
+            Assert.Equal(false, caps["terminal_enabled"]);
+            Assert.Equal(false, caps["vision_enabled"]);
+            Assert.Equal(true, caps["peer_cache_enabled"]);
+        }
+
+        [Fact]
+        public void PeerCache_PackagePassesThePropertyToConfigure()
+        {
+            string package = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "AgentPackage.wxs"));
+            Assert.Contains("<Property Id=\"PEER_CACHE_ENABLED\" Secure=\"yes\" />", package);
+            Assert.Contains("PEER_CACHE_ENABLED=[PEER_CACHE_ENABLED]", package);
         }
 
         // ---- eski kurulum temizliği, kaldırma, paket saklama ----

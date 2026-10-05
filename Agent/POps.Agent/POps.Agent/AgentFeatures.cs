@@ -13,6 +13,7 @@ namespace POpsAgent
             "winget",
             "power",
             "message",
+            "peer_cache",
         };
 
         public static string Header => string.Join(",", All);
