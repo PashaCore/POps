@@ -111,7 +111,7 @@ jobs:
       - name: Lint with flake8
         # Tam kapı: repo kökündeki .flake8 (max-line-length 120). Backend, Linux ajanı ve araçlar (tools/, README çizimleri) temiz tutulur; yeni uyarı CI'ı kırar.
         if: matrix.python == '3.12'
-        run: flake8 Backend/ Agent-Linux/ tools/ assets/readme/ --count --show-source --statistics
+        run: flake8 Backend/ Agent-Linux/ tools/ assets/readme/ fuzz/ --count --show-source --statistics
       - name: Import smoke test
         # Modül yüklenirken zorunlu ortam değişkenleri okunur; veritabanına bağlanılmaz. (FastAPI dahil edilen
         # router'ları artık iç içe tutar; app.routes uç sayısını vermez.)
@@ -614,6 +614,42 @@ jobs:
         # Geçici anahtarla imzala/doğrula, kurcalanmış manifest ve bozuk artefakt reddedilmeli.
         # Gerçek imza anahtarı (secret) gerekmez.
         run: python tools/sign_release.py selftest
+
+  fuzz:
+    name: Fuzzing (Atheris)
+    # fuzz/ hedefleri (docs/fuzzing.md): ajanın /ws/agent mesajları, HTTP istek modelleri, imzalı sürüm manifest'i,
+    # bildirim ayarları. Her hedef 60 sn, depodaki tohumlardan başlar; hata bulan girdi artifact olarak yüklenir.
+    # Sürüm etiketinde çalışmaz (yayın, main'de zaten bulanık test edilmiş commit'i rastgeleliğe bağlamasın).
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          # atheris'in tekerlekleri CPython 3.12+ içindir
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            Backend/requirements.lock
+            .github/requirements/fuzz.lock
+      - name: Install dependencies
+        run: |
+          pip install --require-hashes -r Backend/requirements.lock
+          pip install --require-hashes -r .github/requirements/fuzz.lock
+      - name: Fuzz each target for 60 seconds
+        env:
+          FUZZ_ARTIFACTS: ${{ runner.temp }}/fuzz-artifacts
+        run: fuzz/run.sh 60
+      - name: Upload failing inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: fuzz-failures
+          path: ${{ runner.temp }}/fuzz-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
 
   security:
     name: Security invariants (integration)
