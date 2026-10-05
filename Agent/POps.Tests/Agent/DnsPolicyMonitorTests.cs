@@ -34,10 +34,10 @@ namespace POps.Tests.Agent
 
         private static AgentPolicy Policy(Dictionary<string, List<string>> domains, bool autoQuarantine = false, int threshold = 3) => new AgentPolicy
         {
-            dns_categories = new List<string> { "bahis", "oyun" },
-            dns_domains = domains,
-            auto_quarantine = autoQuarantine,
-            quarantine_threshold = threshold,
+            DnsCategories = new List<string> { "bahis", "oyun" },
+            DnsDomains = domains,
+            AutoQuarantine = autoQuarantine,
+            QuarantineThreshold = threshold,
         };
 
         private static Dictionary<string, List<string>> Lists() => new Dictionary<string, List<string>>

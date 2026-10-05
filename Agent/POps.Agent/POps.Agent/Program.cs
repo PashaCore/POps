@@ -16,7 +16,7 @@ namespace POpsAgent
             {
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.WriteLine($"\n========================================");
-                Console.WriteLine($" POps Agent - Sürüm: {Worker.APP_VERSION}");
+                Console.WriteLine($" POps Agent - Sürüm: {Worker.AppVersion}");
                 Console.WriteLine($"========================================\n");
                 Console.ResetColor();
                 return; // Uygulamayı burada bitir, hostu hiç başlatma.
@@ -37,7 +37,7 @@ namespace POpsAgent
 
             // POpsHelpers ile sistem başlangıcını logluyoruz
             POpsHelpers.Log("AGENT", "========================================");
-            POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor ({Worker.APP_VERSION})");
+            POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor ({Worker.AppVersion})");
 
             // Tatbikat kararı açılışın başında alınır; health.json ancak Worker çekirdek başlangıcını tamamlayınca yazılır.
             bool suppressOperationalHealth = AgentUpdate.ApplyRollbackDrillOnStartup();

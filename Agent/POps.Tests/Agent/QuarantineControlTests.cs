@@ -208,8 +208,8 @@ namespace POps.Tests.Agent
             DnsPolicyMonitor.Reporter = (_, _) => { };
             DnsPolicyMonitor.Configure(new AgentPolicy
             {
-                dns_categories = new List<string> { "bahis" },
-                dns_domains = new Dictionary<string, List<string>> { ["bahis"] = new List<string> { "bet.example" } },
+                DnsCategories = new List<string> { "bahis" },
+                DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = new List<string> { "bet.example" } },
             }, HwId, "https://pops.example");
             try
             {

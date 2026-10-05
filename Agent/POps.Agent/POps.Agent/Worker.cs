@@ -19,6 +19,7 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,21 +29,22 @@ using System.Threading.Tasks;
 
 namespace POpsAgent
 {
+    // GET /api/agent_policies yanıtı (alan adları sunucunun JSON'ı)
     public class AgentPolicy
     {
-        public string fair_use_text { get; set; } = "";
-        public List<string> dns_categories { get; set; } = new List<string>();
+        [JsonPropertyName("fair_use_text")] public string FairUseText { get; set; } = "";
+        [JsonPropertyName("dns_categories")] public List<string> DnsCategories { get; set; } = new List<string>();
         // Kategori -> alan adları (tam eşleşme ya da alt alan; bkz. DnsWatch). Yoksa DNS tespiti yapılmaz.
-        public Dictionary<string, List<string>> dns_domains { get; set; } = new Dictionary<string, List<string>>();
-        public bool auto_quarantine { get; set; } = false;
-        public int quarantine_threshold { get; set; } = 3;
+        [JsonPropertyName("dns_domains")] public Dictionary<string, List<string>> DnsDomains { get; set; } = new Dictionary<string, List<string>>();
+        [JsonPropertyName("auto_quarantine")] public bool AutoQuarantine { get; set; }
+        [JsonPropertyName("quarantine_threshold")] public int QuarantineThreshold { get; set; } = 3;
     }
 
     [SupportedOSPlatform("windows")]
     public class Worker : BackgroundService
     {
         // Sürüm kök VERSION dosyasından gelir (Directory.Build.props -> assembly). Elle güncellenmez.
-        public static readonly string APP_VERSION = POpsHelpers.AppVersion;
+        public static readonly string AppVersion = POpsHelpers.AppVersion;
 
         private readonly ILogger<Worker> _logger;
         private readonly string _pcName;
@@ -83,11 +85,11 @@ namespace POpsAgent
         private TaskCompletionSource<byte[]> _thumbnailTcs;
 
 
-        private object _cachedDna = null;
-        private object _cachedInventory = null;
+        private object _cachedDna;
+        private object _cachedInventory;
 
         private AgentPolicy _currentPolicy = new AgentPolicy();
-        private bool _fairUseAcknowledged = false;
+        private bool _fairUseAcknowledged;
 
         // Karantina (lockdown/unlock/çevrimdışı bypass) ve Windows Update: bkz. QuarantineControl, PatchManager
         private QuarantineControl _quarantine;
@@ -119,7 +121,7 @@ namespace POpsAgent
             {
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.WriteLine($"\n========================================");
-                Console.WriteLine($" POps Agent - Sürüm: {APP_VERSION}");
+                Console.WriteLine($" POps Agent - Sürüm: {AppVersion}");
                 Console.WriteLine($"========================================\n");
                 Console.ResetColor();
                 Environment.Exit(0);
@@ -213,7 +215,7 @@ namespace POpsAgent
                 else if (verdict == BindingVerdict.Match)
                 {
                     string bound = Binding.BoundHwId;
-                    if (bound != null && bound.StartsWith("HW-") && bound != _hwId)
+                    if (bound != null && bound.StartsWith("HW-", StringComparison.Ordinal) && bound != _hwId)
                     {
                         POpsHelpers.Log("AGENT", $"Kimlik dosyası anahtarın verildiği kimlikten farklı ({_hwId}); {bound} geri yükleniyor.", true);
                         UpdateIdentityFile(bound);
@@ -280,9 +282,9 @@ namespace POpsAgent
             ReportConfigProblem();
             // Tepsi ve watchdog kullanıcı oturumunda yoksa başlatılır (kurulum/güncelleme sonrası, karantinada kilit ekranı).
             // Yavaş WMI açılışını beklemez.
-            _ = Task.Run(() => new UserSessionApps().RunAsync(stoppingToken));
+            _ = Task.Run(() => new UserSessionApps().RunAsync(stoppingToken), stoppingToken);
             // Log saklama: açılışta ve günde bir (bkz. LogRetention)
-            _ = Task.Run(() => LogRetentionLoopAsync(stoppingToken));
+            _ = Task.Run(() => LogRetentionLoopAsync(stoppingToken), stoppingToken);
 
             await Task.Run(InitializeCoreState, stoppingToken);
             _slowInitialization = Task.Run(InitializeSlowState, stoppingToken);
@@ -301,7 +303,7 @@ namespace POpsAgent
             string baseWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://");
 
             // Start background tasks
-            _ = Task.Run(() => PolicyPollingLoop(stoppingToken));
+            _ = Task.Run(() => PolicyPollingLoop(stoppingToken), stoppingToken);
 
             // Sunucuya bildirimler (yalnızca cihaz secret'ı varken; bkz. AgentHttp): yazılım envanteri (açılıştan
             // kısa süre sonra, sonra 6 saatte bir), günlük Windows Update taraması, oturum açma/kapama
@@ -314,12 +316,12 @@ namespace POpsAgent
                 DnsPolicyMonitor.OnUserChanged();
             };
             _software = new SoftwareReporter(_serverUrl, () => _hwId, _health.InventoryUploaded, error => _health.RecordError("inventory", error));
-            _ = Task.Run(() => _software.RunAsync(stoppingToken));
-            _ = Task.Run(() => _patches.ScheduleLoopAsync(stoppingToken));
-            _ = Task.Run(() => sessions.RunAsync(stoppingToken));
-            _ = Task.Run(() => _helpdesk.PollLoopAsync(stoppingToken, () => _trayPipe?.IsConnected == true));
+            _ = Task.Run(() => _software.RunAsync(stoppingToken), stoppingToken);
+            _ = Task.Run(() => _patches.ScheduleLoopAsync(stoppingToken), stoppingToken);
+            _ = Task.Run(() => sessions.RunAsync(stoppingToken), stoppingToken);
+            _ = Task.Run(() => _helpdesk.PollLoopAsync(stoppingToken, () => _trayPipe?.IsConnected == true), stoppingToken);
             // Karantinada sunucunun adresi değişirse izin listesi yenilenir (bkz. NetworkIsolation)
-            _ = Task.Run(() => IsolationRefreshLoopAsync(stoppingToken));
+            _ = Task.Run(() => IsolationRefreshLoopAsync(stoppingToken), stoppingToken);
 
             // Son sağlam bağlantıdan beri art arda başarısız bağlantı sayısı (bkz. ReconnectBackoff)
             int reconnectAttempt = 0;
@@ -331,9 +333,9 @@ namespace POpsAgent
                 EnsureTrayPipeServer();
                 _commandWs = new ClientWebSocket();
                 _commandWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(commandWsUrl));
-                _commandWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
+                _commandWs.Options.SetRequestHeader("X-Agent-Version", AppVersion);
                 string authMode = ApplyAuthHeaders(_commandWs);
-                POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({APP_VERSION}, kimlik: {authMode})");
+                POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({AppVersion}, kimlik: {authMode})");
                 _startupHealth.Mark(StartupCheck.Loop);
 
                 try
@@ -575,9 +577,9 @@ namespace POpsAgent
             DnsPolicyMonitor.Configure(policy, _hwId, _serverUrl);
             _health.PolicySynced();
 
-            if (!string.IsNullOrWhiteSpace(policy.fair_use_text) && !_fairUseAcknowledged)
+            if (!string.IsNullOrWhiteSpace(policy.FairUseText) && !_fairUseAcknowledged)
             {
-                string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(policy.fair_use_text));
+                string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(policy.FairUseText));
                 _trayPipe?.SendCommandToDesktop($"SHOW_FAIR_USE:{b64}");
             }
         }
@@ -621,7 +623,7 @@ namespace POpsAgent
 
             _trayPipe.OnMessageReceived += (message) =>
             {
-                if (message.StartsWith("USER_COMMAND:"))
+                if (message.StartsWith("USER_COMMAND:", StringComparison.Ordinal))
                 {
                     // Eski tepsi sürümlerinin "WatchDog'u / ekran izlemeyi duraklat" komutları artık kabul edilmez
                     POpsHelpers.Log("AGENT", $"Yok sayılan kullanıcı komutu: {message}");
@@ -631,20 +633,20 @@ namespace POpsAgent
                     _fairUseAcknowledged = true;
                     POpsHelpers.Log("AGENT", "Kullanıcı aydınlatma metnini onayladı.");
                 }
-                else if (message.StartsWith("ACTIVE_APP:"))
+                else if (message.StartsWith("ACTIVE_APP:", StringComparison.Ordinal))
                 {
                     // Yalnızca süreç adı; heartbeat'te active_window olarak gider
                     string app = ActiveApp.Sanitize(message.Substring("ACTIVE_APP:".Length));
                     if (app != null) _activeApp = app;
                 }
-                else if (message.StartsWith("ACTIVE_WINDOW:"))
+                else if (message.StartsWith("ACTIVE_WINDOW:", StringComparison.Ordinal))
                 {
                     // Eski tepsi pencere başlığı gönderir: KVKK gereği sunucuya iletilmez (bkz. ActiveApp)
                 }
-                else if (message.StartsWith("START_VISION_TUNNEL"))
+                else if (message.StartsWith("START_VISION_TUNNEL", StringComparison.Ordinal))
                 {
                     int fps = 2;
-                    if (message.Contains(":")) int.TryParse(message.Split(':')[1], out fps);
+                    if (message.Contains(':') && !int.TryParse(message.Split(':')[1], out fps)) fps = 2;
                     _ = Task.Run(async () =>
                     {
                         await ConnectVisionTunnelAsync(CancellationToken.None);
@@ -663,7 +665,7 @@ namespace POpsAgent
                         }
                     });
                 }
-                else if (message.StartsWith("REJECT_VISION_TUNNEL:"))
+                else if (message.StartsWith("REJECT_VISION_TUNNEL:", StringComparison.Ordinal))
                 {
                     _visionSessionApproved = false;
                     string sessionId = message.Split(':')[1];
@@ -684,7 +686,7 @@ namespace POpsAgent
                     _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
                     _ = DisconnectVisionTunnelAsync();
                 }
-                else if (message.StartsWith("UNLOCK_BYPASS:"))
+                else if (message.StartsWith("UNLOCK_BYPASS:", StringComparison.Ordinal))
                 {
                     _ = HandleBypassAttemptAsync(message.Substring("UNLOCK_BYPASS:".Length));
                 }
@@ -696,7 +698,7 @@ namespace POpsAgent
                 {
                     _ = _visionRelay.ForwardClipboardAsync(message.Substring("CLIPBOARD:".Length), ClipboardAllowed);
                 }
-                else if (message.StartsWith("TICKET_CREATE:"))
+                else if (message.StartsWith("TICKET_CREATE:", StringComparison.Ordinal))
                 {
                     _ = _helpdesk.CreateAsync(message.Substring("TICKET_CREATE:".Length));
                 }
@@ -832,7 +834,7 @@ namespace POpsAgent
             }
             string visionWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://") + $"/ws/vision/{_hwId}";
             string secret = AgentCredentials.CurrentSecret ?? AgentCredentials.LoadSecret();
-            VisionAuthSelection auth = VisionChannel.SelectHeaders(secret, AgentCredentials.GetEnrollToken(), APP_VERSION);
+            VisionAuthSelection auth = VisionChannel.SelectHeaders(secret, AgentCredentials.GetEnrollToken(), AppVersion);
             if (!auth.CanConnect)
             {
                 POpsHelpers.Log("AGENT", "[GÜVENLİK] Vision tüneli açılmadı: cihaz henüz kayıtlı değil (anahtar yok)", true);
@@ -1070,7 +1072,7 @@ namespace POpsAgent
                             try { if (ws.State == WebSocketState.Open) await ws.SendAsync(new ArraySegment<byte>(b), WebSocketMessageType.Text, true, CancellationToken.None); }
                             finally { _wsCommandLock.Release(); }
                         }
-                    });
+                    }, stoppingToken);
                 }
                 else
                 {
@@ -1125,7 +1127,7 @@ namespace POpsAgent
                             task_id = tid,
                             exit_code = execution.ExitCode,
                         });
-                    });
+                    }, CancellationToken.None);
                 }
                 else if (action == "get_hardware") await SendHardwareInfoAsync();
                 else if (action == "set_capabilities") await HandleSetCapabilitiesAsync(root);
@@ -1164,7 +1166,7 @@ namespace POpsAgent
                 else if (action == "update_agent")
                 {
                     JsonElement command = root.Clone();
-                    _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl, ReportUpdateProgressAsync));
+                    _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl, ReportUpdateProgressAsync), CancellationToken.None);
                 }
                 else if (action == "wake_peer" && !AgentModules.IsEnabled(AgentModules.Wol)) await DenyCapabilityAsync("wol", action, reason: AgentModules.DisabledReason);
                 else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
@@ -1420,7 +1422,7 @@ namespace POpsAgent
         }
 
         // Sunucu sonucu kaydetti: result_id bekleyen sonuçla eşleşiyorsa dosya kenara alınır; eşleşmiyorsa beklemeye devam
-        internal void HandleUpdateResultAck(JsonElement root)
+        internal static void HandleUpdateResultAck(JsonElement root)
         {
             string pending = AgentUpdate.PendingResultId();
             if (UpdateResultReporter.Acknowledges(root, pending))
@@ -1447,7 +1449,7 @@ namespace POpsAgent
                 if (File.Exists(_identityFilePath))
                 {
                     string savedId = File.ReadAllText(_identityFilePath).Trim();
-                    if (!string.IsNullOrEmpty(savedId) && savedId.StartsWith("HW-")) return savedId;
+                    if (!string.IsNullOrEmpty(savedId) && savedId.StartsWith("HW-", StringComparison.Ordinal)) return savedId;
                 }
 
                 string newId = GenerateFallbackHash();
@@ -1508,7 +1510,7 @@ namespace POpsAgent
             catch { }
         }
 
-        private object GetHardwareDnaInternal()
+        private static object GetHardwareDnaInternal()
         {
             bool ramReadable = true, diskSerialReal = true, wmiHealthy = true;
             string uuid = "NULL", biosSn = "NULL", diskSn = "NULL", mac = "NULL", ramSn = "NULL";
@@ -1593,7 +1595,7 @@ namespace POpsAgent
                 new ObjectQuery(query),
                 new System.Management.EnumerationOptions { Timeout = WmiTimeout, ReturnImmediately = true, Rewindable = false });
 
-        private string GetRamSerialNumbers()
+        private static string GetRamSerialNumbers()
         {
             try
             {
@@ -1609,7 +1611,7 @@ namespace POpsAgent
             catch { return "NULL"; }
         }
 
-        private string GetVolumeId()
+        private static string GetVolumeId()
         {
             try
             {
@@ -1625,26 +1627,28 @@ namespace POpsAgent
                     process.Start();
                     string output = process.StandardOutput.ReadToEnd();
                     process.WaitForExit();
-                    foreach (string line in output.Split('\n')) if (line.Contains("-")) return line.Split(' ').Last().Trim();
+                    foreach (string line in output.Split('\n')) if (line.Contains('-')) return line.Split(' ').Last().Trim();
                 }
             }
             catch { }
             return "NULL";
         }
 
-        private string GenerateFallbackHash()
+        private static string GenerateFallbackHash()
         {
             try
             {
                 string raw = GetWmiValue("Win32_ComputerSystemProduct", "UUID") + GetMacAddress();
-                using MD5 md5 = MD5.Create();
-                byte[] hash = md5.ComputeHash(Encoding.ASCII.GetBytes(raw));
-                return "HW-" + BitConverter.ToString(hash).Replace("-", "").Substring(0, 12);
+                // MD5 güvenlik için değil, kimlik türetmek için: algoritma değişirse kurulu her cihazın kimliği değişirdi
+#pragma warning disable CA5351
+                byte[] hash = MD5.HashData(Encoding.ASCII.GetBytes(raw));
+#pragma warning restore CA5351
+                return string.Concat("HW-", Convert.ToHexString(hash).AsSpan(0, 12));
             }
-            catch { return "HW-" + Guid.NewGuid().ToString().Substring(0, 12); }
+            catch { return string.Concat("HW-", Guid.NewGuid().ToString().AsSpan(0, 12)); }
         }
 
-        private string GetWmiValue(string wmiClass, string property)
+        private static string GetWmiValue(string wmiClass, string property)
         {
             try
             {
@@ -1655,7 +1659,7 @@ namespace POpsAgent
             return "-";
         }
 
-        private string GetTotalRam()
+        private static string GetTotalRam()
         {
             try
             {
@@ -1666,17 +1670,17 @@ namespace POpsAgent
             return "-";
         }
 
-        private string GetMacAddress()
+        private static string GetMacAddress()
         {
             try
             {
-                foreach (var nic in NetworkInterface.GetAllNetworkInterfaces()) if (nic.OperationalStatus == OperationalStatus.Up && nic.NetworkInterfaceType != NetworkInterfaceType.Loopback) return string.Join(":", nic.GetPhysicalAddress().GetAddressBytes().Select(b => b.ToString("X2")));
+                foreach (var nic in NetworkInterface.GetAllNetworkInterfaces()) if (nic.OperationalStatus == OperationalStatus.Up && nic.NetworkInterfaceType != NetworkInterfaceType.Loopback) return string.Join(":", nic.GetPhysicalAddress().GetAddressBytes().Select(b => b.ToString("X2", CultureInfo.InvariantCulture)));
             }
             catch { }
             return "-";
         }
 
-        private string GetLocalIPAddress()
+        private static string GetLocalIPAddress()
         {
             try
             {
@@ -1686,12 +1690,12 @@ namespace POpsAgent
             return "-";
         }
 
-        private string GetDiskInfo()
+        private static string GetDiskInfo()
         {
             try
             {
                 var sb = new StringBuilder();
-                foreach (var drive in DriveInfo.GetDrives()) if (drive.IsReady && drive.DriveType == DriveType.Fixed) sb.Append($"{drive.Name} {drive.TotalFreeSpace / (1024L * 1024 * 1024)}GB Boş / {drive.TotalSize / (1024L * 1024 * 1024)}GB Toplam | ");
+                foreach (var drive in DriveInfo.GetDrives()) if (drive.IsReady && drive.DriveType == DriveType.Fixed) sb.Append(CultureInfo.InvariantCulture, $"{drive.Name} {drive.TotalFreeSpace / (1024L * 1024 * 1024)}GB Boş / {drive.TotalSize / (1024L * 1024 * 1024)}GB Toplam | ");
                 return sb.ToString().TrimEnd(' ', '|');
             }
             catch { }
@@ -1732,7 +1736,7 @@ namespace POpsAgent
         public OperationalChecks Snapshot() => _gate.Snapshot();
     }
 
-    public class TrayPipeServer
+    public sealed class TrayPipeServer : IDisposable
     {
         private const int MaxPipeMessageBytes = 32 * 1024 * 1024;
         private CancellationTokenSource _cts;
@@ -1778,6 +1782,12 @@ namespace POpsAgent
             }
         }
         public void Stop() { _cts?.Cancel(); _pipeServer?.Dispose(); }
+
+        public void Dispose()
+        {
+            Stop();
+            _cts?.Dispose();
+        }
 
         public void SendCommandToDesktop(string json)
         {
@@ -1850,7 +1860,7 @@ namespace POpsAgent
                         int lRead = 0;
                         while (lRead < 4)
                         {
-                            int r = await _pipeServer.ReadAsync(lBuf, lRead, 4 - lRead, token);
+                            int r = await _pipeServer.ReadAsync(lBuf.AsMemory(lRead, 4 - lRead), token);
                             if (r == 0) break;
                             lRead += r;
                         }
@@ -1868,7 +1878,7 @@ namespace POpsAgent
                         int total = 0;
                         while (total < dLen)
                         {
-                            int r = await _pipeServer.ReadAsync(d, total, dLen - total, token);
+                            int r = await _pipeServer.ReadAsync(d.AsMemory(total, dLen - total), token);
                             if (r == 0) break;
                             total += r;
                         }

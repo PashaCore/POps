@@ -52,9 +52,9 @@ namespace POpsAgent
             if (process == IntPtr.Zero) return null;
             try
             {
-                var buffer = new StringBuilder(1024);
-                int size = buffer.Capacity;
-                return QueryFullProcessImageName(process, 0, buffer, ref size) ? buffer.ToString(0, size) : null;
+                var buffer = new char[1024];
+                int size = buffer.Length;
+                return QueryFullProcessImageName(process, 0, buffer, ref size) ? new string(buffer, 0, size) : null;
             }
             finally { CloseHandle(process); }
         }
@@ -71,7 +71,7 @@ namespace POpsAgent
         private static extern IntPtr OpenProcess(uint access, bool inheritHandle, uint processId);
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "QueryFullProcessImageNameW")]
-        private static extern bool QueryFullProcessImageName(IntPtr process, int flags, StringBuilder exeName, ref int size);
+        private static extern bool QueryFullProcessImageName(IntPtr process, int flags, [Out] char[] exeName, ref int size);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool ProcessIdToSessionId(uint processId, out uint sessionId);
@@ -85,7 +85,7 @@ namespace POpsAgent
     [SupportedOSPlatform("windows")]
     public static class Authenticode
     {
-        public enum Result { Unsigned, Valid, Invalid }
+        public enum Result { NotSigned, Valid, Invalid }
 
         private static readonly ConcurrentDictionary<string, (DateTime Stamp, Result Result)> Cache = new ConcurrentDictionary<string, (DateTime, Result)>(StringComparer.OrdinalIgnoreCase);
 
@@ -121,7 +121,7 @@ namespace POpsAgent
 
                 uint status = unchecked((uint)WinVerifyTrust(IntPtr.Zero, GenericVerifyV2, dataPtr));
                 if (status == 0) return Result.Valid;
-                if (status == TrustENoSignature || status == TrustESubjectFormUnknown || status == TrustEProviderUnknown) return Result.Unsigned;
+                if (status == TrustENoSignature || status == TrustESubjectFormUnknown || status == TrustEProviderUnknown) return Result.NotSigned;
                 return Result.Invalid;
             }
             finally

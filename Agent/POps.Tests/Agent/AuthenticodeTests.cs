@@ -10,7 +10,7 @@ namespace POps.Tests.Agent
     {
         [Fact]
         public void UnsignedBinary_IsUnsigned() =>
-            Assert.Equal(Authenticode.Result.Unsigned, Authenticode.Verify(typeof(AuthenticodeTests).Assembly.Location));
+            Assert.Equal(Authenticode.Result.NotSigned, Authenticode.Verify(typeof(AuthenticodeTests).Assembly.Location));
 
         [Fact]
         public void SignedBinary_IsValid()

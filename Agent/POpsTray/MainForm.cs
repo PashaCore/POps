@@ -223,7 +223,7 @@ namespace POpsTray
                         int lRead = 0;
                         while (lRead < 4)
                         {
-                            int r = await pipeClient.ReadAsync(lBuf, lRead, 4 - lRead, token);
+                            int r = await pipeClient.ReadAsync(lBuf.AsMemory(lRead, 4 - lRead), token);
                             if (r == 0) break;
                             lRead += r;
                         }
@@ -236,7 +236,7 @@ namespace POpsTray
                         int total = 0;
                         while (total < dLen)
                         {
-                            int r = await pipeClient.ReadAsync(d, total, dLen - total, token);
+                            int r = await pipeClient.ReadAsync(d.AsMemory(total, dLen - total), token);
                             if (r == 0) break;
                             total += r;
                         }
