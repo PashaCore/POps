@@ -1,6 +1,7 @@
 # Package downloads: resume and a lab-local peer cache
 
-Status: step 1 done (agent 0.1.23, BITS); step 2 decided here, not built.
+Status: step 1 done (agent 0.1.23, BITS); step 2 server side built (after 0.1.22-alpha), agent side not built yet.
+The agent's part is specified in [`../agent.md`, "Peer cache contract"](../agent.md#peer-cache-contract).
 
 ## Problem
 
@@ -45,18 +46,37 @@ reduce the number of downloads.
 
 ## Decision: A, server-coordinated
 
-1. **Staged dispatch (server).**
-   - For each lab the server first sends `update_agent` to one online PC.
-   - When that PC reports `update_progress` `verified`, the server sends the command to the rest of the lab, with
-     `"peers": [{"hw_id", "url"}]` listing up to three online PCs in the lab that have verified the package.
-   - Old agents ignore the field.
+1. **Staged dispatch (server, built).**
+   - Only agents that announce `peer_cache` in `X-Agent-Features` take part. For each lab with at least two such
+     online targets the server first sends `update_agent` to one of them, the seed: it needs a usable LAN address
+     (`X-Agent-Peer-Cache: ip=…`, else the inventory address, else the connection address when it is private and
+     not shared), must not already run the target version, and wired PCs (`link=wired`) and the most recently
+     seen come first.
+   - When the seed reports `update_result` `success` on its new version, the server sends the command to the rest
+     of the lab with `"peers": [{"hw_id", "url"}]` (up to three online PCs of the lab that reported success for the
+     package less than 110 minutes ago, the seed first, rotated per PC). The trigger was `verified` in the first
+     draft; it is the result because the seed's service, and so its cache server, is stopped while `POpsUpdater`
+     installs, which is exactly when the rest of the lab would download. `verified` is shown in the panel and
+     restarts the seed's time limit.
+   - A seed that does not reach `verified` within 10 minutes (`PEER_CACHE_SEED_TIMEOUT_SECONDS`), or a result
+     within 10 minutes after it, or that fails, is replaced by the next candidate; after three seeds or with no
+     candidate left the rest gets `update_agent` without `peers`.
+   - Agents without the feature, PCs without a lab and labs without a candidate are sent the update at once, as
+     before. Old agents ignore the field anyway.
+   - The setting `update_peer_cache` (Sistem → Ajanlar → "Sınıf içinde eşten dağıt", on by default) switches it
+     off; switching it off sends the update to the PCs still waiting for a seed.
+   - The rollout state is kept in memory. After a server restart the PCs that were still waiting are not sent the
+     update; the next deploy stages them again (PCs already sent are tracked in `pending_updates` as before).
 2. **Cache (agent).**
    - After `verified` the package is kept in `C:\POpsData\cache\<sha256>` (SYSTEM/Administrators only).
    - It is kept for 2 hours or until the next update, whichever is sooner, and at most two packages.
+   - It is copied there before the install, so the new version serves it after the restart.
 3. **Peer server (agent).**
    - While it holds a cached package, the service listens on one port (HttpListener) and answers only
      `GET /pops-cache/<sha256>` for a package it has.
-   - The server is read-only, with no listing and at most 4 concurrent transfers.
+   - The server is read-only, with no listing and at most 4 concurrent transfers (further requests wait up to
+     60 seconds for a slot).
+   - Default port 8817; the agent may announce another with `X-Agent-Peer-Cache: port=…`.
    - A firewall rule allows the port inbound from the local subnet only.
    - It stops when the cache is empty.
 4. **Download order (agent).**
@@ -74,8 +94,10 @@ reduce the number of downloads.
   every peer is unreachable (client isolation on Wi-Fi) falls back to today's behaviour.
 - **Rollout time:** Staged dispatch adds one download time per lab before the rest of the lab starts.
 
-### Work, when scheduled
-- **Agent:** cache directory and cleanup, the peer server with its firewall rule, `peers` handling in
-  `DownloadVerifiedAsync`, and tests with a fake peer.
-- **Server:** staged dispatch per lab, `peers` in `update_agent`, the protocol schema, and panel display of
-  "via peer".
+### Work
+- **Agent (to do):** the header, cache directory and cleanup, the peer server with its firewall rule, `peers`
+  handling in `DownloadVerifiedAsync`, and tests with a fake peer. Contract: [`../agent.md`](../agent.md#peer-cache-contract).
+- **Server (done):** `Backend/pops/peer_cache.py` (staged dispatch per lab, seed choice and fallback), `peers` in
+  `update_agent` from `POST /api/system/deploy-update`, peer state in `update-progress`, the setting
+  (`POST /api/system/update-peer-cache`), the protocol schema and example, the panel's per-lab line ("tohum:
+  PC-12, doğrulandı; 38 bilgisayara eşten dağıtılıyor"), and `Backend/tests/test_peer_cache.py`.

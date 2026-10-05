@@ -42,6 +42,7 @@ Ways to create it:
 | `DB_COMMAND_TIMEOUT` | no | `30` | Longest single query, in seconds. Migrations run on a separate connection without this limit. |
 | `DB_IDLE_IN_TRANSACTION_MS` | no | `60000` | PostgreSQL closes a session that sits idle inside a transaction this long, so it cannot hold locks. |
 | `HEARTBEAT_FLUSH_SECONDS` | no | `2` | Agent heartbeats are collected and written in one statement this often. |
+| `PEER_CACHE_SEED_TIMEOUT_SECONDS` | no | `600` | Lab-local peer cache: how long a lab's seed PC has to report `verified`, and then a successful result, before the next PC becomes the seed (see [`agent.md`](agent.md#peer-cache-contract)). Tests use `4`. |
 | `SCHEDULE_VALID_MINUTES` | no | `60` | A scheduled run that could not be sent within this many minutes of its time becomes `Expired`. |
 | `SCHEDULE_MISFIRE_MINUTES` | no | `60` | If the server was down longer than this past a run time, that run is skipped and reported as missed. |
 | `TOTP_ENCRYPTION_KEY` | no | derived from `JWT_SECRET` | Fernet key that encrypts the 2FA secrets and the per-device bypass keys in the database. Set it before ever changing `JWT_SECRET`; see [`security.md`](security.md#two-factor-authentication). |
@@ -204,6 +205,7 @@ SQL is shown for recovery situations.
 | --- | --- | --- |
 | `concurrent_limit` | **Ayarlar** → "Görev kuyruğu" → "Eşzamanlı görev sınırı" (1–200), **Dağıtım** → "Eşzamanlı kurulum sınırı" (1–100) or the limit button on **İşlemler** (1–500) | How many devices run a queued task at the same time. Default `5`. The backend treats `0` as no limit (API or SQL only). |
 | `enforce_agent_auth` | **Sistem** → "Kimlik zorlaması" | `1`: agents without a valid secret or enrollment token are rejected (WebSocket `4401`, HTTP `401`). Default off (accept-both). |
+| `update_peer_cache` | **Sistem** → **Ajanlar** → "Sınıf içinde eşten dağıt" | Default on: agents that support the lab-local peer cache are updated one PC per lab first, the rest of the lab fetch the package from it ([`agent.md`](agent.md#peer-cache-contract)). `0`: every PC downloads from the server at once, as before. |
 | `agent_policies` | **Politikalar** | JSON policy read by agents every 60 seconds (below). |
 | `verified_release_version`, `verified_release_manifest` | **Sistem** → **Ajanlar** | The staged, verified agent release. Set only by a successful upload or GitHub download. |
 | `auto_enroll_lab` | **Sınıflar** → **Sınıf işlemleri** → **Otomatik kayıt…** | JSON `{"lab": "<lab>", "until": "YYYY-MM-DD"}`. Devices that connect for the **first time** on or before `until` (server date) are put into that lab. A lab from the enrollment token takes precedence, devices that are already known keep their lab, and a value without `until` (from older versions) is ignored. |

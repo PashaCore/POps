@@ -357,6 +357,11 @@ An admin who is not a superadmin sees only the **Sunucu** and **Ajanlar** cards,
    reason. Agents up to 0.1.21 report no stages: they show **Kuruluyor** until the result, and after 3 minutes
    "Ajan ilerleme bildirmiyor (eski sürüm olabilir)". A PC whose update to the same version is still running is
    not sent it again; the notice says "N bilgisayara zaten gönderildi, kurulum sürüyor" and the box follows it.
+   **Sınıf içinde eşten dağıt** (superadmin, on by default) stages the update per lab for agents that support the
+   lab-local peer cache ([`agent.md`](agent.md#peer-cache-contract)): the progress box then has one line per lab
+   ("tohum: PC-12, doğrulandı; 38 bilgisayara eşten dağıtılıyor", "… 7 bilgisayar bekliyor", "tohum bulunamadı; …
+   sunucudan gönderildi"), the seed's row says it is the lab's seed and the PCs waiting for it show **Tohum
+   bekleniyor**.
 3. **Ajan kaydı ve kimlik**: the **Kimlik zorlaması** switch (agent-auth enforcement; the card shows how many
    agents are enrolled) and **Kayıt jetonları**: **Jeton üret** (**Sınıf**, **Not**, **Kullanım sayısı**,
    **Geçerlilik (saat)**), the list of tokens and revoking them.

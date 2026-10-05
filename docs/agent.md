@@ -535,7 +535,8 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
    that is not newer than its own, downloads the MSI from `<ServerUrl>/updates/<name>` and checks its size and
    SHA-256. From 0.1.23-alpha the download uses BITS: it resumes after a network drop or a restart, and a download
    that is still running after 15 minutes continues with the next update command. When BITS cannot be used, the
-   agent downloads directly as before. See [`design/peer-cache.md`](design/peer-cache.md).
+   agent downloads directly as before. See [`design/peer-cache.md`](design/peer-cache.md). With the lab-local peer
+   cache (below) the server sends `update_agent` to one PC per lab first and to the rest with `peers`.
 3. `POpsUpdater` installs it, waits up to 90 seconds for the new version to report `phase: "operational"`
    in `C:\POpsData\health.json`, and otherwise rolls back to the previous MSI. Operational means the agent's
    identity, credentials, capabilities, quarantine/TLS state and tray pipe are ready and its first connection
@@ -558,6 +559,102 @@ service forwards them. **Sistem → Güncellemeler** shows them per PC
 
 The outcomes and the rollback drill are described in [`Agent/README.md`](../Agent/README.md#updates). Agents
 older than 0.1.3-alpha cannot apply signed updates and must be reinstalled once with the MSI.
+
+### Peer cache contract
+
+Lab-local peer cache for update packages ([`design/peer-cache.md`](design/peer-cache.md), option A). The server
+side is built (after 0.1.22-alpha); the agent part is not built yet, and this is the contract it must follow. The
+message schema and a test vector are in [`protocol/`](protocol/README.md) (`server-to-agent/update_agent.json`,
+`examples/server-to-agent/update_agent.peers.json`).
+
+**1. Announce the feature.** On the `/ws/agent` connection, next to `X-Agent-Version`:
+
+```
+X-Agent-Features: peer_cache
+X-Agent-Peer-Cache: port=8817; ip=10.20.0.12; link=wired
+```
+
+- `peer_cache` in `X-Agent-Features` (comma-separated with the other features, for example `winget,peer_cache`)
+  is what makes the server stage updates for this PC and send it `peers`. Without it the PC is updated as today.
+- `X-Agent-Peer-Cache` is optional and every part of it is optional, in any order, separated by `;`:
+  - `port`: the TCP port of the cache server, 1024–65535. Default **8817**.
+  - `ip`: the IPv4 address other PCs in the lab should use, a private address (10/8, 172.16/12, 192.168/16).
+    Send the address of the interface that routes to the POps server. Without it the server uses the address
+    the agent reported in its hardware inventory (`ip_address`), and only as a last resort the address the
+    connection came from (only when it is private and no other PC shares it, that is no NAT in between). A PC
+    with no usable address is never a seed or a peer.
+  - `link`: `wired` or `wireless`. Wired PCs are preferred as seeds.
+- The server announces `peer_cache` in `server_info.features`. Against a server that does not, the agent need not
+  keep a cache or listen.
+
+**2. What the server does** (`Backend/pops/peer_cache.py`), so the agent knows what to expect:
+
+- When the update setting "Sınıf içinde eşten dağıt" is on (the default), for every lab with at least two online
+  target PCs that announce the feature, the server picks one **seed** (online, feature, a usable address, not
+  already on the target version; wired first, then the most recently seen). The seed gets a normal
+  `update_agent` (no `peers`). The other feature PCs in that lab wait.
+- The seed downloads from the server, verifies, installs and restarts as today. When it reports
+  `update_result` with `status: "success"` for that version **on its new connection**, the server sends
+  `update_agent` to the waiting PCs with `peers`. The server waits for the result and not for `verified` because
+  the seed's service is stopped while `POpsUpdater` installs, so its cache server is down at exactly that time.
+- Stages the server listens to: `update_progress` `verified` from the seed (shown in the panel; it restarts the
+  seed's time limit for the install), `update_progress` `rejected` and any `update_result` other than `success`
+  (the seed failed: the next candidate becomes the seed), and `update_result` `success` (the PC holds the package
+  and becomes a peer). A seed that does not reach `verified` within 10 minutes, or a result within 10 minutes after
+  `verified`, is replaced by the next candidate. After three seeds, or when no candidate is left, the waiting PCs get
+  `update_agent` without `peers`.
+- `peers` lists 1–3 PCs of the same lab that reported success for this package less than 110 minutes ago and are
+  online with the feature: the seed first, the order rotated from PC to PC so that not every PC starts with the
+  same peer. A later `update_agent` for the same version (a PC that was off comes online and is sent the update)
+  gets `peers` at once, without a new seed.
+- PCs without a lab, agents without the feature and labs with no candidate are updated as today, without `peers`.
+
+**3. The message.** `update_agent` with an optional `peers` array:
+
+```json
+{"action": "update_agent", "manifest": "…", "manifest_sig": "…",
+ "peers": [{"hw_id": "HW-LAB1-PC12", "url": "http://10.20.0.12:8817/pops-cache/4d638345…3beb"}]}
+```
+
+`url` is always `http://<IPv4>:<port>/pops-cache/<sha256>`, the SHA-256 of the agent MSI from the signed manifest in
+lowercase hex. Agents without `peer_cache` ignore the field (the Windows agent reads `update_agent` by property name;
+unknown fields are ignored).
+
+**4. Downloading with peers.** Nothing about the signature check changes: verify the manifest first, exactly as
+today; `peers` is read only after that.
+
+- Ignore a peer whose `url` does not match the pattern above, whose path SHA-256 is not the manifest's MSI
+  SHA-256, or whose host is not a private IPv4 address.
+- Try the peers in the order given, one at a time: connect timeout 3 seconds; if no data arrives for 15 seconds, or
+  the answer is anything but `200` with the expected `Content-Length`, go to the next peer. After the last peer,
+  download from `<ServerUrl>/updates/<name>` as today (BITS or HttpClient).
+- Check the size and SHA-256 against the signed manifest **whatever the source**. A mismatch from a peer deletes
+  the file and moves on to the next source (log the peer's `hw_id`); it never fails the update and never installs.
+- Report `update_progress` as today (`received`, `downloaded`, `verified`, …). Optionally put the source in
+  `detail` of `downloaded` (for example `peer HW-LAB1-PC12` or `server`); the server stores it but does not depend
+  on it.
+
+**5. The seed's (and every peer's) cache.** After `verified`, keep the package for others:
+
+- Store it as `C:\POpsData\cache\<sha256>` (the file name is the lowercase SHA-256, no extension; SYSTEM and
+  Administrators only). Copy it there before `POpsUpdater` starts, so it survives the install.
+- Keep it for **2 hours** after `verified`, or until the next update is verified, whichever comes first. Keep at
+  most two packages; delete the oldest. Delete expired files at service start and every 10 minutes.
+- **The cache server.** While at least one package is in the cache, the service listens on the port
+  (`HttpListener`, `http://+:<port>/pops-cache/`) and answers only `GET` (and `HEAD`) for
+  `/pops-cache/<sha256>` with a file it holds: `200`, `Content-Type: application/octet-stream`,
+  `Content-Length`. Anything else is `404` (`405` for other methods); no directory listing, no other path, no
+  query strings, no redirects. Read-only: it never writes, deletes or uploads anything because of a request.
+- At most 4 transfers at a time. Further requests wait for a free slot for up to 60 seconds, then get `503`
+  (a lab of 40 PCs must not fall back to the server because the seed was busy for a few seconds).
+- It starts at service start when the cache holds a package (so that it is already listening when the new version
+  sends its `update_result`) and stops when the cache becomes empty.
+- Firewall: one inbound rule for the program, the TCP port, remote address `LocalSubnet` only, all profiles, added
+  when the server starts and removed when it stops (and at service start if no package is cached).
+- A PC that reports `success` for an update also keeps its package and serves it the same way: the server may
+  list it as a peer for PCs updated later.
+- Log start and stop of the cache server and each served transfer (peer address, SHA-256 prefix, bytes) to the
+  local log; no event log entry per transfer.
 
 ## Files and logs
 

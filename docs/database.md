@@ -150,6 +150,7 @@ returns the first broken entry. Rows written before migration `0004` have no has
 | --- | --- | --- |
 | `concurrent_limit` | **Ayarlar** / **Dağıtım** / **İşlemler** pages | How many devices may run a task at the same time (default `5`; `0` = unlimited). |
 | `enforce_agent_auth` | **Sistem** page | `1` = agents without valid credentials are rejected; anything else = accept-both. |
+| `update_peer_cache` | **Sistem** → **Ajanlar** | `0` = agent updates go to every PC at once; missing or anything else = staged per lab with peers (lab-local peer cache, `pops/peer_cache.py`). The rollout state itself is kept in memory, not in the database. |
 | `agent_policies` | **Politikalar** page / API | JSON: fair-use text, DNS categories, `auto_quarantine`, `quarantine_threshold`, `dns_domains`. |
 | `verified_release_version` | release upload / GitHub fetch | Version of the staged, signature-verified agent release. |
 | `verified_release_manifest` | release upload / GitHub fetch | The staged release's manifest (JSON); `deploy-update` sends this release. |
