@@ -120,6 +120,20 @@ namespace POpsAgent
         public static LocalAuditEvent FilePulled(string transferId, string path, long size, string reason) =>
             Warning(1121, "Yönetici bir dosyayı aldı", ("transfer_id", Safe(transferId)), ("path", Safe(path)), ("size", size), ("reason", Safe(reason)));
 
+        // Uzaktan güç işlemi kabul edildi (geri sayım başladı ya da hemen yapılacak); yöneticinin notu yazılmaz
+        public static LocalAuditEvent PowerAccepted(string op, int delaySeconds, string requestedBy, int taskId) =>
+            Info(1130, "Güç işlemi kabul edildi", ("op", Safe(op)), ("delay", delaySeconds),
+                ("requested_by", Safe(requestedBy)), ("task_id", taskId));
+
+        // Kullanıcıya mesaj gösterildi: yalnızca üst veri; başlık ve metin asla yazılmaz
+        public static LocalAuditEvent UserMessageShown(int taskId, int titleLength, int textLength, string style, bool requiresAck, string requestedBy) =>
+            Info(1140, "Kullanıcıya mesaj gösterildi", ("task_id", taskId), ("title_length", titleLength),
+                ("text_length", textLength), ("style", Safe(style)), ("requires_ack", requiresAck), ("requested_by", Safe(requestedBy)));
+
+        // Okundu onayı beklenen mesaj sonuçlandı: acknowledged, timeout, cancelled ya da service_stopping
+        public static LocalAuditEvent UserMessageFinished(int taskId, string outcome) =>
+            Info(1141, "Kullanıcı mesajı sonuçlandı", ("task_id", taskId), ("outcome", Safe(outcome)));
+
         public static void Write(LocalAuditEvent item)
         {
             if (item == null) return;

@@ -11,6 +11,8 @@ namespace POpsAgent
             "exam",
             "files",
             "winget",
+            "power",
+            "message",
         };
 
         public static string Header => string.Join(",", All);

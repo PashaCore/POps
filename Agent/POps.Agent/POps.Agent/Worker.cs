@@ -100,6 +100,9 @@ namespace POpsAgent
         // Yazılım envanteri (yeni secret alınınca son gönderim unutulur)
         private SoftwareReporter _software;
         private bool _cloneRejectedAudited;
+        // Uzaktan güç işlemleri ve kullanıcı mesajları (bkz. PowerActions, UserMessages)
+        internal PowerActions Power { get; }
+        internal UserMessages Messages { get; }
 
         public Worker(ILogger<Worker> logger) : this(logger, new AgentStartupHealth(false)) { }
 
@@ -141,6 +144,10 @@ namespace POpsAgent
             // Önceki çalışmadan onay bekleyen sonuçlar okunur
             Results = new ResultSpool(SecureStore.PathOf(ResultSpool.FileName));
             _visionRelay = new VisionRelay(SendVisionBinaryAsync, SendVisionTextAsync, ToTray);
+            Power = new PowerActions(SendTaskResultAsync, taskId => DenyCapabilityAsync(PowerActions.Capability, PowerActions.ActionName, taskId),
+                ToTray, TrayInConsoleSession);
+            Messages = new UserMessages(SendTaskResultAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
+                ToTray, TrayConnected);
             Binding = new HardwareBinding(_identityFilePath,
                 () => (HardwareInfo.GetWmiValue("Win32_ComputerSystemProduct", "UUID"), HardwareInfo.GetWmiValue("Win32_BIOS", "SerialNumber")));
         }
@@ -941,6 +948,10 @@ namespace POpsAgent
                 {
                     _ = _activity.ListAsync();
                 }
+                else if (message.StartsWith(UserMessages.AckPrefix, StringComparison.Ordinal) || message.StartsWith(PowerActions.LockResultPrefix, StringComparison.Ordinal))
+                {
+                    _ = OnTrayReplyAsync(message);
+                }
             };
 
             _trayPipe.OnFrameReceived += async (jpegBytes) =>
@@ -992,6 +1003,9 @@ namespace POpsAgent
                 SyncTrayModules();
                 string configError = ConfigErrorMessage();
                 if (configError != null) _trayPipe?.SendCommandToDesktop(configError);
+                // Süren geri sayım ve okundu onayı bekleyen mesajlar yeniden gösterilir
+                Power.SyncTray();
+                Messages.SyncTray();
             };
 
             _trayPipe.Start().ContinueWith(_ => _startupHealth.Mark(StartupCheck.Pipe), CancellationToken.None,
@@ -1163,12 +1177,44 @@ namespace POpsAgent
 
         // Testler: tepsiye giden mesajlar
         internal Action<string> TrayOverride { get; set; }
+        // Testler: tepsi bağlı mı / etkin konsol oturumunda mı (null: gerçek boru)
+        internal Func<bool> TrayConnectedOverride { get; set; }
+        internal Func<bool> TrayInConsoleOverride { get; set; }
 
         private void ToTray(string message)
         {
             if (TrayOverride != null) TrayOverride(message);
             else _trayPipe?.SendCommandToDesktop(message);
         }
+
+        private bool TrayConnected() => TrayConnectedOverride != null ? TrayConnectedOverride() : _trayPipe?.IsConnected == true;
+
+        // Kilitleme tepsiden yalnızca tepsi etkin konsol oturumundaysa (RDP oturumundaki tepsi konsolu kilitleyemez)
+        private bool TrayInConsoleSession()
+        {
+            if (TrayInConsoleOverride != null) return TrayInConsoleOverride();
+            TrayPipeServer pipe = _trayPipe;
+            return pipe != null && pipe.IsConnected && pipe.ClientSession != UserSessionLauncher.NoSession && pipe.ClientSession == SessionTasks.ConsoleSession();
+        }
+
+        // Tepsinin güç/mesaj yanıtları: "USER_MESSAGE_ACK:<task_id>" (kullanıcı Tamam'a bastı),
+        // "POWER_LOCK_RESULT:<task_id>:1|0" (LockWorkStation). Dönen: bekleyen bir göreve aitti.
+        internal async Task<bool> OnTrayReplyAsync(string message)
+        {
+            try
+            {
+                if (message.StartsWith(UserMessages.AckPrefix, StringComparison.Ordinal))
+                    return await Messages.OnAcknowledgedAsync(message.Substring(UserMessages.AckPrefix.Length));
+                if (message.StartsWith(PowerActions.LockResultPrefix, StringComparison.Ordinal))
+                    return Power.OnTrayLockResult(message.Substring(PowerActions.LockResultPrefix.Length));
+            }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"Tepsi yanıtı işlenemedi: {ex.Message}", true); }
+            return false;
+        }
+
+        // Güç işlemi ve kullanıcı mesajı sonucu (execute'un result'ıyla aynı biçim ve aynı saklama/onay yolu)
+        private Task SendTaskResultAsync(int taskId, string output, int exitCode) =>
+            SendResultAsync(taskId, new { type = "result", pc_name = _hwId, task_id = taskId, output, exit_code = exitCode });
 
         internal void StartCapture(int fps)
         {
@@ -1414,7 +1460,14 @@ namespace POpsAgent
                         && cancelProp.TryGetInt32(out int cancelTaskId) ? cancelTaskId : -1;
                     if (_commandRunner.Cancel(cancelId))
                         POpsHelpers.Log("AGENT", $"Uzaktan komut panelden iptal edildi; işlem sonlandırılıyor (TaskID: {cancelId}).");
+                    // Güç işleminin geri sayımı ya da okundu onayı beklenen mesaj (sonuç -2)
+                    else if (Power.Cancel(cancelId))
+                        POpsHelpers.Log("AGENT", $"Güç işlemi panelden iptal edildi; geri sayım durduruldu (TaskID: {cancelId}).");
+                    else await Messages.CancelAsync(cancelId);
                 }
+                // Uzaktan güç işlemi ve kullanıcıya mesaj (yalnızca X-Agent-Features'ta duyurulduğu için gelir)
+                else if (action == "power") await Power.HandleAsync(root, stoppingToken);
+                else if (action == "user_message") await Messages.HandleAsync(root, stoppingToken);
                 else if (action == "lockdown")
                 {
                     string reason = root.TryGetProperty("reason", out var rProp) && rProp.ValueKind == JsonValueKind.String ? rProp.GetString() : null;
@@ -1525,6 +1578,9 @@ namespace POpsAgent
                 _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
                 await DisconnectVisionTunnelAsync();
             }
+            // Güç işlemleri kapandıysa süren geri sayım da durur
+            if (!AgentCapabilities.PowerEnabled && Power.CancelForDisabledCapability())
+                POpsHelpers.Log("AGENT", "Güç işlemleri kapatıldı; süren geri sayım durduruldu.");
             await SendCommandMessageAsync(AgentCapabilities.StatusMessage());
             if (!AgentCapabilities.ExamEnabled && ExamMode.IsActive) await EndExamAsync("capability");
         }
@@ -1892,6 +1948,8 @@ namespace POpsAgent
 
         // Bağlı tepsinin oturumundaki kullanıcı (bağlantı yoksa null)
         public string ClientUser { get; private set; }
+        // Bağlı tepsinin oturumu (bağlantı yoksa ya da bilinmiyorsa NoSession)
+        public uint ClientSession { get; private set; } = UserSessionLauncher.NoSession;
 
         public bool IsConnected
         {
@@ -1969,7 +2027,8 @@ namespace POpsAgent
                         await Task.Delay(2000, token);
                         continue;
                     }
-                    ClientUser = clientPid == 0 ? null : UserSessionLauncher.SessionUser(UserSessionLauncher.SessionOf((int)clientPid));
+                    ClientSession = clientPid == 0 ? UserSessionLauncher.NoSession : UserSessionLauncher.SessionOf((int)clientPid);
+                    ClientUser = UserSessionLauncher.SessionUser(ClientSession);
                     _lastPipeError = null;
                     POpsHelpers.Log("PIPE", "🟢 Tepsi bağlandı (doğrulandı).");
                     try { OnConnected?.Invoke(); } catch (Exception ex) { POpsHelpers.Log("PIPE", $"Bağlantı sonrası eşitleme başarısız: {ex.Message}", true); }
@@ -2031,6 +2090,7 @@ namespace POpsAgent
                 {
                     _pipeServer?.Dispose();
                     ClientUser = null;
+                    ClientSession = UserSessionLauncher.NoSession;
                     OnDisconnected?.Invoke();
                 }
             }

@@ -3,5 +3,8 @@
   "terminal_enabled": true,
   "vision_enabled": true,
   "server_ca": "custom",
-  "files_enabled": true
+  "files_enabled": true,
+  "exam_enabled": true,
+  "power_enabled": true,
+  "message_enabled": false
 }

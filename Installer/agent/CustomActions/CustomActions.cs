@@ -223,6 +223,10 @@ namespace POps.Installer
                     return "EXAM_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
                 if (!TryParseFlag(Prop("FILES_ENABLED"), out bool? files))
                     return "FILES_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
+                if (!TryParseFlag(Prop("POWER_ENABLED"), out bool? power))
+                    return "POWER_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
+                if (!TryParseFlag(Prop("MESSAGE_ENABLED"), out bool? message))
+                    return "MESSAGE_ENABLED 1 (açık) ya da 0 (kapalı) olmalı.";
                 // Bozuk sertifika hiçbir şey yazılmadan reddedilir
                 string caError = ReadServerCa(Prop("SERVER_CA_CERT"), out string caPem, out bool removeCa, out string caSubject);
                 if (caError != null) return caError;
@@ -230,7 +234,15 @@ namespace POps.Installer
                 EnsureDataDirectories(layout);
                 string folderError = ApplyInstallFolderPolicy(installDir, Prop("INSTALLDIR_STATE"), log);
                 if (folderError != null) return folderError;
-                WriteCapabilities(layout, terminal, vision, exam, files, log);
+                WriteCapabilities(layout, new Dictionary<string, bool?>
+                {
+                    ["terminal_enabled"] = terminal,
+                    ["vision_enabled"] = vision,
+                    ["exam_enabled"] = exam,
+                    ["files_enabled"] = files,
+                    ["power_enabled"] = power,
+                    ["message_enabled"] = message,
+                }, log);
                 WriteServerCa(layout, caPem, removeCa, caSubject, log);
                 WriteSecret(Path.Combine(layout.SecureDir, BypassSecretFile), bypassSecret, Existing("BypassSecret"), "BypassSecret", log);
                 WriteSecret(Path.Combine(layout.SecureDir, EnrollTokenFile), enrollToken, Existing("EnrollToken"), "EnrollToken", log);
@@ -358,35 +370,28 @@ namespace POps.Installer
         private static bool SamePath(string a, string b) =>
             string.Equals(Path.GetFullPath(a).TrimEnd('\\'), Path.GetFullPath(b).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
 
-        // Yetenek politikası (ajanda AgentCapabilities): terminal, Vision, sınav modu ve dosya aktarımı. Kurulum iki yönde de yazabilir; sunucu
-        // yalnızca kapatabilir. Özellik verilmeyen bayrak mevcut dosyadan korunur, böylece sunucunun kapattığı yetenek
-        // bir güncellemeyle kendiliğinden açılmaz. Dosya yoksa ikisi de açık başlar; var ama okunamıyorsa (ajan da
-        // öyle sayar) verilmeyen bayrak kapalı kalır.
-        private static void WriteCapabilities(Layout layout, bool? terminal, bool? vision, bool? exam, bool? files, Action<string> log)
+        // Yetenek politikası (ajanda AgentCapabilities): terminal, Vision, sınav modu, dosya aktarımı, güç işlemleri ve
+        // kullanıcı mesajları (TERMINAL_ENABLED, VISION_ENABLED, EXAM_ENABLED, FILES_ENABLED, POWER_ENABLED,
+        // MESSAGE_ENABLED). Kurulum iki yönde de yazabilir; sunucu yalnızca kapatabilir. Özellik verilmeyen bayrak mevcut dosyadan korunur, böylece sunucunun kapattığı yetenek
+        // bir güncellemeyle kendiliğinden açılmaz; dosyada olmayan bayrak (eski kurulum) açık sayılır. Dosya yoksa hepsi
+        // açık başlar; var ama okunamıyorsa (ajan da öyle sayar) verilmeyen bayrak kapalı kalır.
+        private static void WriteCapabilities(Layout layout, IDictionary<string, bool?> flags, Action<string> log)
         {
             string path = Path.Combine(layout.SecureDir, CapabilitiesFile);
             bool exists = File.Exists(path);
             Dictionary<string, object> current = exists ? ReadJsonObject(path, log) : null;
-            if (exists && terminal == null && vision == null && exam == null && files == null) return;
+            if (exists && flags.Values.All(v => v == null)) return;
 
             // Dosyada olmayan yetenek (eski dosya) açıktır; okunamayan dosyada verilmeyen bayrak kapalı kalır
             bool Keep(string key) => !exists || (current != null && (!current.TryGetValue(key, out object v) || !(v is bool b) || b));
-            bool terminalEnabled = terminal ?? Keep("terminal_enabled");
-            bool visionEnabled = vision ?? Keep("vision_enabled");
-            bool examEnabled = exam ?? Keep("exam_enabled");
-            bool filesEnabled = files ?? Keep("files_enabled");
 
-            var json = new Dictionary<string, object>
-            {
-                ["terminal_enabled"] = terminalEnabled,
-                ["vision_enabled"] = visionEnabled,
-                ["exam_enabled"] = examEnabled,
-                ["files_enabled"] = filesEnabled,
-                ["source"] = "msi",
-                ["updated_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            };
+            var json = new Dictionary<string, object>();
+            foreach (KeyValuePair<string, bool?> flag in flags) json[flag.Key] = flag.Value ?? Keep(flag.Key);
+            json["source"] = "msi";
+            json["updated_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             WriteProtected(path, ToJson(json, 0) + "\r\n");
-            log($"POps: yetenekler yazıldı: terminal={(terminalEnabled ? "açık" : "kapalı")}, vision={(visionEnabled ? "açık" : "kapalı")}, sınav={(examEnabled ? "açık" : "kapalı")}, dosya={(filesEnabled ? "açık" : "kapalı")}.");
+            log("POps: yetenekler yazıldı: " + string.Join(", ", flags.Keys.Select(key =>
+                key.Replace("_enabled", "") + "=" + ((bool)json[key] ? "açık" : "kapalı"))) + ".");
         }
 
         // Karantina kilit politikaları (ajanda KioskMode): kaldırmada kayıttaki önceki değerlere dönülür, kayıt silinir.
