@@ -63,6 +63,9 @@ The wire format of both WebSockets (`/ws/agent`, `/ws/vision`) is specified in [
 - The agent reads `ServerUrl` and connects to `wss://<host>/ws/agent/<hw_id>`. A non-loopback `http://` address is
   refused: the agent logs `[GÜVENLİK] ServerUrl şifresiz http ve yerel değil …` every 10 minutes and does not
   connect (the tray and watchdog keep running).
+- If `appsettings.json` cannot be read or holds no valid `ServerUrl`, the agent falls back to
+  `http://127.0.0.1:8000` (useful only for a server on the same PC), logs an error, writes event 1090 and the tray
+  shows "POps - yapılandırma okunamadı" with a warning icon, instead of looking healthy.
 - It sends a heartbeat every 5 seconds. After a disconnect it waits a random time between 0 and
   min(60 s, 2 s × 2^n), where n is the number of connections that failed in a row (full jitter; 0.1.7 and older
   waited a fixed 5 s, so all agents came back at once after a server restart). n goes back to 0 once a connection
@@ -178,8 +181,8 @@ the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 
 command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine allow list refreshed (old and new
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
-that partly changed (no decision taken), 1080 a change of the server's modules and 1100 a clipboard shared in a
-Vision session (direction and length only). Failure to write an event does not stop the
+that partly changed (no decision taken), 1080 a change of the server's modules, 1090 a configuration that could not
+be read and 1100 a clipboard shared in a Vision session (direction and length only). Failure to write an event does not stop the
 service.
 
 ## Capability policy
@@ -288,7 +291,9 @@ UTF-8(`hw_id|yyyy-MM-dd`), using the device's local date). If `bypass.device` ex
 fails closed and the legacy fleet secret is not tried. When the file is absent, older servers remain compatible
 through the deprecated first-six-hex SHA-256(`hw_id` + `BYPASS_SECRET` + date) formula. After 5 wrong codes the bypass locks for 15
 minutes, doubling up to 24 hours; from 0.1.5-alpha the counters are kept in `bypass-state.json` and survive a
-restart, and the lock screen and the tray check the code format first so a typo does not use up an attempt.
+restart, and the lock screen and the tray check the code format first so a typo does not use up an attempt. The
+service keeps the tray pipe open while the server is unreachable, so a code typed on the lock screen reaches it; if
+it cannot, the lock screen says so.
 
 ## Policies
 
@@ -367,6 +372,12 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
    that fails before storing it does not lose it. Without `server_info` within 15 seconds of connecting the agent
    treats the server as older: it sends the result once and sets the file aside, as before.
 
+While an update runs, the agent reports each stage with `update_progress` to servers that list the feature:
+received, downloaded, verified, updater started, waiting for a busy Windows Installer (up to 5 tries), installing,
+or the reason it refused the update. The updater writes its stages to `C:\POpsData\update-progress.json` and the
+service forwards them. **Sistem → Güncellemeler** shows them per PC
+([`api.md`](api.md#update_progress-agent-update-stages)).
+
 The outcomes and the rollback drill are described in [`Agent/README.md`](../Agent/README.md#updates). Agents
 older than 0.1.3-alpha cannot apply signed updates and must be reinstalled once with the MSI.
 
@@ -377,11 +388,11 @@ older than 0.1.3-alpha cannot apply signed updates and must be reinstalled once 
 | `C:\Program Files\POps\` | Programs and `appsettings.json` (`ServerUrl`, `PersistDir`; SYSTEM and Administrators only). |
 | `C:\POpsData\identity.key` | Hardware ID. |
 | `C:\POpsData\secure\` | `agent.secret`, `enroll.token`, `bypass.secret`, `capabilities.json`, `isolation.json`, `lockdown.json`, `bypass-state.json`, `hw.bind`, `clone-<time>\` (SYSTEM and Administrators only). |
-| `C:\POpsData\health.json`, `update.lock`, `update-result.json` | Update state. |
+| `C:\POpsData\health.json`, `update.lock`, `update-result.json`, `update-progress.json` | Update state. |
 | `C:\POpsData\session.json`, `patch-scan.json` | Last reported sign-in; time of the last Windows Update scan and a report not yet delivered (0.1.5-alpha on). |
 | `C:\POpsData\software-inventory.json` | Last software inventory sent: SHA-256 of the sorted list, device ID and time (0.1.15-alpha on). |
 | `C:\POpsData\packages\installed.msi`, `updates\`, `updater\` | Rollback package, downloaded update, updater copy. |
-| `C:\POpsLogs\POps_<yyyyMMdd>.log` | Service and updater log (SYSTEM and Administrators only). |
+| `C:\POpsLogs\POps_<yyyyMMdd>.log`, `msi-*.log` | Service and updater log, and the updater's msiexec logs (SYSTEM and Administrators only). At start and once a day the service deletes these logs when they are older than 30 days, and the oldest ones while the folder holds more than 200 MB; today's log is never deleted. |
 | `%LOCALAPPDATA%\POps\Logs\` | Per-user logs: `POpsWatchdog_<yyyyMMdd>.log` and the tray's `TrayLog.txt` (message types only, rotated at 1 MB). |
 
 Uninstalling removes the programs, the service, the Run entry and `appsettings.json`, but keeps `C:\POpsData`
