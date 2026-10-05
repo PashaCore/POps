@@ -14,8 +14,11 @@ namespace POpsAgent
     //  * vision_enabled:   ekran akışı, ekran önizlemesi, uzaktan fare/klavye
     //  * exam_enabled:     sınav modu (ağı izin listesiyle sınırlama, uygulama engeli; bkz. ExamMode)
     //  * files_enabled:    dosya gönderme ve alma (bkz. FileTransfer)
+    //  * power_enabled:    "power" (kapatma, yeniden başlatma, oturum kapatma, kilitleme; bkz. PowerActions)
+    //  * message_enabled:  "user_message" (tepside kullanıcıya mesaj; bkz. UserMessages)
     // Kaynak C:\POpsData\secure\capabilities.json (yalnızca SYSTEM/Administrators). Kurulum (MSI TERMINAL_ENABLED /
-    // VISION_ENABLED / EXAM_ENABLED / FILES_ENABLED) iki yönde de yazar; sunucu yalnızca KAPATABİLİR ("set_capabilities" ... false). Sunucudan
+    // VISION_ENABLED / EXAM_ENABLED / FILES_ENABLED / POWER_ENABLED / MESSAGE_ENABLED) iki yönde de yazar; sunucu yalnızca
+    // KAPATABİLİR ("set_capabilities" ... false). Sunucudan
     // gelen "aç" isteği yok sayılır: yeniden açmak yerel yöneticinin işidir (MSI yeniden kurulum / onarım).
     // Dosya yoksa (bu özellikten önceki kurulum) hepsi açıktır; dosyada olmayan yetenek (eski dosya) açıktır; dosya
     // okunamıyorsa hepsi kapalı sayılır.
@@ -27,15 +30,22 @@ namespace POpsAgent
         public const string Vision = "vision_enabled";
         public const string Exam = "exam_enabled";
         public const string Files = "files_enabled";
-        private static readonly string[] Names = { Terminal, Vision, Exam, Files };
+        public const string Power = "power_enabled";
+        public const string Message = "message_enabled";
+        private static readonly string[] Names = { Terminal, Vision, Exam, Files, Power, Message };
 
         private static readonly object Gate = new object();
-        private static readonly Dictionary<string, bool> State = new Dictionary<string, bool> { [Terminal] = true, [Vision] = true, [Exam] = true, [Files] = true };
+        private static readonly Dictionary<string, bool> State = new Dictionary<string, bool>
+        {
+            [Terminal] = true, [Vision] = true, [Exam] = true, [Files] = true, [Power] = true, [Message] = true,
+        };
 
         public static bool TerminalEnabled { get { lock (Gate) return State[Terminal]; } }
         public static bool VisionEnabled { get { lock (Gate) return State[Vision]; } }
         public static bool ExamEnabled { get { lock (Gate) return State[Exam]; } }
         public static bool FilesEnabled { get { lock (Gate) return State[Files]; } }
+        public static bool PowerEnabled { get { lock (Gate) return State[Power]; } }
+        public static bool MessageEnabled { get { lock (Gate) return State[Message]; } }
 
         public static void Load()
         {
@@ -46,7 +56,7 @@ namespace POpsAgent
                 if (text == null)
                 {
                     foreach (string name in Names) State[name] = true;
-                    POpsHelpers.Log("POLICY", $"{FileName} yok: terminal, Vision, sınav modu ve dosya aktarımı açık (kurulum varsayılanı).");
+                    POpsHelpers.Log("POLICY", $"{FileName} yok: bütün yetenekler açık (kurulum varsayılanı).");
                     return;
                 }
                 try
@@ -59,7 +69,7 @@ namespace POpsAgent
                 {
                     // Dosyaya yalnızca SYSTEM/Administrators yazabilir; okunamıyorsa güvenli yöne düşülür
                     foreach (string name in Names) State[name] = false;
-                    POpsHelpers.Log("POLICY", $"[GÜVENLİK] {FileName} okunamadı ({ex.Message}); terminal, Vision, sınav modu ve dosya aktarımı kapalı sayılıyor.", true);
+                    POpsHelpers.Log("POLICY", $"[GÜVENLİK] {FileName} okunamadı ({ex.Message}); bütün yetenekler kapalı sayılıyor.", true);
                     return;
                 }
                 POpsHelpers.Log("POLICY", $"Yetenekler: {Describe()}.");
@@ -107,20 +117,18 @@ namespace POpsAgent
 
         public static string Describe()
         {
-            lock (Gate) return $"terminal={(State[Terminal] ? "açık" : "kapalı")}, vision={(State[Vision] ? "açık" : "kapalı")}, sınav={(State[Exam] ? "açık" : "kapalı")}, dosya={(State[Files] ? "açık" : "kapalı")}";
+            lock (Gate)
+                return $"terminal={OnOff(Terminal)}, vision={OnOff(Vision)}, sınav={OnOff(Exam)}, dosya={OnOff(Files)}, güç={OnOff(Power)}, mesaj={OnOff(Message)}";
         }
+
+        private static string OnOff(string name) => State[name] ? "açık" : "kapalı";
 
         private static void Persist(string source)
         {
-            var json = new JsonObject
-            {
-                [Terminal] = State[Terminal],
-                [Vision] = State[Vision],
-                [Exam] = State[Exam],
-                [Files] = State[Files],
-                ["source"] = source,
-                ["updated_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            };
+            var json = new JsonObject();
+            foreach (string name in Names) json[name] = State[name];
+            json["source"] = source;
+            json["updated_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             try { SecureStore.WriteProtected(SecureStore.PathOf(FileName), json.ToJsonString(new JsonSerializerOptions { WriteIndented = true })); }
             catch (Exception ex) { POpsHelpers.Log("POLICY", $"{FileName} yazılamadı; kapatma bu çalışmada geçerli, yeniden başlatmada kaybolabilir: {ex.Message}", true); }
         }

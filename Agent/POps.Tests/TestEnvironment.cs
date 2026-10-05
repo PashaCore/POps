@@ -45,6 +45,7 @@ namespace POps.Tests
             POps.Shared.ServerTrust.CaPath = Path.Combine(DefaultSecureDir, POps.Shared.ServerTrust.FileName);
             // Karantina testleri gerçek Görev Yöneticisi / oturum politikalarına dokunmasın
             POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
+            IsolatePowerAndSessions();
 #endif
         }
 
@@ -89,6 +90,23 @@ namespace POps.Tests
             // Testler gerçek winget'i asla çalıştırmaz (ör. paylaşılan protokol vektörlerindeki winget_install); gereken sınıf
             // kendi sahtesini kurar
             POpsAgent.WingetInstall.Locator = () => null;
+            IsolatePowerAndSessions();
+        }
+
+        // Testler bu makineyi asla kapatmaz, yeniden başlatmaz, oturumu kapatmaz ya da kilitlemez: gerçek güç API'sinin
+        // yerine her çağrıda hata veren sahte, oturum sorgularının yerine "kullanıcı yok" konur. Test kendi sahtesini
+        // koyar; bir sonraki test yeniden bu reddeden sahtelerle başlar.
+        public static readonly Func<POpsAgent.PowerOperation, int, bool> RefusingPowerApi =
+            (operation, taskId) => throw new InvalidOperationException($"Testte gerçek güç API'si çağrıldı ({operation}, görev {taskId}).");
+
+        public static void IsolatePowerAndSessions()
+        {
+            POpsAgent.PowerActions.Execute = RefusingPowerApi;
+            POpsAgent.PowerActions.TrayLockTimeout = TimeSpan.FromSeconds(5);
+            POpsAgent.SessionTasks.HasConsoleUser = () => false;
+            POpsAgent.SessionTasks.ConsoleSession = () => POps.Shared.UserSessionLauncher.NoSession;
+            POpsAgent.SessionTasks.Delay = System.Threading.Tasks.Task.Delay;
+            POpsAgent.UserMessages.AckTimeout = TimeSpan.FromMinutes(30);
         }
 
         private static bool IsUnderRoot(string path) =>

@@ -272,6 +272,8 @@ namespace POpsTray
 
                 // Vision v2 (eski START_CAPTURE'dan önce: o da "START_CAPTURE" ile başlar)
                 if (HandleVisionV2(jsonMsg)) return;
+                // Uzaktan güç işlemi geri sayımı ve kullanıcı mesajı (bkz. PowerMessageForms.cs)
+                if (HandlePowerAndMessages(jsonMsg)) return;
 
                 if (jsonMsg.StartsWith("START_CAPTURE")) 
                 { 
