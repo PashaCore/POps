@@ -248,7 +248,7 @@ namespace POpsAgent
 
             if (!POpsHelpers.IsSecureServerUrl(_serverUrl))
             {
-                StartTrayPipeServer();
+                EnsureTrayPipeServer();
                 _startupHealth.Mark(StartupCheck.Loop);
                 await RunWithoutServerAsync(stoppingToken);
                 return;
@@ -283,7 +283,8 @@ namespace POpsAgent
             {
                 string commandWsUrl = $"{baseWsUrl}/ws/agent/{_hwId}";
 
-                StartTrayPipeServer();
+                // Tepsi borusu bir kez açılır ve sunucu bağlantısından bağımsız açık kalır (bkz. OnCommandConnectionLostAsync)
+                EnsureTrayPipeServer();
                 _commandWs = new ClientWebSocket();
                 _commandWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(commandWsUrl));
                 _commandWs.Options.SetRequestHeader("X-Agent-Version", APP_VERSION);
@@ -347,10 +348,22 @@ namespace POpsAgent
                 else
                     POpsHelpers.Log("AGENT", $"Sunucuya {wait.TotalSeconds:0.0} sn sonra yeniden bağlanılacak.");
 
-                _trayPipe?.Stop();
-                await DisconnectVisionTunnelAsync();
+                await OnCommandConnectionLostAsync();
                 await Task.Delay(wait, stoppingToken);
             }
+        }
+
+        // Sunucu bağlantısı koptu. Tepsi borusu açık kalır: sunucuya ulaşılamazken de çevrimdışı bypass kodu, kilit ekranı
+        // ve yardım masası mesajları servise ulaşmalı. 0.1.22'ye kadar boru her kopuşta kapatılıp ancak bir sonraki
+        // bağlanma denemesinde açılıyordu; geri çekilme beklemesinde (60 sn'ye kadar, 4401'de 2 dk, 4409'da 11 dk) tepsiye
+        // yazılan kod sessizce kayboluyordu. Uzaktan izleme ve girdi biter: tepsi yakalamayı durdurur, basılı kalan uzak
+        // tuşları bırakır (eskiden borunun kapanması bunu sağlıyordu).
+        internal async Task OnCommandConnectionLostAsync()
+        {
+            bool visionActive = _isVisionStreamActive || _visionSessionApproved || _visionWs != null;
+            _visionSessionApproved = false;
+            if (visionActive) _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
+            await DisconnectVisionTunnelAsync();
         }
 
         // 4409: sunucu bu kimliği başka bir bilgisayarda bağlı buldu (kopyalanmış kurulum, asıl cihaz bağlı).
@@ -526,10 +539,11 @@ namespace POpsAgent
         // Boru dinlemeye geçince sağlık kontrolü işaretlenir (bkz. AgentStartupHealth). Bağlantı döngüsü bunu
         // beklemez: boru adı başka bir süreçte kalırsa (ör. yerel bir kullanıcı adı önceden aldıysa) tepsi çalışmaz
         // ama ajan sunucuya yine bağlanır; health.json yazılmadığı için güncelleme de başarılı sayılmaz.
-        private void StartTrayPipeServer()
+        // Servis boyunca tek boru: zaten açıksa bir şey yapılmaz. Dinleme döngüsü hata ve tepsi kopmalarında kendini yeniler.
+        internal void EnsureTrayPipeServer()
         {
-            _trayPipe?.Stop();
-            _trayPipe = new TrayPipeServer(_logger, _hwId, _httpClient, _serverUrl);
+            if (_trayPipe != null) return;
+            _trayPipe = new TrayPipeServer();
 
             _trayPipe.OnMessageReceived += (message) =>
             {
@@ -1120,6 +1134,7 @@ namespace POpsAgent
         internal CommandRunner CommandRunner { get => _commandRunner; set => _commandRunner = value; }
         internal QuarantineControl Quarantine { get => _quarantine; set => _quarantine = value; }
         internal string HwId { get => _hwId; set => _hwId = value; }
+        internal TrayPipeServer TrayPipe => _trayPipe;
         internal SoftwareReporter Software { get => _software; set => _software = value; }
 
         private async Task SendCommandMessageAsync(object payload) => await TrySendCommandMessageAsync(payload);
@@ -1540,10 +1555,6 @@ namespace POpsAgent
 
     public class TrayPipeServer
     {
-        private readonly ILogger _logger;
-        private readonly string _hwId;
-        private readonly HttpClient _http;
-        private readonly string _serverUrl;
         private const int MaxPipeMessageBytes = 32 * 1024 * 1024;
         private CancellationTokenSource _cts;
         private NamedPipeServerStream _pipeServer;
@@ -1559,10 +1570,10 @@ namespace POpsAgent
         // Boruya yalnızca kurulum klasöründeki tepsi bağlanabilir (bkz. PipeClientVerifier)
         private static readonly string TrayExePath = Path.Combine(AppContext.BaseDirectory, "POpsTray.exe");
 
-        public TrayPipeServer(ILogger logger, string hwId, HttpClient http, string serverUrl)
-        {
-            _logger = logger; _hwId = hwId; _http = http; _serverUrl = serverUrl;
-        }
+        // Testler başka bir ad ve sahte istemci denetimi kullanır (gerçek tepsiyle ve kurulu servisle çakışmasın)
+        internal static string PipeName { get; set; } = "POpsTrayPipe";
+        // null: kurulu tepsi doğrulaması (PipeClientVerifier). Dönen: ret nedeni, null kabul.
+        internal static Func<Microsoft.Win32.SafeHandles.SafePipeHandle, string> ClientCheckOverride { get; set; }
 
         public Task Start()
         {
@@ -1611,7 +1622,7 @@ namespace POpsAgent
 
         private async Task ListenPipeAsync(CancellationToken token)
         {
-            string pipeName = @"POpsTrayPipe";
+            string pipeName = PipeName;
             while (!token.IsCancellationRequested)
             {
                 try
@@ -1621,7 +1632,8 @@ namespace POpsAgent
                     // ağ ve servis hesapları için Everyone izni kaldırıldı.
                     var interactive = new SecurityIdentifier(WellKnownSidType.InteractiveSid, null);
                     var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-                    var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+                    // Servis hesabı (LocalSystem; testlerde testi çalıştıran kullanıcı, bkz. SecureStore.SystemSid)
+                    var system = SecureStore.SystemSid;
                     ps.AddAccessRule(new PipeAccessRule(system, PipeAccessRights.FullControl, AccessControlType.Allow));
                     ps.AddAccessRule(new PipeAccessRule(admins, PipeAccessRights.FullControl, AccessControlType.Allow));
                     ps.AddAccessRule(new PipeAccessRule(interactive, PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize, AccessControlType.Allow));
@@ -1634,7 +1646,10 @@ namespace POpsAgent
                     POpsHelpers.Log("PIPE", $"Bekleniyor: {pipeName}");
 
                     await _pipeServer.WaitForConnectionAsync(token);
-                    string rejection = PipeClientVerifier.Verify(_pipeServer.SafePipeHandle, TrayExePath, out uint clientPid);
+                    uint clientPid = 0;
+                    string rejection = ClientCheckOverride != null
+                        ? ClientCheckOverride(_pipeServer.SafePipeHandle)
+                        : PipeClientVerifier.Verify(_pipeServer.SafePipeHandle, TrayExePath, out clientPid);
                     if (rejection != null)
                     {
                         POpsHelpers.Log("PIPE", $"[GÜVENLİK] Tepsi borusuna doğrulanmamış istemci bağlandı, bağlantı kesildi: {rejection}", true);
@@ -1643,7 +1658,7 @@ namespace POpsAgent
                         await Task.Delay(2000, token);
                         continue;
                     }
-                    ClientUser = UserSessionLauncher.SessionUser(UserSessionLauncher.SessionOf((int)clientPid));
+                    ClientUser = clientPid == 0 ? null : UserSessionLauncher.SessionUser(UserSessionLauncher.SessionOf((int)clientPid));
                     _lastPipeError = null;
                     POpsHelpers.Log("PIPE", "🟢 Tepsi bağlandı (doğrulandı).");
                     try { OnConnected?.Invoke(); } catch (Exception ex) { POpsHelpers.Log("PIPE", $"Bağlantı sonrası eşitleme başarısız: {ex.Message}", true); }

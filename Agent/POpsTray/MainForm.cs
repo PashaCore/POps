@@ -546,7 +546,8 @@ namespace POpsTray
             }
         }
 
-        private void SendToService(string message)
+        // Dönen: mesaj servise yazıldı mı (boru bağlı değilse ya da yazma başarısızsa false)
+        private bool SendToService(string message)
         {
             if (pipeClient != null && pipeClient.IsConnected)
             {
@@ -560,9 +561,11 @@ namespace POpsTray
                         pipeClient.Write(data, 0, data.Length);
                         pipeClient.Flush();
                     }
+                    return true;
                 }
                 catch { }
             }
+            return false;
         }
 
         private void SendToServiceBytes(byte[] data)
@@ -681,14 +684,14 @@ namespace POpsTray
         // ---------------------------------------------------------------- yardım masası
         private void OpenReportForm()
         {
-            if (_reportForm == null || _reportForm.IsDisposed) _reportForm = new ReportProblemForm(SendToService);
+            if (_reportForm == null || _reportForm.IsDisposed) _reportForm = new ReportProblemForm(m => SendToService(m));
             _reportForm.Show();
             _reportForm.Activate();
         }
 
         private void OpenTicketsForm()
         {
-            if (_ticketsForm == null || _ticketsForm.IsDisposed) _ticketsForm = new MyTicketsForm(SendToService);
+            if (_ticketsForm == null || _ticketsForm.IsDisposed) _ticketsForm = new MyTicketsForm(m => SendToService(m));
             else _ticketsForm.Request();
             _ticketsForm.Show();
             _ticketsForm.Activate();
@@ -696,7 +699,7 @@ namespace POpsTray
 
         private void OpenActivityForm()
         {
-            if (_activityForm == null || _activityForm.IsDisposed) _activityForm = new ActivityForm(SendToService);
+            if (_activityForm == null || _activityForm.IsDisposed) _activityForm = new ActivityForm(m => SendToService(m));
             else _activityForm.Request();
             _activityForm.Show();
             _activityForm.Activate();
@@ -749,7 +752,11 @@ namespace POpsTray
                 MessageBox.Show(KioskForm.CodeFormatHint, "Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            SendToService($"UNLOCK_BYPASS:{token}");
+            if (!SendToService($"UNLOCK_BYPASS:{token}"))
+            {
+                MessageBox.Show(KioskForm.ServiceUnreachable, "Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
             MessageBox.Show("Bypass Token gönderildi. Token doğruysa kilit ekranı ve ağ izolasyonu kaldırılacaktır.", "Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
