@@ -17,8 +17,13 @@ Komutlar:
     verify   --dir DIR --pub-pem FILE      imzayı ve (varsa) dosya özetlerini doğrula
     selftest                               geçici anahtarla imzala/doğrula + kurcalama testi
 
+Örnek:
+    python3 tools/sign_release.py selftest
+    python3 tools/sign_release.py genkey --out-dir keys/
+    python3 tools/sign_release.py sign --dir dist/ --version 0.1.22 --tag v0.1.22 --key-pem keys/private.pem
+
 Özel anahtar `sign` için --key-pem dosyası ya da POPS_RELEASE_PRIVATE_KEY ortam
-değişkeninden (PEM içeriği) okunur. Python 3.9 uyumlu.
+değişkeninden (PEM içeriği) okunur. Python 3.10+ uyumlu.
 """
 import argparse
 import base64

@@ -19,11 +19,11 @@ panellere düşen mesaj/sn, sunucu CPU/RSS. Vision kare akışı simüle edilmez
 kanalı gerektirir). Sonuçlar BENCHMARKS.md için; ölçümü kendi donanımınızda tekrarlayın.
 
 Örnek:
-    python agent_simulator.py --n 1000 --url ws://127.0.0.1:8099 --duration 30 --hb 5
-    python agent_simulator.py --n 300 --url ws://127.0.0.1:8099 --enroll-token TOKEN --software 150 \\
+    python3 tools/agent_simulator.py --n 1000 --url ws://127.0.0.1:8099 --duration 30 --hb 5
+    python3 tools/agent_simulator.py --n 300 --url ws://127.0.0.1:8099 --enroll-token TOKEN --software 150 \\
         --patches --panels 3 --jwt "$JWT" --server-pid "$(pgrep -f 'uvicorn server:app' | head -1)"
 
-Python 3.9 uyumlu; yalnızca websockets + standart kütüphane.
+Python 3.10+ uyumlu; yalnızca websockets + standart kütüphane.
 """
 import argparse
 import asyncio

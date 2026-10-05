@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Panelde HTML'e yazılan yerleri kaçırılmamış veri için tarar (CI: dashboard işi). Yalnızca standart
-kütüphane, Python 3.9+.
+kütüphane, Python 3.10+.
+
+Örnek:
+    python3 tools/html_sinks/check_html_sinks.py
+"""
 
 Taranan: Dashboard/*.php, Dashboard/includes/*.php, Dashboard/assets/*.js (assets/vendor hariç);
 PHP dosyalarında yalnızca <script> blokları JS olarak okunur.
