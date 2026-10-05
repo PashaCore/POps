@@ -57,9 +57,36 @@ differentiators are exactly the things a general RMM does not care about:
   that even a compromised server cannot run code on their PCs — a security *and* sales
   argument a general RMM cannot make.
 
+## Licence: open source, not source-available
+
+POps is licensed under [Apache 2.0](../LICENSE), an OSI-approved open-source licence. A school, a district or an IT
+company may run it, change it and pass it on, also as part of a paid service.
+
+Tactical RMM, often named as an open alternative, uses its own Tactical RMM License 1.0. Its source is public, but
+the licence says it is not an open-source licence and forbids offering the software as part of a commercial
+service (hosting, SaaS, installation services) without written permission. That matters to an IT company or a
+district that wants to run the tool for several schools.
+
+## GLPI: integrate, do not compete
+
+Many schools and public institutions keep their asset register and service desk in GLPI. POps does not try to
+replace it. POps knows the live state of each Windows PC because its agent reports it; GLPI keeps the register,
+loans, contracts and the wider service desk. The plan is an export of POps inventory and helpdesk tickets to GLPI,
+so a school does not need a second inventory agent. It is a design note, not a feature yet:
+[`integrations/glpi.md`](integrations/glpi.md).
+
+## Pardus, ETAP and Lider Ahenk
+
+Many Turkish state schools run Pardus, and many classroom interactive boards run Pardus ETAP. POps manages only
+Windows 10 and 11 today, so a Windows-only POps misses those machines. A Linux agent (Pardus first) is planned.
+Integrating with Lider Ahenk, which already manages Pardus machines and ETAP boards centrally, is the other option;
+it has not been evaluated yet. See the [roadmap](../ROADMAP.md#linux-agent-pardus-first).
+
 ## Do not claim
 
 - Do not claim POps "replaces" classroom-management software; it is not a lesson tool.
 - Do not put a device/agent count in marketing until it is measured — see `BENCHMARKS.md`.
 - Do not present transparency as only a slogan; it is a concrete, demoable feature set
   (consent banner, per-user activity history, capability policy).
+- Do not claim a GLPI export, a Linux or Pardus agent or a Lider Ahenk integration exists; none of
+  them does yet.
