@@ -2,7 +2,7 @@
 
 This directory is the machine-readable definition of what a POps agent and the backend say to each other over
 their WebSockets. It is written from the code (`Backend/pops/routers/agents.py`, `routers/control.py`,
-`pops/taskqueue.py`, `pops/winget.py`, `Backend/system_routes.py` and the Windows agent's `Worker.cs`), and a unit test keeps it
+`pops/taskqueue.py`, `pops/winget.py`, `routers/system/` and the Windows agent's `Worker.cs`), and a unit test keeps it
 in step with that code. Any agent implementation (the Windows agent, the Linux agent) is expected to pass
 the same test vectors.
 

@@ -60,16 +60,10 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
     await devicelist.sync([pc_name])
     await add_audit_log(pc_name, "device_deleted", "Cihaz silindi: %s" % auth.get("sub"), {"admin": auth.get("sub")})
     # Cihaz çevrimiçiyse çalışan komutu durdurması istenir, sonra bağlantı kapatılır
-    agent_ws = manager.active_agents.get(pc_name)
-    if agent_ws:
+    if await manager.is_online(pc_name):
         for row in running:
             await manager.send_command({"action": "cancel_task", "task_id": row["id"]}, pc_name)
-    manager.disconnect_agent(pc_name)
-    if agent_ws:
-        try:
-            await agent_ws.close(code=4000, reason="Cihaz silindi")
-        except Exception:
-            pass
+    await manager.kick_agent(pc_name, 4000, "Cihaz silindi")
     return {"status": "success", "message": f"{pc_name} silindi."}
 
 

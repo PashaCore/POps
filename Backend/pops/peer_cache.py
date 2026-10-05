@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Set
 
 from pops import update_tracking
+from pops.cluster import cluster
 from pops.db import execute_query
 from pops.labs import UNASSIGNED_LAB
 from pops.manager import manager
@@ -235,7 +236,9 @@ async def plan(online: Iterable[str], version: str, sha256: str, msg: dict) -> P
     kalanı (eşsiz) bugünkü gibi gönderilir."""
     out = Plan()
     online = sorted(set(online))
-    if not online or not _SHA256.match(sha256 or "") or not await enabled():
+    # Birden fazla backend süreci (REDIS_URL): aşamalı gönderimin durumu süreçte tutulur, tohumun sonucu başka sürece
+    # gelebilir; eş önbelleği kapalıymış gibi herkese doğrudan gönderilir (docs/ha.md)
+    if not online or not _SHA256.match(sha256 or "") or cluster.enabled() or not await enabled():
         return out
     # Başka sürümün gönderimi eskidi: bekleyenleri gönderilmez (yeni gönderim onları zaten hedefliyorsa alırlar)
     for lab, ro in list(_rollouts.items()):

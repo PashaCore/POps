@@ -29,7 +29,7 @@ async def attempt_p2p_wol(mac_address: str, lab_name: str):
     )
     for peer in peers or []:
         peer_name = peer["pc_name"]
-        if peer_name in manager.active_agents:
+        if await manager.is_online(peer_name):
             await manager.send_command({"action": "wake_peer", "mac": mac_address}, peer_name)
             return True
     return False

@@ -72,6 +72,8 @@ Ways to create it:
 | `GLPI_CA_FILE` | no | empty | Path to a PEM file with the certificate authority that signed the GLPI server's certificate, when it is not one the system trusts (a school's own CA). |
 | `LOG_LEVEL` | no | `INFO` | Backend log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | `LOG_FORMAT` | no | `json` | `json`: one JSON object per line (for journald and log collectors). `text`: readable lines for development. |
+| `REDIS_URL` | no | unset | Turns on several backend workers: `redis://[:password@]host:6379/0` (`rediss://` for TLS). Unset: one process, as before. See [`ha.md`](ha.md). |
+| `REDIS_PREFIX` | no | `pops` | Prefix of POps keys and channels in Redis; give each installation its own when several share one Redis. |
 | `METRICS_TOKEN` | no | unset | Turns on the Prometheus `/metrics` endpoint; at least 16 characters, sent as `Authorization: Bearer <token>`. Unset: the endpoint returns 404. See [`backend.md`](backend.md#logs-metrics-and-diagnostics). |
 | `POPS_DEMO_USERS` | no | empty | Comma-separated panel user names that are **read-only demo accounts** (for a public demo). They can sign in and read, but every other request (anything but `GET`, `HEAD`, `OPTIONS`) returns `403` with `Demo hesabında değiştirilemez`, including their own password and 2FA. See [Public demo](#public-demo-read-only-accounts). |
 

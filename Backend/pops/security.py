@@ -18,13 +18,26 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from pops.config import CSRF_SAFE_METHODS, DEMO_USERS, JWT_ALGO, JWT_COOKIE_NAME, JWT_EXPIRE_H, JWT_SECRET
+from pops.config import (
+    CSRF_SAFE_METHODS, DEMO_USERS, JWT_ALGO, JWT_COOKIE_NAME, JWT_EXPIRE_H, JWT_SECRET, REDIS_PREFIX, REDIS_URL,
+)
 from pops.db import execute_query
 
 log = logging.getLogger("pops.security")
 
 
-limiter = Limiter(key_func=get_remote_address)
+if REDIS_URL:
+    # Birden fazla süreçte istek sınırları bütün süreçlerde ortak (Redis). Redis'e ulaşılamazsa süreç kendi bellek
+    # sayacına geçer ve Redis'i aralıklarla yeniden dener; kısa zaman aşımları olay döngüsünü bekletmesin diye.
+    limiter = Limiter(
+        key_func=get_remote_address,
+        storage_uri=REDIS_URL,
+        storage_options={"socket_connect_timeout": 0.5, "socket_timeout": 0.5},
+        in_memory_fallback_enabled=True,
+        key_prefix=REDIS_PREFIX,
+    )
+else:
+    limiter = Limiter(key_func=get_remote_address)
 
 
 # Demo hesapları (POPS_DEMO_USERS) yalnızca okur: GET/HEAD/OPTIONS dışındaki her panel isteği burada reddedilir.

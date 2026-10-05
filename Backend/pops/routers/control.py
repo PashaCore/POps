@@ -63,10 +63,10 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
     # mu) panoyu belirler: pano yalnızca kullanıcının kabul ettiği oturumda çalışır.
     manager.add_vision_session(data.target_pc, admin_name, mandatory=data.is_mandatory)
     # Tünel başka bir oturum için zaten açıksa yeni görüntüleyici monitör listesini buradan alır
-    if data.target_pc in manager.vision_monitors:
+    monitors = manager.monitors_of(data.target_pc)   # tünel başka süreçte olabilir (bkz. docs/ha.md)
+    if monitors is not None:
         await manager.send_to_session_holders(
-            {"type": "monitors", "hw_id": data.target_pc, "list": manager.vision_monitors[data.target_pc]},
-            data.target_pc, {admin_name},
+            {"type": "monitors", "hw_id": data.target_pc, "list": monitors}, data.target_pc, {admin_name},
         )
     # Hesap verebilirlik (F4): kontrol oturumunu ajanların yazamadığı hash-zincirli loga META olarak
     # yaz (ham tuş/koordinat DEĞİL — sadece kim, hangi cihaz, gerekçe, zorunlu mu).
@@ -166,7 +166,7 @@ async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
         (data.target_pc, (data.reason or "")[:300]),
     )
     await devicelist.sync([data.target_pc])
-    online = data.target_pc in manager.active_agents
+    online = await manager.is_online(data.target_pc)
     await manager.send_command({"action": "lockdown", "reason": data.reason}, data.target_pc)
     await notify("lockdown", "high", "Cihaz karantinaya alındı (%s)" % admin_name, data.reason or "", data.target_pc)
 
@@ -205,7 +205,7 @@ async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
         (data.target_pc,),
     )
     await devicelist.sync([data.target_pc])
-    online = data.target_pc in manager.active_agents
+    online = await manager.is_online(data.target_pc)
     await manager.send_command({"action": "unlock"}, data.target_pc)
 
     return {
@@ -487,7 +487,7 @@ async def _from_vision(pc_name: str, message: dict, state: dict) -> None:
         if monitors is None:
             metrics.count("vision_messages_malformed")
             return
-        manager.vision_monitors[pc_name] = monitors
+        manager.set_monitors(pc_name, monitors)
         await manager.send_to_session_holders({"type": "monitors", "hw_id": pc_name, "list": monitors}, pc_name)
     elif payload.get("type") == "clipboard":
         delivery = _clipboard_from_pc(pc_name, payload)
@@ -587,7 +587,7 @@ async def _vision_control(websocket: WebSocket, username: str, msg: dict, vision
         await manager.send_remote_input_to_vision(command, target)
         return
     if not manager.clipboard_allowed(username, target):
-        answer(False, "not_accepted" if target in manager.active_vision_ws else "no_stream")
+        answer(False, "not_accepted" if manager.vision_tunnel_open(target) else "no_stream")
         return
     if not _clipboard_rate_ok(("to_pc", target)):
         answer(False, "rate")
@@ -626,7 +626,7 @@ async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin_session
     # F1: ekran önizlemesi salt-okur viewer'a kapalı (yalnız admin/superadmin)
     await tenancy.check_device(auth, pc_name)
     await modules.check("vision", pc_name=pc_name)
-    if pc_name not in manager.active_agents:
+    if not await manager.is_online(pc_name):
         return {"status": "error", "image": None}
     loop = asyncio.get_event_loop()
     fut = loop.create_future()
@@ -660,7 +660,7 @@ async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_
     msg = _flat_remote_input(data)
     sent = await manager.send_remote_input_to_vision(msg, target)
     if not sent:
-        if target in manager.active_agents:
+        if await manager.is_online(target):
             await manager.send_command(msg, target)
             return {"status": "success"}
         return {"status": "error"}

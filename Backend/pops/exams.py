@@ -281,7 +281,9 @@ async def active_exam(lab: Optional[str]) -> Optional[dict]:
 
 # ── Gönderim ─────────────────────────────────────────────────────────────────
 async def _send(pcs: Iterable[str], message: dict) -> List[str]:
-    online = [pc for pc in dict.fromkeys(pcs) if pc in manager.active_agents]
+    pcs = list(dict.fromkeys(pcs))
+    up = await manager.online_among(pcs)   # birden fazla süreçte bütün süreçlerin ajanları
+    online = [pc for pc in pcs if pc in up]
     if not online:
         return []
     results = await asyncio.gather(*[manager.send_command(message, pc) for pc in online])
@@ -292,7 +294,9 @@ async def deliver(exam: dict, pcs: Iterable[str]) -> List[str]:
     """Sınavı bağlı bilgisayarlara gönderir; ulaşanları döner. Gönderim zamanı mesajdan ÖNCE yazılır: ajanın hemen
     gelen exam_state'i gönderilmemiş bir sınava ait sanılmasın. Bilgisayarın önceki bir sınavı (başka sınıftan
     taşındı) bu gönderimle geçersizleşir: ajanın ayarı yenisiyle değişir."""
-    online = [pc for pc in dict.fromkeys(pcs) if pc in manager.active_agents]
+    pcs = list(dict.fromkeys(pcs))
+    up = await manager.online_among(pcs)
+    online = [pc for pc in pcs if pc in up]
     if not online:
         return []
     await execute_query(
@@ -355,7 +359,7 @@ async def sync_pc(pc_name: str, lab: Optional[str] = None, known_lab: bool = Fal
 async def sync_pcs(pc_names: Iterable[str], lab: str) -> None:
     """Taşınan bilgisayarlar: yalnızca bağlı olanlar (diğerleri bağlanınca eşitlenir)."""
     for pc in dict.fromkeys(pc_names):
-        if pc in manager.active_agents:
+        if await manager.is_online(pc):
             await sync_pc(pc, lab, known_lab=True)
 
 
@@ -558,8 +562,9 @@ async def lab_devices(exam: dict) -> List[dict]:
     )
     now = time.time()
     out = []
+    up = await manager.online_among([r["pc_name"] for r in rows or []])
     for r in rows or []:
-        online = r["pc_name"] in manager.active_agents
+        online = r["pc_name"] in up
         out.append({
             "pc_name": r["pc_name"],
             "name": r["display_name"] or r["hostname"] or r["pc_name"],

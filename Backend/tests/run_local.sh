@@ -26,10 +26,11 @@ export PEER_CACHE_SEED_TIMEOUT_SECONDS="${PEER_CACHE_SEED_TIMEOUT_SECONDS:-4}"
 export POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1
 
 # Sunucusuz testler. Protokol testi jsonschema ister (yalnızca test bağımlılığı; CI kurar)
-skip=()
+# test_ha.py ayrı veritabanı işi yapar ve kendi süreçlerini açar: sonda, yalnızca POPS_TEST_REDIS verildiyse
+skip=(--deselect tests/test_ha.py::test_ha)
 if ! python -c "import jsonschema" 2>/dev/null; then
   echo "test_protocol.py atlandı: pip install jsonschema==4.26.0"
-  skip=(--deselect tests/test_protocol.py::test_protocol)
+  skip+=(--deselect tests/test_protocol.py::test_protocol)
 fi
 if [ "${COVERAGE:-0}" = "1" ]; then
   rm -f .coverage .coverage.*
@@ -49,6 +50,10 @@ for _ in $(seq 1 40); do curl -sf "$POPS_TEST_HTTP/api/health" >/dev/null 2>&1 &
 # Sunucu isteyen betikler; sonuç sunucu kapatıldıktan sonra bildirilir (kapsam raporu yine basılır)
 rc=0
 python -m pytest -v -m integration tests || rc=$?
+# Birden fazla backend süreci (docs/ha.md): yalnızca bir Redis verildiyse; kendi iki sürecini 9997/9998'de açar
+if [ -n "${POPS_TEST_REDIS:-}" ]; then
+  python -m pytest -v tests/test_ha.py || rc=$?
+fi
 if [ "${COVERAGE:-0}" = "1" ]; then
   kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
   python -m coverage combine --rcfile=.coveragerc >/dev/null

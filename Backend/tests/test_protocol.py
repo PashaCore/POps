@@ -285,16 +285,16 @@ def test_code_matches_schemas():
     chk(all(SCHEMAS[S2A][n].get("deprecated") for n in set(SCHEMAS[S2A]) - sent),
         "kodun göndermediği şemalar deprecated işaretli")
 
-    agents_src = _read(os.path.join(BACKEND, "pops", "routers", "agents.py"))
+    from pops.routers import agents
+
     control_src = _read(os.path.join(BACKEND, "pops", "routers", "control.py"))
-    handled = set(re.findall(r'(?:payload|pld)\.get\("type"\) == "([a-z_]+)"', agents_src + control_src))
+    # /ws/agent: mesaj türü → işleyici tablosu (agents._HANDLERS); /ws/vision: control.py'deki tür denetimleri
+    handled = set(agents._HANDLERS) | set(re.findall(r'(?:payload|pld)\.get\("type"\) == "([a-z_]+)"', control_src))
     for group in re.findall(r'payload\.get\("type"\) in \[([^\]]*)\]', control_src):
         handled |= set(re.findall(r'"([a-z_]+)"', group))
-    handled.add("heartbeat")   # type'sız; status ile tanınır (agents.py handle_routine_payload)
+    handled.add("heartbeat")   # type'sız; status ile tanınır (agents.py _dispatch)
     chk(handled == set(SCHEMAS[A2S]), "sunucunun işlediği her type'ın şeması var ve her şema işleniyor (fark: %s)"
         % sorted(handled ^ set(SCHEMAS[A2S])))
-
-    from pops.routers import agents
 
     features = SCHEMAS[S2A]["server_info"]["properties"]["features"]["description"]
     for f in agents.SERVER_FEATURES:

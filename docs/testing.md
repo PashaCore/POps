@@ -17,6 +17,7 @@ select and add tests: [CONTRIBUTING.md](../CONTRIBUTING.md#backend-tests-pytest)
 | Lock files | `tools/backend_lock.sh --check`: `Backend/requirements.lock` and the CI tool locks (`.github/requirements/*.lock`) regenerated from their inputs must be unchanged. | CI `backend-lock` job |
 | `fuzz/` | Atheris fuzz targets for the agent WebSocket handler, the request models, the signed release manifest and the notification settings ([fuzzing.md](fuzzing.md)). | CI `fuzz` job (60 s per target), `fuzz/run.sh` |
 | `Backend/tests/test_*.py` (others) | Integration tests against a running backend and an empty PostgreSQL database (`pytest -m integration`). | CI `security` job, `Backend/tests/run_local.sh` |
+| `Backend/tests/test_ha.py` | Several backend workers ([`ha.md`](ha.md)): starts two workers with one database and one Redis, reaches through a Redis relay it can cut. | CI `ha` job (with a `redis` service), `run_local.sh` when `POPS_TEST_REDIS` is set; skipped without it |
 | `Agent/POps.Tests` | xUnit tests for the agent, updater logic, shared code and the MSI custom actions (pure logic and temp-folder file operations; no firewall, pipe or service). | CI `test-agent` job (Windows) |
 | `Agent-Linux/tests` | pytest for the Linux agent on the distribution's own `python3` and packages, without root: identity/DNA, manifest verification, command limits and refusals, result spool, inventory parsers, update selection and the installer's rollback paths (fake `dpkg`/`systemctl`), the shared protocol vectors, a mock server; the `.deb` built twice must be byte-identical and is installed with `dpkg -i` (service not started). | CI `linux-agent` job |
 | `Agent-Linux/tests/test_integration.py` | The Linux agent from the source tree against a running backend over TLS (`pops-tls` CA): enrollment, platform, inventory, commands with exit codes, acknowledged results, refusal when the terminal is off. | CI `linux-agent-backend` job |
@@ -31,6 +32,15 @@ Run the backend suite locally (never against a production database):
 ```bash
 export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<u> DB_PASS=<p> DB_NAME=<empty test db> JWT_SECRET=dev
 COVERAGE=1 bash Backend/tests/run_local.sh   # needs pytest (.github/requirements/pytest.lock); COVERAGE=1 also coverage
+```
+
+The several-workers test needs a Redis it may use (it only touches keys under a random prefix). With
+`POPS_TEST_REDIS` set, `run_local.sh` runs it at the end; on its own, against a migrated database:
+
+```bash
+docker run --rm -d --name pops-test-redis -p 127.0.0.1:6390:6379 redis:7-alpine
+POPS_TEST_REDIS=redis://127.0.0.1:6390/0 python -m pytest -v Backend/tests/test_ha.py   # workers on 9997, 9998
+docker stop pops-test-redis
 ```
 
 ### Panel end-to-end tests
@@ -100,7 +110,7 @@ Baseline (2026-09-29): **backend 69.6 %** of statements. Lowest modules, and the
 
 | Module | Coverage | Why it is low |
 |---|---|---|
-| `system_routes.py` | 29 % | GitHub release fetch, agent deploy and self-update paths need network or root; only upload/verify and version are exercised. |
+| `pops/routers/system/` (was `system_routes.py`) | 29 % | GitHub release fetch, agent deploy and self-update paths need network or root; only upload/verify and version are exercised. |
 | `pops/wol.py` | 25 % | Wake-on-LAN sends UDP broadcasts; untested. |
 | `pops/routers/tasks.py` | 38 % | Orchestration, package upload and storage endpoints. |
 | `pops/routers/devices.py` | 41 % | Device edit/delete, labs, hardware inventory views. |
@@ -160,4 +170,5 @@ machine and a regression would not be caught by CI.
 | Text timestamps converted to `TIMESTAMPTZ` (`0031`): row counts, a value read in the server's time zone, indexes, an audit chain built before the migration still verifies; API times in ISO 8601 (also for power tasks, file transfers and exams), day filters and CSV times in the server's zone; no zone-less or text time column left, including the SSO, GLPI, exam and file transfer tables | Tested | `test_timestamps.py` (applies the migrations before `0031` in a scratch schema, writes old-format rows, then the rest), `test_units.py` |
 | Server self-update and deploy rollback | Tested (fakes) | `test_deploy.sh`: rollback of code and venv after a failed `pip`, copy or health check; database dump before a migration marked `-- pops: dump-before` (before the restart, at most 3 kept, stop on missing space or a failed dump, restore commands printed on rollback); venv rebuilt when its Python is too old (and put back on failure); early stop without a new enough Python; signed release tags. The real systemd path is field-verified (`deploy-status.json` `state=ok`). |
 | Panel pages (PHP) | Tested | End-to-end smoke of every page at desktop and phone width, and the main flows (sign-in, devices, labs, tasks, logs, Sistem, Ayarlar, viewer role) in Chromium: `tests/e2e/`, CI `panel-e2e` job. Not covered: Vision and remote command against a live agent (no agent and no WebSocket proxy in the stack). |
+| Several workers with Redis: command to an agent on another worker, broadcasts, frames only to the session holder's panel on another worker, remote input to a tunnel on another worker, task result and job center, update stage, shared rate limit, agent moving to another worker, Redis down and back | Tested | `test_ha.py` (CI `ha` job); the full integration list also passes with `REDIS_URL` set and one worker |
 | Vision screen tunnel | Partly | Frame scoping and the v2 relay tested (`test_remote_authz.py`, `test_vision_v2.py`); the tray's decision while the secure desktop is up (notice instead of capture, resume with a full frame) tested (`VisionDesktopTests`); a session that starts while the PC is locked (event 1150, the notice set up before capture and closed at session end, capture held until the notice is shown, consent never started on a timer) tested with seams (`VisionLockedStartTests`); tray capture and the banner window are not |

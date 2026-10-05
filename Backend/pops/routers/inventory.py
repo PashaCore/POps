@@ -90,8 +90,9 @@ async def _patch_command(data: PatchInstallInput, auth: dict, action: str, label
     targets, closed = await modules.split_pcs("patches", targets)
     if closed and not targets:
         raise modules.closed_error("patches")
-    online = sorted(t for t in set(targets) if t in manager.active_agents)
-    offline = sorted(t for t in set(targets) if t not in manager.active_agents)
+    up = await manager.online_among(targets)
+    online = sorted(t for t in set(targets) if t in up)
+    offline = sorted(t for t in set(targets) if t not in up)
     msg = {"action": action, "scope": data.scope}
     for pc in online:
         await manager.send_command(msg, pc)

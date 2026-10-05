@@ -39,11 +39,12 @@ async def _online_targets(target_mode: str, targets: list, auth: dict) -> tuple:
             detail="Kayıtlı olmayan bilgisayar: %s" % ", ".join(unknown[:10]) + (" …" if len(unknown) > 10 else ""),
         )
     seen, online, offline = set(), [], []
+    up = await manager.online_among(t["pc"] for t in resolved)   # birden fazla süreçte bütün süreçlerin ajanları
     for t in resolved:
         if t["pc"] in seen:
             continue
         seen.add(t["pc"])
-        (online if t["pc"] in manager.active_agents else offline).append(t)
+        (online if t["pc"] in up else offline).append(t)
     return online, [t["pc"] for t in offline]
 
 

@@ -6,7 +6,9 @@ seviyesi bildirim üretmez: kayıtsız bir ajan sahte "kritik" olay yağdıramas
 
 Dışarıya gönderim olay akışını hiçbir zaman bloklamaz ve hata fırlatmaz: kayıt önce veritabanına
 yazılır, e-posta/webhook arka planda (thread'de, zaman aşımlı) gönderilir, sonuç kayda işlenir.
-Aynı olay 10 dakika içinde tekrar gelirse yok sayılır; dışarıya gönderim 10 dakikada en fazla 30.
+Aynı olay 10 dakika içinde tekrar gelirse yok sayılır; dışarıya gönderim 10 dakikada en fazla 30. Birden fazla
+backend süreci çalışıyorsa (REDIS_URL) süzgeç ve sınır bütün süreçlerde ortaktır (Redis; erişilemezse süreç kendi
+sayacına döner).
 """
 
 import asyncio
@@ -23,6 +25,7 @@ from email.message import EmailMessage
 from typing import Optional
 
 from pops import config
+from pops.cluster import cluster
 from pops.db import execute_query
 
 log = logging.getLogger("pops.notify")
@@ -194,6 +197,14 @@ def _deliver(settings: dict, event: str, severity: str, title: str, detail: str,
     return ",".join(channels), "; ".join(errors)
 
 
+async def _shared_rate_ok() -> bool:
+    if cluster.enabled():
+        shared = await cluster.rate_ok(_SEND_WINDOW, _SEND_LIMIT)
+        if shared is not None:
+            return shared
+    return _rate_ok()
+
+
 def _rate_ok() -> bool:
     now = time.time()
     while _sent_times and now - _sent_times[0] > _SEND_WINDOW:
@@ -268,6 +279,8 @@ async def notify(
         # Kayıttan önce işaretlenir (aynı anda gelen iki olay iki kayıt açmasın); kayıt başarısız olursa işaret
         # geri alınır, yoksa veritabanı geri gelince aynı olay tekrar süzgecine takılıp hiç kaydedilmezdi (F15)
         _recent[key] = now
+        if not force and cluster.enabled() and await cluster.claim_once(key, _DEDUPE_SECONDS) is False:
+            return None   # başka bir süreç aynı olayı az önce kaydetti
 
         rows = await execute_query(
             "INSERT INTO notifications (event, severity, pc_name, title, detail) VALUES ($1,$2,$3,$4,$5) "
@@ -282,7 +295,7 @@ async def notify(
         wants = settings.get("notify_enabled") == "1" and (
             force or _SEV_RANK[severity] >= _SEV_RANK.get(settings.get("notify_min_severity"), 2)
         )
-        if wants and (force or _rate_ok()):
+        if wants and (force or await _shared_rate_ok()):
             task = asyncio.create_task(_deliver_and_record(nid, settings, event, severity, title, detail, pc_name))
             _tasks.add(task)
             task.add_done_callback(_tasks.discard)
@@ -290,6 +303,8 @@ async def notify(
     except Exception:
         if key is not None and not recorded:
             _recent.pop(key, None)
+            if cluster.enabled():
+                await cluster.forget_once(key)
         log.exception("bildirim kaydedilemedi", extra={"event": event, "attempt": _attempt + 1})
         if not recorded:
             _schedule_retry(_attempt, (event, severity, title, detail, pc_name, force))

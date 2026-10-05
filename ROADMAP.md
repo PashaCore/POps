@@ -162,7 +162,8 @@ valid signature.
 - **Server-side owner filter for helpdesk tickets** (an admin sees the tickets assigned to them). Lab-scoped
   permissions are done as organisational units (district → school, scope per user and token; D-25).
 - **Device list paging** for large fleets.
-- **High availability:** several backend processes with Redis (see Vision below).
+- **High availability:** done for the backend: several workers with Redis, off by default
+  ([`docs/ha.md`](docs/ha.md)). PostgreSQL itself relies on standard replication.
 - **RDP and multi-session PCs (F19):** today the tray assumes one console session.
 - **Measure again:** 5,000 agents on 0.1.12+ over HTTPS with health telemetry, and a Vision load test.
 - **End-to-end tests on Windows:** a Windows test machine for the real MSI update and rollback (the panel's
@@ -218,16 +219,16 @@ yet; the choice between the options above and this path is open.
 
 ### Vision beyond one school
 
-*Status: planned.*
+*Status: several workers with Redis done ([`docs/ha.md`](docs/ha.md)); a separate relay and WebRTC open.*
 
-Today one backend process holds every agent, panel and Vision socket and forwards frames only to the panel of the
-admin who holds the session (D-01, D-09 in [`docs/decisions.md`](docs/decisions.md)). Options:
+By default one backend process holds every agent, panel and Vision socket and forwards frames only to the panel of
+the admin who holds the session (D-01, D-09 in [`docs/decisions.md`](docs/decisions.md)). Options:
 
-- **Several workers with Redis pub/sub.** Route commands, events and frames through channels keyed by device and
-  by panel user; move session grants, pending updates and notification counters to Redis or PostgreSQL. Frames
-  are published per session and consumed only by the worker that holds that admin's panel socket, never
-  broadcast. PostgreSQL `LISTEN/NOTIFY` could carry control events without a new service, but its payload limit
-  (8000 bytes by default) rules it out for frames.
+- **Several workers with Redis pub/sub (done, D-26).** Commands, events and frames go through channels keyed by
+  device and by panel user; session grants, the online-agent registry, notification counters and rate limits are in
+  Redis, pending updates in PostgreSQL. Frames are published only to the channels of the session holders and
+  consumed by the worker that holds that admin's panel socket, never broadcast. Off unless `REDIS_URL` is set.
+  PostgreSQL `LISTEN/NOTIFY` was not used: its payload limit (8000 bytes by default) rules it out for frames.
 - **A separate Vision relay.** Agents' `/ws/vision` and the viewing panel connect to a relay; the backend issues a
   short-lived ticket (device, admin, expiry) that the relay checks. This keeps frame traffic off the API process
   and can run per school.

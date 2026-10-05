@@ -448,6 +448,57 @@ jobs:
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -q "yok (her sey guncel)" || { echo "::error::Migration idempotent degil"; exit 1; }
 
+  ha:
+    name: Several backend workers (Redis)
+    # İki backend süreci aynı veritabanı ve aynı Redis'le (REDIS_URL): başka süreçteki ajana komut, panel yayınları,
+    # yalnızca oturum sahibine ekran karesi, görev sonucu, güncelleme adımı, ortak istek sınırı; Redis durunca süreç
+    # kendi soketleriyle çalışır. Test iki süreci kendisi başlatır (9997, 9998). Diğer job'lar tek süreçtir.
+    # Bkz. docs/ha.md.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: pops
+          POSTGRES_PASSWORD: pops
+          POSTGRES_DB: pops_ha
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_USER: pops
+      DB_PASS: pops
+      DB_NAME: pops_ha
+      JWT_SECRET: ci-ha-test-secret
+      POPS_TEST_REDIS: redis://127.0.0.1:6379/0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Backend/requirements.lock
+      - name: Install backend deps
+        run: |
+          pip install --require-hashes -r Backend/requirements.lock
+          pip install --require-hashes -r .github/requirements/pytest.lock
+      - name: Migrate + two workers + HA test
+        run: |
+          set -euo pipefail
+          python Backend/migrate.py
+          python -m pytest -v Backend/tests/test_ha.py
+
   backup-restore:
     name: Backup and restore (PostgreSQL 16)
     # pops-backup / pops-restore gerçekten çalışıyor mu: yedek + sınama, kurcalanmış zincir reddi, geri dönüş.

@@ -10,7 +10,8 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
 
 ## D-01 One backend process with in-memory connection state
 
-**Since:** 0.1.0-alpha; documented and measured in 0.1.3-alpha (`3311bf9`).
+**Since:** 0.1.0-alpha; documented and measured in 0.1.3-alpha (`3311bf9`). **Partly superseded by D-26:** one
+process stays the default; several workers are possible with Redis.
 
 - **Context:** The backend holds one WebSocket per agent plus the panel and Vision sockets, and routes commands,
   frames and remote input between them. Doing this across several processes needs a message broker.
@@ -48,7 +49,10 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   wiring). The code lives in `Backend/pops/` (config, db, panel security, agent auth, audit, connection manager,
   models, task queue, DNA, WoL, notifications, scheduler) with one `APIRouter` per endpoint group in
   `pops/routers/`. `system_routes.py` stays a separate router built with injected dependencies. The split did not
-  change behaviour: the route table and responses were compared before and after.
+  change behaviour: the route table and responses were compared before and after. Later the system router became
+  the package `pops/routers/system/` (one module per area, the same injected dependencies; `system_routes` is kept
+  as an alias of its `common.py` for old imports and tests), and `/ws/agent` became small functions with a table
+  from message `type` to handler, again without a change in behaviour or in `docs/openapi.json`.
 - **Consequences:** New endpoints go into a router that `server.py` includes. Modules reach the pool as
   `db.db_pool`, never `from pops.db import db_pool`. `pops/config.py` imports no other `pops` module. flake8
   (`.flake8`, 120 columns) is a full CI gate, so any new finding fails the build.
@@ -545,3 +549,41 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   releases, enrollment tokens, notification channels) stay with the superadmin; a school admin does not enroll PCs
   without the district handing out an enrollment token for its lab. Changing a scope bumps the user's token version,
   so open sessions sign in again; open panel sockets pick up a changed lab assignment within 10 seconds.
+
+## D-26 Several backend workers through Redis pub/sub, off by default
+
+**Since:** 0.1.23-alpha.
+
+- **Context:** A review noted that the backend is one process (D-01), so a district, several schools on one server
+  or a standby process needs a broker or a separate Vision relay. One process carries a district (5,000 agents,
+  [capacity report](kapasite/README.md)), so the need is availability and growth room, not today's load. The
+  options were in the roadmap: Redis pub/sub, PostgreSQL `LISTEN/NOTIFY`, a separate Vision relay, WebRTC later.
+- **Decision:** Optional several workers with Redis, turned on by `REDIS_URL` (`pops/cluster.py`). Without it the
+  code paths are the old ones; the full integration suite passes both without Redis and with Redis and one worker.
+  - Every socket stays in the worker that accepted it. A command for an agent on another worker is published on
+    the device's channel, which only the worker holding that socket subscribes to; remote input, viewer commands and
+    clipboard text use the device's Vision channel. Panel and admin broadcasts go on one events channel. Screen
+    frames (JSON, and Vision v2 binary frames as base64) and the session holder's Vision messages go only to the
+    channels of the users holding a session for that device (the F12 rule, checked on both sides), never to every
+    worker.
+  - Shared state: the online-agent registry (device → worker) in Redis with 15 s worker liveness keys, cleaned up
+    by the other workers when one dies; remote-control session grants (with their mode) and Vision tunnels
+    (clipboard owner, monitors) in Redis, mirrored in each worker's memory and re-read every 10 s; the device list
+    version from a shared counter, with changed rows published to every worker; notification dedupe and send limit
+    and the login rate limits in Redis; updates awaiting a result stay in PostgreSQL and are re-read before use. The
+    task queue takes a PostgreSQL advisory lock per round, and one leader worker (a session advisory lock on its own
+    connection) runs the periodic jobs. The manager's synchronous methods stay synchronous: their Redis writes go
+    through an ordered background queue.
+  - Redis is not the system of record: if it is down, each worker keeps serving its own sockets, drops traffic for
+    other workers, logs, and reconnects; registry entries and queued grant changes are written again afterwards.
+  - The load balancer needs no stickiness. Classification of everything kept per process: [`ha.md`](ha.md).
+  - Organisational-unit scopes (D-25) hold across workers: a broadcast carries its device, and the worker that
+    holds a panel applies that panel's scope before it queues the message.
+- **Consequences:** A worker or a server can be lost or restarted without losing the others' agents and panels,
+  and capacity grows with workers. A second service (Redis) has to be run and monitored for this mode. PostgreSQL
+  stays a single point of failure (standard replication is the answer, not POps code), and with several servers
+  `storage/`, `updates/`, `releases/` and `transfers/` must be shared. Some throttles stay per worker (listed in
+  `ha.md`), and a command counts as delivered once the holding worker received it. Agents do not rebalance after a restart until
+  they reconnect. LISTEN/NOTIFY was not used because its 8,000-byte payload limit rules it out for frames, and a
+  separate Vision relay would only cover Vision.
+

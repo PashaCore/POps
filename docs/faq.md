@@ -14,7 +14,8 @@ PostgreSQL and Python 3.10 or newer (3.12 recommended; the installer adds it on 
 The measured numbers are in [`BENCHMARKS.md`](../BENCHMARKS.md) and the [capacity report](kapasite/README.md): one
 backend process brought 5,000 simulated agents back within 11 seconds of a restart, at about 40 % of one CPU core and
 69 MB + 0.16 MB per agent of memory. Hundreds of agents sending full software lists at the same moment raise latency
-above a second. The backend runs as a single process, so plan one server per school.
+above a second. The backend runs as a single process by default; several workers or servers are possible with
+Redis ([`ha.md`](ha.md)).
 
 **Is the panel available in English?**
 Yes, every page: **Türkçe / English** at the bottom of the sidebar or under the sign-in form switches the interface

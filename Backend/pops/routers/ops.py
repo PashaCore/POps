@@ -16,7 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import Field
 
-from pops import db, health_alerts, logs, metrics, retention, scheduler, server_metrics
+from pops import db, health_alerts, logs, metrics, retention, scheduler, server_metrics, update_tracking
+from pops.cluster import WORKER_ID, cluster
 from pops.config import DB_POOL_MAX, METRICS_TOKEN
 from pops.db import execute_query
 from pops.manager import manager
@@ -47,9 +48,9 @@ def _backup_status():
 
 
 def _version():
-    from system_routes import _read_version  # system_routes, pops paketine bağımlı değil; döngü yok
+    from pops.routers.system import common  # sürüm tek yerden okunur (VERSION / POPS_VERSION)
 
-    return _read_version()
+    return common._read_version()
 
 
 def _pool_stats():
@@ -82,9 +83,11 @@ async def prometheus_metrics(request: Request):
     pool = _pool_stats()
     devices = await _device_counts()
     tick = scheduler.last_tick[0]
+    agents, panels = await manager.connection_counts()   # birden fazla süreçte bütün süreçlerin toplamı
+    await update_tracking.refresh()
     gauges = [
-        ("pops_agents_connected", "Bagli ajan WebSocket sayisi", [({}, len(manager.active_agents))]),
-        ("pops_panels_connected", "Bagli panel WebSocket sayisi", [({}, len(manager.active_panels))]),
+        ("pops_agents_connected", "Bagli ajan WebSocket sayisi", [({}, agents)]),
+        ("pops_panels_connected", "Bagli panel WebSocket sayisi", [({}, panels)]),
         ("pops_vision_sessions", "Acik uzaktan izleme oturumu olan cihaz", [({}, len(manager.vision_sessions))]),
         ("pops_pending_agent_updates", "Sonucu beklenen ajan guncellemesi", [({}, len(manager.pending_updates))]),
         ("pops_devices", "Kayitli cihazlar (durum)", [({"state": k}, v) for k, v in devices.items()]),
@@ -93,6 +96,11 @@ async def prometheus_metrics(request: Request):
          [({}, round(time.time() - tick, 1) if tick else -1)]),
         ("pops_process_resident_memory_mb", "Surecin bellek kullanimi (MB)", [({}, server_metrics.rss_mb() or 0)]),
     ]
+    cluster_info = await _cluster_info()
+    if cluster_info:
+        gauges.append(("pops_cluster_workers", "Calisan backend sureci (Redis ile)",
+                       [({}, len(cluster_info["workers"] or []))]))
+        gauges.append(("pops_worker_agents_connected", "Bu surece bagli ajan", [({}, len(manager.active_agents))]))
     backup = _backup_status()
     if backup and backup.get("at"):
         try:
@@ -118,13 +126,15 @@ async def diagnostics(auth: dict = Depends(require_superadmin)):
             slow.append({"route": route, "count": count, "avg_ms": round(row[-1] / count * 1000, 1)})
     slow.sort(key=lambda r: r["avg_ms"], reverse=True)
     server_errors = sum(n for (_m, _r, s), n in metrics.http_requests.items() if s >= 500)
-    return {
+    agents, panels = await manager.connection_counts()
+    await update_tracking.refresh()
+    out = {
         "version": _version(),
         "uptime_seconds": round(time.time() - metrics.STARTED_AT),
         "pid": os.getpid(),
         "rss_mb": server_metrics.rss_mb(),
-        "agents_connected": len(manager.active_agents),
-        "panels_connected": len(manager.active_panels),
+        "agents_connected": agents,
+        "panels_connected": panels,
         "vision_sessions": len(manager.vision_sessions),
         "pending_updates": len(manager.pending_updates),
         "devices": await _device_counts(),
@@ -142,6 +152,19 @@ async def diagnostics(auth: dict = Depends(require_superadmin)):
         "disk": health_alerts.last["disk"],
         "tls": health_alerts.last["tls"],
     }
+    cluster_info = await _cluster_info()
+    if cluster_info:
+        out["cluster"] = cluster_info
+    return out
+
+
+async def _cluster_info():
+    """Birden fazla süreç (REDIS_URL): bu süreç, Redis bağlantısı, periyodik işleri yapan süreç mi ve canlı süreçler
+    (her birinin ajan ve panel sayısı). Tek süreçte None."""
+    if not cluster.enabled():
+        return None
+    return {"worker": WORKER_ID, "redis_ok": cluster.healthy, "leader": scheduler._leader["held"],
+            "workers": await cluster.workers()}
 
 
 def _load_summary():
@@ -176,7 +199,7 @@ async def overview(span: str = "24h", auth: dict = Depends(require_superadmin)):
         raise HTTPException(status_code=422, detail="span 24h, 7d ya da 30d olmalı")
     data = await server_metrics.overview(span)
     data["devices"] = await _device_counts()
-    data["agents_connected"] = len(manager.active_agents)
+    data["agents_connected"] = (await manager.connection_counts())[0]
     return data
 
 

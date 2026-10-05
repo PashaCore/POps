@@ -2,11 +2,15 @@
 
 import asyncio
 import datetime
+import logging
 
-from pops import metrics, modules, power, winget
+from pops import db, metrics, modules, power, winget
+from pops.cluster import cluster
 from pops.db import execute_query
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
+
+log = logging.getLogger("pops.taskqueue")
 
 
 async def resolve_targets(target_mode: str, targets, conn=None, scope=None) -> list:
@@ -58,6 +62,9 @@ def _seconds_since(created_at) -> float:
 # atıyordu: 2000 ajan aynı anda bağlanınca ~2 milyon sorgu, sunucu dakikalarca meşgul (bkz. BENCHMARKS.md).
 _queue_lock = asyncio.Lock()
 _queue_again = False
+# Birden fazla süreçte turlar süreçler arasında da sıraya girer (aynı görev iki süreçten gönderilmesin, eşzamanlılık
+# sınırı bütün süreçlerde geçerli olsun)
+_QUEUE_LOCK = 0x504F5051  # "POPQ"
 
 
 async def process_queue():
@@ -68,9 +75,25 @@ async def process_queue():
     async with _queue_lock:
         while True:
             _queue_again = False
-            await _process_queue_once()
+            if cluster.enabled():
+                await _process_queue_locked()
+            else:
+                await _process_queue_once()
             if not _queue_again:
                 break
+
+
+async def _process_queue_locked():
+    try:
+        async with db.acquire() as conn:
+            await conn.execute("SELECT pg_advisory_lock($1)", _QUEUE_LOCK)
+            try:
+                await _process_queue_once()
+            finally:
+                await conn.execute("SELECT pg_advisory_unlock($1)", _QUEUE_LOCK)
+    except Exception:
+        # Bu tur atlanır; kuyruk bir sonraki çağrıda (ajan bağlanınca, sonuç gelince, zamanlayıcıda) yeniden işlenir
+        log.warning("görev kuyruğu işlenemedi", exc_info=True)
 
 
 async def _process_queue_once():
@@ -82,7 +105,7 @@ async def _process_queue_once():
         limit = max(0, int(limit_row[0]["value"])) if limit_row else 5
     except ValueError:
         limit = 5
-    online_pcs = list(manager.active_agents.keys())
+    online_pcs = await manager.online_agents()
     if not online_pcs:
         return
     # Eşzamanlılık kotasını yalnızca BAĞLI cihazlardaki çalışan görevler tutar: bağlantısı kopmuş cihazın "Running"
