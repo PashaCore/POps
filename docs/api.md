@@ -329,6 +329,11 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | --- | --- | --- | --- |
 | POST | `/api/system/enroll-token` | require_superadmin | `{lab_name?, note?, ttl_hours = 72, max_uses = 1}` (TTL 1 h – 30 days, uses 1–10000). Returns the token. A field it does not know (for example `lab` instead of `lab_name`) is `422`, so a typo does not create a token with default values. |
 | GET | `/api/system/enroll-tokens` | require_superadmin | Latest 200 tokens with use counts and expiry. |
+| GET | `/api/branding` | none | `{org_name, logo, logo_v}`: the organisation name and whether a logo is set (`logo_v` changes with the logo). The sign-in page reads it before anyone signs in. |
+| GET | `/api/branding/logo` | none | The logo image (`image/png`, `image/jpeg` or `image/webp`, `nosniff`, cached for a day); `404` without a logo. |
+| POST | `/api/system/branding` | require_superadmin | `{org_name}` (at most 80 characters; empty or `null` removes it). Audit-logged. |
+| POST | `/api/system/branding/logo` | require_superadmin | Multipart `file`: PNG, JPEG or WebP by content (not by name or declared type), at most 256 KB (`413`), else `415`. Audit-logged. |
+| DELETE | `/api/system/branding/logo` | require_superadmin | Removes the logo. Audit-logged. |
 | DELETE | `/api/system/enroll-token/{token_id}` | require_superadmin | Revokes (deletes) a token. |
 | POST | `/api/system/enforce-auth` | require_superadmin | `{enabled}`: turns `enforce_agent_auth` on or off. |
 | POST | `/api/system/allow-reenroll` | require_superadmin | `{pc_name, allow}`: lets an already enrolled device obtain a new secret with an enrollment token once. |

@@ -364,7 +364,7 @@ effect on them. See [`configuration.md`](configuration.md#agent-policy-object).
 ### Ayarlar
 
 Three tabs, kept in the address like on **Sistem**: **Kullanıcılar**, **Güvenlik** (two-step verification) and
-**Genel** (task queue and server connection).
+**Genel** (organisation, task queue and server connection).
 
 - **Kullanıcılar**: the users with their role, page access and last sign-in; a click opens the user's panel. A
   superadmin can add users (**Kullanıcı ekle**), edit the role and the pages (**Rolü ve yetkileri düzenle**, the
@@ -374,6 +374,9 @@ Three tabs, kept in the address like on **Sistem**: **Kullanıcılar**, **Güven
 - **İki adımlı doğrulama**: set up (QR code and manual key), enable with a code (**Etkinleştir**), or disable with a
   code, for your own account. 2FA is optional but recommended: an admin or superadmin whose own 2FA is off sees a
   short notice under the title of this page and of **Sistem**; × hides it in that browser for 7 days.
+- **Kurum**: the organisation name and logo shown on the sign-in page instead of "POps" (PNG, JPEG or WebP, at most
+  256 KB; SVG is not accepted). A small "POps · Pasha Core" line stays under the form. Only a superadmin changes them;
+  every change goes to the audit log.
 - **Görev kuyruğu**: the task concurrency limit (**Eşzamanlı görev sınırı**, `concurrent_limit`, 1–200).
 - **Sunucu bağlantısı**: the API and WebSocket addresses in use and a connection test. The addresses come from the
   server's `.env` and cannot be changed here.
