@@ -14,7 +14,8 @@ namespace POps.Tests.Agent
     // Komut tablosu (bkz. CommandDispatcher; Worker.cs bölmesinin a1 adımı). Eski if/else zincirinin işlediği her eylem
     // tabloda, komut kanalının her sunucu mesajının bir işleyicisi var, aynı eylem iki işleyicide olamaz, tanınmayan eylem
     // yok sayılır.
-    public class CommandDispatcherTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class CommandDispatcherTests : SharedStateTestBase, IDisposable
     {
         // Worker.HandleServerMessageAsync'in if/else zincirinin (a1'den önce) işlediği eylemler, zincirdeki sırayla
         private static readonly string[] OldChainActions =
