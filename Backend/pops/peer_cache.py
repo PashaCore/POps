@@ -172,7 +172,7 @@ async def set_enabled(on: bool) -> None:
         # Kapatılınca tohum bekleyen bilgisayarlar beklemez: bugünkü gibi eşsiz gönderilir
         for ro in list(_rollouts.values()):
             if ro.state == "seeding":
-                await _release(ro, "kapatıldı")
+                await _release(ro, "kapatıldı", use_peers=False)
 
 
 async def _rows(pcs: List[str]) -> List[dict]:
@@ -301,6 +301,8 @@ async def _send(pc: str, message: dict, version: str) -> bool:
 
 
 async def _next_seed(ro: Rollout, why: str) -> None:
+    # Süre hemen ertelenir: aşağıdaki beklemeler sürerken tick aynı tohumu ikinci kez bırakmasın
+    ro.deadline = time.time() + SEED_TIMEOUT
     if ro.seed:
         ro.tried.append(ro.seed)
         log.info("tohum bırakıldı", extra={"lab": ro.lab, "pc_name": ro.seed, "reason": why})
@@ -322,11 +324,11 @@ async def _next_seed(ro: Rollout, why: str) -> None:
     await _release(ro, "tohum kalmadı")
 
 
-async def _release(ro: Rollout, why: str) -> None:
+async def _release(ro: Rollout, why: str, use_peers: bool = True) -> None:
     """Bekleyenlere gönderir: hazır eş varsa peers ile, yoksa bugünkü gibi."""
     if ro.state != "seeding":
         return
-    peers = _live_peers(ro)
+    peers = _live_peers(ro) if use_peers else []
     ro.state = "released" if peers else "fallback"
     ro.released_at = time.time()
     waiting = sorted(ro.waiting)
