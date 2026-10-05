@@ -96,6 +96,9 @@ namespace POpsAgent
         // Ajanın yapılandırması (appsettings.json, POPS_SERVER_URL) okunamadı: sunucu adresi son çaredir
         public static LocalAuditEvent ConfigUnreadable(string problem, string serverUrl) =>
             Build(1090, LocalAuditLevel.Error, "Yapılandırma okunamadı", ("problem", Safe(problem)), ("server_url", Safe(serverUrl)));
+        // Vision v2 pano paylaşımı (yalnızca kullanıcının kabul ettiği oturumda): yön ve uzunluk, içerik asla
+        public static LocalAuditEvent ClipboardShared(string direction, int length) =>
+            Info(1100, "Pano paylaşıldı", ("direction", Safe(direction)), ("length", length));
 
         public static void Write(LocalAuditEvent item)
         {

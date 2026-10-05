@@ -55,6 +55,50 @@ When you pick a lab on the **Uzak ekran** page, the wall requests a preview of e
 The tray never logs remote keystrokes; its log records message types only. The audit log records that a session
 was opened, not what was typed.
 
+## Vision v2: capture and transport (agent 0.1.23+)
+
+Used only when the server lists `vision_binary` in `server_info.features`; otherwise the agent keeps sending
+full JPEG frames as JSON (`stream_frame`, base64), as before.
+
+- **Capture (tray, user session):**
+  - DXGI Desktop Duplication per screen, with GDI as the fallback where DXGI is not available (RDP, some
+    virtual machines, a secure desktop).
+  - The capture thread runs per-monitor DPI aware, so all coordinates are physical pixels.
+- **Changed regions:** After a full frame, only changed regions are sent. They are found by comparing 64×64
+  tiles with what the viewer already has; touching tiles are merged. If more than 8 regions remain or they cover
+  more than half the screen, a full frame is sent instead.
+- **Screens:**
+  - The tray reports `{"type": "monitors", "list": [{"index", "width", "height", "primary"}]}` when the stream
+    starts and after a display change.
+  - `{"action": "select_monitor", "index": n | "all"}` picks a screen (default: primary). `all` puts every screen
+    side by side in one image (monitor byte `0xFF`).
+- **Quality:**
+  - `{"action": "set_quality", "quality": 30–75, "scale": 0.5–1.0, "fps": 1–10}` sets the upper limits.
+    Out-of-range values are clamped; missing ones default to 60, 1.0 and 5.
+  - When the service has to drop a frame (the previous one is still being sent: frames are dropped, never
+    queued), the tray lowers the JPEG quality, then the scale. The next frame is full, and regions are held back
+    until it has gone. After 5 s without drops the tray steps back toward the limits.
+- **Frames:** Binary WebSocket messages with an 18-byte big-endian header:
+  - kind: `0x01` full, `0x02` region, `0x03` cursor position (no image);
+  - monitor;
+  - sequence (u32);
+  - x, y, w, h;
+  - full output width and height;
+  - then the JPEG.
+
+  **Coordinates are always the output's real pixels.** At a scale below 1 the JPEG is smaller, and the viewer
+  draws it into the rectangle (x, y, w, h). A cursor message carries the position in x, y with w = h = 0. Frames
+  are at most 2 MB.
+- **Remote mouse:** While v2 runs, `mouse_move` x, y are pixels of the selected screen (or of the side-by-side
+  image). The tray maps them to the physical screen.
+- **Clipboard:**
+  - Text only, at most 64 KB.
+  - Only while a session the PC user **accepted** is open (not a mandatory session that only showed a notice).
+  - Both directions: the viewer sends `{"action": "clipboard", "text"}`, and the agent sends
+    `{"type": "clipboard", "text"}` when the user copies text.
+  - The tray shows "Pano paylaşıldı".
+  - The Windows event log records only the direction and the length (event 1100), never the text.
+
 ## Diagnostics (Teşhis)
 
 The **Diğer işlemler** menu of the focus view has **Teşhis komutları**, which opens the **Teşhis** dialog. Its commands are queued like any other

@@ -5,6 +5,8 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- Vision v2: DXGI Masaüstü Çoğaltma COM arayüzleri vtable üzerinden çağrılır (Vision/NativeCapture.cs) -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Tepsi kullanıcının ortam değişkenleriyle başlar: HKCU\Environment'taki DOTNET_STARTUP_HOOKS kullanıcının kendi
          kodunu tepsinin içine yükleyemesin (servis tepsi mesajlarına yine güvenilmeyen girdi gibi davranır) -->
