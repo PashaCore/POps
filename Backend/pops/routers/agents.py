@@ -862,6 +862,14 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                             "AND status IN ('Running', 'Completed', 'Failed', 'Unknown', 'Interrupted', 'Timed Out')",
                             (denied_task, active_hwid),
                         )
+                    if payload.get("capability") == "quarantine" and payload.get("reason") == "not_supported":
+                        # Bu ajanda karantina yok (Linux ajanı): kilit isteği "bekleyen" kalmasın ve panel cihazı
+                        # kilitli göstermesin; yönetici reddi bildirimden görür
+                        await execute_query(
+                            "UPDATE clients SET is_quarantined = FALSE, pending_quarantine_action = NULL, "
+                            "pending_quarantine_reason = NULL WHERE pc_name = $1",
+                            (active_hwid,),
+                        )
                     await log_audit_event(
                         active_hwid,
                         "Security",
@@ -879,6 +887,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         "medium",
                         "Vision tüneli açılmadı: cihaz kayıtlı değil (anahtarı yok)"
                         if payload.get("reason") == "not_enrolled"
+                        else "Ajan bu işlemi desteklemiyor: %s" % (payload.get("capability") or "?")
+                        if payload.get("reason") == "not_supported"
                         else "Kapalı yetenek istendi, ajan reddetti: %s" % (payload.get("capability") or "?"),
                         str(payload.get("action") or ""),
                         active_hwid,
