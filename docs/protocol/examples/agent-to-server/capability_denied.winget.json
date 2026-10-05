@@ -1,0 +1,7 @@
+{
+  "type": "capability_denied",
+  "capability": "deploy",
+  "action": "winget_install",
+  "task_id": 1052,
+  "reason": "module_disabled"
+}

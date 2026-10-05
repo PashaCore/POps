@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/winget_install.json",
+  "title": "winget_install",
+  "description": "Install a winget package (task queue: Dağıtım, a WINGET step). Sent only to an agent whose connection announced `winget` in `X-Agent-Features`; for any other agent the server marks the task `Denied` (exit code -8) and sends nothing, so an agent that does not implement it never receives it. Same task rules as `execute`: the server marks the task `Running` first, one task per device at a time, the same `task_id` may arrive again and must not run twice at once, `cancel_task` stops it, 30-minute limit. The agent refuses unless the local terminal capability and the lab's `deploy` module are on (`result` with `exit_code` -5 and `capability_denied`), checks `id` and `version` against the patterns below itself, and answers `result` with `exit_code` -7 when winget is not installed. Otherwise it starts winget.exe (the newest Microsoft.DesktopAppInstaller folder under %ProgramFiles%\\WindowsApps) as LocalSystem without a shell, each argument a separate ArgumentList entry: install --id <id> -e --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity, plus --version <version> when set; and answers `result` with winget's exit code. See docs/agent.md#winget_install-contract.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "task_id",
+    "id"
+  ],
+  "properties": {
+    "action": {
+      "const": "winget_install",
+      "description": "Message type."
+    },
+    "task_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Task ID; echoed in `result` and `result_ack`."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}$",
+      "description": "winget package identifier, matched exactly (-e) and case-sensitively, for example Mozilla.Firefox. The pattern admits no space, quote or shell character; the agent refuses anything else (`result` with `exit_code` -5)."
+    },
+    "version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9A-Za-z.+_-]{1,40}$",
+      "description": "Version to install; null or missing = the latest. Same refusal rule as `id`."
+    },
+    "requested_by": {
+      "type": "string",
+      "description": "Panel user (or API token) who queued it; written to the device's local audit log, as for `execute`."
+    }
+  }
+}

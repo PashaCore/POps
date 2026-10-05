@@ -186,7 +186,9 @@ service.
 ### `winget_install` contract
 
 Deploys a package from the winget community source (**Dağıtım** → winget paketi; server side added after
-0.1.22-alpha). The agent part is not built yet; this is the contract it must follow. Why it is a separate action and
+0.1.22-alpha). The agent part is not built yet; this is the contract it must follow. The message schema and test
+vectors are in [`protocol/`](protocol/README.md) (`server-to-agent/winget_install.json`,
+`examples/server-to-agent/winget_install*.json`, `examples/agent-to-server/result.winget*.json`). Why it is a separate action and
 not an `execute` payload: [`decisions.md` D-22](decisions.md#d-22-winget-packages-as-their-own-agent-action).
 
 **1. Announce the feature.** An agent that implements `winget_install` sends this header on the `/ws/agent`

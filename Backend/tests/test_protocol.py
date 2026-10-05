@@ -465,7 +465,8 @@ async def agent_session_with_secret():
 
     unknown = _load(os.path.join(PROTO, "examples", "unknown", A2S + ".json"))
     ws = FakeWS([first] + rest + [other_thumb, future_result, dynamic_ack, unknown],
-                headers={"X-Agent-Secret": SECRET, "X-Agent-Version": "0.1.21-alpha"}, on_send=remember_key)
+                headers={"X-Agent-Secret": SECRET, "X-Agent-Version": "0.1.21-alpha",
+                         "X-Agent-Features": "winget, Bilinmeyen Ad"}, on_send=remember_key)
     try:
         await agents.websocket_agent(ws, HW)
     finally:
@@ -506,6 +507,8 @@ async def agent_session_with_secret():
     chk(stored.get(1044, (None,) * 5)[3] == -5 and stored.get(1045, (None,) * 5)[3] is None
         and stored.get(1042, (None,) * 5)[3] == 0, "result çıkış kodları olduğu gibi yazıldı (yoksa NULL)")
     chk(all(p[2] == HW for p in stored.values()), "sonuç yalnızca bağlantının cihazına yazıldı")
+    chk([p[3] for p in db.params("INSERT INTO agent_versions")] == [["winget"]],
+        "X-Agent-Features saklandı (geçersiz ad atıldı)")
     caps = db.params("UPDATE clients SET cap_terminal_enabled")
     chk((True, True, HW, "system") in caps and (False, True, HW, "custom") in caps, "capabilities saklandı")
     chk((1044, HW) in db.params("UPDATE tasks SET status = 'Denied'"),
@@ -664,7 +667,7 @@ async def vision_channel():
 async def server_builders():
     print("== sunucunun kurduğu komutlar")
     import system_routes
-    from pops import modules, taskqueue, wol
+    from pops import modules, taskqueue, winget, wol
     from pops.manager import manager
     from pops.models import LockdownInput, PatchInstallInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
     from pops.models import TaskActionInput
@@ -705,6 +708,28 @@ async def server_builders():
         chk([m.get("action") for m in agent_ws.sent] == ["execute"] and agent_ws.sent[0]["requested_by"] == "admin",
             "taskqueue: execute, isteyen kullanıcıyla")
         take(agent_ws, "taskqueue._process_queue_once")
+
+        # winget görevi: "winget" duyuran ajana komut değil paket bilgisi gider; duyurmayana hiçbir şey (-8 ile Denied)
+        def winget_queue(features):
+            return FakeDB([
+                ("SELECT 1 FROM tasks WHERE status = 'Pending' LIMIT 1", [{"x": 1}]),
+                ("COUNT(DISTINCT target_pc)", [{"c": 0}]),
+                ("SELECT DISTINCT t.target_pc, av.features", [{"target_pc": HW, "features": features}]),
+                ("SELECT * FROM (", [] if features is None else [{
+                    "id": 1050, "target_pc": HW, "kind": "winget", "created_by": "admin",
+                    "payload": winget.payload("Mozilla.Firefox"), "script_path": winget.command_line("Mozilla.Firefox"),
+                    "created_at": "2026-10-05 10:00:00"}]),
+            ])
+        P.set(taskqueue, "execute_query", winget_queue(["winget"]))
+        await taskqueue._process_queue_once()
+        chk(agent_ws.sent == [{"action": "winget_install", "task_id": 1050, "id": "Mozilla.Firefox", "version": None,
+                               "requested_by": "admin"}], "taskqueue: winget_install, komutsuz")
+        take(agent_ws, "taskqueue._process_queue_once (winget)")
+        old_agent = winget_queue(None)
+        P.set(taskqueue, "execute_query", old_agent)
+        await taskqueue._process_queue_once()
+        chk(not agent_ws.sent and any(p[2] == winget.EXIT_UNSUPPORTED for p in old_agent.params("exit_code = $3")),
+            "winget duyurmayan ajana gönderilmedi, görev -8 ile reddedildi")
 
         P.set(tasks_router, "execute_query", FakeDB([("WITH target AS", [
             {"id": 1042, "target_pc": HW, "old_status": "Running"}])]))
@@ -834,8 +859,9 @@ async def server_builders():
     for origin, msg in built:
         check_message(S2A, msg, origin)
     produced = {message_name(S2A, m) for _, m in built}
-    chk({"execute", "cancel_task", "lockdown", "unlock", "start_vision_session", "stop_stream", "remote_input",
-         "scan_updates", "install_updates", "wake_peer", "update_agent", "set_capabilities", "server_info"} <= produced,
+    chk({"execute", "winget_install", "cancel_task", "lockdown", "unlock", "start_vision_session", "stop_stream",
+         "remote_input", "scan_updates", "install_updates", "wake_peer", "update_agent", "set_capabilities",
+         "server_info"} <= produced,
         "uçlardaki bütün komutlar kuruldu ve denetlendi")
 
 

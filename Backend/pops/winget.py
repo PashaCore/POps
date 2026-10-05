@@ -19,7 +19,6 @@ from pops import winget_catalog
 
 KIND = "winget"
 FEATURE = "winget"
-ACTION = "winget_install"
 
 # fullmatch: "$" satır sonundan önce de eşleşirdi ("Mozilla.Firefox\n" geçmesin)
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}")
@@ -100,7 +99,7 @@ def read_payload(value) -> dict:
 def message(task: dict, requested_by: str) -> dict:
     """Ajana giden iletinin kendisi (docs/agent.md). Paket bilgisi gönderimden hemen önce yeniden doğrulanır."""
     spec = read_payload(task.get("payload"))
-    return {"action": ACTION, "task_id": task["id"], "id": spec["id"], "version": spec["version"],
+    return {"action": "winget_install", "task_id": task["id"], "id": spec["id"], "version": spec["version"],
             "requested_by": requested_by}
 
 
