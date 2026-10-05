@@ -101,7 +101,10 @@ namespace POps.Tests.Agent
             string dir = TestEnvironment.NewDir("iso");
             File.WriteAllText(Path.Combine(dir, "enable.ps1"), NetworkIsolation.BuildEnableScript(NetworkIsolation.AllowedRanges(Allowed)));
             File.WriteAllText(Path.Combine(dir, "disable.ps1"), NetworkIsolation.BuildDisableScript(new[] { "Public" }));
-            foreach (string name in new[] { "enable.ps1", "disable.ps1" })
+            // Sınav modu aynı betikleri kendi kural grubuyla kullanır
+            File.WriteAllText(Path.Combine(dir, "exam-enable.ps1"), NetworkIsolation.BuildEnableScript(NetworkIsolation.AllowedRanges(Allowed), NetworkIsolation.ExamRuleGroup));
+            File.WriteAllText(Path.Combine(dir, "exam-disable.ps1"), NetworkIsolation.BuildDisableScript(new[] { "Public", "Private" }, NetworkIsolation.ExamRuleGroup));
+            foreach (string name in new[] { "enable.ps1", "disable.ps1", "exam-enable.ps1", "exam-disable.ps1" })
             {
                 // Yalnızca ayrıştırılır, çalıştırılmaz
                 var psi = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };

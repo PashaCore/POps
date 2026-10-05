@@ -287,6 +287,8 @@ namespace POpsAgent
             _ = Task.Run(() => LogRetentionLoopAsync(stoppingToken), stoppingToken);
 
             await Task.Run(InitializeCoreState, stoppingToken);
+            // Sınav modu sunucuya ulaşılamasa da süresinde biter; uygulama engeli ve izin listesi yenilemesi burada
+            _ = Task.Run(() => ExamLoopAsync(stoppingToken), stoppingToken);
             _slowInitialization = Task.Run(InitializeSlowState, stoppingToken);
             AgentUpdate.LogLastResult();
             // Güncelleme sürmüyorsa önceki çalışmadan kalan aşama dosyası silinir
@@ -358,6 +360,7 @@ namespace POpsAgent
                         if (!capabilitiesReported)
                         {
                             await SendCommandMessageAsync(AgentCapabilities.StatusMessage());
+                            if (ExamMode.IsActive) await SendExamStateAsync();
                             capabilitiesReported = true;
                         }
                         await ForwardUpdateProgressAsync();
@@ -411,6 +414,154 @@ namespace POpsAgent
             _visionSessionApproved = false;
             if (visionActive) _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
             await DisconnectVisionTunnelAsync();
+        }
+
+        // ------------------------------------------------------------------ sınav modu (bkz. ExamMode)
+        // Testler: tepsiye giden sınav mesajları
+        internal Action<string> ExamTrayOverride { get; set; }
+        private readonly HashSet<string> _examStoppedLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private volatile bool _examNetworkChanged;
+
+        private void ExamToTray(string message)
+        {
+            if (ExamTrayOverride != null) ExamTrayOverride(message);
+            else _trayPipe?.SendCommandToDesktop(message);
+        }
+
+        // Tepsi bandı: mesaj ve bitiş zamanı
+        internal static string ExamTrayMessage(ExamSettings settings) =>
+            "EXAM_ON:" + Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
+            {
+                ["message"] = string.IsNullOrWhiteSpace(settings?.Message) ? "Sınav modu: yalnızca izin verilen siteler açık" : settings.Message,
+                ["until"] = settings?.Until,
+            }));
+
+        internal async Task HandleExamModeAsync(JsonElement root)
+        {
+            bool enable = root.TryGetProperty("enabled", out JsonElement e) && e.ValueKind == JsonValueKind.True;
+            if (!enable)
+            {
+                await EndExamAsync("server");
+                return;
+            }
+            if (!AgentCapabilities.ExamEnabled)
+            {
+                await DenyCapabilityAsync("exam", "exam_mode");
+                await SendExamStateAsync();
+                return;
+            }
+            if (!ExamMode.TryParse(root, DateTimeOffset.UtcNow, out ExamSettings settings, out string error))
+            {
+                POpsHelpers.Log("EXAM", $"Sınav modu emri uygulanmadı: {error}.", true);
+                await SendExamStateAsync(error);
+                return;
+            }
+            if (!await ExamMode.EnableAsync(settings, _serverUrl))
+            {
+                await SendExamStateAsync("ağ kuralları uygulanamadı");
+                return;
+            }
+            lock (_examStoppedLogged) _examStoppedLogged.Clear();
+            LocalAudit.Write(LocalAudit.ExamStarted(settings));
+            POpsHelpers.Log("EXAM", $"SINAV MODU AKTİF: {settings.Allow.Count} izinli kayıt, bitiş {(settings.Until == null ? "yok" : DateTimeOffset.FromUnixTimeSeconds(settings.Until.Value).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture))}, {settings.BlockApps.Count} engelli uygulama.");
+            ExamToTray(ExamTrayMessage(ExamMode.Load()));
+            await SendExamStateAsync();
+        }
+
+        // source: "server", "until" (süre doldu; sunucuya ulaşılamasa da)
+        internal async Task EndExamAsync(string source)
+        {
+            if (!ExamMode.IsActive)
+            {
+                await SendExamStateAsync();
+                return;
+            }
+            if (!await ExamMode.DisableAsync())
+            {
+                await SendExamStateAsync("ağ kuralları kaldırılamadı");
+                return;
+            }
+            LocalAudit.Write(LocalAudit.ExamEnded(source));
+            POpsHelpers.Log("EXAM", $"Sınav modu bitti ({source}).");
+            ExamToTray("EXAM_OFF");
+            await SendExamStateAsync();
+        }
+
+        private Task SendExamStateAsync(string detail = null) => SendCommandMessageAsync(ExamMode.StateMessage(detail));
+
+        // 2 sn'de bir: süre doldu mu, engelli uygulamalar; 2 dk'da bir ve ağ adresi değişince: izin listesi çözümü
+        private async Task ExamLoopAsync(CancellationToken token)
+        {
+            System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += (_, _) => _examNetworkChanged = true;
+            DateTime lastRefresh = DateTime.UtcNow;
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    bool refresh = _examNetworkChanged || DateTime.UtcNow - lastRefresh >= ExamMode.RefreshInterval;
+                    if (refresh)
+                    {
+                        lastRefresh = DateTime.UtcNow;
+                        _examNetworkChanged = false;
+                    }
+                    await ExamTickAsync(DateTimeOffset.UtcNow, refresh ? "dönemsel ya da ağ adresi değişti" : null);
+                }
+                catch (Exception ex) { POpsHelpers.Log("EXAM", $"Sınav modu denetimi başarısız: {ex.Message}", true); }
+                try { await Task.Delay(TimeSpan.FromSeconds(2), token); }
+                catch (OperationCanceledException) { return; }
+            }
+        }
+
+        // Bir tur: süre dolduysa (sunucuya ulaşılamasa da) biter; yoksa engelli uygulamalar kapatılır, refreshReason
+        // verilmişse izin listesi yeniden çözülür. Dönen: sınav bu turda bitti mi.
+        internal async Task<bool> ExamTickAsync(DateTimeOffset now, string refreshReason)
+        {
+            ExamSettings settings = ExamMode.IsActive ? ExamMode.Load() : null;
+            if (settings == null) return false;
+            if (ExamMode.Expired(settings, now))
+            {
+                await EndExamAsync("until");
+                return !ExamMode.IsActive;
+            }
+            StopBlockedApps(settings);
+            if (refreshReason != null) await ExamMode.RefreshAsync(_serverUrl, refreshReason);
+            return false;
+        }
+
+        private void StopBlockedApps(ExamSettings settings)
+        {
+            if (settings.BlockApps.Count == 0) return;
+            Process[] all = Process.GetProcesses();
+            try
+            {
+                var candidates = all.Select(p =>
+                {
+                    try { return (Pid: p.Id, Name: p.ProcessName, Session: p.SessionId); }
+                    catch (InvalidOperationException) { return (Pid: p.Id, Name: (string)null, Session: 0); }
+                }).ToList();
+                foreach (int pid in ExamMode.ProcessesToStop(candidates, settings.BlockApps))
+                {
+                    Process process = all.First(p => p.Id == pid);
+                    string app = candidates.First(c => c.Pid == pid).Name + ".exe";
+                    try
+                    {
+                        process.Kill();
+                        bool first;
+                        lock (_examStoppedLogged) first = _examStoppedLogged.Add(app);
+                        if (first)
+                        {
+                            LocalAudit.Write(LocalAudit.ExamAppStopped(app, pid));
+                            POpsHelpers.Log("EXAM", $"Sınav modunda {app} kapatıldı (PID {pid}).");
+                        }
+                        ExamToTray("EXAM_APP_BLOCKED:" + app);
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception) { }
+                }
+            }
+            finally
+            {
+                foreach (Process p in all) p.Dispose();
+            }
         }
 
         // 4409: sunucu bu kimliği başka bir bilgisayarda bağlı buldu (kopyalanmış kurulum, asıl cihaz bağlı).
@@ -757,6 +908,7 @@ namespace POpsAgent
             _trayPipe.OnConnected += () =>
             {
                 _quarantine.SyncTray();
+                if (ExamMode.IsActive) ExamToTray(ExamTrayMessage(ExamMode.Load()));
                 SyncTrayModules();
                 string configError = ConfigErrorMessage();
                 if (configError != null) _trayPipe?.SendCommandToDesktop(configError);
@@ -1173,6 +1325,7 @@ namespace POpsAgent
                 else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
                 else if (action == "set_secret") { HandleSetSecret(root); }
                 else if (action == "set_bypass_secret") { await HandleSetBypassSecretAsync(root); }
+                else if (action == "exam_mode") { await HandleExamModeAsync(root); }
                 else if (action == "cancel_task")
                 {
                     int cancelId = root.TryGetProperty("task_id", out var cancelProp) && cancelProp.ValueKind == JsonValueKind.Number

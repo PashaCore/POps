@@ -12,23 +12,27 @@ namespace POpsAgent
     // kapatabilir. Sunucu ele geçirilse bile kapalı bir yetenek o makinede kullanılamaz.
     //  * terminal_enabled: "execute" (SYSTEM olarak komut çalıştırma)
     //  * vision_enabled:   ekran akışı, ekran önizlemesi, uzaktan fare/klavye
+    //  * exam_enabled:     sınav modu (ağı izin listesiyle sınırlama, uygulama engeli; bkz. ExamMode)
     // Kaynak C:\POpsData\secure\capabilities.json (yalnızca SYSTEM/Administrators). Kurulum (MSI TERMINAL_ENABLED /
-    // VISION_ENABLED) iki yönde de yazar; sunucu yalnızca KAPATABİLİR ("set_capabilities" ... false). Sunucudan
+    // VISION_ENABLED / EXAM_ENABLED) iki yönde de yazar; sunucu yalnızca KAPATABİLİR ("set_capabilities" ... false). Sunucudan
     // gelen "aç" isteği yok sayılır: yeniden açmak yerel yöneticinin işidir (MSI yeniden kurulum / onarım).
-    // Dosya yoksa (bu özellikten önceki kurulum) ikisi de açıktır; dosya okunamıyorsa ikisi de kapalı sayılır.
+    // Dosya yoksa (bu özellikten önceki kurulum) hepsi açıktır; dosyada olmayan yetenek (eski dosya) açıktır; dosya
+    // okunamıyorsa hepsi kapalı sayılır.
     [SupportedOSPlatform("windows")]
     public static class AgentCapabilities
     {
         public const string FileName = "capabilities.json";
         public const string Terminal = "terminal_enabled";
         public const string Vision = "vision_enabled";
-        private static readonly string[] Names = { Terminal, Vision };
+        public const string Exam = "exam_enabled";
+        private static readonly string[] Names = { Terminal, Vision, Exam };
 
         private static readonly object Gate = new object();
-        private static readonly Dictionary<string, bool> State = new Dictionary<string, bool> { [Terminal] = true, [Vision] = true };
+        private static readonly Dictionary<string, bool> State = new Dictionary<string, bool> { [Terminal] = true, [Vision] = true, [Exam] = true };
 
         public static bool TerminalEnabled { get { lock (Gate) return State[Terminal]; } }
         public static bool VisionEnabled { get { lock (Gate) return State[Vision]; } }
+        public static bool ExamEnabled { get { lock (Gate) return State[Exam]; } }
 
         public static void Load()
         {
@@ -38,8 +42,8 @@ namespace POpsAgent
             {
                 if (text == null)
                 {
-                    State[Terminal] = State[Vision] = true;
-                    POpsHelpers.Log("POLICY", $"{FileName} yok: terminal ve Vision açık (kurulum varsayılanı).");
+                    foreach (string name in Names) State[name] = true;
+                    POpsHelpers.Log("POLICY", $"{FileName} yok: terminal, Vision ve sınav modu açık (kurulum varsayılanı).");
                     return;
                 }
                 try
@@ -51,8 +55,8 @@ namespace POpsAgent
                 catch (Exception ex) when (ex is JsonException || ex is InvalidOperationException || ex is FormatException)
                 {
                     // Dosyaya yalnızca SYSTEM/Administrators yazabilir; okunamıyorsa güvenli yöne düşülür
-                    State[Terminal] = State[Vision] = false;
-                    POpsHelpers.Log("POLICY", $"[GÜVENLİK] {FileName} okunamadı ({ex.Message}); terminal ve Vision kapalı sayılıyor.", true);
+                    foreach (string name in Names) State[name] = false;
+                    POpsHelpers.Log("POLICY", $"[GÜVENLİK] {FileName} okunamadı ({ex.Message}); terminal, Vision ve sınav modu kapalı sayılıyor.", true);
                     return;
                 }
                 POpsHelpers.Log("POLICY", $"Yetenekler: {Describe()}.");
@@ -93,12 +97,12 @@ namespace POpsAgent
         public static Dictionary<string, object> StatusMessage()
         {
             lock (Gate)
-                return new Dictionary<string, object> { ["type"] = "capabilities", [Terminal] = State[Terminal], [Vision] = State[Vision], ["server_ca"] = ServerTrust.Mode };
+                return new Dictionary<string, object> { ["type"] = "capabilities", [Terminal] = State[Terminal], [Vision] = State[Vision], [Exam] = State[Exam], ["server_ca"] = ServerTrust.Mode };
         }
 
         public static string Describe()
         {
-            lock (Gate) return $"terminal={(State[Terminal] ? "açık" : "kapalı")}, vision={(State[Vision] ? "açık" : "kapalı")}";
+            lock (Gate) return $"terminal={(State[Terminal] ? "açık" : "kapalı")}, vision={(State[Vision] ? "açık" : "kapalı")}, sınav={(State[Exam] ? "açık" : "kapalı")}";
         }
 
         private static void Persist(string source)
@@ -107,6 +111,7 @@ namespace POpsAgent
             {
                 [Terminal] = State[Terminal],
                 [Vision] = State[Vision],
+                [Exam] = State[Exam],
                 ["source"] = source,
                 ["updated_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             };

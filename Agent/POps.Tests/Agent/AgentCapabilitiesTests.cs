@@ -96,7 +96,7 @@ namespace POps.Tests.Agent
             _ = CapabilitiesPath;
             AgentCapabilities.Load();
             AgentCapabilities.ApplyServerRequest(Request("{\"vision_enabled\":false}"));
-            Assert.Equal("{\"type\":\"capabilities\",\"terminal_enabled\":true,\"vision_enabled\":false,\"server_ca\":\"system\"}", JsonSerializer.Serialize(AgentCapabilities.StatusMessage()));
+            Assert.Equal("{\"type\":\"capabilities\",\"terminal_enabled\":true,\"vision_enabled\":false,\"exam_enabled\":true,\"server_ca\":\"system\"}", JsonSerializer.Serialize(AgentCapabilities.StatusMessage()));
         }
     }
 }

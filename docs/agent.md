@@ -183,17 +183,51 @@ command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine 
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
 that partly changed (no decision taken), 1080 a change of the server's modules, 1090 a configuration that could not
-be read and 1100 a clipboard shared in a Vision session (direction and length only). Failure to write an event does not stop the
+be read, 1100 a clipboard shared in a Vision session (direction and length only), and 1110/1111/1112 exam mode
+started, ended and an app closed during an exam. Failure to write an event does not stop the
 service.
 
 ## Capability policy
 
-Terminal (`execute`) and Vision (streaming, previews, remote input) can be disabled per PC, so that even a
-compromised server cannot use them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`, `1` / `0`);
+Terminal (`execute`), Vision (streaming, previews, remote input) and exam mode can be disabled per PC, so that even
+a compromised server cannot use them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`, `EXAM_ENABLED`,
+`1` / `0`);
 the server can only switch them off (**Sistem** → "Cihaz yetenekleri"). A refused command is closed with
 a `[REDDEDİLDİ]` result and reported as `capability_denied`. Re-enabling needs a local administrator: MSI repair or
 reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; see
 [`Agent/README.md`](../Agent/README.md#capability-policy).
+
+## Exam mode
+
+From 0.1.23-alpha the server can put a lab into exam mode.
+
+```json
+{"action": "exam_mode", "enabled": true, "allow": ["sinav.meb.gov.tr", "10.0.0.5", "10.1.0.0/24"],
+ "until": 1791210000, "message": "Sınav modu: yalnızca sınav sitesi açık", "block_apps": ["cmd.exe"]}
+```
+
+`{"action": "exam_mode", "enabled": false}` ends it.
+
+- **Network:** The PC can reach only the POps server, DNS/DHCP and the allow list (host names, IPv4/IPv6
+  addresses, CIDR ranges from /8 for IPv4 and /16 for IPv6).
+  - It uses the quarantine isolation engine with its own firewall rule group (`POps Exam`). Exam mode and
+    quarantine are independent; if both run, quarantine (the stricter one) wins.
+  - Firewall profiles that were off before are turned off again only when neither group is active.
+  - Host names are resolved again every 2 minutes and whenever a network address changes.
+- **Validation:** At most 64 allow entries and 32 apps; a message of at most 300 characters (control characters
+  removed); `until` must be in the future. Processes that would break the session or POps (explorer, svchost,
+  winlogon, the POps programs, …) are never closed. A refused command is answered with `exam_state` and a
+  `detail`.
+- **PC user:** The tray shows a red banner at the top of the primary screen with the message and the end time.
+  It cannot be closed. The listed apps are closed in user sessions every 2 seconds, and the tray says so.
+- **End:** Exam mode ends at `until` even when the server cannot be reached. It survives a restart (state in
+  `C:\POpsData\secure\exam.json`).
+- **Reporting:** `{"type": "exam_state", "enabled", "since", "until"}` is sent after every change and once after
+  each connection while an exam runs.
+- **Capability:** `exam_enabled`, on by default; `EXAM_ENABLED=0` switches it off locally, and the server can only
+  switch it off.
+- **Events:** 1110 exam started (allow list, end time, apps), 1111 ended (`server` or `until`), 1112 app closed
+  (once per app and exam).
 
 ## Modules
 
