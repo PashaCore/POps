@@ -25,6 +25,8 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\Windows\Temp\pops-msi-in
 | `PERSIST_DIR`   | optional      | `appsettings.json` → `PersistDir` (see `Agent/README.md`, machines with freeze software) |
 | `TERMINAL_ENABLED` | optional   | `C:\POpsData\secure\capabilities.json`: `1` allows the panel's remote terminal (`execute`) on this PC, `0` disables it. See *Capability policy* in `Agent/README.md`. |
 | `VISION_ENABLED`   | optional   | same file: `1` / `0` for screen streaming, previews and remote input. |
+| `POWER_ENABLED`    | optional   | same file: `1` / `0` for remote shutdown, restart, sign-out and lock (`power`). |
+| `MESSAGE_ENABLED`  | optional   | same file: `1` / `0` for messages from the panel shown in the tray (`user_message`). |
 | `SERVER_CA_CERT` | optional      | path to the school CA's PEM (`pops-ca.pem`, served at `https://<server>/pops-ca.pem`) → `C:\POpsData\secure\server-ca.pem`. The agent then accepts the server certificate only if it chains to that CA. `system` removes the file (Windows trust store). Do **not** pass it for a Let's Encrypt or other public certificate. See [`docs/tls.md`](../docs/tls.md). |
 | `INSTALLFOLDER` | optional      | install folder, default `C:\Program Files\POps`. See *Install folder* below. |
 
