@@ -376,8 +376,8 @@ jobs:
           shellcheck --version | head -2
           mapfile -t scripts < <(find Installer/server -maxdepth 1 -type f -name 'pops-*' ! -name '*.*' | sort)
           # Uyarı ve hatalar kırar; "info" ve "style" notları (ör. SC2015, sürüme göre değişir) yalnızca raporlanır
-          shellcheck --severity=info Installer/server/install.sh Installer/server/tests/*.sh "${scripts[@]}" || true
-          shellcheck --severity=warning Installer/server/install.sh Installer/server/tests/*.sh "${scripts[@]}"
+          shellcheck --severity=info Installer/server/install.sh Installer/server/tests/*.sh "${scripts[@]}" docker/dashboard-entrypoint.sh Backend/tests/run_local.sh || true
+          shellcheck --severity=warning Installer/server/install.sh Installer/server/tests/*.sh "${scripts[@]}" docker/dashboard-entrypoint.sh Backend/tests/run_local.sh
       - name: Deploy and self-update tests
         run: bash Installer/server/tests/test_deploy.sh
 
