@@ -41,58 +41,58 @@
 
 <div class="page-header">
     <div>
-        <h1>Destek talepleri</h1>
+        <h1><?php _e('Destek talepleri'); ?></h1>
         <div class="summary" id="hdSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="btn" id="newBtn"><?php echo pops_icon('plus', 'sm'); ?>Yeni talep</button>
+        <button type="button" class="btn" id="newBtn"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Yeni talep'); ?></button>
     </div>
 </div>
 
 <div class="hd-bar">
-    <div class="segmented" id="hdFilter" role="group" aria-label="Duruma göre süz"></div>
+    <div class="segmented" id="hdFilter" role="group" aria-label="<?php _e('Duruma göre süz'); ?>"></div>
     <span class="grow"></span>
     <div class="search-field">
         <?php echo pops_icon('search', 'sm'); ?>
-        <input type="search" id="hdSearch" placeholder="Konu, açıklama, bildiren ya da bilgisayar" aria-label="Talep ara">
+        <input type="search" id="hdSearch" placeholder="<?php _e('Konu, açıklama, bildiren ya da bilgisayar'); ?>" aria-label="<?php _e('Talep ara'); ?>">
     </div>
 </div>
 
-<div class="card hd-list" id="hdList"><div class="loading-state" role="status"><span class="spinner"></span>Talepler yükleniyor…</div></div>
+<div class="card hd-list" id="hdList"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Talepler yükleniyor…'); ?></div></div>
 
 <div class="modal-overlay" id="newModal">
     <div class="modal-box">
         <div class="modal-header">
-            <div class="modal-title">Yeni talep</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x'); ?></button>
+            <div class="modal-title"><?php _e('Yeni talep'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x'); ?></button>
         </div>
         <div class="modal-body">
             <div class="field" id="nfSubjectField">
-                <label for="nfSubject">Konu</label>
-                <input type="text" id="nfSubject" maxlength="200" placeholder="Örn. Lab-1 yazıcısı çıktı vermiyor" autocomplete="off">
-                <div class="field-error" id="nfSubjectErr">Konu en az 3 karakter olmalı.</div>
+                <label for="nfSubject"><?php _e('Konu'); ?></label>
+                <input type="text" id="nfSubject" maxlength="200" placeholder="<?php _e('Örn. Lab-1 yazıcısı çıktı vermiyor'); ?>" autocomplete="off">
+                <div class="field-error" id="nfSubjectErr"><?php _e('Konu en az 3 karakter olmalı.'); ?></div>
             </div>
             <div class="form-grid" style="margin-bottom:var(--space-4)">
-                <div class="field"><label for="nfCategory">Kategori</label><select id="nfCategory"></select></div>
-                <div class="field"><label for="nfPriority">Öncelik</label>
-                    <select id="nfPriority"><option value="normal">Normal</option><option value="high">Yüksek</option><option value="low">Düşük</option></select></div>
+                <div class="field"><label for="nfCategory"><?php _e('Kategori'); ?></label><select id="nfCategory"></select></div>
+                <div class="field"><label for="nfPriority"><?php _e('Öncelik'); ?></label>
+                    <select id="nfPriority"><option value="normal">Normal</option><option value="high"><?php _e('Yüksek'); ?></option><option value="low"><?php _e('Düşük'); ?></option></select></div>
             </div>
             <div class="field">
-                <label for="nfPc">Bilgisayar <span class="field-hint" style="display:inline">(isteğe bağlı)</span></label>
-                <select id="nfPc"><option value="">Bilgisayar yok</option></select>
+                <label for="nfPc"><?php _e('Bilgisayar'); ?> <span class="field-hint" style="display:inline"><?php _e('(isteğe bağlı)'); ?></span></label>
+                <select id="nfPc"><option value=""><?php _e('Bilgisayar yok'); ?></option></select>
             </div>
             <div class="field">
-                <label for="nfReporter">Bildiren</label>
+                <label for="nfReporter"><?php _e('Bildiren'); ?></label>
                 <input type="text" id="nfReporter" maxlength="100" autocomplete="off">
             </div>
             <div class="field">
-                <label for="nfBody">Açıklama</label>
-                <textarea id="nfBody" rows="4" maxlength="5000" placeholder="Ne oldu, ne zamandan beri, ne denendi?"></textarea>
+                <label for="nfBody"><?php _e('Açıklama'); ?></label>
+                <textarea id="nfBody" rows="4" maxlength="5000" placeholder="<?php _e('Ne oldu, ne zamandan beri, ne denendi?'); ?>"></textarea>
             </div>
         </div>
         <div class="modal-footer">
-            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
-            <button type="button" class="btn" id="nfSave">Talebi aç</button>
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="nfSave"><?php _e('Talebi aç'); ?></button>
         </div>
     </div>
 </div>
@@ -104,16 +104,19 @@
     const ME = <?= json_encode($_SESSION['username'] ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const $ = (id) => document.getElementById(id);
     const params = new URLSearchParams(location.search);
-    const CAT = { donanim: 'Donanım', yazilim: 'Yazılım', ag: 'Ağ / İnternet', yazici: 'Yazıcı', hesap: 'Hesap / şifre', diger: 'Diğer' };
+    // Tablolar sayfa yüklenirken bir kez çevrilir; anahtarlar (kategori, durum, öncelik) sunucuya giden veridir
+    const CAT = { donanim: POps.t('Donanım'), yazilim: POps.t('Yazılım'), ag: POps.t('Ağ / İnternet'), yazici: POps.t('Yazıcı'), hesap: POps.t('Hesap / şifre'), diger: POps.t('Diğer') };
     // Durum: kelime, renk (.word/.dot/.res) ve simge
     const ST = {
-        open: { w: 'Açık', c: 'warn', i: 'message' },
-        in_progress: { w: 'Üzerinde çalışılıyor', c: 'run', i: 'clock' },
-        waiting: { w: 'Yanıt bekleniyor', c: '', i: 'send' },
-        resolved: { w: 'Çözüldü', c: 'ok', i: 'check' },
-        closed: { w: 'Kapatıldı', c: '', i: 'check' }
+        open: { w: POps.t('Açık'), c: 'warn', i: 'message' },
+        in_progress: { w: POps.t('Üzerinde çalışılıyor'), c: 'run', i: 'clock' },
+        waiting: { w: POps.t('Yanıt bekleniyor'), c: '', i: 'send' },
+        resolved: { w: POps.t('Çözüldü'), c: 'ok', i: 'check' },
+        closed: { w: POps.t('Kapatıldı'), c: '', i: 'check' }
     };
-    const PR = { high: 'Yüksek', normal: 'Normal', low: 'Düşük' };
+    const PR = { high: POps.t('Yüksek'), normal: 'Normal', low: POps.t('Düşük') };
+    const lower = (v) => String(v).toLocaleLowerCase(POps.locale);
+    const srcText = (t) => t.source === 'agent' ? POps.t('tepsiden') : POps.t('panelden');
     const st = (s) => ST[s] || { w: s || '—', c: '', i: 'message' };
     const ACTIVE = ['open', 'in_progress', 'waiting'];
     const ui = { f: params.get('f') === 'all' ? 'all' : params.get('f') === 'closed' ? 'closed' : 'open', q: '', items: [], counts: {}, loaded: false, focus: null, detail: null, detailSig: '', seq: 0, sig: '' };
@@ -126,8 +129,8 @@
     function rowHtml(t) {
         const s = st(t.status);
         const where = devName(t) ? devName(t) + (labText(t) ? ' · ' + labText(t) : '') : '';
-        const meta = [t.reporter || (t.source === 'agent' ? 'tepsiden' : 'panelden'), where, CAT[t.category] || t.category, t.assignee ? 'atanan: ' + t.assignee : '', Number(t.message_count) ? t.message_count + ' mesaj' : '', '#' + t.id].filter(Boolean).join(' · ');
-        const markHtml = t.priority === 'high' ? dev.markHtml({ kind: 'err', glyph: '!', text: 'Yüksek öncelik' }) : '';
+        const meta = [t.reporter || srcText(t), where, CAT[t.category] || t.category, t.assignee ? POps.t('atanan: {name}', { name: t.assignee }) : '', Number(t.message_count) ? POps.tn('{n} mesaj', Number(t.message_count)) : '', '#' + t.id].filter(Boolean).join(' · ');
+        const markHtml = t.priority === 'high' ? dev.markHtml({ kind: 'err', glyph: '!', text: POps.t('Yüksek öncelik') }) : '';
         return `<div class="act clickable${ui.focus === t.id ? ' is-focus' : ''}" data-id="${Number(t.id)}" role="button" tabindex="0">
             <div class="res ${escapeHtml(s.c)}">${POps.iconHtml(s.i)}</div>
             <div style="min-width:0"><div class="what">${escapeHtml(t.subject)}${markHtml}</div><div class="meta">${escapeHtml(meta)}</div></div>
@@ -139,12 +142,15 @@
         const n = (k) => Number(c[k] || 0);
         const active = n('open') + n('in_progress') + n('waiting');
         const closed = n('resolved') + n('closed');
-        $('hdSummary').innerHTML = `<span class="sum"><span class="dot warn"></span><b>${n('open')}</b> açık</span>`
-            + (n('in_progress') ? `<span class="sum"><span class="dot run"></span><b>${n('in_progress')}</b> üzerinde çalışılıyor</span>` : '')
-            + (n('waiting') ? `<span class="sum"><span class="dot"></span><b>${n('waiting')}</b> yanıt bekleniyor</span>` : '')
-            + `<span class="sum"><span class="dot ok"></span><b>${Number(closed)}</b> kapalı</span>`;
+        // Sayı kalın: yer tutucuya HTML parçası (POps.tHtml'in üçüncü argümanı)
+        const sumHtml = (text, num) => POps.tnHtml(text, num, null, { n: `<b>${Number(num)}</b>` });
+        $('hdSummary').innerHTML = `<span class="sum"><span class="dot warn"></span>${sumHtml('{n} açık', n('open'))}</span>`
+            + (n('in_progress') ? `<span class="sum"><span class="dot run"></span>${sumHtml('{n} üzerinde çalışılıyor', n('in_progress'))}</span>` : '')
+            + (n('waiting') ? `<span class="sum"><span class="dot"></span>${sumHtml('{n} yanıt bekleniyor', n('waiting'))}</span>` : '')
+            + `<span class="sum"><span class="dot ok"></span>${sumHtml('{n} kapalı', closed)}</span>`;
         const btnHtml = (k, label, num) => `<button type="button" data-f="${escapeHtml(k)}" class="${ui.f === k ? 'active' : ''}" aria-pressed="${ui.f === k ? 'true' : 'false'}">${escapeHtml(label)} <span class="n">${Number(num)}</span></button>`;
-        $('hdFilter').innerHTML = btnHtml('open', 'Açık', active) + btnHtml('all', 'Tümü', active + closed) + btnHtml('closed', 'Kapalı', closed);
+        // "Kapalı" burada kapanmış talepler (cihaz durumu değil): 'ticket' bağlamı
+        $('hdFilter').innerHTML = btnHtml('open', POps.t('Açık'), active) + btnHtml('all', POps.t('Tümü'), active + closed) + btnHtml('closed', POps.tx('Kapalı', 'ticket'), closed);
     }
     function renderList(force) {
         if (!ui.loaded) return;
@@ -153,9 +159,9 @@
         if (!force && sig === ui.sig) return;
         ui.sig = sig;
         if (!ui.items.length) {
-            if (ui.q) POps.setEmpty(list, { icon: 'filter', title: 'Süzgece uyan talep yok', text: 'Aramayı ya da süzgeci değiştirin.' });
-            else if (ui.f === 'open') POps.setEmpty(list, { icon: 'check', kind: 'success', title: 'Açık talep yok', text: 'Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.' });
-            else POps.setEmpty(list, { icon: 'inbox', title: ui.f === 'closed' ? 'Kapalı talep yok' : 'Henüz talep yok', text: 'Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.' });
+            if (ui.q) POps.setEmpty(list, { icon: 'filter', title: POps.t('Süzgece uyan talep yok'), text: POps.t('Aramayı ya da süzgeci değiştirin.') });
+            else if (ui.f === 'open') POps.setEmpty(list, { icon: 'check', kind: 'success', title: POps.t('Açık talep yok'), text: POps.t('Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.') });
+            else POps.setEmpty(list, { icon: 'inbox', title: ui.f === 'closed' ? POps.t('Kapalı talep yok') : POps.t('Henüz talep yok'), text: POps.t('Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.') });
             return;
         }
         list.innerHTML = ui.items.map(rowHtml).join('');
@@ -184,50 +190,59 @@
     }
 
     // ================= Ayrıntı paneli =================
+    // Sunucunun yazdığı değişiklik notu ("durum: çözüldü; öncelik: high; atanan: ali"): sabit sözcükleri arayüz dilinde gösterilir
     const isChangeNote = (m) => m.internal && /^(durum|öncelik|atanan): /.test(m.body || '') && String(m.body).split('; ').every(p => /^(durum|öncelik|atanan): /.test(p));
-    const changeText = (body) => String(body).split('; ').map(p => p.replace(/^öncelik: (high|normal|low)$/, (x, v) => 'öncelik: ' + PR[v].toLocaleLowerCase('tr'))).join(', ');
+    const ST_BY_SERVER = { 'açık': 'open', 'üzerinde çalışılıyor': 'in_progress', 'yanıt bekleniyor': 'waiting', 'çözüldü': 'resolved', 'kapatıldı': 'closed' };
+    const changeText = (body) => String(body).split('; ').map(p => {
+        const m = /^(durum|öncelik|atanan): ([\s\S]*)$/.exec(p);
+        if (m[1] === 'durum') return POps.t('durum: {status}', { status: ST_BY_SERVER[m[2]] ? lower(ST[ST_BY_SERVER[m[2]]].w) : m[2] });
+        if (m[1] === 'öncelik') return POps.t('öncelik: {priority}', { priority: PR[m[2]] ? lower(PR[m[2]]) : m[2] });
+        return m[2] === 'yok' ? POps.t('atanan: yok') : POps.t('atanan: {name}', { name: m[2] });
+    }).join(', ');
     function threadHtml(t) {
-        const src = t.source === 'agent' ? 'tepsiden' : 'panelden';
-        const openHtml = `<div class="ev"><span class="dot"></span><span class="tx">${escapeHtml((t.reporter || 'Bilinmeyen kullanıcı') + ' talebi ' + src + ' açtı')}</span><span class="t">${POps.timeHtml(t.created_at)}</span></div>`;
-        const bodyHtml = t.body ? `<div class="msg user"><div class="mh"><b>${escapeHtml(t.reporter || 'Bildiren')}</b><span>açıklama</span><span class="t">${POps.timeHtml(t.created_at)}</span></div><div class="mb">${escapeHtml(t.body)}</div></div>` : '';
+        const who = t.reporter || POps.t('Bilinmeyen kullanıcı');
+        const openText = t.source === 'agent' ? POps.t('{name} talebi tepsiden açtı', { name: who }) : POps.t('{name} talebi panelden açtı', { name: who });
+        const openHtml = `<div class="ev"><span class="dot"></span><span class="tx">${escapeHtml(openText)}</span><span class="t">${POps.timeHtml(t.created_at)}</span></div>`;
+        const bodyHtml = t.body ? `<div class="msg user"><div class="mh"><b>${escapeHtml(t.reporter || POps.t('Bildiren'))}</b><span>${POps.tHtml('açıklama')}</span><span class="t">${POps.timeHtml(t.created_at)}</span></div><div class="mb">${escapeHtml(t.body)}</div></div>` : '';
         const msgHtml = (m) => isChangeNote(m)
             ? `<div class="ev"><span class="dot"></span><span class="tx">${escapeHtml(m.author + ' · ' + changeText(m.body))}</span><span class="t">${POps.timeHtml(m.created_at)}</span></div>`
-            : `<div class="msg ${m.internal ? 'note' : 'reply'}"><div class="mh"><b>${escapeHtml(m.author)}</b><span>${m.internal ? 'iç not' : (t.source === 'agent' ? 'kullanıcıya yanıt' : 'yanıt')}</span><span class="t">${POps.timeHtml(m.created_at)}</span></div><div class="mb">${escapeHtml(m.body)}</div></div>`;
-        return `<div><h3>Yazışma</h3><div class="thread">${openHtml}${bodyHtml}${(t.messages || []).map(msgHtml).join('')}</div></div>`;
+            : `<div class="msg ${m.internal ? 'note' : 'reply'}"><div class="mh"><b>${escapeHtml(m.author)}</b><span>${m.internal ? POps.tHtml('iç not') : (t.source === 'agent' ? POps.tHtml('kullanıcıya yanıt') : POps.tHtml('yanıt'))}</span><span class="t">${POps.timeHtml(m.created_at)}</span></div><div class="mb">${escapeHtml(m.body)}</div></div>`;
+        return `<div><h3>${POps.tHtml('Yazışma')}</h3><div class="thread">${openHtml}${bodyHtml}${(t.messages || []).map(msgHtml).join('')}</div></div>`;
     }
     function mainHtml(t) {
         const s = st(t.status);
         const ico = t.status === 'open' ? 'idle' : t.status === 'resolved' ? 'on' : '';
-        const next = t.status === 'open' ? ['take', 'play', 'Üzerine al'] : ACTIVE.includes(t.status) ? ['resolve', 'check', 'Çözüldü'] : ['reopen', 'refresh', 'Yeniden aç'];
+        // "Çözüldü" burada düğme (eylem): 'action' bağlamı
+        const next = t.status === 'open' ? ['take', 'play', POps.t('Üzerine al')] : ACTIVE.includes(t.status) ? ['resolve', 'check', POps.tx('Çözüldü', 'action')] : ['reopen', 'refresh', POps.t('Yeniden aç')];
         const devOn = !POps.isOffline({ status: t.device_status });
         const pcHtml = t.pc_name
             ? `<span class="dot ${devOn ? 'on' : 'off'}"></span>${escapeHtml(devName(t) + (labText(t) ? ' · ' + labText(t) : ''))}`
-            : '<span class="faint">yok</span>';
+            : `<span class="faint">${POps.tHtml('yok')}</span>`;
         const user = t.logged_user && !['-', 'None'].includes(t.logged_user) ? t.logged_user : '';
         const app = t.pc_name && t.active_window && t.active_window !== '-' ? t.active_window : '';
         const facts = [
-            ['Bildiren', (t.reporter || '—') + ' · ' + (t.source === 'agent' ? 'tepsiden' : 'panelden')],
-            ['Oturumdaki kullanıcı', devOn ? user : ''], ['Ön plandaki program', devOn ? app : ''],
-            ['Kategori', CAT[t.category] || t.category], ['Atanan', t.assignee || 'kimse']
+            [POps.t('Bildiren'), (t.reporter || '—') + ' · ' + srcText(t)],
+            [POps.t('Oturumdaki kullanıcı'), devOn ? user : ''], [POps.t('Ön plandaki program'), devOn ? app : ''],
+            [POps.t('Kategori'), CAT[t.category] || t.category], [POps.t('Atanan'), t.assignee || POps.t('kimse')]
         ];
         const factsHtml = '<div class="glist">'
-            + `<div class="grow"><span>Bilgisayar</span><span>${pcHtml}</span></div>`
+            + `<div class="grow"><span>${POps.tHtml('Bilgisayar')}</span><span>${pcHtml}</span></div>`
             + facts.filter(f => f[1]).map(f => `<div class="grow"><span>${escapeHtml(f[0])}</span><span>${escapeHtml(f[1])}</span></div>`).join('')
-            + `<div class="grow"><span>Öncelik</span><span class="${t.priority === 'high' ? 'word bad' : ''}">${escapeHtml(PR[t.priority] || t.priority)}</span></div>`
-            + `<div class="grow"><span>Açıldı</span><span>${POps.timeHtml(t.created_at)}</span></div>`
-            + `<div class="grow"><span>Son hareket</span><span>${POps.timeHtml(t.updated_at)}</span></div>`
-            + (t.resolved_at ? `<div class="grow"><span>Kapandı</span><span>${POps.timeHtml(t.resolved_at)}</span></div>` : '')
+            + `<div class="grow"><span>${POps.tHtml('Öncelik')}</span><span class="${t.priority === 'high' ? 'word bad' : ''}">${escapeHtml(PR[t.priority] || t.priority)}</span></div>`
+            + `<div class="grow"><span>${POps.tHtml('Açıldı')}</span><span>${POps.timeHtml(t.created_at)}</span></div>`
+            + `<div class="grow"><span>${POps.tHtml('Son hareket')}</span><span>${POps.timeHtml(t.updated_at)}</span></div>`
+            + (t.resolved_at ? `<div class="grow"><span>${POps.tHtml('Kapandı')}</span><span>${POps.timeHtml(t.resolved_at)}</span></div>` : '')
             + '</div>';
         return `<div class="drawer-head">
                 <div class="drawer-title"><span class="drawer-ico ${escapeHtml(ico)}">${POps.iconHtml('help', 'lg')}</span>
                     <div style="min-width:0"><h2>${escapeHtml(t.subject)}</h2><div class="sub"><span class="dot ${escapeHtml(s.c)}"></span>${escapeHtml(s.w)} · #${Number(t.id)}</div></div></div>
-                <button type="button" class="ibtn sm" data-act="close" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button>
+                <button type="button" class="ibtn sm" data-act="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button>
             </div>
             <div class="circs">
                 <button type="button" class="circ" data-act="${escapeHtml(next[0])}"><span>${POps.iconHtml(next[1])}</span>${escapeHtml(next[2])}</button>
-                <button type="button" class="circ" data-act="status" aria-haspopup="menu"><span>${POps.iconHtml('tag')}</span>Durum</button>
-                <button type="button" class="circ" data-act="assign" aria-haspopup="menu"><span>${POps.iconHtml('users')}</span>Ata</button>
-                <button type="button" class="circ" data-act="more" aria-haspopup="menu"><span>${POps.iconHtml('more')}</span>Diğer</button>
+                <button type="button" class="circ" data-act="status" aria-haspopup="menu"><span>${POps.iconHtml('tag')}</span>${POps.tHtml('Durum')}</button>
+                <button type="button" class="circ" data-act="assign" aria-haspopup="menu"><span>${POps.iconHtml('users')}</span>${POps.tHtml('Ata')}</button>
+                <button type="button" class="circ" data-act="more" aria-haspopup="menu"><span>${POps.iconHtml('more')}</span>${escapeHtml(POps.tx('Diğer', 'menu'))}</button>
             </div>
             ${factsHtml}${threadHtml(t)}`;
     }
@@ -239,15 +254,15 @@
             body.dataset.tk = String(t.id);
             body.innerHTML = `<div class="tk-main"></div>
                 <div class="tk-reply">
-                    <textarea id="tkReply" rows="3" maxlength="5000" aria-label="Yanıt"></textarea>
+                    <textarea id="tkReply" rows="3" maxlength="5000" aria-label="${escapeHtml(POps.t('Yanıt'))}"></textarea>
                     <div class="row">
-                        <label class="check"><input type="checkbox" id="tkInternal"> İç not (kullanıcı görmez)</label>
-                        <button type="button" class="btn sm" data-act="send">${POps.iconHtml('send', 'sm')}<span id="tkSendText">Gönder</span></button>
+                        <label class="check"><input type="checkbox" id="tkInternal"> ${POps.tHtml('İç not (kullanıcı görmez)')}</label>
+                        <button type="button" class="btn sm" data-act="send">${POps.iconHtml('send', 'sm')}<span id="tkSendText">${POps.tHtml('Gönder')}</span></button>
                     </div>
                 </div>`;
             keep = false;
         }
-        $('tkReply').placeholder = t.source === 'agent' ? 'Kullanıcıya yanıt (tepsideki Taleplerim listesinde görür)' : 'Not ya da yanıt';
+        $('tkReply').placeholder = t.source === 'agent' ? POps.t('Kullanıcıya yanıt (tepsideki Taleplerim listesinde görür)') : POps.t('Not ya da yanıt');
         const scroll = body.scrollTop;
         body.querySelector('.tk-main').innerHTML = mainHtml(t);
         body.scrollTop = keep ? scroll : 0;
@@ -259,7 +274,7 @@
             if (!keep && POps.drawer.isOpen('tk:' + id)) {
                 const body = POps.drawer.body();
                 body.dataset.tk = '';
-                POps.setError(body, e, { title: 'Talep alınamadı' });
+                POps.setError(body, e, { title: POps.t('Talep alınamadı') });
             }
             return;
         }
@@ -276,7 +291,7 @@
         ui.focus = id;
         renderList(true);
         wireDrawer(body);
-        if (!ui.detail || ui.detail.id !== id) { body.dataset.tk = ''; POps.setLoading(body, 'Talep yükleniyor…'); }
+        if (!ui.detail || ui.detail.id !== id) { body.dataset.tk = ''; POps.setLoading(body, POps.t('Talep yükleniyor…')); }
         loadDetail(id, false);
     }
     async function update(t, data, msg) {
@@ -292,11 +307,11 @@
         const internal = $('tkInternal').checked;
         const btn = POps.drawer.body().querySelector('[data-act="send"]');
         try { await POps.busy(btn, () => POps.post(`/api/tickets/${encodeURIComponent(t.id)}/messages`, { body, internal })); }
-        catch (e) { POps.toast('error', 'Gönderilemedi: ' + POps.errorMessage(e)); return; }
+        catch (e) { POps.toast('error', POps.t('Gönderilemedi: {error}', { error: POps.errorMessage(e) })); return; }
         ta.value = '';
         $('tkInternal').checked = false;
-        $('tkSendText').textContent = 'Gönder';
-        if (!internal && t.source === 'agent') POps.toast('success', 'Yanıt gönderildi; kullanıcı tepside görür.');
+        $('tkSendText').textContent = POps.t('Gönder');
+        if (!internal && t.source === 'agent') POps.toast('success', POps.t('Yanıt gönderildi; kullanıcı tepside görür.'));
         await Promise.all([load().catch(() => {}), loadDetail(t.id, true)]);
         const b = POps.drawer.body();
         b.scrollTop = b.scrollHeight;
@@ -314,37 +329,37 @@
             if (act === 'close') { POps.drawer.close(); return; }
             if (!t) return;
             if (act === 'send') send();
-            else if (act === 'take') update(t, ME ? { status: 'in_progress', assignee: ME } : { status: 'in_progress' }, 'Talep üzerinize alındı.');
-            else if (act === 'resolve') update(t, { status: 'resolved' }, 'Talep çözüldü olarak işaretlendi.');
-            else if (act === 'reopen') update(t, { status: 'open' }, 'Talep yeniden açıldı.');
-            else if (act === 'status') POps.menu(b, [{ header: 'Durum' }].concat(Object.keys(ST).map(k => ({
-                label: ST[k].w, icon: ST[k].i, disabled: k === t.status, hint: k === t.status ? 'şu an' : '',
-                onClick: () => update(t, { status: k }, `Durum: ${ST[k].w}.`)
+            else if (act === 'take') update(t, ME ? { status: 'in_progress', assignee: ME } : { status: 'in_progress' }, POps.t('Talep üzerinize alındı.'));
+            else if (act === 'resolve') update(t, { status: 'resolved' }, POps.t('Talep çözüldü olarak işaretlendi.'));
+            else if (act === 'reopen') update(t, { status: 'open' }, POps.t('Talep yeniden açıldı.'));
+            else if (act === 'status') POps.menu(b, [{ header: POps.t('Durum') }].concat(Object.keys(ST).map(k => ({
+                label: ST[k].w, icon: ST[k].i, disabled: k === t.status, hint: k === t.status ? POps.t('şu an') : '',
+                onClick: () => update(t, { status: k }, POps.t('Durum: {status}.', { status: ST[k].w }))
             }))));
             else if (act === 'assign') POps.menu(b, [
-                { header: t.assignee ? `Atanan: ${t.assignee}` : 'Kimseye atanmadı' },
-                ME ? { label: 'Bana ata', icon: 'user', disabled: t.assignee === ME, hint: ME, onClick: () => update(t, { assignee: ME }, 'Talep size atandı.') } : null,
-                { label: 'Başkasına ata…', icon: 'users', onClick: async () => {
-                    const who = await POps.prompt({ title: 'Talebi ata', label: 'Atanan kişi', defaultValue: t.assignee || '', maxLength: 100, confirmText: 'Ata', icon: 'user' });
+                { header: t.assignee ? POps.t('Atanan: {name}', { name: t.assignee }) : POps.t('Kimseye atanmadı') },
+                ME ? { label: POps.t('Bana ata'), icon: 'user', disabled: t.assignee === ME, hint: ME, onClick: () => update(t, { assignee: ME }, POps.t('Talep size atandı.')) } : null,
+                { label: POps.t('Başkasına ata…'), icon: 'users', onClick: async () => {
+                    const who = await POps.prompt({ title: POps.t('Talebi ata'), label: POps.t('Atanan kişi'), defaultValue: t.assignee || '', maxLength: 100, confirmText: POps.t('Ata'), icon: 'user' });
                     if (who === null || !who.trim()) return;
-                    update(t, { assignee: who.trim() }, `Talep ${who.trim()} kişisine atandı.`);
+                    update(t, { assignee: who.trim() }, POps.t('Talep {name} kişisine atandı.', { name: who.trim() }));
                 } },
                 t.assignee ? '-' : null,
-                t.assignee ? { label: 'Atamayı kaldır', icon: 'x', onClick: () => update(t, { assignee: '' }, 'Atama kaldırıldı.') } : null
+                t.assignee ? { label: POps.t('Atamayı kaldır'), icon: 'x', onClick: () => update(t, { assignee: '' }, POps.t('Atama kaldırıldı.')) } : null
             ]);
             else if (act === 'more') {
                 const off = POps.isOffline({ status: t.device_status });
                 POps.menu(b, [
-                    { header: 'Öncelik' },
-                    ...['high', 'normal', 'low'].map(k => ({ label: PR[k], icon: k === 'high' ? 'alert' : k === 'low' ? 'arrow-down' : 'tag', disabled: k === t.priority, hint: k === t.priority ? 'şu an' : '', onClick: () => update(t, { priority: k }, `Öncelik: ${PR[k].toLocaleLowerCase('tr')}.`) })),
+                    { header: POps.t('Öncelik') },
+                    ...['high', 'normal', 'low'].map(k => ({ label: PR[k], icon: k === 'high' ? 'alert' : k === 'low' ? 'arrow-down' : 'tag', disabled: k === t.priority, hint: k === t.priority ? POps.t('şu an') : '', onClick: () => update(t, { priority: k }, POps.t('Öncelik: {priority}.', { priority: lower(PR[k]) })) })),
                     t.pc_name ? '-' : null,
-                    t.pc_name ? { label: 'Ekranı izle', icon: 'eye', disabled: off, title: off ? 'Bilgisayar kapalı' : '', onClick: () => { location.href = dev.screenUrl([t.pc_name]); } } : null,
-                    t.pc_name ? { label: 'Bilgisayarı aç', icon: 'monitor', onClick: () => { location.href = 'devices?pc=' + encodeURIComponent(t.pc_name); } } : null
+                    t.pc_name ? { label: POps.t('Ekranı izle'), icon: 'eye', disabled: off, title: off ? POps.t('Bilgisayar kapalı') : '', onClick: () => { location.href = dev.screenUrl([t.pc_name]); } } : null,
+                    t.pc_name ? { label: POps.t('Bilgisayarı aç'), icon: 'monitor', onClick: () => { location.href = 'devices?pc=' + encodeURIComponent(t.pc_name); } } : null
                 ]);
             }
         });
         body.addEventListener('change', (e) => {
-            if (e.target.id === 'tkInternal') $('tkSendText').textContent = e.target.checked ? 'Not ekle' : 'Gönder';
+            if (e.target.id === 'tkInternal') $('tkSendText').textContent = e.target.checked ? POps.t('Not ekle') : POps.t('Gönder');
         });
         body.addEventListener('keydown', (e) => {
             if (e.target.id === 'tkReply' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
@@ -353,7 +368,7 @@
 
     // ================= Yeni talep =================
     $('nfCategory').innerHTML = Object.entries(CAT).map(([k, v]) => `<option value="${escapeHtml(k)}">${escapeHtml(v)}</option>`).join('');
-    $('nfReporter').placeholder = 'Boş bırakılırsa siz' + (ME ? ` (${ME})` : '');
+    $('nfReporter').placeholder = ME ? POps.t('Boş bırakılırsa siz ({name})', { name: ME }) : POps.t('Boş bırakılırsa siz');
     $('newBtn').addEventListener('click', async () => {
         ['nfSubject', 'nfReporter', 'nfBody'].forEach(i => { $(i).value = ''; });
         $('nfCategory').value = 'diger';
@@ -364,12 +379,12 @@
             const devs = await POps.get('/api/devices');
             const byLab = new Map();
             (Array.isArray(devs) ? devs : []).slice().sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true })).forEach(d => {
-                const l = d.lab && d.lab !== dev.UNASSIGNED ? d.lab : 'Atanmamış';
+                const l = d.lab && d.lab !== dev.UNASSIGNED ? d.lab : POps.t('Atanmamış');
                 if (!byLab.has(l)) byLab.set(l, []);
                 byLab.get(l).push(d);
             });
             const cur = $('nfPc').value;
-            $('nfPc').innerHTML = '<option value="">Bilgisayar yok</option>' + [...byLab.keys()].sort((a, b) => a.localeCompare(b, 'tr')).map(l =>
+            $('nfPc').innerHTML = `<option value="">${POps.tHtml('Bilgisayar yok')}</option>` + [...byLab.keys()].sort((a, b) => a.localeCompare(b, 'tr')).map(l =>
                 `<optgroup label="${escapeHtml(l)}">${byLab.get(l).map(d => `<option value="${escapeHtml(d.hw_id || d.hostname)}">${escapeHtml(POps.deviceName(d))}</option>`).join('')}</optgroup>`).join('');
             $('nfPc').value = cur;
         } catch (e) { /* bilgisayar isteğe bağlı */ }
@@ -387,7 +402,7 @@
         } catch (err) { POps.toast('error', POps.errorMessage(err)); return; }
         if (!r) return;
         closeModal('newModal');
-        POps.toast('success', `Talep #${r.id} açıldı.`);
+        POps.toast('success', POps.t('Talep #{id} açıldı.', { id: r.id }));
         if (ui.f === 'closed') ui.f = 'open';
         await load().catch(() => {});
         openTicket(r.id);

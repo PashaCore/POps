@@ -60,70 +60,70 @@
 
 <div class="page-header">
     <div>
-        <h1>Kayıtlar</h1>
+        <h1><?php _e('Kayıtlar'); ?></h1>
         <div class="summary" id="lgSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="lgExport" data-tip="Listeyi dışa aktar (CSV)" data-tip-pos="left" aria-label="Listeyi dışa aktar"><?php echo pops_icon('download'); ?></button>
-        <button type="button" class="ibtn boxed" id="lgMenuBtn" data-tip="Diğer işlemler" data-tip-pos="left" aria-label="Diğer işlemler" aria-haspopup="menu" hidden><?php echo pops_icon('more'); ?></button>
+        <button type="button" class="ibtn boxed" id="lgExport" data-tip="<?php _e('Listeyi dışa aktar (CSV)'); ?>" data-tip-pos="left" aria-label="<?php _e('Listeyi dışa aktar'); ?>"><?php echo pops_icon('download'); ?></button>
+        <button type="button" class="ibtn boxed" id="lgMenuBtn" data-tip="<?php _e('Diğer işlemler'); ?>" data-tip-pos="left" aria-label="<?php _e('Diğer işlemler'); ?>" aria-haspopup="menu" hidden><?php echo pops_icon('more'); ?></button>
     </div>
 </div>
 
-<div class="tabs lg-tabs" id="lgTabs" role="tablist" aria-label="Görünüm">
-    <button type="button" class="tab active" data-tab="log" role="tab" aria-selected="true">Olaylar</button>
-    <button type="button" class="tab" data-tab="hw" role="tab" aria-selected="false">Donanım</button>
+<div class="tabs lg-tabs" id="lgTabs" role="tablist" aria-label="<?php _e('Görünüm'); ?>">
+    <button type="button" class="tab active" data-tab="log" role="tab" aria-selected="true"><?php _e('Olaylar'); ?></button>
+    <button type="button" class="tab" data-tab="hw" role="tab" aria-selected="false"><?php _e('Donanım'); ?></button>
 </div>
 
 <section id="lgPaneLog">
     <div class="lg-bar">
-        <div class="segmented" id="lgFilter" role="group" aria-label="Önem derecesine göre süz">
-            <button type="button" data-f="all" class="active" aria-pressed="true">Tümü <span class="count" data-n="all"></span></button>
-            <button type="button" data-f="warn" aria-pressed="false">Uyarılar <span class="count" data-n="warn"></span></button>
-            <button type="button" data-f="sec" aria-pressed="false">Güvenlik <span class="count" data-n="sec"></span></button>
+        <div class="segmented" id="lgFilter" role="group" aria-label="<?php _e('Önem derecesine göre süz'); ?>">
+            <button type="button" data-f="all" class="active" aria-pressed="true"><?php _e('Tümü'); ?> <span class="count" data-n="all"></span></button>
+            <button type="button" data-f="warn" aria-pressed="false"><?php _e('Uyarılar'); ?> <span class="count" data-n="warn"></span></button>
+            <button type="button" data-f="sec" aria-pressed="false"><?php _e('Güvenlik'); ?> <span class="count" data-n="sec"></span></button>
         </div>
-        <button type="button" class="btn secondary lg-fbtn" id="lgFiltersBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="lgFPanel"><?php echo pops_icon('filter', 'sm'); ?>Süzgeçler<span class="badge" id="lgFCount" hidden></span></button>
+        <button type="button" class="btn secondary lg-fbtn" id="lgFiltersBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="lgFPanel"><?php echo pops_icon('filter', 'sm'); ?><?php _e('Süzgeçler'); ?><span class="badge" id="lgFCount" hidden></span></button>
         <span class="grow"></span>
         <div class="search-field">
             <?php echo pops_icon('search', 'sm'); ?>
-            <input type="search" id="lgSearch" placeholder="Olay, bilgisayar ya da kişi" aria-label="Kayıtlarda ara">
+            <input type="search" id="lgSearch" placeholder="<?php _e('Olay, bilgisayar ya da kişi'); ?>" aria-label="<?php _e('Kayıtlarda ara'); ?>">
         </div>
     </div>
-    <div class="lg-fpanel" id="lgFPanel" role="dialog" aria-label="Süzgeçler" hidden>
-        <label>Tür<select id="lgKind"><option value="">Bütün türler</option></select></label>
-        <label>Sınıf<select id="lgLab"><option value="">Bütün sınıflar</option></select></label>
-        <label>Kişi<select id="lgWho"><option value="">Herkes</option></select></label>
+    <div class="lg-fpanel" id="lgFPanel" role="dialog" aria-label="<?php _e('Süzgeçler'); ?>" hidden>
+        <label><?php _e('Tür'); ?><select id="lgKind"><option value=""><?php _e('Bütün türler'); ?></option></select></label>
+        <label><?php _e('Sınıf'); ?><select id="lgLab"><option value=""><?php _e('Bütün sınıflar'); ?></option></select></label>
+        <label><?php _e('Kişi'); ?><select id="lgWho"><option value=""><?php _e('Herkes'); ?></option></select></label>
         <div class="two">
-            <label>Başlangıç<input type="date" id="lgFrom"></label>
-            <label>Bitiş<input type="date" id="lgTo"></label>
+            <label><?php _e('Başlangıç'); ?><input type="date" id="lgFrom"></label>
+            <label><?php _e('Bitiş'); ?><input type="date" id="lgTo"></label>
         </div>
-        <div class="foot"><button type="button" class="btn ghost sm" id="lgFClear">Süzgeçleri temizle</button><button type="button" class="btn sm" id="lgFDone">Tamam</button></div>
+        <div class="foot"><button type="button" class="btn ghost sm" id="lgFClear"><?php _e('Süzgeçleri temizle'); ?></button><button type="button" class="btn sm" id="lgFDone"><?php _e('Tamam'); ?></button></div>
     </div>
     <div class="lg-chips" id="lgChips"></div>
-    <div class="card"><div class="lg-list" id="lgList" aria-live="polite"><div class="loading-state" role="status"><span class="spinner"></span>Kayıtlar yükleniyor…</div></div></div>
+    <div class="card"><div class="lg-list" id="lgList" aria-live="polite"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Kayıtlar yükleniyor…'); ?></div></div></div>
     <div class="lg-pager" id="lgPager" hidden>
         <span id="lgRange"></span>
-        <div class="pages" id="lgPages" role="navigation" aria-label="Sayfalar"></div>
-        <label class="size">Sayfa başına <select id="lgSize" aria-label="Sayfa başına kayıt"><option>25</option><option>50</option><option>75</option><option>100</option></select></label>
+        <div class="pages" id="lgPages" role="navigation" aria-label="<?php _e('Sayfalar'); ?>"></div>
+        <label class="size"><?php _e('Sayfa başına'); ?> <select id="lgSize" aria-label="<?php _e('Sayfa başına kayıt'); ?>"><option>25</option><option>50</option><option>75</option><option>100</option></select></label>
     </div>
     <div class="lg-note" id="lgNote"></div>
 </section>
 
 <section id="lgPaneHw" hidden>
     <div class="lg-bar">
-        <select id="hwLab" aria-label="Sınıfa göre süz"><option value="">Bütün sınıflar</option></select>
+        <select id="hwLab" aria-label="<?php _e('Sınıfa göre süz'); ?>"><option value=""><?php _e('Bütün sınıflar'); ?></option></select>
         <span class="grow"></span>
         <div class="search-field">
             <?php echo pops_icon('search', 'sm'); ?>
-            <input type="search" id="hwSearch" placeholder="Bilgisayar, işlemci, IP, MAC" aria-label="Donanımda ara">
+            <input type="search" id="hwSearch" placeholder="<?php _e('Bilgisayar, işlemci, IP, MAC'); ?>" aria-label="<?php _e('Donanımda ara'); ?>">
         </div>
     </div>
     <div class="table-wrap">
         <table class="data-table hw-table wide">
-            <thead><tr><th>Bilgisayar</th><th>İşlemci</th><th>Bellek</th><th>Disk</th><th>İşletim sistemi</th><th>IP</th><th>Güncelleme</th></tr></thead>
-            <tbody id="hwBody"><tr><td colspan="7"><div class="loading-state" role="status"><span class="spinner"></span>Donanım bilgileri yükleniyor…</div></td></tr></tbody>
+            <thead><tr><th><?php _e('Bilgisayar'); ?></th><th><?php _e('İşlemci'); ?></th><th><?php _e('Bellek'); ?></th><th>Disk</th><th><?php _e('İşletim sistemi'); ?></th><th>IP</th><th><?php _e('Güncelleme'); ?></th></tr></thead>
+            <tbody id="hwBody"><tr><td colspan="7"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Donanım bilgileri yükleniyor…'); ?></div></td></tr></tbody>
         </table>
     </div>
-    <div class="lg-note">Donanım bilgisini ajan açılışta ve günde bir kez gönderir.</div>
+    <div class="lg-note"><?php _e('Donanım bilgisini ajan açılışta ve günde bir kez gönderir.'); ?></div>
 </section>
 
 <script>
@@ -148,6 +148,8 @@
     const { SEV_WORD, KIND_LABEL, CAT_LABEL, RISK_LABEL, CAP, BY_TYPE, commandOf, EVENTS, parseMeta, isoOf, cleanMsg, cap1, riskSev, whoOf, sourceOf, norm } = POps.logs;
 
     const pcName = (pc) => pc ? dev.name(pc) : '';
+    // Özet satırında sayı kalın: yer tutucuya HTML parçası (POps.tHtml'in üçüncü argümanı)
+    const boldHtml = (n) => `<b>${Number(n)}</b>`;
     const labOf = (pc) => { const d = dev.find(pc); return d && d.lab && d.lab !== dev.UNASSIGNED ? d.lab : ''; };
 
     // ---------------------------------------------------------------- süzgeç
@@ -174,33 +176,33 @@
         if (!d) return day;
         const now = new Date();
         const y = new Date(now); y.setDate(now.getDate() - 1);
-        if (d.toDateString() === now.toDateString()) return 'Bugün';
-        if (d.toDateString() === y.toDateString()) return 'Dün';
+        if (d.toDateString() === now.toDateString()) return POps.t('Bugün');
+        if (d.toDateString() === y.toDateString()) return POps.t('Dün');
         const o = { day: 'numeric', month: 'long', weekday: 'long' };
         if (d.getFullYear() !== now.getFullYear()) o.year = 'numeric';
-        return d.toLocaleDateString('tr-TR', o);
+        return d.toLocaleDateString(POps.locale, o);
     }
     function factsHtml(e) {
         const r = e.r, m = e.m;
         const lab = labOf(e.pc);
         const facts = [
-            ['Bilgisayar', e.pc ? pcName(e.pc) + (pcName(e.pc) !== e.pc ? ' (' + e.pc + ')' : '') : ''],
-            ['Sınıf', lab], ['Kim', e.who + (r.actor_id && r.actor_id !== e.who && r.actor_id !== 'Agent' && r.actor_id !== e.pc ? ' (' + r.actor_id + ')' : '')], ['Kaynak', sourceOf(r)], ['IP', m.ip || m.client_ip || ''],
-            ['Gerekçe', r.reason || ''], ['Alan adı', m.domain || ''], ['Site kategorisi', m.violation_category || ''],
-            ['Komut', e.key === 'execute_queue' ? commandOf(r, m) : ''], ['Mesaj', cleanMsg(r.message)],
-            ['Olay türü', [r.event_type, r.action].filter(x => x && x !== 'unknown').join(' · ')],
-            ['Kategori', CAT_LABEL[String(r.category || '').toLowerCase()] || r.category || r.log_type || ''],
-            ['Risk düzeyi', RISK_LABEL[String(r.risk_level || '').toLowerCase()] || r.risk_level || ''],
-            ['Zaman', POps.fullTime(e.at)], ['Kayıt no', '#' + e.id]
+            [POps.t('Bilgisayar'), e.pc ? pcName(e.pc) + (pcName(e.pc) !== e.pc ? ' (' + e.pc + ')' : '') : ''],
+            [POps.t('Sınıf'), lab], [POps.t('Kim'), e.who + (r.actor_id && r.actor_id !== e.who && r.actor_id !== 'Agent' && r.actor_id !== e.pc ? ' (' + r.actor_id + ')' : '')], [POps.t('Kaynak'), sourceOf(r)], ['IP', m.ip || m.client_ip || ''],
+            [POps.t('Gerekçe'), r.reason || ''], [POps.t('Alan adı'), m.domain || ''], [POps.t('Site kategorisi'), m.violation_category || ''],
+            [POps.t('Komut'), e.key === 'execute_queue' ? commandOf(r, m) : ''], [POps.t('Mesaj'), cleanMsg(r.message)],
+            [POps.t('Olay türü'), [r.event_type, r.action].filter(x => x && x !== 'unknown').join(' · ')],
+            [POps.t('Kategori'), CAT_LABEL[String(r.category || '').toLowerCase()] || r.category || r.log_type || ''],
+            [POps.t('Risk düzeyi'), RISK_LABEL[String(r.risk_level || '').toLowerCase()] || r.risk_level || ''],
+            [POps.t('Zaman'), POps.fullTime(e.at)], [POps.t('Kayıt no'), '#' + e.id]
         ];
-        // Bilinmeyen ek alanlar (zincir özeti dahil) olduğu gibi, düz metin
+        // Bilinmeyen ek alanlar (zincir özeti dahil) olduğu gibi, düz metin (ad da veri: çevrilmez)
         const known = ['ip', 'client_ip', 'domain', 'violation_category', 'raw_command', 'created_by'];
         Object.keys(m).filter(k => !known.includes(k)).slice(0, 12).forEach(k => {
             const v = m[k];
             facts.push([k, v != null && typeof v === 'object' ? JSON.stringify(v) : String(v == null ? '' : v)]);
         });
         const rowsHtml = facts.filter(f => f[1]).map(f => `<span>${escapeHtml(f[0])}</span><span>${escapeHtml(String(f[1]).slice(0, 600))}</span>`).join('');
-        const linksHtml = e.pc ? `<div class="lg-links">${ui.pc !== e.pc ? '<button type="button" data-act="pc">Yalnızca bu bilgisayarın kayıtları</button>' : ''}<button type="button" data-act="device">Bilgisayarın ayrıntıları</button></div>` : '';
+        const linksHtml = e.pc ? `<div class="lg-links">${ui.pc !== e.pc ? `<button type="button" data-act="pc">${POps.tHtml('Yalnızca bu bilgisayarın kayıtları')}</button>` : ''}<button type="button" data-act="device">${POps.tHtml('Bilgisayarın ayrıntıları')}</button></div>` : '';
         return `<div class="facts">${rowsHtml}${linksHtml}</div>`;
     }
     function rowHtml(e) {
@@ -211,7 +213,7 @@
         const whereHtml = where ? escapeHtml(where) + (lab ? ' · ' + escapeHtml(lab) : '') + ' · ' : '';
         const metaHtml = whereHtml + escapeHtml(e.who) + ' · ' + POps.timeHtml(e.at);
         const whyHtml = e.why && e.sev !== 'info' ? `<div class="why${e.sev === 'warn' ? ' warn' : ''}">${escapeHtml(e.why)}</div>` : '';
-        const noteHtml = e.why && e.sev === 'info' ? ' · ' + escapeHtml(e.why.toLocaleLowerCase('tr')) : '';
+        const noteHtml = e.why && e.sev === 'info' ? ' · ' + escapeHtml(e.why.toLocaleLowerCase(POps.locale)) : '';
         return `<div class="act clickable" data-id="${escapeHtml(e.id)}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}">
             <div class="res ${escapeHtml(cls)}">${POps.iconHtml(e.icon)}</div>
             <div class="lg-body" style="min-width:0"><div class="what">${escapeHtml(e.title)}</div><div class="meta">${metaHtml}${noteHtml}</div>${whyHtml}</div>
@@ -234,7 +236,7 @@
         const sig = JSON.stringify(byKind) + ui.kind;
         if (sel.dataset.sig !== sig) {
             sel.dataset.sig = sig;
-            sel.replaceChildren(POps.el('option', { value: '', text: 'Bütün türler' }));
+            sel.replaceChildren(POps.el('option', { value: '', text: POps.t('Bütün türler') }));
             Object.keys(KIND_LABEL).forEach(k => {
                 if (!byKind[k] && ui.kind !== k) return;
                 sel.append(POps.el('option', { value: k, text: `${KIND_LABEL[k]} (${byKind[k] || 0})` }));
@@ -246,7 +248,7 @@
         const labSig = labs.join('|') + '|' + ui.lab;
         if (labSel.dataset.sig !== labSig) {
             labSel.dataset.sig = labSig;
-            labSel.replaceChildren(POps.el('option', { value: '', text: 'Bütün sınıflar' }), ...labs.map(l => POps.el('option', { value: l, text: l })), POps.el('option', { value: dev.UNASSIGNED, text: 'Atanmamış' }));
+            labSel.replaceChildren(POps.el('option', { value: '', text: POps.t('Bütün sınıflar') }), ...labs.map(l => POps.el('option', { value: l, text: l })), POps.el('option', { value: dev.UNASSIGNED, text: POps.t('Atanmamış') }));
             labSel.value = ui.lab;
         }
         const whoSel = $('lgWho');
@@ -255,7 +257,7 @@
         const whoSig = JSON.stringify(whos) + ui.who;
         if (whoSel.dataset.sig !== whoSig) {
             whoSel.dataset.sig = whoSig;
-            whoSel.replaceChildren(POps.el('option', { value: '', text: 'Herkes' }), ...Object.keys(whos).sort((a, b) => a.localeCompare(b, 'tr')).map(w => POps.el('option', { value: w, text: `${w} (${whos[w]})` })));
+            whoSel.replaceChildren(POps.el('option', { value: '', text: POps.t('Herkes') }), ...Object.keys(whos).sort((a, b) => a.localeCompare(b, 'tr')).map(w => POps.el('option', { value: w, text: `${w} (${whos[w]})` })));
             whoSel.value = ui.who;
         }
     }
@@ -265,8 +267,8 @@
             const devs = state.devices || [];
             const inv = ui.inv || {};
             const have = devs.filter(d => inv[d.hostname] && inv[d.hostname].cpu && inv[d.hostname].cpu !== '-').length;
-            box.innerHTML = `<span class="sum"><b>${devs.length}</b> bilgisayar</span><span class="sum"><b>${Number(have)}</b> donanım bildirdi</span>`
-                + (ui.inv && devs.length - have ? `<span class="sum"><span class="dot off"></span><b>${devs.length - have}</b> bekleniyor</span>` : '');
+            box.innerHTML = `<span class="sum">${POps.tnHtml('{n} bilgisayar', devs.length, null, { n: boldHtml(devs.length) })}</span><span class="sum">${POps.tnHtml('{n} donanım bildirdi', have, null, { n: boldHtml(have) })}</span>`
+                + (ui.inv && devs.length - have ? `<span class="sum"><span class="dot off"></span>${POps.tnHtml('{n} bekleniyor', devs.length - have, null, { n: boldHtml(devs.length - have) })}</span>` : '');
             return;
         }
         if (!ui.loaded) { box.textContent = ''; return; }
@@ -275,9 +277,9 @@
         const warn = ui.rows.filter(e => e.sev === 'warn').length;
         const bad = ui.rows.filter(e => e.sev === 'bad').length;
         const todayN = ui.rows.filter(e => e.day === todayKey).length;
-        box.innerHTML = `<span class="sum"><b>${ui.rows.length}</b> kayıt</span><span class="sum">bugün <b>${Number(todayN)}</b></span>`
-            + (warn ? `<a href="#" class="sum" data-f="warn"><span class="dot warn"></span><b>${Number(warn)}</b> uyarı</a>` : '')
-            + (bad ? `<a href="#" class="sum" data-f="warn"><span class="dot bad"></span><b>${Number(bad)}</b> kritik</a>` : '');
+        box.innerHTML = `<span class="sum">${POps.tnHtml('{n} kayıt', ui.rows.length, null, { n: boldHtml(ui.rows.length) })}</span><span class="sum">${POps.tHtml('bugün {n}', null, { n: boldHtml(todayN) })}</span>`
+            + (warn ? `<a href="#" class="sum" data-f="warn"><span class="dot warn"></span>${POps.tnHtml('{n} uyarı', warn, null, { n: boldHtml(warn) })}</a>` : '')
+            + (bad ? `<a href="#" class="sum" data-f="warn"><span class="dot bad"></span>${POps.tnHtml('{n} kritik', bad, null, { n: boldHtml(bad) })}</a>` : '');
     }
     function renderNote() {
         const note = $('lgNote');
@@ -286,33 +288,35 @@
         const ranged = !!(ui.from || ui.to || ui.pc);
         const limit = ranged ? LIMITS[LIMITS.length - 1] : LIMITS[ui.limitIx];
         const full = ui.rows.length >= limit;
+        // n çoğul biçimini seçer, {count} biçimlenmiş sayıdır (1.000 / 1,000)
+        const cnt = (n) => ({ n, count: n.toLocaleString(POps.locale) });
         note.append(POps.el('span', { text: ranged
-            ? (full ? `Seçilen bilgisayar ya da tarih aralığındaki son ${limit.toLocaleString('tr-TR')} kayıt sunucudan alındı.` : 'Seçilen bilgisayar ya da tarih aralığındaki bütün kayıtlar sunucudan alındı.')
-            : full ? `Son ${limit.toLocaleString('tr-TR')} kayıt yüklendi; tarih aralığı seçince o aralığın tamamı sunucudan alınır.` : `Sunucudaki ${ui.rows.length.toLocaleString('tr-TR')} kaydın hepsi yüklendi.` }));
+            ? (full ? POps.t('Seçilen bilgisayar ya da tarih aralığındaki son {count} kayıt sunucudan alındı.', cnt(limit)) : POps.t('Seçilen bilgisayar ya da tarih aralığındaki bütün kayıtlar sunucudan alındı.'))
+            : full ? POps.t('Son {count} kayıt yüklendi; tarih aralığı seçince o aralığın tamamı sunucudan alınır.', cnt(limit)) : POps.t('Sunucudaki {count} kaydın hepsi yüklendi.', cnt(ui.rows.length)) }));
         if (!ranged && full && ui.limitIx < LIMITS.length - 1) {
-            const b = POps.el('button', { type: 'button', text: 'Daha eski kayıtları yükle' });
+            const b = POps.el('button', { type: 'button', text: POps.t('Daha eski kayıtları yükle') });
             b.addEventListener('click', () => { ui.limitIx += 1; ui.sig = ''; POps.busy(b, loadLogs).catch(e => POps.toast('error', POps.errorMessage(e))); });
             note.append(b);
         }
     }
-    const fmtDay = (d) => { const x = POps.toDate(d + 'T12:00:00'); return x ? x.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : d; };
+    const fmtDay = (d) => { const x = POps.toDate(d + 'T12:00:00'); return x ? x.toLocaleDateString(POps.locale, { day: 'numeric', month: 'short' }) : d; };
     function activeFilters() {
         const out = [];
-        if (ui.pc) out.push(['pc', 'Bilgisayar', pcName(ui.pc)]);
-        if (ui.kind) out.push(['kind', 'Tür', KIND_LABEL[ui.kind] || ui.kind]);
-        if (ui.lab) out.push(['lab', 'Sınıf', ui.lab === dev.UNASSIGNED ? 'Atanmamış' : ui.lab]);
-        if (ui.who) out.push(['who', 'Kişi', ui.who]);
-        if (ui.from || ui.to) out.push(['date', 'Tarih', (ui.from ? fmtDay(ui.from) : '…') + ' – ' + (ui.to ? fmtDay(ui.to) : 'bugün')]);
+        if (ui.pc) out.push(['pc', POps.t('Bilgisayar'), pcName(ui.pc)]);
+        if (ui.kind) out.push(['kind', POps.t('Tür'), KIND_LABEL[ui.kind] || ui.kind]);
+        if (ui.lab) out.push(['lab', POps.t('Sınıf'), ui.lab === dev.UNASSIGNED ? POps.t('Atanmamış') : ui.lab]);
+        if (ui.who) out.push(['who', POps.t('Kişi'), ui.who]);
+        if (ui.from || ui.to) out.push(['date', POps.t('Tarih'), (ui.from ? fmtDay(ui.from) : '…') + ' – ' + (ui.to ? fmtDay(ui.to) : POps.t('bugün'))]);
         return out;
     }
     function renderPcChip() {
         const f = activeFilters();
         const box = $('lgChips');
         box.replaceChildren(...f.map(([key, label, value]) => {
-            const x = POps.el('button', { type: 'button', 'aria-label': label + ' süzgecini kaldır', 'data-clear': key });
+            const x = POps.el('button', { type: 'button', 'aria-label': POps.t('{label} süzgecini kaldır', { label }), 'data-clear': key });
             x.append(POps.iconEl('x', 'sm'));
             return POps.el('span', { className: 'chip' }, [document.createTextNode(label + ': '), POps.el('b', { text: value }), x]);
-        }), ...(f.length > 1 ? [POps.el('button', { type: 'button', className: 'clear', 'data-clear': 'all', text: 'Hepsini temizle' })] : []));
+        }), ...(f.length > 1 ? [POps.el('button', { type: 'button', className: 'clear', 'data-clear': 'all', text: POps.t('Hepsini temizle') })] : []));
         const n = f.filter(x => x[0] !== 'pc').length;
         $('lgFCount').hidden = !n;
         $('lgFCount').textContent = String(n);
@@ -329,8 +333,8 @@
             $('lgPager').hidden = true;
             const filtered = ui.rows.length > 0;
             POps.setEmpty(list, filtered
-                ? { icon: 'filter', title: 'Süzgece uyan kayıt yok', text: 'Arama, tarih ya da süzgeçleri değiştirin.' }
-                : { icon: 'list', title: 'Henüz kayıt yok', text: 'Bilgisayarlar olay bildirdikçe burada görünür.' });
+                ? { icon: 'filter', title: POps.t('Süzgece uyan kayıt yok'), text: POps.t('Arama, tarih ya da süzgeçleri değiştirin.') }
+                : { icon: 'list', title: POps.t('Henüz kayıt yok'), text: POps.t('Bilgisayarlar olay bildirdikçe burada görünür.') });
             return;
         }
         const pages = Math.max(1, Math.ceil(rows.length / ui.size));
@@ -352,7 +356,8 @@
     // Sayfa düğmeleri: ilk, son, bulunulan sayfanın iki yanı; aralar "…"
     function renderPager(total, startIx, count, pages) {
         $('lgPager').hidden = false;
-        $('lgRange').textContent = `${(startIx + 1).toLocaleString('tr-TR')}–${(startIx + count).toLocaleString('tr-TR')} / ${total.toLocaleString('tr-TR')} kayıt`;
+        const fmt = (n) => n.toLocaleString(POps.locale);
+        $('lgRange').textContent = POps.tn('{from}–{to} / {total} kayıt', total, { from: fmt(startIx + 1), to: fmt(startIx + count), total: fmt(total) });
         $('lgSize').value = String(ui.size);
         const want = new Set([1, pages, ui.page - 1, ui.page, ui.page + 1].filter(n => n >= 1 && n <= pages));
         if (ui.page <= 3) [2, 3, 4].forEach(n => n <= pages && want.add(n));
@@ -360,18 +365,18 @@
         const nums = [...want].sort((a, b) => a - b);
         const box = $('lgPages');
         const btn = (label, page, opts) => {
-            const b = POps.el('button', { type: 'button', 'data-page': String(page), 'aria-label': (opts && opts.aria) || ('Sayfa ' + page) });
+            const b = POps.el('button', { type: 'button', 'data-page': String(page), 'aria-label': (opts && opts.aria) || POps.t('Sayfa {n}', { n: page }) });
             if (opts && opts.icon) b.append(POps.iconEl(opts.icon, 'sm')); else b.textContent = label;
             if (opts && opts.on) { b.className = 'on'; b.setAttribute('aria-current', 'page'); }
             if (opts && opts.disabled) b.disabled = true;
             return b;
         };
-        const items = [btn('', ui.page - 1, { icon: 'left', aria: 'Önceki sayfa', disabled: ui.page <= 1 })];
+        const items = [btn('', ui.page - 1, { icon: 'left', aria: POps.t('Önceki sayfa'), disabled: ui.page <= 1 })];
         nums.forEach((n, i) => {
             if (i && n - nums[i - 1] > 1) items.push(POps.el('span', { className: 'gap', text: '…' }));
             items.push(btn(String(n), n, { on: n === ui.page }));
         });
-        items.push(btn('', ui.page + 1, { icon: 'right', aria: 'Sonraki sayfa', disabled: ui.page >= pages }));
+        items.push(btn('', ui.page + 1, { icon: 'right', aria: POps.t('Sonraki sayfa'), disabled: ui.page >= pages }));
         box.replaceChildren(...items);
     }
     function goPage(n) {
@@ -496,7 +501,7 @@
     $('lgSearch').addEventListener('input', (ev) => { clearTimeout(qt); qt = setTimeout(() => { ui.q = ev.target.value.trim().toLocaleLowerCase('tr'); ui.page = 1; render(); }, 150); });
 
     // ---------------------------------------------------------------- donanım
-    const HW_FIELDS = [['cpu', 'İşlemci'], ['ram', 'Bellek'], ['motherboard', 'Anakart'], ['gpu', 'Ekran kartı'], ['disk_info', 'Disk'], ['os_version', 'İşletim sistemi'], ['ip_address', 'IP'], ['mac_address', 'MAC']];
+    const HW_FIELDS = [['cpu', POps.t('İşlemci')], ['ram', POps.t('Bellek')], ['motherboard', POps.t('Anakart')], ['gpu', POps.t('Ekran kartı')], ['disk_info', 'Disk'], ['os_version', POps.t('İşletim sistemi')], ['ip_address', 'IP'], ['mac_address', 'MAC']];
     const hwOf = (h) => { const x = ui.inv && ui.inv[h]; return x && x.cpu && x.cpu !== '-' ? x : null; };
     const val = (v) => v && v !== '-' ? String(v) : '';
     async function loadInventory(force) {
@@ -515,7 +520,7 @@
     }
     // Atanmamışlar en sonda
     const labKey = (d) => d.lab && d.lab !== dev.UNASSIGNED ? '0' + d.lab : '1';
-    const labText = (d) => d.lab && d.lab !== dev.UNASSIGNED ? d.lab : 'Atanmamış';
+    const labText = (d) => d.lab && d.lab !== dev.UNASSIGNED ? d.lab : POps.t('Atanmamış');
     function hwRows() {
         const q = ui.hq;
         return (state.devices || []).filter(d => {
@@ -531,9 +536,9 @@
         const labs = dev.labs();
         if (sel.dataset.sig === labs.join('|')) return;
         sel.dataset.sig = labs.join('|');
-        sel.replaceChildren(POps.el('option', { value: '', text: 'Bütün sınıflar' }));
+        sel.replaceChildren(POps.el('option', { value: '', text: POps.t('Bütün sınıflar') }));
         labs.forEach(l => sel.append(POps.el('option', { value: l, text: l })));
-        sel.append(POps.el('option', { value: dev.UNASSIGNED, text: 'Atanmamış' }));
+        sel.append(POps.el('option', { value: dev.UNASSIGNED, text: POps.t('Atanmamış') }));
         sel.value = ui.hlab;
     }
     function hwRowHtml(d) {
@@ -542,7 +547,7 @@
         const cellHtml = (v) => val(v) ? escapeHtml(val(v)) : '—';
         const specsHtml = hw
             ? `<td>${cellHtml(hw.cpu)}</td><td>${cellHtml(hw.ram)}</td><td>${cellHtml(hw.disk_info)}</td><td>${cellHtml(hw.os_version)}</td>`
-            : '<td colspan="4" class="wait">Donanım bilgisi bekleniyor</td>';
+            : `<td colspan="4" class="wait">${POps.tHtml('Donanım bilgisi bekleniyor')}</td>`;
         return `<tr data-host="${escapeHtml(d.hostname)}" class="${ui.hfocus === d.hostname ? 'is-focus' : ''}">
             <td><div class="nm">${escapeHtml(POps.deviceName(d))}</div><div class="sub">${escapeHtml(lab)}</div></td>
             ${specsHtml}
@@ -562,8 +567,8 @@
         const body = $('hwBody');
         if (!rows.length) {
             POps.setEmpty(body, (state.devices || []).length
-                ? { tag: 'tr', colspan: 7, icon: 'filter', title: 'Süzgece uyan bilgisayar yok', text: 'Arama ya da sınıf süzgecini değiştirin.' }
-                : { tag: 'tr', colspan: 7, icon: 'devices', title: 'Henüz bilgisayar yok', text: 'Ajan kurulan bilgisayarlar bağlandıkça burada görünür.' });
+                ? { tag: 'tr', colspan: 7, icon: 'filter', title: POps.t('Süzgece uyan bilgisayar yok'), text: POps.t('Arama ya da sınıf süzgecini değiştirin.') }
+                : { tag: 'tr', colspan: 7, icon: 'devices', title: POps.t('Henüz bilgisayar yok'), text: POps.t('Ajan kurulan bilgisayarlar bağlandıkça burada görünür.') });
             return;
         }
         body.innerHTML = rows.map(hwRowHtml).join('');
@@ -574,21 +579,21 @@
         const lab = labText(d);
         const rowsHtml = hw
             ? HW_FIELDS.filter(f => val(hw[f[0]])).map(f => `<div class="grow"><span>${escapeHtml(f[1])}</span><span${f[0] === 'mac_address' || f[0] === 'ip_address' ? ' class="mono"' : ''}>${escapeHtml(val(hw[f[0]]))}</span></div>`).join('')
-              + `<div class="grow"><span>Kimlik</span><span class="mono">${escapeHtml(d.hostname)}</span></div>`
-              + `<div class="grow"><span>Son güncelleme</span><span>${POps.timeHtml(isoOf(hw.last_updated))}</span></div>`
-            : `<div class="grow"><span>Kimlik</span><span class="mono">${escapeHtml(d.hostname)}</span></div>`;
+              + `<div class="grow"><span>${POps.tHtml('Kimlik')}</span><span class="mono">${escapeHtml(d.hostname)}</span></div>`
+              + `<div class="grow"><span>${POps.tHtml('Son güncelleme')}</span><span>${POps.timeHtml(isoOf(hw.last_updated))}</span></div>`
+            : `<div class="grow"><span>${POps.tHtml('Kimlik')}</span><span class="mono">${escapeHtml(d.hostname)}</span></div>`;
         return `<div class="drawer-head">
                 <div class="drawer-title">
                     <span class="drawer-ico ${escapeHtml(st.cls)}">${POps.iconHtml('cpu', 'lg')}</span>
                     <div style="min-width:0"><h2>${escapeHtml(POps.deviceName(d))}</h2><div class="sub"><span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.word)} · ${escapeHtml(lab)}</div></div>
                 </div>
-                <button type="button" class="ibtn sm" data-lg="close" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button>
+                <button type="button" class="ibtn sm" data-lg="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button>
             </div>
-            ${hw ? '' : '<div class="issue lock">Ajan donanım bilgisini henüz göndermedi; açılışta ve günde bir kez gönderir.</div>'}
+            ${hw ? '' : `<div class="issue lock">${POps.tHtml('Ajan donanım bilgisini henüz göndermedi; açılışta ve günde bir kez gönderir.')}</div>`}
             <div class="glist">${rowsHtml}</div>
             <div class="lg-dlinks">
-                <button type="button" class="btn secondary sm" data-lg="logs">${POps.iconHtml('list', 'sm')}Olay kayıtları</button>
-                <button type="button" class="btn secondary sm" data-lg="device">${POps.iconHtml('monitor', 'sm')}Bilgisayarın ayrıntıları</button>
+                <button type="button" class="btn secondary sm" data-lg="logs">${POps.iconHtml('list', 'sm')}${POps.tHtml('Olay kayıtları')}</button>
+                <button type="button" class="btn secondary sm" data-lg="device">${POps.iconHtml('monitor', 'sm')}${POps.tHtml('Bilgisayarın ayrıntıları')}</button>
             </div>`;
     }
     function openHw(h) {
@@ -645,43 +650,45 @@
     $('lgExport').addEventListener('click', () => {
         if (ui.tab === 'hw') {
             const rows = hwRows();
-            if (!rows.length) return POps.toast('info', 'Dışa aktarılacak bilgisayar yok.');
-            return csv('pops-donanim', ['Bilgisayar', 'Kimlik', 'Sınıf'].concat(HW_FIELDS.map(f => f[1]), ['Son güncelleme']),
+            if (!rows.length) return POps.toast('info', POps.t('Dışa aktarılacak bilgisayar yok.'));
+            // Sütun adları ve dosya adı arayüz dilinde; hücreler veri (ham zaman, ad, sürüm) olduğu gibi
+            return csv(POps.t('pops-donanim'), [POps.t('Bilgisayar'), POps.t('Kimlik'), POps.t('Sınıf')].concat(HW_FIELDS.map(f => f[1]), [POps.t('Son güncelleme')]),
                 rows.map(d => { const hw = hwOf(d.hostname) || {}; return [POps.deviceName(d), d.hostname, labText(d)].concat(HW_FIELDS.map(f => val(hw[f[0]])), [hw.last_updated || '']); }));
         }
         const rows = ui.rows.filter(e => pass(e));
-        if (!rows.length) return POps.toast('info', 'Dışa aktarılacak kayıt yok.');
-        csv('pops-kayitlar', ['Zaman', 'Olay', 'Önem', 'Bilgisayar', 'Kimlik', 'Sınıf', 'Kim', 'Gerekçe', 'Mesaj', 'Olay türü', 'Eylem', 'Kategori', 'Risk'],
+        if (!rows.length) return POps.toast('info', POps.t('Dışa aktarılacak kayıt yok.'));
+        csv(POps.t('pops-kayitlar'), ['Zaman', 'Olay', 'Önem', 'Bilgisayar', 'Kimlik', 'Sınıf', 'Kim', 'Gerekçe', 'Mesaj', 'Olay türü', 'Eylem', 'Kategori', 'Risk'].map(h => POps.t(h)),
             rows.map(e => [e.r.timestamp, e.title, SEV_WORD[e.sev], pcName(e.pc), e.pc, labOf(e.pc), e.who, e.r.reason, cleanMsg(e.r.message), e.r.event_type, e.r.action, e.r.category, e.r.risk_level]));
     });
 
     async function wakeAll(btn) {
         const off = (state.devices || []).filter(d => POps.isOffline(d)).length;
-        if (!off) return POps.toast('info', 'Bütün bilgisayarlar zaten açık.');
+        if (!off) return POps.toast('info', POps.t('Bütün bilgisayarlar zaten açık.'));
         const ok = await POps.confirm({
-            title: `Kapalı ${off} bilgisayar uyandırılsın mı?`,
-            message: 'MAC adresi bilinen bütün kapalı bilgisayarlara uyandırma (Wake-on-LAN) sinyali gönderilir.',
-            confirmText: `${off} bilgisayarı uyandır`, icon: 'zap'
+            title: POps.tn('Kapalı {n} bilgisayar uyandırılsın mı?', off),
+            message: POps.t('MAC adresi bilinen bütün kapalı bilgisayarlara uyandırma (Wake-on-LAN) sinyali gönderilir.'),
+            confirmText: POps.tn('{n} bilgisayarı uyandır', off), icon: 'zap'
         });
         if (!ok) return;
-        await POps.act(btn, () => POps.post('/api/wake_all'), { success: (r) => `${(r && r.woken_pcs) || 0} bilgisayara uyandırma sinyali gönderildi.` });
+        await POps.act(btn, () => POps.post('/api/wake_all'), { success: (r) => POps.tn('{n} bilgisayara uyandırma sinyali gönderildi.', (r && r.woken_pcs) || 0) });
     }
     async function verifyChain(btn) {
         let r;
         try { r = await POps.busy(btn, () => POps.get('/api/system/audit-verify')); }
         catch (e) { POps.toast('error', POps.errorMessage(e)); return; }
         if (!r) return;
-        const n = Number(r.checked || 0).toLocaleString('tr-TR');
-        const note = 'Denetim zinciri yönetici işlemlerini (karantina, açma kodu, güncelleme, lisans) tutar; her kayıt bir öncekinin özetini taşır, araya giren değişiklik zinciri kırar.';
+        const checked = Number(r.checked || 0);
+        const cnt = { n: checked, count: checked.toLocaleString(POps.locale) };
+        const note = POps.t('Denetim zinciri yönetici işlemlerini (karantina, açma kodu, güncelleme, lisans) tutar; her kayıt bir öncekinin özetini taşır, araya giren değişiklik zinciri kırar.');
         await POps.alert(r.ok
-            ? { title: 'Denetim zinciri sağlam', tone: 'success', icon: 'shield', confirmText: 'Kapat', note,
-                message: Number(r.checked) ? `${n} kayıt doğrulandı; hiçbiri değiştirilmemiş ya da silinmemiş.` : 'Zincirde henüz doğrulanacak kayıt yok.' }
-            : { title: 'Denetim zinciri kırık', tone: 'warning', icon: 'alert', confirmText: 'Kapat', note,
-                message: `#${r.first_broken_id} numaralı kayıt değiştirilmiş ya da silinmiş görünüyor. Ondan önceki ${n} kayıt sorunsuz.` });
+            ? { title: POps.t('Denetim zinciri sağlam'), tone: 'success', icon: 'shield', confirmText: POps.t('Kapat'), note,
+                message: checked ? POps.t('{count} kayıt doğrulandı; hiçbiri değiştirilmemiş ya da silinmemiş.', cnt) : POps.t('Zincirde henüz doğrulanacak kayıt yok.') }
+            : { title: POps.t('Denetim zinciri kırık'), tone: 'warning', icon: 'alert', confirmText: POps.t('Kapat'), note,
+                message: POps.t('#{id} numaralı kayıt değiştirilmiş ya da silinmiş görünüyor. Ondan önceki {count} kayıt sorunsuz.', Object.assign({ id: r.first_broken_id }, cnt)) });
     }
     const menuItems = () => [
-        CAN_ADMIN ? { label: 'Bütün bilgisayarları uyandır', icon: 'zap', onClick: (a) => wakeAll(a) } : null,
-        IS_SUPER ? { label: 'Denetim zincirini doğrula', icon: 'shield', onClick: (a) => verifyChain(a) } : null
+        CAN_ADMIN ? { label: POps.t('Bütün bilgisayarları uyandır'), icon: 'zap', onClick: (a) => wakeAll(a) } : null,
+        IS_SUPER ? { label: POps.t('Denetim zincirini doğrula'), icon: 'shield', onClick: (a) => verifyChain(a) } : null
     ].filter(Boolean);
     $('lgMenuBtn').hidden = !menuItems().length;
     $('lgMenuBtn').addEventListener('click', (ev) => POps.menu(ev.currentTarget, menuItems()));
