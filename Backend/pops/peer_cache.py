@@ -31,6 +31,7 @@ from typing import Dict, Iterable, List, Optional, Set
 
 from pops import update_tracking
 from pops.db import execute_query
+from pops.labs import UNASSIGNED_LAB
 from pops.manager import manager
 
 log = logging.getLogger("pops.peer_cache")
@@ -46,7 +47,7 @@ SEED_TIMEOUT = float(os.environ.get("PEER_CACHE_SEED_TIMEOUT_SECONDS", "600"))
 TICK_SECONDS = max(0.5, min(5.0, SEED_TIMEOUT / 4))
 # Ajan paketi doğrulamadan sonra 2 saat tutar; sunucu onu 10 dk önce eş olarak önermeyi bırakır
 PEER_TTL = 110 * 60
-UNASSIGNED = "Atanmamis_Cihazlar"
+UNASSIGNED = UNASSIGNED_LAB
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
