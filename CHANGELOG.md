@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Agent: warnings gate.** The agent, tray, watchdog, updater and shared library build with the .NET 10 recommended analyzers and treat warnings as errors. The warnings that existed on 5 October are listed per file in `Agent/.editorconfig`, and any new one fails the build. 60 warnings were fixed, including all of them in the service's `Worker.cs` and the tray pipe code.
 - **Panel: browser configuration object renamed to `window.POPS_API`** (`assets/pops_config.js`). **Upgrading:** the file ships with the panel and is replaced on update; if you edited it locally, rename the global in your copy.
 - **API: the old RPC paths are deprecated but keep working** (`/api/create_lab`, `/api/move_pcs`, `/api/set_concurrent_limit`, `/api/deploy_orchestration`, … — the list is in `docs/api.md`); the panel still uses them. Unlike `/api/set_main_pc`, the REST name does not toggle: `PUT` sets the main PC, `DELETE` clears it.
 - **API: `task_sequence`.** `POST /api/deploy_orchestration` (and `POST /api/v1/tasks`) accepts `task_sequence` as well as `taskSequence`; sending both is `422`.
