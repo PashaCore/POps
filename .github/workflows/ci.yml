@@ -178,6 +178,9 @@ jobs:
       - name: Translations (i18n)
         # Dashboard/lang/*/*.json: geçerli JSON, yer tutucular anahtarla aynı, her Türkçe anahtar kaynakta birebir var
         run: python3 tools/i18n/check_i18n.py
+      - name: JS unit tests
+        # Ortak betiğin ve sayfa betiklerinin (assets/pages) saf yardımcıları; bağımlılık yok, runner'daki node yeter
+        run: node --test tests/unit-js/*.test.mjs
 
   panel-e2e:
     name: Panel end-to-end
