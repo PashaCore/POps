@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Several backend workers (optional, D-26).** With `REDIS_URL` set, the backend can run as several uvicorn workers or on several servers behind a load balancer, without sticky sessions. Off by default: a single-process install behaves as before. See `docs/ha.md`.
+  - Shared through Redis: commands, panel broadcasts, screen frames (only to session holders), Vision messages, the device list, session grants, the online-agent registry, notification limits and login rate limits.
+  - A dead worker's agents are marked Offline, and one leader runs the periodic jobs. If Redis is down, each worker keeps its own agents and panels running.
+- **`tools/agent_simulator.py --url A,B`** spreads agents over several backends, and `--report-every` prints the split.
 - **Agent: power actions and messages to the user.** The agent announces `power` and `message` in `X-Agent-Features` and follows the server's `power` and `user_message` schemas. `power` shuts the PC down, restarts it, signs the user out or locks it, after a countdown of up to 10 minutes that the tray shows on top with the administrator's note ("Bilgisayar 60 sn içinde yeniden başlatılacak"); the service keeps the time, so it also acts without the tray, and the result is sent just before acting. Lock goes through the tray (`LockWorkStation`) and falls back to disconnecting the console session; sign-out uses `WTSLogoffSession`; shutdown and restart use `shutdown.exe /f`. `cancel_task` stops a countdown. `user_message` shows a window with a title, a text of up to 1000 characters and an info or warning icon; with `requires_ack` the single result waits for the user's Tamam (`[TAMAM] okundu`) for up to 30 minutes. Sign-out, lock and messages need a signed-in user (otherwise exit code -6, "[REDDEDİLDİ] oturum açık kullanıcı yok"); a message while a user is signed in but the tray is not running fails with -3. Every field is checked again on the agent and the text is cleaned as on the server (control, text-direction and zero-width characters removed; title and note on one line). Both can be switched off on the PC with the new MSI properties `POWER_ENABLED=0` / `MESSAGE_ENABLED=0` (on by default) or by the server with `set_capabilities`; switching on again needs the MSI. New event log entries 1130 (power action), 1140 and 1141 (message shown and its outcome) hold only metadata, never the message text.
 - **Agent: the `capabilities` message reports `exam_enabled`, `power_enabled` and `message_enabled`** (optional fields in the schema), next to `terminal_enabled`, `vision_enabled`, `files_enabled` and `server_ca`.
 - **Agent: log and data folders from `appsettings.json`.** `LogDirectory` and `DataDirectory` move `C:\POpsLogs` and `C:\POpsData`, for example to a second disk; the defaults are unchanged.
@@ -129,6 +133,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Backend code layout.** `/ws/agent` is split into small functions with one handler per message type, and the system endpoints moved from `system_routes.py` to the package `pops/routers/system/`. `system_routes` still works as an import name. No behaviour or API change.
+- **Counts across all workers.** Diagnostics, `/metrics` and the overview count connected agents and panels across all workers; diagnostics shows a `cluster` block when Redis is on.
+- **New backend dependency:** `redis` 7.4.1.
 - **CI: the agent's nullable baseline only shrinks.** `tools/check_nullable_baseline.py` (CI's version job) compares the agent files that carry `#nullable disable` with the fixed list in `tools/nullable_baseline.txt` (53 files: 41 in the agent service, 9 in the shared library, 2 in the updater, 1 in the MSI custom actions).
   - A file outside the list that turns nullable off fails CI; new files must be nullable-clean.
   - A listed file that is gone or no longer has the line fails too, until its entry is removed, so the list shrinks as files are cleaned. A product project without `<Nullable>enable</Nullable>` also fails.
