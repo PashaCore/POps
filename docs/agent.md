@@ -350,7 +350,9 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
    an update stage in that time) is not sent it again: its update lock would make the agent ignore it anyway.
 2. The agent verifies the manifest's ed25519 signature with the public key compiled into it, refuses a version
    that is not newer than its own, downloads the MSI from `<ServerUrl>/updates/<name>` and checks its size and
-   SHA-256.
+   SHA-256. From 0.1.23-alpha the download uses BITS: it resumes after a network drop or a restart, and a download
+   that is still running after 15 minutes continues with the next update command. When BITS cannot be used, the
+   agent downloads directly as before. See [`design/peer-cache.md`](design/peer-cache.md).
 3. `POpsUpdater` installs it, waits up to 90 seconds for the new version to report `phase: "operational"`
    in `C:\POpsData\health.json`, and otherwise rolls back to the previous MSI. Operational means the agent's
    identity, credentials, capabilities, quarantine/TLS state and tray pipe are ready and its first connection
