@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/vision_rejected.json",
   "title": "vision_rejected",
-  "description": "The user declined a non-mandatory remote-control request (`start_vision_session`). Forwarded to all panels unchanged.",
+  "description": "The user declined a non-mandatory remote-control request (`start_vision_session`). Forwarded to all panels as `type`, `session_id` and the connection's device ID in `hw_id`.",
   "x-pops-channels": [
     "/ws/agent"
   ],
@@ -22,7 +22,7 @@
     },
     "hw_id": {
       "type": "string",
-      "description": "The agent's own device ID."
+      "description": "The agent's own device ID. Ignored: the server forwards the ID of the connection."
     }
   }
 }

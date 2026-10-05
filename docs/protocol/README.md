@@ -194,7 +194,7 @@ a lower or unparsable version only switches these behaviours off.
 | `exam_state` | command | Kept per exam and device; corrected with `exam_mode` when it differs; leaving a running exam is audited and notified | [exam_state](agent-to-server/exam_state.json) | [in exam](examples/agent-to-server/exam_state.json), [off](examples/agent-to-server/exam_state.off.json) |
 | `bypass_secret_ack` | command | Bypass key marked delivered | [bypass_secret_ack](agent-to-server/bypass_secret_ack.json) | [example](examples/agent-to-server/bypass_secret_ack.json) |
 | `thumbnail` | command, Vision | Preview to admin panels | [thumbnail](agent-to-server/thumbnail.json) | [example](examples/agent-to-server/thumbnail.json) |
-| `vision_rejected` | command | Forwarded to panels | [vision_rejected](agent-to-server/vision_rejected.json) | [example](examples/agent-to-server/vision_rejected.json) |
+| `vision_rejected` | command | Forwarded to panels with the connection's device ID | [vision_rejected](agent-to-server/vision_rejected.json) | [example](examples/agent-to-server/vision_rejected.json) |
 | `stream_frame` | Vision | Forwarded to session holders | [stream_frame](agent-to-server/stream_frame.json) | [example](examples/agent-to-server/stream_frame.json) |
 | `monitors` | Vision | Stored for the tunnel; forwarded to session holders | [monitors](agent-to-server/monitors.json) | [example](examples/agent-to-server/monitors.json) |
 | `clipboard` | Vision | Audited without the text, then forwarded to the holder of the accepted session | [clipboard](agent-to-server/clipboard.json) | [example](examples/agent-to-server/clipboard.json) |

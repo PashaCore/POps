@@ -866,7 +866,12 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     await manager.broadcast_to_admin_panels(payload)
                     continue
                 if payload.get("type") == "vision_rejected":
-                    await manager.broadcast_to_panels(payload)
+                    # Cihaz bağlantıdan (önizlemedeki gibi): gövdedeki hw_id yetki taşımaz. Panel bu mesajda cihazı
+                    # yoksa ya da kendi açık oturumunun cihazıysa uzaktan bağlantıyı kapatır; başka bir ajan böylece
+                    # yöneticinin oturumunu kapattırabiliyordu (fuzz/fuzz_agent_ws.py)
+                    await manager.broadcast_to_panels(
+                        {"type": "vision_rejected", "session_id": payload.get("session_id"), "hw_id": active_hwid}
+                    )
                     continue
                 if payload.get("type") == "update_result":
                     # Ajanın güncelleme sonucu (POpsUpdater update-result.json'ından). 0.1.14+ ajan result_id gönderir
