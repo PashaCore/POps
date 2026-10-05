@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from pops import exams, modules, winget
+from pops import exams, modules, power, winget
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.manager import manager
@@ -80,11 +80,12 @@ async def _close_effects(before: dict, after: dict) -> dict:
             )
             effects["tasks_denied"] += len(denied or [])
         else:
+            # Güç komutu ve kullanıcıya mesaj komut değildir, kalır (eski ajandaki execute karşılığını kuyruk reddeder)
             denied = await execute_query(
                 "UPDATE tasks SET status = 'Denied', output = COALESCE(output, '') || '[MODÜL KAPALI]: Uzak komut "
                 "modülü kapatıldı; görev çalıştırılmadı.' WHERE target_pc = ANY($1::text[]) "
-                "AND status IN ('Pending', 'Paused') RETURNING id",
-                (pcs,),
+                "AND status IN ('Pending', 'Paused') AND (kind IS NULL OR kind <> ALL($2::text[])) RETURNING id",
+                (pcs, list(power.KINDS)),
                 fetch=True,
             )
             effects["tasks_denied"] += len(denied or [])

@@ -1404,6 +1404,88 @@
         "title": "PolicyAlertInput",
         "type": "object"
       },
+      "PowerCommandInput": {
+        "additionalProperties": false,
+        "description": "Hedef: target_mode PC (cihaz kimlikleri), LAB (sınıf adları) ya da ALL. Yalnızca çevrimiçi hedeflere görev\naçılır.",
+        "properties": {
+          "delay": {
+            "default": 0,
+            "maximum": 600.0,
+            "minimum": 0.0,
+            "title": "Delay",
+            "type": "integer"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "op": {
+            "enum": [
+              "shutdown",
+              "restart",
+              "logoff",
+              "lock"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "target_mode": {
+            "default": "PC",
+            "enum": [
+              "ALL",
+              "LAB",
+              "PC"
+            ],
+            "title": "Target Mode",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "title": "Targets",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "title": "PowerCommandInput",
+        "type": "object"
+      },
       "ProfileInput": {
         "properties": {
           "profile": {
@@ -2060,6 +2142,71 @@
           "permissions"
         ],
         "title": "UserCreateInput",
+        "type": "object"
+      },
+      "UserMessageInput": {
+        "additionalProperties": false,
+        "properties": {
+          "requires_ack": {
+            "default": false,
+            "title": "Requires Ack",
+            "type": "boolean"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "style": {
+            "default": "info",
+            "enum": [
+              "info",
+              "warning"
+            ],
+            "title": "Style",
+            "type": "string"
+          },
+          "target_mode": {
+            "default": "PC",
+            "enum": [
+              "ALL",
+              "LAB",
+              "PC"
+            ],
+            "title": "Target Mode",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "title": "Targets",
+            "type": "array"
+          },
+          "text": {
+            "maxLength": 2000,
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 160,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "text"
+        ],
+        "title": "UserMessageInput",
         "type": "object"
       },
       "UserUpdateInput": {
@@ -3354,6 +3501,51 @@
         ]
       }
     },
+    "/api/v1/devices/message": {
+      "post": {
+        "description": "Oturumdaki kullanıcıya tepside mesaj (başlık, metin, bilgi/uyarı, isteğe bağlı okundu onayı). Mesajı bir kişi\nyazar: API jetonu kullanılamaz. \"message\" duyurmayan ajanda görev gönderilmeden reddedilir (-8).",
+        "operationId": "user_message_api_devices_message_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserMessageInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "User Message",
+        "tags": [
+          "power"
+        ]
+      }
+    },
     "/api/v1/devices/move": {
       "post": {
         "operationId": "move_pcs_api_devices_move_post",
@@ -3395,6 +3587,51 @@
         "summary": "Move Pcs",
         "tags": [
           "devices"
+        ]
+      }
+    },
+    "/api/v1/devices/power": {
+      "post": {
+        "description": "Kapat, yeniden başlat, oturumu kapat ya da kilitle; isteğe bağlı gecikme (0-600 sn) ve kullanıcıya not.\n\"power\" duyurmayan ajana kapatma/yeniden başlatma eski komutla gider, diğerleri gönderilmeden reddedilir (-8).\nAPI jetonuyla da kullanılabilir (admin rolü).",
+        "operationId": "power_command_api_devices_power_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PowerCommandInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Power Command",
+        "tags": [
+          "power"
         ]
       }
     },

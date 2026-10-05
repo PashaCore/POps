@@ -1531,6 +1531,48 @@ def test_devicelist():
         dl.reset()
 
 
+def test_power():
+    """Güç komutu ve mesaj: metin temizliği (kontrol ve yön karakterleri), sınırlar, eski ajan için güvenli not ve
+    Linux kalıbı, plan (native / fallback / unsupported), denetim önizlemesi."""
+    print("== güç komutu ve mesaj")
+    import re
+
+    from pops import power
+
+    chk(power.clean_text("a\u0000b\tc\u202ed\r\ne", 50) == "ab cd e", "tek satır: kontrol ve yön karakterleri")
+    chk(power.clean_text("x\r\n\r\n\r\n\u0007y  \nz", 50, multiline=True) == "x\n\ny\nz",
+        "çok satır: \\n kalır, en çok bir boş satır")
+    chk(power.clean_text("Öğrenci ŞIİ çğü", 20) == "Öğrenci ŞIİ çğü", "Türkçe korunur")
+    for bad, why in ((lambda: power.clean_text("x" * 201, 200), "uzun not"),
+                     (lambda: power.power_payload("hibernate", 0), "bilinmeyen op"),
+                     (lambda: power.power_payload("lock", 601), "uzun gecikme"),
+                     (lambda: power.power_payload("lock", True), "bool gecikme"),
+                     (lambda: power.message_payload(" ", "metin"), "boş başlık"),
+                     (lambda: power.message_payload("b", "m", "danger"), "bilinmeyen stil")):
+        try:
+            bad()
+            chk(False, "%s reddedilir" % why)
+        except ValueError:
+            chk(True, "%s reddedilir" % why)
+    spec = power.power_payload("shutdown", 0, 'Not: %TEMP% & "x" ^ | < > ! `$(id)` ğ')
+    cmd = power.fallback_command(spec, None)
+    chk(cmd == 'shutdown /s /f /t 5 /c "Not: TEMP x (id) ğ"', "eski Windows: güvenli not, en az 5 sn: %s" % cmd)
+    note = cmd.split("/c ", 1)[1][1:-1]
+    chk(not set(note) & set('%"^&|<>!`$\n'), "notta kabuk karakteri yok")
+    linux = power.fallback_command(power.power_payload("restart", 90, "not"), "linux")
+    chk(re.fullmatch(r"shutdown\s+/([rs])\s+/f\s+/t\s+(\d{1,4})", linux) is not None and linux.endswith("/t 90"),
+        "Linux: notsuz kalıp")
+    chk(power.fallback_command(power.power_payload("restart", 0, "%%"), None) == "shutdown /r /f /t 5",
+        "boş kalan not eklenmez")
+    lock = power.power_payload("lock", 0)
+    chk(power.plan("power", lock, ["power"], None) == "native" and power.plan("power", lock, [], None) == "unsupported"
+        and power.plan("power", spec, None, "linux") == "fallback"
+        and power.plan("user_message", power.message_payload("a", "b"), ["power"], None) == "unsupported",
+        "plan: native / fallback / unsupported")
+    p = power.preview("x" * 100)
+    chk(p == {"length": 100, "preview": "x" * 60 + "…"}, "önizleme: uzunluk ve ilk 60 karakter")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -1553,6 +1595,7 @@ def main():
     test_winget()
     test_vision_v2()
     test_devicelist()
+    test_power()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

@@ -55,6 +55,7 @@ from pops.routers import (
     modules as modules_router,
     notifications,
     ops,
+    power as power_router,
     reports,
     rest,
     schedules,
@@ -243,7 +244,7 @@ async def shutdown_event():
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
-    activity, modules_router, branding, tokens, files,
+    activity, modules_router, branding, tokens, files, power_router,
     # Sınav modu (/api/labs/{lab_name:path}/exam): rest'in genel /api/labs/{lab_name} yollarından önce
     exams_router,
     # REST adları (/api/v1) eski uçların işleyicilerini çağırır; eskilerden sonra bağlanır

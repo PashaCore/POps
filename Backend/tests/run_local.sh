@@ -64,6 +64,7 @@ python tests/test_files.py
 python tests/test_exam.py
 python tests/test_winget.py
 python tests/test_devices_delta.py
+python tests/test_power_message.py
 if [ "${COVERAGE:-0}" = "1" ]; then
   kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
   python -m coverage combine --rcfile=.coveragerc >/dev/null

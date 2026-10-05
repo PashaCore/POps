@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/user_message.json",
+  "title": "user_message",
+  "description": "Show a message to the signed-in user from the tray (Mesaj gönder, POST /api/devices/message). Sent only to an agent whose connection announced `message` in `X-Agent-Features`; for any other agent the server marks the task `Denied` with exit code -8 and sends nothing (there is no safe fallback). The agent refuses when its local `message` capability is off (`result` with `exit_code` -5 and `capability_denied` with capability `message`) and answers `result` with `exit_code` -6 and output \"[REDDEDİLDİ] oturum açık kullanıcı yok\" when nobody is signed in. Otherwise it shows the message and answers `result` with `exit_code` 0: right away with \"[TAMAM] gösterildi\"; with `requires_ack`, \"[TAMAM] okundu\" when the user clicks Tamam, or \"[TAMAM] gösterildi, onaylanmadı\" after 30 minutes without a click. A message waiting for its acknowledgement does not hold the device's task queue. See docs/agent.md#power-and-user_message-contract.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "task_id",
+    "title",
+    "text",
+    "style",
+    "requires_ack"
+  ],
+  "properties": {
+    "action": {
+      "const": "user_message",
+      "description": "Message type."
+    },
+    "task_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Task ID; echoed in `result` and `result_ack`."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "Heading, one line of plain UTF-8 text (control characters, line breaks and bidirectional formatting characters removed by the server)."
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "description": "Body, plain UTF-8 text. May contain line breaks (\\n only; at most one empty line in a row); every other control character is removed by the server. Display it as text, never as HTML or through a shell."
+    },
+    "style": {
+      "enum": [
+        "info",
+        "warning"
+      ],
+      "description": "info = Bilgi (neutral); warning = Uyarı (warning colour and icon)."
+    },
+    "requires_ack": {
+      "type": "boolean",
+      "description": "true: keep the message up until the user clicks Tamam and report \"[TAMAM] okundu\" (or \"[TAMAM] gösterildi, onaylanmadı\" after 30 minutes)."
+    },
+    "requested_by": {
+      "type": "string",
+      "description": "Panel user who wrote it (API tokens cannot send messages); written to the device's local audit log."
+    }
+  }
+}

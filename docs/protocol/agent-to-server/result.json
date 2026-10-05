@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/result.json",
   "title": "result",
-  "description": "Output of an `execute` or `winget_install` task. The server stores it only for a task of this device that is `Running`, `Unknown`, `Interrupted`, `Timed Out` or `Cancelled` (a cancelled task keeps its status), sets the status from `exit_code` and forwards the output to the panels. It always answers `result_ack` for an integer `task_id`, also when the task does not exist or belongs to another device, so the agent can drop it. A message without an integer `task_id` is ignored.",
+  "description": "Output of an `execute`, `winget_install`, `power` or `user_message` task. The server stores it only for a task of this device that is `Running`, `Unknown`, `Interrupted`, `Timed Out` or `Cancelled` (a cancelled task keeps its status), sets the status from `exit_code` and forwards the output to the panels. It always answers `result_ack` for an integer `task_id`, also when the task does not exist or belongs to another device, so the agent can drop it. A message without an integer `task_id` is ignored.",
   "x-pops-channels": [
     "/ws/agent"
   ],
@@ -26,14 +26,14 @@
         "null"
       ],
       "maxLength": 524288,
-      "description": "Combined output. Agents truncate it to 524 288 characters (the Windows agent appends a note). A result whose output starts with \"[REDDEDİLDİ]\" and whose `exit_code` is missing, null, -5 or -7 marks the task `Denied`."
+      "description": "Combined output. Agents truncate it to 524 288 characters (the Windows agent appends a note). A result whose output starts with \"[REDDEDİLDİ]\" and whose `exit_code` is missing, null, -5, -6 or -7 marks the task `Denied`."
     },
     "exit_code": {
       "type": [
         "integer",
         "null"
       ],
-      "description": "0.1.13+. 0 = `Completed`, anything else = `Failed`; missing or null = `Completed`. Codes set by the agent itself: -1 time limit (30 min), -2 cancelled, -3 agent error, -4 service stopping, -5 refused (terminal capability or module off; with \"[REDDEDİLDİ]\" the task is `Denied`), -6 duplicate (never sent), -7 winget is not installed (`winget_install`, with \"[REDDEDİLDİ]\": `Denied`). For `winget_install` it is winget's exit code as a signed 32-bit integer (an HRESULT); -1978335189 and -1978335135 (already installed) and -1978334967 and -1978334965 (installed, restart pending) also count as `Completed`."
+      "description": "0.1.13+. 0 = `Completed`, anything else = `Failed`; missing or null = `Completed`. Codes set by the agent itself: -1 time limit (30 min), -2 cancelled, -3 agent error, -4 service stopping, -5 refused (terminal capability or module off; with \"[REDDEDİLDİ]\" the task is `Denied`), -6 nobody is signed in (`power` logoff/lock and `user_message`, with \"[REDDEDİLDİ]\": `Denied`; the Windows agent's internal duplicate code -6 is never sent), -7 winget is not installed (`winget_install`, with \"[REDDEDİLDİ]\": `Denied`). The server itself sets -8 on a task it did not send because the agent does not support it (`winget_install`, `power` logoff/lock, `user_message`). For `winget_install` it is winget's exit code as a signed 32-bit integer (an HRESULT); -1978335189 and -1978335135 (already installed) and -1978334967 and -1978334965 (installed, restart pending) also count as `Completed`."
     },
     "pc_name": {
       "type": "string",

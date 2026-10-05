@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/power.json",
+  "title": "power",
+  "description": "Shut down, restart, sign out or lock the device (Cihazlar / Sınıflar power actions, POST /api/devices/power). Sent only to an agent whose connection announced `power` in `X-Agent-Features`. For any other agent the server sends `shutdown` and `restart` as the old `execute` command instead (`shutdown /s|/r /f /t <max(delay,5)>`, on Windows with an optional `/c \"<note>\"` that keeps only letters, digits, spaces and . , : ; ? ' ( ) -; on Linux exactly that pattern, which the Linux agent maps to systemctl) and marks `logoff` and `lock` tasks `Denied` with exit code -8 without sending anything. Task rules as for `execute`: the server marks the task `Running` first and the same `task_id` may arrive again. The agent refuses when its local `power` capability is off (`result` with `exit_code` -5 and `capability_denied` with capability `power`); for `logoff` and `lock` with nobody signed in it answers `result` with `exit_code` -6 and output \"[REDDEDİLDİ] oturum açık kullanıcı yok\". Otherwise it shows a tray countdown of `delay` seconds with `message`, sends `result` with `exit_code` 0 and output starting \"[TAMAM]\" just before it acts, then acts. See docs/agent.md#power-and-user_message-contract.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "task_id",
+    "op",
+    "delay"
+  ],
+  "properties": {
+    "action": {
+      "const": "power",
+      "description": "Message type."
+    },
+    "task_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Task ID; echoed in `result` and `result_ack`."
+    },
+    "op": {
+      "enum": [
+        "shutdown",
+        "restart",
+        "logoff",
+        "lock"
+      ],
+      "description": "shutdown = power off; restart = reboot; logoff = sign out the interactive user; lock = lock the interactive session. shutdown and restart are forced (unsaved work is lost)."
+    },
+    "delay": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600,
+      "description": "Seconds to wait before acting, with a tray countdown. 0 = act now (the agent may still show the note for a moment)."
+    },
+    "message": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200,
+      "description": "Optional note for the user, shown with the countdown; null when not set. Plain UTF-8 text on one line: the server has removed control characters, line breaks and bidirectional formatting characters. Display it as text, never pass it to a shell."
+    },
+    "requested_by": {
+      "type": "string",
+      "description": "Panel user (or API token) who asked for it; written to the device's local audit log, as for `execute`."
+    }
+  }
+}

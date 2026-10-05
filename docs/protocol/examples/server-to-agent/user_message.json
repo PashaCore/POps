@@ -1,0 +1,9 @@
+{
+  "action": "user_message",
+  "task_id": 1063,
+  "title": "Sınav başlıyor",
+  "text": "Lütfen açık dosyaları kaydedip kapatın.\nSınav 10 dakika sonra başlayacak.",
+  "style": "warning",
+  "requires_ack": true,
+  "requested_by": "ogretmen"
+}

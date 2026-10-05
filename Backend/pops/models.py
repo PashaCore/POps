@@ -6,7 +6,7 @@ from pydantic import (
     AliasChoices, BaseModel, ConfigDict, Field, StrictFloat, StrictInt, field_validator, model_validator,
 )
 
-from pops import winget
+from pops import power, winget
 
 TargetMode = Literal["ALL", "LAB", "PC"]
 
@@ -419,3 +419,52 @@ class ExamStartInput(StrictInput):
 
 class ExamEndInput(StrictInput):
     reason: str = Field(default="", max_length=1000)
+
+
+# ─── Güç komutları ve kullanıcıya mesaj (pops/power.py) ───────────────────────
+class PowerCommandInput(StrictInput):
+    """Hedef: target_mode PC (cihaz kimlikleri), LAB (sınıf adları) ya da ALL. Yalnızca çevrimiçi hedeflere görev
+    açılır."""
+    target_mode: TargetMode = "PC"
+    targets: List[str] = Field(default_factory=list, max_length=5000)
+    op: Literal["shutdown", "restart", "logoff", "lock"]
+    delay: int = Field(default=0, ge=0, le=power.MAX_DELAY)
+    # Kullanıcıya not (isteğe bağlı): kontrol karakterleri atılır, sonra en çok 200 karakter
+    message: Optional[str] = Field(default=None, max_length=2 * power.MAX_NOTE)
+    source: Optional[str] = Field(default=None, max_length=40)
+    title: Optional[str] = Field(default=None, max_length=200)
+
+    _mode = field_validator("target_mode", mode="before")(upper_mode)
+
+    @field_validator("message")
+    @classmethod
+    def _note(cls, value):
+        return power.clean_text(value, power.MAX_NOTE) or None
+
+
+class UserMessageInput(StrictInput):
+    target_mode: TargetMode = "PC"
+    targets: List[str] = Field(default_factory=list, max_length=5000)
+    title: str = Field(max_length=2 * power.MAX_TITLE)
+    text: str = Field(max_length=2 * power.MAX_TEXT)
+    style: Literal["info", "warning"] = "info"
+    requires_ack: bool = False
+    source: Optional[str] = Field(default=None, max_length=40)
+
+    _mode = field_validator("target_mode", mode="before")(upper_mode)
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, value):
+        value = power.clean_text(value, power.MAX_TITLE)
+        if not value:
+            raise ValueError("Başlık boş olamaz")
+        return value
+
+    @field_validator("text")
+    @classmethod
+    def _text(cls, value):
+        value = power.clean_text(value, power.MAX_TEXT, multiline=True)
+        if not value:
+            raise ValueError("Metin boş olamaz")
+        return value

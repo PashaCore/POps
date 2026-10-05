@@ -10,6 +10,8 @@
     "exam_mode",
     "winget",
     "vision_binary",
-    "vision_clipboard"
+    "vision_clipboard",
+    "power",
+    "message"
   ]
 }

@@ -808,7 +808,7 @@ async def vision_channel():
 async def server_builders():
     print("== sunucunun kurduğu komutlar")
     import system_routes
-    from pops import exams, modules, taskqueue, winget, wol
+    from pops import exams, modules, power, taskqueue, winget, wol
     from pops.manager import manager
     from pops.models import LockdownInput, PatchInstallInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
     from pops.models import TaskActionInput
@@ -874,6 +874,62 @@ async def server_builders():
         await taskqueue._process_queue_once()
         chk(not agent_ws.sent and any(p[2] == winget.EXIT_UNSUPPORTED for p in old_agent.params("exit_code = $3")),
             "winget duyurmayan ajana gönderilmedi, görev -8 ile reddedildi")
+
+        # Güç komutu ve mesaj: "power"/"message" duyuran ajana kendi iletisi; duyurmayan Windows ajanına kapatma ve
+        # yeniden başlatma eski execute komutuyla (güvenli not), Linux'a notsuz kalıpla; kilit, oturumu kapatma ve
+        # mesaj duyurmayana hiç gitmez (-8 ile Denied). Kuyruğun seçimi görevi döndürse de gönderilmez.
+        def power_queue(kind, spec, features, platform=None):
+            payload = json.dumps(spec, ensure_ascii=False)
+            return FakeDB([
+                ("SELECT 1 FROM tasks WHERE status = 'Pending' LIMIT 1", [{"x": 1}]),
+                ("COUNT(DISTINCT target_pc)", [{"c": 0}]),
+                ("SELECT t.id, t.kind, t.payload", [{"id": 1060, "kind": kind, "payload": payload, "target_pc": HW,
+                                                    "features": features, "platform": platform}]),
+                ("SELECT * FROM (", [{"id": 1060, "target_pc": HW, "kind": kind, "created_by": "admin",
+                                      "payload": payload, "script_path": power.summary(kind, spec),
+                                      "created_at": "2026-10-05 10:00:00", "agent_features": features,
+                                      "agent_platform": platform}]),
+            ])
+        note = 'Ders bitti; 5 dakika içinde kaydedin. %PATH% & "x"'
+        shutdown = power.power_payload("shutdown", 300, note)
+        lock = power.power_payload("lock", 0)
+        msg = power.message_payload("Sınav başlıyor", "Kaydedin.\nSınav 10 dakika sonra.", "warning", True)
+        for kind, spec, features, platform, expected, what in (
+            ("power", shutdown, ["power", "message"], None,
+             {"action": "power", "task_id": 1060, "op": "shutdown", "delay": 300,
+              "message": 'Ders bitti; 5 dakika içinde kaydedin. %PATH% & "x"', "requested_by": "admin"},
+             "power, notuyla"),
+            ("power", lock, ["power"], "windows",
+             {"action": "power", "task_id": 1060, "op": "lock", "delay": 0, "message": None, "requested_by": "admin"},
+             "power lock"),
+            ("user_message", msg, ["message"], None,
+             {"action": "user_message", "task_id": 1060, "title": "Sınav başlıyor",
+              "text": "Kaydedin.\nSınav 10 dakika sonra.", "style": "warning", "requires_ack": True,
+              "requested_by": "admin"}, "user_message"),
+            ("power", shutdown, [], None,
+             {"action": "execute", "task_id": 1060,
+              "script_path": 'shutdown /s /f /t 300 /c "Ders bitti; 5 dakika içinde kaydedin. PATH x"',
+              "requested_by": "admin"}, "eski Windows ajanına execute, tırnaklanabilen notla"),
+            ("power", power.power_payload("restart", 0, note), None, "linux",
+             {"action": "execute", "task_id": 1060, "script_path": "shutdown /r /f /t 5", "requested_by": "admin"},
+             "Linux ajanına notsuz kalıp, en az 5 sn"),
+        ):
+            P.set(taskqueue, "execute_query", power_queue(kind, spec, features, platform))
+            await taskqueue._process_queue_once()
+            chk(agent_ws.sent == [expected], "taskqueue: %s (%s)" % (what, agent_ws.sent))
+            take(agent_ws, "taskqueue._process_queue_once (%s)" % what)
+        for kind, spec, features, platform, what in (
+            ("power", lock, ["message", "winget"], None, "kilit, power duyurmayan ajan"),
+            ("power", power.power_payload("logoff", 60), None, "linux", "oturumu kapatma, Linux"),
+            ("user_message", msg, ["power"], None, "mesaj, message duyurmayan ajan"),
+        ):
+            fake = power_queue(kind, spec, features, platform)
+            P.set(taskqueue, "execute_query", fake)
+            await taskqueue._process_queue_once()
+            denied = fake.params("UPDATE tasks SET status = 'Denied', exit_code = $2")
+            chk(not agent_ws.sent and [p[1:] for p in denied] == [(power.EXIT_UNSUPPORTED, power.UNSUPPORTED_OUTPUT)],
+                "%s: hiçbir şey gönderilmedi, görev -8 ile reddedildi" % what)
+            agent_ws.sent.clear()
 
         P.set(tasks_router, "execute_query", FakeDB([("WITH target AS", [
             {"id": 1042, "target_pc": HW, "old_status": "Running"}])]))
@@ -1062,9 +1118,9 @@ async def server_builders():
     for origin, msg in built:
         check_message(S2A, msg, origin)
     produced = {message_name(S2A, m) for _, m in built}
-    chk({"execute", "winget_install", "cancel_task", "lockdown", "unlock", "start_vision_session", "stop_stream",
-         "remote_input", "scan_updates", "install_updates", "wake_peer", "update_agent", "set_capabilities",
-         "server_info", "file_push", "file_pull", "exam_mode"} <= produced,
+    chk({"execute", "winget_install", "power", "user_message", "cancel_task", "lockdown", "unlock",
+         "start_vision_session", "stop_stream", "remote_input", "scan_updates", "install_updates", "wake_peer",
+         "update_agent", "set_capabilities", "server_info", "file_push", "file_pull", "exam_mode"} <= produced,
         "uçlardaki bütün komutlar kuruldu ve denetlendi")
 
 
