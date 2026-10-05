@@ -852,6 +852,31 @@ def test_agent_platform():
     chk(agents_router.agent_platform("beos", "haiku") == "windows", "bilinmeyen değer windows sayılır")
 
 
+def test_agent_packages():
+    """Ajan güncellemesi platform başına tek paket seçer; Windows ajanının MSI adı .deb ile karışmaz."""
+    print("== agent_packages")
+    import system_routes
+
+    msi = {"name": "POps-Agent-0.1.22-alpha-win-x64.msi", "sha256": "a" * 64, "size": 1}
+    deb = {"name": "pops-agent_0.1.22-alpha_all.deb", "sha256": "b" * 64, "size": 1}
+    zipped = {"name": "POps-Agent-0.1.22-alpha-win-x64.zip", "sha256": "c" * 64, "size": 1}
+    server = {"name": "pops-server-0.1.22-alpha.tar.gz", "sha256": "d" * 64, "size": 1}
+    both = {"artifacts": [deb, msi, zipped, server]}
+    chk(system_routes._agent_packages(both) == {"windows": msi["name"], "linux": deb["name"]},
+        "manifest'te MSI ve .deb: platform başına bir paket")
+    chk(system_routes._agent_msis(both) == [msi["name"]], ".deb, Windows'un MSI listesine girmez")
+    chk(system_routes._agent_packages({"artifacts": [msi, zipped]}) == {"windows": msi["name"]},
+        "eski release (yalnız MSI)")
+    chk(system_routes._agent_packages({"artifacts": [deb]}) == {"linux": deb["name"]}, "yalnız .deb")
+    try:
+        system_routes._agent_packages({"artifacts": [deb, dict(deb, name="pops-agent_0.1.23-alpha_all.deb")]})
+        chk(False, "iki .deb reddedilir")
+    except ValueError:
+        chk(True, "iki .deb reddedilir")
+    chk(system_routes._agent_debs({"artifacts": [{"name": "pops-agent_x_all.deb.sig"}, {"name": "../a_all.deb"}]})
+        == [], "benzer ama geçersiz adlar paket sayılmaz")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -868,6 +893,7 @@ def main():
     test_server_metrics()
     test_api_v1()
     test_agent_platform()
+    test_agent_packages()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)
