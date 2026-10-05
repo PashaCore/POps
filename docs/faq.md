@@ -17,10 +17,10 @@ backend process brought 5,000 simulated agents back within 11 seconds of a resta
 above a second. The backend runs as a single process, so plan one server per school.
 
 **Is the panel available in English?**
-Mostly: **Türkçe / English** at the bottom of the sidebar switches the interface for your browser. 10 of the 14
-pages are translated, with the sidebar, search, notifications, dialogs and device actions. **Ayarlar**, **Sistem**,
-**Uzak komut** and the sign-in page are being converted and show Turkish text until then ([`i18n.md`](i18n.md)).
-Server messages without an English entry stay Turkish.
+Yes, every page: **Türkçe / English** at the bottom of the sidebar or under the sign-in form switches the interface
+for your browser. Until you choose, the sign-in page follows the browser's language. Names people typed (labs,
+devices, packages) stay as they are, and server messages without an English entry stay Turkish
+([`i18n.md`](i18n.md)).
 
 **Can I try POps without installing it?**
 Yes. A public, read-only demo runs at [demo.pashacore.com.tr](https://demo.pashacore.com.tr) (user `demo`,

@@ -53,8 +53,8 @@ Beklentiyi baştan doğru kurmak için POps'un **ne olmadığını** da yazıyor
 - **Henüz denenmemiş durumlar var:** Uzak Masaüstü ve çok kullanıcılı oturumlar, uzaktan kontrol sırasında UAC onay
   ekranı, birden fazla monitör ve %100 dışındaki ekran ölçekleme.
 - **Active Directory / LDAP ile giriş yok.** Panel hesapları POps'un kendi kullanıcılarıdır.
-- **İngilizce arayüz henüz tamamlanmadı.** Panel Türkçe ve İngilizce kullanılabilir; 14 sayfanın 10'u İngilizceye
-  çevrildi, Ayarlar, Sistem, Uzak komut ve giriş sayfası sırada. Teknik belgelerin çoğu İngilizcedir.
+- **Teknik belgelerin çoğu İngilizcedir.** Panelin her sayfası Türkçe ve İngilizce kullanılabilir; okullar için
+  rehberler (bu sayfa gibi) Türkçedir.
 - **Destek modeli henüz belirlenmedi.** Bugün destek GitHub üzerinden, gönüllülük esasıyladır; yanıt süresi sözü
   verilmez. Ücretli destek ve hizmet seviyesi seçenekleri [`ROADMAP.md`](../../ROADMAP.md#support-model) dosyasında
   karar bekliyor.

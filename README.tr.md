@@ -34,8 +34,8 @@
 > [`SECURITY.md`](SECURITY.md), sıradaki işler için [`ROADMAP.md`](ROADMAP.md) dosyasına bakın.
 
 > [!NOTE]
-> Panel **Türkçe** ve **İngilizce** kullanılabilir; dil tarayıcı başına seçilir. İngilizce şimdilik 14 sayfanın 10'unu
-> kapsıyor, kalanlar hazırlanıyor. Teknik belgeler ve API İngilizcedir; bu sayfa İngilizce README'nin Türkçesidir.
+> Panelin her sayfası **Türkçe** ve **İngilizce** kullanılabilir; dil tarayıcı başına seçilir. Teknik belgeler ve API
+> İngilizcedir; bu sayfa İngilizce README'nin Türkçesidir.
 
 > [!TIP]
 > **Kurmadan deneyin:** herkese açık, salt okunur bir demo [demo.pashacore.com.tr](https://demo.pashacore.com.tr)
@@ -141,7 +141,7 @@ için ayrıntılı anlatım: [Neden POps?](docs/tr/neden-pops.md)
 | **Saklama süresi** | Eski olay kayıtları, biten görevler ve okunmuş bildirimler takvime göre silinir; denetim zinciri korunur. Her ajan kendi log klasörünü 30 gün ve 200 MB ile sınırlar. |
 | **Otomasyon için API** | Sürümlü `/api/v1` ve REST adları, görüntüleyici ya da yönetici rolünde API jetonları (bir kez gösterilir, yalnızca özeti saklanır) ve depodaki OpenAPI dosyası ([`docs/api.md`](docs/api.md), İngilizce). |
 | **Kurumunuz** | Giriş sayfasında kurumunuzun adı ve logosu (**Ayarlar → Genel → Kurum**). |
-| **İki dil** | Türkçe ve İngilizce, tarayıcı başına seçilir. İngilizce 14 sayfanın 10'unu kapsıyor; kalanlar hazırlanıyor. |
+| **İki dil** | Panelin her sayfası Türkçe ve İngilizce, tarayıcı başına seçilir; giriş sayfası siz seçene kadar tarayıcının dilini izler. |
 
 ---
 
@@ -331,8 +331,8 @@ Dondurma yazılımları (Deep Freeze, Shadow Defender), ajan dondurmadan önce k
   yalnızca imzalı etikete geçmesi için [`keys/allowed_signers`](keys/allowed_signers) dosyasını
   `/etc/pops/allowed_signers` olarak kurun ([`docs/self-update.md`](docs/self-update.md)).
 - **DNS** yalnızca tespit edip bildirir; engelleme planlı.
-- **Panel dili:** Türkçe ve İngilizce. Ayarlar, Sistem, Uzak komut ve giriş sayfası henüz yalnızca Türkçe
-  (hazırlanıyor); İngilizce karşılığı olmayan sunucu iletileri Türkçe kalır.
+- **Diller:** panel Türkçe ve İngilizcedir; ama İngilizce karşılığı olmayan sunucu iletileri ve Windows ajanının
+  kendi metinleri (tepsi, onay pencereleri, kilit ekranı) yalnızca Türkçedir.
 
 ---
 
@@ -437,9 +437,8 @@ Belgelerin çoğu İngilizcedir; Türkçe olanlar işaretlidir.
 
 ## 🧭 Yol haritası
 
-Üzerinde çalışılanlar: İngilizce arayüzün kalan sayfaları, Vision v2'nin sunucu ve panel tarafı ve bir Linux ajanı
-(önce Pardus). Sırada önce SignPath Foundation üzerinden Authenticode kod imzalama var. Ardından bir mimari tur
-geliyor:
+Üzerinde çalışılanlar: Vision v2'nin sunucu ve panel tarafı ve bir Linux ajanı (önce Pardus). Sırada önce SignPath
+Foundation üzerinden Authenticode kod imzalama var. Ardından bir mimari tur geliyor:
 - görevler için tam durum makinesi;
 - imzalı komutlar ve mTLS;
 - yalnızca ekleme yapılabilen bir denetim rolü;

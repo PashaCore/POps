@@ -125,11 +125,10 @@ tagged release.
   server is unreachable, warnings as errors in the build (Unreleased)
 - [x] **Vision v2, agent side:** DXGI capture, changed regions, several screens, adaptive quality, binary frames,
   clipboard in an accepted session (Unreleased)
+- [x] **English interface:** every page in Turkish and English, chosen per browser (Unreleased)
 
 ## In progress
 
-- [ ] **English interface:** every page in Turkish and English, chosen per browser. 10 of the 14 pages are done;
-  Ayarlar, Sistem, Uzak komut and the sign-in page are still Turkish.
 - [ ] **Vision v2 in the panel:** the server side and the viewer for the agent's new capture.
 - [ ] **Linux agent (Pardus first):** inventory, commands and signed updates.
 

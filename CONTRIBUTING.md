@@ -66,7 +66,7 @@ a change one person can review in one sitting, and add the label.
 | `VERSION`, `CHANGELOG.md` | The single version source and the changelog. |
 | `Shared/`, `assets/`, `screenshots/` | A placeholder README; images used by the README. |
 
-The panel's text is Turkish, with an English interface in progress ([`docs/i18n.md`](docs/i18n.md)). `CHANGELOG.md`
+The panel is written in Turkish and every page is translated to English ([`docs/i18n.md`](docs/i18n.md)). `CHANGELOG.md`
 and most of `docs/` are in English; code comments are mostly Turkish.
 
 ## Local setup

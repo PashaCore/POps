@@ -2,8 +2,8 @@
 
 The panel is a set of PHP pages in `Dashboard/`. PHP handles sign-in and page access; everything else is done in
 the browser with calls to the backend API (`/api/…`) and the panel WebSocket (`/ws/panel`) on the panel's own
-origin. The interface is in Turkish, and most pages can also be shown in English (see the sidebar below); page and
-button names below are quoted as they appear in Turkish.
+origin. Every page can be shown in Turkish or English (see the sidebar below); page and button names below are
+quoted as they appear in Turkish.
 
 ## Signing in
 
@@ -16,7 +16,8 @@ the account is changed or deleted; any `401` from the API returns you to the log
 When a superadmin has set them (**Ayarlar → Genel → Kurum**), the sign-in page shows the organisation's name and
 logo instead of "POps", with a small "POps · Pasha Core" line under the form. On a public demo server
 (`POPS_DEMO_LOGIN`, [`configuration.md`](configuration.md#public-demo-read-only-accounts)) it also shows the demo
-account.
+account. **Türkçe / English** under the form switches the language; until one is chosen, the page follows the
+browser's language.
 
 ## Addresses
 
@@ -66,7 +67,7 @@ the menu button).
   while new PCs have no lab.
 - At the bottom: the job center, **Bildirimler** and the signed-in user with the sign-out button.
 - **Türkçe / English** under the user switches the interface language for this browser (kept for a year in the
-  `pops_lang` cookie). The English interface is being completed page by page; untranslated text stays Turkish
+  `pops_lang` cookie). Text without an English entry, such as some server messages, stays Turkish
   ([`i18n.md`](i18n.md)).
 
 **Job center.** As soon as this browser tab has sent something to PCs (a power command, a message, a command, a

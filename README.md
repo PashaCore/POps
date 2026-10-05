@@ -34,9 +34,8 @@
 > and the risks that remain, and [`ROADMAP.md`](ROADMAP.md) for what comes next.
 
 > [!NOTE]
-> The panel is in **Turkish** and **English**, chosen per browser; English covers 10 of the 14 pages so far and the
-> rest is in progress. The documentation, the API and this README are in English; a Turkish README is
-> [here](README.tr.md).
+> Every page of the panel is in **Turkish** and **English**, chosen per browser. The documentation, the API and this
+> README are in English; a Turkish README is [here](README.tr.md).
 
 > [!TIP]
 > **Try it without installing:** a public, read-only demo runs at
@@ -142,7 +141,7 @@ as Veyon; the two can run side by side ([positioning](docs/positioning.md); in T
 | **Retention** | Old event logs, finished tasks and read notifications are deleted on a schedule; the audit chain is kept. Each agent keeps its own log folder to 30 days and 200 MB. |
 | **API for automation** | A versioned `/api/v1` with REST names, API tokens with the viewer or admin role (shown once, stored only as a hash), and the OpenAPI file in the repository ([`docs/api.md`](docs/api.md)). |
 | **Your organisation** | Your organisation's name and logo on the sign-in page (**Ayarlar → Genel → Kurum**). |
-| **Two languages** | Turkish and English, chosen per browser. English covers 10 of the 14 pages; the rest is in progress. |
+| **Two languages** | Every panel page in Turkish and English, chosen per browser; the sign-in page follows the browser's language until you choose. |
 
 ---
 
@@ -332,8 +331,8 @@ Freeze software (Deep Freeze, Shadow Defender) works when the agent is enrolled 
   tags, install [`keys/allowed_signers`](keys/allowed_signers) as `/etc/pops/allowed_signers`
   ([`docs/self-update.md`](docs/self-update.md)).
 - **DNS** is detection and reporting only; blocking is planned.
-- **Panel language:** Turkish and English. Ayarlar, Sistem, Uzak komut and the sign-in page are still Turkish only
-  (in progress), and server messages without an English entry stay Turkish.
+- **Languages:** the panel is in Turkish and English, but server messages without an English entry and the
+  Windows agent's own texts (tray, consent dialogs, lock screen) are Turkish only.
 
 ---
 
@@ -430,11 +429,11 @@ How to run the suites locally: [`docs/testing.md`](docs/testing.md).
 
 ## 🧭 Roadmap
 
-In progress: the rest of the English interface, the server and panel side of Vision v2, and a Linux agent (Pardus
-first). Next: Authenticode code signing through the SignPath Foundation comes first, then an architecture round: a
-full task state machine, signed commands, mTLS, an append-only audit role, lab-scoped permissions, high
-availability, RDP support, a new 5,000-agent run over HTTPS and end-to-end tests on a Windows test machine. The
-whole list, with design notes: [`ROADMAP.md`](ROADMAP.md).
+In progress: the server and panel side of Vision v2, and a Linux agent (Pardus first). Next: Authenticode code
+signing through the SignPath Foundation comes first, then an architecture round: a full task state machine, signed
+commands, mTLS, an append-only audit role, lab-scoped permissions, high availability, RDP support, a new 5,000-agent
+run over HTTPS and end-to-end tests on a Windows test machine. The whole list, with design notes:
+[`ROADMAP.md`](ROADMAP.md).
 
 ---
 
