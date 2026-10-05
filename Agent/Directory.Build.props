@@ -28,9 +28,12 @@
     Nullable: her ürün projesinin csproj'unda <Nullable>enable</Nullable> var (Agent/ dışındaki MSI custom action
     projesi Installer/agent/CustomActions dahil; orada nullable uyarıları ayrıca hata sayılır). Nullable uyarıları da bu
     kapıya girer. Temiz olmayan eski dosyalarda "#nullable disable" satırı vardır (yeniler ilk satırda, eskiler
-    using'lerin altında); bu da .editorconfig gibi bir tabandır ve yalnızca küçülür: dosya temizlenince satırı silin,
-    yeni dosyaya bu satırı koymayın, yeni dosya nullable açısından temiz olmalı. Tabandaki dosyalar (2026-10-05):
-    POps.Agent 37, POps.Shared 9 (KioskPolicies.cs custom action'larda da derlenir), POpsUpdater 2, custom action'lar 1,
+    using'lerin altında); bu da .editorconfig gibi bir tabandır ve yalnızca küçülür: dosya temizlenince satırı ve
+    tools/nullable_baseline.txt'deki yolunu silin, yeni dosyaya bu satırı koymayın, yeni dosya nullable açısından temiz
+    olmalı. CI'ın version işi (tools/check_nullable_baseline.py) listede olmayan bir dosyadaki bu satırı, listede olup
+    silinmiş ya da artık bu satırı taşımayan dosyayı ve <Nullable>enable</Nullable>'ı olmayan ürün projesini hata sayar;
+    proje başına sayıları da yazar. Tabandaki dosyalar (2026-10-05, Worker.cs bölmesinin a0 adımından sonra):
+    POps.Agent 41, POps.Shared 9 (KioskPolicies.cs custom action'larda da derlenir), POpsUpdater 2, custom action'lar 1,
     POpsTray 0, POpsWatchdog 0.
   -->
   <PropertyGroup Condition="'$(MSBuildProjectName)' != 'POps.Tests'">

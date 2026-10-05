@@ -401,6 +401,10 @@ jobs:
         # Belgeler (README, ROADMAP, docs/, sürüm notu) sürümü, Python/PostgreSQL alt sınırını ve ajanın .NET'ini
         # tek kaynaklardan (VERSION, requirements.txt, migrations işi, csproj) farklı söylemesin. setup-python gerekmez.
         run: python3 tools/check_docs_versions.py
+      - name: Nullable baseline only shrinks
+        # Ajanın ürün projelerinde "#nullable disable" taşıyan dosyalar tools/nullable_baseline.txt'deki sabit listeyle
+        # aynı olmalı: yeni dosya nullable açısından temiz olmalı, temizlenen dosyanın satırı listeden silinir.
+        run: python3 tools/check_nullable_baseline.py
 
   migrations:
     name: Migrations (PostgreSQL 13)
