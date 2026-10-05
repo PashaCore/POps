@@ -198,7 +198,7 @@ async def create_ticket(data: PanelTicketInput, auth: dict = Depends(require_adm
     return {"ok": True, "id": rows[0]["id"]}
 
 
-@router.post("/api/tickets/{ticket_id}/update", dependencies=[modules.require("helpdesk")])
+@router.post("/api/tickets/{ticket_id}/update", dependencies=[modules.require("helpdesk")], deprecated=True)
 async def update_ticket(ticket_id: int, data: TicketUpdateInput, auth: dict = Depends(require_admin)):
     rows = await execute_query("SELECT status, priority, assignee FROM tickets WHERE id = $1", (ticket_id,), fetch=True)
     if not rows:

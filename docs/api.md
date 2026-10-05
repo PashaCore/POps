@@ -1,15 +1,46 @@
 # API Reference
 
-The POps backend (FastAPI) serves a REST API under `/api/` and WebSockets under `/ws/`. Behind the
-reverse proxy both are reached on the panel's own origin, for example `https://pops.example.com/api/devices`.
-The backend itself listens on `127.0.0.1:8000` (see [`installation.md`](installation.md)).
+The POps backend (FastAPI) serves a REST API under `/api/v1/` (and, for the panel and existing agents, the same
+endpoints under plain `/api/`) and WebSockets under `/ws/`. Behind the reverse proxy both are reached on the panel's
+own origin, for example `https://pops.example.com/api/v1/devices`. The backend itself listens on `127.0.0.1:8000`
+(see [`installation.md`](installation.md)).
 
-The tables below were produced from the running app's route table (`server.app.routes`: 102 HTTP routes, 3
-WebSocket routes and 2 static mounts) together with the authentication dependency of each route, and each purpose line was checked against the endpoint code in
-`Backend/pops/routers/` and `Backend/system_routes.py`.
+The tables below were produced from the running app's route table (153 HTTP routes, among them the 27 REST names
+listed under [REST names and deprecated paths](#rest-names-and-deprecated-paths), 3 WebSocket routes and the
+`/updates` static mount) together with the authentication dependency of each route, and each purpose line was
+checked against the endpoint code in `Backend/pops/routers/` and `Backend/system_routes.py`. The tables list the
+plain `/api/...` paths; every one of them also answers under `/api/v1/...` (see [Versioning](#versioning)).
 
-There is no interactive API documentation: the app is created with `docs_url=None`, `redoc_url=None` and
-`openapi_url=None`, so `/docs`, `/redoc` and `/openapi.json` are not served.
+## OpenAPI specification
+
+The running server does not serve interactive documentation: the app is created with `docs_url=None`,
+`redoc_url=None` and `openapi_url=None`, so `/docs`, `/redoc` and `/openapi.json` are not served. The specification
+is kept in the repository instead: [`openapi.json`](openapi.json) (OpenAPI 3.1, every path written under
+`/api/v1`, operations tagged by endpoint group, deprecated paths marked `deprecated`). It is generated from the code
+with `python tools/export_openapi.py`; the CI `backend` job runs `python tools/export_openapi.py --check` and fails
+when the committed file differs, so a change to an endpoint or a request model must commit the regenerated file.
+Open it in any OpenAPI viewer or client generator.
+
+## Versioning
+
+- `/api/v1/...` is the stable surface for integrations (scripts, monitoring, other systems). Every HTTP endpoint
+  under `/api/...` also answers under `/api/v1/...`: the same handler, the same permissions, the same response. A
+  small middleware (`Backend/pops/apiversion.py`) rewrites the `/api/v1/` prefix to `/api/` before routing.
+- Plain `/api/...` stays for the panel and existing agents and keeps working; agents are not changed.
+- WebSockets (`/ws/...`), `/download/...`, `/updates/...` and `/metrics` are not versioned.
+- Within v1 changes are additive: new endpoints and new optional request or response fields. Removing or renaming a
+  path or a field, or changing what it means, would need `/api/v2`. Paths marked deprecated keep working for the
+  life of v1.
+- Rate limits and metrics count both forms together: `/api/v1/admin/login` shares the login limit with
+  `/api/admin/login`, and `pops_http_requests_total` labels both with the same route template (no separate `v1`
+  series).
+- Field names are snake_case. The one camelCase request field, `taskSequence` of `POST /api/deploy_orchestration`,
+  is also accepted as `task_sequence`; new clients should use `task_sequence` (the panel still sends
+  `taskSequence`). Sending both is `422`.
+- Uploading large files through `/api/v1` (`POST /api/v1/files`, `/api/v1/upload`,
+  `/api/v1/system/upload-release`) needs the larger request body limit of the reverse proxy on those paths too: the
+  nginx and Apache templates in `Installer/server/` and `docker/` match `^/api/(v1/)?(upload|files|system/upload-release)$`.
+  An existing server keeps its own site configuration: until it is updated, use plain `/api/upload` for files over 8 MB.
 
 ## Authentication
 
@@ -34,13 +65,44 @@ for the permission check is read from the database, not from the token. Editing 
 including a role or password change) increments `token_version`, and deleting a user removes the row, so
 their existing tokens stop working immediately.
 
+### API tokens (automation)
+
+For scripts and other systems that should not use a person's login. A superadmin creates them in the panel
+(**Ayarlar → Güvenlik → API jetonları**) or with `POST /api/v1/tokens`; see [Automation](#automation).
+
+- **Format:** `pops_` followed by 43 URL-safe characters (32 random bytes). The token is returned **once**, in the
+  reply to its creation. The server stores only its SHA-256 hash and the first 8 characters after `pops_`
+  (`token_prefix`, to recognise it in lists).
+- **Sending it:** `Authorization: Bearer pops_...`. It is not accepted in the `pops_jwt` cookie. Because it is not a
+  cookie, a request with a token needs no `X-Requested-With` header; cookie sessions still do.
+- **Role `viewer`:** `GET` and `HEAD` requests on everything a viewer may read; any other method is `403`, even on
+  endpoints that only read (`POST /api/tasks/status`; use `GET /api/v1/tasks`).
+- **Role `admin`:** what an admin can do in the panel, except the endpoints below. A token can never be
+  `superadmin`.
+- **Never reachable with a token (`403`):** every superadmin endpoint (users, tokens, releases and agent updates,
+  enrollment, enforcement, capabilities, modules, self-update, notification settings, branding, retention, audit
+  verification); the user list and the 2FA endpoints (`require_user_session`, `require_admin_session`); remote
+  control and screen access (`/api/audit/session/start|end`, `/api/thumbnail/{pc_name}`, `/api/remote_input`,
+  `/api/stream/stop`), which stay tied to a person's panel session. `/ws/panel` accepts only the panel cookie.
+- **Expiry and revocation** are checked against the database on every request: a revoked or expired token gets `401`
+  at once. `last_used_at` is written at most once a minute per token.
+- **Accountability:** actions done with a token are recorded as `token:<name>`: `tasks.created_by`, the `by` / `admin`
+  fields of the hash-chained audit log, `actor_id` of the event log. Creating and revoking a token are audit-logged
+  (`api_token_created`, `api_token_revoked`). Token names are unique among all tokens, revoked ones included, and
+  user names cannot start with `token:`, so `token:<name>` always means one token.
+
 ### Roles
 
 | Dependency | Who passes | Used for |
 | --- | --- | --- |
-| `require_auth` | any signed-in user (`viewer`, `admin`, `superadmin`) | reading data (including reports, licences and CSV exports), own 2FA settings |
-| `require_admin` | `admin`, `superadmin` | day-to-day operations (devices, labs, tasks and scheduled tasks, remote control, policies, Windows Update commands, licence definitions, helpdesk tickets, the notification list, release notes) |
-| `require_superadmin` | `superadmin` | users, releases and agent updates, enrollment, enforcement, capabilities, self-update, audit verification, notification settings |
+| `require_auth` | any signed-in user (`viewer`, `admin`, `superadmin`) or API token | reading data (including reports, licences and CSV exports) |
+| `require_admin` | `admin`, `superadmin` (users or `admin` API tokens) | day-to-day operations (devices, labs, tasks and scheduled tasks, quarantine, policies, Windows Update commands, licence definitions, helpdesk tickets, the notification list, release notes) |
+| `require_superadmin` | `superadmin` user (never an API token) | users, API tokens, releases and agent updates, enrollment, enforcement, capabilities, self-update, audit verification, notification settings |
+| `require_user_session` | any signed-in user (login JWT or panel cookie), not an API token | own 2FA settings |
+| `require_admin_session` | `admin`, `superadmin` user, not an API token | the user list, remote-control sessions, screen previews, remote input |
+
+API tokens have the role `viewer` or `admin` and pass `require_auth` and (as `admin`) `require_admin`; see
+[API tokens](#api-tokens-automation).
 
 Missing or invalid token: `401`. Valid token but insufficient role, or a failed CSRF check: `403`.
 
@@ -88,14 +150,22 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | --- | --- | --- | --- |
 | POST | `/api/admin/login` | none | Password login (bcrypt hashes only). Returns a token, or a 2FA challenge. Rate-limited. |
 | POST | `/api/admin/login/totp` | none | Second login step: `{challenge, otp}`. Rate-limited. |
-| GET | `/api/admin/2fa/status` | require_auth | Whether 2FA is enabled for the current user. |
-| POST | `/api/admin/2fa/setup` | require_auth | Creates a new TOTP secret (not yet enforced); returns `secret` and an `otpauth://` URI. `400` if 2FA is already on. |
-| POST | `/api/admin/2fa/enable` | require_auth | `{otp}`: confirms a code and turns 2FA on. |
-| POST | `/api/admin/2fa/disable` | require_auth | `{otp}`: turns 2FA off; a valid code is required while it is on. |
-| GET | `/api/admin/users` | require_admin | Lists users (id, username, role, last login, permissions). |
+| GET | `/api/admin/2fa/status` | require_user_session | Whether 2FA is enabled for the current user. |
+| POST | `/api/admin/2fa/setup` | require_user_session | Creates a new TOTP secret (not yet enforced); returns `secret` and an `otpauth://` URI. `400` if 2FA is already on. |
+| POST | `/api/admin/2fa/enable` | require_user_session | `{otp}`: confirms a code and turns 2FA on. |
+| POST | `/api/admin/2fa/disable` | require_user_session | `{otp}`: turns 2FA off; a valid code is required while it is on. |
+| GET | `/api/admin/users` | require_admin_session | Lists users (id, username, role, last login, permissions). |
 | POST | `/api/admin/users` | require_superadmin | `{username, password, role, permissions}`. Roles: `superadmin`, `admin`, `viewer`; `permissions` is a JSON array string. `409` if the name exists. |
 | PUT | `/api/admin/users/{user_id}` | require_superadmin | Updates name, role, permissions and optionally password; invalidates the user's tokens. The last superadmin cannot be demoted. |
 | DELETE | `/api/admin/users/{user_id}` | require_superadmin | Deletes a user. You cannot delete yourself or the last superadmin. |
+
+### API tokens
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/tokens` | require_superadmin | All tokens, newest first (at most 500): `id`, `name`, `role`, `token_prefix`, `created_by`, `created_at`, `expires_at`, `last_used_at`, `revoked_at` and `state` (`active`, `expired`, `revoked`). Never the token itself. |
+| POST | `/api/tokens` | require_superadmin | `{name, role: "viewer" \| "admin", expires_days?}`: `expires_days` 1–3650, omitted or `null` for no expiry. The name has 1–64 letters, digits, spaces, `.`, `_` or `-` (`400` otherwise) and is unique among all tokens, revoked ones included (`409`). Returns `token` (**only here**) and the stored fields. An unknown field or role `superadmin` is `422`. Audit-logged (`api_token_created`). |
+| DELETE | `/api/tokens/{token_id}` | require_superadmin | Revokes the token (`revoked_at`); it stops working at once and stays in the list. `already_revoked: true` if it was revoked before; `404` for an unknown id. Audit-logged (`api_token_revoked`). |
 
 ### Devices and labs
 
@@ -106,52 +176,52 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 | DELETE | `/api/devices/{pc_name}` | require_admin | Deletes the device, its hardware and software inventory, its Windows Update status, its `agent_logs_v2` rows, its version row and its **device secret**, and closes its socket (code `4000`). |
 | GET | `/api/inventory` | require_auth | Hardware inventory of all devices (`hw_inventory`). |
 | GET | `/api/logs` | require_auth | Latest event log entries (`agent_logs_v2`), newest first. `?limit=` (default 1000, at most 20000), optional `pc` (device ID), `since` and `until` (`YYYY-MM-DD`, both days included; `422` if malformed). |
-| POST | `/api/rename_device` | require_admin | `{pc_name, display_name}`: sets the display name. |
-| POST | `/api/move_pc` | require_admin | `{pc_name, new_lab}`. |
-| POST | `/api/move_pcs` | require_admin | `{pc_names: [...], new_lab}`. |
-| GET | `/api/custom_labs` | require_auth | Names of the labs created in the panel. |
-| POST | `/api/create_lab` | require_admin | `{lab_name}`. |
-| POST | `/api/rename_lab` | require_admin | `{old_name, new_name}`; moves devices, the seating layout and task records in one transaction. |
-| POST | `/api/delete_lab` | require_admin | `{lab_name}`; its devices go back to `Atanmamis_Cihazlar` (unassigned). |
+| POST | `/api/rename_device` | require_admin | `{pc_name, display_name}`: sets the display name. **Deprecated:** `PATCH /api/v1/devices/{pc_name}`. |
+| POST | `/api/move_pc` | require_admin | `{pc_name, new_lab}`. **Deprecated:** `POST /api/v1/devices/move`. |
+| POST | `/api/move_pcs` | require_admin | `{pc_names: [...], new_lab}`. **Deprecated:** `POST /api/v1/devices/move`. |
+| GET | `/api/custom_labs` | require_auth | Names of the labs created in the panel. **Deprecated:** `GET /api/v1/labs`. |
+| POST | `/api/create_lab` | require_admin | `{lab_name}`. **Deprecated:** `POST /api/v1/labs`. |
+| POST | `/api/rename_lab` | require_admin | `{old_name, new_name}`; moves devices, the seating layout and task records in one transaction. **Deprecated:** `PATCH /api/v1/labs/{lab_name}`. |
+| POST | `/api/delete_lab` | require_admin | `{lab_name}`; its devices go back to `Atanmamis_Cihazlar` (unassigned). **Deprecated:** `DELETE /api/v1/labs/{lab_name}`. |
 | GET | `/api/lab_settings` | require_auth | Per lab: main PC and seating layout JSON. |
-| POST | `/api/set_main_pc` | require_admin | `{lab_name, pc_name}`; sets the lab's main PC, or clears it if it is already that PC. |
-| POST | `/api/save_lab_layout` | require_admin | `{lab_name, layout_json}`. |
-| POST | `/api/set_auto_enroll` | require_admin | `{target_lab, expire_date: "YYYY-MM-DD"}`. Devices that connect for the first time on or before that date go into `target_lab`; an enrollment token's lab takes precedence. Stored as `auto_enroll_lab` and written to the audit log. `400` for an invalid date or an empty lab. |
+| POST | `/api/set_main_pc` | require_admin | `{lab_name, pc_name}`; sets the lab's main PC, or clears it if it is already that PC. **Deprecated:** `PUT` / `DELETE /api/v1/labs/{lab_name}/main-pc` (no toggle). |
+| POST | `/api/save_lab_layout` | require_admin | `{lab_name, layout_json}`. **Deprecated:** `PUT /api/v1/labs/{lab_name}/layout`. |
+| POST | `/api/set_auto_enroll` | require_admin | **Deprecated:** `PUT /api/v1/settings/auto-enroll`. `{target_lab, expire_date: "YYYY-MM-DD"}`. Devices that connect for the first time on or before that date go into `target_lab`; an enrollment token's lab takes precedence. Stored as `auto_enroll_lab` and written to the audit log. `400` for an invalid date or an empty lab. |
 
 ### Wake-on-LAN
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/wake_pc/{pc_name}` | require_admin | Sends a magic packet to the device's MAC (from its inventory) and asks one online agent in the same lab to send one too. |
-| POST | `/api/wake_lab/{lab_name}` | require_admin | Same for every device in the lab; returns `woken_pcs`, the number of devices a magic packet was **sent** to. Wake-on-LAN has no acknowledgement: whether a PC started shows only when its agent connects. |
-| POST | `/api/wake_all` | require_admin | Same for every device with a known MAC. |
+| POST | `/api/wake_pc/{pc_name}` | require_admin | **Deprecated:** `POST /api/v1/devices/{pc_name}/wake`. Sends a magic packet to the device's MAC (from its inventory) and asks one online agent in the same lab to send one too. |
+| POST | `/api/wake_lab/{lab_name}` | require_admin | **Deprecated:** `POST /api/v1/labs/{lab_name}/wake`. Same for every device in the lab; returns `woken_pcs`, the number of devices a magic packet was **sent** to. Wake-on-LAN has no acknowledgement: whether a PC started shows only when its agent connects. |
+| POST | `/api/wake_all` | require_admin | Same for every device with a known MAC. **Deprecated:** `POST /api/v1/devices/wake`. |
 
 ### Tasks, deployment and packages
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/deploy_orchestration` | require_admin | `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], taskSequence: [{name, type, command}], title?, source?, reason?}`. Queues one task per target and step in one transaction, recording the requesting user, then starts the queue. `title` (at most 200 characters), `source` (the panel page the request comes from, at most 40) and `reason` (at most 500) are optional; they are stored on every created task together with the caller's IP address and a `batch_id` shared by the tasks of the request. A task's title is the step's `name`, or `title` when the step has none. Returns `created` (number of tasks) and `task_ids`. The same request from the same user within 5 seconds (double click, retry) creates nothing and returns `duplicate: true`. `target_mode` is not case-sensitive (`"lab"` is `LAB`). `422` for an unknown `target_mode`, a field the endpoint does not know (also inside `taskSequence`), or a PC ID that is not registered (nothing is created). |
+| POST | `/api/deploy_orchestration` | require_admin | **Deprecated:** `POST /api/v1/tasks` (same body). `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], task_sequence: [{name, type, command}], title?, source?, reason?}` (`taskSequence` is accepted too; not both). Queues one task per target and step in one transaction, recording the requesting user, then starts the queue. `title` (at most 200 characters), `source` (the panel page the request comes from, at most 40) and `reason` (at most 500) are optional; they are stored on every created task together with the caller's IP address and a `batch_id` shared by the tasks of the request. A task's title is the step's `name`, or `title` when the step has none. Returns `created` (number of tasks) and `task_ids`. The same request from the same user within 5 seconds (double click, retry) creates nothing and returns `duplicate: true`. `target_mode` is not case-sensitive (`"lab"` is `LAB`). `422` for an unknown `target_mode`, a field the endpoint does not know (also inside `task_sequence`), or a PC ID that is not registered (nothing is created). |
 | GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). Besides the queue columns each row has `title`, `source`, `reason`, `client_ip` and `batch_id` (empty on tasks created before migration `0019`); the panel groups the tasks of one `batch_id` into one job. |
 | POST | `/api/tasks/status` | require_auth | `{ids: [...]}` (at most 5000): `{"items": [{id, target_pc, target_lab, status, exit_code, dispatched_at}]}` for the tasks that still exist. The panel's job center polls it for the progress of what was sent. |
 | POST | `/api/tasks/action` | require_admin | `{action: CANCEL \| RETRY \| PAUSE \| RESUME, target_mode: TASK \| LAB \| PC \| ALL, target_id}`. RETRY opens a **new** task for each finished task (`retry_of` = the old one) unless a retry of it is still pending or running; the old task keeps its result. A retry keeps the title and reason, gets `source` `tasks` and a new `batch_id`, and the reply lists `task_ids`. |
-| POST | `/api/flush_queue` | require_admin | Deletes all task records; the deletion (who, how many) is written to the hash-chained audit log first. |
-| GET | `/api/get_concurrent_limit` | require_auth | Current `concurrent_limit` (default 5). |
-| POST | `/api/set_concurrent_limit` | require_admin | `{limit}` (0–10000): how many devices may run a task at the same time; `0` means no limit. A negative value is refused (`422`). |
-| POST | `/api/upload` | require_admin | Multipart `file`. Stored under `Backend/storage` with a sanitised name. Returns `sig` (and `url`) for the signed download link and the file's `sha256`. |
+| POST | `/api/flush_queue` | require_admin | **Deprecated:** `DELETE /api/v1/tasks`. Deletes all task records; the deletion (who, how many) is written to the hash-chained audit log first. |
+| GET | `/api/get_concurrent_limit` | require_auth | Current `concurrent_limit` (default 5). **Deprecated:** `GET /api/v1/settings/task-concurrency`. |
+| POST | `/api/set_concurrent_limit` | require_admin | **Deprecated:** `PUT /api/v1/settings/task-concurrency`. `{limit}` (0–10000): how many devices may run a task at the same time; `0` means no limit. A negative value is refused (`422`). |
+| POST | `/api/upload` | require_admin | **Deprecated:** `POST /api/v1/files`. Multipart `file`. Stored under `Backend/storage` with a sanitised name. Returns `sig` (and `url`) for the signed download link and the file's `sha256`. |
 | GET | `/api/packages` | require_auth | Saved package definitions of the **Dağıtım** page. |
-| POST | `/api/add_package` | require_admin | `{id, name, type, meta, command, icon, color}`; insert or update. |
-| POST | `/api/delete_package` | require_admin | `{id}`. |
+| POST | `/api/add_package` | require_admin | `{id, name, type, meta, command, icon, color}`; insert or update. **Deprecated:** `POST /api/v1/packages`. |
+| POST | `/api/delete_package` | require_admin | `{id}`. **Deprecated:** `DELETE /api/v1/packages/{package_id}`. |
 | GET | `/api/storage` | require_auth | Size of uploaded files and update packages, event log table size and a 7-day log trend. |
 
 ### Remote control and Vision
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/audit/session/start` | require_admin | `{target_pc, reason, is_mandatory}`. Opens a recorded remote-control session and sends `start_vision_session` to the agent. A mandatory session needs a reason. Returns `session_id` and `countdown_seconds`. |
-| POST | `/api/audit/session/end` | require_admin | `{session_id, status}`: closes the session and withdraws the session grant. |
-| GET | `/api/thumbnail/{pc_name}` | require_admin | Asks the agent for a screen preview and waits up to 5 seconds. |
-| POST | `/api/remote_input` | require_admin | `{device, input_type, ...fields}`: `input_type` is `mouse_move`, `mouse_click`, `mouse_wheel` or `keyboard`; fields (`x`, `y`, `relative`, `button`, `is_down`, `double`, `delta`, `horizontal`, `key`, `code`, `ctrl`, `alt`, `shift`, `meta`, `altgr`) go at the top level, as the panel sends them (the older `data: {...}` object is still accepted). Only these fields are forwarded. Refused with `403` unless the caller has an open session for that device. |
-| POST | `/api/stream/stop` | require_admin | `{pc_name}`: sends `stop_stream` to the agent. (A `GET` before 0.1.14.) |
+| POST | `/api/audit/session/start` | require_admin_session | `{target_pc, reason, is_mandatory}`. Opens a recorded remote-control session and sends `start_vision_session` to the agent. A mandatory session needs a reason. Returns `session_id` and `countdown_seconds`. |
+| POST | `/api/audit/session/end` | require_admin_session | `{session_id, status}`: closes the session and withdraws the session grant. |
+| GET | `/api/thumbnail/{pc_name}` | require_admin_session | Asks the agent for a screen preview and waits up to 5 seconds. |
+| POST | `/api/remote_input` | require_admin_session | `{device, input_type, ...fields}`: `input_type` is `mouse_move`, `mouse_click`, `mouse_wheel` or `keyboard`; fields (`x`, `y`, `relative`, `button`, `is_down`, `double`, `delta`, `horizontal`, `key`, `code`, `ctrl`, `alt`, `shift`, `meta`, `altgr`) go at the top level, as the panel sends them (the older `data: {...}` object is still accepted). Only these fields are forwarded. Refused with `403` unless the caller has an open session for that device. |
+| POST | `/api/stream/stop` | require_admin_session | `{pc_name}`: sends `stop_stream` to the agent. (A `GET` before 0.1.14.) |
 
 See [`vision.md`](vision.md) for the session rules.
 
@@ -159,16 +229,16 @@ See [`vision.md`](vision.md) for the session rules.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/security/lockdown` | require_admin | `{target_pc, reason}`: marks the device quarantined and sends `lockdown`. Logged to both audit tables. |
-| POST | `/api/security/unlock` | require_admin | `{target_pc, reason}`: clears quarantine and sends `unlock`. |
-| POST | `/api/security/bypass_token/{pc_name}` | require_admin | The device's next offline bypass code for today (per-device key; the legacy `BYPASS_SECRET` code for older agents). Each request returns the next of up to 10 daily codes (`n`), because 0.1.13+ agents accept each code once. Logged, `Cache-Control: no-store`. |
+| POST | `/api/security/lockdown` | require_admin | **Deprecated:** `POST /api/v1/devices/{pc_name}/quarantine` `{reason}`. `{target_pc, reason}`: marks the device quarantined and sends `lockdown`. Logged to both audit tables. |
+| POST | `/api/security/unlock` | require_admin | `{target_pc, reason}`: clears quarantine and sends `unlock`. **Deprecated:** `DELETE /api/v1/devices/{pc_name}/quarantine` `{reason}`. |
+| POST | `/api/security/bypass_token/{pc_name}` | require_admin | **Deprecated:** `POST /api/v1/devices/{pc_name}/bypass-code`. The device's next offline bypass code for today (per-device key; the legacy `BYPASS_SECRET` code for older agents). Each request returns the next of up to 10 daily codes (`n`), because 0.1.13+ agents accept each code once. Logged, `Cache-Control: no-store`. |
 
 ### Agent policies
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/agent_policies` | none | Fair-use text, DNS categories, `auto_quarantine`, `quarantine_threshold` and `dns_domains`. Read by agents; contains no secrets. An agent that sends `X-Agent-Id` and `X-Agent-Secret` also gets `modules` (`{module_id: bool}` for its lab) and the DNS settings of its lab; without them the organisation-wide setting applies. If DNS policy is off, `dns_domains` is `{}`, `dns_categories` `[]` and `auto_quarantine` `false`; if quarantine is off, `auto_quarantine` is `false`. |
-| POST | `/api/agent_policies` | require_admin | Saves the policy object above. `dns_domains` is cleaned (lower case, no scheme or path, no leading `*.`, no duplicates, at most 5000 per category); if the field is omitted, the stored lists are kept. |
+| POST | `/api/agent_policies` | require_admin | **Deprecated:** `PUT /api/v1/agent_policies`. Saves the policy object above. `dns_domains` is cleaned (lower case, no scheme or path, no leading `*.`, no duplicates, at most 5000 per category); if the field is omitted, the stored lists are kept. |
 
 ### Agent-facing HTTP endpoints
 
@@ -211,7 +281,7 @@ not get a second one.
 | --- | --- | --- | --- |
 | GET | `/api/scheduled_tasks` | require_admin | All scheduled tasks with `next_run`, `last_run`, `last_result`, plus the current `server_time`. |
 | POST | `/api/scheduled_tasks` | require_admin | `{name, command, target_mode: ALL \| LAB \| PC, targets, schedule_type: once \| daily \| weekly, run_at?, time_of_day?, weekdays?, enabled}`. `once` needs a future `run_at` (`YYYY-MM-DDTHH:MM`); `daily` and `weekly` need `time_of_day` (`HH:MM`); `weekly` needs `weekdays` (1 = Monday … 7 = Sunday). Name up to 100, command up to 4000 characters. |
-| POST | `/api/scheduled_tasks/{task_id}/toggle` | require_admin | `{enabled}`: pause or resume. A one-time task whose time has passed cannot be resumed (`400`). |
+| POST | `/api/scheduled_tasks/{task_id}/toggle` | require_admin | **Deprecated:** `PATCH /api/v1/scheduled_tasks/{task_id}`. `{enabled}`: pause or resume. A one-time task whose time has passed cannot be resumed (`400`). |
 | POST | `/api/scheduled_tasks/{task_id}/run` | require_admin | Queues the command once, now; the caller is recorded as the requester. Returns `queued` (number of tasks). |
 | DELETE | `/api/scheduled_tasks/{task_id}` | require_admin | Deletes the scheduled task. Already queued tasks are not affected. |
 
@@ -264,7 +334,7 @@ contains that text (both case-insensitive). Every change is written to the hash-
 | GET | `/api/licenses` | require_auth | All licences with `installed`, `free` and `state` (`ok`, `over`, `expiring` within 30 days, `expired`), plus a `summary` count per state. |
 | GET | `/api/licenses/{license_id}/devices` | require_auth | Devices with a matching program, and the program name and version. |
 | POST | `/api/licenses` | require_admin | `{name, match_pattern, publisher?, seats?, license_type: per_device \| site \| subscription, expires_at?: "YYYY-MM-DD", notes?}`. `seats` empty means unlimited. `match_pattern` is 2–200 characters of plain text; `%`, `_` and `\` are rejected in the pattern and the publisher filter. |
-| POST | `/api/licenses/{license_id}` | require_admin | Replaces a licence definition (same body). |
+| POST | `/api/licenses/{license_id}` | require_admin | Replaces a licence definition (same body). **Deprecated:** `PUT /api/v1/licenses/{license_id}`. |
 | DELETE | `/api/licenses/{license_id}` | require_admin | Deletes a licence definition. |
 
 Once a day the scheduler raises a notification for each licence that is over its seats (high), expired (high) or
@@ -283,7 +353,7 @@ priorities: `low`, `normal`, `high`.
 | GET | `/api/tickets` | require_admin | Ticket list: `?status=active` (default: open, in progress, waiting) or one status, `?q=` searches subject, text, reporter and host name; at most 300, high priority first; plus counts per status. |
 | GET | `/api/tickets/{ticket_id}` | require_admin | One ticket with the device's current state and the full thread, internal notes included. |
 | POST | `/api/tickets` | require_admin | `{subject, body?, category?, priority?, pc_name?, reporter?}`: opens a ticket from the panel (reporter defaults to the current user). |
-| POST | `/api/tickets/{ticket_id}/update` | require_admin | `{status?, priority?, assignee?}`. Each change is added to the thread as an internal note. |
+| POST | `/api/tickets/{ticket_id}/update` | require_admin | **Deprecated:** `PATCH /api/v1/tickets/{ticket_id}`. `{status?, priority?, assignee?}`. Each change is added to the thread as an internal note. |
 | POST | `/api/tickets/{ticket_id}/messages` | require_admin | `{body, internal}`. A reply (`internal: false`) to an `open` ticket sets it to `waiting`; an internal note does not change the status. |
 
 The agent endpoints require a valid `X-Agent-Id` + `X-Agent-Secret` for that device even while enforcement is
@@ -352,6 +422,61 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | --- | --- | --- |
 | `/download/<name>?sig=…` | `Backend/storage` | Files uploaded with `/api/upload`, only with the signed link (no login, because agents download packages from here; a wrong or missing signature gets 404). |
 | `/updates/<name>` | `Backend/updates` | The agent MSI copied there by `deploy-update`. Served without authentication; agents check its size and SHA-256 against the signed manifest. |
+
+## REST names and deprecated paths
+
+Endpoints whose path is an action (`/api/create_lab`, `/api/move_pcs`, `/api/set_concurrent_limit` ...) have a
+resource-style name under `/api/v1`. Each REST name calls the same handler as the old path (`Backend/pops/routers/rest.py`):
+same checks, same module gating, same response. The old paths keep working for the panel and existing scripts;
+they are marked deprecated here and in [`openapi.json`](openapi.json). Like every route, the REST names also answer
+without the version prefix (`/api/labs`), but integrations should use `/api/v1`.
+
+A lab name in a path is URL-encoded (spaces as `%20`, Turkish letters as UTF-8). A name with a slash, common for
+classes such as `9/A`, is written with the slash as it is: `/api/v1/labs/9/A/main-pc`. `9%2FA` works against the
+backend and behind nginx, but Apache refuses an encoded slash with `404` unless `AllowEncodedSlashes` is set, so
+do not rely on it. A lab whose name ends in `/wake`, `/main-pc` or `/layout` can only be changed with the old paths.
+
+| Deprecated path (still works) | REST name | Notes |
+| --- | --- | --- |
+| `GET /api/custom_labs` | `GET /api/v1/labs` | |
+| `POST /api/create_lab` `{lab_name}` | `POST /api/v1/labs` `{lab_name}` | |
+| `POST /api/rename_lab` `{old_name, new_name}` | `PATCH /api/v1/labs/{lab_name}` `{new_name}` | |
+| `POST /api/delete_lab` `{lab_name}` | `DELETE /api/v1/labs/{lab_name}` | |
+| `POST /api/set_main_pc` `{lab_name, pc_name}` | `PUT /api/v1/labs/{lab_name}/main-pc` `{pc_name}` and `DELETE /api/v1/labs/{lab_name}/main-pc` | The old path toggles (the same PC again clears it); `PUT` sets it, every time, and `DELETE` clears it. |
+| `POST /api/save_lab_layout` `{lab_name, layout_json}` | `PUT /api/v1/labs/{lab_name}/layout` `{layout_json}` | |
+| `POST /api/wake_lab/{lab_name}` | `POST /api/v1/labs/{lab_name}/wake` | |
+| `POST /api/move_pc` `{pc_name, new_lab}`, `POST /api/move_pcs` `{pc_names, new_lab}` | `POST /api/v1/devices/move` `{pc_names: [...], new_lab}` | One or many PCs. |
+| `POST /api/rename_device` `{pc_name, display_name}` | `PATCH /api/v1/devices/{pc_name}` `{display_name}` | |
+| `POST /api/wake_pc/{pc_name}` | `POST /api/v1/devices/{pc_name}/wake` | |
+| `POST /api/wake_all` | `POST /api/v1/devices/wake` | |
+| `POST /api/security/lockdown` `{target_pc, reason}` | `POST /api/v1/devices/{pc_name}/quarantine` `{reason}` | |
+| `POST /api/security/unlock` `{target_pc, reason}` | `DELETE /api/v1/devices/{pc_name}/quarantine` `{reason}` | The reason goes in the JSON body. |
+| `POST /api/security/bypass_token/{pc_name}` | `POST /api/v1/devices/{pc_name}/bypass-code` | |
+| `GET /api/get_concurrent_limit` | `GET /api/v1/settings/task-concurrency` | |
+| `POST /api/set_concurrent_limit` `{limit}` | `PUT /api/v1/settings/task-concurrency` `{limit}` | |
+| `POST /api/set_auto_enroll` `{target_lab, expire_date}` | `PUT /api/v1/settings/auto-enroll` `{target_lab, expire_date}` | |
+| `POST /api/deploy_orchestration` | `POST /api/v1/tasks` | Same body; use `task_sequence`. |
+| `POST /api/flush_queue` | `DELETE /api/v1/tasks` | Deletes every task record (audit-logged first). |
+| `POST /api/upload` | `POST /api/v1/files` | Multipart `file`. See the upload size note under [Versioning](#versioning). |
+| `POST /api/add_package` | `POST /api/v1/packages` | Insert or update by `id`. |
+| `POST /api/delete_package` `{id}` | `DELETE /api/v1/packages/{package_id}` | |
+| `POST /api/agent_policies` | `PUT /api/v1/agent_policies` | |
+| `POST /api/scheduled_tasks/{task_id}/toggle` `{enabled}` | `PATCH /api/v1/scheduled_tasks/{task_id}` `{enabled}` | |
+| `POST /api/licenses/{license_id}` | `PUT /api/v1/licenses/{license_id}` | |
+| `POST /api/tickets/{ticket_id}/update` | `PATCH /api/v1/tickets/{ticket_id}` | |
+
+Not renamed, on purpose:
+
+- superadmin endpoints (`/api/system/...`, `/api/modules/{module_id}`, `/api/admin/users...`): panel operations that
+  an API token cannot call;
+- remote control and screen access (`/api/audit/session/*`, `/api/thumbnail/*`, `/api/remote_input`,
+  `/api/stream/stop`): panel session only;
+- the agent endpoints (`/api/auth/*`, `/api/inventory/{pc_name}`, `/api/logs/{pc_name}`, `/api/policy_alert`,
+  `/api/software/{pc_name}`, `/api/patches/{pc_name}`, `/api/tickets/agent/*`, `/api/activity/agent/*`): the agent
+  protocol does not change;
+- actions on a named resource, which are already resource-style: `/api/tasks/action`, `/api/tasks/status`,
+  `/api/patches/scan`, `/api/patches/install`, `/api/notifications/read`, `/api/notifications/clear`,
+  `/api/scheduled_tasks/{task_id}/run`, `/api/tickets/{ticket_id}/messages`.
 
 ## WebSockets
 
@@ -462,6 +587,44 @@ stages; the panel then shows the update as before ("Kuruluyor" until the result)
   `vision_rejected`, `ticket_new` (a ticket opened by an agent); `thumbnail` replies go to admin/superadmin panels only; live `stream_frame`s go only to the
   session holder (see above).
 
+## Automation
+
+1. **Create a token** (superadmin): **Ayarlar → Güvenlik → API jetonları → Jeton oluştur**. Give it a name that says
+   what uses it (it appears in the logs as `token:<name>`), pick **Görüntüleyici** for read-only use (inventory
+   exports, dashboards, monitoring) or **Yönetici** for jobs that change things (queueing commands, moving PCs,
+   quarantine), and a validity in days (empty: no expiry). Copy the token from the dialog: it is not shown again.
+   The same can be done with `POST /api/v1/tokens` from a superadmin's panel session or login JWT.
+2. **Call `/api/v1`** with `Authorization: Bearer <token>`. No cookie, no `X-Requested-With`.
+3. **Revoke** the token when the script is retired or the token may have leaked (trash icon in the list, or
+   `DELETE /api/v1/tokens/{id}`). It stops working at once.
+
+Keep the token in a secret store or an environment variable, not in the script or its repository.
+
+```bash
+export POPS=https://pops.example.com
+export POPS_TOKEN=pops_...            # from Ayarlar → Güvenlik → API jetonları
+
+# Devices (viewer or admin token)
+curl -s "$POPS/api/v1/devices" -H "Authorization: Bearer $POPS_TOKEN"
+
+# Queue a command on one PC (admin token); the task is recorded as created by token:<name>
+curl -s "$POPS/api/v1/tasks" -H "Authorization: Bearer $POPS_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"target_mode": "PC", "targets": ["HW-..."], "source": "api", "reason": "weekly disk check",
+       "task_sequence": [{"name": "Disk", "type": "CMD", "command": "wmic logicaldisk get size,freespace"}]}'
+
+# Follow the returned task_ids
+curl -s "$POPS/api/v1/tasks?limit=50" -H "Authorization: Bearer $POPS_TOKEN"
+
+# Move two PCs into the lab "9/A", then make one of them its main PC (the slash stays a slash in the path)
+curl -s "$POPS/api/v1/devices/move" -H "Authorization: Bearer $POPS_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"pc_names": ["HW-...", "HW-..."], "new_lab": "9/A"}'
+curl -s -X PUT "$POPS/api/v1/labs/9/A/main-pc" -H "Authorization: Bearer $POPS_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"pc_name": "HW-..."}'
+```
+
+A `401` means the token is unknown, expired or revoked; a `403` means its role does not allow the request (a viewer
+token sending anything but `GET`, or an endpoint tokens cannot use).
+
 ## Example
 
 ```bash
@@ -470,7 +633,7 @@ TOKEN=$(curl -s https://pops.example.com/api/admin/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"<password>"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
 
-curl -s https://pops.example.com/api/devices -H "Authorization: Bearer $TOKEN"
+curl -s https://pops.example.com/api/v1/devices -H "Authorization: Bearer $TOKEN"
 
 # Unauthenticated health check (on the server itself)
 curl -s http://127.0.0.1:8000/api/health

@@ -328,3 +328,43 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   0.1.2-alpha) disappear. `<app>/venv` becomes a symbolic link to `venv-py<version>-<id>`. CI runs lint, the
   integration tests and the migrations on 3.12 and the unit tests and import check also on 3.10. Code must not use
   3.11-only features. Startup and shutdown use a lifespan handler, since Starlette 1.0 removed `on_event`.
+
+## D-21 A versioned `/api/v1` with REST names, and API tokens for automation
+
+**Since:** 0.1.22-alpha.
+
+- **Context:** An outside review counted 122 endpoints in mixed styles: RPC paths (`/api/create_lab`,
+  `/api/move_pcs`, `/api/set_concurrent_limit`) next to REST ones (`/api/licenses/{id}`), one camelCase request field
+  (`taskSequence`), no version in the path, no published schema, and no way to automate without a person's login
+  JWT, which expires after 12 hours and carries that person's full role. The panel and the agents in the field call
+  the existing paths and fields, so none of them can change.
+- **Decision:**
+  - Every HTTP route under `/api/...` also answers under `/api/v1/...`. One ASGI middleware
+    (`pops/apiversion.py`) rewrites the prefix before routing, so there is one handler per endpoint, metrics keep
+    the route template as label and the slowapi limit is shared (it counts per handler). `/api/v1` is the stable
+    surface for integrations; plain `/api` stays for the panel and agents. WebSockets are not versioned. Within v1
+    changes are additive; a breaking change needs `/api/v2`.
+  - RPC-style endpoints that an API token can call get REST names (`pops/routers/rest.py`: 27 routes), each calling
+    the old handler or a thin wrapper that turns the path parameter into the old body. The old paths stay and are
+    marked deprecated in the docs and the schema. Superadmin, remote-control and agent endpoints keep their names.
+    The REST name for the main PC does not toggle (`PUT` sets, `DELETE` clears); the old `set_main_pc` still does.
+  - `taskSequence` is also accepted as `task_sequence` (pydantic `validation_alias` with both names; `extra="forbid"`
+    still refuses unknown fields, and sending both is `422`). The schema shows only `task_sequence`.
+  - API tokens (migration `0022`, table `api_tokens`): `pops_` + 32 random bytes, only the SHA-256 hash and an
+    8-character prefix stored, shown once. Role `viewer` (GET only) or `admin`, never `superadmin`. A token is
+    accepted only as `Authorization: Bearer`, so it needs no CSRF header; the cookie keeps the `X-Requested-With`
+    check. Tokens cannot reach superadmin endpoints (users, tokens, releases, enrollment ...), the user list, 2FA,
+    or remote control and screen previews, which stay tied to a person's panel session (D-09). Expiry and
+    revocation are read from the database on every request; `last_used_at` is written at most once a minute. The
+    principal's name is `token:<name>`, so tasks and audit entries name the token; token names are unique for good
+    and user names cannot start with `token:`. Only a superadmin creates, lists and revokes tokens
+    (**Ayarlar → Güvenlik**), and both are audit-logged.
+  - The OpenAPI document is generated from the code into `docs/openapi.json` (paths written under `/api/v1`) by
+    `tools/export_openapi.py`; CI fails when it is stale. The running server still serves no `/docs`,
+    `/redoc` or `/openapi.json`.
+- **Consequences:** Integrations get one documented, versioned surface and a credential that can be scoped,
+  expired and revoked without touching a user. Two names exist for 27 endpoints until a future major version drops
+  the deprecated ones; the panel still uses the old ones. A token has an admin's power over PCs (commands run as
+  SYSTEM), so it must be treated like an admin password; the audit trail shows which token did what. Uploads over
+  8 MB through `/api/v1` need the updated reverse-proxy rule on existing servers. Endpoint and model changes must
+  commit the regenerated schema.

@@ -35,7 +35,8 @@ The endpoint list is in [`api.md`](api.md) and the schema in [`database.md`](dat
 
 `Backend/tests/` holds integration tests that run against a live backend and an empty PostgreSQL database. CI's
 `security` job runs them in this order: `test_security.py`, `test_2fa.py`, `test_agent_authz.py`,
-`test_remote_authz.py`, `test_f4_accountability.py`, `test_features.py`, `test_helpdesk_licenses.py`, `test_ops.py`.
+`test_remote_authz.py`, `test_f4_accountability.py`, `test_features.py`, `test_helpdesk_licenses.py`, `test_ops.py`,
+`test_api_tokens.py`.
 `test_units.py` needs no server. `Backend/tests/run_local.sh` does the same locally: it applies the migrations,
 starts a temporary backend on `127.0.0.1:8099` and runs the scripts (`COVERAGE=1` adds a coverage report). What is
 and is not covered: [`testing.md`](testing.md). Export `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME` (an empty

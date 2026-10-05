@@ -1008,7 +1008,7 @@ def _clean_dns_domains(raw: dict) -> dict:
     return out
 
 
-@router.post("/api/agent_policies")
+@router.post("/api/agent_policies", deprecated=True)
 async def save_policies(data: AgentPoliciesInput, auth: dict = Depends(require_admin)):
     if data.dns_domains is None:
         # Alan adı listesini göndermeyen istemci onu silmesin: kayıtlı listeyi koru

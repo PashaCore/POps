@@ -45,6 +45,7 @@ python tests/test_f4_accountability.py
 python tests/test_features.py
 python tests/test_helpdesk_licenses.py
 python tests/test_ops.py
+python tests/test_api_tokens.py
 if [ "${COVERAGE:-0}" = "1" ]; then
   kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
   python -m coverage combine --rcfile=.coveragerc >/dev/null

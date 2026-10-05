@@ -20,6 +20,7 @@ from slowapi.errors import RateLimitExceeded
 
 from migrate import run_migrations_on
 from pops import db, heartbeats, notify, secretbox, update_tracking
+from pops.apiversion import ApiVersionMiddleware
 from pops.logs import setup_logging, stop_background_writer
 from pops.metrics import RequestContextMiddleware
 from pops.audit import add_audit_log
@@ -52,8 +53,10 @@ from pops.routers import (
     notifications,
     ops,
     reports,
+    rest,
     schedules,
     tasks,
+    tokens,
 )
 from pops.scheduler import scheduler_loop
 from pops.security import _totp_code, create_jwt, limiter, require_admin, require_superadmin
@@ -77,7 +80,8 @@ async def lifespan(_app):
     await shutdown_event()
 
 
-# API şeması ve etkileşimli dokümantasyon (/docs, /redoc, /openapi.json) dışarıya sunulmaz
+# API şeması ve etkileşimli dokümantasyon (/docs, /redoc, /openapi.json) dışarıya sunulmaz; şema depoda durur
+# (docs/openapi.json, tools/export_openapi.py üretir, CI güncel olduğunu denetler)
 app = FastAPI(title="POps Merkez API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
@@ -96,13 +100,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-Agent-Version", "X-Requested-With", "X-Request-ID"],
     expose_headers=["X-Request-ID"],
 )
 
-# En dıştaki kullanıcı middleware'i (en son eklenen): request_id, istek metrikleri, yakalanmayan hata logu
+# request_id, istek metrikleri, yakalanmayan hata logu
 app.add_middleware(RequestContextMiddleware)
+# En dıştaki kullanıcı middleware'i (en son eklenen): /api/v1/... -> /api/...; metrikler ve yönlendirme sürümsüz yolu
+# görür (bkz. pops/apiversion.py)
+app.add_middleware(ApiVersionMiddleware)
 
 
 if not os.path.exists(UPLOAD_DIR):
@@ -227,7 +234,9 @@ async def shutdown_event():
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
-    activity, modules_router, branding,
+    activity, modules_router, branding, tokens,
+    # REST adları (/api/v1) eski uçların işleyicilerini çağırır; eskilerden sonra bağlanır
+    rest,
 )
 for _r in _ROUTERS:
     app.include_router(_r.router)

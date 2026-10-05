@@ -79,6 +79,8 @@ machine and a regression would not be caught by CI.
 | Licences and help desk (panel + agent, throttling) | Tested | `test_helpdesk_licenses.py` |
 | Modules: organisation and lab settings, dependencies, `409` on every module, queue/scheduler/policy enforcement, install profiles | Tested | `test_modules.py`, `test_units.py` |
 | Request ID, `/metrics` access control, diagnostics, overview history | Tested | `test_ops.py`, `test_units.py` |
+| API tokens (superadmin-only management, hash-only storage, viewer GET-only, admin limits, expiry and revocation, `last_used_at` throttle, `token:<name>` in tasks and audit), `/api/v1` and REST names equal to the old paths, `task_sequence`/`taskSequence`, CSRF for cookie sessions, shared rate limit and metric labels | Tested | `test_api_tokens.py`, `test_units.py` |
+| `docs/openapi.json` matches the code | Tested | CI `backend` job (`tools/export_openapi.py --check`) |
 | Migrations from empty and idempotency | Tested | `migrations` job |
 | Server self-update and deploy rollback | Tested (fakes) | `test_deploy.sh`: rollback of code and venv after a failed `pip`, copy or health check; venv rebuilt when its Python is too old (and put back on failure); early stop without a new enough Python; signed release tags. The real systemd path is field-verified (`deploy-status.json` `state=ok`). |
 | Panel pages (PHP) | Not tested | Syntax only; the headless-browser end-to-end setup exists locally but not in CI |

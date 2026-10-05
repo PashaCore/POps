@@ -371,8 +371,8 @@ effect on them. See [`configuration.md`](configuration.md#agent-policy-object).
 
 ### Ayarlar
 
-Three tabs, kept in the address like on **Sistem**: **Kullanıcılar**, **Güvenlik** (two-step verification) and
-**Genel** (organisation, task queue and server connection).
+Three tabs, kept in the address like on **Sistem**: **Kullanıcılar**, **Güvenlik** (two-step verification and, for
+a superadmin, API tokens) and **Genel** (organisation, task queue and server connection).
 
 - **Kullanıcılar**: the users with their role, page access and last sign-in; a click opens the user's panel. A
   superadmin can add users (**Kullanıcı ekle**), edit the role and the pages (**Rolü ve yetkileri düzenle**, the
@@ -382,6 +382,12 @@ Three tabs, kept in the address like on **Sistem**: **Kullanıcılar**, **Güven
 - **İki adımlı doğrulama**: set up (QR code and manual key), enable with a code (**Etkinleştir**), or disable with a
   code, for your own account. 2FA is optional but recommended: an admin or superadmin whose own 2FA is off sees a
   short notice under the title of this page and of **Sistem**; × hides it in that browser for 7 days.
+- **API jetonları** (superadmin only): tokens for scripts and other systems that call `/api/v1` without a person's
+  login ([`api.md`](api.md#automation)). The list shows each token's name, role, prefix (`pops_xxxxxxxx…`), creator,
+  creation time, last use, expiry and state (**Etkin**, **Süresi doldu**, **İptal edildi**). **Jeton oluştur** asks for
+  a name, the role (**Görüntüleyici**: read only; **Yönetici**: daily operations, without superadmin functions, users,
+  tokens and remote screen) and the validity in days (empty: no expiry), then shows the token once with a copy
+  button. The trash icon revokes a token after a confirmation; it stops working at once and stays in the list.
 - **Kurum**: the organisation name and logo shown on the sign-in page instead of "POps" (PNG, JPEG or WebP, at most
   256 KB; SVG is not accepted). A small "POps · Pasha Core" line stays under the form. Only a superadmin changes them;
   every change goes to the audit log.

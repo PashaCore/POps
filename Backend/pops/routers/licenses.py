@@ -119,7 +119,7 @@ async def create_license(data: LicenseInput, auth: dict = Depends(require_admin)
     return {"ok": True, "id": rows[0]["id"]}
 
 
-@router.post("/api/licenses/{license_id}", dependencies=[modules.require("licenses")])
+@router.post("/api/licenses/{license_id}", dependencies=[modules.require("licenses")], deprecated=True)
 async def update_license(license_id: int, data: LicenseInput, auth: dict = Depends(require_admin)):
     name, pattern, publisher, seats, ltype, exp, notes = _validated(data)
     rows = await execute_query(

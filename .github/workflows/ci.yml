@@ -117,6 +117,15 @@ jobs:
         run: python -c "import server, setup_env; print('ok')"
       - name: Unit tests (no server)
         run: python Backend/tests/test_units.py
+      - name: OpenAPI spec is up to date
+        # docs/openapi.json koddan üretilir (çalışan sunucu şemayı sunmaz). Uç ya da istek modeli değişince yeniden
+        # üretilip commit'lenmeli; betik farkı görürse nasıl üretileceğini yazar ve iş kırılır.
+        if: matrix.python == '3.12'
+        run: |
+          python tools/export_openapi.py --check || {
+            echo "::error file=docs/openapi.json::docs/openapi.json is out of date. Regenerate it with 'python tools/export_openapi.py' (Python 3.12, Backend/requirements.txt installed) and commit the result."
+            exit 1
+          }
 
   dashboard:
     name: Dashboard checks
@@ -457,6 +466,7 @@ jobs:
           python Backend/tests/test_features.py
           python Backend/tests/test_helpdesk_licenses.py
           python Backend/tests/test_ops.py
+          python Backend/tests/test_api_tokens.py
       - name: Backend coverage
         # Alt sınır (fail_under) kapsamın fark edilmeden düşmesini engeller; kapsam arttıkça yükseltin.
         # Hangi kritik yolların test edildiği: docs/testing.md

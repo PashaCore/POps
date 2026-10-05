@@ -2,7 +2,7 @@
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 TargetMode = Literal["ALL", "LAB", "PC"]
 
@@ -100,7 +100,9 @@ class TaskSequenceItem(StrictInput):
 class OrchestrationInput(StrictInput):
     target_mode: TargetMode
     targets: List[str]
-    taskSequence: List[TaskSequenceItem]
+    # Yeni istemciler task_sequence yazar; panel ve eski betikler taskSequence gönderir (ikisi de kabul edilir, ikisi
+    # birden gönderilirse 422). Şemada (docs/openapi.json) yalnızca task_sequence görünür.
+    task_sequence: List[TaskSequenceItem] = Field(validation_alias=AliasChoices("task_sequence", "taskSequence"))
     # Bağlam (isteğe bağlı): işin okunur adı, isteğin geldiği panel sayfası ve gerekçe görev kaydında saklanır
     title: Optional[str] = Field(default=None, max_length=200)
     source: Optional[str] = Field(default=None, max_length=40)
@@ -342,3 +344,31 @@ class TicketUpdateInput(BaseModel):
 class TicketMessageInput(BaseModel):
     body: str
     internal: bool = False
+
+
+# ─── REST adları (/api/v1): yol parametresi gövdedeki alanın yerini alır ───────
+class LabRenameInput(StrictInput):
+    new_name: str
+
+
+class DeviceUpdateInput(StrictInput):
+    display_name: str
+
+
+class MainPcInput(StrictInput):
+    pc_name: str
+
+
+class LabLayoutInput(StrictInput):
+    layout_json: str
+
+
+class QuarantineInput(StrictInput):
+    reason: str
+
+
+# ─── API jetonları ────────────────────────────────────────────────────────────
+class ApiTokenCreateInput(StrictInput):
+    name: str = Field(min_length=1, max_length=64)
+    role: Literal["viewer", "admin"]
+    expires_days: Optional[int] = Field(default=None, ge=1, le=3650)   # None = süresiz
