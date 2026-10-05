@@ -35,12 +35,24 @@ namespace POpsAgent
         public static string HealthPath => Path.Combine(DataDir, "health.json");
         public static string ResultPath => Path.Combine(DataDir, "update-result.json");
         public static string IdentityPath => Path.Combine(DataDir, "identity.key");
+        // Updater'ın yazdığı kurulum aşaması (bkz. POps.Shared.UpdateProgressFile)
+        public static string ProgressPath => Path.Combine(DataDir, UpdateProgressFile.FileName);
 
         private static readonly Regex MsiNameRegex = new Regex(@"^POps-Agent-[A-Za-z0-9._-]+-win-x64\.msi$", RegexOptions.Compiled);
         private static readonly Regex Sha256HexRegex = new Regex("^[0-9a-f]{64}$", RegexOptions.Compiled);
         private const long MaxPackageBytes = 512L * 1024 * 1024;
         private static readonly TimeSpan StaleLockAge = TimeSpan.FromMinutes(15);
         private static int _busy;
+        // Hazırlanmakta olan güncellemenin sürümü (manifest doğrulandıktan sonra; ignored_busy'de bildirilir)
+        private static volatile string _preparingVersion;
+
+        // Sunucu bu özelliği server_info'da duyurursa güncelleme aşamaları bildirilir (bkz. ProgressMessage)
+        public const string ProgressFeature = "update_progress";
+        private static readonly Regex VersionTextRegex = new Regex("^[0-9A-Za-z.+_-]{1,64}$", RegexOptions.Compiled);
+
+        // Testler: manifest'i doğrulayan anahtar ve updater'ın başlatılması (dönen: başlatıldı mı)
+        internal static string TrustedKeyOverride { get; set; }
+        internal static Func<string, string, string, bool> LaunchOverride { get; set; }
 
         // Ajanın kendi sürümü, manifest ve VERSION dosyasındaki biçimde ("0.1.2-alpha")
         public static string InstalledVersion => InstalledVersionOverride ?? POpsHelpers.AppVersion.TrimStart('v');
@@ -262,13 +274,54 @@ namespace POpsAgent
         }
 
         // ==========================================
+        // update_progress: update_agent ile update_result arasındaki aşamalar (sunucu 0.1.22+, docs/api.md)
+        // ==========================================
+        // Yalnızca dolu alanlar; "status" alanı ASLA yok (sunucular status'lü her mesajı heartbeat sayar).
+        public static Dictionary<string, object> ProgressMessage(string stage, string toVersion = null, int? attempt = null, int? of = null, string detail = null)
+        {
+            var message = new Dictionary<string, object> { ["type"] = "update_progress", ["stage"] = stage };
+            if (toVersion != null && VersionTextRegex.IsMatch(toVersion)) message["to_version"] = toVersion;
+            bool counts = attempt is >= 1 and <= 100 && (of == null || (of >= attempt && of <= 100));
+            if (counts) message["attempt"] = attempt.Value;
+            if (counts && of != null) message["of"] = of.Value;
+            if (!string.IsNullOrEmpty(detail)) message["detail"] = detail;
+            return message;
+        }
+
+        // Bir update_agent emrinin bağlamı: aşamaları gönderen çağrı (Worker: bağlı soket; testlerde liste) ve ilk ret
+        // nedeni. "rejected" emir başına bir kez, emrin sonunda gider; ardından update_result gelmez.
+        internal sealed class UpdateCommand
+        {
+            public Func<Dictionary<string, object>, Task<bool>> Report { get; init; }
+            public string ToVersion { get; set; }
+            public string RejectReason { get; private set; }
+
+            public void Reject(string reason)
+            {
+                AgentUpdate.Reject(reason);
+                RejectReason ??= reason;
+            }
+
+            // En iyi çaba: soket kapalıysa düşer, saklanmaz
+            public async Task StageAsync(string stage, string detail = null, string toVersion = null)
+            {
+                if (Report == null) return;
+                try { await Report(ProgressMessage(stage, toVersion ?? ToVersion, detail: detail)); }
+                catch (Exception ex) { POpsHelpers.Log("UPDATE", $"Güncelleme aşaması ({stage}) bildirilemedi: {ex.Message}", true); }
+            }
+        }
+
+        // ==========================================
         // update_agent emri
         // ==========================================
-        public static async Task HandleUpdateCommandAsync(JsonElement command, HttpClient http, string serverUrl)
+        public static async Task HandleUpdateCommandAsync(JsonElement command, HttpClient http, string serverUrl,
+            Func<Dictionary<string, object>, Task<bool>> report = null)
         {
+            var update = new UpdateCommand { Report = report };
             if (Interlocked.Exchange(ref _busy, 1) == 1)
             {
                 POpsHelpers.Log("UPDATE", "Güncelleme zaten hazırlanıyor; yeni emir yok sayıldı.");
+                await update.StageAsync("ignored_busy", "başka bir güncelleme hazırlanıyor", _preparingVersion ?? LockedVersion());
                 return;
             }
             string packagePath = null;
@@ -278,43 +331,47 @@ namespace POpsAgent
                 if (IsLockFresh())
                 {
                     POpsHelpers.Log("UPDATE", "Başka bir güncelleme sürüyor (update.lock); emir yok sayıldı.");
+                    await update.StageAsync("ignored_busy", "update.lock taze, güncelleme sürüyor", LockedVersion());
                     return;
                 }
+                await update.StageAsync("received");
 
                 string manifestBase64 = Str(command, "manifest");
                 string signature = Str(command, "manifest_sig");
                 if (manifestBase64 == null || signature == null)
                 {
-                    Reject("emirde imzalı manifest yok; imzasız paket uygulanmaz");
+                    update.Reject("emirde imzalı manifest yok; imzasız paket uygulanmaz");
                     return;
                 }
                 byte[] manifestBytes;
                 try { manifestBytes = Convert.FromBase64String(manifestBase64); }
-                catch (FormatException) { Reject("manifest base64 değil"); return; }
+                catch (FormatException) { update.Reject("manifest base64 değil"); return; }
 
-                if (!ReleaseVerifier.VerifySignature(manifestBytes, signature))
+                if (!ReleaseVerifier.VerifySignature(manifestBytes, signature, TrustedKeyOverride ?? ReleaseVerifier.PublicKeyBase64))
                 {
-                    Reject("manifest imzası geçersiz (kurcalanmış ya da başka anahtarla imzalanmış)");
+                    update.Reject("manifest imzası geçersiz (kurcalanmış ya da başka anahtarla imzalanmış)");
                     return;
                 }
                 ReleaseVerifier.Manifest manifest = ReleaseVerifier.Parse(manifestBytes);
+                update.ToVersion = manifest.Version;
 
                 if (ReleaseVerifier.CompareVersions(manifest.Version, InstalledVersion) <= 0)
                 {
-                    Reject($"manifest sürümü ({manifest.Version}) kurulu sürümden ({InstalledVersion}) yeni değil");
+                    update.Reject($"manifest sürümü ({manifest.Version}) kurulu sürümden ({InstalledVersion}) yeni değil");
                     return;
                 }
+                _preparingVersion = manifest.Version;
 
                 var msis = manifest.Artifacts.Where(a => a.Name != null && MsiNameRegex.IsMatch(a.Name)).ToList();
                 if (msis.Count != 1)
                 {
-                    Reject($"manifest'te tek bir ajan MSI'ı bekleniyordu, {msis.Count} bulundu");
+                    update.Reject($"manifest'te tek bir ajan MSI'ı bekleniyordu, {msis.Count} bulundu");
                     return;
                 }
                 ReleaseVerifier.Artifact msi = msis[0];
                 if (msi.Sha256 == null || !Sha256HexRegex.IsMatch(msi.Sha256) || msi.Size <= 0 || msi.Size > MaxPackageBytes)
                 {
-                    Reject($"{msi.Name}: manifest'teki özet ya da boyut geçersiz");
+                    update.Reject($"{msi.Name}: manifest'teki özet ya da boyut geçersiz");
                     return;
                 }
                 POpsHelpers.Log("UPDATE", $"[GÜVENLİK] İmzalı manifest doğrulandı: {InstalledVersion} -> {manifest.Version} ({msi.Name}, {manifest.Tag}).");
@@ -323,23 +380,39 @@ namespace POpsAgent
                 foreach (string old in Directory.GetFiles(UpdatesDir)) TryDelete(old);
                 packagePath = Path.Combine(UpdatesDir, msi.Name);
                 string url = $"{serverUrl.TrimEnd('/')}/updates/{Uri.EscapeDataString(msi.Name)}";
-                if (!await DownloadVerifiedAsync(http, url, packagePath, msi)) return;
+                if (!await DownloadVerifiedAsync(http, url, packagePath, msi, update)) return;
 
-                launched = LaunchUpdater(packagePath, msi.Sha256, manifest.Version);
+                launched = LaunchOverride != null
+                    ? LaunchOverride(packagePath, msi.Sha256, manifest.Version)
+                    : LaunchUpdater(packagePath, msi.Sha256, manifest.Version, update);
+                if (launched) await update.StageAsync("updater_started");
             }
             catch (Exception ex)
             {
                 POpsHelpers.Log("UPDATE", $"Güncelleme hazırlanamadı: {ex.Message}", true);
+                update.Reject($"Güncelleme hazırlanamadı: {ex.Message}");
             }
             finally
             {
+                if (!launched && update.RejectReason != null) await update.StageAsync("rejected", update.RejectReason);
                 if (!launched && packagePath != null) TryDelete(packagePath);
+                _preparingVersion = null;
                 Interlocked.Exchange(ref _busy, 0);
             }
         }
 
-        internal static async Task<bool> DownloadVerifiedAsync(HttpClient http, string url, string path, ReleaseVerifier.Artifact expected)
+        // update.lock'taki hedef sürüm (yoksa null)
+        private static string LockedVersion() => ReadJson<UpdateRun>(LockPath)?.ToVersion;
+
+        internal static async Task<bool> DownloadVerifiedAsync(HttpClient http, string url, string path, ReleaseVerifier.Artifact expected,
+            UpdateCommand update = null)
         {
+            void Reject(string reason)
+            {
+                if (update != null) update.Reject(reason);
+                else AgentUpdate.Reject(reason);
+            }
+
             POpsHelpers.Log("UPDATE", $"İndiriliyor: {url}");
             string partial = path + ".partial";
             TryDelete(partial);
@@ -369,6 +442,7 @@ namespace POpsAgent
             }
 
             byte[] actual = hash.GetHashAndReset();
+            if (update != null) await update.StageAsync("downloaded");
             if (total != expected.Size || !CryptographicOperations.FixedTimeEquals(actual, Convert.FromHexString(expected.Sha256)))
             {
                 TryDelete(partial);
@@ -377,17 +451,18 @@ namespace POpsAgent
             }
             File.Move(partial, path, true);
             POpsHelpers.Log("UPDATE", "[GÜVENLİK] Paket boyutu ve SHA-256'sı imzalı manifest'le eşleşti.");
+            if (update != null) await update.StageAsync("verified");
             return true;
         }
 
-        private static bool LaunchUpdater(string msiPath, string sha256, string toVersion)
+        private static bool LaunchUpdater(string msiPath, string sha256, string toVersion, UpdateCommand update)
         {
             string installDir = AppContext.BaseDirectory.TrimEnd('\\');
             string[] files;
             try { files = UpdaterFiles(installDir).ToArray(); }
             catch (Exception ex) when (ex is FileNotFoundException || ex is JsonException || ex is InvalidDataException)
             {
-                Reject($"POpsUpdater kopyalanamıyor: {ex.Message}");
+                update.Reject($"POpsUpdater kopyalanamıyor: {ex.Message}");
                 return false;
             }
 
@@ -449,6 +524,27 @@ namespace POpsAgent
                 if (!File.Exists(path)) throw new FileNotFoundException($"{name} kurulum klasöründe yok", path);
                 yield return path;
             }
+        }
+
+        // update.lock tazeyken ve henüz sonuç yokken updater'ın yazdığı aşama; aynı çalışmaya (started_at) ait değilse
+        // ya da okunamıyorsa null. Kilit bayatsa kalan aşama dosyası silinir.
+        public static UpdateProgressRecord PendingProgress()
+        {
+            if (File.Exists(ResultPath)) return null;
+            if (!IsLockFresh())
+            {
+                UpdateProgressFile.Delete(ProgressPath);
+                return null;
+            }
+            UpdateProgressRecord record = UpdateProgressFile.Read(ProgressPath);
+            UpdateRun run = ReadJson<UpdateRun>(LockPath);
+            return record != null && run != null && record.Run == run.StartedAt ? record : null;
+        }
+
+        // Açılışta: güncelleme sürmüyorsa önceki çalışmadan kalan aşama dosyası silinir
+        public static void CleanupStaleProgress()
+        {
+            if (!IsLockFresh()) UpdateProgressFile.Delete(ProgressPath);
         }
 
         public static bool IsLockFresh()

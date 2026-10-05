@@ -245,6 +245,8 @@ namespace POpsAgent
             await Task.Run(InitializeCoreState, stoppingToken);
             _slowInitialization = Task.Run(InitializeSlowState, stoppingToken);
             AgentUpdate.LogLastResult();
+            // Güncelleme sürmüyorsa önceki çalışmadan kalan aşama dosyası silinir
+            AgentUpdate.CleanupStaleProgress();
 
             if (!POpsHelpers.IsSecureServerUrl(_serverUrl))
             {
@@ -313,6 +315,7 @@ namespace POpsAgent
                             await SendCommandMessageAsync(AgentCapabilities.StatusMessage());
                             capabilitiesReported = true;
                         }
+                        await ForwardUpdateProgressAsync();
                         await ReportUpdateResultAsync(stoppingToken);
                         await FlushPendingResultsAsync();
                         await Task.Delay(5000, stoppingToken);
@@ -370,6 +373,35 @@ namespace POpsAgent
         {
             UpdateResults.OnConnected();
             Results.OnConnected();
+            // update_progress: ilk mesaj heartbeat olana kadar gönderilmez; son aşama yeni bağlantıda bir kez daha gider
+            _heartbeatSent = false;
+            _forwardedProgress = null;
+        }
+
+        // Bu bağlantıda ilk heartbeat gitti mi (sunucu cihazı ilk mesajın dna_payload'ından kaydeder)
+        private volatile bool _heartbeatSent;
+        // Bu bağlantıda iletilen son updater aşaması (aşama|deneme|zaman)
+        private string _forwardedProgress;
+
+        internal void OnHeartbeatSent() => _heartbeatSent = true;
+
+        // update_progress: yalnızca sunucu özelliği duyurduysa ve bu bağlantıda heartbeat gittiyse; en iyi çaba (soket
+        // kapalıysa düşer, saklanmaz). Dönen: gönderildi mi.
+        internal async Task<bool> ReportUpdateProgressAsync(Dictionary<string, object> message)
+        {
+            if (!_heartbeatSent || Handshake.Supports(AgentUpdate.ProgressFeature) != true) return false;
+            return await TrySendCommandMessageAsync(message);
+        }
+
+        // Heartbeat döngüsünde: updater'ın yazdığı aşama (installing, waiting_installer) değiştiyse sunucuya iletilir
+        internal async Task ForwardUpdateProgressAsync()
+        {
+            UpdateProgressRecord record = AgentUpdate.PendingProgress();
+            if (record == null) return;
+            string key = $"{record.Stage}|{record.Attempt}|{record.At}";
+            if (key == _forwardedProgress) return;
+            if (await ReportUpdateProgressAsync(AgentUpdate.ProgressMessage(record.Stage, record.ToVersion, record.Attempt, record.Of, record.Detail)))
+                _forwardedProgress = key;
         }
 
         internal void OnCommandChannelConnected()
@@ -978,7 +1010,7 @@ namespace POpsAgent
                 else if (action == "update_agent")
                 {
                     JsonElement command = root.Clone();
-                    _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl));
+                    _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl, ReportUpdateProgressAsync));
                 }
                 else if (action == "wake_peer" && !AgentModules.IsEnabled(AgentModules.Wol)) await DenyCapabilityAsync("wol", action, reason: AgentModules.DisabledReason);
                 else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
@@ -1073,7 +1105,14 @@ namespace POpsAgent
             var bytes = Encoding.UTF8.GetBytes(json);
 
             await _wsCommandLock.WaitAsync(token);
-            try { if (_commandWs != null && _commandWs.State == WebSocketState.Open) await _commandWs.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token); }
+            try
+            {
+                if (_commandWs != null && _commandWs.State == WebSocketState.Open)
+                {
+                    await _commandWs.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
+                    OnHeartbeatSent();
+                }
+            }
             finally { _wsCommandLock.Release(); }
         }
 
