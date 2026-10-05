@@ -74,6 +74,7 @@ def cmd_configure(args) -> int:
 
 
 def cmd_status(args) -> int:
+    _need_root(args)   # ayar ve durum dosyaları yalnızca root'a açık
     p = _paths(args)
     cfg = config.load(p.config_file)
     caps = capabilities.Capabilities(p.capabilities_file, p.capability_state)
@@ -149,6 +150,7 @@ def cmd_capabilities(args) -> int:
 
 
 def cmd_audit_verify(args) -> int:
+    _need_root(args)
     ok, count, problems = audit.verify(_paths(args).audit_log)
     print("%d kayıt; zincir %s." % (count, "sağlam" if ok else "BOZUK"))
     for line in problems[:50]:

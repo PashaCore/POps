@@ -188,7 +188,8 @@ class Agent:
                 pass
         checks = self.init_core()
         checks["loop"] = True
-        if not self.update.startup_skip_health():
+        # Kurucu yeni sürümün sağlığını buradan anlar: yalnızca çekirdek açılış tamamsa yazılır (Windows ile aynı)
+        if not self.update.startup_skip_health() and all(checks.values()):
             self.update.write_health(checks)
         update.prune_packages(self.paths.packages_dir, self.version)
         last = store.read_text(self.paths.update_result)
