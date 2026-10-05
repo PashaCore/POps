@@ -15,7 +15,7 @@ POps is alpha software. Read [`../SECURITY.md`](../SECURITY.md) before you run i
 | Server | Linux with systemd (tested: AlmaLinux/RHEL/Rocky, Debian/Ubuntu), PostgreSQL, Python 3.10+ (3.12 recommended), PHP 8 with `curl`, nginx or Apache, a host name with a TLS certificate. |
 | Managed PCs | Windows 10 or 11, 64-bit. No prerequisites: the .NET runtime comes with the agent. See *Supported systems* below. |
 | Network | Each PC opens outbound connections to the server on port 443 (HTTPS) and keeps two WebSocket connections open (commands and Vision). Proxies and firewalls must allow the WebSocket upgrade (`Upgrade: websocket`) and long-lived connections; TLS inspection must either be off for the POps host or use a CA the agents trust. There is no HTTP polling fallback. Wake-on-LAN needs UDP broadcasts from the server to the lab subnet. |
-| Administrators | A browser. From 0.1.22 the panel loads nothing from third parties; 0.1.21 and earlier load fonts and icons from public CDNs. |
+| Administrators | A browser. From 0.1.22 the panel loads nothing from third parties; 0.1.21 and earlier load fonts and icons from public CDNs. Every page is in Turkish and English (**Türkçe / English** at the bottom of the sidebar and under the sign-in form). |
 
 ### Supported systems
 
@@ -26,8 +26,10 @@ POps is alpha software. Read [`../SECURITY.md`](../SECURITY.md) before you run i
 | One monitor, 100 % scaling | Several monitors and display scaling other than 100 % (remote control coordinates) |
 | Turkish and English keyboard layouts (0.1.14) | Other layouts and input methods |
 
-Windows on ARM, 32-bit Windows, Windows Server as a managed PC, macOS and Linux PCs are not supported. Freeze
-software (Deep Freeze, Shadow Defender) needs care: see [`Agent/README.md`](../Agent/README.md#machines-with-freeze-software).
+Windows on ARM, 32-bit Windows, Windows Server as a managed PC and macOS are not supported. Linux PCs (Pardus 23 and
+later, Debian 12, Ubuntu 24.04) have a first-version agent with inventory, commands and signed updates, but no screen
+view, quarantine or tray: see [`Agent-Linux/README.md`](../Agent-Linux/README.md). Freeze software (Deep Freeze,
+Shadow Defender) needs care: see [`Agent/README.md`](../Agent/README.md#machines-with-freeze-software).
 
 ## How it fits together
 
@@ -53,6 +55,10 @@ To look around first, use the public read-only demo at [demo.pashacore.com.tr](h
    sign-in to running a command on a PC.
 4. **Learn the panel:** [`dashboard.md`](dashboard.md).
 5. **Harden it:** turn on agent-auth enforcement and 2FA, and review [`security.md`](security.md).
+6. **Keep it updated:** read the operator summary at the top of each release in
+   [`../CHANGELOG.md`](../CHANGELOG.md) before updating. On a native server, the deploy takes a database dump before
+   a migration that rewrites tables; from a release before 0.1.23, reinstall `pops-deploy-backend` first
+   ([`deployment.md`](deployment.md)).
 
 ## Terms used in these docs
 
@@ -80,12 +86,16 @@ To look around first, use the public read-only demo at [demo.pashacore.com.tr](h
 | Components and data flows | [`architecture.md`](architecture.md) |
 | Web panel | [`dashboard.md`](dashboard.md) |
 | Windows agent | [`agent.md`](agent.md) |
+| Linux agent (first version) | [`../Agent-Linux/README.md`](../Agent-Linux/README.md) |
+| Several backend workers with Redis (optional) | [`ha.md`](ha.md) |
 | Screen view and remote control | [`vision.md`](vision.md) |
 | Backend code layout | [`backend.md`](backend.md) |
 | REST and WebSocket API | [`api.md`](api.md); OpenAPI file for `/api/v1`: [`openapi.json`](openapi.json) |
 | Agent protocol (JSON Schema, test vectors) | [`protocol/README.md`](protocol/README.md) |
 | Panel languages (Turkish, English) | [`i18n.md`](i18n.md) |
 | Tests and how to run them | [`testing.md`](testing.md) |
+| Fuzzing | [`fuzzing.md`](fuzzing.md) |
+| Design notes: lab peer cache, several workers | [`design/peer-cache.md`](design/peer-cache.md), [`design/worker-split.md`](design/worker-split.md) |
 | Public read-only demo (setup) | [`../deploy/demo/README.md`](../deploy/demo/README.md) |
 | Database and migrations | [`database.md`](database.md) |
 | Security controls | [`security.md`](security.md) |

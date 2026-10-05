@@ -78,10 +78,12 @@ first version has been tested against a simulated GLPI, not yet against a real i
 
 ## Pardus, ETAP and Lider Ahenk
 
-Many Turkish state schools run Pardus, and many classroom interactive boards run Pardus ETAP. POps manages only
-Windows 10 and 11 today, so a Windows-only POps misses those machines. A Linux agent (Pardus first) is planned.
-Integrating with Lider Ahenk, which already manages Pardus machines and ETAP boards centrally, is the other option;
-it has not been evaluated yet. See the [roadmap](../ROADMAP.md#linux-agent-pardus-first).
+Many Turkish state schools run Pardus, and many classroom interactive boards run Pardus ETAP. A first version of
+the Linux agent exists ([`Agent-Linux/`](../Agent-Linux/README.md); Pardus 23 and later, Debian 12, Ubuntu 24.04):
+inventory, installed packages, remote commands and signed updates, but no screen view, quarantine or tray yet, and
+it has not yet run in a Pardus lab. Integrating with Lider Ahenk, which already manages Pardus machines and ETAP
+boards centrally, is another option; it has not been evaluated yet. See the
+[roadmap](../ROADMAP.md#linux-agent-pardus-first).
 
 ## Do not claim
 
@@ -89,5 +91,6 @@ it has not been evaluated yet. See the [roadmap](../ROADMAP.md#linux-agent-pardu
 - Do not put a device/agent count in marketing until it is measured — see `BENCHMARKS.md`.
 - Do not present transparency as only a slogan; it is a concrete, demoable feature set
   (consent banner, per-user activity history, capability policy).
-- Do not claim a Linux or Pardus agent or a Lider Ahenk integration exists; neither does yet. The GLPI export
+- Do not claim a Lider Ahenk integration exists; it does not. The Linux agent exists as a first version: say what
+  it does not do yet (screen view, quarantine, tray) and that it has not run in a Pardus lab yet. The GLPI export
   exists, but say that it has not been tried against a real GLPI yet.

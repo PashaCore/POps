@@ -308,7 +308,6 @@ Whatever the choice, a second maintainer with review and release rights would re
 
 ## Later (not scheduled)
 
-- Active Directory / LDAP sign-in for the panel
 - Policy synchronisation similar to Group Policy
 - Plugin SDK for backend and agent modules
 - macOS agent
