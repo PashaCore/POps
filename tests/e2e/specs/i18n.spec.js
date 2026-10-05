@@ -65,7 +65,7 @@ test.describe('İngilizce arayüz', () => {
     test('Sistem ve Ayarlar sekmeleri İngilizce', async ({ page }) => {
         await page.goto('/system');
         await settled(page);
-        await expect(page.locator('#sysTabs').getByRole('tab')).toHaveText(['Overview', 'Updates', 'Security', 'Health and backup', 'Notifications and retention']);
+        await expect(page.locator('#sysTabs').getByRole('tab')).toHaveText(['Overview', 'Updates', 'Security', 'Health and backup', 'Notifications and retention', 'Modules', 'Integrations']);
         await page.goto('/settings');
         await settled(page);
         await expect(page.locator('#setTabs').getByRole('tab')).toHaveText(['Users', 'Security', 'General']);

@@ -390,6 +390,7 @@ class FakeIdp:
 
         self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", self.port), H)
         sctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        sctx.minimum_version = ssl.TLSVersion.TLSv1_2
         certfile = os.path.join(pki.dir, "idp.pem")
         with open(certfile, "w") as f:
             f.write(pki.cert_pem + pki.key_pem)
