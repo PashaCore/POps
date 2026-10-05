@@ -91,6 +91,7 @@
   "Sunucu zamanında yanıt vermedi.": "The server did not respond in time.",
   "Bu islem icin admin yetkisi gereklidir.": "This action requires the admin role.",
   "Bu islem icin superadmin yetkisi gereklidir.": "This action requires the superadmin role.",
+  "Demo hesabında değiştirilemez": "Can't be changed with a demo account",
   "CSRF doğrulaması başarısız": "CSRF check failed",
   "Token gerekli": "Token required",
   "Geçersiz, süresi dolmuş ya da iptal edilmiş oturum": "Invalid, expired or revoked session",
