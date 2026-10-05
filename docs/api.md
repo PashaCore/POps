@@ -122,7 +122,7 @@ Agents do not use JWTs. They authenticate with headers:
 | `X-Agent-Id` | agent HTTP endpoints | The device's hardware ID (`HW-…`). Checked together with `X-Agent-Secret`. |
 | `X-Agent-Version` | `/ws/agent/…` | Agent version, stored in `agent_versions`. |
 | `X-Agent-Platform` | `/ws/agent/…` (and agent HTTP endpoints) | `linux` from the Linux agent; stored in `clients.platform` on every connection. Windows agents do not send it and count as `windows`. |
-| `X-Agent-Features` | `/ws/agent/…` | Comma-separated features the agent implements (lowercase `[a-z0-9_]`, at most 32), for example `winget`. Stored per connection in `agent_versions.features` (empty when the header is missing); the server sends `winget_install` only to agents that announce `winget`. |
+| `X-Agent-Features` | `/ws/agent/…` | Comma-separated features the agent implements (lowercase `[a-z0-9_]`, at most 32), for example `winget`. Stored per connection in `agent_versions.features` (empty when the header is missing); the server sends `winget_install` only to agents that announce `winget`, `power` only to `power` and `user_message` only to `message`. |
 
 On the agent HTTP endpoints (`agent_http_auth` in the tables below) a valid `X-Agent-Id` + `X-Agent-Secret` pair
 binds the request to that device: writing data for another device returns `403`. Requests without valid
@@ -178,7 +178,9 @@ endpoint, like the other agent endpoints that are limited per device (helpdesk, 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/devices` | require_auth | All devices with status, lab, IP, current user, active window, quarantine flag, agent version, running version, capability state, `platform` (`windows` or `linux`) and `agent_features` (what the agent announced in `X-Agent-Features`, for example `["winget"]`; empty for older agents). Returns a weak `ETag`; `If-None-Match` with it gives `304` without a body. `?since=<version>` returns only what changed since that version. See [Device list: ETag, changes and push](#device-list-etag-changes-and-push). |
-| GET | `/api/devices/{pc_name}/activity` | require_auth | The latest operations on one device, newest first, `?limit=` (default 15, at most 50): its tasks (`kind: "task"` with `id`, `title`, `command` (first 300 characters), `status`, `exit_code`, `at`, `by`, `source`, `reason`, `ip`, `started_at`, `batch_id`, `task_kind`: `"winget"` for a winget step, else `null`) and its remote-control sessions (`kind: "vision"` with `status`, `at`, `ended_at`, `by`, `reason`, `mandatory`), merged. Returns `{"items": [...]}`. The panel shows it as "Son işlemler" in the PC detail panel. |
+| GET | `/api/devices/{pc_name}/activity` | require_auth | The latest operations on one device, newest first, `?limit=` (default 15, at most 50): its tasks (`kind: "task"` with `id`, `title`, `command` (first 300 characters), `status`, `exit_code`, `at`, `by`, `source`, `reason`, `ip`, `started_at`, `batch_id`, `task_kind`: `"winget"` for a winget step, `"power"` / `"user_message"` for a power action or message, else `null`) and its remote-control sessions (`kind: "vision"` with `status`, `at`, `ended_at`, `by`, `reason`, `mandatory`), merged. Returns `{"items": [...]}`. The panel shows it as "Son işlemler" in the PC detail panel. |
+| POST | `/api/devices/power` | require_admin (API tokens allowed) | Power action, see [Power actions and messages](#power-actions-and-messages). |
+| POST | `/api/devices/message` | require_admin_session (no API tokens) | Message to the signed-in user, see [Power actions and messages](#power-actions-and-messages). |
 | DELETE | `/api/devices/{pc_name}` | require_admin | Deletes the device, its hardware and software inventory, its Windows Update status, its `agent_logs_v2` rows, its version row and its **device secret**, and closes its socket (code `4000`). |
 | GET | `/api/inventory` | require_auth | Hardware inventory of all devices (`hw_inventory`). |
 | GET | `/api/logs` | require_auth | Latest event log entries (`agent_logs_v2`), newest first. `?limit=` (default 1000, at most 20000), optional `pc` (device ID), `since` and `until` (`YYYY-MM-DD`, both days included; `422` if malformed). |
@@ -230,6 +232,39 @@ forward does not change it. How the server tracks it: [`backend.md`](backend.md#
   30 seconds while its socket is open (every 5 seconds without one).
 - Changes made outside the server (for example by hand in SQL) are noticed within a minute.
 
+### Power actions and messages
+
+Both endpoints (also under `/api/v1`) queue one task per **online** target and start the queue; offline targets are
+skipped and listed. Targets follow the task conventions: `target_mode` `PC` (default; device IDs), `LAB` (lab names)
+or `ALL` (`targets` ignored); a PC ID that is not registered, or no target, is `422` and creates nothing.
+
+`POST /api/devices/power`: `{target_mode?, targets, op: "shutdown" | "restart" | "logoff" | "lock", delay?: 0-600,
+message?: string, source?, title?}`. `message` is a note for the user: control characters, line breaks and
+bidirectional formatting characters are removed, then it may have at most 200 characters (`422` otherwise).
+Admins and admin API tokens.
+
+`POST /api/devices/message`: `{target_mode?, targets, title, text, style?: "info" | "warning", requires_ack?: bool,
+source?}`. `title` (1–80) and `text` (1–1000, line breaks kept) are cleaned the same way and are required. Admins
+with a panel session only: an API token gets `403` (a person writes the message).
+
+Response: `{"status": "success", "created", "task_ids", "batch_id", "skipped_offline": [...], "native": [...],
+"fallback": [...], "unsupported": [...]}`. `native`: the agent announced `power` / `message` and gets the new
+message; `fallback`: shutdown or restart for an older (or Linux) agent, sent as the old `shutdown` command;
+`unsupported`: the task becomes `Denied` with exit code -8 and nothing is sent. These lists are a preview from the
+agents' current features; the queue decides when it sends.
+
+Tasks are stored with `kind` `power` (`payload` `{op, delay, message}`) or `user_message` (`payload` `{title, text,
+style, requires_ack}`), title `Kapat` / `Yeniden başlat` / `Oturumu kapat` / `Kilitle` / `Mesaj`, a readable
+`script_path` without the text (`power shutdown delay=60`, `user_message warning ack`) and an expiry of 15 minutes.
+They do not count against the concurrency limit, a message waiting for its acknowledgement does not hold the
+device's queue, and they do not depend on the `terminal` module (the old command for an older agent does). Results:
+0 `Completed`; -5 (capability off), -6 (nobody signed in) and -8 (not supported) `Denied`. Agent side:
+[`agent.md`](agent.md#power-and-user_message-contract).
+
+Audit: one `power_command` / `user_message` record per request (op or style, delay or acknowledgement, target
+count, offline / fallback / unsupported counts, requesting user) and one per device when sent. The note, title and
+text are recorded only as their length and first 60 characters.
+
 ### Wake-on-LAN
 
 | Method | Path | Auth | Purpose |
@@ -243,7 +278,7 @@ forward does not change it. How the server tracks it: [`backend.md`](backend.md#
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/api/deploy_orchestration` | require_admin | **Deprecated:** `POST /api/v1/tasks` (same body). `{target_mode: "ALL" \| "LAB" \| "PC", targets: [...], task_sequence: [{name, type, command}], title?, source?, reason?}` (`taskSequence` is accepted too; not both). A step of `type` `WINGET` (any case) carries `winget: {id, version}` instead of `command` (see [winget steps](#winget-steps)); any other step needs `command` and may not have `winget`. Queues one task per target and step in one transaction, recording the requesting user, then starts the queue. `title` (at most 200 characters), `source` (the panel page the request comes from, at most 40) and `reason` (at most 500) are optional; they are stored on every created task together with the caller's IP address and a `batch_id` shared by the tasks of the request. A task's title is the step's `name`, or `title` when the step has none. Returns `created` (number of tasks) and `task_ids`. The same request from the same user within 5 seconds (double click, retry) creates nothing and returns `duplicate: true`. `target_mode` is not case-sensitive (`"lab"` is `LAB`). `422` for an unknown `target_mode`, a field the endpoint does not know (also inside `task_sequence`), or a PC ID that is not registered (nothing is created). |
-| GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). Besides the queue columns each row has `title`, `source`, `reason`, `client_ip` and `batch_id` (empty on tasks created before migration `0019`); the panel groups the tasks of one `batch_id` into one job. `kind` is `"winget"` for a winget step (`null` for a command) and `payload` its package `{id, version}`. |
+| GET | `/api/tasks` | require_auth | Task list, newest first, `?limit=` (default 1000). Besides the queue columns each row has `title`, `source`, `reason`, `client_ip` and `batch_id` (empty on tasks created before migration `0019`); the panel groups the tasks of one `batch_id` into one job. `kind` is `"winget"` for a winget step, `"power"` / `"user_message"` for a power action or message (`null` for a command), and `payload` its details (`{id, version}` for winget). |
 | GET | `/api/deploy/winget/catalog` | require_auth, module `deploy` | The winget catalog of the **Dağıtım** page (see [winget steps](#winget-steps)). `?q=` (at most 100 characters; every word must appear in the id, name, publisher, category or description; Turkish letters and case do not matter), `?category=`, `?limit=` (1–500, default 200). `{"items": [{id, name, publisher, category, description, description_en, note?, note_en?}], "matched", "total", "categories": [{id, label, count}], "updated", "source"}`. Ids that start with or equal the query come first. |
 | POST | `/api/tasks/status` | require_auth | `{ids: [...]}` (at most 5000): `{"items": [{id, target_pc, target_lab, status, exit_code, dispatched_at}]}` for the tasks that still exist. The panel's job center polls it for the progress of what was sent. |
 | POST | `/api/tasks/action` | require_admin | `{action: CANCEL \| RETRY \| PAUSE \| RESUME, target_mode: TASK \| LAB \| PC \| ALL, target_id}`. RETRY opens a **new** task for each finished task (`retry_of` = the old one) unless a retry of it is still pending or running; the old task keeps its result. A retry keeps the title and reason, gets `source` `tasks` and a new `batch_id`, and the reply lists `task_ids`. |

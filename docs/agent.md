@@ -150,6 +150,7 @@ What the service does with each server command:
 | --- | --- |
 | `execute` | Runs the command line as a temporary `.bat` through `cmd.exe` as LocalSystem (UTF-8, 30-minute limit) and returns the output as a `result`. Refused when the terminal capability is off. Used by **Dağıtım**, **Uzak komut** and the PC actions on **Cihazlar** and **Sınıflar** through the task queue. The `.bat` (`pops_task_<32 hex>.bat` in the service's temp folder) is deleted when the task ends; from 0.1.14-alpha files left by a crash are deleted at service start, before the first task (only names matching exactly that pattern). Output is read in fixed 8192-character chunks, not by line, so even a single line of hundreds of megabytes stays within the 524 288-character (512 Ki) limit (the rest is read and dropped, the pipe never blocks). The same task ID is never run twice at once: a repeated `execute` for a running task is logged and ignored. Exit codes the agent sets itself: -1 time limit, -2 cancelled, -3 agent error, -4 service stopping, -5 refused (terminal capability off). |
 | `winget_install` | Installs a winget package as LocalSystem; see [below](#winget_install-contract). Sent only to agents that announce `winget` in `X-Agent-Features`. Agents without it never receive it (the server marks the task `Denied` instead). |
+| `power` / `user_message` | Shut down, restart, sign out or lock with a tray countdown and note; show a message to the signed-in user. See [below](#power-and-user_message-contract). Sent only to agents that announce `power` / `message` in `X-Agent-Features`. |
 | `get_hardware` | Posts the hardware inventory. |
 | `start_vision_session` | Passes the session request to the tray (consent dialog or mandatory countdown). |
 | `stop_stream` | Stops screen capture and closes the Vision connection. |
@@ -158,7 +159,7 @@ What the service does with each server command:
 | `wake_peer` | Sends a Wake-on-LAN packet for another PC in the same lab. |
 | `set_identity` | Replaces the stored hardware ID. |
 | `set_secret` | Stores the device secret and deletes the enrollment token. |
-| `server_info` | Sent by the server once the agent is registered; `features` containing `update_result_ack` / `result_ack` means the server confirms update results / task results (0.1.14-alpha); `winget` means the server may send `winget_install` and reads `X-Agent-Features`. Without `server_info` within 15 seconds of connecting the agent treats the server as older (same rule for both). |
+| `server_info` | Sent by the server once the agent is registered; `features` containing `update_result_ack` / `result_ack` means the server confirms update results / task results (0.1.14-alpha); `winget` means the server may send `winget_install` and reads `X-Agent-Features`; `power` and `message` mean the same for `power` and `user_message`. Without `server_info` within 15 seconds of connecting the agent treats the server as older (same rule for both). |
 | `result_ack` | The server stored the task result for `task_id`; the agent deletes it from `C:\POpsData\secure\pending-results.json`. |
 | `update_result_ack` | The server stored the update result with this `result_id`; the agent sets `update-result.json` aside. |
 | `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
@@ -277,6 +278,88 @@ command (the package id and version may be recorded in clear).
 | anything else | Failed | The panel names common winget codes (package not found, installer hash mismatch, app in use, another install running, disk full, blocked by policy …). |
 
 -8 is set by the server only (agent without the feature).
+
+### `power` and `user_message` contract
+
+Power actions (**Kapat**, **Yeniden başlat**, **Oturumu kapat**, **Kilitle**) and **Mesaj gönder** used to be
+`execute` commands (`shutdown /s /f /t 5`, `msg *`). From the server version after 0.1.22-alpha they are their own
+messages. Schemas and test vectors: [`protocol/server-to-agent/power.json`](protocol/server-to-agent/power.json),
+[`user_message.json`](protocol/server-to-agent/user_message.json), `examples/server-to-agent/power*.json`,
+`examples/server-to-agent/user_message.json`, `examples/agent-to-server/result.power.json`,
+`result.no_session.json`, `result.user_message.json`, `capability_denied.power.json`, `capability_denied.message.json`.
+
+**1. Announce the features.** An agent that implements them sends, on the `/ws/agent` connection (together with
+any other feature, comma-separated):
+
+```
+X-Agent-Features: power,message
+```
+
+The server stores the list per connection (`agent_versions.features`, `agent_features` in `/api/devices`) and sends
+`power` only to an agent that announced `power`, `user_message` only to one that announced `message`. The server
+lists `power` and `message` in `server_info.features`.
+
+**2. `power`.**
+
+```json
+{"action": "power", "task_id": 61, "op": "shutdown", "delay": 300, "message": "Ders bitti; kaydedin.", "requested_by": "ogretmen"}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `op` | `shutdown` \| `restart` \| `logoff` \| `lock` | Forced power off, forced restart, sign out the interactive user, lock the interactive session. |
+| `delay` | integer 0–600 | Seconds before acting. |
+| `message` | string ≤ 200 or null | Note for the user, one line; the server has removed control characters, line breaks and bidirectional formatting characters. |
+| `requested_by` | string | Panel user or API token; write it to the local audit log as for `execute`. |
+
+- Local capability `power` (on by default, can be switched off locally like terminal and Vision): when it is off,
+  answer `result` with `exit_code` -5 and `[REDDEDİLDİ] …`, then `capability_denied` with `"capability": "power"`,
+  `"action": "power"` and the `task_id`.
+- `logoff` and `lock` with nobody signed in: `result` with `exit_code` -6 and `[REDDEDİLDİ] oturum açık kullanıcı yok`.
+- Otherwise show a tray countdown of `delay` seconds with `message`, send `result` with `exit_code` 0 and an output
+  that starts with `[TAMAM]` (for example `[TAMAM] 300 saniye sonra kapanıyor`) just before acting, then act. The
+  result must leave before a shutdown or restart, so the task does not stay `Running`.
+
+**3. `user_message`.**
+
+```json
+{"action": "user_message", "task_id": 63, "title": "Sınav başlıyor", "text": "Kaydedin.\nSınav 10 dakika sonra.", "style": "warning", "requires_ack": true, "requested_by": "ogretmen"}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `title` | string 1–80 | One line. |
+| `text` | string 1–1000 | May contain `\n` line breaks (never more than one empty line in a row); no other control characters. |
+| `style` | `info` \| `warning` | Bilgi or Uyarı look. |
+| `requires_ack` | boolean | Keep it on screen until the user clicks Tamam. |
+| `requested_by` | string | Always a panel user (API tokens cannot send messages). |
+
+- Local capability `message` (on by default): off → `result` -5 and `capability_denied` with
+  `"capability": "message"`, `"action": "user_message"`.
+- Nobody signed in: `result` -6 `[REDDEDİLDİ] oturum açık kullanıcı yok`.
+- Shown: `result` 0 `[TAMAM] gösterildi` right away; with `requires_ack`, `[TAMAM] okundu` when the user clicks Tamam,
+  or `[TAMAM] gösterildi, onaylanmadı` after 30 minutes without a click. The server does not hold the device's task
+  queue while a message waits for its acknowledgement.
+- Title and text are plain text: never HTML, never a shell argument.
+
+**4. Results.**
+
+| Exit code | Task status | Meaning |
+| --- | --- | --- |
+| `0` with `[TAMAM] …` | Completed | Done (or shown / read). |
+| -5 with `[REDDEDİLDİ] …` | Denied | Local capability off. |
+| -6 with `[REDDEDİLDİ] oturum açık kullanıcı yok` | Denied | Nobody signed in (logoff, lock, message). |
+| -8 | Denied | Set by the server only: the agent did not announce the feature and there is no fallback; nothing was sent. |
+
+On the wire -6 now means "nobody signed in"; the Windows agent's internal duplicate code -6 is never sent.
+
+**5. Agents without the features.** The server sends `shutdown` and `restart` as the old `execute` command,
+`shutdown /s|/r /f /t <max(delay, 5)>`, on Windows with `/c "<note>"` when the note has characters left after keeping
+only letters, digits, spaces and `. , : ; ? ' ( ) -` (safe inside the quoted `.bat` line). Linux agents
+(`clients.platform = 'linux'`) get exactly `shutdown /s|/r /f /t N`, which they map to `systemctl poweroff|reboot`.
+`logoff`, `lock` and messages are not sent: the task becomes `Denied` with -8 ("Bu bilgisayardaki ajan bunu
+desteklemiyor …"). The old command is an `execute`, so it still needs the terminal capability and the lab's
+`terminal` module; `power` and `user_message` themselves do not depend on that module.
 
 ## Capability policy
 

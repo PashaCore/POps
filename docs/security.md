@@ -163,6 +163,18 @@ Both are on by default so that a fresh install works for a lab. **Turn them off 
 teachers' and administration PCs a remote terminal and screen view are rarely necessary, and a PC with both off
 offers nothing to someone who takes over the server or an admin account.
 
+### Power actions and messages
+
+Power actions (shut down, restart, sign out, lock) and messages to the user are their own agent messages
+(`power`, `user_message`), not commands: the note, title and text travel as JSON fields, never through a shell, and
+the server removes control characters, line breaks (except in a message's text) and bidirectional formatting
+characters first. Only admins can send them; a message also needs a panel session (API tokens get `403`), so a
+person is behind every text a user sees. For older agents shutdown and restart fall back to the fixed `shutdown`
+command, with a note reduced to letters, digits, spaces and `. , : ; ? ' ( ) -`; everything else is refused without
+being sent. Audit records keep op or style, delay, target count and the requesting user, and only the length and
+the first 60 characters of a note or message. The agent has local `power` and `message` capabilities (on by default)
+that a site can switch off like terminal and Vision.
+
 ## File transfer
 
 An admin can send a file to PCs and fetch a file from a PC (**Dosya gönder** / **Dosya al**; protocol in

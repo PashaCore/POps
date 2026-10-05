@@ -153,9 +153,17 @@ lab selector (**Bütün sınıflar**, **Atanmamış**) and a search over name, u
 exports the list as CSV. Click a PC for its detail panel; the action bar and the selection work as described under
 [Working with PCs](#working-with-pcs).
 
-Restart and shut down are queued as commands (`shutdown /r /f /t 5` / `shutdown /s /f /t 5`) through the task
-queue. Wake-on-LAN needs the MAC address from the hardware inventory. A **Mesaj gönder** note is shown to the
-signed-in user with the Windows `msg` command. Deleting a device also deletes its device secret; see
+**Güç** (detail panel) and the action bar offer **Yeniden başlat**, **Kapat**, **Oturumu kapat** and **Kilitle**;
+the dialog has **Gecikme** (**Hemen**, **1 dk**, **5 dk**, **10 dk**) and an optional **Kullanıcıya not** (at most
+200 characters) that the user sees with a countdown in the tray. **Mesaj gönder** (detail panel → **Diğer**, action
+bar → more) opens a dialog with **Başlık**, **Metin** (with a counter, at most 1000 characters), **Bilgi** /
+**Uyarı** and **Okundu onayı iste**; the result says when the message was shown or read. These go through
+`/api/devices/power` and `/api/devices/message` and appear on **İşlemler**. **Oturumu kapat**, **Kilitle** and
+**Mesaj gönder** need an agent that supports them: they are disabled, with the reason on hover, when no selected
+PC's agent does, and the dialog says how many selected PCs will be skipped. On older agents **Kapat** and **Yeniden
+başlat** still work (as the old `shutdown` command). The task drawer explains a refusal: nobody signed in, the
+agent does not support it (update the agent) or the feature is turned off on the PC. Wake-on-LAN needs the MAC
+address from the hardware inventory. Deleting a device also deletes its device secret; see
 [`troubleshooting.md`](troubleshooting.md).
 
 ### Sınıflar
