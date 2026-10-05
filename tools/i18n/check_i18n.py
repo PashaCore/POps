@@ -100,7 +100,7 @@ def no_duplicates(pairs):
 
 def check_file(path, corpus, pages):
     errors = []
-    name = os.path.splitext(os.path.basename(path))[0]
+    name = os.path.splitext(os.path.basename(path))[0].split('.')[0]   # settings.tokens.json -> settings
     if name != 'common' and name not in pages:
         errors.append('%s: Dashboard/%s.php yok (ad "common" ya da bir sayfa olmalı)' % (path, name))
     try:
@@ -153,6 +153,10 @@ def missing(root, page, lang):
         return json.loads(read(p)) if os.path.exists(p) else {}
     have = load('common')
     if page != 'common':
+        d = os.path.join(root, 'Dashboard', 'lang', lang)
+        for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            if n.startswith(page + '.') and n.endswith('.json'):
+                have.update(json.loads(read(os.path.join(d, n))))
         have.update(load(page))
     seen, out = set(), []
     for path in source_files(root, page):

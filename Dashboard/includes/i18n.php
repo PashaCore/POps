@@ -68,27 +68,36 @@ function pops_set_lang_cookie(string $lang): void
     ]);
 }
 
-// Dosya bulunamaz ya da bozuksa boş sözlük: metinler Türkçe kalır, sayfa çalışmaya devam eder
+// Dosya bulunamaz ya da bozuksa boş sözlük: metinler Türkçe kalır, sayfa çalışmaya devam eder.
+// Bir sayfanın sözlüğü <ad>.json ile isteğe bağlı parça dosyalarından (<ad>.<parça>.json, ör. settings.tokens.json)
+// oluşur: aynı sayfaya özellik ekleyen dallar ayrı dosya yazar, birbirini ezmez. Ana dosya parçalara üstün gelir.
 function pops_i18n_load(string $name): array
 {
     if (!preg_match('/^[a-z0-9_-]+$/', $name)) {
         return [];
     }
-    $path = __DIR__ . '/../lang/en/' . $name . '.json';
-    if (!is_file($path)) {
-        return [];
-    }
-    $data = json_decode((string) file_get_contents($path), true);
-    if (!is_array($data)) {
-        error_log('POps i18n: ' . $name . '.json okunamadı: ' . json_last_error_msg());
-        return [];
+    $dir = __DIR__ . '/../lang/en/';
+    $paths = glob($dir . $name . '.*.json') ?: [];
+    sort($paths);
+    if (is_file($dir . $name . '.json')) {
+        $paths[] = $dir . $name . '.json';
     }
     $out = [];
-    foreach ($data as $k => $v) {
-        if (is_string($v) && $v !== '') {
-            $out[(string) $k] = $v;
-        } elseif (is_array($v) && isset($v['other']) && is_string($v['other'])) {
-            $out[(string) $k] = array_filter($v, 'is_string');
+    foreach ($paths as $path) {
+        if (!preg_match('/^[a-z0-9_-]+(\.[a-z0-9_-]+)?\.json$/', basename($path))) {
+            continue;
+        }
+        $data = json_decode((string) file_get_contents($path), true);
+        if (!is_array($data)) {
+            error_log('POps i18n: ' . basename($path) . ' okunamadı: ' . json_last_error_msg());
+            continue;
+        }
+        foreach ($data as $k => $v) {
+            if (is_string($v) && $v !== '') {
+                $out[(string) $k] = $v;
+            } elseif (is_array($v) && isset($v['other']) && is_string($v['other'])) {
+                $out[(string) $k] = array_filter($v, 'is_string');
+            }
         }
     }
     return $out;
