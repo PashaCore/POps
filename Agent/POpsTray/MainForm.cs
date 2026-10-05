@@ -948,6 +948,19 @@ namespace POpsTray
                 }));
                 return true;
             }
+            // Dosya aktarımı: kullanıcıya hep söylenir
+            if (message.StartsWith("FILE_PUSHED:", StringComparison.Ordinal))
+            {
+                string name = message.Substring("FILE_PUSHED:".Length);
+                this.Invoke(new Action(() => ShowNotification("Dosya", $"Yönetici bir dosya gönderdi: {name}")));
+                return true;
+            }
+            if (message.StartsWith("FILE_PULLED:", StringComparison.Ordinal))
+            {
+                string path = message.Substring("FILE_PULLED:".Length);
+                this.Invoke(new Action(() => ShowNotification("Dosya", $"Yönetici bu dosyayı aldı: {path}")));
+                return true;
+            }
             if (message.StartsWith("EXAM_APP_BLOCKED:", StringComparison.Ordinal))
             {
                 string app = message.Substring("EXAM_APP_BLOCKED:".Length);

@@ -176,10 +176,11 @@ msiexec /i POps-Agent-<version>-win-x64.msi /qn /l*v C:\Windows\Temp\pops-msi-in
 | `TERMINAL_ENABLED` | `C:\POpsData\secure\capabilities.json` | `1` / `0`: allow or forbid remote commands (`execute`) on this PC. |
 | `VISION_ENABLED` | same file | `1` / `0`: allow or forbid screen streaming, previews and remote input. |
 | `EXAM_ENABLED` | same file | `1` / `0`: allow or forbid exam mode (network limited to an allow list, apps closed). Default `1`. |
+| `FILES_ENABLED` | same file | `1` / `0`: allow or forbid file push and pull. Default `1`. |
 | `INSTALLFOLDER` | – | Install folder, default `C:\Program Files\POps`. |
 
 On an upgrade every property is optional: a property that is not given keeps the installed value. A first
-install without `TERMINAL_ENABLED` / `VISION_ENABLED` / `EXAM_ENABLED` enables all three; a capability missing from
+install without `TERMINAL_ENABLED` / `VISION_ENABLED` / `EXAM_ENABLED` / `FILES_ENABLED` enables all four; a capability missing from
 an older `capabilities.json` counts as enabled.
 
 ### `appsettings.json` keys and environment variables

@@ -301,6 +301,7 @@ namespace POps.Tests.Installer
         [InlineData("TERMINAL_ENABLED", "maybe", "TERMINAL_ENABLED")]
         [InlineData("VISION_ENABLED", "2", "VISION_ENABLED")]
         [InlineData("EXAM_ENABLED", "evetmi", "EXAM_ENABLED")]
+        [InlineData("FILES_ENABLED", "x", "FILES_ENABLED")]
         public void InvalidProperty_FailsTheInstall(string key, string value, string expected)
         {
             Layout layout = NewLayout();
@@ -349,8 +350,9 @@ namespace POps.Tests.Installer
         public void Capabilities_ExamCanBeTurnedOffLocally_AndOldFilesKeepIt()
         {
             Layout layout = NewLayout();
-            Assert.Null(Configure(layout, ("SERVER_URL", "https://pops.example"), ("EXAM_ENABLED", "0")));
+            Assert.Null(Configure(layout, ("SERVER_URL", "https://pops.example"), ("EXAM_ENABLED", "0"), ("FILES_ENABLED", "0")));
             Assert.Equal(false, Json(Secure(layout, "capabilities.json"))["exam_enabled"]);
+            Assert.Equal(false, Json(Secure(layout, "capabilities.json"))["files_enabled"]);
 
             Layout old = NewLayout();
             Write(Secure(old, "capabilities.json"), "{\"terminal_enabled\":false,\"vision_enabled\":true,\"source\":\"msi\"}");
@@ -358,6 +360,7 @@ namespace POps.Tests.Installer
             var caps = Json(Secure(old, "capabilities.json"));
             Assert.Equal(false, caps["terminal_enabled"]);
             Assert.Equal(true, caps["exam_enabled"]);
+            Assert.Equal(true, caps["files_enabled"]);
         }
 
         [Fact]

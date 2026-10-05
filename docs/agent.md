@@ -187,8 +187,9 @@ command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine 
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
 that partly changed (no decision taken), 1080 a change of the server's modules, 1090 a configuration that could not
-be read, 1100 a clipboard shared in a Vision session (direction and length only), and 1110/1111/1112 exam mode
-started, ended and an app closed during an exam. Failure to write an event does not stop the
+be read, 1100 a clipboard shared in a Vision session (direction and length only), 1110/1111/1112 exam mode
+started, ended and an app closed during an exam, and 1120/1121 a file pushed to or pulled from the PC. Failure to
+write an event does not stop the
 service.
 
 ### `winget_install` contract
@@ -281,13 +282,74 @@ command (the package id and version may be recorded in clear).
 
 ## Capability policy
 
-Terminal (`execute`), Vision (streaming, previews, remote input) and exam mode can be disabled per PC, so that even
-a compromised server cannot use them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`, `EXAM_ENABLED`,
-`1` / `0`);
+Terminal (`execute`), Vision (streaming, previews, remote input), exam mode and file transfer can be disabled per
+PC, so that even a compromised server cannot use them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`,
+`EXAM_ENABLED`, `FILES_ENABLED`, `1` / `0`);
 the server can only switch them off (**Sistem** → "Cihaz yetenekleri"). A refused command is closed with
 a `[REDDEDİLDİ]` result and reported as `capability_denied`. Re-enabling needs a local administrator: MSI repair or
 reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; see
 [`Agent/README.md`](../Agent/README.md#capability-policy).
+
+## File transfer
+
+From 0.1.23-alpha a server that lists `file_transfer` in `server_info.features` can send files to a PC and fetch
+files from it. The messages are the server's (`docs/protocol/server-to-agent/file_push.json`, `file_pull.json`,
+`docs/protocol/agent-to-server/file_result.json`). The agent announces `files` in `X-Agent-Features` and reports
+`files_enabled` in `capabilities` (the server sends file commands only to agents that report it).
+
+Capability `files_enabled`: on by default, `FILES_ENABLED=0` switches it off locally, and the server can only
+switch it off. With it off, a request is answered with one `capability_denied` (`capability: files`,
+`action: file_push` or `file_pull`, `transfer_id`) and no `file_result`: the server marks the transfer `rejected`.
+Each transfer is announced in the tray and written to the event log.
+
+- **Transfer ID:** `transfer_id` must match `^[A-Za-z0-9_-]{8,64}$`. A request without a valid ID is only logged
+  locally: no `file_result` (the server ignores unknown transfers). With the capability off, the
+  `capability_denied` is still sent, without `transfer_id`.
+- **Push** (admin → PC):
+
+  ```json
+  {"action": "file_push", "transfer_id", "name", "size", "sha256", "url", "dest": "public_desktop" | "inbox", "reason", "allow_exec"}
+  ```
+
+  - **Source:** The agent downloads only from its own server. `url` must have the server's form
+    `/api/files/<id>/download?t=<token>`; it is appended to `ServerUrl` like every other agent request (the token
+    is kept). The request goes without redirects and with the device key (`X-Agent-Id`, `X-Agent-Secret`).
+  - **Checks:** The size (at most 1 GB; the server sends at most 200 MB) and the SHA-256 are verified. A reason
+    of at least 3 characters is required.
+  - **Destinations:** `public_desktop` (`C:\Users\Public\Desktop`) or `inbox` (`C:\POpsData\inbox\<yyyy-MM-dd>`,
+    readable by Users, full control for SYSTEM and Administrators). No other path is possible.
+  - **File name:** No path separators, no `:` (alternate data streams), no wildcards or control characters, no
+    reserved names (`CON`, `COM1`, …). Trailing dots and spaces are removed, and a clash gets " (2)".
+  - **Executable-like files:** `.lnk`, `.url` and `.scr` only with `allow_exec: true`.
+  - **Download:** The file goes to a temporary file in the protected folder and is copied into place only when
+    it matches, so it takes the destination's permissions.
+  - **PC user:** The tray says "Yönetici bir dosya gönderdi: <ad>". Event 1120 records the ID, path, size, SHA-256
+    and reason.
+- **Pull** (PC → admin):
+
+  ```json
+  {"action": "file_pull", "transfer_id", "path", "max_size", "upload", "reason", "any_profile"}
+  ```
+
+  - **Request:** A reason of at least 3 characters is required. The path must start with a drive letter
+    (`C:\…`), have at most 1024 characters and contain no wildcards and no `:` after the drive (no network,
+    device or alternate-data-stream paths).
+  - **Real path:** The checks use the file's real path, with symbolic links and junctions resolved
+    (`GetFinalPathNameByHandle`).
+  - **Refused:**
+    - anything under `C:\POpsData\secure`;
+    - another user's profile, unless `any_profile: true`. Allowed without it are the profile of the user signed
+      in at the console and `Public`; with nobody signed in, every profile counts as another user's;
+    - files larger than `max_size` (at most 1 GB).
+  - **Upload:** `POST` to `upload` (form `/api/files/<id>/upload?t=<token>`, same rule as `url`), the raw file as
+    `application/octet-stream`, with the device key. The optional `X-Content-SHA256` header is not sent.
+  - **PC user:** The tray says "Yönetici bu dosyayı aldı: <yol>". Event 1121 records the ID, path, size and
+    reason.
+- **Result:** `{"type": "file_result", "transfer_id", "outcome": "done" | "rejected" | "failed", "path", "detail"}`.
+  The field is `outcome`, not `status`: a server that does not know `file_result` would take a message with
+  `status` for a heartbeat. `path` is left out when it is longer than 1024 characters; `detail` is cut at 300.
+  A request that breaks a rule (type, path, profile, size, reason) is `rejected`; a download, checksum, disk or
+  upload error is `failed`.
 
 ## Exam mode
 

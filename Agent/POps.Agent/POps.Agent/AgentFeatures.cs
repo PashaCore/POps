@@ -9,6 +9,7 @@ namespace POpsAgent
         public static readonly string[] All =
         {
             "exam",
+            "files",
         };
 
         public static string Header => string.Join(",", All);
