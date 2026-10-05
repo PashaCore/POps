@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Organisational units (district → school).** A superadmin builds a tree of units on **Ayarlar → Birimler**, puts labs into units, and gives users and API tokens a scope.
+  - A scoped account sees and acts only on its units' devices, sub-units included.
+  - The server enforces the scope on every endpoint (`Backend/pops/tenancy.py`), so it also holds for API tokens. Out-of-scope ids answer `404`, and organisation-wide settings answer `403`.
+  - Covered: devices, labs, tasks, deployment and winget, file transfer, exam mode, power actions and messages, Vision, logs, inventory, reports and CSV, licences, tickets, scheduled tasks, notifications, update progress and the panel WebSocket.
+  - New `/api/org-units`; `org_scope` on users and tokens; the unit name shows in the sidebar. Nothing changes until units exist. D-25, migration `0032`.
+- **Scopes for directory and OIDC accounts.** Group mappings can carry a scope (unit ids or `"all"`). While units exist, a new directory or OIDC account whose mappings set no scope gets an empty scope, so it is never unscoped by accident.
 - **Panel sign-in with Active Directory / LDAP and OpenID Connect** (Microsoft Entra ID, Google, Keycloak …). A superadmin sets it up under **Ayarlar → Güvenlik → Kimlik sağlayıcıları**.
   - Directory users sign in with the usual form; with OIDC the sign-in page shows "*<name>* ile giriş yap".
   - Directory groups (or OIDC group claims) map to İzleyici, Yönetici or Süper admin and to pages, and the mapping is rewritten at every sign-in. **Bağlantıyı sına** checks the connection and a user's resulting role before saving.
@@ -118,6 +124,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Real timestamps.** The older tables' text dates become `TIMESTAMPTZ` (migration `0031`), read in the server's time zone (`POPS_TZ`, else the system zone). The API returns ISO 8601 with an offset; CSV keeps readable local time. Audit chains written before the update still verify.
+- **The deploy backs up the database before a rewriting migration.** `pops-deploy-backend` runs `pg_dump` before any migration marked `-- pops: dump-before`. It keeps at most 3 dumps, respects `KEEP_BACKUPS` and checks free space first.
+  - **Upgrading:** reinstall `Installer/server/pops-deploy-backend` to `/usr/local/sbin/pops-deploy-backend` before deploying. `0031` rewrites large tables (logs, tasks, audit), so the update takes longer.
+  - To roll back after this migration, restore that dump together with the old code (`docs/deployment.md`).
+  - If the old text dates were written in a zone other than the server's, set `POPS_TZ` before migrating.
 - **New agents get Kapat and Yeniden başlat as `power` messages,** not as a `shutdown` command; older Windows and Linux agents still get the old command. Sign-out, lock and messages are refused with -8 for agents without the feature, and nothing is sent to them.
 - **Power and message tasks are queued apart from commands.** They don't use up the concurrency limit, don't depend on the remote command module, and expire after 15 minutes if they are not sent. Mesaj gönder no longer uses the Windows `msg` command.
 - **API: unknown fields in a request body are refused** (`422`, `extra_forbidden` with the field name) on every panel and integration endpoint.
@@ -185,6 +196,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A scoped account cannot reach another school's devices.** That holds for lists and direct ids, through the panel, the REST API, API tokens and the panel WebSocket, including the device-list version and `devices_changed`.
 - **The peer cache is off by default, and a PC listens only when told.** `update_agent` carries `"peer_cache": true` only while the setting is on, and only to the PCs that take part in a staged rollout. Without it the agent keeps no package, starts no cache server and opens no port. The README's "no inbound ports on PCs" holds unless an admin turns the peer cache on.
 - **Directory and OIDC sign-in are verified end to end.**
   - Directory sign-in works only over LDAPS or StartTLS, with the certificate and host name verified.
