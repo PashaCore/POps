@@ -16,6 +16,7 @@
 
   [![POps CI](https://github.com/PashaCore/POps/actions/workflows/ci.yml/badge.svg)](https://github.com/PashaCore/POps/actions/workflows/ci.yml)
   [![CodeQL](https://github.com/PashaCore/POps/actions/workflows/codeql.yml/badge.svg)](https://github.com/PashaCore/POps/actions/workflows/codeql.yml)
+  [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/PashaCore/POps/badge)](https://scorecard.dev/viewer/?uri=github.com/PashaCore/POps)
 
   ⭐ **Açık Kaynak** &nbsp;•&nbsp; 🛡️ **Tasarımdan Şeffaf** &nbsp;•&nbsp; ⚡ **Gerçek Zamanlı** &nbsp;•&nbsp; 🏫 **Eğitim ve Ekipler İçin**
 
@@ -277,8 +278,8 @@ msiexec /i POps-Agent-<sürüm>-win-x64.msi /qn SERVER_URL=https://<sunucunuz> E
 Bu özelliklere ihtiyaç olmayan bilgisayarlarda `TERMINAL_ENABLED=0` ve/veya `VISION_ENABLED=0` ekleyin. Bilgisayar
 birkaç saniye içinde **Cihazlar** sayfasında görünür.
 
-Adım adım (İngilizce): [`docs/quick-start.md`](docs/quick-start.md). Docker Compose seçeneği:
-[`docs/docker.md`](docs/docker.md).
+Adım adım (İngilizce): [`docs/quick-start.md`](docs/quick-start.md). Docker Compose seçeneği, GHCR'daki hazır
+imajlarla: [`docs/docker.md`](docs/docker.md).
 
 ---
 

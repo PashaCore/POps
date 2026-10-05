@@ -26,6 +26,8 @@ If you update without these steps, nothing breaks but the server stays on the pr
 ### Added
 
 - **Panel: the organisation's name and logo on the sign-in page.** **Ayarlar → Genel → Kurum** sets the name and a logo (PNG, JPEG or WebP, at most 256 KB, checked by content; SVG is refused). The sign-in page shows them instead of "POps", with a small "POps · Pasha Core" line under the form; the personal links moved to the README. Only a superadmin changes them, and each change is audit-logged (`GET /api/branding`, `GET /api/branding/logo`, `POST /api/system/branding`, `POST`/`DELETE /api/system/branding/logo`).
+- **Docker: ready-made images on GHCR.** From this release on, every release also pushes `ghcr.io/pashacore/pops-backend` and `ghcr.io/pashacore/pops-dashboard` (`linux/amd64`, tags `<version>` such as `0.1.22-alpha` and `latest`), with a build provenance attestation and an SBOM. The images are pushed only after the release itself is published, so only when the CI tests, the version check and the release approval have passed. `docker compose up -d` now pulls them instead of building; `POPS_IMAGE_TAG` in `.env` pins a version, and `docker compose up -d --build` still builds from source (`docs/docker.md`). **Upgrading a Docker install:** after `git pull` (or unpacking the new server package), `docker compose pull && docker compose up -d` switches to the published images; `docker compose up -d --build` keeps building locally.
+- **OpenSSF Scorecard.** `.github/workflows/scorecard.yml` rates the repository's supply-chain practices on every push to `main` and weekly, uploads the findings to Security → Code scanning and publishes the score shown by the new badge in README and README.tr.
 
 ### Security
 

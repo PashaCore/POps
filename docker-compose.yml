@@ -1,6 +1,9 @@
 # POps with Docker Compose. Optional: the native install (docs/installation.md) is the
 # primary path. Quick start: cp .env.example .env, fill in the values, then
-#     docker compose up -d --build
+#     docker compose up -d
+# This pulls the published images ghcr.io/pashacore/pops-backend and pops-dashboard (tag
+# POPS_IMAGE_TAG, default "latest"); if they cannot be pulled, Compose builds them here.
+# To build from this checkout instead of pulling: docker compose up -d --build
 # TLS, agents, upgrades and backups: docs/docker.md.
 name: pops
 
@@ -30,6 +33,7 @@ services:
     # No published port: only the backend talks to the database.
 
   backend:
+    image: ghcr.io/pashacore/pops-backend:${POPS_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
@@ -52,6 +56,7 @@ services:
     # No published port: reach it through the dashboard (/api, /ws, /updates, /download).
 
   dashboard:
+    image: ghcr.io/pashacore/pops-dashboard:${POPS_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: docker/dashboard.Dockerfile
