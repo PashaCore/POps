@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Agent: an unreadable configuration is reported.** When `appsettings.json` cannot be read or has no valid `ServerUrl`, the agent still falls back to `http://127.0.0.1:8000`, but now logs an error, writes Windows event 1090 and shows "POps - yapılandırma okunamadı" with a warning icon in the tray instead of looking healthy.
 - **Panel: on phones the scheduled tasks table scrolls inside its card** instead of widening the page.
 - **Panel: viewers no longer see pages they cannot open.** A viewer whose permission list still contained Dağıtım, Uzak komut or Ayarlar (for example an admin demoted to viewer) saw those pages in the menu and the Ctrl+K search but got "Yetkisiz Erişim". They are now hidden for viewers.
 - **Panel: İşlemler no longer asks for the admin-only scheduled-task list as a viewer** every 30 seconds (it only produced 403 errors in the browser console); the Zamanlanmış tab is hidden for viewers.
