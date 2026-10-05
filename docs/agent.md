@@ -189,8 +189,9 @@ server addresses), 1030 update results, 1040 capability changes, 1050 identity r
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
 that partly changed (no decision taken), 1080 a change of the server's modules, 1090 a configuration that could not
 be read, 1100 a clipboard shared in a Vision session (direction and length only), 1110/1111/1112 exam mode
-started, ended and an app closed during an exam, and 1120/1121 a file pushed to or pulled from the PC. Failure to
-write an event does not stop the
+started, ended and an app closed during an exam, 1120/1121 a file pushed to or pulled from the PC, and 1150 a Vision
+session that started while the PC was locked (session, requester, mandatory; see
+[`vision.md`](vision.md#a-session-that-starts-while-the-pc-is-locked)). Failure to write an event does not stop the
 service.
 
 ### `winget_install` contract

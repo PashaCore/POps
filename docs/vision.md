@@ -40,7 +40,9 @@ When you pick a lab on the **Uzak ekran** page, the wall requests a preview of e
 3. On the PC:
    - **Routine:** a dialog names the admin and the reason and asks whether to accept. If the user declines, the
      panel is told (`vision_rejected`) and nothing is captured.
-   - **Mandatory:** a full-screen notice counts down, then the session starts.
+   - **Mandatory:** a full-screen notice counts down, then the session starts. If the user's desktop is not on
+     screen when it ends (the PC is locked), the user gets the session notice on return
+     ([below](#a-session-that-starts-while-the-pc-is-locked)).
 4. The agent opens `/ws/vision/{hw_id}` (with the same credentials as its command channel) and the tray starts
    capturing the primary screen as JPEG. Frames are relayed to the backend, which forwards them **only** to the
    panel of the admin who holds the session. If that admin's panel is not connected, frames are dropped.
@@ -292,11 +294,46 @@ does not show or control it.
   Ctrl+Alt+Del or unlock the PC.
 - **Previews:** a preview requested while the secure desktop is up gets no picture (the service waits 5 seconds
   for it).
-- **Consent:** the consent dialog and the countdown are windows on the user's desktop. A session requested while
-  the PC is locked is seen only after the user unlocks. A routine session waits for the answer; a mandatory session
-  starts when its countdown ends, and the viewer sees the notice until the user unlocks.
+- **Consent:** the consent dialog and the countdown are windows on the user's desktop, so a session requested while
+  the PC is locked is seen only after the user returns. See
+  [A session that starts while the PC is locked](#a-session-that-starts-while-the-pc-is-locked).
 - **Nobody signed in** (sign-in screen after a restart or sign-out): there is no tray, so there is nothing to
   capture, and `start_vision_session` is not answered.
+
+### A session that starts while the PC is locked
+
+Owner decision 5: no silent session. A mandatory session that starts while the user's desktop is not on screen
+shows its notice as soon as the desktop returns, for the rest of the session, and the PC records it.
+
+- **Routine (Kullanıcıya sor):** cannot start while the PC is locked. The dialog waits on the user's desktop, with no
+  time limit, and the session starts only after **Evet**. A countdown sent with a routine request is ignored.
+- **Mandatory (Zorunlu müdahale):** the countdown runs on the hidden desktop and the session starts when it ends,
+  as before. When the tray starts the session it checks whether the user's desktop is on screen (the same input
+  desktop check as the capture). If it is not (lock screen, a UAC prompt, the Ctrl+Alt+Del screen), the tray marks
+  the start (`START_VISION_TUNNEL:<fps>:locked` on the pipe) and, once the Vision tunnel is open, the service
+  - writes event **1150** "Vision oturumu bilgisayar kilitliyken başladı" to the Windows event log (`session_id`,
+    `requested_by`, `mandatory`; no reason, no screen content), once for that start, after 1010;
+  - posts an ordinary event log entry to the server on the existing `POST /api/logs/{hw_id}` (`event_type`
+    `agent.vision_locked_start`, category `vision`, `meta_data` with `session_id`, `requested_by`, `mandatory`). The
+    server stores it like any agent log entry (`agent_logs_v2`); no protocol or server change;
+  - tells the tray to set up the session notice, before capture starts.
+- **While the desktop is away** the viewer gets the secure desktop notice picture, as before.
+- **When the user's desktop returns** (the tray checks every half second), the tray first shows the notice, then
+  lets capture continue, so the session sends no picture of the user's desktop before the notice is on it
+  (previews are separate and unchanged):
+  - a balloon: "Bilgisayarınız kilitliyken Bilgi İşlem yetkilisi *X* ekranınıza bağlandı …" with the session ID;
+  - a banner at the bottom of the primary screen, always on top, which does not take focus and cannot be closed by
+    the user: "Ekranınız Bilgi İşlem tarafından izleniyor (oturum bilgisayarınız kilitliyken başladı)", with the
+    admin, the reason and the session ID. The admin sees it in the picture too.
+- **Until the session ends.** Locking and unlocking again does not remove the banner. It closes when the session
+  ends: `stop_stream`, the server closing the Vision tunnel, the command connection or the tray connection dropping,
+  Vision switched off (capability or module). The tray then says "Bilgi İşlem oturumu sona erdi." A session that
+  ends before the user returns shows nothing more.
+- **Tray connection lost.** The service already ends the approved session when the tray disconnects; the tray now
+  also stops capturing and closes the notice, so a session cannot go on without its notice after a reconnect.
+- A session that starts while the user's desktop is on screen behaves as before: no 1150, no banner.
+- Old tray with a new service: the tray does not send the flag, so nothing changes. New tray with an old service: the
+  service ignores the flag (it reads only the frame rate); no 1150 and no banner.
 
 ### Why the secure desktop is not captured
 
@@ -412,8 +449,11 @@ does not show or control it.
 3. Ctrl+Alt+Del: turning on `SoftwareSASGeneration` on every PC. Recommended: no.
 4. The sign-in screen with nobody signed in: not supported, or mandatory sessions only, with a reason and a notice
    drawn on the secure desktop?
-5. A mandatory session that starts while the PC is locked shows its countdown on the hidden user desktop. Should
-   the countdown wait until the user's desktop is on screen? This applies today, with or without a helper.
+5. ~~A mandatory session that starts while the PC is locked shows its countdown on the hidden user desktop. Should
+   the countdown wait until the user's desktop is on screen?~~ **Decided and implemented:** the session is not
+   held back, but it is never silent. The session notice is shown as soon as the user's desktop returns and stays
+   until the session ends, and the PC writes "started while locked" (event 1150) to its local audit; see
+   [A session that starts while the PC is locked](#a-session-that-starts-while-the-pc-is-locked).
 6. Authenticode signing before a SYSTEM helper ships.
 
 Until then, for tasks that need elevation use remote commands (**Uzak komut**, `execute`), which run as SYSTEM and
