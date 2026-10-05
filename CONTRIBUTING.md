@@ -21,6 +21,31 @@ Useful background before a first change: [`docs/getting-started.md`](docs/gettin
 - **Enhancements:** open an issue that explains the problem for lab administrators, not only the proposed
   solution. Larger design changes are discussed before code is written.
 - **Pull requests:** see [Pull requests](#pull-requests).
+- **Questions:** ask in [GitHub Discussions](https://github.com/PashaCore/POps/discussions) (category **Q&A**).
+  Issues are for bugs and concrete proposals; the issue forms point to the right place.
+
+## Good first issues
+
+Issues labelled
+[`good first issue`](https://github.com/PashaCore/POps/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+are small, self-contained tasks for a first contribution. Each one says why it matters, which files to look at and
+what "done" means (acceptance criteria). They avoid the areas the maintainers are changing at the moment, so a pull
+request does not collide with other work, and most of them need neither a Windows machine nor a running server.
+[`help wanted`](https://github.com/PashaCore/POps/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) marks
+larger items where outside help is welcome.
+
+To pick one up:
+
+1. Read the issue and the files it points to. If something is unclear, ask in the issue before you start.
+2. Comment that you would like to take it, so two people do not work on the same thing. A maintainer assigns it
+   to you. Take one at a time.
+3. Fork the repository, branch from `main` and keep the change to what the issue asks for.
+4. Open a pull request that says `Fixes #<number>`, fill in the template and check the acceptance criteria one by
+   one. CI must pass.
+5. If you cannot finish, say so in the issue so someone else can take it over. That is fine.
+
+Maintainers writing a good first issue: describe the context, name the files, list acceptance criteria, keep it to
+a change one person can review in one sitting, and add the label.
 
 ## Repository layout
 
@@ -145,7 +170,7 @@ Security → Code scanning and on the README badge).
 
 | Job | Checks | Run it locally |
 | --- | --- | --- |
-| Build (5 agent projects) | `dotnet build -c Release` of the agent, tray, watchdog, updater and legacy Vision | see [Agent](#agent-windows-net-8-sdk) |
+| Build (5 agent projects) | `dotnet build -c Release` of the agent, tray, watchdog, updater and legacy Vision | see [Agent](#agent-windows-net-10-sdk) |
 | Agent unit tests | `dotnet test Agent/POps.Tests/POps.Tests.csproj` | same |
 | Backend (Python 3.12, 3.10) | `flake8 Backend/ tools/ assets/readme/` (3.12); importing `server` and `setup_env`; `test_units.py` | `flake8 Backend/ tools/ assets/readme/` |
 | Dashboard checks | `php -l` on every PHP file; dark mode stays removed | `find Dashboard -name '*.php' -print0 \| xargs -0 -n1 php -l` |

@@ -9,7 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Docs: Turkish guides for schools** in `docs/tr/`: "Neden POps?" (what POps solves and what it does not, KVKK and transparency, cost, working without internet), "POps ve Veyon birlikte" (who does what, installing both on the same PCs without port conflicts, a typical day; with a light and dark figure from `assets/readme/make_figures.py`), "Pilot okul kurulumu" (a checklist for one lab of 10 PCs, what to measure for 2–4 weeks, a feedback form) and a case study template. README.tr links them; README lists them as "Turkish guides for schools".
+- **Docs: code signing policy** (`docs/code-signing.md`) for Authenticode signing through the SignPath Foundation: what is signed and never signed, how a release is built and approved, roles, key custody and how to verify a download. The application is still to be made; the binaries are not Authenticode-signed yet.
+- **Docs: GLPI export design note** (`docs/integrations/glpi.md`): sending inventory and helpdesk tickets to GLPI, with field mappings, sync direction, conflicts and authentication. ROADMAP lists it under Next → Integrations.
+- **Docs: "Linux and Pardus"** in README and README.tr; ROADMAP names Lider Ahenk integration as an alternative to a Linux agent.
+- **GitHub: issue forms and contributor onboarding.** Bug report and feature request forms replace the Markdown templates; questions go to Discussions and security reports to SECURITY.md. The pull request template has a checklist (tests, lint, docs, CHANGELOG, no secrets, transparency), and CONTRIBUTING has a "Good first issues" section.
 - **Panel: English interface (in progress).** **Türkçe / English** at the bottom of the sidebar switches the panel language for this browser (cookie `pops_lang`, kept for a year; the default stays Turkish). Translated so far: the sidebar, search, job center and notifications, page titles, dialogs, toasts and error messages (including the most frequent server messages), relative times and dates, the device actions and the device detail panel, task states and failure reasons, the event wording shown on **Kayıtlar**, and **Kontrol merkezi**. Other pages are being converted and show Turkish text until then. Translations live in `Dashboard/lang/en/` (one file per page); CI checks them with `tools/i18n/check_i18n.py`. How it works and how to convert a page: [`docs/i18n.md`](docs/i18n.md).
+
+### Fixed
+
+- **Docs:** a broken link to the agent setup section in CONTRIBUTING; getting-started no longer says the panel loads fonts and icons from CDNs.
+
 
 ## [0.1.22-alpha] - 2026-10-05
 

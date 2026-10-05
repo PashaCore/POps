@@ -141,7 +141,8 @@ Short design notes. Where options are listed, the choice has not been made.
 - **Measure again:** 5,000 agents on 0.1.12+ over HTTPS with health telemetry, and a Vision load test.
 - **End-to-end tests:** Playwright for the panel in CI and a Windows test machine for the real MSI update and
   rollback.
-- **Code signing:** apply to SignPath Foundation (free Authenticode for open-source projects).
+- **Code signing:** apply to SignPath Foundation (free Authenticode for open-source projects). The policy that
+  will apply is in [`docs/code-signing.md`](docs/code-signing.md).
 - **Update loop guard:** do not send the same update again to a PC that reported `pending_reboot`.
 
 ### Linux agent (Pardus first)
@@ -154,11 +155,25 @@ enrollment token and per-device secret (root-only file), hardware ID from DMI da
 (`.deb` listed in the signed manifest). Screen view comes later, and X11 and Wayland need different capture paths.
 The panel must show each device's OS and keep PowerShell and shell commands apart.
 
+Many Turkish public schools use Pardus, including Pardus ETAP on classroom interactive boards. TÜBİTAK ULAKBİM, which
+develops Pardus, also develops Lider Ahenk, a central management system for Pardus machines and ETAP boards.
+**Integrating with Lider Ahenk** instead of, or before, shipping a POps agent for Linux is an alternative path: POps
+would then show and act on Pardus machines through a system the school may already use. It has not been evaluated
+yet; the choice between the options above and this path is open.
+
 | Option | For | Against |
 | --- | --- | --- |
 | .NET on Linux | Reuses the tested protocol code and logic (manifest verification, message reassembly, capability policy, DNS matching) and `POps.Tests`; one language for all agents. | Service, WMI inventory, firewall, pipe/tray and MSI updater are Windows-only and must be rewritten anyway. Needs the .NET runtime on the PC or a large self-contained build. .NET 8 support ends on 10 November 2026, so it would start on .NET 10. |
 | Small Go agent | One static binary, no runtime, simple `.deb` and systemd packaging, ed25519 in the standard library. | Adds another language to the project, which works against the bus-factor concern. Protocol and verification are reimplemented; the signed test manifest in `Agent/POps.Tests/TestData` can cross-check them. |
 | Python agent | Same language as the backend; Python 3 is present on Debian-based desktops such as Pardus. | Depends on the system Python and its packages (or ships a venv); source is readable on the PC; weaker fit for screen capture later. |
+
+### Integrations
+
+*Status: design, not implemented.*
+
+- **GLPI export:** send POps inventory (hardware, installed software) and helpdesk tickets to GLPI through its REST
+  API, with POps as the source of truth for what agents report. Design note with mappings, sync direction, conflicts
+  and authentication: [`docs/integrations/glpi.md`](docs/integrations/glpi.md).
 
 ### Vision beyond one school
 
@@ -237,8 +252,9 @@ Whatever the choice, a second maintainer with review and release rights would re
 - Close pentest findings F9 and F11.
 - Freeze software (Deep Freeze and similar): thaw before an update and freeze again afterwards. Today: enroll
   before freezing or use `PersistDir` ([`Agent/README.md`](Agent/README.md#machines-with-freeze-software)).
-- A Turkish "Neden POps?" page for school management (terminal and screen off on staff PCs, on in labs) and a
-  "terminal/ekran kapalı" badge in the device list.
+- ~~A Turkish "Neden POps?" page for school management (terminal and screen off on staff PCs, on in labs).~~ Done:
+  [`docs/tr/neden-pops.md`](docs/tr/neden-pops.md), with the other Turkish guides for schools in [`docs/tr/`](docs/tr).
+- A "terminal/ekran kapalı" badge in the device list.
 - Release signing key rotation with two trusted keys in the agent (procedure in
   [`keys/README.md`](keys/README.md#rotasyon)).
 

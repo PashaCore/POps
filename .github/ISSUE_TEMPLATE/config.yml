@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or help with an installation
+    url: https://github.com/PashaCore/POps/discussions/categories/q-a
+    about: Ask in GitHub Discussions (Q&A). Issues are for confirmed bugs and concrete proposals.
+  - name: Idea to talk through first
+    url: https://github.com/PashaCore/POps/discussions/categories/ideas
+    about: Not sure yet what the change should be? Start a discussion under Ideas.
+  - name: Security vulnerability
+    url: https://github.com/PashaCore/POps/blob/main/SECURITY.md
+    about: Do not open a public issue. Report it privately as described in SECURITY.md.

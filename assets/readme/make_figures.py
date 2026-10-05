@@ -4,7 +4,7 @@
 
 Writes <name>.<lang>.svg and <name>.<lang>-dark.svg next to this file. The READMEs pick the theme with
 <picture> + prefers-color-scheme. Edit the texts here, not the SVG files. Capacity numbers come from
-docs/kapasite/olcum.json.
+docs/kapasite/olcum.json. The "veyon" figure belongs to docs/tr/veyon-ile-birlikte.md and exists in Turkish only.
 """
 
 import json
@@ -254,6 +254,22 @@ T = {
         "cap_sub": "0.1.11-alpha · tek backend süreci · sanal ajanlar, düz WebSocket · 0 başarısız deneme",
         "cap_y": "saniye",
         "cap_legend": "Aynı anda bağlanan ajan sayısı · altında: backend işlemcisi, tek çekirdeğin yüzdesi",
+
+        # docs/tr/veyon-ile-birlikte.md (yalnızca Türkçe)
+        "vy_title": "Aynı bilgisayarda iki katman: Veyon dersi, POps laboratuvarı yönetir",
+        "vy_sub": "Veyon öğretmenden öğrenci bilgisayarına bağlanır; POps ajanı sunucuya kendisi bağlanır. "
+                  "Portlar çakışmaz.",
+        "vy_teacher": "Öğretmen", "vy_teacher_sub": ["Veyon Master", "ders sırasında açık"],
+        "vy_lab": "Laboratuvar bilgisayarları (Windows 10 / 11)",
+        "vy_pc": "Öğrenci bilgisayarı",
+        "vy_veyon": "Veyon Service", "vy_veyon_sub": "TCP 11100'ü dinler",
+        "vy_pops": "POps ajanı", "vy_pops_sub": "port açmaz, dışa bağlanır",
+        "vy_it": "BT sorumlusu", "vy_it_sub": ["Tarayıcı, POps paneli", "her zaman"],
+        "vy_server": "POps sunucusu (okulda)",
+        "vy_server_sub": ["envanter, dağıtım, güncelleme, denetim", "nginx 443 · backend yalnızca 127.0.0.1"],
+        "vy_e_lesson": ("TCP 11100", "ders sırasında"), "vy_e_https": "HTTPS", "vy_e_out": "yalnızca dışa 443",
+        "vy_note": "Karantinadaki bilgisayar yalnızca POps sunucusuna, DNS'e ve DHCP'ye açıktır; "
+                   "o sırada Veyon da bağlanamaz.",
     },
 }
 
@@ -436,14 +452,73 @@ def capacity(t, p):
     return s
 
 
+def veyon(t, p):
+    s = Svg(1000, 516, p, t["vy_title"])
+    s.text(28, 38, t["vy_title"], 20, weight=700)
+    s.text(28, 60, t["vy_sub"], 13, p["muted"])
+
+    # Sol üst: öğretmen (Veyon Master)
+    s.rect(28, 140, 180, 92, fill=p["amber_bg"], stroke=p["amber"], rx=10)
+    s.text(44, 168, t["vy_teacher"], 15, p["amber"], 700)
+    s.lines(44, 190, t["vy_teacher_sub"], 12, gap=18)
+
+    # Orta: laboratuvar, üç öğrenci bilgisayarı; her birinde Veyon Service ve POps ajanı yan yana
+    lx, lw = 300, 672
+    s.rect(lx, 88, lw, 228, fill=p["card"], stroke=p["border"], rx=12)
+    s.text(lx + 18, 114, t["vy_lab"], 14, p["muted"], 700)
+    cw, gap = 200, 18
+    centers = []
+    for i in range(3):
+        x = lx + 18 + i * (cw + gap)
+        centers.append(x + cw / 2)
+        s.rect(x, 128, cw, 172, fill=p["bg"], stroke=p["border"], rx=10)
+        s.text(x + 14, 152, "%s %d" % (t["vy_pc"], i + 1), 13, weight=700)
+        s.rect(x + 12, 166, cw - 24, 54, fill=p["amber_bg"], stroke=p["amber"], rx=8)
+        s.text(x + 24, 188, t["vy_veyon"], 13, p["amber"], 700)
+        s.text(x + 24, 207, t["vy_veyon_sub"], 11, p["muted"])
+        s.rect(x + 12, 232, cw - 24, 54, fill=p["violet_bg"], stroke=p["violet"], rx=8)
+        s.text(x + 24, 254, t["vy_pops"], 13, p["violet"], 700)
+        s.text(x + 24, 273, t["vy_pops_sub"], 11, p["muted"])
+
+    # Öğretmenden öğrenci bilgisayarlarına (gelen bağlantı, yalnızca ders sırasında)
+    s.arrow(210, 193, lx - 2, 193, "amber")
+    s.text(254, 180, t["vy_e_lesson"][0], 11.5, p["amber"], 700, "middle")
+    s.text(254, 214, t["vy_e_lesson"][1], 11, p["amber"], 400, "middle")
+
+    # Alt: BT sorumlusu ve POps sunucusu
+    s.rect(28, 372, 180, 84, fill=p["blue_bg"], stroke=p["blue"], rx=10)
+    s.text(44, 400, t["vy_it"], 15, p["blue"], 700)
+    s.lines(44, 422, t["vy_it_sub"], 12, gap=18)
+    sx, sw = 520, 300
+    s.rect(sx, 372, sw, 84, fill=p["green_bg"], stroke=p["green"], rx=10)
+    s.text(sx + 16, 400, t["vy_server"], 15, p["green"], 700)
+    s.lines(sx + 16, 422, t["vy_server_sub"], 11.5, p["muted"], gap=18)
+    s.arrow(210, 414, sx - 2, 414, "blue", both=True)
+    s.text((210 + sx) / 2, 404, t["vy_e_https"], 11.5, p["blue"], 600, "middle")
+
+    # Ajanlardan sunucuya: dışa doğru, sürekli
+    targets = [sx + 40, sx + sw / 2, sx + sw - 40]
+    for cx, tx in zip(centers, targets):
+        s.arrow(cx, 302, tx, 370, "violet")
+    s.pill(330, 326, t["vy_e_out"], "violet", 10.5)
+
+    s.rect(28, 470, 944, 32, fill=p["card"], stroke=p["border"], rx=8)
+    s.text(500, 491, t["vy_note"], 12, p["muted"], 600, "middle")
+    return s
+
+
 FIGURES = {"architecture": architecture, "security": security, "updates": updates, "timeline": timeline,
-           "capacity": capacity}
+           "capacity": capacity, "veyon": veyon}
+# Yalnızca bazı dillerde çizilen şekiller (öteki şekiller her dilde)
+ONLY_LANGS = {"veyon": ("tr",)}
 
 
 def main():
     for lang, texts in T.items():
         for theme, pal in PALETTES.items():
             for name, fn in FIGURES.items():
+                if lang not in ONLY_LANGS.get(name, (lang,)):
+                    continue
                 suffix = "" if theme == "light" else "-dark"
                 fn(texts, pal).save(os.path.join(HERE, "%s.%s%s.svg" % (name, lang, suffix)))
     print("ok")
