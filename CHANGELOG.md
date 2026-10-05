@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent protocol as JSON Schema with shared test vectors.** `docs/protocol/` defines both agent WebSockets message by message (9 agent → server and 20 server → agent messages, plus the signed release manifest), with 51 example messages that the backend checks and the agent tests load (`docs/protocol/AGENT_TESTS.md`). Rules for a second agent: agent messages carry `type`, server messages `action`; what exists today is protocol 1; optional behaviour is negotiated with `server_info.features`; unknown fields and messages are ignored. `server_info` now also sends `"protocol": 1`. `Backend/tests/test_protocol.py` runs the real WebSocket handlers, task queue and endpoints with a fake database and fake sockets and fails on any message that does not match its schema.
 - **Public read-only demo** (`deploy/demo/`): a Compose stack with PostgreSQL, the backend and a fake fleet on an internal network and the panel on 127.0.0.1:8180; `seed.py` (demo viewer, enrollment token, two weeks of history, licences, "POps Demo Okulu"); `reset.sh` (nightly wipe and reseed); `setup-host.sh` (owner install with a 03:30 systemd timer); Virtualmin and `.htaccess` steps.
 - **`tools/demo_fleet.py`:** 50 fake school PCs in four labs plus two teacher PCs. They enroll with a token, follow a school calendar, report inventory, software and Windows Update status, raise DNS violations and help-desk tickets, and answer every command with a canned reply. They never execute anything.
 - **Demo accounts:** backend `POPS_DEMO_USERS` makes the listed accounts read-only (every request other than GET, HEAD and OPTIONS returns 403 "Demo hesabında değiştirilemez", including the account's own password and 2FA); panel `POPS_DEMO_LOGIN` shows the demo credentials on the sign-in page. `Backend/tests/test_demo.py` checks every write endpoint in the route table.
@@ -42,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Docs: Vision channel authentication.** `docs/api.md` said `/ws/vision` accepts an enrollment token; it accepts only the device secret.
 - **Apache template: WebSocket rule.** `Installer/server/apache-htaccess.example` forwarded `/ws/panel` as `/ws/` because the path came from the wrong condition. **Upgrading:** if your `Dashboard/.htaccess` has the `Upgrade` condition after the `/ws/` path condition, swap them (sites with a vhost `ProxyPass /ws/` were not affected).
 - **Agent: an unreadable configuration is reported.** When `appsettings.json` cannot be read or has no valid `ServerUrl`, the agent still falls back to `http://127.0.0.1:8000`, but now logs an error, writes Windows event 1090 and shows "POps - yapılandırma okunamadı" with a warning icon in the tray instead of looking healthy.
 - **Panel: on phones the scheduled tasks table scrolls inside its card** instead of widening the page.
@@ -50,6 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docs: stale facts.** ROADMAP no longer lists pentest findings F9 and F11 as open (closed in 0.1.4 and 0.1.13); the FAQ gives the measured capacity (5,000 agents on one process) instead of 1,000; the MSI install examples write their log to `C:\Windows\Temp`, which always exists, instead of `C:\POpsLogs`, which a fresh PC does not have yet (msiexec would refuse with 1622); `docs/api.md` no longer links a design note that is not in the repository.
 - **Agent: offline bypass works while the server is unreachable.** The tray pipe stays open for the whole life of the service; before, it was closed after every lost server connection until the next attempt, and an offline code typed in the lock screen during that wait (up to a minute, 10 minutes after a `4409`) was dropped silently. The lock screen now says when a code could not reach the service. Needs the agent from the next release.
 - **Docs:** a broken link to the agent setup section in CONTRIBUTING; getting-started no longer says the panel loads fonts and icons from CDNs.
+
+### Security
+
+- **Remote screen frames are filed under the tunnel's own device.** `/ws/vision` forwarded the `hw_id` the agent put in a frame, so an enrolled agent could put frames into another device's tile for an admin who had a session open on it. The server now sets it to the device that authenticated the tunnel.
+- **Backend dependencies are hash-locked.** `Backend/requirements.lock` pins every dependency, indirect ones included, with the SHA-256 of each file; `install.sh`, `pops-deploy-backend`, the Docker image and CI install it with `pip install --require-hashes`, so a changed file on the package index is refused before anything is installed. Checkouts without the lock fall back to `requirements.txt`. Regenerate it with `tools/backend_lock.sh` after changing `requirements.txt` (CI checks it); Dependabot PRs get it from the `lock-refresh` workflow. A native server uses the lock once `/usr/local/sbin/pops-deploy-backend` is updated.
 
 ## [0.1.22-alpha] - 2026-10-05
 
