@@ -229,7 +229,7 @@
         const why = badTask ? dev.failReason(badTask) : '';
         const badNames = j.tasks.filter(x => POps.taskState(x.status) === 'bad').map(x => dev.name(x.target_pc));
         const word = k === 'run' ? POps.t('Sürüyor') : k === 'bad' ? (j.c.total === 1 ? dev.statusWord(t.status) : POps.t('{bad}/{total} başarısız', { bad: j.c.bad, total: j.c.total })) : POps.t('Tamamlandı');
-        const metaHtml = escapeHtml(t.created_by || POps.t('sistem')) + ' · ' + POps.timeHtml(t.created_at) + (t.source ? ' · ' + escapeHtml(dev.sourceText(t.source)) : '') + ' · ' + escapeHtml(where);
+        const metaHtml = escapeHtml(POps.tPattern(t.created_by) || POps.t('sistem')) + ' · ' + POps.timeHtml(t.created_at) + (t.source ? ' · ' + escapeHtml(dev.sourceText(t.source)) : '') + ' · ' + escapeHtml(where);
         const whyHtml = why ? `<div class="why">${escapeHtml(why)}${j.c.total > 1 && badNames.length ? ' · ' + escapeHtml(badNames.slice(0, 4).join(', ')) + (badNames.length > 4 ? '…' : '') : ''}</div>` : '';
         return `<a class="act clickable" href="tasks?job=${encodeURIComponent(j.key)}" style="color:inherit">
             <div class="res ${escapeHtml(k)}">${POps.iconHtml(k === 'ok' ? 'check' : k === 'bad' ? 'x' : 'clock')}</div>

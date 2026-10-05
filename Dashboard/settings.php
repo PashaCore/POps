@@ -2,10 +2,11 @@
 <?php
 $isSuper = ($_SESSION['role'] ?? '') === 'superadmin';
 // Kullanıcının açabileceği sayfalar (kontrol merkezi herkese açık, Sistem yalnızca süper admin)
+// Anahtarlar veridir (yetki listesi); adlar yalnızca gösterilir
 $permPages = [
-    'devices' => 'Cihazlar', 'labs' => 'Sınıflar', 'tasks' => 'İşlemler', 'terminal' => 'Uzak komut',
-    'vision' => 'Uzak ekran', 'deploy' => 'Dağıtım', 'policies' => 'Politikalar', 'logger' => 'Kayıtlar',
-    'reports' => 'Raporlar', 'helpdesk' => 'Destek talepleri', 'settings' => 'Ayarlar',
+    'devices' => __('Cihazlar'), 'labs' => __('Sınıflar'), 'tasks' => __('İşlemler'), 'terminal' => __('Uzak komut'),
+    'vision' => __('Uzak ekran'), 'deploy' => __('Dağıtım'), 'policies' => __('Politikalar'), 'logger' => __('Kayıtlar'),
+    'reports' => __('Raporlar'), 'helpdesk' => __('Destek talepleri'), 'settings' => __('Ayarlar'),
 ];
 $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php ile aynı
 ?>
@@ -87,37 +88,37 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 
 <div class="page-header">
     <div>
-        <h1>Ayarlar</h1>
+        <h1><?php _e('Ayarlar'); ?></h1>
         <div class="summary">
-            <span class="sum" id="sumUsers">Yükleniyor…</span>
+            <span class="sum" id="sumUsers"><?php _e('Yükleniyor…'); ?></span>
             <span class="sum" id="sumConn" hidden></span>
             <span class="sum" id="sumTwofa" hidden></span>
         </div>
     </div>
     <?php if ($isSuper): ?>
     <div class="page-header-actions">
-        <button type="button" class="btn" id="addUserBtn"><?php echo pops_icon('plus', 'sm'); ?>Kullanıcı ekle</button>
+        <button type="button" class="btn" id="addUserBtn"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Kullanıcı ekle'); ?></button>
     </div>
     <?php endif; ?>
 </div>
 
-<div class="tabs set-tabs" id="setTabs" aria-label="Ayarlar bölümleri">
-    <button type="button" class="tab" data-tab="users">Kullanıcılar</button>
-    <button type="button" class="tab" data-tab="security">Güvenlik</button>
-    <button type="button" class="tab" data-tab="general">Genel</button>
+<div class="tabs set-tabs" id="setTabs" aria-label="<?php _e('Ayarlar bölümleri'); ?>">
+    <button type="button" class="tab" data-tab="users"><?php _e('Kullanıcılar'); ?></button>
+    <button type="button" class="tab" data-tab="security"><?php _e('Güvenlik'); ?></button>
+    <button type="button" class="tab" data-tab="general"><?php _e('Genel'); ?></button>
 </div>
 
 <div class="sects">
     <section class="sect" data-pane="users" aria-labelledby="hUsers">
         <div class="sect-head">
-            <h2 id="hUsers">Kullanıcılar</h2>
-            <p>Panele kimlerin girebileceği ve hangi sayfaları açabileceği. Ayrıntı ve işlemler için bir kullanıcıya tıklayın.<?php if (!$isSuper): ?> Kullanıcıları yalnızca süper admin ekler, düzenler ve siler.<?php endif; ?></p>
+            <h2 id="hUsers"><?php _e('Kullanıcılar'); ?></h2>
+            <p><?php _e('Panele kimlerin girebileceği ve hangi sayfaları açabileceği. Ayrıntı ve işlemler için bir kullanıcıya tıklayın.'); ?><?php if (!$isSuper): ?> <?php _e('Kullanıcıları yalnızca süper admin ekler, düzenler ve siler.'); ?><?php endif; ?></p>
         </div>
         <div class="sect-body">
             <div class="table-wrap">
                 <table class="data-table user-table">
-                    <thead><tr><th>Kullanıcı</th><th>Rol</th><th class="hide-sm col-access">Erişim</th><th>Son giriş</th></tr></thead>
-                    <tbody id="userBody"><tr><td colspan="4"><div class="loading-state" role="status"><span class="spinner"></span>Kullanıcılar yükleniyor…</div></td></tr></tbody>
+                    <thead><tr><th><?php _e('Kullanıcı'); ?></th><th><?php _e('Rol'); ?></th><th class="hide-sm col-access"><?php _e('Erişim'); ?></th><th><?php _e('Son giriş'); ?></th></tr></thead>
+                    <tbody id="userBody"><tr><td colspan="4"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Kullanıcılar yükleniyor…'); ?></div></td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -125,36 +126,36 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 
     <section class="sect" data-pane="security" id="twofaCard" aria-labelledby="hTwofa">
         <div class="sect-head">
-            <h2 id="hTwofa">İki adımlı doğrulama</h2>
-            <p>Girişte şifreye ek olarak doğrulama uygulamasından (Google Authenticator, Authy, Microsoft Authenticator) 6 haneli kod istenir. Yalnızca kendi hesabınız için geçerlidir.</p>
+            <h2 id="hTwofa"><?php _e('İki adımlı doğrulama'); ?></h2>
+            <p><?php _e('Girişte şifreye ek olarak doğrulama uygulamasından (Google Authenticator, Authy, Microsoft Authenticator) 6 haneli kod istenir. Yalnızca kendi hesabınız için geçerlidir.'); ?></p>
         </div>
         <div class="sect-body">
             <div class="set">
                 <div class="srow">
                     <div class="grow">
-                        <div class="t">Hesabınızda 2FA</div>
-                        <div class="d" id="twofaDesc">Önerilir, zorunlu değildir.</div>
+                        <div class="t"><?php _e('Hesabınızda 2FA'); ?></div>
+                        <div class="d" id="twofaDesc"><?php _e('Önerilir, zorunlu değildir.'); ?></div>
                     </div>
                     <span class="st" id="twofaState"><span class="spinner sm"></span></span>
                     <button type="button" class="btn secondary sm" id="twofaBtn" hidden></button>
                 </div>
                 <div class="srow block" id="twofaSetup" hidden>
                     <div class="tf-setup">
-                        <div class="tf-qr" id="twofaQr" aria-label="2FA kurulum QR kodu"></div>
+                        <div class="tf-qr" id="twofaQr" aria-label="<?php _e('2FA kurulum QR kodu'); ?>"></div>
                         <div class="tf-steps">
-                            <div class="tf-step"><span class="n">1</span><span>Doğrulama uygulamasında yeni hesap ekleyip QR kodu okutun.</span></div>
+                            <div class="tf-step"><span class="n">1</span><span><?php _e('Doğrulama uygulamasında yeni hesap ekleyip QR kodu okutun.'); ?></span></div>
                             <div class="field" style="margin:0">
-                                <label for="twofaSecret">QR okutamıyorsanız bu anahtarı elle girin</label>
+                                <label for="twofaSecret"><?php _e('QR okutamıyorsanız bu anahtarı elle girin'); ?></label>
                                 <div class="input-group">
                                     <input type="text" id="twofaSecret" readonly spellcheck="false">
-                                    <button type="button" class="ibtn boxed" id="twofaCopy" data-tip="Anahtarı kopyala" data-tip-pos="left" aria-label="Anahtarı kopyala"><?php echo pops_icon('copy'); ?></button>
+                                    <button type="button" class="ibtn boxed" id="twofaCopy" data-tip="<?php _e('Anahtarı kopyala'); ?>" data-tip-pos="left" aria-label="<?php _e('Anahtarı kopyala'); ?>"><?php echo pops_icon('copy'); ?></button>
                                 </div>
                             </div>
-                            <div class="tf-step"><span class="n">2</span><span>Uygulamanın gösterdiği 6 haneli kodu yazın.</span></div>
+                            <div class="tf-step"><span class="n">2</span><span><?php _e('Uygulamanın gösterdiği 6 haneli kodu yazın.'); ?></span></div>
                             <div class="input-group">
-                                <input type="text" id="twofaCode" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" aria-label="6 haneli kod">
-                                <button type="button" class="btn" id="twofaEnableBtn">Etkinleştir</button>
-                                <button type="button" class="btn ghost" id="twofaCancelBtn">Vazgeç</button>
+                                <input type="text" id="twofaCode" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" aria-label="<?php _e('6 haneli kod'); ?>">
+                                <button type="button" class="btn" id="twofaEnableBtn"><?php _e('Etkinleştir'); ?></button>
+                                <button type="button" class="btn ghost" id="twofaCancelBtn"><?php _e('Vazgeç'); ?></button>
                             </div>
                         </div>
                     </div>
@@ -166,17 +167,17 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     <?php if ($isSuper): ?>
     <section class="sect" data-pane="security" aria-labelledby="hTokens">
         <div class="sect-head">
-            <h2 id="hTokens">API jetonları</h2>
-            <p>Betikler ve dış sistemler panel girişi olmadan <code>/api/v1</code> uçlarını bu jetonlarla kullanır. Jeton yalnızca oluşturulurken bir kez gösterilir; sunucuda özeti saklanır. Görüntüleyici yalnızca okur; Yönetici günlük işleri yapar ama süper admin işlemlerine, kullanıcılara, jetonlara ve uzak ekrana erişemez. Ayrıntı: <code>docs/api.md</code></p>
+            <h2 id="hTokens"><?php _e('API jetonları'); ?></h2>
+            <p><?php _e('Betikler ve dış sistemler panel girişi olmadan {path} uçlarını bu jetonlarla kullanır.', ['path' => '/api/v1']); ?> <?php _e('Jeton yalnızca oluşturulurken bir kez gösterilir; sunucuda özeti saklanır. Görüntüleyici yalnızca okur; Yönetici günlük işleri yapar ama süper admin işlemlerine, kullanıcılara, jetonlara ve uzak ekrana erişemez.'); ?> <?php _e('Ayrıntı:'); ?> <code>docs/api.md</code></p>
         </div>
         <div class="sect-body">
             <div class="set">
                 <div class="srow">
                     <div class="grow">
-                        <div class="t">Jetonlar</div>
-                        <div class="d" id="tokSummary">Yükleniyor…</div>
+                        <div class="t"><?php _e('Jetonlar'); ?></div>
+                        <div class="d" id="tokSummary"><?php _e('Yükleniyor…'); ?></div>
                     </div>
-                    <button type="button" class="btn secondary sm" id="tokNew"><?php echo pops_icon('plus', 'sm'); ?>Jeton oluştur</button>
+                    <button type="button" class="btn secondary sm" id="tokNew"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Jeton oluştur'); ?></button>
                 </div>
             </div>
             <div class="set" id="tokList" hidden></div>
@@ -186,28 +187,28 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 
     <section class="sect" data-pane="general" aria-labelledby="hOrg">
         <div class="sect-head">
-            <h2 id="hOrg">Kurum</h2>
-            <p>Giriş ekranında görünen ad ve logo. Yalnızca süper admin değiştirir.</p>
+            <h2 id="hOrg"><?php _e('Kurum'); ?></h2>
+            <p><?php _e('Giriş ekranında görünen ad ve logo. Yalnızca süper admin değiştirir.'); ?></p>
         </div>
         <div class="sect-body">
             <div class="set">
                 <div class="srow">
                     <div class="grow">
-                        <div class="t" id="orgNameLabel">Kurum adı</div>
-                        <div class="d">Giriş ekranının başlığı olur. Boş bırakılırsa "POps" yazar.</div>
+                        <div class="t" id="orgNameLabel"><?php _e('Kurum adı'); ?></div>
+                        <div class="d"><?php _e('Giriş ekranının başlığı olur. Boş bırakılırsa "POps" yazar.'); ?></div>
                     </div>
-                    <input type="text" id="orgName" class="org-name" maxlength="80" autocomplete="organization" aria-labelledby="orgNameLabel" placeholder="Örn. Atatürk Anadolu Lisesi" disabled>
-                    <button type="button" class="btn secondary sm" id="orgSave" disabled>Kaydet</button>
+                    <input type="text" id="orgName" class="org-name" maxlength="80" autocomplete="organization" aria-labelledby="orgNameLabel" placeholder="<?php _e('Örn. Atatürk Anadolu Lisesi'); ?>" disabled>
+                    <button type="button" class="btn secondary sm" id="orgSave" disabled><?php _e('Kaydet'); ?></button>
                 </div>
                 <div class="srow">
                     <div class="grow">
                         <div class="t">Logo</div>
-                        <div class="d">PNG, JPEG ya da WebP, en çok 256 KB. Kare ya da yatay bir logo en iyi görünür.</div>
+                        <div class="d"><?php _e('PNG, JPEG ya da WebP, en çok 256 KB. Kare ya da yatay bir logo en iyi görünür.'); ?></div>
                     </div>
-                    <img id="orgLogo" class="org-logo" alt="Kurum logosu" hidden>
+                    <img id="orgLogo" class="org-logo" alt="<?php _e('Kurum logosu'); ?>" hidden>
                     <input type="file" id="orgLogoFile" accept="image/png,image/jpeg,image/webp" hidden>
-                    <button type="button" class="btn secondary sm" id="orgLogoPick" disabled><?php echo pops_icon('upload', 'sm'); ?>Logo yükle</button>
-                    <button type="button" class="ibtn sm" id="orgLogoDel" data-tip="Logoyu kaldır" data-tip-pos="left" aria-label="Logoyu kaldır" hidden><?php echo pops_icon('trash', 'sm'); ?></button>
+                    <button type="button" class="btn secondary sm" id="orgLogoPick" disabled><?php echo pops_icon('upload', 'sm'); ?><?php _e('Logo yükle'); ?></button>
+                    <button type="button" class="ibtn sm" id="orgLogoDel" data-tip="<?php _e('Logoyu kaldır'); ?>" data-tip-pos="left" aria-label="<?php _e('Logoyu kaldır'); ?>" hidden><?php echo pops_icon('trash', 'sm'); ?></button>
                 </div>
             </div>
         </div>
@@ -215,18 +216,18 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 
     <section class="sect" data-pane="general" aria-labelledby="hQueue">
         <div class="sect-head">
-            <h2 id="hQueue">Görev kuyruğu</h2>
-            <p>Dosya indirme ve kurulum gibi görevler ağ boğulmasın diye paketler halinde gönderilir.</p>
+            <h2 id="hQueue"><?php _e('Görev kuyruğu'); ?></h2>
+            <p><?php _e('Dosya indirme ve kurulum gibi görevler ağ boğulmasın diye paketler halinde gönderilir.'); ?></p>
         </div>
         <div class="sect-body">
             <div class="set">
                 <div class="srow">
                     <div class="grow">
-                        <div class="t" id="queueLimitLabel">Eşzamanlı görev sınırı</div>
-                        <div class="d">Aynı anda görev alan en çok bilgisayar sayısı. 1 Gbit ağda en çok 15 önerilir.</div>
+                        <div class="t" id="queueLimitLabel"><?php _e('Eşzamanlı görev sınırı'); ?></div>
+                        <div class="d"><?php _e('Aynı anda görev alan en çok bilgisayar sayısı. 1 Gbit ağda en çok 15 önerilir.'); ?></div>
                     </div>
                     <input type="number" id="queueLimit" min="1" max="200" inputmode="numeric" aria-labelledby="queueLimitLabel" disabled>
-                    <span class="unit">bilgisayar</span>
+                    <span class="unit"><?php _e('bilgisayar'); ?></span>
                 </div>
             </div>
         </div>
@@ -234,36 +235,36 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 
     <section class="sect" data-pane="general" aria-labelledby="hServer">
         <div class="sect-head">
-            <h2 id="hServer">Sunucu bağlantısı</h2>
-            <p>Adresler sunucudaki <code>.env</code> dosyasından okunur (<code>POPS_API_URL</code>, <code>POPS_API_INTERNAL_URL</code>) ve buradan değiştirilemez. Ayrıntı: <code>docs/configuration.md</code></p>
+            <h2 id="hServer"><?php _e('Sunucu bağlantısı'); ?></h2>
+            <p><?php _e('Adresler sunucudaki {file} dosyasından okunur ({names}) ve buradan değiştirilemez.', ['file' => '.env', 'names' => 'POPS_API_URL, POPS_API_INTERNAL_URL']); ?> <?php _e('Ayrıntı:'); ?> <code>docs/configuration.md</code></p>
         </div>
         <div class="sect-body">
             <div class="set">
                 <div class="srow">
                     <div class="grow">
-                        <div class="t">Bağlantı</div>
-                        <div class="d" id="connDesc">Panelin merkez sunucuya ulaşıp ulaşmadığı</div>
+                        <div class="t"><?php _e('Bağlantı'); ?></div>
+                        <div class="d" id="connDesc"><?php _e('Panelin merkez sunucuya ulaşıp ulaşmadığı'); ?></div>
                     </div>
-                    <span class="st" id="connState"><span class="spinner sm"></span>Sınanıyor</span>
-                    <button type="button" class="ibtn sm" id="connRetry" data-tip="Yeniden sına" data-tip-pos="left" aria-label="Bağlantıyı yeniden sına"><?php echo pops_icon('refresh', 'sm'); ?></button>
+                    <span class="st" id="connState"><span class="spinner sm"></span><?php _e('Sınanıyor'); ?></span>
+                    <button type="button" class="ibtn sm" id="connRetry" data-tip="<?php _e('Yeniden sına'); ?>" data-tip-pos="left" aria-label="<?php _e('Bağlantıyı yeniden sına'); ?>"><?php echo pops_icon('refresh', 'sm'); ?></button>
                 </div>
                 <div class="srow">
-                    <div class="grow"><div class="t">REST API adresi</div></div>
+                    <div class="grow"><div class="t"><?php _e('REST API adresi'); ?></div></div>
                     <span class="val" id="dispHttpUrl">—</span>
                 </div>
                 <div class="srow">
-                    <div class="grow"><div class="t">WebSocket adresi</div></div>
+                    <div class="grow"><div class="t"><?php _e('WebSocket adresi'); ?></div></div>
                     <span class="val" id="dispWsUrl">—</span>
                 </div>
             </div>
         </div>
     </section>
 
-    <div class="savebar" id="saveBar" role="region" aria-label="Kaydedilmemiş değişiklikler" hidden>
+    <div class="savebar" id="saveBar" role="region" aria-label="<?php _e('Kaydedilmemiş değişiklikler'); ?>" hidden>
         <span class="dot warn" aria-hidden="true"></span>
-        <span class="sb-text">Kaydedilmemiş değişiklik var</span>
-        <button type="button" class="btn secondary sm" id="discardBtn">Vazgeç</button>
-        <button type="button" class="btn sm" id="saveBtn">Kaydet</button>
+        <span class="sb-text"><?php _e('Kaydedilmemiş değişiklik var'); ?></span>
+        <button type="button" class="btn secondary sm" id="discardBtn"><?php _e('Vazgeç'); ?></button>
+        <button type="button" class="btn sm" id="saveBtn"><?php _e('Kaydet'); ?></button>
     </div>
 </div>
 
@@ -271,44 +272,44 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 <div class="modal-overlay" id="userModal">
     <div class="modal-box">
         <div class="modal-header">
-            <div class="modal-title" id="umTitle">Kullanıcı ekle</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x', 'sm'); ?></button>
+            <div class="modal-title" id="umTitle"><?php _e('Kullanıcı ekle'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x', 'sm'); ?></button>
         </div>
         <div class="modal-body">
             <div class="field" id="umNameField">
-                <label for="umName">Kullanıcı adı</label>
+                <label for="umName"><?php _e('Kullanıcı adı'); ?></label>
                 <input type="text" id="umName" maxlength="64" autocomplete="off" spellcheck="false">
-                <div class="field-error">Kullanıcı adı girin.</div>
+                <div class="field-error"><?php _e('Kullanıcı adı girin.'); ?></div>
             </div>
             <div class="field" id="umPassField">
-                <label for="umPass">Şifre</label>
+                <label for="umPass"><?php _e('Şifre'); ?></label>
                 <input type="password" id="umPass" autocomplete="new-password">
-                <div class="field-error">Şifre girin.</div>
-                <div class="field-hint">En az 8 karakter önerilir.</div>
+                <div class="field-error"><?php _e('Şifre girin.'); ?></div>
+                <div class="field-hint"><?php _e('En az 8 karakter önerilir.'); ?></div>
             </div>
             <div class="field">
-                <span class="field-label">Rol</span>
-                <div class="segmented block" id="umRole" role="group" aria-label="Rol">
-                    <button type="button" data-role="viewer" aria-pressed="false">İzleyici</button>
-                    <button type="button" data-role="admin" aria-pressed="false">Yönetici</button>
-                    <button type="button" data-role="superadmin" aria-pressed="false">Süper admin</button>
+                <span class="field-label"><?php _e('Rol'); ?></span>
+                <div class="segmented block" id="umRole" role="group" aria-label="<?php _e('Rol'); ?>">
+                    <button type="button" data-role="viewer" aria-pressed="false"><?php _e('İzleyici'); ?></button>
+                    <button type="button" data-role="admin" aria-pressed="false"><?php _e('Yönetici'); ?></button>
+                    <button type="button" data-role="superadmin" aria-pressed="false"><?php _e('Süper admin'); ?></button>
                 </div>
                 <div class="field-hint" id="umRoleHint"></div>
             </div>
             <div class="field" id="umPerms">
-                <span class="field-label">Açabileceği sayfalar</span>
+                <span class="field-label"><?php _e('Açabileceği sayfalar'); ?></span>
                 <div class="perm-grid">
                     <?php foreach ($permPages as $key => $label): ?>
                     <label class="check" data-page="<?php echo htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>"><input type="checkbox" class="perm-cb" value="<?php echo htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></label>
                     <?php endforeach; ?>
                 </div>
-                <div class="field-hint" id="umPermsHint">Kontrol merkezi herkese açıktır.</div>
+                <div class="field-hint" id="umPermsHint"><?php _e('Kontrol merkezi herkese açıktır.'); ?></div>
             </div>
-            <div class="alert info" id="umSelf" hidden><div>Kendi hesabınızı değiştirince yeniden giriş yapmanız gerekir.</div></div>
+            <div class="alert info" id="umSelf" hidden><div><?php _e('Kendi hesabınızı değiştirince yeniden giriş yapmanız gerekir.'); ?></div></div>
         </div>
         <div class="modal-footer">
-            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
-            <button type="button" class="btn" id="umSave">Kullanıcıyı ekle</button>
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="umSave"><?php _e('Kullanıcıyı ekle'); ?></button>
         </div>
     </div>
 </div>
@@ -316,34 +317,34 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 <div class="modal-overlay" id="tokModal">
     <div class="modal-box">
         <div class="modal-header">
-            <div class="modal-title">API jetonu oluştur</div>
-            <button type="button" class="modal-close" data-close-modal aria-label="Kapat"><?php echo pops_icon('x', 'sm'); ?></button>
+            <div class="modal-title"><?php _e('API jetonu oluştur'); ?></div>
+            <button type="button" class="modal-close" data-close-modal aria-label="<?php _e('Kapat'); ?>"><?php echo pops_icon('x', 'sm'); ?></button>
         </div>
         <div class="modal-body">
             <div class="field" id="tkNameField">
-                <label for="tkName">Ad</label>
-                <input type="text" id="tkName" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Örn. envanter-betigi">
-                <div class="field-error">Harf, rakam, boşluk, nokta, alt çizgi ya da tire; en çok 64 karakter.</div>
-                <div class="field-hint">Jetonla yapılan işler kayıtlara <code>token:ad</code> olarak yazılır. Ad tektir.</div>
+                <label for="tkName"><?php _e('Ad'); ?></label>
+                <input type="text" id="tkName" maxlength="64" autocomplete="off" spellcheck="false" placeholder="<?php _e('Örn. envanter-betigi'); ?>">
+                <div class="field-error"><?php _e('Harf, rakam, boşluk, nokta, alt çizgi ya da tire; en çok 64 karakter.'); ?></div>
+                <div class="field-hint"><?php _e('Jetonla yapılan işler kayıtlara {name} olarak yazılır. Ad tektir.', ['name' => __('token:ad')]); ?></div>
             </div>
             <div class="field">
-                <span class="field-label">Yetki</span>
-                <div class="segmented block" id="tkRole" role="group" aria-label="Yetki">
-                    <button type="button" data-trole="viewer" aria-pressed="false">Görüntüleyici</button>
-                    <button type="button" data-trole="admin" aria-pressed="false">Yönetici</button>
+                <span class="field-label"><?php _e('Yetki'); ?></span>
+                <div class="segmented block" id="tkRole" role="group" aria-label="<?php _e('Yetki'); ?>">
+                    <button type="button" data-trole="viewer" aria-pressed="false"><?php _e('Görüntüleyici'); ?></button>
+                    <button type="button" data-trole="admin" aria-pressed="false"><?php _e('Yönetici'); ?></button>
                 </div>
                 <div class="field-hint" id="tkRoleHint"></div>
             </div>
             <div class="field" id="tkDaysField">
-                <label for="tkDays">Geçerlilik (gün)</label>
+                <label for="tkDays"><?php _e('Geçerlilik (gün)'); ?></label>
                 <input type="number" id="tkDays" min="1" max="3650" value="90" inputmode="numeric">
-                <div class="field-error">1 ile 3650 arasında bir sayı girin ya da boş bırakın.</div>
-                <div class="field-hint">Boş bırakılırsa süresiz olur.</div>
+                <div class="field-error"><?php _e('1 ile 3650 arasında bir sayı girin ya da boş bırakın.'); ?></div>
+                <div class="field-hint"><?php _e('Boş bırakılırsa süresiz olur.'); ?></div>
             </div>
         </div>
         <div class="modal-footer">
-            <button type="button" class="btn secondary" data-close-modal>Vazgeç</button>
-            <button type="button" class="btn" id="tkCreate">Jeton oluştur</button>
+            <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
+            <button type="button" class="btn" id="tkCreate"><?php _e('Jeton oluştur'); ?></button>
         </div>
     </div>
 </div>
@@ -369,12 +370,13 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     const ME = <?php echo json_encode((string)($_SESSION['username'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
     const PAGES = <?php echo json_encode($permPages, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
     const VIEWER_BLOCKED = <?php echo json_encode($viewerBlocked, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+    // Metinler Türkçe anahtardır; gösterilirken çevrilir
     const ROLES = {
         superadmin: { word: 'Süper admin', hint: 'Her şeye erişir: bütün sayfalar, kullanıcılar ve Sistem.' },
         admin: { word: 'Yönetici', hint: 'Seçilen sayfalarda günlük işleri yapar.' },
         viewer: { word: 'İzleyici', hint: 'Seçilen sayfaları yalnızca görüntüler; Dağıtım, Uzak komut ve Ayarlar kapalıdır.' }
     };
-    const roleWord = (r) => (ROLES[r] || { word: r || '—' }).word;
+    const roleWord = (r) => (ROLES[r] ? POps.t(ROLES[r].word) : r || '—');
     const pageName = (k) => PAGES[k] || k;
     // Sunucunun "YYYY-MM-DD HH:MM:SS" (yerel saat) biçimi her tarayıcıda okunsun
     const loginDate = (v) => (v ? POps.toDate(String(v).replace(' ', 'T')) : null);
@@ -390,17 +392,17 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 
     // ================= KULLANICILAR =================
     function accessText(u) {
-        if (u.role === 'superadmin') return 'Bütün sayfalar';
+        if (u.role === 'superadmin') return POps.t('Bütün sayfalar');
         const n = permsOf(u).filter(k => PAGES[k]).length;
-        return n ? `${n} sayfa` : 'Yalnızca kontrol merkezi';
+        return n ? POps.tn('{n} sayfa', n) : POps.t('Yalnızca kontrol merkezi');
     }
     function rowHtml(u) {
         const self = u.username === ME;
         const initial = String(u.username || '?').charAt(0).toLocaleUpperCase('tr');
         const when = loginDate(u.last_login);
-        const lastHtml = when ? POps.timeHtml(when) : '<span class="faint">Hiç girmedi</span>';
+        const lastHtml = when ? POps.timeHtml(when) : '<span class="faint">' + POps.tHtml('Hiç girmedi') + '</span>';
         return `<tr data-id="${Number(u.id)}" tabindex="0" class="${focusId === u.id ? 'is-focus' : ''}">
-            <td><div class="nm"><span class="av" aria-hidden="true">${escapeHtml(initial)}</span><span>${escapeHtml(u.username)}${self ? '<span class="you">siz</span>' : ''}</span></div></td>
+            <td><div class="nm"><span class="av" aria-hidden="true">${escapeHtml(initial)}</span><span>${escapeHtml(u.username)}${self ? '<span class="you">' + POps.tHtml('siz') + '</span>' : ''}</span></div></td>
             <td>${escapeHtml(roleWord(u.role))}</td>
             <td class="hide-sm col-access" title="${escapeHtml(u.role === 'superadmin' ? '' : permsOf(u).map(pageName).join(', '))}">${escapeHtml(accessText(u))}</td>
             <td class="when">${lastHtml}</td>
@@ -409,7 +411,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     function renderUsers() {
         const body = $('userBody');
         if (!users.length) {
-            POps.setEmpty(body, { tag: 'tr', colspan: 4, icon: 'users', title: 'Kayıtlı kullanıcı yok' });
+            POps.setEmpty(body, { tag: 'tr', colspan: 4, icon: 'users', title: POps.t('Kayıtlı kullanıcı yok') });
             return;
         }
         body.innerHTML = users.map(rowHtml).join('');
@@ -417,7 +419,9 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     function renderSummary() {
         if (usersLoaded) {
             const supers = users.filter(u => u.role === 'superadmin').length;
-            $('sumUsers').innerHTML = `<b>${users.length}</b> kullanıcı` + (supers && supers < users.length ? ` · <b>${Number(supers)}</b> süper admin` : '');
+            const boldHtml = (x) => `<b>${Number(x)}</b>`;
+            $('sumUsers').innerHTML = POps.tnHtml('{n} kullanıcı', users.length, null, { n: boldHtml(users.length) })
+                + (supers && supers < users.length ? ' · ' + POps.tnHtml('{n} süper admin', supers, null, { n: boldHtml(supers) }) : '');
         }
     }
     async function loadUsers() {
@@ -427,7 +431,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             usersLoaded = true;
         } catch (e) {
             POps.setError($('userBody'), e, { tag: 'tr', colspan: 4 });
-            $('sumUsers').textContent = 'Kullanıcılar alınamadı';
+            $('sumUsers').textContent = POps.t('Kullanıcılar alınamadı');
             return;
         }
         if (focusId !== null && !users.some(u => u.id === focusId)) { focusId = null; POps.drawer.close(); }
@@ -441,27 +445,27 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         const self = u.username === ME;
         const perms = permsOf(u);
         const when = loginDate(u.last_login);
-        const pagesText = u.role === 'superadmin' ? 'Bütün sayfalar' : (perms.length ? perms.map(pageName).join(', ') : 'Yalnızca kontrol merkezi');
-        const factsHtml = `<div class="grow"><span>Rol</span><span>${escapeHtml(roleWord(u.role))}</span></div>`
-            + `<div class="grow"><span>Sayfalar</span><span>${escapeHtml(pagesText)}</span></div>`
-            + `<div class="grow"><span>Son giriş</span><span>${when ? POps.timeHtml(when) : 'Hiç girmedi'}</span></div>`
-            + (self && twofaOn !== null ? `<div class="grow"><span>2FA</span><span>${twofaOn ? 'Açık' : 'Kapalı'}</span></div>` : '')
-            + `<div class="grow"><span>Kimlik</span><span>#${Number(u.id)}</span></div>`;
+        const pagesText = u.role === 'superadmin' ? POps.t('Bütün sayfalar') : (perms.length ? perms.map(pageName).join(', ') : POps.t('Yalnızca kontrol merkezi'));
+        const factsHtml = `<div class="grow"><span>${POps.tHtml('Rol')}</span><span>${escapeHtml(roleWord(u.role))}</span></div>`
+            + `<div class="grow"><span>${POps.tHtml('Sayfalar')}</span><span>${escapeHtml(pagesText)}</span></div>`
+            + `<div class="grow"><span>${POps.tHtml('Son giriş')}</span><span>${when ? POps.timeHtml(when) : POps.tHtml('Hiç girmedi')}</span></div>`
+            + (self && twofaOn !== null ? `<div class="grow"><span>2FA</span><span>${twofaOn ? POps.tHtml('Açık') : escapeHtml(POps.tx('Kapalı', 'switch'))}</span></div>` : '')
+            + `<div class="grow"><span>${POps.tHtml('Kimlik')}</span><span>#${Number(u.id)}</span></div>`;
         const canDelete = u.role !== 'superadmin' && !self;
         const actionsHtml = IS_SUPER
             ? `<div class="set uact">
-                <button type="button" class="srow" data-act="edit">${POps.iconHtml('sliders', 'sm')}<span class="grow">Rolü ve yetkileri düzenle</span>${POps.iconHtml('right', 'sm')}</button>
-                <button type="button" class="srow" data-act="password">${POps.iconHtml('key', 'sm')}<span class="grow">Şifreyi sıfırla</span>${POps.iconHtml('right', 'sm')}</button>
-                ${canDelete ? `<button type="button" class="srow danger" data-act="delete">${POps.iconHtml('trash', 'sm')}<span class="grow">Kullanıcıyı sil</span></button>` : ''}
+                <button type="button" class="srow" data-act="edit">${POps.iconHtml('sliders', 'sm')}<span class="grow">${POps.tHtml('Rolü ve yetkileri düzenle')}</span>${POps.iconHtml('right', 'sm')}</button>
+                <button type="button" class="srow" data-act="password">${POps.iconHtml('key', 'sm')}<span class="grow">${POps.tHtml('Şifreyi sıfırla')}</span>${POps.iconHtml('right', 'sm')}</button>
+                ${canDelete ? `<button type="button" class="srow danger" data-act="delete">${POps.iconHtml('trash', 'sm')}<span class="grow">${POps.tHtml('Kullanıcıyı sil')}</span></button>` : ''}
               </div>`
-              + (canDelete ? '' : `<div class="dnote">${self ? 'Kendi hesabınızı silemezsiniz.' : 'Süper admin hesabı silinemez; silmek için önce rolünü değiştirin.'}</div>`)
-            : '<div class="dnote">Kullanıcıları yalnızca süper admin düzenleyebilir.</div>';
+              + (canDelete ? '' : `<div class="dnote">${self ? POps.tHtml('Kendi hesabınızı silemezsiniz.') : POps.tHtml('Süper admin hesabı silinemez; silmek için önce rolünü değiştirin.')}</div>`)
+            : '<div class="dnote">' + POps.tHtml('Kullanıcıları yalnızca süper admin düzenleyebilir.') + '</div>';
         return `<div class="drawer-head">
                 <div class="drawer-title">
                     <span class="drawer-ico">${POps.iconHtml('user', 'lg')}</span>
-                    <div style="min-width:0"><h2>${escapeHtml(u.username)}</h2><div class="sub">${escapeHtml(roleWord(u.role))}${self ? ' · siz' : ''}</div></div>
+                    <div style="min-width:0"><h2>${escapeHtml(u.username)}</h2><div class="sub">${escapeHtml(roleWord(u.role))}${self ? ' · ' + POps.tHtml('siz') : ''}</div></div>
                 </div>
-                <button type="button" class="ibtn sm" data-act="close" data-tip="Kapat (Esc)" data-tip-pos="left" aria-label="Paneli kapat">${POps.iconHtml('x', 'sm')}</button>
+                <button type="button" class="ibtn sm" data-act="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button>
             </div>
             <div class="glist">${factsHtml}</div>
             ${actionsHtml}`;
@@ -510,23 +514,23 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     function setRole(r) {
         formRole = r;
         $('umRole').querySelectorAll('button').forEach(b => { const on = b.dataset.role === r; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
-        $('umRoleHint').textContent = ROLES[r].hint;
+        $('umRoleHint').textContent = POps.t(ROLES[r].hint);
         $('umPerms').hidden = r === 'superadmin';
         // İzleyici bu sayfaları yetki verilse de açamaz (includes/header.php)
         document.querySelectorAll('#umPerms .check').forEach(l => {
             const blocked = r === 'viewer' && VIEWER_BLOCKED.includes(l.dataset.page);
             l.classList.toggle('is-blocked', blocked);
             l.querySelector('input').disabled = blocked;
-            l.title = blocked ? 'İzleyici bu sayfayı açamaz' : '';
+            l.title = blocked ? POps.t('İzleyici bu sayfayı açamaz') : '';
         });
-        $('umPermsHint').textContent = r === 'viewer' ? 'Kontrol merkezi herkese açıktır. İzleyici Dağıtım, Uzak komut ve Ayarlar sayfalarını açamaz.' : 'Kontrol merkezi herkese açıktır.';
+        $('umPermsHint').textContent = r === 'viewer' ? POps.t('Kontrol merkezi herkese açıktır. İzleyici Dağıtım, Uzak komut ve Ayarlar sayfalarını açamaz.') : POps.t('Kontrol merkezi herkese açıktır.');
     }
     function clearErrors() { document.querySelectorAll('#userModal .field.has-error').forEach(f => f.classList.remove('has-error')); }
     function openEditor(u) {
         editing = u || null;
         clearErrors();
-        $('umTitle').textContent = u ? 'Kullanıcıyı düzenle' : 'Kullanıcı ekle';
-        $('umSave').textContent = u ? 'Değişiklikleri kaydet' : 'Kullanıcıyı ekle';
+        $('umTitle').textContent = u ? POps.t('Kullanıcıyı düzenle') : POps.t('Kullanıcı ekle');
+        $('umSave').textContent = u ? POps.t('Değişiklikleri kaydet') : POps.t('Kullanıcıyı ekle');
         $('umName').value = u ? u.username : '';
         $('umPass').value = '';
         $('umPassField').hidden = !!u;   // var olan kullanıcının şifresi "Şifreyi sıfırla" ile değişir
@@ -552,7 +556,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         const target = editing;
         const ok = await POps.act($('umSave'), () => target
             ? POps.api('/api/admin/users/' + encodeURIComponent(target.id), { method: 'PUT', body: payload })
-            : POps.post('/api/admin/users', payload), { success: target ? `${username} güncellendi.` : `${username} eklendi.` });
+            : POps.post('/api/admin/users', payload), { success: target ? POps.t('{name} güncellendi.', { name: username }) : POps.t('{name} eklendi.', { name: username }) });
         if (!ok) return;
         closeModal('userModal');
         await loadUsers();
@@ -561,19 +565,19 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     async function resetPassword(u) {
         const self = u.username === ME;
         const pw = await POps.prompt({
-            title: `${u.username} için yeni şifre`,
-            message: self ? 'Şifreyi değiştirince yeniden giriş yapmanız gerekir.' : 'Kullanıcının açık oturumları kapanır; yeni şifreyle yeniden girer.',
-            label: 'Yeni şifre', inputType: 'password', autocomplete: 'new-password', trim: false,
-            hint: 'En az 8 karakter önerilir.', confirmText: 'Şifreyi değiştir', icon: 'key'
+            title: POps.t('{name} için yeni şifre', { name: u.username }),
+            message: self ? POps.t('Şifreyi değiştirince yeniden giriş yapmanız gerekir.') : POps.t('Kullanıcının açık oturumları kapanır; yeni şifreyle yeniden girer.'),
+            label: POps.t('Yeni şifre'), inputType: 'password', autocomplete: 'new-password', trim: false,
+            hint: POps.t('En az 8 karakter önerilir.'), confirmText: POps.t('Şifreyi değiştir'), icon: 'key'
         });
         if (pw === null) return;
         const payload = { username: u.username, role: u.role, permissions: JSON.stringify(permsOf(u)), password: pw };
-        if (await POps.act(null, () => POps.api('/api/admin/users/' + encodeURIComponent(u.id), { method: 'PUT', body: payload }), { success: `${u.username} için şifre değişti.` })) loadUsers();
+        if (await POps.act(null, () => POps.api('/api/admin/users/' + encodeURIComponent(u.id), { method: 'PUT', body: payload }), { success: POps.t('{name} için şifre değişti.', { name: u.username }) })) loadUsers();
     }
     async function deleteUser(u) {
-        const ok = await POps.confirm({ title: `${u.username} silinsin mi?`, message: 'Kullanıcının açık oturumları da kapanır. Bu işlem geri alınamaz.', confirmText: 'Kullanıcıyı sil', danger: true, icon: 'trash' });
+        const ok = await POps.confirm({ title: POps.t('{name} silinsin mi?', { name: u.username }), message: POps.t('Kullanıcının açık oturumları da kapanır. Bu işlem geri alınamaz.'), confirmText: POps.t('Kullanıcıyı sil'), danger: true, icon: 'trash' });
         if (!ok) return;
-        if (await POps.act(null, () => POps.del('/api/admin/users/' + encodeURIComponent(u.id)), { success: `${u.username} silindi.` })) {
+        if (await POps.act(null, () => POps.del('/api/admin/users/' + encodeURIComponent(u.id)), { success: POps.t('{name} silindi.', { name: u.username }) })) {
             POps.drawer.close();
             loadUsers();
         }
@@ -590,14 +594,14 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     function renderTwofa(enabled) {
         twofaOn = enabled;
         $('twofaSetup').hidden = true;
-        $('twofaState').innerHTML = enabled ? '<span class="dot ok"></span>Açık' : '<span class="dot off"></span>Kapalı';
-        $('twofaDesc').textContent = enabled ? 'Girişte doğrulama kodu istenir.' : 'Önerilir, zorunlu değildir.';
+        $('twofaState').innerHTML = enabled ? '<span class="dot ok"></span>' + POps.tHtml('Açık') : '<span class="dot off"></span>' + escapeHtml(POps.tx('Kapalı', 'switch'));
+        $('twofaDesc').textContent = enabled ? POps.t('Girişte doğrulama kodu istenir.') : POps.t('Önerilir, zorunlu değildir.');
         const b = $('twofaBtn');
         b.hidden = false;
-        b.textContent = enabled ? "2FA'yı kapat" : "2FA'yı kur";
+        b.textContent = enabled ? POps.t("2FA'yı kapat") : POps.t("2FA'yı kur");
         b.dataset.mode = enabled ? 'disable' : 'setup';
         $('sumTwofa').hidden = false;
-        $('sumTwofa').innerHTML = enabled ? '<span class="dot ok"></span>2FA açık' : '<span class="dot off"></span>2FA kapalı';
+        $('sumTwofa').innerHTML = enabled ? '<span class="dot ok"></span>' + POps.tHtml('2FA açık') : '<span class="dot off"></span>' + POps.tHtml('2FA kapalı');
         if (typeof popsTwofaNudge === 'function') popsTwofaNudge(enabled);
         const u = focusId !== null && users.find(x => x.id === focusId);
         if (u && u.username === ME && POps.drawer.isOpen('user:' + u.id)) renderDrawer(u);
@@ -607,19 +611,19 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             const r = await POps.get('/api/admin/2fa/status');
             renderTwofa(!!(r && r.enabled));
         } catch (e) {
-            $('twofaState').innerHTML = '<span class="dot bad"></span>Alınamadı';
+            $('twofaState').innerHTML = '<span class="dot bad"></span>' + POps.tHtml('Alınamadı');
             $('twofaDesc').textContent = POps.errorMessage(e);
         }
     }
     async function twofaSetup(btn) {
         let r;
         try { r = await POps.busy(btn, () => POps.post('/api/admin/2fa/setup')); }
-        catch (e) { POps.toast('error', 'Kurulum başlatılamadı: ' + POps.errorMessage(e)); return; }
+        catch (e) { POps.toast('error', POps.t('Kurulum başlatılamadı: {error}', { error: POps.errorMessage(e) })); return; }
         $('twofaSecret').value = (r && r.secret) || '';
         const qr = $('twofaQr');
         qr.replaceChildren();
         if (typeof QRCode !== 'undefined' && r && r.otpauth_uri) new QRCode(qr, { text: r.otpauth_uri, width: 180, height: 180 });
-        else qr.textContent = 'QR kodu oluşturulamadı; yandaki anahtarı elle girin.';
+        else qr.textContent = POps.t('QR kodu oluşturulamadı; yandaki anahtarı elle girin.');
         $('twofaCode').value = '';
         $('twofaSetup').hidden = false;
         $('twofaBtn').hidden = true;
@@ -627,14 +631,14 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     }
     async function twofaEnable() {
         const code = $('twofaCode').value.trim();
-        if (!/^\d{6}$/.test(code)) { $('twofaCode').classList.add('is-invalid'); $('twofaCode').focus(); POps.toast('warning', '6 haneli kodu girin.'); return; }
-        if (await POps.act($('twofaEnableBtn'), () => POps.post('/api/admin/2fa/enable', { otp: code }), { success: '2FA açıldı. Bir sonraki girişte kod istenecek.' })) loadTwofa();
+        if (!/^\d{6}$/.test(code)) { $('twofaCode').classList.add('is-invalid'); $('twofaCode').focus(); POps.toast('warning', POps.t('6 haneli kodu girin.')); return; }
+        if (await POps.act($('twofaEnableBtn'), () => POps.post('/api/admin/2fa/enable', { otp: code }), { success: POps.t('2FA açıldı. Bir sonraki girişte kod istenecek.') })) loadTwofa();
     }
     async function twofaDisable() {
-        const code = await POps.prompt({ title: "2FA'yı kapatmak istiyor musunuz?", message: 'Doğrulama uygulamasındaki 6 haneli kodu girin.', label: 'Kod', placeholder: '123456', maxLength: 6, inputMode: 'numeric', confirmText: "2FA'yı kapat", danger: true,
-            validate: (v) => /^\d{6}$/.test(v.trim()) ? null : '6 haneli kodu girin.' });
+        const code = await POps.prompt({ title: POps.t("2FA'yı kapatmak istiyor musunuz?"), message: POps.t('Doğrulama uygulamasındaki 6 haneli kodu girin.'), label: POps.t('Kod'), placeholder: '123456', maxLength: 6, inputMode: 'numeric', confirmText: POps.t("2FA'yı kapat"), danger: true,
+            validate: (v) => /^\d{6}$/.test(v.trim()) ? null : POps.t('6 haneli kodu girin.') });
         if (code === null) return;
-        if (await POps.act($('twofaBtn'), () => POps.post('/api/admin/2fa/disable', { otp: code.trim() }), { success: '2FA kapatıldı.' })) loadTwofa();
+        if (await POps.act($('twofaBtn'), () => POps.post('/api/admin/2fa/disable', { otp: code.trim() }), { success: POps.t('2FA kapatıldı.') })) loadTwofa();
     }
     $('twofaBtn').addEventListener('click', (e) => { if (e.currentTarget.dataset.mode === 'disable') twofaDisable(); else twofaSetup(e.currentTarget); });
     $('twofaEnableBtn').addEventListener('click', twofaEnable);
@@ -642,13 +646,14 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     $('twofaCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); twofaEnable(); } });
     $('twofaCancelBtn').addEventListener('click', () => { $('twofaSetup').hidden = true; $('twofaBtn').hidden = false; });
     $('twofaCopy').addEventListener('click', async () => {
-        try { await navigator.clipboard.writeText($('twofaSecret').value); POps.toast('success', 'Anahtar kopyalandı.'); }
-        catch (e) { $('twofaSecret').select(); POps.toast('warning', 'Kopyalanamadı; anahtarı seçip elle kopyalayın.'); }
+        try { await navigator.clipboard.writeText($('twofaSecret').value); POps.toast('success', POps.t('Anahtar kopyalandı.')); }
+        catch (e) { $('twofaSecret').select(); POps.toast('warning', POps.t('Kopyalanamadı; anahtarı seçip elle kopyalayın.')); }
     });
     $('twofaSecret').addEventListener('click', (e) => e.target.select());
 
     // ================= API JETONLARI (yalnızca süper admin) =================
     // Liste ve iptal: /api/tokens. Jeton yalnızca oluşturma yanıtında gelir ve bir kez gösterilir.
+    // Metinler Türkçe anahtardır; gösterilirken çevrilir
     const TOKEN_ROLES = {
         viewer: { word: 'Görüntüleyici', hint: 'Yalnızca okur (GET): cihazlar, görevler, raporlar.' },
         admin: { word: 'Yönetici', hint: 'Günlük işleri yapar (görev, sınıf, karantina). Süper admin işlemleri, kullanıcılar, jetonlar ve uzak ekran kapalıdır.' }
@@ -657,12 +662,12 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     let apiTokens = [];
     let tokenRole = 'viewer';
     function tokenRowHtml(t) {
-        const st = TOKEN_STATES[t.state] || ['off', t.state || '—'];
-        const role = (TOKEN_ROLES[t.role] || { word: t.role || '—' }).word;
+        const st = TOKEN_STATES[t.state] ? [TOKEN_STATES[t.state][0], POps.t(TOKEN_STATES[t.state][1])] : ['off', t.state || '—'];
+        const role = TOKEN_ROLES[t.role] ? POps.t(TOKEN_ROLES[t.role].word) : t.role || '—';
         const metaHtml = `<code>pops_${escapeHtml(t.token_prefix || '')}…</code>`
-            + ' · oluşturuldu ' + POps.timeHtml(t.created_at) + (t.created_by ? ' · ' + escapeHtml(t.created_by) : '')
-            + ' · son kullanım ' + (t.last_used_at ? POps.timeHtml(t.last_used_at) : 'hiç')
-            + (t.revoked_at ? ' · iptal ' + POps.timeHtml(t.revoked_at) : ' · bitiş ' + (t.expires_at ? POps.timeHtml(t.expires_at) : 'süresiz'));
+            + ' · ' + POps.tHtml('oluşturuldu {time}', null, { time: POps.timeHtml(t.created_at) }) + (t.created_by ? ' · ' + escapeHtml(t.created_by) : '')
+            + ' · ' + (t.last_used_at ? POps.tHtml('son kullanım {time}', null, { time: POps.timeHtml(t.last_used_at) }) : POps.tHtml('hiç kullanılmadı'))
+            + ' · ' + (t.revoked_at ? POps.tHtml('iptal {time}', null, { time: POps.timeHtml(t.revoked_at) }) : t.expires_at ? POps.tHtml('bitiş {time}', null, { time: POps.timeHtml(t.expires_at) }) : POps.tHtml('süresiz'));
         return `<div class="srow tok-row${t.state === 'active' ? '' : ' is-off'}">
             ${POps.iconHtml('key', 'lead')}
             <div class="grow">
@@ -670,26 +675,26 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
                 <div class="d">${metaHtml}</div>
             </div>
             <span class="st"><span class="dot ${escapeHtml(st[0])}"></span>${escapeHtml(st[1])}</span>
-            ${t.state === 'revoked' ? '' : `<button type="button" class="ibtn sm" data-revoke="${Number(t.id)}" data-tip="Jetonu iptal et" data-tip-pos="left" aria-label="${escapeHtml(t.name)} jetonunu iptal et">${POps.iconHtml('trash', 'sm')}</button>`}
+            ${t.state === 'revoked' ? '' : `<button type="button" class="ibtn sm" data-revoke="${Number(t.id)}" data-tip="${escapeHtml(POps.t('Jetonu iptal et'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('{name} jetonunu iptal et', { name: t.name }))}">${POps.iconHtml('trash', 'sm')}</button>`}
         </div>`;
     }
     function renderApiTokens() {
         const active = apiTokens.filter(t => t.state === 'active').length;
         $('tokSummary').textContent = apiTokens.length
-            ? `${active} etkin` + (apiTokens.length > active ? `, ${apiTokens.length - active} iptal edilmiş ya da süresi dolmuş` : '')
-            : 'Henüz jeton yok.';
+            ? POps.t('{n} etkin', { n: active }) + (apiTokens.length > active ? ', ' + POps.t('{n} iptal edilmiş ya da süresi dolmuş', { n: apiTokens.length - active }) : '')
+            : POps.t('Henüz jeton yok.');
         $('tokList').hidden = !apiTokens.length;
         $('tokList').innerHTML = apiTokens.map(tokenRowHtml).join('');
     }
     async function loadApiTokens() {
         try { apiTokens = (await POps.get('/api/tokens')) || []; }
-        catch (e) { $('tokSummary').textContent = 'Jetonlar alınamadı: ' + POps.errorMessage(e); return; }
+        catch (e) { $('tokSummary').textContent = POps.t('Jetonlar alınamadı: {error}', { error: POps.errorMessage(e) }); return; }
         renderApiTokens();
     }
     function setTokenRole(r) {
         tokenRole = r;
         $('tkRole').querySelectorAll('button').forEach(b => { const on = b.dataset.trole === r; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
-        $('tkRoleHint').textContent = TOKEN_ROLES[r].hint;
+        $('tkRoleHint').textContent = POps.t(TOKEN_ROLES[r].hint);
     }
     async function createApiToken() {
         document.querySelectorAll('#tokModal .field.has-error').forEach(f => f.classList.remove('has-error'));
@@ -706,17 +711,17 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         closeModal('tokModal');
         loadApiTokens();
         await POps.alert({
-            title: 'API jetonu hazır', icon: 'key', codes: [d.token], confirmText: 'Kopyaladım, kapat',
-            message: `${d.name} · ${(TOKEN_ROLES[d.role] || { word: d.role }).word} · ${d.expires_at ? POps.fullTime(d.expires_at) + ' tarihine kadar' : 'süresiz'}`,
-            note: 'Jeton bir daha gösterilmez; şimdi kopyalayıp güvenli bir yerde saklayın. İsteklerde Authorization: Bearer <jeton> başlığıyla /api/v1 uçlarına gönderin.'
+            title: POps.t('API jetonu hazır'), icon: 'key', codes: [d.token], confirmText: POps.t('Kopyaladım, kapat'),
+            message: d.name + ' · ' + (TOKEN_ROLES[d.role] ? POps.t(TOKEN_ROLES[d.role].word) : d.role) + ' · ' + (d.expires_at ? POps.t('{date} tarihine kadar', { date: POps.fullTime(d.expires_at) }) : POps.t('süresiz')),
+            note: POps.t('Jeton bir daha gösterilmez; şimdi kopyalayıp güvenli bir yerde saklayın. İsteklerde Authorization: Bearer <jeton> başlığıyla /api/v1 uçlarına gönderin.')
         });
     }
     async function revokeApiToken(id) {
         const t = apiTokens.find(x => x.id === id);
         if (!t) return;
-        const ok = await POps.confirm({ title: `${t.name} jetonu iptal edilsin mi?`, message: 'Bu jetonu kullanan betikler hemen erişimini kaybeder. Bu işlem geri alınamaz; jeton listede iptal edilmiş olarak kalır.', confirmText: 'Jetonu iptal et', danger: true, icon: 'trash' });
+        const ok = await POps.confirm({ title: POps.t('{name} jetonu iptal edilsin mi?', { name: t.name }), message: POps.t('Bu jetonu kullanan betikler hemen erişimini kaybeder. Bu işlem geri alınamaz; jeton listede iptal edilmiş olarak kalır.'), confirmText: POps.t('Jetonu iptal et'), danger: true, icon: 'trash' });
         if (!ok) return;
-        if (await POps.act(null, () => POps.del('/api/tokens/' + encodeURIComponent(id)), { success: `${t.name} iptal edildi.` })) loadApiTokens();
+        if (await POps.act(null, () => POps.del('/api/tokens/' + encodeURIComponent(id)), { success: POps.t('{name} iptal edildi.', { name: t.name }) })) loadApiTokens();
     }
     if (IS_SUPER && $('tokNew')) {
         $('tokNew').addEventListener('click', () => {
@@ -754,7 +759,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     }
     async function loadBrand() {
         try { renderBrand(await POps.get('/api/branding')); }
-        catch (e) { $('orgName').placeholder = 'Alınamadı: ' + POps.errorMessage(e); return; }
+        catch (e) { $('orgName').placeholder = POps.t('Alınamadı: {error}', { error: POps.errorMessage(e) }); return; }
         $('orgName').disabled = !IS_SUPER;
         $('orgLogoPick').disabled = !IS_SUPER;
     }
@@ -764,23 +769,23 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         const name = $('orgName').value.trim();
         let r = null;
         if (await POps.act(this, async () => { r = await POps.post('/api/system/branding', { org_name: name || null }); },
-            { success: name ? 'Kurum adı kaydedildi.' : 'Kurum adı kaldırıldı.' })) renderBrand(r);
+            { success: name ? POps.t('Kurum adı kaydedildi.') : POps.t('Kurum adı kaldırıldı.') })) renderBrand(r);
     });
     $('orgLogoPick').addEventListener('click', () => $('orgLogoFile').click());
     $('orgLogoFile').addEventListener('change', async function () {
         const f = this.files && this.files[0];
         this.value = '';
         if (!f) return;
-        if (f.size > 256 * 1024) { POps.toast('warning', 'Logo en çok 256 KB olabilir.'); return; }
+        if (f.size > 256 * 1024) { POps.toast('warning', POps.t('Logo en çok 256 KB olabilir.')); return; }
         const fd = new FormData();
         fd.append('file', f);
         let r = null;
-        if (await POps.act($('orgLogoPick'), async () => { r = await POps.post('/api/system/branding/logo', fd); }, { success: 'Logo yüklendi.' })) renderBrand(r);
+        if (await POps.act($('orgLogoPick'), async () => { r = await POps.post('/api/system/branding/logo', fd); }, { success: POps.t('Logo yüklendi.') })) renderBrand(r);
     });
     $('orgLogoDel').addEventListener('click', async function () {
-        if (!await POps.confirm({ title: 'Logo kaldırılsın mı?', message: 'Giriş ekranında yeniden POps logosu görünür.', confirmText: 'Kaldır', danger: true })) return;
+        if (!await POps.confirm({ title: POps.t('Logo kaldırılsın mı?'), message: POps.t('Giriş ekranında yeniden POps logosu görünür.'), confirmText: POps.t('Kaldır'), danger: true })) return;
         let r = null;
-        if (await POps.act(this, async () => { r = await POps.del('/api/system/branding/logo'); }, { success: 'Logo kaldırıldı.' })) renderBrand(r);
+        if (await POps.act(this, async () => { r = await POps.del('/api/system/branding/logo'); }, { success: POps.t('Logo kaldırıldı.') })) renderBrand(r);
     });
 
     // ================= GÖREV KUYRUĞU =================
@@ -795,7 +800,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             $('queueLimit').disabled = false;
         } catch (e) {
             $('queueLimit').placeholder = '—';
-            $('queueLimit').title = 'Sınır alınamadı: ' + POps.errorMessage(e);
+            $('queueLimit').title = POps.t('Sınır alınamadı: {error}', { error: POps.errorMessage(e) });
         }
         refreshBar();
     }
@@ -805,10 +810,10 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         if (!v || v < 1 || v > 200 || String(v) !== limitValue()) {
             $('queueLimit').classList.add('is-invalid');
             $('queueLimit').focus();
-            POps.toast('warning', '1 ile 200 arasında bir sayı girin.');
+            POps.toast('warning', POps.t('1 ile 200 arasında bir sayı girin.'));
             return;
         }
-        if (await POps.act($('saveBtn'), () => POps.post('/api/set_concurrent_limit', { limit: v }), { success: `Eşzamanlı görev sınırı ${v} bilgisayar oldu.` })) {
+        if (await POps.act($('saveBtn'), () => POps.post('/api/set_concurrent_limit', { limit: v }), { success: POps.tn('Eşzamanlı görev sınırı {n} bilgisayar oldu.', v) })) {
             limitSaved = v;
             $('queueLimit').value = v;
             refreshBar();
@@ -830,18 +835,18 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     // ================= SUNUCU BAĞLANTISI =================
     async function testConnection() {
         const st = $('connState');
-        st.innerHTML = '<span class="spinner sm"></span>Sınanıyor';
+        st.innerHTML = '<span class="spinner sm"></span>' + POps.tHtml('Sınanıyor');
         const t0 = performance.now();
         try {
             await POps.get('/api/devices');
             const ms = Math.round(performance.now() - t0);
-            st.innerHTML = `<span class="dot ok"></span>Çalışıyor · ${Number(ms)} ms`;
-            $('connDesc').textContent = 'Panel merkez sunucuya ulaşıyor.';
-            $('sumConn').innerHTML = '<span class="dot ok"></span>Sunucu çalışıyor';
+            st.innerHTML = `<span class="dot ok"></span>${POps.tHtml('Çalışıyor · {ms} ms', { ms: Number(ms) })}`;
+            $('connDesc').textContent = POps.t('Panel merkez sunucuya ulaşıyor.');
+            $('sumConn').innerHTML = '<span class="dot ok"></span>' + POps.tHtml('Sunucu çalışıyor');
         } catch (e) {
-            st.innerHTML = '<span class="dot bad"></span>Ulaşılamıyor';
+            st.innerHTML = '<span class="dot bad"></span>' + POps.tHtml('Ulaşılamıyor');
             $('connDesc').textContent = POps.errorMessage(e);
-            $('sumConn').innerHTML = '<span class="dot bad"></span>Sunucuya ulaşılamıyor';
+            $('sumConn').innerHTML = '<span class="dot bad"></span>' + POps.tHtml('Sunucuya ulaşılamıyor');
         }
         $('sumConn').hidden = false;
     }
@@ -851,8 +856,8 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         $('dispHttpUrl').textContent = POPS_API.HTTP_URL;
         $('dispWsUrl').textContent = POPS_API.WS_URL;
     } else {
-        $('dispHttpUrl').textContent = 'pops_config.js okunamadı';
-        $('dispWsUrl').textContent = 'pops_config.js okunamadı';
+        $('dispHttpUrl').textContent = POps.t('pops_config.js okunamadı');
+        $('dispWsUrl').textContent = POps.t('pops_config.js okunamadı');
     }
     testConnection();
     loadUsers();

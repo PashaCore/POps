@@ -111,7 +111,7 @@
         tasks.forEach(t => {
             const key = t.batch_id || ['legacy', t.created_at, t.created_by, t.script_path, t.retry_of ? 'r' : ''].join('|');
             let j = map.get(key);
-            if (!j) { j = { key, tasks: [], title: dev.taskTitle(t), by: t.created_by, at: t.created_at, source: t.source, reason: t.reason, ip: t.client_ip, command: t.script_path, minId: t.id }; map.set(key, j); }
+            if (!j) { j = { key, tasks: [], title: dev.taskTitle(t), by: POps.tPattern(t.created_by), at: t.created_at, source: t.source, reason: t.reason, ip: t.client_ip, command: t.script_path, minId: t.id }; map.set(key, j); }
             j.tasks.push(t);
             if (t.id < j.minId) { j.minId = t.id; }
         });
@@ -352,7 +352,7 @@
                 <td>${escapeHtml(when(t))}</td>
                 <td>${escapeHtml(target(t))}</td>
                 <td>${t.enabled && t.next_run ? POps.timeHtml(t.next_run) : `<span class="status-pill offline"><span class="dot off"></span>${POps.tHtml('Durduruldu')}</span>`}</td>
-                <td>${t.last_run ? POps.timeHtml(t.last_run) + (t.last_result ? ' · ' + escapeHtml(t.last_result) : '') : `<span class="faint">${POps.tHtml('Henüz çalışmadı')}</span>`}</td>
+                <td>${t.last_run ? POps.timeHtml(t.last_run) + (t.last_result ? ' · ' + escapeHtml(POps.tPattern(t.last_result)) : '') : `<span class="faint">${POps.tHtml('Henüz çalışmadı')}</span>`}</td>
             </tr>`).join('')}</tbody></table></div>`
             + `<div class="set-note" style="padding:10px 16px">${ui.serverTime ? POps.tHtml('Saatler sunucu saatine göredir (şu an {time}).', { time: POps.fullTime(ui.serverTime) }) : POps.tHtml('Saatler sunucu saatine göredir.')}</div>`;
     }
@@ -374,7 +374,7 @@
                 <div class="grow"><span>${POps.tHtml('Hedef')}</span><span>${escapeHtml(target(t))}</span></div>
                 <div class="grow"><span>${POps.tHtml('Sıradaki')}</span><span>${t.enabled && t.next_run ? POps.timeHtml(t.next_run) : '—'}</span></div>
                 <div class="grow"><span>${POps.tHtml('Son çalışma')}</span><span>${t.last_run ? POps.timeHtml(t.last_run) : '—'}</span></div>
-                ${t.last_result ? `<div class="grow"><span>${POps.tHtml('Son sonuç')}</span><span>${escapeHtml(t.last_result)}</span></div>` : ''}
+                ${t.last_result ? `<div class="grow"><span>${POps.tHtml('Son sonuç')}</span><span>${escapeHtml(POps.tPattern(t.last_result))}</span></div>` : ''}
                 ${t.created_by ? `<div class="grow"><span>${POps.tHtml('Oluşturan')}</span><span>${escapeHtml(t.created_by)}</span></div>` : ''}
             </div>
             <div><h3>${POps.tHtml('Komut')}</h3><div class="tk-cmd">${escapeHtml(t.command)}</div></div>`;

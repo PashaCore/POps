@@ -174,7 +174,7 @@
                 list.innerHTML = (d.items || []).length ? d.items.map(n => `
                     <div class="notif-item${n.is_read ? '' : ' unread'}">
                         <span class="sev ${escapeHtml(n.severity)}"></span>
-                        <div><div class="t">${escapeHtml(n.title)}</div>
+                        <div><div class="t">${escapeHtml(POps.tPattern(n.title))}</div>
                         <div class="m">${escapeHtml(when(n.created_at))}${n.pc_name ? ' · ' + escapeHtml(n.pc_name) : ''}${n.detail ? ' · ' + escapeHtml(n.detail) : ''}${n.delivery_error ? ` · <span title="${escapeHtml(n.delivery_error)}" style="color:var(--danger-text);">${POps.tHtml('gönderilemedi')}</span>` : ''}</div></div>
                     </div>`).join('') : `<div class="notif-empty">${POps.tHtml('Bildirim yok.')}</div>`;
             }

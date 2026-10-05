@@ -132,7 +132,7 @@
         await POps.act(o.btn, () => POps.post('/api/deploy_orchestration', {
             target_mode: 'PC', targets: on, taskSequence: [{ name: p.step, type: 'CMD', command: p.cmd }],
             title: p.step + (o.scopeLabel ? ' · ' + o.scopeLabel : ''), source: o.source || null
-        }, { jobTitle: p.label() + ' · ' + (o.scopeLabel || count(on.length)) }), { success: (r) => POps.tn('Komut {n} bilgisayara gönderildi.', (r && r.created) || on.length) });
+        }, { jobTitle: o.scopeLabel ? POps.taskName(p.step + ' · ' + o.scopeLabel) : p.label() + ' · ' + count(on.length) }), { success: (r) => POps.tn('Komut {n} bilgisayara gönderildi.', (r && r.created) || on.length) });
     };
     dev.wake = async function (hosts, o) {
         const off = hosts.filter(h => { const d = byHost(h); return !d || POps.isOffline(d); });
@@ -166,7 +166,7 @@
         await POps.act(o.btn, () => POps.post('/api/deploy_orchestration', {
             target_mode: 'PC', targets: on, taskSequence: [{ name: 'Mesaj', type: 'CMD', command: `msg * /TIME:120 "${clean}"` }],
             title: 'Mesaj', source: o.source || null
-        }, { jobTitle: POps.taskName('Mesaj') + ' · ' + (o.scopeLabel || count(on.length)) }), { success: POps.tn('Mesaj {n} bilgisayara gönderildi.', on.length) });
+        }, { jobTitle: o.scopeLabel ? POps.taskName(['Mesaj', o.scopeLabel].join(' · ')) : POps.taskName('Mesaj') + ' · ' + count(on.length) }), { success: POps.tn('Mesaj {n} bilgisayara gönderildi.', on.length) });
     };
 
     // ---- Taşı
@@ -356,7 +356,7 @@
         const a = String(m.created_by || r.actor_id || '').trim();
         if (!a || a === 'Agent' || a === r.pc_name) return POps.t('Ajan');
         if (/^system/i.test(a)) return POps.t('Sistem');
-        return a;
+        return POps.tPattern(a);   // "admin (zamanlanmış #4)" gibi sunucu ekleri çevrilir
     }
     function sourceOf(r) {
         const t = String(r.event_type || '');
@@ -438,7 +438,7 @@
         }
         const k = POps.taskState(a.status);
         const why = k === 'bad' ? dev.failReason(a) : '';
-        const metaHtml = escapeHtml(a.by || '?') + ' · ' + POps.timeHtml(a.at) + (a.source ? ' · ' + escapeHtml(dev.sourceText(a.source)) : '');
+        const metaHtml = escapeHtml(POps.tPattern(a.by || '?')) + ' · ' + POps.timeHtml(a.at) + (a.source ? ' · ' + escapeHtml(dev.sourceText(a.source)) : '');
         return `<div class="act"><div class="res ${escapeHtml(k)}">${POps.iconHtml(k === 'ok' ? 'check' : k === 'bad' ? 'x' : 'clock')}</div><div style="min-width:0"><div class="what">${escapeHtml(dev.taskTitle(a))}</div>
             <div class="meta">${metaHtml}${a.reason ? ' · ' + POps.tHtml('gerekçe: {reason}', { reason: a.reason }) : ''}</div>
             ${why ? `<div class="why">${escapeHtml(why)}</div>` : ''}</div>
