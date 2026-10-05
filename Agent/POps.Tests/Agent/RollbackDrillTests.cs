@@ -166,4 +166,32 @@ namespace POps.Tests.Agent
             Assert.Equal(RollbackDrill.ConsumedFileName, Path.GetFileName(AgentUpdate.ConsumedDrillPath));
         }
     }
+
+    public class StaleLockDrillTests : TestBase, IDisposable
+    {
+        public StaleLockDrillTests()
+        {
+            AgentUpdate.DataDir = TestEnvironment.NewDir("stale");
+            Directory.CreateDirectory(AgentUpdate.SecureDataDir);
+        }
+
+        public void Dispose()
+        {
+            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
+            AgentUpdate.InstalledVersionOverride = null;
+        }
+
+        // L4: çökmüş bir updater'dan kalan eski kilit "güncelleme var" sayılmaz; işaret tüketilmez
+        [Fact]
+        public void StaleUpdateLock_DoesNotConsumeTheMarker()
+        {
+            File.WriteAllText(AgentUpdate.RollbackDrillPath, "");
+            File.WriteAllText(AgentUpdate.LockPath, JsonSerializer.Serialize(new { from_version = "0.1.5-alpha", to_version = "0.1.6-alpha", started_at = 1000 }));
+            File.SetLastWriteTimeUtc(AgentUpdate.LockPath, DateTime.UtcNow.AddMinutes(-20));
+            AgentUpdate.InstalledVersionOverride = "0.1.6-alpha";
+
+            Assert.False(AgentUpdate.ApplyRollbackDrillOnStartup());
+            Assert.True(AgentUpdate.RollbackDrillRequested());
+        }
+    }
 }

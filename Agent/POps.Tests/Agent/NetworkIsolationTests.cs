@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -5,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Numerics;
+using System.Text.Json;
 using POpsAgent;
 using Xunit;
 
@@ -123,6 +125,74 @@ namespace POps.Tests.Agent
             SecureStore.Dir = TestEnvironment.NewDir("iso-state");
             File.WriteAllText(NetworkIsolation.StatePath, "{\"previous_profiles\":[{\"Name\":\"Domain\",\"Enabled\":\"True\"},{\"Name\":\"Private\",\"Enabled\":\"False\"}],\"since\":1}");
             Assert.Equal(new[] { "Private" }, NetworkIsolation.ReadPreviouslyDisabledProfiles());
+        }
+    }
+
+    // A3: karantinada sunucu adresi değişirse izin listesi yenilenir; önceki profil durumu korunur
+    public class IsolationRefreshTests : TestBase
+    {
+        private static IPAddress Ip(string s) => IPAddress.Parse(s);
+
+        [Fact]
+        public void SameAddresses_IgnoresOrderDuplicatesMappingAndScope()
+        {
+            Assert.True(NetworkIsolation.SameAddresses(new[] { Ip("203.0.113.10"), Ip("2001:db8::1") }, new[] { "2001:db8::1", "203.0.113.10" }));
+            Assert.True(NetworkIsolation.SameAddresses(new[] { Ip("::ffff:203.0.113.10"), Ip("203.0.113.10") }, new[] { "203.0.113.10" }));
+            Assert.True(NetworkIsolation.SameAddresses(new[] { Ip("fe80::1%12") }, new[] { "fe80::1" }));
+            Assert.False(NetworkIsolation.SameAddresses(new[] { Ip("203.0.113.11") }, new[] { "203.0.113.10" }));
+            Assert.False(NetworkIsolation.SameAddresses(new[] { Ip("203.0.113.10"), Ip("203.0.113.11") }, new[] { "203.0.113.10" }));
+            Assert.False(NetworkIsolation.SameAddresses(new[] { Ip("203.0.113.10") }, new[] { "çöp" }));
+        }
+
+        [Fact]
+        public void Merge_KeepsPreviousProfilesAndSince_ReplacesOnlyServerAddresses()
+        {
+            const string first = "{\"previous_profiles\":[{\"Name\":\"Domain\",\"Enabled\":\"True\"},{\"Name\":\"Private\",\"Enabled\":\"False\"}],\"since\":1700000000}";
+            string withServer = NetworkIsolation.MergeServerAddresses(first, new[] { Ip("203.0.113.10") });
+            string refreshed = NetworkIsolation.MergeServerAddresses(withServer, new[] { Ip("198.51.100.7"), Ip("198.51.100.7") });
+
+            using JsonDocument doc = JsonDocument.Parse(refreshed);
+            Assert.Equal(1700000000, doc.RootElement.GetProperty("since").GetInt64());
+            Assert.Equal("False", doc.RootElement.GetProperty("previous_profiles")[1].GetProperty("Enabled").GetString());
+            Assert.Equal(new[] { "198.51.100.7" }, NetworkIsolation.ReadServerAddresses(refreshed));
+        }
+
+        [Fact]
+        public void Refresh_DoesNotTouchTheProfilesThatUnlockRestores()
+        {
+            SecureStore.Dir = TestEnvironment.NewDir("iso-refresh");
+            File.WriteAllText(NetworkIsolation.StatePath, "{\"previous_profiles\":[{\"Name\":\"Public\",\"Enabled\":\"False\"}],\"since\":5}");
+            string merged = NetworkIsolation.MergeServerAddresses(File.ReadAllText(NetworkIsolation.StatePath), new[] { Ip("203.0.113.99") });
+            File.WriteAllText(NetworkIsolation.StatePath, merged);
+            Assert.Equal(new[] { "Public" }, NetworkIsolation.ReadPreviouslyDisabledProfiles());
+            Assert.True(NetworkIsolation.IsActive);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("{\"previous_profiles\":[]}")]
+        [InlineData("{bozuk")]
+        [InlineData("{\"server_addresses\":\"203.0.113.1\"}")]
+        public void UnknownServerAddresses_AreNull(string state) => Assert.Null(NetworkIsolation.ReadServerAddresses(state));
+
+        [Fact]
+        public void Merge_OfAnUnreadableState_StillRecordsTheServer() =>
+            Assert.Equal(new[] { "203.0.113.10" }, NetworkIsolation.ReadServerAddresses(NetworkIsolation.MergeServerAddresses("{bozuk", new[] { Ip("203.0.113.10") })));
+
+        [Fact]
+        public void NormalizeAddresses_SortedAndDistinct() =>
+            Assert.Equal(new[] { "10.0.0.2", "10.0.0.9", "2001:db8::5" },
+                NetworkIsolation.NormalizeAddresses(new[] { Ip("2001:db8::5"), Ip("10.0.0.9"), Ip("::ffff:10.0.0.2"), Ip("10.0.0.9"), null }));
+
+        [Fact]
+        public void EnableScript_AddsNewRulesBeforeRemovingOldOnes()
+        {
+            string script = NetworkIsolation.BuildEnableScript(NetworkIsolation.AllowedRanges(new[] { Ip("203.0.113.10") }));
+            int capture = script.IndexOf("$old = @(Get-NetFirewallRule -Group $group", StringComparison.Ordinal);
+            int add = script.IndexOf("New-NetFirewallRule", StringComparison.Ordinal);
+            int remove = script.IndexOf("$old | Remove-NetFirewallRule", StringComparison.Ordinal);
+            Assert.True(capture >= 0 && capture < add && add < remove, script);
         }
     }
 }
