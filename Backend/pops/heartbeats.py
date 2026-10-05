@@ -11,6 +11,7 @@ adres, ad, sağlık özeti) değişen cihazlar işaretlenir. Yalnızca last_seen
 """
 
 import asyncio
+import datetime
 import logging
 import os
 
@@ -25,7 +26,7 @@ FLUSH_SECONDS = float(os.environ.get("HEARTBEAT_FLUSH_SECONDS", "2"))
 _pending = {}  # pc_name -> (last_seen, status, active_window, hostname, ip, agent_health_json)
 
 
-def record(pc_name: str, last_seen: str, status, active_window, hostname, ip, health_json) -> None:
+def record(pc_name: str, last_seen: datetime.datetime, status, active_window, hostname, ip, health_json) -> None:
     metrics.count("heartbeats")
     _pending[pc_name] = (
         last_seen,
@@ -52,7 +53,7 @@ async def flush() -> int:
     await execute_query(
         "UPDATE clients AS c SET last_seen = v.last_seen, status = v.status, active_window = v.active_window, "
         "hostname = v.hostname, ip_address = v.ip, agent_health = v.health::jsonb "
-        "FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[]) "
+        "FROM unnest($1::text[], $2::timestamptz[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[]) "
         "AS v(pc_name, last_seen, status, active_window, hostname, ip, health) "
         "WHERE c.pc_name = v.pc_name",
         tuple(list(c) for c in cols),

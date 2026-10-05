@@ -27,7 +27,7 @@ from typing import Dict, Iterable, List, Optional
 
 import asyncpg
 
-from pops import modules
+from pops import modules, timeutil
 from pops.labs import UNASSIGNED_LAB
 from pops.audit import add_audit_log
 from pops.db import execute_query
@@ -184,7 +184,7 @@ def _epoch(dt) -> Optional[float]:
 
 
 def _iso(dt) -> Optional[str]:
-    return dt.isoformat() if dt is not None else None
+    return timeutil.iso(dt)   # API biçimi: sunucunun saat diliminde ofsetli ISO 8601 (bkz. pops/timeutil.py)
 
 
 def device_state(online: bool, row: Optional[dict], now: float) -> str:
@@ -598,8 +598,13 @@ async def lab_state(lab: str) -> dict:
     }
 
 
-async def history(lab: Optional[str] = None, active: Optional[bool] = None, limit: int = 50) -> List[dict]:
+async def history(lab: Optional[str] = None, active: Optional[bool] = None, limit: int = 50,
+                  labs: Optional[List[str]] = None) -> List[dict]:
+    """labs verilirse yalnızca o sınıfların sınavları (kurum birimi kapsamı, pops/tenancy.py)."""
     where, params = [], []
+    if labs is not None:
+        params.append(list(labs))
+        where.append("e.lab_name = ANY($%d::text[])" % len(params))
     if lab:
         params.append(lab)
         where.append("e.lab_name = $%d" % len(params))

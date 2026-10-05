@@ -15,6 +15,7 @@ Ortam: POPS_TEST_HTTP + DB_* + JWT_SECRET.
 """
 
 import asyncio
+import datetime
 import json
 import os
 import sys
@@ -26,7 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 import asyncpg  # noqa: E402
 
 import server  # noqa: E402  (create_jwt)
-from pops import db  # noqa: E402
+from pops import db, timeutil  # noqa: E402
 from pops.audit import add_audit_log  # noqa: E402
 
 HTTP = os.environ["POPS_TEST_HTTP"]
@@ -187,11 +188,13 @@ async def run(c, admin, viewer):
         await c.execute("INSERT INTO global_settings (key, value) VALUES ($1, $2)", r["key"], r["value"])
 
     print("== olay kayıtları: bilgisayar ve tarih süzgeci")
+    # Günler sunucunun saat diliminde (sunucu testle aynı ortamda: POPS_TZ ya da yerel saat dilimi)
     for pc, msg, ts in (("HW-JB1", "jb-log-1", "2026-01-10 09:00:00"), ("HW-JB1", "jb-log-2", "2026-01-11 23:59:59"),
                         ("HW-JB1", "jb-log-3", "2026-01-12 00:00:00"), ("HW-JB2", "jb-log-4", "2026-01-11 10:00:00")):
+        at = datetime.datetime.strptime(ts, timeutil.TEXT_FORMAT).replace(tzinfo=timeutil.zone())
         await c.execute(
             "INSERT INTO agent_logs_v2 (pc_name, event_type, message, \"timestamp\") VALUES ($1, 'auth.login', $2, $3)",
-            pc, msg, ts)
+            pc, msg, at)
     s, lg = req("/api/logs?pc=HW-JB1&since=2026-01-10&until=2026-01-11", viewer)
     got = [x.get("message") for x in lg] if isinstance(lg, list) else lg
     chk(s == 200 and got == ["jb-log-2", "jb-log-1"], "bilgisayar ve tarih aralığı, iki gün de dahil (%s)" % got)

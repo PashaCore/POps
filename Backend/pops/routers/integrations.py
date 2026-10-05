@@ -7,7 +7,7 @@ from typing import Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field, field_validator
 
-from pops import config, glpi
+from pops import config, glpi, timeutil
 from pops.audit import add_audit_log
 from pops.models import StrictInput
 from pops.security import require_superadmin
@@ -102,7 +102,7 @@ async def save_glpi(data: GlpiSettingsInput, auth: dict = Depends(require_supera
         raise HTTPException(status_code=400, detail="Eşitlemeyi açmak için GLPI adresi ve kullanıcı jetonu gerekli.")
     if values["sync"]["tickets"] and not values["tickets_since"]:
         # Talepler ilk açıldığı günden itibaren gider; eski talepler GLPI'ye dökülmesin
-        values["tickets_since"] = cur.get("tickets_since") or datetime.date.today().isoformat()
+        values["tickets_since"] = cur.get("tickets_since") or timeutil.today().isoformat()
     if values["locations"] is None:
         values.pop("locations")
     changed = await glpi.save(values)

@@ -1,7 +1,8 @@
 """Raporlar: filo özeti (cihaz, sürüm, kayıt, yama, yazılım, olaylar, güncellemeler) ve CSV dışa aktarma.
 
 CSV'de hücreler formül olarak yorumlanmasın diye =, +, -, @ ile başlayan değerlerin önüne ' eklenir:
-yazılım adları ve olay metinleri ajandan gelir (CSV/formül enjeksiyonu)."""
+yazılım adları ve olay metinleri ajandan gelir (CSV/formül enjeksiyonu). CSV'deki zamanlar sunucunun saat
+diliminde okunur 'YYYY-AA-GG SS:DD:ss' metnidir; günlük gruplar da o dilime göredir."""
 
 import csv
 import datetime
@@ -11,15 +12,15 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
-from pops import modules
+from pops import modules, tenancy, timeutil
 from pops.db import execute_query
 from pops.security import require_auth
 
 router = APIRouter()
 
 
-def _since(days: int) -> str:
-    return (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+def _since(days: int) -> datetime.datetime:
+    return timeutil.ago(days=days)
 
 
 def _clamp_days(days: int) -> int:
@@ -30,69 +31,79 @@ def _clamp_days(days: int) -> int:
 async def report_summary(days: int = 30, auth: dict = Depends(require_auth)):
     days = _clamp_days(days)
     since = _since(days)
+    # Kurum birimi kapsamı: kapsamlı hesapta bütün sayılar yalnızca kapsamdaki cihazlardan (pops/tenancy.py)
+    org = await tenancy.scope_of(auth)
+
+    async def fetch(sql: str, params=(), column: str = "c.lab_name", by_device: bool = False):
+        args = list(params)
+        cond = (tenancy.device_sql if by_device else tenancy.lab_sql)(org, column, args)
+        return await execute_query(sql.replace("{scope}", cond), tuple(args), fetch=True)
 
     dev = (
-        await execute_query(
+        await fetch(
             "SELECT count(*) AS total, count(*) FILTER (WHERE status = 'Online') AS online, "
             "count(*) FILTER (WHERE is_quarantined) AS quarantined, count(s.pc_name) AS enrolled "
-            "FROM clients c LEFT JOIN agent_secrets s ON s.pc_name = c.pc_name",
-            fetch=True,
+            "FROM clients c LEFT JOIN agent_secrets s ON s.pc_name = c.pc_name WHERE {scope}",
         )
     )[0]
-    labs = await execute_query(
+    labs = await fetch(
         "SELECT coalesce(lab_name, '') AS lab, count(*) AS total, count(*) FILTER (WHERE status = 'Online') AS online "
-        "FROM clients GROUP BY 1 ORDER BY 1",
-        fetch=True,
+        "FROM clients WHERE {scope} GROUP BY 1 ORDER BY 1",
+        column="lab_name",
     )
-    versions = await execute_query(
+    versions = await fetch(
         "SELECT coalesce(av.version, 'bilinmiyor') AS version, count(*) AS devices FROM clients c "
-        "LEFT JOIN agent_versions av ON av.pc_name = c.pc_name GROUP BY 1 ORDER BY 2 DESC",
-        fetch=True,
+        "LEFT JOIN agent_versions av ON av.pc_name = c.pc_name WHERE {scope} GROUP BY 1 ORDER BY 2 DESC",
     )
     patch = (
-        await execute_query(
+        await fetch(
             "SELECT count(p.pc_name) AS reporting, "
             "count(*) FILTER (WHERE p.pc_name IS NOT NULL AND p.pending_count = 0) AS up_to_date, "
             "count(*) FILTER (WHERE p.pending_security > 0) AS pending_security, "
             "count(*) FILTER (WHERE p.pending_critical > 0) AS pending_critical, "
             "count(*) FILTER (WHERE p.reboot_required) AS reboot_required "
-            "FROM clients c LEFT JOIN device_patch_status p ON p.pc_name = c.pc_name",
-            fetch=True,
+            "FROM clients c LEFT JOIN device_patch_status p ON p.pc_name = c.pc_name WHERE {scope}",
         )
     )[0]
     sw = (
-        await execute_query(
-            "SELECT count(DISTINCT pc_name) AS reporting_devices, count(DISTINCT name) AS titles FROM device_software",
-            fetch=True,
+        await fetch(
+            "SELECT count(DISTINCT pc_name) AS reporting_devices, count(DISTINCT name) AS titles FROM device_software "
+            "WHERE {scope}",
+            column="pc_name", by_device=True,
         )
     )[0]
-    by_risk = await execute_query(
-        "SELECT risk_level, count(*) AS n FROM agent_logs_v2 WHERE timestamp >= $1 GROUP BY 1", (since,), fetch=True
+    by_risk = await fetch(
+        "SELECT risk_level, count(*) AS n FROM agent_logs_v2 WHERE timestamp >= $1 AND {scope} GROUP BY 1", (since,),
+        column="pc_name", by_device=True,
     )
-    by_day = await execute_query(
-        "SELECT substr(timestamp, 1, 10) AS day, "
+    by_day = await fetch(
+        "SELECT to_char(timestamp AT TIME ZONE $2, 'YYYY-MM-DD') AS day, "
         "count(*) FILTER (WHERE risk_level = 'critical') AS critical, "
         "count(*) FILTER (WHERE risk_level = 'high') AS high, "
         "count(*) FILTER (WHERE risk_level = 'medium') AS medium "
-        "FROM agent_logs_v2 WHERE timestamp >= $1 GROUP BY 1 ORDER BY 1",
-        (since,),
-        fetch=True,
+        "FROM agent_logs_v2 WHERE timestamp >= $1 AND {scope} GROUP BY 1 ORDER BY 1",
+        (since, timeutil.zone_name()),
+        column="pc_name", by_device=True,
     )
-    top_policy = await execute_query(
+    top_policy = await fetch(
         "SELECT meta_data->>'domain' AS domain, meta_data->>'violation_category' AS category, count(*) AS n "
-        "FROM agent_logs_v2 WHERE timestamp >= $1 AND action = 'dns_block' GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 10",
+        "FROM agent_logs_v2 WHERE timestamp >= $1 AND action = 'dns_block' AND {scope} GROUP BY 1, 2 "
+        "ORDER BY 3 DESC LIMIT 10",
         (since,),
-        fetch=True,
+        column="pc_name", by_device=True,
     )
-    top_devices = await execute_query(
+    top_devices = await fetch(
         "SELECT l.pc_name, max(c.hostname) AS hostname, max(c.display_name) AS display_name, count(*) AS n "
         "FROM agent_logs_v2 l LEFT JOIN clients c ON c.pc_name = l.pc_name "
-        "WHERE l.timestamp >= $1 AND l.risk_level IN ('critical', 'high') GROUP BY 1 ORDER BY 4 DESC LIMIT 10",
+        "WHERE l.timestamp >= $1 AND l.risk_level IN ('critical', 'high') AND {scope} GROUP BY 1 ORDER BY 4 DESC "
+        "LIMIT 10",
         (since,),
-        fetch=True,
+        column="l.pc_name", by_device=True,
     )
-    upd_rows = await execute_query(
-        "SELECT changes FROM device_audit_logs WHERE action = 'update_result' AND timestamp >= $1", (since,), fetch=True
+    upd_rows = await fetch(
+        "SELECT changes FROM device_audit_logs WHERE action = 'update_result' AND timestamp >= $1 AND {scope}",
+        (since,),
+        column="hw_id", by_device=True,
     )
     updates = {}
     for r in upd_rows or []:
@@ -104,7 +115,7 @@ async def report_summary(days: int = 30, auth: dict = Depends(require_auth)):
 
     return {
         "days": days,
-        "generated_at": datetime.datetime.now().astimezone().isoformat(),
+        "generated_at": timeutil.iso(timeutil.now()),
         "devices": {**{k: int(v) for k, v in dev.items()}, "labs": [dict(r) for r in labs or []]},
         "versions": [dict(r) for r in versions or []],
         "patches": {k: int(v) for k, v in patch.items()},
@@ -120,6 +131,8 @@ async def report_summary(days: int = 30, auth: dict = Depends(require_auth)):
 
 
 def _cell(v) -> str:
+    if isinstance(v, datetime.datetime):
+        v = timeutil.local_text(v)
     s = "" if v is None else str(v)
     return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s
 
@@ -127,6 +140,8 @@ def _cell(v) -> str:
 @router.get("/api/reports/export", dependencies=[modules.require("reports")])
 async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_auth)):
     days = _clamp_days(days)
+    org = await tenancy.scope_of(auth)
+    args = []
     if kind == "devices":
         header = [
             "hw_id",
@@ -152,7 +167,9 @@ async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_
             "p.pending_count, p.pending_security, p.reboot_required "
             "FROM clients c LEFT JOIN agent_versions av ON av.pc_name = c.pc_name "
             "LEFT JOIN agent_secrets s ON s.pc_name = c.pc_name LEFT JOIN hw_inventory h ON h.pc_name = c.pc_name "
-            "LEFT JOIN device_patch_status p ON p.pc_name = c.pc_name ORDER BY c.lab_name NULLS LAST, c.hostname",
+            "LEFT JOIN device_patch_status p ON p.pc_name = c.pc_name WHERE " + tenancy.lab_sql(org, "c.lab_name", args)
+            + " ORDER BY c.lab_name NULLS LAST, c.hostname",
+            tuple(args),
             fetch=True,
         )
     elif kind == "software":
@@ -160,7 +177,9 @@ async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_
         rows = await execute_query(
             "SELECT s.pc_name, c.hostname, c.lab_name, s.name, s.version, s.publisher, s.install_date "
             "FROM device_software s LEFT JOIN clients c ON c.pc_name = s.pc_name "
-            "ORDER BY c.lab_name NULLS LAST, c.hostname, lower(s.name)",
+            "WHERE " + tenancy.lab_sql(org, "c.lab_name", args)
+            + " ORDER BY c.lab_name NULLS LAST, c.hostname, lower(s.name)",
+            tuple(args),
             fetch=True,
         )
     elif kind == "patches":
@@ -179,7 +198,9 @@ async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_
         rows = await execute_query(
             "SELECT c.pc_name, c.hostname, c.lab_name, p.pending_count, p.pending_security, p.pending_critical, "
             "p.reboot_required, p.last_search, p.last_install, p.last_result FROM clients c "
-            "LEFT JOIN device_patch_status p ON p.pc_name = c.pc_name ORDER BY c.lab_name NULLS LAST, c.hostname",
+            "LEFT JOIN device_patch_status p ON p.pc_name = c.pc_name WHERE " + tenancy.lab_sql(org, "c.lab_name", args)
+            + " ORDER BY c.lab_name NULLS LAST, c.hostname",
+            tuple(args),
             fetch=True,
         )
     elif kind == "licenses":
@@ -202,14 +223,16 @@ async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_
                     "notes",
                 )
             }
-            for lic in await licenses_with_usage()
+            for lic in await licenses_with_usage(org)
         ]
     elif kind == "events":
         header = ["timestamp", "hw_id", "risk", "category", "action", "actor", "message"]
+        args = [_since(days)]
         rows = await execute_query(
             "SELECT timestamp, pc_name, risk_level, category, action, actor_id, message FROM agent_logs_v2 "
-            "WHERE timestamp >= $1 ORDER BY timestamp DESC LIMIT 50000",
-            (_since(days),),
+            "WHERE timestamp >= $1 AND " + tenancy.device_sql(org, "pc_name", args)
+            + " ORDER BY timestamp DESC LIMIT 50000",
+            tuple(args),
             fetch=True,
         )
     else:
@@ -220,7 +243,7 @@ async def report_export(kind: str, days: int = 30, auth: dict = Depends(require_
     w.writerow(header)
     for r in rows or []:
         w.writerow([_cell(v) for v in r.values()])
-    name = "pops-%s-%s.csv" % (kind, datetime.date.today().isoformat())
+    name = "pops-%s-%s.csv" % (kind, timeutil.today().isoformat())
     # BOM: Excel Türkçe karakterleri doğru açsın
     return Response(
         content="﻿" + buf.getvalue(),

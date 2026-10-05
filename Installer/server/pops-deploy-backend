@@ -17,6 +17,12 @@
 # kurmadan durur ve deploy geri döner. Kilidi olmayan eski bir checkout'ta requirements.txt kullanılır. "Requirements
 # değişti" kararı ikisini de karşılaştırır.
 #
+# Veritabanı: başında "-- pops: dump-before" satırı olan bir migration (tabloları yeniden yazan, eski kodun çalışamayacağı
+# değişiklik; ör. 0031 TEXT -> TIMESTAMPTZ) henüz uygulanmamışsa, servis yeniden başlamadan ÖNCE pg_dump -Fc ile
+# $APP/.deploy-backups/db-<zaman>.dump alınır (.env'deki DB_* ile; en çok 3 ve KEEP_BACKUPS kadar saklanır). Yer
+# yetmezse ya da dump alınamazsa hiçbir şeye dokunulmadan durulur. Bu deploy geri dönerse kod eski hâline döner ama
+# uygulanmış migration geri alınmaz: betik dump'ı eski kodla geri yükleme komutunu yazar (docs/deployment.md).
+#
 # Ayarlar: /etc/pops/deploy.conf (REPO, APP, SVC, OWNER, HEALTH_BASE, HEALTH_WAIT, KEEP_BACKUPS; örnek ve açıklama:
 # Installer/server/deploy.conf.example). Dosya yoksa install.sh'in varsayılanları geçerlidir. pops-selfupdate
 # da REPO'yu aynı dosyadan okur.
@@ -27,7 +33,8 @@
 # host'takini de elle güncelleyin:  sudo install -m 755 Installer/server/pops-deploy-backend /usr/local/sbin/
 #
 # Test kancaları (Installer/server/tests/test_deploy.sh): POPS_DEPLOY_CONF ayar dosyasının yolu,
-# POPS_DEPLOY_ALLOW_NONROOT=1 root olmadan çalışma, POPS_DEPLOY_PYTHONS yeni venv için aranan yorumlayıcılar.
+# POPS_DEPLOY_ALLOW_NONROOT=1 root olmadan çalışma, POPS_DEPLOY_PYTHONS yeni venv için aranan yorumlayıcılar,
+# POPS_DEPLOY_FREE_KB yedek dizinindeki boş yer (KB; df yerine).
 # Üretimde hiçbiri verilmez.
 set -Eeuo pipefail
 
@@ -92,6 +99,8 @@ NEW_VENV=""                                     # yeni venv'in gerçek dizini ($
 NEW_VENV_TEMP=0                                 # 1: yeni venv henüz canlı değil; hata olursa silinir
 VENV_ASIDE="$APP/.venv.old-$ID"                 # yeniden kurulumda eski venv (dizin ya da bağ) burada bekler
 CHANGED=0                                       # 1: canlıda bir şey değişti; bundan sonraki her hata geri döner
+DB_DUMP=""                                      # migration öncesi veritabanı yedeği (alındıysa): $BACKUPS/db-$ID.dump
+DUMP_MARK="-- pops: dump-before"                # bu satırı taşıyan migration'dan önce veritabanı yedeklenir
 
 # Deploy'un canlıda tek tek yönettiği dosyalar (pops/ paketi ayrıca bütün olarak silinip açılır)
 managed_files() {
@@ -135,6 +144,14 @@ rollback() {   # $1=neden. Kod setini ve (değiştiyse) venv'i yedekten geri yü
         fi
     fi
     systemctl restart "$SVC"
+    if [ -n "$DB_DUMP" ]; then
+        echo "DİKKAT: bu deploy veritabanını dönüştüren bir migration içeriyordu ve servis yeni kodla başlamıştı;"
+        echo "migration uygulanmışsa eski kod veritabanıyla çalışmaz. Deploy'dan hemen önce alınan yedeği eski kodla"
+        echo "geri yükleyin (arada yazılan kayıtlar kaybolur; bkz. docs/deployment.md):"
+        echo "  systemctl stop $SVC"
+        echo "  sudo -u postgres pg_restore --clean --if-exists --no-owner --role=<DB_USER> -d <DB_NAME> $DB_DUMP"
+        echo "  systemctl start $SVC"
+    fi
     exit 1
 }
 
@@ -307,6 +324,46 @@ for v in "$BACKUPS"/venv-*.tgz; do
     if [ -e "$v" ] && [ ! -e "$BACKUPS/code-${v##*/venv-}" ]; then rm -f "$v"; fi
 done
 
+# Migration öncesi veritabanı yedeği: bekleyen bir migration "$DUMP_MARK" taşıyorsa (bkz. baştaki açıklama)
+envval() {   # $APP/.env'den tek değer (dosya ÇALIŞTIRILMAZ): KEY=değer, isteğe bağlı tırnak
+    sed -n "s/^$1=//p" "$APP/.env" 2>/dev/null | tail -n1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+heavy=()
+for f in Backend/migrations/*.sql; do
+    if [ ! -e "$APP/migrations/$(basename "$f")" ] && grep -qxF -- "$DUMP_MARK" "$f"; then heavy+=("$(basename "$f" .sql)"); fi
+done
+if [ "${#heavy[@]}" -gt 0 ]; then
+    DB_HOST=$(envval DB_HOST); DB_PORT=$(envval DB_PORT); DB_USER=$(envval DB_USER); DB_NAME=$(envval DB_NAME)
+    DB_HOST=${DB_HOST:-localhost}; DB_PORT=${DB_PORT:-5432}
+    PGPASSWORD=$(envval DB_PASS); export PGPASSWORD
+    abort_dump() { rm -f "$BACKUP" "$PRE_LIST" "${VENV_BACKUP:-}" "$BACKUPS/db-$ID.dump"; drop_new_venv; die "$1 Hiçbir şey değiştirilmedi."; }
+    [ -n "$DB_USER" ] && [ -n "$DB_NAME" ] || abort_dump "migration öncesi yedek için $APP/.env'de DB_USER/DB_NAME yok."
+    PSQL=(psql -X -A -t -q -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME")
+    # Veritabanında zaten uygulanmışsa (ör. yarıda kalmış bir önceki deploy) yeniden yedek gerekmez
+    applied=$("${PSQL[@]}" -c "SELECT version FROM schema_migrations" 2>/dev/null || true)
+    todo=()
+    for v in "${heavy[@]}"; do grep -qxF -- "$v" <<<"$applied" || todo+=("$v"); done
+    if [ "${#todo[@]}" -gt 0 ]; then
+        size_kb=$("${PSQL[@]}" -c "SELECT pg_database_size(current_database()) / 1024" 2>/dev/null) \
+            || abort_dump "veritabanına bağlanılamadı (migration öncesi yedek: ${todo[*]})."
+        free_kb=${POPS_DEPLOY_FREE_KB:-$(df -Pk "$BACKUPS" | awk 'NR == 2 {print $4}')}
+        # Sıkıştırılmış dump veritabanından küçüktür; yine de veritabanı boyutu + 100 MB boş yer istenir
+        if [ "$free_kb" -lt $(( size_kb + 102400 )) ]; then
+            abort_dump "migration öncesi yedek için yer yok: $BACKUPS'ta ${free_kb} KB boş, veritabanı ${size_kb} KB."
+        fi
+        echo "Veritabanı dönüştüren migration (${todo[*]}): önce yedek alınıyor ($BACKUPS/db-$ID.dump)."
+        pg_dump -Fc -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "$BACKUPS/db-$ID.dump" \
+            || abort_dump "pg_dump başarısız (migration öncesi yedek)."
+        chmod 600 "$BACKUPS/db-$ID.dump"
+        DB_DUMP="$BACKUPS/db-$ID.dump"
+        # Saklama: en çok 3 (KEEP_BACKUPS daha küçükse o kadar) veritabanı yedeği
+        keep=$(( KEEP_BACKUPS < 3 ? KEEP_BACKUPS : 3 ))
+        # shellcheck disable=SC2012
+        ls -1t "$BACKUPS"/db-*.dump | tail -n +$((keep + 1)) | while read -r old; do rm -f "$old"; done
+    fi
+    unset PGPASSWORD
+fi
+
 CHANGED=1   # buradan sonra her hata (ERR, sinyal ya da açık denetim) rollback'ten geçer
 
 # Servis kullanıcısı repo klasörünü okuyamaz; dosyalar $APP'e kopyalanır. Yeni venv'e requirements zaten kuruldu.
@@ -322,8 +379,8 @@ if [ "$REBUILD" = 0 ] && [ "$REQ_CHANGED" = 1 ]; then
         || rollback "pip install başarısız"
 fi
 
-# Migration SQL'leri (yalnız eklenir; server.py açılışta bekleyenleri idempotent uygular). Not: ileride
-# yıkıcı/ağır bir migration gelirse restart'tan ÖNCE pg_dump + "python migrate.py" adımı eklenmeli.
+# Migration SQL'leri (yalnız eklenir; server.py açılışta bekleyenleri idempotent uygular). Veritabanını dönüştüren
+# migration'dan önce yedek yukarıda alındı ("$DUMP_MARK").
 install -d -o "$OWNER" -g "$GROUP" -m 755 "$APP/migrations"
 for f in Backend/migrations/*.sql; do
     install -o "$OWNER" -g "$GROUP" -m 644 "$f" "$APP/migrations/$(basename "$f")"
@@ -379,7 +436,7 @@ if [ "$ok" = 1 ]; then
         esac
         echo "venv Python $NEW_PY_VER ile yeniden kuruldu: $VENV -> $NEW_VENV"
     fi
-    echo "Backend $REV canlıda. Yedek: $BACKUP${VENV_BACKUP:+ (venv: $VENV_BACKUP)}"
+    echo "Backend $REV canlıda. Yedek: $BACKUP${VENV_BACKUP:+ (venv: $VENV_BACKUP)}${DB_DUMP:+ (veritabanı: $DB_DUMP)}"
 else
     journalctl -u "$SVC" -n 20 --no-pager || true
     rollback "Sağlık kontrolü başarısız"

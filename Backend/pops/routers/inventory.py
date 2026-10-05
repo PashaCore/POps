@@ -2,7 +2,8 @@
 
 Ajan uçları yalnızca ANAHTARLI (secret) ajanları kabul eder, enforce_agent_auth kapalı olsa bile:
 bu verileri yalnızca yeni ajanlar gönderir ve hepsi kayıtlıdır; eski uçlardaki "legacy kabul"
-artık riski burada yoktur. Panel uçları: okuma require_auth, yama tarama/kurma emri require_admin."""
+artık riski burada yoktur. Panel uçları: okuma require_auth, yama tarama/kurma emri require_admin; hepsi kurum birimi
+kapsamına göre süzülür (pops/tenancy.py)."""
 
 import datetime
 import json
@@ -10,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from pops import db, modules
+from pops import db, modules, tenancy, timeutil
 from pops.agent_auth import agent_http_auth, bind_agent
 from pops.audit import add_audit_log
 from pops.db import execute_query
@@ -35,7 +36,7 @@ def _parse_ts(v: Optional[str]) -> Optional[datetime.datetime]:
         return None
     try:
         ts = datetime.datetime.fromisoformat(v.replace("Z", "+00:00"))
-        return ts if ts.tzinfo else ts.astimezone()
+        return ts if ts.tzinfo else ts.replace(tzinfo=timeutil.zone())
     except ValueError:
         return None
 
@@ -79,7 +80,13 @@ async def _patch_command(data: PatchInstallInput, auth: dict, action: str, label
         raise HTTPException(status_code=400, detail="Geçersiz hedef türü.")
     if data.scope not in ("security", "all"):
         raise HTTPException(status_code=400, detail="Kapsam 'security' ya da 'all' olmalı.")
-    targets = [t["pc"] for t in await resolve_targets(data.target_mode, data.targets)]
+    org = await tenancy.scope_of(auth)
+    if data.target_mode == "LAB":
+        for lab in data.targets:
+            await tenancy.check_lab(auth, lab)
+    elif data.target_mode == "PC":
+        await tenancy.check_devices(auth, data.targets)
+    targets = [t["pc"] for t in await resolve_targets(data.target_mode, data.targets, scope=org)]
     targets, closed = await modules.split_pcs("patches", targets)
     if closed and not targets:
         raise modules.closed_error("patches")
@@ -154,26 +161,34 @@ async def put_patch_status(pc_name: str, data: PatchStatusInput, agent_id: Optio
 async def search_software(q: str = "", limit: int = 300, auth: dict = Depends(require_auth)):
     """Filodaki yazılımlar: ad, yayıncı, sürümler ve kaç cihazda kurulu olduğu."""
     limit = max(1, min(limit, 2000))
+    args = [(q or "").strip()[:100], limit]
+    in_scope = tenancy.device_sql(await tenancy.scope_of(auth), "pc_name", args)
     rows = await execute_query(
         "SELECT name, max(publisher) AS publisher, count(DISTINCT pc_name) AS devices, "
         "array_agg(DISTINCT version) AS versions FROM device_software "
-        "WHERE $1 = '' OR name ILIKE '%' || $1 || '%' OR publisher ILIKE '%' || $1 || '%' "
+        "WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR publisher ILIKE '%' || $1 || '%') AND " + in_scope + " "
         "GROUP BY name ORDER BY count(DISTINCT pc_name) DESC, name LIMIT $2",
-        ((q or "").strip()[:100], limit),
+        tuple(args),
         fetch=True,
     )
-    total = await execute_query("SELECT count(DISTINCT pc_name) AS n FROM device_software", fetch=True)
+    args = []
+    in_scope = tenancy.device_sql(await tenancy.scope_of(auth), "pc_name", args)
+    total = await execute_query(
+        "SELECT count(DISTINCT pc_name) AS n FROM device_software WHERE " + in_scope, tuple(args), fetch=True
+    )
     return {"items": [dict(r) for r in rows or []], "reporting_devices": int(total[0]["n"]) if total else 0}
 
 
 @router.get("/api/software/devices", dependencies=[modules.require("software")])
 async def software_devices(name: str, auth: dict = Depends(require_auth)):
     """Belirli bir yazılımın kurulu olduğu cihazlar ve sürümleri."""
+    args = [name]
+    in_scope = tenancy.lab_sql(await tenancy.scope_of(auth), "c.lab_name", args)
     rows = await execute_query(
         "SELECT s.pc_name, s.version, s.install_date, c.hostname, c.display_name, c.lab_name, c.status "
-        "FROM device_software s LEFT JOIN clients c ON c.pc_name = s.pc_name WHERE s.name = $1 "
+        "FROM device_software s LEFT JOIN clients c ON c.pc_name = s.pc_name WHERE s.name = $1 AND " + in_scope + " "
         "ORDER BY c.lab_name NULLS LAST, c.hostname",
-        (name,),
+        tuple(args),
         fetch=True,
     )
     return [dict(r) for r in rows or []]
@@ -181,6 +196,7 @@ async def software_devices(name: str, auth: dict = Depends(require_auth)):
 
 @router.get("/api/devices/{pc_name}/software", dependencies=[modules.require("software")])
 async def device_software(pc_name: str, auth: dict = Depends(require_auth)):
+    await tenancy.check_device(auth, pc_name)
     rows = await execute_query(
         "SELECT name, version, publisher, install_date, updated_at FROM device_software WHERE pc_name = $1 "
         "ORDER BY lower(name)",
@@ -190,7 +206,7 @@ async def device_software(pc_name: str, auth: dict = Depends(require_auth)):
     out = []
     for r in rows or []:
         r = dict(r)
-        r["updated_at"] = r["updated_at"].astimezone().isoformat()
+        r["updated_at"] = timeutil.iso(r["updated_at"])
         out.append(r)
     return out
 
@@ -198,12 +214,16 @@ async def device_software(pc_name: str, auth: dict = Depends(require_auth)):
 @router.get("/api/patches", dependencies=[modules.require("patches")])
 async def list_patch_status(auth: dict = Depends(require_auth)):
     """Cihaz başına Windows Update durumu (hiç bildirmeyen cihazlar da listelenir)."""
+    args = []
+    in_scope = tenancy.lab_sql(await tenancy.scope_of(auth), "c.lab_name", args)
     rows = await execute_query(
         "SELECT c.pc_name, c.hostname, c.display_name, c.lab_name, c.status, av.version AS agent_version, "
         "p.pending_count, p.pending_security, p.pending_critical, p.reboot_required, p.last_search, "
         "p.last_install, p.updates, p.last_result, p.updated_at "
         "FROM clients c LEFT JOIN device_patch_status p ON p.pc_name = c.pc_name "
-        "LEFT JOIN agent_versions av ON av.pc_name = c.pc_name ORDER BY c.lab_name NULLS LAST, c.hostname",
+        "LEFT JOIN agent_versions av ON av.pc_name = c.pc_name WHERE " + in_scope + " "
+        "ORDER BY c.lab_name NULLS LAST, c.hostname",
+        tuple(args),
         fetch=True,
     )
     out = []
@@ -211,7 +231,7 @@ async def list_patch_status(auth: dict = Depends(require_auth)):
         r = dict(r)
         for k in ("last_search", "last_install", "updated_at"):
             if r.get(k):
-                r[k] = r[k].astimezone().isoformat()
+                r[k] = timeutil.iso(r[k])
         r["updates"] = json.loads(r["updates"]) if r.get("updates") else []
         r["reported"] = r.get("updated_at") is not None
         out.append(r)

@@ -16,6 +16,11 @@ yalnızca last_seen'i ileri alması değişiklik sayılmaz, yoksa her heartbeat 
 liste karşılaştırılır: işaretlemeyi unutan bir yazım en geç o zaman yakalanır ve last_seen'i ilerleyen satırlar
 "seen" olarak yayımlanır (panel last_seen'i en fazla bu kadar gecikmeyle görür).
 
+Kurum birimi kapsamı (pops/tenancy.py): sürüm, günlük ve bildirim bütün kurumundur. Kapsamlı hesap için
+GET /api/devices kopyadan yalnızca kendi sınıflarının satırlarını döner; sürümü (ve ETag'i) o satırların özetidir
+(scoped_version), "since" her zaman tam liste alır. Böylece sürüm ya da ETag başka okulun değişikliğini göstermez.
+Panel bildirimi de kapsamlı sokete yalnızca kendi sınıflarından bir cihaz değişince, sürümsüz gider (changed_labs).
+
 Sürüm, açılış anının milisaniyesiyle başlar ve milisaniyeden çok daha yavaş artar (turda en fazla bir, artı panel
 işlemleri): yeniden başlatmadan önceki bir sürüm yeni sürecin günlüğünden her zaman eskidir (tam liste döner). Tek
 uvicorn worker'ı varsayılır (bkz. docs/decisions.md).
@@ -23,11 +28,13 @@ uvicorn worker'ı varsayılır (bkz. docs/decisions.md).
 
 import asyncio
 import collections
+import hashlib
+import json
 import logging
 import time
 from typing import Iterable, Optional
 
-from pops import agent_health, metrics
+from pops import agent_health, metrics, timeutil
 from pops.db import execute_query
 
 log = logging.getLogger("pops.devicelist")
@@ -63,7 +70,7 @@ def api_row(r: dict) -> dict:
         "ip": r["ip_address"],
         "lab": r["lab_name"],
         "status": r["status"],
-        "last_seen": r["last_seen"],
+        "last_seen": timeutil.iso(r["last_seen"]),
         "active_window": r["active_window"],
         "boot_count": r["boot_count"],
         "current_user": r.get("logged_user", "-"),
@@ -84,7 +91,7 @@ def api_row(r: dict) -> dict:
         # Ajanın son heartbeat'teki sağlık özeti (0.1.12+; bkz. pops/agent_health.py)
         "agent_health": agent_health.parse(r.get("agent_health")),
         # Son kopuş: ne zaman, neden (WebSocket kapanış kodu)
-        "last_disconnect_at": r["last_disconnect_at"].isoformat() if r.get("last_disconnect_at") else None,
+        "last_disconnect_at": timeutil.iso(r.get("last_disconnect_at")),
         "last_disconnect_reason": r.get("last_disconnect_reason"),
         # Çevrimdışı bypass: device = cihaza özel anahtar onaylı, pending = gönderildi/onay bekliyor, None = eski
         "bypass_key": (
@@ -160,6 +167,7 @@ class _State:
         self.log = ChangeLog(self.version)
         self.dirty = set()
         self.scan_due = False
+        self.changed_labs = set()   # son bildirimden bu yana değişen satırların sınıfları (eski ve yeni)
 
 
 S = _State()
@@ -212,6 +220,32 @@ def delta(since: int) -> Optional[dict]:
         pc: S.rows[pc]["last_seen"] for pc, v in S.seen_ver.items() if v > since and pc not in skip and pc in S.rows
     }
     return {"version": S.version, "full": False, "changed": changed, "removed": removed, "seen": seen}
+
+
+def take_changed_labs() -> set:
+    """Son çağrıdan bu yana değişen, silinen ya da last_seen'i yayımlanan cihazların sınıfları (taşınanlarda eski ve
+    yeni sınıf); kapsamlı panellere bildirim için (bkz. manager.broadcast_devices_changed)."""
+    labs, S.changed_labs = S.changed_labs, set()
+    return labs
+
+
+async def scoped_rows(labs, fresh: bool = False) -> list:
+    """Kapsamlı hesabın satırları (yalnızca verilen sınıflardaki cihazlar), kimliğe göre sıralı. fresh=False ve kopya
+    hazırsa veritabanına gidilmez (sürüm karşılaştırması için; kopya ?since= yanıtlarıyla aynı gecikmeyle günceldir)."""
+    labs = sorted(set(labs or ()))
+    if S.ready and not fresh:
+        rows = [r for r in S.rows.values() if r["lab"] in labs]
+    else:
+        found = await execute_query(_QUERY + " WHERE c.lab_name = ANY($1::text[])", (labs,), fetch=True)
+        rows = [api_row(r) for r in found or []]
+    return sorted(rows, key=lambda r: r["hw_id"])
+
+
+def scoped_version(rows: list) -> int:
+    """Kapsamlı listenin sürümü: satırların özeti (48 bit, JavaScript sayısına sığar). Yalnızca bu satırlar değişince
+    değişir; başka okulların değişikliği görünmez."""
+    raw = json.dumps(rows, sort_keys=True, default=str, ensure_ascii=False).encode("utf-8")
+    return int(hashlib.sha256(raw).hexdigest()[:12], 16)
 
 
 def heartbeat_differs(pc: str, status, active_window, hostname, ip, health_json) -> bool:
@@ -268,6 +302,8 @@ async def _refresh(pcs: Optional[set], scan: bool) -> bool:
         old = S.rows.get(pc)
         if old is None or differs(old, row):
             changed.append(pc)
+            if old is not None:
+                S.changed_labs.add(old["lab"])   # başka sınıfa taşınan cihaz eski sınıfın listesinden de çıkar
         elif scan and row["last_seen"] != S.published.get(pc):
             seen.append(pc)
         S.rows[pc] = row
@@ -275,6 +311,8 @@ async def _refresh(pcs: Optional[set], scan: bool) -> bool:
     removed = [pc for pc in asked if pc not in fresh and pc in S.rows]
     if not (changed or removed or seen):
         return False
+    S.changed_labs.update(fresh[pc]["lab"] for pc in changed + seen)
+    S.changed_labs.update(S.rows[pc]["lab"] for pc in removed)
     S.version += 1
     for pc in changed:
         S.published[pc] = fresh[pc]["last_seen"]

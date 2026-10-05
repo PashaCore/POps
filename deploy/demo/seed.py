@@ -37,9 +37,8 @@ import asyncpg  # noqa: E402
 import bcrypt  # noqa: E402
 
 import demo_fleet as fleet  # noqa: E402
-from pops import auditchain  # noqa: E402  (bağımlılıksız: yalnızca hash zinciri)
+from pops import auditchain, timeutil  # noqa: E402  (bağımlılıksız: hash zinciri ve saat dilimi)
 
-TS = "%Y-%m-%d %H:%M:%S"
 ORG_NAME = "POps Demo Okulu"
 IT = "bt.sorumlusu"               # geçmişteki işlemleri yapan BT sorumlusu (panel kullanıcısı değil, yalnızca ad)
 OFFICE_IP = "10.20.0.15"
@@ -70,7 +69,8 @@ def previous_version(v: str) -> str:
 
 
 def aware(dt: datetime.datetime) -> datetime.datetime:
-    return dt.astimezone()
+    """Zaman damgası sütunları TIMESTAMPTZ (migration 0031): yerel saat, saat dilimiyle ve saniye hassasiyetinde."""
+    return dt.astimezone().replace(microsecond=0)
 
 
 class History:
@@ -349,7 +349,7 @@ async def write_history(c, h: History):
             "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, output, created_by, exit_code, "
             "dispatched_at, title, source, reason, client_ip, batch_id, schedule_id, expires_at) "
             "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id",
-            t["target_pc"], t["target_lab"], t["script_path"], t["status"], t["created_at"].strftime(TS), t["output"],
+            t["target_pc"], t["target_lab"], t["script_path"], t["status"], aware(t["created_at"]), t["output"],
             t["created_by"], t["exit_code"], aware(t["dispatched_at"]) if t["dispatched_at"] else None, t["title"],
             t["source"], t["reason"], t["client_ip"], t["batch_id"], t["schedule_id"],
             aware(t["expires_at"]) if t["expires_at"] else None,
@@ -366,17 +366,19 @@ async def write_history(c, h: History):
     await c.executemany(
         "INSERT INTO agent_logs_v2 (pc_name, actor_id, event_type, category, action, risk_level, reason, message, "
         "meta_data, timestamp) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
-        [(pc, actor, et, cat, act, risk, reason, msg, json.dumps(meta, ensure_ascii=False), at.strftime(TS))
+        [(pc, actor, et, cat, act, risk, reason, msg, json.dumps(meta, ensure_ascii=False), aware(at))
          for at, pc, actor, et, cat, act, risk, reason, msg, meta in h.events],
     )
-    # Hash zinciri: pops/audit.py ile aynı kilit ve özet; zincirin o anki ucundan devam eder
+    # Hash zinciri: pops/audit.py ile aynı kilit ve özet; zincirin o anki ucundan devam eder. Özete giren zaman
+    # metni veritabanında sabitlenen denetim saat diliminde üretilir (pops/auditchain.py)
     h.audits.sort(key=lambda r: r[0])
+    await timeutil.configure_from_db(c)
     async with c.transaction():
         await c.execute("SELECT pg_advisory_xact_lock($1)", AUDIT_CHAIN_LOCK)
         prev = await c.fetchval("SELECT entry_hash FROM device_audit_logs ORDER BY id DESC LIMIT 1")
         rows = []
         for at, hw, action, reason, changes in h.audits:
-            payload, ts = json.dumps(changes, ensure_ascii=False), at.strftime(TS)
+            payload, ts = json.dumps(changes, ensure_ascii=False), aware(at)
             entry = auditchain.entry_hash(prev, hw, action, reason, payload, ts)
             rows.append((hw, action, reason, payload, ts, prev, entry))
             prev = entry
@@ -393,7 +395,7 @@ async def write_history(c, h: History):
         await c.execute(
             "INSERT INTO enterprise_audit_logs (session_id, admin_id, admin_name, admin_role, target_pc, start_time, "
             "end_time, reason, is_notified, is_mandatory, status) VALUES ($1,NULL,$2,'admin',$3,$4,$5,$6,TRUE,$7,"
-            "'Completed')", sid, IT, hw, start.strftime(TS), end.strftime(TS), reason, mandatory)
+            "'Completed')", sid, IT, hw, aware(start), aware(end), reason, mandatory)
     for source, pc, reporter, cat, subject, body, status, prio, created, msgs in h.tickets:
         tid = await c.fetchval(
             "INSERT INTO tickets (created_at, updated_at, source, pc_name, reporter, category, subject, body, status, "
@@ -476,7 +478,7 @@ async def seed_settings(c, devices, admin, token):
             "ip_address, dna_uuid, dna_bios, dna_disk, dna_mac, dna_ram, cap_ram_readable, last_disconnect_at, "
             "last_disconnect_reason) VALUES ($1,$2,$3,$4,'Offline','-',$5,$6,$7,$8,$9,$10,$11,TRUE,$12,$13) "
             "ON CONFLICT (pc_name) DO UPDATE SET lab_name = $3",
-            d.hw_id, d.hostname, d.lab, last.strftime(TS), 40 + int(fleet._h(d.hostname, "boot") * 260), d.ip,
+            d.hw_id, d.hostname, d.lab, aware(last), 40 + int(fleet._h(d.hostname, "boot") * 260), d.ip,
             hw["uuid"], hw["bios_sn"], hw["disk_sn"], hw["mac"], hw["ram_sn"], aware(last),
             "ajan kapattı (servis duruyor ya da yeniden başlıyor)")
 

@@ -3,15 +3,16 @@
 İkisi de görev açar (tasks.kind = 'power' | 'user_message', ayrıntı payload'da) ve kuyruk gönderir: sonuç İşlemler'de
 ve cihazın Son işlemler'inde görünür. Yalnızca çevrimiçi hedeflere görev açılır; kapalı bilgisayar açılınca
 saatler sonra kapanmasın ya da eski bir mesaj görmesin diye görev 15 dakika içinde gönderilemezse süresi dolar.
+Kurum birimleri (pops/tenancy.py): hedefler çağıranın kapsamında çözülür; kapsam dışındaki sınıf 404, kapsam dışındaki
+cihaz kimliği "kayıtlı olmayan" (422) olur, ALL yalnızca kapsamdaki cihazlardır.
 """
 
-import datetime
 import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from pops import db, power
+from pops import db, power, tenancy, timeutil
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.manager import manager
@@ -24,10 +25,13 @@ router = APIRouter()
 TASK_TTL_SECONDS = 15 * 60
 
 
-async def _online_targets(target_mode: str, targets: list) -> tuple:
+async def _online_targets(target_mode: str, targets: list, auth: dict) -> tuple:
     if target_mode != "ALL" and not targets:
         raise HTTPException(status_code=422, detail="Hedef bilgisayar yok.")
-    resolved = await resolve_targets(target_mode, targets)
+    if target_mode == "LAB":
+        for lab in targets:
+            await tenancy.check_lab(auth, lab)
+    resolved = await resolve_targets(target_mode, targets, scope=await tenancy.scope_of(auth))
     unknown = [t["pc"] for t in resolved if t.get("unknown")]
     if unknown:
         raise HTTPException(
@@ -59,12 +63,12 @@ async def _plans(kind: str, spec: dict, pcs: list) -> dict:
 
 
 async def _queue(kind: str, spec: dict, title: str, data, auth: dict, request: Request) -> dict:
-    online, offline = await _online_targets(data.target_mode, data.targets)
+    online, offline = await _online_targets(data.target_mode, data.targets, auth)
     creator = auth.get("sub")
     batch_id = uuid.uuid4().hex[:16]
     ids = []
     if online:
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = timeutil.now()
         async with db.transaction() as conn:
             created = await conn.fetch(
                 "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, title, source, "

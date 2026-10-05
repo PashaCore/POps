@@ -31,7 +31,7 @@ from pydantic import field_validator
 
 import release_verify
 from pops import agent_version as agent_version_mod
-from pops import devicelist, peer_cache, update_tracking
+from pops import devicelist, peer_cache, tenancy, timeutil, update_tracking
 from pops.models import StrictInput, TargetMode, UpdateProgressInput, upper_mode
 
 
@@ -422,9 +422,12 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         update_available = _newer(latest, running)
         # Doğrulanmış ajan paketi GitHub'daki son sürüm değil: panel "GitHub'dan indir" düğmesini gösterir
         release_available = _newer(latest, staged_version)
+        args = []
+        in_scope = tenancy.lab_sql(await tenancy.scope_of(auth), "c.lab_name", args)
         counts = await execute_query(
             "SELECT count(*) AS total, count(s.pc_name) AS enrolled "
-            "FROM clients c LEFT JOIN agent_secrets s ON s.pc_name = c.pc_name", fetch=True)
+            "FROM clients c LEFT JOIN agent_secrets s ON s.pc_name = c.pc_name WHERE " + in_scope, tuple(args),
+            fetch=True)
         return {
             "server": await _server_update(force=check),
             "agents_total": int(counts[0]["total"]) if counts else 0,
@@ -631,10 +634,11 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
 
     @router.get("/api/system/enroll-tokens")
     async def list_enroll_tokens(auth: dict = Depends(require_superadmin)):
-        return await execute_query(
+        rows = await execute_query(
             "SELECT id, token_hint, lab_name, note, created_at, expires_at, is_used, used_by, used_at, "
             "max_uses, use_count, (expires_at < NOW() AND NOT is_used) AS expired "
             "FROM enroll_tokens ORDER BY id DESC LIMIT 200", fetch=True)
+        return [timeutil.iso_row(r) for r in rows or []]
 
     @router.delete("/api/system/enroll-token/{token_id}")
     async def revoke_enroll_token(token_id: int, auth: dict = Depends(require_superadmin)):
@@ -646,10 +650,11 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         """Gönderilmiş bir ajan güncellemesinin cihaz cihaz durumu (panelin işlem merkezi): bağlı mı, çalışan sürüm,
         sonucu beklenen gönderim var mı (ne zaman gönderildi, ajanın bildirdiği son adım) ve gönderimden sonra gelen
         güncelleme sonucu (başarılı / geri döndü / reddedildi). Zamanlar Unix saniyesi; "now" sunucunun saati."""
-        pcs = list(dict.fromkeys(str(p) for p in data.pcs))[:5000]
+        # Kurum birimi kapsamı: kapsam dışındaki cihaz listede yer almaz (pops/tenancy.py)
+        pcs = await tenancy.visible_pcs(auth, list(dict.fromkeys(str(p) for p in data.pcs))[:5000])
         if not pcs:
             return {"items": []}
-        since = datetime.datetime.fromtimestamp(max(0.0, data.since)).strftime("%Y-%m-%d %H:%M:%S")
+        since = datetime.datetime.fromtimestamp(max(0.0, data.since), datetime.timezone.utc)
         rows = await execute_query(
             "SELECT c.pc_name, c.status, c.running_version, av.version AS agent_version FROM clients c "
             "LEFT JOIN agent_versions av ON av.pc_name = c.pc_name WHERE c.pc_name = ANY($1::text[])",
@@ -668,8 +673,13 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
                 ch = {}
             last[r["hw_id"]] = {k: ch.get(k) for k in ("status", "rollback", "to_version", "detail", "agent_state")}
         known = {r["pc_name"]: r for r in rows or []}
-        # Sınıf içi eş gönderimi: bilgisayarın rolü (tohum, tohumu bekliyor, eşten) ve sınıf başına özet
+        # Sınıf içi eş gönderimi: bilgisayarın rolü (tohum, tohumu bekliyor, eşten) ve sınıf başına özet. Kapsamlı
+        # hesap yalnızca kapsamdaki sınıfların özetini görür (tohum ve denenenler o sınıfın bilgisayarlarıdır)
         peer = peer_cache.status_for(pcs)
+        scope = await tenancy.scope_of(auth)
+        if not scope.is_global:
+            peer["labs"] = [x for x in peer["labs"] if scope.allows_lab(x["lab"])]
+            peer["items"] = {pc: v for pc, v in peer["items"].items() if scope.allows_lab(v["lab"])}
         items = []
         for pc in pcs:
             r = known.get(pc)

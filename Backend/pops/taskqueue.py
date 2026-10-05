@@ -9,28 +9,37 @@ from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 
 
-async def resolve_targets(target_mode: str, targets, conn=None) -> list:
+async def resolve_targets(target_mode: str, targets, conn=None, scope=None) -> list:
     """Görev hedefleri: ALL (tüm cihazlar), LAB (lab adları), PC (HW- kimlikleri) -> [{"pc", "lab"}].
     Hedef sayısından bağımsız tek sorgu (eskiden her lab/cihaz için ayrı sorgu gidiyordu). conn verilirse o bağlantı
-    (ve işlemi) kullanılır."""
+    (ve işlemi) kullanılır. scope (pops/tenancy.Scope) kapsamlıysa yalnızca laboratuvarı kapsamdaki cihazlar çözülür;
+    kapsam dışındaki kimlik "unknown" olur (var olup olmadığı belli olmaz)."""
 
     async def fetch(query, *params):
         if conn is not None:
             return [dict(r) for r in await conn.fetch(query, *params)]
         return await execute_query(query, params, fetch=True) or []
 
+    labs = None if scope is None or scope.is_global else scope.lab_list()
     if target_mode == 'ALL':
-        res = await fetch("SELECT pc_name, lab_name FROM clients")
+        res = await fetch(
+            "SELECT pc_name, lab_name FROM clients WHERE ($1::text[] IS NULL OR lab_name = ANY($1::text[]))", labs
+        )
         return [{"pc": r["pc_name"], "lab": r["lab_name"]} for r in res]
     names = [str(t) for t in (targets or [])]
     if target_mode == 'LAB':
         res = await fetch(
             "SELECT pc_name, lab_name FROM clients WHERE lab_name = ANY($1::text[]) "
+            "AND ($2::text[] IS NULL OR lab_name = ANY($2::text[])) "
             "ORDER BY array_position($1::text[], lab_name), pc_name",
-            names,
+            names, labs,
         )
         return [{"pc": r["pc_name"], "lab": r["lab_name"]} for r in res]
-    res = await fetch("SELECT pc_name, lab_name FROM clients WHERE pc_name = ANY($1::text[])", names)
+    res = await fetch(
+        "SELECT pc_name, lab_name FROM clients WHERE pc_name = ANY($1::text[]) "
+        "AND ($2::text[] IS NULL OR lab_name = ANY($2::text[]))",
+        names, labs,
+    )
     labs = {r["pc_name"]: r["lab_name"] for r in res}
     # unknown: kayıtlı olmayan kimlik. Panelden gelen istekte reddedilir; zamanlanmış görevde o arada silinen cihazın
     # görevi eskisi gibi açılır ve geçerlilik süresi dolunca kapanır.
@@ -38,12 +47,10 @@ async def resolve_targets(target_mode: str, targets, conn=None) -> list:
 
 
 def _seconds_since(created_at) -> float:
-    # created_at yerel saatte 'YYYY-MM-DD HH:MM:SS' metni
-    try:
-        created = datetime.datetime.strptime(str(created_at), "%Y-%m-%d %H:%M:%S")
-        return (datetime.datetime.now() - created).total_seconds()
-    except ValueError:
+    # created_at TIMESTAMPTZ (asyncpg saat dilimli datetime döner)
+    if not isinstance(created_at, datetime.datetime) or created_at.tzinfo is None:
         return 0.0
+    return (datetime.datetime.now(datetime.timezone.utc) - created_at).total_seconds()
 
 
 # Eşzamanlı çağrılar birleştirilir: bir tur sürerken gelen çağrılar üst üste yığılmaz, tur bitince bir kez

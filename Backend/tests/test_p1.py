@@ -257,7 +257,7 @@ async def run(c, admin, superadmin, viewer):
     for pc in COMPAT:
         tids[pc] = await c.fetchval(
             "INSERT INTO tasks (target_pc, script_path, status, created_at, dispatched_at) "
-            "VALUES ($1, 'exit 3', 'Running', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), NOW()) RETURNING id", pc)
+            "VALUES ($1, 'exit 3', 'Running', now(), NOW()) RETURNING id", pc)
     for pc, ver in COMPAT.items():
         result = {"type": "result", "task_id": tids[pc], "output": "çıktı"}
         if ver and ver >= "0.1.13":
@@ -272,13 +272,13 @@ async def run(c, admin, superadmin, viewer):
     v14 = agents["HW-PV14"]
     t_ack = await c.fetchval(
         "INSERT INTO tasks (target_pc, script_path, status, created_at, dispatched_at) "
-        "VALUES ('HW-PV14', 'echo ack', 'Running', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), NOW()) RETURNING id")
+        "VALUES ('HW-PV14', 'echo ack', 'Running', now(), NOW()) RETURNING id")
     await v14.send(json.dumps({"type": "result", "task_id": t_ack, "output": "ok", "exit_code": 0}))
     acks = [m for m in await collect(v14, 1.5) if isinstance(m, dict) and m.get("action") == "result_ack"]
     chk(any(m.get("task_id") == t_ack for m in acks), "sonuç kaydedilince onaylandı (result_ack)")
     t_den = await c.fetchval(
         "INSERT INTO tasks (target_pc, script_path, status, created_at, dispatched_at) "
-        "VALUES ('HW-PV14', 'hostname', 'Running', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), NOW()) RETURNING id")
+        "VALUES ('HW-PV14', 'hostname', 'Running', now(), NOW()) RETURNING id")
     # 0.1.13 ajanı: çıkış kodsuz ret sonucu, ardından capability_denied
     await v14.send(json.dumps({"type": "result", "task_id": t_den, "output": "[REDDEDİLDİ] terminal kapalı"}))
     await v14.send(json.dumps({"type": "capability_denied", "capability": "terminal", "action": "execute",
@@ -334,7 +334,7 @@ async def run(c, admin, superadmin, viewer):
     print("== yeniden deneme yeni görev açar; eski çalıştırmanın geç sonucu yenisini etkilemez")
     old = await c.fetchval(
         "INSERT INTO tasks (target_pc, script_path, status, created_at) VALUES ('HW-PDUP', 'echo retry', 'Cancelled', "
-        "to_char(now(), 'YYYY-MM-DD HH24:MI:SS')) RETURNING id")
+        "now()) RETURNING id")
     s, b = req("/api/tasks/action", admin, {"action": "RETRY", "target_mode": "TASK", "target_id": str(old)})
     new = await c.fetchrow("SELECT id, status, created_by FROM tasks WHERE retry_of=$1", old)
     chk(b.get("changed") == 1 and new is not None and new["id"] != old and new["status"] == "Pending",
@@ -416,7 +416,7 @@ async def run(c, admin, superadmin, viewer):
 
     print("== saklama süresi")
     await c.execute("INSERT INTO agent_logs_v2 (pc_name, message, timestamp) VALUES ('HW-PHB', 'p1-test-old', "
-                    "'2001-01-01 00:00:00'), ('HW-PHB', 'p1-test-new', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'))")
+                    "'2001-01-01 00:00:00'), ('HW-PHB', 'p1-test-new', now())")
     old_done = await c.fetchval("INSERT INTO tasks (target_pc, script_path, status, created_at) VALUES "
                                 "('HW-PHB', 'p1 old', 'Completed', '2001-01-01 00:00:00') RETURNING id")
     old_wait = await c.fetchval("INSERT INTO tasks (target_pc, script_path, status, created_at) VALUES "

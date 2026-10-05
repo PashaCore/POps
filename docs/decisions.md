@@ -498,3 +498,50 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   sign-in attempt; a running session lasts until it expires (`JWT_EXPIRE_HOURS`) unless a superadmin deletes the
   account. IdPs that do not send `email_verified` cannot use the domain rule and need group mappings. The LDAP
   integration test needs Docker.
+
+## D-25 Organisational units: one server for a district, scope enforced on the server
+
+**Since:** 0.1.23-alpha.
+
+- **Context:** A review noted that POps had no tenancy: a district education office (İlçe MEM) that wants to run
+  one server for its schools had to give every school's IT teacher an account that sees and controls every PC of
+  every school. ROADMAP listed "lab-scoped permissions". Page permissions only hide panel pages and do not limit the
+  API (D-09 and `security.md`), so a panel-only filter would not be a boundary.
+- **Decision:**
+  - A tree of **organisational units** (`org_units`: id, name, parent; district → school, any depth). Labs belong to
+    at most one unit (`custom_labs.org_unit_id`). Devices are not assigned directly: a device belongs to the unit of
+    its lab, so moving a PC between labs moves it between units, and a new PC is in no unit until it is put in a lab.
+  - Users and API tokens get a **scope** (`org_scope`): `NULL` means everything, a list of unit ids means those units
+    and their sub-units. Existing installations have no units and every account is unscoped, so nothing changes until
+    a superadmin sets units up. A superadmin is always unscoped; only a superadmin manages units, lab assignment and
+    scopes.
+  - The scope is enforced on the server, in one place (`Backend/pops/tenancy.py`): `scope_of(principal)` reads the
+    scope that `verify_session` / `verify_api_token` load from the database on every request, expands the units and
+    returns the set of lab names; `lab_sql`, `device_sql`, `task_sql`, `unit_sql` and `owned_scope_sql` add the
+    matching condition to a query, `check_device` / `check_lab` guard requests that name an object, and
+    `require_global` closes organisation-wide settings to scoped accounts. Every endpoint that lists or acts on
+    devices, labs, tasks, logs, reports, exports, tickets, licences, Vision, deployment, schedules and notifications
+    uses them; target resolution for tasks and schedules takes the scope too. The panel WebSocket filters broadcasts
+    and remote input by the same lab set.
+  - Out-of-scope objects named by id answer `404`, not `403`, so a scoped account cannot probe which device ids or
+    tickets exist elsewhere. Organisation-wide settings (task concurrency, auto-enroll, agent policy, the shared
+    package library and uploads) answer `403`.
+  - Devices in no unit (unassigned PCs, labs without a unit) are visible only to unscoped accounts: the district or
+    the server operator decides where a new PC belongs.
+  - Objects that are not devices get an owner unit where it matters: licences (`org_unit_id`, counted on that unit's
+    devices), tickets without a PC (`org_unit_id`) and scheduled tasks (`org_scope` of their creator, applied again
+    on every run). The package library stays one shared library, managed by unscoped admins.
+  - Directory and OIDC sign-in (D-24) never creates an unscoped account by accident: a group mapping (or the OIDC
+    default role) may set a scope (unit ids, or `"all"` to say "everything" explicitly); when none of the matching
+    mappings does, a new account gets an empty scope while units exist, and a superadmin chooses its units. A scope a
+    superadmin gave an existing account stays unless a mapping sets one.
+  - Server-wide integrations stay with the superadmin and are not scoped: GLPI export sends every device and ticket,
+    the identity providers, module settings and their preview, and the update peer cache setting. Power actions,
+    messages, file transfer, exam mode, winget deployment and the update rollout views follow the scope like tasks.
+- **Consequences:** A district can run one server and give each school an admin who sees only that school; the
+  district office sees all of them. The boundary is the server, so it holds for API tokens and scripts too. Because
+  devices follow their lab, the unit of a lab is the single thing to get right, and a lab name stays unique across
+  the whole server (a school cannot create a lab with another school's lab name). Server-level pages (**Sistem**,
+  releases, enrollment tokens, notification channels) stay with the superadmin; a school admin does not enroll PCs
+  without the district handing out an enrollment token for its lab. Changing a scope bumps the user's token version,
+  so open sessions sign in again; open panel sockets pick up a changed lab assignment within 10 seconds.

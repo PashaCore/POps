@@ -477,7 +477,7 @@ def test_p1():
         real_resolve = tasks_router.resolve_targets
         gate = asyncio.Event()
 
-        async def slow_fail(mode, targets):
+        async def slow_fail(mode, targets, **_kw):
             await gate.wait()
             raise RuntimeError("veritabanı yok")
 
@@ -1605,13 +1605,17 @@ def test_peer_cache():
         pc.connected("S5", ["peer_cache"], "ip=10.0.0.5")
         pc.connected("S6", ["peer_cache"], "")
         chk("S4" not in pc._announce, "özelliği duyurmayan ajanın başlığı yok sayılır")
+
+        def seen(h, m, sec):   # clients.last_seen TIMESTAMPTZ (0031)
+            return datetime.datetime(2026, 10, 5, h, m, sec, tzinfo=datetime.timezone.utc)
+
         rows = [
-            {"pc_name": "S1", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 10:00:01"},
-            {"pc_name": "S2", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 09:00:00",
+            {"pc_name": "S1", "has_feature": True, "version": "0.1.23", "last_seen": seen(10, 0, 1)},
+            {"pc_name": "S2", "has_feature": True, "version": "0.1.23", "last_seen": seen(9, 0, 0),
              "inv_ip": "10.0.0.2"},
-            {"pc_name": "S3", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 10:00:02"},
-            {"pc_name": "S4", "has_feature": True, "version": "0.1.23", "last_seen": "2026-10-05 10:00:09"},
-            {"pc_name": "S5", "has_feature": True, "version": "v9.9.9", "last_seen": "2026-10-05 10:00:09"},
+            {"pc_name": "S3", "has_feature": True, "version": "0.1.23", "last_seen": seen(10, 0, 2)},
+            {"pc_name": "S4", "has_feature": True, "version": "0.1.23", "last_seen": seen(10, 0, 9)},
+            {"pc_name": "S5", "has_feature": True, "version": "v9.9.9", "last_seen": seen(10, 0, 9)},
             {"pc_name": "S6", "has_feature": True, "version": "0.1.23", "conn_ip": "10.0.0.6"},
             {"pc_name": "S7", "has_feature": True, "version": "0.1.23", "conn_ip": "10.0.0.6"},
         ]
@@ -1663,12 +1667,26 @@ def test_sso():
           {"group": "cn=view, dc=okul, dc=local", "role": "viewer", "pages": ["logger", "devices"]},
           {"group": "cn=root,dc=okul,dc=local", "role": "superadmin", "pages": []}]
     chk(sso.map_role(["cn=admins,dc=okul,dc=local", "CN=VIEW,DC=okul,DC=local"], gm, dn=True)
-        == ("admin", ["devices", "logger"]), "en yüksek rol, sayfaların birleşimi; DN büyük/küçük harf duyarsız")
+        == ("admin", ["devices", "logger"], None),
+        "en yüksek rol, sayfaların birleşimi; DN büyük/küçük harf duyarsız")
     chk(sso.map_role(["cn=other,dc=okul,dc=local"], gm, dn=True) is None, "eşleşmeyen grup: erişim yok")
-    chk(sso.map_role(["cn=root,dc=okul,dc=local", "cn=admins,dc=okul,dc=local"], gm, dn=True) == ("superadmin", []),
+    chk(sso.map_role(["cn=root,dc=okul,dc=local", "cn=admins,dc=okul,dc=local"], gm, dn=True)
+        == ("superadmin", [], None),
         "süper admin sayfa listesi taşımaz")
     chk(sso.map_role(["POPS-Admins"], [{"group": "pops-admins", "role": "admin", "pages": []}], dn=False)
-        == ("admin", []), "OIDC grubu büyük/küçük harf duyarsız")
+        == ("admin", [], None), "OIDC grubu büyük/küçük harf duyarsız")
+    # Kurum birimi kapsamı (D-25): kapsam veren eşlemelerin birleşimi; vermeyen eşleme kapsamı genişletmez
+    sm = [{"group": "it", "role": "admin", "pages": [], "org_scope": None},
+          {"group": "okul-a", "role": "viewer", "pages": [], "org_scope": [3]},
+          {"group": "okul-b", "role": "viewer", "pages": [], "org_scope": [2, 1]},
+          {"group": "ilce", "role": "viewer", "pages": [], "org_scope": "all"},
+          {"group": "kok", "role": "superadmin", "pages": [], "org_scope": None}]
+    chk(sso.map_role(["it"], sm, dn=False)[2] is None, "kapsam ayarlanmamış: None (yeni hesap en dar kapsamı alır)")
+    chk(sso.map_role(["it", "okul-a"], sm, dn=False) == ("admin", [], [3]),
+        "kapsamsız eşleme, kapsamlı eşlemenin kapsamını genişletmez")
+    chk(sso.map_role(["okul-a", "okul-b"], sm, dn=False)[2] == [1, 2, 3], "birden çok kapsam: birleşim")
+    chk(sso.map_role(["okul-a", "ilce"], sm, dn=False)[2] == "all", "açıkça \"all\": bütün kurum")
+    chk(sso.map_role(["okul-a", "kok"], sm, dn=False) == ("superadmin", [], None), "süper admin kapsamsız")
 
     base = {"host": "dc1.okul.local", "port": 636, "security": "ldaps", "base_dn": "dc=okul,dc=local",
             "bind_dn": "cn=svc,dc=okul,dc=local", "user_filter": "(sAMAccountName={username})"}
@@ -1709,6 +1727,23 @@ def test_sso():
     chk(refused(sso.clean_ldap, dict(base, ca_pem="not a cert")), "bozuk CA reddedilir")
     chk(refused(sso.clean_ldap, dict(base, group_map=[{"group": "cn=x", "role": "admin", "pages": ["Bad Page"]}])),
         "geçersiz sayfa adı reddedilir")
+    for bad in ([], ["x"], [0], "everything"):
+        chk(refused(sso.clean_ldap, dict(base, group_map=[{"group": "cn=x", "role": "admin", "pages": [],
+                                                          "org_scope": bad}])),
+            "eşlemede geçersiz kapsam reddedilir: %r" % (bad,))
+    gm_ok = sso.clean_ldap(dict(base, group_map=[
+        {"group": "cn=a", "role": "admin", "pages": [], "org_scope": [5, 5, 2]},
+        {"group": "cn=b", "role": "viewer", "pages": [], "org_scope": "all"},
+        {"group": "cn=c", "role": "superadmin", "pages": [], "org_scope": [1]},
+        {"group": "cn=d", "role": "viewer", "pages": []}]))["group_map"]
+    chk([m["org_scope"] for m in gm_ok] == [[2, 5], "all", None, None],
+        "eşleme kapsamı: tekilleştirilir, \"all\" kalır, süper adminde ve verilmeyende None")
+    chk(sso.scope_units({"group_map": gm_ok, "default_org_scope": [9]}) == [2, 5, 9], "ayarlardaki birimler")
+    try:
+        LdapSettingsInput(group_map=[{"group": "cn=x", "role": "admin", "org_scope": "everything"}])
+        chk(False, "kapsamda yalnızca \"all\" metni geçer")
+    except ValidationError:
+        chk(True, "kapsamda bilinmeyen metin 422")
     try:
         LdapSettingsInput(host="x", unknown=1)
         chk(False, "bilinmeyen alan reddedilmeli")
@@ -1934,6 +1969,63 @@ def test_fuzz_findings():
         os.unlink(f.name)
 
 
+def test_timeutil():
+    """Zaman damgaları (0031): saat dilimi sırası, API biçimi, CSV/tepsi metni, denetim özetinin eski metinle uyumu."""
+    print("== zaman damgaları")
+    from pops import auditchain, timeutil
+
+    saved = {k: os.environ.get(k) for k in ("POPS_TZ", "TZ")}
+    try:
+        os.environ["POPS_TZ"] = "Asia/Tokyo"
+        os.environ["TZ"] = "Europe/Istanbul"
+        chk(timeutil.detect_zone_name("UTC") == "Asia/Tokyo", "POPS_TZ önce gelir")
+        os.environ["POPS_TZ"] = "Bozuk/Dilim"
+        logging.disable(logging.WARNING)   # beklenen uyarı ("POPS_TZ tanınmadı") çıktıya düşmesin
+        try:
+            chk(timeutil.detect_zone_name("UTC") == "Europe/Istanbul", "tanınmayan POPS_TZ yok sayılır, süreç dilimi")
+        finally:
+            logging.disable(logging.NOTSET)
+        del os.environ["POPS_TZ"]
+        os.environ["TZ"] = ":America/New_York"
+        chk(timeutil.detect_zone_name("UTC") == "America/New_York", "TZ ortam değişkeni (':' önekli)")
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    timeutil.configure(name="Europe/Istanbul", audit_zone_name="Europe/Istanbul")
+    utc = datetime.datetime(2026, 10, 5, 8, 58, 11, 123456, tzinfo=datetime.timezone.utc)
+    chk(timeutil.iso(utc) == "2026-10-05T11:58:11+03:00", "API: sunucu diliminde ofsetli ISO 8601, saniye (%s)"
+        % timeutil.iso(utc))
+    chk(timeutil.local_text(utc) == "2026-10-05 11:58:11", "CSV/tepsi: okunur yerel saat")
+    chk(timeutil.iso(None) is None and timeutil.iso(datetime.date(2026, 1, 2)) == "2026-01-02", "None ve tarih")
+    row = timeutil.iso_row({"id": 1, "created_at": utc, "name": "x"})
+    chk(row == {"id": 1, "created_at": "2026-10-05T11:58:11+03:00", "name": "x"}, "satırdaki zaman alanları")
+    start = timeutil.day_start(datetime.date(2026, 10, 5))
+    chk(start.isoformat() == "2026-10-05T00:00:00+03:00", "gün başı sunucu diliminde")
+    chk(timeutil.now().microsecond == 0 and timeutil.now().utcoffset() == datetime.timedelta(hours=3),
+        "şimdi: saniye hassasiyeti, sunucu dilimi")
+    chk(activity._local({"timestamp": utc, "action": "x"}) == {"timestamp": "2026-10-05 11:58:11", "action": "x"},
+        "tepsi geçmişi eski metin biçiminde")
+
+    # Denetim zinciri: 0031'den önce metinle özetlenmiş kayıt, TIMESTAMPTZ'den üretilen metinle aynı özeti verir
+    old = auditchain.entry_hash(None, "HW-1", "lockdown", "r", "{}", "2026-10-05 11:58:11")
+    new = auditchain.entry_hash(None, "HW-1", "lockdown", "r", "{}", utc.replace(microsecond=0))
+    chk(old == new, "eski metin ve zaman damgası aynı özet (denetim dilimi)")
+    rows = [{"id": 1, "hw_id": "HW-1", "action": "lockdown", "reason": "r", "changes": "{}",
+             "timestamp": utc.replace(microsecond=0), "entry_hash": old}]
+    chk(auditchain.verify(rows)["ok"], "zincir doğrulanır")
+    tokyo = timeutil.tzinfo_for("Asia/Tokyo")
+    chk(not auditchain.verify(rows, tz=tokyo)["ok"], "başka dilimde metin değişir, zincir kırık görünür")
+    timeutil.configure(name="UTC", audit_zone_name="Europe/Istanbul")
+    chk(auditchain.verify(rows)["ok"], "sunucu dilimi değişse de sabit denetim dilimiyle doğrulanır")
+    # Süreçteki diğer testler için: saat dilimi yeniden algılanır, denetim dilimi veritabanından okunacak
+    timeutil.configure()
+    timeutil._state.update(audit_name=None, audit_zone=None)
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -1962,6 +2054,7 @@ def main():
     test_strict_inputs()
     test_glpi()
     test_fuzz_findings()
+    test_timeutil()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

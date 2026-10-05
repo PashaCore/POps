@@ -16,7 +16,7 @@ from pops.db import execute_query
 from pops.models import EndAuditSessionInput, LockdownInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
 from pops.security import require_admin, require_admin_session, require_superadmin, verify_jwt, verify_session
 from pops.agent_auth import verify_agent_secret
-from pops import auditchain, bypass, devicelist, metrics, modules, vision
+from pops import auditchain, bypass, devicelist, metrics, modules, tenancy, timeutil, vision
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 from pops.notify import notify
@@ -39,8 +39,9 @@ _background: set = set()
 # soketine gider, API jetonunun soketi yoktur ve bu işlemler bir kişiye bağlı kalmalıdır (D-09, D-21).
 @router.post("/api/audit/session/start")
 async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends(require_admin_session)):
+    await tenancy.check_device(auth, data.target_pc)
     await modules.check("vision", pc_name=data.target_pc)
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = timeutil.now()
     session_id = f"SES-{secrets.token_hex(6).upper()}"
     # Rıza sorulmadan açılan (zorunlu) oturum için gerekçe şarttır
     if data.is_mandatory and not data.reason.strip():
@@ -110,11 +111,13 @@ async def start_audit_session(data: StartAuditSessionInput, auth: dict = Depends
 
 @router.post("/api/audit/session/end")
 async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(require_admin_session)):
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = timeutil.now()
     # Oturumu kapatmadan önce hedef+admin'i öğren ki vision-session yetkisini geri alalım (F1/F12).
     srow = await execute_query(
         "SELECT target_pc, admin_name FROM enterprise_audit_logs WHERE session_id = $1", (data.session_id,), fetch=True
     )
+    if srow:
+        await tenancy.check_device(auth, srow[0]["target_pc"])
     await execute_query(
         "UPDATE enterprise_audit_logs SET end_time = $1, status = $2 WHERE session_id = $3",
         (now, data.status, data.session_id),
@@ -126,6 +129,7 @@ async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(req
 
 @router.post("/api/security/lockdown", deprecated=True)
 async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
+    await tenancy.check_device(auth, data.target_pc)
     # Kilitlemek karantina modülüne bağlı; kaldırmak (unlock) ve bypass kodu her zaman çalışır
     await modules.check("quarantine", pc_name=data.target_pc)
     # Linux ajanında (ilk sürüm) karantina yok: cihaz "kilitli" ve istek "bekleyen" görünmesin (çevrimdışı cihaz da)
@@ -175,6 +179,7 @@ async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
 
 @router.post("/api/security/unlock", deprecated=True)
 async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
+    await tenancy.check_device(auth, data.target_pc)
 
     # Karantina logunu yaz
     admin_name = auth.get('sub')
@@ -219,12 +224,13 @@ async def get_bypass_token(pc_name: str, response: Response, auth: dict = Depend
     # Karantinadaki (çevrimdışı) cihaz için tepsi uygulamasına girilecek kod (formüller: pops/bypass.py). Kod
     # durumu değiştirir (günün bir sonraki kodu) ve gizlidir: POST, önbelleğe alınmaz.
     response.headers["Cache-Control"] = "no-store"
-    today = datetime.date.today()
+    await tenancy.check_device(auth, pc_name)
+    today = timeutil.today()
     # Ajan (0.1.13+) her kodu günde bir kez kabul eder: her istek o günün bir sonraki kodunu verir
     used = await execute_query(
         "SELECT count(*) AS n FROM device_audit_logs WHERE hw_id = $1 AND action = 'bypass_code' "
-        "AND left(\"timestamp\", 10) = $2",
-        (pc_name, today.isoformat()),
+        "AND \"timestamp\" >= $2 AND \"timestamp\" < $3",
+        (pc_name, timeutil.day_start(today), timeutil.day_start(today + datetime.timedelta(days=1))),
         fetch=True,
     )
     n = int(used[0]["n"]) if used else 0
@@ -288,7 +294,14 @@ async def websocket_panel(websocket: WebSocket):
     role = session.get("role")  # DB'den (iptal/rol-düşürme anında geçerli)
     # ?topics=devices: soket yalnızca o konunun mesajlarını alır (panelin cihaz listesi soketi; bkz. pops/manager.py)
     topics = [t.strip() for t in (websocket.query_params.get("topics") or "").split(",") if t.strip()][:8]
-    await manager.connect_panel(websocket, username, role, topics or None)
+    # Kapsam (kurum birimleri): yayınlar ve uzaktan girdi yalnızca kapsamdaki cihazlar için. Panel yayın listesine
+    # girmeden önce yazılır (arada gelen yayın kapsamsız sanılmasın).
+    manager.panel_scopes[websocket] = (await tenancy.scope_of(session)).labs
+    try:
+        await manager.connect_panel(websocket, username, role, topics or None)
+    except Exception:
+        manager.panel_scopes.pop(websocket, None)
+        raise
     last_reverify = time.time()
     target_labs = {}   # cihaz -> (laboratuvar, okunma anı): modül denetimi için
 
@@ -312,13 +325,30 @@ async def websocket_panel(websocket: WebSocket):
             manager.panel_roles[websocket] = fresh.get("role")
             if fresh.get("role") not in ("admin", "superadmin"):
                 manager.drop_user_sessions(username)
+            try:
+                labs = (await tenancy.scope_of(fresh)).labs
+            except Exception:
+                continue
+            if labs != manager.panel_scopes.get(websocket):
+                # Kapsam değişti: yayın süzgeci güncellenir, açık görüntü/kontrol yetkileri düşer
+                manager.panel_scopes[websocket] = labs
+                manager.drop_user_sessions(username)
+            elif labs is not None:
+                # Oturum açıkken kapsam dışındaki bir sınıfa taşınan cihazın görüntüsü ve kontrolü de düşer
+                for pc in [pc for pc in list(manager.vision_sessions) if manager.user_has_session(username, pc)]:
+                    if await tenancy.lab_of(pc) not in labs:
+                        manager.remove_vision_session(pc, username)
 
     async def vision_module_on(target: str) -> bool:
-        # Cihazın laboratuvarı 10 sn önbellekte (fare hareketi başına sorgu atılmasın)
+        # Cihazın laboratuvarı 10 sn önbellekte (fare hareketi başına sorgu atılmasın). Kapsam dışındaki cihaz
+        # (kurum birimleri, pops/tenancy.py) modülü kapalı sayılır: girdi, pano ve görüntüleyici komutları gitmez.
         cached = target_labs.get(target)
         if cached is None or time.time() - cached[1] > 10:
             cached = (await modules.lab_of(target), time.time())
             target_labs[target] = cached
+        scope_labs = manager.panel_scopes.get(websocket)
+        if scope_labs is not None and cached[0] not in scope_labs:
+            return False
         return await modules.enabled("vision", cached[0])
 
     revalidator = asyncio.create_task(revalidate())
@@ -476,6 +506,7 @@ async def _from_vision(pc_name: str, message: dict, state: dict) -> None:
 # yalnız admin (Vision zaten yalnız admin'e açık).
 @router.post("/api/stream/stop")
 async def stop_stream(data: StreamStopInput, auth: dict = Depends(require_admin_session)):
+    await tenancy.check_device(auth, data.pc_name)
     await manager.send_command({"action": "stop_stream"}, data.pc_name)
     return {"status": "stopped"}
 
@@ -593,6 +624,7 @@ def _flat_remote_input(data: RemoteInputData) -> dict:
 @router.get("/api/thumbnail/{pc_name}")
 async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin_session)):
     # F1: ekran önizlemesi salt-okur viewer'a kapalı (yalnız admin/superadmin)
+    await tenancy.check_device(auth, pc_name)
     await modules.check("vision", pc_name=pc_name)
     if pc_name not in manager.active_agents:
         return {"status": "error", "image": None}
@@ -615,6 +647,7 @@ async def get_thumbnail(pc_name: str, auth: dict = Depends(require_admin_session
 @router.post("/api/remote_input")
 async def send_remote_input(data: RemoteInputData, auth: dict = Depends(require_admin_session)):
     target = data.device
+    await tenancy.check_device(auth, target)
     await modules.check("vision", pc_name=target)
     # F1: uzaktan girdi yalnızca admin + o cihaz için AÇIK denetim oturumu olan kullanıcıdan
     if not manager.user_has_session(auth.get("sub"), target):

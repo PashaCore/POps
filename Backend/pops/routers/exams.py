@@ -3,24 +3,27 @@
 Yollar baştan REST biçimindedir; /api/v1 altında da aynı işleyiciye ulaşır (pops/apiversion.py). Sınıf adı yol
 bölümüdür ve "9/A" gibi eğik çizgi içerebilir ({lab_name:path}): bu router, genel /api/labs/{lab_name} yollarını
 tanımlayan routers/rest.py'den ÖNCE bağlanır (Starlette ilk tam eşleşmeyi seçer; bkz. server._ROUTERS).
+
+Kurum birimi kapsamı (pops/tenancy.py): kapsamlı hesap yalnızca kendi sınıflarında sınav başlatır, bitirir ve görür;
+kapsam dışı sınıf 404, geçmiş listesi yalnızca kendi sınıflarını içerir.
 """
 
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from pops import exams, modules
+from pops import exams, modules, tenancy
 from pops.models import ExamEndInput, ExamStartInput
 from pops.security import require_admin, require_auth
 
 router = APIRouter()
 
 
-async def _lab(lab_name: str) -> str:
+async def _lab(lab_name: str, auth: dict) -> str:
     lab = (lab_name or "").strip()
     if not lab or lab == exams.UNASSIGNED:
         raise HTTPException(status_code=400, detail="Sınav modu bir sınıf için başlatılır.")
-    if not await exams.lab_exists(lab):
+    if not await exams.lab_exists(lab) or not (await tenancy.scope_of(auth)).allows_lab(lab):
         raise HTTPException(status_code=404, detail="Böyle bir sınıf yok.")
     return lab
 
@@ -28,7 +31,7 @@ async def _lab(lab_name: str) -> str:
 @router.post("/api/labs/{lab_name:path}/exam")
 async def start_exam(lab_name: str, data: ExamStartInput, auth: dict = Depends(require_admin)):
     """Sınıfta sınav modunu başlatır ve bağlı ajanlara gönderir; çevrimdışı olanlar bağlanınca alır."""
-    lab = await _lab(lab_name)
+    lab = await _lab(lab_name, auth)
     await modules.check("exam", lab=lab)
     reason = exams.clean_text(data.reason, exams.REASON_MAX)
     if not reason:
@@ -51,7 +54,7 @@ async def start_exam(lab_name: str, data: ExamStartInput, auth: dict = Depends(r
 @router.delete("/api/labs/{lab_name:path}/exam")
 async def end_exam(lab_name: str, data: Optional[ExamEndInput] = None, auth: dict = Depends(require_admin)):
     """Sınıfın süren sınavını bitirir ve bağlı ajanlara enabled:false gönderir. Gövde isteğe bağlı: {reason}."""
-    lab = await _lab(lab_name)
+    lab = await _lab(lab_name, auth)
     await exams.end_expired()
     note = exams.clean_text(data.reason if data else "", exams.REASON_MAX)
     result = await exams.end(lab, auth.get("sub"), "admin", note)
@@ -67,6 +70,7 @@ async def get_lab_exam(lab_name: str, auth: dict = Depends(require_auth)):
     lab = (lab_name or "").strip()
     if not lab:
         raise HTTPException(status_code=400, detail="Sınıf adı gerekli.")
+    await tenancy.check_lab(auth, lab)
     return await exams.lab_state(lab)
 
 
@@ -79,4 +83,6 @@ async def list_exams(
 ):
     """Sınav geçmişi, yeniden eskiye. active=true yalnızca sürenleri (bilgisayar durum sayılarıyla) verir."""
     await exams.end_expired()
-    return {"items": await exams.history((lab or "").strip() or None, active, limit)}
+    scope = await tenancy.scope_of(auth)
+    labs = None if scope.is_global else scope.lab_list()
+    return {"items": await exams.history((lab or "").strip() or None, active, limit, labs)}

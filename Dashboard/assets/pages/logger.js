@@ -539,12 +539,12 @@
             if (!rows.length) return POps.toast('info', POps.t('Dışa aktarılacak bilgisayar yok.'));
             // Sütun adları ve dosya adı arayüz dilinde; hücreler veri (ham zaman, ad, sürüm) olduğu gibi
             return csv(POps.t('pops-donanim'), [POps.t('Bilgisayar'), POps.t('Kimlik'), POps.t('Sınıf')].concat(HW_FIELDS.map(f => f[1]), [POps.t('Son güncelleme')]),
-                rows.map(d => { const hw = hwOf(d.hostname) || {}; return [POps.deviceName(d), d.hostname, labText(d)].concat(HW_FIELDS.map(f => val(hw[f[0]])), [hw.last_updated || '']); }));
+                rows.map(d => { const hw = hwOf(d.hostname) || {}; return [POps.deviceName(d), d.hostname, labText(d)].concat(HW_FIELDS.map(f => val(hw[f[0]])), [POps.csvTime(hw.last_updated)]); }));
         }
         const rows = ui.rows.filter(e => pass(e));
         if (!rows.length) return POps.toast('info', POps.t('Dışa aktarılacak kayıt yok.'));
         csv(POps.t('pops-kayitlar'), ['Zaman', 'Olay', 'Önem', 'Bilgisayar', 'Kimlik', 'Sınıf', 'Kim', 'Gerekçe', 'Mesaj', 'Olay türü', 'Eylem', 'Kategori', 'Risk'].map(h => POps.t(h)),
-            rows.map(e => [e.r.timestamp, e.title, SEV_WORD[e.sev], pcName(e.pc), e.pc, labOf(e.pc), e.who, e.r.reason, cleanMsg(e.r.message), e.r.event_type, e.r.action, e.r.category, e.r.risk_level]));
+            rows.map(e => [POps.csvTime(e.r.timestamp), e.title, SEV_WORD[e.sev], pcName(e.pc), e.pc, labOf(e.pc), e.who, e.r.reason, cleanMsg(e.r.message), e.r.event_type, e.r.action, e.r.category, e.r.risk_level]));
     });
 
     async function wakeAll(btn) {

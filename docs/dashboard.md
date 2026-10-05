@@ -59,7 +59,9 @@ without `.php`.
 | Sistem | `system.php` | superadmin |
 
 A superadmin sees every page. Other users see the pages ticked under **Açabileceği sayfalar** when their account
-is created or edited. These page permissions only control the panel; what a user may do through the API depends on
+is created or edited. A user with a **scope** (organisational units, see **Ayarlar → Birimler**) sees on every page
+only the labs and PCs of those units: the panel shows what the API returns, and the sidebar shows the unit name
+under "Yönetim paneli". These page permissions only control the panel; what a user may do through the API depends on
 the role ([`security.md`](security.md#roles)). Within pages, some controls are hidden by role, for example the PC
 actions on **Cihazlar** and in the PC detail panel (not shown to viewers), device deletion (superadmin only), the
 offline unlock code (admin and superadmin), the Windows Update buttons and licence editing on **Raporlar** and the
@@ -473,8 +475,9 @@ effect on them. See [`configuration.md`](configuration.md#agent-policy-object).
 
 ### Ayarlar
 
-Three tabs, kept in the address like on **Sistem**: **Kullanıcılar**, **Güvenlik** (two-step verification and, for
-a superadmin, API tokens and identity providers) and **Genel** (organisation, task queue and server connection).
+Tabs, kept in the address like on **Sistem**: **Kullanıcılar**, **Birimler** (superadmin only), **Güvenlik**
+(two-step verification and, for a superadmin, API tokens and identity providers) and **Genel** (organisation,
+task queue and server connection).
 
 - **Kullanıcılar**: the users with their role, page access and last sign-in; a click opens the user's panel. A
   superadmin can add users (**Kullanıcı ekle**), edit the role and the pages (**Rolü ve yetkileri düzenle**, the
@@ -486,6 +489,14 @@ a superadmin, API tokens and identity providers) and **Genel** (organisation, ta
   (**Yerel**, **Dizin (LDAP)**, **OpenID Connect**): a directory or OIDC account created here has no password and is
   linked to the person with the same name at the first sign-in; turning such an account back into a local one asks for
   a new password. The first local superadmin cannot be turned into a directory or OIDC account.
+  Once units exist, the form also has **Kapsam**: **Bütün kurum** (everything, the default) or **Seçili
+  birimler** with a unit tree; the access column and the user's panel show the scope. A superadmin has no scope.
+- **Birimler** (superadmin only): the organisational units as a tree (for example a district with its schools), each
+  with its labs and the number of users scoped to it, and the labs that are in no unit. **Birim ekle** adds a top
+  unit; the … menu of a unit chooses its labs (**Sınıfları seç…**: a list of every lab with its PC count and current
+  unit; choosing a lab of another unit moves it), adds a sub-unit, edits the name and the parent, or deletes the
+  unit (not while it has sub-units; its labs are left without a unit). Until units exist, every user sees
+  everything. See [`api.md`](api.md#organisational-units-scope).
 - **İki adımlı doğrulama**: set up (QR code and manual key), enable with a code (**Etkinleştir**), or disable with a
   code, for your own account. 2FA is optional but recommended: an admin or superadmin whose own 2FA is off sees a
   short notice under the title of this page and of **Sistem**; × hides it in that browser for 7 days.
@@ -494,7 +505,8 @@ a superadmin, API tokens and identity providers) and **Genel** (organisation, ta
   creation time, last use, expiry and state (**Etkin**, **Süresi doldu**, **İptal edildi**). **Jeton oluştur** asks for
   a name, the role (**Görüntüleyici**: read only; **Yönetici**: daily operations, without superadmin functions, users,
   tokens and remote screen) and the validity in days (empty: no expiry), then shows the token once with a copy
-  button. The trash icon revokes a token after a confirmation; it stops working at once and stays in the list.
+  button. When units exist, **Kapsam** limits the token to one unit (and its sub-units). The trash icon revokes a
+  token after a confirmation; it stops working at once and stays in the list.
 - **Kimlik sağlayıcıları** (superadmin only): sign-in with **Active Directory / LDAP** and **OpenID Connect**. Each row
   shows whether it is on (**Etkin** / **Devre dışı**), the server or provider and the number of group mappings;
   **Ayarla** opens its form. LDAP: server, port, **LDAPS** or **StartTLS**, an optional CA certificate, the service
@@ -502,7 +514,9 @@ a superadmin, API tokens and identity providers) and **Genel** (organisation, ta
   button name, provider address (issuer), client ID and secret, redirect URI (prefilled with this panel's address),
   scopes, user name and groups claims, an optional CA certificate, allowed e-mail domains and a default role for
   them. Both have **Grup → rol**: one row per group with a role (**İzleyici**, **Yönetici**, **Süper admin**) and the
-  pages it opens (pages a viewer cannot open are greyed out). **Bağlantıyı sına** tries the values in the form
+  pages it opens (pages a viewer cannot open are greyed out); once units exist, also its **Kapsam** (**Kapsam
+  seçilmedi**, **Bütün kurum** or one unit; the OIDC default role has its own). An account that first signs in
+  through a mapping without a scope sees no unit until a superadmin chooses one. **Bağlantıyı sına** tries the values in the form
   before saving: for LDAP the TLS connection and the service account, and with a user name, that user's DN, groups
   and resulting role; for OIDC the discovery document and signing keys. Password fields stay empty: leave them empty
   to keep the saved secret. Fields and values: [`configuration.md`](configuration.md#identity-providers).

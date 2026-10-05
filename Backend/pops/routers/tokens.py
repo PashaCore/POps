@@ -4,6 +4,9 @@ Yalnızca süper admin oluşturur, listeler ve iptal eder (require_superadmin AP
 yönetemez). Jeton "pops_" + 32 bayt rastgeledir, yalnızca oluşturulurken bir kez döner; veritabanında SHA-256 özeti
 ve tanımak için ilk 8 karakteri kalır. Doğrulama ve yetki: pops/security.py (verify_api_token). Oluşturma ve iptal
 hash-zincirli denetim kaydına yazılır. Bkz. docs/api.md "API tokens", docs/decisions.md D-21.
+
+Jeton, kullanıcı gibi bir kurum birimi kapsamı taşıyabilir (org_scope; bkz. pops/tenancy.py): o zaman yalnızca o
+birimlerin cihazlarını görür ve onlarda işlem yapar.
 """
 
 import re
@@ -11,6 +14,7 @@ import re
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 
+from pops import tenancy, timeutil
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.models import ApiTokenCreateInput
@@ -22,7 +26,7 @@ router = APIRouter()
 _NAME_RE = re.compile(r"[\w .-]{1,64}")
 _PREFIX_LEN = 8
 _COLUMNS = (
-    "id, name, role, token_prefix, created_by, created_at, expires_at, last_used_at, revoked_at, "
+    "id, name, role, org_scope, token_prefix, created_by, created_at, expires_at, last_used_at, revoked_at, "
     "CASE WHEN revoked_at IS NOT NULL THEN 'revoked' WHEN expires_at <= NOW() THEN 'expired' "
     "ELSE 'active' END AS state"
 )
@@ -31,7 +35,14 @@ _COLUMNS = (
 @router.get("/api/tokens")
 async def list_tokens(auth: dict = Depends(require_superadmin)):
     """Bütün jetonlar, yeniden eskiye (iptal edilmiş ve süresi dolmuşlar da). Jetonun kendisi hiçbir zaman dönmez."""
-    return await execute_query("SELECT %s FROM api_tokens ORDER BY id DESC LIMIT 500" % _COLUMNS, fetch=True)
+    rows = await execute_query("SELECT %s FROM api_tokens ORDER BY id DESC LIMIT 500" % _COLUMNS, fetch=True)
+    return [await _out(r) for r in rows or []]
+
+
+async def _out(row) -> dict:
+    out = timeutil.iso_row(row)
+    out["org_units"] = await tenancy.unit_names(row["org_scope"])
+    return out
 
 
 @router.post("/api/tokens")
@@ -42,15 +53,16 @@ async def create_token(data: ApiTokenCreateInput, auth: dict = Depends(require_s
             status_code=400,
             detail="Ad en çok 64 karakter olmalı; harf, rakam, boşluk, nokta, alt çizgi ve tire içerebilir.",
         )
+    org_scope = await tenancy.clean_scope(data.org_scope)
     token = new_api_token()
     prefix = token[len(API_TOKEN_PREFIX):len(API_TOKEN_PREFIX) + _PREFIX_LEN]
     try:
         rows = await execute_query(
-            "INSERT INTO api_tokens (name, token_hash, token_prefix, role, created_by, expires_at) "
+            "INSERT INTO api_tokens (name, token_hash, token_prefix, role, created_by, expires_at, org_scope) "
             "VALUES ($1, $2, $3, $4, $5, "
-            "CASE WHEN $6::int IS NULL THEN NULL ELSE NOW() + make_interval(days => $6) END) "
+            "CASE WHEN $6::int IS NULL THEN NULL ELSE NOW() + make_interval(days => $6) END, $7) "
             "RETURNING " + _COLUMNS,
-            (name, api_token_hash(token), prefix, data.role, auth.get("sub"), data.expires_days),
+            (name, api_token_hash(token), prefix, data.role, auth.get("sub"), data.expires_days, org_scope),
             fetch=True,
         )
     except asyncpg.UniqueViolationError:
@@ -64,11 +76,11 @@ async def create_token(data: ApiTokenCreateInput, auth: dict = Depends(require_s
         "API jetonu oluşturuldu: %s (%s)" % (name, data.role),
         {
             "id": row["id"], "name": name, "role": data.role, "prefix": prefix, "by": auth.get("sub"),
-            "expires_at": row["expires_at"].isoformat() if row["expires_at"] else None,
+            "expires_at": timeutil.iso(row["expires_at"]), "org_scope": org_scope,
         },
     )
     # Jeton yalnızca bu yanıtta görünür
-    return {"status": "success", "token": token, **row}
+    return {"status": "success", "token": token, **(await _out(row))}
 
 
 @router.delete("/api/tokens/{token_id}")

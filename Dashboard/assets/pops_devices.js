@@ -795,7 +795,7 @@
         if (v && typeof v === 'object') return v;
         try { const o = JSON.parse(v || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; }
     }
-    // Sunucu zamanı yerel saatle "YYYY-AA-GG SS:DD:ss" metnidir; T ile her tarayıcıda yerel saat olarak okunur
+    // Sunucu zamanı ofsetli ISO 8601'dir (olduğu gibi kalır); eski "YYYY-AA-GG SS:DD:ss" metni T ile yerel saat okunur
     const isoOf = (ts) => typeof ts === 'string' ? ts.replace(' ', 'T') : ts;
     const cleanMsg = (s) => String(s || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
     const cap1 = (s) => s ? s.charAt(0).toLocaleUpperCase('tr') + s.slice(1) : s;

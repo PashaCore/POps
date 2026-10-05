@@ -59,6 +59,8 @@ tables from Python code at startup and never edit a migration that has already b
 | `0028_power_message.sql` | Power actions and messages to the user: `tasks.kind` `power` / `user_message` with `payload` `{op, delay, message}` / `{title, text, style, requires_ack}`; adds `tasks.kind` / `payload`, `agent_versions.features` and `clients.platform` with `IF NOT EXISTS` (the same columns as `0026` and `0027`). See [`api.md`](api.md#power-actions-and-messages). |
 | `0029_glpi.sql` | `glpi_links`: the GLPI item each exported POps record is linked to (GLPI export, see [`integrations/glpi.md`](integrations/glpi.md)). |
 | `0030_sso.sql` | `users.auth_source` / `external_id` and the tables `sso_providers` (directory and OpenID Connect settings) and `sso_flows` (short-lived sign-in state and tickets). |
+| `0031_timestamptz.sql` | The text dates of the older tables become `TIMESTAMPTZ`, read in the server's time zone (see [Timestamps](#timestamps)); `global_settings.audit_time_zone`. Rewrites the tables: back up before the update. |
+| `0032_org_units.sql` | `org_units` (district → school), `custom_labs.org_unit_id`, `org_scope` on users, API tokens and scheduled tasks, `org_unit_id` on licences and tickets. See [Organisational units](#organisational-units). |
 | `0020_refused_results.sql` | Tasks the agent refused but an older server stored as `Completed` (output starting with `[REDDEDİLDİ]`, no exit code) become `Denied` with exit code `-5`. |
 | `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
 | `0017_task_expiry.sql` | `tasks.expires_at`, `tasks.schedule_id`, `tasks.agent_started_at` and the pending-by-schedule index. |
@@ -172,11 +174,46 @@ returns the first broken entry. Rows written before migration `0004` have no has
 
 See [`configuration.md`](configuration.md#runtime-settings-database) for how to change them.
 
+### Organisational units
+
+Migration `0032` (decision D-25, `Backend/pops/tenancy.py`):
+
+| Table / column | Meaning |
+| --- | --- |
+| `org_units` | `id`, `name`, `parent_id` (district → school; `NULL` at the top), `created_at`. Names are unique under one parent, case-insensitive. |
+| `custom_labs.org_unit_id` | The lab's unit; `NULL` = in no unit (only unscoped accounts see it and its PCs). A device belongs to the unit of its lab. |
+| `users.org_scope`, `api_tokens.org_scope` | `NULL` = everything; an array of unit ids = those units and their sub-units. |
+| `scheduled_tasks.org_scope` | The creator's scope; targets are resolved in it on every run. |
+| `licenses.org_unit_id`, `tickets.org_unit_id` | Owner unit of a licence (installations counted on that unit's PCs) and of a ticket without a PC. |
+
+Deleting a unit removes its id from the scope arrays and sets the foreign keys to `NULL`.
+
 ### Timestamps
 
-Most timestamp columns of the older tables are `TEXT` in the form `YYYY-MM-DD HH:MM:SS`, in the server's local
-time. The newer tables (`enroll_tokens`, `agent_secrets`, `schema_migrations` and the tables of migrations
-`0009` and `0010`) use `TIMESTAMPTZ` (`licenses.expires_at` is a `DATE`).
+Every timestamp column is `TIMESTAMPTZ` (`licenses.expires_at` is a `DATE`). Until migration `0031` the older
+tables kept `TEXT` in the form `YYYY-MM-DD HH:MM:SS` in the server's local time: `tasks.created_at`,
+`agent_logs_v2.timestamp`, `agent_logs.timestamp`, `device_audit_logs.timestamp`, `clients.last_seen`,
+`hw_inventory.last_updated`, `agent_versions.last_update`, `users.last_login` and
+`enterprise_audit_logs.start_time` / `end_time` (and `agent_bypass_keys.issued_at` / `confirmed_at` were
+`TIMESTAMP` without a zone). `0031` converts them in place:
+
+- The old text is read in the **server's time zone**: `POPS_TZ` if set, otherwise the time zone of the backend
+  process (`TZ`, `/etc/localtime`), otherwise the database's `TimeZone` setting (see
+  [`configuration.md`](configuration.md#variables)). `migrate.py` passes it to the migration as the session
+  setting `pops.tz`; run by hand without it, the database's `TimeZone` is used. Text that does not parse becomes
+  `NULL`.
+- The zone used is stored once as `global_settings.audit_time_zone` and never changes. The audit hash chain hashes
+  the timestamp as `YYYY-MM-DD HH:MM:SS` text, rendered from the stored value in that zone, for rows written before
+  and after the migration alike, so existing chains keep verifying (`pops/auditchain.py`).
+- The type change rewrites the tables and rebuilds their indexes; on a large `agent_logs_v2` it can take from a few
+  seconds to a few minutes at the first start after the update.
+- Columns that stay `TEXT` on purpose: `device_software.install_date` (raw value the agent reads from Windows,
+  for example `20240131`), `scheduled_tasks.time_of_day` (`HH:MM`) and the dates kept in `global_settings`.
+
+Rolling the backend code back to a version before `0031` after the migration has run does not work: the old code
+writes text into these columns. `pops-deploy-backend` dumps the database before it installs this migration (it is
+marked `-- pops: dump-before`); restore that dump together with the old code (see
+[`deployment.md`](deployment.md#rolling-back-after-a-migration-that-rewrites-tables)).
 
 ## Useful queries
 

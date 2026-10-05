@@ -1,4 +1,8 @@
-"""Görev kuyruğu, orkestrasyon, paket deposu ve depolama uçları."""
+"""Görev kuyruğu, orkestrasyon, paket deposu ve depolama uçları.
+
+Kurum birimleri (pops/tenancy.py): görev, cihazının laboratuvarı kapsamdaysa görünür ve değiştirilir. Paket
+kitaplığı ve dosya deposu ortaktır: herkes kullanır, yalnızca kapsamsız yönetici ekler/siler (aynı adlı dosya başka
+bir okulun paketini ezmesin). Kuyruk sınırı kurum geneli ayardır."""
 
 import asyncio
 import base64
@@ -19,7 +23,7 @@ from fastapi.responses import FileResponse
 from werkzeug.utils import secure_filename
 
 from pops.config import LOG_TABLE, UPDATES_DIR, UPLOAD_DIR
-from pops import db, modules, winget
+from pops import db, modules, tenancy, timeutil, winget
 from pops.db import execute_query
 from pops.models import (
     CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput, TaskStatusInput,
@@ -35,7 +39,10 @@ router = APIRouter()
 
 @router.get("/api/tasks")
 async def get_tasks(limit: int = 1000, auth: dict = Depends(require_auth)):
-    rows = await execute_query("SELECT * FROM tasks ORDER BY id DESC LIMIT $1", (limit,), fetch=True)
+    args = [limit]
+    where = tenancy.task_sql(await tenancy.scope_of(auth), "tasks", args)
+    rows = await execute_query("SELECT * FROM tasks WHERE " + where + " ORDER BY id DESC LIMIT $1", tuple(args),
+                               fetch=True)
     for r in rows or []:
         # winget görevinin paketi ({"id", "version"}); asyncpg JSONB'yi metin döndürür
         if isinstance(r.get("payload"), str):
@@ -43,20 +50,25 @@ async def get_tasks(limit: int = 1000, auth: dict = Depends(require_auth)):
                 r["payload"] = json.loads(r["payload"])
             except ValueError:
                 r["payload"] = None
-    return rows if rows else []
+    return [timeutil.iso_row(r) for r in rows or []]
 
 
 @router.post("/api/flush_queue", deprecated=True)
 async def flush_queue(auth: dict = Depends(require_admin)):
     # F4(b): tüm görev geçmişini silmeden ÖNCE, kimin sildiğini + kaç kayıt olduğunu hash-zincirli loga yaz.
-    cnt = await execute_query("SELECT COUNT(*) AS c FROM tasks", fetch=True)
+    # Kapsamlı hesap yalnızca kendi cihazlarının görevlerini siler.
+    scope = await tenancy.scope_of(auth)
+    args = []
+    where = tenancy.task_sql(scope, "tasks", args)
+    cnt = await execute_query("SELECT COUNT(*) AS c FROM tasks WHERE " + where, tuple(args), fetch=True)
     await add_audit_log(
         "*",
         "flush_queue",
         "Görev kuyruğu/geçmişi silindi: %s" % auth.get("sub"),
-        {"admin": auth.get("sub"), "deleted": (cnt[0]["c"] if cnt else None)},
+        {"admin": auth.get("sub"), "deleted": (cnt[0]["c"] if cnt else None),
+         "org_scope": None if scope.is_global else scope.raw},
     )
-    await execute_query("DELETE FROM tasks")
+    await execute_query("DELETE FROM tasks WHERE " + where, tuple(args))
     return {"status": "success"}
 
 
@@ -98,17 +110,31 @@ async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require
     if scope is None:
         raise HTTPException(status_code=400, detail="Geçersiz hedef")
     where, value = scope
+    # Kurum birimi kapsamı: kapsam dışındaki görev, sınıf ya da cihaz 404; ALL yalnızca kapsamdakilere uygulanır
+    org = await tenancy.scope_of(auth)
+    if not org.is_global:
+        if mode == "TASK":
+            check = [int(tid)]
+            cond = tenancy.task_sql(org, "t", check)
+            if not await execute_query("SELECT 1 FROM tasks t WHERE t.id = $1 AND " + cond, tuple(check), fetch=True):
+                raise HTTPException(status_code=404, detail="Görev bulunamadı.")
+        elif mode == "LAB":
+            await tenancy.check_lab(auth, tid)
+        elif mode == "PC":
+            await tenancy.check_device(auth, tid)
     if action == "RETRY":
-        return await _retry(where, value(), auth.get("sub"), _client_ip(request))
+        return await _retry(where, value(), auth.get("sub"), _client_ip(request), org)
     # Önceki durum da döner: çalışmakta olan görev iptal edildiyse ajana da bildirilir
+    args = [new_status, list(_ACTION_STATUSES[action]), value()]
+    in_scope = tenancy.task_sql(org, "t", args)
     changed = await execute_query(
         "WITH target AS (SELECT t.id, t.target_pc, t.status FROM tasks t "
-        f"WHERE {where.format(v='$3')} AND t.status = ANY($2::text[]) FOR UPDATE) "
+        f"WHERE {where.format(v='$3')} AND t.status = ANY($2::text[]) AND {in_scope} FOR UPDATE) "
         "UPDATE tasks t SET status = $1, "
         "dispatched_at = CASE WHEN $1 = 'Pending' THEN NULL ELSE t.dispatched_at END, "
         "exit_code = CASE WHEN $1 = 'Pending' THEN NULL ELSE t.exit_code END "
         "FROM target WHERE t.id = target.id RETURNING target.id, target.target_pc, target.status AS old_status",
-        (new_status, list(_ACTION_STATUSES[action]), value()),
+        tuple(args),
         fetch=True,
     )
     if action == "CANCEL":
@@ -121,21 +147,23 @@ async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require
     return {"status": "success", "changed": len(changed or [])}
 
 
-async def _retry(where: str, value, creator: str, client_ip=None) -> dict:
+async def _retry(where: str, value, creator: str, client_ip=None, org=tenancy.GLOBAL) -> dict:
     """Yeniden deneme YENİ bir görev kaydı açar (retry_of = eski görev); eski kayıt sonucuyla kalır. Eskiden aynı
     görev kimliği yeniden "Pending" yapılıyordu: iptal edilmiş ama hâlâ süren eski çalıştırmanın geç gelen sonucu
     yeni çalıştırmayı tamamlanmış gösterebilirdi. Aynı görevin süren bir yeniden denemesi varsa ikincisi açılmaz.
     Görevin türü (kind) ve paketi (payload) de kopyalanır: winget görevi komut olarak yeniden çalıştırılmaz."""
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = timeutil.now()
+    args = [value, now, creator, list(_ACTION_STATUSES["RETRY"]), _ACTIVE_STATUSES, client_ip, uuid.uuid4().hex[:16]]
+    in_scope = tenancy.task_sql(org, "t", args)
     created = await execute_query(
         "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, retry_of, "
         "title, source, reason, client_ip, batch_id, kind, payload) "
         "SELECT t.target_pc, t.target_lab, t.script_path, 'Pending', $2, $3, t.id, "
         "t.title, 'tasks', t.reason, $6, $7, t.kind, t.payload FROM tasks t "
-        f"WHERE {where.format(v='$1')} AND t.status = ANY($4::text[]) "
+        f"WHERE {where.format(v='$1')} AND t.status = ANY($4::text[]) AND {in_scope} "
         "AND NOT EXISTS (SELECT 1 FROM tasks n WHERE n.retry_of = t.id AND n.status = ANY($5::text[])) "
         "RETURNING id",
-        (value, now, creator, list(_ACTION_STATUSES["RETRY"]), _ACTIVE_STATUSES, client_ip, uuid.uuid4().hex[:16]),
+        tuple(args),
         fetch=True,
     )
     await process_queue()
@@ -147,20 +175,23 @@ async def _retry(where: str, value, creator: str, client_ip=None) -> dict:
 async def task_status(data: TaskStatusInput, auth: dict = Depends(require_auth)):
     """Verilen görevlerin durumu (panelin işlem merkezi bir işin ilerlemesini buradan izler). Silinmiş görev listede
     yoktur."""
+    args = [list(dict.fromkeys(data.ids))]
+    where = tenancy.task_sql(await tenancy.scope_of(auth), "tasks", args)
     rows = await execute_query(
-        "SELECT id, target_pc, target_lab, status, exit_code, dispatched_at FROM tasks WHERE id = ANY($1::int[])",
-        (list(dict.fromkeys(data.ids)),),
+        "SELECT id, target_pc, target_lab, status, exit_code, dispatched_at FROM tasks WHERE id = ANY($1::int[]) "
+        "AND " + where,
+        tuple(args),
         fetch=True,
     )
     return {"items": [
         {"id": r["id"], "target_pc": r["target_pc"], "target_lab": r["target_lab"], "status": r["status"],
-         "exit_code": r["exit_code"], "dispatched_at": r["dispatched_at"].isoformat() if r["dispatched_at"] else None}
+         "exit_code": r["exit_code"], "dispatched_at": timeutil.iso(r["dispatched_at"])}
         for r in rows or []
     ]}
 
 
 @router.post("/api/set_concurrent_limit", deprecated=True)
-async def set_concurrent_limit(data: SetLimitInput, auth: dict = Depends(require_admin)):
+async def set_concurrent_limit(data: SetLimitInput, auth: dict = Depends(tenancy.require_global_admin)):
     await execute_query(
         "INSERT INTO global_settings (key, value) "
         "VALUES ('concurrent_limit', $1) ON CONFLICT (key) DO UPDATE "
@@ -222,7 +253,8 @@ def _store_upload(src, dest: str) -> str:
 
 
 @router.post("/api/upload", dependencies=[modules.require("deploy")], deprecated=True)
-async def upload_file(request: Request, file: UploadFile = File(...), auth: dict = Depends(require_admin)):
+async def upload_file(request: Request, file: UploadFile = File(...),
+                      auth: dict = Depends(tenancy.require_global_admin)):
     # Dosya adını temizle ("../", mutlak yol, ayraç vb. atılır)
     filename = secure_filename(file.filename or "")
     if not filename:
@@ -260,7 +292,7 @@ async def download_file(filename: str, sig: str = ""):
 
 
 @router.post("/api/add_package", dependencies=[modules.require("deploy")], deprecated=True)
-async def add_package(data: CreatePackageInput, auth: dict = Depends(require_admin)):
+async def add_package(data: CreatePackageInput, auth: dict = Depends(tenancy.require_global_admin)):
     await execute_query(
         "INSERT INTO packages (id, name, type, meta, command, icon, color) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO UPDATE "
@@ -272,7 +304,7 @@ async def add_package(data: CreatePackageInput, auth: dict = Depends(require_adm
 
 
 @router.post("/api/delete_package", dependencies=[modules.require("deploy")], deprecated=True)
-async def delete_package(data: DeletePackageInput, auth: dict = Depends(require_admin)):
+async def delete_package(data: DeletePackageInput, auth: dict = Depends(tenancy.require_global_admin)):
     await execute_query("DELETE FROM packages WHERE id = $1", (data.id,))
     return {"status": "success"}
 
@@ -318,14 +350,18 @@ async def api_storage(auth: dict = Depends(require_auth)):
         size_row = await execute_query(f"SELECT pg_total_relation_size('{LOG_TABLE}') as size", fetch=True)
         log_bytes = size_row[0]['size'] if size_row else 0
 
+        # Gün, sunucunun saat dilimine göre (son 7 gün, bugün dahil); kapsamlı hesapta yalnızca kendi cihazları
+        args = [timeutil.zone_name(), timeutil.day_start(timeutil.today() - datetime.timedelta(days=6))]
+        in_scope = tenancy.device_sql(await tenancy.scope_of(auth), "pc_name", args)
         trend_rows = await execute_query(
             f"""
-            SELECT SUBSTRING(timestamp FROM 1 FOR 10) as day, COUNT(*) as c
+            SELECT to_char("timestamp" AT TIME ZONE $1, 'YYYY-MM-DD') as day, COUNT(*) as c
             FROM {LOG_TABLE}
-            WHERE timestamp >= to_char(current_date - interval '6 days', 'YYYY-MM-DD')
-            GROUP BY SUBSTRING(timestamp FROM 1 FOR 10)
+            WHERE "timestamp" >= $2 AND {in_scope}
+            GROUP BY 1
             ORDER BY day ASC
         """,
+            tuple(args),
             fetch=True,
         )
         log_trend = [{"day": r['day'], "count": r['c']} for r in trend_rows] if trend_rows else []
@@ -392,7 +428,11 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
     outcome = asyncio.get_running_loop().create_future()
     _recent_orchestrations[key] = (time.monotonic(), outcome)
     try:
-        target_pcs = await resolve_targets(data.target_mode, data.targets)
+        org = await tenancy.scope_of(auth)
+        if data.target_mode == "LAB":
+            for lab in data.targets:
+                await tenancy.check_lab(auth, lab)
+        target_pcs = await resolve_targets(data.target_mode, data.targets, scope=org)
         unknown = [t["pc"] for t in target_pcs if t.get("unknown")]
         if unknown:
             # Kayıtlı olmayan bilgisayara açılan görev hiçbir zaman gönderilemez ve süresiz bekler
@@ -408,7 +448,7 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
             raise modules.closed_error(needed)
         allowed = set(allowed)
         target_pcs = [t for t in target_pcs if t["pc"] in allowed]
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = timeutil.now()
         # Adım -> (komut, başlık, tür, paket). winget adımının komutu ajanın çalıştıracağı komut satırının okunur
         # hâlidir (ajana gitmez); ajan paketi "winget_install" iletisiyle alır (bkz. pops/winget.py).
         steps = [_step_row(task) for task in data.task_sequence]

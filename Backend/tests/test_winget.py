@@ -319,7 +319,7 @@ async def run(c, admin, viewer, superadmin):
     chk(s == 409, "kapalı laboratuvara WINGET adımı 409 (%s)" % s)
     late = await c.fetchval(
         "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, kind, payload) VALUES "
-        "($1, $2, $3, 'Pending', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), 'winget', $4::jsonb) RETURNING id",
+        "($1, $2, $3, 'Pending', now(), 'winget', $4::jsonb) RETURNING id",
         NEW, LAB, winget.command_line("Git.Git"), winget.payload("Git.Git"))
     s, b = deploy(admin, [NEW], [{"name": "komut", "type": "CMD", "command": "echo wg-modul " + RUN}])
     chk(s == 200, "uzak komut açık: komut kabul")
@@ -333,7 +333,7 @@ async def run(c, admin, viewer, superadmin):
     await result(cmd_id, 0, "wg-modul")
     paused = await c.fetchval(
         "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, kind, payload) VALUES "
-        "($1, $2, $3, 'Paused', to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), 'winget', $4::jsonb) RETURNING id",
+        "($1, $2, $3, 'Paused', now(), 'winget', $4::jsonb) RETURNING id",
         OLD, LAB, winget.command_line("Git.Git"), winget.payload("Git.Git"))
     req("/api/modules/deploy", superadmin, {"enabled": None, "lab": LAB})
     s, b = req("/api/modules/deploy", superadmin, {"enabled": False, "lab": LAB})

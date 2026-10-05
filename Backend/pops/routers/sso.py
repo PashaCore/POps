@@ -144,14 +144,14 @@ async def oidc_callback(request: Request, state: str = "", code: str = "", error
         return _fail(cfg, "access", "e-posta alan adı izinli değil ya da doğrulanmamış", user=ident["username"])
     mapped = sso.map_role(ident["groups"], cfg.get("group_map") or [], dn=False)
     if not mapped and cfg.get("default_role") and cfg.get("allowed_domains"):
-        mapped = (cfg["default_role"], list(cfg.get("default_pages") or []))
+        mapped = (cfg["default_role"], list(cfg.get("default_pages") or []), cfg.get("default_org_scope"))
     if not mapped:
         await sso.revoke_sessions(linked_id, "grup eşlemesi yok")
         return _fail(cfg, "access", "eşlenen grup yok", user=ident["username"])
     if not sso.valid_username(ident["username"]):
         return _fail(cfg, "token", "kullanıcı adı talebi boş ya da geçersiz (%s)" % cfg.get("username_claim"))
     try:
-        user = await sso.link_user("oidc", ident["external_id"], ident["username"], mapped[0], mapped[1])
+        user = await sso.link_user("oidc", ident["external_id"], ident["username"], mapped[0], mapped[1], mapped[2])
     except sso.SsoRefused as exc:
         return _fail(cfg, exc.code, exc.message, user=ident["username"])
     ticket = await sso.issue_ticket(user, "oidc", flow["binding"], flow.get("next"))
@@ -167,7 +167,7 @@ async def sso_redeem(request: Request, data: SsoRedeemInput):
     if not t or not hmac.compare_digest(str(t.get("binding", "")), sso.binding_hash(data.binding)):
         raise HTTPException(status_code=401, detail="Giriş bileti geçersiz ya da süresi dolmuş; yeniden deneyin.")
     rows = await execute_query(
-        "SELECT id, username, role, permissions, totp_enabled, totp_secret, token_version, auth_source "
+        "SELECT id, username, role, permissions, totp_enabled, totp_secret, token_version, auth_source, org_scope "
         "FROM users WHERE id = $1", (t["user_id"],), fetch=True)
     if not rows or rows[0]["auth_source"] != t.get("source") or int(rows[0]["token_version"] or 0) != t.get("tv"):
         raise HTTPException(status_code=401, detail="Giriş bileti geçersiz ya da süresi dolmuş; yeniden deneyin.")
@@ -229,6 +229,7 @@ async def test_ldap(request: Request, data: LdapTestInput, auth: dict = Depends(
         mapped = sso.map_role(out.get("groups") or [], cfg["group_map"], dn=True)
         out["role"] = mapped[0] if mapped else None
         out["pages"] = mapped[1] if mapped else []
+        out["org_scope"] = mapped[2] if mapped else None
     return out
 
 

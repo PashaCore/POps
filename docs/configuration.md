@@ -41,6 +41,7 @@ Ways to create it:
 | `DB_CONNECT_TIMEOUT` | no | `10` | Seconds to open a database connection. |
 | `DB_COMMAND_TIMEOUT` | no | `30` | Longest single query, in seconds. Migrations run on a separate connection without this limit. |
 | `DB_IDLE_IN_TRANSACTION_MS` | no | `60000` | PostgreSQL closes a session that sits idle inside a transaction this long, so it cannot hold locks. |
+| `POPS_TZ` | no | the process time zone | Server time zone as an IANA name, for example `Europe/Istanbul`. Used for day boundaries (log and report filters, "today"), the readable times in CSV exports and the offset of the times the API returns. Unset: the backend process's own time zone (`TZ`, `/etc/localtime`), then the database's `TimeZone` setting. Migration `0031` read the old text timestamps in this zone; set it before that update only if the backend ran in a different zone than the one detected now. |
 | `HEARTBEAT_FLUSH_SECONDS` | no | `2` | Agent heartbeats are collected and written in one statement this often. |
 | `PEER_CACHE_SEED_TIMEOUT_SECONDS` | no | `600` | Lab-local peer cache: how long a lab's seed PC has to report `verified`, and then a successful result, before the next PC becomes the seed (see [`agent.md`](agent.md#peer-cache-contract)). Tests use `4`. |
 | `SCHEDULE_VALID_MINUTES` | no | `60` | A scheduled run that could not be sent within this many minutes of its time becomes `Expired`. |
@@ -246,7 +247,7 @@ sign-in works and what is checked: [`security.md`](security.md#directory-and-sin
 | `user_filter` | `(sAMAccountName={username})` | LDAP filter with `{username}` (escaped). Example that also skips disabled AD accounts: `(&(objectCategory=person)(sAMAccountName={username})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))`. OpenLDAP: `(uid={username})`. |
 | `username_attribute` | `sAMAccountName` | Attribute that holds the panel user name (`uid` on OpenLDAP); its value is used, so `ALI` and `ali` are the same account. |
 | `group_base_dn`, `group_filter` | `""`, `(\|(member={user_dn})(uniqueMember={user_dn}))` | Optional group search in addition to the user's `memberOf`. `{user_dn}` and `{username}` are escaped. Nested AD groups: `(member:1.2.840.113556.1.4.1941:={user_dn})`. |
-| `group_map` | `[]` | List of `{"group": "<group DN>", "role": "viewer" \| "admin" \| "superadmin", "pages": ["devices", ...]}`. DNs compare case-insensitively and ignore spaces after commas. The highest matching role wins; pages are the union of all matches; `superadmin` gets every page. |
+| `group_map` | `[]` | List of `{"group": "<group DN>", "role": "viewer" \| "admin" \| "superadmin", "pages": ["devices", ...]}`. DNs compare case-insensitively and ignore spaces after commas. The highest matching role wins; pages are the union of all matches; `superadmin` gets every page. Optional `"org_scope"`: unit ids or `"all"` (see [Organisational units](api.md#organisational-units-scope)); the scopes of the matching entries are combined, and an entry without one does not widen it. When no matching entry sets a scope, a new account gets an empty scope while units exist (it sees no device until a superadmin chooses its units). |
 | `timeout` | `5` | Seconds for connecting and for each answer (1–30). |
 | `allow_insecure_for_tests` | `false` | Allows `security: "plain"`, and only if the backend runs with `POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1` (otherwise `400`). For automated tests only (CI sets the variable); never set it on a real server. The panel never shows or sends the field, so saving from the panel turns it off. |
 
@@ -265,6 +266,7 @@ sign-in works and what is checked: [`security.md`](security.md#directory-and-sin
 | `group_map` | `[]` | As for LDAP, but with claim values, compared case-insensitively. |
 | `allowed_domains` | `[]` | If set, only users whose **verified** e-mail (`email_verified: true`) is in one of these domains can sign in, whatever their groups. |
 | `default_role`, `default_pages` | `""`, `[]` | Role (`viewer` or `admin`, never `superadmin`) and pages for users of an allowed domain who match no group. Empty: they cannot sign in. Needs `allowed_domains`. |
+| `default_org_scope` | `null` | Scope for those users: unit ids or `"all"`; `null` behaves like a group entry without a scope. |
 | `ca_pem` | `""` | CA certificate for a provider with an internal certificate (on-premises Keycloak, AD FS). |
 | `allow_insecure_for_tests` | `false` | Allows an http issuer, only with `POPS_SSO_ALLOW_INSECURE_FOR_TESTS=1` on the backend. For automated tests only; not in the panel. |
 

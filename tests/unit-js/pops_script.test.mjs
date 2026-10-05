@@ -113,6 +113,14 @@ describe('zaman ve süre', () => {
         const d = new Date('2026-10-05T12:00:00Z');
         assert.equal(POps.toDate('2026-10-05T12:00:00Z').getTime(), d.getTime());
     });
+    it('sunucu zamanı ofsetli ISO 8601: aynı an, CSV için okunur yerel saat', () => {
+        const { POps } = tr;
+        assert.equal(POps.toDate('2026-10-05T11:58:11+03:00').getTime(), Date.UTC(2026, 9, 5, 8, 58, 11));
+        // CSV: sunucunun duvar saati olduğu gibi (tarayıcının saat diliminden bağımsız)
+        assert.equal(POps.csvTime('2026-10-05T11:58:11+03:00'), '2026-10-05 11:58:11');
+        assert.equal(POps.csvTime('2026-10-05 11:58:11'), '2026-10-05 11:58:11');
+        for (const v of [null, '', '-']) assert.equal(POps.csvTime(v), '');
+    });
     it('duration: saniye, dakika, saat, gün sınırları', () => {
         const { POps } = tr;
         const cases = [[0, '0 sn'], [-5, '0 sn'], ['abc', '0 sn'], [59.4, '59 sn'], [60, '1 dk'], [61, '1 dk 1 sn'], [599, '9 dk 59 sn'],

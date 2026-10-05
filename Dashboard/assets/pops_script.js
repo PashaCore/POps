@@ -988,6 +988,15 @@ POps.relTime = function (v) {
     if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
     return d.toLocaleDateString(POps.locale, opts) + ' ' + hm;
 };
+// CSV için okunur zaman "YYYY-AA-GG SS:DD:ss". Sunucu zamanı ofsetli ISO 8601'dir ("2026-10-05T11:58:11+03:00"): duvar
+// saati olduğu gibi alınır (sunucunun saat dilimi, sunucunun CSV'leriyle aynı); başka değer tarayıcının saatiyle yazılır.
+POps.csvTime = function (v) {
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(v)) return v.slice(0, 10) + ' ' + v.slice(11, 19);
+    const d = popsDate(v);
+    if (!d) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+};
 POps.timeHtml = function (v) {
     const d = popsDate(v);
     if (!d) return '—';

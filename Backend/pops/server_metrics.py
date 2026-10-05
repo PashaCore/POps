@@ -15,7 +15,7 @@ import json
 import os
 import time
 
-from pops import db, health_alerts, metrics
+from pops import db, health_alerts, metrics, timeutil
 from pops.config import LOG_TABLE
 from pops.manager import manager
 
@@ -23,8 +23,8 @@ SAMPLE_SECONDS = 60
 KEEP_DAYS = 30
 _PRUNE_SECONDS = 3600
 
-# Aralık -> (süre, ölçüm noktası aralığı, çubuk aralığı) saniye. Ölçümler UTC'ye, çubuklar sunucunun yerel saatine
-# hizalanır (görev ve olay zamanları yerel "YYYY-AA-GG SS:DD:ss" metnidir).
+# Aralık -> (süre, ölçüm noktası aralığı, çubuk aralığı) saniye. Ölçümler UTC'ye, çubuklar sunucunun saat dilimindeki
+# yerel saate hizalanır (pops/timeutil.py).
 RANGES = {
     "24h": (86400, 900, 3600),
     "7d": (7 * 86400, 7200, 6 * 3600),
@@ -122,7 +122,8 @@ async def sample(force: bool = False) -> bool:
 
 
 def bar_starts(now: datetime.datetime, seconds: int, bar: int):
-    """Yerel saatle çubuk başlangıçları, eskiden yeniye; sonuncusu şu anki çubuk (24 saatte 24, 30 günde 30)."""
+    """Yerel saatle (saat dilimsiz duvar saati) çubuk başlangıçları, eskiden yeniye; sonuncusu şu anki çubuk (24 saatte
+    24, 30 günde 30)."""
     if bar >= 86400:
         last = now.replace(hour=0, minute=0, second=0, microsecond=0)
     else:
@@ -133,7 +134,7 @@ def bar_starts(now: datetime.datetime, seconds: int, bar: int):
 
 
 def _bar_index(starts, text):
-    """'YYYY-AA-GG SS…' metninin düştüğü çubuk; aralık dışıysa None."""
+    """'YYYY-AA-GG SS…' metninin (sunucunun saat diliminde yerel saat) düştüğü çubuk; aralık dışıysa None."""
     try:
         at = datetime.datetime.strptime(text[:13], "%Y-%m-%d %H")
     except (TypeError, ValueError):
@@ -189,24 +190,30 @@ async def overview(span: str) -> dict:
         "FROM server_metrics ORDER BY ts DESC LIMIT 1", fetch=True,
     )
 
-    # Görevler, olaylar ve ajan güncellemeleri: yerel saatle çubuklar
-    now = datetime.datetime.fromtimestamp(now_ts)
+    # Görevler, olaylar ve ajan güncellemeleri: sunucunun saat dilimindeki yerel saatle çubuklar. Kayıtlar o dilimde
+    # 'YYYY-AA-GG SS' saatine yuvarlanıp sayılır.
+    tz = timeutil.zone()
+    now = datetime.datetime.fromtimestamp(now_ts, tz).replace(tzinfo=None)
     starts = bar_starts(now, seconds, bar)
-    since = starts[0].strftime("%Y-%m-%d %H:%M:%S")
-    tasks = [{"t": int(time.mktime(s.timetuple())), "ok": 0, "failed": 0, "denied": 0, "other": 0} for s in starts]
+    since = starts[0].replace(tzinfo=tz)
+    zone = timeutil.zone_name()
+    tasks = [{"t": int(s.replace(tzinfo=tz).timestamp()), "ok": 0, "failed": 0, "denied": 0, "other": 0}
+             for s in starts]
     events = [{"t": b["t"], "info": 0, "medium": 0, "high": 0} for b in tasks]
     rows = await db.execute_query(
-        "SELECT left(created_at, 13) AS h, status, count(*) AS n FROM tasks WHERE created_at >= $1 GROUP BY 1, 2",
-        (since,), fetch=True,
+        "SELECT to_char(created_at AT TIME ZONE $2, 'YYYY-MM-DD HH24') AS h, status, count(*) AS n FROM tasks "
+        "WHERE created_at >= $1 GROUP BY 1, 2",
+        (since, zone), fetch=True,
     )
     for r in rows or []:
         i = _bar_index(starts, r["h"])
         if i is not None:
             tasks[i][TASK_GROUPS.get(r["status"], "other")] += r["n"]
     rows = await db.execute_query(
-        f'SELECT left("timestamp", 13) AS h, lower(coalesce(risk_level, \'\')) AS risk, count(*) AS n FROM {LOG_TABLE} '
+        f'SELECT to_char("timestamp" AT TIME ZONE $2, \'YYYY-MM-DD HH24\') AS h, '
+        f'lower(coalesce(risk_level, \'\')) AS risk, count(*) AS n FROM {LOG_TABLE} '
         'WHERE "timestamp" >= $1 GROUP BY 1, 2',
-        (since,), fetch=True,
+        (since, zone), fetch=True,
     )
     for r in rows or []:
         i = _bar_index(starts, r["h"])

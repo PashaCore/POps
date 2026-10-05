@@ -14,6 +14,9 @@ Aynı anda iki çalıştırıcının (ör. deploy script'i + yeniden başlayan u
 Migration'lar salt DDL/parametresizdir (asyncpg simple-query protokolü çoklu ifadeyi
 yalnızca parametre olmadan çalıştırır). Her migration kendi transaction'ında atomiktir.
 
+Sunucunun saat dilimi (pops/timeutil.py: POPS_TZ > sürecin yerel saat dilimi > veritabanının TimeZone ayarı)
+oturuma `pops.tz` olarak yazılır; eski metin zaman damgalarını çeviren migration (0031) onu okur.
+
 Kullanım:
     python migrate.py            # env'deki DB_* ile bağlan, bekleyenleri uygula
     python migrate.py --status   # neyin uygulandığını yaz, hiçbir şey değiştirme
@@ -29,6 +32,8 @@ from typing import List, Optional, Tuple
 
 import asyncpg
 from dotenv import load_dotenv
+
+from pops import timeutil
 
 # 'POps' ASCII baytları -> tüm migration çalıştırmaları bu advisory lock'u paylaşır.
 _ADVISORY_LOCK_KEY = 0x504F7073  # 1347371635
@@ -52,12 +57,26 @@ def _discover() -> List[Tuple[str, str]]:
     return out
 
 
+async def _set_time_zone(conn: asyncpg.Connection) -> str:
+    """Sunucunun saat dilimini oturuma pops.tz olarak yazar. PostgreSQL adı tanımıyorsa veritabanının kendi
+    TimeZone ayarı kullanılır (migration yarıda kalmasın)."""
+    db_tz = await conn.fetchval("SHOW TimeZone")
+    name = timeutil.detect_zone_name(db_tz)
+    try:
+        await conn.fetchval("SELECT now() AT TIME ZONE $1", name)
+    except asyncpg.PostgresError:
+        name = db_tz
+    await conn.execute("SELECT set_config('pops.tz', $1, false)", name)
+    return name
+
+
 async def _apply(conn: asyncpg.Connection, verbose: bool = True) -> List[str]:
     """Bekleyen migration'ları advisory lock altında uygular; uygulananların listesini döndürür."""
     applied_now: List[str] = []
     await conn.execute("SELECT pg_advisory_lock($1)", _ADVISORY_LOCK_KEY)
     try:
         await conn.execute(_SCHEMA_MIGRATIONS_DDL)
+        await _set_time_zone(conn)
         rows = await conn.fetch("SELECT version FROM schema_migrations")
         done = {r["version"] for r in rows}
         for version, path in _discover():

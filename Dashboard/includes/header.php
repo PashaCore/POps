@@ -173,6 +173,7 @@ $pops_role_label = ['superadmin' => __('Süper Admin'), 'admin' => __('Yönetici
         .sb-brand img { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; }
         .sb-brand b { display: block; font-size: 14px; font-weight: 600; line-height: 1.2; }
         .sb-brand small { display: block; font-size: 11px; color: #6b7587; }
+        .sb-brand small.sb-unit { color: #aab3c2; max-width: 168px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .sb-search { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 9px; background: #151e30; color: #7d8798; font-size: 13px; width: 100%; transition: background-color 0.12s, color 0.12s; }
         .sb-search:hover { background: #1b2539; color: #c9d0db; }
         .sb-search kbd { margin-left: auto; font-family: inherit; font-size: 11px; color: #5b6577; }
@@ -255,7 +256,10 @@ $pops_role_label = ['superadmin' => __('Süper Admin'), 'admin' => __('Yönetici
         <aside class="app-sidebar" id="appSidebar" aria-label="<?php _e('Ana menü'); ?>">
             <a class="sb-brand" href="./">
                 <img src="assets/favicon/favicon-96x96.png" alt="">
-                <span><b>POps</b><small><?php _e('Yönetim paneli'); ?></small></span>
+                <span><b>POps</b><small><?php _e('Yönetim paneli'); ?></small><?php
+                    // Kapsamı kurum birimleriyle sınırlı hesap: birim adı (bkz. Backend/pops/tenancy.py)
+                    $pops_units = array_filter((array) ($_SESSION['org_units'] ?? []), 'is_string');
+                    if ($pops_units): ?><small class="sb-unit" title="<?php _e('Yetki kapsamı'); ?>"><?php echo htmlspecialchars(implode(', ', $pops_units), ENT_QUOTES, 'UTF-8'); ?></small><?php endif; ?></span>
             </a>
             <button type="button" class="sb-search" id="paletteOpen" aria-label="<?php _e('Ara (Ctrl+K)'); ?>"><?php echo pops_icon('search', 'sm'); ?><span><?php _e('Ara'); ?></span><kbd>Ctrl K</kbd></button>
             <nav class="sidebar-nav">

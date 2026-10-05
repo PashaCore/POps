@@ -230,7 +230,7 @@ async def main():
     async def new_task(script):
         return await c.fetchval(
             "INSERT INTO tasks (target_pc, script_path, status, created_at, created_by) "
-            "VALUES ('HW-H3', $1, 'Pending', NOW()::text, 'hadmin') RETURNING id",
+            "VALUES ('HW-H3', $1, 'Pending', NOW(), 'hadmin') RETURNING id",
             script,
         )
 

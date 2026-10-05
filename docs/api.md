@@ -5,7 +5,7 @@ endpoints under plain `/api/`) and WebSockets under `/ws/`. Behind the reverse p
 own origin, for example `https://pops.example.com/api/v1/devices`. The backend itself listens on `127.0.0.1:8000`
 (see [`installation.md`](installation.md)).
 
-The tables below were produced from the running app's route table (157 HTTP routes, among them the 27 REST names
+The tables below were produced from the running app's route table (162 HTTP routes, among them the 27 REST names
 listed under [REST names and deprecated paths](#rest-names-and-deprecated-paths), 3 WebSocket routes and the
 `/updates` static mount) together with the authentication dependency of each route, and each purpose line was
 checked against the endpoint code in `Backend/pops/routers/` and `Backend/system_routes.py`. The tables list the
@@ -34,6 +34,11 @@ Open it in any OpenAPI viewer or client generator.
 - Rate limits and metrics count both forms together: `/api/v1/admin/login` shares the login limit with
   `/api/admin/login`, and `pops_http_requests_total` labels both with the same route template (no separate `v1`
   series).
+- Times are ISO 8601 with the server's UTC offset and whole seconds, for example `"2026-10-05T11:58:11+03:00"`
+  (the server's time zone: `POPS_TZ`, see [`configuration.md`](configuration.md#variables)). Dates without a time
+  stay `YYYY-MM-DD`; day filters such as `since` / `until` count days in the server's time zone. Exceptions: CSV
+  exports write `YYYY-MM-DD HH:MM:SS` in the server's time zone, and the agent's tray history
+  (`GET /api/activity/agent/{hw_id}`) keeps that text form for the agent to show as is.
 - Field names are snake_case. The one camelCase request field, `taskSequence` of `POST /api/deploy_orchestration`,
   is also accepted as `task_sequence`; new clients should use `task_sequence` (the panel still sends
   `taskSequence`). Sending both is `422`.
@@ -81,6 +86,8 @@ For scripts and other systems that should not use a person's login. A superadmin
   endpoints that only read (`POST /api/tasks/status`; use `GET /api/v1/tasks`).
 - **Role `admin`:** what an admin can do in the panel, except the endpoints below. A token can never be
   `superadmin`.
+- **Scope:** a token can carry an `org_scope` like a user; it then sees and acts only on its units' devices (see
+  [Organisational units](#organisational-units-scope)).
 - **Never reachable with a token (`403`):** every superadmin endpoint (users, tokens, releases and agent updates,
   enrollment, enforcement, capabilities, modules, self-update, notification settings, branding, retention, audit
   verification); the user list and the 2FA endpoints (`require_user_session`, `require_admin_session`); remote
@@ -107,6 +114,56 @@ API tokens have the role `viewer` or `admin` and pass `require_auth` and (as `ad
 [API tokens](#api-tokens-automation).
 
 Missing or invalid token: `401`. Valid token but insufficient role, or a failed CSRF check: `403`.
+
+### Organisational units (scope)
+
+A district (İlçe MEM) can manage several schools from one server. A superadmin builds a tree of units (district →
+school, table `org_units`), puts labs into units (`custom_labs.org_unit_id`) and gives users and API tokens a
+**scope** (`org_scope`). Decision D-25; the code is `Backend/pops/tenancy.py`.
+
+- `org_scope: null` (every existing account, and the default): no limit; everything behaves as before units existed.
+- `org_scope: [unit ids]`: those units **and all their sub-units**. The account sees and acts only on devices whose
+  lab belongs to one of them. Devices without such a lab (`Atanmamis_Cihazlar`, a lab in no unit, a lab only seen on
+  devices) are visible only to accounts without a scope.
+- A superadmin is always unscoped; `org_scope` cannot be set on one (`400`). Unknown unit ids and an empty list are
+  `400`.
+- Lists are filtered on the server. A request that names an object outside the scope by id (device, lab, task,
+  ticket, licence, scheduled task, Vision session) answers `404`, as if it did not exist; a PC in `targets` of a new
+  task answers `422` "Kayıtlı olmayan bilgisayar". Settings that affect the whole organisation answer `403` to a
+  scoped account.
+- A task is visible by its device's **current** lab (its recorded `target_lab` only once the device is deleted). A
+  ticket with a PC is visible by the PC; a ticket without one by its `org_unit_id`. A licence belongs to a unit
+  (`org_unit_id`): its installations are counted on that unit's devices and only accounts whose scope includes the
+  unit see it; a licence without a unit counts every device and is visible only to unscoped accounts. A scheduled
+  task carries its creator's scope and resolves its targets in that scope on every run; a scoped account sees only
+  schedules whose units are all inside its own scope. Notifications are filtered by their PC; notifications without
+  a PC (licences, schedules, server) are for unscoped accounts.
+- Objects a scoped account creates go into its first unit unless `org_unit_id` is given: a new lab
+  (`POST /api/v1/labs`), a licence, a ticket without a PC. It cannot reuse the name of a lab outside its scope
+  (`409`).
+- Panel WebSocket: messages about a device (task output, capabilities, update results, screen previews, new tickets,
+  file transfers) go only to panels whose scope includes the device's lab; remote input to a device outside the scope
+  is dropped. `devices_changed` reaches a scoped panel only when one of its labs changed, and without the version. The
+  socket re-reads the scope every 10 seconds; when it changes, open remote-control rights are dropped.
+- Device list delta: a scoped caller always gets the full list of its devices (`?since=` included); the `ETag` and
+  `version` are computed from its own rows only, so another school's change does not reveal itself or break a `304`.
+- Directory and OpenID Connect accounts (D-24): a group mapping, and the OIDC default role, can carry `org_scope`
+  (unit ids, or `"all"` for explicitly everything). The scopes of the matching mappings are combined (`"all"` wins);
+  a mapping without a scope does not widen it. When no matching mapping sets a scope, a **new** account gets the
+  narrowest scope: an empty one (no devices) while units exist, until a superadmin chooses its units; with no units
+  at all it is unscoped as before. An existing account keeps the scope a superadmin gave it, and a configured scope is
+  written at every sign-in (a change ends its open sessions). Deleted units drop out; if none is left the scope is
+  empty, never `null`. A superadmin is always unscoped, and an account that stops being superadmin without a
+  configured scope gets the narrowest one. Unknown unit ids in the provider settings are `400`.
+
+| Scoped (filtered, out-of-scope ids `404`) | Global for scoped accounts (`403` on write) | Superadmin only (always global) |
+| --- | --- | --- |
+| devices, labs, lab settings, inventory, logs, device activity, tasks (list, status, actions, retry, flush), deployment (`deploy_orchestration`, `POST /api/v1/tasks`), Wake-on-LAN, quarantine, offline bypass codes, Vision (session start/end, preview, remote input, stream stop, panel socket), software, Windows Update (list, scan, install), reports and CSV exports, licences, tickets, scheduled tasks, notifications, file transfer (push, pull, list, download), exam mode (`/api/labs/{lab}/exam`, `/api/exams`), winget deployment, power actions and messages (`/api/devices/power`, `/api/devices/message`), `/api/modules` (lab list), `/api/system/version` (device counts), `/api/system/update-progress` (with the peer-cache lab summary `peer_labs`), `/api/storage` (log trend), `/api/admin/users` (a scoped admin sees itself and users inside its scope), `/api/org-units` (read) | task concurrency (`set_concurrent_limit`), auto-enroll, agent policies (`POST /api/agent_policies`), the package library and file uploads (`add_package`, `delete_package`, `upload`): one shared library, so a school cannot overwrite another school's installer. Reading them stays open. | users, API tokens, org units and lab assignment, enrollment tokens, agent releases and updates, capability policy, re-enrollment, enforcement, self-update, notification settings, retention, diagnostics and overview, audit verification, branding, modules (write and the effect preview), identity providers (`/api/sso/settings`, `/api/sso/test/*`), the update peer cache setting, GLPI export (`/api/system/glpi*`: it exports the whole server's devices and tickets) |
+
+Left global on purpose and not filtered: `GET /api/packages`, `GET /api/get_concurrent_limit`,
+`GET /api/agent_policies/meta`, `/api/system/release-notes`, `/api/system/self-update/status` (server facts, no
+school data), the winget catalogue (`/api/deploy/winget/catalog`), `/api/branding` and the agent-facing endpoints (an
+agent authenticates as its own device).
 
 The per-user `permissions` list (page names) only controls which dashboard pages a non-superadmin sees; the
 API itself checks roles only. See [`dashboard.md`](dashboard.md).
@@ -174,9 +231,9 @@ field therefore fails instead of running with a default value. Two kinds of body
 | POST | `/api/admin/2fa/setup` | require_user_session | Creates a new TOTP secret (not yet enforced); returns `secret` and an `otpauth://` URI. `400` if 2FA is already on. |
 | POST | `/api/admin/2fa/enable` | require_user_session | `{otp}`: confirms a code and turns 2FA on. |
 | POST | `/api/admin/2fa/disable` | require_user_session | `{otp}`: turns 2FA off; a valid code is required while it is on. |
-| GET | `/api/admin/users` | require_admin_session | Lists users (id, username, role, last login, permissions, `auth_source`). |
-| POST | `/api/admin/users` | require_superadmin | `{username, password, role, permissions, auth_source?}`. Roles: `superadmin`, `admin`, `viewer`; `permissions` is a JSON array string. `auth_source` `local` (default, password required), `ldap` or `oidc` (no password; linked at the first sign-in). `409` if the name exists. |
-| PUT | `/api/admin/users/{user_id}` | require_superadmin | Updates name, role, permissions and optionally password and `auth_source`; invalidates the user's tokens. The last superadmin cannot be demoted. Turning a local account into `ldap`/`oidc` removes its password (refused for the first local superadmin and the last local superadmin); turning it back into `local` needs `password`. |
+| GET | `/api/admin/users` | require_admin_session | Lists users (id, username, role, last login, permissions, `auth_source`, `org_scope`, `org_units` as `[{id, name}]`). A scoped admin sees itself and the users whose scope lies inside its own. |
+| POST | `/api/admin/users` | require_superadmin | `{username, password, role, permissions, auth_source?, org_scope?}`. Roles: `superadmin`, `admin`, `viewer`; `permissions` is a JSON array string. `auth_source` `local` (default, password required), `ldap` or `oidc` (no password; linked at the first sign-in). `org_scope` is `null` (everything) or unit ids (see [Organisational units](#organisational-units-scope)). `409` if the name exists. |
+| PUT | `/api/admin/users/{user_id}` | require_superadmin | Updates name, role, permissions, `org_scope` (left unchanged when the field is not sent) and optionally password and `auth_source`; invalidates the user's tokens. The last superadmin cannot be demoted. Turning a local account into `ldap`/`oidc` removes its password (refused for the first local superadmin and the last local superadmin); turning it back into `local` needs `password`. |
 | DELETE | `/api/admin/users/{user_id}` | require_superadmin | Deletes a user. You cannot delete yourself or the last superadmin. |
 
 ### Directory and single sign-on
@@ -200,8 +257,8 @@ The OpenID Connect flow and the settings; see [`security.md`](security.md#direct
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/tokens` | require_superadmin | All tokens, newest first (at most 500): `id`, `name`, `role`, `token_prefix`, `created_by`, `created_at`, `expires_at`, `last_used_at`, `revoked_at` and `state` (`active`, `expired`, `revoked`). Never the token itself. |
-| POST | `/api/tokens` | require_superadmin | `{name, role: "viewer" \| "admin", expires_days?}`: `expires_days` 1–3650, omitted or `null` for no expiry. The name has 1–64 letters, digits, spaces, `.`, `_` or `-` (`400` otherwise) and is unique among all tokens, revoked ones included (`409`). Returns `token` (**only here**) and the stored fields. An unknown field or role `superadmin` is `422`. Audit-logged (`api_token_created`). |
+| GET | `/api/tokens` | require_superadmin | All tokens, newest first (at most 500): `id`, `name`, `role`, `org_scope`, `org_units`, `token_prefix`, `created_by`, `created_at`, `expires_at`, `last_used_at`, `revoked_at` and `state` (`active`, `expired`, `revoked`). Never the token itself. |
+| POST | `/api/tokens` | require_superadmin | `{name, role: "viewer" \| "admin", expires_days?, org_scope?}`: `expires_days` 1–3650, omitted or `null` for no expiry; `org_scope` `null` (everything) or unit ids. The name has 1–64 letters, digits, spaces, `.`, `_` or `-` (`400` otherwise) and is unique among all tokens, revoked ones included (`409`). Returns `token` (**only here**) and the stored fields. An unknown field or role `superadmin` is `422`. Audit-logged (`api_token_created`). |
 | DELETE | `/api/tokens/{token_id}` | require_superadmin | Revokes the token (`revoked_at`); it stops working at once and stays in the list. `already_revoked: true` if it was revoked before; `404` for an unknown id. Audit-logged (`api_token_revoked`). |
 
 ### Devices and labs
@@ -219,7 +276,7 @@ The OpenID Connect flow and the settings; see [`security.md`](security.md#direct
 | POST | `/api/move_pc` | require_admin | `{pc_name, new_lab}`. **Deprecated:** `POST /api/v1/devices/move`. |
 | POST | `/api/move_pcs` | require_admin | `{pc_names: [...], new_lab}`. **Deprecated:** `POST /api/v1/devices/move`. |
 | GET | `/api/custom_labs` | require_auth | Names of the labs created in the panel. **Deprecated:** `GET /api/v1/labs`. |
-| POST | `/api/create_lab` | require_admin | `{lab_name}`. **Deprecated:** `POST /api/v1/labs`. |
+| POST | `/api/create_lab` | require_admin | `{lab_name, org_unit_id?}`; a scoped account's lab goes into its first unit when `org_unit_id` is not given. **Deprecated:** `POST /api/v1/labs`. |
 | POST | `/api/rename_lab` | require_admin | `{old_name, new_name}`; moves devices, the seating layout and task records in one transaction. **Deprecated:** `PATCH /api/v1/labs/{lab_name}`. |
 | POST | `/api/delete_lab` | require_admin | `{lab_name}`; its devices go back to `Atanmamis_Cihazlar` (unassigned). **Deprecated:** `DELETE /api/v1/labs/{lab_name}`. |
 | GET | `/api/lab_settings` | require_auth | Per lab: main PC and seating layout JSON. |
@@ -245,7 +302,7 @@ forward does not change it. How the server tracks it: [`backend.md`](backend.md#
   {"version": 1791204427412, "full": false,
    "changed": [{"hw_id": "HW-...", "status": "Offline", "...": "same fields as a list row"}],
    "removed": ["HW-..."],
-   "seen": {"HW-...": "2026-10-05 10:01:00"}}
+   "seen": {"HW-...": "2026-10-05T10:01:00+03:00"}}
   ```
 
   `changed` holds the whole current row of every device that changed or appeared, `removed` the IDs of deleted
@@ -295,6 +352,19 @@ device's queue, and they do not depend on the `terminal` module (the old command
 Audit: one `power_command` / `user_message` record per request (op or style, delay or acknowledgement, target
 count, offline / fallback / unsupported counts, requesting user) and one per device when sent. The note, title and
 text are recorded only as their length and first 60 characters.
+
+### Organisational units
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/org-units` | require_auth | `{units: [{id, name, parent_id, created_at, labs, users}], labs: [{lab_name, org_unit_id, devices}], org_scope, org_units}`. A scoped account gets only its units (its top unit with `parent_id: null`) and labs; `org_scope` / `org_units` describe the caller. |
+| POST | `/api/org-units` | require_superadmin | `{name, parent_id?}`. Names are unique under one parent, case-insensitive (`409`). |
+| PATCH | `/api/org-units/{unit_id}` | require_superadmin | `{name?, parent_id?}`; `parent_id: null` moves it to the top. A unit cannot go under itself or its sub-units (`400`). |
+| DELETE | `/api/org-units/{unit_id}` | require_superadmin | `409` while it has sub-units. Its labs, licences and tickets lose their unit; the id is removed from user, token and schedule scopes. |
+| PUT | `/api/org-units/{unit_id}/labs` | require_superadmin | `{labs: [names]}`: the unit's complete lab list. Listed labs move to this unit (also from another unit); its other labs lose their unit. A lab known only from devices becomes a panel lab. `Atanmamis_Cihazlar` is refused (`400`), an unknown lab is `404`. |
+
+Every change is written to the audit log (`org_unit_create`, `org_unit_update`, `org_unit_delete`,
+`org_unit_labs`).
 
 ### Wake-on-LAN
 
@@ -542,9 +612,9 @@ contains that text (both case-insensitive). Every change is written to the hash-
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/licenses` | require_auth | All licences with `installed`, `free` and `state` (`ok`, `over`, `expiring` within 30 days, `expired`), plus a `summary` count per state. |
+| GET | `/api/licenses` | require_auth | The licences in the caller's scope with `installed`, `free`, `state` (`ok`, `over`, `expiring` within 30 days, `expired`) and `org_unit_id`, plus a `summary` count per state. A unit's licence counts only that unit's devices. |
 | GET | `/api/licenses/{license_id}/devices` | require_auth | Devices with a matching program, and the program name and version. |
-| POST | `/api/licenses` | require_admin | `{name, match_pattern, publisher?, seats?, license_type: per_device \| site \| subscription, expires_at?: "YYYY-MM-DD", notes?}`. `seats` empty means unlimited. `match_pattern` is 2–200 characters of plain text; `%`, `_` and `\` are rejected in the pattern and the publisher filter. |
+| POST | `/api/licenses` | require_admin | `{name, match_pattern, publisher?, seats?, license_type: per_device \| site \| subscription, expires_at?: "YYYY-MM-DD", notes?}`. `seats` empty means unlimited. `match_pattern` is 2–200 characters of plain text; `%`, `_` and `\` are rejected in the pattern and the publisher filter. `org_unit_id?`: the licence's unit (a scoped account's first unit by default; `null` = whole organisation, unscoped accounts only); kept on update when not sent. |
 | POST | `/api/licenses/{license_id}` | require_admin | Replaces a licence definition (same body). **Deprecated:** `PUT /api/v1/licenses/{license_id}`. |
 | DELETE | `/api/licenses/{license_id}` | require_admin | Deletes a licence definition. |
 
@@ -563,7 +633,7 @@ priorities: `low`, `normal`, `high`.
 | GET | `/api/tickets/agent/{pc_name}` | agent_http_auth, enrolled only | The device's latest 20 tickets with their status and the replies, **without** internal notes. |
 | GET | `/api/tickets` | require_admin | Ticket list: `?status=active` (default: open, in progress, waiting) or one status, `?q=` searches subject, text, reporter and host name; at most 300, high priority first; plus counts per status. |
 | GET | `/api/tickets/{ticket_id}` | require_admin | One ticket with the device's current state and the full thread, internal notes included. |
-| POST | `/api/tickets` | require_admin | `{subject, body?, category?, priority?, pc_name?, reporter?}`: opens a ticket from the panel (reporter defaults to the current user). |
+| POST | `/api/tickets` | require_admin | `{subject, body?, category?, priority?, pc_name?, reporter?, org_unit_id?}`: opens a ticket from the panel (reporter defaults to the current user; a ticket without a PC goes into a scoped account's first unit). |
 | POST | `/api/tickets/{ticket_id}/update` | require_admin | **Deprecated:** `PATCH /api/v1/tickets/{ticket_id}`. `{status?, priority?, assignee?}`. Each change is added to the thread as an internal note. |
 | POST | `/api/tickets/{ticket_id}/messages` | require_admin | `{body, internal}`. A reply (`internal: false`) to an `open` ticket sets it to `waiting`; an internal note does not change the status. |
 

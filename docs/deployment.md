@@ -143,7 +143,13 @@ rollback:
    `requirements.txt` or `requirements.lock` changed or the venv is rebuilt, it also snapshots the whole venv to
    `venv-<timestamp>-<pid>.tgz` next to it before `pip` touches it (about 25 MB for the default requirements). If
    the snapshot fails, for example on a full disk, it stops without changing anything,
-5. copies the tracked `Backend/*.py` files (including the `pops/` package, excluding tests), `migrations/`,
+5. if a new migration starts with the line `-- pops: dump-before` (a migration that rewrites tables in a way the
+   previous code cannot use, such as `0031` that turns text dates into `TIMESTAMPTZ`) and the database has not
+   applied it yet, dumps the database with `pg_dump -Fc` (connection from `<app>/.env`) to
+   `<app>/.deploy-backups/db-<timestamp>-<pid>.dump` before the restart. It needs the database size plus 100 MB
+   free in that folder; if there is not enough space, the database cannot be reached or `pg_dump` fails, it stops
+   with nothing changed. At most 3 database dumps are kept (fewer if `KEEP_BACKUPS` is smaller),
+6. copies the tracked `Backend/*.py` files (including the `pops/` package, excluding tests), `migrations/`,
    `requirements.txt` and `requirements.lock` (and runs `pip install --require-hashes -r requirements.lock` into the
    live venv if either changed; a checkout without the lock installs `requirements.txt`), `VERSION` and the release
    public key. pip checks every downloaded file against the lock's SHA-256 hashes and stops before installing
@@ -151,8 +157,8 @@ rollback:
    the same way;
    after a rebuild it moves the old venv aside and makes `<app>/venv` a symbolic link to the new one, so the
    unit's `<app>/venv/bin/uvicorn` stays the same,
-6. restarts the service and checks `/api/health` (200), `/api/agent_policies` (200) and `/api/devices` (401),
-7. on **any** failure after the first change (`pip`, copying a file, the restart or the health check) restores the
+7. restarts the service and checks `/api/health` (200), `/api/agent_policies` (200) and `/api/devices` (401),
+8. on **any** failure after the first change (`pip`, copying a file, the restart or the health check) restores the
    previous code set exactly (also removing files the failed deploy added) and, if it was snapshotted, the venv at
    the same absolute path, so the `#!` lines of its console scripts stay valid; after a rebuild it puts the old
    venv back in place and deletes the new one. Then it restarts the service. The restore itself is never cut short
@@ -161,6 +167,24 @@ rollback:
 
 The last `KEEP_BACKUPS` (10) rollback points are kept; a venv snapshot is deleted together with its code backup.
 Database migrations are not rolled back (see [`decisions.md`](decisions.md)).
+
+#### Rolling back after a migration that rewrites tables
+
+Most migrations only add tables and columns, and the previous code keeps working with them. A migration marked
+`-- pops: dump-before` does not: after `0031` the old code writes text dates into `TIMESTAMPTZ` columns and fails.
+If such a deploy rolls back (or you want to go back to the old version later), the code goes back but the database
+stays migrated. The script then prints the dump it took and the restore commands. Restore the dump **together with
+the old code**; records written between the dump and the restore are lost:
+
+```bash
+sudo systemctl stop pops
+sudo -u postgres pg_restore --clean --if-exists --no-owner --role=<DB_USER> -d <DB_NAME> \
+    /opt/pops/.deploy-backups/db-<timestamp>-<pid>.dump
+sudo systemctl start pops      # with the old code in place (the rollback already restored it)
+```
+
+Then check the audit chain (`cd /opt/pops && venv/bin/python audit_verify.py`). Going forward again is a normal
+update: the migration runs again on the restored database.
 
 The script in the repository is a reference copy. Install the copy you run as root, so a deploy never overwrites
 the script while it runs, and reinstall it when a release changes it (the CHANGELOG says so):

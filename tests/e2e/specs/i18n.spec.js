@@ -68,6 +68,6 @@ test.describe('İngilizce arayüz', () => {
         await expect(page.locator('#sysTabs').getByRole('tab')).toHaveText(['Overview', 'Updates', 'Security', 'Health and backup', 'Notifications and retention', 'Modules', 'Integrations']);
         await page.goto('/settings');
         await settled(page);
-        await expect(page.locator('#setTabs').getByRole('tab')).toHaveText(['Users', 'Security', 'General']);
+        await expect(page.locator('#setTabs').getByRole('tab')).toHaveText(['Users', 'Units', 'Security', 'General']);
     });
 });

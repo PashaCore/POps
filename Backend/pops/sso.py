@@ -8,6 +8,8 @@ Protokoller pops/sso_ldap.py ve pops/sso_oidc.py'de; uçlar routers/sso.py ile r
   * Dizin/OIDC hesabının yerel şifresi yoktur (password_hash '!sso'). Kimlik external_id ile bağlanır; aynı adlı
     yerel hesap kendiliğinden bağlanmaz (dizindeki "admin" yerel "admin"i ele geçiremez).
   * Rol ve sayfalar her girişte eşlemeden yeniden yazılır; eşlenen bir grupta olmayan giriş yapamaz.
+  * Kurum birimi kapsamı (D-25): eşleme org_scope verebilir (birim kimlikleri ya da "all"). Verilmezse YENİ hesap
+    en dar kapsamı alır: birim varsa boş kapsam (hiçbir cihaz; süper admin birim seçer), birim yoksa kapsamsız.
   * Gizli değerler (hizmet hesabı şifresi, istemci sırrı) 2FA anahtarlarıyla aynı anahtarla şifreli durur.
 """
 
@@ -51,7 +53,7 @@ LDAP_DEFAULTS = {
 OIDC_DEFAULTS = {
     "display_name": "", "issuer": "", "client_id": "", "redirect_uri": "", "scopes": "openid email profile",
     "username_claim": "email", "groups_claim": "groups", "group_map": [], "allowed_domains": [],
-    "default_role": "", "default_pages": [], "ca_pem": "", "allow_insecure_for_tests": False,
+    "default_role": "", "default_pages": [], "default_org_scope": None, "ca_pem": "", "allow_insecure_for_tests": False,
 }
 DEFAULTS = {"ldap": LDAP_DEFAULTS, "oidc": OIDC_DEFAULTS}
 # Değişince kayıtlı sır yeniden girilmeden kullanılmaz: çalınmış bir süper admin oturumu sırrı başka bir sunucuya,
@@ -125,6 +127,27 @@ def _check_pages(pages: Iterable[str], what: str) -> List[str]:
     return out
 
 
+ALL_UNITS = "all"
+
+
+def _check_scope(value, role: Optional[str], what: str):
+    """Eşlemenin kurum birimi kapsamı: None (ayarlanmadı), "all" (açıkça bütün kurum) ya da birim kimlikleri.
+    Süper admin her zaman kapsamsızdır; onun eşlemesinde kapsam tutulmaz."""
+    if value is None or role == "superadmin":
+        return None
+    if value == ALL_UNITS:
+        return ALL_UNITS
+    if not isinstance(value, list) or not value:
+        raise ValueError("%s: kapsam birim listesi ya da \"all\" olmalı." % what)
+    try:
+        ids = sorted({int(i) for i in value})
+    except (TypeError, ValueError):
+        raise ValueError("%s: geçersiz birim." % what)
+    if any(i <= 0 for i in ids):
+        raise ValueError("%s: geçersiz birim." % what)
+    return ids
+
+
 def _check_group_map(items: list) -> list:
     out = []
     for m in items or []:
@@ -135,8 +158,18 @@ def _check_group_map(items: list) -> list:
         if role not in ROLE_RANK:
             raise ValueError("Grup eşlemesinde geçersiz rol.")
         pages = _check_pages(m.get("pages"), "Grup eşlemesi")
-        out.append({"group": group, "role": role, "pages": [] if role == "superadmin" else pages})
+        out.append({"group": group, "role": role, "pages": [] if role == "superadmin" else pages,
+                    "org_scope": _check_scope(m.get("org_scope"), role, "Grup eşlemesi")})
     return out
+
+
+def scope_units(cfg: dict) -> List[int]:
+    """Ayarlarda geçen bütün birim kimlikleri (kaydederken var olup olmadıkları denetlenir)."""
+    out = set()
+    for v in [m.get("org_scope") for m in cfg.get("group_map") or []] + [cfg.get("default_org_scope")]:
+        if isinstance(v, list):
+            out.update(v)
+    return sorted(out)
 
 
 def check_ca_pem(pem: str) -> str:
@@ -230,6 +263,7 @@ def clean_oidc(cfg: dict) -> dict:
     if c["default_role"] and not domains:
         raise ValueError("Varsayılan rol için en az bir e-posta alan adı girin.")
     c["default_pages"] = _check_pages(c["default_pages"], "Varsayılan sayfalar")
+    c["default_org_scope"] = _check_scope(c["default_org_scope"], c["default_role"] or "viewer", "Varsayılan kapsam")
     c["group_map"] = _check_group_map(c["group_map"])
     c["ca_pem"] = check_ca_pem(c["ca_pem"])
     return c
@@ -258,13 +292,16 @@ def normalize_dn(dn: str) -> str:
     return re.sub(r"\s*([,=+])\s*", r"\1", s)
 
 
-def map_role(groups: Iterable[str], group_map: list, dn: bool) -> Optional[Tuple[str, List[str]]]:
-    """Kullanıcının gruplarıyla eşleşen en yüksek rol ve eşleşen bütün eşlemelerin sayfaları (birleşim). Eşleşme
-    yoksa None (giriş reddedilir). LDAP'ta gruplar DN olarak, OIDC'de büyük/küçük harf duyarsız karşılaştırılır."""
+def map_role(groups: Iterable[str], group_map: list, dn: bool) -> Optional[Tuple[str, List[str], object]]:
+    """Kullanıcının gruplarıyla eşleşen en yüksek rol, eşleşen bütün eşlemelerin sayfaları (birleşim) ve kapsamı.
+    Kapsam: eşleşen eşlemelerden kapsam verenlerin birleşimi ("all" verilmişse "all"); hiçbiri vermediyse None
+    (ayarlanmadı: link_user en dar kapsamı uygular). Eşleşme yoksa None (giriş reddedilir). LDAP'ta gruplar DN
+    olarak, OIDC'de büyük/küçük harf duyarsız karşılaştırılır."""
     norm = normalize_dn if dn else (lambda g: (g or "").strip().casefold())
     have = {norm(g) for g in groups if isinstance(g, str) and g.strip()}
     best = None
     pages: List[str] = []
+    scopes = []
     for m in group_map or []:
         if norm(m.get("group", "")) not in have:
             continue
@@ -273,9 +310,15 @@ def map_role(groups: Iterable[str], group_map: list, dn: bool) -> Optional[Tuple
                 pages.append(p)
         if best is None or ROLE_RANK[m["role"]] > ROLE_RANK[best]:
             best = m["role"]
+        if m.get("org_scope") is not None:
+            scopes.append(m["org_scope"])
     if best is None:
         return None
-    return best, ([] if best == "superadmin" else sorted(pages))
+    if best == "superadmin" or ALL_UNITS in scopes:
+        scope = ALL_UNITS if best != "superadmin" else None
+    else:
+        scope = sorted({int(i) for s in scopes for i in s}) if scopes else None
+    return best, ([] if best == "superadmin" else sorted(pages)), scope
 
 
 def valid_username(name: str) -> bool:
@@ -330,6 +373,12 @@ async def save(kind: str, enabled: bool, cfg: dict, secret: Optional[str], by: s
                          if kind == "ldap" else
                          "Sağlayıcı ya da istemci değişti: kayıtlı istemci sırrı kullanılmaz, sırrı yeniden girin.")
     sealed = old_sealed if secret is None else (secretbox.seal(secret) if secret else None)
+    units = scope_units(cfg)
+    if units:
+        known = await execute_query("SELECT id FROM org_units WHERE id = ANY($1::int[])", (units,), fetch=True)
+        missing = sorted(set(units) - {r["id"] for r in known or []})
+        if missing:
+            raise ValueError("Bilinmeyen birim: %s" % ", ".join(str(i) for i in missing))
     if enabled:
         require_complete(kind, cfg, bool(sealed))
     await execute_query(
@@ -412,14 +461,40 @@ async def issue_ticket(user: dict, source: str, binding: str, next_path: Optiona
 
 # ── Hesabın yerel kullanıcıya bağlanması ────────────────────────────────────────
 
-_USER_COLS = "id, username, role, permissions, totp_enabled, totp_secret, token_version, auth_source, external_id"
+_USER_COLS = ("id, username, role, permissions, totp_enabled, totp_secret, token_version, auth_source, external_id, "
+              "org_scope")
+_UNSET = object()
 
 
-async def link_user(source: str, external_id: str, username: str, role: str, pages: List[str]) -> dict:
+async def _wanted_scope(role: str, scope):
+    """Eşlemenin istediği kapsam: superadmin ve "all" kapsamsız (None); birim listesi, silinmiş birimler atılarak
+    (hepsi silindiyse boş liste: hiçbir şey, kapsamsız DEĞİL); ayarlanmadıysa _UNSET."""
+    if role == "superadmin" or scope == ALL_UNITS:
+        return None
+    if scope is None:
+        return _UNSET
+    rows = await execute_query("SELECT id FROM org_units WHERE id = ANY($1::int[])", ([int(i) for i in scope],),
+                               fetch=True)
+    have = {r["id"] for r in rows or []}
+    return [int(i) for i in scope if int(i) in have]
+
+
+async def _narrowest_scope():
+    """Kapsamı ayarlanmamış yeni hesabın kapsamı: birim varsa boş liste (hiçbir cihaz; süper admin birim seçene
+    kadar), hiç birim yoksa (kurum birimleri kullanılmıyor) kapsamsız. Kazara kapsamsız hesap açılmaz."""
+    rows = await execute_query("SELECT EXISTS (SELECT 1 FROM org_units) AS any", fetch=True)
+    return [] if rows and rows[0]["any"] else None
+
+
+async def link_user(source: str, external_id: str, username: str, role: str, pages: List[str],
+                    scope=None) -> dict:
     """Dizin/OIDC kimliğinin yerel kaydı: external_id ile bulunur; yoksa aynı adlı, henüz bağlanmamış aynı kaynaklı
     kayda bağlanır (süper adminin önceden açtığı hesap); o da yoksa oluşturulur. Rol ve sayfalar eşlemeden yazılır;
-    değiştiyse token_version artar (eski oturumlar kapanır). Yerel ya da başka kişiye bağlı aynı ad: reddedilir."""
+    değiştiyse token_version artar (eski oturumlar kapanır). Yerel ya da başka kişiye bağlı aynı ad: reddedilir.
+    scope (map_role'ün üçüncü değeri): ayarlanmışsa her girişte yazılır; ayarlanmamışsa yeni hesap en dar kapsamı
+    alır, var olan hesabın kapsamı (süper adminin panelde verdiği) değişmez."""
     perms = json.dumps(pages)
+    wanted = await _wanted_scope(role, scope)
     rows = await execute_query(
         "SELECT %s FROM users WHERE auth_source = $1 AND external_id = $2" % _USER_COLS,
         (source, external_id), fetch=True)
@@ -442,24 +517,35 @@ async def link_user(source: str, external_id: str, username: str, role: str, pag
             if not u:
                 raise SsoRefused("conflict", "Hesap bağlanamadı; yeniden deneyin.")
         else:
+            new_scope = await _narrowest_scope() if wanted is _UNSET else wanted
             try:
                 u = (await execute_query(
-                    "INSERT INTO users (username, password_hash, role, permissions, auth_source, external_id) "
-                    "VALUES ($1, $2, $3, $4, $5, $6) RETURNING %s" % _USER_COLS,
-                    (username, SSO_PASSWORD_HASH, role, perms, source, external_id), fetch=True))[0]
+                    "INSERT INTO users (username, password_hash, role, permissions, auth_source, external_id, "
+                    "org_scope) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING %s" % _USER_COLS,
+                    (username, SSO_PASSWORD_HASH, role, perms, source, external_id, new_scope), fetch=True))[0]
             except Exception as exc:  # aynı anda iki ilk giriş: benzersizlik ihlali
                 log.warning("dizin hesabı oluşturulamadı", extra={"user": username, "error": type(exc).__name__})
                 raise SsoRefused("conflict", "Hesap oluşturulamadı; yeniden deneyin.")
             created = True
             await add_audit_log("*", "sso_user_created", "Dizin/OIDC hesabı ilk girişte oluşturuldu: %s" % username, {
-                "user": username, "source": source, "role": role, "pages": pages})
-    if not created and (u["role"] != role or (u["permissions"] or "[]") != perms):
-        before = {"role": u["role"], "pages": u["permissions"]}
-        u = (await execute_query(
-            "UPDATE users SET role = $1, permissions = $2, token_version = token_version + 1 WHERE id = $3 "
-            "RETURNING %s" % _USER_COLS, (role, perms, u["id"]), fetch=True))[0]
-        await add_audit_log("*", "sso_role_synced", "Dizin/OIDC grubundan rol güncellendi: %s" % u["username"], {
-            "user": u["username"], "source": source, "before": before, "after": {"role": role, "pages": perms}})
+                "user": username, "source": source, "role": role, "pages": pages, "org_scope": new_scope})
+    if not created:
+        old_scope = list(u["org_scope"]) if u["org_scope"] is not None else None
+        if wanted is not _UNSET:
+            new_scope = wanted
+        elif u["role"] == "superadmin" and role != "superadmin":
+            # Süper adminlikten düşen hesap ayarlanmamış kapsamla bütün kuruma kalmasın
+            new_scope = await _narrowest_scope()
+        else:
+            new_scope = old_scope
+        if u["role"] != role or (u["permissions"] or "[]") != perms or new_scope != old_scope:
+            before = {"role": u["role"], "pages": u["permissions"], "org_scope": old_scope}
+            u = (await execute_query(
+                "UPDATE users SET role = $1, permissions = $2, org_scope = $4, token_version = token_version + 1 "
+                "WHERE id = $3 RETURNING %s" % _USER_COLS, (role, perms, u["id"], new_scope), fetch=True))[0]
+            await add_audit_log("*", "sso_role_synced", "Dizin/OIDC grubundan rol güncellendi: %s" % u["username"], {
+                "user": u["username"], "source": source, "before": before,
+                "after": {"role": role, "pages": perms, "org_scope": new_scope}})
     return u
 
 
