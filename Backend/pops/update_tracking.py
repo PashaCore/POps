@@ -8,6 +8,9 @@ sunucu onaylayana (update_result_ack) kadar saklar ve yeniden gönderir; aynı r
 Ara adımlar (update_progress, docs/api.md): ajan emri aldıktan sonra sonuç gelene kadar nerede olduğunu bildirir.
 Son adım bellekte (manager.update_stages) ve gönderimin satırında durur; sonuç gelince ya da gönderim unutulunca
 silinir, yeni gönderim sıfırlar. Adımı bildirmeyen eski ajanda (0.1.21 ve öncesi) hiçbir şey değişmez.
+
+Birden fazla backend süreci çalışıyorsa (REDIS_URL) tablo asıl kayıttır: gönderimi ve adımı başka süreç yazmış
+olabilir, okuyan yer önce refresh() ile bellekteki kopyayı tablodan yeniler. Tek süreçte refresh() hiçbir şey yapmaz.
 """
 
 import re
@@ -15,6 +18,7 @@ import time
 import unicodedata
 from typing import Iterable, Optional, Set
 
+from pops.cluster import cluster
 from pops.db import execute_query
 from pops.manager import manager
 
@@ -150,14 +154,39 @@ async def forget(pc: str) -> None:
     await execute_query("DELETE FROM pending_updates WHERE pc_name = $1", (pc,))
 
 
+_SELECT = (
+    "SELECT pc_name, version, extract(epoch FROM sent_at) AS sent, stage, detail, attempt, attempt_of, "
+    "extract(epoch FROM stage_at) AS stage_at FROM pending_updates"
+)
+
+
 async def load() -> int:
     """Açılışta: yeniden başlatmadan önce gönderilmiş ve sonucu beklenen güncellemeler (son adımlarıyla) belleğe
     alınır."""
-    rows = await execute_query(
-        "SELECT pc_name, version, extract(epoch FROM sent_at) AS sent, stage, detail, attempt, attempt_of, "
-        "extract(epoch FROM stage_at) AS stage_at FROM pending_updates",
-        fetch=True,
-    )
+    rows = await execute_query(_SELECT, fetch=True)
+    _remember_rows(rows)
+    return len(rows or [])
+
+
+async def refresh(pcs: Optional[Iterable[str]] = None) -> None:
+    """Birden fazla süreçte: verilen cihazların (None: hepsinin) gönderimi ve son adımı tablodan yeniden okunur;
+    tabloda olmayanlar bellekten düşer (sonucu başka süreç kaydetmiş ya da gönderim unutulmuş)."""
+    if not cluster.enabled():
+        return
+    if pcs is None:
+        rows = await execute_query(_SELECT, fetch=True)
+        manager.pending_updates.clear()
+        manager.update_stages.clear()
+    else:
+        pcs = list(pcs)
+        rows = await execute_query(_SELECT + " WHERE pc_name = ANY($1::text[])", (pcs,), fetch=True)
+        for pc in pcs:
+            manager.pending_updates.pop(pc, None)
+            manager.update_stages.pop(pc, None)
+    _remember_rows(rows)
+
+
+def _remember_rows(rows) -> None:
     for r in rows or []:
         manager.pending_updates[r["pc_name"]] = (r["version"], float(r["sent"]))
         if r["stage"]:
@@ -168,7 +197,6 @@ async def load() -> int:
                 "of": r["attempt_of"],
                 "stage_at": float(r["stage_at"]) if r["stage_at"] is not None else None,
             }
-    return len(rows or [])
 
 
 async def seen(pc: str, result_id: str) -> bool:

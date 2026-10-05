@@ -65,6 +65,7 @@ def register(router: APIRouter, d: common.Deps) -> None:
         if not scope.is_global:
             peer["labs"] = [x for x in peer["labs"] if scope.allows_lab(x["lab"])]
             peer["items"] = {pc: v for pc, v in peer["items"].items() if scope.allows_lab(v["lab"])}
+        await update_tracking.refresh(pcs)   # birden fazla süreçte gönderim ve adım başka süreçte yazılmış olabilir
         items = []
         for pc in pcs:
             r = known.get(pc)
@@ -149,11 +150,12 @@ def register(router: APIRouter, d: common.Deps) -> None:
         # Sınıf içi eş önbelleği (pops/peer_cache.py): sınıfın tohumu şimdi, geri kalanı tohum hazır olunca "peers"
         # ile gider; hazır eşi olan sınıfa hemen peers ile; özelliği olmayanlara bugünkü gibi. Eşler MSI'ı paylaşır
         # (msi_sha): yalnızca Windows cihazlar; .deb alan Linux cihazlar bugünkü gibi doğrudan gönderilir
-        staging = await peer_cache.plan([t for t in targets if t in manager.active_agents
+        up = await manager.online_among(targets)   # birden fazla süreçte bütün süreçlerin ajanları
+        staging = await peer_cache.plan([t for t in targets if t in up
                                          and platform_of.get(t, "windows") == "windows"], version, msi_sha, msg)
         online = []
-        offline = sorted(t for t in targets if t not in manager.active_agents)
-        for pc in sorted(t for t in targets if t in manager.active_agents and t not in staging.hold):
+        offline = sorted(t for t in targets if t not in up)
+        for pc in sorted(t for t in targets if t in up and t not in staging.hold):
             peers = staging.peers.get(pc)
             message = dict(msg, peers=peers) if peers else msg
             if pc in staging.cache:

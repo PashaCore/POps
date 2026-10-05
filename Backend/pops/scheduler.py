@@ -4,6 +4,10 @@ başlatılır, 30 sn'de bir döner.
 
 Saatler sunucunun saat diliminde yorumlanır. Birden fazla backend süreci çalışsa bile aynı görev iki
 kez eklenmez: tur, PostgreSQL advisory kilidiyle tek sürece verilir ve satırlar FOR UPDATE ile alınır.
+
+Birden fazla süreçte (REDIS_URL) periyodik işleri yalnızca bir süreç ("lider") yapar: lider, kendi veritabanı
+bağlantısında oturum boyu bir advisory kilidi tutar. Lider süreç durursa bağlantısı kapanır, kilit düşer ve başka bir
+süreç bir sonraki turda devralır. Sağlık uyarıları, günlük işler ve ölçümler böylece tekrarlanmaz.
 """
 
 import asyncio
@@ -15,10 +19,14 @@ import time
 import uuid
 from typing import Optional
 
+import asyncpg
+
 from pops import (
     db, exams, filestore, glpi, health_alerts, modules, retention, server_metrics, tenancy, timeutil,
     update_tracking,
 )
+from pops.cluster import cluster
+from pops.config import DB_CONFIG, DB_CONNECT_TIMEOUT
 from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.notify import notify
@@ -35,6 +43,7 @@ SCHEDULE_VALID_MINUTES = int(os.environ.get("SCHEDULE_VALID_MINUTES", "60"))
 SCHEDULE_MISFIRE_MINUTES = int(os.environ.get("SCHEDULE_MISFIRE_MINUTES", "60"))
 UPDATE_SILENCE_SECONDS = 20 * 60
 _SCHEDULER_LOCK = 0x504F5053  # "POPS"
+_LEADER_LOCK = 0x504F504C     # "POPL": birden fazla süreçte periyodik işleri yapan süreç
 
 
 def _now() -> datetime.datetime:
@@ -205,13 +214,14 @@ async def reap_stuck_tasks() -> int:
 async def check_pending_updates() -> None:
     """Güncelleme gönderilen ajan uzun süre sonuç bildirmediyse (ölü/yönetilemez ajan sonuç gönderemez). Süre
     gönderimden ya da ajanın bildirdiği son adımdan (update_progress) sayılır: ilerleyen kurulum sessiz sayılmaz."""
+    await update_tracking.refresh()   # birden fazla süreçte gönderimleri başka süreç yapmış olabilir
     now = time.time()
     for pc, (version, sent_at) in list(manager.pending_updates.items()):
         stage = manager.update_stages.get(pc) or {}
         if now - max(sent_at, stage.get("stage_at") or 0) < UPDATE_SILENCE_SECONDS:
             continue
         await update_tracking.forget(pc)
-        online = pc in manager.active_agents
+        online = await manager.is_online(pc)
         await notify(
             "update_silent",
             "high",
@@ -259,12 +269,55 @@ async def check_licenses_daily() -> None:
             )
 
 
-# Son tamamlanan turun zamanı (epoch); /api/system/diagnostics zamanlayıcının durup durmadığını gösterir
+# Son tamamlanan turun zamanı (epoch); /api/system/diagnostics zamanlayıcının durup durmadığını gösterir. Birden fazla
+# süreçte lider olmayan süreç de turu (yalnızca liderlik denemesini) tamamlayınca yazar: döngünün çalıştığını gösterir.
 last_tick = [0.0]
+_leader = {"conn": None, "held": False}
+
+
+async def is_leader() -> bool:
+    """Tek süreçte her zaman. Birden fazla süreçte liderlik kilidini tutan süreç (kilidi tutan bağlantı açık kaldıkça);
+    kilit boştaysa alınır."""
+    if not cluster.enabled():
+        return True
+    conn = _leader["conn"]
+    try:
+        if conn is None or conn.is_closed():
+            conn = _leader["conn"] = await asyncpg.connect(**DB_CONFIG, timeout=DB_CONNECT_TIMEOUT)
+            _leader["held"] = False
+        if _leader["held"]:
+            await conn.fetchval("SELECT 1")   # bağlantı koptuysa kilit de düşmüştür
+            return True
+        _leader["held"] = bool(await conn.fetchval("SELECT pg_try_advisory_lock($1)", _LEADER_LOCK))
+        if _leader["held"]:
+            log.info("bu süreç periyodik işleri devraldı (lider)")
+        return _leader["held"]
+    except Exception:
+        log.warning("liderlik kilidi denetlenemedi", exc_info=True)
+        if conn is not None:
+            try:
+                await conn.close()
+            except Exception:
+                pass
+        _leader["conn"], _leader["held"] = None, False
+        return False
+
+
+async def release_leadership() -> None:
+    conn, _leader["conn"], _leader["held"] = _leader["conn"], None, False
+    if conn is not None:
+        try:
+            await conn.close()
+        except Exception:
+            pass
 
 
 async def scheduler_loop() -> None:
     while True:
+        if not await is_leader():
+            last_tick[0] = time.time()
+            await asyncio.sleep(TICK_SECONDS)
+            continue
         try:
             await run_due()
             await reap_stuck_tasks()

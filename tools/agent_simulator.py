@@ -17,6 +17,9 @@ Her sahte ajan gerçek ajan gibi /ws/agent'a bağlanır, dna_payload gönderir v
                    bağlanır (panelde Çevrimdışı → Çevrimiçi; cihaz listesi değişikliği)
   --app-churn K    dakikada (filo genelinde, ortalama) K heartbeat'te ön plandaki uygulama değişir
                    (bkz. tools/bench_devices_delta.py)
+  --url A,B        birden fazla backend süreci (REDIS_URL, docs/ha.md): her bağlantı denemesi adreslerden birini
+                   rastgele seçer (DNS ya da yapışkansız yük dengeleyici gibi); --report-every N açık bağlantıların
+                   adreslere dağılımını N sn'de bir yazar.
 
 Ölçülenler: bağlanan ajan, heartbeat/sn, HTTP istek/sn ve gecikme yüzdelikleri (p50/p95/p99), hatalar,
 panellere düşen mesaj/sn, sunucu CPU/RSS. Vision kare akışı simüle edilmez (açık denetim oturumu ve tepsi
@@ -131,13 +134,14 @@ async def agent(i, args, stop_at, stats):
 
 async def agent_once(i, args, stop_at, stats):
     """Bir bağlantı ömrü. Dönen: bağlantı sağlam kuruldu mu (en az bir heartbeat gitti)."""
-    base = args.url.rstrip("/")
+    base = random.choice(args.urls).rstrip("/")
     http_base = base.replace("wss://", "https://").replace("ws://", "http://")
     uri = base + "/ws/agent/" + hwid(i)
     headers = {"X-Agent-Version": "sim"}
     if args.enroll_token:
         headers["X-Enroll-Token"] = args.enroll_token
     secret = None
+    opened = False
     try:
         try:
             conn = websockets.connect(uri, open_timeout=30, close_timeout=5, max_queue=8, additional_headers=headers)
@@ -145,6 +149,8 @@ async def agent_once(i, args, stop_at, stats):
             conn = websockets.connect(uri, open_timeout=30, close_timeout=5, max_queue=8, extra_headers=headers)
         async with conn as ws:
             await ws.send(dna(i))
+            stats["open"][base] = stats["open"].get(base, 0) + 1
+            opened = True
             if i not in stats["ever"]:
                 stats["ever"].add(i)
                 stats["connected"] += 1
@@ -192,10 +198,13 @@ async def agent_once(i, args, stop_at, stats):
         if stats["errors"] <= 3:
             stats["last_error"] = repr(e)
         return False
+    finally:
+        if opened:
+            stats["open"][base] -= 1
 
 
 async def panel(k, args, stop_at, stats):
-    uri = args.url.rstrip("/") + "/ws/panel"
+    uri = args.urls[k % len(args.urls)].rstrip("/") + "/ws/panel"
     cookie = {"Cookie": "pops_jwt=%s" % args.jwt}
     try:
         try:
@@ -213,6 +222,15 @@ async def panel(k, args, stop_at, stats):
     except Exception as e:
         stats["panel_errors"] += 1
         stats["last_error"] = stats["last_error"] or repr(e)
+
+
+async def reporter(args, stop_at, stats):
+    t0 = time.monotonic()
+    while time.monotonic() < stop_at:
+        await asyncio.sleep(args.report_every)
+        print("t=%4.0fs  open=%d  %s" % (time.monotonic() - t0, sum(stats["open"].values()),
+                                         "  ".join("%s=%d" % (u, n) for u, n in sorted(stats["open"].items()))),
+              flush=True)
 
 
 def proc_sample(pid):
@@ -254,7 +272,9 @@ async def main():
     p.add_argument("--flap", type=float, default=0, help="dakikada kopup yeniden bağlanan ajan (filo geneli)")
     p.add_argument("--flap-down", type=float, default=5.0, help="kopan ajanın yeniden bağlanmadan önce beklediği sn")
     p.add_argument("--app-churn", type=float, default=0, help="dakikada ön plandaki uygulama değişimi (filo geneli)")
+    p.add_argument("--report-every", type=float, default=0, help="açık bağlantıların adreslere dağılımı (sn)")
     args = p.parse_args()
+    args.urls = [u.strip() for u in args.url.split(",") if u.strip()]
     if (args.software or args.patches) and not args.enroll_token:
         p.error("--software/--patches için --enroll-token gerekir (bu uçlar yalnız anahtarlı ajanı kabul eder)")
     if args.panels and not args.jwt:
@@ -262,10 +282,12 @@ async def main():
 
     stats = {"connected": 0, "enrolled": 0, "heartbeats": 0, "errors": 0, "last_error": None, "http": {},
              "panels": 0, "panel_msgs": 0, "panel_errors": 0, "ever": set(), "retries": 0, "all_at": None,
-             "flaps": 0, "app_changes": 0}
+             "flaps": 0, "app_changes": 0, "open": {}}
     t0 = time.monotonic()
     stop_at = t0 + 15 + args.duration + args.n * args.ramp
     tasks = [asyncio.ensure_future(panel(k, args, stop_at, stats)) for k in range(args.panels)]
+    if args.report_every:
+        tasks.append(asyncio.ensure_future(reporter(args, stop_at, stats)))
     for i in range(args.n):
         tasks.append(asyncio.ensure_future(agent(i, args, stop_at, stats)))
         if args.ramp:

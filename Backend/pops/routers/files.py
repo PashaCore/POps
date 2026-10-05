@@ -126,6 +126,7 @@ async def _targets(pcs, auth: dict) -> tuple:
     )
     scope = await tenancy.scope_of(auth)
     known = {r["pc_name"]: r for r in rows or [] if scope.allows_lab(r["lab_name"])}
+    up = await manager.online_among(pcs)   # birden fazla süreçte bütün süreçlerin ajanları
     ok, skipped = [], []
     lab_on = {}
     for pc in pcs:
@@ -138,7 +139,7 @@ async def _targets(pcs, auth: dict) -> tuple:
             lab_on[lab] = await modules.enabled("files", lab)
         if not lab_on[lab]:
             skipped.append({"pc_name": pc, "reason": "module_closed"})
-        elif pc not in manager.active_agents:
+        elif pc not in up:
             skipped.append({"pc_name": pc, "reason": "offline"})
         elif r["cap_files_enabled"] is None:
             skipped.append({"pc_name": pc, "reason": "unsupported"})

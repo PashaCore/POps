@@ -95,7 +95,7 @@ async def _close_effects(before: dict, after: dict, apply: bool = True) -> dict:
         elif mid == "vision":
             for pc in [pc for pc in pcs if pc in manager.vision_sessions]:
                 effects["vision_sessions_closed"] += 1
-                if apply and manager.vision_sessions.pop(pc, None):
+                if apply and manager.drop_device_sessions(pc):
                     await manager.send_command({"action": "stop_stream"}, pc)
         elif mid == "deploy":
             effects["tasks_denied"] += await _deny_tasks(

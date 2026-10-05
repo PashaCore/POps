@@ -109,11 +109,11 @@ async def sample(force: bool = False) -> bool:
     disk = await asyncio.to_thread(_disk_pct)
     size = await db.execute_query("SELECT pg_database_size(current_database()) AS b", fetch=True)
     db_mb = round(size[0]["b"] / 1048576, 1) if size else None
+    agents, panels = await manager.connection_counts()   # birden fazla süreçte bütün süreçlerin toplamı
     await db.execute_query(
         "INSERT INTO server_metrics (ts, agents, panels, cpu_pct, mem_pct, disk_pct, db_mb, rss_mb, requests, errors) "
         "VALUES (date_trunc('minute', NOW()), $1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (ts) DO NOTHING",
-        (len(manager.active_agents), len(manager.active_panels), cpu_pct_between(before_cpu, cpu), _mem_pct(),
-         disk, db_mb, rss_mb(), requests, errors),
+        (agents, panels, cpu_pct_between(before_cpu, cpu), _mem_pct(), disk, db_mb, rss_mb(), requests, errors),
     )
     if now - _state["pruned"] >= _PRUNE_SECONDS:
         _state["pruned"] = now

@@ -159,3 +159,14 @@ METRICS_TOKEN = os.environ.get('METRICS_TOKEN', '').strip()
 # Yalnızca otomatik testler: kimlik sağlayıcısı ayarındaki allow_insecure_for_tests (şifresiz LDAP, http OIDC
 # sağlayıcısı) ancak sunucu bu değişkenle (1) başlatıldıysa kabul edilir. Üretimde tanımlamayın.
 SSO_ALLOW_INSECURE_FOR_TESTS = os.environ.get('POPS_SSO_ALLOW_INSECURE_FOR_TESTS', '').strip() == '1'
+
+
+# ─── Birden fazla backend süreci (HA) ──────────────────────────────────────────
+# Tanımlıysa (redis://host:6379/0) birden fazla uvicorn worker'ı ya da sunucu aynı veritabanı ve bu Redis'le çalışır:
+# ajan komutları, panel yayınları ve ekran kareleri Redis kanallarından geçer, çevrimiçi ajan kaydı, oturum yetkileri,
+# bildirim sayaçları ve istek sınırları paylaşılır (bkz. docs/ha.md). Boşsa tek süreç (varsayılan).
+REDIS_URL = os.environ.get('REDIS_URL', '').strip()
+
+
+# Redis anahtarlarının ve kanallarının öneki: aynı Redis'i paylaşan kurulumlar birbirini görmesin
+REDIS_PREFIX = os.environ.get('REDIS_PREFIX', '').strip() or 'pops'

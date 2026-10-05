@@ -83,7 +83,7 @@ def register(router: APIRouter, d: common.Deps) -> None:
         await devicelist.sync([pc])
         # send_command çevrimdışıysa no-op; online durumunu ayrıca bildiriyoruz. Kapatma isteği
         # kalıcı kaydedildi, ajan sonra bağlanınca /ws/agent 'capabilities' handler'ı uygular.
-        online = pc in manager.active_agents
+        online = await manager.is_online(pc)
         await manager.send_command(msg, pc)
         applied = {k: msg[k] for k in msg if k != "action"}
         await d.add_audit_log(pc, "set_capabilities", "Yetenek politikası gönderildi",

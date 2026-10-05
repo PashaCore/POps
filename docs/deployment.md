@@ -33,13 +33,21 @@ can proxy WebSockets. `install.sh` is tested on AlmaLinux/RHEL/Rocky and Debian/
 `python3` is 3.9; `install.sh` installs the `python3.12` package there. Ubuntu 22.04 (3.10), Debian 12 (3.11) and
 Ubuntu 24.04 (3.12) need nothing extra. Why 3.9 was dropped: [`decisions.md`](decisions.md) D-20.
 
-### One worker
+### One worker, or several with Redis
 
-Run the backend with a **single** uvicorn worker. The list of connected agents, the panel sockets and the
-remote-control session grants are kept in the process's memory, so an agent and a panel connected to different
-workers would not see each other. One worker is enough for a whole district: the [capacity report](kapasite/README.md) measured 5,000 agents back
-11 s after a restart with no failed attempt and 40 % of one core in steady state, and gives hardware sizing by fleet
-size (raw numbers in [`BENCHMARKS.md`](../BENCHMARKS.md)).
+By default run the backend with a **single** uvicorn worker. The list of connected agents, the panel sockets and
+the remote-control session grants are kept in the process's memory, so without Redis an agent and a panel
+connected to different workers would not see each other. One worker is enough for a whole district: the
+[capacity report](kapasite/README.md) measured 5,000 agents back 11 s after a restart with no failed attempt and
+40 % of one core in steady state, and gives hardware sizing by fleet size (raw numbers in
+[`BENCHMARKS.md`](../BENCHMARKS.md)).
+
+For more than one worker (`uvicorn --workers N`, or several servers behind a load balancer without sticky
+sessions), set `REDIS_URL` in `.env` on every server and run a Redis that all of them reach. Commands, broadcasts
+and screen frames then travel between workers through Redis, and the online-agent list, session grants, Vision
+tunnels, the device list version, notification counters and rate limits are shared. With several servers,
+`storage/`, `updates/`, `releases/` and `transfers/` must be shared storage. Setup, topology, failure behaviour and
+what stays a single point of failure (PostgreSQL): [`ha.md`](ha.md).
 
 ## Web server and TLS
 

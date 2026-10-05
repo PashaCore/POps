@@ -184,8 +184,10 @@ addresses because only the dashboard can reach it.
   network. For devices assigned to a lab, wake requests are also relayed through an online
   agent in that lab, which is unaffected. If you depend on the server's broadcast, use the native install.
 - **TLS.** Not included; see above.
-- **Scaling the backend.** It must run as one container with one process, because connected
-  agents and panels are tracked in memory. Do not use `--scale backend=N`.
+- **Scaling the backend.** Without Redis it must run as one container with one process, because connected
+  agents and panels are tracked in memory: do not use `--scale backend=N`. With a Redis service and `REDIS_URL`
+  set for the backend, several containers work (see [`ha.md`](ha.md)); `storage`, `updates`, `releases` and
+  `transfers` must then be shared volumes.
 
 ## Upgrades
 

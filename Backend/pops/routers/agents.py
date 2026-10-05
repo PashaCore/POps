@@ -286,6 +286,7 @@ async def _update_progress(pc_name: str, payload: dict, agent_version: Optional[
         log.info("tanınmayan güncelleme adımı yok sayıldı",
                  extra={"pc_name": pc_name, "stage": str(payload.get("stage"))[:40]})
         return
+    await update_tracking.refresh([pc_name])   # birden fazla süreçte gönderimi başka süreç yapmış olabilir
     if not update_tracking.accepts(pc_name, progress):
         log.info("beklenmeyen güncelleme adımı yok sayıldı", extra={"pc_name": pc_name, "stage": progress["stage"]})
         return
@@ -661,7 +662,7 @@ async def _authenticate(conn: _AgentConn) -> bool:
 
 async def _register(conn: _AgentConn, payload) -> bool:
     """İlk mesaj. Donanım bilgisi (dna_payload) geldiyse kimlik eşitlemesi, kayıt jetonunun tüketimi ve cihaz kaydı;
-    sonra bağlantı kaydedilir (manager.active_agents) ve ajana sunucu bilgisi gider. Kayıttan önce bağlantı komut
+    sonra bağlantı kaydedilir (manager.register_agent) ve ajana sunucu bilgisi gider. Kayıttan önce bağlantı komut
     almaz ve başka bir bağlantının yerini almaz. Bağlantı reddedildiyse False."""
     if "dna_payload" not in payload:
         if conn.auth_method == "enroll":
@@ -671,7 +672,7 @@ async def _register(conn: _AgentConn, payload) -> bool:
         await execute_query(
             "UPDATE agent_versions SET features = $2 WHERE pc_name = $1", (conn.hwid, conn.agent_features)
         )
-        manager.active_agents[conn.hwid] = conn.ws
+        await manager.register_agent(conn.hwid, conn.ws)
         peer_cache.connected(conn.hwid, conn.agent_features, conn.ws.headers.get(peer_cache.HEADER))
         await _send_server_info(conn.ws)
         await _sync_exam(conn.hwid)
@@ -704,7 +705,7 @@ async def _register(conn: _AgentConn, payload) -> bool:
     if new_secret:
         await _finish_enroll(conn, new_secret, enroll_lab)
 
-    manager.active_agents[conn.hwid] = conn.ws
+    await manager.register_agent(conn.hwid, conn.ws)
     peer_cache.connected(conn.hwid, conn.agent_features, conn.ws.headers.get(peer_cache.HEADER))
     await _send_server_info(conn.ws)
     await _send_bypass_key(conn)
@@ -729,7 +730,7 @@ async def _reconcile_identity(conn: _AgentConn, dna_payload: dict) -> Optional[b
     (reconcile_device) ve eski kimliğin anahtarı ile bypass anahtarı yeni kimliğe taşınır."""
     if conn.auth_method == "secret":
         mismatch = await check_known_device(conn.hwid, dna_payload, conn.client_ip)
-        if mismatch and manager.active_agents.get(conn.hwid) is not None:
+        if mismatch and await manager.is_online(conn.hwid):
             # Aynı kimlik ve anahtar, başka bir donanımdan, asıl cihaz bağlıyken: kayıttan SONRA alınmış bir imajın
             # klonu. Bağlı cihazın yerini almaz, yönetici uyarılır (yoksa 40 klon tek cihaz görünür).
             await _reject_clone(conn.ws, conn.hwid, conn.client_ip, conn.agent_version)
@@ -874,7 +875,7 @@ async def _receive_loop(conn: _AgentConn) -> None:
 async def _close(conn: _AgentConn) -> None:
     """Bağlantının sonu: cihaz Offline yazılır, kopuşun sebebi saklanır. Yeniden bağlanan ajanın yeni soketi
     kayıtlıysa ona dokunulmaz (o durumda bu eski bağlantının kapanması cihazın kopması değildir)."""
-    if manager.disconnect_agent(conn.hwid, conn.ws):
+    if await manager.release_agent(conn.hwid, conn.ws):
         heartbeats.discard(conn.hwid)
         peer_cache.disconnected(conn.hwid)
         await execute_query(

@@ -52,7 +52,8 @@ Notifications are stored for the panel's **Bildirimler** and, if configured, sen
 Some state is kept only in the backend process's memory: which agents and panels are connected, the Vision
 sockets, remote-control session grants, pending screenshot requests, updates waiting for a result, and the
 notification de-duplication and rate counters. Everything else is in PostgreSQL
-([`database.md`](database.md)). Because of the in-memory state the backend runs as a single worker.
+([`database.md`](database.md)). Because of the in-memory state the backend runs as a single worker unless
+`REDIS_URL` is set, in which case several workers share routing and state through Redis ([`ha.md`](ha.md)).
 
 ### Database
 

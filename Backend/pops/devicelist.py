@@ -22,8 +22,13 @@ GET /api/devices kopyadan yalnızca kendi sınıflarının satırlarını döner
 Panel bildirimi de kapsamlı sokete yalnızca kendi sınıflarından bir cihaz değişince, sürümsüz gider (changed_labs).
 
 Sürüm, açılış anının milisaniyesiyle başlar ve milisaniyeden çok daha yavaş artar (turda en fazla bir, artı panel
-işlemleri): yeniden başlatmadan önceki bir sürüm yeni sürecin günlüğünden her zaman eskidir (tam liste döner). Tek
-uvicorn worker'ı varsayılır (bkz. docs/decisions.md).
+işlemleri): yeniden başlatmadan önceki bir sürüm yeni sürecin günlüğünden her zaman eskidir (tam liste döner).
+
+Birden fazla backend süreci (REDIS_URL, docs/ha.md): sürüm Redis'teki ortak sayaçtan alınır (her süreçte aynı sürüm
+aynı değişikliği anlatır) ve değişikliği bulan süreç değişen satırları events kanalında yayımlar; diğer süreçler
+kopyalarına ve günlüklerine aynı sürümle işler, kendi panellerine bildirir. Dakikalık tarama bir dakikada tek süreçte
+yapılır. Redis yokken sürümler süreçler arasında karşılaştırılamaz: ETag ve ?since= kapalıdır (tam liste döner);
+bağlantı gelince her süreç bütün listeyi yeniden tarar.
 """
 
 import asyncio
@@ -35,6 +40,7 @@ import time
 from typing import Iterable, Optional
 
 from pops import agent_health, metrics, timeutil
+from pops.cluster import CH_EVENTS, cluster
 from pops.db import execute_query
 
 log = logging.getLogger("pops.devicelist")
@@ -131,10 +137,14 @@ class ChangeLog:
         return len(self._items)
 
     def add(self, version: int, now: float, changed: Iterable[str] = (), removed: Iterable[str] = ()) -> None:
+        latest = next(reversed(self._items.values()))[0] if self._items else None
         for pcs, gone in ((changed, False), (removed, True)):
             for pc in pcs:
                 self._items.pop(pc, None)
                 self._items[pc] = (version, now, gone)
+        if latest is not None and version < latest:
+            # Birden fazla süreçte başka sürecin değişikliği geç gelebilir: günlük sürüm sırasında kalır
+            self._items = collections.OrderedDict(sorted(self._items.items(), key=lambda kv: kv[1][0]))
         self.trim(now)
 
     def trim(self, now: float) -> None:
@@ -181,8 +191,13 @@ def reset() -> None:
     S, _lock, _wake = _State(), asyncio.Lock(), asyncio.Event()
 
 
+def _comparable() -> bool:
+    """Sürümler bütün süreçlerde aynı anlamda mı (tek süreç, ya da Redis'e ulaşılıyor)."""
+    return not cluster.enabled() or cluster.healthy
+
+
 def etag() -> Optional[str]:
-    return 'W/"d%d"' % S.version if S.ready else None
+    return 'W/"d%d"' % S.version if S.ready and _comparable() else None
 
 
 def etag_matches(header: Optional[str], tag: Optional[str]) -> bool:
@@ -208,7 +223,7 @@ def etag_matches(header: Optional[str], tag: Optional[str]) -> bool:
 
 def delta(since: int) -> Optional[dict]:
     """'since' sürümünden bu yana değişenler; yanıtlanamıyorsa None (çağıran tam listeyi döner)."""
-    if not S.ready or since > S.version:
+    if not S.ready or since > S.version or not _comparable():
         return None
     got = S.log.since(since)
     if got is None:
@@ -313,7 +328,8 @@ async def _refresh(pcs: Optional[set], scan: bool) -> bool:
         return False
     S.changed_labs.update(fresh[pc]["lab"] for pc in changed + seen)
     S.changed_labs.update(S.rows[pc]["lab"] for pc in removed)
-    S.version += 1
+    shared = await cluster.next_version(S.version) if cluster.enabled() else None
+    S.version = shared if shared is not None else S.version + 1
     for pc in changed:
         S.published[pc] = fresh[pc]["last_seen"]
     for pc in seen:
@@ -325,7 +341,52 @@ async def _refresh(pcs: Optional[set], scan: bool) -> bool:
         S.seen_ver.pop(pc, None)
     S.log.add(S.version, now, changed, removed)
     metrics.count("device_list_versions")
+    if shared is not None:
+        await cluster.publish(CH_EVENTS, {
+            "k": "devlist", "v": S.version, "rows": {pc: fresh[pc] for pc in changed}, "removed": removed,
+            "seen": {pc: fresh[pc]["last_seen"] for pc in seen},
+        })
     return True
+
+
+_remote_tasks = set()
+
+
+def _on_remote(data: dict) -> None:
+    """Başka sürecin bulduğu değişiklik (birden fazla süreç): aynı sürümle kopyaya ve günlüğe işlenir."""
+    task = asyncio.ensure_future(_apply_remote(data))
+    _remote_tasks.add(task)
+    task.add_done_callback(_remote_tasks.discard)
+
+
+async def _apply_remote(data: dict) -> None:
+    if not S.ready:
+        return
+    async with _lock:
+        version, now = int(data["v"]), time.monotonic()
+        rows, removed, seen = data.get("rows") or {}, data.get("removed") or [], data.get("seen") or {}
+        # Kapsamlı panellerin bildirimi için değişen sınıflar (taşınan cihazın eski sınıfı dahil; bkz. _refresh)
+        S.changed_labs.update(S.rows[pc]["lab"] for pc in list(rows) + list(seen) + list(removed) if pc in S.rows)
+        S.changed_labs.update(row.get("lab") for row in rows.values())
+        for pc, row in rows.items():
+            S.rows[pc] = row
+            S.published[pc] = row.get("last_seen")
+        for pc, last_seen in seen.items():
+            if pc in S.rows:
+                S.rows[pc] = dict(S.rows[pc], last_seen=last_seen)
+            S.published[pc] = last_seen
+            S.seen_ver[pc] = version
+        for pc in removed:
+            S.rows.pop(pc, None)
+            S.published.pop(pc, None)
+            S.seen_ver.pop(pc, None)
+        S.log.add(version, now, list(rows), removed)
+        S.version = max(S.version, version)
+    _wake.set()
+
+
+cluster.handlers["devlist"] = _on_remote
+cluster.reconnect_hooks.append(lambda: touch_all())
 
 
 async def _init() -> None:
@@ -333,6 +394,12 @@ async def _init() -> None:
         rows = await fetch_rows()
         S.rows = {r["hw_id"]: r for r in rows}
         S.published = {pc: r["last_seen"] for pc, r in S.rows.items()}
+        if cluster.enabled():
+            # Ortak sayaç bu sürecin başlangıç sürümünü geçer: başka süreçlerin bundan sonraki sürümleri bu sürecin
+            # önceki her sürümünden büyük olur
+            shared = await cluster.next_version(S.version)
+            if shared is not None:
+                S.version = S.log.floor = shared
         S.ready = True
 
 
@@ -352,6 +419,10 @@ async def run_loop(broadcast) -> None:
         started = time.monotonic()
         try:
             scan = S.scan_due or started - last_scan >= SCAN_SECONDS
+            if scan and not S.scan_due and cluster.enabled() and await cluster.claim("devlist-scan",
+                                                                                     int(SCAN_SECONDS) - 5) is False:
+                # Birden fazla süreçte dakikalık taramayı bu dakika başka bir süreç yaptı
+                scan, last_scan = False, started
             if scan or S.dirty:
                 pcs, S.dirty = S.dirty, set()
                 if scan:

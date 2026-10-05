@@ -19,7 +19,9 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from migrate import run_migrations_on
-from pops import db, devicelist, glpi, heartbeats, notify, peer_cache, secretbox, tenancy, timeutil, update_tracking
+from pops import db, devicelist, glpi, heartbeats, notify, peer_cache, scheduler, secretbox, tenancy
+from pops import timeutil, update_tracking
+from pops.cluster import cluster
 from pops.apiversion import ApiVersionMiddleware
 from pops.logs import setup_logging, stop_background_writer
 from pops.metrics import RequestContextMiddleware
@@ -66,7 +68,6 @@ from pops.routers import (
     tokens,
 )
 from pops.routers.system import build_router as _build_system_router
-from pops.scheduler import scheduler_loop
 from pops.security import _totp_code, create_jwt, limiter, require_admin, require_superadmin
 
 # server modülünden dışarıya açılan adlar: uvicorn için 'app'; testler ve geri uyum için JWT/TOTP
@@ -177,8 +178,9 @@ async def startup_event():
             await secretbox.reseal_sso_secrets(execute_query)
             # Yeniden başlatmadan önce gönderilmiş, sonucu beklenen ajan güncellemeleri (S20)
             await update_tracking.load()
-            # Açılışta hiçbir ajan bağlı değil; bağlananlar yeniden Online yazılır
-            await execute_query("UPDATE clients SET status = 'Offline' WHERE status IS DISTINCT FROM 'Offline'")
+            # Birden fazla süreç (REDIS_URL): Redis kanalları ve paylaşılan kayıt (bkz. pops/cluster.py, docs/ha.md)
+            await cluster.start(manager)
+            await _mark_disconnected_offline()
 
             admin_user = os.environ.get('PANEL_ADMIN_USER', 'admin')
             admin_pass = os.environ.get('PANEL_ADMIN_PASS')
@@ -198,7 +200,7 @@ async def startup_event():
             else:
                 log.info("panel yönetici hesabı mevcut", extra={"user": admin_user})
             # Zamanlanmış görevler + güncelleme sonucu gelmeyen ajan uyarısı (30 sn'de bir)
-            app.state.scheduler = asyncio.create_task(scheduler_loop())
+            app.state.scheduler = asyncio.create_task(scheduler.scheduler_loop())
             # Heartbeat'ler toplu yazılır (bkz. pops/heartbeats.py)
             app.state.heartbeats = asyncio.create_task(heartbeats.flush_loop())
             # Cihaz listesi sürümü ve panele "değişti" bildirimi (bkz. pops/devicelist.py)
@@ -209,6 +211,7 @@ async def startup_event():
         except Exception as e:
             log.error("veritabanı bağlantı hatası", extra={"attempt": i + 1, "of": 5, "error": repr(e)[:300]})
             # Yarım kalan denemenin havuzu kapatılır (bir sonraki deneme yenisini açar; bağlantılar sızmasın)
+            await cluster.stop()
             if db.db_pool is not None:
                 await db.db_pool.close()
                 db.db_pool = None
@@ -217,6 +220,20 @@ async def startup_event():
                 # sağlık kontrolü de başarısız görünür
                 raise RuntimeError("Veritabanına bağlanılamadı ya da migration'lar uygulanamadı (5 deneme)") from e
             await asyncio.sleep(3)
+
+
+async def _mark_disconnected_offline():
+    """Açılışta bu süreçte hiçbir ajan bağlı değil; bağlananlar yeniden Online yazılır. Birden fazla süreçte başka bir
+    sürece bağlı ajanlar Online kalır (Redis'e ulaşılamazsa hepsi Offline yazılır, heartbeat'leri düzeltir)."""
+    held = await cluster.online_agents() if cluster.enabled() else None
+    if held is None:
+        await execute_query("UPDATE clients SET status = 'Offline' WHERE status IS DISTINCT FROM 'Offline'")
+    else:
+        await execute_query(
+            "UPDATE clients SET status = 'Offline' WHERE status IS DISTINCT FROM 'Offline' "
+            "AND NOT (pc_name = ANY($1::text[]))",
+            (held,),
+        )
 
 
 # Kapanışta beklenecek en uzun süre (saniye); systemd'nin durdurma süresinin (varsayılan 90 sn) altında kalır
@@ -236,6 +253,9 @@ async def shutdown_event():
             except (asyncio.CancelledError, Exception):
                 pass
     await glpi.stop()   # süren GLPI eşitlemesi (havuz kapanmadan)
+    # Bu sürecin Redis kaydı (worker, kalan ajanları) silinir; periyodik işler başka sürece geçer
+    await cluster.stop()
+    await scheduler.release_leadership()
     if db.db_pool:
         try:
             await asyncio.wait_for(heartbeats.flush(), SHUTDOWN_DRAIN_SECONDS)
