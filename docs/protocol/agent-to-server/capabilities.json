@@ -35,6 +35,18 @@
     "files_enabled": {
       "type": "boolean",
       "description": "File transfer (`file_push` / `file_pull`) allowed on this device. Agents that support file transfer always send it; when it is missing the server treats the agent as not supporting it and sends no file commands."
+    },
+    "exam_enabled": {
+      "type": "boolean",
+      "description": "Exam mode (`exam_mode`) allowed on this device. Sent by agents that implement exam mode (they announce `exam` in `X-Agent-Features`); when it is missing the server does not know the state."
+    },
+    "power_enabled": {
+      "type": "boolean",
+      "description": "Power actions (`power`: shut down, restart, sign out, lock) allowed on this device. Sent by agents that announce `power` in `X-Agent-Features`; when it is missing the server does not know the state."
+    },
+    "message_enabled": {
+      "type": "boolean",
+      "description": "Messages to the signed-in user (`user_message`) allowed on this device. Sent by agents that announce `message` in `X-Agent-Features`; when it is missing the server does not know the state."
     }
   }
 }

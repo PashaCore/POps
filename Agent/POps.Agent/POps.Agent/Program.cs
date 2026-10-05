@@ -22,8 +22,13 @@ namespace POpsAgent
                 return; // Uygulamayı burada bitir, hostu hiç başlatma.
             }
 
+            // Log ve veri klasörleri appsettings.json'dan (LogDirectory / DataDirectory; bkz. AgentDirectories), ilk log
+            // satırından önce. Servis seçilen klasörleri oluşturup kilitler; --generalize aynı klasörlerdeki dosyaları siler.
+            bool generalize = Generalizer.IsRequested(args);
+            FolderSettings folders = AgentDirectories.Apply(secure: !generalize);
+
             // İmaj öncesi temizlik: servis durdurulur, cihaza özel dosyalar silinir (bkz. Generalizer; çıkış kodları orada)
-            if (Generalizer.IsRequested(args))
+            if (generalize)
             {
                 Environment.ExitCode = Generalizer.Run(args, Console.Out);
                 return;
@@ -38,6 +43,7 @@ namespace POpsAgent
             // POpsHelpers ile sistem başlangıcını logluyoruz
             POpsHelpers.Log("AGENT", "========================================");
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor ({Worker.AppVersion})");
+            AgentDirectories.LogChoice(folders);
 
             // Tatbikat kararı açılışın başında alınır; health.json ancak Worker çekirdek başlangıcını tamamlayınca yazılır.
             bool suppressOperationalHealth = AgentUpdate.ApplyRollbackDrillOnStartup();

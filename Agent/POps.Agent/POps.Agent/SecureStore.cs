@@ -17,7 +17,8 @@ namespace POpsAgent
     [SupportedOSPlatform("windows")]
     public static class SecureStore
     {
-        public const string DefaultDir = @"C:\POpsData\secure";
+        // Veri klasörü (DataDirectory) seçilince servis açılışta Dir'i <veri klasörü>\secure yapar (bkz. AgentDirectories)
+        public const string DefaultDir = FolderSettings.DefaultDataDirectory + @"\secure";
 
         // Ajanın çalıştığı hesap (LocalSystem). Birim testleri bunu testi çalıştıran kullanıcıya çevirir: korumalı
         // dosyayı değiştirmek için SYSTEM'in sahip olduğu hakları test kullanıcısı üstlenir.
@@ -28,18 +29,13 @@ namespace POpsAgent
 
         public static string PathOf(string name) => Path.Combine(Dir, name);
 
-        // Klasörü yoksa korumalı ACL ile oluşturur, varsa ACL'ini her açılışta yeniden kurar.
+        // Klasörü yoksa korumalı ACL ile oluşturur, varsa ACL'ini her açılışta yeniden kurar (bkz. FolderSettings.Secure).
+        // Sahibi güvenilir değilse SYSTEM yapılır: klasörü önceden açan bir kullanıcı sahip olarak izinleri yeniden açabilirdi.
         public static void EnsureDirectory()
         {
-            var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-            var sec = new DirectorySecurity();
-            sec.SetAccessRuleProtection(true, false);
-            sec.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-            sec.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-
-            var dir = new DirectoryInfo(Dir);
-            if (dir.Exists) dir.SetAccessControl(sec);
-            else dir.Create(sec);
+            string error = FolderSettings.Secure(Dir, usersRead: false, out bool tightened);
+            if (error != null) throw new IOException($"{Dir} kilitlenemedi: {error}");
+            if (tightened) POpsHelpers.Log("SECURE", FolderSettings.TightenedNote(Dir, usersRead: false));
         }
 
         public static FileSecurity ProtectedFileSecurity()

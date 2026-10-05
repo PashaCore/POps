@@ -62,7 +62,8 @@ why.
 **What does the user at the PC see?**
 The POps icon in the system tray at all times; a notice when a screen preview is taken (at most every five
 minutes, and the tooltip shows the time of the last one); a consent dialog, or for a mandatory session a
-full-screen countdown with the reason; the fair-use text if the school sets one; and the lock screen when the PC
+full-screen countdown with the reason (if the PC was locked when the session started, a banner from the moment the
+user returns until the session ends); the fair-use text if the school sets one; and the lock screen when the PC
 is quarantined. There is no hidden mode.
 
 **Can a read-only account watch screens?**

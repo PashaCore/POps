@@ -245,12 +245,13 @@ namespace POps.Tests.Agent
             Assert.False(longOne.TryGetProperty("path", out _));
         }
 
-        // capabilities: sunucu örneği capabilities.files.json ile aynı alanlar ve sıra (exam_enabled yok)
+        // capabilities: sunucu örneği capabilities.files.json ile aynı alanlar ve sıra
         [Fact]
         public void Capabilities_HaveTheServerKeys()
         {
             AgentCapabilities.Load();
-            Assert.Equal(new[] { "type", "terminal_enabled", "vision_enabled", "server_ca", "files_enabled" }, AgentCapabilities.StatusMessage().Keys);
+            Assert.Equal(new[] { "type", "terminal_enabled", "vision_enabled", "server_ca", "files_enabled", "exam_enabled", "power_enabled", "message_enabled" },
+                AgentCapabilities.StatusMessage().Keys);
             Assert.Equal(true, AgentCapabilities.StatusMessage()[AgentCapabilities.Files]);
         }
 

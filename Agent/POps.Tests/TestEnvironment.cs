@@ -21,6 +21,8 @@ namespace POps.Tests
         // Testlerin kullandığı veri ve güvenli klasörler (hep geçici klasörün içinde)
         public static readonly string DefaultDataDir = Path.Combine(Root, "data-default");
         public static readonly string DefaultSecureDir = Path.Combine(Root, "secure-default");
+        // SYSTEM bileşenlerinin log klasörü (loglar yine LogDirectoryOverride'a gider; bu yalnızca yol olarak kullanılır)
+        public static readonly string DefaultMachineLogDir = Path.Combine(Root, "machine-logs");
 #endif
 
         static TestEnvironment()
@@ -29,11 +31,14 @@ namespace POps.Tests
             // Korumalı dosyaların ACL'inde test kullanıcısı "servis hesabı" olarak yer aldığı için silinebilirler
             AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { Directory.Delete(Root, true); } catch { } };
             SecurityIdentifier me = WindowsIdentity.GetCurrent().User;
+            // Klasör izinleri (veri, log, secure) testte "servis hesabı" olarak test kullanıcısına verilir
+            POps.Shared.FolderSettings.SystemSid = me;
 #if NETFRAMEWORK
             POps.Installer.Setup.SystemSid = me;
 #else
             DefaultConfigPaths = POps.Shared.POpsHelpers.ConfigPaths.ToArray();
             POps.Shared.POpsHelpers.LogDirectoryOverride = Path.Combine(Root, "logs");
+            POps.Shared.POpsHelpers.MachineLogDir = DefaultMachineLogDir;
             POps.Shared.POpsHelpers.ConfigPaths = new string[0];
             POpsAgent.SecureStore.SystemSid = me;
             POpsAgent.SecureStore.Dir = DefaultSecureDir;
@@ -45,6 +50,7 @@ namespace POps.Tests
             POps.Shared.ServerTrust.CaPath = Path.Combine(DefaultSecureDir, POps.Shared.ServerTrust.FileName);
             // Karantina testleri gerçek Görev Yöneticisi / oturum politikalarına dokunmasın
             POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
+            IsolatePowerAndSessions();
 #endif
         }
 
@@ -75,6 +81,8 @@ namespace POps.Tests
             if (!IsUnderRoot(POpsAgent.AgentUpdate.DataDir)) POpsAgent.AgentUpdate.DataDir = DefaultDataDir;
             if (!IsUnderRoot(POpsAgent.SecureStore.Dir)) POpsAgent.SecureStore.Dir = DefaultSecureDir;
             if (!IsUnderRoot(POps.Shared.ServerTrust.CaPath)) POps.Shared.ServerTrust.CaPath = Path.Combine(DefaultSecureDir, POps.Shared.ServerTrust.FileName);
+            if (!IsUnderRoot(POps.Shared.POpsHelpers.MachineLogDir)) POps.Shared.POpsHelpers.MachineLogDir = DefaultMachineLogDir;
+            POpsAgent.AgentDirectories.Problem = null;
             if (!(POpsAgent.KioskMode.Registry is FakeKioskRegistry)) POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
             // Güncelleme indirmeleri testlerde BITS'e gitmez (BITS testleri sahte çalıştırıcıyla açar)
             POpsAgent.BitsDownload.Enabled = false;
@@ -89,6 +97,23 @@ namespace POps.Tests
             // Testler gerçek winget'i asla çalıştırmaz (ör. paylaşılan protokol vektörlerindeki winget_install); gereken sınıf
             // kendi sahtesini kurar
             POpsAgent.WingetInstall.Locator = () => null;
+            IsolatePowerAndSessions();
+        }
+
+        // Testler bu makineyi asla kapatmaz, yeniden başlatmaz, oturumu kapatmaz ya da kilitlemez: gerçek güç API'sinin
+        // yerine her çağrıda hata veren sahte, oturum sorgularının yerine "kullanıcı yok" konur. Test kendi sahtesini
+        // koyar; bir sonraki test yeniden bu reddeden sahtelerle başlar.
+        public static readonly Func<POpsAgent.PowerOperation, int, bool> RefusingPowerApi =
+            (operation, taskId) => throw new InvalidOperationException($"Testte gerçek güç API'si çağrıldı ({operation}, görev {taskId}).");
+
+        public static void IsolatePowerAndSessions()
+        {
+            POpsAgent.PowerActions.Execute = RefusingPowerApi;
+            POpsAgent.PowerActions.TrayLockTimeout = TimeSpan.FromSeconds(5);
+            POpsAgent.SessionTasks.HasConsoleUser = () => false;
+            POpsAgent.SessionTasks.ConsoleSession = () => POps.Shared.UserSessionLauncher.NoSession;
+            POpsAgent.SessionTasks.Delay = System.Threading.Tasks.Task.Delay;
+            POpsAgent.UserMessages.AckTimeout = TimeSpan.FromMinutes(30);
         }
 
         private static bool IsUnderRoot(string path) =>

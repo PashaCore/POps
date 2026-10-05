@@ -358,7 +358,9 @@ async def run(c, sup, socks):
                                             "detail": "manifest imzası geçersiz"}))
     got = await inbox({pc: socks[pc] for pc in ("HW-PCC2", "HW-PCC3")}, 1.5)
     chk(len(got["HW-PCC2"]) == 1 and not got["HW-PCC3"], "ret: PCC2 hemen tohum oldu")
-    c_info = await wait_lab(sup, c_lab, LAB_C, lambda x: x.get("state") == "fallback", TIMEOUT + 6)
+    # Durum gönderimlerden önce "fallback" olur: gönderim de bitene kadar beklenir (yüklü CI'da yarış olmasın)
+    c_info = await wait_lab(sup, c_lab, LAB_C,
+                            lambda x: x.get("state") == "fallback" and x.get("without_peers") == 1, TIMEOUT + 6)
     chk(c_info.get("state") == "fallback" and c_info.get("without_peers") == 1 and c_info.get("tried")
         == ["HW-PCC1", "HW-PCC2"], "tohum kalmadı: eşsiz gönderildi (%s)" % c_info)
     got = await inbox({"HW-PCC3": socks["HW-PCC3"]}, 1)

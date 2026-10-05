@@ -73,7 +73,9 @@ namespace POpsAgent
 
         private void Start(uint session, string exeName)
         {
-            if (UserSessionLauncher.TryStart(session, Path.Combine(_installDir, exeName), out int pid, out string error))
+            // Watchdog update.lock'u servisin veri klasöründe arar (appsettings.json'u kullanıcı oturumunda okuyamaz)
+            string arguments = exeName == "POpsWatchdog.exe" ? AgentDirectories.WatchdogArguments() : null;
+            if (UserSessionLauncher.TryStart(session, Path.Combine(_installDir, exeName), out int pid, out string error, arguments))
             {
                 _lastProblem = null;
                 int count = _starts.TryGetValue(exeName, out int n) ? n + 1 : 1;

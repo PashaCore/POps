@@ -24,7 +24,9 @@ namespace POpsWatchDog
 
         // POpsUpdater güncelleme boyunca bu dosyayı tutar; msiexec servisi durdurup tepsiyi kapattığında
         // watchdog onları yeniden başlatıp kurulumla yarışmasın. Updater çökse bile 15 dk sonra yok sayılır.
-        static readonly string UpdateLockPath = @"C:\POpsData\update.lock";
+        // Veri klasörünü servis (ya da updater) --datadir ile geçirir: appsettings.json (DataDirectory) kullanıcı
+        // oturumunda okunamaz. Verilmezse ya da geçersizse C:\POpsData.
+        static string UpdateLockPath = Path.Combine(POps.Shared.FolderSettings.DefaultDataDirectory, "update.lock");
         static readonly TimeSpan StaleUpdateLockAge = TimeSpan.FromMinutes(15);
         static bool _updatePauseLogged;
 
@@ -42,6 +44,12 @@ namespace POpsWatchDog
                 SpawnVersionWindow();
                 return;
             }
+
+            // Servisin veri klasörü (yalnızca değer denetlenir; diske servis bakmıştır)
+            var folders = POps.Shared.FolderSettings.FromArguments(args ?? Array.Empty<string>(),
+                POps.Shared.FolderRules.ForMachine(AppContext.BaseDirectory), checkLocation: false);
+            UpdateLockPath = Path.Combine(folders.DataDirectory, "update.lock");
+            foreach (string problem in folders.Problems) POpsHelpers.Log("WATCHDOG", problem, true);
 
             // Form yok: süreç arka planda döngüyü çalıştırarak yaşar
             Task.Run(() => RunAsync()).GetAwaiter().GetResult();

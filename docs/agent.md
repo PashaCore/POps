@@ -135,6 +135,10 @@ The wire format of both WebSockets (`/ws/agent`, `/ws/vision`) is specified in [
 - **Authentication.** Before it has a device secret the agent sends the enrollment token (`X-Enroll-Token`); the
   server answers with `set_secret`. From then on it sends `X-Agent-Secret`. Secrets live in `C:\POpsData\secure`
   (SYSTEM and Administrators only) and are never written to a log. See [`security.md`](security.md#agent-identity).
+- **Features.** The command connection also carries `X-Agent-Features: exam,files,winget,power,message`, the
+  optional server actions this agent implements. The server sends `exam_mode`, file transfers, `winget_install`,
+  `power` and `user_message` only to agents that list them; older agents never receive them and older servers ignore
+  the header.
 - **Vision authentication.** The command socket may use the enrollment token for first registration, but the
   Vision socket never sends it: Vision requires the device's `X-Agent-Secret` and stays closed before enrollment.
   A Vision `4401` rejection clears the stream and local approval without an automatic retry.
@@ -150,6 +154,7 @@ What the service does with each server command:
 | --- | --- |
 | `execute` | Runs the command line as a temporary `.bat` through `cmd.exe` as LocalSystem (UTF-8, 30-minute limit) and returns the output as a `result`. Refused when the terminal capability is off. Used by **Dağıtım**, **Uzak komut** and the PC actions on **Cihazlar** and **Sınıflar** through the task queue. The `.bat` (`pops_task_<32 hex>.bat` in the service's temp folder) is deleted when the task ends; from 0.1.14-alpha files left by a crash are deleted at service start, before the first task (only names matching exactly that pattern). Output is read in fixed 8192-character chunks, not by line, so even a single line of hundreds of megabytes stays within the 524 288-character (512 Ki) limit (the rest is read and dropped, the pipe never blocks). The same task ID is never run twice at once: a repeated `execute` for a running task is logged and ignored. Exit codes the agent sets itself: -1 time limit, -2 cancelled, -3 agent error, -4 service stopping, -5 refused (terminal capability off). |
 | `winget_install` | Installs a winget package as LocalSystem; see [below](#winget_install-contract). Sent only to agents that announce `winget` in `X-Agent-Features`. Agents without it never receive it (the server marks the task `Denied` instead). |
+| `cancel_task` | Stops a running `execute` (exit code -2), a `power` countdown or a `user_message` that waits for its click. |
 | `power` / `user_message` | Shut down, restart, sign out or lock with a tray countdown and note; show a message to the signed-in user. See [below](#power-and-user_message-contract). Sent only to agents that announce `power` / `message` in `X-Agent-Features`. |
 | `get_hardware` | Posts the hardware inventory. |
 | `start_vision_session` | Passes the session request to the tray (consent dialog or mandatory countdown). |
@@ -163,7 +168,7 @@ What the service does with each server command:
 | `result_ack` | The server stored the task result for `task_id`; the agent deletes it from `C:\POpsData\secure\pending-results.json`. |
 | `update_result_ack` | The server stored the update result with this `result_id`; the agent sets `update-result.json` aside. |
 | `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
-| `set_capabilities` | Switches terminal and/or Vision **off**; requests to switch them on are ignored. |
+| `set_capabilities` | Switches capabilities **off**: the server sends `terminal_enabled` / `vision_enabled`; the agent also applies `exam_enabled`, `files_enabled`, `power_enabled` and `message_enabled`. Requests to switch one on are ignored. |
 | `update_agent` | Starts a signed update (below). |
 
 The server may also send `scan_updates` and `install_updates`
@@ -188,9 +193,14 @@ command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine 
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
 that partly changed (no decision taken), 1080 a change of the server's modules, 1090 a configuration that could not
-be read, 1100 a clipboard shared in a Vision session (direction and length only), 1110/1111/1112 exam mode
-started, ended and an app closed during an exam, and 1120/1121 a file pushed to or pulled from the PC. Failure to
-write an event does not stop the
+be read (or a `DataDirectory` / `LogDirectory` that was refused, the default folder is used), 1100 a
+clipboard shared in a Vision session (direction and length only), 1110/1111/1112 exam mode
+started, ended and an app closed during an exam, 1120/1121 a file pushed to or pulled from the PC, 1130 a
+power action accepted (operation, delay, requester and task; not the note), 1140 a message shown to the user
+(task, title and text length, style, whether a click is required, requester; never the title or text), 1141
+the end of a message that waited for a click (`acknowledged`, `timeout`, `cancelled` or `service_stopping`) and
+1150 a Vision session that started while the PC was locked (session, requester, mandatory; see
+[`vision.md`](vision.md#a-session-that-starts-while-the-pc-is-locked)). Failure to write an event does not stop the
 service.
 
 ### `winget_install` contract
@@ -365,12 +375,16 @@ desteklemiyor …"). The old command is an `execute`, so it still needs the term
 
 ## Capability policy
 
-Terminal (`execute`), Vision (streaming, previews, remote input), exam mode and file transfer can be disabled per
-PC, so that even a compromised server cannot use them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`,
-`EXAM_ENABLED`, `FILES_ENABLED`, `1` / `0`);
+Terminal (`execute`), Vision (streaming, previews, remote input), exam mode, file transfer, power actions
+(`power`) and user messages (`user_message`) can be disabled per PC, so that even a compromised server cannot use
+them there. The MSI sets them (`TERMINAL_ENABLED`, `VISION_ENABLED`, `EXAM_ENABLED`, `FILES_ENABLED`,
+`POWER_ENABLED`, `MESSAGE_ENABLED`, `1` / `0`; all on by default);
 the server can only switch them off (**Sistem** → "Cihaz yetenekleri"). A refused command is closed with
 a `[REDDEDİLDİ]` result and reported as `capability_denied`. Re-enabling needs a local administrator: MSI repair or
-reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; see
+reinstall with `…_ENABLED=1`. The state is in `C:\POpsData\secure\capabilities.json`; a capability missing from an
+older file counts as on. The `capabilities` message reports all six (`terminal_enabled`, `vision_enabled`,
+`files_enabled`, `exam_enabled`, `power_enabled`, `message_enabled`) with `server_ca`; the last three are optional
+in the schema, so older agents that do not send them stay valid. See
 [`Agent/README.md`](../Agent/README.md#capability-policy).
 
 ## File transfer
@@ -473,13 +487,97 @@ connects.
     never as the first message of a connection. A change while the server is unknown or unreachable is reported
     after the next `server_info`.
 - **Capability:** `exam_enabled` in `capabilities.json`, on by default; `EXAM_ENABLED=0` switches it off locally.
-  The agent also applies `exam_enabled: false` from `set_capabilities` (and ignores `true`). It is not part of the
-  `capabilities` message (the server's schema has no such field). With it off, `exam_mode` with `enabled: true`
+  The agent also applies `exam_enabled: false` from `set_capabilities` (and ignores `true`) and reports it as
+  `exam_enabled` in the `capabilities` message. With it off, `exam_mode` with `enabled: true`
   is answered with one `capability_denied` (`capability: exam`, `action: exam_mode`) and nothing is applied. If it
   is switched off while exam mode runs (reinstall with `EXAM_ENABLED=0`, or `set_capabilities`), the agent leaves
   exam mode within 2 seconds and sends `exam_state` with `enabled: false`.
 - **Events:** 1110 exam started (allow list, end time, apps), 1111 ended (`server`, `until` or `capability`),
   1112 app closed (once per app and exam).
+
+## Power actions and user messages
+
+How the Windows agent implements the [`power` and `user_message` contract](#power-and-user_message-contract). It
+announces `power` and `message` in `X-Agent-Features`, and the server sends the two actions only to agents that do.
+Each task gets exactly one `result`, kept until `result_ack` like the result of `execute`. The agent checks every
+field again against the server's schemas ([`power.json`](protocol/server-to-agent/power.json),
+[`user_message.json`](protocol/server-to-agent/user_message.json)).
+
+**Text.** The server cleans the note, title and text before sending them; the agent repeats the same cleaning, so a
+message that bypassed the server still reaches the screen as plain text:
+
+- `\r\n` and `\r` become `\n`; U+2028 and U+2029 count as line breaks too;
+- control characters other than `\n` (C0, DEL, C1) are removed, a tab becomes a space;
+- text-direction controls (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), zero-width and invisible format characters
+  (U+200B–U+200D, U+2060–U+2065) and U+FEFF are removed;
+- the power note and the title are one line: every line break becomes a space;
+- the message text keeps its line breaks, without spaces at the end of a line and with at most one empty line in a
+  row;
+- leading and trailing white space is removed.
+
+Lengths are counted in Unicode characters, as JSON Schema and the server do (an emoji is one character), on the value
+that arrived.
+
+**`power`** (`op` `shutdown`, `restart`, `logoff` or `lock`; `delay` 0–600 seconds; `message` up to 200 characters or
+`null`):
+
+- **Checks, in this order.** No integer `task_id`: ignored (nothing to report to). The `power` capability is off:
+  exit code -5, `[REDDEDİLDİ] Bu cihazda uzaktan güç işlemleri kapalı …` and `capability_denied`. A field is invalid
+  (`op` missing or unknown, `delay` missing, `null` or not an integer from 0 to 600, `message` too long or neither
+  text nor `null`): -5, `[REDDEDİLDİ] Geçersiz güç isteği: …`, without `capability_denied`. `logoff` or `lock` while
+  nobody is signed in at the console: -6, `[REDDEDİLDİ] oturum açık kullanıcı yok`. Otherwise the request is accepted
+  and event 1130 is written. A `message` that is missing, `null` or empty once cleaned means no note.
+- **Countdown.** With a delay the tray shows a window on top of the others: "Bilgisayar 60 sn içinde yeniden
+  başlatılacak" (… kapatılacak, "Oturumunuz … kapatılacak", … kilitlenecek), the note, and "Açık çalışmalarınızı
+  şimdi kaydedin; kaydedilmemiş değişiklikler kaybolur." (for a lock: "Kilit açıldığında programlarınız açık
+  kalır."). It does not take the keyboard focus, and the user may close it: the action happens anyway. The service
+  owns the timer, so the action also happens without a tray; a tray that connects during the countdown shows the
+  remaining seconds. With `delay` 0 the agent acts at once, without a window.
+- **Acting.** When the time is up the agent sends the result first (0, `[TAMAM] Bilgisayar kapatılıyor.` /
+  `… yeniden başlatılıyor.` / `[TAMAM] Kullanıcının oturumu kapatılıyor.` / `[TAMAM] Bilgisayar kilitleniyor.`) and
+  then acts; after a shutdown or restart the server receives it on the next connection if it did not arrive before.
+  A `logoff` or `lock` whose user signed out during the countdown ends with -6 instead. An action that fails after
+  the result was sent is only logged (`[HATA] Güç işlemi uygulanamadı`).
+  - Shutdown and restart: `%SystemRoot%\System32\shutdown.exe /s` or `/r` with `/t 0 /f /d p:0:0`. Running programs
+    are closed without asking (lab PCs must not hang on a "save changes?" dialog); the countdown and the note are the
+    warning.
+  - Sign-out: `WTSLogoffSession` on the console session, from the service.
+  - Lock: a service running as LocalSystem cannot lock the user's desktop, so the tray calls `LockWorkStation` when it
+    runs in the console session; the session stays the console session and the user unlocks as usual. When the tray
+    is not connected, runs in another session (Remote Desktop) or does not confirm within 5 seconds, the service
+    disconnects the console session (`WTSDisconnectSession`): programs keep running and Windows shows the sign-in
+    screen, but until the user signs in again the PC reports nobody at the console.
+- **One countdown at a time.** The same `task_id` again is ignored, as for `execute`. A newer `power` replaces the
+  running countdown; the older task ends with -2. `cancel_task` with the task's ID stops the countdown (-2,
+  `[İPTAL EDİLDİ]: Güç işlemi panelden iptal edildi; bilgisayara dokunulmadı.`); the tray closes the window and shows
+  "Güç işlemi iptal edildi". `set_capabilities` with `power_enabled` `false` stops it the same way. If the service
+  stops during the countdown the result is -4.
+
+**`user_message`** (`title` 1–80 characters, `text` 1–1000, `style` `info` or `warning`, `requires_ack`; all four are
+required):
+
+- **Checks.** The same order: integer `task_id`, the `message` capability (-5 and `capability_denied`), the fields
+  (-5, `[REDDEDİLDİ] Geçersiz mesaj: …`; a title or text that is empty once cleaned is invalid too). Only the tray in
+  the user's session can show a message:
+  - no tray connected and nobody signed in at the console: -6, `[REDDEDİLDİ] oturum açık kullanıcı yok`;
+  - no tray connected but someone signed in: -3, `[HATA]: POps tepsisi bu bilgisayarda çalışmıyor; mesaj
+    gösterilmedi.` (the server marks the task `Failed`; -6 on the wire means only that nobody is signed in).
+
+  A connected tray counts as a user who can read it, so a message also reaches a Remote Desktop user. Messages are
+  not queued for later.
+- **Window.** On top of the others, without taking the keyboard focus: the title, the text with its line breaks and
+  an information or warning icon. It has no default button, so Enter typed in another program cannot acknowledge it.
+- **Result.** Without `requires_ack` the window has a "Kapat" button and the result is sent at once: `[TAMAM]
+  gösterildi`. With `requires_ack` it has only "Tamam" (with the hint "Okuduğunuzu bildirmek için Tamam'a basın.";
+  Alt+F4 does not close it) and the result waits: `[TAMAM] okundu` when the user clicks, `[TAMAM] gösterildi,
+  onaylanmadı` after 30 minutes or when the service stops. There is no earlier `[TAMAM] gösterildi` for such a
+  message: the server keeps only the first result of a task. While it waits, a tray that reconnects shows it again,
+  the same `task_id` is ignored and `cancel_task` closes the window (-2).
+- **Privacy.** Event 1140 records the task, the lengths of title and text, style, `requires_ack` and the requester;
+  1141 how a message that waited ended. Neither the event log nor the agent's logs contain the title or text.
+
+Exit code -6 is also `CommandRunner.ExitDuplicate` (a repeated `execute`), which the agent never sends; for `power`
+and `user_message` it is sent and means that nobody is signed in.
 
 ## Modules
 
@@ -776,7 +874,7 @@ today; `peers` is read only after that.
 
 | Path | Contents |
 | --- | --- |
-| `C:\Program Files\POps\` | Programs and `appsettings.json` (`ServerUrl`, `PersistDir`; SYSTEM and Administrators only). |
+| `C:\Program Files\POps\` | Programs and `appsettings.json` (`ServerUrl`, `PersistDir`, `DataDirectory`, `LogDirectory`; SYSTEM and Administrators only). |
 | `C:\POpsData\identity.key` | Hardware ID. |
 | `C:\POpsData\secure\` | `agent.secret`, `enroll.token`, `bypass.secret`, `capabilities.json`, `isolation.json`, `lockdown.json`, `bypass-state.json`, `hw.bind`, `clone-<time>\` (SYSTEM and Administrators only). |
 | `C:\POpsData\health.json`, `update.lock`, `update-result.json`, `update-progress.json` | Update state. |
@@ -785,6 +883,11 @@ today; `peers` is read only after that.
 | `C:\POpsData\packages\installed.msi`, `updates\`, `updater\` | Rollback package, downloaded update, updater copy. |
 | `C:\POpsLogs\POps_<yyyyMMdd>.log`, `msi-*.log` | Service and updater log, and the updater's msiexec logs (SYSTEM and Administrators only). At start and once a day the service deletes these logs when they are older than 30 days, and the oldest ones while the folder holds more than 200 MB; today's log is never deleted. |
 | `%LOCALAPPDATA%\POps\Logs\` | Per-user logs: `POpsWatchdog_<yyyyMMdd>.log` and the tray's `TrayLog.txt` (message types only, rotated at 1 MB). |
+
+`C:\POpsData` and `C:\POpsLogs` are the defaults. `DataDirectory` and `LogDirectory` in `appsettings.json` move them
+(for example to `D:\POpsData`); the subfolders and files above keep their names and permissions inside the chosen
+folder, the updater and the watchdog get the same folders from the service, and nothing is moved when the setting
+changes. Rules and caveats: [`configuration.md`](configuration.md#log-and-data-folders).
 
 Uninstalling removes the programs, the service, the Run entry and `appsettings.json`, but keeps `C:\POpsData`
 (identity and secret) and `C:\POpsLogs`, so a reinstalled PC returns with the same identity.

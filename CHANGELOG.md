@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent: power actions and messages to the user.** The agent announces `power` and `message` in `X-Agent-Features` and follows the server's `power` and `user_message` schemas. `power` shuts the PC down, restarts it, signs the user out or locks it, after a countdown of up to 10 minutes that the tray shows on top with the administrator's note ("Bilgisayar 60 sn içinde yeniden başlatılacak"); the service keeps the time, so it also acts without the tray, and the result is sent just before acting. Lock goes through the tray (`LockWorkStation`) and falls back to disconnecting the console session; sign-out uses `WTSLogoffSession`; shutdown and restart use `shutdown.exe /f`. `cancel_task` stops a countdown. `user_message` shows a window with a title, a text of up to 1000 characters and an info or warning icon; with `requires_ack` the single result waits for the user's Tamam (`[TAMAM] okundu`) for up to 30 minutes. Sign-out, lock and messages need a signed-in user (otherwise exit code -6, "[REDDEDİLDİ] oturum açık kullanıcı yok"); a message while a user is signed in but the tray is not running fails with -3. Every field is checked again on the agent and the text is cleaned as on the server (control, text-direction and zero-width characters removed; title and note on one line). Both can be switched off on the PC with the new MSI properties `POWER_ENABLED=0` / `MESSAGE_ENABLED=0` (on by default) or by the server with `set_capabilities`; switching on again needs the MSI. New event log entries 1130 (power action), 1140 and 1141 (message shown and its outcome) hold only metadata, never the message text.
+- **Agent: the `capabilities` message reports `exam_enabled`, `power_enabled` and `message_enabled`** (optional fields in the schema), next to `terminal_enabled`, `vision_enabled`, `files_enabled` and `server_ca`.
+- **Agent: log and data folders from `appsettings.json`.** `LogDirectory` and `DataDirectory` move `C:\POpsLogs` and `C:\POpsData`, for example to a second disk; the defaults are unchanged.
+  - Full local paths only: relative, network (UNC) and device paths, wildcards, alternate data streams, a drive root, the Windows, profiles and install folders, `Program Files` / `ProgramData` themselves, and folders whose parent users could replace are refused. A refused value falls back to the default with an error in the log and event 1090; the agent still starts.
+  - The chosen folders get the same permissions as the defaults (no inheritance). The updater and the watchdog get the folders from the service; the MSI uses them on an upgrade or repair. Nothing is moved when the setting changes; see `docs/configuration.md`.
 - **Organisational units (district → school).** A superadmin builds a tree of units on **Ayarlar → Birimler**, puts labs into units, and gives users and API tokens a scope.
   - A scoped account sees and acts only on its units' devices, sub-units included.
   - The server enforces the scope on every endpoint (`Backend/pops/tenancy.py`), so it also holds for API tokens. Out-of-scope ids answer `404`, and organisation-wide settings answer `403`.
@@ -124,6 +129,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CI: the agent's nullable baseline only shrinks.** `tools/check_nullable_baseline.py` (CI's version job) compares the agent files that carry `#nullable disable` with the fixed list in `tools/nullable_baseline.txt` (53 files: 41 in the agent service, 9 in the shared library, 2 in the updater, 1 in the MSI custom actions).
+  - A file outside the list that turns nullable off fails CI; new files must be nullable-clean.
+  - A listed file that is gone or no longer has the line fails too, until its entry is removed, so the list shrinks as files are cleaned. A product project without `<Nullable>enable</Nullable>` also fails.
+- **Agent: a mandatory Vision session that starts while the PC is locked is no longer silent** (owner decision 5, `docs/vision.md`).
+  - The countdown still runs on the hidden desktop, but the tray records that the user's desktop was not on screen when the session started.
+  - As soon as the user's desktop returns, the tray shows a balloon and a banner at the bottom of the screen that the user cannot close ("Ekranınız Bilgi İşlem tarafından izleniyor (oturum bilgisayarınız kilitliyken başladı)", with the admin, the reason and the session ID). The banner stays until the session ends, and no picture of the user's desktop is sent before it is on screen.
+  - The PC writes event 1150 to the Windows event log and posts an `agent.vision_locked_start` entry to the server's event log (existing `POST /api/logs`; no protocol change).
+  - Routine (consent) sessions still wait for the user's answer.
+  - The tray now also stops capturing when it loses its connection to the service.
 - **Real timestamps.** The older tables' text dates become `TIMESTAMPTZ` (migration `0031`), read in the server's time zone (`POPS_TZ`, else the system zone). The API returns ISO 8601 with an offset; CSV keeps readable local time. Audit chains written before the update still verify.
 - **The deploy backs up the database before a rewriting migration.** `pops-deploy-backend` runs `pg_dump` before any migration marked `-- pops: dump-before`. It keeps at most 3 dumps, respects `KEEP_BACKUPS` and checks free space first.
   - **Upgrading:** reinstall `Installer/server/pops-deploy-backend` to `/usr/local/sbin/pops-deploy-backend` before deploying. `0031` rewrites large tables (logs, tasks, audit), so the update takes longer.
@@ -196,6 +210,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Agent folders: owner checked on every start.** If the data, `secure` or log folder is owned by another account (for example a student who created `C:\POpsData` before the agent was installed), the service and the MSI set the owner to SYSTEM when they lock the folder; before, that account could open the permissions again.
 - **A scoped account cannot reach another school's devices.** That holds for lists and direct ids, through the panel, the REST API, API tokens and the panel WebSocket, including the device-list version and `devices_changed`.
 - **The peer cache is off by default, and a PC listens only when told.** `update_agent` carries `"peer_cache": true` only while the setting is on, and only to the PCs that take part in a staged rollout. Without it the agent keeps no package, starts no cache server and opens no port. The README's "no inbound ports on PCs" holds unless an admin turns the peer cache on.
 - **Directory and OIDC sign-in are verified end to end.**
