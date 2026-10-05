@@ -368,3 +368,42 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   SYSTEM), so it must be treated like an admin password; the audit trail shows which token did what. Uploads over
   8 MB through `/api/v1` need the updated reverse-proxy rule on existing servers. Endpoint and model changes must
   commit the regenerated schema.
+
+## D-22 winget packages as their own agent action
+
+**Since:** after 0.1.22-alpha (server and panel; the agent side follows).
+
+- **Context:** A reviewer listed a winget/Chocolatey catalog as missing: schools install the same browsers, office
+  suites and teaching tools on every PC, and building an MSI/EXE package for each is slow. Every deployment so far
+  is an `execute` task: the panel builds a command line and the agent runs it through `cmd.exe`. Agents in the
+  field are old and new at once, and an agent ignores a command `action` it does not know.
+- **Options:**
+  - (a) Send winget as an `execute` task whose `script_path` carries a marker and a structured payload. Old agents
+    would hand the marker to `cmd.exe` as a command line: something would run (an error, or winget through a shell
+    with server-supplied text), which is exactly what must not happen.
+  - (b) A new action, `winget_install`, with the package as data, answered with the normal `result`.
+- **Decision:** (b).
+  - The step type is `WINGET` with `{"id", "version"}`. The task row gets `kind = 'winget'` and the package in
+    `payload` (migration `0024`); `script_path` holds the readable command line for the panel and the audit log and
+    is never sent. Retries copy `kind` and `payload`, so a winget task can never become an `execute`.
+  - Old agents must not receive it at all: they would ignore it and leave the task `Running` until the 35-minute
+    timeout. An agent that implements it says so with `X-Agent-Features: winget` when it connects; the server
+    stores the list per connection (`agent_versions.features`) and sends `winget_install` only to such an agent.
+    For every other agent the task becomes `Denied` with exit code -8 before anything is sent. The panel warns
+    before deploying to computers whose agent lacks the feature. The server lists `winget` in
+    `server_info.features`.
+  - Ids match `^[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}$` and versions `^[0-9A-Za-z.+_-]{1,40}$`, checked on the request,
+    again before dispatch and again by the agent. The agent starts `winget.exe` without a shell, with each argument
+    as its own `ArgumentList` entry, so nothing in an id or version can become a command.
+  - The agent runs it only where the local terminal capability is on and the lab's `deploy` module is on: it
+    installs software as SYSTEM, like package deployment through `execute`, so the D-08 lock covers it too. The
+    server checks the module before dispatch.
+  - winget exit codes that mean "already installed" or "installed, restart pending" count as `Completed`.
+  - The catalog (69 packages, ids checked against `microsoft/winget-pkgs`) is a Python module,
+    `Backend/pops/winget_catalog.py`, not a JSON file: `pops-deploy-backend`, which self-update runs from
+    `/usr/local/sbin`, copies only the tracked `Backend/*.py`, migrations, keys and `VERSION`, so a data file
+    would never reach installed servers. Packages that are not in the catalog can still be deployed by id.
+- **Consequences:** No old agent runs or loses a winget step; it is refused with a reason the panel can show.
+  The agent needs one more handler and one header. PCs need winget (App Installer) and internet access to the
+  winget source; offline schools keep using uploaded packages (D-15). A per-PC switch for deployment separate
+  from the terminal capability would need a new local capability and is not part of this change.
