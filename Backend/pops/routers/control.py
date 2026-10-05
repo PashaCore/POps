@@ -111,6 +111,10 @@ async def end_audit_session(data: EndAuditSessionInput, auth: dict = Depends(req
 async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
     # Kilitlemek karantina modülüne bağlı; kaldırmak (unlock) ve bypass kodu her zaman çalışır
     await modules.check("quarantine", pc_name=data.target_pc)
+    # Linux ajanında (ilk sürüm) karantina yok: cihaz "kilitli" ve istek "bekleyen" görünmesin (çevrimdışı cihaz da)
+    row = await execute_query("SELECT platform FROM clients WHERE pc_name = $1", (data.target_pc,), fetch=True)
+    if row and row[0].get("platform") == "linux":
+        raise HTTPException(status_code=409, detail="Linux ajanında karantina henüz yok; bilgisayar kilitlenmedi.")
 
     # Karantina logunu yaz
     admin_name = auth.get('sub')

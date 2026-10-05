@@ -230,7 +230,7 @@ See [`vision.md`](vision.md) for the session rules.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/api/security/lockdown` | require_admin | **Deprecated:** `POST /api/v1/devices/{pc_name}/quarantine` `{reason}`. `{target_pc, reason}`: marks the device quarantined and sends `lockdown`. Logged to both audit tables. |
+| POST | `/api/security/lockdown` | require_admin | **Deprecated:** `POST /api/v1/devices/{pc_name}/quarantine` `{reason}`. `{target_pc, reason}`: marks the device quarantined and sends `lockdown`. Logged to both audit tables. `409` for a Linux PC (`clients.platform = linux`): the Linux agent has no quarantine yet. |
 | POST | `/api/security/unlock` | require_admin | `{target_pc, reason}`: clears quarantine and sends `unlock`. **Deprecated:** `DELETE /api/v1/devices/{pc_name}/quarantine` `{reason}`. |
 | POST | `/api/security/bypass_token/{pc_name}` | require_admin | **Deprecated:** `POST /api/v1/devices/{pc_name}/bypass-code`. The device's next offline bypass code for today (per-device key; the legacy `BYPASS_SECRET` code for older agents). Each request returns the next of up to 10 daily codes (`n`), because 0.1.13+ agents accept each code once. Logged, `Cache-Control: no-store`. |
 

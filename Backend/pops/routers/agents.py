@@ -494,6 +494,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
     active_hwid = pc_name
     agent_version = websocket.headers.get("X-Agent-Version", "unknown")
     platform_header = websocket.headers.get("X-Agent-Platform")
+    platform = agent_platform(platform_header)
     connected_at = time.monotonic()
     close_reason = "bilinmiyor"
 
@@ -862,9 +863,11 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                             "AND status IN ('Running', 'Completed', 'Failed', 'Unknown', 'Interrupted', 'Timed Out')",
                             (denied_task, active_hwid),
                         )
-                    if payload.get("capability") == "quarantine" and payload.get("reason") == "not_supported":
+                    if (payload.get("capability") == "quarantine" and payload.get("reason") == "not_supported"
+                            and auth_method == "secret" and platform == "linux"):
                         # Bu ajanda karantina yok (Linux ajanı): kilit isteği "bekleyen" kalmasın ve panel cihazı
-                        # kilitli göstermesin; yönetici reddi bildirimden görür
+                        # kilitli göstermesin; yönetici reddi bildirimden görür. Yalnızca anahtarla doğrulanmış Linux
+                        # ajanından: başka bir bağlantı bu iletiyle karantina durumunu silemesin.
                         await execute_query(
                             "UPDATE clients SET is_quarantined = FALSE, pending_quarantine_action = NULL, "
                             "pending_quarantine_reason = NULL WHERE pc_name = $1",

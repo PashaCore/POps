@@ -20,9 +20,11 @@ capability policy and signed releases, and appears in the panel as a **Linux** d
 | Signed self-update with rollback | |
 | Local append-only audit log | |
 
-A request for something that is not in this version (quarantine, screen view, Windows Update scan) is answered with
-`capability_denied` and reason `not_supported`: the panel shows it as refused and a notification says the agent does
-not support it; the device is not left marked as quarantined.
+The server does not quarantine a Linux PC: **Karantinaya al** answers `409` ("Linux ajanında karantina henüz yok")
+and nothing is marked as locked. Other requests for something that is not in this version (screen view, Windows
+Update scan) are answered by the agent with `capability_denied` and reason `not_supported`: the panel shows them as
+refused and a notification says the agent does not support them. A `lockdown` that reaches the agent anyway (sent
+before the server knew the platform) is refused the same way, and the server then clears the quarantine flag.
 
 Known limitations of this version:
 

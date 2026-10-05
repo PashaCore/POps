@@ -432,7 +432,7 @@ Different on Linux:
 | Commands | `/bin/sh -c` as root in `/`, clean environment, no input. **Uzak komut** says so and does not offer the Windows-only quick commands. The panel's restart and shut-down commands (`shutdown /r|/s /f /t N`) run as `systemctl reboot|poweroff` after N seconds. |
 | Inventory | Hardware from `/proc` and `/sys`; installed packages from `dpkg-query` (library and debug packages left out; `install_date` from the package's file list). No Windows Update data: the panel shows "—". |
 | Signed-in user | From systemd-logind (active local session, graphical first). |
-| Not in this version | Screen view and remote input, quarantine and the offline bypass (the device key is stored and acknowledged), tray, notices, help desk, DNS policy alerts. These requests are answered with `capability_denied` and reason `not_supported`; a refused quarantine does not leave the device marked as locked. |
+| Not in this version | Screen view and remote input, quarantine and the offline bypass (the device key is stored and acknowledged), tray, notices, help desk, DNS policy alerts. The server refuses to quarantine a Linux PC (`409`); the other requests are answered by the agent with `capability_denied` and reason `not_supported`, so the panel shows them as refused. |
 | Files | `/etc/pops-agent/` (configuration, `0700`), `/var/lib/pops-agent/` (identity, secret, spool, update state, `0700`), `/var/log/pops-agent/` (log rotated daily and at 10 MB, 30 days; audit log; updater log). |
 
 Tests: `python3 -m pytest Agent-Linux/tests` (no root needed); CI runs them on the distribution's packages, builds the

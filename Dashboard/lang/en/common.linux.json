@@ -1,3 +1,4 @@
 {
-  "Uzak ekran Linux ajanında henüz yok": "Remote screen is not in the Linux agent yet"
+  "Uzak ekran Linux ajanında henüz yok": "Remote screen is not in the Linux agent yet",
+  "Linux ajanında karantina henüz yok; bilgisayar kilitlenmedi.": "Quarantine is not in the Linux agent yet; the computer was not locked."
 }

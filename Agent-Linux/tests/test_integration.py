@@ -8,8 +8,8 @@ Ortam (yoksa test atlanır):
 
 Adımlar: kayıt jetonu → ajan kaydolur (anahtar 0600, jeton ayardan silinir) → panel cihazı Linux ve çevrimiçi
 gösterir → donanım envanteri gelir → komut çıkış koduyla döner → onaylanan sonuç diskten silinir → sunucu uzak komutu
-kapatınca komut "Denied" (-5, "[REDDEDİLDİ] …") olur → karantina emri desteklenmiyor diye reddedilir → ajan SIGTERM
-ile temiz kapanır ve yerel denetim izi sağlamdır.
+kapatınca komut "Denied" (-5, "[REDDEDİLDİ] …") olur → sunucu Linux bilgisayarı karantinaya almaz (409) → ajan
+SIGTERM ile temiz kapanır ve yerel denetim izi sağlamdır.
 """
 
 import json
@@ -153,13 +153,10 @@ def test_linux_agent_against_backend(tmp_path, token):
         # Onaylanan sonuç diskten silindi
         wait_for("onay bekleyen sonuç kalmasın", lambda: not (state / "pending-results.json").exists(), 15)
 
-        # Karantina bu sürümde yok: emir capability_denied ile reddedilir, ajan çökmez
-        status, _ = api("/api/security/lockdown", {"target_pc": hw_id, "reason": "entegrasyon testi"}, token)
-        assert status in (200, 202), status
-        wait_for("karantina reddi yerel denetimde",
-                 lambda: "unsupported_refused" in (logs / "audit.log").read_text(), 20)
-        # ...ve panel cihazı kilitli göstermez (sunucu bekleyen kilit isteğini bırakır)
-        wait_for("panel kilitli göstermesin", lambda: device(token, hw_id)["is_quarantined"] is False, 20)
+        # Karantina bu sürümde yok: sunucu Linux bilgisayarı kilitlemez (409), panel kilitli göstermez
+        status, body = api("/api/security/lockdown", {"target_pc": hw_id, "reason": "entegrasyon testi"}, token)
+        assert status == 409 and "Linux" in str(body), (status, body)
+        assert device(token, hw_id)["is_quarantined"] is False
 
         # Sunucu uzak komutu kapatır: ajan kalıcı kaydeder, bildirir; komut Denied, -5, [REDDEDİLDİ]
         status, _ = api("/api/system/set-capabilities", {"pc_name": hw_id, "terminal_enabled": False}, token)
