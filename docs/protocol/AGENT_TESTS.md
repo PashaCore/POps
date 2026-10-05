@@ -3,7 +3,8 @@
 The files in [`examples/`](examples/) are shared test vectors. The backend checks them in
 `Backend/tests/test_protocol.py`; every agent implementation should check them too, so that a change on either side
 shows up as a failing test instead of a field the other side silently ignores. This page describes the tests for
-the Windows agent (`Agent/POps.Tests`, xUnit). The Linux agent can follow the same list.
+the Windows agent (`Agent/POps.Tests`, xUnit). The Linux agent runs the same checks in
+`Agent-Linux/tests/test_protocol_vectors.py` (pytest; the schema checks need `python3-jsonschema`).
 
 ## Finding the files
 
@@ -47,12 +48,17 @@ isolation callbacks, so no firewall rule or real setting is touched.
    | `set_identity.json` | `HwId` is `HW-9B41D07E5A2C` |
    | `set_bypass_secret.json` | ignored, nothing stored or sent (the test worker has no device-secret connection); `BypassSecretCommand.Process(secret, true, …)` with the vector's `secret` stores it and returns the `fingerprint` of `examples/agent-to-server/bypass_secret_ack.json` |
    | `execute*.json` with the terminal capability off | a `result` with `exit_code` -5 and a `capability_denied` with the same `task_id` |
+   | `winget_install*.json` | agents that do not implement it (and do not send `X-Agent-Features: winget`): ignored, nothing sent. Agents that do, with the terminal capability off: a `result` with `exit_code` -5 and a `capability_denied` with the same `task_id`; with the `deploy` module off: the same with `capability` `deploy` and `reason` `module_disabled` |
    | `cancel_task.json`, `result_ack.json`, `update_result_ack.json`, `unlock.json` | no exception; nothing sent |
    | `lockdown.json` | the fake isolation is applied (`NetworkIsolation.StatePath` exists) |
+   | `exam_mode.json` | exam mode applied with the vector's allow list, message, program list and `until`; an `exam_state` with `enabled: true` is sent. With the `exam` capability off: one `capability_denied` (`capability` `exam`, `action` `exam_mode`) and nothing applied |
+   | `exam_mode.off.json` | no exception; exam mode removed if it was applied (then an `exam_state` with `enabled: false`) |
    | `set_capabilities.*.json` | the capabilities are off afterwards and a `capabilities` message is sent |
    | `remote_input.*.json` with Vision off | one `capability_denied` (capability `vision`) |
+   | `select_monitor*.json`, `set_quality.json`, `clipboard.json` | Vision-channel messages: through `Worker.HandleVisionControlAsync` with Vision off, one `capability_denied`; `VisionRelay.TrayMessageFor` gives `VISION_SELECT:1` / `VISION_SELECT:all`, `VISION_QUALITY:…`, and `CLIPBOARD_SET:…` only with `userAccepted` |
    | `scan_updates.json`, `install_updates.*.json`, `wake_peer.json` with the module off (`AgentModules`) | `capability_denied` with `reason` `module_disabled` |
    | `update_agent.json` | refused: the manifest is signed with the test key, not the release key (see 3) |
+   | `file_push.json`, `file_pull.json` with file transfer off | a `capability_denied` (capability `files`) or a `file_result` `rejected` with the same `transfer_id`; nothing is downloaded or uploaded (with it on, the URLs point at a test server that does not exist: a `file_result` `failed`) |
    | `unknown/server-to-agent.json` | ignored: no exception, nothing sent |
 
    Running `execute` for real is already covered by `WorkerCommandTests`; here it is enough to refuse it, so the

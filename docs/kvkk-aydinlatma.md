@@ -20,9 +20,12 @@
 | Kurulu yazılımlar (ad, sürüm, yayıncı, kurulum tarihi) ve Windows Update durumu | Sunucu DB | Varlık ve yama yönetimi | Kurum belirler | BT yöneticisi |
 | Denetim kayıtları (kim, ne zaman, hangi işlem) | Sunucu DB (`device_audit_logs` / `agent_logs_v2`) | Hesap verebilirlik | Kurum belirler | BT yöneticisi |
 | Politika ihlali uyarıları (DNS/kategori) | Sunucu DB | İçerik politikası | Kurum belirler | BT yöneticisi |
+| **Yöneticinin bilgisayardan istediği dosya** (Dosya al) ve bilgisayara gönderilen dosya | Sunucu diski (`Backend/transfers`); veritabanında yalnızca ad, boyut, SHA-256, yol, gerekçe, kim ve ne zaman | Destek / denetim (gerekçe zorunlu, denetim kaydına yazılır) | Alınan dosya **7 gün** sonra silinir; gönderilen dosya bilgisayar indirince silinir | İsteyen yönetici ve diğer adminler; isteğin kendisi tepsideki "Etkinlik geçmişim"de görünür |
 
-**POps'un TOPLAMADIĞI:** tuş kaydı (keylogger yoktur), dosya içerikleri, kişisel
-dosya/tarayıcı geçmişi. Ekran görüntüsü **gizlice** alınmaz — her önizleme tepsi
+**POps'un TOPLAMADIĞI:** tuş kaydı (keylogger yoktur), tarayıcı geçmişi; dosya içerikleri yalnızca bir yönetici
+belirli bir dosyayı gerekçe yazarak açıkça istediğinde (Dosya al) ve yalnızca o dosya alınır, kendiliğinden ya da toplu
+dosya taraması yapılmaz. Başka kullanıcıların profilinden dosya almak süper admin işidir. Dosya aktarımı modülü
+kapatılabilir; bilgisayarda da kapatılabilir. Ekran görüntüsü **gizlice** alınmaz — her önizleme tepsi
 ipucunu günceller ve en fazla 5 dakikada bir bildirim gösterir; canlı oturum onay
 ister ya da zorunlu oturumda geri sayım + gerekçe gösterir; tepsi simgesi her zaman
 görünür, gizli mod yoktur.

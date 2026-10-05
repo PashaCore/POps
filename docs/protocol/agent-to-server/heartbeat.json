@@ -116,11 +116,11 @@
             },
             "bios_sn": {
               "type": "string",
-              "description": "BIOS serial number."
+              "description": "BIOS serial number (Linux agent: SMBIOS system serial, else the board serial)."
             },
             "disk_sn": {
               "type": "string",
-              "description": "System disk serial (the Windows agent falls back to the volume ID)."
+              "description": "System disk serial (the Windows agent falls back to the volume ID, the Linux agent to the root file system's UUID)."
             },
             "mac": {
               "type": "string",
@@ -147,6 +147,10 @@
             "wmi_healthy": {
               "type": "boolean",
               "description": "Not used by the server."
+            },
+            "dmi_readable": {
+              "type": "boolean",
+              "description": "Linux agent: False when the DMI files (root only) could not be read. Not used by the server."
             }
           }
         },
@@ -163,6 +167,59 @@
     "lab_name": {
       "type": "string",
       "description": "Sent by the Windows agent (\"Atanmamis_Cihazlar\"); ignored."
+    },
+    "platform": {
+      "enum": [
+        "windows",
+        "linux"
+      ],
+      "description": "Linux agent: operating system family, the same value as its `X-Agent-Platform` header (the server prefers the header). Stored in `clients.platform` from the first message. The Windows agent does not send it (= windows)."
+    },
+    "system": {
+      "type": "object",
+      "description": "Linux agent: current load of the PC. Not stored by the server yet.",
+      "properties": {
+        "cpu_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "CPU use since the previous heartbeat, percent."
+        },
+        "mem_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Memory in use (MemTotal - MemAvailable), percent."
+        },
+        "disk_root_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Root file system in use, percent."
+        },
+        "uptime_s": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Seconds since boot."
+        },
+        "load1": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "One-minute load average."
+        }
+      }
     }
   }
 }

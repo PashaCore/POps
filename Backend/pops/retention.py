@@ -2,7 +2,9 @@
 
 Silinenler (süre global_settings'te, gün; 0 = süresiz sakla):
   * retention_days_logs:          ajan olay kayıtları (agent_logs_v2 ve eski agent_logs)
-  * retention_days_tasks:         sonuçlanmış görevler ve çıktıları (bekleyen/çalışan görevlere dokunulmaz)
+  * retention_days_tasks:         sonuçlanmış görevler ve çıktıları (bekleyen/çalışan görevlere dokunulmaz) ve
+                                  sonuçlanmış dosya aktarımı kayıtları (dosyası silinmiş olanlar; dosyalar ayrıca 7
+                                  günde silinir, bkz. pops/filestore.py)
   * retention_days_notifications: okunmuş bildirimler
 
 Silinmeyenler: device_audit_logs (hash zincirli denetim kaydı; satır silmek zinciri kırar, arşivleme planı için bkz.
@@ -86,6 +88,12 @@ async def apply() -> dict:
             "tasks",
             "created_at < $1 AND status = ANY($2::text[])",
             (_cutoff_text(cfg["retention_days_tasks"]), _FINISHED_TASKS),
+        )
+        removed["file_transfers"] = await _delete_in_batches(
+            "file_transfers",
+            "created_at < NOW() - make_interval(days => $1) AND storage_path IS NULL "
+            "AND status <> ALL($2::text[])",
+            (cfg["retention_days_tasks"], ["sent", "downloading", "uploading"]),
         )
     if cfg["retention_days_notifications"]:
         removed["notifications"] = await _delete_in_batches(

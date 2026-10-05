@@ -1,5 +1,6 @@
-"""Zamanlayıcı: vakti gelen zamanlanmış görevleri normal görev kuyruğuna ekler ve güncelleme
-gönderilip sonucu hiç gelmeyen ajanlar için bildirim üretir. Açılışta başlatılır, 30 sn'de bir döner.
+"""Zamanlayıcı: vakti gelen zamanlanmış görevleri normal görev kuyruğuna ekler, güncelleme
+gönderilip sonucu hiç gelmeyen ajanlar için bildirim üretir ve süresi dolan sınavları kapatır. Açılışta
+başlatılır, 30 sn'de bir döner.
 
 Saatler sunucunun saat diliminde yorumlanır. Birden fazla backend süreci çalışsa bile aynı görev iki
 kez eklenmez: tur, PostgreSQL advisory kilidiyle tek sürece verilir ve satırlar FOR UPDATE ile alınır.
@@ -14,7 +15,7 @@ import time
 import uuid
 from typing import Optional
 
-from pops import db, health_alerts, modules, retention, server_metrics, update_tracking
+from pops import db, exams, filestore, health_alerts, modules, retention, server_metrics, update_tracking
 from pops.audit import add_audit_log
 from pops.manager import manager
 from pops.notify import notify
@@ -262,10 +263,14 @@ async def scheduler_loop() -> None:
         try:
             await run_due()
             await reap_stuck_tasks()
+            # Bitişi gelen sınavlar kapanır, sınıfın bağlı ajanlarına enabled:false gider (pops/exams.py)
+            await exams.end_expired()
             await check_pending_updates()
             await check_licenses_daily()
             await retention.apply_daily()
             await health_alerts.check()
+            # Dosya aktarımı: süresi dolan jetonlar, gönderilmiş ve 7 günü dolan alınmış dosyalar (5 dk'da bir)
+            await filestore.purge_periodic()
             last_tick[0] = time.time()
         except asyncio.CancelledError:
             raise

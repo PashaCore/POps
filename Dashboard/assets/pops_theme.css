@@ -866,6 +866,26 @@ button:disabled { cursor: not-allowed; }
 .pops-dialog-field label { margin-bottom: 0.375rem; }
 .pops-dialog-field .field-error { margin-top: 0.375rem; }
 .pops-dialog-footer { padding: 0 var(--space-6) var(--space-5); display: flex; justify-content: flex-end; gap: 0.5rem; }
+/* POps.form: alanlar çağıranın; gönderim hatası en altta */
+.pops-form { display: flex; flex-direction: column; gap: 14px; margin-top: 0.875rem; }
+.pops-form > .field { margin: 0; }
+.pops-form .check { align-items: flex-start; }
+.pops-form .check input { margin-top: 2px; }
+.pops-dialog-error { margin-top: 0.875rem; padding: 0.625rem 0.75rem; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--danger-text); font-size: var(--text-sm); line-height: 1.45; overflow-wrap: anywhere; }
+/* Dosya seçme alanı ve yükleme ilerlemesi */
+.pops-drop { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 18px 14px; border: 1px dashed var(--border-default); border-radius: 12px; background: var(--bg-surface-2); text-align: center; cursor: pointer; margin: 0; transition: border-color 0.12s, background-color 0.12s; }
+.pops-drop:hover, .pops-drop.over, .pops-drop:focus-within { border-color: var(--primary-500); background: var(--primary-50); }
+.pops-drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; padding: 0; }
+.pops-drop .ico { color: var(--text-tertiary); margin-bottom: 2px; }
+.pops-drop.has .ico { color: var(--success-solid); }
+.pops-drop .drop-t { font-size: var(--text-sm); font-weight: var(--fw-medium); color: var(--text-primary); overflow-wrap: anywhere; }
+.pops-drop .drop-s { font-size: var(--text-xs); color: var(--text-muted); }
+.pops-prog { display: flex; align-items: center; gap: 10px; font-size: var(--text-xs); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.pops-prog[hidden] { display: none; }
+.pops-prog .pbar { flex: 1; }
+.field.has-error .pops-drop { border-color: var(--danger-solid); }
+/* Dosya aktarımı satırındaki yol: tek satır, tamamı üstüne gelince */
+.act .meta.path { font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
 
 /* ============ BİLDİRİM (TOAST) ============ */
 .toast-container {

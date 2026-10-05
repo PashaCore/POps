@@ -64,7 +64,6 @@
   "Uygulama kapatılıyor: {app}": "Closing app: {app}",
   "POps komut satırı": "POps command line",
   "Yönetici: {name}": "Admin: {name}",
-  "Komutlar hedefte SYSTEM hesabıyla, cmd.exe ile çalışır.": "Commands run on the target as SYSTEM, with cmd.exe.",
   "Rutin işler için sağ üstteki Hızlı komutlar menüsünü kullanın. Ekranı temizlemek için: cls": "For routine work, use the Quick commands menu at the top right. To clear the screen: cls",
   "Terminal çıktısı kopyalandı.": "Output copied.",
   "Kopyalanamadı; metni seçip elle kopyalayın.": "Could not copy; select the text and copy it by hand.",

@@ -48,7 +48,7 @@
     .vw-ctrl select { width: auto; min-height: 32px; padding-top: 4px; padding-bottom: 4px; }
     .vw-ctrl .ibtns { display: flex; gap: 2px; }
     .vw-stage { position: relative; background: var(--text-primary); height: calc(100vh - 290px); min-height: 280px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-    .vw-stage img { width: 100%; height: 100%; object-fit: contain; user-select: none; pointer-events: none; display: block; }
+    .vw-stage img, .vw-stage canvas { width: 100%; height: 100%; object-fit: contain; user-select: none; pointer-events: none; display: block; }
     #inputLayer { position: absolute; inset: 0; outline: none; z-index: 3; cursor: crosshair; }
     .vw-wait { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 0 24px; color: rgba(255, 255, 255, 0.82); font-size: var(--text-md); background: rgba(0, 0, 0, 0.45); }
     .vw-wait.solid { background: transparent; }
@@ -67,6 +67,29 @@
     .vw:fullscreen { border-radius: 0; }
     .vw:fullscreen .vw-stage { height: auto; flex: 1; }
     @media (max-width: 640px) { .vw-stage { height: 56vw; min-height: 200px; } }
+    /* Vision v2: ekran seçimi, görüntü ayarları, pano */
+    .vw-ctrl .segmented > button { min-width: 32px; }
+    .vw-ibtn-on { color: var(--primary-500); }
+    .vw-pop { position: absolute; top: 48px; right: 12px; z-index: 5; width: min(290px, calc(100% - 24px)); background: var(--bg-surface); color: var(--text-primary); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); padding: 14px 14px 2px; }
+    .vw-pop .field > label { display: flex; justify-content: space-between; gap: 8px; }
+    .vw-pop .field > label b { font-variant-numeric: tabular-nums; color: var(--text-primary); font-weight: var(--fw-semibold); }
+    .vw-pop input[type="range"] { width: 100%; accent-color: var(--primary-500); }
+    .vw-pop .field-hint { margin-bottom: 12px; }
+    .vw-clip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; padding: 12px 16px 4px; border-top: 1px solid var(--border-subtle); }
+    .vw-clip .field { margin-bottom: 8px; }
+    .vw-clip textarea { min-height: 76px; font-family: var(--font-mono); font-size: 12px; }
+    .vw-clip-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
+    .vw-clip-row .field-hint { min-width: 0; overflow-wrap: anywhere; }
+    .vw-clip-note { grid-column: 1 / -1; margin: 0 0 8px; }
+    .vw-clip.off textarea, .vw-clip.off .btn { opacity: 0.55; }
+    .vw-foot .rate { font-variant-numeric: tabular-nums; }
+    @media (max-width: 640px) {
+        .vw-clip { grid-template-columns: minmax(0, 1fr); }
+        /* Dar ekranda görüntü alanı alçak: ayar kutusu üstten başlar, açıklama gizlenir */
+        .vw-pop { top: 8px; left: 8px; right: 8px; width: auto; padding: 10px 12px 0; }
+        .vw-pop .field { margin-bottom: 10px; }
+        .vw-pop .field-hint { display: none; }
+    }
 
     /* Teşhis */
     .diag-out { background: var(--text-primary); color: #e5e5ea; border-radius: 10px; padding: 10px 12px; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; height: 220px; overflow: auto; margin-bottom: 14px; }
@@ -106,12 +129,15 @@
         <div class="vw-ctrl">
             <label class="switch-field" id="liveField"><span class="switch success"><input type="checkbox" id="liveSw"><span></span></span><?php _e('Canlı izle'); ?></label>
             <label class="switch-field off" id="ctrlField"><span class="switch warning"><input type="checkbox" id="ctrlSw" disabled><span></span></span><?php _e('Kontrol'); ?></label>
+            <div class="segmented" id="monSeg" role="group" aria-label="<?php _e('Ekran seçimi'); ?>" hidden></div>
             <select id="fpsSel" aria-label="<?php _e('Kare hızı'); ?>" hidden>
                 <option value="1"><?php _e('{n} kare/sn', ['n' => 1]); ?></option>
                 <option value="2" selected><?php _e('{n} kare/sn', ['n' => 2]); ?></option>
                 <option value="5"><?php _e('{n} kare/sn', ['n' => 5]); ?></option>
             </select>
             <div class="ibtns">
+                <button type="button" class="ibtn" data-act="quality" id="qualBtn" data-tip="<?php _e('Görüntü ayarları'); ?>" aria-label="<?php _e('Görüntü ayarları'); ?>" aria-expanded="false" aria-controls="qualPop" hidden><?php echo pops_icon('sliders'); ?></button>
+                <button type="button" class="ibtn" data-act="clip" id="clipBtn" data-tip="<?php _e('Pano'); ?>" aria-label="<?php _e('Pano'); ?>" aria-expanded="false" aria-controls="clipPanel" hidden><?php echo pops_icon('copy'); ?></button>
                 <button type="button" class="ibtn" data-act="snap" data-tip="<?php _e('Görüntüyü tazele'); ?>" aria-label="<?php _e('Görüntüyü tazele'); ?>"><?php echo pops_icon('refresh'); ?></button>
                 <button type="button" class="ibtn" data-act="full" data-tip="<?php _e('Tam ekran'); ?>" aria-label="<?php _e('Tam ekran'); ?>"><?php echo pops_icon('expand'); ?></button>
                 <button type="button" class="ibtn" data-act="more" data-tip="<?php _e('Diğer işlemler'); ?>" data-tip-pos="left" aria-label="<?php _e('Diğer işlemler'); ?>" aria-haspopup="menu"><?php echo pops_icon('more'); ?></button>
@@ -120,9 +146,34 @@
     </div>
     <div class="vw-stage" id="vwStage">
         <img id="liveImg" alt="" draggable="false" hidden>
+        <canvas id="liveCanvas" hidden></canvas>
         <div class="vw-wait solid" id="vwWait"></div>
         <div id="inputLayer" tabindex="0" aria-label="<?php _e('Uzak bilgisayar ekranı; fare ve klavye bu bilgisayara gider'); ?>" hidden></div>
         <span class="vw-badge" id="vwBadge"><span class="dot"></span><span id="vwBadgeT"><?php _e('Önizleme'); ?></span></span>
+        <div class="vw-pop" id="qualPop" role="group" aria-label="<?php _e('Görüntü ayarları'); ?>" hidden>
+            <div class="field">
+                <label for="qualRange"><?php _e('Görüntü kalitesi'); ?> <b id="qualVal"></b></label>
+                <input type="range" id="qualRange" min="30" max="75" step="5" value="60">
+            </div>
+            <div class="field">
+                <label for="scaleSel"><?php _e('Ölçek'); ?></label>
+                <select id="scaleSel"></select>
+            </div>
+            <p class="field-hint"><?php _e('Bunlar üst sınırdır: bağlantı yavaşlarsa bilgisayar önce kaliteyi, sonra ölçeği kendiliğinden düşürür.'); ?></p>
+        </div>
+    </div>
+    <div class="vw-clip" id="clipPanel" hidden>
+        <div class="field">
+            <label for="clipOut"><?php _e('Bilgisayara gönder'); ?></label>
+            <textarea id="clipOut" rows="3" placeholder="<?php _e('Metni buraya yazın ya da yapıştırın'); ?>"></textarea>
+            <div class="vw-clip-row"><span class="field-hint" id="clipOutHint"></span><button type="button" class="btn sm" id="clipSend"><?php echo pops_icon('send', 'sm'); ?><?php _e('Panoya gönder'); ?></button></div>
+        </div>
+        <div class="field">
+            <label for="clipIn"><?php _e('Bilgisayarda kopyalanan'); ?></label>
+            <textarea id="clipIn" rows="3" readonly placeholder="<?php _e('Bilgisayarda metin kopyalanınca burada görünür'); ?>"></textarea>
+            <div class="vw-clip-row"><span class="field-hint" id="clipInHint"></span><button type="button" class="btn secondary sm" id="clipCopy" disabled><?php echo pops_icon('copy', 'sm'); ?><?php _e('Kopyala'); ?></button></div>
+        </div>
+        <p class="field-hint vw-clip-note" id="clipNote"></p>
     </div>
     <div class="vw-foot" id="vwFoot"></div>
 </div>
@@ -181,6 +232,7 @@
 </div>
 <?php endif; ?>
 
+<script src="<?php echo htmlspecialchars(pops_asset('assets/pops_vision.js'), ENT_QUOTES, 'UTF-8'); ?>"></script>
 <script>
 (function () {
     const dev = POps.dev;
@@ -209,7 +261,19 @@
     const cache = {};   // bilgisayar -> { img, at }
     const asked = {};   // bilgisayar -> görüntü istendiği an
     let visionMod = null;
-    const V = { pc: null, live: false, sid: null, ctrl: false, startedAt: 0, reason: '', mandatory: false, tick: null, cd: null, frames: 0, held: new Map(), type: 'routine' };
+    const V = { pc: null, live: false, sid: null, ctrl: false, startedAt: 0, reason: '', mandatory: false, tick: null, cd: null, frames: 0, held: new Map(), type: 'routine',
+        // Vision v2 (ikili kareler): v2 = bu yayın ikili/monitör listesi gönderiyor; mode = 'img' (eski JSON kare) ya da 'canvas'
+        v2: false, mode: 'img', mons: [], sel: null, viewer: null };
+    // Görüntü ayarları bu tarayıcıda saklanır; ajanın varsayılanı 60 / 1.0 / 5
+    const Q_DEFAULT = { quality: 60, scale: 1, fps: 5 };
+    const Q = (function () {
+        try {
+            const q = JSON.parse(localStorage.getItem('pops_vision_q') || 'null');
+            if (q && q.quality >= 30 && q.quality <= 75 && q.scale >= 0.5 && q.scale <= 1 && q.fps >= 1 && q.fps <= 10) return { quality: +q.quality, scale: +q.scale, fps: +q.fps };
+        } catch (e) { /* özel pencere */ }
+        return Object.assign({}, Q_DEFAULT);
+    })();
+    const CLIP_MAX = 65536;
 
     // ---- Kapsam
     function visionOn(lab) {
@@ -437,7 +501,13 @@
         let ws;
         try { ws = new WebSocket(WS_URL); } catch (e) { setTimeout(connectWS, WS.backoff); WS.backoff = Math.min(30000, WS.backoff * 2); return; }
         WS.ws = ws;
-        ws.onopen = () => { WS.backoff = 2000; while (WS.queue.length && ws.readyState === WebSocket.OPEN) ws.send(WS.queue.shift()); };
+        ws.binaryType = 'arraybuffer';
+        ws.onopen = () => {
+            WS.backoff = 2000;
+            // Bu panel Vision v2 ikili karelerini çözebilir (sunucu ancak bundan sonra ikili kare gönderir)
+            ws.send(JSON.stringify({ type: 'panel_hello', features: ['vision_binary'] }));
+            while (WS.queue.length && ws.readyState === WebSocket.OPEN) ws.send(WS.queue.shift());
+        };
         ws.onmessage = onMessage;
         ws.onclose = () => { if (WS.ws === ws) WS.ws = null; setTimeout(connectWS, WS.backoff); WS.backoff = Math.min(30000, WS.backoff * 2); };
     }
@@ -450,8 +520,10 @@
         return false;
     }
     function onMessage(ev) {
+        if (ev.data instanceof ArrayBuffer) { onBinary(ev.data); return; }
         let data;
         try { data = JSON.parse(ev.data); } catch (e) { return; }
+        if (data.hw_id && data.hw_id === V.pc && onVisionMessage(data)) return;
         if (data.type === 'terminal_output' && data.id === V.pc && $('diagModal') && $('diagModal').classList.contains('open')) {
             diagLog('\n' + String(data.output == null ? '' : data.output));
         } else if (data.type === 'vision_rejected') {
@@ -462,8 +534,10 @@
             const card = document.querySelector(`#vsGrid .scr[data-host="${CSS.escape(data.hw_id)}"]`);
             if (card) applyImage(card);
             if (V.pc === data.hw_id) {
-                if (data.type === 'stream_frame') { V.frames += 1; if (V.live) showFrame(data.image, true); }
-                else if (!V.live || !V.frames) showFrame(data.image, false);
+                if (data.type === 'stream_frame') {
+                    V.frames += 1;
+                    if (V.live) { viewer().count(Math.round(data.image.length * 3 / 4)); showFrame(data.image, true); }
+                } else if (!V.live || !V.frames) showFrame(data.image, false);
             }
         }
     }
@@ -492,7 +566,7 @@
         setTimeout(applyImages, 10500);
     }
     $('refreshBtn').addEventListener('click', function () {
-        if (V.pc) { snapshot(); return; }
+        if (V.pc) { if (V.live && V.v2) requestFull(); else snapshot(); return; }
         const list = scopeDevices();
         if (!list.filter(d => !blocked(d)).length) return POps.toast('info', POps.t('İzlenebilecek açık bilgisayar yok.'));
         requestThumbs(list);
@@ -505,13 +579,21 @@
     function showFrame(b64, live) {
         const img = $('liveImg');
         img.src = IMG + b64; img.hidden = false;
+        if (live) setMode('img');
+        else if (V.mode !== 'canvas') $('liveCanvas').hidden = true;
         if (live || !V.live) setWait('');
+    }
+    // Gösterilen yüzey: eski ajanın JSON karesi <img>'de, Vision v2 kareleri tuvalde
+    function setMode(mode) {
+        V.mode = mode;
+        $('liveCanvas').hidden = mode !== 'canvas';
+        if (mode === 'canvas') $('liveImg').hidden = true;
     }
     function setWait(text, sub, spin) {
         const w = $('vwWait');
         if (!text) { w.hidden = true; w.textContent = ''; return; }
         w.hidden = false;
-        w.classList.toggle('solid', $('liveImg').hidden);
+        w.classList.toggle('solid', $('liveImg').hidden && $('liveCanvas').hidden);
         w.replaceChildren();
         if (spin) w.append(POps.el('span', { className: 'spinner' }));
         w.append(POps.el('div', { text }));
@@ -535,6 +617,7 @@
         $('ctrlField').classList.toggle('off', !V.live || IS_VIEWER);
         $('fpsSel').hidden = !V.live;
         $('inputLayer').hidden = !V.ctrl;
+        renderV2Controls();
         const badge = $('vwBadge');
         badge.className = 'vw-badge' + (V.ctrl ? ' ctrl' : V.live ? ' live' : '');
         $('vwBadgeT').textContent = V.ctrl ? POps.t('Kontrol açık') : V.live ? POps.t('Canlı') : POps.t('Önizleme');
@@ -545,7 +628,9 @@
         if (V.live) {
             const sec = Math.max(0, Math.round((Date.now() - V.startedAt) / 1000));
             const mm = String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
-            foot.innerHTML = `<span class="dot bad"></span><b>${V.mandatory ? POps.tHtml('Zorunlu müdahale') : POps.tHtml('Canlı izleme')}</b><span>· ${escapeHtml(ME.name || '?')}</span><span>· ${POps.tHtml('gerekçe: {reason}', { reason: V.reason })}</span><span class="tm">· ${escapeHtml(mm)}</span>`;
+            const st = V.viewer && V.frames ? V.viewer.stats() : null;
+            const rateHtml = st ? `<span class="rate">· ${POps.tHtml('{fps} kare/sn · {kbps} kbit/sn', { fps: st.fps.toLocaleString(POps.locale), kbps: st.kbps.toLocaleString(POps.locale) })}</span>` : '';
+            foot.innerHTML = `<span class="dot bad"></span><b>${V.mandatory ? POps.tHtml('Zorunlu müdahale') : POps.tHtml('Canlı izleme')}</b><span>· ${escapeHtml(ME.name || '?')}</span><span>· ${POps.tHtml('gerekçe: {reason}', { reason: V.reason })}</span><span class="tm">· ${escapeHtml(mm)}</span>${rateHtml}`;
         } else if (IS_VIEWER) {
             foot.textContent = POps.t('Canlı izleme ve kontrol yalnızca yöneticilere açıktır.');
         } else {
@@ -555,6 +640,7 @@
     }
     function openViewer(h) {
         V.pc = h; V.live = false; V.sid = null; V.ctrl = false; V.frames = 0;
+        resetV2();
         $('vsMain').hidden = true;
         $('viewer').hidden = false;
         renderViewerHead();
@@ -635,6 +721,8 @@
     });
     function startLive(countdown) {
         V.live = true; V.frames = 0; V.startedAt = Date.now();
+        // Tünel zaten açıksa sunucu monitör listesini oturum açılırken gönderir: liste korunur
+        resetV2(true);
         clearInterval(V.cd); clearInterval(V.tick);
         if (countdown > 0) {
             let c = countdown;
@@ -662,7 +750,13 @@
         if (!V.pc) return;
         const wasLive = V.live, sid = V.sid, pc = V.pc;
         if (V.ctrl) setCtrl(false);
+        if (V.mode === 'canvas' && V.viewer) {
+            // Son görüntü önizleme olarak kalır (kartta da)
+            const b64 = V.viewer.snapshot();
+            if (b64) { cache[pc] = { img: b64, at: Date.now() }; showFrame(b64, false); }
+        }
         V.live = false; V.sid = null; V.frames = 0;
+        resetV2();
         clearInterval(V.cd); clearInterval(V.tick);
         if (!$('liveImg').hidden) setWait(''); else if (wasLive) setWait(POps.t('Görüntü bekleniyor…'), '', true);
         renderViewerState();
@@ -674,7 +768,187 @@
         else stopLive();
     });
     $('fpsSel').addEventListener('change', () => {
-        if (V.pc && V.live) wsSend({ type: 'remote_input', device: V.pc, action: 'set_fps', fps: parseInt($('fpsSel').value, 10) });
+        if (!V.pc || !V.live) return;
+        const fps = parseInt($('fpsSel').value, 10);
+        if (V.v2) { Q.fps = fps; sendQuality(); }
+        else wsSend({ type: 'remote_input', device: V.pc, action: 'set_fps', fps });
+    });
+
+    // =================================================================
+    // VISION V2: ikili kareler, ekran seçimi, görüntü ayarları, pano
+    // =================================================================
+    function viewer() {
+        if (!V.viewer) {
+            V.viewer = new POpsVision.Viewer($('liveCanvas'), {
+                onFirstFrame: () => { if (V.live) { setMode('canvas'); setWait(''); } },
+                // Sunucu ya da tarayıcı bölge düşürdü: seçimi yeniden göndermek ajana tam kare yollatır
+                onNeedFull: (monitor) => { if (V.live) selectMonitor(V.sel !== null ? V.sel : (monitor === POpsVision.ALL ? 'all' : monitor), true); }
+            });
+        }
+        return V.viewer;
+    }
+    function resetV2(keepScreens) {
+        if (V.viewer) V.viewer.reset();
+        V.v2 = false; V.awaitOut = null;
+        if (!keepScreens) { V.mons = []; V.sel = null; }
+        if (V.mode === 'canvas') { V.mode = 'img'; $('liveCanvas').hidden = true; }
+        $('qualPop').hidden = true;
+        $('clipPanel').hidden = true;
+        $('clipIn').value = ''; $('clipInHint').textContent = ''; $('clipOutHint').textContent = '';
+        $('clipCopy').disabled = true;
+    }
+    function vcontrol(action, fields) {
+        return wsSend(Object.assign({ type: 'vision_control', device: V.pc, action }, fields));
+    }
+    function onBinary(buf) {
+        const f = POpsVision.parse(buf);
+        if (!f || f.hw !== V.pc || !V.live) return;
+        V.frames += 1;
+        if (!V.v2) startV2();
+        viewer().push(f);
+    }
+    // Bu yayın Vision v2: denetimler görünür; kayıtlı ayarlar ajanın varsayılanından farklıysa gönderilir
+    function startV2() {
+        V.v2 = true;
+        if (Q.quality !== Q_DEFAULT.quality || Q.scale !== Q_DEFAULT.scale || Q.fps !== Q_DEFAULT.fps) sendQuality();
+        renderViewerState();
+    }
+    // Panel soketinin Vision mesajları (bu bilgisayar için); işlendiyse true
+    function onVisionMessage(data) {
+        if (data.type === 'monitors' && Array.isArray(data.list)) {
+            V.mons = data.list.filter(m => m && Number.isInteger(m.index)).map(m => ({ index: m.index, width: Number(m.width) || 0, height: Number(m.height) || 0, primary: !!m.primary }))
+                .sort((a, b) => a.index - b.index);
+            if (V.sel !== 'all' && !V.mons.some(m => m.index === V.sel)) V.sel = (V.mons.find(m => m.primary) || V.mons[0] || { index: null }).index;
+            if (V.live && !V.v2) startV2(); else renderV2Controls();
+            return true;
+        }
+        if (data.type === 'vision_resync') {
+            if (V.viewer && V.live) V.viewer.resync(Number(data.monitor));
+            return true;
+        }
+        if (data.type === 'clipboard' && typeof data.text === 'string') {
+            $('clipIn').value = data.text;
+            $('clipCopy').disabled = false;
+            $('clipInHint').textContent = POps.t('{time} kopyalandı', { time: new Date().toLocaleTimeString(POps.locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+            if ($('clipPanel').hidden) POps.toast('info', POps.t('Bilgisayarda metin kopyalandı; Pano bölümünde görünür.'));
+            return true;
+        }
+        if (data.type === 'clipboard_result') {
+            const why = { not_accepted: POps.t('Pano yalnızca kullanıcının onayladığı oturumda kullanılabilir.'), no_stream: POps.t('Görüntü aktarımı henüz başlamadı.'),
+                invalid: POps.t('Metin en çok 64 KB olabilir.'), rate: POps.t('Çok sık gönderildi; biraz bekleyin.'), module: POps.t('Uzak ekran bu sınıfta kapalı'),
+                audit: POps.t('Denetim kaydı yazılamadı; metin gönderilmedi.') };
+            $('clipOutHint').textContent = data.ok ? POps.t('Gönderildi.') : (why[data.reason] || POps.t('Gönderilemedi.'));
+            if (!data.ok) POps.toast('warning', POps.t('Pano gönderilemedi: {error}', { error: why[data.reason] || POps.t('Gönderilemedi.') }));
+            return true;
+        }
+        return false;
+    }
+    // Görüntüyü tazele (v2): seçimi yeniden göndermek tam kare getirir
+    function requestFull() {
+        const out = V.viewer && V.viewer.output();
+        const cur = V.sel !== null ? V.sel : out ? (out.monitor === POpsVision.ALL ? 'all' : out.monitor) : null;
+        if (cur !== null) selectMonitor(cur, true);
+    }
+    function selectMonitor(index, again) {
+        if (!V.pc || !V.live) return;
+        if (!again) {
+            V.sel = index;
+            // Ajan fareyi yeni seçime göre eşler: yeni çıktının ilk karesi gelene kadar (en çok 3 sn) fare gönderilmez
+            const out = V.viewer && V.viewer.output();
+            const key = index === 'all' ? POpsVision.ALL : index;
+            V.awaitOut = out && out.monitor !== key ? { key, until: Date.now() + 3000 } : null;
+        }
+        vcontrol('select_monitor', { index });
+        renderV2Controls();
+    }
+    function sendQuality() {
+        try { localStorage.setItem('pops_vision_q', JSON.stringify(Q)); } catch (e) { /* özel pencere */ }
+        if (V.pc && V.live) vcontrol('set_quality', { quality: Q.quality, scale: Q.scale, fps: Q.fps });
+    }
+    function renderV2Controls() {
+        const on = V.live && V.v2;
+        // Ekran seçimi: birden çok ekran varsa (Tümü: ekranlar yan yana tek görüntüde)
+        const seg = $('monSeg');
+        const many = on && V.mons.length > 1;
+        seg.hidden = !many;
+        if (many) {
+            const items = V.mons.map(m => [String(m.index), String(m.index + 1), m.primary ? POps.t('Ekran {n} (birincil) · {w}×{h}', { n: m.index + 1, w: m.width, h: m.height }) : POps.t('Ekran {n} · {w}×{h}', { n: m.index + 1, w: m.width, h: m.height })]);
+            items.push(['all', POps.t('Tümü'), POps.t('Bütün ekranlar yan yana')]);
+            const sig = JSON.stringify([items, V.sel]);
+            if (seg.dataset.sig !== sig) {
+                seg.dataset.sig = sig;
+                seg.innerHTML = items.map(([k, label, tip]) => {
+                    const act = String(V.sel) === k;
+                    return `<button type="button" data-mon="${escapeHtml(k)}" class="${act ? 'active' : ''}" aria-pressed="${act ? 'true' : 'false'}" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${escapeHtml(label)}</button>`;
+                }).join('');
+            }
+        }
+        // Kare hızı: v2'de 10'a kadar ve set_quality ile
+        const sel = $('fpsSel');
+        const has10 = !!sel.querySelector('option[value="10"]');
+        if (on && !has10) sel.append(POps.el('option', { value: '10', text: POps.t('{n} kare/sn', { n: 10 }) }));
+        if (!on && has10) { sel.querySelector('option[value="10"]').remove(); sel.value = '2'; }
+        if (on) sel.value = String(Q.fps);
+        $('qualBtn').hidden = !on;
+        $('clipBtn').hidden = !on;
+        if (!on) { $('qualPop').hidden = true; $('clipPanel').hidden = true; }
+        $('qualBtn').setAttribute('aria-expanded', $('qualPop').hidden ? 'false' : 'true');
+        $('clipBtn').setAttribute('aria-expanded', $('clipPanel').hidden ? 'false' : 'true');
+        $('qualBtn').classList.toggle('vw-ibtn-on', !$('qualPop').hidden);
+        $('clipBtn').classList.toggle('vw-ibtn-on', !$('clipPanel').hidden);
+        renderClip();
+    }
+    $('monSeg').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-mon]');
+        if (b) selectMonitor(b.dataset.mon === 'all' ? 'all' : parseInt(b.dataset.mon, 10));
+    });
+    // Görüntü ayarları
+    (function wireQuality() {
+        const sc = $('scaleSel');
+        [[0.5, 50], [0.75, 75], [1, 100]].forEach(([v, pct]) => sc.append(POps.el('option', { value: String(v), text: POps.pct(pct) })));
+        const show = () => { $('qualRange').value = String(Q.quality); $('qualVal').textContent = String(Q.quality); sc.value = String(Q.scale); };
+        show();
+        let qt = null;
+        $('qualRange').addEventListener('input', () => {
+            Q.quality = parseInt($('qualRange').value, 10);
+            $('qualVal').textContent = String(Q.quality);
+            clearTimeout(qt); qt = setTimeout(sendQuality, 250);
+        });
+        sc.addEventListener('change', () => { Q.scale = parseFloat(sc.value); sendQuality(); });
+        V.showQuality = show;
+    })();
+    function togglePop(id) {
+        const el = $(id);
+        el.hidden = !el.hidden;
+        if (id === 'qualPop' && !el.hidden) V.showQuality();
+        renderV2Controls();
+        if (!el.hidden) (id === 'qualPop' ? $('qualRange') : $('clipOut')).focus();
+    }
+    document.addEventListener('click', (e) => {
+        if (!$('qualPop').hidden && !e.target.closest('#qualPop') && !e.target.closest('#qualBtn')) { $('qualPop').hidden = true; renderV2Controls(); }
+    });
+    // Pano: yalnızca metin, en çok 64 KB; yalnızca kullanıcının onayladığı oturumda (sunucu ve ajan da denetler)
+    function renderClip() {
+        const ok = V.live && V.v2 && !V.mandatory;
+        $('clipPanel').classList.toggle('off', !ok);
+        $('clipOut').disabled = !ok;
+        $('clipSend').disabled = !ok;
+        $('clipNote').textContent = ok
+            ? POps.t('Yalnızca metin, en çok 64 KB. Bilgisayardaki kullanıcı pano paylaşımını görür; denetim kaydına yalnızca yön ve uzunluk yazılır, metnin kendisi yazılmaz.')
+            : POps.t('Pano yalnızca kullanıcının onayladığı oturumda kullanılabilir.');
+    }
+    $('clipSend').addEventListener('click', () => {
+        const text = $('clipOut').value;
+        if (!text) { $('clipOut').focus(); return; }
+        if (new TextEncoder().encode(text).length > CLIP_MAX) { $('clipOutHint').textContent = POps.t('Metin en çok 64 KB olabilir.'); return; }
+        $('clipOutHint').textContent = POps.t('Gönderiliyor…');
+        if (!vcontrol('clipboard', { text })) $('clipOutHint').textContent = POps.t('Bağlantı yeniden kuruluyor; metin bağlanınca gider.');
+    });
+    $('clipCopy').addEventListener('click', async () => {
+        const text = $('clipIn').value;
+        try { await navigator.clipboard.writeText(text); }
+        catch (e) { $('clipIn').select(); try { document.execCommand('copy'); } catch (e2) { /* tarayıcı izin vermedi */ } }
+        $('clipInHint').textContent = POps.t('Bu bilgisayarın panosuna kopyalandı.');
     });
 
     // ---- Kontrol: fare ve klavye (yalnızca açık oturumda; sunucu da oturumu denetler)
@@ -689,16 +963,29 @@
         if (!V.pc || !V.ctrl || !wsOpen()) return;
         const display = $('liveImg');
         if (type === 'mouse') {
-            const rect = display.getBoundingClientRect();
-            const nw = display.naturalWidth, nh = display.naturalHeight;
-            if (!nw || !nh) return;
-            const fit = Math.min(rect.width / nw, rect.height / nh);
-            const rw = nw * fit, rh = nh * fit;
-            const ox = (rect.width - rw) / 2, oy = (rect.height - rh) / 2;
-            const xN = Math.max(0, Math.min(1, (e.clientX - rect.left - ox) / rw));
-            const yN = Math.max(0, Math.min(1, (e.clientY - rect.top - oy) / rh));
-            // Kare %75 ölçekte gelir: koordinat ekranın gerçek çözünürlüğüne çevrilir
-            const x = Math.round(xN * (nw / 0.75)), y = Math.round(yN * (nh / 0.75));
+            let x, y;
+            if (V.mode === 'canvas') {
+                // Vision v2: koordinat gösterilen çıktının gerçek pikseli (seçili ekran ya da yan yana görüntü); ajan
+                // onu fiziksel ekrana eşler
+                const p = V.viewer && V.viewer.toRemote(e.clientX, e.clientY);
+                if (!p) return;
+                if (V.awaitOut) {
+                    if (p.monitor !== V.awaitOut.key && Date.now() < V.awaitOut.until) return;
+                    V.awaitOut = null;
+                }
+                x = p.x; y = p.y;
+            } else {
+                const rect = display.getBoundingClientRect();
+                const nw = display.naturalWidth, nh = display.naturalHeight;
+                if (!nw || !nh) return;
+                const fit = Math.min(rect.width / nw, rect.height / nh);
+                const rw = nw * fit, rh = nh * fit;
+                const ox = (rect.width - rw) / 2, oy = (rect.height - rh) / 2;
+                const xN = Math.max(0, Math.min(1, (e.clientX - rect.left - ox) / rw));
+                const yN = Math.max(0, Math.min(1, (e.clientY - rect.top - oy) / rh));
+                // Eski ajanın karesi %75 ölçekte gelir: koordinat ekranın gerçek çözünürlüğüne çevrilir
+                x = Math.round(xN * (nw / 0.75)); y = Math.round(yN * (nh / 0.75));
+            }
             if (action === 'down' || action === 'move') WS.ws.send(JSON.stringify({ type: 'remote_input', device: V.pc, input_type: 'mouse_move', x, y, relative: false }));
             if (action === 'down' || action === 'up') {
                 const btn = e.button === 1 ? 'middle' : e.button === 2 ? 'right' : 'left';
@@ -737,6 +1024,7 @@
         window.addEventListener('blur', releaseHeldKeys);
         document.addEventListener('visibilitychange', () => { if (document.hidden) releaseHeldKeys(); });
         $('liveImg').addEventListener('contextmenu', e => e.preventDefault());
+        $('liveCanvas').addEventListener('contextmenu', e => e.preventDefault());
     })();
 
     // ---- Görünüm üst çubuğu
@@ -753,7 +1041,9 @@
         if (!b || b.disabled) return;
         const act = b.dataset.act;
         if (act === 'back') closeViewer();
-        else if (act === 'snap') snapshot();
+        else if (act === 'quality') togglePop('qualPop');
+        else if (act === 'clip') togglePop('clipPanel');
+        else if (act === 'snap') { if (V.live && V.v2) requestFull(); else snapshot(); }
         else if (act === 'full') toggleFull();
         else if (act === 'more') {
             const h = V.pc, d = dev.find(h) || {};
@@ -849,7 +1139,9 @@
     let escBusy = false;
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') escBusy = POps.drawer.isOpen() || !!document.querySelector(LAYERS); }, true);
     document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape' || e.defaultPrevented || !V.pc || V.ctrl || document.fullscreenElement) return;
+        if (e.key !== 'Escape' || e.defaultPrevented || !V.pc || V.ctrl) return;
+        if (!$('qualPop').hidden) { $('qualPop').hidden = true; renderV2Controls(); $('qualBtn').focus(); return; }
+        if (document.fullscreenElement) return;
         if (escBusy || POps.drawer.isOpen() || document.querySelector(LAYERS)) return;
         closeViewer();
     });

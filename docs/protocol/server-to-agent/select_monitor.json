@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/select_monitor.json",
+  "title": "select_monitor",
+  "description": "Vision v2: which screen to stream. Sent on the Vision channel, only for the admin holding a session for the device. The viewer also sends its current selection again when it needs a full frame (regions were dropped on the way), so the agent answers every select_monitor with a full frame of the selection.",
+  "x-pops-channels": [
+    "/ws/vision"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "index"
+  ],
+  "properties": {
+    "action": {
+      "const": "select_monitor",
+      "description": "Message type."
+    },
+    "index": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
+        },
+        {
+          "const": "all"
+        }
+      ],
+      "description": "A screen `index` from `monitors`, or `all`: every screen side by side in one image (monitor byte 0xFF)."
+    }
+  }
+}

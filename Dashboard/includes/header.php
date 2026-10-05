@@ -99,13 +99,15 @@ $pops_role_label = ['superadmin' => __('Süper Admin'), 'admin' => __('Yönetici
     // Sayfa yoklama yardımcısı (bütün sayfalar): sekme arka plandayken sunucuya hiç istek atılmaz, sekmeye
     // dönünce hemen bir kez tazelenir; 5 dk boyunca fare/klavye yoksa aralık 4 katına çıkar (açık unutulan
     // sekmeler sunucuyu dövmesin); istek hata verirse aralık 60 sn'ye kadar ikiye katlanır, başarıda normale döner.
+    // intervalMs bir işlev de olabilir (her turda yeniden okunur; ör. panel soketi açıkken daha seyrek).
     window.popsPoll = function (fn, intervalMs) {
         let lastInput = Date.now(), timer = null, failures = 0, running = false;
         ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(ev =>
             document.addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true }));
         const delay = () => {
             const idle = Date.now() - lastInput > 5 * 60 * 1000;
-            return Math.min(60000, intervalMs * (idle ? 4 : 1) * Math.pow(2, failures));
+            const base = typeof intervalMs === 'function' ? intervalMs() : intervalMs;
+            return Math.min(60000, base * (idle ? 4 : 1) * Math.pow(2, failures));
         };
         const tick = async () => {
             timer = null;

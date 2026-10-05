@@ -10,6 +10,9 @@ This page is an overview. The detailed references are:
 - [`Agent/README.md`](../Agent/README.md): settings, secrets, server authentication, local hardening, the capability
   policy, the update and rollback procedure, and the unit tests.
 
+PCs running Pardus or Debian use the [Linux agent](#linux-agent-pardus-and-debian) (first version: inventory and
+remote commands).
+
 ## Components
 
 | Program | Runs as | Started by | Does |
@@ -146,6 +149,7 @@ What the service does with each server command:
 | Command | Effect |
 | --- | --- |
 | `execute` | Runs the command line as a temporary `.bat` through `cmd.exe` as LocalSystem (UTF-8, 30-minute limit) and returns the output as a `result`. Refused when the terminal capability is off. Used by **Dağıtım**, **Uzak komut** and the PC actions on **Cihazlar** and **Sınıflar** through the task queue. The `.bat` (`pops_task_<32 hex>.bat` in the service's temp folder) is deleted when the task ends; from 0.1.14-alpha files left by a crash are deleted at service start, before the first task (only names matching exactly that pattern). Output is read in fixed 8192-character chunks, not by line, so even a single line of hundreds of megabytes stays within the 524 288-character (512 Ki) limit (the rest is read and dropped, the pipe never blocks). The same task ID is never run twice at once: a repeated `execute` for a running task is logged and ignored. Exit codes the agent sets itself: -1 time limit, -2 cancelled, -3 agent error, -4 service stopping, -5 refused (terminal capability off). |
+| `winget_install` | Installs a winget package as LocalSystem; see [below](#winget_install-contract). Sent only to agents that announce `winget` in `X-Agent-Features`. Agents without it never receive it (the server marks the task `Denied` instead). |
 | `get_hardware` | Posts the hardware inventory. |
 | `start_vision_session` | Passes the session request to the tray (consent dialog or mandatory countdown). |
 | `stop_stream` | Stops screen capture and closes the Vision connection. |
@@ -154,7 +158,7 @@ What the service does with each server command:
 | `wake_peer` | Sends a Wake-on-LAN packet for another PC in the same lab. |
 | `set_identity` | Replaces the stored hardware ID. |
 | `set_secret` | Stores the device secret and deletes the enrollment token. |
-| `server_info` | Sent by the server once the agent is registered; `features` containing `update_result_ack` / `result_ack` means the server confirms update results / task results (0.1.14-alpha). Without `server_info` within 15 seconds of connecting the agent treats the server as older (same rule for both). |
+| `server_info` | Sent by the server once the agent is registered; `features` containing `update_result_ack` / `result_ack` means the server confirms update results / task results (0.1.14-alpha); `winget` means the server may send `winget_install` and reads `X-Agent-Features`. Without `server_info` within 15 seconds of connecting the agent treats the server as older (same rule for both). |
 | `result_ack` | The server stored the task result for `task_id`; the agent deletes it from `C:\POpsData\secure\pending-results.json`. |
 | `update_result_ack` | The server stored the update result with this `result_id`; the agent sets `update-result.json` aside. |
 | `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
@@ -186,6 +190,94 @@ that partly changed (no decision taken), 1080 a change of the server's modules, 
 be read and 1100 a clipboard shared in a Vision session (direction and length only). Failure to write an event does not stop the
 service.
 
+### `winget_install` contract
+
+Deploys a package from the winget community source (**Dağıtım** → winget paketi; server side added after
+0.1.22-alpha). The agent part is not built yet; this is the contract it must follow. The message schema and test
+vectors are in [`protocol/`](protocol/README.md) (`server-to-agent/winget_install.json`,
+`examples/server-to-agent/winget_install*.json`, `examples/agent-to-server/result.winget*.json`). Why it is a separate action and
+not an `execute` payload: [`decisions.md` D-23](decisions.md#d-23-winget-packages-as-their-own-agent-action).
+
+**1. Announce the feature.** An agent that implements `winget_install` sends this header on the `/ws/agent`
+connection, next to `X-Agent-Version`:
+
+```
+X-Agent-Features: winget
+```
+
+A comma-separated list of lowercase names (`[a-z0-9_]`, at most 32); unknown names are ignored. The server stores
+it per connection (`agent_versions.features`), shows it on **Dağıtım** and sends `winget_install` only to an agent
+whose current connection announced `winget`. An agent without the header never gets the message: the server marks
+the task `Denied` with exit code -8 and does not send it. The server announces `winget` in `server_info.features`;
+the agent does not need to wait for it.
+
+**2. The message.**
+
+```json
+{"action": "winget_install", "task_id": 42, "id": "Mozilla.Firefox", "version": null, "requested_by": "admin"}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `task_id` | integer | As in `execute`: one task, one `result`. |
+| `id` | string | winget package identifier, matched exactly (`-e`). |
+| `version` | string or `null` | A specific version, or `null` for the latest. |
+| `requested_by` | string | Who queued it; for the local audit record, as in `execute`. |
+
+**3. Checks before running** (refusals are a `result`, never a run):
+
+- Capability and module: run only when the local terminal capability is on **and** the lab's `deploy` module is on
+  (the policy's `modules.deploy`; `deploy` depends on `terminal` on the server). Otherwise answer `exit_code` -5,
+  `output` starting with `[REDDEDİLDİ]` (for example `[REDDEDİLDİ] Bu cihazda uzaktan terminal kapalı (yetenek
+  politikası); winget kurulumu yapılmadı.`), and send `capability_denied` with `"action": "winget_install"`,
+  `"task_id"`, `"capability": "terminal"` (local capability off) or `"capability": "deploy"` with
+  `"reason": "module_disabled"` (module off). Installing software as SYSTEM is software deployment, so it follows
+  the same local lock as package deployment through `execute`.
+- Validate again, whatever the server sent: `id` must match `^[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}$` and `version`
+  (when not `null`) `^[0-9A-Za-z.+_-]{1,40}$`, as a whole-string match (no trailing newline). Otherwise answer
+  `exit_code` -5 and `[REDDEDİLDİ] Geçersiz winget paketi kimliği ya da sürümü; kurulmadı.`
+- The same `task_id` already running: ignore the repeat, as for `execute`.
+
+**4. Find winget.** `winget.exe` is an app execution alias in the signed-in user's profile and is not on the
+SYSTEM account's `PATH`. Use the newest
+`%ProgramFiles%\WindowsApps\Microsoft.DesktopAppInstaller_<version>_<arch>__8wekyb3d8bbwe\winget.exe` (x64 or
+arm64 to match the OS), and only from that folder. When none exists, answer `exit_code` -7 and
+`[REDDEDİLDİ] winget bu bilgisayarda yok` (the server marks the task `Denied`).
+
+**5. Run.** Start `winget.exe` directly, **without a shell** (`UseShellExecute = false`, no `cmd.exe`, no
+`.bat`, no string concatenation into a command line), passing each argument as its own entry of
+`ProcessStartInfo.ArgumentList`, in this order:
+
+```
+install --id <id> -e --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity [--version <version>]
+```
+
+Same limits as `execute`: 30-minute time limit (-1), `cancel_task` ends it and its child processes (-2), service
+stop (-4), the same output cap. Capture stdout and stderr; drop the progress-bar and spinner lines winget draws
+with carriage returns so the output stays readable. Write the start and finish to the local event log like a
+command (the package id and version may be recorded in clear).
+
+**6. Answer** with the normal result, kept until `result_ack` like any task result:
+
+```json
+{"type": "result", "pc_name": "HW-…", "task_id": 42, "output": "…", "exit_code": -1978335135}
+```
+
+`exit_code` is winget's own exit code as a signed 32-bit integer (winget returns HRESULTs, for example
+`0x8A150061` = -1978335135). The server reads it like this:
+
+| Exit code | Task status | Meaning |
+| --- | --- | --- |
+| `0` | Completed | Installed. |
+| -1978335189 (`0x8A15002B`), -1978335135 (`0x8A150061`) | Completed | Already installed and up to date. |
+| -1978334967 (`0x8A150109`), -1978334965 (`0x8A15010B`) | Completed | Installed; a restart finishes it. |
+| -5 with `[REDDEDİLDİ] …` | Denied | Refused by the capability policy, the module or validation. |
+| -7 with `[REDDEDİLDİ] winget bu bilgisayarda yok` | Denied | No winget on the PC. |
+| -1 / -2 / -3 / -4 | Failed | Time limit, cancelled, agent error, service stopping (as for `execute`). |
+| anything else | Failed | The panel names common winget codes (package not found, installer hash mismatch, app in use, another install running, disk full, blocked by policy …). |
+
+-8 is set by the server only (agent without the feature).
+
 ## Capability policy
 
 Terminal (`execute`) and Vision (streaming, previews, remote input) can be disabled per PC, so that even a
@@ -214,6 +306,7 @@ change applies within a minute.
   | Module | Behaviour |
   | --- | --- |
   | `terminal` | `execute` is not run. The result is `exit_code` -5 with `[REDDEDİLDİ] Uzak komut modülü …`, followed by `capability_denied` with `"reason": "module_disabled"`. |
+  | `deploy` | `winget_install` is not run (agents that implement it; see [below](#winget_install-contract)). |
   | `vision` | `start_stream`, `start_vision_session`, the Vision tunnel, previews and remote input are refused with `capability_denied` (`module_disabled`). A Vision session that is open when the module closes is ended. |
   | `helpdesk` | The tray hides "Sorun bildir" and "Taleplerim" (`HELPDESK_MENU:0` over the pipe) and shows them again when the module opens. Requests that still arrive get "Yardım masası … kapalı", and new replies are not polled. |
   | `software` | The software inventory is not collected or sent. When the module opens, the last-send record is forgotten, so the list goes out in the next 6-hour round even if it did not change (the server did not store it while the module was off). |
@@ -221,7 +314,8 @@ change applies within a minute.
   | `wol` | `wake_peer` (waking another PC in the lab) is refused (`capability_denied`, `module_disabled`). |
   | `dns_policy`, `quarantine` | Nothing extra on the agent. The server sends an empty DNS list and `auto_quarantine: false`. Unlock, offline bypass and the lock screen work as before. |
 
-- **Server only.** `deploy`, `schedules`, `licenses` and `reports` are enforced by the server.
+- **Server only.** `schedules`, `licenses` and `reports` are enforced by the server; `deploy` too, and by agents
+  that implement `winget_install`.
 - **Logging.** A change is logged once and written to the event log as 1080 (closed and opened modules). On the
   first policy after the service starts, this happens only when a module is off.
 
@@ -408,3 +502,41 @@ dotnet test Agent/POps.Tests/POps.Tests.csproj --configuration Release
 ```
 
 The version of every component comes from the repository-root `VERSION` file (`Agent/Directory.Build.props`).
+
+## Linux agent (Pardus and Debian)
+
+A first version of the agent for Pardus 23 / Debian 12 and later (and Ubuntu 24.04) is in
+[`Agent-Linux/`](../Agent-Linux/README.md). It is Python 3 on the distribution's own `python3-websockets` and
+`python3-cryptography` packages ([D-22](decisions.md#d-22-the-linux-agent-is-python-3-on-the-distributions-own-packages)),
+installed from a `.deb` that is part of every signed release. Install, configuration, files, limits, the update and
+rollback steps and uninstalling are in [`Agent-Linux/README.md`](../Agent-Linux/README.md).
+
+Same as the Windows agent:
+
+- the `/ws/agent` protocol, enrollment token and per-device secret, `server_info` and the acknowledgements
+  (`result_ack`, `update_result_ack`), backoff with jitter (at least 60 s after `4401`, 10 min after `4409`);
+- TLS only (plain `http://` only to the same PC), optionally pinned to the school's CA (`SERVER_CA_CERT`, reported as
+  `server_ca: custom`);
+- the hardware DNA the server compares (`uuid`, `bios_sn`, `disk_sn`, `mac`, `ram_sn` from DMI, the root disk, the
+  physical network card and SMBIOS memory records), clone detection after disk imaging, `pops-agent generalize`
+  before taking an image;
+- command limits (30 minutes, 512 K characters, exit code, cancel), results kept on disk until acknowledged, the
+  capability policy with the `[REDDEDİLDİ]` result and exit code `-5`, lab modules;
+- signed updates: the agent takes exactly `pops-agent_<version>_all.deb` from the signed manifest, downloads it from
+  `/updates/`, and a transient systemd unit installs it and rolls back to the previous `.deb` when the new version
+  does not report health within 90 seconds; the result is sent in the Windows `update_result` schema;
+- a local audit log of admin actions (`/var/log/pops-agent/audit.log`, hash-chained and append-only).
+
+Different on Linux:
+
+| | Linux agent |
+| --- | --- |
+| Identification | Sends `X-Agent-Platform: linux`; the panel shows **Linux** (`clients.platform`, migration 0026). |
+| Commands | `/bin/sh -c` as root in `/`, clean environment, no input. **Uzak komut** says so and does not offer the Windows-only quick commands. The panel's restart and shut-down commands (`shutdown /r|/s /f /t N`) run as `systemctl reboot|poweroff` after N seconds. |
+| Inventory | Hardware from `/proc` and `/sys`; installed packages from `dpkg-query` (library and debug packages left out; `install_date` from the package's file list). No Windows Update data: the panel shows "—". |
+| Signed-in user | From systemd-logind (active local session, graphical first). |
+| Not in this version | Screen view and remote input, quarantine and the offline bypass (the device key is stored and acknowledged), tray, notices, help desk, DNS policy alerts. The server refuses to quarantine a Linux PC (`409`); the other requests are answered by the agent with `capability_denied` and reason `not_supported`, so the panel shows them as refused. |
+| Files | `/etc/pops-agent/` (configuration, `0700`), `/var/lib/pops-agent/` (identity, secret, spool, update state, `0700`), `/var/log/pops-agent/` (log rotated daily and at 10 MB, 30 days; audit log; updater log). |
+
+Tests: `python3 -m pytest Agent-Linux/tests` (no root needed); CI runs them on the distribution's packages, builds the
+`.deb` twice to check it is reproducible, installs it with `dpkg`, and runs the agent against a backend over TLS.

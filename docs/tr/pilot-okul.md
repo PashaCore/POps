@@ -135,6 +135,12 @@ Let's Encrypt kullanıyorsanız `SERVER_CA_CERT=…` kısmını çıkarın. Bilg
   bilgisayar yalnızca POps sunucusuna erişebilir. Panelden **Karantinayı Kaldır** ile geri alın; ağın geri geldiğini
   denetleyin.
 - **Yazılım dağıtımı:** küçük bir MSI'ı (örneğin 7-Zip) **Dağıtım** ile önce bir, sonra 10 bilgisayara gönderin.
+- **Sınav modu:** **Sınıflar**'da laboratuvarı seçin, **Sınıf işlemleri → Sınav modu…** ile 40 dakikalık bir sınav
+  başlatın; izin listesine yalnızca sınav sitesini (örneğin `sinav.meb.gov.tr`) yazın. Bilgisayarda tepside
+  mesajınız görünmeli; sınav sitesi açılmalı, başka siteler açılmamalı. Kutucuklarda bilgisayarların **Sınavda**
+  göründüğünü denetleyin, sonra **Sınavı bitir** ile kapatın ve ağın geri geldiğine bakın. Sınav modu bir ağ
+  kısıtlamasıdır, gözetim değildir: bilgisayarda yerel yönetici olan biri onu kapatabilir. Öğrenci hesaplarının
+  standart kullanıcı olduğundan emin olun. Ayrıntılar: [`security.md`](../security.md#exam-mode) (İngilizce).
 - **Geri alma tatbikatı:** güncelleme başarısız olursa önceki sürümün kendiliğinden geri geldiğini görmek içindir.
   Kurulu sürümden daha yeni imzalı bir sürüm gerektirir: bir bilgisayara önce bir önceki sürümü kurun, yönetici
   komut isteminde `type nul > C:\POpsData\secure\rollback-drill` ile işareti bırakın, sonra **Sistem →

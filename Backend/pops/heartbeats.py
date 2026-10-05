@@ -5,13 +5,16 @@ yazma, her biri ayrı bir havuz bağlantısı ve işlem. Şimdi heartbeat bellek
 ve FLUSH_SECONDS'ta bir tek UPDATE ... FROM unnest(...) ile yazılır. Panel ve raporlar en fazla bu kadar gecikmeli
 görür. Yalnızca hâlâ bağlı cihazlar yazılır: kopan cihazın bekleyen heartbeat'i atılır, yoksa "Offline" kaydının
 üzerine geç bir "Online" yazılırdı (bkz. routers/agents.py, bağlantı kapanışı).
+
+Panelin cihaz listesi sürümlüdür (pops/devicelist.py): yazımdan sonra yalnızca görünen bir alanı (durum, uygulama,
+adres, ad, sağlık özeti) değişen cihazlar işaretlenir. Yalnızca last_seen'i ilerleyen heartbeat yeni sürüm açmaz.
 """
 
 import asyncio
 import logging
 import os
 
-from pops import metrics
+from pops import devicelist, metrics
 from pops.db import execute_query
 from pops.manager import manager
 
@@ -55,6 +58,7 @@ async def flush() -> int:
         tuple(list(c) for c in cols),
     )
     metrics.count("heartbeat_rows_written", len(batch))
+    devicelist.touch([pc for pc, row in batch if devicelist.heartbeat_differs(pc, *row[1:])])
     # Yazım sürerken kopan cihaz: bağlantı kapanışının "Offline" kaydı bu toplu yazımdan önce bitmiş olabilir, o
     # durumda biz "Online"ı üstüne yazdık. Yazım bittiğinde artık bağlı olmayanlar yeniden "Offline" yapılır (kapanış
     # bu andan sonra olursa kendi kaydı zaten sonra gelir).
@@ -65,6 +69,7 @@ async def flush() -> int:
             "WHERE pc_name = ANY($1::text[]) AND status IS DISTINCT FROM 'Offline'",
             (gone,),
         )
+        devicelist.touch(gone)
     return len(batch)
 
 

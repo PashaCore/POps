@@ -519,6 +519,83 @@
         "title": "EnrollTokenInput",
         "type": "object"
       },
+      "ExamEndInput": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "ExamEndInput",
+        "type": "object"
+      },
+      "ExamStartInput": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Allow",
+            "type": "array"
+          },
+          "block_apps": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Block Apps",
+            "type": "array"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "maximum": 480.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Message",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ExamStartInput",
+        "type": "object"
+      },
       "FetchReleaseInput": {
         "properties": {
           "force": {
@@ -539,6 +616,47 @@
           }
         },
         "title": "FetchReleaseInput",
+        "type": "object"
+      },
+      "FilePullInput": {
+        "additionalProperties": false,
+        "properties": {
+          "any_profile": {
+            "default": false,
+            "title": "Any Profile",
+            "type": "boolean"
+          },
+          "max_size": {
+            "maximum": 209715200.0,
+            "minimum": 1.0,
+            "title": "Max Size",
+            "type": "integer"
+          },
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "pc": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Pc",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pc",
+          "path",
+          "max_size",
+          "reason"
+        ],
+        "title": "FilePullInput",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1730,8 +1848,15 @@
         "additionalProperties": false,
         "properties": {
           "command": {
-            "title": "Command",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
           },
           "name": {
             "title": "Name",
@@ -1740,12 +1865,21 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "winget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WingetPackage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "name",
-          "type",
-          "command"
+          "type"
         ],
         "title": "TaskSequenceItem",
         "type": "object"
@@ -2000,6 +2134,32 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WingetPackage": {
+        "additionalProperties": false,
+        "description": "WINGET adımının paketi: winget kimliği ve isteğe bağlı sürüm (null: en son sürüm). Bkz. pops/winget.py.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "WingetPackage",
         "type": "object"
       }
     },
@@ -3016,6 +3176,83 @@
         ]
       }
     },
+    "/api/v1/deploy/winget/catalog": {
+      "get": {
+        "description": "Okul ve ofis için seçilmiş winget paketleri (pops/winget_catalog.py; kimlikler winget-pkgs deposunda\ndoğrulandı). q: kimlik, ad, yayıncı, kategori ya da açıklamada geçen sözcükler (Türkçe harf ve büyük/küçük harf\nfarkı yok sayılır); category: kategori kimliği. Katalogda olmayan bir paket de kimliğiyle dağıtılabilir.",
+        "operationId": "winget_catalog_api_deploy_winget_catalog_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 100,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Winget Catalog",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/deploy_orchestration": {
       "post": {
         "deprecated": true,
@@ -3063,7 +3300,26 @@
     },
     "/api/v1/devices": {
       "get": {
+        "description": "Cihaz listesi. Parametresiz: bütün cihazlar (dizi; biçim değişmez). Yanıtta zayıf ETag (W/\"d<sürüm>\") vardır;\nIf-None-Match tutarsa 304. ?since=<sürüm>: {\"version\", \"full\": false, \"changed\", \"removed\", \"seen\"} ya da günlük\nyetmezse {\"version\", \"full\": true, \"devices\"} (bkz. pops/devicelist.py, docs/api.md).",
         "operationId": "get_devices_api_devices_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3072,6 +3328,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not Modified: If-None-Match matches the current device list version (ETag)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -3553,7 +3822,149 @@
         ]
       }
     },
+    "/api/v1/exams": {
+      "get": {
+        "description": "Sınav geçmişi, yeniden eskiye. active=true yalnızca sürenleri (bilgisayar durum sayılarıyla) verir.",
+        "operationId": "list_exams_api_exams_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lab",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lab"
+            }
+          },
+          {
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Active"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Exams",
+        "tags": [
+          "exams"
+        ]
+      }
+    },
     "/api/v1/files": {
+      "get": {
+        "description": "Aktarımlar, yeniden eskiye (?pc= ile bir bilgisayarın). Yalnız üst veri; dosyanın kendisi /content'ten.",
+        "operationId": "list_transfers_api_files_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pc",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pc"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Transfers",
+        "tags": [
+          "files"
+        ]
+      },
       "post": {
         "operationId": "upload_file_api_files_post",
         "requestBody": {
@@ -3594,6 +4005,294 @@
         "summary": "Upload File",
         "tags": [
           "tasks"
+        ]
+      }
+    },
+    "/api/v1/files/pull": {
+      "post": {
+        "description": "Bilgisayardan dosya ister. Gerekçe zorunlu ve denetim kaydına yazılır. any_profile (başka kullanıcıların\nprofilinden de) yalnızca superadmin içindir.",
+        "operationId": "pull_file_api_files_pull_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilePullInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pull File",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/push": {
+      "post": {
+        "description": "Multipart: file, pcs (bir ya da birçok kez), dest, reason, allow_exec. Gövde yetki denetiminden SONRA okunur\n(oturumsuz biri 200 MB yükleyip sunucuya geçici dosya yazdıramaz).",
+        "operationId": "push_file_api_files_push_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "allow_exec": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "dest": {
+                    "enum": [
+                      "public_desktop",
+                      "inbox"
+                    ],
+                    "type": "string"
+                  },
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "pcs": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 500,
+                    "type": "array"
+                  },
+                  "reason": {
+                    "maxLength": 300,
+                    "minLength": 3,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file",
+                  "pcs",
+                  "dest",
+                  "reason"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Push File",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/{transfer_id}/content": {
+      "get": {
+        "description": "Bilgisayardan alınan dosya: her zaman ek (attachment) olarak, içerik türü tahmin edilmeden (nosniff) ve\nönbelleğe alınmadan. İndirme denetim kaydına yazılır.",
+        "operationId": "download_content_api_files__transfer_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "transfer_id",
+            "required": true,
+            "schema": {
+              "title": "Transfer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download Content",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/{transfer_id}/download": {
+      "get": {
+        "description": "Ajan, kendisine gönderilen dosyayı indirir. Jeton tek kullanımlıktır ve 1 saatte dolar; aktarım bu ajanın\nbilgisayarına ait olmalıdır. Yanlış jeton, başka bilgisayar, kullanılmış/süresi dolmuş jeton: aynı 404 (jeton\ntüketilmez).",
+        "operationId": "agent_download_api_files__transfer_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "transfer_id",
+            "required": true,
+            "schema": {
+              "title": "Transfer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "t",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "T",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Download",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/{transfer_id}/upload": {
+      "post": {
+        "description": "Ajan istenen dosyayı yükler. Gövde ham dosyadır (application/octet-stream; önerilen) ya da multipart 'file'\nalanı. İsteğe bağlı X-Content-SHA256 başlığı verilirse özet tutmalıdır. Jeton tek kullanımlık: yarıda kalan ya da\nboyut sınırını aşan yükleme aktarımı 'failed' yapar.",
+        "operationId": "agent_upload_api_files__transfer_id__upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "transfer_id",
+            "required": true,
+            "schema": {
+              "title": "Transfer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "t",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "T",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Upload",
+        "tags": [
+          "files"
         ]
       }
     },
@@ -3927,6 +4626,167 @@
         "summary": "Rename Lab",
         "tags": [
           "devices"
+        ]
+      }
+    },
+    "/api/v1/labs/{lab_name}/exam": {
+      "delete": {
+        "description": "Sınıfın süren sınavını bitirir ve bağlı ajanlara enabled:false gönderir. Gövde isteğe bağlı: {reason}.",
+        "operationId": "end_exam_api_labs__lab_name__exam_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lab_name",
+            "required": true,
+            "schema": {
+              "title": "Lab Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ExamEndInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "End Exam",
+        "tags": [
+          "exams"
+        ]
+      },
+      "get": {
+        "description": "Sınıfın sınav durumu ve her bilgisayarın durumu (sınavda, ayrıldı, ulaşılamıyor, desteklemiyor ...). Bilinmeyen\nsınıfta sınav yoktur (active: false): panel yeni silinen ya da yeniden adlandırılan sınıfı sorarken 404 almasın.",
+        "operationId": "get_lab_exam_api_labs__lab_name__exam_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lab_name",
+            "required": true,
+            "schema": {
+              "title": "Lab Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Lab Exam",
+        "tags": [
+          "exams"
+        ]
+      },
+      "post": {
+        "description": "Sınıfta sınav modunu başlatır ve bağlı ajanlara gönderir; çevrimdışı olanlar bağlanınca alır.",
+        "operationId": "start_exam_api_labs__lab_name__exam_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lab_name",
+            "required": true,
+            "schema": {
+              "title": "Lab Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExamStartInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Exam",
+        "tags": [
+          "exams"
         ]
       }
     },
@@ -6493,7 +7353,7 @@
     },
     "/api/v1/system/deploy-update": {
       "post": {
-        "description": "Staged (yüklenip doğrulanmış) imzalı release'i hedef ajanlara dağıtır. Ajana\n{\"action\":\"update_agent\",\"manifest\":<b64>,\"manifest_sig\":<sig>} gönderilir; ajan MSI'ı\nkendi ServerUrl'inin /updates/<ad>'ından indirip imza + SHA-256'yı kendisi doğrular.",
+        "description": "Staged (yüklenip doğrulanmış) imzalı release'i hedef ajanlara dağıtır. Ajana\n{\"action\":\"update_agent\",\"manifest\":<b64>,\"manifest_sig\":<sig>} gönderilir; ajan kendi paketini (Windows MSI,\nLinux .deb) imzalı manifest'ten seçer, kendi ServerUrl'inin /updates/<ad>'ından indirip imza + SHA-256'yı\nkendisi doğrular. Release'te kendi platformunun paketi olmayan cihazlar atlanır (skipped_no_package).",
         "operationId": "deploy_update_api_system_deploy_update_post",
         "requestBody": {
           "content": {
@@ -6720,7 +7580,7 @@
     },
     "/api/v1/system/fetch-release": {
       "post": {
-        "description": "İnternetli kurulum yolu: imzalı release'i (manifest.json + .sig + ajan MSI'ı) GitHub'dan\nindirir ve upload-release ile AYNI doğrulamadan geçirip stage eder. Güven imzadan gelir,\nindirme kaynağından değil. Önce manifest indirilip doğrulanır; MSI'ın adını ve özetini\nimzalı manifest belirler. Ajanlara göndermek yine ayrı adımdır (deploy-update).",
+        "description": "İnternetli kurulum yolu: imzalı release'i (manifest.json + .sig + ajan paketleri: Windows MSI'ı ve varsa\nLinux .deb'i) GitHub'dan indirir ve upload-release ile AYNI doğrulamadan geçirip stage eder. Güven imzadan\ngelir, indirme kaynağından değil. Önce manifest indirilip doğrulanır; paketlerin adını ve özetini imzalı\nmanifest belirler. Ajanlara göndermek yine ayrı adımdır (deploy-update).",
         "operationId": "fetch_release_api_system_fetch_release_post",
         "requestBody": {
           "content": {

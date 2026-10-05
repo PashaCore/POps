@@ -35,7 +35,8 @@ _SAFE_RID = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
 
 # ── Yük ölçümleri (0.1.14): heartbeat başına sorgu, saniyedeki yazma, komut gönderme gecikmesi ──────────────
 # counters: heartbeats, heartbeat_queries (heartbeat işlenirken atılan sorgu), heartbeat_rows_written (toplu yazılan
-# satır), db_reads, db_writes (execute_query üzerinden; işlem içindeki sorgular sayılmaz)
+# satır), db_reads, db_writes (execute_query üzerinden; işlem içindeki sorgular sayılmaz), device_list_versions (cihaz
+# listesinin yeni sürümleri), device_list_304 / device_list_delta / device_list_full (/api/devices yanıt türleri)
 counters = {}
 _writes_per_second = {}  # epoch saniyesi -> yazma sayısı (son 60 sn)
 # Görevin kuyruğa girişinden ajana gönderilmesine kadar geçen süre (eşzamanlılık sınırında bekleme dahil) ve
@@ -206,7 +207,8 @@ def render(gauges, level_counts, version):
     metric("pops_unhandled_errors_total", "counter", "Yakalanmayan istisnalar", [({}, unhandled_errors[0])])
     metric(
         "pops_events_total", "counter",
-        "Olay sayaclari (heartbeats, heartbeat_queries, heartbeat_rows_written, db_reads, db_writes)",
+        "Olay sayaclari (heartbeats, heartbeat_queries, heartbeat_rows_written, db_reads, db_writes, "
+        "device_list_versions, device_list_304, device_list_delta, device_list_full)",
         [({"event": k}, v) for k, v in sorted(counters.items())],
     )
     for name, help_text, row, buckets in (

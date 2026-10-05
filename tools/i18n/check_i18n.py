@@ -151,15 +151,19 @@ def lang_files(root):
 
 
 def missing(root, page, lang):
+    d = os.path.join(root, 'Dashboard', 'lang', lang)
+
     def load(name):
-        p = os.path.join(root, 'Dashboard', 'lang', lang, name + '.json')
-        return json.loads(read(p)) if os.path.exists(p) else {}
+        # <ad>.json ve parça dosyaları <ad>.<parça>.json (panel ikisini de okur: includes/i18n.php)
+        out = {}
+        for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            if n.startswith(name + '.') and n.endswith('.json') and n != name + '.json':
+                out.update(json.loads(read(os.path.join(d, n))))
+        p = os.path.join(d, name + '.json')
+        out.update(json.loads(read(p)) if os.path.exists(p) else {})
+        return out
     have = load('common')
     if page != 'common':
-        d = os.path.join(root, 'Dashboard', 'lang', lang)
-        for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
-            if n.startswith(page + '.') and n.endswith('.json'):
-                have.update(json.loads(read(os.path.join(d, n))))
         have.update(load(page))
     seen, out = set(), []
     for path in source_files(root, page):

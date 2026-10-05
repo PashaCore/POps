@@ -23,7 +23,7 @@ import secrets
 import shutil
 import time
 import urllib.request
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
@@ -31,7 +31,7 @@ from pydantic import BaseModel, field_validator
 
 import release_verify
 from pops import agent_version as agent_version_mod
-from pops import update_tracking
+from pops import devicelist, update_tracking
 from pops.models import StrictInput, TargetMode, UpdateProgressInput, upper_mode
 
 
@@ -318,9 +318,31 @@ def _new_items(new: Optional[dict], old: Optional[dict]) -> Optional[dict]:
 
 
 def _agent_msis(manifest: dict) -> List[str]:
-    """İmzalı manifest'teki ajan MSI'larının adları (deploy-update tam olarak birini bekler)."""
+    """İmzalı manifest'teki Windows ajan MSI'larının adları (en çok bir tane beklenir)."""
     return [str(a.get("name", "")) for a in manifest.get("artifacts", [])
             if str(a.get("name", "")).startswith("POps-Agent-") and str(a.get("name", "")).endswith("-win-x64.msi")]
+
+
+# Linux ajan paketi (Agent-Linux/build_deb.py): pops-agent_<sürüm>_all.deb
+_DEB_RE = re.compile(r"^pops-agent_[A-Za-z0-9.+~-]+_all\.deb$")
+
+
+def _agent_debs(manifest: dict) -> List[str]:
+    """İmzalı manifest'teki Linux ajan paketlerinin (.deb) adları (en çok bir tane beklenir)."""
+    return [n for n in (str(a.get("name", "")) for a in manifest.get("artifacts", [])) if _DEB_RE.match(n)]
+
+
+def _agent_packages(manifest: dict) -> Dict[str, str]:
+    """Platform -> ajan paketi ("windows": MSI, "linux": .deb). Bir platform için birden fazla paket varsa
+    ValueError. Her ajan imzalı manifest'ten yalnızca kendi paketini seçer (Windows ajanı MSI adını, Linux ajanı .deb
+    adını arar); diğer platformun paketi onları etkilemez."""
+    out = {}
+    for platform, names in (("windows", _agent_msis(manifest)), ("linux", _agent_debs(manifest))):
+        if len(names) > 1:
+            raise ValueError("%s için tek bir ajan paketi bekleniyordu, %d var" % (platform, len(names)))
+        if names:
+            out[platform] = names[0]
+    return out
 
 
 def _newer(candidate: Optional[str], current: Optional[str]) -> bool:
@@ -531,10 +553,10 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
 
     @router.post("/api/system/fetch-release")
     async def fetch_release(data: FetchReleaseInput, auth: dict = Depends(require_superadmin)):
-        """İnternetli kurulum yolu: imzalı release'i (manifest.json + .sig + ajan MSI'ı) GitHub'dan
-        indirir ve upload-release ile AYNI doğrulamadan geçirip stage eder. Güven imzadan gelir,
-        indirme kaynağından değil. Önce manifest indirilip doğrulanır; MSI'ın adını ve özetini
-        imzalı manifest belirler. Ajanlara göndermek yine ayrı adımdır (deploy-update)."""
+        """İnternetli kurulum yolu: imzalı release'i (manifest.json + .sig + ajan paketleri: Windows MSI'ı ve varsa
+        Linux .deb'i) GitHub'dan indirir ve upload-release ile AYNI doğrulamadan geçirip stage eder. Güven imzadan
+        gelir, indirme kaynağından değil. Önce manifest indirilip doğrulanır; paketlerin adını ve özetini imzalı
+        manifest belirler. Ajanlara göndermek yine ayrı adımdır (deploy-update)."""
         pub = _pubkey_path()
         if not pub:
             raise HTTPException(status_code=503,
@@ -566,13 +588,19 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
                 manifest = release_verify.verify_manifest(blobs["manifest.json"], blobs["manifest.json.sig"], pub)
             except release_verify.ReleaseVerifyError as exc:
                 raise HTTPException(status_code=400, detail="İmza doğrulanamadı: %s" % exc)
-            msis = _agent_msis(manifest)
-            if len(msis) != 1 or msis[0] not in assets:
-                raise HTTPException(status_code=502, detail="%s release'inde imzalı ajan MSI'ı bulunamadı." % tag)
             try:
-                blobs[msis[0]] = await asyncio.to_thread(_http_get, assets[msis[0]], _MAX_ARTIFACT_BYTES)
-            except Exception as exc:
-                raise HTTPException(status_code=502, detail="MSI indirilemedi: %s" % exc)
+                packages = _agent_packages(manifest)
+            except ValueError as exc:
+                raise HTTPException(status_code=502, detail="%s release'i: %s." % (tag, exc))
+            missing = [n for n in packages.values() if n not in assets]
+            if not packages or missing:
+                raise HTTPException(status_code=502, detail="%s release'inde imzalı ajan paketi bulunamadı%s." % (
+                    tag, (": " + ", ".join(missing)) if missing else ""))
+            for name in packages.values():
+                try:
+                    blobs[name] = await asyncio.to_thread(_http_get, assets[name], _MAX_ARTIFACT_BYTES)
+                except Exception as exc:
+                    raise HTTPException(status_code=502, detail="%s indirilemedi: %s" % (name, exc))
             result = await _verify_and_stage(blobs, data.force)
         finally:
             _fetch_state["busy"] = False
@@ -666,8 +694,9 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
     @router.post("/api/system/deploy-update")
     async def deploy_update(data: DeployUpdateInput, auth: dict = Depends(require_superadmin)):
         """Staged (yüklenip doğrulanmış) imzalı release'i hedef ajanlara dağıtır. Ajana
-        {"action":"update_agent","manifest":<b64>,"manifest_sig":<sig>} gönderilir; ajan MSI'ı
-        kendi ServerUrl'inin /updates/<ad>'ından indirip imza + SHA-256'yı kendisi doğrular."""
+        {"action":"update_agent","manifest":<b64>,"manifest_sig":<sig>} gönderilir; ajan kendi paketini (Windows MSI,
+        Linux .deb) imzalı manifest'ten seçer, kendi ServerUrl'inin /updates/<ad>'ından indirip imza + SHA-256'yı
+        kendisi doğrular. Release'te kendi platformunun paketi olmayan cihazlar atlanır (skipped_no_package)."""
         staged = await _staged_release()
         if not staged:
             raise HTTPException(status_code=400,
@@ -678,21 +707,29 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         spath = os.path.join(reldir, "manifest.json.sig")
         if not (os.path.isfile(mpath) and os.path.isfile(spath)):
             raise HTTPException(status_code=409, detail="Staged release dosyaları eksik; tekrar yükleyin.")
-        msis = _agent_msis(staged)
-        if len(msis) != 1:
-            raise HTTPException(status_code=409,
-                                detail="Staged release'de tek bir ajan MSI'ı bekleniyordu, %d var." % len(msis))
-        msi_name = msis[0]
-        msi_src = os.path.join(reldir, msi_name)
-        if not os.path.isfile(msi_src):
-            raise HTTPException(status_code=409,
-                                detail="MSI staged klasörde yok: %s (upload-release'e MSI'ı da yükleyin)." % msi_name)
-        # Ajan buradan indirir (/updates StaticFiles); yol-gezinme koruması
+        try:
+            packages = _agent_packages(staged)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="Staged release: %s." % exc)
+        if not packages:
+            raise HTTPException(status_code=409, detail="Staged release'de ajan paketi (MSI ya da .deb) yok.")
+        # Ajan buradan indirir (/updates StaticFiles); yol-gezinme koruması. Yalnızca staged klasörde olan paketler
+        # kopyalanır (upload-release'e yalnız MSI yüklenmiş olabilir); paketi olmayan platformun cihazları atlanır.
         os.makedirs(updates_dir, exist_ok=True)
-        msi_dst = os.path.realpath(os.path.join(updates_dir, msi_name))
-        if os.path.dirname(msi_dst) != os.path.realpath(updates_dir):
-            raise HTTPException(status_code=400, detail="geçersiz MSI adı")
-        shutil.copyfile(msi_src, msi_dst)
+        available = {}
+        for platform, name in packages.items():
+            src = os.path.join(reldir, name)
+            if not os.path.isfile(src):
+                continue
+            dst = os.path.realpath(os.path.join(updates_dir, name))
+            if os.path.dirname(dst) != os.path.realpath(updates_dir):
+                raise HTTPException(status_code=400, detail="geçersiz paket adı")
+            shutil.copyfile(src, dst)
+            available[platform] = name
+        if not available:
+            raise HTTPException(status_code=409, detail="Paket staged klasörde yok: %s (upload-release'e paketi de "
+                                                        "yükleyin)." % ", ".join(packages.values()))
+        msi_name, deb_name = available.get("windows"), available.get("linux")
         with open(mpath, "rb") as f:
             manifest_b64 = base64.b64encode(f.read()).decode("ascii")
         with open(spath, "r", encoding="utf-8") as f:
@@ -700,6 +737,11 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         msg = {"action": "update_agent", "manifest": manifest_b64, "manifest_sig": sig}
 
         targets = await _resolve_targets(data)
+        rows = await execute_query(
+            "SELECT pc_name, platform FROM clients WHERE pc_name = ANY($1::text[])", (sorted(targets),), fetch=True)
+        platform_of = {r["pc_name"]: (r["platform"] or "windows") for r in rows or []}
+        no_package = sorted(t for t in targets if platform_of.get(t, "windows") not in available)
+        targets = {t for t in targets if t not in no_package}
         # Aynı sürüm son 15 dk içinde gönderildiyse (ya da ajan o sürede adım bildirdiyse) yeniden gönderilmez: ajan
         # kurulum sürerken gelen ikinci emri zaten yok sayar. Kurulum sırasında bağlantısız görünen cihaz da burada.
         already = sorted(await update_tracking.recently_sent(targets, version))
@@ -715,10 +757,11 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
             # adımı silinir (bkz. pops/update_tracking.py)
             await update_tracking.mark_sent(pc, version)
         await add_audit_log("*", "deploy_update", "İmzalı güncelleme dağıtıldı: %s" % version,
-                            {"version": version, "msi": msi_name, "dispatched": online, "offline": offline,
-                             "already_pending": already, "by": auth.get("sub")})
-        return {"ok": True, "version": version, "msi": msi_name,
-                "dispatched": online, "skipped_offline": offline, "already_pending": already}
+                            {"version": version, "msi": msi_name, "deb": deb_name, "dispatched": online,
+                             "offline": offline, "no_package": no_package, "already_pending": already,
+                             "by": auth.get("sub")})
+        return {"ok": True, "version": version, "msi": msi_name, "deb": deb_name, "dispatched": online,
+                "skipped_offline": offline, "skipped_no_package": no_package, "already_pending": already}
 
     @router.post("/api/system/enforce-auth")
     async def set_enforce(data: EnforceInput, auth: dict = Depends(require_superadmin)):
@@ -800,6 +843,7 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         params.append(pc)
         await execute_query("UPDATE clients SET %s WHERE pc_name=$%d" % (", ".join(sets), len(params)),
                             tuple(params))
+        await devicelist.sync([pc])
         # send_command çevrimdışıysa no-op; online durumunu ayrıca bildiriyoruz. Kapatma isteği
         # kalıcı kaydedildi, ajan sonra bağlanınca /ws/agent 'capabilities' handler'ı uygular.
         online = pc in manager.active_agents

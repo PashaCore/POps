@@ -372,3 +372,76 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   SYSTEM), so it must be treated like an admin password; the audit trail shows which token did what. Uploads over
   8 MB through `/api/v1` need the updated reverse-proxy rule on existing servers. Endpoint and model changes must
   commit the regenerated schema.
+
+## D-22 The Linux agent is Python 3 on the distribution's own packages
+
+**Since:** 0.1.23-alpha (first version; the CHANGELOG entry lands with the release).
+
+- **Context:** Schools that use Pardus (the Turkish public-sector Debian derivative) had no agent. The reviewers
+  scoped a first version to inventory and commands: the same `/ws/agent` protocol, enrollment token and per-device
+  secret, hardware ID from DMI, installed packages from `dpkg`, commands with the capability policy, and signed
+  updates. Screen view, quarantine and the tray are later work. The roadmap listed three ways to build it: .NET on
+  Linux, a small Go agent and a Python agent.
+- **Decision:** Python 3 with the standard library plus two distribution packages, `python3-websockets` and
+  `python3-cryptography` (both in Debian 12 and Pardus 23). No virtual environment and no `pip` on the PC: the
+  `.deb` depends on those packages and `apt` installs them, and their security fixes arrive with the
+  distribution's updates. The agent lives in `Agent-Linux/`; `build_deb.py` writes the `.deb` (`Architecture: all`,
+  about 45 KB) without dpkg, byte for byte reproducible from `SOURCE_DATE_EPOCH`, and the release workflow adds it to
+  the signed manifest next to the MSI. Reasons:
+  - it is the backend team's language: the same people can read and change both ends of the protocol;
+  - it is tested end to end on Linux CI: the unit tests run on the distribution's own `python3` and packages, and an
+    integration job enrolls the agent from the source tree against a real backend over TLS;
+  - the package is small and architecture-independent: one `.deb` for every lab PC (tested on amd64);
+  - the first version's scope (inventory and commands) needs no GUI, capture or system API that Python lacks.
+- **Not chosen now:** .NET would reuse the tested protocol code and `POps.Tests`, but the service host, WMI
+  inventory, pipe, tray and MSI updater are Windows-specific and would be rewritten anyway, and it needs either the
+  .NET runtime on every PC or a self-contained build per architecture (the Windows MSI is about 41 MB, D-19) whose
+  security fixes only come with a POps release. Go gives one static binary, but adds a third language to a small team (the bus-factor
+  concern) and reimplements protocol and verification without sharing code with either side; it stays the option if
+  a later version (screen capture on X11 and Wayland) needs a compiled helper.
+- **Consequences:** Supported systems are those whose `python3-websockets` is 10 or newer: Debian 12 and Pardus 23
+  and later, Ubuntu 24.04. Ubuntu 22.04's 9.1 package does not work with its own Python 3.10 and is not supported.
+  The agent's source is readable on the PC (it is open source anyway); its files are root-owned and the service runs
+  `python3 -I`, which ignores `PYTHON*` variables and user site-packages. The agent cannot pin its library versions:
+  it is written against websockets 10 to 17 and cryptography 38 and later, and CI runs it on the distribution
+  packages. Self-update installs the `.deb` with `dpkg` from a transient systemd unit and rolls back to the previous
+  package; there is no bundled runtime to update. Linux devices are told apart by `clients.platform` (migration 0026).
+
+## D-23 winget packages as their own agent action
+
+**Since:** 0.1.23-alpha (server and panel; the agent side follows).
+
+- **Context:** A reviewer listed a winget/Chocolatey catalog as missing: schools install the same browsers, office
+  suites and teaching tools on every PC, and building an MSI/EXE package for each is slow. Every deployment so far
+  is an `execute` task: the panel builds a command line and the agent runs it through `cmd.exe`. Agents in the
+  field are old and new at once, and an agent ignores a command `action` it does not know.
+- **Options:**
+  - (a) Send winget as an `execute` task whose `script_path` carries a marker and a structured payload. Old agents
+    would hand the marker to `cmd.exe` as a command line: something would run (an error, or winget through a shell
+    with server-supplied text), which is exactly what must not happen.
+  - (b) A new action, `winget_install`, with the package as data, answered with the normal `result`.
+- **Decision:** (b).
+  - The step type is `WINGET` with `{"id", "version"}`. The task row gets `kind = 'winget'` and the package in
+    `payload` (migration `0027`); `script_path` holds the readable command line for the panel and the audit log and
+    is never sent. Retries copy `kind` and `payload`, so a winget task can never become an `execute`.
+  - Old agents must not receive it at all: they would ignore it and leave the task `Running` until the 35-minute
+    timeout. An agent that implements it says so with `X-Agent-Features: winget` when it connects; the server
+    stores the list per connection (`agent_versions.features`) and sends `winget_install` only to such an agent.
+    For every other agent the task becomes `Denied` with exit code -8 before anything is sent. The panel warns
+    before deploying to computers whose agent lacks the feature. The server lists `winget` in
+    `server_info.features`.
+  - Ids match `^[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}$` and versions `^[0-9A-Za-z.+_-]{1,40}$`, checked on the request,
+    again before dispatch and again by the agent. The agent starts `winget.exe` without a shell, with each argument
+    as its own `ArgumentList` entry, so nothing in an id or version can become a command.
+  - The agent runs it only where the local terminal capability is on and the lab's `deploy` module is on: it
+    installs software as SYSTEM, like package deployment through `execute`, so the D-08 lock covers it too. The
+    server checks the module before dispatch.
+  - winget exit codes that mean "already installed" or "installed, restart pending" count as `Completed`.
+  - The catalog (69 packages, ids checked against `microsoft/winget-pkgs`) is a Python module,
+    `Backend/pops/winget_catalog.py`, not a JSON file: `pops-deploy-backend`, which self-update runs from
+    `/usr/local/sbin`, copies only the tracked `Backend/*.py`, migrations, keys and `VERSION`, so a data file
+    would never reach installed servers. Packages that are not in the catalog can still be deployed by id.
+- **Consequences:** No old agent runs or loses a winget step; it is refused with a reason the panel can show.
+  The agent needs one more handler and one header. PCs need winget (App Installer) and internet access to the
+  winget source; offline schools keep using uploaded packages (D-15). A per-PC switch for deployment separate
+  from the terminal capability would need a new local capability and is not part of this change.

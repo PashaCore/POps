@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/capability_denied.json",
   "title": "capability_denied",
-  "description": "The agent refused a request because a capability or a server module is off on this device, or because the device is not enrolled. The server writes an audit event, raises a notification and forwards it to the panels. With `task_id` the task becomes `Denied`. Agents send the same capability/action/reason at most once a minute, except when `task_id` is set.",
+  "description": "The agent refused a request because a capability or a server module is off on this device, because the device is not enrolled, or because the agent does not implement it (Linux agent). The server writes an audit event, raises a notification and forwards it to the panels. With `task_id` the task becomes `Denied`; with `transfer_id` (capability `files`) the file transfer becomes `rejected` and the device's file capability is stored as off. Agents send the same capability/action/reason at most once a minute, except when `task_id` is set.",
   "x-pops-channels": [
     "/ws/agent"
   ],
@@ -19,19 +19,23 @@
     },
     "capability": {
       "type": "string",
-      "description": "terminal, vision, patches or wol (Windows agent)."
+      "description": "terminal, vision, patches, wol, files or exam (Windows agent); terminal, vision, quarantine, patches or wol (Linux agent); deploy for a `winget_install` refused because the lab's deploy module is off."
     },
     "action": {
       "type": "string",
-      "description": "What was refused: a server action (execute, start_vision_session, start_stream, wake_peer, scan_updates, install_updates), a remote_input sub-command (get_thumbnail, set_fps, remote_input) or vision_tunnel (the tray asked for the Vision channel)."
+      "description": "What was refused: a server action (execute, winget_install, start_vision_session, start_stream, wake_peer, scan_updates, install_updates, file_push, file_pull, exam_mode; lockdown and unlock from the Linux agent), a remote_input sub-command (get_thumbnail, set_fps, remote_input) or vision_tunnel (the tray asked for the Vision channel)."
     },
     "task_id": {
       "type": "integer",
-      "description": "Only for a refused `execute`."
+      "description": "Only for a refused `execute` or `winget_install`."
+    },
+    "transfer_id": {
+      "type": "string",
+      "description": "Only for a refused `file_push` or `file_pull`: the transfer from that message."
     },
     "reason": {
       "type": "string",
-      "description": "0.1.12+. Missing = local capability policy; \"module_disabled\" = the server module is off for the device's lab; \"not_enrolled\" = no device secret, so the Vision channel was not opened."
+      "description": "0.1.12+. Missing = local capability policy; \"module_disabled\" = the server module is off for the device's lab; \"not_enrolled\" = no device secret, so the Vision channel was not opened. \"not_supported\" = the agent does not implement the action (Linux agent: quarantine, Vision, Windows Update); for `quarantine` from a secret-authenticated Linux agent the server clears the device's quarantine flag and pending action."
     }
   }
 }

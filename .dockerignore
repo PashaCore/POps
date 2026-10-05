@@ -18,6 +18,7 @@ Backend/tests
 Backend/storage
 Backend/updates
 Backend/releases
+Backend/transfers
 # Server-specific files that are not in git
 Dashboard/.htaccess
 Dashboard/includes/config.php

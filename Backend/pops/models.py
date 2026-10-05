@@ -1,8 +1,12 @@
 """İstek gövdeleri için Pydantic modelleri."""
 
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AliasChoices, BaseModel, ConfigDict, Field, StrictFloat, StrictInt, field_validator, model_validator,
+)
+
+from pops import winget
 
 TargetMode = Literal["ALL", "LAB", "PC"]
 
@@ -91,10 +95,38 @@ class SetLimitInput(BaseModel):
     limit: int = Field(ge=0, le=10000)
 
 
+class WingetPackage(StrictInput):
+    """WINGET adımının paketi: winget kimliği ve isteğe bağlı sürüm (null: en son sürüm). Bkz. pops/winget.py."""
+    id: str
+    version: Optional[str] = None
+
+    _id = field_validator("id")(winget.clean_id)
+    _version = field_validator("version")(winget.clean_version)
+
+
 class TaskSequenceItem(StrictInput):
     name: str
+    # CMD (serbest komut), package / script (kitaplıktan, komut panelde üretilir) ya da WINGET (winget paketi)
     type: str
-    command: str
+    command: Optional[str] = None
+    winget: Optional[WingetPackage] = None
+
+    @model_validator(mode="after")
+    def _payload(self):
+        if self.is_winget:
+            if self.winget is None:
+                raise ValueError("WINGET adımı winget paketini ister ({\"id\": ..., \"version\": ...})")
+            if self.command:
+                raise ValueError("WINGET adımı komut taşımaz")
+        elif self.winget is not None:
+            raise ValueError("winget alanı yalnızca WINGET adımında olur")
+        elif self.command is None:
+            raise ValueError("Adımın komutu yok")
+        return self
+
+    @property
+    def is_winget(self) -> bool:
+        return (self.type or "").strip().upper() == "WINGET"
 
 
 class OrchestrationInput(StrictInput):
@@ -372,3 +404,18 @@ class ApiTokenCreateInput(StrictInput):
     name: str = Field(min_length=1, max_length=64)
     role: Literal["viewer", "admin"]
     expires_days: Optional[int] = Field(default=None, ge=1, le=3650)   # None = süresiz
+
+
+# ─── Sınav modu (pops/exams.py) ───────────────────────────────────────────────
+class ExamStartInput(StrictInput):
+    # Girişlerin biçimi ve sayısı (en çok 50, tekrarlar birleşir) uçta denetlenir: hatalı girişin adı 400'de yazar
+    allow: List[str] = Field(default_factory=list, max_length=200)
+    until: Optional[Union[StrictInt, StrictFloat]] = None            # unix saniye; ya bu ya duration_minutes
+    duration_minutes: Optional[StrictInt] = Field(default=None, ge=1, le=480)
+    message: str = Field(default="", max_length=1000)
+    block_apps: List[str] = Field(default_factory=list, max_length=200)
+    reason: str = Field(max_length=1000)
+
+
+class ExamEndInput(StrictInput):
+    reason: str = Field(default="", max_length=1000)

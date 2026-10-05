@@ -1,0 +1,50 @@
+{
+  "Sınav modu": "Exam mode",
+  "Sınav modu…": "Exam mode…",
+  "Sınav modu (modül kapalı)": "Exam mode (module off)",
+  "Sınav modu: {lab}": "Exam mode: {lab}",
+  "Sınavı bitir": "End exam",
+  "Sınavı başlat": "Start exam",
+  "İzin verilen: {list}": "Allowed: {list}",
+  "{n} sınavda": "{n} in exam",
+  "{n} ayrıldı": "{n} left",
+  "{n} reddetti": "{n} refused",
+  "{n} ulaşılamıyor": "{n} unreachable",
+  "{n} desteklemiyor": "{n} not supported",
+  "{n} bekleniyor": "{n} waiting",
+  "Sınav süresince sınıftaki bilgisayarlar yalnızca POps sunucusuna ve izin verdiğiniz adreslere erişir; tepside mesajınız görünür. Bu bir ağ kısıtlamasıdır, gözetim değildir: bilgisayardaki yerel yönetici sınav modunu kapatabilir.": "During the exam the lab's computers can reach only the POps server and the addresses you allow, and your message shows in the tray. This is a network restriction, not proctoring: a local administrator on the computer can switch exam mode off.",
+  "Sınıfta {n} bilgisayar var.": {
+    "one": "The lab has {n} computer.",
+    "other": "The lab has {n} computers."
+  },
+  "Sınıfta {n} bilgisayar var; kapalı olanlar açılınca sınavı alır.": {
+    "one": "The lab has {n} computer; if it is off, it gets the exam when it starts.",
+    "other": "The lab has {n} computers; those that are off get the exam when they start."
+  },
+  "İzin verilen adresler": "Allowed addresses",
+  "Her satıra bir alan adı, IP adresi ya da ağ (CIDR). En fazla 50. POps sunucusu, DNS ve DHCP her zaman açıktır; boş bırakılırsa yalnızca onlar açık kalır.": "One domain name, IP address or network (CIDR) per line, at most 50. The POps server, DNS and DHCP are always open; leave it empty to allow only those.",
+  "Süre": "Duration",
+  "40 dk": "40 min",
+  "80 dk": "80 min",
+  "120 dk": "120 min",
+  "Saat seç": "Pick a time",
+  "Bitiş saati": "End time",
+  "Bitiş: {time}": "Ends at {time}",
+  "Bitiş saati geçmiş; bugün için ileri bir saat seçin.": "That time has passed; pick a later time today.",
+  "Tepside görünen mesaj": "Message shown in the tray",
+  "Engellenecek programlar (isteğe bağlı)": "Programs to block (optional)",
+  "Virgülle ayırın. Sınav süresince bu programlar açılamaz.": "Separate them with commas. These programs cannot be started during the exam.",
+  "Örn. 9/A matematik yazılısı": "E.g. 9/A maths test",
+  "Gerekçe yazın.": "Enter a reason.",
+  "Sınav modu başladı: {n} bilgisayara gönderildi.": {
+    "one": "Exam mode started: sent to {n} computer.",
+    "other": "Exam mode started: sent to {n} computers."
+  },
+  "Kapalı {n} bilgisayar açılınca alır.": {
+    "one": "{n} computer that is off gets it when it starts.",
+    "other": "{n} computers that are off get it when they start."
+  },
+  "{lab} sınavı bitirilsin mi?": "End the exam in {lab}?",
+  "Bilgisayarlar hemen sınav modundan çıkar; kapalı olanlar açılınca çıkar.": "The computers leave exam mode now; those that are off leave it when they start.",
+  "Sınav bitirildi.": "Exam ended."
+}

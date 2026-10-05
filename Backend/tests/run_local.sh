@@ -47,6 +47,7 @@ python tests/test_security.py
 python tests/test_2fa.py
 python tests/test_agent_authz.py
 python tests/test_remote_authz.py
+python tests/test_vision_v2.py
 python tests/test_device_keys.py
 python tests/test_hardening.py
 python tests/test_p1.py
@@ -59,6 +60,10 @@ python tests/test_helpdesk_licenses.py
 python tests/test_ops.py
 python tests/test_api_tokens.py
 python tests/test_demo.py
+python tests/test_files.py
+python tests/test_exam.py
+python tests/test_winget.py
+python tests/test_devices_delta.py
 if [ "${COVERAGE:-0}" = "1" ]; then
   kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
   python -m coverage combine --rcfile=.coveragerc >/dev/null

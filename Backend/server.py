@@ -19,7 +19,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from migrate import run_migrations_on
-from pops import db, heartbeats, notify, secretbox, update_tracking
+from pops import db, devicelist, heartbeats, notify, secretbox, update_tracking
 from pops.apiversion import ApiVersionMiddleware
 from pops.logs import setup_logging, stop_background_writer
 from pops.metrics import RequestContextMiddleware
@@ -31,6 +31,7 @@ from pops.config import (
     DB_IDLE_IN_TRANSACTION_MS,
     DB_POOL_MAX,
     DB_POOL_MIN,
+    FILES_DIR,
     JWT_ALGO,
     JWT_COOKIE_NAME,
     JWT_SECRET,
@@ -46,6 +47,8 @@ from pops.routers import (
     auth,
     control,
     devices,
+    files,
+    exams as exams_router,
     helpdesk,
     inventory,
     licenses,
@@ -120,6 +123,10 @@ if not os.path.exists(UPDATES_DIR):
     os.makedirs(UPDATES_DIR)
 
 
+# Dosya aktarımı klasörü: statik bağlanmaz (bkz. routers/files.py)
+os.makedirs(FILES_DIR, mode=0o750, exist_ok=True)
+
+
 # /download artık statik değil: dağıtım paketleri yalnızca imzalı adresle iner (bkz. routers/tasks.py download_file)
 
 
@@ -179,6 +186,8 @@ async def startup_event():
             app.state.scheduler = asyncio.create_task(scheduler_loop())
             # Heartbeat'ler toplu yazılır (bkz. pops/heartbeats.py)
             app.state.heartbeats = asyncio.create_task(heartbeats.flush_loop())
+            # Cihaz listesi sürümü ve panele "değişti" bildirimi (bkz. pops/devicelist.py)
+            app.state.devicelist = asyncio.create_task(devicelist.run_loop(manager.broadcast_to_panels))
             break
         except Exception as e:
             log.error("veritabanı bağlantı hatası", extra={"attempt": i + 1, "of": 5, "error": repr(e)[:300]})
@@ -201,7 +210,7 @@ async def shutdown_event():
     """Düzgün kapanış. uvicorn bu noktada yeni bağlantı almayı bırakmış, açık WebSocket'leri kapatmış (ajanlar
     "Offline" yazıldı) ve süren HTTP isteklerini beklemiştir. Kalanlar: zamanlayıcı (turu yarıda kalırsa işlemi
     geri alınır), bellekte bekleyen heartbeat'ler, arka plandaki bildirim gönderimleri ve havuz."""
-    for name in ("scheduler", "heartbeats"):
+    for name in ("scheduler", "heartbeats", "devicelist"):
         task = getattr(app.state, name, None)
         if task:
             task.cancel()
@@ -234,7 +243,9 @@ async def shutdown_event():
 # Uç grupları (sıra: özgün tanım sırasına yakın; yol/metot çakışması yok — bkz. rota eşleşme testi)
 _ROUTERS = (
     auth, control, agents, tasks, devices, schedules, notifications, inventory, reports, licenses, helpdesk, ops,
-    activity, modules_router, branding, tokens,
+    activity, modules_router, branding, tokens, files,
+    # Sınav modu (/api/labs/{lab_name:path}/exam): rest'in genel /api/labs/{lab_name} yollarından önce
+    exams_router,
     # REST adları (/api/v1) eski uçların işleyicilerini çağırır; eskilerden sonra bağlanır
     rest,
 )

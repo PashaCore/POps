@@ -24,6 +24,7 @@ import json  # noqa: E402
 import logging  # noqa: E402
 import re  # noqa: E402
 import tempfile  # noqa: E402
+import time  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 
 from jsonschema import Draft202012Validator  # noqa: E402
@@ -271,7 +272,7 @@ def test_code_matches_schemas():
 
     agents_src = _read(os.path.join(BACKEND, "pops", "routers", "agents.py"))
     control_src = _read(os.path.join(BACKEND, "pops", "routers", "control.py"))
-    handled = set(re.findall(r'(?:payload|pld)\.get\("type"\) == "([a-z_]+)"', agents_src))
+    handled = set(re.findall(r'(?:payload|pld)\.get\("type"\) == "([a-z_]+)"', agents_src + control_src))
     for group in re.findall(r'payload\.get\("type"\) in \[([^\]]*)\]', control_src):
         handled |= set(re.findall(r'"([a-z_]+)"', group))
     handled.add("heartbeat")   # type'sız; status ile tanınır (agents.py handle_routine_payload)
@@ -356,6 +357,17 @@ class FakeWS:
         item = item() if callable(item) else item
         return item if isinstance(item, str) else json.dumps(item, ensure_ascii=False)
 
+    async def receive(self):
+        """ASGI biçimi (ikili mesaj da alan /ws/vision için): bytes ikili mesaj olur, bitince disconnect."""
+        if self.closed is not None or not self.incoming:
+            return {"type": "websocket.disconnect", "code": 1000}
+        item = self.incoming.pop(0)
+        item = item() if callable(item) else item
+        if isinstance(item, bytes):
+            return {"type": "websocket.receive", "bytes": item}
+        return {"type": "websocket.receive",
+                "text": item if isinstance(item, str) else json.dumps(item, ensure_ascii=False)}
+
     async def send_text(self, text):
         msg = json.loads(text)
         self.sent.append(msg)
@@ -384,6 +396,28 @@ class Captured(logging.Handler):
         self.records.append(record)
 
 
+def exam_row(ended=False):
+    """examples/server-to-agent/exam_mode.json'daki sınavın exam_sessions satırı (sahte veritabanı için)."""
+    import datetime
+
+    on = example(S2A, "exam_mode")
+    utc = datetime.timezone.utc
+    return {
+        "id": 31, "lab_name": "LAB-A", "allow_list": json.dumps(on["allow"]),
+        "until_at": datetime.datetime.fromtimestamp(on["until"], utc), "message": on["message"],
+        "block_apps": json.dumps(on["block_apps"]), "reason": "Matematik yazılısı", "started_by": "admin",
+        "started_at": datetime.datetime.fromtimestamp(on["until"] - 2400, utc),
+        "ended_by": "admin" if ended else None,
+        "ended_at": datetime.datetime.fromtimestamp(on["until"] - 600, utc) if ended else None,
+        "end_reason": "admin" if ended else None,
+    }
+
+
+def exam_clock():
+    """Sınav örneklerinin anı: exam_state örneğinden 2 dakika sonra (sınav sürüyor, bitişe 38 dakika var)."""
+    return SimpleNamespace(time=lambda: example(A2S, "exam_state")["since"] + 120, monotonic=time.monotonic)
+
+
 def channel_examples(channel):
     return [(f, m) for f, m in examples(A2S) if channel in SCHEMAS[A2S][f.split(".")[0]]["x-pops-channels"]]
 
@@ -393,9 +427,12 @@ def channel_examples(channel):
 
 async def agent_session_with_secret():
     print("== /ws/agent: cihaz anahtarıyla bağlantı, bütün ajan örnekleri gerçek işleyiciden geçer")
-    from pops import bypass, heartbeats, secretbox, update_tracking
+    import datetime
+
+    from pops import bypass, exams, heartbeats, modules, secretbox, update_tracking
     from pops.manager import manager
     from pops.routers import agents
+    from pops.routers import files as file_router
 
     P = Patches()
     keys = {}
@@ -416,10 +453,25 @@ async def agent_session_with_secret():
          [{"is_quarantined": True, "act": "lock", "reason": "Sınav"}]),
         ("SELECT cap_terminal_disable_requested", [{"t": True, "v": False}]),
         ("UPDATE tasks SET output", lambda p: [{"id": p[1]}]),
+        ("UPDATE file_transfers SET status = $3", lambda p: [{"direction": "push", "name": "Ödev föyü 3.pdf"}]),
+        ("UPDATE file_transfers SET status = 'rejected'", [{"direction": "pull"}]),
+        # Cihazın sınıfında örnekteki sınav sürüyor; son gönderim 30 sn önce (erken çıkış sayılır)
+        ("SELECT lab_name FROM clients WHERE pc_name = $1", [{"lab_name": "LAB-A"}]),
+        ("FROM exam_sessions WHERE lab_name = $1 AND ended_at IS NULL", [exam_row()]),
+        ("INSERT INTO exam_devices (exam_id, pc_name, reported_at", lambda p: [{
+            "sent_at": datetime.datetime.fromtimestamp(exam_clock().time() - 30, datetime.timezone.utc),
+            "denied_at": None, "since_sent": 30.0}]),
+        ("UPDATE exam_devices SET left_at", [{"left_at": None}]),
     ])
     audits, events, notes, beats, panels, admin_panels, queue = [], [], [], [], [], [], []
-    for mod in (agents, bypass, update_tracking):
+    for mod in (agents, bypass, update_tracking, file_router, exams, modules):
         P.set(mod, "execute_query", db)
+    P.set(file_router, "add_audit_log", recorder(audits))
+    P.set(exams, "time", exam_clock())
+    P.set(exams, "add_audit_log", recorder(audits))
+    P.set(exams, "notify", recorder(notes))
+    exams._resent.pop(HW, None)
+    modules.invalidate()
 
     async def secret_ok(pc, secret):
         return pc == HW and secret == SECRET
@@ -465,12 +517,14 @@ async def agent_session_with_secret():
 
     unknown = _load(os.path.join(PROTO, "examples", "unknown", A2S + ".json"))
     ws = FakeWS([first] + rest + [other_thumb, future_result, dynamic_ack, unknown],
-                headers={"X-Agent-Secret": SECRET, "X-Agent-Version": "0.1.21-alpha"}, on_send=remember_key)
+                headers={"X-Agent-Secret": SECRET, "X-Agent-Version": "0.1.21-alpha",
+                         "X-Agent-Features": "winget, Bilinmeyen Ad"}, on_send=remember_key)
     try:
         await agents.websocket_agent(ws, HW)
     finally:
         logging.getLogger("pops.agents").removeHandler(log)
         P.restore()
+        modules.invalidate()
         manager.active_agents.pop(HW, None)
         manager.pending_updates.pop(HW, None)
 
@@ -495,7 +549,14 @@ async def agent_session_with_secret():
     chk(uacks == with_id, "result_id'li update_result'lar onaylandı, result_id'siz onaylanmadı")
     chk({"action": "set_capabilities", "terminal_enabled": False} in ws.sent,
         "kapatılması istenen ama açık bildirilen yetenek için set_capabilities yeniden gönderildi")
-    chk(len(ws.sent) == 3 + 1 + len(acks) + len(uacks) + 1, "başka mesaj gönderilmedi (bilinmeyen type yanıtsız)")
+    # Kapatılması istenen terminali açık bildiren her capabilities örneği için bir set_capabilities
+    resends = sum(1 for f, m in cmd if f.startswith("capabilities.") and m.get("terminal_enabled"))
+    exam_msgs = [m for m in ws.sent if m.get("action") == "exam_mode"]
+    chk(exam_msgs == [example(S2A, "exam_mode")],
+        "sınıfında sınav süren cihaz bağlanınca exam_mode'u aldı (örnekle aynı); exam_state'ler yanıtsız")
+    chk(actions.index("exam_mode") == 3, "exam_mode bekleyen komutlardan sonra: %s" % actions[:5])
+    chk(len(ws.sent) == 3 + 1 + len(acks) + len(uacks) + resends + len(exam_msgs),
+        "başka mesaj gönderilmedi (bilinmeyen type yanıtsız)")
 
     hb_count = sum(1 for f, _ in cmd if f.startswith("heartbeat."))
     chk(len(beats) == hb_count, "her heartbeat (type'sız ve type'lı) kaydedildi: %d" % len(beats))
@@ -506,16 +567,35 @@ async def agent_session_with_secret():
     chk(stored.get(1044, (None,) * 5)[3] == -5 and stored.get(1045, (None,) * 5)[3] is None
         and stored.get(1042, (None,) * 5)[3] == 0, "result çıkış kodları olduğu gibi yazıldı (yoksa NULL)")
     chk(all(p[2] == HW for p in stored.values()), "sonuç yalnızca bağlantının cihazına yazıldı")
+    chk([p[3] for p in db.params("INSERT INTO agent_versions")] == [["winget"]],
+        "X-Agent-Features saklandı (geçersiz ad atıldı)")
     caps = db.params("UPDATE clients SET cap_terminal_enabled")
-    chk((True, True, HW, "system") in caps and (False, True, HW, "custom") in caps, "capabilities saklandı")
+    chk((True, True, HW, "system", None) in caps and (False, True, HW, "custom", None) in caps
+        and (True, True, HW, "custom", True) in caps, "capabilities saklandı (files_enabled yoksa NULL)")
+    results = {p[0]: p[2] for p in db.params("UPDATE file_transfers SET status = $3")}
+    file_results = {m["transfer_id"]: m["outcome"] for f, m in cmd if f.startswith("file_result.")}
+    chk(results == file_results and all(p[1] == HW for p in db.params("UPDATE file_transfers SET status = $3")),
+        "file_result yalnızca bağlantının cihazındaki aktarımı güncelledi: %s" % results)
+    denied_files = [m for f, m in cmd if f.startswith("capability_denied.") and m.get("capability") == "files"]
+    chk(db.params("UPDATE clients SET cap_files_enabled = FALSE") == [(HW,)] * len(denied_files)
+        and db.params("UPDATE file_transfers SET status = 'rejected'")
+        == [(m["transfer_id"], HW) for m in denied_files],
+        "capability_denied (files): yetenek kapalı, aktarım rejected")
     chk((1044, HW) in db.params("UPDATE tasks SET status = 'Denied'"),
         "capability_denied task_id'li görevi Denied yaptı")
     audit_actions = [a[0][1] for a in audits]
+    chk(audit_actions.count("file_result") == len(file_results), "her file_result denetim kaydına yazıldı")
     chk(audit_actions.count("update_result") == len([f for f, _ in cmd if f.startswith("update_result.")]),
         "her update_result denetim kaydına yazıldı")
     chk("bypass_key" in audit_actions and "bypass_key_mismatch" in audit_actions,
         "doğru parmak izi anahtarı onayladı, yanlışı (örnek) uyumsuzluk olarak kaydedildi")
     chk("quarantine_partial" in audit_actions, "yalıtımsız karantina bildirimi (heartbeat.typed) kaydedildi")
+    chk("exam_left" in audit_actions and any(n[0][0] == "exam_left" for n in notes),
+        "sınav sürerken 'sınavda değil' (exam_state.off) denetlendi ve bildirildi")
+    chk([p[2] for p in db.params("INSERT INTO exam_devices (exam_id, pc_name, reported_at")] == [True, False],
+        "exam_state'ler sınavın cihaz satırına yazıldı")
+    chk(bool(db.params("INSERT INTO exam_devices (exam_id, pc_name, denied_at)")),
+        "capability_denied (exam) cihazı 'reddetti' yaptı")
     denied = [e for e in events if e[1].get("event_type") == "agent.capability_denied"]
     chk(len(denied) == len([f for f, _ in cmd if f.startswith("capability_denied.")]),
         "her capability_denied denetlendi")
@@ -530,6 +610,7 @@ async def agent_session_with_secret():
 async def agent_session_with_enroll_token():
     print("== /ws/agent: kayıt jetonuyla ilk bağlantı (set_secret)")
     from pops import db as dbmod
+    from pops import exams, modules
     from pops.manager import manager
     from pops.routers import agents
 
@@ -565,7 +646,8 @@ async def agent_session_with_enroll_token():
     async def same_id(claimed, dna, ip, ws):
         return claimed
 
-    P.set(agents, "execute_query", db)
+    for mod in (agents, exams, modules):
+        P.set(mod, "execute_query", db)
     P.set(dbmod, "transaction", transaction)
     P.set(agents, "verify_agent_secret", no_secret)
     P.set(agents, "valid_enroll_token", token)
@@ -575,10 +657,12 @@ async def agent_session_with_enroll_token():
         P.set(agents, name, recorder([]))
     ws = FakeWS([example(A2S, "heartbeat.first")],
                 headers={"X-Enroll-Token": "enroll-token-0123", "X-Agent-Version": "0.1.21-alpha"})
+    modules.invalidate()
     try:
         await agents.websocket_agent(ws, HW)
     finally:
         P.restore()
+        modules.invalidate()
         manager.active_agents.pop(HW, None)
     for m in ws.sent:
         check_message(S2A, m, "sunucu→ajan %s" % message_name(S2A, m))
@@ -625,11 +709,12 @@ async def identity_reassignment():
 
 async def vision_channel():
     print("== /ws/vision: kareler oturum sahiplerine bu cihazın kimliğiyle iletilir")
+    from pops import vision
     from pops.manager import manager
     from pops.routers import control
 
     P = Patches()
-    forwarded = []
+    forwarded, binary, to_holders, audits = [], [], [], []
 
     async def secret_ok(pc, secret):
         return pc == HW and secret == SECRET
@@ -637,25 +722,84 @@ async def vision_channel():
     async def to_viewers(message, pc):
         forwarded.append((message, pc))
 
+    async def to_binary(pc, frame, data):
+        binary.append((pc, frame, data))
+        return 1
+
+    async def holders(message, pc, users=None):
+        to_holders.append((message, pc, users))
+        return 1
+
     P.set(control, "verify_agent_secret", secret_ok)
-    P.set(control, "add_audit_log", recorder([]))
+    P.set(control, "add_audit_log", recorder(audits))
     P.set(manager, "send_frame_to_viewers", to_viewers)
+    P.set(manager, "send_binary_frame_to_viewers", to_binary)
+    P.set(manager, "send_to_session_holders", holders)
+    P.set(manager, "has_session_panels", lambda pc, users=None: True)
+    # Kullanıcının kabul ettiği oturum: tünel oturumdan sonra açılır (pano bu oturumun sahibine gider)
+    manager.add_vision_session(HW, "ayse")
     vis = [m for _, m in channel_examples(VIS)]
+    frames = [m for m in vis if m.get("type") in ("stream_frame", "thumbnail")]
     unknown = _load(os.path.join(PROTO, "examples", "unknown", A2S + ".json"))
     # Başka bir cihazın kimliğiyle gönderilen kare de bu tünelin cihazına yazılmalı
-    spoofed = dict(vis[0], hw_id="HW-BASKACIHAZ1")
-    ws = FakeWS(vis + [spoofed, unknown], headers={"X-Agent-Secret": SECRET})
+    spoofed = dict(frames[0], hw_id="HW-BASKACIHAZ1")
+    jpeg = base64.b64decode(example(A2S, "stream_frame")["image"])
+    good = vision.pack_frame(vision.KIND_FULL, 0xFF, 7, 0, 0, 3200, 1080, 3200, 1080, jpeg)
+    bad = vision.pack_frame(vision.KIND_REGION, 0, 8, 3100, 0, 200, 10, 3200, 1080, jpeg)
+    ws = FakeWS(vis + [spoofed, good, bad, unknown], headers={"X-Agent-Secret": SECRET})
     try:
         await control.websocket_vision(ws, HW)
+        await asyncio.gather(*list(control._background))   # pano denetim kaydı ve iletimi arka planda
     finally:
         P.restore()
+        manager.remove_vision_session(HW, "ayse")
         manager.active_vision_ws.pop(HW, None)
-    expected = [dict(m, hw_id=HW) for m in vis]
-    chk([m for m, _ in forwarded][:len(vis)] == expected and all(pc == HW for _, pc in forwarded),
+    expected = [dict(m, hw_id=HW) for m in frames]
+    chk([m for m, _ in forwarded][:len(frames)] == expected and all(pc == HW for _, pc in forwarded),
         "stream_frame ve thumbnail bu cihazın kimliğiyle iletildi, bilinmeyen type atıldı")
-    chk(len(forwarded) == len(vis) + 1 and forwarded[-1][0].get("hw_id") == HW,
+    chk(len(forwarded) == len(frames) + 1 and forwarded[-1][0].get("hw_id") == HW,
         "başka cihaz kimliğiyle gelen kare bu tünelin cihazına yazıldı (sahte kutu yok)")
+    chk(len(binary) == 1 and binary[0][0] == HW and binary[0][2] == good and binary[0][1].monitor == 0xFF,
+        "geçerli ikili kare bu cihaz için iletildi, kuralları bozan atıldı")
+    mons = example(A2S, "monitors")
+    clip = example(A2S, "clipboard")
+    chk(({"type": "monitors", "hw_id": HW, "list": mons["list"]}, HW, None) in to_holders,
+        "monitors oturum sahiplerine bu cihazın kimliğiyle iletildi")
+    chk(({"type": "clipboard", "hw_id": HW, "text": clip["text"]}, HW, {"ayse"}) in to_holders,
+        "pano metni kabul edilmiş oturumun sahibine iletildi")
+    chk([a[0][1] for a in audits] == ["clipboard"] and clip["text"] not in json.dumps(audits[0][0], ensure_ascii=False)
+        and audits[0][0][3] == {"direction": "from_pc", "length": len(clip["text"]), "admins": ["ayse"]},
+        "pano denetim kaydında yön ve uzunluk var, metin yok")
     chk(ws.closed is None and not ws.sent, "Vision kanalında sunucu yanıt göndermez")
+
+    print("== görüntüleyici komutları (select_monitor, set_quality, clipboard) ajana")
+    P = Patches()
+    sent, replies = [], []
+    vision_ws, panel = FakeWS(), object()
+
+    async def module_on(target):
+        return True
+
+    P.set(control, "add_audit_log", recorder([]))
+    P.set(manager, "send_to_panel", lambda ws_, msg: replies.append(msg))
+    manager.panel_roles[panel] = "admin"
+    manager.add_vision_session(HW, "ayse")
+    manager.vision_tunnel_opened(HW, vision_ws)
+    try:
+        for name in ("select_monitor", "select_monitor.all", "set_quality", "clipboard"):
+            msg = dict(example(S2A, name), type="vision_control", device=HW)
+            await control._vision_control(panel, "ayse", msg, module_on)
+        sent = list(vision_ws.sent)
+    finally:
+        P.restore()
+        manager.remove_vision_session(HW, "ayse")
+        manager.disconnect_vision(HW)
+        manager.panel_roles.pop(panel, None)
+    for m in sent:
+        check_message(S2A, m, "sunucu→ajan %s (görüntüleyici)" % message_name(S2A, m))
+    chk(sent == [example(S2A, n) for n in ("select_monitor", "select_monitor.all", "set_quality", "clipboard")],
+        "komutlar ajana örneklerle aynı biçimde gitti (cihaz ve type alanı eklenmedi)")
+    chk(replies == [{"type": "clipboard_result", "hw_id": HW, "ok": True}], "panele pano sonucu döndü")
 
 
 # ------------------------------------------------------------------------- sunucunun kurduğu komutlar (gerçek kod)
@@ -664,12 +808,15 @@ async def vision_channel():
 async def server_builders():
     print("== sunucunun kurduğu komutlar")
     import system_routes
-    from pops import modules, taskqueue, wol
+    from pops import exams, modules, taskqueue, winget, wol
     from pops.manager import manager
     from pops.models import LockdownInput, PatchInstallInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
     from pops.models import TaskActionInput
+    from pops import filestore
     from pops.routers import agents, control, inventory, tasks as tasks_router
+    from pops.routers import files as file_router
     from pops.routers import modules as modules_router
+    from starlette.requests import Request
 
     P = Patches()
     agent_ws, vision_ws = FakeWS(), FakeWS()
@@ -705,6 +852,28 @@ async def server_builders():
         chk([m.get("action") for m in agent_ws.sent] == ["execute"] and agent_ws.sent[0]["requested_by"] == "admin",
             "taskqueue: execute, isteyen kullanıcıyla")
         take(agent_ws, "taskqueue._process_queue_once")
+
+        # winget görevi: "winget" duyuran ajana komut değil paket bilgisi gider; duyurmayana hiçbir şey (-8 ile Denied)
+        def winget_queue(features):
+            return FakeDB([
+                ("SELECT 1 FROM tasks WHERE status = 'Pending' LIMIT 1", [{"x": 1}]),
+                ("COUNT(DISTINCT target_pc)", [{"c": 0}]),
+                ("SELECT DISTINCT t.target_pc, av.features", [{"target_pc": HW, "features": features}]),
+                ("SELECT * FROM (", [] if features is None else [{
+                    "id": 1050, "target_pc": HW, "kind": "winget", "created_by": "admin",
+                    "payload": winget.payload("Mozilla.Firefox"), "script_path": winget.command_line("Mozilla.Firefox"),
+                    "created_at": "2026-10-05 10:00:00"}]),
+            ])
+        P.set(taskqueue, "execute_query", winget_queue(["winget"]))
+        await taskqueue._process_queue_once()
+        chk(agent_ws.sent == [{"action": "winget_install", "task_id": 1050, "id": "Mozilla.Firefox", "version": None,
+                               "requested_by": "admin"}], "taskqueue: winget_install, komutsuz")
+        take(agent_ws, "taskqueue._process_queue_once (winget)")
+        old_agent = winget_queue(None)
+        P.set(taskqueue, "execute_query", old_agent)
+        await taskqueue._process_queue_once()
+        chk(not agent_ws.sent and any(p[2] == winget.EXIT_UNSUPPORTED for p in old_agent.params("exit_code = $3")),
+            "winget duyurmayan ajana gönderilmedi, görev -8 ile reddedildi")
 
         P.set(tasks_router, "execute_query", FakeDB([("WITH target AS", [
             {"id": 1042, "target_pc": HW, "old_status": "Running"}])]))
@@ -770,6 +939,65 @@ async def server_builders():
         chk([m.get("action") for m in agent_ws.sent] == ["scan_updates", "install_updates"], "Windows Update komutları")
         take(agent_ws, "inventory.scan_patches / install_patches")
 
+        # Dosya aktarımı: gerçek uçlar (çok parçalı yükleme dahil), geçici klasöre yazar
+        async def enabled(*a, **k):
+            return True
+
+        class _Conn:
+            async def executemany(self, query, rows):
+                return None
+
+        @contextlib.asynccontextmanager
+        async def transaction():
+            yield _Conn()
+
+        P.set(modules, "enabled", enabled)
+        P.set(file_router, "execute_query", FakeDB([("FROM clients WHERE pc_name = ANY", [
+            {"pc_name": HW, "lab_name": "LAB-A", "cap_files_enabled": True}])]))
+        P.set(file_router, "add_audit_log", recorder([]))
+        P.set(file_router, "db", SimpleNamespace(transaction=transaction))
+        with tempfile.TemporaryDirectory() as files_dir:
+            P.set(filestore, "FILES_DIR", os.path.realpath(files_dir))
+            boundary = "popsprotocoltest"
+            parts = [("pcs", HW), ("dest", "inbox"), ("reason", "9-A ödev dosyası"), ("allow_exec", "false")]
+            body = b"".join(('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n' % (boundary, k, v))
+                            .encode() for k, v in parts)
+            body += ('--%s\r\nContent-Disposition: form-data; name="file"; filename="Ödev föyü 3.pdf"\r\n'
+                     'Content-Type: application/pdf\r\n\r\n' % boundary).encode() + b"%PDF-1.4 test" + b"\r\n"
+            body += ("--%s--\r\n" % boundary).encode()
+            sent_body = [False]
+
+            async def receive():
+                if sent_body[0]:
+                    return {"type": "http.disconnect"}
+                sent_body[0] = True
+                return {"type": "http.request", "body": body, "more_body": False}
+
+            req = Request({"type": "http", "method": "POST", "path": "/api/files/push", "query_string": b"",
+                           "headers": [(b"content-type", ("multipart/form-data; boundary=" + boundary).encode()),
+                                       (b"content-length", str(len(body)).encode())]}, receive)
+            pushed = await file_router.push_file(req, auth)
+            await file_router.pull_file(file_router.FilePullInput(
+                pc=HW, path="C:\\Users\\Public\\Documents\\rapor.pdf", max_size=10485760,
+                reason="Sınav dosyasının kontrolü"), auth)
+        chk([m.get("action") for m in agent_ws.sent] == ["file_push", "file_pull"]
+            and agent_ws.sent[0]["transfer_id"] == pushed["transfers"][0]["transfer_id"],
+            "dosya aktarımı: file_push ve file_pull")
+        take(agent_ws, "files.push_file / pull_file")
+        P.set(exams, "execute_query", FakeDB([
+            ("INSERT INTO exam_sessions", [exam_row()]),
+            ("UPDATE exam_sessions SET ended_at = NOW(), ended_by = $2", [exam_row(ended=True)]),
+            ("SELECT pc_name FROM clients WHERE lab_name", [{"pc_name": HW}]),
+        ]))
+        P.set(exams, "add_audit_log", recorder([]))
+        P.set(exams, "time", exam_clock())
+        on = example(S2A, "exam_mode")
+        await exams.start("LAB-A", on["allow"], on["until"], on["message"], on["block_apps"], "Matematik yazılısı",
+                          "admin")
+        await exams.end("LAB-A", "admin")
+        chk(agent_ws.sent == [on, example(S2A, "exam_mode.off")], "sınav modu: başlatınca exam_mode, bitince kapatma")
+        take(agent_ws, "exams.start / end")
+
         P.set(wol, "execute_query", FakeDB([("SELECT pc_name FROM clients WHERE lab_name", [{"pc_name": HW}])]))
         chk(await wol.attempt_p2p_wol("A4:BB:6D:12:34:57", "LAB-A"), "Wake-on-LAN eş üzerinden")
         take(agent_ws, "wol.attempt_p2p_wol")
@@ -834,8 +1062,9 @@ async def server_builders():
     for origin, msg in built:
         check_message(S2A, msg, origin)
     produced = {message_name(S2A, m) for _, m in built}
-    chk({"execute", "cancel_task", "lockdown", "unlock", "start_vision_session", "stop_stream", "remote_input",
-         "scan_updates", "install_updates", "wake_peer", "update_agent", "set_capabilities", "server_info"} <= produced,
+    chk({"execute", "winget_install", "cancel_task", "lockdown", "unlock", "start_vision_session", "stop_stream",
+         "remote_input", "scan_updates", "install_updates", "wake_peer", "update_agent", "set_capabilities",
+         "server_info", "file_push", "file_pull", "exam_mode"} <= produced,
         "uçlardaki bütün komutlar kuruldu ve denetlendi")
 
 

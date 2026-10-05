@@ -96,16 +96,34 @@ where they are sent is set on **Sistem** → **Bildirimler**.
   a row.
 - **Actions.** Wake, restart and shut down (restart and shut down ask for confirmation and skip PCs that are
   off), screen and command (these hand the online PCs over to **Uzak ekran** and **Uzak komut**), and a **Diğer
-  işlemler** menu: message, move to another lab, quarantine and lift quarantine. Quarantine asks for a reason.
+  işlemler** menu: message, **Dosya gönder** (send a file, see below), move to another lab, quarantine and lift
+  quarantine. Quarantine asks for a reason.
 - **Detail panel.** Clicking a PC opens a panel on the right: status and signed-in user, round buttons for
   **Ekran**, **Komut**, **Güç** and **Diğer** (disabled when the PC is off or the capability is turned off for
-  it), its issues (quarantine, outdated agent, errors reported by the agent, remote command or screen turned off on it),
-  the facts (user, application, lab,
+  it), its issues (quarantine, outdated agent, errors reported by the agent, remote command, screen or file transfer
+  turned off on it), the exam state while the PC's lab is in exam mode (**Sınav modu**: the PC's state, time left,
+  allowed addresses, blocked programs, who started it), the facts (user, application, lab,
   IP, MAC, agent version, memory, last seen, reason of the last disconnect, ID) and **Son işlemler**: the latest
   tasks and remote-screen sessions on the PC with what was done, who did it, when, from which page, the reason
-  and the result (a failed task says why). The list comes from `GET /api/devices/{pc}/activity`. **Diğer** has
-  message, rename, move, make or unmake teacher PC, quarantine or lift it, the offline unlock code (only for a
-  quarantined PC) and, for a superadmin, delete.
+  and the result (a failed task says why). The list comes from `GET /api/devices/{pc}/activity`. Below it,
+  **Dosya aktarımları** (only when the PC has any): the latest files sent to and fetched from the PC with direction
+  ("Bilgisayara" / "Bilgisayardan"), name, size, status, who, when, reason and the path; a fetched file has an
+  **İndir** button while it is kept (7 days). The list refreshes every 3 seconds while a transfer is running.
+  **Diğer** has message, **Dosya gönder**, **Dosya al**, rename, move, make or unmake teacher PC, quarantine or lift
+  it, the offline unlock code (only for a quarantined PC) and, for a superadmin, delete.
+- **Dosya gönder** (admins): pick or drop a file (at most 200 MB), choose **Ortak masaüstü** (the public desktop,
+  seen by every user of the PC) or **POps gelen kutusu** (the agent's inbox folder), write a reason and, for
+  shortcuts and screen savers (`.lnk`, `.url`, `.scr`), tick **Çalıştırılabilir dosyaya izin ver**. The dialog shows
+  upload progress; Vazgeç stops the upload. From the action bar of **Cihazlar** and **Sınıflar** the same dialog
+  sends one file to all selected PCs (or the whole list or lab): PCs that are off or have no file transfer are listed
+  as skipped and get nothing. Each PC downloads the file once; the row turns **Teslim edildi** when the agent has
+  written it.
+- **Dosya al** (admins, one PC): the full path on the PC (`C:\...`; network paths are refused), the largest size to
+  accept (10, 50 or 200 MB), a reason and, for a superadmin only, **Başka kullanıcıların profilinden de**. When the
+  file arrives the row shows **Alındı** and an **İndir** button; the download is always a file (never opened in the
+  browser) and is audit-logged. Both entries are disabled, with the reason as a tooltip, when the PC is off, its
+  agent does not support file transfer, or file transfer is turned off on it; viewers do not get them.
+  Server side: [`api.md`](api.md#file-transfer); threat notes: [`security.md`](security.md#file-transfer).
 - **Who did it.** Every task records its title, the page it was sent from, the reason, the caller's IP address and a
   job ID shared by the tasks of one request. **İşlemler**, **Kontrol merkezi** and the detail panel show them.
 
@@ -155,6 +173,22 @@ tiles that do not match. Select tiles and use the action bar, or click a tile fo
   and an enrollment token created for a lab takes precedence. Setting the rule is written to the audit log; only
   one rule is active at a time.
 - The lab's teacher PC is set in the detail panel (**Diğer** → **Öğretmen bilgisayarı yap**).
+- **Sınav modu…** (in **Sınıf işlemleri**, admins) restricts the network of every PC in the lab for an exam. The
+  dialog asks for the allowed addresses (one domain name, IP address or CIDR network per line, at most 50; the POps
+  server, DNS and DHCP are always open), the duration (**40 dk**, **80 dk**, **120 dk** or **Saat seç** for an end
+  time today, at most 8 hours), the message shown in the tray (empty: a default text), programs to block
+  (optional, comma separated, for example `cmd.exe`) and a reason. The last allow list of a lab is remembered in the
+  browser. Invalid entries are named in the dialog. The menu item is greyed out when the `exam` module is off for
+  the lab.
+- **While an exam runs** the lab shows a bar under the title: **Sınav modu · 23 dk kaldı**, the PC counts by state,
+  the allowed addresses and, for admins, **Sınavı bitir** (with a confirmation; also in **Sınıf işlemleri**). The
+  lab's entry in the sidebar gets a clock icon. Every tile shows the PC's state: **Sınavda · 23 dk**, **Ayrıldı**
+  (it left exam mode before the end: switched off locally or tampered with; a notification is raised),
+  **Ulaşılamıyor** (off or not connected; it gets the exam when it connects), **Desteklemiyor (eski ajan)** (the
+  agent did not answer within 20 seconds: it has no exam mode), **Bekleniyor** (just sent) or **Reddetti** (exam
+  mode is switched off locally on the PC). The page refreshes the exam every 5 seconds. Exam mode ends by itself at
+  the end time, also on PCs that are offline; PCs that were off when an exam ended early leave it when they
+  connect. What exam mode does and does not guarantee: [`security.md`](security.md#exam-mode).
 
 Devices can also be placed in a lab at enrollment by creating the enrollment token for that lab (**Sistem**).
 
@@ -223,10 +257,10 @@ are released when control is turned off, the page loses focus or the tab is hidd
 
 ### Dağıtım
 
-A library of packages and scripts (a table with size, SHA-256, date added and last deployment; filter **Tümü** /
-**Paketler** / **Betikler**, search) and the place where they are sent to PCs.
+A library of packages, scripts and winget packages (a table with size, SHA-256, date added and last deployment;
+filter **Tümü** / **Paketler** / **Betikler** / **winget**, search) and the place where they are sent to PCs.
 
-- **Paket yükle** adds an item, in two types:
+- **Paket yükle** adds an item, in three types:
   - **Kurulum paketi** (`.exe`, `.msi`, or a `.zip` that contains `install.bat`): the file is uploaded to the server
     (`/api/upload`) and the item stores a PowerShell command that downloads it from `/download/<file>` into
     `C:\POpsLogs\` on the PC and installs it: `.msi` with `msiexec /i … /qn /norestart` plus your parameters
@@ -234,14 +268,28 @@ A library of packages and scripts (a table with size, SHA-256, date added and la
     else by running the file with your parameters (for example `/S`). Exit codes 0 and 3010 count as success.
     Progress is written to `C:\POpsLogs\deploy_trace.txt` on the PC.
   - **Betik** (PowerShell, CMD): the text is run as is.
-  - Both can reboot the PC afterwards (**Bitince yeniden başlat**).
+  - **winget paketi**: a package from the winget community source, installed by winget as SYSTEM, silently and for
+    all users. Pick it from the catalog (69 common school and office apps, searchable by name, publisher and
+    category, with a category filter; ids checked against `microsoft/winget-pkgs`) or type any winget id
+    (**winget kimliği**, for example `Mozilla.Firefox`; find others with `winget search`). **Sürüm** is optional;
+    empty means the latest. The id and version are checked as you type (letters, digits and `. + _ -`); nothing
+    is uploaded. The PC needs winget (App Installer), internet access to the winget source and an agent that
+    supports winget.
+  - Packages and scripts can reboot the PC afterwards (**Bitince yeniden başlat**).
 - Click an item for its panel: **Dağıt**, **Düzenle**, copy the hash, the download address or the command,
-  **Görev zincirine ekle**, delete, and its latest deployments.
+  **Görev zincirine ekle**, delete, and its latest deployments. A winget package shows its id, version,
+  publisher, category, the exact command the agent runs, licence notes from the catalog (WinRAR, PyCharm, Teams)
+  and how many PCs run an agent without winget support.
 - **Dağıt** opens the deployment dialog: the steps (a chain of several items runs in the order shown; the
   **Görev zinciri oluştur** button starts with an empty chain), the target (**Bütün ağ**, selected labs under
   **Sınıflar**, or selected PCs under **Bilgisayarlar**), an optional reason and **Dağıt**. PCs that are off are
   skipped unless **Kapalılar açılınca kursun** is on. Every step becomes one queued task per PC (see **İşlemler**),
-  with the page and the reason recorded.
+  with the page and the reason recorded. **Adım ekle** also lists winget packages and offers **winget kataloğundan
+  ekle…**, which adds a package to the library and to the chain without leaving the dialog. When the chain has a
+  winget step, the dialog warns how many selected PCs run an agent without winget support: the step is refused
+  there (**Reddedildi**, "Bu bilgisayardaki ajan winget kurulumunu desteklemiyor"). winget steps appear in the
+  history and on **İşlemler** as "winget: <name>"; failure reasons name common winget results (package not
+  found, app in use, another install running, no winget on the PC …).
 - The sliders button sets how many PCs install at the same time (**Eşzamanlı kurulum sınırı**, 1–100).
 
 Commands run as SYSTEM on the PCs. Files uploaded here are downloadable without a login only through the signed link the upload returns (`/download/<file>?sig=…`); the deployment script also checks the file's SHA-256 before running it.

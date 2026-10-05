@@ -305,6 +305,7 @@ ready-made images on GHCR ([`docs/docker.md`](docs/docker.md)).
 | :--- | :--- |
 | **Server** | Linux with systemd, PostgreSQL 13+, Python 3.10+ (3.12 recommended), PHP 8 with `curl`, nginx or Apache, a host name with a TLS certificate. A small VM is enough for a school ([sizing](docs/kapasite/README.md)). |
 | **Managed PCs** | Windows 10 or 11, 64-bit. Nothing else: the agent brings its own .NET 10 runtime. |
+| **Linux PCs (first version)** | Pardus 23 / Debian 12 or later, Ubuntu 24.04: a 45 KB `.deb` on the distribution's `python3`, `python3-websockets` and `python3-cryptography` (`apt` installs them). Inventory and remote commands; no screen view, quarantine or tray yet ([`Agent-Linux/README.md`](Agent-Linux/README.md)). |
 | **Network** | Outbound HTTPS (443) from the PCs to the server, with the WebSocket upgrade allowed through proxies and firewalls. Wake-on-LAN needs UDP broadcasts to the lab subnet. |
 | **Browser** | Any current browser. The panel loads nothing from other hosts (fonts and icons are bundled), so it works on a network without internet. |
 
@@ -333,6 +334,10 @@ Freeze software (Deep Freeze, Shadow Defender) works when the agent is enrolled 
 - **DNS** is detection and reporting only; blocking is planned.
 - **Languages:** the panel is in Turkish and English, but server messages without an English entry and the
   Windows agent's own texts (tray, consent dialogs, lock screen) are Turkish only.
+- **Linux agent (first version):** inventory and remote commands only; screen view, quarantine, the tray, user
+  messages and DNS alerts are Windows-only for now. It has run in Debian 12 containers and on CI, not yet in a Pardus
+  lab, and a dual-boot PC whose Windows side is enrolled is seen as the same hardware
+  ([`Agent-Linux/README.md`](Agent-Linux/README.md)).
 
 ---
 
@@ -391,6 +396,7 @@ How to run the suites locally: [`docs/testing.md`](docs/testing.md).
 | Path | Contents |
 | :--- | :--- |
 | [`Agent/`](Agent) | Windows agent (.NET 10): `POps.Agent` service, `POpsTray`, `POpsWatchdog`, `POpsUpdater`, shared library `POps.Shared`, tests `POps.Tests`. |
+| [`Agent-Linux/`](Agent-Linux) | Linux agent for Pardus/Debian (Python 3): `pops_agent/` package, `.deb` builder, systemd unit, tests. |
 | [`Backend/`](Backend) | FastAPI backend: `pops/` package, routers, migrations, tests. |
 | [`Dashboard/`](Dashboard) | PHP 8 panel (Turkish and English UI). |
 | [`Installer/`](Installer) | WiX MSI for the agent; server installer, deploy, self-update, backup and TLS scripts. |

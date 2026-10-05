@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from pops import db, modules
+from pops import db, exams, modules
 from pops.db import execute_query
 from pops.models import AgentPoliciesInput, AuthEventInput, HwInventoryInput, LogInput, PolicyAlertInput
 from pops.security import require_admin, require_auth
@@ -27,12 +27,16 @@ from pops.manager import manager
 from pops.taskqueue import process_queue
 from pops.dna import check_known_device, reconcile_device
 from pops.notify import notify
-from pops import agent_health, agent_version as agent_version_mod, bypass, heartbeats, metrics, update_notice
+from pops import agent_health, agent_version as agent_version_mod, bypass, devicelist, heartbeats, metrics
+from pops import update_notice, winget
 from pops import update_tracking
+from pops.routers import files as file_transfer
 
 log = logging.getLogger("pops.agents")
-# Ajanın çalıştırmadığı komutun sonucu bu önekle başlar (Agent CommandExecutionPolicy.DisabledMessage)
+# Ajanın çalıştırmadığı komutun sonucu bu önekle başlar (Agent CommandExecutionPolicy.DisabledMessage). Çıkış kodu
+# eski ajanlarda yoktur, 0.1.13+ ajanlarda -5 (reddedildi); winget_install'da -7 = bilgisayarda winget yok.
 REFUSED_PREFIX = "[REDDEDİLDİ]"
+REFUSED_EXIT_CODES = (None, winget.EXIT_DENIED, winget.EXIT_UNAVAILABLE)
 router = APIRouter()
 
 
@@ -50,6 +54,7 @@ async def auth_login(data: AuthEventInput, agent_id: Optional[str] = Depends(age
         risk_level="info",
     )
     await execute_query("UPDATE clients SET logged_user=$1 WHERE pc_name=$2", (data.student_id, data.hw_id))
+    devicelist.touch([data.hw_id])
     return {"status": "success"}
 
 
@@ -84,6 +89,7 @@ async def auth_logout(data: AuthEventInput, agent_id: Optional[str] = Depends(ag
         risk_level="info",
     )
     await execute_query("UPDATE clients SET logged_user='-' WHERE pc_name=$1", (data.hw_id,))
+    devicelist.touch([data.hw_id])
     return {"status": "success"}
 
 
@@ -142,6 +148,7 @@ async def reconcile_quarantine(
                 "pending_quarantine_reason = NULL WHERE pc_name = $2",
                 (reported, pc_name),
             )
+            devicelist.touch([pc_name])
             _quarantine_resent.pop(pc_name, None)
             return
         now = time.time()
@@ -152,6 +159,7 @@ async def reconcile_quarantine(
         return
     if bool(row["is_quarantined"]) != reported:
         await execute_query("UPDATE clients SET is_quarantined = $1 WHERE pc_name = $2", (reported, pc_name))
+        devicelist.touch([pc_name])
         await add_audit_log(
             pc_name,
             "quarantine_state",
@@ -163,8 +171,17 @@ async def reconcile_quarantine(
 # Sunucunun desteklediği, ajanın davranışını değiştiren özellikler (0.1.14+ ajan okur; eskiler bilinmeyen action'ı
 # yok sayar). update_result_ack: güncelleme sonucu kaydedilince onaylanır, ajan onaya kadar sonucu saklar.
 # update_progress: güncellemenin ara adımları okunur (eski sunucu bilinmeyen mesajı zaten yok sayar; ajan isterse
-# yalnızca bunu duyuran sunucuya gönderir).
-SERVER_FEATURES = ("update_result_ack", "result_ack", "update_progress")
+# yalnızca bunu duyuran sunucuya gönderir). file_transfer: file_push / file_pull komutları ve file_result iletisi
+# (bkz. routers/files.py); ajan dosya aktarımını yalnızca bunu duyuran sunucudan kabul edebilir. exam_mode: sınav
+# modu gönderilir ve exam_state okunur (pops/exams.py).
+# winget: sunucu winget görevlerini "winget_install" ile gönderir ve ajanın bağlanırken X-Agent-Features ile duyurduğu
+# özellikleri okur (bkz. pops/winget.py); görev yalnızca "winget" duyuran ajana gider.
+# vision_binary: /ws/vision ikili kareleri ve monitors/select_monitor/set_quality'yi bilir (eski sunucu ikili mesajda
+# tüneli düşürürdü). vision_clipboard: pano metni aktarılır (bkz. docs/vision.md).
+SERVER_FEATURES = (
+    "update_result_ack", "result_ack", "update_progress", "file_transfer", "exam_mode", "winget", "vision_binary",
+    "vision_clipboard",
+)
 # Ajan protokolünün sürümü (docs/protocol/README.md): yalnızca uyumsuz bir değişiklikte artar. Yeni alan ya da yeni
 # mesaj sürümü değiştirmez; sunucunun yeni davranışları SERVER_FEATURES ile duyurulur.
 PROTOCOL_VERSION = 1
@@ -190,6 +207,15 @@ async def _send_server_info(websocket: WebSocket) -> None:
         await websocket.send_text(json.dumps(server_info_message()))
     except Exception:
         pass
+
+
+async def _sync_exam(pc_name: str) -> None:
+    """Bağlanan ajanı sınıfının sınav durumuna getirir. Hata bağlantıyı düşürmez: ajan bir sonraki bağlanışında ya da
+    exam_state bildirdiğinde yeniden eşitlenir."""
+    try:
+        await exams.sync_pc(pc_name)
+    except Exception as exc:
+        log.warning("sınav durumu eşitlenemedi", extra={"pc_name": pc_name, "error": repr(exc)[:300]})
 
 
 async def _ack_update_result(pc_name: str, result_id: str) -> None:
@@ -220,6 +246,7 @@ async def _store_update_result(pc_name: str, payload: dict) -> None:
         await execute_query(
             "UPDATE clients SET running_version=$1 WHERE pc_name=$2", (str(payload.get("running_version")), pc_name)
         )
+        devicelist.touch([pc_name])
     # Yalnızca GERÇEKTEN kötü durumlar kritik loglanır (bkz. pops/update_notice.py)
     notice = update_notice.describe(payload)
     if update_notice.is_critical(payload):
@@ -263,6 +290,18 @@ async def _update_progress(pc_name: str, payload: dict, agent_version: Optional[
         })
         return
     await update_tracking.set_stage(pc_name, progress)
+
+
+# Ajanın işletim sistemi ailesi (X-Agent-Platform; Linux ajanı gönderir). Başlık yoksa Windows ajanıdır.
+PLATFORMS = ("windows", "linux")
+
+
+def agent_platform(header: Optional[str], payload_value=None) -> str:
+    for value in (header, payload_value):
+        value = str(value or "").strip().lower()
+        if value in PLATFORMS:
+            return value
+    return "windows"
 
 
 # WebSocket kapanış kodları (RFC 6455) → panelde ve günlükte okunur sebep
@@ -481,6 +520,9 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
     client_ip = websocket.client.host if websocket.client else "Bilinmiyor"
     active_hwid = pc_name
     agent_version = websocket.headers.get("X-Agent-Version", "unknown")
+    platform_header = websocket.headers.get("X-Agent-Platform")
+    platform = agent_platform(platform_header)
+    agent_features = agent_version_mod.features(websocket.headers.get("X-Agent-Features"))
     connected_at = time.monotonic()
     close_reason = "bilinmiyor"
 
@@ -527,20 +569,24 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             task_id = pld.get("task_id")
             if not isinstance(task_id, int) or isinstance(task_id, bool):
                 return
-            # Ajanın ret sonucu ("[REDDEDİLDİ] …", eski ajanlarda çıkış kodsuz) görevi "Completed" yapmasın: ayrıca
-            # gelen capability_denied iletisi kaybolsa ya da sunucu eskiyse de görev "Denied" olur.
+            # Ajanın ret sonucu ("[REDDEDİLDİ] …", eski ajanlarda çıkış kodsuz, yenilerde -5; winget yoksa -7) görevi
+            # "Completed" ya da "Failed" yapmasın: ayrıca gelen capability_denied iletisi kaybolsa ya da sunucu eskiyse
+            # de görev "Denied" olur.
             output = pld.get("output")
-            refused = exit_code is None and isinstance(output, str) and output.startswith(REFUSED_PREFIX)
-            if refused:
+            refused = (exit_code in REFUSED_EXIT_CODES and isinstance(output, str)
+                       and output.startswith(REFUSED_PREFIX))
+            if refused and exit_code is None:
                 exit_code = -5
+            # winget görevinde "zaten kurulu" ve "kuruldu, yeniden başlatma bekliyor" kodları da başarıdır
             stored = await execute_query(
                 "UPDATE tasks SET output = $1, exit_code = $4, status = CASE "
                 "WHEN status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out') THEN "
-                "(CASE WHEN $5 THEN 'Denied' WHEN $4::int IS NULL OR $4::int = 0 THEN 'Completed' ELSE 'Failed' END) "
+                "(CASE WHEN $5 THEN 'Denied' WHEN $4::int IS NULL OR $4::int = 0 THEN 'Completed' "
+                "WHEN kind = $6 AND $4::int = ANY($7::int[]) THEN 'Completed' ELSE 'Failed' END) "
                 "ELSE status END "
                 "WHERE id = $2 AND target_pc = $3 "
                 "AND status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out', 'Cancelled') RETURNING id",
-                (output, task_id, active_hwid, exit_code, refused),
+                (output, task_id, active_hwid, exit_code, refused, winget.KIND, list(winget.OK_EXIT_CODES)),
                 fetch=True,
             )
             # Sonuç veritabanına yazıldı: 0.1.14+ ajan sonucu bu onaya kadar saklar ve yeniden gönderir (aynı sonucun
@@ -625,6 +671,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         (verified_hwid, active_hwid),
                     )
                     await bypass.move(active_hwid, verified_hwid)
+                    devicelist.touch([active_hwid])
                     active_hwid = verified_hwid
 
             # Kayıt jetonu: jetonun tüketimi, yeniden kayıt izninin tüketimi ve anahtar tek işlemde (F02). Jeton bu
@@ -648,6 +695,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             hw = dna_payload.get("hardware", {})
             caps = dna_payload.get("capabilities", {})
             real_hostname = payload.get("hostname", active_hwid)
+            platform = agent_platform(platform_header, payload.get("platform"))
 
             # Bağlantı koptuğunda "çalışıyor" kalan görevlerin akıbeti (F05)
             await _settle_running_tasks(active_hwid, payload.get("agent_health"), agent_version)
@@ -665,10 +713,10 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             await execute_query(
                 """
                 INSERT INTO clients (pc_name, hostname, lab_name, last_seen, status, active_window, boot_count,
-                    ip_address, dna_uuid, dna_bios, dna_disk, dna_mac, dna_ram, cap_ram_readable)
-                VALUES ($1, $2, $11, $3, 'Online', '-', 1, $4, $5, $6, $7, $8, $9, $10)
+                    ip_address, dna_uuid, dna_bios, dna_disk, dna_mac, dna_ram, cap_ram_readable, platform)
+                VALUES ($1, $2, $11, $3, 'Online', '-', 1, $4, $5, $6, $7, $8, $9, $10, $13)
                 ON CONFLICT (pc_name) DO UPDATE SET status='Online', last_seen=$3, ip_address=$4,
-                    boot_count=clients.boot_count + 1, hostname=$2,
+                    boot_count=clients.boot_count + 1, hostname=$2, platform=$13,
                     dna_uuid=CASE WHEN $12 THEN clients.dna_uuid ELSE $5 END,
                     dna_bios=CASE WHEN $12 THEN clients.dna_bios ELSE $6 END,
                     dna_disk=CASE WHEN $12 THEN clients.dna_disk ELSE $7 END,
@@ -689,14 +737,17 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     caps.get('ram_readable', True),
                     new_lab,
                     keep_dna,
+                    platform,
                 ),
             )
 
+            # Sürüm ve ajanın duyurduğu özellikler (X-Agent-Features, ör. winget) her bağlantıda yazılır: kuyruk winget
+            # görevini yalnızca o özelliği duyuran ajana gönderir. Başlığı göndermeyen ajanda boş liste.
             await execute_query(
-                "INSERT INTO agent_versions (pc_name, version, last_update) "
-                "VALUES ($1, $2, $3) ON CONFLICT (pc_name) DO UPDATE "
-                "SET version=$2, last_update=$3",
-                (active_hwid, agent_version, now),
+                "INSERT INTO agent_versions (pc_name, version, last_update, features) "
+                "VALUES ($1, $2, $3, $4) ON CONFLICT (pc_name) DO UPDATE "
+                "SET version=$2, last_update=$3, features=$4",
+                (active_hwid, agent_version, now, agent_features),
             )
 
             if new_secret:
@@ -725,12 +776,17 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                     except Exception:
                         pass
 
+            # Cihaz satırı (durum, sürüm, sınıf, bypass anahtarı) değişti: panel listesi bir sonraki turda okur
+            devicelist.touch([active_hwid])
             hw_exists = await execute_query(
                 "SELECT cpu FROM hw_inventory WHERE pc_name = $1", (active_hwid,), fetch=True
             )
             if not hw_exists or hw_exists[0]["cpu"] == "-":
                 await manager.send_command({"action": "get_hardware"}, active_hwid)
             await process_queue()
+            # Sınıfın süren sınavı (yeniden bağlanan ya da sınav sürerken sınıfa taşınmış bilgisayar); sınav bu
+            # bilgisayarda bitmeden kapandıysa enabled:false (bkz. pops/exams.py, docs/protocol/README.md sırası)
+            await _sync_exam(active_hwid)
         else:
             if auth_method == "enroll":
                 # Kayıt, donanım bilgisini taşıyan ilk mesajla yapılır
@@ -739,8 +795,12 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 except Exception:
                     pass
                 return
+            await execute_query(
+                "UPDATE agent_versions SET features = $2 WHERE pc_name = $1", (active_hwid, agent_features)
+            )
             manager.active_agents[active_hwid] = websocket
             await _send_server_info(websocket)
+            await _sync_exam(active_hwid)
 
         await handle_routine_payload(payload)
 
@@ -786,18 +846,30 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 if payload.get("type") == "update_progress":
                     await _update_progress(active_hwid, payload, agent_version)
                     continue
+                if payload.get("type") == "file_result":
+                    # Dosya aktarımının sonucu (gönderilen dosya yazıldı/reddedildi; istenen dosya bulunamadı...)
+                    await file_transfer.handle_result(active_hwid, payload)
+                    continue
+                if payload.get("type") == "exam_state":
+                    # Ajanın sınav modu durumu: sınav yokken "sınavda" ise kapatma yeniden gider, sınav sürerken
+                    # "sınavda değil" ise erken çıkış bildirilir (pops/exams.py)
+                    await exams.on_agent_state(active_hwid, payload)
+                    continue
                 if payload.get("type") == "capabilities":
                     # Ajan güncel yetenek durumunu bildirir (bağlantıda + her değişimde). Sakla + panele yay.
                     t = payload.get("terminal_enabled")
                     v = payload.get("vision_enabled")
+                    # files_enabled: dosya aktarımı (bilmeyen eski ajanda alan yok -> NULL, sunucu dosya göndermez)
+                    f = payload.get("files_enabled")
                     # server_ca (0.1.10+): custom = cihazdaki kurum CA'sı, system = Windows kök deposu; yoksa eskisi
                     # kalır
                     sc = payload.get("server_ca")
                     sc = sc if sc in ("custom", "system") else None
                     await execute_query(
                         "UPDATE clients SET cap_terminal_enabled=$1, cap_vision_enabled=$2, "
-                        "cap_server_ca=COALESCE($4, cap_server_ca) WHERE pc_name=$3",
-                        (bool(t) if t is not None else None, bool(v) if v is not None else None, active_hwid, sc),
+                        "cap_server_ca=COALESCE($4, cap_server_ca), cap_files_enabled=$5 WHERE pc_name=$3",
+                        (bool(t) if t is not None else None, bool(v) if v is not None else None, active_hwid, sc,
+                         bool(f) if f is not None else None),
                     )
                     # Yönetici daha önce kapatma istediyse ama ajan hâlâ AÇIK bildiriyorsa (ör. istek
                     # çevrimdışıyken verildi) kapatmayı yeniden gönder. Fail-safe: yalnızca kapatırız.
@@ -815,13 +887,16 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                             resend["vision_enabled"] = False
                         if resend:
                             await manager.send_command({"action": "set_capabilities", **resend}, active_hwid)
+                    devicelist.touch([active_hwid])
                     await manager.broadcast_to_panels(
-                        {"type": "capabilities", "pc_name": active_hwid, "terminal_enabled": t, "vision_enabled": v}
+                        {"type": "capabilities", "pc_name": active_hwid, "terminal_enabled": t, "vision_enabled": v,
+                         "files_enabled": f}
                     )
                     continue
                 if payload.get("type") == "bypass_secret_ack":
                     fp = str(payload.get("fingerprint") or "")[:64]
                     if connected_with_secret and await bypass.confirm(active_hwid, fp):
+                        devicelist.touch([active_hwid])
                         await add_audit_log(
                             active_hwid, "bypass_key", "Cihaza özel bypass anahtarı ajana ulaştı", {"fingerprint": fp}
                         )
@@ -836,7 +911,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 if payload.get("type") == "capability_denied":
                     # Ajan, kapalı bir yetenek için gelen isteği reddettiğini bildirir. Denetime yaz + panele yay.
                     # reason (0.1.12+): ör. not_enrolled = cihaz anahtarı olmadığı için Vision tüneli açılmadı
-                    _md = {k: payload.get(k) for k in ("capability", "action", "task_id", "reason")}
+                    _md = {k: payload.get(k) for k in ("capability", "action", "task_id", "transfer_id", "reason")}
                     denied_task = payload.get("task_id")
                     if isinstance(denied_task, int) and not isinstance(denied_task, bool):
                         # Komut çalıştırılmadı. Ajanın ret sonucu (0.1.13 ve öncesi çıkış kodsuz) görevi "Completed"
@@ -846,6 +921,19 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                             "WHERE id = $1 AND target_pc = $2 "
                             "AND status IN ('Running', 'Completed', 'Failed', 'Unknown', 'Interrupted', 'Timed Out')",
                             (denied_task, active_hwid),
+                        )
+                    if payload.get("capability") == "files":
+                        # Dosya aktarımı bilgisayarda kapalı: yetenek kapalı yazılır, aktarım "rejected"
+                        await file_transfer.handle_denied(active_hwid, payload)
+                    elif (payload.get("capability") == "quarantine" and payload.get("reason") == "not_supported"
+                            and auth_method == "secret" and platform == "linux"):
+                        # Bu ajanda karantina yok (Linux ajanı): kilit isteği "bekleyen" kalmasın ve panel cihazı
+                        # kilitli göstermesin; yönetici reddi bildirimden görür. Yalnızca anahtarla doğrulanmış Linux
+                        # ajanından: başka bir bağlantı bu iletiyle karantina durumunu silemesin.
+                        await execute_query(
+                            "UPDATE clients SET is_quarantined = FALSE, pending_quarantine_action = NULL, "
+                            "pending_quarantine_reason = NULL WHERE pc_name = $1",
+                            (active_hwid,),
                         )
                     await log_audit_event(
                         active_hwid,
@@ -864,10 +952,14 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                         "medium",
                         "Vision tüneli açılmadı: cihaz kayıtlı değil (anahtarı yok)"
                         if payload.get("reason") == "not_enrolled"
+                        else "Ajan bu işlemi desteklemiyor: %s" % (payload.get("capability") or "?")
+                        if payload.get("reason") == "not_supported"
                         else "Kapalı yetenek istendi, ajan reddetti: %s" % (payload.get("capability") or "?"),
                         str(payload.get("action") or ""),
                         active_hwid,
                     )
+                    if payload.get("capability") == "exam":
+                        await exams.on_denied(active_hwid)
                     await manager.broadcast_to_panels({"type": "capability_denied", "pc_name": active_hwid, **_md})
                     continue
                 await handle_routine_payload(payload)
@@ -911,6 +1003,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
                 "WHERE pc_name = $1",
                 (active_hwid, close_reason[:200]),
             )
+            devicelist.touch([active_hwid])
             log.info(
                 "ajan bağlantısı kapandı",
                 extra={
@@ -971,6 +1064,7 @@ async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depend
     if agent_id is not None and data.event_type in ("agent.auto_quarantine", "agent.offline_bypass"):
         quarantined = data.event_type == "agent.auto_quarantine"
         await execute_query("UPDATE clients SET is_quarantined = $1 WHERE pc_name = $2", (quarantined, pc_name))
+        devicelist.touch([pc_name])
         await add_audit_log(
             pc_name,
             "auto_quarantine" if quarantined else "offline_bypass",
@@ -994,6 +1088,7 @@ async def add_log(pc_name: str, data: LogInput, agent_id: Optional[str] = Depend
             "UPDATE clients SET is_quarantined = TRUE, pending_quarantine_action = 'unlock' WHERE pc_name = $1",
             (pc_name,),
         )
+        devicelist.touch([pc_name])
         await notify(
             "unlock_failed", "high", "Karantina kaldırılamadı, ağ yalıtımı sürüyor", (data.reason or "")[:300], pc_name
         )

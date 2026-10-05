@@ -839,6 +839,698 @@ def test_api_v1():
         "jeton kimliği ayırt edilir")
 
 
+def test_files():
+    print("== dosya aktarımı")
+    import io
+    import tempfile
+
+    from pops import filestore
+
+    chk(filestore.clean_name("Ödev 1.pdf") == "Ödev 1.pdf", "Türkçe ad korunur")
+    chk(filestore.clean_name("..\\..\\Windows\\evil\u202egnp.exe") == "evilgnp.exe", "yol ve yön karakteri atılır")
+    chk(filestore.clean_name("a<b>c:d|e?.txt") == "abcde.txt", "Windows'ta geçersiz karakterler atılır")
+    chk(filestore.clean_name("CON.txt") == "_CON.txt" and filestore.clean_name("nul") == "_nul", "ayrılmış adlar")
+    chk(filestore.clean_name("  rapor.pdf.  ") == "rapor.pdf", "sondaki nokta ve boşluk atılır")
+    chk(filestore.clean_name("..") is None and filestore.clean_name("") is None and filestore.clean_name("/") is None,
+        "kullanılamayan ad: None")
+    long_name = filestore.clean_name("a" * 300 + ".docx")
+    chk(len(long_name) == 200 and long_name.endswith(".docx"), "uzun ad kısalır, uzantı kalır")
+    chk(filestore.needs_exec("x.LNK") and filestore.needs_exec("a.url") and filestore.needs_exec("s.scr")
+        and not filestore.needs_exec("a.exe"), "allow_exec isteyen türler (sözleşme)")
+    chk(filestore.check_pull_path("c:/Users/Public/a.txt") == "c:\\Users\\Public\\a.txt", "/ -> \\")
+    for bad in ("\\\\srv\\share\\a", "a.txt", "C:\\a\\..\\b", "C:\\a.txt:ads", "C:\\d\\", "C:\\a?.txt",
+                "C:\\a\\\\b.txt", "C:\\a\x07.txt", "C:\\" + "a" * 1100):
+        try:
+            filestore.check_pull_path(bad)
+            chk(False, "geçersiz yol kabul edildi: %r" % bad)
+        except ValueError:
+            pass
+    chk(filestore.name_of_path("C:\\Users\\Public\\rapor.pdf") == "rapor.pdf", "yoldan dosya adı")
+    chk(filestore.valid_id("abcDEF12_-x") and not filestore.valid_id("../x") and not filestore.valid_id("a" * 65)
+        and not filestore.valid_id(None), "kimlik biçimi")
+    chk(filestore.blob_path("../etc/passwd") is None and filestore.blob_path("push-abc.bin") is None
+        and filestore.blob_path("pull-abcdefgh.bin") is not None, "depo adı yalnız sunucunun ürettiği biçimde")
+    real_dir = filestore.FILES_DIR
+    with tempfile.TemporaryDirectory() as tmp:
+        filestore.FILES_DIR = os.path.realpath(tmp)
+        try:
+            size, sha = filestore.store_file(io.BytesIO(b"x" * 10), "push-abcdefgh.bin", 10)
+            chk(size == 10 and len(sha) == 64 and os.path.exists(os.path.join(tmp, "push-abcdefgh.bin")),
+                "sınırda dosya yazıldı")
+            try:
+                filestore.store_file(io.BytesIO(b"x" * 11), "push-abcdefgx.bin", 10)
+                chk(False, "sınır aşıldı ama yazıldı")
+            except filestore.TooLarge:
+                chk(sorted(os.listdir(tmp)) == ["push-abcdefgh.bin"], "sınır aşılınca geçici dosya kalmaz")
+
+            async def chunks():
+                for part in (b"a" * 700000, b"b" * 700000):
+                    yield part
+            size, _sha = asyncio.run(filestore.store_stream(chunks(), "pull-abcdefgh.bin", 2000000))
+            chk(size == 1400000 and os.path.getsize(os.path.join(tmp, "pull-abcdefgh.bin")) == 1400000,
+                "akış parça parça yazıldı")
+            try:
+                asyncio.run(filestore.store_stream(chunks(), "pull-abcdefgx.bin", 1000000))
+                chk(False, "akış sınırı aşıldı ama yazıldı")
+            except filestore.TooLarge:
+                chk(not any(n.startswith(".upload-") or n == "pull-abcdefgx.bin" for n in os.listdir(tmp)),
+                    "akış sınırı aşılınca geçici dosya kalmaz")
+            old = os.path.join(tmp, "pull-orphan01.bin")
+            open(old, "wb").close()
+            os.utime(old, (time.time() - 2 * 86400, time.time() - 2 * 86400))
+            removed = filestore._orphans({"push-abcdefgh.bin"})
+            chk(removed == 1 and not os.path.exists(old) and os.path.exists(os.path.join(tmp, "pull-abcdefgh.bin")),
+                "sahipsiz eski dosya silinir, yenisi ve kayıtlı olan kalır")
+        finally:
+            filestore.FILES_DIR = real_dir
+    items = activity.build_items(
+        "HW-F", [],
+        [{"action": "file_push", "timestamp": "2026-10-01 10:00:00",
+          "changes": '{"name": "Ödev.pdf", "admin": "Pasha", "reason": "ders"}'},
+         {"action": "file_pull", "timestamp": "2026-10-01 11:00:00",
+          "changes": '{"path": "C:\\\\Users\\\\ali\\\\gizli.docx", "admin": "Pasha", "reason": "inceleme"}'}],
+        [], [],
+    )
+    chk([i["title"] for i in items] == ["Bu bilgisayardan dosya istendi", "Bilgisayara dosya gönderildi: Ödev.pdf"],
+        "tepsi geçmişinde dosya aktarımları")
+    chk("gizli.docx" not in json.dumps(items, ensure_ascii=False) and items[0]["actor"] == "Pasha",
+        "istenen dosyanın yolu tepside görünmez, yapan görünür")
+
+
+def test_exam():
+    """Sınav modu: izin listesi (alan adı, IP, CIDR) ve program listesi doğrulaması, bitiş zamanı, bilgisayar durumu,
+    ajan mesajının biçimi ve eğik çizgili sınıf adıyla yönlendirme."""
+    print("== sınav modu")
+    from pops import exams
+
+    good = {
+        "sinav.meb.gov.tr": "sinav.meb.gov.tr", "https://Sinav.MEB.gov.tr/giris?x=1": "sinav.meb.gov.tr",
+        "10.0.0.5": "10.0.0.5", "10.1.0.7/24": "10.1.0.0/24", "10.0.0.5/32": "10.0.0.5", "2001:db8::1": "2001:db8::1",
+        "http://[2001:db8::1]:8080/a": "2001:db8::1", "example.com.": "example.com", "meb.gov.tr/a/b": "meb.gov.tr",
+        "sınav.meb.gov.tr": "xn--snav-lza.meb.gov.tr",
+    }
+    got = {raw: exams.clean_allow_entry(raw) for raw in good}
+    chk(got == good, "izin girişleri normalleşir (%s)" % {k: v for k, v in got.items() if good[k] != v})
+    bad = ["", "*.meb.gov.tr", "localhost", "0.0.0.0/0", "::/8", "10.0.0", "foo bar", "a..b", "-a.com", "10.0.0.5:80",
+           "1.2.3.4/abc", "x" * 301]
+    passed = []
+    for raw in bad:
+        try:
+            passed.append((raw, exams.clean_allow_entry(raw)))
+        except ValueError:
+            pass
+    chk(not passed, "geçersiz girişler reddedilir (%s)" % passed)
+    chk(exams.clean_allow(["a.com", "A.com", "10.0.0.1"]) == ["a.com", "10.0.0.1"], "tekrarlar birleşir, sıra korunur")
+    try:
+        exams.clean_allow(["n%d.example.com" % i for i in range(51)])
+        chk(False, "51 giriş reddedilmeli")
+    except ValueError as exc:
+        chk("50" in str(exc), "en fazla 50 giriş")
+    try:
+        exams.clean_allow(["ok.com", "kötü giriş"])
+        chk(False, "geçersiz giriş reddedilmeli")
+    except ValueError as exc:
+        chk("kötü giriş" in str(exc), "hata mesajı geçersiz girişi adıyla yazar")
+
+    chk(exams.clean_apps(["cmd", "C:\\Windows\\System32\\CMD.EXE", "PowerShell.exe"]) == ["cmd.exe", "powershell.exe"],
+        "program adı: yol atılır, küçük harf, .exe eklenir, tekrarsız")
+    for apps in (["explorer.exe"], ["POpsAgent.exe"], ["bad*.exe"], ["n%d.exe" % i for i in range(51)]):
+        try:
+            exams.clean_apps(apps)
+            chk(False, "reddedilmeli: %s" % apps[:1])
+        except ValueError:
+            chk(True, "reddedildi: %s" % apps[0])
+
+    now = 1_800_000_000.0
+    chk(exams.resolve_until(None, 40, now) == int(now) + 2400, "süre (dakika) bitişe çevrilir")
+    chk(exams.resolve_until(now + 3600, None, now) == int(now) + 3600, "bitiş zamanı olduğu gibi")
+    late = now + 8 * 3600 + 1
+    for until, minutes in ((None, None), (now + 600, 10), (now - 5, None), (now + 30, None), (late, None)):
+        try:
+            exams.resolve_until(until, minutes, now)
+            chk(False, "bitiş reddedilmeli: %s %s" % (until, minutes))
+        except ValueError:
+            chk(True, "bitiş reddedildi: until=%s duration=%s" % (until and until - now, minutes))
+
+    t = datetime.datetime.fromtimestamp
+    utc = datetime.timezone.utc
+    sent = t(now - 60, utc)
+
+    def st(online, row, at=now):
+        return exams.device_state(online, row, at)
+
+    chk(st(False, {"sent_at": sent, "reported_at": sent, "enabled": True}) == "unreachable", "çevrimdışı: ulaşılamıyor")
+    chk(st(True, None) == "pending", "gönderilmemiş: bekleniyor")
+    chk(st(True, {"sent_at": t(now - 5, utc)}) == "pending", "yeni gönderildi, yanıt yok: bekleniyor")
+    chk(st(True, {"sent_at": sent}) == "unsupported", "yanıt yok (eski ajan): desteklemiyor")
+    chk(st(True, {"sent_at": sent, "reported_at": t(now - 50, utc), "enabled": True}) == "in_exam", "sınavda")
+    chk(st(True, {"sent_at": sent, "reported_at": t(now - 10, utc), "enabled": False}) == "left", "ayrıldı")
+    chk(st(True, {"sent_at": t(now - 3, utc), "reported_at": t(now - 2, utc), "enabled": False}) == "pending",
+        "gönderimden hemen sonraki 'sınavda değil' henüz ayrılma sayılmaz")
+    chk(st(True, {"sent_at": sent, "reported_at": t(now - 50, utc), "enabled": False,
+                  "denied_at": t(now - 40, utc)}) == "denied", "yerel yetenek kapalı: reddetti")
+    chk(st(True, {"sent_at": sent, "reported_at": t(now - 30, utc), "enabled": True,
+                  "denied_at": t(now - 40, utc)}) == "in_exam", "retten sonra sınava giren: sınavda")
+    chk(exams.counts([{"state": "in_exam"}, {"state": "left"}, {"state": "in_exam"}])
+        == {"in_exam": 2, "left": 1, "unreachable": 0, "unsupported": 0, "pending": 0, "denied": 0}, "durum sayıları")
+
+    row = {"id": 7, "lab_name": "9/A", "allow_list": '["sinav.meb.gov.tr"]', "until_at": t(now + 600, utc),
+           "message": "m", "block_apps": "[]", "reason": "r", "started_by": "admin", "started_at": t(now, utc),
+           "ended_by": None, "ended_at": None, "end_reason": None}
+    exam = exams.public(row, now)
+    chk(exam["active"] and exam["remaining_seconds"] == 600 and exam["until"] == int(now) + 600
+        and exam["allow"] == ["sinav.meb.gov.tr"], "kaydın API biçimi")
+    msg = exams.agent_message(exam)
+    chk(msg == {"action": "exam_mode", "enabled": True, "allow": ["sinav.meb.gov.tr"], "until": int(now) + 600,
+                "message": "m", "block_apps": []}, "ajan mesajı sözleşmedeki biçimde")
+    chk(exams.DISABLE == {"action": "exam_mode", "enabled": False}, "kapatma mesajı")
+    chk(exams._ts(True) is None and exams._ts("1") is None and exams._ts(1) is None
+        and exams._ts(now).timestamp() == now, "ajanın zamanı yalnızca makul unix sayısı")
+
+    import server
+    from pops.routers import agents, devices, exams as exams_router, rest
+
+    routed = {
+        ("POST", "/api/labs/9/A/exam"): exams_router.start_exam,
+        ("DELETE", "/api/labs/9/A/exam"): exams_router.end_exam,
+        ("GET", "/api/labs/Lab 1/exam"): exams_router.get_lab_exam,
+        ("GET", "/api/exams"): exams_router.list_exams,
+        ("DELETE", "/api/labs/9/A"): rest.delete_lab,
+        ("POST", "/api/labs/9/A/wake"): devices.wake_lab,
+    }
+    wrong = []
+    for (method, path), endpoint in routed.items():
+        status, _, scope = asyncio.run(_asgi(server.app, method, path))
+        if status != 401 or scope.get("endpoint") is not endpoint:
+            wrong.append("%s %s -> %s %s" % (method, path, status, getattr(scope.get("endpoint"), "__name__", None)))
+    chk(not wrong, "sınav yolları (eğik çizgili sınıf adıyla) doğru işleyicide, oturumsuz 401 (%s)" % wrong)
+    chk("exam_mode" in agents.SERVER_FEATURES, "server_info exam_mode'u duyurur")
+
+
+def test_agent_platform():
+    """Linux ajanı (migration 0026): platform başlıktan, yoksa ilk mesajdan; bildirmeyen ajan Windows."""
+    print("== agent_platform")
+    from pops.routers import agents as agents_router
+
+    chk(agents_router.agent_platform("linux") == "linux" and agents_router.agent_platform(" Linux ") == "linux",
+        "X-Agent-Platform: linux")
+    chk(agents_router.agent_platform(None) == "windows" and agents_router.agent_platform("") == "windows",
+        "başlık yoksa (Windows ajanı) windows")
+    chk(agents_router.agent_platform(None, "linux") == "linux", "başlık yoksa ilk mesajdaki platform")
+    chk(agents_router.agent_platform("beos", "haiku") == "windows", "bilinmeyen değer windows sayılır")
+
+
+def test_agent_packages():
+    """Ajan güncellemesi platform başına tek paket seçer; Windows ajanının MSI adı .deb ile karışmaz."""
+    print("== agent_packages")
+    import system_routes
+
+    msi = {"name": "POps-Agent-0.1.22-alpha-win-x64.msi", "sha256": "a" * 64, "size": 1}
+    deb = {"name": "pops-agent_0.1.22-alpha_all.deb", "sha256": "b" * 64, "size": 1}
+    zipped = {"name": "POps-Agent-0.1.22-alpha-win-x64.zip", "sha256": "c" * 64, "size": 1}
+    server = {"name": "pops-server-0.1.22-alpha.tar.gz", "sha256": "d" * 64, "size": 1}
+    both = {"artifacts": [deb, msi, zipped, server]}
+    chk(system_routes._agent_packages(both) == {"windows": msi["name"], "linux": deb["name"]},
+        "manifest'te MSI ve .deb: platform başına bir paket")
+    chk(system_routes._agent_msis(both) == [msi["name"]], ".deb, Windows'un MSI listesine girmez")
+    chk(system_routes._agent_packages({"artifacts": [msi, zipped]}) == {"windows": msi["name"]},
+        "eski release (yalnız MSI)")
+    chk(system_routes._agent_packages({"artifacts": [deb]}) == {"linux": deb["name"]}, "yalnız .deb")
+    try:
+        system_routes._agent_packages({"artifacts": [deb, dict(deb, name="pops-agent_0.1.23-alpha_all.deb")]})
+        chk(False, "iki .deb reddedilir")
+    except ValueError:
+        chk(True, "iki .deb reddedilir")
+    chk(system_routes._agent_debs({"artifacts": [{"name": "pops-agent_x_all.deb.sig"}, {"name": "../a_all.deb"}]})
+        == [], "benzer ama geçersiz adlar paket sayılmaz")
+
+
+def test_winget():
+    """winget adımı: kimlik ve sürüm doğrulaması (kabuk karakteri ve satır sonu geçmez), sabit argüman listesi, adım
+    modeli (WINGET paket ister, komut taşımaz), ajana giden ileti, X-Agent-Features ve katalog araması."""
+    print("== winget")
+    from pydantic import ValidationError
+
+    from pops import agent_version, winget, winget_catalog
+    from pops.models import OrchestrationInput, TaskSequenceItem
+
+    for good in ("Mozilla.Firefox", "Notepad++.Notepad++", "Microsoft.VCRedist.2015+.x64", "7zip.7zip",
+                 "Adobe.Acrobat.Reader.64-bit", "a_" + "b" * 126):
+        chk(winget.clean_id(good) == good, "geçerli kimlik: %s" % good[:40])
+    for bad in ("", "x", ".Mozilla", "-Firefox", "Mozilla Firefox", "Mozilla.Firefox\n", "Mozilla.Firefox\r",
+                "Mozilla.Firefox & calc", "a;b", "a|b", "a\"b", "a'b", "a`b", "$(x)", "a>b", "a%PATH%",
+                "a/b", "a\\b", "a" * 129, "Mozilla.Firefox\x00", "Mözilla.Firefox", None, 5, ["x"]):
+        try:
+            winget.clean_id(bad)
+            chk(False, "geçersiz kimlik reddedilmeli: %r" % (bad,))
+        except ValueError:
+            chk(True, "geçersiz kimlik reddedildi: %r" % (str(bad)[:30],))
+    chk(winget.clean_version(None) is None and winget.clean_version("") is None, "sürüm yok: en son sürüm")
+    for good in ("1.2", "124.0.1", "3.12.10", "1.0-beta+2", "x" * 40):
+        chk(winget.clean_version(good) == good, "geçerli sürüm: %s" % good[:20])
+    for bad in ("1.2 ", "1.2\n", "1;2", "1 2", "x" * 41, "--force", 1.2):
+        try:
+            v = winget.clean_version(bad)
+            # "--force" yalnızca izinli karakterlerden oluşur ama ayrı argüman olarak --version'ın değeridir
+            chk(bad == "--force" and v == "--force", "sürüm %r" % (bad,))
+        except ValueError:
+            chk(True, "geçersiz sürüm reddedildi: %r" % (str(bad)[:20],))
+
+    args = winget.arguments("Mozilla.Firefox", "124.0")
+    chk(args == ["install", "--id", "Mozilla.Firefox", "-e", "--silent", "--scope", "machine",
+                 "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
+                 "--version", "124.0"], "argüman listesi sözleşmedeki gibi (%s)" % args)
+    chk(winget.arguments("7zip.7zip")[-1] == "--disable-interactivity", "sürümsüz: --version yok")
+    chk(winget.command_line("7zip.7zip").startswith("winget install --id 7zip.7zip -e --silent"), "okunur komut")
+
+    task = {"id": 7, "payload": winget.payload("Mozilla.Firefox", None)}
+    chk(winget.message(task, "admin") == {"action": "winget_install", "task_id": 7, "id": "Mozilla.Firefox",
+                                          "version": None, "requested_by": "admin"}, "ajana giden ileti")
+    for broken in ('{"id": "a b"}', '{"id": "Mozilla.Firefox", "version": "1 2"}', "[]", "null", None, "{"):
+        try:
+            winget.message({"id": 8, "payload": broken}, "admin")
+            chk(False, "bozuk paket bilgisi gönderilmemeli: %r" % (broken,))
+        except (ValueError, TypeError):
+            chk(True, "bozuk paket bilgisi gönderilmedi: %r" % (broken,))
+
+    ok = TaskSequenceItem(name="Firefox", type="WINGET", winget={"id": "Mozilla.Firefox", "version": None})
+    chk(ok.is_winget and ok.winget.id == "Mozilla.Firefox" and ok.command is None, "WINGET adımı")
+    chk(TaskSequenceItem(name="x", type="winget", winget={"id": "7zip.7zip"}).is_winget,
+        "tür büyük/küçük harf duyarsız")
+    for bad, why in (
+        ({"type": "WINGET"}, "paketsiz WINGET"),
+        ({"type": "WINGET", "winget": {"id": "Mozilla.Firefox"}, "command": "calc"}, "komutlu WINGET"),
+        ({"type": "WINGET", "winget": {"id": "Mozilla.Firefox & calc"}}, "kabuk karakterli kimlik"),
+        ({"type": "WINGET", "winget": {"id": "Mozilla.Firefox", "version": "1.0 & calc"}}, "kabuk karakterli sürüm"),
+        ({"type": "WINGET", "winget": {"id": "Mozilla.Firefox", "args": "--force"}}, "tanınmayan paket alanı"),
+        ({"type": "CMD", "command": "echo", "winget": {"id": "Mozilla.Firefox"}}, "winget alanlı CMD"),
+        ({"type": "CMD"}, "komutsuz CMD"),
+    ):
+        try:
+            TaskSequenceItem.model_validate(dict({"name": "t"}, **bad))
+            chk(False, "%s reddedilmeli" % why)
+        except ValidationError:
+            chk(True, "%s reddedildi" % why)
+    chk(TaskSequenceItem(name="t", type="CMD", command="").command == "", "boş komutlu CMD eskisi gibi geçer")
+    chk(len(OrchestrationInput.model_validate({"target_mode": "pc", "targets": ["HW-1"], "taskSequence": [
+        {"name": "a", "type": "package", "command": "x"}, {"name": "b", "type": "WINGET", "winget": {"id": "Git.Git"}},
+    ]}).task_sequence) == 2, "karışık zincir")
+
+    chk(agent_version.features("winget") == ["winget"], "X-Agent-Features: winget")
+    chk(agent_version.features(" Winget , foo_bar,winget,,bad name,x;y,") == ["foo_bar", "winget"],
+        "özellik listesi temizlenir")
+    chk(agent_version.features(None) == [] and agent_version.features("") == [], "başlık yoksa boş")
+    chk(len(agent_version.features(",".join("f%d" % i for i in range(100)))) == 32, "en çok 32 özellik")
+    chk(winget.supports(["winget"]) and not winget.supports(None) and not winget.supports([]), "özellik denetimi")
+
+    ids = [p["id"] for p in winget_catalog.PACKAGES]
+    chk(len(ids) == len(set(ids)) and len(ids) >= 60, "katalog: %d tekil paket" % len(ids))
+    bad_entries = []
+    for p in winget_catalog.PACKAGES:
+        try:
+            winget.clean_id(p["id"])
+        except ValueError:
+            bad_entries.append(p["id"])
+        if p["category"] not in winget.CATEGORY_LABELS or not all(p.get(k) for k in (
+                "name", "publisher", "description", "description_en")):
+            bad_entries.append(p["id"])
+    chk(not bad_entries, "katalog kayıtları eksiksiz ve kimlikleri geçerli (%s)" % bad_entries)
+    r = winget.search("TARAYICI")
+    chk(r["matched"] >= 4 and all(p["category"] == "browser" for p in r["items"]),
+        "Türkçe büyük harf / ı farkı yok sayılır (%d)" % r["matched"])
+    chk([p["id"] for p in winget.search("firefox")["items"]][:2] == ["Mozilla.Firefox", "Mozilla.Firefox.tr"],
+        "adı aramayla başlayan önce")
+    chk(winget.search("mozilla.firefox")["items"][0]["id"] == "Mozilla.Firefox", "tam kimlik en üstte")
+    chk(winget.search("python dil")["matched"] == 2, "sözcüklerin hepsi geçmeli")
+    r = winget.search("", "education")
+    chk(r["items"] and all(p["category"] == "education" for p in r["items"]) and r["total"] == len(ids),
+        "kategori süzgeci")
+    chk(sum(c["count"] for c in r["categories"]) == len(ids), "kategori sayıları")
+    chk(winget.search("yok-boyle-bir-paket")["items"] == [], "eşleşme yoksa boş")
+    chk(len(winget.search("", limit=3)["items"]) == 3, "limit")
+    chk(-1978335135 in winget.OK_EXIT_CODES and 0 in winget.OK_EXIT_CODES, "zaten kurulu = başarı")
+
+
+def test_vision_v2():
+    """Vision v2: ikili kare başlığı, panel öneki, görüntüleyici komutları, yavaş panelde kare düşürme ve kare/pano
+    yetkisi (F12: yalnızca oturum sahibi admin paneli, yalnızca ikili kare bildiren panel)."""
+    print("== vision v2")
+    from pops import vision as v
+    from pops import manager as mgr
+
+    jpeg = b"\xff\xd8\xff\xe0" + b"x" * 60 + b"\xff\xd9"
+    full = v.pack_frame(v.KIND_FULL, 0, 7, 0, 0, 1920, 1080, 1920, 1080, jpeg)
+    f, why = v.parse_frame(full)
+    chk(why is None and f == v.Frame(1, 0, 7, 0, 0, 1920, 1080, 1920, 1080),
+        "tam kare başlığı okunur (18 bayt, BE)")
+    chk(v.HEADER_SIZE == 18 and full[:2] == b"\x01\x00" and full[2:6] == b"\x00\x00\x00\x07"
+        and full[14:16] == (1920).to_bytes(2, "big"), "alan sırası: tür, monitör, sıra, x, y, w, h, tam w, tam h")
+    region = v.pack_frame(v.KIND_REGION, 1, 0xFFFFFFFF, 100, 50, 200, 80, 1280, 1024, jpeg)
+    f, why = v.parse_frame(region)
+    chk(why is None and f.kind == 2 and f.monitor == 1 and f.seq == 0xFFFFFFFF
+        and (f.x, f.y, f.w, f.h) == (100, 50, 200, 80), "bölge karesi okunur (u32 sıra sınırda)")
+    cursor = v.pack_frame(v.KIND_CURSOR, 0, 8, 640, 360, 0, 0, 1920, 1080)
+    f, why = v.parse_frame(cursor)
+    chk(why is None and f.kind == 3 and (f.x, f.y) == (640, 360), "imleç konumu: görüntüsüz 18 bayt")
+    every = v.pack_frame(v.KIND_FULL, v.ALL_MONITORS, 9, 0, 0, 3200, 1080, 3200, 1080, jpeg)
+    chk(v.parse_frame(every)[0].monitor == 0xFF, "monitör 0xFF: bütün ekranlar yan yana tek görüntüde")
+    big = v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 10, 10, 10, 10, jpeg + b"\x00" * v.MAX_FRAME_BYTES)
+    bad = {
+        "short": full[:17],
+        "kind": b"\x07" + full[1:],
+        "monitor": v.pack_frame(v.KIND_FULL, 16, 1, 0, 0, 10, 10, 10, 10, jpeg),
+        "geometry": v.pack_frame(v.KIND_REGION, 0, 1, 1900, 0, 40, 10, 1920, 1080, jpeg),
+        "jpeg": v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 10, 10, 10, 10, b"\x89PNG...."),
+        "cursor_payload": v.pack_frame(v.KIND_CURSOR, 0, 1, 1, 1, 0, 0, 10, 10, jpeg),
+        "oversize": big,
+    }
+    chk(all(v.parse_frame(data) == (None, reason) for reason, data in bad.items()),
+        "bozuk kareler nedeniyle reddedilir: " + ", ".join(bad))
+    geometry = (
+        v.pack_frame(v.KIND_FULL, 0, 1, 5, 0, 10, 10, 10, 10, jpeg),        # tam kare (0,0)'dan
+        v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 5, 10, 10, 10, jpeg),         # tam kare bütün çıktı
+        v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 0, 0, 0, 10, jpeg),           # çıktı boyutu sıfır olamaz
+        v.pack_frame(v.KIND_REGION, 0, 1, 0, 0, 0, 10, 10, 10, jpeg),       # bölge boyutu sıfır olamaz
+        v.pack_frame(v.KIND_CURSOR, 0, 1, 10, 0, 0, 0, 10, 10),             # imleç çıktının içinde
+        v.pack_frame(v.KIND_CURSOR, 0, 1, 1, 1, 4, 4, 10, 10),              # imleçte w = h = 0
+    )
+    chk(all(v.parse_frame(data)[1] == "geometry" for data in geometry),
+        "geometri ajanın kurallarıyla aynı: tam kare bütün çıktı, bölge içinde, imleç w = h = 0")
+    chk(v.parse_frame(v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 10, 10, 10, 10, b"\xff\xd8\xff"))[1] == "jpeg",
+        "JPEG imzası ve en az 4 bayt")
+    exact = v.pack_frame(v.KIND_FULL, 0, 1, 0, 0, 10, 10, 10, 10, jpeg)
+    chk(v.parse_frame(exact + b"\x00" * (v.MAX_FRAME_BYTES - len(exact)))[1] is None, "tam 2 MB kabul edilir")
+    chk(v.panel_prefix("HW-ABC") == b"\x01\x06HW-ABC" and v.panel_prefix("") is None
+        and v.panel_prefix("x" * 256) is None and v.panel_prefix("ÇÖ") == b"\x01\x04" + "ÇÖ".encode(),
+        "panel öneki: 0x01, kimliğin bayt uzunluğu, UTF-8 kimlik")
+
+    vc = v.viewer_command
+    chk(vc({"action": "select_monitor", "index": 1, "device": "HW-1", "x": 1})
+        == {"action": "select_monitor", "index": 1}
+        and vc({"action": "select_monitor", "index": "all"}) == {"action": "select_monitor", "index": "all"},
+        "select_monitor: yalnız sözleşmedeki alanlar")
+    chk(vc({"action": "select_monitor", "index": True}) is None
+        and vc({"action": "select_monitor", "index": 16}) is None
+        and vc({"action": "select_monitor", "index": "1"}) is None, "select_monitor: geçersiz dizin atılır")
+    chk(vc({"action": "set_quality", "quality": 50, "scale": 0.75, "fps": 5})
+        == {"action": "set_quality", "quality": 50, "scale": 0.75, "fps": 5}
+        and vc({"action": "set_quality", "quality": 75, "scale": 1, "fps": 10})["scale"] == 1.0,
+        "set_quality: sınırlar içinde iletilir")
+    chk(all(vc(dict({"action": "set_quality", "quality": 50, "scale": 0.75, "fps": 5}, **bad)) is None for bad in (
+        {"quality": 29}, {"quality": 76}, {"scale": 0.4}, {"scale": 1.01}, {"fps": 0}, {"fps": 11},
+        {"fps": 2.5}, {"quality": True}, {"scale": float("nan")}, {"scale": "1"})), "set_quality: sınır dışı atılır")
+    chk(vc({"action": "clipboard", "text": "merhaba"}) == {"action": "clipboard", "text": "merhaba"}
+        and vc({"action": "clipboard", "text": "ğ" * 32768}) is not None
+        and vc({"action": "clipboard", "text": "ğ" * 32769}) is None
+        and vc({"action": "clipboard", "text": ""}) is None
+        and vc({"action": "clipboard", "text": "\ud800"}) is None and vc({"action": "execute"}) is None,
+        "pano: en çok 64 KB UTF-8, boş ve bozuk metin atılır; bilinmeyen komut atılır")
+    ml = v.monitors_list
+    chk(ml({"list": [{"index": 0, "width": 1920, "height": 1080, "primary": True, "name": "x"}]})
+        == [{"index": 0, "width": 1920, "height": 1080, "primary": True}], "monitors: bilinen alanlar")
+    chk(all(ml(p) is None for p in ({"list": []}, {"list": "x"}, {"list": [{"index": 0, "width": 0, "height": 1}]},
+            {"list": [{"index": 0, "width": 9, "height": 9}, {"index": 0, "width": 9, "height": 9}]},
+            {"list": [{"index": 0, "width": 9, "height": 9, "primary": 1}]})), "monitors: bozuk liste atılır")
+
+    class SlowWS:
+        def __init__(self):
+            self.sent, self.gate = [], asyncio.Event()
+
+        async def send_text(self, t):
+            await self.gate.wait()
+            self.sent.append(t)
+
+        async def send_bytes(self, b):
+            await self.gate.wait()
+            self.sent.append(b)
+
+    async def slow_panel():
+        dead = []
+        ws = SlowWS()
+        sender = mgr._PanelSender(ws, dead.append)
+        k0, k1, kc = ("HW-1", 0), ("HW-1", 1), ("HW-1", "cursor")
+        sender.put_binary(k0, v.KIND_FULL, b"F0")
+        await asyncio.sleep(0)  # F0 yazılıyor, panel yavaş: gerisi bekler
+        resync = [sender.put_binary(k0, v.KIND_REGION, b"R%d" % i) for i in range(mgr._BIN_KEY_MAX_FRAMES + 2)]
+        chk(resync.count(True) == 1 and resync[mgr._BIN_KEY_MAX_FRAMES] is True and k0 in sender.stale
+            and len(sender.bins[k0]) == mgr._BIN_KEY_MAX_FRAMES,
+            "yavaş panel: %d bölgeden sonrası düşer, monitör bayatlar (bir kez vision_resync)"
+            % mgr._BIN_KEY_MAX_FRAMES)
+        sender.put_binary(k1, v.KIND_REGION, b"S1")
+        chk(list(sender.bins[k1]) == [b"S1"], "başka monitörün bölgeleri etkilenmez")
+        sender.put_binary(k0, v.KIND_FULL, b"F1")
+        chk(list(sender.bins[k0]) == [b"F1"] and k0 not in sender.stale,
+            "tam kare bekleyenlerin yerini alır, bayatlık biter")
+        sender.put_binary(k0, v.KIND_REGION, b"R99")
+        sender.put_binary(kc, v.KIND_CURSOR, b"C1")
+        sender.put_binary(kc, v.KIND_CURSOR, b"C2")
+        chk(sender.dropped_frames == 2 + mgr._BIN_KEY_MAX_FRAMES + 1, "düşen kareler sayılır")
+        ws.gate.set()
+        for _ in range(20):
+            await asyncio.sleep(0)
+        mine = [b for b in ws.sent if b in (b"F0", b"F1", b"R99")]
+        chk(mine == [b"F0", b"F1", b"R99"] and b"C2" in ws.sent and b"C1" not in ws.sent and b"S1" in ws.sent
+            and not sender.bins and not dead, "panel yetişince sıra korunarak gönderilir, imleçte yalnız sonuncu")
+        ws.gate.clear()
+        sender.put_binary(k0, v.KIND_FULL, b"G0")
+        await asyncio.sleep(0)
+        mb = b"x" * (1024 * 1024)
+        res = [sender.put_binary(k0, v.KIND_REGION, mb) for _ in range(5)]
+        chk(res == [False] * 4 + [True], "bayt sınırı: bekleyen bölgeler 4 MB'ı geçemez")
+        sender.task.cancel()
+
+        # Yönetici: ikili kare yalnız oturum sahibi admin'in ikili kare bildiren paneline, önek tünelin cihazı
+        m = mgr.ConnectionManager()
+
+        class FastWS:
+            def __init__(self):
+                self.sent = []
+
+            async def send_text(self, t):
+                self.sent.append(t)
+
+            async def send_bytes(self, b):
+                self.sent.append(b)
+
+        panels = {}
+        for name, user, role, binary in (("own", "ali", "admin", True), ("own_text", "ali", "admin", False),
+                                         ("other", "veli", "admin", True), ("viewer", "ali", "viewer", True)):
+            ws = FastWS()
+            panels[name] = ws
+            m.active_panels.append(ws)
+            m.panel_users[ws], m.panel_roles[ws] = user, role
+            m.panel_senders[ws] = mgr._PanelSender(ws, lambda w: None)
+            if binary:
+                m.panel_binary.add(ws)
+        m.add_vision_session("HW-1", "ali")
+        m.add_vision_session("HW-2", "veli")
+        frame, _ = v.parse_frame(full)
+        n = await m.send_binary_frame_to_viewers("HW-1", frame, full)
+        for _ in range(20):   # panel gönderici görevi: Python 3.10'da tek tur yetmez
+            await asyncio.sleep(0)
+        chk(n == 1 and panels["own"].sent == [b"\x01\x04HW-1" + full] and not panels["own_text"].sent
+            and not panels["other"].sent and not panels["viewer"].sent,
+            "F12: ikili kare yalnız oturum sahibinin ikili panelinde; önek tünelin cihazı")
+        await m.send_to_session_holders({"type": "monitors", "hw_id": "HW-1", "list": []}, "HW-1")
+        for _ in range(20):
+            await asyncio.sleep(0)
+        chk(len(panels["own_text"].sent) == 1 and not panels["other"].sent and not panels["viewer"].sent,
+            "monitors yalnız oturum sahibinin panellerine")
+        chk(not m.clipboard_allowed("ali", "HW-1"), "pano: tünel açılmadan kapalı")
+        m.vision_tunnel_opened("HW-1", FastWS())
+        chk(m.clipboard_allowed("ali", "HW-1") and m.clipboard_users("HW-1") == {"ali"},
+            "pano: tüneli tek 'kullanıcıya sor' oturumunun rızası açtı → o oturumun sahibine açık")
+        m.add_vision_session("HW-1", "veli")
+        chk(m.clipboard_users("HW-1") == {"ali"}, "pano: tünel açıkken başlayan ikinci oturuma kapalı")
+        m.vision_tunnel_opened("HW-1", FastWS())
+        chk(not m.clipboard_users("HW-1"),
+            "pano: tünel açılırken iki oturum varsa (hangisi kabul edildi bilinmez) kimseye açılmaz")
+        m.remove_vision_session("HW-1", "veli")
+        m.add_vision_session("HW-1", "ali", mandatory=True)
+        m.vision_tunnel_opened("HW-1", FastWS())
+        chk(not m.clipboard_allowed("ali", "HW-1"), "pano: zorunlu oturumda kapalı")
+        m.add_vision_session("HW-1", "ali")
+        m.vision_tunnel_opened("HW-1", FastWS())
+        chk(m.clipboard_allowed("ali", "HW-1"), "pano: yeni 'kullanıcıya sor' oturumu tüneli yeniden açınca açık")
+        m.add_vision_session("HW-1", "ali", mandatory=True)
+        chk(not m.clipboard_allowed("ali", "HW-1"), "pano: oturum zorunluya dönerse kapanır")
+        m.remove_vision_session("HW-1", "ali")
+        chk(not m.clipboard_allowed("ali", "HW-1") and ("HW-1", "ali") not in m.vision_session_modes
+            and "HW-1" not in m.vision_clipboard_owner, "oturum bitince pano, oturum türü ve pano sahibi düşer")
+        m.vision_tunnel_opened("HW-2", FastWS())
+        chk(m.vision_clipboard_owner.get("HW-2") == "veli", "B cihazında tek oturum: pano sahibi veli")
+        m.disconnect_vision("HW-2")
+        chk("HW-2" not in m.vision_clipboard_owner and not m.clipboard_allowed("veli", "HW-2"),
+            "tünel kapanınca pano sahibi düşer")
+
+        # Yavaş panelde bekleyen ikili kareler toplam sınırı aşarsa panel kapatılır (monitör baytını ajan seçer)
+        dead = []
+        ws = SlowWS()
+        sender = mgr._PanelSender(ws, dead.append)
+        mb2 = b"x" * (2 * 1024 * 1024)
+        sender.put_binary(("HW-9", 0), v.KIND_FULL, b"F")
+        await asyncio.sleep(0)
+        for mon in range(9):
+            sender.put_binary(("HW-9", mon), v.KIND_FULL, mb2)
+        chk(dead == [ws], "bekleyen ikili kareler 16 MB'ı aşınca panel kapatıldı")
+        sender.task.cancel()
+        for s in m.panel_senders.values():
+            s.task.cancel()
+
+    asyncio.run(slow_panel())
+    from pops.routers import agents
+    chk({"vision_binary", "vision_clipboard"} <= set(agents.SERVER_FEATURES),
+        "server_info vision_binary ve vision_clipboard'u duyurur")
+
+
+def _dev_row(pc, **kw):
+    row = {"hostname": pc, "hw_id": pc, "real_hostname": pc.lower(), "pc_name": pc.lower(), "status": "Online",
+           "active_window": "-", "ip": "10.0.0.1", "agent_health": None, "last_seen": "2026-10-05 10:00:00",
+           "display_name": None, "lab": "L1"}
+    row.update(kw)
+    return row
+
+
+def test_devicelist():
+    """Cihaz listesi sürümü (pops/devicelist.py): değişiklik günlüğünün sınırları, ETag karşılaştırması, sürümün
+    yalnızca görünen bir alan değişince artması, last_seen yayımı ve panele bildirimin saniyede en fazla bir kez
+    gitmesi. Veritabanı yerine sahte satır okuyucu kullanılır."""
+    print("== cihaz listesi: değişiklik günlüğü")
+    from pops import devicelist as dl
+
+    log_ = dl.ChangeLog(100, max_entries=5, max_age=600)
+    log_.add(101, 0.0, ["a", "b"])
+    log_.add(102, 1.0, ["c"], ["d"])
+    got = log_.since(100)
+    chk(set(got[0]) == {"a", "b", "c"} and got[1] == ["d"], "since: değişenler ve silinenler (%s)" % (got,))
+    chk(log_.since(102) == ([], []), "güncel sürümden sonra değişiklik yok")
+    chk(log_.since(99) is None, "günlüğün başlangıcından eski since yanıtlanmaz")
+    log_.add(103, 2.0, ["a"])
+    chk(len(log_) == 4 and log_.since(102) == (["a"], []), "aynı cihaz günlükte tek kayıt (en sonuncusu)")
+    log_.add(104, 3.0, ["d"])
+    got = log_.since(101)
+    chk("d" in got[0] and got[1] == [], "silinip yeniden gelen cihaz değişen sayılır")
+    log_.add(105, 4.0, ["e%d" % i for i in range(10)])
+    chk(len(log_) == 5 and log_.floor == 105 and log_.since(104) is None and log_.since(105) == ([], []),
+        "kayıt sınırı: en eskiler düşer, taban sürüm yükselir (floor=%s)" % log_.floor)
+
+    log_ = dl.ChangeLog(0, max_entries=100, max_age=600)
+    log_.add(1, 0.0, ["x"])
+    log_.add(2, 500.0, ["y"])
+    log_.add(3, 700.0, ["z"])
+    chk(log_.floor == 1 and log_.since(0) is None and set(log_.since(1)[0]) == {"y", "z"},
+        "yaş sınırı: 10 dakikadan eski kayıt düşer")
+    log_.trim(1200.0)
+    chk(log_.floor == 2 and log_.since(1) is None and log_.since(2) == (["z"], []), "zaman geçtikçe taban yükselir")
+    big = dl.ChangeLog(0)
+    big.add(1, 0.0, ["pc%d" % i for i in range(dl.LOG_MAX_ENTRIES + 10)])
+    chk(len(big) == dl.LOG_MAX_ENTRIES, "varsayılan sınır %d kayıt" % dl.LOG_MAX_ENTRIES)
+
+    print("== panel soketi konuları")
+    from pops.manager import ConnectionManager
+    m = ConnectionManager()
+    only, plain = object(), object()
+    m.panel_topics[only] = frozenset(t for t in ("devices_changed",))
+    chk(m._wants(only, "devices_changed") and not m._wants(only, "terminal_output")
+        and not m._wants(only, "thumbnail"), "?topics=devices: yalnızca devices_changed")
+    chk(m._wants(plain, "terminal_output") and m._wants(plain, "thumbnail") and not m._wants(plain, "devices_changed"),
+        "konusuz soket: eski mesajların hepsi, isteğe bağlı devices_changed hariç")
+
+    print("== cihaz listesi: ETag")
+    tag = 'W/"d42"'
+    for header, want in (('W/"d42"', True), ('"d42"', True), ('W/"d42-gzip"', True), ('"x", W/"d42"', True),
+                         ("*", True), ('W/"d41"', False), ('W/"d4"', False), ("", False), (None, False),
+                         ('W/"d42-gzipx"', False)):
+        chk(dl.etag_matches(header, tag) is want, "If-None-Match %r -> %s" % (header, want))
+
+    print("== cihaz listesi: sürüm yalnızca görünen alan değişince artar")
+    real_fetch = dl.fetch_rows
+    db_rows = {}
+
+    async def fake_fetch(pcs=None):
+        return [dict(r) for pc, r in sorted(db_rows.items()) if pcs is None or pc in pcs]
+
+    async def scenario():
+        dl.reset()
+        db_rows.update({"HW-1": _dev_row("HW-1"), "HW-2": _dev_row("HW-2", status="Offline")})
+        await dl._init()
+        v0 = dl.S.version
+        empty = {"version": v0, "full": False, "changed": [], "removed": [], "seen": {}}
+        chk(dl.etag() == 'W/"d%d"' % v0 and dl.delta(v0) == empty, "ilk okuma sürüm açmaz")
+        chk(dl.delta(v0 - 1) is None and dl.delta(v0 + 1) is None, "açılıştan eski ya da ileri since: tam liste")
+        # Yalnızca last_seen ilerledi: hedefli okumada sürüm artmaz
+        db_rows["HW-1"]["last_seen"] = "2026-10-05 10:00:05"
+        chk(not dl.heartbeat_differs("HW-1", "Online", "-", "hw-1", "10.0.0.1", None),
+            "değişmeyen heartbeat ön süzgeçten geçmez")
+        await dl.sync(["HW-1"])
+        chk(dl.S.version == v0, "last_seen'i ilerleyen satır sürüm açmaz")
+        chk(dl.heartbeat_differs("HW-1", "Idle", "-", "hw-1", "10.0.0.1", None)
+            and dl.heartbeat_differs("HW-1", "Online", "chrome", "hw-1", "10.0.0.1", None)
+            and dl.heartbeat_differs("HW-1", "Online", "-", "hw-1", "10.0.0.2", None)
+            and dl.heartbeat_differs("HW-1", "Online", "-", "hw-1", "10.0.0.1", '{"loop_errors_1h": 1}')
+            and dl.heartbeat_differs("HW-NEW", "Online", "-", None, "10.0.0.1", None),
+            "durum, uygulama, adres, sağlık özeti değişince ya da yeni cihazda ön süzgeç işaretler")
+        db_rows["HW-1"]["status"] = "Idle"
+        await dl.sync(["HW-1"])
+        d = dl.delta(v0)
+        chk(dl.S.version == v0 + 1 and [r["status"] for r in d["changed"]] == ["Idle"] and d["seen"] == {},
+            "durum değişti: sürüm +1, satır değişenlerde")
+        # Silinen cihaz ve dakikalık tarama (last_seen yayımı)
+        del db_rows["HW-2"]
+        db_rows["HW-3"] = _dev_row("HW-3")
+        db_rows["HW-1"]["last_seen"] = "2026-10-05 10:01:00"
+        await dl._refresh(None, scan=False)
+        d = dl.delta(v0 + 1)
+        chk(d["removed"] == ["HW-2"] and [r["hw_id"] for r in d["changed"]] == ["HW-3"] and d["seen"] == {},
+            "silinen ve yeni cihaz (taramasız okuma last_seen yayımlamaz)")
+        v2 = dl.S.version
+        await dl._refresh(None, scan=True)
+        d = dl.delta(v2)
+        chk(dl.S.version == v2 + 1 and d["changed"] == [] and d["seen"] == {"HW-1": "2026-10-05 10:01:00"},
+            "tarama last_seen'i ilerleyen satırı 'seen' olarak yayımlar")
+        await dl._refresh(None, scan=True)
+        chk(dl.S.version == v2 + 1, "değişiklik yoksa tarama sürüm açmaz")
+        d = dl.delta(v0)
+        chk(d["removed"] == ["HW-2"] and {r["hw_id"] for r in d["changed"]} == {"HW-1", "HW-3"}
+            and "HW-1" not in d["seen"], "eski since: değişen satır tam gider, ayrıca 'seen'de yer almaz")
+
+        # Bildirim: sürekli değişiklikte saniyede en fazla bir yayın, son sürümle
+        pushes = []
+
+        async def broadcast(msg):
+            pushes.append((time.monotonic(), msg))
+
+        task = asyncio.ensure_future(dl.run_loop(broadcast))
+        started = time.monotonic()
+        n = 0
+        while time.monotonic() - started < 2.3:
+            n += 1
+            db_rows["HW-3"]["active_window"] = "app%d" % n
+            dl.touch(["HW-3"])
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(1.2)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        gaps = [b[0] - a[0] for a, b in zip(pushes, pushes[1:])]
+        chk(2 <= len(pushes) <= 4 and all(g >= 0.95 for g in gaps),
+            "yayın saniyede en fazla bir kez (%d yayın, aralıklar %s)" % (len(pushes), [round(g, 2) for g in gaps]))
+        chk(pushes and pushes[-1][1] == {"type": "devices_changed", "version": dl.S.version},
+            "son yayın güncel sürümü taşır")
+        chk(any(r["active_window"] == "app%d" % n for r in dl.delta(v0)["changed"]), "son değişiklik listede")
+
+    dl.SCAN_SECONDS, scan_was = 1000.0, dl.SCAN_SECONDS
+    dl.fetch_rows = fake_fetch
+    try:
+        asyncio.run(scenario())
+    finally:
+        dl.fetch_rows = real_fetch
+        dl.SCAN_SECONDS = scan_was
+        dl.reset()
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -854,6 +1546,13 @@ def main():
     test_release_compare()
     test_server_metrics()
     test_api_v1()
+    test_files()
+    test_exam()
+    test_agent_platform()
+    test_agent_packages()
+    test_winget()
+    test_vision_v2()
+    test_devicelist()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)

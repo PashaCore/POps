@@ -1,0 +1,12 @@
+processor	: 0
+vendor_id	: GenuineIntel
+cpu family	: 6
+model		: 165
+model name	: Intel(R) Core(TM) i5-10400 CPU @ 2.90GHz
+stepping	: 3
+cpu MHz		: 2900.000
+cache size	: 12288 KB
+
+processor	: 1
+vendor_id	: GenuineIntel
+model name	: Intel(R) Core(TM) i5-10400 CPU @ 2.90GHz

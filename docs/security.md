@@ -92,8 +92,8 @@ an entry.
 | Role | Can |
 | --- | --- |
 | `viewer` | Read devices, labs, inventory, software, Windows Update state, licences, logs, tasks, packages and reports (including CSV exports). Cannot see screen previews or live frames, cannot send remote input, and cannot open the **Dağıtım**, **Uzak komut** or **Ayarlar** pages. |
-| `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, scheduled tasks, Windows Update scan and install, licence definitions, helpdesk tickets, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies, the notification list (**Bildirimler**). |
-| `superadmin` | Additionally: panel users, API tokens, agent releases and updates, enrollment tokens, agent-auth enforcement, re-enrollment, capability policy, server self-update, audit-chain verification, notification settings. |
+| `admin` | Everything operational: devices and labs, Wake-on-LAN, deployment and commands, scheduled tasks, Windows Update scan and install, licence definitions, helpdesk tickets, remote-control sessions, remote input, previews, quarantine, offline bypass codes, policies, the notification list (**Bildirimler**), sending files to PCs and fetching files from them (panel session only). |
+| `superadmin` | Additionally: fetching files from other users' profiles on a PC, panel users, API tokens, agent releases and updates, enrollment tokens, agent-auth enforcement, re-enrollment, capability policy, server self-update, audit-chain verification, notification settings. |
 
 Things to keep in mind:
 
@@ -163,12 +163,97 @@ Both are on by default so that a fresh install works for a lab. **Turn them off 
 teachers' and administration PCs a remote terminal and screen view are rarely necessary, and a PC with both off
 offers nothing to someone who takes over the server or an admin account.
 
+## File transfer
+
+An admin can send a file to PCs and fetch a file from a PC (**Dosya gönder** / **Dosya al**; protocol in
+[`api.md`](api.md#file-transfer)). What protects it:
+
+- **Who.** Sending, fetching and downloading a fetched file need an admin in a **panel session**; API tokens are
+  refused (`403`), so files are never moved by automation without a person. Viewers can only see the list (names,
+  sizes, reasons, who and when). Fetching from **other users' profiles** (`any_profile`) needs a superadmin. A reason
+  is required for both directions (3–300 characters).
+- **Audit.** Every send (per PC), every request, every received file, every download of a fetched file and every
+  result from the agent goes into the hash-chained audit log with metadata only: transfer ID, name, size,
+  SHA-256, destination or path, size limit, `any_profile`, reason, who. The file content is never logged or stored in
+  the database. The tray's **Etkinlik geçmişim** shows the PC's users that a file was sent or requested (who, when,
+  reason) but not the path or name of a fetched file, which may belong to another user.
+- **One-time tokens bound to one PC.** Each PC gets its own transfer ID and a random token (32 bytes, stored as
+  SHA-256 only) valid for one use and 1 hour. The agent endpoints always need the device secret (`X-Agent-Id` +
+  `X-Agent-Secret`), also while `enforce_agent_auth` is off. A wrong token, another PC's secret, a used or expired
+  token and an unknown ID all return the same `404`, and failed attempts do not use the token up. The token travels
+  only on the PC's own authenticated WebSocket. The agent downloads and uploads only from the server it is enrolled
+  with (the URLs are relative).
+- **Destinations and file types.** The server sends only `public_desktop` or `inbox`, never a path; the agent writes
+  only to its allowlisted folders and refuses `.lnk`, `.url` and `.scr` unless the admin ticked "çalıştırılabilir
+  dosyaya izin ver" (the server refuses them too without it). File names are cleaned on the server (no path parts,
+  no characters Windows does not allow, no control or direction characters such as U+202E that could make an `.exe`
+  look like a `.png`, no reserved names). The agent checks size and SHA-256 before it writes.
+- **Paths.** A fetch request must be a full local path with a drive letter. Network paths
+  (`\\server\share`, which would make the agent connect to another host with the PC's machine account), device
+  paths (`\\?\`), `..`, wildcards and alternate data streams are refused by the server; the agent applies its own
+  profile rules on top.
+- **Size and storage.** At most 200 MB each way. An oversized request is refused before its body is read, and an
+  agent upload is cut off at the requested `max_size`. Files are stored under server-made names in
+  `Backend/transfers` (not served, mode `0750`/`0640`); a fetched file is downloaded only through
+  `GET /api/files/{id}/content`, always as an attachment with `nosniff` and a sandboxing CSP, so a fetched HTML or SVG
+  file cannot run in the panel's origin. Fetched files are deleted after 7 days, sent files once all tokens are used
+  or expired; transfers are not in backups.
+- **Off switches.** The `files` module turns the feature off for the organisation or a lab (open transfers are
+  rejected and their tokens stop working). On the PC, file transfer can be switched off locally; the agent reports
+  `files_enabled: false`, and the server sends it nothing. An agent that does not report the capability gets no
+  file commands.
+
+## Exam mode
+
+Exam mode (**Sınıflar → Sınıf işlemleri → Sınav modu…**, `POST /api/labs/{lab}/exam`) restricts a lab's PCs for the
+length of an exam. What it does:
+
+- **Network isolation with an allow list.** The agent uses the quarantine isolation: outbound traffic is blocked
+  except to the POps server, DNS, DHCP and the allowed domain names, IP addresses and networks (domain names are
+  resolved by the agent). The server validates the list (no wildcards, no network wider than `/8`, at most 50
+  entries).
+- **A notice.** The tray shows the admin's message for the whole exam.
+- **Optional program block.** Listed programs (`cmd.exe`, …) are blocked while the exam runs. POps's own
+  processes and the Windows session processes cannot be listed.
+- **A fixed end.** Every exam has an end time at most 8 hours ahead. The agent leaves exam mode at that time on its
+  own, also when it is offline; the server ends the exam too and tells connected agents.
+- **Accountability.** Starting, ending and the automatic end are written to the hash-chained audit log
+  (`exam_start`, `exam_end`, `exam_auto_end`) with who, the lab, the reason and the lists. A PC that reports it left
+  exam mode while the exam runs gets an audit entry (`exam_left`) and a notification; a PC whose agent refuses
+  (`capability_denied`, capability `exam`) is logged and notified, and the panel shows both.
+
+What it does **not** guarantee:
+
+- **A local administrator can switch it off.** The `exam` capability can be switched off on the PC, and an
+  administrator of the PC can stop the agent or change the firewall. Exam mode is meant for students with standard
+  accounts. The panel shows such a PC as **Ayrıldı** or **Reddetti** and raises a notification, but only after the
+  agent reports it, and only if it still can.
+- **It is not proctoring.** POps does not watch, record or analyse the screen, the camera, keystrokes or the
+  student during an exam. Remote screen (Vision) keeps its own rules (consent or a recorded mandatory session).
+- **It does not stop other devices.** Phones, a second network card the agent does not manage, or a USB modem are
+  outside its reach. It also does not change what the allowed sites themselves permit.
+- **Older agents ignore it.** An agent without exam mode drops the command; the panel shows it as
+  **Desteklemiyor (eski ajan)**, and that PC is not restricted.
+- **Offline PCs** get the exam when they connect. A PC that never connects during the exam is not restricted.
+
 ## Remote control and transparency
 
 - Remote mouse/keyboard input and `execute` sent over the remote-input path need an admin **and** an open
   remote-control session for that device, opened with a recorded reason. A session grant expires after 30
   minutes without activity.
-- Live frames go only to the admin who opened the session, never to viewers or other panels.
+- Live frames go only to the admin who opened the session, never to viewers or other panels. The server files every
+  frame (JSON or Vision v2 binary), monitor list and clipboard text under the device whose secret opened the Vision
+  tunnel; a device ID inside the message is ignored, so one enrolled agent cannot show its screen in another
+  device's view. Binary frames that break the header rules or exceed 2 MB are dropped and counted in `/metrics`.
+- **Clipboard (Vision v2).** Text only, at most 64 KB, both directions, and only in a session the PC user
+  accepted: an "ask the user" session (never a mandatory session, which only shows a notice) that was the only open
+  session for the PC when its Vision tunnel opened. With several sessions at that moment, or for a session started
+  while the tunnel was open, the server cannot tell which one the user accepted and refuses for all of them. Only
+  that session's admin can send text to the PC or receive text copied there; at most 30 texts per minute per device
+  and direction. The server writes the direction, length, admin and time to the hash-chained audit log before passing
+  the text on (no audit entry, no transfer), never the text itself, and keeps no copy; the agent refuses clipboard
+  outside an accepted session as well and its event log also records only direction and length. Screen selection
+  and quality changes (`select_monitor`, `set_quality`) are forwarded only from the session holder too.
 - On the PC, the user is asked for consent, or, for a mandatory session, sees a full-screen countdown. The agent
   applies remote input only during a session the tray started after that step, even if the server is
   compromised.
@@ -271,7 +356,7 @@ restrict database access.
 | `/download/<file>?sig=…` | Deployment packages for agents, only with the signed link returned at upload (wrong or missing signature: 404). Anyone who has a package's link can still download it, so do not upload anything confidential on the **Dağıtım** page. |
 | `/updates/<file>` | The agent MSI being distributed (verified by agents against the signed manifest). |
 | `/api/v1/...` | The same endpoints as `/api/...` with the same authentication; nothing extra is open. |
-| `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. The software, Windows Update and helpdesk endpoints always require them. |
+| `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Agent channels; they require agent credentials once enforcement is on. The software, Windows Update, helpdesk and file transfer endpoints always require them. |
 
 ## Operator checklist
 

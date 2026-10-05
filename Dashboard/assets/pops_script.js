@@ -3,9 +3,11 @@
 //   POps.api / get / post / del  : tek istek sarmalayıcı (JSON, 401 -> giriş, FastAPI 'detail' hatası)
 //   POps.toast(tür, metin)       : sağ alttaki bildirim (success | error | warning | info)
 //   POps.confirm / prompt / alert: tarayıcı penceresi yerine sayfa içi pencere (Promise döner)
+//   POps.form                    : alanları çağıranın kurduğu pencere (gönderim sürerken açık kalır)
+//   POps.upload                  : FormData yükleme, ilerleme bildirimiyle (XMLHttpRequest)
 //   POps.busy / act              : düğmeyi istek sürerken kilitler; hata/başarı bildirimini gösterir
 //   openModal / closeModal       : sayfadaki .modal-overlay pencereleri (odak tuzağı, Esc)
-//   POps.watchDevices            : cihaz listesini (state.devices) yalnızca isteyen sayfada yoklar
+//   POps.watchDevices            : cihaz listesini (state.devices) yalnızca isteyen sayfada güncel tutar (değişiklikler + panel soketi)
 //   POps.iconHtml / iconEl       : çizgi simge (assets/pops_icons.svg)
 //   POps.menu(düğme, öğeler)     : açılır menü;  POps.drawer: sağdaki ayrıntı paneli
 //   POps.pageTabs(çubuk)          : çok bölümlü sayfaların sekmeleri (?tab=)
@@ -220,6 +222,8 @@ POps.errorMessage = function (err, fallback) {
     return POps.t((err && err.message) || fallback || 'Beklenmeyen hata.');
 };
 
+// POps.api'nin 304 yanıtı (yalnızca If-None-Match gönderen istekte gelir)
+POps.NOT_MODIFIED = Object.freeze({ notModified: true });
 POps.api = async function (path, opts) {
     const o = Object.assign({ method: 'GET' }, opts || {});
     const headers = new Headers(o.headers || {});
@@ -244,6 +248,8 @@ POps.api = async function (path, opts) {
         window.location.href = '/logout';
         return new Promise(() => {});
     }
+    // If-None-Match gönderen istek: içerik değişmedi (gövde yok)
+    if (res.status === 304) return POps.NOT_MODIFIED;
     let data = null;
     if (res.status !== 204) {
         const ct = res.headers.get('content-type') || '';
@@ -264,6 +270,35 @@ POps.api = async function (path, opts) {
 POps.get = (path, opts) => POps.api(path, Object.assign({}, opts, { method: 'GET' }));
 POps.post = (path, body, opts) => POps.api(path, Object.assign({}, opts, { method: 'POST', body: body === undefined ? {} : body }));
 POps.del = (path, opts) => POps.api(path, Object.assign({}, opts, { method: 'DELETE' }));
+// FormData yükleme; fetch yükleme ilerlemesini vermediği için XMLHttpRequest. Hata metni ve 401 POps.api ile aynı.
+// POps.upload('/api/…', formData, { onProgress: (oran 0..1) => …, signal })
+POps.upload = function (path, form, opts) {
+    const o = opts || {};
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const abort = () => xhr.abort();
+        xhr.open('POST', /^https?:\/\//.test(path) ? path : API_HTTP + path);
+        xhr.withCredentials = true;
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        if (o.onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable && e.total) o.onProgress(e.loaded / e.total); };
+        const done = () => { if (o.signal) o.signal.removeEventListener('abort', abort); };
+        xhr.onload = () => {
+            done();
+            if (xhr.status === 401) { window.location.href = '/logout'; return; }
+            let data = null;
+            try { data = JSON.parse(xhr.responseText); } catch (e) { data = xhr.responseText || null; }
+            if (xhr.status >= 200 && xhr.status < 300 && !(data && typeof data === 'object' && data.status === 'error')) resolve(data);
+            else reject(new ApiError(apiErrorText(data, xhr.status), xhr.status, data));
+        };
+        xhr.onerror = () => { done(); reject(new ApiError(POps.t('Sunucuya ulaşılamadı. Bağlantınızı kontrol edin.'), 0, null)); };
+        xhr.onabort = () => { done(); const e = new Error('abort'); e.name = 'AbortError'; reject(e); };
+        if (o.signal) {
+            if (o.signal.aborted) { xhr.abort(); return; }
+            o.signal.addEventListener('abort', abort);
+        }
+        xhr.send(form);
+    });
+};
 
 // Eski çağrılar için (endpoint, {method, body: JSON metni})
 async function apiRequest(endpoint, options) {
@@ -458,7 +493,7 @@ function openDialog(kind, opts) {
         overlay.className = 'pops-dialog-overlay';
         const box = document.createElement('div');
         box.className = 'pops-dialog' + (o.danger ? ' danger' : (o.tone ? ' ' + o.tone : ''));
-        box.setAttribute('role', kind === 'prompt' ? 'dialog' : 'alertdialog');
+        box.setAttribute('role', kind === 'prompt' || kind === 'form' ? 'dialog' : 'alertdialog');
         box.setAttribute('aria-modal', 'true');
         box.tabIndex = -1;
         const titleId = 'popsDialogTitle' + n, msgId = 'popsDialogMsg' + n;
@@ -468,7 +503,7 @@ function openDialog(kind, opts) {
         body.className = 'pops-dialog-body';
         const ic = document.createElement('div');
         ic.className = 'pops-dialog-icon';
-        ic.appendChild(POps.iconEl(o.icon || (o.danger ? 'alert' : kind === 'prompt' ? 'edit' : kind === 'alert' ? 'info' : 'help')));
+        ic.appendChild(POps.iconEl(o.icon || (o.danger ? 'alert' : kind === 'prompt' || kind === 'form' ? 'edit' : kind === 'alert' ? 'info' : 'help')));
         const content = document.createElement('div');
         content.className = 'pops-dialog-content';
         const title = document.createElement('h2');
@@ -501,8 +536,9 @@ function openDialog(kind, opts) {
             row.append(c, copy);
             content.appendChild(row);
         });
+        let note = null;
         if (o.note) {
-            const note = document.createElement('p');
+            note = document.createElement('p');
             note.className = 'pops-dialog-note';
             note.textContent = String(o.note);
             content.appendChild(note);
@@ -544,6 +580,17 @@ function openDialog(kind, opts) {
             }
             content.appendChild(field);
         }
+        // form: alanlar çağıranın kurduğu öğe; gönderim hatası en altta
+        let formErr = null;
+        if (kind === 'form') {
+            if (o.content) content.appendChild(o.content);
+            if (note) content.appendChild(note);   // formda not alanların altında, düğmelerin üstünde
+            formErr = document.createElement('div');
+            formErr.className = 'pops-dialog-error';
+            formErr.setAttribute('role', 'alert');
+            formErr.hidden = true;
+            content.appendChild(formErr);
+        }
         body.append(ic, content);
 
         const footer = document.createElement('div');
@@ -559,12 +606,12 @@ function openDialog(kind, opts) {
         const okBtn = document.createElement('button');
         okBtn.type = 'button';
         okBtn.className = 'btn' + (o.danger ? ' danger' : '');
-        okBtn.textContent = o.confirmText || POps.t(kind === 'alert' ? 'Tamam' : kind === 'prompt' ? 'Kaydet' : 'Onayla');
+        okBtn.textContent = o.confirmText || POps.t(kind === 'alert' ? 'Tamam' : kind === 'prompt' || kind === 'form' ? 'Kaydet' : 'Onayla');
         footer.appendChild(okBtn);
         box.append(body, footer);
         overlay.appendChild(box);
 
-        let done = false;
+        let done = false, sending = null;
         function finish(result) {
             if (done) return;
             done = true;
@@ -573,7 +620,33 @@ function openDialog(kind, opts) {
             restoreFocus(prevFocus);
             resolve(result);
         }
-        function cancel() { finish(kind === 'prompt' ? null : false); }
+        function cancel() {
+            if (sending) sending.abort();   // süren gönderim (ör. dosya yüklemesi) durur
+            finish(kind === 'prompt' || kind === 'form' ? null : false);
+        }
+        function showFormError(text) {
+            formErr.textContent = text || '';
+            formErr.hidden = !text;
+        }
+        async function submitForm() {
+            if (sending) return;
+            sending = new AbortController();
+            showFormError('');
+            okBtn.disabled = true;
+            okBtn.classList.add('is-loading');
+            okBtn.setAttribute('aria-busy', 'true');
+            try {
+                const r = await o.submit({ signal: sending.signal, setError: showFormError, box });
+                if (r !== false) finish(r === undefined ? true : r);
+            } catch (e) {
+                if (!(e && e.name === 'AbortError')) showFormError(POps.errorMessage(e));
+            } finally {
+                sending = null;
+                okBtn.disabled = false;
+                okBtn.classList.remove('is-loading');
+                okBtn.removeAttribute('aria-busy');
+            }
+        }
         function showError(text) {
             err.textContent = text;
             input.closest('.field').classList.add('has-error');
@@ -581,6 +654,7 @@ function openDialog(kind, opts) {
             input.focus();
         }
         function accept() {
+            if (kind === 'form') return submitForm();
             if (kind !== 'prompt') return finish(true);
             let v = input.value;
             if (o.trim !== false) v = v.trim();
@@ -600,7 +674,7 @@ function openDialog(kind, opts) {
             if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
             else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
                 const t = e.target;
-                if (t && t.tagName === 'TEXTAREA') return;
+                if (t && (t.tagName === 'TEXTAREA' || t.type === 'file')) return;
                 if (t && t.tagName === 'BUTTON' && t !== okBtn) return;   // Vazgeç / Kopyala kendi işini yapar
                 e.preventDefault();
                 e.stopPropagation();
@@ -610,7 +684,9 @@ function openDialog(kind, opts) {
         document.body.appendChild(overlay);
         syncBodyLock();
         setTimeout(() => {
+            const first = kind === 'form' ? box.querySelector('.pops-dialog-content input:not([type=hidden]):not([disabled]), .pops-dialog-content select, .pops-dialog-content textarea, .pops-dialog-content button') : null;
             if (input) { input.focus(); if (input.select) input.select(); }
+            else if (first) first.focus();
             else okBtn.focus();
         }, 10);
     });
@@ -621,6 +697,11 @@ POps.confirm = (opts) => openDialog('confirm', typeof opts === 'string' ? { mess
 POps.prompt = (opts) => openDialog('prompt', typeof opts === 'string' ? { message: opts } : opts);
 // alert({title, message, code|codes, note}) -> Promise<true>
 POps.alert = (opts) => openDialog('alert', typeof opts === 'string' ? { message: opts } : opts);
+// form({title, message, icon, content: öğe, confirmText, note, submit: async ({ signal, setError, box }) => sonuç})
+//   -> Promise<sonuç | null>. Gönderim sürerken pencere açık kalır ve düğme kilitlenir; submit false dönerse pencere
+//   açık kalır (alan hatası gösterilmiştir), hata fırlatırsa metni pencerenin altında görünür. Vazgeç / Esc süren
+//   gönderimi iptal eder (signal).
+POps.form = (opts) => openDialog('form', opts);
 
 // ============== DÜĞME DURUMU ==============
 // İstek sürerken düğmeyi kilitler ve dönen halka gösterir; ikinci tıklama yok sayılır
@@ -656,23 +737,56 @@ POps.act = async function (btn, fn, opts) {
 };
 
 // ============== CİHAZ LİSTESİ ==============
-// Yalnızca POps.watchDevices() çağıran sayfa yoklar (eskiden her sayfa 3 sn'de bir üç istek atıyordu)
+// Yalnızca POps.watchDevices() çağıran sayfa yoklar (eskiden her sayfa 3 sn'de bir üç istek atıyordu). Liste sürümlüdür
+// (docs/api.md, /api/devices): ilk istek bütün listeyi ve sürümü alır, sonrakiler ?since=<sürüm> ile yalnızca
+// değişenleri; değişiklik yoksa sunucu 304 döner (If-None-Match). Panel soketi (/ws/panel?topics=devices) sürüm
+// değişince haber verir: değişiklik hemen çekilir, soket açıkken yoklama 30 sn'de bir (soket yoksa 5 sn).
 let inventoryAt = 0;
 let inventoryMap = {};
-async function loadDevices() {
-    const wantInventory = !!state.withInventory;
-    const [devices, labs, settings, inv] = await Promise.all([
-        POps.get('/api/devices'),
-        POps.get('/api/custom_labs').catch(() => state.customLabs),
-        POps.get('/api/lab_settings').catch(() => null),
-        wantInventory && Date.now() - inventoryAt > 60000 ? POps.get('/api/inventory').catch(() => null) : Promise.resolve(null)
-    ]).catch(e => { state.devicesError = e; document.dispatchEvent(new CustomEvent('pops_data_updated', { detail: { error: e } })); throw e; });
-    if (Array.isArray(inv)) {
-        inventoryAt = Date.now();
-        inventoryMap = {};
-        inv.forEach(r => { inventoryMap[r.pc_name] = r; });
+const DEV_POLL_MS = 5000;
+const DEV_POLL_SOCKET_MS = 30000;
+const devList = { version: null, rows: new Map(), inflight: null, again: false, socketOpen: false };
+const devKey = (d) => d.hw_id || d.hostname;
+
+// Listeyi ya da son sürümden bu yana değişenleri alır; liste değiştiyse true
+async function fetchDeviceRows() {
+    const v = devList.version;
+    const r = await POps.get('/api/devices?since=' + (v == null ? 0 : v), v == null ? {} : { headers: { 'If-None-Match': 'W/"d' + v + '"' } });
+    if (r === POps.NOT_MODIFIED) return false;
+    if (Array.isArray(r)) {   // ?since= bilmeyen eski sunucu: her seferinde bütün liste
+        devList.rows = new Map(r.map(d => [devKey(d), d]));
+        devList.version = null;
+        return true;
     }
-    state.devices = (Array.isArray(devices) ? devices : []).map(d => {
+    if (!r || typeof r !== 'object') return false;
+    const changed = Array.isArray(r.changed) ? r.changed : [];
+    const removed = Array.isArray(r.removed) ? r.removed : [];
+    const seen = r.seen && typeof r.seen === 'object' ? Object.keys(r.seen) : [];
+    if (r.full) {
+        devList.rows = new Map((Array.isArray(r.devices) ? r.devices : []).map(d => [devKey(d), d]));
+    } else {
+        changed.forEach(d => devList.rows.set(devKey(d), d));
+        removed.forEach(id => devList.rows.delete(id));
+        // Yalnızca last_seen'i ilerleyen cihazlar (sunucu dakikada bir bildirir)
+        seen.forEach(id => { const d = devList.rows.get(id); if (d) devList.rows.set(id, Object.assign({}, d, { last_seen: r.seen[id] })); });
+    }
+    devList.version = typeof r.version === 'number' ? r.version : null;
+    return !!r.full || changed.length + removed.length + seen.length > 0;
+}
+// Aynı anda tek istek; sürerken yenisi istenirse biter bitmez bir kez daha sorulur (eski yanıt yenisini ezmesin)
+function syncDevices() {
+    if (devList.inflight) { devList.again = true; return devList.inflight; }
+    devList.inflight = (async () => {
+        let changed = false;
+        try {
+            do { devList.again = false; changed = (await fetchDeviceRows()) || changed; } while (devList.again);
+            return changed;
+        } finally { devList.inflight = null; }
+    })();
+    return devList.inflight;
+}
+function publishDevices() {
+    state.devices = [...devList.rows.values()].map(d => {
         const hw = inventoryMap[d.hostname] || {};
         return Object.assign({}, d, {
             id: d.hostname,
@@ -683,6 +797,27 @@ async function loadDevices() {
             active_window: d.active_window || '-'
         });
     });
+    const stats = {};
+    state.devices.forEach(d => { stats[d.lab] = (stats[d.lab] || 0) + 1; });
+    state.labsStats = stats;
+    state.devicesLoaded = true;
+    state.devicesError = null;
+    document.dispatchEvent(new CustomEvent('pops_data_updated', { detail: {} }));
+    return state.devices;
+}
+async function loadDevices() {
+    const wantInventory = !!state.withInventory;
+    const [, labs, settings, inv] = await Promise.all([
+        syncDevices(),
+        POps.get('/api/custom_labs').catch(() => state.customLabs),
+        POps.get('/api/lab_settings').catch(() => null),
+        wantInventory && Date.now() - inventoryAt > 60000 ? POps.get('/api/inventory').catch(() => null) : Promise.resolve(null)
+    ]).catch(e => { state.devicesError = e; document.dispatchEvent(new CustomEvent('pops_data_updated', { detail: { error: e } })); throw e; });
+    if (Array.isArray(inv)) {
+        inventoryAt = Date.now();
+        inventoryMap = {};
+        inv.forEach(r => { inventoryMap[r.pc_name] = r; });
+    }
     state.customLabs = Array.isArray(labs) ? labs : [];
     if (settings && typeof settings === 'object') {
         state.mainPcs = {};
@@ -692,22 +827,53 @@ async function loadDevices() {
             state.labLayouts[lab] = settings[lab].layout_json;
         }
     }
-    const stats = {};
-    state.devices.forEach(d => { stats[d.lab] = (stats[d.lab] || 0) + 1; });
-    state.labsStats = stats;
-    state.devicesLoaded = true;
-    state.devicesError = null;
-    document.dispatchEvent(new CustomEvent('pops_data_updated', { detail: {} }));
-    return state.devices;
+    return publishDevices();
 }
 POps.loadDevices = loadDevices;
+// Soketten "değişti" gelince: yalnızca cihaz değişiklikleri çekilir. Arka plandaki sekme çekmez; sekmeye dönünce
+// popsPoll hemen yoklar.
+async function refreshDevicesNow() {
+    if (document.hidden) return;
+    try { if (await syncDevices()) publishDevices(); } catch (e) { /* yoklama yeniden dener */ }
+}
+const devSocket = { backoff: 2000, ping: null };
+function connectDeviceSocket() {
+    if (typeof POPS_API === 'undefined' || typeof WebSocket === 'undefined') return;
+    let ws;
+    try { ws = new WebSocket(POPS_API.wsUrl('/ws/panel?topics=devices')); } catch (e) { retryDeviceSocket(); return; }
+    ws.onopen = () => {
+        devList.socketOpen = true;
+        devSocket.backoff = 2000;
+        // Boştaki bağlantıyı ters vekil (ör. Apache, 60 sn) kapatmasın
+        devSocket.ping = setInterval(() => { try { ws.send('{"type":"ping"}'); } catch (e) { /* kapanıyor */ } }, 45000);
+        refreshDevicesNow();   // soket kapalıyken kaçan değişiklikler
+    };
+    ws.onmessage = (ev) => {
+        let m = null;
+        try { m = JSON.parse(ev.data); } catch (e) { return; }
+        if (m && m.type === 'devices_changed' && !(typeof m.version === 'number' && devList.version != null && m.version <= devList.version)) refreshDevicesNow();
+    };
+    ws.onclose = (ev) => {
+        const wasOpen = devList.socketOpen;
+        devList.socketOpen = false;
+        clearInterval(devSocket.ping);
+        // Yoklama hemen 5 sn düzenine döner (oturum bittiyse 401 giriş sayfasına götürür)
+        if (wasOpen && devicesPoller) devicesPoller.now();
+        if (ev.code !== 4001) retryDeviceSocket();
+    };
+}
+function retryDeviceSocket() {
+    setTimeout(connectDeviceSocket, devSocket.backoff);
+    devSocket.backoff = Math.min(60000, devSocket.backoff * 2);
+}
 let devicesPoller = null;
 POps.watchDevices = function (opts) {
     const o = opts || {};
     if (o.inventory) state.withInventory = true;
     if (!devicesPoller) {
         loadDevices().catch(() => {});
-        devicesPoller = window.popsPoll(loadDevices, o.interval || 5000);
+        devicesPoller = window.popsPoll(loadDevices, () => (devList.socketOpen ? DEV_POLL_SOCKET_MS : (o.interval || DEV_POLL_MS)));
+        connectDeviceSocket();
     }
     return devicesPoller;
 };
