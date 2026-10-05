@@ -18,7 +18,8 @@ namespace POpsTray.Vision
     // İlk kare (ve ekran/ölçek değişiminden, düşürülen kareden sonra) tam gider; sonra yalnızca değişen bölgeler
     // (64x64 ızgara karşılaştırması). Ekran seçilebilir ya da "hepsi" yan yana birleştirilir. Kalite ve ölçek
     // görüntüleyicinin istediğine (set_quality) ve servisin bildirdiği düşmelere göre ayarlanır. Kareler borudan
-    // PipeMagic ile servise gider.
+    // PipeMagic ile servise gider. Güvenli masaüstü (UAC onayı, kilit, oturum açma ekranı) etkinken o masaüstü
+    // yakalanmaz; görüntüleyiciye bildirim resmi gider (bkz. SecureDesktopNotice, POps.Shared.VisionDesktopGate).
     [SupportedOSPlatform("windows")]
     internal sealed class VisionStreamer : IDisposable
     {
@@ -145,12 +146,32 @@ namespace POpsTray.Vision
             var sources = new List<Source>();
             var current = new ScreenImage();
             var shown = new ScreenImage();
+            var notice = new ScreenImage();
+            var desktop = new VisionDesktopGate();
+            byte monitor = 0;
+            bool gdiFailureLogged = false;
             Point lastCursor = new Point(-1, -1);
             try
             {
                 while (_running)
                 {
                     var watch = Stopwatch.StartNew();
+                    // Güvenli masaüstü (UAC, kilit, oturum açma ekranı) etkinken yakalanacak bir şey yok: donmuş son kare
+                    // yerine bildirim resmi gider, masaüstü geri gelince kaynaklar yeniden açılır ve tam kare gider
+                    VisionDesktopStep step = desktop.Next(InputDesktop.IsOwn(), _forceFull, DateTime.UtcNow);
+                    if (step is VisionDesktopStep.Enter or VisionDesktopStep.Notice or VisionDesktopStep.Wait)
+                    {
+                        if (step == VisionDesktopStep.Enter) TrayLog.Write("Vision v2: kullanıcının masaüstü görünmüyor (güvenli masaüstü); görüntü yerine bildirim gönderiliyor.");
+                        if (step != VisionDesktopStep.Wait && SendNotice(current, monitor, notice)) _forceFull = false;
+                        Pace(watch);
+                        continue;
+                    }
+                    if (step == VisionDesktopStep.Resume)
+                    {
+                        TrayLog.Write("Vision v2: kullanıcının masaüstü geri geldi; yakalama sürüyor.");
+                        _resetSources = true;
+                        _forceFull = true;
+                    }
                     if (_resetSources)
                     {
                         _resetSources = false;
@@ -160,9 +181,14 @@ namespace POpsTray.Vision
                     }
                     if (sources.Count == 0) { Thread.Sleep(1000); _resetSources = true; continue; }
 
-                    bool changed = CaptureAll(sources, current, out bool lost);
+                    bool changed = CaptureAll(sources, current, out bool lost, out bool gdiFailed);
                     if (lost) _resetSources = true;
-                    byte monitor = sources.Count == 1 ? (byte)sources[0].Monitor.Index : VisionFrame.AllMonitors;
+                    if (gdiFailed && !gdiFailureLogged)
+                    {
+                        TrayLog.Write("Vision v2: GDI yakalaması başarısız; sonraki karede yeniden denenecek.");
+                        gdiFailureLogged = true;
+                    }
+                    monitor = sources.Count == 1 ? (byte)sources[0].Monitor.Index : VisionFrame.AllMonitors;
                     if (current.Width > 0 && (_forceFull || shown.Width != current.Width || shown.Height != current.Height))
                     {
                         if (SendRegion(VisionFrame.Full, monitor, current, new VisionRegions.Rect(0, 0, current.Width, current.Height)))
@@ -187,14 +213,7 @@ namespace POpsTray.Vision
                         lastCursor = cursor;
                         _send(VisionFrame.WithPipeMagic(VisionFrame.Build(VisionFrame.Cursor, monitor, NextSequence(), cursor.X, cursor.Y, 0, 0, current.Width, current.Height, ReadOnlySpan<byte>.Empty)));
                     }
-                    int fps;
-                    lock (_gate)
-                    {
-                        _quality.OnTick(DateTime.UtcNow);
-                        fps = _quality.Fps;
-                    }
-                    int wait = 1000 / fps - (int)watch.ElapsedMilliseconds;
-                    if (wait > 0) Thread.Sleep(wait);
+                    Pace(watch);
                 }
             }
             catch (Exception ex) { TrayLog.Write($"Vision v2 yakalama durdu: {ex.GetType().Name}"); }
@@ -204,6 +223,35 @@ namespace POpsTray.Vision
                 Dpi.Restore(dpi);
                 _running = false;
             }
+        }
+
+        // Kare hızına göre bekler (kalite adımı da burada)
+        private void Pace(Stopwatch watch)
+        {
+            int fps;
+            lock (_gate)
+            {
+                _quality.OnTick(DateTime.UtcNow);
+                fps = _quality.Fps;
+            }
+            int wait = 1000 / fps - (int)watch.ElapsedMilliseconds;
+            if (wait > 0) Thread.Sleep(wait);
+        }
+
+        // Kullanıcının masaüstü görünmüyor: son görüntünün boyutunda (yoksa birincil ekranın) bildirim resmi tam kare
+        // olarak gider. Dönen: kare gönderildi mi.
+        private bool SendNotice(ScreenImage current, byte monitor, ScreenImage notice)
+        {
+            int width = current.Width, height = current.Height;
+            if (width == 0 || height == 0)
+            {
+                MonitorInfo? primary = Monitors.List().Find(m => m.Primary);
+                width = primary?.Bounds.Width ?? 1280;
+                height = primary?.Bounds.Height ?? 720;
+                monitor = (byte)(primary?.Index ?? 0);
+            }
+            if (notice.Width != width || notice.Height != height) SecureDesktopNotice.RenderInto(notice, width, height);
+            return SendRegion(VisionFrame.Full, monitor, notice, new VisionRegions.Rect(0, 0, width, height));
         }
 
         // Seçili ekran (ya da hepsi) için kaynaklar; DXGI olmazsa GDI. Ekran listesi görüntüleyiciye gider.
@@ -232,10 +280,13 @@ namespace POpsTray.Vision
             return sources;
         }
 
-        // Dönen: görüntü değişmiş olabilir mi. lost: bir DXGI kaynağı kayboldu (yeniden açılacak)
-        private static bool CaptureAll(List<Source> sources, ScreenImage current, out bool lost)
+        // Dönen: görüntü değişmiş olabilir mi. lost: bir DXGI kaynağı kayboldu (yeniden açılacak). gdiFailed: GDI
+        // yakalaması bu turda başarısız oldu (masaüstü denetimiyle yakalama arasında güvenli masaüstüne geçildiyse BitBlt
+        // hata döner; eskiden bu hata yakalama iş parçacığını bitiriyordu ve yayın masaüstü geri gelince de donuk kalıyordu)
+        private static bool CaptureAll(List<Source> sources, ScreenImage current, out bool lost, out bool gdiFailed)
         {
             lost = false;
+            gdiFailed = false;
             bool changed = false;
             foreach (Source s in sources)
             {
@@ -247,8 +298,12 @@ namespace POpsTray.Vision
                 }
                 else
                 {
-                    GdiCapture.Capture(s.Monitor.Bounds, s.Image);
-                    changed = true;
+                    try
+                    {
+                        GdiCapture.Capture(s.Monitor.Bounds, s.Image);
+                        changed = true;
+                    }
+                    catch (ExternalException) { gdiFailed = true; }
                 }
             }
             if (sources.Count == 1)

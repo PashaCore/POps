@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent: exam mode.**
+  - `exam_mode` limits the PC's network to the POps server, DNS/DHCP and an allow list of host names, addresses and CIDR ranges (at most 50). It uses its own firewall rule group, independent of quarantine.
+  - The tray shows a banner with the message and the end time. Up to 50 listed apps are closed. The exam ends at `until` even without the server.
+  - The agent answers every `exam_mode` with `exam_state` (`enabled`, `since`, `until`) and reports it once per connection to servers that list `exam_mode`.
+  - New capability `exam_enabled` (MSI `EXAM_ENABLED`, on by default; the server can only switch it off). Switching it off ends a running exam, and while it is off `exam_mode` is refused with `capability_denied`.
+  - The agent announces `exam` in `X-Agent-Features`. Events 1110–1112.
+- **Agent: file transfer.**
+  - `file_push` downloads a file only from the server's one-time `/api/files/<id>/download?t=…` URL. It checks the size and SHA-256 and writes the file only to the public desktop or `C:\POpsData\inbox\<date>`, under a cleaned name; `.lnk`/`.url`/`.scr` only when allowed.
+  - `file_pull` uploads a file the admin asked for, with a reason. Never from `C:\POpsData\secure`, from other users' profiles only when explicitly allowed, never over the size limit; symbolic links are resolved first.
+  - The result is reported as `file_result` with `outcome` `done`, `rejected` or `failed`. The PC user is told in the tray; events 1120 and 1121.
+  - New capability `files_enabled` (MSI `FILES_ENABLED`, on by default; reported in `capabilities`). While it is off, a request is refused with `capability_denied` carrying the `transfer_id`. The agent announces `files` in `X-Agent-Features`.
+- **Agent: winget packages.** The agent implements `winget_install`, announced with the new `X-Agent-Features: winget` header.
+  - It installs a winget package as LocalSystem without a shell, only when the local terminal capability and the lab's deploy module are on.
+  - It validates the package id and version itself, answers -7 when winget is missing, and reports winget's own exit code.
+- **Agent tests read the shared protocol vectors in `docs/protocol`.** Every server-to-agent example is handled, agent messages validate against the JSON Schemas with only documented fields, the signed update vector verifies with the test key only, and the agent-to-server examples match what the agent sends.
+- **Docs: Vision on the secure desktop** (`docs/vision.md`).
+  - It covers what happens during UAC prompts and on the lock and sign-in screens, and why they are not captured today.
+  - It sets out the design a safe implementation would need (a SYSTEM helper in the user's session, a SYSTEM-only pipe, consent and audit, a threat model, a lab test plan) and the decisions left for the owner.
 - **Fuzzing with Atheris.** Four targets in `fuzz/`: the agent WebSocket handler, the request models, the signed release manifest and the notification settings. A `fuzz` CI job runs each for 60 s; see `docs/fuzzing.md`.
 - **File transfer (server and panel).** An admin can send a file to PCs and fetch a file from a PC. In the device panel, **Diğer** has **Dosya gönder** (pick or drop a file up to 200 MB, destination **Ortak masaüstü** or **POps gelen kutusu**, a reason, and "çalıştırılabilir dosyaya izin ver" for `.lnk`/`.url`/`.scr`; with upload progress) and **Dosya al** (full path, largest size 10/50/200 MB, a reason; a superadmin can also allow other users' profiles). **Dosya gönder** is also in the action bar menu of **Cihazlar** and **Sınıflar** for the selected PCs; PCs that are off or have no file transfer are skipped and listed. The panel's new **Dosya aktarımları** list shows direction, name, size, status, who, when and why, with **İndir** for a fetched file. Server: `POST /api/files/push`, `POST /api/files/pull`, `GET /api/files`, `GET /api/files/{id}/content`, and for agents `GET /api/files/{id}/download` and `POST /api/files/{id}/upload`; agent messages `file_push`, `file_pull` and `file_result`, capability `files_enabled` in `capabilities`, feature `file_transfer` in `server_info` (schemas in `docs/protocol`). Each PC gets its own transfer and a one-time token (1 hour, stored as a hash) bound to that PC; the agent endpoints always need the device secret, and a wrong, used or expired token or another PC's secret gets 404. Sending, fetching and downloading need an admin panel session (API tokens are refused); every send, request, received file, download and agent result is in the hash-chained audit log (metadata only, never the content), and the tray's activity history shows that a file was sent or requested. Fetched files are kept 7 days, sent files until they are downloaded; files live in `Backend/transfers` (`POPS_FILES_DIR`, Docker volume `transfers`), are not served and are not backed up. New module **Dosya aktarımı** (`files`, on by default). Migration `0025_file_transfers` (table `file_transfers`, `clients.cap_files_enabled`). The reverse proxy templates allow 200 MB bodies on the two upload paths. The Windows agent side comes with the agent team's release; until an agent reports `files_enabled`, the server sends it nothing.
 - **Exam mode (sınav modu) per lab.** In Sınıflar → Sınıf işlemleri → Sınav modu…, an admin sets:
@@ -67,6 +85,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Agent: nullable reference types.** The agent service, the shared library and the MSI custom actions now build with nullable reference types on, as the tray, watchdog and updater already did.
+  - The 49 files that were not nullable-clean on 5 October keep a `#nullable disable` line: a baseline that only shrinks, like the warnings list in `Agent/.editorconfig`.
+  - New files must be nullable-clean: a nullable warning fails the build, now also in the custom actions. No behaviour change.
+- **Agent tests are named after the component they test** (for example `HardwareBindingTests.cs`, `ResultSpoolTests.cs`) instead of the review round that added them. No test was added, removed or changed.
+- **Agent: Worker.cs split, step a0.** A pure move (1919 → 1717 lines) toward one handler per message type; the design is in the PR (#122). No behaviour change.
 - **Backend tests run under pytest.** `python -m pytest` runs `Backend/tests` (configuration: the root `pytest.ini`; pytest comes from the hash-locked `.github/requirements/pytest.lock`). `test_units.py` is a pytest module, one test per function, so a single test can be selected (`-k`) and JUnit output written (`--junitxml`). The older script tests are collected by `Backend/tests/conftest.py` without being imported: each runs in its own process as one test, a failure lists the checks that failed, scripts that need a running server carry the `integration` marker and keep the order CI used, and a new script needs no registration. CI and `Backend/tests/run_local.sh` call pytest instead of listing the scripts; how to run, select and add tests is in CONTRIBUTING.md.
 - **Agent updates per platform.** A signed release carries the MSI and the `.deb`. fetch-release stages both; deploy-update copies both to `/updates/` and skips PCs whose platform has no package (`skipped_no_package`). Migration `0026` adds `clients.platform`.
 - **Agent results:** a `[REDDEDİLDİ]` result with exit code -5 now marks the task `Denied` directly.
@@ -99,6 +122,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Agent: an unreadable-hardware heartbeat follows the protocol schema.** When the hardware could not be read, the heartbeat now carries an empty `dna_payload` object instead of null.
+- **Agent: Vision shows a notice while the secure desktop is up.**
+  - During a live session, a UAC prompt, Ctrl+Alt+Del, the lock screen or the sign-in screen no longer leaves the viewer on a frozen picture. The tray sends a "Güvenli masaüstü etkin" picture instead, every 5 seconds, and resumes the live picture when the user's desktop returns.
+  - With Vision v2, capture no longer stops for good after the first UAC prompt or lock. The secure desktop itself is still neither shown nor controlled.
 - **Wrong-typed fields in an agent's first message are ignored, as the protocol rules say.** A wrong-typed `dna_payload`, `hardware`, `capabilities` or `hostname`, or a number like `1e999` in `agent_health`, no longer closes the connection (1011).
 - **A malformed signed release manifest is rejected with 400** instead of failing with 500. This covers a manifest that is not a JSON object and one with malformed artefact entries.
 - **The agent policy drops domain entries that contain whitespace or control characters.** A NUL used to make saving the policy fail.

@@ -47,7 +47,7 @@ namespace POps.Shared
 
         public void Mark(StartupCheck check)
         {
-            OperationalChecks snapshot = null;
+            OperationalChecks? snapshot = null;
             lock (_gate)
             {
                 switch (check)
@@ -93,7 +93,7 @@ namespace POps.Shared
             {
                 using JsonDocument doc = JsonDocument.Parse(json);
                 JsonElement root = doc.RootElement;
-                string actual = root.TryGetProperty("version", out JsonElement version) && version.ValueKind == JsonValueKind.String
+                string? actual = root.TryGetProperty("version", out JsonElement version) && version.ValueKind == JsonValueKind.String
                     ? version.GetString()?.TrimStart('v', 'V') : null;
                 if (!string.Equals(actual, expectedVersion.Trim().TrimStart('v', 'V'), StringComparison.OrdinalIgnoreCase)) return false;
                 if (!root.TryGetProperty("ts", out JsonElement ts) || !ts.TryGetInt64(out long unix)) return false;

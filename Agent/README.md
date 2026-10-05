@@ -21,6 +21,8 @@ dotnet test Agent/POps.Tests/POps.Tests.csproj --configuration Release
 
 The project targets `net10.0-windows` (agent and `POps.Shared`) and `net472` (the MSI custom actions in `Installer/agent/CustomActions`), and CI runs it as the `test-agent` job. Tests cover logic only; firewall, pipe and service behaviour is not tested. Everything runs in a temporary folder with the current user standing in for SYSTEM, so the tests need no administrator rights and never touch `C:\POps`, `C:\POpsData` or `C:\POpsLogs`. `TestData/manifest.json` and its `.sig` are the signed v0.1.3-alpha release manifest, used to check the embedded public key.
 
+The tests run one at a time because the agent keeps paths and test seams in static properties; the plan to split `Worker.cs` into command handlers and run the tests in parallel is in [`docs/design/worker-split.md`](../docs/design/worker-split.md).
+
 Install it with the MSI from the release (`POps-Agent-<version>-win-x64.msi`); properties, upgrades and migration from older installs are described in [`Installer/README.md`](../Installer/README.md).
 
 ## Configuration

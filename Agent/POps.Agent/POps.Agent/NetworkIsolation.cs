@@ -41,6 +41,9 @@ namespace POpsAgent
     public static class NetworkIsolation
     {
         public const string RuleGroup = "POps Isolation";
+        // Sınav modu aynı motoru kendi kural grubuyla kullanır (bkz. ExamMode). Bir grup kalkarken öteki sürüyorsa
+        // güvenlik duvarı profilleri kapatılmaz: kapatmak ötekinin kurallarını da etkisiz bırakırdı.
+        public const string ExamRuleGroup = "POps Exam";
         private static readonly string[] Profiles = { "Domain", "Private", "Public" };
         private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
 
@@ -204,7 +207,7 @@ namespace POpsAgent
         // ------------------------------------------------------------------------------------------
         // Adresler
         // ------------------------------------------------------------------------------------------
-        private static async Task<List<IPAddress>> ResolveServerAsync(string serverUrl)
+        internal static async Task<List<IPAddress>> ResolveServerAsync(string serverUrl)
         {
             if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out Uri uri)) return new List<IPAddress>();
             if (IPAddress.TryParse(uri.Host.Trim('[', ']'), out IPAddress literal)) return new List<IPAddress> { literal };
@@ -214,7 +217,7 @@ namespace POpsAgent
 
         // Sunucuya yeniden bağlanabilmek ve IP adresini koruyabilmek için gerekenler: DNS ve DHCP sunucuları,
         // yerel yayın, IPv6 bağlantı-yerel (komşu keşfi) ve çoklu yayın adresleri.
-        private static IEnumerable<IPAddress> LocalInfrastructure()
+        internal static IEnumerable<IPAddress> LocalInfrastructure()
         {
             foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces().Where(n => n.OperationalStatus == OperationalStatus.Up))
             {
@@ -260,7 +263,7 @@ namespace POpsAgent
             return result;
         }
 
-        private static (BigInteger, BigInteger, bool) Cidr(string network, int prefix)
+        internal static (BigInteger, BigInteger, bool) Cidr(string network, int prefix)
         {
             IPAddress a = IPAddress.Parse(network);
             bool v6 = a.AddressFamily == AddressFamily.InterNetworkV6;
@@ -289,17 +292,17 @@ namespace POpsAgent
         // ------------------------------------------------------------------------------------------
         // Betikler (yalnızca sabit metin + IP aralıkları; dışarıdan gelen hiçbir değer betiğe girmez)
         // ------------------------------------------------------------------------------------------
-        internal static string BuildEnableScript(IEnumerable<(BigInteger Start, BigInteger End, bool V6)> allowed)
+        internal static string BuildEnableScript(IEnumerable<(BigInteger Start, BigInteger End, bool V6)> allowed, string group = RuleGroup)
         {
             string blocked = string.Join(",", BlockedRanges(allowed).Select(r => $"'{r}'"));
             return $@"$ErrorActionPreference = 'Stop'
-$group = '{RuleGroup}'
+$group = '{group}'
 $previous = @(Get-NetFirewallProfile | ForEach-Object {{ [pscustomobject]@{{ Name = [string]$_.Name; Enabled = [string]$_.Enabled }} }})
 $old = @(Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue)
 Get-NetFirewallRule -DisplayName 'POps_Isolation_*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 $blocked = @({blocked})
-New-NetFirewallRule -Group $group -DisplayName 'POps Isolation - Outbound' -Direction Outbound -Action Block -Profile Any -RemoteAddress $blocked | Out-Null
-New-NetFirewallRule -Group $group -DisplayName 'POps Isolation - Inbound' -Direction Inbound -Action Block -Profile Any -RemoteAddress $blocked | Out-Null
+New-NetFirewallRule -Group $group -DisplayName '{group} - Outbound' -Direction Outbound -Action Block -Profile Any -RemoteAddress $blocked | Out-Null
+New-NetFirewallRule -Group $group -DisplayName '{group} - Inbound' -Direction Inbound -Action Block -Profile Any -RemoteAddress $blocked | Out-Null
 # Eski kurallar yeniler kurulduktan SONRA kalkar: yenilemede cihaz bir an bile korumasız kalmaz
 if ($old.Count -gt 0) {{ $old | Remove-NetFirewallRule }}
 Set-NetFirewallProfile -Profile Domain,Private,Public -Enabled True
@@ -307,15 +310,22 @@ ConvertTo-Json -Compress -InputObject $previous
 ";
         }
 
-        internal static string BuildDisableScript(IEnumerable<string> profilesToDisable)
+        internal static string BuildDisableScript(IEnumerable<string> profilesToDisable, string group = RuleGroup)
         {
+            string other = group == RuleGroup ? ExamRuleGroup : RuleGroup;
             var sb = new StringBuilder();
             sb.AppendLine("$ErrorActionPreference = 'Stop'");
-            sb.AppendLine($"Get-NetFirewallRule -Group '{RuleGroup}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule");
-            sb.AppendLine("Get-NetFirewallRule -DisplayName 'POps_Isolation_*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule");
-            // Karantinadan önce kapalı olan profiller yeniden kapatılır (yalnızca bilinen profil adları)
-            foreach (string profile in profilesToDisable.Where(p => Profiles.Contains(p)).Distinct())
-                sb.AppendLine($"Set-NetFirewallProfile -Profile {profile} -Enabled False");
+            sb.AppendLine($"Get-NetFirewallRule -Group '{group}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule");
+            if (group == RuleGroup) sb.AppendLine("Get-NetFirewallRule -DisplayName 'POps_Isolation_*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule");
+            // Önceden kapalı olan profiller yeniden kapatılır (yalnızca bilinen profil adları); öteki grup (karantina /
+            // sınav modu) sürüyorsa profillere dokunulmaz
+            string[] profiles = profilesToDisable.Where(p => Profiles.Contains(p)).Distinct().ToArray();
+            if (profiles.Length > 0)
+            {
+                sb.AppendLine($"if (@(Get-NetFirewallRule -Group '{other}' -ErrorAction SilentlyContinue).Count -eq 0) {{");
+                foreach (string profile in profiles) sb.AppendLine($"    Set-NetFirewallProfile -Profile {profile} -Enabled False");
+                sb.AppendLine("}");
+            }
             sb.AppendLine("'OK'");
             return sb.ToString();
         }

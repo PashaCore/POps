@@ -88,7 +88,7 @@ namespace POpsAgent
         public static string PrimaryPath => SecureStore.PathOf(FileName);
         private static string MirrorPath() => AgentCredentials.PersistPath(FileName);
 
-        // dna_payload ile aynı normalleştirme (Worker.GetHardwareDnaInternal)
+        // dna_payload ile aynı normalleştirme (HardwareInfo.GetHardwareDnaInternal)
         public static string NormalizeUuid(string raw) =>
             raw == null || raw == "-" || raw == "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF" ? "NULL" : raw;
 

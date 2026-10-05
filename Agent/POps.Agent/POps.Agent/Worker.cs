@@ -29,17 +29,6 @@ using System.Threading.Tasks;
 
 namespace POpsAgent
 {
-    // GET /api/agent_policies yanıtı (alan adları sunucunun JSON'ı)
-    public class AgentPolicy
-    {
-        [JsonPropertyName("fair_use_text")] public string FairUseText { get; set; } = "";
-        [JsonPropertyName("dns_categories")] public List<string> DnsCategories { get; set; } = new List<string>();
-        // Kategori -> alan adları (tam eşleşme ya da alt alan; bkz. DnsWatch). Yoksa DNS tespiti yapılmaz.
-        [JsonPropertyName("dns_domains")] public Dictionary<string, List<string>> DnsDomains { get; set; } = new Dictionary<string, List<string>>();
-        [JsonPropertyName("auto_quarantine")] public bool AutoQuarantine { get; set; }
-        [JsonPropertyName("quarantine_threshold")] public int QuarantineThreshold { get; set; } = 3;
-    }
-
     [SupportedOSPlatform("windows")]
     public class Worker : BackgroundService
     {
@@ -137,7 +126,7 @@ namespace POpsAgent
             // Yapılandırma okunamadıysa adres son çaredir; sorun açılışta Olay Günlüğüne yazılır, tepside gösterilir
             (_serverUrl, ConfigProblem) = POpsHelpers.ResolveServerUrl();
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor (Hedef: {_serverUrl})");
-            foreach (string configPath in POpsHelpers.ConfigPaths) SecureConfigFile(configPath);
+            foreach (string configPath in POpsHelpers.ConfigPaths) HardwareInfo.SecureConfigFile(configPath);
 
             _quarantine = new QuarantineControl(message => _trayPipe?.SendCommandToDesktop(message),
                 EnableNetworkIsolationAsync, DisableNetworkIsolationAsync, audit: LocalAudit.Write);
@@ -153,7 +142,7 @@ namespace POpsAgent
             Results = new ResultSpool(SecureStore.PathOf(ResultSpool.FileName));
             _visionRelay = new VisionRelay(SendVisionBinaryAsync, SendVisionTextAsync, ToTray);
             Binding = new HardwareBinding(_identityFilePath,
-                () => (GetWmiValue("Win32_ComputerSystemProduct", "UUID"), GetWmiValue("Win32_BIOS", "SerialNumber")));
+                () => (HardwareInfo.GetWmiValue("Win32_ComputerSystemProduct", "UUID"), HardwareInfo.GetWmiValue("Win32_BIOS", "SerialNumber")));
         }
 
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
@@ -231,7 +220,7 @@ namespace POpsAgent
         {
             try
             {
-                _cachedDna = GetHardwareDnaInternal();
+                _cachedDna = HardwareInfo.GetHardwareDnaInternal();
                 _cachedInventory = BuildInventoryInternal();
             }
             catch (Exception ex)
@@ -287,6 +276,8 @@ namespace POpsAgent
             _ = Task.Run(() => LogRetentionLoopAsync(stoppingToken), stoppingToken);
 
             await Task.Run(InitializeCoreState, stoppingToken);
+            // Sınav modu sunucuya ulaşılamasa da süresinde biter; uygulama engeli ve izin listesi yenilemesi burada
+            _ = Task.Run(() => ExamLoopAsync(stoppingToken), stoppingToken);
             _slowInitialization = Task.Run(InitializeSlowState, stoppingToken);
             AgentUpdate.LogLastResult();
             // Güncelleme sürmüyorsa önceki çalışmadan kalan aşama dosyası silinir
@@ -334,6 +325,7 @@ namespace POpsAgent
                 _commandWs = new ClientWebSocket();
                 _commandWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(commandWsUrl));
                 _commandWs.Options.SetRequestHeader("X-Agent-Version", AppVersion);
+                _commandWs.Options.SetRequestHeader(AgentFeatures.HeaderName, AgentFeatures.Header);
                 string authMode = ApplyAuthHeaders(_commandWs);
                 POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({AppVersion}, kimlik: {authMode})");
                 _startupHealth.Mark(StartupCheck.Loop);
@@ -413,6 +405,243 @@ namespace POpsAgent
             await DisconnectVisionTunnelAsync();
         }
 
+        // ------------------------------------------------------------------ dosya aktarımı (bkz. FileTransfer)
+        // Emir doğrulanır ve iş arka planda yürür (komut döngüsünü bekletmez); sonuç file_result ile bildirilir.
+        // Yetenek kapalıysa yalnızca capability_denied gider (transfer_id ile; sunucu aktarımı ondan "rejected" yapar).
+        // transfer_id eksik ya da geçersizse file_result gönderilmez (sunucu bilmediği aktarımı yok sayar), yalnızca loglanır.
+        internal async Task HandleFileTransferAsync(string action, JsonElement root, CancellationToken token)
+        {
+            string transferId = FileTransfer.TransferIdOf(root);
+            if (!AgentCapabilities.FilesEnabled)
+            {
+                await DenyCapabilityAsync("files", action, transferId: transferId);
+                return;
+            }
+            if (transferId == null)
+            {
+                POpsHelpers.Log("FILES", $"{action} yok sayıldı: transfer_id eksik ya da geçersiz.", true);
+                return;
+            }
+            if (action == "file_push")
+            {
+                if (!FileTransfer.TryParsePush(root, _serverUrl, out FileTransfer.PushRequest push, out string error))
+                {
+                    POpsHelpers.Log("FILES", $"Dosya gönderimi reddedildi ({transferId}): {error}.", true);
+                    await SendCommandMessageAsync(FileTransfer.Result(transferId, "rejected", detail: error));
+                    return;
+                }
+                FileTransferTask = Task.Run(async () =>
+                {
+                    var (outcome, path, detail) = await FileTransfer.PushAsync(push, _hwId, DateTime.Now, token);
+                    if (outcome == "done")
+                    {
+                        LocalAudit.Write(LocalAudit.FilePushed(push.TransferId, path, push.Size, push.Sha256, push.Reason));
+                        POpsHelpers.Log("FILES", $"Yönetici dosya gönderdi: {path} ({push.Size} bayt).");
+                        ToTray("FILE_PUSHED:" + Path.GetFileName(path));
+                    }
+                    else POpsHelpers.Log("FILES", $"Dosya gönderimi tamamlanmadı ({push.TransferId}, {outcome}): {detail}.", true);
+                    await SendCommandMessageAsync(FileTransfer.Result(push.TransferId, outcome, path, detail));
+                }, CancellationToken.None);
+                return;
+            }
+            if (!FileTransfer.TryParsePull(root, _serverUrl, out FileTransfer.PullRequest pull, out string pullError))
+            {
+                POpsHelpers.Log("FILES", $"Dosya alma reddedildi ({transferId}): {pullError}.", true);
+                await SendCommandMessageAsync(FileTransfer.Result(transferId, "rejected", detail: pullError));
+                return;
+            }
+            FileTransferTask = Task.Run(async () =>
+            {
+                var (outcome, path, detail, size) = await FileTransfer.PullAsync(pull, _hwId, token);
+                if (outcome == "done")
+                {
+                    LocalAudit.Write(LocalAudit.FilePulled(pull.TransferId, path, size, pull.Reason));
+                    POpsHelpers.Log("FILES", $"Yönetici dosyayı aldı: {path} ({size} bayt).");
+                    ToTray("FILE_PULLED:" + path);
+                }
+                else POpsHelpers.Log("FILES", $"Dosya alma tamamlanmadı ({pull.TransferId}, {outcome}): {detail}.", true);
+                await SendCommandMessageAsync(FileTransfer.Result(pull.TransferId, outcome, path, detail));
+            }, CancellationToken.None);
+        }
+
+        // Testler: son başlatılan aktarım
+        internal Task FileTransferTask { get; private set; } = Task.CompletedTask;
+
+        // ------------------------------------------------------------------ sınav modu (bkz. ExamMode)
+        private readonly HashSet<string> _examStoppedLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private volatile bool _examNetworkChanged;
+
+        // Tepsi bandı: mesaj ve bitiş zamanı
+        internal static string ExamTrayMessage(ExamSettings settings) =>
+            "EXAM_ON:" + Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
+            {
+                ["message"] = string.IsNullOrWhiteSpace(settings?.Message) ? "Sınav modu: yalnızca izin verilen siteler açık" : settings.Message,
+                ["until"] = settings?.Until,
+            }));
+
+        // Sınava giriş ve çıkış birbirini beklemez olmasın (dönemsel tur, sunucu emri, set_capabilities aynı anda gelebilir)
+        private readonly SemaphoreSlim _examGate = new SemaphoreSlim(1, 1);
+        // Bu çalışmada sınav modundan çıkılan an (unix sn; 0: bu çalışmada çıkılmadı). exam_state.since için bellekte tutulur.
+        private long _examLeftAt;
+        // Bu bağlantıda bağlantı sonrası exam_state gönderildi mi (server_info'dan sonra bir kez; bkz. ReportExamStateOnConnectAsync)
+        private volatile bool _examStateReported;
+        // Testler: emrin doğrulandığı ve sınavdan çıkılan an
+        internal Func<DateTimeOffset> ExamClock { get; set; } = () => DateTimeOffset.UtcNow;
+
+        internal async Task HandleExamModeAsync(JsonElement root)
+        {
+            bool enable = root.TryGetProperty("enabled", out JsonElement e) && e.ValueKind == JsonValueKind.True;
+            if (!enable)
+            {
+                await EndExamAsync("server", reply: true);
+                return;
+            }
+            if (!AgentCapabilities.ExamEnabled)
+            {
+                // Yerel olarak kapalı: hiçbir şey uygulanmaz; önceden kalan bir sınav sürüyorsa biter (exam_state ile)
+                await DenyCapabilityAsync("exam", "exam_mode");
+                if (ExamMode.IsActive) await EndExamAsync("capability", reply: true);
+                return;
+            }
+            if (!ExamMode.TryParse(root, ExamClock(), out ExamSettings settings, out string error))
+            {
+                POpsHelpers.Log("EXAM", $"Sınav modu emri uygulanmadı: {error}.", true);
+                await SendExamStateAsync(reply: true);
+                return;
+            }
+            await _examGate.WaitAsync();
+            try { await EnterExamAsync(settings); }
+            finally { _examGate.Release(); }
+            await SendExamStateAsync(reply: true);
+        }
+
+        private async Task EnterExamAsync(ExamSettings settings)
+        {
+            // Uygulanamazsa neden ExamMode'da yerel loga yazılır; sunucuya o anki durum gider
+            if (!await ExamMode.EnableAsync(settings, _serverUrl)) return;
+            lock (_examStoppedLogged) _examStoppedLogged.Clear();
+            LocalAudit.Write(LocalAudit.ExamStarted(settings));
+            POpsHelpers.Log("EXAM", $"SINAV MODU AKTİF: {settings.Allow.Count} izinli kayıt, bitiş {(settings.Until == null ? "yok" : DateTimeOffset.FromUnixTimeSeconds(settings.Until.Value).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture))}, {settings.BlockApps.Count} engelli uygulama.");
+            ToTray(ExamTrayMessage(ExamMode.Load()));
+        }
+
+        // source: "server", "until" (süre doldu; sunucuya ulaşılamasa da), "capability" (sınav yeteneği yerel olarak
+        // kapalı: MSI EXAM_ENABLED=0 ile yeniden kurulum ya da set_capabilities). reply: exam_mode emrine yanıt.
+        internal async Task EndExamAsync(string source, bool reply = false)
+        {
+            await _examGate.WaitAsync();
+            try { await LeaveExamAsync(source); }
+            finally { _examGate.Release(); }
+            await SendExamStateAsync(reply);
+        }
+
+        private async Task LeaveExamAsync(string source)
+        {
+            // Kaldırılamazsa neden ExamMode'da loglanır; sunucuya "hâlâ sınavda" gider
+            if (!ExamMode.IsActive || !await ExamMode.DisableAsync()) return;
+            Interlocked.Exchange(ref _examLeftAt, ExamClock().ToUnixTimeSeconds());
+            LocalAudit.Write(LocalAudit.ExamEnded(source));
+            POpsHelpers.Log("EXAM", $"Sınav modu bitti ({source}).");
+            ToTray("EXAM_OFF");
+        }
+
+        // exam_state hiçbir zaman bağlantının ilk mesajı değildir: exam_mode emrine yanıt (reply) emri gönderen sunucuya
+        // gider; kendiliğinden değişiklik (until, yetenek kapandı) yalnızca server_info'da exam_mode duyuran sunucuya.
+        // server_info henüz gelmediyse gönderilmez: bağlantı sonrası bildirim (ReportExamStateOnConnectAsync) o anki
+        // durumu zaten taşır.
+        private async Task SendExamStateAsync(bool reply)
+        {
+            if (!reply && Handshake.Supports(ExamMode.Feature) != true) return;
+            long left = Interlocked.Read(ref _examLeftAt);
+            await SendCommandMessageAsync(ExamMode.StateMessage(left == 0 ? null : left));
+        }
+
+        // Her bağlantıda server_info'dan sonra bir kez (sunucu exam_mode duyurduysa): sunucu sınav durumunu bağlantı
+        // başında öğrenir (sınavda değilken de).
+        internal async Task ReportExamStateOnConnectAsync()
+        {
+            if (_examStateReported || Handshake.Supports(ExamMode.Feature) != true) return;
+            _examStateReported = true;
+            await SendExamStateAsync(reply: false);
+        }
+
+        // 2 sn'de bir: süre doldu mu, engelli uygulamalar; 2 dk'da bir ve ağ adresi değişince: izin listesi çözümü
+        private async Task ExamLoopAsync(CancellationToken token)
+        {
+            System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += (_, _) => _examNetworkChanged = true;
+            DateTime lastRefresh = DateTime.UtcNow;
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    bool refresh = _examNetworkChanged || DateTime.UtcNow - lastRefresh >= ExamMode.RefreshInterval;
+                    if (refresh)
+                    {
+                        lastRefresh = DateTime.UtcNow;
+                        _examNetworkChanged = false;
+                    }
+                    await ExamTickAsync(DateTimeOffset.UtcNow, refresh ? "dönemsel ya da ağ adresi değişti" : null);
+                }
+                catch (Exception ex) { POpsHelpers.Log("EXAM", $"Sınav modu denetimi başarısız: {ex.Message}", true); }
+                try { await Task.Delay(TimeSpan.FromSeconds(2), token); }
+                catch (OperationCanceledException) { return; }
+            }
+        }
+
+        // Bir tur: sınav yeteneği yerel olarak kapalıysa (EXAM_ENABLED=0 ile yeniden kurulum) ya da süre dolduysa
+        // (sunucuya ulaşılamasa da) biter; yoksa engelli uygulamalar kapatılır, refreshReason verilmişse izin listesi
+        // yeniden çözülür. Dönen: sınav bu turda bitti mi.
+        internal async Task<bool> ExamTickAsync(DateTimeOffset now, string refreshReason)
+        {
+            ExamSettings settings = ExamMode.IsActive ? ExamMode.Load() : null;
+            if (settings == null) return false;
+            bool allowed = AgentCapabilities.ExamEnabled;
+            if (!allowed || ExamMode.Expired(settings, now))
+            {
+                await EndExamAsync(allowed ? "until" : "capability");
+                return !ExamMode.IsActive;
+            }
+            StopBlockedApps(settings);
+            if (refreshReason != null) await ExamMode.RefreshAsync(_serverUrl, refreshReason);
+            return false;
+        }
+
+        private void StopBlockedApps(ExamSettings settings)
+        {
+            if (settings.BlockApps.Count == 0) return;
+            Process[] all = Process.GetProcesses();
+            try
+            {
+                var candidates = all.Select(p =>
+                {
+                    try { return (Pid: p.Id, Name: p.ProcessName, Session: p.SessionId); }
+                    catch (InvalidOperationException) { return (Pid: p.Id, Name: (string)null, Session: 0); }
+                }).ToList();
+                foreach (int pid in ExamMode.ProcessesToStop(candidates, settings.BlockApps))
+                {
+                    Process process = all.First(p => p.Id == pid);
+                    string app = candidates.First(c => c.Pid == pid).Name + ".exe";
+                    try
+                    {
+                        ExamMode.StopProcess(process);
+                        bool first;
+                        lock (_examStoppedLogged) first = _examStoppedLogged.Add(app);
+                        if (first)
+                        {
+                            LocalAudit.Write(LocalAudit.ExamAppStopped(app, pid));
+                            POpsHelpers.Log("EXAM", $"Sınav modunda {app} kapatıldı (PID {pid}).");
+                        }
+                        ToTray("EXAM_APP_BLOCKED:" + app);
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception) { }
+                }
+            }
+            finally
+            {
+                foreach (Process p in all) p.Dispose();
+            }
+        }
+
         // 4409: sunucu bu kimliği başka bir bilgisayarda bağlı buldu (kopyalanmış kurulum, asıl cihaz bağlı).
         // Olay Günlüğüne çalışma başına bir kez yazılır; log her kopuşta.
         internal void OnCloneRejected(TimeSpan wait)
@@ -433,6 +662,8 @@ namespace POpsAgent
             // update_progress: ilk mesaj heartbeat olana kadar gönderilmez; son aşama yeni bağlantıda bir kez daha gider
             _heartbeatSent = false;
             _forwardedProgress = null;
+            // exam_state bu bağlantıda server_info'dan sonra yeniden bildirilir
+            _examStateReported = false;
         }
 
         // Bu bağlantıda ilk heartbeat gitti mi (sunucu cihazı ilk mesajın dna_payload'ından kaydeder)
@@ -757,6 +988,7 @@ namespace POpsAgent
             _trayPipe.OnConnected += () =>
             {
                 _quarantine.SyncTray();
+                if (ExamMode.IsActive) ToTray(ExamTrayMessage(ExamMode.Load()));
                 SyncTrayModules();
                 string configError = ConfigErrorMessage();
                 if (configError != null) _trayPipe?.SendCommandToDesktop(configError);
@@ -1168,11 +1400,14 @@ namespace POpsAgent
                     JsonElement command = root.Clone();
                     _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl, ReportUpdateProgressAsync), CancellationToken.None);
                 }
+                else if (action == WingetInstall.Action) await HandleWingetInstallAsync(root, stoppingToken);
                 else if (action == "wake_peer" && !AgentModules.IsEnabled(AgentModules.Wol)) await DenyCapabilityAsync("wol", action, reason: AgentModules.DisabledReason);
                 else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
                 else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
                 else if (action == "set_secret") { HandleSetSecret(root); }
                 else if (action == "set_bypass_secret") { await HandleSetBypassSecretAsync(root); }
+                else if (action == "exam_mode") { await HandleExamModeAsync(root); }
+                else if (action == "file_push" || action == "file_pull") { await HandleFileTransferAsync(action, root, stoppingToken); }
                 else if (action == "cancel_task")
                 {
                     int cancelId = root.TryGetProperty("task_id", out var cancelProp) && cancelProp.ValueKind == JsonValueKind.Number
@@ -1192,7 +1427,11 @@ namespace POpsAgent
                         await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId), _hwId, QuarantineControl.UnlockFailedLog(), "Karantina kaldırma hatası");
                 }
                 // Güncelleme sonucu onayı (bkz. UpdateResultReporter). Tanınmayan action'lar yok sayılır.
-                else if (action == "server_info") Handshake.OnServerInfo(root);
+                else if (action == "server_info")
+                {
+                    Handshake.OnServerInfo(root);
+                    await ReportExamStateOnConnectAsync();
+                }
                 else if (action == "update_result_ack") HandleUpdateResultAck(root);
                 // Görev sonucu sunucuda yazıldı (bkz. ResultSpool)
                 else if (action == "result_ack") HandleResultAck(root);
@@ -1236,7 +1475,8 @@ namespace POpsAgent
 
         // Ön plandaki uygulamanın adı (tepsiden; pencere başlığı gönderilmez) ve karantina durumu. Sunucu (anahtarlı
         // bağlantıda) "quarantined" ile bekleyen kilit/açma isteğini tamamlar ya da yeniden gönderir; bekleyen istek
-        // yoksa panel ajanın gerçek durumunu gösterir.
+        // yoksa panel ajanın gerçek durumunu gösterir. Donanım bilgisi okunamadıysa dna_payload boş nesnedir (null
+        // değil; şema nesne ister, sunucu ikisini de boş sayar).
         internal object HeartbeatPayload() => new
         {
             hw_id = _hwId,
@@ -1245,7 +1485,7 @@ namespace POpsAgent
             status = "Online",
             active_window = _activeApp ?? "-",
             quarantined = _quarantine.IsLocked,
-            dna_payload = _cachedDna,
+            dna_payload = _cachedDna ?? new object(),
             agent_health = _health.Snapshot(
                 _trayPipe?.IsConnected == true,
                 AgentCapabilities.VisionEnabled,
@@ -1273,30 +1513,100 @@ namespace POpsAgent
         }
 
         // Sunucunun "set_capabilities" isteği: yalnızca kapatma uygulanır (bkz. AgentCapabilities). Vision kapandıysa
-        // süren yayın hemen durdurulur. Son durum sunucuya "capabilities" olarak bildirilir.
+        // süren yayın hemen durdurulur. Son durum sunucuya "capabilities" olarak bildirilir. Sınav yeteneği kapandıysa
+        // süren sınav biter (exam_state ile).
         private async Task HandleSetCapabilitiesAsync(JsonElement request)
         {
             var changed = AgentCapabilities.ApplyServerRequest(request);
             foreach (string capability in changed.Disabled)
-                LocalAudit.Write(LocalAudit.CapabilityChanged(capability == AgentCapabilities.Terminal ? "terminal" : "vision", true, false));
+                LocalAudit.Write(LocalAudit.CapabilityChanged(capability.Replace("_enabled", "", StringComparison.Ordinal), true, false));
             if (!AgentCapabilities.VisionEnabled && _isVisionStreamActive)
             {
                 _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
                 await DisconnectVisionTunnelAsync();
             }
             await SendCommandMessageAsync(AgentCapabilities.StatusMessage());
+            if (!AgentCapabilities.ExamEnabled && ExamMode.IsActive) await EndExamAsync("capability");
         }
 
         // Kapalı bir yeteneğe gelen istek loglanır ve sunucuya "capability_denied" olarak bildirilir. Uzaktan fare
-        // hareketi gibi sık gelen istekler için aynı yetenek/eylem en çok dakikada bir bildirilir.
+        // hareketi gibi sık gelen istekler için aynı yetenek/eylem en çok dakikada bir bildirilir; görev (task_id) ya da
+        // dosya aktarımı (transfer_id) reddi her seferinde gider (sunucu o görevi / aktarımı kapatır).
         private readonly Dictionary<string, DateTime> _lastDenialNotice = new Dictionary<string, DateTime>();
 
-        private async Task DenyCapabilityAsync(string capability, string action, int? taskId = null, string reason = null)
+        // ------------------------------------------------------------------ winget_install (bkz. WingetInstall)
+        // Retler "result" olarak bildirilir (-5; winget yoksa -7) ve hiçbir şey çalıştırılmaz. Yerel terminal yeteneği ya da
+        // sınıfın deploy modülü kapalıysa ardından capability_denied gider (execute ile aynı sıra). Çalıştırma execute gibi:
+        // aynı görev iki kez başlamaz, süre sınırı, cancel_task, sonuç result_ack'e kadar saklanır.
+        internal async Task HandleWingetInstallAsync(JsonElement root, CancellationToken stoppingToken)
+        {
+            if (!root.TryGetProperty("task_id", out JsonElement taskProp) || taskProp.ValueKind != JsonValueKind.Number || !taskProp.TryGetInt32(out int tid))
+            {
+                POpsHelpers.Log("AGENT", "winget_install emrinde geçerli task_id yok; yok sayıldı.", true);
+                return;
+            }
+            string requestedBy = root.TryGetProperty("requested_by", out JsonElement by) && by.ValueKind == JsonValueKind.String ? by.GetString() : null;
+            if (_commandRunner.IsRunning(tid))
+            {
+                POpsHelpers.Log("AGENT", $"winget kurulumu zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
+                return;
+            }
+            string rejection = null, deniedCapability = null, deniedReason = null, wingetPath = null, id = null, version = null;
+            int exitCode = CommandRunner.ExitDenied;
+            if (!AgentCapabilities.TerminalEnabled)
+            {
+                rejection = WingetInstall.TerminalOffMessage;
+                deniedCapability = "terminal";
+            }
+            else if (!AgentModules.IsEnabled(AgentModules.Deploy))
+            {
+                rejection = WingetInstall.DeployOffMessage;
+                deniedCapability = AgentModules.Deploy;
+                deniedReason = AgentModules.DisabledReason;
+            }
+            else if (!WingetInstall.TryParse(root, out id, out version)) rejection = WingetInstall.InvalidMessage;
+            else if ((wingetPath = WingetInstall.Locator()) == null)
+            {
+                rejection = WingetInstall.MissingMessage;
+                exitCode = WingetInstall.ExitMissing;
+            }
+            if (rejection != null)
+            {
+                POpsHelpers.Log("AGENT", $"{rejection} (TaskID: {tid})", true);
+                await SendResultAsync(tid, new { type = "result", pc_name = _hwId, task_id = tid, output = rejection, exit_code = exitCode });
+                if (deniedCapability != null) await DenyCapabilityAsync(deniedCapability, WingetInstall.Action, tid, deniedReason);
+                return;
+            }
+            POpsHelpers.Log("AGENT", $"winget kurulumu başlıyor: {WingetInstall.Describe(id, version)} (TaskID: {tid})");
+            LocalAudit.Write(LocalAudit.CommandStarted(tid, WingetInstall.Describe(id, version), requestedBy));
+            // Görev kimliği burada (eşzamanlı olarak) ayrılır: arkasından gelen aynı kimlik ikinci işlem başlatamaz
+            Task<CommandExecutionResult> run = _commandRunner.RunProgramAsync(tid, wingetPath, WingetInstall.Arguments(id, version), stoppingToken);
+            _ = Task.Run(async () =>
+            {
+                CommandExecutionResult execution = await run;
+                if (execution.ExitCode == CommandRunner.ExitDuplicate)
+                {
+                    POpsHelpers.Log("AGENT", $"winget kurulumu zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
+                    return;
+                }
+                LocalAudit.Write(LocalAudit.CommandFinished(tid, execution.ExitCode, execution.Duration));
+                await SendResultAsync(tid, new
+                {
+                    type = "result",
+                    pc_name = _hwId,
+                    output = WingetInstall.CleanOutput(execution.Output),
+                    task_id = tid,
+                    exit_code = execution.ExitCode,
+                });
+            }, CancellationToken.None);
+        }
+
+        private async Task DenyCapabilityAsync(string capability, string action, int? taskId = null, string reason = null, string transferId = null)
         {
             string key = $"{capability}/{action}/{reason}";
             lock (_lastDenialNotice)
             {
-                if (taskId == null && _lastDenialNotice.TryGetValue(key, out DateTime last) && DateTime.UtcNow - last < TimeSpan.FromMinutes(1)) return;
+                if (taskId == null && transferId == null && _lastDenialNotice.TryGetValue(key, out DateTime last) && DateTime.UtcNow - last < TimeSpan.FromMinutes(1)) return;
                 _lastDenialNotice[key] = DateTime.UtcNow;
             }
             if (reason == null)
@@ -1305,6 +1615,7 @@ namespace POpsAgent
                 POpsHelpers.Log("POLICY", $"{action} reddedildi: {capability} modülü bu bilgisayarın laboratuvarında kapalı.", true);
             var notice = new Dictionary<string, object> { ["type"] = "capability_denied", ["capability"] = capability, ["action"] = action };
             if (taskId != null) notice["task_id"] = taskId.Value;
+            if (transferId != null) notice["transfer_id"] = transferId;
             if (reason != null) notice["reason"] = reason;
             await SendCommandMessageAsync(notice);
         }
@@ -1442,7 +1753,7 @@ namespace POpsAgent
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
                 // Eski sürümler bu klasörü Everyone:FullControl ile açıyordu; oturum açan herkes kimlik
                 // dosyasını değiştirip başka bir cihaz gibi bağlanabiliyordu. ACL her başlangıçta yeniden kurulur.
-                SecureDataDirectory(dir);
+                HardwareInfo.SecureDataDirectory(dir);
                 // Watchdog'u duraklatma özelliği kaldırıldı; eski sürümden kalan bayrak temizlenir
                 try { File.Delete(Path.Combine(dir, "watchdog_pause.flag")); } catch { }
 
@@ -1452,47 +1763,14 @@ namespace POpsAgent
                     if (!string.IsNullOrEmpty(savedId) && savedId.StartsWith("HW-", StringComparison.Ordinal)) return savedId;
                 }
 
-                string newId = GenerateFallbackHash();
+                string newId = HardwareInfo.GenerateFallbackHash();
                 File.WriteAllText(_identityFilePath, newId);
                 return newId;
             }
             catch
             {
-                return GenerateFallbackHash();
+                return HardwareInfo.GenerateFallbackHash();
             }
-        }
-
-        // Yalnızca SYSTEM ve Administrators yazabilir; kullanıcı oturumunda çalışan watchdog kimliği okuyabilir.
-        private static void SecureDataDirectory(string dir)
-        {
-            try
-            {
-                var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-                var sec = new DirectorySecurity();
-                sec.SetAccessRuleProtection(true, false);
-                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-                sec.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null), FileSystemRights.ReadAndExecute, inherit, PropagationFlags.None, AccessControlType.Allow));
-                new DirectoryInfo(dir).SetAccessControl(sec);
-            }
-            catch (Exception ex) { POpsHelpers.Log("AGENT", $"POpsData izinleri ayarlanamadı: {ex.Message}", true); }
-        }
-
-        // appsettings.json yalnızca SYSTEM ve Administrators'a açıktır; izin üst klasörden devralınmaz
-        // (Program Files, Users'a okuma verir). Kurulum ya da onarım dosyayı varsayılan izinlerle yeniden
-        // oluşturabildiği için ACL her açılışta kurulur ve sonuç geri okunarak doğrulanır. Gizli değerler
-        // zaten bu dosyada tutulmaz (bkz. AgentCredentials.MigrateSecrets).
-        private static void SecureConfigFile(string path)
-        {
-            try
-            {
-                if (!File.Exists(path)) return;
-                var file = new FileInfo(path);
-                file.SetAccessControl(SecureStore.ProtectedFileSecurity());
-                if (!SecureStore.IsLockedDown(file.GetAccessControl()))
-                    POpsHelpers.Log("AGENT", $"[GÜVENLİK] {path} kilitlenemedi: SYSTEM/Administrators dışında erişim izni hâlâ var.", true);
-            }
-            catch (Exception ex) { POpsHelpers.Log("AGENT", $"{path} izinleri ayarlanamadı: {ex.Message}", true); }
         }
 
         private void UpdateIdentityFile(string newId)
@@ -1510,32 +1788,6 @@ namespace POpsAgent
             catch { }
         }
 
-        private static object GetHardwareDnaInternal()
-        {
-            bool ramReadable = true, diskSerialReal = true, wmiHealthy = true;
-            string uuid = "NULL", biosSn = "NULL", diskSn = "NULL", mac = "NULL", ramSn = "NULL";
-
-            try
-            {
-                // hw.bind özeti aynı normalleştirmeyi kullanır (bkz. HardwareBinding)
-                uuid = HardwareBinding.NormalizeUuid(GetWmiValue("Win32_ComputerSystemProduct", "UUID"));
-                biosSn = HardwareBinding.NormalizeBiosSerial(GetWmiValue("Win32_BIOS", "SerialNumber"));
-                diskSn = GetWmiValue("Win32_DiskDrive", "SerialNumber");
-                if (diskSn == "-" || string.IsNullOrWhiteSpace(diskSn)) { diskSerialReal = false; diskSn = GetVolumeId(); }
-                ramSn = GetRamSerialNumbers();
-                if (ramSn == "NULL") ramReadable = false;
-                mac = GetMacAddress();
-            }
-            catch { wmiHealthy = false; }
-
-            return new
-            {
-                os = GetWmiValue("Win32_OperatingSystem", "Caption"),
-                capabilities = new { ram_readable = ramReadable, disk_serial_real = diskSerialReal, wmi_healthy = wmiHealthy },
-                hardware = new { uuid, bios_sn = biosSn, disk_sn = diskSn, mac, ram_sn = ramSn }
-            };
-        }
-
         private object BuildInventoryInternal()
         {
             try
@@ -1544,13 +1796,13 @@ namespace POpsAgent
                 {
                     hw_id = _hwId,
                     hostname = _pcName,
-                    cpu = GetWmiValue("Win32_Processor", "Name"),
-                    ram = GetTotalRam(),
-                    motherboard = GetWmiValue("Win32_BaseBoard", "Product"),
-                    gpu = GetWmiValue("Win32_VideoController", "Name"),
-                    os_version = GetWmiValue("Win32_OperatingSystem", "Caption"),
-                    ip_address = GetLocalIPAddress(),
-                    mac_address = GetMacAddress(),
+                    cpu = HardwareInfo.GetWmiValue("Win32_Processor", "Name"),
+                    ram = HardwareInfo.GetTotalRam(),
+                    motherboard = HardwareInfo.GetWmiValue("Win32_BaseBoard", "Product"),
+                    gpu = HardwareInfo.GetWmiValue("Win32_VideoController", "Name"),
+                    os_version = HardwareInfo.GetWmiValue("Win32_OperatingSystem", "Caption"),
+                    ip_address = HardwareInfo.GetLocalIPAddress(),
+                    mac_address = HardwareInfo.GetMacAddress(),
                     disk_info = GetDiskInfo(),
                     dna = _cachedDna
                 };
@@ -1586,110 +1838,6 @@ namespace POpsAgent
             }
         }
 
-        // Takılan bir WMI sağlayıcısı sorguyu süresiz bekletmesin: bağlantı ve her sonuç için zaman aşımı
-        private static readonly TimeSpan WmiTimeout = TimeSpan.FromSeconds(15);
-
-        private static ManagementObjectSearcher WmiQuery(string query) =>
-            new ManagementObjectSearcher(
-                new ManagementScope(@"\\.\root\cimv2", new ConnectionOptions { Timeout = WmiTimeout }),
-                new ObjectQuery(query),
-                new System.Management.EnumerationOptions { Timeout = WmiTimeout, ReturnImmediately = true, Rewindable = false });
-
-        private static string GetRamSerialNumbers()
-        {
-            try
-            {
-                var serials = new List<string>();
-                using var searcher = WmiQuery("SELECT SerialNumber FROM Win32_PhysicalMemory");
-                foreach (var obj in searcher.Get())
-                {
-                    string sn = obj["SerialNumber"]?.ToString()?.Trim();
-                    if (!string.IsNullOrEmpty(sn) && sn != "Unknown" && sn != "00000000") serials.Add(sn);
-                }
-                return serials.Count > 0 ? string.Join(",", serials) : "NULL";
-            }
-            catch { return "NULL"; }
-        }
-
-        private static string GetVolumeId()
-        {
-            try
-            {
-                var drive = new DriveInfo("C");
-                if (drive.IsReady)
-                {
-                    using var process = new Process();
-                    process.StartInfo.FileName = "cmd.exe";
-                    process.StartInfo.Arguments = "/c vol c:";
-                    process.StartInfo.UseShellExecute = false;
-                    process.StartInfo.RedirectStandardOutput = true;
-                    process.StartInfo.CreateNoWindow = true;
-                    process.Start();
-                    string output = process.StandardOutput.ReadToEnd();
-                    process.WaitForExit();
-                    foreach (string line in output.Split('\n')) if (line.Contains('-')) return line.Split(' ').Last().Trim();
-                }
-            }
-            catch { }
-            return "NULL";
-        }
-
-        private static string GenerateFallbackHash()
-        {
-            try
-            {
-                string raw = GetWmiValue("Win32_ComputerSystemProduct", "UUID") + GetMacAddress();
-                // MD5 güvenlik için değil, kimlik türetmek için: algoritma değişirse kurulu her cihazın kimliği değişirdi
-#pragma warning disable CA5351
-                byte[] hash = MD5.HashData(Encoding.ASCII.GetBytes(raw));
-#pragma warning restore CA5351
-                return string.Concat("HW-", Convert.ToHexString(hash).AsSpan(0, 12));
-            }
-            catch { return string.Concat("HW-", Guid.NewGuid().ToString().AsSpan(0, 12)); }
-        }
-
-        private static string GetWmiValue(string wmiClass, string property)
-        {
-            try
-            {
-                using var searcher = WmiQuery($"SELECT {property} FROM {wmiClass}");
-                foreach (var obj in searcher.Get()) return obj[property]?.ToString()?.Trim() ?? "-";
-            }
-            catch { }
-            return "-";
-        }
-
-        private static string GetTotalRam()
-        {
-            try
-            {
-                using var searcher = WmiQuery("SELECT TotalPhysicalMemory FROM Win32_ComputerSystem");
-                foreach (var obj in searcher.Get()) if (ulong.TryParse(obj["TotalPhysicalMemory"]?.ToString(), out ulong bytes)) return (bytes / (1024L * 1024 * 1024)) + " GB";
-            }
-            catch { }
-            return "-";
-        }
-
-        private static string GetMacAddress()
-        {
-            try
-            {
-                foreach (var nic in NetworkInterface.GetAllNetworkInterfaces()) if (nic.OperationalStatus == OperationalStatus.Up && nic.NetworkInterfaceType != NetworkInterfaceType.Loopback) return string.Join(":", nic.GetPhysicalAddress().GetAddressBytes().Select(b => b.ToString("X2", CultureInfo.InvariantCulture)));
-            }
-            catch { }
-            return "-";
-        }
-
-        private static string GetLocalIPAddress()
-        {
-            try
-            {
-                foreach (var ip in System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName()).AddressList) if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) return ip.ToString();
-            }
-            catch { }
-            return "-";
-        }
-
         private static string GetDiskInfo()
         {
             try
@@ -1706,34 +1854,6 @@ namespace POpsAgent
         private Task<bool> EnableNetworkIsolationAsync() => NetworkIsolation.EnableAsync(_serverUrl);
 
         private Task<bool> DisableNetworkIsolationAsync() => NetworkIsolation.DisableAsync();
-    }
-
-    public sealed class CommandExecutionResult
-    {
-        public CommandExecutionResult(string output, int exitCode, TimeSpan duration)
-        {
-            Output = CommandExecutionPolicy.TruncateOutput(output);
-            ExitCode = exitCode;
-            Duration = duration;
-        }
-
-        public string Output { get; }
-        public int ExitCode { get; }
-        public TimeSpan Duration { get; }
-    }
-
-    public sealed class AgentStartupHealth
-    {
-        private readonly OperationalHealthGate _gate;
-
-        public AgentStartupHealth(bool suppressed, Action<OperationalChecks> writer = null)
-        {
-            _gate = new OperationalHealthGate(suppressed, writer ?? AgentUpdate.WriteOperationalHealth);
-        }
-
-        public void Run(StartupCheck check, Action action) => _gate.Run(check, action);
-        public void Mark(StartupCheck check) => _gate.Mark(check);
-        public OperationalChecks Snapshot() => _gate.Snapshot();
     }
 
     public sealed class TrayPipeServer : IDisposable

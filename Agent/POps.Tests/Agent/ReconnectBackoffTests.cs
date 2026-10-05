@@ -82,5 +82,25 @@ namespace POps.Tests.Agent
         [Fact]
         public void AfterAHealthyConnection_FirstRetryIsQuick() =>
             Assert.True(ReconnectBackoff.Delay(0, false, Top) < TimeSpan.FromSeconds(2));
+
+        [Fact]
+        public void CloseCode4409_WaitsTenMinutesPlusJitter()
+        {
+            Assert.Equal(ReconnectBackoff.Rejection.Clone, ReconnectBackoff.FromCloseStatus(4409));
+            Assert.Equal(ReconnectBackoff.Rejection.Auth, ReconnectBackoff.FromCloseStatus(4401));
+            Assert.Equal(ReconnectBackoff.Rejection.None, ReconnectBackoff.FromCloseStatus(1000));
+            Assert.Equal(ReconnectBackoff.Rejection.None, ReconnectBackoff.FromCloseStatus(null));
+
+            for (int attempt = 0; attempt <= ReconnectBackoff.MaxAttempt; attempt++)
+            {
+                Assert.Equal(TimeSpan.FromMinutes(10), ReconnectBackoff.Delay(attempt, ReconnectBackoff.Rejection.Clone, new FixedRandom(0)));
+                TimeSpan top = ReconnectBackoff.Delay(attempt, ReconnectBackoff.Rejection.Clone, new FixedRandom(0.9999));
+                Assert.InRange(top, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(11));
+            }
+            Assert.Equal(TimeSpan.FromMinutes(10) + ReconnectBackoff.Ceiling(5) * 0.5,
+                ReconnectBackoff.Delay(5, ReconnectBackoff.Rejection.Clone, new FixedRandom(0.5)));
+            // Eski imza değişmedi
+            Assert.Equal(ReconnectBackoff.AuthRejectedMinimum, ReconnectBackoff.Delay(0, true, new FixedRandom(0)));
+        }
     }
 }

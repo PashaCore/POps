@@ -17,7 +17,7 @@ namespace POps.Shared
         private static readonly SecurityIdentifier LocalSystem = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
         private static readonly SecurityIdentifier Administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
 
-        public static bool IsTrustedOwner(SecurityIdentifier owner) =>
+        public static bool IsTrustedOwner(SecurityIdentifier? owner) =>
             owner != null && (owner.Equals(LocalSystem) || owner.Equals(Administrators));
 
         // Dönen: güvenilir mi; owner: okunan sahip (loglamak için) ya da okunamama nedeni

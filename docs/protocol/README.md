@@ -149,6 +149,8 @@ and sends such a message only to an agent that announced it. Features in use:
 | `power` | `power` is sent for power tasks (shutdown, restart, logoff, lock). For an agent without it shutdown and restart go as the old `execute` command (`shutdown /s\|/r /f /t <max(delay,5)>`, on Windows with a `/c` note limited to letters, digits, spaces and `. , : ; ? ' ( ) -`, on Linux without a note); logoff and lock become `Denied` (exit code -8, "[REDDEDİLDİ] Bu bilgisayardaki ajan bunu desteklemiyor …") and nothing is sent. |
 | `message` | `user_message` is sent for message tasks. For an agent without it the task becomes `Denied` (exit code -8) and nothing is sent. |
 | `peer_cache` | Agent updates are staged per lab: one agent with the feature (the seed) gets `update_agent` first; when it reports a successful `update_result`, the other agents with the feature in that lab get `update_agent` with `peers`. Agents without it are updated at once, without `peers`. The agent's duties are in [`../agent.md`, "Peer cache contract"](../agent.md#peer-cache-contract). |
+| `exam` | Informational: exam mode is gated by the `exam_state` answer (no answer within 20 s = not supported), not by the header. |
+| `files` | Informational: file transfer is gated by `files_enabled` in `capabilities`. |
 
 A new message whose effect matters and that old agents would ignore gets a feature name here instead of a version
 threshold.

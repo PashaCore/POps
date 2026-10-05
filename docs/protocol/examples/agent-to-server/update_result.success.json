@@ -5,6 +5,7 @@
   "from_version": "0.1.20-alpha",
   "to_version": "0.1.21-alpha",
   "running_version": "0.1.21-alpha",
+  "rollback": "none",
   "agent_state": "running",
   "msi_exit_code": 0,
   "reboot_required": false
