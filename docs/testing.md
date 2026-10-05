@@ -136,6 +136,7 @@ machine and a regression would not be caught by CI.
 | Modules: organisation and lab settings, dependencies, `409` on every module, queue/scheduler/policy enforcement, install profiles | Tested | `test_modules.py`, `test_units.py` |
 | Request ID, `/metrics` access control, diagnostics, overview history | Tested | `test_ops.py`, `test_units.py` |
 | API tokens (superadmin-only management, hash-only storage, viewer GET-only, admin limits, expiry and revocation, `last_used_at` throttle, `token:<name>` in tasks and audit), `/api/v1` and REST names equal to the old paths, `task_sequence`/`taskSequence`, CSRF for cookie sessions, shared rate limit and metric labels | Tested | `test_api_tokens.py`, `test_units.py` |
+| winget deployment: id and version validation, the step model, `winget_install` only to agents that announce `winget` (others get `Denied`, nothing sent), result codes (`already installed` counts as done, `-7` no winget), retry and chains keep the task kind, the deploy module, the catalog endpoint | Tested (server) | `test_winget.py` (simulated agent), `test_units.py`. The agent side (resolving `winget.exe` as SYSTEM, running it) is built and tested by the agent team. |
 | `docs/openapi.json` matches the code | Tested | CI `backend` job (`tools/export_openapi.py --check`) |
 | Demo accounts (`POPS_DEMO_USERS`) cannot change anything: every write endpoint from the route table returns `403` | Tested | `test_demo.py` |
 | Migrations from empty and idempotency | Tested | `migrations` job |

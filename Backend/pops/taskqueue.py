@@ -3,7 +3,7 @@
 import asyncio
 import datetime
 
-from pops import metrics, modules
+from pops import metrics, modules, winget
 from pops.db import execute_query
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
@@ -89,6 +89,7 @@ async def _process_queue_once():
     available_slots = limit - running_pcs_count
     if not (available_slots > 0 or limit == 0):
         return
+    await _refuse_winget(online_pcs)
     # Çevrimiçi ve şu an görev çalıştırmayan her cihazın en eski bekleyen görevi, tek sorguda; en eski görev önce
     tasks = await execute_query(
         """
@@ -129,10 +130,21 @@ async def _process_queue_once():
         )
         # F4(a): komutu KİMİN kuyrukladığını göster (eskiden 'System/Queue' idi, iz yoktu).
         actor = task.get("created_by") or "System/Queue"
-        # requested_by: ajan komutu kimin istediğini yerel denetim izine (Windows Olay Günlüğü) yazar (0.1.12+)
-        sent = await manager.send_command(
-            {"action": "execute", "task_id": task["id"], "script_path": task["script_path"], "requested_by": actor}, pc
-        )
+        is_winget = task.get("kind") == winget.KIND
+        if is_winget:
+            try:
+                message = winget.message(task, actor)
+            except (ValueError, TypeError):
+                # Kayıt elle bozulmadıkça olmaz: paket bilgisi doğrulanamayan görev ajana hiç gitmez
+                await execute_query(
+                    "UPDATE tasks SET status = 'Error', output = $2 WHERE id = $1", (task["id"], winget.INVALID_OUTPUT)
+                )
+                continue
+        else:
+            # requested_by: ajan komutu kimin istediğini yerel denetim izine (Windows Olay Günlüğü) yazar (0.1.12+)
+            message = {"action": "execute", "task_id": task["id"], "script_path": task["script_path"],
+                       "requested_by": actor}
+        sent = await manager.send_command(message, pc)
         if sent:
             metrics.observe_dispatch(_seconds_since(task.get("created_at")))
         else:
@@ -142,6 +154,9 @@ async def _process_queue_once():
                 (task["id"],),
             )
             continue
+        meta = {"raw_command": task["script_path"], "created_by": task.get("created_by")}
+        if is_winget:
+            meta.update(winget_id=message["id"], winget_version=message["version"])
         await log_audit_event(
             pc,
             "Deploy",
@@ -149,20 +164,59 @@ async def _process_queue_once():
             actor_id=actor,
             event_type="deploy.execution",
             category="system_maintenance",
-            action="execute_queue",
+            action="winget_install" if is_winget else "execute_queue",
             risk_level="info",
-            meta_data={"raw_command": task["script_path"], "created_by": task.get("created_by")},
+            meta_data=meta,
         )
-        # SYSTEM olarak komut çalıştırma yüksek-değerli olay → hash-zincirli,
+        # SYSTEM olarak komut çalıştırma (ya da paket kurma) yüksek-değerli olay → hash-zincirli,
         # ajanların yazamadığı loga da düş.
-        await add_audit_log(
-            pc,
-            "execute",
-            "SYSTEM komutu çalıştırıldı (kuyruk: %s)" % actor,
-            {
-                "task_id": task["id"],
-                "created_by": task.get("created_by"),
-                "command": (task["script_path"] or "")[:200],
-            },
-        )
+        if is_winget:
+            await add_audit_log(
+                pc,
+                "winget_install",
+                "winget paketi kurulumu gönderildi (kuyruk: %s)" % actor,
+                {"task_id": task["id"], "created_by": task.get("created_by"), "id": message["id"],
+                 "version": message["version"]},
+            )
+        else:
+            await add_audit_log(
+                pc,
+                "execute",
+                "SYSTEM komutu çalıştırıldı (kuyruk: %s)" % actor,
+                {
+                    "task_id": task["id"],
+                    "created_by": task.get("created_by"),
+                    "command": (task["script_path"] or "")[:200],
+                },
+            )
         available_slots -= 1
+
+
+async def _refuse_winget(online_pcs: list) -> None:
+    """Çevrimiçi cihazların bekleyen winget görevlerinden gönderilemeyecek olanlar (kuyruğun seçiminden ÖNCE, cihazın
+    sıradaki görevi beklemesin diye):
+      - cihazın laboratuvarında dosya dağıtımı modülü kapalı: "Denied", [MODÜL KAPALI];
+      - ajan bağlanırken "winget" özelliğini duyurmadı (X-Agent-Features; eski ajan iletiyi yok sayıp görevi
+        "Running"de bırakırdı): gönderilmeden "Denied", çıkış kodu -8."""
+    rows = await execute_query(
+        "SELECT DISTINCT t.target_pc, av.features FROM tasks t LEFT JOIN agent_versions av ON av.pc_name = t.target_pc "
+        "WHERE t.status = 'Pending' AND t.kind = $2 AND t.target_pc = ANY($1::text[])",
+        (online_pcs, winget.KIND),
+        fetch=True,
+    )
+    if not rows:
+        return
+    _allowed, closed = await modules.split_pcs("deploy", [r["target_pc"] for r in rows])
+    if closed:
+        await execute_query(
+            "UPDATE tasks SET status = 'Denied', output = COALESCE(NULLIF(output, ''), '') || $3 "
+            "WHERE status = 'Pending' AND kind = $2 AND target_pc = ANY($1::text[])",
+            (closed, winget.KIND, winget.MODULE_CLOSED_OUTPUT),
+        )
+    old_agents = [r["target_pc"] for r in rows if r["target_pc"] not in closed and not winget.supports(r["features"])]
+    if old_agents:
+        await execute_query(
+            "UPDATE tasks SET status = 'Denied', exit_code = $3, output = $4 "
+            "WHERE status = 'Pending' AND kind = $2 AND target_pc = ANY($1::text[])",
+            (old_agents, winget.KIND, winget.EXIT_UNSUPPORTED, winget.UNSUPPORTED_OUTPUT),
+        )

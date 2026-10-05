@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from pops import modules
+from pops import modules, winget
 from pops.audit import add_audit_log
 from pops.db import execute_query
 from pops.manager import manager
@@ -45,11 +45,12 @@ async def _snapshot(labs: List[str]) -> dict:
 
 
 async def _close_effects(before: dict, after: dict) -> dict:
-    """Kapanan modülün açık işleri durur: Vision oturumları kapanır, bekleyen komut görevleri "Denied" olur."""
+    """Kapanan modülün açık işleri durur: Vision oturumları kapanır, bekleyen komut görevleri "Denied" olur. Dosya
+    dağıtımı kapanınca (uzak komut açık kalsa da) bekleyen winget görevleri "Denied" olur."""
     closed = [key for key, was_on in before.items() if was_on and not after[key]]
     effects = {"vision_sessions_closed": 0, "tasks_denied": 0}
     for mid, lab in closed:
-        if mid not in ("vision", "terminal"):
+        if mid not in ("vision", "terminal", "deploy"):
             continue
         if lab is None:
             rows = await execute_query("SELECT pc_name FROM clients WHERE lab_name IS NULL", fetch=True)
@@ -63,6 +64,15 @@ async def _close_effects(before: dict, after: dict) -> dict:
                 if manager.vision_sessions.pop(pc, None):
                     effects["vision_sessions_closed"] += 1
                     await manager.send_command({"action": "stop_stream"}, pc)
+        elif mid == "deploy":
+            denied = await execute_query(
+                "UPDATE tasks SET status = 'Denied', output = COALESCE(output, '') || '[MODÜL KAPALI]: Dosya "
+                "dağıtımı modülü kapatıldı; winget kurulumu başlatılmadı.' WHERE target_pc = ANY($1::text[]) "
+                "AND kind = $2 AND status IN ('Pending', 'Paused') RETURNING id",
+                (pcs, winget.KIND),
+                fetch=True,
+            )
+            effects["tasks_denied"] += len(denied or [])
         else:
             denied = await execute_query(
                 "UPDATE tasks SET status = 'Denied', output = COALESCE(output, '') || '[MODÜL KAPALI]: Uzak komut "

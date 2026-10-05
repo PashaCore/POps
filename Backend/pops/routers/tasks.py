@@ -12,13 +12,14 @@ import secrets
 import tempfile
 import time
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from werkzeug.utils import secure_filename
 
 from pops.config import LOG_TABLE, UPDATES_DIR, UPLOAD_DIR
-from pops import db, modules
+from pops import db, modules, winget
 from pops.db import execute_query
 from pops.models import (
     CreatePackageInput, DeletePackageInput, OrchestrationInput, SetLimitInput, TaskActionInput, TaskStatusInput,
@@ -35,6 +36,13 @@ router = APIRouter()
 @router.get("/api/tasks")
 async def get_tasks(limit: int = 1000, auth: dict = Depends(require_auth)):
     rows = await execute_query("SELECT * FROM tasks ORDER BY id DESC LIMIT $1", (limit,), fetch=True)
+    for r in rows or []:
+        # winget görevinin paketi ({"id", "version"}); asyncpg JSONB'yi metin döndürür
+        if isinstance(r.get("payload"), str):
+            try:
+                r["payload"] = json.loads(r["payload"])
+            except ValueError:
+                r["payload"] = None
     return rows if rows else []
 
 
@@ -116,13 +124,14 @@ async def handle_task_action(data: TaskActionInput, auth: dict = Depends(require
 async def _retry(where: str, value, creator: str, client_ip=None) -> dict:
     """Yeniden deneme YENİ bir görev kaydı açar (retry_of = eski görev); eski kayıt sonucuyla kalır. Eskiden aynı
     görev kimliği yeniden "Pending" yapılıyordu: iptal edilmiş ama hâlâ süren eski çalıştırmanın geç gelen sonucu
-    yeni çalıştırmayı tamamlanmış gösterebilirdi. Aynı görevin süren bir yeniden denemesi varsa ikincisi açılmaz."""
+    yeni çalıştırmayı tamamlanmış gösterebilirdi. Aynı görevin süren bir yeniden denemesi varsa ikincisi açılmaz.
+    Görevin türü (kind) ve paketi (payload) de kopyalanır: winget görevi komut olarak yeniden çalıştırılmaz."""
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     created = await execute_query(
         "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, retry_of, "
-        "title, source, reason, client_ip, batch_id) "
+        "title, source, reason, client_ip, batch_id, kind, payload) "
         "SELECT t.target_pc, t.target_lab, t.script_path, 'Pending', $2, $3, t.id, "
-        "t.title, 'tasks', t.reason, $6, $7 FROM tasks t "
+        "t.title, 'tasks', t.reason, $6, $7, t.kind, t.payload FROM tasks t "
         f"WHERE {where.format(v='$1')} AND t.status = ANY($4::text[]) "
         "AND NOT EXISTS (SELECT 1 FROM tasks n WHERE n.retry_of = t.id AND n.status = ANY($5::text[])) "
         "RETURNING id",
@@ -274,6 +283,19 @@ async def get_packages(auth: dict = Depends(require_auth)):
     return rows if rows else []
 
 
+@router.get("/api/deploy/winget/catalog", dependencies=[modules.require("deploy")])
+async def winget_catalog(
+    q: str = Query("", max_length=100),
+    category: Optional[str] = Query(None, max_length=40),
+    limit: int = Query(200, ge=1, le=500),
+    auth: dict = Depends(require_auth),
+):
+    """Okul ve ofis için seçilmiş winget paketleri (pops/winget_catalog.py; kimlikler winget-pkgs deposunda
+    doğrulandı). q: kimlik, ad, yayıncı, kategori ya da açıklamada geçen sözcükler (Türkçe harf ve büyük/küçük harf
+    farkı yok sayılır); category: kategori kimliği. Katalogda olmayan bir paket de kimliğiyle dağıtılabilir."""
+    return winget.search(q, category, limit)
+
+
 def get_folder_size(folder):
     total = 0
     if os.path.exists(folder):
@@ -335,10 +357,21 @@ def _orchestration_key(creator: str, data: OrchestrationInput) -> str:
             _recent_orchestrations.pop(key, None)
     return hashlib.sha256(
         json.dumps(
-            [creator, data.target_mode, data.targets, [(t.type, t.command) for t in data.task_sequence]],
+            [creator, data.target_mode, data.targets,
+             [(t.type, t.command, t.winget.model_dump() if t.winget else None) for t in data.task_sequence]],
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
+
+
+def _step_row(task) -> tuple:
+    """Zincir adımı -> görev kaydının (script_path, title, kind, payload) alanları."""
+    name = (task.name or "")[:200] or None
+    if task.is_winget:
+        spec = task.winget
+        return (winget.command_line(spec.id, spec.version), name or "winget: %s" % spec.id, winget.KIND,
+                winget.payload(spec.id, spec.version))
+    return (task.command, name, None, None)
 
 
 @router.post("/api/deploy_orchestration", deprecated=True)
@@ -367,8 +400,8 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
                 status_code=422,
                 detail="Kayıtlı olmayan bilgisayar: %s" % ", ".join(unknown[:10]) + (" …" if len(unknown) > 10 else ""),
             )
-        # Kütüphaneden paket/betik adımı dosya dağıtımı modülüne, serbest komut uzak komut modülüne bağlıdır; her
-        # hedef kendi laboratuvarının ayarıyla denetlenir. Hiçbirinde açık değilse istek reddedilir.
+        # Kütüphaneden paket/betik ve winget adımı dosya dağıtımı modülüne, serbest komut uzak komut modülüne
+        # bağlıdır; her hedef kendi laboratuvarının ayarıyla denetlenir. Hiçbirinde açık değilse istek reddedilir.
         needed = "deploy" if any((t.type or "").upper() != "CMD" for t in data.task_sequence) else "terminal"
         allowed, closed = await modules.split_pcs(needed, [t["pc"] for t in target_pcs])
         if target_pcs and not allowed:
@@ -376,10 +409,10 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
         allowed = set(allowed)
         target_pcs = [t for t in target_pcs if t["pc"] in allowed]
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        rows = [
-            (target["pc"], target["lab"], task.command, (task.name or "")[:200] or None)
-            for target in target_pcs for task in data.task_sequence
-        ]
+        # Adım -> (komut, başlık, tür, paket). winget adımının komutu ajanın çalıştıracağı komut satırının okunur
+        # hâlidir (ajana gitmez); ajan paketi "winget_install" iletisiyle alır (bkz. pops/winget.py).
+        steps = [_step_row(task) for task in data.task_sequence]
+        rows = [(target["pc"], target["lab"]) + step for target in target_pcs for step in steps]
         batch_id = uuid.uuid4().hex[:16]
         reason = (data.reason or "").strip() or None
         ids = []
@@ -389,12 +422,14 @@ async def deploy_orchestration(data: OrchestrationInput, auth: dict = Depends(re
             async with db.transaction() as conn:
                 created = await conn.fetch(
                     "INSERT INTO tasks (target_pc, target_lab, script_path, status, created_at, created_by, "
-                    "title, source, reason, client_ip, batch_id) "
-                    "SELECT t.pc, t.lab, t.cmd, 'Pending', $5, $6, COALESCE(t.title, $7), $8, $9, $10, $11 "
-                    "FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) WITH ORDINALITY "
-                    "AS t(pc, lab, cmd, title, n) ORDER BY t.n RETURNING id",
+                    "title, source, reason, client_ip, batch_id, kind, payload) "
+                    "SELECT t.pc, t.lab, t.cmd, 'Pending', $5, $6, COALESCE(t.title, $7), $8, $9, $10, $11, t.kind, "
+                    "t.payload::jsonb "
+                    "FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $12::text[], $13::text[]) "
+                    "WITH ORDINALITY AS t(pc, lab, cmd, title, kind, payload, n) ORDER BY t.n RETURNING id",
                     [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows],
                     now, creator, data.title, data.source, reason, _client_ip(request), batch_id,
+                    [r[4] for r in rows], [r[5] for r in rows],
                 )
             ids = [r["id"] for r in created]
     except Exception as exc:

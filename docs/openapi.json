@@ -1730,8 +1730,15 @@
         "additionalProperties": false,
         "properties": {
           "command": {
-            "title": "Command",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
           },
           "name": {
             "title": "Name",
@@ -1740,12 +1747,21 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "winget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WingetPackage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "name",
-          "type",
-          "command"
+          "type"
         ],
         "title": "TaskSequenceItem",
         "type": "object"
@@ -2000,6 +2016,32 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WingetPackage": {
+        "additionalProperties": false,
+        "description": "WINGET adımının paketi: winget kimliği ve isteğe bağlı sürüm (null: en son sürüm). Bkz. pops/winget.py.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "WingetPackage",
         "type": "object"
       }
     },
@@ -3011,6 +3053,83 @@
           }
         ],
         "summary": "Delete Package",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/deploy/winget/catalog": {
+      "get": {
+        "description": "Okul ve ofis için seçilmiş winget paketleri (pops/winget_catalog.py; kimlikler winget-pkgs deposunda\ndoğrulandı). q: kimlik, ad, yayıncı, kategori ya da açıklamada geçen sözcükler (Türkçe harf ve büyük/küçük harf\nfarkı yok sayılır); category: kategori kimliği. Katalogda olmayan bir paket de kimliğiyle dağıtılabilir.",
+        "operationId": "winget_catalog_api_deploy_winget_catalog_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 100,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Winget Catalog",
         "tags": [
           "tasks"
         ]

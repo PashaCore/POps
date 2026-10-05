@@ -2,7 +2,9 @@
 
 from typing import List, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from pops import winget
 
 TargetMode = Literal["ALL", "LAB", "PC"]
 
@@ -91,10 +93,38 @@ class SetLimitInput(BaseModel):
     limit: int = Field(ge=0, le=10000)
 
 
+class WingetPackage(StrictInput):
+    """WINGET adımının paketi: winget kimliği ve isteğe bağlı sürüm (null: en son sürüm). Bkz. pops/winget.py."""
+    id: str
+    version: Optional[str] = None
+
+    _id = field_validator("id")(winget.clean_id)
+    _version = field_validator("version")(winget.clean_version)
+
+
 class TaskSequenceItem(StrictInput):
     name: str
+    # CMD (serbest komut), package / script (kitaplıktan, komut panelde üretilir) ya da WINGET (winget paketi)
     type: str
-    command: str
+    command: Optional[str] = None
+    winget: Optional[WingetPackage] = None
+
+    @model_validator(mode="after")
+    def _payload(self):
+        if self.is_winget:
+            if self.winget is None:
+                raise ValueError("WINGET adımı winget paketini ister ({\"id\": ..., \"version\": ...})")
+            if self.command:
+                raise ValueError("WINGET adımı komut taşımaz")
+        elif self.winget is not None:
+            raise ValueError("winget alanı yalnızca WINGET adımında olur")
+        elif self.command is None:
+            raise ValueError("Adımın komutu yok")
+        return self
+
+    @property
+    def is_winget(self) -> bool:
+        return (self.type or "").strip().upper() == "WINGET"
 
 
 class OrchestrationInput(StrictInput):
