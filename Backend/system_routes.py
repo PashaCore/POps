@@ -31,7 +31,7 @@ from pydantic import BaseModel, field_validator
 
 import release_verify
 from pops import agent_version as agent_version_mod
-from pops import update_tracking
+from pops import devicelist, update_tracking
 from pops.models import StrictInput, TargetMode, UpdateProgressInput, upper_mode
 
 
@@ -843,6 +843,7 @@ def build_router(require_admin, require_superadmin, execute_query, manager, upda
         params.append(pc)
         await execute_query("UPDATE clients SET %s WHERE pc_name=$%d" % (", ".join(sets), len(params)),
                             tuple(params))
+        await devicelist.sync([pc])
         # send_command çevrimdışıysa no-op; online durumunu ayrıca bildiriyoruz. Kapatma isteği
         # kalıcı kaydedildi, ajan sonra bağlanınca /ws/agent 'capabilities' handler'ı uygular.
         online = pc in manager.active_agents

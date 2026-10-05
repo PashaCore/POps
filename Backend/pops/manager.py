@@ -36,6 +36,11 @@ _BIN_KEY_MAX_BYTES = 4 * 1024 * 1024
 # Bir panelde bekleyen bütün ikili kareler (monitör baytını ajan seçer: 17 çıktı x 4 MB olmasın); aşan panel kapatılır
 _BIN_PANEL_MAX_BYTES = 16 * 1024 * 1024
 _ADMIN_ROLES = ("admin", "superadmin")
+# Konu süzgeci: /ws/panel?topics=devices ile açılan soket YALNIZCA bu konudaki mesajları alır (panelin cihaz listesi
+# soketi; görev çıktıları ve ekran görüntüleri gitmez). Konusuz soket eskisi gibi her şeyi alır; yalnızca isteğe bağlı
+# türler (devices_changed) ona gitmez: mevcut istemciler beklemedikleri yeni bir mesaj görmesin.
+PANEL_TOPICS = {"devices": ("devices_changed",)}
+_OPT_IN_TYPES = frozenset(t for types in PANEL_TOPICS.values() for t in types)
 
 
 class _PanelSender:
@@ -156,13 +161,19 @@ class ConnectionManager:
         self.vision_monitors: Dict[str, list] = {}
         self.vision_session_modes: Dict[tuple, tuple] = {}  # (pc_name, kullanıcı) -> (açılış anı, zorunlu mu)
         self.vision_clipboard_owner: Dict[str, str] = {}  # pc_name -> rızası tüneli açan oturumun sahibi
+        # panel soketi -> alacağı mesaj türleri (?topics=); kaydı olmayan soket isteğe bağlılar dışında hepsini alır
+        self.panel_topics: Dict[WebSocket, frozenset] = {}
 
     async def connect_agent(self, websocket: WebSocket, pc_name: str):
         self.active_agents[pc_name] = websocket
 
-    async def connect_panel(self, websocket: WebSocket, username: Optional[str] = None, role: Optional[str] = None):
+    async def connect_panel(
+        self, websocket: WebSocket, username: Optional[str] = None, role: Optional[str] = None, topics=None
+    ):
         await websocket.accept()
         self.active_panels.append(websocket)
+        if topics:
+            self.panel_topics[websocket] = frozenset(t for topic in topics for t in PANEL_TOPICS.get(topic, ()))
         self.panel_senders[websocket] = _PanelSender(websocket, self._drop_slow_panel)
         if username:
             self.panel_users[websocket] = username
@@ -260,6 +271,7 @@ class ConnectionManager:
         self.panel_users.pop(websocket, None)
         self.panel_roles.pop(websocket, None)
         self.panel_binary.discard(websocket)
+        self.panel_topics.pop(websocket, None)
         sender = self.panel_senders.pop(websocket, None)
         if sender is not None and sender.task is not asyncio.current_task():
             sender.task.cancel()
@@ -270,9 +282,13 @@ class ConnectionManager:
         task = asyncio.ensure_future(websocket.close(code=1013))
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
-    def _queue_to_panel(self, panel: WebSocket, text: str, frame_key: Optional[tuple] = None):
+    def _wants(self, panel: WebSocket, message_type) -> bool:
+        topics = self.panel_topics.get(panel)
+        return message_type not in _OPT_IN_TYPES if topics is None else message_type in topics
+
+    def _queue_to_panel(self, panel: WebSocket, text: str, frame_key: Optional[tuple] = None, mtype=None):
         sender = self.panel_senders.get(panel)
-        if sender is None:
+        if sender is None or not self._wants(panel, mtype):
             return
         if frame_key is not None:
             sender.put_frame(frame_key, text)
@@ -320,7 +336,7 @@ class ConnectionManager:
     async def broadcast_to_panels(self, message: dict):
         text = json.dumps(message)
         for panel in list(self.active_panels):
-            self._queue_to_panel(panel, text)
+            self._queue_to_panel(panel, text, mtype=message.get("type"))
 
     async def broadcast_to_admin_panels(self, message: dict):
         """Yalnızca admin/superadmin rollü panellere gönderir. Ekran görüntüsü/thumbnail gibi hassas
@@ -330,7 +346,7 @@ class ConnectionManager:
         frame_key = (message.get("type"), message.get("hw_id")) if message.get("type") in _FRAME_TYPES else None
         for panel in list(self.active_panels):
             if self.panel_roles.get(panel) in ("admin", "superadmin"):
-                self._queue_to_panel(panel, text, frame_key)
+                self._queue_to_panel(panel, text, frame_key, message.get("type"))
 
     def _session_panels(self, pc_name: str, users: Optional[set] = None) -> List[WebSocket]:
         """O cihaz için açık oturumu olan (users verilirse yalnız onlardan) admin kullanıcıların panelleri. Rol,
@@ -353,7 +369,7 @@ class ConnectionManager:
         text = json.dumps(message)
         frame_key = (message.get("type"), pc_name)
         for panel in panels:
-            self._queue_to_panel(panel, text, frame_key)
+            self._queue_to_panel(panel, text, frame_key, message.get("type"))
 
     def has_session_panels(self, pc_name: str, users: Optional[set] = None) -> bool:
         return bool(self._session_panels(pc_name, users))

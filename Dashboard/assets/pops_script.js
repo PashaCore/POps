@@ -7,7 +7,7 @@
 //   POps.upload                  : FormData yükleme, ilerleme bildirimiyle (XMLHttpRequest)
 //   POps.busy / act              : düğmeyi istek sürerken kilitler; hata/başarı bildirimini gösterir
 //   openModal / closeModal       : sayfadaki .modal-overlay pencereleri (odak tuzağı, Esc)
-//   POps.watchDevices            : cihaz listesini (state.devices) yalnızca isteyen sayfada yoklar
+//   POps.watchDevices            : cihaz listesini (state.devices) yalnızca isteyen sayfada güncel tutar (değişiklikler + panel soketi)
 //   POps.iconHtml / iconEl       : çizgi simge (assets/pops_icons.svg)
 //   POps.menu(düğme, öğeler)     : açılır menü;  POps.drawer: sağdaki ayrıntı paneli
 //   POps.pageTabs(çubuk)          : çok bölümlü sayfaların sekmeleri (?tab=)
@@ -222,6 +222,8 @@ POps.errorMessage = function (err, fallback) {
     return POps.t((err && err.message) || fallback || 'Beklenmeyen hata.');
 };
 
+// POps.api'nin 304 yanıtı (yalnızca If-None-Match gönderen istekte gelir)
+POps.NOT_MODIFIED = Object.freeze({ notModified: true });
 POps.api = async function (path, opts) {
     const o = Object.assign({ method: 'GET' }, opts || {});
     const headers = new Headers(o.headers || {});
@@ -246,6 +248,8 @@ POps.api = async function (path, opts) {
         window.location.href = '/logout';
         return new Promise(() => {});
     }
+    // If-None-Match gönderen istek: içerik değişmedi (gövde yok)
+    if (res.status === 304) return POps.NOT_MODIFIED;
     let data = null;
     if (res.status !== 204) {
         const ct = res.headers.get('content-type') || '';
@@ -733,23 +737,56 @@ POps.act = async function (btn, fn, opts) {
 };
 
 // ============== CİHAZ LİSTESİ ==============
-// Yalnızca POps.watchDevices() çağıran sayfa yoklar (eskiden her sayfa 3 sn'de bir üç istek atıyordu)
+// Yalnızca POps.watchDevices() çağıran sayfa yoklar (eskiden her sayfa 3 sn'de bir üç istek atıyordu). Liste sürümlüdür
+// (docs/api.md, /api/devices): ilk istek bütün listeyi ve sürümü alır, sonrakiler ?since=<sürüm> ile yalnızca
+// değişenleri; değişiklik yoksa sunucu 304 döner (If-None-Match). Panel soketi (/ws/panel?topics=devices) sürüm
+// değişince haber verir: değişiklik hemen çekilir, soket açıkken yoklama 30 sn'de bir (soket yoksa 5 sn).
 let inventoryAt = 0;
 let inventoryMap = {};
-async function loadDevices() {
-    const wantInventory = !!state.withInventory;
-    const [devices, labs, settings, inv] = await Promise.all([
-        POps.get('/api/devices'),
-        POps.get('/api/custom_labs').catch(() => state.customLabs),
-        POps.get('/api/lab_settings').catch(() => null),
-        wantInventory && Date.now() - inventoryAt > 60000 ? POps.get('/api/inventory').catch(() => null) : Promise.resolve(null)
-    ]).catch(e => { state.devicesError = e; document.dispatchEvent(new CustomEvent('pops_data_updated', { detail: { error: e } })); throw e; });
-    if (Array.isArray(inv)) {
-        inventoryAt = Date.now();
-        inventoryMap = {};
-        inv.forEach(r => { inventoryMap[r.pc_name] = r; });
+const DEV_POLL_MS = 5000;
+const DEV_POLL_SOCKET_MS = 30000;
+const devList = { version: null, rows: new Map(), inflight: null, again: false, socketOpen: false };
+const devKey = (d) => d.hw_id || d.hostname;
+
+// Listeyi ya da son sürümden bu yana değişenleri alır; liste değiştiyse true
+async function fetchDeviceRows() {
+    const v = devList.version;
+    const r = await POps.get('/api/devices?since=' + (v == null ? 0 : v), v == null ? {} : { headers: { 'If-None-Match': 'W/"d' + v + '"' } });
+    if (r === POps.NOT_MODIFIED) return false;
+    if (Array.isArray(r)) {   // ?since= bilmeyen eski sunucu: her seferinde bütün liste
+        devList.rows = new Map(r.map(d => [devKey(d), d]));
+        devList.version = null;
+        return true;
     }
-    state.devices = (Array.isArray(devices) ? devices : []).map(d => {
+    if (!r || typeof r !== 'object') return false;
+    const changed = Array.isArray(r.changed) ? r.changed : [];
+    const removed = Array.isArray(r.removed) ? r.removed : [];
+    const seen = r.seen && typeof r.seen === 'object' ? Object.keys(r.seen) : [];
+    if (r.full) {
+        devList.rows = new Map((Array.isArray(r.devices) ? r.devices : []).map(d => [devKey(d), d]));
+    } else {
+        changed.forEach(d => devList.rows.set(devKey(d), d));
+        removed.forEach(id => devList.rows.delete(id));
+        // Yalnızca last_seen'i ilerleyen cihazlar (sunucu dakikada bir bildirir)
+        seen.forEach(id => { const d = devList.rows.get(id); if (d) devList.rows.set(id, Object.assign({}, d, { last_seen: r.seen[id] })); });
+    }
+    devList.version = typeof r.version === 'number' ? r.version : null;
+    return !!r.full || changed.length + removed.length + seen.length > 0;
+}
+// Aynı anda tek istek; sürerken yenisi istenirse biter bitmez bir kez daha sorulur (eski yanıt yenisini ezmesin)
+function syncDevices() {
+    if (devList.inflight) { devList.again = true; return devList.inflight; }
+    devList.inflight = (async () => {
+        let changed = false;
+        try {
+            do { devList.again = false; changed = (await fetchDeviceRows()) || changed; } while (devList.again);
+            return changed;
+        } finally { devList.inflight = null; }
+    })();
+    return devList.inflight;
+}
+function publishDevices() {
+    state.devices = [...devList.rows.values()].map(d => {
         const hw = inventoryMap[d.hostname] || {};
         return Object.assign({}, d, {
             id: d.hostname,
@@ -760,6 +797,27 @@ async function loadDevices() {
             active_window: d.active_window || '-'
         });
     });
+    const stats = {};
+    state.devices.forEach(d => { stats[d.lab] = (stats[d.lab] || 0) + 1; });
+    state.labsStats = stats;
+    state.devicesLoaded = true;
+    state.devicesError = null;
+    document.dispatchEvent(new CustomEvent('pops_data_updated', { detail: {} }));
+    return state.devices;
+}
+async function loadDevices() {
+    const wantInventory = !!state.withInventory;
+    const [, labs, settings, inv] = await Promise.all([
+        syncDevices(),
+        POps.get('/api/custom_labs').catch(() => state.customLabs),
+        POps.get('/api/lab_settings').catch(() => null),
+        wantInventory && Date.now() - inventoryAt > 60000 ? POps.get('/api/inventory').catch(() => null) : Promise.resolve(null)
+    ]).catch(e => { state.devicesError = e; document.dispatchEvent(new CustomEvent('pops_data_updated', { detail: { error: e } })); throw e; });
+    if (Array.isArray(inv)) {
+        inventoryAt = Date.now();
+        inventoryMap = {};
+        inv.forEach(r => { inventoryMap[r.pc_name] = r; });
+    }
     state.customLabs = Array.isArray(labs) ? labs : [];
     if (settings && typeof settings === 'object') {
         state.mainPcs = {};
@@ -769,22 +827,53 @@ async function loadDevices() {
             state.labLayouts[lab] = settings[lab].layout_json;
         }
     }
-    const stats = {};
-    state.devices.forEach(d => { stats[d.lab] = (stats[d.lab] || 0) + 1; });
-    state.labsStats = stats;
-    state.devicesLoaded = true;
-    state.devicesError = null;
-    document.dispatchEvent(new CustomEvent('pops_data_updated', { detail: {} }));
-    return state.devices;
+    return publishDevices();
 }
 POps.loadDevices = loadDevices;
+// Soketten "değişti" gelince: yalnızca cihaz değişiklikleri çekilir. Arka plandaki sekme çekmez; sekmeye dönünce
+// popsPoll hemen yoklar.
+async function refreshDevicesNow() {
+    if (document.hidden) return;
+    try { if (await syncDevices()) publishDevices(); } catch (e) { /* yoklama yeniden dener */ }
+}
+const devSocket = { backoff: 2000, ping: null };
+function connectDeviceSocket() {
+    if (typeof POPS_API === 'undefined' || typeof WebSocket === 'undefined') return;
+    let ws;
+    try { ws = new WebSocket(POPS_API.wsUrl('/ws/panel?topics=devices')); } catch (e) { retryDeviceSocket(); return; }
+    ws.onopen = () => {
+        devList.socketOpen = true;
+        devSocket.backoff = 2000;
+        // Boştaki bağlantıyı ters vekil (ör. Apache, 60 sn) kapatmasın
+        devSocket.ping = setInterval(() => { try { ws.send('{"type":"ping"}'); } catch (e) { /* kapanıyor */ } }, 45000);
+        refreshDevicesNow();   // soket kapalıyken kaçan değişiklikler
+    };
+    ws.onmessage = (ev) => {
+        let m = null;
+        try { m = JSON.parse(ev.data); } catch (e) { return; }
+        if (m && m.type === 'devices_changed' && !(typeof m.version === 'number' && devList.version != null && m.version <= devList.version)) refreshDevicesNow();
+    };
+    ws.onclose = (ev) => {
+        const wasOpen = devList.socketOpen;
+        devList.socketOpen = false;
+        clearInterval(devSocket.ping);
+        // Yoklama hemen 5 sn düzenine döner (oturum bittiyse 401 giriş sayfasına götürür)
+        if (wasOpen && devicesPoller) devicesPoller.now();
+        if (ev.code !== 4001) retryDeviceSocket();
+    };
+}
+function retryDeviceSocket() {
+    setTimeout(connectDeviceSocket, devSocket.backoff);
+    devSocket.backoff = Math.min(60000, devSocket.backoff * 2);
+}
 let devicesPoller = null;
 POps.watchDevices = function (opts) {
     const o = opts || {};
     if (o.inventory) state.withInventory = true;
     if (!devicesPoller) {
         loadDevices().catch(() => {});
-        devicesPoller = window.popsPoll(loadDevices, o.interval || 5000);
+        devicesPoller = window.popsPoll(loadDevices, () => (devList.socketOpen ? DEV_POLL_SOCKET_MS : (o.interval || DEV_POLL_MS)));
+        connectDeviceSocket();
     }
     return devicesPoller;
 };

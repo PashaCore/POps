@@ -16,7 +16,7 @@ from pops.db import execute_query
 from pops.models import EndAuditSessionInput, LockdownInput, RemoteInputData, StartAuditSessionInput, StreamStopInput
 from pops.security import require_admin, require_admin_session, require_superadmin, verify_jwt, verify_session
 from pops.agent_auth import verify_agent_secret
-from pops import auditchain, bypass, metrics, modules, vision
+from pops import auditchain, bypass, devicelist, metrics, modules, vision
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 from pops.notify import notify
@@ -161,6 +161,7 @@ async def lockdown_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
         "WHERE pc_name = $1",
         (data.target_pc, (data.reason or "")[:300]),
     )
+    await devicelist.sync([data.target_pc])
     online = data.target_pc in manager.active_agents
     await manager.send_command({"action": "lockdown", "reason": data.reason}, data.target_pc)
     await notify("lockdown", "high", "Cihaz karantinaya alındı (%s)" % admin_name, data.reason or "", data.target_pc)
@@ -198,6 +199,7 @@ async def unlock_pc(data: LockdownInput, auth: dict = Depends(require_admin)):
         "pending_quarantine_reason = NULL WHERE pc_name = $1",
         (data.target_pc,),
     )
+    await devicelist.sync([data.target_pc])
     online = data.target_pc in manager.active_agents
     await manager.send_command({"action": "unlock"}, data.target_pc)
 
@@ -284,7 +286,9 @@ async def websocket_panel(websocket: WebSocket):
         return
     username = session.get("sub")
     role = session.get("role")  # DB'den (iptal/rol-düşürme anında geçerli)
-    await manager.connect_panel(websocket, username, role)
+    # ?topics=devices: soket yalnızca o konunun mesajlarını alır (panelin cihaz listesi soketi; bkz. pops/manager.py)
+    topics = [t.strip() for t in (websocket.query_params.get("topics") or "").split(",") if t.strip()][:8]
+    await manager.connect_panel(websocket, username, role, topics or None)
     last_reverify = time.time()
     target_labs = {}   # cihaz -> (laboratuvar, okunma anı): modül denetimi için
 

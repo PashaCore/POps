@@ -5,10 +5,10 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from pops.config import LOG_TABLE, USE_V2_SCHEMA
-from pops import agent_health, db, exams, modules
+from pops import db, devicelist, exams, metrics, modules
 from pops.db import execute_query
 from pops.models import (
     AutoEnrollInput,
@@ -51,6 +51,7 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
         return {"status": "error", "message": "Cihaz silinemedi; hiçbir kayıt değiştirilmedi. Sunucu günlüğüne bakın."}
     manager.pending_updates.pop(pc_name, None)
     manager.update_stages.pop(pc_name, None)
+    await devicelist.sync([pc_name])
     await add_audit_log(pc_name, "device_deleted", "Cihaz silindi: %s" % auth.get("sub"), {"admin": auth.get("sub")})
     # Cihaz çevrimiçiyse çalışan komutu durdurması istenir, sonra bağlantı kapatılır
     agent_ws = manager.active_agents.get(pc_name)
@@ -129,62 +130,39 @@ async def wake_all(auth: dict = Depends(require_admin)):
     return {"status": "success", "woken_pcs": count}
 
 
-@router.get("/api/devices")
-async def get_devices(auth: dict = Depends(require_auth)):
-    query = """
-    SELECT
-        c.pc_name, c.hostname, c.display_name, c.lab_name, c.last_seen, c.status, c.active_window,
-        c.boot_count, c.logged_user, c.ip_address, c.cap_ram_readable, c.is_quarantined,
-        c.cap_terminal_enabled, c.cap_vision_enabled, c.cap_server_ca, c.cap_files_enabled,
-        c.cap_terminal_disable_requested, c.cap_vision_disable_requested, c.running_version,
-        c.agent_health, c.last_disconnect_at, c.last_disconnect_reason, c.platform,
-        bk.pc_name AS bypass_key_issued, bk.confirmed_at AS bypass_key_confirmed,
-        av.version AS agent_version, av.features AS agent_features
-    FROM clients c
-    LEFT JOIN agent_versions av ON c.pc_name = av.pc_name
-    LEFT JOIN agent_bypass_keys bk ON c.pc_name = bk.pc_name
-    """
-    rows = await execute_query(query, fetch=True)
-    return [
-        {
-            "hostname": r["pc_name"],
-            "real_hostname": r["hostname"] or r["pc_name"],
-            "display_name": r["display_name"],
-            "pc_name": r["hostname"] or r["pc_name"],
-            "hw_id": r["pc_name"],
-            "ip": r["ip_address"],
-            "lab": r["lab_name"],
-            "status": r["status"],
-            "last_seen": r["last_seen"],
-            "active_window": r["active_window"],
-            "boot_count": r["boot_count"],
-            "current_user": r.get("logged_user", "-"),
-            "is_quarantined": r.get("is_quarantined", False),
-            "agent_version": r.get("agent_version") or "Bilinmiyor",
-            # Ajanın bağlanırken duyurduğu özellikler (X-Agent-Features, ör. "winget"); eski ajanda boş
-            "agent_features": list(r.get("agent_features") or []),
-            "running_version": r.get("running_version"),
-            # İşletim sistemi ailesi (migration 0026): bildirmeyen (Windows) ajan "windows"
-            "platform": r.get("platform") or "windows",
-            "cap_terminal_enabled": r.get("cap_terminal_enabled"),
-            "cap_vision_enabled": r.get("cap_vision_enabled"),
-            "cap_server_ca": r.get("cap_server_ca"),
-            # Dosya aktarımı: True açık, False bilgisayarda kapalı, None ajan desteklemiyor (bkz. routers/files.py)
-            "cap_files_enabled": r.get("cap_files_enabled"),
-            "cap_terminal_disable_requested": r.get("cap_terminal_disable_requested", False),
-            "cap_vision_disable_requested": r.get("cap_vision_disable_requested", False),
-            # Ajanın son heartbeat'teki sağlık özeti (0.1.12+; bkz. pops/agent_health.py)
-            "agent_health": agent_health.parse(r.get("agent_health")),
-            # Son kopuş: ne zaman, neden (WebSocket kapanış kodu)
-            "last_disconnect_at": r["last_disconnect_at"].isoformat() if r.get("last_disconnect_at") else None,
-            "last_disconnect_reason": r.get("last_disconnect_reason"),
-            # Çevrimdışı bypass: device = cihaza özel anahtar onaylı, pending = gönderildi/onay bekliyor, None = eski
-            "bypass_key": (
-                "device" if r.get("bypass_key_confirmed") else "pending" if r.get("bypass_key_issued") else None
-            ),
-        }
-        for r in (rows or [])
-    ]
+# Önbellek: tarayıcı saklayabilir ama her seferinde sunucuya sorar (ETag ile 304); paylaşılan önbellek saklamaz
+_DEVICES_CACHE = "private, no-cache"
+
+
+@router.get(
+    "/api/devices",
+    responses={304: {"description": "Not Modified: If-None-Match matches the current device list version (ETag)"}},
+)
+async def get_devices(
+    request: Request, response: Response, since: Optional[int] = None, auth: dict = Depends(require_auth)
+):
+    """Cihaz listesi. Parametresiz: bütün cihazlar (dizi; biçim değişmez). Yanıtta zayıf ETag (W/"d<sürüm>") vardır;
+    If-None-Match tutarsa 304. ?since=<sürüm>: {"version", "full": false, "changed", "removed", "seen"} ya da günlük
+    yetmezse {"version", "full": true, "devices"} (bkz. pops/devicelist.py, docs/api.md)."""
+    # Sürüm, veritabanı okunmadan ÖNCE alınır: dönen içerik en az bu sürüm kadar yenidir
+    version = devicelist.S.version if devicelist.S.ready else None
+    tag = devicelist.etag()
+    if tag and devicelist.etag_matches(request.headers.get("if-none-match"), tag):
+        metrics.count("device_list_304")
+        return Response(status_code=304, headers={"ETag": tag, "Cache-Control": _DEVICES_CACHE})
+    response.headers["Cache-Control"] = _DEVICES_CACHE
+    if tag:
+        response.headers["ETag"] = tag
+    if since is not None:
+        changes = devicelist.delta(since)
+        if changes is not None:
+            metrics.count("device_list_delta")
+            return changes
+    metrics.count("device_list_full")
+    rows = await devicelist.fetch_rows()
+    if since is None:
+        return rows
+    return {"version": version, "full": True, "devices": rows}
 
 
 def _iso(v):
@@ -310,12 +288,14 @@ async def rename_lab(data: RenameLabInput, auth: dict = Depends(require_admin)):
                 data.new_name,
                 data.old_name,
             )
+    await devicelist.sync()
     return {"status": "success"}
 
 
 @router.post("/api/rename_device", deprecated=True)
 async def rename_device(data: RenameDeviceInput, auth: dict = Depends(require_admin)):
     await execute_query("UPDATE clients SET display_name = $1 WHERE pc_name = $2", (data.display_name, data.pc_name))
+    await devicelist.sync([data.pc_name])
     return {"status": "success"}
 
 
@@ -328,6 +308,7 @@ async def delete_lab(data: DeleteLabInput, auth: dict = Depends(require_admin)):
             await conn.execute("DELETE FROM lab_settings WHERE lab_name = $1", data.lab_name)
     # Süren sınav biter; bilgisayarları (artık atanmamış) enabled:false alır
     await exams.end(data.lab_name, auth.get("sub"), "lab_deleted")
+    await devicelist.sync()
     return {"status": "success"}
 
 
@@ -335,6 +316,7 @@ async def delete_lab(data: DeleteLabInput, auth: dict = Depends(require_admin)):
 async def move_pc(data: MovePcInput, auth: dict = Depends(require_admin)):
     await execute_query("UPDATE clients SET lab_name = $1 WHERE pc_name = $2", (data.new_lab, data.pc_name))
     await exams.sync_pcs([data.pc_name], data.new_lab)
+    await devicelist.sync([data.pc_name])
     return {"status": "success"}
 
 
@@ -344,6 +326,7 @@ async def move_pcs(data: MovePcsInput, auth: dict = Depends(require_admin)):
         await execute_query("UPDATE clients SET lab_name = $1 WHERE pc_name = $2", (data.new_lab, pc))
     # Sınav sürerken sınıfa taşınan bağlı bilgisayar sınavı hemen alır; sınavdaki sınıftan çıkan enabled:false alır
     await exams.sync_pcs(data.pc_names, data.new_lab)
+    await devicelist.sync(data.pc_names)
     return {"status": "success"}
 
 

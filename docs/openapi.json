@@ -3300,7 +3300,26 @@
     },
     "/api/v1/devices": {
       "get": {
+        "description": "Cihaz listesi. Parametresiz: bütün cihazlar (dizi; biçim değişmez). Yanıtta zayıf ETag (W/\"d<sürüm>\") vardır;\nIf-None-Match tutarsa 304. ?since=<sürüm>: {\"version\", \"full\": false, \"changed\", \"removed\", \"seen\"} ya da günlük\nyetmezse {\"version\", \"full\": true, \"devices\"} (bkz. pops/devicelist.py, docs/api.md).",
         "operationId": "get_devices_api_devices_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3309,6 +3328,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not Modified: If-None-Match matches the current device list version (ETag)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [

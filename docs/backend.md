@@ -16,6 +16,7 @@ database pool, migrations and the scheduler loop) and wires the routers. Everyth
 | `pops/audit.py` | `agent_logs_v2` event log and the agent-unwritable, hash-chained `device_audit_logs`. |
 | `pops/manager.py` | WebSocket connection manager (agents, panels, vision) and time-limited remote-control session grants. |
 | `pops/models.py` | Pydantic request models. |
+| `pops/devicelist.py` | The device list version behind `GET /api/devices` (ETag, `?since=` changes) and the `devices_changed` push to panel sockets; see [Device list version](#device-list-version). |
 | `pops/taskqueue.py`, `pops/dna.py`, `pops/wol.py` | Task queue dispatch and target resolution, hardware-DNA identity reconciliation, Wake-on-LAN. |
 | `pops/notify.py` | Notifications: the `notifications` table behind the panel's **Bildirimler**, optional e-mail (SMTP from `.env`) and webhook delivery in the background, dedupe and send cap. The webhook target is resolved and must be a public address (unless `NOTIFY_WEBHOOK_ALLOW_PRIVATE`); the connection is pinned to the checked address and redirects are not followed. |
 | `pops/exams.py` | Exam mode: one running exam per lab (`exam_sessions`), allow-list and program-list validation, delivery of `exam_mode` on start, (re)connect and PC moves, `enabled: false` on end, the agents' `exam_state` reports (left-early notification) and per-PC state. |
@@ -68,13 +69,47 @@ The endpoint list is in [`api.md`](api.md) and the schema in [`database.md`](dat
 `Backend/tests/` holds integration tests that run against a live backend and an empty PostgreSQL database. CI's
 `security` job runs them in this order: `test_security.py`, `test_2fa.py`, `test_agent_authz.py`,
 `test_remote_authz.py`, `test_vision_v2.py`, `test_f4_accountability.py`, `test_features.py`, `test_helpdesk_licenses.py`,
-`test_ops.py`, `test_api_tokens.py`, `test_exam.py`.
+`test_ops.py`, `test_api_tokens.py`, `test_exam.py`, `test_devices_delta.py`.
 `test_units.py` and `test_protocol.py` (the agent protocol in [`protocol/`](protocol/README.md); it needs
 `pip install jsonschema==4.26.0`, which is not a runtime dependency) need no server. `Backend/tests/run_local.sh`
 does the same locally: it applies the migrations, starts a temporary backend on `127.0.0.1:8099` and runs the
 scripts (`COVERAGE=1` adds a coverage report). What is and is not covered: [`testing.md`](testing.md). Export
 `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME` (an empty test database) and `JWT_SECRET` first; never point it
 at a production database.
+
+## Device list version
+
+The panel used to fetch the whole device list every 5 seconds per open tab (1.39 MB for 2,040 devices). Now the
+server keeps a version of the list and the panel fetches only changes (`Backend/pops/devicelist.py`; the HTTP side
+is in [`api.md`](api.md#device-list-etag-changes-and-push), measurements in
+[`BENCHMARKS.md`](../BENCHMARKS.md)).
+
+- **Snapshot and version.** At startup the server reads every row of the list once and keeps it in memory with a
+  version number, which starts at the start time in milliseconds. One round at a time (at most one per second, under
+  a lock) re-reads rows from the database and compares them with the snapshot, ignoring `last_seen`. If a row
+  differs, appeared or disappeared, the version grows by one for that round. Nothing else bumps it.
+- **Who marks rows.** Code that writes a device row marks it: hot paths (`heartbeats.flush`, an agent connecting,
+  disconnecting, reporting capabilities, quarantine state, update results, user login and logout) call
+  `devicelist.touch(pcs)`, and the next round reads those rows in one query; panel actions (rename, move, lab rename
+  or delete, device delete, quarantine, capability policy) call `await devicelist.sync(pcs)`, which re-reads the
+  rows before the response is sent, so the panel's next `?since=` already sees the change. The heartbeat flush marks
+  only devices whose status, foreground app, address, name or health summary differ from the snapshot, so a
+  heartbeat that only moves `last_seen` costs no query.
+- **Minute scan.** Every 60 seconds the whole list is read and compared. It catches writes that nobody marked (new
+  code that forgot to, SQL by hand) and publishes `last_seen`: rows whose only change is `last_seen` get the new
+  version as a `seen` entry. The scan reads about 2,000 rows once a minute.
+- **Change log.** For each device the log keeps only its latest change (version, time, deleted or not), in version
+  order, bounded to 5,000 devices and 10 minutes. An entry that falls out raises the log's floor; a `since` below
+  the floor gets the whole list (`full: true`). `seen` uses a per-device version instead, so it needs no bound.
+- **Push.** After a round that changed the version, the loop sends `{"type": "devices_changed", "version": n}`
+  through `manager.broadcast_to_panels`; rounds are at least a second apart, so this goes out at most once a second.
+  Only panel sockets opened with `?topics=devices` get it, and they get nothing else (`manager.PANEL_TOPICS`);
+  sockets without `topics` keep receiving exactly the messages they did before.
+- **Limits.** The version, snapshot and log are in the one uvicorn process (like the rest of the connection state;
+  see [`decisions.md`](decisions.md)). A failed round is logged (`cihaz listesi turu başarısız`) and its rows are
+  read again in the next round.
+- **Metrics:** `pops_events_total{event="device_list_versions"}` counts new versions;
+  `device_list_304`, `device_list_delta` and `device_list_full` count `/api/devices` answers by kind.
 
 ## Logs, metrics and diagnostics
 
