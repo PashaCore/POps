@@ -3,7 +3,7 @@
 `tools/sign_release.py`'nin ürettiği `manifest.json` + `manifest.json.sig` çiftini
 depodaki açık anahtarla (`keys/pops_release_ed25519.pub.pem`) doğrular ve manifest'teki
 SHA-256 özetlerini yerel dosyalarla karşılaştırır. openssl ile üretilen imzalarla
-da uyumludur (aynı ham ed25519). Python 3.9 uyumlu.
+da uyumludur (aynı ham ed25519).
 
 NOT: Bu, uygulama seviyesindeki (upload-release) doğrulamadır ve açık anahtarı
 uygulamanın okuyabildiği yerden okur. Root ile çalışan sunucu-kendini-güncelleme

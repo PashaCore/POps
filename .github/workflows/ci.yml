@@ -83,31 +83,38 @@ jobs:
           if-no-files-found: ignore
 
   backend:
-    name: Backend (Python 3.9)
+    name: Backend (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12 hedef (EL9'un python3.12 paketi, Ubuntu 24.04, Docker imajı); 3.10 en düşük desteklenen sürüm
+        # (Ubuntu 22.04). İkisinde de import + birim testleri; lint yalnızca hedefte. Bkz. docs/decisions.md D-20.
+        python: [ '3.12', '3.10' ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
-        # Sunucu hedefi AlmaLinux/RHEL 9'un Python 3.9'u
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: '3.9'
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: Backend/requirements.txt
       - name: Install dependencies
         run: pip install -r Backend/requirements.txt flake8
       - name: Lint with flake8
         # Tam kapı: repo kökündeki .flake8 (max-line-length 120). Backend ve araçlar (tools/, README çizimleri) temiz tutulur; yeni uyarı CI'ı kırar.
+        if: matrix.python == '3.12'
         run: flake8 Backend/ tools/ assets/readme/ --count --show-source --statistics
       - name: Import smoke test
-        # Modül yüklenirken zorunlu ortam değişkenleri okunur; veritabanına bağlanılmaz
+        # Modül yüklenirken zorunlu ortam değişkenleri okunur; veritabanına bağlanılmaz. (FastAPI dahil edilen
+        # router'ları artık iç içe tutar; app.routes uç sayısını vermez.)
         working-directory: Backend
         env:
           JWT_SECRET: ci-only
           DB_USER: ci
           DB_PASS: ci
           DB_NAME: ci
-        run: python -c "import server, setup_env; print('ok', len(server.app.routes), 'routes')"
+        run: python -c "import server, setup_env; print('ok')"
       - name: Unit tests (no server)
         run: python Backend/tests/test_units.py
 
@@ -200,7 +207,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.9"
+          python-version: "3.12"
       - name: Install migrate.py deps
         run: pip install asyncpg python-dotenv
       - name: Fresh migrate + schema check + idempotency
@@ -245,7 +252,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.9"
+          python-version: "3.12"
       - name: Install deps
         run: |
           pip install -r Backend/requirements.txt
@@ -353,8 +360,9 @@ jobs:
   server-scripts:
     name: Server scripts
     # Installer/server betikleri: shellcheck + pops-deploy-backend / pops-selfupdate davranış testleri (geçici
-    # dizinlerde, systemctl/curl/sudo/journalctl/pip taklitleriyle, root olmadan): normal deploy, sağlık kontrolü /
-    # pip / kopyalama hatasında kod ve venv'in birebir geri dönüşü, ayar dosyası, imzalı sürüm etiketleri, DRYRUN.
+    # dizinlerde, systemctl/curl/sudo/journalctl/pip/python taklitleriyle, root olmadan): normal deploy, sağlık
+    # kontrolü / pip / kopyalama hatasında kod ve venv'in birebir geri dönüşü, venv'in Python'u eskiyse yeni venv
+    # (yorumlayıcı yoksa erken hata), ayar dosyası, imzalı sürüm etiketleri, DRYRUN.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -378,7 +386,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install cryptography
         run: pip install 'cryptography==43.0.3'
       - name: sign_release selftest
@@ -418,7 +426,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.9"
+          python-version: "3.12"
       - name: Install backend deps
         # coverage yalnızca CI'da (canlı sunucunun venv'ine girmez)
         run: pip install -r Backend/requirements.txt coverage==7.10.7

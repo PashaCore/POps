@@ -1,4 +1,4 @@
-"""PostgreSQL bağlantı havuzu ve execute_query. db_pool açılışta (server.startup_event) atanır;
+"""PostgreSQL bağlantı havuzu ve execute_query. db_pool açılışta (server.startup_event, lifespan) atanır;
 diğer modüller havuza 'db.db_pool' ile ERİŞİR (import anında None'a bağlanmasın diye).
 
 Havuzdan bağlantı her zaman acquire() ile alınır: havuz dolu ve veritabanı yanıtsızken DB_ACQUIRE_TIMEOUT saniye
