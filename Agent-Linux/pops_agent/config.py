@@ -34,7 +34,10 @@ ENROLL_TOKEN=
 
 class AgentConfig:
     def __init__(self, server_url: str = "", enroll_token: Optional[str] = None, ca_file: Optional[str] = None):
-        self.server_url = (server_url or "").strip().rstrip("/")
+        url = (server_url or "").strip().rstrip("/")
+        scheme, sep, rest = url.partition("://")
+        # "HTTPS://" de geçerli bir adres: şema küçük harfe çevrilir (TLS ve kurum sertifikası kararı şemaya bakar)
+        self.server_url = scheme.lower() + sep + rest if sep else url
         self.enroll_token = enroll_token or None
         self.ca_file = ca_file or None
 

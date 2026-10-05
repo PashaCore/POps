@@ -69,6 +69,7 @@ def test_enroll_command_ack_and_refusals(tmp_path):
                     if msg.get("type") == "result" and msg.get("task_id") == 41:
                         await ws.send(json.dumps({"action": "result_ack", "task_id": 41}))
                         await ws.send(json.dumps({"action": "lockdown", "reason": "test"}))
+                        await ws.send(json.dumps({"action": "lockdown", "reason": "ikinci kez"}))
                         await ws.send(json.dumps({"action": "set_capabilities", "terminal_enabled": False}))
                         await ws.send(json.dumps({"action": "execute", "task_id": 42, "script_path": "id"}))
             except Exception:
@@ -80,6 +81,7 @@ def test_enroll_command_ack_and_refusals(tmp_path):
         try:
             result = await next_message(queue, "result")
             denied_q = await next_message(queue, "capability_denied")
+            denied_q2 = await next_message(queue, "capability_denied")   # tek seferlik emir: her seferinde yanıt
             caps = None
             while caps is None or caps.get("terminal_enabled") is not False:
                 caps = await next_message(queue, "capabilities")
@@ -91,9 +93,9 @@ def test_enroll_command_ack_and_refusals(tmp_path):
             agent.stopping.set()
             await asyncio.wait_for(runner, 30)
             server.close()
-        return seen, result, denied_q, refused, denied_t, spool_left, p
+        return seen, result, denied_q, denied_q2, refused, denied_t, spool_left, p
 
-    seen, result, denied_q, refused, denied_t, spool_left, p = asyncio.run(scenario())
+    seen, result, denied_q, denied_q2, refused, denied_t, spool_left, p = asyncio.run(scenario())
     h = {k.lower(): v for k, v in seen["headers"].items()}
     assert h["x-agent-version"] == "0.1.22-alpha" and h["x-agent-platform"] == "linux"
     assert h["x-enroll-token"] == "abcdefghijklmnop" and "x-agent-secret" not in h
@@ -112,7 +114,7 @@ def test_enroll_command_ack_and_refusals(tmp_path):
     # 41 onaylandı ve diskten silindi; onaylanmayan 42 (ret sonucu) onay gelene kadar diskte kalır
     assert [e["task_id"] for e in spool_left] == [42]
     assert denied_q == {"type": "capability_denied", "capability": "quarantine", "action": "lockdown",
-                        "reason": "not_supported"}
+                        "reason": "not_supported"} == denied_q2
     assert refused["task_id"] == 42 and refused["exit_code"] == -5 and refused["output"].startswith("[REDDEDİLDİ]")
     assert denied_t["capability"] == "terminal" and denied_t["task_id"] == 42
     events = [json.loads(line)["event"] for line in open(p.audit_log)]

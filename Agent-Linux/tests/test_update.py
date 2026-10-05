@@ -79,7 +79,10 @@ def test_valid_update_launches_transient_unit(tmp_path, signer):
     runs = Runs()
     http = FakeHttp()
     m, p, audits = manager(tmp_path, http, runs)
-    package = m.handle(command(signer))
+    stages = []
+    package = m.handle(command(signer), lambda stage, **f: stages.append((stage, f.get("to_version"))))
+    assert stages == [("received", None), ("downloaded", "0.1.22-alpha"), ("verified", "0.1.22-alpha"),
+                      ("updater_started", "0.1.22-alpha")]
     assert package == os.path.join(p.packages_dir, "pops-agent_0.1.22-alpha_all.deb")
     assert open(package, "rb").read() == DEB and http.paths == ["/updates/pops-agent_0.1.22-alpha_all.deb"]
     args = runs.calls[-1]
@@ -89,7 +92,9 @@ def test_valid_update_launches_transient_unit(tmp_path, signer):
     assert os.path.isfile(os.path.join(p.updater_dir, "pops-agent-updater.py"))
     lock = json.load(open(p.update_lock))
     assert lock["to_version"] == "0.1.22-alpha" and audits[-1][0] == "update_started"
-    assert m.lock_fresh() and m.handle(command(signer)) is None   # ikinci emir kilit varken yok sayılır
+    busy = []
+    assert m.lock_fresh() and m.handle(command(signer), lambda s, **f: busy.append(s)) is None   # kilit varken
+    assert busy == ["ignored_busy"]
 
 
 @pytest.mark.parametrize("case,reason", [
@@ -133,8 +138,11 @@ def test_update_rejections(tmp_path, signer, case, reason):
     runs = Runs()
     m, p, audits = manager(tmp_path, http, runs)
     m.systemd_available = lambda: sysd
-    assert m.handle(cmd) is None
+    stages = []
+    assert m.handle(cmd, lambda stage, **f: stages.append((stage, f))) is None
     assert audits and audits[-1][0] == "update_rejected" and reason in audits[-1][1]["reason"]
+    # sunucu reddi update_progress "rejected" olarak alır ve gönderimi kapatır (panel beklemede kalmaz)
+    assert stages[0][0] == "received" and stages[-1][0] == "rejected" and reason in stages[-1][1]["detail"]
     assert not any(c[0] == "systemd-run" for c in runs.calls)
     assert not os.path.exists(os.path.join(p.packages_dir, "pops-agent_0.1.22-alpha_all.deb"))
     assert not os.path.exists(p.update_lock)
@@ -156,6 +164,15 @@ def test_update_result_message_and_ack(tmp_path):
     assert [a[0] for a in audits].count("update_result") == 1   # yerel denetim bir kez
     m.mark_reported()
     assert not os.path.exists(p.update_result) and os.path.exists(p.update_result_reported)
+
+
+def test_repack_control_drops_database_fields():
+    status = ("Package: pops-agent\nStatus: install ok installed\nPriority: optional\nVersion: 0.1.21~alpha\n"
+              "Conffiles:\n /etc/pops-agent/capabilities.conf 0123abcd\nDescription: POps agent\n second line\n")
+    out = update.control_for_repack(status)
+    assert "Status" not in out and "Conffiles" not in out and "capabilities.conf" not in out
+    assert out == ("Package: pops-agent\nPriority: optional\nVersion: 0.1.21~alpha\nDescription: POps agent\n"
+                   " second line\n")
 
 
 def test_rollback_drill_decision():

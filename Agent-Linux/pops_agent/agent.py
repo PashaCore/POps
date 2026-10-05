@@ -422,12 +422,14 @@ class Agent:
             self.update_results.sent(rid)
             log.info("Güncelleme sonucu sunucuya iletildi, onay bekleniyor: %s (%s).", message.get("status"), rid)
 
-    async def deny(self, capability: str, action: str, task_id: Optional[int] = None, reason: Optional[str] = None):
-        """Kapalı ya da bu sürümde olmayan yetenek: loglanır ve capability_denied bildirilir. Görevsiz istekler aynı
-        yetenek/eylem/neden için en çok dakikada bir bildirilir (ör. uzaktan fare hareketi)."""
+    async def deny(self, capability: str, action: str, task_id: Optional[int] = None, reason: Optional[str] = None,
+                   throttle: bool = False):
+        """Kapalı ya da bu sürümde olmayan yetenek: loglanır ve capability_denied bildirilir. Sık gelen istekler
+        (throttle: panelin önizleme ve uzaktan girdi iletileri) aynı yetenek/eylem/neden için en çok dakikada bir
+        bildirilir; tek seferlik emirler (karantina, Vision oturumu) her seferinde yanıtlanır ki sunucu reddi görsün."""
         key = "%s/%s/%s" % (capability, action, reason)
         now = time.monotonic()
-        if task_id is None and now - self._denials.get(key, -1e9) < 60:
+        if throttle and task_id is None and now - self._denials.get(key, -1e9) < 60:
             return
         self._denials[key] = now
         if reason == NOT_SUPPORTED:
@@ -451,7 +453,8 @@ class Agent:
     async def handle(self, msg: Dict) -> None:
         if msg.get("type") == "remote_input":
             if msg.get("device") in (None, self.hw_id):
-                await self.deny("vision", str(msg.get("action") or "remote_input")[:40], reason=NOT_SUPPORTED)
+                await self.deny("vision", str(msg.get("action") or "remote_input")[:40], reason=NOT_SUPPORTED,
+                                throttle=True)
             return
         action = msg.get("action")
         if not isinstance(action, str):
@@ -615,7 +618,20 @@ class Agent:
         await self.send({"type": "bypass_secret_ack", "fingerprint": fingerprint})
 
     async def on_update_agent(self, msg: Dict) -> None:
-        self._spawn(asyncio.to_thread(self.update.handle, dict(msg)))
+        loop = asyncio.get_running_loop()
+
+        def progress(stage: str, to_version: Optional[str] = None, detail: Optional[str] = None) -> None:
+            """update_progress yalnızca bunu duyuran sunucuya (server_info features); kurulum iş parçacığından."""
+            if self.handshake.supports("update_progress") is not True:
+                return
+            message = {"type": "update_progress", "stage": stage}
+            if to_version:
+                message["to_version"] = to_version
+            if detail:
+                message["detail"] = detail
+            asyncio.run_coroutine_threadsafe(self.send(message), loop)
+
+        self._spawn(asyncio.to_thread(self.update.handle, dict(msg), progress))
 
     async def on_wake_peer(self, msg: Dict) -> None:
         if not self.module_enabled("wol"):

@@ -64,6 +64,8 @@ class HttpClient:
     def _conn(self, timeout: Optional[float] = None):
         t = timeout or self.timeout
         if self.scheme == "https":
+            if self.ctx is None:   # sistem deposuna sessizce düşülmez (kurum sertifikası atlanırdı)
+                raise TrustError("https için TLS bağlamı yok")
             return http.client.HTTPSConnection(self.host, self.port, timeout=t, context=self.ctx)
         return http.client.HTTPConnection(self.host, self.port, timeout=t)
 

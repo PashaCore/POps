@@ -62,34 +62,45 @@ class UpdateManager:
         self._audited_result = None
 
     # ── update_agent ──
-    def handle(self, command: dict) -> Optional[str]:
-        """Dönen: başlatılan kurucunun paket yolu; reddedilirse None (neden loglanır ve denetime yazılır)."""
+    def handle(self, command: dict, progress: Optional[Callable] = None) -> Optional[str]:
+        """Dönen: başlatılan kurucunun paket yolu; reddedilirse None (neden loglanır ve denetime yazılır).
+        progress(stage, to_version=None, detail=None): sunucuya update_progress adımı (Windows ajanıyla aynı adlar:
+        received, downloaded, verified, updater_started, rejected, ignored_busy)."""
+        step = progress or (lambda *a, **k: None)
         if not self._busy.acquire(blocking=False):
             log.info("Güncelleme zaten hazırlanıyor; yeni emir yok sayıldı.")
+            step("ignored_busy")
             return None
         package = None
         launched = False
+        to_version = None
         try:
             if self.lock_fresh():
                 log.info("Başka bir güncelleme sürüyor (update.lock); emir yok sayıldı.")
+                step("ignored_busy")
                 return None
+            step("received")
             manifest, deb = self.verify_command(command)
+            to_version = manifest.version
             if not self.systemd_available():
                 raise UpdateRejected("systemd yok: kurulum geçici bir systemd biriminde yapılır")
             log.warning("[GÜVENLİK] İmzalı manifest doğrulandı: %s -> %s (%s, %s).", self.installed_version,
                         manifest.version, deb.name, manifest.tag)
             store.ensure_dir(self.paths.packages_dir, 0o700)
             package = os.path.join(self.paths.packages_dir, deb.name)
-            self.download_verified(deb, package)
+            self.download_verified(deb, package, lambda: step("downloaded", to_version=to_version))
+            step("verified", to_version=to_version)
             rollback = self.rollback_package()
             launched = self.launch(package, deb.sha256, manifest.version, rollback)
             if launched:
                 self.audit("update_started", from_version=self.installed_version, to_version=manifest.version,
                            package=deb.name, rollback_package=os.path.basename(rollback) if rollback else None)
+                step("updater_started", to_version=to_version)
             return package if launched else None
         except UpdateRejected as exc:
             log.error("[GÜVENLİK] Güncelleme reddedildi: %s.", exc)
             self.audit("update_rejected", reason=str(exc)[:300])
+            step("rejected", to_version=to_version, detail=str(exc)[:300])
             return None
         except Exception as exc:   # noqa: BLE001 - beklenmeyen hata emri düşürür, ajanı değil
             log.exception("Güncelleme hazırlanamadı: %s", exc)
@@ -119,7 +130,7 @@ class UpdateManager:
             raise UpdateRejected(str(exc))
         return manifest, deb
 
-    def download_verified(self, deb, path: str) -> None:
+    def download_verified(self, deb, path: str, downloaded: Optional[Callable] = None) -> None:
         partial = path + ".partial"
         store.delete(partial)
         digest = hashlib.sha256()
@@ -138,6 +149,8 @@ class UpdateManager:
         if status != 200:
             store.delete(partial)
             raise UpdateRejected("paket indirilemedi: HTTP %s" % status)
+        if downloaded:
+            downloaded()
         actual = digest.hexdigest()
         if total != deb.size or not hmac.compare_digest(actual, deb.sha256):
             store.delete(partial)
@@ -183,10 +196,9 @@ class UpdateManager:
         try:
             debian = os.path.join(tmp, "DEBIAN")
             os.makedirs(debian, 0o755)
-            lines = [line for line in control.splitlines() if not line.startswith("Status:")]
             with open(os.path.join(debian, "control"), "w", encoding="utf-8") as f:
-                f.write("\n".join(lines).strip() + "\n")
-            for name in ("preinst", "postinst", "prerm", "postrm", "conffiles"):
+                f.write(control_for_repack(control))
+            for name in ("preinst", "postinst", "prerm", "postrm", "conffiles", "md5sums"):
                 src = "/var/lib/dpkg/info/pops-agent.%s" % name
                 if os.path.isfile(src):
                     shutil.copy2(src, os.path.join(debian, name))
@@ -196,7 +208,11 @@ class UpdateManager:
                 dest = os.path.join(tmp, path.lstrip("/"))
                 os.makedirs(os.path.dirname(dest), 0o755, exist_ok=True)
                 shutil.copy2(path, dest, follow_symlinks=False)
-            self._q("dpkg-deb", "--root-owner-group", "--build", tmp, out_path)
+            # Yarım kalan paket asıl adla kalmasın: önce geçici ada, sonra rename
+            partial = out_path + ".partial"
+            store.delete(partial)
+            self._q("dpkg-deb", "--root-owner-group", "--build", tmp, partial)
+            os.replace(partial, out_path)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         log.info("Geri dönüş paketi kurulu sürümden üretildi: %s", out_path)
@@ -297,6 +313,23 @@ class UpdateManager:
                                                  "pid": os.getpid(), "phase": "operational", "checks": checks})
         except OSError as exc:
             log.error("health.json yazılamadı: %s", exc)
+
+
+# dpkg-query -s'nin yalnızca kurulu paket veritabanına ait alanları (dpkg-repack gibi atılır; devam satırlarıyla)
+_STATUS_FIELDS = ("Status", "Conffiles", "Config-Version")
+
+
+def control_for_repack(status_text: str) -> str:
+    out, skip = [], False
+    for line in status_text.splitlines():
+        if line[:1] in (" ", "\t"):
+            if not skip:
+                out.append(line)
+            continue
+        skip = line.split(":", 1)[0] in _STATUS_FIELDS
+        if not skip and line.strip():
+            out.append(line)
+    return "\n".join(out).strip() + "\n"
 
 
 def decide_drill(marker: bool, consumed: Optional[dict], run: Optional[dict], own_version: str) -> Dict[str, bool]:

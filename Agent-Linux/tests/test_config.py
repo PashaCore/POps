@@ -22,6 +22,19 @@ def test_parse_config(tmp_path):
     assert config.load(str(tmp_path / "yok")).server_url == ""
 
 
+def test_scheme_case_is_normalised():
+    cfg = config.AgentConfig("HTTPS://Pops.Okul.local/pops/")
+    assert cfg.server_url == "https://Pops.Okul.local/pops" and cfg.ws_base == "wss://Pops.Okul.local/pops"
+    assert cfg.secure
+
+
+def test_https_client_never_falls_back_to_system_store():
+    from pops_agent import net
+
+    with pytest.raises(net.TrustError):
+        net.HttpClient("https://pops.okul.local", None, {})._conn()
+
+
 @pytest.mark.parametrize("url,ok", [
     ("https://pops.okul.local", True), ("https://10.0.0.5:8443/pops", True), ("http://127.0.0.1:8000", True),
     ("http://localhost", True), ("http://[::1]:8000", True), ("http://10.0.0.5", False),
