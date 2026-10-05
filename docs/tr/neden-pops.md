@@ -53,8 +53,8 @@ Beklentiyi baştan doğru kurmak için POps'un **ne olmadığını** da yazıyor
 - **Henüz denenmemiş durumlar var:** Uzak Masaüstü ve çok kullanıcılı oturumlar, uzaktan kontrol sırasında UAC onay
   ekranı, birden fazla monitör ve %100 dışındaki ekran ölçekleme.
 - **Active Directory / LDAP ile giriş yok.** Panel hesapları POps'un kendi kullanıcılarıdır.
-- **Panel Türkçedir.** İngilizce arayüz hazırlanıyor; bazı bölümler çevrildi, diğerleri sırayla geliyor. Teknik
-  belgelerin çoğu İngilizcedir.
+- **İngilizce arayüz henüz tamamlanmadı.** Panel Türkçe ve İngilizce kullanılabilir; 14 sayfanın 10'u İngilizceye
+  çevrildi, Ayarlar, Sistem, Uzak komut ve giriş sayfası sırada. Teknik belgelerin çoğu İngilizcedir.
 - **Destek modeli henüz belirlenmedi.** Bugün destek GitHub üzerinden, gönüllülük esasıyladır; yanıt süresi sözü
   verilmez. Ücretli destek ve hizmet seviyesi seçenekleri [`ROADMAP.md`](../../ROADMAP.md#support-model) dosyasında
   karar bekliyor.
@@ -127,7 +127,10 @@ Karşılaştırmanın İngilizce aslı: [`docs/positioning.md`](../positioning.m
 
 ## Sonraki adım
 
-1. [Pilot okul kurulumu](pilot-okul.md): 10 bilgisayarlık bir lab için yaklaşık bir saatlik kontrol listesi.
-2. Pilottan sonra sonuçları paylaşmak isterseniz: [vaka çalışması şablonu](vaka-calismasi-sablonu.md).
-3. Sorular için: [GitHub Discussions](https://github.com/PashaCore/POps/discussions). Güvenlik açıklarını herkese
+1. Kurmadan önce göz atmak için herkese açık, salt okunur demoyu açın:
+   [demo.pashacore.com.tr](https://demo.pashacore.com.tr) (kullanıcı `demo`, şifre `demo`). 50 bilgisayarlı, uydurma
+   bir okul gösterir; orada hiçbir şey değiştirilemez ve her gece sıfırlanır.
+2. [Pilot okul kurulumu](pilot-okul.md): 10 bilgisayarlık bir lab için yaklaşık bir saatlik kontrol listesi.
+3. Pilottan sonra sonuçları paylaşmak isterseniz: [vaka çalışması şablonu](vaka-calismasi-sablonu.md).
+4. Sorular için: [GitHub Discussions](https://github.com/PashaCore/POps/discussions). Güvenlik açıklarını herkese
    açık yazmayın; [`SECURITY.md`](../../SECURITY.md) dosyasındaki adrese bildirin.
