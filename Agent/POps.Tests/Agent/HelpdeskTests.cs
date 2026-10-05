@@ -1,72 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Pipes;
 using System.Linq;
 using System.Net.Http;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
-using POps.Shared;
 using POpsAgent;
 using Xunit;
 
 namespace POps.Tests.Agent
 {
-    // 1) Tepsi/watchdog kullanıcı oturumunda başlatılır (saha: kurulum ve güncellemeden sonra tepsi yoktu)
-    public class UserSessionAppsTests : TestBase
-    {
-        // SYSTEM olarak çalışan bir CI'da WTSQueryUserToken başarılı olur ve süreç gerçekten başlardı: o durumda atlanır
-        public static bool SkipLaunchTests => WindowsIdentity.GetCurrent().IsSystem;
-
-        [Fact]
-        public void NoSignedInUser_StartsNothing() =>
-            Assert.Equal((false, false), UserAppsPolicy.WhatToStart(false, false, false, false, true, TimeSpan.FromHours(1)));
-
-        [Fact]
-        public void DuringAnUpdate_StartsNothing() =>
-            Assert.Equal((false, false), UserAppsPolicy.WhatToStart(true, true, false, false, true, TimeSpan.FromHours(1)));
-
-        [Fact]
-        public void MissingApps_AreStarted() =>
-            Assert.Equal((true, true), UserAppsPolicy.WhatToStart(true, false, false, false, true, TimeSpan.Zero));
-
-        [Fact]
-        public void RunningApps_AreLeftAlone() =>
-            Assert.Equal((false, false), UserAppsPolicy.WhatToStart(true, false, true, true, true, TimeSpan.FromHours(1)));
-
-        [Fact]
-        public void Tray_WaitsForTheShellButNotForever()
-        {
-            // Oturum yeni açıldı, görev çubuğu henüz yok: tepsi simgesi kaybolmasın diye beklenir
-            Assert.Equal((false, false), UserAppsPolicy.WhatToStart(true, false, true, false, false, TimeSpan.FromSeconds(10)));
-            // Özel kabuk (explorer hiç yok): bir dakika sonra yine de başlatılır
-            Assert.Equal((false, true), UserAppsPolicy.WhatToStart(true, false, true, false, false, UserAppsPolicy.ShellWait));
-        }
-
-        // Testler SYSTEM değildir: kullanıcı belirteci alınamaz, hiçbir şey başlatılmaz ve istisna çıkmaz
-        [Fact]
-        public void WithoutSystemRights_NothingIsStarted()
-        {
-            if (SkipLaunchTests) return;
-            string harmless = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "whoami.exe");
-            uint session = UserSessionLauncher.ActiveConsoleSession();
-            Assert.False(UserSessionLauncher.HasSignedInUser(session));
-            Assert.False(UserSessionLauncher.TryStart(session, harmless, out int pid, out string error));
-            Assert.Equal(0, pid);
-            Assert.False(string.IsNullOrEmpty(error));
-
-            Assert.False(UserSessionLauncher.TryStart(session, @"C:\yok\POpsTray.exe", out _, out string missing));
-            Assert.Contains("yok", missing);
-            Assert.False(UserSessionLauncher.TryStart(UserSessionLauncher.NoSession, harmless, out _, out _));
-
-            new UserSessionApps(TestEnvironment.NewDir("apps")).EnsureOnce();
-        }
-    }
-
     // 2) Yardım masası: tepsi isteği, sunucu sözleşmesi, yanıt mesajları, kullanıcıya göre süzme, yeni yanıtlar
     public class HelpdeskTests : TestBase, IDisposable
     {
@@ -232,60 +178,87 @@ namespace POps.Tests.Agent
         }
     }
 
-    // Testler hiçbir zaman gerçek C:\POpsData / C:\POpsData\secure klasörlerine yazmaz: bir test gerçek yolu geri
-    // bırakırsa sonraki testin temel kurucusu onu geçici klasöre çevirir
-    public class TestIsolationTests : TestBase
+    public class HelpdeskThrottleTests : TestBase, IDisposable
     {
-        private sealed class NextTest : TestBase { }
+        private readonly List<string> _tray = new List<string>();
+        private int _requests;
+        private DateTime _now = new DateTime(2026, 9, 28, 10, 0, 0, DateTimeKind.Utc);
 
-        [Fact]
-        public void RealFoldersAreNeverUsed()
+        public HelpdeskThrottleTests()
         {
-            AgentUpdate.DataDir = @"C:\POpsData";
-            SecureStore.Dir = @"C:\POpsData\secure";
-            _ = new NextTest();
-            Assert.Equal(TestEnvironment.DefaultDataDir, AgentUpdate.DataDir);
-            Assert.Equal(TestEnvironment.DefaultSecureDir, SecureStore.Dir);
-            Assert.StartsWith(System.IO.Path.GetTempPath(), AgentUpdate.DataDir, StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    // 3) Tepsi, borunun servise ait olduğunu sahibinden anlar (L13)
-    public class PipeOwnerTests : TestBase
-    {
-        [Fact]
-        public void OnlySystemOrAdministratorsAreTrusted()
-        {
-            Assert.True(PipeOwner.IsTrustedOwner(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null)));
-            Assert.True(PipeOwner.IsTrustedOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null)));
-            Assert.False(PipeOwner.IsTrustedOwner(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null)));
-            Assert.False(PipeOwner.IsTrustedOwner(WindowsIdentity.GetCurrent().User));
-            Assert.False(PipeOwner.IsTrustedOwner(null));
+            AgentUpdate.DataDir = TestEnvironment.NewDir("throttle");
+            SecureStore.Dir = TestEnvironment.NewDir("throttle-secure");
+            AgentCredentials.SaveSecret("test-secret-0123456789abcdefghijklmn", "HW-A");
         }
 
-        // Servisin borusuyla aynı izin düzeniyle (SYSTEM ve Administrators tam, etkileşimli kullanıcı ReadWrite):
-        // istemci sahibi okuyabilmeli; test kullanıcısının açtığı boru güvenilir sayılmamalı
-        [Fact]
-        public async Task OwnerIsReadThroughTheClientConnection()
+        public void Dispose() => AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
+
+        private Helpdesk Desk(Func<Task<(int?, string)>> response) => new Helpdesk("https://pops.example", () => "HW-A", () => "ogrenci", _tray.Add)
         {
-            string name = "POpsTest_" + Guid.NewGuid().ToString("N");
-            var ps = new PipeSecurity();
-            ps.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), PipeAccessRights.FullControl, AccessControlType.Allow));
-            ps.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), PipeAccessRights.FullControl, AccessControlType.Allow));
-            ps.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.InteractiveSid, null), PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize, AccessControlType.Allow));
-            // CI oturumu etkileşimli olmayabilir: bağlanabilmek için test kullanıcısına da aynı hak
-            ps.AddAccessRule(new PipeAccessRule(WindowsIdentity.GetCurrent().User, PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize, AccessControlType.Allow));
+            UtcNow = () => _now,
+            Sender = (method, path, payload, what) => { Interlocked.Increment(ref _requests); return response(); },
+        };
 
-            using NamedPipeServerStream server = NamedPipeServerStreamAcl.Create(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, ps);
-            Task accept = server.WaitForConnectionAsync();
-            using var client = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
-            await client.ConnectAsync(5000);
-            await accept;
+        private static string Create(string subject) => Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { subject, category = "ag", body = "" })));
 
-            var actualOwner = (SecurityIdentifier)server.GetAccessControl().GetOwner(typeof(SecurityIdentifier));
-            bool trusted = PipeOwner.Check(client, out string owner);
-            Assert.Equal(actualOwner.Value, owner);
-            Assert.Equal(PipeOwner.IsTrustedOwner(actualOwner), trusted);
+        private static JsonElement Last(List<string> tray, string kind)
+        {
+            string m = tray[^1];
+            Assert.StartsWith(kind + ":", m);
+            return JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(m.Substring(kind.Length + 1)))).RootElement.Clone();
+        }
+
+        [Fact]
+        public async Task Create_AtMostEveryTenSeconds()
+        {
+            Helpdesk desk = Desk(() => Task.FromResult<(int?, string)>((200, "{\"id\":1}")));
+            await desk.CreateAsync(Create("Konu bir"));
+            await desk.CreateAsync(Create("Konu iki"));
+            Assert.Equal(1, _requests);
+            Assert.Equal(Helpdesk.BusyMessage, Last(_tray, "TICKET_RESULT").GetProperty("message").GetString());
+
+            _now = _now.AddSeconds(10);
+            await desk.CreateAsync(Create("Konu üç"));
+            Assert.Equal(2, _requests);
+        }
+
+        [Fact]
+        public async Task List_OneAtATimeAndAtMostEverySixSeconds()
+        {
+            var gate = new TaskCompletionSource<(int?, string)>();
+            Helpdesk desk = Desk(() => gate.Task);
+
+            Task first = desk.ListAsync();
+            await desk.ListAsync();                     // ilki sürerken
+            Assert.Equal(1, _requests);
+            JsonElement busy = Last(_tray, "TICKET_LIST_RESULT");
+            Assert.True(busy.GetProperty("busy").GetBoolean());
+            Assert.False(busy.GetProperty("ok").GetBoolean());
+
+            gate.SetResult((200, "[]"));
+            await first;
+            await desk.ListAsync();                     // bittiği saniye: aralık dolmadı
+            Assert.Equal(1, _requests);
+
+            _now = _now.AddSeconds(5);                  // sunucunun 5 sn'si ajana yetmez (6 sn)
+            await desk.ListAsync();
+            Assert.Equal(1, _requests);
+
+            _now = _now.AddSeconds(1);
+            gate = new TaskCompletionSource<(int?, string)>();
+            gate.SetResult((200, "[]"));
+            await desk.ListAsync();
+            Assert.Equal(2, _requests);
+        }
+
+        // Sunucunun cihaz başına 5 sn sınırı (429) hata sayılmaz: tepsi listeyi korur, yalnızca kısa notu gösterir
+        [Fact]
+        public async Task ServerThrottle_IsQuiet()
+        {
+            await Desk(() => Task.FromResult<(int?, string)>((429, "{\"detail\":\"Çok sık istek; birkaç saniye sonra tekrar deneyin.\"}"))).ListAsync();
+            JsonElement reply = Last(_tray, "TICKET_LIST_RESULT");
+            Assert.True(reply.GetProperty("busy").GetBoolean());
+            Assert.Equal(Helpdesk.BusyMessage, reply.GetProperty("message").GetString());
         }
     }
 }

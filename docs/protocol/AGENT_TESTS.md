@@ -51,7 +51,7 @@ isolation callbacks, so no firewall rule or real setting is touched.
    | `winget_install*.json` | agents that do not implement it (and do not send `X-Agent-Features: winget`): ignored, nothing sent. Agents that do, with the terminal capability off: a `result` with `exit_code` -5 and a `capability_denied` with the same `task_id`; with the `deploy` module off: the same with `capability` `deploy` and `reason` `module_disabled` |
    | `cancel_task.json`, `result_ack.json`, `update_result_ack.json`, `unlock.json` | no exception; nothing sent |
    | `lockdown.json` | the fake isolation is applied (`NetworkIsolation.StatePath` exists) |
-   | `exam_mode.json` | exam mode applied with the vector's allow list, message, program list and `until`; an `exam_state` with `enabled: true` is sent. With the `exam` capability off: one `capability_denied` (`capability` `exam`, `action` `exam_mode`) and nothing applied |
+   | `exam_mode.json` | exam mode applied with the vector's allow list, message, program list and `until` (a fixed past time: load it with a test clock set before `until`, e.g. `until` − 1 h); an `exam_state` with `enabled: true` is sent. With the `exam` capability off: one `capability_denied` (`capability` `exam`, `action` `exam_mode`) and nothing applied |
    | `exam_mode.off.json` | no exception; exam mode removed if it was applied (then an `exam_state` with `enabled: false`) |
    | `set_capabilities.*.json` | the capabilities are off afterwards and a `capabilities` message is sent |
    | `remote_input.*.json` with Vision off | one `capability_denied` (capability `vision`) |
@@ -101,7 +101,7 @@ isolation callbacks, so no firewall rule or real setting is touched.
    MSI. The bytes are the same as `TestData/manifest.json`.
 
 4. **The agent → server vectors stay in step with the agent.** For each message the agent builds in test 2, the
-   example of the same name (for example `examples/agent-to-server/capabilities.default.json`) must have the same
+   example of the same name (for example `examples/agent-to-server/capabilities.files.json`, the message of a current agent) must have the same
    set of top-level keys, so the vectors show what the agent really sends. A key the agent stops sending, or a new
    one, then fails here and the example and schema are updated in the same change.
 

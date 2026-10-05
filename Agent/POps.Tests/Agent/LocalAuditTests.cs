@@ -75,5 +75,38 @@ namespace POps.Tests.Agent
             Assert.Equal(LocalAuditLevel.Warning, events[6].Level);
             Assert.Contains("fingerprint: 72cd6e8422c407fb", events[7].Message);
         }
+
+        [Fact]
+        public void AuditEvents_ForCloneAndCloneRejection()
+        {
+            LocalAuditEvent detected = LocalAudit.CloneDetected("HW-ORIGINAL", "HW-DERIVED", @"C:\POpsData\secure\clone-20261002-093000",
+                new[] { "identity.key", "agent.secret" }, true);
+            Assert.Equal(1070, detected.EventId);
+            Assert.Equal(LocalAuditLevel.Warning, detected.Level);
+            Assert.Contains("old_hw_id: HW-ORIGINAL", detected.Message);
+            Assert.Contains("new_hw_id: HW-DERIVED", detected.Message);
+            Assert.Contains("files: identity.key, agent.secret", detected.Message);
+            Assert.Contains("enroll_token: var", detected.Message);
+
+            LocalAuditEvent rejected = LocalAudit.CloneRejected("command");
+            Assert.Equal(1071, rejected.EventId);
+            Assert.Equal(LocalAuditLevel.Warning, rejected.Level);
+
+            LocalAuditEvent partly = LocalAudit.HardwarePartlyChanged(new[] { "bios_sn" }, new[] { "uuid" });
+            Assert.Equal(1072, partly.EventId);
+            Assert.Equal(LocalAuditLevel.Warning, partly.Level);
+            Assert.Contains("changed: bios_sn", partly.Message);
+            Assert.Contains("unchanged: uuid", partly.Message);
+        }
+
+        [Fact]
+        public void RefreshEvent_RecordsOldAndNewAddresses()
+        {
+            LocalAuditEvent e = LocalAudit.QuarantineAllowListRefreshed(new[] { "203.0.113.10" }, new[] { "198.51.100.7" }, "periyodik denetim");
+            Assert.Equal(1022, e.EventId);
+            Assert.Contains("old: 203.0.113.10", e.Message);
+            Assert.Contains("new: 198.51.100.7", e.Message);
+            Assert.Contains("(bilinmiyor)", LocalAudit.QuarantineAllowListRefreshed(null, new[] { "1.2.3.4" }, "x").Message);
+        }
     }
 }

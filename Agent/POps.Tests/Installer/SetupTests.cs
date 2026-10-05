@@ -300,6 +300,8 @@ namespace POps.Tests.Installer
         [InlineData("PERSIST_DIR", "relative", "PERSIST_DIR")]
         [InlineData("TERMINAL_ENABLED", "maybe", "TERMINAL_ENABLED")]
         [InlineData("VISION_ENABLED", "2", "VISION_ENABLED")]
+        [InlineData("EXAM_ENABLED", "evetmi", "EXAM_ENABLED")]
+        [InlineData("FILES_ENABLED", "x", "FILES_ENABLED")]
         public void InvalidProperty_FailsTheInstall(string key, string value, string expected)
         {
             Layout layout = NewLayout();
@@ -339,7 +341,26 @@ namespace POps.Tests.Installer
             var caps = Json(Secure(layout, "capabilities.json"));
             Assert.Equal(true, caps["terminal_enabled"]);
             Assert.Equal(true, caps["vision_enabled"]);
+            Assert.Equal(true, caps["exam_enabled"]);
             Assert.True(LockedDown(File.GetAccessControl(Secure(layout, "capabilities.json"))));
+        }
+
+        // Sınav modu yerelde kapatılabilir; dosyada olmayan (eski kurulum) yetenek açık sayılır ve korunur
+        [Fact]
+        public void Capabilities_ExamCanBeTurnedOffLocally_AndOldFilesKeepIt()
+        {
+            Layout layout = NewLayout();
+            Assert.Null(Configure(layout, ("SERVER_URL", "https://pops.example"), ("EXAM_ENABLED", "0"), ("FILES_ENABLED", "0")));
+            Assert.Equal(false, Json(Secure(layout, "capabilities.json"))["exam_enabled"]);
+            Assert.Equal(false, Json(Secure(layout, "capabilities.json"))["files_enabled"]);
+
+            Layout old = NewLayout();
+            Write(Secure(old, "capabilities.json"), "{\"terminal_enabled\":false,\"vision_enabled\":true,\"source\":\"msi\"}");
+            Assert.Null(Configure(old, ("SERVER_URL", "https://pops.example"), ("VISION_ENABLED", "1")));
+            var caps = Json(Secure(old, "capabilities.json"));
+            Assert.Equal(false, caps["terminal_enabled"]);
+            Assert.Equal(true, caps["exam_enabled"]);
+            Assert.Equal(true, caps["files_enabled"]);
         }
 
         [Fact]

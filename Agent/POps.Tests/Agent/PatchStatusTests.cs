@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using POpsAgent;
 using Xunit;
 
@@ -295,6 +296,60 @@ namespace POps.Tests.Agent
             Assert.Null(PatchSchedule.NextPostUtc(PostResult.Sent, Start));
             Assert.Null(PatchSchedule.NextPostUtc(PostResult.EndpointMissing, Start));
             Assert.NotNull(PatchSchedule.NextPostUtc(PostResult.NotSent, Start));
+        }
+    }
+
+    // M2: gönderilemeyen durum saklanır, yalnızca gönderim yeniden denenir; uç yoksa bırakılır
+    public class PatchDeliveryTests : TestBase, IDisposable
+    {
+        public PatchDeliveryTests() => AgentUpdate.DataDir = TestEnvironment.NewDir("patch");
+
+        public void Dispose() => AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
+
+        private static PatchStatusPayload Status(string lastResult = null) =>
+            PatchClassifier.BuildStatus(new List<PendingUpdate> { new PendingUpdate { Kb = "KB1", Title = "t", Severity = "Critical" } }, false, DateTime.UtcNow, null, lastResult);
+
+        private static PatchManager Manager(PostResult result) =>
+            new PatchManager("https://pops.example", () => "HW-A") { Poster = _ => Task.FromResult(result) };
+
+        [Fact]
+        public async Task FailedPost_KeepsTheReportForARetry()
+        {
+            DateTime lastScan = DateTime.UtcNow.AddMinutes(-2);
+            PatchManager.SaveState(new PatchState { LastScanUtc = lastScan });
+
+            await Manager(PostResult.Failed).DeliverAsync(Status("2 güncelleme kuruldu"));
+
+            PatchState state = PatchManager.LoadState();
+            Assert.Equal("2 güncelleme kuruldu", state.PendingReport.LastResult);
+            Assert.InRange(state.NextPostUtc.Value, DateTime.UtcNow.AddMinutes(29), DateTime.UtcNow.AddMinutes(31));
+            // Tarama zamanı değişmez: sonraki tam tarama yine 24 saat sonra
+            Assert.Equal(lastScan, state.LastScanUtc);
+        }
+
+        [Fact]
+        public async Task SuccessfulRetry_ClearsTheReport()
+        {
+            await Manager(PostResult.Failed).DeliverAsync(Status());
+            await Manager(PostResult.Sent).DeliverAsync(PatchManager.LoadState().PendingReport);
+            PatchState state = PatchManager.LoadState();
+            Assert.Null(state.PendingReport);
+            Assert.Null(state.NextPostUtc);
+        }
+
+        [Fact]
+        public async Task MissingEndpoint_DropsTheReport()
+        {
+            await Manager(PostResult.EndpointMissing).DeliverAsync(Status());
+            Assert.Null(PatchManager.LoadState().PendingReport);
+        }
+
+        [Fact]
+        public void InvalidScope_StartsNothing()
+        {
+            PatchManager manager = Manager(PostResult.Sent);
+            manager.RequestInstall("security\r\n[AGENT] sahte");
+            Assert.False(manager.IsBusy);
         }
     }
 }

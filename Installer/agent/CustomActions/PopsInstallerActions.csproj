@@ -12,7 +12,11 @@
     <Platform>x64</Platform>
     <PlatformTarget>x64</PlatformTarget>
     <LangVersion>latest</LangVersion>
-    <Nullable>disable</Nullable>
+    <!-- Nullable açık; temiz olmayan eski dosyaların ilk satırı "#nullable disable" (taban, yalnızca küçülür; kural
+         Agent/Directory.Build.props'ta). Bu proje Agent/ uyarı kapısının dışında olduğundan nullable uyarıları burada
+         ayrıca hata sayılır: yeni dosya nullable açısından temiz olmalı. -->
+    <Nullable>enable</Nullable>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable</WarningsAsErrors>
     <ImplicitUsings>disable</ImplicitUsings>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>

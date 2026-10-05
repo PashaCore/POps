@@ -141,6 +141,8 @@ and sends such a message only to an agent that announced it. Features in use:
 | Feature | Server behaviour |
 | --- | --- |
 | `winget` | `winget_install` is sent for WINGET tasks. For an agent without it the task becomes `Denied` (exit code -8, "[REDDEDİLDİ] Bu bilgisayardaki ajan winget kurulumunu desteklemiyor …") and nothing is sent, so an agent that would ignore the message never leaves a task `Running`. |
+| `exam` | Informational: exam mode is gated by the `exam_state` answer (no answer within 20 s = not supported), not by the header. |
+| `files` | Informational: file transfer is gated by `files_enabled` in `capabilities`. |
 
 A new message whose effect matters and that old agents would ignore gets a feature name here instead of a version
 threshold.

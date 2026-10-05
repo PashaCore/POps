@@ -139,4 +139,48 @@ namespace POps.Tests.Agent
             Assert.Equal(TimeSpan.FromHours(24), guard.LockedUntilUtc - now);
         }
     }
+
+    // L4 notu: 24 saat hatasız geçince eski hatalar ve kilitlenmeler unutulur
+    public class BypassDecayTests : TestBase
+    {
+        private const string HwId = "HW-678CC8C5265E", Secret = "sekret-Ç-1";
+        private static readonly DateTime Day = new DateTime(2026, 9, 26);
+
+        public BypassDecayTests() => SecureStore.Dir = TestEnvironment.NewDir("decay");
+
+        [Fact]
+        public void OldLockouts_AreForgottenAfterADayWithoutFailures()
+        {
+            string path = SecureStore.PathOf(OfflineBypass.StateFileName);
+            DateTime t = new DateTime(2026, 9, 26, 8, 0, 0, DateTimeKind.Utc);
+            DateTime now = t;
+            var guard = new OfflineBypass(() => now, path);
+
+            for (int lockout = 0; lockout < 3; lockout++)
+            {
+                for (int i = 0; i < OfflineBypass.MaxFailures; i++) guard.Attempt("000000", HwId, Secret, Day);
+                now = guard.LockedUntilUtc;   // kilit bitti
+            }
+            Assert.Equal(3, guard.Lockouts);
+
+            // Bir gün hatasız: bir sonraki kilit yine 15 dakika (60 değil)
+            now = now.AddHours(25);
+            var afterRestart = new OfflineBypass(() => now, path);
+            for (int i = 0; i < OfflineBypass.MaxFailures; i++) afterRestart.Attempt("000000", HwId, Secret, Day);
+            Assert.Equal(now + TimeSpan.FromMinutes(15), afterRestart.LockedUntilUtc);
+            Assert.Equal(1, afterRestart.Lockouts);
+        }
+
+        [Fact]
+        public void RecentFailures_AreNotForgotten()
+        {
+            DateTime now = new DateTime(2026, 9, 26, 8, 0, 0, DateTimeKind.Utc);
+            var guard = new OfflineBypass(() => now);
+            guard.Attempt("000000", HwId, Secret, Day);
+            guard.Attempt("000000", HwId, Secret, Day);
+            now = now.AddHours(23);
+            guard.Attempt("000000", HwId, Secret, Day);
+            Assert.Equal(3, guard.Failures);
+        }
+    }
 }

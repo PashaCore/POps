@@ -58,6 +58,8 @@
     <!-- Yetenek politikası: 1 açık, 0 kapalı; verilmezse mevcut durum korunur (ilk kurulumda açık) -->
     <Property Id="TERMINAL_ENABLED" Secure="yes" />
     <Property Id="VISION_ENABLED" Secure="yes" />
+    <Property Id="EXAM_ENABLED" Secure="yes" />
+    <Property Id="FILES_ENABLED" Secure="yes" />
     <!-- Kurum sertifikası (özel CA): PEM dosyasının yolu -> C:\POpsData\secure\server-ca.pem; ajan sunucu sertifikasını
          yalnızca bu CA ile doğrular. Verilmezse mevcut dosya korunur; "system" dosyayı siler (sistem güven deposu). -->
     <Property Id="SERVER_CA_CERT" Secure="yes" />
@@ -157,7 +159,7 @@
     <CustomAction Id="PopsConfigure" BinaryRef="PopsActions" DllEntry="Configure"
                   Execute="deferred" Impersonate="no" Return="check" HideTarget="yes" />
     <SetProperty Id="PopsConfigure" Sequence="execute" Before="PopsConfigure"
-                 Value="INSTALLFOLDER=[INSTALLFOLDER];INSTALLDIR_STATE=[POPS_INSTALLDIR_STATE];SERVER_URL=[SERVER_URL];PERSIST_DIR=[PERSIST_DIR];ENROLL_TOKEN=[ENROLL_TOKEN];ENROLL_TOKEN_FILE=[ENROLL_TOKEN_FILE];BYPASS_SECRET=[BYPASS_SECRET];BYPASS_SECRET_FILE=[BYPASS_SECRET_FILE];TERMINAL_ENABLED=[TERMINAL_ENABLED];VISION_ENABLED=[VISION_ENABLED];SERVER_CA_CERT=[SERVER_CA_CERT]" />
+                 Value="INSTALLFOLDER=[INSTALLFOLDER];INSTALLDIR_STATE=[POPS_INSTALLDIR_STATE];SERVER_URL=[SERVER_URL];PERSIST_DIR=[PERSIST_DIR];ENROLL_TOKEN=[ENROLL_TOKEN];ENROLL_TOKEN_FILE=[ENROLL_TOKEN_FILE];BYPASS_SECRET=[BYPASS_SECRET];BYPASS_SECRET_FILE=[BYPASS_SECRET_FILE];TERMINAL_ENABLED=[TERMINAL_ENABLED];VISION_ENABLED=[VISION_ENABLED];EXAM_ENABLED=[EXAM_ENABLED];FILES_ENABLED=[FILES_ENABLED];SERVER_CA_CERT=[SERVER_CA_CERT]" />
 
     <!-- Eski (MSI'sız) kurulum klasörleri ve kalıntılar; yalnızca yeni servis başladıktan sonra -->
     <CustomAction Id="PopsCleanupLegacy" BinaryRef="PopsActions" DllEntry="CleanupLegacy"

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
 using POpsAgent;
@@ -198,6 +199,96 @@ namespace POps.Tests.Agent
             Assert.Equal(("bahis", puny), DnsWatch.Match("cdn.bahis-örnek.com", new[] { "bahis" }, lists));
             // Benzer görünen başka bir ad eşleşmez
             Assert.Null(DnsWatch.MatchCategory("bahis-ornek.com", new[] { "bahis" }, lists));
+        }
+    }
+
+    public class DnsDomainIndexTests : TestBase, IDisposable
+    {
+        public void Dispose()
+        {
+            DnsPolicyMonitor.Reset();
+            DnsPolicyMonitor.UtcNow = () => DateTime.UtcNow;
+            DnsPolicyMonitor.CacheReader = DnsWatch.ReadCacheNames;
+        }
+
+        [Fact]
+        public void SuffixChain_FindsTheEntryAndRespectsCategoryOrder()
+        {
+            var lists = new Dictionary<string, List<string>>
+            {
+                ["oyun"] = new List<string> { "cdn.site.example" },
+                ["bahis"] = new List<string> { "SITE.example.", "other.example" },
+            };
+            var index = new DnsDomainIndex(new[] { "bahis", "oyun" }, lists);
+            Assert.Equal(3, index.Count);
+            Assert.Equal(("bahis", "site.example"), index.Match("www.site.example"));
+            // Hem cdn.site.example (oyun) hem site.example (bahis) uyar: politikadaki sıra (bahis önce) belirler
+            Assert.Equal(("bahis", "site.example"), index.Match("x.cdn.site.example"));
+            Assert.Null(index.Match("notsite.example"));
+            Assert.Null(index.Match("example"));
+            Assert.Null(DnsDomainIndex.Empty.Match("site.example"));
+        }
+
+        // N1: dizin yalnızca listeler değişince kurulur (politika her dakika yeniden okunur)
+        [Fact]
+        public void Index_IsBuiltOnlyWhenListsChange()
+        {
+            DnsPolicyMonitor.Reset();
+            AgentPolicy Policy(params string[] domains) => new AgentPolicy
+            {
+                DnsCategories = new List<string> { "bahis" },
+                DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = domains.ToList() },
+            };
+            int before = DnsPolicyMonitor.IndexBuilds;
+            DnsPolicyMonitor.Configure(Policy("a.example"), "HW-A", "https://pops.example");
+            DnsPolicyMonitor.Configure(Policy("a.example"), "HW-A", "https://pops.example");
+            DnsPolicyMonitor.Configure(Policy("a.example"), "HW-B", "https://pops.example");
+            Assert.Equal(before + 1, DnsPolicyMonitor.IndexBuilds);
+            DnsPolicyMonitor.Configure(Policy("a.example", "b.example"), "HW-A", "https://pops.example");
+            Assert.Equal(before + 2, DnsPolicyMonitor.IndexBuilds);
+        }
+
+        // N1: büyük listelerde tarama turu listenin boyutuyla büyümez (eski yol: ad x giriş normalleştirme)
+        [Fact]
+        public void LargeLists_CheckQuickly()
+        {
+            DnsPolicyMonitor.Reset();
+            var lists = new Dictionary<string, List<string>>
+            {
+                ["bahis"] = Enumerable.Range(0, 5000).Select(i => $"bet{i}.örnek-{i % 7}.example").ToList(),
+                ["oyun"] = Enumerable.Range(0, 5000).Select(i => $"game{i}.example").ToList(),
+            };
+            List<string> cache = Enumerable.Range(0, 2000).Select(i => $"host{i}.cdn{i % 13}.innocent{i}.example").ToList();
+            DnsPolicyMonitor.CacheReader = () => cache;
+            DnsPolicyMonitor.Reporter = (_, _) => { };
+            DnsPolicyMonitor.Configure(new AgentPolicy { DnsCategories = new List<string> { "bahis", "oyun" }, DnsDomains = lists }, "HW-A", "https://pops.example");
+
+            var clock = Stopwatch.StartNew();
+            for (int round = 0; round < 20; round++) Assert.Empty(DnsPolicyMonitor.CheckNow());
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), $"20 tur {clock.ElapsedMilliseconds} ms sürdü");
+        }
+
+        // M4 notu: önbellek okuması boş/başarısız dönerse önceki kullanıcının taban listesi silinmez
+        [Fact]
+        public void EmptyCacheRead_KeepsThePreviousUsersBaseline()
+        {
+            DnsPolicyMonitor.Reset();
+            var cache = new List<string> { "bet1.example" };
+            DnsPolicyMonitor.CacheReader = () => cache.ToList();
+            var reports = new List<string>();
+            DnsPolicyMonitor.Reporter = (domain, _) => reports.Add(domain);
+            DnsPolicyMonitor.Configure(new AgentPolicy
+            {
+                DnsCategories = new List<string> { "bahis" },
+                DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = new List<string> { "bet1.example" } },
+            }, "HW-A", "https://pops.example");
+
+            DnsPolicyMonitor.OnUserChanged();          // bet1 önceki kullanıcının
+            cache.Clear();
+            DnsPolicyMonitor.CheckNow();               // okuma boş döndü (ör. DnsGetCacheDataTable başarısız)
+            cache.Add("bet1.example");                 // aynı önbellek kaydı yine okundu
+            Assert.Empty(DnsPolicyMonitor.CheckNow());
+            Assert.Empty(reports);
         }
     }
 }
