@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.23-alpha] - 2026-10-05
+
+**For operators, in short:**
+1. **New in the panel:**
+   - **Exam mode** per lab: the network is limited to an allow list, with optional app blocking. It lasts at most 8 hours and ends on time even offline.
+   - **File transfer:** send a file to PCs, or fetch one from a PC with a reason.
+   - **Power actions** with a countdown and a note, and **messages to the user** with an optional read receipt.
+   - **winget packages** in Dağıtım, with a 69-app catalogue.
+   - **Vision v2:** several screens, adaptive quality, and clipboard in a session the user accepted.
+   - **Every page in English.**
+2. **For organisations:**
+   - Sign-in with **Active Directory/LDAP or OpenID Connect**.
+   - **Organisational units** (district → school): admins and API tokens see only their own schools.
+   - **REST API v1** with tokens, **GLPI export** and **Sistem → Modüller**.
+   - Optionally, **several backend workers with Redis**.
+3. **Linux agent, first version** (Pardus 23+, Debian 12, Ubuntu 24.04; one `.deb`):
+   - It reports inventory and installed packages, runs commands, and updates itself from signed releases with rollback.
+   - It has no screen view, quarantine or tray yet.
+4. **Update your agents** (**Sistem → Güncellemeler**). The new Windows agent is needed for exam mode, file transfer, winget, power actions and messages, and Vision v2. Older agents are recognised: they are skipped, or get the old shutdown command. It also:
+   - shows each update stage in the panel and resumes downloads (BITS);
+   - deletes logs after 30 days;
+   - lets you move the log and data folders.
+5. **Before updating a native server:**
+   - Reinstall `/usr/local/sbin/pops-deploy-backend` from this release first. Migration `0031` rewrites large tables, and the new script takes a database dump before it.
+   - Migrations `0024`–`0032` run by themselves; expect a longer first start.
+   - If you edited `Dashboard/assets/pops_config.js`, rename its global to `POPS_API`.
+   - The lab peer cache for agent updates is off by default.
+
+Try it without installing: https://demo.pashacore.com.tr (demo / demo, read-only). Known limitations are in the README.
+
 ### Added
 
 - **Agent: lab-local peer cache for updates.** The agent announces `peer_cache` in `X-Agent-Features` and follows the server's staged rollout. It downloads an update from the `peers` in `update_agent` first, then from the server, and checks every source against the signed size and SHA-256. Only when `update_agent` carries `"peer_cache": true` (the server's "Sınıf içinde eşten dağıt" setting, off by default) does it keep the verified package in `C:\POpsData\cache` for 2 hours (or until the next update). It then serves it read-only to PCs in its own subnet on TCP 8817: `GET`/`HEAD /pops-cache/<sha256>` only, at most 4 transfers, firewall rule group "POps Peer Cache" (LocalSubnet, POpsAgent.exe). Nothing is served or fetched from peers during quarantine or exam mode. The `downloaded` stage names the source (`peer <hw_id>`, `server`, `cache`). `capabilities` reports `peer_cache_enabled`; `PEER_CACHE_ENABLED=0` on the MSI switches it off, and the feature is then not announced.
@@ -909,7 +939,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.22-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.23-alpha...HEAD
+[0.1.23-alpha]: https://github.com/PashaCore/POps/compare/v0.1.22-alpha...v0.1.23-alpha
 [0.1.22-alpha]: https://github.com/PashaCore/POps/compare/v0.1.21-alpha...v0.1.22-alpha
 [0.1.21-alpha]: https://github.com/PashaCore/POps/compare/v0.1.20-alpha...v0.1.21-alpha
 [0.1.20-alpha]: https://github.com/PashaCore/POps/compare/v0.1.19-alpha...v0.1.20-alpha

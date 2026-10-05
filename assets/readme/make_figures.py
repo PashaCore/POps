@@ -168,7 +168,8 @@ T = {
             ("0.1.12–0.1.14", "30 Sep–2 Oct", ["External reviews", "R-01 … R-20,", "F01 … F21;", "reliability"]),
             ("0.1.15", "2 Oct", [".NET 10 built in,", "modules per lab"]),
             ("0.1.16–0.1.21", "3 Oct", ["New panel: one", "layout, details,", "charts"]),
-            ("next", "", ["Python 3.12,", "offline panel,", "fewer releases"]),
+            ("0.1.22–0.1.23", "5 Oct", ["English panel,", "exam mode, Linux,", "SSO, schools, HA"]),
+            ("next", "", ["Code signing,", "pilot schools"]),
         ],
 
         "cap_title": "All agents back after a server restart",
@@ -247,7 +248,8 @@ T = {
             ("0.1.12–0.1.14", "30 Eyl–2 Eki", ["Dış incelemeler", "R-01 … R-20,", "F01 … F21;", "güvenilirlik"]),
             ("0.1.15", "2 Eki", [".NET 10 içinde,", "sınıf modülleri"]),
             ("0.1.16–0.1.21", "3 Eki", ["Yeni panel: tek", "düzen, ayrıntı,", "grafikler"]),
-            ("sırada", "", ["Python 3.12,", "internetsiz panel,", "seyrek sürüm"]),
+            ("0.1.22–0.1.23", "5 Eki", ["İngilizce panel,", "sınav modu, Linux,", "SSO, okullar, HA"]),
+            ("sırada", "", ["Kod imzalama,", "pilot okullar"]),
         ],
 
         "cap_title": "Sunucu yeniden başladıktan sonra bütün ajanlar geri bağlandı",

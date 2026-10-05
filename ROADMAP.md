@@ -113,24 +113,32 @@ tagged release.
 - [x] **Release rhythm:** weekly releases with a short operator summary on top; signed release tags (0.1.22)
 - [x] Organisation name and logo on the sign-in page; Docker images on GHCR; OpenSSF Scorecard (0.1.22)
 
-### After 0.1.22 (Unreleased)
+### After the 0.1.21 reviews (0.1.23)
 
 - [x] **API for automation:** `/api/v1`, REST names next to the old ones, API tokens, the OpenAPI file in the
-  repository (Unreleased)
+  repository (0.1.23)
 - [x] **Panel end-to-end tests** in CI with a real browser: every page at desktop and phone width, and the main flows
-  (Unreleased)
-- [x] **Agent protocol** as JSON Schema with shared test vectors; hash-locked backend dependencies (Unreleased)
-- [x] **Public read-only demo** with a fake school fleet, reset every night (Unreleased)
+  (0.1.23)
+- [x] **Agent protocol** as JSON Schema with shared test vectors; hash-locked backend dependencies (0.1.23)
+- [x] **Public read-only demo** with a fake school fleet, reset every night (0.1.23)
 - [x] **Agent:** update stages in the panel, BITS download that resumes, log retention, offline bypass while the
-  server is unreachable, warnings as errors in the build (Unreleased)
+  server is unreachable, warnings as errors in the build (0.1.23)
 - [x] **Vision v2, agent side:** DXGI capture, changed regions, several screens, adaptive quality, binary frames,
-  clipboard in an accepted session (Unreleased)
-- [x] **English interface:** every page in Turkish and English, chosen per browser (Unreleased)
+  clipboard in an accepted session (0.1.23)
+- [x] **English interface:** every page in Turkish and English, chosen per browser (0.1.23)
+- [x] **Vision v2 in the panel:** binary relay, canvas viewer, screen picker, quality, clipboard (0.1.23)
+- [x] **Linux agent, first version** (Pardus/Debian): inventory, commands, signed updates with rollback (0.1.23)
+- [x] **Exam mode, file transfer, winget, power actions and messages to the user** (server, panel and agent)
+  (0.1.23)
+- [x] **Sign-in with LDAP/AD and OpenID Connect; organisational units with scoped admins; real timestamps**
+  (0.1.23)
+- [x] **Modules screen, strict request bodies, GLPI export; optional several backend workers with Redis**
+  (0.1.23)
+- [x] **Supply chain:** hash-locked CI tools, pinned images, read-only workflow tokens, fuzzing (0.1.23)
 
 ## In progress
 
-- [ ] **Vision v2 in the panel:** the server side and the viewer for the agent's new capture.
-- [ ] **Linux agent (Pardus first):** inventory, commands and signed updates.
+Nothing right now; the next items are below.
 
 ## Next
 
