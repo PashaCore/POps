@@ -5,12 +5,17 @@ A high test count says little on its own; the table below is the honest list.
 
 ## How the tests run
 
+The backend tests run under **pytest** (`pytest.ini`, `Backend/tests/conftest.py`): `test_units.py` is a pytest
+module, one test per function; every older script test is one pytest test that runs the script in its own process
+and passes when it exits with 0. Scripts that need a running backend carry the `integration` marker. How to run,
+select and add tests: [CONTRIBUTING.md](../CONTRIBUTING.md#backend-tests-pytest).
+
 | Suite | What it is | Where it runs |
 |---|---|---|
-| `Backend/tests/test_units.py` | Pure unit tests, no database or server. | CI `backend` job (Python 3.12 and 3.10) |
+| `Backend/tests/test_units.py` | Pure unit tests, no database or server (pytest functions). | CI `backend` job (Python 3.12 and 3.10), `security` job under coverage |
 | `Backend/tests/test_protocol.py` | Agent protocol ([`protocol/`](protocol/README.md)): every schema and example, and the real `/ws/agent` and `/ws/vision` handlers, task queue and endpoints run with a fake database and fake sockets; every message they send or accept must match its schema. Needs `jsonschema` (CI installs it). | CI `backend` job (Python 3.12 and 3.10), `security` job under coverage |
 | Backend lock file | `tools/backend_lock.sh --check`: `Backend/requirements.lock` regenerated from `requirements.txt` must be unchanged. | CI `backend-lock` job |
-| `Backend/tests/test_*.py` (others) | Integration tests against a running backend and an empty PostgreSQL database. | CI `security` job, `Backend/tests/run_local.sh` |
+| `Backend/tests/test_*.py` (others) | Integration tests against a running backend and an empty PostgreSQL database (`pytest -m integration`). | CI `security` job, `Backend/tests/run_local.sh` |
 | `Agent/POps.Tests` | xUnit tests for the agent, updater logic, shared code and the MSI custom actions (pure logic and temp-folder file operations; no firewall, pipe or service). | CI `test-agent` job (Windows) |
 | `Agent-Linux/tests` | pytest for the Linux agent on the distribution's own `python3` and packages, without root: identity/DNA, manifest verification, command limits and refusals, result spool, inventory parsers, update selection and the installer's rollback paths (fake `dpkg`/`systemctl`), the shared protocol vectors, a mock server; the `.deb` built twice must be byte-identical and is installed with `dpkg -i` (service not started). | CI `linux-agent` job |
 | `Agent-Linux/tests/test_integration.py` | The Linux agent from the source tree against a running backend over TLS (`pops-tls` CA): enrollment, platform, inventory, commands with exit codes, acknowledged results, refusal when the terminal is off. | CI `linux-agent-backend` job |
@@ -24,7 +29,7 @@ Run the backend suite locally (never against a production database):
 
 ```bash
 export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<u> DB_PASS=<p> DB_NAME=<empty test db> JWT_SECRET=dev
-COVERAGE=1 bash Backend/tests/run_local.sh   # COVERAGE=1 needs the coverage package; omit it to skip the report
+COVERAGE=1 bash Backend/tests/run_local.sh   # needs pytest (.github/requirements/pytest.lock); COVERAGE=1 also coverage
 ```
 
 ### Panel end-to-end tests

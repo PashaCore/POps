@@ -45,3 +45,6 @@ htmlcov/
 
 # Public demo secrets (deploy/demo/setup-host.sh)
 deploy/demo/.env.demo
+
+# pytest önbelleği
+.pytest_cache/

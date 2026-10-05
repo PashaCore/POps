@@ -82,6 +82,7 @@ python3.12 -m venv venv                     # any 3.10+; venv/ is git-ignored
 . venv/bin/activate
 pip install --require-hashes -r Backend/requirements.lock
 pip install flake8 jsonschema==4.26.0     # lint and the protocol test only
+pip install --require-hashes -r .github/requirements/pytest.lock   # the test runner
 
 # a development role and database (as the PostgreSQL superuser)
 sudo -u postgres createuser --pwprompt pops_dev
@@ -180,7 +181,7 @@ Security → Code scanning and on the README badge).
 | --- | --- | --- |
 | Build (5 agent projects) | `dotnet build -c Release` of the agent, tray, watchdog, updater and legacy Vision | see [Agent](#agent-windows-net-10-sdk) |
 | Agent unit tests | `dotnet test Agent/POps.Tests/POps.Tests.csproj` | same |
-| Backend (Python 3.12, 3.10) | `flake8 Backend/ tools/ assets/readme/` (3.12); importing `server` and `setup_env`; `test_units.py`; `test_protocol.py` | `flake8 Backend/ tools/ assets/readme/`, `python Backend/tests/test_protocol.py` |
+| Backend (Python 3.12, 3.10) | `flake8 Backend/ tools/ assets/readme/` (3.12); importing `server` and `setup_env`; `test_units.py`; `test_protocol.py` | `flake8 Backend/ tools/ assets/readme/`, `python -m pytest -m "not integration"` |
 | Backend lock file | `Backend/requirements.lock` matches `requirements.txt` | `tools/backend_lock.sh --check` (uv 0.12.23) |
 | Dashboard checks | `php -l` on every PHP file; dark mode stays removed | `find Dashboard -name '*.php' -print0 \| xargs -0 -n1 php -l` |
 | Panel end-to-end | Playwright (Chromium) on the real panel and backend: every page at 1440 and 390 px, main flows, no console errors or outside requests | `cd tests/e2e && npm ci && npx playwright test` with an empty `DB_NAME` ([docs/testing.md](docs/testing.md#panel-end-to-end-tests)) |
@@ -196,40 +197,58 @@ Security → Code scanning and on the README badge).
 - Formatting follows black with `-l 120 -S` (line length 120, quotes left as written). CI runs flake8 only, not
   black.
 
-### Backend integration tests
+### Backend tests (pytest)
 
-`Backend/tests/*.py` are plain scripts, not pytest. Each talks to a **running backend** over HTTP and WebSocket
-and also writes to **its database directly**: it creates users and enrollment tokens and switches
-`enforce_agent_auth`. Run them only against an **empty, throwaway database**, never against a real server. The
-steps below mirror the `security` job in `ci.yml`, which is the reference for the list and the order:
+The runner is [pytest](https://docs.pytest.org/), from the hash-locked `.github/requirements/pytest.lock` (see
+[Local setup](#backend-python-310-postgresql)). The configuration is the repository-root `pytest.ini`, and
+`Backend/tests/conftest.py` explains how the files are collected.
+
+```bash
+python -m pytest -m "not integration"                    # no database or server: test_units.py, test_protocol.py
+python -m pytest Backend/tests/test_units.py -k bypass   # one test
+python -m pytest --junitxml=report.xml                   # JUnit output for an IDE or CI
+```
+
+There are two kinds of test file in `Backend/tests/`:
+
+- **pytest tests** (`test_units.py`): every `test_*` function is a separate test. Write new tests this way: plain
+  functions with `assert`, and `import pytest` when you need its helpers.
+- **Script tests** (all the others, written before the switch): a file that runs itself, either with
+  `if __name__ == "__main__":` or with `asyncio.run(main())` at module level, prints its checks and exits non-zero on
+  failure. pytest never imports these; it runs each one as **one test** in its own process, and a failure shows the
+  checks that failed (`FAIL` / `✘` lines) with the full output. A new script test needs no registration: drop the file
+  in `Backend/tests/` and it is collected.
+
+A script that reads `POPS_TEST_HTTP` needs a **running backend** and gets the `integration` marker; without
+`POPS_TEST_HTTP` it is skipped. These tests also write to **their database directly**: they create users and
+enrollment tokens and switch `enforce_agent_auth`. Run them only against an **empty, throwaway database**, never
+against a real server. They share one server and database, so they run one after another in a fixed order
+(`SCRIPT_ORDER` in `conftest.py`, the same order CI always used); new scripts run after the listed ones, by name.
+
+`Backend/tests/run_local.sh` does what the `security` job in `ci.yml` does: tests without a server, migrations, a
+temporary server on port 8099, the integration tests, and the coverage report with `COVERAGE=1`:
 
 ```bash
 createdb pops_test                          # empty database your role owns
-export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<user> DB_PASS=<password> DB_NAME=pops_test
-export JWT_SECRET=ci-test-secret CORS_ALLOWED_ORIGINS= NOTIFY_WEBHOOK_ALLOW_PRIVATE=1 GLPI_ALLOW_PRIVATE=1
-export POPS_TEST_HTTP=http://127.0.0.1:8099
-cd Backend
-python migrate.py
-python -m uvicorn server:app --host 127.0.0.1 --port 8099 >/tmp/pops-test.log 2>&1 &
-SERVER_PID=$!
-curl --retry-connrefused --retry 40 --retry-delay 1 -sf "$POPS_TEST_HTTP/api/health" >/dev/null
-python tests/test_security.py
-python tests/test_2fa.py
-python tests/test_agent_authz.py
-python tests/test_remote_authz.py
-python tests/test_f4_accountability.py
-python tests/test_features.py
-python tests/test_helpdesk_licenses.py
-kill "$SERVER_PID"
+export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=<user> DB_PASS=<password> DB_NAME=pops_test JWT_SECRET=dev
+COVERAGE=1 bash Backend/tests/run_local.sh  # COVERAGE=1 needs coverage==7.10.7; omit it to skip the report
+```
+
+By hand, against a server you started yourself on 8099:
+
+```bash
+export POPS_TEST_HTTP=http://127.0.0.1:8099 CORS_ALLOWED_ORIGINS= NOTIFY_WEBHOOK_ALLOW_PRIVATE=1 GLPI_ALLOW_PRIVATE=1
+python -m pytest -v -m integration                       # all of them, in order
+python -m pytest -v Backend/tests/test_security.py       # one script
 ```
 
 - Export every `DB_*` variable and `JWT_SECRET` yourself. A value missing from the environment is read from `.env`,
   which may point at another database. The server and the tests must use the same `JWT_SECRET`, because the tests
   create their own tokens.
 - `NOTIFY_WEBHOOK_ALLOW_PRIVATE=1` lets `test_features.py` send webhooks to its own receiver on `127.0.0.1`, and
-  `GLPI_ALLOW_PRIVATE=1` lets `test_glpi.py` reach its fake GLPI there.
-- `Backend/tests/run_local.sh` runs the first five scripts the same way and stops the server when it exits.
-- Each script prints its checks and exits non-zero on failure. Add a new test file to the `security` job.
+  `GLPI_ALLOW_PRIVATE=1` lets `test_glpi.py` reach its fake GLPI there. `run_local.sh` sets them, and the other
+  variables the scripts expect (`METRICS_TOKEN`, `POPS_DEMO_USERS`, `PEER_CACHE_SEED_TIMEOUT_SECONDS`,
+  `POPS_SSO_ALLOW_INSECURE_FOR_TESTS`). `test_sso.py` starts OpenLDAP with Docker and skips that part without it.
 
 ### Migration check
 
@@ -327,7 +346,7 @@ Agent files named without a path are in `Agent/POps.Agent/POps.Agent/`.
 
 - Fork the repository (or use a branch if you have write access) and branch from `main`. Keep one topic per pull
   request, and keep refactoring separate from behaviour changes.
-- Fill in the [pull request template](.github/pull_request_template.md) and say how you tested: which scripts, and
+- Fill in the [pull request template](.github/pull_request_template.md) and say how you tested: which tests, and
   for agent changes which Windows version. For changes to the updater or the MSI, say whether the rollback drill
   was run.
 - All CI jobs and CodeQL must pass.

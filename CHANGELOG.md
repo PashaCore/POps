@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Backend tests run under pytest.** `python -m pytest` runs `Backend/tests` (configuration: the root `pytest.ini`; pytest comes from the hash-locked `.github/requirements/pytest.lock`). `test_units.py` is a pytest module, one test per function, so a single test can be selected (`-k`) and JUnit output written (`--junitxml`). The older script tests are collected by `Backend/tests/conftest.py` without being imported: each runs in its own process as one test, a failure lists the checks that failed, scripts that need a running server carry the `integration` marker and keep the order CI used, and a new script needs no registration. CI and `Backend/tests/run_local.sh` call pytest instead of listing the scripts; how to run, select and add tests is in CONTRIBUTING.md.
 - **Agent updates per platform.** A signed release carries the MSI and the `.deb`. fetch-release stages both; deploy-update copies both to `/updates/` and skips PCs whose platform has no package (`skipped_no_package`). Migration `0026` adds `clients.platform`.
 - **Agent results:** a `[REDDEDİLDİ]` result with exit code -5 now marks the task `Denied` directly.
 - **`/api/devices`** returns `agent_features`. Closing the Dosya dağıtımı module in a lab denies its pending winget tasks.

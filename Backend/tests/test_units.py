@@ -1,6 +1,7 @@
 """Sunucu gerektirmeyen birim testleri (CI 'backend' job'ı).
 
-Veritabanı ya da çalışan sunucu gerekmez: python Backend/tests/test_units.py
+Veritabanı ya da çalışan sunucu gerekmez: python -m pytest Backend/tests/test_units.py
+(tek bir test: ... -k test_bypass). Her test_* fonksiyonu ayrı bir pytest testidir.
 """
 
 import os
@@ -18,16 +19,18 @@ import time  # noqa: E402
 
 import datetime  # noqa: E402
 
+import pytest  # noqa: E402
+
 from pops import agent_health, bypass, logs, update_notice, update_tracking  # noqa: E402
 from pops.routers import activity  # noqa: E402
 
-FAILS = []
+FAILS = []   # yalnızca main() (python tests/test_units.py) için; pytest main()'i kullanmaz, chk() ilk hatada düşürür
 
 
 def chk(cond, msg):
-    print(("  OK   " if cond else "  FAIL ") + msg)
+    """Koşul sağlanmazsa testi msg ile düşürür (betik biçiminden kalan yardımcı; yeni testlerde assert yazın)."""
     if not cond:
-        FAILS.append(msg)
+        pytest.fail(msg)
 
 
 def test_update_notice():
