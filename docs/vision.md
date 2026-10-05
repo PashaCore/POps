@@ -63,7 +63,8 @@ full JPEG frames as JSON (`stream_frame`, base64), as before.
 
 - **Capture (tray, user session):**
   - DXGI Desktop Duplication per screen, with GDI as the fallback where DXGI is not available (RDP, some
-    virtual machines, a secure desktop).
+    virtual machines). Neither captures the secure desktop; see
+    [Secure desktop](#secure-desktop-uac-prompts-logon-screen).
   - The capture thread runs per-monitor DPI aware, so all coordinates are physical pixels.
 - **Changed regions:** After a full frame, only changed regions are sent. They are found by comparing 64×64
   tiles with what the viewer already has; touching tiles are merged. If more than 8 regions remain or they cover
@@ -256,7 +257,164 @@ and the PC detail panel ([`dashboard.md`](dashboard.md#working-with-pcs)).
 
 - Vision needs the tray to be running in a signed-in user session. With nobody signed in there is no screen to
   capture.
+- The secure desktop (UAC prompts, Ctrl+Alt+Del, the lock and sign-in screens) is neither shown nor controlled;
+  the viewer gets a notice picture while it is up ([below](#secure-desktop-uac-prompts-logon-screen)).
 - Agents before Vision v2 capture only the primary monitor; a v2 agent streams any screen, or all side by side.
 - Frames travel over the same TLS connection as the rest of the agent traffic (`wss://`).
 - Enforcement: once `enforce_agent_auth` is on, `/ws/vision` connections without valid agent credentials are
   rejected (`4401`) and audited.
+
+## Secure desktop (UAC prompts, logon screen)
+
+Windows shows some screens on a separate, protected desktop: the UAC prompt (while "Switch to the secure desktop
+when prompting for elevation" is on, the Windows default), the Ctrl+Alt+Del screen, the lock screen and the
+sign-in screen. It is the `Winlogon` desktop of the session's `WinSta0` window station. Only LocalSystem can open
+it, and while it is up Windows sends the display, keyboard and mouse to it instead of the user's desktop. Vision
+does not show or control it.
+
+### What happens today
+
+- **Detection:** before each frame the tray checks whether the input desktop (the one on screen) is the desktop
+  it runs on (`OpenInputDesktop` with read access only, then its name). While the secure desktop is up the tray,
+  running as the user, cannot open it.
+- **Viewer:** instead of a frozen last picture the viewer gets a generated notice ("Güvenli masaüstü etkin", with
+  an English line) in the normal frame format: a JPEG `stream_frame` on the JSON path, a full frame (`0x01`) with
+  Vision v2. The tray sends it when the switch happens, again every 5 seconds so that a viewer that connects later
+  also gets it, and with v2 whenever a full frame is needed (a dropped frame, `select_monitor`, a scale change).
+  Nothing is read from the screen for it. The protocol is unchanged.
+- **Return:** when the user's desktop comes back, capture continues. With v2 the tray reopens its DXGI sources
+  (a duplication is lost on every desktop switch) and sends a full frame. A failed GDI capture (the desktop switched
+  between the check and the capture) is retried on the next frame and does not end the v2 capture thread. The tray
+  log records the switch and the return, never the picture.
+- **Remote input:** the tray runs as the user on `WinSta0\Default`. While another desktop has the input, Windows
+  refuses its `SendInput`, `mouse_event` and `SetCursorPos`; events that arrive meanwhile are dropped, not queued,
+  and never reach the prompt. The admin cannot click **Yes** on a UAC prompt, type credentials into it, press
+  Ctrl+Alt+Del or unlock the PC.
+- **Previews:** a preview requested while the secure desktop is up gets no picture (the service waits 5 seconds
+  for it).
+- **Consent:** the consent dialog and the countdown are windows on the user's desktop. A session requested while
+  the PC is locked is seen only after the user unlocks. A routine session waits for the answer; a mandatory session
+  starts when its countdown ends, and the viewer sees the notice until the user unlocks.
+- **Nobody signed in** (sign-in screen after a restart or sign-out): there is no tray, so there is nothing to
+  capture, and `start_vision_session` is not answered.
+
+### Why the secure desktop is not captured
+
+1. **It needs a SYSTEM process inside the user's session.** Only LocalSystem can open the `Winlogon` desktop, and
+   DXGI Desktop Duplication refuses it (`E_ACCESSDENIED`) to any other account. The service is LocalSystem but runs
+   in session 0, which has its own window stations and cannot reach the console session's desktops (session 0
+   isolation). Capturing the secure desktop means starting a second SYSTEM process in the user's session, which
+   undoes that isolation on purpose. Any bug in it (frame encoding, message parsing, a library loaded from the
+   wrong place) is a local privilege escalation, and the student at the PC is the person best placed to try one.
+2. **Input there is elevation.** An administrator approves a UAC consent prompt with one click; the secure desktop
+   exists so that no program can make that click. A remote click sent by a SYSTEM helper is exactly such a program.
+   For a standard user the prompt asks for an administrator's password, which the admin would type remotely.
+   Whether a Vision session may approve elevation is a policy decision before it is a technical one.
+3. **Ctrl+Alt+Del needs a security setting.** `SendSAS` works only when the `SoftwareSASGeneration` policy
+   ("Disable or enable software Secure Attention Sequence") allows services; Windows ships with it off. Turning it
+   on for every PC weakens the secure attention sequence and is not something the agent should change.
+4. **On the sign-in screen there is nobody to ask.** A routine session needs the user's yes, and a mandatory one
+   tells the user with a countdown. With nobody signed in there is neither a user nor a tray, and a notice on the
+   secure desktop would need yet another SYSTEM window there. Even with a user signed in, the lock screen can show
+   notification previews, the user name and e-mail address; whether consent to "my screen" covers that is a
+   privacy (KVKK) question.
+5. **It cannot be tested where it is written.** The parts that matter (a SYSTEM process in the console session,
+   following desktop switches, DXGI on `Winlogon`, input to a UAC prompt) run only as SYSTEM on a real secure
+   desktop, that is, by hand on a lab PC. Unit tests can cover the decisions around them, not the mechanism. A
+   half-tested SYSTEM component is worse than this documented limit.
+6. **The binaries are not Authenticode-signed yet** ([`code-signing.md`](code-signing.md)). The tray pipe checks
+   the image path and checks a signature only once one exists. A SYSTEM helper should require a valid signature in
+   both directions, so it should not ship before signing.
+
+### Design for a later implementation
+
+**Components**
+
+- `POpsSecureDesktop.exe`, new, in the install folder, signed. No window, no tray icon, no network, and no file,
+  registry or process access beyond what is listed here. A dedicated capture thread (no windows or hooks, so
+  `SetThreadDesktop` succeeds) follows the input desktop with `OpenInputDesktop` + `SetThreadDesktop`, captures with
+  DXGI Desktop Duplication (recreated after each `DXGI_ERROR_ACCESS_LOST`) or GDI `BitBlt` from that desktop, and
+  encodes Vision v2 frames (same header, same 2 MB limit). It captures only while the input desktop is `Winlogon`;
+  on the user's desktop it sends nothing and the tray captures as today (least privilege).
+- In the service: a launcher and a second pipe. Frames go through `VisionRelay` as today, so the viewer needs no
+  change. Today's notice picture stays as the fallback when the helper is not allowed or fails.
+
+**Starting it**
+
+- Only the service starts it, only during an approved Vision session (`_visionSessionApproved`, Vision capability
+  and module on), and only after the tray reports that the secure desktop is up.
+- Token and process: `DuplicateTokenEx` of the service's own LocalSystem token (primary token),
+  `SetTokenInformation(TokenSessionId)` with the console session from `WTSGetActiveConsoleSessionId` (needs
+  `SeTcbPrivilege`, which LocalSystem has), then `CreateProcessAsUser` with `lpDesktop = "winsta0\winlogon"`, no
+  inherited handles and no user environment block (the user's `DOTNET_*` variables must not reach a SYSTEM
+  process). Built with `StartupHookSupport=false`, like the tray.
+- Lifetime: never longer than the session. The service ends it on `stop_stream`, session end, tray disconnect,
+  Vision capability or module off, and service stop. The helper exits on its own when its pipe closes, when no
+  keep-alive arrives for a few seconds, or when the user's desktop returns.
+
+**Pipe**
+
+- A separate pipe (for example `POpsSecureDesktopPipe`) created by the service, with LocalSystem as the only entry
+  in its ACL and as its owner: no user process can open it.
+- The service accepts a client only if its image path is the installed helper, its token user is `S-1-5-18`, its
+  session is the console session and its Authenticode signature is valid (required, not "when signed"). The helper
+  checks that the pipe's owner is SYSTEM (`PipeOwner`).
+- Messages: service to helper `START:fps`, `QUALITY:q,s,fps`, `SELECT:n|all`, `STOP`, and validated input events
+  only if input is allowed; helper to service: v2 frames (checked with `VisionFrame.TryParse` as today) and
+  `DESKTOP:winlogon|other`. Anything else closes the pipe. Messages are limited to the frame size (2 MB), not the
+  tray pipe's 32 MB.
+
+**Consent and audit**
+
+- Same rules as today: the helper runs only inside a session that the user accepted, or a mandatory session whose
+  notice was shown. For a mandatory session the notice should have been shown while the user's desktop was on
+  screen (the tray reports that), so that a locked PC is never watched without the user having seen the countdown.
+- The clipboard stays off on the secure desktop.
+- Local audit (Windows event log, `POps Agent`): 1160 "secure desktop shown" (`session_id`, `requested_by`,
+  `user_approved`, input on or off) and 1161 "secure desktop ended" (with the duration). The server records the
+  same through an additive agent message (for example `vision_secure_desktop` with `state` `started` / `ended`) in
+  `device_audit_logs`.
+- Afterwards the tray tells the user that the admin also saw the secure desktop.
+- Input to the secure desktop is off by default and can be switched on only locally (an MSI property like
+  `VISION_ENABLED`, which the server can switch off but not on).
+
+**Threat model**
+
+| Who | Tries to | Stopped by |
+| --- | --- | --- |
+| Student at the PC | Open the helper pipe or feed it messages | Pipe ACL: LocalSystem only |
+| Student at the PC | Run a fake helper or replace the exe | Only the service starts it, from the install folder; image path, SYSTEM token, session and signature checks |
+| Student at the PC | Load code into it (DLL, startup hook, environment) | Install folder writable by administrators only; no user environment; `StartupHookSupport=false` |
+| Student at the PC | Window messages to it | It has no windows; UIPI blocks lower-integrity senders |
+| Student at the PC | Keep it running after the session | Lifetime bound to the session and a keep-alive |
+| Compromised tray | Report a desktop switch that did not happen | The helper checks the input desktop itself and only runs inside an approved session |
+| Compromised server | Watch the lock or sign-in screen, or approve UAC prompts, without consent | Same consent flow; `VISION_ENABLED=0` capability lock; input only if enabled locally; local audit 1160/1161 independent of the server |
+| Bug in the helper | Crash or misparse | Fixed message set, strict parsing, no file or shell access; it exits on any error and the viewer falls back to the notice |
+
+**Tests**
+
+- Unit tests with seams (CI): the start decision (approved session, capability, module, secure desktop reported);
+  the token and start parameters (session, desktop name, flags) built by a pure function; client verification with
+  fake path, SID, session and signature; the message parser (allowed set, sizes, malformed input closes the pipe);
+  lifetime (session end, tray disconnect, capability off, keep-alive timeout); audit events 1160/1161; the relay
+  forwarding helper frames only in an approved session.
+- By hand on a lab PC, never on a developer's machine: UAC consent and credential prompts, the Ctrl+Alt+Del screen,
+  Win+L and unlock, sign-out and the sign-in screen, fast user switching, an RDP session (no console), two monitors,
+  a virtual machine without DXGI (GDI). Kill the service and check that the helper exits; try to open the pipe as a
+  standard user and as an administrator; in Process Explorer check token SYSTEM, the user's session, desktop
+  `Winlogon`, no network connections and no child processes; check events 1160/1161.
+
+### Decisions for the owner
+
+1. May Vision show the secure desktop at all (lock screen notifications, user name, KVKK)?
+2. View only, or also input (approving UAC prompts, typing an administrator's password remotely)? Recommended:
+   view only first.
+3. Ctrl+Alt+Del: turning on `SoftwareSASGeneration` on every PC. Recommended: no.
+4. The sign-in screen with nobody signed in: not supported, or mandatory sessions only, with a reason and a notice
+   drawn on the secure desktop?
+5. A mandatory session that starts while the PC is locked shows its countdown on the hidden user desktop. Should
+   the countdown wait until the user's desktop is on screen? This applies today, with or without a helper.
+6. Authenticode signing before a SYSTEM helper ships.
+
+Until then, for tasks that need elevation use remote commands (**Uzak komut**, `execute`), which run as SYSTEM and
+are audited, rather than a UAC prompt inside a Vision session.
