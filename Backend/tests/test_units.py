@@ -1326,12 +1326,14 @@ def test_vision_v2():
         m.add_vision_session("HW-2", "veli")
         frame, _ = v.parse_frame(full)
         n = await m.send_binary_frame_to_viewers("HW-1", frame, full)
-        await asyncio.sleep(0)
+        for _ in range(20):   # panel gönderici görevi: Python 3.10'da tek tur yetmez
+            await asyncio.sleep(0)
         chk(n == 1 and panels["own"].sent == [b"\x01\x04HW-1" + full] and not panels["own_text"].sent
             and not panels["other"].sent and not panels["viewer"].sent,
             "F12: ikili kare yalnız oturum sahibinin ikili panelinde; önek tünelin cihazı")
         await m.send_to_session_holders({"type": "monitors", "hw_id": "HW-1", "list": []}, "HW-1")
-        await asyncio.sleep(0)
+        for _ in range(20):
+            await asyncio.sleep(0)
         chk(len(panels["own_text"].sent) == 1 and not panels["other"].sent and not panels["viewer"].sent,
             "monitors yalnız oturum sahibinin panellerine")
         chk(not m.clipboard_allowed("ali", "HW-1"), "pano: tünel açılmadan kapalı")
