@@ -41,3 +41,6 @@ Dashboard/includes/config.php
 .coverage.*
 coverage.xml
 htmlcov/
+
+# Public demo secrets (deploy/demo/setup-host.sh)
+deploy/demo/.env.demo

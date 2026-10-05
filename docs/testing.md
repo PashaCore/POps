@@ -134,6 +134,7 @@ machine and a regression would not be caught by CI.
 | Request ID, `/metrics` access control, diagnostics, overview history | Tested | `test_ops.py`, `test_units.py` |
 | API tokens (superadmin-only management, hash-only storage, viewer GET-only, admin limits, expiry and revocation, `last_used_at` throttle, `token:<name>` in tasks and audit), `/api/v1` and REST names equal to the old paths, `task_sequence`/`taskSequence`, CSRF for cookie sessions, shared rate limit and metric labels | Tested | `test_api_tokens.py`, `test_units.py` |
 | `docs/openapi.json` matches the code | Tested | CI `backend` job (`tools/export_openapi.py --check`) |
+| Demo accounts (`POPS_DEMO_USERS`) cannot change anything: every write endpoint from the route table returns `403` | Tested | `test_demo.py` |
 | Migrations from empty and idempotency | Tested | `migrations` job |
 | Server self-update and deploy rollback | Tested (fakes) | `test_deploy.sh`: rollback of code and venv after a failed `pip`, copy or health check; venv rebuilt when its Python is too old (and put back on failure); early stop without a new enough Python; signed release tags. The real systemd path is field-verified (`deploy-status.json` `state=ok`). |
 | Panel pages (PHP) | Tested | End-to-end smoke of every page at desktop and phone width, and the main flows (sign-in, devices, labs, tasks, logs, Sistem, Ayarlar, viewer role) in Chromium: `tests/e2e/`, CI `panel-e2e` job. Not covered: Vision and remote command against a live agent (no agent and no WebSocket proxy in the stack). |

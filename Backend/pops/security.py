@@ -18,13 +18,19 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from pops.config import CSRF_SAFE_METHODS, JWT_ALGO, JWT_COOKIE_NAME, JWT_EXPIRE_H, JWT_SECRET
+from pops.config import CSRF_SAFE_METHODS, DEMO_USERS, JWT_ALGO, JWT_COOKIE_NAME, JWT_EXPIRE_H, JWT_SECRET
 from pops.db import execute_query
 
 log = logging.getLogger("pops.security")
 
 
 limiter = Limiter(key_func=get_remote_address)
+
+
+# Demo hesapları (POPS_DEMO_USERS) yalnızca okur: GET/HEAD/OPTIONS dışındaki her panel isteği burada reddedilir.
+# Gövdesi sorgu taşıyan, hiçbir şey değiştirmeyen POST uçları ayrıca izinlidir.
+DEMO_DENIED = "Demo hesabında değiştirilemez"
+DEMO_READ_ONLY_POSTS = frozenset({"/api/tasks/status"})
 
 
 security_scheme = HTTPBearer(auto_error=False)
@@ -159,6 +165,14 @@ async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = D
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail='Geçersiz, süresi dolmuş ya da iptal edilmiş oturum'
         )
+    # Bütün panel uçları (require_admin, require_superadmin, modül denetimi) buradan geçer: demo hesabının yazma
+    # isteği rolüne bakılmadan tek yerde reddedilir (kendi şifresi, 2FA'sı dahil)
+    if (
+        session['sub'] in DEMO_USERS
+        and request.method not in CSRF_SAFE_METHODS
+        and request.url.path not in DEMO_READ_ONLY_POSTS
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=DEMO_DENIED)
     return session
 
 

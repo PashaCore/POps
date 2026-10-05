@@ -68,6 +68,7 @@ Ways to create it:
 | `LOG_LEVEL` | no | `INFO` | Backend log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | `LOG_FORMAT` | no | `json` | `json`: one JSON object per line (for journald and log collectors). `text`: readable lines for development. |
 | `METRICS_TOKEN` | no | unset | Turns on the Prometheus `/metrics` endpoint; at least 16 characters, sent as `Authorization: Bearer <token>`. Unset: the endpoint returns 404. See [`backend.md`](backend.md#logs-metrics-and-diagnostics). |
+| `POPS_DEMO_USERS` | no | empty | Comma-separated panel user names that are **read-only demo accounts** (for a public demo). They can sign in and read, but every other request (anything but `GET`, `HEAD`, `OPTIONS`) returns `403` with `Demo hesabında değiştirilemez`, including their own password and 2FA. See [Public demo](#public-demo-read-only-accounts). |
 
 The backend refuses to start (`RuntimeError: Ortam değişkeni tanımlı değil: …`) when `JWT_SECRET`, `DB_USER`,
 `DB_PASS` or `DB_NAME` is missing.
@@ -125,7 +126,8 @@ project-root `.env` (two levels above `Dashboard/includes/`):
 | Variable | Default | Used for |
 | --- | --- | --- |
 | `POPS_API_INTERNAL_URL` | `http://localhost:8000` | The address PHP uses to reach the backend for the login request (server to server). Set it if the backend is not on `localhost:8000`. |
-| `POPS_API_URL` | placeholder | Defines the `API_URL` constant. The current pages do not use it. |
+| `POPS_API_URL` | placeholder | Defines the `API_URL` constant; the sign-in page uses it for the organisation logo. |
+| `POPS_DEMO_LOGIN` | empty | `user:password` of a public demo account. The sign-in page shows "Demo: kullanıcı …, şifre … (salt okunur)" and pre-fills the user name. Empty: nothing is shown. |
 
 `install.sh` writes `POPS_API_INTERNAL_URL` into the backend's `.env` (for example `/opt/pops/.env`), which the panel
 does not read. If you installed with a `PORT` other than 8000, set the variable for PHP as well.
@@ -136,6 +138,22 @@ In the browser, the panel always calls the API and WebSockets on **its own origi
 
 The session and JWT cookies are marked `Secure` automatically when the request is HTTPS (directly or through
 `X-Forwarded-Proto: https`).
+
+### Public demo (read-only accounts)
+
+A public demo panel needs an account that anyone may use. Two settings make one:
+
+1. **Backend** `POPS_DEMO_USERS=demo` (comma list). The check is in `require_auth`
+   (`Backend/pops/security.py`), which every panel endpoint goes through, so it covers endpoints added later too.
+   Only `GET`, `HEAD` and `OPTIONS` pass, plus `POST /api/tasks/status`, which reads task states. Everything else,
+   the account's own password and 2FA included, returns `403` with `Demo hesabında değiştirilemez`. Give the
+   account the `viewer` role as well: admin-only pages and endpoints then stay closed for reading too.
+2. **Panel** `POPS_DEMO_LOGIN=demo:demo` shows the credentials on the sign-in page (escaped) and pre-fills the
+   user name. Only `config.php` files made from the current template read it (`define('POPS_DEMO_LOGIN', …)`);
+   an older `config.php` simply shows nothing.
+
+The user itself is created like any other viewer. `deploy/demo/` contains a complete demo (fake fleet, seed data,
+nightly reset) built on these two settings.
 
 ## Agent configuration
 

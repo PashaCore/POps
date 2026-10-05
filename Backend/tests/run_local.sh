@@ -15,6 +15,8 @@ export POPS_TEST_HTTP="${POPS_TEST_HTTP:-http://127.0.0.1:8099}"
 export NOTIFY_WEBHOOK_ALLOW_PRIVATE=1
 export CORS_ALLOWED_ORIGINS=""
 export METRICS_TOKEN="${METRICS_TOKEN:-local-metrics-token-0123456789}"
+# test_demo.py: salt okunur demo hesabı (sunucu ve test aynı değeri okur)
+export POPS_DEMO_USERS="${POPS_DEMO_USERS:-ci_demo}"
 
 if [ "${COVERAGE:-0}" = "1" ]; then
   rm -f .coverage .coverage.*
@@ -46,6 +48,7 @@ python tests/test_features.py
 python tests/test_helpdesk_licenses.py
 python tests/test_ops.py
 python tests/test_api_tokens.py
+python tests/test_demo.py
 if [ "${COVERAGE:-0}" = "1" ]; then
   kill -TERM "$UP"; wait "$UP" 2>/dev/null || true
   python -m coverage combine --rcfile=.coveragerc >/dev/null

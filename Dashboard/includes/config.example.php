@@ -32,3 +32,7 @@ function pops_env(string $key, ?string $default = null): ?string
 
 // Panelin sunucu tarafından (PHP -> FastAPI) konuştuğu iç API adresi
 define('API_INTERNAL_URL', rtrim(pops_env('POPS_API_INTERNAL_URL', 'http://localhost:8000'), '/'));
+
+// Herkese açık demo: "kullanıcı:şifre" verilirse giriş sayfası bu salt okunur hesabı gösterir (boş = gösterilmez).
+// Hesabın kendisi sunucuda POPS_DEMO_USERS ile salt okunur yapılır; bkz. docs/configuration.md
+define('POPS_DEMO_LOGIN', (string) pops_env('POPS_DEMO_LOGIN', ''));

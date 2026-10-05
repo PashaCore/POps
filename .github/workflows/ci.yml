@@ -504,6 +504,8 @@ jobs:
       NOTIFY_WEBHOOK_ALLOW_PRIVATE: "1"
       # test_ops.py /metrics'i bu jetonla okur (sunucu ile aynı değer)
       METRICS_TOKEN: ci-metrics-token-0123456789
+      # test_demo.py: bu hesap salt okunur demo hesabıdır (sunucu ve test aynı değeri okur)
+      POPS_DEMO_USERS: ci_demo
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Set up Python
@@ -538,6 +540,7 @@ jobs:
           python Backend/tests/test_helpdesk_licenses.py
           python Backend/tests/test_ops.py
           python Backend/tests/test_api_tokens.py
+          python Backend/tests/test_demo.py
       - name: Backend coverage
         # Alt sınır (fail_under) kapsamın fark edilmeden düşmesini engeller; kapsam arttıkça yükseltin.
         # Hangi kritik yolların test edildiği: docs/testing.md
