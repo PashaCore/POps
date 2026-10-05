@@ -3,6 +3,7 @@
 import datetime
 import json
 import logging
+import re
 import secrets
 import time
 from typing import Optional
@@ -25,7 +26,7 @@ from pops.agent_auth import (
 from pops.audit import add_audit_log, log_audit_event
 from pops.manager import manager
 from pops.taskqueue import process_queue
-from pops.dna import check_known_device, reconcile_device
+from pops.dna import check_known_device, reconcile_device, clean_payload as clean_dna_payload
 from pops.notify import notify
 from pops import agent_health, agent_version as agent_version_mod, bypass, devicelist, heartbeats, metrics
 from pops import update_notice, winget
@@ -320,6 +321,45 @@ def _close_reason(code, reason) -> str:
     return "%s: %s" % (text, reason[:120]) if reason else text
 
 
+# JSON'da NUL ve eşi olmayan vekil karakter yalnızca \u kaçışıyla gelebilir (ham denetim karakteri JSON'u bozar)
+_UNSTORABLE_ESCAPE = re.compile(r"\\u(?:0000|[dD][89a-fA-F][0-9a-fA-F]{2})")
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def _storable_text(text: str) -> str:
+    return _SURROGATE.sub("\ufffd", text.replace("\x00", ""))
+
+
+def _parse_agent_message(data: str):
+    """Ajanın bir çerçevesi -> JSON değeri, içindeki metinler PostgreSQL'e yazılabilir hâlde: NUL (U+0000) silinir, eşi
+    olmayan vekil karakter (ör. \\udfff) U+FFFD olur. PostgreSQL ikisini de metinde ve jsonb'de reddeder: böyle bir
+    görev çıktısı hiç saklanamaz (ajan onaysız sonucu yeniden gönderip durur), toplu heartbeat yazımında tek bir satır
+    bütün cihazların heartbeat'ini düşürürdü (fuzz/fuzz_agent_ws.py). Kaçış yoksa yapı gezilmez."""
+    payload = json.loads(data)
+    if not _UNSTORABLE_ESCAPE.search(data):
+        return payload
+    if isinstance(payload, str):
+        return _storable_text(payload)
+    stack = [payload]   # özyinelemesiz: derin iç içe JSON yığını aşmasın
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            for key in list(item):
+                value = item.pop(key)
+                if isinstance(value, str):
+                    value = _storable_text(value)
+                else:
+                    stack.append(value)
+                item[_storable_text(key)] = value
+        elif isinstance(item, list):
+            for i, value in enumerate(item):
+                if isinstance(value, str):
+                    item[i] = _storable_text(value)
+                else:
+                    stack.append(value)
+    return payload
+
+
 def _is_reboot_command(script: Optional[str]) -> bool:
     """Komut cihazı yeniden başlatıyor mu (shutdown /r, Restart-Computer)? Düzenli ifade kullanılmaz."""
     text = (script or "")[:20000].lower()
@@ -343,8 +383,7 @@ async def _settle_running_tasks(pc_name: str, health, agent_version: str) -> Non
     )
     if not rows:
         return
-    started = health.get("started_at") if isinstance(health, dict) else None
-    started = started if isinstance(started, (int, float)) and not isinstance(started, bool) else None
+    started = agent_health.unix_time(health.get("started_at")) if isinstance(health, dict) else None
     resends = agent_version_mod.at_least(agent_version, (0, 1, 13))
     for r in rows:
         recorded = r.get("agent_started_at")
@@ -635,11 +674,11 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
 
     try:
         data = await websocket.receive_text()
-        payload = json.loads(data)
+        payload = _parse_agent_message(data)
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         if "dna_payload" in payload:
-            dna_payload = payload.get("dna_payload") or {}
+            dna_payload = clean_dna_payload(payload.get("dna_payload"))
             keep_dna = False
             if auth_method == "secret":
                 # Anahtarla doğrulanan bağlantının kimliği değişmez (F04): donanım bilgisi başka bir cihaza
@@ -694,7 +733,8 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
 
             hw = dna_payload.get("hardware", {})
             caps = dna_payload.get("capabilities", {})
-            real_hostname = payload.get("hostname", active_hwid)
+            real_hostname = payload.get("hostname")
+            real_hostname = real_hostname if isinstance(real_hostname, str) else active_hwid
             platform = agent_platform(platform_header, payload.get("platform"))
 
             # Bağlantı koptuğunda "çalışıyor" kalan görevlerin akıbeti (F05)
@@ -809,7 +849,7 @@ async def websocket_agent(websocket: WebSocket, pc_name: str):
             data = await websocket.receive_text()
             mtype = None
             try:
-                payload = json.loads(data)
+                payload = _parse_agent_message(data)
                 if not isinstance(payload, dict):
                     raise ValueError("mesaj JSON nesnesi değil")
                 mtype = str(payload.get("type") or "")[:40]

@@ -1534,6 +1534,28 @@ def test_devicelist():
         dl.reset()
 
 
+def test_fuzz_findings():
+    """fuzz/ hedeflerinin bulduğu hatalar (docs/fuzzing.md)."""
+    print("== fuzz bulguları")
+    from pops import dna
+    from pops.routers import agents
+
+    out = json.loads(agent_health.clean({"started_at": 1e999, "last_policy_sync": float("nan"),
+                                         "last_inventory_upload": 10**400}))
+    chk(out["started_at"] is None and out["last_policy_sync"] is None and out["last_inventory_upload"] is None,
+        "agent_health: sonsuz, NaN ve çok büyük zaman yok sayılır")
+    cleaned = dna.clean_payload({"hardware": {"uuid": 5, "mac": "00:1A", "cpu": "x"},
+                                 "capabilities": {"ram_readable": "evet"}, "os": "Windows"})
+    chk(cleaned == {"hardware": {"mac": "00:1A", "cpu": "x"}, "capabilities": {}, "os": "Windows"},
+        "dna_payload: yanlış türdeki kimlik ve ram_readable atılır")
+    chk(dna.clean_payload([1]) == {"hardware": {}, "capabilities": {}}
+        and dna.clean_payload({"hardware": 9})["hardware"] == {}, "dna_payload: nesne olmayan blok boş sayılır")
+    msg = agents._parse_agent_message('{"type": "result", "output": "a\\u0000b\\udfff", "k\\u0000": ["\\u0000"]}')
+    chk(msg == {"type": "result", "output": "ab\ufffd", "k": [""]},
+        "ajan mesajı: NUL silinir, eşi olmayan vekil karakter U+FFFD olur")
+    chk(agents._parse_agent_message('{"e": "\\ud83d\\ude00"}') == {"e": "\U0001F600"}, "ajan mesajı: emoji korunur")
+
+
 def main():
     test_update_notice()
     test_update_progress()
@@ -1556,6 +1578,7 @@ def main():
     test_winget()
     test_vision_v2()
     test_devicelist()
+    test_fuzz_findings()
     if FAILS:
         print("BASARISIZ: %d kontrol" % len(FAILS))
         sys.exit(1)
