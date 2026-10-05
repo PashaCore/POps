@@ -127,7 +127,8 @@ namespace POps.Shared
         }
 
         // exePath'i oturumdaki kullanıcı olarak başlatır. Dönen: başarılı mı; error: nedeni (loglamak için)
-        public static bool TryStart(uint sessionId, string exePath, out int processId, out string error)
+        // arguments: komut satırına exe yolundan sonra eklenir (ör. watchdog'a veri klasörü); null: yok
+        public static bool TryStart(uint sessionId, string exePath, out int processId, out string error, string arguments = null)
         {
             processId = 0;
             error = null;
@@ -148,7 +149,7 @@ namespace POps.Shared
                 }
 
                 var startup = new StartupInfo { cb = Marshal.SizeOf<StartupInfo>(), lpDesktop = @"winsta0\default" };
-                var commandLine = new StringBuilder("\"" + exePath + "\"");
+                var commandLine = new StringBuilder("\"" + exePath + "\"" + (string.IsNullOrEmpty(arguments) ? "" : " " + arguments));
                 uint flags = CreateUnicodeEnvironment | CreateNoWindow;
                 if (!CreateProcessAsUser(primary, exePath, commandLine, IntPtr.Zero, IntPtr.Zero, false, flags, environment, Path.GetDirectoryName(exePath), ref startup, out ProcessInformation info))
                 {

@@ -28,7 +28,8 @@ namespace POpsAgent
     [SupportedOSPlatform("windows")]
     public static class AgentUpdate
     {
-        public static string DataDir { get; set; } = @"C:\POpsData";
+        // appsettings.json "DataDirectory" (servis açılışta seçer, bkz. AgentDirectories); testlerde geçici klasör
+        public static string DataDir { get; set; } = FolderSettings.DefaultDataDirectory;
         public static string UpdatesDir => Path.Combine(DataDir, "updates");
         public static string UpdaterDir => Path.Combine(DataDir, "updater");
         public static string LockPath => Path.Combine(DataDir, "update.lock");
@@ -507,6 +508,8 @@ namespace POpsAgent
                 };
                 foreach (string arg in new[] { "--msi", msiPath, "--sha256", sha256, "--from", InstalledVersion, "--to", toVersion, "--installdir", installDir })
                     psi.ArgumentList.Add(arg);
+                // Servisin kullandığı veri ve log klasörleri (updater appsettings.json'u okumaz; bkz. AgentDirectories)
+                foreach (string arg in AgentDirectories.UpdaterArguments()) psi.ArgumentList.Add(arg);
 
                 using Process updater = Process.Start(psi) ?? throw new InvalidOperationException("süreç başlatılamadı");
                 POpsHelpers.Log("UPDATE", $"POpsUpdater başlatıldı (PID {updater.Id}); servis kurulum sırasında durup yeni sürümle açılacak.");

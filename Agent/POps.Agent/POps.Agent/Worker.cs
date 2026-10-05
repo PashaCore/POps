@@ -255,11 +255,23 @@ namespace POpsAgent
         // Yapılandırma sorunu (appsettings.json okunamadı, ServerUrl yok ya da geçersiz); null: sorun yok
         internal string ConfigProblem { get; private set; }
 
+        // Klasör ayarının sorunu (LogDirectory / DataDirectory geçersiz ya da kilitlenemedi; varsayılan klasör kullanılıyor,
+        // bkz. AgentDirectories); null: sorun yok
+        internal string FolderProblem { get; set; } = AgentDirectories.Problem;
+
         internal void ReportConfigProblem()
         {
-            if (ConfigProblem == null) return;
-            POpsHelpers.Log("AGENT", $"[HATA] Yapılandırma okunamadı: {ConfigProblem}. Sunucu adresi olarak {_serverUrl} kullanılıyor; ajan yönetilemez durumda.", true);
-            LocalAudit.Write(LocalAudit.ConfigUnreadable(ConfigProblem, _serverUrl));
+            if (ConfigProblem != null)
+            {
+                POpsHelpers.Log("AGENT", $"[HATA] Yapılandırma okunamadı: {ConfigProblem}. Sunucu adresi olarak {_serverUrl} kullanılıyor; ajan yönetilemez durumda.", true);
+                LocalAudit.Write(LocalAudit.ConfigUnreadable(ConfigProblem, _serverUrl));
+            }
+            // Ajan varsayılan klasörle yönetilmeye devam eder: tepside gösterilmez, yalnızca log ve Olay Günlüğü
+            if (FolderProblem != null)
+            {
+                POpsHelpers.Log("AGENT", $"[HATA] Yapılandırma: {FolderProblem}.", true);
+                LocalAudit.Write(LocalAudit.ConfigUnreadable(FolderProblem, _serverUrl));
+            }
         }
 
         // Tepsi uyarı simgesi ve "yapılandırma okunamadı" gösterir (bkz. POpsTray CONFIG_ERROR)

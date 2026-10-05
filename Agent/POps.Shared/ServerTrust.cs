@@ -31,8 +31,8 @@ namespace POps.Shared
         private static bool _broken;
         private static DateTime _lastRejectLogUtc = DateTime.MinValue;
 
-        // Testlerde geçici dosyaya çevrilir
-        public static string CaPath { get; set; } = Path.Combine(@"C:\POpsData\secure", FileName);
+        // Veri klasörü (DataDirectory) seçilince servis açılışta ayarlar; testlerde geçici dosyaya çevrilir
+        public static string CaPath { get; set; } = Path.Combine(FolderSettings.DefaultDataDirectory, "secure", FileName);
 
         // Sunucuya bildirilen kip ("server_ca"): dosya varsa (bozuk olsa da) custom, yoksa system
         public static string Mode

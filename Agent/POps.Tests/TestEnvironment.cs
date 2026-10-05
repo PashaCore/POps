@@ -21,6 +21,8 @@ namespace POps.Tests
         // Testlerin kullandığı veri ve güvenli klasörler (hep geçici klasörün içinde)
         public static readonly string DefaultDataDir = Path.Combine(Root, "data-default");
         public static readonly string DefaultSecureDir = Path.Combine(Root, "secure-default");
+        // SYSTEM bileşenlerinin log klasörü (loglar yine LogDirectoryOverride'a gider; bu yalnızca yol olarak kullanılır)
+        public static readonly string DefaultMachineLogDir = Path.Combine(Root, "machine-logs");
 #endif
 
         static TestEnvironment()
@@ -29,11 +31,14 @@ namespace POps.Tests
             // Korumalı dosyaların ACL'inde test kullanıcısı "servis hesabı" olarak yer aldığı için silinebilirler
             AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { Directory.Delete(Root, true); } catch { } };
             SecurityIdentifier me = WindowsIdentity.GetCurrent().User;
+            // Klasör izinleri (veri, log, secure) testte "servis hesabı" olarak test kullanıcısına verilir
+            POps.Shared.FolderSettings.SystemSid = me;
 #if NETFRAMEWORK
             POps.Installer.Setup.SystemSid = me;
 #else
             DefaultConfigPaths = POps.Shared.POpsHelpers.ConfigPaths.ToArray();
             POps.Shared.POpsHelpers.LogDirectoryOverride = Path.Combine(Root, "logs");
+            POps.Shared.POpsHelpers.MachineLogDir = DefaultMachineLogDir;
             POps.Shared.POpsHelpers.ConfigPaths = new string[0];
             POpsAgent.SecureStore.SystemSid = me;
             POpsAgent.SecureStore.Dir = DefaultSecureDir;
@@ -75,6 +80,8 @@ namespace POps.Tests
             if (!IsUnderRoot(POpsAgent.AgentUpdate.DataDir)) POpsAgent.AgentUpdate.DataDir = DefaultDataDir;
             if (!IsUnderRoot(POpsAgent.SecureStore.Dir)) POpsAgent.SecureStore.Dir = DefaultSecureDir;
             if (!IsUnderRoot(POps.Shared.ServerTrust.CaPath)) POps.Shared.ServerTrust.CaPath = Path.Combine(DefaultSecureDir, POps.Shared.ServerTrust.FileName);
+            if (!IsUnderRoot(POps.Shared.POpsHelpers.MachineLogDir)) POps.Shared.POpsHelpers.MachineLogDir = DefaultMachineLogDir;
+            POpsAgent.AgentDirectories.Problem = null;
             if (!(POpsAgent.KioskMode.Registry is FakeKioskRegistry)) POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
             // Güncelleme indirmeleri testlerde BITS'e gitmez (BITS testleri sahte çalıştırıcıyla açar)
             POpsAgent.BitsDownload.Enabled = false;

@@ -188,7 +188,7 @@ command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine 
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
 that partly changed (no decision taken), 1080 a change of the server's modules, 1090 a configuration that could not
-be read, 1100 a clipboard shared in a Vision session (direction and length only), 1110/1111/1112 exam mode
+be read (or a `DataDirectory` / `LogDirectory` that was refused, the default folder is used), 1100 a clipboard shared in a Vision session (direction and length only), 1110/1111/1112 exam mode
 started, ended and an app closed during an exam, and 1120/1121 a file pushed to or pulled from the PC. Failure to
 write an event does not stop the
 service.
@@ -776,7 +776,7 @@ today; `peers` is read only after that.
 
 | Path | Contents |
 | --- | --- |
-| `C:\Program Files\POps\` | Programs and `appsettings.json` (`ServerUrl`, `PersistDir`; SYSTEM and Administrators only). |
+| `C:\Program Files\POps\` | Programs and `appsettings.json` (`ServerUrl`, `PersistDir`, `DataDirectory`, `LogDirectory`; SYSTEM and Administrators only). |
 | `C:\POpsData\identity.key` | Hardware ID. |
 | `C:\POpsData\secure\` | `agent.secret`, `enroll.token`, `bypass.secret`, `capabilities.json`, `isolation.json`, `lockdown.json`, `bypass-state.json`, `hw.bind`, `clone-<time>\` (SYSTEM and Administrators only). |
 | `C:\POpsData\health.json`, `update.lock`, `update-result.json`, `update-progress.json` | Update state. |
@@ -785,6 +785,11 @@ today; `peers` is read only after that.
 | `C:\POpsData\packages\installed.msi`, `updates\`, `updater\` | Rollback package, downloaded update, updater copy. |
 | `C:\POpsLogs\POps_<yyyyMMdd>.log`, `msi-*.log` | Service and updater log, and the updater's msiexec logs (SYSTEM and Administrators only). At start and once a day the service deletes these logs when they are older than 30 days, and the oldest ones while the folder holds more than 200 MB; today's log is never deleted. |
 | `%LOCALAPPDATA%\POps\Logs\` | Per-user logs: `POpsWatchdog_<yyyyMMdd>.log` and the tray's `TrayLog.txt` (message types only, rotated at 1 MB). |
+
+`C:\POpsData` and `C:\POpsLogs` are the defaults. `DataDirectory` and `LogDirectory` in `appsettings.json` move them
+(for example to `D:\POpsData`); the subfolders and files above keep their names and permissions inside the chosen
+folder, the updater and the watchdog get the same folders from the service, and nothing is moved when the setting
+changes. Rules and caveats: [`configuration.md`](configuration.md#log-and-data-folders).
 
 Uninstalling removes the programs, the service, the Run entry and `appsettings.json`, but keeps `C:\POpsData`
 (identity and secret) and `C:\POpsLogs`, so a reinstalled PC returns with the same identity.

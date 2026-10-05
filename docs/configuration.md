@@ -189,7 +189,7 @@ an older `capabilities.json` counts as enabled.
 ### `appsettings.json` keys and environment variables
 
 The agent looks for each setting in a **system** environment variable first, then in `appsettings.json` in its
-install folder, then in `C:\POps\appsettings.json`.
+install folder, then in `C:\POps\appsettings.json`. `DataDirectory` and `LogDirectory` are read from the files only.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
@@ -197,9 +197,60 @@ install folder, then in `C:\POps\appsettings.json`.
 | `PersistDir` | `POPS_PERSIST_DIR` | – | See `PERSIST_DIR`. Ignored unless it is a fully qualified local path. |
 | `EnrollToken` | `POPS_ENROLL_TOKEN` | – | One-way input: on start the agent moves the value into `C:\POpsData\secure\enroll.token` and removes it from the file or variable. |
 | `BypassSecret` | `POPS_BYPASS_SECRET` | – | Same, into `C:\POpsData\secure\bypass.secret`. |
+| `DataDirectory` | – | `C:\POpsData` | Data folder: device ID, `secure\` (secrets), update state, inbox, packages. See [Log and data folders](#log-and-data-folders). |
+| `LogDirectory` | – | `C:\POpsLogs` | Log folder: service and updater logs, the updater's msiexec logs. See [Log and data folders](#log-and-data-folders). |
 
-Restart the `POpsAgent` service after changing them. `appsettings.json` and `C:\POpsData\secure` are readable
-only by SYSTEM and Administrators.
+Restart the `POpsAgent` service after changing them. `appsettings.json` and the data folder's `secure\` subfolder
+(`C:\POpsData\secure` by default) are readable only by SYSTEM and Administrators.
+
+#### Log and data folders
+
+`DataDirectory` and `LogDirectory` move the data folder (default `C:\POpsData`) and the log folder (default
+`C:\POpsLogs`), for example to a second disk. Paths elsewhere in this guide name the defaults.
+
+```json
+{
+  "ServerUrl": "https://pops.example.com",
+  "DataDirectory": "D:\\POpsData",
+  "LogDirectory": "D:\\POpsLogs"
+}
+```
+
+- **Allowed values.** A full local path with a drive letter, at most 120 characters. Refused: a relative path, a
+  network path (`\\server\share`), a device path (`\\?\…`, `\\.\…`, `\\?\UNC\…`), wildcards and other characters
+  that are invalid in a path, `:` after the drive letter (alternate data streams), `.` or `..` segments, reserved
+  names (`NUL`, `CON`, `COM1`, …), the root of a drive, the Windows folder, the user profiles folder (`C:\Users`)
+  and the install folder (each including everything inside them), `Program Files`, `Program Files (x86)` and
+  `ProgramData` themselves (a subfolder such as `C:\Program Files\POpsData` or `C:\ProgramData\POps` is allowed),
+  and any parent folder of these. The folder must be on a fixed NTFS (or ReFS) disk, and every existing parent
+  folder must be one that only administrators can delete, rename or change the permissions of: the service runs
+  the updater as SYSTEM from `<DataDirectory>\updater`, so a parent folder that users could swap would let them
+  replace it. The two folders must be separate (neither inside the other; the log folder then falls back). An
+  empty or missing key means the default.
+- **Invalid value.** The agent still starts, with the default folder. It logs
+  `[HATA] Yapılandırma: DataDirectory geçersiz (…): …; varsayılan C:\POpsData kullanılıyor` and writes Windows event
+  1090. The tray does not warn, because the PC is still managed. The same happens when the chosen folder cannot be
+  created or locked.
+- **Permissions.** On every start the service creates the chosen folders (and missing parent folders) with the same
+  protection as the defaults, not inherited from the parent folder: data folder SYSTEM and Administrators full
+  control, Users read (the watchdog reads `update.lock`); `secure\` and the log folder SYSTEM and Administrators
+  only. Missing parent folders get SYSTEM and Administrators full control, Users read. A folder that already exists
+  and is open to other accounts, or whose owner is not SYSTEM or Administrators (a student can create a folder at
+  the root of a drive before the agent does), is tightened and its owner set to SYSTEM; the log says
+  `[GÜVENLİK] … izinleri daraltıldı`. The owner check applies to the default folders too.
+- **Who follows it.** The service reads the keys at start and passes the folders to the updater (`--datadir`,
+  `--logdir`) and to the watchdog (`--datadir`; it runs as the signed-in user, who cannot read `appsettings.json`).
+  The tray does not use these folders. The MSI reads the same keys on an upgrade or repair, so `ENROLL_TOKEN`,
+  `BYPASS_SECRET`, `SERVER_CA_CERT`, the capabilities and the rollback package (`packages\installed.msi`) go to the
+  chosen data folder, and a key found only in the old `C:\POps\appsettings.json` is carried over into the install
+  folder's file. There is no MSI property for the folders: set the keys in `appsettings.json`.
+- **Changing it.** The new folder is used after the `POpsAgent` service restarts; restart the PC so the watchdog
+  gets it too. Nothing is moved and the old folder is left as it is. In an empty data folder the agent derives the
+  same device ID from the hardware, but it has no device secret (unless `PersistDir` holds a copy), so it has to
+  enroll again with a token. To keep the secret, stop the service, copy the folder with its permissions
+  (`robocopy C:\POpsData D:\POpsData /E /COPYALL`), change the setting and start the service, while no update is
+  running. Agents older than this release ignore the keys: an update rollback to such a version uses `C:\POpsData`
+  and `C:\POpsLogs` again.
 
 ## Runtime settings (database)
 

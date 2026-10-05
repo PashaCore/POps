@@ -93,7 +93,8 @@ namespace POpsAgent
         public static LocalAuditEvent CloneRejected(string channel) =>
             Warning(1071, "Sunucu bu kimliği başka bir bilgisayarda bağlı buldu (4409)", ("channel", Safe(channel)));
 
-        // Ajanın yapılandırması (appsettings.json, POPS_SERVER_URL) okunamadı: sunucu adresi son çaredir
+        // Ajanın yapılandırması (appsettings.json, POPS_SERVER_URL) okunamadı: sunucu adresi son çaredir. LogDirectory /
+        // DataDirectory geçersizse de (varsayılan klasör kullanılır) aynı olay yazılır.
         public static LocalAuditEvent ConfigUnreadable(string problem, string serverUrl) =>
             Build(1090, LocalAuditLevel.Error, "Yapılandırma okunamadı", ("problem", Safe(problem)), ("server_url", Safe(serverUrl)));
         // Vision v2 pano paylaşımı (yalnızca kullanıcının kabul ettiği oturumda): yön ve uzunluk, içerik asla

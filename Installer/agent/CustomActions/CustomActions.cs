@@ -101,16 +101,20 @@ namespace POps.Installer
         [CustomAction]
         public static ActionResult RemoveConfig(Session session)
         {
-            Setup.RemoveConfig(Value(session.CustomActionData, "INSTALLFOLDER"), session.Log);
+            string installDir = Value(session.CustomActionData, "INSTALLFOLDER");
+            // Veri klasörü (DataDirectory) appsettings.json silinmeden önce okunur
+            Layout layout = Setup.ForInstall(Layout.Default, installDir, session.Log);
+            Setup.RemoveConfig(installDir, session.Log);
             // Karantinadayken kaldırılsa bile Görev Yöneticisi vb. kapalı kalmaz
-            Setup.RestoreKiosk(Layout.Default, new POps.Shared.WindowsKioskRegistry(), session.Log);
+            Setup.RestoreKiosk(layout, new POps.Shared.WindowsKioskRegistry(), session.Log);
             return ActionResult.Success;
         }
 
         [CustomAction]
         public static ActionResult KeepPackage(Session session)
         {
-            Setup.KeepPackage(Value(session.CustomActionData, "ORIGINAL_MSI"), Layout.Default, session.Log);
+            Layout layout = Setup.ForInstall(Layout.Default, Value(session.CustomActionData, "INSTALLFOLDER"), session.Log);
+            Setup.KeepPackage(Value(session.CustomActionData, "ORIGINAL_MSI"), layout, session.Log);
             return ActionResult.Success;
         }
 
@@ -125,13 +129,16 @@ namespace POps.Installer
             data != null && data.ContainsKey(key) ? Setup.Clean(data[key]) : null;
     }
 
-    // Kurulumun dokunduğu sabit konumlar (testte geçici klasörlerle değiştirilir)
+    // Kurulumun dokunduğu konumlar (testte geçici klasörlerle değiştirilir). Veri ve log klasörleri appsettings.json'da
+    // DataDirectory / LogDirectory verilmişse onlardır (Setup.ApplyFolders; ajanla aynı kural, POps.Shared.FolderSettings).
     internal sealed class Layout
     {
-        public string DataDir = @"C:\POpsData";
-        public string SecureDir = @"C:\POpsData\secure";
-        public string LogDir = @"C:\POpsLogs";
+        public string DataDir = POps.Shared.FolderSettings.DefaultDataDirectory;
+        public string SecureDir = POps.Shared.FolderSettings.DefaultDataDirectory + @"\secure";
+        public string LogDir = POps.Shared.FolderSettings.DefaultLogDirectory;
         public IList<string> LegacyDirs;
+        // Seçilebilecek klasörlerin sınırları; null: makinedeki varsayılanlar (testler geçici klasöre izin verir)
+        public POps.Shared.FolderRules Rules;
 
         public static Layout Default => new Layout { LegacyDirs = DefaultLegacyDirs() };
 
@@ -227,7 +234,12 @@ namespace POps.Installer
                 string caError = ReadServerCa(Prop("SERVER_CA_CERT"), out string caPem, out bool removeCa, out string caSubject);
                 if (caError != null) return caError;
 
-                EnsureDataDirectories(layout);
+                // Veri ve log klasörleri: appsettings.json'daki DataDirectory / LogDirectory (geçersizse varsayılan; ajan da
+                // aynı kuralla aynı klasörü seçer). Gizli değerler ve yetenekler seçilen veri klasörüne yazılır.
+                string dataDirectory = Existing(POps.Shared.FolderSettings.DataDirectoryKey);
+                string logDirectory = Existing(POps.Shared.FolderSettings.LogDirectoryKey);
+                layout = ApplyFolders(layout, dataDirectory, logDirectory, installDir, secure: true, log);
+                EnsureDataDirectories(layout, log);
                 string folderError = ApplyInstallFolderPolicy(installDir, Prop("INSTALLDIR_STATE"), log);
                 if (folderError != null) return folderError;
                 WriteCapabilities(layout, terminal, vision, exam, files, log);
@@ -239,6 +251,9 @@ namespace POps.Installer
                 Dictionary<string, object> config = parsed[0] ?? new Dictionary<string, object>();
                 config["ServerUrl"] = serverUrl.TrimEnd('/');
                 if (persistDir != null) config["PersistDir"] = persistDir;
+                // Eski konumdaki (C:\POps) klasör ayarı da taşınır: CleanupLegacy o dosyayı siler
+                if (dataDirectory != null) config[POps.Shared.FolderSettings.DataDirectoryKey] = dataDirectory;
+                if (logDirectory != null) config[POps.Shared.FolderSettings.LogDirectoryKey] = logDirectory;
                 config.Remove("BypassSecret");
                 config.Remove("EnrollToken");
 
@@ -487,30 +502,56 @@ namespace POps.Installer
         private static readonly SecurityIdentifier UsersSid = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
         private const InheritanceFlags Inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
 
-        // POpsData: SYSTEM/Administrators tam, Users okuma (tepsi ve watchdog identity.key'i okur).
+        // POpsData: SYSTEM/Administrators tam, Users okuma (watchdog update.lock'u okur).
         // POpsData\secure: yalnızca SYSTEM/Administrators.
-        private static void EnsureDataDirectories(Layout layout)
+        // C:\POpsLogs: SYSTEM olarak yazılan loglar; kullanıcılar okuyamaz, içine dosya/bağlantı bırakamaz
+        // (tepsi ve watchdog loglarını %LOCALAPPDATA%\POps\Logs'a yazar).
+        // İzinler ajanla aynı (POps.Shared.FolderSettings.Secure): devralma yok; klasörü önceden bir kullanıcı açtıysa
+        // (C:\ altında herkes klasör açabilir) sahibi SYSTEM yapılır, yoksa sahip olarak izinleri yeniden açabilirdi.
+        private static void EnsureDataDirectories(Layout layout, Action<string> log)
         {
-            var data = new DirectorySecurity();
-            data.SetAccessRuleProtection(true, false);
-            data.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
-            data.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
-            data.AddAccessRule(new FileSystemAccessRule(UsersSid, FileSystemRights.ReadAndExecute, Inherit, PropagationFlags.None, AccessControlType.Allow));
-            CreateOrSecure(layout.DataDir, data);
+            SecureFolder(layout.DataDir, usersRead: true, log);
+            SecureFolder(layout.SecureDir, usersRead: false, log);
+            if (layout.LogDir != null) SecureFolder(layout.LogDir, usersRead: false, log);
+        }
 
-            var secure = new DirectorySecurity();
-            secure.SetAccessRuleProtection(true, false);
-            secure.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
-            secure.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
-            CreateOrSecure(layout.SecureDir, secure);
+        private static void SecureFolder(string dir, bool usersRead, Action<string> log)
+        {
+            string error = POps.Shared.FolderSettings.Secure(dir, usersRead, out bool tightened);
+            if (error != null) throw new IOException($"{dir} kilitlenemedi: {error}");
+            if (tightened) log("POps: " + POps.Shared.FolderSettings.TightenedNote(dir, usersRead));
+        }
 
-            // C:\POpsLogs: SYSTEM olarak yazılan loglar; kullanıcılar okuyamaz, içine dosya/bağlantı bırakamaz
-            // (tepsi ve watchdog loglarını %LOCALAPPDATA%\POps\Logs'a yazar)
-            var logs = new DirectorySecurity();
-            logs.SetAccessRuleProtection(true, false);
-            logs.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
-            logs.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, Inherit, PropagationFlags.None, AccessControlType.Allow));
-            if (layout.LogDir != null) CreateOrSecure(layout.LogDir, logs);
+        // Veri ve log klasörü ayarı (appsettings.json DataDirectory / LogDirectory), ajanla aynı kuralla: geçersiz, güvensiz
+        // ya da kilitlenemeyen klasörde varsayılan kullanılır (ajan da öyle yapar ve Olay Günlüğüne yazar). secure: seçilen
+        // klasörler oluşturulup kilitlenir (Configure); KeepPackage ve RemoveConfig yalnızca yolu kullanır.
+        internal static Layout ApplyFolders(Layout layout, string dataValue, string logValue, string installDir, bool secure, Action<string> log)
+        {
+            POps.Shared.FolderRules rules = layout.Rules ?? POps.Shared.FolderRules.ForMachine(installDir);
+            POps.Shared.FolderSettings folders = POps.Shared.FolderSettings.Resolve(dataValue, logValue, rules, true,
+                layout.DataDir, layout.LogDir ?? POps.Shared.FolderSettings.DefaultLogDirectory);
+            if (secure) folders.SecureCustom();
+            foreach (string problem in folders.Problems) log("POps: UYARI: " + problem);
+            foreach (string note in folders.Notes) log("POps: " + note);
+            if (!folders.CustomData && !folders.CustomLog) return layout;
+            log($"POps: veri klasörü {folders.DataDirectory}, log klasörü {folders.LogDirectory} (appsettings.json).");
+            return new Layout
+            {
+                DataDir = folders.DataDirectory,
+                SecureDir = folders.CustomData ? folders.SecureDirectory : layout.SecureDir,
+                LogDir = folders.CustomLog ? folders.LogDirectory : layout.LogDir,
+                LegacyDirs = layout.LegacyDirs,
+                Rules = layout.Rules,
+            };
+        }
+
+        // Kurulu ajanın appsettings.json'undaki klasörler (klasörlere dokunulmaz)
+        internal static Layout ForInstall(Layout layout, string installDir, Action<string> log)
+        {
+            if (installDir == null) return layout;
+            Dictionary<string, object> config = ReadJsonObject(Path.Combine(installDir, ConfigName), log);
+            return ApplyFolders(layout, StringValue(config, POps.Shared.FolderSettings.DataDirectoryKey),
+                StringValue(config, POps.Shared.FolderSettings.LogDirectoryKey), installDir, secure: false, log);
         }
 
         // ==========================================================================================
@@ -726,12 +767,6 @@ namespace POps.Installer
         // SYSTEM, Administrators ve hizmet SID'leri (NT SERVICE\TrustedInstaller: Program Files'ın olağan sahibi)
         private static bool IsTrusted(SecurityIdentifier sid) =>
             sid != null && (sid.Equals(SystemSid) || sid.Equals(AdminsSid) || sid.IsWellKnown(WellKnownSidType.LocalSystemSid) || sid.Value.StartsWith("S-1-5-80-", StringComparison.Ordinal));
-
-        private static void CreateOrSecure(string dir, DirectorySecurity sec)
-        {
-            if (Directory.Exists(dir)) Directory.SetAccessControl(dir, sec);
-            else Directory.CreateDirectory(dir, sec);
-        }
 
         private static FileSecurity ProtectedFileSecurity()
         {

@@ -167,10 +167,11 @@
     <SetProperty Id="PopsCleanupLegacy" Sequence="execute" Before="PopsCleanupLegacy" Value="INSTALLFOLDER=[INSTALLFOLDER]" />
 
     <!-- Kurulan paket C:\POpsData\packages\installed.msi olarak saklanır: POpsUpdater, yeni sürüm sağlıklı
-         açılmazsa buna geri döner (Windows Installer'ın önbelleğindeki kopyada gömülü dosyalar yoktur) -->
+         açılmazsa buna geri döner (Windows Installer'ın önbelleğindeki kopyada gömülü dosyalar yoktur). appsettings.json'da
+         DataDirectory varsa o klasöre; INSTALLFOLDER bu yüzden gelir. -->
     <CustomAction Id="PopsKeepPackage" BinaryRef="PopsActions" DllEntry="KeepPackage"
                   Execute="deferred" Impersonate="no" Return="ignore" />
-    <SetProperty Id="PopsKeepPackage" Sequence="execute" Before="PopsKeepPackage" Value="ORIGINAL_MSI=[OriginalDatabase]" />
+    <SetProperty Id="PopsKeepPackage" Sequence="execute" Before="PopsKeepPackage" Value="ORIGINAL_MSI=[OriginalDatabase];INSTALLFOLDER=[INSTALLFOLDER]" />
 
     <!-- Gerçek kaldırmada appsettings.json; yükseltme ve geri dönüşte (UPGRADINGPRODUCTCODE) dokunulmaz -->
     <CustomAction Id="PopsRemoveConfig" BinaryRef="PopsActions" DllEntry="RemoveConfig"
