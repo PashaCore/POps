@@ -1431,7 +1431,7 @@ namespace POpsAgent
         {
             var changed = AgentCapabilities.ApplyServerRequest(request);
             foreach (string capability in changed.Disabled)
-                LocalAudit.Write(LocalAudit.CapabilityChanged(capability == AgentCapabilities.Terminal ? "terminal" : "vision", true, false));
+                LocalAudit.Write(LocalAudit.CapabilityChanged(capability.Replace("_enabled", "", StringComparison.Ordinal), true, false));
             if (!AgentCapabilities.VisionEnabled && _isVisionStreamActive)
             {
                 _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");

@@ -80,6 +80,10 @@ namespace POps.Tests
             POpsAgent.BitsDownload.Enabled = false;
             // Sunucu modülleri bellekte tutulur: her test hepsi açık başlar
             POpsAgent.AgentModules.Reset();
+            // Güvenlik duvarı betikleri ve sınav izin listesinin ad çözümü gerçek sisteme gitmez (ör. paylaşılan protokol
+            // vektörlerindeki exam_mode); bunları sınayan sınıflar kendi sahtelerini kurar
+            POpsAgent.NetworkIsolation.ScriptRunner = _ => System.Threading.Tasks.Task.FromResult((1, "testlerde güvenlik duvarına dokunulmaz"));
+            POpsAgent.ExamMode.Resolver = _ => System.Threading.Tasks.Task.FromResult(Array.Empty<System.Net.IPAddress>());
         }
 
         private static bool IsUnderRoot(string path) =>

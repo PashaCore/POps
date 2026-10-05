@@ -1,0 +1,15 @@
+{
+  "action": "exam_mode",
+  "enabled": true,
+  "allow": [
+    "sinav.example.org",
+    "10.0.0.5",
+    "10.1.0.0/24"
+  ],
+  "until": 2524608000,
+  "message": "Sınav modu: yalnızca sınav sitesi açık",
+  "block_apps": [
+    "cmd.exe",
+    "chrome.exe"
+  ]
+}

@@ -2,5 +2,6 @@
   "type": "capabilities",
   "terminal_enabled": false,
   "vision_enabled": true,
+  "exam_enabled": true,
   "server_ca": "custom"
 }
