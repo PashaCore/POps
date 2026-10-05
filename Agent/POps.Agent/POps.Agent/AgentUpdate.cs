@@ -414,6 +414,21 @@ namespace POpsAgent
             }
 
             POpsHelpers.Log("UPDATE", $"İndiriliyor: {url}");
+
+            // BITS: ağ kesintisinde ve yeniden başlatmada kaldığı yerden sürer (bkz. BitsDownload); kullanılamazsa doğrudan
+            string bitsTarget = path + ".bits";
+            BitsDownload.Outcome bits = await BitsDownload.DownloadAsync(url, bitsTarget, expected.Sha256);
+            if (bits == BitsDownload.Outcome.Pending)
+            {
+                Reject($"paket indirmesi BITS ile sürüyor ({BitsDownload.Timeout.TotalMinutes:0} dk içinde bitmedi); güncellemeyi yeniden gönderin, kaldığı yerden devam eder");
+                return false;
+            }
+            if (bits == BitsDownload.Outcome.Done)
+            {
+                (long size, byte[] digest) = HashFile(bitsTarget);
+                return await AcceptAsync(bitsTarget, size, digest);
+            }
+
             string partial = path + ".partial";
             TryDelete(partial);
 
@@ -441,18 +456,29 @@ namespace POpsAgent
                 }
             }
 
-            byte[] actual = hash.GetHashAndReset();
-            if (update != null) await update.StageAsync("downloaded");
-            if (total != expected.Size || !CryptographicOperations.FixedTimeEquals(actual, Convert.FromHexString(expected.Sha256)))
+            return await AcceptAsync(partial, total, hash.GetHashAndReset());
+
+            // İki yol için aynı: imzalı manifest'teki boyut ve SHA-256 tutmazsa dosya silinir, emir reddedilir
+            async Task<bool> AcceptAsync(string downloaded, long total, byte[] actual)
             {
-                TryDelete(partial);
-                Reject($"indirilen paket manifest'le uyuşmuyor (boyut {total}/{expected.Size}, SHA-256 {Convert.ToHexString(actual).ToLowerInvariant()}, beklenen {expected.Sha256})");
-                return false;
+                if (update != null) await update.StageAsync("downloaded");
+                if (total != expected.Size || !CryptographicOperations.FixedTimeEquals(actual, Convert.FromHexString(expected.Sha256)))
+                {
+                    TryDelete(downloaded);
+                    Reject($"indirilen paket manifest'le uyuşmuyor (boyut {total}/{expected.Size}, SHA-256 {Convert.ToHexString(actual).ToLowerInvariant()}, beklenen {expected.Sha256})");
+                    return false;
+                }
+                File.Move(downloaded, path, true);
+                POpsHelpers.Log("UPDATE", "[GÜVENLİK] Paket boyutu ve SHA-256'sı imzalı manifest'le eşleşti.");
+                if (update != null) await update.StageAsync("verified");
+                return true;
             }
-            File.Move(partial, path, true);
-            POpsHelpers.Log("UPDATE", "[GÜVENLİK] Paket boyutu ve SHA-256'sı imzalı manifest'le eşleşti.");
-            if (update != null) await update.StageAsync("verified");
-            return true;
+        }
+
+        private static (long Size, byte[] Sha256) HashFile(string path)
+        {
+            using FileStream stream = File.OpenRead(path);
+            return (stream.Length, SHA256.HashData(stream));
         }
 
         private static bool LaunchUpdater(string msiPath, string sha256, string toVersion, UpdateCommand update)
