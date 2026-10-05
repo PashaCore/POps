@@ -402,7 +402,8 @@ Steps marked "real PC" also get the manual check on a test machine: enrol, `exec
   secrets, inventory, quarantine. Groups that are still inside Worker register as a `DelegateHandler` around the
   existing method, so the if/else chain disappears in this PR. New tests: every message in
   `docs/protocol/server-to-agent/` maps to exactly one handler, a duplicate fails, and an unknown action sends
-  nothing.
+  nothing. **Done** in
+  [#138 refactor(agent): command dispatcher and simple handlers (split step a1)](https://github.com/PashaCore/POps/pull/138).
 - **a2. Execute.** `ExecuteHandler`, `WingetInstallHandler`, `ResultOutbox`, `CapabilityGate`. Covered by
   `WorkerCommandTests`, `WorkerResultAckTests`, `CommandResultTests`, `WingetInstallTests` and the protocol vectors.
 - **a3. Vision.** `VisionSession`, `VisionHandler`, `RemoteInputHandler`, `CapabilitiesHandler`. This is the riskiest
