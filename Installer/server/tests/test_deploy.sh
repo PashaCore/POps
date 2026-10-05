@@ -381,7 +381,7 @@ check "sonra sağlık kontrolü başarısız: kod geri, yedeği eski kodla geri 
     '[ "$RC" != 0 ] && has "pg_restore --clean --if-exists" "$T/out" && has "db-" "$T/out" && [ "$BEFORE" = "$(snap "$A")" ]'
 run_deploy
 check "son olarak başarılı deploy" '[ "$RC" = 0 ] && [ -s "$T/calls/pg_dump" ]'
-git -C "$R" rm -q Backend/migrations/000[3-9]_*.sql; commit "$R" "migration'lar geri"
+git -C "$R" rm -q 'Backend/migrations/000[3-9]_*.sql'; commit "$R" "migration'lar geri"
 rm -f "$A/.env"
 
 # =========================================================================================================
