@@ -42,7 +42,17 @@
     }
 
     // ---------------------------------------------------------------- sekmeler
+    // Sekmenin verisi ilk açılışta yüklenir (ad listeden; nesneden adla çağrı yok)
+    function loadTab(tab) {
+        switch (tab) {
+            case 'software': loadSoftware(); break;
+            case 'patches': loadPatches(); break;
+            case 'licenses': loadLicenses(); break;
+            default: loadSummary();
+        }
+    }
     function setTab(tab) {
+        if (!TABS.includes(tab)) tab = 'summary';
         ui.tab = tab;
         $('rpTabs').querySelectorAll('.tab').forEach(t => {
             const on = t.dataset.tab === tab;
@@ -55,7 +65,7 @@
         if (tab === 'summary') u.searchParams.delete('tab'); else u.searchParams.set('tab', tab);
         history.replaceState(null, '', u.pathname + u.search);
         if (POps.drawer.isOpen()) POps.drawer.close();
-        if (!ui.loaded[tab]) { ui.loaded[tab] = true; ({ summary: loadSummary, software: loadSoftware, patches: loadPatches, licenses: loadLicenses })[tab](); }
+        if (!ui.loaded[tab]) { ui.loaded[tab] = true; loadTab(tab); }
     }
     $('rpTabs').addEventListener('click', (e) => { const t = e.target.closest('.tab[data-tab]'); if (t && t.dataset.tab !== ui.tab) setTab(t.dataset.tab); });
 
