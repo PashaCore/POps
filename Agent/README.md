@@ -33,6 +33,7 @@ The agent reads its settings from `appsettings.json` in its install folder first
 | ---------------------- | -------------------- | ----------- |
 | `ServerUrl`            | `POPS_SERVER_URL`    | POps backend URL, e.g. `https://pops.example.com`. Must be `https://`: over plain `ws://` anyone on the network could read the device secret and send commands the agent runs as SYSTEM, so with an `http://` address the agent does not connect at all and logs why. Plain `http://` is accepted only for a server on the same machine (`127.0.0.1`, `localhost`); that is also the fallback when unset. |
 | `PersistDir`           | `POPS_PERSIST_DIR`   | Optional. A local NTFS folder that freeze software (Deep Freeze ThawSpace, a thawed drive, …) does not roll back. The device secret and the hardware binding (`hw.bind`) are mirrored there so they survive a reboot on a frozen machine. |
+| `DataDirectory`, `LogDirectory` | – (file only) | Optional. Move the data folder (`C:\POpsData`) and the log folder (`C:\POpsLogs`), e.g. to `D:\POpsData`. Full local paths only; an invalid value falls back to the default with an error in the log and event 1090. Nothing is moved when they change. Rules: [`docs/configuration.md`](../docs/configuration.md#log-and-data-folders). |
 
 ### Secrets
 

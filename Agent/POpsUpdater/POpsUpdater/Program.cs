@@ -19,6 +19,9 @@ namespace POpsUpdater
     // Ajan güncellemesini MSI ile uygular (Faz 7). Ajan (SYSTEM) imzalı manifest'i ve paketi doğruladıktan
     // sonra bu programı kurulum klasörü dışından (C:\POpsData\updater) başlatır:
     //   POpsUpdater --msi <paket> --sha256 <özet> --from <kurulu sürüm> --to <yeni sürüm> --installdir <klasör>
+    //               [--datadir <veri klasörü> --logdir <log klasörü>]
+    // Veri ve log klasörlerini servis geçirir (appsettings.json DataDirectory / LogDirectory, bkz.
+    // POps.Shared.FolderSettings); updater aynı kurallarla yeniden denetler, verilmezse C:\POpsData ve C:\POpsLogs.
     // Adımlar: kilit, özet kontrolü, geri dönüş paketinin doğrulanması, dosya yedeği, kullanıcı süreçlerini
     // kapatma, msiexec /i, yeni sürümün health.json'unu bekleme; yeni sürüm sağlıklı açılmazsa önceki MSI'a
     // (yoksa dosya yedeğine) dönüş; her durumda ajan servisinin varlık/çalışma kontrolü; update-result.json;
@@ -29,28 +32,29 @@ namespace POpsUpdater
     [SupportedOSPlatform("windows")]
     static class Program
     {
-        const string DataDir = @"C:\POpsData";
-        const string LogDir = @"C:\POpsLogs";
+        // Servisin geçirdiği klasörler (Main'de, ilk log satırından önce)
+        static string DataDir = FolderSettings.DefaultDataDirectory;
+        static string LogDir = FolderSettings.DefaultLogDirectory;
         const string ServiceName = "POpsAgent";
         // Installer/agent/Package.wxs UpgradeCode
         const string UpgradeCode = "{1F4A5444-0EA0-40FE-8D23-C5233D4576D1}";
 
-        static readonly string LockPath = Path.Combine(DataDir, "update.lock");
-        static readonly string HealthPath = Path.Combine(DataDir, "health.json");
-        static readonly string ResultPath = Path.Combine(DataDir, "update-result.json");
+        static string LockPath => Path.Combine(DataDir, "update.lock");
+        static string HealthPath => Path.Combine(DataDir, "health.json");
+        static string ResultPath => Path.Combine(DataDir, "update-result.json");
         // Kurulumun aşaması servise (o da sunucuya "update_progress" olarak) gider; bkz. POps.Shared.UpdateProgressFile
-        static readonly string ProgressPath = Path.Combine(DataDir, UpdateProgressFile.FileName);
+        static string ProgressPath => Path.Combine(DataDir, UpdateProgressFile.FileName);
         const int MsiexecAttempts = 5;
         // Bu çalışma: update.lock'taki started_at ve hedef sürüm (aşama dosyasına yazılır)
         static long _run;
         static string _toVersion;
         // MSI her kurulumda kendi paketini buraya installed.msi olarak bırakır (geri dönüş kaynağı)
-        static readonly string PackagesDir = Path.Combine(DataDir, "packages");
-        static readonly string BackupRoot = Path.Combine(DataDir, "backup");
+        static string PackagesDir => Path.Combine(DataDir, "packages");
+        static string BackupRoot => Path.Combine(DataDir, "backup");
         static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(90);
         // Geri dönüş tatbikatı: yönetici bu dosyayı koyarsa yeni sürüm health.json yazmaz (bkz. Agent/README.md)
         // Tatbikat işaretleri (rollback-drill ve yeni ajanın tükettiği rollback-drill.consumed; bkz. POps.Shared.RollbackDrill)
-        static readonly string SecureDir = Path.Combine(DataDir, "secure");
+        static string SecureDir => Path.Combine(DataDir, "secure");
 
         // msiexec'in kurulum hiç başlamadan döndüğü kodlar: bu durumlarda makinede hiçbir şey değişmez
         static readonly Dictionary<int, string> InstallNeverStarted = new Dictionary<int, string>
@@ -76,8 +80,14 @@ namespace POpsUpdater
 
         static int Main(string[] args)
         {
-            // SYSTEM olarak çalışır; ajanla aynı log dosyasına (C:\POpsLogs\POps_<tarih>.log) yazar
+            // SYSTEM olarak çalışır; ajanla aynı log dosyasına (C:\POpsLogs\POps_<tarih>.log ya da LogDirectory) yazar
             POpsHelpers.Component = "Updater";
+            // Servisin kullandığı veri ve log klasörleri, servisle aynı kurallarla (kurulum klasörü dahil); geçersizse varsayılan
+            FolderSettings folders = FolderSettings.FromArguments(args, FolderRules.ForMachine(FolderSettings.ArgumentValue(args, "--installdir")), checkLocation: true);
+            DataDir = folders.DataDirectory;
+            LogDir = folders.LogDirectory;
+            POpsHelpers.MachineLogDir = LogDir;
+            foreach (string problem in folders.Problems) Log($"[HATA] {problem}", true);
             Options opt = ParseArgs(args);
             if (opt == null)
             {
@@ -554,7 +564,9 @@ namespace POpsUpdater
                 foreach ((bool start, string exe) in new[] { (watchdog, "POpsWatchdog.exe"), (tray, "POpsTray.exe") })
                 {
                     if (!start) continue;
-                    if (UserSessionLauncher.TryStart(session, Path.Combine(dir, exe), out int pid, out string error))
+                    // Watchdog update.lock'u servisin veri klasöründe arar (servis de aynı argümanla başlatır)
+                    string arguments = exe == "POpsWatchdog.exe" ? FolderSettings.Argument(FolderSettings.DataDirectorySwitch, DataDir) : null;
+                    if (UserSessionLauncher.TryStart(session, Path.Combine(dir, exe), out int pid, out string error, arguments))
                         Log($"{exe} kullanıcı oturumunda başlatıldı (oturum {session}, PID {pid}).");
                     else
                         Log($"{exe} kullanıcı oturumunda başlatılamadı: {error}", true);
