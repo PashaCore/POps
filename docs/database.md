@@ -52,6 +52,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0019_task_context.sql` | `tasks.title`, `source`, `reason`, `client_ip` and `batch_id` (what a task is, which panel page sent it, why, from which address, and which request it belongs to) and indexes on `batch_id` and on `target_pc`. |
 | `0022_api_tokens.sql` | `api_tokens` (API tokens for automation). |
 | `0023_update_progress.sql` | `pending_updates.stage`, `detail`, `attempt`, `attempt_of`, `stage_at`: the last stage the agent reported for a pending update (`update_progress`, see [`api.md`](api.md#update_progress-agent-update-stages)). |
+| `0024_device_platform.sql` | `clients.platform` (`windows` / `linux`, from the agent's `X-Agent-Platform`; `NULL` for agents that do not send it, shown as `windows`). |
 | `0020_refused_results.sql` | Tasks the agent refused but an older server stored as `Completed` (output starting with `[REDDEDİLDİ]`, no exit code) become `Denied` with exit code `-5`. |
 | `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
 | `0017_task_expiry.sql` | `tasks.expires_at`, `tasks.schedule_id`, `tasks.agent_started_at` and the pending-by-schedule index. |
@@ -69,7 +70,7 @@ application code.
 
 | Table | Contents |
 | --- | --- |
-| `clients` | One row per device: host name, display name, lab, `status` (`Online` / `Offline` / last heartbeat status), `last_seen`, active window, boot count, signed-in user (`logged_user`), IP, hardware fingerprint (`dna_uuid`, `dna_bios`, `dna_disk`, `dna_mac`, `dna_ram`, `cap_ram_readable`), `is_quarantined`, capability state (`cap_terminal_enabled`, `cap_vision_enabled`, `cap_terminal_disable_requested`, `cap_vision_disable_requested`), `running_version`, `allow_reenroll`, `agent_health` (health summary from the last heartbeat, agents 0.1.12+; see `Backend/pops/agent_health.py`), `last_disconnect_at` / `last_disconnect_reason` (when and why the last connection closed). New devices land in lab `Atanmamis_Cihazlar` (unassigned). |
+| `clients` | One row per device: host name, display name, lab, `status` (`Online` / `Offline` / last heartbeat status), `last_seen`, active window, boot count, signed-in user (`logged_user`), IP, hardware fingerprint (`dna_uuid`, `dna_bios`, `dna_disk`, `dna_mac`, `dna_ram`, `cap_ram_readable`), `is_quarantined`, capability state (`cap_terminal_enabled`, `cap_vision_enabled`, `cap_terminal_disable_requested`, `cap_vision_disable_requested`), `running_version`, `allow_reenroll`, `agent_health` (health summary from the last heartbeat, agents 0.1.12+; see `Backend/pops/agent_health.py`), `last_disconnect_at` / `last_disconnect_reason` (when and why the last connection closed), `platform` (`windows` / `linux`; `NULL` means Windows). New devices land in lab `Atanmamis_Cihazlar` (unassigned). |
 | `hw_inventory` | Hardware inventory per device (CPU, RAM, motherboard, GPU, OS, IP, MAC, disks, last update). |
 | `agent_versions` | Agent version per device, from the `X-Agent-Version` header at connect. |
 | `custom_labs` | Lab names created in the panel. |

@@ -149,13 +149,28 @@ Short design notes. Where options are listed, the choice has not been made.
 
 ### Linux agent (Pardus first)
 
-*Status: planned. Implementation language not decided.*
+*Status: first version (in `Agent-Linux/`; decision [D-22](docs/decisions.md#d-22-the-linux-agent-is-python-3-on-the-distributions-own-packages)).*
 
-Scope of a first version: inventory and commands only. A systemd service with the same `/ws/agent` protocol,
-enrollment token and per-device secret (root-only file), hardware ID from DMI data, installed packages from
-`dpkg`, commands run by the service, the same capability policy (terminal on/off), and signed updates
-(`.deb` listed in the signed manifest). Screen view comes later, and X11 and Wayland need different capture paths.
-The panel must show each device's OS and keep PowerShell and shell commands apart.
+Done in the first version: a systemd service with the same `/ws/agent` protocol, enrollment token and per-device
+secret (root-only file), hardware ID and DNA from DMI data, hardware inventory and installed packages from `dpkg`,
+commands run as root with `/bin/sh` and the Windows limits, results kept until the server acknowledges them, the same
+capability policy (terminal on/off, the server can only switch off), signed updates (`pops-agent_<version>_all.deb`
+in the signed manifest, installed from a transient systemd unit, rolled back to the previous `.deb` if the new one
+does not come up), a local append-only audit log, and `clients.platform` so the panel shows each device's OS and
+**Uzak komut** keeps Windows and shell commands apart. Supported: Debian 12 / Pardus 23 and later, Ubuntu 24.04.
+
+Next for Linux:
+
+- **Screen view:** X11 and Wayland need different capture paths (PipeWire portal on Wayland, with the user's
+  consent dialog), and a user-session helper in place of the Windows tray.
+- **Quarantine:** an nftables table that allows only the server, plus a lock screen in the user session; the offline
+  bypass key is already stored and acknowledged.
+- **Tray and notifications:** messages to the signed-in user (`notify-send` through the session bus), the fair-use
+  notice and the help desk.
+- **Power and message buttons:** the agent already maps the panel's restart and shut-down commands; a native
+  message path needs the session helper above.
+
+Options that were considered for the language:
 
 Many Turkish public schools use Pardus, including Pardus ETAP on classroom interactive boards. TÜBİTAK ULAKBİM, which
 develops Pardus, also develops Lider Ahenk, a central management system for Pardus machines and ETAP boards.
@@ -165,9 +180,9 @@ yet; the choice between the options above and this path is open.
 
 | Option | For | Against |
 | --- | --- | --- |
-| .NET on Linux | Reuses the tested protocol code and logic (manifest verification, message reassembly, capability policy, DNS matching) and `POps.Tests`; one language for all agents. | Service, WMI inventory, firewall, pipe/tray and MSI updater are Windows-only and must be rewritten anyway. Needs the .NET runtime on the PC or a large self-contained build. .NET 8 support ends on 10 November 2026, so it would start on .NET 10. |
-| Small Go agent | One static binary, no runtime, simple `.deb` and systemd packaging, ed25519 in the standard library. | Adds another language to the project, which works against the bus-factor concern. Protocol and verification are reimplemented; the signed test manifest in `Agent/POps.Tests/TestData` can cross-check them. |
-| Python agent | Same language as the backend; Python 3 is present on Debian-based desktops such as Pardus. | Depends on the system Python and its packages (or ships a venv); source is readable on the PC; weaker fit for screen capture later. |
+| .NET on Linux | Reuses the tested protocol code and logic (manifest verification, message reassembly, capability policy, DNS matching) and `POps.Tests`; one language for all agents. | Service, WMI inventory, firewall, pipe/tray and MSI updater are Windows-only and must be rewritten anyway. Needs the .NET runtime on the PC or a large self-contained build whose security fixes only come with a POps release. Not chosen now (D-22). |
+| Small Go agent | One static binary, no runtime, simple `.deb` and systemd packaging, ed25519 in the standard library. | Adds another language to the project, which works against the bus-factor concern. Protocol and verification are reimplemented. Not chosen now; still the option for a compiled capture helper later (D-22). |
+| **Python agent (chosen)** | Same language as the backend; Python 3 is present on Debian-based desktops such as Pardus; tested end to end on Linux CI; a 45 KB `Architecture: all` package. | Depends on the system Python and its `python3-websockets` / `python3-cryptography` (10+ / 38+); source is readable on the PC; weaker fit for screen capture later. |
 
 ### Integrations
 

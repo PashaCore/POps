@@ -10,6 +10,9 @@ This page is an overview. The detailed references are:
 - [`Agent/README.md`](../Agent/README.md): settings, secrets, server authentication, local hardening, the capability
   policy, the update and rollback procedure, and the unit tests.
 
+PCs running Pardus or Debian use the [Linux agent](#linux-agent-pardus-and-debian) (first version: inventory and
+remote commands).
+
 ## Components
 
 | Program | Runs as | Started by | Does |
@@ -396,3 +399,41 @@ dotnet test Agent/POps.Tests/POps.Tests.csproj --configuration Release
 ```
 
 The version of every component comes from the repository-root `VERSION` file (`Agent/Directory.Build.props`).
+
+## Linux agent (Pardus and Debian)
+
+A first version of the agent for Pardus 23 / Debian 12 and later (and Ubuntu 24.04) is in
+[`Agent-Linux/`](../Agent-Linux/README.md). It is Python 3 on the distribution's own `python3-websockets` and
+`python3-cryptography` packages ([D-22](decisions.md#d-22-the-linux-agent-is-python-3-on-the-distributions-own-packages)),
+installed from a `.deb` that is part of every signed release. Install, configuration, files, limits, the update and
+rollback steps and uninstalling are in [`Agent-Linux/README.md`](../Agent-Linux/README.md).
+
+Same as the Windows agent:
+
+- the `/ws/agent` protocol, enrollment token and per-device secret, `server_info` and the acknowledgements
+  (`result_ack`, `update_result_ack`), backoff with jitter (at least 60 s after `4401`, 10 min after `4409`);
+- TLS only (plain `http://` only to the same PC), optionally pinned to the school's CA (`SERVER_CA_CERT`, reported as
+  `server_ca: custom`);
+- the hardware DNA the server compares (`uuid`, `bios_sn`, `disk_sn`, `mac`, `ram_sn` from DMI, the root disk, the
+  physical network card and SMBIOS memory records), clone detection after disk imaging, `pops-agent generalize`
+  before taking an image;
+- command limits (30 minutes, 512 K characters, exit code, cancel), results kept on disk until acknowledged, the
+  capability policy with the `[REDDEDİLDİ]` result and exit code `-5`, lab modules;
+- signed updates: the agent takes exactly `pops-agent_<version>_all.deb` from the signed manifest, downloads it from
+  `/updates/`, and a transient systemd unit installs it and rolls back to the previous `.deb` when the new version
+  does not report health within 90 seconds; the result is sent in the Windows `update_result` schema;
+- a local audit log of admin actions (`/var/log/pops-agent/audit.log`, hash-chained and append-only).
+
+Different on Linux:
+
+| | Linux agent |
+| --- | --- |
+| Identification | Sends `X-Agent-Platform: linux`; the panel shows **Linux** (`clients.platform`, migration 0024). |
+| Commands | `/bin/sh -c` as root in `/`, clean environment, no input. **Uzak komut** says so and does not offer the Windows-only quick commands. The panel's restart and shut-down commands (`shutdown /r|/s /f /t N`) run as `systemctl reboot|poweroff` after N seconds. |
+| Inventory | Hardware from `/proc` and `/sys`; installed packages from `dpkg-query` (library and debug packages left out; `install_date` from the package's file list). No Windows Update data: the panel shows "—". |
+| Signed-in user | From systemd-logind (active local session, graphical first). |
+| Not in this version | Screen view and remote input, quarantine and the offline bypass (the device key is stored and acknowledged), tray, notices, help desk, DNS policy alerts. These requests are answered with `capability_denied` and reason `not_supported`; a refused quarantine does not leave the device marked as locked. |
+| Files | `/etc/pops-agent/` (configuration, `0700`), `/var/lib/pops-agent/` (identity, secret, spool, update state, `0700`), `/var/log/pops-agent/` (log rotated daily and at 10 MB, 30 days; audit log; updater log). |
+
+Tests: `python3 -m pytest Agent-Linux/tests` (no root needed); CI runs them on the distribution's packages, builds the
+`.deb` twice to check it is reproducible, installs it with `dpkg`, and runs the agent against a backend over TLS.

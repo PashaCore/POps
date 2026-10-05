@@ -368,3 +368,37 @@ rewrite an accepted entry. When a decision changes, add a new entry and mark the
   SYSTEM), so it must be treated like an admin password; the audit trail shows which token did what. Uploads over
   8 MB through `/api/v1` need the updated reverse-proxy rule on existing servers. Endpoint and model changes must
   commit the regenerated schema.
+
+## D-22 The Linux agent is Python 3 on the distribution's own packages
+
+**Since:** 0.1.23-alpha (first version; the CHANGELOG entry lands with the release).
+
+- **Context:** Schools that use Pardus (the Turkish public-sector Debian derivative) had no agent. The reviewers
+  scoped a first version to inventory and commands: the same `/ws/agent` protocol, enrollment token and per-device
+  secret, hardware ID from DMI, installed packages from `dpkg`, commands with the capability policy, and signed
+  updates. Screen view, quarantine and the tray are later work. The roadmap listed three ways to build it: .NET on
+  Linux, a small Go agent and a Python agent.
+- **Decision:** Python 3 with the standard library plus two distribution packages, `python3-websockets` and
+  `python3-cryptography` (both in Debian 12 and Pardus 23). No virtual environment and no `pip` on the PC: the
+  `.deb` depends on those packages and `apt` installs them, and their security fixes arrive with the
+  distribution's updates. The agent lives in `Agent-Linux/`; `build_deb.py` writes the `.deb` (`Architecture: all`,
+  about 45 KB) without dpkg, byte for byte reproducible from `SOURCE_DATE_EPOCH`, and the release workflow adds it to
+  the signed manifest next to the MSI. Reasons:
+  - it is the backend team's language: the same people can read and change both ends of the protocol;
+  - it is tested end to end on Linux CI: the unit tests run on the distribution's own `python3` and packages, and an
+    integration job enrolls the agent from the source tree against a real backend over TLS;
+  - the package is small and architecture-independent, so one `.deb` covers amd64 and arm64 lab PCs;
+  - the first version's scope (inventory and commands) needs no GUI, capture or system API that Python lacks.
+- **Not chosen now:** .NET would reuse the tested protocol code and `POps.Tests`, but the service host, WMI
+  inventory, pipe, tray and MSI updater are Windows-specific and would be rewritten anyway, and it needs either the
+  .NET runtime on every PC or a self-contained build per architecture (the Windows MSI is about 41 MB, D-19) whose
+  security fixes only come with a POps release. Go gives one static binary, but adds a third language to a small team (the bus-factor
+  concern) and reimplements protocol and verification without sharing code with either side; it stays the option if
+  a later version (screen capture on X11 and Wayland) needs a compiled helper.
+- **Consequences:** Supported systems are those whose `python3-websockets` is 10 or newer: Debian 12 and Pardus 23
+  and later, Ubuntu 24.04. Ubuntu 22.04's 9.1 package does not work with its own Python 3.10 and is not supported.
+  The agent's source is readable on the PC (it is open source anyway); its files are root-owned and the service runs
+  `python3 -I`, which ignores `PYTHON*` variables and user site-packages. The agent cannot pin its library versions:
+  it is written against websockets 10 to 17 and cryptography 38 and later, and CI runs it on the distribution
+  packages. Self-update installs the `.deb` with `dpkg` from a transient systemd unit and rolls back to the previous
+  package; there is no bundled runtime to update. Linux devices are told apart by `clients.platform` (migration 0024).

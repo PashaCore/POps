@@ -119,6 +119,7 @@ Agents do not use JWTs. They authenticate with headers:
 | `X-Agent-Secret` | `/ws/agent/…`, `/ws/vision/…`, agent HTTP endpoints | Per-device secret issued by the server at enrollment. The server stores only its SHA-256. |
 | `X-Agent-Id` | agent HTTP endpoints | The device's hardware ID (`HW-…`). Checked together with `X-Agent-Secret`. |
 | `X-Agent-Version` | `/ws/agent/…` | Agent version, stored in `agent_versions`. |
+| `X-Agent-Platform` | `/ws/agent/…` (and agent HTTP endpoints) | `linux` from the Linux agent; stored in `clients.platform` on every connection. Windows agents do not send it and count as `windows`. |
 
 On the agent HTTP endpoints (`agent_http_auth` in the tables below) a valid `X-Agent-Id` + `X-Agent-Secret` pair
 binds the request to that device: writing data for another device returns `403`. Requests without valid
@@ -171,7 +172,7 @@ explained in [`agent.md`](agent.md) and [`security.md`](security.md).
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/devices` | require_auth | All devices with status, lab, IP, current user, active window, quarantine flag, agent version, running version and capability state. |
+| GET | `/api/devices` | require_auth | All devices with status, lab, IP, current user, active window, quarantine flag, agent version, running version, capability state and `platform` (`windows` or `linux`). |
 | GET | `/api/devices/{pc_name}/activity` | require_auth | The latest operations on one device, newest first, `?limit=` (default 15, at most 50): its tasks (`kind: "task"` with `id`, `title`, `command` (first 300 characters), `status`, `exit_code`, `at`, `by`, `source`, `reason`, `ip`, `started_at`, `batch_id`) and its remote-control sessions (`kind: "vision"` with `status`, `at`, `ended_at`, `by`, `reason`, `mandatory`), merged. Returns `{"items": [...]}`. The panel shows it as "Son işlemler" in the PC detail panel. |
 | DELETE | `/api/devices/{pc_name}` | require_admin | Deletes the device, its hardware and software inventory, its Windows Update status, its `agent_logs_v2` rows, its version row and its **device secret**, and closes its socket (code `4000`). |
 | GET | `/api/inventory` | require_auth | Hardware inventory of all devices (`hw_inventory`). |
@@ -389,8 +390,8 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/api/system/upload-release` | require_superadmin | Multipart `files` (`manifest.json`, `manifest.json.sig` and packages) and form field `force`. Verifies the ed25519 signature against `keys/pops_release_ed25519.pub.pem` and every file's SHA-256, then stages the release under `Backend/releases/<version>/`. `409` if it is not newer than the staged release (unless `force`). |
-| POST | `/api/system/fetch-release` | require_superadmin | `{tag?, force}`: downloads `manifest.json`, its signature and the agent MSI of a GitHub release (latest if `tag` is empty) and runs the same verification as an upload. `502` if GitHub cannot be reached. |
-| POST | `/api/system/deploy-update` | require_superadmin | `{target_mode: "ALL" \| "LAB" \| "PC", targets}`: copies the staged MSI to `/updates/` and sends `update_agent` with the signed manifest to the **online** targets. A target that already has a pending update to the same version, sent less than 15 minutes ago or with a stage reported in the last 15 minutes, is not sent again (the agent ignores a second command while its update lock is fresh): it is listed in `already_pending`, online or not. Returns `dispatched`, `skipped_offline` and `already_pending`. `target_mode` is not case-sensitive; an unknown mode or field is `422`. |
+| POST | `/api/system/fetch-release` | require_superadmin | `{tag?, force}`: downloads `manifest.json`, its signature and the agent packages the manifest lists (the Windows MSI and, from releases that have it, the Linux `pops-agent_<version>_all.deb`) from a GitHub release (latest if `tag` is empty) and runs the same verification as an upload. `502` if GitHub cannot be reached or a listed package is missing. |
+| POST | `/api/system/deploy-update` | require_superadmin | `{target_mode: "ALL" \| "LAB" \| "PC", targets}`: copies the staged agent packages (at most one MSI and one `.deb`) to `/updates/` and sends `update_agent` with the signed manifest to the **online** targets; each agent picks its own package from the manifest. Targets whose platform (`clients.platform`) has no package in the staged release are skipped (`skipped_no_package`). A target that already has a pending update to the same version, sent less than 15 minutes ago or with a stage reported in the last 15 minutes, is not sent again (the agent ignores a second command while its update lock is fresh): it is listed in `already_pending`, online or not. Returns `msi`, `deb`, `dispatched`, `skipped_offline`, `skipped_no_package` and `already_pending`. `target_mode` is not case-sensitive; an unknown mode or field is `422`. |
 | POST | `/api/system/update-progress` | require_admin | `{pcs: [...], version, since}` (`since` = Unix time of the dispatch; at most 5000 devices): per device `known`, `online`, `version`, `on_target` (running `version`), `pending` (an update was sent and not answered yet), `sent_at` (when it was sent), the last stage the agent reported for it (`stage`, `detail`, `attempt`, `of`, `stage_at`; all `null` when there is none, see [`update_progress`](#update_progress-agent-update-stages)) and `result` (the update result received since `since`: `status`, `rollback`, `to_version`, `detail`, `agent_state`). `now` is the server's time. Times are Unix seconds. The panel follows an agent update with it. |
 
 ### Enrollment, identity and capabilities
@@ -421,7 +422,7 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | Path | Served from | Notes |
 | --- | --- | --- |
 | `/download/<name>?sig=…` | `Backend/storage` | Files uploaded with `/api/upload`, only with the signed link (no login, because agents download packages from here; a wrong or missing signature gets 404). |
-| `/updates/<name>` | `Backend/updates` | The agent MSI copied there by `deploy-update`. Served without authentication; agents check its size and SHA-256 against the signed manifest. |
+| `/updates/<name>` | `Backend/updates` | The agent packages (MSI, `.deb`) copied there by `deploy-update`. Served without authentication; agents check size and SHA-256 against the signed manifest. |
 
 ## REST names and deprecated paths
 
@@ -496,6 +497,11 @@ The agent channels are specified message by message, with JSON Schemas, test vec
   `server_info` (protocol version and features) and then sends commands. Every message in both directions, the
   connection sequence and the close codes (`4401`, `4409`, `4000`, `1011`) are in [`protocol/`](protocol/README.md);
   the update stages an agent reports are described [below](#update_progress-agent-update-stages).
+- **Platform:** the agent's `X-Agent-Platform` header (`linux` from the Linux agent; or `platform` in the first
+  message) is stored in `clients.platform`; without it the device is `windows`.
+- **Not supported:** the Linux agent answers actions it does not have yet (`lockdown`, `unlock`, Vision,
+  `scan_updates`, `install_updates`) with `capability_denied` and `reason: "not_supported"`. For `quarantine` the
+  server then clears the device's quarantine flag and pending quarantine action, so the panel does not show it locked.
 - When a registered connection closes, the reason (the close code in words, for example "bağlantı koptu" for
   `1006`) and the time are stored in `clients.last_disconnect_reason` / `last_disconnect_at`.
 

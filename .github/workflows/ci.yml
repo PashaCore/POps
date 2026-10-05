@@ -158,7 +158,7 @@ jobs:
 
   linux-agent:
     name: Linux agent
-    # Pardus/Debian ajanı (Agent-Linux, docs/decisions.md D-21): bilgisayardakiyle aynı yığın, yani dağıtımın kendi
+    # Pardus/Debian ajanı (Agent-Linux, docs/decisions.md D-22): bilgisayardakiyle aynı yığın, yani dağıtımın kendi
     # python3'ü ve python3-websockets / python3-cryptography paketleri. Birim testleri (root gerekmez), .deb'in iki
     # kez derlenip aynı baytları vermesi, dpkg -i (servis başlatılmaz: policy-rc.d), dosya izinleri ve purge.
     runs-on: ubuntu-latest
