@@ -21,6 +21,19 @@ updates:
       # uv elle yükseltilir: kilitlerin biçimi uv sürümüne bağlı (lock-tools.txt)
       - dependency-name: uv
 
+  - package-ecosystem: docker
+    # docker/*.Dockerfile taban imajları özetle (sha256) sabit; aynı etiketin yeni özeti haftalık gelir.
+    directory: /docker
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    ignore:
+      # Python 3.12 (D-20) ve PHP 8.3 (CI'ın sınadığı) bilinçli seçimdir; sürüm geçişi elle yapılır
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: php
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
   - package-ecosystem: nuget
     directories:
       - /Agent/POps.Agent/POps.Agent

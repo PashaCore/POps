@@ -279,7 +279,8 @@ jobs:
             org.opencontainers.image.licenses=Apache-2.0
       - name: Build and push
         # Önbellek kullanılmaz (yayın imajı başka iş akışlarının bıraktığı katmanlara dayanmasın); taban imajlar
-        # her seferinde güncel çekilir. Provenance (SLSA) ve SBOM kayıtları imajla birlikte GHCR'a gider.
+        # Dockerfile'daki özetle (sha256) çekilir, özetleri Dependabot haftalık günceller. Provenance (SLSA) ve SBOM
+        # kayıtları imajla birlikte GHCR'a gider.
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .

@@ -1,7 +1,9 @@
 # POps backend (FastAPI + uvicorn). Built by docker-compose.yml from the repository root;
 # see docs/docker.md. Only Backend/ (without tests), the release public key and VERSION
 # are copied in (.dockerignore allowlist).
-FROM python:3.12-slim
+# The base image is pinned by digest (multi-arch index); Dependabot proposes the new digest
+# of the same tag weekly (.github/dependabot.yml).
+FROM python:3.12-slim@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
