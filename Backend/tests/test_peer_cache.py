@@ -323,7 +323,8 @@ async def run(c, sup, socks):
     chk(got["HW-PCA5"] and got["HW-PCA5"][0].get("peers") == exp, "PCA5 peers aldı")
     chk(not got["HW-PCA4"] and not got["HW-PCA1"], "eski ajana ve eski tohuma yeniden gitmedi")
     m = got["HW-PCA3"][0] if got["HW-PCA3"] else {}
-    chk(set(m) == {"action", "manifest", "manifest_sig", "peers", "peer_cache"}, "update_agent alanları: %s" % sorted(m))
+    chk(set(m) == {"action", "manifest", "manifest_sig", "peers", "peer_cache"},
+        "update_agent alanları: %s" % sorted(m))
     a = lab_of(progress(sup, a_lab), LAB_A)
     chk(a.get("state") == "released" and a.get("via_peers") == 2 and a.get("waiting") == 0 and a.get("peers") == 1,
         "sınıf özeti: eşten dağıtılıyor (%s)" % a)
