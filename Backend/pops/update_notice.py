@@ -37,6 +37,9 @@ def describe(payload):
                 "Geri dönüş çalışmadı; son çare kurulum ajanı %s sürümünde geri getirdi" % (running or from_version),
             )
         return ("update_problem", "critical", "%s güncellemesi ve geri dönüş başarısız" % to_version)
+    if status == "rejected":
+        # Ajan paketi uygulamadı (imza, sürüm, indirme ya da özet tutmadı); sebep bildirimin ayrıntısında
+        return ("update_problem", "critical", "Ajan %s güncellemesini reddetti" % to_version)
     if status in CRITICAL_STATUSES:
         return ("update_problem", "critical", "Ajan güncellemesi başarısız (%s): %s" % (status, to_version))
     if status == "rolled_back":

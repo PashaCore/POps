@@ -53,6 +53,7 @@
     .ro-bar { padding: 4px 16px 12px; }
     .ro-list { border-top: 1px solid var(--border-subtle); max-height: 360px; overflow-y: auto; padding: 0 12px; }
     .ro-list .act { padding: 10px 4px; }
+    .ro-list .note { margin-top: 4px; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
     .ro-more { padding: 10px 16px; border-top: 1px solid var(--border-subtle); font-size: var(--text-sm); }
 
     /* Sağlık kutucukları: ince çizgili ızgara */
@@ -881,10 +882,15 @@
         let d;
         try { d = await POps.busy(btn, () => POps.post('/api/system/deploy-update', { target_mode: 'PC', targets: hosts })); }
         catch (e) { POps.toast('error', 'Güncelleme gönderilemedi: ' + POps.errorMessage(e)); return false; }
-        const sent = d.dispatched || [], off = d.skipped_offline || [];
-        if (!sent.length) { POps.toast('warning', 'Hiçbir bilgisayar bağlı değildi; güncelleme gönderilmedi.'); return false; }
-        POps.toast('success', `${fmtV(d.version)} ${sent.length} bilgisayara gönderildi` + (off.length ? `, ${off.length} kapalı bilgisayar atlandı.` : '.'));
-        rollout = { version: d.version, pcs: sent, skipped: off, since, at: Date.now(), by: ME, doneAt: null };
+        // already_pending: aynı sürüm son 15 dk içinde gönderilmiş, kurulum sürüyor; yeniden gönderilmedi ama izlenir
+        const sent = d.dispatched || [], off = d.skipped_offline || [], dup = d.already_pending || [];
+        if (!sent.length && !dup.length) { POps.toast('warning', 'Hiçbir bilgisayar bağlı değildi; güncelleme gönderilmedi.'); return false; }
+        const said = [];
+        if (sent.length) said.push(`${fmtV(d.version)} ${sent.length} bilgisayara gönderildi`);
+        if (dup.length) said.push(`${dup.length} bilgisayara zaten gönderildi, kurulum sürüyor`);
+        if (off.length) said.push(`${off.length} kapalı bilgisayar atlandı`);
+        POps.toast(sent.length ? 'success' : 'info', said.join(', ') + '.');
+        rollout = { version: d.version, pcs: [...sent, ...dup], skipped: off, since, at: Date.now(), by: ME, doneAt: null };
         store.set(RKEY, rollout);
         rItems = null; rShowAll = false;
         pollRollout();
@@ -956,20 +962,37 @@
 
     // ---- Gönderim ilerlemesi: POST /api/system/update-progress (sayfa yenilense de bu tarayıcıda sürer)
     let rollout = store.get(RKEY);
-    let rItems = null, rTimer = null, rErr = null, rShowAll = false;
+    let rItems = null, rTimer = null, rErr = null, rShowAll = false, rNow = null;
     const BAD_RES = ['rollback_failed', 'failed', 'reverted_by_freeze', 'error', 'rejected'];
+    // Ajanın bildirdiği adım (update_progress, 0.1.22+). 0.1.21 ve öncesi adım bildirmez; onlarda eski davranış sürer.
+    const STAGE_WORDS = new Map([['received', 'Alındı'], ['downloaded', 'İndirildi'], ['verified', 'Doğrulandı'],
+        ['updater_started', 'Kurulum başladı'], ['waiting_installer', 'Bekleniyor'], ['installing', 'Kuruluyor'], ['ignored_busy', 'Kuruluyor']]);
+    const QUIET_AFTER = 180;   // sn: gönderimden bu kadar sonra hiç adım gelmediyse ajan ilerleme bildirmiyor
+    function stageNote(it) {
+        const notes = [];
+        if (it.stage === 'waiting_installer') notes.push('Windows Installer meşgul, bekleniyor' + (it.attempt && it.of ? ` (${Number(it.attempt)}/${Number(it.of)})` : '') + '.');
+        if (it.stage === 'ignored_busy') notes.push('Önceki güncelleme sürüyor; bu gönderim yok sayıldı.');
+        if (!it.online) notes.push(['updater_started', 'waiting_installer', 'installing'].includes(it.stage) ? 'Ajan şu an bağlı değil; kurulumda servis yeniden başlar.' : 'Ajan şu an bağlı değil.');
+        return notes.join(' ');
+    }
     function itemState(it) {
         const r = it.result || null;
         const s = String((r && r.status) || '');
         if (it.on_target) return { k: 'ok', w: 'Güncellendi' };
         if (r && r.agent_state === 'unmanaged') return { k: 'bad', w: 'Elle kurulum gerekli', why: 'Ajan güncellemeden sonra çalışmıyor; bilgisayarda yeniden kurulmalı.' };
+        if (r && s === 'rejected') return { k: 'bad', w: 'Reddedildi', why: 'Reddedildi: ' + (r.detail || 'ajan sebep bildirmedi') };
         const more = r && r.detail ? ' Ajanın bildirdiği: ' + r.detail : '';
         if (r && BAD_RES.includes(s)) return { k: 'bad', w: 'Başarısız', why: (s === 'rollback_failed' ? 'Güncelleme ve geri dönüş başarısız.' : s === 'reverted_by_freeze' ? 'Dondurma yazılımı (Deep Freeze vb.) güncellemeyi geri aldı.' : 'Güncelleme başarısız.') + more };
         if (r && s === 'rolled_back') return { k: 'warn', w: 'Geri alındı', why: 'Yeni sürüm sağlıklı açılmadı; önceki sürüme dönüldü.' + more };
         if (r && s === 'install_failed') return { k: 'warn', w: 'Başlatılamadı', why: 'Kurulum başlatılamadı; bilgisayar değişmedi.' + more };
         if (r && /pending_reboot/.test(s)) return { k: 'run', w: 'Yeniden başlatma bekliyor' };
         if (!it.known) return { k: 'warn', w: 'Kayıtlı değil' };
-        if (it.pending) return { k: 'run', w: it.online ? 'Kuruluyor' : 'Yeniden bağlanıyor' };
+        if (it.pending && STAGE_WORDS.has(it.stage)) return { k: 'run', w: STAGE_WORDS.get(it.stage), at: it.stage_at, note: stageNote(it) };
+        if (it.pending && it.online) {
+            const quiet = rNow != null && it.sent_at != null && rNow - it.sent_at > QUIET_AFTER;
+            return { k: 'run', w: 'Kuruluyor', note: quiet ? 'Ajan ilerleme bildirmiyor (eski sürüm olabilir).' : '' };
+        }
+        if (it.pending) return { k: 'run', w: 'Yeniden bağlanıyor' };
         if (!it.online) return { k: 'run', w: 'Kapalı' };
         return { k: 'warn', w: 'Sonuç gelmedi', why: 'Ajan güncellemeyi aldı ama sonuç bildirmedi; sürümü değişmedi.' };
     }
@@ -1000,8 +1023,9 @@
             const metaRow = [d && d.lab && d.lab !== dev.UNASSIGNED ? d.lab : '', it.version ? 'çalışan ' + fmtV(it.version) : ''].filter(Boolean).join(' · ');
             return `<div class="act"><div class="res ${escapeHtml(s.k)}">${POps.iconHtml(icon)}</div>
                 <div style="min-width:0"><div class="what">${escapeHtml(dev.name(it.pc))}</div><div class="meta">${escapeHtml(metaRow || it.pc)}</div>
+                ${s.note ? `<div class="note">${escapeHtml(s.note)}</div>` : ''}
                 ${s.why ? `<div class="why${s.k === 'warn' ? ' warn' : ''}">${escapeHtml(s.why)}</div>` : ''}</div>
-                <div class="side">${wordHtml(s.k, s.w)}</div></div>`;
+                <div class="side">${wordHtml(s.k, s.w)}${s.at ? `<span class="when">${POps.timeHtml(s.at)}</span>` : ''}</div></div>`;
         }).join('');
         box.innerHTML = `<div class="ro-head"><div class="res ${escapeHtml(k)}" style="width:28px;height:28px;border-radius:99px;display:flex;align-items:center;justify-content:center">${running ? '<span class="spinner sm"></span>' : POps.iconHtml(k === 'ok' ? 'check' : 'alert', 'sm')}</div>
                 <div class="grow"><div class="t" style="font-weight:var(--fw-medium)">${escapeHtml(fmtV(rollout.version))} gönderimi</div><div class="d" style="font-size:var(--text-xs);color:var(--text-muted)">${metaHtml}</div></div>
@@ -1022,7 +1046,7 @@
         if (!rollout) { renderRollout(); return; }
         try {
             const r = await POps.post('/api/system/update-progress', { pcs: rollout.pcs, version: normV(rollout.version), since: rollout.since });
-            rItems = r.items || []; rErr = null;
+            rItems = r.items || []; rErr = null; rNow = typeof r.now === 'number' ? r.now : null;
         } catch (e) { rErr = e; }
         if (!rollout) return;
         const c = rCounts();

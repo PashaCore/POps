@@ -197,10 +197,12 @@ async def reap_stuck_tasks() -> int:
 
 
 async def check_pending_updates() -> None:
-    """Güncelleme gönderilen ajan uzun süre sonuç bildirmediyse (ölü/yönetilemez ajan sonuç gönderemez)."""
+    """Güncelleme gönderilen ajan uzun süre sonuç bildirmediyse (ölü/yönetilemez ajan sonuç gönderemez). Süre
+    gönderimden ya da ajanın bildirdiği son adımdan (update_progress) sayılır: ilerleyen kurulum sessiz sayılmaz."""
     now = time.time()
     for pc, (version, sent_at) in list(manager.pending_updates.items()):
-        if now - sent_at < UPDATE_SILENCE_SECONDS:
+        stage = manager.update_stages.get(pc) or {}
+        if now - max(sent_at, stage.get("stage_at") or 0) < UPDATE_SILENCE_SECONDS:
             continue
         await update_tracking.forget(pc)
         online = pc in manager.active_agents
@@ -208,7 +210,8 @@ async def check_pending_updates() -> None:
             "update_silent",
             "high",
             "Güncelleme (%s) gönderildi, ajan 20 dakikadır sonuç bildirmedi" % version,
-            "Ajan şu an %s." % ("bağlı" if online else "bağlı değil"),
+            "Ajan şu an %s." % ("bağlı" if online else "bağlı değil")
+            + (" Son bildirdiği adım: %s." % stage["stage"] if stage.get("stage") else ""),
             pc,
         )
 

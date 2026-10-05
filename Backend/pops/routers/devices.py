@@ -50,6 +50,7 @@ async def delete_device(pc_name: str, auth: dict = Depends(require_admin)):
         log.error("cihaz silinemedi", extra={"pc_name": pc_name, "error": repr(e)[:300]})
         return {"status": "error", "message": "Cihaz silinemedi; hiçbir kayıt değiştirilmedi. Sunucu günlüğüne bakın."}
     manager.pending_updates.pop(pc_name, None)
+    manager.update_stages.pop(pc_name, None)
     await add_audit_log(pc_name, "device_deleted", "Cihaz silindi: %s" % auth.get("sub"), {"admin": auth.get("sub")})
     # Cihaz çevrimiçiyse çalışan komutu durdurması istenir, sonra bağlantı kapatılır
     agent_ws = manager.active_agents.get(pc_name)

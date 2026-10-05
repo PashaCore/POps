@@ -78,6 +78,9 @@ class ConnectionManager:
         # pc_name -> (sürüm, gönderim zamanı): güncelleme gönderildi, sonucu bekleniyor. Sonuç gelmeden
         # uzun süre geçerse zamanlayıcı "ajan geri dönmedi" bildirimi üretir (ölü ajan sonuç gönderemez).
         self.pending_updates: Dict[str, tuple] = {}
+        # pc_name -> bekleyen güncellemenin ajanın bildirdiği son adımı (stage, detail, attempt, of, stage_at);
+        # yalnızca pending_updates'te olan cihaz için tutulur (bkz. pops/update_tracking.py)
+        self.update_stages: Dict[str, dict] = {}
         self.panel_senders: Dict[WebSocket, _PanelSender] = {}
 
     async def connect_agent(self, websocket: WebSocket, pc_name: str):

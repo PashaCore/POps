@@ -341,7 +341,8 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
 
 1. A superadmin stages a release on **Sistem** (download from GitHub, or upload `manifest.json`,
    `manifest.json.sig` and the MSI) and sends it to all agents, a lab or selected PCs. Only online agents receive
-   it; send it again for the others later.
+   it; send it again for the others later. A PC that got the same version less than 15 minutes ago (or reported
+   an update stage in that time) is not sent it again: its update lock would make the agent ignore it anyway.
 2. The agent verifies the manifest's ed25519 signature with the public key compiled into it, refuses a version
    that is not newer than its own, downloads the MSI from `<ServerUrl>/updates/<name>` and checks its size and
    SHA-256.

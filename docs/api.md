@@ -320,8 +320,8 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 | --- | --- | --- | --- |
 | POST | `/api/system/upload-release` | require_superadmin | Multipart `files` (`manifest.json`, `manifest.json.sig` and packages) and form field `force`. Verifies the ed25519 signature against `keys/pops_release_ed25519.pub.pem` and every file's SHA-256, then stages the release under `Backend/releases/<version>/`. `409` if it is not newer than the staged release (unless `force`). |
 | POST | `/api/system/fetch-release` | require_superadmin | `{tag?, force}`: downloads `manifest.json`, its signature and the agent MSI of a GitHub release (latest if `tag` is empty) and runs the same verification as an upload. `502` if GitHub cannot be reached. |
-| POST | `/api/system/deploy-update` | require_superadmin | `{target_mode: "ALL" \| "LAB" \| "PC", targets}`: copies the staged MSI to `/updates/` and sends `update_agent` with the signed manifest to the **online** targets. Returns `dispatched` and `skipped_offline`. `target_mode` is not case-sensitive; an unknown mode or field is `422`. |
-| POST | `/api/system/update-progress` | require_admin | `{pcs: [...], version, since}` (`since` = Unix time of the dispatch; at most 5000 devices): per device `known`, `online`, `version`, `on_target` (running `version`), `pending` (an update was sent and not answered yet) and `result` (the update result received since `since`: `status`, `rollback`, `to_version`, `detail`, `agent_state`). The panel follows an agent update with it. |
+| POST | `/api/system/deploy-update` | require_superadmin | `{target_mode: "ALL" \| "LAB" \| "PC", targets}`: copies the staged MSI to `/updates/` and sends `update_agent` with the signed manifest to the **online** targets. A target that already has a pending update to the same version, sent less than 15 minutes ago or with a stage reported in the last 15 minutes, is not sent again (the agent ignores a second command while its update lock is fresh): it is listed in `already_pending`, online or not. Returns `dispatched`, `skipped_offline` and `already_pending`. `target_mode` is not case-sensitive; an unknown mode or field is `422`. |
+| POST | `/api/system/update-progress` | require_admin | `{pcs: [...], version, since}` (`since` = Unix time of the dispatch; at most 5000 devices): per device `known`, `online`, `version`, `on_target` (running `version`), `pending` (an update was sent and not answered yet), `sent_at` (when it was sent), the last stage the agent reported for it (`stage`, `detail`, `attempt`, `of`, `stage_at`; all `null` when there is none, see [`update_progress`](#update_progress-agent-update-stages)) and `result` (the update result received since `since`: `status`, `rollback`, `to_version`, `detail`, `agent_state`). `now` is the server's time. Times are Unix seconds. The panel follows an agent update with it. |
 
 ### Enrollment, identity and capabilities
 
@@ -369,7 +369,8 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
   reconciles the fingerprint with the known devices and may answer with `set_identity` to give the agent a
   different `HW-…` ID (clone detection or identity recovery).
 - **Other agent → server messages:** `result` (task output), `thumbnail`, `vision_rejected`, `update_result`,
-  `capabilities`, `capability_denied`. Heartbeats are written to the database in batches every 2 seconds.
+  `update_progress` (see [below](#update_progress-agent-update-stages)), `capabilities`, `capability_denied`.
+  Heartbeats are written to the database in batches every 2 seconds.
 - **Update results:** from 0.1.14 an `update_result` carries `result_id` (the first 32 hex characters of the
   SHA-256 of the agent's `update-result.json`). After the result is stored the server answers
   `{"action": "update_result_ack", "result_id": ...}`; a result it already stored is acknowledged without a second
@@ -378,7 +379,7 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
   an agent that keeps results until they are acknowledged (0.1.14+) can send them again after a lost connection. A
   `capability_denied` with a `task_id` marks that task `Denied`.
 - **Server → agent actions:** `server_info` (right after registration: `{"version", "features":
-  ["update_result_ack", "result_ack"]}`; older agents ignore it), `update_result_ack`, `result_ack`, `execute`, `cancel_task`, `get_hardware`,
+  ["update_result_ack", "result_ack", "update_progress"]}`; older agents ignore it), `update_result_ack`, `result_ack`, `execute`, `cancel_task`, `get_hardware`,
   `set_secret`, `set_bypass_secret`, `set_identity`, `update_agent`,
   `set_capabilities`, `lockdown`, `unlock`, `start_vision_session`, `stop_stream`, `wake_peer`,
   `scan_updates` and `install_updates` (`{"scope": "security" | "all"}`; handled by agents from 0.1.5-alpha on),
@@ -386,6 +387,56 @@ such a lab are answered `{"status": "ignored"}` and not stored. Lifting a quaran
 - **Other close codes:** `4000` when the device is deleted in the panel, `1011` after a malformed message or
   server error. When a registered connection closes, the reason (the close code in words, for example "bağlantı
   koptu" for `1006`) and the time are stored in `clients.last_disconnect_reason` / `last_disconnect_at`.
+
+#### `update_progress`: agent update stages
+
+Between `update_agent` and `update_result` the agent reports where the update stands. Agents up to 0.1.21 send no
+stages; the panel then shows the update as before ("Kuruluyor" until the result).
+
+```json
+{"type": "update_progress", "stage": "waiting_installer", "to_version": "0.1.22-alpha", "attempt": 2, "of": 5}
+```
+
+| `stage` | Sent when | Panel |
+| --- | --- | --- |
+| `received` | The service accepted an `update_agent` command (no other update preparing, `update.lock` not fresh), before checking it. | Alındı |
+| `downloaded` | The download of the MSI named in the signed manifest finished, before its size and SHA-256 are compared. | İndirildi |
+| `verified` | Size and SHA-256 match the signed manifest. | Doğrulandı |
+| `updater_started` | `POpsUpdater` was started and `update.lock` written. | Kurulum başladı |
+| `waiting_installer` | `msiexec` returned 1618 (another Windows Installer job is running) and the updater waits before trying again. `attempt` = attempts made so far, `of` = attempts allowed (5). | Windows Installer meşgul, bekleniyor (2/5) |
+| `installing` | The updater starts `msiexec` for the new package (again after each wait). | Kuruluyor |
+| `rejected` | The service did not apply the command: no or bad manifest, bad signature, version not newer, more than one MSI, download failed, size or SHA-256 mismatch, updater files missing, or an error while preparing (for example the server could not be reached during the download). `detail` = the reason. Sent instead of an `update_result` (the updater's own refusal, a SHA-256 mismatch when it starts, still ends with an `update_result` with status `rejected`). | Reddedildi: \<reason\> |
+| `ignored_busy` | A second `update_agent` came while an update was preparing or `update.lock` was fresh; the command was ignored; no `received` is sent for it. `to_version` = the version of the update in progress if known, else omitted. | Kuruluyor, "Önceki güncelleme sürüyor; bu gönderim yok sayıldı." |
+
+- Like every message other than the heartbeat, it must not be the first message of a connection (the server
+  registers the device from the first message's `dna_payload`).
+- `type` and `stage` are required. Optional: `to_version` (the manifest version; `[0-9A-Za-z.+_-]`, at most 64
+  characters), `attempt` and `of` (integers 1–100, `attempt` ≤ `of`), `detail` (text). An invalid optional value is
+  dropped; the rest of the message still counts. The message carries **no `status` field**: servers handle any
+  message with `status` as a heartbeat.
+- The server keeps a stage only while an update it sent to this device is pending, and only when `to_version`
+  (if given) is that update's version; `ignored_busy` is kept whatever its version. An unknown stage, a stage for
+  a device without a pending update, or one for another version is ignored and logged at info level; the
+  connection stays open.
+- `detail` is cut to 300 characters; control characters become spaces, Unicode format characters (for example
+  U+202E) are removed and runs of spaces collapse to one.
+- The latest stage per device is kept in memory and in `pending_updates` (`stage`, `detail`, `attempt`,
+  `attempt_of`, `stage_at`), so it survives a server restart. The same stage with the same `detail`, `attempt` and
+  `of` sent again changes nothing, and `stage_at` stays the time of the first report: the agent may send its
+  latest stage again after reconnecting.
+- `rejected` ends the update. The server stores it like an `update_result` with status `rejected`,
+  `to_version` (the pending version if the message has none), `from_version` (the connection's `X-Agent-Version`)
+  and `detail` (the reason, or "ajan sebep bildirmedi"): audit entry `update_result`, critical event,
+  notification `update_problem` ("Ajan … güncellemesini reddetti"), the pending update is closed and
+  `update-progress` returns it as the `result`.
+- An `update_result`, a device deletion or the 20-minute silence check (counted from the dispatch or the last
+  stage, whichever is later) closes the pending update and clears its stage. A new dispatch clears it too.
+- **Older servers** ignore the message. The agent loop in `Backend/pops/routers/agents.py` handles the types it
+  knows (`thumbnail`, `vision_rejected`, `update_result`, `capabilities`, `bypass_secret_ack`,
+  `capability_denied`) and passes everything else to the routine handler, which acts only on `type: "result"`
+  and on messages with a `status` field; anything else is dropped without an error, and the connection stays
+  open. A server that handles `update_progress` lists it in `server_info.features`; an agent may skip the
+  messages when the feature is missing, but does not have to.
 
 ### `/ws/vision/{hw_id}` — agent screen stream
 
