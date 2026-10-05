@@ -144,7 +144,20 @@ namespace POpsAgent
         }
 
         // Görev kimliği ÇAĞRI anında ayrılır (TryAdd): aynı kimlik zaten çalışıyorsa ikinci işlem başlatılmaz, ExitDuplicate döner
-        public Task<CommandExecutionResult> RunAsync(int taskId, string command, CancellationToken serviceStopping)
+        public Task<CommandExecutionResult> RunAsync(int taskId, string command, CancellationToken serviceStopping) =>
+            Reserve(taskId, cancel => RunReservedAsync(taskId, command, cancel, serviceStopping));
+
+        // Kabuk ve .bat olmadan, bağımsız değişken listesiyle bir program (ör. winget): komutla aynı çıktı, süre sınırı,
+        // iptal ve yineleme koruması; bağımsız değişkenler kabukta yorumlanmaz
+        public Task<CommandExecutionResult> RunProgramAsync(int taskId, string fileName, IEnumerable<string> arguments, CancellationToken serviceStopping) =>
+            Reserve(taskId, cancel =>
+            {
+                var info = NewStartInfo(fileName);
+                foreach (string argument in arguments) info.ArgumentList.Add(argument);
+                return RunInfoAsync(taskId, info, cancel, null, serviceStopping);
+            });
+
+        private Task<CommandExecutionResult> Reserve(int taskId, Func<CancellationTokenSource, Task<CommandExecutionResult>> run)
         {
             var cancel = new CancellationTokenSource();
             if (!_running.TryAdd(taskId, cancel))
@@ -153,29 +166,44 @@ namespace POpsAgent
                 return Task.FromResult(new CommandExecutionResult(
                     $"[YİNELENEN]: Görev {taskId} zaten çalışıyor; ikinci kez başlatılmadı.", ExitDuplicate, TimeSpan.Zero));
             }
-            return RunReservedAsync(taskId, command, cancel, serviceStopping);
+            return run(cancel);
         }
+
+        private static ProcessStartInfo NewStartInfo(string fileName) => new ProcessStartInfo
+        {
+            FileName = fileName,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
 
         private async Task<CommandExecutionResult> RunReservedAsync(int taskId, string command, CancellationTokenSource cancel, CancellationToken serviceStopping)
         {
-            var stopwatch = Stopwatch.StartNew();
-            string tempBatPath = null;
+            string tempBatPath;
             try
             {
                 tempBatPath = Path.Combine(Path.GetTempPath(), $"pops_task_{Guid.NewGuid():N}.bat");
-                await File.WriteAllTextAsync(tempBatPath, "@echo off\r\nchcp 65001 > nul\r\n" + command, new UTF8Encoding(false));
+                await File.WriteAllTextAsync(tempBatPath, "@echo off\r\nchcp 65001 > nul\r\n" + command, new UTF8Encoding(false), serviceStopping);
+            }
+            catch (Exception ex)
+            {
+                _running.TryRemove(new KeyValuePair<int, CancellationTokenSource>(taskId, cancel));
+                cancel.Dispose();
+                return new CommandExecutionResult($"Ajan Hatası: {ex.Message}", ExitAgentError, TimeSpan.Zero);
+            }
+            ProcessStartInfo info = NewStartInfo(_shell);
+            info.Arguments = _arguments(tempBatPath);
+            return await RunInfoAsync(taskId, info, cancel, tempBatPath, serviceStopping);
+        }
 
-                var info = new ProcessStartInfo
-                {
-                    FileName = _shell,
-                    Arguments = _arguments(tempBatPath),
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8,
-                };
+        private async Task<CommandExecutionResult> RunInfoAsync(int taskId, ProcessStartInfo info, CancellationTokenSource cancel, string tempBatPath, CancellationToken serviceStopping)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
                 using var process = new Process { StartInfo = info };
                 var stdout = new BoundedOutput(CommandExecutionPolicy.MaxOutputChars);
                 var stderr = new BoundedOutput(CommandExecutionPolicy.MaxOutputChars / 4);

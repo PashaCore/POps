@@ -10,6 +10,7 @@ namespace POpsAgent
         {
             "exam",
             "files",
+            "winget",
         };
 
         public static string Header => string.Join(",", All);

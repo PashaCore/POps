@@ -1411,6 +1411,7 @@ namespace POpsAgent
                     JsonElement command = root.Clone();
                     _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(command, _httpClient, _serverUrl, ReportUpdateProgressAsync), CancellationToken.None);
                 }
+                else if (action == WingetInstall.Action) await HandleWingetInstallAsync(root, stoppingToken);
                 else if (action == "wake_peer" && !AgentModules.IsEnabled(AgentModules.Wol)) await DenyCapabilityAsync("wol", action, reason: AgentModules.DisabledReason);
                 else if (action == "wake_peer") { WakeOnLan.Send(root.GetProperty("mac").GetString()); }
                 else if (action == "set_identity") { UpdateIdentityFile(root.GetProperty("new_hw_id").GetString()); }
@@ -1543,6 +1544,73 @@ namespace POpsAgent
         // hareketi gibi sık gelen istekler için aynı yetenek/eylem en çok dakikada bir bildirilir; görev (task_id) ya da
         // dosya aktarımı (transfer_id) reddi her seferinde gider (sunucu o görevi / aktarımı kapatır).
         private readonly Dictionary<string, DateTime> _lastDenialNotice = new Dictionary<string, DateTime>();
+
+        // ------------------------------------------------------------------ winget_install (bkz. WingetInstall)
+        // Retler "result" olarak bildirilir (-5; winget yoksa -7) ve hiçbir şey çalıştırılmaz. Yerel terminal yeteneği ya da
+        // sınıfın deploy modülü kapalıysa ardından capability_denied gider (execute ile aynı sıra). Çalıştırma execute gibi:
+        // aynı görev iki kez başlamaz, süre sınırı, cancel_task, sonuç result_ack'e kadar saklanır.
+        internal async Task HandleWingetInstallAsync(JsonElement root, CancellationToken stoppingToken)
+        {
+            if (!root.TryGetProperty("task_id", out JsonElement taskProp) || taskProp.ValueKind != JsonValueKind.Number || !taskProp.TryGetInt32(out int tid))
+            {
+                POpsHelpers.Log("AGENT", "winget_install emrinde geçerli task_id yok; yok sayıldı.", true);
+                return;
+            }
+            string requestedBy = root.TryGetProperty("requested_by", out JsonElement by) && by.ValueKind == JsonValueKind.String ? by.GetString() : null;
+            if (_commandRunner.IsRunning(tid))
+            {
+                POpsHelpers.Log("AGENT", $"winget kurulumu zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
+                return;
+            }
+            string rejection = null, deniedCapability = null, deniedReason = null, wingetPath = null, id = null, version = null;
+            int exitCode = CommandRunner.ExitDenied;
+            if (!AgentCapabilities.TerminalEnabled)
+            {
+                rejection = WingetInstall.TerminalOffMessage;
+                deniedCapability = "terminal";
+            }
+            else if (!AgentModules.IsEnabled(AgentModules.Deploy))
+            {
+                rejection = WingetInstall.DeployOffMessage;
+                deniedCapability = AgentModules.Deploy;
+                deniedReason = AgentModules.DisabledReason;
+            }
+            else if (!WingetInstall.TryParse(root, out id, out version)) rejection = WingetInstall.InvalidMessage;
+            else if ((wingetPath = WingetInstall.Locator()) == null)
+            {
+                rejection = WingetInstall.MissingMessage;
+                exitCode = WingetInstall.ExitMissing;
+            }
+            if (rejection != null)
+            {
+                POpsHelpers.Log("AGENT", $"{rejection} (TaskID: {tid})", true);
+                await SendResultAsync(tid, new { type = "result", pc_name = _hwId, task_id = tid, output = rejection, exit_code = exitCode });
+                if (deniedCapability != null) await DenyCapabilityAsync(deniedCapability, WingetInstall.Action, tid, deniedReason);
+                return;
+            }
+            POpsHelpers.Log("AGENT", $"winget kurulumu başlıyor: {WingetInstall.Describe(id, version)} (TaskID: {tid})");
+            LocalAudit.Write(LocalAudit.CommandStarted(tid, WingetInstall.Describe(id, version), requestedBy));
+            // Görev kimliği burada (eşzamanlı olarak) ayrılır: arkasından gelen aynı kimlik ikinci işlem başlatamaz
+            Task<CommandExecutionResult> run = _commandRunner.RunProgramAsync(tid, wingetPath, WingetInstall.Arguments(id, version), stoppingToken);
+            _ = Task.Run(async () =>
+            {
+                CommandExecutionResult execution = await run;
+                if (execution.ExitCode == CommandRunner.ExitDuplicate)
+                {
+                    POpsHelpers.Log("AGENT", $"winget kurulumu zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
+                    return;
+                }
+                LocalAudit.Write(LocalAudit.CommandFinished(tid, execution.ExitCode, execution.Duration));
+                await SendResultAsync(tid, new
+                {
+                    type = "result",
+                    pc_name = _hwId,
+                    output = WingetInstall.CleanOutput(execution.Output),
+                    task_id = tid,
+                    exit_code = execution.ExitCode,
+                });
+            }, CancellationToken.None);
+        }
 
         private async Task DenyCapabilityAsync(string capability, string action, int? taskId = null, string reason = null, string transferId = null)
         {

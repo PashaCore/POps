@@ -86,6 +86,9 @@ namespace POps.Tests
             POpsAgent.ExamMode.Resolver = _ => System.Threading.Tasks.Task.FromResult(Array.Empty<System.Net.IPAddress>());
             // Sınav modunun uygulama engeli bu bilgisayardaki gerçek süreçleri (cmd.exe, powershell.exe) kapatmaz
             POpsAgent.ExamMode.StopProcess = _ => { };
+            // Testler gerçek winget'i asla çalıştırmaz (ör. paylaşılan protokol vektörlerindeki winget_install); gereken sınıf
+            // kendi sahtesini kurar
+            POpsAgent.WingetInstall.Locator = () => null;
         }
 
         private static bool IsUnderRoot(string path) =>
