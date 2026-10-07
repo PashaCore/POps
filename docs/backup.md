@@ -32,7 +32,7 @@ The result is written to `/var/lib/pops-state/backup-status.json` (a root-owned 
 
 ## Setup
 
-`Installer/server/install.sh` installs and enables it (nightly around 02:30, 14 days kept, at least the newest 3).
+`Installer/server/install.sh` installs and enables it (nightly around 02:30; see **Retention** below).
 On an existing server:
 
 ```bash
@@ -45,9 +45,22 @@ sudo pops-backup    # first run now
 ```
 
 Edit `/etc/pops/backup.conf`: `POPS_APP` (backend folder), `POPS_SERVICE` and `POPS_SERVICE_USER` (systemd unit and
-the user it runs as), `POPS_PANEL_ENV`, `KEEP_DAYS`. The temporary restore database needs the same `pg_hba.conf`
+the user it runs as), `POPS_PANEL_ENV`, the retention settings. The temporary restore database needs the same `pg_hba.conf`
 access as the real one (`install.sh` adds a line for `<db>_restorecheck`). PostgreSQL 13 or later is required
 (`DROP DATABASE … WITH (FORCE)`).
+
+**Retention.** After each verified backup, older folders are deleted unless one of these rules keeps them:
+
+| Setting | Default | Keeps |
+|---|---|---|
+| `KEEP_MIN` | `3` | the newest backups, always |
+| `KEEP_DAYS` | `7` | every backup younger than this many days (`0` turns the rule off) |
+| `KEEP_WEEKLY` | `4` | the newest backup of each of the last weeks that have a backup (ISO weeks of the folder's UTC date) |
+
+The defaults keep about ten backups: a week of nightly ones and one per week for a month. Each backup is mostly agent
+packages (`releases/`, `updates/`, roughly 80 MB per agent version kept on the server), so on a small disk set
+`KEEP_DAYS=0` (last 3 nights plus 4 weekly) and `BACKUP_EXCLUDE_UPDATES=1`. Up to 0.1.23 only `KEEP_DAYS=14` and
+`KEEP_MIN=3` existed; an existing `backup.conf` with `KEEP_DAYS=14` still keeps two weeks, plus the weekly ones.
 
 **Consistency.** `pg_dump` reads the whole database in one snapshot, so devices, secrets, tasks and the audit chain
 in `db.dump` always belong together, even while agents keep writing. The files are archived just after the dump:

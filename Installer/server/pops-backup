@@ -17,8 +17,9 @@ CONF=${POPS_BACKUP_CONF:-/etc/pops/backup.conf}
 POPS_APP=${POPS_APP:-/opt/pops}                     # backend dizini (.env burada)
 POPS_PANEL_ENV=${POPS_PANEL_ENV:-}                  # panel .env'i (panel başka dizinden sunuluyorsa)
 BACKUP_DIR=${BACKUP_DIR:-/var/backups/pops}
-KEEP_DAYS=${KEEP_DAYS:-14}                          # bundan eski yedekler silinir...
-KEEP_MIN=${KEEP_MIN:-3}                             # ...ama en yeni KEEP_MIN yedek her zaman kalır
+KEEP_MIN=${KEEP_MIN:-3}                             # en yeni KEEP_MIN yedek her zaman kalır,
+KEEP_DAYS=${KEEP_DAYS:-7}                           # bu kadar günden yeni olanlar da (0: gün kuralı yok),
+KEEP_WEEKLY=${KEEP_WEEKLY:-4}                       # bir de yedeği olan son KEEP_WEEKLY haftanın her birinin en yenisi
 RSYNC_TARGET=${RSYNC_TARGET:-}                      # başka makineye kopya: kullanici@makine:/yol (ssh anahtarıyla)
 VERIFY_RESTORE=${VERIFY_RESTORE:-1}                 # 1: yedeği geçici veritabanına açıp doğrula
 STATUS_FILE=${STATUS_FILE:-/var/lib/pops-state/backup-status.json}   # root'a ait dizin (bkz. write_status)
@@ -111,16 +112,27 @@ if [ "$VERIFY_RESTORE" = 1 ]; then
 fi
 trap - ERR
 
-# Saklama: KEEP_DAYS'ten eski yedekler silinir, en yeni KEEP_MIN tanesi her durumda kalır
+# Saklama: en yeni KEEP_MIN yedek, KEEP_DAYS günden yeni olanlar ve yedeği olan son KEEP_WEEKLY haftanın her
+# birinin en yeni yedeği kalır; gerisi silinir. Hafta, klasör adındaki UTC tarihin ISO haftasıdır (pazartesi başlar).
 mapfile -t all < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -name '20*Z' | sort -r)
+declare -A weeks=()
 for i in "${!all[@]}"; do
-    [ "$i" -lt "$KEEP_MIN" ] && continue
-    if [ -n "$(find "${all[$i]}" -maxdepth 0 -mtime +"$KEEP_DAYS")" ]; then
-        log "eski yedek siliniyor: ${all[$i]}"
-        rm -rf -- "${all[$i]}"
+    d=${all[$i]}
+    keep=0
+    if [ "$i" -lt "$KEEP_MIN" ] || [ "$d" = "$OUT" ]; then keep=1; fi
+    if [ "$KEEP_DAYS" -gt 0 ] && [ -z "$(find "$d" -maxdepth 0 -mtime +"$KEEP_DAYS")" ]; then keep=1; fi
+    name=$(basename "$d")
+    week=$(date -u -d "${name:0:8}" +%G-W%V 2>/dev/null || true)
+    if [ -n "$week" ] && [ -z "${weeks[$week]:-}" ] && [ "${#weeks[@]}" -lt "$KEEP_WEEKLY" ]; then
+        weeks[$week]=1
+        keep=1
+    fi
+    if [ "$keep" = 0 ]; then
+        log "eski yedek siliniyor: $d"
+        rm -rf -- "$d"
     fi
 done
-find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.failed' -mtime +"$KEEP_DAYS" -exec rm -rf -- {} + 2>/dev/null || true
+find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.failed' -mtime +"$(( KEEP_DAYS > 0 ? KEEP_DAYS : 7 ))" -exec rm -rf -- {} + 2>/dev/null || true
 
 if [ -n "$RSYNC_TARGET" ]; then
     log "başka makineye kopyalanıyor: $RSYNC_TARGET"
