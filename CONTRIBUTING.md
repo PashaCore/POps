@@ -47,6 +47,18 @@ To pick one up:
 Maintainers writing a good first issue: describe the context, name the files, list acceptance criteria, keep it to
 a change one person can review in one sitting, and add the label.
 
+### Türkçe katkı
+
+Türkçe bilenler için ayrılmış işler [`türkçe`](https://github.com/PashaCore/POps/issues?q=is%3Aissue+is%3Aopen+label%3At%C3%BCrk%C3%A7e) etiketini taşır ve Türkçe yazılmıştır: belge çevirileri, Türkçe
+rehberler, Pardus'ta deneme, panelin Türkçe metinleri, demo ve pilot rehberi için okul gözüyle geri bildirim.
+Çoğu için kod yazmak, sunucu ya da Windows bilgisayar gerekmez. Adımlar yukarıdakiyle aynı: işi seçin, issue'ya
+almak istediğinizi yazın, işi size atayalım. Sorularınızı issue'da ya da
+[Discussions](https://github.com/PashaCore/POps/discussions)'ta Türkçe sorabilirsiniz. Pull request açıklaması ve
+commit mesajı Türkçe olabilir.
+
+Çeviride: komutlar, dosya yolları, ayar adları ve kod çevrilmez; panelde görünen adlar panelde nasıl yazıyorsa öyle
+kalır; terimler [`README.tr.md`](README.tr.md) ile aynıdır. Türkçe belgeler [`docs/tr/`](docs/tr/) klasöründedir.
+
 ## Repository layout
 
 | Path | Contents |

@@ -600,7 +600,7 @@ envanterlerini tutmak ve bunu klavyenin başındaki kişilere açıkça yapmak b
 
 ## 🤝 Katkı, güvenlik bildirimi ve lisans
 
-- **Katkı:** [`CONTRIBUTING.md`](CONTRIBUTING.md) ve [Davranış Kuralları](CODE_OF_CONDUCT.md) dosyalarını okuyun.
+- **Katkı:** [`CONTRIBUTING.md`](CONTRIBUTING.md) ve [Davranış Kuralları](CODE_OF_CONDUCT.md) dosyalarını okuyun. İlk katkı için küçük işler [`good first issue`](https://github.com/PashaCore/POps/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) etiketini taşır; Türkçe yazılmış olanlar (çeviri, Türkçe rehber, Pardus'ta deneme, okul gözüyle geri bildirim) [`türkçe`](https://github.com/PashaCore/POps/issues?q=is%3Aissue+is%3Aopen+label%3At%C3%BCrk%C3%A7e) etiketindedir. Bkz. CONTRIBUTING, *Türkçe katkı*.
   Hata bildirimleri, belgeler ve testler de özellikler kadar değerlidir.
 - **Güvenlik:** herkese açık issue açmayın; **security@pashacore.com.tr** adresine yazın ([`SECURITY.md`](SECURITY.md)).
 - **Lisans:** [Apache 2.0](LICENSE).
