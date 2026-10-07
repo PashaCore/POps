@@ -20,7 +20,7 @@ Komutlar:
 Örnek:
     python3 tools/sign_release.py selftest
     python3 tools/sign_release.py genkey --out-dir keys/
-    python3 tools/sign_release.py sign --dir dist/ --version 0.1.22 --tag v0.1.22 --key-pem keys/private.pem
+    python3 tools/sign_release.py sign --dir dist/ --version 0.1.22-alpha --tag v0.1.22-alpha --key-pem keys/pops_release_ed25519.key.pem
 
 Özel anahtar `sign` için --key-pem dosyası ya da POPS_RELEASE_PRIVATE_KEY ortam
 değişkeninden (PEM içeriği) okunur. Python 3.10+ uyumlu.
