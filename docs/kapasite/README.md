@@ -167,8 +167,9 @@ Aşağıdaki değerler POps sunucusu, PostgreSQL, işletim sistemi ve panel (ngi
 ~2.000 yazma/sn'ye çıkar. Tek süreç için sınıra yakın olduğundan bu ölçekten önce sinyallerin toplu yazılması
 (yazmayı 6–12 kat azaltır) yapılmalı ve ölçüm tekrarlanmalıdır.
 
-Disk: veritabanı küçük kalır (bugün birkaç on MB); diskin çoğunu gece yedekleri (günde ~40 MB × 14 gün) ve ajan
-paketleri kaplar. Yedeğin bir kopyasının **başka bir makinede** tutulması önerilir (bkz. [`../backup.md`](../backup.md)).
+Disk: veritabanı küçük kalır (bugün birkaç on MB); diskin çoğunu ajan paketleri ve gece yedekleri kaplar. Her yedek
+sunucudaki ajan paketlerini de içerir (sunucuda tutulan her ajan sürümü için ~80 MB); saklama ayarları için
+[`../backup.md`](../backup.md) içindeki *Retention* bölümüne bakın. Yedeğin bir kopyasının **başka bir makinede** tutulması önerilir (bkz. [`../backup.md`](../backup.md)).
 
 Uzaktan ekran izleme (Vision) bu tabloya dahil değildir: her açık izleme oturumu, cihaz başına en fazla 5 kare/sn
 görüntüyü sunucu üzerinden taşır ve ayrıca ağ ile işlemci ister. Aynı anda çok sayıda cihaz izlenecekse ağ
