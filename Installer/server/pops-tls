@@ -6,6 +6,7 @@
 #   pops-tls renew [--force]              bitmesine 30 günden az kaldıysa (ya da --force) aynı adlarla yeniler, web sunucusunu yeniler
 #   pops-tls import <cert.pem> <key.pem>  dışarıdan alınmış sertifikayı yerine koyar (kurum CA'sı kullanılmaz)
 #   pops-tls show                         CA parmak izi, sunucu sertifikasının adları ve bitiş tarihi
+#   pops-tls check [--days N]             sertifikanın süresi N günden (varsayılan 30) çoksa 0, N gün veya az kaldıysa 1, yoksa 2 ile çıkar
 #
 # Dosyalar: /etc/pops/ca/pops-ca.pem (herkese açık: ajanlara SERVER_CA_CERT ile, tarayıcılara güvenilen kök olarak
 # verilir), /etc/pops/ca/ca.key (yalnızca root; sunucudan ÇIKMAZ), /etc/pops/tls/server.crt + server.key (nginx).
@@ -136,10 +137,49 @@ cmd_show() {
         echo "Sunucu sertifikası: $CERT"
         openssl x509 -in "$CERT" -noout -subject -issuer -enddate | sed 's/^/  /'
         openssl x509 -in "$CERT" -noout -ext subjectAltName 2>/dev/null | tail -n +2 | sed 's/^ */  Adlar: /'
-        echo "  Kalan: $(days_left "$CERT") gün$([ -f "$SAN_FILE" ] && echo " (pops-tls renew ile yenilenir)")"
+        local left
+        left=$(days_left "$CERT")
+        if [ "$left" -le "$RENEW_BEFORE_DAYS" ]; then
+            echo "  Kalan: uyarı: $left gün kaldı$([ -f "$SAN_FILE" ] && echo " (pops-tls renew ile yenilenir)")"
+        else
+            echo "  Kalan: $left gün$([ -f "$SAN_FILE" ] && echo " (pops-tls renew ile yenilenir)")"
+        fi
     else
         echo "Sunucu sertifikası yok: pops-tls init <alan-adı>"
     fi
+}
+
+cmd_check() {
+    local threshold=$RENEW_BEFORE_DAYS
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --days)
+                threshold="${2:-}"
+                if [ -z "$threshold" ] || ! [[ "$threshold" =~ ^[0-9]+$ ]]; then
+                    die "--days bir sayı olmalı"
+                fi
+                shift 2
+                ;;
+            *)
+                die "bilinmeyen seçenek: $1"
+                ;;
+        esac
+    done
+    if [ ! -f "$CERT" ]; then
+        echo "sunucu sertifikası yok: $CERT" >&2
+        return 2
+    fi
+    local left
+    left=$(days_left "$CERT")
+    if [ "$left" -le "$threshold" ]; then
+        if [ "$left" -le 0 ]; then
+            echo "sertifika süresi doldu: $left gün kaldı (eşik: $threshold gün)"
+        else
+            echo "sertifika yenileme zamanı yaklaştı: $left gün kaldı (eşik: $threshold gün)"
+        fi
+        return 1
+    fi
+    return 0
 }
 
 case "${1:-}" in
@@ -147,5 +187,6 @@ case "${1:-}" in
     renew) shift; cmd_renew "$@" ;;
     import) shift; cmd_import "$@" ;;
     show) cmd_show ;;
-    *) sed -n '2,12p' "$0"; exit 1 ;;
+    check) shift; cmd_check "$@" ;;
+    *) sed -n '2,13p' "$0"; exit 1 ;;
 esac

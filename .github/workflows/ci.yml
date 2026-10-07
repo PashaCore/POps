@@ -632,6 +632,9 @@ jobs:
           openssl verify -CAfile "$POPS_CA_DIR/pops-ca.pem" "$POPS_TLS_DIR/server.crt"
           openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$RUNNER_TEMP/other.key" -out "$RUNNER_TEMP/other.pem" -days 1 -subj "/CN=Other CA" 2>/dev/null
           if openssl verify -CAfile "$RUNNER_TEMP/other.pem" "$POPS_TLS_DIR/server.crt" 2>/dev/null; then echo "::error::yabancı CA kabul edildi"; exit 1; fi
+          $T check
+          if $T check --days 900 2>/dev/null; then echo "::error::check --days 900 0 döndürdü"; exit 1; fi
+          if POPS_TLS_DIR=$RUNNER_TEMP/missing $T check 2>/dev/null; then echo "::error::olmayan sertifika 0 döndürdü"; exit 1; fi
           if $T import "$RUNNER_TEMP/other.pem" "$POPS_TLS_DIR/server.key" 2>/dev/null; then echo "::error::eşleşmeyen anahtar kabul edildi"; exit 1; fi
       - name: nginx template renders and validates
         run: |
