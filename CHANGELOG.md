@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Vision: a thumbnail reaches the panel with only its documented fields.** The server passed the agent's `thumbnail` message on to the admin panels as it came, apart from setting `hw_id` from the connection. An agent could add a `pc_name` naming another PC. The panel reads only `hw_id`, so nothing was shown under the wrong PC, but the server's rule is that no agent message reaches the panel in another device's name. Found by the `agent_ws` fuzz target; the input is now in its regression corpus.
 - **Docs: stale facts after 0.1.23.** Getting started, the Turkish "Neden POps?" guide and the positioning page no longer say there is no Linux agent or no directory sign-in. The Veyon guide lists the peer cache port and points to Sistem → Modüller. The quick start shows the language switch, every capability property and the Linux `.deb`. The Linux agent README no longer says Mesaj gönder sends the Windows `msg` command. ROADMAP no longer lists directory sign-in under Later.
 - **Sistem: an agent that is installing an update shows as updating, not off.** The agent's service is stopped during the install, so the PC looked offline and the card said "Hepsi kapalı". PCs with an update in flight are now counted as "güncelleniyor", and "eski ajanı güncelle" doesn't send to them again.
 
