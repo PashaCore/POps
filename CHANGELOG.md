@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Backups: weekly retention.** `pops-backup` now keeps the newest `KEEP_MIN` backups (3), every backup younger than `KEEP_DAYS` days (now 7, was 14; `0` turns the rule off) and the newest backup of each of the last `KEEP_WEEKLY` weeks (4), and deletes the rest. Each backup carries the agent packages kept on the server (about 80 MB per agent version), so with 14 nightly copies the folder kept growing. On a small disk, `KEEP_DAYS=0` keeps the last 3 nights plus 4 weekly backups. An existing `backup.conf` with `KEEP_DAYS=14` still keeps two weeks. CI checks the rules on dated folders.
 - **Docs: README and README.tr describe 0.1.23.**
   - **Features and how it works:** new feature rows for exam mode, file transfer, winget, power actions and messages, Vision v2, organisational units, directory and OIDC sign-in, modules, the GLPI export and several workers with Redis. "How it works" covers the Redis workers, the Linux agent and `X-Agent-Features`.
   - **Security and transparency:** the SSO safeguards, tenancy, file transfer tokens, exam mode as a notice (not proctoring), the notices for power actions and messages, the locked-PC Vision banner and every capability switch.
