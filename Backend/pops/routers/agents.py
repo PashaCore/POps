@@ -974,15 +974,17 @@ async def _on_heartbeat(conn: _AgentConn, payload: dict) -> None:
 
 
 async def _on_thumbnail(conn: _AgentConn, payload: dict) -> None:
-    # Görüntü yalnızca bu bağlantının cihazına ait olabilir (F16): gövdedeki kimlik yetki taşımaz
-    payload["hw_id"] = conn.hwid
+    # Görüntü yalnızca bu bağlantının cihazına ait olabilir (F16): gövdedeki kimlik yetki taşımaz. Panele yalnızca
+    # belgelenmiş alanlar gider; ajanın eklediği bir pc_name, panele başka cihaz adına bir mesaj olarak ulaşırdı
+    # (fuzz/fuzz_agent_ws.py)
+    image = payload.get("image", "")
     if conn.hwid in manager.pending_thumbnails:
         for fut in manager.pending_thumbnails[conn.hwid]:
             if not fut.done():
-                fut.set_result(payload.get("image", ""))
+                fut.set_result(image)
         manager.pending_thumbnails[conn.hwid] = []
     # F1 kalıntısı: ekran görüntüsü yalnızca admin panellerine (viewer'a SIZMAZ).
-    await manager.broadcast_to_admin_panels(payload, device=conn.hwid)
+    await manager.broadcast_to_admin_panels({"type": "thumbnail", "hw_id": conn.hwid, "image": image}, device=conn.hwid)
 
 
 async def _on_vision_rejected(conn: _AgentConn, payload: dict) -> None:
