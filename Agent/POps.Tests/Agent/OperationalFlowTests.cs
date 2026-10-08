@@ -13,7 +13,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Arka plan raporlayıcılarının işletim sistemi ve ağ sınırları sahtedir; yalnız karar ve durum akışı denenir.
-    public class ReporterFlowTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class ReporterFlowTests : SharedStateTestBase, IDisposable
     {
         private readonly string _data = TestEnvironment.NewDir("reporter-flow");
 
@@ -127,7 +128,8 @@ namespace POps.Tests.Agent
         }
     }
 
-    public class AgentHttpFlowTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class AgentHttpFlowTests : SharedStateTestBase, IDisposable
     {
         private sealed class Handler : HttpMessageHandler
         {

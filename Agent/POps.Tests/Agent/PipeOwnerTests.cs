@@ -9,6 +9,7 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // 3) Tepsi, borunun servise ait olduğunu sahibinden anlar (L13)
+    [Collection(MachineCollection.Name)]
     public class PipeOwnerTests : TestBase
     {
         [Fact]

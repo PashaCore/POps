@@ -14,7 +14,8 @@ namespace POps.Tests.Agent
 {
     // Karantina: lockdown / unlock / DNS eşiği / çevrimdışı bypass aynı yoldan geçer; kilit durumu diskte tutulur.
     // Tepsi ve güvenlik duvarı sahtedir.
-    public class QuarantineControlTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class QuarantineControlTests : SharedStateTestBase
     {
         private const string HwId = "HW-678CC8C5265E";
         private const string Secret = "sekret-Ç-1";
@@ -287,7 +288,8 @@ namespace POps.Tests.Agent
     }
 
     // HB: heartbeat karantina durumunu taşır; kilit/açma idempotenttir
-    public class QuarantineHeartbeatTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class QuarantineHeartbeatTests : SharedStateTestBase, IDisposable
     {
         private readonly List<string> _tray = new List<string>();
         private int _enabled, _disabled;

@@ -13,7 +13,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Vision v2, servis: ikili karelerin iletilmesi ve geri basınç, görüntüleyici denetimi, pano
-    public class VisionRelayTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class VisionRelayTests : SharedStateTestBase
     {
         private static readonly byte[] Jpeg = { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10 };
         private readonly List<byte[]> _binary = new List<byte[]>();

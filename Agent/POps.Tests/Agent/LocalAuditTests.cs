@@ -6,7 +6,8 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    public class LocalAuditTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class LocalAuditTests : SharedStateTestBase
     {
         [Fact]
         public void CommandEvents_ContainHashAndMetadata_ButNeverCommandText()

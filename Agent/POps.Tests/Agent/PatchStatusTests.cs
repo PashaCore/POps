@@ -209,7 +209,8 @@ namespace POps.Tests.Agent
         }
     }
 
-    public class PatchScheduleTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class PatchScheduleTests : SharedStateTestBase
     {
         private static readonly DateTime Start = new DateTime(2026, 9, 28, 7, 55, 0, DateTimeKind.Utc);
 
@@ -300,7 +301,8 @@ namespace POps.Tests.Agent
     }
 
     // M2: gönderilemeyen durum saklanır, yalnızca gönderim yeniden denenir; uç yoksa bırakılır
-    public class PatchDeliveryTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class PatchDeliveryTests : SharedStateTestBase, IDisposable
     {
         public PatchDeliveryTests() => AgentUpdate.DataDir = TestEnvironment.NewDir("patch");
 

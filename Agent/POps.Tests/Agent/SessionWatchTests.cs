@@ -4,7 +4,8 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    public class SessionEventsTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class SessionEventsTests : SharedStateTestBase
     {
         private static readonly DateTime Boot = new DateTime(2026, 9, 28, 7, 50, 0, DateTimeKind.Utc);
 

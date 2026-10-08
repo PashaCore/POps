@@ -30,7 +30,8 @@ namespace POps.Tests.Agent
         public void CleanUp() => CleanUps++;
     }
 
-    public class WindowsUpdateAgentTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class WindowsUpdateAgentTests : SharedStateTestBase
     {
         [Fact]
         public void HungJob_IsAbortedAndNotWaitedForever()

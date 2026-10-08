@@ -182,7 +182,8 @@ namespace POps.Tests.Agent
     }
 
     // Yazılım envanteri: açılışta rastgele gecikme, değişmeyen listeyi 7 gün göndermeme
-    public class InventoryLoadTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class InventoryLoadTests : SharedStateTestBase, IDisposable
     {
         private static readonly DateTime T0 = new DateTime(2026, 10, 2, 8, 0, 0, DateTimeKind.Utc);
         private int _posts, _uploaded;

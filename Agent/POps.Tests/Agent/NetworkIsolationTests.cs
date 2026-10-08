@@ -13,7 +13,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Yalnızca adres aralığı hesabı ve betik metni test edilir; betik asla çalıştırılmaz (güvenlik duvarını değiştirir)
-    public class NetworkIsolationTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class NetworkIsolationTests : SharedStateTestBase
     {
         private static readonly IPAddress[] Allowed =
         {
@@ -129,7 +130,8 @@ namespace POps.Tests.Agent
     }
 
     // A3: karantinada sunucu adresi değişirse izin listesi yenilenir; önceki profil durumu korunur
-    public class IsolationRefreshTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class IsolationRefreshTests : SharedStateTestBase
     {
         private static IPAddress Ip(string s) => IPAddress.Parse(s);
 

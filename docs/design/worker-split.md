@@ -19,12 +19,18 @@ Status: proposed, not built. The code changes start after #97, #99, #100 and #10
   forgets to reset, or resets to the wrong value, changes the result of whatever runs next.
   Examples on main and in open PRs:
   - Worker's constructor assigns the static `DnsPolicyMonitor.Quarantine` and `DnsPolicyMonitor.ErrorReporter`.
-    The last Worker constructed in the process gets every DNS auto-quarantine.
+    The last Worker constructed in the process gets every DNS auto-quarantine. **Fixed** in
+    [#137 test(agent): per-Worker DNS callbacks, no real folders in tests (split prerequisite)](https://github.com/PashaCore/POps/pull/137).
   - `AgentHttp.Client` is swapped for a fake by `ModulesTests`, `ReporterFlowTests` and `AgentHttpFlowTests`, and by
     `FileTransferTests` in #99.
   - `TestIsolationTests.RealFoldersAreNeverUsed` points `AgentUpdate.DataDir` at the real `C:\POpsData` for a moment.
+    **Fixed** in
+    [#137 test(agent): per-Worker DNS callbacks, no real folders in tests (split prerequisite)](https://github.com/PashaCore/POps/pull/137).
   - In #99, `FileTransferTests.Dispose` sets `FileTransfer.ProfileInfo` to `null` instead of back to `ReadProfiles`.
     A later test that reaches `FileTransfer.PullAsync` in the same run would throw. Only the serial order hides it.
+
+  Since step (c) the classes that touch no static run in parallel, and a guard test keeps every class that does in
+  one serial collection (see [(c)](#c-parallel-tests-per-collection)).
 
 Baseline (developer PC, Release, net10.0): 841 tests, 18 s of test time. The slowest classes start real processes
 or wait on purpose: `CommandRunnerTests` 3.4 s, `ModulesTests` 2.5 s, `CommandOutputChunkTests` 1.7 s,
@@ -399,14 +405,19 @@ Steps marked "real PC" also get the manual check on a test machine: enrol, `exec
   secrets, inventory, quarantine. Groups that are still inside Worker register as a `DelegateHandler` around the
   existing method, so the if/else chain disappears in this PR. New tests: every message in
   `docs/protocol/server-to-agent/` maps to exactly one handler, a duplicate fails, and an unknown action sends
-  nothing.
+  nothing. **Done** in
+  [#138 refactor(agent): command dispatcher and simple handlers (split step a1)](https://github.com/PashaCore/POps/pull/138).
 - **a2. Execute.** `ExecuteHandler`, `WingetInstallHandler`, `ResultOutbox`, `CapabilityGate`. Covered by
   `WorkerCommandTests`, `WorkerResultAckTests`, `CommandResultTests`, `WingetInstallTests` and the protocol vectors.
+  **Done** in
+  [#139 refactor(agent): execute, winget and task handlers (split step a2)](https://github.com/PashaCore/POps/pull/139).
 - **a3. Vision.** `VisionSession`, `VisionHandler`, `RemoteInputHandler`, `CapabilitiesHandler`. This is the riskiest
   step, so it is its own PR, checked on a real PC. Covered by `VisionRelayTests`, the vision cases of `ModulesTests`
   and `WorkerCommandTests`, `TrayPipeLifetimeTests` (connection loss stops capture) and the protocol vectors.
+  **Done** in [#160 refactor(agent): Vision and capabilities handlers (split step a3)](https://github.com/PashaCore/POps/pull/160).
 - **a4. Exam and files.** `ExamHandler` with the exam loop, and `FileTransferHandler`. Covered by `ExamModeTests` and
-  `FileTransferTests`. Checked on a real PC (firewall group, banner).
+  `FileTransferTests`. Checked on a real PC (firewall group, banner). **Done** in
+  [#159 refactor(agent): exam, file transfer, power and message handlers (split step a4)](https://github.com/PashaCore/POps/pull/159).
 - **a5. Connection and tray.** `CommandConnection`, `TrayMessageRouter`, `PolicySync`. Worker.cs is now within its
   budget. Covered by `TrayPipeLifetimeTests`, `UpdateProgressTests`, `ReviewFourTests` (4409) and `ModulesTests`.
   Checked on a real PC (reconnect, 4401 backoff).
@@ -431,28 +442,74 @@ rewritten: instead of setting the real path for a moment, it checks that `AgentH
 
 ### (c) Parallel tests, per collection
 
-This step can land as soon as (a) is done; it does not wait for (b).
+**Done** in
+[#156 test(agent): run agent tests in parallel; serial collections for shared state and machine tests](https://github.com/PashaCore/POps/pull/156),
+after a2 and before (b). Two things differ from the plan: net472 runs in parallel too, under the same rules, and a
+first form of the guard test from (d) landed here.
 
-- `[assembly: CollectionBehavior(DisableTestParallelization = true)]` stays only for net472 (the MSI custom action
-  tests, under `#if NETFRAMEWORK`).
-- Two collections are defined with `[CollectionDefinition(..., DisableParallelization = true)]`. xUnit 2.9 runs
-  these one at a time, after all parallel collections have finished:
-  - **`SharedState`:** every class that still touches a static. Its base class is the only one that calls
-    `EnsureIsolated`; the parallel classes use a `TestBase` that changes nothing.
-  - **`Machine`:** classes that are serial because of the machine, not the code: real processes and timing
-    (`CommandRunnerTests`, `CommandOutputChunkTests`, `WuaJobTests` with its 300 ms to 5 s window, the
-    `DnsDomainIndexTests` "20 rounds under 5 s" check) and the real named pipe until its name is an instance option.
-- Everything else runs in parallel, one collection per class (xUnit's default).
-- Each (b) PR moves the classes it frees from `SharedState` to the default.
-- Proposed: for the first two weeks CI runs the net10.0 tests twice. Parallel scheduling differs between runs, so a
-  test that depends on timing or on another test gets two chances to show it.
+- `[assembly: CollectionBehavior(DisableTestParallelization = true)]` is gone. `Agent/POps.Tests/TestCollections.cs`
+  turns parallelization on for both targets (one collection per class, `MaxParallelThreads` at xUnit's default, the
+  number of cores) and defines two collections with `[CollectionDefinition(..., DisableParallelization = true)]`.
+  xUnit 2.9 runs these one at a time, after all parallel collections have finished, so a serial class never runs
+  next to another test:
+  - **`SharedState`:** every class that still touches a mutable static. Its base class, `SharedStateTestBase`, is the
+    only one that calls `EnsureIsolated`; the parallel classes use a `TestBase` that changes nothing. The static
+    constructor of `TestEnvironment` applies every seam once, so the parallel classes see the isolated values.
+  - **`Machine`:** classes that touch no static but start a real process or open a named pipe or a listening socket:
+    `CommandRunnerTests`, `CommandOutputChunkTests` and `StaleTaskFileTests` (cmd.exe), `PipeOwnerTests` (pipe) and
+    `WebSocketMessagesTests` (loopback socket). The timing classes the plan put here, `WindowsUpdateAgentTests` (the
+    former `WuaJobTests`) and `DnsDomainIndexTests`, also set statics, so they are in `SharedState` and move to
+    `Machine` when (b) frees them.
+  - net472 (MSI custom actions): `SetupTests`, `FolderSetupTests` and `ServerCaSetupTests` set
+    `Setup.TrustedBaseForTests` and are in `SharedState`; `KioskRestoreSetupTests` and `EventSourcePackageTests` run
+    in parallel.
+- Inventory when it landed, 94 test classes: 58 `SharedState` (55 net10.0, 3 net472), 5 `Machine`, 31 parallel
+  (both targets, including the guard). The table with the reason for each class is in the PR. The last (b) step each
+  `SharedState` class waits for, from the statics it reaches:
+
+  | Freed by | Classes |
+  | --- | --- |
+  | b1 (paths) | 9: `BypassDecayTests`, `IsolationRefreshTests`, `NetworkIsolationTests`, `PatchScheduleTests`, `ResultSpoolTests`, `SessionEventsTests`, `TestEnvironmentTests`, `UpdateResultAckTests`, `UserSessionAppsTests` |
+  | b2 (runtime state) | 14: `ActivityHistoryTests`, `AgentCapabilitiesTests`, `AgentHttpFlowTests`, `AgentHttpTests`, `HealthCheckTests`, `HelpdeskTests`, `HelpdeskThrottleTests`, `InventoryLoadTests`, `LocalAuditTests`, `PatchDeliveryTests`, `ReporterFlowTests`, `RollbackDrillTests`, `ServerTrustTests`, `StaleLockDrillTests` |
+  | b3 (machine seams; the peer cache seams from #123 counted here) | 20: `AgentHealthTelemetryTests`, `AgentUpdateTests`, `BitsDownloadTests`, `CommandDispatcherTests`, `ExamModeTests`, `FileTransferTests`, `FolderSettingsTests`, `GeneralizerTests`, `HardwareBindingTests`, `KioskPoliciesTests`, `NetworkIsolationFlowTests`, `PeerCacheTests`, `PowerMessageTests`, `UpdateProgressTests`, `VisionLockedStartTests`, `VisionRelayTests`, `WindowsUpdateAgentTests`, `WingetInstallTests`, `WorkerCommandTests`, `WorkerResultAckTests` |
+  | b4 (`DnsPolicyMonitor`) | 7: `DnsDomainIndexTests`, `DnsPolicyMonitorTests`, `DnsWorkerBindingTests`, `ModulesTests`, `QuarantineControlTests`, `QuarantineHeartbeatTests`, `TrayPipeLifetimeTests` |
+  | not covered by (b) | 8: `AgentCredentialsTests`, `ConfigProblemTests`, `POpsHelpersTests` (environment variables; `POpsHelpers.Component`), `SecureStoreTests` (`SecureStore.SystemSid`), `ProtocolVectorTests` (its own static schema cache), `SetupTests`, `FolderSetupTests`, `ServerCaSetupTests` (`Setup.TrustedBaseForTests`) |
+
+- **Guard.** `ParallelSafetyTests` reads the IL of every test class and of the product code it reaches
+  (`StaticAccessScanner`: calls, lambdas, async state machines and nested types; not interface or virtual dispatch,
+  reflection or `dynamic`; a reachable default delegate counts even when the test replaces it). It fails when:
+  - a class outside `SharedState` reads or writes a mutable static: a static field written anywhere outside a static
+    constructor (a settable property nobody sets counts as constant), a static collection whose content changes, or
+    an environment variable. Six process-wide values that `TestEnvironment` sets once may be read anywhere: the log
+    folder, the machine log folder, the component name and the three service account SIDs;
+  - a parallel class starts a process, opens a named pipe or a listening socket, or calls `Thread.Sleep`;
+  - a class's base class and collection disagree (`SharedStateTestBase` if and only if `SharedState`);
+  - a `SharedState` class no longer touches any static, so each (b) PR moves the classes it frees and the collection
+    only shrinks.
+  A test that measures elapsed time cannot be seen in IL; such a class is put in `Machine` by hand.
+- Stability: 13 full runs in a row (`dotnet test -c Release`, both targets), 0 failures each time: net10.0 1,291 and
+  net472 68 tests. No test flaked, so none was moved. Run time does not drop (net10.0: 27 s serial, 28–36 s
+  parallel), because almost all of it is spent in the serial collections (`PeerCacheTests` alone takes 9.6 s); the
+  gain is that results no longer depend on test order, and it grows as (b) empties `SharedState`.
+- Proposed (open question 7): for the first two weeks CI runs the net10.0 tests twice. Parallel scheduling differs
+  between runs, so a test that depends on another test gets two chances to show it.
 
 ### (d) Parallel by default
 
-- `SharedState` is empty and is deleted. `Machine` stays, and every class in it carries a comment saying why.
+What remains after (c):
+- `SharedState` empties as (b) proceeds; the guard names the classes each (b) PR frees. The 8 classes that (b) does
+  not cover need their own small change first: configuration and environment reads through a parameter
+  (`ConfigProblemTests`, `AgentCredentialsTests`, `POpsHelpersTests`, with `LogFile_PerComponent` calling a pure
+  `LogFilePath(component, day)` overload), `ProtectedFileSecurity` taking the SID as an argument (`SecureStoreTests`),
+  a per-instance schema cache in `ProtocolVectorTests`, and `Setup.TrustedBaseForTests` as an argument of the MSI
+  custom actions. Then `SharedState` and `SharedStateTestBase` are deleted.
+- `WindowsUpdateAgentTests` and `DnsDomainIndexTests` measure time: when (b) frees them they go to `Machine`, not to
+  the parallel classes. `Machine` stays, and every class in it carries a comment saying why.
 - A guard test fails when a new static mutable field or settable static property appears in `POpsAgent` or
   `POps.Shared`: it reflects over the assemblies, skips compiler-generated types and checks an allow list with a
   reason per entry. A new static then has to be argued for in review instead of slipping in as a test seam.
+  `StaticAccessScanner` already finds these statics (the "written outside a static constructor" set); the guard can
+  reuse it.
 - `MaxParallelThreads` stays at xUnit's default (the number of cores) unless the Windows runner shows contention.
 
 ## Risks and how to check them
@@ -471,14 +528,17 @@ This step can land as soon as (a) is done; it does not wait for (b).
 - **Timing-sensitive tests under load.** `WaitForResult` polls for 30 s, `CommandRunnerTests` assert durations and
   kill timeouts, and the WUA and DNS index tests measure time. They go to `Machine`. Parallel runs are repeated
   locally (20 runs) before (c) and (d) merge, and each flaky test is fixed or moved to `Machine`, not retried.
+  In (c) all of them are serial (`Machine`, or `SharedState` while they still set a static), and both serial
+  collections run after the parallel classes, so none of them shares the CPU with another test.
 - **Named pipes.** A unique name per test becomes an instance option in b3. The pipe ACL uses the process-wide
   `SystemSid`, which is set once.
 - **Temp folders.** `TestEnvironment.Root` is per process and `NewDir` per test, so they are already safe. The
   exception is `CommandRunner`, which writes its `pops_task_*.bat` files to the real `%TEMP%`, while
   `CleanupStaleTaskFiles()` defaults to `%TEMP%` too. A cleanup in one test could delete another test's running task
-  file. b3 moves the task folder into `AgentPaths` before those classes leave `Machine`.
+  file. b3 moves the task folder into `AgentPaths` before those classes leave `Machine`. **Fixed** in
+  [#137 test(agent): per-Worker DNS callbacks, no real folders in tests (split prerequisite)](https://github.com/PashaCore/POps/pull/137).
 - **Ports.** `AgentHttpTests` and `WebSocketMessagesTests` listen on port 0 (an ephemeral port), and no agent test
-  uses a fixed port.
+  uses a fixed port. In (c) the guard keeps every class that opens a listening socket or a named pipe serial anyway.
 - **Machine state reached from tests.** `LocalAudit.Write` goes to the real Event Log today; without the source
   registered it fails and logs. With `IAuditSink` tests stop touching it. #97 subscribes to the process-wide
   `NetworkChange.NetworkAddressChanged` in the exam loop and never unsubscribes; a4 makes that subscription

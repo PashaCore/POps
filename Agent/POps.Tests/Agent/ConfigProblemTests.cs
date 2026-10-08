@@ -9,7 +9,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Yapılandırma okunamazsa ajan sessizce 127.0.0.1'e düşmez: sorun loglanır, Olay Günlüğüne yazılır, tepside görünür
-    public class ConfigProblemTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class ConfigProblemTests : SharedStateTestBase, IDisposable
     {
         public void Dispose() => POpsHelpers.ConfigPaths = new string[0];
 

@@ -2,10 +2,6 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Security.Principal;
-using Xunit;
-
-// Testler statik durumu (SecureStore.Dir, POpsHelpers.ConfigPaths ...) değiştirdiği için sırayla çalışır
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
 
 namespace POps.Tests
 {
@@ -48,10 +44,10 @@ namespace POps.Tests
             Directory.CreateDirectory(DefaultSecureDir);
             Directory.CreateDirectory(DefaultDataDir);
             POps.Shared.ServerTrust.CaPath = Path.Combine(DefaultSecureDir, POps.Shared.ServerTrust.FileName);
-            // Karantina testleri gerçek Görev Yöneticisi / oturum politikalarına dokunmasın
-            POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
-            IsolatePowerAndSessions();
-            IsolatePeerCache();
+            // Bütün test seam'leri süreç başında bir kez kurulur (karantina testleri gerçek Görev Yöneticisi / oturum
+            // politikalarına, güvenlik duvarına, güç API'sine dokunmaz ...). Paralel sınıflar EnsureIsolated çağırmaz ve
+            // statikleri değiştirmez: seri koleksiyonlar paralel sınıflardan sonra çalıştığı için bu değerleri görürler.
+            EnsureIsolated();
 #endif
         }
 
@@ -62,6 +58,12 @@ namespace POps.Tests
             Directory.CreateDirectory(dir);
             return dir;
         }
+
+#if !NETFRAMEWORK
+        // Uzaktan komut çalıştırıcısı: görev dosyaları (pops_task_*.bat) gerçek %TEMP%'e değil, testin kendi klasörüne yazılır
+        public static POpsAgent.CommandRunner NewCommandRunner(TimeSpan? maxDuration = null) =>
+            new POpsAgent.CommandRunner(maxDuration: maxDuration, taskDirectory: NewDir("tasks"));
+#endif
 
         // Depo kökü (VERSION dosyasını arayarak)
         public static string RepoRoot()
@@ -138,12 +140,22 @@ namespace POps.Tests
 #endif
     }
 
-    // Statik kurucunun her test sınıfından önce çalışmasını garanti eder
+    // Statik kurucunun her test sınıfından önce çalışmasını garanti eder. Paralel çalışan sınıfların tabanıdır: hiçbir
+    // statiği değiştirmez.
     public abstract class TestBase
     {
         protected TestBase()
         {
             System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(TestEnvironment).TypeHandle);
+        }
+    }
+
+    // SharedState koleksiyonunun tabanı: her testten önce yolları ve test seam'lerini test değerlerine geri alır. Bundan
+    // türeyen sınıf [Collection(SharedStateCollection.Name)] taşır; paralel bir sınıf bundan türemez (ParallelSafetyTests)
+    public abstract class SharedStateTestBase : TestBase
+    {
+        protected SharedStateTestBase()
+        {
 #if !NETFRAMEWORK
             TestEnvironment.EnsureIsolated();
 #endif
