@@ -416,7 +416,8 @@ Steps marked "real PC" also get the manual check on a test machine: enrol, `exec
   and `WorkerCommandTests`, `TrayPipeLifetimeTests` (connection loss stops capture) and the protocol vectors.
   **Done** in [#160 refactor(agent): Vision and capabilities handlers (split step a3)](https://github.com/PashaCore/POps/pull/160).
 - **a4. Exam and files.** `ExamHandler` with the exam loop, and `FileTransferHandler`. Covered by `ExamModeTests` and
-  `FileTransferTests`. Checked on a real PC (firewall group, banner).
+  `FileTransferTests`. Checked on a real PC (firewall group, banner). **Done** in
+  [#159 refactor(agent): exam, file transfer, power and message handlers (split step a4)](https://github.com/PashaCore/POps/pull/159).
 - **a5. Connection and tray.** `CommandConnection`, `TrayMessageRouter`, `PolicySync`. Worker.cs is now within its
   budget. Covered by `TrayPipeLifetimeTests`, `UpdateProgressTests`, `ReviewFourTests` (4409) and `ModulesTests`.
   Checked on a real PC (reconnect, 4401 backoff).
