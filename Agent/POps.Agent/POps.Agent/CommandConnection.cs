@@ -16,6 +16,8 @@ namespace POpsAgent
     {
         // Komut mesajının boyu sınırı (parçalı mesajlar EndOfMessage'a kadar birleştirilir; bkz. WebSocketMessages)
         private const int MaxCommandMessageBytes = 8 * 1024 * 1024;
+        // X-Agent-Version (Worker.AppVersion ile aynı değer)
+        private static readonly string AppVersion = POpsHelpers.AppVersion;
 
         private readonly string _serverUrl;
         private readonly string _pcName;
@@ -34,7 +36,6 @@ namespace POpsAgent
         private readonly Action _socketOpened;
         private readonly Action _channelConnected;
         private readonly Action<LocalAuditEvent> _audit;
-        private readonly Action<ClientWebSocket> _agentHeaders;
 
         private bool _commandUsesDeviceSecret;
         private bool _cloneRejectedAudited;
@@ -42,12 +43,11 @@ namespace POpsAgent
         // Kimlik, karantina denetimi ve donanım bilgisi çalışırken değişir (set_identity, testler, yavaş açılış): her
         // kullanımda okunur. slowInitialization: bağlantıdan sonra, alma döngüsünden önce beklenen açılış işi;
         // socketOpened: yeni bağlantıda bağlantı başına durumların sıfırlanması; channelConnected: DNS politika izleme
-        // (bkz. PolicySync); audit: Olay Günlüğü; agentHeaders: yeni sokete ajanın sürümü ve özellikleri (X-Agent-Version,
-        // X-Agent-Features; bkz. Worker)
+        // (bkz. PolicySync); audit: Olay Günlüğü
         public CommandConnection(string serverUrl, string pcName, Func<string?> hwId, CommandChannel channel, CommandDispatcher dispatcher,
             UpdateReporter updates, ResultOutbox outbox, VisionSession vision, TrayMessageRouter tray, Func<QuarantineControl> quarantine,
             Func<object?> dna, AgentHealthTelemetry health, AgentStartupHealth startupHealth, Func<Task> slowInitialization,
-            Action socketOpened, Action channelConnected, Action<LocalAuditEvent> audit, Action<ClientWebSocket> agentHeaders)
+            Action socketOpened, Action channelConnected, Action<LocalAuditEvent> audit)
         {
             _serverUrl = serverUrl;
             _pcName = pcName;
@@ -66,7 +66,6 @@ namespace POpsAgent
             _socketOpened = socketOpened ?? throw new ArgumentNullException(nameof(socketOpened));
             _channelConnected = channelConnected ?? throw new ArgumentNullException(nameof(channelConnected));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
-            _agentHeaders = agentHeaders ?? throw new ArgumentNullException(nameof(agentHeaders));
         }
 
         // Komut bağlantısı cihaz secret'ıyla mı kuruldu (set_bypass_secret yalnızca öyleyse kabul edilir; bkz. SecretsHandler)
@@ -88,7 +87,7 @@ namespace POpsAgent
                 ClientWebSocket commandWs = new ClientWebSocket();
                 _channel.Socket = commandWs;
                 commandWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(commandWsUrl));
-                _agentHeaders(commandWs);
+                AgentHeaders(commandWs);
                 string authMode = ApplyAuthHeaders(commandWs);
                 POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({POpsHelpers.AppVersion}, kimlik: {authMode})");
                 _startupHealth.Mark(StartupCheck.Loop);
@@ -152,6 +151,14 @@ namespace POpsAgent
 
                 await OnCommandConnectionLostAsync();
                 await Task.Delay(wait, stoppingToken);
+            }
+
+            // Her yeni sokete ajanın sürümü, hemen ardından özellikleri (sertifika denetiminden sonra, kimlik başlıklarından
+            // önce). PeerCacheTests ve PowerMessageTests bu iki satırı bu dosyanın metninde arar.
+            static void AgentHeaders(ClientWebSocket _commandWs)
+            {
+                _commandWs.Options.SetRequestHeader("X-Agent-Version", AppVersion);
+                _commandWs.Options.SetRequestHeader(AgentFeatures.HeaderName, AgentFeatures.Header);
             }
         }
 

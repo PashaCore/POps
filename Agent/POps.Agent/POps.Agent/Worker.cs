@@ -155,18 +155,11 @@ namespace POpsAgent
             _updates = new UpdateReporter(Handshake, UpdateResults, _channel.TrySendAsync, LocalAudit.Write);
             _policy = new PolicySync(_serverUrl, () => _hwId, _httpClient, _health, _vision, () => _tray.Pipe, () => _software, LocalAudit.Write);
             Dispatcher = BuildDispatcher();
-            // Her bağlanma denemesinde yeni sokete ajanın sürümü, hemen ardından özellikleri (bkz. CommandConnection). Bu iki
-            // satır Worker.cs'te kalır: PeerCacheTests ve PowerMessageTests onları bu dosyanın metninde arar.
-            void AgentHeaders(ClientWebSocket _commandWs)
-            {
-                _commandWs.Options.SetRequestHeader("X-Agent-Version", AppVersion);
-                _commandWs.Options.SetRequestHeader(AgentFeatures.HeaderName, AgentFeatures.Header);
-            }
             _tray = new TrayMessageRouter(() => new TrayPipeServer(), _startupHealth, _vision, _remoteInput, _channel, () => _hwId, _policy, _helpdesk, _activity,
                 Power, Messages, () => _quarantine, HandleBypassAttemptAsync, ToTray, ConfigErrorMessage);
             _connection = new CommandConnection(_serverUrl, _pcName, () => _hwId, _channel, Dispatcher, _updates, _outbox, _vision, _tray,
                 () => _quarantine, () => _cachedDna, _health, _startupHealth, () => _slowInitialization, OnCommandSocketOpened,
-                _policy.OnCommandChannelConnected, LocalAudit.Write, AgentHeaders);
+                _policy.OnCommandChannelConnected, LocalAudit.Write);
         }
 
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka

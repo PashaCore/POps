@@ -195,7 +195,7 @@ namespace POps.Tests.Agent
             Assert.Matches(new Regex("^[a-z0-9_]+(,[a-z0-9_]+)*$"), AgentFeatures.Header);
 
             // Komut tüneli başlığı sürüm başlığının hemen ardından ekler
-            string worker = File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot(), "Agent", "POps.Agent", "POps.Agent", "Worker.cs"));
+            string worker = File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot(), "Agent", "POps.Agent", "POps.Agent", "CommandConnection.cs"));
             Assert.Contains("_commandWs.Options.SetRequestHeader(\"X-Agent-Version\", AppVersion);\n                _commandWs.Options.SetRequestHeader(AgentFeatures.HeaderName, AgentFeatures.Header);",
                 worker.Replace("\r\n", "\n"));
         }
