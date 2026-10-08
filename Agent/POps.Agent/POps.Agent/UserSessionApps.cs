@@ -18,6 +18,7 @@ namespace POpsAgent
     {
         public static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
 
+        private readonly AgentPaths _paths;
         private readonly string _installDir;
         private uint _session = UserSessionLauncher.NoSession;
         private DateTime _signedInSinceUtc;
@@ -25,7 +26,12 @@ namespace POpsAgent
         // Art arda başlatma sayısı (program görülünce sıfırlanır): hemen kapanan program 30 sn'de bir loglanmasın
         private readonly System.Collections.Generic.Dictionary<string, int> _starts = new System.Collections.Generic.Dictionary<string, int>();
 
-        public UserSessionApps(string installDir = null) => _installDir = installDir ?? AppContext.BaseDirectory;
+        // paths: güncellemenin kilidi (update.lock) ve watchdog'a geçirilen veri klasörü
+        public UserSessionApps(AgentPaths paths, string installDir = null)
+        {
+            _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+            _installDir = installDir ?? AppContext.BaseDirectory;
+        }
 
         public async Task RunAsync(CancellationToken token)
         {
@@ -60,7 +66,7 @@ namespace POpsAgent
                 var (watchdog, tray) = UserAppsPolicy.WhatToStart(
                     userSignedIn: true,
                     // update.lock yalnızca ajanın başlattığı güncellemede var; elle/GPO ile MSI kurulumu için Windows Installer'a da bakılır
-                    updateInProgress: AgentUpdate.IsLockFresh() || UserSessionLauncher.WindowsInstallerBusy(),
+                    updateInProgress: AgentUpdate.IsLockFresh(_paths) || UserSessionLauncher.WindowsInstallerBusy(),
                     watchdogRunning: watchdogRunning,
                     trayRunning: trayRunning,
                     shellReady: UserSessionLauncher.ShellReady(session),
@@ -74,7 +80,7 @@ namespace POpsAgent
         private void Start(uint session, string exeName)
         {
             // Watchdog update.lock'u servisin veri klasöründe arar (appsettings.json'u kullanıcı oturumunda okuyamaz)
-            string arguments = exeName == "POpsWatchdog.exe" ? AgentDirectories.WatchdogArguments() : null;
+            string arguments = exeName == "POpsWatchdog.exe" ? _paths.WatchdogArguments() : null;
             if (UserSessionLauncher.TryStart(session, Path.Combine(_installDir, exeName), out int pid, out string error, arguments))
             {
                 _lastProblem = null;

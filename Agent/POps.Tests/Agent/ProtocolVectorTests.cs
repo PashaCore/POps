@@ -30,7 +30,7 @@ namespace POps.Tests.Agent
             SecureStore.Dir = TestEnvironment.NewDir("protocol-secure");
             AgentUpdate.DataDir = TestEnvironment.NewDir("protocol-data");
             AgentCapabilities.Load();
-            _worker = new Worker(NullLogger<Worker>.Instance)
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = "HW-3F9A1C7B2E4D",
                 SendOverride = payload =>
@@ -39,8 +39,8 @@ namespace POps.Tests.Agent
                     return Task.FromResult(true);
                 },
             };
-            _worker.Binding = new HardwareBinding(AgentUpdate.IdentityPath, () => ("4C4C4544-0042-3510-8051-B3C04F4D3132", "B3C0MD2"));
-            _worker.Quarantine = new QuarantineControl(_ => { },
+            _worker.Binding = new HardwareBinding(AgentHarness.FromStatics().Paths, () => ("4C4C4544-0042-3510-8051-B3C04F4D3132", "B3C0MD2"));
+            _worker.Quarantine = new QuarantineControl(AgentHarness.FromStatics().Paths, _ => { },
                 () => { File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
                 () => { File.Delete(NetworkIsolation.StatePath); return Task.FromResult(true); });
         }

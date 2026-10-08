@@ -57,7 +57,8 @@ namespace POpsAgent
             return true;
         }
 
-        public static int Run(string[] args, TextWriter output)
+        // paths: servisin klasörleri (appsettings.json DataDirectory; bkz. AgentDirectories)
+        public static int Run(string[] args, TextWriter output, AgentPaths paths)
         {
             if (!TryParse(args, out string token, out string error))
             {
@@ -78,7 +79,7 @@ namespace POpsAgent
             }
 
             bool complete = true;
-            foreach (string path in DeviceFiles())
+            foreach (string path in DeviceFiles(paths))
             {
                 if (path == null || !File.Exists(path)) continue;
                 try
@@ -92,7 +93,7 @@ namespace POpsAgent
                     output.WriteLine($"Silinemedi: {path} ({ex.Message})");
                 }
             }
-            foreach (string folder in CloneFolders())
+            foreach (string folder in CloneFolders(paths))
             {
                 try
                 {
@@ -110,9 +111,9 @@ namespace POpsAgent
             {
                 try
                 {
-                    SecureStore.EnsureDirectory();
-                    SecureStore.WriteProtected(SecureStore.PathOf(AgentCredentials.EnrollTokenFileName), token);
-                    output.WriteLine($"Enroll jetonu yazıldı: {SecureStore.PathOf(AgentCredentials.EnrollTokenFileName)}");
+                    SecureStore.EnsureDirectory(paths.SecureDir);
+                    SecureStore.WriteProtected(paths.SecureFile(AgentCredentials.EnrollTokenFileName), token);
+                    output.WriteLine($"Enroll jetonu yazıldı: {paths.SecureFile(AgentCredentials.EnrollTokenFileName)}");
                 }
                 catch (Exception ex)
                 {
@@ -130,25 +131,25 @@ namespace POpsAgent
 
         // Cihaza özel dosyalar: kimlik, secret (ve PersistDir kopyası), cihaz bypass anahtarı, donanım bağı,
         // onay bekleyen görev ve güncelleme sonuçları, son yazılım envanteri gönderimi
-        public static IEnumerable<string> DeviceFiles()
+        public static IEnumerable<string> DeviceFiles(AgentPaths paths)
         {
-            yield return AgentUpdate.IdentityPath;
-            yield return SecureStore.PathOf(AgentCredentials.SecretFileName);
+            yield return paths.IdentityPath;
+            yield return paths.SecureFile(AgentCredentials.SecretFileName);
             yield return AgentCredentials.PersistPath(AgentCredentials.SecretFileName);
-            yield return SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName);
-            yield return HardwareBinding.PrimaryPath;
+            yield return paths.SecureFile(AgentCredentials.DeviceBypassSecretFileName);
+            yield return paths.SecureFile(HardwareBinding.FileName);
             yield return AgentCredentials.PersistPath(HardwareBinding.FileName);
-            yield return SecureStore.PathOf(ResultSpool.FileName);
-            yield return AgentUpdate.ResultPath;
-            yield return AgentUpdate.ReportedResultPath;
-            yield return SoftwareReporter.StatePath;
+            yield return paths.SecureFile(ResultSpool.FileName);
+            yield return paths.UpdateResultPath;
+            yield return paths.ReportedResultPath;
+            yield return paths.DataFile(SoftwareReporter.StateFileName);
         }
 
         // Kopya algılandığında kenara alınan eski kimlik ve anahtarlar (secure\clone-*)
-        private static IEnumerable<string> CloneFolders()
+        private static IEnumerable<string> CloneFolders(AgentPaths paths)
         {
-            if (!Directory.Exists(SecureStore.Dir)) return Array.Empty<string>();
-            return Directory.GetDirectories(SecureStore.Dir, HardwareBinding.CloneFolderPrefix + "*");
+            if (!Directory.Exists(paths.SecureDir)) return Array.Empty<string>();
+            return Directory.GetDirectories(paths.SecureDir, HardwareBinding.CloneFolderPrefix + "*");
         }
 
         // Servis durdurulur; ardından watchdog kapatılır (yönetici oturumundaki watchdog servisi 10 sn içinde yeniden

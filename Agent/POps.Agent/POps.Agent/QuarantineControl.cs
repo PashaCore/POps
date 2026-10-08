@@ -17,25 +17,33 @@ namespace POpsAgent
     //  * Yalıtım kaldırılamazsa kilit sürer ve kullanıcıya "kaldırıldı" denmez (UNLOCK_FAILED).
     public sealed class QuarantineControl
     {
+        public const string LockFileName = "lockdown.json";
+
         private readonly Action<string> _toTray;
         private readonly Func<Task<bool>> _enableIsolation;
         private readonly Func<Task<bool>> _disableIsolation;
         private readonly OfflineBypass _bypass;
         private readonly Action<LocalAuditEvent> _audit;
+        // Ağ yalıtımının durum dosyası (NetworkIsolation yazar): varsa ağ yalıtılmış
+        private readonly string _isolationState;
 
-        public QuarantineControl(Action<string> toTray, Func<Task<bool>> enableIsolation, Func<Task<bool>> disableIsolation,
+        // paths: kilit kaydı, ağ yalıtımının durumu ve bypass denemelerinin kaydı güvenli depoda
+        public QuarantineControl(AgentPaths paths, Action<string> toTray, Func<Task<bool>> enableIsolation, Func<Task<bool>> disableIsolation,
             OfflineBypass bypass = null, Action<LocalAuditEvent> audit = null)
         {
+            ArgumentNullException.ThrowIfNull(paths);
             _toTray = toTray;
             _enableIsolation = enableIsolation;
             _disableIsolation = disableIsolation;
-            _bypass = bypass ?? new OfflineBypass(statePath: SecureStore.PathOf(OfflineBypass.StateFileName));
+            _bypass = bypass ?? new OfflineBypass(statePath: paths.SecureFile(OfflineBypass.StateFileName));
             _audit = audit ?? (_ => { });
+            LockPath = paths.SecureFile(LockFileName);
+            _isolationState = paths.SecureFile(NetworkIsolation.StateFileName);
         }
 
         public OfflineBypass Bypass => _bypass;
 
-        public static string LockPath => SecureStore.PathOf("lockdown.json");
+        public string LockPath { get; }
 
         public const string DefaultReason = "Belirtilmedi";
         // DNS eşiğindeki otomatik karantinanın kilit ekranındaki nedeni
@@ -73,12 +81,12 @@ namespace POpsAgent
             RiskLevel = "medium",
         };
 
-        public bool IsLocked => File.Exists(LockPath) || File.Exists(NetworkIsolation.StatePath);
+        public bool IsLocked => File.Exists(LockPath) || File.Exists(_isolationState);
 
         // Heartbeat'te ayrı bildirilir (F08): kilit ekranı açık ama ağ yalıtılamamışsa sunucu kilit işlemini
         // tamamlanmış saymaz, komutu yeniden gönderir (yalıtım yeniden denenir) ve yöneticiyi uyarır.
         public bool ScreenLocked => File.Exists(LockPath);
-        public bool NetworkIsolated => File.Exists(NetworkIsolation.StatePath);
+        public bool NetworkIsolated => File.Exists(_isolationState);
         public string LastIsolationError { get; private set; }
 
         public string LockReason
@@ -117,7 +125,7 @@ namespace POpsAgent
             // Sunucunun yeniden gönderdiği kilit nedensiz olabilir: kayıtlı neden korunur
             reason = !string.IsNullOrWhiteSpace(reason) ? reason.Trim() : IsLocked ? LockReason : DefaultReason;
             bool wasLocked = IsLocked;
-            bool alreadyIsolated = File.Exists(NetworkIsolation.StatePath);
+            bool alreadyIsolated = File.Exists(_isolationState);
             try { SecureStore.WriteProtected(LockPath, JsonSerializer.Serialize(new Dictionary<string, string> { ["reason"] = reason })); }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Kilit durumu yazılamadı ({LockPath}): {ex.Message}", true); }
             // Ctrl+Alt+Del seçenekleri (Görev Yöneticisi, oturumu kapat, kullanıcı değiştir, ...) kilit sürerken kapalı

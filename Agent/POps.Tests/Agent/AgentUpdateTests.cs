@@ -229,8 +229,7 @@ namespace POps.Tests.Agent
     }
 
     // A5: update_result sunucu onaylayana kadar saklanır
-    [Collection(SharedStateCollection.Name)]
-    public class UpdateResultAckTests : SharedStateTestBase
+    public class UpdateResultAckTests : TestBase
     {
         private DateTime _now = new DateTime(2026, 10, 2, 10, 0, 0, DateTimeKind.Utc);
 
@@ -307,47 +306,47 @@ namespace POps.Tests.Agent
         [Fact]
         public void ResultId_IsSha256OfTheRawFile_First32LowercaseHex()
         {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("result-id");
-            Assert.Null(AgentUpdate.PendingResultId());
+            AgentPaths paths = AgentHarness.Create("result-id").Paths;
+            Assert.Null(AgentUpdate.PendingResultId(paths));
             byte[] raw = Encoding.UTF8.GetBytes("{\"outcome\":\"success\",\"to_version\":\"0.1.14-alpha\"}");
-            File.WriteAllBytes(AgentUpdate.ResultPath, raw);
+            File.WriteAllBytes(paths.UpdateResultPath, raw);
 
             string expected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(raw)).ToLowerInvariant().Substring(0, 32);
-            Assert.Equal(expected, AgentUpdate.PendingResultId());
-            Assert.Equal(expected, AgentUpdate.PendingResultMessage()["result_id"]);
+            Assert.Equal(expected, AgentUpdate.PendingResultId(paths));
+            Assert.Equal(expected, AgentUpdate.PendingResultMessage(paths)["result_id"]);
             Assert.Equal(32, expected.Length);
             // Aynı sonuç için hep aynı değer
-            Assert.Equal(AgentUpdate.PendingResultId(), AgentUpdate.PendingResultId());
+            Assert.Equal(AgentUpdate.PendingResultId(paths), AgentUpdate.PendingResultId(paths));
         }
 
         [Fact]
         public void ResultFile_StaysUntilAMatchingAck()
         {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("result-ack");
-            File.WriteAllText(AgentUpdate.ResultPath, "{\"outcome\":\"success\"}");
+            AgentPaths paths = AgentHarness.Create("result-ack").Paths;
+            File.WriteAllText(paths.UpdateResultPath, "{\"outcome\":\"success\"}");
             UpdateResultReporter r = NewReporter();
             r.OnServerInfo(AckServer);
-            string id = (string)AgentUpdate.PendingResultMessage()["result_id"];
+            string id = (string)AgentUpdate.PendingResultMessage(paths)["result_id"];
             Assert.Equal(UpdateResultReporter.Step.SendAndKeep, r.Next(id));
             r.Sent(id);
 
             // Yanlış kimlik: dosya kalır
-            Assert.False(UpdateResultReporter.Acknowledges(Json("{\"action\":\"update_result_ack\",\"result_id\":\"0000\"}"), AgentUpdate.PendingResultId()));
-            Assert.True(File.Exists(AgentUpdate.ResultPath));
+            Assert.False(UpdateResultReporter.Acknowledges(Json("{\"action\":\"update_result_ack\",\"result_id\":\"0000\"}"), AgentUpdate.PendingResultId(paths)));
+            Assert.True(File.Exists(paths.UpdateResultPath));
 
             // Doğru kimlik: kenara alınır
-            Assert.True(UpdateResultReporter.Acknowledges(Json("{\"action\":\"update_result_ack\",\"result_id\":\"" + id + "\"}"), AgentUpdate.PendingResultId()));
-            AgentUpdate.MarkResultReported();
-            Assert.False(File.Exists(AgentUpdate.ResultPath));
-            Assert.Null(AgentUpdate.PendingResultId());
+            Assert.True(UpdateResultReporter.Acknowledges(Json("{\"action\":\"update_result_ack\",\"result_id\":\"" + id + "\"}"), AgentUpdate.PendingResultId(paths)));
+            AgentUpdate.MarkResultReported(paths);
+            Assert.False(File.Exists(paths.UpdateResultPath));
+            Assert.Null(AgentUpdate.PendingResultId(paths));
         }
 
         [Fact]
         public void ResultWithBom_IsStillRead()
         {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("result-bom");
-            File.WriteAllText(AgentUpdate.ResultPath, "{\"outcome\":\"success\"}", new UTF8Encoding(true));
-            Assert.Equal("success", AgentUpdate.PendingResultMessage()["status"]);
+            AgentPaths paths = AgentHarness.Create("result-bom").Paths;
+            File.WriteAllText(paths.UpdateResultPath, "{\"outcome\":\"success\"}", new UTF8Encoding(true));
+            Assert.Equal("success", AgentUpdate.PendingResultMessage(paths)["status"]);
         }
     }
 }

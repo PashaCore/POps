@@ -37,7 +37,7 @@ namespace POps.Tests.Agent
             return JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(trayMessage.Substring(kind.Length + 1)))).RootElement.Clone();
         }
 
-        private Helpdesk Desk(string user, int? status, string body) => new Helpdesk("https://pops.example", () => "HW-A", () => user, _tray.Add)
+        private Helpdesk Desk(string user, int? status, string body) => new Helpdesk(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-A", () => user, _tray.Add)
         {
             Sender = (method, path, payload, _) =>
             {
@@ -142,14 +142,15 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task List_ShowsOnlyTheSignedInUsersTickets()
         {
-            await Desk("ogrenci", 200, ServerList).ListAsync();
+            Helpdesk desk = Desk("ogrenci", 200, ServerList);
+            await desk.ListAsync();
             JsonElement reply = Decode(_tray.Single(), "TICKET_LIST_RESULT");
             JsonElement tickets = reply.GetProperty("tickets");
             Assert.Equal(1, tickets.GetArrayLength());
             Assert.Equal(3, tickets[0].GetProperty("id").GetInt64());
             Assert.DoesNotContain("gizli kalmalı", _tray.Single().Length > 0 ? Encoding.UTF8.GetString(Convert.FromBase64String(_tray.Single().Substring("TICKET_LIST_RESULT:".Length))) : "");
             // Görüntülenen yanıtlar için sonra balon çıkmaz
-            Assert.Equal(1, Helpdesk.LoadSeen()[3]);
+            Assert.Equal(1, desk.LoadSeen()[3]);
         }
 
         [Fact]
@@ -195,7 +196,7 @@ namespace POps.Tests.Agent
 
         public void Dispose() => AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
 
-        private Helpdesk Desk(Func<Task<(int?, string)>> response) => new Helpdesk("https://pops.example", () => "HW-A", () => "ogrenci", _tray.Add)
+        private Helpdesk Desk(Func<Task<(int?, string)>> response) => new Helpdesk(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-A", () => "ogrenci", _tray.Add)
         {
             UtcNow = () => _now,
             Sender = (method, path, payload, what) => { Interlocked.Increment(ref _requests); return response(); },

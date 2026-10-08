@@ -176,7 +176,7 @@ namespace POps.Tests.Agent
         public void StartCapture_PicksTheProtocolFromServerInfo(bool binary, string expected)
         {
             var tray = new List<string>();
-            using var worker = new Worker(NullLogger<Worker>.Instance) { TrayOverride = tray.Add, SendOverride = _ => Task.FromResult(true) };
+            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context) { TrayOverride = tray.Add, SendOverride = _ => Task.FromResult(true) };
             worker.OnCommandSocketOpened();
             worker.Handshake.OnServerInfo(Json(binary ? "{\"action\":\"server_info\",\"features\":[\"vision_binary\"]}" : "{\"action\":\"server_info\",\"features\":[]}"));
             worker.StartCapture(4);
@@ -189,7 +189,7 @@ namespace POps.Tests.Agent
         {
             var sent = new List<JsonElement>();
             var tray = new List<string>();
-            using var worker = new Worker(NullLogger<Worker>.Instance)
+            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = "HW-V2",
                 TrayOverride = tray.Add,

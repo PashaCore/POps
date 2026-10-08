@@ -60,20 +60,22 @@ namespace POpsAgent
 
         private static readonly JsonSerializerOptions WriteOptions = new JsonSerializerOptions { WriteIndented = true };
 
+        private readonly AgentPaths _paths;
         private readonly Func<(string Uuid, string BiosSerial)> _read;
         private readonly Func<DateTimeOffset> _now;
         private (string Uuid, string BiosSerial)? _reading;
         private readonly HashSet<string> _logged = new HashSet<string>();
 
-        // read: ham WMI değerleri (Win32_ComputerSystemProduct.UUID, Win32_BIOS.SerialNumber; okunamazsa "-")
-        public HardwareBinding(string identityPath, Func<(string Uuid, string BiosSerial)> read, Func<DateTimeOffset> now = null)
+        // paths: kimlik dosyası ve güvenli depo; read: ham WMI değerleri (Win32_ComputerSystemProduct.UUID,
+        // Win32_BIOS.SerialNumber; okunamazsa "-")
+        public HardwareBinding(AgentPaths paths, Func<(string Uuid, string BiosSerial)> read, Func<DateTimeOffset> now = null)
         {
-            IdentityPath = identityPath;
+            _paths = paths ?? throw new ArgumentNullException(nameof(paths));
             _read = read ?? throw new ArgumentNullException(nameof(read));
             _now = now ?? (() => DateTimeOffset.UtcNow);
         }
 
-        public string IdentityPath { get; }
+        public string IdentityPath => _paths.IdentityPath;
         // Son açılış denetimi
         public BindingVerdict Verdict { get; private set; } = BindingVerdict.Missing;
         public string BoundHwId { get; private set; }
@@ -85,7 +87,7 @@ namespace POpsAgent
         public IReadOnlyList<string> ChangedParts { get; private set; } = Array.Empty<string>();
         public IReadOnlyList<string> SameParts { get; private set; } = Array.Empty<string>();
 
-        public static string PrimaryPath => SecureStore.PathOf(FileName);
+        public string PrimaryPath => _paths.SecureFile(FileName);
         private static string MirrorPath() => AgentCredentials.PersistPath(FileName);
 
         // dna_payload ile aynı normalleştirme (HardwareInfo.GetHardwareDnaInternal)
@@ -166,7 +168,7 @@ namespace POpsAgent
         }
 
         // Birincil ve PersistDir kopyasından en yenisi (eşitlikte birincil)
-        public static BindingRecord Load()
+        public BindingRecord Load()
         {
             BindingRecord primary = Parse(SecureStore.Read(PrimaryPath));
             string mirrorPath = MirrorPath();
@@ -237,7 +239,7 @@ namespace POpsAgent
             Write(saved, "set_identity");
         }
 
-        private static bool Write(BindingRecord record, string reason)
+        private bool Write(BindingRecord record, string reason)
         {
             string json = JsonSerializer.Serialize(record, WriteOptions);
             bool saved = TryWrite(PrimaryPath, json);
@@ -268,8 +270,8 @@ namespace POpsAgent
             var moved = new List<string>();
             try
             {
-                SecureStore.EnsureDirectory();
-                string baseName = SecureStore.PathOf(CloneFolderPrefix + _now().UtcDateTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
+                SecureStore.EnsureDirectory(_paths.SecureDir);
+                string baseName = _paths.SecureFile(CloneFolderPrefix + _now().UtcDateTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
                 string folder = baseName;
                 for (int i = 2; Directory.Exists(folder); i++) folder = baseName + "-" + i;
                 Directory.CreateDirectory(folder);
@@ -292,13 +294,13 @@ namespace POpsAgent
         private IEnumerable<(string Source, string Name)> DeviceFiles()
         {
             yield return (IdentityPath, Path.GetFileName(IdentityPath));
-            yield return (SecureStore.PathOf(AgentCredentials.SecretFileName), AgentCredentials.SecretFileName);
+            yield return (_paths.SecureFile(AgentCredentials.SecretFileName), AgentCredentials.SecretFileName);
             yield return (AgentCredentials.PersistPath(AgentCredentials.SecretFileName), AgentCredentials.SecretFileName + PersistSuffix);
-            yield return (SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName), AgentCredentials.DeviceBypassSecretFileName);
+            yield return (_paths.SecureFile(AgentCredentials.DeviceBypassSecretFileName), AgentCredentials.DeviceBypassSecretFileName);
             yield return (PrimaryPath, FileName);
             yield return (MirrorPath(), FileName + PersistSuffix);
             // Asıl cihazın görev sonuçları yeni kimlikle gönderilmesin
-            yield return (SecureStore.PathOf(ResultSpool.FileName), ResultSpool.FileName);
+            yield return (_paths.SecureFile(ResultSpool.FileName), ResultSpool.FileName);
         }
 
         private string ReadIdentity()

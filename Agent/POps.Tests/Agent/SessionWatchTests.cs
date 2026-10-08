@@ -4,8 +4,7 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    [Collection(SharedStateCollection.Name)]
-    public class SessionEventsTests : SharedStateTestBase
+    public class SessionEventsTests : TestBase
     {
         private static readonly DateTime Boot = new DateTime(2026, 9, 28, 7, 50, 0, DateTimeKind.Utc);
 
@@ -42,11 +41,12 @@ namespace POps.Tests.Agent
         [Fact]
         public void ReportedStateSurvivesRestart()
         {
-            if (System.IO.File.Exists(SessionReporter.StatePath)) System.IO.File.Delete(SessionReporter.StatePath);
-            Assert.Null(SessionReporter.Load());
-            SessionReporter.Save(S("ali", 2));
-            Assert.Empty(SessionEvents.Diff(SessionReporter.Load(), S("ali", 2)));
-            if (System.IO.File.Exists(SessionReporter.StatePath)) System.IO.File.Delete(SessionReporter.StatePath);
+            string statePath = AgentHarness.Create("session").Paths.DataFile(SessionReporter.StateFileName);
+            if (System.IO.File.Exists(statePath)) System.IO.File.Delete(statePath);
+            Assert.Null(SessionReporter.Load(statePath));
+            SessionReporter.Save(statePath, S("ali", 2));
+            Assert.Empty(SessionEvents.Diff(SessionReporter.Load(statePath), S("ali", 2)));
+            if (System.IO.File.Exists(statePath)) System.IO.File.Delete(statePath);
         }
     }
 

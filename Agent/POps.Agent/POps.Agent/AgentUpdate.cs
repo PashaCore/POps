@@ -30,16 +30,39 @@ namespace POpsAgent
     [SupportedOSPlatform("windows")]
     public static class AgentUpdate
     {
-        // appsettings.json "DataDirectory" (servis açılışta seçer, bkz. AgentDirectories); testlerde geçici klasör
+        // Yollar AgentPaths'ten gelir (veri klasörü appsettings.json "DataDirectory"; servis açılışta seçer, bkz.
+        // AgentDirectories): Program ve Worker'ın kurduğu servisler (UpdateHandler, UpdateReporter, UserSessionApps)
+        // aşağıdaki işlevlerin AgentPaths alan biçimlerini çağırır.
+        //
+        // Süreç varsayılanı: servis açılışta DataDir'i AgentPaths.DataDir'e çevirir (bkz. AgentDirectories.Use). DataDir'i
+        // eş önbelleği ve dosya aktarımı (Worker bölmesinin b3 adımı), ondan türeyen yolları ve AgentPaths almayan
+        // biçimleri yalnızca AgentUpdate'i ve güncellemeyi sınayan testler kullanır; b2 adımı (AgentUpdater örneği)
+        // bu bölümü kaldırır.
         public static string DataDir { get; set; } = FolderSettings.DefaultDataDirectory;
-        public static string UpdatesDir => Path.Combine(DataDir, "updates");
-        public static string UpdaterDir => Path.Combine(DataDir, "updater");
-        public static string LockPath => Path.Combine(DataDir, "update.lock");
-        public static string HealthPath => Path.Combine(DataDir, "health.json");
-        public static string ResultPath => Path.Combine(DataDir, "update-result.json");
-        public static string IdentityPath => Path.Combine(DataDir, "identity.key");
+        private static AgentPaths ProcessPaths => AgentPaths.ForFolders(DataDir, POpsHelpers.MachineLogDir, POpsHelpers.ConfigPaths);
+        public static string UpdatesDir => ProcessPaths.UpdatesDir;
+        public static string UpdaterDir => ProcessPaths.UpdaterDir;
+        public static string LockPath => ProcessPaths.UpdateLockPath;
+        public static string HealthPath => ProcessPaths.HealthPath;
+        public static string ResultPath => ProcessPaths.UpdateResultPath;
+        public static string IdentityPath => ProcessPaths.IdentityPath;
         // Updater'ın yazdığı kurulum aşaması (bkz. POps.Shared.UpdateProgressFile)
-        public static string ProgressPath => Path.Combine(DataDir, UpdateProgressFile.FileName);
+        public static string ProgressPath => ProcessPaths.UpdateProgressPath;
+        public static string ReportedResultPath => ProcessPaths.ReportedResultPath;
+        public static string SecureDataDir => ProcessPaths.SecureDir;
+        public static string RollbackDrillPath => ProcessPaths.RollbackDrillPath;
+        public static string ConsumedDrillPath => ProcessPaths.ConsumedDrillPath;
+        public static void WriteOperationalHealth(OperationalChecks checks) => WriteOperationalHealth(ProcessPaths, checks);
+        public static bool RollbackDrillRequested() => RollbackDrillRequested(ProcessPaths);
+        public static bool ApplyRollbackDrillOnStartup() => ApplyRollbackDrillOnStartup(ProcessPaths);
+        public static string PendingResultId() => PendingResultId(ProcessPaths);
+        public static Dictionary<string, object> PendingResultMessage() => PendingResultMessage(ProcessPaths);
+        public static void MarkResultReported() => MarkResultReported(ProcessPaths);
+        public static void CleanupStaleProgress() => CleanupStaleProgress(ProcessPaths);
+        public static bool IsLockFresh() => IsLockFresh(ProcessPaths);
+        public static Task HandleUpdateCommandAsync(JsonElement command, HttpClient http, string serverUrl,
+            Func<Dictionary<string, object>, Task<bool>> report = null) =>
+            HandleUpdateCommandAsync(command, http, serverUrl, ProcessPaths, report);
 
         private static readonly Regex MsiNameRegex = new Regex(@"^POps-Agent-[A-Za-z0-9._-]+-win-x64\.msi$", RegexOptions.Compiled);
         private static readonly Regex Sha256HexRegex = new Regex("^[0-9a-f]{64}$", RegexOptions.Compiled);
@@ -66,12 +89,12 @@ namespace POpsAgent
         // ==========================================
         // health.json: updater yeni sürümün çekirdek başlangıcını tamamladığını buradan anlar
         // ==========================================
-        public static void WriteOperationalHealth(OperationalChecks checks)
+        public static void WriteOperationalHealth(AgentPaths paths, OperationalChecks checks)
         {
             try
             {
                 if (checks == null || !checks.Complete) return;
-                Directory.CreateDirectory(DataDir);
+                Directory.CreateDirectory(paths.DataDir);
                 var health = new
                 {
                     version = InstalledVersion,
@@ -87,12 +110,10 @@ namespace POpsAgent
                         loop = checks.Loop,
                     },
                 };
-                WriteAtomic(HealthPath, JsonSerializer.Serialize(health));
+                WriteAtomic(paths.HealthPath, JsonSerializer.Serialize(health));
             }
             catch (Exception ex) { POpsHelpers.Log("UPDATE", $"health.json yazılamadı: {ex.Message}", true); }
         }
-
-        public static string ReportedResultPath => Path.Combine(DataDir, "update-result.reported.json");
 
         // Geri dönüş tatbikatı: yönetici bu dosyayı oluşturunca (klasör yalnızca SYSTEM/Administrators'a açık)
         // güncellemeyle kurulan yeni sürüm açılışta health.json yazmaz, updater onu sağlıksız sayıp önceki MSI'a döner.
@@ -106,13 +127,10 @@ namespace POpsAgent
         //  * health.json yalnızca .consumed'daki sürüm kendi sürümü ve güncelleme çalışması aynıysa atlanır: SCM yeni
         //    sürümü yeniden başlatsa da tatbikat sürer; geri kurulan eski sürüm (işareti bilmese de) sağlık bildirir;
         //    aynı sürüm sonra yeniden gönderilirse (yeni çalışma) eski .consumed silinir ve normal kurulur.
-        public static string SecureDataDir => Path.Combine(DataDir, "secure");
-        public static string RollbackDrillPath => Path.Combine(SecureDataDir, RollbackDrill.MarkerFileName);
-        public static string ConsumedDrillPath => Path.Combine(SecureDataDir, RollbackDrill.ConsumedFileName);
-
-        public static bool RollbackDrillRequested()
+        // İşaret ve tüketilmiş hâli güvenli depodadır (AgentPaths.RollbackDrillPath, ConsumedDrillPath).
+        public static bool RollbackDrillRequested(AgentPaths paths)
         {
-            try { return File.Exists(RollbackDrillPath); }
+            try { return File.Exists(paths.RollbackDrillPath); }
             catch { return false; }
         }
 
@@ -166,19 +184,19 @@ namespace POpsAgent
         }
 
         // Servis açılışında, health.json'dan önce. Dönen: health.json bu açılışta yazılmasın mı
-        public static bool ApplyRollbackDrillOnStartup()
+        public static bool ApplyRollbackDrillOnStartup(AgentPaths paths)
         {
             try
             {
                 // Bayat kilit (15 dk'dan eski, updater çökmüş) "güncelleme yok" sayılır
-                UpdateRun run = IsLockFresh() ? ReadJson<UpdateRun>(LockPath) : null;
-                DrillDecision decision = DecideDrill(RollbackDrillRequested(), ReadJson<ConsumedDrill>(ConsumedDrillPath), run, InstalledVersion);
-                if (decision.DiscardConsumed) TryDelete(ConsumedDrillPath);
+                UpdateRun run = IsLockFresh(paths) ? ReadJson<UpdateRun>(paths.UpdateLockPath) : null;
+                DrillDecision decision = DecideDrill(RollbackDrillRequested(paths), ReadJson<ConsumedDrill>(paths.ConsumedDrillPath), run, InstalledVersion);
+                if (decision.DiscardConsumed) TryDelete(paths.ConsumedDrillPath);
                 if (decision.Consume)
                 {
-                    SecureStore.WriteProtected(ConsumedDrillPath, JsonSerializer.Serialize(new ConsumedDrill { Version = InstalledVersion, UpdateStartedAt = run.StartedAt }, DrillJson));
-                    File.Delete(RollbackDrillPath);
-                    POpsHelpers.Log("UPDATE", $"[TATBİKAT] rollback-drill işareti tüketildi ({ConsumedDrillPath}); geri kurulan sürüm sağlık bildirebilecek.");
+                    SecureStore.WriteProtected(paths.ConsumedDrillPath, JsonSerializer.Serialize(new ConsumedDrill { Version = InstalledVersion, UpdateStartedAt = run.StartedAt }, DrillJson));
+                    File.Delete(paths.RollbackDrillPath);
+                    POpsHelpers.Log("UPDATE", $"[TATBİKAT] rollback-drill işareti tüketildi ({paths.ConsumedDrillPath}); geri kurulan sürüm sağlık bildirebilecek.");
                 }
                 return decision.SkipHealth;
             }
@@ -208,21 +226,21 @@ namespace POpsAgent
             Convert.ToHexString(SHA256.HashData(raw ?? Array.Empty<byte>())).ToLowerInvariant().Substring(0, 32);
 
         // Bekleyen sonucun kimliği; sonuç yoksa null
-        public static string PendingResultId()
+        public static string PendingResultId(AgentPaths paths)
         {
-            try { return File.Exists(ResultPath) ? ResultId(File.ReadAllBytes(ResultPath)) : null; }
+            try { return File.Exists(paths.UpdateResultPath) ? ResultId(File.ReadAllBytes(paths.UpdateResultPath)) : null; }
             catch (IOException) { return null; }
         }
 
         // Updater'ın bıraktığı ve henüz sunucuya iletilmemiş sonuç, sunucunun beklediği "update_result" mesajı
         // olarak (status = outcome, result_id); yoksa null. Kenara alma zamanını UpdateResultReporter belirler
         // (onaylı sunucuda onay gelince, eski sunucuda gönderince).
-        public static Dictionary<string, object> PendingResultMessage()
+        public static Dictionary<string, object> PendingResultMessage(AgentPaths paths)
         {
             try
             {
-                if (!File.Exists(ResultPath)) return null;
-                byte[] raw = File.ReadAllBytes(ResultPath);
+                if (!File.Exists(paths.UpdateResultPath)) return null;
+                byte[] raw = File.ReadAllBytes(paths.UpdateResultPath);
                 // Kimlik ham baytlardan; ayrıştırmada olası UTF-8 BOM atlanır
                 int bom = raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF ? 3 : 0;
                 using JsonDocument doc = JsonDocument.Parse(raw.AsMemory(bom));
@@ -246,17 +264,17 @@ namespace POpsAgent
             }
         }
 
-        public static void MarkResultReported()
+        public static void MarkResultReported(AgentPaths paths)
         {
-            try { File.Move(ResultPath, ReportedResultPath, true); }
+            try { File.Move(paths.UpdateResultPath, paths.ReportedResultPath, true); }
             catch (Exception ex) { POpsHelpers.Log("UPDATE", $"update-result.json kenara alınamadı: {ex.Message}", true); }
         }
 
-        public static void LogLastResult()
+        public static void LogLastResult(AgentPaths paths)
         {
             try
             {
-                if (File.Exists(ResultPath)) POpsHelpers.Log("UPDATE", $"Son güncelleme sonucu: {File.ReadAllText(ResultPath).Trim()}");
+                if (File.Exists(paths.UpdateResultPath)) POpsHelpers.Log("UPDATE", $"Son güncelleme sonucu: {File.ReadAllText(paths.UpdateResultPath).Trim()}");
             }
             catch { }
         }
@@ -317,24 +335,24 @@ namespace POpsAgent
         // ==========================================
         // update_agent emri
         // ==========================================
-        public static async Task HandleUpdateCommandAsync(JsonElement command, HttpClient http, string serverUrl,
+        public static async Task HandleUpdateCommandAsync(JsonElement command, HttpClient http, string serverUrl, AgentPaths paths,
             Func<Dictionary<string, object>, Task<bool>> report = null)
         {
             var update = new UpdateCommand { Report = report };
             if (Interlocked.Exchange(ref _busy, 1) == 1)
             {
                 POpsHelpers.Log("UPDATE", "Güncelleme zaten hazırlanıyor; yeni emir yok sayıldı.");
-                await update.StageAsync("ignored_busy", "başka bir güncelleme hazırlanıyor", _preparingVersion ?? LockedVersion());
+                await update.StageAsync("ignored_busy", "başka bir güncelleme hazırlanıyor", _preparingVersion ?? LockedVersion(paths));
                 return;
             }
             string packagePath = null;
             bool launched = false;
             try
             {
-                if (IsLockFresh())
+                if (IsLockFresh(paths))
                 {
                     POpsHelpers.Log("UPDATE", "Başka bir güncelleme sürüyor (update.lock); emir yok sayıldı.");
-                    await update.StageAsync("ignored_busy", "update.lock taze, güncelleme sürüyor", LockedVersion());
+                    await update.StageAsync("ignored_busy", "update.lock taze, güncelleme sürüyor", LockedVersion(paths));
                     return;
                 }
                 await update.StageAsync("received");
@@ -388,9 +406,9 @@ namespace POpsAgent
                     ? PeerDownload.Parse(command, msi.Sha256)
                     : new List<PeerDownload.Peer>();
 
-                Directory.CreateDirectory(UpdatesDir);
-                foreach (string old in Directory.GetFiles(UpdatesDir)) TryDelete(old);
-                packagePath = Path.Combine(UpdatesDir, msi.Name);
+                Directory.CreateDirectory(paths.UpdatesDir);
+                foreach (string old in Directory.GetFiles(paths.UpdatesDir)) TryDelete(old);
+                packagePath = Path.Combine(paths.UpdatesDir, msi.Name);
                 string url = $"{serverUrl.TrimEnd('/')}/updates/{Uri.EscapeDataString(msi.Name)}";
                 if (!await DownloadVerifiedAsync(http, url, packagePath, msi, update, peers)) return;
                 // Doğrulanmış paketin kopyası, sunucu istediyse eşler için saklanır (paket updater için yerinde kalır)
@@ -398,7 +416,7 @@ namespace POpsAgent
 
                 launched = LaunchOverride != null
                     ? LaunchOverride(packagePath, msi.Sha256, manifest.Version)
-                    : LaunchUpdater(packagePath, msi.Sha256, manifest.Version, update);
+                    : LaunchUpdater(paths, packagePath, msi.Sha256, manifest.Version, update);
                 if (launched) await update.StageAsync("updater_started");
             }
             catch (Exception ex)
@@ -416,7 +434,7 @@ namespace POpsAgent
         }
 
         // update.lock'taki hedef sürüm (yoksa null)
-        private static string LockedVersion() => ReadJson<UpdateRun>(LockPath)?.ToVersion;
+        private static string LockedVersion(AgentPaths paths) => ReadJson<UpdateRun>(paths.UpdateLockPath)?.ToVersion;
 
         // "downloaded" aşamasının detail'i: paketin kaynağı (docs/agent.md#peer-cache-contract: "peer <hw_id>", "server";
         // ajanın kendi önbelleğindeki aynı paket "cache")
@@ -535,7 +553,7 @@ namespace POpsAgent
             return size == expected.Size && CryptographicOperations.FixedTimeEquals(digest, Convert.FromHexString(expected.Sha256));
         }
 
-        private static bool LaunchUpdater(string msiPath, string sha256, string toVersion, UpdateCommand update)
+        private static bool LaunchUpdater(AgentPaths paths, string msiPath, string sha256, string toVersion, UpdateCommand update)
         {
             string installDir = AppContext.BaseDirectory.TrimEnd('\\');
             string[] files;
@@ -546,23 +564,23 @@ namespace POpsAgent
                 return false;
             }
 
-            if (Directory.Exists(UpdaterDir)) Directory.Delete(UpdaterDir, true);
-            Directory.CreateDirectory(UpdaterDir);
-            foreach (string f in files) File.Copy(f, Path.Combine(UpdaterDir, Path.GetFileName(f)), true);
+            if (Directory.Exists(paths.UpdaterDir)) Directory.Delete(paths.UpdaterDir, true);
+            Directory.CreateDirectory(paths.UpdaterDir);
+            foreach (string f in files) File.Copy(f, Path.Combine(paths.UpdaterDir, Path.GetFileName(f)), true);
 
-            WriteAtomic(LockPath, JsonSerializer.Serialize(new { from_version = InstalledVersion, to_version = toVersion, started_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
+            WriteAtomic(paths.UpdateLockPath, JsonSerializer.Serialize(new { from_version = InstalledVersion, to_version = toVersion, started_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
             try
             {
-                var psi = new ProcessStartInfo(Path.Combine(UpdaterDir, "POpsUpdater.exe"))
+                var psi = new ProcessStartInfo(Path.Combine(paths.UpdaterDir, "POpsUpdater.exe"))
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    WorkingDirectory = UpdaterDir,
+                    WorkingDirectory = paths.UpdaterDir,
                 };
                 foreach (string arg in new[] { "--msi", msiPath, "--sha256", sha256, "--from", InstalledVersion, "--to", toVersion, "--installdir", installDir })
                     psi.ArgumentList.Add(arg);
                 // Servisin kullandığı veri ve log klasörleri (updater appsettings.json'u okumaz; bkz. AgentDirectories)
-                foreach (string arg in AgentDirectories.UpdaterArguments()) psi.ArgumentList.Add(arg);
+                foreach (string arg in paths.UpdaterArguments()) psi.ArgumentList.Add(arg);
 
                 using Process updater = Process.Start(psi) ?? throw new InvalidOperationException("süreç başlatılamadı");
                 POpsHelpers.Log("UPDATE", $"POpsUpdater başlatıldı (PID {updater.Id}); servis kurulum sırasında durup yeni sürümle açılacak.");
@@ -570,7 +588,7 @@ namespace POpsAgent
             }
             catch
             {
-                TryDelete(LockPath);
+                TryDelete(paths.UpdateLockPath);
                 throw;
             }
         }
@@ -610,30 +628,31 @@ namespace POpsAgent
 
         // update.lock tazeyken ve henüz sonuç yokken updater'ın yazdığı aşama; aynı çalışmaya (started_at) ait değilse
         // ya da okunamıyorsa null. Kilit bayatsa kalan aşama dosyası silinir.
-        public static UpdateProgressRecord PendingProgress()
+        public static UpdateProgressRecord PendingProgress(AgentPaths paths)
         {
-            if (File.Exists(ResultPath)) return null;
-            if (!IsLockFresh())
+            if (File.Exists(paths.UpdateResultPath)) return null;
+            if (!IsLockFresh(paths))
             {
-                UpdateProgressFile.Delete(ProgressPath);
+                UpdateProgressFile.Delete(paths.UpdateProgressPath);
                 return null;
             }
-            UpdateProgressRecord record = UpdateProgressFile.Read(ProgressPath);
-            UpdateRun run = ReadJson<UpdateRun>(LockPath);
+            UpdateProgressRecord record = UpdateProgressFile.Read(paths.UpdateProgressPath);
+            UpdateRun run = ReadJson<UpdateRun>(paths.UpdateLockPath);
             return record != null && run != null && record.Run == run.StartedAt ? record : null;
         }
 
         // Açılışta: güncelleme sürmüyorsa önceki çalışmadan kalan aşama dosyası silinir
-        public static void CleanupStaleProgress()
+        public static void CleanupStaleProgress(AgentPaths paths)
         {
-            if (!IsLockFresh()) UpdateProgressFile.Delete(ProgressPath);
+            if (!IsLockFresh(paths)) UpdateProgressFile.Delete(paths.UpdateProgressPath);
         }
 
-        public static bool IsLockFresh()
+        // update.lock var ve 15 dakikadan yeni: güncelleme sürüyor
+        public static bool IsLockFresh(AgentPaths paths)
         {
             try
             {
-                var lockFile = new FileInfo(LockPath);
+                var lockFile = new FileInfo(paths.UpdateLockPath);
                 return lockFile.Exists && DateTime.UtcNow - lockFile.LastWriteTimeUtc < StaleLockAge;
             }
             catch { return false; }

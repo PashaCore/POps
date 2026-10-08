@@ -12,9 +12,10 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    // Yalnızca adres aralığı hesabı ve betik metni test edilir; betik asla çalıştırılmaz (güvenlik duvarını değiştirir)
-    [Collection(SharedStateCollection.Name)]
-    public class NetworkIsolationTests : SharedStateTestBase
+    // Yalnızca adres aralığı hesabı ve betik metni test edilir; betik asla çalıştırılmaz (güvenlik duvarını değiştirir).
+    // Machine: betiklerin ayrıştırılması için powershell.exe başlatılır (Scripts_ParseWithoutErrors).
+    [Collection(MachineCollection.Name)]
+    public class NetworkIsolationTests : TestBase
     {
         private static readonly IPAddress[] Allowed =
         {
@@ -123,15 +124,14 @@ namespace POps.Tests.Agent
         [Fact]
         public void PreviousFirewallState_IsReadBack()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("iso-state");
-            File.WriteAllText(NetworkIsolation.StatePath, "{\"previous_profiles\":[{\"Name\":\"Domain\",\"Enabled\":\"True\"},{\"Name\":\"Private\",\"Enabled\":\"False\"}],\"since\":1}");
-            Assert.Equal(new[] { "Private" }, NetworkIsolation.ReadPreviouslyDisabledProfiles());
+            string statePath = AgentHarness.Create("iso-state").Paths.SecureFile(NetworkIsolation.StateFileName);
+            File.WriteAllText(statePath, "{\"previous_profiles\":[{\"Name\":\"Domain\",\"Enabled\":\"True\"},{\"Name\":\"Private\",\"Enabled\":\"False\"}],\"since\":1}");
+            Assert.Equal(new[] { "Private" }, NetworkIsolation.ReadPreviouslyDisabledProfiles(statePath));
         }
     }
 
     // A3: karantinada sunucu adresi değişirse izin listesi yenilenir; önceki profil durumu korunur
-    [Collection(SharedStateCollection.Name)]
-    public class IsolationRefreshTests : SharedStateTestBase
+    public class IsolationRefreshTests : TestBase
     {
         private static IPAddress Ip(string s) => IPAddress.Parse(s);
 
@@ -162,12 +162,12 @@ namespace POps.Tests.Agent
         [Fact]
         public void Refresh_DoesNotTouchTheProfilesThatUnlockRestores()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("iso-refresh");
-            File.WriteAllText(NetworkIsolation.StatePath, "{\"previous_profiles\":[{\"Name\":\"Public\",\"Enabled\":\"False\"}],\"since\":5}");
-            string merged = NetworkIsolation.MergeServerAddresses(File.ReadAllText(NetworkIsolation.StatePath), new[] { Ip("203.0.113.99") });
-            File.WriteAllText(NetworkIsolation.StatePath, merged);
-            Assert.Equal(new[] { "Public" }, NetworkIsolation.ReadPreviouslyDisabledProfiles());
-            Assert.True(NetworkIsolation.IsActive);
+            string statePath = AgentHarness.Create("iso-refresh").Paths.SecureFile(NetworkIsolation.StateFileName);
+            File.WriteAllText(statePath, "{\"previous_profiles\":[{\"Name\":\"Public\",\"Enabled\":\"False\"}],\"since\":5}");
+            string merged = NetworkIsolation.MergeServerAddresses(File.ReadAllText(statePath), new[] { Ip("203.0.113.99") });
+            File.WriteAllText(statePath, merged);
+            Assert.Equal(new[] { "Public" }, NetworkIsolation.ReadPreviouslyDisabledProfiles(statePath));
+            Assert.True(NetworkIsolation.IsActiveAt(statePath));
         }
 
         [Theory]

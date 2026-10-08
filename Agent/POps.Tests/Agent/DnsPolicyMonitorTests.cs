@@ -57,7 +57,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void Worker_StartsMonitoringWhenTheCommandChannelConnects()
         {
-            using var worker = new Worker(NullLogger<Worker>.Instance);
+            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context);
             Assert.False(DnsPolicyMonitor.IsRunning);
 
             worker.OnCommandChannelConnected();
@@ -356,9 +356,9 @@ namespace POps.Tests.Agent
         private sealed class TestWorker : IDisposable
         {
             public readonly List<string> Tray = new List<string>();
-            public readonly Worker Worker = new Worker(NullLogger<Worker>.Instance);
+            public readonly Worker Worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context);
 
-            public TestWorker() => Worker.Quarantine = new QuarantineControl(Tray.Add, () => Task.FromResult(true), () => Task.FromResult(true));
+            public TestWorker() => Worker.Quarantine = new QuarantineControl(AgentHarness.FromStatics().Paths, Tray.Add, () => Task.FromResult(true), () => Task.FromResult(true));
 
             public int Lockdowns => Tray.Count(m => m.Contains("\"lockdown\"", StringComparison.Ordinal));
 
@@ -411,7 +411,7 @@ namespace POps.Tests.Agent
             Assert.Equal((0, 0), (first.Lockdowns, second.Lockdowns));
             Assert.Equal(("", ""), (first.LastError, second.LastError));
             Assert.Empty(_unbound);
-            Assert.False(File.Exists(QuarantineControl.LockPath));
+            Assert.False(File.Exists(first.Worker.Quarantine.LockPath));
         }
 
         // İlk Worker atıldı, ikincisi çalışıyor: atılan Worker ikincinin bağını çözmez; karantina ve hata ikinciye gider

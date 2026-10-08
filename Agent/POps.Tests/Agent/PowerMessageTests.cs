@@ -39,7 +39,7 @@ namespace POps.Tests.Agent
             SecureStore.Dir = TestEnvironment.NewDir("power-secure");
             AgentUpdate.DataDir = TestEnvironment.NewDir("power-data");
             AgentCapabilities.Load();   // dosya yok: hepsi açık
-            _worker = new Worker(NullLogger<Worker>.Instance)
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = "HW-TEST",
                 SendOverride = payload =>

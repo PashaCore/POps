@@ -37,7 +37,7 @@ namespace POps.Tests.Agent
             File.WriteAllText(config, "{bozuk");
             POpsHelpers.ConfigPaths = new[] { config };
             AgentCapabilities.Load();   // dosya yok: hepsi açık
-            _worker = new Worker(NullLogger<Worker>.Instance)
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = HwId,
                 SendOverride = p =>
