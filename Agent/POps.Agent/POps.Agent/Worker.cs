@@ -96,6 +96,9 @@ namespace POpsAgent
         // Uzaktan güç işlemleri ve kullanıcı mesajları (bkz. PowerActions, UserMessages)
         internal PowerActions Power { get; }
         internal UserMessages Messages { get; }
+        // Sınav modu ve dosya aktarımı (bkz. ExamHandler, FileTransferHandler)
+        private readonly ExamHandler _exam;
+        private readonly FileTransferHandler _files;
 
         public Worker(ILogger<Worker> logger) : this(logger, new AgentStartupHealth(false)) { }
 
@@ -144,6 +147,8 @@ namespace POpsAgent
                 ToTray, TrayInConsoleSession);
             Messages = new UserMessages(SendTaskResultAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
                 ToTray, TrayConnected);
+            _exam = new ExamHandler(_gate, Handshake, TrySendCommandMessageAsync, ToTray, LocalAudit.Write, _serverUrl, () => ExamClock());
+            _files = new FileTransferHandler(_gate, _serverUrl, () => _hwId, TrySendCommandMessageAsync, ToTray, LocalAudit.Write);
             Binding = new HardwareBinding(_identityFilePath,
                 () => (HardwareInfo.GetWmiValue("Win32_ComputerSystemProduct", "UUID"), HardwareInfo.GetWmiValue("Win32_BIOS", "SerialNumber")));
             Dispatcher = BuildDispatcher();
@@ -424,173 +429,28 @@ namespace POpsAgent
             await _vision.DisconnectVisionTunnelAsync();
         }
 
-        // ------------------------------------------------------------------ dosya aktarımı (bkz. FileTransfer)
-        // Emir doğrulanır ve iş arka planda yürür (komut döngüsünü bekletmez); sonuç file_result ile bildirilir.
-        // Yetenek kapalıysa yalnızca capability_denied gider (transfer_id ile; sunucu aktarımı ondan "rejected" yapar).
-        // transfer_id eksik ya da geçersizse file_result gönderilmez (sunucu bilmediği aktarımı yok sayar), yalnızca loglanır.
-        internal async Task HandleFileTransferAsync(string action, JsonElement root, CancellationToken token)
-        {
-            string transferId = FileTransfer.TransferIdOf(root);
-            if (!AgentCapabilities.FilesEnabled)
-            {
-                await DenyCapabilityAsync("files", action, transferId: transferId);
-                return;
-            }
-            if (transferId == null)
-            {
-                POpsHelpers.Log("FILES", $"{action} yok sayıldı: transfer_id eksik ya da geçersiz.", true);
-                return;
-            }
-            if (action == "file_push")
-            {
-                if (!FileTransfer.TryParsePush(root, _serverUrl, out FileTransfer.PushRequest push, out string error))
-                {
-                    POpsHelpers.Log("FILES", $"Dosya gönderimi reddedildi ({transferId}): {error}.", true);
-                    await SendCommandMessageAsync(FileTransfer.Result(transferId, "rejected", detail: error));
-                    return;
-                }
-                FileTransferTask = Task.Run(async () =>
-                {
-                    var (outcome, path, detail) = await FileTransfer.PushAsync(push, _hwId, DateTime.Now, token);
-                    if (outcome == "done")
-                    {
-                        LocalAudit.Write(LocalAudit.FilePushed(push.TransferId, path, push.Size, push.Sha256, push.Reason));
-                        POpsHelpers.Log("FILES", $"Yönetici dosya gönderdi: {path} ({push.Size} bayt).");
-                        ToTray("FILE_PUSHED:" + Path.GetFileName(path));
-                    }
-                    else POpsHelpers.Log("FILES", $"Dosya gönderimi tamamlanmadı ({push.TransferId}, {outcome}): {detail}.", true);
-                    await SendCommandMessageAsync(FileTransfer.Result(push.TransferId, outcome, path, detail));
-                }, CancellationToken.None);
-                return;
-            }
-            if (!FileTransfer.TryParsePull(root, _serverUrl, out FileTransfer.PullRequest pull, out string pullError))
-            {
-                POpsHelpers.Log("FILES", $"Dosya alma reddedildi ({transferId}): {pullError}.", true);
-                await SendCommandMessageAsync(FileTransfer.Result(transferId, "rejected", detail: pullError));
-                return;
-            }
-            FileTransferTask = Task.Run(async () =>
-            {
-                var (outcome, path, detail, size) = await FileTransfer.PullAsync(pull, _hwId, token);
-                if (outcome == "done")
-                {
-                    LocalAudit.Write(LocalAudit.FilePulled(pull.TransferId, path, size, pull.Reason));
-                    POpsHelpers.Log("FILES", $"Yönetici dosyayı aldı: {path} ({size} bayt).");
-                    ToTray("FILE_PULLED:" + path);
-                }
-                else POpsHelpers.Log("FILES", $"Dosya alma tamamlanmadı ({pull.TransferId}, {outcome}): {detail}.", true);
-                await SendCommandMessageAsync(FileTransfer.Result(pull.TransferId, outcome, path, detail));
-            }, CancellationToken.None);
-        }
+        // ------------------------------------------------------------------ dosya aktarımı (bkz. FileTransferHandler)
+        // Testler: emir doğrudan ve son başlatılan aktarım
+        internal Task HandleFileTransferAsync(string action, JsonElement root, CancellationToken token) => _files.HandleFileTransferAsync(action, root, token);
+        internal Task FileTransferTask => _files.FileTransferTask;
 
-        // Testler: son başlatılan aktarım
-        internal Task FileTransferTask { get; private set; } = Task.CompletedTask;
-
-        // ------------------------------------------------------------------ sınav modu (bkz. ExamMode)
-        private readonly HashSet<string> _examStoppedLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // ------------------------------------------------------------------ sınav modu (bkz. ExamHandler)
         private volatile bool _examNetworkChanged;
-
-        // Tepsi bandı: mesaj ve bitiş zamanı
-        internal static string ExamTrayMessage(ExamSettings settings) =>
-            "EXAM_ON:" + Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
-            {
-                ["message"] = string.IsNullOrWhiteSpace(settings?.Message) ? "Sınav modu: yalnızca izin verilen siteler açık" : settings.Message,
-                ["until"] = settings?.Until,
-            }));
-
-        // Sınava giriş ve çıkış birbirini beklemez olmasın (dönemsel tur, sunucu emri, set_capabilities aynı anda gelebilir)
-        private readonly SemaphoreSlim _examGate = new SemaphoreSlim(1, 1);
-        // Bu çalışmada sınav modundan çıkılan an (unix sn; 0: bu çalışmada çıkılmadı). exam_state.since için bellekte tutulur.
-        private long _examLeftAt;
-        // Bu bağlantıda bağlantı sonrası exam_state gönderildi mi (server_info'dan sonra bir kez; bkz. ReportExamStateOnConnectAsync)
-        private volatile bool _examStateReported;
         // Testler: emrin doğrulandığı ve sınavdan çıkılan an
         internal Func<DateTimeOffset> ExamClock { get; set; } = () => DateTimeOffset.UtcNow;
 
-        internal async Task HandleExamModeAsync(JsonElement root)
-        {
-            bool enable = root.TryGetProperty("enabled", out JsonElement e) && e.ValueKind == JsonValueKind.True;
-            if (!enable)
-            {
-                await EndExamAsync("server", reply: true);
-                return;
-            }
-            if (!AgentCapabilities.ExamEnabled)
-            {
-                // Yerel olarak kapalı: hiçbir şey uygulanmaz; önceden kalan bir sınav sürüyorsa biter (exam_state ile)
-                await DenyCapabilityAsync("exam", "exam_mode");
-                if (ExamMode.IsActive) await EndExamAsync("capability", reply: true);
-                return;
-            }
-            if (!ExamMode.TryParse(root, ExamClock(), out ExamSettings settings, out string error))
-            {
-                POpsHelpers.Log("EXAM", $"Sınav modu emri uygulanmadı: {error}.", true);
-                await SendExamStateAsync(reply: true);
-                return;
-            }
-            await _examGate.WaitAsync();
-            try { await EnterExamAsync(settings); }
-            finally { _examGate.Release(); }
-            await SendExamStateAsync(reply: true);
-        }
-
-        private async Task EnterExamAsync(ExamSettings settings)
-        {
-            // Uygulanamazsa neden ExamMode'da yerel loga yazılır; sunucuya o anki durum gider
-            if (!await ExamMode.EnableAsync(settings, _serverUrl)) return;
-            // Sınav modunda eş önbelleği sunulmaz; arka planda yeniden denetlenir (bkz. PeerCache)
-            _ = Task.Run(PeerCache.SyncAsync);
-            lock (_examStoppedLogged) _examStoppedLogged.Clear();
-            LocalAudit.Write(LocalAudit.ExamStarted(settings));
-            POpsHelpers.Log("EXAM", $"SINAV MODU AKTİF: {settings.Allow.Count} izinli kayıt, bitiş {(settings.Until == null ? "yok" : DateTimeOffset.FromUnixTimeSeconds(settings.Until.Value).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture))}, {settings.BlockApps.Count} engelli uygulama.");
-            ToTray(ExamTrayMessage(ExamMode.Load()));
-        }
-
-        // source: "server", "until" (süre doldu; sunucuya ulaşılamasa da), "capability" (sınav yeteneği yerel olarak
-        // kapalı: MSI EXAM_ENABLED=0 ile yeniden kurulum ya da set_capabilities). reply: exam_mode emrine yanıt.
-        internal async Task EndExamAsync(string source, bool reply = false)
-        {
-            await _examGate.WaitAsync();
-            try { await LeaveExamAsync(source); }
-            finally { _examGate.Release(); }
-            await SendExamStateAsync(reply);
-        }
-
-        private async Task LeaveExamAsync(string source)
-        {
-            // Kaldırılamazsa neden ExamMode'da loglanır; sunucuya "hâlâ sınavda" gider
-            if (!ExamMode.IsActive || !await ExamMode.DisableAsync()) return;
-            _ = Task.Run(PeerCache.SyncAsync);
-            Interlocked.Exchange(ref _examLeftAt, ExamClock().ToUnixTimeSeconds());
-            LocalAudit.Write(LocalAudit.ExamEnded(source));
-            POpsHelpers.Log("EXAM", $"Sınav modu bitti ({source}).");
-            ToTray("EXAM_OFF");
-        }
-
-        // exam_state hiçbir zaman bağlantının ilk mesajı değildir: exam_mode emrine yanıt (reply) emri gönderen sunucuya
-        // gider; kendiliğinden değişiklik (until, yetenek kapandı) yalnızca server_info'da exam_mode duyuran sunucuya.
-        // server_info henüz gelmediyse gönderilmez: bağlantı sonrası bildirim (ReportExamStateOnConnectAsync) o anki
-        // durumu zaten taşır.
-        private async Task SendExamStateAsync(bool reply)
-        {
-            if (!reply && Handshake.Supports(ExamMode.Feature) != true) return;
-            long left = Interlocked.Read(ref _examLeftAt);
-            await SendCommandMessageAsync(ExamMode.StateMessage(left == 0 ? null : left));
-        }
-
-        // Her bağlantıda server_info'dan sonra bir kez (sunucu exam_mode duyurduysa): sunucu sınav durumunu bağlantı
-        // başında öğrenir (sınavda değilken de).
-        internal async Task ReportExamStateOnConnectAsync()
-        {
-            if (_examStateReported || Handshake.Supports(ExamMode.Feature) != true) return;
-            _examStateReported = true;
-            await SendExamStateAsync(reply: false);
-        }
+        // Tepsi bağlantısı, set_capabilities, server_info, sınav döngüsü ve testler buradan çağırır (bkz. ExamHandler)
+        internal static string ExamTrayMessage(ExamSettings settings) => ExamHandler.ExamTrayMessage(settings);
+        internal Task HandleExamModeAsync(JsonElement root) => _exam.HandleExamModeAsync(root);
+        internal Task EndExamAsync(string source, bool reply = false) => _exam.EndExamAsync(source, reply);
+        internal Task ReportExamStateOnConnectAsync() => _exam.ReportExamStateOnConnectAsync();
+        internal Task<bool> ExamTickAsync(DateTimeOffset now, string refreshReason) => _exam.ExamTickAsync(now, refreshReason);
 
         // 2 sn'de bir: süre doldu mu, engelli uygulamalar; 2 dk'da bir ve ağ adresi değişince: izin listesi çözümü
         private async Task ExamLoopAsync(CancellationToken token)
         {
-            System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += (_, _) => _examNetworkChanged = true;
+            // Süreç geneli olay: Worker atılınca bırakılır (bkz. Dispose)
+            System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnExamNetworkAddressChanged;
             DateTime lastRefresh = DateTime.UtcNow;
             while (!token.IsCancellationRequested)
             {
@@ -610,59 +470,7 @@ namespace POpsAgent
             }
         }
 
-        // Bir tur: sınav yeteneği yerel olarak kapalıysa (EXAM_ENABLED=0 ile yeniden kurulum) ya da süre dolduysa
-        // (sunucuya ulaşılamasa da) biter; yoksa engelli uygulamalar kapatılır, refreshReason verilmişse izin listesi
-        // yeniden çözülür. Dönen: sınav bu turda bitti mi.
-        internal async Task<bool> ExamTickAsync(DateTimeOffset now, string refreshReason)
-        {
-            ExamSettings settings = ExamMode.IsActive ? ExamMode.Load() : null;
-            if (settings == null) return false;
-            bool allowed = AgentCapabilities.ExamEnabled;
-            if (!allowed || ExamMode.Expired(settings, now))
-            {
-                await EndExamAsync(allowed ? "until" : "capability");
-                return !ExamMode.IsActive;
-            }
-            StopBlockedApps(settings);
-            if (refreshReason != null) await ExamMode.RefreshAsync(_serverUrl, refreshReason);
-            return false;
-        }
-
-        private void StopBlockedApps(ExamSettings settings)
-        {
-            if (settings.BlockApps.Count == 0) return;
-            Process[] all = Process.GetProcesses();
-            try
-            {
-                var candidates = all.Select(p =>
-                {
-                    try { return (Pid: p.Id, Name: p.ProcessName, Session: p.SessionId); }
-                    catch (InvalidOperationException) { return (Pid: p.Id, Name: (string)null, Session: 0); }
-                }).ToList();
-                foreach (int pid in ExamMode.ProcessesToStop(candidates, settings.BlockApps))
-                {
-                    Process process = all.First(p => p.Id == pid);
-                    string app = candidates.First(c => c.Pid == pid).Name + ".exe";
-                    try
-                    {
-                        ExamMode.StopProcess(process);
-                        bool first;
-                        lock (_examStoppedLogged) first = _examStoppedLogged.Add(app);
-                        if (first)
-                        {
-                            LocalAudit.Write(LocalAudit.ExamAppStopped(app, pid));
-                            POpsHelpers.Log("EXAM", $"Sınav modunda {app} kapatıldı (PID {pid}).");
-                        }
-                        ToTray("EXAM_APP_BLOCKED:" + app);
-                    }
-                    catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception) { }
-                }
-            }
-            finally
-            {
-                foreach (Process p in all) p.Dispose();
-            }
-        }
+        private void OnExamNetworkAddressChanged(object sender, EventArgs e) => _examNetworkChanged = true;
 
         // 4409: sunucu bu kimliği başka bir bilgisayarda bağlı buldu (kopyalanmış kurulum, asıl cihaz bağlı).
         // Olay Günlüğüne çalışma başına bir kez yazılır; log her kopuşta.
@@ -685,7 +493,7 @@ namespace POpsAgent
             _heartbeatSent = false;
             _forwardedProgress = null;
             // exam_state bu bağlantıda server_info'dan sonra yeniden bildirilir
-            _examStateReported = false;
+            _exam.OnCommandSocketOpened();
         }
 
         // Bu bağlantıda ilk heartbeat gitti mi (sunucu cihazı ilk mesajın dna_payload'ından kaydeder)
@@ -728,6 +536,9 @@ namespace POpsAgent
         public override void Dispose()
         {
             DnsPolicyMonitor.Release(_dnsQuarantine, _dnsErrorReporter);
+            // Sınav döngüsünün ağ olayı ve sınav giriş/çıkış kilidi (bkz. ExamLoopAsync, ExamHandler)
+            System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnExamNetworkAddressChanged;
+            _exam.Dispose();
             base.Dispose();
             GC.SuppressFinalize(this);
         }
@@ -1120,12 +931,10 @@ namespace POpsAgent
             new WingetInstallHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write),
             new CapabilitiesHandler(_vision, Power, () => _trayPipe, TrySendCommandMessageAsync, LocalAudit.Write, EndExamIfCapabilityOffAsync),
             new VisionHandler(_vision, _gate, () => _trayPipe),
-            // a4: ExamHandler, FileTransferHandler; uzaktan güç işlemi ve kullanıcıya mesaj (yalnızca X-Agent-Features'ta
-            // duyurulduğu için gelir)
-            new DelegateHandler(command => HandleExamModeAsync(command.Root), "exam_mode"),
-            new DelegateHandler(command => HandleFileTransferAsync(command.Action, command.Root, command.Stopping), "file_push", "file_pull"),
-            new DelegateHandler(command => Power.HandleAsync(command.Root, command.Stopping), "power"),
-            new DelegateHandler(command => Messages.HandleAsync(command.Root, command.Stopping), "user_message"),
+            _exam,
+            _files,
+            new PowerHandler(Power),
+            new UserMessageHandler(Messages),
         }, remoteInput: _remoteInput);
 
         // Ön plandaki uygulamanın adı (tepsiden; pencere başlığı gönderilmez) ve karantina durumu. Sunucu (anahtarlı
