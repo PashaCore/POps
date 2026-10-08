@@ -38,7 +38,8 @@ Kısacası: **ders** Veyon'da, **laboratuvarın kendisi** POps'ta.
 
 ### Portlar çakışmaz
 
-POps ajanı bilgisayarda hiçbir ağ portu dinlemez. Sunucuya kendisi, dışa doğru 443 numaralı porttan bağlanır.
+POps ajanı bilgisayarda hiçbir ağ portu dinlemez (tek istisna aşağıdaki, varsayılan olarak kapalı eş önbelleğidir).
+Sunucuya kendisi, dışa doğru 443 numaralı porttan bağlanır.
 Veyon ise öğrenci bilgisayarında bir port dinler, öğretmen bilgisayarı ona bağlanır. İkisinin kullandığı portlar
 ayrıdır:
 
@@ -48,13 +49,14 @@ ayrıdır:
 | Veyon Master | Öğretmen bilgisayarı | TCP 11400 (ekran yansıtma, demo sunucusu) | Öğrenci bilgisayarlarına TCP 11100 |
 | POps ajanı (servis ve tepsi) | Öğrenci bilgisayarı | Yok | POps sunucusuna TCP 443: komut kanalı ve gerektiğinde Vision kanalı (WebSocket, TLS) |
 | POps servis ile tepsi arası | Öğrenci bilgisayarı | Ağ portu değil: yerel adlandırılmış kanal `POpsTrayPipe` | — |
+| POps eş önbelleği (isteğe bağlı) | Öğrenci bilgisayarı | Yalnızca "Sınıf içinde eşten dağıt" açıkken ve bir güncelleme sürerken: TCP 8817, yalnızca yerel alt ağdan, en çok 2 saat | Aynı labdaki başka bir bilgisayara TCP 8817 (güncelleme paketini almak için) |
 | POps Wake-on-LAN | Sunucu (ve aynı labdaki açık bir bilgisayar) | — | UDP 9, yerel ağa yayın |
 | POps sunucusu | Okuldaki Linux sunucu | 443 (HTTPS) ve 80 (HTTPS'e yönlendirme); backend yalnızca `127.0.0.1:8000` | — |
 
 Veyon port numaraları Veyon'un varsayılanlarıdır ve Veyon Configurator'da değiştirilebilir
 ([Veyon belgeleri](https://docs.veyon.io/en/latest/admin/troubleshooting.html)). Veyon, varsayılan ayarıyla
-Windows Güvenlik Duvarı'na kendi istisnasını ekler. POps ise güvenlik duvarına yalnızca karantina sırasında kural
-ekler (aşağıya bakın). POps tarafındaki ayrıntılar: [`docs/agent.md`](../agent.md),
+Windows Güvenlik Duvarı'na kendi istisnasını ekler. POps ise güvenlik duvarına yalnızca karantina ve sınav modu
+sırasında, bir de eş önbelleği açıkken ("POps Peer Cache" kural grubu) kural ekler (aşağıya bakın). POps tarafındaki ayrıntılar: [`docs/agent.md`](../agent.md),
 [`docs/getting-started.md`](../getting-started.md#what-you-need).
 
 ### Kurulum sırası
@@ -115,9 +117,9 @@ ekler (aşağıya bakın). POps tarafındaki ayrıntılar: [`docs/agent.md`](../
 - **Ekranı iki araç da görebilir; gerekmiyorsa birini kapatın.** Öğretmenlerin Veyon kullandığı bir labda BT'nin de
   ekran görmesi gerekmiyorsa POps Vision'ı kapatabilirsiniz:
   - kurulumda `VISION_ENABLED=0`: bilgisayarın kendisinde kilitlenir, sunucu geri açamaz;
-  - ya da sunucuda o laba özel `vision` modülünü kapatarak: geri açılabilir. Bunun için bugün panelde bir sayfa
-    yoktur; superadmin `POST /api/modules/vision` ile `{"enabled": false, "lab": "<lab adı>"}` gönderir
-    ([`docs/api.md`](../api.md#modules-and-install-profiles)).
+  - ya da panelde **Sistem → Modüller**'de **Uzaktan ekran (Vision)** modülünü o lab için **Kapalı** yaparak (yalnızca
+    superadmin): geri açılabilir. Aynı ayar API'den de yapılır: `POST /api/modules/vision` ile
+    `{"enabled": false, "lab": "<lab adı>"}` ([`docs/api.md`](../api.md#modules-and-install-profiles)).
 - **Şeffaflık kuralları araca göre değişir.** POps'un onay, duyuru ve "son 30 gün" listesi yalnızca POps
   oturumları için geçerlidir. Veyon oturumunda öğrencinin ne gördüğü Veyon'un kendi ayarlarına bağlıdır.
 - **KVKK aydınlatma metninde ikisini de anın.** Öğretmenin ders sırasında Veyon ile ekran izleyebildiğini, BT'nin

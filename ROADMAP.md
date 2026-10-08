@@ -110,7 +110,7 @@ tagged release.
   existing servers get a new virtual environment during the update (0.1.22)
 - [x] **Offline panel:** fonts and icons bundled with the panel, no requests to third-party hosts (0.1.22)
 - [x] **API input checks:** unknown fields and unknown target modes refused instead of ignored (0.1.22)
-- [x] **Release rhythm:** weekly releases with a short operator summary on top; signed release tags (0.1.22)
+- [x] **Release rhythm:** at most one planned release a week (security fixes in between), with a short operator summary on top; signed release tags (0.1.22)
 - [x] Organisation name and logo on the sign-in page; Docker images on GHCR; OpenSSF Scorecard (0.1.22)
 
 ### After the 0.1.21 reviews (0.1.23)
@@ -308,7 +308,6 @@ Whatever the choice, a second maintainer with review and release rights would re
 
 ## Later (not scheduled)
 
-- Active Directory / LDAP sign-in for the panel
 - Policy synchronisation similar to Group Policy
 - Plugin SDK for backend and agent modules
 - macOS agent

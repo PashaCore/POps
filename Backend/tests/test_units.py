@@ -1004,8 +1004,10 @@ def test_exam():
     chk(exam["active"] and exam["remaining_seconds"] == 600 and exam["until"] == int(now) + 600
         and exam["allow"] == ["sinav.meb.gov.tr"], "kaydın API biçimi")
     msg = exams.agent_message(exam)
+    sent_now = msg.pop("now", None)
     chk(msg == {"action": "exam_mode", "enabled": True, "allow": ["sinav.meb.gov.tr"], "until": int(now) + 600,
                 "message": "m", "block_apps": []}, "ajan mesajı sözleşmedeki biçimde")
+    chk(isinstance(sent_now, int) and abs(sent_now - time.time()) < 60, "ajan mesajı sunucunun saatini (now) taşıyor")
     chk(exams.DISABLE == {"action": "exam_mode", "enabled": False}, "kapatma mesajı")
     chk(exams._ts(True) is None and exams._ts("1") is None and exams._ts(1) is None
         and exams._ts(now).timestamp() == now, "ajanın zamanı yalnızca makul unix sayısı")

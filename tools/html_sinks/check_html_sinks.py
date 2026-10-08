@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Panelde HTML'e yazılan yerleri kaçırılmamış veri için tarar (CI: dashboard işi). Yalnızca standart
-kütüphane, Python 3.9+.
+kütüphane, Python 3.10+.
 
 Taranan: Dashboard/*.php, Dashboard/includes/*.php, Dashboard/assets/*.js ve sayfa betikleri
 Dashboard/assets/pages/*.js (assets/vendor hariç);
@@ -34,6 +34,9 @@ Anahtar, bulgunun bulunduğu satırın boşlukları sadeleştirilmiş metninin S
 satır kayınca bozulmaz, satırın kendisi değişince yeniden inceleme ister. "func:ad" o dosyada ad(...)
 çağrısının güvenli HTML döndürdüğünü, "sink:ad/N" ad(...)'ın N. (0'dan) argümanını HTML olarak
 yazdığını bildirir. Kullanılmayan izin satırı da hatadır.
+
+Örnek:
+    python3 tools/html_sinks/check_html_sinks.py
 """
 import argparse
 import hashlib

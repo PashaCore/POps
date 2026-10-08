@@ -370,10 +370,21 @@ namespace POps.Tests
         private static FieldInfo StaticState(FieldInfo field)
         {
             if (field == null || !IsScanned(field.Module.Assembly) || IsCompilerGenerated(field.DeclaringType)) return null;
-            if (field.DeclaringType == typeof(StaticAccessScanner)) return null;
+            if (field.DeclaringType == typeof(StaticAccessScanner) || IsCoverageTracker(field.DeclaringType)) return null;
             if (field.IsLiteral || field.IsDefined(typeof(ThreadStaticAttribute), false)) return null;
             if (field.IsInitOnly && !IsMutableCollection(field.FieldType)) return null;
             return Resolve(() => field.Module.ResolveField(field.MetadataToken)) ?? field;
+        }
+
+        // Kapsam ölçümünün (CI'da coverlet, --collect "XPlat Code Coverage") her derlemeye eklediği sayaç türü:
+        // <Derleme>_<guid> adında, statik HitsArray ve RecordHit ile. Testlerin paylaştığı durum değil; filtrelenmezse
+        // CI'da ölçülen her sınıf ona dokunuyor görünür
+        private static bool IsCoverageTracker(Type type)
+        {
+            if (type == null) return false;
+            if (type.Namespace != null && type.Namespace.StartsWith("Coverlet.", StringComparison.Ordinal)) return true;
+            int cut = type.Name.LastIndexOf('_');
+            return cut > 0 && Guid.TryParse(type.Name.Substring(cut + 1), out _);
         }
 
         private static void SetDepth(List<FieldInfo> stack, int depth)

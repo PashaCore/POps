@@ -11,10 +11,13 @@ POPS_HEALTH_URL=http://127.0.0.1:8000/api/health
 # Panel .env'i backend dizini dışındaysa (ör. panel başka bir web kökünden sunuluyorsa)
 POPS_PANEL_ENV=
 
-# Yedeklerin yeri ve saklama süresi (en yeni KEEP_MIN yedek her zaman kalır)
+# Yedeklerin yeri ve saklama: en yeni KEEP_MIN yedek, KEEP_DAYS günden yeni olanlar (0: gün kuralı yok) ve
+# yedeği olan son KEEP_WEEKLY haftanın her birinin en yeni yedeği kalır; gerisi silinir.
+# Disk darsa: KEEP_DAYS=0 ile "son 3 gece + 4 haftalık" kalır.
 BACKUP_DIR=/var/backups/pops
-KEEP_DAYS=14
 KEEP_MIN=3
+KEEP_DAYS=7
+KEEP_WEEKLY=4
 
 # Başka bir makineye kopya (önerilir: sunucu diski ölürse yedek de gider). ssh anahtarıyla, parolasız:
 #   RSYNC_TARGET=yedek@nas.okul.local:/yedek/pops

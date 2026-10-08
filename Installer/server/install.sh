@@ -179,7 +179,7 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now pops.service
 
-echo "==> Gece yedeği: pops-backup.timer (/var/backups/pops, 14 gün)"
+echo "==> Gece yedeği: pops-backup.timer (/var/backups/pops; son 7 gün + 4 haftalık)"
 install -m 755 "$SRC/Installer/server/pops-backup" "$SRC/Installer/server/pops-restore" /usr/local/sbin/
 install -m 644 "$SRC/Installer/server/pops-backup.service" "$SRC/Installer/server/pops-backup.timer" /etc/systemd/system/
 install -d -m 755 /etc/pops

@@ -292,12 +292,14 @@ async def run(c, admin, superadmin, viewer, sockets):
     chk(exam.get("allow") == GOOD["allow"] and exam.get("block_apps") == ["cmd.exe", "powershell.exe"]
         and exam.get("started_by") == "exadmin" and exam.get("reason") == GOOD["reason"], "kayıt alanları")
     got = {pc: await expect_exam(sockets[pc]) for pc in (PC1, PC2, OLD)}
-    want_keys = {"action", "enabled", "allow", "until", "message", "block_apps"}
+    want_keys = {"action", "enabled", "allow", "until", "now", "message", "block_apps"}
     msg = got[PC1] or {}
     chk(all(got.values()), "sınıfın bağlı ajanları exam_mode aldı")
     chk(set(msg) == want_keys and msg.get("enabled") is True and msg.get("allow") == GOOD["allow"]
         and msg.get("message") == GOOD["message"] and msg.get("block_apps") == ["cmd.exe", "powershell.exe"]
-        and isinstance(msg.get("until"), int) and abs(msg["until"] - (started_at + 2400)) < 10,
+        and isinstance(msg.get("until"), int) and abs(msg["until"] - (started_at + 2400)) < 10
+        # now: sunucunun gönderdiği andaki saati; ajan kalan süreyi until - now ile bulur
+        and isinstance(msg.get("now"), int) and abs(msg["now"] - time.time()) < 30,
         "mesaj sözleşmedeki biçimde (%s)" % msg)
     chk(await expect_exam(sockets[PC3], 1.0) is None, "başka sınıftaki ajan almadı")
     until = msg.get("until")
