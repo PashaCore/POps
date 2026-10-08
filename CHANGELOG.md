@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Docs: release rhythm stated as it is.** README, README.tr, ROADMAP and the code-signing page said releases come out weekly, but 0.1.22 and 0.1.23 came out on the same day. They now say at most one planned release a week, with security fixes in between.
 - **Docs: tool scripts.** The docstrings of `tools/agent_simulator.py`, `tools/bench_charts.py`, `tools/html_sinks/check_html_sinks.py` and `tools/sign_release.py` give Python 3.10+ (the oldest version CI tests) and `python3 tools/…` examples that run from the repository root. Thanks to @RajGahoi (#90).
 - **Docs: Turkish contributions.** CONTRIBUTING has a short Turkish section, *Türkçe katkı*, and README.tr links the `good first issue` and new `türkçe` labels. Ten first issues are written in Turkish (translations of the FAQ, backup, troubleshooting and quick start guides; a Pardus test of the Linux agent; a spelling and terminology check of the panel's Turkish; a glossary; an exam mode guide for teachers; first-impression feedback on the demo; a review of the pilot school guide).
 - **Backups: weekly retention.** `pops-backup` now keeps the newest `KEEP_MIN` backups (3), every backup younger than `KEEP_DAYS` days (now 7, was 14; `0` turns the rule off) and the newest backup of each of the last `KEEP_WEEKLY` weeks (4), and deletes the rest. Each backup carries the agent packages kept on the server (about 80 MB per agent version), so with 14 nightly copies the folder kept growing. On a small disk, `KEEP_DAYS=0` keeps the last 3 nights plus 4 weekly backups. An existing `backup.conf` with `KEEP_DAYS=14` still keeps two weeks. CI checks the rules on dated folders.
@@ -22,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Also:** the lab peer cache, updated requirements and known limitations, the Linux and Pardus status, 0.1.22 and 0.1.23 in the release history, test counts from the release CI run, and new screenshots from the public demo (`screenshots/v0.1.23/`).
 - **Docs: SECURITY.md** lists the 0.1.23 controls and four new residual risks: the peer cache port when enabled, Redis inside the trust boundary in multi-worker mode, trust in the directory or SSO provider, and fetched files kept for 7 days.
 - **Docs: CONTRIBUTING.md**'s repository layout and CI tables match `ci.yml` (Linux agent jobs, the Redis job, fuzzing, the lock check, JavaScript unit tests, pytest).
+
+### Removed
+
+- The 14 old panel screenshots in `screenshots/light/`; nothing linked to them since the README moved to `screenshots/v0.1.23/`.
 
 ### Fixed
 
