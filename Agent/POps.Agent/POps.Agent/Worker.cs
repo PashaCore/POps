@@ -52,26 +52,13 @@ namespace POpsAgent
 
         private ClientWebSocket _commandWs;
         private bool _commandUsesDeviceSecret;
-        private ClientWebSocket _visionWs;
         private readonly SemaphoreSlim _wsCommandLock = new(1, 1);
         private readonly SemaphoreSlim _wsVisionLock = new(1, 1);
-        // Vision v2: ikili kareler, görüntüleyici denetimi, pano (bkz. VisionRelay)
-        private readonly VisionRelay _visionRelay;
+        // Vision oturumu: tünel, onay, ekran yakalama, Vision v2 (bkz. VisionSession); "remote_input" ve ekran önizlemesi
+        private readonly VisionSession _vision;
+        private readonly RemoteInputHandler _remoteInput;
 
         private TrayPipeServer _trayPipe;
-        private volatile bool _isVisionStreamActive;
-        // Uzaktan fare/klavye yalnızca kullanıcının tepsi üzerinden onayladığı (ya da zorunlu oturumda bildirimin
-        // gösterildiği) Vision oturumu açıkken uygulanır. Sunucu ele geçirilse bile yerel onay olmadan girdi yok.
-        private volatile bool _visionSessionApproved;
-        private string _visionSessionId;
-        private string _visionRequestedBy;
-        private string _visionReason;
-        private bool _visionUserApproved;
-        private bool _visionAuditActive;
-        private bool _pendingVisionMandatory;
-        // Bu oturumda tepsinin oturum bildirimi kuruldu (oturum bilgisayar kilitliyken başladı; bkz. OnVisionStartedLocked)
-        private bool _visionNoticeArmed;
-        private TaskCompletionSource<byte[]> _thumbnailTcs;
 
 
         private object _cachedDna;
@@ -151,7 +138,8 @@ namespace POpsAgent
             Results = new ResultSpool(SecureStore.PathOf(ResultSpool.FileName));
             _outbox = new ResultOutbox(Handshake, Results, TrySendCommandMessageAsync);
             _gate = new CapabilityGate(TrySendCommandMessageAsync, AgentModules.IsEnabled, TimeProvider.System);
-            _visionRelay = new VisionRelay(SendVisionBinaryAsync, SendVisionTextAsync, ToTray);
+            _vision = new VisionSession(() => _hwId, _pcName, _serverUrl, _gate, Handshake, ToTray, () => _trayPipe, Audit, _wsVisionLock);
+            _remoteInput = new RemoteInputHandler(_vision, _gate, () => _hwId, () => _trayPipe, _wsCommandLock);
             Power = new PowerActions(SendTaskResultAsync, taskId => DenyCapabilityAsync(PowerActions.Capability, PowerActions.ActionName, taskId),
                 ToTray, TrayInConsoleSession);
             Messages = new UserMessages(SendTaskResultAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
@@ -430,10 +418,10 @@ namespace POpsAgent
         // tuşları bırakır (eskiden borunun kapanması bunu sağlıyordu).
         internal async Task OnCommandConnectionLostAsync()
         {
-            bool visionActive = _isVisionStreamActive || _visionSessionApproved || _visionWs != null;
-            _visionSessionApproved = false;
+            bool visionActive = _vision.StreamActive || _vision.SessionApproved || _vision.HasTunnel;
+            _vision.RevokeApproval();
             if (visionActive) _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
-            await DisconnectVisionTunnelAsync();
+            await _vision.DisconnectVisionTunnelAsync();
         }
 
         // ------------------------------------------------------------------ dosya aktarımı (bkz. FileTransfer)
@@ -850,11 +838,11 @@ namespace POpsAgent
                 : $"Sunucu modülleri değişti: kapatılan {closed}; açılan {opened}.");
             LocalAudit.Write(LocalAudit.ModulesChanged(change.Closed, change.Opened));
 
-            if (change.Closed.Contains(AgentModules.Vision) && (_isVisionStreamActive || _visionWs != null))
+            if (change.Closed.Contains(AgentModules.Vision) && (_vision.StreamActive || _vision.HasTunnel))
             {
-                _visionSessionApproved = false;
+                _vision.RevokeApproval();
                 _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
-                _ = DisconnectVisionTunnelAsync();
+                _ = _vision.DisconnectVisionTunnelAsync();
             }
             if (change.Closed.Contains(AgentModules.Helpdesk) || change.Opened.Contains(AgentModules.Helpdesk)) SyncTrayModules();
             if (change.Opened.Contains(AgentModules.Software)) _software?.ForgetLastReport();
@@ -902,7 +890,7 @@ namespace POpsAgent
                 }
                 else if (message.StartsWith("REJECT_VISION_TUNNEL:", StringComparison.Ordinal))
                 {
-                    _visionSessionApproved = false;
+                    _vision.RevokeApproval();
                     string sessionId = message.Split(':')[1];
                     var payload = new { type = "vision_rejected", session_id = sessionId, hw_id = _hwId };
                     byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
@@ -917,9 +905,9 @@ namespace POpsAgent
                 }
                 else if (message == "STOP_VISION_TUNNEL")
                 {
-                    _visionSessionApproved = false;
+                    _vision.RevokeApproval();
                     _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
-                    _ = DisconnectVisionTunnelAsync();
+                    _ = _vision.DisconnectVisionTunnelAsync();
                 }
                 else if (message.StartsWith("UNLOCK_BYPASS:", StringComparison.Ordinal))
                 {
@@ -927,11 +915,11 @@ namespace POpsAgent
                 }
                 else if (message.StartsWith("VISION_MONITORS:", StringComparison.Ordinal))
                 {
-                    if (_isVisionStreamActive && BinaryVision) _ = _visionRelay.ForwardMonitorsAsync(message.Substring("VISION_MONITORS:".Length));
+                    if (_vision.StreamActive && _vision.BinaryVision) _ = _vision.Relay.ForwardMonitorsAsync(message.Substring("VISION_MONITORS:".Length));
                 }
                 else if (message.StartsWith("CLIPBOARD:", StringComparison.Ordinal))
                 {
-                    _ = _visionRelay.ForwardClipboardAsync(message.Substring("CLIPBOARD:".Length), ClipboardAllowed);
+                    _ = _vision.Relay.ForwardClipboardAsync(message.Substring("CLIPBOARD:".Length), _vision.ClipboardAllowed);
                 }
                 else if (message.StartsWith("TICKET_CREATE:", StringComparison.Ordinal))
                 {
@@ -951,44 +939,22 @@ namespace POpsAgent
                 }
             };
 
+            // JPEG kare: önce bekleyen ekran önizlemesi (RemoteInputHandler), yoksa eski (JSON) yayının karesi (VisionSession)
             _trayPipe.OnFrameReceived += async (jpegBytes) =>
             {
-                var tcs = Interlocked.Exchange(ref _thumbnailTcs, null);
-                if (tcs != null)
-                {
-                    tcs.TrySetResult(jpegBytes);
-                    return;
-                }
-                
-                if (!_isVisionStreamActive) return;
-                
-                var localWs = _visionWs;
-                if (localWs == null || localWs.State != WebSocketState.Open) return;
-                
-                try
-                {
-                    string base64Image = Convert.ToBase64String(jpegBytes);
-                    var framePayload = new { type = "stream_frame", hw_id = _hwId, hostname = _pcName, image = base64Image };
-                    byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(framePayload));
-                    
-                    if (await _wsVisionLock.WaitAsync(1500))
-                    {
-                        try { await localWs.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None); }
-                        finally { _wsVisionLock.Release(); }
-                    }
-                }
-                catch { }
+                if (_remoteInput.TryCompleteSnapshot(jpegBytes)) return;
+                await _vision.ForwardStreamFrameAsync(jpegBytes);
             };
 
             // Vision v2 karesi (işaretli): yalnızca yayın açıkken ve sunucu ikili kareyi destekliyorsa
             _trayPipe.OnVisionFrame += data =>
             {
-                if (_isVisionStreamActive && BinaryVision) _ = _visionRelay.ForwardFrameAsync(data);
+                if (_vision.StreamActive && _vision.BinaryVision) _ = _vision.Relay.ForwardFrameAsync(data);
             };
 
             _trayPipe.OnDisconnected += () =>
             {
-                _visionSessionApproved = false;
+                _vision.RevokeApproval();
                 _activeApp = null;
             };
 
@@ -1041,9 +1007,9 @@ namespace POpsAgent
 
         // Testler: Vision tünelinin açılması (gerçek sunucuya bağlanılmaz; true: tünel açıldı), Vision olaylarının Olay
         // Günlüğü kaydı ve sunucunun olay günlüğüne giden kayıt (POST /api/logs)
-        internal Func<Task<bool>> VisionTunnelOverride { get; set; }
+        internal Func<Task<bool>> VisionTunnelOverride { get => _vision.TunnelOverride; set => _vision.TunnelOverride = value; }
         internal Action<LocalAuditEvent> AuditOverride { get; set; }
-        internal Func<AgentLogPayload, Task> DeviceLogOverride { get; set; }
+        internal Func<AgentLogPayload, Task> DeviceLogOverride { get => _vision.DeviceLogOverride; set => _vision.DeviceLogOverride = value; }
 
         private void Audit(LocalAuditEvent item)
         {
@@ -1051,189 +1017,11 @@ namespace POpsAgent
             else LocalAudit.Write(item);
         }
 
-        // Tepsi oturumu başlattı (kullanıcı kabul etti ya da zorunlu oturumun geri sayımı bitti). Tünel açılmadıysa (Vision
-        // kapalı, şifresiz sunucu, bağlantı hatası) ekran yakalanmaz. İstek doğrulanmış tepsiden, kullanıcı onayından sonra
-        // geldiği için oturum onaylıdır.
-        internal async Task StartVisionFromTrayAsync(string message)
-        {
-            (int fps, bool lockedAtStart) = VisionSessionStart.ParseTunnelMessage(message);
-            await ConnectVisionTunnelAsync(CancellationToken.None);
-            if (!_isVisionStreamActive) return;
-            _visionSessionApproved = true;
-            _visionUserApproved = !_pendingVisionMandatory;
-            if (!_visionAuditActive)
-            {
-                Audit(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, _visionUserApproved));
-                _visionAuditActive = true;
-            }
-            // Bildirim yakalamadan önce kurulur: tepsi kullanıcının masaüstünü ancak bildirim ekrandayken yakalar
-            if (lockedAtStart) OnVisionStartedLocked();
-            StartCapture(fps);
-        }
+        // Tepsi oturumu başlattı (START_VISION_TUNNEL; bkz. VisionSession)
+        internal Task StartVisionFromTrayAsync(string message) => _vision.StartVisionFromTrayAsync(message);
 
-        // Karar: docs/vision.md "Secure desktop", karar 5. Oturum başlarken kullanıcının masaüstü ekranda değildi (kilit,
-        // oturum açma, UAC ya da Ctrl+Alt+Del ekranı; geri sayım görünmedi). Sessiz oturum olmasın: Olay Günlüğüne 1150,
-        // sunucunun olay günlüğüne kayıt (mevcut POST /api/logs, protokol değişmedi) ve tepside oturum bildirimi; tepsi onu
-        // kullanıcının masaüstü geri gelince gösterir, oturum bitene kadar (DisconnectVisionTunnelAsync) açık tutar.
-        // Her kilitli başlatma için bir kez (tepsi yeniden bağlanmış olabilir, bildirimi yeniden kurulmalı).
-        private void OnVisionStartedLocked()
-        {
-            bool mandatory = _pendingVisionMandatory;
-            POpsHelpers.Log("VISION", "Vision oturumu bilgisayar kilitliyken başladı; kullanıcının masaüstü geri gelince oturum bildirimi gösterilecek.");
-            Audit(LocalAudit.VisionStartedWhileLocked(_visionSessionId, _visionRequestedBy, mandatory));
-            _visionNoticeArmed = true;
-            ToTray(VisionSessionNotice.OnMessage(new VisionNoticeInfo(_visionSessionId, _visionRequestedBy, _visionReason, mandatory)));
-            AgentLogPayload log = VisionLockedStartLog(_visionSessionId, _visionRequestedBy, mandatory);
-            _ = DeviceLogOverride != null
-                ? DeviceLogOverride(log)
-                : AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId), _hwId, log, "Kilitliyken başlayan Vision oturumu kaydı");
-        }
-
-        // Sunucuda sıradan bir olay günlüğü kaydı (agent_logs_v2); sunucu bu türe özel bir şey yapmaz
-        internal static AgentLogPayload VisionLockedStartLog(string sessionId, string requestedBy, bool mandatory) => new AgentLogPayload
-        {
-            LogType = "Security",
-            Message = "Vision oturumu bilgisayar kilitliyken başladı; kullanıcı masaüstüne dönünce oturum bildirimi gösterilir",
-            EventType = "agent.vision_locked_start",
-            Category = "vision",
-            Action = "vision_started_while_locked",
-            RiskLevel = "medium",
-            MetaData = new Dictionary<string, object>
-            {
-                ["session_id"] = LogText.Safe(sessionId, 100),
-                ["requested_by"] = LogText.Safe(requestedBy, 100),
-                ["mandatory"] = mandatory,
-            },
-        };
-
-        private async Task ConnectVisionTunnelAsync(CancellationToken token)
-        {
-            if (_visionWs != null && _visionWs.State == WebSocketState.Open) return;
-            if (!AgentCapabilities.VisionEnabled)
-            {
-                await DenyCapabilityAsync("vision", "vision_tunnel");
-                return;
-            }
-            if (!AgentModules.IsEnabled(AgentModules.Vision))
-            {
-                await DenyCapabilityAsync("vision", "vision_tunnel", reason: AgentModules.DisabledReason);
-                return;
-            }
-            if (VisionTunnelOverride != null)
-            {
-                _isVisionStreamActive = await VisionTunnelOverride();
-                return;
-            }
-            // Ekran akışı ve uzaktan girdi yalnızca şifreli kanaldan (bkz. POpsHelpers.IsSecureServerUrl). Tepsi
-            // START_VISION_TUNNEL'ı komut tüneli bağlı olmasa da isteyebildiği için burada ayrıca denetlenir.
-            if (!POpsHelpers.IsSecureServerUrl(_serverUrl))
-            {
-                POpsHelpers.Log("AGENT", "[GÜVENLİK] Vision tüneli açılmadı: ServerUrl şifresiz ve yerel değil.", true);
-                return;
-            }
-            string visionWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://") + $"/ws/vision/{_hwId}";
-            string secret = AgentCredentials.CurrentSecret ?? AgentCredentials.LoadSecret();
-            VisionAuthSelection auth = VisionChannel.SelectHeaders(secret, AgentCredentials.GetEnrollToken(), AppVersion);
-            if (!auth.CanConnect)
-            {
-                POpsHelpers.Log("AGENT", "[GÜVENLİK] Vision tüneli açılmadı: cihaz henüz kayıtlı değil (anahtar yok)", true);
-                await DenyCapabilityAsync("vision", "vision_tunnel", reason: "not_enrolled");
-                return;
-            }
-            var newWs = new ClientWebSocket();
-            newWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(visionWsUrl));
-            foreach (KeyValuePair<string, string> header in auth.Headers)
-                newWs.Options.SetRequestHeader(header.Key, header.Value);
-            try
-            {
-                await newWs.ConnectAsync(new Uri(visionWsUrl), token);
-                var oldWs = Interlocked.Exchange(ref _visionWs, newWs);
-                if (oldWs != null && oldWs.State == WebSocketState.Open) { try { await oldWs.CloseAsync(WebSocketCloseStatus.NormalClosure, "Değişti", CancellationToken.None); } catch { } oldWs.Dispose(); }
-                _isVisionStreamActive = true;
-                _ = ReceiveVisionInputsAsync(_visionWs, token);
-            }
-            catch (Exception ex)
-            {
-                POpsHelpers.Log("AGENT", $"[!] Vision Tüneli açılamadı: {ex.Message}", true);
-                ApplyVisionClose(newWs.CloseStatus);
-                newWs.Dispose();
-            }
-        }
-
-        private async Task DisconnectVisionTunnelAsync()
-        {
-            _isVisionStreamActive = false;
-            _visionSessionApproved = false;
-            var ws = Interlocked.Exchange(ref _visionWs, null);
-            if (ws != null) { try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Yayın Kesildi", CancellationToken.None); } catch { } ws.Dispose(); }
-            if (_visionAuditActive)
-            {
-                Audit(LocalAudit.VisionFinished(_visionSessionId, _visionRequestedBy, _visionUserApproved));
-                _visionAuditActive = false;
-            }
-            // Oturum bitti: kilitliyken başlayan oturumun bildirimi kapanır (tepsi STOP_CAPTURE'da da kapatır; bu yol
-            // sunucunun tüneli kapattığı durumu da kapsar)
-            if (_visionNoticeArmed)
-            {
-                _visionNoticeArmed = false;
-                ToTray(VisionSessionNotice.Off);
-            }
-        }
-
-        // Mesaj boyu sınırları (parçalı mesajlar EndOfMessage'a kadar birleştirilir; bkz. WebSocketMessages)
+        // Komut mesajının boyu sınırı (parçalı mesajlar EndOfMessage'a kadar birleştirilir; bkz. WebSocketMessages)
         private const int MaxCommandMessageBytes = 8 * 1024 * 1024;
-        private const int MaxVisionMessageBytes = 1024 * 1024;
-
-        // Uzaktan fare/klavye olayı (input_type taşıyan remote_input). Ekran önizlemesi ve FPS ayarı girdi değildir.
-        private static bool IsInputEvent(JsonElement root) => root.TryGetProperty("input_type", out _);
-
-        // Reddedilirse capability_denied'ın yeteneği ve nedeni; yerel yetenek kilidi önce, sonra sunucu modülü, sonra onay
-        private (string Capability, string Reason) VisionDenial(bool isInputEvent)
-        {
-            if (AgentCapabilities.VisionEnabled && !AgentModules.IsEnabled(AgentModules.Vision)) return ("vision", AgentModules.DisabledReason);
-            return (VisionInputGate.DenialReason(AgentCapabilities.VisionEnabled, _visionSessionApproved, _isVisionStreamActive, isInputEvent), null);
-        }
-
-        private async Task ReceiveVisionInputsAsync(ClientWebSocket ws, CancellationToken token)
-        {
-            var buffer = new byte[8192];
-            try
-            {
-                while (ws.State == WebSocketState.Open && _isVisionStreamActive)
-                {
-                    var (message, type) = await WebSocketMessages.ReceiveTextAsync(ws, buffer, MaxVisionMessageBytes, token);
-                    if (type == WebSocketMessageType.Close) break;
-                    using var doc = JsonDocument.Parse(message);
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "remote_input")
-                    {
-                        string targetDevice = root.GetProperty("device").GetString();
-                        if (targetDevice != _hwId) continue;
-                        var (denial, denialReason) = VisionDenial(IsInputEvent(root));
-                        if (denial != null) { await DenyCapabilityAsync(denial, "remote_input", reason: denialReason); continue; }
-                        _trayPipe?.SendCommandToDesktop(message);
-                    }
-                    else if (root.TryGetProperty("action", out _))
-                    {
-                        await HandleVisionControlAsync(root);
-                    }
-                }
-            }
-            catch (WebSocketMessages.TooLargeException ex) { POpsHelpers.Log("AGENT", $"[GÜVENLİK] Vision tüneli kapatıldı: {ex.Message}.", true); }
-            catch { }
-            finally
-            {
-                ApplyVisionClose(ws.CloseStatus);
-                await DisconnectVisionTunnelAsync();
-            }
-        }
-
-        // ------------------------------------------------------------------ Vision v2
-        // Sunucu ikili Vision karesini destekliyor mu (server_info "vision_binary"); desteklemiyorsa eski JSON kareler
-        internal bool BinaryVision => Handshake.Supports(VisionRelay.BinaryFeature) == true;
-
-        // Pano yalnızca kullanıcının kabul ettiği (zorunlu bildirimli değil), açık bir v2 oturumunda
-        private bool ClipboardAllowed => _isVisionStreamActive && _visionSessionApproved && _visionUserApproved && BinaryVision;
 
         // Testler: tepsiye giden mesajlar
         internal Action<string> TrayOverride { get; set; }
@@ -1276,79 +1064,9 @@ namespace POpsAgent
         private Task SendTaskResultAsync(int taskId, string output, int exitCode) =>
             SendResultAsync(taskId, new { type = "result", pc_name = _hwId, task_id = taskId, output, exit_code = exitCode });
 
-        internal void StartCapture(int fps)
-        {
-            if (!BinaryVision)
-            {
-                ToTray($"START_CAPTURE:{fps}");
-                return;
-            }
-            _visionRelay.Reset();
-            ToTray($"START_CAPTURE_V2:{fps}");
-            if (_visionUserApproved) ToTray("CLIPBOARD_SHARE:1");
-        }
-
-        // Görüntüleyiciden (oturumu tutan yönetici): select_monitor, set_quality, clipboard. Onaylı oturum gerekir.
-        internal async Task HandleVisionControlAsync(JsonElement root)
-        {
-            if (root.TryGetProperty("device", out JsonElement device) && device.ValueKind == JsonValueKind.String && device.GetString() != _hwId) return;
-            string action = root.TryGetProperty("action", out JsonElement a) && a.ValueKind == JsonValueKind.String ? a.GetString() : "vision_control";
-            var (denial, denialReason) = VisionDenial(isInputEvent: true);
-            if (denial != null)
-            {
-                await DenyCapabilityAsync(denial, action, reason: denialReason);
-                return;
-            }
-            string trayMessage = VisionRelay.TrayMessageFor(root, ClipboardAllowed, out LocalAuditEvent audit);
-            if (trayMessage == null)
-            {
-                POpsHelpers.Log("VISION", $"Görüntüleyici mesajı uygulanmadı ({LogText.Safe(action, 40)}): geçersiz, çok büyük ya da pano için kabul edilmiş oturum yok.");
-                return;
-            }
-            if (audit != null) Audit(audit);
-            ToTray(trayMessage);
-        }
-
-        private async Task<bool> SendVisionBinaryAsync(ReadOnlyMemory<byte> frame)
-        {
-            var ws = _visionWs;
-            if (ws == null || ws.State != WebSocketState.Open) return false;
-            if (!await _wsVisionLock.WaitAsync(1500)) return false;
-            try
-            {
-                await ws.SendAsync(frame, WebSocketMessageType.Binary, true, CancellationToken.None);
-                return true;
-            }
-            catch (Exception) { return false; }
-            finally { _wsVisionLock.Release(); }
-        }
-
-        private async Task<bool> SendVisionTextAsync(object payload)
-        {
-            var ws = _visionWs;
-            if (ws == null || ws.State != WebSocketState.Open) return false;
-            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
-            if (!await _wsVisionLock.WaitAsync(1500)) return false;
-            try
-            {
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
-                return true;
-            }
-            catch (Exception) { return false; }
-            finally { _wsVisionLock.Release(); }
-        }
-
-        private void ApplyVisionClose(WebSocketCloseStatus? status)
-        {
-            VisionCloseDecision decision = VisionChannel.OnClosed(status == null ? null : (int)status.Value);
-            if (decision.AuthenticationRejected)
-            {
-                LocalAudit.Write(LocalAudit.AuthenticationRejected("vision"));
-                POpsHelpers.Log("AGENT", "[GÜVENLİK] Sunucu Vision kanalında cihaz kimliğini reddetti (4401); tünel yeniden denenmeyecek.", true);
-            }
-            if (decision.ClearStream) _isVisionStreamActive = false;
-            if (decision.ClearApproval) _visionSessionApproved = false;
-        }
+        // Ekran yakalamanın başlatılması ve görüntüleyici denetimi (bkz. VisionSession)
+        internal void StartCapture(int fps) => _vision.StartCapture(fps);
+        internal Task HandleVisionControlAsync(JsonElement root) => _vision.HandleVisionControlAsync(root);
 
         private async Task ReceiveCommandsAsync(ClientWebSocket ws, CancellationToken stoppingToken)
         {
@@ -1400,126 +1118,15 @@ namespace POpsAgent
             new QuarantineHandler(() => _quarantine, _serverUrl, () => _hwId),
             new ExecuteHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, Power, Messages),
             new WingetInstallHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write),
-            // a3: CapabilitiesHandler, VisionHandler (RemoteInputHandler aşağıda)
-            new DelegateHandler(command => HandleSetCapabilitiesAsync(command.Root), "set_capabilities"),
-            new DelegateHandler(HandleVisionCommandAsync, "start_stream", "start_vision_session", "stop_stream"),
+            new CapabilitiesHandler(_vision, Power, () => _trayPipe, TrySendCommandMessageAsync, LocalAudit.Write, EndExamIfCapabilityOffAsync),
+            new VisionHandler(_vision, _gate, () => _trayPipe),
             // a4: ExamHandler, FileTransferHandler; uzaktan güç işlemi ve kullanıcıya mesaj (yalnızca X-Agent-Features'ta
             // duyurulduğu için gelir)
             new DelegateHandler(command => HandleExamModeAsync(command.Root), "exam_mode"),
             new DelegateHandler(command => HandleFileTransferAsync(command.Action, command.Root, command.Stopping), "file_push", "file_pull"),
             new DelegateHandler(command => Power.HandleAsync(command.Root, command.Stopping), "power"),
             new DelegateHandler(command => Messages.HandleAsync(command.Root, command.Stopping), "user_message"),
-        }, remoteInput: new DelegateHandler(HandleRemoteInputAsync, CommandDispatcher.RemoteInput));
-
-        // "type": "remote_input": ekran önizlemesi (get_thumbnail; yanıt geldiği soketten gider) ya da tepsiye giden
-        // uzaktan fare/klavye
-        private async Task HandleRemoteInputAsync(ServerCommand command)
-        {
-            string message = command.Raw;
-            JsonElement root = command.Root;
-            ClientWebSocket ws = command.Connection;
-            CancellationToken stoppingToken = command.Stopping;
-
-            string targetDevice = root.TryGetProperty("device", out var devProp) ? devProp.GetString() : "";
-            if (targetDevice != _hwId) return;
-
-            string act = root.TryGetProperty("action", out var actProp) ? actProp.GetString() : "";
-            // Ekran önizlemesi ve uzaktan fare/klavye Vision yeteneğidir
-            var (denial, denialReason) = VisionDenial(IsInputEvent(root));
-            if (denial != null)
-            {
-                await DenyCapabilityAsync(denial, string.IsNullOrEmpty(act) ? "remote_input" : act, reason: denialReason);
-                return;
-            }
-            if (act == "get_thumbnail")
-            {
-                _ = Task.Run(async () =>
-                {
-                    byte[] img = await CaptureSnapshotAsync(TimeSpan.FromSeconds(5));
-                    if (img != null && img.Length > 0)
-                    {
-                        var payload = new { type = "thumbnail", hw_id = _hwId, image = Convert.ToBase64String(img) };
-                        byte[] b = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
-                        await _wsCommandLock.WaitAsync();
-                        try { if (ws.State == WebSocketState.Open) await ws.SendAsync(new ArraySegment<byte>(b), WebSocketMessageType.Text, true, CancellationToken.None); }
-                        finally { _wsCommandLock.Release(); }
-                    }
-                }, stoppingToken);
-            }
-            else
-            {
-                _trayPipe?.SendCommandToDesktop(message);
-            }
-        }
-
-        // start_stream (eski), start_vision_session, stop_stream: önce Vision yeteneği, sonra Vision modülü
-        private async Task HandleVisionCommandAsync(ServerCommand command)
-        {
-            string message = command.Raw;
-            JsonElement root = command.Root;
-            string action = command.Action;
-            CancellationToken stoppingToken = command.Stopping;
-            if ((action == "start_stream" || action == "start_vision_session") && !AgentCapabilities.VisionEnabled)
-            {
-                await DenyCapabilityAsync("vision", action);
-            }
-            else if ((action == "start_stream" || action == "start_vision_session") && !AgentModules.IsEnabled(AgentModules.Vision))
-            {
-                await DenyCapabilityAsync("vision", action, reason: AgentModules.DisabledReason);
-            }
-            else if (action == "start_stream") {
-                if (!_visionAuditActive)
-                {
-                    _visionSessionId = null;
-                    _visionRequestedBy = null;
-                    _pendingVisionMandatory = true;
-                }
-                await ConnectVisionTunnelAsync(stoppingToken); 
-                int fps = root.TryGetProperty("fps", out var fProp) ? (fProp.ValueKind == JsonValueKind.Number ? fProp.GetInt32() : 2) : 2;
-                if (_isVisionStreamActive)
-                {
-                    if (!_visionAuditActive)
-                    {
-                        _visionUserApproved = false;
-                        Audit(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, false));
-                        _visionAuditActive = true;
-                    }
-                    StartCapture(fps);
-                }
-            }
-            else if (action == "stop_stream") { 
-                _trayPipe?.SendCommandToDesktop("STOP_CAPTURE"); 
-                await DisconnectVisionTunnelAsync(); 
-            }
-            else if (action == "start_vision_session")
-            {
-                _visionSessionId = root.TryGetProperty("session_id", out var session) && session.ValueKind == JsonValueKind.String ? session.GetString() : null;
-                _visionRequestedBy = root.TryGetProperty("requested_by", out var requester) && requester.ValueKind == JsonValueKind.String
-                    ? requester.GetString()
-                    : root.TryGetProperty("admin_name", out var admin) && admin.ValueKind == JsonValueKind.String ? admin.GetString() : null;
-                _pendingVisionMandatory = root.TryGetProperty("is_mandatory", out var mandatory) && mandatory.ValueKind == JsonValueKind.True;
-                _visionReason = root.TryGetProperty("reason", out var reasonProp) && reasonProp.ValueKind == JsonValueKind.String ? reasonProp.GetString() : null;
-                // Onay ya da geri sayım tepsidedir; oturum yalnızca tepsinin START_VISION_TUNNEL'ı ile başlar
-                ToTray(message);
-            }
-        }
-
-        private async Task<byte[]> CaptureSnapshotAsync(TimeSpan timeout)
-        {
-            if (_trayPipe == null) return null;
-            var tcs = new TaskCompletionSource<byte[]>();
-            var old = Interlocked.Exchange(ref _thumbnailTcs, tcs);
-            old?.TrySetCanceled();
-            try
-            {
-                _trayPipe.SendCommandToDesktop("CAPTURE_SNAPSHOT");
-                using var cts = new CancellationTokenSource(timeout);
-                cts.Token.Register(() => tcs.TrySetCanceled(), useSynchronizationContext: false);
-                return await tcs.Task;
-            }
-            catch { return null; }
-            finally { Interlocked.CompareExchange(ref _thumbnailTcs, null, tcs); }
-        }
+        }, remoteInput: _remoteInput);
 
         // Ön plandaki uygulamanın adı (tepsiden; pencere başlığı gönderilmez) ve karantina durumu. Sunucu (anahtarlı
         // bağlantıda) "quarantined" ile bekleyen kilit/açma isteğini tamamlar ya da yeniden gönderir; bekleyen istek
@@ -1537,7 +1144,7 @@ namespace POpsAgent
             agent_health = _health.Snapshot(
                 _trayPipe?.IsConnected == true,
                 AgentCapabilities.VisionEnabled,
-                _visionWs?.State == WebSocketState.Open,
+                _vision.TunnelOpen,
                 _quarantine.ScreenLocked,
                 _quarantine.NetworkIsolated,
                 _quarantine.LastIsolationError)
@@ -1560,25 +1167,10 @@ namespace POpsAgent
             finally { _wsCommandLock.Release(); }
         }
 
-        // Sunucunun "set_capabilities" isteği: yalnızca kapatma uygulanır (bkz. AgentCapabilities). Vision kapandıysa
-        // süren yayın hemen durdurulur. Son durum sunucuya "capabilities" olarak bildirilir. Sınav yeteneği kapandıysa
-        // süren sınav biter (exam_state ile).
-        private async Task HandleSetCapabilitiesAsync(JsonElement request)
+        // set_capabilities'ten sonra ("capabilities" gönderildi; bkz. CapabilitiesHandler): sınav yeteneği kapandıysa
+        // süren sınav biter (exam_state ile). a4'te sınav modu ExamHandler'a taşınınca bu da onunla gider.
+        private async Task EndExamIfCapabilityOffAsync()
         {
-            var changed = AgentCapabilities.ApplyServerRequest(request);
-            foreach (string capability in changed.Disabled)
-                LocalAudit.Write(LocalAudit.CapabilityChanged(capability.Replace("_enabled", "", StringComparison.Ordinal), true, false));
-            // Eş önbelleği kapandıysa önbellek silinir, sunum durur
-            if (changed.Disabled.Contains(AgentCapabilities.PeerCacheKey)) await PeerCache.SyncAsync();
-            if (!AgentCapabilities.VisionEnabled && _isVisionStreamActive)
-            {
-                _trayPipe?.SendCommandToDesktop("STOP_CAPTURE");
-                await DisconnectVisionTunnelAsync();
-            }
-            // Güç işlemleri kapandıysa süren geri sayım da durur
-            if (!AgentCapabilities.PowerEnabled && Power.CancelForDisabledCapability())
-                POpsHelpers.Log("AGENT", "Güç işlemleri kapatıldı; süren geri sayım durduruldu.");
-            await SendCommandMessageAsync(AgentCapabilities.StatusMessage());
             if (!AgentCapabilities.ExamEnabled && ExamMode.IsActive) await EndExamAsync("capability");
         }
 
