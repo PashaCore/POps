@@ -172,8 +172,9 @@ cmd_check() {
     local left
     left=$(days_left "$CERT")
     if [ "$left" -le "$threshold" ]; then
-        if [ "$left" -le 0 ]; then
-            echo "sertifika süresi doldu: $left gün kaldı (eşik: $threshold gün)"
+        # days_left aşağı yuvarlar: son 24 saatte 0 gösterir; süre gerçekten dolmuş mu, openssl söyler
+        if ! openssl x509 -checkend 0 -noout -in "$CERT" >/dev/null; then
+            echo "sertifika süresi doldu: $(( -left )) gün önce (eşik: $threshold gün)"
         else
             echo "sertifika yenileme zamanı yaklaştı: $left gün kaldı (eşik: $threshold gün)"
         fi

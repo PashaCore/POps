@@ -52,8 +52,9 @@ sudo pops-tls init pops.okul.local 10.10.0.5   # reissue with a new name or IP (
 ```
 
 Example cron job for external monitoring:
+
 ```bash
-0 6 * * * /usr/local/bin/pops-tls check || echo "POps TLS warning or failure" | mail -s "POps TLS Alert" admin@okul.local
+0 6 * * * /usr/local/sbin/pops-tls check || echo "POps TLS warning or failure" | mail -s "POps TLS Alert" admin@okul.local
 ```
 
 The server name must stay the same for the life of the agents: it is baked into every agent's `ServerUrl`.
