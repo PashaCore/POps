@@ -45,7 +45,8 @@ namespace POpsAgent
         private readonly AgentHealthTelemetry _health = new AgentHealthTelemetry();
         // Uzaktan komutlar (iptal ve servis durması işlemi sonlandırır)
         private CommandRunner _commandRunner = new CommandRunner();
-        private Task _slowInitialization;
+        // ExecuteAsync açılışta kurar; bağlantı döngüsü onu bekler (testler döngüyü açılış olmadan çalıştırır)
+        private Task _slowInitialization = Task.CompletedTask;
 
         // 🚀 ARTIK SABİT DEĞİL, HELPERS'TAN OKUNACAK
         private string _serverUrl;
@@ -315,8 +316,6 @@ namespace POpsAgent
                 return;
             }
 
-            string baseWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://");
-
             // Start background tasks
             _ = Task.Run(() => PolicyPollingLoop(stoppingToken), stoppingToken);
 
@@ -337,6 +336,15 @@ namespace POpsAgent
             _ = Task.Run(() => _helpdesk.PollLoopAsync(stoppingToken, () => _trayPipe?.IsConnected == true), stoppingToken);
             // Karantinada sunucunun adresi değişirse izin listesi yenilenir (bkz. NetworkIsolation)
             _ = Task.Run(() => IsolationRefreshLoopAsync(stoppingToken), stoppingToken);
+
+            await RunCommandConnectionAsync(stoppingToken);
+        }
+
+        // Sunucuya komut bağlantısı: bağlanır, heartbeat döngüsünü sürdürür, kopunca geri çekilip yeniden bağlanır (servis
+        // durana kadar). Testler sahte sunucuyla doğrudan çalıştırır.
+        internal async Task RunCommandConnectionAsync(CancellationToken stoppingToken)
+        {
+            string baseWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://");
 
             // Son sağlam bağlantıdan beri art arda başarısız bağlantı sayısı (bkz. ReconnectBackoff)
             int reconnectAttempt = 0;
