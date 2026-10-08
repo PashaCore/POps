@@ -929,7 +929,7 @@ namespace POpsAgent
             new QuarantineHandler(() => _quarantine, _serverUrl, () => _hwId),
             new ExecuteHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, Power, Messages),
             new WingetInstallHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write),
-            new CapabilitiesHandler(_vision, Power, () => _trayPipe, TrySendCommandMessageAsync, LocalAudit.Write, EndExamIfCapabilityOffAsync),
+            new CapabilitiesHandler(_vision, Power, () => _trayPipe, TrySendCommandMessageAsync, LocalAudit.Write, _exam.EndIfCapabilityOffAsync),
             new VisionHandler(_vision, _gate, () => _trayPipe),
             _exam,
             _files,
@@ -974,13 +974,6 @@ namespace POpsAgent
                 }
             }
             finally { _wsCommandLock.Release(); }
-        }
-
-        // set_capabilities'ten sonra ("capabilities" gönderildi; bkz. CapabilitiesHandler): sınav yeteneği kapandıysa
-        // süren sınav biter (exam_state ile). a4'te sınav modu ExamHandler'a taşınınca bu da onunla gider.
-        private async Task EndExamIfCapabilityOffAsync()
-        {
-            if (!AgentCapabilities.ExamEnabled && ExamMode.IsActive) await EndExamAsync("capability");
         }
 
         // capability_denied (bkz. CapabilityGate; dakikada bir sınırı tüm eylemlerde ortak)

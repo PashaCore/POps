@@ -98,6 +98,13 @@ namespace POpsAgent
             _toTray(ExamTrayMessage(ExamMode.Load()));
         }
 
+        // set_capabilities'ten sonra ("capabilities" gönderildi; bkz. CapabilitiesHandler): sınav yeteneği kapandıysa
+        // süren sınav biter (exam_state ile)
+        internal async Task EndIfCapabilityOffAsync()
+        {
+            if (!AgentCapabilities.ExamEnabled && ExamMode.IsActive) await EndExamAsync("capability");
+        }
+
         // source: "server", "until" (süre doldu; sunucuya ulaşılamasa da), "capability" (sınav yeteneği yerel olarak
         // kapalı: MSI EXAM_ENABLED=0 ile yeniden kurulum ya da set_capabilities). reply: exam_mode emrine yanıt.
         internal async Task EndExamAsync(string source, bool reply = false)
