@@ -83,8 +83,8 @@ Every release is approved by hand; nothing is signed automatically. Before appro
 - `CHANGELOG.md` has the section for that version;
 - the files in the request are the expected ones (names, product name, version).
 
-Releases are planned weekly. A fix for a security problem may get its own release in between; it goes through the
-same approval.
+At most one release a week is planned. A fix for a security problem may get its own release in between; it goes
+through the same approval.
 
 ## Key custody
 

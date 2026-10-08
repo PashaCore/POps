@@ -283,8 +283,9 @@ Manifest her zaman bilgisayarın kendi sunucusundan gelir; bir eşten gelen pake
 eşleşirse kabul edilir. Tasarım (İngilizce): [`docs/design/peer-cache.md`](docs/design/peer-cache.md).
 
 Sunucu kendini de aynı şekilde, sağlık kontrolü ve kendiliğinden geri alma ile günceller. Kararlı kanalda en yeni
-sürüm etiketine geçer (sürümler haftalık çıkar; etiketler SSH ile imzalıdır). Bir test sunucusu bunun yerine `main`'i
-izleyebilir (önizleme kanalı). Bkz. [`docs/self-update.md`](docs/self-update.md).
+sürüm etiketine geçer (haftada en çok bir planlı sürüm çıkar, güvenlik düzeltmesi arada gelebilir; etiketler SSH ile
+imzalıdır). Bir test sunucusu bunun yerine `main`'i izleyebilir (önizleme kanalı). Bkz.
+[`docs/self-update.md`](docs/self-update.md).
 
 ---
 
