@@ -568,6 +568,7 @@ async def agent_session_with_secret():
     # Kapatılması istenen terminali açık bildiren her capabilities örneği için bir set_capabilities
     resends = sum(1 for f, m in cmd if f.startswith("capabilities.") and m.get("terminal_enabled"))
     exam_msgs = [m for m in ws.sent if m.get("action") == "exam_mode"]
+    # now: sunucunun saati (exams.time burada exam_clock; örnekteki now da o an)
     chk(exam_msgs == [example(S2A, "exam_mode")],
         "sınıfında sınav süren cihaz bağlanınca exam_mode'u aldı (örnekle aynı); exam_state'ler yanıtsız")
     chk(actions.index("exam_mode") == 3, "exam_mode bekleyen komutlardan sonra: %s" % actions[:5])
