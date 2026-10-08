@@ -414,6 +414,7 @@ Steps marked "real PC" also get the manual check on a test machine: enrol, `exec
 - **a3. Vision.** `VisionSession`, `VisionHandler`, `RemoteInputHandler`, `CapabilitiesHandler`. This is the riskiest
   step, so it is its own PR, checked on a real PC. Covered by `VisionRelayTests`, the vision cases of `ModulesTests`
   and `WorkerCommandTests`, `TrayPipeLifetimeTests` (connection loss stops capture) and the protocol vectors.
+  **Done** in [#160 refactor(agent): Vision and capabilities handlers (split step a3)](https://github.com/PashaCore/POps/pull/160).
 - **a4. Exam and files.** `ExamHandler` with the exam loop, and `FileTransferHandler`. Covered by `ExamModeTests` and
   `FileTransferTests`. Checked on a real PC (firewall group, banner).
 - **a5. Connection and tray.** `CommandConnection`, `TrayMessageRouter`, `PolicySync`. Worker.cs is now within its
