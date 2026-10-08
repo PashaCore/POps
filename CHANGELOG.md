@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Exam mode: the server sends its own time.** `exam_mode` now carries `now` (unix seconds) next to `until`. Agents from 0.1.24 take `until - now` as the time left and count it on a monotonic clock, so a PC clock that is ahead no longer refuses the exam and one that is behind no longer lengthens it. Older agents ignore the field. Schema, example and protocol README updated.
 - **Docs: release rhythm stated as it is.** README, README.tr, ROADMAP and the code-signing page said releases come out weekly, but 0.1.22 and 0.1.23 came out on the same day. They now say at most one planned release a week, with security fixes in between.
 - **Docs: tool scripts.** The docstrings of `tools/agent_simulator.py`, `tools/bench_charts.py`, `tools/html_sinks/check_html_sinks.py` and `tools/sign_release.py` give Python 3.10+ (the oldest version CI tests) and `python3 tools/…` examples that run from the repository root. Thanks to @RajGahoi (#90).
 - **Docs: Turkish contributions.** CONTRIBUTING has a short Turkish section, *Türkçe katkı*, and README.tr links the `good first issue` and new `türkçe` labels. Ten first issues are written in Turkish (translations of the FAQ, backup, troubleshooting and quick start guides; a Pardus test of the Linux agent; a spelling and terminology check of the panel's Turkish; a glossary; an exam mode guide for teachers; first-impression feedback on the demo; a review of the pilot school guide).
