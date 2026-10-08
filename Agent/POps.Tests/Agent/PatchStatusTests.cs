@@ -209,8 +209,7 @@ namespace POps.Tests.Agent
         }
     }
 
-    [Collection(SharedStateCollection.Name)]
-    public class PatchScheduleTests : SharedStateTestBase
+    public class PatchScheduleTests : TestBase
     {
         private static readonly DateTime Start = new DateTime(2026, 9, 28, 7, 55, 0, DateTimeKind.Utc);
 
@@ -262,18 +261,19 @@ namespace POps.Tests.Agent
         [Fact]
         public void State_SurvivesRestart()
         {
-            if (File.Exists(PatchManager.StatePath)) File.Delete(PatchManager.StatePath);
-            Assert.Null(PatchManager.LoadState().LastScanUtc);
+            string statePath = AgentHarness.Create("patch").Paths.DataFile(PatchManager.StateFileName);
+            if (File.Exists(statePath)) File.Delete(statePath);
+            Assert.Null(PatchManager.LoadState(statePath).LastScanUtc);
             DateTime t = new DateTime(2026, 9, 27, 9, 30, 0, DateTimeKind.Utc);
             var pending = PatchClassifier.BuildStatus(new List<PendingUpdate> { new PendingUpdate { Kb = "KB1", Title = "t" } }, true, t, null, "özet");
-            PatchManager.SaveState(new PatchState { LastScanUtc = t, PendingReport = pending, NextPostUtc = t.AddMinutes(30) });
+            PatchManager.SaveState(statePath, new PatchState { LastScanUtc = t, PendingReport = pending, NextPostUtc = t.AddMinutes(30) });
 
-            PatchState loaded = PatchManager.LoadState();
+            PatchState loaded = PatchManager.LoadState(statePath);
             Assert.Equal(t, loaded.LastScanUtc);
             Assert.Equal(t.AddMinutes(30), loaded.NextPostUtc);
             Assert.Equal("KB1", loaded.PendingReport.Updates.Single().Kb);
             Assert.Equal("özet", loaded.PendingReport.LastResult);
-            if (File.Exists(PatchManager.StatePath)) File.Delete(PatchManager.StatePath);
+            if (File.Exists(statePath)) File.Delete(statePath);
         }
 
         // M2: gönderim başarısızsa yalnızca GÖNDERİM yeniden denenir; tam tarama günde bir kalır
@@ -302,27 +302,28 @@ namespace POps.Tests.Agent
 
     // M2: gönderilemeyen durum saklanır, yalnızca gönderim yeniden denenir; uç yoksa bırakılır
     [Collection(SharedStateCollection.Name)]
-    public class PatchDeliveryTests : SharedStateTestBase, IDisposable
+    public class PatchDeliveryTests : SharedStateTestBase
     {
-        public PatchDeliveryTests() => AgentUpdate.DataDir = TestEnvironment.NewDir("patch");
+        // Testin veri klasörü (patch-scan.json)
+        private readonly AgentPaths _paths = AgentHarness.Create("patch").Paths;
 
-        public void Dispose() => AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
+        private string StatePath => _paths.DataFile(PatchManager.StateFileName);
 
         private static PatchStatusPayload Status(string lastResult = null) =>
             PatchClassifier.BuildStatus(new List<PendingUpdate> { new PendingUpdate { Kb = "KB1", Title = "t", Severity = "Critical" } }, false, DateTime.UtcNow, null, lastResult);
 
-        private static PatchManager Manager(PostResult result) =>
-            new PatchManager("https://pops.example", () => "HW-A") { Poster = _ => Task.FromResult(result) };
+        private PatchManager Manager(PostResult result) =>
+            new PatchManager(_paths, "https://pops.example", () => "HW-A") { Poster = _ => Task.FromResult(result) };
 
         [Fact]
         public async Task FailedPost_KeepsTheReportForARetry()
         {
             DateTime lastScan = DateTime.UtcNow.AddMinutes(-2);
-            PatchManager.SaveState(new PatchState { LastScanUtc = lastScan });
+            PatchManager.SaveState(StatePath, new PatchState { LastScanUtc = lastScan });
 
             await Manager(PostResult.Failed).DeliverAsync(Status("2 güncelleme kuruldu"));
 
-            PatchState state = PatchManager.LoadState();
+            PatchState state = PatchManager.LoadState(StatePath);
             Assert.Equal("2 güncelleme kuruldu", state.PendingReport.LastResult);
             Assert.InRange(state.NextPostUtc.Value, DateTime.UtcNow.AddMinutes(29), DateTime.UtcNow.AddMinutes(31));
             // Tarama zamanı değişmez: sonraki tam tarama yine 24 saat sonra
@@ -333,8 +334,8 @@ namespace POps.Tests.Agent
         public async Task SuccessfulRetry_ClearsTheReport()
         {
             await Manager(PostResult.Failed).DeliverAsync(Status());
-            await Manager(PostResult.Sent).DeliverAsync(PatchManager.LoadState().PendingReport);
-            PatchState state = PatchManager.LoadState();
+            await Manager(PostResult.Sent).DeliverAsync(PatchManager.LoadState(StatePath).PendingReport);
+            PatchState state = PatchManager.LoadState(StatePath);
             Assert.Null(state.PendingReport);
             Assert.Null(state.NextPostUtc);
         }
@@ -343,7 +344,7 @@ namespace POps.Tests.Agent
         public async Task MissingEndpoint_DropsTheReport()
         {
             await Manager(PostResult.EndpointMissing).DeliverAsync(Status());
-            Assert.Null(PatchManager.LoadState().PendingReport);
+            Assert.Null(PatchManager.LoadState(StatePath).PendingReport);
         }
 
         [Fact]

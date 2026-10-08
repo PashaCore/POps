@@ -29,7 +29,7 @@ namespace POps.Tests.Agent
             AgentUpdate.DataDir = TestEnvironment.NewDir("modules-data");
             AgentCapabilities.Load();   // dosya yok: terminal ve Vision yerelde açık
             AgentCredentials.SaveSecret(Secret, "HW-MOD");
-            _worker = new Worker(NullLogger<Worker>.Instance)
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = "HW-MOD",
                 SendOverride = payload =>
@@ -215,11 +215,11 @@ namespace POps.Tests.Agent
         public async Task Patches_ClosedModule_ResultIsNotSent_AndComesBack()
         {
             int posts = 0;
-            var patches = new PatchManager("https://pops.example", () => "HW-MOD") { Poster = _ => { posts++; return Task.FromResult(PostResult.Sent); } };
+            var patches = new PatchManager(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-MOD") { Poster = _ => { posts++; return Task.FromResult(PostResult.Sent); } };
             Close("patches");
             Assert.Equal(PostResult.NotSent, await patches.DeliverAsync(new PatchStatusPayload()));
             Assert.Equal(0, posts);
-            Assert.Null(PatchManager.LoadState().PendingReport);
+            Assert.Null(PatchManager.LoadState(patches.StatePath).PendingReport);
 
             OpenAll();
             Assert.Equal(PostResult.Sent, await patches.DeliverAsync(new PatchStatusPayload()));
@@ -243,7 +243,7 @@ namespace POps.Tests.Agent
         public async Task Software_ClosedModule_NotSent_AndResentWhenReopened()
         {
             int posts = 0;
-            var reporter = new SoftwareReporter("https://pops.example", () => "HW-MOD")
+            var reporter = new SoftwareReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-MOD")
             {
                 Collector = () => new List<SoftwareItem> { new SoftwareItem { Name = "7-Zip", Version = "24.08" } },
                 Poster = (_, _) => { posts++; return Task.FromResult(PostResult.Sent); },
@@ -266,7 +266,7 @@ namespace POps.Tests.Agent
         public async Task Helpdesk_ClosedModule_HidesTheMenuAndRefuses_AndComesBack()
         {
             var replies = new List<string>();
-            var helpdesk = new Helpdesk("https://pops.example", () => "HW-MOD", () => "ogrenci", replies.Add);
+            var helpdesk = new Helpdesk(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-MOD", () => "ogrenci", replies.Add);
             Assert.Equal("HELPDESK_MENU:1", Worker.HelpdeskMenuMessage());
 
             Close("helpdesk");

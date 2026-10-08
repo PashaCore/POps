@@ -16,6 +16,8 @@ namespace POpsAgent
         private readonly UpdateResultReporter _updateResults;
         private readonly Func<object, Task<bool>> _send;
         private readonly Action<LocalAuditEvent> _audit;
+        // update-result.json, update.lock ve updater'ın aşama dosyası (bkz. AgentPaths)
+        private readonly AgentPaths _paths;
 
         // Bu bağlantıda ilk heartbeat gitti mi (sunucu cihazı ilk mesajın dna_payload'ından kaydeder)
         private volatile bool _heartbeatSent;
@@ -23,14 +25,15 @@ namespace POpsAgent
         private string? _forwardedProgress;
 
         // handshake, updateResults: Worker'ınkilerle aynı örnekler; send: komut kanalına gönderim (dönen: gönderildi mi);
-        // audit: yerel denetim izi (Olay Günlüğü)
+        // audit: yerel denetim izi (Olay Günlüğü); paths: updater'la paylaşılan dosyalar
         public UpdateReporter(ServerHandshake handshake, UpdateResultReporter updateResults, Func<object, Task<bool>> send,
-            Action<LocalAuditEvent> audit)
+            Action<LocalAuditEvent> audit, AgentPaths paths)
         {
             _handshake = handshake ?? throw new ArgumentNullException(nameof(handshake));
             _updateResults = updateResults ?? throw new ArgumentNullException(nameof(updateResults));
             _send = send ?? throw new ArgumentNullException(nameof(send));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+            _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         }
 
         // Yeni komut bağlantısı: update_progress ilk mesaj heartbeat olana kadar gönderilmez; son aşama yeni bağlantıda bir
@@ -54,7 +57,7 @@ namespace POpsAgent
         // Heartbeat döngüsünde: updater'ın yazdığı aşama (installing, waiting_installer) değiştiyse sunucuya iletilir
         internal async Task ForwardUpdateProgressAsync()
         {
-            UpdateProgressRecord? record = AgentUpdate.PendingProgress();
+            UpdateProgressRecord? record = AgentUpdate.PendingProgress(_paths);
             if (record == null) return;
             string key = $"{record.Stage}|{record.Attempt}|{record.At}";
             if (key == _forwardedProgress) return;
@@ -66,7 +69,7 @@ namespace POpsAgent
         // yeni sürüm açıldıktan sonra yazdığı için her heartbeat'te bakılır. Onaylı sunucuda dosya onaya kadar kalır.
         internal async Task ReportUpdateResultAsync(CancellationToken token)
         {
-            Dictionary<string, object>? message = AgentUpdate.PendingResultMessage();
+            Dictionary<string, object>? message = AgentUpdate.PendingResultMessage(_paths);
             if (message == null) return;
             // Yerel denetim izi (1030) sunucu bağlantısından bağımsız, sonuç ilk görüldüğünde
             _audit(AgentUpdate.PendingResultAudit(message));
@@ -79,7 +82,7 @@ namespace POpsAgent
 
             if (step == UpdateResultReporter.Step.SendAndMarkReported)
             {
-                AgentUpdate.MarkResultReported();
+                AgentUpdate.MarkResultReported(_paths);
                 POpsHelpers.Log("UPDATE", $"Güncelleme sonucu sunucuya iletildi: {message["status"]}.");
             }
             else

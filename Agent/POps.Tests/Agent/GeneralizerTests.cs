@@ -38,11 +38,11 @@ namespace POps.Tests.Agent
             AgentUpdate.IdentityPath,
             SecureStore.PathOf(AgentCredentials.SecretFileName),
             SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName),
-            HardwareBinding.PrimaryPath,
+            SecureStore.PathOf(HardwareBinding.FileName),
             SecureStore.PathOf(ResultSpool.FileName),
             AgentUpdate.ResultPath,
             AgentUpdate.ReportedResultPath,
-            SoftwareReporter.StatePath,
+            Path.Combine(AgentUpdate.DataDir, SoftwareReporter.StateFileName),
         };
 
         // Bilgisayara değil kuruma ait olanlar: kalır
@@ -65,7 +65,7 @@ namespace POps.Tests.Agent
         private static (int Code, string Output) Run(params string[] args)
         {
             var output = new StringWriter();
-            int code = Generalizer.Run(args, output);
+            int code = Generalizer.Run(args, output, AgentHarness.FromStatics().Paths);
             return (code, output.ToString());
         }
 

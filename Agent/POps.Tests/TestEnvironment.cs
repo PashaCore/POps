@@ -76,16 +76,13 @@ namespace POps.Tests
         public static string TestData(string name) => Path.Combine(AppContext.BaseDirectory, "TestData", name);
 
 #if !NETFRAMEWORK
-        // Bir test gerçek klasörlere (C:\POpsData, ...) dönen bir yol bırakmışsa bir sonraki test öncesinde geçici
-        // klasörlere geri alınır. (Türetilmiş sınıfın alan başlatıcıları temel kurucudan ÖNCE çalışır: orada okunan
-        // yol, ortam kurulmadan önceki gerçek yol olabilir.)
+        // SharedState sınıflarında her testten önce: test seam'leri ve bellekteki ajan durumu test değerlerine geri alınır.
+        // Yollar burada değildir: Worker ve kurduğu servisler yolları AgentContext'ten alır (bkz. AgentHarness); henüz
+        // statik kalan yolları (SecureStore.Dir, AgentUpdate.DataDir, ...) statik kurucu bir kez geçici klasörlere çevirir,
+        // testler yalnızca geçici klasörlere çevirir. Worker bölmesinin (b) adımları buradan satır siler; b4'ten sonra
+        // EnsureIsolated kalmaz.
         public static void EnsureIsolated()
         {
-            if (!IsUnderRoot(POpsAgent.AgentUpdate.DataDir)) POpsAgent.AgentUpdate.DataDir = DefaultDataDir;
-            if (!IsUnderRoot(POpsAgent.SecureStore.Dir)) POpsAgent.SecureStore.Dir = DefaultSecureDir;
-            if (!IsUnderRoot(POps.Shared.ServerTrust.CaPath)) POps.Shared.ServerTrust.CaPath = Path.Combine(DefaultSecureDir, POps.Shared.ServerTrust.FileName);
-            if (!IsUnderRoot(POps.Shared.POpsHelpers.MachineLogDir)) POps.Shared.POpsHelpers.MachineLogDir = DefaultMachineLogDir;
-            POpsAgent.AgentDirectories.Problem = null;
             if (!(POpsAgent.KioskMode.Registry is FakeKioskRegistry)) POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
             // Güncelleme indirmeleri testlerde BITS'e gitmez (BITS testleri sahte çalıştırıcıyla açar)
             POpsAgent.BitsDownload.Enabled = false;
@@ -134,9 +131,6 @@ namespace POps.Tests
             POpsAgent.PeerDownload.HeaderTimeout = POpsAgent.PeerDownload.DefaultHeaderTimeout;
             POpsAgent.PeerDownload.StallTimeout = POpsAgent.PeerDownload.DefaultStallTimeout;
         }
-
-        private static bool IsUnderRoot(string path) =>
-            !string.IsNullOrEmpty(path) && Path.GetFullPath(path).StartsWith(Root, StringComparison.OrdinalIgnoreCase);
 #endif
     }
 

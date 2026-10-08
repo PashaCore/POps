@@ -8,9 +8,10 @@ namespace POpsAgent
     {
         private readonly OperationalHealthGate _gate;
 
-        public AgentStartupHealth(bool suppressed, Action<OperationalChecks> writer = null)
+        // writer: health.json'u yazan (servis: AgentUpdate.WriteOperationalHealth ile AgentPaths.HealthPath'e)
+        public AgentStartupHealth(bool suppressed, Action<OperationalChecks> writer)
         {
-            _gate = new OperationalHealthGate(suppressed, writer ?? AgentUpdate.WriteOperationalHealth);
+            _gate = new OperationalHealthGate(suppressed, writer ?? throw new ArgumentNullException(nameof(writer)));
         }
 
         public void Run(StartupCheck check, Action action) => _gate.Run(check, action);

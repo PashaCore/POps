@@ -47,7 +47,7 @@ namespace POps.Tests.Agent
             AgentCredentials.SaveSecret(Secret, HwId);
             SecureStore.WriteProtected(SecureStore.PathOf(AgentCredentials.EnrollTokenFileName), EnrollToken);
             AgentCapabilities.Load();   // dosya yok: varsayılanlar (Vision açık)
-            _worker = new Worker(NullLogger<Worker>.Instance) { HwId = HwId };
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context) { HwId = HwId };
             _logStart = LogLength();
         }
 

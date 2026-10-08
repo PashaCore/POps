@@ -140,7 +140,7 @@ namespace POps.Tests.Agent
 
         private readonly List<JsonElement> _sent = new List<JsonElement>();
 
-        private Worker NewWorker() => new Worker(NullLogger<Worker>.Instance)
+        private Worker NewWorker() => new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
         {
             HwId = "HW-WINGET",
             SendOverride = p => { lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(p)); return Task.FromResult(true); },

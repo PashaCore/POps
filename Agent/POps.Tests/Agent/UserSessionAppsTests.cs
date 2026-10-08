@@ -10,8 +10,7 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // 1) Tepsi/watchdog kullanıcı oturumunda başlatılır (saha: kurulum ve güncellemeden sonra tepsi yoktu)
-    [Collection(SharedStateCollection.Name)]
-    public class UserSessionAppsTests : SharedStateTestBase
+    public class UserSessionAppsTests : TestBase
     {
         // SYSTEM olarak çalışan bir CI'da WTSQueryUserToken başarılı olur ve süreç gerçekten başlardı: o durumda atlanır
         public static bool SkipLaunchTests => WindowsIdentity.GetCurrent().IsSystem;
@@ -57,7 +56,7 @@ namespace POps.Tests.Agent
             Assert.Contains("yok", missing);
             Assert.False(UserSessionLauncher.TryStart(UserSessionLauncher.NoSession, harmless, out _, out _));
 
-            new UserSessionApps(TestEnvironment.NewDir("apps")).EnsureOnce();
+            new UserSessionApps(AgentHarness.Create("apps-data").Paths, TestEnvironment.NewDir("apps")).EnsureOnce();
         }
 
         // M1 sertleştirme: tepsi ve watchdog DOTNET_STARTUP_HOOKS ile kullanıcı kodu yüklemez

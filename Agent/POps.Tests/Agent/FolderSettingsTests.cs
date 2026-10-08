@@ -37,7 +37,6 @@ namespace POps.Tests.Agent
         public void Dispose()
         {
             POpsHelpers.ConfigPaths = new string[0];
-            AgentDirectories.Problem = null;
             AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
             SecureStore.Dir = TestEnvironment.DefaultSecureDir;
             ServerTrust.CaPath = Path.Combine(TestEnvironment.DefaultSecureDir, ServerTrust.FileName);
@@ -290,8 +289,8 @@ namespace POps.Tests.Agent
             string data = Dir("D", "POpsData"), logs = Dir("E", "POpsLogs");
             Config(new { ServerUrl = "https://pops.example", DataDirectory = data, LogDirectory = logs });
 
-            FolderSettings service = AgentDirectories.Apply(secure: true, Rules(), _defaultData, _defaultLog);
-            Assert.Null(AgentDirectories.Problem);
+            (FolderSettings service, AgentPaths paths) = AgentDirectories.Apply(secure: true, Rules(), _defaultData, _defaultLog);
+            Assert.Null(paths.FolderProblem);
             Assert.Equal(data, AgentUpdate.DataDir);
             Assert.Equal(Path.Combine(data, "secure"), SecureStore.Dir);
             Assert.Equal(Path.Combine(data, "secure", ServerTrust.FileName), ServerTrust.CaPath);
@@ -302,12 +301,12 @@ namespace POps.Tests.Agent
             Assert.False(Directory.Exists(_defaultData));
 
             // Updater: servisin komut satırından, aynı kurallarla
-            FolderSettings updater = FolderSettings.FromArguments(AgentDirectories.UpdaterArguments().ToList(), Rules(), checkLocation: true);
+            FolderSettings updater = FolderSettings.FromArguments(paths.UpdaterArguments().ToList(), Rules(), checkLocation: true);
             Assert.Equal((service.DataDirectory, service.LogDirectory), (updater.DataDirectory, updater.LogDirectory));
             Assert.Null(updater.Problem);
 
             // Watchdog: --datadir "<klasör>" (CreateProcessAsUser komut satırı)
-            Assert.Equal($"--datadir \"{data}\"", AgentDirectories.WatchdogArguments());
+            Assert.Equal($"--datadir \"{data}\"", paths.WatchdogArguments());
             FolderSettings watchdog = FolderSettings.FromArguments(new[] { "--datadir", data }, Rules(), checkLocation: false);
             Assert.Equal(data, watchdog.DataDirectory);
         }
@@ -327,15 +326,15 @@ namespace POps.Tests.Agent
         public void InvalidSetting_IsReportedAsAConfigProblem_ButNotInTheTray()
         {
             Config(new { ServerUrl = "https://pops.example", DataDirectory = @"\\server\share\POps", LogDirectory = "logs" });
-            AgentDirectories.Apply(secure: true, Rules(), _defaultData, _defaultLog);
+            AgentPaths paths = AgentDirectories.Apply(secure: true, Rules(), _defaultData, _defaultLog).Paths;
             Assert.Equal(_defaultData, AgentUpdate.DataDir);
             Assert.Equal(_defaultLog, POpsHelpers.MachineLogDir);
-            Assert.Contains("DataDirectory geçersiz", AgentDirectories.Problem);
-            Assert.Contains("LogDirectory geçersiz (logs)", AgentDirectories.Problem);
+            Assert.Contains("DataDirectory geçersiz", paths.FolderProblem);
+            Assert.Contains("LogDirectory geçersiz (logs)", paths.FolderProblem);
 
-            using var worker = new Worker(NullLogger<Worker>.Instance);
+            using var worker = new Worker(NullLogger<Worker>.Instance, new AgentContext(paths));
             Assert.Null(worker.ConfigProblem);
-            Assert.Equal(AgentDirectories.Problem, worker.FolderProblem);
+            Assert.Equal(paths.FolderProblem, worker.FolderProblem);
             Assert.Null(worker.ConfigErrorMessage());
             worker.ReportConfigProblem();   // Olay Günlüğü yazılamasa da durmaz
 
@@ -349,9 +348,9 @@ namespace POps.Tests.Agent
         public void NonTextSetting_IsAProblem()
         {
             Config(new { ServerUrl = "https://pops.example", DataDirectory = 5 });
-            AgentDirectories.Apply(secure: false, Rules(), _defaultData, _defaultLog);
+            AgentPaths paths = AgentDirectories.Apply(secure: false, Rules(), _defaultData, _defaultLog).Paths;
             Assert.Equal(_defaultData, AgentUpdate.DataDir);
-            Assert.Contains("DataDirectory bir metin", AgentDirectories.Problem);
+            Assert.Contains("DataDirectory bir metin", paths.FolderProblem);
         }
     }
 }
