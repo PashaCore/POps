@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`pops-tls check [--days N]` for monitoring.** Exits `0` while the server certificate is valid for more than N days (default 30, the threshold `renew` uses), `1` with one line when it has N days or fewer left or has expired, and `2` when there is no certificate. It changes nothing on disk, so a cron mail or a monitoring plugin can run it. `pops-tls show` marks the "Kalan" line with "uyarı" inside the threshold. Thanks to @RajGahoi (#155, closes #112).
+
 ### Changed
 
 - **Docs: tool scripts.** The docstrings of `tools/agent_simulator.py`, `tools/bench_charts.py`, `tools/html_sinks/check_html_sinks.py` and `tools/sign_release.py` give Python 3.10+ (the oldest version CI tests) and `python3 tools/…` examples that run from the repository root. Thanks to @RajGahoi (#90).
