@@ -8,7 +8,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // POpsAgent.exe --generalize [--enroll-token <jeton>]
-    public class GeneralizerTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class GeneralizerTests : SharedStateTestBase, IDisposable
     {
         private const string Token = "multi-use-token-0123456789abcdef";
         private readonly Func<bool> _isAdmin = Generalizer.IsAdministrator;

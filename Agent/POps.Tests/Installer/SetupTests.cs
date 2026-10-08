@@ -12,7 +12,8 @@ namespace POps.Tests.Installer
 {
     // MSI custom action'larının mantığı (Installer/agent/CustomActions). Kurulumun dokunduğu bütün klasörler
     // geçici klasörlere yönlendirilir: gerçek C:\POpsData, C:\POpsLogs, C:\POps ve Program Files'a dokunulmaz.
-    public class SetupTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class SetupTests : SharedStateTestBase
     {
         private readonly string _root = TestEnvironment.NewDir("msi");
         private readonly List<string> _log = new List<string>();

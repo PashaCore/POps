@@ -9,7 +9,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // "Etkinlik geçmişim": GET /api/activity/agent/{hw_id} yanıtı, 60 sn önbellek, hata mesajları
-    public class ActivityHistoryTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class ActivityHistoryTests : SharedStateTestBase
     {
         private const string Sample = "{\"device\":\"HW-1\",\"days\":30,\"items\":[" +
             "{\"at\":\"2026-09-27 19:22:38\",\"kind\":\"remote_session\",\"title\":\"Uzaktan izleme oturumu başladı\",\"actor\":\"Pasha\",\"detail\":\"Gerekçe: arıza\"}," +

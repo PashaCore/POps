@@ -141,7 +141,8 @@ namespace POps.Tests.Agent
     }
 
     // L4 notu: 24 saat hatasız geçince eski hatalar ve kilitlenmeler unutulur
-    public class BypassDecayTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class BypassDecayTests : SharedStateTestBase
     {
         private const string HwId = "HW-678CC8C5265E", Secret = "sekret-Ç-1";
         private static readonly DateTime Day = new DateTime(2026, 9, 26);

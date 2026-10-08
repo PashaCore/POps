@@ -6,7 +6,8 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    public class SecureStoreTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class SecureStoreTests : SharedStateTestBase
     {
         [Fact]
         public void Directory_IsProtectedAndReappliedOnEveryStart()

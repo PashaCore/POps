@@ -13,7 +13,8 @@ namespace POps.Tests.Agent
 {
     // winget_install (docs/agent.md "winget_install contract"): doğrulama, bağımsız değişkenler, winget'in bulunması,
     // kabuksuz çalıştırma, yetenek/modül retleri, -7, çıktının temizlenmesi, X-Agent-Features
-    public class WingetInstallTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class WingetInstallTests : SharedStateTestBase, IDisposable
     {
         private readonly Func<string> _locator = WingetInstall.Locator;
 
@@ -123,7 +124,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task RunProgram_PassesArgumentsWithoutAShell()
         {
-            var runner = new CommandRunner();
+            var runner = TestEnvironment.NewCommandRunner();
             // Bağımsız değişkenler ArgumentList ile tek tek gider (kabuk yorumlamaz)
             CommandExecutionResult result = await runner.RunProgramAsync(1, Path.Combine(Environment.SystemDirectory, "cmd.exe"),
                 new[] { "/d", "/c", "echo", "winget-ok" }, CancellationToken.None);

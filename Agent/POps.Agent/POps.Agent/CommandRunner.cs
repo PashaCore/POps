@@ -86,29 +86,35 @@ namespace POpsAgent
         private readonly string _shell;
         private readonly Func<string, string> _arguments;
         private readonly TimeSpan _maxDuration;
+        private readonly string _taskDirectory;
 
-        // shell/arguments/maxDuration yalnızca testler içindir; ajan cmd.exe ve bir .bat dosyası kullanır
-        public CommandRunner(string shell = null, Func<string, string> arguments = null, TimeSpan? maxDuration = null)
+        // shell/arguments/maxDuration/taskDirectory yalnızca testler içindir; ajan cmd.exe ve Path.GetTempPath() altında
+        // bir .bat dosyası kullanır (testler görev dosyalarını kendi geçici klasörlerine yazar)
+        public CommandRunner(string shell = null, Func<string, string> arguments = null, TimeSpan? maxDuration = null, string taskDirectory = null)
         {
             _shell = shell ?? "cmd.exe";
             _arguments = arguments ?? (bat => $"/c \"{bat}\"");
             _maxDuration = maxDuration ?? CommandExecutionPolicy.MaxDuration;
+            _taskDirectory = taskDirectory;
         }
+
+        // Görev dosyalarının klasörü; verilmediyse her okumada Path.GetTempPath()
+        public string TaskDirectory => _taskDirectory ?? Path.GetTempPath();
 
         public int RunningCount => _running.Count;
 
         public bool IsRunning(int taskId) => _running.ContainsKey(taskId);
 
-        // Görev dosyası: Path.GetTempPath() altında pops_task_<32 küçük hex>.bat (Guid "N"). Görev bitince silinir; servis
+        // Görev dosyası: TaskDirectory altında pops_task_<32 küçük hex>.bat (Guid "N"). Görev bitince silinir; servis
         // ya da makine çökerse kalır ve içinde yönetici komutu olabilir.
         private static readonly Regex TaskFileName = new Regex(@"^pops_task_[0-9a-f]{32}\.bat$", RegexOptions.CultureInvariant);
 
         public static bool IsTaskFile(string fileName) => fileName != null && TaskFileName.IsMatch(fileName);
 
         // Açılışta, ilk görevden önce: yalnızca bu desene uyan dosyalar silinir. Silinemeyen loglanır, açılış durmaz.
-        public static (int Deleted, int Failed) CleanupStaleTaskFiles(string directory = null)
+        // directory: görev dosyalarının klasörü (Worker'da çalıştırıcının TaskDirectory'si)
+        public static (int Deleted, int Failed) CleanupStaleTaskFiles(string directory)
         {
-            directory ??= Path.GetTempPath();
             int deleted = 0, failed = 0;
             try
             {
@@ -185,7 +191,7 @@ namespace POpsAgent
             string tempBatPath;
             try
             {
-                tempBatPath = Path.Combine(Path.GetTempPath(), $"pops_task_{Guid.NewGuid():N}.bat");
+                tempBatPath = Path.Combine(TaskDirectory, $"pops_task_{Guid.NewGuid():N}.bat");
                 await File.WriteAllTextAsync(tempBatPath, "@echo off\r\nchcp 65001 > nul\r\n" + command, new UTF8Encoding(false), serviceStopping);
             }
             catch (Exception ex)

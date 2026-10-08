@@ -10,7 +10,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // 1) Tepsi/watchdog kullanıcı oturumunda başlatılır (saha: kurulum ve güncellemeden sonra tepsi yoktu)
-    public class UserSessionAppsTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class UserSessionAppsTests : SharedStateTestBase
     {
         // SYSTEM olarak çalışan bir CI'da WTSQueryUserToken başarılı olur ve süreç gerçekten başlardı: o durumda atlanır
         public static bool SkipLaunchTests => WindowsIdentity.GetCurrent().IsSystem;

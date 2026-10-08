@@ -15,7 +15,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Dosya aktarımı: ad temizleme, yalnızca kendi sunucusu, izinli hedefler, çekmede profil ve güvenli klasör kuralları
-    public class FileTransferTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class FileTransferTests : SharedStateTestBase, IDisposable
     {
         private const string Server = "https://pops.example";
         private const string Secret = "files-secret-0123456789abcdefghijklm";

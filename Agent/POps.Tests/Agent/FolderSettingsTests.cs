@@ -13,7 +13,8 @@ namespace POps.Tests.Agent
 {
     // appsettings.json LogDirectory / DataDirectory: değer kuralları, varsayılana dönüş ve bildirim, klasör izinleri,
     // servis / updater / watchdog'un aynı klasörleri seçmesi. Klasörler hep geçici test klasöründe.
-    public class FolderSettingsTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class FolderSettingsTests : SharedStateTestBase, IDisposable
     {
         private readonly string _root = TestEnvironment.NewDir("folders");
         private readonly string _defaultData;

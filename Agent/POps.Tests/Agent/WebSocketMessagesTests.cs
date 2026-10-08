@@ -10,6 +10,7 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
+    [Collection(MachineCollection.Name)]
     public class WebSocketMessagesTests : TestBase
     {
         private const int CommandLimit = 8 * 1024 * 1024; // Worker.MaxCommandMessageBytes

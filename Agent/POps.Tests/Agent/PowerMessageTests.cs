@@ -17,7 +17,8 @@ namespace POps.Tests.Agent
     // (PowerActions.Execute) yalnızca çağrıyı kaydeder, oturum sorgusu (SessionTasks.HasConsoleUser) testin değeridir,
     // bekleme (SessionTasks.Delay) anında ya da test bırakınca biter, tepsi borusu TrayOverride'dır. Bu testler bilgisayarı
     // asla kapatmaz, yeniden başlatmaz, oturumu kapatmaz ya da kilitlemez.
-    public class PowerMessageTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class PowerMessageTests : SharedStateTestBase, IDisposable
     {
         private readonly Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();

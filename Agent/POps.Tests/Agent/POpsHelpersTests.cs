@@ -5,7 +5,8 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    public class POpsHelpersTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class POpsHelpersTests : SharedStateTestBase
     {
         private static string Write(string json)
         {

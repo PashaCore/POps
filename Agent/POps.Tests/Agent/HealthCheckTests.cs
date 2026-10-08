@@ -6,7 +6,8 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    public class HealthCheckTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class HealthCheckTests : SharedStateTestBase
     {
         private static readonly DateTime NotBefore = DateTimeOffset.FromUnixTimeSeconds(1000).UtcDateTime;
 

@@ -9,7 +9,8 @@ namespace POps.Tests.Agent
 {
     // Geri dönüş tatbikatı: işaret, güncellemeyle kurulan yeni sürümün ilk açılışında tüketilir. Sahada 0.1.4 -> 0.1.5
     // tatbikatı "rollback_failed" vermişti: geri kurulan 0.1.4 de işareti görüp sağlık bildirmemişti.
-    public class RollbackDrillTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class RollbackDrillTests : SharedStateTestBase, IDisposable
     {
         public RollbackDrillTests()
         {
@@ -167,7 +168,8 @@ namespace POps.Tests.Agent
         }
     }
 
-    public class StaleLockDrillTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class StaleLockDrillTests : SharedStateTestBase, IDisposable
     {
         public StaleLockDrillTests()
         {

@@ -19,7 +19,8 @@ namespace POps.Tests.Agent
 {
     // docs/protocol: sunucu ile ajanın ortak test vektörleri ve JSON şemaları (bkz. docs/protocol/AGENT_TESTS.md).
     // Dosyalar kopyalanmaz; iki taraf da aynı kopyayı okur.
-    public class ProtocolVectorTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class ProtocolVectorTests : SharedStateTestBase, IDisposable
     {
         private readonly Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();

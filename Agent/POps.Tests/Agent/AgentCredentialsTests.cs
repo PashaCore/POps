@@ -9,7 +9,8 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    public class AgentCredentialsTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class AgentCredentialsTests : SharedStateTestBase
     {
         private static string Urlsafe(int bytes) => Convert.ToBase64String(RandomNumberGenerator.GetBytes(bytes)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 

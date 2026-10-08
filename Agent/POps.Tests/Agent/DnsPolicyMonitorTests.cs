@@ -1,7 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using POpsAgent;
 using Xunit;
@@ -10,7 +16,8 @@ namespace POps.Tests.Agent
 {
     // DNS izleme artık gerçekten başlatılıyor (F8 kodu vardı ama hiç çağrılmıyordu). Önbellek, saat, bildirim ve
     // karantina sahtedir: gerçek DNS önbelleği okunmaz, sunucuya gidilmez, güvenlik duvarına dokunulmaz.
-    public class DnsPolicyMonitorTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class DnsPolicyMonitorTests : SharedStateTestBase, IDisposable
     {
         private readonly List<string> _cache = new List<string>();
         private readonly List<(string Domain, string Category)> _reports = new List<(string, string)>();
@@ -51,8 +58,6 @@ namespace POps.Tests.Agent
         public void Worker_StartsMonitoringWhenTheCommandChannelConnects()
         {
             using var worker = new Worker(NullLogger<Worker>.Instance);
-            // Worker otomatik karantinayı kendi kilit ekranı yoluna bağlar; testte sahtesine geri alınır
-            DnsPolicyMonitor.Quarantine = reason => _quarantines.Add(reason);
             Assert.False(DnsPolicyMonitor.IsRunning);
 
             worker.OnCommandChannelConnected();
@@ -202,7 +207,8 @@ namespace POps.Tests.Agent
         }
     }
 
-    public class DnsDomainIndexTests : TestBase, IDisposable
+    [Collection(SharedStateCollection.Name)]
+    public class DnsDomainIndexTests : SharedStateTestBase, IDisposable
     {
         public void Dispose()
         {
@@ -289,6 +295,147 @@ namespace POps.Tests.Agent
             cache.Add("bet1.example");                 // aynı önbellek kaydı yine okundu
             Assert.Empty(DnsPolicyMonitor.CheckNow());
             Assert.Empty(reports);
+        }
+    }
+
+    // İzleme statik, Worker birden çok (testlerde olduğu gibi): otomatik karantina ve DNS hataları yalnızca çalışan
+    // Worker'a gider. Kurulan Worker bağlamaz (eskiden son kurulan Worker hepsini alırdı); atılan Worker hiçbir şey almaz
+    // ve kendinden sonra bağlanan Worker'ı çözmez. Worker'ların kilidi sahtedir (tepsi listesi, sahte yalıtım), HTTP sahte.
+    [Collection(SharedStateCollection.Name)]
+    public class DnsWorkerBindingTests : SharedStateTestBase, IDisposable
+    {
+        // Testten önceki değerler (temel kurucudan sonra okunur: alan başlatıcıları ortam kurulmadan çalışır)
+        private readonly string _secureDir;
+        private readonly HttpClient _client;
+        private readonly POps.Shared.IKioskRegistry _registry;
+        private readonly Func<IEnumerable<string>> _cacheReader;
+        private readonly Action<string, string> _reporter;
+        private readonly Action<string> _quarantine;
+        private readonly List<string> _cache = new List<string>();
+        // Hiçbir Worker bağlı değilken testin kendi karantinası
+        private readonly List<string> _unbound = new List<string>();
+
+        public DnsWorkerBindingTests()
+        {
+            (_secureDir, _client, _registry) = (SecureStore.Dir, AgentHttp.Client, KioskMode.Registry);
+            (_cacheReader, _reporter, _quarantine) = (DnsPolicyMonitor.CacheReader, DnsPolicyMonitor.Reporter, DnsPolicyMonitor.Quarantine);
+            SecureStore.Dir = TestEnvironment.NewDir("dns-workers");
+            AgentHttp.Client = new HttpClient(new OkHandler());
+            KioskMode.Registry = new FakeKioskRegistry();
+            DnsPolicyMonitor.Reset();
+            DnsPolicyMonitor.CacheReader = () => _cache.ToList();
+            DnsPolicyMonitor.Reporter = (_, _) => { };
+            DnsPolicyMonitor.Quarantine = _unbound.Add;
+            DnsPolicyMonitor.Configure(new AgentPolicy
+            {
+                DnsCategories = new List<string> { "bahis" },
+                DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = new List<string> { "bet1.example", "bet2.example" } },
+                AutoQuarantine = true,
+                QuarantineThreshold = 1,
+            }, "HW-DNS", "https://pops.example");
+        }
+
+        public void Dispose()
+        {
+            DnsPolicyMonitor.Reset();
+            DnsPolicyMonitor.CacheReader = _cacheReader;
+            DnsPolicyMonitor.Reporter = _reporter;
+            DnsPolicyMonitor.Quarantine = _quarantine;
+            KioskMode.Registry = _registry;
+            AgentHttp.Client = _client;
+            SecureStore.Dir = _secureDir;
+        }
+
+        private sealed class OkHandler : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+                Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        }
+
+        // Kilidi sahte bir Worker: kilit ekranı mesajları Tray'e düşer, yalıtım uygulanmış sayılır
+        private sealed class TestWorker : IDisposable
+        {
+            public readonly List<string> Tray = new List<string>();
+            public readonly Worker Worker = new Worker(NullLogger<Worker>.Instance);
+
+            public TestWorker() => Worker.Quarantine = new QuarantineControl(Tray.Add, () => Task.FromResult(true), () => Task.FromResult(true));
+
+            public int Lockdowns => Tray.Count(m => m.Contains("\"lockdown\"", StringComparison.Ordinal));
+
+            public string LastError => JsonSerializer.SerializeToElement(Worker.HeartbeatPayload())
+                .GetProperty("agent_health").GetProperty("last_error").GetString();
+
+            public void Dispose() => Worker.Dispose();
+        }
+
+        // Listedeki yeni bir giriş; eşik 1 olduğu için otomatik karantina
+        private void Violate(string domain)
+        {
+            _cache.Add(domain);
+            DnsPolicyMonitor.ResetViolations();
+            Assert.Single(DnsPolicyMonitor.CheckNow());
+        }
+
+        // DNS önbelleği okunamadı: hata bağlı Worker'ın heartbeat'ine (agent_health.last_error) yazılır
+        private void FailCacheRead()
+        {
+            DnsPolicyMonitor.CacheReader = () => throw new InvalidOperationException("önbellek okunamadı");
+            try { DnsPolicyMonitor.CheckNow(); }
+            finally { DnsPolicyMonitor.CacheReader = () => _cache.ToList(); }
+        }
+
+        [Fact]
+        public void ConstructingAWorker_BindsNothing()
+        {
+            using var worker = new TestWorker();
+            Violate("bet1.example");
+            FailCacheRead();
+            Assert.Single(_unbound);
+            Assert.Equal(0, worker.Lockdowns);
+            Assert.Equal("", worker.LastError);
+        }
+
+        // İkinci Worker en son bağlandı ve atıldı: karantina hiçbir Worker'a gitmez. İlki de almaz; onun bağı ikincinin
+        // bağlanmasıyla bitti.
+        [Fact]
+        public void SecondWorkerDisposed_NoWorkerReceivesTheAutoQuarantine()
+        {
+            using var first = new TestWorker();
+            var second = new TestWorker();
+            first.Worker.BindDnsPolicyMonitor();
+            second.Worker.BindDnsPolicyMonitor();
+            second.Dispose();
+
+            Violate("bet1.example");
+            FailCacheRead();
+            Assert.Equal((0, 0), (first.Lockdowns, second.Lockdowns));
+            Assert.Equal(("", ""), (first.LastError, second.LastError));
+            Assert.Empty(_unbound);
+            Assert.False(File.Exists(QuarantineControl.LockPath));
+        }
+
+        // İlk Worker atıldı, ikincisi çalışıyor: atılan Worker ikincinin bağını çözmez; karantina ve hata ikinciye gider
+        [Fact]
+        public void FirstWorkerDisposed_TheRunningWorkerStillReceives()
+        {
+            var first = new TestWorker();
+            using var second = new TestWorker();
+            first.Worker.BindDnsPolicyMonitor();
+            second.Worker.BindDnsPolicyMonitor();
+            first.Dispose();
+
+            Violate("bet1.example");
+            FailCacheRead();
+            Assert.Equal((0, 1), (first.Lockdowns, second.Lockdowns));
+            Assert.Equal("", first.LastError);
+            Assert.StartsWith("dns: ", second.LastError, StringComparison.Ordinal);
+            Assert.Empty(_unbound);
+
+            // Çalışan Worker atılınca o da bırakır
+            second.Dispose();
+            Violate("bet2.example");
+            Assert.Equal(1, second.Lockdowns);
+            Assert.Empty(_unbound);
         }
     }
 }

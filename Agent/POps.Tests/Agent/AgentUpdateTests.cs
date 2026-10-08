@@ -15,7 +15,8 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    public class AgentUpdateTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class AgentUpdateTests : SharedStateTestBase
     {
         private sealed class FakeServer : HttpMessageHandler
         {
@@ -228,7 +229,8 @@ namespace POps.Tests.Agent
     }
 
     // A5: update_result sunucu onaylayana kadar saklanır
-    public class UpdateResultAckTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class UpdateResultAckTests : SharedStateTestBase
     {
         private DateTime _now = new DateTime(2026, 10, 2, 10, 0, 0, DateTimeKind.Utc);
 

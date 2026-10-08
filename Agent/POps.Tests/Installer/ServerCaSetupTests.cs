@@ -13,7 +13,8 @@ namespace POps.Tests.Installer
 {
     // MSI SERVER_CA_CERT: PEM yolu -> C:\POpsData\secure\server-ca.pem (yalnızca SYSTEM/Administrators); verilmezse
     // mevcut dosya korunur; "system" siler; bozuk ya da CA olmayan sertifika kurulumu durdurur.
-    public class ServerCaSetupTests : TestBase
+    [Collection(SharedStateCollection.Name)]
+    public class ServerCaSetupTests : SharedStateTestBase
     {
         private readonly string _root = TestEnvironment.NewDir("msi-ca");
         private readonly List<string> _log = new List<string>();
