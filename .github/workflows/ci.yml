@@ -593,6 +593,20 @@ jobs:
           test "$(psql -h 127.0.0.1 -U pops -d pops_ci -X -A -t -c "SELECT count(*) FROM device_audit_logs WHERE reason='degistirildi'")" = 0
           ( cd "$APP" && python audit_verify.py )
 
+          echo "== saklama: en yeni KEEP_MIN yedek + yedeği olan son KEEP_WEEKLY haftanın en yenisi kalır"
+          B="$RUNNER_TEMP/backups"
+          for d in 20250106T010000Z 20250108T010000Z 20250113T010000Z 20250120T010000Z 20250121T010000Z; do
+            mkdir "$B/$d"; touch -d "${d:0:8}" "$B/$d"
+          done
+          sleep 1
+          KEEP_MIN=2 KEEP_DAYS=0 KEEP_WEEKLY=3 Installer/server/pops-backup
+          ls "$B"
+          # Kalanlar: bugünkü iki yedek (KEEP_MIN; bu hafta da onlarla sayıldı), 2025-W04'ün en yenisi (21 Oca),
+          # 2025-W03 (13 Oca). Silinenler: 20 Oca (W04'ün eskisi), W02'nin ikisi (hafta sınırı 3).
+          test -d "$FIRST" && test -d "$B/20250121T010000Z" && test -d "$B/20250113T010000Z"
+          test ! -e "$B/20250120T010000Z" && test ! -e "$B/20250108T010000Z" && test ! -e "$B/20250106T010000Z"
+          test "$(find "$B" -mindepth 1 -maxdepth 1 -type d -name '20*Z' | wc -l)" = 4
+
   tls:
     name: TLS tool and nginx template
     runs-on: ubuntu-latest
@@ -618,6 +632,11 @@ jobs:
           openssl verify -CAfile "$POPS_CA_DIR/pops-ca.pem" "$POPS_TLS_DIR/server.crt"
           openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$RUNNER_TEMP/other.key" -out "$RUNNER_TEMP/other.pem" -days 1 -subj "/CN=Other CA" 2>/dev/null
           if openssl verify -CAfile "$RUNNER_TEMP/other.pem" "$POPS_TLS_DIR/server.crt" 2>/dev/null; then echo "::error::yabancı CA kabul edildi"; exit 1; fi
+          $T check
+          rc=0; $T check --days 900 >/dev/null || rc=$?
+          [ "$rc" = 1 ] || { echo "::error::check --days 900 çıkış kodu $rc (1 beklenirdi)"; exit 1; }
+          rc=0; POPS_TLS_DIR=$RUNNER_TEMP/missing $T check 2>/dev/null || rc=$?
+          [ "$rc" = 2 ] || { echo "::error::olmayan sertifikada çıkış kodu $rc (2 beklenirdi)"; exit 1; }
           if $T import "$RUNNER_TEMP/other.pem" "$POPS_TLS_DIR/server.key" 2>/dev/null; then echo "::error::eşleşmeyen anahtar kabul edildi"; exit 1; fi
       - name: nginx template renders and validates
         run: |

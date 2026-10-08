@@ -836,6 +836,12 @@
     // =================================================================
     // AJANLAR: sürüm dağılımı, paket, güncelleme ve ilerleme
     // =================================================================
+    // İzlenen gönderimde güncellemesi süren bilgisayarlar (sonuç bekleniyor; servisi kurulumda kapalı olabilir)
+    function updatingPcs() {
+        const out = new Set();
+        (rItems || []).forEach(it => { if (it.pending && !it.on_target && itemState(it).k === 'run') out.add(it.pc); });
+        return out;
+    }
     function agentInfo() {
         const v = S.ver || {};
         const staged = v.staged_version || '';
@@ -869,7 +875,11 @@
         if (!S.ver) return;
         const A = agentInfo();
         const v = A.v;
-        const sig = JSON.stringify([v.staged_version, v.latest, v.release_available, v.checked_github, v.update_peer_cache, S.fetching, A.all.map(d => [d.hostname, dev.version(d), d.status])]);
+        // Güncellemesi süren eski ajan (gönderildi, sonucu gelmedi): kurulumda servisi durur; "kapalı" değil "güncelleniyor"
+        const upd = updatingPcs();
+        const oldUpd = A.old.filter(d => upd.has(d.hostname)).length;
+        const onIdle = A.oldOn.filter(d => !upd.has(d.hostname)).length;
+        const sig = JSON.stringify([v.staged_version, v.latest, v.release_available, v.checked_github, v.update_peer_cache, S.fetching, A.all.map(d => [d.hostname, dev.version(d), d.status]), [...upd]]);
         if (!force && sig === agHash) return;
         agHash = sig;
         // Durum
@@ -888,15 +898,19 @@
         const pkgMoreHtml = `<button type="button" class="ibtn sm" data-act="pkgmore" data-tip="${escapeHtml(POps.t('Paket işlemleri'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paket işlemleri'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>`;
         // Güncelleme satırı
         let upT, upD, upBtn = '';
-        const offOld = A.old.length - A.oldOn.length;
+        const offOld = A.old.length - onIdle - oldUpd;
         if (!A.staged) { upT = POps.t('Ajan güncellemesi'); upD = POps.t('Önce ajan paketini indirin.'); }
         else if (v.release_available) { upT = POps.tn('{n} ajan {version} sürümünde değil', A.old.length, { version: fmtV(A.staged) }); upD = POps.t('Gönderilecek paket {staged}; önce {latest} paketini indirin.', { staged: fmtV(A.staged), latest: fmtV(v.latest) }); }
         else if (!A.old.length) { upT = POps.t('Bütün ajanlar {version} sürümünde', { version: fmtV(A.staged) }); upD = POps.t('Gönderilecek güncelleme yok.'); }
         else {
             upT = POps.tn('{n} eski ajan', A.old.length);
-            upD = (offOld && A.oldOn.length ? POps.t('{on} açık, {off} kapalı (kapalılar açılınca gönderilebilir).', { on: A.oldOn.length, off: offOld })
-                : A.oldOn.length ? POps.tn('{n} açık.', A.oldOn.length) : POps.t('Hepsi kapalı.')) + ' ' + POps.t('Yeni sürüm açılmazsa ajan önceki sürüme kendiliğinden döner.');
-            if (IS_SUPER) upBtn = `<button type="button" class="btn" data-act="deploy-old" ${A.oldOn.length ? '' : 'disabled'}>${POps.iconHtml('arrow-up', 'sm')}${POps.tnHtml('{n} eski ajanı güncelle', A.oldOn.length)}</button>`;
+            const parts = [];
+            if (oldUpd) parts.push(POps.tn('{n} güncelleniyor.', oldUpd));
+            if (offOld && onIdle) parts.push(POps.t('{on} açık, {off} kapalı (kapalılar açılınca gönderilebilir).', { on: onIdle, off: offOld }));
+            else if (onIdle) parts.push(POps.tn('{n} açık.', onIdle));
+            else if (offOld) parts.push(oldUpd ? POps.tn('{n} kapalı.', offOld) : POps.t('Hepsi kapalı.'));
+            upD = parts.join(' ') + ' ' + POps.t('Yeni sürüm açılmazsa ajan önceki sürüme kendiliğinden döner.');
+            if (IS_SUPER) upBtn = `<button type="button" class="btn" data-act="deploy-old" ${onIdle ? '' : 'disabled'}>${POps.iconHtml('arrow-up', 'sm')}${POps.tnHtml('{n} eski ajanı güncelle', onIdle)}</button>`;
         }
         const upMoreHtml = IS_SUPER && A.staged && !v.release_available ? `<button type="button" class="ibtn sm" data-act="upmore" data-tip="${escapeHtml(POps.t('Hedef seç'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Başka hedefe gönder'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>` : '';
         $('agSet').innerHTML = `<div class="srow block"><div style="display:flex;justify-content:space-between;gap:12px"><div class="t">${POps.tHtml('Sürüm dağılımı')}</div><div class="v">${POps.tnHtml('{n} ajan', A.all.length)}</div></div>${distHtml(A)}</div>
@@ -930,7 +944,13 @@
         const A = agentInfo();
         switch (b.dataset.act) {
             case 'fetch': fetchRelease(); break;
-            case 'deploy-old': deploy(A.oldOn.map(d => d.hostname), b, A.old.length - A.oldOn.length); break;
+            case 'deploy-old': {
+                // Güncellemesi sürenlere yeniden gönderilmez
+                const upd = updatingPcs();
+                const idle = A.oldOn.filter(d => !upd.has(d.hostname));
+                deploy(idle.map(d => d.hostname), b, A.old.length - idle.length);
+                break;
+            }
             case 'pkgmore': POps.menu(b, [
                 { label: POps.t('Paketi elle yükle…'), icon: 'upload', onClick: () => openModal('uploadModal') },
                 { label: POps.t('Sürüm notları'), icon: 'file', onClick: openNotes }
@@ -1201,6 +1221,7 @@
                 : POps.tn('{version}: {n} bilgisayar güncellendi.', c.total, { version: fmtV(rollout.version) }));
         }
         renderRollout();
+        renderAgents(false);   // "güncelleniyor" sayısı ilerlemeyle birlikte değişir
         // 45 dk sonra (ya da hepsi sonuçlanınca) izleme durur; kapalı bilgisayarlar o zamana dek "Kapalı" görünür
         if (c.run && Date.now() - rollout.at < 45 * 60 * 1000) rTimer = setTimeout(pollRollout, document.hidden ? 15000 : 4000);
         else if (c.run && !rollout.doneAt) { rollout.doneAt = Date.now(); store.set(RKEY, rollout); renderRollout(); }

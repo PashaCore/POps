@@ -47,24 +47,38 @@ To pick one up:
 Maintainers writing a good first issue: describe the context, name the files, list acceptance criteria, keep it to
 a change one person can review in one sitting, and add the label.
 
+### Türkçe katkı
+
+Türkçe bilenler için ayrılmış işler [`türkçe`](https://github.com/PashaCore/POps/issues?q=is%3Aissue+is%3Aopen+label%3At%C3%BCrk%C3%A7e) etiketini taşır ve Türkçe yazılmıştır: belge çevirileri, Türkçe
+rehberler, Pardus'ta deneme, panelin Türkçe metinleri, demo ve pilot rehberi için okul gözüyle geri bildirim.
+Çoğu için kod yazmak, sunucu ya da Windows bilgisayar gerekmez. Adımlar yukarıdakiyle aynı: işi seçin, issue'ya
+almak istediğinizi yazın, işi size atayalım. Sorularınızı issue'da ya da
+[Discussions](https://github.com/PashaCore/POps/discussions)'ta Türkçe sorabilirsiniz. Pull request açıklaması ve
+commit mesajı Türkçe olabilir.
+
+Çeviride: komutlar, dosya yolları, ayar adları ve kod çevrilmez; panelde görünen adlar panelde nasıl yazıyorsa öyle
+kalır; terimler [`README.tr.md`](README.tr.md) ile aynıdır. Türkçe belgeler [`docs/tr/`](docs/tr/) klasöründedir.
+
 ## Repository layout
 
 | Path | Contents |
 | --- | --- |
-| `Backend/` | FastAPI backend. `server.py` only builds the app. `pops/` holds configuration, database pool, panel security, agent authentication, audit log, connection manager, models, notifications, scheduler, task queue, hardware-DNA identity and Wake-on-LAN; `pops/routers/` has one router per endpoint group, and `pops/routers/system/` covers versions, releases, enrollment, agent updates, self-update and capabilities (`system_routes.py` is its old import name); `release_verify.py` checks signed releases. `migrate.py` and `migrations/NNNN_*.sql` own the schema. `setup_env.py` is the server setup script. `tests/` holds the integration tests. `storage/`, `updates/` and `releases/` are runtime data and git-ignored. |
-| `Dashboard/` | PHP 8 panel: one file per page (`index.php`, `devices.php`, `system.php`, ...), `includes/` (`header.php` with the fetch wrapper and escaping helpers, `session.php`, `sidebar.php`, `config.example.php`), `assets/`. |
+| `Backend/` | FastAPI backend. `server.py` only builds the app. `pops/` holds configuration, database pool, panel security, agent authentication, audit log, connection manager, models, notifications, scheduler, task queue, hardware-DNA identity and Wake-on-LAN, and the newer modules: `tenancy.py` (organisational-unit scopes), `sso.py` / `sso_ldap.py` / `sso_oidc.py` (directory and OIDC sign-in), `cluster.py` (several workers with Redis), `exams.py`, `power.py`, `winget.py`, `filestore.py`, `peer_cache.py`, `glpi.py`; `pops/routers/` has one router per endpoint group, and `pops/routers/system/` covers versions, releases, enrollment, agent updates, self-update and capabilities (`system_routes.py` is its old import name); `release_verify.py` checks signed releases. `migrate.py` and `migrations/NNNN_*.sql` own the schema. `setup_env.py` is the server setup script. `tests/` holds the pytest unit tests and the script tests (`conftest.py` explains how they are collected). `requirements.txt` is the input, `requirements.lock` the hash-locked install. `storage/`, `updates/`, `releases/` and `transfers/` are runtime data and git-ignored. |
+| `Dashboard/` | PHP 8 panel: one file per page (`index.php`, `devices.php`, `system.php`, ...), `includes/` (`header.php` with the fetch wrapper and escaping helpers, `session.php`, `sidebar.php`, `config.example.php`), `assets/` (shared scripts, the icon set, bundled fonts) with `assets/pages/` for page scripts moved out of the PHP files, and `lang/en/` for the English texts ([`docs/i18n.md`](docs/i18n.md)). |
 | `Agent/` | .NET 10 agent: `POps.Agent` (Windows service), `POpsTray`, `POpsWatchdog`, `POpsUpdater`, `POps.Shared` (helpers shared by the programs), `POps.Tests` (xUnit). `Directory.Build.props` takes the version from `VERSION` and turns on the warnings gate; `.editorconfig` holds the warning baseline. |
+| `Agent-Linux/` | Linux agent for Pardus/Debian/Ubuntu (Python 3 on the distribution's packages, decision D-22): `pops_agent/` package, `pops-agent` launcher, `debian/` (control file, systemd unit, maintainer scripts), `build_deb.py` (reproducible `.deb`), `tests/` (pytest) ([`Agent-Linux/README.md`](Agent-Linux/README.md)). |
 | `Installer/agent/` | WiX 5 MSI (`Package.wxs`, `POps.Agent.Installer.wixproj`) and its custom actions (`CustomActions/`, .NET Framework 4.7.2). |
-| `Installer/server/` | `install.sh` (native install), `nginx.example.conf`, `pops-deploy-backend` (deploy with health check and rollback), `pops-selfupdate` with its systemd `.path` and `.service` units. |
+| `Installer/server/` | `install.sh` (native install), the nginx and Apache templates, `pops-deploy-backend` (deploy with health check, pre-migration dump and rollback), `pops-selfupdate` with its systemd `.path` and `.service` units, `pops-backup` / `pops-restore`, `pops-tls`, and `tests/` for the scripts. |
 | `docker/`, `docker-compose.yml` | Optional container setup ([`docs/docker.md`](docs/docker.md)). |
-| `tools/` | `sign_release.py` (sign, verify, generate keys, self-test), `backend_lock.sh` (`Backend/requirements.lock`), `export_openapi.py` (`docs/openapi.json`), `agent_simulator.py` (load test), `demo_fleet.py` (fake PCs for the demo), `i18n/` and `html_sinks/` (panel checks). |
-| `tests/e2e/` | Panel end-to-end tests (Playwright). |
+| `fuzz/` | Atheris fuzz targets (`fuzz_*.py`), their seed inputs in `corpus/` and `run.sh` ([`docs/fuzzing.md`](docs/fuzzing.md)). |
+| `tools/` | `sign_release.py` (sign, verify, generate keys, self-test), `backend_lock.sh` (`Backend/requirements.lock` and `.github/requirements/*.lock`), `export_openapi.py` (`docs/openapi.json`), `agent_simulator.py` (load test), `bench_charts.py` and `bench_devices_delta.py` (benchmark charts and measurements), `demo_fleet.py` (fake PCs for the demo), `check_docs_versions.py` and `check_nullable_baseline.py` (CI checks), `i18n/` and `html_sinks/` (panel checks). |
+| `tests/` | `e2e/`: panel end-to-end tests (Playwright); `unit-js/`: JavaScript unit tests for the panel helpers (Node's built-in test runner). |
 | `deploy/demo/` | The public read-only demo ([`deploy/demo/README.md`](deploy/demo/README.md)). |
-| `keys/` | The release **public** key only. Private keys (`*.key.pem`) are git-ignored and never committed. |
-| `docs/` | Operator and developer documentation, including the decision log `decisions.md`, the agent protocol in `protocol/` and `openapi.json`. |
-| `.github/` | `workflows/ci.yml`, `release.yml`, `codeql.yml`, `scorecard.yml`, `lock-refresh.yml`; `scripts/ci_schema_check.py`; Dependabot; CODEOWNERS; issue and PR templates. |
+| `keys/` | The release **public** key, the tag-signing public key and `allowed_signers`. Private keys (`*.key.pem`) are git-ignored and never committed. |
+| `docs/` | Operator and developer documentation, including the decision log `decisions.md`, the agent protocol in `protocol/` (JSON Schemas, example messages, `AGENT_TESTS.md`), design notes in `design/`, `integrations/glpi.md`, the Turkish guides in `tr/` and `openapi.json`. |
+| `.github/` | `workflows/ci.yml`, `release.yml`, `codeql.yml`, `scorecard.yml`, `lock-refresh.yml`; `requirements/` (hash-locked CI tools: `pytest`, `backend-ci`, `fuzz`, `signing`, `lock-tools`); `scripts/ci_schema_check.py`; Dependabot; CODEOWNERS; issue and PR templates. |
 | `VERSION`, `CHANGELOG.md` | The single version source and the changelog. |
-| `Shared/`, `assets/`, `screenshots/` | A placeholder README; images used by the README. |
+| `Shared/`, `assets/`, `screenshots/` | A placeholder README; images used by the README (`screenshots/v0.1.23/` holds the current ones). |
 
 The panel is written in Turkish and every page is translated to English ([`docs/i18n.md`](docs/i18n.md)). `CHANGELOG.md`
 and most of `docs/` are in English; code comments are mostly Turkish.
@@ -183,17 +197,23 @@ Security → Code scanning and on the README badge).
 
 | Job | Checks | Run it locally |
 | --- | --- | --- |
-| Build (5 agent projects) | `dotnet build -c Release` of the agent, tray, watchdog, updater and legacy Vision | see [Agent](#agent-windows-net-10-sdk) |
-| Agent unit tests | `dotnet test Agent/POps.Tests/POps.Tests.csproj` | same |
-| Backend (Python 3.12, 3.10) | `flake8 Backend/ tools/ assets/readme/` (3.12); importing `server` and `setup_env`; `test_units.py`; `test_protocol.py` | `flake8 Backend/ tools/ assets/readme/`, `python -m pytest -m "not integration"` |
-| Backend lock file | `Backend/requirements.lock` matches `requirements.txt` | `tools/backend_lock.sh --check` (uv 0.12.23) |
-| Dashboard checks | `php -l` on every PHP file; dark mode stays removed | `find Dashboard -name '*.php' -print0 \| xargs -0 -n1 php -l` |
+| Build (4 agent projects) | `dotnet build -c Release` of `POps.Agent`, `POpsUpdater`, `POpsWatchdog` and `POpsTray` | see [Agent](#agent-windows-net-10-sdk) |
+| Agent unit tests | `dotnet test Agent/POps.Tests/POps.Tests.csproj` (.NET 10 and .NET Framework 4.7.2) with a coverage summary | same |
+| Backend (Python 3.12, 3.10) | `flake8 Backend/ Agent-Linux/ tools/ assets/readme/ fuzz/` (3.12); importing `server` and `setup_env`; `test_units.py`; `docs/openapi.json` is up to date (3.12); `test_protocol.py` | `flake8 Backend/ Agent-Linux/ tools/ assets/readme/ fuzz/`, `python -m pytest -m "not integration"`, `python tools/export_openapi.py` |
+| Backend lock file | `Backend/requirements.lock` and `.github/requirements/*.lock` match their inputs | `tools/backend_lock.sh --check` (uv from `.github/requirements/lock-tools.lock`) |
+| Linux agent | `Agent-Linux/tests` with the distribution's `python3` and packages; the `.deb` built twice must be identical; `dpkg -i` (service not started), file modes, `pops-agent version`, purge | `python3 -m pytest Agent-Linux/tests`, `python3 Agent-Linux/build_deb.py --out /tmp/deb` ([`Agent-Linux/README.md`](Agent-Linux/README.md#building-and-testing)) |
+| Linux agent against the backend | the agent from the source tree enrolls with a backend over TLS (school CA from `pops-tls`), runs a command, has its result acknowledged, and is refused a switched-off command (`Agent-Linux/tests/test_integration.py`) | see the job in `ci.yml` (`POPS_IT_URL`, `POPS_IT_CA`, `POPS_IT_ADMIN_PASS`) |
+| Dashboard checks | `php -l` on every PHP file; dark mode stays removed; `check_html_sinks.py`; `check_i18n.py`; JavaScript unit tests | `find Dashboard -name '*.php' -print0 \| xargs -0 -n1 php -l`, `python3 tools/html_sinks/check_html_sinks.py`, `python3 tools/i18n/check_i18n.py`, `node --test tests/unit-js/*.test.mjs` |
 | Panel end-to-end | Playwright (Chromium) on the real panel and backend: every page at 1440 and 390 px, main flows, no console errors or outside requests | `cd tests/e2e && npm ci && npx playwright test` with an empty `DB_NAME` ([docs/testing.md](docs/testing.md#panel-end-to-end-tests)) |
-| Version consistency | `VERSION` == top CHANGELOG release heading == built `<Version>` | compare by hand |
+| Version consistency | Actions pinned to commit SHAs; `VERSION` == top CHANGELOG release heading == built `<Version>`; docs state the current versions (`check_docs_versions.py`); the nullable baseline only shrinks (`check_nullable_baseline.py`) | `python3 tools/check_docs_versions.py`, `python3 tools/check_nullable_baseline.py` |
 | Migrations (PostgreSQL 13) | fresh `migrate.py`, `ci_schema_check.py`, second run applies nothing | see below |
+| Several backend workers (Redis) | `Backend/tests/test_ha.py`: two workers on one database and one Redis, then Redis cut off ([docs/ha.md](docs/ha.md)) | `POPS_TEST_REDIS=redis://127.0.0.1:6379/0 python -m pytest -v Backend/tests/test_ha.py` with the `DB_*` variables of an empty database |
+| Backup and restore (PostgreSQL 16) | `pops-backup` with test-restore, a tampered backup and a tampered audit chain refused, `pops-restore --db-only` | see the job in `ci.yml` |
+| TLS tool and nginx template | `pops-tls init` / `show` / `renew`, chain and name checks; the nginx template renders and passes `nginx -t` | see the job in `ci.yml` |
+| Server scripts | shellcheck; `Installer/server/tests/test_deploy.sh` (deploy, rollback, pre-migration dump, venv rebuild, signed tags) with fakes, without root | `bash Installer/server/tests/test_deploy.sh` |
 | Release signing tool | `tools/sign_release.py selftest` (temporary key, no secret needed) | same command |
-| Fuzzing (Atheris) | each target in `fuzz/` (agent WebSocket messages, request models, release manifest, notification settings) for 60 s; flake8 also lints `fuzz/` | `fuzz/run.sh` with Python 3.12 ([docs/fuzzing.md](docs/fuzzing.md)) |
-| Security invariants | the integration tests against a running backend | see below |
+| Fuzzing (Atheris) | each target in `fuzz/` (agent WebSocket messages, request models, release manifest, notification settings) for 60 s; not on release tags | `fuzz/run.sh` with Python 3.12 ([docs/fuzzing.md](docs/fuzzing.md)) |
+| Security invariants (integration) | `python -m pytest -m "not integration"` and then the integration scripts against a running backend under coverage, with a coverage floor | `Backend/tests/run_local.sh` (see below) |
 
 ### Lint and formatting
 

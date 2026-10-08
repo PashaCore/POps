@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/exam_mode.json",
   "title": "exam_mode",
-  "description": "Exam mode for the device's lab (servers that list `exam_mode` in `server_info.features`). `enabled: true` turns it on or replaces the running configuration: block all traffic except the POps server, DNS, DHCP and `allow`, show `message` in the tray, block the programs in `block_apps`, and leave exam mode at `until` on the agent's own clock even when offline. Sent when an admin starts an exam (POST /api/labs/{lab}/exam), after every connection of a device whose lab has a running exam (after queued commands), when a connected device is moved into such a lab, and again when the agent reports an `until` that differs from the exam's. `enabled: false` (no other field) ends it: sent when the exam ends (admin or `until`), when the device is moved out of the lab, on connect when an exam the device may still apply ended early, and when the agent reports `enabled: true` while its lab has no exam (at most once a minute). The agent answers with `exam_state`; with the `exam` capability switched off locally it answers `capability_denied` (`capability: exam`, `action: exam_mode`).",
+  "description": "Exam mode for the device's lab (servers that list `exam_mode` in `server_info.features`). `enabled: true` turns it on or replaces the running configuration: block all traffic except the POps server, DNS, DHCP and `allow`, show `message` in the tray, block the programs in `block_apps`, and leave exam mode at `until` even when offline. Agents from 0.1.24 count the time left (`until - now`) on a monotonic clock, so a PC clock that is ahead or behind does not shorten or lengthen the exam. Sent when an admin starts an exam (POST /api/labs/{lab}/exam), after every connection of a device whose lab has a running exam (after queued commands), when a connected device is moved into such a lab, and again when the agent reports an `until` that differs from the exam's. `enabled: false` (no other field) ends it: sent when the exam ends (admin or `until`), when the device is moved out of the lab, on connect when an exam the device may still apply ended early, and when the agent reports `enabled: true` while its lab has no exam (at most once a minute). The agent answers with `exam_state`; with the `exam` capability switched off locally it answers `capability_denied` (`capability: exam`, `action: exam_mode`).",
   "x-pops-channels": [
     "/ws/agent"
   ],
@@ -48,7 +48,11 @@
         "integer",
         "null"
       ],
-      "description": "End as unix seconds; the agent leaves exam mode at this time on its own clock. `null` would mean no end time; this server always sends a number at most 8 hours ahead."
+      "description": "End as unix seconds, on the server's clock. `null` would mean no end time; this server always sends a number at most 8 hours ahead, and agents from 0.1.24 never keep exam mode longer than 8 hours."
+    },
+    "now": {
+      "type": "integer",
+      "description": "The server's time in unix seconds when it sent the message (from 0.1.24). The agent takes `until - now` as the time left and counts it down on a monotonic clock; it keeps at most 8 hours. Without `now` (older servers) the agent compares `until` with its own clock."
     },
     "message": {
       "type": "string",

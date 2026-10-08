@@ -3,9 +3,10 @@
 
 Bağımlılık yok. Her grafik açık ve koyu tema için iki dosya olarak yazılır (<ad>.svg, <ad>-koyu.svg); rapor
 GitHub'ın <picture> etiketiyle temaya göre birini gösterir. Renkler dataviz varsayılan paletinden (doğrulanmış
-kategorik 1. ve 2. yuva); tek eksen, ince çizgiler, seçici doğrudan etiketler.
+kategorik 1. ve 2. yuva); tek eksen, ince çizgiler, seçici doğrudan etiketler. Python 3.10+ uyumlu.
 
-    python tools/bench_charts.py docs/kapasite/olcum.json docs/kapasite/
+Örnek:
+    python3 tools/bench_charts.py docs/kapasite/olcum.json docs/kapasite/
 """
 
 import json

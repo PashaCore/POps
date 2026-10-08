@@ -45,9 +45,16 @@ public certificate.
 
 ```bash
 sudo pops-tls show            # CA fingerprint, server certificate names, days left
+sudo pops-tls check           # exit 0 if valid > 30 days, exit 1 if ≤ 30 days or expired, exit 2 if missing
 sudo pops-tls renew           # renews when fewer than 30 days remain (the timer runs this weekly)
 sudo pops-tls renew --force   # renew now
 sudo pops-tls init pops.okul.local 10.10.0.5   # reissue with a new name or IP (same CA)
+```
+
+Example cron job for external monitoring:
+
+```bash
+0 6 * * * /usr/local/sbin/pops-tls check || echo "POps TLS warning or failure" | mail -s "POps TLS Alert" admin@okul.local
 ```
 
 The server name must stay the same for the life of the agents: it is baked into every agent's `ServerUrl`.

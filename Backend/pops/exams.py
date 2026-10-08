@@ -1,7 +1,8 @@
 """Sınav modu: bir sınıfın bilgisayarlarında süreli ağ kısıtlaması (bkz. docs/api.md "Exam mode", docs/security.md).
 
 Sınav sınıf başına tutulur (exam_sessions; bir sınıfta en fazla bir süren sınav) ve sınıfın bağlı ajanlarına gider:
-    {"action": "exam_mode", "enabled": true, "allow": [...], "until": <unix>, "message": "...", "block_apps": [...]}
+    {"action": "exam_mode", "enabled": true, "allow": [...], "until": <unix>, "now": <unix>, "message": "...",
+     "block_apps": [...]}
 Bitince {"action": "exam_mode", "enabled": false}. Ajan, POps sunucusu, DNS, DHCP ve izin listesi dışındaki trafiği
 keser, tepside mesajı gösterir, listedeki programları engeller ve until'de (çevrimdışı da olsa) kendiliğinden çıkar.
 Durumunu exam_state ile bildirir; yerel "exam" yeteneği kapalıysa capability_denied ile reddeder.
@@ -244,6 +245,9 @@ def agent_message(exam: dict) -> dict:
         "enabled": True,
         "allow": exam["allow"],
         "until": exam["until"],
+        # Sunucunun saati: ajan kalan süreyi until - now ile bulup kendi monotonik saatiyle sayar; PC saati ileri ya da
+        # geri olsa da sınavın süresi değişmez (eski ajanlar alanı yok sayar ve until'i kendi saatiyle karşılaştırır)
+        "now": int(time.time()),
         "message": exam["message"],
         "block_apps": exam["block_apps"],
     }

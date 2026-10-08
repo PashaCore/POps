@@ -41,6 +41,9 @@ nginx and PHP 8 with PHP-FPM and the `curl` extension from your distribution fir
 
 ## 3. Sign in
 
+The sign-in page follows the browser's language until you pick one with **Türkçe / English** under the form (the
+same switch is at the bottom of the sidebar). This guide uses the Turkish labels.
+
 Open `https://pops.example.com/`, sign in as `admin` with the password from step 1, then on **Ayarlar**:
 
 - change the password (**Kullanıcılar** → click your user → **Şifreyi sıfırla**; you are signed out and sign in
@@ -67,8 +70,15 @@ Open `https://pops.example.com/`, sign in as `admin` with the password from step
    ```
 
 Optional properties: `BYPASS_SECRET=<the BYPASS_SECRET from the server's .env>` for offline quarantine bypass,
-`TERMINAL_ENABLED=0` / `VISION_ENABLED=0` to forbid remote commands or screen view on this PC. All properties:
+`TERMINAL_ENABLED=0` / `VISION_ENABLED=0` to forbid remote commands or screen view on this PC, and
+`EXAM_ENABLED=0`, `FILES_ENABLED=0`, `POWER_ENABLED=0`, `MESSAGE_ENABLED=0`, `PEER_CACHE_ENABLED=0` for exam mode,
+file transfer, power actions, messages and the lab peer cache. All properties:
 [`configuration.md`](configuration.md#msi-properties).
+
+A Linux PC (Pardus 23 and later, Debian 12, Ubuntu 24.04) takes the `.deb` from the same release instead:
+`sudo apt install ./pops-agent_<version>_all.deb`, then
+`sudo pops-agent configure --server https://pops.example.com --token <token>` (with `--ca` for a school CA; see
+[`Agent-Linux/README.md`](../Agent-Linux/README.md#install)).
 
 ## 6. Check that it arrived
 

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`pops-tls check [--days N]` for monitoring.** Exits `0` while the server certificate is valid for more than N days (default 30, the threshold `renew` uses), `1` with one line when it has N days or fewer left or has expired, and `2` when there is no certificate. It changes nothing on disk, so a cron mail or a monitoring plugin can run it. `pops-tls show` marks the "Kalan" line with "uyarı" inside the threshold. Thanks to @RajGahoi (#155, closes #112).
+
+### Changed
+
+- **Agent: the Worker is split into command handlers (steps a0–a4).** A `CommandDispatcher` routes each server action to its own handler class: execute, winget, tasks, Vision and capabilities, exam, file transfer, power, messages and more. `CapabilityGate` sends every `capability_denied` from one place. `Worker.cs` shrinks from 2,203 to about 1,750 lines. Behaviour is unchanged: the agent's 1,304 + 68 tests pass with the same names and results. Two small additions: the exam handler releases its resources when the agent stops, and the network change listener is removed when the Worker stops.
+- **Agent tests run in parallel.** Classes that touch shared static state or open real processes, pipes or sockets run in two serial collections; the other 31 classes run in parallel. A guard test fails CI when a parallel class touches mutable static state. It ignores the hit counters that code coverage adds in CI.
+- **Exam mode: the server sends its own time.** `exam_mode` now carries `now` (unix seconds) next to `until`. Agents from 0.1.24 take `until - now` as the time left and count it on a monotonic clock, so a PC clock that is ahead no longer refuses the exam and one that is behind no longer lengthens it. Older agents ignore the field. Schema, example and protocol README updated.
+- **Docs: release rhythm stated as it is.** README, README.tr, ROADMAP and the code-signing page said releases come out weekly, but 0.1.22 and 0.1.23 came out on the same day. They now say at most one planned release a week, with security fixes in between.
+- **Docs: tool scripts.** The docstrings of `tools/agent_simulator.py`, `tools/bench_charts.py`, `tools/html_sinks/check_html_sinks.py` and `tools/sign_release.py` give Python 3.10+ (the oldest version CI tests) and `python3 tools/…` examples that run from the repository root. Thanks to @RajGahoi (#90).
+- **Docs: Turkish contributions.** CONTRIBUTING has a short Turkish section, *Türkçe katkı*, and README.tr links the `good first issue` and new `türkçe` labels. Ten first issues are written in Turkish (translations of the FAQ, backup, troubleshooting and quick start guides; a Pardus test of the Linux agent; a spelling and terminology check of the panel's Turkish; a glossary; an exam mode guide for teachers; first-impression feedback on the demo; a review of the pilot school guide).
+- **Backups: weekly retention.** `pops-backup` now keeps the newest `KEEP_MIN` backups (3), every backup younger than `KEEP_DAYS` days (now 7, was 14; `0` turns the rule off) and the newest backup of each of the last `KEEP_WEEKLY` weeks (4), and deletes the rest. Each backup carries the agent packages kept on the server (about 80 MB per agent version), so with 14 nightly copies the folder kept growing. On a small disk, `KEEP_DAYS=0` keeps the last 3 nights plus 4 weekly backups. An existing `backup.conf` with `KEEP_DAYS=14` still keeps two weeks. CI checks the rules on dated folders.
+- **Docs: README and README.tr describe 0.1.23.**
+  - **Features and how it works:** new feature rows for exam mode, file transfer, winget, power actions and messages, Vision v2, organisational units, directory and OIDC sign-in, modules, the GLPI export and several workers with Redis. "How it works" covers the Redis workers, the Linux agent and `X-Agent-Features`.
+  - **Security and transparency:** the SSO safeguards, tenancy, file transfer tokens, exam mode as a notice (not proctoring), the notices for power actions and messages, the locked-PC Vision banner and every capability switch.
+  - **Also:** the lab peer cache, updated requirements and known limitations, the Linux and Pardus status, 0.1.22 and 0.1.23 in the release history, test counts from the release CI run, and new screenshots from the public demo (`screenshots/v0.1.23/`).
+- **Docs: SECURITY.md** lists the 0.1.23 controls and four new residual risks: the peer cache port when enabled, Redis inside the trust boundary in multi-worker mode, trust in the directory or SSO provider, and fetched files kept for 7 days.
+- **Docs: CONTRIBUTING.md**'s repository layout and CI tables match `ci.yml` (Linux agent jobs, the Redis job, fuzzing, the lock check, JavaScript unit tests, pytest).
+
+### Removed
+
+- The 14 old panel screenshots in `screenshots/light/`; nothing linked to them since the README moved to `screenshots/v0.1.23/`.
+
+### Fixed
+
+- **Vision: a thumbnail reaches the panel with only its documented fields.** The server passed the agent's `thumbnail` message on to the admin panels as it came, apart from setting `hw_id` from the connection. An agent could add a `pc_name` naming another PC. The panel reads only `hw_id`, so nothing was shown under the wrong PC, but the server's rule is that no agent message reaches the panel in another device's name. Found by the `agent_ws` fuzz target; the input is now in its regression corpus.
+- **Docs: stale facts after 0.1.23.** Getting started, the Turkish "Neden POps?" guide and the positioning page no longer say there is no Linux agent or no directory sign-in. The Veyon guide lists the peer cache port and points to Sistem → Modüller. The quick start shows the language switch, every capability property and the Linux `.deb`. The Linux agent README no longer says Mesaj gönder sends the Windows `msg` command. ROADMAP no longer lists directory sign-in under Later.
+- **Sistem: an agent that is installing an update shows as updating, not off.** The agent's service is stopped during the install, so the PC looked offline and the card said "Hepsi kapalı". PCs with an update in flight are now counted as "güncelleniyor", and "eski ajanı güncelle" doesn't send to them again.
+
 ## [0.1.23-alpha] - 2026-10-05
 
 **For operators, in short:**

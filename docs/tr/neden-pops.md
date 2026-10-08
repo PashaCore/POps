@@ -46,13 +46,13 @@ Beklentiyi baştan doğru kurmak için POps'un **ne olmadığını** da yazıyor
 - **Ders yönetim aracı değildir.** Öğretmenin ders sırasında ekranları izlemesi, kendi ekranını sınıfa yansıtması
   ya da bilgisayarları kilitlemesi için Veyon gibi araçlar vardır. POps onların yerini almaz, altında çalışır:
   [POps ve Veyon birlikte](veyon-ile-birlikte.md).
-- **Bugün yalnızca Windows 10 ve 11 (64 bit) yönetir.** Linux ve Pardus ajanı planlanıyor ama henüz yok; macOS,
-  telefon ve tablet yönetimi de yok.
+- **Asıl olarak Windows 10 ve 11 (64 bit) yönetir.** Pardus, Debian ve Ubuntu için Linux ajanının ilk sürümü var;
+  ama yalnızca envanter, uzak komut ve imzalı güncelleme yapar (ekran izleme, karantina ve tepsi henüz yok) ve henüz
+  bir Pardus laboratuvarında denenmedi. macOS, telefon ve tablet yönetimi yok.
 - **İçerik filtresi değildir.** DNS politikası, listelenen alan adlarına girişi **tespit eder** ve isterseniz eşiği
   aşan bilgisayarı karantinaya alır; siteleri engellemez. Engelleme için okulun ağ filtresi gerekir.
 - **Henüz denenmemiş durumlar var:** Uzak Masaüstü ve çok kullanıcılı oturumlar, uzaktan kontrol sırasında UAC onay
   ekranı, birden fazla monitör ve %100 dışındaki ekran ölçekleme.
-- **Active Directory / LDAP ile giriş yok.** Panel hesapları POps'un kendi kullanıcılarıdır.
 - **Teknik belgelerin çoğu İngilizcedir.** Panelin her sayfası Türkçe ve İngilizce kullanılabilir; okullar için
   rehberler (bu sayfa gibi) Türkçedir.
 - **Destek modeli henüz belirlenmedi.** Bugün destek GitHub üzerinden, gönüllülük esasıyladır; yanıt süresi sözü
@@ -85,7 +85,8 @@ bekler. POps şeffaflığı sonradan eklenen bir ayar olarak değil, tasarımın
 
 Veriler okulun kendi sunucusundaki PostgreSQL veritabanında tutulur. Sunucunun dışarıya açtığı bağlantılar
 şunlardır: GitHub'dan yeni sürüm denetimi ve sürüm notları (internet yoksa atlanır) ve yalnızca siz ayarlarsanız
-bildirim e-postası ya da webhook. Bilgisayarlardaki ajanlar yalnızca kurulumda verilen POps sunucusuna bağlanır.
+bildirim e-postası ya da webhook, panel girişi için okulun dizini (Active Directory/LDAP) ya da bir OpenID Connect
+sağlayıcısı ve GLPI aktarımı. Bilgisayarlardaki ajanlar yalnızca kurulumda verilen POps sunucusuna bağlanır.
 
 Ayrıntılar (İngilizce): [`docs/security.md`](../security.md), [`docs/vision.md`](../vision.md).
 
