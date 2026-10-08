@@ -282,8 +282,9 @@ from the PC's own server, and a package from a peer is accepted only if it match
 Design: [`docs/design/peer-cache.md`](docs/design/peer-cache.md).
 
 The server updates itself the same way, with a health check and automatic rollback. On the stable channel it moves
-to the newest release tag (releases come out weekly; tags are SSH-signed). A test server can follow `main` instead
-(the preview channel). See [`docs/self-update.md`](docs/self-update.md).
+to the newest release tag (at most one planned release a week, a security fix may come in between; tags are
+SSH-signed). A test server can follow `main` instead (the preview channel). See
+[`docs/self-update.md`](docs/self-update.md).
 
 ---
 
