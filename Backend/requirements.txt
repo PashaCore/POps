@@ -6,7 +6,7 @@ fastapi==0.142.2
 # FastAPI'nin alt sınırı (>=0.46) eski, açığı olan Starlette'e izin verir; düzeltmeli sürüm burada sabitlenir.
 starlette==1.7.0
 uvicorn[standard]==0.54.0
-asyncpg==0.31.0
+asyncpg==0.32.0
 pydantic==2.13.5
 PyJWT==2.15.1
 bcrypt==5.0.0
