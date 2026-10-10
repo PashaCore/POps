@@ -21,7 +21,7 @@ ldap3==2.9.1
 pyasn1==0.6.4
 # Birden fazla backend süreci (REDIS_URL, isteğe bağlı; bkz. docs/ha.md): redis-py ve asyncio istemcisi. Tek süreçte
 # yüklenir ama kullanılmaz. slowapi'nin istek sınırı deposu (limits) 8.x'i henüz desteklemiyor.
-redis==7.4.1
+redis==8.1.0
 # Dolaylı bağımlılıklar (Starlette/uvicorn): güvenlik düzeltmeleri, var olan bir venv'e "pip install -r" ile
 # kurulurken de gelsin diye sabittir (pip, sınırı karşılayan eski sürümü kendiliğinden yükseltmez).
 anyio==4.15.1
