@@ -74,7 +74,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Move-Item msi-out/POps-Agent.msi "POps-Agent-$ver-win-x64.msi"
           Write-Host "MSI $msiVersion -> POps-Agent-$ver-win-x64.msi"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: agent
           path: |
@@ -101,7 +101,7 @@ jobs:
           cmp deb-out/*.deb deb-check/*.deb
           dpkg-deb --info deb-out/*.deb
           mv deb-out/*.deb .
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: linux-agent
           path: pops-agent_*_all.deb
@@ -124,7 +124,7 @@ jobs:
           find "dist/$NAME/Backend" -type d -name __pycache__ -prune -exec rm -rf {} +
           tar -C dist -czf "$NAME.tar.gz" "$NAME"
           tar -tzf "$NAME.tar.gz" | head -20
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: server
           path: pops-server-*.tar.gz
