@@ -38,16 +38,53 @@
     #examModal .segmented { margin-bottom: 2px; }
     .exam-time { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .exam-time input[type=time] { width: auto; }
+    /* Bilgisayarlar: sınıflar kutu kutu (genel görünüm), sınıf görünümünde başlıkta yazılı işlemler */
+    .crumbs { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--text-tertiary); margin-bottom: 10px; }
+    .crumbs a { color: var(--text-tertiary); }
+    .crumbs a:hover { color: var(--primary-500); }
+    .crumbs .sep { color: var(--text-muted); }
+    .view-switch { display: inline-flex; }
+    .view-switch a { text-decoration: none; }
+    .page-header-actions .btn { gap: 7px; }
+    .labs-bar .actionbar { gap: 4px; }
+    .labs-bar .actionbar .btn.sm { height: 30px; }
+    .lab-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+    .lab-tile { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 14px; background: var(--bg-surface); box-shadow: 0 0 0 1px var(--border-subtle); color: inherit; text-decoration: none; min-height: 118px; transition: box-shadow .12s; }
+    .lab-tile:hover { box-shadow: 0 0 0 1px var(--primary-500), 0 4px 14px rgba(0,0,0,.06); color: inherit; }
+    .lab-tile:focus-visible { outline: 2px solid var(--primary-500); outline-offset: 2px; }
+    .lab-tile .lt-h { display: flex; align-items: center; gap: 8px; }
+    .lab-tile .lt-n { font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+    .lab-tile .lt-c { font-size: var(--text-sm); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .lab-tile .lt-c b { color: var(--text-primary); }
+    .lab-tile .lt-sq { display: flex; flex-wrap: wrap; gap: 3px; }
+    .lab-tile .lt-sq i { width: 10px; height: 10px; border-radius: 3px; background: #d8dbe2; }
+    .lab-tile .lt-sq i.on { background: #34c759; }
+    .lab-tile .lt-sq i.idle { background: #ff9f0a; }
+    .lab-tile .lt-sq i.bad { background: #ff3b30; }
+    .lab-tile .lt-f { font-size: var(--text-xs); color: var(--text-muted); margin-top: auto; }
+    .lab-tile .lt-f .w { color: #b25e00; }
+    .lab-tile .lt-f .b { color: #c4001a; }
+    .lab-tile.unassigned { box-shadow: 0 0 0 1px #ffb340; }
+    .lab-tile .exam-pill { font-size: var(--text-xs); padding: 2px 8px; border-radius: 99px; background: #fff3d6; color: #8a4600; white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
 </style>
 
+<nav class="crumbs" id="labCrumbs" aria-label="<?php _e('Konum'); ?>" hidden>
+    <a href="labs" id="labBack"><?php _e('Bilgisayarlar'); ?></a><span class="sep" aria-hidden="true">/</span><span id="labCrumbName"></span>
+</nav>
 <div class="page-header">
     <div>
-        <h1 id="labTitle"><?php _e('Sınıflar'); ?></h1>
+        <h1 id="labTitle"><?php _e('Bilgisayarlar'); ?></h1>
         <div class="summary" id="labSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="editLayoutBtn" data-tip="<?php _e('Yerleşimi düzenle'); ?>" aria-label="<?php _e('Yerleşimi düzenle'); ?>" hidden><?php echo pops_icon('grid-edit'); ?></button>
-        <button type="button" class="ibtn boxed" id="labMenuBtn" data-tip="<?php _e('Sınıf işlemleri'); ?>" data-tip-pos="left" aria-label="<?php _e('Sınıf işlemleri'); ?>" aria-haspopup="menu"><?php echo pops_icon('more'); ?></button>
+        <div class="segmented view-switch" id="viewSwitch" role="group" aria-label="<?php _e('Görünüm'); ?>">
+            <a href="labs" class="active" aria-current="page"><?php _e('Sınıflar'); ?></a>
+            <a href="devices"><?php _e('Liste'); ?></a>
+        </div>
+        <button type="button" class="btn" id="newLabBtn" hidden><?php echo pops_icon('plus', 'sm'); ?><?php _e('Yeni sınıf'); ?></button>
+        <button type="button" class="btn" id="examBtn" hidden><?php echo pops_icon('clock', 'sm'); ?><span><?php _e('Sınav başlat'); ?></span></button>
+        <button type="button" class="btn secondary" id="editLayoutBtn" hidden><?php echo pops_icon('grid-edit', 'sm'); ?><?php _e('Yerleşimi düzenle'); ?></button>
+        <button type="button" class="btn secondary" id="labMenuBtn" aria-haspopup="menu" hidden><?php echo pops_icon('more', 'sm'); ?><?php _ex('Diğer', 'menu'); ?></button>
     </div>
 </div>
 
@@ -124,7 +161,8 @@
     const UNASSIGNED = dev.UNASSIGNED;
     const UNASSIGNED_KEY = '__atanmamis';
     const params = new URLSearchParams(location.search);
-    let current = params.get('lab') || (function () { try { return localStorage.getItem('pops_lab') || ''; } catch (e) { return ''; } })();
+    let pendingDo = params.get('do');   // Kontrol merkezi → Sınav başlat: labs?lab=X&do=exam
+    let current = params.get('lab') || '';   // boş: bütün sınıflar (kutular)
     let selected = new Set();
     let focus = null;
     let editing = false;
@@ -185,6 +223,7 @@
         return [e.id, EXAM.shortLeft(e), data ? data.devices.map(x => x.pc_name + ':' + x.state) : null];
     }
     function renderExamBar() {
+        renderExamBtn();
         const box = $('examBar');
         const e = current !== UNASSIGNED_KEY ? examOf(current) : null;
         if (!e) { box.hidden = true; box.textContent = ''; return; }
@@ -230,6 +269,58 @@
         box.innerHTML = linksHtml + unHtml;
     }
 
+    // Bütün sınıflar: her sınıf bir kutu (açık/toplam, bilgisayar başına bir kare, sınav, karantina, eski ajan)
+    function renderOverview(labs, unCount) {
+        $('examBar').hidden = true;
+        $('labsBar').hidden = true;
+        $('editLayoutBtn').hidden = true;
+        $('labTitle').textContent = POps.t('Bilgisayarlar');
+        document.title = POps.t('Bilgisayarlar') + ' · POps';
+        map.classList.remove('is-selecting', 'is-editing');
+        const all = state.devices || [];
+        const boldHtml = (n) => `<b>${Number(n)}</b>`;
+        const onAll = all.filter(d => !POps.isOffline(d)).length;
+        $('labSummary').innerHTML = `<span class="sum">${POps.tnHtml('{n} sınıf', labs.length, null, { n: boldHtml(labs.length) })}</span>`
+            + `<span class="sum">${POps.tnHtml('{n} bilgisayar', all.length, null, { n: boldHtml(all.length) })}</span>`
+            + `<span class="sum"><span class="dot on"></span>${POps.tHtml('{n} açık', null, { n: boldHtml(onAll) })}</span>`;
+        if (!labs.length && !unCount) {
+            map.innerHTML = `<div class="empty-state">${POps.iconHtml('labs')}<h3>${POps.tHtml('Henüz sınıf yok')}</h3><p>${POps.tHtml('Bilgisayarları yerleştirmek için önce bir sınıf oluşturun.')}</p>${CAN_ADMIN ? `<button type="button" class="btn" id="firstLabBtn">${POps.tHtml('Sınıf ekle')}</button>` : ''}</div>`;
+            if (CAN_ADMIN) $('firstLabBtn').addEventListener('click', addLab);
+            return;
+        }
+        const newest = dev.newestVersion();
+        const tile = (key, name, pcs, extraCls) => {
+            const on = pcs.filter(d => dev.state(d).cls === 'on').length;
+            const idle = pcs.filter(d => dev.state(d).cls === 'idle').length;
+            const q = pcs.filter(d => d.is_quarantined).length;
+            const old = pcs.filter(d => { const m = dev.mark(d, newest); return m && m.kind === 'old'; }).length;
+            const e = key === UNASSIGNED_KEY ? null : examOf(key);
+            const sqHtml = pcs.slice(0, 60).map(d => `<i class="${d.is_quarantined ? 'bad' : escapeHtml(dev.state(d).cls)}" title="${escapeHtml(POps.deviceName(d))}"></i>`).join('');
+            const footHtml = (q ? `<span class="b">${escapeHtml(POps.tn('{n} karantinada', q))}</span>` : '') + (q && old ? ' · ' : '')
+                + (old ? `<span class="w">${escapeHtml(POps.tn('{n} eski ajan', old))}</span>` : '');
+            return `<a class="lab-tile${extraCls ? ' ' + escapeHtml(extraCls) : ''}" href="labs?lab=${encodeURIComponent(key)}" data-lab="${escapeHtml(key)}">`
+                + `<div class="lt-h"><span class="lt-n">${escapeHtml(name)}</span>${e ? `<span class="exam-pill">${POps.iconHtml('clock', 'sm')}${escapeHtml(EXAM.badgeText(e))}</span>` : ''}</div>`
+                + `<div class="lt-c">${pcs.length ? POps.tHtml('{on} / {total} açık', null, { on: boldHtml(on + idle), total: boldHtml(pcs.length) }) : POps.tHtml('Boş sınıf')}</div>`
+                + (sqHtml ? `<div class="lt-sq" aria-hidden="true">${sqHtml}</div>` : '')
+                + `<div class="lt-f">${footHtml || '&nbsp;'}</div></a>`;
+        };
+        const tilesHtml = labs.map(l => tile(l, l, pcsOf(l), '')).join('')
+            + (unCount ? tile(UNASSIGNED_KEY, POps.t('Atanmamış bilgisayarlar'), pcsOf(UNASSIGNED_KEY), 'unassigned') : '');
+        map.innerHTML = `<div class="lab-grid">${tilesHtml}</div>`;
+    }
+    // Sınav: sınıf görünümünde başlıkta görünür (başlat ya da bitir)
+    function renderExamBtn() {
+        const b = $('examBtn');
+        const real = current && current !== UNASSIGNED_KEY;
+        b.hidden = !real || !CAN_ADMIN;
+        if (b.hidden) return;
+        const running = !!examOf(current);
+        b.querySelector('span').textContent = running ? POps.t('Sınavı bitir') : POps.t('Sınav başlat');
+        b.classList.toggle('danger', running);
+        b.disabled = !running && examModuleOff(current);
+        b.title = b.disabled ? POps.t('Sınav modülü bu sınıfta kapalı.') : '';
+    }
+
     function scopeHosts() {
         if (selected.size) return [...selected];
         return pcsOf(current).map(d => d.hostname);
@@ -255,14 +346,11 @@
             ? `<span class="scope sel">${POps.tHtml('{n} seçili', { n: Number(n) })}<button type="button" data-act="clear" aria-label="${escapeHtml(POps.t('Seçimi temizle'))}" data-tip="${escapeHtml(POps.t('Seçimi temizle (Esc)'))}">${POps.iconHtml('x', 'sm')}</button></span>`
             : `<span class="scope">${current === UNASSIGNED_KEY ? POps.tHtml('Hepsi {n}', null, { n: boldHtml(all) }) : POps.tHtml('Tüm sınıf {n}', null, { n: boldHtml(all) })}</span>`;
         const moveHtml = current === UNASSIGNED_KEY ? `<span class="sep"></span><button type="button" class="btn sm" data-act="move" style="margin:0 4px">${POps.iconHtml('move', 'sm')}${POps.tHtml('Sınıfa taşı')}</button>` : '';
+        const btnHtml = (act, icon, label, cls) => `<button type="button" class="btn ${escapeHtml(cls || 'secondary')} sm" data-act="${escapeHtml(act)}" title="${escapeHtml(label + ' · ' + tgt)}">${POps.iconHtml(icon, 'sm')}${escapeHtml(label)}</button>`;
         bar.innerHTML = scopeHtml + '<span class="sep"></span>'
-            + `<button type="button" class="ibtn" data-act="wake" data-tip="${escapeHtml(wake + ' · ' + tgt)}" aria-label="${escapeHtml(wake)}">${POps.iconHtml('zap')}</button>`
-            + `<button type="button" class="ibtn" data-act="restart" data-tip="${escapeHtml(restart + ' · ' + tgt)}" aria-label="${escapeHtml(restart)}">${POps.iconHtml('restart')}</button>`
-            + `<button type="button" class="ibtn danger" data-act="shutdown" data-tip="${escapeHtml(shutdown + ' · ' + tgt)}" aria-label="${escapeHtml(shutdown)}">${POps.iconHtml('power')}</button>`
+            + btnHtml('wake', 'zap', wake) + btnHtml('restart', 'restart', restart) + btnHtml('shutdown', 'power', shutdown, 'danger-soft')
             + '<span class="sep"></span>'
-            + `<button type="button" class="ibtn" data-act="screen" data-tip="${escapeHtml(screen + ' · ' + tgt)}" aria-label="${escapeHtml(screen)}">${POps.iconHtml('eye')}</button>`
-            + `<button type="button" class="ibtn" data-act="command" data-tip="${escapeHtml(command + ' · ' + tgt)}" aria-label="${escapeHtml(command)}">${POps.iconHtml('terminal')}</button>`
-            + `<button type="button" class="ibtn" data-act="more" data-tip="${escapeHtml(POps.t('Diğer işlemler'))}" aria-label="${escapeHtml(POps.t('Diğer işlemler'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>`
+            + btnHtml('screen', 'eye', screen) + btnHtml('command', 'terminal', command) + btnHtml('more', 'more', POps.tx('Diğer', 'menu'))
             + moveHtml;
     }
 
@@ -288,8 +376,8 @@
         if (!state.devicesLoaded) return;
         const labs = labNames();
         const unCount = pcsOf(UNASSIGNED_KEY).length;
-        if (current !== UNASSIGNED_KEY && !labs.includes(current)) current = labs.find(l => pcsOf(l).length) || labs[0] || (unCount ? UNASSIGNED_KEY : '');
-        if (current === UNASSIGNED_KEY && !unCount) current = labs.find(l => pcsOf(l).length) || labs[0] || '';
+        if (current && current !== UNASSIGNED_KEY && !labs.includes(current)) current = '';
+        if (current === UNASSIGNED_KEY && !unCount) current = '';
         renderNav();
         const pcs = pcsOf(current);
         const newest = dev.newestVersion();
@@ -300,15 +388,21 @@
         selected = new Set([...selected].filter(h => pcs.some(d => d.hostname === h)));
         if (focus && !pcs.some(d => d.hostname === focus)) focus = null;
 
+        const real = current && current !== UNASSIGNED_KEY;
+        $('labCrumbs').hidden = !current;
+        $('viewSwitch').hidden = !!current;
+        $('newLabBtn').hidden = !!current || !CAN_ADMIN;
+        $('labMenuBtn').hidden = !real || !CAN_ADMIN;
+        renderExamBtn();
         if (!current) {
-            renderExamBar();
-            $('labTitle').textContent = POps.t('Sınıflar');
-            $('labSummary').textContent = '';
-            $('labsBar').hidden = true;
-            $('editLayoutBtn').hidden = true;
-            map.innerHTML = `<div class="empty-state">${POps.iconHtml('labs')}<h3>${POps.tHtml('Henüz sınıf yok')}</h3><p>${POps.tHtml('Bilgisayarları yerleştirmek için önce bir sınıf oluşturun.')}</p>${CAN_ADMIN ? `<button type="button" class="btn" id="firstLabBtn">${POps.tHtml('Sınıf ekle')}</button>` : ''}</div>`;
-            if (CAN_ADMIN) $('firstLabBtn').addEventListener('click', addLab);
+            renderOverview(labs, unCount);
             return;
+        }
+        $('labCrumbName').textContent = current === UNASSIGNED_KEY ? POps.t('Atanmamış bilgisayarlar') : current;
+        if (pendingDo === 'exam' && real) {
+            pendingDo = null;
+            if (CAN_ADMIN && !examOf(current) && !examModuleOff(current)) setTimeout(openExam, 0);
+            else if (examOf(current)) POps.toast('info', POps.t('{lab} sınıfında süren bir sınav var.', { lab: current }));
         }
         $('labTitle').textContent = current === UNASSIGNED_KEY ? POps.t('Atanmamış bilgisayarlar') : current;
         try { localStorage.setItem('pops_lab', current); } catch (e) { /* özel pencere */ }
@@ -347,14 +441,18 @@
         render(true);
     }
     function openPc(h) {
-        focus = h;
-        selected.add(h);
-        render(true);
-        dev.open(h, { source: 'labs', onClose: () => { if (focus === h) { focus = null; render(true); } } });
+        location.href = 'pc?id=' + encodeURIComponent(h);
     }
 
     // ---- Etkileşim
     map.addEventListener('click', (e) => {
+        const lt = e.target.closest('.lab-tile[data-lab]');
+        if (lt) {
+            if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+            e.preventDefault();
+            switchLab(lt.dataset.lab, true);
+            return;
+        }
         if (editing) return;
         const t = e.target.closest('.tile[data-host]');
         if (!t) { if (e.target === map || e.target.classList.contains('lab-cols') || e.target.classList.contains('lab-col')) { selected.clear(); render(true); } return; }
@@ -413,10 +511,11 @@
         }
     }
     if (!CAN_ADMIN) { $('labMenuBtn').hidden = true; map.classList.add('no-select'); }
+    $('newLabBtn').addEventListener('click', addLab);
+    $('examBtn').addEventListener('click', (e) => { if (examOf(current)) endExam(e.currentTarget); else openExam(); });
     $('labMenuBtn').addEventListener('click', (e) => {
         const real = current && current !== UNASSIGNED_KEY;
         POps.menu(e.currentTarget, [
-            { label: POps.t('Yeni sınıf…'), icon: 'plus', onClick: addLab },
             real ? { label: POps.t('Yeniden adlandır…'), icon: 'edit', onClick: async () => {
                 const name = await POps.prompt({ title: POps.t('Sınıfı yeniden adlandır'), label: POps.t('Yeni ad'), defaultValue: current, maxLength: 60, confirmText: POps.t('Kaydet') });
                 if (!name || !name.trim() || name.trim() === current) return;
@@ -428,10 +527,6 @@
                 if (!date) return;
                 POps.act(null, () => POps.post('/api/set_auto_enroll', { target_lab: current, expire_date: date }), { success: POps.t('Otomatik kayıt {date} tarihine kadar açık.', { date }) });
             } } : null,
-            real && examOf(current) ? { label: POps.t('Sınavı bitir'), icon: 'stop', danger: true, onClick: () => endExam(null) } : null,
-            real && !examOf(current) ? (examModuleOff(current)
-                ? { label: POps.t('Sınav modu (modül kapalı)'), icon: 'clock', disabled: true }
-                : { label: POps.t('Sınav modu…'), icon: 'clock', onClick: openExam }) : null,
             real ? '-' : null,
             real ? { label: POps.t('Sınıfı sil'), icon: 'trash', danger: true, onClick: async () => {
                 const n = pcsOf(current).length;
@@ -593,17 +688,19 @@
         e.preventDefault();
         switchLab(a.dataset.lab);
     });
-    function switchLab(lab) {
+    function switchLab(lab, push) {
         if (lab === current) return;
         current = lab;
         selected.clear(); focus = null; editing = false; query = ''; $('labSearch').value = '';
         POps.drawer.close();
         try { localStorage.setItem('pops_lab', lab); } catch (e) { /* özel pencere */ }
-        history.replaceState(null, '', 'labs?lab=' + encodeURIComponent(lab));
+        const url = lab ? 'labs?lab=' + encodeURIComponent(lab) : 'labs';
+        if (push) history.pushState(null, '', url); else history.replaceState(null, '', url);
         render(true);
         pollExams().catch(() => {});
     }
-    window.addEventListener('popstate', () => { const l = new URLSearchParams(location.search).get('lab'); if (l) switchLab(l); });
+    window.addEventListener('popstate', () => switchLab(new URLSearchParams(location.search).get('lab') || ''));
+    $('labBack').addEventListener('click', (e) => { if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return; e.preventDefault(); switchLab('', true); });
     let qt = null;
     $('labSearch').addEventListener('input', (e) => { clearTimeout(qt); qt = setTimeout(() => { query = e.target.value.trim(); render(true); }, 120); });
 

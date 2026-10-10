@@ -1,6 +1,5 @@
 {
   "Aydınlatma metni": "Privacy notice",
-  "Bilgisayarın okulca yönetildiğini, neyin kaydedilip neyin kaydedilmediğini anlatan kısa metin. Ajan açılınca tepside gösterilir; kullanıcı onaylayana kadar dakikada bir sorulur.": "A short text that tells users the school manages the computer and what is and isn't recorded. The agent shows it from the tray at startup and asks again every minute until the user accepts.",
   "Aydınlatma ve adil kullanım metni": "Privacy and fair-use notice",
   "Örn. Bu bilgisayar okul tarafından yönetilmektedir…": "e.g. This computer is managed by the school…",
   "Boş bırakılırsa gösterilmez.": "Not shown if left empty.",
@@ -8,11 +7,9 @@
   "Kurumunuzun KVKK aydınlatma metnine bağlantı vermeniz önerilir.": "We recommend linking to your organisation's KVKK privacy notice.",
   "Şablon:": "Template:",
   "Yasaklı alan adı tespiti": "Blocked domain detection",
-  "Açık bir kategorinin listesindeki alan adına girilince ajan ihlal kaydeder ve size bildirir. Engelleme yapmaz; bunun için okulun ağ filtresini kullanın. Sayfa içeriği, arama ve klavye kaydedilmez.": "When someone opens a domain on the list of an enabled category, the agent records a violation and notifies you. It does not block anything; use the school's network filter for that. Page content, searches and keystrokes are not recorded.",
   "0.1.5 ve sonrası ajanlarda çalışır.": "Works with agent 0.1.5 and later.",
   "0.1.5 ve sonrası ajanlarda çalışır · şu an {ok}/{total} ajan": "Works with agent 0.1.5 and later · {ok}/{total} agents now",
   "Otomatik karantina": "Automatic quarantine",
-  "Eşiğe ulaşan bilgisayar kendini ağdan yalıtır: yalnızca POps sunucusuna, DNS ve DHCP'ye erişebilir. Yalnızca DNS tespiti çalışan ajanlarda etkilidir.": "A computer that reaches the limit isolates itself from the network: it can reach only the POps server, DNS and DHCP. Works only on agents that run DNS detection.",
   "Eşikte bilgisayarı kendiliğinden karantinaya al": "Quarantine the computer automatically at the limit",
   "Eşik": "Limit",
   "Ajan son açıldığından beri tespit edilen ihlal sayısı": "Violations detected since the agent last started",
@@ -41,7 +38,6 @@
   "{n} alan adı": {"one": "{n} domain", "other": "{n} domains"},
   "liste boş": "list empty",
   "{len}/4000 karakter": "{len}/4000 characters",
-  "Kurum geneli": "Organisation-wide",
   "Aydınlatma metni gösteriliyor": "Privacy notice shown",
   "Aydınlatma metni yok": "No privacy notice",
   "{n} kategori": {"one": "{n} category", "other": "{n} categories"},
@@ -49,7 +45,6 @@
   "DNS tespiti kapalı": "DNS detection off",
   "Otomatik karantina açık · eşik {n}": "Automatic quarantine on · limit {n}",
   "Otomatik karantina kapalı": "Automatic quarantine off",
-  "{count} ajan destekliyor": "{count} agents support it",
   "Son değişiklik: {who} · {time}": "Last change: {who} · {time}",
   "Yalnızca görüntüleme": "View only",
   "DNS politikası": "DNS policy",
@@ -64,5 +59,9 @@
   "Kaydedilemedi.": "Could not save.",
   "Metin örnek metinle değiştirilsin mi?": "Replace the text with the sample?",
   "Şu anki metnin yerine örnek metin yazılır. Kaydetmeden önce düzenleyebilirsiniz.": "The sample replaces the current text. You can edit it before saving.",
-  "Metni değiştir": "Replace text"
+  "Metni değiştir": "Replace text",
+  "Kaydedilmemiş değişiklik: {list}": "Unsaved changes: {list}",
+  "Ajan açılınca tepside gösterilir; kullanıcı onaylayana kadar dakikada bir sorulur.": "Shown from the tray when the agent starts; asked again every minute until the user accepts.",
+  "Listedeki alan adına girilince ajan ihlal kaydeder; engellemez. Sayfa içeriği, arama ve klavye kaydedilmez.": "When a listed domain is visited the agent records a violation; it does not block it. Page content, searches and keystrokes are not recorded.",
+  "Eşiğe ulaşan bilgisayar ağdan yalıtılır; yalnızca POps sunucusuna, DNS ve DHCP'ye erişir.": "A computer that reaches the threshold is isolated from the network; it can reach only the POps server, DNS and DHCP."
 }

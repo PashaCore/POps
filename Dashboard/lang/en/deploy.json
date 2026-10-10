@@ -20,9 +20,7 @@
   "Sessiz kurulum parametreleri": "Silent install switches",
   "MSI için /qn /norestart kendiliğinden eklenir. Kurulum adımları hedefte {path} dosyasına yazılır.": "For MSI, /qn /norestart is added automatically. The install steps are logged to {path} on the target.",
   "ZIP paketi nasıl hazırlanır?": "How do I build a ZIP package?",
-  "ZIP'in ana dizininde (alt klasörde değil) install.bat bulunmalı.": "install.bat must be at the top level of the ZIP, not in a subfolder.",
-  "POps ZIP'i hedefte açar ve install.bat'ı yukarıdaki parametrelerle yönetici olarak çalıştırır.": "POps extracts the ZIP on the target and runs install.bat as administrator with the switches above.",
-  "Kurulum pencere açmadan bitsin diye install.bat içindeki komutlara sessiz kurulum parametrelerini (/S, /qn, /quiet) ekleyin.": "Add silent switches (/S, /qn, /quiet) to the commands in install.bat so the install finishes without opening a window.",
+  "ZIP'in ana dizinine install.bat koyun; POps onu yönetici olarak çalıştırır. İçindeki komutlara sessiz kurulum parametresi (/S, /qn) ekleyin.": "Put install.bat in the root of the ZIP; POps runs it as administrator. Add silent install switches (/S, /qn) to its commands.",
   "install.bat örneği": "install.bat example",
   "Örn. w32tm /resync": "e.g. w32tm /resync",
   "PowerShell ya da CMD komutları; hedefte SYSTEM hesabıyla çalışır.": "PowerShell or CMD commands; they run as SYSTEM on the target.",
@@ -62,8 +60,6 @@
   "{limit} eşzamanlı kurulum": "{limit} installs at a time",
   "Sınırsız": "Unlimited",
   "{n} eşzamanlı kurulum": {"one": "Up to {n} install at a time", "other": "Up to {n} installs at a time"},
-  "{n} paket": {"one": "{n} package", "other": "{n} packages"},
-  "{n} betik": {"one": "{n} script", "other": "{n} scripts"},
   "{n} dağıtım sürüyor": {"one": "{n} deployment running", "other": "{n} deployments running"},
   "{n} sorunlu dağıtım (bugün)": {"one": "{n} failed deployment today", "other": "{n} failed deployments today"},
   "Süzgece uyan paket yok": "No matching packages",
@@ -92,7 +88,6 @@
   "{n} dağıtım daha": {"one": "{n} more deployment", "other": "{n} more deployments"},
   "Henüz dağıtılmadı.": "Not deployed yet.",
   "Düzenle": "Edit",
-  "Diğer işlemler": "More actions",
   "Son dağıtımlar": "Recent deployments",
   "Özeti kopyala": "Copy hash",
   "İndirme adresini kopyala": "Copy download link",
@@ -153,5 +148,7 @@
   "Bilgisayar sayısı": "Number of computers",
   "1 ile 100 arasında bir sayı girin.": "Enter a number from 1 to 100.",
   "Aynı anda en çok {n} bilgisayarda görev çalışacak.": {"one": "Tasks will run on at most {n} computer at a time.", "other": "Tasks will run on at most {n} computers at a time."},
-  "Kaydedilemedi.": "Could not save."
+  "Kaydedilemedi.": "Could not save.",
+  "özet yok": "no hash",
+  "{name} dağıt": "Deploy {name}"
 }

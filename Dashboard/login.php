@@ -61,7 +61,7 @@ function pops_api_post($path, $payload) {
     return [$decoded, $httpcode, ''];
 }
 
-// Kurum adı ve logosu (Ayarlar → Genel → Kurum); sunucuya ulaşılamazsa POps'un kendi görünümü kalır
+// Kurum adı ve logosu (Kullanıcılar ve giriş → Genel → Kurum); sunucuya ulaşılamazsa POps'un kendi görünümü kalır
 function pops_branding() {
     $ch = curl_init(API_INTERNAL_URL . '/api/branding');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);

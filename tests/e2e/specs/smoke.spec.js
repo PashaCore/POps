@@ -2,10 +2,12 @@
 // kaybolur ve dar ekranda yatay taşma olmaz. Konsol/sayfa hatası, dış istek ve PHP uyarısı fixtures.js'te denetlenir.
 import { test, expect, settled } from '../fixtures.js';
 
+// [yol, başlık, yan menüde etkin satır (başlıktan farklıysa), h1 (başlıktan farklıysa)]
 const PAGES = [
     ['/', 'Kontrol merkezi'],
-    ['/devices', 'Cihazlar'],
-    ['/labs', 'Sınıflar'],
+    ['/devices', 'Bilgisayarlar'],
+    ['/labs', 'Bilgisayarlar'],
+    ['/pc?id=HW-E2E0000102', 'Bilgisayar', 'Bilgisayarlar', 'LAB1-PC01'],
     ['/tasks', 'İşlemler'],
     ['/terminal', 'Uzak komut'],
     ['/vision', 'Uzak ekran'],
@@ -14,8 +16,9 @@ const PAGES = [
     ['/logger', 'Kayıtlar'],
     ['/reports', 'Raporlar'],
     ['/helpdesk', 'Destek talepleri'],
-    ['/settings', 'Ayarlar'],
-    ['/system', 'Sistem'],
+    ['/settings', 'Kullanıcılar ve giriş'],
+    ['/system', 'Sistem ve Güncelleme'],
+    ['/system?view=ayarlar', 'Ayarlar'],
 ];
 
 async function expectNoHorizontalOverflow(page) {
@@ -38,7 +41,7 @@ test.describe('giriş sayfası', () => {
     });
 });
 
-for (const [path, title] of PAGES) {
+for (const [path, title, navTitle, h1Text] of PAGES) {
     test(`${title} (${path}) açılır`, async ({ page }) => {
         const res = await page.goto(path);
         expect(res.status()).toBe(200);
@@ -46,14 +49,14 @@ for (const [path, title] of PAGES) {
 
         // Üst çubuk (dar ekran) ve yan menüdeki etkin sayfa sunucuda yazılır; yan menü dar ekranda gizli de olsa DOM'da
         await expect(page.locator('#pageTitle')).toHaveText(title);
-        await expect(page.locator('.sidebar-nav a.nav-item[aria-current="page"] > span').first()).toHaveText(title);
+        await expect(page.locator('.sidebar-nav a.nav-item[aria-current="page"] > span').first()).toHaveText(navTitle || title);
         await settled(page);
         const h1 = page.locator('.page-header h1');
         await expect(h1).toBeVisible();
-        if (path === '/labs') {
-            // Sınıflar sayfası başlığa seçili sınıfın adını yazar
-            await expect(h1).not.toHaveText('');
-            await expect(page).toHaveTitle(`${(await h1.textContent()).trim()} · POps`);
+        if (h1Text) {
+            // Bilgisayar sayfası başlığa bilgisayarın adını yazar
+            await expect(h1).toHaveText(h1Text);
+            await expect(page).toHaveTitle(`${h1Text} · POps`);
         } else {
             await expect(h1).toHaveText(title);
             await expect(page).toHaveTitle(`${title} · POps`);

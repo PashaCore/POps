@@ -1,6 +1,7 @@
 <?php include 'includes/header.php'; ?>
 
 <style>
+    .page-header-actions .btn { gap: 7px; }
     .lg-tabs { margin-bottom: 16px; }
     .lg-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
     .lg-bar .grow { flex: 1; }
@@ -11,11 +12,13 @@
     .lg-list .act { padding: 13px 6px; outline: none; }
     .lg-list .act:focus-visible { box-shadow: var(--focus-ring); }
     .lg-list .act > .facts { grid-column: 2 / -1; margin-top: -2px; cursor: text; }
+    .lg-list .act .meta a { color: var(--text-secondary); font-weight: var(--fw-medium); }
+    .lg-list .act .meta a:hover { color: var(--primary-500); text-decoration: underline; }
     .lg-day { font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--text-muted); padding: 18px 6px 2px; }
     .lg-day:first-child { padding-top: 12px; }
     .lg-links { grid-column: 1 / -1; display: flex; gap: 14px; flex-wrap: wrap; padding-top: 6px; }
-    .lg-links button { color: var(--primary-500); font-size: var(--text-xs); font-weight: var(--fw-medium); }
-    .lg-links button:hover { text-decoration: underline; }
+    .lg-links button, .lg-links a { color: var(--primary-500); font-size: var(--text-xs); font-weight: var(--fw-medium); }
+    .lg-links button:hover, .lg-links a:hover { text-decoration: underline; }
     .lg-note { font-size: var(--text-xs); color: var(--text-muted); padding: 10px 4px 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .lg-note button { color: var(--primary-500); font-size: var(--text-xs); font-weight: var(--fw-medium); }
     .lg-note button:hover { text-decoration: underline; }
@@ -43,18 +46,19 @@
     .lg-pager .size { display: flex; align-items: center; gap: 8px; }
     .lg-pager .size select { width: auto; min-height: 32px; padding-top: 0; padding-bottom: 0; }
     .hw-table tbody tr { cursor: pointer; }
-    .hw-table tbody tr.is-focus { background: #f0f6ff; }
     .hw-table .nm { font-weight: var(--fw-semibold); }
+    .hw-table .nm a { color: inherit; }
+    .hw-table .nm a:hover { color: var(--primary-500); }
     .hw-table .sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: 1px; }
     .hw-table td.mono { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
     .hw-table .wait { color: var(--text-muted); }
     .hw-table td:nth-child(3), .hw-table td:nth-last-child(-n+2) { white-space: nowrap; }
-    .lg-dlinks { display: flex; gap: 8px; flex-wrap: wrap; }
     @media (max-width: 640px) {
         .lg-bar select { flex: 1 1 auto; }
-                .lg-list { padding: 2px 10px 6px; }
+        .lg-list { padding: 2px 10px 6px; }
         .lg-list .act > .facts { grid-column: 1 / -1; grid-template-columns: 96px minmax(0, 1fr); }
         .lg-bar .search-field { flex: 1 1 100%; }
+        .lg-bar .segmented { max-width: 100%; overflow-x: auto; }
     }
 </style>
 
@@ -64,21 +68,22 @@
         <div class="summary" id="lgSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="lgExport" data-tip="<?php _e('Listeyi dışa aktar (CSV)'); ?>" data-tip-pos="left" aria-label="<?php _e('Listeyi dışa aktar'); ?>"><?php echo pops_icon('download'); ?></button>
-        <button type="button" class="ibtn boxed" id="lgMenuBtn" data-tip="<?php _e('Diğer işlemler'); ?>" data-tip-pos="left" aria-label="<?php _e('Diğer işlemler'); ?>" aria-haspopup="menu" hidden><?php echo pops_icon('more'); ?></button>
+        <button type="button" class="btn secondary" id="lgExport"><?php echo pops_icon('download', 'sm'); ?><?php _e('CSV indir'); ?></button>
+        <button type="button" class="btn secondary" id="lgMenuBtn" aria-haspopup="menu" hidden><?php echo pops_icon('more', 'sm'); ?><?php _ex('Diğer', 'menu'); ?></button>
     </div>
 </div>
 
-<div class="tabs lg-tabs" id="lgTabs" role="tablist" aria-label="<?php _e('Görünüm'); ?>">
-    <button type="button" class="tab active" data-tab="log" role="tab" aria-selected="true"><?php _e('Olaylar'); ?></button>
-    <button type="button" class="tab" data-tab="hw" role="tab" aria-selected="false"><?php _e('Donanım'); ?></button>
+<div class="tabs lg-tabs" id="lgTabs" aria-label="<?php _e('Görünüm'); ?>">
+    <button type="button" class="tab" data-tab="log"><?php _e('Olaylar'); ?></button>
+    <button type="button" class="tab" data-tab="hw"><?php _e('Donanım'); ?></button>
 </div>
 
-<section id="lgPaneLog">
+<section data-pane="log" id="lgPaneLog">
     <div class="lg-bar">
         <div class="segmented" id="lgFilter" role="group" aria-label="<?php _e('Önem derecesine göre süz'); ?>">
             <button type="button" data-f="all" class="active" aria-pressed="true"><?php _e('Tümü'); ?> <span class="count" data-n="all"></span></button>
             <button type="button" data-f="warn" aria-pressed="false"><?php _e('Uyarılar'); ?> <span class="count" data-n="warn"></span></button>
+            <button type="button" data-f="bad" aria-pressed="false"><?php _e('Kritik'); ?> <span class="count" data-n="bad"></span></button>
             <button type="button" data-f="sec" aria-pressed="false"><?php _e('Güvenlik'); ?> <span class="count" data-n="sec"></span></button>
         </div>
         <button type="button" class="btn secondary lg-fbtn" id="lgFiltersBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="lgFPanel"><?php echo pops_icon('filter', 'sm'); ?><?php _e('Süzgeçler'); ?><span class="badge" id="lgFCount" hidden></span></button>
@@ -108,8 +113,12 @@
     <div class="lg-note" id="lgNote"></div>
 </section>
 
-<section id="lgPaneHw" hidden>
+<section data-pane="hw" id="lgPaneHw" hidden>
     <div class="lg-bar">
+        <div class="segmented" id="hwFilter" role="group" aria-label="<?php _e('Donanım bilgisine göre süz'); ?>">
+            <button type="button" data-hf="all" class="active" aria-pressed="true"><?php _e('Tümü'); ?> <span class="count" data-n="all"></span></button>
+            <button type="button" data-hf="wait" aria-pressed="false"><?php _e('Bekleyen'); ?> <span class="count" data-n="wait"></span></button>
+        </div>
         <select id="hwLab" aria-label="<?php _e('Sınıfa göre süz'); ?>"><option value=""><?php _e('Bütün sınıflar'); ?></option></select>
         <span class="grow"></span>
         <div class="search-field">
@@ -123,7 +132,6 @@
             <tbody id="hwBody"><tr><td colspan="7"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Donanım bilgileri yükleniyor…'); ?></div></td></tr></tbody>
         </table>
     </div>
-    <div class="lg-note"><?php _e('Donanım bilgisini ajan açılışta ve günde bir kez gönderir.'); ?></div>
 </section>
 
 <?php /* Sayfa betiği assets/pages/logger.js: sayfada satır içi betik yok */ ?>

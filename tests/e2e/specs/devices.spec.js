@@ -1,4 +1,4 @@
-// Cihazlar: arama listeyi süzer, satıra tıklayınca ayrıntı paneli açılır. Örnek veride 12 bilgisayar var (seed.sql).
+// Bilgisayarlar (liste): arama listeyi süzer, satıra tıklayınca bilgisayarın sayfası açılır. Örnek veride 12 bilgisayar var (seed.sql).
 import { test, expect, settled } from '../fixtures.js';
 
 test.beforeEach(async ({ page }) => {
@@ -33,19 +33,16 @@ test('arama listeyi süzer', async ({ page }) => {
     await expect(rows).toHaveCount(12);
 });
 
-test('cihaza tıklayınca ayrıntı paneli açılır', async ({ page }) => {
+test('cihaza tıklayınca bilgisayar sayfası açılır', async ({ page }) => {
     await page.locator('#devBody tr[data-host]').filter({ hasText: 'LAB1-PC01' }).locator('.nm').click();
-    const drawer = page.locator('#popsDrawer');
-    await expect(drawer).toHaveClass(/\bopen\b/);
-    await expect(drawer.locator('.drawer-head h2')).toHaveText('LAB1-PC01');
+    await expect(page).toHaveURL(/\/pc\?id=HW-E2E0000102$/);
+    await expect(page.locator('#pcName')).toHaveText('LAB1-PC01');
 
-    const fact = (label) => drawer.locator('.glist .grow').filter({ has: page.locator('span', { hasText: new RegExp(`^${label}$`) }) });
-    await expect(fact('IP')).toContainText('10.20.1.11');
+    const fact = (label) => page.locator('#paneGeneral .kv').filter({ has: page.locator('span', { hasText: new RegExp(`^${label}$`) }) });
+    await expect(fact('IP adresi')).toContainText('10.20.1.11');
     await expect(fact('Sınıf')).toContainText('Lab-1 Yazılım');
-    await expect(fact('Kimlik')).toContainText('HW-E2E0000102');
-    // Son işlemler sunucudan ayrıca yüklenir (örnek veride bu bilgisayara tamamlanmış bir görev var)
-    await expect(drawer.locator('#devRecent .act').first()).toContainText('Tamamlandı');
-
-    await drawer.getByRole('button', { name: 'Paneli kapat' }).click();
-    await expect(drawer).not.toHaveClass(/\bopen\b/);
+    await expect(fact('Donanım kimliği')).toContainText('HW-E2E0000102');
+    // Geçmiş sunucudan ayrıca yüklenir (örnek veride bu bilgisayara tamamlanmış bir görev var)
+    await page.locator('#pcTabs [data-tab="history"]').click();
+    await expect(page.locator('#paneHistory .act').first()).toContainText('Tamamlandı');
 });

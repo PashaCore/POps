@@ -33,7 +33,8 @@ test.describe('giriş sayfası', () => {
 
 const PAGES = [
     ['/', 'Overview'],
-    ['/devices', 'Devices'],
+    ['/devices', 'Computers'],
+    ['/labs', 'Computers'],
     ['/tasks', 'Jobs'],
     ['/terminal', 'Remote command'],
     ['/vision', 'Remote screen'],
@@ -42,8 +43,9 @@ const PAGES = [
     ['/logger', 'Logs'],
     ['/reports', 'Reports'],
     ['/helpdesk', 'Help desk'],
-    ['/settings', 'Settings'],
-    ['/system', 'System'],
+    ['/settings', 'Users and sign-in'],
+    ['/system', 'System and updates'],
+    ['/system?view=ayarlar', 'Settings'],
 ];
 
 test.describe('İngilizce arayüz', () => {
@@ -62,12 +64,18 @@ test.describe('İngilizce arayüz', () => {
         });
     }
 
-    test('Sistem ve Ayarlar sekmeleri İngilizce', async ({ page }) => {
+    // Bölüm sekmeleri gizlidir (.tabs-in-nav), yan menüden sürülür: ikisi de İngilizce
+    test('Sistem, Ayarlar ve Kullanıcılar ve giriş bölümleri İngilizce', async ({ page }) => {
         await page.goto('/system');
         await settled(page);
-        await expect(page.locator('#sysTabs').getByRole('tab')).toHaveText(['Overview', 'Updates', 'Security', 'Health and backup', 'Notifications and retention', 'Modules', 'Integrations']);
+        await expect(page.locator('#sysTabs [data-tab]')).toHaveText(['Updates', 'Health and backup']);
+        await expect(page.locator('.nav-tabs[data-for="system"] a[data-tab]')).toHaveText(['Updates', 'Health and backup']);
+        await page.goto('/system?view=ayarlar');
+        await settled(page);
+        await expect(page.locator('#sysTabs [data-tab]')).toHaveText(['Enrollment and security', 'Notifications and retention', 'Modules', 'Integrations']);
         await page.goto('/settings');
         await settled(page);
-        await expect(page.locator('#setTabs').getByRole('tab')).toHaveText(['Users', 'Units', 'Security', 'General']);
+        await expect(page.locator('#setTabs [data-tab]')).toHaveText(['Users', 'Units', 'Sign-in and security', 'General']);
+        await expect(page.locator('.nav-tabs[data-for="settings"] a[data-tab]')).toHaveText(['Users', 'Units', 'Sign-in and security', 'General']);
     });
 });

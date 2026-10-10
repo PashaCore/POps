@@ -102,3 +102,30 @@ test('süzgeç paneli', async ({ page }) => {
     await expect(page.locator('#lgFCount')).toBeHidden();
     await expect(page.locator('#lgRange')).toHaveText(/^1–25 \/ /);
 });
+
+test('bilgisayar bağlantısı ve adresten gelen süzgeç', async ({ page }) => {
+    const { total } = await range(page);
+    // Satırdaki bilgisayar adı bilgisayar sayfasını açar
+    await expect(page.locator('#lgList .act[data-id] .meta a').first()).toHaveAttribute('href', /^pc\?id=./);
+
+    // Raporlar'daki sayılar Kayıtlar'ı süzgeçle açar: yüksek ve kritik olaylar
+    await page.goto('/logger?risk=high');
+    await settled(page);
+    const chip = page.locator('#lgChips .chip').filter({ hasText: 'Risk düzeyi:' });
+    await expect(chip).toBeVisible();
+    await expect(page.locator('#lgFCount')).toBeHidden();
+    await expect(page.locator('#lgPager')).toBeVisible();
+    expect((await range(page)).total).toBeLessThan(total);
+    await page.getByRole('button', { name: 'Risk düzeyi süzgecini kaldır' }).click();
+    await expect(chip).toHaveCount(0);
+    await expect(page).not.toHaveURL(/risk=/);
+});
+
+test('donanım sekmesi adreste; satır bilgisayar sayfasının donanım bölümüne gider', async ({ page }) => {
+    await page.getByRole('tab', { name: 'Donanım' }).click();
+    await expect(page).toHaveURL(/tab=hw/);
+    await expect(page.locator('#hwBody tr[data-host] a').first()).toHaveAttribute('href', /^pc\?id=.+&tab=hardware$/);
+    await page.getByRole('tab', { name: 'Olaylar' }).click();
+    await expect(page).not.toHaveURL(/tab=/);
+    await expect(page.locator('#lgList .act[data-id]').first()).toBeVisible();
+});

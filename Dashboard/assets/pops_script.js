@@ -932,7 +932,7 @@ async function popsTwofaNudge(enabled) {
     box.id = 'twofaNudge';
     box.className = 'twofa-nudge';
     box.setAttribute('role', 'status');
-    const link = POps.el('a', { href: 'settings#twofaCard', text: POps.t('Ayarlar → İki adımlı doğrulama') });
+    const link = POps.el('a', { href: 'settings?tab=security#twofaCard', text: POps.t('Kullanıcılar ve giriş → İki adımlı doğrulama') });
     const close = POps.el('button', { type: 'button', className: 'twofa-nudge-close', title: POps.t('7 gün gösterme'), 'aria-label': POps.t('Kapat') }, [POps.iconEl('x', 'sm')]);
     box.append(POps.iconEl('shield', 'sm'), POps.el('span', null, POps.tNodes('Hesabınızda iki adımlı doğrulama (2FA) kapalı. Önerilir: {link} bölümünden açabilirsiniz.', null, { link })), close);
     close.addEventListener('click', () => {
@@ -1381,4 +1381,44 @@ POps.jobs = (function () {
         clearDone() { jobs = jobs.filter(j => !j.doneAt); save(); emit(); },
         start() { emit(); if (jobs.some(j => !j.doneAt)) kick(); }
     };
+})();
+
+// Sunucu sayfalarının bölümleri menüde (sidebar.php $nav_subs): menüdeki satır, sayfanın gizli sekme çubuğundaki
+// (.tabs-in-nav) düğmeyi tetikler; sayfa sekme değiştirince menüdeki işaret eşlenir. Ok, bölümleri açar/kapatır.
+(function () {
+    function init() {
+        document.querySelectorAll('.nav-caret').forEach(c => c.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const box = document.querySelector('.nav-tabs[data-for="' + CSS.escape(c.dataset.caret) + '"]');
+            if (!box) return;
+            box.hidden = !box.hidden;
+            c.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
+        }));
+        const activeLink = document.querySelector('.nav-item.active');
+        const subs = activeLink ? document.querySelector('.nav-tabs[data-for="' + CSS.escape(activeLink.dataset.page) + '"]') : null;
+        const bar = document.querySelector('.tabs-in-nav');
+        if (!subs || !bar) return;
+        const btn = (t) => bar.querySelector('[data-tab="' + CSS.escape(t) + '"]');
+        const current = () => { const b = bar.querySelector('[data-tab].active, [data-tab][aria-selected="true"]'); return b ? b.dataset.tab : null; };
+        const mark = (t) => subs.querySelectorAll('a[data-tab]').forEach(a => {
+            const on = a.dataset.tab === t;
+            a.classList.toggle('active', on);
+            if (on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+        });
+        subs.addEventListener('click', (e) => {
+            const a = e.target.closest('a[data-tab]');
+            if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+            const b = btn(a.dataset.tab);
+            if (!b || b.hidden || b.disabled) return;
+            e.preventDefault();
+            b.click();
+            mark(a.dataset.tab);
+        });
+        new MutationObserver(() => { const t = current(); if (t) mark(t); }).observe(bar, { subtree: true, attributes: true, attributeFilter: ['class', 'aria-selected'] });
+        const want = new URLSearchParams(location.search).get('tab');
+        if (want && btn(want) && current() !== want) btn(want).click();
+        else if (current()) mark(current());
+    }
+    if (document.readyState === 'complete') init(); else window.addEventListener('load', init);
 })();

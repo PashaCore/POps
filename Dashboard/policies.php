@@ -2,13 +2,15 @@
 <?php $canEdit = ($_SESSION['role'] ?? '') !== 'viewer'; ?>
 
 <style>
-    /* Ayar bölümü: solda başlık ve kısa açıklama, sağda ayar satırları; dar ekranda alt alta */
-    .sects > .sect { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); gap: 14px 48px; padding: 28px 0; border-top: 1px solid var(--border-subtle); }
-    .sects > .sect:first-child { border-top: 0; padding-top: 4px; }
-    .sect-head h2 { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); }
-    .sect-head p { font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.55; margin-top: 6px; }
-    .sect-head .meta { font-size: var(--text-xs); color: var(--text-muted); margin-top: 10px; display: flex; align-items: center; gap: 6px; }
-    .sect-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    /* Politikalar: üç bölüm alt alta, okunur genişlikte; kaydet çubuğu altta yapışık */
+    .sects { max-width: 960px; }
+    .sect { display: flex; flex-direction: column; gap: 10px; min-width: 0; scroll-margin-top: 16px; }
+    .sect + .sect { margin-top: 32px; }
+    .sect-h { display: flex; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; padding: 0 4px; }
+    .sect-h h2 { font-size: var(--text-lg); font-weight: var(--fw-semibold); letter-spacing: -0.01em; }
+    .sect-h .meta { margin-left: auto; font-size: var(--text-xs); color: var(--text-muted); display: inline-flex; align-items: center; gap: 6px; }
+    .sect-note { font-size: var(--text-xs); color: var(--text-muted); padding: 0 4px; line-height: 1.5; }
+    .sect-note code { font-size: 11.5px; }
     .srow.block { display: block; }
     .srow textarea { width: 100%; }
     .srow .foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: var(--text-xs); color: var(--text-muted); }
@@ -26,11 +28,11 @@
     .cat-body textarea { font-family: var(--font-mono); font-size: 12.5px; min-height: 120px; }
     .cat-body .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
     .faint { color: var(--text-muted); }
-    /* Kaydedilmemiş değişiklik çubuğu */
+    /* Kaydedilmemiş değişiklik çubuğu: neyin değiştiği yazar */
     .savebar { position: sticky; bottom: 16px; z-index: 50; width: fit-content; max-width: 100%; margin: 24px auto 0; display: flex; align-items: center; gap: 10px; padding: 7px 7px 7px 16px; background: var(--bg-surface); border-radius: 14px; box-shadow: 0 0 0 1px var(--border-subtle), 0 8px 28px rgba(0, 0, 0, 0.10); font-size: var(--text-sm); color: var(--text-primary); }
-    .savebar .sb-sub { color: var(--text-muted); }
+    .savebar .sb-text { min-width: 0; max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .savebar .sb-sub { color: var(--text-muted); white-space: nowrap; }
     .savebar .btn { margin-left: 2px; }
-    @media (max-width: 960px) { .sects > .sect { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 22px 0; } }
     @media (max-width: 640px) {
         .savebar { width: 100%; }
         .savebar .sb-sub { display: none; }
@@ -48,72 +50,59 @@
 <div id="polError" hidden></div>
 
 <div class="sects" id="polForm" hidden>
-    <section class="sect" aria-labelledby="hFair">
-        <div class="sect-head">
-            <h2 id="hFair"><?php _e('Aydınlatma metni'); ?></h2>
-            <p><?php _e('Bilgisayarın okulca yönetildiğini, neyin kaydedilip neyin kaydedilmediğini anlatan kısa metin. Ajan açılınca tepside gösterilir; kullanıcı onaylayana kadar dakikada bir sorulur.'); ?></p>
-        </div>
-        <div class="sect-body">
-            <div class="set">
-                <div class="srow block">
-                    <label for="fairUseText" class="sr-only"><?php _e('Aydınlatma ve adil kullanım metni'); ?></label>
-                    <textarea id="fairUseText" rows="5" maxlength="4000" <?= $canEdit ? '' : 'readonly' ?> placeholder="<?php _e('Örn. Bu bilgisayar okul tarafından yönetilmektedir…'); ?>"></textarea>
-                    <div class="foot">
-                        <span id="fairCount"><?php _e('Boş bırakılırsa gösterilmez.'); ?></span>
-                        <?php if ($canEdit): ?>
-                        <button type="button" class="btn ghost sm" id="fairDefault"><?php echo pops_icon('file', 'sm'); ?><?php _e('Örnek metni kullan'); ?></button>
-                        <?php endif; ?>
-                    </div>
+    <section class="sect" id="secFair" aria-labelledby="hFair">
+        <div class="sect-h"><h2 id="hFair"><?php _e('Aydınlatma metni'); ?></h2></div>
+        <div class="sect-note"><?php _e('Ajan açılınca tepside gösterilir; kullanıcı onaylayana kadar dakikada bir sorulur.'); ?></div>
+        <div class="set">
+            <div class="srow block">
+                <label for="fairUseText" class="sr-only"><?php _e('Aydınlatma ve adil kullanım metni'); ?></label>
+                <textarea id="fairUseText" rows="5" maxlength="4000" <?= $canEdit ? '' : 'readonly' ?> placeholder="<?php _e('Örn. Bu bilgisayar okul tarafından yönetilmektedir…'); ?>"></textarea>
+                <div class="foot">
+                    <span id="fairCount"><?php _e('Boş bırakılırsa gösterilmez.'); ?></span>
+                    <?php if ($canEdit): ?>
+                    <button type="button" class="btn ghost sm" id="fairDefault"><?php echo pops_icon('file', 'sm'); ?><?php _e('Örnek metni kullan'); ?></button>
+                    <?php endif; ?>
                 </div>
             </div>
-            <div class="set-note"><?php _e('Kurumunuzun KVKK aydınlatma metnine bağlantı vermeniz önerilir.'); ?> <?php _e('Şablon:'); ?> <code>docs/kvkk-aydinlatma.md</code></div>
         </div>
+        <div class="sect-note"><?php _e('Kurumunuzun KVKK aydınlatma metnine bağlantı vermeniz önerilir.'); ?> <?php _e('Şablon:'); ?> <code>docs/kvkk-aydinlatma.md</code></div>
     </section>
 
-    <section class="sect" aria-labelledby="hDns">
-        <div class="sect-head">
-            <h2 id="hDns"><?php _e('Yasaklı alan adı tespiti'); ?></h2>
-            <p><?php _e('Açık bir kategorinin listesindeki alan adına girilince ajan ihlal kaydeder ve size bildirir. Engelleme yapmaz; bunun için okulun ağ filtresini kullanın. Sayfa içeriği, arama ve klavye kaydedilmez.'); ?></p>
-            <div class="meta" id="fleetNote"><?php _e('0.1.5 ve sonrası ajanlarda çalışır.'); ?></div>
-        </div>
-        <div class="sect-body">
-            <div id="dnsNotes"></div>
-            <div class="set" id="cats"></div>
-        </div>
+    <section class="sect" id="secDns" aria-labelledby="hDns">
+        <div class="sect-h"><h2 id="hDns"><?php _e('Yasaklı alan adı tespiti'); ?></h2><span class="meta" id="fleetNote"><?php _e('0.1.5 ve sonrası ajanlarda çalışır.'); ?></span></div>
+        <div class="sect-note"><?php _e('Listedeki alan adına girilince ajan ihlal kaydeder; engellemez. Sayfa içeriği, arama ve klavye kaydedilmez.'); ?></div>
+        <div id="dnsNotes"></div>
+        <div class="set" id="cats"></div>
     </section>
 
-    <section class="sect" aria-labelledby="hQ">
-        <div class="sect-head">
-            <h2 id="hQ"><?php _e('Otomatik karantina'); ?></h2>
-            <p><?php _e("Eşiğe ulaşan bilgisayar kendini ağdan yalıtır: yalnızca POps sunucusuna, DNS ve DHCP'ye erişebilir. Yalnızca DNS tespiti çalışan ajanlarda etkilidir."); ?></p>
-        </div>
-        <div class="sect-body">
-            <div id="qNotes"></div>
-            <div class="set">
-                <div class="srow">
-                    <div class="grow">
-                        <div class="t" id="autoQLabel"><?php _e('Otomatik karantina'); ?></div>
-                        <div class="d"><?php _e('Eşikte bilgisayarı kendiliğinden karantinaya al'); ?></div>
-                    </div>
-                    <label class="switch"><input type="checkbox" id="autoQ" aria-labelledby="autoQLabel" <?= $canEdit ? '' : 'disabled' ?>><span></span></label>
+    <section class="sect" id="secQ" aria-labelledby="hQ">
+        <div class="sect-h"><h2 id="hQ"><?php _e('Otomatik karantina'); ?></h2></div>
+        <div class="sect-note"><?php _e("Eşiğe ulaşan bilgisayar ağdan yalıtılır; yalnızca POps sunucusuna, DNS ve DHCP'ye erişir."); ?></div>
+        <div id="qNotes"></div>
+        <div class="set">
+            <div class="srow">
+                <div class="grow">
+                    <div class="t" id="autoQLabel"><?php _e('Otomatik karantina'); ?></div>
+                    <div class="d"><?php _e('Eşikte bilgisayarı kendiliğinden karantinaya al'); ?></div>
                 </div>
-                <div class="srow" id="qRow">
-                    <div class="grow">
-                        <div class="t" id="qThresholdLabel"><?php _e('Eşik'); ?></div>
-                        <div class="d"><?php _e('Ajan son açıldığından beri tespit edilen ihlal sayısı'); ?></div>
-                    </div>
-                    <input type="number" id="qThreshold" min="1" max="100" value="3" inputmode="numeric" aria-labelledby="qThresholdLabel" <?= $canEdit ? '' : 'disabled' ?>>
-                    <span class="unit"><?php _e('ihlal'); ?></span>
-                </div>
+                <label class="switch"><input type="checkbox" id="autoQ" aria-labelledby="autoQLabel" <?= $canEdit ? '' : 'disabled' ?>><span></span></label>
             </div>
-            <div class="set-note" id="qReleaseNote"></div>
+            <div class="srow" id="qRow">
+                <div class="grow">
+                    <div class="t" id="qThresholdLabel"><?php _e('Eşik'); ?></div>
+                    <div class="d"><?php _e('Ajan son açıldığından beri tespit edilen ihlal sayısı'); ?></div>
+                </div>
+                <input type="number" id="qThreshold" min="1" max="100" value="3" inputmode="numeric" aria-labelledby="qThresholdLabel" <?= $canEdit ? '' : 'disabled' ?>>
+                <span class="unit"><?php _e('ihlal'); ?></span>
+            </div>
         </div>
+        <div class="sect-note" id="qReleaseNote"></div>
     </section>
 
     <?php if ($canEdit): ?>
     <div class="savebar" id="saveBar" role="region" aria-label="<?php _e('Kaydedilmemiş değişiklikler'); ?>" hidden>
         <span class="dot warn" aria-hidden="true"></span>
-        <span class="sb-text"><?php _e('Kaydedilmemiş değişiklik var'); ?></span>
+        <span class="sb-text" id="saveText"><?php _e('Kaydedilmemiş değişiklik var'); ?></span>
         <span class="sb-sub"><?php _e('· ajanlar kaydettikten sonra 1 dakika içinde alır'); ?></span>
         <button type="button" class="btn secondary sm" id="discardBtn"><?php _ex('Vazgeç', 'discard'); ?></button>
         <button type="button" class="btn sm" id="saveBtn"><?php _e('Kaydet'); ?></button>
@@ -197,6 +186,19 @@
         };
     }
     const isDirty = () => canEdit && policy !== null && JSON.stringify(collect()) !== savedSig;
+    // Kaydedilmemiş değişikliğin olduğu bölümler (kaydet çubuğunda yazar)
+    function changedParts() {
+        if (!savedSig) return [];
+        const a = collect(), b = JSON.parse(savedSig);
+        const out = [];
+        if (a.fair_use_text !== b.fair_use_text) out.push(POps.t('Aydınlatma metni'));
+        CATS.forEach(c => {
+            const was = b.dns_categories.includes(c.key), is = a.dns_categories.includes(c.key);
+            if (was !== is || JSON.stringify(a.dns_domains[c.key]) !== JSON.stringify(b.dns_domains[c.key])) out.push(POps.t(c.t));
+        });
+        if (a.auto_quarantine !== b.auto_quarantine || a.quarantine_threshold !== b.quarantine_threshold) out.push(POps.t('Otomatik karantina'));
+        return out;
+    }
 
     // Formun anlık hali: sayılar, boş liste uyarısı, eşik satırı ve kaydet çubuğu
     function refresh() {
@@ -213,7 +215,15 @@
         if (canEdit) $('qThreshold').disabled = !p.auto_quarantine;
         const len = $('fairUseText').value.trim().length;
         $('fairCount').textContent = len ? POps.t('{len}/4000 karakter', { len }) : POps.t('Boş bırakılırsa gösterilmez.');
-        if (canEdit) $('saveBar').hidden = !isDirty();
+        if (canEdit) {
+            const dirty = isDirty();
+            $('saveBar').hidden = !dirty;
+            if (dirty) {
+                const parts = changedParts();
+                $('saveText').textContent = parts.length ? POps.t('Kaydedilmemiş değişiklik: {list}', { list: parts.join(', ') }) : POps.t('Kaydedilmemiş değişiklik var');
+                $('saveText').title = $('saveText').textContent;
+            }
+        }
     }
 
     // Başlık özeti: ajanlara giden (kayıtlı) politika
@@ -226,11 +236,9 @@
         const fair = String(p.fair_use_text || '').trim();
         // Sayı kalın: yer tutucuya HTML parçası (POps.tHtml / tnHtml'in son argümanı)
         const boldHtml = (n) => `<b>${Number(n)}</b>`;
-        const sumHtml = `<span class="sum">${POps.tHtml('Kurum geneli')}</span>`
-            + (fair ? `<span class="sum"><span class="dot ok"></span>${POps.tHtml('Aydınlatma metni gösteriliyor')}</span>` : `<span class="sum"><span class="dot off"></span>${POps.tHtml('Aydınlatma metni yok')}</span>`)
-            + (active.length ? `<span class="sum"><span class="dot ok"></span>${POps.tnHtml('{n} kategori', active.length, null, { n: boldHtml(active.length) })} · ${POps.tnHtml('{n} alan adı izleniyor', nDomains, null, { n: boldHtml(nDomains) })}</span>` : `<span class="sum"><span class="dot off"></span>${POps.tHtml('DNS tespiti kapalı')}</span>`)
-            + (p.auto_quarantine ? `<span class="sum"><span class="dot ok"></span>${POps.tHtml('Otomatik karantina açık · eşik {n}', null, { n: boldHtml(p.quarantine_threshold) })}</span>` : `<span class="sum"><span class="dot off"></span>${POps.tHtml('Otomatik karantina kapalı')}</span>`)
-            + (fleet && fleet.total ? `<span class="sum">${POps.tHtml('{count} ajan destekliyor', null, { count: `<b>${Number(fleet.ok)}/${Number(fleet.total)}</b>` })}</span>` : '')
+        const sumHtml = (fair ? `<a href="#secFair" class="sum"><span class="dot ok"></span>${POps.tHtml('Aydınlatma metni gösteriliyor')}</a>` : `<a href="#secFair" class="sum"><span class="dot off"></span>${POps.tHtml('Aydınlatma metni yok')}</a>`)
+            + (active.length ? `<a href="#secDns" class="sum"><span class="dot ok"></span>${POps.tnHtml('{n} kategori', active.length, null, { n: boldHtml(active.length) })} · ${POps.tnHtml('{n} alan adı izleniyor', nDomains, null, { n: boldHtml(nDomains) })}</a>` : `<a href="#secDns" class="sum"><span class="dot off"></span>${POps.tHtml('DNS tespiti kapalı')}</a>`)
+            + (p.auto_quarantine ? `<a href="#secQ" class="sum"><span class="dot ok"></span>${POps.tHtml('Otomatik karantina açık · eşik {n}', null, { n: boldHtml(p.quarantine_threshold) })}</a>` : `<a href="#secQ" class="sum"><span class="dot off"></span>${POps.tHtml('Otomatik karantina kapalı')}</a>`)
             + (meta && meta.updated_at ? `<span class="sum faint">${POps.tHtml('Son değişiklik: {who} · {time}', { who: meta.updated_by || '?' }, { time: POps.timeHtml(meta.updated_at) })}</span>` : '')
             + (canEdit ? '' : `<span class="sum">${POps.tHtml('Yalnızca görüntüleme')}</span>`);
         $('polSummary').innerHTML = sumHtml;
@@ -331,7 +339,7 @@
     buildCats();
     // Bağlantı cümlenin içinde; yeri dile göre değişir
     $('qReleaseNote').append(...POps.tNodes('Karantina {link} sayfasından kaldırılır ya da bilgisayarda çevrimdışı açma koduyla kalkar.', null,
-        { link: POps.el('a', { href: 'devices', text: POps.t('Cihazlar') }) }));
+        { link: POps.el('a', { href: 'devices?f=issue', text: POps.t('Bilgisayarlar') }) }));
     $('cats').addEventListener('click', (e) => {
         const b = e.target.closest('.cat-open');
         if (!b) return;

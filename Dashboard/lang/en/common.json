@@ -38,7 +38,10 @@
   "Okunmuş bildirimleri sil": "Delete read notifications",
   "Okunmuş bildirimler silinsin mi?": "Delete read notifications?",
   "Zildeki okunmuş bildirimler silinir. Olayların kendisi denetim kayıtlarında kalır.": "Read notifications are removed from the bell. The events themselves stay in the audit log.",
-  "{n} bildirim silindi.": {"one": "{n} notification deleted.", "other": "{n} notifications deleted."},
+  "{n} bildirim silindi.": {
+    "one": "{n} notification deleted.",
+    "other": "{n} notifications deleted."
+  },
   "Silinecek okunmuş bildirim yok.": "No read notifications to delete.",
   "Bildirim yok.": "No notifications.",
   "Bildirimler alınamadı.": "Could not load notifications.",
@@ -49,7 +52,10 @@
   "Sınıf": "Lab",
   "çevrimiçi": "online",
   "kapalı": "offline",
-  "{n} işlem sürüyor": {"one": "{n} job running", "other": "{n} jobs running"},
+  "{n} işlem sürüyor": {
+    "one": "{n} job running",
+    "other": "{n} jobs running"
+  },
   "İşlemler tamamlandı": "Jobs finished",
   "{n} başarısız": "{n} failed",
   "başarısız: {names}": "failed: {names}",
@@ -109,19 +115,37 @@
   "{n} sn": "{n} s",
   "{n} dk": "{n} min",
   "{n} sa": "{n} h",
-  "{n} gün": {"one": "{n} day", "other": "{n} days"},
+  "{n} gün": {
+    "one": "{n} day",
+    "other": "{n} days"
+  },
   "Hesabınızda iki adımlı doğrulama (2FA) kapalı. Önerilir: {link} bölümünden açabilirsiniz.": "Two-step verification (2FA) is off for your account. Recommended: turn it on under {link}.",
-  "Ayarlar → İki adımlı doğrulama": "Settings → Two-step verification",
+  "Kullanıcılar ve giriş → İki adımlı doğrulama": "Users and sign-in → Two-step verification",
   "7 gün gösterme": "Hide for 7 days",
   "{title}: {ok} başarılı, {bad} başarısız.": "{title}: {ok} succeeded, {bad} failed.",
-  "{title}: {n} cihazda tamamlandı.": {"one": "{title}: completed on {n} device.", "other": "{title}: completed on {n} devices."},
-  "{n} cihaz": {"one": "{n} device", "other": "{n} devices"},
-  "{n} bilgisayar": {"one": "{n} computer", "other": "{n} computers"},
+  "{title}: {n} cihazda tamamlandı.": {
+    "one": "{title}: completed on {n} device.",
+    "other": "{title}: completed on {n} devices."
+  },
+  "{n} cihaz": {
+    "one": "{n} device",
+    "other": "{n} devices"
+  },
+  "{n} bilgisayar": {
+    "one": "{n} computer",
+    "other": "{n} computers"
+  },
   "Açık cihaz yok; komut gönderilmedi.": "No devices are on; nothing was sent.",
   "Bütün ağ uyandırılsın mı?": "Wake the whole network?",
   "MAC adresi bilinen bütün kapalı cihazlara uyandırma (WOL) sinyali gönderilecek.": "A wake-on-LAN signal will be sent to every offline device with a known MAC address.",
-  "{n} cihaza uyandırma sinyali gönderildi.": {"one": "Wake signal sent to {n} device.", "other": "Wake signal sent to {n} devices."},
-  "{lab}: {n} cihaza uyandırma sinyali gönderildi.": {"one": "{lab}: wake signal sent to {n} device.", "other": "{lab}: wake signal sent to {n} devices."},
+  "{n} cihaza uyandırma sinyali gönderildi.": {
+    "one": "Wake signal sent to {n} device.",
+    "other": "Wake signal sent to {n} devices."
+  },
+  "{lab}: {n} cihaza uyandırma sinyali gönderildi.": {
+    "one": "{lab}: wake signal sent to {n} device.",
+    "other": "{lab}: wake signal sent to {n} devices."
+  },
   "Uyandırma sinyali gönderildi.": "Wake signal sent.",
   "Çevrimiçi": "Online",
   "Boşta": "Idle",
@@ -130,59 +154,125 @@
   "oturum yok": "no session",
   "Karantinada: kullanıcı ekranı kilitli": "Quarantined: user screen locked",
   "Ajan eski: {version} (güncel {latest})": "Agent outdated: {version} (latest {latest})",
-  "Ajan son 1 saatte {n} hata bildirdi": {"one": "Agent reported {n} error in the last hour", "other": "Agent reported {n} errors in the last hour"},
+  "Ajan son 1 saatte {n} hata bildirdi": {
+    "one": "Agent reported {n} error in the last hour",
+    "other": "Agent reported {n} errors in the last hour"
+  },
   "Uzak komut bu cihazda kapalı": "Remote command is off on this device",
   "Uzak ekran bu cihazda kapalı": "Remote screen is off on this device",
-  "{names} ve {n} bilgisayar daha": {"one": "{names} and {n} more computer", "other": "{names} and {n} more computers"},
+  "{names} ve {n} bilgisayar daha": {
+    "one": "{names} and {n} more computer",
+    "other": "{names} and {n} more computers"
+  },
   "Uyandır": "Wake",
   "Yeniden başlat": "Restart",
   "{name} yeniden başlatılsın mı?": "Restart {name}?",
-  "{n} bilgisayar yeniden başlatılsın mı?": {"one": "Restart {n} computer?", "other": "Restart {n} computers?"},
-  "{n} bilgisayarı yeniden başlat": {"one": "Restart {n} computer", "other": "Restart {n} computers"},
+  "{n} bilgisayar yeniden başlatılsın mı?": {
+    "one": "Restart {n} computer?",
+    "other": "Restart {n} computers?"
+  },
+  "{n} bilgisayarı yeniden başlat": {
+    "one": "Restart {n} computer",
+    "other": "Restart {n} computers"
+  },
   "{name} kapatılsın mı?": "Shut down {name}?",
-  "{n} bilgisayar kapatılsın mı?": {"one": "Shut down {n} computer?", "other": "Shut down {n} computers?"},
-  "{n} bilgisayarı kapat": {"one": "Shut down {n} computer", "other": "Shut down {n} computers"},
+  "{n} bilgisayar kapatılsın mı?": {
+    "one": "Shut down {n} computer?",
+    "other": "Shut down {n} computers?"
+  },
+  "{n} bilgisayarı kapat": {
+    "one": "Shut down {n} computer",
+    "other": "Shut down {n} computers"
+  },
   "Hedef bilgisayar yok.": "No target computers.",
   "Bilgisayar kapalı; komut gönderilmedi.": "The computer is off; nothing was sent.",
   "Seçili bilgisayarların hiçbiri açık değil; komut gönderilmedi.": "None of the selected computers is on; nothing was sent.",
-  "Kapalı {n} bilgisayar atlanacak.": {"one": "{n} computer is off and will be skipped.", "other": "{n} computers are off and will be skipped."},
-  "Komut {n} bilgisayara gönderildi.": {"one": "Command sent to {n} computer.", "other": "Command sent to {n} computers."},
+  "Kapalı {n} bilgisayar atlanacak.": {
+    "one": "{n} computer is off and will be skipped.",
+    "other": "{n} computers are off and will be skipped."
+  },
+  "Komut {n} bilgisayara gönderildi.": {
+    "one": "Command sent to {n} computer.",
+    "other": "Command sent to {n} computers."
+  },
   "Bilgisayar zaten açık.": "The computer is already on.",
   "Seçili bilgisayarların hepsi zaten açık.": "All selected computers are already on.",
-  "{lab}: {n} bilgisayara uyandırma sinyali gönderildi.": {"one": "{lab}: wake signal sent to {n} computer.", "other": "{lab}: wake signal sent to {n} computers."},
-  "{n} bilgisayara uyandırma sinyali gönderildi.": {"one": "Wake signal sent to {n} computer.", "other": "Wake signal sent to {n} computers."},
-  "{n} bilgisayar uyandırılamadı (MAC adresi bilinmiyor olabilir): {names}": {"one": "Could not wake {n} computer (MAC address may be unknown): {names}", "other": "Could not wake {n} computers (MAC address may be unknown): {names}"},
+  "{lab}: {n} bilgisayara uyandırma sinyali gönderildi.": {
+    "one": "{lab}: wake signal sent to {n} computer.",
+    "other": "{lab}: wake signal sent to {n} computers."
+  },
+  "{n} bilgisayara uyandırma sinyali gönderildi.": {
+    "one": "Wake signal sent to {n} computer.",
+    "other": "Wake signal sent to {n} computers."
+  },
+  "{n} bilgisayar uyandırılamadı (MAC adresi bilinmiyor olabilir): {names}": {
+    "one": "Could not wake {n} computer (MAC address may be unknown): {names}",
+    "other": "Could not wake {n} computers (MAC address may be unknown): {names}"
+  },
   "Mesaj gönder": "Send message",
   "Açık bilgisayar yok; mesaj gönderilmedi.": "No computers are on; no message sent.",
   "{name} ekranına mesaj": "Message to {name}",
-  "{n} bilgisayara mesaj": {"one": "Message to {n} computer", "other": "Message to {n} computers"},
+  "{n} bilgisayara mesaj": {
+    "one": "Message to {n} computer",
+    "other": "Message to {n} computers"
+  },
   "Mesaj": "Message",
   "Gönder": "Send",
-  "Mesaj {n} bilgisayara gönderildi.": {"one": "Message sent to {n} computer.", "other": "Message sent to {n} computers."},
+  "Mesaj {n} bilgisayara gönderildi.": {
+    "one": "Message sent to {n} computer.",
+    "other": "Message sent to {n} computers."
+  },
   "Başka sınıfa taşı…": "Move to another lab…",
   "{name} nereye taşınsın?": "Move {name} to",
-  "{n} bilgisayar nereye taşınsın?": {"one": "Move {n} computer to", "other": "Move {n} computers to"},
+  "{n} bilgisayar nereye taşınsın?": {
+    "one": "Move {n} computer to",
+    "other": "Move {n} computers to"
+  },
   "Yeni sınıf…": "New lab…",
   "Yeni sınıf": "New lab",
   "Sınıf adı": "Lab name",
   "Oluştur ve taşı": "Create and move",
   "Sınıftan çıkar": "Remove from lab",
-  "{n} bilgisayar sınıftan çıkarıldı.": {"one": "{n} computer removed from its lab.", "other": "{n} computers removed from their lab."},
-  "{n} bilgisayar {lab} sınıfına taşındı.": {"one": "{n} computer moved to {lab}.", "other": "{n} computers moved to {lab}."},
+  "{n} bilgisayar sınıftan çıkarıldı.": {
+    "one": "{n} computer removed from its lab.",
+    "other": "{n} computers removed from their lab."
+  },
+  "{n} bilgisayar {lab} sınıfına taşındı.": {
+    "one": "{n} computer moved to {lab}.",
+    "other": "{n} computers moved to {lab}."
+  },
   "Karantinaya al": "Quarantine",
   "{name} karantinaya alınsın mı?": "Quarantine {name}?",
-  "{n} bilgisayar karantinaya alınsın mı?": {"one": "Quarantine {n} computer?", "other": "Quarantine {n} computers?"},
+  "{n} bilgisayar karantinaya alınsın mı?": {
+    "one": "Quarantine {n} computer?",
+    "other": "Quarantine {n} computers?"
+  },
   "Kullanıcının ekranı kilitlenir; kaldırana kadar bilgisayar kullanılamaz. Kapalı bilgisayar açılınca kilitlenir.": "The user's screen is locked and the computer can't be used until you release it. A computer that is off locks when it starts.",
   "Gerekçe": "Reason",
   "Örn. sınav sırasında yetkisiz kullanım": "e.g. unauthorised use during an exam",
-  "{n} bilgisayarı karantinaya al": {"one": "Quarantine {n} computer", "other": "Quarantine {n} computers"},
-  "{n} bilgisayar karantinaya alındı.": {"one": "{n} computer quarantined.", "other": "{n} computers quarantined."},
+  "{n} bilgisayarı karantinaya al": {
+    "one": "Quarantine {n} computer",
+    "other": "Quarantine {n} computers"
+  },
+  "{n} bilgisayar karantinaya alındı.": {
+    "one": "{n} computer quarantined.",
+    "other": "{n} computers quarantined."
+  },
   "Karantinayı kaldır": "Release from quarantine",
   "{name} karantinadan çıkarılsın mı?": "Release {name} from quarantine?",
-  "{n} bilgisayar karantinadan çıkarılsın mı?": {"one": "Release {n} computer from quarantine?", "other": "Release {n} computers from quarantine?"},
+  "{n} bilgisayar karantinadan çıkarılsın mı?": {
+    "one": "Release {n} computer from quarantine?",
+    "other": "Release {n} computers from quarantine?"
+  },
   "Gerekçe (isteğe bağlı)": "Reason (optional)",
-  "{n} bilgisayar karantinadan çıkarıldı.": {"one": "{n} computer released from quarantine.", "other": "{n} computers released from quarantine."},
-  "{n} bilgisayarda kaldırılamadı.": {"one": "Could not release {n} computer.", "other": "Could not release {n} computers."},
+  "{n} bilgisayar karantinadan çıkarıldı.": {
+    "one": "{n} computer released from quarantine.",
+    "other": "{n} computers released from quarantine."
+  },
+  "{n} bilgisayarda kaldırılamadı.": {
+    "one": "Could not release {n} computer.",
+    "other": "Could not release {n} computers."
+  },
   "Yeniden adlandır": "Rename",
   "Bilgisayarın adını değiştir": "Rename computer",
   "Panelde bu adla görünür. Boş bırakırsanız bilgisayarın kendi adı kullanılır.": "The panel shows the computer under this name. Leave it empty to use the computer's own name.",
@@ -236,7 +326,10 @@
   "Teşhis: Ajanı yeniden başlat|task": "Diagnostics: restart agent",
   "Teşhis: Yeniden başlat|task": "Diagnostics: restart",
   "Uygulamayı kapat: {app}": "Close app: {app}",
-  "seçili {n} bilgisayar": {"one": "{n} selected computer", "other": "{n} selected computers"},
+  "seçili {n} bilgisayar": {
+    "one": "{n} selected computer",
+    "other": "{n} selected computers"
+  },
   "bütün ağ": "whole network",
   "atanmamışlar": "unassigned",
   "süzgece uyanlar": "filter matches",
@@ -312,7 +405,10 @@
   "gerekçe: {reason}": "reason: {reason}",
   "Cihazlar sayfasında aç": "Open in Devices",
   "Cihaz bulunamadı.": "Device not found.",
-  "{n} cihaz için kuyruğa eklendi": {"one": "Queued for {n} device", "other": "Queued for {n} devices"},
+  "{n} cihaz için kuyruğa eklendi": {
+    "one": "Queued for {n} device",
+    "other": "Queued for {n} devices"
+  },
   "kaçırıldı: planlanan {at}, {n} dk geç fark edildi": "missed: planned for {at}, noticed {n} min late",
   "hata: {error}": "error: {error}",
   "{user} (elle çalıştırılan zamanlanmış #{id})": "{user} (scheduled #{id}, run by hand)",
@@ -346,5 +442,24 @@
   "Klon bilgisayar reddedildi: aynı cihaz kimliği başka bir donanımdan": "Cloned computer refused: the same device ID came from other hardware",
   "Cihaz kural ihlali eşiğinde kendini karantinaya aldı": "Device quarantined itself at the policy violation limit",
   "Çevrimdışı bypass kodu kullanıldı, karantina kalktı": "Offline unlock code used; quarantine lifted",
-  "Vision tüneli açılmadı: cihaz kayıtlı değil (anahtarı yok)": "Vision tunnel not opened: the device is not enrolled (no key)"
+  "Vision tüneli açılmadı: cihaz kayıtlı değil (anahtarı yok)": "Vision tunnel not opened: the device is not enrolled (no key)",
+  "Bilgisayarlar": "Computers",
+  "Bilgisayar": "Computer",
+  "Kullanıcılar ve giriş": "Users and sign-in",
+  "Sistem ve Güncelleme": "System and updates",
+  "Güncellemeler": "Updates",
+  "Sağlık ve yedek": "Health and backup",
+  "Cihaz kaydı ve güvenlik": "Enrollment and security",
+  "Bildirimler ve saklama": "Notifications and retention",
+  "Modüller": "Modules",
+  "Entegrasyonlar": "Integrations",
+  "Kullanıcılar": "Users",
+  "Birimler": "Units",
+  "Giriş ve güvenlik": "Sign-in and security",
+  "Genel": "General",
+  "Bölümleri göster": "Show sections",
+  "Eşleşen bilgisayar yok.": "No matching computer.",
+  "Karantinada": "Quarantined",
+  "Bilgisayar, sınıf ya da kullanıcı ara": "Search computer, lab or user",
+  "Bilgisayar ara": "Search computers"
 }

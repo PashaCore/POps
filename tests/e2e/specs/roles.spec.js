@@ -28,7 +28,7 @@ test('izleyici yönetici işlemlerini ve sayfalarını görmez', async ({ page: 
 
         await test.step('yan menüde yalnızca açabildiği sayfalar', async () => {
             const nav = page.locator('.sidebar-nav a.nav-item > span:first-of-type');
-            await expect(nav).toHaveText(['Kontrol merkezi', 'Cihazlar', 'Sınıflar', 'İşlemler', 'Kayıtlar']);
+            await expect(nav).toHaveText(['Kontrol merkezi', 'Bilgisayarlar', 'İşlemler', 'Kayıtlar']);
         });
 
         await test.step('yönetici sayfaları kapalı', async () => {
@@ -39,7 +39,7 @@ test('izleyici yönetici işlemlerini ve sayfalarını görmez', async ({ page: 
             }
         });
 
-        await test.step('Cihazlar: seçim ve toplu işlem yok, ayrıntıda işlem düğmesi yok', async () => {
+        await test.step('Bilgisayarlar (liste): seçim ve toplu işlem yok, bilgisayar sayfasında işlem düğmesi yok', async () => {
             await page.goto('/devices');
             await settled(page);
             await expect(page.locator('#devBody tr[data-host]')).toHaveCount(12);
@@ -47,16 +47,21 @@ test('izleyici yönetici işlemlerini ve sayfalarını görmez', async ({ page: 
             await expect(page.locator('#devBar [data-act]')).toHaveCount(0);
             await expect(page.locator('#devBar')).toHaveText('12 bilgisayar');
             await page.locator('#devBody tr[data-host]').filter({ hasText: 'LAB1-PC01' }).locator('.nm').click();
-            const drawer = page.locator('#popsDrawer');
-            await expect(drawer.locator('.drawer-head h2')).toHaveText('LAB1-PC01');
-            await expect(drawer.locator('.circs, [data-act="power"], [data-act="more"], [data-act="command"]')).toHaveCount(0);
+            await expect(page.locator('#pcName')).toHaveText('LAB1-PC01');
+            await settled(page);
+            await expect(page.locator('#pcActs a, #pcActs button')).toHaveCount(0);
         });
 
-        await test.step('Sınıflar: sınıf işlemleri ve yerleşim düzenleme yok', async () => {
+        await test.step('Bilgisayarlar (sınıflar): sınıf işlemleri ve yerleşim düzenleme yok', async () => {
             await page.goto('/labs');
             await settled(page);
-            await expect(page.locator('#labTitle')).not.toHaveText('Sınıflar');
-            await expect(page.getByRole('button', { name: 'Sınıf işlemleri' })).toBeHidden();
+            await expect(page.locator('#labTitle')).toHaveText('Bilgisayarlar');
+            await expect(page.locator('#newLabBtn')).toBeHidden();
+            await page.goto('/labs?lab=' + encodeURIComponent('Lab-1 Yazılım'));
+            await settled(page);
+            await expect(page.locator('#labTitle')).toHaveText('Lab-1 Yazılım');
+            await expect(page.locator('#labMenuBtn')).toBeHidden();
+            await expect(page.locator('#examBtn')).toBeHidden();
             await expect(page.getByRole('button', { name: 'Yerleşimi düzenle' })).toBeHidden();
             await expect(page.locator('#labBar [data-act]')).toHaveCount(0);
         });
@@ -73,7 +78,8 @@ test('izleyici yönetici işlemlerini ve sayfalarını görmez', async ({ page: 
             await page.goto('/logger');
             await settled(page);
             await expect(page.locator('#lgList .act[data-id]').first()).toBeVisible();
-            await expect(page.getByRole('button', { name: 'Diğer işlemler' })).toBeHidden();
+            await expect(page.getByRole('button', { name: 'CSV indir' })).toBeVisible();
+            await expect(page.locator('#lgMenuBtn')).toBeHidden();
         });
 
         await test.step('API de reddeder', async () => {

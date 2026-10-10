@@ -19,14 +19,16 @@ $viewer_blocked = ['deploy', 'settings', 'terminal'];
 $current_page = basename($_SERVER['PHP_SELF'], '.php');
 // Arayüz dili: ortak sözlük + bu sayfanın sözlüğü (lang/en/<sayfa>.json)
 pops_i18n_init($current_page);
+// Yetki listesindeki sayfa adı: bilgisayar sayfası (pc) Cihazlar yetkisiyle açılır
+$perm_page = ['pc' => 'devices'][$current_page] ?? $current_page;
 if ($current_page !== 'index' && $current_page !== 'logout') {
     $role = $_SESSION['role'] ?? 'admin';
     $permissions = $_SESSION['permissions'] ?? [];
 
     $is_unauthorized = false;
-    if ($role === 'viewer' && in_array($current_page, $viewer_blocked)) {
+    if ($role === 'viewer' && in_array($perm_page, $viewer_blocked)) {
         $is_unauthorized = true;
-    } elseif ($role !== 'superadmin' && !in_array($current_page, $permissions)) {
+    } elseif ($role !== 'superadmin' && !in_array($perm_page, $permissions)) {
         $is_unauthorized = true;
     }
 
@@ -65,12 +67,14 @@ function pops_icon(string $name, string $cls = ''): string
         . htmlspecialchars($sprite . '#i-' . $name, ENT_QUOTES, 'UTF-8') . '"></use></svg>';
 }
 $pops_titles = [
-    'index' => __('Kontrol merkezi'), 'devices' => __('Cihazlar'), 'labs' => __('Sınıflar'),
+    'index' => __('Kontrol merkezi'), 'devices' => __('Bilgisayarlar'), 'labs' => __('Bilgisayarlar'), 'pc' => __('Bilgisayar'),
     'tasks' => __('İşlemler'), 'terminal' => __('Uzak komut'), 'vision' => __('Uzak ekran'),
     'deploy' => __('Dağıtım'), 'policies' => __('Politikalar'), 'logger' => __('Kayıtlar'),
-    'reports' => __('Raporlar'), 'helpdesk' => __('Destek talepleri'), 'settings' => __('Ayarlar'),
-    'system' => __('Sistem'),
+    'reports' => __('Raporlar'), 'helpdesk' => __('Destek talepleri'), 'settings' => __('Kullanıcılar ve giriş'),
+    'system' => __('Sistem ve Güncelleme'), 'system-config' => __('Ayarlar'),
 ];
+// system.php iki görünümdür: güncelleme, sağlık ve yedek (varsayılan) ile ayarlar (?view=ayarlar). Menüde ayrı satırlar.
+$pops_page_key = ($current_page === 'system' && ($_GET['view'] ?? '') === 'ayarlar' && ($_SESSION['role'] ?? '') === 'superadmin') ? 'system-config' : $current_page;
 $pops_role = $_SESSION['role'] ?? 'admin';
 $pops_role_label = ['superadmin' => __('Süper Admin'), 'admin' => __('Yönetici'), 'viewer' => __('İzleyici')][$pops_role] ?? __('Yönetici');
 ?>
@@ -80,7 +84,7 @@ $pops_role_label = ['superadmin' => __('Süper Admin'), 'admin' => __('Yönetici
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light">
-    <title><?php echo htmlspecialchars(($pops_titles[$current_page] ?? 'POps') . ' · POps', ENT_QUOTES, 'UTF-8'); ?></title>
+    <title><?php echo htmlspecialchars(($pops_titles[$pops_page_key] ?? 'POps') . ' · POps', ENT_QUOTES, 'UTF-8'); ?></title>
     <link rel="icon" type="image/png" href="assets/favicon/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon/favicon.svg" />
     <link rel="shortcut icon" href="assets/favicon/favicon.ico" />
@@ -196,6 +200,16 @@ $pops_role_label = ['superadmin' => __('Süper Admin'), 'admin' => __('Yönetici
         .nav-sub a span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .nav-sub a .n { margin-left: auto; font-size: 11px; color: #6b7587; }
         .nav-sub a .dot { width: 6px; height: 6px; }
+        .nav-sub[hidden] { display: none; }
+        /* Sunucu sayfalarının bölümleri menüde (sidebar.php $nav_subs): ok alt satırları açar/kapatır */
+        .nav-item.has-subs { position: relative; padding-right: 28px; }
+        .nav-item .n:empty { display: none; }
+        .nav-item > span:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .nav-item .nav-caret { position: absolute; right: 6px; top: 6px; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; color: #6b7587; }
+        .nav-item .nav-caret .ico { width: 14px; height: 14px; transition: transform .15s; }
+        .nav-item .nav-caret[aria-expanded="true"] .ico { transform: rotate(180deg); }
+        .nav-item .nav-caret:hover { background: #22304c; color: #fff; }
+        .tabs-in-nav { display: none !important; }
         .sb-foot { display: flex; flex-direction: column; gap: 4px; }
         .sb-jobs { display: block; width: 100%; text-align: left; background: #151e30; border-radius: 10px; padding: 9px 11px; color: #d6dbe3; font-size: 12px; }
         .sb-jobs:hover { background: #1b2539; }
@@ -300,6 +314,6 @@ $pops_role_label = ['superadmin' => __('Süper Admin'), 'admin' => __('Yönetici
         <div class="app-main">
             <header class="app-topbar">
                 <button type="button" class="menu-toggle" id="menuToggle" aria-label="<?php _e('Menüyü aç'); ?>" aria-controls="appSidebar" aria-expanded="false"><?php echo pops_icon('menu'); ?></button>
-                <span id="pageTitle"><?php echo htmlspecialchars($pops_titles[$current_page] ?? ucfirst($current_page), ENT_QUOTES, 'UTF-8'); ?></span>
+                <span id="pageTitle"><?php echo htmlspecialchars($pops_titles[$pops_page_key] ?? ucfirst($current_page), ENT_QUOTES, 'UTF-8'); ?></span>
             </header>
             <main class="app-content" id="mainContent">

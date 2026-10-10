@@ -21,6 +21,8 @@ test('API ile açılan görev durumuyla görünür', async ({ page }) => {
     await expect(job.locator('.side .word')).toHaveText('Sırada');
     await expect(job.locator('.meta')).toContainText('LAB1-PC01');
     await expect(job.locator('.meta')).toContainText('admin');
+    // Bilgisayar adı bilgisayarın sayfasına gider
+    await expect(job.locator('.meta a')).toHaveAttribute('href', 'pc?id=HW-E2E0000102');
 
     // Ayrıntı paneli: komut ve hedef bilgisayar
     await job.click();
@@ -30,16 +32,21 @@ test('API ile açılan görev durumuyla görünür', async ({ page }) => {
     await expect(drawer.locator('.tk-cmd')).toHaveText('echo e2e');
     await expect(drawer.locator('.tk-dev .act[data-task]')).toHaveCount(1);
     await expect(drawer.locator('.tk-dev .act[data-task] .what')).toHaveText('LAB1-PC01');
+    await expect(drawer.locator('.tk-dev .act[data-task] .what a')).toHaveAttribute('href', 'pc?id=HW-E2E0000102');
     await drawer.getByRole('button', { name: 'Paneli kapat' }).click();
 
     // Durum sunucuda değişince liste yoklamayla güncellenir (sayfa yenilenmeden)
     const r = await apiJson(page.request, 'POST', '/api/tasks/action', { action: 'CANCEL', target_mode: 'TASK', target_id: String(taskId) });
     expect(r.changed).toBe(1);
     await expect(job.locator('.side .word')).toHaveText('İptal edildi', { timeout: 15_000 });
+    // Biten sorunlu işin satırında yeniden deneme düğmesi (yazılı)
+    await expect(job.getByRole('button', { name: 'Yeniden dene' })).toBeVisible();
 
-    // "Sorunlu" süzgeci iptal edilen işi gösterir, "Sürüyor" göstermez
+    // "Sorunlu" süzgeci iptal edilen işi gösterir, "Sürüyor" göstermez; süzgeç adreste (?f=) kalır
     await page.locator('#tkFilter').getByRole('button', { name: 'Sürüyor' }).click();
     await expect(job).toHaveCount(0);
+    await expect(page).toHaveURL(/[?&]f=run\b/);
     await page.locator('#tkFilter').getByRole('button', { name: 'Sorunlu' }).click();
     await expect(job).toHaveCount(1);
+    await expect(page).toHaveURL(/[?&]f=bad\b/);
 });
