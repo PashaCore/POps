@@ -12,7 +12,7 @@ namespace POpsAgent
     // "type": "remote_input": ekran önizlemesi (get_thumbnail; yanıt geldiği soketten gider) ya da tepsiye giden
     // uzaktan fare/klavye. Yalnızca bu bilgisayara gelen; Vision yeteneği, modülü ve girdi için onaylı oturum gerekir
     // (bkz. VisionSession.VisionDenial). Önizleme: tepsiye CAPTURE_SNAPSHOT, yanıtı tepsinin bir sonraki JPEG karesi
-    // (Worker'ın tepsi borusu önce TryCompleteSnapshot'a verir).
+    // (tepsi borusu karesi önce TryCompleteSnapshot'a verir; bkz. TrayMessageRouter).
     [SupportedOSPlatform("windows")]
     internal sealed class RemoteInputHandler : ICommandHandler
     {
@@ -20,19 +20,19 @@ namespace POpsAgent
         private readonly CapabilityGate _gate;
         private readonly Func<string?> _hwId;
         private readonly Func<TrayPipeServer?> _trayPipe;
-        private readonly SemaphoreSlim _wsCommandLock;
+        private readonly CommandChannel _channel;
         private TaskCompletionSource<byte[]>? _thumbnailTcs;
 
-        // Kimlik set_identity ile değişir, tepsi borusu servis çalışırken kurulur: her kullanımda okunur. commandLock:
-        // komut soketinin yazma kilidi (önizleme yanıtı heartbeat ve diğer mesajlarla aynı sokete yazılır)
+        // Kimlik set_identity ile değişir, tepsi borusu servis çalışırken kurulur: her kullanımda okunur. channel: komut
+        // soketine yazım (önizleme yanıtı heartbeat ve diğer mesajlarla aynı kilit altında yazılır)
         public RemoteInputHandler(VisionSession vision, CapabilityGate gate, Func<string?> hwId, Func<TrayPipeServer?> trayPipe,
-            SemaphoreSlim commandLock)
+            CommandChannel channel)
         {
             _vision = vision ?? throw new ArgumentNullException(nameof(vision));
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _hwId = hwId ?? throw new ArgumentNullException(nameof(hwId));
             _trayPipe = trayPipe ?? throw new ArgumentNullException(nameof(trayPipe));
-            _wsCommandLock = commandLock ?? throw new ArgumentNullException(nameof(commandLock));
+            _channel = channel ?? throw new ArgumentNullException(nameof(channel));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { CommandDispatcher.RemoteInput };
@@ -64,9 +64,8 @@ namespace POpsAgent
                     {
                         var payload = new { type = "thumbnail", hw_id = _hwId(), image = Convert.ToBase64String(img) };
                         byte[] b = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
-                        await _wsCommandLock.WaitAsync();
-                        try { if (ws?.State == WebSocketState.Open) await ws.SendAsync(new ArraySegment<byte>(b), WebSocketMessageType.Text, true, CancellationToken.None); }
-                        finally { _wsCommandLock.Release(); }
+                        // İsteğin geldiği sokete; kilit süresiz beklenir (bkz. CommandChannel.SendOnAsync)
+                        await _channel.SendOnAsync(() => ws, b);
                     }
                 }, stoppingToken);
             }
