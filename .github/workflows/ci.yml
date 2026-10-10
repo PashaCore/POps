@@ -76,7 +76,7 @@ jobs:
           print("POpsAgent kapsamı %%%.1f (taban %%%.1f)" % (agent[0], AGENT_FLOOR))
       - name: Upload agent coverage
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: agent-coverage
           path: TestResults/**/coverage.cobertura.xml
@@ -343,7 +343,7 @@ jobs:
         run: npx playwright test
       - name: Upload report and traces
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: panel-e2e-report
           path: |
@@ -718,7 +718,7 @@ jobs:
         run: fuzz/run.sh 60
       - name: Upload failing inputs
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: fuzz-failures
           path: ${{ runner.temp }}/fuzz-artifacts/
@@ -799,7 +799,7 @@ jobs:
           python -m coverage report --rcfile=.coveragerc --fail-under=65
       - name: Upload backend coverage
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: backend-coverage
           path: Backend/coverage.xml
