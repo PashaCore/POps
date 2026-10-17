@@ -7,7 +7,7 @@ fastapi==0.142.2
 starlette==1.7.0
 uvicorn[standard]==0.54.0
 asyncpg==0.32.0
-pydantic==2.13.5
+pydantic==2.14.1
 PyJWT==2.15.1
 bcrypt==5.0.0
 slowapi==0.1.10
