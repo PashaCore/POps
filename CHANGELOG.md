@@ -10,15 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Simulator lab distribution.** `tools/agent_simulator.py --labs N` creates short-lived `SIM-LAB-*` enrollment
-  tokens and spreads simulated agents evenly across them for realistic class and report testing.
+  tokens and spreads simulated agents evenly across them for realistic class and report testing. Thanks to
+  @adity982 (#170, closes #72).
 - **`pops-tls check [--days N]` for monitoring.** Exits `0` while the server certificate is valid for more than N days (default 30, the threshold `renew` uses), `1` with one line when it has N days or fewer left or has expired, and `2` when there is no certificate. It changes nothing on disk, so a cron mail or a monitoring plugin can run it. `pops-tls show` marks the "Kalan" line with "uyarı" inside the threshold. Thanks to @RajGahoi (#155, closes #112).
 
 ### Changed
 
-- **Backend dependencies: asyncpg 0.32 and redis 8.1** (#165, #166).
+- **Backend dependencies: asyncpg 0.32, redis 8.1, pydantic 2.14 and FastAPI 0.143** (#165, #166, #172, #174).
   - asyncpg keeps the pool's `min_size` connections open (POps: 2 per worker) and fixes a pool deadlock after a protocol abort.
   - redis-py 8 talks RESP3 by default with compatible responses; the multi-worker Redis job passes unchanged.
-  - Both come from the hash-locked `requirements.lock` on the next server update.
+  - pydantic 2.14 and FastAPI 0.143 need no code change; FastAPI's automatic OpenTelemetry setup is now opt-in and
+    POps never used it. Starlette 1.8 is skipped: it needs Python 3.11 and the backend still supports 3.10 (D-20).
+  - All of them come from the hash-locked `requirements.lock` on the next server update.
+- **Agent: .NET packages 10.0.13** (Microsoft.Extensions.Hosting, System.Diagnostics.EventLog and
+  System.ServiceProcess.ServiceController; #177, #178, #182, #183), the October servicing release.
+- **Docker images: refreshed `python:3.12-slim` and `php` base image digests** (#187, #189).
 - **Agent: the Worker is split into command handlers (steps a0–a4).** A `CommandDispatcher` routes each server action to its own handler class: execute, winget, tasks, Vision and capabilities, exam, file transfer, power, messages and more. `CapabilityGate` sends every `capability_denied` from one place. `Worker.cs` shrinks from 2,203 to about 1,750 lines. Behaviour is unchanged: the agent's 1,304 + 68 tests pass with the same names and results. Two small additions: the exam handler releases its resources when the agent stops, and the network change listener is removed when the Worker stops.
 - **Agent tests run in parallel.** Classes that touch shared static state or open real processes, pipes or sockets run in two serial collections; the other 31 classes run in parallel. A guard test fails CI when a parallel class touches mutable static state. It ignores the hit counters that code coverage adds in CI.
 - **Exam mode: the server sends its own time.** `exam_mode` now carries `now` (unix seconds) next to `until`. Agents from 0.1.24 take `until - now` as the time left and count it on a monotonic clock, so a PC clock that is ahead no longer refuses the exam and one that is behind no longer lengthens it. Older agents ignore the field. Schema, example and protocol README updated.
