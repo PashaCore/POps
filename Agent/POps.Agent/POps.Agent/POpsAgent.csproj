@@ -10,10 +10,10 @@
 	<ItemGroup>
 		<!-- Release manifest'inin ed25519 imzası (.NET'te yerleşik ed25519 yok) -->
 		<PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
-		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.12" />
-		<PackageReference Include="System.Management" Version="10.0.12" />
-		<PackageReference Include="System.Diagnostics.EventLog" Version="10.0.12" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
+		<PackageReference Include="System.Management" Version="10.0.13" />
+		<PackageReference Include="System.Diagnostics.EventLog" Version="10.0.13" />
 	</ItemGroup>
 
 	<!-- Ortak yardımcılar (sürüm, log, ayarlar, kimlik): Agent/POps.Shared -->

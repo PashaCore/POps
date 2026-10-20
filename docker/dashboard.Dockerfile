@@ -3,7 +3,7 @@
 # root; see docs/docker.md. TLS is terminated in front of this container.
 # The base image is pinned by digest (multi-arch index); Dependabot proposes the new digest
 # of the same tag weekly (.github/dependabot.yml).
-FROM php:8.3-apache@sha256:c2c73159da2f7a19167a2849bd9785ca9ad4f5eeff01f85295ef861a5e9bcf4d
+FROM php:8.3-apache@sha256:f8506a19d79cad7fcf0c8049f1ed2208824961018fdc10bd80f324094dcd36bd
 
 # The panel only needs curl, json and session, all built into the official image.
 RUN a2enmod proxy proxy_http proxy_wstunnel headers remoteip rewrite deflate \

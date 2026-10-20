@@ -6,6 +6,8 @@ Her sahte ajan gerçek ajan gibi /ws/agent'a bağlanır, dna_payload gönderir v
   --enroll-token   ajanlar jetonla kaydolur ve sunucunun verdiği anahtarı (set_secret) alır; sonraki HTTP
                    istekleri X-Agent-Id + X-Agent-Secret ile gider (yazılım/yama uçları yalnız anahtarlı ajanı
                    kabul eder)
+  --labs N         superadmin JWT ile SIM-LAB-1 … SIM-LAB-N için kısa ömürlü kayıt jetonları üretir ve ajanları
+                   sınıflara eşit dağıtır; --enroll-token ile birlikte kullanılamaz
   --software N     bağlandıktan sonra N kayıtlık yazılım listesi gönderir (--software-every ile tekrar)
   --patches        Windows Update durumu gönderir (--patch-every ile tekrar)
   --panels K       K panel WebSocket'i açar (--jwt ile) ve yayın (broadcast) yükünü sayar
@@ -27,6 +29,7 @@ kanalı gerektirir). Sonuçlar BENCHMARKS.md için; ölçümü kendi donanımın
 
 Örnek:
     python3 tools/agent_simulator.py --n 1000 --url ws://127.0.0.1:8099 --duration 30 --hb 5
+    python3 tools/agent_simulator.py --n 100 --labs 4 --jwt "$JWT"
     python3 tools/agent_simulator.py --n 300 --url ws://127.0.0.1:8099 --enroll-token TOKEN --software 150 \\
         --patches --panels 3 --jwt "$JWT" --server-pid "$(pgrep -f 'uvicorn server:app' | head -1)"
 
@@ -93,6 +96,38 @@ def _post(url, body, headers, timeout):
         return 0, time.perf_counter() - t
 
 
+def _post_json(url, body, headers, timeout=30):
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json", **headers})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read()).get("detail", e.reason)
+        except (ValueError, AttributeError):
+            detail = e.reason
+        raise RuntimeError("kayıt jetonu oluşturulamadı (HTTP %d): %s" % (e.code, detail)) from e
+
+
+async def create_lab_tokens(args):
+    """SIM-LAB-* kayıt jetonlarını üretir; sıra ajan i %% N dağılımıyla aynıdır."""
+    base = args.urls[0].rstrip("/").replace("wss://", "https://").replace("ws://", "http://")
+    loop = asyncio.get_running_loop()
+    tokens = []
+    for lab_index in range(args.labs):
+        uses = (args.n + args.labs - 1 - lab_index) // args.labs
+        body = {"lab_name": "SIM-LAB-%d" % (lab_index + 1), "max_uses": max(1, uses), "ttl_hours": 1,
+                "note": "tools/agent_simulator.py --labs"}
+        status, response = await loop.run_in_executor(
+            _http_pool, _post_json, base + "/api/system/enroll-token", body,
+            {"Authorization": "Bearer " + args.jwt}, 30)
+        if status < 200 or status >= 300 or not response.get("token"):
+            raise RuntimeError("SIM-LAB-%d için kayıt jetonu oluşturulamadı" % (lab_index + 1))
+        tokens.append(response["token"])
+    return tokens
+
+
 async def http_post(stats, name, url, body, headers):
     loop = asyncio.get_running_loop()
     status, dt = await loop.run_in_executor(_http_pool, _post, url, body, headers, 30)
@@ -138,8 +173,9 @@ async def agent_once(i, args, stop_at, stats):
     http_base = base.replace("wss://", "https://").replace("ws://", "http://")
     uri = base + "/ws/agent/" + hwid(i)
     headers = {"X-Agent-Version": "sim"}
-    if args.enroll_token:
-        headers["X-Enroll-Token"] = args.enroll_token
+    enroll_token = args.lab_tokens[i % args.labs] if args.labs else args.enroll_token
+    if enroll_token:
+        headers["X-Enroll-Token"] = enroll_token
     secret = None
     opened = False
     try:
@@ -168,6 +204,10 @@ async def agent_once(i, args, stop_at, stats):
                         if m.get("action") == "set_secret":
                             secret = m.get("secret")
                             stats["enrolled"] += 1
+                            if args.labs and i not in stats["lab_ever"]:
+                                lab = "SIM-LAB-%d" % (i % args.labs + 1)
+                                stats["lab_enrolled"][lab] = stats["lab_enrolled"].get(lab, 0) + 1
+                                stats["lab_ever"].add(i)
                     except (ValueError, AttributeError):
                         pass
                 except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
@@ -261,6 +301,8 @@ async def main():
     p.add_argument("--hb", type=float, default=5.0, help="heartbeat aralığı (sn)")
     p.add_argument("--ramp", type=float, default=0.002, help="ajanlar arası bağlanma gecikmesi (sn)")
     p.add_argument("--enroll-token", default=None)
+    p.add_argument("--labs", type=int, default=0,
+                   help="ajanları otomatik üretilen SIM-LAB-* sınıflarına dağıt (superadmin --jwt gerekir)")
     p.add_argument("--software", type=int, default=0, help="ajan başına yazılım kaydı (0 = gönderme)")
     p.add_argument("--software-every", type=float, default=0, help="yazılım listesini tekrar gönderme aralığı (sn)")
     p.add_argument("--patches", action="store_true")
@@ -275,14 +317,24 @@ async def main():
     p.add_argument("--report-every", type=float, default=0, help="açık bağlantıların adreslere dağılımı (sn)")
     args = p.parse_args()
     args.urls = [u.strip() for u in args.url.split(",") if u.strip()]
-    if (args.software or args.patches) and not args.enroll_token:
-        p.error("--software/--patches için --enroll-token gerekir (bu uçlar yalnız anahtarlı ajanı kabul eder)")
+    if (args.software or args.patches) and not (args.enroll_token or args.labs):
+        p.error("--software/--patches için --enroll-token veya --labs gerekir "
+                "(bu uçlar yalnız anahtarlı ajanı kabul eder)")
     if args.panels and not args.jwt:
         p.error("--panels için --jwt (ya da POPS_SIM_JWT) gerekir")
+    if args.labs < 0:
+        p.error("--labs sıfırdan küçük olamaz")
+    if args.labs and args.enroll_token:
+        p.error("--labs ile --enroll-token birlikte kullanılamaz")
+    if args.labs and not args.jwt:
+        p.error("--labs için --jwt (ya da POPS_SIM_JWT) gerekir")
+    if args.labs > args.n:
+        p.error("--labs ajan sayısından (--n) büyük olamaz")
+    args.lab_tokens = await create_lab_tokens(args) if args.labs else []
 
     stats = {"connected": 0, "enrolled": 0, "heartbeats": 0, "errors": 0, "last_error": None, "http": {},
              "panels": 0, "panel_msgs": 0, "panel_errors": 0, "ever": set(), "retries": 0, "all_at": None,
-             "flaps": 0, "app_changes": 0, "open": {}}
+             "flaps": 0, "app_changes": 0, "open": {}, "lab_enrolled": {}, "lab_ever": set()}
     t0 = time.monotonic()
     stop_at = t0 + 15 + args.duration + args.n * args.ramp
     tasks = [asyncio.ensure_future(panel(k, args, stop_at, stats)) for k in range(args.panels)]
@@ -304,7 +356,6 @@ async def main():
         print("reconnect: all_connected_after=%s  failed_attempts=%d  retries=%d"
               % ("%.1fs" % (stats["all_at"] - t0) if stats["all_at"] else "henüz değil", stats["errors"],
                  stats["retries"]))
-
     # Isınma: ilk yazılım/yama gönderimleri bağlanmayla çakışmasın diye pencereden önce kısa bekle
     await asyncio.sleep(min(10.0, args.hb * 2))
     hb0, msgs0 = stats["heartbeats"], stats["panel_msgs"]
@@ -330,6 +381,9 @@ async def main():
         hz = os.sysconf("SC_CLK_TCK")
         cpu = (s1[0] - s0[0]) / hz / w * 100
         print("server cpu=%.0f%% (bir çekirdeğin yüzdesi)  rss=%.0f MB" % (cpu, s1[1] / 1024))
+    if args.labs:
+        print("labs: %s" % "  ".join("%s=%d" % (lab, stats["lab_enrolled"].get(lab, 0))
+                                     for lab in ("SIM-LAB-%d" % i for i in range(1, args.labs + 1))))
     for t in tasks:
         t.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
