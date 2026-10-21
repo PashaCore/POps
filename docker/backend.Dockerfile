@@ -3,7 +3,7 @@
 # are copied in (.dockerignore allowlist).
 # The base image is pinned by digest (multi-arch index); Dependabot proposes the new digest
 # of the same tag weekly (.github/dependabot.yml).
-FROM python:3.12-slim@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

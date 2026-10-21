@@ -161,10 +161,22 @@ async def run(c, admin):
     chk(s == 200 and isinstance(plain, list), "parametresiz yanıt hâlâ dizi")
     chk(all(set(d) == KEYS for d in plain), "alanlar değişmedi")
     chk(tag.startswith('W/"d') and h.get("Cache-Control") == "private, no-cache", "zayıf ETag: %s" % tag)
-    s, h304, body = http("/api/devices", admin, headers={"If-None-Match": tag})
+    # Önceki testlerin ajanları bu arada çevrimdışı olabilir: liste değişince sürüm ve ETag de değişir ve 200 doğru
+    # yanıttır. Yeni ETag ile yeniden denenir; aynı ETag'e 200 gelirse hata (yalnızca değişen liste yeniden denenir)
+    for _ in range(10):
+        s, h304, body = http("/api/devices", admin, headers={"If-None-Match": tag})
+        if s == 304 or h304.get("ETag") in (None, tag):
+            break
+        tag = h304["ETag"]
+        await asyncio.sleep(0.5)
     chk(s == 304 and body == b"" and h304.get("ETag") == tag, "If-None-Match tutunca 304, gövde yok")
-    chk(http("/api/devices", admin, headers={"If-None-Match": tag[:-1] + '-gzip"'})[0] == 304,
-        "Apache'nin -gzip eklediği ETag de tutar")
+    for _ in range(10):
+        s, hz, _body = http("/api/devices", admin, headers={"If-None-Match": tag[:-1] + '-gzip"'})
+        if s == 304 or hz.get("ETag") in (None, tag):
+            break
+        tag = hz["ETag"]
+        await asyncio.sleep(0.5)
+    chk(s == 304, "Apache'nin -gzip eklediği ETag de tutar")
     s, _h, body = http("/api/devices", admin, headers={"If-None-Match": 'W/"d1"'})
     chk(s == 200 and isinstance(body, list), "eski ETag tam liste alır")
     chk(http("/api/devices", None, headers={"If-None-Match": tag})[0] == 401, "kimliksiz istek 401 (304 değil)")
