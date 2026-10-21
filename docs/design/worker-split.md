@@ -1,7 +1,9 @@
 # Agent service: split Worker.cs, run the agent tests in parallel
 
-Status: proposed, not built. The code changes start after #97, #99, #100 and #104 are on main (see
-[Merge order](#merge-order)).
+Status: built; the series is complete. Every step has its PR (a0–a5, (c), b1, b2, b4, b3, and the last one, (d), in
+#195; see [Migration plan](#migration-plan)), and the open ones merge in order (#162 → #163 → #192 → #193 → #194 →
+#195). The code changes started after #97, #99, #100 and #104 were on main (see [Merge order](#merge-order)). What is
+left is listed under [Follow-ups](#follow-ups).
 
 ## Problem
 
@@ -31,7 +33,10 @@ Status: proposed, not built. The code changes start after #97, #99, #100 and #10
     A later test that reaches `FileTransfer.PullAsync` in the same run would throw. Only the serial order hides it.
 
   Since step (c) the classes that touch no static run in parallel, and a guard test keeps every class that does in
-  one serial collection (see [(c)](#c-parallel-tests-per-collection)).
+  one serial collection (see [(c)](#c-parallel-tests-per-collection)). Since step (d) no test class touches a mutable
+  static and that collection is gone: everything runs in parallel except the classes that use the machine itself
+  (processes, pipes, listening sockets, measured time), and a second guard keeps new statics out of the product (see
+  [(d)](#d-parallel-by-default)).
 
 Baseline (developer PC, Release, net10.0): 841 tests, 18 s of test time. The slowest classes start real processes
 or wait on purpose: `CommandRunnerTests` 3.4 s, `ModulesTests` 2.5 s, `CommandOutputChunkTests` 1.7 s,
@@ -322,7 +327,7 @@ Assert.Contains(1020, agent.AuditIds);       // quarantine start, not checkable 
 | --- | --- | --- | --- | --- |
 | `SecureStore.Dir` | `SecureStore.PathOf` callers: capabilities, credentials, isolation, quarantine, bypass, result spool, binding, kiosk, generalizer; exam and files in the PRs | 17 test files and `TestEnvironment` | `AgentPaths.SecureDir` (`SecureFile(name)`). b1: the Worker, the services it builds, Program and `Generalizer` take it from `AgentPaths`; `SecureStore`'s file helpers already take full paths, `EnsureDirectory(dir)` too. b3: `Dir`, `PathOf` and the parameterless `EnsureDirectory()` are deleted; kiosk, isolation, exam, files and the peer cache take their files from `AgentPaths` (`KioskMode(recordPath, registry)`, `NetworkIsolation(statePath, scripts)`, `ExamMode(statePath, ...)`, `FileTransfer(paths, ...)`, `PeerCache(paths, ...)`). `DefaultDir` stays as a constant | b1 (**done** in #163); facade b3 (**done** in #194) |
 | `AgentUpdate.DataDir` and the paths derived from it (identity, health, lock, result, progress, inbox, cache) | `AgentUpdate`, Worker, `Helpdesk`, `PatchManager`, `SessionReporter`, `SoftwareReporter`, `Generalizer`, `FileTransfer`, `PeerCache`, `UserSessionApps` | 14 test files and `TestEnvironment` | `AgentPaths.DataDir` and named paths (`IdentityPath`, `HealthPath`, `UpdateLockPath`, ...). b1: every `AgentUpdate` function that used a `DataDir` path takes an `AgentPaths`; the Worker's services and Program pass theirs. b2: the forwarders the `AgentUpdater` replaced (`WriteOperationalHealth`, `ApplyRollbackDrillOnStartup`, `HandleUpdateCommandAsync`) and the two path properties whose last callers moved to the harness (`SecureDataDir`, `ConsumedDrillPath`) are deleted. b3: `DataDir`, the derived properties and the parameterless forwarders are deleted; the peer cache and the file transfer use `AgentPaths.PeerCacheDir`/`InboxDir`, the update tests call the `AgentPaths` forms with their own folders | b1 (**done** in #163); partly b2 (**done** in #192); the rest b3 (**done** in #194) |
-| `POpsHelpers.ConfigPaths` | `ResolveServerUrl`, `ReadConfigValue`, Worker's ACL fix, credential migration | `ConfigProblemTests`, `POpsHelpersTests`, `AgentCredentialsTests`, `ReviewFourTests` | `AgentPaths.ConfigPaths` (production: `POpsHelpers.DefaultConfigPaths`), passed to `ResolveServerUrl(configPaths)` and `ReadConfigText(key, paths)`. b1: Worker and `AgentDirectories`. b2: the context's `CredentialStore` reads `AgentPaths.ConfigPaths` (`ReadConfigValue(key, paths)`, `GetSetting(key, envVar, paths)`, migration). b3: `PersistDir` in `HardwareBinding` and `Generalizer` reads `AgentPaths.ConfigPaths` (`PersistPath(file, configPaths)`; the parameterless form is deleted) and `AgentDirectories.Apply` takes the files as a required argument. `ConfigPaths` stays only as `POps.Shared`'s default for the parameterless `ResolveServerUrl()`/`ReadConfigValue(key)`/`GetSetting(key, envVar)` (`ConfigProblemTests`, `POpsHelpersTests`; not covered by (b)) | b1 (**done** in #163), credentials b2 (**done** in #192), `PersistDir` b3 (**done** in #194) |
+| `POpsHelpers.ConfigPaths` | `ResolveServerUrl`, `ReadConfigValue`, Worker's ACL fix, credential migration | `ConfigProblemTests`, `POpsHelpersTests`, `AgentCredentialsTests`, `ReviewFourTests` | `AgentPaths.ConfigPaths` (production: `POpsHelpers.DefaultConfigPaths`), passed to `ResolveServerUrl(configPaths)` and `ReadConfigText(key, paths)`. b1: Worker and `AgentDirectories`. b2: the context's `CredentialStore` reads `AgentPaths.ConfigPaths` (`ReadConfigValue(key, paths)`, `GetSetting(key, envVar, paths)`, migration). b3: `PersistDir` in `HardwareBinding` and `Generalizer` reads `AgentPaths.ConfigPaths` (`PersistPath(file, configPaths)`; the parameterless form is deleted) and `AgentDirectories.Apply` takes the files as a required argument. `ConfigPaths` stayed only as `POps.Shared`'s default for the parameterless `ResolveServerUrl()`/`ReadConfigValue(key)`/`GetSetting(key, envVar)` (`ConfigProblemTests`, `POpsHelpersTests`; not covered by (b)). d: `ConfigPaths` and those three parameterless forms are deleted (no product code called them); `GetServerUrl(configPaths)` takes the files, and `ResolveServerUrl(configPaths, environment)` and `GetSetting(key, envVar, paths, environment)` take the environment lookup (the existing forms pass `Environment.GetEnvironmentVariable`), so the tests give their own files and variables and change nothing process-wide | b1 (**done** in #163), credentials b2 (**done** in #192), `PersistDir` b3 (**done** in #194), the rest d (**done** in #195) |
 | `AgentDirectories.Problem` (the folder setting's problem) | Worker (`FolderProblem`, event 1090) | `FolderSettingsTests`, `EnsureIsolated` | `AgentPaths.FolderProblem`; `UpdaterArguments`/`WatchdogArguments` are `AgentPaths` methods | b1 (**done** in #163) |
 | `ServerTrust.CaPath` and its cache (`_ca`, `_loadedPath`, `_broken`, last-reject time) | Worker (reload, sockets), `AgentHttp.Handler`, `capabilities` (`server_ca`) | `ServerTrustTests` | `AgentPaths.ServerCaPath` (b1); `ServerTrust` instance in the context (`AgentContext.Trust`, only the agent uses it). b2: a plain instance class (`ServerTrust(caPath)`); no static is left (`CaPath` and the cache are per instance, `AgentDirectories.Use` no longer sets a path). The Worker's policy/download client, `AgentHttp`, the command and Vision sockets and `server_ca` use the context's one instance | path b1 (**done** in #163), instance b2 (**done** in #192) |
 | `AgentCapabilities` state | Worker, the gate, the heartbeat, `capabilities` | `Load()` after writing `capabilities.json` | `CapabilityState` instance (`AgentContext.Capabilities`; file and `ServerTrust` as constructor arguments). b3: `AgentCapabilities.Process` and its forwarders are deleted; `PeerCache` (`Enabled`) and `AgentFeatures` (an instance over the context's state; `CommandConnection` holds it in a property named `AgentFeatures`, so the `X-Agent-Features` line that `PeerCacheTests` and `PowerMessageTests` read is unchanged) take the context's instance | b2 (**done** in #192); `Process` b3 (**done** in #194) |
@@ -339,7 +344,9 @@ Assert.Contains(1020, agent.AuditIds);       // quarantine start, not checkable 
 | `Generalizer.IsAdministrator`, `StopAgent` | `--generalize` (no Worker) | `GeneralizeTests` | arguments to `Generalizer.Run`, Program passes `MachineSeams.IsAdministrator`/`StopAgent` | b3 (**done** in #194) |
 | `ExamMode.Resolver`, `StopProcess` (#97), `FileTransfer.PublicDesktopOverride`, `ProfileInfo` (#99), `WingetInstall.Locator` (#100) | the new handlers | their test classes | `ExamMode(statePath, scripts, resolver, stopProcess)` instance in `ExamHandler`, `FileTransfer(paths, http, credentials, publicDesktop, profiles)` instance in `FileTransferHandler`, the locator a `WingetInstallHandler` argument; all from `MachineSeams` | b3 (**done** in #194) |
 | `PowerActions.Execute`, `TrayLockTimeout`, `SessionTasks.HasConsoleUser`, `ConsoleSession`, `Delay`, `UserMessages.AckTimeout` | power, user messages, the tray's console check | `PowerMessageTests`, `EnsureIsolated` | the power call and the console queries are machine seams (`MachineSeams.Power`, `HasConsoleUser`, `ConsoleSession`) given to `PowerActions`, `UserMessages` and the Worker; the wait and the timeouts are instance properties of `PowerActions` and `UserMessages` (like `Audit`) | b3 (**done** in #194) |
-| `PeerCache` (#123): server, verified key, firewall rule state, `Clock`, `FirewallRunner`, `ListenEndpoint`, `IsLocalSubnet`, `IsIsolated`; `PeerDownload.HeaderTimeout`, `StallTimeout`, `AllowLoopbackPeers` | update download, Worker (minute check, isolation and exam changes, stop), `set_capabilities` | `PeerCacheTests`, `EnsureIsolated` | `PeerCache(paths, capabilities, firewall, endpoint)` and `PeerDownload(isLocalSubnet)` instances, parts of the `AgentUpdater` (`AgentUpdater.PeerCache`); firewall runner and listen address are `MachineSeams.PeerCacheFirewall`/`PeerCacheEndpoint` (service: PowerShell and `[::]:8817`, default: refused and `127.0.0.1:0`); the test hooks are instance properties. `DownloadVerifiedAsync` is an `AgentUpdater` method | b3 (**done** in #194) |
+| `PeerCache` (#123): server, verified key, firewall rule state, `Clock`, `FirewallRunner`, `ListenEndpoint`, `IsLocalSubnet`, `IsIsolated`; `PeerDownload.HeaderTimeout`, `StallTimeout`, `AllowLoopbackPeers` | update download, Worker (minute check, isolation and exam changes, stop), `set_capabilities` | `PeerCacheTests`, `EnsureIsolated` | `PeerCache(paths, capabilities, firewall, endpoint)` and `PeerDownload(isLocalSubnet)` instances, parts of the `AgentUpdater` (`AgentUpdater.PeerCache`); firewall runner and listen address are `MachineSeams.PeerCacheFirewall`/`PeerCacheEndpoint` (service: PowerShell and `[::]:8817`, default: refused and `127.0.0.1:0`); the test hooks are instance properties. `DownloadVerifiedAsync` is an `AgentUpdater` method. d: the listen address became the server itself, `MachineSeams.PeerCacheServer` (a `PeerCacheServerFactory` returning an `IPeerCacheServer`; service: a `PeerCacheServer` on `[::]:8817`; default: a server that never listens, whose `Start` throws `SocketException` like a port that cannot be opened, so `PeerCache` logs its existing "dinlenemedi" line and serves nothing); `PeerCache(paths, capabilities, firewall, server)`, the hook `ListenEndpoint` is `NewServer`; `PeerCacheTests` passes a loopback one | b3 (**done** in #194); server factory d (**done** in #195) |
+| `Setup.TrustedBaseForTests` (MSI custom actions) | the install folder checks (`CheckInstallFolder`, `ApplyInstallFolderPolicy`) | `SetupTests`, `FolderSetupTests`, `ServerCaSetupTests` | argument: `CheckInstallFolder(dir, protectedFolders, knownFiles, trustedBase, out state)`, `ApplyInstallFolderPolicy(dir, state, trustedBase, log)`, `Configure(data, layout, trustedBase, log)`; the custom actions pass `null`, as the static was in every installation | d (**done** in #195) |
+| Machine-level environment variables (`POPS_BYPASS_SECRET`, `POPS_ENROLL_TOKEN`) read and deleted by the credential migration | `CredentialStore.MigrateSecrets` (startup) | none set them, but `AgentCredentialsTests` reached the real read and delete | machine seams `MachineSeams.ReadMachineVariable`/`DeleteMachineVariable` (service: `Environment` with `EnvironmentVariableTarget.Machine`; default: no variable, nothing deleted), constructor arguments of `CredentialStore` | d (**done** in #195) |
 | `DnsPolicyMonitor`: timer, policy, index, reported and recent lists, baseline, flags, `UtcNow`, `CacheReader`, `Reporter`, `Quarantine`, `ErrorReporter`, `IndexBuilds` | Worker (configure, start, user change) | `DnsPolicyMonitorTests`, `QuarantineControlTests`, `ReReviewTests` | sealed, disposable instance owned by the Worker (`Worker.Dns`), not a context part: its callbacks are the Worker's. Constructor arguments: quarantine and error callbacks, the context's `AgentHttp` and `CredentialStore` (`/api/policy_alert`), `TimeProvider` (the Worker passes `TimeProvider.System`) and the DNS cache reader (service: `DnsWatch.ReadCacheNames`); an internal overload takes a fake reporter. `PolicySync` configures and starts the Worker's instance, `QuarantineControl` gets an `unlocked` callback (the Worker passes `Dns.ResetViolations`), `Worker.Dispose` stops the timer and releases the callbacks. #137's `BindDnsPolicyMonitor`/`Bind`/`Release` and the default quarantine (`NetworkIsolation.EnableAsync`, which never ran in the service: the Worker bound its own before the monitor could start) are gone. No static is left | b4 (**done** in #193) |
 
 These can stay static, because they are immutable or describe the whole process or machine:
@@ -347,14 +354,25 @@ These can stay static, because they are immutable or describe the whole process 
   functions (`LocalAudit` event builders, `VisionRelay.TrayMessageFor`, `CommandExecutionPolicy`, `ReconnectBackoff`);
 - `POpsHelpers.Log` with its lock and `LogDirectoryOverride` (set once per test process) and `Component` (set once
   per program). `POpsHelpersTests.LogFile_PerComponent` changes `Component`; it moves to the serial collection or
-  calls a pure `LogFilePath(component, day)` overload;
+  calls a pure `LogFilePath(component, day)` overload (d: it calls `LogFilePath(component, day)` and
+  `LogsToUserProfileFor(component)`; no test changes `Component`);
 - `POpsHelpers.MachineLogDir`, the SYSTEM components' log folder: the service sets it once from `AgentPaths.LogDir`,
   the updater from `--logdir`; `POpsHelpers.Log` reads it (b1 keeps it, see #163);
 - `SecureStore.SystemSid` (the service account, set once per test process). `SecureStoreTests` changes it and goes
-  serial, or `ProtectedFileSecurity` takes the SID as an argument;
+  serial, or `ProtectedFileSecurity` takes the SID as an argument (d: the test's swap only reached the trusted-owner
+  check, so `Read(path, requireTrustedOwner, systemSid)` takes the SID and the test passes LocalSystem;
+  `ProtectedFileSecurity` needed no argument). `FolderSettings.SystemSid` is the same value for the folder ACLs;
+- `Authenticode.Cache`, signature results per file path and last write time: the result belongs to the file, so two
+  agents share it safely;
 - `NetworkIsolation.Gate`, `KioskMode.Gate`, the exam mode gate and `PeerCache.Gate`. They serialize changes to the
   machine's firewall, registry and peer cache port, of which there is one per machine. With fakes they only serialize,
   which is harmless.
+
+Since (d) `ProductStaticTests` holds this list for `POpsAgent` and `POps.Shared`: every static field written outside a
+static constructor (or a static collection whose content changes) and every static property with a setter must be on
+its allow list with a reason. Today that is six: `POpsHelpers.MachineLogDir`, `Component` and `LogDirectoryOverride`,
+`FolderSettings.SystemSid`, `SecureStore.SystemSid` and `Authenticode.Cache` (readonly gates and constants are not
+mutable statics and are not listed).
 
 The replacements meet in one object per Worker:
 
@@ -414,6 +432,12 @@ As built in b1 (#163), b2 (#192) and b4 (#193), the shape the later steps extend
   assembly reaches `Production` or any implementation it creates (IL, with `StaticAccessScanner.PathToAny`; Program
   does), and that the object graph of a harness-built Worker and of the services built with the harness holds no
   delegate `Production` creates and no `WindowsKioskRegistry`, and that each part holds the context's seam.
+  d adds two kinds of seam and changes one: the peer cache listen address is now the server itself
+  (`PeerCacheServer`, a factory; default: a server that never listens, its `Start` refuses like a port that cannot be
+  opened), and the machine-level environment variables the credential migration reads and deletes
+  (`ReadMachineVariable`/`DeleteMachineVariable`; default: no variable, nothing deleted) are seams, constructor
+  arguments of `CredentialStore`. `MachineSeamsTests` checks that the default server refuses to start and that the
+  default reads no variable.
 - `AgentPaths` is immutable. `AgentPaths.ForFolders(data, log, configPaths)` is the service layout (secure folder
   and server CA inside the data folder); the constructor takes every folder for the tests.
 - `AgentHarness` (`Agent/POps.Tests/AgentHarness.cs`): `Create(name, http)` gives a test its own folders under
@@ -546,7 +570,8 @@ line; the monitor's own resets in the tests are gone. The DNS assertions read th
 that make a violation or a failed cache read name the monitor they act on: the test's own one, which belongs to no
 Worker, or the Worker's. b3: `EnsureIsolated` and every seam reset are gone; `SharedStateTestBase` is an empty marker
 and `TestEnvironment` only creates the per-process root and sets the process-wide values once (log folders, the
-service account SIDs, empty config files for the parameterless readers). Assertions that read a deleted static read
+service account SIDs, empty config files for the parameterless readers; d deletes `SharedStateTestBase` and the config
+files, whose readers are gone). Assertions that read a deleted static read
 the test's instance or `AgentPaths` instead, with the same expected values: `AgentCapabilities.X` → the harness's
 `Capabilities.X`, `AgentUpdate.ResultPath` → `Paths.UpdateResultPath`, `SecureStore.PathOf(f)` → `Paths.SecureFile(f)`;
 where a class has many such lines a property with the type's name keeps them verbatim (`PeerCache`, `PeerDownload`,
@@ -590,7 +615,7 @@ first form of the guard test from (d) landed here.
   | b2 (runtime state) | **done** in #192, 13: `ActivityHistoryTests`, `AgentCapabilitiesTests`, `AgentHttpFlowTests`, `AgentHttpTests` (to `Machine`: it listens on a TCP socket), `HelpdeskTests`, `HelpdeskThrottleTests`, `InventoryLoadTests`, `LocalAuditTests`, `PatchDeliveryTests`, `ReporterFlowTests`, `RollbackDrillTests`, `ServerTrustTests`, `StaleLockDrillTests` |
   | b3 (machine seams; the peer cache seams from #123 counted here) | **done** in #194, 29: the 26 counted here (`AgentHealthTelemetryTests`, `AgentUpdateTests`, `BitsDownloadTests`, `CommandDispatcherTests`, `DnsPolicyMonitorTests`, `DnsWorkerBindingTests`, `ExamModeTests`, `FileTransferTests`, `FolderSettingsTests`, `GeneralizerTests`, `HardwareBindingTests`, `KioskPoliciesTests`, `ModulesTests`, `NetworkIsolationFlowTests`, `PeerCacheTests`, `PowerMessageTests`, `QuarantineControlTests`, `QuarantineHeartbeatTests`, `TrayPipeLifetimeTests`, `UpdateProgressTests`, `VisionLockedStartTests`, `VisionRelayTests`, `WindowsUpdateAgentTests`, `WingetInstallTests`, `WorkerCommandTests`, `WorkerResultAckTests`) and three added after (c) (`CommandConnectionTests`, `TrayMessageRouterTests`, `VisionCommandTests`). Four run in parallel (`GeneralizerTests`, `KioskPoliciesTests`, `NetworkIsolationFlowTests`, `QuarantineControlTests`); 25 go to `Machine`: every class that builds a Worker or an `AgentUpdater`'s download reaches the peer cache server's `TcpListener` in IL, some open the tray pipe or start powershell.exe, cmd.exe or a fake winget, and `WindowsUpdateAgentTests` measures elapsed time (by hand: the scanner does not follow the `dynamic` WUA calls) |
   | b4 (`DnsPolicyMonitor`) | **done** in #193, 1: `DnsDomainIndexTests` (to `Machine`: it measures elapsed time). The other six classes counted here first (`DnsPolicyMonitorTests`, `DnsWorkerBindingTests`, `ModulesTests`, `QuarantineControlTests`, `QuarantineHeartbeatTests`, `TrayPipeLifetimeTests`) no longer reach a `DnsPolicyMonitor` static, but the guard keeps them in `SharedState` for the b3 seams they reach; they moved to the b3 row |
-  | not covered by (b) | 8: `AgentCredentialsTests`, `ConfigProblemTests`, `POpsHelpersTests` (environment variables; `POpsHelpers.Component`), `SecureStoreTests` (`SecureStore.SystemSid`), `ProtocolVectorTests` (its own static schema cache), `SetupTests`, `FolderSetupTests`, `ServerCaSetupTests` (`Setup.TrustedBaseForTests`) |
+  | not covered by (b) | **done** in (d), #195, 8: `AgentCredentialsTests`, `ConfigProblemTests`, `POpsHelpersTests` (environment variables; `POpsHelpers.Component`), `SecureStoreTests` (`SecureStore.SystemSid`), `ProtocolVectorTests` (its own static schema cache), `SetupTests`, `FolderSetupTests`, `ServerCaSetupTests` (`Setup.TrustedBaseForTests`). All eight run in parallel; `SharedState` is deleted |
 
   After b4, 97 test classes: 37 `SharedState` (34 net10.0, 3 net472), 8 `Machine`, 52 parallel (both targets counted
   once). Classes added after (c) are not in the table above.
@@ -610,6 +635,10 @@ first form of the guard test from (d) landed here.
   - a `SharedState` class no longer touches any static, so each (b) PR moves the classes it frees and the collection
     only shrinks.
   A test that measures elapsed time cannot be seen in IL; such a class is put in `Machine` by hand.
+  (d) changed the guard with the collection gone: no class may read or write a mutable static (five process-wide
+  values stay readable everywhere: the two log folders and the three service account SIDs; no test changes the
+  component name any more), the parallel classes still may not use the machine, and a `Machine` class must reach a
+  machine resource in IL or be on a by-hand list with its reason. The two `SharedState` checks are gone.
 - Stability: 13 full runs in a row (`dotnet test -c Release`, both targets), 0 failures each time: net10.0 1,291 and
   net472 68 tests. No test flaked, so none was moved. Run time does not drop (net10.0: 27 s serial, 28–36 s
   parallel), because almost all of it is spent in the serial collections (`PeerCacheTests` alone takes 9.6 s); the
@@ -619,7 +648,8 @@ first form of the guard test from (d) landed here.
 
 ### (d) Parallel by default
 
-What remains after (c):
+**Done** in [#195 test(agent): parallel by default; product static guard (split step d)](https://github.com/PashaCore/POps/pull/195),
+the last step of the series. The plan, as written after (c):
 - `SharedState` empties as (b) proceeds; the guard names the classes each (b) PR frees. Since b3 only the 8 classes
   that (b) does not cover are left, and they need their own small change first: configuration and environment reads
   through a parameter (`ConfigProblemTests`, `AgentCredentialsTests`, `POpsHelpersTests`, with `LogFile_PerComponent` calling a pure
@@ -640,6 +670,89 @@ What remains after (c):
   `StaticAccessScanner` already finds these statics (the "written outside a static constructor" set); the guard can
   reuse it.
 - `MaxParallelThreads` stays at xUnit's default (the number of cores) unless the Windows runner shows contention.
+
+As built:
+- **The eight classes**, each after its own small change, all parallel now:
+  - `ConfigProblemTests`, `POpsHelpersTests`: the configuration files are an argument (`ResolveServerUrl(configPaths)`,
+    `GetServerUrl(configPaths)`, `GetSetting(key, envVar, paths)`), and so is the environment lookup
+    (`ResolveServerUrl(configPaths, environment)`, `GetSetting(key, envVar, paths, environment)`; the existing forms
+    pass `Environment.GetEnvironmentVariable`). The tests give their own files and variables and no longer call
+    `Environment.SetEnvironmentVariable`. `POpsHelpers.ConfigPaths` and the parameterless `GetServerUrl()`,
+    `ResolveServerUrl()`, `GetSetting(key, envVar)` and `ReadConfigValue(key)` are deleted: no product code called
+    them. `LogFile_PerComponent` calls `LogFilePath(component, day)` and `LogsToUserProfileFor(component)`, and
+    `LogFilePath(day)`/`LogsToUserProfile` call them with `Component`.
+  - `AgentCredentialsTests`: what it reached was the credential migration's machine-level environment variables
+    (read, and deleted after the move to the secure store). They are machine seams now
+    (`MachineSeams.ReadMachineVariable`/`DeleteMachineVariable`, constructor arguments of `CredentialStore`; Program
+    passes the real ones from `Production()`, the default reads nothing and deletes nothing), so no test can reach
+    this PC's variables.
+  - `SecureStoreTests`: the SID swap only reached the trusted-owner check, so `Read(path, requireTrustedOwner,
+    systemSid)` takes the SID and the test passes LocalSystem; `ProtectedFileSecurity` needed no argument.
+    `SecureStore.SystemSid` stays a process-wide value that only `TestEnvironment` sets, once.
+  - `ProtocolVectorTests`: the schema cache is per test instance.
+  - `SetupTests`, `FolderSetupTests`, `ServerCaSetupTests` (net472): `Setup.TrustedBaseForTests` is gone; the trusted
+    base is an argument of `CheckInstallFolder`, `ApplyInstallFolderPolicy` and `Configure`, and the custom actions
+    pass `null`, which is what the static was in every installation.
+  - `SharedStateCollection` and `SharedStateTestBase` are deleted, and so are `TestEnvironment.DefaultConfigPaths`
+    and the empty config file list `TestEnvironment` set for the parameterless readers.
+- **Listener seam.** `MachineSeams.PeerCacheServer` replaces `PeerCacheEndpoint`: a `PeerCacheServerFactory` that
+  builds the server (`IPeerCacheServer`, which `PeerCacheServer` implements); `PeerCache` starts it exactly as before
+  (construction outside, `Start` inside the `SocketException` catch). The service's factory builds a `PeerCacheServer`
+  on `[::]:8817`. The default builds a server that never listens: its `Start` throws `SocketException` (access denied),
+  so `PeerCache` takes its existing "dinlenemedi" path, serves nothing and adds no firewall rule. `PeerCacheTests`
+  passes a loopback factory through the harness (it also counts the servers, as the endpoint fake did).
+  `MachineSeamsTests` checks the default (a `Refusing` method; its server refuses to start and has no port) and that
+  the harness-built `PeerCache` holds the context's factory. With the listener behind a delegate, 16 classes reach
+  no machine resource and run in parallel: `AgentHealthTelemetryTests`, `AgentUpdateTests`, `CommandDispatcherTests`,
+  `DnsPolicyMonitorTests`, `DnsWorkerBindingTests`, `ExamModeTests`, `FileTransferTests`, `FolderSettingsTests`,
+  `HardwareBindingTests`, `MachineSeamsWorkerTests`, `PowerMessageTests`, `QuarantineHeartbeatTests`,
+  `UpdateProgressTests`, `VisionCommandTests`, `VisionLockedStartTests`, `VisionRelayTests`.
+- **`Machine`, 18 classes**, each with a "Machine:" comment: 13 the guard sees (`AgentHttpTests`,
+  `WebSocketMessagesTests`: listening socket; `BitsDownloadTests`, `NetworkIsolationTests`: powershell.exe;
+  `CommandRunnerTests`, `CommandOutputChunkTests`, `StaleTaskFileTests`: cmd.exe; `WingetInstallTests`: the fake
+  winget process; `PeerCacheTests`: loopback servers and powershell.exe; `PipeOwnerTests`, `TrayMessageRouterTests`,
+  `TrayPipeLifetimeTests`: named pipes; `CommandConnectionTests`: pipe and a loopback server) and 5 by hand, listed
+  with their reasons in `ParallelSafetyTests.MachineByHand`: `WindowsUpdateAgentTests` and `DnsDomainIndexTests`
+  measure time; `WorkerCommandTests`, `WorkerResultAckTests` and `ModulesTests` run commands through a real
+  `CommandRunner` behind the dispatcher's interface calls.
+- **Guard.** `ParallelSafetyTests`: no class touches a mutable static (`NoTestClass_TouchesMutableStatics`; the
+  readable process-wide values are the two log folders and the three service account SIDs), no parallel class uses
+  the machine, and a `Machine` class reaches a machine resource in IL or is in `MachineByHand`
+  (`MachineClasses_StillNeedTheMachine`; an entry for a class that is not in `Machine` fails too, so the collection
+  only shrinks). The two `SharedState` checks are gone.
+- **Product static guard.** `ProductStaticTests.ProductStatics_AreOnTheAllowList` lists the mutable statics of
+  `POpsAgent` and `POps.Shared` with `StaticAccessScanner.MutableStatics`: the scanner's own set (a static field
+  written outside a static constructor, or a static collection whose content changes) plus every static property
+  with a setter, even one nobody sets yet; compiler-generated types and coverlet's tracker types (namespace
+  `Coverlet.*` or a name ending in `_<guid>`) are skipped, as are constants, `[ThreadStatic]` fields and readonly
+  fields that do not change. Each one must be on the allow list with a reason, and a list entry that is no longer
+  found fails too. The list has six entries: `POpsHelpers.MachineLogDir`, `Component` and `LogDirectoryOverride`,
+  `FolderSettings.SystemSid`, `SecureStore.SystemSid` and `Authenticode.Cache` (see [Static state](#static-state)).
+  `Guard_ReportsASampleStatic` checks the guard on samples in the test assembly: a settable property nobody sets, a
+  field written outside the static constructor and a mutated readonly list are reported; a constant, a readonly
+  value, a field written only in the static constructor, a `[ThreadStatic]` field, a get-only property, the lambda
+  cache and a type named like coverlet's tracker are not.
+- `MaxParallelThreads` stays at xUnit's default.
+- Inventory: 100 test classes (both targets counted once; d adds `ProductStaticTests`): 0 `SharedState`, 18
+  `Machine`, 82 parallel. net10.0 1,326 tests, net472 67 (the guard changes: three `SharedState` checks gone, two
+  `ParallelSafetyTests` and two `ProductStaticTests` checks added).
+- Stability and time: 5 full runs in a row (`dotnet test -c Release`, both targets), 0 failures each time; no test
+  flaked, so none was moved. The CI-style coverage run passes too. Test time on the developer laptop: net10.0 45–49 s
+  (b3: 49–51 s), net472 1 s (b3: 2 s). The gain is small because the serial tail is most of the run (see the first
+  follow-up); the point of the series was that a test's result no longer depends on what ran before it, and nothing
+  shares mutable state any more. Call-site multiset (log lines, `LocalAudit` events, tray messages, denials): equal.
+
+#### Follow-ups
+
+- The serial tail is the run time: `CommandConnectionTests` (about 23 s; its connection loop waits 5 s after each
+  heartbeat) and `PeerCacheTests` (about 10 s) are most of it. Making the loop's wait a `CommandConnection` option, or
+  splitting the class so only the tests that open the pipe and the loopback server stay in `Machine`, would cut it.
+- The scanner does not follow interface or virtual calls, so three classes are in `Machine` by hand because a real
+  `CommandRunner` runs behind `ICommandHandler`. Where a test only needs the reply and not the process, a fake runner
+  given through the harness would let it run in parallel; the by-hand list would then shrink.
+- `FolderSettings.SystemSid` and `SecureStore.SystemSid` stay process-wide (set once). If a second service account is
+  ever needed, the ACL helpers can take the SID as an argument the way `SecureStore.Read` does now.
+- Open question 7 (CI runs the net10.0 tests twice for two weeks) is still the owner's call.
 
 ## Risks and how to check them
 
