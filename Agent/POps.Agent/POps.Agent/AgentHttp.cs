@@ -31,8 +31,8 @@ namespace POpsAgent
     public sealed class AgentHttp
     {
         // Süreç varsayılanı: servis açılışta bağlamın örneğine çevirir (bkz. AgentContext.UseForProcess). Worker ve kurduğu
-        // servisler bağlamın örneğini kullanır; bunu Worker bölmesinin b3/b4 adımlarına kadar statik kalan kod (FileTransfer,
-        // DnsPolicyMonitor) ve onları sınayan SharedState testleri okur. Başlangıç değeri kurum sertifikasını her kullanımda
+        // servisler bağlamın örneğini kullanır; bunu Worker bölmesinin b3 adımına kadar statik kalan kod (FileTransfer) ve
+        // onu sınayan SharedState testleri okur. Başlangıç değeri kurum sertifikasını her kullanımda
         // SecureStore.Dir'den alır.
         public static AgentHttp Default { get; internal set; } =
             new AgentHttp(new ServerTrust(() => SecureStore.PathOf(ServerTrust.FileName)).NewHandler(), AgentCredentials.Process);

@@ -23,21 +23,28 @@ namespace POps.Tests.Agent
         private readonly List<(string Domain, string Category)> _reports = new List<(string, string)>();
         private readonly List<string> _quarantines = new List<string>();
         private DateTime _now = new DateTime(2026, 9, 28, 9, 0, 0, DateTimeKind.Utc);
+        private readonly AgentHarness _agent;
+        private readonly DnsPolicyMonitor _dns;
 
         public DnsPolicyMonitorTests()
         {
-            DnsPolicyMonitor.Reset();
-            DnsPolicyMonitor.UtcNow = () => _now;
-            DnsPolicyMonitor.CacheReader = () => _cache.ToList();
-            DnsPolicyMonitor.Reporter = (domain, category) => _reports.Add((domain, category));
-            DnsPolicyMonitor.Quarantine = reason => _quarantines.Add(reason);
+            _agent = AgentHarness.Create("dns");
+            _dns = _agent.NewDnsMonitor(() => _cache.ToList(), (domain, category) => _reports.Add((domain, category)),
+                quarantine: reason => _quarantines.Add(reason), clock: new Clock(() => _now));
         }
 
         public void Dispose()
         {
-            DnsPolicyMonitor.Reset();
-            DnsPolicyMonitor.UtcNow = () => DateTime.UtcNow;
-            DnsPolicyMonitor.CacheReader = DnsWatch.ReadCacheNames;
+            _dns.Dispose();
+            _agent.Dispose();
+        }
+
+        // Testin saati: her okumada _now
+        private sealed class Clock : TimeProvider
+        {
+            private readonly Func<DateTime> _utcNow;
+            public Clock(Func<DateTime> utcNow) => _utcNow = utcNow;
+            public override DateTimeOffset GetUtcNow() => new DateTimeOffset(_utcNow(), TimeSpan.Zero);
         }
 
         private static AgentPolicy Policy(Dictionary<string, List<string>> domains, bool autoQuarantine = false, int threshold = 3) => new AgentPolicy
@@ -57,15 +64,15 @@ namespace POps.Tests.Agent
         [Fact]
         public void Worker_StartsMonitoringWhenTheCommandChannelConnects()
         {
-            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context);
-            Assert.False(DnsPolicyMonitor.IsRunning);
+            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context, () => _cache.ToList());
+            Assert.False(worker.Dns.IsRunning);
 
             worker.OnCommandChannelConnected();
-            Assert.True(DnsPolicyMonitor.IsRunning);
+            Assert.True(worker.Dns.IsRunning);
 
             // Yeniden bağlanmak ikinci bir zamanlayıcı açmaz
             worker.OnCommandChannelConnected();
-            Assert.True(DnsPolicyMonitor.IsRunning);
+            Assert.True(worker.Dns.IsRunning);
         }
 
         [Fact]
@@ -73,14 +80,14 @@ namespace POps.Tests.Agent
         {
             _cache.AddRange(new[] { "bet1.example", "www.bet1.example", "essex.ac.uk" });
 
-            DnsPolicyMonitor.Configure(Policy(new Dictionary<string, List<string>>()), "HW-A", "https://pops.example");
-            Assert.Empty(DnsPolicyMonitor.CheckNow());
+            _dns.Configure(Policy(new Dictionary<string, List<string>>()), "HW-A", "https://pops.example");
+            Assert.Empty(_dns.CheckNow());
 
-            DnsPolicyMonitor.Configure(Policy(null), "HW-A", "https://pops.example");
-            Assert.Empty(DnsPolicyMonitor.CheckNow());
+            _dns.Configure(Policy(null), "HW-A", "https://pops.example");
+            Assert.Empty(_dns.CheckNow());
 
-            DnsPolicyMonitor.Configure(Policy(new Dictionary<string, List<string>> { ["bahis"] = new List<string>() }), "HW-A", "https://pops.example");
-            Assert.Empty(DnsPolicyMonitor.CheckNow());
+            _dns.Configure(Policy(new Dictionary<string, List<string>> { ["bahis"] = new List<string>() }), "HW-A", "https://pops.example");
+            Assert.Empty(_dns.CheckNow());
 
             Assert.Empty(_reports);
             Assert.Empty(_quarantines);
@@ -91,12 +98,12 @@ namespace POps.Tests.Agent
         public void SubdomainsOfOneEntry_CountOnce()
         {
             _cache.AddRange(new[] { "www.bet1.example", "cdn.bet1.example", "static.bet1.example", "essex.ac.uk", "notbet1.example" });
-            DnsPolicyMonitor.Configure(Policy(Lists(), autoQuarantine: true, threshold: 2), "HW-A", "https://pops.example");
+            _dns.Configure(Policy(Lists(), autoQuarantine: true, threshold: 2), "HW-A", "https://pops.example");
 
-            Assert.Single(DnsPolicyMonitor.CheckNow());
-            Assert.Empty(DnsPolicyMonitor.CheckNow());
+            Assert.Single(_dns.CheckNow());
+            Assert.Empty(_dns.CheckNow());
             Assert.Single(_reports);
-            Assert.Equal(1, DnsPolicyMonitor.Violations);
+            Assert.Equal(1, _dns.Violations);
             Assert.Empty(_quarantines);
         }
 
@@ -104,33 +111,33 @@ namespace POps.Tests.Agent
         public void PolicyUpdate_TakesEffectOnTheNextCheck()
         {
             _cache.Add("bet1.example");
-            DnsPolicyMonitor.Configure(Policy(new Dictionary<string, List<string>>()), "HW-A", "https://pops.example");
-            Assert.Empty(DnsPolicyMonitor.CheckNow());
+            _dns.Configure(Policy(new Dictionary<string, List<string>>()), "HW-A", "https://pops.example");
+            Assert.Empty(_dns.CheckNow());
 
-            DnsPolicyMonitor.Configure(Policy(Lists()), "HW-A", "https://pops.example");
-            Assert.Single(DnsPolicyMonitor.CheckNow());
+            _dns.Configure(Policy(Lists()), "HW-A", "https://pops.example");
+            Assert.Single(_dns.CheckNow());
         }
 
         // M4: eşik son 1 saatteki ihlallere uygulanır
         [Fact]
         public void Threshold_UsesAOneHourSlidingWindow()
         {
-            DnsPolicyMonitor.Configure(Policy(Lists(), autoQuarantine: true, threshold: 3), "HW-A", "https://pops.example");
+            _dns.Configure(Policy(Lists(), autoQuarantine: true, threshold: 3), "HW-A", "https://pops.example");
 
             _cache.Add("bet1.example");
-            DnsPolicyMonitor.CheckNow();
+            _dns.CheckNow();
             _now = _now.AddMinutes(40);
             _cache.Add("bet2.example");
-            DnsPolicyMonitor.CheckNow();
+            _dns.CheckNow();
             _now = _now.AddMinutes(30);   // ilk ihlal pencereden çıktı
             _cache.Add("bet3.example");
-            DnsPolicyMonitor.CheckNow();
-            Assert.Equal(2, DnsPolicyMonitor.Violations);
+            _dns.CheckNow();
+            Assert.Equal(2, _dns.Violations);
             Assert.Empty(_quarantines);
 
             _now = _now.AddMinutes(10);
             _cache.Add("game.example");
-            DnsPolicyMonitor.CheckNow();
+            _dns.CheckNow();
             Assert.Single(_quarantines);
             Assert.Contains("3 ihlal", _quarantines[0]);
             Assert.Contains("bahis", _quarantines[0]);
@@ -140,16 +147,16 @@ namespace POps.Tests.Agent
         [Fact]
         public void AutoQuarantine_OnceAtThreshold_AgainAfterReset()
         {
-            DnsPolicyMonitor.Configure(Policy(Lists(), autoQuarantine: true, threshold: 2), "HW-A", "https://pops.example");
+            _dns.Configure(Policy(Lists(), autoQuarantine: true, threshold: 2), "HW-A", "https://pops.example");
 
             _cache.AddRange(new[] { "bet1.example", "bet2.example", "bet3.example" });
-            DnsPolicyMonitor.CheckNow();
+            _dns.CheckNow();
             Assert.Single(_quarantines);
 
             // unlock / bypass sayacı sıfırlar; eşik yeniden aşılınca yine karantina
-            DnsPolicyMonitor.ResetViolations();
+            _dns.ResetViolations();
             _cache.AddRange(new[] { "bet4.example", "game.example" });
-            DnsPolicyMonitor.CheckNow();
+            _dns.CheckNow();
             Assert.Equal(2, _quarantines.Count);
         }
 
@@ -157,33 +164,33 @@ namespace POps.Tests.Agent
         [Fact]
         public void UserChange_ResetsCountAndIgnoresThePreviousUsersCache()
         {
-            DnsPolicyMonitor.Configure(Policy(Lists(), autoQuarantine: true, threshold: 2), "HW-A", "https://pops.example");
+            _dns.Configure(Policy(Lists(), autoQuarantine: true, threshold: 2), "HW-A", "https://pops.example");
             _cache.Add("bet1.example");
-            DnsPolicyMonitor.CheckNow();
-            Assert.Equal(1, DnsPolicyMonitor.Violations);
+            _dns.CheckNow();
+            Assert.Equal(1, _dns.Violations);
 
             // Öğrenci değişti; önbellekte öncekinin bet1 ve bet2 kayıtları duruyor
             _cache.Add("bet2.example");
-            DnsPolicyMonitor.OnUserChanged();
-            Assert.Equal(0, DnsPolicyMonitor.Violations);
-            Assert.Empty(DnsPolicyMonitor.CheckNow());
+            _dns.OnUserChanged();
+            Assert.Equal(0, _dns.Violations);
+            Assert.Empty(_dns.CheckNow());
             Assert.Empty(_quarantines);
 
             // Önceki kayıt önbellekten düştü, yeni öğrenci aynı siteyi açtı: yine bildirilir
             _cache.Clear();
-            DnsPolicyMonitor.CheckNow();
+            _dns.CheckNow();
             _cache.Add("www.bet1.example");
-            Assert.Equal(new[] { ("www.bet1.example", "bahis") }, DnsPolicyMonitor.CheckNow());
+            Assert.Equal(new[] { ("www.bet1.example", "bahis") }, _dns.CheckNow());
             Assert.Equal(2, _reports.Count);
-            Assert.Equal(1, DnsPolicyMonitor.Violations);
+            Assert.Equal(1, _dns.Violations);
         }
 
         [Fact]
         public void NoAutoQuarantine_NeverIsolates()
         {
-            DnsPolicyMonitor.Configure(Policy(Lists(), autoQuarantine: false, threshold: 1), "HW-A", "https://pops.example");
+            _dns.Configure(Policy(Lists(), autoQuarantine: false, threshold: 1), "HW-A", "https://pops.example");
             _cache.AddRange(new[] { "bet1.example", "bet2.example" });
-            DnsPolicyMonitor.CheckNow();
+            _dns.CheckNow();
             Assert.Equal(2, _reports.Count);
             Assert.Empty(_quarantines);
         }
@@ -207,15 +214,13 @@ namespace POps.Tests.Agent
         }
     }
 
-    [Collection(SharedStateCollection.Name)]
-    public class DnsDomainIndexTests : SharedStateTestBase, IDisposable
+    // Machine: LargeLists_CheckQuickly geçen gerçek süreyi ölçer (yük altındaki makinede kayar)
+    [Collection(MachineCollection.Name)]
+    public class DnsDomainIndexTests : TestBase, IDisposable
     {
-        public void Dispose()
-        {
-            DnsPolicyMonitor.Reset();
-            DnsPolicyMonitor.UtcNow = () => DateTime.UtcNow;
-            DnsPolicyMonitor.CacheReader = DnsWatch.ReadCacheNames;
-        }
+        private readonly AgentHarness _agent = AgentHarness.Create("dns-index");
+
+        public void Dispose() => _agent.Dispose();
 
         [Fact]
         public void SuffixChain_FindsTheEntryAndRespectsCategoryOrder()
@@ -239,38 +244,36 @@ namespace POps.Tests.Agent
         [Fact]
         public void Index_IsBuiltOnlyWhenListsChange()
         {
-            DnsPolicyMonitor.Reset();
+            using DnsPolicyMonitor dns = _agent.NewDnsMonitor(Array.Empty<string>);
             AgentPolicy Policy(params string[] domains) => new AgentPolicy
             {
                 DnsCategories = new List<string> { "bahis" },
                 DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = domains.ToList() },
             };
-            int before = DnsPolicyMonitor.IndexBuilds;
-            DnsPolicyMonitor.Configure(Policy("a.example"), "HW-A", "https://pops.example");
-            DnsPolicyMonitor.Configure(Policy("a.example"), "HW-A", "https://pops.example");
-            DnsPolicyMonitor.Configure(Policy("a.example"), "HW-B", "https://pops.example");
-            Assert.Equal(before + 1, DnsPolicyMonitor.IndexBuilds);
-            DnsPolicyMonitor.Configure(Policy("a.example", "b.example"), "HW-A", "https://pops.example");
-            Assert.Equal(before + 2, DnsPolicyMonitor.IndexBuilds);
+            int before = dns.IndexBuilds;
+            dns.Configure(Policy("a.example"), "HW-A", "https://pops.example");
+            dns.Configure(Policy("a.example"), "HW-A", "https://pops.example");
+            dns.Configure(Policy("a.example"), "HW-B", "https://pops.example");
+            Assert.Equal(before + 1, dns.IndexBuilds);
+            dns.Configure(Policy("a.example", "b.example"), "HW-A", "https://pops.example");
+            Assert.Equal(before + 2, dns.IndexBuilds);
         }
 
         // N1: büyük listelerde tarama turu listenin boyutuyla büyümez (eski yol: ad x giriş normalleştirme)
         [Fact]
         public void LargeLists_CheckQuickly()
         {
-            DnsPolicyMonitor.Reset();
             var lists = new Dictionary<string, List<string>>
             {
                 ["bahis"] = Enumerable.Range(0, 5000).Select(i => $"bet{i}.örnek-{i % 7}.example").ToList(),
                 ["oyun"] = Enumerable.Range(0, 5000).Select(i => $"game{i}.example").ToList(),
             };
             List<string> cache = Enumerable.Range(0, 2000).Select(i => $"host{i}.cdn{i % 13}.innocent{i}.example").ToList();
-            DnsPolicyMonitor.CacheReader = () => cache;
-            DnsPolicyMonitor.Reporter = (_, _) => { };
-            DnsPolicyMonitor.Configure(new AgentPolicy { DnsCategories = new List<string> { "bahis", "oyun" }, DnsDomains = lists }, "HW-A", "https://pops.example");
+            using DnsPolicyMonitor dns = _agent.NewDnsMonitor(() => cache, (_, _) => { });
+            dns.Configure(new AgentPolicy { DnsCategories = new List<string> { "bahis", "oyun" }, DnsDomains = lists }, "HW-A", "https://pops.example");
 
             var clock = Stopwatch.StartNew();
-            for (int round = 0; round < 20; round++) Assert.Empty(DnsPolicyMonitor.CheckNow());
+            for (int round = 0; round < 20; round++) Assert.Empty(dns.CheckNow());
             Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), $"20 tur {clock.ElapsedMilliseconds} ms sürdü");
         }
 
@@ -278,29 +281,28 @@ namespace POps.Tests.Agent
         [Fact]
         public void EmptyCacheRead_KeepsThePreviousUsersBaseline()
         {
-            DnsPolicyMonitor.Reset();
             var cache = new List<string> { "bet1.example" };
-            DnsPolicyMonitor.CacheReader = () => cache.ToList();
             var reports = new List<string>();
-            DnsPolicyMonitor.Reporter = (domain, _) => reports.Add(domain);
-            DnsPolicyMonitor.Configure(new AgentPolicy
+            using DnsPolicyMonitor dns = _agent.NewDnsMonitor(() => cache.ToList(), (domain, _) => reports.Add(domain));
+            dns.Configure(new AgentPolicy
             {
                 DnsCategories = new List<string> { "bahis" },
                 DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = new List<string> { "bet1.example" } },
             }, "HW-A", "https://pops.example");
 
-            DnsPolicyMonitor.OnUserChanged();          // bet1 önceki kullanıcının
+            dns.OnUserChanged();                       // bet1 önceki kullanıcının
             cache.Clear();
-            DnsPolicyMonitor.CheckNow();               // okuma boş döndü (ör. DnsGetCacheDataTable başarısız)
+            dns.CheckNow();                            // okuma boş döndü (ör. DnsGetCacheDataTable başarısız)
             cache.Add("bet1.example");                 // aynı önbellek kaydı yine okundu
-            Assert.Empty(DnsPolicyMonitor.CheckNow());
+            Assert.Empty(dns.CheckNow());
             Assert.Empty(reports);
         }
     }
 
-    // İzleme statik, Worker birden çok (testlerde olduğu gibi): otomatik karantina ve DNS hataları yalnızca çalışan
-    // Worker'a gider. Kurulan Worker bağlamaz (eskiden son kurulan Worker hepsini alırdı); atılan Worker hiçbir şey almaz
-    // ve kendinden sonra bağlanan Worker'ı çözmez. Worker'ların kilidi sahtedir (tepsi listesi, sahte yalıtım), HTTP sahte.
+    // Her Worker'ın kendi DNS izlemesi (Worker.Dns) var, testlerde olduğu gibi Worker birden çok: otomatik karantina ve DNS
+    // hataları yalnızca o izlemenin Worker'ına gider. Kurulan Worker başka bir izlemenin geri çağrılarını almaz (eskiden son
+    // kurulan Worker hepsini alırdı); atılan Worker hiçbir şey almaz ve başka bir Worker'ı etkilemez. Worker'ların kilidi
+    // sahtedir (tepsi listesi, sahte yalıtım), HTTP ve DNS önbelleği sahte.
     [Collection(SharedStateCollection.Name)]
     public class DnsWorkerBindingTests : SharedStateTestBase, IDisposable
     {
@@ -308,43 +310,40 @@ namespace POps.Tests.Agent
         private readonly string _secureDir;
         private readonly HttpClient _client;
         private readonly POps.Shared.IKioskRegistry _registry;
-        private readonly Func<IEnumerable<string>> _cacheReader;
-        private readonly Action<string, string> _reporter;
-        private readonly Action<string> _quarantine;
         private readonly List<string> _cache = new List<string>();
-        // Hiçbir Worker bağlı değilken testin kendi karantinası
+        // true iken önbellek okunamaz (bkz. FailCacheRead)
+        private bool _failRead;
+        // Hiçbir Worker'a ait olmayan, testin kendi izlemesi ve karantinası
         private readonly List<string> _unbound = new List<string>();
+        private readonly DnsPolicyMonitor _dns;
 
         public DnsWorkerBindingTests()
         {
             (_secureDir, _client, _registry) = (SecureStore.Dir, AgentHttp.Default.Client, KioskMode.Registry);
-            (_cacheReader, _reporter, _quarantine) = (DnsPolicyMonitor.CacheReader, DnsPolicyMonitor.Reporter, DnsPolicyMonitor.Quarantine);
             SecureStore.Dir = TestEnvironment.NewDir("dns-workers");
             AgentHttp.Default.Client = new HttpClient(new OkHandler());
             KioskMode.Registry = new FakeKioskRegistry();
-            DnsPolicyMonitor.Reset();
-            DnsPolicyMonitor.CacheReader = () => _cache.ToList();
-            DnsPolicyMonitor.Reporter = (_, _) => { };
-            DnsPolicyMonitor.Quarantine = _unbound.Add;
-            DnsPolicyMonitor.Configure(new AgentPolicy
-            {
-                DnsCategories = new List<string> { "bahis" },
-                DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = new List<string> { "bet1.example", "bet2.example" } },
-                AutoQuarantine = true,
-                QuarantineThreshold = 1,
-            }, "HW-DNS", "https://pops.example");
+            _dns = AgentHarness.FromStatics().NewDnsMonitor(Cache, quarantine: _unbound.Add);
+            _dns.Configure(Policy(), "HW-DNS", "https://pops.example");
         }
 
         public void Dispose()
         {
-            DnsPolicyMonitor.Reset();
-            DnsPolicyMonitor.CacheReader = _cacheReader;
-            DnsPolicyMonitor.Reporter = _reporter;
-            DnsPolicyMonitor.Quarantine = _quarantine;
+            _dns.Dispose();
             KioskMode.Registry = _registry;
             AgentHttp.Default.Client = _client;
             SecureStore.Dir = _secureDir;
         }
+
+        private static AgentPolicy Policy() => new AgentPolicy
+        {
+            DnsCategories = new List<string> { "bahis" },
+            DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = new List<string> { "bet1.example", "bet2.example" } },
+            AutoQuarantine = true,
+            QuarantineThreshold = 1,
+        };
+
+        private IEnumerable<string> Cache() => _failRead ? throw new InvalidOperationException("önbellek okunamadı") : _cache.ToList();
 
         private sealed class OkHandler : HttpMessageHandler
         {
@@ -352,13 +351,19 @@ namespace POps.Tests.Agent
                 Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
 
-        // Kilidi sahte bir Worker: kilit ekranı mesajları Tray'e düşer, yalıtım uygulanmış sayılır
+        // Kilidi sahte bir Worker: kilit ekranı mesajları Tray'e düşer, yalıtım uygulanmış sayılır; DNS izlemesi testin
+        // önbelleğini okur
         private sealed class TestWorker : IDisposable
         {
             public readonly List<string> Tray = new List<string>();
-            public readonly Worker Worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context);
+            public readonly Worker Worker;
 
-            public TestWorker() => Worker.Quarantine = new QuarantineControl(AgentHarness.FromStatics().Paths, Tray.Add, () => Task.FromResult(true), () => Task.FromResult(true));
+            public TestWorker(Func<IEnumerable<string>> cache)
+            {
+                Worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context, cache);
+                Worker.Quarantine = new QuarantineControl(AgentHarness.FromStatics().Paths, Tray.Add, () => Task.FromResult(true), () => Task.FromResult(true));
+                Worker.Dns.Configure(Policy(), "HW-DNS", "https://pops.example");
+            }
 
             public int Lockdowns => Tray.Count(m => m.Contains("\"lockdown\"", StringComparison.Ordinal));
 
@@ -369,63 +374,60 @@ namespace POps.Tests.Agent
         }
 
         // Listedeki yeni bir giriş; eşik 1 olduğu için otomatik karantina
-        private void Violate(string domain)
+        private void Violate(DnsPolicyMonitor dns, string domain)
         {
             _cache.Add(domain);
-            DnsPolicyMonitor.ResetViolations();
-            Assert.Single(DnsPolicyMonitor.CheckNow());
+            dns.ResetViolations();
+            Assert.Single(dns.CheckNow());
         }
 
-        // DNS önbelleği okunamadı: hata bağlı Worker'ın heartbeat'ine (agent_health.last_error) yazılır
-        private void FailCacheRead()
+        // DNS önbelleği okunamadı: hata izlemenin Worker'ının heartbeat'ine (agent_health.last_error) yazılır
+        private void FailCacheRead(DnsPolicyMonitor dns)
         {
-            DnsPolicyMonitor.CacheReader = () => throw new InvalidOperationException("önbellek okunamadı");
-            try { DnsPolicyMonitor.CheckNow(); }
-            finally { DnsPolicyMonitor.CacheReader = () => _cache.ToList(); }
+            _failRead = true;
+            try { dns.CheckNow(); }
+            finally { _failRead = false; }
         }
 
         [Fact]
         public void ConstructingAWorker_BindsNothing()
         {
-            using var worker = new TestWorker();
-            Violate("bet1.example");
-            FailCacheRead();
+            using var worker = new TestWorker(Cache);
+            Violate(_dns, "bet1.example");
+            FailCacheRead(_dns);
             Assert.Single(_unbound);
             Assert.Equal(0, worker.Lockdowns);
             Assert.Equal("", worker.LastError);
         }
 
-        // İkinci Worker en son bağlandı ve atıldı: karantina hiçbir Worker'a gitmez. İlki de almaz; onun bağı ikincinin
-        // bağlanmasıyla bitti.
+        // İkinci Worker atıldı: onun izlemesi hiçbir Worker'a karantina ya da hata göndermez. İlki de almaz; o izleme
+        // ikincinindir.
         [Fact]
         public void SecondWorkerDisposed_NoWorkerReceivesTheAutoQuarantine()
         {
-            using var first = new TestWorker();
-            var second = new TestWorker();
-            first.Worker.BindDnsPolicyMonitor();
-            second.Worker.BindDnsPolicyMonitor();
+            using var first = new TestWorker(Cache);
+            var second = new TestWorker(Cache);
             second.Dispose();
 
-            Violate("bet1.example");
-            FailCacheRead();
+            Violate(second.Worker.Dns, "bet1.example");
+            FailCacheRead(second.Worker.Dns);
             Assert.Equal((0, 0), (first.Lockdowns, second.Lockdowns));
             Assert.Equal(("", ""), (first.LastError, second.LastError));
             Assert.Empty(_unbound);
             Assert.False(File.Exists(first.Worker.Quarantine.LockPath));
         }
 
-        // İlk Worker atıldı, ikincisi çalışıyor: atılan Worker ikincinin bağını çözmez; karantina ve hata ikinciye gider
+        // İlk Worker atıldı, ikincisi çalışıyor: atılan Worker ikinciyi etkilemez; ikincinin izlemesinin karantinası ve hatası
+        // ikinciye gider
         [Fact]
         public void FirstWorkerDisposed_TheRunningWorkerStillReceives()
         {
-            var first = new TestWorker();
-            using var second = new TestWorker();
-            first.Worker.BindDnsPolicyMonitor();
-            second.Worker.BindDnsPolicyMonitor();
+            var first = new TestWorker(Cache);
+            using var second = new TestWorker(Cache);
             first.Dispose();
 
-            Violate("bet1.example");
-            FailCacheRead();
+            Violate(second.Worker.Dns, "bet1.example");
+            FailCacheRead(second.Worker.Dns);
             Assert.Equal((0, 1), (first.Lockdowns, second.Lockdowns));
             Assert.Equal("", first.LastError);
             Assert.StartsWith("dns: ", second.LastError, StringComparison.Ordinal);
@@ -433,7 +435,7 @@ namespace POps.Tests.Agent
 
             // Çalışan Worker atılınca o da bırakır
             second.Dispose();
-            Violate("bet2.example");
+            Violate(second.Worker.Dns, "bet2.example");
             Assert.Equal(1, second.Lockdowns);
             Assert.Empty(_unbound);
         }

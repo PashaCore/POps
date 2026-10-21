@@ -24,12 +24,15 @@ namespace POpsAgent
         private readonly Func<Task<bool>> _disableIsolation;
         private readonly OfflineBypass _bypass;
         private readonly Action<LocalAuditEvent> _audit;
+        // Karantina kalktı (unlock ya da çevrimdışı bypass): Worker DNS ihlal sayacını sıfırlar (DnsPolicyMonitor.ResetViolations)
+        private readonly Action _unlocked;
         // Ağ yalıtımının durum dosyası (NetworkIsolation yazar): varsa ağ yalıtılmış
         private readonly string _isolationState;
 
-        // paths: kilit kaydı, ağ yalıtımının durumu ve bypass denemelerinin kaydı güvenli depoda
+        // paths: kilit kaydı, ağ yalıtımının durumu ve bypass denemelerinin kaydı güvenli depoda; unlocked: karantina kalkınca
+        // (null: hiçbir şey)
         public QuarantineControl(AgentPaths paths, Action<string> toTray, Func<Task<bool>> enableIsolation, Func<Task<bool>> disableIsolation,
-            OfflineBypass bypass = null, Action<LocalAuditEvent> audit = null)
+            OfflineBypass bypass = null, Action<LocalAuditEvent> audit = null, Action unlocked = null)
         {
             ArgumentNullException.ThrowIfNull(paths);
             _toTray = toTray;
@@ -37,6 +40,7 @@ namespace POpsAgent
             _disableIsolation = disableIsolation;
             _bypass = bypass ?? new OfflineBypass(statePath: paths.SecureFile(OfflineBypass.StateFileName));
             _audit = audit ?? (_ => { });
+            _unlocked = unlocked ?? (() => { });
             LockPath = paths.SecureFile(LockFileName);
             _isolationState = paths.SecureFile(NetworkIsolation.StateFileName);
         }
@@ -168,7 +172,7 @@ namespace POpsAgent
             SecureStore.Delete(LockPath);
             LastIsolationError = null;
             KioskMode.Release();
-            DnsPolicyMonitor.ResetViolations();
+            _unlocked();
             _toTray(UnlockMessage(source));
             _audit(LocalAudit.QuarantineFinished(AuditSource(source)));
             return true;

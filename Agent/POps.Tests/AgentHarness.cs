@@ -16,7 +16,8 @@ namespace POps.Tests
     //     using var worker = new Worker(NullLogger<Worker>.Instance, agent.Context);
     //
     // Worker bölmesinin (b) adımları bağlama parça ekledikçe (b2: çalışma durumu, b4: DnsPolicyMonitor, b3: makine kapıları)
-    // harness de onların test hâllerini kurar ve test sınıfları bir bir buraya geçer (bkz. docs/design/worker-split.md).
+    // harness de onların test hâllerini kurar ve test sınıfları bir bir buraya geçer (bkz. docs/design/worker-split.md). b4'ün
+    // DnsPolicyMonitor'ü bağlamda değil, Worker'dadır; harness testin kendi örneğini kurar (NewDnsMonitor).
     internal sealed class AgentHarness : IDisposable
     {
         private readonly string _root;
@@ -35,6 +36,14 @@ namespace POps.Tests
         public ServerTrust Trust => Context.Trust;
         public AgentHttp Http => Context.Http;
         public AgentUpdater Updater => Context.Updater;
+
+        // DNS politika izleme (bkz. DnsPolicyMonitor; serviste her Worker'ın kendi örneği, Worker.Dns), bu bağlamın HTTP istemcisi
+        // ve kimlik bilgileriyle. DNS önbelleği testin sahtesidir (gerçek önbellek okunmaz); verilmeyen karantina, hata ve ihlal
+        // bildirimi hiçbir şey yapmaz (sunucuya gidilmez), saat verilmezse gerçek saattir.
+        public DnsPolicyMonitor NewDnsMonitor(Func<IEnumerable<string>> cache, Action<string, string> reporter = null,
+            Action<string> quarantine = null, Action<string> errors = null, TimeProvider clock = null) =>
+            new DnsPolicyMonitor(quarantine ?? (_ => { }), errors ?? (_ => { }), Http, Credentials, clock ?? TimeProvider.System, cache,
+                reporter ?? ((_, _) => { }));
 
         // Testin kendi klasörleri: veri, güvenli depo (verinin içinde, serviste olduğu gibi) ve log. Ayar dosyası yok
         // (gerçek C:\POps\appsettings.json okunmaz). Klasörler oluşturulur: gerçek kurulumda da hep vardır. Çalışma durumu

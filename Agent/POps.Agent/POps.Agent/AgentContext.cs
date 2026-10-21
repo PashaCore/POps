@@ -11,7 +11,8 @@ namespace POpsAgent
     // Worker bölmesinin (b) adımları statikleri buraya taşır (bkz. docs/design/worker-split.md):
     //  * b1: yollar (Paths).
     //  * b2: çalışma durumu: yetenekler, modüller, kimlik bilgileri, ServerTrust, AgentHttp, güncelleme durumu.
-    //  * b4: DnsPolicyMonitor.
+    //  * b4: DnsPolicyMonitor bir örnek; bağlamda değil, Worker'da (Worker.Dns): geri çağrıları Worker'ındır. HTTP istemcisini
+    //    ve kimlik bilgilerini bağlamdan alır.
     //  * b3: makine kapıları (AgentMachine: PowerShell çalıştırıcısı, kiosk kaydı, BITS, boru seçenekleri, winget, ...).
     // Her yeni parça kurucuya bir argüman ve bir salt okunur özellik olarak eklenir.
     [SupportedOSPlatform("windows")]
@@ -44,9 +45,9 @@ namespace POpsAgent
         // Kurulu sürüm, güncelleme emri ve tatbikat (bkz. AgentUpdate)
         public AgentUpdater Updater { get; }
 
-        // Servis açılışında, Program'dan bir kez: Worker bölmesinin b3/b4 adımlarına kadar statik kalan kodun okuduğu süreç
-        // varsayılanları bu bağlamın örneklerine çevrilir (PeerCache ve X-Agent-Features: yetenekler; FileTransfer ve
-        // DnsPolicyMonitor: HTTP istemcisi ve cihaz secret'ı). Böylece serviste her parçanın tek örneği vardır.
+        // Servis açılışında, Program'dan bir kez: Worker bölmesinin b3 adımına kadar statik kalan kodun okuduğu süreç
+        // varsayılanları bu bağlamın örneklerine çevrilir (PeerCache ve X-Agent-Features: yetenekler; FileTransfer: HTTP
+        // istemcisi ve cihaz secret'ı). Böylece serviste her parçanın tek örneği vardır.
         internal void UseForProcess()
         {
             AgentCapabilities.Process = Capabilities;

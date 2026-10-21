@@ -56,9 +56,8 @@ namespace POpsAgent
         // yolu AgentPaths'ten alır ve aşağıdaki işlevlerin statePath alan biçimlerini çağırır.
         public const string StateFileName = "isolation.json";
 
-        // Süreç varsayılanı (SecureStore.Dir): eş önbelleği (PeerCache.DefaultIsolated), DnsPolicyMonitor'ün varsayılan
-        // karantinası ve bunları ya da yalıtımı sınayan testler için. Worker bölmesinin b3 adımı NetworkIsolation'ı örneğe
-        // çevirince kalkar.
+        // Süreç varsayılanı (SecureStore.Dir): eş önbelleği (PeerCache.DefaultIsolated) ve onu ya da yalıtımı sınayan testler
+        // için. Worker bölmesinin b3 adımı NetworkIsolation'ı örneğe çevirince kalkar.
         public static string StatePath => SecureStore.PathOf(StateFileName);
         public static bool IsActive => IsActiveAt(StatePath);
         public static Task<bool> EnableAsync(string serverUrl) => EnableAsync(serverUrl, StatePath);
