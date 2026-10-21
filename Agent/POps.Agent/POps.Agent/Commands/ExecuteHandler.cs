@@ -20,10 +20,12 @@ namespace POpsAgent
         private readonly Action<LocalAuditEvent> _audit;
         private readonly PowerActions _power;
         private readonly UserMessages _messages;
+        private readonly CapabilityState _capabilities;
 
-        // Çalıştırıcı testlerde sahtesiyle değiştirilir, kimlik set_identity ile değişir: her kullanımda okunur
+        // Çalıştırıcı testlerde sahtesiyle değiştirilir, kimlik set_identity ile değişir: her kullanımda okunur.
+        // capabilities: bağlamın yetenek durumu
         public ExecuteHandler(Func<CommandRunner> runner, CapabilityGate gate, ResultOutbox outbox, Func<string?> hwId,
-            Action<LocalAuditEvent> audit, PowerActions power, UserMessages messages)
+            Action<LocalAuditEvent> audit, PowerActions power, UserMessages messages, CapabilityState capabilities)
         {
             _runner = runner ?? throw new ArgumentNullException(nameof(runner));
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
@@ -32,6 +34,7 @@ namespace POpsAgent
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
             _power = power ?? throw new ArgumentNullException(nameof(power));
             _messages = messages ?? throw new ArgumentNullException(nameof(messages));
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { "execute", "cancel_task" };
@@ -41,7 +44,7 @@ namespace POpsAgent
 
         private async Task HandleExecuteAsync(JsonElement root, CancellationToken stoppingToken)
         {
-            CommandPermission commandPermission = CommandExecutionPolicy.Permission(AgentCapabilities.TerminalEnabled, _gate.ModuleEnabled(AgentModules.Terminal));
+            CommandPermission commandPermission = CommandExecutionPolicy.Permission(_capabilities.TerminalEnabled, _gate.ModuleEnabled(AgentModules.Terminal));
             if (!commandPermission.Allowed)
             {
                 // Görev "Running"de asılı kalmasın diye sonuç olarak da bildirilir. Çıkış kodu -5 (reddedildi): eski sunucu

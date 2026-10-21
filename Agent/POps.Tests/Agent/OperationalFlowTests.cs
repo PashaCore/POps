@@ -13,19 +13,16 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Arka plan raporlayıcılarının işletim sistemi ve ağ sınırları sahtedir; yalnız karar ve durum akışı denenir.
-    [Collection(SharedStateCollection.Name)]
-    public class ReporterFlowTests : SharedStateTestBase, IDisposable
+    public class ReporterFlowTests : TestBase, IDisposable
     {
-        private readonly string _data = TestEnvironment.NewDir("reporter-flow");
+        private readonly AgentHarness _agent = AgentHarness.Create("reporter-flow");
 
         public ReporterFlowTests()
         {
-            AgentUpdate.DataDir = _data;
-            SecureStore.Dir = TestEnvironment.NewDir("reporter-secret");
-            AgentCredentials.SaveSecret("reporter-secret-0123456789abcdefghijkl", "HW-R");
+            _agent.Credentials.SaveSecret("reporter-secret-0123456789abcdefghijkl", "HW-R");
         }
 
-        public void Dispose() => AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
+        public void Dispose() => _agent.Dispose();
 
         private static List<SoftwareItem> Inventory(string version = "1") => new List<SoftwareItem>
         {
@@ -37,7 +34,7 @@ namespace POps.Tests.Agent
         {
             int posts = 0, uploaded = 0;
             DateTime now = new DateTime(2026, 9, 30, 10, 0, 0, DateTimeKind.Utc);
-            var reporter = new SoftwareReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-R", () => uploaded++)
+            var reporter = new SoftwareReporter(_agent.Paths, "https://pops.example", () => "HW-R", _agent.Modules, _agent.Http, () => uploaded++)
             {
                 Collector = () => Inventory(),
                 UtcNow = () => now,
@@ -65,7 +62,7 @@ namespace POps.Tests.Agent
         [InlineData(PostResult.EndpointMissing, 1440)]
         public async Task SoftwareReport_FailureUsesTheExpectedBackoff(PostResult result, int minutes)
         {
-            var reporter = new SoftwareReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-R")
+            var reporter = new SoftwareReporter(_agent.Paths, "https://pops.example", () => "HW-R", _agent.Modules, _agent.Http)
             {
                 Collector = () => Inventory("2"),
                 Poster = (_, _) => Task.FromResult(result),
@@ -77,7 +74,7 @@ namespace POps.Tests.Agent
         public async Task SoftwareReport_CollectorFailureIsReportedWithoutStoppingTheLoop()
         {
             string error = null;
-            var reporter = new SoftwareReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-R", error: value => error = value)
+            var reporter = new SoftwareReporter(_agent.Paths, "https://pops.example", () => "HW-R", _agent.Modules, _agent.Http, error: value => error = value)
             {
                 Collector = () => throw new InvalidOperationException("registry unavailable"),
             };
@@ -96,7 +93,7 @@ namespace POps.Tests.Agent
         public async Task SessionSwitch_ReportsLogoutThenLoginAndPersistsTheNewState()
         {
             var calls = new List<(string Action, string User)>();
-            var reporter = new SessionReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-R", "PC-R")
+            var reporter = new SessionReporter(_agent.Paths, "https://pops.example", () => "HW-R", "PC-R", _agent.Http)
             {
                 Poster = (action, id, body) =>
                 {
@@ -118,7 +115,7 @@ namespace POps.Tests.Agent
         public async Task SessionFailure_KeepsTheLastReportedState()
         {
             SessionSnapshot previous = Session("ali", 1);
-            var reporter = new SessionReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-R", "PC-R")
+            var reporter = new SessionReporter(_agent.Paths, "https://pops.example", () => "HW-R", "PC-R", _agent.Http)
             {
                 Poster = (_, _, _) => Task.FromResult(false),
             };
@@ -128,8 +125,7 @@ namespace POps.Tests.Agent
         }
     }
 
-    [Collection(SharedStateCollection.Name)]
-    public class AgentHttpFlowTests : SharedStateTestBase, IDisposable
+    public class AgentHttpFlowTests : TestBase, IDisposable
     {
         private sealed class Handler : HttpMessageHandler
         {
@@ -143,20 +139,19 @@ namespace POps.Tests.Agent
             }
         }
 
-        private readonly HttpClient _previous = AgentHttp.Client;
         private readonly Handler _handler = new Handler();
+        private readonly AgentHarness _agent;
 
         public AgentHttpFlowTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("http-flow");
-            AgentCredentials.SaveSecret("http-secret-0123456789abcdefghijklmn", "HW-H");
-            AgentHttp.Client = new HttpClient(_handler);
+            _agent = AgentHarness.Create("http-flow", _handler);
+            _agent.Credentials.SaveSecret("http-secret-0123456789abcdefghijklmn", "HW-H");
         }
 
         public void Dispose()
         {
-            AgentHttp.Client.Dispose();
-            AgentHttp.Client = _previous;
+            _agent.Http.Client.Dispose();
+            _agent.Dispose();
         }
 
         [Fact]
@@ -166,7 +161,7 @@ namespace POps.Tests.Agent
             {
                 Content = new StringContent("{\"ok\":true}", Encoding.UTF8, "application/json"),
             };
-            var result = await AgentHttp.SendAsync(HttpMethod.Post, "https://pops.example", "/api/test", "HW-H", new { value = 7 }, "test");
+            var result = await _agent.Http.SendAsync(HttpMethod.Post, "https://pops.example", "/api/test", "HW-H", new { value = 7 }, "test");
 
             Assert.Equal(200, result.Status);
             Assert.Equal("{\"ok\":true}", result.Body);
@@ -177,33 +172,33 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task SendAsync_OversizedAndNetworkFailureReturnSafeResults()
         {
-            int previousLimit = AgentHttp.MaxResponseBytes;
+            int previousLimit = _agent.Http.MaxResponseBytes;
             try
             {
-                AgentHttp.MaxResponseBytes = 3;
+                _agent.Http.MaxResponseBytes = 3;
                 _handler.Reply = _ => new HttpResponseMessage(HttpStatusCode.TooManyRequests)
                 {
                     Content = new StringContent("large"),
                 };
-                var oversized = await AgentHttp.SendAsync(HttpMethod.Get, "https://pops.example", "/api/test", "HW-H", null, "test");
+                var oversized = await _agent.Http.SendAsync(HttpMethod.Get, "https://pops.example", "/api/test", "HW-H", null, "test");
                 Assert.Equal(429, oversized.Status);
                 Assert.Null(oversized.Body);
 
                 _handler.Reply = _ => throw new HttpRequestException("offline");
-                var failed = await AgentHttp.SendAsync(HttpMethod.Get, "https://pops.example", "/api/test", "HW-H", null, "test");
+                var failed = await _agent.Http.SendAsync(HttpMethod.Get, "https://pops.example", "/api/test", "HW-H", null, "test");
                 Assert.Null(failed.Status);
                 Assert.Null(failed.Body);
             }
-            finally { AgentHttp.MaxResponseBytes = previousLimit; }
+            finally { _agent.Http.MaxResponseBytes = previousLimit; }
         }
 
         [Fact]
         public async Task PostJsonAsync_ReturnsTrueOnlyForSuccess()
         {
             _handler.Reply = _ => new HttpResponseMessage(HttpStatusCode.NoContent);
-            Assert.True(await AgentHttp.PostJsonAsync("https://pops.example", "/api/test", "HW-H", new { }, "test"));
+            Assert.True(await _agent.Http.PostJsonAsync("https://pops.example", "/api/test", "HW-H", new { }, "test"));
             _handler.Reply = _ => new HttpResponseMessage(HttpStatusCode.InternalServerError);
-            Assert.False(await AgentHttp.PostJsonAsync("https://pops.example", "/api/test", "HW-H", new { }, "test"));
+            Assert.False(await _agent.Http.PostJsonAsync("https://pops.example", "/api/test", "HW-H", new { }, "test"));
         }
     }
 

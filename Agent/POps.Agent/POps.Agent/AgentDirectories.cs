@@ -33,14 +33,13 @@ namespace POpsAgent
         }
 
         // Süreç geneli değerler aynı klasörlere: SYSTEM bileşenlerinin log klasörü (POpsHelpers.Log; süreç başına bir kez) ve
-        // Worker bölmesinin b2/b3 adımlarına kadar statik kalan yollar (AgentUpdate.DataDir, SecureStore.Dir,
-        // ServerTrust.CaPath; onları kullanan kod: bkz. her birinin açıklaması)
+        // Worker bölmesinin b3 adımına kadar statik kalan yollar (AgentUpdate.DataDir, SecureStore.Dir; onları kullanan kod:
+        // bkz. her birinin açıklaması). Kurum sertifikasının yolu bağlamın ServerTrust'ındadır (bkz. Program).
         internal static void Use(AgentPaths paths)
         {
             POpsHelpers.MachineLogDir = paths.LogDir;
             AgentUpdate.DataDir = paths.DataDir;
             SecureStore.Dir = paths.SecureDir;
-            ServerTrust.CaPath = paths.ServerCaPath;
         }
 
         // Açılışta: seçilen klasörler (varsayılan değilse) ve daraltılan izinler

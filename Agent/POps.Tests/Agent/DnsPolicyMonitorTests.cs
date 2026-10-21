@@ -317,10 +317,10 @@ namespace POps.Tests.Agent
 
         public DnsWorkerBindingTests()
         {
-            (_secureDir, _client, _registry) = (SecureStore.Dir, AgentHttp.Client, KioskMode.Registry);
+            (_secureDir, _client, _registry) = (SecureStore.Dir, AgentHttp.Default.Client, KioskMode.Registry);
             (_cacheReader, _reporter, _quarantine) = (DnsPolicyMonitor.CacheReader, DnsPolicyMonitor.Reporter, DnsPolicyMonitor.Quarantine);
             SecureStore.Dir = TestEnvironment.NewDir("dns-workers");
-            AgentHttp.Client = new HttpClient(new OkHandler());
+            AgentHttp.Default.Client = new HttpClient(new OkHandler());
             KioskMode.Registry = new FakeKioskRegistry();
             DnsPolicyMonitor.Reset();
             DnsPolicyMonitor.CacheReader = () => _cache.ToList();
@@ -342,7 +342,7 @@ namespace POps.Tests.Agent
             DnsPolicyMonitor.Reporter = _reporter;
             DnsPolicyMonitor.Quarantine = _quarantine;
             KioskMode.Registry = _registry;
-            AgentHttp.Client = _client;
+            AgentHttp.Default.Client = _client;
             SecureStore.Dir = _secureDir;
         }
 

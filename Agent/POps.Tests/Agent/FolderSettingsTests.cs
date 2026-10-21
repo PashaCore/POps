@@ -39,7 +39,6 @@ namespace POps.Tests.Agent
             POpsHelpers.ConfigPaths = new string[0];
             AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
             SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            ServerTrust.CaPath = Path.Combine(TestEnvironment.DefaultSecureDir, ServerTrust.FileName);
             POpsHelpers.MachineLogDir = TestEnvironment.DefaultMachineLogDir;
         }
 
@@ -293,7 +292,7 @@ namespace POps.Tests.Agent
             Assert.Null(paths.FolderProblem);
             Assert.Equal(data, AgentUpdate.DataDir);
             Assert.Equal(Path.Combine(data, "secure"), SecureStore.Dir);
-            Assert.Equal(Path.Combine(data, "secure", ServerTrust.FileName), ServerTrust.CaPath);
+            Assert.Equal(Path.Combine(data, "secure", ServerTrust.FileName), paths.ServerCaPath);
             Assert.Equal(Path.Combine(data, "identity.key"), AgentUpdate.IdentityPath);
             Assert.Equal(logs, POpsHelpers.MachineLogDir);
             Assert.True(new DirectoryInfo(data).GetAccessControl().AreAccessRulesProtected);
@@ -332,7 +331,7 @@ namespace POps.Tests.Agent
             Assert.Contains("DataDirectory geçersiz", paths.FolderProblem);
             Assert.Contains("LogDirectory geçersiz (logs)", paths.FolderProblem);
 
-            using var worker = new Worker(NullLogger<Worker>.Instance, new AgentContext(paths));
+            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.ForPaths(paths).Context);
             Assert.Null(worker.ConfigProblem);
             Assert.Equal(paths.FolderProblem, worker.FolderProblem);
             Assert.Null(worker.ConfigErrorMessage());

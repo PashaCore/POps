@@ -13,13 +13,16 @@ namespace POpsAgent
         private readonly Func<QuarantineControl> _quarantine;
         private readonly string _serverUrl;
         private readonly Func<string?> _hwId;
+        private readonly AgentHttp _http;
 
-        // Karantina denetimi testlerde sahtesiyle değiştirilir, kimlik set_identity ile değişir: her kullanımda okunur
-        public QuarantineHandler(Func<QuarantineControl> quarantine, string serverUrl, Func<string?> hwId)
+        // Karantina denetimi testlerde sahtesiyle değiştirilir, kimlik set_identity ile değişir: her kullanımda okunur.
+        // http: bağlamın HTTP istemcisi (denetim kaydı)
+        public QuarantineHandler(Func<QuarantineControl> quarantine, string serverUrl, Func<string?> hwId, AgentHttp http)
         {
             _quarantine = quarantine ?? throw new ArgumentNullException(nameof(quarantine));
             _serverUrl = serverUrl;
             _hwId = hwId ?? throw new ArgumentNullException(nameof(hwId));
+            _http = http ?? throw new ArgumentNullException(nameof(http));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { "lockdown", "unlock" };
@@ -35,7 +38,7 @@ namespace POpsAgent
             {
                 // Panel cihazı açık gösterir; yalıtım kaldırılamadıysa denetim kaydı bunu söyler
                 if (!await _quarantine().UnlockAsync("server"))
-                    await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId()), _hwId(), QuarantineControl.UnlockFailedLog(), "Karantina kaldırma hatası");
+                    await _http.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId()), _hwId(), QuarantineControl.UnlockFailedLog(), "Karantina kaldırma hatası");
             }
         }
     }

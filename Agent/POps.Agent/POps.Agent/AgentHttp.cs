@@ -26,21 +26,43 @@ namespace POpsAgent
         NotSent,
     }
 
-    public static class AgentHttp
+    // Bir ajanın HTTP istemcisi ve bildirim durumu. Servis için Program bir kez kurar (sunucu sertifikası bağlamın
+    // ServerTrust'ıyla doğrulanır), testler sahte işleyiciyle kurar.
+    public sealed class AgentHttp
     {
-        // Yönlendirme izlenmez: .NET yönlendirmede Authorization'ı atar ama X-Agent-Secret gibi özel başlıkları yeni
-        // hosta da taşır. Sunucunun 3xx yanıtı başarısız gönderim sayılır. Sunucu sertifikası ServerTrust ile
-        // doğrulanır (kurum sertifikası varsa yalnızca ona zincirlenen kabul edilir).
-        internal static readonly HttpClientHandler Handler = ServerTrust.NewHandler();
+        // Süreç varsayılanı: servis açılışta bağlamın örneğine çevirir (bkz. AgentContext.UseForProcess). Worker ve kurduğu
+        // servisler bağlamın örneğini kullanır; bunu Worker bölmesinin b3/b4 adımlarına kadar statik kalan kod (FileTransfer,
+        // DnsPolicyMonitor) ve onları sınayan SharedState testleri okur. Başlangıç değeri kurum sertifikasını her kullanımda
+        // SecureStore.Dir'den alır.
+        public static AgentHttp Default { get; internal set; } =
+            new AgentHttp(new ServerTrust(() => SecureStore.PathOf(ServerTrust.FileName)).NewHandler(), AgentCredentials.Process);
 
-        public static HttpClient Client { get; set; } = new HttpClient(Handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(100) };
+        private readonly CredentialStore _credentials;
 
-        public static bool CanReport => AgentCredentials.CurrentSecret != null;
+        // handler: sunucu istekleri. Servis: ServerTrust.NewHandler(); yönlendirme izlenmez: .NET yönlendirmede
+        // Authorization'ı atar ama X-Agent-Secret gibi özel başlıkları yeni hosta da taşır. Sunucunun 3xx yanıtı başarısız
+        // gönderim sayılır. Sunucu sertifikası ServerTrust ile doğrulanır (kurum sertifikası varsa yalnızca ona zincirlenen
+        // kabul edilir). credentials: X-Agent-Id + X-Agent-Secret (bağlamın CredentialStore'u)
+        public AgentHttp(HttpMessageHandler handler, CredentialStore credentials)
+        {
+            ArgumentNullException.ThrowIfNull(handler);
+            _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
+            Handler = handler as HttpClientHandler;
+            Client = new HttpClient(handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(100) };
+        }
 
-        private static bool _noSecretLogged;
+        // Sunucu istemcisinin işleyicisi (yönlendirme ve sertifika ayarı); sahte işleyiciyle kurulduysa null
+        internal HttpClientHandler Handler { get; }
+
+        // Testler sahte istemciyle değiştirebilir
+        public HttpClient Client { get; internal set; }
+
+        public bool CanReport => _credentials.CurrentSecret != null;
+
+        private bool _noSecretLogged;
 
         // Secret yokken bildirimlerin neden gitmediği bir kez loglanır (ilk kayıtta secret birkaç saniye sonra gelir)
-        public static bool EnsureCanReport()
+        public bool EnsureCanReport()
         {
             if (CanReport) { _noSecretLogged = false; return true; }
             if (!_noSecretLogged) POpsHelpers.Log("AGENT", "Cihaz secret'ı yok: yazılım envanteri, Windows Update durumu ve oturum olayları gönderilmiyor (sunucu yalnızca kayıtlı ajanı kabul eder).");
@@ -54,7 +76,7 @@ namespace POpsAgent
             : PostResult.Failed;
 
         // path: "/api/software/{hw_id}" gibi. Hata loglanır.
-        public static async Task<PostResult> PostAsync(string serverUrl, string path, string hwId, object payload, string what)
+        public async Task<PostResult> PostAsync(string serverUrl, string path, string hwId, object payload, string what)
         {
             if (!CanReport || !POpsHelpers.IsSecureServerUrl(serverUrl)) return PostResult.NotSent;
             try
@@ -63,7 +85,7 @@ namespace POpsAgent
                 {
                     Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"),
                 };
-                AgentCredentials.AddHttpAuth(request, hwId);
+                _credentials.AddHttpAuth(request, hwId);
                 using var response = await Client.SendAsync(request);
                 PostResult result = Classify((int)response.StatusCode);
                 if (result != PostResult.Sent)
@@ -77,22 +99,22 @@ namespace POpsAgent
             }
         }
 
-        public static async Task<bool> PostJsonAsync(string serverUrl, string path, string hwId, object payload, string what) =>
+        public async Task<bool> PostJsonAsync(string serverUrl, string path, string hwId, object payload, string what) =>
             await PostAsync(serverUrl, path, hwId, payload, what) == PostResult.Sent;
 
         // Yanıt gövdesi gereken çağrılar (yardım masası). Status null: gönderilmedi (secret yok, şifresiz sunucu) ya da
         // ağ hatası. Yanıt en çok MaxResponseBytes okunur: Content-Length'e güvenilmez (parçalı yanıtta yoktur), akış
         // sınırlı okunur; sınırı aşan yanıtın gövdesi null döner.
-        internal static int MaxResponseBytes { get; set; } = 4 * 1024 * 1024;
+        internal int MaxResponseBytes { get; set; } = 4 * 1024 * 1024;
 
-        public static async Task<(int? Status, string Body)> SendAsync(HttpMethod method, string serverUrl, string path, string hwId, object payload, string what)
+        public async Task<(int? Status, string Body)> SendAsync(HttpMethod method, string serverUrl, string path, string hwId, object payload, string what)
         {
             if (!CanReport || !POpsHelpers.IsSecureServerUrl(serverUrl)) return (null, null);
             try
             {
                 using var request = new HttpRequestMessage(method, serverUrl.TrimEnd('/') + path);
                 if (payload != null) request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-                AgentCredentials.AddHttpAuth(request, hwId);
+                _credentials.AddHttpAuth(request, hwId);
                 using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
                 int status = (int)response.StatusCode;
                 string body = await ReadLimitedAsync(response.Content, MaxResponseBytes);

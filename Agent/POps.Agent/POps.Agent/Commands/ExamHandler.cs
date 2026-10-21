@@ -22,10 +22,12 @@ namespace POpsAgent
         private readonly Action<LocalAuditEvent> _audit;
         private readonly string _serverUrl;
         private readonly Func<DateTimeOffset> _clock;
+        private readonly CapabilityState _capabilities;
 
-        // send: komut kanalına gönderim; clock: emrin doğrulandığı ve sınavdan çıkılan an (testlerde sahteleri)
+        // send: komut kanalına gönderim; clock: emrin doğrulandığı ve sınavdan çıkılan an (testlerde sahteleri);
+        // capabilities: bağlamın yetenek durumu
         public ExamHandler(CapabilityGate gate, ServerHandshake handshake, Func<object, Task<bool>> send, Action<string> toTray,
-            Action<LocalAuditEvent> audit, string serverUrl, Func<DateTimeOffset> clock)
+            Action<LocalAuditEvent> audit, string serverUrl, Func<DateTimeOffset> clock, CapabilityState capabilities)
         {
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _handshake = handshake ?? throw new ArgumentNullException(nameof(handshake));
@@ -34,6 +36,7 @@ namespace POpsAgent
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
             _serverUrl = serverUrl;
             _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { "exam_mode" };
@@ -67,7 +70,7 @@ namespace POpsAgent
                 await EndExamAsync("server", reply: true);
                 return;
             }
-            if (!AgentCapabilities.ExamEnabled)
+            if (!_capabilities.ExamEnabled)
             {
                 // Yerel olarak kapalı: hiçbir şey uygulanmaz; önceden kalan bir sınav sürüyorsa biter (exam_state ile)
                 await _gate.DenyAsync("exam", "exam_mode");
@@ -102,7 +105,7 @@ namespace POpsAgent
         // süren sınav biter (exam_state ile)
         internal async Task EndIfCapabilityOffAsync()
         {
-            if (!AgentCapabilities.ExamEnabled && ExamMode.IsActive) await EndExamAsync("capability");
+            if (!_capabilities.ExamEnabled && ExamMode.IsActive) await EndExamAsync("capability");
         }
 
         // source: "server", "until" (süre doldu; sunucuya ulaşılamasa da), "capability" (sınav yeteneği yerel olarak
@@ -156,7 +159,7 @@ namespace POpsAgent
         {
             ExamSettings? settings = ExamMode.IsActive ? ExamMode.Load() : null;
             if (settings == null) return false;
-            bool allowed = AgentCapabilities.ExamEnabled;
+            bool allowed = _capabilities.ExamEnabled;
             if (!allowed || ExamMode.Expired(settings, now))
             {
                 await EndExamAsync(allowed ? "until" : "capability");

@@ -186,17 +186,23 @@ namespace POpsAgent
         private readonly Func<string> _hwId;
         private readonly Action _uploaded;
         private readonly Action<string> _error;
+        private readonly ModuleState _modules;
+        private readonly AgentHttp _http;
 
-        // paths: son başarılı gönderimin kaydı (<veri klasörü>\software-inventory.json)
-        public SoftwareReporter(AgentPaths paths, string serverUrl, Func<string> hwId, Action uploaded = null, Action<string> error = null)
+        // paths: son başarılı gönderimin kaydı (<veri klasörü>\software-inventory.json); modules, http: bağlamın sunucu
+        // modülleri ve HTTP istemcisi
+        public SoftwareReporter(AgentPaths paths, string serverUrl, Func<string> hwId, ModuleState modules, AgentHttp http,
+            Action uploaded = null, Action<string> error = null)
         {
             StatePath = paths.DataFile(StateFileName);
             _serverUrl = serverUrl;
             _hwId = hwId;
+            _modules = modules ?? throw new ArgumentNullException(nameof(modules));
+            _http = http ?? throw new ArgumentNullException(nameof(http));
             _uploaded = uploaded ?? (() => { });
             _error = error ?? (_ => { });
             _gate = new ReportGate(MaxSilence, StatePath);
-            Poster = (id, payload) => AgentHttp.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/software/", id), id, payload, "Yazılım envanteri");
+            Poster = (id, payload) => _http.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/software/", id), id, payload, "Yazılım envanteri");
         }
 
         public string StatePath { get; }
@@ -235,9 +241,9 @@ namespace POpsAgent
         // Bir tur; null: normal aralık, aksi halde bir sonraki denemeye kadar beklenecek süre
         internal async Task<TimeSpan?> ReportOnceAsync()
         {
-            if (!AgentHttp.EnsureCanReport()) return WaitForSecret;
+            if (!_http.EnsureCanReport()) return WaitForSecret;
             // Modül sunucuda kapalı: liste toplanmaz, gönderilmez (açılınca son gönderim unutulur, bkz. Worker)
-            if (!AgentModules.IsEnabled(AgentModules.Software)) return null;
+            if (!_modules.IsEnabled(AgentModules.Software)) return null;
             try
             {
                 List<SoftwareItem> items = Collector();

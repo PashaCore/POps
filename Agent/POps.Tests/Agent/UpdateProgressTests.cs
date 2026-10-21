@@ -37,16 +37,18 @@ namespace POps.Tests.Agent
             generator.Init(new Ed25519KeyGenerationParameters(new SecureRandom()));
             var pair = generator.GenerateKeyPair();
             _key = (Ed25519PrivateKeyParameters)pair.Private;
-            AgentUpdate.TrustedKeyOverride = Convert.ToBase64String(((Ed25519PublicKeyParameters)pair.Public).GetEncoded());
-            AgentUpdate.InstalledVersionOverride = "0.1.22-alpha";
-            AgentUpdate.LaunchOverride = (_, _, _) => true;
+            _trustedKey = Convert.ToBase64String(((Ed25519PublicKeyParameters)pair.Public).GetEncoded());
         }
+
+        // Manifest'i doğrulayan test anahtarı ve updater'ın başlatılması (dönen: başlatıldı mı). Testin ajanının güncelleme
+        // durumu ilk emirde bunlarla kurulur (0.1.22-alpha kurulu).
+        private readonly string _trustedKey;
+        private Func<string, string, string, bool> _launch = (_, _, _) => true;
+        private AgentUpdater _updater;
+        private AgentUpdater Updater => _updater ??= new AgentUpdater(AgentHarness.FromStatics().Paths, "0.1.22-alpha", _trustedKey, _launch);
 
         public void Dispose()
         {
-            AgentUpdate.TrustedKeyOverride = null;
-            AgentUpdate.InstalledVersionOverride = null;
-            AgentUpdate.LaunchOverride = null;
             AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
             SecureStore.Dir = TestEnvironment.DefaultSecureDir;
         }
@@ -86,7 +88,7 @@ namespace POps.Tests.Agent
         }
 
         private Task Run(JsonElement command, HttpClient http) =>
-            AgentUpdate.HandleUpdateCommandAsync(command, http, "https://pops.example", Collect);
+            Updater.HandleUpdateCommandAsync(command, http, "https://pops.example", Collect);
 
         private string[] Stages() { lock (_stages) return _stages.Select(m => (string)m["stage"]).ToArray(); }
 
@@ -151,7 +153,7 @@ namespace POps.Tests.Agent
                 case "bad-sha": command = Command(artifacts: new object[] { new { name = MsiName, sha256 = "abc", size = _package.Length } }); break;
                 case "http-404": http = Serving(Array.Empty<byte>(), HttpStatusCode.NotFound); break;
                 case "size-mismatch": http = Serving(_package.Take(100).ToArray()); break;
-                case "updater-missing": AgentUpdate.LaunchOverride = null; break;   // test klasöründe POpsUpdater.deps.json yok
+                case "updater-missing": _launch = null; break;   // test klasöründe POpsUpdater.deps.json yok
                 case "exception":
                     http = new HttpClient(new Server { Respond = _ => throw new HttpRequestException("sunucuya ulaşılamadı") });
                     break;

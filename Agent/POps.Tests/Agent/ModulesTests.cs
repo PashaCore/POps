@@ -21,7 +21,9 @@ namespace POps.Tests.Agent
         private const string Secret = "modules-secret-0123456789abcdefghijkl";
         private readonly Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();
-        private readonly HttpClient _client = AgentHttp.Client;
+        private readonly HttpClient _client = AgentHttp.Default.Client;
+        // Worker'ın bağlamı (sunucu modülleri dahil)
+        private readonly AgentHarness _agent;
 
         public ModulesTests()
         {
@@ -29,7 +31,8 @@ namespace POps.Tests.Agent
             AgentUpdate.DataDir = TestEnvironment.NewDir("modules-data");
             AgentCapabilities.Load();   // dosya yok: terminal ve Vision yerelde açık
             AgentCredentials.SaveSecret(Secret, "HW-MOD");
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            _agent = AgentHarness.FromStatics();
+            _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-MOD",
                 SendOverride = payload =>
@@ -44,8 +47,7 @@ namespace POps.Tests.Agent
         public void Dispose()
         {
             _worker.Dispose();
-            AgentHttp.Client = _client;
-            AgentModules.Reset();
+            AgentHttp.Default.Client = _client;
             SecureStore.Dir = TestEnvironment.DefaultSecureDir;
             AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
             AgentCapabilities.Load();
@@ -103,7 +105,7 @@ namespace POps.Tests.Agent
         public async Task PolicyRequest_CarriesTheDeviceKey_AndAppliesModules()
         {
             var handler = new Handler { Body = Policy(("terminal", false), ("vision", true)) };
-            AgentHttp.Client = new HttpClient(handler);
+            AgentHttp.Default.Client = new HttpClient(handler);
 
             string json = await _worker.FetchPolicyJsonAsync(CancellationToken.None);
             Assert.Equal(HttpMethod.Get, handler.Seen.Method);
@@ -112,8 +114,8 @@ namespace POps.Tests.Agent
             Assert.Equal(Secret, handler.Seen.Headers.GetValues("X-Agent-Secret").Single());
 
             _worker.ApplyPolicy(json);
-            Assert.False(AgentModules.IsEnabled(AgentModules.Terminal));
-            Assert.True(AgentModules.IsEnabled(AgentModules.Vision));
+            Assert.False(_agent.Modules.IsEnabled(AgentModules.Terminal));
+            Assert.True(_agent.Modules.IsEnabled(AgentModules.Vision));
         }
 
         [Theory]
@@ -123,25 +125,25 @@ namespace POps.Tests.Agent
         public void WithoutModules_EverythingIsOn(string json)
         {
             Close("terminal", "vision", "helpdesk");
-            Assert.Equal(new[] { "helpdesk", "terminal", "vision" }, AgentModules.Closed());
+            Assert.Equal(new[] { "helpdesk", "terminal", "vision" }, _agent.Modules.Closed());
 
             _worker.ApplyPolicy(json);
-            Assert.Empty(AgentModules.Closed());
-            Assert.All(AllModules, m => Assert.True(AgentModules.IsEnabled(m)));
+            Assert.Empty(_agent.Modules.Closed());
+            Assert.All(AllModules, m => Assert.True(_agent.Modules.IsEnabled(m)));
         }
 
         [Fact]
         public void Apply_ReportsWhatChanged()
         {
-            ModuleChange first = AgentModules.Apply(JsonDocument.Parse(Policy(("terminal", false), ("vision", true))).RootElement);
+            ModuleChange first = _agent.Modules.Apply(JsonDocument.Parse(Policy(("terminal", false), ("vision", true))).RootElement);
             Assert.True(first.First);
             Assert.Equal(new[] { "terminal" }, first.Closed);
 
-            ModuleChange same = AgentModules.Apply(JsonDocument.Parse(Policy(("terminal", false))).RootElement);
+            ModuleChange same = _agent.Modules.Apply(JsonDocument.Parse(Policy(("terminal", false))).RootElement);
             Assert.False(same.Any);
             Assert.False(same.First);
 
-            ModuleChange next = AgentModules.Apply(JsonDocument.Parse(Policy(("terminal", true), ("wol", false))).RootElement);
+            ModuleChange next = _agent.Modules.Apply(JsonDocument.Parse(Policy(("terminal", true), ("wol", false))).RootElement);
             Assert.Equal(new[] { "wol" }, next.Closed);
             Assert.Equal(new[] { "terminal" }, next.Opened);
         }
@@ -215,7 +217,7 @@ namespace POps.Tests.Agent
         public async Task Patches_ClosedModule_ResultIsNotSent_AndComesBack()
         {
             int posts = 0;
-            var patches = new PatchManager(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-MOD") { Poster = _ => { posts++; return Task.FromResult(PostResult.Sent); } };
+            var patches = new PatchManager(_agent.Paths, "https://pops.example", () => "HW-MOD", _agent.Modules, _agent.Http) { Poster = _ => { posts++; return Task.FromResult(PostResult.Sent); } };
             Close("patches");
             Assert.Equal(PostResult.NotSent, await patches.DeliverAsync(new PatchStatusPayload()));
             Assert.Equal(0, posts);
@@ -243,7 +245,7 @@ namespace POps.Tests.Agent
         public async Task Software_ClosedModule_NotSent_AndResentWhenReopened()
         {
             int posts = 0;
-            var reporter = new SoftwareReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-MOD")
+            var reporter = new SoftwareReporter(_agent.Paths, "https://pops.example", () => "HW-MOD", _agent.Modules, _agent.Http)
             {
                 Collector = () => new List<SoftwareItem> { new SoftwareItem { Name = "7-Zip", Version = "24.08" } },
                 Poster = (_, _) => { posts++; return Task.FromResult(PostResult.Sent); },
@@ -266,18 +268,18 @@ namespace POps.Tests.Agent
         public async Task Helpdesk_ClosedModule_HidesTheMenuAndRefuses_AndComesBack()
         {
             var replies = new List<string>();
-            var helpdesk = new Helpdesk(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-MOD", () => "ogrenci", replies.Add);
-            Assert.Equal("HELPDESK_MENU:1", Worker.HelpdeskMenuMessage());
+            var helpdesk = new Helpdesk(_agent.Paths, "https://pops.example", () => "HW-MOD", () => "ogrenci", replies.Add, _agent.Modules, _agent.Http);
+            Assert.Equal("HELPDESK_MENU:1", _worker.HelpdeskMenuMessage());
 
             Close("helpdesk");
-            Assert.Equal("HELPDESK_MENU:0", Worker.HelpdeskMenuMessage());
+            Assert.Equal("HELPDESK_MENU:0", _worker.HelpdeskMenuMessage());
             await helpdesk.CreateAsync("e30=");
             await helpdesk.ListAsync();
             Assert.Equal(2, replies.Count);
             Assert.All(replies, r => Assert.True(SaysDisabled(r)));
 
             OpenAll();
-            Assert.Equal("HELPDESK_MENU:1", Worker.HelpdeskMenuMessage());
+            Assert.Equal("HELPDESK_MENU:1", _worker.HelpdeskMenuMessage());
             replies.Clear();
             await helpdesk.CreateAsync("e30=");
             Assert.Single(replies);
@@ -327,7 +329,7 @@ namespace POps.Tests.Agent
 
             // Aynı yanıt ikinci kez: değişiklik yok
             Close("terminal");
-            Assert.False(AgentModules.Apply(JsonDocument.Parse(Policy(("terminal", false))).RootElement).Any);
+            Assert.False(_agent.Modules.Apply(JsonDocument.Parse(Policy(("terminal", false))).RootElement).Any);
         }
     }
 }

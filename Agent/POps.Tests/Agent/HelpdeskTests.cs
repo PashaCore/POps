@@ -14,20 +14,18 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // 2) Yardım masası: tepsi isteği, sunucu sözleşmesi, yanıt mesajları, kullanıcıya göre süzme, yeni yanıtlar
-    [Collection(SharedStateCollection.Name)]
-    public class HelpdeskTests : SharedStateTestBase, IDisposable
+    public class HelpdeskTests : TestBase, IDisposable
     {
         private readonly List<string> _tray = new List<string>();
         private readonly List<(HttpMethod Method, string Path, object Payload)> _requests = new List<(HttpMethod, string, object)>();
+        private readonly AgentHarness _agent = AgentHarness.Create("helpdesk");
 
         public HelpdeskTests()
         {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("helpdesk");
-            SecureStore.Dir = TestEnvironment.NewDir("helpdesk-secure");
-            AgentCredentials.SaveSecret("test-secret-0123456789abcdefghijklmn", "HW-A");
+            _agent.Credentials.SaveSecret("test-secret-0123456789abcdefghijklmn", "HW-A");
         }
 
-        public void Dispose() => AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
+        public void Dispose() => _agent.Dispose();
 
         private static string Encode(object value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value)));
 
@@ -37,7 +35,7 @@ namespace POps.Tests.Agent
             return JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(trayMessage.Substring(kind.Length + 1)))).RootElement.Clone();
         }
 
-        private Helpdesk Desk(string user, int? status, string body) => new Helpdesk(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-A", () => user, _tray.Add)
+        private Helpdesk Desk(string user, int? status, string body) => new Helpdesk(_agent.Paths, "https://pops.example", () => "HW-A", () => user, _tray.Add, _agent.Modules, _agent.Http)
         {
             Sender = (method, path, payload, _) =>
             {
@@ -180,23 +178,21 @@ namespace POps.Tests.Agent
         }
     }
 
-    [Collection(SharedStateCollection.Name)]
-    public class HelpdeskThrottleTests : SharedStateTestBase, IDisposable
+    public class HelpdeskThrottleTests : TestBase, IDisposable
     {
         private readonly List<string> _tray = new List<string>();
         private int _requests;
         private DateTime _now = new DateTime(2026, 9, 28, 10, 0, 0, DateTimeKind.Utc);
+        private readonly AgentHarness _agent = AgentHarness.Create("throttle");
 
         public HelpdeskThrottleTests()
         {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("throttle");
-            SecureStore.Dir = TestEnvironment.NewDir("throttle-secure");
-            AgentCredentials.SaveSecret("test-secret-0123456789abcdefghijklmn", "HW-A");
+            _agent.Credentials.SaveSecret("test-secret-0123456789abcdefghijklmn", "HW-A");
         }
 
-        public void Dispose() => AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
+        public void Dispose() => _agent.Dispose();
 
-        private Helpdesk Desk(Func<Task<(int?, string)>> response) => new Helpdesk(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-A", () => "ogrenci", _tray.Add)
+        private Helpdesk Desk(Func<Task<(int?, string)>> response) => new Helpdesk(_agent.Paths, "https://pops.example", () => "HW-A", () => "ogrenci", _tray.Add, _agent.Modules, _agent.Http)
         {
             UtcNow = () => _now,
             Sender = (method, path, payload, what) => { Interlocked.Increment(ref _requests); return response(); },

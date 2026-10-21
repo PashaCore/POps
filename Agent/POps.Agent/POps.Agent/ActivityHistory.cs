@@ -56,16 +56,19 @@ namespace POpsAgent
         private ActivityListMessage _cached;
         private DateTime _cachedAtUtc;
 
-        public ActivityHistory(string serverUrl, Func<string> hwId, Action<string> toTray)
+        // http: bağlamın HTTP istemcisi
+        public ActivityHistory(string serverUrl, Func<string> hwId, Action<string> toTray, AgentHttp http)
         {
+            ArgumentNullException.ThrowIfNull(http);
             _hwId = hwId;
             _toTray = toTray;
-            Sender = (method, path, payload, what) => AgentHttp.SendAsync(method, serverUrl, path, _hwId(), payload, what);
+            Sender = (method, path, payload, what) => http.SendAsync(method, serverUrl, path, _hwId(), payload, what);
+            CanReport = () => http.CanReport;
         }
 
         // Testlerde değiştirilir
         internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
-        internal Func<bool> CanReport { get; set; } = () => AgentHttp.CanReport;
+        internal Func<bool> CanReport { get; set; }
         internal Func<HttpMethod, string, object, string, Task<(int? Status, string Body)>> Sender { get; set; }
 
         public async Task ListAsync()

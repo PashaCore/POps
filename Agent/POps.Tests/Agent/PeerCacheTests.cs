@@ -62,10 +62,15 @@ namespace POps.Tests.Agent
             generator.Init(new Ed25519KeyGenerationParameters(new SecureRandom()));
             var pair = generator.GenerateKeyPair();
             _key = (Ed25519PrivateKeyParameters)pair.Private;
-            AgentUpdate.TrustedKeyOverride = Convert.ToBase64String(((Ed25519PublicKeyParameters)pair.Public).GetEncoded());
-            AgentUpdate.InstalledVersionOverride = "0.1.22-alpha";
-            AgentUpdate.LaunchOverride = (_, _, _) => true;
+            _trustedKey = Convert.ToBase64String(((Ed25519PublicKeyParameters)pair.Public).GetEncoded());
         }
+
+        // Güncelleme: manifest'i doğrulayan test anahtarı ve updater'ın başlatılması (dönen: başlatıldı mı). Testin ajanının
+        // güncelleme durumu ilk emirde bunlarla kurulur (0.1.22-alpha kurulu).
+        private readonly string _trustedKey;
+        private Func<string, string, string, bool> _launch = (_, _, _) => true;
+        private AgentUpdater _updater;
+        private AgentUpdater Updater => _updater ??= new AgentUpdater(AgentHarness.FromStatics().Paths, "0.1.22-alpha", _trustedKey, _launch);
 
         public void Dispose()
         {
@@ -76,9 +81,6 @@ namespace POps.Tests.Agent
             }
             foreach (TcpListener raw in _rawPeers) raw.Stop();
             PeerCache.ResetState();
-            AgentUpdate.TrustedKeyOverride = null;
-            AgentUpdate.InstalledVersionOverride = null;
-            AgentUpdate.LaunchOverride = null;
             // Sonraki testler yetenekleri açık bulsun
             SecureStore.Dir = TestEnvironment.NewDir("peer-secure-reset");
             AgentCapabilities.Load();
@@ -150,7 +152,7 @@ namespace POps.Tests.Agent
         private AgentUpdate.UpdateCommand Update() => new AgentUpdate.UpdateCommand { Report = Collect };
 
         private Task Run(JsonElement command, Server server) =>
-            AgentUpdate.HandleUpdateCommandAsync(command, new HttpClient(server), "https://pops.example", Collect);
+            Updater.HandleUpdateCommandAsync(command, new HttpClient(server), "https://pops.example", Collect);
 
         private async Task<string> StoreAsync(byte[] bytes = null)
         {
@@ -259,7 +261,7 @@ namespace POps.Tests.Agent
             string launchedPackage = null;
             bool packageThereAtLaunch = false;
             byte[] cachedAtLaunch = null;
-            AgentUpdate.LaunchOverride = (msi, _, _) =>
+            _launch = (msi, _, _) =>
             {
                 launchedPackage = msi;
                 packageThereAtLaunch = File.Exists(msi);

@@ -286,7 +286,7 @@ namespace POpsAgent
                         Content = new StringContent(json, Encoding.UTF8, "application/json"),
                     };
                     AgentCredentials.AddHttpAuth(request, hwId);
-                    using var response = await AgentHttp.Client.SendAsync(request);
+                    using var response = await AgentHttp.Default.Client.SendAsync(request);
                     if (!response.IsSuccessStatusCode) POpsHelpers.Log("TRACKER", $"Kural ihlali bildirilemedi: HTTP {(int)response.StatusCode}.", true);
                 }
                 catch (Exception ex)

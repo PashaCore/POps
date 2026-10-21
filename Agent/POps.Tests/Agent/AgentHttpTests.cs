@@ -13,10 +13,12 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // AgentHttp: yönlendirme izlenmez (L10), 404/405 "uç yok" sayılır (M2). Gerçek bir TCP dinleyicisiyle, yalnızca
-    // 127.0.0.1 üzerinde denenir.
-    [Collection(SharedStateCollection.Name)]
-    public class AgentHttpTests : SharedStateTestBase, IDisposable
+    // 127.0.0.1 üzerinde denenir (Machine: dinleyen soket).
+    [Collection(MachineCollection.Name)]
+    public class AgentHttpTests : TestBase, IDisposable
     {
+        private readonly AgentHarness _agent = AgentHarness.Create("http");
+
         private sealed class FakeHttpServer : IDisposable
         {
             private readonly TcpListener _listener = new TcpListener(IPAddress.Loopback, 0);
@@ -73,14 +75,13 @@ namespace POps.Tests.Agent
 
         public AgentHttpTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("http");
-            AgentCredentials.SaveSecret("test-secret-0123456789abcdefghijklmn", "HW-TEST");
+            _agent.Credentials.SaveSecret("test-secret-0123456789abcdefghijklmn", "HW-TEST");
         }
 
-        public void Dispose() { }
+        public void Dispose() => _agent.Dispose();
 
         [Fact]
-        public void ClientDoesNotFollowRedirects() => Assert.False(AgentHttp.Handler.AllowAutoRedirect);
+        public void ClientDoesNotFollowRedirects() => Assert.False(_agent.Http.Handler.AllowAutoRedirect);
 
         [Fact]
         public async Task Redirect_IsNotFollowed_SecretStaysWithTheServer()
@@ -88,7 +89,7 @@ namespace POps.Tests.Agent
             using var elsewhere = new FakeHttpServer(Status(200, "OK"));
             using var server = new FakeHttpServer(Status(302, "Found", $"Location: {elsewhere.Url}/steal\r\n"));
 
-            PostResult result = await AgentHttp.PostAsync(server.Url, "/api/software/HW-TEST", "HW-TEST", new { items = new object[0] }, "test");
+            PostResult result = await _agent.Http.PostAsync(server.Url, "/api/software/HW-TEST", "HW-TEST", new { items = new object[0] }, "test");
 
             Assert.Equal(PostResult.Failed, result);
             Assert.Equal(1, server.Requests);
@@ -106,12 +107,12 @@ namespace POps.Tests.Agent
         public async Task StatusCodes_AreClassified(int code, string reason, PostResult expected)
         {
             using var server = new FakeHttpServer(Status(code, reason));
-            Assert.Equal(expected, await AgentHttp.PostAsync(server.Url, "/api/patches/HW-TEST", "HW-TEST", new { pending_count = 0 }, "test"));
+            Assert.Equal(expected, await _agent.Http.PostAsync(server.Url, "/api/patches/HW-TEST", "HW-TEST", new { pending_count = 0 }, "test"));
         }
 
         [Fact]
         public async Task PlainHttpToAnotherHost_IsNeverSent() =>
-            Assert.Equal(PostResult.NotSent, await AgentHttp.PostAsync("http://pops.example", "/api/software/HW-TEST", "HW-TEST", new { }, "test"));
+            Assert.Equal(PostResult.NotSent, await _agent.Http.PostAsync("http://pops.example", "/api/software/HW-TEST", "HW-TEST", new { }, "test"));
     }
 
     public class BoundedResponseTests : TestBase

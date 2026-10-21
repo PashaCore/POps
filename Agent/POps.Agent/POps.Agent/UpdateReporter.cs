@@ -18,6 +18,8 @@ namespace POpsAgent
         private readonly Action<LocalAuditEvent> _audit;
         // update-result.json, update.lock ve updater'ın aşama dosyası (bkz. AgentPaths)
         private readonly AgentPaths _paths;
+        // Sonucun yerel denetim kaydı bir kez (bkz. AgentUpdater.PendingResultAudit)
+        private readonly AgentUpdater _updater;
 
         // Bu bağlantıda ilk heartbeat gitti mi (sunucu cihazı ilk mesajın dna_payload'ından kaydeder)
         private volatile bool _heartbeatSent;
@@ -25,15 +27,16 @@ namespace POpsAgent
         private string? _forwardedProgress;
 
         // handshake, updateResults: Worker'ınkilerle aynı örnekler; send: komut kanalına gönderim (dönen: gönderildi mi);
-        // audit: yerel denetim izi (Olay Günlüğü); paths: updater'la paylaşılan dosyalar
+        // audit: yerel denetim izi (Olay Günlüğü); paths: updater'la paylaşılan dosyalar; updater: bağlamın güncelleme durumu
         public UpdateReporter(ServerHandshake handshake, UpdateResultReporter updateResults, Func<object, Task<bool>> send,
-            Action<LocalAuditEvent> audit, AgentPaths paths)
+            Action<LocalAuditEvent> audit, AgentPaths paths, AgentUpdater updater)
         {
             _handshake = handshake ?? throw new ArgumentNullException(nameof(handshake));
             _updateResults = updateResults ?? throw new ArgumentNullException(nameof(updateResults));
             _send = send ?? throw new ArgumentNullException(nameof(send));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
             _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+            _updater = updater ?? throw new ArgumentNullException(nameof(updater));
         }
 
         // Yeni komut bağlantısı: update_progress ilk mesaj heartbeat olana kadar gönderilmez; son aşama yeni bağlantıda bir
@@ -72,7 +75,7 @@ namespace POpsAgent
             Dictionary<string, object>? message = AgentUpdate.PendingResultMessage(_paths);
             if (message == null) return;
             // Yerel denetim izi (1030) sunucu bağlantısından bağımsız, sonuç ilk görüldüğünde
-            _audit(AgentUpdate.PendingResultAudit(message));
+            _audit(_updater.PendingResultAudit(message));
 
             string? resultId = message["result_id"] as string;
             UpdateResultReporter.Step step = _updateResults.Next(resultId);

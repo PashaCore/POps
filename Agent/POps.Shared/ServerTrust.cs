@@ -18,32 +18,48 @@ namespace POps.Shared
     //  * Dosya var ama okunamıyor/bozuksa güvenli yöne düşülür: hiçbir sertifika kabul edilmez (kurulum bozuk PEM'i
     //    zaten reddeder; buraya yalnızca elle bozulmuş dosya düşer).
     // Reddedilen bağlantı kurulmaz; ajan geri çekilmeyle yeniden dener (bkz. ReconnectBackoff).
+    // Ajanın bağlamındaki örnek (POpsAgent.AgentContext.Trust; dosya AgentPaths.ServerCaPath): servis için Program bir kez
+    // kurar, testler kendi geçici dosyalarıyla kurar. Okunan sertifika ve dakikada bir ret logu örneğe aittir.
     [SupportedOSPlatform("windows")]
-    public static class ServerTrust
+    public sealed class ServerTrust
     {
         public const string FileName = "server-ca.pem";
         public const string ModeCustom = "custom", ModeSystem = "system";
         public const string ChainMessage = "[GÜVENLİK] Sunucu sertifikası kurum sertifikasına (server-ca.pem) zincirlenmiyor";
 
-        private static readonly object Gate = new object();
-        private static string _loadedPath;
-        private static X509Certificate2 _ca;
-        private static bool _broken;
-        private static DateTime _lastRejectLogUtc = DateTime.MinValue;
+        private readonly object _gate = new object();
+        private readonly Func<string> _caPath;
+        private string _loadedPath;
+        private X509Certificate2 _ca;
+        private bool _broken;
+        private DateTime _lastRejectLogUtc = DateTime.MinValue;
 
-        // Veri klasörü (DataDirectory) seçilince servis açılışta ayarlar; testlerde geçici dosyaya çevrilir
-        public static string CaPath { get; set; } = Path.Combine(FolderSettings.DefaultDataDirectory, "secure", FileName);
+        // caPath: kurum sertifikasının dosyası (servis: <veri klasörü>\secure\server-ca.pem)
+        public ServerTrust(string caPath)
+        {
+            ArgumentNullException.ThrowIfNull(caPath);
+            _caPath = () => caPath;
+        }
+
+        // caPath her kullanımda okunur, yol değişince dosya yeniden okunur. Ajanın süreç varsayılanı içindir (Worker bölmesinin
+        // b3 adımına kadar SecureStore.Dir'i izler; bkz. POpsAgent.AgentHttp.Default).
+        public ServerTrust(Func<string> caPath)
+        {
+            _caPath = caPath ?? throw new ArgumentNullException(nameof(caPath));
+        }
+
+        public string CaPath => _caPath();
 
         // Sunucuya bildirilen kip ("server_ca"): dosya varsa (bozuk olsa da) custom, yoksa system
-        public static string Mode
+        public string Mode
         {
-            get { lock (Gate) { EnsureLoaded(); return _ca != null || _broken ? ModeCustom : ModeSystem; } }
+            get { lock (_gate) { EnsureLoaded(); return _ca != null || _broken ? ModeCustom : ModeSystem; } }
         }
 
         // Dosya değiştiyse (kurulum) yeniden okunur; açılışta kipi loglamak için de çağrılır
-        public static void Reload()
+        public void Reload()
         {
-            lock (Gate)
+            lock (_gate)
             {
                 _loadedPath = null;
                 EnsureLoaded();
@@ -53,17 +69,18 @@ namespace POps.Shared
             }
         }
 
-        private static void EnsureLoaded()
+        private void EnsureLoaded()
         {
-            if (_loadedPath == CaPath) return;
+            string path = CaPath;
+            if (_loadedPath == path) return;
             _ca?.Dispose();
             _ca = null;
             _broken = false;
-            _loadedPath = CaPath;
+            _loadedPath = path;
             try
             {
-                if (!File.Exists(CaPath)) return;
-                _ca = X509Certificate2.CreateFromPem(File.ReadAllText(CaPath));
+                if (!File.Exists(path)) return;
+                _ca = X509Certificate2.CreateFromPem(File.ReadAllText(path));
             }
             catch (Exception)
             {
@@ -73,11 +90,11 @@ namespace POps.Shared
         }
 
         // Tek doğrulama. host: bağlanılan ana makine adı (URI'nin IdnHost'u). errors: .NET'in sistem deposuyla vardığı sonuç.
-        public static bool Validate(X509Certificate2 certificate, X509Chain presented, SslPolicyErrors errors, string host)
+        public bool Validate(X509Certificate2 certificate, X509Chain presented, SslPolicyErrors errors, string host)
         {
             X509Certificate2 ca;
             bool broken;
-            lock (Gate)
+            lock (_gate)
             {
                 EnsureLoaded();
                 ca = _ca;
@@ -113,14 +130,14 @@ namespace POps.Shared
         }
 
         // HttpClientHandler.ServerCertificateCustomValidationCallback
-        public static bool HttpCallback(HttpRequestMessage request, X509Certificate2 certificate, X509Chain chain, SslPolicyErrors errors) =>
+        public bool HttpCallback(HttpRequestMessage request, X509Certificate2 certificate, X509Chain chain, SslPolicyErrors errors) =>
             Validate(certificate, chain, errors, request?.RequestUri?.IdnHost);
 
         // ClientWebSocketOptions.RemoteCertificateValidationCallback: bağlanılan adres kapanışta taşınır
-        public static RemoteCertificateValidationCallback WebSocketCallback(Uri uri) =>
+        public RemoteCertificateValidationCallback WebSocketCallback(Uri uri) =>
             (sender, certificate, chain, errors) => Validate(certificate as X509Certificate2 ?? (certificate == null ? null : new X509Certificate2(certificate)), chain, errors, uri?.IdnHost);
 
-        public static HttpClientHandler NewHandler() =>
+        public HttpClientHandler NewHandler() =>
             new HttpClientHandler { AllowAutoRedirect = false, ServerCertificateCustomValidationCallback = HttpCallback };
 
         private static string Describe(X509Certificate2 certificate)
@@ -130,9 +147,9 @@ namespace POps.Shared
         }
 
         // Aynı sebep her denemede loglanmasın: dakikada bir
-        private static bool Reject(string message)
+        private bool Reject(string message)
         {
-            lock (Gate)
+            lock (_gate)
             {
                 DateTime now = DateTime.UtcNow;
                 if (now - _lastRejectLogUtc >= TimeSpan.FromMinutes(1))

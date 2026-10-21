@@ -13,10 +13,11 @@ namespace POps.Tests.Agent
 {
     // Kurum sertifikasına güven: server-ca.pem varsa sunucu sertifikası yalnızca o CA'ya zincirlenir ve ana makine adı
     // eşleşirse kabul edilir; dosya yoksa sistem deposu (.NET'in kararı) geçerlidir; bozuk dosya her şeyi reddeder.
-    [Collection(SharedStateCollection.Name)]
-    public class ServerTrustTests : SharedStateTestBase, IDisposable
+    public class ServerTrustTests : TestBase, IDisposable
     {
         private const string Host = "pops.okul.local";
+        // Testin ajanı: kurum sertifikası kendi güvenli deposunda; ServerTrust, HTTP istemcisi ve "capabilities" onun
+        private readonly AgentHarness _agent = AgentHarness.Create("tls");
         private readonly string _caPath;
         private readonly X509Certificate2 _ca = NewCa("CN=POps Test CA");
         private readonly X509Certificate2 _otherCa = NewCa("CN=Baska Kurum CA");
@@ -24,34 +25,32 @@ namespace POps.Tests.Agent
 
         public ServerTrustTests()
         {
-            _caPath = Path.Combine(TestEnvironment.NewDir("tls"), ServerTrust.FileName);
+            _caPath = _agent.Paths.ServerCaPath;
             _server = NewServerCertificate(_ca, Host);
-            ServerTrust.CaPath = _caPath;
-            ServerTrust.Reload();
+            _agent.Trust.Reload();
         }
 
         public void Dispose()
         {
-            ServerTrust.CaPath = Path.Combine(TestEnvironment.DefaultSecureDir, ServerTrust.FileName);
-            ServerTrust.Reload();
             _ca.Dispose(); _otherCa.Dispose(); _server.Dispose();
+            _agent.Dispose();
         }
 
         private void PinTo(X509Certificate2 ca)
         {
             File.WriteAllText(_caPath, ca.ExportCertificatePem());
-            ServerTrust.Reload();
+            _agent.Trust.Reload();
         }
 
         // Sistem deposu bu sertifikayı tanımaz: .NET zincir hatası bildirir
-        private static bool Check(X509Certificate2 cert, string host, SslPolicyErrors errors = SslPolicyErrors.RemoteCertificateChainErrors) =>
-            ServerTrust.Validate(cert, null, errors, host);
+        private bool Check(X509Certificate2 cert, string host, SslPolicyErrors errors = SslPolicyErrors.RemoteCertificateChainErrors) =>
+            _agent.Trust.Validate(cert, null, errors, host);
 
         [Fact]
         public void CorrectCa_IsAccepted_EvenThoughTheSystemStoreRejectsIt()
         {
             PinTo(_ca);
-            Assert.Equal("custom", ServerTrust.Mode);
+            Assert.Equal("custom", _agent.Trust.Mode);
             Assert.True(Check(_server, Host));
             Assert.True(Check(_server, Host.ToUpperInvariant()));
         }
@@ -76,7 +75,7 @@ namespace POps.Tests.Agent
         public void NoFile_KeepsTheSystemDecision()
         {
             Assert.False(File.Exists(_caPath));
-            Assert.Equal("system", ServerTrust.Mode);
+            Assert.Equal("system", _agent.Trust.Mode);
             Assert.True(Check(_server, Host, SslPolicyErrors.None));
             Assert.False(Check(_server, Host, SslPolicyErrors.RemoteCertificateChainErrors));
             Assert.False(Check(_server, Host, SslPolicyErrors.RemoteCertificateNameMismatch));
@@ -86,8 +85,8 @@ namespace POps.Tests.Agent
         public void BrokenFile_RejectsEverything()
         {
             File.WriteAllText(_caPath, "bu bir sertifika degil");
-            ServerTrust.Reload();
-            Assert.Equal("custom", ServerTrust.Mode);
+            _agent.Trust.Reload();
+            Assert.Equal("custom", _agent.Trust.Mode);
             Assert.False(Check(_server, Host, SslPolicyErrors.None));
             Assert.False(Check(null, Host, SslPolicyErrors.None));
         }
@@ -104,30 +103,30 @@ namespace POps.Tests.Agent
         {
             PinTo(_ca);
             using var request = new HttpRequestMessage(HttpMethod.Get, $"https://{Host}/api/x");
-            Assert.True(ServerTrust.HttpCallback(request, _server, null, SslPolicyErrors.RemoteCertificateChainErrors));
+            Assert.True(_agent.Trust.HttpCallback(request, _server, null, SslPolicyErrors.RemoteCertificateChainErrors));
             using var other = new HttpRequestMessage(HttpMethod.Get, "https://baska.okul.local/api/x");
-            Assert.False(ServerTrust.HttpCallback(other, _server, null, SslPolicyErrors.RemoteCertificateChainErrors));
+            Assert.False(_agent.Trust.HttpCallback(other, _server, null, SslPolicyErrors.RemoteCertificateChainErrors));
 
-            Assert.True(ServerTrust.WebSocketCallback(new Uri($"wss://{Host}/ws/agent/HW-1"))(null, _server, null, SslPolicyErrors.RemoteCertificateChainErrors));
-            Assert.False(ServerTrust.WebSocketCallback(new Uri("wss://baska.okul.local/ws/agent/HW-1"))(null, _server, null, SslPolicyErrors.RemoteCertificateChainErrors));
+            Assert.True(_agent.Trust.WebSocketCallback(new Uri($"wss://{Host}/ws/agent/HW-1"))(null, _server, null, SslPolicyErrors.RemoteCertificateChainErrors));
+            Assert.False(_agent.Trust.WebSocketCallback(new Uri("wss://baska.okul.local/ws/agent/HW-1"))(null, _server, null, SslPolicyErrors.RemoteCertificateChainErrors));
         }
 
         // Ajanın bütün HTTP istemcileri yönlendirme izlemez ve bu doğrulamayı kullanır
         [Fact]
         public void Handler_UsesTheValidationAndNoRedirects()
         {
-            using HttpClientHandler handler = ServerTrust.NewHandler();
+            using HttpClientHandler handler = _agent.Trust.NewHandler();
             Assert.False(handler.AllowAutoRedirect);
             Assert.NotNull(handler.ServerCertificateCustomValidationCallback);
-            Assert.NotNull(AgentHttp.Handler.ServerCertificateCustomValidationCallback);
+            Assert.NotNull(_agent.Http.Handler.ServerCertificateCustomValidationCallback);
         }
 
         [Fact]
         public void CapabilitiesMessage_ReportsTheMode()
         {
-            Assert.Contains("\"server_ca\":\"system\"", JsonSerializer.Serialize(AgentCapabilities.StatusMessage()));
+            Assert.Contains("\"server_ca\":\"system\"", JsonSerializer.Serialize(_agent.Capabilities.StatusMessage()));
             PinTo(_ca);
-            Assert.Contains("\"server_ca\":\"custom\"", JsonSerializer.Serialize(AgentCapabilities.StatusMessage()));
+            Assert.Contains("\"server_ca\":\"custom\"", JsonSerializer.Serialize(_agent.Capabilities.StatusMessage()));
         }
 
         // ------------------------------------------------------------------ test sertifikaları

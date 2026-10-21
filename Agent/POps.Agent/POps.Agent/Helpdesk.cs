@@ -97,7 +97,7 @@ namespace POpsAgent
         public const string ModuleDisabledMessage = "Yardım masası bu bilgisayarın laboratuvarında kapalı.";
 
         // Sunucuda yardım masası modülü (bkz. AgentModules)
-        private static bool Enabled => AgentModules.IsEnabled(AgentModules.Helpdesk);
+        private bool Enabled => _modules.IsEnabled(AgentModules.Helpdesk);
         public static readonly TimeSpan CreateInterval = TimeSpan.FromSeconds(10);
         // Sunucunun sınırı 5 sn: aynı aralık saat kaymasıyla ara sıra 429 alıyordu
         public static readonly TimeSpan ListInterval = TimeSpan.FromSeconds(6);
@@ -139,16 +139,22 @@ namespace POpsAgent
         private readonly Func<string> _currentUser;
         private readonly Action<string> _toTray;
         private readonly object _seenLock = new object();
+        private readonly ModuleState _modules;
+        private readonly AgentHttp _http;
 
-        // paths: görüntülenen yanıtların kaydı (<veri klasörü>\tickets-seen.json)
-        public Helpdesk(AgentPaths paths, string serverUrl, Func<string> hwId, Func<string> currentUser, Action<string> toTray)
+        // paths: görüntülenen yanıtların kaydı (<veri klasörü>\tickets-seen.json); modules, http: bağlamın sunucu modülleri
+        // ve HTTP istemcisi
+        public Helpdesk(AgentPaths paths, string serverUrl, Func<string> hwId, Func<string> currentUser, Action<string> toTray,
+            ModuleState modules, AgentHttp http)
         {
             SeenPath = paths.DataFile(SeenFileName);
             _serverUrl = serverUrl;
             _hwId = hwId;
             _currentUser = currentUser;
             _toTray = toTray;
-            Sender = (method, path, payload, what) => AgentHttp.SendAsync(method, _serverUrl, path, _hwId(), payload, what);
+            _modules = modules ?? throw new ArgumentNullException(nameof(modules));
+            _http = http ?? throw new ArgumentNullException(nameof(http));
+            Sender = (method, path, payload, what) => _http.SendAsync(method, _serverUrl, path, _hwId(), payload, what);
         }
 
         // Testlerde değiştirilir: sunucuya istek (durum kodu ve gövde; ağ hatasında null)
@@ -175,7 +181,7 @@ namespace POpsAgent
                 Reply("TICKET_RESULT", new TicketResultMessage { Ok = false, Message = error });
                 return;
             }
-            if (!AgentHttp.CanReport)
+            if (!_http.CanReport)
             {
                 Reply("TICKET_RESULT", new TicketResultMessage { Ok = false, Message = NotEnrolledMessage });
                 return;
@@ -203,7 +209,7 @@ namespace POpsAgent
                 Reply("TICKET_LIST_RESULT", new TicketListMessage { Ok = false, Message = ModuleDisabledMessage });
                 return;
             }
-            if (!AgentHttp.CanReport)
+            if (!_http.CanReport)
             {
                 Reply("TICKET_LIST_RESULT", new TicketListMessage { Ok = false, Message = NotEnrolledMessage });
                 return;
@@ -246,7 +252,7 @@ namespace POpsAgent
                 {
                     string user = _currentUser();
                     // Liste sınırını tepsiyle paylaşır; o sırada liste isteniyorsa bu tur atlanır. 429 sessizce geçilir.
-                    if (user != null && trayConnected() && AgentHttp.CanReport && Enabled && TryEnter(_listGate))
+                    if (user != null && trayConnected() && _http.CanReport && Enabled && TryEnter(_listGate))
                     {
                         List<TicketView> tickets;
                         try { (tickets, _, _) = await FetchAsync(); }

@@ -9,9 +9,12 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // "Etkinlik geçmişim": GET /api/activity/agent/{hw_id} yanıtı, 60 sn önbellek, hata mesajları
-    [Collection(SharedStateCollection.Name)]
-    public class ActivityHistoryTests : SharedStateTestBase
+    public class ActivityHistoryTests : TestBase, IDisposable
     {
+        private readonly AgentHarness _agent = AgentHarness.Create("activity");
+
+        public void Dispose() => _agent.Dispose();
+
         private const string Sample = "{\"device\":\"HW-1\",\"days\":30,\"items\":[" +
             "{\"at\":\"2026-09-27 19:22:38\",\"kind\":\"remote_session\",\"title\":\"Uzaktan izleme oturumu başladı\",\"actor\":\"Pasha\",\"detail\":\"Gerekçe: arıza\"}," +
             "{\"at\":\"2026-09-27 19:20:00\",\"kind\":\"command\",\"title\":\"Uzaktan komut çalıştırıldı\",\"actor\":null,\"detail\":null}]}";
@@ -20,7 +23,7 @@ namespace POps.Tests.Agent
         private int _calls;
         private string _path;
 
-        private ActivityHistory History(Func<(int?, string)> reply) => new ActivityHistory("https://pops.example", () => "HW-1", null)
+        private ActivityHistory History(Func<(int?, string)> reply) => new ActivityHistory("https://pops.example", () => "HW-1", null, _agent.Http)
         {
             UtcNow = () => _now,
             CanReport = () => true,
@@ -155,7 +158,7 @@ namespace POps.Tests.Agent
         public async Task ListAsync_SendsTheEncodedResultToTheTray()
         {
             string frame = null;
-            ActivityHistory h = new ActivityHistory("https://pops.example", () => "HW-1", value => frame = value)
+            ActivityHistory h = new ActivityHistory("https://pops.example", () => "HW-1", value => frame = value, _agent.Http)
             {
                 UtcNow = () => _now,
                 CanReport = () => true,

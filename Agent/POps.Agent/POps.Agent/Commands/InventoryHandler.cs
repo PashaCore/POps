@@ -17,14 +17,20 @@ namespace POpsAgent
         private readonly string _serverUrl;
         private readonly Func<string?> _hwId;
         private readonly AgentHealthTelemetry _health;
+        private readonly CredentialStore _credentials;
+        private readonly AgentHttp _http;
 
-        // inventory: açılışın yavaş adımında (WMI) toplanan envanter, yoksa null; kimlik her kullanımda okunur
-        public InventoryHandler(Func<object?> inventory, string serverUrl, Func<string?> hwId, AgentHealthTelemetry health)
+        // inventory: açılışın yavaş adımında (WMI) toplanan envanter, yoksa null; kimlik her kullanımda okunur.
+        // credentials, http: bağlamın kimlik bilgileri ve HTTP istemcisi
+        public InventoryHandler(Func<object?> inventory, string serverUrl, Func<string?> hwId, AgentHealthTelemetry health,
+            CredentialStore credentials, AgentHttp http)
         {
             _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
             _serverUrl = serverUrl;
             _hwId = hwId ?? throw new ArgumentNullException(nameof(hwId));
             _health = health ?? throw new ArgumentNullException(nameof(health));
+            _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
+            _http = http ?? throw new ArgumentNullException(nameof(http));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { "get_hardware" };
@@ -42,9 +48,9 @@ namespace POpsAgent
                 {
                     Content = new StringContent(json, Encoding.UTF8, "application/json"),
                 };
-                AgentCredentials.AddHttpAuth(request, _hwId());
+                _credentials.AddHttpAuth(request, _hwId());
                 // Kimlik başlıkları taşıyan istek yönlendirme izlemeyen istemciyle gider (bkz. AgentHttp)
-                using var response = await AgentHttp.Client.SendAsync(request);
+                using var response = await _http.Client.SendAsync(request);
                 if (!response.IsSuccessStatusCode)
                 {
                     POpsHelpers.Log("AGENT", $"Donanım envanteri gönderilemedi: HTTP {(int)response.StatusCode}.", true);

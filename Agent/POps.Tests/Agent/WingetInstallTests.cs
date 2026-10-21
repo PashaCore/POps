@@ -17,12 +17,15 @@ namespace POps.Tests.Agent
     public class WingetInstallTests : SharedStateTestBase, IDisposable
     {
         private readonly Func<string> _locator = WingetInstall.Locator;
+        // Testin Worker'larının bağlamı (sunucu modülleri dahil)
+        private readonly AgentHarness _agent;
 
         public WingetInstallTests()
         {
             SecureStore.Dir = TestEnvironment.NewDir("winget-secure");
             AgentUpdate.DataDir = TestEnvironment.NewDir("winget-data");
             AgentCapabilities.Load();
+            _agent = AgentHarness.FromStatics();
         }
 
         public void Dispose()
@@ -140,7 +143,7 @@ namespace POps.Tests.Agent
 
         private readonly List<JsonElement> _sent = new List<JsonElement>();
 
-        private Worker NewWorker() => new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+        private Worker NewWorker() => new Worker(NullLogger<Worker>.Instance, _agent.Context)
         {
             HwId = "HW-WINGET",
             SendOverride = p => { lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(p)); return Task.FromResult(true); },
@@ -191,7 +194,7 @@ namespace POps.Tests.Agent
         public async Task DeployModuleOff_IsRefused_WithModuleDisabled()
         {
             NothingMayRun();
-            AgentModules.Apply(JsonDocument.Parse("{\"modules\":{\"deploy\":false}}").RootElement);
+            _agent.Modules.Apply(JsonDocument.Parse("{\"modules\":{\"deploy\":false}}").RootElement);
             using Worker worker = NewWorker();
             await worker.HandleServerMessageAsync(Install(43, "Mozilla.Firefox"), null, CancellationToken.None);
             JsonElement result = await ResultFor(43);

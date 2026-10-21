@@ -23,6 +23,8 @@ namespace POps.Tests.Agent
     public class ProtocolVectorTests : SharedStateTestBase, IDisposable
     {
         private readonly Worker _worker;
+        // Worker'ın bağlamı (sunucu modülleri dahil)
+        private readonly AgentHarness _agent;
         private readonly List<JsonElement> _sent = new List<JsonElement>();
 
         public ProtocolVectorTests()
@@ -30,7 +32,8 @@ namespace POps.Tests.Agent
             SecureStore.Dir = TestEnvironment.NewDir("protocol-secure");
             AgentUpdate.DataDir = TestEnvironment.NewDir("protocol-data");
             AgentCapabilities.Load();
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            _agent = AgentHarness.FromStatics();
+            _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-3F9A1C7B2E4D",
                 SendOverride = payload =>
@@ -70,8 +73,8 @@ namespace POps.Tests.Agent
             AgentCapabilities.Load();
         }
 
-        private static void ModulesOff() =>
-            AgentModules.Apply(JsonDocument.Parse("{\"modules\":{\"patches\":false,\"wol\":false}}").RootElement);
+        private void ModulesOff() =>
+            _agent.Modules.Apply(JsonDocument.Parse("{\"modules\":{\"patches\":false,\"wol\":false}}").RootElement);
 
         private static void PowerAndMessageOff()
         {
@@ -282,7 +285,7 @@ namespace POps.Tests.Agent
 
         private async Task<(JsonElement Result, JsonElement Denied)> RefusedExecute()
         {
-            AgentModules.Apply(JsonDocument.Parse("{\"modules\":{\"terminal\":false}}").RootElement);
+            _agent.Modules.Apply(JsonDocument.Parse("{\"modules\":{\"terminal\":false}}").RootElement);
             await _worker.HandleServerMessageAsync(File.ReadAllText(Protocol("examples", "server-to-agent", "execute.queue.json")), null, CancellationToken.None);
             return (Assert.Single(Sent("result")), Assert.Single(Sent("capability_denied")));
         }

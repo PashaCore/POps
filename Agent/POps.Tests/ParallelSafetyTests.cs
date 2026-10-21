@@ -119,9 +119,9 @@ namespace POps.Tests
             Assert.True(Has(StaticAccessScanner.Kind.Write, "Environment.SetEnvironmentVariable"), string.Join(Environment.NewLine, findings));
             Assert.True(Has(StaticAccessScanner.Kind.Machine, "Process.Start"), string.Join(Environment.NewLine, findings));
 #if !NETFRAMEWORK
-            StaticAccessScanner.Finding deep = findings.SingleOrDefault(f => f.Kind == StaticAccessScanner.Kind.Write && f.Member == "AgentUpdate._auditedResult");
+            StaticAccessScanner.Finding deep = findings.SingleOrDefault(f => f.Kind == StaticAccessScanner.Kind.Write && f.Member == "POpsHelpers.MachineLogDir");
             Assert.NotNull(deep);
-            Assert.Contains("AgentUpdate.PendingResultAudit", deep.Path);
+            Assert.Contains("AgentDirectories.Use", deep.Path);
 #endif
             // İçeriği değişmeyen readonly koleksiyonlar ve sabit gibi kullanılan ayarlar sayılmaz
             Assert.DoesNotContain(findings, f => f.Member == "POpsHelpers.UserSessionComponents");
@@ -146,11 +146,12 @@ namespace POps.Tests
 
         public static Func<string> ReadsInALambda() => () => POpsAgent.AgentUpdate.DataDir;
 
-        // AgentUpdate.PendingResultAudit, sonucun denetim kaydına yazıldığını statik bir alanda tutar
+        // AgentDirectories.Use, SYSTEM bileşenlerinin log klasörünü süreç geneli statiğe yazar (POpsHelpers.MachineLogDir;
+        // servis bir kez yazar, statik kalır)
         public static async Task ReachesProductStateFromAsyncCode()
         {
             await Task.Yield();
-            POpsAgent.AgentUpdate.PendingResultAudit(null);
+            POpsAgent.AgentDirectories.Use(null);
         }
 
         public static bool LogsToUserProfile() => POps.Shared.POpsHelpers.LogsToUserProfile;

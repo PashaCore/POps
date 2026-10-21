@@ -99,6 +99,7 @@ namespace POpsAgent
         private readonly Func<int, Task> _deny;
         private readonly Action<string> _toTray;
         private readonly Func<bool> _trayConnected;
+        private readonly CapabilityState _capabilities;
         private readonly object _gate = new object();
         // Okundu onayı bekleyenler (task_id); sözlükten çıkaran sonucu gönderir
         private readonly Dictionary<int, Pending> _waiting = new Dictionary<int, Pending>();
@@ -106,13 +107,16 @@ namespace POpsAgent
         // Olay Günlüğü (testler yakalar)
         internal Action<LocalAuditEvent> Audit { get; set; } = LocalAudit.Write;
 
-        // sendResult(task_id, output, exit_code); deny(task_id): capability_denied message/user_message
-        public UserMessages(Func<int, string, int, Task> sendResult, Func<int, Task> deny, Action<string> toTray, Func<bool> trayConnected)
+        // sendResult(task_id, output, exit_code); deny(task_id): capability_denied message/user_message; capabilities: bağlamın
+        // yetenek durumu
+        public UserMessages(Func<int, string, int, Task> sendResult, Func<int, Task> deny, Action<string> toTray, Func<bool> trayConnected,
+            CapabilityState capabilities)
         {
             _sendResult = sendResult;
             _deny = deny;
             _toTray = toTray;
             _trayConnected = trayConnected;
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
         }
 
         public bool IsWaiting(int taskId) { lock (_gate) return _waiting.ContainsKey(taskId); }
@@ -131,7 +135,7 @@ namespace POpsAgent
                 POpsHelpers.Log("AGENT", $"Mesaj zaten gösteriliyor; yinelenen emir yok sayıldı (TaskID: {taskId}).");
                 return;
             }
-            if (!AgentCapabilities.MessageEnabled)
+            if (!_capabilities.MessageEnabled)
             {
                 await _sendResult(taskId, DisabledMessage, CommandRunner.ExitDenied);
                 await _deny(taskId);

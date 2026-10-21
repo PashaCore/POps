@@ -38,6 +38,10 @@ namespace POpsAgent
         private readonly Action<LocalAuditEvent> _audit;
         // Ağ yalıtımının durum dosyası (AgentPaths; bkz. NetworkIsolation)
         private readonly string _isolationState;
+        // Bağlamın yetenek durumu, kimlik bilgileri ve sunucu sertifikasına güveni
+        private readonly CapabilityState _capabilities;
+        private readonly CredentialStore _credentials;
+        private readonly ServerTrust _trust;
 
         private bool _commandUsesDeviceSecret;
         private bool _cloneRejectedAudited;
@@ -46,11 +50,12 @@ namespace POpsAgent
         // kullanımda okunur. slowInitialization: bağlantıdan sonra, alma döngüsünden önce beklenen açılış işi;
         // socketOpened: yeni bağlantıda bağlantı başına durumların sıfırlanması; channelConnected: DNS politika izleme
         // (bkz. PolicySync); audit: Olay Günlüğü; isolationState: ağ yalıtımının durum dosyası (art arda bağlantı
-        // hatasında izin listesi yenilenir)
+        // hatasında izin listesi yenilenir); capabilities, credentials, trust: bağlamın parçaları
         public CommandConnection(string serverUrl, string pcName, Func<string?> hwId, CommandChannel channel, CommandDispatcher dispatcher,
             UpdateReporter updates, ResultOutbox outbox, VisionSession vision, TrayMessageRouter tray, Func<QuarantineControl> quarantine,
             Func<object?> dna, AgentHealthTelemetry health, AgentStartupHealth startupHealth, Func<Task> slowInitialization,
-            Action socketOpened, Action channelConnected, Action<LocalAuditEvent> audit, string isolationState)
+            Action socketOpened, Action channelConnected, Action<LocalAuditEvent> audit, string isolationState,
+            CapabilityState capabilities, CredentialStore credentials, ServerTrust trust)
         {
             _serverUrl = serverUrl;
             _pcName = pcName;
@@ -70,6 +75,9 @@ namespace POpsAgent
             _channelConnected = channelConnected ?? throw new ArgumentNullException(nameof(channelConnected));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
             _isolationState = isolationState ?? throw new ArgumentNullException(nameof(isolationState));
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+            _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
+            _trust = trust ?? throw new ArgumentNullException(nameof(trust));
         }
 
         // Komut bağlantısı cihaz secret'ıyla mı kuruldu (set_bypass_secret yalnızca öyleyse kabul edilir; bkz. SecretsHandler)
@@ -90,7 +98,7 @@ namespace POpsAgent
                 _tray.EnsureTrayPipeServer();
                 ClientWebSocket commandWs = new ClientWebSocket();
                 _channel.Socket = commandWs;
-                commandWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(commandWsUrl));
+                commandWs.Options.RemoteCertificateValidationCallback = _trust.WebSocketCallback(new Uri(commandWsUrl));
                 AgentHeaders(commandWs);
                 string authMode = ApplyAuthHeaders(commandWs);
                 POpsHelpers.Log("AGENT", $"[POps V4] DUAL-SOCKET MİMARİSİ BAŞLATILDI ({POpsHelpers.AppVersion}, kimlik: {authMode})");
@@ -115,7 +123,7 @@ namespace POpsAgent
                         await SendHeartbeatAsync(stoppingToken);
                         if (!capabilitiesReported)
                         {
-                            await _channel.TrySendAsync(AgentCapabilities.StatusMessage());
+                            await _channel.TrySendAsync(_capabilities.StatusMessage());
                             capabilitiesReported = true;
                         }
                         await _updates.ForwardUpdateProgressAsync();
@@ -187,8 +195,8 @@ namespace POpsAgent
             _commandUsesDeviceSecret = false;
             if (!POpsHelpers.IsSecureServerUrl(_serverUrl)) return "yok (şifresiz bağlantı)";
 
-            string secret = AgentCredentials.CurrentSecret ?? AgentCredentials.LoadSecret();
-            string enrollToken = AgentCredentials.GetEnrollToken();
+            string secret = _credentials.CurrentSecret ?? _credentials.LoadSecret();
+            string enrollToken = _credentials.GetEnrollToken();
             _commandUsesDeviceSecret = secret != null;
 
             if (secret != null) ws.Options.SetRequestHeader("X-Agent-Secret", secret);
@@ -265,7 +273,7 @@ namespace POpsAgent
             dna_payload = _dna() ?? new object(),
             agent_health = _health.Snapshot(
                 _tray.Pipe?.IsConnected == true,
-                AgentCapabilities.VisionEnabled,
+                _capabilities.VisionEnabled,
                 _vision.TunnelOpen,
                 _quarantine().ScreenLocked,
                 _quarantine().NetworkIsolated,
