@@ -14,17 +14,25 @@ namespace POps.Tests.Agent
     {
         private static string Urlsafe(int bytes) => Convert.ToBase64String(RandomNumberGenerator.GetBytes(bytes)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-        private static string NewStore()
+        // Testin güvenli deposu (NewStore) ve ayar dosyaları (Config); kimlik bilgileri ilk kullanımda bunlarla kurulur
+        private string _store;
+        private string[] _config = new string[0];
+        private CredentialStore _credentials;
+
+        private CredentialStore Credentials => _credentials ??= new CredentialStore(
+            new AgentPaths(_store, _store, _store, _config, Path.Combine(_store, ServerTrust.FileName)));
+
+        private string NewStore()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("store");
-            return SecureStore.Dir;
+            _store = TestEnvironment.NewDir("store");
+            return _store;
         }
 
-        private static string Config(string json)
+        private string Config(string json)
         {
             string path = Path.Combine(TestEnvironment.NewDir("cfg"), "appsettings.json");
             File.WriteAllText(path, json);
-            POpsHelpers.ConfigPaths = new[] { path };
+            _config = new[] { path };
             return path;
         }
 
@@ -61,13 +69,13 @@ namespace POps.Tests.Agent
             string mirror = TestEnvironment.NewDir("thaw");
             Config("{\"PersistDir\":\"" + mirror.Replace("\\", "\\\\") + "\"}");
             string secret = Urlsafe(32);
-            Assert.True(AgentCredentials.SaveSecret(secret, "HW-TEST"));
+            Assert.True(Credentials.SaveSecret(secret, "HW-TEST"));
 
             // C: geri alındı: birincil depoda eski secret
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCredentials.SecretFileName), "{\"secret\":\"" + Urlsafe(32) + "\",\"saved_at\":1}");
-            Assert.Equal(secret, AgentCredentials.LoadSecret());
-            Assert.Equal(secret, AgentCredentials.ParseRecord(SecureStore.Read(SecureStore.PathOf(AgentCredentials.SecretFileName))).Secret);
-            Assert.Equal(secret, AgentCredentials.CurrentSecret);
+            SecureStore.WriteProtected(Path.Combine(_store, AgentCredentials.SecretFileName), "{\"secret\":\"" + Urlsafe(32) + "\",\"saved_at\":1}");
+            Assert.Equal(secret, Credentials.LoadSecret());
+            Assert.Equal(secret, AgentCredentials.ParseRecord(SecureStore.Read(Path.Combine(_store, AgentCredentials.SecretFileName))).Secret);
+            Assert.Equal(secret, Credentials.CurrentSecret);
         }
 
         [Fact]
@@ -77,15 +85,15 @@ namespace POps.Tests.Agent
             string token = Urlsafe(24);
             string config = Config("{\"ServerUrl\":\"https://pops.example\",\"BypassSecret\":\"bp-ÇĞ\",\"EnrollToken\":\"" + token + "\",\"Logging\":{\"LogLevel\":{\"Default\":\"Information\"}}}");
 
-            AgentCredentials.MigrateSecrets();
+            Credentials.MigrateSecrets();
 
             string rewritten = File.ReadAllText(config);
             Assert.DoesNotContain("BypassSecret", rewritten);
             Assert.DoesNotContain("EnrollToken", rewritten);
             Assert.Contains("https://pops.example", rewritten);
             Assert.Contains("Information", rewritten);
-            Assert.Equal("bp-ÇĞ", AgentCredentials.GetBypassSecret());
-            Assert.Equal(token, AgentCredentials.GetEnrollToken());
+            Assert.Equal("bp-ÇĞ", Credentials.GetBypassSecret());
+            Assert.Equal(token, Credentials.GetEnrollToken());
             Assert.True(SecureStore.IsLockedDown(new FileInfo(config).GetAccessControl()));
         }
 
@@ -94,10 +102,10 @@ namespace POps.Tests.Agent
         {
             NewStore();
             const string secret = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
-            Assert.True(AgentCredentials.SaveDeviceBypassSecret(secret));
-            Assert.Equal(secret, AgentCredentials.GetDeviceBypassSecret(out bool present));
+            Assert.True(Credentials.SaveDeviceBypassSecret(secret));
+            Assert.Equal(secret, Credentials.GetDeviceBypassSecret(out bool present));
             Assert.True(present);
-            Assert.True(SecureStore.IsLockedDown(new FileInfo(SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName)).GetAccessControl()));
+            Assert.True(SecureStore.IsLockedDown(new FileInfo(Path.Combine(_store, AgentCredentials.DeviceBypassSecretFileName)).GetAccessControl()));
         }
 
         [Theory]
@@ -109,10 +117,10 @@ namespace POps.Tests.Agent
             NewStore();
             Config("{}");
             string secret = Urlsafe(32);
-            AgentCredentials.SaveSecret(secret, "HW-TEST");
+            Credentials.SaveSecret(secret, "HW-TEST");
 
             var request = new HttpRequestMessage(HttpMethod.Post, url);
-            AgentCredentials.AddHttpAuth(request, "HW-TEST");
+            Credentials.AddHttpAuth(request, "HW-TEST");
             Assert.Equal(expected, request.Headers.Contains("X-Agent-Secret"));
             if (expected)
             {

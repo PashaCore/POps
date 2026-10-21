@@ -22,7 +22,7 @@ namespace POpsAgent
     // C:'yi her açılışta geri aldığında yeni secret kaybolmasın diye PersistDir ayarlıysa secret dondurulmayan
     // bu klasöre de yazılır; açılışta ikisinden en yeni kayıt kullanılır.
     // Bu çalışmanın durumu (bilinen secret, bir kez loglanan uyarı) bağlamdaki CredentialStore örneğindedir (bkz.
-    // AgentContext.Credentials); burada dosya adları, saf yardımcılar ve süreç varsayılanı kalır.
+    // AgentContext.Credentials); burada dosya adları ve saf yardımcılar kalır.
     [SupportedOSPlatform("windows")]
     public static class AgentCredentials
     {
@@ -34,22 +34,6 @@ namespace POpsAgent
         // Sunucu secret'ı secrets.token_urlsafe(32), jetonu token_urlsafe(24) ile üretir. HTTP başlığına
         // girecek değer yalnızca bu alfabeyle kabul edilir.
         private static readonly Regex TokenRegex = new Regex(@"^[A-Za-z0-9_-]{16,256}$", RegexOptions.Compiled);
-
-        // Süreç varsayılanı: servis açılışta bağlamın örneğine çevirir (bkz. AgentContext.UseForProcess). Worker ve kurduğu
-        // servisler bağlamın örneğini kullanır; bunu Worker bölmesinin b3 adımına kadar statik kalan HTTP kodu
-        // (FileTransfer: AddHttpAuth) ve aşağıdaki biçimleri çağıran SharedState testleri okur. Başlangıç
-        // değeri yolları her kullanımda SecureStore.Dir ve POpsHelpers.ConfigPaths'ten alır.
-        public static CredentialStore Process { get; internal set; } = new CredentialStore(() => SecureStore.Dir, () => POpsHelpers.ConfigPaths);
-
-        public static string CurrentSecret => Process.CurrentSecret;
-        public static void AddHttpAuth(HttpRequestMessage request, string hwId) => Process.AddHttpAuth(request, hwId);
-        public static string LoadSecret() => Process.LoadSecret();
-        public static bool SaveSecret(string secret, string pcName) => Process.SaveSecret(secret, pcName);
-        public static string GetEnrollToken() => Process.GetEnrollToken();
-        public static string GetBypassSecret() => Process.GetBypassSecret();
-        public static string GetDeviceBypassSecret(out bool present) => Process.GetDeviceBypassSecret(out present);
-        public static bool SaveDeviceBypassSecret(string secret) => Process.SaveDeviceBypassSecret(secret);
-        public static void MigrateSecrets() => Process.MigrateSecrets();
 
         public sealed class SecretRecord
         {
@@ -80,11 +64,8 @@ namespace POpsAgent
         }
 
         // PersistDir: dondurma yazılımının geri almadığı yerel NTFS klasörü (ör. Deep Freeze ThawSpace). Secret ve
-        // donanım bağı (hw.bind) orada da tutulur. Ayarlı değilse ya da kullanılamıyorsa null. Ayar POpsHelpers.ConfigPaths'ten
-        // (HardwareBinding ve Generalizer; Worker bölmesinin b3 adımına kadar).
-        internal static string PersistPath(string fileName) => PersistPath(fileName, POpsHelpers.ConfigPaths);
-
-        // configPaths: ayarın arandığı dosyalar (CredentialStore: bağlamın AgentPaths.ConfigPaths'i)
+        // donanım bağı (hw.bind) orada da tutulur. Ayarlı değilse ya da kullanılamıyorsa null. configPaths: ayarın arandığı
+        // dosyalar (CredentialStore, HardwareBinding ve Generalizer: ajanın AgentPaths.ConfigPaths'i)
         internal static string PersistPath(string fileName, IReadOnlyList<string> configPaths)
         {
             string dir = POpsHelpers.GetSetting("PersistDir", "POPS_PERSIST_DIR", configPaths);
@@ -136,27 +117,17 @@ namespace POpsAgent
         };
 
         // Güvenli depo ve ayar dosyaları (servis: AgentPaths.SecureDir ve ConfigPaths)
-        private readonly Func<string> _secureDir;
-        private readonly Func<IReadOnlyList<string>> _configPaths;
+        private readonly AgentPaths _paths;
 
         private bool _badTokenLogged;
 
         // paths: güvenli depo (SecureDir) ve gizli ayarların arandığı dosyalar (ConfigPaths)
         public CredentialStore(AgentPaths paths)
         {
-            ArgumentNullException.ThrowIfNull(paths);
-            _secureDir = () => paths.SecureDir;
-            _configPaths = () => paths.ConfigPaths;
+            _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         }
 
-        // Yollar her kullanımda okunur: süreç varsayılanı içindir (bkz. AgentCredentials.Process)
-        internal CredentialStore(Func<string> secureDir, Func<IReadOnlyList<string>> configPaths)
-        {
-            _secureDir = secureDir ?? throw new ArgumentNullException(nameof(secureDir));
-            _configPaths = configPaths ?? throw new ArgumentNullException(nameof(configPaths));
-        }
-
-        private string SecureFile(string name) => Path.Combine(_secureDir(), name);
+        private string SecureFile(string name) => _paths.SecureFile(name);
 
         // Bu çalışmada bilinen cihaz secret'ı (LoadSecret / SaveSecret günceller). Komut ve Vision WebSocket'i ile
         // ajan HTTP çağrıları buradan okur; diske yazılamasa bile servis yeniden başlayana kadar kullanılır.
@@ -176,7 +147,7 @@ namespace POpsAgent
         // Servis açılışında: güvenli klasörü (ACL dahil) hazırlar ve açıkta kalan gizli ayarları taşır.
         public void Initialize()
         {
-            string secureDir = _secureDir();
+            string secureDir = _paths.SecureDir;
             try { SecureStore.EnsureDirectory(secureDir); }
             catch (Exception ex) { POpsHelpers.Log("SECURE", $"Güvenli klasör hazırlanamadı ({secureDir}): {ex.Message}", true); }
             MigrateSecrets();
@@ -230,14 +201,14 @@ namespace POpsAgent
             }
         }
 
-        private string MirrorPath() => AgentCredentials.PersistPath(AgentCredentials.SecretFileName, _configPaths());
+        private string MirrorPath() => AgentCredentials.PersistPath(AgentCredentials.SecretFileName, _paths.ConfigPaths);
 
         // ==========================================
         // ENROLL JETONU
         // ==========================================
         public string GetEnrollToken()
         {
-            string token = SecureStore.Read(SecureFile(AgentCredentials.EnrollTokenFileName)) ?? POpsHelpers.ReadConfigValue("EnrollToken", _configPaths());
+            string token = SecureStore.Read(SecureFile(AgentCredentials.EnrollTokenFileName)) ?? POpsHelpers.ReadConfigValue("EnrollToken", _paths.ConfigPaths);
             if (token == null) return null;
             if (!AgentCredentials.IsWellFormed(token))
             {
@@ -260,7 +231,7 @@ namespace POpsAgent
         // ==========================================
         // Tanımlı değilse null döner ve çevrimdışı bypass devre dışı kalır.
         public string GetBypassSecret() =>
-            SecureStore.Read(SecureFile(AgentCredentials.BypassSecretFileName)) ?? POpsHelpers.ReadConfigValue("BypassSecret", _configPaths());
+            SecureStore.Read(SecureFile(AgentCredentials.BypassSecretFileName)) ?? POpsHelpers.ReadConfigValue("BypassSecret", _paths.ConfigPaths);
 
         // Dosya varsa okuma/biçim hatasında eski filo anahtarına geri düşülmez; çağıran present değerini korur.
         public string GetDeviceBypassSecret(out bool present)
@@ -306,7 +277,7 @@ namespace POpsAgent
                 catch (Exception ex) { POpsHelpers.Log("SECURE", $"{envVar} taşınamadı: {ex.Message}", true); }
             }
 
-            foreach (string path in _configPaths())
+            foreach (string path in _paths.ConfigPaths)
             {
                 try
                 {

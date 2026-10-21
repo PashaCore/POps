@@ -105,32 +105,37 @@ namespace POpsAgent
         // tepsi -> servis: "POWER_LOCK_RESULT:<task_id>:1|0"
         public const string LockResultPrefix = "POWER_LOCK_RESULT:";
 
-        // Gerçek işlem (bkz. WindowsPower). Testler sahtesini koyar; gerçek olan yalnızca LocalSystem'de bir şey yapar.
-        internal static Func<PowerOperation, int, bool> Execute { get; set; } = WindowsPower.Run;
-        // Tepsinin kilitleme yanıtı en çok bu kadar beklenir; sonra servis oturumu ayırır
-        internal static TimeSpan TrayLockTimeout { get; set; } = TimeSpan.FromSeconds(5);
-
         private readonly Func<int, string, int, Task> _sendResult;
         private readonly Func<int, Task> _deny;
         private readonly Action<string> _toTray;
         private readonly Func<bool> _trayInConsoleSession;
         private readonly CapabilityState _capabilities;
+        // Gerçek işlem (servis: WindowsPower, yalnızca LocalSystem'de bir şey yapar) ve konsol oturumunda kullanıcı var mı
+        // (bkz. MachineSeams.Power, HasConsoleUser)
+        private readonly Func<PowerOperation, int, bool> _platform;
+        private readonly Func<bool> _hasConsoleUser;
         private readonly object _gate = new object();
         private Pending? _current;
 
         // Olay Günlüğü (testler yakalar)
         internal Action<LocalAuditEvent> Audit { get; set; } = LocalAudit.Write;
+        // Geri sayım beklemesi (testler anında ya da elle biter) ve tepsinin kilitleme yanıtının en uzun beklemesi (sonra servis
+        // oturumu ayırır). Servis değiştirmez.
+        internal Func<TimeSpan, CancellationToken, Task> Delay { get; set; } = Task.Delay;
+        internal TimeSpan TrayLockTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
         // sendResult(task_id, output, exit_code); deny(task_id): capability_denied power/power; capabilities: bağlamın yetenek
-        // durumu
+        // durumu; platform: güç işleminin kendisi; hasConsoleUser: etkin konsol oturumunda oturum açmış kullanıcı var mı
         public PowerActions(Func<int, string, int, Task> sendResult, Func<int, Task> deny, Action<string> toTray, Func<bool> trayInConsoleSession,
-            CapabilityState capabilities)
+            CapabilityState capabilities, Func<PowerOperation, int, bool> platform, Func<bool> hasConsoleUser)
         {
             _sendResult = sendResult;
             _deny = deny;
             _toTray = toTray;
             _trayInConsoleSession = trayInConsoleSession;
             _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+            _platform = platform ?? throw new ArgumentNullException(nameof(platform));
+            _hasConsoleUser = hasConsoleUser ?? throw new ArgumentNullException(nameof(hasConsoleUser));
         }
 
         // Geri sayımı süren (ya da işlemi yapılmakta olan) görev; yoksa null
@@ -163,7 +168,7 @@ namespace POpsAgent
                 await _sendResult(taskId, $"[REDDEDİLDİ] Geçersiz güç isteği: {error}.", CommandRunner.ExitDenied);
                 return;
             }
-            if (request.NeedsUser && !SessionTasks.HasConsoleUser())
+            if (request.NeedsUser && !_hasConsoleUser())
             {
                 POpsHelpers.Log("AGENT", $"Güç işlemi ({request.Op}) yapılmadı: oturum açık kullanıcı yok (TaskID: {taskId}).");
                 await _sendResult(taskId, SessionTasks.NoUserOutput, SessionTasks.ExitNoUser);
@@ -183,7 +188,7 @@ namespace POpsAgent
                 POpsHelpers.Log("AGENT", $"Önceki güç işleminin geri sayımı durduruldu (TaskID: {replaced.Request.TaskId}).");
             if (request.DelaySeconds > 0) _toTray(CountdownMessage(request, request.DelaySeconds));
             // Bekleme girişi kabul anında alınır: arka plandaki görev sonradan değiştirilen girişi kullanmaz
-            Func<TimeSpan, CancellationToken, Task> delay = SessionTasks.Delay;
+            Func<TimeSpan, CancellationToken, Task> delay = Delay;
             _ = Task.Run(() => RunAsync(pending, delay), CancellationToken.None);
         }
 
@@ -267,7 +272,7 @@ namespace POpsAgent
                     return;
                 }
                 // Geri sayımda kullanıcı oturumu kapatmış olabilir
-                if (request.NeedsUser && !SessionTasks.HasConsoleUser())
+                if (request.NeedsUser && !_hasConsoleUser())
                 {
                     _toTray(CancelPrefix + taskId.ToString(CultureInfo.InvariantCulture));
                     POpsHelpers.Log("AGENT", $"Güç işlemi ({request.Op}) yapılmadı: süre dolduğunda oturum açık kullanıcı yoktu (TaskID: {taskId}).");
@@ -304,9 +309,9 @@ namespace POpsAgent
             return false;
         }
 
-        private static bool RunPlatform(PowerRequest request)
+        private bool RunPlatform(PowerRequest request)
         {
-            try { return Execute(request.Operation, request.TaskId); }
+            try { return _platform(request.Operation, request.TaskId); }
             catch (Exception ex)
             {
                 POpsHelpers.Log("AGENT", $"[HATA] Güç işlemi ({request.Op}) başarısız: {ex.Message}", true);

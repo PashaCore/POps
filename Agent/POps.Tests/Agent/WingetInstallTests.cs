@@ -13,28 +13,25 @@ namespace POps.Tests.Agent
 {
     // winget_install (docs/agent.md "winget_install contract"): doğrulama, bağımsız değişkenler, winget'in bulunması,
     // kabuksuz çalıştırma, yetenek/modül retleri, -7, çıktının temizlenmesi, X-Agent-Features
-    [Collection(SharedStateCollection.Name)]
-    public class WingetInstallTests : SharedStateTestBase, IDisposable
+    // Machine: sahte winget gerçek bir süreç olarak çalışır; Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class WingetInstallTests : TestBase, IDisposable
     {
-        private readonly Func<string> _locator = WingetInstall.Locator;
-        // Testin Worker'larının bağlamı (sunucu modülleri dahil)
+        // winget.exe'nin yeri (makine kapısı, her emirde sorulur; null: yok)
+        private Func<string> _locator = () => null;
+        // Testin Worker'larının bağlamı (sunucu modülleri dahil); winget kapısı _locator
         private readonly AgentHarness _agent;
 
         public WingetInstallTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("winget-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("winget-data");
-            AgentCapabilities.Load();
-            _agent = AgentHarness.FromStatics();
+            _agent = AgentHarness.Create("winget", machine: new MachineSeams { Kiosk = new FakeKioskRegistry(), WingetLocator = () => _locator() });
+            _agent.Capabilities.Load();
         }
 
-        public void Dispose()
-        {
-            WingetInstall.Locator = _locator;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentCapabilities.Load();
-        }
+        public void Dispose() => _agent.Dispose();
+
+        // X-Agent-Features: bu bağlamın yetenek durumundan (bkz. CommandConnection)
+        private AgentFeatures AgentFeatures => new AgentFeatures(_agent.Capabilities);
 
         private static JsonElement Command(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
@@ -168,12 +165,12 @@ namespace POps.Tests.Agent
         private static string Install(int taskId, string id, string version = null) =>
             JsonSerializer.Serialize(new { action = "winget_install", task_id = taskId, id, version, requested_by = "admin" });
 
-        private static void NothingMayRun() => WingetInstall.Locator = () => throw new InvalidOperationException("çağrılmamalı");
+        private void NothingMayRun() => _locator = () => throw new InvalidOperationException("çağrılmamalı");
 
-        private static void TerminalOff()
+        private void TerminalOff()
         {
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":true}");
-            AgentCapabilities.Load();
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":true}");
+            _agent.Capabilities.Load();
         }
 
         [Fact]
@@ -219,7 +216,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task WingetMissing_IsMinusSeven()
         {
-            WingetInstall.Locator = () => null;
+            _locator = () => null;
             using Worker worker = NewWorker();
             await worker.HandleServerMessageAsync(Install(45, "Mozilla.Firefox"), null, CancellationToken.None);
             JsonElement result = await ResultFor(45);
@@ -244,7 +241,7 @@ namespace POps.Tests.Agent
         {
             string fake = Path.Combine(TestEnvironment.NewDir("fake-winget"), "winget.cmd");
             File.WriteAllText(fake, "@echo off\r\necho ARGS:%*\r\nexit /b -1978335189\r\n");
-            WingetInstall.Locator = () => fake;
+            _locator = () => fake;
             using Worker worker = NewWorker();
             await worker.HandleServerMessageAsync(Install(46, "Mozilla.Firefox", "131.0"), null, CancellationToken.None);
             JsonElement result = await ResultFor(46);

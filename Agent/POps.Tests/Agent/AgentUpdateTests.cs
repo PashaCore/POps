@@ -15,8 +15,9 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    [Collection(SharedStateCollection.Name)]
-    public class AgentUpdateTests : SharedStateTestBase
+    // Machine: güncellemenin eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class AgentUpdateTests : TestBase
     {
         private sealed class FakeServer : HttpMessageHandler
         {
@@ -30,10 +31,13 @@ namespace POps.Tests.Agent
             }
         }
 
-        private static string NewDataDir()
+        // Testin ajanı: her test kendi veri klasörüyle (bkz. NewDataDir)
+        private AgentHarness _agent;
+
+        private string NewDataDir()
         {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("update");
-            return AgentUpdate.DataDir;
+            _agent = AgentHarness.Create("update");
+            return _agent.Paths.DataDir;
         }
 
         private static JsonElement Json(string text) => JsonDocument.Parse(text).RootElement.Clone();
@@ -43,7 +47,7 @@ namespace POps.Tests.Agent
         {
             string dir = NewDataDir();
             var server = new FakeServer();
-            await AgentHarness.FromStatics().Updater.HandleUpdateCommandAsync(Json("{\"action\":\"update_agent\",\"download_url\":\"http://evil/x.zip\",\"hash\":\"" + new string('a', 64) + "\"}"), new HttpClient(server), "https://pops.example");
+            await _agent.Updater.HandleUpdateCommandAsync(Json("{\"action\":\"update_agent\",\"download_url\":\"http://evil/x.zip\",\"hash\":\"" + new string('a', 64) + "\"}"), new HttpClient(server), "https://pops.example");
             Assert.Empty(server.Requests);
             Assert.False(Directory.Exists(Path.Combine(dir, "updates")));
         }
@@ -59,7 +63,7 @@ namespace POps.Tests.Agent
                 manifest = Convert.ToBase64String(File.ReadAllBytes(TestEnvironment.TestData("manifest.json"))),
                 manifest_sig = File.ReadAllText(TestEnvironment.TestData("manifest.json.sig")),
             });
-            await AgentHarness.FromStatics().Updater.HandleUpdateCommandAsync(Json(command), new HttpClient(server), "https://pops.example");
+            await _agent.Updater.HandleUpdateCommandAsync(Json(command), new HttpClient(server), "https://pops.example");
             Assert.Empty(server.Requests);
         }
 
@@ -78,7 +82,7 @@ namespace POps.Tests.Agent
             var (bytes, artifact) = Package(300_000);
             string path = Path.Combine(dir, artifact.Name);
             var server = Serving(bytes);
-            Assert.True(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + artifact.Name, path, artifact));
+            Assert.True(await _agent.Updater.DownloadVerifiedAsync(new HttpClient(server), "https://pops.example/updates/" + artifact.Name, path, artifact));
             Assert.Equal(bytes, File.ReadAllBytes(path));
             Assert.False(File.Exists(path + ".partial"));
             Assert.Equal("/updates/" + artifact.Name, server.Requests.Single());
@@ -92,7 +96,7 @@ namespace POps.Tests.Agent
             byte[] evil = (byte[])bytes.Clone();
             evil[1000] ^= 0xFF;
             string path = Path.Combine(dir, artifact.Name);
-            Assert.False(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(Serving(evil)), "https://pops.example/updates/x", path, artifact));
+            Assert.False(await _agent.Updater.DownloadVerifiedAsync(new HttpClient(Serving(evil)), "https://pops.example/updates/x", path, artifact));
             Assert.Empty(Directory.GetFiles(dir));
         }
 
@@ -102,7 +106,7 @@ namespace POps.Tests.Agent
             string dir = NewDataDir();
             var (bytes, artifact) = Package(50_000);
             string path = Path.Combine(dir, artifact.Name);
-            Assert.False(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(Serving(bytes.Concat(new byte[4096]).ToArray())), "https://pops.example/updates/x", path, artifact));
+            Assert.False(await _agent.Updater.DownloadVerifiedAsync(new HttpClient(Serving(bytes.Concat(new byte[4096]).ToArray())), "https://pops.example/updates/x", path, artifact));
             Assert.Empty(Directory.GetFiles(dir));
         }
 
@@ -111,7 +115,7 @@ namespace POps.Tests.Agent
         {
             string dir = NewDataDir();
             var (_, artifact) = Package(10);
-            Assert.False(await AgentUpdate.DownloadVerifiedAsync(new HttpClient(new FakeServer()), "https://pops.example/updates/x", Path.Combine(dir, artifact.Name), artifact));
+            Assert.False(await _agent.Updater.DownloadVerifiedAsync(new HttpClient(new FakeServer()), "https://pops.example/updates/x", Path.Combine(dir, artifact.Name), artifact));
             Assert.Empty(Directory.GetFiles(dir));
         }
 
@@ -119,7 +123,7 @@ namespace POps.Tests.Agent
         public void WriteOperationalHealth_WritesPhaseChecksVersionAndTimestamp()
         {
             NewDataDir();
-            var updater = new AgentUpdater(AgentHarness.FromStatics().Paths, installedVersion: "0.1.3-alpha");
+            var updater = _agent.NewUpdater(installedVersion: "0.1.3-alpha");
             updater.WriteOperationalHealth(new OperationalChecks
             {
                 Identity = true,
@@ -128,30 +132,30 @@ namespace POps.Tests.Agent
                 Pipe = true,
                 Loop = true,
             });
-            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(AgentUpdate.HealthPath));
+            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(_agent.Paths.HealthPath));
             Assert.Equal("0.1.3-alpha", doc.RootElement.GetProperty("version").GetString());
             Assert.Equal("operational", doc.RootElement.GetProperty("phase").GetString());
             Assert.All(doc.RootElement.GetProperty("checks").EnumerateObject(), check => Assert.True(check.Value.GetBoolean()));
             Assert.InRange(doc.RootElement.GetProperty("ts").GetInt64(), DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 5, DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 5);
-            Assert.False(File.Exists(AgentUpdate.HealthPath + ".tmp"));
+            Assert.False(File.Exists(_agent.Paths.HealthPath + ".tmp"));
         }
 
         [Fact]
         public void WriteOperationalHealth_DoesNotWriteIncompleteChecks()
         {
             NewDataDir();
-            AgentHarness.FromStatics().Updater.WriteOperationalHealth(new OperationalChecks { Identity = true });
-            Assert.False(File.Exists(AgentUpdate.HealthPath));
+            _agent.Updater.WriteOperationalHealth(new OperationalChecks { Identity = true });
+            Assert.False(File.Exists(_agent.Paths.HealthPath));
         }
 
         [Fact]
         public void PendingResult_IsReportedOnceWithStatusAndRunningVersion()
         {
             NewDataDir();
-            Assert.Null(AgentUpdate.PendingResultMessage());
-            File.WriteAllText(AgentUpdate.ResultPath, "{\"outcome\":\"rolled_back\",\"rollback\":\"msi_transaction\",\"running_version\":\"0.1.2-alpha\",\"from_version\":\"0.1.2-alpha\",\"to_version\":\"0.1.3-alpha\",\"msi_exit_code\":1603,\"reboot_required\":false,\"agent_state\":\"running\"}");
+            Assert.Null(AgentUpdate.PendingResultMessage(_agent.Paths));
+            File.WriteAllText(_agent.Paths.UpdateResultPath, "{\"outcome\":\"rolled_back\",\"rollback\":\"msi_transaction\",\"running_version\":\"0.1.2-alpha\",\"from_version\":\"0.1.2-alpha\",\"to_version\":\"0.1.3-alpha\",\"msi_exit_code\":1603,\"reboot_required\":false,\"agent_state\":\"running\"}");
 
-            Dictionary<string, object> message = AgentUpdate.PendingResultMessage();
+            Dictionary<string, object> message = AgentUpdate.PendingResultMessage(_agent.Paths);
             Assert.Equal("update_result", message["type"]);
             Assert.Equal("rolled_back", message["status"]);
             Assert.Equal("msi_transaction", message["rollback"]);
@@ -159,37 +163,37 @@ namespace POps.Tests.Agent
             Assert.Equal(1603, message["msi_exit_code"]);
             Assert.Equal(false, message["reboot_required"]);
 
-            AgentUpdate.MarkResultReported();
-            Assert.Null(AgentUpdate.PendingResultMessage());
-            Assert.True(File.Exists(AgentUpdate.ReportedResultPath));
+            AgentUpdate.MarkResultReported(_agent.Paths);
+            Assert.Null(AgentUpdate.PendingResultMessage(_agent.Paths));
+            Assert.True(File.Exists(_agent.Paths.ReportedResultPath));
         }
 
         [Fact]
         public void UnreadableResult_IsNotSent()
         {
             NewDataDir();
-            File.WriteAllText(AgentUpdate.ResultPath, "{broken");
-            Assert.Null(AgentUpdate.PendingResultMessage());
+            File.WriteAllText(_agent.Paths.UpdateResultPath, "{broken");
+            Assert.Null(AgentUpdate.PendingResultMessage(_agent.Paths));
         }
 
         [Fact]
         public void RollbackDrillMarker_IsDetected()
         {
             string dir = NewDataDir();
-            Assert.False(AgentUpdate.RollbackDrillRequested());
+            Assert.False(AgentUpdate.RollbackDrillRequested(_agent.Paths));
             Directory.CreateDirectory(Path.Combine(dir, "secure"));
-            File.WriteAllText(AgentUpdate.RollbackDrillPath, "");
-            Assert.True(AgentUpdate.RollbackDrillRequested());
+            File.WriteAllText(_agent.Paths.RollbackDrillPath, "");
+            Assert.True(AgentUpdate.RollbackDrillRequested(_agent.Paths));
         }
 
         [Fact]
         public void UpdateLock_IsStaleAfterFifteenMinutes()
         {
             NewDataDir();
-            File.WriteAllText(AgentUpdate.LockPath, "{}");
-            Assert.True(AgentUpdate.IsLockFresh());
-            File.SetLastWriteTimeUtc(AgentUpdate.LockPath, DateTime.UtcNow.AddMinutes(-16));
-            Assert.False(AgentUpdate.IsLockFresh());
+            File.WriteAllText(_agent.Paths.UpdateLockPath, "{}");
+            Assert.True(AgentUpdate.IsLockFresh(_agent.Paths));
+            File.SetLastWriteTimeUtc(_agent.Paths.UpdateLockPath, DateTime.UtcNow.AddMinutes(-16));
+            Assert.False(AgentUpdate.IsLockFresh(_agent.Paths));
         }
 
         // Updater kurulum klasörü dışına deps.json'daki bütün bağımlılıklarıyla kopyalanır; POps.Shared.dll dahil

@@ -129,10 +129,9 @@ namespace POps.Shared
             @"C:\POps\appsettings.json",
         };
 
-        // Süreç varsayılanı: Worker'ın bağlamı dışında ayar okuyan ajan kodu (PersistDir: HardwareBinding ve Generalizer,
-        // Worker bölmesinin b3 adımına kadar; kimlik bilgilerinin süreç varsayılanı AgentCredentials.Process) ve onları
-        // sınayan testler için. Bağlamdaki CredentialStore AgentPaths.ConfigPaths'i kullanır. Servis değiştirmez; testler
-        // yolları değiştirebilir.
+        // Süreç varsayılanı: aşağıdaki parametresiz biçimler (ResolveServerUrl, GetSetting, ReadConfigValue) ve onları sınayan
+        // testler için. Ajan ayarları bağlamın AgentPaths.ConfigPaths'iyle okur (kimlik bilgileri, PersistDir, sunucu adresi,
+        // klasörler). Servis değiştirmez; testler yolları değiştirebilir.
         public static IReadOnlyList<string> ConfigPaths { get; internal set; } = DefaultConfigPaths;
 
         // Sunucu adresi okunamazsa son çare (yalnızca aynı makinedeki sunucu için anlamlı)

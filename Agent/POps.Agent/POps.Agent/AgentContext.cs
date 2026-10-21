@@ -13,13 +13,14 @@ namespace POpsAgent
     //  * b2: çalışma durumu: yetenekler, modüller, kimlik bilgileri, ServerTrust, AgentHttp, güncelleme durumu.
     //  * b4: DnsPolicyMonitor bir örnek; bağlamda değil, Worker'da (Worker.Dns): geri çağrıları Worker'ındır. HTTP istemcisini
     //    ve kimlik bilgilerini bağlamdan alır.
-    //  * b3: makine kapıları (AgentMachine: PowerShell çalıştırıcısı, kiosk kaydı, BITS, boru seçenekleri, winget, ...).
+    //  * b3: makine kapıları (Machine: güvenlik duvarı betikleri, kiosk kaydı, eş önbelleği, BITS, updater, güç, oturum,
+    //    winget, sınav, dosya aktarımı, tepsi borusu, --generalize; bkz. MachineSeams).
     // Her yeni parça kurucuya bir argüman ve bir salt okunur özellik olarak eklenir.
     [SupportedOSPlatform("windows")]
     public sealed class AgentContext
     {
         public AgentContext(AgentPaths paths, CapabilityState capabilities, ModuleState modules, CredentialStore credentials,
-            ServerTrust trust, AgentHttp http, AgentUpdater updater)
+            ServerTrust trust, AgentHttp http, AgentUpdater updater, MachineSeams machine)
         {
             Paths = paths ?? throw new ArgumentNullException(nameof(paths));
             Capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
@@ -28,9 +29,10 @@ namespace POpsAgent
             Trust = trust ?? throw new ArgumentNullException(nameof(trust));
             Http = http ?? throw new ArgumentNullException(nameof(http));
             Updater = updater ?? throw new ArgumentNullException(nameof(updater));
+            Machine = machine ?? throw new ArgumentNullException(nameof(machine));
         }
 
-        // Veri, güvenli depo, log, ayar dosyaları ve kurum sertifikası
+        // Veri, güvenli depo, log, ayar dosyaları, kurum sertifikası ve görev dosyaları
         public AgentPaths Paths { get; }
         // Yerel yetenek kilidi (capabilities.json; bkz. AgentCapabilities)
         public CapabilityState Capabilities { get; }
@@ -42,17 +44,9 @@ namespace POpsAgent
         public ServerTrust Trust { get; }
         // Ajan HTTP istemcisi ve bildirimleri (bkz. AgentHttp)
         public AgentHttp Http { get; }
-        // Kurulu sürüm, güncelleme emri ve tatbikat (bkz. AgentUpdate)
+        // Kurulu sürüm, güncelleme emri, tatbikat ve eş önbelleği (bkz. AgentUpdate)
         public AgentUpdater Updater { get; }
-
-        // Servis açılışında, Program'dan bir kez: Worker bölmesinin b3 adımına kadar statik kalan kodun okuduğu süreç
-        // varsayılanları bu bağlamın örneklerine çevrilir (PeerCache ve X-Agent-Features: yetenekler; FileTransfer: HTTP
-        // istemcisi ve cihaz secret'ı). Böylece serviste her parçanın tek örneği vardır.
-        internal void UseForProcess()
-        {
-            AgentCapabilities.Process = Capabilities;
-            AgentCredentials.Process = Credentials;
-            AgentHttp.Default = Http;
-        }
+        // Makineye açılan kapılar (servis: MachineSeams.Production; testlerde reddeden sahteler)
+        public MachineSeams Machine { get; }
     }
 }

@@ -291,7 +291,7 @@ namespace POps.Tests.Agent
             update.Categories.Values.Add(new FakeUpdateCategory { Name = "Security Updates", CategoryID = "cat-1" });
             session.Searcher.Result.Updates.Values.Add(update);
 
-            WindowsUpdateAgent.Scan scan = WindowsUpdateAgent.Search(session, TimeSpan.FromSeconds(1));
+            WindowsUpdateAgent.Scan scan = new WindowsUpdateAgent().Search(session, TimeSpan.FromSeconds(1));
 
             Assert.Equal(WindowsUpdateAgent.Criteria, session.Searcher.CriteriaSeen);
             Assert.Equal(1, session.Searcher.Job.CleanUps);
@@ -309,7 +309,7 @@ namespace POps.Tests.Agent
             {
                 var session = new FakeUpdateSession();
                 session.Searcher.Result.ResultCode = code;
-                Assert.ThrowsAny<Exception>(() => WindowsUpdateAgent.Search(session, TimeSpan.FromSeconds(1)));
+                Assert.ThrowsAny<Exception>(() => new WindowsUpdateAgent().Search(session, TimeSpan.FromSeconds(1)));
                 Assert.Equal(1, session.Searcher.Job.CleanUps);
             }
         }
@@ -337,7 +337,7 @@ namespace POps.Tests.Agent
             var scan = new WindowsUpdateAgent.Scan();
             scan.Pending.Add(new PendingUpdate { Title = "Managed", Severity = "Critical", NeedsUserInput = true });
             scan.Handles.Add(new object());
-            WindowsUpdateAgent.InstallOutcome outcome = WindowsUpdateAgent.Install(new object(), scan, new[] { 0 }, TimeSpan.FromSeconds(1));
+            WindowsUpdateAgent.InstallOutcome outcome = new WindowsUpdateAgent().Install(new object(), scan, new[] { 0 }, TimeSpan.FromSeconds(1));
             Assert.Equal(1, outcome.Skipped);
             Assert.Empty(outcome.Failed);
             Assert.Equal(0, outcome.Installed);

@@ -30,30 +30,28 @@ namespace POps.Tests.Agent
         public void CleanUp() => CleanUps++;
     }
 
-    [Collection(SharedStateCollection.Name)]
-    public class WindowsUpdateAgentTests : SharedStateTestBase
+    // Machine: geçen gerçek süreyi ölçer (HungJob_IsAbortedAndNotWaitedForever; IL'den görünmez)
+    [Collection(MachineCollection.Name)]
+    public class WindowsUpdateAgentTests : TestBase
     {
         [Fact]
         public void HungJob_IsAbortedAndNotWaitedForever()
         {
-            TimeSpan previous = WindowsUpdateAgent.AbortGrace;
-            WindowsUpdateAgent.AbortGrace = TimeSpan.FromMilliseconds(300);
-            try
+            var wua = new WindowsUpdateAgent(abortGrace: TimeSpan.FromMilliseconds(300));
             {
                 var job = new FakeWuaJob { IsCompleted = false };
                 var clock = Stopwatch.StartNew();
-                Assert.True(WindowsUpdateAgent.WaitForJob(job, TimeSpan.FromMilliseconds(100)));
+                Assert.True(wua.WaitForJob(job, TimeSpan.FromMilliseconds(100)));
                 Assert.InRange(clock.Elapsed, TimeSpan.FromMilliseconds(300), TimeSpan.FromSeconds(5));
                 Assert.Equal(1, job.Aborts);
             }
-            finally { WindowsUpdateAgent.AbortGrace = previous; }
         }
 
         [Fact]
         public void FinishedJob_IsNotAborted()
         {
             var job = new FakeWuaJob { IsCompleted = true };
-            Assert.False(WindowsUpdateAgent.WaitForJob(job, TimeSpan.FromMinutes(1)));
+            Assert.False(new WindowsUpdateAgent().WaitForJob(job, TimeSpan.FromMinutes(1)));
             Assert.Equal(0, job.Aborts);
         }
 

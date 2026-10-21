@@ -8,18 +8,19 @@ using Xunit;
 
 namespace POps.Tests
 {
-    // Statik bir duruma (yollar, test seam'leri, bellekteki ajan durumu, ortam değişkenleri) dokunan sınıflar. Hepsi
-    // SharedStateTestBase'ten türer: EnsureIsolated yalnızca bu koleksiyonda, her testten önce çalışır. Worker bölmesinin
-    // (b) adımları statikleri kaldırdıkça sınıflar buradan çıkar; (d) adımında koleksiyon boşalır ve silinir.
+    // Süreç geneli bir değere (ortam değişkenleri, parametresiz ayar okumalarının dosyaları, servis hesabı, kendi statik
+    // önbelleği, MSI custom action'larının güvenilir kökü) dokunan sınıflar. Hepsi SharedStateTestBase'ten türer. Worker
+    // bölmesinin (b) adımları statikleri kaldırdıkça sınıflar buradan çıktı; (d) adımında kalanlar da çıkar, koleksiyon silinir.
     [CollectionDefinition(Name, DisableParallelization = true)]
     public sealed class SharedStateCollection
     {
         public const string Name = "SharedState";
     }
 
-    // Kod yüzünden değil makine yüzünden seri olan sınıflar: gerçek süreç başlatan, adlandırılmış boru ya da soket açan,
-    // ya da geçen gerçek süreyi ölçen testler. Yük altındaki bir makinede süre ölçümleri kayar; bunlar paralel testler
-    // bittikten sonra, boş bir makinede çalışır. Statiklere dokunmazlar.
+    // Kod yüzünden değil makine yüzünden seri olan sınıflar: gerçek süreç başlatan, adlandırılmış boru ya da soket açan
+    // (ya da onları açan koda IL'den ulaşan; ör. Worker'ın eş önbelleği sunucusu), ya da geçen gerçek süreyi ölçen
+    // testler. Yük altındaki bir makinede süre ölçümleri kayar; bunlar paralel testler bittikten sonra, boş bir makinede
+    // çalışır. Statiklere dokunmazlar; her sınıf nedenini bir yorumla söyler.
     [CollectionDefinition(Name, DisableParallelization = true)]
     public sealed class MachineCollection
     {

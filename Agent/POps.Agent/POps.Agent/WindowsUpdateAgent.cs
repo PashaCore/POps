@@ -15,7 +15,7 @@ namespace POpsAgent
     // Arama, indirme ve kurma zaman uyumsuz (Begin*/End*) çalışır: süre dolunca RequestAbort ile gerçekten durdurulur;
     // eşzamanlı Search/Download/Install durdurulamaz ve saatlerce takılabilir.
     [SupportedOSPlatform("windows")]
-    internal static class WindowsUpdateAgent
+    internal sealed class WindowsUpdateAgent
     {
         public const string Criteria = "IsInstalled=0 and IsHidden=0 and Type='Software'";
         // İndirme + kurmanın toplam üst sınırı
@@ -25,10 +25,18 @@ namespace POpsAgent
         private const int OrcSucceeded = 2, OrcSucceededWithErrors = 3, OrcAborted = 5;
         // UpdateOperation
         private const int UoInstallation = 1;
-        // Zaman aşımında RequestAbort'tan sonra işin kapanması için tanınan ek süre; kapanmazsa beklenmez (testlerde kısaltılır)
-        internal static TimeSpan AbortGrace { get; set; } = TimeSpan.FromMinutes(2);
-        // BrowseOnly okunamayan güncelleme ilk kez görüldüğünde loglanır
-        private static int _browseOnlyUnreadableLogged;
+        // Zaman aşımında RequestAbort'tan sonra işin kapanması için tanınan ek süre; kapanmazsa beklenmez
+        internal static readonly TimeSpan DefaultAbortGrace = TimeSpan.FromMinutes(2);
+        // BrowseOnly okunamayan güncelleme ilk kez görüldüğünde loglanır (bu örnekte bir kez; serviste Worker'ın PatchManager'ı)
+        private int _browseOnlyUnreadableLogged;
+
+        // abortGrace: RequestAbort'tan sonraki ek süre (null: 2 dk; testler kısaltır)
+        public WindowsUpdateAgent(TimeSpan? abortGrace = null)
+        {
+            AbortGrace = abortGrace ?? DefaultAbortGrace;
+        }
+
+        internal TimeSpan AbortGrace { get; }
 
         public sealed class Scan
         {
@@ -65,11 +73,11 @@ namespace POpsAgent
 
         private static dynamic NewCollection() => Activator.CreateInstance(Type.GetTypeFromProgID("Microsoft.Update.UpdateColl", true));
 
-        internal static bool WaitForJob(dynamic job, TimeSpan timeout) => WaitForJob(job, new Budget(timeout));
+        internal bool WaitForJob(dynamic job, TimeSpan timeout) => WaitForJob(job, new Budget(timeout));
 
         // İş bitene ya da süre dolana kadar bekler. Süre dolunca RequestAbort; iş AbortGrace içinde kapanmazsa
         // beklemeyi bırakır (thread ve "meşgul" bayrağı serbest kalır). Dönen: süre doldu mu
-        private static bool WaitForJob(dynamic job, Budget budget)
+        private bool WaitForJob(dynamic job, Budget budget)
         {
             Stopwatch sinceAbort = null;
             while (!(bool)job.IsCompleted)
@@ -106,7 +114,7 @@ namespace POpsAgent
             { IsBackground = true, Name = "POps Windows Update cleanup" }.Start();
         }
 
-        public static Scan Search(dynamic session, TimeSpan timeout)
+        public Scan Search(dynamic session, TimeSpan timeout)
         {
             dynamic searcher = session.CreateUpdateSearcher();
             dynamic job = searcher.BeginSearch(Criteria, new WuaCallback(), new UnknownWrapper(null));
@@ -136,7 +144,7 @@ namespace POpsAgent
             }
         }
 
-        private static PendingUpdate DescribeUpdate(dynamic update)
+        private PendingUpdate DescribeUpdate(dynamic update)
         {
             var pending = new PendingUpdate
             {
@@ -204,7 +212,7 @@ namespace POpsAgent
         // Seçilen güncellemeler: gerekirse EULA kabul edilir, indirilir ve kurulur; toplam en çok `timeout`. Kullanıcı
         // girişi isteyebilenler gözetimsiz kurulamayacağı için, isteğe bağlı ve sürüm yükseltmesi olanlar hiç
         // kurulmaz (seçimde de elenir). Yeniden başlatılmaz; gerekiyorsa RebootRequired döner.
-        public static InstallOutcome Install(dynamic session, Scan scan, IReadOnlyList<int> selected, TimeSpan timeout)
+        public InstallOutcome Install(dynamic session, Scan scan, IReadOnlyList<int> selected, TimeSpan timeout)
         {
             var budget = new Budget(timeout);
             var outcome = new InstallOutcome();

@@ -20,12 +20,15 @@ namespace POpsAgent
         private readonly Func<string?> _hwId;
         private readonly Action<LocalAuditEvent> _audit;
         private readonly CapabilityState _capabilities;
+        private readonly Func<string?> _locator;
 
         // Çalıştırıcı testlerde sahtesiyle değiştirilir, kimlik set_identity ile değişir: her kullanımda okunur.
-        // winget.exe'nin yeri her emirde WingetInstall.Locator'dan bulunur. capabilities: bağlamın yetenek durumu
+        // capabilities: bağlamın yetenek durumu; locator: winget.exe'nin yeri, her emirde sorulur (null: yok; bkz.
+        // MachineSeams.WingetLocator)
         public WingetInstallHandler(Func<CommandRunner> runner, CapabilityGate gate, ResultOutbox outbox, Func<string?> hwId,
-            Action<LocalAuditEvent> audit, CapabilityState capabilities)
+            Action<LocalAuditEvent> audit, CapabilityState capabilities, Func<string?> locator)
         {
+            _locator = locator ?? throw new ArgumentNullException(nameof(locator));
             _runner = runner ?? throw new ArgumentNullException(nameof(runner));
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
@@ -67,7 +70,7 @@ namespace POpsAgent
                 deniedReason = AgentModules.DisabledReason;
             }
             else if (!WingetInstall.TryParse(root, out id, out version)) rejection = WingetInstall.InvalidMessage;
-            else if ((wingetPath = WingetInstall.Locator()) == null)
+            else if ((wingetPath = _locator()) == null)
             {
                 rejection = WingetInstall.MissingMessage;
                 exitCode = WingetInstall.ExitMissing;

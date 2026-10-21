@@ -23,12 +23,19 @@ namespace POpsAgent
         private readonly string _serverUrl;
         private readonly Func<DateTimeOffset> _clock;
         private readonly CapabilityState _capabilities;
+        // Bu Worker'ın sınav modu (aynı adlı özellik: ExamMode.TryParse gibi kurallar yine türden okunur)
+        private ExamMode ExamMode { get; }
+        private readonly PeerCache _peerCache;
 
         // send: komut kanalına gönderim; clock: emrin doğrulandığı ve sınavdan çıkılan an (testlerde sahteleri);
-        // capabilities: bağlamın yetenek durumu
+        // capabilities: bağlamın yetenek durumu; exam: sınav modunun durumu ve makine kapıları; peerCache: sınava girip
+        // çıkınca yeniden denetlenen eş önbelleği
         public ExamHandler(CapabilityGate gate, ServerHandshake handshake, Func<object, Task<bool>> send, Action<string> toTray,
-            Action<LocalAuditEvent> audit, string serverUrl, Func<DateTimeOffset> clock, CapabilityState capabilities)
+            Action<LocalAuditEvent> audit, string serverUrl, Func<DateTimeOffset> clock, CapabilityState capabilities, ExamMode exam,
+            PeerCache peerCache)
         {
+            ExamMode = exam ?? throw new ArgumentNullException(nameof(exam));
+            _peerCache = peerCache ?? throw new ArgumentNullException(nameof(peerCache));
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _handshake = handshake ?? throw new ArgumentNullException(nameof(handshake));
             _send = send ?? throw new ArgumentNullException(nameof(send));
@@ -44,6 +51,9 @@ namespace POpsAgent
         public Task HandleAsync(ServerCommand command) => HandleExamModeAsync(command.Root);
 
         public void Dispose() => _examGate.Dispose();
+
+        // Sınav modunun durumu (testler: durum dosyası ve makine kapıları)
+        internal ExamMode Exam => ExamMode;
 
         private readonly HashSet<string> _examStoppedLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -94,7 +104,7 @@ namespace POpsAgent
             // Uygulanamazsa neden ExamMode'da yerel loga yazılır; sunucuya o anki durum gider
             if (!await ExamMode.EnableAsync(settings, _serverUrl)) return;
             // Sınav modunda eş önbelleği sunulmaz; arka planda yeniden denetlenir (bkz. PeerCache)
-            _ = Task.Run(PeerCache.SyncAsync);
+            _ = Task.Run(_peerCache.SyncAsync);
             lock (_examStoppedLogged) _examStoppedLogged.Clear();
             _audit(LocalAudit.ExamStarted(settings));
             POpsHelpers.Log("EXAM", $"SINAV MODU AKTİF: {settings.Allow.Count} izinli kayıt, bitiş {(settings.Until == null ? "yok" : DateTimeOffset.FromUnixTimeSeconds(settings.Until.Value).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture))}, {settings.BlockApps.Count} engelli uygulama.");
@@ -122,7 +132,7 @@ namespace POpsAgent
         {
             // Kaldırılamazsa neden ExamMode'da loglanır; sunucuya "hâlâ sınavda" gider
             if (!ExamMode.IsActive || !await ExamMode.DisableAsync()) return;
-            _ = Task.Run(PeerCache.SyncAsync);
+            _ = Task.Run(_peerCache.SyncAsync);
             Interlocked.Exchange(ref _examLeftAt, _clock().ToUnixTimeSeconds());
             _audit(LocalAudit.ExamEnded(source));
             POpsHelpers.Log("EXAM", $"Sınav modu bitti ({source}).");

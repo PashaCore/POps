@@ -4,27 +4,34 @@ using System.IO;
 using System.Runtime.Versioning;
 using System.Text.Json;
 
-#nullable disable
-
 namespace POpsAgent
 {
     // Karantina sürerken Ctrl+Alt+Del seçeneklerinin kapatılması (bkz. POps.Shared.KioskPolicies). Kayıt:
     // C:\POpsData\secure\kiosk-policies.json (yalnızca SYSTEM/Administrators). Uygulanır: kilitte, açılışta kilit
     // sürüyorsa ve tepsi bağlanınca (sonradan oturum açan kullanıcı). Geri alınır: kilit açılınca (panel, bypass kodu),
     // açılışta kilit yoksa, tepsi bağlanınca kilit yoksa (karantinada oturumu kapatmış kullanıcı döndü) ve MSI
-    // kaldırılırken. Hiçbir hata kilit/açma akışını durdurmaz; yalnızca loglanır.
+    // kaldırılırken. Hiçbir hata kilit/açma akışını durdurmaz; yalnızca loglanır. Karantinanın örneğidir (bkz.
+    // QuarantineControl.Kiosk).
     [SupportedOSPlatform("windows")]
-    public static class KioskMode
+    public sealed class KioskMode
     {
         public const string FileName = "kiosk-policies.json";
-        public static string RecordPath => SecureStore.PathOf(FileName);
 
-        // Testlerde sahte kayıt defteriyle değiştirilir
-        public static IKioskRegistry Registry { get; set; } = new WindowsKioskRegistry();
-
+        // Kayıt defteri bir makinede tektir: değişiklikler sıralanır
         private static readonly object Gate = new object();
 
-        public static void Engage()
+        // recordPath: önceki değerlerin kaydı (<güvenli depo>\kiosk-policies.json); registry: politikaların yazıldığı kayıt
+        // defteri (servis: HKLM/HKU, bkz. MachineSeams.Kiosk; testlerde bellekteki sahte)
+        public KioskMode(string recordPath, IKioskRegistry registry)
+        {
+            RecordPath = recordPath ?? throw new ArgumentNullException(nameof(recordPath));
+            Registry = registry ?? throw new ArgumentNullException(nameof(registry));
+        }
+
+        public string RecordPath { get; }
+        public IKioskRegistry Registry { get; }
+
+        public void Engage()
         {
             lock (Gate)
             {
@@ -41,7 +48,7 @@ namespace POpsAgent
             }
         }
 
-        public static void Release()
+        public void Release()
         {
             lock (Gate)
             {
@@ -65,13 +72,13 @@ namespace POpsAgent
         }
 
         // Servis açılışı ve tepsi bağlantısı: kilit sürüyorsa uygula, sürmüyorsa kalıntıyı temizle
-        public static void Sync(bool locked)
+        public void Sync(bool locked)
         {
             if (locked) Engage();
             else Release();
         }
 
-        private static List<KioskEntry> Load()
+        private List<KioskEntry> Load()
         {
             try
             {

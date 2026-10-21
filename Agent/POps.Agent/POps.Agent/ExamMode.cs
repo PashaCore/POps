@@ -37,9 +37,10 @@ namespace POpsAgent
     // izin listesiyle (alan adı, IP, CIDR) konuşabilir. Karantinanın yalıtım motoru kendi kural grubuyla ("POps Exam")
     // kullanılır; karantinayla bağımsızdır, ikisi birden sürerse sıkı olan (karantina) geçerlidir. Alan adları 2 dakikada
     // bir ve ağ adresi değişince yeniden çözülür. İsteğe bağlı uygulama listesi oturumlarda kapatılır. "until" geçince
-    // mod sunucuya ulaşılamasa da biter. Durum C:\POpsData\secure\exam.json'da (yeniden başlatmada sürer).
+    // mod sunucuya ulaşılamasa da biter. Durum C:\POpsData\secure\exam.json'da (yeniden başlatmada sürer). Worker'ın örneği
+    // sınav işleyicisindedir (bkz. ExamHandler).
     [SupportedOSPlatform("windows")]
-    public static class ExamMode
+    public sealed class ExamMode
     {
         public const string StateFileName = "exam.json";
         // server_info.features: sunucu exam_mode gönderir ve exam_state okur
@@ -62,15 +63,27 @@ namespace POpsAgent
             "msiexec.exe",
         };
 
-        public static string StatePath => SecureStore.PathOf(StateFileName);
-        public static bool IsActive => File.Exists(StatePath);
+        // statePath: durum dosyası (<güvenli depo>\exam.json); scripts: güvenlik duvarı betikleri (karantinanın motoru, kendi
+        // kural grubuyla; bkz. MachineSeams.FirewallScripts); resolver: izin listesindeki alan adlarının çözümü; stopProcess:
+        // engelli uygulamanın kapatılması. Servis: gerçekleri (MachineSeams.Production); testlerde makineye dokunmayan sahteler.
+        public ExamMode(string statePath, Func<string, Task<(int Exit, string Output)>> scripts, Func<string, Task<IPAddress[]>> resolver,
+            Action<Process> stopProcess)
+        {
+            StatePath = statePath ?? throw new ArgumentNullException(nameof(statePath));
+            Scripts = scripts ?? throw new ArgumentNullException(nameof(scripts));
+            Resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
+            StopProcess = stopProcess ?? throw new ArgumentNullException(nameof(stopProcess));
+        }
 
-        // Testler: alan adı çözümü
-        internal static Func<string, Task<IPAddress[]>> Resolver { get; set; } = host => Dns.GetHostAddressesAsync(host);
-        // Testler: engelli uygulamanın kapatılması (testlerde gerçek süreçlere dokunulmaz)
-        internal static Action<Process> StopProcess { get; set; } = process => process.Kill();
+        public string StatePath { get; }
+        public bool IsActive => IsActiveAt(StatePath);
+        internal Func<string, Task<(int Exit, string Output)>> Scripts { get; }
+        internal Func<string, Task<IPAddress[]>> Resolver { get; }
+        internal Action<Process> StopProcess { get; }
 
-        public static ExamSettings? Load()
+        public static bool IsActiveAt(string statePath) => File.Exists(statePath);
+
+        public ExamSettings? Load()
         {
             string? text = SecureStore.Read(StatePath);
             if (text == null) return null;
@@ -140,7 +153,7 @@ namespace POpsAgent
         }
 
         // Kurallara girecek adresler: sunucu (zorunlu), DNS/DHCP, izin listesindeki IP'ler ve çözülen alan adları
-        internal static async Task<(List<(BigInteger Start, BigInteger End, bool V6)>? Ranges, List<string>? Addresses)> AllowedAsync(ExamSettings settings, string serverUrl)
+        internal async Task<(List<(BigInteger Start, BigInteger End, bool V6)>? Ranges, List<string>? Addresses)> AllowedAsync(ExamSettings settings, string serverUrl)
         {
             List<IPAddress> server = await NetworkIsolation.ResolveServerAsync(serverUrl);
             if (server.Count == 0) return (null, null);
@@ -163,7 +176,7 @@ namespace POpsAgent
         }
 
         // Kurallar kurulur ve durum yazılır. Sunucu adresi çözülemezse uygulanmaz (cihaz sunucudan kopardı).
-        public static async Task<bool> EnableAsync(ExamSettings settings, string serverUrl)
+        public async Task<bool> EnableAsync(ExamSettings settings, string serverUrl)
         {
             await Gate.WaitAsync();
             try
@@ -174,7 +187,7 @@ namespace POpsAgent
                     POpsHelpers.Log("EXAM", $"[GÜVENLİK] Sunucu adresi çözülemedi ({serverUrl}); sınav modu uygulanmadı.", true);
                     return false;
                 }
-                (int exit, string output) = await NetworkIsolation.ScriptRunner(NetworkIsolation.BuildEnableScript(ranges, NetworkIsolation.ExamRuleGroup));
+                (int exit, string output) = await Scripts(NetworkIsolation.BuildEnableScript(ranges, NetworkIsolation.ExamRuleGroup));
                 if (exit != 0)
                 {
                     POpsHelpers.Log("EXAM", $"Sınav modu uygulanamadı (çıkış {exit}): {output}", true);
@@ -197,7 +210,7 @@ namespace POpsAgent
         }
 
         // Alan adları yeniden çözülür; adresler değiştiyse kurallar yenilenir. Dönen: kurallar yenilendi mi.
-        public static async Task<bool> RefreshAsync(string serverUrl, string reason)
+        public async Task<bool> RefreshAsync(string serverUrl, string reason)
         {
             await Gate.WaitAsync();
             try
@@ -206,7 +219,7 @@ namespace POpsAgent
                 if (settings == null) return false;
                 var (ranges, addresses) = await AllowedAsync(settings, serverUrl);
                 if (ranges == null || addresses == null || addresses.SequenceEqual(settings.Addresses ?? new List<string>(), StringComparer.Ordinal)) return false;
-                (int exit, string output) = await NetworkIsolation.ScriptRunner(NetworkIsolation.BuildEnableScript(ranges, NetworkIsolation.ExamRuleGroup));
+                (int exit, string output) = await Scripts(NetworkIsolation.BuildEnableScript(ranges, NetworkIsolation.ExamRuleGroup));
                 if (exit != 0)
                 {
                     POpsHelpers.Log("EXAM", $"Sınav izin listesi yenilenemedi ({reason}, çıkış {exit}): {output}", true);
@@ -225,13 +238,13 @@ namespace POpsAgent
             finally { Gate.Release(); }
         }
 
-        public static async Task<bool> DisableAsync()
+        public async Task<bool> DisableAsync()
         {
             await Gate.WaitAsync();
             try
             {
                 ExamSettings? settings = Load();
-                (int exit, string output) = await NetworkIsolation.ScriptRunner(
+                (int exit, string output) = await Scripts(
                     NetworkIsolation.BuildDisableScript(settings?.PreviousDisabledProfiles ?? new List<string>(), NetworkIsolation.ExamRuleGroup));
                 if (exit != 0)
                 {
@@ -249,7 +262,7 @@ namespace POpsAgent
             finally { Gate.Release(); }
         }
 
-        private static void Save(ExamSettings settings) => SecureStore.WriteProtected(StatePath, JsonSerializer.Serialize(settings, Json));
+        private void Save(ExamSettings settings) => SecureStore.WriteProtected(StatePath, JsonSerializer.Serialize(settings, Json));
 
         // Etkinleştirme betiğinin son satırı: önceki profil durumları; kapalı olanların adları
         internal static List<string> DisabledProfiles(string? output)
@@ -271,7 +284,7 @@ namespace POpsAgent
         // yalnızca yerel loga yazılır). since: o anki durumun başladığı an (unix sn): sınavdayken giriş zamanı, sınavda
         // değilken bu çalışmada sınavdan çıkıldıysa çıkış zamanı (leftAt); bilinmiyorsa gönderilmez. until: sınavdayken
         // sınavın bitişi, değilken null.
-        public static Dictionary<string, object?> StateMessage(long? leftAt)
+        public Dictionary<string, object?> StateMessage(long? leftAt)
         {
             ExamSettings? s = Load();
             var message = new Dictionary<string, object?> { ["type"] = "exam_state", ["enabled"] = s != null };

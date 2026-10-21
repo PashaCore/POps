@@ -38,8 +38,8 @@ namespace POpsAgent
         private static readonly Regex MeasureRegex = new Regex(@"^[0-9.,%KMGBkib]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly char[] BarChars = { '█', '▒', '▓', '░' };
 
-        // Testler: winget.exe'nin yeri (null: yok)
-        internal static Func<string?> Locator { get; set; } = () => Find(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps"));
+        // Servisin winget.exe araması (null: yok; yalnızca MachineSeams.Production kurar, bkz. MachineSeams.WingetLocator)
+        internal static string? LocateWinget() => Find(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps"));
 
         // Dönen false: id ya da sürüm geçersiz (sürüm null/yok = en yenisi)
         public static bool TryParse(JsonElement command, out string id, out string? version)

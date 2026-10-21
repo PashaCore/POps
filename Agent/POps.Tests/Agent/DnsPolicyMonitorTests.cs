@@ -16,8 +16,9 @@ namespace POps.Tests.Agent
 {
     // DNS izleme artık gerçekten başlatılıyor (F8 kodu vardı ama hiç çağrılmıyordu). Önbellek, saat, bildirim ve
     // karantina sahtedir: gerçek DNS önbelleği okunmaz, sunucuya gidilmez, güvenlik duvarına dokunulmaz.
-    [Collection(SharedStateCollection.Name)]
-    public class DnsPolicyMonitorTests : SharedStateTestBase, IDisposable
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class DnsPolicyMonitorTests : TestBase, IDisposable
     {
         private readonly List<string> _cache = new List<string>();
         private readonly List<(string Domain, string Category)> _reports = new List<(string, string)>();
@@ -64,7 +65,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void Worker_StartsMonitoringWhenTheCommandChannelConnects()
         {
-            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context, () => _cache.ToList());
+            using var worker = new Worker(NullLogger<Worker>.Instance, _agent.Context, () => _cache.ToList());
             Assert.False(worker.Dns.IsRunning);
 
             worker.OnCommandChannelConnected();
@@ -303,13 +304,12 @@ namespace POps.Tests.Agent
     // hataları yalnızca o izlemenin Worker'ına gider. Kurulan Worker başka bir izlemenin geri çağrılarını almaz (eskiden son
     // kurulan Worker hepsini alırdı); atılan Worker hiçbir şey almaz ve başka bir Worker'ı etkilemez. Worker'ların kilidi
     // sahtedir (tepsi listesi, sahte yalıtım), HTTP ve DNS önbelleği sahte.
-    [Collection(SharedStateCollection.Name)]
-    public class DnsWorkerBindingTests : SharedStateTestBase, IDisposable
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class DnsWorkerBindingTests : TestBase, IDisposable
     {
-        // Testten önceki değerler (temel kurucudan sonra okunur: alan başlatıcıları ortam kurulmadan çalışır)
-        private readonly string _secureDir;
-        private readonly HttpClient _client;
-        private readonly POps.Shared.IKioskRegistry _registry;
+        // Testin kendi izlemesinin bağlamı (sunucu istekleri sahte işleyiciye)
+        private readonly AgentHarness _agent = AgentHarness.Create("dns-workers", new OkHandler());
         private readonly List<string> _cache = new List<string>();
         // true iken önbellek okunamaz (bkz. FailCacheRead)
         private bool _failRead;
@@ -319,20 +319,14 @@ namespace POps.Tests.Agent
 
         public DnsWorkerBindingTests()
         {
-            (_secureDir, _client, _registry) = (SecureStore.Dir, AgentHttp.Default.Client, KioskMode.Registry);
-            SecureStore.Dir = TestEnvironment.NewDir("dns-workers");
-            AgentHttp.Default.Client = new HttpClient(new OkHandler());
-            KioskMode.Registry = new FakeKioskRegistry();
-            _dns = AgentHarness.FromStatics().NewDnsMonitor(Cache, quarantine: _unbound.Add);
+            _dns = _agent.NewDnsMonitor(Cache, quarantine: _unbound.Add);
             _dns.Configure(Policy(), "HW-DNS", "https://pops.example");
         }
 
         public void Dispose()
         {
             _dns.Dispose();
-            KioskMode.Registry = _registry;
-            AgentHttp.Default.Client = _client;
-            SecureStore.Dir = _secureDir;
+            _agent.Dispose();
         }
 
         private static AgentPolicy Policy() => new AgentPolicy
@@ -352,16 +346,17 @@ namespace POps.Tests.Agent
         }
 
         // Kilidi sahte bir Worker: kilit ekranı mesajları Tray'e düşer, yalıtım uygulanmış sayılır; DNS izlemesi testin
-        // önbelleğini okur
+        // önbelleğini okur. Her Worker'ın kendi bağlamı (klasörler, sahte sunucu, bellekteki kiosk kaydı)
         private sealed class TestWorker : IDisposable
         {
             public readonly List<string> Tray = new List<string>();
             public readonly Worker Worker;
+            private readonly AgentHarness _agent = AgentHarness.Create("dns-worker", new OkHandler());
 
             public TestWorker(Func<IEnumerable<string>> cache)
             {
-                Worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context, cache);
-                Worker.Quarantine = new QuarantineControl(AgentHarness.FromStatics().Paths, Tray.Add, () => Task.FromResult(true), () => Task.FromResult(true));
+                Worker = new Worker(NullLogger<Worker>.Instance, _agent.Context, cache);
+                Worker.Quarantine = new QuarantineControl(_agent.Paths, Tray.Add, () => Task.FromResult(true), () => Task.FromResult(true), _agent.Machine.Kiosk);
                 Worker.Dns.Configure(Policy(), "HW-DNS", "https://pops.example");
             }
 
@@ -370,7 +365,11 @@ namespace POps.Tests.Agent
             public string LastError => JsonSerializer.SerializeToElement(Worker.HeartbeatPayload())
                 .GetProperty("agent_health").GetProperty("last_error").GetString();
 
-            public void Dispose() => Worker.Dispose();
+            public void Dispose()
+            {
+                Worker.Dispose();
+                _agent.Dispose();
+            }
         }
 
         // Listedeki yeni bir giriş; eşik 1 olduğu için otomatik karantina

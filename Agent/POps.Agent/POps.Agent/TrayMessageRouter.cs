@@ -29,6 +29,8 @@ namespace POpsAgent
         private readonly Func<string, Task> _bypassAttempt;
         private readonly Action<string> _toTray;
         private readonly Func<string?> _configErrorMessage;
+        // Bu Worker'ın sınav modu (aynı adlı özellik: ExamMode.TryParse gibi kurallar yine türden okunur)
+        private ExamMode ExamMode { get; }
         // Tepsinin metin mesajları: sırayla denenir, ilk eşleşen işler (bkz. Route)
         private readonly (Func<string, bool> Matches, Action<string> Handle)[] _routes;
 
@@ -39,12 +41,13 @@ namespace POpsAgent
         // newPipe: boruyu kurar (bir kez; boru servis boyunca açık kalır, Worker atılırken de kapatılmaz). Kimlik ve
         // karantina denetimi çalışırken değişebilir (set_identity, testler): her kullanımda okunur. bypassAttempt: çevrimdışı
         // bypass kodu (UNLOCK_BYPASS:); toTray: Worker.ToTray (testlerde TrayOverride); configErrorMessage: yapılandırma
-        // sorunu (yoksa null; bkz. Worker.ConfigErrorMessage)
+        // sorunu (yoksa null; bkz. Worker.ConfigErrorMessage); exam: sınav modu (tepsi bağlanınca bant yeniden gösterilir)
         public TrayMessageRouter(Func<TrayPipeServer> newPipe, AgentStartupHealth startupHealth, VisionSession vision,
             RemoteInputHandler remoteInput, CommandChannel channel, Func<string?> hwId, PolicySync policy, Helpdesk helpdesk,
             ActivityHistory activity, PowerActions power, UserMessages messages, Func<QuarantineControl> quarantine,
-            Func<string, Task> bypassAttempt, Action<string> toTray, Func<string?> configErrorMessage)
+            Func<string, Task> bypassAttempt, Action<string> toTray, Func<string?> configErrorMessage, ExamMode exam)
         {
+            ExamMode = exam ?? throw new ArgumentNullException(nameof(exam));
             _newPipe = newPipe ?? throw new ArgumentNullException(nameof(newPipe));
             _startupHealth = startupHealth ?? throw new ArgumentNullException(nameof(startupHealth));
             _vision = vision ?? throw new ArgumentNullException(nameof(vision));

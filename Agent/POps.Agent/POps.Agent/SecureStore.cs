@@ -24,16 +24,8 @@ namespace POpsAgent
         internal static SecurityIdentifier SystemSid { get; set; } = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
         private static readonly SecurityIdentifier AdminsSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
 
-        // Süreç varsayılanı: servis açılışta AgentPaths.SecureDir'e çevirir (bkz. AgentDirectories.Use). Worker ve kurduğu
-        // servisler yolu AgentPaths'ten alır; bunu yalnızca Worker bölmesinin b3 adımının örneğe çevireceği statik kod
-        // (yeteneklerin, kimlik bilgilerinin ve HTTP istemcisinin süreç varsayılanı: AgentCapabilities.Process,
-        // AgentCredentials.Process, AgentHttp.Default; KioskMode, NetworkIsolation, ExamMode, FileTransfer) ve onları sınayan
-        // testler okur.
-        public static string Dir { get; set; } = DefaultDir;
-
-        public static string PathOf(string name) => Path.Combine(Dir, name);
-
-        public static void EnsureDirectory() => EnsureDirectory(Dir);
+        // Klasör ajanın AgentPaths.SecureDir'idir (servis: <veri klasörü>\secure; bkz. AgentDirectories); buradaki işlevler tam
+        // yol alır.
 
         // Klasörü yoksa korumalı ACL ile oluşturur, varsa ACL'ini her açılışta yeniden kurar (bkz. FolderSettings.Secure).
         // Sahibi güvenilir değilse SYSTEM yapılır: klasörü önceden açan bir kullanıcı sahip olarak izinleri yeniden açabilirdi.

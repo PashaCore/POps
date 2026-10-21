@@ -19,12 +19,15 @@ namespace POpsAgent
         private readonly Action<LocalAuditEvent> _audit;
         private readonly Func<Task> _afterReport;
         private readonly CapabilityState _capabilities;
+        private readonly PeerCache _peerCache;
 
         // Tepsi borusu servis çalışırken kurulur: her kullanımda okunur. afterReport: "capabilities" gönderildikten sonra;
-        // capabilities: bağlamın yetenek durumu
+        // capabilities: bağlamın yetenek durumu; peerCache: eş önbelleği yeteneği kapanınca yeniden denetlenir
         public CapabilitiesHandler(VisionSession vision, PowerActions power, Func<TrayPipeServer?> trayPipe,
-            Func<object, Task<bool>> send, Action<LocalAuditEvent> audit, Func<Task> afterReport, CapabilityState capabilities)
+            Func<object, Task<bool>> send, Action<LocalAuditEvent> audit, Func<Task> afterReport, CapabilityState capabilities,
+            PeerCache peerCache)
         {
+            _peerCache = peerCache ?? throw new ArgumentNullException(nameof(peerCache));
             _vision = vision ?? throw new ArgumentNullException(nameof(vision));
             _power = power ?? throw new ArgumentNullException(nameof(power));
             _trayPipe = trayPipe ?? throw new ArgumentNullException(nameof(trayPipe));
@@ -43,7 +46,7 @@ namespace POpsAgent
             foreach (string capability in changed.Disabled)
                 _audit(LocalAudit.CapabilityChanged(capability.Replace("_enabled", "", StringComparison.Ordinal), true, false));
             // Eş önbelleği kapandıysa önbellek silinir, sunum durur
-            if (changed.Disabled.Contains(AgentCapabilities.PeerCacheKey)) await PeerCache.SyncAsync();
+            if (changed.Disabled.Contains(AgentCapabilities.PeerCacheKey)) await _peerCache.SyncAsync();
             if (!_capabilities.VisionEnabled && _vision.StreamActive)
             {
                 _trayPipe()?.SendCommandToDesktop("STOP_CAPTURE");

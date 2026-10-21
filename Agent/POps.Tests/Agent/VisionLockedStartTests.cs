@@ -14,14 +14,16 @@ namespace POps.Tests.Agent
     // oturumu başlatırken kullanıcının masaüstü ekranda değilse servis 1150 yazar ve tepsiye oturum bildirimini kurdurur;
     // tepsi bildirimi masaüstü geri gelince gösterir ve oturum bitene kadar açık tutar. Gerçek masaüstü, pencere ya da
     // Vision tüneli yok: tepsinin kararları POps.Shared'de saf, servisin tüneli, Olay Günlüğü ve sunucu kaydı sahte.
-    [Collection(SharedStateCollection.Name)]
-    public class VisionLockedStartTests : SharedStateTestBase, IDisposable
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class VisionLockedStartTests : TestBase, IDisposable
     {
         private const string MandatoryRequest = "{\"action\":\"start_vision_session\",\"session_id\":\"SES-0123456789AB\",\"is_mandatory\":true,"
             + "\"admin_name\":\"Pasha\",\"requested_by\":\"Pasha\",\"reason\":\"Güvenlik güncellemesi\",\"countdown_seconds\":30}";
         private const string ConsentRequest = "{\"action\":\"start_vision_session\",\"session_id\":\"SES-00000000CAFE\",\"is_mandatory\":false,"
             + "\"admin_name\":\"Ayşe\",\"requested_by\":\"Ayşe\",\"reason\":\"Yazıcı sorunu\",\"countdown_seconds\":0}";
 
+        private readonly AgentHarness _agent = AgentHarness.Create("vision-locked");
         private readonly Worker _worker;
         private readonly List<string> _tray = new List<string>();
         private readonly List<LocalAuditEvent> _audit = new List<LocalAuditEvent>();
@@ -31,9 +33,8 @@ namespace POps.Tests.Agent
 
         public VisionLockedStartTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("vision-locked-secure");
-            AgentCapabilities.Load();   // dosya yok: Vision açık
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            _agent.Capabilities.Load();   // dosya yok: Vision açık
+            _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-LOCK",
                 TrayOverride = m => { lock (_tray) _tray.Add(m); },
@@ -47,8 +48,7 @@ namespace POps.Tests.Agent
         public void Dispose()
         {
             _worker.Dispose();
-            SecureStore.Dir = TestEnvironment.NewDir("vision-locked-reset");
-            AgentCapabilities.Load();
+            _agent.Dispose();
         }
 
         private Task Server(string json) => _worker.HandleServerMessageAsync(json, null, CancellationToken.None);

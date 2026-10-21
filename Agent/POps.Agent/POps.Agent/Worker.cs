@@ -50,13 +50,17 @@ namespace POpsAgent
         private readonly AgentUpdater _updater;
         // <veri klasörü>\identity.key
         private readonly string _identityFilePath;
-        // Ağ yalıtımının durum dosyası (<güvenli depo>\isolation.json; bkz. NetworkIsolation)
-        private readonly string _isolationState;
+        // Makineye açılan kapılar (bkz. MachineSeams; servis: gerçek makine, testlerde reddeden sahteler) ve eş önbelleği
+        // (güncelleme durumunun parçası; bkz. AgentUpdater.PeerCache)
+        private readonly MachineSeams _machine;
+        private readonly PeerCache _peerCache;
+        // Ağ karantinası (<güvenli depo>\isolation.json; bkz. NetworkIsolation)
+        internal NetworkIsolation Isolation { get; }
         private readonly HttpClient _httpClient;
         private readonly AgentStartupHealth _startupHealth;
         private readonly AgentHealthTelemetry _health = new AgentHealthTelemetry();
-        // Uzaktan komutlar (iptal ve servis durması işlemi sonlandırır)
-        private CommandRunner _commandRunner = new CommandRunner();
+        // Uzaktan komutlar (iptal ve servis durması işlemi sonlandırır); görev dosyaları AgentPaths.TaskDir'de
+        private CommandRunner _commandRunner;
         // ExecuteAsync açılışta kurar; bağlantı döngüsü onu bekler (testler döngüyü açılış olmadan çalıştırır)
         private Task _slowInitialization = Task.CompletedTask;
 
@@ -145,8 +149,11 @@ namespace POpsAgent
             _trust = context.Trust;
             _http = context.Http;
             _updater = context.Updater;
+            _machine = context.Machine;
+            _peerCache = _updater.PeerCache;
             _identityFilePath = _paths.IdentityPath;
-            _isolationState = _paths.SecureFile(NetworkIsolation.StateFileName);
+            Isolation = new NetworkIsolation(_paths.SecureFile(NetworkIsolation.StateFileName), _machine.FirewallScripts);
+            _commandRunner = new CommandRunner(taskDirectory: _paths.TaskDir);
             FolderProblem = _paths.FolderProblem;
             _pcName = Environment.MachineName;
             // Politika ve /updates paket indirme: sunucu sertifikası da ServerTrust ile doğrulanır
@@ -165,7 +172,7 @@ namespace POpsAgent
             Dns = new DnsPolicyMonitor(reason => _ = AutoQuarantineAsync(reason), message => _health.RecordError("dns", message), _http, _credentials,
                 TimeProvider.System, dnsCache);
             _quarantine = new QuarantineControl(_paths, message => _tray.Pipe?.SendCommandToDesktop(message),
-                EnableNetworkIsolationAsync, DisableNetworkIsolationAsync, audit: LocalAudit.Write, unlocked: Dns.ResetViolations);
+                EnableNetworkIsolationAsync, DisableNetworkIsolationAsync, _machine.Kiosk, audit: LocalAudit.Write, unlocked: Dns.ResetViolations);
             _patches = new PatchManager(_paths, _serverUrl, () => _hwId, _modules, _http);
             // Talebin sahibi konsoldaki değil, isteği yapan tepsinin oturumundaki kullanıcı (hızlı kullanıcı değiştirme, RDP)
             _helpdesk = new Helpdesk(_paths, _serverUrl, () => _hwId, () => _tray.Pipe?.ClientUser, message => _tray.Pipe?.SendCommandToDesktop(message), _modules, _http);
@@ -179,21 +186,23 @@ namespace POpsAgent
                 _capabilities, _credentials, _trust, _http);
             _remoteInput = new RemoteInputHandler(_vision, _gate, () => _hwId, () => _tray.Pipe, _channel);
             Power = new PowerActions(SendTaskResultAsync, taskId => DenyCapabilityAsync(PowerActions.Capability, PowerActions.ActionName, taskId),
-                ToTray, TrayInConsoleSession, _capabilities);
+                ToTray, TrayInConsoleSession, _capabilities, _machine.Power, _machine.HasConsoleUser);
             Messages = new UserMessages(SendTaskResultAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
-                ToTray, TrayConnected, _capabilities);
-            _exam = new ExamHandler(_gate, Handshake, _channel.TrySendAsync, ToTray, LocalAudit.Write, _serverUrl, () => ExamClock(), _capabilities);
-            _files = new FileTransferHandler(_gate, _serverUrl, () => _hwId, _channel.TrySendAsync, ToTray, LocalAudit.Write, _capabilities);
+                ToTray, TrayConnected, _capabilities, _machine.HasConsoleUser);
+            _exam = new ExamHandler(_gate, Handshake, _channel.TrySendAsync, ToTray, LocalAudit.Write, _serverUrl, () => ExamClock(), _capabilities,
+                new ExamMode(_paths.SecureFile(ExamMode.StateFileName), _machine.FirewallScripts, _machine.ExamResolver, _machine.StopProcess), _peerCache);
+            _files = new FileTransferHandler(_gate, _serverUrl, () => _hwId, _channel.TrySendAsync, ToTray, LocalAudit.Write, _capabilities,
+                new FileTransfer(_paths, _http, _credentials, _machine.PublicDesktop, _machine.Profiles));
             Binding = new HardwareBinding(_paths,
                 () => (HardwareInfo.GetWmiValue("Win32_ComputerSystemProduct", "UUID"), HardwareInfo.GetWmiValue("Win32_BIOS", "SerialNumber")));
             _updates = new UpdateReporter(Handshake, UpdateResults, _channel.TrySendAsync, LocalAudit.Write, _paths, _updater);
             _policy = new PolicySync(_serverUrl, () => _hwId, _httpClient, _health, _vision, () => _tray.Pipe, () => _software, LocalAudit.Write, _modules, _http, Dns);
             Dispatcher = BuildDispatcher();
-            _tray = new TrayMessageRouter(() => new TrayPipeServer(), _startupHealth, _vision, _remoteInput, _channel, () => _hwId, _policy, _helpdesk, _activity,
-                Power, Messages, () => _quarantine, HandleBypassAttemptAsync, ToTray, ConfigErrorMessage);
+            _tray = new TrayMessageRouter(() => new TrayPipeServer(_machine.TrayPipe), _startupHealth, _vision, _remoteInput, _channel, () => _hwId, _policy,
+                _helpdesk, _activity, Power, Messages, () => _quarantine, HandleBypassAttemptAsync, ToTray, ConfigErrorMessage, _exam.Exam);
             _connection = new CommandConnection(_serverUrl, _pcName, () => _hwId, _channel, Dispatcher, _updates, _outbox, _vision, _tray,
                 () => _quarantine, () => _cachedDna, _health, _startupHealth, () => _slowInitialization, OnCommandSocketOpened,
-                _policy.OnCommandChannelConnected, LocalAudit.Write, _isolationState, _capabilities, _credentials, _trust);
+                _policy.OnCommandChannelConnected, LocalAudit.Write, Isolation, _capabilities, _credentials, _trust);
         }
 
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
@@ -216,7 +225,7 @@ namespace POpsAgent
             ApplyHardwareBinding(binding);
             _startupHealth.Run(StartupCheck.Capabilities, _capabilities.Load);
             // Karantina yeniden başlatmadan sonra sürüyorsa Ctrl+Alt+Del seçenekleri yeniden kapatılır; sürmüyorsa kalıntı temizlenir
-            KioskMode.Sync(_quarantine.IsLocked);
+            _quarantine.Kiosk.Sync(_quarantine.IsLocked);
             if (_quarantine.IsLocked) LocalAudit.Write(LocalAudit.QuarantineStarted("açılış"));
             // Kurum sertifikası (server-ca.pem) varsa sunucu yalnızca onunla doğrulanır; kip loglanır
             _trust.Reload();
@@ -343,7 +352,7 @@ namespace POpsAgent
             _ = Task.Run(() => ExamLoopAsync(stoppingToken), stoppingToken);
             _slowInitialization = Task.Run(InitializeSlowState, stoppingToken);
             // Eş önbelleği: açılışta ve dakikada bir süre/yetenek/karantina denetimi, paket varken sunum (bkz. PeerCache)
-            _ = Task.Run(() => PeerCache.RunAsync(stoppingToken), stoppingToken);
+            _ = Task.Run(() => _peerCache.RunAsync(stoppingToken), stoppingToken);
             AgentUpdate.LogLastResult(_paths);
             // Güncelleme sürmüyorsa önceki çalışmadan kalan aşama dosyası silinir
             AgentUpdate.CleanupStaleProgress(_paths);
@@ -394,6 +403,9 @@ namespace POpsAgent
         private volatile bool _examNetworkChanged;
         // Testler: emrin doğrulandığı ve sınavdan çıkılan an
         internal Func<DateTimeOffset> ExamClock { get; set; } = () => DateTimeOffset.UtcNow;
+
+        // Testler: sınav modunun durumu (durum dosyası, ayarlar)
+        internal ExamMode Exam => _exam.Exam;
 
         // set_capabilities, server_info, sınav döngüsü ve testler buradan çağırır (bkz. ExamHandler)
         internal Task HandleExamModeAsync(JsonElement root) => _exam.HandleExamModeAsync(root);
@@ -470,7 +482,7 @@ namespace POpsAgent
             {
                 try { await Task.Delay(NetworkIsolation.RefreshInterval, token); }
                 catch (OperationCanceledException) { return; }
-                if (NetworkIsolation.IsActiveAt(_isolationState)) await NetworkIsolation.RefreshServerAddressesAsync(_serverUrl, "periyodik denetim", _isolationState);
+                if (Isolation.IsActive) await Isolation.RefreshServerAddressesAsync(_serverUrl, "periyodik denetim");
             }
         }
 
@@ -543,7 +555,7 @@ namespace POpsAgent
         {
             if (TrayInConsoleOverride != null) return TrayInConsoleOverride();
             TrayPipeServer pipe = _tray.Pipe;
-            return pipe != null && pipe.IsConnected && pipe.ClientSession != UserSessionLauncher.NoSession && pipe.ClientSession == SessionTasks.ConsoleSession();
+            return pipe != null && pipe.IsConnected && pipe.ClientSession != UserSessionLauncher.NoSession && pipe.ClientSession == _machine.ConsoleSession();
         }
 
         // Güç işlemi ve kullanıcı mesajı sonucu (execute'un result'ıyla aynı biçim ve aynı saklama/onay yolu)
@@ -575,8 +587,9 @@ namespace POpsAgent
             new InventoryHandler(() => _cachedInventory, _serverUrl, () => _hwId, _health, _credentials, _http),
             new QuarantineHandler(() => _quarantine, _serverUrl, () => _hwId, _http),
             new ExecuteHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, Power, Messages, _capabilities),
-            new WingetInstallHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, _capabilities),
-            new CapabilitiesHandler(_vision, Power, () => _tray.Pipe, _channel.TrySendAsync, LocalAudit.Write, _exam.EndIfCapabilityOffAsync, _capabilities),
+            new WingetInstallHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, _capabilities, _machine.WingetLocator),
+            new CapabilitiesHandler(_vision, Power, () => _tray.Pipe, _channel.TrySendAsync, LocalAudit.Write, _exam.EndIfCapabilityOffAsync, _capabilities,
+                _peerCache),
             new VisionHandler(_vision, _gate, () => _tray.Pipe, _capabilities),
             _exam,
             _files,
@@ -682,15 +695,15 @@ namespace POpsAgent
         // eş önbelleği sunulmaz; değişiklikten sonra arka planda yeniden denetlenir (bkz. PeerCache).
         private async Task<bool> EnableNetworkIsolationAsync()
         {
-            bool applied = await NetworkIsolation.EnableAsync(_serverUrl, _isolationState);
-            _ = Task.Run(PeerCache.SyncAsync);
+            bool applied = await Isolation.EnableAsync(_serverUrl);
+            _ = Task.Run(_peerCache.SyncAsync);
             return applied;
         }
 
         private async Task<bool> DisableNetworkIsolationAsync()
         {
-            bool removed = await NetworkIsolation.DisableAsync(_isolationState);
-            _ = Task.Run(PeerCache.SyncAsync);
+            bool removed = await Isolation.DisableAsync();
+            _ = Task.Run(_peerCache.SyncAsync);
             return removed;
         }
 
@@ -699,7 +712,7 @@ namespace POpsAgent
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
             await base.StopAsync(cancellationToken);
-            await PeerCache.ShutdownAsync();
+            await _peerCache.ShutdownAsync();
         }
     }
 }

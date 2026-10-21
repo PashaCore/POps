@@ -19,12 +19,15 @@ namespace POpsAgent
         private readonly Action<string> _toTray;
         private readonly Action<LocalAuditEvent> _audit;
         private readonly CapabilityState _capabilities;
+        private readonly FileTransfer _transfer;
 
         // send: komut kanalına gönderim; toTray: tepsiye mesaj. Kimlik set_identity ile değişir, gönderim ve tepsi
-        // testlerde sahteleriyle değiştirilir: her kullanımda okunur. capabilities: bağlamın yetenek durumu
+        // testlerde sahteleriyle değiştirilir: her kullanımda okunur. capabilities: bağlamın yetenek durumu; transfer: indirme,
+        // yükleme ve hedef klasörler (bkz. FileTransfer)
         public FileTransferHandler(CapabilityGate gate, string serverUrl, Func<string> hwId, Func<object, Task<bool>> send,
-            Action<string> toTray, Action<LocalAuditEvent> audit, CapabilityState capabilities)
+            Action<string> toTray, Action<LocalAuditEvent> audit, CapabilityState capabilities, FileTransfer transfer)
         {
+            _transfer = transfer ?? throw new ArgumentNullException(nameof(transfer));
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _serverUrl = serverUrl;
             _hwId = hwId ?? throw new ArgumentNullException(nameof(hwId));
@@ -64,7 +67,7 @@ namespace POpsAgent
                 }
                 FileTransferTask = Task.Run(async () =>
                 {
-                    var (outcome, path, detail) = await FileTransfer.PushAsync(push, _hwId(), DateTime.Now, token);
+                    var (outcome, path, detail) = await _transfer.PushAsync(push, _hwId(), DateTime.Now, token);
                     if (outcome == "done")
                     {
                         _audit(LocalAudit.FilePushed(push.TransferId, path, push.Size, push.Sha256, push.Reason));
@@ -84,7 +87,7 @@ namespace POpsAgent
             }
             FileTransferTask = Task.Run(async () =>
             {
-                var (outcome, path, detail, size) = await FileTransfer.PullAsync(pull, _hwId(), token);
+                var (outcome, path, detail, size) = await _transfer.PullAsync(pull, _hwId(), token);
                 if (outcome == "done")
                 {
                     _audit(LocalAudit.FilePulled(pull.TransferId, path, size, pull.Reason));
@@ -96,7 +99,8 @@ namespace POpsAgent
             }, CancellationToken.None);
         }
 
-        // Testler: son başlatılan aktarım
+        // Testler: son başlatılan aktarım ve aktarımın kendisi (hedef klasörler)
         internal Task FileTransferTask { get; private set; } = Task.CompletedTask;
+        internal FileTransfer Transfer => _transfer;
     }
 }

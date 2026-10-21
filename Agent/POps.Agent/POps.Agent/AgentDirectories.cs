@@ -14,13 +14,12 @@ namespace POpsAgent
     internal static class AgentDirectories
     {
         // secure: seçilen klasörler oluşturulur ve kilitlenir (servis). --generalize yalnızca yolları kullanır.
-        // configPaths: ayarın arandığı dosyalar (null: POpsHelpers.ConfigPaths). Testler kuralları ve varsayılan klasörleri
-        // geçici klasörlere çevirir. Dönen: seçilen klasörler (log satırları için) ve ajanın yolları.
-        internal static (FolderSettings Folders, AgentPaths Paths) Apply(bool secure, FolderRules? rules = null,
-            string defaultData = FolderSettings.DefaultDataDirectory, string defaultLog = FolderSettings.DefaultLogDirectory,
-            IReadOnlyList<string>? configPaths = null)
+        // configPaths: ayarın arandığı dosyalar (servis: POpsHelpers.DefaultConfigPaths). Testler ayar dosyalarını, kuralları ve
+        // varsayılan klasörleri geçici klasörlere çevirir. Dönen: seçilen klasörler (log satırları için) ve ajanın yolları.
+        internal static (FolderSettings Folders, AgentPaths Paths) Apply(bool secure, IReadOnlyList<string> configPaths, FolderRules? rules = null,
+            string defaultData = FolderSettings.DefaultDataDirectory, string defaultLog = FolderSettings.DefaultLogDirectory)
         {
-            configPaths ??= POpsHelpers.ConfigPaths;
+            ArgumentNullException.ThrowIfNull(configPaths);
             string? data = POpsHelpers.ReadConfigText(FolderSettings.DataDirectoryKey, configPaths, out string? dataProblem);
             string? log = POpsHelpers.ReadConfigText(FolderSettings.LogDirectoryKey, configPaths, out string? logProblem);
             FolderSettings folders = FolderSettings.Resolve(data, log, rules ?? FolderRules.ForMachine(AppContext.BaseDirectory), true, defaultData, defaultLog);
@@ -28,18 +27,14 @@ namespace POpsAgent
             if (logProblem != null) folders.Problems.Add($"{logProblem}; varsayılan {defaultLog} kullanılıyor");
             if (secure) folders.SecureCustom();
             AgentPaths paths = AgentPaths.ForFolders(folders.DataDirectory, folders.LogDirectory, configPaths, folders.Problem);
-            Use(paths);
             return (folders, paths);
         }
 
-        // Süreç geneli değerler aynı klasörlere: SYSTEM bileşenlerinin log klasörü (POpsHelpers.Log; süreç başına bir kez) ve
-        // Worker bölmesinin b3 adımına kadar statik kalan yollar (AgentUpdate.DataDir, SecureStore.Dir; onları kullanan kod:
-        // bkz. her birinin açıklaması). Kurum sertifikasının yolu bağlamın ServerTrust'ındadır (bkz. Program).
+        // Süreç geneli tek değer seçilen klasöre: SYSTEM bileşenlerinin log klasörü (POpsHelpers.Log; Program bir kez, ilk log
+        // satırından önce çağırır). Diğer yollar bağlamın AgentPaths'indedir (bkz. Program).
         internal static void Use(AgentPaths paths)
         {
             POpsHelpers.MachineLogDir = paths.LogDir;
-            AgentUpdate.DataDir = paths.DataDir;
-            SecureStore.Dir = paths.SecureDir;
         }
 
         // Açılışta: seçilen klasörler (varsayılan değilse) ve daraltılan izinler

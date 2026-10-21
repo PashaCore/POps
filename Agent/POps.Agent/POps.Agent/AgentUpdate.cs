@@ -32,30 +32,8 @@ namespace POpsAgent
     {
         // Yollar AgentPaths'ten gelir (veri klasörü appsettings.json "DataDirectory"; servis açılışta seçer, bkz.
         // AgentDirectories): Program ve Worker'ın kurduğu servisler (UpdateHandler, UpdateReporter, UserSessionApps)
-        // aşağıdaki işlevlerin AgentPaths alan biçimlerini çağırır. Kurulu sürüme ya da süren güncellemeye bağlı işler
-        // (health.json, tatbikat, update_agent, sonucun denetim kaydı) bağlamın AgentUpdater örneğindedir.
-        //
-        // Süreç varsayılanı: servis açılışta DataDir'i AgentPaths.DataDir'e çevirir (bkz. AgentDirectories.Use). DataDir'i
-        // eş önbelleği ve dosya aktarımı (Worker bölmesinin b3 adımı), ondan türeyen yolları ve AgentPaths almayan
-        // biçimleri yalnızca AgentUpdate'i ve güncellemeyi sınayan testler kullanır; b3 adımı bu bölümü kaldırır.
-        public static string DataDir { get; set; } = FolderSettings.DefaultDataDirectory;
-        private static AgentPaths ProcessPaths => AgentPaths.ForFolders(DataDir, POpsHelpers.MachineLogDir, POpsHelpers.ConfigPaths);
-        public static string UpdatesDir => ProcessPaths.UpdatesDir;
-        public static string UpdaterDir => ProcessPaths.UpdaterDir;
-        public static string LockPath => ProcessPaths.UpdateLockPath;
-        public static string HealthPath => ProcessPaths.HealthPath;
-        public static string ResultPath => ProcessPaths.UpdateResultPath;
-        public static string IdentityPath => ProcessPaths.IdentityPath;
-        // Updater'ın yazdığı kurulum aşaması (bkz. POps.Shared.UpdateProgressFile)
-        public static string ProgressPath => ProcessPaths.UpdateProgressPath;
-        public static string ReportedResultPath => ProcessPaths.ReportedResultPath;
-        public static string RollbackDrillPath => ProcessPaths.RollbackDrillPath;
-        public static bool RollbackDrillRequested() => RollbackDrillRequested(ProcessPaths);
-        public static string PendingResultId() => PendingResultId(ProcessPaths);
-        public static Dictionary<string, object> PendingResultMessage() => PendingResultMessage(ProcessPaths);
-        public static void MarkResultReported() => MarkResultReported(ProcessPaths);
-        public static void CleanupStaleProgress() => CleanupStaleProgress(ProcessPaths);
-        public static bool IsLockFresh() => IsLockFresh(ProcessPaths);
+        // aşağıdaki işlevleri bağlamın AgentPaths'iyle çağırır. Kurulu sürüme ya da süren güncellemeye bağlı işler
+        // (health.json, tatbikat, update_agent, eş önbelleği, BITS, sonucun denetim kaydı) bağlamın AgentUpdater örneğindedir.
 
         internal static readonly Regex MsiNameRegex = new Regex(@"^POps-Agent-[A-Za-z0-9._-]+-win-x64\.msi$", RegexOptions.Compiled);
         internal static readonly Regex Sha256HexRegex = new Regex("^[0-9a-f]{64}$", RegexOptions.Compiled);
@@ -253,9 +231,10 @@ namespace POpsAgent
         public const string SourcePeerPrefix = "peer ";
 
         // Kaynak sırası: aynı paket yerel önbellekte (önceki bir çalışmada doğrulanmış), emirdeki eşler, sunucu (BITS, sonra
-        // HttpClient). Her kaynak imzalı manifest'teki boyut ve SHA-256'yla denetlenir.
-        internal static async Task<bool> DownloadVerifiedAsync(HttpClient http, string url, string path, ReleaseVerifier.Artifact expected,
-            UpdateCommand update = null, IReadOnlyList<PeerDownload.Peer> peers = null)
+        // HttpClient). Her kaynak imzalı manifest'teki boyut ve SHA-256'yla denetlenir. cache, peerDownload, bits: ajanın
+        // güncelleme durumunun parçaları (bkz. AgentUpdater.DownloadVerifiedAsync)
+        internal static async Task<bool> DownloadVerifiedAsync(PeerCache cache, PeerDownload peerDownload, BitsDownload bits, HttpClient http,
+            string url, string path, ReleaseVerifier.Artifact expected, UpdateCommand update = null, IReadOnlyList<PeerDownload.Peer> peers = null)
         {
             void Reject(string reason)
             {
@@ -266,15 +245,15 @@ namespace POpsAgent
             string local = path + ".peer";
             TryDelete(local);
             string source = null;
-            if (await PeerCache.TryCopyToAsync(expected.Sha256, local))
+            if (await cache.TryCopyToAsync(expected.Sha256, local))
             {
                 if (Matches(local, expected)) source = SourceCache;
                 else POpsHelpers.Log("UPDATE", "Önbellekteki paket imzalı manifest'le uyuşmadı; indiriliyor.", true);
             }
-            if (source == null && AgentCapabilities.PeerCacheEnabled)
+            if (source == null && cache.Enabled)
             {
                 TryDelete(local);
-                PeerDownload.Peer peer = await PeerDownload.DownloadAsync(peers, expected, local);
+                PeerDownload.Peer peer = await peerDownload.DownloadAsync(peers, expected, local);
                 if (peer != null) source = SourcePeerPrefix + peer.HwId;
             }
             if (source != null)
@@ -292,13 +271,13 @@ namespace POpsAgent
 
             // BITS: ağ kesintisinde ve yeniden başlatmada kaldığı yerden sürer (bkz. BitsDownload); kullanılamazsa doğrudan
             string bitsTarget = path + ".bits";
-            BitsDownload.Outcome bits = await BitsDownload.DownloadAsync(url, bitsTarget, expected.Sha256);
-            if (bits == BitsDownload.Outcome.Pending)
+            BitsDownload.Outcome outcome = await bits.DownloadAsync(url, bitsTarget, expected.Sha256);
+            if (outcome == BitsDownload.Outcome.Pending)
             {
                 Reject($"paket indirmesi BITS ile sürüyor ({BitsDownload.Timeout.TotalMinutes:0} dk içinde bitmedi); güncellemeyi yeniden gönderin, kaldığı yerden devam eder");
                 return false;
             }
-            if (bits == BitsDownload.Outcome.Done)
+            if (outcome == BitsDownload.Outcome.Done)
             {
                 (long size, byte[] digest) = HashFile(bitsTarget);
                 return await AcceptAsync(bitsTarget, size, digest);
@@ -446,9 +425,14 @@ namespace POpsAgent
         }
     }
 
+    // Updater'ın başlatılması (bkz. AgentUpdater.StartUpdater; makine kapısı, MachineSeams.LaunchUpdater): servisin klasörleri,
+    // kurulu sürüm, doğrulanmış paket, SHA-256'sı ve hedef sürüm; başlatılamazsa nedeni reject'e. Dönen: başlatıldı mı
+    public delegate bool UpdaterLaunch(AgentPaths paths, string fromVersion, string package, string sha256, string toVersion, Action<string> reject);
+
     // Bir ajanın güncelleme durumu (bkz. AgentUpdate): kurulu sürüm, manifest'i doğrulayan anahtar, updater'ın başlatılması,
-    // hazırlanan güncelleme (aynı anda tek emir) ve sonucun denetim kaydı. Servis için Program bir kez, host kurulmadan önce
-    // kurar (tatbikat kararı açılışın başında alınır); testler sürümü, anahtarı ve başlatıcıyı kurucuda verir.
+    // hazırlanan güncelleme (aynı anda tek emir), eş önbelleği, eşlerden ve BITS ile indirme ve sonucun denetim kaydı. Servis
+    // için Program bir kez, host kurulmadan önce kurar (tatbikat kararı açılışın başında alınır); testler sürümü, anahtarı ve
+    // başlatıcıyı kurucuda verir.
     [SupportedOSPlatform("windows")]
     public sealed class AgentUpdater
     {
@@ -457,20 +441,41 @@ namespace POpsAgent
         private readonly string _installedVersion;
         private readonly string _trustedKey;
         private readonly Func<string, string, string, bool> _launch;
+        private readonly UpdaterLaunch _launchUpdater;
         private int _busy;
         // Hazırlanmakta olan güncellemenin sürümü (manifest doğrulandıktan sonra; ignored_busy'de bildirilir)
         private volatile string _preparingVersion;
 
-        // installedVersion: kurulu sürüm (null: bu derlemenin sürümü); trustedKey: manifest'i doğrulayan ed25519 anahtarı (null:
-        // gömülü anahtar, ReleaseVerifier.PublicKeyBase64); launch: updater'ın başlatılması (paket, SHA-256, hedef sürüm;
-        // dönen: başlatıldı mı; null: POpsUpdater kopyalanıp başlatılır). Sürüm, anahtar ve başlatıcıyı testler verir.
-        public AgentUpdater(AgentPaths paths, string installedVersion = null, string trustedKey = null, Func<string, string, string, bool> launch = null)
+        // capabilities: bağlamın yetenek durumu (peer_cache_enabled); machine: eş önbelleğinin güvenlik duvarı kuralı ve dinlediği
+        // adres, BITS ve updater'ın başlatılması (bkz. MachineSeams). installedVersion: kurulu sürüm (null: bu derlemenin
+        // sürümü); trustedKey: manifest'i doğrulayan ed25519 anahtarı (null: gömülü anahtar, ReleaseVerifier.PublicKeyBase64);
+        // launch: updater'ın başlatılması (paket, SHA-256, hedef sürüm; dönen: başlatıldı mı; null: makine kapısı). Sürüm,
+        // anahtar ve başlatıcıyı testler verir.
+        public AgentUpdater(AgentPaths paths, CapabilityState capabilities, MachineSeams machine, string installedVersion = null, string trustedKey = null,
+            Func<string, string, string, bool> launch = null)
         {
             _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+            ArgumentNullException.ThrowIfNull(machine);
             _installedVersion = installedVersion;
             _trustedKey = trustedKey;
             _launch = launch;
+            _launchUpdater = machine.LaunchUpdater;
+            PeerCache = new PeerCache(paths, capabilities, machine.PeerCacheFirewall, machine.PeerCacheEndpoint);
+            PeerDownload = new PeerDownload(address => PeerCache.IsLocalSubnet(address));
+            Bits = new BitsDownload(machine.Bits);
         }
+
+        // Laboratuvar eş önbelleği: doğrulanmış paketi eşlere sunar (bkz. PeerCache); Worker dakikalık denetimi ve kapanışı yapar
+        public PeerCache PeerCache { get; }
+        // Emirdeki eşlerden indirme (bkz. PeerDownload) ve BITS (bkz. BitsDownload)
+        internal PeerDownload PeerDownload { get; }
+        internal BitsDownload Bits { get; }
+        internal UpdaterLaunch LaunchUpdater => _launchUpdater;
+
+        // Paketin indirilmesi ve imzalı manifest'le denetimi (bkz. AgentUpdate.DownloadVerifiedAsync)
+        internal Task<bool> DownloadVerifiedAsync(HttpClient http, string url, string path, ReleaseVerifier.Artifact expected,
+            AgentUpdate.UpdateCommand update = null, IReadOnlyList<PeerDownload.Peer> peers = null) =>
+            AgentUpdate.DownloadVerifiedAsync(PeerCache, PeerDownload, Bits, http, url, path, expected, update, peers);
 
         // Ajanın kendi sürümü, manifest ve VERSION dosyasındaki biçimde ("0.1.2-alpha")
         public string InstalledVersion => _installedVersion ?? POpsHelpers.AppVersion.TrimStart('v');
@@ -615,7 +620,7 @@ namespace POpsAgent
                 // yalnızca yetenek açıkken ve karantina / sınav modu yokken denenir.
                 bool keepForPeers = PeerCache.Requested(command);
                 await PeerCache.OnUpdateStartingAsync(msi.Sha256, keepForPeers);
-                List<PeerDownload.Peer> peers = AgentCapabilities.PeerCacheEnabled && !PeerCache.IsIsolated()
+                List<PeerDownload.Peer> peers = PeerCache.Enabled && !PeerCache.IsIsolated()
                     ? PeerDownload.Parse(command, msi.Sha256)
                     : new List<PeerDownload.Peer>();
 
@@ -623,13 +628,13 @@ namespace POpsAgent
                 foreach (string old in Directory.GetFiles(_paths.UpdatesDir)) AgentUpdate.TryDelete(old);
                 packagePath = Path.Combine(_paths.UpdatesDir, msi.Name);
                 string url = $"{serverUrl.TrimEnd('/')}/updates/{Uri.EscapeDataString(msi.Name)}";
-                if (!await AgentUpdate.DownloadVerifiedAsync(http, url, packagePath, msi, update, peers)) return;
+                if (!await DownloadVerifiedAsync(http, url, packagePath, msi, update, peers)) return;
                 // Doğrulanmış paketin kopyası, sunucu istediyse eşler için saklanır (paket updater için yerinde kalır)
                 if (keepForPeers) await PeerCache.StoreAsync(packagePath, msi.Sha256, msi.Size);
 
                 launched = _launch != null
                     ? _launch(packagePath, msi.Sha256, manifest.Version)
-                    : LaunchUpdater(packagePath, msi.Sha256, manifest.Version, update);
+                    : _launchUpdater(_paths, InstalledVersion, packagePath, msi.Sha256, manifest.Version, update.Reject);
                 if (launched) await update.StageAsync("updater_started");
             }
             catch (Exception ex)
@@ -646,34 +651,36 @@ namespace POpsAgent
             }
         }
 
-        private bool LaunchUpdater(string msiPath, string sha256, string toVersion, AgentUpdate.UpdateCommand update)
+        // Servisin updater başlatıcısı (yalnızca MachineSeams.Production kurar): POpsUpdater kurulum klasörünün dışına kopyalanır,
+        // update.lock yazılır, updater başlatılır
+        internal static bool StartUpdater(AgentPaths paths, string fromVersion, string msiPath, string sha256, string toVersion, Action<string> reject)
         {
             string installDir = AppContext.BaseDirectory.TrimEnd('\\');
             string[] files;
             try { files = AgentUpdate.UpdaterFiles(installDir).ToArray(); }
             catch (Exception ex) when (ex is FileNotFoundException || ex is JsonException || ex is InvalidDataException)
             {
-                update.Reject($"POpsUpdater kopyalanamıyor: {ex.Message}");
+                reject($"POpsUpdater kopyalanamıyor: {ex.Message}");
                 return false;
             }
 
-            if (Directory.Exists(_paths.UpdaterDir)) Directory.Delete(_paths.UpdaterDir, true);
-            Directory.CreateDirectory(_paths.UpdaterDir);
-            foreach (string f in files) File.Copy(f, Path.Combine(_paths.UpdaterDir, Path.GetFileName(f)), true);
+            if (Directory.Exists(paths.UpdaterDir)) Directory.Delete(paths.UpdaterDir, true);
+            Directory.CreateDirectory(paths.UpdaterDir);
+            foreach (string f in files) File.Copy(f, Path.Combine(paths.UpdaterDir, Path.GetFileName(f)), true);
 
-            AgentUpdate.WriteAtomic(_paths.UpdateLockPath, JsonSerializer.Serialize(new { from_version = InstalledVersion, to_version = toVersion, started_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
+            AgentUpdate.WriteAtomic(paths.UpdateLockPath, JsonSerializer.Serialize(new { from_version = fromVersion, to_version = toVersion, started_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
             try
             {
-                var psi = new ProcessStartInfo(Path.Combine(_paths.UpdaterDir, "POpsUpdater.exe"))
+                var psi = new ProcessStartInfo(Path.Combine(paths.UpdaterDir, "POpsUpdater.exe"))
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    WorkingDirectory = _paths.UpdaterDir,
+                    WorkingDirectory = paths.UpdaterDir,
                 };
-                foreach (string arg in new[] { "--msi", msiPath, "--sha256", sha256, "--from", InstalledVersion, "--to", toVersion, "--installdir", installDir })
+                foreach (string arg in new[] { "--msi", msiPath, "--sha256", sha256, "--from", fromVersion, "--to", toVersion, "--installdir", installDir })
                     psi.ArgumentList.Add(arg);
                 // Servisin kullandığı veri ve log klasörleri (updater appsettings.json'u okumaz; bkz. AgentDirectories)
-                foreach (string arg in _paths.UpdaterArguments()) psi.ArgumentList.Add(arg);
+                foreach (string arg in paths.UpdaterArguments()) psi.ArgumentList.Add(arg);
 
                 using Process updater = Process.Start(psi) ?? throw new InvalidOperationException("süreç başlatılamadı");
                 POpsHelpers.Log("UPDATE", $"POpsUpdater başlatıldı (PID {updater.Id}); servis kurulum sırasında durup yeni sürümle açılacak.");
@@ -681,7 +688,7 @@ namespace POpsAgent
             }
             catch
             {
-                AgentUpdate.TryDelete(_paths.UpdateLockPath);
+                AgentUpdate.TryDelete(paths.UpdateLockPath);
                 throw;
             }
         }

@@ -24,9 +24,12 @@ namespace POpsAgent
         internal const string InboxFolder = "inbox";
         internal const string PeerCacheFolder = "cache";
 
-        // folderProblem: klasör ayarının sorunu (varsayılan klasör kullanılıyor); null: sorun yok
+        private readonly string? _taskDir;
+
+        // folderProblem: klasör ayarının sorunu (varsayılan klasör kullanılıyor); null: sorun yok. taskDir: uzaktan komutların
+        // görev dosyaları (null: servisin geçici klasörü, Path.GetTempPath(); testler kendi klasörlerini verir)
         public AgentPaths(string dataDir, string secureDir, string logDir, IReadOnlyList<string> configPaths, string serverCaPath,
-            string? folderProblem = null)
+            string? folderProblem = null, string? taskDir = null)
         {
             DataDir = dataDir ?? throw new ArgumentNullException(nameof(dataDir));
             SecureDir = secureDir ?? throw new ArgumentNullException(nameof(secureDir));
@@ -34,6 +37,7 @@ namespace POpsAgent
             ConfigPaths = configPaths ?? throw new ArgumentNullException(nameof(configPaths));
             ServerCaPath = serverCaPath ?? throw new ArgumentNullException(nameof(serverCaPath));
             FolderProblem = folderProblem;
+            _taskDir = taskDir;
         }
 
         // Servisin yerleşimi: güvenli depo ve kurum sertifikası veri klasörünün içinde
@@ -49,6 +53,8 @@ namespace POpsAgent
         public string ServerCaPath { get; }
         // LogDirectory / DataDirectory geçersiz ya da kilitlenemedi (varsayılan klasör kullanılıyor); null: sorun yok
         public string? FolderProblem { get; }
+        // Uzaktan komutların pops_task_*.bat dosyaları (bkz. CommandRunner); servis her okumada Path.GetTempPath()
+        public string TaskDir => _taskDir ?? Path.GetTempPath();
 
         public string DataFile(string name) => Path.Combine(DataDir, name);
         public string SecureFile(string name) => Path.Combine(SecureDir, name);
@@ -66,7 +72,7 @@ namespace POpsAgent
         // Geri dönüş tatbikatının işareti ve tüketilmiş hâli (güvenli depoda)
         public string RollbackDrillPath => SecureFile(RollbackDrill.MarkerFileName);
         public string ConsumedDrillPath => SecureFile(RollbackDrill.ConsumedFileName);
-        // Dosya aktarımının gelen kutusu ve eş önbelleği (FileTransfer ve PeerCache b3'e kadar AgentUpdate.DataDir'den kurar)
+        // Dosya aktarımının gelen kutusu ve eş önbelleği (bkz. FileTransfer, PeerCache)
         public string InboxDir => DataFile(InboxFolder);
         public string PeerCacheDir => DataFile(PeerCacheFolder);
 

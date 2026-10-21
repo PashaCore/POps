@@ -15,23 +15,21 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Sunucu modülleri (0.1.15): politika yanıtındaki "modules" bellekte tutulur; etkin = sunucuda açık VE yerelde izinli
-    [Collection(SharedStateCollection.Name)]
-    public class ModulesTests : SharedStateTestBase, IDisposable
+    // Machine: uzaktan komutlar gerçek cmd.exe ile çalışır; Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class ModulesTests : TestBase, IDisposable
     {
         private const string Secret = "modules-secret-0123456789abcdefghijkl";
         private readonly Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();
-        private readonly HttpClient _client = AgentHttp.Default.Client;
         // Worker'ın bağlamı (sunucu modülleri dahil)
         private readonly AgentHarness _agent;
 
         public ModulesTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("modules-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("modules-data");
-            AgentCapabilities.Load();   // dosya yok: terminal ve Vision yerelde açık
-            AgentCredentials.SaveSecret(Secret, "HW-MOD");
-            _agent = AgentHarness.FromStatics();
+            _agent = AgentHarness.Create("modules");
+            _agent.Capabilities.Load();   // dosya yok: terminal ve Vision yerelde açık
+            _agent.Credentials.SaveSecret(Secret, "HW-MOD");
             _worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-MOD",
@@ -47,10 +45,7 @@ namespace POps.Tests.Agent
         public void Dispose()
         {
             _worker.Dispose();
-            AgentHttp.Default.Client = _client;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentCapabilities.Load();
+            _agent.Dispose();
         }
 
         private sealed class Handler : HttpMessageHandler
@@ -105,7 +100,7 @@ namespace POps.Tests.Agent
         public async Task PolicyRequest_CarriesTheDeviceKey_AndAppliesModules()
         {
             var handler = new Handler { Body = Policy(("terminal", false), ("vision", true)) };
-            AgentHttp.Default.Client = new HttpClient(handler);
+            _agent.Http.Client = new HttpClient(handler);
 
             string json = await _worker.FetchPolicyJsonAsync(CancellationToken.None);
             Assert.Equal(HttpMethod.Get, handler.Seen.Method);
@@ -298,16 +293,16 @@ namespace POps.Tests.Agent
         [Fact]
         public void ClosedModules_NeverTouchCapabilitiesJson()
         {
-            string path = SecureStore.PathOf(AgentCapabilities.FileName);
+            string path = _agent.Paths.SecureFile(AgentCapabilities.FileName);
             Assert.False(File.Exists(path));
             Close(AllModules);
             Assert.False(File.Exists(path));
-            Assert.True(AgentCapabilities.TerminalEnabled);
-            Assert.True(AgentCapabilities.VisionEnabled);
+            Assert.True(_agent.Capabilities.TerminalEnabled);
+            Assert.True(_agent.Capabilities.VisionEnabled);
 
             // Yerel kilit varken de dosya yalnızca yerel kilitle değişir
             SecureStore.WriteProtected(path, "{\"terminal_enabled\":false,\"vision_enabled\":true}");
-            AgentCapabilities.Load();
+            _agent.Capabilities.Load();
             byte[] before = File.ReadAllBytes(path);
             DateTime written = File.GetLastWriteTimeUtc(path);
             OpenAll();
@@ -315,7 +310,7 @@ namespace POps.Tests.Agent
             OpenAll();
             Assert.Equal(before, File.ReadAllBytes(path));
             Assert.Equal(written, File.GetLastWriteTimeUtc(path));
-            Assert.False(AgentCapabilities.TerminalEnabled);
+            Assert.False(_agent.Capabilities.TerminalEnabled);
         }
 
         [Fact]

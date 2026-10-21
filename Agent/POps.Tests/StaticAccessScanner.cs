@@ -111,7 +111,7 @@ namespace POps.Tests
 
         // Test sınıfının ve iç içe türlerinin (lambda kapanışları, durum makineleri, yardımcı sınıflar) bütün yöntemlerinden
         // başlayarak ulaşılan değişebilir statikler ve makine kaynakları; her (üye, tür, erişen yöntem) için en kısa yol.
-        // skip: içine inilmeyen yöntemler (ör. SharedStateTestBase'in kurucusu: EnsureIsolated sınıfın kendi erişimi değildir)
+        // skip: içine inilmeyen yöntemler (ör. SharedStateTestBase'in kurucusu: sınıfın kendi erişimi değildir)
         public static List<Finding> Scan(Type testClass, Func<MethodBase, bool> skip = null)
         {
             HashSet<(Guid, int)> mutable = MutableFields();
@@ -149,6 +149,37 @@ namespace POps.Tests
             }
             return findings.Values.OrderBy(f => f.Kind).ThenBy(f => f.Member, StringComparer.Ordinal).ThenBy(f => f.At, StringComparer.Ordinal).ToList();
         }
+
+        // Türden (iç içe türleriyle) başlayarak ulaşılan yöntemler arasında targets'tan biri varsa ona giden en kısa yol, yoksa
+        // null. İzleme Scan'inkiyle aynıdır (çağrılar, lambda'lar, durum makineleri; arayüz ve sanal çağrılar izlenmez).
+        public static string PathToAny(Type type, IEnumerable<MethodBase> targets)
+        {
+            var wanted = new HashSet<(Guid, int)>(targets.Select(Key));
+            var parent = new Dictionary<(Guid, int), MethodBase>();
+            var queue = new Queue<MethodBase>();
+            foreach (Type t in WithNested(type))
+                foreach (MethodBase root in DeclaredMethods(t))
+                    if (!parent.ContainsKey(Key(root)))
+                    {
+                        parent.Add(Key(root), null);
+                        queue.Enqueue(root);
+                    }
+            while (queue.Count > 0)
+            {
+                MethodBase method = queue.Dequeue();
+                if (wanted.Contains(Key(method))) return PathTo(method, parent);
+                foreach (MethodBase callee in Summarize(method).Callees)
+                    if (!parent.ContainsKey(Key(callee)))
+                    {
+                        parent.Add(Key(callee), method);
+                        queue.Enqueue(callee);
+                    }
+            }
+            return null;
+        }
+
+        // Yöntemin kendi gövdesinde çağırdığı, kurduğu ya da temsilcisini aldığı (taranan derlemelerdeki) yöntemler
+        public static IReadOnlyList<MethodBase> DirectCallees(MethodBase method) => Summarize(method).Callees;
 
         // Taranan derlemelerin bütün yöntemlerinde statik kurucu dışında yazılan alanlar ve içeriği değiştirilen koleksiyonlar.
         // Otomatik özelliğin set erişimcisi alanı yazar ama özellik ancak biri o erişimciyi çağırırsa değişir: hiç
@@ -357,7 +388,8 @@ namespace POps.Tests
             string shortName = declaring.Name + "." + callee.Name;
             if (ProcessWideWrites.Any(w => w.Type == typeName && w.Method == callee.Name)) summary.Calls.Add((shortName, Kind.Write));
             if (MachineCalls.Any(m => m.Type == typeName && m.Method == callee.Name)) summary.Calls.Add((shortName, Kind.Machine));
-            if (IsScanned(callee.Module.Assembly))
+            // Kapsam ölçümünün sayaç çağrıları (RecordHit) izlenmez: her yönteme eklenir, testlerin durumu değildir
+            if (IsScanned(callee.Module.Assembly) && !IsCoverageTracker(declaring))
             {
                 // Genel (generic) türlerin ve yöntemlerin tanımına inilir: gövde ve anahtar aynıdır
                 MethodBase definition = Resolve(() => callee.Module.ResolveMethod(callee.MetadataToken));
@@ -433,7 +465,7 @@ namespace POps.Tests
             return false;
         }
 
-        // Otomatik özelliğin alanı özelliğin adıyla yazılır: "<Dir>k__BackingField" -> "SecureStore.Dir"
+        // Otomatik özelliğin alanı özelliğin adıyla yazılır: "<SystemSid>k__BackingField" -> "SecureStore.SystemSid"
         private static string MemberName(FieldInfo field)
         {
             string name = field.Name;

@@ -34,6 +34,8 @@ namespace POpsAgent
         private PatchStatusPayload _lastStatus;
         private readonly ModuleState _modules;
         private readonly AgentHttp _http;
+        // Windows Update Agent çağrıları (tarama, kurma; bkz. WindowsUpdateAgent)
+        private readonly WindowsUpdateAgent _wua = new WindowsUpdateAgent();
 
         // paths: gönderilemeyen durumun dosyası (<veri klasörü>\patch-scan.json); modules, http: bağlamın sunucu modülleri
         // ve HTTP istemcisi
@@ -129,7 +131,7 @@ namespace POpsAgent
                 status = await RunOnWuaThread<PatchStatusPayload>(() =>
                 {
                     dynamic session = WindowsUpdateAgent.NewSession();
-                    WindowsUpdateAgent.Scan scan = WindowsUpdateAgent.Search(session, ScanTimeout);
+                    WindowsUpdateAgent.Scan scan = _wua.Search(session, ScanTimeout);
                     return (PatchStatusPayload)StatusOf(session, scan, lastResult);
                 });
             }
@@ -152,7 +154,7 @@ namespace POpsAgent
                 status = await RunOnWuaThread<PatchStatusPayload>(() =>
                 {
                     dynamic session = WindowsUpdateAgent.NewSession();
-                    WindowsUpdateAgent.Scan scan = WindowsUpdateAgent.Search(session, ScanTimeout);
+                    WindowsUpdateAgent.Scan scan = _wua.Search(session, ScanTimeout);
                     List<int> selected = PatchClassifier.SelectForInstall(scan.Pending, scope);
                     string summary;
                     if (selected.Count == 0) summary = PatchClassifier.Summarize(0, null, 0, WindowsUpdateAgent.RebootRequired());
@@ -160,7 +162,7 @@ namespace POpsAgent
                     {
                         try
                         {
-                            WindowsUpdateAgent.InstallOutcome outcome = WindowsUpdateAgent.Install(session, scan, selected, WindowsUpdateAgent.InstallTimeout);
+                            WindowsUpdateAgent.InstallOutcome outcome = _wua.Install(session, scan, selected, WindowsUpdateAgent.InstallTimeout);
                             summary = PatchClassifier.Summarize(outcome.Installed, outcome.Failed, outcome.Skipped, outcome.RebootRequired || WindowsUpdateAgent.RebootRequired(), outcome.TimedOut);
                         }
                         catch (Exception ex)
@@ -174,7 +176,7 @@ namespace POpsAgent
                     try
                     {
                         dynamic after = WindowsUpdateAgent.NewSession();
-                        return (PatchStatusPayload)StatusOf(after, (WindowsUpdateAgent.Scan)WindowsUpdateAgent.Search(after, ScanTimeout), summary);
+                        return (PatchStatusPayload)StatusOf(after, (WindowsUpdateAgent.Scan)_wua.Search(after, ScanTimeout), summary);
                     }
                     catch (Exception ex)
                     {

@@ -5,8 +5,9 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    [Collection(SharedStateCollection.Name)]
-    public class AgentHealthTelemetryTests : SharedStateTestBase
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class AgentHealthTelemetryTests : TestBase
     {
         [Fact]
         public void ErrorCounter_UsesASlidingOneHourWindow()
@@ -60,7 +61,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void Heartbeat_ContainsTheHealthContract()
         {
-            using var worker = new Worker(Microsoft.Extensions.Logging.Abstractions.NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context);
+            using var worker = new Worker(Microsoft.Extensions.Logging.Abstractions.NullLogger<Worker>.Instance, AgentHarness.Create().Context);
             JsonElement health = JsonSerializer.SerializeToElement(worker.HeartbeatPayload()).GetProperty("agent_health");
 
             Assert.Equal(JsonValueKind.Number, health.GetProperty("started_at").ValueKind);

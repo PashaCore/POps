@@ -92,31 +92,34 @@ namespace POpsAgent
         // tepsi -> servis: "USER_MESSAGE_ACK:<task_id>"
         public const string AckPrefix = "USER_MESSAGE_ACK:";
 
-        // Okundu onayı en çok bu kadar beklenir
-        internal static TimeSpan AckTimeout { get; set; } = TimeSpan.FromMinutes(30);
-
         private readonly Func<int, string, int, Task> _sendResult;
         private readonly Func<int, Task> _deny;
         private readonly Action<string> _toTray;
         private readonly Func<bool> _trayConnected;
         private readonly CapabilityState _capabilities;
+        // Etkin konsol oturumunda oturum açmış kullanıcı var mı (bkz. MachineSeams.HasConsoleUser)
+        private readonly Func<bool> _hasConsoleUser;
         private readonly object _gate = new object();
         // Okundu onayı bekleyenler (task_id); sözlükten çıkaran sonucu gönderir
         private readonly Dictionary<int, Pending> _waiting = new Dictionary<int, Pending>();
 
         // Olay Günlüğü (testler yakalar)
         internal Action<LocalAuditEvent> Audit { get; set; } = LocalAudit.Write;
+        // Okundu onayının beklemesi (testler anında ya da elle biter) ve en uzun süresi. Servis değiştirmez.
+        internal Func<TimeSpan, CancellationToken, Task> Delay { get; set; } = Task.Delay;
+        internal TimeSpan AckTimeout { get; set; } = TimeSpan.FromMinutes(30);
 
         // sendResult(task_id, output, exit_code); deny(task_id): capability_denied message/user_message; capabilities: bağlamın
-        // yetenek durumu
+        // yetenek durumu; hasConsoleUser: tepsi bağlı değilken sonucun nedeni (kullanıcı yok mu, tepsi mi çalışmıyor)
         public UserMessages(Func<int, string, int, Task> sendResult, Func<int, Task> deny, Action<string> toTray, Func<bool> trayConnected,
-            CapabilityState capabilities)
+            CapabilityState capabilities, Func<bool> hasConsoleUser)
         {
             _sendResult = sendResult;
             _deny = deny;
             _toTray = toTray;
             _trayConnected = trayConnected;
             _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+            _hasConsoleUser = hasConsoleUser ?? throw new ArgumentNullException(nameof(hasConsoleUser));
         }
 
         public bool IsWaiting(int taskId) { lock (_gate) return _waiting.ContainsKey(taskId); }
@@ -151,7 +154,7 @@ namespace POpsAgent
             // Mesajı yalnızca kullanıcının oturumundaki tepsi gösterebilir
             if (!_trayConnected())
             {
-                bool user = SessionTasks.HasConsoleUser();
+                bool user = _hasConsoleUser();
                 POpsHelpers.Log("AGENT", $"Mesaj gösterilmedi: {(user ? "tepsi bağlı değil" : "oturum açık kullanıcı yok")} (TaskID: {taskId}).");
                 if (user) await _sendResult(taskId, NoTrayOutput, CommandRunner.ExitAgentError);
                 else await _sendResult(taskId, SessionTasks.NoUserOutput, SessionTasks.ExitNoUser);
@@ -175,7 +178,7 @@ namespace POpsAgent
                 return;
             }
             // Bekleme girişi ve süre kabul anında alınır: arka plandaki görev sonradan değiştirilen girişi kullanmaz
-            Func<TimeSpan, CancellationToken, Task> delay = SessionTasks.Delay;
+            Func<TimeSpan, CancellationToken, Task> delay = Delay;
             TimeSpan timeout = AckTimeout;
             _ = Task.Run(() => WaitForAckAsync(pending, delay, timeout, serviceStopping), CancellationToken.None);
         }

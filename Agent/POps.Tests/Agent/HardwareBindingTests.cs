@@ -14,8 +14,9 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // 4. inceleme, ajan: cihaz anahtarının donanıma bağı (hw.bind), kopyalanmış kurulum ve 4409
-    [Collection(SharedStateCollection.Name)]
-    public class HardwareBindingTests : SharedStateTestBase, IDisposable
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class HardwareBindingTests : TestBase, IDisposable
     {
         private const string Uuid = "4C4C4544-0042-3510-8052-B4C04F4B4E32";
         private const string Bios = "5B4KNK2";
@@ -24,44 +25,39 @@ namespace POps.Tests.Agent
         private const string Secret = "binding-secret-0123456789abcdefghijkl";
         private static readonly DateTimeOffset T0 = new DateTimeOffset(2026, 10, 2, 9, 30, 0, TimeSpan.Zero);
 
+        // Testin ajanı; ayar dosyası (bkz. Persist) baştan bağlamın ayar dosyasıdır, yazılana kadar yoktur
+        private readonly string _config = Path.Combine(TestEnvironment.NewDir("bind-cfg"), "appsettings.json");
+        private readonly AgentHarness _agent;
+
         public HardwareBindingTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("bind-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("bind-data");
-            POpsHelpers.ConfigPaths = new string[0];
+            _agent = AgentHarness.Create("bind", configPaths: new[] { _config });
         }
 
-        public void Dispose()
-        {
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            POpsHelpers.ConfigPaths = new string[0];
-        }
+        public void Dispose() => _agent.Dispose();
 
         // Donanım bağının birincil kopyası (güvenli depoda)
-        private static string PrimaryPath => SecureStore.PathOf(HardwareBinding.FileName);
+        private string PrimaryPath => _agent.Paths.SecureFile(HardwareBinding.FileName);
 
-        private static HardwareBinding Binding(string uuid, string bios, DateTimeOffset? now = null) =>
-            new HardwareBinding(AgentHarness.FromStatics().Paths, () => (uuid, bios), () => now ?? T0);
+        private HardwareBinding Binding(string uuid, string bios, DateTimeOffset? now = null) =>
+            new HardwareBinding(_agent.Paths, () => (uuid, bios), () => now ?? T0);
 
         // PersistDir (dondurulmayan klasör) ayarlanır
-        private static string Persist()
+        private string Persist()
         {
             string dir = TestEnvironment.NewDir("bind-thaw");
-            string config = Path.Combine(TestEnvironment.NewDir("bind-cfg"), "appsettings.json");
-            File.WriteAllText(config, "{\"PersistDir\":\"" + dir.Replace("\\", "\\\\") + "\"}");
-            POpsHelpers.ConfigPaths = new[] { config };
+            File.WriteAllText(_config, "{\"PersistDir\":\"" + dir.Replace("\\", "\\\\") + "\"}");
             return dir;
         }
 
         private static string Sha256(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
         // Aynı bilgisayarda kurulu ajanın dosyaları: kimlik, secret, cihaz bypass anahtarı, donanım bağı
-        private static void Enrolled(string hwId = "HW-ORIGINAL")
+        private void Enrolled(string hwId = "HW-ORIGINAL")
         {
-            File.WriteAllText(AgentUpdate.IdentityPath, hwId);
-            Assert.True(AgentCredentials.SaveSecret(Secret, hwId));
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName), "device-bypass");
+            File.WriteAllText(_agent.Paths.IdentityPath, hwId);
+            Assert.True(_agent.Credentials.SaveSecret(Secret, hwId));
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCredentials.DeviceBypassSecretFileName), "device-bypass");
             Assert.True(Binding(Uuid, Bios).Bind(hwId, "test"));
         }
 
@@ -165,9 +161,9 @@ namespace POps.Tests.Agent
         public void Evaluate_NothingComparable_IsUnreadable(string uuid, string bios) =>
             Assert.Equal(BindingVerdict.Unreadable, HardwareBinding.Evaluate(BothReal, uuid, bios));
 
-        private static string PendingResults => SecureStore.PathOf(ResultSpool.FileName);
+        private string PendingResults => _agent.Paths.SecureFile(ResultSpool.FileName);
 
-        private static void PendingResult(int taskId) =>
+        private void PendingResult(int taskId) =>
             new ResultSpool(PendingResults).Add(taskId, new { type = "result", task_id = taskId, exit_code = 0 });
 
         [Fact]
@@ -175,25 +171,25 @@ namespace POps.Tests.Agent
         {
             Enrolled();
             PendingResult(7);
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCredentials.EnrollTokenFileName), "enroll-token-0123456789abcdef");
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCredentials.EnrollTokenFileName), "enroll-token-0123456789abcdef");
 
             var binding = Binding(OtherUuid, OtherBios);
             Assert.Equal(BindingVerdict.Clone, binding.CheckOnStartup());
 
-            string folder = SecureStore.PathOf("clone-20261002-093000");
+            string folder = _agent.Paths.SecureFile("clone-20261002-093000");
             Assert.Equal(folder, binding.CloneFolder);
             Assert.Equal("HW-ORIGINAL", binding.PreviousHwId);
             Assert.Equal(new[] { "identity.key", "agent.secret", "bypass.device", "hw.bind", "pending-results.json" }, binding.MovedFiles);
             foreach (string name in binding.MovedFiles) Assert.True(File.Exists(Path.Combine(folder, name)), name);
-            Assert.False(File.Exists(AgentUpdate.IdentityPath));
-            Assert.False(File.Exists(SecureStore.PathOf(AgentCredentials.SecretFileName)));
-            Assert.False(File.Exists(SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName)));
+            Assert.False(File.Exists(_agent.Paths.IdentityPath));
+            Assert.False(File.Exists(_agent.Paths.SecureFile(AgentCredentials.SecretFileName)));
+            Assert.False(File.Exists(_agent.Paths.SecureFile(AgentCredentials.DeviceBypassSecretFileName)));
             Assert.False(File.Exists(PrimaryPath));
             Assert.False(File.Exists(PendingResults));
             Assert.Equal("HW-ORIGINAL", File.ReadAllText(Path.Combine(folder, "identity.key")));
             // Jeton kalır: kopya onunla yeni cihaz olarak kaydolur
-            Assert.True(File.Exists(SecureStore.PathOf(AgentCredentials.EnrollTokenFileName)));
-            Assert.Null(AgentCredentials.LoadSecret());
+            Assert.True(File.Exists(_agent.Paths.SecureFile(AgentCredentials.EnrollTokenFileName)));
+            Assert.Null(_agent.Credentials.LoadSecret());
         }
 
         [Fact]
@@ -209,19 +205,19 @@ namespace POps.Tests.Agent
             Assert.Contains("agent.secret.persist", binding.MovedFiles);
             Assert.Contains("hw.bind.persist", binding.MovedFiles);
             Assert.False(File.Exists(Path.Combine(thaw, AgentCredentials.SecretFileName)));
-            Assert.Null(AgentCredentials.LoadSecret());
+            Assert.Null(_agent.Credentials.LoadSecret());
         }
 
-        private static void AssertUntouched(HardwareBinding binding)
+        private void AssertUntouched(HardwareBinding binding)
         {
             Assert.Null(binding.CloneFolder);
             Assert.Empty(binding.MovedFiles);
-            Assert.True(File.Exists(AgentUpdate.IdentityPath));
-            Assert.True(File.Exists(SecureStore.PathOf(AgentCredentials.SecretFileName)));
-            Assert.True(File.Exists(SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName)));
+            Assert.True(File.Exists(_agent.Paths.IdentityPath));
+            Assert.True(File.Exists(_agent.Paths.SecureFile(AgentCredentials.SecretFileName)));
+            Assert.True(File.Exists(_agent.Paths.SecureFile(AgentCredentials.DeviceBypassSecretFileName)));
             Assert.True(File.Exists(PrimaryPath));
             Assert.True(File.Exists(PendingResults));
-            Assert.Empty(Directory.GetDirectories(SecureStore.Dir, "clone-*"));
+            Assert.Empty(Directory.GetDirectories(_agent.Paths.SecureDir, "clone-*"));
         }
 
         [Fact]
@@ -253,7 +249,7 @@ namespace POps.Tests.Agent
             var binding = Binding(Uuid, Bios);
             Assert.Equal(BindingVerdict.Match, binding.CheckOnStartup());
             Assert.Equal("HW-ORIGINAL", binding.BoundHwId);
-            Assert.True(File.Exists(SecureStore.PathOf(AgentCredentials.SecretFileName)));
+            Assert.True(File.Exists(_agent.Paths.SecureFile(AgentCredentials.SecretFileName)));
         }
 
         // Dondurma yazılımı C:'yi imajdaki hâline döndürdü; dondurulmayan klasördeki (yeni) bağ geçerlidir
@@ -288,7 +284,7 @@ namespace POps.Tests.Agent
             Assert.Equal(HardwareBinding.Digest(Uuid, Bios), record.Digest);
         }
 
-        private static Worker NewWorker(string hwId) => new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+        private Worker NewWorker(string hwId) => new Worker(NullLogger<Worker>.Instance, _agent.Context)
         {
             HwId = hwId,
             SendOverride = _ => Task.FromResult(true),
@@ -299,7 +295,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void ExistingInstall_FirstUseTrust_WritesTheBinding()
         {
-            Assert.True(AgentCredentials.SaveSecret(Secret, "HW-OLD"));
+            Assert.True(_agent.Credentials.SaveSecret(Secret, "HW-OLD"));
             using Worker worker = NewWorker("HW-OLD");
             Assert.Equal(BindingVerdict.Missing, worker.Binding.CheckOnStartup());
             worker.ApplyHardwareBinding(BindingVerdict.Missing);
@@ -325,12 +321,12 @@ namespace POps.Tests.Agent
         public void Match_RestoresTheIdentityTheKeyWasIssuedTo()
         {
             Assert.True(Binding(Uuid, Bios).Bind("HW-CLONE", "test"));
-            File.WriteAllText(AgentUpdate.IdentityPath, "HW-ORIGINAL");
+            File.WriteAllText(_agent.Paths.IdentityPath, "HW-ORIGINAL");
             using Worker worker = NewWorker("HW-ORIGINAL");
             Assert.Equal(BindingVerdict.Match, worker.Binding.CheckOnStartup());
             worker.ApplyHardwareBinding(BindingVerdict.Match);
             Assert.Equal("HW-CLONE", worker.HwId);
-            Assert.Equal("HW-CLONE", File.ReadAllText(AgentUpdate.IdentityPath));
+            Assert.Equal("HW-CLONE", File.ReadAllText(_agent.Paths.IdentityPath));
         }
 
         [Fact]
@@ -353,7 +349,7 @@ namespace POps.Tests.Agent
             PendingResult(7);
             PendingResult(8);
             var sent = new List<JsonElement>();
-            using Worker worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+            using Worker worker = new Worker(NullLogger<Worker>.Instance, _agent.Context)
             {
                 HwId = "HW-DERIVED",
                 SendOverride = payload => { sent.Add(JsonSerializer.SerializeToElement(payload)); return Task.FromResult(true); },

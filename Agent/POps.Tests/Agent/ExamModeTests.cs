@@ -14,36 +14,40 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Sınav modu: emrin doğrulanması, güvenlik duvarı kuralları (ayrı grup), süresinde bitmesi, uygulama engeli
-    [Collection(SharedStateCollection.Name)]
-    public class ExamModeTests : SharedStateTestBase, IDisposable
+    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    [Collection(MachineCollection.Name)]
+    public class ExamModeTests : TestBase, IDisposable
     {
         private readonly List<string> _scripts = new List<string>();
-        private readonly Func<string, Task<(int, string)>> _runner = NetworkIsolation.ScriptRunner;
-        private readonly Func<string, Task<IPAddress[]>> _resolver = ExamMode.Resolver;
         private IPAddress[] _resolved = { IPAddress.Parse("198.51.100.7") };
         private static readonly DateTimeOffset Now = new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
+        // Testin ajanı: güvenlik duvarı betikleri _scripts'e yazılır, izin listesinin ad çözümü _resolved (makine kapıları)
+        private readonly AgentHarness _agent;
+        private ExamMode _exam;
 
         public ExamModeTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("exam-secure");
-            AgentUpdate.DataDir = TestEnvironment.NewDir("exam-data");
-            AgentCapabilities.Load();
-            NetworkIsolation.ScriptRunner = script =>
+            _agent = AgentHarness.Create("exam", machine: new MachineSeams
             {
-                lock (_scripts) _scripts.Add(script);
-                return Task.FromResult((0, "[{\"Name\":\"Domain\",\"Enabled\":\"True\"},{\"Name\":\"Public\",\"Enabled\":\"False\"}]"));
-            };
-            ExamMode.Resolver = _ => Task.FromResult(_resolved);
+                Kiosk = new FakeKioskRegistry(),
+                FirewallScripts = script =>
+                {
+                    lock (_scripts) _scripts.Add(script);
+                    return Task.FromResult((0, "[{\"Name\":\"Domain\",\"Enabled\":\"True\"},{\"Name\":\"Public\",\"Enabled\":\"False\"}]"));
+                },
+                ExamResolver = _ => Task.FromResult(_resolved),
+            });
+            _agent.Capabilities.Load();
         }
 
-        public void Dispose()
-        {
-            NetworkIsolation.ScriptRunner = _runner;
-            ExamMode.Resolver = _resolver;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentCapabilities.Load();
-        }
+        public void Dispose() => _agent.Dispose();
+
+        // X-Agent-Features: bu bağlamın yetenek durumundan (bkz. CommandConnection)
+        private AgentFeatures AgentFeatures => new AgentFeatures(_agent.Capabilities);
+
+        // Bu bağlamın sınav modu (Worker'ınkiyle aynı durum dosyası ve makine kapıları)
+        private ExamMode ExamMode => _exam ??= new ExamMode(_agent.Paths.SecureFile(ExamMode.StateFileName), _agent.Machine.FirewallScripts,
+            _agent.Machine.ExamResolver, _agent.Machine.StopProcess);
 
         private static JsonElement Json(string text) => JsonDocument.Parse(text).RootElement.Clone();
 
@@ -185,7 +189,7 @@ namespace POps.Tests.Agent
         private readonly List<JsonElement> _sent = new List<JsonElement>();
         private readonly List<string> _tray = new List<string>();
 
-        private Worker NewWorker(bool online = true) => new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
+        private Worker NewWorker(bool online = true) => new Worker(NullLogger<Worker>.Instance, _agent.Context)
         {
             HwId = "HW-EXAM",
             SendOverride = p => { lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(p)); return Task.FromResult(online); },
@@ -230,7 +234,7 @@ namespace POps.Tests.Agent
             Assert.False(ExamMode.IsActive);
             lock (_sent) Assert.Equal("capability_denied", Assert.Single(_sent).GetProperty("type").GetString());
             // capabilities mesajı sınav yeteneğinin kapalı olduğunu bildirir (exam_enabled, şemada isteğe bağlı)
-            Assert.Equal(false, AgentCapabilities.StatusMessage()[AgentCapabilities.Exam]);
+            Assert.Equal(false, _agent.Capabilities.StatusMessage()[AgentCapabilities.Exam]);
         }
 
         // Geçersiz emir: uygulanmaz, neden yalnızca yerel loga yazılır; sunucuya şemadaki alanlarla o anki durum gider
@@ -318,11 +322,11 @@ namespace POps.Tests.Agent
 
         private List<JsonElement> Sent(string type) { lock (_sent) return _sent.Where(m => m.TryGetProperty("type", out JsonElement t) && t.GetString() == type).ToList(); }
 
-        private static void DisableExamCapabilityLocally()
+        private void DisableExamCapabilityLocally()
         {
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":true,\"vision_enabled\":true,\"exam_enabled\":false}");
-            AgentCapabilities.Load();
-            Assert.False(AgentCapabilities.ExamEnabled);
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"terminal_enabled\":true,\"vision_enabled\":true,\"exam_enabled\":false}");
+            _agent.Capabilities.Load();
+            Assert.False(_agent.Capabilities.ExamEnabled);
         }
 
         // Sunucunun exam_state şeması: type ve enabled zorunlu; since ve until sayı ya da null; başka alan yok
@@ -470,7 +474,7 @@ namespace POps.Tests.Agent
             Assert.True(ExamMode.IsActive);
 
             await Handle(worker, "{\"action\":\"set_capabilities\",\"exam_enabled\":false}");
-            Assert.False(AgentCapabilities.ExamEnabled);
+            Assert.False(_agent.Capabilities.ExamEnabled);
             Assert.False(ExamMode.IsActive);
             JsonElement capabilities = Assert.Single(Sent("capabilities"));
             Assert.False(capabilities.GetProperty("exam_enabled").GetBoolean());
@@ -510,13 +514,13 @@ namespace POps.Tests.Agent
         [Fact]
         public void Capabilities_OldFileWithoutExam_KeepsExamOn()
         {
-            SecureStore.WriteProtected(SecureStore.PathOf(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":true}");
-            AgentCapabilities.Load();
-            Assert.True(AgentCapabilities.ExamEnabled);
-            Assert.False(AgentCapabilities.TerminalEnabled);
-            var (disabled, _) = AgentCapabilities.ApplyServerRequest(Json("{\"exam_enabled\":false}"));
+            SecureStore.WriteProtected(_agent.Paths.SecureFile(AgentCapabilities.FileName), "{\"terminal_enabled\":false,\"vision_enabled\":true}");
+            _agent.Capabilities.Load();
+            Assert.True(_agent.Capabilities.ExamEnabled);
+            Assert.False(_agent.Capabilities.TerminalEnabled);
+            var (disabled, _) = _agent.Capabilities.ApplyServerRequest(Json("{\"exam_enabled\":false}"));
             Assert.Equal(new[] { AgentCapabilities.Exam }, disabled);
-            Assert.False(AgentCapabilities.ExamEnabled);
+            Assert.False(_agent.Capabilities.ExamEnabled);
         }
 
         [Fact]

@@ -15,26 +15,23 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Güncelleme paketinin BITS ile indirilmesi: betik, sonuçlar ve eski yola düşme; imzalı SHA-256 denetimi iki yolda da
-    [Collection(SharedStateCollection.Name)]
-    public class BitsDownloadTests : SharedStateTestBase, IDisposable
+    // Machine: betiğin ayrıştırılması için powershell.exe başlatılır (Script_ParsesWithoutErrors)
+    [Collection(MachineCollection.Name)]
+    public class BitsDownloadTests : TestBase, IDisposable
     {
-        private readonly Func<string, TimeSpan, Task<(int, string)>> _runner = BitsDownload.Runner;
+        // Testin ajanı: BITS kapısı testin sahte çalıştırıcısıdır (bkz. Bits)
+        private readonly AgentHarness _agent;
+        private Func<string, TimeSpan, Task<(int, string)>> _runner;
         private readonly byte[] _package = RandomNumberGenerator.GetBytes(3000);
         private readonly List<string> _stages = new List<string>();
         private int _httpRequests;
 
         public BitsDownloadTests()
         {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("bits-data");
-            BitsDownload.Enabled = true;
+            _agent = AgentHarness.Create("bits-data", machine: new MachineSeams { Kiosk = new FakeKioskRegistry(), Bits = (script, timeout) => _runner(script, timeout) });
         }
 
-        public void Dispose()
-        {
-            BitsDownload.Enabled = false;
-            BitsDownload.Runner = _runner;
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-        }
+        public void Dispose() => _agent.Dispose();
 
         private ReleaseVerifier.Artifact Artifact() => new ReleaseVerifier.Artifact
         {
@@ -54,11 +51,11 @@ namespace POps.Tests.Agent
             }
         }
 
-        private Task<bool> Download(string path) => AgentUpdate.DownloadVerifiedAsync(new HttpClient(new Server(this)), "https://pops.example/updates/x.msi", path,
+        private Task<bool> Download(string path) => _agent.Updater.DownloadVerifiedAsync(new HttpClient(new Server(this)), "https://pops.example/updates/x.msi", path,
             Artifact(), new AgentUpdate.UpdateCommand { Report = m => { lock (_stages) _stages.Add((string)m["stage"]); return Task.FromResult(true); } });
 
         // Sahte BITS: hedefe verilen baytları yazar ve çıkış kodunu döner
-        private void Bits(int exit, byte[] content = null) => BitsDownload.Runner = (script, _) =>
+        private void Bits(int exit, byte[] content = null) => _runner = (script, _) =>
         {
             if (content != null)
             {
@@ -72,7 +69,7 @@ namespace POps.Tests.Agent
         public async Task Bits_Done_IsVerifiedLikeADirectDownload()
         {
             Bits(0, _package);
-            string path = Path.Combine(AgentUpdate.DataDir, "x.msi");
+            string path = Path.Combine(_agent.Paths.DataDir, "x.msi");
             Assert.True(await Download(path));
             Assert.Equal(_package, File.ReadAllBytes(path));
             Assert.Equal(0, _httpRequests);
@@ -84,7 +81,7 @@ namespace POps.Tests.Agent
         public async Task Bits_WrongContent_IsRejected()
         {
             Bits(0, _package.Take(100).ToArray());
-            string path = Path.Combine(AgentUpdate.DataDir, "x.msi");
+            string path = Path.Combine(_agent.Paths.DataDir, "x.msi");
             Assert.False(await Download(path));
             Assert.False(File.Exists(path));
             Assert.False(File.Exists(path + ".bits"));
@@ -95,7 +92,7 @@ namespace POps.Tests.Agent
         public async Task Bits_StillRunning_RejectsWithoutASecondDownload()
         {
             Bits(3);
-            Assert.False(await Download(Path.Combine(AgentUpdate.DataDir, "x.msi")));
+            Assert.False(await Download(Path.Combine(_agent.Paths.DataDir, "x.msi")));
             Assert.Equal(0, _httpRequests);
             Assert.Empty(_stages);
         }
@@ -107,7 +104,7 @@ namespace POps.Tests.Agent
         public async Task Bits_Unavailable_FallsBackToHttpClient(int exit)
         {
             Bits(exit);
-            string path = Path.Combine(AgentUpdate.DataDir, "x.msi");
+            string path = Path.Combine(_agent.Paths.DataDir, "x.msi");
             Assert.True(await Download(path));
             Assert.Equal(1, _httpRequests);
             Assert.Equal(_package, File.ReadAllBytes(path));

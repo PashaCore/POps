@@ -36,8 +36,9 @@ namespace POpsAgent
         private readonly Action _socketOpened;
         private readonly Action _channelConnected;
         private readonly Action<LocalAuditEvent> _audit;
-        // Ağ yalıtımının durum dosyası (AgentPaths; bkz. NetworkIsolation)
-        private readonly string _isolationState;
+        // Ağ yalıtımı (bkz. NetworkIsolation) ve X-Agent-Features (bağlamın yetenek durumundan; bkz. AgentFeatures)
+        private readonly NetworkIsolation _isolation;
+        private AgentFeatures AgentFeatures { get; }
         // Bağlamın yetenek durumu, kimlik bilgileri ve sunucu sertifikasına güveni
         private readonly CapabilityState _capabilities;
         private readonly CredentialStore _credentials;
@@ -49,12 +50,12 @@ namespace POpsAgent
         // Kimlik, karantina denetimi ve donanım bilgisi çalışırken değişir (set_identity, testler, yavaş açılış): her
         // kullanımda okunur. slowInitialization: bağlantıdan sonra, alma döngüsünden önce beklenen açılış işi;
         // socketOpened: yeni bağlantıda bağlantı başına durumların sıfırlanması; channelConnected: DNS politika izleme
-        // (bkz. PolicySync); audit: Olay Günlüğü; isolationState: ağ yalıtımının durum dosyası (art arda bağlantı
-        // hatasında izin listesi yenilenir); capabilities, credentials, trust: bağlamın parçaları
+        // (bkz. PolicySync); audit: Olay Günlüğü; isolation: ağ yalıtımı (art arda bağlantı hatasında izin listesi yenilenir);
+        // capabilities, credentials, trust: bağlamın parçaları
         public CommandConnection(string serverUrl, string pcName, Func<string?> hwId, CommandChannel channel, CommandDispatcher dispatcher,
             UpdateReporter updates, ResultOutbox outbox, VisionSession vision, TrayMessageRouter tray, Func<QuarantineControl> quarantine,
             Func<object?> dna, AgentHealthTelemetry health, AgentStartupHealth startupHealth, Func<Task> slowInitialization,
-            Action socketOpened, Action channelConnected, Action<LocalAuditEvent> audit, string isolationState,
+            Action socketOpened, Action channelConnected, Action<LocalAuditEvent> audit, NetworkIsolation isolation,
             CapabilityState capabilities, CredentialStore credentials, ServerTrust trust)
         {
             _serverUrl = serverUrl;
@@ -74,8 +75,9 @@ namespace POpsAgent
             _socketOpened = socketOpened ?? throw new ArgumentNullException(nameof(socketOpened));
             _channelConnected = channelConnected ?? throw new ArgumentNullException(nameof(channelConnected));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
-            _isolationState = isolationState ?? throw new ArgumentNullException(nameof(isolationState));
+            _isolation = isolation ?? throw new ArgumentNullException(nameof(isolation));
             _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+            AgentFeatures = new AgentFeatures(capabilities);
             _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
             _trust = trust ?? throw new ArgumentNullException(nameof(trust));
         }
@@ -149,8 +151,8 @@ namespace POpsAgent
                 TimeSpan wait = ReconnectBackoff.Delay(reconnectAttempt, rejection, Random.Shared);
                 reconnectAttempt = ReconnectBackoff.NextAttempt(reconnectAttempt);
                 // Karantinada art arda 3 bağlantı hatası: sunucunun adresi değişmiş olabilir, izin listesi beklemeden yenilenir
-                if (reconnectAttempt == NetworkIsolation.RefreshAfterFailures && NetworkIsolation.IsActiveAt(_isolationState))
-                    _ = Task.Run(() => NetworkIsolation.RefreshServerAddressesAsync(_serverUrl, "art arda 3 bağlantı hatası", _isolationState));
+                if (reconnectAttempt == NetworkIsolation.RefreshAfterFailures && _isolation.IsActive)
+                    _ = Task.Run(() => _isolation.RefreshServerAddressesAsync(_serverUrl, "art arda 3 bağlantı hatası"));
                 if (authRejected)
                 {
                     _audit(LocalAudit.AuthenticationRejected("command"));
@@ -166,8 +168,9 @@ namespace POpsAgent
             }
 
             // Her yeni sokete ajanın sürümü, hemen ardından özellikleri (sertifika denetiminden sonra, kimlik başlıklarından
-            // önce). PeerCacheTests ve PowerMessageTests bu iki satırı bu dosyanın metninde arar.
-            static void AgentHeaders(ClientWebSocket _commandWs)
+            // önce). PeerCacheTests ve PowerMessageTests bu iki satırı bu dosyanın metninde arar. AgentFeatures bu bağlantının
+            // örneğidir (aynı adlı özellik; HeaderName türün sabiti).
+            void AgentHeaders(ClientWebSocket _commandWs)
             {
                 _commandWs.Options.SetRequestHeader("X-Agent-Version", AppVersion);
                 _commandWs.Options.SetRequestHeader(AgentFeatures.HeaderName, AgentFeatures.Header);
