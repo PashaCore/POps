@@ -16,8 +16,6 @@ namespace POps.Tests.Agent
 {
     // DNS izleme artık gerçekten başlatılıyor (F8 kodu vardı ama hiç çağrılmıyordu). Önbellek, saat, bildirim ve
     // karantina sahtedir: gerçek DNS önbelleği okunmaz, sunucuya gidilmez, güvenlik duvarına dokunulmaz.
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class DnsPolicyMonitorTests : TestBase, IDisposable
     {
         private readonly List<string> _cache = new List<string>();
@@ -304,8 +302,6 @@ namespace POps.Tests.Agent
     // hataları yalnızca o izlemenin Worker'ına gider. Kurulan Worker başka bir izlemenin geri çağrılarını almaz (eskiden son
     // kurulan Worker hepsini alırdı); atılan Worker hiçbir şey almaz ve başka bir Worker'ı etkilemez. Worker'ların kilidi
     // sahtedir (tepsi listesi, sahte yalıtım), HTTP ve DNS önbelleği sahte.
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class DnsWorkerBindingTests : TestBase, IDisposable
     {
         // Testin kendi izlemesinin bağlamı (sunucu istekleri sahte işleyiciye)

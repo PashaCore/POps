@@ -29,7 +29,10 @@ namespace POps.Shared
 
         private static readonly HashSet<string> UserSessionComponents = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Watchdog", "Vision" };
 
-        public static bool LogsToUserProfile => UserSessionComponents.Contains(Component);
+        public static bool LogsToUserProfile => LogsToUserProfileFor(Component);
+
+        // Bileşen kullanıcı oturumunda mı çalışır (kendi %LOCALAPPDATA%\POps\Logs klasörüne yazar)
+        public static bool LogsToUserProfileFor(string component) => UserSessionComponents.Contains(component);
 
         // Sürüm kök VERSION dosyasından gelir (Agent/Directory.Build.props -> assembly). Bütün bileşenler aynı
         // VERSION ile derlendiği için ortak kütüphanenin sürümü bileşenin sürümüdür. "+<commit>" atılır, önüne
@@ -54,14 +57,19 @@ namespace POps.Shared
         // Testler logu geçici bir klasöre yönlendirir (C:\POpsLogs'a asla dokunmasınlar)
         internal static string LogDirectoryOverride { get; set; }
 
-        public static string LogDirectory =>
+        public static string LogDirectory => LogDirectoryFor(Component);
+
+        private static string LogDirectoryFor(string component) =>
             LogDirectoryOverride
-            ?? (LogsToUserProfile
+            ?? (LogsToUserProfileFor(component)
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "POps", "Logs")
                 : MachineLogDir);
 
-        public static string LogFilePath(DateTime day) =>
-            Path.Combine(LogDirectory, LogsToUserProfile ? $"POps{Component}_{day:yyyyMMdd}.log" : $"POps_{day:yyyyMMdd}.log");
+        public static string LogFilePath(DateTime day) => LogFilePath(Component, day);
+
+        // Bileşenin o günkü log dosyası (bileşen adı Component'ten değil, argümandan)
+        public static string LogFilePath(string component, DateTime day) =>
+            Path.Combine(LogDirectoryFor(component), LogsToUserProfileFor(component) ? $"POps{component}_{day:yyyyMMdd}.log" : $"POps_{day:yyyyMMdd}.log");
 
         // C:\POpsLogs (ya da LogDirectory) yalnızca SYSTEM ve Administrators'a açıktır (izin devralınmaz). C:\ altındaki
         // varsayılan izinle oturum açan her kullanıcı buraya dosya ya da bağlantı (hardlink/junction) bırakabiliyor, SYSTEM
@@ -122,34 +130,33 @@ namespace POps.Shared
         // 2. AYARLAR
         // ==========================================
         // Ayar dosyası önce bileşenin kurulu olduğu klasörde (MSI: C:\Program Files\POps), sonra eski sabit konumda
-        // (C:\POps) aranır; her ayar için ilk dolu değer kullanılır. Ajan bu listeyi açılışta AgentPaths'e alır.
+        // (C:\POps) aranır; her ayar için ilk dolu değer kullanılır. Ajan bu listeyi açılışta AgentPaths'e alır; ayarlar
+        // hep verilen dosyalardan okunur (ajan: AgentPaths.ConfigPaths), süreç geneli bir ayar dosyası listesi yoktur.
         public static IReadOnlyList<string> DefaultConfigPaths { get; } = new[]
         {
             Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
             @"C:\POps\appsettings.json",
         };
 
-        // Süreç varsayılanı: aşağıdaki parametresiz biçimler (ResolveServerUrl, GetSetting, ReadConfigValue) ve onları sınayan
-        // testler için. Ajan ayarları bağlamın AgentPaths.ConfigPaths'iyle okur (kimlik bilgileri, PersistDir, sunucu adresi,
-        // klasörler). Servis değiştirmez; testler yolları değiştirebilir.
-        public static IReadOnlyList<string> ConfigPaths { get; internal set; } = DefaultConfigPaths;
-
         // Sunucu adresi okunamazsa son çare (yalnızca aynı makinedeki sunucu için anlamlı)
         public const string FallbackServerUrl = "http://127.0.0.1:8000";
 
-        public static string GetServerUrl() => ResolveServerUrl().Url;
+        public static string GetServerUrl(IReadOnlyList<string> configPaths) => ResolveServerUrl(configPaths).Url;
 
         // Sunucu adresi ve yapılandırmanın sorunu (null: sorun yok). Adres koda gömülmez: önce POPS_SERVER_URL ortam
         // değişkeni, sonra configPaths'teki ilk dolu ServerUrl. Okunamayan (bozuk JSON, erişim) bir dosya, adres başka
         // bir dosyadan gelse de sorun sayılır. Adres bulunamaz ya da geçerli bir http(s) adresi değilse son çare kullanılır.
         // Eskiden bu durum yalnızca loga yazılıyordu; ajan sağlıklı görünüp hiçbir sunucuya bağlanmıyordu.
-        public static (string Url, string Problem) ResolveServerUrl() => ResolveServerUrl(ConfigPaths);
+        public static (string Url, string Problem) ResolveServerUrl(IReadOnlyList<string> configPaths) =>
+            ResolveServerUrl(configPaths, Environment.GetEnvironmentVariable);
 
-        public static (string Url, string Problem) ResolveServerUrl(IReadOnlyList<string> configPaths)
+        // environment: ortam değişkeninin değeri (servis: Environment.GetEnvironmentVariable; testler kendi değerlerini verir,
+        // sürecin ortamını değiştirmez)
+        public static (string Url, string Problem) ResolveServerUrl(IReadOnlyList<string> configPaths, Func<string, string> environment)
         {
             var problems = new List<string>();
             string url = null, source = null;
-            string env = Environment.GetEnvironmentVariable("POPS_SERVER_URL");
+            string env = environment("POPS_SERVER_URL");
             if (!string.IsNullOrWhiteSpace(env))
             {
                 url = env.Trim();
@@ -204,12 +211,14 @@ namespace POps.Shared
             && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback));
 
         // Gizli olmayan bir ayar: önce sistem ortam değişkeni, sonra appsettings.json.
-        public static string GetSetting(string key, string envVar) => GetSetting(key, envVar, ConfigPaths);
-
         // paths: ayarın arandığı dosyalar (ajan: AgentPaths.ConfigPaths)
-        public static string GetSetting(string key, string envVar, IEnumerable<string> paths)
+        public static string GetSetting(string key, string envVar, IEnumerable<string> paths) =>
+            GetSetting(key, envVar, paths, Environment.GetEnvironmentVariable);
+
+        // environment: ortam değişkeninin değeri (servis: Environment.GetEnvironmentVariable)
+        public static string GetSetting(string key, string envVar, IEnumerable<string> paths, Func<string, string> environment)
         {
-            string env = Environment.GetEnvironmentVariable(envVar);
+            string env = environment(envVar);
             return !string.IsNullOrWhiteSpace(env) ? env.Trim() : ReadConfigValue(key, paths);
         }
 
@@ -239,9 +248,7 @@ namespace POps.Shared
             return null;
         }
 
-        // Bir ayarı sırayla ConfigPaths içindeki dosyalarda arar; hiçbirinde dolu değilse null döner.
-        public static string ReadConfigValue(string key) => ReadConfigValue(key, ConfigPaths);
-
+        // Bir ayarı sırayla paths içindeki dosyalarda arar; hiçbirinde dolu değilse null döner.
         public static string ReadConfigValue(string key, IEnumerable<string> paths)
         {
             foreach (string path in paths)

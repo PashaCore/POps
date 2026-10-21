@@ -54,7 +54,7 @@ namespace POpsAgent
             // Worker'ın yolları, çalışma durumu ve makine kapıları (bkz. AgentContext): her parçanın servis boyunca tek örneği.
             // Güncelleme durumu tatbikat kararından önce gerekir.
             var trust = new ServerTrust(paths.ServerCaPath);
-            var credentials = new CredentialStore(paths);
+            var credentials = new CredentialStore(paths, machine.ReadMachineVariable, machine.DeleteMachineVariable);
             var capabilities = new CapabilityState(paths.SecureFile(AgentCapabilities.FileName), trust);
             var context = new AgentContext(paths,
                 capabilities,

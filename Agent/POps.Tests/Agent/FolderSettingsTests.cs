@@ -13,8 +13,6 @@ namespace POps.Tests.Agent
 {
     // appsettings.json LogDirectory / DataDirectory: değer kuralları, varsayılana dönüş ve bildirim, klasör izinleri,
     // servis / updater / watchdog'un aynı klasörleri seçmesi. Klasörler hep geçici test klasöründe.
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class FolderSettingsTests : TestBase
     {
         private readonly string _root = TestEnvironment.NewDir("folders");

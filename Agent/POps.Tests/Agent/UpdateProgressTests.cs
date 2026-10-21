@@ -21,8 +21,6 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // update_progress: update_agent ile update_result arasındaki aşamalar (servis ve updater -> servis dosyası)
-    // Machine: güncellemenin eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class UpdateProgressTests : TestBase, IDisposable
     {
         private const string MsiName = "POps-Agent-9.9.9-win-x64.msi";

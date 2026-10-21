@@ -19,8 +19,7 @@ namespace POps.Tests.Agent
 {
     // docs/protocol: sunucu ile ajanın ortak test vektörleri ve JSON şemaları (bkz. docs/protocol/AGENT_TESTS.md).
     // Dosyalar kopyalanmaz; iki taraf da aynı kopyayı okur.
-    [Collection(SharedStateCollection.Name)]
-    public class ProtocolVectorTests : SharedStateTestBase, IDisposable
+    public class ProtocolVectorTests : TestBase, IDisposable
     {
         private readonly Worker _worker;
         // Worker'ın bağlamı (sunucu modülleri dahil)
@@ -232,16 +231,17 @@ namespace POps.Tests.Agent
         }
 
         // ------------------------------------------------------------------ 2. ajanın ürettikleri şemaya uyar
-        private static readonly ConcurrentDictionary<string, JsonSchema> Schemas = new ConcurrentDictionary<string, JsonSchema>();
+        // Okunan şemalar bu testin örneğinde tutulur (statik bir önbellek değil: sınıf paralel çalışır)
+        private readonly ConcurrentDictionary<string, JsonSchema> _schemas = new ConcurrentDictionary<string, JsonSchema>();
 
-        private static JsonSchema Schema(string type) =>
-            Schemas.GetOrAdd(type, t => JsonSchema.FromFile(Protocol("agent-to-server", t + ".json"), new BuildOptions { SchemaRegistry = new SchemaRegistry() }));
+        private JsonSchema Schema(string type) =>
+            _schemas.GetOrAdd(type, t => JsonSchema.FromFile(Protocol("agent-to-server", t + ".json"), new BuildOptions { SchemaRegistry = new SchemaRegistry() }));
 
         private static JsonElement SchemaJson(string type) => JsonDocument.Parse(File.ReadAllText(Protocol("agent-to-server", type + ".json"))).RootElement.Clone();
 
         private static JsonElement Example(string direction, string file) => JsonDocument.Parse(File.ReadAllText(Protocol("examples", direction, file))).RootElement.Clone();
 
-        private static void AssertMatches(string type, JsonElement message)
+        private void AssertMatches(string type, JsonElement message)
         {
             EvaluationResults result = Schema(type).Evaluate(message, new EvaluationOptions { OutputFormat = OutputFormat.List });
             Assert.True(result.IsValid, $"{type} şemaya uymuyor: " + string.Join("; ", (result.Details ?? new List<EvaluationResults>())

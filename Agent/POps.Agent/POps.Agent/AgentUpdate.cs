@@ -460,7 +460,7 @@ namespace POpsAgent
             _trustedKey = trustedKey;
             _launch = launch;
             _launchUpdater = machine.LaunchUpdater;
-            PeerCache = new PeerCache(paths, capabilities, machine.PeerCacheFirewall, machine.PeerCacheEndpoint);
+            PeerCache = new PeerCache(paths, capabilities, machine.PeerCacheFirewall, machine.PeerCacheServer);
             PeerDownload = new PeerDownload(address => PeerCache.IsLocalSubnet(address));
             Bits = new BitsDownload(machine.Bits);
         }

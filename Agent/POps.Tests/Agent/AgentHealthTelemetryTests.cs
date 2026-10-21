@@ -5,8 +5,6 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class AgentHealthTelemetryTests : TestBase
     {
         [Fact]

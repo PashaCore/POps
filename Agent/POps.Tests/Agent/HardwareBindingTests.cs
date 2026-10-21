@@ -14,8 +14,6 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // 4. inceleme, ajan: cihaz anahtarının donanıma bağı (hw.bind), kopyalanmış kurulum ve 4409
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class HardwareBindingTests : TestBase, IDisposable
     {
         private const string Uuid = "4C4C4544-0042-3510-8052-B4C04F4B4E32";

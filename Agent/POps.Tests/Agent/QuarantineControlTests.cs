@@ -277,8 +277,6 @@ namespace POps.Tests.Agent
     }
 
     // HB: heartbeat karantina durumunu taşır; kilit/açma idempotenttir
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class QuarantineHeartbeatTests : TestBase
     {
         private readonly List<string> _tray = new List<string>();

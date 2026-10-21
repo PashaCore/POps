@@ -14,8 +14,6 @@ namespace POps.Tests.Agent
     // CapabilitiesHandler ve VisionSession'a taşındı; bu testler taşımadan önce de aynı sonucu verir). Gerçek Vision tüneli
     // ve tepsi borusu yok: tünel VisionTunnelOverride ile açılır, tepsi TrayOverride'dır, denetim kayıtları ve sunucuya
     // giden mesajlar tek bir sıralı listeye yazılır.
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class VisionCommandTests : TestBase, IDisposable
     {
         private const string HwId = "HW-VIS";

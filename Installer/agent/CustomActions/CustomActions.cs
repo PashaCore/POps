@@ -31,7 +31,7 @@ namespace POps.Installer
         [CustomAction]
         public static ActionResult Configure(Session session)
         {
-            string error = Setup.Configure(ToDictionary(session.CustomActionData), Layout.Default, session.Log);
+            string error = Setup.Configure(ToDictionary(session.CustomActionData), Layout.Default, trustedBase: null, session.Log);
             if (error == null) return ActionResult.Success;
 
             session.Log("POps: HATA: " + error);
@@ -53,7 +53,7 @@ namespace POps.Installer
         public static ActionResult CheckInstallFolder(Session session)
         {
             string dir = Setup.Clean(session["INSTALLFOLDER"]);
-            string error = Setup.CheckInstallFolder(dir, Setup.DefaultProtectedFolders(), KnownFileNames(session), out string state);
+            string error = Setup.CheckInstallFolder(dir, Setup.DefaultProtectedFolders(), KnownFileNames(session), trustedBase: null, out string state);
             if (error != null) return Fail(session, error);
             session["POPS_INSTALLDIR_STATE"] = state;
             session.Log($"POps: kurulum klasörü {dir} ({state}).");
@@ -180,8 +180,9 @@ namespace POps.Installer
 
         // ==========================================================================================
         // Configure: dosyalar kopyalandıktan sonra, servis başlamadan önce. Hata metni döner (null = başarılı).
+        // trustedBase: kurulum klasörü denetiminin güvendiği test klasörü (bkz. CheckInstallFolder); kurulumda null.
         // ==========================================================================================
-        public static string Configure(IDictionary<string, string> data, Layout layout, Action<string> log)
+        public static string Configure(IDictionary<string, string> data, Layout layout, string trustedBase, Action<string> log)
         {
             try
             {
@@ -246,7 +247,7 @@ namespace POps.Installer
                 string logDirectory = Existing(POps.Shared.FolderSettings.LogDirectoryKey);
                 layout = ApplyFolders(layout, dataDirectory, logDirectory, installDir, secure: true, log);
                 EnsureDataDirectories(layout, log);
-                string folderError = ApplyInstallFolderPolicy(installDir, Prop("INSTALLDIR_STATE"), log);
+                string folderError = ApplyInstallFolderPolicy(installDir, Prop("INSTALLDIR_STATE"), trustedBase, log);
                 if (folderError != null) return folderError;
                 WriteCapabilities(layout, new Dictionary<string, bool?>
                 {
@@ -604,8 +605,9 @@ namespace POps.Installer
             return list;
         }
 
-        // Hata metni ya da null; state: new / pops / other
-        internal static string CheckInstallFolder(string installDir, IList<string> protectedFolders, ISet<string> knownFiles, out string state)
+        // Hata metni ya da null; state: new / pops / other. trustedBase: birim testlerinin geçici klasörü (bkz. CheckAncestors);
+        // kurulumda null.
+        internal static string CheckInstallFolder(string installDir, IList<string> protectedFolders, ISet<string> knownFiles, string trustedBase, out string state)
         {
             state = null;
             if (string.IsNullOrWhiteSpace(installDir)) return "INSTALLFOLDER boş.";
@@ -639,26 +641,25 @@ namespace POps.Installer
                     return $"Kurulum klasörü bir sistem klasörü ya da onun üst klasörü olamaz ({full}): POps'a ait ayrı bir alt klasör verin, ör. {Path.Combine(protectedFull, "POps")}.";
             }
 
-            string ancestorError = CheckAncestors(full);
+            string ancestorError = CheckAncestors(full, trustedBase);
             if (ancestorError != null) return ancestorError;
 
             if (!Directory.Exists(full)) { state = StateNew; return null; }
             state = OnlyPopsFiles(full, knownFiles) ? StatePops : StateOther;
-            if (state == StateOther && Exposed(full, Directory.GetAccessControl(full)))
+            if (state == StateOther && Exposed(full, Directory.GetAccessControl(full), trustedBase))
                 return $"Kurulum klasöründe ({full}) başka dosyalar var ve kullanıcılar bu klasöre yazabiliyor. Servis buradan SYSTEM olarak çalışacağı için POps'u ayrı, yeni bir klasöre kurun (ör. C:\\Program Files\\POps).";
             return null;
         }
 
         // Yoldaki her üst klasör: kullanıcı onu (ya da içindeki alt klasörü) silip yeniden adlandıramamalı, izinlerini
         // değiştirememeli; henüz yoksa msiexec oluşturacağı için en yakın var olan üstten devralacağı haklara bakılır.
-        // Birim testleri: zincir bu klasörde (hariç) durur. Testler kullanıcı profilindeki geçici klasörde çalışır; profilin
-        // üst klasörlerinde uygulama paketlerinin (S-1-15-2-...) tam yetkisi vardır ve gerçekte oraya kurulum reddedilir.
-        internal static string TrustedBaseForTests { get; set; }
-
-        private static string CheckAncestors(string full)
+        // Birim testleri: zincir trustedBase klasöründe (hariç) durur. Testler kullanıcı profilindeki geçici klasörde çalışır;
+        // profilin üst klasörlerinde uygulama paketlerinin (S-1-15-2-...) tam yetkisi vardır ve gerçekte oraya kurulum
+        // reddedilir. Kurulumda trustedBase null'dır.
+        private static string CheckAncestors(string full, string trustedBase)
         {
             string root = Path.GetPathRoot(full);
-            string stop = TrustedBaseForTests != null ? Path.GetFullPath(TrustedBaseForTests).TrimEnd('\\') : null;
+            string stop = trustedBase != null ? Path.GetFullPath(trustedBase).TrimEnd('\\') : null;
             bool underStop = stop != null && full.StartsWith(stop + "\\", StringComparison.OrdinalIgnoreCase);
             var chain = new List<string>();
             for (string p = Path.GetDirectoryName(full); p != null && !SamePath(p, root) && !(underStop && SamePath(p, stop)); p = Path.GetDirectoryName(p)) chain.Insert(0, p);
@@ -711,24 +712,24 @@ namespace POps.Installer
         // Kullanıcıların yazabildiği ya da sahibi güvenilir olmayan (izinlerini değiştirebilen) klasör
         internal static bool Exposed(DirectorySecurity sec) => UsersCanWrite(sec) || !IsTrusted(Owner(sec));
 
-        // Testler kullanıcı profilindeki geçici klasörde çalışır. TrustedBaseForTests altında yalnızca testin açıkça
-        // eklediği kurallar değerlendirilir; üstteki profil ACL'leri makineden makineye değişir. Üretimde kanca null'dır.
-        private static bool Exposed(string path, DirectorySecurity sec) =>
-            UntrustedHas(sec, WriteRights, forChildren: false, explicitOnly: IsUnderTrustedBase(path)) || !IsTrusted(Owner(sec));
+        // Testler kullanıcı profilindeki geçici klasörde çalışır. trustedBase altında yalnızca testin açıkça eklediği kurallar
+        // değerlendirilir; üstteki profil ACL'leri makineden makineye değişir. Kurulumda trustedBase null'dır.
+        private static bool Exposed(string path, DirectorySecurity sec, string trustedBase) =>
+            UntrustedHas(sec, WriteRights, forChildren: false, explicitOnly: IsUnderTrustedBase(path, trustedBase)) || !IsTrusted(Owner(sec));
 
-        private static bool IsUnderTrustedBase(string path)
+        private static bool IsUnderTrustedBase(string path, string trustedBase)
         {
-            if (TrustedBaseForTests == null) return false;
+            if (trustedBase == null) return false;
             string full = Path.GetFullPath(path).TrimEnd('\\');
-            string stop = Path.GetFullPath(TrustedBaseForTests).TrimEnd('\\');
+            string stop = Path.GetFullPath(trustedBase).TrimEnd('\\');
             return SamePath(full, stop) || full.StartsWith(stop + "\\", StringComparison.OrdinalIgnoreCase);
         }
 
-        // Configure (SYSTEM): hata metni ya da null
-        internal static string ApplyInstallFolderPolicy(string installDir, string state, Action<string> log)
+        // Configure (SYSTEM): hata metni ya da null. trustedBase: bkz. Exposed (kurulumda null)
+        internal static string ApplyInstallFolderPolicy(string installDir, string state, string trustedBase, Action<string> log)
         {
             if (!Directory.Exists(installDir)) return null;
-            if (!Exposed(installDir, Directory.GetAccessControl(installDir))) return null;   // zaten korunuyor (ör. Program Files): dokunulmaz
+            if (!Exposed(installDir, Directory.GetAccessControl(installDir), trustedBase)) return null;   // zaten korunuyor (ör. Program Files): dokunulmaz
             if (state != StateNew && state != StatePops)
                 return $"Kurulum klasörü ({installDir}) kullanıcıların yazabildiği bir yerde ve POps'a ait değil; izinleri değiştirilmedi. POps'u ayrı, yeni bir klasöre kurun (ör. C:\\Program Files\\POps).";
             try

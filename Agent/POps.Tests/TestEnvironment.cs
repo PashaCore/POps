@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Security.Principal;
 
 namespace POps.Tests
@@ -13,11 +12,12 @@ namespace POps.Tests
         public static readonly string Root = Path.Combine(Path.GetTempPath(), "pops-tests", Guid.NewGuid().ToString("N").Substring(0, 8));
 
 #if !NETFRAMEWORK
-        public static readonly string[] DefaultConfigPaths;
         // SYSTEM bileşenlerinin log klasörü (loglar yine LogDirectoryOverride'a gider; bu yalnızca yol olarak kullanılır)
         public static readonly string DefaultMachineLogDir = Path.Combine(Root, "machine-logs");
 #endif
 
+        // Süreç geneli değerler burada, test sürecinin başında bir kez kurulur ve sonra hiçbir test değiştirmez: log klasörleri ve
+        // servis hesabının SID'leri (ParallelSafetyTests: her yerde okunabilirler, yazılamazlar)
         static TestEnvironment()
         {
             Directory.CreateDirectory(Root);
@@ -29,14 +29,11 @@ namespace POps.Tests
 #if NETFRAMEWORK
             POps.Installer.Setup.SystemSid = me;
 #else
-            DefaultConfigPaths = POps.Shared.POpsHelpers.ConfigPaths.ToArray();
             POps.Shared.POpsHelpers.LogDirectoryOverride = Path.Combine(Root, "logs");
             POps.Shared.POpsHelpers.MachineLogDir = DefaultMachineLogDir;
-            // Bağlamı olmayan ayar okumaları (POpsHelpers'ın parametresiz biçimleri) gerçek C:\POps\appsettings.json'u okumaz
-            POps.Shared.POpsHelpers.ConfigPaths = new string[0];
             POpsAgent.SecureStore.SystemSid = me;
-            // Ajanın yolları, çalışma durumu ve makine kapıları her testin kendi bağlamındadır (bkz. AgentHarness): makineye
-            // dokunan her kapı orada reddeden sahtedir. Burada sıfırlanacak test seam'i kalmadı (Worker bölmesinin b3 adımı).
+            // Ajanın yolları, ayar dosyaları, çalışma durumu ve makine kapıları her testin kendi bağlamındadır (bkz. AgentHarness):
+            // makineye dokunan her kapı orada reddeden sahtedir. Sıfırlanacak test seam'i yok (Worker bölmesinin b3 ve d adımları).
 #endif
         }
 
@@ -66,21 +63,13 @@ namespace POps.Tests
 
     }
 
-    // Statik kurucunun her test sınıfından önce çalışmasını garanti eder. Paralel çalışan sınıfların tabanıdır: hiçbir
-    // statiği değiştirmez.
+    // Statik kurucunun her test sınıfından önce çalışmasını garanti eder. Test sınıflarının tabanıdır: hiçbir statiği
+    // değiştirmez.
     public abstract class TestBase
     {
         protected TestBase()
         {
             System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(TestEnvironment).TypeHandle);
         }
-    }
-
-    // SharedState koleksiyonunun tabanı: sınıfın süreç geneli bir değere (ortam değişkeni, ayar dosyaları, servis hesabı,
-    // kendi statik önbelleği, MSI custom action'larının güvenilir kökü) dokunduğunu gösterir. Worker bölmesinin b3 adımından
-    // beri her testten önce sıfırlanacak test seam'i yok. Bundan türeyen sınıf [Collection(SharedStateCollection.Name)]
-    // taşır; paralel bir sınıf bundan türemez (ParallelSafetyTests)
-    public abstract class SharedStateTestBase : TestBase
-    {
     }
 }

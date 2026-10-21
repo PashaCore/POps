@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,9 +13,10 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Makine kapıları güvenli varsayılanla (bkz. MachineSeams): testten ulaşılan hiçbir yol gerçek güvenlik duvarı betiğini,
-    // kiosk kayıt defterini, BITS'i, güç API'sini, winget'i, süreç kapatmayı, updater'ı, servis durdurmayı ya da kurulu
-    // servisin tepsi borusunu kuramaz. Gerçek kapılar yalnızca MachineSeams.Production'da kurulur ve onu yalnızca Program
-    // çağırır; kapı verilmeyen her yol (MachineSeams'in parametresiz hâli, AgentHarness) reddeden sahtelere düşer.
+    // kiosk kayıt defterini, sistem ortam değişkenlerini, BITS'i, güç API'sini, winget'i, süreç kapatmayı, updater'ı, servis
+    // durdurmayı, kurulu servisin tepsi borusunu ya da dinleyen eş önbelleği sunucusunu kuramaz. Gerçek kapılar yalnızca
+    // MachineSeams.Production'da kurulur ve onu yalnızca Program çağırır; kapı verilmeyen her yol (MachineSeams'in parametresiz
+    // hâli, AgentHarness) reddeden sahtelere düşer.
     public class MachineSeamsTests : TestBase
     {
         internal static MethodInfo Production =>
@@ -36,8 +38,19 @@ namespace POps.Tests.Agent
                 object value = property.GetValue(machine);
                 if (property.Name == nameof(MachineSeams.Bits)) Assert.Null(value);
                 else if (value is Delegate seam)
+                {
                     Assert.True(seam.Method.DeclaringType == typeof(MachineSeams.Refusing),
                         $"{property.Name}: {seam.Method.DeclaringType}.{seam.Method.Name} reddeden sahte değil");
+                    if (property.Name == nameof(MachineSeams.PeerCacheServer))
+                    {
+                        // Eş önbelleğinin sunucusu kurulur ama dinlemez: Start, portu açılamayan bir sunucu gibi reddeder
+                        using IPeerCacheServer server = machine.PeerCacheServer(new string('0', 64), "yok", _ => true, PeerCache.MaxClients);
+                        Assert.Throws<SocketException>(server.Start);
+                        Assert.Equal(0, server.Port);
+                    }
+                    // Bu bilgisayarın sistem ortam değişkenleri okunmaz (eski sürümden kalan gizli değer yok sayılır)
+                    if (property.Name == nameof(MachineSeams.ReadMachineVariable)) Assert.Null(machine.ReadMachineVariable("POPS_BYPASS_SECRET"));
+                }
                 else if (property.Name == nameof(MachineSeams.Kiosk))
                     Assert.False(value is WindowsKioskRegistry, "kiosk kaydı gerçek kayıt defteri");
                 else if (property.Name == nameof(MachineSeams.TrayPipe))
@@ -87,8 +100,6 @@ namespace POps.Tests.Agent
 
     // Harness'le kurulan Worker ve servisler yalnızca bağlamın reddeden kapılarını tutar: nesne çizgesinde gerçek bir kapının
     // (Production'ın kurduğu temsilci ya da gerçek kayıt defteri) izi yoktur, parçalar kapılarını bağlamdan alır.
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir; bu testler soket ya da boru açmaz.
-    [Collection(MachineCollection.Name)]
     public class MachineSeamsWorkerTests : TestBase
     {
         private static bool Ours(Type type) =>
@@ -172,7 +183,9 @@ namespace POps.Tests.Agent
             Assert.Same(machine.Profiles, transfer.ProfileInfo);
             PeerCache cache = agent.Updater.PeerCache;
             Assert.Same(machine.PeerCacheFirewall, cache.FirewallRunner);
-            Assert.Same(machine.PeerCacheEndpoint, cache.ListenEndpoint);
+            Assert.Same(machine.PeerCacheServer, cache.NewServer);
+            Assert.Contains(machine.ReadMachineVariable, Fields(agent.Credentials));
+            Assert.Contains(machine.DeleteMachineVariable, Fields(agent.Credentials));
             Assert.Null(agent.Updater.Bits.Runner);
             Assert.False(agent.Updater.Bits.Enabled);
             Assert.Same(machine.LaunchUpdater, agent.Updater.LaunchUpdater);

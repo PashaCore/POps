@@ -10,6 +10,7 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
+    // Machine: 127.0.0.1'de dinleyen bir soket açılır (gerçek WebSocket bağlantısı)
     [Collection(MachineCollection.Name)]
     public class WebSocketMessagesTests : TestBase
     {

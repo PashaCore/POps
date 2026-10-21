@@ -15,8 +15,6 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Dosya aktarımı: ad temizleme, yalnızca kendi sunucusu, izinli hedefler, çekmede profil ve güvenli klasör kuralları
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class FileTransferTests : TestBase, IDisposable
     {
         private const string Server = "https://pops.example";

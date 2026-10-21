@@ -18,9 +18,10 @@ namespace POps.Tests
     //     using var worker = new Worker(NullLogger<Worker>.Instance, agent.Context);
     //
     // Makine kapıları (bkz. MachineSeams): verilmezse reddeden sahteler (MachineSeams'in varsayılanı; kiosk kaydı bellekteki
-    // FakeKioskRegistry). Gerçek güvenlik duvarına, kayıt defterine, BITS'e, güç API'sine, winget'e, süreçlere, updater'a ve
-    // kurulu servisin tepsi borusuna hiçbir yoldan ulaşılmaz (bkz. MachineSeamsTests). Bir kapıyı sınayan test yalnızca onun
-    // sahtesini verir: AgentHarness.Create(machine: new MachineSeams { FirewallScripts = ... }).
+    // FakeKioskRegistry). Gerçek güvenlik duvarına, kayıt defterine, sistem ortam değişkenlerine, BITS'e, güç API'sine, winget'e,
+    // süreçlere, updater'a ve kurulu servisin tepsi borusuna hiçbir yoldan ulaşılmaz, eş önbelleği dinlemez (bkz.
+    // MachineSeamsTests). Bir kapıyı sınayan test yalnızca onun sahtesini verir: AgentHarness.Create(machine: new MachineSeams
+    // { FirewallScripts = ... }).
     internal sealed class AgentHarness : IDisposable
     {
         private readonly string _root;
@@ -97,7 +98,7 @@ namespace POps.Tests
         {
             machine ??= RefusingMachine();
             var trust = new ServerTrust(paths.ServerCaPath);
-            var credentials = new CredentialStore(paths);
+            var credentials = new CredentialStore(paths, machine.ReadMachineVariable, machine.DeleteMachineVariable);
             var capabilities = new CapabilityState(paths.SecureFile(AgentCapabilities.FileName), trust);
             return new AgentContext(paths,
                 capabilities,
