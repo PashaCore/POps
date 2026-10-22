@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Panel: keep file transfer off on a PC, and choose features to install off.** The capability policy on
+  **Cihaz kaydı ve güvenlik** covers file transfer next to remote command and remote screen: the server keeps a
+  standing "off" request (`set-capabilities` `files_enabled`, migration `0033`), re-sends it when the agent reconnects
+  reporting it on, and refuses file transfers to that PC meanwhile (#199). The enrollment token dialog lists remote
+  command, remote screen, file transfer, exam mode, power actions, messages and in-lab package sharing; the result
+  shows the ready `msiexec` command with `NAME_ENABLED=0` for each feature ticked, so a staff PC can be installed with
+  them off from the first start (#198).
 - **Simulator lab distribution.** `tools/agent_simulator.py --labs N` creates short-lived `SIM-LAB-*` enrollment
   tokens and spreads simulated agents evenly across them for realistic class and report testing. Thanks to
   @adity982 (#170, closes #72).
@@ -16,6 +23,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Panel rebuilt for everyday work (#198).** Every page was rebuilt on the same engine and API, without a
+  backend change: one **Bilgisayarlar** section (lab tiles with status squares, the lab's PCs, a flat list) and a full
+  PC page (`pc?id=`) with the problems and their fixes and tabs for general, hardware, software, updates, history,
+  events and files; labelled buttons with one primary action per page and the rest in a **Diğer** menu; lists as the
+  main content, rows that open the item; **Sistem ve Güncelleme** and **Ayarlar** sections as sidebar sub-items, with
+  server and agent updates shown as steps. No KPI tiles or decorative charts on the working pages; statistics stay on
+  **Raporlar**.
+- **Agent: winget pins the newest version and says where a package landed (#202).** Without a version the agent first
+  reads the newest version in the winget source and installs that one, so `--scope machine` can no longer quietly
+  install an old release that still had a machine-scope installer (in the field Anki fell back from 26.09.3 to
+  2.1.65); the output says which version was chosen. A second line says where the package landed: machine-wide, or
+  only in the SYSTEM account's profile, where the PC's users do not see it.
+- **Agent: file transfer errors in plain Turkish (#202).** A broken upload or download no longer shows a raw .NET
+  message such as `Error while copying content to a stream.`; it says what happened (for example that the connection
+  was cut and that a proxy's size limit, such as Cloudflare's 100 MB, may be the cause) with the original error in
+  brackets. HTTP 413, DNS, connection and TLS errors have their own texts.
+- **Docs: file transfers through a proxy's size limit** in troubleshooting (#201).
 - **Backend dependencies: asyncpg 0.32, redis 8.1, pydantic 2.14 and FastAPI 0.143** (#165, #166, #172, #174).
   - asyncpg keeps the pool's `min_size` connections open (POps: 2 per worker) and fixes a pool deadlock after a protocol abort.
   - redis-py 8 talks RESP3 by default with compatible responses; the multi-worker Redis job passes unchanged.
@@ -45,6 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Panel: the PC page's file buttons with `?tab=files`.** Opening a PC page directly on the files tab stopped the
+  page's script before the buttons were wired, so **Dosya gönder** and **Dosya al** did nothing (#198).
+- **Panel: the MAC address on the PC page.** The General tab read a field the device list never has, so it always
+  showed "—"; it now comes from the hardware inventory (#198).
 - **Panel: the running version after a manual install.** The server stored the running version only from an
   update result, so a PC whose agent was installed or downgraded by hand kept showing the old version. The version
   the agent announces when it connects is now stored as well (#197, found in the 0.1.24 field test).
