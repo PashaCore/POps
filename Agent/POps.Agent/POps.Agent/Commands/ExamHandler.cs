@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Text.Json;
@@ -21,18 +20,16 @@ namespace POpsAgent
         private readonly Action<string> _toTray;
         private readonly Action<LocalAuditEvent> _audit;
         private readonly string _serverUrl;
-        private readonly Func<DateTimeOffset> _clock;
         private readonly CapabilityState _capabilities;
         // Bu Worker'ın sınav modu (aynı adlı özellik: ExamMode.TryParse gibi kurallar yine türden okunur)
         private ExamMode ExamMode { get; }
         private readonly PeerCache _peerCache;
 
-        // send: komut kanalına gönderim; clock: emrin doğrulandığı ve sınavdan çıkılan an (testlerde sahteleri);
-        // capabilities: bağlamın yetenek durumu; exam: sınav modunun durumu ve makine kapıları; peerCache: sınava girip
-        // çıkınca yeniden denetlenen eş önbelleği
+        // send: komut kanalına gönderim; capabilities: bağlamın yetenek durumu; exam: sınav modunun durumu, makine kapıları ve
+        // saati (emrin doğrulandığı ve sınavdan çıkılan an, bitişi sayan monotonik saat; testlerde sahteleri); peerCache: sınava
+        // girip çıkınca yeniden denetlenen eş önbelleği
         public ExamHandler(CapabilityGate gate, ServerHandshake handshake, Func<object, Task<bool>> send, Action<string> toTray,
-            Action<LocalAuditEvent> audit, string serverUrl, Func<DateTimeOffset> clock, CapabilityState capabilities, ExamMode exam,
-            PeerCache peerCache)
+            Action<LocalAuditEvent> audit, string serverUrl, CapabilityState capabilities, ExamMode exam, PeerCache peerCache)
         {
             ExamMode = exam ?? throw new ArgumentNullException(nameof(exam));
             _peerCache = peerCache ?? throw new ArgumentNullException(nameof(peerCache));
@@ -42,7 +39,6 @@ namespace POpsAgent
             _toTray = toTray ?? throw new ArgumentNullException(nameof(toTray));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
             _serverUrl = serverUrl;
-            _clock = clock ?? throw new ArgumentNullException(nameof(clock));
             _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
         }
 
@@ -57,12 +53,12 @@ namespace POpsAgent
 
         private readonly HashSet<string> _examStoppedLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // Tepsi bandı: mesaj ve bitiş zamanı
+        // Tepsi bandı: mesaj ve bitiş zamanı, bu bilgisayarın saatiyle (bant bu saatin yanında okunur; sınav da o saatte biter)
         internal static string ExamTrayMessage(ExamSettings? settings) =>
             "EXAM_ON:" + Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object?>
             {
                 ["message"] = string.IsNullOrWhiteSpace(settings?.Message) ? "Sınav modu: yalnızca izin verilen siteler açık" : settings.Message,
-                ["until"] = settings?.Until,
+                ["until"] = settings?.EndsAt ?? settings?.Until,
             }));
 
         // Sınava giriş ve çıkış birbirini beklemez olmasın (dönemsel tur, sunucu emri, set_capabilities aynı anda gelebilir)
@@ -87,7 +83,7 @@ namespace POpsAgent
                 if (ExamMode.IsActive) await EndExamAsync("capability", reply: true);
                 return;
             }
-            if (!ExamMode.TryParse(root, _clock(), out ExamSettings? settings, out string? error))
+            if (!ExamMode.TryAccept(root, out ExamSettings? settings, out string? error))
             {
                 POpsHelpers.Log("EXAM", $"Sınav modu emri uygulanmadı: {error}.", true);
                 await SendExamStateAsync(reply: true);
@@ -107,7 +103,8 @@ namespace POpsAgent
             _ = Task.Run(_peerCache.SyncAsync);
             lock (_examStoppedLogged) _examStoppedLogged.Clear();
             _audit(LocalAudit.ExamStarted(settings));
-            POpsHelpers.Log("EXAM", $"SINAV MODU AKTİF: {settings.Allow.Count} izinli kayıt, bitiş {(settings.Until == null ? "yok" : DateTimeOffset.FromUnixTimeSeconds(settings.Until.Value).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture))}, {settings.BlockApps.Count} engelli uygulama.");
+            string clock = settings.ServerClock ? "sunucunun saatiyle" : settings.Until == null ? "until yok, en çok 8 saat" : "bu bilgisayarın saatiyle";
+            POpsHelpers.Log("EXAM", $"SINAV MODU AKTİF: {settings.Allow.Count} izinli kayıt, bitiş {ExamMode.LocalTime(settings.EndsAt ?? 0)} (kalan {ExamMode.Minutes(settings.Remaining)} dk, {clock}), {settings.BlockApps.Count} engelli uygulama.");
             _toTray(ExamTrayMessage(ExamMode.Load()));
         }
 
@@ -133,7 +130,7 @@ namespace POpsAgent
             // Kaldırılamazsa neden ExamMode'da loglanır; sunucuya "hâlâ sınavda" gider
             if (!ExamMode.IsActive || !await ExamMode.DisableAsync()) return;
             _ = Task.Run(_peerCache.SyncAsync);
-            Interlocked.Exchange(ref _examLeftAt, _clock().ToUnixTimeSeconds());
+            Interlocked.Exchange(ref _examLeftAt, ExamMode.Clock.GetUtcNow().ToUnixTimeSeconds());
             _audit(LocalAudit.ExamEnded(source));
             POpsHelpers.Log("EXAM", $"Sınav modu bitti ({source}).");
             _toTray("EXAM_OFF");
@@ -163,18 +160,21 @@ namespace POpsAgent
         internal void OnCommandSocketOpened() => _examStateReported = false;
 
         // Bir tur: sınav yeteneği yerel olarak kapalıysa (EXAM_ENABLED=0 ile yeniden kurulum) ya da süre dolduysa
-        // (sunucuya ulaşılamasa da) biter; yoksa engelli uygulamalar kapatılır, refreshReason verilmişse izin listesi
-        // yeniden çözülür. Dönen: sınav bu turda bitti mi.
-        internal async Task<bool> ExamTickAsync(DateTimeOffset now, string? refreshReason)
+        // (monotonik saatle, sunucuya ulaşılamasa da; bkz. ExamMode.TimeLeftAsync) biter; yoksa engelli uygulamalar kapatılır,
+        // refreshReason verilmişse izin listesi yeniden çözülür. Dönen: sınav bu turda bitti mi.
+        internal async Task<bool> ExamTickAsync(string? refreshReason)
         {
             ExamSettings? settings = ExamMode.IsActive ? ExamMode.Load() : null;
             if (settings == null) return false;
             bool allowed = _capabilities.ExamEnabled;
-            if (!allowed || ExamMode.Expired(settings, now))
+            (TimeSpan Left, bool EndsAtMoved)? end = allowed ? await ExamMode.TimeLeftAsync() : null;
+            if (!allowed || end?.Left <= TimeSpan.Zero)
             {
                 await EndExamAsync(allowed ? "until" : "capability");
                 return !ExamMode.IsActive;
             }
+            // Bitiş bu bilgisayarın saatine göre kaydı (saat ayarlandı, yeniden başlatmada kısaltıldı): bant yeni bitişi gösterir
+            if (end?.EndsAtMoved == true) _toTray(ExamTrayMessage(ExamMode.Load()));
             StopBlockedApps(settings);
             if (refreshReason != null) await ExamMode.RefreshAsync(_serverUrl, refreshReason);
             return false;

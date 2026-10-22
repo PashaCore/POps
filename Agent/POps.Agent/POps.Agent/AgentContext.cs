@@ -15,12 +15,13 @@ namespace POpsAgent
     //    ve kimlik bilgilerini bağlamdan alır.
     //  * b3: makine kapıları (Machine: güvenlik duvarı betikleri, kiosk kaydı, eş önbelleği, BITS, updater, güç, oturum,
     //    winget, sınav, dosya aktarımı, tepsi borusu, --generalize; bkz. MachineSeams).
+    //  * Saat (Clock): bilgisayarın saati ve monotonik saat; bugün sınav modunun bitişi okur (bkz. ExamMode).
     // Her yeni parça kurucuya bir argüman ve bir salt okunur özellik olarak eklenir.
     [SupportedOSPlatform("windows")]
     public sealed class AgentContext
     {
         public AgentContext(AgentPaths paths, CapabilityState capabilities, ModuleState modules, CredentialStore credentials,
-            ServerTrust trust, AgentHttp http, AgentUpdater updater, MachineSeams machine)
+            ServerTrust trust, AgentHttp http, AgentUpdater updater, MachineSeams machine, TimeProvider clock)
         {
             Paths = paths ?? throw new ArgumentNullException(nameof(paths));
             Capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
@@ -30,6 +31,7 @@ namespace POpsAgent
             Http = http ?? throw new ArgumentNullException(nameof(http));
             Updater = updater ?? throw new ArgumentNullException(nameof(updater));
             Machine = machine ?? throw new ArgumentNullException(nameof(machine));
+            Clock = clock ?? throw new ArgumentNullException(nameof(clock));
         }
 
         // Veri, güvenli depo, log, ayar dosyaları, kurum sertifikası ve görev dosyaları
@@ -48,5 +50,8 @@ namespace POpsAgent
         public AgentUpdater Updater { get; }
         // Makineye açılan kapılar (servis: MachineSeams.Production; testlerde reddeden sahteler)
         public MachineSeams Machine { get; }
+        // Bilgisayarın saati (GetUtcNow) ve monotonik saat (GetTimestamp; saat ayarlansa da ileri gider). Servis: AgentClock;
+        // testlerde ikisini ayrı ayrı ilerleten sahte.
+        public TimeProvider Clock { get; }
     }
 }

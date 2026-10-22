@@ -174,6 +174,7 @@ namespace POps.Tests.Agent
             Assert.Same(machine.FirewallScripts, worker.Exam.Scripts);
             Assert.Same(machine.ExamResolver, worker.Exam.Resolver);
             Assert.Same(machine.StopProcess, worker.Exam.StopProcess);
+            Assert.Same(agent.Context.Clock, worker.Exam.Clock);
             Assert.Contains(machine.Power, Fields(worker.Power));
             Assert.Contains(machine.HasConsoleUser, Fields(worker.Power));
             Assert.Contains(machine.HasConsoleUser, Fields(worker.Messages));
@@ -199,7 +200,8 @@ namespace POps.Tests.Agent
             AssertNoProductionSeam(agent.Context);
             AssertNoProductionSeam(agent.NewUpdater("0.1.0", launch: (_, _, _) => false));
             AssertNoProductionSeam(new NetworkIsolation(agent.Paths.SecureFile(NetworkIsolation.StateFileName), machine.FirewallScripts));
-            AssertNoProductionSeam(new ExamMode(agent.Paths.SecureFile(ExamMode.StateFileName), machine.FirewallScripts, machine.ExamResolver, machine.StopProcess));
+            AssertNoProductionSeam(new ExamMode(agent.Paths.SecureFile(ExamMode.StateFileName), machine.FirewallScripts, machine.ExamResolver, machine.StopProcess,
+                agent.Context.Clock));
             AssertNoProductionSeam(new QuarantineControl(agent.Paths, _ => { }, () => Task.FromResult(true), () => Task.FromResult(true), machine.Kiosk));
             AssertNoProductionSeam(new FileTransfer(agent.Paths, agent.Http, agent.Credentials, machine.PublicDesktop, machine.Profiles));
             AssertNoProductionSeam(new PowerActions((_, _, _) => Task.CompletedTask, _ => Task.CompletedTask, _ => { }, () => false, agent.Capabilities,

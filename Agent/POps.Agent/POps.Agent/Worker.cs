@@ -189,8 +189,9 @@ namespace POpsAgent
                 ToTray, TrayInConsoleSession, _capabilities, _machine.Power, _machine.HasConsoleUser);
             Messages = new UserMessages(SendTaskResultAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
                 ToTray, TrayConnected, _capabilities, _machine.HasConsoleUser);
-            _exam = new ExamHandler(_gate, Handshake, _channel.TrySendAsync, ToTray, LocalAudit.Write, _serverUrl, () => ExamClock(), _capabilities,
-                new ExamMode(_paths.SecureFile(ExamMode.StateFileName), _machine.FirewallScripts, _machine.ExamResolver, _machine.StopProcess), _peerCache);
+            _exam = new ExamHandler(_gate, Handshake, _channel.TrySendAsync, ToTray, LocalAudit.Write, _serverUrl, _capabilities,
+                new ExamMode(_paths.SecureFile(ExamMode.StateFileName), _machine.FirewallScripts, _machine.ExamResolver, _machine.StopProcess, context.Clock),
+                _peerCache);
             _files = new FileTransferHandler(_gate, _serverUrl, () => _hwId, _channel.TrySendAsync, ToTray, LocalAudit.Write, _capabilities,
                 new FileTransfer(_paths, _http, _credentials, _machine.PublicDesktop, _machine.Profiles));
             Binding = new HardwareBinding(_paths,
@@ -401,8 +402,6 @@ namespace POpsAgent
 
         // ------------------------------------------------------------------ sınav modu (bkz. ExamHandler)
         private volatile bool _examNetworkChanged;
-        // Testler: emrin doğrulandığı ve sınavdan çıkılan an
-        internal Func<DateTimeOffset> ExamClock { get; set; } = () => DateTimeOffset.UtcNow;
 
         // Testler: sınav modunun durumu (durum dosyası, ayarlar)
         internal ExamMode Exam => _exam.Exam;
@@ -411,7 +410,7 @@ namespace POpsAgent
         internal Task HandleExamModeAsync(JsonElement root) => _exam.HandleExamModeAsync(root);
         internal Task EndExamAsync(string source, bool reply = false) => _exam.EndExamAsync(source, reply);
         internal Task ReportExamStateOnConnectAsync() => _exam.ReportExamStateOnConnectAsync();
-        internal Task<bool> ExamTickAsync(DateTimeOffset now, string refreshReason) => _exam.ExamTickAsync(now, refreshReason);
+        internal Task<bool> ExamTickAsync(string refreshReason) => _exam.ExamTickAsync(refreshReason);
 
         // 2 sn'de bir: süre doldu mu, engelli uygulamalar; 2 dk'da bir ve ağ adresi değişince: izin listesi çözümü
         private async Task ExamLoopAsync(CancellationToken token)
@@ -429,7 +428,7 @@ namespace POpsAgent
                         lastRefresh = DateTime.UtcNow;
                         _examNetworkChanged = false;
                     }
-                    await ExamTickAsync(DateTimeOffset.UtcNow, refresh ? "dönemsel ya da ağ adresi değişti" : null);
+                    await ExamTickAsync(refresh ? "dönemsel ya da ağ adresi değişti" : null);
                 }
                 catch (Exception ex) { POpsHelpers.Log("EXAM", $"Sınav modu denetimi başarısız: {ex.Message}", true); }
                 try { await Task.Delay(TimeSpan.FromSeconds(2), token); }

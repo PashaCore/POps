@@ -63,7 +63,8 @@ namespace POpsAgent
                 trust,
                 new AgentHttp(trust.NewHandler(), credentials),
                 new AgentUpdater(paths, capabilities, machine),
-                machine);
+                machine,
+                AgentClock.Instance);
 
             // Tatbikat kararı açılışın başında alınır; health.json ancak Worker çekirdek başlangıcını tamamlayınca yazılır.
             bool suppressOperationalHealth = context.Updater.ApplyRollbackDrillOnStartup();
