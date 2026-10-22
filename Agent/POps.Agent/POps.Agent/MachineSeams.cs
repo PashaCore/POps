@@ -34,8 +34,9 @@ namespace POpsAgent
         // PeerCache, PeerCacheServer)
         public Func<string, Task<(int Exit, string Output)>> PeerCacheFirewall { get; init; } = Refusing.Script;
         public PeerCacheServerFactory PeerCacheServer { get; init; } = Refusing.NoPeerCacheServer;
-        // Güç işlemi (kapatma, yeniden başlatma, oturum kapatma, kilitleme; bkz. PowerActions). Dönen: uygulandı mı
-        public Func<PowerOperation, int, bool> Power { get; init; } = Refusing.Power;
+        // Güç işlemi (kapatma, yeniden başlatma, oturum kapatma, kilitleme; bkz. PowerActions). Dönen: işlemin gerçek sonucu
+        // (Win32 hata kodu ya da shutdown.exe'nin çıkış kodu; bkz. PowerOutcome)
+        public Func<PowerOperation, int, PowerOutcome> Power { get; init; } = Refusing.Power;
         // Etkin konsol oturumunda oturum açmış kullanıcı var mı, ve o oturumun kimliği (bkz. SessionTasks)
         public Func<bool> HasConsoleUser { get; init; } = Refusing.NoConsoleUser;
         public Func<uint> ConsoleSession { get; init; } = Refusing.NoConsoleSession;
@@ -98,7 +99,7 @@ namespace POpsAgent
             public static IPeerCacheServer NoPeerCacheServer(string sha256, string path, Func<IPAddress, bool> isLocal, int maxClients) =>
                 new NotListeningPeerCacheServer(sha256);
 
-            public static bool Power(PowerOperation operation, int taskId) =>
+            public static PowerOutcome Power(PowerOperation operation, int taskId) =>
                 throw new InvalidOperationException($"Testte gerçek güç API'si çağrıldı ({operation}, görev {taskId}).");
 
             public static bool NoConsoleUser() => false;

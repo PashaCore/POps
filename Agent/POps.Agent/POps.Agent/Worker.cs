@@ -185,9 +185,11 @@ namespace POpsAgent
             _vision = new VisionSession(() => _hwId, _pcName, _serverUrl, _gate, Handshake, ToTray, () => _tray.Pipe, Audit, _wsVisionLock,
                 _capabilities, _credentials, _trust, _http);
             _remoteInput = new RemoteInputHandler(_vision, _gate, () => _hwId, () => _tray.Pipe, _channel);
-            Power = new PowerActions(SendTaskResultAsync, taskId => DenyCapabilityAsync(PowerActions.Capability, PowerActions.ActionName, taskId),
+            // Güç işlemi ve kullanıcı mesajı sonucu (execute'un result'ıyla aynı biçim ve aynı saklama/onay yolu)
+            var taskResults = new TaskResults(_outbox, () => _hwId);
+            Power = new PowerActions(taskResults, taskId => DenyCapabilityAsync(PowerActions.Capability, PowerActions.ActionName, taskId),
                 ToTray, TrayInConsoleSession, _capabilities, _machine.Power, _machine.HasConsoleUser);
-            Messages = new UserMessages(SendTaskResultAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
+            Messages = new UserMessages(taskResults.SendAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
                 ToTray, TrayConnected, _capabilities, _machine.HasConsoleUser);
             _exam = new ExamHandler(_gate, Handshake, _channel.TrySendAsync, ToTray, LocalAudit.Write, _serverUrl, _capabilities,
                 new ExamMode(_paths.SecureFile(ExamMode.StateFileName), _machine.FirewallScripts, _machine.ExamResolver, _machine.StopProcess, context.Clock),
@@ -557,10 +559,6 @@ namespace POpsAgent
             return pipe != null && pipe.IsConnected && pipe.ClientSession != UserSessionLauncher.NoSession && pipe.ClientSession == _machine.ConsoleSession();
         }
 
-        // Güç işlemi ve kullanıcı mesajı sonucu (execute'un result'ıyla aynı biçim ve aynı saklama/onay yolu)
-        private Task SendTaskResultAsync(int taskId, string output, int exitCode) =>
-            SendResultAsync(taskId, new { type = "result", pc_name = _hwId, task_id = taskId, output, exit_code = exitCode });
-
         // Ekran yakalamanın başlatılması ve görüntüleyici denetimi (bkz. VisionSession)
         internal void StartCapture(int fps) => _vision.StartCapture(fps);
         internal Task HandleVisionControlAsync(JsonElement root) => _vision.HandleVisionControlAsync(root);
@@ -609,8 +607,7 @@ namespace POpsAgent
         internal TrayPipeServer TrayPipe => _tray.Pipe;
         internal SoftwareReporter Software { get => _software; set => _software = value; }
 
-        // Görev sonucu ve heartbeat'te bekleyen sonuçlar (bkz. ResultOutbox)
-        private Task SendResultAsync(int taskId, object result) => _outbox.SendResultAsync(taskId, result);
+        // Heartbeat'te bekleyen görev sonuçları (bkz. ResultOutbox)
         internal Task FlushPendingResultsAsync() => _outbox.FlushPendingResultsAsync();
 
         private string InitializeIdentity()

@@ -552,20 +552,35 @@ that arrived.
   kalır."). It does not take the keyboard focus, and the user may close it: the action happens anyway. The service
   owns the timer, so the action also happens without a tray; a tray that connects during the countdown shows the
   remaining seconds. With `delay` 0 the agent acts at once, without a window.
-- **Acting.** When the time is up the agent sends the result first (0, `[TAMAM] Bilgisayar kapatılıyor.` /
-  `… yeniden başlatılıyor.` / `[TAMAM] Kullanıcının oturumu kapatılıyor.` / `[TAMAM] Bilgisayar kilitleniyor.`) and
-  then acts; after a shutdown or restart the server receives it on the next connection if it did not arrive before.
-  A `logoff` or `lock` whose user signed out during the countdown ends with -6 instead. An action that fails after
-  the result was sent is only logged (`[HATA] Güç işlemi uygulanamadı`).
-  - Shutdown and restart: `%SystemRoot%\System32\shutdown.exe /s` or `/r` with `/t 0 /f /d p:0:0`. Running programs
-    are closed without asking (lab PCs must not hang on a "save changes?" dialog); the countdown and the note are the
-    warning.
-  - Sign-out: `WTSLogoffSession` on the console session, from the service.
+- **Acting.** When the time is up the agent acts, and the task's one `result` reports what really happened, not what
+  was asked. A `logoff` or `lock` whose user signed out during the countdown ends with -6 instead, without acting.
+  - Shutdown and restart cut the connection, so they go in this order. The result `[TAMAM] Bilgisayar kapatılıyor.`
+    (`… yeniden başlatılıyor.`, exit code 0) is written to the result spool as not sent, and nothing sends it yet (a
+    heartbeat neither). Then `%SystemRoot%\System32\shutdown.exe /s` or `/r` runs with `/t 0 /f /d p:0:0`, and the
+    agent waits for its exit code: shutdown.exe starts the shutdown and returns at once. Exit code 0: the agent tries
+    to send the result; if it does not leave before the PC goes down, it is sent from the spool on the first
+    connection after boot. Any other exit code (for example a shutdown blocked by policy, or another one already
+    scheduled): the stored result is replaced with `[HATA] shutdown.exe <code>: <Windows message>. Bilgisayar
+    kapatılmadı.` (`… yeniden başlatılmadı.`) with shutdown.exe's exit code as the exit code, and sent at once; the
+    PC stays on and the agent does nothing else. A shutdown.exe that cannot be started or does not exit within 15
+    seconds is an error too (the Win32 code, or -3). Running programs are closed without asking (lab PCs must not hang
+    on a "save changes?" dialog); the countdown and the note are the warning.
+  - Sign-out and lock do not cut the connection: the agent acts first, then sends the result of that call. Sign-out
+    is `WTSLogoffSession` on the console session, from the service: `[TAMAM] Kullanıcının oturumu kapatılıyor.` when
+    it succeeds.
   - Lock: a service running as LocalSystem cannot lock the user's desktop, so the tray calls `LockWorkStation` when it
-    runs in the console session; the session stays the console session and the user unlocks as usual. When the tray
-    is not connected, runs in another session (Remote Desktop) or does not confirm within 5 seconds, the service
+    runs in the console session and answers whether it succeeded; the session stays the console session and the user
+    unlocks as usual (`[TAMAM] Bilgisayar kilitlendi.`). When the tray is not connected, runs in another session
+    (Remote Desktop), answers that `LockWorkStation` failed or does not answer within 5 seconds, the service
     disconnects the console session (`WTSDisconnectSession`): programs keep running and Windows shows the sign-in
-    screen, but until the user signs in again the PC reports nobody at the console.
+    screen, but until the user signs in again the PC reports nobody at the console (`[TAMAM] Bilgisayar kilitlendi:
+    konsol oturumu ayrıldı …`). An answer from the tray after the 5 seconds is ignored, so a lock the tray did not
+    confirm in time and whose disconnect failed is reported as failed, even if the tray locked the screen late.
+  - A failed `WTSLogoffSession` or `WTSDisconnectSession` ends with its Win32 error code and `[HATA] Kullanıcının
+    oturumu kapatılamadı: …` / `[HATA] Bilgisayar kilitlenemedi: …` (after the tray's answer when the tray was asked).
+    No console session at the moment of the call, an agent that does not run as LocalSystem, or a power call that
+    fails in the agent itself ends with -3 and `[HATA] …`. The server marks a task with any code other than 0
+    `Failed`.
 - **One countdown at a time.** The same `task_id` again is ignored, as for `execute`. A newer `power` replaces the
   running countdown; the older task ends with -2. `cancel_task` with the task's ID stops the countdown (-2,
   `[İPTAL EDİLDİ]: Güç işlemi panelden iptal edildi; bilgisayara dokunulmadı.`); the tray closes the window and shows

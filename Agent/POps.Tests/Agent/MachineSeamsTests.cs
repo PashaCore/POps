@@ -204,7 +204,8 @@ namespace POps.Tests.Agent
                 agent.Context.Clock));
             AssertNoProductionSeam(new QuarantineControl(agent.Paths, _ => { }, () => Task.FromResult(true), () => Task.FromResult(true), machine.Kiosk));
             AssertNoProductionSeam(new FileTransfer(agent.Paths, agent.Http, agent.Credentials, machine.PublicDesktop, machine.Profiles));
-            AssertNoProductionSeam(new PowerActions((_, _, _) => Task.CompletedTask, _ => Task.CompletedTask, _ => { }, () => false, agent.Capabilities,
+            var outbox = new ResultOutbox(new ServerHandshake(), new ResultSpool(agent.Paths.SecureFile(ResultSpool.FileName)), _ => Task.FromResult(true));
+            AssertNoProductionSeam(new PowerActions(new TaskResults(outbox, () => null), _ => Task.CompletedTask, _ => { }, () => false, agent.Capabilities,
                 machine.Power, machine.HasConsoleUser));
             AssertNoProductionSeam(new UserMessages((_, _, _) => Task.CompletedTask, _ => Task.CompletedTask, _ => { }, () => false, agent.Capabilities,
                 machine.HasConsoleUser));
