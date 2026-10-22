@@ -208,6 +208,10 @@ signed updates; install the MSI on them once.
     `[GÜVENLİK] … Offline Bypass …`).
 - A valid code removes the network isolation. Use **Karantinayı Kaldır** in the panel once the PC is back online
   to clear the quarantine state and the lock screen.
+- **A reinstalled agent is quarantined again (or put back into an exam).** Uninstalling the agent during a quarantine
+  or an exam frees the PC: the MSI removes every POps firewall rule and the lock (from 0.1.24-alpha). The server,
+  however, still has the PC quarantined or the lab's exam running, and sends it again as soon as the new agent
+  connects. Lift the quarantine in the panel (or end the exam) before reinstalling.
 
 ## Wake-on-LAN
 

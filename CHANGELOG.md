@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CI: Windows end-to-end test of the agent on a throwaway runner (#203).** On every release tag (and on demand) a
+  fresh Windows machine builds two agent versions with a throwaway signing key, runs the backend with a test CA and
+  checks what cannot be tried on a real school PC without risk: a refused shutdown or restart, an exam with the clock
+  moved two hours both ways, uninstalling during a quarantine or an exam (rules, state files, kiosk policies,
+  firewall profiles), an upgrade during a quarantine, an update with a pinned CA (no BITS) and the lab peer cache
+  (good peer, wrong bytes, peer outside the subnet). The first run of 0.1.24's agent: 11 passed, 2 skipped (lock and
+  sign-out would end the runner's own session), 0 failed. See `docs/testing.md`.
+
+### Changed
+
+- **Docs: reinstalling during a quarantine or an exam.** The troubleshooting guide says to lift the quarantine or end
+  the exam first; otherwise the server sends it again to the new agent.
+
 ## [0.1.24-alpha] - 2026-10-22
 
 **For operators, in short:**
