@@ -1,0 +1,63 @@
+name: Windows agent end-to-end
+
+# POps Windows ajanının (0.1.24 düzeltmeleri, PR #196/#197) sahada doğrulanamayan adımlarını — güç, sınav saati,
+# kaldırma, sabitlenmiş CA, eş önbelleği — atılacak bir windows-latest runner'ında tekrarlar: kurulum, kaldırma,
+# güvenlik duvarı, saat ve servisleri değiştirmek orada serbesttir. Yavaştır: yalnızca elle (workflow_dispatch),
+# e2e-win/** dallarına push'ta ve v* etiketlerinde çalışır, her PR'da değil. Ajan ve backend ürün kodu
+# DEĞİŞTİRİLMEZ (yalnızca test için gömülü imza anahtarı çalışma kopyasında yamalanır). Ayrıntılar: docs/testing.md.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "e2e-win/**" ]
+    tags: [ "v*" ]
+
+permissions:
+  contents: read
+
+env:
+  # Türkçe çıktı runner'ın cp1252 konsolunda UnicodeEncodeError vermesin
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
+jobs:
+  agent-e2e:
+    name: Agent end-to-end (throwaway runner)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install backend deps (websockets, asyncpg, cryptography, uvicorn...)
+        shell: pwsh
+        run: |
+          python -m pip install --require-hashes -r Backend/requirements.lock
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run end-to-end tests
+        shell: pwsh
+        run: tests/e2e-windows/run.ps1
+      - name: Safety net and log collection
+        # run.ps1 yarıda kalsa da: POps güvenlik duvarı kuralları, bekleyen kapatma ve saat eşitlemesi temizlenir;
+        # ajan, MSI ve backend logları artifact klasörüne
+        if: always()
+        shell: pwsh
+        run: |
+          & tests/e2e-windows/safety.ps1
+          $dst = "$env:RUNNER_TEMP\e2e\artifacts"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item C:\POpsLogs\*.log $dst -ErrorAction SilentlyContinue
+          Copy-Item "$env:RUNNER_TEMP\e2e\backend-*.log" $dst -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: e2e-windows-logs
+          path: ${{ runner.temp }}/e2e/artifacts/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
