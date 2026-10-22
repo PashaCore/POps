@@ -15,15 +15,23 @@
     .dev-table th .arr { opacity: 0.6; margin-left: 3px; }
     .dev-table .ver { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
     .dev-table td.mono { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+    .view-switch a { text-decoration: none; }
+    .page-header-actions .btn { gap: 7px; }
+    .dev-bar .actionbar { gap: 4px; }
+    .dev-bar .actionbar .btn.sm { height: 30px; }
 </style>
 
 <div class="page-header">
     <div>
-        <h1><?php _e('Cihazlar'); ?></h1>
+        <h1><?php _e('Bilgisayarlar'); ?></h1>
         <div class="summary" id="devSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="exportBtn" data-tip="<?php _e('Listeyi dışa aktar (CSV)'); ?>" data-tip-pos="left" aria-label="<?php _e('Listeyi dışa aktar'); ?>"><?php echo pops_icon('download'); ?></button>
+        <div class="segmented view-switch" role="group" aria-label="<?php _e('Görünüm'); ?>">
+            <a href="labs"><?php _e('Sınıflar'); ?></a>
+            <a href="devices" class="active" aria-current="page"><?php _e('Liste'); ?></a>
+        </div>
+        <button type="button" class="btn secondary" id="exportBtn"><?php echo pops_icon('download', 'sm'); ?><?php _e('CSV indir'); ?></button>
     </div>
 </div>
 
@@ -138,17 +146,14 @@
         const tgt = n ? POps.tn('{n} bilgisayar', n) : POps.tn('listedeki {n} bilgisayar', rows.length);
         if (!CAN_ADMIN) { bar.innerHTML = `<span class="scope">${POps.tnHtml('{n} bilgisayar', rows.length)}</span>`; return; }
         const wake = POps.t('Uyandır'), restart = POps.t('Yeniden başlat'), shutdown = POps.tx('Kapat', 'power');
+        const btnHtml = (act, icon, label, cls) => `<button type="button" class="btn ${escapeHtml(cls || 'secondary')} sm" data-act="${escapeHtml(act)}" title="${escapeHtml(label + ' · ' + tgt)}">${POps.iconHtml(icon, 'sm')}${escapeHtml(label)}</button>`;
         bar.innerHTML = (n
             ? `<span class="scope sel">${POps.tHtml('{n} seçili', { n: Number(n) })}<button type="button" data-act="clear" aria-label="${escapeHtml(POps.t('Seçimi temizle'))}" data-tip="${escapeHtml(POps.t('Seçimi temizle (Esc)'))}">${POps.iconHtml('x', 'sm')}</button></span>`
             : `<span class="scope">${POps.tHtml('Listedeki {n}', null, { n: `<b>${Number(rows.length)}</b>` })}</span>`)
             + '<span class="sep"></span>'
-            + `<button type="button" class="ibtn" data-act="wake" data-tip="${escapeHtml(wake + ' · ' + tgt)}" aria-label="${escapeHtml(wake)}">${POps.iconHtml('zap')}</button>`
-            + `<button type="button" class="ibtn" data-act="restart" data-tip="${escapeHtml(restart + ' · ' + tgt)}" aria-label="${escapeHtml(restart)}">${POps.iconHtml('restart')}</button>`
-            + `<button type="button" class="ibtn danger" data-act="shutdown" data-tip="${escapeHtml(shutdown + ' · ' + tgt)}" aria-label="${escapeHtml(shutdown)}">${POps.iconHtml('power')}</button>`
+            + btnHtml('wake', 'zap', wake) + btnHtml('restart', 'restart', restart) + btnHtml('shutdown', 'power', shutdown, 'danger-soft')
             + '<span class="sep"></span>'
-            + `<button type="button" class="ibtn" data-act="screen" data-tip="${escapeHtml(POps.t('Ekranları izle'))}" aria-label="${escapeHtml(POps.t('Ekranları izle'))}">${POps.iconHtml('eye')}</button>`
-            + `<button type="button" class="ibtn" data-act="command" data-tip="${escapeHtml(POps.t('Komut gönder'))}" aria-label="${escapeHtml(POps.t('Komut gönder'))}">${POps.iconHtml('terminal')}</button>`
-            + `<button type="button" class="ibtn" data-act="more" data-tip="${escapeHtml(POps.t('Diğer işlemler'))}" aria-label="${escapeHtml(POps.t('Diğer işlemler'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>`;
+            + btnHtml('screen', 'eye', POps.t('Ekranları izle')) + btnHtml('command', 'terminal', POps.t('Komut gönder')) + btnHtml('more', 'more', POps.tx('Diğer', 'menu'));
     }
     function render(force) {
         if (!state.devicesLoaded) return;
@@ -173,9 +178,7 @@
     }
 
     function openPc(h) {
-        ui.focus = h;
-        render(true);
-        dev.open(h, { source: 'devices', onClose: () => { if (ui.focus === h) { ui.focus = null; render(true); } } });
+        location.href = 'pc?id=' + encodeURIComponent(h);
     }
 
     body.addEventListener('click', (e) => {

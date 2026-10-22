@@ -1,6 +1,7 @@
 // =================================================================
 // Kayıtlar sayfasının betiği (logger.php). Ortak betiklerden (POps.*, POps.dev, POps.logs, state) sonra defer
 // ile yüklenir. Sayfanın PHP'den aldığı değer yok; rol header.php'nin window.USER_ROLE'ünden okunur.
+// Adresten gelen süzgeçler: tab=hw, f=warn|bad|sec, pc, kind, from, to (YYYY-AA-GG), risk=high, q.
 // En üstteki saf yardımcılar DOM'a dokunmaz; tests/unit-js/pages.test.mjs sınar (bkz. docs/dashboard.md).
 // =================================================================
 (function () {
@@ -28,21 +29,32 @@
     const LIMITS = [1000, 5000, 20000];
     const SIZES = [25, 50, 75, 100];
     const savedSize = (() => { try { return Number(localStorage.getItem('pops_log_size')) || 0; } catch (e) { return 0; } })();
-    const ui = {
-        tab: params.get('tab') === 'hw' ? 'hw' : 'log', f: ['warn', 'sec'].includes(params.get('f')) ? params.get('f') : 'all', kind: '', q: '', pc: params.get('pc') || '', from: '', to: '',
-        lab: '', who: '', page: 1, size: SIZES.includes(savedSize) ? savedSize : 25,
-        limitIx: 0, open: new Set(), rows: [], byId: new Map(), loaded: false, sig: '',
-        inv: null, invAt: 0, hq: '', hlab: '', hfocus: null, hsig: ''
-    };
-    const list = $('lgList');
+    const isDay = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
 
     // Olay sözlüğü ortak dosyada (assets/pops_devices.js, POps.logs): Kontrol merkezi de aynı dili kullanır
-    const { SEV_WORD, KIND_LABEL, CAT_LABEL, RISK_LABEL, CAP, BY_TYPE, commandOf, EVENTS, parseMeta, isoOf, cleanMsg, cap1, riskSev, whoOf, sourceOf, norm } = POps.logs;
+    const { SEV_WORD, KIND_LABEL, CAT_LABEL, RISK_LABEL, commandOf, isoOf, cleanMsg, cap1, sourceOf, norm } = POps.logs;
+
+    const ui = {
+        f: ['warn', 'bad', 'sec'].includes(params.get('f')) ? params.get('f') : 'all',
+        kind: KIND_LABEL[params.get('kind')] ? params.get('kind') : '',
+        q: (params.get('q') || '').trim().toLocaleLowerCase('tr'),
+        pc: params.get('pc') || '',
+        from: isDay(params.get('from')) ? params.get('from') : '',
+        to: isDay(params.get('to')) ? params.get('to') : '',
+        risk: params.get('risk') === 'high' ? 'high' : '',
+        lab: '', who: '', page: 1, size: SIZES.includes(savedSize) ? savedSize : 25,
+        limitIx: 0, open: new Set(), rows: [], byId: new Map(), loaded: false, sig: '',
+        inv: null, invAt: 0, hq: '', hlab: '', hf: 'all', hsig: ''
+    };
+    const list = $('lgList');
+    if (params.get('q')) $('lgSearch').value = params.get('q');
+    $('lgFrom').value = ui.from;
+    $('lgTo').value = ui.to;
 
     const pcName = (pc) => pc ? dev.name(pc) : '';
-    // Özet satırında sayı kalın: yer tutucuya HTML parçası (POps.tHtml'in üçüncü argümanı)
-    const boldHtml = (n) => `<b>${Number(n)}</b>`;
+    const pcHref = (pc) => 'pc?id=' + encodeURIComponent(pc);
     const labOf = (pc) => { const d = dev.find(pc); return d && d.lab && d.lab !== dev.UNASSIGNED ? d.lab : ''; };
+    const highRisk = (e) => ['high', 'critical'].includes(String(e.r.risk_level || '').toLowerCase());
 
     // ---------------------------------------------------------------- süzgeç
     function hay(e) {
@@ -51,7 +63,9 @@
     }
     function pass(e, skip) {
         if (skip !== 'f' && ui.f === 'warn' && e.sev === 'info') return false;
+        if (skip !== 'f' && ui.f === 'bad' && e.sev !== 'bad') return false;
         if (skip !== 'f' && ui.f === 'sec' && !e.security) return false;
+        if (ui.risk && !highRisk(e)) return false;
         if (ui.kind && e.kind !== ui.kind) return false;
         if (ui.pc && e.pc !== ui.pc) return false;
         if (ui.lab && (ui.lab === dev.UNASSIGNED ? !!labOf(e.pc) : labOf(e.pc) !== ui.lab)) return false;
@@ -74,6 +88,18 @@
         if (d.getFullYear() !== now.getFullYear()) o.year = 'numeric';
         return d.toLocaleDateString(POps.locale, o);
     }
+    // Yasaklı sitenin kategorisi: ek alandan ya da ajanın iletisinden ("KURAL İHLALİ: alan (kategori) kişi")
+    const siteCat = (e) => e.m.violation_category || (cleanMsg(e.r.message).match(/\(([^)]{1,60})\)/) || [])[1] || '';
+    // Uyarının nedeni: gerekçe; yoksa ajanın iletisi (başlığı tekrar etmiyorsa). Yasaklı sitede kategori meta satırında.
+    function whyOf(e) {
+        if (e.why) return e.why;
+        const msg = cleanMsg(e.r.message);
+        if (!msg || e.key === 'dns_block') return '';
+        const low = msg.toLocaleLowerCase('tr'), title = String(e.title).toLocaleLowerCase('tr');
+        if (low === title) return '';
+        const rest = low.startsWith(title) ? msg.slice(title.length).replace(/^[\s:·,-]+/, '') : msg;
+        return rest ? cap1(rest.slice(0, 300)) : '';
+    }
     function factsHtml(e) {
         const r = e.r, m = e.m;
         const lab = labOf(e.pc);
@@ -94,18 +120,20 @@
             facts.push([k, v != null && typeof v === 'object' ? JSON.stringify(v) : String(v == null ? '' : v)]);
         });
         const rowsHtml = facts.filter(f => f[1]).map(f => `<span>${escapeHtml(f[0])}</span><span>${escapeHtml(String(f[1]).slice(0, 600))}</span>`).join('');
-        const linksHtml = e.pc ? `<div class="lg-links">${ui.pc !== e.pc ? `<button type="button" data-act="pc">${POps.tHtml('Yalnızca bu bilgisayarın kayıtları')}</button>` : ''}<button type="button" data-act="device">${POps.tHtml('Bilgisayarın ayrıntıları')}</button></div>` : '';
+        const linksHtml = e.pc ? `<div class="lg-links">${ui.pc !== e.pc ? `<button type="button" data-act="pc">${POps.tHtml('Yalnızca bu bilgisayarın kayıtları')}</button>` : ''}<a href="${pcHref(e.pc)}">${POps.tHtml('Bilgisayarı aç')}</a></div>` : '';
         return `<div class="facts">${rowsHtml}${linksHtml}</div>`;
     }
     function rowHtml(e) {
         const open = ui.open.has(e.id);
         const cls = e.sev === 'info' ? '' : e.sev;
-        const where = pcName(e.pc);
         const lab = labOf(e.pc);
-        const whereHtml = where ? escapeHtml(where) + (lab ? ' · ' + escapeHtml(lab) : '') + ' · ' : '';
+        const whereHtml = e.pc ? `<a href="${pcHref(e.pc)}">${escapeHtml(pcName(e.pc))}</a>` + (lab ? ' · ' + escapeHtml(lab) : '') + ' · ' : '';
         const metaHtml = whereHtml + escapeHtml(e.who) + ' · ' + POps.timeHtml(e.at);
-        const whyHtml = e.why && e.sev !== 'info' ? `<div class="why${e.sev === 'warn' ? ' warn' : ''}">${escapeHtml(e.why)}</div>` : '';
-        const noteHtml = e.why && e.sev === 'info' ? ' · ' + escapeHtml(e.why.toLocaleLowerCase(POps.locale)) : '';
+        const why = e.sev !== 'info' ? whyOf(e) : '';
+        const whyHtml = why ? `<div class="why${e.sev === 'warn' ? ' warn' : ''}">${escapeHtml(why)}</div>` : '';
+        const cat = e.key === 'dns_block' ? siteCat(e) : '';
+        const noteHtml = (e.why && e.sev === 'info' ? ' · ' + escapeHtml(e.why.toLocaleLowerCase(POps.locale)) : '')
+            + (cat ? ' · ' + POps.tHtml('Site kategorisi: {category}', { category: cat }) : '');
         return `<div class="act clickable" data-id="${escapeHtml(e.id)}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}">
             <div class="res ${escapeHtml(cls)}">${POps.iconHtml(e.icon)}</div>
             <div class="lg-body" style="min-width:0"><div class="what">${escapeHtml(e.title)}</div><div class="meta">${metaHtml}${noteHtml}</div>${whyHtml}</div>
@@ -115,7 +143,7 @@
 
     function renderCounts() {
         const base = ui.rows.filter(e => pass(e, 'f'));
-        const n = { all: base.length, warn: base.filter(e => e.sev !== 'info').length, sec: base.filter(e => e.security).length };
+        const n = { all: base.length, warn: base.filter(e => e.sev !== 'info').length, bad: base.filter(e => e.sev === 'bad').length, sec: base.filter(e => e.security).length };
         $('lgFilter').querySelectorAll('button[data-f]').forEach(b => {
             const on = b.dataset.f === ui.f;
             b.classList.toggle('active', on);
@@ -153,24 +181,18 @@
             whoSel.value = ui.who;
         }
     }
+    // Başlığın altındaki tek satır: bugünkü olaylar (tıklayınca bugünün süzgeci). Sayılar süzgeç düğmelerinde.
     function renderSummary() {
         const box = $('lgSummary');
-        if (ui.tab === 'hw') {
-            const devs = state.devices || [];
-            const inv = ui.inv || {};
-            const have = devs.filter(d => inv[d.hostname] && inv[d.hostname].cpu && inv[d.hostname].cpu !== '-').length;
-            box.innerHTML = `<span class="sum">${POps.tnHtml('{n} bilgisayar', devs.length, null, { n: boldHtml(devs.length) })}</span><span class="sum">${POps.tnHtml('{n} donanım bildirdi', have, null, { n: boldHtml(have) })}</span>`
-                + (ui.inv && devs.length - have ? `<span class="sum"><span class="dot off"></span>${POps.tnHtml('{n} bekleniyor', devs.length - have, null, { n: boldHtml(devs.length - have) })}</span>` : '');
-            return;
-        }
-        if (!ui.loaded) { box.textContent = ''; return; }
-        const todayKey = dayKey(new Date());
-        const warn = ui.rows.filter(e => e.sev === 'warn').length;
-        const bad = ui.rows.filter(e => e.sev === 'bad').length;
-        const todayN = ui.rows.filter(e => e.day === todayKey).length;
-        box.innerHTML = `<span class="sum">${POps.tnHtml('{n} kayıt', ui.rows.length, null, { n: boldHtml(ui.rows.length) })}</span><span class="sum">${POps.tHtml('bugün {n}', null, { n: boldHtml(todayN) })}</span>`
-            + (warn ? `<a href="#" class="sum" data-f="warn"><span class="dot warn"></span>${POps.tnHtml('{n} uyarı', warn, null, { n: boldHtml(warn) })}</a>` : '')
-            + (bad ? `<a href="#" class="sum" data-f="warn"><span class="dot bad"></span>${POps.tnHtml('{n} kritik', bad, null, { n: boldHtml(bad) })}</a>` : '');
+        if (!ui.loaded) { box.replaceChildren(); return; }
+        const today = dayKey(new Date());
+        if ((ui.to && ui.to < today) || (ui.from && ui.from > today)) { box.replaceChildren(); return; }   // aralık bugünü kapsamıyor
+        const n = ui.rows.filter(e => e.day === today).length;
+        const on = ui.from === today && ui.to === today;
+        // Bugünün süzgeci açıksa ikinci tıklama kaldırır
+        const a = POps.el('a', { href: '#', className: 'sum', 'data-day': on && tabs.current() === 'log' ? '' : today });
+        a.append(...POps.tNodes('Bugün {n} olay', { n }, { n: POps.el('b', { text: n.toLocaleString(POps.locale) }) }));
+        box.replaceChildren(a);
     }
     function renderNote() {
         const note = $('lgNote');
@@ -194,6 +216,7 @@
     function activeFilters() {
         const out = [];
         if (ui.pc) out.push(['pc', POps.t('Bilgisayar'), pcName(ui.pc)]);
+        if (ui.risk) out.push(['risk', POps.t('Risk düzeyi'), POps.t('yüksek ve kritik')]);
         if (ui.kind) out.push(['kind', POps.t('Tür'), KIND_LABEL[ui.kind] || ui.kind]);
         if (ui.lab) out.push(['lab', POps.t('Sınıf'), ui.lab === dev.UNASSIGNED ? POps.t('Atanmamış') : ui.lab]);
         if (ui.who) out.push(['who', POps.t('Kişi'), ui.who]);
@@ -208,16 +231,26 @@
             x.append(POps.iconEl('x', 'sm'));
             return POps.el('span', { className: 'chip' }, [document.createTextNode(label + ': '), POps.el('b', { text: value }), x]);
         }), ...(f.length > 1 ? [POps.el('button', { type: 'button', className: 'clear', 'data-clear': 'all', text: POps.t('Hepsini temizle') })] : []));
-        const n = f.filter(x => x[0] !== 'pc').length;
+        const n = f.filter(x => x[0] !== 'pc' && x[0] !== 'risk').length;
         $('lgFCount').hidden = !n;
         $('lgFCount').textContent = String(n);
     }
+    // Adres süzgeçleri izler: sayfa yenilenince ya da bağlantı paylaşılınca aynı liste açılır
+    function syncUrl() {
+        const u = new URL(location.href);
+        const set = (k, v) => { if (v) u.searchParams.set(k, v); else u.searchParams.delete(k); };
+        set('f', ui.f === 'all' ? '' : ui.f); set('pc', ui.pc); set('kind', ui.kind); set('from', ui.from); set('to', ui.to); set('risk', ui.risk);
+        u.searchParams.delete('q');
+        const next = u.pathname + u.search + u.hash;
+        if (next !== location.pathname + location.search + location.hash) history.replaceState(null, '', next);
+    }
     function render() {
         renderSummary();
-        if (ui.tab !== 'log') return;
+        if (tabs.current() !== 'log') return;
         renderCounts();
         renderPcChip();
         renderNote();
+        syncUrl();
         if (!ui.loaded) return;
         const rows = ui.rows.filter(e => pass(e));
         if (!rows.length) {
@@ -319,18 +352,15 @@
         ui.page = 1;
         ui.sig = '';
         loadLogs().catch(() => {});
-        const u = new URL(location.href);
-        if (ui.pc) u.searchParams.set('pc', ui.pc); else u.searchParams.delete('pc');
-        history.replaceState(null, '', u.pathname + u.search);
         render();
     }
     list.addEventListener('click', (ev) => {
+        if (ev.target.closest('a')) return;   // bilgisayar bağlantısı: sayfa değişir
         const b = ev.target.closest('[data-act]');
         const row = ev.target.closest('.act[data-id]');
         if (b) {
             const e = row ? ui.byId.get(row.dataset.id) : null;
             if (b.dataset.act === 'pc' && e) { setPc(e.pc); window.scrollTo({ top: 0, behavior: 'smooth' }); }
-            else if (b.dataset.act === 'device' && e) dev.open(e.pc, { source: 'logger' });
             return;
         }
         if (!row || ev.target.closest('.facts') || String(window.getSelection() || '')) return;
@@ -342,7 +372,18 @@
         if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleRow(row); }
     });
     $('lgFilter').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-f]'); if (b) { ui.f = b.dataset.f; ui.page = 1; render(); } });
-    $('lgSummary').addEventListener('click', (ev) => { const a = ev.target.closest('[data-f]'); if (a) { ev.preventDefault(); setTab('log'); ui.f = a.dataset.f; ui.page = 1; render(); } });
+    function setDates(from, to) {
+        ui.from = from; ui.to = to;
+        $('lgFrom').value = from; $('lgTo').value = to;
+        dateChanged();
+    }
+    $('lgSummary').addEventListener('click', (ev) => {
+        const a = ev.target.closest('[data-day]');
+        if (!a) return;
+        ev.preventDefault();
+        if (tabs.current() !== 'log') tabs.set('log');
+        setDates(a.dataset.day, a.dataset.day);
+    });
     // Süzgeç paneli
     const fpanel = $('lgFPanel'), fbtn = $('lgFiltersBtn');
     function openPanel(open) {
@@ -359,7 +400,7 @@
     document.addEventListener('mousedown', (ev) => { if (!fpanel.hidden && !fpanel.contains(ev.target) && !fbtn.contains(ev.target)) openPanel(false); });
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !fpanel.hidden) { ev.preventDefault(); openPanel(false); fbtn.focus(); } }, true);
     window.addEventListener('resize', () => openPanel(false));
-    const dateChanged = () => { ui.page = 1; ui.sig = ''; ui.limitIx = 0; render(); loadLogs().catch(() => {}); };
+    function dateChanged() { ui.page = 1; ui.sig = ''; ui.limitIx = 0; render(); loadLogs().catch(() => {}); }
     $('lgKind').addEventListener('change', (ev) => { ui.kind = ev.target.value; ui.page = 1; render(); });
     $('lgLab').addEventListener('change', (ev) => { ui.lab = ev.target.value; ui.page = 1; render(); });
     $('lgWho').addEventListener('change', (ev) => { ui.who = ev.target.value; ui.page = 1; render(); });
@@ -367,10 +408,11 @@
     $('lgTo').addEventListener('change', (ev) => { ui.to = ev.target.value; dateChanged(); });
     function clearFilter(key) {
         if (key === 'pc' || key === 'all') { if (ui.pc) { setPc(''); } }
+        if (key === 'risk' || key === 'all') ui.risk = '';
         if (key === 'kind' || key === 'all') { ui.kind = ''; $('lgKind').value = ''; }
         if (key === 'lab' || key === 'all') { ui.lab = ''; $('lgLab').value = ''; }
         if (key === 'who' || key === 'all') { ui.who = ''; $('lgWho').value = ''; }
-        if ((key === 'date' || key === 'all') && (ui.from || ui.to)) { ui.from = ui.to = ''; $('lgFrom').value = $('lgTo').value = ''; dateChanged(); return; }
+        if ((key === 'date' || key === 'all') && (ui.from || ui.to)) { setDates('', ''); return; }
         ui.page = 1;
         render();
     }
@@ -409,9 +451,10 @@
     // Atanmamışlar en sonda
     const labKey = (d) => d.lab && d.lab !== dev.UNASSIGNED ? '0' + d.lab : '1';
     const labText = (d) => d.lab && d.lab !== dev.UNASSIGNED ? d.lab : POps.t('Atanmamış');
-    function hwRows() {
+    function hwRows(skipF) {
         const q = ui.hq;
         return (state.devices || []).filter(d => {
+            if (!skipF && ui.hf === 'wait' && hwOf(d.hostname)) return false;
             if (ui.hlab && (ui.hlab === dev.UNASSIGNED ? (d.lab && d.lab !== dev.UNASSIGNED) : d.lab !== ui.hlab)) return false;
             if (!q) return true;
             const hw = (ui.inv && ui.inv[d.hostname]) || {};
@@ -419,37 +462,47 @@
                 .some(v => String(v || '').toLocaleLowerCase('tr').includes(q));
         }).sort((a, b) => labKey(a).localeCompare(labKey(b), 'tr') || POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
     }
-    function renderHwLabs() {
+    function renderHwBar() {
         const sel = $('hwLab');
         const labs = dev.labs();
-        if (sel.dataset.sig === labs.join('|')) return;
-        sel.dataset.sig = labs.join('|');
-        sel.replaceChildren(POps.el('option', { value: '', text: POps.t('Bütün sınıflar') }));
-        labs.forEach(l => sel.append(POps.el('option', { value: l, text: l })));
-        sel.append(POps.el('option', { value: dev.UNASSIGNED, text: POps.t('Atanmamış') }));
-        sel.value = ui.hlab;
+        if (sel.dataset.sig !== labs.join('|')) {
+            sel.dataset.sig = labs.join('|');
+            sel.replaceChildren(POps.el('option', { value: '', text: POps.t('Bütün sınıflar') }));
+            labs.forEach(l => sel.append(POps.el('option', { value: l, text: l })));
+            sel.append(POps.el('option', { value: dev.UNASSIGNED, text: POps.t('Atanmamış') }));
+            sel.value = ui.hlab;
+        }
+        const base = hwRows(true);
+        const n = { all: base.length, wait: base.filter(d => !hwOf(d.hostname)).length };
+        $('hwFilter').querySelectorAll('button[data-hf]').forEach(b => {
+            const on = b.dataset.hf === ui.hf;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            b.querySelector('.count').textContent = ui.inv ? String(n[b.dataset.hf]) : '';
+        });
     }
+    const hwHref = (h) => pcHref(h) + '&tab=hardware';
     function hwRowHtml(d) {
         const hw = hwOf(d.hostname);
         const lab = labText(d);
         const cellHtml = (v) => val(v) ? escapeHtml(val(v)) : '—';
         const specsHtml = hw
             ? `<td>${cellHtml(hw.cpu)}</td><td>${cellHtml(hw.ram)}</td><td>${cellHtml(hw.disk_info)}</td><td>${cellHtml(hw.os_version)}</td>`
-            : `<td colspan="4" class="wait">${POps.tHtml('Donanım bilgisi bekleniyor')}</td>`;
-        return `<tr data-host="${escapeHtml(d.hostname)}" class="${ui.hfocus === d.hostname ? 'is-focus' : ''}">
-            <td><div class="nm">${escapeHtml(POps.deviceName(d))}</div><div class="sub">${escapeHtml(lab)}</div></td>
+            : `<td colspan="4" class="wait" data-tip="${escapeHtml(POps.t('Donanım bilgisini ajan açılışta ve günde bir kez gönderir.'))}">${POps.tHtml('Donanım bilgisi bekleniyor')}</td>`;
+        return `<tr data-host="${escapeHtml(d.hostname)}">
+            <td><div class="nm"><a href="${hwHref(d.hostname)}">${escapeHtml(POps.deviceName(d))}</a></div><div class="sub">${escapeHtml(lab)}</div></td>
             ${specsHtml}
             <td class="mono">${escapeHtml(val(hw && hw.ip_address) || d.ip || '—')}</td>
             <td>${hw ? POps.timeHtml(isoOf(hw.last_updated)) : '<span class="wait">—</span>'}</td>
         </tr>`;
     }
     function renderHw() {
-        if (ui.tab !== 'hw') return;
+        if (tabs.current() !== 'hw') return;
         renderSummary();
-        renderHwLabs();
         if (!state.devicesLoaded || !ui.inv) return;
+        renderHwBar();
         const rows = hwRows();
-        const sig = JSON.stringify([ui.hq, ui.hlab, ui.hfocus, ui.invAt, rows.map(d => [d.hostname, d.display_name, d.lab, d.ip])]);
+        const sig = JSON.stringify([ui.hq, ui.hlab, ui.hf, ui.invAt, rows.map(d => [d.hostname, d.display_name, d.lab, d.ip])]);
         if (sig === ui.hsig) return;
         ui.hsig = sig;
         const body = $('hwBody');
@@ -461,67 +514,27 @@
         }
         body.innerHTML = rows.map(hwRowHtml).join('');
     }
-    function hwDrawerHtml(d) {
-        const hw = hwOf(d.hostname);
-        const st = dev.state(d);
-        const lab = labText(d);
-        const rowsHtml = hw
-            ? HW_FIELDS.filter(f => val(hw[f[0]])).map(f => `<div class="grow"><span>${escapeHtml(f[1])}</span><span${f[0] === 'mac_address' || f[0] === 'ip_address' ? ' class="mono"' : ''}>${escapeHtml(val(hw[f[0]]))}</span></div>`).join('')
-              + `<div class="grow"><span>${POps.tHtml('Kimlik')}</span><span class="mono">${escapeHtml(d.hostname)}</span></div>`
-              + `<div class="grow"><span>${POps.tHtml('Son güncelleme')}</span><span>${POps.timeHtml(isoOf(hw.last_updated))}</span></div>`
-            : `<div class="grow"><span>${POps.tHtml('Kimlik')}</span><span class="mono">${escapeHtml(d.hostname)}</span></div>`;
-        return `<div class="drawer-head">
-                <div class="drawer-title">
-                    <span class="drawer-ico ${escapeHtml(st.cls)}">${POps.iconHtml('cpu', 'lg')}</span>
-                    <div style="min-width:0"><h2>${escapeHtml(POps.deviceName(d))}</h2><div class="sub"><span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.word)} · ${escapeHtml(lab)}</div></div>
-                </div>
-                <button type="button" class="ibtn sm" data-lg="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button>
-            </div>
-            ${hw ? '' : `<div class="issue lock">${POps.tHtml('Ajan donanım bilgisini henüz göndermedi; açılışta ve günde bir kez gönderir.')}</div>`}
-            <div class="glist">${rowsHtml}</div>
-            <div class="lg-dlinks">
-                <button type="button" class="btn secondary sm" data-lg="logs">${POps.iconHtml('list', 'sm')}${POps.tHtml('Olay kayıtları')}</button>
-                <button type="button" class="btn secondary sm" data-lg="device">${POps.iconHtml('monitor', 'sm')}${POps.tHtml('Bilgisayarın ayrıntıları')}</button>
-            </div>`;
-    }
-    function openHw(h) {
-        const d = dev.find(h);
-        if (!d) return;
-        ui.hfocus = h;
-        renderHw();
-        const body = POps.drawer.open('hw:' + h, { onClose: () => { if (ui.hfocus === h) { ui.hfocus = null; renderHw(); } } });
-        body.innerHTML = hwDrawerHtml(d);
-        if (!body.dataset.lgWired) {
-            body.dataset.lgWired = '1';
-            body.addEventListener('click', (ev) => {
-                const b = ev.target.closest('[data-lg]');
-                const k = POps.drawer.key() || '';
-                if (!b || !k.startsWith('hw:')) return;
-                const host = k.slice(3);
-                if (b.dataset.lg === 'close') POps.drawer.close();
-                else if (b.dataset.lg === 'device') dev.open(host, { source: 'logger' });
-                else if (b.dataset.lg === 'logs') { POps.drawer.close(); setTab('log'); setPc(host); }
-            });
-        }
-    }
-    $('hwBody').addEventListener('click', (ev) => { const tr = ev.target.closest('tr[data-host]'); if (tr) openHw(tr.dataset.host); });
+    // Satır bilgisayar sayfasını (Donanım bölümü) açar
+    $('hwBody').addEventListener('click', (ev) => {
+        const tr = ev.target.closest('tr[data-host]');
+        if (!tr || ev.target.closest('a')) return;
+        location.href = hwHref(tr.dataset.host);
+    });
+    $('hwFilter').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-hf]'); if (b) { ui.hf = b.dataset.hf; renderHw(); } });
     $('hwLab').addEventListener('change', (ev) => { ui.hlab = ev.target.value; renderHw(); });
     let hqt = null;
     $('hwSearch').addEventListener('input', (ev) => { clearTimeout(hqt); hqt = setTimeout(() => { ui.hq = ev.target.value.trim().toLocaleLowerCase('tr'); renderHw(); }, 150); });
 
-    // ---------------------------------------------------------------- sekmeler
-    function setTab(tab) {
-        ui.tab = tab;
-        $('lgTabs').querySelectorAll('.tab').forEach(t => { const on = t.dataset.tab === tab; t.classList.toggle('active', on); t.setAttribute('aria-selected', on ? 'true' : 'false'); });
-        $('lgPaneLog').hidden = tab !== 'log';
-        $('lgPaneHw').hidden = tab !== 'hw';
-        const u = new URL(location.href);
-        if (tab === 'hw') u.searchParams.set('tab', 'hw'); else u.searchParams.delete('tab');
-        history.replaceState(null, '', u.pathname + u.search);
-        if (tab === 'hw') { ui.hsig = ''; loadInventory(false); renderHw(); } else render();
-        renderSummary();
-    }
-    $('lgTabs').addEventListener('click', (ev) => { const t = ev.target.closest('.tab[data-tab]'); if (t && t.dataset.tab !== ui.tab) setTab(t.dataset.tab); });
+    // ---------------------------------------------------------------- sekmeler (?tab=hw)
+    let tabsReady = false;   // pageTabs kurulurken onChange'i bir kez çağırır; ilk çizim aşağıda
+    const tabs = POps.pageTabs($('lgTabs'), {
+        def: 'log',
+        onChange: (tab) => {
+            if (!tabsReady) return;
+            if (tab === 'hw') { ui.hsig = ''; loadInventory(false); renderHw(); } else render();
+            renderSummary();
+        }
+    });
 
     // ---------------------------------------------------------------- dışa aktarma ve diğer işlemler
     function csv(name, header, rows) {
@@ -534,7 +547,7 @@
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }
     $('lgExport').addEventListener('click', () => {
-        if (ui.tab === 'hw') {
+        if (tabs.current() === 'hw') {
             const rows = hwRows();
             if (!rows.length) return POps.toast('info', POps.t('Dışa aktarılacak bilgisayar yok.'));
             // Sütun adları ve dosya adı arayüz dilinde; hücreler veri (ham zaman, ad, sürüm) olduğu gibi
@@ -581,7 +594,7 @@
 
     // ---------------------------------------------------------------- başlat
     document.addEventListener('pops_data_updated', () => {
-        if (ui.tab === 'hw') { renderHw(); if (ui.inv && Date.now() - ui.invAt > 60000) loadInventory(true); }
+        if (tabs.current() === 'hw') { renderHw(); if (ui.inv && Date.now() - ui.invAt > 60000) loadInventory(true); }
         else if (ui.loaded && list.querySelector('.act')) {
             // cihaz adları sonradan gelirse (ilk açılış) satırlar ad ile yeniden yazılır
             const sig = (state.devices || []).map(d => d.hostname + (d.display_name || '') + (d.lab || '')).join('|');
@@ -589,7 +602,9 @@
         }
     });
     POps.watchDevices();
-    setTab(ui.tab);
+    tabsReady = true;
+    if (tabs.current() === 'hw') loadInventory(false);
+    render();
     loadLogs().catch(() => {});
     popsPoll(loadLogs, 10000);
 })();

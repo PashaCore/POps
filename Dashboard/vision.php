@@ -2,16 +2,18 @@
 <?php $vsRole = $_SESSION['role'] ?? ''; $vsCanAdmin = in_array($vsRole, ['admin', 'superadmin'], true); ?>
 
 <style>
-    .vs-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
-    .vs-bar .grow { flex: 1; }
-    .vs-bar .search-field { flex: 0 1 240px; min-width: 180px; }
-    .vs-bar select { width: auto; min-width: 170px; }
-    .vs-scope { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--text-sm); color: var(--text-tertiary); min-height: 34px; min-width: 0; max-width: 100%; }
+    .page-header-actions .btn { gap: 7px; }
+    .summary a.sum.on { color: var(--text-primary); text-decoration: underline; text-underline-offset: 3px; }
+    .vs-scope { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--text-sm); color: var(--text-tertiary); min-height: 34px; min-width: 0; max-width: 100%; margin-bottom: 14px; }
+    .vs-scope:empty { display: none; }
     .vs-scope .segmented { max-width: 100%; }
-    @media (max-width: 640px) { .vs-bar .search-field { flex: 1 1 100%; } .vs-bar .grow { display: none; } }
+    .vs-scope select { width: auto; min-width: 200px; }
     .vs-scope b { color: var(--text-primary); font-weight: var(--fw-semibold); }
-    .vs-scope .lnk, .lnk { color: var(--primary-500); font-size: var(--text-sm); }
-    .vs-scope .lnk:hover, .lnk:hover { text-decoration: underline; }
+    .vs-bar { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; margin-bottom: 18px; }
+    .vs-bar .search-field { flex: 0 1 260px; min-width: 180px; margin-left: auto; }
+    .vs-bar .actionbar { gap: 4px; }
+    .vs-bar .actionbar .btn.sm { height: 30px; gap: 6px; }
+    @media (max-width: 640px) { .vs-bar .search-field { flex: 1 1 100%; } }
     .faint { color: var(--text-muted); }
     .segmented .n { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: var(--text-xs); }
 
@@ -30,7 +32,8 @@
     .scr .age { position: absolute; right: 8px; bottom: 8px; font-size: 11px; line-height: 1; padding: 4px 7px; border-radius: 99px; background: rgba(0, 0, 0, 0.55); color: #fff; }
     .scr .cap { padding: 10px 12px 12px; }
     .scr .nm { display: flex; align-items: center; gap: 7px; font-weight: var(--fw-semibold); font-size: var(--text-sm); color: var(--text-primary); min-width: 0; }
-    .scr .nm .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .scr .nm .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
+    .scr .nm a.t:hover { color: var(--primary-500); text-decoration: underline; }
     .scr .sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .scr.dim .thumb { background: var(--bg-surface-2); }
     .scr.dim .ph { color: var(--text-tertiary); }
@@ -39,15 +42,21 @@
     /* Büyük görünüm */
     .vw { overflow: hidden; display: flex; flex-direction: column; }
     .vw-head { display: flex; align-items: center; gap: 10px 14px; padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; }
+    .vw-head .btn, .vw-ctrl .btn { gap: 6px; }
     .vw-title { min-width: 0; flex: 1 1 200px; }
     .vw-title h2 { font-size: var(--text-lg); font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
     .vw-title .sub { font-size: var(--text-sm); color: var(--text-tertiary); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-    .vw-ctrl { display: flex; align-items: center; gap: 6px 16px; flex-wrap: wrap; }
-    .vw-ctrl .switch-field { cursor: pointer; margin: 0; white-space: nowrap; }
+    .vw-hacts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    /* Görüntü denetimleri: canlı izleme ve kontrol solda, görüntü ayarları sağda */
+    .vw-ctrl { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; padding: 8px 14px; border-bottom: 1px solid var(--border-subtle); min-height: 50px; }
+    .vw-ctrl .grow { flex: 1; }
+    .vw-ctrl .vsep { width: 1px; height: 22px; background: var(--border-subtle); flex: none; }
+    .vw-ctrl:not(:has(#fpsSel:not([hidden]))) .vsep { display: none; }
+    .vw-ctrl .switch-field { cursor: pointer; margin: 0; white-space: nowrap; font-weight: var(--fw-medium); }
     .vw-ctrl .switch-field.off { opacity: 0.5; cursor: not-allowed; }
     .vw-ctrl select { width: auto; min-height: 32px; padding-top: 4px; padding-bottom: 4px; }
-    .vw-ctrl .ibtns { display: flex; gap: 2px; }
-    .vw-stage { position: relative; background: var(--text-primary); height: calc(100vh - 290px); min-height: 280px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .vw-ctrl .btn.vw-ibtn-on { background: var(--primary-50); border-color: var(--primary-200); color: var(--primary-600); }
+    .vw-stage { position: relative; background: var(--text-primary); height: calc(100vh - 340px); min-height: 280px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
     .vw-stage img, .vw-stage canvas { width: 100%; height: 100%; object-fit: contain; user-select: none; pointer-events: none; display: block; }
     #inputLayer { position: absolute; inset: 0; outline: none; z-index: 3; cursor: crosshair; }
     .vw-wait { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 0 24px; color: rgba(255, 255, 255, 0.82); font-size: var(--text-md); background: rgba(0, 0, 0, 0.45); }
@@ -69,7 +78,6 @@
     @media (max-width: 640px) { .vw-stage { height: 56vw; min-height: 200px; } }
     /* Vision v2: ekran seçimi, görüntü ayarları, pano */
     .vw-ctrl .segmented > button { min-width: 32px; }
-    .vw-ibtn-on { color: var(--primary-500); }
     .vw-pop { position: absolute; top: 48px; right: 12px; z-index: 5; width: min(290px, calc(100% - 24px)); background: var(--bg-surface); color: var(--text-primary); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); padding: 14px 14px 2px; }
     .vw-pop .field > label { display: flex; justify-content: space-between; gap: 8px; }
     .vw-pop .field > label b { font-variant-numeric: tabular-nums; color: var(--text-primary); font-weight: var(--fw-semibold); }
@@ -84,6 +92,7 @@
     .vw-clip.off textarea, .vw-clip.off .btn { opacity: 0.55; }
     .vw-foot .rate { font-variant-numeric: tabular-nums; }
     @media (max-width: 640px) {
+        .vw-ctrl .grow, .vw-ctrl .vsep { display: none; }
         .vw-clip { grid-template-columns: minmax(0, 1fr); }
         /* Dar ekranda görüntü alanı alçak: ayar kutusu üstten başlar, açıklama gizlenir */
         .vw-pop { top: 8px; left: 8px; right: 8px; width: auto; padding: 10px 12px 0; }
@@ -104,15 +113,14 @@
         <div class="summary" id="vsSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="histBtn" data-tip="<?php _e('Oturum geçmişi'); ?>" aria-label="<?php _e('Oturum geçmişi'); ?>"><?php echo pops_icon('clock'); ?></button>
-        <button type="button" class="ibtn boxed" id="refreshBtn" data-tip="<?php _e('Ekranları tazele'); ?>" data-tip-pos="left" aria-label="<?php _e('Ekranları tazele'); ?>"><?php echo pops_icon('refresh'); ?></button>
+        <button type="button" class="btn secondary" id="histBtn"><?php echo pops_icon('clock', 'sm'); ?><?php _e('Oturum geçmişi'); ?></button>
+        <button type="button" class="btn secondary" id="refreshBtn"><?php echo pops_icon('refresh', 'sm'); ?><?php _e('Ekranları tazele'); ?></button>
     </div>
 </div>
 
 <div id="vsMain">
+    <div class="vs-scope" id="vsScope"></div>
     <div class="vs-bar">
-        <div class="vs-scope" id="vsScope"></div>
-        <span class="grow"></span>
         <?php if ($vsCanAdmin): ?><div class="actionbar" id="vsActions" role="toolbar" aria-label="<?php _e('Bilgisayar işlemleri'); ?>"></div><?php endif; ?>
         <div class="search-field">
             <?php echo pops_icon('search', 'sm'); ?>
@@ -124,25 +132,27 @@
 
 <div class="card vw" id="viewer" hidden>
     <div class="vw-head">
-        <button type="button" class="ibtn" data-act="back" data-tip="<?php _e('Ekranlara dön (Esc)'); ?>" aria-label="<?php _e('Ekranlara dön'); ?>"><?php echo pops_icon('left'); ?></button>
+        <button type="button" class="btn secondary sm" data-act="back" title="<?php _e('Ekranlara dön (Esc)'); ?>"><?php echo pops_icon('left', 'sm'); ?><span><?php _e('Ekranlar'); ?></span></button>
         <div class="vw-title"><h2 id="vwName"></h2><div class="sub" id="vwSub"></div></div>
-        <div class="vw-ctrl">
-            <label class="switch-field" id="liveField"><span class="switch success"><input type="checkbox" id="liveSw"><span></span></span><?php _e('Canlı izle'); ?></label>
-            <label class="switch-field off" id="ctrlField"><span class="switch warning"><input type="checkbox" id="ctrlSw" disabled><span></span></span><?php _e('Kontrol'); ?></label>
-            <div class="segmented" id="monSeg" role="group" aria-label="<?php _e('Ekran seçimi'); ?>" hidden></div>
-            <select id="fpsSel" aria-label="<?php _e('Kare hızı'); ?>" hidden>
-                <option value="1"><?php _e('{n} kare/sn', ['n' => 1]); ?></option>
-                <option value="2" selected><?php _e('{n} kare/sn', ['n' => 2]); ?></option>
-                <option value="5"><?php _e('{n} kare/sn', ['n' => 5]); ?></option>
-            </select>
-            <div class="ibtns">
-                <button type="button" class="ibtn" data-act="quality" id="qualBtn" data-tip="<?php _e('Görüntü ayarları'); ?>" aria-label="<?php _e('Görüntü ayarları'); ?>" aria-expanded="false" aria-controls="qualPop" hidden><?php echo pops_icon('sliders'); ?></button>
-                <button type="button" class="ibtn" data-act="clip" id="clipBtn" data-tip="<?php _e('Pano'); ?>" aria-label="<?php _e('Pano'); ?>" aria-expanded="false" aria-controls="clipPanel" hidden><?php echo pops_icon('copy'); ?></button>
-                <button type="button" class="ibtn" data-act="snap" data-tip="<?php _e('Görüntüyü tazele'); ?>" aria-label="<?php _e('Görüntüyü tazele'); ?>"><?php echo pops_icon('refresh'); ?></button>
-                <button type="button" class="ibtn" data-act="full" data-tip="<?php _e('Tam ekran'); ?>" aria-label="<?php _e('Tam ekran'); ?>"><?php echo pops_icon('expand'); ?></button>
-                <button type="button" class="ibtn" data-act="more" data-tip="<?php _e('Diğer işlemler'); ?>" data-tip-pos="left" aria-label="<?php _e('Diğer işlemler'); ?>" aria-haspopup="menu"><?php echo pops_icon('more'); ?></button>
-            </div>
+        <div class="vw-hacts">
+            <button type="button" class="btn secondary sm" data-act="full"><?php echo pops_icon('expand', 'sm'); ?><span><?php _e('Tam ekran'); ?></span></button>
+            <button type="button" class="btn secondary sm" data-act="more" aria-haspopup="menu"><?php echo pops_icon('more', 'sm'); ?><span><?php _ex('Diğer', 'menu'); ?></span></button>
         </div>
+    </div>
+    <div class="vw-ctrl" role="toolbar" aria-label="<?php _e('Görüntü denetimleri'); ?>">
+        <label class="switch-field" id="liveField"><span class="switch success"><input type="checkbox" id="liveSw"><span></span></span><?php _e('Canlı izle'); ?></label>
+        <label class="switch-field off" id="ctrlField"><span class="switch warning"><input type="checkbox" id="ctrlSw" disabled><span></span></span><?php _e('Kontrol'); ?></label>
+        <span class="vsep"></span>
+        <div class="segmented" id="monSeg" role="group" aria-label="<?php _e('Ekran seçimi'); ?>" hidden></div>
+        <select id="fpsSel" aria-label="<?php _e('Kare hızı'); ?>" hidden>
+            <option value="1"><?php _e('{n} kare/sn', ['n' => 1]); ?></option>
+            <option value="2" selected><?php _e('{n} kare/sn', ['n' => 2]); ?></option>
+            <option value="5"><?php _e('{n} kare/sn', ['n' => 5]); ?></option>
+        </select>
+        <button type="button" class="btn secondary sm" data-act="quality" id="qualBtn" aria-expanded="false" aria-controls="qualPop" hidden><?php echo pops_icon('sliders', 'sm'); ?><span><?php _e('Görüntü ayarları'); ?></span></button>
+        <button type="button" class="btn secondary sm" data-act="clip" id="clipBtn" aria-expanded="false" aria-controls="clipPanel" hidden><?php echo pops_icon('copy', 'sm'); ?><span><?php _e('Pano'); ?></span></button>
+        <span class="grow"></span>
+        <button type="button" class="btn secondary sm" data-act="snap"><?php echo pops_icon('refresh', 'sm'); ?><span><?php _e('Görüntüyü tazele'); ?></span></button>
     </div>
     <div class="vw-stage" id="vwStage">
         <img id="liveImg" alt="" draggable="false" hidden>
@@ -257,7 +267,8 @@
         return list.length ? [...new Set(list)] : null;
     }
     const params = new URLSearchParams(location.search);
-    const ui = { pcs: pcParam(), lab: params.get('lab') || (function () { try { return localStorage.getItem('pops_lab') || ''; } catch (e) { return ''; } })(), q: '', hash: '', thumbKey: '' };
+    // f: özetteki sayılardan gelen süzgeç ('' hepsi, on açık, off kapalı, blocked izlenemeyen)
+    const ui = { pcs: pcParam(), lab: params.get('lab') || (function () { try { return localStorage.getItem('pops_lab') || ''; } catch (e) { return ''; } })(), q: '', f: '', hash: '', thumbKey: '' };
     const cache = {};   // bilgisayar -> { img, at }
     const asked = {};   // bilgisayar -> görüntü istendiği an
     let visionMod = null;
@@ -303,7 +314,8 @@
         const q = ui.q.toLocaleLowerCase('tr');
         return [POps.deviceName(d), d.hostname, d.ip, d.mac, dev.user(d), d.lab].some(v => String(v || '').toLocaleLowerCase('tr').includes(q));
     }
-    function scopeDevices() {
+    // Kapsam (sınıf, seçim ya da arama); özet bunu sayar
+    function scopeAll() {
         const all = state.devices || [];
         let list;
         if (ui.pcs) list = ui.pcs.map(h => all.find(d => d.hostname === h) || { hostname: h, missing: true });
@@ -313,10 +325,19 @@
         if (ui.q) list = list.filter(d => !d.missing && matches(d));
         return list.sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
     }
+    function stateFilter(d) {
+        if (ui.f === 'on') return !d.missing && !POps.isOffline(d);
+        if (ui.f === 'off') return !!d.missing || POps.isOffline(d);
+        if (ui.f === 'blocked') return !d.missing && !POps.isOffline(d) && !!blocked(d);
+        return true;
+    }
+    // Ekranda görünenler: kapsam + özetten seçilen süzgeç
+    function scopeDevices() { return scopeAll().filter(stateFilter); }
+    const wholeScope = () => !ui.pcs && !ui.q && !ui.f && ui.lab !== UN;
     // Güç işlemlerinde görev başlığının parçası olarak sunucuya gider (veri): Türkçe kalır
     function scopeName() {
-        if (ui.pcs) return ui.pcs.length === 1 ? dev.name(ui.pcs[0]) : `seçili ${ui.pcs.length} bilgisayar`;
-        if (ui.q) return 'süzgece uyanlar';
+        if (ui.pcs && !ui.f) return ui.pcs.length === 1 ? dev.name(ui.pcs[0]) : `seçili ${ui.pcs.length} bilgisayar`;
+        if (ui.q || ui.f) return 'süzgece uyanlar';
         return ui.lab === UN ? 'atanmamışlar' : ui.lab;
     }
 
@@ -328,7 +349,7 @@
             const psig = 'pcs:' + ui.pcs.length + ':' + missing;
             if (box.dataset.sig === psig) return;
             box.dataset.sig = psig;
-            box.innerHTML = `<span>${POps.tnHtml('Seçili {n} bilgisayar', ui.pcs.length, null, { n: `<b>${Number(ui.pcs.length)}</b>` })}${missing ? ' ' + POps.tnHtml('({n} tanesi kayıtlı değil)', missing) : ''}</span><span class="faint">·</span><button type="button" class="lnk" data-act="all">${POps.tHtml('Tümünü göster')}</button>`;
+            box.innerHTML = `<span>${POps.tnHtml('Seçili {n} bilgisayar', ui.pcs.length, null, { n: `<b>${Number(ui.pcs.length)}</b>` })}${missing ? ' ' + POps.tnHtml('({n} tanesi kayıtlı değil)', missing) : ''}</span><button type="button" class="btn secondary sm" data-act="all">${POps.iconHtml('labs', 'sm')}${POps.tHtml('Tümünü göster')}</button>`;
             return;
         }
         const ls = labs();
@@ -355,59 +376,70 @@
     });
     $('vsScope').addEventListener('change', (e) => { if (e.target.id === 'vsLab') setLab(e.target.value); });
     function setLab(lab) {
-        ui.lab = lab; ui.q = ''; $('vsSearch').value = '';
+        ui.lab = lab; ui.q = ''; ui.f = ''; $('vsSearch').value = '';
         try { if (lab !== UN) localStorage.setItem('pops_lab', lab); } catch (e) { /* özel pencere */ }
         history.replaceState(null, '', 'vision?lab=' + encodeURIComponent(lab));
         render(true);
     }
     function showAll() {
         const first = ui.pcs && dev.find(ui.pcs[0]);
-        ui.pcs = null;
+        ui.pcs = null; ui.f = '';
         if (first && first.lab) ui.lab = first.lab && first.lab !== dev.UNASSIGNED ? first.lab : UN;
         history.replaceState(null, '', 'vision' + (ui.lab ? '?lab=' + encodeURIComponent(ui.lab) : ''));
         $('vsScope').dataset.sig = '';
         render(true);
     }
 
+    // Özet: her sayı ekranları o duruma göre süzer (yeniden tıklayınca süzgeç kalkar)
     function renderSummary(list) {
         const real = list.filter(d => !d.missing);
         const on = real.filter(d => !POps.isOffline(d)).length;
         const capOff = real.filter(d => !POps.isOffline(d) && blocked(d)).length;
+        const off = list.length - on;
+        if ((ui.f === 'off' && !off) || (ui.f === 'on' && !on) || (ui.f === 'blocked' && !capOff)) ui.f = '';
         // Sayı kalın: yer tutucuya HTML parçası (POps.tnHtml'in son argümanı)
         const boldHtml = (n) => `<b>${Number(n)}</b>`;
-        $('vsSummary').innerHTML = `<span class="sum">${POps.tnHtml('{n} ekran', list.length, null, { n: boldHtml(list.length) })}</span>`
-            + `<span class="sum"><span class="dot on"></span>${POps.tnHtml('{n} açık', on, null, { n: boldHtml(on) })}</span>`
-            + `<span class="sum"><span class="dot off"></span>${POps.tnHtml('{n} kapalı', real.length - on, null, { n: boldHtml(real.length - on) })}</span>`
-            + (capOff && !IS_VIEWER ? `<span class="sum"><span class="dot"></span>${POps.tnHtml('{n} izlenemiyor', capOff, null, { n: boldHtml(capOff) })}</span>` : '')
+        // Büyük görünüm açıkken sayılar yalnızca bilgi (süzgeç ekranlar listesinde)
+        const itemHtml = (f, dotHtml, textHtml) => V.pc ? `<span class="sum">${dotHtml}${textHtml}</span>`
+            : `<a href="#" class="sum${f && ui.f === f ? ' on' : ''}" data-f="${escapeHtml(f)}" aria-pressed="${f && ui.f === f ? 'true' : 'false'}">${dotHtml}${textHtml}</a>`;
+        $('vsSummary').innerHTML = itemHtml('', '', POps.tnHtml('{n} ekran', list.length, null, { n: boldHtml(list.length) }))
+            + (on ? itemHtml('on', '<span class="dot on"></span>', POps.tnHtml('{n} açık', on, null, { n: boldHtml(on) })) : '')
+            + (off ? itemHtml('off', '<span class="dot off"></span>', POps.tnHtml('{n} kapalı', off, null, { n: boldHtml(off) })) : '')
+            + (capOff && !IS_VIEWER ? itemHtml('blocked', '<span class="dot"></span>', POps.tnHtml('{n} izlenemiyor', capOff, null, { n: boldHtml(capOff) })) : '')
             + (V.live ? `<span class="sum"><span class="dot bad"></span>${POps.tHtml('{name} canlı izleniyor', { name: dev.name(V.pc) })}</span>` : '');
     }
+    $('vsSummary').addEventListener('click', (e) => {
+        const a = e.target.closest('a[data-f]');
+        if (!a || V.pc) return;
+        e.preventDefault();
+        ui.f = ui.f === a.dataset.f ? '' : a.dataset.f;
+        render(true);
+    });
 
     function renderActions(list) {
         const bar = $('vsActions');
         if (!bar) return;
         const n = list.filter(d => !d.missing).length;
-        const label = ui.pcs ? POps.t('Seçili') : ui.q ? POps.t('Süzgeçteki') : (ui.lab === UN ? POps.t('Atanmamış') : POps.t('Bu sınıf'));
+        const label = ui.q || ui.f ? POps.t('Süzgeçteki') : ui.pcs ? POps.t('Seçili') : (ui.lab === UN ? POps.t('Atanmamış') : POps.t('Bu sınıf'));
         const tgt = POps.tn('{n} bilgisayar', n);
-        const wake = POps.t('Uyandır'), restart = POps.t('Yeniden başlat'), shut = POps.tx('Kapat', 'power'), more = POps.t('Diğer işlemler');
+        const btnHtml = (act, icon, text, cls) => `<button type="button" class="btn ${escapeHtml(cls || 'secondary')} sm" data-act="${escapeHtml(act)}" title="${escapeHtml(text + ' · ' + tgt)}"${act === 'more' ? ' aria-haspopup="menu"' : ''}>${POps.iconHtml(icon, 'sm')}${escapeHtml(text)}</button>`;
         bar.innerHTML = `<span class="scope">${escapeHtml(label)} <b>${Number(n)}</b></span><span class="sep"></span>`
-            + `<button type="button" class="ibtn" data-act="wake" data-tip="${escapeHtml(wake + ' · ' + tgt)}" aria-label="${escapeHtml(wake)}">${POps.iconHtml('zap')}</button>`
-            + `<button type="button" class="ibtn" data-act="restart" data-tip="${escapeHtml(restart + ' · ' + tgt)}" aria-label="${escapeHtml(restart)}">${POps.iconHtml('restart')}</button>`
-            + `<button type="button" class="ibtn danger" data-act="shutdown" data-tip="${escapeHtml(shut + ' · ' + tgt)}" aria-label="${escapeHtml(shut)}">${POps.iconHtml('power')}</button>`
-            + `<span class="sep"></span><button type="button" class="ibtn" data-act="more" data-tip="${escapeHtml(more)}" data-tip-pos="left" aria-label="${escapeHtml(more)}" aria-haspopup="menu">${POps.iconHtml('more')}</button>`;
+            + btnHtml('wake', 'zap', POps.t('Uyandır')) + btnHtml('restart', 'restart', POps.t('Yeniden başlat')) + btnHtml('shutdown', 'power', POps.tx('Kapat', 'power'), 'danger-soft')
+            + '<span class="sep"></span>' + btnHtml('command', 'terminal', POps.t('Komut gönder')) + btnHtml('more', 'more', POps.tx('Diğer', 'menu'));
     }
     if ($('vsActions')) $('vsActions').addEventListener('click', (e) => {
         const b = e.target.closest('[data-act]');
         if (!b) return;
         const hosts = scopeDevices().filter(d => !d.missing).map(d => d.hostname);
-        const o = { btn: b, source: 'vision', scopeLabel: scopeName(), lab: !ui.pcs && !ui.q && ui.lab !== UN ? ui.lab : null, wholeLab: !ui.pcs && !ui.q && ui.lab !== UN };
+        const o = { btn: b, source: 'vision', scopeLabel: scopeName(), lab: wholeScope() ? ui.lab : null, wholeLab: wholeScope() };
         const act = b.dataset.act;
         if (act === 'wake' || act === 'restart' || act === 'shutdown') dev.power(act, hosts, o);
+        else if (act === 'command') { const on = hosts.filter(h => !POps.isOffline(dev.find(h))); if (!on.length) return POps.toast('warning', POps.t('Açık bilgisayar yok.')); location.href = dev.commandUrl(on.slice(0, 200)); }
         else if (act === 'more') {
             const all = (state.devices || []).map(d => d.hostname);
             POps.menu(b, [
                 dev.messageItem(hosts, o),
                 ...dev.sessionItems(hosts, o),
-                { label: POps.t('Uzak komut'), icon: 'terminal', onClick: () => { const on = hosts.filter(h => !POps.isOffline(dev.find(h))); if (!on.length) return POps.toast('warning', POps.t('Açık bilgisayar yok.')); location.href = dev.commandUrl(on.slice(0, 200)); } },
                 '-',
                 { header: POps.t('Bütün ağ') },
                 { label: POps.t('Ağdaki hepsini uyandır'), icon: 'zap', onClick: () => window.wakeUpCommand('ALL', null, b) },
@@ -430,7 +462,7 @@
         const markHtml = d.is_quarantined ? `<span class="mk">${dev.markHtml({ kind: 'lock', icon: 'lock', text: POps.t('Karantinada: kullanıcı ekranı kilitli') })}</span>` : '';
         return `<div class="scr${r ? ' dim' : ''}" data-host="${escapeHtml(d.hostname)}" role="button" tabindex="0" aria-label="${escapeHtml(name + ' · ' + (r ? r.text : st.word))}">
             <div class="thumb"><img alt="" hidden><div class="ph">${phHtml}</div>${markHtml}<span class="age" hidden></span></div>
-            <div class="cap"><div class="nm"><span class="dot ${escapeHtml(st.cls)}" title="${escapeHtml(st.word)}"></span><span class="t">${escapeHtml(name)}</span></div><div class="sub">${escapeHtml(sub)}</div></div>
+            <div class="cap"><div class="nm"><span class="dot ${escapeHtml(st.cls)}" title="${escapeHtml(st.word)}"></span>${d.missing ? `<span class="t">${escapeHtml(name)}</span>` : `<a class="t" href="pc?id=${encodeURIComponent(d.hostname)}" title="${escapeHtml(POps.t('Bilgisayar ayrıntıları'))}">${escapeHtml(name)}</a>`}</div><div class="sub">${escapeHtml(sub)}</div></div>
         </div>`;
     }
     function applyImage(card) {
@@ -454,16 +486,17 @@
         if (!state.devicesLoaded) return;
         ensureLab();
         renderScope();
-        const list = scopeDevices();
-        renderSummary(list);
-        const sig = JSON.stringify([ui.pcs, ui.lab, ui.q, IS_VIEWER, visionMod && [visionMod.enabled, visionMod.lab_enabled], list.map(d => [d.hostname, d.status, POps.deviceName(d), dev.user(d), d.lab, d.cap_vision_enabled, d.is_quarantined, POps.isOffline(d) ? d.last_seen : ''])]);
+        const all = scopeAll();
+        renderSummary(all);
+        const list = all.filter(stateFilter);
+        const sig = JSON.stringify([ui.pcs, ui.lab, ui.q, ui.f, IS_VIEWER, visionMod && [visionMod.enabled, visionMod.lab_enabled], list.map(d => [d.hostname, d.status, POps.deviceName(d), dev.user(d), d.lab, d.cap_vision_enabled, d.is_quarantined, POps.isOffline(d) ? d.last_seen : ''])]);
         if (!force && sig === ui.hash) return;
         ui.hash = sig;
         renderActions(list);
         const grid = $('vsGrid');
         if (!list.length) {
             const any = (state.devices || []).length;
-            POps.setEmpty(grid, ui.q ? { icon: 'filter', title: POps.t('Süzgece uyan bilgisayar yok'), text: POps.t('Aramayı değiştirin.') }
+            POps.setEmpty(grid, ui.q || ui.f ? { icon: 'filter', title: POps.t('Süzgece uyan bilgisayar yok'), text: POps.t('Aramayı değiştirin.') }
                 : !any ? { icon: 'devices', title: POps.t('Henüz bilgisayar yok'), text: POps.t('Ajan kurulan bilgisayarlar bağlandıkça burada görünür.') }
                 : { icon: 'devices', title: POps.t('Bu sınıfta bilgisayar yok'), text: POps.t('Başka bir sınıf seçin.') });
             return;
@@ -472,23 +505,24 @@
         applyImages();
         // Kapsam değişince (ilk açılış, sınıf, seçim) görüntüler bir kez istenir
         const key = JSON.stringify([ui.pcs, ui.lab, ui.q]);
-        if (key !== ui.thumbKey && !V.pc) { ui.thumbKey = key; requestThumbs(list); }
+        if (key !== ui.thumbKey && !V.pc) { ui.thumbKey = key; requestThumbs(all); }
     }
 
     $('vsGrid').addEventListener('click', (e) => {
         const c = e.target.closest('.scr[data-host]');
-        if (!c || e.target.closest('.mark')) return;
+        if (!c || e.target.closest('.mark, a')) return;
         openCard(c);
     });
     $('vsGrid').addEventListener('keydown', (e) => {
         const c = e.target.closest('.scr[data-host]');
-        if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openCard(c); }
+        if (c && e.target === c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openCard(c); }
     });
     function openCard(c) {
         const h = c.dataset.host;
         const d = dev.find(h);
         if (!d) return POps.toast('warning', POps.t('Bu bilgisayar kayıtlı değil.'));
-        if (blocked(d)) { dev.open(h, { source: 'vision' }); return; }
+        // Ekranı gösterilemeyen bilgisayar: nedeni ve işlemleri bilgisayar sayfasında
+        if (blocked(d)) { location.href = 'pc?id=' + encodeURIComponent(h); return; }
         openViewer(h);
     }
 
@@ -1037,8 +1071,8 @@
         else el.classList.add('full');
     }
     document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) $('viewer').classList.remove('full'); });
-    document.querySelector('#viewer .vw-head').addEventListener('click', (e) => {
-        const b = e.target.closest('[data-act]');
+    $('viewer').addEventListener('click', (e) => {
+        const b = e.target.closest('.vw-head [data-act], .vw-ctrl [data-act]');
         if (!b || b.disabled) return;
         const act = b.dataset.act;
         if (act === 'back') closeViewer();
@@ -1049,7 +1083,8 @@
         else if (act === 'more') {
             const h = V.pc, d = dev.find(h) || {};
             POps.menu(b, [
-                { label: POps.t('Bilgisayar ayrıntıları'), icon: 'info', onClick: () => { exitFull(); dev.open(h, { source: 'vision' }); } },
+                // Canlı oturum sayfadan çıkınca kapanır: oturum sürerken bilgisayar sayfası yeni sekmede açılır
+                { label: POps.t('Bilgisayar ayrıntıları'), icon: 'info', onClick: () => { exitFull(); const url = 'pc?id=' + encodeURIComponent(h); if (V.live) window.open(url, '_blank', 'noopener'); else location.href = url; } },
                 CAN_ADMIN ? { label: POps.t('Teşhis komutları'), icon: 'terminal', onClick: openDiag } : null,
                 { label: POps.t('Oturum geçmişi'), icon: 'clock', onClick: () => { exitFull(); openHistory(); } },
                 CAN_ADMIN ? '-' : null,
@@ -1097,7 +1132,7 @@
     const HIST_MAX = 40;
     async function openHistory() {
         const hosts = V.pc ? [V.pc] : scopeDevices().filter(d => !d.missing).map(d => d.hostname);
-        const scope = V.pc ? dev.name(V.pc) : (ui.pcs ? POps.tn('Seçili {n} bilgisayar', hosts.length) : ui.q ? POps.tn('Süzgeçteki {n} bilgisayar', hosts.length) : (ui.lab === UN ? POps.t('Atanmamış') : ui.lab) + ' · ' + POps.tn('{n} bilgisayar', hosts.length));
+        const scope = V.pc ? dev.name(V.pc) : (ui.q || ui.f ? POps.tn('Süzgeçteki {n} bilgisayar', hosts.length) : ui.pcs ? POps.tn('Seçili {n} bilgisayar', hosts.length) : (ui.lab === UN ? POps.t('Atanmamış') : ui.lab) + ' · ' + POps.tn('{n} bilgisayar', hosts.length));
         const body = POps.drawer.open('vhist:' + hosts.join(',').slice(0, 200));
         const headHtml = `<div class="drawer-head"><div class="drawer-title"><span class="drawer-ico">${POps.iconHtml('clock', 'lg')}</span><div style="min-width:0"><h2>${POps.tHtml('Oturum geçmişi')}</h2><div class="sub">${escapeHtml(scope)}</div></div></div>`
             + `<button type="button" class="ibtn sm" data-vact="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button></div>`;
@@ -1117,7 +1152,7 @@
             const dur = start && end ? POps.duration((end - start) / 1000) : '';
             const metaHtml = escapeHtml(a.by || '?') + ' · ' + POps.timeHtml(a.at) + (dur ? ' · ' + escapeHtml(dur) : '') + ' · ' + escapeHtml(a.mandatory ? POps.t('zorunlu müdahale') : POps.t('kullanıcıya soruldu'));
             return `<div class="act"><div class="res${k ? ' ' + escapeHtml(k) : ''}">${POps.iconHtml('eye')}</div>
-                <div style="min-width:0"><div class="what">${escapeHtml(dev.name(a.pc))}</div><div class="meta">${metaHtml}</div>
+                <div style="min-width:0"><div class="what"><a href="pc?id=${encodeURIComponent(a.pc)}">${escapeHtml(dev.name(a.pc))}</a></div><div class="meta">${metaHtml}</div>
                 ${a.reason ? `<div class="meta">${POps.tHtml('Gerekçe: {reason}', { reason: a.reason })}</div>` : ''}
                 ${stale ? `<div class="why warn">${POps.tHtml('Oturum panelden kapatılmadı (sekme kapandı ya da bağlantı koptu); izleme yetkisi sunucuda süre dolunca düşer.')}</div>` : ''}</div>
                 <div class="side"><span class="word${k ? ' ' + escapeHtml(k) : ''}" title="${escapeHtml(POps.fullTime(a.ended_at))}">${escapeHtml(w)}</span></div></div>`;

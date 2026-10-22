@@ -1,7 +1,6 @@
 {
   "Entegrasyonlar": "Integrations",
   "Dışa aktarım": "Export",
-  "Açıkken bilgisayarlar, kurulu yazılımlar ve destek talepleri GLPI'ye gönderilir; kapalıyken hiçbir şey gönderilmez. GLPI'den POps'a bir şey alınmaz.": "While on, computers, installed software and help desk tickets are sent to GLPI; while off, nothing is sent. Nothing comes back from GLPI into POps.",
   "GLPI'ye dışa aktarım": "Export to GLPI",
   "GLPI adresi": "GLPI address",
   "GLPI'nin adresi; apirest.php kendiliğinden eklenir.": "The address of GLPI; apirest.php is added automatically.",
@@ -24,11 +23,9 @@
   "Destek talepleri": "Help desk tickets",
   "Talebi bildirenin adı": "Name of the ticket's reporter",
   "Talepler": "Tickets",
-  "Bu tarihten itibaren açılan talepler bir kez gönderilir; sonraki açık yanıtlar takip olarak eklenir.": "Tickets opened from this date are sent once; later public replies are added as follow-ups.",
   "Taleplerin başlangıç tarihi": "Start date for tickets",
   "Bağlantıyı sına": "Test connection",
   "Eşitleme": "Sync",
-  "GLPI'ye gönderim yeni bir kişisel veri aktarımıdır; okulun KVKK aydınlatma metninde belirtilmelidir. Oturumdaki kullanıcı, ekran görüntüsü ve olay kayıtları gönderilmez. GLPI'deki bir kayıt POps'tan silinmez.": "Sending data to GLPI is a new transfer of personal data and must be named in the school's KVKK notice. The signed-in user, screen images and event records are not sent. POps never deletes an item in GLPI.",
   "Eşitleniyor": "Syncing",
   "Henüz eşitlenmedi": "Not synced yet",
   "Son eşitleme başarısız": "Last sync failed",
@@ -96,5 +93,8 @@
   "Beklenmeyen hata; ayrıntı sunucu logunda.": "Unexpected error; details are in the server log.",
   "GLPI'nin yanıtı çok büyük.": "GLPI's response is too large.",
   "GLPI_CA_FILE okunamadı.": "GLPI_CA_FILE could not be read.",
-  "GLPI isteği oluşturulamadı: adres ya da jetonda geçersiz karakter var.": "Could not build the GLPI request: the address or a token contains an invalid character."
+  "GLPI isteği oluşturulamadı: adres ya da jetonda geçersiz karakter var.": "Could not build the GLPI request: the address or a token contains an invalid character.",
+  "Yalnızca POps'tan GLPI'ye gönderilir; GLPI'den bir şey alınmaz.": "Data only goes from POps to GLPI; nothing is taken from GLPI.",
+  "Bu tarihten sonra açılan talepler gönderilir.": "Tickets opened after this date are sent.",
+  "GLPI'ye gönderim kişisel veri aktarımıdır; KVKK aydınlatma metninde belirtin. Oturumdaki kullanıcı, ekran görüntüsü ve olay kayıtları gönderilmez.": "Sending to GLPI is a transfer of personal data; mention it in your KVKK privacy notice. The signed-in user, screenshots and event logs are not sent."
 }

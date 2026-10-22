@@ -9,26 +9,31 @@ $permPages = [
     'reports' => __('Raporlar'), 'helpdesk' => __('Destek talepleri'), 'settings' => __('Ayarlar'),
 ];
 $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php ile aynı
+// Bölümler yan menüden seçilir (sekme çubuğu .tabs-in-nav gizli); ilk boyamada yalnızca seçili bölüm görünsün
+$setTabs = ['users', 'units', 'security', 'general'];
+$setTab = $_GET['tab'] ?? '';
+if (!in_array($setTab, $setTabs, true) || ($setTab === 'units' && !$isSuper)) { $setTab = 'users'; }
 ?>
 
 <style>
-    /* Ayar bölümü: solda başlık ve kısa açıklama, sağda ayar satırları; dar ekranda alt alta */
-    .sects > .sect { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); gap: 14px 48px; padding: 28px 0; border-top: 1px solid var(--border-subtle); }
-    .sects > .sect:first-child { border-top: 0; padding-top: 4px; }
-    .set-tabs { margin-bottom: 8px; }
+    /* Kullanıcılar ve giriş: bölümler alt alta, okunur genişlikte */
+    .sects { max-width: 960px; display: flex; flex-direction: column; gap: 32px; }
+    .sect { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
     .sects > .sect[hidden] { display: none; }
-    /* Sekmede görünen ilk bölüm üst çizgisiz başlar */
-    .sects > .sect.first-visible { border-top: 0; padding-top: 12px; }
-    .sect-head h2 { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--text-primary); }
-    .sect-head p { font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.55; margin-top: 6px; }
-    .sect-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .sect-h { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; padding: 0 4px; min-height: 32px; }
+    .sect-h h2 { font-size: var(--text-lg); font-weight: var(--fw-semibold); letter-spacing: -0.01em; }
+    .sect-h .sub { font-size: var(--text-sm); color: var(--text-tertiary); }
+    .sect-h .btn { margin-left: auto; gap: 7px; }
+    .sect-note { font-size: var(--text-xs); color: var(--text-muted); padding: 0 4px; line-height: 1.5; }
+    .sect-note code { font-size: 11.5px; }
+    .page-header-actions .btn { gap: 7px; }
     .srow.block { display: block; }
-    .srow .val { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-secondary); text-align: right; overflow-wrap: anywhere; min-width: 0; max-width: 60%; }
+    .sects .srow { flex-wrap: wrap; row-gap: 10px; }
+    .sects .srow > .grow { min-width: min(220px, 100%); }
     .srow .st { display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); color: var(--text-secondary); white-space: nowrap; }
+    .srow .btn { gap: 6px; }
     .srow input.org-name { width: min(280px, 100%); }
     .org-logo { width: 44px; height: 44px; object-fit: contain; border-radius: 10px; background: var(--bg-surface); box-shadow: 0 0 0 1px var(--border-subtle); padding: 4px; }
-    .srow input[type=number] { width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
-    .srow .unit { font-size: var(--text-sm); color: var(--text-tertiary); }
     .faint { color: var(--text-muted); }
 
     /* Kullanıcılar */
@@ -39,6 +44,8 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     .user-table .nm { display: flex; align-items: center; gap: 10px; font-weight: var(--fw-semibold); min-width: 0; }
     .user-table .nm > span:not(.av):not(.badge) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .user-table .nm > .badge { flex: none; }
+    .user-table td.actions { width: 1%; }
+    .user-table td.actions .btn { gap: 6px; }
     .av { width: 28px; height: 28px; border-radius: 99px; background: var(--bg-surface-3); color: var(--text-secondary); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: var(--fw-semibold); flex: none; }
     .you { font-size: var(--text-xs); color: var(--text-muted); font-weight: var(--fw-regular); margin-left: 6px; }
     .user-table td.when { color: var(--text-tertiary); white-space: nowrap; }
@@ -60,6 +67,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     .tf-step { display: flex; gap: 10px; align-items: baseline; font-size: var(--text-sm); color: var(--text-primary); }
     .tf-step .n { width: 20px; height: 20px; border-radius: 99px; background: var(--bg-surface-3); color: var(--text-secondary); font-size: 11px; font-weight: var(--fw-semibold); display: inline-flex; align-items: center; justify-content: center; flex: none; }
     .tf-steps .input-group input { font-family: var(--font-mono); }
+    .tf-steps .input-group .btn { gap: 6px; }
     #twofaCode { max-width: 140px; letter-spacing: 0.12em; }
 
     /* API jetonları */
@@ -93,35 +101,36 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     .unit-row .t { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .unit-row .t > span:first-child, .unit-row .d { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .unit-row .grow { min-width: 0; }
+    .unit-row .acts { display: flex; gap: 6px; flex: none; }
     .scope-list { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto; }
     .scope-list .check { padding: 5px 0; }
     .scope-list .check .faint { margin-left: 6px; font-size: var(--text-xs); }
+
+    /* Sunucu bağlantısı: kısa liste */
+    .conn-row { padding-top: 10px; padding-bottom: 10px; }
+    .conn-row .k { color: var(--text-tertiary); font-size: var(--text-sm); white-space: nowrap; }
+    .conn-row .val { margin-left: auto; font-family: var(--font-mono); font-size: 12.5px; color: var(--text-secondary); text-align: right; overflow-wrap: anywhere; min-width: 0; }
 
     /* Kullanıcı formu */
     .perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; }
     .perm-grid .check { padding: 5px 0; }
     .perm-grid .check.is-blocked { color: var(--text-muted); cursor: not-allowed; }
-
-    /* Kaydedilmemiş değişiklik çubuğu */
-    .savebar { position: sticky; bottom: 16px; z-index: 50; width: fit-content; max-width: 100%; margin: 24px auto 0; display: flex; align-items: center; gap: 10px; padding: 7px 7px 7px 16px; background: var(--bg-surface); border-radius: 14px; box-shadow: 0 0 0 1px var(--border-subtle), 0 8px 28px rgba(0, 0, 0, 0.10); font-size: var(--text-sm); color: var(--text-primary); }
-    .savebar .btn { margin-left: 2px; }
-    @media (max-width: 960px) { .sects > .sect { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 22px 0; } }
     @media (max-width: 640px) {
         .hide-sm { display: none; }
         .tf-setup { grid-template-columns: minmax(0, 1fr); }
         .tf-qr { justify-self: center; }
-        .savebar { width: 100%; }
-        .savebar .sb-text { flex: 1; }
+        .unit-row { flex-wrap: wrap; }
+        .unit-row .acts { width: 100%; justify-content: flex-end; }
     }
 </style>
 
 <div class="page-header">
     <div>
-        <h1><?php _e('Ayarlar'); ?></h1>
+        <h1><?php echo htmlspecialchars($pops_titles[$pops_page_key] ?? __('Kullanıcılar ve giriş'), ENT_QUOTES, 'UTF-8'); ?></h1>
         <div class="summary">
-            <span class="sum" id="sumUsers"><?php _e('Yükleniyor…'); ?></span>
-            <span class="sum" id="sumConn" hidden></span>
-            <span class="sum" id="sumTwofa" hidden></span>
+            <a href="settings" class="sum" id="sumUsers" data-go="users"><?php _e('Yükleniyor…'); ?></a>
+            <a href="settings?tab=security" class="sum" id="sumTwofa" data-go="security" hidden></a>
+            <a href="settings?tab=general" class="sum" id="sumConn" data-go="general" hidden></a>
         </div>
     </div>
     <?php if ($isSuper): ?>
@@ -131,222 +140,149 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     <?php endif; ?>
 </div>
 
-<div class="tabs set-tabs" id="setTabs" aria-label="<?php _e('Ayarlar bölümleri'); ?>">
+<div class="tabs tabs-in-nav" id="setTabs" aria-label="<?php _e('Ayarlar bölümleri'); ?>">
     <button type="button" class="tab" data-tab="users"><?php _e('Kullanıcılar'); ?></button>
     <?php if ($isSuper): ?><button type="button" class="tab" data-tab="units"><?php _e('Birimler'); ?></button><?php endif; ?>
-    <button type="button" class="tab" data-tab="security"><?php _e('Güvenlik'); ?></button>
+    <button type="button" class="tab" data-tab="security"><?php _e('Giriş ve güvenlik'); ?></button>
     <button type="button" class="tab" data-tab="general"><?php _e('Genel'); ?></button>
 </div>
 
 <div class="sects">
-    <section class="sect" data-pane="users" aria-labelledby="hUsers">
-        <div class="sect-head">
-            <h2 id="hUsers"><?php _e('Kullanıcılar'); ?></h2>
-            <p><?php _e('Panele kimlerin girebileceği ve hangi sayfaları açabileceği. Ayrıntı ve işlemler için bir kullanıcıya tıklayın.'); ?><?php if (!$isSuper): ?> <?php _e('Kullanıcıları yalnızca süper admin ekler, düzenler ve siler.'); ?><?php endif; ?></p>
+    <section class="sect" data-pane="users" aria-label="<?php _e('Kullanıcılar'); ?>"<?php if ($setTab !== 'users'): ?> hidden<?php endif; ?>>
+        <div class="table-wrap">
+            <table class="data-table user-table">
+                <thead><tr><th><?php _e('Kullanıcı'); ?></th><th><?php _e('Rol'); ?></th><th class="hide-sm col-access"><?php _e('Erişim'); ?></th><th><?php _e('Son giriş'); ?></th><?php if ($isSuper): ?><th class="actions hide-sm"><span class="sr-only"><?php _e('İşlemler'); ?></span></th><?php endif; ?></tr></thead>
+                <tbody id="userBody"><tr><td colspan="5"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Kullanıcılar yükleniyor…'); ?></div></td></tr></tbody>
+            </table>
         </div>
-        <div class="sect-body">
-            <div class="table-wrap">
-                <table class="data-table user-table">
-                    <thead><tr><th><?php _e('Kullanıcı'); ?></th><th><?php _e('Rol'); ?></th><th class="hide-sm col-access"><?php _e('Erişim'); ?></th><th><?php _e('Son giriş'); ?></th></tr></thead>
-                    <tbody id="userBody"><tr><td colspan="4"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Kullanıcılar yükleniyor…'); ?></div></td></tr></tbody>
-                </table>
-            </div>
-        </div>
+        <?php if (!$isSuper): ?><div class="sect-note"><?php _e('Kullanıcıları yalnızca süper admin ekler, düzenler ve siler.'); ?></div><?php endif; ?>
     </section>
 
     <?php if ($isSuper): ?>
-    <section class="sect" data-pane="units" aria-labelledby="hUnits">
-        <div class="sect-head">
+    <section class="sect" data-pane="units" aria-labelledby="hUnits"<?php if ($setTab !== 'units'): ?> hidden<?php endif; ?>>
+        <div class="sect-h">
             <h2 id="hUnits"><?php _e('Kurum birimleri'); ?></h2>
-            <p><?php _e('Bir ilçe birçok okulu bu sunucudan yönetecekse birimleri (ilçe, okul) kurun, sınıfları birimlere bağlayın ve kullanıcılara kapsam verin. Kapsamı olan kullanıcı yalnızca kendi birimlerinin sınıflarını ve bilgisayarlarını görür. Birim kurulmadıkça herkes her şeyi görür.'); ?></p>
+            <span class="sub" id="unitSummary"><?php _e('Yükleniyor…'); ?></span>
+            <button type="button" class="btn secondary sm" id="unitNew"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Birim ekle'); ?></button>
         </div>
-        <div class="sect-body">
-            <div class="set">
-                <div class="srow">
-                    <div class="grow">
-                        <div class="t"><?php _e('Birimler'); ?></div>
-                        <div class="d" id="unitSummary"><?php _e('Yükleniyor…'); ?></div>
-                    </div>
-                    <button type="button" class="btn secondary sm" id="unitNew"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Birim ekle'); ?></button>
-                </div>
-            </div>
-            <div class="set" id="unitTree" hidden></div>
-            <div class="set" id="unitFree" hidden></div>
-        </div>
+        <div class="sect-note"><?php _e('Kapsamı olan kullanıcı yalnızca kendi birimlerinin sınıflarını ve bilgisayarlarını görür.'); ?></div>
+        <div class="set" id="unitTree" hidden></div>
+        <div class="set" id="unitFree" hidden></div>
     </section>
     <?php endif; ?>
 
-    <section class="sect" data-pane="security" id="twofaCard" aria-labelledby="hTwofa">
-        <div class="sect-head">
-            <h2 id="hTwofa"><?php _e('İki adımlı doğrulama'); ?></h2>
-            <p><?php _e('Girişte şifreye ek olarak doğrulama uygulamasından (Google Authenticator, Authy, Microsoft Authenticator) 6 haneli kod istenir. Yalnızca kendi hesabınız için geçerlidir.'); ?></p>
-        </div>
-        <div class="sect-body">
-            <div class="set">
-                <div class="srow">
-                    <div class="grow">
-                        <div class="t"><?php _e('Hesabınızda 2FA'); ?></div>
-                        <div class="d" id="twofaDesc"><?php _e('Önerilir, zorunlu değildir.'); ?></div>
-                    </div>
-                    <span class="st" id="twofaState"><span class="spinner sm"></span></span>
-                    <button type="button" class="btn secondary sm" id="twofaBtn" hidden></button>
+    <section class="sect" data-pane="security" id="twofaCard" aria-labelledby="hTwofa"<?php if ($setTab !== 'security'): ?> hidden<?php endif; ?>>
+        <div class="sect-h"><h2 id="hTwofa"><?php _e('İki adımlı doğrulama'); ?></h2></div>
+        <div class="set">
+            <div class="srow">
+                <div class="grow">
+                    <div class="t"><?php _e('Hesabınızda 2FA'); ?></div>
+                    <div class="d" id="twofaDesc"><?php _e('Önerilir, zorunlu değildir.'); ?></div>
                 </div>
-                <div class="srow block" id="twofaSetup" hidden>
-                    <div class="tf-setup">
-                        <div class="tf-qr" id="twofaQr" aria-label="<?php _e('2FA kurulum QR kodu'); ?>"></div>
-                        <div class="tf-steps">
-                            <div class="tf-step"><span class="n">1</span><span><?php _e('Doğrulama uygulamasında yeni hesap ekleyip QR kodu okutun.'); ?></span></div>
-                            <div class="field" style="margin:0">
-                                <label for="twofaSecret"><?php _e('QR okutamıyorsanız bu anahtarı elle girin'); ?></label>
-                                <div class="input-group">
-                                    <input type="text" id="twofaSecret" readonly spellcheck="false">
-                                    <button type="button" class="ibtn boxed" id="twofaCopy" data-tip="<?php _e('Anahtarı kopyala'); ?>" data-tip-pos="left" aria-label="<?php _e('Anahtarı kopyala'); ?>"><?php echo pops_icon('copy'); ?></button>
-                                </div>
-                            </div>
-                            <div class="tf-step"><span class="n">2</span><span><?php _e('Uygulamanın gösterdiği 6 haneli kodu yazın.'); ?></span></div>
+                <span class="st" id="twofaState"><span class="spinner sm"></span></span>
+                <button type="button" class="btn secondary sm" id="twofaBtn" hidden></button>
+            </div>
+            <div class="srow block" id="twofaSetup" hidden>
+                <div class="tf-setup">
+                    <div class="tf-qr" id="twofaQr" aria-label="<?php _e('2FA kurulum QR kodu'); ?>"></div>
+                    <div class="tf-steps">
+                        <div class="tf-step"><span class="n">1</span><span><?php _e('Doğrulama uygulamasında yeni hesap ekleyip QR kodu okutun.'); ?></span></div>
+                        <div class="field" style="margin:0">
+                            <label for="twofaSecret"><?php _e('QR okutamıyorsanız bu anahtarı elle girin'); ?></label>
                             <div class="input-group">
-                                <input type="text" id="twofaCode" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" aria-label="<?php _e('6 haneli kod'); ?>">
-                                <button type="button" class="btn" id="twofaEnableBtn"><?php _e('Etkinleştir'); ?></button>
-                                <button type="button" class="btn ghost" id="twofaCancelBtn"><?php _e('Vazgeç'); ?></button>
+                                <input type="text" id="twofaSecret" readonly spellcheck="false">
+                                <button type="button" class="btn secondary" id="twofaCopy"><?php echo pops_icon('copy', 'sm'); ?><?php _e('Kopyala'); ?></button>
                             </div>
+                        </div>
+                        <div class="tf-step"><span class="n">2</span><span><?php _e('Uygulamanın gösterdiği 6 haneli kodu yazın.'); ?></span></div>
+                        <div class="input-group">
+                            <input type="text" id="twofaCode" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" aria-label="<?php _e('6 haneli kod'); ?>">
+                            <button type="button" class="btn" id="twofaEnableBtn"><?php _e('Etkinleştir'); ?></button>
+                            <button type="button" class="btn ghost" id="twofaCancelBtn"><?php _e('Vazgeç'); ?></button>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+        <div class="sect-note"><?php _e('Girişte şifreye ek olarak doğrulama uygulamasındaki 6 haneli kod istenir. Yalnızca kendi hesabınız için geçerlidir.'); ?></div>
     </section>
 
     <?php if ($isSuper): ?>
-    <section class="sect" data-pane="security" aria-labelledby="hTokens">
-        <div class="sect-head">
+    <section class="sect" data-pane="security" aria-labelledby="hTokens"<?php if ($setTab !== 'security'): ?> hidden<?php endif; ?>>
+        <div class="sect-h">
             <h2 id="hTokens"><?php _e('API jetonları'); ?></h2>
-            <p><?php _e('Betikler ve dış sistemler panel girişi olmadan {path} uçlarını bu jetonlarla kullanır.', ['path' => '/api/v1']); ?> <?php _e('Jeton yalnızca oluşturulurken bir kez gösterilir; sunucuda özeti saklanır. Görüntüleyici yalnızca okur; Yönetici günlük işleri yapar ama süper admin işlemlerine, kullanıcılara, jetonlara ve uzak ekrana erişemez.'); ?> <?php _e('Ayrıntı:'); ?> <code>docs/api.md</code></p>
+            <span class="sub" id="tokSummary"><?php _e('Yükleniyor…'); ?></span>
+            <button type="button" class="btn secondary sm" id="tokNew"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Jeton oluştur'); ?></button>
         </div>
-        <div class="sect-body">
-            <div class="set">
-                <div class="srow">
-                    <div class="grow">
-                        <div class="t"><?php _e('Jetonlar'); ?></div>
-                        <div class="d" id="tokSummary"><?php _e('Yükleniyor…'); ?></div>
-                    </div>
-                    <button type="button" class="btn secondary sm" id="tokNew"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Jeton oluştur'); ?></button>
+        <div class="sect-note"><?php _e('Betikler ve dış sistemler panel girişi olmadan {path} uçlarını bu jetonlarla kullanır.', ['path' => '/api/v1']); ?> <?php _e('Ayrıntı:'); ?> <code>docs/api.md</code></div>
+        <div class="set" id="tokList" hidden></div>
+    </section>
+
+    <section class="sect" data-pane="security" aria-labelledby="hSso"<?php if ($setTab !== 'security'): ?> hidden<?php endif; ?>>
+        <div class="sect-h"><h2 id="hSso"><?php _e('Kimlik sağlayıcıları'); ?></h2></div>
+        <div class="set">
+            <div class="srow">
+                <div class="grow">
+                    <div class="t">Active Directory / LDAP</div>
+                    <div class="d" id="ssoLdapDesc"><?php _e('Yükleniyor…'); ?></div>
                 </div>
+                <span class="st" id="ssoLdapState"></span>
+                <button type="button" class="btn secondary sm" id="ssoLdapEdit" disabled><?php echo pops_icon('sliders', 'sm'); ?><?php _e('Ayarla'); ?></button>
             </div>
-            <div class="set" id="tokList" hidden></div>
+            <div class="srow">
+                <div class="grow">
+                    <div class="t">OpenID Connect</div>
+                    <div class="d" id="ssoOidcDesc"><?php _e('Yükleniyor…'); ?></div>
+                </div>
+                <span class="st" id="ssoOidcState"></span>
+                <button type="button" class="btn secondary sm" id="ssoOidcEdit" disabled><?php echo pops_icon('sliders', 'sm'); ?><?php _e('Ayarla'); ?></button>
+            </div>
         </div>
+        <div class="sect-note"><?php _e('Rol ve sayfalar dizindeki gruplardan gelir. Dizine ulaşılamasa da yerel hesaplar girer.'); ?> <code>docs/security.md</code></div>
     </section>
     <?php endif; ?>
 
-    <?php if ($isSuper): ?>
-    <section class="sect" data-pane="security" aria-labelledby="hSso">
-        <div class="sect-head">
-            <h2 id="hSso"><?php _e('Kimlik sağlayıcıları'); ?></h2>
-            <p><?php _e('Okulun dizin hesaplarıyla (Active Directory / LDAP) ya da tek oturum açma sağlayıcısıyla (OpenID Connect: Microsoft Entra ID, Google, Keycloak) panele giriş. Rol ve sayfalar dizindeki gruplardan gelir. Yerel hesaplar her zaman çalışır: dizine ulaşılamasa da yerel süper admin girer.'); ?> <code>docs/security.md</code></p>
-        </div>
-        <div class="sect-body">
-            <div class="set">
-                <div class="srow">
-                    <div class="grow">
-                        <div class="t">Active Directory / LDAP</div>
-                        <div class="d" id="ssoLdapDesc"><?php _e('Yükleniyor…'); ?></div>
-                    </div>
-                    <span class="st" id="ssoLdapState"></span>
-                    <button type="button" class="btn secondary sm" id="ssoLdapEdit" disabled><?php _e('Ayarla'); ?></button>
+    <section class="sect" data-pane="general" aria-labelledby="hOrg"<?php if ($setTab !== 'general'): ?> hidden<?php endif; ?>>
+        <div class="sect-h"><h2 id="hOrg"><?php _e('Kurum'); ?></h2></div>
+        <div class="set">
+            <div class="srow">
+                <div class="grow">
+                    <div class="t" id="orgNameLabel"><?php _e('Kurum adı'); ?></div>
+                    <div class="d"><?php _e('Giriş ekranının başlığı olur. Boş bırakılırsa "POps" yazar.'); ?></div>
                 </div>
-                <div class="srow">
-                    <div class="grow">
-                        <div class="t">OpenID Connect</div>
-                        <div class="d" id="ssoOidcDesc"><?php _e('Yükleniyor…'); ?></div>
-                    </div>
-                    <span class="st" id="ssoOidcState"></span>
-                    <button type="button" class="btn secondary sm" id="ssoOidcEdit" disabled><?php _e('Ayarla'); ?></button>
+                <input type="text" id="orgName" class="org-name" maxlength="80" autocomplete="organization" aria-labelledby="orgNameLabel" placeholder="<?php _e('Örn. Atatürk Anadolu Lisesi'); ?>" disabled>
+                <button type="button" class="btn secondary sm" id="orgSave" disabled><?php _e('Kaydet'); ?></button>
+            </div>
+            <div class="srow">
+                <div class="grow">
+                    <div class="t">Logo</div>
+                    <div class="d"><?php _e('PNG, JPEG ya da WebP, en çok 256 KB. Kare ya da yatay bir logo en iyi görünür.'); ?></div>
                 </div>
+                <img id="orgLogo" class="org-logo" alt="<?php _e('Kurum logosu'); ?>" hidden>
+                <input type="file" id="orgLogoFile" accept="image/png,image/jpeg,image/webp" hidden>
+                <button type="button" class="btn secondary sm" id="orgLogoPick" disabled><?php echo pops_icon('upload', 'sm'); ?><?php _e('Logo yükle'); ?></button>
+                <button type="button" class="btn secondary sm" id="orgLogoDel" hidden><?php echo pops_icon('trash', 'sm'); ?><?php _e('Logoyu kaldır'); ?></button>
             </div>
         </div>
+        <?php if (!$isSuper): ?><div class="sect-note"><?php _e('Yalnızca süper admin değiştirir.'); ?></div><?php endif; ?>
     </section>
-    <?php endif; ?>
 
-    <section class="sect" data-pane="general" aria-labelledby="hOrg">
-        <div class="sect-head">
-            <h2 id="hOrg"><?php _e('Kurum'); ?></h2>
-            <p><?php _e('Giriş ekranında görünen ad ve logo. Yalnızca süper admin değiştirir.'); ?></p>
-        </div>
-        <div class="sect-body">
-            <div class="set">
-                <div class="srow">
-                    <div class="grow">
-                        <div class="t" id="orgNameLabel"><?php _e('Kurum adı'); ?></div>
-                        <div class="d"><?php _e('Giriş ekranının başlığı olur. Boş bırakılırsa "POps" yazar.'); ?></div>
-                    </div>
-                    <input type="text" id="orgName" class="org-name" maxlength="80" autocomplete="organization" aria-labelledby="orgNameLabel" placeholder="<?php _e('Örn. Atatürk Anadolu Lisesi'); ?>" disabled>
-                    <button type="button" class="btn secondary sm" id="orgSave" disabled><?php _e('Kaydet'); ?></button>
+    <section class="sect" data-pane="general" aria-labelledby="hServer"<?php if ($setTab !== 'general'): ?> hidden<?php endif; ?>>
+        <div class="sect-h"><h2 id="hServer"><?php _e('Sunucu bağlantısı'); ?></h2></div>
+        <div class="set">
+            <div class="srow">
+                <div class="grow">
+                    <div class="t"><?php _e('Bağlantı'); ?></div>
+                    <div class="d" id="connDesc"><?php _e('Panelin merkez sunucuya ulaşıp ulaşmadığı'); ?></div>
                 </div>
-                <div class="srow">
-                    <div class="grow">
-                        <div class="t">Logo</div>
-                        <div class="d"><?php _e('PNG, JPEG ya da WebP, en çok 256 KB. Kare ya da yatay bir logo en iyi görünür.'); ?></div>
-                    </div>
-                    <img id="orgLogo" class="org-logo" alt="<?php _e('Kurum logosu'); ?>" hidden>
-                    <input type="file" id="orgLogoFile" accept="image/png,image/jpeg,image/webp" hidden>
-                    <button type="button" class="btn secondary sm" id="orgLogoPick" disabled><?php echo pops_icon('upload', 'sm'); ?><?php _e('Logo yükle'); ?></button>
-                    <button type="button" class="ibtn sm" id="orgLogoDel" data-tip="<?php _e('Logoyu kaldır'); ?>" data-tip-pos="left" aria-label="<?php _e('Logoyu kaldır'); ?>" hidden><?php echo pops_icon('trash', 'sm'); ?></button>
-                </div>
+                <span class="st" id="connState"><span class="spinner sm"></span><?php _e('Sınanıyor'); ?></span>
+                <button type="button" class="btn secondary sm" id="connRetry"><?php echo pops_icon('refresh', 'sm'); ?><?php _e('Yeniden sına'); ?></button>
             </div>
+            <div class="srow conn-row"><span class="k"><?php _e('REST API adresi'); ?></span><span class="val" id="dispHttpUrl">—</span></div>
+            <div class="srow conn-row"><span class="k"><?php _e('WebSocket adresi'); ?></span><span class="val" id="dispWsUrl">—</span></div>
         </div>
+        <div class="sect-note"><?php _e('Adresler sunucudaki {file} dosyasından okunur ({names}) ve buradan değiştirilemez.', ['file' => '.env', 'names' => 'POPS_API_URL, POPS_API_INTERNAL_URL']); ?></div>
     </section>
-
-    <section class="sect" data-pane="general" aria-labelledby="hQueue">
-        <div class="sect-head">
-            <h2 id="hQueue"><?php _e('Görev kuyruğu'); ?></h2>
-            <p><?php _e('Dosya indirme ve kurulum gibi görevler ağ boğulmasın diye paketler halinde gönderilir.'); ?></p>
-        </div>
-        <div class="sect-body">
-            <div class="set">
-                <div class="srow">
-                    <div class="grow">
-                        <div class="t" id="queueLimitLabel"><?php _e('Eşzamanlı görev sınırı'); ?></div>
-                        <div class="d"><?php _e('Aynı anda görev alan en çok bilgisayar sayısı. 1 Gbit ağda en çok 15 önerilir.'); ?></div>
-                    </div>
-                    <input type="number" id="queueLimit" min="1" max="200" inputmode="numeric" aria-labelledby="queueLimitLabel" disabled>
-                    <span class="unit"><?php _e('bilgisayar'); ?></span>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="sect" data-pane="general" aria-labelledby="hServer">
-        <div class="sect-head">
-            <h2 id="hServer"><?php _e('Sunucu bağlantısı'); ?></h2>
-            <p><?php _e('Adresler sunucudaki {file} dosyasından okunur ({names}) ve buradan değiştirilemez.', ['file' => '.env', 'names' => 'POPS_API_URL, POPS_API_INTERNAL_URL']); ?> <?php _e('Ayrıntı:'); ?> <code>docs/configuration.md</code></p>
-        </div>
-        <div class="sect-body">
-            <div class="set">
-                <div class="srow">
-                    <div class="grow">
-                        <div class="t"><?php _e('Bağlantı'); ?></div>
-                        <div class="d" id="connDesc"><?php _e('Panelin merkez sunucuya ulaşıp ulaşmadığı'); ?></div>
-                    </div>
-                    <span class="st" id="connState"><span class="spinner sm"></span><?php _e('Sınanıyor'); ?></span>
-                    <button type="button" class="ibtn sm" id="connRetry" data-tip="<?php _e('Yeniden sına'); ?>" data-tip-pos="left" aria-label="<?php _e('Bağlantıyı yeniden sına'); ?>"><?php echo pops_icon('refresh', 'sm'); ?></button>
-                </div>
-                <div class="srow">
-                    <div class="grow"><div class="t"><?php _e('REST API adresi'); ?></div></div>
-                    <span class="val" id="dispHttpUrl">—</span>
-                </div>
-                <div class="srow">
-                    <div class="grow"><div class="t"><?php _e('WebSocket adresi'); ?></div></div>
-                    <span class="val" id="dispWsUrl">—</span>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <div class="savebar" id="saveBar" role="region" aria-label="<?php _e('Kaydedilmemiş değişiklikler'); ?>" hidden>
-        <span class="dot warn" aria-hidden="true"></span>
-        <span class="sb-text"><?php _e('Kaydedilmemiş değişiklik var'); ?></span>
-        <button type="button" class="btn secondary sm" id="discardBtn"><?php _e('Vazgeç'); ?></button>
-        <button type="button" class="btn sm" id="saveBtn"><?php _e('Kaydet'); ?></button>
-    </div>
 </div>
 
 <?php if ($isSuper): ?>
@@ -610,19 +546,21 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
 <!-- QR üretimi tarayıcıda yapılır (gizli anahtar dışarı gitmez). Kütüphane yerelde
      barındırılır → çevrimdışı okullarda da çalışır, harici CDN'e bağımlı değildir. -->
 <script src="assets/vendor/qrcode.min.js"></script>
-
 <script>
 (function () {
 
-    // ---- Sekmeler: Kullanıcılar / Güvenlik / Genel (2FA önerisindeki #twofaCard bağlantısı Güvenlik'i açar)
-    const markFirst = () => {
-        let first = true;
-        document.querySelectorAll('.sects > .sect').forEach(sec => { sec.classList.toggle('first-visible', !sec.hidden && first); if (!sec.hidden) first = false; });
-    };
-    const setTabs = POps.pageTabs(document.getElementById('setTabs'), { def: 'users', panes: '.sects > [data-pane]', onChange: markFirst });
+    // ---- Bölümler yan menüden sürülür (.tabs-in-nav); 2FA önerisindeki #twofaCard bağlantısı Giriş ve güvenlik'i açar
+    const setTabs = POps.pageTabs(document.getElementById('setTabs'), { def: 'users', panes: '.sects > [data-pane]' });
     if (location.hash === '#twofaCard') setTabs.set('security');
     window.addEventListener('hashchange', () => { if (location.hash === '#twofaCard') setTabs.set('security'); });
     const $ = (id) => document.getElementById(id);
+    // Başlıktaki özet: her öğe ilgili bölümü açar
+    document.querySelector('.page-header .summary').addEventListener('click', (e) => {
+        const a = e.target.closest('[data-go]');
+        if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+        e.preventDefault();
+        setTabs.set(a.dataset.go, { scroll: true });
+    });
     const IS_SUPER = window.USER_ROLE === 'superadmin';
     const ME = <?php echo json_encode((string)($_SESSION['username'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
     const PAGES = <?php echo json_encode($permPages, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
@@ -634,7 +572,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         viewer: { word: 'İzleyici', hint: 'Seçilen sayfaları yalnızca görüntüler; Dağıtım, Uzak komut ve Ayarlar kapalıdır.' }
     };
     const roleWord = (r) => (ROLES[r] ? POps.t(ROLES[r].word) : r || '—');
-    // Kimlik kaynağı: yerel şifre ya da dizin / OpenID Connect (bkz. Güvenlik → Kimlik sağlayıcıları)
+    // Kimlik kaynağı: yerel şifre ya da dizin / OpenID Connect (bkz. Giriş ve güvenlik → Kimlik sağlayıcıları)
     const SOURCES = { local: 'Yerel', ldap: 'Dizin (LDAP)', oidc: 'OpenID Connect' };
     const isSso = (u) => !!(u && u.auth_source && u.auth_source !== 'local');
     const pageName = (k) => PAGES[k] || k;
@@ -648,7 +586,6 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     let usersLoaded = false;
     let focusId = null;
     let twofaOn = null;
-    let limitSaved = null;
     let orgUnits = [];   // kurum birimleri (yalnızca süper admin yükler)
     let orgLabs = [];
 
@@ -675,12 +612,13 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             <td>${escapeHtml(roleWord(u.role))}</td>
             <td class="hide-sm col-access" title="${escapeHtml(u.role === 'superadmin' ? '' : permsOf(u).map(pageName).join(', '))}">${escapeHtml(accessText(u))}</td>
             <td class="when">${lastHtml}</td>
+            ${IS_SUPER ? `<td class="actions hide-sm"><button type="button" class="btn secondary sm" data-edit="${Number(u.id)}" aria-label="${escapeHtml(POps.t('{name} kullanıcısını düzenle', { name: u.username }))}">${POps.iconHtml('edit', 'sm')}${POps.tHtml('Düzenle')}</button></td>` : ''}
         </tr>`;
     }
     function renderUsers() {
         const body = $('userBody');
         if (!users.length) {
-            POps.setEmpty(body, { tag: 'tr', colspan: 4, icon: 'users', title: POps.t('Kayıtlı kullanıcı yok') });
+            POps.setEmpty(body, { tag: 'tr', colspan: 5, icon: 'users', title: POps.t('Kayıtlı kullanıcı yok') });
             return;
         }
         body.innerHTML = users.map(rowHtml).join('');
@@ -699,7 +637,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             users = (r && Array.isArray(r.users)) ? r.users : [];
             usersLoaded = true;
         } catch (e) {
-            POps.setError($('userBody'), e, { tag: 'tr', colspan: 4 });
+            POps.setError($('userBody'), e, { tag: 'tr', colspan: 5 });
             $('sumUsers').textContent = POps.t('Kullanıcılar alınamadı');
             return;
         }
@@ -772,12 +710,14 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         renderDrawer(u);
     }
     $('userBody').addEventListener('click', (e) => {
+        const ed = e.target.closest('[data-edit]');
+        if (ed) { const u = users.find(x => x.id === Number(ed.dataset.edit)); if (u) openEditor(u); return; }
         const tr = e.target.closest('tr[data-id]');
         if (tr && !e.target.closest('a')) openUser(Number(tr.dataset.id));
     });
     $('userBody').addEventListener('keydown', (e) => {
         const tr = e.target.closest('tr[data-id]');
-        if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openUser(Number(tr.dataset.id)); }
+        if (tr && e.target === tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openUser(Number(tr.dataset.id)); }
     });
 
     // ---- Ekle / düzenle (yalnızca süper admin; sunucu da yalnızca süper admine izin verir)
@@ -935,7 +875,10 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
                 <div class="t"><span>${escapeHtml(u.name)}</span>${u.users ? `<span class="badge muted">${POps.tnHtml('{n} kullanıcı', Number(u.users))}</span>` : ''}</div>
                 <div class="d" title="${escapeHtml(labsText)}">${escapeHtml(labsText)}</div>
             </div>
-            <button type="button" class="ibtn sm" data-unit-menu="${Number(u.id)}" aria-haspopup="true" aria-label="${escapeHtml(POps.t('{name} işlemleri', { name: u.name }))}">${POps.iconHtml('more', 'sm')}</button>
+            <div class="acts">
+                <button type="button" class="btn secondary sm" data-unit-labs="${Number(u.id)}">${POps.iconHtml('labs', 'sm')}${POps.tHtml('Sınıfları seç')}</button>
+                <button type="button" class="btn ghost sm" data-unit-menu="${Number(u.id)}" aria-haspopup="menu" aria-label="${escapeHtml(POps.t('{name} işlemleri', { name: u.name }))}">${POps.iconHtml('more', 'sm')}${POps.tHtml('Diğer')}</button>
+            </div>
         </div>`;
     }
     function renderUnits() {
@@ -1033,11 +976,12 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         $('unName').addEventListener('input', () => $('unNameField').classList.remove('has-error'));
         $('ulSave').addEventListener('click', saveUnitLabs);
         $('unitTree').addEventListener('click', (e) => {
+            const lb = e.target.closest('[data-unit-labs]');
+            if (lb) { const lu = unitById(Number(lb.dataset.unitLabs)); if (lu) openUnitLabs(lu); return; }
             const b = e.target.closest('[data-unit-menu]');
             const u = b && unitById(Number(b.dataset.unitMenu));
             if (!u) return;
             POps.menu(b, [
-                { label: POps.t('Sınıfları seç…'), icon: 'labs', onClick: () => openUnitLabs(u) },
                 { label: POps.t('Alt birim ekle…'), icon: 'plus', onClick: () => openUnitEditor(null, u.id) },
                 { label: POps.t('Düzenle…'), icon: 'edit', onClick: () => openUnitEditor(u) },
                 '-',
@@ -1132,7 +1076,7 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
                 <div class="d">${metaHtml}</div>
             </div>
             <span class="st"><span class="dot ${escapeHtml(st[0])}"></span>${escapeHtml(st[1])}</span>
-            ${t.state === 'revoked' ? '' : `<button type="button" class="ibtn sm" data-revoke="${Number(t.id)}" data-tip="${escapeHtml(POps.t('Jetonu iptal et'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('{name} jetonunu iptal et', { name: t.name }))}">${POps.iconHtml('trash', 'sm')}</button>`}
+            ${t.state === 'revoked' ? '' : `<button type="button" class="btn secondary sm" data-revoke="${Number(t.id)}" aria-label="${escapeHtml(POps.t('{name} jetonunu iptal et', { name: t.name }))}">${POps.iconHtml('trash', 'sm')}${POps.tHtml('İptal et')}</button>`}
         </div>`;
     }
     function renderApiTokens() {
@@ -1526,50 +1470,6 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
         if (await POps.act(this, async () => { r = await POps.del('/api/system/branding/logo'); }, { success: POps.t('Logo kaldırıldı.') })) renderBrand(r);
     });
 
-    // ================= GÖREV KUYRUĞU =================
-    const limitValue = () => $('queueLimit').value.trim();
-    const isDirty = () => limitSaved !== null && limitValue() !== String(limitSaved);
-    function refreshBar() { $('saveBar').hidden = !isDirty(); }
-    async function loadLimit() {
-        try {
-            const r = await POps.get('/api/get_concurrent_limit');
-            limitSaved = (r && r.limit != null) ? r.limit : 5;
-            $('queueLimit').value = limitSaved;
-            $('queueLimit').disabled = false;
-        } catch (e) {
-            $('queueLimit').placeholder = '—';
-            $('queueLimit').title = POps.t('Sınır alınamadı: {error}', { error: POps.errorMessage(e) });
-        }
-        refreshBar();
-    }
-    async function saveLimit() {
-        if (!isDirty()) return;
-        const v = parseInt(limitValue(), 10);
-        if (!v || v < 1 || v > 200 || String(v) !== limitValue()) {
-            $('queueLimit').classList.add('is-invalid');
-            $('queueLimit').focus();
-            POps.toast('warning', POps.t('1 ile 200 arasında bir sayı girin.'));
-            return;
-        }
-        if (await POps.act($('saveBtn'), () => POps.post('/api/set_concurrent_limit', { limit: v }), { success: POps.tn('Eşzamanlı görev sınırı {n} bilgisayar oldu.', v) })) {
-            limitSaved = v;
-            $('queueLimit').value = v;
-            refreshBar();
-        }
-    }
-    $('queueLimit').addEventListener('input', (e) => { e.target.classList.remove('is-invalid'); refreshBar(); });
-    $('queueLimit').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveLimit(); } });
-    $('saveBtn').addEventListener('click', saveLimit);
-    $('discardBtn').addEventListener('click', () => { $('queueLimit').value = limitSaved; $('queueLimit').classList.remove('is-invalid'); refreshBar(); });
-    document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S') && isDirty()) { e.preventDefault(); saveLimit(); }
-    });
-    window.addEventListener('beforeunload', (e) => {
-        if (!isDirty()) return;
-        e.preventDefault();
-        e.returnValue = '';
-    });
-
     // ================= SUNUCU BAĞLANTISI =================
     async function testConnection() {
         const st = $('connState');
@@ -1580,13 +1480,13 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
             const ms = Math.round(performance.now() - t0);
             st.innerHTML = `<span class="dot ok"></span>${POps.tHtml('Çalışıyor · {ms} ms', { ms: Number(ms) })}`;
             $('connDesc').textContent = POps.t('Panel merkez sunucuya ulaşıyor.');
-            $('sumConn').innerHTML = '<span class="dot ok"></span>' + POps.tHtml('Sunucu çalışıyor');
+            $('sumConn').hidden = true;
         } catch (e) {
             st.innerHTML = '<span class="dot bad"></span>' + POps.tHtml('Ulaşılamıyor');
             $('connDesc').textContent = POps.errorMessage(e);
             $('sumConn').innerHTML = '<span class="dot bad"></span>' + POps.tHtml('Sunucuya ulaşılamıyor');
+            $('sumConn').hidden = false;
         }
-        $('sumConn').hidden = false;
     }
     $('connRetry').addEventListener('click', testConnection);
 
@@ -1600,7 +1500,6 @@ $viewerBlocked = ['deploy', 'settings', 'terminal'];   // includes/header.php il
     testConnection();
     loadUsers();
     loadTwofa();
-    loadLimit();
     loadBrand();
 })();
 </script>

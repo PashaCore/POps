@@ -1,6 +1,8 @@
 // =================================================================
 // Raporlar sayfasının betiği (reports.php). Ortak betiklerden (POps.*, POps.dev, state) sonra defer ile yüklenir.
 // Sayfa verisi PHP'den <script type="application/json" id="rpData"> ile gelir: { canEditLic }.
+// İstatistik yalnızca bu sayfada: her sayı ilgili listeyi açar (Kayıtlar, Bilgisayarlar, bilgisayar sayfası ya da
+// bu sayfanın sekmesi). Adres: ?tab=software|patches|licenses, Windows güncellemelerinde f=need|sec|none.
 // En üstteki saf yardımcılar DOM'a dokunmaz; tests/unit-js/pages.test.mjs sınar (bkz. docs/dashboard.md).
 // =================================================================
 (function () {
@@ -22,18 +24,18 @@
     const dev = POps.dev;
     const $ = (id) => document.getElementById(id);
     const CAN_ACT = dev.canAdmin;
+    const IS_SUPER = window.USER_ROLE === 'superadmin';
     const PAGE = JSON.parse($('rpData').textContent);
     const CAN_EDIT_LIC = PAGE.canEditLic === true;
     const params = new URLSearchParams(location.search);
-    const TABS = ['summary', 'software', 'patches', 'licenses'];
-    const ui = { tab: TABS.includes(params.get('tab')) ? params.get('tab') : 'summary', loaded: {}, focus: null };
+    const ui = { loaded: {}, focus: null };
     const fmtN = (v) => Number(v || 0).toLocaleString(POps.locale);
     const nHtml = (v) => escapeHtml(fmtN(v));
     // Sayı kalın: yer tutucuya HTML parçası (POps.tHtml'in üçüncü argümanı)
     const boldHtml = (v) => `<b>${nHtml(v)}</b>`;
     const devName = (r) => r.display_name || r.hostname || r.pc_name || '';
     const labName = (l) => l && l !== dev.UNASSIGNED ? l : POps.t('Atanmamış');
-    const UNASSIGNED_KEY = dev.UNASSIGNED;
+    const pcHref = (h) => 'pc?id=' + encodeURIComponent(h);
     // Tablo gövdesinde yükleniyor satırı (POps.setLoading tbody'ye div koyar)
     function loadingRow(tbody, cols, text) {
         POps.setLoading(tbody, text);
@@ -41,7 +43,7 @@
         tbody.replaceChildren(POps.el('tr', null, [POps.el('td', { colspan: String(cols) }, [box])]));
     }
 
-    // ---------------------------------------------------------------- sekmeler
+    // ---------------------------------------------------------------- sekmeler (?tab=)
     // Sekmenin verisi ilk açılışta yüklenir (ad listeden; nesneden adla çağrı yok)
     function loadTab(tab) {
         switch (tab) {
@@ -51,23 +53,16 @@
             default: loadSummary();
         }
     }
-    function setTab(tab) {
-        if (!TABS.includes(tab)) tab = 'summary';
-        ui.tab = tab;
-        $('rpTabs').querySelectorAll('.tab').forEach(t => {
-            const on = t.dataset.tab === tab;
-            t.classList.toggle('active', on); t.setAttribute('aria-selected', on ? 'true' : 'false');
-            if (on && t.scrollIntoView) t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-        });
-        TABS.forEach(k => { $('pane-' + k).hidden = k !== tab; });
-        document.querySelectorAll('.rp-tools[data-for]').forEach(el => { el.hidden = el.dataset.for !== tab; });
-        const u = new URL(location.href);
-        if (tab === 'summary') u.searchParams.delete('tab'); else u.searchParams.set('tab', tab);
-        history.replaceState(null, '', u.pathname + u.search);
+    let tabsReady = false;   // pageTabs kurulurken onChange'i bir kez çağırır; ilk yükleme en altta
+    function onTab(tab) {
         if (POps.drawer.isOpen()) POps.drawer.close();
+        // Güncelleme süzgeci (f) yalnızca kendi sekmesinin adresinde
+        const u = new URL(location.href);
+        if (tab === 'patches' && pt.f !== 'all') u.searchParams.set('f', pt.f); else u.searchParams.delete('f');
+        history.replaceState(null, '', u.pathname + u.search + u.hash);
         if (!ui.loaded[tab]) { ui.loaded[tab] = true; loadTab(tab); }
     }
-    $('rpTabs').addEventListener('click', (e) => { const t = e.target.closest('.tab[data-tab]'); if (t && t.dataset.tab !== ui.tab) setTab(t.dataset.tab); });
+    const tabs = POps.pageTabs($('rpTabs'), { def: 'summary', onChange: (tab) => { if (tabsReady) onTab(tab); } });
 
     // ---------------------------------------------------------------- CSV
     $('rpExport').addEventListener('click', (e) => {
@@ -84,29 +79,36 @@
     });
 
     // ---------------------------------------------------------------- ÖZET
-    // Sayı kartı: etiket ve sayı burada kaçırılır; alt satır (footHtml) çağıranın hazırladığı HTML
-    // go: { page, f } başka sayfaya bağlantı, { tab } bu sayfada sekme, null tıklanmaz
-    function kpiHtml(label, valueHtml, footHtml, go) {
-        const innerHtml = `<div class="l">${escapeHtml(label)}</div><div class="v">${valueHtml}</div><div class="f"><span>${footHtml}</span>${go ? `<span class="go">${POps.iconHtml('right', 'sm')}</span>` : ''}</div>`;
-        if (!go) return `<div class="kpi">${innerHtml}</div>`;
-        if (go.tab) return `<button type="button" class="kpi" data-go="${escapeHtml(go.tab)}">${innerHtml}</button>`;
-        return `<a class="kpi" href="${encodeURIComponent(go.page)}${go.f ? '?f=' + encodeURIComponent(go.f) : ''}">${innerHtml}</a>`;
+    // Sayı kartı: etiket ve sayı düz metin; alt satır (footHtml) çağıranın hazırladığı HTML.
+    // go: { href } başka sayfa, { tab, f } bu sayfada sekme, { list } bilgisayar listesi (panel); yoksa tıklanmaz.
+    function kpiEl(label, value, small, footHtml, go) {
+        const tag = !go ? 'div' : go.href ? 'a' : 'button';
+        const el = POps.el(tag, { className: 'kpi', href: go && go.href ? go.href : null, type: tag === 'button' ? 'button' : null });
+        if (go && go.tab) { el.dataset.tab = go.tab; if (go.f) el.dataset.f = go.f; }
+        if (go && go.list) el.dataset.list = go.list;
+        const v = POps.el('div', { className: 'v', text: fmtN(value) });
+        if (small != null) v.append(' ', POps.el('small', { text: '/ ' + fmtN(small) }));
+        const foot = POps.el('span');
+        foot.innerHTML = footHtml;
+        el.append(POps.el('div', { className: 'l', text: label }), v, POps.el('div', { className: 'f' }, [foot, go ? POps.el('span', { className: 'go' }, [POps.iconEl('right', 'sm')]) : null]));
+        return el;
     }
     const UPD = {
         success: ['ok', POps.t('Başarılı')], rolled_back: ['warn', POps.t('Geri alındı')], pending_reboot: ['warn', POps.t('Yeniden başlatma bekliyor')],
         rollback_pending_reboot: ['warn', POps.t('Geri alma yeniden başlatma bekliyor')], install_failed: ['', POps.t('Başlamadı, değişiklik yok')],
         rollback_failed: ['bad', POps.t('Geri alma başarısız')], failed: ['bad', POps.t('Başarısız')], error: ['bad', POps.t('Hata')], rejected: ['bad', POps.t('Reddedildi')]
     };
+    let periodFrom = '';   // dönemin ilk günü (Kayıtlar bağlantıları bu tarihten süzer)
     async function loadSummary() {
         let d;
         try { d = await POps.get('/api/reports/summary?days=' + encodeURIComponent($('rpDays').value)); }
         catch (e) { POps.setError($('kpis'), e); $('kpis').firstElementChild.style.gridColumn = '1 / -1'; ['dayChart', 'versions', 'updates', 'topPolicy', 'topDevices'].forEach(id => { $(id).textContent = '—'; }); return; }
         const dv = d.devices || {}, p = d.patches || {}, sw = d.software || {}, ev = (d.events && d.events.by_risk) || {};
-        const labs = (dv.labs || []).filter(l => l.lab && l.lab !== UNASSIGNED_KEY).length;
-        $('rpSummary').innerHTML = `<span class="sum">${POps.tnHtml('{n} cihaz', dv.total, null, { n: boldHtml(dv.total) })}</span><span class="sum">${POps.tnHtml('{n} sınıf', labs, null, { n: boldHtml(labs) })}</span>`
-            + `<span class="sum">${POps.tnHtml('son {n} gün', d.days, null, { n: boldHtml(d.days) })}</span><span class="sum">${POps.tHtml('hazırlandı {time}', null, { time: POps.timeHtml(d.generated_at) })}</span>`;
+        const start = new Date(); start.setDate(start.getDate() - (Number(d.days) - 1));
+        periodFrom = dayKey(start);
+        $('rpGenerated').innerHTML = POps.tHtml('hazırlandı {time}', null, { time: POps.timeHtml(d.generated_at) });
 
-        // Açık/boşta/kapalı sayıları Cihazlar sayfasıyla aynı kuralla (sunucu özeti boştakileri kapalı sayar)
+        // Açık/boşta/kapalı sayıları Bilgisayarlar sayfasıyla aynı kuralla (sunucu özeti boştakileri kapalı sayar)
         await devReady;
         const list = state.devicesLoaded ? (state.devices || []) : null;
         const onN = list ? list.filter(x => dev.state(x).cls === 'on').length : (dv.online || 0);
@@ -120,32 +122,41 @@
         const secFootHtml = p.reporting
             ? (p.pending_critical ? `<span class="dot bad"></span>${cntHtml('{n} kritik', p.pending_critical)}` : POps.tHtml('Kritik eksik yok')) + (p.reboot_required ? ` · ${cntHtml('{n} yeniden başlatma', p.reboot_required)}` : '') + (notReported ? ` · ${cntHtml('{n} bildirmedi', notReported)}` : '')
             : POps.tHtml('Henüz bildiren bilgisayar yok');
-        $('kpis').innerHTML = [
-            kpiHtml(POps.t('Cihaz'), nHtml(dv.total), `<span class="dot on"></span>${cntHtml('{n} açık', onN)}` + (idleN ? ` · ${cntHtml('{n} boşta', idleN)}` : '') + ` · ${cntHtml('{n} kapalı', off)}`, { page: 'devices' }),
-            kpiHtml(POps.t('Kayıtlı ajan'), `${nHtml(dv.enrolled)} <small>/ ${nHtml(dv.total)}</small>`,
-                unenrolled ? `<span class="dot warn"></span>${cntHtml('{n} ajan anahtarsız', unenrolled)}` : `<span class="dot ok"></span>${POps.tHtml('Hepsi anahtarlı')}`, null),
-            kpiHtml(POps.t('Karantinada'), nHtml(dv.quarantined), dv.quarantined ? `<span class="dot bad"></span>${POps.tHtml('Kullanımı kilitli bilgisayar var')}` : POps.tHtml('Yok'), dv.quarantined ? { page: 'devices', f: 'issue' } : null),
-            kpiHtml(POps.t('Güvenlik güncellemesi bekleyen'), nHtml(p.pending_security), secFootHtml, { tab: 'patches' }),
-            kpiHtml(POps.t('Yazılım bildiren bilgisayar'), nHtml(sw.reporting_devices), cntHtml('{n} farklı program', sw.titles), { tab: 'software' }),
-            kpiHtml(POps.t('Yüksek ve kritik olay'), nHtml(highCrit), `${cntHtml('son {n} gün', d.days)} · ${cntHtml('{n} kritik', ev.critical || 0)} · ${cntHtml('{n} orta', ev.medium || 0)}`, { page: 'logger', f: 'warn' })
-        ].join('');
+        const qN = list ? list.filter(x => x.is_quarantined).length : Number(dv.quarantined || 0);
+        $('kpis').replaceChildren(...[
+            kpiEl(POps.t('Bilgisayar'), dv.total, null, `<span class="dot on"></span>${cntHtml('{n} açık', onN)}` + (idleN ? ` · ${cntHtml('{n} boşta', idleN)}` : '') + ` · ${cntHtml('{n} kapalı', off)}`, { href: 'devices' }),
+            kpiEl(POps.t('Karantinada'), qN, null, qN ? `<span class="dot bad"></span>${POps.tHtml('Kullanımı kilitli bilgisayar var')}` : POps.tHtml('Yok'), qN && list ? { list: 'quarantine' } : null),
+            kpiEl(POps.t('Güvenlik güncellemesi bekleyen'), p.pending_security, null, secFootHtml, { href: 'reports?tab=patches&f=sec', tab: 'patches', f: 'sec' }),
+            kpiEl(POps.t('Yazılım bildiren bilgisayar'), sw.reporting_devices, null, cntHtml('{n} farklı program', sw.titles), { href: 'reports?tab=software', tab: 'software' }),
+            kpiEl(POps.t('Yüksek ve kritik olay'), highCrit, null, `${cntHtml('son {n} gün', d.days)} · ${cntHtml('{n} kritik', ev.critical || 0)}`, { href: 'logger?risk=high&from=' + encodeURIComponent(periodFrom) }),
+            // Cihaz anahtarları Sistem → Cihaz kaydı ve güvenlik bölümünde (yalnızca süper yönetici)
+            IS_SUPER ? kpiEl(POps.t('Kayıtlı ajan'), dv.enrolled, dv.total || 0,
+                unenrolled ? `<span class="dot warn"></span>${cntHtml('{n} ajan anahtarsız', unenrolled)}` : `<span class="dot ok"></span>${POps.tHtml('Hepsi anahtarlı')}`, { href: 'system?view=ayarlar&tab=security' }) : null
+        ].filter(Boolean));
 
-        // Günlük seri: dönemdeki her gün (olay olmayan günler 0)
+        // Günlük seri: dönemdeki her gün (olay olmayan günler 0); sütun o günün kayıtlarını açar
         const byDay = {};
         ((d.events && d.events.by_day) || []).forEach(r => { byDay[r.day] = (r.critical || 0) + (r.high || 0); });
         const days = [];
         for (let i = d.days - 1; i >= 0; i--) {
             const t = new Date(); t.setDate(t.getDate() - i);
-            days.push({ v: byDay[dayKey(t)] || 0, label: t.toLocaleDateString(POps.locale, { day: 'numeric', month: 'short' }) });
+            days.push({ v: byDay[dayKey(t)] || 0, key: dayKey(t), label: t.toLocaleDateString(POps.locale, { day: 'numeric', month: 'short' }) });
         }
         const max = Math.max(1, ...days.map(x => x.v));
         const total = days.reduce((a, x) => a + x.v, 0);
         $('dayMeta').textContent = total ? POps.tn('Son {days} günde {total} olay · en yoğun gün {max}', total, { days: fmtN(d.days), total: fmtN(total), max: fmtN(max) }) : POps.tn('Son {n} gün', d.days);
         const mid = days[Math.floor(days.length / 2)];
+        const colHtml = (x) => {
+            const tip = POps.tn('{date} · {count} olay', x.v, { date: x.label, count: fmtN(x.v) });
+            const barHtml = `<div class="bar" style="height:${Number((x.v / max) * 100).toFixed(1)}%"></div>`;
+            return x.v
+                ? `<a class="col" href="logger?risk=high&amp;from=${encodeURIComponent(x.key)}&amp;to=${encodeURIComponent(x.key)}" data-tip="${escapeHtml(tip)}" data-tip-pos="up">${barHtml}</a>`
+                : `<div class="col zero" data-tip="${escapeHtml(tip)}" data-tip-pos="up">${barHtml}</div>`;
+        };
         $('dayChart').innerHTML = total
             ? `<div class="daychart" role="img" aria-label="${escapeHtml(POps.t('Son {days} günde günlük yüksek ve kritik olay sayısı; toplam {total}', { days: fmtN(d.days), total: fmtN(total) }))}">
                 <div class="grid"><span>${nHtml(max)}</span></div>
-                ${days.map(x => `<div class="col${x.v ? '' : ' zero'}" data-tip="${escapeHtml(POps.tn('{date} · {count} olay', x.v, { date: x.label, count: fmtN(x.v) }))}" data-tip-pos="up"><div class="bar" style="height:${Number((x.v / max) * 100).toFixed(1)}%"></div></div>`).join('')}
+                ${days.map(colHtml).join('')}
                </div>
                <div class="daychart-axis"><span>${escapeHtml(days[0].label)}</span><span>${escapeHtml(mid.label)}</span><span>${escapeHtml(days[days.length - 1].label)}</span></div>`
             : `<div class="rp-calm"><span class="dot ok"></span>${POps.tHtml('Bu dönemde yüksek ya da kritik olay yok.')}</div>`;
@@ -153,30 +164,46 @@
         const versions = d.versions || [];
         const vmax = Math.max(1, ...versions.map(v => v.devices));
         $('versions').innerHTML = versions.length ? versions.map(v => `
-            <div class="hbar"><span class="k" title="${escapeHtml(v.version)}">${escapeHtml(v.version === 'bilinmiyor' ? POps.t('Bilinmiyor') : v.version)}</span>
-            <div class="t"><div class="f" style="width:${Number((v.devices / vmax) * 100).toFixed(1)}%"></div></div><span class="n">${nHtml(v.devices)}</span></div>`).join('')
+            <button type="button" class="hbar" data-ver="${escapeHtml(v.version)}" ${list ? '' : 'disabled'}><span class="k" title="${escapeHtml(v.version)}">${escapeHtml(v.version === 'bilinmiyor' ? POps.t('Bilinmiyor') : v.version)}</span>
+            <span class="t"><span class="f" style="display:block;width:${Number((v.devices / vmax) * 100).toFixed(1)}%"></span></span><span class="n">${nHtml(v.devices)}</span></button>`).join('')
             : `<div class="rp-calm">${POps.tHtml('Bilgisayar yok.')}</div>`;
 
         const ups = Object.entries(d.updates || {}).sort((a, b) => b[1] - a[1]);
         $('updMeta').textContent = POps.tn('Son {n} gün', d.days);
+        $('updLink').innerHTML = IS_SUPER ? `<a href="system?tab=updates">${POps.tHtml('Güncellemeler')}</a>` : '';
         $('updates').innerHTML = ups.length ? ups.map(([k, c]) => {
             const u = UPD[k] || ['', POps.t('Bilinmeyen sonuç')];
-            return `<div class="rp-li"><span class="k"><span class="dot ${escapeHtml(u[0])}"></span><span title="${escapeHtml(k)}">${escapeHtml(u[1])}</span></span><span class="n">${nHtml(c)}</span></div>`;
+            return `<div class="rp-li"><span class="k row"><span class="dot ${escapeHtml(u[0])}"></span><span title="${escapeHtml(k)}">${escapeHtml(u[1])}</span></span><span class="n">${nHtml(c)}</span></div>`;
         }).join('') : `<div class="rp-calm">${POps.tHtml('Bu dönemde ajan güncellemesi olmadı.')}</div>`;
 
+        // Alan adı Kayıtlar'da aranır (dönemin kural ihlalleri)
         const tp = (d.events && d.events.top_policy) || [];
-        $('topPolicy').innerHTML = tp.length ? tp.map(r => `<div class="rp-li"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px"><span>${escapeHtml(r.domain || '—')}</span><span class="sub">${escapeHtml(r.category || POps.t('kategori yok'))}</span></span><span class="n">${nHtml(r.n)}</span></div>`).join('')
+        $('topPolicy').innerHTML = tp.length ? tp.map(r => `<a class="rp-li" href="logger?kind=policy&amp;from=${encodeURIComponent(periodFrom)}&amp;q=${encodeURIComponent(r.domain || '')}"><span class="k"><span>${escapeHtml(r.domain || '—')}</span><span class="sub">${escapeHtml(r.category || POps.t('kategori yok'))}</span></span><span class="n">${nHtml(r.n)}</span></a>`).join('')
             : `<div class="rp-calm"><span class="dot ok"></span>${POps.tHtml('Bu dönemde engellenen site yok.')}</div>`;
+        // Bilgisayar adı bilgisayar sayfasını, sayı o bilgisayarın yüksek ve kritik olaylarını açar
         const td = (d.events && d.events.top_devices) || [];
         $('topDevices').innerHTML = td.length ? td.map(r => {
             const lab = (dev.find(r.pc_name) || {}).lab;
-            return `<a class="rp-li" href="logger?pc=${encodeURIComponent(r.pc_name)}&amp;f=warn" title="${escapeHtml(POps.t('Kayıtlarda göster'))}"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px"><span>${escapeHtml(devName(r))}</span><span class="sub">${escapeHtml(lab ? labName(lab) : r.pc_name)}</span></span><span class="n">${nHtml(r.n)}</span></a>`;
+            return `<div class="rp-li"><span class="k"><a href="${pcHref(r.pc_name)}">${escapeHtml(devName(r))}</a><span class="sub">${escapeHtml(lab ? labName(lab) : r.pc_name)}</span></span>`
+                + `<a class="n" href="logger?risk=high&amp;from=${encodeURIComponent(periodFrom)}&amp;pc=${encodeURIComponent(r.pc_name)}" title="${escapeHtml(POps.t('Kayıtlarda göster'))}">${nHtml(r.n)}</a></div>`;
         }).join('') : `<div class="rp-calm"><span class="dot ok"></span>${POps.tHtml('Bu dönemde uyarı alan bilgisayar yok.')}</div>`;
     }
     $('rpDays').addEventListener('change', loadSummary);
-    $('kpis').addEventListener('click', (e) => { const b = e.target.closest('button[data-go]'); if (b) setTab(b.dataset.go); });
+    $('kpis').addEventListener('click', (e) => {
+        const k = e.target.closest('.kpi');
+        if (!k || e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+        if (k.dataset.tab) { e.preventDefault(); if (k.dataset.f) setPtFilter(k.dataset.f); tabs.set(k.dataset.tab, { scroll: true }); }
+        else if (k.dataset.list === 'quarantine') openPcList('q', POps.t('Karantinada'), (state.devices || []).filter(x => x.is_quarantined));
+    });
+    $('versions').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-ver]');
+        if (!b || b.disabled) return;
+        const v = b.dataset.ver;
+        const rows = (state.devices || []).filter(x => (dev.version(x) || 'bilinmiyor') === v);
+        openPcList('v', POps.t('Ajan {version}', { version: v === 'bilinmiyor' ? POps.t('Bilinmiyor') : v }), rows);
+    });
 
-    // ---------------------------------------------------------------- ayrıntı paneli (yazılım, güncelleme, lisans)
+    // ---------------------------------------------------------------- ayrıntı paneli (yazılım, lisans, bilgisayar listesi)
     function drawerHeadHtml(title, subText, dotCls, icon) {
         return `<div class="drawer-head">
             <div class="drawer-title"><span class="drawer-ico">${POps.iconHtml(icon, 'lg')}</span>
@@ -202,9 +229,8 @@
             body.addEventListener('click', (e) => {
                 const b = e.target.closest('[data-rp]');
                 const k = POps.drawer.key() || '';
-                if (!b || !/^(sw|pt|lic):/.test(k) || b.disabled) return;
+                if (!b || !/^(sw|lic|pcs):/.test(k) || b.disabled) return;
                 if (b.dataset.rp === 'close') POps.drawer.close();
-                else if (b.dataset.rp === 'pc') dev.open(b.dataset.host, { source: 'reports' });
                 else if (drawerAct[b.dataset.rp]) drawerAct[b.dataset.rp](b);
             });
         }
@@ -213,11 +239,22 @@
     function markFocus() {
         document.querySelectorAll('.rp-table tbody tr[data-key]').forEach(tr => tr.classList.toggle('is-focus', tr.dataset.key === ui.focus));
     }
+    // Bilgisayar satırı: bilgisayar sayfasına bağlantı
+    function pcRowHtml(host, name, subText) {
+        return `<a class="rp-li" href="${pcHref(host)}"><span class="k" style="white-space:normal"><span>${escapeHtml(name)}</span><span class="sub" style="white-space:normal">${escapeHtml(subText)}</span></span>${POps.iconHtml('right', 'sm')}</a>`;
+    }
     function deviceListHtml(rows, lineOf) {
         if (!rows.length) return `<div class="rp-calm">${POps.tHtml('Eşleşen bilgisayar yok.')}</div>`;
-        return `<div class="rp-dlist">${rows.map(r => `<a href="#" class="rp-li" data-rp="pc" data-host="${escapeHtml(r.pc_name)}"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px;white-space:normal"><span>${escapeHtml(devName(r))}</span><span class="sub" style="white-space:normal">${escapeHtml([labName(r.lab_name), lineOf(r)].filter(Boolean).join(' · '))}</span></span>${POps.iconHtml('right', 'sm')}</a>`).join('')}</div>`;
+        return `<div class="rp-dlist">${rows.map(r => pcRowHtml(r.pc_name, devName(r), [labName(r.lab_name), lineOf(r)].filter(Boolean).join(' · '))).join('')}</div>`;
     }
-    document.addEventListener('click', (e) => { if (e.target.closest('#popsDrawer a[data-rp="pc"]')) e.preventDefault(); });
+    // Özetteki sayının listesi (karantinadakiler, bir ajan sürümündekiler): cihaz listesinden
+    function openPcList(kind, title, rows) {
+        const sorted = rows.slice().sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
+        const listHtml = sorted.length
+            ? `<div class="rp-dlist">${sorted.map(x => pcRowHtml(x.hostname, POps.deviceName(x), labName(x.lab) + ' · ' + dev.state(x).word)).join('')}</div>`
+            : `<div class="rp-calm">${POps.tHtml('Eşleşen bilgisayar yok.')}</div>`;
+        openDrawer('pcs:' + kind + ':' + title, drawerHeadHtml(title, POps.tn('{n} bilgisayar', sorted.length), null, 'devices') + listHtml);
+    }
 
     // ---------------------------------------------------------------- YAZILIM
     let swTimer = null, swItems = [], swSeq = 0;
@@ -262,12 +299,23 @@
     $('swQ').addEventListener('input', () => { clearTimeout(swTimer); swTimer = setTimeout(loadSoftware, 300); });
 
     // ---------------------------------------------------------------- WINDOWS GÜNCELLEMELERİ
-    const pt = { rows: [], f: 'all', q: '', sel: new Set() };
+    const PT_F = ['all', 'need', 'sec', 'none'];
+    const PT_F_LABEL = { all: POps.t('Tümü'), need: POps.t('Eksik'), sec: POps.t('Güvenlik eksik'), none: POps.t('Bildirmedi') };
+    const pt = { rows: [], f: PT_F.includes(params.get('f')) ? params.get('f') : 'all', q: '', sel: new Set() };
     const isOn = (r) => r && !POps.isOffline(r);
+    const ptHref = (h) => pcHref(h) + '&tab=patches';
+    function setPtFilter(f) {
+        pt.f = PT_F.includes(f) ? f : 'all';
+        const u = new URL(location.href);
+        if (pt.f === 'all') u.searchParams.delete('f'); else u.searchParams.set('f', pt.f);
+        history.replaceState(null, '', u.pathname + u.search + u.hash);
+        if (ui.loaded.patches) renderPatches();
+    }
     function ptList() {
         const q = pt.q.toLocaleLowerCase('tr');
         return pt.rows.filter(r => {
             if (pt.f === 'need' && !ptNeeds(r)) return false;
+            if (pt.f === 'sec' && !(r.reported && (r.pending_security || r.pending_critical))) return false;
             if (pt.f === 'none' && r.reported) return false;
             if (q && ![devName(r), r.pc_name, labName(r.lab_name)].some(v => String(v || '').toLocaleLowerCase('tr').includes(q))) return false;
             return true;
@@ -280,10 +328,14 @@
         const pendHtml = r.reported
             ? `${nHtml(r.pending_count)}${r.pending_security || r.pending_critical ? `<div class="sub">${POps.tHtml('{security} güvenlik · {critical} kritik', { security: fmtN(r.pending_security), critical: fmtN(r.pending_critical) })}</div>` : ''}`
             : '<span class="faint">—</span>';
+        // Ajanın son sonucu yalnızca sorun varsa (ajanın yazdığı metin, veri)
+        const res = String(r.last_result || '').trim();
+        const resHtml = r.reported && res && res.toLowerCase() !== 'ok' ? `<div class="sub">${escapeHtml(res.slice(0, 160))}</div>` : '';
+        const stHtml = `<span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.word)}`;
         return `<tr data-key="pt:${escapeHtml(k)}" data-host="${escapeHtml(k)}" class="${pt.sel.has(k) ? 'is-selected' : ''}">
             ${CAN_ACT ? `<td class="check-col"><input type="checkbox" class="pt-cb" data-host="${escapeHtml(k)}" ${pt.sel.has(k) ? 'checked' : ''} aria-label="${escapeHtml(POps.t('{name} seç', { name: devName(r) }))}"></td>` : ''}
-            <td><div class="nm">${escapeHtml(devName(r))}</div><div class="sub">${escapeHtml(sub)}</div></td>
-            <td><span class="st"><span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.word)}</span></td>
+            <td><div class="nm"><a href="${ptHref(k)}">${escapeHtml(devName(r))}</a></div><div class="sub">${escapeHtml(sub)}</div></td>
+            <td>${r.reported ? `<span class="st">${stHtml}</span>` : `<span class="st" data-tip="${escapeHtml(POps.t('Bu bilgisayarın ajanı Windows güncelleme durumunu bildirmiyor (0.1.5 ve sonrası gerekir).'))}">${stHtml}</span>`}${resHtml}</td>
             <td class="num">${pendHtml}</td>
             <td>${r.reported ? (r.reboot_required ? `<span class="st"><span class="dot warn"></span>${POps.tHtml('Gerekli')}</span>` : `<span class="faint">${POps.tHtml('Hayır')}</span>`) : '<span class="faint">—</span>'}</td>
             <td>${r.last_search ? POps.timeHtml(r.last_search) : '<span class="faint">—</span>'}</td>
@@ -296,14 +348,14 @@
         const n = pt.sel.size;
         const on = ptScope(rows).filter(h => isOn(pt.rows.find(r => r.pc_name === h))).length;
         const tgt = (n ? POps.tn('{n} seçili', n) : POps.tn('listedeki {n}', rows.length)) + ' · ' + POps.tn('{n} açık', on);
-        const tip = (label) => escapeHtml(POps.t(label) + ' · ' + tgt);
+        const btnHtml = (act, icon, label) => `<button type="button" class="btn secondary sm" data-act="${escapeHtml(act)}" title="${escapeHtml(label + ' · ' + tgt)}" ${rows.length || n ? '' : 'disabled'}>${POps.iconHtml(icon, 'sm')}${escapeHtml(label)}</button>`;
         bar.innerHTML = (n
             ? `<span class="scope sel">${POps.tnHtml('{n} seçili', n)}<button type="button" data-act="clear" aria-label="${escapeHtml(POps.t('Seçimi temizle'))}" data-tip="${escapeHtml(POps.t('Seçimi temizle'))}">${POps.iconHtml('x', 'sm')}</button></span>`
             : `<span class="scope">${POps.tnHtml('Listedeki {n}', rows.length, null, { n: `<b>${rows.length}</b>` })}</span>`)
             + '<span class="sep"></span>'
-            + `<button type="button" class="ibtn" data-act="scan" data-tip="${tip('Güncellemeleri tara')}" aria-label="${escapeHtml(POps.t('Güncellemeleri tara'))}">${POps.iconHtml('refresh')}</button>`
-            + `<button type="button" class="ibtn" data-act="security" data-tip="${tip('Güvenlik güncellemelerini kur')}" aria-label="${escapeHtml(POps.t('Güvenlik güncellemelerini kur'))}">${POps.iconHtml('shield')}</button>`
-            + `<button type="button" class="ibtn" data-act="all" data-tip="${tip('Bütün güncellemeleri kur')}" aria-label="${escapeHtml(POps.t('Bütün güncellemeleri kur'))}">${POps.iconHtml('download')}</button>`;
+            + btnHtml('scan', 'refresh', POps.t('Güncellemeleri tara'))
+            + btnHtml('security', 'shield', POps.t('Güvenlik güncellemelerini kur'))
+            + btnHtml('all', 'download', POps.t('Hepsini kur'));
     }
     function renderPatches() {
         const rows = ptList();
@@ -311,11 +363,11 @@
         const all = rows.length && rows.every(r => pt.sel.has(r.pc_name));
         $('ptHead').innerHTML = '<tr>' + (CAN_ACT ? `<th class="check-col"><input type="checkbox" id="ptAll" ${all ? 'checked' : ''} aria-label="${escapeHtml(POps.t('Listedekilerin hepsini seç'))}"></th>` : '')
             + `<th>${POps.tHtml('Bilgisayar')}</th><th>${POps.tHtml('Durum')}</th><th class="num">${POps.tHtml('Bekleyen')}</th><th>${POps.tHtml('Yeniden başlatma')}</th><th>${POps.tHtml('Son tarama')}</th></tr>`;
-        const cnt = { all: pt.rows.length, need: pt.rows.filter(ptNeeds).length, none: pt.rows.filter(r => !r.reported).length };
+        const cnt = { all: pt.rows.length, need: pt.rows.filter(ptNeeds).length, sec: pt.rows.filter(r => r.reported && (r.pending_security || r.pending_critical)).length, none: pt.rows.filter(r => !r.reported).length };
         $('ptFilter').querySelectorAll('button[data-f]').forEach(b => {
             const on = b.dataset.f === pt.f;
             b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
-            b.replaceChildren(document.createTextNode(POps.t(({ all: 'Tümü', need: 'Eksik', none: 'Bildirmedi' })[b.dataset.f]) + ' '), POps.el('span', { className: 'count', text: String(cnt[b.dataset.f]) }));
+            b.replaceChildren(document.createTextNode(PT_F_LABEL[b.dataset.f] + ' '), POps.el('span', { className: 'count', text: String(cnt[b.dataset.f]) }));
         });
         renderPtBar(rows);
         const body = $('ptBody');
@@ -326,17 +378,12 @@
             return;
         }
         body.innerHTML = rows.map(ptRowHtml).join('');
-        markFocus();
     }
     async function loadPatches() {
         if (!pt.rows.length) loadingRow($('ptBody'), 6, POps.t('Güncelleme durumu yükleniyor…'));
         try { pt.rows = await POps.get('/api/patches') || []; }
         catch (e) { POps.setError($('ptBody'), e, { tag: 'tr', colspan: 6 }); $('ptBar').textContent = ''; return; }
         renderPatches();
-        if (POps.drawer.isOpen() && String(POps.drawer.key()).startsWith('pt:')) {
-            const r = pt.rows.find(x => 'pt:' + x.pc_name === POps.drawer.key());
-            if (r) openPatch(r);
-        }
     }
     // Kurulum onayı: tek bilgisayar (ad) ya da çok bilgisayar (sayı) için ayrı cümle
     const PT_TEXT = {
@@ -377,51 +424,25 @@
     }
     $('ptBar').addEventListener('click', (e) => {
         const b = e.target.closest('[data-act]');
-        if (!b) return;
+        if (!b || b.disabled) return;
         if (b.dataset.act === 'clear') { pt.sel.clear(); renderPatches(); return; }
         patchCmd(b.dataset.act, ptScope(ptList()), b);
     });
     $('ptHead').addEventListener('change', (e) => { if (e.target.id === 'ptAll') { ptList().forEach(r => e.target.checked ? pt.sel.add(r.pc_name) : pt.sel.delete(r.pc_name)); renderPatches(); } });
     $('ptBody').addEventListener('change', (e) => { if (e.target.classList.contains('pt-cb')) { e.target.checked ? pt.sel.add(e.target.dataset.host) : pt.sel.delete(e.target.dataset.host); renderPatches(); } });
+    // Satır bilgisayar sayfasını (Windows güncellemeleri bölümü) açar; tek bilgisayarın tarama ve kurulumu orada
     $('ptBody').addEventListener('click', (e) => {
         const tr = e.target.closest('tr[data-host]');
-        if (!tr || e.target.closest('input, .check-col')) return;
-        const r = pt.rows.find(x => x.pc_name === tr.dataset.host);
-        if (r) openPatch(r);
+        if (!tr || e.target.closest('input, a, .check-col')) return;
+        location.href = ptHref(tr.dataset.host);
     });
-    $('ptFilter').addEventListener('click', (e) => { const b = e.target.closest('button[data-f]'); if (b) { pt.f = b.dataset.f; renderPatches(); } });
+    $('ptFilter').addEventListener('click', (e) => { const b = e.target.closest('button[data-f]'); if (b) setPtFilter(b.dataset.f); });
     let ptT = null;
     $('ptQ').addEventListener('input', (e) => { clearTimeout(ptT); ptT = setTimeout(() => { pt.q = e.target.value.trim(); renderPatches(); }, 150); });
-    function openPatch(r) {
-        const st = ptState(r);
-        const on = isOn(r);
-        const actsHtml = CAN_ACT ? `<div class="circs">
-                <button type="button" class="circ" data-rp="scan" ${on ? '' : 'disabled'} title="${escapeHtml(POps.t('Windows güncellemelerini tara'))}"><span>${POps.iconHtml('refresh')}</span>${POps.tHtml('Tara')}</button>
-                <button type="button" class="circ" data-rp="security" ${on && r.reported ? '' : 'disabled'} title="${escapeHtml(POps.t('Güvenlik ve kritik güncellemeleri kur'))}"><span>${POps.iconHtml('shield')}</span>${POps.tHtml('Güvenlik')}</button>
-                <button type="button" class="circ" data-rp="all" ${on && r.reported ? '' : 'disabled'} title="${escapeHtml(POps.t('Bekleyen bütün güncellemeleri kur'))}"><span>${POps.iconHtml('download')}</span>${POps.tHtml('Tümü')}</button>
-            </div>` : '';
-        const facts = r.reported ? [
-            [POps.t('Bekleyen'), fmtN(r.pending_count)], [POps.t('Güvenlik'), fmtN(r.pending_security)], [POps.t('Kritik'), fmtN(r.pending_critical)],
-            [POps.t('Yeniden başlatma'), r.reboot_required ? POps.t('Gerekli') : POps.t('Gerekmiyor')], [POps.t('Son sonuç'), r.last_result || '—'],
-            [POps.t('Sınıf'), labName(r.lab_name)], [POps.t('Ajan'), r.agent_version || '—']
-        ] : [[POps.t('Sınıf'), labName(r.lab_name)], [POps.t('Ajan'), r.agent_version || '—']];
-        const times = r.reported ? [[POps.t('Son tarama'), r.last_search], [POps.t('Son kurulum'), r.last_install], [POps.t('Son bildirim'), r.updated_at]] : [];
-        const ups = r.updates || [];
-        const upsHtml = ups.length ? `<div><h3>${POps.tHtml('Bekleyen güncellemeler')}</h3>${ups.map(u => `<div class="rp-li"><span class="k" style="flex-direction:column;align-items:flex-start;gap:1px;white-space:normal"><span style="white-space:normal">${escapeHtml(u.title || POps.t('Adsız güncelleme'))}</span><span class="sub">${escapeHtml([u.kb, u.severity, u.is_security ? POps.t('güvenlik') : ''].filter(Boolean).join(' · '))}</span></span></div>`).join('')}</div>` : '';
-        const noteHtml = r.reported ? '' : `<div class="issue lock">${POps.tHtml('Bu bilgisayarın ajanı Windows güncelleme durumunu bildirmiyor (0.1.5 ve sonrası gerekir).')}</div>`;
-        openDrawer('pt:' + r.pc_name, drawerHeadHtml(devName(r), st.word + (on ? '' : ' · ' + POps.t('kapalı')), st.cls, 'shield') + actsHtml + noteHtml + glistHtml(facts, times) + upsHtml
-            + `<a href="#" data-rp="pc" data-host="${escapeHtml(r.pc_name)}" style="font-size:var(--text-sm)">${POps.tHtml('Bilgisayarın ayrıntıları')}</a>`, {
-            scan: (b) => patchCmd('scan', [r.pc_name], b),
-            security: (b) => patchCmd('security', [r.pc_name], b),
-            all: (b) => patchCmd('all', [r.pc_name], b)
-        });
-    }
 
     // ---------------------------------------------------------------- LİSANSLAR
     const LT = { per_device: POps.t('Cihaz başına'), site: POps.t('Site ya da kampüs'), subscription: POps.t('Abonelik') };
     const LS = { ok: ['ok', POps.t('Uygun')], over: ['bad', POps.t('Aşım')], expiring: ['warn', POps.t('Bitiyor')], expired: ['bad', POps.t('Süresi doldu')] };
-    // Özet satırındaki sayaçlar ("2 aşım")
-    const LS_COUNT = { over: '{n} aşım', expiring: '{n} bitiyor', expired: '{n} süresi doldu' };
     let licenses = [];
     const fmtDate = (v) => { const d = POps.toDate(v && v.length === 10 ? v + 'T00:00:00' : v); return d ? d.toLocaleDateString(POps.locale, { day: 'numeric', month: 'long', year: 'numeric' }) : '—'; };
     function useHtml(l) {
@@ -436,11 +457,7 @@
         try { d = await POps.get('/api/licenses'); }
         catch (e) { POps.setError(body, e, { tag: 'tr', colspan: 5 }); return; }
         licenses = d.items || [];
-        const sm = d.summary || {};
-        const probHtml = ['over', 'expired', 'expiring'].filter(k => sm[k]).map(k => `<span class="sum"><span class="dot ${escapeHtml(LS[k][0])}"></span>${POps.tnHtml(LS_COUNT[k], Number(sm[k]), null, { n: boldHtml(sm[k]) })}</span>`).join('');
-        $('licSummary').innerHTML = licenses.length
-            ? `<span class="sum">${POps.tnHtml('{n} lisans', licenses.length, null, { n: `<b>${licenses.length}</b>` })}</span>` + (probHtml || `<span class="sum"><span class="dot ok"></span>${POps.tHtml('Hepsi uygun')}</span>`)
-            : '';
+        $('licMeta').textContent = licenses.length ? POps.tn('{n} lisans', licenses.length) : '';
         if (!licenses.length) {
             POps.setEmpty(body, { tag: 'tr', colspan: 5, icon: 'key', title: POps.t('Tanımlı lisans yok'), text: CAN_EDIT_LIC ? POps.t('"Lisans ekle" ile koltuk ve bitiş tarihini takip etmeye başlayın.') : POps.t('Bir yönetici lisans eklediğinde burada görünür.') });
             return;
@@ -537,8 +554,8 @@
         });
     }
 
-    // Cihaz listesi bir kez (ad, sınıf ve ayrıntı paneli için); bu sayfa yoklamaz
+    // Cihaz listesi bir kez (ad, sınıf, durum ve bilgisayar listeleri için); bu sayfa yoklamaz
     const devReady = POps.loadDevices().catch(() => null);
-    setTab(ui.tab);
-    if (ui.tab !== 'summary') { ui.loaded.summary = true; loadSummary(); }
+    tabsReady = true;
+    onTab(tabs.current());
 })();

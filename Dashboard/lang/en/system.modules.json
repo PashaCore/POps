@@ -1,6 +1,5 @@
 {
   "Modüller": "Modules",
-  "Kapalı modülün sayfaları ve uçları kullanılamaz; ajanlar değişikliği en geç bir dakikada alır. Cihazlar, sınıflar, kayıt, ajan güncellemesi, denetim kaydı, kullanıcılar, bildirimler ve sunucu sağlığı her zaman açıktır.": "A module that is off has its pages and endpoints closed; agents pick up a change within a minute. Devices, labs, enrollment, agent updates, the audit log, users, notifications and server health are always on.",
   "Kurulum profili": "Install profile",
   "{modules} kapalı olduğu için çalışmaz.": "Not running because {modules} is off.",
   "Gerekir: {modules}": "Needs: {modules}",

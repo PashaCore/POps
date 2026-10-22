@@ -1,6 +1,5 @@
 {
     "Kimlik sağlayıcıları": "Identity providers",
-    "Okulun dizin hesaplarıyla (Active Directory / LDAP) ya da tek oturum açma sağlayıcısıyla (OpenID Connect: Microsoft Entra ID, Google, Keycloak) panele giriş. Rol ve sayfalar dizindeki gruplardan gelir. Yerel hesaplar her zaman çalışır: dizine ulaşılamasa da yerel süper admin girer.": "Sign in to the panel with the school's directory accounts (Active Directory / LDAP) or a single sign-on provider (OpenID Connect: Microsoft Entra ID, Google, Keycloak). Role and pages come from directory groups. Local accounts always work: a local superadmin can sign in even when the directory is down.",
     "Ayarla": "Set up",
     "Etkin": "Enabled",
     "Devre dışı": "Disabled",
@@ -123,5 +122,6 @@
     "İlk süper admin hesabı yerel kalır; dizin ya da OIDC hesabına çevrilemez.": "The first superadmin account stays local; it cannot become a directory or OIDC account.",
     "Son yerel süper admin hesabı yerel kalmalı.": "The last local superadmin account must stay local.",
     "Yerel hesaba çevirmek için yeni bir şifre girin.": "Enter a new password to turn the account into a local one.",
-    "Dizin ya da OIDC hesabının yerel şifresi olmaz.": "A directory or OIDC account has no local password."
+    "Dizin ya da OIDC hesabının yerel şifresi olmaz.": "A directory or OIDC account has no local password.",
+    "Rol ve sayfalar dizindeki gruplardan gelir. Dizine ulaşılamasa da yerel hesaplar girer.": "Role and pages come from directory groups. Local accounts can still sign in when the directory is unreachable."
 }

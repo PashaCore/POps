@@ -1,6 +1,5 @@
 {
   "winget paketi": "winget package",
-  "{n} winget paketi": {"one": "{n} winget package", "other": "{n} winget packages"},
   "winget paketleri": "winget packages",
   "winget kimliği": "winget ID",
   "okunamadı": "unreadable",
@@ -32,7 +31,6 @@
   "Harf ya da rakamla başlamalı; yalnızca harf, rakam ve . + _ - (2-128 karakter).": "Must start with a letter or digit; only letters, digits and . + _ - (2-128 characters).",
   "Katalogda olmayan paketin kimliğini de yazabilirsiniz (winget search ile bulunur).": "You can also enter the ID of a package that is not in the catalog (find it with winget search).",
   "Yalnızca harf, rakam ve . + _ - (en çok 40 karakter).": "Only letters, digits and . + _ - (at most 40 characters).",
-  "Hedefte winget ile SYSTEM hesabıyla, sessiz ve bütün kullanıcılar için kurulur. Bilgisayarda winget (Uygulama Yükleyicisi) ve winget destekleyen bir POps ajanı gerekir.": "Installed on the target by winget as SYSTEM, silently and for all users. The computer needs winget (App Installer) and a POps agent that supports winget.",
   "Tarayıcılar": "Browsers",
   "Ofis ve PDF": "Office and PDF",
   "Eğitim": "Education",
@@ -41,5 +39,6 @@
   "Ses ve video": "Audio and video",
   "İletişim": "Communication",
   "Araçlar": "Utilities",
-  "Çalışma ortamları": "Runtimes"
+  "Çalışma ortamları": "Runtimes",
+  "SYSTEM hesabıyla, sessiz ve bütün kullanıcılar için kurulur; bilgisayarda winget ve güncel POps ajanı gerekir.": "Installs as SYSTEM, silently, for all users; the computer needs winget and an up-to-date POps agent."
 }

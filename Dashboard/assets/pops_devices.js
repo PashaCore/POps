@@ -383,6 +383,42 @@
                 + POps.t('Kullanıcı kodu tepsi simgesi → "Yönetici Müdahalesi (Bypass)" menüsüne girer. Her kod bir kez geçerlidir.')
         });
     };
+    // Bilgisayar seçici (çekmece): arama ve liste; seçilen bilgisayar onPick(host) ile döner (ör. Kontrol merkezindeki
+    // çevrimdışı açma kodu). opts.sub: başlığın altındaki kısa açıklama, opts.filter(d): listeyi daraltır.
+    dev.pickDevice = function (title, onPick, opts) {
+        const o = opts || {};
+        const key = 'pick:' + title;
+        const body = POps.drawer.open(key, {});
+        let q = '';
+        const match = (d) => !q || [POps.deviceName(d), d.hostname, d.lab, dev.user(d)].some(v => v && String(v).toLocaleLowerCase('tr').includes(q));
+        function rowsHtml() {
+            const items = (state.devices || []).filter(d => (!o.filter || o.filter(d)) && match(d))
+                .sort((a, b) => (b.is_quarantined ? 1 : 0) - (a.is_quarantined ? 1 : 0) || POps.deviceName(a).localeCompare(POps.deviceName(b), POps.locale))
+                .slice(0, 300);
+            if (!items.length) return `<div class="faint" style="padding:12px 4px;font-size:var(--text-sm)">${POps.tHtml('Eşleşen bilgisayar yok.')}</div>`;
+            return items.map(d => {
+                const st = dev.state(d);
+                const where = d.lab && d.lab !== UNASSIGNED ? d.lab : POps.t('Atanmamış');
+                return `<button type="button" class="pick-row" data-pick="${escapeHtml(d.hostname)}"><span class="dot ${escapeHtml(st.cls)}"></span>`
+                    + `<span class="grow"><span class="t">${escapeHtml(POps.deviceName(d))}</span><span class="d">${escapeHtml(where + ' · ' + st.word)}</span></span>`
+                    + `${d.is_quarantined ? `<span class="badge warn">${POps.tHtml('Karantinada')}</span>` : ''}</button>`;
+            }).join('');
+        }
+        body.innerHTML = `<div class="drawer-head"><div class="drawer-title"><div style="min-width:0"><h2>${escapeHtml(title)}</h2>${o.sub ? `<div class="sub">${escapeHtml(o.sub)}</div>` : ''}</div></div>`
+            + `<button type="button" class="ibtn sm" data-pick-close aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button></div>`
+            + `<input type="search" class="pick-q" placeholder="${escapeHtml(POps.t('Bilgisayar, sınıf ya da kullanıcı ara'))}" aria-label="${escapeHtml(POps.t('Bilgisayar ara'))}">`
+            + `<div class="pick-list">${rowsHtml()}</div>`;
+        const input = body.querySelector('.pick-q');
+        input.addEventListener('input', () => { q = input.value.trim().toLocaleLowerCase('tr'); body.querySelector('.pick-list').innerHTML = rowsHtml(); });
+        // Çekmece gövdesi paylaşılır: tıklama yalnızca bu seçici açıkken işlenir
+        body.onclick = (e) => {
+            if (POps.drawer.key() !== key) return;
+            if (e.target.closest('[data-pick-close]')) { POps.drawer.close(); return; }
+            const b = e.target.closest('[data-pick]');
+            if (b) { POps.drawer.close(); onPick(b.dataset.pick); }
+        };
+        setTimeout(() => input.focus(), 50);
+    };
     dev.setTeacher = async function (lab, host) {
         const removing = (state.mainPcs || {})[lab] === host;   // aynı bilgisayar gönderilince sunucu kaldırır
         if (await POps.act(null, () => POps.post('/api/set_main_pc', { lab_name: lab, pc_name: host }), { success: removing ? POps.t('{name} artık öğretmen bilgisayarı değil.', { name: dev.name(host) }) : POps.t('{name} öğretmen bilgisayarı yapıldı.', { name: dev.name(host) }) })) POps.loadDevices().catch(() => {});

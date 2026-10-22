@@ -2,19 +2,31 @@
 
 <style>
     .faint { color: var(--text-muted); }
+    .page-header-actions .btn { gap: 7px; }
     .hd-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
     .hd-bar .grow { flex: 1; }
     .hd-bar .search-field { flex: 0 1 320px; min-width: 200px; }
     .segmented .n { color: var(--text-muted); font-variant-numeric: tabular-nums; font-weight: var(--fw-regular); }
-    .hd-list { padding: 4px 12px; }
-    .hd-list .act { padding-left: 8px; padding-right: 8px; }
-    .hd-list .act.is-focus { background: var(--primary-50); }
-    .hd-list .act .what .mark { margin-left: 6px; vertical-align: -3px; }
-    .hd-list .act .side .when { font-variant-numeric: tabular-nums; }
+    .hd-table tbody tr { cursor: pointer; }
+    .hd-table tbody tr.is-focus { background: #f0f6ff; }
+    .hd-table td { vertical-align: top; }
+    .hd-table .nm { font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+    .hd-table .nm .mark { margin-left: 6px; vertical-align: -3px; }
+    .hd-table .sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: 1px; }
+    .hd-table td a.pc { color: var(--text-primary); font-weight: var(--fw-medium); }
+    .hd-table td a.pc:hover { color: var(--primary-500); text-decoration: underline; }
+    .hd-table .st { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+    .hd-table td.when { white-space: nowrap; color: var(--text-secondary); }
 
     /* Ayrıntı paneli */
     .tk-main { display: flex; flex-direction: column; gap: 18px; }
     .tk-main .glist .grow > span:last-child { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+    .tk-main .glist a { color: var(--text-primary); font-weight: var(--fw-medium); }
+    .tk-main .glist a:hover { color: var(--primary-500); text-decoration: underline; }
+    .tk-acts { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tk-acts .btn { gap: 4px; padding-left: 9px; padding-right: 9px; }
+    .tk-acts .btn .ico:last-child:not(:first-child) { width: 12px; height: 12px; opacity: 0.6; margin-right: -3px; }
+    .tk-acts .btn.disabled { pointer-events: none; }
     .thread { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
     .msg { border-radius: 12px; padding: 10px 12px; background: var(--bg-app); font-size: var(--text-sm); }
     .msg.user { background: var(--bg-surface); box-shadow: inset 0 0 0 1px var(--border-subtle); }
@@ -34,15 +46,12 @@
 
     @media (max-width: 640px) {
         .hd-bar .search-field { flex-basis: 100%; }
-        .hd-list { padding: 2px 6px; }
-        .hd-list .act .side .word { white-space: normal; text-align: right; max-width: 92px; }
     }
 </style>
 
 <div class="page-header">
     <div>
         <h1><?php _e('Destek talepleri'); ?></h1>
-        <div class="summary" id="hdSummary"></div>
     </div>
     <div class="page-header-actions">
         <button type="button" class="btn" id="newBtn"><?php echo pops_icon('plus', 'sm'); ?><?php _e('Yeni talep'); ?></button>
@@ -58,7 +67,12 @@
     </div>
 </div>
 
-<div class="card hd-list" id="hdList"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Talepler yükleniyor…'); ?></div></div>
+<div class="table-wrap">
+    <table class="data-table hd-table wide">
+        <thead><tr><th><?php _e('Talep'); ?></th><th><?php _e('Bilgisayar'); ?></th><th><?php _e('Bildiren'); ?></th><th><?php _e('Durum'); ?></th><th><?php _e('Son hareket'); ?></th></tr></thead>
+        <tbody id="hdList"><tr><td colspan="5"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Talepler yükleniyor…'); ?></div></td></tr></tbody>
+    </table>
+</div>
 
 <div class="modal-overlay" id="newModal">
     <div class="modal-box">
@@ -126,28 +140,27 @@
     const labText = (t) => (t.lab_name && t.lab_name !== dev.UNASSIGNED ? t.lab_name : '');
 
     // ================= Liste =================
+    // Satır: talep (konu, kategori, numara), bilgisayar (bilgisayar sayfasına bağlantı), bildiren, durum, son hareket
     function rowHtml(t) {
         const s = st(t.status);
-        const where = devName(t) ? devName(t) + (labText(t) ? ' · ' + labText(t) : '') : '';
-        const meta = [t.reporter || srcText(t), where, CAT[t.category] || t.category, t.assignee ? POps.t('atanan: {name}', { name: t.assignee }) : '', Number(t.message_count) ? POps.tn('{n} mesaj', Number(t.message_count)) : '', '#' + t.id].filter(Boolean).join(' · ');
+        const sub = [CAT[t.category] || t.category, '#' + t.id, Number(t.message_count) ? POps.tn('{n} mesaj', Number(t.message_count)) : '', t.assignee ? POps.t('atanan: {name}', { name: t.assignee }) : ''].filter(Boolean).join(' · ');
         const markHtml = t.priority === 'high' ? dev.markHtml({ kind: 'err', glyph: '!', text: POps.t('Yüksek öncelik') }) : '';
-        return `<div class="act clickable${ui.focus === t.id ? ' is-focus' : ''}" data-id="${Number(t.id)}" role="button" tabindex="0">
-            <div class="res ${escapeHtml(s.c)}">${POps.iconHtml(s.i)}</div>
-            <div style="min-width:0"><div class="what">${escapeHtml(t.subject)}${markHtml}</div><div class="meta">${escapeHtml(meta)}</div></div>
-            <div class="side"><span class="word ${escapeHtml(s.c)}">${escapeHtml(s.w)}</span><span class="when">${POps.timeHtml(t.updated_at)}</span></div>
-        </div>`;
+        const pcHtml = t.pc_name
+            ? `<a class="pc" href="pc?id=${encodeURIComponent(t.pc_name)}">${escapeHtml(devName(t))}</a>${labText(t) ? `<div class="sub">${escapeHtml(labText(t))}</div>` : ''}`
+            : '<span class="faint">—</span>';
+        return `<tr data-id="${Number(t.id)}" class="${ui.focus === t.id ? 'is-focus' : ''}" tabindex="0">
+            <td><div class="nm">${escapeHtml(t.subject)}${markHtml}</div><div class="sub">${escapeHtml(sub)}</div></td>
+            <td>${pcHtml}</td>
+            <td>${escapeHtml(t.reporter || '—')}<div class="sub">${escapeHtml(srcText(t))}</div></td>
+            <td><span class="st"><span class="dot ${escapeHtml(s.c)}"></span>${escapeHtml(s.w)}</span></td>
+            <td class="when">${POps.timeHtml(t.updated_at)}</td>
+        </tr>`;
     }
     function renderHead() {
         const c = ui.counts;
         const n = (k) => Number(c[k] || 0);
         const active = n('open') + n('in_progress') + n('waiting');
         const closed = n('resolved') + n('closed');
-        // Sayı kalın: yer tutucuya HTML parçası (POps.tHtml'in üçüncü argümanı)
-        const sumHtml = (text, num) => POps.tnHtml(text, num, null, { n: `<b>${Number(num)}</b>` });
-        $('hdSummary').innerHTML = `<span class="sum"><span class="dot warn"></span>${sumHtml('{n} açık', n('open'))}</span>`
-            + (n('in_progress') ? `<span class="sum"><span class="dot run"></span>${sumHtml('{n} üzerinde çalışılıyor', n('in_progress'))}</span>` : '')
-            + (n('waiting') ? `<span class="sum"><span class="dot"></span>${sumHtml('{n} yanıt bekleniyor', n('waiting'))}</span>` : '')
-            + `<span class="sum"><span class="dot ok"></span>${sumHtml('{n} kapalı', closed)}</span>`;
         const btnHtml = (k, label, num) => `<button type="button" data-f="${escapeHtml(k)}" class="${ui.f === k ? 'active' : ''}" aria-pressed="${ui.f === k ? 'true' : 'false'}">${escapeHtml(label)} <span class="n">${Number(num)}</span></button>`;
         // "Kapalı" burada kapanmış talepler (cihaz durumu değil): 'ticket' bağlamı
         $('hdFilter').innerHTML = btnHtml('open', POps.t('Açık'), active) + btnHtml('all', POps.t('Tümü'), active + closed) + btnHtml('closed', POps.tx('Kapalı', 'ticket'), closed);
@@ -159,9 +172,10 @@
         if (!force && sig === ui.sig) return;
         ui.sig = sig;
         if (!ui.items.length) {
-            if (ui.q) POps.setEmpty(list, { icon: 'filter', title: POps.t('Süzgece uyan talep yok'), text: POps.t('Aramayı ya da süzgeci değiştirin.') });
-            else if (ui.f === 'open') POps.setEmpty(list, { icon: 'check', kind: 'success', title: POps.t('Açık talep yok'), text: POps.t('Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.') });
-            else POps.setEmpty(list, { icon: 'inbox', title: ui.f === 'closed' ? POps.t('Kapalı talep yok') : POps.t('Henüz talep yok'), text: POps.t('Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.') });
+            const row = { tag: 'tr', colspan: 5 };
+            if (ui.q) POps.setEmpty(list, Object.assign(row, { icon: 'filter', title: POps.t('Süzgece uyan talep yok'), text: POps.t('Aramayı ya da süzgeci değiştirin.') }));
+            else if (ui.f === 'open') POps.setEmpty(list, Object.assign(row, { icon: 'check', kind: 'success', title: POps.t('Açık talep yok'), text: POps.t('Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.') }));
+            else POps.setEmpty(list, Object.assign(row, { icon: 'inbox', title: ui.f === 'closed' ? POps.t('Kapalı talep yok') : POps.t('Henüz talep yok'), text: POps.t('Öğrenciler tepsi simgesinden, siz buradan talep açabilirsiniz.') }));
             return;
         }
         list.innerHTML = ui.items.map(rowHtml).join('');
@@ -179,7 +193,7 @@
             }
         } catch (e) {
             if (seq !== ui.seq) return;
-            if (!ui.loaded) POps.setError(list, e);
+            if (!ui.loaded) POps.setError(list, e, { tag: 'tr', colspan: 5 });
             throw e;
         }
         if (seq !== ui.seq) return;
@@ -209,6 +223,14 @@
             : `<div class="msg ${m.internal ? 'note' : 'reply'}"><div class="mh"><b>${escapeHtml(m.author)}</b><span>${m.internal ? POps.tHtml('iç not') : (t.source === 'agent' ? POps.tHtml('kullanıcıya yanıt') : POps.tHtml('yanıt'))}</span><span class="t">${POps.timeHtml(m.created_at)}</span></div><div class="mb">${escapeHtml(m.body)}</div></div>`;
         return `<div><h3>${POps.tHtml('Yazışma')}</h3><div class="thread">${openHtml}${bodyHtml}${(t.messages || []).map(msgHtml).join('')}</div></div>`;
     }
+    // Talebin bilgisayarı: bilgisayar sayfası ve uzak ekran (kapalıysa ekran düğmesi pasif)
+    function pcActsHtml(t, devOn) {
+        if (!t.pc_name) return '';
+        const screenHtml = devOn
+            ? `<a class="btn secondary sm" href="vision?pc=${encodeURIComponent(t.pc_name)}">${POps.iconHtml('eye', 'sm')}${POps.tHtml('Ekranını izle')}</a>`
+            : `<a class="btn secondary sm disabled" aria-disabled="true" title="${escapeHtml(POps.t('Bilgisayar kapalı'))}">${POps.iconHtml('eye', 'sm')}${POps.tHtml('Ekranını izle')}</a>`;
+        return `<div class="tk-acts"><a class="btn secondary sm" href="pc?id=${encodeURIComponent(t.pc_name)}">${POps.iconHtml('monitor', 'sm')}${POps.tHtml('Bilgisayarı aç')}</a>${screenHtml}</div>`;
+    }
     function mainHtml(t) {
         const s = st(t.status);
         const ico = t.status === 'open' ? 'idle' : t.status === 'resolved' ? 'on' : '';
@@ -216,7 +238,7 @@
         const next = t.status === 'open' ? ['take', 'play', POps.t('Üzerine al')] : ACTIVE.includes(t.status) ? ['resolve', 'check', POps.tx('Çözüldü', 'action')] : ['reopen', 'refresh', POps.t('Yeniden aç')];
         const devOn = !POps.isOffline({ status: t.device_status });
         const pcHtml = t.pc_name
-            ? `<span class="dot ${devOn ? 'on' : 'off'}"></span>${escapeHtml(devName(t) + (labText(t) ? ' · ' + labText(t) : ''))}`
+            ? `<span class="dot ${devOn ? 'on' : 'off'}"></span><a href="pc?id=${encodeURIComponent(t.pc_name)}">${escapeHtml(devName(t))}</a>${labText(t) ? escapeHtml(' · ' + labText(t)) : ''}`
             : `<span class="faint">${POps.tHtml('yok')}</span>`;
         const user = t.logged_user && !['-', 'None'].includes(t.logged_user) ? t.logged_user : '';
         const app = t.pc_name && t.active_window && t.active_window !== '-' ? t.active_window : '';
@@ -238,13 +260,13 @@
                     <div style="min-width:0"><h2>${escapeHtml(t.subject)}</h2><div class="sub"><span class="dot ${escapeHtml(s.c)}"></span>${escapeHtml(s.w)} · #${Number(t.id)}</div></div></div>
                 <button type="button" class="ibtn sm" data-act="close" data-tip="${escapeHtml(POps.t('Kapat (Esc)'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paneli kapat'))}">${POps.iconHtml('x', 'sm')}</button>
             </div>
-            <div class="circs">
-                <button type="button" class="circ" data-act="${escapeHtml(next[0])}"><span>${POps.iconHtml(next[1])}</span>${escapeHtml(next[2])}</button>
-                <button type="button" class="circ" data-act="status" aria-haspopup="menu"><span>${POps.iconHtml('tag')}</span>${POps.tHtml('Durum')}</button>
-                <button type="button" class="circ" data-act="assign" aria-haspopup="menu"><span>${POps.iconHtml('users')}</span>${POps.tHtml('Ata')}</button>
-                <button type="button" class="circ" data-act="more" aria-haspopup="menu"><span>${POps.iconHtml('more')}</span>${escapeHtml(POps.tx('Diğer', 'menu'))}</button>
+            <div class="tk-acts">
+                <button type="button" class="btn sm" data-act="${escapeHtml(next[0])}">${POps.iconHtml(next[1], 'sm')}${escapeHtml(next[2])}</button>
+                <button type="button" class="btn secondary sm" data-act="status" aria-haspopup="menu">${POps.tHtml('Durum')}${POps.iconHtml('chev', 'sm')}</button>
+                <button type="button" class="btn secondary sm" data-act="assign" aria-haspopup="menu">${POps.tHtml('Ata')}${POps.iconHtml('chev', 'sm')}</button>
+                <button type="button" class="btn secondary sm" data-act="priority" aria-haspopup="menu">${POps.tHtml('Öncelik')}${POps.iconHtml('chev', 'sm')}</button>
             </div>
-            ${factsHtml}${threadHtml(t)}`;
+            ${factsHtml}${pcActsHtml(t, devOn)}${threadHtml(t)}`;
     }
     function renderDrawer(keep) {
         const t = ui.detail;
@@ -347,16 +369,10 @@
                 t.assignee ? '-' : null,
                 t.assignee ? { label: POps.t('Atamayı kaldır'), icon: 'x', onClick: () => update(t, { assignee: '' }, POps.t('Atama kaldırıldı.')) } : null
             ]);
-            else if (act === 'more') {
-                const off = POps.isOffline({ status: t.device_status });
-                POps.menu(b, [
-                    { header: POps.t('Öncelik') },
-                    ...['high', 'normal', 'low'].map(k => ({ label: PR[k], icon: k === 'high' ? 'alert' : k === 'low' ? 'arrow-down' : 'tag', disabled: k === t.priority, hint: k === t.priority ? POps.t('şu an') : '', onClick: () => update(t, { priority: k }, POps.t('Öncelik: {priority}.', { priority: lower(PR[k]) })) })),
-                    t.pc_name ? '-' : null,
-                    t.pc_name ? { label: POps.t('Ekranı izle'), icon: 'eye', disabled: off, title: off ? POps.t('Bilgisayar kapalı') : '', onClick: () => { location.href = dev.screenUrl([t.pc_name]); } } : null,
-                    t.pc_name ? { label: POps.t('Bilgisayarı aç'), icon: 'monitor', onClick: () => { location.href = 'devices?pc=' + encodeURIComponent(t.pc_name); } } : null
-                ]);
-            }
+            else if (act === 'priority') POps.menu(b, [
+                { header: POps.t('Öncelik') },
+                ...['high', 'normal', 'low'].map(k => ({ label: PR[k], icon: k === 'high' ? 'alert' : k === 'low' ? 'arrow-down' : 'tag', disabled: k === t.priority, hint: k === t.priority ? POps.t('şu an') : '', onClick: () => update(t, { priority: k }, POps.t('Öncelik: {priority}.', { priority: lower(PR[k]) })) }))
+            ]);
         });
         body.addEventListener('change', (e) => {
             if (e.target.id === 'tkInternal') $('tkSendText').textContent = e.target.checked ? POps.t('Not ekle') : POps.t('Gönder');
@@ -410,11 +426,11 @@
 
     // ================= Liste etkileşimi =================
     list.addEventListener('click', (e) => {
-        const row = e.target.closest('.act[data-id]');
+        const row = e.target.closest('tr[data-id]');
         if (row && !e.target.closest('a, .mark')) openTicket(Number(row.dataset.id));
     });
     list.addEventListener('keydown', (e) => {
-        const row = e.target.closest('.act[data-id]');
+        const row = e.target.closest('tr[data-id]');
         if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTicket(Number(row.dataset.id)); }
     });
     $('hdFilter').addEventListener('click', (e) => {

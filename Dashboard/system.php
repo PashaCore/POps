@@ -1,31 +1,44 @@
 <?php include 'includes/header.php'; ?>
-<?php $sysSuper = ($_SESSION['role'] ?? '') === 'superadmin'; ?>
+<?php
+$sysSuper = ($_SESSION['role'] ?? '') === 'superadmin';
+// İki görünüm: güncelleme, sağlık ve yedek (main) ile ayarlar (config, ?view=ayarlar). Bölümler yan menüden seçilir;
+// sayfanın sekme çubuğu (.tabs-in-nav) gizlidir ve menüden sürülür.
+$sysView = ($sysSuper && $pops_page_key === 'system-config') ? 'config' : 'main';
+$sysTabs = $sysView === 'config'
+    ? ['security' => __('Cihaz kaydı ve güvenlik'), 'notify' => __('Bildirimler ve saklama'), 'modules' => __('Modüller'), 'integrations' => __('Entegrasyonlar')]
+    : ['updates' => __('Güncellemeler'), 'health' => __('Sağlık ve yedek')];
+$sysTab = $_GET['tab'] ?? '';
+if (!$sysSuper || !isset($sysTabs[$sysTab])) { $sysTab = array_key_first($sysTabs); }
+?>
 
 <style>
-    /* Bölümler geniş ekranda iki sütun; sütun sayısı sayfanın gerçek genişliğine göre (ayrıntı paneli açıkken de doğru) */
     .sys-wrap { container-type: inline-size; }
-    .sys-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; align-items: start; }
-    @container (min-width: 960px) { .sys-grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); } .sys-grid.one { grid-template-columns: minmax(0, 1fr); } }
-    .sys-col { display: flex; flex-direction: column; gap: 32px; min-width: 0; }
-    .sec { container-type: inline-size; min-width: 0; }
-    .sec-h { display: flex; align-items: baseline; gap: 12px; padding: 0 4px 10px; }
+    .sys-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; align-items: start; }
+    @container (min-width: 960px) {
+        .sys-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+        .sys-grid.up { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+    }
+    .sys-col { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+    .sys-pane[hidden] { display: none !important; }
+    .sec { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+    .sec-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; padding: 0 4px; }
     .sec-h h2 { font-size: var(--text-lg); font-weight: var(--fw-semibold); letter-spacing: -0.01em; }
-    .sec-h .st { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); color: var(--text-tertiary); white-space: nowrap; }
-    .set + .set { margin-top: 12px; }
+    .sec-h .st { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); color: var(--text-secondary); white-space: nowrap; }
+    .sec-note { font-size: var(--text-xs); color: var(--text-muted); padding: 0 4px; line-height: 1.5; }
+    .page-header-actions .btn { gap: 7px; }
+
     .srow { flex-wrap: wrap; row-gap: 10px; }
     .srow > .grow { min-width: min(220px, 100%); }
     .srow .v { font-weight: var(--fw-medium); color: var(--text-primary); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
-    .srow .v.mono { font-family: var(--font-mono); font-size: 12.5px; }
     .srow .acts { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
-    .srow .d .lnk, .lnk { color: var(--primary-500); font-size: inherit; }
-    .srow .d .lnk:hover, .lnk:hover { text-decoration: underline; }
-    .srow.click { cursor: pointer; }
+    .lnk { color: var(--primary-500); font-size: inherit; }
+    .lnk:hover { text-decoration: underline; }
+    .srow.click { cursor: pointer; color: inherit; text-decoration: none; }
     .srow.click:hover { background: var(--bg-surface-2); }
     .srow.click:first-child:hover { border-radius: 14px 14px 0 0; }
     .srow.click:last-child:hover { border-radius: 0 0 14px 14px; }
-    .srow.block { display: block; }
+    .srow.click:only-child:hover { border-radius: 14px; }
     .srow.click:focus-visible { outline: 2px solid var(--primary-500); outline-offset: -2px; }
-    .sec-h { flex-wrap: wrap; }
     .srow .t .word { margin-left: 8px; }
     .drawer .srow > .grow { min-width: min(180px, 100%); }
     .srow input[type=number] { width: 88px; text-align: right; }
@@ -33,21 +46,50 @@
     .srow .num { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
     .srow .unit { color: var(--text-tertiary); font-size: var(--text-sm); }
     .srow .ico-lead { color: var(--text-tertiary); flex: none; }
+    .srow > .dot { margin-top: 1px; }
+    .srow > .dot.none { background: transparent; }
     .set > .act { padding: 12px 16px; border-bottom: 0; border-top: 1px solid var(--border-subtle); }
     .set > .act:first-child { border-top: 0; }
     .set .why { margin-top: 8px; padding: 9px 12px; border-radius: 10px; background: var(--danger-bg); color: var(--danger-text); font-size: var(--text-xs); line-height: 1.5; overflow-wrap: anywhere; }
     .set .why.warn { background: var(--warning-bg); color: var(--warning-text); }
     .res-spin { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex: none; }
+    .faint { color: var(--text-muted); }
 
-    /* Sürüm dağılımı ve ilerleme */
-    .pbar.dist { height: 8px; margin-top: 12px; }
-    .lgd { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: var(--text-sm); color: var(--text-tertiary); }
-    .lgd span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-    .lgd b { color: var(--text-primary); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+    /* Sunucu: çalışan ve yayımlanmış sürüm yan yana */
+    .vpair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .vcell { padding: 14px 16px; min-width: 0; }
+    .vcell + .vcell { border-left: 1px solid var(--border-subtle); }
+    .vcell .l { font-size: var(--text-xs); color: var(--text-tertiary); }
+    .vcell .v { font-size: 20px; font-weight: var(--fw-semibold); letter-spacing: -0.01em; margin-top: 3px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .vcell .v.new { color: var(--primary-600); }
+    .vcell .s { font-size: var(--text-xs); color: var(--text-muted); margin-top: 3px; overflow-wrap: anywhere; }
     .pbar.indet > i { width: 32%; animation: sysIndet 1.3s ease-in-out infinite; }
     @keyframes sysIndet { from { transform: translateX(-100%); } to { transform: translateX(320%); } }
+
+    /* Ajanlar: kullanılan sürümler ve iki adım */
+    .vlist-h { display: flex; justify-content: space-between; gap: 12px; padding: 12px 16px 6px; font-size: var(--text-xs); color: var(--text-tertiary); }
+    .vlist-h + .srow { border-top: 0; }
+    .vrow { padding-top: 11px; padding-bottom: 11px; gap: 10px; flex-wrap: nowrap; }
+    .vrow .vn { font-family: var(--font-mono); font-size: 13px; font-weight: var(--fw-semibold); color: var(--text-primary); min-width: 0; overflow-wrap: anywhere; }
+    .vrow .vc { margin-left: auto; font-size: var(--text-sm); color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .step { display: flex; gap: 14px; padding: 16px; border-top: 1px solid #f0f0f3; align-items: flex-start; }
+    .step:first-child { border-top: 0; }
+    .step .num { width: 26px; height: 26px; border-radius: 99px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: var(--fw-semibold); background: var(--primary-50); color: var(--primary-600); font-variant-numeric: tabular-nums; }
+    .step.done .num { background: #e9f9ee; color: #248a3d; }
+    .step.off .num { background: var(--bg-surface-3); color: var(--text-muted); }
+    .step > .grow { flex: 1; min-width: 0; }
+    .step .t { font-weight: var(--fw-semibold); color: var(--text-primary); line-height: 26px; }
+    .step.off .t { color: var(--text-tertiary); }
+    .step .d { font-size: var(--text-sm); color: var(--text-secondary); margin-top: 2px; overflow-wrap: anywhere; }
+    .step .d + .d { font-size: var(--text-xs); color: var(--text-muted); }
+    .step .d b { color: var(--text-primary); font-weight: var(--fw-medium); }
+    .step .d .mono { font-family: var(--font-mono); font-size: 12.5px; }
+    .step .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .step .btn { gap: 7px; }
+
+    /* Gönderim izleme */
     .ro-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 6px; flex-wrap: wrap; }
-    .ro-head .grow { flex: 1; min-width: 200px; }
+    .ro-head .grow { flex: 1; min-width: 180px; }
     .ro-head .cnt { font-size: var(--text-sm); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
     .ro-head .cnt b { color: var(--text-primary); }
     .ro-bar { padding: 4px 16px 12px; }
@@ -56,17 +98,39 @@
     .ro-peer .d > svg { flex: none; margin-top: 1px; color: var(--text-tertiary); }
     .ro-list { border-top: 1px solid var(--border-subtle); max-height: 360px; overflow-y: auto; padding: 0 12px; }
     .ro-list .act { padding: 10px 4px; }
+    .ro-list .what a { color: inherit; }
+    .ro-list .what a:hover { color: var(--primary-500); }
     .ro-list .note { margin-top: 4px; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
     .ro-more { padding: 10px 16px; border-top: 1px solid var(--border-subtle); font-size: var(--text-sm); }
 
-    /* Sağlık kutucukları: ince çizgili ızgara */
-    .hstats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--border-subtle); border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 1px var(--border-subtle); }
-    @container (min-width: 520px) { .hstats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-    .hstat { background: var(--bg-surface); padding: 14px 16px; min-width: 0; }
-    .hstat .l { font-size: var(--text-sm); color: var(--text-tertiary); display: flex; align-items: center; gap: 6px; }
-    .hstat .val { font-size: 18px; font-weight: var(--fw-semibold); letter-spacing: -0.01em; margin-top: 4px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-    .hstat .s { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; overflow-wrap: anywhere; }
-    .hstats + .set { margin-top: 12px; }
+    /* Eğilimler: kapalı gelir, açılınca yüklenir */
+    .trends { margin-top: 28px; }
+    .trends > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--bg-surface); border-radius: 14px; box-shadow: 0 0 0 1px var(--border-subtle); }
+    .trends > summary::-webkit-details-marker { display: none; }
+    .trends > summary:hover { background: var(--bg-surface-2); }
+    .trends > summary:focus-visible { outline: 2px solid var(--primary-500); outline-offset: 2px; }
+    .trends > summary .t { font-weight: var(--fw-semibold); }
+    .trends > summary .d { font-size: var(--text-xs); color: var(--text-muted); }
+    .trends > summary .chev { margin-left: auto; color: var(--text-muted); transition: transform 0.15s; }
+    .trends[open] > summary .chev { transform: rotate(90deg); }
+    .trends-bar { display: flex; justify-content: flex-end; margin: 14px 0 12px; }
+    .ch-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    @container (min-width: 720px) { .ch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @container (min-width: 1200px) { .ch-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .ch { display: flex; flex-direction: column; min-width: 0; padding: 16px 18px 12px; background: var(--bg-surface); border-radius: 14px; box-shadow: 0 0 0 1px var(--border-subtle); }
+    .ch-h { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .ch-t { font-weight: var(--fw-semibold); font-size: var(--text-md); }
+    .ch-n { margin-left: auto; font-size: var(--text-xl); font-weight: var(--fw-semibold); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ch-n small { margin-left: 4px; font-size: var(--text-sm); font-weight: var(--fw-regular); letter-spacing: 0; color: var(--text-muted); }
+    .ch-d { display: flex; flex-wrap: wrap; gap: 4px 14px; min-height: 18px; margin-top: 2px; font-size: var(--text-xs); color: var(--text-muted); }
+    .ch-key { display: inline-flex; align-items: center; gap: 6px; }
+    .ch-key i { width: 8px; height: 8px; border-radius: 2px; background: var(--ch); }
+    .ch-key b { font-weight: var(--fw-medium); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .ch-b { position: relative; height: 128px; margin-top: 18px; }
+    .ch-top { position: absolute; right: 0; top: -15px; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; pointer-events: none; }
+    .ch-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 16px; text-align: center; font-size: var(--text-sm); color: var(--text-muted); }
+    .ch-b:empty::before { content: attr(data-loading); position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: var(--text-sm); color: var(--text-muted); }
+    .ch-x { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
     /* Ayrıntı paneli içerikleri */
     .notes-sec { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.55; }
@@ -79,112 +143,107 @@
     .notes-sec li details summary::-webkit-details-marker { display: none; }
     .notes-sec li details[open] summary .more { display: none; }
     .notes-sec .more { color: var(--primary-500); white-space: nowrap; }
-    .notes-sec code, .dr-code { font-size: 0.85em; }
+    .notes-sec code { font-size: 0.85em; }
     .notes-old summary { cursor: pointer; font-weight: var(--fw-medium); color: var(--text-primary); font-size: var(--text-sm); padding: 6px 0; }
     .dr-note { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
     .dr-list { max-height: 46vh; overflow-y: auto; background: var(--bg-app); border-radius: 12px; padding: 4px 12px; }
     .dr-list label.check { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-top: 1px solid var(--border-subtle); }
     .dr-list label.check:first-child { border-top: 0; }
     .dr-list label.check.off { color: var(--text-muted); cursor: not-allowed; }
+    /* Jeton penceresi: kurulumda kapatılacak yetenekler */
+    .tk-caps { border: 0; padding: 0; margin: 16px 0 0; min-width: 0; }
+    .tk-caps legend { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); padding: 0; margin-bottom: 8px; }
+    .tk-caps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 16px; }
+    .tk-caps .field-hint { margin-top: 10px; }
     .dr-list .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
     .dr-list .vv { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; }
     .dr-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .faint { color: var(--text-muted); }
     .dr-sum { font-size: var(--text-sm); color: var(--text-secondary); }
+    .dr-pcs .srow { padding: 10px 14px; gap: 10px; flex-wrap: nowrap; }
+    .dr-pcs .srow .t { font-size: var(--text-sm); }
 
     /* Paketi elle yükle */
     .upload-zone { border: 1.5px dashed var(--border-default); border-radius: 12px; padding: 22px 16px; text-align: center; cursor: pointer; position: relative; background: var(--bg-surface-2); color: var(--text-tertiary); font-size: var(--text-sm); transition: border-color 0.15s, background-color 0.15s; }
     .upload-zone:hover, .upload-zone.dragover { border-color: var(--primary-500); background: var(--primary-50); }
     .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
     .file-list { list-style: none; margin: 10px 0 0; padding: 0; font-size: var(--text-sm); color: var(--text-secondary); }
-    .sys-tabs { margin-bottom: 20px; }
-    .sys-pane[hidden] { display: none !important; }
-    /* Genel bakış: kutucuklar dar ekranda 1–2, genişte 4, çok genişte 8 sütun (satırlar hep dolu); grafikler 1–3 sütun */
-    .ov-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
-    @container (min-width: 520px) { .ov-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @container (min-width: 960px) { .ov-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-    @container (min-width: 1760px) { .ov-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
-    .ov-trend { margin-top: 32px; }
-    .ov-trend-h { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 4px 12px; }
-    .ov-trend-h h2 { font-size: var(--text-lg); font-weight: var(--fw-semibold); letter-spacing: -0.01em; }
-    .ov-trend-h .segmented { margin-left: auto; }
-    .ch-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
-    @container (min-width: 720px) { .ch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @container (min-width: 1200px) { .ch-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-    .ch { display: flex; flex-direction: column; min-width: 0; padding: 16px 18px 12px; background: var(--bg-surface); border-radius: 16px; box-shadow: 0 0 0 1px var(--border-subtle), 0 1px 2px rgba(0, 0, 0, 0.03); }
-    .ch-h { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-    .ch-t { font-weight: var(--fw-semibold); font-size: var(--text-md); }
-    .ch-n { margin-left: auto; font-size: var(--text-2xl); font-weight: var(--fw-semibold); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .ch-n small { margin-left: 4px; font-size: var(--text-sm); font-weight: var(--fw-regular); letter-spacing: 0; color: var(--text-muted); }
-    .ch-d { display: flex; flex-wrap: wrap; gap: 4px 14px; min-height: 18px; margin-top: 2px; font-size: var(--text-xs); color: var(--text-muted); }
-    .ch-key { display: inline-flex; align-items: center; gap: 6px; }
-    .ch-key i { width: 8px; height: 8px; border-radius: 2px; background: var(--ch); }
-    .ch-key b { font-weight: var(--fw-medium); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-    .ch-b { position: relative; height: 128px; margin-top: 18px; }
-    .ch-top { position: absolute; right: 0; top: -15px; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; pointer-events: none; }
-    .ch-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 16px; text-align: center; font-size: var(--text-sm); color: var(--text-muted); }
-    .ch-b:empty::before { content: attr(data-loading); position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: var(--text-sm); color: var(--text-muted); }
-    .ch-x { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-    .ov { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; padding: 16px 18px; background: var(--bg-surface); border-radius: 16px; box-shadow: 0 0 0 1px var(--border-subtle), 0 1px 2px rgba(0, 0, 0, 0.03); min-height: 112px; transition: box-shadow 0.12s; }
-    .ov:hover { box-shadow: 0 0 0 1px var(--border-default), 0 4px 14px rgba(0, 0, 0, 0.06); }
-    .ov:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-    .ov-t { font-weight: var(--fw-semibold); font-size: var(--text-md); }
-    .ov-s { display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); color: var(--text-primary); min-height: 20px; }
-    .ov-s:empty::before { content: attr(data-loading); color: var(--text-muted); }
-    .ov-d { font-size: var(--text-xs); color: var(--text-muted); margin-top: auto; }
     .file-list li { display: flex; gap: 8px; padding: 3px 0; overflow-wrap: anywhere; }
     .file-list li span { color: var(--text-muted); white-space: nowrap; }
 
-    /* Modüller */
+    /* Modüller ve GLPI */
     .md-row .switch { margin-left: auto; }
     .srow .d.md-why { color: var(--warning-text); }
-    .md-foot { margin: 10px 4px 0; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
     .md-labs .srow .segmented { margin-left: auto; }
     .md-labs .srow .t { overflow-wrap: anywhere; }
     .md-find { width: 100%; }
     .gl-checks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: var(--text-sm); }
     .gl-loc .srow input { width: 96px; text-align: right; }
+    @media (max-width: 640px) {
+        .vpair { grid-template-columns: minmax(0, 1fr); }
+        .vcell + .vcell { border-left: 0; border-top: 1px solid var(--border-subtle); }
+    }
 </style>
 
 <div class="page-header">
     <div>
-        <h1><?php _e('Sistem'); ?></h1>
+        <h1><?php echo htmlspecialchars($pops_titles[$pops_page_key] ?? __('Sistem ve Güncelleme'), ENT_QUOTES, 'UTF-8'); ?></h1>
         <div class="summary" id="sysSummary"><span class="sum"><?php _e('Yükleniyor…'); ?></span></div>
     </div>
+    <?php if ($sysView === 'main'): ?>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="notesBtn" data-tip="<?php _e('Sürüm notları'); ?>" aria-label="<?php _e('Sürüm notları'); ?>"><?php echo pops_icon('file'); ?></button>
-        <button type="button" class="ibtn boxed" id="checkBtn" data-tip="<?php _e('Güncellemeleri denetle'); ?>" data-tip-pos="left" aria-label="<?php _e('Güncellemeleri denetle'); ?>"><?php echo pops_icon('refresh'); ?></button>
+        <button type="button" class="btn secondary" id="notesBtn"><?php echo pops_icon('file', 'sm'); ?><?php _e('Sürüm notları'); ?></button>
+        <button type="button" class="btn secondary" id="checkBtn"><?php echo pops_icon('refresh', 'sm'); ?><?php _e('Güncellemeleri denetle'); ?></button>
     </div>
+    <?php endif; ?>
 </div>
 
 <?php if ($sysSuper): ?>
-<div class="tabs sys-tabs" id="sysTabs" aria-label="<?php _e('Sistem bölümleri'); ?>">
-    <button type="button" class="tab" data-tab="overview"><?php _e('Genel bakış'); ?></button>
-    <button type="button" class="tab" data-tab="updates"><?php _e('Güncellemeler'); ?></button>
-    <button type="button" class="tab" data-tab="security"><?php _e('Güvenlik'); ?></button>
-    <button type="button" class="tab" data-tab="health"><?php _e('Sağlık ve yedek'); ?></button>
-    <button type="button" class="tab" data-tab="notify"><?php _e('Bildirimler ve saklama'); ?></button>
-    <button type="button" class="tab" data-tab="modules"><?php _e('Modüller'); ?></button>
-    <button type="button" class="tab" data-tab="integrations"><?php _e('Entegrasyonlar'); ?></button>
+<div class="tabs tabs-in-nav" id="sysTabs" aria-label="<?php _e('Sistem bölümleri'); ?>">
+    <?php foreach ($sysTabs as $tabKey => $tabLabel): ?>
+    <button type="button" class="tab" data-tab="<?php echo htmlspecialchars($tabKey, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($tabLabel, ENT_QUOTES, 'UTF-8'); ?></button>
+    <?php endforeach; ?>
 </div>
 <?php endif; ?>
 
 <div class="sys-wrap">
-    <?php if ($sysSuper): ?>
-    <div class="sys-pane" data-pane="overview">
-        <div class="ov-grid" id="ovGrid">
-            <button type="button" class="ov" data-go="updates" data-src="srvState"><span class="ov-t"><?php _e('Sunucu'); ?></span><span class="ov-s" data-loading="<?php _e('Yükleniyor…'); ?>"></span><span class="ov-d"><?php _e('Sürüm ve sunucu güncellemesi'); ?></span></button>
-            <button type="button" class="ov" data-go="updates" data-src="agState"><span class="ov-t"><?php _e('Ajanlar'); ?></span><span class="ov-s" data-loading="<?php _e('Yükleniyor…'); ?>"></span><span class="ov-d"><?php _e('Sürüm dağılımı, ajan paketi ve gönderim'); ?></span></button>
-            <button type="button" class="ov" data-go="health" data-src="hlState"><span class="ov-t"><?php _e('Sağlık'); ?></span><span class="ov-s" data-loading="<?php _e('Yükleniyor…'); ?>"></span><span class="ov-d"><?php _e('Bağlı ajanlar, veritabanı, hatalar, disk'); ?></span></button>
-            <button type="button" class="ov" data-go="health" data-src="bkState"><span class="ov-t"><?php _e('Yedekler'); ?></span><span class="ov-s" data-loading="<?php _e('Yükleniyor…'); ?>"></span><span class="ov-d"><?php _e('Gece alınan veritabanı yedeği'); ?></span></button>
-            <button type="button" class="ov" data-go="security" data-src="enState"><span class="ov-t"><?php _e('Ajan kaydı ve kimlik'); ?></span><span class="ov-s" data-loading="<?php _e('Yükleniyor…'); ?>"></span><span class="ov-d"><?php _e('Kimlik zorlaması ve kayıt jetonları'); ?></span></button>
-            <button type="button" class="ov" data-go="security" data-src="capState"><span class="ov-t"><?php _e('Cihaz yetenekleri'); ?></span><span class="ov-s" data-loading="<?php _e('Yükleniyor…'); ?>"></span><span class="ov-d"><?php _e('Uzak komut ve uzak ekranın kapatıldığı bilgisayarlar'); ?></span></button>
-            <button type="button" class="ov" data-go="security" data-src="auState"><span class="ov-t"><?php _e('Kayıt bütünlüğü'); ?></span><span class="ov-s" data-loading="<?php _e('Yükleniyor…'); ?>"></span><span class="ov-d"><?php _e('Denetim zincirinin doğrulanması'); ?></span></button>
-            <button type="button" class="ov" data-go="notify" data-src="ntState"><span class="ov-t"><?php _e('Bildirimler'); ?></span><span class="ov-s" data-loading="<?php _e('Yükleniyor…'); ?>"></span><span class="ov-d"><?php _e('E-posta ve webhook, saklama süreleri'); ?></span></button>
+<?php if ($sysView === 'main'): ?>
+    <div class="sys-pane sys-grid up" data-pane="updates"<?php if ($sysTab !== 'updates'): ?> hidden<?php endif; ?>>
+        <div class="sys-col">
+            <section class="sec" id="secServer" aria-labelledby="hServer">
+                <div class="sec-h"><h2 id="hServer"><?php _e('Sunucu'); ?></h2><span class="st" id="srvState"></span></div>
+                <div class="set" id="srvSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+            </section>
         </div>
-        <div class="ov-trend">
-            <div class="ov-trend-h">
-                <h2><?php _e('Eğilimler'); ?></h2>
+        <div class="sys-col">
+            <section class="sec" id="secAgents" aria-labelledby="hAgents">
+                <div class="sec-h"><h2 id="hAgents"><?php _e('Ajanlar'); ?></h2><span class="st" id="agState"></span></div>
+                <div class="set" id="agVers"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+                <div class="set" id="agSteps"></div>
+                <div class="set" id="rollout" hidden></div>
+                <?php if (!$sysSuper): ?><div class="sec-note"><?php _e('Güncelleme, sağlık, yedek, kayıt ve güvenlik ayarları yalnızca süper admin içindir.'); ?></div><?php endif; ?>
+            </section>
+        </div>
+    </div>
+    <?php if ($sysSuper): ?>
+    <div class="sys-pane" data-pane="health"<?php if ($sysTab !== 'health'): ?> hidden<?php endif; ?>>
+        <div class="sys-grid">
+            <div class="sys-col">
+                <section class="sec" id="secHealth" aria-labelledby="hHealth">
+                    <div class="sec-h"><h2 id="hHealth"><?php _e('Sağlık'); ?></h2><span class="st" id="hlState"></span></div>
+                    <div class="set" id="hlBody"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+                </section>
+            </div>
+            <div class="sys-col">
+                <section class="sec" id="secBackup" aria-labelledby="hBackup">
+                    <div class="sec-h"><h2 id="hBackup"><?php _e('Yedekler'); ?></h2><span class="st" id="bkState"></span></div>
+                    <div class="set" id="bkSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
+                    <div class="sec-note"><?php _e('Yedek her gece alınır ve geri yüklenerek sınanır.'); ?></div>
+                </section>
+            </div>
+        </div>
+        <details class="trends" id="trends">
+            <summary><span class="t"><?php _e('Eğilimler'); ?></span><span class="d"><?php _e('Bağlı ajanlar, yük, istekler, işlemler, olaylar ve depolama'); ?></span><?php echo pops_icon('right', 'sm chev'); ?></summary>
+            <div class="trends-bar">
                 <div class="segmented" id="ovSpan" role="group" aria-label="<?php _e('Zaman aralığı'); ?>">
                     <button type="button" data-span="24h"><?php _e('24 saat'); ?></button>
                     <button type="button" data-span="7d"><?php _e('7 gün'); ?></button>
@@ -192,71 +251,43 @@
                 </div>
             </div>
             <div class="ch-grid" id="chGrid">
-            <section class="ch" data-ch="agents" aria-label="<?php _e('Bağlı ajanlar'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('Bağlı ajanlar'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
-            <section class="ch" data-ch="load" aria-label="<?php _e('İşlemci ve bellek'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('İşlemci ve bellek'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
-            <section class="ch" data-ch="requests" aria-label="<?php _e('API istekleri'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('API istekleri'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
-            <section class="ch" data-ch="tasks" aria-label="<?php _e('İşlemler'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('İşlemler'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
-            <section class="ch" data-ch="events" aria-label="<?php _e('Olaylar'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('Olaylar'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
-            <section class="ch" data-ch="storage" aria-label="<?php _e('Veritabanı ve disk'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('Veritabanı ve disk'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
+                <section class="ch" data-ch="agents" aria-label="<?php _e('Bağlı ajanlar'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('Bağlı ajanlar'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
+                <section class="ch" data-ch="load" aria-label="<?php _e('İşlemci ve bellek'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('İşlemci ve bellek'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
+                <section class="ch" data-ch="requests" aria-label="<?php _e('API istekleri'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('API istekleri'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
+                <section class="ch" data-ch="tasks" aria-label="<?php _e('İşlemler'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('İşlemler'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
+                <section class="ch" data-ch="events" aria-label="<?php _e('Olaylar'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('Olaylar'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
+                <section class="ch" data-ch="storage" aria-label="<?php _e('Veritabanı ve disk'); ?>"><div class="ch-h"><span class="ch-t"><?php _e('Veritabanı ve disk'); ?></span><span class="ch-n"></span></div><div class="ch-d"></div><div class="ch-b" data-loading="<?php _e('Yükleniyor…'); ?>"></div><div class="ch-x"></div></section>
             </div>
-        </div>
+        </details>
     </div>
-    <div class="sys-pane sys-grid" data-pane="updates">
+    <?php endif; ?>
+<?php else: ?>
+    <div class="sys-pane sys-grid" data-pane="security"<?php if ($sysTab !== 'security'): ?> hidden<?php endif; ?>>
         <div class="sys-col">
-<section class="sec" id="secServer" aria-labelledby="hServer">
-                <div class="sec-h"><h2 id="hServer"><?php _e('Sunucu'); ?></h2><span class="st" id="srvState"></span></div>
-                <div class="set" id="srvSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
-            </section>
-        </div>
-        <div class="sys-col">
-<section class="sec" id="secAgents" aria-labelledby="hAgents">
-                <div class="sec-h"><h2 id="hAgents"><?php _e('Ajanlar'); ?></h2><span class="st" id="agState"></span></div>
-                <div class="set" id="agSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
-                <div class="set" id="rollout" hidden></div>
-                <?php if (!$sysSuper): ?><div class="set-note"><?php _e('Güncelleme, sağlık, yedek, kayıt ve güvenlik ayarları yalnızca süper admin içindir.'); ?></div><?php endif; ?>
-            </section>
-        </div>
-    </div>
-    <div class="sys-pane sys-grid" data-pane="security">
-        <div class="sys-col">
-<section class="sec" id="secEnroll" aria-labelledby="hEnroll">
+            <section class="sec" id="secEnroll" aria-labelledby="hEnroll">
                 <div class="sec-h"><h2 id="hEnroll"><?php _e('Ajan kaydı ve kimlik'); ?></h2><span class="st" id="enState"></span></div>
                 <div class="set" id="enSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
                 <div class="set" id="tokSet" hidden></div>
             </section>
         </div>
         <div class="sys-col">
-<section class="sec" id="secCaps" aria-labelledby="hCaps">
+            <section class="sec" id="secCaps" aria-labelledby="hCaps">
                 <div class="sec-h"><h2 id="hCaps"><?php _e('Cihaz yetenekleri'); ?></h2><span class="st" id="capState"></span></div>
                 <div class="set" id="capSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
             </section>
-<section class="sec" id="secAudit" aria-labelledby="hAudit">
+            <section class="sec" id="secAudit" aria-labelledby="hAudit">
                 <div class="sec-h"><h2 id="hAudit"><?php _e('Kayıt bütünlüğü'); ?></h2><span class="st" id="auState"></span></div>
                 <div class="set" id="auSet"></div>
             </section>
         </div>
     </div>
-    <div class="sys-pane sys-grid" data-pane="health">
+    <div class="sys-pane sys-grid" data-pane="notify"<?php if ($sysTab !== 'notify'): ?> hidden<?php endif; ?>>
         <div class="sys-col">
-<section class="sec" id="secHealth" aria-labelledby="hHealth">
-                <div class="sec-h"><h2 id="hHealth"><?php _e('Sağlık'); ?></h2><span class="st" id="hlState"></span></div>
-                <div id="hlBody"><div class="set"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div></div>
-            </section>
-        </div>
-        <div class="sys-col">
-<section class="sec" id="secBackup" aria-labelledby="hBackup">
-                <div class="sec-h"><h2 id="hBackup"><?php _e('Yedekler'); ?></h2><span class="st" id="bkState"></span></div>
-                <div class="set" id="bkSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
-            </section>
-        </div>
-    </div>
-    <div class="sys-pane sys-grid" data-pane="notify">
-        <div class="sys-col">
-<section class="sec" id="secNotify" aria-labelledby="hNotify">
+            <section class="sec" id="secNotify" aria-labelledby="hNotify">
                 <div class="sec-h"><h2 id="hNotify"><?php _e('Bildirimler'); ?></h2><span class="st" id="ntState"></span></div>
                 <div class="set" id="ntSet">
                     <div class="srow">
-                        <div class="grow"><div class="t"><?php _e('Dışarıya gönder'); ?></div><div class="d"><?php _e('Önemli olaylar Bildirimler\'de her zaman görünür; açıkken e-posta ve webhook ile de gönderilir. Aynı olay 10 dakikada bir kez gider.'); ?></div></div>
+                        <div class="grow"><div class="t"><?php _e('Dışarıya gönder'); ?></div><div class="d"><?php _e('Açıkken önemli olaylar e-posta ve webhook ile de gider; aynı olay 10 dakikada bir kez.'); ?></div></div>
                         <label class="switch"><input type="checkbox" id="ntEnabled" aria-label="<?php _e('Bildirimleri dışarıya gönder'); ?>"><span></span></label>
                     </div>
                     <div class="srow">
@@ -287,7 +318,7 @@
             </section>
         </div>
         <div class="sys-col">
-<section class="sec" id="secRetention" aria-labelledby="hRetention">
+            <section class="sec" id="secRetention" aria-labelledby="hRetention">
                 <div class="sec-h"><h2 id="hRetention"><?php _e('Saklama süreleri'); ?></h2></div>
                 <div class="set" id="rtSet">
                     <div class="srow">
@@ -310,28 +341,28 @@
             </section>
         </div>
     </div>
-    <div class="sys-pane sys-grid" data-pane="modules">
+    <div class="sys-pane sys-grid" data-pane="modules"<?php if ($sysTab !== 'modules'): ?> hidden<?php endif; ?>>
         <div class="sys-col">
-<section class="sec" id="secModules" aria-labelledby="hModules">
+            <section class="sec" id="secModules" aria-labelledby="hModules">
                 <div class="sec-h"><h2 id="hModules"><?php _e('Modüller'); ?></h2><span class="st" id="mdState"></span></div>
                 <div class="set" id="mdSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
-                <p class="md-foot"><?php _e('Kapalı modülün sayfaları ve uçları kullanılamaz; ajanlar değişikliği en geç bir dakikada alır. Cihazlar, sınıflar, kayıt, ajan güncellemesi, denetim kaydı, kullanıcılar, bildirimler ve sunucu sağlığı her zaman açıktır.'); ?></p>
+                <div class="sec-note"><?php _e('Ajanlar değişikliği en geç bir dakikada alır.'); ?></div>
             </section>
         </div>
         <div class="sys-col">
-<section class="sec" id="secProfile" aria-labelledby="hProfile">
+            <section class="sec" id="secProfile" aria-labelledby="hProfile">
                 <div class="sec-h"><h2 id="hProfile"><?php _e('Kurulum profili'); ?></h2><span class="st" id="pfState"></span></div>
                 <div class="set" id="pfSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
             </section>
         </div>
     </div>
-    <div class="sys-pane sys-grid" data-pane="integrations">
+    <div class="sys-pane sys-grid" data-pane="integrations"<?php if ($sysTab !== 'integrations'): ?> hidden<?php endif; ?>>
         <div class="sys-col">
-<section class="sec" id="secGlpi" aria-labelledby="hGlpi">
+            <section class="sec" id="secGlpi" aria-labelledby="hGlpi">
                 <div class="sec-h"><h2 id="hGlpi">GLPI</h2><span class="st" id="glState"></span></div>
                 <div class="set" id="glSet">
                     <div class="srow">
-                        <div class="grow"><div class="t"><?php _e('Dışa aktarım'); ?></div><div class="d"><?php _e('Açıkken bilgisayarlar, kurulu yazılımlar ve destek talepleri GLPI\'ye gönderilir; kapalıyken hiçbir şey gönderilmez. GLPI\'den POps\'a bir şey alınmaz.'); ?></div></div>
+                        <div class="grow"><div class="t"><?php _e('Dışa aktarım'); ?></div><div class="d"><?php _e('Yalnızca POps\'tan GLPI\'ye gönderilir; GLPI\'den bir şey alınmaz.'); ?></div></div>
                         <label class="switch"><input type="checkbox" id="glEnabled" aria-label="<?php _e('GLPI\'ye dışa aktarım'); ?>"><span></span></label>
                     </div>
                     <div class="srow">
@@ -370,7 +401,7 @@
                         </div>
                     </div>
                     <div class="srow">
-                        <div class="grow"><div class="t"><?php _e('Talepler'); ?></div><div class="d"><?php _e('Bu tarihten itibaren açılan talepler bir kez gönderilir; sonraki açık yanıtlar takip olarak eklenir.'); ?></div></div>
+                        <div class="grow"><div class="t"><?php _e('Talepler'); ?></div><div class="d"><?php _e('Bu tarihten sonra açılan talepler gönderilir.'); ?></div></div>
                         <input type="date" id="glSince" aria-label="<?php _e('Taleplerin başlangıç tarihi'); ?>" style="width:auto">
                     </div>
                     <div class="srow">
@@ -384,32 +415,17 @@
             </section>
         </div>
         <div class="sys-col">
-<section class="sec" id="secGlpiRun" aria-labelledby="hGlpiRun">
+            <section class="sec" id="secGlpiRun" aria-labelledby="hGlpiRun">
                 <div class="sec-h"><h2 id="hGlpiRun"><?php _e('Eşitleme'); ?></h2></div>
                 <div class="set" id="glRun"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
-                <p class="md-foot"><?php _e('GLPI\'ye gönderim yeni bir kişisel veri aktarımıdır; okulun KVKK aydınlatma metninde belirtilmelidir. Oturumdaki kullanıcı, ekran görüntüsü ve olay kayıtları gönderilmez. GLPI\'deki bir kayıt POps\'tan silinmez.'); ?></p>
+                <div class="sec-note"><?php _e('GLPI\'ye gönderim kişisel veri aktarımıdır; KVKK aydınlatma metninde belirtin. Oturumdaki kullanıcı, ekran görüntüsü ve olay kayıtları gönderilmez.'); ?></div>
             </section>
         </div>
     </div>
-    <?php else: ?>
-    <div class="sys-grid one">
-        <div class="sys-col">
-<section class="sec" id="secServer" aria-labelledby="hServer">
-                <div class="sec-h"><h2 id="hServer"><?php _e('Sunucu'); ?></h2><span class="st" id="srvState"></span></div>
-                <div class="set" id="srvSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
-            </section>
-<section class="sec" id="secAgents" aria-labelledby="hAgents">
-                <div class="sec-h"><h2 id="hAgents"><?php _e('Ajanlar'); ?></h2><span class="st" id="agState"></span></div>
-                <div class="set" id="agSet"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Yükleniyor…'); ?></div></div>
-                <div class="set" id="rollout" hidden></div>
-                <?php if (!$sysSuper): ?><div class="set-note"><?php _e('Güncelleme, sağlık, yedek, kayıt ve güvenlik ayarları yalnızca süper admin içindir.'); ?></div><?php endif; ?>
-            </section>
-        </div>
-    </div>
-    <?php endif; ?>
+<?php endif; ?>
 </div>
 
-<?php if ($sysSuper): ?>
+<?php if ($sysSuper && $sysView === 'main'): ?>
 <div id="uploadModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-header">
@@ -432,7 +448,9 @@
         </div>
     </div>
 </div>
+<?php endif; ?>
 
+<?php if ($sysView === 'config'): ?>
 <div id="tokenModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-header">
@@ -447,6 +465,19 @@
                 <div class="field"><label for="tkUses"><?php _e('Kullanım sayısı'); ?></label><input type="number" id="tkUses" min="1" max="10000" value="1"></div>
                 <div class="field"><label for="tkTtl"><?php _e('Geçerlilik (saat)'); ?></label><input type="number" id="tkTtl" min="1" max="720" value="72"></div>
             </div>
+            <fieldset class="tk-caps">
+                <legend><?php _e('Bu kurulumda kapalı olsun'); ?></legend>
+                <div class="tk-caps-grid">
+                    <?php foreach ([
+                        'TERMINAL_ENABLED' => __('Uzak komut'), 'VISION_ENABLED' => __('Uzak ekran'), 'FILES_ENABLED' => __('Dosya aktarımı'),
+                        'EXAM_ENABLED' => __('Sınav modu'), 'POWER_ENABLED' => __('Güç işlemleri'), 'MESSAGE_ENABLED' => __('Mesaj'),
+                        'PEER_CACHE_ENABLED' => __('Sınıf içi paket paylaşımı'),
+                    ] as $prop => $label): ?>
+                    <label class="check"><input type="checkbox" class="tk-cap" value="<?php echo htmlspecialchars($prop, ENT_QUOTES); ?>"> <?php echo htmlspecialchars($label, ENT_QUOTES); ?></label>
+                    <?php endforeach; ?>
+                </div>
+                <div class="field-hint"><?php _e('Kapalı kurulan özelliği sunucu açamaz; sunucu ele geçirilse bile o bilgisayarda çalışmaz. Açmak için ajan yeniden kurulur.'); ?></div>
+            </fieldset>
         </div>
         <div class="modal-footer">
             <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
@@ -458,32 +489,29 @@
 
 <script>
 (function () {
-
-    // ---- Sekmeler ve Genel bakış (yalnızca süper admin): kutucuklar bölüm başlıklarındaki durumu aynen gösterir
-    let ovReady = false;   // grafikler sayfa betiği yüklenince çizilir (sekme açılışta seçilirken henüz değil)
-    const sysTabs = document.getElementById('sysTabs') ? POps.pageTabs(document.getElementById('sysTabs'), {
-        def: 'overview', onChange: (name) => { if (ovReady && name === 'overview') loadOverview(); }
-    }) : null;
-    if (sysTabs) {
-        document.querySelectorAll('#ovGrid .ov').forEach(tile => {
-            const src = document.getElementById(tile.dataset.src);
-            const out = tile.querySelector('.ov-s');
-            if (!src) { tile.hidden = true; return; }
-            const copy = () => out.replaceChildren(...[...src.childNodes].map(n => n.cloneNode(true)));
-            copy();
-            new MutationObserver(copy).observe(src, { childList: true, subtree: true, characterData: true });
-            tile.addEventListener('click', () => sysTabs.set(tile.dataset.go, { scroll: true }));
-        });
-    }
     const dev = POps.dev;
     const $ = (id) => document.getElementById(id);
     const IS_SUPER = window.USER_ROLE === 'superadmin';
+    // main: güncelleme, sağlık ve yedek; config: ayarlar (?view=ayarlar)
+    const VIEW = <?php echo json_encode($sysView, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+    const params = new URLSearchParams(location.search);
+    // Kontrol merkezi → Jeton üret: kayıt jetonları ayarlar görünümünde
+    if (VIEW === 'main' && IS_SUPER && params.get('do') === 'token') { location.replace('system?view=ayarlar&do=token'); return; }
 
-    // ---- Genel bakış grafikleri: GET /api/system/overview?span=24h|7d|30d. Ölçümler (ajan, işlemci, bellek, istek,
-    // veritabanı) sunucunun dakikalık örneklerinden; işlemler, olaylar ve güncellemeler kayıtlardan. Dakikada bir tazelenir.
+    // ---- Bölümler: yan menüden sürülen sekmeler (yalnızca süper admin)
+    let trendsReady = false;   // eğilim grafikleri sayfa betiği yüklenince çizilir
+    const sysTabs = $('sysTabs') ? POps.pageTabs($('sysTabs'), {
+        def: VIEW === 'config' ? 'security' : 'updates',
+        onChange: (name) => { if (trendsReady && name === 'health' && trendsOpen()) loadTrends(); }
+    }) : null;
+
+    // ---- Eğilimler (Sağlık ve yedek'in altında, kapalı gelir): GET /api/system/overview?span=24h|7d|30d. Ölçümler
+    // (ajan, işlemci, bellek, istek, veritabanı) sunucunun dakikalık örneklerinden; işlemler, olaylar ve güncellemeler
+    // kayıtlardan. Yalnızca açıkken yüklenir ve dakikada bir tazelenir.
     const SPAN_KEY = 'pops_sys_span_v1';
     let ovSpan = '24h', ovData = null, ovErr = null, ovSeq = 0;
     try { const v = localStorage.getItem(SPAN_KEY); if (['24h', '7d', '30d'].includes(v)) ovSpan = v; } catch (e) { /* tarayıcı belleği kapalı */ }
+    const trendsOpen = () => !!($('trends') && $('trends').open);
     const nf = (n, d) => Number(n || 0).toLocaleString(POps.locale, { maximumFractionDigits: d || 0 });
     const pct = (v) => (typeof v === 'number' ? POps.pct(nf(v)) : '—');
     const mb = (v) => (typeof v !== 'number' ? '—' : v >= 1024 ? nf(v / 1024, 1) + ' GB' : nf(v, v < 10 ? 1 : 0) + ' MB');
@@ -514,7 +542,7 @@
         const n = points.length;
         c.x.replaceChildren(...(n ? [points[0], points[Math.floor((n - 1) / 2)], points[n - 1]] : []).map(p => POps.el('span', { text: when(p.t, 0, 'axis') })));
     }
-    function renderOverview() {
+    function renderTrends() {
         if (!$('chGrid')) return;
         const card = (k) => { const el = document.querySelector(`#chGrid [data-ch="${k}"]`); return { n: el.querySelector('.ch-n'), d: el.querySelector('.ch-d'), b: el.querySelector('.ch-b'), x: el.querySelector('.ch-x') }; };
         document.querySelectorAll('#ovSpan [data-span]').forEach(b => { const on = b.dataset.span === ovSpan; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
@@ -589,7 +617,7 @@
         chartTo(c, 'line', pts, { series: [{ key: 'db_mb', cls: 'ch-c1' }], area: true,
             tip: p => tipP(p, typeof p.db_mb === 'number' ? POps.t('Veritabanı {size}', { size: mb(p.db_mb) }) + (typeof p.disk === 'number' ? ' · ' + POps.t('disk {pct} dolu', { pct: pct(p.disk) }) : '') : NONE) }, mb, WAIT);
     }
-    async function loadOverview() {
+    async function loadTrends() {
         if (!$('chGrid')) return;
         const seq = ++ovSeq;
         try {
@@ -601,18 +629,22 @@
             ovErr = e;
             if (ovData && ovData.span !== ovSpan) ovData = null;
         }
-        renderOverview();
+        renderTrends();
     }
-    if ($('ovSpan')) $('ovSpan').addEventListener('click', (e) => {
-        const b = e.target.closest('[data-span]');
-        if (!b || b.dataset.span === ovSpan) return;
-        ovSpan = b.dataset.span;
-        try { localStorage.setItem(SPAN_KEY, ovSpan); } catch (err) { /* tarayıcı belleği kapalı */ }
-        ovData = null;
-        document.querySelectorAll('#chGrid .ch-b').forEach(x => x.replaceChildren());
-        renderOverview();
-        loadOverview();
-    });
+    if ($('trends')) {
+        $('trends').addEventListener('toggle', () => { if (trendsOpen()) { renderTrends(); loadTrends(); } });
+        $('ovSpan').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-span]');
+            if (!b || b.dataset.span === ovSpan) return;
+            ovSpan = b.dataset.span;
+            try { localStorage.setItem(SPAN_KEY, ovSpan); } catch (err) { /* tarayıcı belleği kapalı */ }
+            ovData = null;
+            document.querySelectorAll('#chGrid .ch-b').forEach(x => x.replaceChildren());
+            renderTrends();
+            loadTrends();
+        });
+    }
+
     const ME = <?php echo json_encode((string) ($_SESSION['username'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
     const S = { ver: null, su: null, diag: null, diagErr: null, notes: null, checkedAt: null, fetching: false, suBusy: false, suPoll: null, suBefore: '', tokens: null, notify: null, retention: null };
     const RKEY = 'pops_agent_rollout_v1', AKEY = 'pops_audit_verify_v1', SKEY = 'pops_selfupdate_req_v1';
@@ -632,6 +664,10 @@
     const ago = (sec) => POps.t('{time} önce', { time: POps.duration(sec) });
     function setState(id, k, t) { const el = $(id); if (el) el.innerHTML = t ? stateHtml(k, t) : ''; }
     function sectionError(el, e) { if (el) POps.setError(el, e, { compact: true }); }
+    // Satır gibi davranan öğe (role=button): Enter ve boşluk tıklar
+    function keyClick(box, sel) {
+        if (box) box.addEventListener('keydown', (e) => { const r = e.target.closest(sel); if (r && e.target === r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); r.click(); } });
+    }
 
     // ---- Ortak ayrıntı paneli üst kısmı
     function drawerHeadHtml(title, subHtml, icon, cls) {
@@ -703,9 +739,10 @@
     }
 
     function renderServer() {
+        const box = $('srvSet');
+        if (!box) return;
         const I = serverInfo();
         setState('srvState', I.k, I.word);
-        const box = $('srvSet');
         if (!I.v) { POps.setError(box, new Error(POps.t('Sürüm bilgisi alınamadı. Sayfayı yenileyin.')), { compact: true }); return; }
         const srv = I.srv || {};
         const deployedHtml = srv.deployed_at ? POps.tHtml('Panelden güncellendi {time}', null, { time: POps.timeHtml(srv.deployed_at) }) + (srv.rev ? ' · commit ' + escapeHtml(srv.rev) : '') : POps.tHtml('Henüz panelden güncellenmedi');
@@ -724,13 +761,14 @@
             actHtml = `<div class="srow"><div class="grow"><div class="t">${escapeHtml(title)}</div><div class="d">${escapeHtml(desc)}</div></div>
                 ${IS_SUPER ? `<button type="button" class="btn${I.avail ? '' : ' secondary'}" data-act="selfupdate" ${I.configured ? '' : 'disabled'}>${POps.iconHtml('download', 'sm')}${POps.tHtml('Sunucuyu güncelle')}</button>` : ''}</div>`;
         }
-        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Çalışan sürüm')}</div><div class="d">${deployedHtml}</div></div><div class="v">${escapeHtml(fmtV(I.v.running))}</div></div>
+        box.innerHTML = `<div class="vpair">
+                <div class="vcell"><div class="l">${POps.tHtml('Çalışan sürüm')}</div><div class="v">${escapeHtml(fmtV(I.v.running))}</div><div class="s">${deployedHtml}</div></div>
+                <div class="vcell"><div class="l">${I.rel ? POps.tHtml("GitHub'daki son sürüm") : 'GitHub main'}</div><div class="v${I.avail ? ' new' : ''}">${escapeHtml(I.latest)}</div><div class="s">${escapeHtml(I.latestSub)}${commitsHtml}</div></div>
+            </div>
             <div class="srow"><div class="grow"><div class="t">${POps.tHtml('Güncelleme kanalı')}</div><div class="d">${I.rel ? POps.tHtml('Yalnızca yayımlanmış sürümler kurulur.') : POps.tHtml('GitHub main dalı; geliştirme sunucusu içindir.')}</div></div><div class="v">${I.rel ? POps.tHtml('Sürüm') : POps.tHtml('Geliştirme (main)')}</div></div>
-            <div class="srow"><div class="grow"><div class="t">${I.rel ? POps.tHtml("GitHub'daki son sürüm") : 'GitHub main'}</div><div class="d">${escapeHtml(I.latestSub)}${commitsHtml}</div></div><div class="v">${escapeHtml(I.latest)}</div></div>
             ${actHtml}${lastAttemptHtml(I.st)}`;
     }
-
-    $('srvSet').addEventListener('click', (e) => {
+    if ($('srvSet')) $('srvSet').addEventListener('click', (e) => {
         const b = e.target.closest('[data-act]');
         if (!b || b.disabled) return;
         if (b.dataset.act === 'selfupdate') selfUpdate(b);
@@ -831,10 +869,10 @@
         body.innerHTML = headHtml + (html || '<div class="empty-state compact">' + POps.iconHtml('file') + '<p>' + POps.tHtml('Gösterilecek not yok.') + '</p></div>')
             + '<div class="dr-note">' + POps.tHtml('Notlar GitHub’daki CHANGELOG’dan alınır (İngilizce).') + '</div>';
     }
-    $('notesBtn').addEventListener('click', openNotes);
+    if ($('notesBtn')) $('notesBtn').addEventListener('click', openNotes);
 
     // =================================================================
-    // AJANLAR: sürüm dağılımı, paket, güncelleme ve ilerleme
+    // AJANLAR: kullanılan sürümler, 1) paket, 2) gönderim, ilerleme
     // =================================================================
     // İzlenen gönderimde güncellemesi süren bilgisayarlar (sonuç bekleniyor; servisi kurulumda kapalı olabilir)
     function updatingPcs() {
@@ -853,26 +891,32 @@
         const oldOn = old.filter(isOn);
         return { v, staged, target, all, groups, old, oldOn };
     }
-    function distHtml(A) {
-        const total = A.all.length;
-        if (!total) return '<div class="d" style="margin-top:6px">' + POps.tHtml('Henüz kayıtlı ajan yok.') + '</div>';
+    // Sürüm, gönderilecek paketten (yoksa GitHub'daki son sürümden) eskiyse "eski"
+    const verOld = (ver, target) => !!ver && !!target && dev.cmpVersion(ver, target) < 0;
+    function versionsHtml(A) {
+        if (!A.all.length) return `<div class="srow"><div class="grow"><div class="d">${POps.tHtml('Henüz kayıtlı ajan yok.')}</div></div></div>`;
         const vers = [...A.groups.keys()].sort((a, b) => (!a) - (!b) || dev.cmpVersion(b, a));
-        let oldIdx = 0;
-        const parts = vers.map(ver => {
+        const rowsHtml = vers.map(ver => {
             const n = A.groups.get(ver);
-            let cls = 'off', op = 1;
-            if (!ver) cls = 'off';
-            else if (!A.target || dev.cmpVersion(ver, A.target) >= 0) cls = 'ok';
-            else { cls = 'run'; op = Math.max(0.35, 1 - 0.22 * oldIdx++); }
-            return { ver, n, cls, op };
-        });
-        const segHtml = parts.filter(p => p.cls !== 'off').map(p => `<i class="${escapeHtml(p.cls)}" style="width:${(p.n / total * 100).toFixed(2)}%;opacity:${Number(p.op)}"></i>`).join('');
-        const lgdHtml = parts.map(p => `<span><span class="dot ${escapeHtml(p.cls)}" style="opacity:${Number(p.op)}"></span>${escapeHtml(p.ver ? fmtV(p.ver) : POps.t('Bilinmiyor'))} <b>${Number(p.n)}</b></span>`).join('');
-        return `<div class="pbar dist" role="img" aria-label="${escapeHtml(POps.t('Ajan sürüm dağılımı'))}">${segHtml}</div><div class="lgd">${lgdHtml}</div>`;
+            const old = verOld(ver, A.target);
+            const on = old ? A.all.filter(d => normV(dev.version(d)) === ver && isOn(d)).length : 0;
+            const badgeHtml = !ver ? `<span class="badge muted">${POps.tHtml('bilinmiyor')}</span>` : old ? `<span class="badge warn">${POps.tHtml('eski')}</span>` : `<span class="badge ok">${POps.tHtml('güncel')}</span>`;
+            const label = ver ? fmtV(ver) : POps.t('Bilinmiyor');
+            return `<div class="srow click vrow" data-ver="${escapeHtml(ver)}" role="button" tabindex="0" aria-label="${escapeHtml(POps.t('{version} sürümündeki bilgisayarlar', { version: label }))}">`
+                + `<span class="vn">${escapeHtml(label)}</span>${badgeHtml}`
+                + `<span class="vc">${POps.tnHtml('{n} bilgisayar', n)}${old ? ' · ' + POps.tHtml('{n} açık', { n: on }) : ''}</span>${POps.iconHtml('right', 'sm ico-lead')}</div>`;
+        }).join('');
+        return `<div class="vlist-h"><span>${POps.tHtml('Kullanılan sürümler')}</span><span>${POps.tnHtml('{n} ajan', A.all.length)}</span></div>${rowsHtml}`;
+    }
+    // Numaralı adım: st 'done' (tamam, onay işareti), 'off' (önceki adım bekleniyor) ya da ''
+    function stepHtml(n, st, title, bodyHtml, actsHtml) {
+        return `<div class="step${st ? ' ' + escapeHtml(st) : ''}"><span class="num" aria-hidden="true">${st === 'done' ? POps.iconHtml('check', 'sm') : Number(n)}</span>`
+            + `<div class="grow"><div class="t">${escapeHtml(title)}${st === 'done' ? `<span class="sr-only"> · ${POps.tHtml('Tamamlandı')}</span>` : ''}</div>${bodyHtml}`
+            + `${actsHtml ? `<div class="acts">${actsHtml}</div>` : ''}</div></div>`;
     }
     let agHash = '';
     function renderAgents(force) {
-        if (!S.ver) return;
+        if (!S.ver || !$('agSteps')) return;
         const A = agentInfo();
         const v = A.v;
         // Güncellemesi süren eski ajan (gönderildi, sonucu gelmedi): kurulumda servisi durur; "kapalı" değil "güncelleniyor"
@@ -882,25 +926,31 @@
         const sig = JSON.stringify([v.staged_version, v.latest, v.release_available, v.checked_github, v.update_peer_cache, S.fetching, A.all.map(d => [d.hostname, dev.version(d), d.status]), [...upd]]);
         if (!force && sig === agHash) return;
         agHash = sig;
-        // Durum
         let k, word;
         if (v.release_available) { k = 'run'; word = POps.t('Yeni paket: {version}', { version: fmtV(v.latest) }); }
         else if (!A.staged) { k = 'off'; word = POps.t('Paket yok'); }
         else if (A.old.length) { k = 'run'; word = POps.tn('{n} eski ajan', A.old.length); }
         else { k = 'ok'; word = POps.t('Hepsi güncel'); }
         setState('agState', k, word);
-        // Paket satırı
+        $('agVers').innerHTML = versionsHtml(A);
+
+        // 1. Ajan paketi
         let pkgD;
         if (S.fetching) pkgD = POps.t("GitHub'dan indiriliyor ve imzası doğrulanıyor…");
         else if (!A.staged) pkgD = v.latest ? POps.t("Henüz paket yok. GitHub'da {version} var.", { version: fmtV(v.latest) }) : (v.checked_github ? POps.t('Henüz paket yok.') : POps.t("Henüz paket yok; GitHub'a ulaşılamadı."));
         else pkgD = POps.t('İmzası doğrulandı.') + (v.release_available ? ' ' + POps.t("GitHub'da daha yeni {version} var.", { version: fmtV(v.latest) }) : v.latest ? ' ' + POps.t("GitHub'daki son sürümle aynı.") : '');
-        const fetchHtml = IS_SUPER && v.release_available ? `<button type="button" class="btn secondary" data-act="fetch">${POps.iconHtml('download', 'sm')}${POps.tHtml('{version} paketini indir', { version: fmtV(v.latest) })}</button>` : '';
-        const pkgMoreHtml = `<button type="button" class="ibtn sm" data-act="pkgmore" data-tip="${escapeHtml(POps.t('Paket işlemleri'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Paket işlemleri'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>`;
-        // Güncelleme satırı
-        let upT, upD, upBtn = '';
+        const pkgHtml = `<div class="d">${A.staged ? `<b class="mono">${escapeHtml(fmtV(A.staged))}</b> · ` : ''}${escapeHtml(pkgD)}</div>`;
+        const pkgActsHtml = IS_SUPER ? (v.release_available ? `<button type="button" class="btn" data-act="fetch">${POps.iconHtml('download', 'sm')}${POps.tHtml('{version} paketini indir', { version: fmtV(v.latest) })}</button>` : '')
+            + `<button type="button" class="btn secondary" data-act="upload">${POps.iconHtml('upload', 'sm')}${POps.tHtml('Paketi elle yükle')}</button>` : '';
+
+        // 2. Gönderim
+        let upT, upD, upActsHtml = '';
         const offOld = A.old.length - onIdle - oldUpd;
-        if (!A.staged) { upT = POps.t('Ajan güncellemesi'); upD = POps.t('Önce ajan paketini indirin.'); }
-        else if (v.release_available) { upT = POps.tn('{n} ajan {version} sürümünde değil', A.old.length, { version: fmtV(A.staged) }); upD = POps.t('Gönderilecek paket {staged}; önce {latest} paketini indirin.', { staged: fmtV(A.staged), latest: fmtV(v.latest) }); }
+        if (!A.staged) { upT = ''; upD = POps.t('Önce ajan paketini indirin.'); }
+        else if (v.release_available) {
+            upT = A.old.length ? POps.tn('{n} ajan {version} sürümünde değil', A.old.length, { version: fmtV(A.staged) }) : POps.t('Bütün ajanlar {version} sürümünde', { version: fmtV(A.staged) });
+            upD = POps.t('Gönderilecek paket {staged}; önce {latest} paketini indirin.', { staged: fmtV(A.staged), latest: fmtV(v.latest) });
+        }
         else if (!A.old.length) { upT = POps.t('Bütün ajanlar {version} sürümünde', { version: fmtV(A.staged) }); upD = POps.t('Gönderilecek güncelleme yok.'); }
         else {
             upT = POps.tn('{n} eski ajan', A.old.length);
@@ -909,14 +959,18 @@
             if (offOld && onIdle) parts.push(POps.t('{on} açık, {off} kapalı (kapalılar açılınca gönderilebilir).', { on: onIdle, off: offOld }));
             else if (onIdle) parts.push(POps.tn('{n} açık.', onIdle));
             else if (offOld) parts.push(oldUpd ? POps.tn('{n} kapalı.', offOld) : POps.t('Hepsi kapalı.'));
-            upD = parts.join(' ') + ' ' + POps.t('Yeni sürüm açılmazsa ajan önceki sürüme kendiliğinden döner.');
-            if (IS_SUPER) upBtn = `<button type="button" class="btn" data-act="deploy-old" ${onIdle ? '' : 'disabled'}>${POps.iconHtml('arrow-up', 'sm')}${POps.tnHtml('{n} eski ajanı güncelle', onIdle)}</button>`;
+            upT += ' · ' + parts.join(' ');
+            upD = POps.t('Yeni sürüm açılmazsa ajan önceki sürüme kendiliğinden döner.');
+            if (IS_SUPER) upActsHtml = `<button type="button" class="btn" data-act="deploy-old" ${onIdle ? '' : 'disabled'}>${POps.iconHtml('arrow-up', 'sm')}${POps.tnHtml('{n} eski ajanı güncelle', onIdle)}</button>`;
         }
-        const upMoreHtml = IS_SUPER && A.staged && !v.release_available ? `<button type="button" class="ibtn sm" data-act="upmore" data-tip="${escapeHtml(POps.t('Hedef seç'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Başka hedefe gönder'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>` : '';
-        $('agSet').innerHTML = `<div class="srow block"><div style="display:flex;justify-content:space-between;gap:12px"><div class="t">${POps.tHtml('Sürüm dağılımı')}</div><div class="v">${POps.tnHtml('{n} ajan', A.all.length)}</div></div>${distHtml(A)}</div>
-            <div class="srow"><div class="grow"><div class="t">${A.staged ? POps.tHtml('Ajan paketi {version}', { version: fmtV(A.staged) }) : POps.tHtml('Ajan paketi')}</div><div class="d">${escapeHtml(pkgD)}</div></div><div class="acts">${fetchHtml}${IS_SUPER ? pkgMoreHtml : ''}</div></div>
-            <div class="srow"><div class="grow"><div class="t">${escapeHtml(upT)}</div><div class="d">${escapeHtml(upD)}</div></div><div class="acts">${upBtn}${upMoreHtml}</div></div>${peerRowHtml(v)}`;
-        if (S.fetching) { const fb = $('agSet').querySelector('[data-act="fetch"]'); if (fb) { fb.disabled = true; fb.classList.add('is-loading'); } }
+        if (IS_SUPER && A.staged && !v.release_available) upActsHtml += `<button type="button" class="btn secondary" data-act="target" aria-haspopup="menu">${POps.iconHtml('labs', 'sm')}${POps.tHtml('Hedef seç')}</button>`;
+        const s1 = !S.fetching && A.staged && !v.release_available ? 'done' : '';
+        const s2 = !A.staged || v.release_available ? 'off' : !A.old.length ? 'done' : '';
+        $('agSteps').innerHTML = stepHtml(1, s1, POps.t('Ajan paketini hazırla'), pkgHtml, pkgActsHtml)
+            + stepHtml(2, s2, POps.t('Ajanları güncelle'), (upT ? `<div class="d">${escapeHtml(upT)}</div>` : '') + `<div class="d">${escapeHtml(upD)}</div>`, upActsHtml)
+            + peerRowHtml(v);
+        if (S.fetching) { const fb = $('agSteps').querySelector('[data-act="fetch"]'); if (fb) { fb.disabled = true; fb.classList.add('is-loading'); } }
+        if (VD.ver !== null && POps.drawer.isOpen('sysv:' + VD.ver)) renderVersion(VD.ver);
     }
 
     // Sınıf içi eş önbelleği (ajan 0.1.23+ peer_cache): sınıfta önce bir bilgisayar (tohum) güncellenir, diğerleri
@@ -924,44 +978,83 @@
     function peerRowHtml(v) {
         if (!IS_SUPER || typeof v.update_peer_cache !== 'boolean') return '';
         const on = v.update_peer_cache;
-        return `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Sınıf içinde eşten dağıt')}</div><div class="d">${POps.tHtml(on ? 'Her sınıfta önce bir bilgisayar paketi sunucudan indirir, diğerleri onun güncellemesi bitince paketi yerel ağdan alır. Paketin imzası ve özeti her bilgisayarda yine doğrulanır.' : 'Kapalı: bütün bilgisayarlar paketi sunucudan aynı anda indirir.')}</div></div>
+        return `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Sınıf içinde eşten dağıt')}</div><div class="d">${POps.tHtml(on ? 'Sınıfta önce bir bilgisayar indirir, diğerleri paketi ondan alır; imza her bilgisayarda doğrulanır.' : 'Kapalı: bütün bilgisayarlar paketi sunucudan aynı anda indirir.')}</div></div>
                 <label class="switch"><input type="checkbox" id="peerSw" ${on ? 'checked' : ''} aria-label="${escapeHtml(POps.t('Sınıf içinde eşten dağıt'))}"><span></span></label></div>`;
     }
-    $('agSet').addEventListener('change', async (e) => {
-        if (e.target.id !== 'peerSw') return;
-        const sw = e.target, turnOn = sw.checked;
-        try {
-            const d = await POps.busy(sw, () => POps.post('/api/system/update-peer-cache', { enabled: turnOn }));
-            S.ver.update_peer_cache = d.update_peer_cache;
-            POps.toast('success', POps.t(d.update_peer_cache ? 'Eşten dağıtım açıldı.' : 'Eşten dağıtım kapatıldı; bekleyen bilgisayarlara güncelleme gönderildi.'));
-        } catch (err) { sw.checked = !turnOn; POps.toast('error', POps.errorMessage(err)); }
-        renderAgents(true);
-    });
-
-    $('agSet').addEventListener('click', (e) => {
-        const b = e.target.closest('[data-act]');
-        if (!b || b.disabled) return;
-        const A = agentInfo();
-        switch (b.dataset.act) {
-            case 'fetch': fetchRelease(); break;
-            case 'deploy-old': {
-                // Güncellemesi sürenlere yeniden gönderilmez
-                const upd = updatingPcs();
-                const idle = A.oldOn.filter(d => !upd.has(d.hostname));
-                deploy(idle.map(d => d.hostname), b, A.old.length - idle.length);
-                break;
+    if ($('agSteps')) {
+        $('agSteps').addEventListener('change', async (e) => {
+            if (e.target.id !== 'peerSw') return;
+            const sw = e.target, turnOn = sw.checked;
+            try {
+                const d = await POps.busy(sw, () => POps.post('/api/system/update-peer-cache', { enabled: turnOn }));
+                S.ver.update_peer_cache = d.update_peer_cache;
+                POps.toast('success', POps.t(d.update_peer_cache ? 'Eşten dağıtım açıldı.' : 'Eşten dağıtım kapatıldı; bekleyen bilgisayarlara güncelleme gönderildi.'));
+            } catch (err) { sw.checked = !turnOn; POps.toast('error', POps.errorMessage(err)); }
+            renderAgents(true);
+        });
+        $('agSteps').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-act]');
+            if (!b || b.disabled) return;
+            const A = agentInfo();
+            switch (b.dataset.act) {
+                case 'fetch': fetchRelease(); break;
+                case 'upload': openModal('uploadModal'); break;
+                case 'deploy-old': {
+                    // Güncellemesi sürenlere yeniden gönderilmez
+                    const upd = updatingPcs();
+                    const idle = A.oldOn.filter(d => !upd.has(d.hostname));
+                    deploy(idle.map(d => d.hostname), b, A.old.length - idle.length);
+                    break;
+                }
+                case 'target': POps.menu(b, [
+                    { header: POps.t('{version} nereye gönderilsin?', { version: fmtV(A.staged) }) },
+                    { label: POps.t('Bir sınıfa…'), icon: 'labs', onClick: () => openTarget('lab') },
+                    { label: POps.t('Seçili bilgisayarlara…'), icon: 'monitor', onClick: () => openTarget('pc') }
+                ]); break;
             }
-            case 'pkgmore': POps.menu(b, [
-                { label: POps.t('Paketi elle yükle…'), icon: 'upload', onClick: () => openModal('uploadModal') },
-                { label: POps.t('Sürüm notları'), icon: 'file', onClick: openNotes }
-            ]); break;
-            case 'upmore': POps.menu(b, [
-                { header: POps.t('{version} nereye gönderilsin?', { version: fmtV(A.staged) }) },
-                { label: POps.t('Bir sınıfa…'), icon: 'labs', onClick: () => openTarget('lab') },
-                { label: POps.t('Seçili bilgisayarlara…'), icon: 'monitor', onClick: () => openTarget('pc') }
-            ]); break;
-        }
-    });
+        });
+        $('agVers').addEventListener('click', (e) => { const r = e.target.closest('[data-ver]'); if (r) openVersion(r.dataset.ver); });
+        keyClick($('agVers'), '[data-ver]');
+    }
+
+    // ---- Bir sürümdeki bilgisayarlar (sağdaki panel): bilgisayar sayfasına bağlantı, eskiyse açıkları güncelle
+    const VD = { ver: null };
+    function verPcs(ver) {
+        return devs().filter(d => normV(dev.version(d)) === ver)
+            .sort((a, b) => (isOn(b) - isOn(a)) || POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
+    }
+    function renderVersion(ver) {
+        const body = POps.drawer.body();
+        const A = agentInfo();
+        const list = verPcs(ver);
+        const old = verOld(ver, A.target);
+        const upd = updatingPcs();
+        const sendable = list.filter(d => isOn(d) && !upd.has(d.hostname) && normV(dev.version(d)) !== normV(A.staged));
+        const canSend = IS_SUPER && old && A.staged && !A.v.release_available;
+        const label = ver ? fmtV(ver) : POps.t('Bilinmiyor');
+        const subHtml = POps.tnHtml('{n} bilgisayar', list.length) + ' · ' + (!ver ? POps.tHtml('bilinmiyor') : old ? POps.tHtml('eski') : POps.tHtml('güncel'));
+        const rowsHtml = list.map(d => {
+            const st = dev.state(d);
+            const lab = d.lab && d.lab !== dev.UNASSIGNED ? d.lab : POps.t('Atanmamış');
+            return `<a class="srow click" href="pc?id=${encodeURIComponent(d.hostname)}"><span class="dot ${escapeHtml(st.cls)}"></span><div class="grow"><div class="t">${escapeHtml(POps.deviceName(d))}</div><div class="d">${escapeHtml(lab)} · ${escapeHtml(st.word)}</div></div>`
+                + `${upd.has(d.hostname) ? wordHtml('run', POps.t('Güncelleniyor')) : ''}${POps.iconHtml('right', 'sm ico-lead')}</a>`;
+        }).join('');
+        body.innerHTML = drawerHeadHtml(label, subHtml, 'monitor', '')
+            + (canSend ? `<div class="dr-actions"><button type="button" class="btn" data-act="ver-send" ${sendable.length ? '' : 'disabled'}>${POps.iconHtml('arrow-up', 'sm')}${sendable.length ? POps.tnHtml('{n} açık bilgisayarı {version} sürümüne güncelle', sendable.length, { version: fmtV(A.staged) }) : POps.tHtml('Açık bilgisayar yok')}</button></div>` : '')
+            + (rowsHtml ? `<div class="set dr-pcs">${rowsHtml}</div>` : `<div class="dr-note">${POps.tHtml('Bu sürümde bilgisayar kalmadı.')}</div>`);
+    }
+    function openVersion(ver) {
+        openDrawer('sysv:' + ver, async (b) => {
+            if (b.dataset.act !== 'ver-send') return;
+            const A = agentInfo();
+            const upd = updatingPcs();
+            const list = verPcs(VD.ver);
+            const hosts = list.filter(d => isOn(d) && !upd.has(d.hostname) && normV(dev.version(d)) !== normV(A.staged)).map(d => d.hostname);
+            if (await deploy(hosts, b, list.length - hosts.length)) POps.drawer.close();
+        }, () => { VD.ver = null; });
+        VD.ver = ver;
+        renderVersion(ver);
+    }
 
     async function fetchRelease() {
         const tag = (S.ver && S.ver.latest) || null;
@@ -982,7 +1075,7 @@
         $('upList').innerHTML = chosen.map(f => `<li>${escapeHtml(f.name)} <span>${Math.round(f.size / 1024)} KB</span></li>`).join('');
         $('upBtn').disabled = !chosen.length;
     }
-    if (IS_SUPER) {
+    if ($('uploadModal')) {
         const uz = $('uz');
         $('upFiles').addEventListener('change', (e) => { chosen = Array.from(e.target.files); renderFiles(); });
         ['dragover', 'dragenter'].forEach(ev => uz.addEventListener(ev, (e) => { e.preventDefault(); uz.classList.add('dragover'); }));
@@ -1168,6 +1261,7 @@
     }
     function renderRollout() {
         const box = $('rollout');
+        if (!box) return;
         if (!rollout) { box.hidden = true; box.innerHTML = ''; return; }
         box.hidden = false;
         const c = rCounts();
@@ -1186,7 +1280,7 @@
             const icon = s.k === 'ok' ? 'check' : s.k === 'bad' ? 'x' : s.k === 'warn' ? 'alert' : 'clock';
             const metaRow = [d && d.lab && d.lab !== dev.UNASSIGNED ? d.lab : '', it.version ? POps.t('çalışan {version}', { version: fmtV(it.version) }) : ''].filter(Boolean).join(' · ');
             return `<div class="act"><div class="res ${escapeHtml(s.k)}">${POps.iconHtml(icon)}</div>
-                <div style="min-width:0"><div class="what">${escapeHtml(dev.name(it.pc))}</div><div class="meta">${escapeHtml(metaRow || it.pc)}</div>
+                <div style="min-width:0"><div class="what"><a href="pc?id=${encodeURIComponent(it.pc)}">${escapeHtml(dev.name(it.pc))}</a></div><div class="meta">${escapeHtml(metaRow || it.pc)}</div>
                 ${s.note ? `<div class="note">${escapeHtml(s.note)}</div>` : ''}
                 ${s.why ? `<div class="why${s.k === 'warn' ? ' warn' : ''}">${escapeHtml(s.why)}</div>` : ''}</div>
                 <div class="side">${wordHtml(s.k, s.w)}${s.at ? `<span class="when">${POps.timeHtml(s.at)}</span>` : ''}</div></div>`;
@@ -1194,13 +1288,13 @@
         box.innerHTML = `<div class="ro-head"><div class="res ${escapeHtml(k)}" style="width:28px;height:28px;border-radius:99px;display:flex;align-items:center;justify-content:center">${running ? '<span class="spinner sm"></span>' : POps.iconHtml(k === 'ok' ? 'check' : 'alert', 'sm')}</div>
                 <div class="grow"><div class="t" style="font-weight:var(--fw-medium)">${POps.tHtml('{version} gönderimi', { version: fmtV(rollout.version) })}</div><div class="d" style="font-size:var(--text-xs);color:var(--text-muted)">${metaHtml}</div></div>
                 <span class="cnt"><b>${Number(done)}</b>/${Number(c.total)}</span>${wordHtml(k, word)}
-                <button type="button" class="ibtn sm" data-act="ro-close" data-tip="${escapeHtml(POps.t(running ? 'İzlemeyi bırak' : 'Kapat'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t(running ? 'İzlemeyi bırak' : 'Kapat'))}">${POps.iconHtml('x', 'sm')}</button></div>
+                <button type="button" class="btn ghost sm" data-act="ro-close">${POps.iconHtml('x', 'sm')}${escapeHtml(POps.t(running ? 'İzlemeyi bırak' : 'Kapat'))}</button></div>
             <div class="ro-bar"><div class="pbar">${seg('ok', c.ok)}${seg('warn', c.warn)}${seg('bad', c.bad)}${seg('run', c.run)}</div>${rErr ? `<div class="dr-note" style="margin-top:6px">${POps.tHtml('İlerleme okunamadı: {error}', { error: POps.errorMessage(rErr) })}</div>` : ''}</div>
             ${peerLabsHtml()}
             <div class="ro-list">${rowsHtml}</div>
             ${items.length > 6 ? `<div class="ro-more"><button type="button" class="lnk" data-act="ro-all">${rShowAll ? POps.tHtml('Daha az göster') : POps.tHtml('Tümünü göster ({n})', { n: items.length })}</button></div>` : ''}`;
     }
-    $('rollout').addEventListener('click', (e) => {
+    if ($('rollout')) $('rollout').addEventListener('click', (e) => {
         const b = e.target.closest('[data-act]');
         if (!b) return;
         if (b.dataset.act === 'ro-all') { rShowAll = !rShowAll; renderRollout(); }
@@ -1246,8 +1340,10 @@
         (d.tls || []).filter(x => x.level === 'high' || x.level === 'critical').slice(0, 1).forEach(() => out.push(POps.t('Sertifika bitiyor')));
         return out;
     }
-    function statHtml(label, val, subHtml, warn) {
-        return `<div class="hstat"><div class="l">${warn ? '<span class="dot warn"></span>' : ''}${escapeHtml(label)}</div><div class="val">${escapeHtml(String(val))}</div><div class="s">${subHtml}</div></div>`;
+    // Sağlık denetimi satırı: durum noktası, ad, ayrıntı ve sağda değer ya da durum sözcüğü
+    function checkHtml(k, title, dHtml, sideHtml, act) {
+        const openHtml = act ? `<div class="srow click" data-act="${escapeHtml(act)}" role="button" tabindex="0">` : '<div class="srow">';
+        return `${openHtml}<span class="dot ${escapeHtml(k)}"></span><div class="grow"><div class="t">${escapeHtml(title)}</div><div class="d">${dHtml}</div></div>${sideHtml}${act ? POps.iconHtml('right', 'sm ico-lead') : ''}</div>`;
     }
     function renderHealth() {
         const box = $('hlBody');
@@ -1263,26 +1359,26 @@
         const pool = d.db_pool || {};
         const dv = d.devices || {};
         const disk = (d.disk || []).slice().sort((a, b) => a.free_percent - b.free_percent)[0];
-        const tiles = [
-            statHtml(POps.t('Açık kalma'), POps.duration(d.uptime_seconds), POps.tHtml('Bellek {size}', { size: d.rss_mb != null ? d.rss_mb + ' MB' : '—' })),
-            statHtml(POps.t('Bağlı ajan'), fmtNum(d.agents_connected), POps.tHtml('{online} çevrimiçi / {total} kayıtlı', { online: fmtNum(dv.online), total: fmtNum(dv.total) })),
-            statHtml(POps.t('Veritabanı'), `${(pool.size || 0) - (pool.idle || 0)} / ${pool.max || '—'}`, POps.tHtml('kullanımda / en çok')),
-            statHtml(POps.t('Hata'), fmtNum(errs), POps.tHtml('{errors} sunucu hatası, {warnings} uyarı', { errors: fmtNum(d.http_5xx), warnings: fmtNum(lc.WARNING) }), errs > 0),
-            statHtml(POps.t('Zamanlayıcı'), tick === null || tick === undefined ? POps.t('Başlamadı') : ago(tick), tickBad ? POps.tHtml('30 sn’de bir çalışmalı') : POps.tHtml('son tur'), tickBad),
-            disk ? statHtml(POps.t('Disk'), POps.t('{pct} boş', { pct: POps.pct(disk.free_percent) }), escapeHtml(`${fmtBytes(disk.free_bytes)} / ${fmtBytes(disk.total_bytes)}`), disk.level !== 'ok')
-                 : statHtml(POps.t('Uzak ekran oturumu'), fmtNum(d.vision_sessions), POps.tnHtml('{n} açık panel', Number(d.panels_connected) || 0))
-        ].join('');
+        const recent = (d.recent_errors || []).length;
         const tlsHtml = (d.tls || []).map(c => {
             const k = c.level === 'ok' ? 'ok' : c.level === 'unknown' ? 'off' : c.level === 'critical' ? 'bad' : 'warn';
             const w = c.level === 'unknown' ? POps.t('Okunamadı') : POps.tn('{n} gün kaldı', Math.floor(c.days_left));
-            return `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Sertifika')}</div><div class="d">${escapeHtml(c.name)}${c.not_after ? ' · ' + POps.tHtml('bitiş {time}', null, { time: POps.timeHtml(c.not_after) }) : ''}</div></div>${wordHtml(k, w)}</div>`;
+            return checkHtml(k, POps.t('Sertifika'), escapeHtml(c.name) + (c.not_after ? ' · ' + POps.tHtml('bitiş {time}', null, { time: POps.timeHtml(c.not_after) }) : ''), wordHtml(k, w));
         }).join('');
-        const errList = d.recent_errors || [];
-        box.innerHTML = `<div class="hstats">${tiles}</div>
-            <div class="set">${tlsHtml}
-                <div class="srow click" data-act="errors" role="button" tabindex="0"><div class="grow"><div class="t">${POps.tHtml('Son hatalar')}</div><div class="d">${errList.length ? POps.tHtml('Sorun bildirirken istek kimliğini verin.') : POps.tHtml('Sunucu açıldığından beri hata yok.')}</div></div><span class="v">${Number(errList.length)}</span>${POps.iconHtml('right', 'sm ico-lead')}</div>
-                <div class="srow click" data-act="tech" role="button" tabindex="0"><div class="grow"><div class="t">${POps.tHtml('Teknik ayrıntılar')}</div><div class="d">${POps.tHtml('Yük, yavaş istekler, disk ve izleme.')}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>
-            </div>`;
+        const rowsHtml = [
+            checkHtml('ok', POps.t('Sunucu'), POps.tHtml('{time} açık', { time: POps.duration(d.uptime_seconds) }) + ' · ' + POps.tHtml('Bellek {size}', { size: d.rss_mb != null ? d.rss_mb + ' MB' : '—' }), wordHtml('ok', POps.t('Çalışıyor'))),
+            `<a class="srow click" href="labs"><span class="dot ${Number(d.agents_connected) ? 'ok' : 'off'}"></span><div class="grow"><div class="t">${POps.tHtml('Bağlı ajan')}</div><div class="d">${POps.tHtml('{online} çevrimiçi / {total} kayıtlı', { online: fmtNum(dv.online), total: fmtNum(dv.total) })}</div></div><span class="v">${escapeHtml(fmtNum(d.agents_connected))}</span>${POps.iconHtml('right', 'sm ico-lead')}</a>`,
+            checkHtml('ok', POps.t('Veritabanı'), POps.tHtml('Bağlantı: kullanımda / en çok'), `<span class="v">${escapeHtml(`${(pool.size || 0) - (pool.idle || 0)} / ${pool.max || '—'}`)}</span>`),
+            checkHtml(errs ? 'bad' : 'ok', POps.t('Hatalar'), POps.tHtml('{errors} sunucu hatası, {warnings} uyarı', { errors: fmtNum(d.http_5xx), warnings: fmtNum(lc.WARNING) }) + (recent ? ' · ' + POps.tHtml('Sorun bildirirken istek kimliğini verin.') : ''),
+                errs ? wordHtml('bad', POps.tn('{n} hata', errs)) : wordHtml('ok', POps.t('Hata yok')), 'errors'),
+            checkHtml(tickBad ? 'bad' : 'ok', POps.t('Zamanlayıcı'), tickBad ? POps.tHtml('30 sn’de bir çalışmalı') : POps.tHtml('Son tur {time}', { time: ago(tick) }),
+                tickBad ? wordHtml('bad', tick === null || tick === undefined ? POps.t('Başlamadı') : POps.t('Zamanlayıcı durdu')) : wordHtml('ok', POps.t('Çalışıyor'))),
+            disk ? checkHtml(disk.level !== 'ok' ? 'warn' : 'ok', POps.t('Disk'), escapeHtml(`${fmtBytes(disk.free_bytes)} / ${fmtBytes(disk.total_bytes)}`),
+                wordHtml(disk.level !== 'ok' ? 'warn' : 'ok', POps.t('{pct} boş', { pct: POps.pct(disk.free_percent) }))) : '',
+            tlsHtml,
+            `<div class="srow click" data-act="tech" role="button" tabindex="0"><span class="dot none"></span><div class="grow"><div class="t">${POps.tHtml('Teknik ayrıntılar')}</div><div class="d">${POps.tHtml('Yük, yavaş istekler, disk ve izleme.')}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>`
+        ].join('');
+        box.innerHTML = rowsHtml;
     }
     function renderBackup() {
         const box = $('bkSet');
@@ -1294,31 +1390,28 @@
         const K = { ok: ['ok', 'Tamam'], old: ['warn', '2 günden eski'], failed: ['bad', 'Başarısız'], none: ['bad', 'Yedek yok'] }[st];
         const kWord = POps.t(K[1]);
         setState('bkState', K[0], kWord);
-        let rowHtml;
         if (st === 'none') {
-            rowHtml = `<div class="act"><div class="res bad">${POps.iconHtml('x')}</div><div style="min-width:0"><div class="what">${POps.tHtml('Henüz yedek alınmadı')}</div><div class="meta">${POps.tHtml('Gece yedeği kurulu değil.')}</div><div class="why">${POps.tHtml('Veritabanı yedeklenmiyor. Kurulum için docs/backup.md (pops-backup.timer).')}</div></div><div class="side">${wordHtml('bad', kWord)}</div></div>`;
-        } else {
-            const metaHtml = POps.timeHtml(b.at) + (b.bytes ? ' · ' + escapeHtml(fmtBytes(b.bytes)) : '') + (b.verified ? ' · ' + POps.tHtml('geri yükleme sınandı') : '');
-            const whyHtml = st === 'failed' ? `<div class="why">${escapeHtml(b.message || POps.t('Yedek alınamadı ya da geri yükleme sınaması geçmedi.'))}</div>` : st === 'old' ? '<div class="why warn">' + POps.tHtml('Son başarılı yedek 2 günden eski; gece yedeği çalışmıyor olabilir.') + '</div>' : '';
-            rowHtml = `<div class="act"><div class="res ${escapeHtml(K[0])}">${POps.iconHtml(st === 'ok' ? 'check' : st === 'old' ? 'clock' : 'x')}</div><div style="min-width:0"><div class="what">${POps.tHtml('Son veritabanı yedeği')}</div><div class="meta">${metaHtml}</div>${whyHtml}</div><div class="side">${wordHtml(K[0], kWord)}</div></div>`;
+            box.innerHTML = `<div class="act"><div class="res bad">${POps.iconHtml('x')}</div><div style="min-width:0"><div class="what">${POps.tHtml('Henüz yedek alınmadı')}</div><div class="meta">${POps.tHtml('Gece yedeği kurulu değil.')}</div><div class="why">${POps.tHtml('Veritabanı yedeklenmiyor. Kurulum için docs/backup.md (pops-backup.timer).')}</div></div><div class="side">${wordHtml('bad', kWord)}</div></div>`;
+            return;
         }
-        box.innerHTML = rowHtml + '<div class="srow"><div class="grow"><div class="d">' + POps.tHtml('Yedek her gece alınır ve geri yüklenerek sınanır. Yalnızca son yedeğin sonucu tutulur.') + '</div></div></div>';
+        const metaHtml = POps.timeHtml(b.at) + (b.bytes ? ' · ' + escapeHtml(fmtBytes(b.bytes)) : '') + (b.verified ? ' · ' + POps.tHtml('geri yükleme sınandı') : '');
+        const whyHtml = st === 'failed' ? `<div class="why">${escapeHtml(b.message || POps.t('Yedek alınamadı ya da geri yükleme sınaması geçmedi.'))}</div>` : st === 'old' ? '<div class="why warn">' + POps.tHtml('Son başarılı yedek 2 günden eski; gece yedeği çalışmıyor olabilir.') + '</div>' : '';
+        box.innerHTML = `<div class="act"><div class="res ${escapeHtml(K[0])}">${POps.iconHtml(st === 'ok' ? 'check' : st === 'old' ? 'clock' : 'x')}</div><div style="min-width:0"><div class="what">${POps.tHtml('Son veritabanı yedeği')}</div><div class="meta">${metaHtml}</div>${whyHtml}</div><div class="side">${wordHtml(K[0], kWord)}</div></div>`;
     }
     async function loadDiag() {
-        if (!IS_SUPER) return;
+        if (!IS_SUPER || !$('hlBody')) return;
         try { S.diag = await POps.get('/api/system/diagnostics'); S.diagErr = null; }
         catch (e) { S.diagErr = e; }
         renderHealth(); renderBackup(); renderSummary();
     }
-    if ($('hlBody')) $('hlBody').addEventListener('click', (e) => {
-        const r = e.target.closest('[data-act]');
-        if (!r) return;
-        if (r.dataset.act === 'errors') openErrors(); else if (r.dataset.act === 'tech') openTech();
-    });
-    if ($('hlBody')) $('hlBody').addEventListener('keydown', (e) => {
-        const r = e.target.closest('.srow.click[data-act]');
-        if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); r.click(); }
-    });
+    if ($('hlBody')) {
+        $('hlBody').addEventListener('click', (e) => {
+            const r = e.target.closest('[data-act]');
+            if (!r) return;
+            if (r.dataset.act === 'errors') openErrors(); else if (r.dataset.act === 'tech') openTech();
+        });
+        keyClick($('hlBody'), '.srow.click[data-act]');
+    }
     function openErrors() {
         const list = (S.diag && S.diag.recent_errors) || [];
         const body = openDrawer('syse:errors', () => {});
@@ -1363,7 +1456,7 @@
                 ${r.ok ? '' : `<div class="why">${POps.tHtml('#{id} numaralı kayıtta zincir kopuyor: bu kayıt ya da öncesi değiştirilmiş veya silinmiş. Veritabanı yedeğiyle karşılaştırın.', { id: r.first_broken_id })}</div>`}</div><div class="side">${wordHtml(k, w)}</div></div>`;
         }
         setState('auState', k, w);
-        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Denetim zinciri')}</div><div class="d">${POps.tHtml('Yönetici işlemleri ve güncelleme sonuçları birbirine bağlı kaydedilir; silinen ya da değiştirilen kayıt zinciri bozar.')}</div></div>
+        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Denetim zinciri')}</div><div class="d">${POps.tHtml('Silinen ya da değiştirilen kayıt zinciri bozar.')}</div></div>
             <button type="button" class="btn secondary" id="auVerify">${POps.iconHtml('shield', 'sm')}${POps.tHtml('Doğrula')}</button></div>${resHtml}`;
         $('auVerify').addEventListener('click', async function () {
             try {
@@ -1378,46 +1471,57 @@
     // =================================================================
     // CİHAZ YETENEKLERİ (uzak komut / uzak ekran kalıcı kapatma)
     // =================================================================
+    // Kalıcı kapatılabilen yetenekler: cihaz listesindeki alanlar, set-capabilities alanı ve geri açan MSI bayrağı
+    const CAPS = {
+        terminal: { en: 'cap_terminal_enabled', req: 'cap_terminal_disable_requested', field: 'terminal_enabled', flag: 'TERMINAL_ENABLED=1' },
+        vision: { en: 'cap_vision_enabled', req: 'cap_vision_disable_requested', field: 'vision_enabled', flag: 'VISION_ENABLED=1' },
+        files: { en: 'cap_files_enabled', req: 'cap_files_disable_requested', field: 'files_enabled', flag: 'FILES_ENABLED=1' }
+    };
+    const capName = (which) => which === 'terminal' ? POps.t('Uzak komut') : which === 'vision' ? POps.t('Uzak ekran') : POps.t('Dosya aktarımı');
+    const capOffName = (which) => which === 'terminal' ? POps.t('Uzak komut kapalı') : which === 'vision' ? POps.t('Uzak ekran kapalı') : POps.t('Dosya aktarımı kapalı');
+    const capEnabled = (d, which) => d[CAPS[which].en];
+    const capRequested = (d, which) => !!d[CAPS[which].req];
+    const capLimited = (d) => Object.keys(CAPS).some(w => capEnabled(d, w) === false || capRequested(d, w));
     // Kapalı|switch: bir özelliğin kapalı olması (düz "Kapalı" cihazın çevrimdışı olmasıdır)
-    function capWord(enabled, requested) {
+    function capWord(enabled, requested, which) {
         if (requested) return { k: 'bad', w: POps.tx('Kapalı', 'switch'), how: POps.t('Panelden kalıcı kapatıldı') };
         if (enabled === false) return { k: 'bad', w: POps.tx('Kapalı', 'switch'), how: POps.t('Kurulumda kapatılmış') };
         if (enabled === true) return { k: 'ok', w: POps.t('Açık'), how: '' };
+        if (which === 'files') return { k: 'off', w: POps.t('Bildirilmedi'), how: POps.t('Bu ajan dosya aktarımını desteklemiyor') };
         return { k: 'off', w: POps.t('Bildirilmedi'), how: POps.t('Ajan bu bilgiyi göndermiyor (0.1.4 öncesi)') };
     }
     let capHash = '';
     function renderCaps(force) {
         const box = $('capSet');
         if (!box || !state.devicesLoaded) return;
-        const list = devs().filter(d => d.cap_terminal_enabled === false || d.cap_vision_enabled === false || d.cap_terminal_disable_requested || d.cap_vision_disable_requested)
+        const list = devs().filter(capLimited)
             .sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
-        const sig = JSON.stringify([devs().map(d => [d.hostname, POps.deviceName(d), d.status]), list.map(d => [d.hostname, d.cap_terminal_enabled, d.cap_vision_enabled, d.cap_terminal_disable_requested, d.cap_vision_disable_requested])]);
+        const sig = JSON.stringify([devs().map(d => [d.hostname, POps.deviceName(d), d.status]), list.map(d => [d.hostname, ...Object.keys(CAPS).map(w => [capEnabled(d, w), capRequested(d, w)])])]);
         if (!force && sig === capHash) return;
         capHash = sig;
         setState('capState', list.length ? 'off' : 'ok', list.length ? POps.tn('{n} bilgisayarda kısıtlı', list.length) : POps.t('Hepsinde açık'));
         const opts = devs().slice().sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }))
             .map(d => `<option value="${escapeHtml(d.hostname)}">${escapeHtml(POps.deviceName(d))}${d.lab && d.lab !== dev.UNASSIGNED ? ' · ' + escapeHtml(d.lab) : ''}</option>`).join('');
         const rowsHtml = list.map(d => {
-            const t = capWord(d.cap_terminal_enabled, d.cap_terminal_disable_requested), v = capWord(d.cap_vision_enabled, d.cap_vision_disable_requested);
-            const parts = [t.k === 'bad' ? POps.t('Uzak komut kapalı') : '', v.k === 'bad' ? POps.t('Uzak ekran kapalı') : ''].filter(Boolean).join(' · ');
-            const what = d.cap_terminal_disable_requested || d.cap_vision_disable_requested ? POps.t('{what} (panelden)', { what: parts }) : POps.t('{what} (kurulumda)', { what: parts });
+            const parts = Object.keys(CAPS).filter(w => capWord(capEnabled(d, w), capRequested(d, w), w).k === 'bad').map(capOffName).join(' · ');
+            const what = Object.keys(CAPS).some(w => capRequested(d, w)) ? POps.t('{what} (panelden)', { what: parts }) : POps.t('{what} (kurulumda)', { what: parts });
             return `<div class="srow click" data-host="${escapeHtml(d.hostname)}" role="button" tabindex="0"><span class="dot ${escapeHtml(dev.state(d).cls)}"></span><div class="grow"><div class="t">${escapeHtml(POps.deviceName(d))}</div><div class="d">${escapeHtml(what)}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>`;
         }).join('');
-        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Uzak komut ve uzak ekran')}</div><div class="d">${POps.tHtml('Bir bilgisayarda kalıcı kapatılır; sunucu ele geçirilse bile o bilgisayarda çalışmaz.')}</div></div>
+        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Uzak komut, uzak ekran ve dosya aktarımı')}</div><div class="d">${POps.tHtml('Bir bilgisayarda kalıcı kapatılır; sunucu ele geçirilse bile o bilgisayarda çalışmaz.')}</div></div>
             <select id="capPick" aria-label="${escapeHtml(POps.t('Bilgisayar seç'))}" class="wide" style="width:min(240px,100%)"><option value="">${POps.tHtml('Bilgisayar seç…')}</option>${opts}</select></div>${rowsHtml}`;
         $('capPick').addEventListener('change', (e) => { if (e.target.value) { openCap(e.target.value); e.target.value = ''; } });
     }
     if ($('capSet')) {
         $('capSet').addEventListener('click', (e) => { const r = e.target.closest('.srow[data-host]'); if (r) openCap(r.dataset.host); });
-        $('capSet').addEventListener('keydown', (e) => { const r = e.target.closest('.srow[data-host]'); if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openCap(r.dataset.host); } });
+        keyClick($('capSet'), '.srow[data-host]');
     }
 
     function capRowHtml(which, d) {
-        const enabled = which === 'terminal' ? d.cap_terminal_enabled : d.cap_vision_enabled;
-        const requested = which === 'terminal' ? d.cap_terminal_disable_requested : d.cap_vision_disable_requested;
-        const c = capWord(enabled, requested);
-        const flag = which === 'terminal' ? 'TERMINAL_ENABLED=1' : 'VISION_ENABLED=1';
-        const name = which === 'terminal' ? POps.t('Uzak komut') : POps.t('Uzak ekran');
+        const enabled = capEnabled(d, which);
+        const requested = capRequested(d, which);
+        const c = capWord(enabled, requested, which);
+        const flag = CAPS[which].flag;
+        const name = capName(which);
         let btnHtml, hint;
         if (requested) { btnHtml = `<button type="button" class="btn secondary sm" data-act="cap-on" data-which="${escapeHtml(which)}">${POps.tHtml('İzin ver')}</button>`; hint = POps.t('İzin vermek kalıcı kapatmayı kaldırır; yetenek ancak ajan kurulumu onu açık bildirirse geri gelir.'); }
         else if (enabled === false) { btnHtml = `<button type="button" class="btn danger-soft sm" data-act="cap-off" data-which="${escapeHtml(which)}">${POps.tHtml('Kapalı tut')}</button>`; hint = POps.t('Uzaktan açılamaz; açmak için ajanı {flag} ile yeniden kurun. "Kapalı tut" yeniden kurulsa bile kapalı kalmasını sağlar.', { flag }); }
@@ -1427,11 +1531,11 @@
     let capSig = '';
     function renderCapDrawer(host, onlyIfChanged) {
         const d = dev.find(host);
-        const sig = JSON.stringify(d ? [d.status, POps.deviceName(d), d.lab, dev.version(d), d.cap_terminal_enabled, d.cap_vision_enabled, d.cap_terminal_disable_requested, d.cap_vision_disable_requested, d.cap_server_ca, d.bypass_key, d.last_disconnect_reason, d.agent_health] : null);
+        const sig = JSON.stringify(d ? [d.status, POps.deviceName(d), d.lab, dev.version(d), ...Object.keys(CAPS).map(w => [capEnabled(d, w), capRequested(d, w)]), d.cap_server_ca, d.bypass_key, d.last_disconnect_reason, d.agent_health] : null);
         if (onlyIfChanged && sig === capSig) return;
         capSig = sig;
         const body = POps.drawer.body();
-        if (!d) { body.innerHTML = drawerHeadHtml(host, POps.tHtml('Bulunamadı'), 'monitor', '') ; return; }
+        if (!d) { body.innerHTML = drawerHeadHtml(host, POps.tHtml('Bulunamadı'), 'monitor', ''); return; }
         const st = dev.state(d);
         const h = d.agent_health;
         const ag = (t) => t ? ago(Date.now() / 1000 - t) : POps.t('henüz yok');
@@ -1454,10 +1558,10 @@
         }
         const subHtml = `<span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.word)}${d.lab && d.lab !== dev.UNASSIGNED ? ' · ' + escapeHtml(d.lab) : ''}`;
         body.innerHTML = drawerHeadHtml(POps.deviceName(d), subHtml, 'monitor', st.cls)
-            + `<div><h3>${POps.tHtml('Yetenekler')}</h3><div class="set">${capRowHtml('terminal', d)}${capRowHtml('vision', d)}</div>`
+            + `<div><h3>${POps.tHtml('Yetenekler')}</h3><div class="set">${capRowHtml('terminal', d)}${capRowHtml('vision', d)}${capRowHtml('files', d)}</div>`
             + (d.cap_terminal_enabled == null && d.cap_vision_enabled == null ? `<div class="dr-note" style="margin-top:8px">${POps.tHtml('Bu ajan yetenek durumunu bildirmiyor (bildirim 0.1.4 ile geldi). Kapatma şimdi kaydedilebilir, güncellemeden sonra uygulanır.')}</div>` : '') + '</div>'
             + `<div><h3>${isOn(d) ? POps.tHtml('Ajan durumu') : POps.tHtml('Ajan durumu (son bilinen)')}</h3><div class="glist">${factsHtml}</div>${noteHtml}</div>`
-            + `<a href="devices?pc=${encodeURIComponent(d.hostname)}" style="font-size:var(--text-sm)">${POps.tHtml('Cihazlar sayfasında aç')}</a>`;
+            + `<div><a class="btn secondary" href="pc?id=${encodeURIComponent(d.hostname)}">${POps.iconHtml('monitor', 'sm')}${POps.tHtml('Bilgisayar sayfasını aç')}</a></div>`;
     }
     let capHost = null;
     function openCap(host) {
@@ -1471,17 +1575,18 @@
     async function capSet(host, which, enable, btn) {
         const d = dev.find(host) || {};
         const name = POps.deviceName(d);
-        const term = which === 'terminal';
-        const alreadyOff = (term ? d.cap_terminal_enabled : d.cap_vision_enabled) === false;
+        const alreadyOff = capEnabled(d, which) === false;
+        const keepTitle = { terminal: POps.t('{name} bilgisayarında uzak komut kapalı tutulsun mu?', { name }), vision: POps.t('{name} bilgisayarında uzak ekran kapalı tutulsun mu?', { name }), files: POps.t('{name} bilgisayarında dosya aktarımı kapalı tutulsun mu?', { name }) };
+        const offTitle = { terminal: POps.t('{name} bilgisayarında uzak komut kapatılsın mı?', { name }), vision: POps.t('{name} bilgisayarında uzak ekran kapatılsın mı?', { name }), files: POps.t('{name} bilgisayarında dosya aktarımı kapatılsın mı?', { name }) };
+        const offText = { terminal: POps.t('Uzak komutu kapat'), vision: POps.t('Uzak ekranı kapat'), files: POps.t('Dosya aktarımını kapat') };
         if (!enable && !await POps.confirm({
-            title: alreadyOff ? (term ? POps.t('{name} bilgisayarında uzak komut kapalı tutulsun mu?', { name }) : POps.t('{name} bilgisayarında uzak ekran kapalı tutulsun mu?', { name }))
-                : (term ? POps.t('{name} bilgisayarında uzak komut kapatılsın mı?', { name }) : POps.t('{name} bilgisayarında uzak ekran kapatılsın mı?', { name })),
+            title: alreadyOff ? keepTitle[which] : offTitle[which],
             message: alreadyOff ? POps.t('Kurulumda kapatılmış; ajan açık kurulsa bile kapalı kalır. Geri açmak için "İzin ver" ve ajanın yeniden kurulması gerekir.')
                 : POps.t('Kalıcıdır: geri açmak için "İzin ver" ve ajanın bilgisayarda yeniden kurulması gerekir.'),
-            confirmText: alreadyOff ? POps.t('Kapalı tut') : (term ? POps.t('Uzak komutu kapat') : POps.t('Uzak ekranı kapat')), danger: true, icon: 'lock'
+            confirmText: alreadyOff ? POps.t('Kapalı tut') : offText[which], danger: true, icon: 'lock'
         })) return;
         const body = { pc_name: host };
-        body[which === 'terminal' ? 'terminal_enabled' : 'vision_enabled'] = !!enable;
+        body[CAPS[which].field] = !!enable;
         try {
             const r = await POps.busy(btn, () => POps.post('/api/system/set-capabilities', body));
             POps.toast('success', enable ? POps.t('Kalıcı kapatma kaldırıldı. Yetenek, ajan kurulumu onu açık bildirince geri gelir.')
@@ -1507,11 +1612,16 @@
             <div class="srow"><div class="grow"><div class="t">${POps.tHtml('Kayıt jetonları')}</div><div class="d">${S.tokens === null ? POps.tHtml('Yükleniyor…') : toks.length ? POps.tHtml('{valid} geçerli, {used} kullanılmış ya da süresi dolmuş', { valid, used: toks.length - valid }) : POps.tHtml('Henüz jeton yok. Yeni kurulumda MSI’a ENROLL_TOKEN olarak verilir.')}</div></div>
                 <button type="button" class="btn secondary" id="tokNew">${POps.iconHtml('plus', 'sm')}${POps.tHtml('Jeton üret')}</button></div>`;
         $('enforceSw').addEventListener('change', (e) => setEnforce(e.target));
-        $('tokNew').addEventListener('click', () => {
-            $('tkLabs').innerHTML = dev.labs().map(l => `<option value="${escapeHtml(l)}"></option>`).join('');
-            openModal('tokenModal');
-        });
+        $('tokNew').addEventListener('click', openTokenModal);
         renderTokens();
+        renderSummary();
+    }
+    function fillTokenLabs() {
+        if ($('tkLabs')) $('tkLabs').innerHTML = dev.labs().map(l => `<option value="${escapeHtml(l)}"></option>`).join('');
+    }
+    function openTokenModal() {
+        fillTokenLabs();
+        openModal('tokenModal');
     }
     function renderTokens() {
         const box = $('tokSet');
@@ -1524,34 +1634,48 @@
             const metaHtml = escapeHtml(t.lab_name || POps.t('Bütün sınıflar')) + ' · ' + POps.tHtml('{used}/{max} kullanım', { used: Number(t.use_count || 0), max: Number(t.max_uses || 1) }) + ' · ' + POps.timeHtml(t.created_at)
                 + (!t.expired && !t.is_used && t.expires_at ? ' · ' + POps.tHtml('bitiş {time}', null, { time: POps.timeHtml(t.expires_at) }) : '') + (t.note ? ' · ' + escapeHtml(t.note) : '');
             return `<div class="act"><div class="res">${POps.iconHtml('key')}</div><div style="min-width:0"><div class="what"><code>${escapeHtml(t.token_hint || '')}…</code></div><div class="meta">${metaHtml}</div></div>
-                <div class="side" style="flex-direction:row;align-items:center;gap:8px">${wordHtml(k, w)}<button type="button" class="ibtn sm" data-tok="${escapeHtml(t.id)}" data-hint="${escapeHtml(t.token_hint || '')}" data-tip="${escapeHtml(POps.t('Jeton işlemleri'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Jeton işlemleri'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button></div></div>`;
+                <div class="side" style="flex-direction:row;align-items:center;gap:10px">${wordHtml(k, w)}<button type="button" class="btn secondary sm" data-tok="${escapeHtml(t.id)}" data-hint="${escapeHtml(t.token_hint || '')}">${POps.iconHtml('trash', 'sm')}${POps.tHtml('Sil')}</button></div></div>`;
         }).join('');
     }
-    if ($('tokSet')) $('tokSet').addEventListener('click', (e) => {
+    if ($('tokSet')) $('tokSet').addEventListener('click', async (e) => {
         const b = e.target.closest('[data-tok]');
         if (!b) return;
-        POps.menu(b, [{ label: POps.t('Jetonu sil'), icon: 'trash', danger: true, onClick: async () => {
-            if (!await POps.confirm({ title: POps.t('{hint}… jetonu silinsin mi?', { hint: b.dataset.hint }), message: POps.t('Bu jetonla henüz kaydolmamış kurulumlar kaydolamaz. Kayıtlı bilgisayarlar etkilenmez.'), confirmText: POps.t('Jetonu sil'), danger: true, icon: 'trash' })) return;
-            if (await POps.act(null, () => POps.del('/api/system/enroll-token/' + encodeURIComponent(b.dataset.tok)), { success: POps.t('Jeton silindi.') })) loadTokens();
-        } }]);
+        if (!await POps.confirm({ title: POps.t('{hint}… jetonu silinsin mi?', { hint: b.dataset.hint }), message: POps.t('Bu jetonla henüz kaydolmamış kurulumlar kaydolamaz. Kayıtlı bilgisayarlar etkilenmez.'), confirmText: POps.t('Jetonu sil'), danger: true, icon: 'trash' })) return;
+        if (await POps.act(b, () => POps.del('/api/system/enroll-token/' + encodeURIComponent(b.dataset.tok)), { success: POps.t('Jeton silindi.') })) loadTokens();
     });
+    // ?do=token (Kontrol merkezi → Jeton üret): jetonlar yüklenince pencere bir kez açılır
+    let pendingDo = VIEW === 'config' && IS_SUPER ? params.get('do') : null;
     async function loadTokens() {
-        if (!IS_SUPER) return;
+        if (!IS_SUPER || !$('tokSet')) return;
         try { S.tokens = await POps.get('/api/system/enroll-tokens') || []; } catch (e) { S.tokens = []; POps.toast('error', POps.t('Jetonlar alınamadı: {error}', { error: POps.errorMessage(e) })); }
         renderEnroll();
+        if (pendingDo === 'token') {
+            pendingDo = null;
+            const u = new URL(location.href);
+            u.searchParams.delete('do');
+            history.replaceState(null, '', u.pathname + u.search + u.hash);
+            if (sysTabs) sysTabs.set('security');
+            openTokenModal();
+        }
     }
     if ($('tkCreate')) $('tkCreate').addEventListener('click', async function () {
         const body = { lab_name: $('tkLab').value.trim() || null, note: $('tkNote').value.trim() || null, ttl_hours: parseInt($('tkTtl').value, 10) || 72, max_uses: parseInt($('tkUses').value, 10) || 1 };
+        // Kurulumda kapatılacak yetenekler: MSI özelliği =0 (yalnızca bilinen adlar komuta girer)
+        const off = [...document.querySelectorAll('.tk-cap:checked')].map(c => c.value).filter(v => /^[A-Z_]+_ENABLED$/.test(v));
         let d;
         try { d = await POps.busy(this, () => POps.post('/api/system/enroll-token', body)); }
         catch (e) { POps.toast('error', POps.t('Jeton üretilemedi: {error}', { error: POps.errorMessage(e) })); return; }
         closeModal('tokenModal');
         ['tkLab', 'tkNote'].forEach(id => { $(id).value = ''; });
+        document.querySelectorAll('.tk-cap').forEach(c => { c.checked = false; });
         loadTokens();
+        const ver = S.ver && /^\d+\.\d+\.\d+[0-9A-Za-z.-]*$/.test(String(S.ver.server || '')) ? S.ver.server : POps.t('<sürüm>');
+        const cmd = `msiexec /i POps-Agent-${ver}-win-x64.msi /qn /l*v C:\\Windows\\Temp\\pops-msi-install.log SERVER_URL=${location.origin} ENROLL_TOKEN=${d.token}`
+            + off.map(p => ` ${p}=0`).join('');
         await POps.alert({
-            title: POps.t('Kayıt jetonu hazır'), icon: 'key', codes: [d.token], confirmText: POps.t('Kapat'),
+            title: POps.t('Kayıt jetonu hazır'), icon: 'key', codes: [d.token, cmd], confirmText: POps.t('Kapat'),
             message: (d.lab_name || POps.t('Bütün sınıflar')) + ' · ' + POps.tn('{n} kullanım', d.max_uses) + ' · ' + POps.tn('{n} saat geçerli', d.ttl_hours),
-            note: POps.t('MSI kurulumunda ENROLL_TOKEN olarak verin. Jeton yalnızca şimdi gösterilir, sunucuda saklanmaz; şimdi kopyalayın.')
+            note: POps.t('Üstteki jeton, altındaki hazır kurulum komutu (yönetici olarak çalıştırın). Jeton yalnızca şimdi gösterilir, sunucuda saklanmaz; şimdi kopyalayın.')
         });
     });
     async function setEnforce(sw) {
@@ -1587,7 +1711,7 @@
         ntDirty();
     }
     async function loadNotify() {
-        if (!IS_SUPER) return;
+        if (!IS_SUPER || !$('ntSet')) return;
         try { renderNotify(await POps.get('/api/system/notify-settings')); }
         catch (e) { setState('ntState', 'off', POps.t('Okunamadı')); }
     }
@@ -1624,7 +1748,7 @@
         $('rtSave').disabled = true; $('rtSave').className = 'btn secondary';
     }
     async function loadRetention() {
-        if (!IS_SUPER) return;
+        if (!IS_SUPER || !$('rtSet')) return;
         try { renderRetention(await POps.get('/api/system/retention')); } catch (e) { /* bölüm boş kalır */ }
     }
     if ($('rtSet')) {
@@ -1718,6 +1842,7 @@
                 <label class="switch"><input type="checkbox" data-sw="${escapeHtml(m.id)}" ${m.setting !== false ? 'checked' : ''} aria-label="${escapeHtml(label)}"><span></span></label></div>`;
         }).join('');
         renderProfiles();
+        renderSummary();
         if (MD.open && POps.drawer.isOpen('sysmod:' + MD.open)) renderModDrawer(MD.open);
     }
 
@@ -1863,10 +1988,7 @@
             const r = e.target.closest('[data-mod]');
             if (r) openModule(r.dataset.mod);
         });
-        $('mdSet').addEventListener('keydown', (e) => {
-            const r = e.target.closest('[data-mod]');
-            if (r && e.target === r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openModule(r.dataset.mod); }
-        });
+        keyClick($('mdSet'), '[data-mod]');
     }
 
     // ---- Kurulum profili: önizleme (değişecek kurum ayarları, kapanacak oturum ve reddedilecek görevler), sonra uygula
@@ -1912,7 +2034,7 @@
     }
     if ($('pfSet')) {
         $('pfSet').addEventListener('click', (e) => { const r = e.target.closest('[data-prof]'); if (r) openProfile(r.dataset.prof); });
-        $('pfSet').addEventListener('keydown', (e) => { const r = e.target.closest('[data-prof]'); if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openProfile(r.dataset.prof); } });
+        keyClick($('pfSet'), '[data-prof]');
     }
 
     // =================================================================
@@ -2027,7 +2149,7 @@
     function renderGlProblems() {
         const body = POps.drawer.body();
         const probs = (GL.d && GL.d.problems) || [];
-        const rowsHtml = probs.map(p => `<div class="act"><div class="res warn">${POps.iconHtml('alert')}</div><div style="min-width:0"><div class="what">${escapeHtml(p.display_name || p.hostname || p.pc_name)}</div>`
+        const rowsHtml = probs.map(p => `<div class="act"><div class="res warn">${POps.iconHtml('alert')}</div><div style="min-width:0"><div class="what"><a href="pc?id=${encodeURIComponent(p.pc_name)}">${escapeHtml(p.display_name || p.hostname || p.pc_name)}</a></div>`
             + `<div class="meta">${escapeHtml(p.pc_name)}${p.glpi_id ? ' · GLPI #' + Number(p.glpi_id) : ''}</div><div class="why warn">${escapeHtml(p.error || '')}</div></div>`
             + `<div class="side"><button type="button" class="btn secondary sm" data-act="forget" data-pc="${escapeHtml(p.pc_name)}">${POps.tHtml('Bağlantıyı unut')}</button></div></div>`).join('');
         body.innerHTML = drawerHeadHtml(POps.t('Eşleşmeyen bilgisayarlar'), POps.tHtml('GLPI ile eşleşme sorunları'), 'alert', '')
@@ -2093,48 +2215,67 @@
                 renderGlProblems();
             }
         });
-        $('glRun').addEventListener('keydown', (e) => {
-            const r = e.target.closest('.srow.click[data-act]');
-            if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); r.click(); }
-        });
+        keyClick($('glRun'), '.srow.click[data-act]');
     }
 
     // =================================================================
     // ÖZET + YÜKLEME
     // =================================================================
+    // Başlıktaki tek satır: her öğe ilgili bölümü açar
     function renderSummary() {
-        if (!S.ver) return;
-        const I = serverInfo();
-        const A = agentInfo();
+        const box = $('sysSummary');
+        if (!box) return;
         const boldHtml = (x) => `<b>${Number(x)}</b>`;
-        let html = `<span class="sum"><span class="dot ${escapeHtml(I.k)}"></span>${POps.tHtml('Sunucu {version}', null, { version: `<b>${escapeHtml(fmtV(S.ver.running))}</b>` })}</span>`
-            + `<span class="sum">${POps.tnHtml('{n} ajan', A.all.length, null, { n: boldHtml(A.all.length) })}</span>`
-            + (A.old.length ? `<span class="sum"><span class="dot run"></span>${POps.tnHtml('{n} eski ajan', A.old.length, null, { n: boldHtml(A.old.length) })}</span>` : '');
-        if (S.diag) {
-            const n = healthIssues(S.diag).length + (backupState(S.diag.backup) === 'ok' ? 0 : 1);
-            html += n ? `<span class="sum"><span class="dot warn"></span>${POps.tnHtml('{n} sorun', n, null, { n: boldHtml(n) })}</span>` : '<span class="sum"><span class="dot ok"></span>' + POps.tHtml('Sağlıklı') + '</span>';
+        const goHtml = (tab, innerHtml) => (sysTabs ? `<a href="#" class="sum" data-go="${escapeHtml(tab)}">${innerHtml}</a>` : `<span class="sum">${innerHtml}</span>`);
+        let html = '';
+        if (VIEW === 'main') {
+            if (!S.ver) return;
+            const I = serverInfo();
+            const A = agentInfo();
+            html = goHtml('updates', `<span class="dot ${escapeHtml(I.k)}"></span>${POps.tHtml('Sunucu {version}', null, { version: `<b>${escapeHtml(fmtV(S.ver.running))}</b>` })}`)
+                + `<a href="labs" class="sum">${POps.tnHtml('{n} ajan', A.all.length, null, { n: boldHtml(A.all.length) })}</a>`
+                + (A.old.length ? goHtml('updates', `<span class="dot run"></span>${POps.tnHtml('{n} eski ajan', A.old.length, null, { n: boldHtml(A.old.length) })}`) : '');
+            if (S.diag) {
+                const n = healthIssues(S.diag).length + (backupState(S.diag.backup) === 'ok' ? 0 : 1);
+                html += goHtml('health', n ? `<span class="dot warn"></span>${POps.tnHtml('{n} sorun', n, null, { n: boldHtml(n) })}` : '<span class="dot ok"></span>' + POps.tHtml('Sağlıklı'));
+            }
+        } else {
+            if (S.ver) {
+                const enr = S.ver.agents_enrolled || 0, tot = S.ver.agents_total || 0;
+                html += goHtml('security', `<span class="dot ${enr === tot ? 'ok' : 'off'}"></span>${POps.tHtml('{enrolled}/{total} ajan kayıtlı', { enrolled: enr, total: tot })}`);
+            }
+            const au = store.get(AKEY);
+            if (au && !au.ok) html += goHtml('security', '<span class="dot bad"></span>' + POps.tHtml('Denetim zinciri kırık'));
+            if (MD.data) {
+                const off = (MD.data.modules || []).filter(m => !m.enabled).length;
+                if (off) html += goHtml('modules', `<span class="dot off"></span>${POps.tnHtml('{n} modül kapalı', off, null, { n: boldHtml(off) })}`);
+            }
         }
-        const au = store.get(AKEY);
-        if (au && !au.ok) html += '<span class="sum"><span class="dot bad"></span>' + POps.tHtml('Denetim zinciri kırık') + '</span>';
-        $('sysSummary').innerHTML = html;
+        box.innerHTML = html;
     }
+    $('sysSummary').addEventListener('click', (e) => {
+        const a = e.target.closest('[data-go]');
+        if (!a || !sysTabs) return;
+        e.preventDefault();
+        sysTabs.set(a.dataset.go, { scroll: true });
+    });
 
     async function loadAll(check) {
         const [ver] = await Promise.all([
             POps.get('/api/system/version' + (check ? '?check=true' : '')).catch(() => null),
-            loadSelfUpdate()
+            VIEW === 'main' ? loadSelfUpdate() : null
         ]);
         if (ver) S.ver = ver;
         if (!S.ver) {
             const err = new Error(POps.t('Sürüm bilgisi alınamadı. Sayfayı yenileyin.'));
             renderServer();
-            ['agSet', 'enSet'].forEach(id => { if ($(id)) POps.setError($(id), err, { compact: true }); });
+            ['agVers', 'enSet'].forEach(id => { if ($(id)) POps.setError($(id), err, { compact: true }); });
             $('sysSummary').innerHTML = '<span class="sum"><span class="dot bad"></span>' + POps.tHtml('Sürüm bilgisi alınamadı') + '</span>';
             return;
         }
-        if (S.su && (S.su.pending || (S.su.status && S.su.status.state === 'running')) && !S.suPoll) { S.suBusy = true; S.suBefore = ''; watchSelfUpdate(); }
+        if (VIEW === 'main' && S.su && (S.su.pending || (S.su.status && S.su.status.state === 'running')) && !S.suPoll) { S.suBusy = true; S.suBefore = ''; watchSelfUpdate(); }
         S.checkedAt = new Date();
-        $('checkBtn').dataset.tip = POps.t('Güncellemeleri denetle · son {time}', { time: S.checkedAt.toLocaleTimeString(POps.locale, { hour: '2-digit', minute: '2-digit' }) });
+        if ($('checkBtn')) $('checkBtn').title = POps.t('Güncellemeleri denetle · son {time}', { time: S.checkedAt.toLocaleTimeString(POps.locale, { hour: '2-digit', minute: '2-digit' }) });
         renderServer();
         renderAgents(true);
         renderEnroll();
@@ -2142,7 +2283,7 @@
         if (check) S.notes = null;
     }
 
-    $('checkBtn').addEventListener('click', async function () {
+    if ($('checkBtn')) $('checkBtn').addEventListener('click', async function () {
         await POps.busy(this, () => Promise.all([loadAll(true), loadDiag()]));
         POps.toast('info', POps.t('Güncellemeler denetlendi.'));
     });
@@ -2150,23 +2291,27 @@
     document.addEventListener('pops_data_updated', () => {
         renderAgents(false); renderCaps(false); renderSummary();
         if (capHost && POps.drawer.isOpen('syscap:' + capHost)) renderCapDrawer(capHost, true);
-        if (POps.drawer.isOpen('syst:target')) { /* seçim panelindeki liste kendi tazelenir (yazarken bozulmasın) */ }
+        if (VD.ver !== null && POps.drawer.isOpen('sysv:' + VD.ver)) renderVersion(VD.ver);
+        if ($('tokenModal') && $('tokenModal').classList.contains('open')) fillTokenLabs();
+        /* hedef seçim panelindeki liste kendi tazelenir (yazarken bozulmasın) */
     });
 
     POps.watchDevices();
-    ovReady = true;
-    if (sysTabs && sysTabs.current() === 'overview') { renderOverview(); loadOverview(); }
-    if (sysTabs) popsPoll(() => (sysTabs.current() === 'overview' ? loadOverview() : null), 60000);
+    trendsReady = true;
     loadAll(false);
-    loadDiag();
-    loadTokens();
-    loadNotify();
-    loadRetention();
-    loadModules();
-    loadGlpi();
-    renderAudit();
-    if (rollout) pollRollout();
-    if (state.devicesLoaded) { renderCaps(true); }
+    if (VIEW === 'main') {
+        loadDiag();
+        if (rollout) pollRollout();
+        if ($('trends')) popsPoll(() => (trendsOpen() && sysTabs && sysTabs.current() === 'health' ? loadTrends() : null), 60000);
+    } else {
+        loadTokens();
+        loadNotify();
+        loadRetention();
+        loadModules();
+        loadGlpi();
+        renderAudit();
+        if (state.devicesLoaded) renderCaps(true);
+    }
     popsTwofaNudge();
 })();
 </script>

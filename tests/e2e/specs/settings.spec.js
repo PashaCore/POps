@@ -1,7 +1,44 @@
-// Ayarlar → Genel: kurum adı kaydedilir ve giriş sayfasında görünür; eşzamanlı görev sınırı kaydedilir.
-// Değiştirilen ayar test sonunda API ile eski haline döner (diğer testler etkilenmesin).
+// Kullanıcılar ve giriş: bölümler yan menüden açılır (sekme çubuğu .tabs-in-nav gizli); kullanıcı satırı ayrıntı
+// panelini, "Düzenle" düzenleme penceresini açar. Genel: kurum adı kaydedilir ve giriş sayfasında görünür.
+// Değiştirilen ayar test sonunda API ile eski haline döner (diğer testler etkilenmesin). Eşzamanlı görev sınırı
+// İşlemler ve Dağıtım sayfalarındadır (aynı /api/set_concurrent_limit).
 import { test, expect, settled, apiJson, uniq } from '../fixtures.js';
 import { PANEL_URL } from '../stack.js';
+
+test('bölümler menüden açılır; kullanıcı satırı paneli, Düzenle pencereyi açar', async ({ page }) => {
+    await page.goto('/settings');
+    await settled(page);
+    await expect(page.locator('.page-header h1')).toHaveText('Kullanıcılar ve giriş');
+    await expect(page.getByRole('button', { name: 'Kullanıcı ekle' })).toBeVisible();
+    const nav = page.locator('.nav-tabs[data-for="settings"]');
+    await expect(nav.locator('a[data-tab]')).toHaveText(['Kullanıcılar', 'Birimler', 'Giriş ve güvenlik', 'Genel']);
+    await expect(page.locator('#setTabs')).toBeHidden();
+
+    // Satır kullanıcının panelini açar; işlemler yazılı
+    const row = page.locator('#userBody tr[data-id]').filter({ hasText: 'admin' }).first();
+    await row.locator('td').first().click();
+    const drawer = page.locator('#popsDrawer');
+    await expect(drawer).toHaveClass(/\bopen\b/);
+    await expect(drawer.locator('h2')).toHaveText('admin');
+    await expect(drawer.getByRole('button', { name: 'Rolü ve yetkileri düzenle' })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    // Satırdaki "Düzenle" doğrudan düzenleme penceresini açar
+    await row.getByRole('button', { name: 'admin kullanıcısını düzenle' }).click();
+    const dlg = page.getByRole('dialog', { name: 'Kullanıcıyı düzenle' });
+    await expect(dlg).toBeVisible();
+    await expect(dlg.locator('#umName')).toHaveValue('admin');
+    await dlg.getByRole('button', { name: 'Vazgeç' }).click();
+    await expect(dlg).toBeHidden();
+
+    // Giriş ve güvenlik: 2FA, API jetonları, kimlik sağlayıcıları
+    await nav.locator('a[data-tab="security"]').click();
+    await expect(page).toHaveURL(/\/settings\?tab=security$/);
+    await expect(page.locator('#twofaCard')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'API jetonları' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Kimlik sağlayıcıları' })).toBeVisible();
+    await expect(page.locator('[data-pane="users"]')).toBeHidden();
+});
 
 test('kurum adı kaydedilir ve giriş sayfasında görünür', async ({ page, browser, watch }) => {
     const before = await apiJson(page.request, 'GET', '/api/branding');
@@ -36,37 +73,5 @@ test('kurum adı kaydedilir ve giriş sayfasında görünür', async ({ page, br
         }
     } finally {
         await apiJson(page.request, 'POST', '/api/system/branding', { org_name: before.org_name || null });
-    }
-});
-
-test('eşzamanlı görev sınırı kaydedilir', async ({ page }) => {
-    const { limit: before } = await apiJson(page.request, 'GET', '/api/get_concurrent_limit');
-    const next = before >= 150 ? before - 7 : before + 7;
-    try {
-        await page.goto('/settings?tab=general');
-        await settled(page);
-        const input = page.getByRole('spinbutton', { name: 'Eşzamanlı görev sınırı' });
-        const bar = page.getByRole('region', { name: 'Kaydedilmemiş değişiklikler' });
-        await expect(input).toHaveValue(String(before));
-        await expect(bar).toBeHidden();
-
-        // Geçersiz değer kaydedilmez
-        await input.fill('0');
-        await expect(bar).toBeVisible();
-        await bar.getByRole('button', { name: 'Kaydet' }).click();
-        await expect(page.locator('#toastContainer .toast.warning')).toContainText('1 ile 200 arasında');
-        await expect(input).toHaveClass(/\bis-invalid\b/);
-
-        await input.fill(String(next));
-        await bar.getByRole('button', { name: 'Kaydet' }).click();
-        await expect(page.locator('#toastContainer .toast.success')).toContainText(`Eşzamanlı görev sınırı ${next} bilgisayar oldu.`);
-        await expect(bar).toBeHidden();
-        expect((await apiJson(page.request, 'GET', '/api/get_concurrent_limit')).limit).toBe(next);
-
-        await page.reload();
-        await settled(page);
-        await expect(page.getByRole('spinbutton', { name: 'Eşzamanlı görev sınırı' })).toHaveValue(String(next));
-    } finally {
-        await apiJson(page.request, 'POST', '/api/set_concurrent_limit', { limit: before });
     }
 });

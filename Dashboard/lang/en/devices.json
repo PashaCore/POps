@@ -1,6 +1,4 @@
 {
-  "Listeyi dışa aktar (CSV)": "Export list (CSV)",
-  "Listeyi dışa aktar": "Export list",
   "Cihaz işlemleri": "Device actions",
   "Duruma göre süz": "Filter by status",
   "Tümü": "All",
@@ -21,19 +19,24 @@
   "{n} boşta": "{n} idle",
   "{n} kapalı": "{n} offline",
   "{n} sorunlu": "{n} with issues",
-  "listedeki {n} bilgisayar": {"one": "{n} computer in the list", "other": "{n} computers in the list"},
+  "listedeki {n} bilgisayar": {
+    "one": "{n} computer in the list",
+    "other": "{n} computers in the list"
+  },
   "{n} seçili": "{n} selected",
   "Seçimi temizle": "Clear selection",
   "Seçimi temizle (Esc)": "Clear selection (Esc)",
   "Listedeki {n}": "{n} in the list",
   "Ekranları izle": "Watch screens",
   "Komut gönder": "Send command",
-  "Diğer işlemler": "More actions",
   "Süzgece uyan cihaz yok": "No devices match the filters",
   "Arama ya da süzgeçleri değiştirin.": "Change the search or the filters.",
   "Henüz cihaz yok": "No devices yet",
   "Ajan kurulan bilgisayarlar bağlandıkça burada görünür.": "Computers with the agent installed show up here as they connect.",
   "Açık bilgisayar yok.": "No computers are on.",
   "Ad": "Name",
-  "pops-cihazlar-{date}.csv": "pops-devices-{date}.csv"
+  "pops-cihazlar-{date}.csv": "pops-devices-{date}.csv",
+  "Görünüm": "View",
+  "Liste": "List",
+  "CSV indir": "Download CSV"
 }

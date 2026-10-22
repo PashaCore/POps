@@ -2,6 +2,7 @@
 
 <style>
     .faint { color: var(--text-muted); }
+    .page-header-actions .btn { gap: 7px; }
     .dep-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
     .dep-bar .grow { flex: 1; }
     .dep-bar .search-field { flex: 0 1 280px; min-width: 200px; }
@@ -21,6 +22,11 @@
     .dep-table .cell-sub { white-space: nowrap; }
     .dep-table .c-last .cell-sub { white-space: normal; }
     .dep-table .pbar { width: 110px; margin-top: 6px; }
+    .dep-table .c-act { width: 1%; white-space: nowrap; text-align: right; }
+    .dep-table .c-act .btn { gap: 6px; }
+    .dep-table .cell-sub a { color: inherit; }
+    .dep-table .cell-sub a:hover { color: var(--primary-500); text-decoration: underline; }
+    .dep-name .badge { font-weight: var(--fw-medium); cursor: help; }
 
     .hash { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px; margin: -3px -6px; border-radius: 6px; text-align: left; white-space: nowrap; }
     .hash .ico { width: 13px; height: 13px; color: var(--text-muted); opacity: 0; transition: opacity 0.12s; }
@@ -31,8 +37,9 @@
     .hash.full .ico { opacity: 1; }
 
     /* Ayrıntı paneli */
-    .dp-actions { display: flex; align-items: center; gap: 8px; }
+    .dp-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .dp-actions .grow { flex: 1; }
+    .dp-actions .btn { gap: 6px; }
     .glist .grow.stack { flex-direction: column; gap: 4px; }
     .glist .grow.stack > span:last-child, .glist .grow.stack > button { text-align: left; }
     .glist .grow .mono { font-size: 12px; }
@@ -57,8 +64,7 @@
     .up-prog .pbar { flex: 1; }
     .zip-help { margin: -4px 0 18px; font-size: var(--text-sm); color: var(--text-secondary); }
     .zip-help summary { cursor: pointer; color: var(--primary-500); font-size: var(--text-sm); width: fit-content; }
-    .zip-help ul { margin: 10px 0 8px; padding-left: 1.1rem; line-height: 1.55; font-size: var(--text-xs); color: var(--text-tertiary); }
-    .zip-help li + li { margin-top: 4px; }
+    .zip-help p { margin: 8px 0; font-size: var(--text-xs); color: var(--text-tertiary); line-height: 1.5; }
     .zip-help pre { background: var(--bg-app); border-radius: 10px; padding: 10px 12px; font-size: 12px; margin: 0; white-space: pre-wrap; }
     .opt-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: var(--bg-app); }
     .opt-row .grow { flex: 1; min-width: 0; }
@@ -122,16 +128,19 @@
     .run-sum .switch-field { font-weight: var(--fw-regular); color: var(--text-secondary); margin: 0; cursor: pointer; }
     .run-foot-note { margin-right: auto; align-self: center; font-size: var(--text-xs); color: var(--text-muted); }
 
-    @media (max-width: 1500px) { body.drawer-open .dep-table .c-added { display: none; } }
+    @media (max-width: 1500px) {
+        body.drawer-open .dep-table .c-added, body.drawer-open .dep-table .c-hash { display: none; }
+        body.drawer-open .dep-name .s { max-width: 260px; }
+    }
     @media (max-width: 1100px) { .dep-table .c-added { display: none; } }
     @media (max-width: 640px) {
         .dep-table .c-size, .dep-table .c-hash { display: none; }
         .dep-bar .search-field { flex-basis: 100%; }
         .dep-ico { display: none; }
-        .dep-name .s { max-width: 170px; }
-        .dep-table .c-last { min-width: 0; }
-        .dep-table .c-last .cell-sub { white-space: normal; }
-        .dep-table .pbar { width: 72px; }
+        .dep-name .s { max-width: 200px; }
+        /* Dar ekranda satır: ad ve Dağıt; son dağıtım ayrıntı panelinde */
+        .dep-table .c-last { display: none; }
+        .dep-name .t { flex-wrap: wrap; gap: 2px 8px; }
         .run-foot-note { display: none; }
         .wg-grid { grid-template-columns: 1fr; }
         .wg-search { flex-direction: column; }
@@ -146,9 +155,9 @@
         <div class="summary" id="depSummary"></div>
     </div>
     <div class="page-header-actions">
-        <button type="button" class="ibtn boxed" id="chainBtn" data-tip="<?php _e('Görev zinciri oluştur'); ?>" aria-label="<?php _e('Görev zinciri oluştur'); ?>"><?php echo pops_icon('list'); ?></button>
-        <button type="button" class="ibtn boxed" id="limitBtn" data-tip="<?php _e('Eşzamanlı kurulum sınırı'); ?>" aria-label="<?php _e('Eşzamanlı kurulum sınırı'); ?>"><?php echo pops_icon('sliders'); ?></button>
         <button type="button" class="btn" id="uploadBtn"><?php echo pops_icon('upload', 'sm'); ?><?php _e('Paket yükle'); ?></button>
+        <button type="button" class="btn secondary" id="chainBtn"><?php echo pops_icon('list', 'sm'); ?><?php _e('Görev zinciri oluştur'); ?></button>
+        <button type="button" class="btn secondary" id="limitBtn"><?php echo pops_icon('sliders', 'sm'); ?><?php _e('Eşzamanlı kurulum sınırı'); ?></button>
     </div>
 </div>
 
@@ -163,8 +172,8 @@
 
 <div class="table-wrap">
     <table class="data-table dep-table">
-        <thead><tr><th><?php _e('Ad'); ?></th><th class="c-size"><?php _e('Boyut'); ?></th><th class="c-hash">SHA-256</th><th class="c-added"><?php _e('Eklendi'); ?></th><th class="c-last"><?php _e('Son dağıtım'); ?></th></tr></thead>
-        <tbody id="depBody"><tr><td colspan="5"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Paketler yükleniyor…'); ?></div></td></tr></tbody>
+        <thead><tr><th><?php _e('Ad'); ?></th><th class="c-size"><?php _e('Boyut'); ?></th><th class="c-hash">SHA-256</th><th class="c-added"><?php _e('Eklendi'); ?></th><th class="c-last"><?php _e('Son dağıtım'); ?></th><th class="c-act"><span class="sr-only"><?php _e('İşlem'); ?></span></th></tr></thead>
+        <tbody id="depBody"><tr><td colspan="6"><div class="loading-state" role="status"><span class="spinner"></span><?php _e('Paketler yükleniyor…'); ?></div></td></tr></tbody>
     </table>
 </div>
 
@@ -203,11 +212,7 @@
                 </div>
                 <details class="zip-help">
                     <summary><?php _e('ZIP paketi nasıl hazırlanır?'); ?></summary>
-                    <ul>
-                        <li><?php _e("ZIP'in ana dizininde (alt klasörde değil) install.bat bulunmalı."); ?></li>
-                        <li><?php _e("POps ZIP'i hedefte açar ve install.bat'ı yukarıdaki parametrelerle yönetici olarak çalıştırır."); ?></li>
-                        <li><?php _e('Kurulum pencere açmadan bitsin diye install.bat içindeki komutlara sessiz kurulum parametrelerini (/S, /qn, /quiet) ekleyin.'); ?></li>
-                    </ul>
+                    <p><?php _e("ZIP'in ana dizinine install.bat koyun; POps onu yönetici olarak çalıştırır. İçindeki komutlara sessiz kurulum parametresi (/S, /qn) ekleyin."); ?></p>
                     <pre>:: <?php _e('install.bat örneği'); echo "\n"; ?>
 setup.exe /S
 msiexec.exe /i program.msi /qn /norestart</pre>
@@ -245,7 +250,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                         <div class="field-error" id="wgVerErr"><?php _e('Yalnızca harf, rakam ve . + _ - (en çok 40 karakter).'); ?></div>
                     </div>
                 </div>
-                <p class="wg-foot"><?php _e('Hedefte winget ile SYSTEM hesabıyla, sessiz ve bütün kullanıcılar için kurulur. Bilgisayarda winget (Uygulama Yükleyicisi) ve winget destekleyen bir POps ajanı gerekir.'); ?></p>
+                <p class="wg-foot"><?php _e('SYSTEM hesabıyla, sessiz ve bütün kullanıcılar için kurulur; bilgisayarda winget ve güncel POps ajanı gerekir.'); ?></p>
             </div>
             <div class="opt-row" id="pkgRebootRow">
                 <div class="grow"><div class="t"><?php _e('Bitince yeniden başlat'); ?></div><div class="d" id="pkgRebootHint"><?php _e('Başarılı kurulumdan 15 saniye sonra bilgisayar yeniden başlar.'); ?></div></div>
@@ -492,6 +497,11 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         if (j.c.total === 1) return dev.name(j.tasks[0].target_pc);
         return (j.labs.length === 1 ? j.labs[0] + ' · ' : j.labs.length > 1 ? POps.tn('{n} sınıf', j.labs.length) + ' · ' : '') + POps.tn('{n} bilgisayar', j.c.total);
     }
+    // Tek bilgisayarlık dağıtımda hedef, bilgisayar sayfasına bağlantı
+    function targetHtml(j) {
+        if (j.c.total !== 1) return escapeHtml(targetText(j));
+        return `<a href="pc?id=${encodeURIComponent(j.tasks[0].target_pc)}">${escapeHtml(dev.name(j.tasks[0].target_pc))}</a>`;
+    }
     function pbarHtml(c) {
         const segHtml = (cls, n) => n ? `<i class="${escapeHtml(cls)}" style="width:${(n / c.total * 100).toFixed(2)}%"></i>` : '';
         return `<div class="pbar">${segHtml('ok', c.ok)}${segHtml('bad', c.bad)}${segHtml('run', c.run - c.wait)}</div>`;
@@ -511,13 +521,13 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         const j = (ui.deps.get(o.id) || [])[0];
         const subText = o.type === 'winget' ? [o.kind, o.wid, o.wver].filter(Boolean).join(' · ')
             : (o.type === 'package' ? [o.kind, o.file].filter(Boolean).join(' · ') : o.kind + ' · ' + firstLine(o.code)) + (o.reboot ? ' · ' + POps.t('yeniden başlatır') : '');
-        const markHtml = o.type === 'package' && !o.hash ? dev.markHtml({ kind: 'upd', glyph: '!', text: POps.t('Dosya özeti yok: indirilen dosya doğrulanmaz') }) : '';
+        const markHtml = o.type === 'package' && !o.hash ? `<span class="badge warn" data-tip="${escapeHtml(POps.t('Dosya özeti yok: indirilen dosya doğrulanmaz'))}">${POps.tHtml('özet yok')}</span>` : '';
         const hashHtml = o.hash
             ? `<button type="button" class="hash" data-copy="${escapeHtml(o.hash)}" title="${escapeHtml(POps.t('Tam özeti kopyala'))}" aria-label="${escapeHtml(POps.t('SHA-256 özetini kopyala'))}">${escapeHtml(shortHash(o.hash))}${POps.iconHtml('copy')}</button>`
             : '<span class="faint">—</span>';
         const addedHtml = o.at || o.by ? (o.by ? escapeHtml(o.by) + (o.at ? ' · ' : '') : '') + (o.at ? POps.timeHtml(o.at) : '') : '<span class="faint">—</span>';
         const lastHtml = j
-            ? `<span class="word ${escapeHtml(j.state)}">${escapeHtml(jobWord(j))}${j.state === 'run' ? ' · ' + Number(j.c.ok + j.c.bad) + '/' + Number(j.c.total) : ''}</span><div class="cell-sub">${POps.timeHtml(tsOf(j.at))} · ${escapeHtml(targetText(j))}</div>${j.state === 'run' && j.c.total > 1 ? pbarHtml(j.c) : ''}`
+            ? `<span class="word ${escapeHtml(j.state)}">${escapeHtml(jobWord(j))}${j.state === 'run' ? ' · ' + Number(j.c.ok + j.c.bad) + '/' + Number(j.c.total) : ''}</span><div class="cell-sub">${POps.timeHtml(tsOf(j.at))} · ${targetHtml(j)}</div>${j.state === 'run' && j.c.total > 1 ? pbarHtml(j.c) : ''}`
             : `<span class="faint">${POps.tHtml('Henüz dağıtılmadı')}</span>`;
         return `<tr data-id="${escapeHtml(o.id)}" tabindex="0" class="${ui.focus === o.id ? 'is-focus' : ''}">
             <td><div class="dep-name"><span class="dep-ico">${POps.iconHtml(typeIcon(o.type))}</span><div class="tx"><div class="t">${escapeHtml(o.name)}${markHtml}</div><div class="s" title="${escapeHtml(subText)}">${escapeHtml(subText)}</div></div></div></td>
@@ -525,6 +535,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
             <td class="c-hash">${hashHtml}</td>
             <td class="c-added">${addedHtml}</td>
             <td class="c-last">${lastHtml}</td>
+            <td class="c-act"><button type="button" class="btn secondary sm" data-deploy="${escapeHtml(o.id)}" aria-label="${escapeHtml(POps.t('{name} dağıt', { name: o.name }))}">${POps.iconHtml('send', 'sm')}${POps.tHtml('Dağıt')}</button></td>
         </tr>`;
     }
     function renderFilter() {
@@ -533,10 +544,8 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         $('depFilter').innerHTML = btnHtml('all', POps.t('Tümü')) + btnHtml('package', POps.t('Paketler')) + btnHtml('script', POps.t('Betikler'))
             + btnHtml('winget', 'winget');
     }
+    // Özet: türlerin sayısı süzgeçte; burada işlemlere ve sınır ayarına götüren sayılar
     function renderSummary() {
-        const nPkg = ui.pkgs.filter(o => o.type === 'package').length;
-        const nScr = ui.pkgs.filter(o => o.type === 'script').length;
-        const nWg = ui.pkgs.length - nPkg - nScr;
         const seen = new Map();
         ui.deps.forEach(list => list.forEach(j => seen.set(j.key, j)));
         const jobs = [...seen.values()];
@@ -545,14 +554,13 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         // Sayı kalın: yer tutucuya HTML parçası (POps.tnHtml'in son argümanı)
         const boldHtml = (n) => `<b>${Number(n)}</b>`;
         const limitHtml = ui.limit === null ? '' : ui.limit === 0
-            ? `<span class="sum">${POps.tHtml('{limit} eşzamanlı kurulum', null, { limit: `<b>${POps.tHtml('Sınırsız')}</b>` })}</span>`
-            : `<span class="sum">${POps.tnHtml('{n} eşzamanlı kurulum', ui.limit, null, { n: boldHtml(ui.limit) })}</span>`;
-        $('depSummary').innerHTML = `<span class="sum">${POps.tnHtml('{n} paket', nPkg, null, { n: boldHtml(nPkg) })}</span><span class="sum">${POps.tnHtml('{n} betik', nScr, null, { n: boldHtml(nScr) })}</span>`
-            + (nWg ? `<span class="sum">${POps.tnHtml('{n} winget paketi', nWg, null, { n: boldHtml(nWg) })}</span>` : '')
-            + (run ? `<span class="sum"><span class="dot run"></span>${POps.tnHtml('{n} dağıtım sürüyor', run, null, { n: boldHtml(run) })}</span>` : '')
-            + (badToday ? `<span class="sum"><span class="dot bad"></span>${POps.tnHtml('{n} sorunlu dağıtım (bugün)', badToday, null, { n: boldHtml(badToday) })}</span>` : '')
+            ? `<a href="#" class="sum" data-act="limit">${POps.tHtml('{limit} eşzamanlı kurulum', null, { limit: `<b>${POps.tHtml('Sınırsız')}</b>` })}</a>`
+            : `<a href="#" class="sum" data-act="limit">${POps.tnHtml('{n} eşzamanlı kurulum', ui.limit, null, { n: boldHtml(ui.limit) })}</a>`;
+        $('depSummary').innerHTML = (run ? `<a href="tasks" class="sum"><span class="dot run"></span>${POps.tnHtml('{n} dağıtım sürüyor', run, null, { n: boldHtml(run) })}</a>` : '')
+            + (badToday ? `<a href="tasks" class="sum"><span class="dot bad"></span>${POps.tnHtml('{n} sorunlu dağıtım (bugün)', badToday, null, { n: boldHtml(badToday) })}</a>` : '')
             + limitHtml;
     }
+    $('depSummary').addEventListener('click', (e) => { if (e.target.closest('[data-act="limit"]')) { e.preventDefault(); $('limitBtn').click(); } });
     function renderTable(force) {
         if (!ui.loaded) return;
         renderSummary();
@@ -563,9 +571,9 @@ msiexec.exe /i program.msi /qn /norestart</pre>
         ui.sig = sig;
         if (!rows.length) {
             if (ui.pkgs.length) {
-                POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'filter', title: POps.t('Süzgece uyan paket yok'), text: POps.t('Arama ya da süzgeci değiştirin.') });
+                POps.setEmpty(tbody, { tag: 'tr', colspan: 6, icon: 'filter', title: POps.t('Süzgece uyan paket yok'), text: POps.t('Arama ya da süzgeci değiştirin.') });
             } else {
-                POps.setEmpty(tbody, { tag: 'tr', colspan: 5, icon: 'package', title: POps.t('Henüz paket yok'), text: POps.t('Kurulum dosyası ya da betik ekleyin; buradan sınıflara dağıtılır.') });
+                POps.setEmpty(tbody, { tag: 'tr', colspan: 6, icon: 'package', title: POps.t('Henüz paket yok'), text: POps.t('Kurulum dosyası ya da betik ekleyin; buradan sınıflara dağıtılır.') });
                 const b = POps.el('button', { type: 'button', className: 'btn', text: POps.t('Paket yükle') });
                 b.addEventListener('click', () => openPkgModal(null, 'package'));
                 tbody.querySelector('.empty-state').append(b);
@@ -588,7 +596,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
             const want = params.get('pkg');
             if (want && !ui.openedFromUrl) { ui.openedFromUrl = true; if (ui.pkgs.some(o => o.id === want)) openPkg(want); }
         } catch (e) {
-            if (!ui.loaded) POps.setError(tbody, e, { tag: 'tr', colspan: 5 });
+            if (!ui.loaded) POps.setError(tbody, e, { tag: 'tr', colspan: 6 });
             else POps.toast('error', POps.t('Paketler alınamadı: {error}', { error: POps.errorMessage(e) }));
         }
     }
@@ -629,7 +637,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
             : '';
         return `<div class="act clickable" data-job="${escapeHtml(j.key)}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}">
             <div class="res ${escapeHtml(j.state)}">${POps.iconHtml(icon)}</div>
-            <div style="min-width:0"><div class="what">${escapeHtml(targetText(j))}</div>
+            <div style="min-width:0"><div class="what">${targetHtml(j)}</div>
                 <div class="meta">${escapeHtml(j.by || POps.t('sistem'))} · ${POps.timeHtml(tsOf(j.at))}${j.reason ? ' · ' + POps.tHtml('gerekçe: {reason}', { reason: j.reason }) : ''}</div>
                 ${singleWhy ? `<div class="why">${escapeHtml(singleWhy)}</div>` : ''}</div>
             <div class="side"><span class="word ${escapeHtml(j.state)}">${escapeHtml(jobWord(j))}</span><span class="when">${Number(j.c.ok + j.c.bad)}/${Number(j.c.total)}</span>${j.c.total > 1 ? pbarHtml(j.c) : ''}</div>
@@ -682,7 +690,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
                 <button type="button" class="btn" data-act="deploy">${POps.iconHtml('send', 'sm')}${POps.tHtml('Dağıt')}</button>
                 <button type="button" class="btn secondary" data-act="edit">${POps.iconHtml('edit', 'sm')}${POps.tHtml('Düzenle')}</button>
                 <span class="grow"></span>
-                <button type="button" class="ibtn" data-act="more" data-tip="${escapeHtml(POps.t('Diğer işlemler'))}" data-tip-pos="left" aria-label="${escapeHtml(POps.t('Diğer işlemler'))}" aria-haspopup="menu">${POps.iconHtml('more')}</button>
+                <button type="button" class="btn secondary" data-act="more" aria-haspopup="menu">${POps.iconHtml('more', 'sm')}${POps.tHtml('Diğer')}</button>
             </div>
             ${issueHtml}${factsHtml}${codeHtml}
             <div><h3>${POps.tHtml('Son dağıtımlar')}</h3><div class="dp-deps">${depsHtml}</div></div>`;
@@ -1188,6 +1196,8 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     tbody.addEventListener('click', (e) => {
         const copy = e.target.closest('[data-copy]');
         if (copy) { e.stopPropagation(); copyText(copy.dataset.copy, POps.t('Özet kopyalandı.')); return; }
+        const go = e.target.closest('[data-deploy]');
+        if (go) { const o = ui.pkgs.find(x => x.id === go.dataset.deploy); if (o) openRun([o]); return; }
         const tr = e.target.closest('tr[data-id]');
         if (tr && !e.target.closest('a, .mark')) openPkg(tr.dataset.id);
     });
