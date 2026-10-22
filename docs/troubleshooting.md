@@ -93,6 +93,13 @@ enrollment token created for a lab takes precedence.
   `/qn /norestart` plus your parameters; only exit codes 0 and 3010 count as success.
 - **Scripts using the API get `403 CSRF doğrulaması başarısız`.** A request authenticated by the `pops_jwt` cookie
   must send `X-Requested-With: XMLHttpRequest`. Scripts should use `Authorization: Bearer <token>` instead.
+- **A file transfer over about 100 MB fails, a smaller one works.** A reverse proxy in front of the server limits
+  the size of one request. Cloudflare's Free and Pro plans refuse request bodies over 100 MB, so pulling a file of
+  that size from a PC (the agent uploads it in one request) or sending one from the panel fails; in the field a
+  190 MB pull failed after 30 seconds with `Error while copying content to a stream.` while 90 MB went through in 15
+  seconds. Send the file in parts below the limit, let the POps host name bypass the proxy (for Cloudflare: DNS
+  only), or raise the proxy's limit. The web server must allow the size too: the installer's nginx template allows
+  600 MB on the upload addresses (`client_max_body_size`); on Apache, check `LimitRequestBody`.
 
 ## POpsVision
 
