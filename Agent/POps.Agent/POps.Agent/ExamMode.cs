@@ -29,8 +29,8 @@ namespace POpsAgent
         [JsonPropertyName("since")] public long Since { get; set; }
         // Kurallara giren adresler (sunucu + çözülen izin listesi); değişince kurallar yenilenir
         [JsonPropertyName("addresses")] public List<string> Addresses { get; set; } = new List<string>();
-        // Sınavdan önce kapalı olan güvenlik duvarı profilleri (bitince geri kapatılır)
-        [JsonPropertyName("previous_disabled_profiles")] public List<string> PreviousDisabledProfiles { get; set; } = new List<string>();
+        // Sınavdan önce kapalı olan güvenlik duvarı profilleri (bitince ve MSI kaldırılırken geri kapatılır; alan adı ortak)
+        [JsonPropertyName(FirewallRules.ExamProfilesKey)] public List<string> PreviousDisabledProfiles { get; set; } = new List<string>();
     }
 
     // Sınav modu (sunucu {"action":"exam_mode","enabled":true,...}): cihaz yalnızca POps sunucusuyla, DNS/DHCP ile ve
@@ -42,7 +42,7 @@ namespace POpsAgent
     [SupportedOSPlatform("windows")]
     public sealed class ExamMode
     {
-        public const string StateFileName = "exam.json";
+        public const string StateFileName = FirewallRules.ExamStateFile;
         // server_info.features: sunucu exam_mode gönderir ve exam_state okur
         public const string Feature = "exam_mode";
         // Sunucu şeması: allow ve block_apps en çok 50 kayıt (sunucunun mesajı en çok 200 karakter)

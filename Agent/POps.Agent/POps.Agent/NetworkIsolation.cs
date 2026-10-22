@@ -40,11 +40,12 @@ namespace POpsAgent
     [SupportedOSPlatform("windows")]
     public sealed class NetworkIsolation
     {
-        public const string RuleGroup = "POps Isolation";
+        // Kural grupları, profil adları ve durum dosyası tek yerde (POps.Shared.FirewallRules): MSI kaldırılırken aynı adlarla
+        // silinir.
+        public const string RuleGroup = FirewallRules.IsolationGroup;
         // Sınav modu aynı motoru kendi kural grubuyla kullanır (bkz. ExamMode). Bir grup kalkarken öteki sürüyorsa
         // güvenlik duvarı profilleri kapatılmaz: kapatmak ötekinin kurallarını da etkisiz bırakırdı.
-        public const string ExamRuleGroup = "POps Exam";
-        private static readonly string[] Profiles = { "Domain", "Private", "Public" };
+        public const string ExamRuleGroup = FirewallRules.ExamGroup;
         private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
 
         public static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(5);
@@ -54,7 +55,7 @@ namespace POpsAgent
 
         // Durum dosyası güvenli depoda (AgentPaths.SecureFile(StateFileName)). Worker kurar; QuarantineControl ve eş önbelleği
         // yolu AgentPaths'ten alır.
-        public const string StateFileName = "isolation.json";
+        public const string StateFileName = FirewallRules.IsolationStateFile;
 
         // statePath: durum dosyası (<güvenli depo>\isolation.json); scripts: güvenlik duvarı betiklerini çalıştıran (servis:
         // PowerShell, bkz. MachineSeams.FirewallScripts; testlerde güvenlik duvarına dokunmayan sahte)
@@ -309,12 +310,14 @@ namespace POpsAgent
         // ------------------------------------------------------------------------------------------
         internal static string BuildEnableScript(IEnumerable<(BigInteger Start, BigInteger End, bool V6)> allowed, string group = RuleGroup)
         {
+            // Kaldırma yalnızca FirewallRules.Groups'taki grupları siler: başka bir grupta kural kurulmaz
+            if (!FirewallRules.IsGroup(group)) throw new ArgumentException($"Güvenlik duvarı grubu POps.Shared.FirewallRules.Groups'ta yok: {group}", nameof(group));
             string blocked = string.Join(",", BlockedRanges(allowed).Select(r => $"'{r}'"));
             return $@"$ErrorActionPreference = 'Stop'
 $group = '{group}'
 $previous = @(Get-NetFirewallProfile | ForEach-Object {{ [pscustomobject]@{{ Name = [string]$_.Name; Enabled = [string]$_.Enabled }} }})
 $old = @(Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue)
-Get-NetFirewallRule -DisplayName 'POps_Isolation_*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Get-NetFirewallRule -DisplayName '{FirewallRules.LegacyIsolationRules}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 $blocked = @({blocked})
 New-NetFirewallRule -Group $group -DisplayName '{group} - Outbound' -Direction Outbound -Action Block -Profile Any -RemoteAddress $blocked | Out-Null
 New-NetFirewallRule -Group $group -DisplayName '{group} - Inbound' -Direction Inbound -Action Block -Profile Any -RemoteAddress $blocked | Out-Null
@@ -331,10 +334,10 @@ ConvertTo-Json -Compress -InputObject $previous
             var sb = new StringBuilder();
             sb.AppendLine("$ErrorActionPreference = 'Stop'");
             sb.AppendLine($"Get-NetFirewallRule -Group '{group}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule");
-            if (group == RuleGroup) sb.AppendLine("Get-NetFirewallRule -DisplayName 'POps_Isolation_*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule");
+            if (group == RuleGroup) sb.AppendLine($"Get-NetFirewallRule -DisplayName '{FirewallRules.LegacyIsolationRules}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule");
             // Önceden kapalı olan profiller yeniden kapatılır (yalnızca bilinen profil adları); öteki grup (karantina /
             // sınav modu) sürüyorsa profillere dokunulmaz
-            string[] profiles = profilesToDisable.Where(p => Profiles.Contains(p)).Distinct().ToArray();
+            string[] profiles = profilesToDisable.Where(p => FirewallRules.Profiles.Contains(p)).Distinct().ToArray();
             if (profiles.Length > 0)
             {
                 sb.AppendLine($"if (@(Get-NetFirewallRule -Group '{other}' -ErrorAction SilentlyContinue).Count -eq 0) {{");
@@ -352,7 +355,12 @@ ConvertTo-Json -Compress -InputObject $previous
             string json = output?.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.StartsWith("[") || l.StartsWith("{"));
             if (json == null) return;
             if (json.StartsWith("{")) json = "[" + json + "]";
-            SecureStore.WriteProtected(statePath, JsonSerializer.Serialize(new { previous_profiles = JsonDocument.Parse(json).RootElement, since = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
+            // Alan adı MSI kaldırmasıyla ortak (FirewallRules.IsolationProfilesKey): kaldırma önceden kapalı profilleri buradan okur
+            SecureStore.WriteProtected(statePath, JsonSerializer.Serialize(new Dictionary<string, object>
+            {
+                [FirewallRules.IsolationProfilesKey] = JsonDocument.Parse(json).RootElement,
+                ["since"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            }));
         }
 
         internal static List<string> ReadPreviouslyDisabledProfiles(string statePath)
@@ -363,7 +371,7 @@ ConvertTo-Json -Compress -InputObject $previous
                 string text = SecureStore.Read(statePath);
                 if (text == null) return disabled;
                 using JsonDocument doc = JsonDocument.Parse(text);
-                foreach (JsonElement p in doc.RootElement.GetProperty("previous_profiles").EnumerateArray())
+                foreach (JsonElement p in doc.RootElement.GetProperty(FirewallRules.IsolationProfilesKey).EnumerateArray())
                     if (p.GetProperty("Enabled").GetString() == "False") disabled.Add(p.GetProperty("Name").GetString());
             }
             catch (Exception ex) when (ex is JsonException || ex is KeyNotFoundException || ex is InvalidOperationException) { }

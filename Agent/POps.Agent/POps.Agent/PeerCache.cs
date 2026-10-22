@@ -41,7 +41,8 @@ namespace POpsAgent
     public sealed class PeerCache
     {
         public const int Port = 8817;
-        public const string RuleGroup = "POps Peer Cache";
+        // Kural grubu MSI kaldırmasıyla ortak (POps.Shared.FirewallRules): kaldırma bu gruptaki kuralı da siler
+        public const string RuleGroup = FirewallRules.PeerCacheGroup;
         public const string PathPrefix = "/pops-cache/";
         public const int MaxClients = 4;
         public static readonly TimeSpan Lifetime = TimeSpan.FromHours(2);
@@ -375,7 +376,7 @@ namespace POpsAgent
         internal static string BuildAddRuleScript(string program) => $@"$ErrorActionPreference = 'Stop'
 $group = {BitsDownload.Quote(RuleGroup)}
 Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-New-NetFirewallRule -Group $group -DisplayName {BitsDownload.Quote($"POps Peer Cache (TCP {Port})")} -Direction Inbound -Action Allow -Protocol TCP -LocalPort {Port} -RemoteAddress LocalSubnet -Program {BitsDownload.Quote(program)} -Profile Any | Out-Null
+New-NetFirewallRule -Group $group -DisplayName {BitsDownload.Quote($"{RuleGroup} (TCP {Port})")} -Direction Inbound -Action Allow -Protocol TCP -LocalPort {Port} -RemoteAddress LocalSubnet -Program {BitsDownload.Quote(program)} -Profile Any | Out-Null
 'OK'
 ";
 

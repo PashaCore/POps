@@ -180,6 +180,30 @@ namespace POps.Tests
         // Yöntemin kendi gövdesinde çağırdığı, kurduğu ya da temsilcisini aldığı (taranan derlemelerdeki) yöntemler
         public static IReadOnlyList<MethodBase> DirectCallees(MethodBase method) => Summarize(method).Callees;
 
+        // Derlemenin bütün yöntemlerindeki (derleyicinin ürettiği türler dahil) dize sabitleri (ldstr) ve yöntemleri. Ara değerli
+        // dizelerin ($"...{x}...") sabit parçaları ayrı ayrı görünür.
+        public static List<(MethodBase Method, string Literal)> StringLiterals(Assembly assembly)
+        {
+            var literals = new List<(MethodBase, string)>();
+            foreach (Type type in Types(assembly))
+                foreach (MethodBase method in DeclaredMethods(type))
+                {
+                    byte[] il;
+                    try { il = method.GetMethodBody()?.GetILAsByteArray(); }
+                    catch (InvalidOperationException) { continue; }
+                    if (il == null) continue;
+                    int pos = 0;
+                    while (pos < il.Length)
+                    {
+                        byte first = il[pos++];
+                        OpCode op = first == 0xFE ? OpCodesByValue[unchecked((short)(0xFE00 | il[pos++]))] : OpCodesByValue[first];
+                        if (op == OpCodes.Ldstr) literals.Add((method, method.Module.ResolveString(BitConverter.ToInt32(il, pos))));
+                        pos += OperandSize(op.OperandType, il, pos);
+                    }
+                }
+            return literals;
+        }
+
         // Derlemenin (taranan derlemelerden biri) kendi türlerindeki değişebilir statikler, "Tür.Üye" adlarıyla: Scan'in saydığı
         // alanlar (taranan derlemelerin herhangi birinde statik kurucu dışında yazılan ya da içeriği değiştirilen; otomatik
         // özellikler özelliğin adıyla) ve set erişimcisi olan statik özellikler (henüz kimse atamasa da: bir test seam'i böyle

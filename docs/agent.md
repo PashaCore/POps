@@ -930,7 +930,11 @@ folder, the updater and the watchdog get the same folders from the service, and 
 changes. Rules and caveats: [`configuration.md`](configuration.md#log-and-data-folders).
 
 Uninstalling removes the programs, the service, the Run entry and `appsettings.json`, but keeps `C:\POpsData`
-(identity and secret) and `C:\POpsLogs`, so a reinstalled PC returns with the same identity.
+(identity and secret) and `C:\POpsLogs`, so a reinstalled PC returns with the same identity. From 0.1.24 it also
+opens the network, even during a quarantine or an exam: it deletes every firewall rule POps added (`POps Isolation`,
+`POps Exam`, `POps Peer Cache` and the old `POps_Isolation_*` rules), switches the profiles that were off before back
+off, restores the Ctrl+Alt+Del options and deletes `isolation.json`, `exam.json` and `lockdown.json`. An upgrade or a
+rollback keeps all of them ([`Installer/README.md`](../Installer/README.md#what-the-package-does)).
 
 ## Building and testing
 

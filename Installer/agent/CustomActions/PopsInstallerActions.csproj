@@ -31,10 +31,12 @@
     <Content Include="CustomAction.config" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- Karantina kilit politikalarını geri alma mantığı ajanla ortak (kaldırmada kalıntı bırakılmaz); veri ve log
-       klasörlerinin seçimi ve izinleri (appsettings.json DataDirectory / LogDirectory) ajanla aynı kuralla -->
+  <!-- Karantina kilit politikalarını geri alma mantığı ve güvenlik duvarı kurallarının adları ajanla ortak (kaldırmada
+       kalıntı bırakılmaz); veri ve log klasörlerinin seçimi ve izinleri (appsettings.json DataDirectory / LogDirectory)
+       ajanla aynı kuralla -->
   <ItemGroup>
     <Compile Include="..\..\..\Agent\POps.Shared\KioskPolicies.cs" Link="KioskPolicies.cs" />
+    <Compile Include="..\..\..\Agent\POps.Shared\FirewallRules.cs" Link="FirewallRules.cs" />
     <Compile Include="..\..\..\Agent\POps.Shared\FolderSettings.cs" Link="FolderSettings.cs" />
   </ItemGroup>
 

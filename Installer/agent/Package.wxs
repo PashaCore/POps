@@ -178,7 +178,10 @@
                   Execute="deferred" Impersonate="no" Return="ignore" />
     <SetProperty Id="PopsKeepPackage" Sequence="execute" Before="PopsKeepPackage" Value="ORIGINAL_MSI=[OriginalDatabase];INSTALLFOLDER=[INSTALLFOLDER]" />
 
-    <!-- Gerçek kaldırmada appsettings.json; yükseltme ve geri dönüşte (UPGRADINGPRODUCTCODE) dokunulmaz -->
+    <!-- Gerçek kaldırmada appsettings.json silinir, karantina kilit politikaları geri alınır ve POps'un bütün güvenlik duvarı
+         kuralları (karantina, sınav modu, eş önbelleği) silinir, önceden kapalı profiller yeniden kapatılır; yükseltme ve
+         geri dönüşte (UPGRADINGPRODUCTCODE) dokunulmaz: karantina ya da sınav yeni sürümde sürer. RemoveFiles'tan önce, yani
+         StopServices'ten sonra: servis kuralları yeniden kuramaz. SYSTEM olarak (Impersonate="no"). -->
     <CustomAction Id="PopsRemoveConfig" BinaryRef="PopsActions" DllEntry="RemoveConfig"
                   Execute="deferred" Impersonate="no" Return="ignore" />
     <SetProperty Id="PopsRemoveConfig" Sequence="execute" Before="PopsRemoveConfig" Value="INSTALLFOLDER=[INSTALLFOLDER]" />

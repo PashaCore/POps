@@ -107,6 +107,8 @@ namespace POps.Installer
             Setup.RemoveConfig(installDir, session.Log);
             // Karantinadayken kaldırılsa bile Görev Yöneticisi vb. kapalı kalmaz
             Setup.RestoreKiosk(layout, new POps.Shared.WindowsKioskRegistry(), session.Log);
+            // Karantina ya da sınav modu sürerken kaldırılsa bile ağ açılır: POps'un bütün güvenlik duvarı kuralları silinir
+            Setup.RemoveFirewallRules(layout, FirewallScript.Run, session.Log);
             return ActionResult.Success;
         }
 
@@ -127,6 +129,40 @@ namespace POps.Installer
 
         private static string Value(CustomActionData data, string key) =>
             data != null && data.ContainsKey(key) ? Setup.Clean(data[key]) : null;
+    }
+
+    // Kaldırmanın güvenlik duvarı betiğini çalıştıran (ajandaki NetworkIsolation.RunPowerShellAsync'in .NET Framework karşılığı):
+    // 64 bit Windows PowerShell, profil yok, betik -EncodedCommand ile tek parça. Yalnızca RemoveConfig custom action'ı çalıştırır;
+    // testler Setup.RemoveFirewallRules'a güvenlik duvarına dokunmayan bir sahte verir.
+    internal static class FirewallScript
+    {
+        public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(2);
+
+        // Komut satırı (testler yalnızca bunu denetler, süreç başlatmaz)
+        public static System.Diagnostics.ProcessStartInfo StartInfo(string script) =>
+            new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
+                "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(script)))
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+
+        public static (int Exit, string Output) Run(string script)
+        {
+            using (System.Diagnostics.Process p = System.Diagnostics.Process.Start(StartInfo(script)))
+            {
+                System.Threading.Tasks.Task<string> stdout = p.StandardOutput.ReadToEndAsync();
+                System.Threading.Tasks.Task<string> stderr = p.StandardError.ReadToEndAsync();
+                if (!p.WaitForExit((int)Timeout.TotalMilliseconds))
+                {
+                    try { p.Kill(); } catch (Exception) { }
+                    return (-1, "PowerShell " + Timeout.TotalMinutes.ToString(CultureInfo.InvariantCulture) + " dakikada bitmedi");
+                }
+                return (p.ExitCode, (stdout.Result + stderr.Result).Trim());
+            }
+        }
     }
 
     // Kurulumun dokunduğu konumlar (testte geçici klasörlerle değiştirilir). Veri ve log klasörleri appsettings.json'da
@@ -340,7 +376,9 @@ namespace POps.Installer
 
         // ==========================================================================================
         // RemoveConfig: yalnızca gerçek kaldırmada (güncellemede değil). C:\POpsData (kimlik, cihaz
-        // secret'ı) bilerek korunur: yeniden kurulan cihaz aynı kimlikle döner.
+        // secret'ı) bilerek korunur: yeniden kurulan cihaz aynı kimlikle döner. Aynı custom action karantina kilit
+        // politikalarını geri alır (RestoreKiosk) ve güvenlik duvarı kurallarını siler (RemoveFirewallRules); karantina ve
+        // sınav modunun durum dosyaları kurallarla birlikte gider.
         // ==========================================================================================
         public static void RemoveConfig(string installDir, Action<string> log)
         {
@@ -430,6 +468,59 @@ namespace POps.Installer
                 else log($"POps: {pending.Count} kilit ayarı geri alınamadı (oturumu kapalı kullanıcı): {string.Join(", ", pending.Select(e => e.Hive + "\\" + e.Key + "\\" + e.Name))}. Elle temizlik: Agent/README.md.");
             }
             catch (Exception ex) { log("POps: karantina kilit politikaları geri alınamadı: " + ex.Message); }
+        }
+
+        // ==========================================================================================
+        // RemoveFirewallRules: RemoveConfig'te, yani yalnızca gerçek kaldırmada (güncellemede ve geri dönüşte değil: kurallar ve
+        // durum dosyaları yeni sürüme kalır). Servis bu sırada durmuştur, kuralları yeniden kuramaz. Ağ karantinası ya da sınav
+        // modu sürerken kaldırılan ajan bilgisayarı kilitli bırakmasın: POps'un bütün güvenlik duvarı kuralları
+        // (POps.Shared.FirewallRules.Groups ve eski adlar) silinir, karantinanın / sınavın açtığı profillerden önceden kapalı
+        // olanlar (isolation.json, exam.json) yeniden kapatılır. Başarılıysa durum dosyaları da silinir (isolation.json,
+        // exam.json, lockdown.json): yeniden kurulan ajan kuralları geri kurmaz, kilit ekranını göstermez. Başarısızsa dosyalar
+        // kalır: yeniden kurulan ajan karantinayı bilir ve panelin "unlock"u kuralları kaldırıp profilleri geri yükler; elle
+        // temizlik Agent/README.md'de. Hata kaldırmayı bozmaz. run: betiği çalıştıran (kurulum: FirewallScript.Run; testlerde
+        // güvenlik duvarına dokunmayan sahte). Dönen: kurallar kalktı mı.
+        // ==========================================================================================
+        public static bool RemoveFirewallRules(Layout layout, Func<string, (int Exit, string Output)> run, Action<string> log)
+        {
+            try
+            {
+                List<string> profiles = PreviouslyDisabledProfiles(layout, log);
+                (int exit, string output) = run(POps.Shared.FirewallRules.BuildUninstallScript(profiles));
+                if (exit != 0)
+                {
+                    log($"POps: HATA: güvenlik duvarı kuralları kaldırılamadı (çıkış {exit}: {output}). Karantina / sınav durumu korundu; elle temizlik: Agent/README.md \"Lifting a quarantine by hand\".");
+                    return false;
+                }
+                foreach (string name in POps.Shared.FirewallRules.StateFiles)
+                {
+                    string path = Path.Combine(layout.SecureDir, name);
+                    if (File.Exists(path)) DeleteFile(path, log);
+                }
+                log($"POps: güvenlik duvarı kuralları kaldırıldı (gruplar: {string.Join(", ", POps.Shared.FirewallRules.Groups)}; betik: {output})"
+                    + (profiles.Count > 0 ? $"; önceden kapalı profiller yeniden kapatıldı: {string.Join(", ", profiles)}." : "."));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log($"POps: HATA: güvenlik duvarı kuralları kaldırılamadı ({ex.GetType().Name}: {ex.Message}). Karantina / sınav durumu korundu; elle temizlik: Agent/README.md \"Lifting a quarantine by hand\".");
+                return false;
+            }
+        }
+
+        // Karantinadan ve sınavdan önce kapalı olan profiller (ajanın durum dosyalarından; okunamayan dosya yok sayılır, profiller
+        // açık kalır). isolation.json: [{"Name","Enabled"}], Enabled "False" olan; exam.json: ad listesi. Bilinmeyen ad atılır.
+        internal static List<string> PreviouslyDisabledProfiles(Layout layout, Action<string> log)
+        {
+            var names = new List<string>();
+            Dictionary<string, object> isolation = ReadJsonObject(Path.Combine(layout.SecureDir, POps.Shared.FirewallRules.IsolationStateFile), log);
+            if (isolation != null && isolation.TryGetValue(POps.Shared.FirewallRules.IsolationProfilesKey, out object previous) && previous is IEnumerable entries && !(previous is string))
+                foreach (object entry in entries)
+                    if (entry is Dictionary<string, object> profile && StringValue(profile, "Enabled") == "False") names.Add(StringValue(profile, "Name"));
+            Dictionary<string, object> exam = ReadJsonObject(Path.Combine(layout.SecureDir, POps.Shared.FirewallRules.ExamStateFile), log);
+            if (exam != null && exam.TryGetValue(POps.Shared.FirewallRules.ExamProfilesKey, out object disabled) && disabled is IEnumerable list && !(disabled is string))
+                foreach (object name in list) names.Add(name as string);
+            return POps.Shared.FirewallRules.KnownProfiles(names);
         }
 
         // Kurum sertifikası (ajanda ServerTrust): SERVER_CA_CERT=<PEM yolu> dosyayı server-ca.pem olarak güvenli depoya

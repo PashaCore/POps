@@ -107,7 +107,7 @@ The tray menu has **Sorun bildir** (report a problem) and **Taleplerim** (my req
 
 ## Lifting a quarantine by hand
 
-Use this only when neither the panel's unlock nor the offline bypass code helps. For example: the server is gone for good, or PowerShell or Windows Firewall on the PC is broken, so the agent cannot remove its own rules (the panel then reports that the quarantine could not be lifted). You need a local administrator account.
+Use this only when neither the panel's unlock nor the offline bypass code helps. For example: the server is gone for good, or PowerShell or Windows Firewall on the PC is broken, so the agent cannot remove its own rules (the panel then reports that the quarantine could not be lifted). You need a local administrator account. From 0.1.24, uninstalling the MSI does steps 2–4 for the quarantine and exam mode by itself; use this list when the MSI log says `güvenlik duvarı kuralları kaldırılamadı` or the agent is older (exam mode: group `POps Exam` and `C:\POpsData\secure\exam.json`, whose `previous_disabled_profiles` lists the profiles to switch off again).
 
 1. From 0.1.11-alpha the quarantine also hides **Switch user**, **Sign out**, **Lock**, **Change a password** and **Task Manager** on the Ctrl+Alt+Del screen (see *Ctrl+Alt+Del during a quarantine* below). Start the PC in Safe Mode instead: press Ctrl+Alt+Del, click the power icon, hold **Shift** and choose **Restart**, then **Troubleshoot → Advanced options → Startup Settings → Restart → 4 (Safe Mode)**. Sign in as a local administrator. Neither the POps service nor the tray runs in Safe Mode. (Agents older than 0.1.11: Ctrl+Alt+Del → **Switch user** still works.)
 2. In an elevated command prompt, remove the firewall rules:
