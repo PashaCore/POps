@@ -537,6 +537,9 @@ namespace POpsAgent
         // Tepsi oturumu başlattı (START_VISION_TUNNEL; bkz. VisionSession)
         internal Task StartVisionFromTrayAsync(string message) => _vision.StartVisionFromTrayAsync(message);
 
+        // Testler: Vision tünelinin alım döngüsü kapanışı gördü (gerçek tünel yok; bkz. VisionSession.OnTunnelClosedAsync)
+        internal Task OnVisionTunnelClosedAsync(WebSocketCloseStatus? status) => _vision.OnTunnelClosedAsync(status);
+
         // Testler: tepsiye giden mesajlar
         internal Action<string> TrayOverride { get; set; }
         // Testler: tepsi bağlı mı / etkin konsol oturumunda mı (null: gerçek boru)

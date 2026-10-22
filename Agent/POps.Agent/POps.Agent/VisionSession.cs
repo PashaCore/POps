@@ -46,6 +46,13 @@ namespace POpsAgent
         private string? _visionRequestedBy;
         private string? _visionReason;
         private bool _visionUserApproved;
+        // Oturumun Olay Günlüğü kaydı: 1010 yazıldı, 1011 bekleniyor. Oturumun sonu iki yoldan birden gelir: oturumu bitiren yol
+        // (stop_stream, tepsinin STOP_VISION_TUNNEL'ı, bağlantı kaybı ya da servis durması, yetenek ya da modül kapanması) tüneli
+        // kapatırken tünelin alım döngüsü de kapanışı görür ve DisconnectVisionTunnelAsync'i çağırır. Bayrak 1011 yazıldıktan
+        // sonra temizlendiğinde, Olay Günlüğüne yazmanın sürdüğü milisaniyelerde ikinci yol da onu açık görüyor ve 1011 aynı
+        // saniyede iki kez yazılıyordu (saha, 0.1.24-alpha). Bayrak _auditGate altında okunup değişir: 1011'i yalnızca bayrağı
+        // kapatan yol yazar; 1010 kilit altında yazılır, bitiş onu beklemeden 1011 yazamaz.
+        private readonly object _auditGate = new object();
         private bool _visionAuditActive;
         private bool _pendingVisionMandatory;
         // Bu oturumda tepsinin oturum bildirimi kuruldu (oturum bilgisayar kilitliyken başladı; bkz. OnVisionStartedLocked)
@@ -99,10 +106,13 @@ namespace POpsAgent
             if (!_isVisionStreamActive) return;
             _visionSessionApproved = true;
             _visionUserApproved = !_pendingVisionMandatory;
-            if (!_visionAuditActive)
+            lock (_auditGate)
             {
-                _audit(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, _visionUserApproved));
-                _visionAuditActive = true;
+                if (!_visionAuditActive)
+                {
+                    _audit(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, _visionUserApproved));
+                    _visionAuditActive = true;
+                }
             }
             // Bildirim yakalamadan önce kurulur: tepsi kullanıcının masaüstünü ancak bildirim ekrandayken yakalar
             if (lockedAtStart) OnVisionStartedLocked();
@@ -205,11 +215,17 @@ namespace POpsAgent
             _visionSessionApproved = false;
             var ws = Interlocked.Exchange(ref _visionWs, null);
             if (ws != null) { try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Yayın Kesildi", CancellationToken.None); } catch { } ws.Dispose(); }
-            if (_visionAuditActive)
+            // Oturum başına bir 1011: bayrağı kapatan yol yazar, aynı anda gelen öteki yol hiçbir şey yazmadan geçer (bkz. _auditGate)
+            LocalAuditEvent? finished = null;
+            lock (_auditGate)
             {
-                _audit(LocalAudit.VisionFinished(_visionSessionId, _visionRequestedBy, _visionUserApproved));
-                _visionAuditActive = false;
+                if (_visionAuditActive)
+                {
+                    finished = LocalAudit.VisionFinished(_visionSessionId, _visionRequestedBy, _visionUserApproved);
+                    _visionAuditActive = false;
+                }
             }
+            if (finished != null) _audit(finished);
             // Oturum bitti: kilitliyken başlayan oturumun bildirimi kapanır (tepsi STOP_CAPTURE'da da kapatır; bu yol
             // sunucunun tüneli kapattığı durumu da kapsar)
             if (_visionNoticeArmed)
@@ -258,9 +274,16 @@ namespace POpsAgent
             catch { }
             finally
             {
-                ApplyVisionClose(ws.CloseStatus);
-                await DisconnectVisionTunnelAsync();
+                await OnTunnelClosedAsync(ws.CloseStatus);
             }
+        }
+
+        // Tünelin alım döngüsü bitti: sunucu tüneli kapattı, bağlantı koptu ya da oturumu bitiren yol tüneli kapatırken döngü de
+        // kapanışı gördü. Kapanış kodu uygulanır, oturum biter (1011 oturum başına bir kez; bkz. _auditGate)
+        internal async Task OnTunnelClosedAsync(WebSocketCloseStatus? status)
+        {
+            ApplyVisionClose(status);
+            await DisconnectVisionTunnelAsync();
         }
 
         // ------------------------------------------------------------------ Vision v2
@@ -348,7 +371,9 @@ namespace POpsAgent
         // start_stream (eski): kullanıcı onayı olmadan, zorunlu oturum gibi
         internal async Task StartStreamAsync(JsonElement root, CancellationToken stoppingToken)
         {
-            if (!_visionAuditActive)
+            bool auditActive;
+            lock (_auditGate) auditActive = _visionAuditActive;
+            if (!auditActive)
             {
                 _visionSessionId = null;
                 _visionRequestedBy = null;
@@ -358,11 +383,14 @@ namespace POpsAgent
             int fps = root.TryGetProperty("fps", out var fProp) ? (fProp.ValueKind == JsonValueKind.Number ? fProp.GetInt32() : 2) : 2;
             if (_isVisionStreamActive)
             {
-                if (!_visionAuditActive)
+                lock (_auditGate)
                 {
-                    _visionUserApproved = false;
-                    _audit(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, false));
-                    _visionAuditActive = true;
+                    if (!_visionAuditActive)
+                    {
+                        _visionUserApproved = false;
+                        _audit(LocalAudit.VisionStarted(_visionSessionId, _visionRequestedBy, false));
+                        _visionAuditActive = true;
+                    }
                 }
                 StartCapture(fps);
             }

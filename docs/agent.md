@@ -189,7 +189,8 @@ is reported as a `result` with `exit_code` -5 followed by `capability_denied`.
 
 High-impact actions also have a server-independent local record in the Windows **Application** event log under
 the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 and length are recorded, never the
-command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine allow list refreshed (old and new
+command text), 1010/1011 Vision sessions (one of each per session, however it ends: panel stop, tray, lost
+connection or service stop, capability or module off, tunnel closed by the server), 1020/1021 quarantine, 1022 quarantine allow list refreshed (old and new
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
 that partly changed (no decision taken), 1080 a change of the server's modules, 1090 a configuration that could not
