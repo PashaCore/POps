@@ -13,7 +13,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Makine kapıları güvenli varsayılanla (bkz. MachineSeams): testten ulaşılan hiçbir yol gerçek güvenlik duvarı betiğini,
-    // kiosk kayıt defterini, sistem ortam değişkenlerini, BITS'i, güç API'sini, winget'i, süreç kapatmayı, updater'ı, servis
+    // kiosk kayıt defterini, sistem ortam değişkenlerini, BITS'i, güç API'sini, winget'i, kurulu yazılım kayıtlarını (kayıt
+    // defteri), süreç kapatmayı, updater'ı, servis
     // durdurmayı, kurulu servisin tepsi borusunu ya da dinleyen eş önbelleği sunucusunu kuramaz. Gerçek kapılar yalnızca
     // MachineSeams.Production'da kurulur ve onu yalnızca Program çağırır; kapı verilmeyen her yol (MachineSeams'in parametresiz
     // hâli, AgentHarness) reddeden sahtelere düşer.
@@ -52,6 +53,15 @@ namespace POps.Tests.Agent
                     if (property.Name == nameof(MachineSeams.ReadMachineVariable)) Assert.Null(machine.ReadMachineVariable("POPS_BYPASS_SECRET"));
                     // Bu bilgisayarın ağ arabirimleri okunmaz: yerel alt ağ yok (eş önbelleği hiçbir eşi ve istemciyi kabul etmez)
                     if (property.Name == nameof(MachineSeams.LocalSubnets)) Assert.Empty(machine.LocalSubnets());
+                    // Bu bilgisayarın kayıt defteri okunmaz: kurulu yazılım kaydı yok (winget'in kurulduğu yer satırı belirlenemedi der)
+                    if (property.Name == nameof(MachineSeams.InstallRegistry))
+                    {
+                        InstallRegistrySnapshot registry = machine.InstallRegistry();
+                        Assert.Empty(registry.Entries);
+                        Assert.Empty(registry.MachineProducts);
+                        Assert.Empty(registry.SystemProducts);
+                        Assert.Null(registry.Failure);
+                    }
                 }
                 else if (property.Name == nameof(MachineSeams.Kiosk))
                     Assert.False(value is WindowsKioskRegistry, "kiosk kaydı gerçek kayıt defteri");
@@ -87,6 +97,7 @@ namespace POps.Tests.Agent
             Assert.Contains(targets, m => m.DeclaringType == typeof(WindowsKioskRegistry) && m.IsConstructor);
             Assert.Contains(targets, m => m.DeclaringType == typeof(NetworkIsolation) && m.Name == nameof(NetworkIsolation.RunPowerShellAsync));
             Assert.Contains(targets, m => m.DeclaringType == typeof(AgentUpdater) && m.Name == nameof(AgentUpdater.StartUpdater));
+            Assert.Contains(targets, m => m.DeclaringType == typeof(WingetLocation) && m.Name == nameof(WingetLocation.ReadRegistry));
             targets.Add(Production);
 
             var reaching = typeof(MachineSeamsTests).Assembly.GetTypes()
@@ -181,6 +192,7 @@ namespace POps.Tests.Agent
             Assert.Contains(machine.HasConsoleUser, Fields(worker.Power));
             Assert.Contains(machine.HasConsoleUser, Fields(worker.Messages));
             Assert.Contains(machine.WingetLocator, Fields(worker.Dispatcher.HandlerFor(WingetInstall.Action)));
+            Assert.Contains(machine.InstallRegistry, Fields(worker.Dispatcher.HandlerFor(WingetInstall.Action)));
             FileTransfer transfer = Assert.IsType<FileTransferHandler>(worker.Dispatcher.HandlerFor("file_push")).Transfer;
             Assert.Contains(machine.PublicDesktop, Fields(transfer));
             Assert.Same(machine.Profiles, transfer.ProfileInfo);

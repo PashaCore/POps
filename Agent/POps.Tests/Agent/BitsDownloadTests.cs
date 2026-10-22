@@ -25,6 +25,8 @@ namespace POps.Tests.Agent
         private Func<string, TimeSpan, Task<(int, string)>> _runner;
         private readonly byte[] _package = RandomNumberGenerator.GetBytes(3000);
         private readonly List<string> _stages = new List<string>();
+        // "downloaded" aşamasının detail'i (paketin kaynağı)
+        private readonly List<string> _sources = new List<string>();
         private int _httpRequests;
         // BITS kapısının kaç kez çağrıldığı
         private int _bitsCalls;
@@ -63,7 +65,30 @@ namespace POps.Tests.Agent
         }
 
         private Task<bool> Download(string path) => _agent.Updater.DownloadVerifiedAsync(new HttpClient(new Server(this)), "https://pops.example/updates/x.msi", path,
-            Artifact(), new AgentUpdate.UpdateCommand { Report = m => { lock (_stages) _stages.Add((string)m["stage"]); return Task.FromResult(true); } });
+            Artifact(), new AgentUpdate.UpdateCommand
+            {
+                Report = m =>
+                {
+                    lock (_stages)
+                    {
+                        _stages.Add((string)m["stage"]);
+                        if ((string)m["stage"] == "downloaded") _sources.Add(m.TryGetValue("detail", out object detail) ? (string)detail : null);
+                    }
+                    return Task.FromResult(true);
+                },
+            });
+
+        // Bugünkü log dosyasında bu satırı içeren satır sayısı (BITS'i yalnızca bu sınıf kullanır: başka bir test "(BITS)" yazmaz)
+        private static int LogCount(string text)
+        {
+            string path = POpsHelpers.LogFilePath(DateTime.Now);
+            if (!File.Exists(path)) return 0;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd().Split('\n').Count(line => line.Contains(text, StringComparison.Ordinal));
+        }
+
+        private const string BitsLog = "Paket indirildi (BITS).";
 
         // Sahte BITS: hedefe verilen baytları yazar ve çıkış kodunu döner
         private void Bits(int exit, byte[] content = null) => _runner = (script, _) =>
@@ -76,16 +101,22 @@ namespace POps.Tests.Agent
             return Task.FromResult((exit, exit == 0 ? "OK" : exit == 3 ? "BITS: süre doldu" : "BITS: hata"));
         };
 
+        // BITS'le inen paket doğrudan indirilen gibi denetlenir; log ve "downloaded" kaynağı BITS der (saha: 0.1.24-alpha paketi
+        // BITS'le indi, log yalnızca "Paket indirildi (server)." diyordu)
         [Fact]
-        public async Task Bits_Done_IsVerifiedLikeADirectDownload()
+        public async Task Bits_Done_IsVerifiedLikeADirectDownload_AndSaysBits()
         {
             Bits(0, _package);
             string path = Path.Combine(_agent.Paths.DataDir, "x.msi");
+            int logged = LogCount(BitsLog);
             Assert.True(await Download(path));
             Assert.Equal(_package, File.ReadAllBytes(path));
             Assert.Equal(0, _httpRequests);
             Assert.Equal(1, _bitsCalls);
             Assert.Equal(new[] { "downloaded", "verified" }, _stages);
+            Assert.Equal(new[] { "bits" }, _sources);
+            Assert.Equal(AgentUpdate.SourceBits, _sources[0]);
+            Assert.Equal(logged + 1, LogCount(BitsLog));
             Assert.False(File.Exists(path + ".bits"));
         }
 
@@ -112,6 +143,7 @@ namespace POps.Tests.Agent
             Assert.Equal(1, _httpRequests);
             Assert.Equal(_package, File.ReadAllBytes(path));
             Assert.Equal(new[] { "downloaded", "verified" }, _stages);
+            Assert.Equal(new[] { AgentUpdate.SourceServer }, _sources);
             Assert.False(File.Exists(path + ".bits"));
         }
 
@@ -136,6 +168,7 @@ namespace POps.Tests.Agent
             Assert.False(File.Exists(path));
             Assert.False(File.Exists(path + ".bits"));
             Assert.Equal(new[] { "downloaded" }, _stages);
+            Assert.Equal(new[] { AgentUpdate.SourceBits }, _sources);
         }
 
         [Fact]
@@ -155,9 +188,14 @@ namespace POps.Tests.Agent
         {
             Bits(exit);
             string path = Path.Combine(_agent.Paths.DataDir, "x.msi");
+            int logged = LogCount(BitsLog);
             Assert.True(await Download(path));
             Assert.Equal(1, _httpRequests);
             Assert.Equal(_package, File.ReadAllBytes(path));
+            // Doğrudan indirildi: kaynak sunucu, log "(server)"; BITS satırı yok
+            Assert.Equal(new[] { "downloaded", "verified" }, _stages);
+            Assert.Equal(new[] { AgentUpdate.SourceServer }, _sources);
+            Assert.Equal(logged, LogCount(BitsLog));
         }
 
         [Fact]

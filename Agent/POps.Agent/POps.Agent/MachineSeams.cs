@@ -13,7 +13,7 @@ namespace POpsAgent
 {
     // Ajanın makineye açılan kapıları: güvenlik duvarını, kayıt defteri politikalarını, sistem ortam değişkenlerini, BITS
     // işlerini, güç durumunu, kurulu yazılımı ve süreçleri değiştiren ya da bütün arabirimlerde dinleyen her şey, ve servisin
-    // konsol oturumu ve ağ arabirimleri sorguları.
+    // konsol oturumu, ağ arabirimleri ve kurulu yazılım kayıtları sorguları.
     // Bir Worker'ın kapıları bağlamdadır (AgentContext.Machine); Worker kurduğu parçalara yalnızca kullandıkları kapıyı verir.
     //
     // Güvenli varsayılan: parametresiz kurulan nesnenin her kapısı reddeden ya da hiçbir şey yapmayan sahtedir (Refusing;
@@ -43,8 +43,10 @@ namespace POpsAgent
         // Etkin konsol oturumunda oturum açmış kullanıcı var mı, ve o oturumun kimliği (bkz. SessionTasks)
         public Func<bool> HasConsoleUser { get; init; } = Refusing.NoConsoleUser;
         public Func<uint> ConsoleSession { get; init; } = Refusing.NoConsoleSession;
-        // winget.exe'nin yeri (null: yok; bkz. WingetInstall)
+        // winget.exe'nin yeri (null: yok; bkz. WingetInstall) ve kurulu yazılımın kayıtları (Uninstall anahtarları, Windows
+        // Installer ürünleri; winget paketinin kurulduğu yerin kararı, bkz. WingetLocation)
         public Func<string?> WingetLocator { get; init; } = Refusing.NoWinget;
+        public Func<InstallRegistrySnapshot> InstallRegistry { get; init; } = Refusing.NoInstallRegistry;
         // Sınav modu: izin listesindeki alan adlarının çözümü ve engelli uygulamanın kapatılması (bkz. ExamMode, ExamHandler)
         public Func<string, Task<IPAddress[]>> ExamResolver { get; init; } = Refusing.NoAddresses;
         public Action<Process> StopProcess { get; init; } = Refusing.KeepProcess;
@@ -78,6 +80,7 @@ namespace POpsAgent
             HasConsoleUser = SessionTasks.ConsoleUserPresent,
             ConsoleSession = () => UserSessionLauncher.ActiveConsoleSession(),
             WingetLocator = WingetInstall.LocateWinget,
+            InstallRegistry = WingetLocation.ReadRegistry,
             ExamResolver = host => Dns.GetHostAddressesAsync(host),
             StopProcess = process => process.Kill(),
             PublicDesktop = () => Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
@@ -115,6 +118,9 @@ namespace POpsAgent
             public static uint NoConsoleSession() => UserSessionLauncher.NoSession;
 
             public static string? NoWinget() => null;
+
+            // Bu bilgisayarın kayıt defteri okunmaz: kurulu yazılım kaydı yok (kurulduğu yer belirlenemedi olur)
+            public static InstallRegistrySnapshot NoInstallRegistry() => InstallRegistrySnapshot.Nothing();
 
             public static Task<IPAddress[]> NoAddresses(string host) => Task.FromResult(Array.Empty<IPAddress>());
 

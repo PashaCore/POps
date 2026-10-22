@@ -537,6 +537,9 @@ namespace POpsAgent
         // Tepsi oturumu başlattı (START_VISION_TUNNEL; bkz. VisionSession)
         internal Task StartVisionFromTrayAsync(string message) => _vision.StartVisionFromTrayAsync(message);
 
+        // Testler: Vision tünelinin alım döngüsü kapanışı gördü (gerçek tünel yok; bkz. VisionSession.OnTunnelClosedAsync)
+        internal Task OnVisionTunnelClosedAsync(WebSocketCloseStatus? status) => _vision.OnTunnelClosedAsync(status);
+
         // Testler: tepsiye giden mesajlar
         internal Action<string> TrayOverride { get; set; }
         // Testler: tepsi bağlı mı / etkin konsol oturumunda mı (null: gerçek boru)
@@ -584,7 +587,8 @@ namespace POpsAgent
             new InventoryHandler(() => _cachedInventory, _serverUrl, () => _hwId, _health, _credentials, _http),
             new QuarantineHandler(() => _quarantine, _serverUrl, () => _hwId, _http),
             new ExecuteHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, Power, Messages, _capabilities),
-            new WingetInstallHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, _capabilities, _machine.WingetLocator),
+            new WingetInstallHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, _capabilities, _machine.WingetLocator,
+                _machine.InstallRegistry),
             new CapabilitiesHandler(_vision, Power, () => _tray.Pipe, _channel.TrySendAsync, LocalAudit.Write, _exam.EndIfCapabilityOffAsync, _capabilities,
                 _peerCache),
             new VisionHandler(_vision, _gate, () => _tray.Pipe, _capabilities),

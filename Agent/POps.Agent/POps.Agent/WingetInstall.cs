@@ -24,9 +24,10 @@ namespace POpsAgent
     // winget, machine yükleyicisi olan en yeni sürümü sessizce seçerdi (ör. Anki.Anki: 26.09.3 yerine 2023'ün 2.1.65'i).
     // Yalnızca kullanıcı kapsamında yükleyicisi olan paket (sürüm) --scope machine ile "uygulanabilir yükleyici yok"
     // (ExitNoApplicableInstaller) ile biter: aynı görevde bir kez --scope olmadan yeniden denenir (bkz. RetryArguments). Çıktının
-    // ilk satırı kurulumun çalıştığı kapsamdır; sürümü ajan seçtiyse ardından o sürüm, paket bilgisayardaysa ardından winget
-    // list'e göre kurulduğu yer gelir (bkz. ListArguments). "--scope machine" paketin herkese kurulduğunu söylemez: SYSTEM
-    // olarak çalışan bir yükleyici (ör. Anki 2.1.65'in 32 bit NSIS'i) SYSTEM hesabının kendi profiline kurabilir.
+    // ilk satırı kurulumun çalıştığı kapsamdır; sürümü ajan seçtiyse ardından o sürüm, paket bilgisayardaysa ardından kurulumdan
+    // önce ve sonra okunan kayıt defterine göre kurulduğu yer gelir (bkz. WingetLocation). "--scope machine" paketin herkese
+    // kurulduğunu söylemez: SYSTEM olarak çalışan bir yükleyici (ör. Anki 2.1.65'in 32 bit NSIS'i, Anki 26.09.3'ün kullanıcı
+    // başına MSI'ı) SYSTEM hesabının kendi profiline kurabilir.
     // Sonuç execute gibi "result"tır; çıkış kodu winget'in kendi kodudur (işaretli 32 bit, ör. 0x8A150061 = -1978335135;
     // yeniden denendiyse ikinci denemenin kodu).
     [SupportedOSPlatform("windows")]
@@ -46,13 +47,10 @@ namespace POpsAgent
         // (https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md). --scope
         // machine ile yalnızca kullanıcı kapsamında yükleyicisi olan paket bu kodla biter.
         public const int ExitNoApplicableInstaller = unchecked((int)0x8A150010);
-        // winget'in APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND kodu, 0x8A150014 = -1978335212: winget list (ve install, show)
-        // aranan paketi bulamadı
-        public const int ExitNoPackageFound = unchecked((int)0x8A150014);
         // Çıktının ilk satırı: kurulum hangi kapsamla çalıştı (paketin nereye kurulduğunu kurulduğu yer satırı söyler)
         public const string MachineScopeNote = "[kapsam: machine]";
         public const string UserScopeNote = "[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]";
-        // Paket bilgisayardaysa kurulduğu yer (bkz. ListArguments). SYSTEM'in "user" kapsamı SYSTEM hesabının kendi profilidir:
+        // Paket bilgisayardaysa kurulduğu yer (bkz. WingetLocation). SYSTEM'in "user" kapsamı SYSTEM hesabının kendi profilidir:
         // oraya kurulan uygulamayı bilgisayarın kullanıcıları göremez.
         public const string MachineWideNote = "[kurulduğu yer: makine geneli]";
         public const string SystemProfileNote = "[kurulduğu yer: yalnızca SYSTEM hesabının profili — bilgisayarın kullanıcıları göremez]";
@@ -107,18 +105,15 @@ namespace POpsAgent
         public static List<string> VersionsArguments(string id) =>
             new List<string> { "show", "--id", id, "-e", "--source", "winget", "--versions", "--accept-source-agreements", "--disable-interactivity" };
 
-        // Paketin kurulu olduğu yerin sorgusu: "machine" ya da "user" kapsamındaki kurulu paketler arasında bu kimlik var mı. Yalnızca
-        // çıkış koduna bakılır (0: var, ExitNoPackageFound: yok); çıktı yerelleştirilebilir, okunmaz. Hiçbir şey kurmaz.
-        public static List<string> ListArguments(string id, string scope) =>
-            new List<string> { "list", "--id", id, "-e", "--source", "winget", "--scope", scope, "--accept-source-agreements", "--disable-interactivity" };
+        // Kurulumdan sonra paket bilgisayarda mı (kurulduğu yer satırı yalnızca o zaman yazılır): kuruldu (0), yeniden başlatma
+        // bitirecek (0x8A150109) ya da zaten kuruluydu (bkz. AlreadyInstalled). Bilgisayarın kendisini yeniden başlattığı
+        // 0x8A15010B'de yazılmaz: sonuç beklemeden gitsin.
+        public static bool IsOnThePc(int exitCode) => exitCode is 0 or unchecked((int)0x8A150109) || AlreadyInstalled(exitCode);
 
-        // Kurulumdan sonra paket bilgisayarda mı (kurulduğu yer yalnızca o zaman sorulur): kuruldu (0), yeniden başlatma bitirecek
-        // (0x8A150109) ya da zaten kuruluydu (0x8A15002B, 0x8A150061). Bilgisayarın kendisini yeniden başlattığı 0x8A15010B'de
-        // sorulmaz: sonuç beklemeden gitsin.
-        public static bool IsOnThePc(int exitCode) =>
-            exitCode is 0 or unchecked((int)0x8A150109) or unchecked((int)0x8A15002B) or unchecked((int)0x8A150061);
+        // Paket zaten kuruluydu (0x8A15002B güncelleme yok, 0x8A150061 zaten kurulu): winget yükleyiciyi çalıştırmadı
+        public static bool AlreadyInstalled(int exitCode) => exitCode is unchecked((int)0x8A15002B) or unchecked((int)0x8A150061);
 
-        // Bir winget sorgusunun (show, list) neden sonuç vermediği; null: bitti ve 0 ile çıktı. limitReached: kendi süre sınırında
+        // Bir winget sorgusunun (show) neden sonuç vermediği; null: bitti ve 0 ile çıktı. limitReached: kendi süre sınırında
         // (limit) bitmedi
         public static string? QueryFailure(string command, int exitCode, bool limitReached, TimeSpan limit) =>
             limitReached ? $"winget {command} {limit.TotalSeconds:0} sn içinde bitmedi" : exitCode != 0 ? $"winget {command} çıkış kodu {exitCode}" : null;

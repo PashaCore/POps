@@ -27,6 +27,9 @@ namespace POps.Tests.Agent
         private readonly Worker _worker;
         private readonly List<JsonElement> _sent = new List<JsonElement>();
         private readonly List<FakeTray> _trays = new List<FakeTray>();
+        // Vision olaylarının Olay Günlüğü kaydı (gerçek tünel yok, gerçek Olay Günlüğü yok); _whileWriting: yazmanın süresi
+        private readonly List<int> _audit = new List<int>();
+        private Action<LocalAuditEvent> _whileWriting;
 
         public TrayMessageRouterTests()
         {
@@ -45,8 +48,20 @@ namespace POps.Tests.Agent
                     lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(p));
                     return Task.FromResult(true);
                 },
+                VisionTunnelOverride = () => Task.FromResult(true),
+                AuditOverride = e =>
+                {
+                    lock (_audit) _audit.Add(e.EventId);
+                    _whileWriting?.Invoke(e);
+                },
+                DeviceLogOverride = _ => Task.CompletedTask,
             };
             _worker.EnsureTrayPipeServer();
+        }
+
+        private int[] AuditIds()
+        {
+            lock (_audit) return _audit.ToArray();
         }
 
         public void Dispose()
@@ -129,6 +144,33 @@ namespace POps.Tests.Agent
             FakeTray tray = await ConnectTrayAsync();
             await tray.SendAsync("STOP_VISION_TUNNEL");
             Assert.True(await ReceivedAsync(tray, "STOP_CAPTURE"));
+        }
+
+        // Tepsi oturumu kapattı, tünelin alım döngüsü de kapanışı gördü: ilk 1011 yazılırken (Olay Günlüğüne yazmak milisaniyeler
+        // sürer) gelen ikinci bitiş hiçbir şey yazmaz. Saha (0.1.24-alpha): 1011 aynı saniyede iki kez yazılıyordu.
+        [Fact]
+        public async Task StopVisionTunnel_WhileTheTunnelCloses_WritesOne1011()
+        {
+            FakeTray tray = await ConnectTrayAsync();
+            await _worker.StartVisionFromTrayAsync("START_VISION_TUNNEL:2");
+            Assert.Equal(new[] { 1010 }, AuditIds());
+            using var writing = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            int finishes = 0;
+            _whileWriting = e =>
+            {
+                if (e.EventId != 1011 || Interlocked.Increment(ref finishes) != 1) return;
+                writing.Set();
+                release.Wait(TimeSpan.FromSeconds(10));
+            };
+
+            await tray.SendAsync("STOP_VISION_TUNNEL");
+            Assert.True(await Task.Run(() => writing.Wait(TimeSpan.FromSeconds(10))), "1011 yazılmadı");
+            await _worker.OnVisionTunnelClosedAsync(System.Net.WebSockets.WebSocketCloseStatus.NormalClosure);
+            Assert.Equal(new[] { 1010, 1011 }, AuditIds());
+            release.Set();
+            Assert.True(await ReceivedAsync(tray, "STOP_CAPTURE"));
+            Assert.Equal(new[] { 1010, 1011 }, AuditIds());
         }
 
         // Ön plandaki uygulamanın yalnızca süreç adı heartbeat'e girer; pencere başlığı hiç girmez; tepsi kopunca unutulur

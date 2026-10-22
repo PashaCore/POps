@@ -189,7 +189,8 @@ is reported as a `result` with `exit_code` -5 followed by `capability_denied`.
 
 High-impact actions also have a server-independent local record in the Windows **Application** event log under
 the `POps Agent` source. IDs 1000/1001 cover command start/finish (only SHA-256 and length are recorded, never the
-command text), 1010/1011 Vision sessions, 1020/1021 quarantine, 1022 quarantine allow list refreshed (old and new
+command text), 1010/1011 Vision sessions (one of each per session, however it ends: panel stop, tray, lost
+connection or service stop, capability or module off, tunnel closed by the server), 1020/1021 quarantine, 1022 quarantine allow list refreshed (old and new
 server addresses), 1030 update results, 1040 capability changes, 1050 identity rejection, 1060 receipt of a
 bypass-key fingerprint, 1070 a copied installation set aside at start, 1071 a `4409` rejection and 1072 hardware
 that partly changed (no decision taken), 1080 a change of the server's modules, 1090 a configuration that could not
@@ -328,32 +329,63 @@ command (the package id and version may be recorded in clear).
   `task_id` stays reserved (a repeated `winget_install` is ignored), `cancel_task` and a service stop end the running
   step or keep the next one from starting, and the 30-minute limit covers all of them together. There is still one
   `result`, with the last install run's exit code.
-- **Where the package landed.** `--scope machine` is what winget was asked for, not where the package ended up. In
-  the field test Anki 2.1.65 (manifest scope machine, a 32-bit NSIS installer) ran as SYSTEM and installed into
-  SYSTEM's own profile (`C:\Windows\SysWOW64\config\systemprofile\AppData\Local\Programs\Anki`, uninstall entry
-  under `HKEY_USERS\S-1-5-18`), where no user of the PC sees it; after the retry without `--scope` a user-scope
-  installer lands there too. So when the package is on the PC after the install (exit code 0, `0x8A150109` restart
-  needed, `0x8A15002B` or `0x8A150061` already installed) the agent runs
-  `winget list --id <id> -e --source winget --scope machine --accept-source-agreements --disable-interactivity`
-  and, only when that finds nothing, the same with `--scope user` (as SYSTEM: SYSTEM's own profile). Only exit codes
-  are read, never the localized text: 0 is found, `0x8A150014` (-1978335212,
-  `APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND`) is not found. Each query has its own 60-second limit. Any other
-  code, the limit, nothing found in either scope, or a stop (`cancel_task`, service stop, task limit) during the
-  check means the location is not known. A stop during the check does not change the result: the package is
-  installed, the result keeps the install's exit code. After `0x8A15010B` (the PC restarts itself) and after a failed
-  install nothing is asked. Not covered: a portable package (zip) installed machine-wide under
-  `%ProgramFiles%\WinGet\Packages` counts as machine-wide although it has no Start menu shortcut, and when the
-  same id is also installed machine-wide (for example an older version), the line says machine-wide (`winget list`
-  cannot filter by version).
+- **Where the package landed** (`WingetLocation.cs`). `--scope machine` is what winget was asked for, not where the
+  package ended up, and winget cannot tell either: it derives a package's scope from the hive of its uninstall
+  (Apps & features) entry. Field cases, agent as LocalSystem: Anki 2.1.65 (manifest scope machine, a 32-bit NSIS
+  installer) went into SYSTEM's own profile (`C:\Windows\SysWOW64\config\systemprofile\AppData\Local\Programs\Anki`,
+  uninstall entry under `HKEY_USERS\S-1-5-18`); Anki 26.09.3 (a WiX MSI with manifest scope user, installed by the
+  retry without `--scope`) went into `C:\Windows\System32\config\systemprofile\AppData\Local\Programs\Anki` with its
+  Start menu shortcut only in SYSTEM's profile, and Windows Installer registered the product per-user for SYSTEM
+  (`HKEY_USERS\S-1-5-18\Software\Microsoft\Installer\Products\<packed code>`, nothing under
+  `HKLM\SOFTWARE\Classes\Installer\Products`), but it wrote the uninstall entry under HKLM, so
+  `winget list --scope machine` found it and 0.1.24-alpha said machine-wide. No user of the PC sees either install.
+  So the agent no longer asks winget. It reads the registry itself just before the first install run and again after
+  the last one (milliseconds; on the thread pool, not a winget run): the uninstall entries under
+  `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall` (64-bit), `HKLM\SOFTWARE\WOW6432Node\…\Uninstall` and
+  `HKEY_USERS\S-1-5-18\Software\Microsoft\Windows\CurrentVersion\Uninstall` (name, version, `WindowsInstaller`,
+  `InstallLocation`, `UninstallString`, `DisplayIcon`), and the names under `HKLM\SOFTWARE\Classes\Installer\Products`
+  and `HKEY_USERS\S-1-5-18\Software\Microsoft\Installer\Products`. The package's entries are the ones that are new
+  after the install; when there are none, the ones whose `DisplayVersion` changed (an in-place upgrade). Each entry
+  gives signals:
+  - an MSI entry (`WindowsInstaller` = 1 and the key is a product code `{…}`): the product registered under
+    `HKLM\SOFTWARE\Classes\Installer\Products\<packed code>` is machine-wide, under
+    `HKEY_USERS\S-1-5-18\Software\Microsoft\Installer\Products\<packed code>` it is SYSTEM's profile. The packed code
+    is Windows Installer's transform of the product code: the first three groups reversed character by character,
+    the characters of each pair swapped in the last two (`{7AD362E6-020E-4F25-AD49-94A408DC5CA5}` →
+    `6E263DA7E02052F4DA94494A80CDC55A`). The hive of an MSI's uninstall entry is not a signal;
+  - an entry under `HKEY_USERS\S-1-5-18` is SYSTEM's profile;
+  - an `InstallLocation`, `UninstallString` or `DisplayIcon` under `\System32\config\systemprofile\` (or `SysWOW64`,
+    `Sysnative`) is SYSTEM's profile, one under `<drive>:\Program Files\` or `Program Files (x86)\` (8.3 names
+    included) is machine-wide. A non-MSI entry under HKLM says nothing by its hive alone.
+
+  When all signals point to one place, the line names it. Otherwise the line says the location is not known, with a
+  short reason, rather than guessing: both places (`kayıtlar hem makine genelini hem SYSTEM'in profilini gösteriyor`),
+  no signal (`kaldırma kaydı kurulduğu yeri göstermiyor`, for example a non-MSI entry under HKLM installed outside
+  Program Files), no new or changed entry (`yeni ya da sürümü değişen kaldırma kaydı yok`: an MSIX package, an
+  installer that writes no uninstall entry), the registry could not be read (`kayıt defteri okunamadı`), or the
+  package was already installed (`0x8A15002B`, `0x8A150061`: `paket zaten kuruluydu; yükleyici çalışmadı`; winget
+  ran no installer, so nothing that changed belongs to it, and the second read is skipped). The line is written
+  after exit code 0 and after `0x8A150109` (restart needed); after `0x8A15010B` (the PC restarts itself) and after a
+  failed install there is none. The decision and the entries it used go to the agent log. Limits: an unrelated
+  program that installs itself at the same time is counted too (one that only updates itself, like a browser, is
+  ignored while the package has a new entry; when the package has none, its version change is counted); a portable
+  package (zip) installed machine-wide under `%ProgramFiles%\WinGet\Packages` counts as machine-wide although it has
+  no Start menu shortcut; a Program Files folder moved off `<drive>:\Program Files` gives no signal; per-user
+  installs for accounts other than SYSTEM are not looked at (the agent installs only as SYSTEM).
+- **Known limit: uninstalling from SYSTEM's 32-bit profile.** winget cannot uninstall a package that a 32-bit
+  installer put into SYSTEM's profile (Anki 2.1.65 above): the uninstall entry says
+  `C:\WINDOWS\system32\config\systemprofile\…`, but because of WOW64 file system redirection the files are under
+  `C:\Windows\SysWOW64\config\systemprofile\…`, and `winget uninstall` fails with `0x800401F5` (-2147221003,
+  "Application not found"). The uninstaller has to be run from `C:\Windows\SysWOW64\config\systemprofile\…` (for
+  example `…\AppData\Local\Programs\Anki\uninstall.exe`).
 - **Scope in the output.** The first line of `output` names the scope the install ran with: `[kapsam: machine]`, or
   after the retry `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`. When the agent chose the
   version, the next line says which: `[sürüm: kaynaktaki en yeni sürüm <sürüm> seçildi]` (for example 26.09.3 for Anki.Anki), or
   `[sürüm: en yeni sürüm bulunamadı (<reason>); winget kendisi seçti]` with a short reason (`winget show çıkış kodu
   <code>`, `winget show 60 sn içinde bitmedi`, `çıktıda sürüm listesi yok`, `sürüm listesi boş`, `listedeki ilk sürüm
-  geçersiz ya da kısaltılmış`); with a server-given version there is no such line. When the location was checked, the
+  geçersiz ya da kısaltılmış`); with a server-given version there is no such line. When the package is on the PC, the
   next line is `[kurulduğu yer: makine geneli]`, `[kurulduğu yer: yalnızca SYSTEM hesabının profili — bilgisayarın
-  kullanıcıları göremez]` or `[kurulduğu yer: belirlenemedi (<reason>)]` (`winget list çıkış kodu <code>`,
-  `winget list 60 sn içinde bitmedi`, `winget list paketi iki kapsamda da bulamadı`, `görev durdu`). Then the first
+  kullanıcıları göremez]` or `[kurulduğu yer: belirlenemedi (<reason>)]` with one of the reasons above. Then the first
   run's output (at most 4,096 characters) and the second run's, each under its own heading. Refusals (-5, -7) carry
   no scope line; neither does a task stopped during the lookup (-1, -2, -4), which starts with `[sürüm: en yeni sürüm
   sorgulanırken görev durdu; kurulum başlamadı]` followed by the stop reason.
@@ -862,7 +894,9 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
    that is not newer than its own, downloads the MSI from `<ServerUrl>/updates/<name>` and checks its size and
    SHA-256. From 0.1.23-alpha the download uses BITS: it resumes after a network drop or a restart, and a download
    that is still running after 15 minutes continues with the next update command. When BITS cannot be used, the
-   agent downloads directly as before. From the version after 0.1.23-alpha an agent pinned to the school CA
+   agent downloads directly as before. The `downloaded` stage's `detail` and the log name the way the package came
+   (`bits` / `Paket indirildi (BITS).`, `server` for a direct download; see the peer cache contract, point 6, for
+   `cache` and `peer <hw_id>`). From the version after 0.1.23-alpha an agent pinned to the school CA
    (`server_ca = custom`, see [Server certificate](#server-certificate)) does not try BITS at all and downloads
    directly with its own certificate check: BITS uses the Windows trust store, cannot use `server-ca.pem`, and only
    fell back after its retry time (about 10 minutes). The log says so once per download (`BITS kullanılmadı: sunucu
@@ -968,8 +1002,8 @@ today; `peers` is read only after that.
 - Check the size and SHA-256 against the signed manifest **whatever the source**. A mismatch from a peer deletes
   the file and moves on to the next source (log the peer's `hw_id`); it never fails the update and never installs.
 - Report `update_progress` as today (`received`, `downloaded`, `verified`, …). Optionally put the source in
-  `detail` of `downloaded` (for example `peer HW-LAB1-PC12` or `server`); the server stores it but does not depend
-  on it.
+  `detail` of `downloaded` (for example `peer HW-LAB1-PC12`, `bits` or `server`); the server stores it but does not
+  depend on it.
 
 **5. The seed's (and every peer's) cache.** After `verified`, keep the package for others:
 
@@ -1034,7 +1068,10 @@ leave a choice or where it differs:
   public addresses gets no `peers` until the server's rule changes as well. Connect timeout 3 seconds, up to 75
   seconds for the response headers (a busy peer queues the request for up to 60 seconds), then 15 seconds without
   data or 5 minutes in all ends the attempt. No proxy, redirects, cookies or headers: the device secret never goes to
-  a peer. The `downloaded` detail is `peer <hw_id>`, `server` or `cache`.
+  a peer. The `downloaded` detail is `peer <hw_id>`, `bits` (from the server over BITS), `server` (from the server
+  directly, with the agent's own HttpClient: BITS unavailable, or the server certificate pinned to `server-ca.pem`) or
+  `cache`; the log line says the same (`Paket indirildi (BITS).`, `Paket indirildi (server).`, …). Agents up to
+  0.1.24-alpha said `server` for a BITS download too.
 - **Logs.** Start and stop of serving, each transfer (address, SHA-256 prefix, bytes, seconds) and refusals (at most
   one line every 10 seconds) go to the POps log (`PEERCACHE`); no event log entry.
 

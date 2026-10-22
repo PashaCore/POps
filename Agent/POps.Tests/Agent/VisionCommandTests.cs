@@ -25,6 +25,8 @@ namespace POps.Tests.Agent
         private readonly List<JsonElement> _sent = new List<JsonElement>();
         private readonly List<LocalAuditEvent> _audit = new List<LocalAuditEvent>();
         private int _tunnelOpens;
+        // Olay Günlüğüne yazmanın süresi: kayıt listeye girdikten sonra, yazım dönmeden çağrılır (null: anında)
+        private Action<LocalAuditEvent> _whileWriting;
 
         public VisionCommandTests()
         {
@@ -44,7 +46,11 @@ namespace POps.Tests.Agent
                     return Task.FromResult(true);
                 },
                 VisionTunnelOverride = () => { _tunnelOpens++; return Task.FromResult(true); },
-                AuditOverride = e => { lock (_events) { _audit.Add(e); _events.Add("audit:" + e.EventId); } },
+                AuditOverride = e =>
+                {
+                    lock (_events) { _audit.Add(e); _events.Add("audit:" + e.EventId); }
+                    _whileWriting?.Invoke(e);
+                },
                 DeviceLogOverride = _ => Task.CompletedTask,
             };
         }
@@ -59,7 +65,10 @@ namespace POps.Tests.Agent
 
         private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
-        private int[] AuditIds() => _audit.Select(e => e.EventId).ToArray();
+        private int[] AuditIds()
+        {
+            lock (_events) return _audit.Select(e => e.EventId).ToArray();
+        }
 
         private List<string> Tray() => _events.Where(e => e.StartsWith("tray:", StringComparison.Ordinal)).Select(e => e.Substring(5)).ToList();
 
@@ -217,6 +226,75 @@ namespace POps.Tests.Agent
 
             await Server("{\"action\":\"start_stream\",\"fps\":2}");
             Assert.Equal(new[] { 1010, 1011, 1010 }, AuditIds());
+        }
+
+        // ------------------------------------------------------------------ oturumun sonu: tek 1011
+
+        // Oturumu bitiren yollar: panelden durdurma (stop_stream), sunucu bağlantısının kopması (servis durması da bu yoldan:
+        // CommandConnection.RunAsync), Vision yeteneğinin ya da modülünün kapanması, tünelin kapanması (alım döngüsü; sunucu
+        // tüneli kapattı)
+        private Task EndSession(string path) => path switch
+        {
+            "stop_stream" => Server("{\"action\":\"stop_stream\"}"),
+            "connection_lost" => _worker.OnCommandConnectionLostAsync(),
+            "capability_off" => Server("{\"action\":\"set_capabilities\",\"vision_enabled\":false}"),
+            "module_off" => Task.Run(() => VisionModule(on: false)),
+            "tunnel_closed" => _worker.OnVisionTunnelClosedAsync(System.Net.WebSockets.WebSocketCloseStatus.NormalClosure),
+            _ => throw new ArgumentOutOfRangeException(nameof(path)),
+        };
+
+        // Saha (0.1.24-alpha): her Vision oturumunun sonunda 1011 aynı saniyede iki kez yazıldı, 1010 bir kez. Oturumu bitiren yol
+        // tüneli kapatırken tünelin alım döngüsü de kapanışı görür; ikisi de oturumu bitirir. Olay Günlüğüne yazmak
+        // milisaniyeler sürer (EventLog.WriteEntry) ve bayrak yazımdan sonra temizleniyordu: ikinci yol onu hâlâ açık görüyordu.
+        // Burada ilk 1011 yazılırken ikinci yol (tünelin kapanışı; o yolun kendisi sınanırken stop_stream) gelir: 1011 bir kez.
+        // Sonradan gelen bir kapanış da yazmaz; yeni oturum yeniden yazar.
+        [Theory]
+        [InlineData("stop_stream")]
+        [InlineData("connection_lost")]
+        [InlineData("capability_off")]
+        [InlineData("module_off")]
+        [InlineData("tunnel_closed")]
+        public async Task SessionEnd_FromTwoPathsAtOnce_WritesOne1011(string path)
+        {
+            await Server("{\"action\":\"start_stream\",\"fps\":2}");
+            Assert.Equal(new[] { 1010 }, AuditIds());
+            using var writing = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            int finishes = 0;
+            _whileWriting = e =>
+            {
+                if (e.EventId != 1011 || Interlocked.Increment(ref finishes) != 1) return;
+                writing.Set();
+                release.Wait(TimeSpan.FromSeconds(10));
+            };
+
+            Task first = Task.Run(() => EndSession(path));
+            Assert.True(writing.Wait(TimeSpan.FromSeconds(10)), "1011 yazılmadı");
+            await EndSession(path == "tunnel_closed" ? "stop_stream" : "tunnel_closed");
+            Assert.Equal(new[] { 1010, 1011 }, AuditIds());
+            release.Set();
+            await first;
+            Assert.Equal(new[] { 1010, 1011 }, AuditIds());
+            Assert.Contains("user_approved: False", _audit[1].Message);
+
+            await EndSession("tunnel_closed");
+            Assert.Equal(new[] { 1010, 1011 }, AuditIds());
+            if (path is "capability_off" or "module_off") return;
+            await Server("{\"action\":\"start_stream\",\"fps\":2}");
+            Assert.Equal(new[] { 1010, 1011, 1010 }, AuditIds());
+        }
+
+        // Tepsiden onaylı oturum: 1011 oturumun bilgileriyle ve bir kez
+        [Fact]
+        public async Task ApprovedSessionEnd_FromTwoPathsAtOnce_WritesOne1011()
+        {
+            await Server("{\"action\":\"start_vision_session\",\"session_id\":\"SES-1D84778B13BE\",\"is_mandatory\":false,\"requested_by\":\"Ayşe\"}");
+            await _worker.StartVisionFromTrayAsync("START_VISION_TUNNEL:2");
+            await Task.WhenAll(Task.Run(() => EndSession("stop_stream")), Task.Run(() => EndSession("tunnel_closed")), Task.Run(() => EndSession("connection_lost")));
+            Assert.Equal(new[] { 1010, 1011 }, AuditIds());
+            Assert.Contains("session_id: SES-1D84778B13BE", _audit[1].Message);
+            Assert.Contains("requested_by: Ayşe", _audit[1].Message);
+            Assert.Contains("user_approved: True", _audit[1].Message);
         }
 
         // ------------------------------------------------------------------ görüntüleyici denetimi (Vision v2)
