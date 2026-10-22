@@ -38,6 +38,8 @@ KEYS = {
     "cap_vision_disable_requested", "agent_health", "last_disconnect_at", "last_disconnect_reason", "bypass_key",
     # dosya aktarımı, Linux ajanı ve winget dallarının eklediği alanlar
     "cap_files_enabled", "platform", "agent_features",
+    # dosya aktarımının kalıcı kapatma isteği (0033)
+    "cap_files_disable_requested",
 }
 FAILS = []
 

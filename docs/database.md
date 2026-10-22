@@ -60,6 +60,7 @@ tables from Python code at startup and never edit a migration that has already b
 | `0029_glpi.sql` | `glpi_links`: the GLPI item each exported POps record is linked to (GLPI export, see [`integrations/glpi.md`](integrations/glpi.md)). |
 | `0030_sso.sql` | `users.auth_source` / `external_id` and the tables `sso_providers` (directory and OpenID Connect settings) and `sso_flows` (short-lived sign-in state and tickets). |
 | `0031_timestamptz.sql` | The text dates of the older tables become `TIMESTAMPTZ`, read in the server's time zone (see [Timestamps](#timestamps)); `global_settings.audit_time_zone`. Rewrites the tables: back up before the update. |
+| `0033_cap_files_disable.sql` | `clients.cap_files_disable_requested`: an admin's standing request to keep file transfer off on a PC, re-sent when the agent reconnects reporting it on (like terminal and Vision in `0006`). |
 | `0032_org_units.sql` | `org_units` (district → school), `custom_labs.org_unit_id`, `org_scope` on users, API tokens and scheduled tasks, `org_unit_id` on licences and tickets. See [Organisational units](#organisational-units). |
 | `0020_refused_results.sql` | Tasks the agent refused but an older server stored as `Completed` (output starting with `[REDDEDİLDİ]`, no exit code) become `Denied` with exit code `-5`. |
 | `0018_modules.sql` | `module_settings` (module on/off for the organisation or a lab; `config` for module settings) and, on an installation that already has devices, `install_profile = custom`. |
