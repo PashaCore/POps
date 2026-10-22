@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -8,15 +10,18 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using POps.Shared;
 using POpsAgent;
 using Xunit;
 
 namespace POps.Tests.Agent
 {
     // Uzaktan güç işlemleri (power) ve kullanıcı mesajları (user_message). Makineye dokunan her şey sahtedir: güç API'si
-    // (makine kapısı MachineSeams.Power) yalnızca çağrıyı kaydeder, oturum sorgusu (MachineSeams.HasConsoleUser) testin
-    // değeridir, bekleme (PowerActions.Delay, UserMessages.Delay) anında ya da test bırakınca biter, tepsi borusu
-    // TrayOverride'dır. Bu testler bilgisayarı asla kapatmaz, yeniden başlatmaz, oturumu kapatmaz ya da kilitlemez.
+    // (makine kapısı MachineSeams.Power) çağrıyı kaydeder ve testin sonucunu (_outcome; shutdown.exe ve oturum çağrısının
+    // yorumu WindowsPower'ın sahte süreç ve sahte çağrı alan parçalarıyla) döndürür, oturum sorgusu
+    // (MachineSeams.HasConsoleUser) testin değeridir, bekleme (PowerActions.Delay, UserMessages.Delay) anında ya da test
+    // bırakınca biter, tepsi borusu TrayOverride'dır. Bu testler bilgisayarı asla kapatmaz, yeniden başlatmaz, oturumu
+    // kapatmaz ya da kilitlemez.
     public class PowerMessageTests : TestBase, IDisposable
     {
         private readonly Worker _worker;
@@ -32,10 +37,14 @@ namespace POps.Tests.Agent
         private bool _consoleUser = true;
         private bool _trayConnected = true;
         private bool _trayInConsole;
+        // false: komut bağlantısı yok, gönderim başarısız (hiçbir şey gitmez)
+        private bool _online = true;
 
         // Testin ajanı: güç API'si _power, konsoldaki kullanıcı _consoleUser (makine kapıları)
         private readonly AgentHarness _agent;
-        private Func<PowerOperation, int, bool> _power;
+        private readonly Func<PowerOperation, int, PowerOutcome> _power;
+        // Sahte güç API'sinin sonucu (varsayılan: yapıldı)
+        private Func<PowerOperation, int, PowerOutcome> _outcome = (_, _) => PowerOutcome.Done;
 
         public PowerMessageTests()
         {
@@ -51,6 +60,7 @@ namespace POps.Tests.Agent
                 HwId = "HW-TEST",
                 SendOverride = payload =>
                 {
+                    if (!_online) return Task.FromResult(false);
                     JsonElement message = JsonSerializer.SerializeToElement(payload);
                     lock (_timeline)
                     {
@@ -77,7 +87,7 @@ namespace POps.Tests.Agent
                     _powerCalls.Add((operation, taskId));
                     _timeline.Add("power:" + operation);
                 }
-                return true;
+                return _outcome(operation, taskId);
             };
             UseInstantDelay();
         }
@@ -174,6 +184,27 @@ namespace POps.Tests.Agent
             File.WriteAllText(_agent.Paths.SecureFile(AgentCapabilities.FileName), json);
             _agent.Capabilities.Load();
         }
+
+        // server_info'su result_ack duyuran (sonuçları onaylayan) sunucuya bağlanmış bir handshake
+        internal static ServerHandshake Connected(ServerHandshake handshake)
+        {
+            handshake.OnConnected();
+            handshake.OnServerInfo(JsonDocument.Parse("{\"action\":\"server_info\",\"features\":[\"result_ack\"]}").RootElement);
+            return handshake;
+        }
+
+        // Bağlantının sunucusu result_ack duyurdu (sonuçlar onaya kadar diskte). Duyurmayan sunucu varsayılandır: bu Worker hiç
+        // bağlanmadı, sunucu eski sayılır.
+        private void UseAckServer() => Connected(_worker.Handshake);
+
+        private string SpoolPath => _agent.Paths.SecureFile(ResultSpool.FileName);
+
+        // Diskteki (onay bekleyen ya da gönderilmemiş) sonuçlar, dosyadan yeniden okunarak (servis yeniden başlamış gibi)
+        private List<ResultSpool.Entry> OnDisk() => new ResultSpool(SpoolPath).All();
+
+        private static string Output(JsonElement result) => result.GetProperty("output").GetString();
+
+        private static int ExitCode(JsonElement result) => result.GetProperty("exit_code").GetInt32();
 
         private static string Power(int taskId, string op, int delay = 0, string extra = "") =>
             $"{{\"action\":\"power\",\"task_id\":{taskId},\"op\":\"{op}\",\"delay\":{delay}{extra},\"requested_by\":\"Pasha\"}}";
@@ -511,7 +542,7 @@ namespace POps.Tests.Agent
         // ------------------------------------------------------------------ güç: geri sayım
 
         [Fact]
-        public async Task Power_Countdown_TrayShowsIt_ResultIsSentBeforeTheAction()
+        public async Task Power_Countdown_TrayShowsIt_ResultFollowsTheAction()
         {
             UseManualDelay();
             await Handle(Power(41, "restart", 60, ",\"message\":\"Ders bitti,\\u0007 kaydedin\""));
@@ -534,7 +565,8 @@ namespace POps.Tests.Agent
             Assert.Equal(0, result.GetProperty("exit_code").GetInt32());
             Assert.Equal("[TAMAM] Bilgisayar yeniden başlatılıyor.", result.GetProperty("output").GetString());
             Assert.Equal("HW-TEST", result.GetProperty("pc_name").GetString());
-            lock (_timeline) Assert.Equal(new[] { "result:41:0", "power:Restart" }, _timeline);
+            // Sonuç shutdown.exe'nin çıkış kodu belli olunca gider (önce yalnızca diske yazılır)
+            lock (_timeline) Assert.Equal(new[] { "power:Restart", "result:41:0" }, _timeline);
 
             LocalAuditEvent accepted = Assert.Single(Audits(1130));
             Assert.Contains("op: restart", accepted.Message);
@@ -553,7 +585,8 @@ namespace POps.Tests.Agent
             Assert.Empty(Delays());
             Assert.Equal((PowerOperation.Logoff, 42), Assert.Single(PowerCalls()));
             Assert.Equal("[TAMAM] Kullanıcının oturumu kapatılıyor.", Assert.Single(Results(42)).GetProperty("output").GetString());
-            lock (_timeline) Assert.Equal(new[] { "result:42:0", "power:Logoff" }, _timeline);
+            // Oturum kapatma bağlantıyı kesmez: önce işlem, sonra onun sonucu
+            lock (_timeline) Assert.Equal(new[] { "power:Logoff", "result:42:0" }, _timeline);
         }
 
         [Fact]
@@ -651,17 +684,135 @@ namespace POps.Tests.Agent
             Assert.Equal("Elektrik kesintisi", countdown.GetProperty("message").GetString());
         }
 
-        [Fact]
-        public async Task Power_ActionThatFails_IsLoggedAndTheResultStays()
+        // Makine kapısı hata atarsa (burada varsayılanı: gerçek API yerine hata veren sahte) işlem denenememiştir: -3 ve
+        // "[HATA]"; diske önceden yazılan "[TAMAM]" hiç gitmez
+        [Theory]
+        [InlineData("restart")]
+        [InlineData("lock")]
+        public async Task Power_SeamThatThrows_IsAnAgentError(string op)
         {
-            _power = new MachineSeams().Power;   // gerçek API yerine hata veren sahte (makine kapısının varsayılanı)
-            _consoleUser = true;
-            await Handle(Power(50, "restart"));
+            _outcome = new MachineSeams().Power;
+            await Handle(Power(50, op));
             await WaitUntilPowerIdle();
-            Assert.Equal(0, Assert.Single(Results(50)).GetProperty("exit_code").GetInt32());
+            JsonElement result = Assert.Single(Results(50));
+            Assert.Equal(CommandRunner.ExitAgentError, ExitCode(result));
+            Assert.StartsWith("[HATA] ", Output(result));
+            Assert.Contains("güç işlemi yürütülemedi: Testte gerçek güç API'si çağrıldı", Output(result));
+            Assert.Single(_sent);
+            Assert.Empty(OnDisk());
         }
 
-        // ------------------------------------------------------------------ güç: kilitleme yolu
+        // ------------------------------------------------------------------ güç: kapatma ve yeniden başlatma
+
+        // Sonuç shutdown.exe çağrılmadan önce diskte, gönderilmemiş (heartbeat de göndermez); çıkış kodu 0 olunca gönderilir.
+        // Onaylı sunucuda onaya kadar diskte kalır, onaysızda gönderilince silinir.
+        [Theory]
+        [InlineData("shutdown", PowerOperation.Shutdown, false)]
+        [InlineData("restart", PowerOperation.Restart, false)]
+        [InlineData("shutdown", PowerOperation.Shutdown, true)]
+        [InlineData("restart", PowerOperation.Restart, true)]
+        public async Task Power_ShutdownOrRestart_ResultIsOnDiskBeforeShutdownExe(string op, PowerOperation operation, bool ackServer)
+        {
+            if (ackServer) UseAckServer();
+            List<ResultSpool.Entry> onDiskAtCall = null;
+            int sentAtCall = -1;
+            ProcessStartInfo started = null;
+            _outcome = (o, taskId) => WindowsPower.ShutdownExe(WindowsPower.ShutdownStart(o == PowerOperation.Restart, taskId), start =>
+            {
+                // shutdown.exe çalışırken bir heartbeat de gelir: saklanan sonuç gönderilmez
+                _worker.FlushPendingResultsAsync().GetAwaiter().GetResult();
+                onDiskAtCall = OnDisk();
+                sentAtCall = Sent("result").Count;
+                started = start;
+                return 0;
+            });
+            await Handle(Power(71, op));
+            await WaitUntilPowerIdle();
+
+            Assert.Equal((operation, 71), Assert.Single(PowerCalls()));
+            Assert.Equal(operation == PowerOperation.Restart ? "/r" : "/s", started.ArgumentList[0]);
+            ResultSpool.Entry stored = Assert.Single(onDiskAtCall);
+            Assert.Equal(71, stored.TaskId);
+            Assert.Equal(PowerActions.DoneOutput(operation), Output(stored.Result));
+            Assert.Equal(0, ExitCode(stored.Result));
+            Assert.Equal(0, sentAtCall);
+
+            JsonElement result = Assert.Single(Results(71));
+            Assert.Equal(0, ExitCode(result));
+            Assert.Equal(PowerActions.DoneOutput(operation), Output(result));
+            lock (_timeline) Assert.Equal(new[] { "power:" + operation, "result:71:0" }, _timeline);
+            if (ackServer)
+            {
+                Assert.Equal(new[] { 71 }, OnDisk().Select(e => e.TaskId));
+                await Handle("{\"action\":\"result_ack\",\"task_id\":71}");
+            }
+            Assert.Empty(OnDisk());
+        }
+
+        // shutdown.exe 0 dışında bir kodla döndü (ör. politika kapatmayı engelledi): diskteki "[TAMAM]" "[HATA] shutdown.exe
+        // <kod>: ..." ile değiştirilir ve hemen gönderilir; bilgisayar açık kalır, başka hiçbir şey yapılmaz
+        [Theory]
+        [InlineData("shutdown", PowerOperation.Shutdown, "Bilgisayar kapatılmadı.")]
+        [InlineData("restart", PowerOperation.Restart, "Bilgisayar yeniden başlatılmadı.")]
+        public async Task Power_ShutdownExeFails_TheErrorIsSentAndThePcStaysOn(string op, PowerOperation operation, string tail)
+        {
+            UseAckServer();
+            const int blocked = 1190;   // ERROR_SHUTDOWN_IS_SCHEDULED
+            _outcome = (o, taskId) => WindowsPower.ShutdownExe(WindowsPower.ShutdownStart(o == PowerOperation.Restart, taskId), _ => blocked);
+            await Handle(Power(72, op, extra: ",\"message\":\"Ders bitti\""));
+            await WaitUntilPowerIdle();
+
+            Assert.Equal((operation, 72), Assert.Single(PowerCalls()));
+            JsonElement result = Assert.Single(Results(72));
+            Assert.Equal(blocked, ExitCode(result));
+            Assert.Equal($"[HATA] shutdown.exe 1190: {WindowsPower.Win32Message(blocked)}. {tail}", Output(result));
+            // Sunucuya giden tek mesaj bu sonuçtur: "[TAMAM]" hiç gitmedi
+            Assert.Single(_sent);
+            ResultSpool.Entry stored = Assert.Single(OnDisk());
+            Assert.Equal(blocked, ExitCode(stored.Result));
+            Assert.StartsWith("[HATA] shutdown.exe 1190: ", Output(stored.Result));
+            await Handle("{\"action\":\"result_ack\",\"task_id\":72}");
+            Assert.Empty(OnDisk());
+
+            // Sonraki heartbeat'ler de bir şey göndermez; güç API'si yeniden çağrılmaz
+            await _worker.FlushPendingResultsAsync();
+            Assert.Single(_sent);
+            Assert.Single(PowerCalls());
+            Assert.Empty(_tray);
+        }
+
+        // shutdown.exe kapatmayı başlattı ama sonuç gönderilemedi (bağlantı yok): diskte kalır ve yeniden açılışta (yeni
+        // servis, aynı dosya) gönderilir
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task Power_Restart_ResultThatCannotBeSent_GoesAfterBoot(bool ackServer)
+        {
+            if (ackServer) UseAckServer();
+            _online = false;
+            await Handle(Power(73, "restart"));
+            await WaitUntilPowerIdle();
+            Assert.Equal((PowerOperation.Restart, 73), Assert.Single(PowerCalls()));
+            Assert.Empty(_sent);
+            Assert.Equal(new[] { 73 }, OnDisk().Select(e => e.TaskId));
+
+            // Açılış: dosya yeniden okunur; sunucu ilk bağlantıda kendini duyurur (ya da eski sunucu duyurmaz)
+            var sent = new List<JsonElement>();
+            var afterBoot = new ResultOutbox(ackServer ? Connected(new ServerHandshake()) : new ServerHandshake(), new ResultSpool(SpoolPath), payload =>
+            {
+                sent.Add(JsonSerializer.SerializeToElement(payload));
+                return Task.FromResult(true);
+            });
+            await afterBoot.FlushPendingResultsAsync();
+            JsonElement result = Assert.Single(sent);
+            Assert.Equal(73, result.GetProperty("task_id").GetInt32());
+            Assert.Equal(0, ExitCode(result));
+            Assert.Equal("[TAMAM] Bilgisayar yeniden başlatılıyor.", Output(result));
+            Assert.Equal("HW-TEST", result.GetProperty("pc_name").GetString());
+            Assert.Equal(ackServer ? 1 : 0, OnDisk().Count);
+        }
+
+        // ------------------------------------------------------------------ güç: kilitleme ve oturum kapatma
 
         [Fact]
         public async Task Power_Lock_GoesThroughTheTrayInTheConsoleSession()
@@ -676,7 +827,9 @@ namespace POps.Tests.Agent
             await WaitUntilPowerIdle();
             Assert.Equal(PowerActions.LockPrefix + "51", Assert.Single(Tray(PowerActions.LockPrefix)));
             Assert.Empty(PowerCalls());
-            Assert.Equal("[TAMAM] Bilgisayar kilitleniyor.", Assert.Single(Results(51)).GetProperty("output").GetString());
+            JsonElement result = Assert.Single(Results(51));
+            Assert.Equal(0, ExitCode(result));
+            Assert.Equal(PowerActions.LockedOutput, Output(result));
         }
 
         [Fact]
@@ -691,6 +844,9 @@ namespace POps.Tests.Agent
             await Handle(Power(52, "lock"));
             await WaitUntilPowerIdle();
             Assert.Equal((PowerOperation.Lock, 52), Assert.Single(PowerCalls()));
+            JsonElement result = Assert.Single(Results(52));
+            Assert.Equal(0, ExitCode(result));
+            Assert.Equal(PowerActions.DisconnectedOutput, Output(result));
         }
 
         [Fact]
@@ -702,8 +858,10 @@ namespace POps.Tests.Agent
             await WaitUntilPowerIdle();
             Assert.Single(Tray(PowerActions.LockPrefix));
             Assert.Equal((PowerOperation.Lock, 53), Assert.Single(PowerCalls()));
+            Assert.Equal(PowerActions.DisconnectedOutput, Output(Assert.Single(Results(53))));
             // Geç gelen yanıt bir şey değiştirmez
             Assert.False(await _worker.OnTrayReplyAsync(PowerActions.LockResultPrefix + "53:1"));
+            Assert.Single(Results(53));
         }
 
         [Fact]
@@ -714,6 +872,74 @@ namespace POps.Tests.Agent
             await WaitUntilPowerIdle();
             Assert.Empty(Tray(PowerActions.LockPrefix));
             Assert.Equal((PowerOperation.Lock, 54), Assert.Single(PowerCalls()));
+            Assert.Equal(PowerActions.DisconnectedOutput, Output(Assert.Single(Results(54))));
+        }
+
+        // Kabulden sonra konsol oturumu kalmadı (ör. oturum değişirken): çağrı yapılmaz, sonuç hata (-6 değil: kabulde
+        // kullanıcı vardı)
+        [Fact]
+        public async Task Power_Lock_NoConsoleSessionAtTheCall_IsAnError()
+        {
+            int calls = 0;
+            _outcome = (_, _) => WindowsPower.OnConsoleSession(() => UserSessionLauncher.NoSession, session =>
+            {
+                calls++;
+                return (true, 0);
+            }, "WTSDisconnectSession");
+            await Handle(Power(55, "lock"));
+            await WaitUntilPowerIdle();
+            JsonElement result = Assert.Single(Results(55));
+            Assert.Equal(CommandRunner.ExitAgentError, ExitCode(result));
+            Assert.Equal("[HATA] Bilgisayar kilitlenemedi: WTSDisconnectSession çağrılmadı: etkin konsol oturumu yok.", Output(result));
+            Assert.Equal(0, calls);
+        }
+
+        // WTSDisconnectSession ya da WTSLogoffSession hata döndü: sonuç Win32 hata kodu ve "[HATA] ..."
+        [Theory]
+        [InlineData("lock", "WTSDisconnectSession", "[HATA] Bilgisayar kilitlenemedi: ")]
+        [InlineData("logoff", "WTSLogoffSession", "[HATA] Kullanıcının oturumu kapatılamadı: ")]
+        public async Task Power_LockOrLogoff_CallFails_ReportsTheWin32Error(string op, string call, string prefix)
+        {
+            const int accessDenied = 5;
+            uint calledWith = 0;
+            _outcome = (_, _) => WindowsPower.OnConsoleSession(() => 3, session =>
+            {
+                calledWith = session;
+                return (false, accessDenied);
+            }, call);
+            await Handle(Power(56, op));
+            await WaitUntilPowerIdle();
+            Assert.Equal(3u, calledWith);
+            JsonElement result = Assert.Single(Results(56));
+            Assert.Equal(accessDenied, ExitCode(result));
+            Assert.Equal($"{prefix}{call} başarısız (oturum 3, Win32 5: {WindowsPower.Win32Message(accessDenied)}).", Output(result));
+        }
+
+        // Tepsi kilitlemeyi onaylamadı ("0" ya da süre içinde yanıt yok) ve servisin oturum ayırması da başarısız: hata, kod
+        // ayırma çağrısınınki
+        [Theory]
+        [InlineData(true, "tepside LockWorkStation başarısız")]
+        [InlineData(false, "tepsi 0.05 sn içinde yanıt vermedi")]
+        public async Task Power_Lock_TrayDidNotConfirmAndTheFallbackFailed_IsAnError(bool trayAnswers, string trayProblem)
+        {
+            _trayInConsole = true;
+            _worker.Power.TrayLockTimeout = TimeSpan.FromMilliseconds(50);
+            if (trayAnswers)
+                _onTray = message =>
+                {
+                    if (message.StartsWith(PowerActions.LockPrefix, StringComparison.Ordinal))
+                        _ = _worker.OnTrayReplyAsync(PowerActions.LockResultPrefix + message.Substring(PowerActions.LockPrefix.Length) + ":0");
+                };
+            _outcome = (_, _) => WindowsPower.OnConsoleSession(() => 1, _ => (false, 7022), "WTSDisconnectSession");
+            await Handle(Power(57, "lock"));
+            await WaitUntilPowerIdle();
+            Assert.Single(Tray(PowerActions.LockPrefix));
+            Assert.Equal((PowerOperation.Lock, 57), Assert.Single(PowerCalls()));
+            JsonElement result = Assert.Single(Results(57));
+            Assert.Equal(7022, ExitCode(result));
+            Assert.StartsWith($"[HATA] Bilgisayar kilitlenemedi: {trayProblem}; WTSDisconnectSession başarısız (oturum 1, Win32 7022: ", Output(result));
+            Assert.False(await _worker.OnTrayReplyAsync(PowerActions.LockResultPrefix + "57:1"));
+            Assert.Single(Results(57));
         }
 
         // ------------------------------------------------------------------ kullanıcı mesajı
@@ -908,6 +1134,135 @@ namespace POps.Tests.Agent
                 Assert.StartsWith("[TAMAM] gösterildi", Results(taskId).Single().GetProperty("output").GetString());
             }
             Assert.Empty(Sent("capability_denied"));
+        }
+    }
+
+    // Gerçek güç işlemlerinin sonucu nasıl yorumladığı (WindowsPower): shutdown.exe'nin çıkış kodu ve konsol oturumu çağrısının
+    // dönüşü. Süreç ve çağrı testin sahtesidir: hiçbir süreç başlatılmaz, hiçbir oturum ayrılmaz ya da kapatılmaz.
+    public class WindowsPowerTests : TestBase
+    {
+        [Theory]
+        [InlineData(false, "/s")]
+        [InlineData(true, "/r")]
+        public void ShutdownStart_IsShutdownExeFromSystem32_WithTheReason(bool restart, string mode)
+        {
+            ProcessStartInfo start = WindowsPower.ShutdownStart(restart, 42);
+            Assert.Equal(Path.Combine(Environment.SystemDirectory, "shutdown.exe"), start.FileName);
+            Assert.False(start.UseShellExecute);
+            Assert.True(start.CreateNoWindow);
+            Assert.Equal(new[] { mode, "/t", "0", "/f", "/d", "p:0:0", "/c", "POps: yönetici isteği (görev 42)" }, start.ArgumentList);
+        }
+
+        [Fact]
+        public void ShutdownExe_ExitCodeZero_IsDone()
+        {
+            ProcessStartInfo given = WindowsPower.ShutdownStart(true, 1);
+            ProcessStartInfo ran = null;
+            PowerOutcome outcome = WindowsPower.ShutdownExe(given, start =>
+            {
+                ran = start;
+                return 0;
+            });
+            Assert.Same(given, ran);
+            Assert.True(outcome.Succeeded);
+            Assert.Equal(0, outcome.Code);
+            Assert.Equal("", outcome.Error);
+        }
+
+        [Theory]
+        [InlineData(1190)]   // ERROR_SHUTDOWN_IS_SCHEDULED
+        [InlineData(5)]      // erişim engellendi (ör. politika)
+        [InlineData(1)]
+        public void ShutdownExe_OtherExitCode_IsThatCode(int exitCode)
+        {
+            PowerOutcome outcome = WindowsPower.ShutdownExe(WindowsPower.ShutdownStart(false, 1), _ => exitCode);
+            Assert.False(outcome.Succeeded);
+            Assert.Equal(exitCode, outcome.Code);
+            Assert.Equal($"shutdown.exe {exitCode}: {WindowsPower.Win32Message(exitCode)}", outcome.Error);
+            Assert.False(outcome.Error.EndsWith(".", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void ShutdownExe_ThatDoesNotFinish_OrDoesNotStart_IsAnError()
+        {
+            PowerOutcome hung = WindowsPower.ShutdownExe(WindowsPower.ShutdownStart(false, 1), _ => null);
+            Assert.Equal(CommandRunner.ExitAgentError, hung.Code);
+            Assert.Equal($"shutdown.exe {WindowsPower.ShutdownExeWaitSeconds} sn içinde bitmedi", hung.Error);
+
+            PowerOutcome missing = WindowsPower.ShutdownExe(WindowsPower.ShutdownStart(false, 1), _ => throw new Win32Exception(2));
+            Assert.Equal(2, missing.Code);
+            Assert.StartsWith("shutdown.exe başlatılamadı (Win32 2: ", missing.Error);
+
+            PowerOutcome noProcess = WindowsPower.ShutdownExe(WindowsPower.ShutdownStart(false, 1), _ => throw new InvalidOperationException("süreç başlatılamadı"));
+            Assert.Equal(CommandRunner.ExitAgentError, noProcess.Code);
+            Assert.Equal("shutdown.exe başlatılamadı (süreç başlatılamadı)", noProcess.Error);
+        }
+
+        [Fact]
+        public void OnConsoleSession_CallsWithTheConsoleSession()
+        {
+            uint calledWith = 0;
+            PowerOutcome outcome = WindowsPower.OnConsoleSession(() => 7, session =>
+            {
+                calledWith = session;
+                return (true, 0);
+            }, "WTSLogoffSession");
+            Assert.True(outcome.Succeeded);
+            Assert.Equal(7u, calledWith);
+        }
+
+        [Fact]
+        public void OnConsoleSession_WithoutAConsoleSession_DoesNotCall()
+        {
+            bool called = false;
+            PowerOutcome outcome = WindowsPower.OnConsoleSession(() => UserSessionLauncher.NoSession, _ =>
+            {
+                called = true;
+                return (true, 0);
+            }, "WTSDisconnectSession");
+            Assert.False(called);
+            Assert.Equal(CommandRunner.ExitAgentError, outcome.Code);
+            Assert.Equal("WTSDisconnectSession çağrılmadı: etkin konsol oturumu yok", outcome.Error);
+        }
+
+        [Fact]
+        public void OnConsoleSession_FailedCall_IsItsWin32Error_AndNeverZero()
+        {
+            PowerOutcome denied = WindowsPower.OnConsoleSession(() => 2, _ => (false, 5), "WTSDisconnectSession");
+            Assert.Equal(5, denied.Code);
+            Assert.Equal($"WTSDisconnectSession başarısız (oturum 2, Win32 5: {WindowsPower.Win32Message(5)})", denied.Error);
+
+            // Hata kodu okunamadıysa da başarı sayılmaz
+            PowerOutcome unknown = WindowsPower.OnConsoleSession(() => 2, _ => (false, 0), "WTSDisconnectSession");
+            Assert.False(unknown.Succeeded);
+            Assert.Equal(CommandRunner.ExitAgentError, unknown.Code);
+        }
+
+        [Fact]
+        public void PowerOutcome_DefaultIsDone_AndAFailureIsNeverZero()
+        {
+            Assert.True(default(PowerOutcome).Succeeded);
+            Assert.Equal("", default(PowerOutcome).Error);
+            Assert.Equal(PowerOutcome.Done, default(PowerOutcome));
+            Assert.Equal(CommandRunner.ExitAgentError, PowerOutcome.Failed(0, "x").Code);
+            Assert.Equal(1190, PowerOutcome.Failed(1190, "x").Code);
+            Assert.Equal("x", PowerOutcome.Failed(1190, "x").Error);
+        }
+
+        // Kapatma, yeniden başlatma, oturum kapatma ve kilitlemenin sonuç metinleri
+        [Fact]
+        public void Outputs_SayWhatHappened()
+        {
+            Assert.Equal("[TAMAM] Bilgisayar kapatılıyor.", PowerActions.DoneOutput(PowerOperation.Shutdown));
+            Assert.Equal("[TAMAM] Bilgisayar yeniden başlatılıyor.", PowerActions.DoneOutput(PowerOperation.Restart));
+            Assert.Equal("[TAMAM] Kullanıcının oturumu kapatılıyor.", PowerActions.DoneOutput(PowerOperation.Logoff));
+            Assert.Equal(PowerActions.LockedOutput, PowerActions.DoneOutput(PowerOperation.Lock));
+            Assert.Equal("[HATA] shutdown.exe 1190: x. Bilgisayar kapatılmadı.", PowerActions.FailedOutput(PowerOperation.Shutdown, "shutdown.exe 1190: x"));
+            Assert.Equal("[HATA] shutdown.exe 5: x. Bilgisayar yeniden başlatılmadı.", PowerActions.FailedOutput(PowerOperation.Restart, "shutdown.exe 5: x"));
+            Assert.Equal("[HATA] Kullanıcının oturumu kapatılamadı: x.", PowerActions.FailedOutput(PowerOperation.Logoff, "x"));
+            Assert.Equal("[HATA] Bilgisayar kilitlenemedi: x.", PowerActions.FailedOutput(PowerOperation.Lock, "x"));
+            foreach (string done in new[] { PowerActions.LockedOutput, PowerActions.DisconnectedOutput })
+                Assert.StartsWith("[TAMAM] ", done);
         }
     }
 }

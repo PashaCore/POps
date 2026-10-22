@@ -902,9 +902,16 @@ namespace POps.Tests.Agent
             string sha = new string('c', 64);
             return new[]
             {
-                new object[] { $"http://8.8.8.8:8817/pops-cache/{sha}", "özel" },
-                new object[] { $"http://100.64.0.10:8817/pops-cache/{sha}", "özel" },
-                new object[] { $"http://[2001:db8::10]:8817/pops-cache/{sha}", "özel" },
+                // Bu sınıfta her adres yerel alt ağda sayılır (IsLocalSubnet); bunlar yine de eş olamaz. Özel ya da genel olması
+                // fark etmez, alt ağ denetimi PeerSubnetTests'te
+                new object[] { $"http://224.0.0.251:8817/pops-cache/{sha}", "çoklu yayın" },
+                new object[] { $"http://239.1.2.3:8817/pops-cache/{sha}", "çoklu yayın" },
+                new object[] { $"http://[ff02::1]:8817/pops-cache/{sha}", "çoklu yayın" },
+                new object[] { $"http://255.255.255.255:8817/pops-cache/{sha}", "yayın" },
+                new object[] { $"http://240.0.0.1:8817/pops-cache/{sha}", "ayrılmış" },
+                new object[] { $"http://0.0.0.0:8817/pops-cache/{sha}", "belirtilmemiş" },
+                new object[] { $"http://0.1.2.3:8817/pops-cache/{sha}", "belirtilmemiş" },
+                new object[] { $"http://[::]:8817/pops-cache/{sha}", "belirtilmemiş" },
                 new object[] { $"https://pc-12.lab.example:8817/pops-cache/{sha}", "yalnızca http" },
                 new object[] { $"https://192.168.1.20:8817/pops-cache/{sha}", "yalnızca http" },
                 new object[] { $"http://pc-12:8817/pops-cache/{sha}", "IP adresi değil" },
@@ -941,6 +948,9 @@ namespace POps.Tests.Agent
         [InlineData("http://169.254.10.10:8817/pops-cache/{sha}")]
         [InlineData("http://[fe80::1]:8817/pops-cache/{sha}")]
         [InlineData("http://[fd12:3456::7]:8817/pops-cache/{sha}")]
+        [InlineData("http://203.0.113.20:8817/pops-cache/{sha}")]       // genel adres de (alt ağ denetimi: PeerSubnetTests)
+        [InlineData("http://[2001:db8::10]:8817/pops-cache/{sha}")]
+        [InlineData("http://[::ffff:203.0.113.20]:8817/pops-cache/{sha}")]
         public void PeerUrl_Accepted(string url)
         {
             string sha = new string('c', 64);
@@ -969,7 +979,7 @@ namespace POps.Tests.Agent
                 {
                     new { hw_id = "HW-000000000001", url = Url(1) },
                     "not an object",
-                    new { hw_id = "HW-000000000003", url = "http://8.8.8.8:8817/pops-cache/" + sha },
+                    new { hw_id = "HW-000000000003", url = "http://224.0.0.1:8817/pops-cache/" + sha },
                     new { hw_id = "bad id with spaces", url = Url(4) },
                     new { hw_id = "HW-000000000005", url = Url(5) },
                     new { hw_id = "HW-000000000006", url = Url(6) },

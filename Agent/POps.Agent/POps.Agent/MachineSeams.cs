@@ -13,7 +13,7 @@ namespace POpsAgent
 {
     // Ajanın makineye açılan kapıları: güvenlik duvarını, kayıt defteri politikalarını, sistem ortam değişkenlerini, BITS
     // işlerini, güç durumunu, kurulu yazılımı ve süreçleri değiştiren ya da bütün arabirimlerde dinleyen her şey, ve servisin
-    // konsol oturumu sorguları.
+    // konsol oturumu ve ağ arabirimleri sorguları.
     // Bir Worker'ın kapıları bağlamdadır (AgentContext.Machine); Worker kurduğu parçalara yalnızca kullandıkları kapıyı verir.
     //
     // Güvenli varsayılan: parametresiz kurulan nesnenin her kapısı reddeden ya da hiçbir şey yapmayan sahtedir (Refusing;
@@ -34,8 +34,12 @@ namespace POpsAgent
         // PeerCache, PeerCacheServer)
         public Func<string, Task<(int Exit, string Output)>> PeerCacheFirewall { get; init; } = Refusing.Script;
         public PeerCacheServerFactory PeerCacheServer { get; init; } = Refusing.NoPeerCacheServer;
-        // Güç işlemi (kapatma, yeniden başlatma, oturum kapatma, kilitleme; bkz. PowerActions). Dönen: uygulandı mı
-        public Func<PowerOperation, int, bool> Power { get; init; } = Refusing.Power;
+        // Bu bilgisayarın çalışan arabirimlerindeki adresler ve önek uzunlukları: eş önbelleği yalnızca bu alt ağlardaki eşlerden
+        // indirir ve yalnızca onlara sunar (bkz. PeerCache.InLocalSubnet)
+        public Func<IReadOnlyList<InterfaceSubnet>> LocalSubnets { get; init; } = Refusing.NoLocalSubnets;
+        // Güç işlemi (kapatma, yeniden başlatma, oturum kapatma, kilitleme; bkz. PowerActions). Dönen: işlemin gerçek sonucu
+        // (Win32 hata kodu ya da shutdown.exe'nin çıkış kodu; bkz. PowerOutcome)
+        public Func<PowerOperation, int, PowerOutcome> Power { get; init; } = Refusing.Power;
         // Etkin konsol oturumunda oturum açmış kullanıcı var mı, ve o oturumun kimliği (bkz. SessionTasks)
         public Func<bool> HasConsoleUser { get; init; } = Refusing.NoConsoleUser;
         public Func<uint> ConsoleSession { get; init; } = Refusing.NoConsoleSession;
@@ -69,6 +73,7 @@ namespace POpsAgent
             PeerCacheFirewall = PeerCache.RunPowerShellAsync,
             PeerCacheServer = (sha256, path, isLocal, maxClients) =>
                 new PeerCacheServer(sha256, path, new IPEndPoint(IPAddress.IPv6Any, PeerCache.Port), isLocal, maxClients),
+            LocalSubnets = PeerCache.ReadLocalSubnets,
             Power = WindowsPower.Run,
             HasConsoleUser = SessionTasks.ConsoleUserPresent,
             ConsoleSession = () => UserSessionLauncher.ActiveConsoleSession(),
@@ -98,7 +103,11 @@ namespace POpsAgent
             public static IPeerCacheServer NoPeerCacheServer(string sha256, string path, Func<IPAddress, bool> isLocal, int maxClients) =>
                 new NotListeningPeerCacheServer(sha256);
 
-            public static bool Power(PowerOperation operation, int taskId) =>
+            // Bu bilgisayarın arabirimleri okunmaz: yerel alt ağ yok, eş önbelleği hiçbir eşten indirmez ve hiçbir isteğe yanıt
+            // vermez (403). Sonuç testin makinesinin ağına bağlı değildir.
+            public static IReadOnlyList<InterfaceSubnet> NoLocalSubnets() => Array.Empty<InterfaceSubnet>();
+
+            public static PowerOutcome Power(PowerOperation operation, int taskId) =>
                 throw new InvalidOperationException($"Testte gerçek güç API'si çağrıldı ({operation}, görev {taskId}).");
 
             public static bool NoConsoleUser() => false;

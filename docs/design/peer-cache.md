@@ -17,7 +17,9 @@ package's SHA-256).
 - A job that does not finish in 15 minutes keeps running, and the next `update_agent` for the same package
   picks it up.
 - If BITS cannot be used (module or service missing, the organisation's private CA trusted only by the agent and
-  not by Windows, a server without Range support), the agent downloads with HttpClient as before.
+  not by Windows, a server without Range support), the agent downloads with HttpClient as before. From the version
+  after 0.1.23-alpha an agent pinned to the school CA (`server_ca = custom`) skips BITS and downloads with
+  HttpClient straight away, instead of waiting for BITS to give up.
 - The signed manifest's size and SHA-256 are checked on both paths.
 
 This fixes the restart-from-zero problem. It does not reduce the 40× load.
@@ -48,10 +50,11 @@ reduce the number of downloads.
 
 1. **Staged dispatch (server, built).**
    - Only agents that announce `peer_cache` in `X-Agent-Features` take part. For each lab with at least two such
-     online targets the server first sends `update_agent` to one of them, the seed: it needs a usable LAN address
-     (`X-Agent-Peer-Cache: ip=…`, else the inventory address, else the connection address when it is private and
-     not shared), must not already run the target version, and wired PCs (`link=wired`) and the most recently
-     seen come first.
+     online targets the server first sends `update_agent` to one of them, the seed: it needs a usable address
+     (`X-Agent-Peer-Cache: ip=…`, else the inventory address, private or public, else the connection address when
+     it is private and not shared), must not already run the target version, and wired PCs (`link=wired`) and the
+     most recently seen come first. Public IPv4 addresses count from 0.1.24 so that labs without NAT work too; the
+     agent only uses a peer on one of its own subnets.
    - When the seed reports `update_result` `success` on its new version, the server sends the command to the rest
      of the lab with `"peers": [{"hw_id", "url"}]` (up to three online PCs of the lab that reported success for the
      package less than 110 minutes ago, the seed first, rotated per PC). The trigger was `verified` in the first

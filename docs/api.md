@@ -453,8 +453,10 @@ users:
   separate arguments without a shell (see [`agent.md`](agent.md#winget_install-contract)).
 - Like package steps, it needs the `deploy` module in the target's lab.
 - The task is stored with `kind = "winget"`, `payload = {"id", "version"}` and, as `script_path`, the command line
-  the agent runs (`winget install --id Mozilla.Firefox -e --silent --scope machine --accept-package-agreements
-  --accept-source-agreements --disable-interactivity [--version …]`), for display only. Without a `name` the title
+  the agent runs first (`winget install --id Mozilla.Firefox -e --source winget --silent --scope machine
+  --accept-package-agreements --accept-source-agreements --disable-interactivity [--version …]`), for display only.
+  When the package has no machine-scope installer (`0x8A150010`), the agent runs it once more without
+  `--scope machine` ([`agent.md`](agent.md#winget_install-contract), point 5). Without a `name` the title
   is `winget: <id>`.
 - The queue sends `{"action": "winget_install", "task_id", "id", "version", "requested_by"}` only to an agent whose
   connection announced `winget` (`X-Agent-Features`). Pending winget tasks of other online PCs become `Denied` with

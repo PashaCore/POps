@@ -17,7 +17,8 @@ namespace POpsAgent
     //  * Yalıtım kaldırılamazsa kilit sürer ve kullanıcıya "kaldırıldı" denmez (UNLOCK_FAILED).
     public sealed class QuarantineControl
     {
-        public const string LockFileName = "lockdown.json";
+        // MSI kaldırılırken ağ kuralları silinince bu kayıt da silinir (POps.Shared.FirewallRules.StateFiles)
+        public const string LockFileName = FirewallRules.QuarantineLockFile;
 
         private readonly Action<string> _toTray;
         private readonly Func<Task<bool>> _enableIsolation;

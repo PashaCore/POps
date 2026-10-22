@@ -1102,11 +1102,12 @@ def test_winget():
             chk(True, "geçersiz sürüm reddedildi: %r" % (str(bad)[:20],))
 
     args = winget.arguments("Mozilla.Firefox", "124.0")
-    chk(args == ["install", "--id", "Mozilla.Firefox", "-e", "--silent", "--scope", "machine",
+    chk(args == ["install", "--id", "Mozilla.Firefox", "-e", "--source", "winget", "--silent", "--scope", "machine",
                  "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
                  "--version", "124.0"], "argüman listesi sözleşmedeki gibi (%s)" % args)
     chk(winget.arguments("7zip.7zip")[-1] == "--disable-interactivity", "sürümsüz: --version yok")
-    chk(winget.command_line("7zip.7zip").startswith("winget install --id 7zip.7zip -e --silent"), "okunur komut")
+    chk(winget.command_line("7zip.7zip").startswith("winget install --id 7zip.7zip -e --source winget --silent"),
+        "okunur komut")
 
     task = {"id": 7, "payload": winget.payload("Mozilla.Firefox", None)}
     chk(winget.message(task, "admin") == {"action": "winget_install", "task_id": 7, "id": "Mozilla.Firefox",
@@ -1589,11 +1590,16 @@ def test_peer_cache():
     chk((a.port, a.ip, a.link) == (pc.DEFAULT_PORT, "192.168.1.5", "wireless"), "1024 altı port varsayılana döner")
     a = pc.parse_header(None)
     chk((a.port, a.ip, a.link) == (8817, None, None), "başlıksız: 8817, adres yok")
-    for bad in ("8.8.8.8", "127.0.0.1", "169.254.1.1", "0.0.0.0", "224.0.0.1", "fd00::1", "10.0.0.300", "", None,
-                "10.0.0.1:80"):
-        chk(pc.lan_ip(bad) is None, "yerel ağ adresi değil: %r" % (bad,))
+    for bad in ("127.0.0.1", "169.254.1.1", "0.0.0.0", "0.1.2.3", "224.0.0.1", "240.0.0.1", "255.255.255.255",
+                "fd00::1", "10.0.0.300", "", None, "10.0.0.1:80"):
+        chk(pc.lan_ip(bad) is None, "eş adresi değil: %r" % (bad,))
     chk(pc.lan_ip(" 172.16.4.2 ") == "172.16.4.2", "özel adres kabul")
-    chk(pc.parse_header("port=99999; ip=8.8.8.8; link=fiber").ip is None, "geçersiz parçalar atılır")
+    chk(pc.lan_ip("5.10.20.30") == "5.10.20.30", "genel IPv4 kabul (genel adresli laboratuvar)")
+    chk(pc.lan_ip("5.10.20.30", private_only=True) is None, "private_only: genel adres reddedilir")
+    chk(pc.lan_ip("10.1.2.3", private_only=True) == "10.1.2.3", "private_only: özel adres kabul")
+    a = pc.parse_header("port=99999; ip=127.0.0.1; link=fiber")
+    chk((a.port, a.ip, a.link) == (pc.DEFAULT_PORT, None, None), "geçersiz parçalar atılır")
+    chk(pc.parse_header("ip=5.10.20.31").ip == "5.10.20.31", "başlıkta genel adres")
 
     saved = dict(manager.active_agents)
     pc.reset()
@@ -1628,6 +1634,14 @@ def test_peer_cache():
         rows[5]["conn_ip"], rows[6]["conn_ip"] = "10.0.0.6", "10.0.0.7"
         pc.resolve_ips(rows)
         chk(rows[5]["ip"] == "10.0.0.6", "paylaşılmayan özel bağlantı adresi kullanılır")
+        rows[5]["conn_ip"] = "5.10.20.36"
+        pc.resolve_ips(rows)
+        chk(rows[5]["ip"] is None, "genel bağlantı adresi (çoğunlukla NAT) kullanılmaz")
+        rows[5]["inv_ip"] = "5.10.20.36"
+        pc.resolve_ips(rows)
+        chk(rows[5]["ip"] == "5.10.20.36", "envanterdeki genel adres kullanılır")
+        rows[5]["conn_ip"], rows[5]["inv_ip"] = "10.0.0.6", None
+        pc.resolve_ips(rows)
         seeds = pc.choose_seeds(rows, "9.9.9")
         chk(seeds == ["S2", "S3", "S1", "S6"],
             "kablolu önce, sonra en son görülen; özelliksiz, hedef sürümdeki ve bağlı olmayan aday değil: %s" % seeds)

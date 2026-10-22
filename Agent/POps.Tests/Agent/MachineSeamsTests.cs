@@ -50,6 +50,8 @@ namespace POps.Tests.Agent
                     }
                     // Bu bilgisayarın sistem ortam değişkenleri okunmaz (eski sürümden kalan gizli değer yok sayılır)
                     if (property.Name == nameof(MachineSeams.ReadMachineVariable)) Assert.Null(machine.ReadMachineVariable("POPS_BYPASS_SECRET"));
+                    // Bu bilgisayarın ağ arabirimleri okunmaz: yerel alt ağ yok (eş önbelleği hiçbir eşi ve istemciyi kabul etmez)
+                    if (property.Name == nameof(MachineSeams.LocalSubnets)) Assert.Empty(machine.LocalSubnets());
                 }
                 else if (property.Name == nameof(MachineSeams.Kiosk))
                     Assert.False(value is WindowsKioskRegistry, "kiosk kaydı gerçek kayıt defteri");
@@ -174,6 +176,7 @@ namespace POps.Tests.Agent
             Assert.Same(machine.FirewallScripts, worker.Exam.Scripts);
             Assert.Same(machine.ExamResolver, worker.Exam.Resolver);
             Assert.Same(machine.StopProcess, worker.Exam.StopProcess);
+            Assert.Same(agent.Context.Clock, worker.Exam.Clock);
             Assert.Contains(machine.Power, Fields(worker.Power));
             Assert.Contains(machine.HasConsoleUser, Fields(worker.Power));
             Assert.Contains(machine.HasConsoleUser, Fields(worker.Messages));
@@ -184,6 +187,7 @@ namespace POps.Tests.Agent
             PeerCache cache = agent.Updater.PeerCache;
             Assert.Same(machine.PeerCacheFirewall, cache.FirewallRunner);
             Assert.Same(machine.PeerCacheServer, cache.NewServer);
+            Assert.Same(machine.LocalSubnets, cache.LocalSubnets);
             Assert.Contains(machine.ReadMachineVariable, Fields(agent.Credentials));
             Assert.Contains(machine.DeleteMachineVariable, Fields(agent.Credentials));
             Assert.Null(agent.Updater.Bits.Runner);
@@ -199,10 +203,12 @@ namespace POps.Tests.Agent
             AssertNoProductionSeam(agent.Context);
             AssertNoProductionSeam(agent.NewUpdater("0.1.0", launch: (_, _, _) => false));
             AssertNoProductionSeam(new NetworkIsolation(agent.Paths.SecureFile(NetworkIsolation.StateFileName), machine.FirewallScripts));
-            AssertNoProductionSeam(new ExamMode(agent.Paths.SecureFile(ExamMode.StateFileName), machine.FirewallScripts, machine.ExamResolver, machine.StopProcess));
+            AssertNoProductionSeam(new ExamMode(agent.Paths.SecureFile(ExamMode.StateFileName), machine.FirewallScripts, machine.ExamResolver, machine.StopProcess,
+                agent.Context.Clock));
             AssertNoProductionSeam(new QuarantineControl(agent.Paths, _ => { }, () => Task.FromResult(true), () => Task.FromResult(true), machine.Kiosk));
             AssertNoProductionSeam(new FileTransfer(agent.Paths, agent.Http, agent.Credentials, machine.PublicDesktop, machine.Profiles));
-            AssertNoProductionSeam(new PowerActions((_, _, _) => Task.CompletedTask, _ => Task.CompletedTask, _ => { }, () => false, agent.Capabilities,
+            var outbox = new ResultOutbox(new ServerHandshake(), new ResultSpool(agent.Paths.SecureFile(ResultSpool.FileName)), _ => Task.FromResult(true));
+            AssertNoProductionSeam(new PowerActions(new TaskResults(outbox, () => null), _ => Task.CompletedTask, _ => { }, () => false, agent.Capabilities,
                 machine.Power, machine.HasConsoleUser));
             AssertNoProductionSeam(new UserMessages((_, _, _) => Task.CompletedTask, _ => Task.CompletedTask, _ => { }, () => false, agent.Capabilities,
                 machine.HasConsoleUser));

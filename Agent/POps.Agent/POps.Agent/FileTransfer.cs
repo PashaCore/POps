@@ -30,12 +30,18 @@ namespace POpsAgent
     //  * file_pull (PC -> yönetici; gerekçe zorunlu): C:\POpsData\secure içinden hiçbir şey, başka kullanıcıların
     //    profilinden yalnızca any_profile ile, max_size'dan büyük dosya asla. Denetim dosyanın gerçek yoluna
     //    (bağlantılar çözülmüş) yapılır; cihaz anahtarı başlıklarıyla yüklenir.
+    //  * İkisi de ajanın HTTP işleyicisiyle (sunucu sertifikası denetimi, yönlendirme yok), ama bildirimlerin 100 sn'lik
+    //    süresi olmayan kendi istemcisiyle gider (AgentHttp.TransferClient): 2 dakika veri akmazsa ya da toplam 2 saat dolarsa
+    //    aktarım "failed" olur (bkz. TransferWatchdog); veri aktığı sürece 1 GiB'lık dosya yavaş bağlantıda da kesilmez.
     // Her işlem PC kullanıcısına tepsiden söylenir ve yerel denetim kaydına yazılır. Worker'ın örneği dosya aktarımı
     // işleyicisindedir (bkz. FileTransferHandler).
     [SupportedOSPlatform("windows")]
     public sealed class FileTransfer
     {
         public const long MaxBytes = 1024L * 1024 * 1024;
+        // Veri akmadan en çok 2 dakika, toplamda en çok 2 saat (1 GiB için en az ~150 KB/sn)
+        public static readonly TimeSpan DefaultIdleTimeout = TimeSpan.FromMinutes(2);
+        public static readonly TimeSpan DefaultTotalTimeout = TimeSpan.FromHours(2);
         // Sunucu şeması: name en çok 200, reason 3-300, path en çok 1024 karakter
         public const int MaxNameLength = 200, MinReason = 3, MaxReason = 300, MaxPathLength = 1024;
         private static readonly string[] ExecLike = { ".lnk", ".url", ".scr" };
@@ -90,6 +96,10 @@ namespace POpsAgent
             _publicDesktop = publicDesktop ?? throw new ArgumentNullException(nameof(publicDesktop));
             ProfileInfo = profiles ?? throw new ArgumentNullException(nameof(profiles));
         }
+
+        // Testler kısaltır (servis değiştirmez): veri akmadan geçen süre ve aktarımın toplam süresi
+        internal TimeSpan IdleTimeout { get; init; } = DefaultIdleTimeout;
+        internal TimeSpan TotalTimeout { get; init; } = DefaultTotalTimeout;
 
         public string PublicDesktop => _publicDesktop();
         // <veri klasörü>\inbox (AgentPaths.InboxDir)
@@ -237,26 +247,30 @@ namespace POpsAgent
             string destination = request.Dest == "public_desktop" ? PublicDesktop : InboxFor(localNow);
             if (string.IsNullOrEmpty(destination) || !Directory.Exists(destination)) return ("failed", null, "hedef klasör yok");
             string partial = System.IO.Path.Combine(_secureDir, $"transfer-{request.TransferId}.part");
+            // Bağlantı, yanıt başlığı ve her okuma için en çok IdleTimeout; hepsi için en çok TotalTimeout
+            using var watchdog = new TransferWatchdog(IdleTimeout, TotalTimeout, token);
             try
             {
                 SecureStore.EnsureDirectory(_secureDir);
                 using var message = new HttpRequestMessage(HttpMethod.Get, request.Url);
                 _credentials.AddHttpAuth(message, hwId);
-                using HttpResponseMessage response = await _http.Client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token);
+                using HttpResponseMessage response = await _http.TransferClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, watchdog.Token);
                 if (!response.IsSuccessStatusCode) return ("failed", null, $"indirilemedi: HTTP {(int)response.StatusCode}");
+                watchdog.Progress();
                 using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
                 long total = 0;
-                await using (Stream input = await response.Content.ReadAsStreamAsync(token))
+                await using (Stream input = await response.Content.ReadAsStreamAsync(watchdog.Token))
                 await using (var output = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
                     byte[] buffer = new byte[81920];
                     int read;
-                    while ((read = await input.ReadAsync(buffer.AsMemory(), token)) > 0)
+                    while ((read = await input.ReadAsync(buffer.AsMemory(), watchdog.Token)) > 0)
                     {
+                        watchdog.Progress();
                         total += read;
                         if (total > request.Size) return ("failed", null, "dosya bildirilen boyuttan büyük");
                         hash.AppendData(buffer, 0, read);
-                        await output.WriteAsync(buffer.AsMemory(0, read), token);
+                        await output.WriteAsync(buffer.AsMemory(0, read), watchdog.Token);
                     }
                 }
                 string actual = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
@@ -266,9 +280,9 @@ namespace POpsAgent
                 File.Copy(partial, target, false);
                 return ("done", target, null);
             }
-            catch (Exception ex) when (ex is IOException || ex is HttpRequestException || ex is UnauthorizedAccessException || ex is TaskCanceledException)
+            catch (Exception ex) when (ex is IOException || ex is HttpRequestException || ex is UnauthorizedAccessException || ex is OperationCanceledException)
             {
-                return ("failed", null, ex.Message);
+                return ("failed", null, watchdog.Expired ?? ex.Message);
             }
             finally { TryDelete(partial); }
         }
@@ -286,20 +300,23 @@ namespace POpsAgent
                 if (refusal != null) return ("rejected", finalPath, refusal, 0);
                 long size = file.Length;
                 if (size > request.MaxSize) return ("rejected", finalPath, $"dosya max_size'dan büyük ({size} bayt)", size);
+                // Her parça sunucuya yazıldıkça boşta kalma süresi yeniden başlar (bkz. ProgressStream); son parçadan sonra yanıt
+                // için de en çok o kadar beklenir
+                using var watchdog = new TransferWatchdog(IdleTimeout, TotalTimeout, token);
                 try
                 {
-                    using var message = new HttpRequestMessage(HttpMethod.Post, request.Upload) { Content = new StreamContent(file, 81920) };
+                    using var message = new HttpRequestMessage(HttpMethod.Post, request.Upload) { Content = new StreamContent(new ProgressStream(file, watchdog.Progress), 81920) };
                     message.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
                     message.Content.Headers.ContentLength = size;
                     _credentials.AddHttpAuth(message, hwId);
-                    using HttpResponseMessage response = await _http.Client.SendAsync(message, token);
+                    using HttpResponseMessage response = await _http.TransferClient.SendAsync(message, watchdog.Token);
                     return response.IsSuccessStatusCode
                         ? ("done", finalPath, null, size)
                         : ("failed", finalPath, $"yüklenemedi: HTTP {(int)response.StatusCode}", size);
                 }
-                catch (Exception ex) when (ex is IOException || ex is HttpRequestException || ex is TaskCanceledException)
+                catch (Exception ex) when (ex is IOException || ex is HttpRequestException || ex is OperationCanceledException)
                 {
-                    return ("failed", finalPath, ex.Message, size);
+                    return ("failed", finalPath, watchdog.Expired ?? ex.Message, size);
                 }
             }
         }

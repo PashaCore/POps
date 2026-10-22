@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using POps.Shared;
 
@@ -42,6 +43,7 @@ namespace POpsAgent
             _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
             Handler = handler as HttpClientHandler;
             Client = new HttpClient(handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(100) };
+            TransferClient = new HttpClient(handler, disposeHandler: false) { Timeout = Timeout.InfiniteTimeSpan };
         }
 
         // Sunucu istemcisinin işleyicisi (yönlendirme ve sertifika ayarı); sahte işleyiciyle kurulduysa null
@@ -49,6 +51,12 @@ namespace POpsAgent
 
         // Testler sahte istemciyle değiştirebilir
         public HttpClient Client { get; internal set; }
+
+        // Dosya aktarımının istemcisi (bkz. FileTransfer): aynı işleyici, yani aynı sunucu sertifikası denetimi (ServerTrust) ve
+        // yönlendirme yok; cihaz anahtarı başlıkları yine her isteğe eklenir. HttpClient süresi yoktur: Client'ın 100 sn'lik
+        // sınırı yavaş bir bağlantıda 1 GiB'lık bir dosyayı yarıda keserdi. Aktarım kendi iptal jetonuyla boşta kalma (2 dk veri
+        // yok) ve toplam süre (2 saat) sınırını uygular (bkz. TransferWatchdog).
+        public HttpClient TransferClient { get; }
 
         public bool CanReport => _credentials.CurrentSecret != null;
 

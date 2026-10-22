@@ -23,31 +23,45 @@ namespace POpsAgent
     public sealed class ExamSettings
     {
         [JsonPropertyName("allow")] public List<string> Allow { get; set; } = new List<string>();
+        // Sunucunun bitişi (exam_mode.until, sunucunun saatiyle): exam_state.until olarak aynen bildirilir
         [JsonPropertyName("until")] public long? Until { get; set; }
+        // Bitiş, bu bilgisayarın saatiyle (unix sn): yalnızca yeniden başlatmadan sonra sürdürmek ve tepsi bandı için; çalışırken
+        // bitiş monotonik saatle sayılır (bkz. ExamMode.TimeLeftAsync). null: 0.1.24'ten önceki sürümün dosyası.
+        [JsonPropertyName("ends_at")] public long? EndsAt { get; set; }
+        // Emir geldiğinde kalan süre (en çok 8 saat), hangi saatle bulunduğu ve emrin geldiği an (monotonik saat): dosyaya yazılmaz
+        [JsonIgnore] public TimeSpan Remaining { get; set; }
+        [JsonIgnore] internal bool ServerClock { get; set; }
+        [JsonIgnore] internal long? ReceivedTimestamp { get; set; }
         [JsonPropertyName("message")] public string Message { get; set; } = "";
         [JsonPropertyName("block_apps")] public List<string> BlockApps { get; set; } = new List<string>();
         [JsonPropertyName("since")] public long Since { get; set; }
         // Kurallara giren adresler (sunucu + çözülen izin listesi); değişince kurallar yenilenir
         [JsonPropertyName("addresses")] public List<string> Addresses { get; set; } = new List<string>();
-        // Sınavdan önce kapalı olan güvenlik duvarı profilleri (bitince geri kapatılır)
-        [JsonPropertyName("previous_disabled_profiles")] public List<string> PreviousDisabledProfiles { get; set; } = new List<string>();
+        // Sınavdan önce kapalı olan güvenlik duvarı profilleri (bitince ve MSI kaldırılırken geri kapatılır; alan adı ortak)
+        [JsonPropertyName(FirewallRules.ExamProfilesKey)] public List<string> PreviousDisabledProfiles { get; set; } = new List<string>();
     }
 
     // Sınav modu (sunucu {"action":"exam_mode","enabled":true,...}): cihaz yalnızca POps sunucusuyla, DNS/DHCP ile ve
     // izin listesiyle (alan adı, IP, CIDR) konuşabilir. Karantinanın yalıtım motoru kendi kural grubuyla ("POps Exam")
     // kullanılır; karantinayla bağımsızdır, ikisi birden sürerse sıkı olan (karantina) geçerlidir. Alan adları 2 dakikada
-    // bir ve ağ adresi değişince yeniden çözülür. İsteğe bağlı uygulama listesi oturumlarda kapatılır. "until" geçince
-    // mod sunucuya ulaşılamasa da biter. Durum C:\POpsData\secure\exam.json'da (yeniden başlatmada sürer). Worker'ın örneği
-    // sınav işleyicisindedir (bkz. ExamHandler).
+    // bir ve ağ adresi değişince yeniden çözülür. İsteğe bağlı uygulama listesi oturumlarda kapatılır. Süre dolunca mod
+    // sunucuya ulaşılamasa da biter: kalan süre until - now (sunucunun saatiyle; now yoksa until - bu bilgisayarın saati),
+    // en çok 8 saat, monotonik saatle sayılır; bilgisayarın saati ileri ya da geri olsa da sınav uzamaz, kısalmaz. Durum
+    // C:\POpsData\secure\exam.json'da (yeniden başlatmada sürer). Worker'ın örneği sınav işleyicisindedir (bkz. ExamHandler).
     [SupportedOSPlatform("windows")]
     public sealed class ExamMode
     {
-        public const string StateFileName = "exam.json";
+        public const string StateFileName = FirewallRules.ExamStateFile;
         // server_info.features: sunucu exam_mode gönderir ve exam_state okur
         public const string Feature = "exam_mode";
         // Sunucu şeması: allow ve block_apps en çok 50 kayıt (sunucunun mesajı en çok 200 karakter)
         public const int MaxAllow = 50, MaxApps = 50, MaxMessage = 300;
         public static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(2);
+        // Sınav en çok 8 saat sürer (until yoksa da, daha ilerideyse de; sunucu da en çok 8 saat sonrasını gönderir)
+        public const long MaxSeconds = 8 * 60 * 60;
+        public static readonly TimeSpan MaxDuration = TimeSpan.FromSeconds(MaxSeconds);
+        // Kayıtlı bitiş (ends_at) bilgisayarın saatine göre bundan fazla kayınca yeniden yazılır (saat ayarlandı ya da eşitlendi)
+        internal static readonly TimeSpan EndsAtDrift = TimeSpan.FromMinutes(1);
         private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
         private static readonly JsonSerializerOptions Json = new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
@@ -66,13 +80,16 @@ namespace POpsAgent
         // statePath: durum dosyası (<güvenli depo>\exam.json); scripts: güvenlik duvarı betikleri (karantinanın motoru, kendi
         // kural grubuyla; bkz. MachineSeams.FirewallScripts); resolver: izin listesindeki alan adlarının çözümü; stopProcess:
         // engelli uygulamanın kapatılması. Servis: gerçekleri (MachineSeams.Production); testlerde makineye dokunmayan sahteler.
+        // clock: bilgisayarın saati (GetUtcNow) ve bitişi sayan monotonik saat (GetTimestamp); servis: AgentClock (bkz.
+        // AgentContext.Clock), testlerde ikisi ayrı ayrı ilerleyen sahte.
         public ExamMode(string statePath, Func<string, Task<(int Exit, string Output)>> scripts, Func<string, Task<IPAddress[]>> resolver,
-            Action<Process> stopProcess)
+            Action<Process> stopProcess, TimeProvider clock)
         {
             StatePath = statePath ?? throw new ArgumentNullException(nameof(statePath));
             Scripts = scripts ?? throw new ArgumentNullException(nameof(scripts));
             Resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
             StopProcess = stopProcess ?? throw new ArgumentNullException(nameof(stopProcess));
+            Clock = clock ?? throw new ArgumentNullException(nameof(clock));
         }
 
         public string StatePath { get; }
@@ -80,6 +97,10 @@ namespace POpsAgent
         internal Func<string, Task<(int Exit, string Output)>> Scripts { get; }
         internal Func<string, Task<IPAddress[]>> Resolver { get; }
         internal Action<Process> StopProcess { get; }
+        internal TimeProvider Clock { get; }
+        // Bu çalışmada sınavın bitişi, monotonik saatle (Clock.GetTimestamp); null: kurulmadı (yeni süreç: ilk TimeLeftAsync
+        // durum dosyasından kurar). Yalnızca Gate altında okunur ve yazılır.
+        private long? _endTimestamp;
 
         public static bool IsActiveAt(string statePath) => File.Exists(statePath);
 
@@ -91,16 +112,25 @@ namespace POpsAgent
             catch (JsonException) { return null; }
         }
 
-        public static bool Expired(ExamSettings? settings, DateTimeOffset now) =>
-            settings?.Until != null && now.ToUnixTimeSeconds() >= settings.Until.Value;
+        // Emir şimdi geldi: bilgisayarın saatiyle doğrulanır (bkz. TryParse); kalan süre bu andan monotonik saatle sayılır
+        public bool TryAccept(JsonElement command, [NotNullWhen(true)] out ExamSettings? settings, [NotNullWhen(false)] out string? error)
+        {
+            long received = Clock.GetTimestamp();
+            if (!TryParse(command, Clock.GetUtcNow(), out settings, out error)) return false;
+            settings.ReceivedTimestamp = received;
+            return true;
+        }
 
         // Emir doğrulanır: izin listesi (alan adı, IPv4/IPv6, CIDR; en çok 50), mesaj (en çok 300 karakter, denetim
         // karakterleri atılır), until (gelecekte ya da yok), block_apps (yalnızca "ad.exe"; korunan süreçler düşer).
+        // now: bu bilgisayarın saati. Kalan süre until - now (emirdeki now, sunucunun saati; 0.1.24 sunucuları gönderir), yoksa
+        // until - bu bilgisayarın saati (eski sunucu); sıfır ya da geçmişse emir reddedilir. En çok 8 saat; until yoksa ya da
+        // null ise 8 saat.
         public static bool TryParse(JsonElement command, DateTimeOffset now, [NotNullWhen(true)] out ExamSettings? settings, [NotNullWhen(false)] out string? error)
         {
             settings = null;
             error = null;
-            var s = new ExamSettings { Since = now.ToUnixTimeSeconds() };
+            var s = new ExamSettings { Since = now.ToUnixTimeSeconds(), Remaining = MaxDuration };
             if (command.TryGetProperty("allow", out JsonElement allow) && allow.ValueKind == JsonValueKind.Array)
             {
                 foreach (JsonElement entry in allow.EnumerateArray())
@@ -113,9 +143,18 @@ namespace POpsAgent
             }
             if (command.TryGetProperty("until", out JsonElement until) && until.ValueKind == JsonValueKind.Number)
             {
-                if (!until.TryGetInt64(out long u) || u <= s.Since) { error = "until geçmişte"; return false; }
+                long reference = s.Since;
+                if (command.TryGetProperty("now", out JsonElement sent) && sent.ValueKind == JsonValueKind.Number && sent.TryGetInt64(out long serverNow))
+                {
+                    reference = serverNow;
+                    s.ServerClock = true;
+                }
+                TimeSpan? left = until.TryGetInt64(out long u) ? TimeLeft(u, reference) : null;
+                if (left == null) { error = s.ServerClock ? "until geçmişte (sunucunun saatiyle)" : "until geçmişte"; return false; }
                 s.Until = u;
+                s.Remaining = left.Value;
             }
+            s.EndsAt = s.Since + (long)s.Remaining.TotalSeconds;
             if (command.TryGetProperty("message", out JsonElement message) && message.ValueKind == JsonValueKind.String)
                 s.Message = LogText.Safe(message.GetString(), MaxMessage);
             if (command.TryGetProperty("block_apps", out JsonElement apps) && apps.ValueKind == JsonValueKind.Array)
@@ -131,6 +170,14 @@ namespace POpsAgent
             }
             settings = s;
             return true;
+        }
+
+        // until - reference (unix sn) süre olarak, en çok 8 saat; null: sıfır ya da geçmişte. Fark long'a sığmasa da taşmaz.
+        internal static TimeSpan? TimeLeft(long until, long reference)
+        {
+            if (until <= reference) return null;
+            ulong seconds = unchecked((ulong)until - (ulong)reference);
+            return seconds >= MaxSeconds ? MaxDuration : TimeSpan.FromSeconds((long)seconds);
         }
 
         internal static bool IsValidAllowEntry(string value) =>
@@ -195,10 +242,12 @@ namespace POpsAgent
                 }
                 ExamSettings? previous = Load();
                 settings.Addresses = addresses;
-                // Zaten sınavdaysa (ayar değişti) ilk başlangıç ve sınav öncesi profiller korunur
+                // Zaten sınavdaysa (ayar değişti) ilk başlangıç ve sınav öncesi profiller korunur; bitiş yeni emrindir (sunucu
+                // her bağlantıda süren sınavı yeniden gönderir: yeniden başlatmadan sonra kayıtlı bitişin yerine geçer)
                 settings.Since = previous?.Since ?? settings.Since;
                 settings.PreviousDisabledProfiles = previous?.PreviousDisabledProfiles ?? DisabledProfiles(output);
                 Save(settings);
+                _endTimestamp = (settings.ReceivedTimestamp ?? Clock.GetTimestamp()) + Timestamps(settings.Remaining);
                 return true;
             }
             catch (Exception ex)
@@ -252,6 +301,7 @@ namespace POpsAgent
                     return false;
                 }
                 SecureStore.Delete(StatePath);
+                _endTimestamp = null;
                 return true;
             }
             catch (Exception ex)
@@ -261,6 +311,54 @@ namespace POpsAgent
             }
             finally { Gate.Release(); }
         }
+
+        // Bitişe kalan süre, bu çalışmanın monotonik saatiyle: bilgisayarın saati ileri ya da geri alınsa da değişmez. null: sınav
+        // yok. Yeni süreçte (yeniden başlatma, servis yeniden başladı) ilk çağrı bitişi durum dosyasından kurar: kayıtlı bitiş
+        // (ends_at, bilgisayarın saatiyle), en çok bilgisayarın saatinden 8 saat sonra. Kayıtlı bitiş bilgisayarın saatine göre
+        // kaydıysa (saat ayarlandı ya da eşitlendi, 8 saatle kısaltıldı) yeniden yazılır: sonraki yeniden başlatma aynı bitişi
+        // bulur. EndsAtMoved: bu çağrıda yeniden yazıldı (tepsi bandı yeni bitişi göstersin).
+        public async Task<(TimeSpan Left, bool EndsAtMoved)?> TimeLeftAsync()
+        {
+            await Gate.WaitAsync();
+            try
+            {
+                ExamSettings? settings = Load();
+                if (settings == null) return null;
+                long ticks = Clock.GetTimestamp();
+                long wall = Clock.GetUtcNow().ToUnixTimeSeconds();
+                if (_endTimestamp == null)
+                {
+                    // 0.1.24'ten önceki dosya: sunucunun bitişi, o da yoksa girişten 8 saat sonra
+                    long saved = settings.EndsAt ?? settings.Until ?? settings.Since + MaxSeconds;
+                    TimeSpan resumed = TimeLeft(saved, wall) ?? TimeSpan.Zero;
+                    _endTimestamp = ticks + Timestamps(resumed);
+                    POpsHelpers.Log("EXAM", $"Sınav modu sürüyor: kayıtlı bitiş {LocalTime(saved)}, kalan {Minutes(resumed)} dk" +
+                        (resumed == MaxDuration && saved - wall > MaxSeconds ? " (bilgisayarın saatinden 8 saatten fazla ileride; 8 saatle sınırlandı)." : "."));
+                }
+                TimeSpan left = Clock.GetElapsedTime(ticks, _endTimestamp.Value);
+                long endsAt = wall + (long)Math.Ceiling(left.TotalSeconds);
+                bool moved = left > TimeSpan.Zero && (settings.EndsAt == null || Math.Abs(endsAt - settings.EndsAt.Value) > EndsAtDrift.TotalSeconds);
+                if (moved)
+                {
+                    settings.EndsAt = endsAt;
+                    Save(settings);
+                }
+                return (left, moved);
+            }
+            finally { Gate.Release(); }
+        }
+
+        // Süre, monotonik saatin biriminde (Clock.TimestampFrequency)
+        private long Timestamps(TimeSpan duration) => (long)(duration.TotalSeconds * Clock.TimestampFrequency);
+
+        // Loglar için yerel saat ("HH:mm"); eski bir dosyadaki aralık dışı değer "?" olur
+        internal static string LocalTime(long unixSeconds)
+        {
+            try { return DateTimeOffset.FromUnixTimeSeconds(unixSeconds).ToLocalTime().ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture); }
+            catch (ArgumentOutOfRangeException) { return "?"; }
+        }
+
+        internal static long Minutes(TimeSpan duration) => (long)Math.Ceiling(duration.TotalMinutes);
 
         private void Save(ExamSettings settings) => SecureStore.WriteProtected(StatePath, JsonSerializer.Serialize(settings, Json));
 

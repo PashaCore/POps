@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
-using System.Net.Sockets;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -18,9 +17,13 @@ namespace POpsAgent
     // update_agent "peers": [{"hw_id","url"}] (bkz. PeerCache, docs/design/peer-cache.md). Paket önce sıradaki eşlerden,
     // sonra sunucudan indirilir; her kaynak imzalı manifest'teki boyut ve SHA-256'yla denetlenir. Kötü bir eş en çok bir
     // deneme kaybettirir, asla kötü bir kurulum değil.
-    //  * Adres yalnızca http://<özel ya da bağlantı-yerel IPv4/IPv6>:<port>/pops-cache/<manifest'teki sha256> olabilir ve
-    //    bu bilgisayarın yerel alt ağında olmalıdır (eşin güvenlik duvarı kuralı da yalnızca yerel alt ağa açıktır).
-    //    Ad, https, başka yol, sorgu, kullanıcı bilgisi, genel ya da geri döngü adresi reddedilir; en çok 5 eş.
+    //  * Adres yalnızca http://<IPv4/IPv6>:<port>/pops-cache/<manifest'teki sha256> olabilir ve bu bilgisayarın kendi alt
+    //    ağlarından birinde olmalıdır (arabirimin adresi ve maskesi; IPv6'da bağlantı-yerel ve arabirimdeki önekler; bkz.
+    //    PeerCache.InLocalSubnet). Eşin güvenlik duvarı kuralı da yalnızca yerel alt ağa (LocalSubnet) açıktır; bu kural ondan
+    //    geniş değildir. Özel ya da genel olması fark etmez: genel IPv4 kullanan laboratuvarda aynı alt ağdaki eş kabul edilir,
+    //    özel adresli ama başka alt ağdaki eş reddedilir. Ad, https, başka yol, sorgu, kullanıcı bilgisi, geri döngü, çoklu
+    //    yayın, yayın ve belirtilmemiş adres reddedilir; en çok 5 eş. Alt ağ dışındaki eş bir kez uyarıyla loglanır (eş
+    //    önbelleği sessizce çalışmıyor görünmesin), sonrakiler bilgi satırıyla.
     //  * Eşe hiçbir başlık (cihaz secret'ı, sürüm, çerez) gitmez; vekil sunucu kullanılmaz, yönlendirme izlenmez.
     //  * Bağlantı için 3 sn. Yanıt başlığı için 75 sn: meşgul eş isteği boş aktarım yeri için 60 sn sıraya alır (bkz.
     //    PeerCacheServer). Yanıt 200 ve Content-Length imzalı boyut olmalı; aktarımda 15 sn veri gelmezse ya da eş
@@ -38,7 +41,12 @@ namespace POpsAgent
 
         private static readonly Regex HwIdRegex = new Regex("^[A-Za-z0-9_-]{1,64}$", RegexOptions.Compiled);
 
+        // TryValidate'in alt ağ dışı nedeni (Parse bunu bir kez uyarıyla loglar)
+        private const string OutsideLocalSubnets = "bu bilgisayarın yerel alt ağında değil";
+
         private readonly Func<IPAddress, bool> _isLocalSubnet;
+        // Alt ağ dışındaki bir eş için uyarı yazıldı mı (servis boyunca bir kez)
+        private int _subnetWarned;
 
         // isLocalSubnet: adres bu bilgisayarın yerel alt ağlarından birinde mi (servis: eş önbelleğinin denetimi, bkz.
         // PeerCache.IsLocalSubnet; her kullanımda sorulur)
@@ -72,9 +80,22 @@ namespace POpsAgent
                 string? url = Str(item, "url");
                 string label = hwId != null && HwIdRegex.IsMatch(hwId) ? hwId : "?";
                 if (TryValidate(url, sha256, out Uri? uri, out string reason)) peers.Add(new Peer(label, uri!));
+                else if (reason == OutsideLocalSubnets) RefusedOutsideLocalSubnets(label, url);
                 else POpsHelpers.Log("UPDATE", $"[GÜVENLİK] Eş adresi reddedildi ({label}, {LogText.Safe(url, 120)}): {reason}.", true);
             }
             return peers;
+        }
+
+        // Sunucu bu bilgisayarın alt ağlarında olmayan bir eş bildirdi (ör. laboratuvar birden çok alt ağa bölünmüş): ilk kez
+        // uyarı, sonra bilgi satırı. Paket sıradaki kaynaktan, en sonunda sunucudan iner.
+        private void RefusedOutsideLocalSubnets(string label, string? url)
+        {
+            string peer = $"{label}, {LogText.Safe(url, 120)}";
+            if (Interlocked.Exchange(ref _subnetWarned, 1) == 0)
+                POpsHelpers.Log("UPDATE", $"Eş önbelleği: eş bu bilgisayarın alt ağlarından hiçbirinde değil ({peer}); eşler yalnızca bu "
+                    + "bilgisayarın kendi alt ağlarından kabul edilir (eşin güvenlik duvarı kuralı da yalnızca yerel alt ağa açık). Paket "
+                    + "sıradaki kaynaktan indirilecek. Bu uyarı bir kez yazılır; sonraki retler bilgi satırıdır.", true);
+            else POpsHelpers.Log("UPDATE", $"Eş adresi reddedildi ({peer}): {OutsideLocalSubnets}.");
         }
 
         public bool TryValidate(string? url, string sha256, out Uri? uri, out string reason)
@@ -91,23 +112,11 @@ namespace POpsAgent
             IPAddress a = PeerCache.Normalize(address);
             bool loopback = IPAddress.IsLoopback(a);
             if (loopback && !AllowLoopbackPeers) { reason = "geri döngü adresi"; return false; }
-            if (!loopback && !IsPrivateOrLinkLocal(a)) { reason = "özel ya da bağlantı-yerel bir adres değil"; return false; }
-            if (!_isLocalSubnet(a)) { reason = "bu bilgisayarın yerel alt ağında değil"; return false; }
+            if (!loopback && PeerCache.NotAPeerAddress(a) is string notAPeer) { reason = notAPeer; return false; }
+            if (!_isLocalSubnet(a)) { reason = OutsideLocalSubnets; return false; }
             uri = parsed;
             reason = "";
             return true;
-        }
-
-        // 10/8, 172.16/12, 192.168/16, 169.254/16; IPv6 fc00::/7 (ULA) ve fe80::/10
-        internal static bool IsPrivateOrLinkLocal(IPAddress address)
-        {
-            IPAddress a = PeerCache.Normalize(address);
-            byte[] b = a.GetAddressBytes();
-            if (a.AddressFamily == AddressFamily.InterNetwork)
-                return b[0] == 10 || (b[0] == 172 && (b[1] & 0xF0) == 16) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254);
-            if (a.AddressFamily == AddressFamily.InterNetworkV6)
-                return a.IsIPv6LinkLocal || (b[0] & 0xFE) == 0xFC;
-            return false;
         }
 
         // Eşler sırayla denenir; doğrulanmış paket hedefe yazılır. Dönen: paketi veren eş, olmadıysa null (hedef silinir).

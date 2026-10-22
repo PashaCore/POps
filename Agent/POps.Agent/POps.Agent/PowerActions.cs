@@ -1,6 +1,7 @@
 #nullable enable
 
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -85,13 +86,20 @@ namespace POpsAgent
     // dolunca işlem yapılır; tepsi bağlıysa (ya da süre içinde bağlanırsa) geri sayımı gösterir.
     //  * Sıra: task_id -> yetenek (power_enabled; kapalıysa -5 + capability_denied) -> alanlar (geçersizse -5, yalnızca
     //    result) -> logoff/lock için konsolda oturum açık kullanıcı (yoksa -6) -> kabul (Olay Günlüğü 1130).
-    //  * Süre dolunca sonuç ("[TAMAM] ...", 0) önce gönderilir (onaylı sunucuda diske de yazılır), sonra işlem yapılır:
-    //    kapatma bağlantıyı keser, sonuç yeniden açılışta gönderilir.
+    //  * Süre dolunca işlem yapılır ve sonuç işlemin gerçek sonucundan gönderilir (bkz. PowerOutcome):
+    //    - oturum kapatma ve kilitleme bağlantıyı kesmez: önce işlem, sonra sonuç. Başarı 0 ("[TAMAM] ..."), başarısızlık
+    //      Win32 hata kodu ve "[HATA] ...".
+    //    - kapatma ve yeniden başlatma bağlantıyı keser: "[TAMAM] ..." önce gönderilmemiş olarak diske yazılır (ResultOutbox
+    //      Store; heartbeat de göndermez), sonra shutdown.exe çalışır ve çıkış kodu beklenir (kapatmayı başlatıp hemen
+    //      döner). 0: sonuç gönderilmeye çalışılır, gönderilemezse yeniden açılışta diskten gider. 0 değilse diskteki sonuç
+    //      "[HATA] shutdown.exe <kod>: ..." ile değiştirilip hemen gönderilir; bilgisayar açık kalır, başka bir şey yapılmaz.
     //  * Aynı anda tek geri sayım: aynı task_id yeniden gelirse yok sayılır (execute gibi); başka bir power gelirse
     //    öncekinin yerine geçer (önceki -2). cancel_task geri sayımı durdurur (-2); servis durursa -4.
-    //  * Kilitleme: tepsi konsol oturumundaysa LockWorkStation'ı tepsi çağırır (oturum aynı kalır); tepsi yoksa ya da
-    //    yanıt vermezse servis konsol oturumunu ayırır (WTSDisconnectSession: oturum ve programlar açık kalır, Windows
-    //    giriş ekranını gösterir). Oturum kapatma servisten WTSLogoffSession, kapatma/yeniden başlatma shutdown.exe ile.
+    //  * Kilitleme: tepsi konsol oturumundaysa LockWorkStation'ı tepsi çağırır (oturum aynı kalır) ve TrayLockTimeout içinde
+    //    "1" ile onaylarsa kilitleme yapılmış sayılır. Tepsi yoksa, "0" derse ya da süre içinde yanıt vermezse servis konsol
+    //    oturumunu ayırır (WTSDisconnectSession: oturum ve programlar açık kalır, Windows giriş ekranını gösterir); sonuç o
+    //    çağrınınkidir. Tepsinin onaylamadığı ve ayırmanın da başarısız olduğu kilitleme hatadır (geç gelen onay yok
+    //    sayılır). Oturum kapatma servisten WTSLogoffSession, kapatma/yeniden başlatma shutdown.exe ile.
     [SupportedOSPlatform("windows")]
     public sealed class PowerActions
     {
@@ -105,14 +113,18 @@ namespace POpsAgent
         // tepsi -> servis: "POWER_LOCK_RESULT:<task_id>:1|0"
         public const string LockResultPrefix = "POWER_LOCK_RESULT:";
 
-        private readonly Func<int, string, int, Task> _sendResult;
+        // Kilitlemenin sonuç metni: tepsi kilitledi ya da servis konsol oturumunu ayırdı
+        public const string LockedOutput = "[TAMAM] Bilgisayar kilitlendi.";
+        public const string DisconnectedOutput = "[TAMAM] Bilgisayar kilitlendi: konsol oturumu ayrıldı, Windows giriş ekranını gösteriyor (programlar açık).";
+
+        private readonly TaskResults _results;
         private readonly Func<int, Task> _deny;
         private readonly Action<string> _toTray;
         private readonly Func<bool> _trayInConsoleSession;
         private readonly CapabilityState _capabilities;
         // Gerçek işlem (servis: WindowsPower, yalnızca LocalSystem'de bir şey yapar) ve konsol oturumunda kullanıcı var mı
         // (bkz. MachineSeams.Power, HasConsoleUser)
-        private readonly Func<PowerOperation, int, bool> _platform;
+        private readonly Func<PowerOperation, int, PowerOutcome> _platform;
         private readonly Func<bool> _hasConsoleUser;
         private readonly object _gate = new object();
         private Pending? _current;
@@ -124,12 +136,13 @@ namespace POpsAgent
         internal Func<TimeSpan, CancellationToken, Task> Delay { get; set; } = Task.Delay;
         internal TimeSpan TrayLockTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
-        // sendResult(task_id, output, exit_code); deny(task_id): capability_denied power/power; capabilities: bağlamın yetenek
-        // durumu; platform: güç işleminin kendisi; hasConsoleUser: etkin konsol oturumunda oturum açmış kullanıcı var mı
-        public PowerActions(Func<int, string, int, Task> sendResult, Func<int, Task> deny, Action<string> toTray, Func<bool> trayInConsoleSession,
-            CapabilityState capabilities, Func<PowerOperation, int, bool> platform, Func<bool> hasConsoleUser)
+        // results: görev sonuçlarının gönderimi ve saklanması (ResultOutbox); deny(task_id): capability_denied power/power;
+        // capabilities: bağlamın yetenek durumu; platform: güç işleminin kendisi; hasConsoleUser: etkin konsol oturumunda
+        // oturum açmış kullanıcı var mı
+        internal PowerActions(TaskResults results, Func<int, Task> deny, Action<string> toTray, Func<bool> trayInConsoleSession,
+            CapabilityState capabilities, Func<PowerOperation, int, PowerOutcome> platform, Func<bool> hasConsoleUser)
         {
-            _sendResult = sendResult;
+            _results = results ?? throw new ArgumentNullException(nameof(results));
             _deny = deny;
             _toTray = toTray;
             _trayInConsoleSession = trayInConsoleSession;
@@ -157,7 +170,7 @@ namespace POpsAgent
             }
             if (!_capabilities.PowerEnabled)
             {
-                await _sendResult(taskId, DisabledMessage, CommandRunner.ExitDenied);
+                await _results.SendAsync(taskId, DisabledMessage, CommandRunner.ExitDenied);
                 await _deny(taskId);
                 return;
             }
@@ -165,13 +178,13 @@ namespace POpsAgent
             if (request == null)
             {
                 POpsHelpers.Log("AGENT", $"[GÜVENLİK] Geçersiz güç isteği reddedildi (TaskID: {taskId}): {error}.", true);
-                await _sendResult(taskId, $"[REDDEDİLDİ] Geçersiz güç isteği: {error}.", CommandRunner.ExitDenied);
+                await _results.SendAsync(taskId, $"[REDDEDİLDİ] Geçersiz güç isteği: {error}.", CommandRunner.ExitDenied);
                 return;
             }
             if (request.NeedsUser && !_hasConsoleUser())
             {
                 POpsHelpers.Log("AGENT", $"Güç işlemi ({request.Op}) yapılmadı: oturum açık kullanıcı yok (TaskID: {taskId}).");
-                await _sendResult(taskId, SessionTasks.NoUserOutput, SessionTasks.ExitNoUser);
+                await _results.SendAsync(taskId, SessionTasks.NoUserOutput, SessionTasks.ExitNoUser);
                 return;
             }
 
@@ -238,13 +251,23 @@ namespace POpsAgent
                 message = request.Message,
             }));
 
-        // Başarılı sonucun metni (işlemden hemen önce gönderilir)
+        // Başarılı sonucun metni: kapatma ve yeniden başlatmada shutdown.exe'den önce diske yazılır, ötekilerde işlemden sonra
+        // gönderilir (kilitleme: tepsi kilitledi; servisin ayırdığı oturum DisconnectedOutput)
         public static string DoneOutput(PowerOperation operation) => operation switch
         {
             PowerOperation.Shutdown => "[TAMAM] Bilgisayar kapatılıyor.",
             PowerOperation.Restart => "[TAMAM] Bilgisayar yeniden başlatılıyor.",
             PowerOperation.Logoff => "[TAMAM] Kullanıcının oturumu kapatılıyor.",
-            _ => "[TAMAM] Bilgisayar kilitleniyor.",
+            _ => LockedOutput,
+        };
+
+        // Başarısız işlemin sonuç metni; error: PowerOutcome.Error (kapatmada "shutdown.exe <kod>: ...")
+        public static string FailedOutput(PowerOperation operation, string error) => operation switch
+        {
+            PowerOperation.Shutdown => $"[HATA] {error}. Bilgisayar kapatılmadı.",
+            PowerOperation.Restart => $"[HATA] {error}. Bilgisayar yeniden başlatılmadı.",
+            PowerOperation.Logoff => $"[HATA] Kullanıcının oturumu kapatılamadı: {error}.",
+            _ => $"[HATA] Bilgisayar kilitlenemedi: {error}.",
         };
 
         private async Task RunAsync(Pending pending, Func<TimeSpan, CancellationToken, Task> delay)
@@ -266,9 +289,9 @@ namespace POpsAgent
                 {
                     _toTray(CancelPrefix + taskId.ToString(CultureInfo.InvariantCulture));
                     if (pending.CancelReason != null)
-                        await _sendResult(taskId, $"[İPTAL EDİLDİ]: Güç işlemi {pending.CancelReason}; bilgisayara dokunulmadı.", CommandRunner.ExitCancelled);
+                        await _results.SendAsync(taskId, $"[İPTAL EDİLDİ]: Güç işlemi {pending.CancelReason}; bilgisayara dokunulmadı.", CommandRunner.ExitCancelled);
                     else
-                        await _sendResult(taskId, "[DURDURULDU]: POps Agent servisi durduğu için güç işlemi yapılmadı.", CommandRunner.ExitServiceStopping);
+                        await _results.SendAsync(taskId, "[DURDURULDU]: POps Agent servisi durduğu için güç işlemi yapılmadı.", CommandRunner.ExitServiceStopping);
                     return;
                 }
                 // Geri sayımda kullanıcı oturumu kapatmış olabilir
@@ -276,15 +299,12 @@ namespace POpsAgent
                 {
                     _toTray(CancelPrefix + taskId.ToString(CultureInfo.InvariantCulture));
                     POpsHelpers.Log("AGENT", $"Güç işlemi ({request.Op}) yapılmadı: süre dolduğunda oturum açık kullanıcı yoktu (TaskID: {taskId}).");
-                    await _sendResult(taskId, SessionTasks.NoUserOutput, SessionTasks.ExitNoUser);
+                    await _results.SendAsync(taskId, SessionTasks.NoUserOutput, SessionTasks.ExitNoUser);
                     return;
                 }
 
-                await _sendResult(taskId, DoneOutput(request.Operation), 0);
-                bool done = request.Operation == PowerOperation.Lock && _trayInConsoleSession() && await LockThroughTrayAsync(pending);
-                if (!done) done = RunPlatform(request);
-                if (done) POpsHelpers.Log("AGENT", $"Güç işlemi uygulandı: {request.Op} (TaskID: {taskId}).");
-                else POpsHelpers.Log("AGENT", $"[HATA] Güç işlemi uygulanamadı: {request.Op} (TaskID: {taskId}); sonuç sunucuya önceden gönderilmişti.", true);
+                if (request.Operation == PowerOperation.Shutdown || request.Operation == PowerOperation.Restart) await ShutDownAsync(request);
+                else await SignOutOrLockAsync(pending);
             }
             catch (Exception ex)
             {
@@ -297,25 +317,73 @@ namespace POpsAgent
             }
         }
 
-        // Tepsi kendi oturumunda LockWorkStation'ı çağırır ve "POWER_LOCK_RESULT:<id>:1|0" ile yanıtlar
-        private async Task<bool> LockThroughTrayAsync(Pending pending)
+        // Kapatma ve yeniden başlatma bağlantıyı keser: sonuç önce gönderilmemiş olarak diske yazılır (gönderilmeye çalışılmaz),
+        // sonra shutdown.exe'nin çıkış kodu beklenir. 0: sonuç gönderilmeye çalışılır (gönderilemezse yeniden açılışta
+        // diskten gider). Değilse diskteki sonuç hatayla değiştirilip hemen gönderilir; bilgisayar açık kalır.
+        private async Task ShutDownAsync(PowerRequest request)
+        {
+            int taskId = request.TaskId;
+            string done = DoneOutput(request.Operation);
+            _results.Store(taskId, done, 0);
+            PowerOutcome outcome = RunPlatform(request);
+            if (outcome.Succeeded)
+            {
+                POpsHelpers.Log("AGENT", $"Güç işlemi başlatıldı: {request.Op} (TaskID: {taskId}).");
+                await _results.SendStoredAsync(taskId, done, 0);
+                return;
+            }
+            POpsHelpers.Log("AGENT", $"[HATA] Güç işlemi yapılamadı: {request.Op} (TaskID: {taskId}): {outcome.Error}; bilgisayar açık kalıyor.", true);
+            await _results.SendStoredAsync(taskId, FailedOutput(request.Operation, outcome.Error), outcome.Code);
+        }
+
+        // Oturum kapatma ve kilitleme bağlantıyı kesmez: önce işlem, sonra onun sonucu
+        private async Task SignOutOrLockAsync(Pending pending)
+        {
+            PowerRequest request = pending.Request;
+            int taskId = request.TaskId;
+            string? trayProblem = null;
+            if (request.Operation == PowerOperation.Lock && _trayInConsoleSession())
+            {
+                trayProblem = await LockThroughTrayAsync(pending);
+                if (trayProblem == null)
+                {
+                    POpsHelpers.Log("AGENT", $"Güç işlemi uygulandı: lock, tepsi ekranı kilitledi (TaskID: {taskId}).");
+                    await _results.SendAsync(taskId, LockedOutput, 0);
+                    return;
+                }
+                POpsHelpers.Log("AGENT", $"Tepsi kilitlemeyi onaylamadı ({trayProblem}); konsol oturumu servisten ayrılıyor (TaskID: {taskId}).", true);
+            }
+            PowerOutcome outcome = RunPlatform(request);
+            if (outcome.Succeeded)
+            {
+                POpsHelpers.Log("AGENT", $"Güç işlemi uygulandı: {request.Op} (TaskID: {taskId}).");
+                await _results.SendAsync(taskId, request.Operation == PowerOperation.Lock ? DisconnectedOutput : DoneOutput(request.Operation), 0);
+                return;
+            }
+            string error = trayProblem == null ? outcome.Error : $"{trayProblem}; {outcome.Error}";
+            POpsHelpers.Log("AGENT", $"[HATA] Güç işlemi yapılamadı: {request.Op} (TaskID: {taskId}): {error}.", true);
+            await _results.SendAsync(taskId, FailedOutput(request.Operation, error), outcome.Code);
+        }
+
+        // Tepsi kendi oturumunda LockWorkStation'ı çağırır ve "POWER_LOCK_RESULT:<id>:1|0" ile yanıtlar. Dönen: null tepsi
+        // kilitledi ("1", TrayLockTimeout içinde); değilse neden (tepsi "0" dedi ya da süre içinde yanıt vermedi)
+        private async Task<string?> LockThroughTrayAsync(Pending pending)
         {
             var reply = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             lock (_gate) pending.TrayLock = reply;
             _toTray(LockPrefix + pending.Request.TaskId.ToString(CultureInfo.InvariantCulture));
             Task finished = await Task.WhenAny(reply.Task, Task.Delay(TrayLockTimeout));
-            if (finished == reply.Task && await reply.Task) return true;
-            POpsHelpers.Log("AGENT", "Tepsi ekranı kilitleyemedi ya da yanıt vermedi; konsol oturumu servisten ayrılıyor.", true);
-            return false;
+            if (finished != reply.Task) return $"tepsi {TrayLockTimeout.TotalSeconds.ToString(CultureInfo.InvariantCulture)} sn içinde yanıt vermedi";
+            return await reply.Task ? null : "tepside LockWorkStation başarısız";
         }
 
-        private bool RunPlatform(PowerRequest request)
+        // Güç işleminin kendisi; makine kapısı hata atarsa işlem denenememiş sayılır (-3)
+        private PowerOutcome RunPlatform(PowerRequest request)
         {
             try { return _platform(request.Operation, request.TaskId); }
             catch (Exception ex)
             {
-                POpsHelpers.Log("AGENT", $"[HATA] Güç işlemi ({request.Op}) başarısız: {ex.Message}", true);
-                return false;
+                return PowerOutcome.Failed(CommandRunner.ExitAgentError, $"güç işlemi yürütülemedi: {ex.Message.Trim().TrimEnd('.')}");
             }
         }
 
@@ -370,39 +438,70 @@ namespace POpsAgent
         }
     }
 
+    // Güç işleminin gerçek sonucu (makine kapısı MachineSeams.Power; servis: WindowsPower). Code 0: yapıldı (kapatma ve
+    // yeniden başlatmada shutdown.exe kapatmayı başlattı). Değilse sonucun exit_code'u: kilitleme ve oturum kapatmada Win32
+    // hata kodu, kapatma ve yeniden başlatmada shutdown.exe'nin çıkış kodu (ya da başlatılamadıysa Win32 hata kodu), işlem
+    // hiç denenemediyse CommandRunner.ExitAgentError (-3). Error: başarısızlığın Türkçe açıklaması ("[HATA] ..." metninin
+    // gövdesi; başarıda boş).
+    [SupportedOSPlatform("windows")]
+    public readonly record struct PowerOutcome
+    {
+        private readonly string? _error;
+
+        private PowerOutcome(int code, string? error)
+        {
+            Code = code;
+            _error = error;
+        }
+
+        public int Code { get; }
+        public string Error => _error ?? "";
+        public bool Succeeded => Code == 0;
+
+        public static PowerOutcome Done => default;
+
+        // Kodu bilinmeyen (0 olan) başarısızlık ajan hatası sayılır: başarısız işlem hiçbir zaman 0 ile bildirilmez
+        public static PowerOutcome Failed(int code, string error) => new PowerOutcome(code == 0 ? CommandRunner.ExitAgentError : code, error);
+    }
+
     // Gerçek güç işlemleri. Yalnızca LocalSystem'de (servis) çalışır: elle ya da test sürecinde çalışan kod bilgisayarı
     // kapatamaz. Kapatma ve yeniden başlatma shutdown.exe ile (System32'den, tam yol): açık programlar beklenmeden
-    // kapatılır (/f; uyarı geri sayımdır), Olay Günlüğüne "planlı" nedeniyle yazılır.
+    // kapatılır (/f; uyarı geri sayımdır), Olay Günlüğüne "planlı" nedeniyle yazılır. Sonucu yorumlayan parçalar
+    // (ShutdownExe, OnConsoleSession) çağrıyı argüman olarak alır: testler sahte süreç ve sahte oturum çağrısıyla sınar.
     [SupportedOSPlatform("windows")]
     internal static class WindowsPower
     {
-        public static bool Run(PowerOperation operation, int taskId)
+        // shutdown.exe kapatmayı başlatıp hemen döner; bundan uzun sürerse başarısız sayılır
+        internal const int ShutdownExeWaitSeconds = 15;
+
+        public static PowerOutcome Run(PowerOperation operation, int taskId)
         {
             using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
             {
-                if (!identity.IsSystem)
-                {
-                    POpsHelpers.Log("AGENT", "Güç işlemi yapılmadı: ajan LocalSystem olarak çalışmıyor.", true);
-                    return false;
-                }
+                if (!identity.IsSystem) return PowerOutcome.Failed(CommandRunner.ExitAgentError, "ajan LocalSystem olarak çalışmıyor");
             }
             switch (operation)
             {
-                case PowerOperation.Shutdown: return RunShutdownExe("/s", taskId);
-                case PowerOperation.Restart: return RunShutdownExe("/r", taskId);
-                case PowerOperation.Logoff: return OnConsoleSession(session => WTSLogoffSession(IntPtr.Zero, session, false), "WTSLogoffSession");
-                default: return OnConsoleSession(session => WTSDisconnectSession(IntPtr.Zero, session, false), "WTSDisconnectSession");
+                case PowerOperation.Shutdown: return ShutdownExe(ShutdownStart(restart: false, taskId), RunAndWait);
+                case PowerOperation.Restart: return ShutdownExe(ShutdownStart(restart: true, taskId), RunAndWait);
+                case PowerOperation.Logoff:
+                    return OnConsoleSession(() => UserSessionLauncher.ActiveConsoleSession(),
+                        session => (WTSLogoffSession(IntPtr.Zero, session, false), Marshal.GetLastWin32Error()), "WTSLogoffSession");
+                default:
+                    return OnConsoleSession(() => UserSessionLauncher.ActiveConsoleSession(),
+                        session => (WTSDisconnectSession(IntPtr.Zero, session, false), Marshal.GetLastWin32Error()), "WTSDisconnectSession");
             }
         }
 
-        private static bool RunShutdownExe(string mode, int taskId)
+        // shutdown.exe /s|/r /t 0 /f /d p:0:0 /c "POps: yönetici isteği (görev N)"
+        internal static ProcessStartInfo ShutdownStart(bool restart, int taskId)
         {
             var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "shutdown.exe"))
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
-            start.ArgumentList.Add(mode);
+            start.ArgumentList.Add(restart ? "/r" : "/s");
             start.ArgumentList.Add("/t");
             start.ArgumentList.Add("0");
             start.ArgumentList.Add("/f");
@@ -410,24 +509,42 @@ namespace POpsAgent
             start.ArgumentList.Add("p:0:0");
             start.ArgumentList.Add("/c");
             start.ArgumentList.Add($"POps: yönetici isteği (görev {taskId.ToString(CultureInfo.InvariantCulture)})");
-            using Process? process = Process.Start(start);
-            if (process == null) return false;
-            if (!process.WaitForExit(15000))
-            {
-                POpsHelpers.Log("AGENT", "shutdown.exe 15 sn içinde bitmedi.", true);
-                return false;
-            }
-            if (process.ExitCode != 0) POpsHelpers.Log("AGENT", $"shutdown.exe {process.ExitCode} ile çıktı.", true);
-            return process.ExitCode == 0;
+            return start;
         }
 
-        private static bool OnConsoleSession(Func<uint, bool> call, string name)
+        // shutdown.exe'nin sonucu. run: süreci başlatır ve çıkış kodunu bekler (null: ShutdownExeWaitSeconds içinde bitmedi;
+        // başlatılamazsa Win32Exception ya da InvalidOperationException)
+        internal static PowerOutcome ShutdownExe(ProcessStartInfo start, Func<ProcessStartInfo, int?> run)
         {
-            uint session = UserSessionLauncher.ActiveConsoleSession();
-            if (session == UserSessionLauncher.NoSession) return false;
-            if (call(session)) return true;
-            POpsHelpers.Log("AGENT", $"{name} başarısız (oturum {session}, Win32 {Marshal.GetLastWin32Error()}).", true);
-            return false;
+            int? exitCode;
+            try { exitCode = run(start); }
+            catch (Win32Exception ex) { return PowerOutcome.Failed(ex.NativeErrorCode, $"shutdown.exe başlatılamadı (Win32 {ex.NativeErrorCode}: {Describe(ex.Message)})"); }
+            catch (InvalidOperationException ex) { return PowerOutcome.Failed(CommandRunner.ExitAgentError, $"shutdown.exe başlatılamadı ({Describe(ex.Message)})"); }
+            if (exitCode == null) return PowerOutcome.Failed(CommandRunner.ExitAgentError, $"shutdown.exe {ShutdownExeWaitSeconds} sn içinde bitmedi");
+            if (exitCode == 0) return PowerOutcome.Done;
+            return PowerOutcome.Failed(exitCode.Value, $"shutdown.exe {exitCode.Value.ToString(CultureInfo.InvariantCulture)}: {Win32Message(exitCode.Value)}");
+        }
+
+        // Konsol oturumundaki çağrı (WTSLogoffSession, WTSDisconnectSession). call: çağrının dönüşü ve hemen ardından okunan
+        // Win32 hata kodu. Etkin konsol oturumu yoksa çağrı yapılmaz (-3).
+        internal static PowerOutcome OnConsoleSession(Func<uint> consoleSession, Func<uint, (bool Ok, int Error)> call, string name)
+        {
+            uint session = consoleSession();
+            if (session == UserSessionLauncher.NoSession) return PowerOutcome.Failed(CommandRunner.ExitAgentError, $"{name} çağrılmadı: etkin konsol oturumu yok");
+            (bool ok, int error) = call(session);
+            if (ok) return PowerOutcome.Done;
+            return PowerOutcome.Failed(error, $"{name} başarısız (oturum {session.ToString(CultureInfo.InvariantCulture)}, Win32 {error.ToString(CultureInfo.InvariantCulture)}: {Win32Message(error)})");
+        }
+
+        // Win32 hata kodunun sistem iletisi (Türkçe Windows'ta Türkçe), sondaki nokta olmadan
+        internal static string Win32Message(int code) => Describe(new Win32Exception(code).Message);
+
+        private static string Describe(string message) => message.Trim().TrimEnd('.');
+
+        private static int? RunAndWait(ProcessStartInfo start)
+        {
+            using Process process = Process.Start(start) ?? throw new InvalidOperationException("süreç başlatılamadı");
+            return process.WaitForExit(ShutdownExeWaitSeconds * 1000) ? process.ExitCode : null;
         }
 
         [DllImport("wtsapi32.dll", SetLastError = true)]

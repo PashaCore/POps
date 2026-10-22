@@ -61,9 +61,9 @@ namespace POps.Tests
         // yok (gerçek C:\POps\appsettings.json okunmaz). Klasörler oluşturulur: gerçek kurulumda da hep vardır. Çalışma durumu
         // servisteki gibi kurulur (bkz. Program), her parçanın yeni bir örneği; http: sunucu isteklerinin sahte işleyicisi
         // (null: servisteki ServerTrust işleyicisi); configPaths: ayar dosyaları (null: yok); machine: makine kapıları (null:
-        // reddeden sahteler).
+        // reddeden sahteler); clock: bilgisayarın saati ve monotonik saat (null: servisteki gibi gerçek saat, AgentClock).
         public static AgentHarness Create(string name = "agent", HttpMessageHandler http = null, MachineSeams machine = null,
-            IReadOnlyList<string> configPaths = null)
+            IReadOnlyList<string> configPaths = null, TimeProvider clock = null)
         {
             string root = TestEnvironment.NewDir(name);
             string data = Path.Combine(root, "data");
@@ -73,13 +73,13 @@ namespace POps.Tests
             Directory.CreateDirectory(paths.SecureDir);
             Directory.CreateDirectory(paths.LogDir);
             Directory.CreateDirectory(paths.TaskDir);
-            return new AgentHarness(root, NewContext(paths, http, machine));
+            return new AgentHarness(root, NewContext(paths, http, machine, clock));
         }
 
         // Verilen klasörlerle (ör. AgentDirectories.Apply'ın seçtikleri) testin kendi çalışma durumu ve makine kapıları.
         // Klasörler testindir; harness silmez.
         public static AgentHarness ForPaths(AgentPaths paths, HttpMessageHandler http = null, MachineSeams machine = null) =>
-            new AgentHarness(null, NewContext(paths, http, machine));
+            new AgentHarness(null, NewContext(paths, http, machine, null));
 
         // Testlerin makine kapıları: MachineSeams'in reddeden varsayılanları, kiosk kaydı bellekteki FakeKioskRegistry
         public static MachineSeams RefusingMachine() => new MachineSeams { Kiosk = new FakeKioskRegistry() };
@@ -94,7 +94,7 @@ namespace POps.Tests
             return null;
         }
 
-        private static AgentContext NewContext(AgentPaths paths, HttpMessageHandler http, MachineSeams machine)
+        private static AgentContext NewContext(AgentPaths paths, HttpMessageHandler http, MachineSeams machine, TimeProvider clock)
         {
             machine ??= RefusingMachine();
             var trust = new ServerTrust(paths.ServerCaPath);
@@ -107,7 +107,8 @@ namespace POps.Tests
                 trust,
                 new AgentHttp(http ?? trust.NewHandler(), credentials),
                 new AgentUpdater(paths, capabilities, machine),
-                machine);
+                machine,
+                clock ?? AgentClock.Instance);
         }
 
         // Create()'in klasörleri silinir (korumalı dosyaların ACL'inde "servis hesabı" test kullanıcısıdır)

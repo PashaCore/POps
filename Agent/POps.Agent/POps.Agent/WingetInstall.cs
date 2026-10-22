@@ -17,9 +17,13 @@ namespace POpsAgent
     //   {"action":"winget_install","task_id":42,"id":"Mozilla.Firefox","version":null,"requested_by":"admin"}
     // Ajan yerel terminal yeteneği ve sınıfın deploy modülü açıksa, kimlik ve sürümü kendisi de doğrulayıp winget.exe'yi
     // SYSTEM olarak, kabuk olmadan, her bağımsız değişkeni ayrı vererek çalıştırır:
-    //   install --id <id> -e --silent --scope machine --accept-package-agreements --accept-source-agreements
+    //   install --id <id> -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements
     //   --disable-interactivity [--version <v>]
-    // Sonuç execute gibi "result"tır; çıkış kodu winget'in kendi kodudur (işaretli 32 bit, ör. 0x8A150061 = -1978335135).
+    // --source winget: yalnızca topluluk kaynağı; SYSTEM olarak msstore kaynağı devreye girmez. Yalnızca kullanıcı kapsamında
+    // yükleyicisi olan paket --scope machine ile "uygulanabilir yükleyici yok" (ExitNoApplicableInstaller) ile biter: aynı
+    // görevde bir kez --scope olmadan yeniden denenir (bkz. RetryArguments). Çıktının ilk satırı kullanılan kapsamdır.
+    // Sonuç execute gibi "result"tır; çıkış kodu winget'in kendi kodudur (işaretli 32 bit, ör. 0x8A150061 = -1978335135;
+    // yeniden denendiyse ikinci denemenin kodu).
     [SupportedOSPlatform("windows")]
     public static class WingetInstall
     {
@@ -32,11 +36,24 @@ namespace POpsAgent
         public const string TerminalOffMessage = "[REDDEDİLDİ] Bu cihazda uzaktan terminal kapalı (yetenek politikası); winget kurulumu yapılmadı.";
         public const string DeployOffMessage = "[REDDEDİLDİ] Dağıtım modülü bu cihazın sınıfında kapalı (sunucu politikası); winget kurulumu yapılmadı.";
 
+        // winget'in APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER kodu, 0x8A150010 = -1978335216: "None of the installers are
+        // applicable for the current system"
+        // (https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md). --scope
+        // machine ile yalnızca kullanıcı kapsamında yükleyicisi olan paket bu kodla biter.
+        public const int ExitNoApplicableInstaller = unchecked((int)0x8A150010);
+        // Çıktının ilk satırı: paket hangi kapsamla kuruldu (denendi)
+        public const string MachineScopeNote = "[kapsam: machine]";
+        public const string UserScopeNote = "[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]";
+        // Yeniden denendiyse ilk denemenin çıktısından en çok bu kadarı (asıl çıktı ikinci denemenin; ilki birkaç satırdır)
+        internal const int MachineAttemptMaxChars = 4096;
+
         // Tam eşleşme: \z sondaki satır sonunu da kabul etmez ($ ederdi)
         private static readonly Regex IdRegex = new Regex(@"^[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly Regex VersionRegex = new Regex(@"^[0-9A-Za-z.+_-]{1,40}\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly Regex MeasureRegex = new Regex(@"^[0-9.,%KMGBkib]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly char[] BarChars = { '█', '▒', '▓', '░' };
+        private static readonly string[] MachineScope = { "--scope", "machine" };
+        private static readonly string[] Unattended = { "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity" };
 
         // Servisin winget.exe araması (null: yok; yalnızca MachineSeams.Production kurar, bkz. MachineSeams.WingetLocator)
         internal static string? LocateWinget() => Find(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps"));
@@ -59,15 +76,30 @@ namespace POpsAgent
             return true;
         }
 
-        public static List<string> Arguments(string id, string? version)
+        // machineScope false: kapsamsız yeniden deneme (--scope machine yok; bkz. RetryArguments)
+        public static List<string> Arguments(string id, string? version, bool machineScope = true)
         {
-            var args = new List<string>
-            {
-                "install", "--id", id, "-e", "--silent", "--scope", "machine",
-                "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
-            };
+            var args = new List<string> { "install", "--id", id, "-e", "--source", "winget", "--silent" };
+            if (machineScope) args.AddRange(MachineScope);
+            args.AddRange(Unattended);
             if (version != null) args.AddRange(new[] { "--version", version });
             return args;
+        }
+
+        // İlk denemenin (--scope machine) çıkış kodundan, aynı görevdeki tek yeniden denemenin bağımsız değişkenleri: yalnızca
+        // "uygulanabilir yükleyici yok" kodunda, --scope olmadan. null: yeniden denenmez.
+        public static List<string>? RetryArguments(int machineExitCode, string id, string? version) =>
+            machineExitCode == ExitNoApplicableInstaller ? Arguments(id, version, machineScope: false) : null;
+
+        // Sunucuya giden çıktı: ilk satır kullanılan kapsam, ardından winget'in temizlenmiş çıktısı. machineAttempt: kapsamsız
+        // yeniden denendiyse ilk denemenin (--scope machine) çıktısı; iki denemenin çıktısı sırayla yazılır.
+        public static string ResultOutput(string output, string? machineAttempt = null)
+        {
+            if (machineAttempt == null) return CommandExecutionPolicy.TruncateOutput(MachineScopeNote + "\n" + CleanOutput(output));
+            string first = CleanOutput(machineAttempt);
+            if (first.Length > MachineAttemptMaxChars) first = string.Concat(first.AsSpan(0, MachineAttemptMaxChars), "\n[ÇIKTI KISALTILDI]");
+            return CommandExecutionPolicy.TruncateOutput($"{UserScopeNote}\n[1. deneme, --scope machine: çıkış {ExitNoApplicableInstaller}]\n{first}\n"
+                + $"[2. deneme, kapsamsız]\n{CleanOutput(output)}");
         }
 
         // Yerel olay günlüğü için komut metni (kimlik ve sürüm açıkça yazılabilir)

@@ -159,23 +159,51 @@ namespace POpsAgent
         // Kabuk ve .bat olmadan, bağımsız değişken listesiyle bir program (ör. winget): komutla aynı çıktı, süre sınırı,
         // iptal ve yineleme koruması; bağımsız değişkenler kabukta yorumlanmaz
         public Task<CommandExecutionResult> RunProgramAsync(int taskId, string fileName, IEnumerable<string> arguments, CancellationToken serviceStopping) =>
-            Reserve(taskId, cancel =>
+            RunProgramAsync(taskId, fileName, arguments, null, serviceStopping);
+
+        // retry: ilk denemenin sonucundan, aynı programın ikinci denemesinin bağımsız değişkenleri (null: ikinci deneme yok; ör.
+        // winget'in kapsamsız yeniden denemesi, bkz. WingetInstallHandler). En çok bir kez sorulur. İki deneme tek görevdir: kimlik
+        // ikincinin sonuna kadar ayrılı kalır (yinelenen emir başlamaz), süre sınırı ikisini birlikte kapsar, cancel_task ya da
+        // servis durması ilk denemeden sonra geldiyse ikinci başlatılmaz. Dönen: son denemenin sonucu.
+        public Task<CommandExecutionResult> RunProgramAsync(int taskId, string fileName, IEnumerable<string> arguments,
+            Func<CommandExecutionResult, IEnumerable<string>> retry, CancellationToken serviceStopping) =>
+            Reserve(taskId, async cancel =>
             {
-                var info = NewStartInfo(fileName);
-                foreach (string argument in arguments) info.ArgumentList.Add(argument);
-                return RunInfoAsync(taskId, info, cancel, null, serviceStopping);
+                using var timeout = new CancellationTokenSource(_maxDuration);
+                CommandExecutionResult result = await RunInfoAsync(taskId, ProgramStartInfo(fileName, arguments), cancel, null, timeout.Token, serviceStopping);
+                IEnumerable<string> again = retry?.Invoke(result);
+                if (again == null) return result;
+                if (cancel.IsCancellationRequested || serviceStopping.IsCancellationRequested || timeout.IsCancellationRequested)
+                {
+                    (string reason, int code) = StopReason(cancel, serviceStopping);
+                    return new CommandExecutionResult(reason, code, TimeSpan.Zero);
+                }
+                return await RunInfoAsync(taskId, ProgramStartInfo(fileName, again), cancel, null, timeout.Token, serviceStopping);
             });
 
-        private Task<CommandExecutionResult> Reserve(int taskId, Func<CancellationTokenSource, Task<CommandExecutionResult>> run)
+        // Görev kimliği çağrı anında ayrılır, çalıştırma (bütün denemeleri) bitince bırakılır
+        private async Task<CommandExecutionResult> Reserve(int taskId, Func<CancellationTokenSource, Task<CommandExecutionResult>> run)
         {
             var cancel = new CancellationTokenSource();
             if (!_running.TryAdd(taskId, cancel))
             {
                 cancel.Dispose();
-                return Task.FromResult(new CommandExecutionResult(
-                    $"[YİNELENEN]: Görev {taskId} zaten çalışıyor; ikinci kez başlatılmadı.", ExitDuplicate, TimeSpan.Zero));
+                return new CommandExecutionResult($"[YİNELENEN]: Görev {taskId} zaten çalışıyor; ikinci kez başlatılmadı.", ExitDuplicate, TimeSpan.Zero);
             }
-            return run(cancel);
+            try { return await run(cancel); }
+            finally
+            {
+                // Yalnızca bu çalıştırmanın kaydı kaldırılır
+                _running.TryRemove(new KeyValuePair<int, CancellationTokenSource>(taskId, cancel));
+                cancel.Dispose();
+            }
+        }
+
+        private static ProcessStartInfo ProgramStartInfo(string fileName, IEnumerable<string> arguments)
+        {
+            ProcessStartInfo info = NewStartInfo(fileName);
+            foreach (string argument in arguments) info.ArgumentList.Add(argument);
+            return info;
         }
 
         private static ProcessStartInfo NewStartInfo(string fileName) => new ProcessStartInfo
@@ -199,16 +227,17 @@ namespace POpsAgent
             }
             catch (Exception ex)
             {
-                _running.TryRemove(new KeyValuePair<int, CancellationTokenSource>(taskId, cancel));
-                cancel.Dispose();
                 return new CommandExecutionResult($"Ajan Hatası: {ex.Message}", ExitAgentError, TimeSpan.Zero);
             }
             ProcessStartInfo info = NewStartInfo(_shell);
             info.Arguments = _arguments(tempBatPath);
-            return await RunInfoAsync(taskId, info, cancel, tempBatPath, serviceStopping);
+            using var timeout = new CancellationTokenSource(_maxDuration);
+            return await RunInfoAsync(taskId, info, cancel, tempBatPath, timeout.Token, serviceStopping);
         }
 
-        private async Task<CommandExecutionResult> RunInfoAsync(int taskId, ProcessStartInfo info, CancellationTokenSource cancel, string tempBatPath, CancellationToken serviceStopping)
+        // timeout: görevin süre sınırı (bütün denemeleri için bir kez kurulur)
+        private async Task<CommandExecutionResult> RunInfoAsync(int taskId, ProcessStartInfo info, CancellationTokenSource cancel, string tempBatPath,
+            CancellationToken timeout, CancellationToken serviceStopping)
         {
             var stopwatch = Stopwatch.StartNew();
             try
@@ -221,8 +250,7 @@ namespace POpsAgent
                 // akışlar sabit parçalarla okunur, sınır dolunca okuma sürer ama atılır (boru tıkanıp işlem asılı kalmaz)
                 Task pumps = Task.WhenAll(PumpAsync(process.StandardOutput, stdout), PumpAsync(process.StandardError, stderr));
 
-                using var timeout = new CancellationTokenSource(_maxDuration);
-                using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancel.Token, serviceStopping);
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout, cancel.Token, serviceStopping);
                 try
                 {
                     await process.WaitForExitAsync(linked.Token);
@@ -232,11 +260,7 @@ namespace POpsAgent
                     try { process.Kill(entireProcessTree: true); } catch { }
                     try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); } catch { }
                     await DrainAsync(pumps, taskId);
-                    (string reason, int code) = cancel.IsCancellationRequested
-                        ? ("[İPTAL EDİLDİ]: Görev panelden iptal edildi; işlem sonlandırıldı.", ExitCancelled)
-                        : serviceStopping.IsCancellationRequested
-                            ? ("[DURDURULDU]: POps Agent servisi durduğu için işlem sonlandırıldı.", ExitServiceStopping)
-                            : ($"[HATA]: İşlem {_maxDuration.TotalMinutes:0} dakikadan uzun sürdüğü için zorla sonlandırıldı.", ExitTimeout);
+                    (string reason, int code) = StopReason(cancel, serviceStopping);
                     string partial = Normalize(stdout.ToString());
                     return new CommandExecutionResult(string.IsNullOrEmpty(partial) ? reason : reason + "\n[ÇIKTI]:\n" + partial,
                         code, stopwatch.Elapsed);
@@ -257,13 +281,18 @@ namespace POpsAgent
             }
             finally
             {
-                // Yalnızca bu çalıştırmanın kaydı kaldırılır
-                _running.TryRemove(new KeyValuePair<int, CancellationTokenSource>(taskId, cancel));
-                cancel.Dispose();
                 stopwatch.Stop();
                 if (tempBatPath != null) try { File.Delete(tempBatPath); } catch { }
             }
         }
+
+        // Görev bitmeden durduruldu: panelden iptal, servis durması, yoksa süre sınırı
+        private (string Reason, int Code) StopReason(CancellationTokenSource cancel, CancellationToken serviceStopping) =>
+            cancel.IsCancellationRequested
+                ? ("[İPTAL EDİLDİ]: Görev panelden iptal edildi; işlem sonlandırıldı.", ExitCancelled)
+                : serviceStopping.IsCancellationRequested
+                    ? ("[DURDURULDU]: POps Agent servisi durduğu için işlem sonlandırıldı.", ExitServiceStopping)
+                    : ($"[HATA]: İşlem {_maxDuration.TotalMinutes:0} dakikadan uzun sürdüğü için zorla sonlandırıldı.", ExitTimeout);
 
         private static async Task PumpAsync(StreamReader reader, BoundedOutput sink)
         {

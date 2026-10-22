@@ -67,6 +67,8 @@ namespace POpsAgent
         public bool PowerEnabled { get { lock (_gate) return _state[AgentCapabilities.Power]; } }
         public bool MessageEnabled { get { lock (_gate) return _state[AgentCapabilities.Message]; } }
         public bool PeerCacheEnabled { get { lock (_gate) return _state[AgentCapabilities.PeerCacheKey]; } }
+        // Sunucu sertifikasının doğrulanma kipi ("server_ca": ServerTrust.ModeCustom ya da ModeSystem; bkz. StatusMessage)
+        public string ServerCa => _trust.Mode;
 
         public void Load()
         {

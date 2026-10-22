@@ -344,7 +344,7 @@ msiexec.exe /i program.msi /qn /norestart</pre>
     // yazar); dağıtımda ajana komut değil, kimlik ve sürüm gider.
     const WG_ID = /^[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}$/;
     const WG_VER = /^[0-9A-Za-z.+_-]{1,40}$/;
-    const WG_ARGS = ' -e --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity';
+    const WG_ARGS = ' -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity';
     const wingetCommand = (id, ver) => 'winget install --id ' + id + WG_ARGS + (ver ? ' --version ' + ver : '');
     function wingetOf(command) {
         const c = String(command || '');

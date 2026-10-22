@@ -185,12 +185,15 @@ namespace POpsAgent
             _vision = new VisionSession(() => _hwId, _pcName, _serverUrl, _gate, Handshake, ToTray, () => _tray.Pipe, Audit, _wsVisionLock,
                 _capabilities, _credentials, _trust, _http);
             _remoteInput = new RemoteInputHandler(_vision, _gate, () => _hwId, () => _tray.Pipe, _channel);
-            Power = new PowerActions(SendTaskResultAsync, taskId => DenyCapabilityAsync(PowerActions.Capability, PowerActions.ActionName, taskId),
+            // Güç işlemi ve kullanıcı mesajı sonucu (execute'un result'ıyla aynı biçim ve aynı saklama/onay yolu)
+            var taskResults = new TaskResults(_outbox, () => _hwId);
+            Power = new PowerActions(taskResults, taskId => DenyCapabilityAsync(PowerActions.Capability, PowerActions.ActionName, taskId),
                 ToTray, TrayInConsoleSession, _capabilities, _machine.Power, _machine.HasConsoleUser);
-            Messages = new UserMessages(SendTaskResultAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
+            Messages = new UserMessages(taskResults.SendAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
                 ToTray, TrayConnected, _capabilities, _machine.HasConsoleUser);
-            _exam = new ExamHandler(_gate, Handshake, _channel.TrySendAsync, ToTray, LocalAudit.Write, _serverUrl, () => ExamClock(), _capabilities,
-                new ExamMode(_paths.SecureFile(ExamMode.StateFileName), _machine.FirewallScripts, _machine.ExamResolver, _machine.StopProcess), _peerCache);
+            _exam = new ExamHandler(_gate, Handshake, _channel.TrySendAsync, ToTray, LocalAudit.Write, _serverUrl, _capabilities,
+                new ExamMode(_paths.SecureFile(ExamMode.StateFileName), _machine.FirewallScripts, _machine.ExamResolver, _machine.StopProcess, context.Clock),
+                _peerCache);
             _files = new FileTransferHandler(_gate, _serverUrl, () => _hwId, _channel.TrySendAsync, ToTray, LocalAudit.Write, _capabilities,
                 new FileTransfer(_paths, _http, _credentials, _machine.PublicDesktop, _machine.Profiles));
             Binding = new HardwareBinding(_paths,
@@ -401,8 +404,6 @@ namespace POpsAgent
 
         // ------------------------------------------------------------------ sınav modu (bkz. ExamHandler)
         private volatile bool _examNetworkChanged;
-        // Testler: emrin doğrulandığı ve sınavdan çıkılan an
-        internal Func<DateTimeOffset> ExamClock { get; set; } = () => DateTimeOffset.UtcNow;
 
         // Testler: sınav modunun durumu (durum dosyası, ayarlar)
         internal ExamMode Exam => _exam.Exam;
@@ -411,7 +412,7 @@ namespace POpsAgent
         internal Task HandleExamModeAsync(JsonElement root) => _exam.HandleExamModeAsync(root);
         internal Task EndExamAsync(string source, bool reply = false) => _exam.EndExamAsync(source, reply);
         internal Task ReportExamStateOnConnectAsync() => _exam.ReportExamStateOnConnectAsync();
-        internal Task<bool> ExamTickAsync(DateTimeOffset now, string refreshReason) => _exam.ExamTickAsync(now, refreshReason);
+        internal Task<bool> ExamTickAsync(string refreshReason) => _exam.ExamTickAsync(refreshReason);
 
         // 2 sn'de bir: süre doldu mu, engelli uygulamalar; 2 dk'da bir ve ağ adresi değişince: izin listesi çözümü
         private async Task ExamLoopAsync(CancellationToken token)
@@ -429,7 +430,7 @@ namespace POpsAgent
                         lastRefresh = DateTime.UtcNow;
                         _examNetworkChanged = false;
                     }
-                    await ExamTickAsync(DateTimeOffset.UtcNow, refresh ? "dönemsel ya da ağ adresi değişti" : null);
+                    await ExamTickAsync(refresh ? "dönemsel ya da ağ adresi değişti" : null);
                 }
                 catch (Exception ex) { POpsHelpers.Log("EXAM", $"Sınav modu denetimi başarısız: {ex.Message}", true); }
                 try { await Task.Delay(TimeSpan.FromSeconds(2), token); }
@@ -558,10 +559,6 @@ namespace POpsAgent
             return pipe != null && pipe.IsConnected && pipe.ClientSession != UserSessionLauncher.NoSession && pipe.ClientSession == _machine.ConsoleSession();
         }
 
-        // Güç işlemi ve kullanıcı mesajı sonucu (execute'un result'ıyla aynı biçim ve aynı saklama/onay yolu)
-        private Task SendTaskResultAsync(int taskId, string output, int exitCode) =>
-            SendResultAsync(taskId, new { type = "result", pc_name = _hwId, task_id = taskId, output, exit_code = exitCode });
-
         // Ekran yakalamanın başlatılması ve görüntüleyici denetimi (bkz. VisionSession)
         internal void StartCapture(int fps) => _vision.StartCapture(fps);
         internal Task HandleVisionControlAsync(JsonElement root) => _vision.HandleVisionControlAsync(root);
@@ -610,8 +607,7 @@ namespace POpsAgent
         internal TrayPipeServer TrayPipe => _tray.Pipe;
         internal SoftwareReporter Software { get => _software; set => _software = value; }
 
-        // Görev sonucu ve heartbeat'te bekleyen sonuçlar (bkz. ResultOutbox)
-        private Task SendResultAsync(int taskId, object result) => _outbox.SendResultAsync(taskId, result);
+        // Heartbeat'te bekleyen görev sonuçları (bkz. ResultOutbox)
         internal Task FlushPendingResultsAsync() => _outbox.FlushPendingResultsAsync();
 
         private string InitializeIdentity()

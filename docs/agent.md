@@ -262,8 +262,13 @@ arm64 to match the OS), and only from that folder. When none exists, answer `exi
 `ProcessStartInfo.ArgumentList`, in this order:
 
 ```
-install --id <id> -e --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity [--version <version>]
+install --id <id> -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity [--version <version>]
 ```
+
+`--source winget` keeps the msstore source out under LocalSystem (agents up to 0.1.23 ran without it). When this run
+ends with `0x8A150010` (-1978335216, no applicable installer: the package has no machine-scope installer), run it
+once more with the same arguments minus `--scope machine`, within the same task and time limit, and answer one result
+with the second run's exit code; see point 7.
 
 Same limits as `execute`: 30-minute time limit (-1), `cancel_task` ends it and its child processes (-2), service
 stop (-4), the same output cap. Capture stdout and stderr; drop the progress-bar and spinner lines winget draws
@@ -290,6 +295,20 @@ command (the package id and version may be recorded in clear).
 | anything else | Failed | The panel names common winget codes (package not found, installer hash mismatch, app in use, another install running, disk full, blocked by policy …). |
 
 -8 is set by the server only (agent without the feature).
+
+**7. The Windows agent** (`WingetInstall.cs`, `Commands/WingetInstallHandler.cs`), from 0.1.24-alpha:
+
+- **User-scope-only packages.** When that run ends with winget's "no applicable installer" code, `0x8A150010` =
+  -1978335216 (`APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER`, "None of the installers are applicable for the
+  current system"; see winget's
+  [return codes](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md)),
+  it runs winget once more with the same arguments minus `--scope machine`. No other code is retried, and there is
+  no third run. Both runs are the same task: the `task_id` stays reserved (a repeated `winget_install` is ignored),
+  `cancel_task` and a service stop end the second run or keep it from starting, and the 30-minute limit covers both
+  runs together. There is still one `result`, with the second run's exit code.
+- **Scope in the output.** The first line of `output` names the scope used: `[kapsam: machine]`, or after the retry
+  `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`, followed by the first run's output (at most
+  4,096 characters) and the second run's, each under its own heading. Refusals (-5, -7) carry no scope line.
 
 ### `power` and `user_message` contract
 
@@ -328,9 +347,15 @@ lists `power` and `message` in `server_info.features`.
   answer `result` with `exit_code` -5 and `[REDDEDİLDİ] …`, then `capability_denied` with `"capability": "power"`,
   `"action": "power"` and the `task_id`.
 - `logoff` and `lock` with nobody signed in: `result` with `exit_code` -6 and `[REDDEDİLDİ] oturum açık kullanıcı yok`.
-- Otherwise show a tray countdown of `delay` seconds with `message`, send `result` with `exit_code` 0 and an output
-  that starts with `[TAMAM]` (for example `[TAMAM] 300 saniye sonra kapanıyor`) just before acting, then act. The
-  result must leave before a shutdown or restart, so the task does not stay `Running`.
+- Otherwise show a tray countdown of `delay` seconds with `message`, then act. The `result` says what really
+  happened (from 0.1.24; agents up to 0.1.23 sent `[TAMAM]` just before acting):
+  - `lock` and `logoff`: act first, then answer `exit_code` 0 with an output that starts with `[TAMAM]`, or the Win32
+    error code with `[HATA] …`.
+  - `shutdown` and `restart`: store `[TAMAM] …` (for example `[TAMAM] 300 saniye sonra kapanıyor`) in the result
+    queue without sending it, then run `shutdown.exe`. When it exits non-zero, replace the result with
+    `[HATA] shutdown.exe <code>: …` and that code (the Win32 code when it cannot start at all), send it at once and
+    leave the PC on. When it exits 0, send `[TAMAM]`; if it cannot leave before the PC goes down, it goes from the
+    result queue after the restart, so the task does not stay `Running`.
 
 **3. `user_message`.**
 
@@ -361,6 +386,7 @@ lists `power` and `message` in `server_info.features`.
 | `0` with `[TAMAM] …` | Completed | Done (or shown / read). |
 | -5 with `[REDDEDİLDİ] …` | Denied | Local capability off. |
 | -6 with `[REDDEDİLDİ] oturum açık kullanıcı yok` | Denied | Nobody signed in (logoff, lock, message). |
+| any other code with `[HATA] …` | Failed | The action failed: a Win32 error code (lock, logoff), `shutdown.exe`'s exit code (shutdown, restart) or -3 (agent error). The PC stays as it was. |
 | -8 | Denied | Set by the server only: the agent did not announce the feature and there is no fallback; nothing was sent. |
 
 On the wire -6 now means "nobody signed in"; the Windows agent's internal duplicate code -6 is never sent.
@@ -443,6 +469,12 @@ Each transfer is announced in the tray and written to the event log.
     `application/octet-stream`, with the device key. The optional `X-Content-SHA256` header is not sent.
   - **PC user:** The tray says "Yönetici bu dosyayı aldı: <yol>". Event 1121 records the ID, path, size and
     reason.
+- **Time limits** (push and pull alike): a transfer goes through the agent's HTTP handler (the same server
+  certificate check, no redirects, the device key on each request) but with a client of its own that has no request
+  timeout: the 100-second limit of the agent's other requests no longer cuts a large file on a slow link. Instead the
+  transfer is `failed` when no data has moved for 2 minutes (while connecting and waiting for the response too;
+  `detail`: `zaman aşımı: 2 dakikadır veri yok`) or when it has taken 2 hours in all (`toplam süre 2 saati aştı`),
+  which a 1 GB file meets at about 150 KB/s.
 - **Result:** `{"type": "file_result", "transfer_id", "outcome": "done" | "rejected" | "failed", "path", "detail"}`.
   The field is `outcome`, not `status`: a server that does not know `file_result` would take a message with
   `status` for a heartbeat. `path` is left out when it is longer than 1024 characters; `detail` is cut at 300.
@@ -534,20 +566,35 @@ that arrived.
   kalır."). It does not take the keyboard focus, and the user may close it: the action happens anyway. The service
   owns the timer, so the action also happens without a tray; a tray that connects during the countdown shows the
   remaining seconds. With `delay` 0 the agent acts at once, without a window.
-- **Acting.** When the time is up the agent sends the result first (0, `[TAMAM] Bilgisayar kapatılıyor.` /
-  `… yeniden başlatılıyor.` / `[TAMAM] Kullanıcının oturumu kapatılıyor.` / `[TAMAM] Bilgisayar kilitleniyor.`) and
-  then acts; after a shutdown or restart the server receives it on the next connection if it did not arrive before.
-  A `logoff` or `lock` whose user signed out during the countdown ends with -6 instead. An action that fails after
-  the result was sent is only logged (`[HATA] Güç işlemi uygulanamadı`).
-  - Shutdown and restart: `%SystemRoot%\System32\shutdown.exe /s` or `/r` with `/t 0 /f /d p:0:0`. Running programs
-    are closed without asking (lab PCs must not hang on a "save changes?" dialog); the countdown and the note are the
-    warning.
-  - Sign-out: `WTSLogoffSession` on the console session, from the service.
+- **Acting.** When the time is up the agent acts, and the task's one `result` reports what really happened, not what
+  was asked. A `logoff` or `lock` whose user signed out during the countdown ends with -6 instead, without acting.
+  - Shutdown and restart cut the connection, so they go in this order. The result `[TAMAM] Bilgisayar kapatılıyor.`
+    (`… yeniden başlatılıyor.`, exit code 0) is written to the result spool as not sent, and nothing sends it yet (a
+    heartbeat neither). Then `%SystemRoot%\System32\shutdown.exe /s` or `/r` runs with `/t 0 /f /d p:0:0`, and the
+    agent waits for its exit code: shutdown.exe starts the shutdown and returns at once. Exit code 0: the agent tries
+    to send the result; if it does not leave before the PC goes down, it is sent from the spool on the first
+    connection after boot. Any other exit code (for example a shutdown blocked by policy, or another one already
+    scheduled): the stored result is replaced with `[HATA] shutdown.exe <code>: <Windows message>. Bilgisayar
+    kapatılmadı.` (`… yeniden başlatılmadı.`) with shutdown.exe's exit code as the exit code, and sent at once; the
+    PC stays on and the agent does nothing else. A shutdown.exe that cannot be started or does not exit within 15
+    seconds is an error too (the Win32 code, or -3). Running programs are closed without asking (lab PCs must not hang
+    on a "save changes?" dialog); the countdown and the note are the warning.
+  - Sign-out and lock do not cut the connection: the agent acts first, then sends the result of that call. Sign-out
+    is `WTSLogoffSession` on the console session, from the service: `[TAMAM] Kullanıcının oturumu kapatılıyor.` when
+    it succeeds.
   - Lock: a service running as LocalSystem cannot lock the user's desktop, so the tray calls `LockWorkStation` when it
-    runs in the console session; the session stays the console session and the user unlocks as usual. When the tray
-    is not connected, runs in another session (Remote Desktop) or does not confirm within 5 seconds, the service
+    runs in the console session and answers whether it succeeded; the session stays the console session and the user
+    unlocks as usual (`[TAMAM] Bilgisayar kilitlendi.`). When the tray is not connected, runs in another session
+    (Remote Desktop), answers that `LockWorkStation` failed or does not answer within 5 seconds, the service
     disconnects the console session (`WTSDisconnectSession`): programs keep running and Windows shows the sign-in
-    screen, but until the user signs in again the PC reports nobody at the console.
+    screen, but until the user signs in again the PC reports nobody at the console (`[TAMAM] Bilgisayar kilitlendi:
+    konsol oturumu ayrıldı …`). An answer from the tray after the 5 seconds is ignored, so a lock the tray did not
+    confirm in time and whose disconnect failed is reported as failed, even if the tray locked the screen late.
+  - A failed `WTSLogoffSession` or `WTSDisconnectSession` ends with its Win32 error code and `[HATA] Kullanıcının
+    oturumu kapatılamadı: …` / `[HATA] Bilgisayar kilitlenemedi: …` (after the tray's answer when the tray was asked).
+    No console session at the moment of the call, an agent that does not run as LocalSystem, or a power call that
+    fails in the agent itself ends with -3 and `[HATA] …`. The server marks a task with any code other than 0
+    `Failed`.
 - **One countdown at a time.** The same `task_id` again is ignored, as for `execute`. A newer `power` replaces the
   running countdown; the older task ends with -2. `cancel_task` with the task's ID stops the countdown (-2,
   `[İPTAL EDİLDİ]: Güç işlemi panelden iptal edildi; bilgisayara dokunulmadı.`); the tray closes the window and shows
@@ -745,7 +792,11 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
    that is not newer than its own, downloads the MSI from `<ServerUrl>/updates/<name>` and checks its size and
    SHA-256. From 0.1.23-alpha the download uses BITS: it resumes after a network drop or a restart, and a download
    that is still running after 15 minutes continues with the next update command. When BITS cannot be used, the
-   agent downloads directly as before. See [`design/peer-cache.md`](design/peer-cache.md). With the lab-local peer
+   agent downloads directly as before. From the version after 0.1.23-alpha an agent pinned to the school CA
+   (`server_ca = custom`, see [Server certificate](#server-certificate)) does not try BITS at all and downloads
+   directly with its own certificate check: BITS uses the Windows trust store, cannot use `server-ca.pem`, and only
+   fell back after its retry time (about 10 minutes). The log says so once per download (`BITS kullanılmadı: sunucu
+   sertifikası kurum sertifikasıyla (server-ca.pem) doğrulanıyor …`). See [`design/peer-cache.md`](design/peer-cache.md). With the lab-local peer
    cache (below) the server sends `update_agent` to one PC per lab first and to the rest with `peers`.
 3. `POpsUpdater` installs it, waits up to 90 seconds for the new version to report `phase: "operational"`
    in `C:\POpsData\health.json`, and otherwise rolls back to the previous MSI. Operational means the agent's
@@ -839,7 +890,8 @@ unknown fields are ignored).
 today; `peers` is read only after that.
 
 - Ignore a peer whose `url` does not match the pattern above, whose path SHA-256 is not the manifest's MSI
-  SHA-256, or whose host is not a private IPv4 address.
+  SHA-256, or whose host is not a private IPv4 address. (The Windows agent asks for an address on one of the PC's
+  own subnets instead, private or public; see point 6.)
 - Try the peers in the order given, one at a time: connect timeout 3 seconds; if no data arrives for 15 seconds, or
   the answer is anything but `200` with the expected `Content-Length`, go to the next peer. After the last peer,
   download from `<ServerUrl>/updates/<name>` as today (BITS or HttpClient).
@@ -891,21 +943,28 @@ leave a choice or where it differs:
 - **Server.** A `TcpListener` on `[::]:8817` (IPv4 and IPv6) instead of `HttpListener`: traffic to an HttpListener
   belongs to http.sys (the `System` process), so a firewall rule for `POpsAgent.exe` would not match it. It answers
   `GET` and `HEAD` for `/pops-cache/<sha256>`; other methods get `405` (`Allow: GET, HEAD`), other paths `404`, a
-  malformed request `400`, and clients outside the PC's local subnets `403` (on top of the firewall rule). 10 seconds
-  to send the request, 10 minutes per transfer, `Connection: close`, no Range. At most 4 transfers; further requests
-  wait up to 60 seconds for a slot, then get `503` with `Retry-After: 30`; beyond 128 open connections a new one gets
-  `503` at once.
+  malformed request `400`, and clients outside the PC's own subnets `403` (the rule under Downloading; on top of the
+  firewall rule). 10 seconds to send the request, 10 minutes per transfer, `Connection: close`, no Range. At most 4
+  transfers; further requests wait up to 60 seconds for a slot, then get `503` with `Retry-After: 30`; beyond 128 open
+  connections a new one gets `503` at once.
 - **Firewall.** Rule group `POps Peer Cache`: inbound allow, TCP 8817, `LocalSubnet`, program `POpsAgent.exe`, all
   profiles, added with PowerShell when serving starts and removed when it stops (cache empty, quarantine, exam mode,
   service stop). A failed script is retried after 15 minutes. At service start a leftover rule is removed only if
   the cache folder exists. The quarantine and exam rule groups are not touched.
 - **Quarantine and exam mode.** While either is active the agent neither serves nor tries peers (their rules block
   that traffic anyway); serving resumes when both end.
-- **Downloading.** A peer is used only inside one of the PC's local subnets (stricter than "private": the serving
-  side's rule is LocalSubnet-only); private and link-local IPv6 addresses are accepted too, and at most 5 entries are
-  read. Connect timeout 3 seconds, up to 75 seconds for the response headers (a busy peer queues the request for up
-  to 60 seconds), then 15 seconds without data or 5 minutes in all ends the attempt. No proxy, redirects, cookies or
-  headers: the device secret never goes to a peer. The `downloaded` detail is `peer <hw_id>`, `server` or `cache`.
+- **Downloading.** A peer is used only when its address is on one of the PC's own subnets: the subnet of an
+  interface's IPv4 address and mask, or for IPv6 the link-local and on-link prefixes of its interfaces (a prefix wider
+  than /8 for IPv4 or /64 for IPv6 does not count). Private or public makes no difference, so labs that use public
+  IPv4 addresses work too, and a private address on another subnet is refused. This is no wider than the serving
+  side's firewall rule (`LocalSubnet`). Loopback, multicast, broadcast (also an IPv4 subnet's network and broadcast
+  address) and unspecified addresses are refused; at most 5 entries are read. The first peer refused for being
+  outside the PC's subnets is logged once as a warning (`UPDATE`), later ones as information; other refusals stay
+  `[GÜVENLİK]` warnings. The server still lists only private IPv4 addresses as peers (points 1 and 2), so a lab with
+  public addresses gets no `peers` until the server's rule changes as well. Connect timeout 3 seconds, up to 75
+  seconds for the response headers (a busy peer queues the request for up to 60 seconds), then 15 seconds without
+  data or 5 minutes in all ends the attempt. No proxy, redirects, cookies or headers: the device secret never goes to
+  a peer. The `downloaded` detail is `peer <hw_id>`, `server` or `cache`.
 - **Logs.** Start and stop of serving, each transfer (address, SHA-256 prefix, bytes, seconds) and refusals (at most
   one line every 10 seconds) go to the POps log (`PEERCACHE`); no event log entry.
 
@@ -930,7 +989,11 @@ folder, the updater and the watchdog get the same folders from the service, and 
 changes. Rules and caveats: [`configuration.md`](configuration.md#log-and-data-folders).
 
 Uninstalling removes the programs, the service, the Run entry and `appsettings.json`, but keeps `C:\POpsData`
-(identity and secret) and `C:\POpsLogs`, so a reinstalled PC returns with the same identity.
+(identity and secret) and `C:\POpsLogs`, so a reinstalled PC returns with the same identity. From 0.1.24 it also
+opens the network, even during a quarantine or an exam: it deletes every firewall rule POps added (`POps Isolation`,
+`POps Exam`, `POps Peer Cache` and the old `POps_Isolation_*` rules), switches the profiles that were off before back
+off, restores the Ctrl+Alt+Del options and deletes `isolation.json`, `exam.json` and `lockdown.json`. An upgrade or a
+rollback keeps all of them ([`Installer/README.md`](../Installer/README.md#what-the-package-does)).
 
 ## Building and testing
 

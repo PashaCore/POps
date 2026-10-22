@@ -13,9 +13,10 @@ namespace POpsAgent
     // Güncelleme paketinin BITS ile indirilmesi (Windows'un BitsTransfer modülü). BITS ağ kesintisinde ve servis
     // yeniden başladığında kaldığı yerden sürer (HTTP Range); iş, paketin SHA-256'sından türeyen adla bulunur, bir
     // sonraki emir aynı işi sürdürür. İmzalı manifest'in boyut ve SHA-256 denetimi değişmez (bkz. AgentUpdate).
-    // BITS kullanılamazsa (modül/hizmet yok, sertifika kurumun özel CA'sıyla ve makine deposunda değil, sunucu
-    // Range desteklemiyor...) çağıran HttpClient'la indirir. Değerler betiğe yalnızca tek tırnaklı, kaçışlı
-    // değişmez olarak girer.
+    // BITS kullanılamazsa (modül/hizmet yok, sunucu Range desteklemiyor...) çağıran HttpClient'la indirir. Sunucu
+    // sertifikası kurum sertifikasına sabitlendiyse (server-ca.pem, "server_ca": "custom"; bkz. ServerTrust) BITS hiç
+    // denenmez: BITS Windows'un güven deposunu kullanır, ajanın kurum sertifikasını kullanamaz ve ancak yeniden deneme
+    // süresi (~10 dk) dolunca eski yola düşülürdü. Değerler betiğe yalnızca tek tırnaklı, kaçışlı değişmez olarak girer.
     // Bir ajanın güncelleme durumunun parçasıdır (bkz. AgentUpdater).
     [SupportedOSPlatform("windows")]
     public sealed class BitsDownload
@@ -24,12 +25,18 @@ namespace POpsAgent
 
         public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(15);
         public const string JobPrefix = "POps update ";
+        public const string PinnedCaMessage = "BITS kullanılmadı: sunucu sertifikası kurum sertifikasıyla (server-ca.pem) doğrulanıyor, BITS bu sertifikayı kullanamaz; paket doğrudan indiriliyor.";
+
+        private readonly Func<bool> _serverCaPinned;
 
         // runner: BITS betiğini çalıştıran (betik, süre; servis: PowerShell, bkz. MachineSeams.Bits). null: BITS kullanılmaz
-        // (testler, makine kapısı verilmeyen kod), paket HttpClient ile indirilir.
-        public BitsDownload(Func<string, TimeSpan, Task<(int Exit, string Output)>> runner)
+        // (testler, makine kapısı verilmeyen kod), paket HttpClient ile indirilir. serverCaPinned: sunucu sertifikası kurum
+        // sertifikasıyla mı doğrulanıyor (ajanın ServerTrust'ı, "server_ca" custom); her indirmede sorulur, true ise BITS
+        // çağrılmaz.
+        public BitsDownload(Func<string, TimeSpan, Task<(int Exit, string Output)>> runner, Func<bool> serverCaPinned)
         {
             Runner = runner;
+            _serverCaPinned = serverCaPinned ?? throw new ArgumentNullException(nameof(serverCaPinned));
         }
 
         internal Func<string, TimeSpan, Task<(int Exit, string Output)>> Runner { get; }
@@ -41,6 +48,11 @@ namespace POpsAgent
         public async Task<Outcome> DownloadAsync(string url, string destination, string sha256)
         {
             if (!Enabled) return Outcome.Unavailable;
+            if (_serverCaPinned())
+            {
+                POpsHelpers.Log("UPDATE", PinnedCaMessage);
+                return Outcome.Unavailable;
+            }
             try
             {
                 (int exit, string output) = await Runner(BuildScript(url, destination, JobName(sha256), Timeout), Timeout + TimeSpan.FromMinutes(2));
