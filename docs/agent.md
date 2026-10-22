@@ -461,6 +461,12 @@ Each transfer is announced in the tray and written to the event log.
     `application/octet-stream`, with the device key. The optional `X-Content-SHA256` header is not sent.
   - **PC user:** The tray says "Yönetici bu dosyayı aldı: <yol>". Event 1121 records the ID, path, size and
     reason.
+- **Time limits** (push and pull alike): a transfer goes through the agent's HTTP handler (the same server
+  certificate check, no redirects, the device key on each request) but with a client of its own that has no request
+  timeout: the 100-second limit of the agent's other requests no longer cuts a large file on a slow link. Instead the
+  transfer is `failed` when no data has moved for 2 minutes (while connecting and waiting for the response too;
+  `detail`: `zaman aşımı: 2 dakikadır veri yok`) or when it has taken 2 hours in all (`toplam süre 2 saati aştı`),
+  which a 1 GB file meets at about 150 KB/s.
 - **Result:** `{"type": "file_result", "transfer_id", "outcome": "done" | "rejected" | "failed", "path", "detail"}`.
   The field is `outcome`, not `status`: a server that does not know `file_result` would take a message with
   `status` for a heartbeat. `path` is left out when it is longer than 1024 characters; `detail` is cut at 300.
