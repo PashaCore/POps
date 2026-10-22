@@ -88,8 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docker/dashboard.Dockerfile` pins the patched `php:8.3-apache`. **Installations with the distribution's PHP** (the
   `install.sh` layout) must update their PHP packages and restart PHP-FPM: AlmaLinux/RHEL 9 `dnf update 'php*'`
   (fixed in `8.0.30-8.el9_8.alma.1`), Debian/Ubuntu `apt upgrade`. Until then PHP's own stop-gap is
-  `session.upload_progress.enabled=0` and a `memory_limit` the application cannot raise; updating is the only complete
-  fix. Docker images from the 0.1.23-alpha release still carry PHP 8.3.35: rebuild with `docker compose build
+  `session.upload_progress.enabled=0` plus `memory_limit=-1` set where the application cannot override it (with a
+  container or cgroup memory limit as the boundary); updating is the only complete fix. Docker images from the 0.1.23-alpha release still carry PHP 8.3.35: rebuild with `docker compose build
   dashboard` or wait for the next release. The demo server was rebuilt and its host PHP updated on 22 October.
 
 ## [0.1.23-alpha] - 2026-10-05
