@@ -1,6 +1,0 @@
-{
-  "type": "capability_denied",
-  "capability": "quarantine",
-  "action": "lockdown",
-  "reason": "not_supported"
-}

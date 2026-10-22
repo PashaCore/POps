@@ -1,7 +1,0 @@
-{
-  "action": "winget_install",
-  "task_id": 1051,
-  "id": "GeoGebra.Classic",
-  "version": "6.0.930",
-  "requested_by": "token:okul-otomasyon"
-}

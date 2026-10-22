@@ -1,7 +1,0 @@
-{
-  "type": "update_result",
-  "status": "success",
-  "from_version": "0.1.12-alpha",
-  "to_version": "0.1.13-alpha",
-  "running_version": "0.1.13-alpha"
-}

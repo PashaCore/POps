@@ -1,7 +1,0 @@
-{
-  "action": "winget_install",
-  "task_id": 1050,
-  "id": "Mozilla.Firefox",
-  "version": null,
-  "requested_by": "admin"
-}
