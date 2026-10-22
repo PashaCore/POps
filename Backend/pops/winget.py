@@ -47,6 +47,22 @@ INVALID_OUTPUT = "[HATA]: winget görevinin paket bilgisi geçersiz; ajana gönd
 # güncel sürüm zaten kurulu (UPDATE_NOT_APPLICABLE, PACKAGE_ALREADY_INSTALLED) ya da kurulum bitti ama yeniden
 # başlatma istiyor (INSTALL_REBOOT_REQUIRED_TO_FINISH, INSTALL_REBOOT_INITIATED). Görev "Completed" olur.
 OK_EXIT_CODES = (0, -1978335189, -1978335135, -1978334967, -1978334965)
+UPDATE_NOT_APPLICABLE = -1978335189   # 0x8A15002B
+# UPDATE_NOT_APPLICABLE winget'te iki anlama gelir: güncel sürüm zaten kurulu, ya da istenen sürüm kurulu olandan farklı
+# bir kurulum teknolojisiyle (ör. exe yerine MSI) geldiği için üzerine kurulamadı ("The install technology of the newer
+# version specified is different from the current version installed"). İkincisinde paket kurulmamıştır. winget SYSTEM
+# altında İngilizce yazar (sahada Türkçe Windows'ta da böyle görüldü).
+_NOT_INSTALLED_MARKERS = ("install technology of the newer version",)
+
+
+def result_ok(exit_code: Optional[int], output) -> bool:
+    """winget görevinin sonucu başarı mı: OK_EXIT_CODES'tan biri, ama "kurulum teknolojisi farklı" denen
+    UPDATE_NOT_APPLICABLE değil."""
+    if exit_code not in OK_EXIT_CODES:
+        return False
+    text = str(output or "").lower()
+    return not (exit_code == UPDATE_NOT_APPLICABLE and any(m in text for m in _NOT_INSTALLED_MARKERS))
+
 
 CATEGORY_LABELS = {
     "browser": "Tarayıcılar",

@@ -820,6 +820,14 @@ async def _upsert_device(conn: _AgentConn, payload: dict, dna_payload: dict, kee
         "SET version=$2, last_update=$3, features=$4",
         (conn.hwid, conn.agent_version, now, conn.agent_features),
     )
+    # Çalışan sürüm bağlantıda duyurulandır. Elle kurulan ya da düşürülen ajan update_result göndermez; panel
+    # running_version'ı agent_version'a tercih ettiği için eski değer kalırsa yanlış sürüm görünürdü.
+    if conn.agent_version and conn.agent_version != "unknown":
+        changed = await execute_query(
+            "UPDATE clients SET running_version=$1 WHERE pc_name=$2 AND running_version IS DISTINCT FROM $1 "
+            "RETURNING pc_name", (conn.agent_version[:64], conn.hwid), fetch=True)
+        if changed:
+            devicelist.touch([conn.hwid])
 
 
 async def _finish_enroll(conn: _AgentConn, new_secret: str, enroll_lab: Optional[str]) -> None:
@@ -913,16 +921,17 @@ async def _on_result(conn: _AgentConn, payload: dict) -> None:
     refused = exit_code in REFUSED_EXIT_CODES and isinstance(output, str) and output.startswith(REFUSED_PREFIX)
     if refused and exit_code is None:
         exit_code = -5
-    # winget görevinde "zaten kurulu" ve "kuruldu, yeniden başlatma bekliyor" kodları da başarıdır
+    # winget görevinde "zaten kurulu" ve "kuruldu, yeniden başlatma bekliyor" kodları da başarıdır (winget.result_ok)
+    winget_ok = winget.result_ok(exit_code, output)
     stored = await execute_query(
         "UPDATE tasks SET output = $1, exit_code = $4, status = CASE "
         "WHEN status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out') THEN "
         "(CASE WHEN $5 THEN 'Denied' WHEN $4::int IS NULL OR $4::int = 0 THEN 'Completed' "
-        "WHEN kind = $6 AND $4::int = ANY($7::int[]) THEN 'Completed' ELSE 'Failed' END) "
+        "WHEN kind = $6 AND $7::bool THEN 'Completed' ELSE 'Failed' END) "
         "ELSE status END "
         "WHERE id = $2 AND target_pc = $3 "
         "AND status IN ('Running', 'Unknown', 'Interrupted', 'Timed Out', 'Cancelled') RETURNING id",
-        (output, task_id, conn.hwid, exit_code, refused, winget.KIND, list(winget.OK_EXIT_CODES)),
+        (output, task_id, conn.hwid, exit_code, refused, winget.KIND, winget_ok),
         fetch=True,
     )
     # Sonuç veritabanına yazıldı: 0.1.14+ ajan sonucu bu onaya kadar saklar ve yeniden gönderir (aynı sonucun ikinci

@@ -272,6 +272,11 @@ async def run(c, admin, viewer, superadmin):
     for n, (code, output, status) in enumerate((
         (-1978335135, "Found an existing package already installed.", "Completed"),
         (-1978335189, "No available upgrade found.", "Completed"),
+        # Sahada (0.1.24): sürüm sabitlenince exe kurulu, istenen MSI. winget aynı kodu döner ama paket kurulmadı
+        (-1978335189, "[2. deneme, kapsamsız]\nFound an existing package already installed. Trying to upgrade the "
+                      "installed package...\nThe install technology of the newer version specified is different from "
+                      "the current version installed. Please uninstall the package and install the newer version.",
+         "Failed"),
         (-1978334967, "Restart your PC to finish installation.", "Completed"),
         (-1978335212, "No package found matching input criteria.", "Failed"),
         (winget.EXIT_UNAVAILABLE, "[REDDEDİLDİ] winget bu bilgisayarda yok", "Denied"),

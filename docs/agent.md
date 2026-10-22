@@ -287,7 +287,7 @@ command (the package id and version may be recorded in clear).
 | Exit code | Task status | Meaning |
 | --- | --- | --- |
 | `0` | Completed | Installed. |
-| -1978335189 (`0x8A15002B`), -1978335135 (`0x8A150061`) | Completed | Already installed and up to date. |
+| -1978335189 (`0x8A15002B`), -1978335135 (`0x8A150061`) | Completed | Already installed and up to date. winget returns `0x8A15002B` also when the requested version uses a different install technology than the installed one (output: "The install technology of the newer version specified is different …"); then nothing was installed and the task is `Failed`. |
 | -1978334967 (`0x8A150109`), -1978334965 (`0x8A15010B`) | Completed | Installed; a restart finishes it. |
 | -5 with `[REDDEDİLDİ] …` | Denied | Refused by the capability policy, the module or validation. |
 | -7 with `[REDDEDİLDİ] winget bu bilgisayarda yok` | Denied | No winget on the PC. |

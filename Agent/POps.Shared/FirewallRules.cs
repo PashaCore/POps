@@ -65,6 +65,8 @@ namespace POps.Shared
         {
             var sb = new StringBuilder();
             sb.AppendLine("$ErrorActionPreference = 'Stop'");
+            // NetSecurity modülünün ilk yüklenişindeki ilerleme kayıtları (CLIXML) çıktıya, oradan MSI log'una karışmasın
+            sb.AppendLine("$ProgressPreference = 'SilentlyContinue'");
             sb.AppendLine("$groups = @(" + string.Join(", ", Groups.Select(Quote)) + ")");
             sb.AppendLine("$legacy = " + Quote(LegacyIsolationRules));
             sb.AppendLine("function Get-POpsRules { Get-NetFirewallRule | Where-Object { ($groups -contains $_.Group) -or ($_.DisplayName -like $legacy) } }");
