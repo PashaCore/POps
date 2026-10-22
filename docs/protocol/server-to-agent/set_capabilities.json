@@ -22,6 +22,10 @@
     "vision_enabled": {
       "type": "boolean",
       "description": "false = refuse previews, streams and remote input; a running stream stops."
+    },
+    "files_enabled": {
+      "type": "boolean",
+      "description": "false = switch file transfer (file_push / file_pull) off on this PC. Sent from POST /api/system/set-capabilities and re-sent when the agent reconnects reporting it on."
     }
   },
   "anyOf": [
@@ -33,6 +37,11 @@
     {
       "required": [
         "vision_enabled"
+      ]
+    },
+    {
+      "required": [
+        "files_enabled"
       ]
     }
   ]

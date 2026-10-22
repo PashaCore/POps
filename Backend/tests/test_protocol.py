@@ -466,7 +466,7 @@ async def agent_session_with_secret():
         ("UPDATE agent_bypass_keys SET confirmed_at", confirm_key),
         ("SELECT is_quarantined, pending_quarantine_action",
          [{"is_quarantined": True, "act": "lock", "reason": "Sınav"}]),
-        ("SELECT cap_terminal_disable_requested", [{"t": True, "v": False}]),
+        ("SELECT cap_terminal_disable_requested", [{"t": True, "v": False, "f": False}]),
         ("UPDATE tasks SET output", lambda p: [{"id": p[1]}]),
         ("UPDATE file_transfers SET status = $3", lambda p: [{"direction": "push", "name": "Ödev föyü 3.pdf"}]),
         ("UPDATE file_transfers SET status = 'rejected'", [{"direction": "pull"}]),
@@ -1030,7 +1030,7 @@ async def server_builders():
 
         P.set(modules, "enabled", enabled)
         P.set(file_router, "execute_query", FakeDB([("FROM clients WHERE pc_name = ANY", [
-            {"pc_name": HW, "lab_name": "LAB-A", "cap_files_enabled": True}])]))
+            {"pc_name": HW, "lab_name": "LAB-A", "cap_files_enabled": True, "cap_files_disable_requested": False}])]))
         P.set(file_router, "add_audit_log", recorder([]))
         P.set(file_router, "db", SimpleNamespace(transaction=transaction))
         with tempfile.TemporaryDirectory() as files_dir:
@@ -1142,11 +1142,14 @@ async def server_builders():
             chk(len(peered.get("peers") or []) == 3 and peered.get("manifest") == sent.get("manifest"),
                 "peers'lı update_agent")
             take(agent_ws, "system_routes.deploy_update")
-            for fields in ({"terminal_enabled": False}, {"terminal_enabled": False, "vision_enabled": False}):
+            for fields in ({"terminal_enabled": False}, {"terminal_enabled": False, "vision_enabled": False},
+                           {"files_enabled": False}):
                 capability = system_routes.CapabilityInput(pc_name=HW, **fields)
                 await endpoints["/api/system/set-capabilities"](capability, auth)
-            chk([m.get("vision_enabled") for m in agent_ws.sent] == [None, False],
+            chk([m.get("vision_enabled") for m in agent_ws.sent] == [None, False, None],
                 "set_capabilities yalnızca verilen alanlar")
+            chk(agent_ws.sent[-1] == {"action": "set_capabilities", "files_enabled": False},
+                "dosya aktarımı da kapatılabilir")
             take(agent_ws, "system_routes.set_capabilities")
     finally:
         P.restore()

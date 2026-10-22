@@ -55,10 +55,10 @@ def register(router: APIRouter, d: common.Deps) -> None:
                               {"enabled": data.enabled})
         return {"ok": True, "enforce_agent_auth": data.enabled}
 
-    # --- Ajan yetenek politikası (terminal/Vision) — fail-safe: yalnızca KAPATMA -----
+    # --- Ajan yetenek politikası (terminal/Vision/dosya aktarımı) — fail-safe: yalnızca KAPATMA -----
     @router.post("/api/system/set-capabilities")
     async def set_capabilities(data: common.CapabilityInput, auth: dict = Depends(d.require_superadmin)):
-        """Bir cihazda terminal/Vision yeteneğini kapatır. FAIL-SAFE: ajan sunucudan gelen "aç"ı
+        """Bir cihazda terminal, Vision ya da dosya aktarımı yeteneğini kapatır. FAIL-SAFE: ajan sunucudan gelen "aç"ı
         yok sayar (kalıcı açma yeniden kurulum / offline-imzalı politika ister); bu uç pratikte
         yalnızca KAPATMAK içindir. İstek kalıcı kaydedilir; ajan çevrimdışıysa yeniden bağlanınca
         uygulanır. Panelde açığa çekmek isteği temizler ama ajanı otomatik açmaz."""
@@ -75,8 +75,12 @@ def register(router: APIRouter, d: common.Deps) -> None:
             msg["vision_enabled"] = bool(data.vision_enabled)
             params.append(not bool(data.vision_enabled))
             sets.append("cap_vision_disable_requested=$%d" % len(params))
+        if data.files_enabled is not None:
+            msg["files_enabled"] = bool(data.files_enabled)
+            params.append(not bool(data.files_enabled))
+            sets.append("cap_files_disable_requested=$%d" % len(params))
         if len(msg) == 1:
-            raise HTTPException(status_code=400, detail="terminal_enabled ve/veya vision_enabled verin.")
+            raise HTTPException(status_code=400, detail="terminal_enabled, vision_enabled ya da files_enabled verin.")
         params.append(pc)
         await d.execute_query("UPDATE clients SET %s WHERE pc_name=$%d" % (", ".join(sets), len(params)),
                               tuple(params))

@@ -314,6 +314,17 @@
       "CapabilityInput": {
         "additionalProperties": false,
         "properties": {
+          "files_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files Enabled"
+          },
           "pc_name": {
             "title": "Pc Name",
             "type": "string"
@@ -9865,7 +9876,7 @@
     },
     "/api/v1/system/set-capabilities": {
       "post": {
-        "description": "Bir cihazda terminal/Vision yeteneğini kapatır. FAIL-SAFE: ajan sunucudan gelen \"aç\"ı\nyok sayar (kalıcı açma yeniden kurulum / offline-imzalı politika ister); bu uç pratikte\nyalnızca KAPATMAK içindir. İstek kalıcı kaydedilir; ajan çevrimdışıysa yeniden bağlanınca\nuygulanır. Panelde açığa çekmek isteği temizler ama ajanı otomatik açmaz.",
+        "description": "Bir cihazda terminal, Vision ya da dosya aktarımı yeteneğini kapatır. FAIL-SAFE: ajan sunucudan gelen \"aç\"ı\nyok sayar (kalıcı açma yeniden kurulum / offline-imzalı politika ister); bu uç pratikte\nyalnızca KAPATMAK içindir. İstek kalıcı kaydedilir; ajan çevrimdışıysa yeniden bağlanınca\nuygulanır. Panelde açığa çekmek isteği temizler ama ajanı otomatik açmaz.",
         "operationId": "set_capabilities_api_system_set_capabilities_post",
         "requestBody": {
           "content": {

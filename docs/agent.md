@@ -168,7 +168,7 @@ What the service does with each server command:
 | `result_ack` | The server stored the task result for `task_id`; the agent deletes it from `C:\POpsData\secure\pending-results.json`. |
 | `update_result_ack` | The server stored the update result with this `result_id`; the agent sets `update-result.json` aside. |
 | `set_bypass_secret` | Stores the per-device offline bypass key and acknowledges its fingerprint; accepted only on a device-secret command connection. |
-| `set_capabilities` | Switches capabilities **off**: the server sends `terminal_enabled` / `vision_enabled`; the agent also applies `exam_enabled`, `files_enabled`, `power_enabled`, `message_enabled` and `peer_cache_enabled`. Requests to switch one on are ignored. |
+| `set_capabilities` | Switches capabilities **off**: the server sends `terminal_enabled` / `vision_enabled` / `files_enabled`; the agent also applies `exam_enabled`, `files_enabled`, `power_enabled`, `message_enabled` and `peer_cache_enabled`. Requests to switch one on are ignored. |
 | `update_agent` | Starts a signed update (below). |
 
 The server may also send `scan_updates` and `install_updates`

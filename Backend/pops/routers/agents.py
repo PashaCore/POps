@@ -1055,8 +1055,8 @@ async def _on_capabilities(conn: _AgentConn, payload: dict) -> None:
     # Yönetici daha önce kapatma istediyse ama ajan hâlâ AÇIK bildiriyorsa (ör. istek çevrimdışıyken verildi)
     # kapatmayı yeniden gönder. Fail-safe: yalnızca kapatırız.
     reqrow = await execute_query(
-        "SELECT cap_terminal_disable_requested AS t, cap_vision_disable_requested AS v "
-        "FROM clients WHERE pc_name=$1",
+        "SELECT cap_terminal_disable_requested AS t, cap_vision_disable_requested AS v, "
+        "cap_files_disable_requested AS f FROM clients WHERE pc_name=$1",
         (conn.hwid,),
         fetch=True,
     )
@@ -1066,6 +1066,8 @@ async def _on_capabilities(conn: _AgentConn, payload: dict) -> None:
             resend["terminal_enabled"] = False
         if reqrow[0]["v"] and v:
             resend["vision_enabled"] = False
+        if reqrow[0]["f"] and f:
+            resend["files_enabled"] = False
         if resend:
             await manager.send_command({"action": "set_capabilities", **resend}, conn.hwid)
     devicelist.touch([conn.hwid])

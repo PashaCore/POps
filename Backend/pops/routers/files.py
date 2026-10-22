@@ -120,9 +120,10 @@ async def _targets(pcs, auth: dict) -> tuple:
     """(gönderilebilir bilgisayarlar [(pc, lab)], atlananlar [{pc_name, reason}]). Sebep: unknown (kayıtlı değil ya da
     isteyenin kurum birimi kapsamı dışında),
     module_closed (dosya aktarımı modülü kapalı), offline, unsupported (ajan özelliği bilmiyor), disabled (bilgisayarda
-    kapatılmış)."""
+    kapatılmış ya da yönetici kalıcı kapattı: ajan kapatmayı henüz uygulamamış olsa da gönderilmez)."""
     rows = await execute_query(
-        "SELECT pc_name, lab_name, cap_files_enabled FROM clients WHERE pc_name = ANY($1::text[])", (pcs,), fetch=True
+        "SELECT pc_name, lab_name, cap_files_enabled, cap_files_disable_requested FROM clients "
+        "WHERE pc_name = ANY($1::text[])", (pcs,), fetch=True
     )
     scope = await tenancy.scope_of(auth)
     known = {r["pc_name"]: r for r in rows or [] if scope.allows_lab(r["lab_name"])}
@@ -143,7 +144,7 @@ async def _targets(pcs, auth: dict) -> tuple:
             skipped.append({"pc_name": pc, "reason": "offline"})
         elif r["cap_files_enabled"] is None:
             skipped.append({"pc_name": pc, "reason": "unsupported"})
-        elif not r["cap_files_enabled"]:
+        elif not r["cap_files_enabled"] or r["cap_files_disable_requested"]:
             skipped.append({"pc_name": pc, "reason": "disabled"})
         else:
             ok.append((pc, lab))

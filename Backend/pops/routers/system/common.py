@@ -45,6 +45,7 @@ class CapabilityInput(StrictInput):
     pc_name: str
     terminal_enabled: Optional[bool] = None   # yalnızca False anlamlı (fail-safe kapatma)
     vision_enabled: Optional[bool] = None
+    files_enabled: Optional[bool] = None
 
 
 class ReenrollInput(StrictInput):

@@ -705,7 +705,7 @@ only whether one is saved.
 | DELETE | `/api/system/enroll-token/{token_id}` | require_superadmin | Revokes (deletes) a token. |
 | POST | `/api/system/enforce-auth` | require_superadmin | `{enabled}`: turns `enforce_agent_auth` on or off. |
 | POST | `/api/system/allow-reenroll` | require_superadmin | `{pc_name, allow}`: lets an already enrolled device obtain a new secret with an enrollment token once. |
-| POST | `/api/system/set-capabilities` | require_superadmin | `{pc_name, terminal_enabled?, vision_enabled?}`. `false` disables the capability on the agent and is re-sent when the device reconnects; `true` only clears that standing request (agents ignore an "enable" from the server). |
+| POST | `/api/system/set-capabilities` | require_superadmin | `{pc_name, terminal_enabled?, vision_enabled?, files_enabled?}`. `false` disables the capability on the agent and is re-sent when the device reconnects; `true` only clears that standing request (agents ignore an "enable" from the server). |
 
 ### Server self-update
 
