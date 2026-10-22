@@ -301,7 +301,7 @@
   "Uzak ekran kapalı": "Remote screen off",
   "{what} (panelden)": "{what} (from the panel)",
   "{what} (kurulumda)": "{what} (at install)",
-  "Uzak komut ve uzak ekran": "Remote command and remote screen",
+  "Uzak komut, uzak ekran ve dosya aktarımı": "Remote command, remote screen and file transfer",
   "Bir bilgisayarda kalıcı kapatılır; sunucu ele geçirilse bile o bilgisayarda çalışmaz.": "Turned off permanently on a computer; even a compromised server can't use them there.",
   "Bilgisayar seç": "Choose computer",
   "Bilgisayar seç…": "Choose computer…",
@@ -456,5 +456,11 @@
   "{n} modül kapalı": {"one": "{n} module off", "other": "{n} modules off"},
   "Yedek her gece alınır ve geri yüklenerek sınanır.": "A backup is taken every night and tested by restoring it.",
   "Bağlı ajanlar, yük, istekler, işlemler, olaylar ve depolama": "Connected agents, load, requests, jobs, events and storage",
-  "Açıkken önemli olaylar e-posta ve webhook ile de gider; aynı olay 10 dakikada bir kez.": "When on, important events also go out by email and webhook; the same event at most once every 10 minutes."
+  "Açıkken önemli olaylar e-posta ve webhook ile de gider; aynı olay 10 dakikada bir kez.": "When on, important events also go out by email and webhook; the same event at most once every 10 minutes.",
+  "Dosya aktarımı": "File transfer",
+  "Dosya aktarımı kapalı": "File transfer off",
+  "Bu ajan dosya aktarımını desteklemiyor": "This agent does not support file transfer",
+  "{name} bilgisayarında dosya aktarımı kapalı tutulsun mu?": "Keep file transfer off on {name}?",
+  "{name} bilgisayarında dosya aktarımı kapatılsın mı?": "Turn off file transfer on {name}?",
+  "Dosya aktarımını kapat": "Turn off file transfer"
 }

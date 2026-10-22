@@ -1453,32 +1453,43 @@ if (!$sysSuper || !isset($sysTabs[$sysTab])) { $sysTab = array_key_first($sysTab
     // =================================================================
     // CİHAZ YETENEKLERİ (uzak komut / uzak ekran kalıcı kapatma)
     // =================================================================
+    // Kalıcı kapatılabilen yetenekler: cihaz listesindeki alanlar, set-capabilities alanı ve geri açan MSI bayrağı
+    const CAPS = {
+        terminal: { en: 'cap_terminal_enabled', req: 'cap_terminal_disable_requested', field: 'terminal_enabled', flag: 'TERMINAL_ENABLED=1' },
+        vision: { en: 'cap_vision_enabled', req: 'cap_vision_disable_requested', field: 'vision_enabled', flag: 'VISION_ENABLED=1' },
+        files: { en: 'cap_files_enabled', req: 'cap_files_disable_requested', field: 'files_enabled', flag: 'FILES_ENABLED=1' }
+    };
+    const capName = (which) => which === 'terminal' ? POps.t('Uzak komut') : which === 'vision' ? POps.t('Uzak ekran') : POps.t('Dosya aktarımı');
+    const capOffName = (which) => which === 'terminal' ? POps.t('Uzak komut kapalı') : which === 'vision' ? POps.t('Uzak ekran kapalı') : POps.t('Dosya aktarımı kapalı');
+    const capEnabled = (d, which) => d[CAPS[which].en];
+    const capRequested = (d, which) => !!d[CAPS[which].req];
+    const capLimited = (d) => Object.keys(CAPS).some(w => capEnabled(d, w) === false || capRequested(d, w));
     // Kapalı|switch: bir özelliğin kapalı olması (düz "Kapalı" cihazın çevrimdışı olmasıdır)
-    function capWord(enabled, requested) {
+    function capWord(enabled, requested, which) {
         if (requested) return { k: 'bad', w: POps.tx('Kapalı', 'switch'), how: POps.t('Panelden kalıcı kapatıldı') };
         if (enabled === false) return { k: 'bad', w: POps.tx('Kapalı', 'switch'), how: POps.t('Kurulumda kapatılmış') };
         if (enabled === true) return { k: 'ok', w: POps.t('Açık'), how: '' };
+        if (which === 'files') return { k: 'off', w: POps.t('Bildirilmedi'), how: POps.t('Bu ajan dosya aktarımını desteklemiyor') };
         return { k: 'off', w: POps.t('Bildirilmedi'), how: POps.t('Ajan bu bilgiyi göndermiyor (0.1.4 öncesi)') };
     }
     let capHash = '';
     function renderCaps(force) {
         const box = $('capSet');
         if (!box || !state.devicesLoaded) return;
-        const list = devs().filter(d => d.cap_terminal_enabled === false || d.cap_vision_enabled === false || d.cap_terminal_disable_requested || d.cap_vision_disable_requested)
+        const list = devs().filter(capLimited)
             .sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }));
-        const sig = JSON.stringify([devs().map(d => [d.hostname, POps.deviceName(d), d.status]), list.map(d => [d.hostname, d.cap_terminal_enabled, d.cap_vision_enabled, d.cap_terminal_disable_requested, d.cap_vision_disable_requested])]);
+        const sig = JSON.stringify([devs().map(d => [d.hostname, POps.deviceName(d), d.status]), list.map(d => [d.hostname, ...Object.keys(CAPS).map(w => [capEnabled(d, w), capRequested(d, w)])])]);
         if (!force && sig === capHash) return;
         capHash = sig;
         setState('capState', list.length ? 'off' : 'ok', list.length ? POps.tn('{n} bilgisayarda kısıtlı', list.length) : POps.t('Hepsinde açık'));
         const opts = devs().slice().sort((a, b) => POps.deviceName(a).localeCompare(POps.deviceName(b), 'tr', { numeric: true }))
             .map(d => `<option value="${escapeHtml(d.hostname)}">${escapeHtml(POps.deviceName(d))}${d.lab && d.lab !== dev.UNASSIGNED ? ' · ' + escapeHtml(d.lab) : ''}</option>`).join('');
         const rowsHtml = list.map(d => {
-            const t = capWord(d.cap_terminal_enabled, d.cap_terminal_disable_requested), v = capWord(d.cap_vision_enabled, d.cap_vision_disable_requested);
-            const parts = [t.k === 'bad' ? POps.t('Uzak komut kapalı') : '', v.k === 'bad' ? POps.t('Uzak ekran kapalı') : ''].filter(Boolean).join(' · ');
-            const what = d.cap_terminal_disable_requested || d.cap_vision_disable_requested ? POps.t('{what} (panelden)', { what: parts }) : POps.t('{what} (kurulumda)', { what: parts });
+            const parts = Object.keys(CAPS).filter(w => capWord(capEnabled(d, w), capRequested(d, w), w).k === 'bad').map(capOffName).join(' · ');
+            const what = Object.keys(CAPS).some(w => capRequested(d, w)) ? POps.t('{what} (panelden)', { what: parts }) : POps.t('{what} (kurulumda)', { what: parts });
             return `<div class="srow click" data-host="${escapeHtml(d.hostname)}" role="button" tabindex="0"><span class="dot ${escapeHtml(dev.state(d).cls)}"></span><div class="grow"><div class="t">${escapeHtml(POps.deviceName(d))}</div><div class="d">${escapeHtml(what)}</div></div>${POps.iconHtml('right', 'sm ico-lead')}</div>`;
         }).join('');
-        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Uzak komut ve uzak ekran')}</div><div class="d">${POps.tHtml('Bir bilgisayarda kalıcı kapatılır; sunucu ele geçirilse bile o bilgisayarda çalışmaz.')}</div></div>
+        box.innerHTML = `<div class="srow"><div class="grow"><div class="t">${POps.tHtml('Uzak komut, uzak ekran ve dosya aktarımı')}</div><div class="d">${POps.tHtml('Bir bilgisayarda kalıcı kapatılır; sunucu ele geçirilse bile o bilgisayarda çalışmaz.')}</div></div>
             <select id="capPick" aria-label="${escapeHtml(POps.t('Bilgisayar seç'))}" class="wide" style="width:min(240px,100%)"><option value="">${POps.tHtml('Bilgisayar seç…')}</option>${opts}</select></div>${rowsHtml}`;
         $('capPick').addEventListener('change', (e) => { if (e.target.value) { openCap(e.target.value); e.target.value = ''; } });
     }
@@ -1488,11 +1499,11 @@ if (!$sysSuper || !isset($sysTabs[$sysTab])) { $sysTab = array_key_first($sysTab
     }
 
     function capRowHtml(which, d) {
-        const enabled = which === 'terminal' ? d.cap_terminal_enabled : d.cap_vision_enabled;
-        const requested = which === 'terminal' ? d.cap_terminal_disable_requested : d.cap_vision_disable_requested;
-        const c = capWord(enabled, requested);
-        const flag = which === 'terminal' ? 'TERMINAL_ENABLED=1' : 'VISION_ENABLED=1';
-        const name = which === 'terminal' ? POps.t('Uzak komut') : POps.t('Uzak ekran');
+        const enabled = capEnabled(d, which);
+        const requested = capRequested(d, which);
+        const c = capWord(enabled, requested, which);
+        const flag = CAPS[which].flag;
+        const name = capName(which);
         let btnHtml, hint;
         if (requested) { btnHtml = `<button type="button" class="btn secondary sm" data-act="cap-on" data-which="${escapeHtml(which)}">${POps.tHtml('İzin ver')}</button>`; hint = POps.t('İzin vermek kalıcı kapatmayı kaldırır; yetenek ancak ajan kurulumu onu açık bildirirse geri gelir.'); }
         else if (enabled === false) { btnHtml = `<button type="button" class="btn danger-soft sm" data-act="cap-off" data-which="${escapeHtml(which)}">${POps.tHtml('Kapalı tut')}</button>`; hint = POps.t('Uzaktan açılamaz; açmak için ajanı {flag} ile yeniden kurun. "Kapalı tut" yeniden kurulsa bile kapalı kalmasını sağlar.', { flag }); }
@@ -1502,7 +1513,7 @@ if (!$sysSuper || !isset($sysTabs[$sysTab])) { $sysTab = array_key_first($sysTab
     let capSig = '';
     function renderCapDrawer(host, onlyIfChanged) {
         const d = dev.find(host);
-        const sig = JSON.stringify(d ? [d.status, POps.deviceName(d), d.lab, dev.version(d), d.cap_terminal_enabled, d.cap_vision_enabled, d.cap_terminal_disable_requested, d.cap_vision_disable_requested, d.cap_server_ca, d.bypass_key, d.last_disconnect_reason, d.agent_health] : null);
+        const sig = JSON.stringify(d ? [d.status, POps.deviceName(d), d.lab, dev.version(d), ...Object.keys(CAPS).map(w => [capEnabled(d, w), capRequested(d, w)]), d.cap_server_ca, d.bypass_key, d.last_disconnect_reason, d.agent_health] : null);
         if (onlyIfChanged && sig === capSig) return;
         capSig = sig;
         const body = POps.drawer.body();
@@ -1529,7 +1540,7 @@ if (!$sysSuper || !isset($sysTabs[$sysTab])) { $sysTab = array_key_first($sysTab
         }
         const subHtml = `<span class="dot ${escapeHtml(st.cls)}"></span>${escapeHtml(st.word)}${d.lab && d.lab !== dev.UNASSIGNED ? ' · ' + escapeHtml(d.lab) : ''}`;
         body.innerHTML = drawerHeadHtml(POps.deviceName(d), subHtml, 'monitor', st.cls)
-            + `<div><h3>${POps.tHtml('Yetenekler')}</h3><div class="set">${capRowHtml('terminal', d)}${capRowHtml('vision', d)}</div>`
+            + `<div><h3>${POps.tHtml('Yetenekler')}</h3><div class="set">${capRowHtml('terminal', d)}${capRowHtml('vision', d)}${capRowHtml('files', d)}</div>`
             + (d.cap_terminal_enabled == null && d.cap_vision_enabled == null ? `<div class="dr-note" style="margin-top:8px">${POps.tHtml('Bu ajan yetenek durumunu bildirmiyor (bildirim 0.1.4 ile geldi). Kapatma şimdi kaydedilebilir, güncellemeden sonra uygulanır.')}</div>` : '') + '</div>'
             + `<div><h3>${isOn(d) ? POps.tHtml('Ajan durumu') : POps.tHtml('Ajan durumu (son bilinen)')}</h3><div class="glist">${factsHtml}</div>${noteHtml}</div>`
             + `<div><a class="btn secondary" href="pc?id=${encodeURIComponent(d.hostname)}">${POps.iconHtml('monitor', 'sm')}${POps.tHtml('Bilgisayar sayfasını aç')}</a></div>`;
@@ -1546,17 +1557,18 @@ if (!$sysSuper || !isset($sysTabs[$sysTab])) { $sysTab = array_key_first($sysTab
     async function capSet(host, which, enable, btn) {
         const d = dev.find(host) || {};
         const name = POps.deviceName(d);
-        const term = which === 'terminal';
-        const alreadyOff = (term ? d.cap_terminal_enabled : d.cap_vision_enabled) === false;
+        const alreadyOff = capEnabled(d, which) === false;
+        const keepTitle = { terminal: POps.t('{name} bilgisayarında uzak komut kapalı tutulsun mu?', { name }), vision: POps.t('{name} bilgisayarında uzak ekran kapalı tutulsun mu?', { name }), files: POps.t('{name} bilgisayarında dosya aktarımı kapalı tutulsun mu?', { name }) };
+        const offTitle = { terminal: POps.t('{name} bilgisayarında uzak komut kapatılsın mı?', { name }), vision: POps.t('{name} bilgisayarında uzak ekran kapatılsın mı?', { name }), files: POps.t('{name} bilgisayarında dosya aktarımı kapatılsın mı?', { name }) };
+        const offText = { terminal: POps.t('Uzak komutu kapat'), vision: POps.t('Uzak ekranı kapat'), files: POps.t('Dosya aktarımını kapat') };
         if (!enable && !await POps.confirm({
-            title: alreadyOff ? (term ? POps.t('{name} bilgisayarında uzak komut kapalı tutulsun mu?', { name }) : POps.t('{name} bilgisayarında uzak ekran kapalı tutulsun mu?', { name }))
-                : (term ? POps.t('{name} bilgisayarında uzak komut kapatılsın mı?', { name }) : POps.t('{name} bilgisayarında uzak ekran kapatılsın mı?', { name })),
+            title: alreadyOff ? keepTitle[which] : offTitle[which],
             message: alreadyOff ? POps.t('Kurulumda kapatılmış; ajan açık kurulsa bile kapalı kalır. Geri açmak için "İzin ver" ve ajanın yeniden kurulması gerekir.')
                 : POps.t('Kalıcıdır: geri açmak için "İzin ver" ve ajanın bilgisayarda yeniden kurulması gerekir.'),
-            confirmText: alreadyOff ? POps.t('Kapalı tut') : (term ? POps.t('Uzak komutu kapat') : POps.t('Uzak ekranı kapat')), danger: true, icon: 'lock'
+            confirmText: alreadyOff ? POps.t('Kapalı tut') : offText[which], danger: true, icon: 'lock'
         })) return;
         const body = { pc_name: host };
-        body[which === 'terminal' ? 'terminal_enabled' : 'vision_enabled'] = !!enable;
+        body[CAPS[which].field] = !!enable;
         try {
             const r = await POps.busy(btn, () => POps.post('/api/system/set-capabilities', body));
             POps.toast('success', enable ? POps.t('Kalıcı kapatma kaldırıldı. Yetenek, ajan kurulumu onu açık bildirince geri gelir.')
