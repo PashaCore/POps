@@ -19,9 +19,12 @@ namespace POpsAgent
     // SYSTEM olarak, kabuk olmadan, her bağımsız değişkeni ayrı vererek çalıştırır:
     //   install --id <id> -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements
     //   --disable-interactivity [--version <v>]
-    // --source winget: yalnızca topluluk kaynağı; SYSTEM olarak msstore kaynağı devreye girmez. Yalnızca kullanıcı kapsamında
-    // yükleyicisi olan paket --scope machine ile "uygulanabilir yükleyici yok" (ExitNoApplicableInstaller) ile biter: aynı
-    // görevde bir kez --scope olmadan yeniden denenir (bkz. RetryArguments). Çıktının ilk satırı kullanılan kapsamdır.
+    // --source winget: yalnızca topluluk kaynağı; SYSTEM olarak msstore kaynağı devreye girmez. Sürüm verilmediyse önce kaynaktaki
+    // en yeni sürüm sorulur ve kurulum ona sabitlenir (bkz. VersionsArguments, LatestVersion): sürümsüz ve --scope machine ile
+    // winget, machine yükleyicisi olan en yeni sürümü sessizce seçerdi (ör. Anki.Anki: 26.09.3 yerine 2023'ün 2.1.65'i).
+    // Yalnızca kullanıcı kapsamında yükleyicisi olan paket (sürüm) --scope machine ile "uygulanabilir yükleyici yok"
+    // (ExitNoApplicableInstaller) ile biter: aynı görevde bir kez --scope olmadan yeniden denenir (bkz. RetryArguments). Çıktının
+    // ilk satırı kullanılan kapsamdır; sürümü ajan seçtiyse ikinci satır o sürümdür.
     // Sonuç execute gibi "result"tır; çıkış kodu winget'in kendi kodudur (işaretli 32 bit, ör. 0x8A150061 = -1978335135;
     // yeniden denendiyse ikinci denemenin kodu).
     [SupportedOSPlatform("windows")]
@@ -46,6 +49,10 @@ namespace POpsAgent
         public const string UserScopeNote = "[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]";
         // Yeniden denendiyse ilk denemenin çıktısından en çok bu kadarı (asıl çıktı ikinci denemenin; ilki birkaç satırdır)
         internal const int MachineAttemptMaxChars = 4096;
+        // Sürüm sorgusunun kendi süre sınırı; görevin süre sınırı, cancel_task ve servis durması onu da kapsar
+        public static readonly TimeSpan QueryLimit = TimeSpan.FromSeconds(60);
+        // Görev sürüm sorgusu sırasında durdu (cancel_task, servis durması, süre sınırı): kurulum çalışmadı, kapsam satırı yok
+        public const string LookupStoppedNote = "[sürüm: en yeni sürüm sorgulanırken görev durdu; kurulum başlamadı]";
 
         // Tam eşleşme: \z sondaki satır sonunu da kabul etmez ($ ederdi)
         private static readonly Regex IdRegex = new Regex(@"^[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -86,21 +93,64 @@ namespace POpsAgent
             return args;
         }
 
+        // Kaynaktaki sürümlerin listesi (en yenisi başta; bkz. LatestVersion). Hiçbir şey kurmaz.
+        public static List<string> VersionsArguments(string id) =>
+            new List<string> { "show", "--id", id, "-e", "--source", "winget", "--versions", "--accept-source-agreements", "--disable-interactivity" };
+
+        // Bir winget sorgusunun (show, list) neden sonuç vermediği; null: bitti ve 0 ile çıktı. limitReached: kendi süre sınırında
+        // (limit) bitmedi
+        public static string? QueryFailure(string command, int exitCode, bool limitReached, TimeSpan limit) =>
+            limitReached ? $"winget {command} {limit.TotalSeconds:0} sn içinde bitmedi" : exitCode != 0 ? $"winget {command} çıkış kodu {exitCode}" : null;
+
+        // "winget show --versions" çıktısından kaynaktaki en yeni sürüm. winget sürümleri tek sütunlu bir tabloda en yenisi başta
+        // yazar; sütun başlığı yerelleştirilir ("Version", "Sürüm"), altındaki tire satırı yerelleştirilmez: ondan sonraki ilk satır
+        // alınır. Değer sunucudan gelen sürümün kuralına uymalıdır (VersionRegex): boş, boşluklu ya da tablonun kısalttığı ("…")
+        // değer kabul edilmez. null: bulunamadı, reason kısa nedeni söyler.
+        public static string? LatestVersion(string output, out string reason)
+        {
+            reason = "";
+            bool table = false;
+            foreach (string raw in FinalLines(output ?? ""))
+            {
+                string line = raw.Trim();
+                if (!table)
+                {
+                    table = line.Length >= 3 && line.All(c => c == '-');
+                    continue;
+                }
+                if (line.Length == 0 || IsProgress(line)) continue;
+                if (VersionRegex.IsMatch(line)) return line;
+                reason = "listedeki ilk sürüm geçersiz ya da kısaltılmış";
+                return null;
+            }
+            reason = table ? "sürüm listesi boş" : "çıktıda sürüm listesi yok";
+            return null;
+        }
+
+        // Sürümü sunucu vermediyse çıktının ikinci satırı: ajanın seçtiği sürüm ya da neden seçemediği
+        public static string PinnedNote(string version) => $"[sürüm: kaynaktaki en yeni sürüm {version} seçildi]";
+        public static string UnpinnedNote(string reason) => $"[sürüm: en yeni sürüm bulunamadı ({reason}); winget kendisi seçti]";
+
         // İlk denemenin (--scope machine) çıkış kodundan, aynı görevdeki tek yeniden denemenin bağımsız değişkenleri: yalnızca
         // "uygulanabilir yükleyici yok" kodunda, --scope olmadan. null: yeniden denenmez.
         public static List<string>? RetryArguments(int machineExitCode, string id, string? version) =>
             machineExitCode == ExitNoApplicableInstaller ? Arguments(id, version, machineScope: false) : null;
 
-        // Sunucuya giden çıktı: ilk satır kullanılan kapsam, ardından winget'in temizlenmiş çıktısı. machineAttempt: kapsamsız
-        // yeniden denendiyse ilk denemenin (--scope machine) çıktısı; iki denemenin çıktısı sırayla yazılır.
-        public static string ResultOutput(string output, string? machineAttempt = null)
+        // Sunucuya giden çıktı: ilk satır kullanılan kapsam, sürümü ajan seçtiyse ardından versionNote (PinnedNote ya da
+        // UnpinnedNote), sonra winget'in temizlenmiş çıktısı. machineAttempt: kapsamsız yeniden denendiyse ilk denemenin (--scope
+        // machine) çıktısı; iki denemenin çıktısı sırayla yazılır.
+        public static string ResultOutput(string output, string? machineAttempt = null, string? versionNote = null)
         {
-            if (machineAttempt == null) return CommandExecutionPolicy.TruncateOutput(MachineScopeNote + "\n" + CleanOutput(output));
+            string notes = versionNote == null ? "" : "\n" + versionNote;
+            if (machineAttempt == null) return CommandExecutionPolicy.TruncateOutput(MachineScopeNote + notes + "\n" + CleanOutput(output));
             string first = CleanOutput(machineAttempt);
             if (first.Length > MachineAttemptMaxChars) first = string.Concat(first.AsSpan(0, MachineAttemptMaxChars), "\n[ÇIKTI KISALTILDI]");
-            return CommandExecutionPolicy.TruncateOutput($"{UserScopeNote}\n[1. deneme, --scope machine: çıkış {ExitNoApplicableInstaller}]\n{first}\n"
-                + $"[2. deneme, kapsamsız]\n{CleanOutput(output)}");
+            return CommandExecutionPolicy.TruncateOutput($"{UserScopeNote}{notes}\n[1. deneme, --scope machine: çıkış {ExitNoApplicableInstaller}]\n"
+                + $"{first}\n[2. deneme, kapsamsız]\n{CleanOutput(output)}");
         }
+
+        // Görev sürüm sorgusu sırasında durduysa çıktı: kurulum çalışmadı (kapsam satırı yok), ardından durma nedeni
+        public static string LookupStoppedOutput(string output) => CommandExecutionPolicy.TruncateOutput(LookupStoppedNote + "\n" + CleanOutput(output));
 
         // Yerel olay günlüğü için komut metni (kimlik ve sürüm açıkça yazılabilir)
         public static string Describe(string id, string? version) => version == null ? $"winget install {id}" : $"winget install {id} --version {version}";
@@ -130,17 +180,25 @@ namespace POpsAgent
         {
             if (string.IsNullOrEmpty(output)) return output;
             var lines = new List<string>();
-            foreach (string raw in output.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+            foreach (string line in FinalLines(output))
             {
-                string line = raw;
-                int cr = line.TrimEnd('\r').LastIndexOf('\r');
-                if (cr >= 0) line = line.Substring(cr + 1);
-                line = line.TrimEnd('\r', ' ');
                 if (line.Length > 0 && IsProgress(line)) continue;
                 lines.Add(line);
             }
             while (lines.Count > 0 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
             return string.Join("\n", lines);
+        }
+
+        // Çıktının satırları, her birinin son hâliyle: winget satır başına (\r) dönüp aynı satırı yeniden çizer
+        private static IEnumerable<string> FinalLines(string output)
+        {
+            foreach (string raw in output.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+            {
+                string line = raw;
+                int cr = line.TrimEnd('\r').LastIndexOf('\r');
+                if (cr >= 0) line = line.Substring(cr + 1);
+                yield return line.TrimEnd('\r', ' ');
+            }
         }
 
         private static bool IsProgress(string line)

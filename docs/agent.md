@@ -265,10 +265,20 @@ arm64 to match the OS), and only from that folder. When none exists, answer `exi
 install --id <id> -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity [--version <version>]
 ```
 
-`--source winget` keeps the msstore source out under LocalSystem (agents up to 0.1.23 ran without it). When this run
-ends with `0x8A150010` (-1978335216, no applicable installer: the package has no machine-scope installer), run it
-once more with the same arguments minus `--scope machine`, within the same task and time limit, and answer one result
-with the second run's exit code; see point 7.
+`--source winget` keeps the msstore source out under LocalSystem (agents up to 0.1.23 ran without it). When
+`version` is `null`, first look up the newest version in the source, the same way (no shell, one argument per entry):
+
+```
+show --id <id> -e --source winget --versions --accept-source-agreements --disable-interactivity
+```
+
+and pass it as `--version <newest>`. Without a version, `--scope machine` makes winget silently pick the newest
+version that *has* a machine-scope installer, which can be years old (field test: `Anki.Anki` gave 2.1.65 from 2023
+instead of 26.09.3, because every later version is user-scope only). When the newest version cannot be determined,
+run without `--version`, as before, and say so in the output. When the install run ends with `0x8A150010`
+(-1978335216, no applicable installer: this version has no machine-scope installer), run it once more with the same
+arguments minus `--scope machine` (so with the same pinned version), within the same task and time limit, and answer
+one result with the second run's exit code; see point 7.
 
 Same limits as `execute`: 30-minute time limit (-1), `cancel_task` ends it and its child processes (-2), service
 stop (-4), the same output cap. Capture stdout and stderr; drop the progress-bar and spinner lines winget draws
@@ -298,17 +308,35 @@ command (the package id and version may be recorded in clear).
 
 **7. The Windows agent** (`WingetInstall.cs`, `Commands/WingetInstallHandler.cs`), from 0.1.24-alpha:
 
-- **User-scope-only packages.** When that run ends with winget's "no applicable installer" code, `0x8A150010` =
-  -1978335216 (`APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER`, "None of the installers are applicable for the
-  current system"; see winget's
+- **Newest version pinned.** With `version: null` the agent first runs
+  `winget show --id <id> -e --source winget --versions --accept-source-agreements --disable-interactivity` (point 5)
+  and takes the first row under the dashed separator line of the version table: winget lists the newest version
+  first, and the column header is localized ("Version", "Sürüm") but the dashes are not. The value must pass the same
+  check as a server-given `version` (`^[0-9A-Za-z.+_-]{1,40}$`), so an empty row, a row with spaces or one the table
+  cut short with `…` is not used. The lookup has its own 60-second limit and is part of the task like the install
+  runs. When it fails (non-zero exit code, 60 seconds passed, no version table, an empty or unusable first row) the
+  install runs without `--version`, exactly as before. A server-given `version` is used as it is, with no lookup.
+  Consequence: a package whose newest version has no installer for this PC at all (another architecture only, a newer
+  Windows only) now ends with `0x8A150010` after both runs instead of quietly installing an older version; the admin
+  can ask for a specific version.
+- **User-scope-only packages.** When the install run ends with winget's "no applicable installer" code,
+  `0x8A150010` = -1978335216 (`APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER`, "None of the installers are applicable
+  for the current system"; see winget's
   [return codes](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md)),
-  it runs winget once more with the same arguments minus `--scope machine`. No other code is retried, and there is
-  no third run. Both runs are the same task: the `task_id` stays reserved (a repeated `winget_install` is ignored),
-  `cancel_task` and a service stop end the second run or keep it from starting, and the 30-minute limit covers both
-  runs together. There is still one `result`, with the second run's exit code.
+  it runs winget once more with the same arguments minus `--scope machine` (the same pinned version). No other code
+  is retried, and there is no third run. The lookup and both runs are the same task: the `task_id` stays reserved (a
+  repeated `winget_install` is ignored), `cancel_task` and a service stop end the running step or keep the next one
+  from starting, and the 30-minute limit covers all of them together. There is still one `result`, with the last
+  install run's exit code.
 - **Scope in the output.** The first line of `output` names the scope used: `[kapsam: machine]`, or after the retry
-  `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`, followed by the first run's output (at most
-  4,096 characters) and the second run's, each under its own heading. Refusals (-5, -7) carry no scope line.
+  `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`. When the agent chose the version, the second
+  line says which: `[sürüm: kaynaktaki en yeni sürüm 26.09.3 seçildi]`, or
+  `[sürüm: en yeni sürüm bulunamadı (<reason>); winget kendisi seçti]` with a short reason (`winget show çıkış kodu
+  <code>`, `winget show 60 sn içinde bitmedi`, `çıktıda sürüm listesi yok`, `sürüm listesi boş`, `listedeki ilk sürüm
+  geçersiz ya da kısaltılmış`); with a server-given version there is no such line. Then the first run's output (at
+  most 4,096 characters) and the second run's, each under its own heading. Refusals (-5, -7) carry no scope line;
+  neither does a task stopped during the lookup (-1, -2, -4), which starts with `[sürüm: en yeni sürüm sorgulanırken
+  görev durdu; kurulum başlamadı]` followed by the stop reason.
 
 ### `power` and `user_message` contract
 

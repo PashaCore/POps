@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using System.Threading;
@@ -10,7 +11,8 @@ namespace POpsAgent
     // winget_install (bkz. WingetInstall). Retler "result" olarak bildirilir (-5; winget yoksa -7) ve hiçbir şey
     // çalıştırılmaz. Yerel terminal yeteneği ya da sınıfın deploy modülü kapalıysa ardından capability_denied gider
     // (execute ile aynı sıra). Çalıştırma execute gibi: aynı görev iki kez başlamaz, süre sınırı, cancel_task, sonuç
-    // result_ack'e kadar saklanır. Kapsamsız yeniden deneme aynı görevin parçasıdır (bkz. WingetInstall.RetryArguments).
+    // result_ack'e kadar saklanır. Sürüm sorgusu ve kapsamsız yeniden deneme aynı görevin parçasıdır (bkz.
+    // WingetInstall.LatestVersion, WingetInstall.RetryArguments).
     [SupportedOSPlatform("windows")]
     internal sealed class WingetInstallHandler : ICommandHandler
     {
@@ -38,6 +40,9 @@ namespace POpsAgent
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { WingetInstall.Action };
+
+        // Sürüm sorgusunun kendi süre sınırı (testler kısaltır)
+        internal TimeSpan QueryLimit { get; set; } = WingetInstall.QueryLimit;
 
         public Task HandleAsync(ServerCommand command) => HandleWingetInstallAsync(command.Root, command.Stopping);
 
@@ -84,18 +89,12 @@ namespace POpsAgent
             }
             POpsHelpers.Log("AGENT", $"winget kurulumu başlıyor: {WingetInstall.Describe(id, version)} (TaskID: {tid})");
             _audit(LocalAudit.CommandStarted(tid, WingetInstall.Describe(id, version), requestedBy));
-            // Görev kimliği burada (eşzamanlı olarak) ayrılır: arkasından gelen aynı kimlik ikinci işlem başlatamaz. Machine
-            // kapsamında uygulanabilir yükleyici yoksa aynı görevde (kimlik ayrılı, aynı iptal ve süre sınırı) bir kez kapsamsız
-            // yeniden denenir; sonuç bir tanedir, ikinci denemenin çıkış koduyla.
-            CommandExecutionResult? machineAttempt = null;
-            Task<CommandExecutionResult> run = runner.RunProgramAsync(tid, wingetPath, WingetInstall.Arguments(id, version), first =>
-            {
-                List<string>? retry = WingetInstall.RetryArguments(first.ExitCode, id, version);
-                if (retry == null) return null;
-                machineAttempt = first;
-                POpsHelpers.Log("AGENT", $"winget: paketin machine kapsamında uygulanabilir yükleyicisi yok ({WingetInstall.ExitNoApplicableInstaller}); --scope olmadan yeniden deneniyor (TaskID: {tid}).");
-                return retry;
-            }, stoppingToken);
+            // Görev kimliği burada (eşzamanlı olarak) ayrılır: arkasından gelen aynı kimlik ikinci işlem başlatamaz. Bütün adımlar
+            // (sürüm sorgusu, kurulum, kapsamsız yeniden deneme) aynı görevdir: kimlik ayrılı, aynı iptal ve süre sınırı; sonuç bir
+            // tanedir, son kurulum denemesinin çıkış koduyla.
+            var clock = Stopwatch.StartNew();
+            var install = new InstallSteps(tid, wingetPath!, id, version, QueryLimit);
+            Task<CommandExecutionResult> run = runner.RunProgramsAsync(tid, install.RunAsync, stoppingToken);
             _ = Task.Run(async () =>
             {
                 CommandExecutionResult execution = await run;
@@ -104,17 +103,72 @@ namespace POpsAgent
                     POpsHelpers.Log("AGENT", $"winget kurulumu zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
                     return;
                 }
-                TimeSpan duration = execution.Duration + (machineAttempt?.Duration ?? TimeSpan.Zero);
-                _audit(LocalAudit.CommandFinished(tid, execution.ExitCode, duration));
+                _audit(LocalAudit.CommandFinished(tid, execution.ExitCode, clock.Elapsed));
                 await _outbox.SendResultAsync(tid, new
                 {
                     type = "result",
                     pc_name = _hwId(),
-                    output = WingetInstall.ResultOutput(execution.Output, machineAttempt?.Output),
+                    output = install.LookupStopped ? WingetInstall.LookupStoppedOutput(execution.Output)
+                        : WingetInstall.ResultOutput(execution.Output, install.MachineAttempt?.Output, install.VersionNote),
                     task_id = tid,
                     exit_code = execution.ExitCode,
                 });
             }, CancellationToken.None);
+        }
+
+        // Bir winget_install görevinin adımları (CommandRunner.RunProgramsAsync içinde, sırayla) ve sonuca giren parçaları
+        private sealed class InstallSteps
+        {
+            private readonly int _tid;
+            private readonly string _winget;
+            private readonly string _id;
+            private readonly string? _version;
+            private readonly TimeSpan _queryLimit;
+
+            public InstallSteps(int tid, string winget, string id, string? version, TimeSpan queryLimit)
+            {
+                _tid = tid;
+                _winget = winget;
+                _id = id;
+                _version = version;
+                _queryLimit = queryLimit;
+            }
+
+            // Sürümü ajan seçtiyse çıktının ikinci satırı (WingetInstall.PinnedNote ya da UnpinnedNote)
+            public string? VersionNote { get; private set; }
+            // Görev sürüm sorgusu sırasında durdu: kurulum çalışmadı
+            public bool LookupStopped { get; private set; }
+            // Kapsamsız yeniden denendiyse ilk denemenin (--scope machine) sonucu
+            public CommandExecutionResult? MachineAttempt { get; private set; }
+
+            public async Task<CommandExecutionResult> RunAsync(ProgramSteps steps)
+            {
+                string? version = _version;
+                if (version == null)
+                {
+                    // Sürüm verilmedi: kaynaktaki en yeni sürüme sabitlenir; o sürümün machine yükleyicisi yoksa aşağıdaki kapsamsız
+                    // deneme çalışır (sabitlenmeseydi winget machine yükleyicisi olan eski bir sürümü seçerdi)
+                    CommandExecutionResult lookup = await steps.RunAsync(_winget, WingetInstall.VersionsArguments(_id), _queryLimit);
+                    if (steps.Stopped)
+                    {
+                        LookupStopped = true;
+                        return lookup;
+                    }
+                    string? reason = WingetInstall.QueryFailure("show", lookup.ExitCode, steps.LimitReached, _queryLimit);
+                    version = reason == null ? WingetInstall.LatestVersion(lookup.Output, out reason) : null;
+                    VersionNote = version != null ? WingetInstall.PinnedNote(version) : WingetInstall.UnpinnedNote(reason ?? "");
+                    if (version != null)
+                        POpsHelpers.Log("AGENT", $"winget: kaynaktaki en yeni sürüm {version}; kurulum bu sürüme sabitlendi (TaskID: {_tid}).");
+                    else
+                        POpsHelpers.Log("AGENT", $"winget: en yeni sürüm bulunamadı ({reason}); sürüm verilmeden kuruluyor (TaskID: {_tid}).", true);
+                }
+                CommandExecutionResult first = await steps.RunAsync(_winget, WingetInstall.Arguments(_id, version));
+                List<string>? retry = WingetInstall.RetryArguments(first.ExitCode, _id, version);
+                if (retry == null) return first;
+                MachineAttempt = first;
+                POpsHelpers.Log("AGENT", $"winget: paketin machine kapsamında uygulanabilir yükleyicisi yok ({WingetInstall.ExitNoApplicableInstaller}); --scope olmadan yeniden deneniyor (TaskID: {_tid}).");
+                return await steps.RunAsync(_winget, retry);
+            }
         }
     }
 }

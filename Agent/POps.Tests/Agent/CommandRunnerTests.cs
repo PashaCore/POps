@@ -187,39 +187,44 @@ namespace POps.Tests.Agent
             return script;
         }
 
-        // İkinci deneme (winget'in kapsamsız yeniden denemesi) aynı görevdir: kimlik ayrılı kalır, yalnızca bir kez sorulur,
-        // sonuç ikincinin
+        // Bir görevin programları (ör. winget'in sürüm sorgusu, kurulumu ve kapsamsız yeniden denemesi) aynı görevdir: kimlik
+        // sonuncusu bitene kadar ayrılı kalır (aynı kimlikle gelen ikinci çalıştırma başlamaz), sonuç steps'in
         [Fact]
-        public async Task Retry_RunsOnce_UnderTheSameReservation()
+        public async Task Steps_RunUnderTheSameReservation()
         {
             var runner = TestEnvironment.NewCommandRunner();
             string script = AttemptScript();
-            var asked = new System.Collections.Generic.List<string>();
-            CommandExecutionResult result = await runner.RunProgramAsync(31, script, new[] { "bir", "7" }, first =>
+            CommandExecutionResult result = await runner.RunProgramsAsync(31, async steps =>
             {
+                CommandExecutionResult first = await steps.RunAsync(script, new[] { "bir", "7" });
+                Assert.Equal((7, "deneme bir"), (first.ExitCode, first.Output));
                 Assert.True(runner.IsRunning(31));
-                asked.Add($"{first.ExitCode} {first.Output}");
-                return new[] { "iki", "5" };
+                CommandExecutionResult duplicate = await runner.RunProgramAsync(31, script, new[] { "mark", "0" }, CancellationToken.None);
+                Assert.Equal(CommandRunner.ExitDuplicate, duplicate.ExitCode);
+                return await steps.RunAsync(script, new[] { "iki", "5" });
             }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20));
-            Assert.Equal(new[] { "7 deneme bir" }, asked);
             Assert.Equal((5, "deneme iki"), (result.ExitCode, result.Output));
+            Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(script), "started.txt")));
             Assert.False(runner.IsRunning(31));
 
-            // null: ikinci deneme yok, ilk denemenin sonucu döner
-            CommandExecutionResult single = await runner.RunProgramAsync(32, script, new[] { "tek", "4" }, _ => null, CancellationToken.None);
+            // Tek programlık RunProgramAsync da aynı yoldan
+            CommandExecutionResult single = await runner.RunProgramAsync(32, script, new[] { "tek", "4" }, CancellationToken.None);
             Assert.Equal((4, "deneme tek"), (single.ExitCode, single.Output));
         }
 
-        // Denemeler arasında gelen cancel_task ikinciyi başlatmaz
+        // Programlar arasında gelen cancel_task sonrakini başlatmaz: RunAsync hiçbir şey çalıştırmadan iptal sonucunu döner
         [Fact]
-        public async Task Retry_CancelledBetweenAttempts_DoesNotStartTheSecond()
+        public async Task Steps_CancelledBetweenPrograms_DoNotStartTheNext()
         {
             var runner = TestEnvironment.NewCommandRunner();
             string script = AttemptScript();
-            CommandExecutionResult result = await runner.RunProgramAsync(33, script, new[] { "bir", "7" }, _ =>
+            CommandExecutionResult result = await runner.RunProgramsAsync(33, async steps =>
             {
+                await steps.RunAsync(script, new[] { "bir", "7" });
+                Assert.False(steps.Stopped);
                 Assert.True(runner.Cancel(33));
-                return new[] { "mark", "0" };
+                Assert.True(steps.Stopped);
+                return await steps.RunAsync(script, new[] { "mark", "0" });
             }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20));
             Assert.Equal((CommandRunner.ExitCancelled, "[İPTAL EDİLDİ]: Görev panelden iptal edildi; işlem sonlandırıldı.", TimeSpan.Zero),
                 (result.ExitCode, result.Output, result.Duration));
@@ -227,15 +232,51 @@ namespace POps.Tests.Agent
             Assert.False(runner.IsRunning(33));
         }
 
-        // Süre sınırı iki denemeyi birlikte kapsar: tek başına sınırın altında kalan ikinci deneme (~3 sn < 4 sn), ilkiyle
-        // (~2 sn) birlikte aşınca sonlandırılır
+        // Süre sınırı programları birlikte kapsar: tek başına sınırın altında kalan ikinci program (~3 sn < 4 sn), ilkiyle
+        // (~2 sn) birlikte aşınca sonlandırılır. Adımın kendi, daha uzun sınırı görevinkini uzatmaz; dolan görevin sınırıdır.
         [Fact]
-        public async Task Retry_SharesTheTimeLimit()
+        public async Task Steps_ShareTheTimeLimit()
         {
             var runner = TestEnvironment.NewCommandRunner(TimeSpan.FromSeconds(4));
-            CommandExecutionResult result = await runner.RunProgramAsync(34, AttemptScript(), new[] { "bir", "7", "3" },
-                _ => new[] { "iki", "0", "4" }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
+            string script = AttemptScript();
+            bool stopped = false, limitReached = true;
+            CommandExecutionResult result = await runner.RunProgramsAsync(34, async steps =>
+            {
+                await steps.RunAsync(script, new[] { "bir", "7", "3" });
+                CommandExecutionResult second = await steps.RunAsync(script, new[] { "iki", "0", "4" }, TimeSpan.FromMinutes(1));
+                (stopped, limitReached) = (steps.Stopped, steps.LimitReached);
+                return second;
+            }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
             Assert.Equal(CommandRunner.ExitTimeout, result.ExitCode);
+            Assert.StartsWith("[HATA]: İşlem 4 saniyeden uzun sürdüğü için zorla sonlandırıldı.", result.Output);
+            Assert.True(stopped);
+            Assert.False(limitReached);
+        }
+
+        // Adımın kendi süre sınırı (ör. winget'in sürüm sorgusu): yalnızca o program sonlandırılır (ExitTimeout, LimitReached),
+        // görev sürer ve sonraki program çalışır. Kendisi -1 ile biten program sınıra takılmış sayılmaz.
+        [Fact]
+        public async Task StepLimit_EndsOnlyThatProgram()
+        {
+            var runner = TestEnvironment.NewCommandRunner();
+            string script = AttemptScript();
+            var seen = new System.Collections.Generic.List<(int Exit, bool LimitReached, bool Stopped)>();
+            CommandExecutionResult slow = null;
+            CommandExecutionResult result = await runner.RunProgramsAsync(35, async steps =>
+            {
+                slow = await steps.RunAsync(script, new[] { "yavas", "0", "30" }, TimeSpan.FromSeconds(1));
+                seen.Add((slow.ExitCode, steps.LimitReached, steps.Stopped));
+                CommandExecutionResult minusOne = await steps.RunAsync(script, new[] { "eksi", "-1" }, TimeSpan.FromSeconds(20));
+                seen.Add((minusOne.ExitCode, steps.LimitReached, steps.Stopped));
+                CommandExecutionResult last = await steps.RunAsync(script, new[] { "iki", "3" });
+                seen.Add((last.ExitCode, steps.LimitReached, steps.Stopped));
+                return last;
+            }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(40));
+            Assert.Equal(new[] { (CommandRunner.ExitTimeout, true, false), (-1, false, false), (3, false, false) }, seen);
+            Assert.Equal("[HATA]: İşlem 1 saniyeden uzun sürdüğü için zorla sonlandırıldı.", slow.Output);
+            Assert.True(slow.Duration < TimeSpan.FromSeconds(20));
+            Assert.Equal((3, "deneme iki"), (result.ExitCode, result.Output));
+            Assert.False(runner.IsRunning(35));
         }
 
         [Fact]
