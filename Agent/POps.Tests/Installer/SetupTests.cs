@@ -12,14 +12,11 @@ namespace POps.Tests.Installer
 {
     // MSI custom action'larının mantığı (Installer/agent/CustomActions). Kurulumun dokunduğu bütün klasörler
     // geçici klasörlere yönlendirilir: gerçek C:\POpsData, C:\POpsLogs, C:\POps ve Program Files'a dokunulmaz.
-    [Collection(SharedStateCollection.Name)]
-    public class SetupTests : SharedStateTestBase
+    // Üst klasör zinciri geçici test klasöründe durur: kurulum klasörü denetimlerinin trustedBase argümanı _root'tur
+    public class SetupTests : TestBase
     {
         private readonly string _root = TestEnvironment.NewDir("msi");
         private readonly List<string> _log = new List<string>();
-
-        // Üst klasör zinciri geçici test klasöründe durur (bkz. Setup.TrustedBaseForTests)
-        public SetupTests() => Setup.TrustedBaseForTests = _root;
 
         private Layout NewLayout() => new Layout
         {
@@ -39,7 +36,7 @@ namespace POps.Tests.Installer
                 ["INSTALLDIR_STATE"] = Directory.Exists(InstallDir) ? Setup.StatePops : Setup.StateNew,
             };
             foreach (var (key, value) in properties) data[key] = value;
-            return Setup.Configure(data, layout, _log.Add);
+            return Setup.Configure(data, layout, trustedBase: _root, _log.Add);
         }
 
         private static void Write(string path, string text)
@@ -133,7 +130,7 @@ namespace POps.Tests.Installer
         [InlineData("", "boş")]
         public void InvalidInstallFolders_AreRejected(string dir, string reason)
         {
-            string error = Setup.CheckInstallFolder(dir, Setup.DefaultProtectedFolders(), NoKnownFiles, out string state);
+            string error = Setup.CheckInstallFolder(dir, Setup.DefaultProtectedFolders(), NoKnownFiles, _root, out string state);
             Assert.NotNull(error);
             Assert.Contains(reason, error);
             Assert.Null(state);
@@ -152,15 +149,15 @@ namespace POps.Tests.Installer
                 (Environment.GetEnvironmentVariable("SystemDrive") ?? "C:") + "\\Users",
             })
             {
-                string error = Setup.CheckInstallFolder(dir, system, NoKnownFiles, out _);
+                string error = Setup.CheckInstallFolder(dir, system, NoKnownFiles, _root, out _);
                 Assert.True(error != null && error.Contains("sistem klasörü"), dir + ": " + error);
             }
 
             // Korunan bir klasörün üstü de reddedilir (burada geçici klasörde taklit edilir)
             string fakeSystem = Path.Combine(_root, "Sys", "Windows");
             Directory.CreateDirectory(fakeSystem);
-            Assert.Contains("sistem klasörü", Setup.CheckInstallFolder(Path.Combine(_root, "Sys"), new[] { fakeSystem }, NoKnownFiles, out _));
-            Assert.Null(Setup.CheckInstallFolder(Path.Combine(fakeSystem, "POps"), new[] { fakeSystem }, NoKnownFiles, out string inside));
+            Assert.Contains("sistem klasörü", Setup.CheckInstallFolder(Path.Combine(_root, "Sys"), new[] { fakeSystem }, NoKnownFiles, _root, out _));
+            Assert.Null(Setup.CheckInstallFolder(Path.Combine(fakeSystem, "POps"), new[] { fakeSystem }, NoKnownFiles, _root, out string inside));
             Assert.Equal(Setup.StateNew, inside);
         }
 
@@ -168,7 +165,7 @@ namespace POps.Tests.Installer
         public void DefaultLocation_IsAccepted()
         {
             string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "POps");
-            Assert.Null(Setup.CheckInstallFolder(dir, Setup.DefaultProtectedFolders(), NoKnownFiles, out string state));
+            Assert.Null(Setup.CheckInstallFolder(dir, Setup.DefaultProtectedFolders(), NoKnownFiles, _root, out string state));
             Assert.NotNull(state);
         }
 
@@ -177,7 +174,7 @@ namespace POps.Tests.Installer
         {
             string fresh = Path.Combine(_root, "Apps", "POps");
             Directory.CreateDirectory(Path.GetDirectoryName(fresh));
-            Assert.Null(Setup.CheckInstallFolder(fresh, new string[0], NoKnownFiles, out string state));
+            Assert.Null(Setup.CheckInstallFolder(fresh, new string[0], NoKnownFiles, _root, out string state));
             Assert.Equal(Setup.StateNew, state);
 
             Directory.CreateDirectory(fresh);
@@ -185,7 +182,7 @@ namespace POps.Tests.Installer
             Write(Path.Combine(fresh, "Microsoft.Extensions.Hosting.dll"), "x");
             Write(Path.Combine(fresh, "appsettings.json"), "{}");
             var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Microsoft.Extensions.Hosting.dll" };
-            Assert.Null(Setup.CheckInstallFolder(fresh, new string[0], known, out state));
+            Assert.Null(Setup.CheckInstallFolder(fresh, new string[0], known, _root, out state));
             Assert.Equal(Setup.StatePops, state);
         }
 
@@ -196,15 +193,15 @@ namespace POps.Tests.Installer
             string shared = Path.Combine(_root, "Shared", "Tools");
             Directory.CreateDirectory(shared);
             Write(Path.Combine(shared, "baska-program.exe"), "x");
-            Assert.Null(Setup.CheckInstallFolder(shared, new string[0], NoKnownFiles, out string state));
+            Assert.Null(Setup.CheckInstallFolder(shared, new string[0], NoKnownFiles, _root, out string state));
             Assert.Equal(Setup.StateOther, state);
 
             GrantAuthenticatedUsers(shared, FileSystemRights.Modify);
-            string error = Setup.CheckInstallFolder(shared, new string[0], NoKnownFiles, out _);
+            string error = Setup.CheckInstallFolder(shared, new string[0], NoKnownFiles, _root, out _);
             Assert.Contains("başka dosyalar", error);
 
             // Configure (SYSTEM) da savunma olarak durur ve izinlere dokunmaz
-            string configureError = Setup.ApplyInstallFolderPolicy(shared, Setup.StateOther, _log.Add);
+            string configureError = Setup.ApplyInstallFolderPolicy(shared, Setup.StateOther, _root, _log.Add);
             Assert.Contains("POps'a ait değil", configureError);
             Assert.False(Directory.GetAccessControl(shared).AreAccessRulesProtected);
         }
@@ -216,13 +213,13 @@ namespace POps.Tests.Installer
             string parent = Path.Combine(_root, "OpenParent");
             Directory.CreateDirectory(parent);
             GrantAuthenticatedUsers(parent, FileSystemRights.Modify);
-            Assert.Contains("üst klasörü", Setup.CheckInstallFolder(Path.Combine(parent, "POps"), new string[0], NoKnownFiles, out _));
+            Assert.Contains("üst klasörü", Setup.CheckInstallFolder(Path.Combine(parent, "POps"), new string[0], NoKnownFiles, _root, out _));
 
             // Henüz olmayan ara klasör, kullanıcıların değiştirebileceği izinleri devralacaksa da
             string inheriting = Path.Combine(_root, "InheritParent");
             Directory.CreateDirectory(inheriting);
             GrantAuthenticatedUsers(inheriting, FileSystemRights.Modify, PropagationFlags.InheritOnly);
-            Assert.Contains("oluşturulunca", Setup.CheckInstallFolder(Path.Combine(inheriting, "Apps", "POps"), new string[0], NoKnownFiles, out _));
+            Assert.Contains("oluşturulunca", Setup.CheckInstallFolder(Path.Combine(inheriting, "Apps", "POps"), new string[0], NoKnownFiles, _root, out _));
         }
 
         // Zaten korunan klasöre (ör. Program Files) dokunulmaz
@@ -231,7 +228,7 @@ namespace POps.Tests.Installer
         {
             string dir = Path.Combine(_root, "Protected");
             Directory.CreateDirectory(dir);
-            Assert.Null(Setup.ApplyInstallFolderPolicy(dir, Setup.StateOther, _log.Add));
+            Assert.Null(Setup.ApplyInstallFolderPolicy(dir, Setup.StateOther, _root, _log.Add));
             Assert.False(Directory.GetAccessControl(dir).AreAccessRulesProtected);
         }
 

@@ -118,13 +118,20 @@ namespace POpsAgent
 
         // Güvenli depo ve ayar dosyaları (servis: AgentPaths.SecureDir ve ConfigPaths)
         private readonly AgentPaths _paths;
+        // Eski sürümlerin gizli değer yazdığı sistem ortam değişkenleri: okuma ve taşıdıktan sonra silme (MigrateSecrets)
+        private readonly Func<string, string> _readMachineVariable;
+        private readonly Action<string> _deleteMachineVariable;
 
         private bool _badTokenLogged;
 
-        // paths: güvenli depo (SecureDir) ve gizli ayarların arandığı dosyalar (ConfigPaths)
-        public CredentialStore(AgentPaths paths)
+        // paths: güvenli depo (SecureDir) ve gizli ayarların arandığı dosyalar (ConfigPaths); readMachineVariable,
+        // deleteMachineVariable: sistem ortam değişkenleri (servis: MachineSeams.ReadMachineVariable / DeleteMachineVariable,
+        // testlerde reddeden sahteler: değişken yok, hiçbir şey silinmez)
+        public CredentialStore(AgentPaths paths, Func<string, string> readMachineVariable, Action<string> deleteMachineVariable)
         {
             _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+            _readMachineVariable = readMachineVariable ?? throw new ArgumentNullException(nameof(readMachineVariable));
+            _deleteMachineVariable = deleteMachineVariable ?? throw new ArgumentNullException(nameof(deleteMachineVariable));
         }
 
         private string SecureFile(string name) => _paths.SecureFile(name);
@@ -268,10 +275,10 @@ namespace POpsAgent
             {
                 try
                 {
-                    string value = Environment.GetEnvironmentVariable(envVar, EnvironmentVariableTarget.Machine)?.Trim();
+                    string value = _readMachineVariable(envVar)?.Trim();
                     if (string.IsNullOrEmpty(value)) continue;
                     if (!File.Exists(SecureFile(file))) SecureStore.WriteProtected(SecureFile(file), value);
-                    Environment.SetEnvironmentVariable(envVar, null, EnvironmentVariableTarget.Machine);
+                    _deleteMachineVariable(envVar);
                     POpsHelpers.Log("SECURE", $"{envVar} sistem ortam değişkeninden güvenli depoya taşındı ve silindi (ortam değişkenleri her kullanıcıya açıktır).");
                 }
                 catch (Exception ex) { POpsHelpers.Log("SECURE", $"{envVar} taşınamadı: {ex.Message}", true); }

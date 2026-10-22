@@ -10,6 +10,7 @@ namespace POps.Tests.Agent
 {
     // Uzaktan komut çalıştırıcı: çıktı okunurken sınırlanır; iptal, servis durması ve süre sınırı işlemi sonlandırır;
     // çıkış kodu bildirilir. Testler yalnızca cmd.exe ile kısa, zararsız komutlar (echo, ping 127.0.0.1) çalıştırır.
+    // Machine: gerçek cmd.exe başlatılır; süreler ve sonlandırma beklemeleri ölçülür
     [Collection(MachineCollection.Name)]
     public class CommandRunnerTests : TestBase
     {
@@ -100,6 +101,7 @@ namespace POps.Tests.Agent
     }
 
     // B1: çıktı satır sonu beklemeden sabit parçalarla okunur; B3: aynı görev kimliği iki kez çalışmaz
+    // Machine: gerçek cmd.exe başlatılır
     [Collection(MachineCollection.Name)]
     public class CommandOutputChunkTests : TestBase
     {
@@ -185,6 +187,7 @@ namespace POps.Tests.Agent
     }
 
     // A4: açılışta yarım kalmış görev dosyaları silinir; başka dosyalara dokunulmaz
+    // Machine: görev dosyası gerçek cmd.exe ile çalıştırılır (TaskFile_IsWrittenToTheRunnersFolder_AndCleanedUpThere)
     [Collection(MachineCollection.Name)]
     public class StaleTaskFileTests : TestBase
     {

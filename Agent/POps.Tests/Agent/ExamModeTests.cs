@@ -14,8 +14,6 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Sınav modu: emrin doğrulanması, güvenlik duvarı kuralları (ayrı grup), süresinde bitmesi, uygulama engeli
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class ExamModeTests : TestBase, IDisposable
     {
         private readonly List<string> _scripts = new List<string>();

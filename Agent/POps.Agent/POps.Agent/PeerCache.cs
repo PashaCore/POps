@@ -59,15 +59,16 @@ namespace POpsAgent
         private readonly string _examState;
 
         // paths: önbellek klasörü (<veri klasörü>\cache), karantina ve sınav modunun durum dosyaları; capabilities: bağlamın
-        // yetenek durumu (peer_cache_enabled); firewall: güvenlik duvarı kuralının betiği, endpoint: sunucunun dinlediği adres
-        // (servis: PowerShell ve [::]:8817, bkz. MachineSeams; testlerde güvenlik duvarına dokunmayan sahte ve 127.0.0.1)
+        // yetenek durumu (peer_cache_enabled); firewall: güvenlik duvarı kuralının betiği, server: sunucuyu kuran (servis:
+        // PowerShell ve [::]:8817'de dinleyen sunucu, bkz. MachineSeams; testlerde güvenlik duvarına dokunmayan sahte ve hiç
+        // dinlemeyen sunucu, PeerCacheTests'te 127.0.0.1)
         public PeerCache(AgentPaths paths, CapabilityState capabilities, Func<string, Task<(int Exit, string Output)>> firewall,
-            Func<IPEndPoint> endpoint)
+            PeerCacheServerFactory server)
         {
             ArgumentNullException.ThrowIfNull(paths);
             _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
             FirewallRunner = firewall ?? throw new ArgumentNullException(nameof(firewall));
-            ListenEndpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+            NewServer = server ?? throw new ArgumentNullException(nameof(server));
             Dir = paths.PeerCacheDir;
             _isolationState = paths.SecureFile(NetworkIsolation.StateFileName);
             _examState = paths.SecureFile(ExamMode.StateFileName);
@@ -80,10 +81,10 @@ namespace POpsAgent
         // peer_cache_enabled: kapalıysa paket tutulmaz, sunulmaz, eşlerden indirilmez
         public bool Enabled => _capabilities.PeerCacheEnabled;
 
-        // Testler: saat, güvenlik duvarı betiği, dinlenen adres, yerel alt ağ ve karantina denetimi (servis değiştirmez)
+        // Testler: saat, güvenlik duvarı betiği, sunucunun kurulması, yerel alt ağ ve karantina denetimi (servis değiştirmez)
         internal Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;
         internal Func<string, Task<(int Exit, string Output)>> FirewallRunner { get; set; }
-        internal Func<IPEndPoint> ListenEndpoint { get; set; }
+        internal PeerCacheServerFactory NewServer { get; set; }
         internal Func<IPAddress, bool> IsLocalSubnet { get; set; } = InLocalSubnet;
         internal Func<bool> IsIsolated { get; set; }
 
@@ -98,7 +99,7 @@ namespace POpsAgent
 
         // Önbellek klasörüne erişim ve 8817 portu makinede tektir: denetimler sıralanır
         private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
-        private PeerCacheServer? _server;
+        private IPeerCacheServer? _server;
         // SHA-256'sı bu süreçte denetlenmiş dosya (yol|boyut|zaman); her dakika yeniden hesaplanmaz
         private string? _verifiedKey;
         private bool _ruleAdded;
@@ -301,7 +302,7 @@ namespace POpsAgent
             }
             if (_server == null)
             {
-                var server = new PeerCacheServer(package.Sha256, package.Path, ListenEndpoint(), address => IsLocalSubnet(address), MaxClients);
+                IPeerCacheServer server = NewServer(package.Sha256, package.Path, address => IsLocalSubnet(address), MaxClients);
                 try { server.Start(); }
                 catch (SocketException ex)
                 {
@@ -469,7 +470,7 @@ Get-NetFirewallRule -Group {BitsDownload.Quote(RuleGroup)} -ErrorAction Silently
         // Testler: her test temiz başlar (önceki testin sunucusu kapanır, bellekteki durum unutulur)
         internal void ResetState()
         {
-            PeerCacheServer? server = _server;
+            IPeerCacheServer? server = _server;
             _server = null;
             if (server != null)
             {

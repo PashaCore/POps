@@ -14,8 +14,6 @@ namespace POps.Tests.Agent
     // oturumu başlatırken kullanıcının masaüstü ekranda değilse servis 1150 yazar ve tepsiye oturum bildirimini kurdurur;
     // tepsi bildirimi masaüstü geri gelince gösterir ve oturum bitene kadar açık tutar. Gerçek masaüstü, pencere ya da
     // Vision tüneli yok: tepsinin kararları POps.Shared'de saf, servisin tüneli, Olay Günlüğü ve sunucu kaydı sahte.
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class VisionLockedStartTests : TestBase, IDisposable
     {
         private const string MandatoryRequest = "{\"action\":\"start_vision_session\",\"session_id\":\"SES-0123456789AB\",\"is_mandatory\":true,"

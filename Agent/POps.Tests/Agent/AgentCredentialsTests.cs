@@ -9,18 +9,20 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    [Collection(SharedStateCollection.Name)]
-    public class AgentCredentialsTests : SharedStateTestBase
+    public class AgentCredentialsTests : TestBase
     {
         private static string Urlsafe(int bytes) => Convert.ToBase64String(RandomNumberGenerator.GetBytes(bytes)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-        // Testin güvenli deposu (NewStore) ve ayar dosyaları (Config); kimlik bilgileri ilk kullanımda bunlarla kurulur
+        // Testin güvenli deposu (NewStore) ve ayar dosyaları (Config); kimlik bilgileri ilk kullanımda bunlarla kurulur. Sistem
+        // ortam değişkenleri reddeden kapılardandır (bkz. MachineSeams): bu bilgisayarınkiler okunmaz, silinmez.
         private string _store;
         private string[] _config = new string[0];
         private CredentialStore _credentials;
+        private readonly MachineSeams _machine = AgentHarness.RefusingMachine();
 
         private CredentialStore Credentials => _credentials ??= new CredentialStore(
-            new AgentPaths(_store, _store, _store, _config, Path.Combine(_store, ServerTrust.FileName)));
+            new AgentPaths(_store, _store, _store, _config, Path.Combine(_store, ServerTrust.FileName)),
+            _machine.ReadMachineVariable, _machine.DeleteMachineVariable);
 
         private string NewStore()
         {

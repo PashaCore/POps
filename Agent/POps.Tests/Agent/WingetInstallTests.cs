@@ -13,7 +13,7 @@ namespace POps.Tests.Agent
 {
     // winget_install (docs/agent.md "winget_install contract"): doğrulama, bağımsız değişkenler, winget'in bulunması,
     // kabuksuz çalıştırma, yetenek/modül retleri, -7, çıktının temizlenmesi, X-Agent-Features
-    // Machine: sahte winget gerçek bir süreç olarak çalışır; Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    // Machine: sahte winget gerçek bir süreç olarak çalışır
     [Collection(MachineCollection.Name)]
     public class WingetInstallTests : TestBase, IDisposable
     {

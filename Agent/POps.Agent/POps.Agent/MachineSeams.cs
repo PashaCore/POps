@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
 using System.Runtime.Versioning;
 using System.Security.Principal;
 using System.Threading.Tasks;
@@ -10,15 +11,17 @@ using POps.Shared;
 
 namespace POpsAgent
 {
-    // Ajanın makineye açılan kapıları: güvenlik duvarını, kayıt defteri politikalarını, BITS işlerini, güç durumunu, kurulu
-    // yazılımı ve süreçleri değiştiren ya da bütün arabirimlerde dinleyen her şey, ve servisin konsol oturumu sorguları.
+    // Ajanın makineye açılan kapıları: güvenlik duvarını, kayıt defteri politikalarını, sistem ortam değişkenlerini, BITS
+    // işlerini, güç durumunu, kurulu yazılımı ve süreçleri değiştiren ya da bütün arabirimlerde dinleyen her şey, ve servisin
+    // konsol oturumu sorguları.
     // Bir Worker'ın kapıları bağlamdadır (AgentContext.Machine); Worker kurduğu parçalara yalnızca kullandıkları kapıyı verir.
     //
     // Güvenli varsayılan: parametresiz kurulan nesnenin her kapısı reddeden ya da hiçbir şey yapmayan sahtedir (Refusing;
-    // kiosk politikaları yalnızca bellekte tutulur). Gerçek kapılar yalnızca Production()'da kurulur ve onu yalnızca Program
-    // çağırır. Testler bağlamı AgentHarness ile kurar: kapı vermeyen her yol reddeden sahteye düşer, gerçek güvenlik duvarına,
-    // kayıt defterine, BITS'e, güç API'sine, winget'e, süreçlere ve updater'a hiçbir yoldan ulaşılamaz (bkz. POps.Tests
-    // MachineSeamsTests). Bir test yalnızca sınadığı kapının kendi sahtesini verir (init).
+    // kiosk politikaları yalnızca bellekte tutulur, eş önbelleği dinlemez). Gerçek kapılar yalnızca Production()'da kurulur ve
+    // onu yalnızca Program çağırır. Testler bağlamı AgentHarness ile kurar: kapı vermeyen her yol reddeden sahteye düşer, gerçek
+    // güvenlik duvarına, kayıt defterine, sistem ortam değişkenlerine, BITS'e, güç API'sine, winget'e, süreçlere, updater'a ve
+    // dinleyen bir sokete hiçbir yoldan ulaşılamaz (bkz. POps.Tests MachineSeamsTests). Bir test yalnızca sınadığı kapının
+    // kendi sahtesini verir (init).
     [SupportedOSPlatform("windows")]
     public sealed class MachineSeams
     {
@@ -27,9 +30,10 @@ namespace POpsAgent
         public Func<string, Task<(int Exit, string Output)>> FirewallScripts { get; init; } = Refusing.Script;
         // Karantinanın Ctrl+Alt+Del politikaları (HKLM ve kullanıcı kovanları; bkz. KioskMode)
         public IKioskRegistry Kiosk { get; init; } = new MemoryKioskRegistry();
-        // Eş önbelleğinin güvenlik duvarı kuralı ve sunucusunun dinlediği adres (bkz. PeerCache)
+        // Eş önbelleğinin güvenlik duvarı kuralı ve sunucusu (servis: TCP 8817'de bütün arabirimlerde dinleyen sunucu; bkz.
+        // PeerCache, PeerCacheServer)
         public Func<string, Task<(int Exit, string Output)>> PeerCacheFirewall { get; init; } = Refusing.Script;
-        public Func<IPEndPoint> PeerCacheEndpoint { get; init; } = Refusing.LoopbackEndpoint;
+        public PeerCacheServerFactory PeerCacheServer { get; init; } = Refusing.NoPeerCacheServer;
         // Güç işlemi (kapatma, yeniden başlatma, oturum kapatma, kilitleme; bkz. PowerActions). Dönen: uygulandı mı
         public Func<PowerOperation, int, bool> Power { get; init; } = Refusing.Power;
         // Etkin konsol oturumunda oturum açmış kullanıcı var mı, ve o oturumun kimliği (bkz. SessionTasks)
@@ -52,6 +56,10 @@ namespace POpsAgent
         // --generalize: yönetici mi, servisi ve watchdog'u durdur (başarıda null, aksi halde neden; bkz. Generalizer)
         public Func<bool> IsAdministrator { get; init; } = Refusing.NotAdministrator;
         public Func<string?> StopAgent { get; init; } = Refusing.AgentNotStopped;
+        // Sistem ortam değişkenleri (makine kapsamı, kayıt defterinde): eski sürümlerin gizli değer yazdığı değişkenin
+        // okunması ve güvenli depoya taşındıktan sonra silinmesi (bkz. CredentialStore.MigrateSecrets)
+        public Func<string, string?> ReadMachineVariable { get; init; } = Refusing.NoMachineVariable;
+        public Action<string> DeleteMachineVariable { get; init; } = Refusing.KeepMachineVariable;
 
         // Servisin gerçek makinesi. Yalnızca Program çağırır (testler bağlamı AgentHarness ile kurar).
         internal static MachineSeams Production() => new MachineSeams
@@ -59,7 +67,8 @@ namespace POpsAgent
             FirewallScripts = NetworkIsolation.RunPowerShellAsync,
             Kiosk = new WindowsKioskRegistry(),
             PeerCacheFirewall = PeerCache.RunPowerShellAsync,
-            PeerCacheEndpoint = () => new IPEndPoint(IPAddress.IPv6Any, PeerCache.Port),
+            PeerCacheServer = (sha256, path, isLocal, maxClients) =>
+                new PeerCacheServer(sha256, path, new IPEndPoint(IPAddress.IPv6Any, PeerCache.Port), isLocal, maxClients),
             Power = WindowsPower.Run,
             HasConsoleUser = SessionTasks.ConsoleUserPresent,
             ConsoleSession = () => UserSessionLauncher.ActiveConsoleSession(),
@@ -73,6 +82,8 @@ namespace POpsAgent
             TrayPipe = TrayPipeOptions.Installed(),
             IsAdministrator = () => new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator),
             StopAgent = Generalizer.StopServiceAndWatchdog,
+            ReadMachineVariable = name => Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.Machine),
+            DeleteMachineVariable = name => Environment.SetEnvironmentVariable(name, null, EnvironmentVariableTarget.Machine),
         };
 
         // Kapı verilmeyen her yolun sahteleri: makineye dokunmaz, reddeder ya da "yok" der
@@ -82,8 +93,10 @@ namespace POpsAgent
 
             public static Task<(int Exit, string Output)> Script(string script) => Task.FromResult((1, ScriptOutput));
 
-            // Eş önbelleği yalnızca 127.0.0.1'de rastgele bir portta açılır (8817'de, bütün arabirimlerde değil)
-            public static IPEndPoint LoopbackEndpoint() => new IPEndPoint(IPAddress.Loopback, 0);
+            // Eş önbelleği dinlemez: sunucu kurulur ama Start, portu açılamayan bir sunucu gibi SocketException atar (PeerCache
+            // bunu loglar; paket sunulmaz, güvenlik duvarı kuralı eklenmez). Hiçbir yoldan soket açılmaz.
+            public static IPeerCacheServer NoPeerCacheServer(string sha256, string path, Func<IPAddress, bool> isLocal, int maxClients) =>
+                new NotListeningPeerCacheServer(sha256);
 
             public static bool Power(PowerOperation operation, int taskId) =>
                 throw new InvalidOperationException($"Testte gerçek güç API'si çağrıldı ({operation}, görev {taskId}).");
@@ -115,6 +128,27 @@ namespace POpsAgent
             public static bool NotAdministrator() => false;
 
             public static string? AgentNotStopped() => "testlerde servis ve watchdog durdurulmaz";
+
+            // Bu bilgisayarın sistem ortam değişkenleri okunmaz ve silinmez: eski sürümden kalan gizli değer yok sayılır
+            public static string? NoMachineVariable(string name) => null;
+
+            public static void KeepMachineVariable(string name) { }
+        }
+
+        // Hiç dinlemeyen eş önbelleği sunucusu (Refusing.NoPeerCacheServer)
+        private sealed class NotListeningPeerCacheServer : IPeerCacheServer
+        {
+            public NotListeningPeerCacheServer(string sha256) => Sha256 = sha256;
+
+            public string Sha256 { get; }
+            public int Port => 0;
+            public int ActiveClients => 0;
+
+            public void Start() => throw new SocketException((int)SocketError.AccessDenied);
+
+            public Task StopAsync() => Task.CompletedTask;
+
+            public void Dispose() { }
         }
 
         // Bellekteki kiosk kaydı: gerçek HKLM/HKU politikalarına dokunulmaz

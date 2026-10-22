@@ -15,7 +15,8 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // Sunucu modülleri (0.1.15): politika yanıtındaki "modules" bellekte tutulur; etkin = sunucuda açık VE yerelde izinli
-    // Machine: uzaktan komutlar gerçek cmd.exe ile çalışır; Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    // Machine: uzaktan komutlar gerçek CommandRunner ile cmd.exe'de çalışır (elle: süreç komut dağıtıcısının arayüz çağrısının
+    // arkasında, IL'den görünmez; bkz. ParallelSafetyTests.MachineByHand)
     [Collection(MachineCollection.Name)]
     public class ModulesTests : TestBase, IDisposable
     {

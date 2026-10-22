@@ -111,8 +111,7 @@ namespace POps.Tests
 
         // Test sınıfının ve iç içe türlerinin (lambda kapanışları, durum makineleri, yardımcı sınıflar) bütün yöntemlerinden
         // başlayarak ulaşılan değişebilir statikler ve makine kaynakları; her (üye, tür, erişen yöntem) için en kısa yol.
-        // skip: içine inilmeyen yöntemler (ör. SharedStateTestBase'in kurucusu: sınıfın kendi erişimi değildir)
-        public static List<Finding> Scan(Type testClass, Func<MethodBase, bool> skip = null)
+        public static List<Finding> Scan(Type testClass)
         {
             HashSet<(Guid, int)> mutable = MutableFields();
             var parent = new Dictionary<(Guid, int), MethodBase>();
@@ -141,7 +140,7 @@ namespace POps.Tests
                     if (mutable.Contains(Key(field))) Add(MemberName(field), write ? Kind.Write : Kind.Read, method);
                 foreach ((string member, Kind kind) in summary.Calls) Add(member, kind, method);
                 foreach (MethodBase callee in summary.Callees)
-                    if (!parent.ContainsKey(Key(callee)) && (skip == null || !skip(callee)))
+                    if (!parent.ContainsKey(Key(callee)))
                     {
                         parent.Add(Key(callee), method);
                         queue.Enqueue(callee);
@@ -180,6 +179,27 @@ namespace POps.Tests
 
         // Yöntemin kendi gövdesinde çağırdığı, kurduğu ya da temsilcisini aldığı (taranan derlemelerdeki) yöntemler
         public static IReadOnlyList<MethodBase> DirectCallees(MethodBase method) => Summarize(method).Callees;
+
+        // Derlemenin (taranan derlemelerden biri) kendi türlerindeki değişebilir statikler, "Tür.Üye" adlarıyla: Scan'in saydığı
+        // alanlar (taranan derlemelerin herhangi birinde statik kurucu dışında yazılan ya da içeriği değiştirilen; otomatik
+        // özellikler özelliğin adıyla) ve set erişimcisi olan statik özellikler (henüz kimse atamasa da: bir test seam'i böyle
+        // başlar). Derleyicinin ürettiği türler (lambda önbellekleri, durum makineleri), kapsam ölçümünün sayaç türleri, sabitler,
+        // [ThreadStatic] alanlar ve içeriği değişmeyen readonly alanlar sayılmaz.
+        public static SortedSet<string> MutableStatics(Assembly assembly)
+        {
+            HashSet<(Guid, int)> mutable = MutableFields();
+            var found = new SortedSet<string>(StringComparer.Ordinal);
+            const BindingFlags statics = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly;
+            foreach (Type type in Types(assembly))
+            {
+                if (IsCompilerGenerated(type) || IsCoverageTracker(type)) continue;
+                foreach (FieldInfo field in type.GetFields(statics))
+                    if (StaticState(field) != null && mutable.Contains(Key(field))) found.Add(MemberName(field));
+                foreach (PropertyInfo property in type.GetProperties(statics))
+                    if (property.SetMethod != null) found.Add(type.Name + "." + property.Name);
+            }
+            return found;
+        }
 
         // Taranan derlemelerin bütün yöntemlerinde statik kurucu dışında yazılan alanlar ve içeriği değiştirilen koleksiyonlar.
         // Otomatik özelliğin set erişimcisi alanı yazar ama özellik ancak biri o erişimciyi çağırırsa değişir: hiç

@@ -12,14 +12,12 @@ namespace POps.Tests.Installer
 {
     // MSI, appsettings.json'daki DataDirectory / LogDirectory'yi ajanla aynı kuralla kullanır: gizli değerler, yetenekler,
     // geri dönüş paketi ve karantina kaydı seçilen veri klasörüne gider. Bütün klasörler geçici test klasöründe.
-    [Collection(SharedStateCollection.Name)]
-    public class FolderSetupTests : SharedStateTestBase
+    // Kurulum klasörü denetimi geçici test klasöründe durur (Configure'un trustedBase argümanı)
+    public class FolderSetupTests : TestBase
     {
         private readonly string _root = TestEnvironment.NewDir("msi-folders");
         private readonly List<string> _log = new List<string>();
         private static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
-
-        public FolderSetupTests() => Setup.TrustedBaseForTests = _root;
 
         private Layout NewLayout() => new Layout
         {
@@ -51,7 +49,7 @@ namespace POps.Tests.Installer
                 ["INSTALLDIR_STATE"] = Directory.Exists(InstallDir) ? Setup.StatePops : Setup.StateNew,
             };
             foreach (var (key, value) in properties) data[key] = value;
-            return Setup.Configure(data, layout, _log.Add);
+            return Setup.Configure(data, layout, trustedBase: _root, _log.Add);
         }
 
         [Fact]

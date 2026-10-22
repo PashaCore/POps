@@ -13,7 +13,8 @@ namespace POps.Tests.Agent
 {
     // Sunucunun komut mesajları (Worker.HandleServerMessageAsync). Giden mesajlar yakalanır; karantina gerçek güvenlik
     // duvarına dokunmayan sahte yalıtımla, uzaktan komut gerçek cmd.exe ile çalışır.
-    // Machine: uzaktan komutlar gerçek cmd.exe ile çalışır, sonuç süreyle beklenir; Worker'ın eş önbelleği sunucusu IL'den ulaşılabilir
+    // Machine: uzaktan komutlar gerçek CommandRunner ile cmd.exe'de çalışır, sonuç süreyle beklenir (elle: süreç komut
+    // dağıtıcısının arayüz çağrısının arkasında, IL'den görünmez; bkz. ParallelSafetyTests.MachineByHand)
     [Collection(MachineCollection.Name)]
     public class WorkerCommandTests : TestBase, IDisposable
     {
@@ -411,7 +412,8 @@ namespace POps.Tests.Agent
     }
 
     // B2-B4 Worker üzerinden: ret çıkış kodu, yinelenen görev, onaylı/onaysız sunucu, yeniden bağlanma, yeniden başlama
-    // Machine: uzaktan komutlar gerçek cmd.exe ile çalışır; Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
+    // Machine: uzaktan komutlar gerçek CommandRunner ile cmd.exe'de çalışır (elle: süreç komut dağıtıcısının arayüz çağrısının
+    // arkasında, IL'den görünmez; bkz. ParallelSafetyTests.MachineByHand)
     [Collection(MachineCollection.Name)]
     public class WorkerResultAckTests : TestBase, IDisposable
     {

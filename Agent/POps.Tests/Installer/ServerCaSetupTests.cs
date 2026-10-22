@@ -13,13 +13,11 @@ namespace POps.Tests.Installer
 {
     // MSI SERVER_CA_CERT: PEM yolu -> C:\POpsData\secure\server-ca.pem (yalnızca SYSTEM/Administrators); verilmezse
     // mevcut dosya korunur; "system" siler; bozuk ya da CA olmayan sertifika kurulumu durdurur.
-    [Collection(SharedStateCollection.Name)]
-    public class ServerCaSetupTests : SharedStateTestBase
+    // Kurulum klasörü denetimi geçici test klasöründe durur (Configure'un trustedBase argümanı)
+    public class ServerCaSetupTests : TestBase
     {
         private readonly string _root = TestEnvironment.NewDir("msi-ca");
         private readonly List<string> _log = new List<string>();
-
-        public ServerCaSetupTests() => Setup.TrustedBaseForTests = _root;
 
         private Layout NewLayout() => new Layout
         {
@@ -39,7 +37,7 @@ namespace POps.Tests.Installer
                 ["SERVER_URL"] = "https://pops.okul.local",
             };
             foreach (var (key, value) in properties) data[key] = value;
-            return Setup.Configure(data, layout, _log.Add);
+            return Setup.Configure(data, layout, trustedBase: _root, _log.Add);
         }
 
         private static string StorePath(Layout layout) => Path.Combine(layout.SecureDir, Setup.ServerCaFile);

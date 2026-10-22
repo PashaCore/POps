@@ -19,8 +19,9 @@ namespace POpsAgent
     {
         public const string DefaultDir = FolderSettings.DefaultDataDirectory + @"\secure";
 
-        // Ajanın çalıştığı hesap (LocalSystem). Birim testleri bunu testi çalıştıran kullanıcıya çevirir: korumalı
-        // dosyayı değiştirmek için SYSTEM'in sahip olduğu hakları test kullanıcısı üstlenir.
+        // Ajanın çalıştığı hesap (LocalSystem), süreç boyunca tek değer. Birim testleri bunu süreç başında bir kez testi
+        // çalıştıran kullanıcıya çevirir: korumalı dosyayı değiştirmek için SYSTEM'in sahip olduğu hakları test kullanıcısı
+        // üstlenir. Başka bir hesapla denetleyen test hesabı argüman olarak verir (Read).
         internal static SecurityIdentifier SystemSid { get; set; } = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
         private static readonly SecurityIdentifier AdminsSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
 
@@ -68,13 +69,16 @@ namespace POpsAgent
         // requireTrustedOwner: yalnızca sahibi SYSTEM ya da Administrators olan dosya okunur. Öğrencinin
         // yazabildiği bir klasörde (ör. dondurulmayan sürücü) önceden bırakılmış sahte dosya böylece
         // kabul edilmez. Korumalı klasörün kendisine zaten yalnızca SYSTEM/Administrators yazabilir.
-        public static string Read(string path, bool requireTrustedOwner = false)
+        public static string Read(string path, bool requireTrustedOwner = false) => Read(path, requireTrustedOwner, SystemSid);
+
+        // systemSid: güvenilen servis hesabı (ajan: SystemSid)
+        internal static string Read(string path, bool requireTrustedOwner, SecurityIdentifier systemSid)
         {
             try
             {
                 var info = new FileInfo(path);
                 if (!info.Exists) return null;
-                if (requireTrustedOwner && !IsTrustedOwner(info.GetAccessControl().GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier))
+                if (requireTrustedOwner && !IsTrustedOwner(info.GetAccessControl().GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier, systemSid))
                 {
                     POpsHelpers.Log("SECURE", $"[GÜVENLİK] {path} yok sayıldı: dosya sahibi SYSTEM/Administrators değil.", true);
                     return null;
@@ -106,7 +110,7 @@ namespace POpsAgent
                                 || r.IdentityReference.Equals(AdminsSid));
         }
 
-        private static bool IsTrustedOwner(SecurityIdentifier owner) =>
-            owner != null && (owner.Equals(SystemSid) || owner.Equals(AdminsSid));
+        private static bool IsTrustedOwner(SecurityIdentifier owner, SecurityIdentifier systemSid) =>
+            owner != null && (owner.Equals(systemSid) || owner.Equals(AdminsSid));
     }
 }

@@ -1,12 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using POps.Shared;
 using Xunit;
 
 namespace POps.Tests.Agent
 {
-    [Collection(SharedStateCollection.Name)]
-    public class POpsHelpersTests : SharedStateTestBase
+    public class POpsHelpersTests : TestBase
     {
         private static string Write(string json)
         {
@@ -19,9 +19,9 @@ namespace POps.Tests.Agent
         [Fact]
         public void DefaultConfigPaths_InstallFolderFirst_ThenLegacy()
         {
-            Assert.Equal(2, TestEnvironment.DefaultConfigPaths.Length);
-            Assert.Equal(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), TestEnvironment.DefaultConfigPaths[0]);
-            Assert.Equal(@"C:\POps\appsettings.json", TestEnvironment.DefaultConfigPaths[1]);
+            Assert.Equal(2, POpsHelpers.DefaultConfigPaths.Count);
+            Assert.Equal(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), POpsHelpers.DefaultConfigPaths[0]);
+            Assert.Equal(@"C:\POps\appsettings.json", POpsHelpers.DefaultConfigPaths[1]);
         }
 
         [Fact]
@@ -47,27 +47,22 @@ namespace POps.Tests.Agent
         [Fact]
         public void GetServerUrl_UsesConfigPaths_AndTrimsSlash()
         {
-            POpsHelpers.ConfigPaths = new[] { Write("{\"ServerUrl\":\"https://pops.example/\"}") };
-            try { Assert.Equal("https://pops.example", POpsHelpers.GetServerUrl()); }
-            finally { POpsHelpers.ConfigPaths = new string[0]; }
+            string[] configPaths = { Write("{\"ServerUrl\":\"https://pops.example/\"}") };
+            Assert.Equal("https://pops.example", POpsHelpers.GetServerUrl(configPaths));
         }
 
+        // Ortam değişkeni testin kendi sözlüğündedir: sürecin ortamı değişmez
         [Fact]
         public void GetSetting_EnvironmentVariableWins()
         {
             string name = "POPS_TEST_" + Guid.NewGuid().ToString("N");
-            POpsHelpers.ConfigPaths = new[] { Write("{\"Key\":\"from-file\"}") };
-            try
-            {
-                Assert.Equal("from-file", POpsHelpers.GetSetting("Key", name));
-                Environment.SetEnvironmentVariable(name, " from-env ");
-                Assert.Equal("from-env", POpsHelpers.GetSetting("Key", name));
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable(name, null);
-                POpsHelpers.ConfigPaths = new string[0];
-            }
+            string[] configPaths = { Write("{\"Key\":\"from-file\"}") };
+            var environment = new Dictionary<string, string>();
+            string Variable(string key) => environment.TryGetValue(key, out string value) ? value : null;
+
+            Assert.Equal("from-file", POpsHelpers.GetSetting("Key", name, configPaths, Variable));
+            environment[name] = " from-env ";
+            Assert.Equal("from-env", POpsHelpers.GetSetting("Key", name, configPaths, Variable));
         }
 
         [Theory]
@@ -94,14 +89,8 @@ namespace POps.Tests.Agent
         [InlineData("Vision", true, "POpsVision_20260927.log")]
         public void LogFile_PerComponent(string component, bool userProfile, string fileName)
         {
-            string original = POpsHelpers.Component;
-            try
-            {
-                POpsHelpers.Component = component;
-                Assert.Equal(userProfile, POpsHelpers.LogsToUserProfile);
-                Assert.Equal(fileName, Path.GetFileName(POpsHelpers.LogFilePath(new DateTime(2026, 9, 27))));
-            }
-            finally { POpsHelpers.Component = original; }
+            Assert.Equal(userProfile, POpsHelpers.LogsToUserProfileFor(component));
+            Assert.Equal(fileName, Path.GetFileName(POpsHelpers.LogFilePath(component, new DateTime(2026, 9, 27))));
         }
     }
 }

@@ -37,7 +37,7 @@ namespace POps.Tests.Agent
         private readonly List<TcpListener> _rawPeers = new List<TcpListener>();
         private DateTime _now = new DateTime(2026, 10, 5, 9, 0, 0, DateTimeKind.Utc);
         private bool _isolated;
-        // Eş önbelleği sunucusu kaç kez dinlemeye başladı (ListenEndpoint sahtesi)
+        // Eş önbelleği sunucusu kaç kez kuruldu (LoopbackServer)
         private int _listens;
 
         public PeerCacheTests()
@@ -48,7 +48,8 @@ namespace POps.Tests.Agent
             _key = (Ed25519PrivateKeyParameters)pair.Private;
             _trustedKey = Convert.ToBase64String(((Ed25519PublicKeyParameters)pair.Public).GetEncoded());
 
-            _agent = AgentHarness.Create("peer");
+            // Eş önbelleğinin sunucusu testin kapısıdır: 127.0.0.1'de dinler (reddeden varsayılan hiç dinlemez)
+            _agent = AgentHarness.Create("peer", machine: new MachineSeams { Kiosk = new FakeKioskRegistry(), PeerCacheServer = LoopbackServer });
             _agent.Capabilities.Load(); // dosya yok: hepsi açık
             _updater = _agent.NewUpdater("0.1.22-alpha", _trustedKey, (msi, sha256, version) => _launch(msi, sha256, version));
             PeerCache.FirewallRunner = script =>
@@ -59,11 +60,13 @@ namespace POps.Tests.Agent
             PeerCache.Clock = () => _now;
             PeerCache.IsIsolated = () => _isolated;
             PeerCache.IsLocalSubnet = _ => true;
-            PeerCache.ListenEndpoint = () =>
-            {
-                Interlocked.Increment(ref _listens);
-                return new IPEndPoint(IPAddress.Loopback, 0);
-            };
+        }
+
+        // Sunucu yalnızca 127.0.0.1'de, rastgele bir portta açılır (serviste [::]:8817); kaç kez kurulduğu sayılır
+        private IPeerCacheServer LoopbackServer(string sha256, string path, Func<IPAddress, bool> isLocal, int maxClients)
+        {
+            Interlocked.Increment(ref _listens);
+            return new PeerCacheServer(sha256, path, new IPEndPoint(IPAddress.Loopback, 0), isLocal, maxClients);
         }
 
         // Güncelleme: manifest'i doğrulayan test anahtarı ve updater'ın başlatılması (dönen: başlatıldı mı). Testin ajanının

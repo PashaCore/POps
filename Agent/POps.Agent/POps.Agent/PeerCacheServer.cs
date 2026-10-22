@@ -13,6 +13,22 @@ using System.Threading.Tasks;
 
 namespace POpsAgent
 {
+    // Eş önbelleğinin sunucusu, PeerCache'in gördüğü kadarıyla: kurulur, Start ile dinlemeye başlar (açılamazsa
+    // SocketException), StopAsync ile durur.
+    public interface IPeerCacheServer : IDisposable
+    {
+        string Sha256 { get; }
+        int Port { get; }
+        int ActiveClients { get; }
+        void Start();
+        Task StopAsync();
+    }
+
+    // Paketi (sha256, dosya yolu) yalnızca yerel alt ağdaki adreslere (isLocal), en çok maxClients eşzamanlı aktarımla sunacak
+    // sunucuyu kurar; dinlemeye Start başlar. Bkz. MachineSeams.PeerCacheServer: serviste TCP 8817, bütün arabirimler; testlerin
+    // varsayılanında hiç dinlemeyen bir sunucu.
+    public delegate IPeerCacheServer PeerCacheServerFactory(string sha256, string path, Func<IPAddress, bool> isLocal, int maxClients);
+
     // Eş önbelleğinin salt okunur HTTP sunucusu (bkz. PeerCache). HttpListener yerine TcpListener: http.sys trafiği
     // System sürecine ait sayılır, güvenlik duvarı kuralı POpsAgent.exe'ye bağlanamazdı; burada soket ajanın kendisinde.
     //  * Yalnızca "GET /pops-cache/<sha256> HTTP/1.x" (ve gövdesiz HEAD), <sha256> önbellekteki paket: 200,
@@ -23,7 +39,7 @@ namespace POpsAgent
     //    sınıf, tohum birkaç saniye meşgul diye sunucuya dönmesin). Bekleyenlerle birlikte en çok MaxConnections bağlantı
     //    (fazlası hemen 503). İstek başlığı için 10 sn, aktarım için 10 dk süre; kalıcı bağlantı, Range ve sıkıştırma yok.
     [SupportedOSPlatform("windows")]
-    internal sealed class PeerCacheServer : IDisposable
+    internal sealed class PeerCacheServer : IPeerCacheServer
     {
         private const int MaxHeaderBytes = 8192;
         // Aktarım bekleyenler dahil açık bağlantı sınırı (bir sınıfın hepsi aynı anda sorabilir)

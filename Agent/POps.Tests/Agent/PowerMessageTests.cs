@@ -17,8 +17,6 @@ namespace POps.Tests.Agent
     // (makine kapısı MachineSeams.Power) yalnızca çağrıyı kaydeder, oturum sorgusu (MachineSeams.HasConsoleUser) testin
     // değeridir, bekleme (PowerActions.Delay, UserMessages.Delay) anında ya da test bırakınca biter, tepsi borusu
     // TrayOverride'dır. Bu testler bilgisayarı asla kapatmaz, yeniden başlatmaz, oturumu kapatmaz ya da kilitlemez.
-    // Machine: Worker'ın eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class PowerMessageTests : TestBase, IDisposable
     {
         private readonly Worker _worker;

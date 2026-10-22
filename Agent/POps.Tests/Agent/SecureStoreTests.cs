@@ -6,8 +6,7 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    [Collection(SharedStateCollection.Name)]
-    public class SecureStoreTests : SharedStateTestBase
+    public class SecureStoreTests : TestBase
     {
         [Fact]
         public void Directory_IsProtectedAndReappliedOnEveryStart()
@@ -45,19 +44,15 @@ namespace POps.Tests.Agent
         [Fact]
         public void TrustedOwnerCheck_IgnoresFilesOwnedByOthers()
         {
-            // Test kullanıcısı "servis hesabı"; başka bir sahip (ör. Users grubu) güvenilmez sayılır
+            // Test kullanıcısı "servis hesabı"; başka bir sahip (ör. Users grubu) güvenilmez sayılır. Servis hesabı LocalSystem
+            // olunca (argüman; süreç geneli SystemSid değişmez) test kullanıcısının dosyası güvenilmez.
             string path = Path.Combine(TestEnvironment.NewDir("sec"), "planted.secret");
             File.WriteAllText(path, "planted");
             Assert.Equal("planted", SecureStore.Read(path, requireTrustedOwner: true));
 
-            SecurityIdentifier original = SecureStore.SystemSid;
-            try
-            {
-                SecureStore.SystemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
-                if (!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))
-                    Assert.Null(SecureStore.Read(path, requireTrustedOwner: true));
-            }
-            finally { SecureStore.SystemSid = original; }
+            var localSystem = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+            if (!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))
+                Assert.Null(SecureStore.Read(path, requireTrustedOwner: true, localSystem));
         }
     }
 }

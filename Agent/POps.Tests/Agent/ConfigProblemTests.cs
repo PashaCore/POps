@@ -8,12 +8,10 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    // Yapılandırma okunamazsa ajan sessizce 127.0.0.1'e düşmez: sorun loglanır, Olay Günlüğüne yazılır, tepside görünür
-    [Collection(SharedStateCollection.Name)]
-    public class ConfigProblemTests : SharedStateTestBase, IDisposable
+    // Yapılandırma okunamazsa ajan sessizce 127.0.0.1'e düşmez: sorun loglanır, Olay Günlüğüne yazılır, tepside görünür.
+    // Ayar dosyaları testin kendisinindir ve okumaya argüman olarak verilir; ortam değişkeni de testin değeridir.
+    public class ConfigProblemTests : TestBase
     {
-        public void Dispose() => POpsHelpers.ConfigPaths = new string[0];
-
         private static string Config(string content)
         {
             string path = Path.Combine(TestEnvironment.NewDir("config"), "appsettings.json");
@@ -24,15 +22,15 @@ namespace POps.Tests.Agent
         [Fact]
         public void ValidConfig_HasNoProblem()
         {
-            POpsHelpers.ConfigPaths = new[] { Config("{\"ServerUrl\":\"https://pops.example/\"}") };
-            Assert.Equal(("https://pops.example", (string)null), POpsHelpers.ResolveServerUrl());
+            string[] configPaths = { Config("{\"ServerUrl\":\"https://pops.example/\"}") };
+            Assert.Equal(("https://pops.example", (string)null), POpsHelpers.ResolveServerUrl(configPaths));
         }
 
         [Fact]
         public void NoConfigFile_FallsBack_WithAProblem()
         {
-            POpsHelpers.ConfigPaths = new[] { Path.Combine(TestEnvironment.Root, "yok", "appsettings.json") };
-            var (url, problem) = POpsHelpers.ResolveServerUrl();
+            string[] configPaths = { Path.Combine(TestEnvironment.Root, "yok", "appsettings.json") };
+            var (url, problem) = POpsHelpers.ResolveServerUrl(configPaths);
             Assert.Equal(POpsHelpers.FallbackServerUrl, url);
             Assert.Contains("bulunamadı", problem);
         }
@@ -46,8 +44,8 @@ namespace POps.Tests.Agent
         [InlineData("[1,2]", "tanımlı değil")]
         public void UnreadableOrMissingServerUrl_FallsBack_WithAProblem(string content, string expected)
         {
-            POpsHelpers.ConfigPaths = new[] { Config(content) };
-            var (url, problem) = POpsHelpers.ResolveServerUrl();
+            string[] configPaths = { Config(content) };
+            var (url, problem) = POpsHelpers.ResolveServerUrl(configPaths);
             Assert.Equal(POpsHelpers.FallbackServerUrl, url);
             Assert.Contains(expected, problem);
         }
@@ -57,26 +55,26 @@ namespace POps.Tests.Agent
         public void BrokenFirstFile_IsReported_EvenWhenAnotherHasTheUrl()
         {
             string broken = Config("{bozuk");
-            POpsHelpers.ConfigPaths = new[] { broken, Config("{\"ServerUrl\":\"https://pops.example\"}") };
-            var (url, problem) = POpsHelpers.ResolveServerUrl();
+            string[] configPaths = { broken, Config("{\"ServerUrl\":\"https://pops.example\"}") };
+            var (url, problem) = POpsHelpers.ResolveServerUrl(configPaths);
             Assert.Equal("https://pops.example", url);
             Assert.Contains(broken, problem);
         }
 
+        // POPS_SERVER_URL testin değeridir (sürecin ortamı değişmez)
         [Fact]
         public void EnvironmentVariable_Wins()
         {
-            POpsHelpers.ConfigPaths = new[] { Config("{\"ServerUrl\":\"https://dosya.example\"}") };
-            Environment.SetEnvironmentVariable("POPS_SERVER_URL", "https://ortam.example");
-            try { Assert.Equal(("https://ortam.example", (string)null), POpsHelpers.ResolveServerUrl()); }
-            finally { Environment.SetEnvironmentVariable("POPS_SERVER_URL", null); }
+            string[] configPaths = { Config("{\"ServerUrl\":\"https://dosya.example\"}") };
+            Assert.Equal(("https://ortam.example", (string)null),
+                POpsHelpers.ResolveServerUrl(configPaths, name => name == "POPS_SERVER_URL" ? "https://ortam.example" : null));
         }
 
         [Fact]
         public void Worker_ShowsTheProblemInTheTray_AndAuditsItAsAnError()
         {
-            POpsHelpers.ConfigPaths = new[] { Config("{bozuk") };
-            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.Create(configPaths: POpsHelpers.ConfigPaths).Context);
+            string[] configPaths = { Config("{bozuk") };
+            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.Create(configPaths: configPaths).Context);
             Assert.NotNull(worker.ConfigProblem);
             string message = worker.ConfigErrorMessage();
             Assert.StartsWith("CONFIG_ERROR:", message);
@@ -88,8 +86,8 @@ namespace POps.Tests.Agent
             Assert.Equal(LocalAuditLevel.Error, audit.Level);
             Assert.Contains("server_url: http://127.0.0.1:8000", audit.Message);
 
-            POpsHelpers.ConfigPaths = new[] { Config("{\"ServerUrl\":\"https://pops.example\"}") };
-            using var healthy = new Worker(NullLogger<Worker>.Instance, AgentHarness.Create(configPaths: POpsHelpers.ConfigPaths).Context);
+            configPaths = new[] { Config("{\"ServerUrl\":\"https://pops.example\"}") };
+            using var healthy = new Worker(NullLogger<Worker>.Instance, AgentHarness.Create(configPaths: configPaths).Context);
             Assert.Null(healthy.ConfigProblem);
             Assert.Null(healthy.ConfigErrorMessage());
         }

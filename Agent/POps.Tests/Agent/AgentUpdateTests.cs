@@ -15,8 +15,6 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    // Machine: güncellemenin eş önbelleği sunucusu (TcpListener) IL'den ulaşılabilir
-    [Collection(MachineCollection.Name)]
     public class AgentUpdateTests : TestBase
     {
         private sealed class FakeServer : HttpMessageHandler
