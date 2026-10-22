@@ -26,6 +26,7 @@ select and add tests: [CONTRIBUTING.md](../CONTRIBUTING.md#backend-tests-pytest)
 | Panel syntax and escaping | `php -l` on every page; the HTML-sink scanner (`tools/html_sinks`). | CI `dashboard` job |
 | `tests/e2e/` (panel end to end) | Playwright in headless Chromium against the real panel (`php -S`) and backend on a seeded throwaway database: every page at 1440×900 and 390×844, and the main flows (below). | CI `panel-e2e` job, [locally](#panel-end-to-end-tests) |
 | Server scripts | `Installer/server/tests/test_deploy.sh`: `pops-deploy-backend` and `pops-selfupdate` in a temporary folder with fake `systemctl`, `curl`, `sudo`, `pip` and Python interpreters, without root. | CI `server-scripts` job |
+| `tests/e2e-windows/` (Windows agent end to end) | The real Windows agent MSI installed on a throwaway runner, driven by a real backend over TLS, for the steps a field PC cannot run: power while a shutdown is pending, exam clock skew, uninstall during quarantine/exam, pinned-CA update, lab peer cache ([below](#windows-agent-end-to-end-tests)). | `e2e-windows` workflow (manual, `e2e-win/**` branches, `v*` tags) |
 
 Run the backend suite locally (never against a production database):
 
@@ -98,6 +99,56 @@ with the HTML report and the traces as the `panel-e2e-report` artifact when the 
 An integration test that times out once and then passes is often the host, not the code: while the disk stalls, every
 PostgreSQL commit waits (the PostgreSQL log then shows `using stale statistics instead of current ones because stats
 collector is not responding`). Check that log for the time of the failure before chasing it in the code.
+
+### Windows agent end-to-end tests
+
+`tests/e2e-windows/` runs the **real Windows agent MSI** on a disposable `windows-latest` runner (Windows Server
+2025), driven by a real backend, to field-test the steps the owner's only PC cannot run — those that change the
+firewall, clock or services. Changing anything on the runner is fine because it is thrown away. It is slow (it builds
+the agent and installs/uninstalls it several times), so the `e2e-windows` workflow runs only on demand
+(`workflow_dispatch`), on pushes to `e2e-win/**` branches and on `v*` tags — never on every PR.
+
+The harness (`run.ps1`, with Python helpers) is self-contained:
+
+1. Starts the bundled PostgreSQL 17, generates a throwaway **test CA** and a `localhost` server certificate
+   (`certs.py`), and a throwaway **ed25519 release key** (`tools/sign_release.py genkey`). It patches that public key
+   into the agent's `ReleaseVerifier.PublicKeyBase64` **in the working copy only** and drops the public PEM where the
+   backend looks (`Backend/keys/`), so the test signs updates the agent and backend accept. Product code is never
+   changed; a real bug is reported, not patched.
+2. Builds two agent packages from the same tree (`build.ps1`, same steps as `release.yml`): **A** (`0.1.90-e2e`) and
+   **B** (`0.1.91-e2e`), signs B, and starts the backend with uvicorn over TLS (test CA).
+3. Installs agent **A** with `SERVER_CA_CERT` pinned to the test CA, then runs the steps and writes a PASS/FAIL/SKIP
+   table with the evidence line of each step (`results.md`, also in the job summary; uploaded with the agent, MSI and
+   backend logs as the `e2e-windows-logs` artifact). The build is not uploaded.
+
+   - **T3a** power: with a shutdown already pending (`shutdown /s /t 3000`; a second schedule must return 1190 first,
+     otherwise no power command is sent), `power` shutdown and restart must each fail with `[HATA] shutdown.exe 1190: …`,
+     the task goes `Failed`, the pending shutdown is still pending and the machine stays up (then `shutdown /a`).
+   - **T3b** power with nobody signed in → `-6 … oturum açık kullanıcı yok`: **skipped** on a hosted runner, because
+     its console session (where `Runner.Worker` lives) always has a signed-in user, so a real lock/logoff would end
+     the job. The rejection path is covered by `Agent/POps.Tests` instead.
+   - **T4** exam clock: start a one-minute exam (the runner's own connections are put on the exam allow list),
+     **stop the backend** so the agent is alone, move the clock +2 h (the exam must not end) and −2 h (it must not
+     extend), restore the clock, and confirm the exam ends about 60 s after the command, on the agent's monotonic
+     deadline (log `Sınav modu bitti (until)`, event 1111 `source: until`, no `POps Exam` rule left).
+   - **T6** pinned CA: deploy a signed update; the agent log must show the BITS-skip line
+     (`BitsDownload.PinnedCaMessage`) and `Paket indirildi (server)`, and the agent reconnects as B. **T6b** (BITS used
+     when the test CA is in the machine Root store instead of pinned) is optional and not run.
+   - **T7** peer cache: a simulated seed agent (`seed_agent.py`, modelled on `Backend/tests/test_peer_cache.py`) and a
+     fake peer HTTP server (`peer_server.py`) on the runner's own LAN IP. The real agent must download from the peer
+     (`Eşten indiriliyor` / `Paket indirildi (peer …)`); with wrong bytes it falls back to the server on a SHA
+     mismatch, and a peer outside the runner's subnets gives exactly one warning and a server download. Between
+     variants the agent is reinstalled as A and `C:\POpsData\cache` is cleared (uninstall keeps `C:\POpsData`, and a
+     kept package would be reused as `Paket indirildi (cache)`).
+   - **T5** uninstall: engage a real quarantine (and a variant during an exam, a variant that keeps the rules on a
+     major upgrade, and a variant with a profile disabled beforehand), then uninstall and confirm every POps firewall
+     rule and state file is gone, the kiosk policies are reverted, the network is reachable and the MSI log says
+     `güvenlik duvarı kuralları kaldırıldı`.
+
+Every isolation window (quarantine, exam) blocks all outbound traffic except the POps server, which kills a hosted job
+after ~90 s, so each window is kept short and a background `safety.ps1` plus a `finally` removes **all** POps firewall
+groups, cancels any pending shutdown and re-enables time sync no matter how a step ends. The runner never really shuts
+down or restarts.
 
 ## Coverage
 
