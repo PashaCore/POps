@@ -25,8 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent: .NET packages 10.0.13** (Microsoft.Extensions.Hosting, System.Diagnostics.EventLog, System.Management and
   System.ServiceProcess.ServiceController; #177, #178, #182, #183, #191).
 - **Docker images: refreshed `python:3.12-slim` and `php` base image digests** (#187, #189).
-- **Agent: the Worker is split into command handlers (steps a0–a4).** A `CommandDispatcher` routes each server action to its own handler class: execute, winget, tasks, Vision and capabilities, exam, file transfer, power, messages and more. `CapabilityGate` sends every `capability_denied` from one place. `Worker.cs` shrinks from 2,203 to about 1,750 lines. Behaviour is unchanged: the agent's 1,304 + 68 tests pass with the same names and results. Two small additions: the exam handler releases its resources when the agent stops, and the network change listener is removed when the Worker stops.
-- **Agent tests run in parallel.** Classes that touch shared static state or open real processes, pipes or sockets run in two serial collections; the other 31 classes run in parallel. A guard test fails CI when a parallel class touches mutable static state. It ignores the hit counters that code coverage adds in CI.
+- **Agent: the Worker is split into command handlers and a per-agent context (steps a0–a5, b1–b4, d; #162, #163, #192–#195).** A `CommandDispatcher` routes each server action to its own handler class: execute, winget, tasks, Vision and capabilities, exam, file transfer, power, messages and more. `CapabilityGate` sends every `capability_denied` from one place. The connection loop, the sender and the tray message routing have their own classes. The agent's folders, runtime state (capabilities, modules, credentials, server trust, HTTP client, update state), the machine seams (firewall, kiosk, exam, file transfer) and the DNS policy monitor are instances held by one `AgentContext` instead of statics. `Worker.cs` shrinks from 2,203 to about 710 lines. Behaviour is unchanged. Two small additions: the exam handler releases its resources when the agent stops, and the network change listener is removed when the Worker stops. Design note: [`docs/design/worker-split.md`](docs/design/worker-split.md).
+- **Agent tests run in parallel by default.** Only classes that open real processes, pipes or sockets run serially; the shared-state collection is gone, because no test changes a process-wide static any more. A guard test fails CI when a parallel class touches mutable static state, and a second one when product code in `POpsAgent` or `POps.Shared` adds a mutable static. Both ignore the hit counters that code coverage adds in CI. CI ran 1,479 tests on .NET 10 and 81 on the .NET Framework 4.7.2 MSI actions.
 - **Exam mode: the server sends its own time.** `exam_mode` now carries `now` (unix seconds) next to `until`. Agents from 0.1.24 take `until - now` as the time left and count it on a monotonic clock, so a PC clock that is ahead no longer refuses the exam and one that is behind no longer lengthens it. Older agents ignore the field. Schema, example and protocol README updated.
 - **Docs: release rhythm stated as it is.** README, README.tr, ROADMAP and the code-signing page said releases come out weekly, but 0.1.22 and 0.1.23 came out on the same day. They now say at most one planned release a week, with security fixes in between.
 - **Docs: tool scripts.** The docstrings of `tools/agent_simulator.py`, `tools/bench_charts.py`, `tools/html_sinks/check_html_sinks.py` and `tools/sign_release.py` give Python 3.10+ (the oldest version CI tests) and `python3 tools/…` examples that run from the repository root. Thanks to @RajGahoi (#90).
@@ -45,6 +45,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Agent: uninstalling removes every POps firewall rule.** The MSI's uninstall deletes the quarantine, exam mode and
+  peer cache rules (and the unnamed rules of agents before 0.1.4), turns the firewall profiles that were off before a
+  quarantine or exam back off, and deletes the quarantine and exam state files. A PC uninstalled during a quarantine
+  or an exam is no longer left without network. An upgrade or rollback keeps the rules (#196).
+- **Agent: the exam length no longer depends on the PC clock.** The agent counts from the server's `now` on a
+  monotonic clock, so a changed PC clock cannot shorten or lengthen an exam; it is at most 8 hours, also after a
+  restart (#196, server side #158).
+- **Agent: winget installs use only the winget source.** `--source winget` keeps the msstore source out under
+  LocalSystem. A package without a machine-wide installer (`0x8A150010`) is retried once without `--scope machine`,
+  and the result's first line says which scope was used. Such a package probably installs into the SYSTEM profile,
+  where students do not see it (#196).
+- **Agent: power results say what really happened.** Lock and sign-out report after acting, with the Win32 error code
+  on failure. A shutdown or restart that `shutdown.exe` refuses is reported as `[HATA]` with its exit code, the task
+  is `Failed` and the PC stays on; before, the agent reported `[TAMAM]` just before acting (#196).
+- **Agent: large file transfers no longer stop after 100 seconds.** File transfers have their own HTTP client: a
+  transfer stops only after 2 minutes without data or 2 hours in total (#196).
+- **Agent: no BITS when the server CA is pinned.** With `SERVER_CA_CERT` set the agent downloads updates directly,
+  because BITS cannot use the pinned CA; that saves about 10 minutes per update (#196).
+- **Peer cache in labs with public IPv4 addresses.** The server now offers a PC's own public IPv4 address as a peer
+  (from `X-Agent-Peer-Cache` or the inventory; a public connection address is still not used, as it is usually the
+  school's NAT), and the agent accepts peers on its own subnets, private or public. Before, such labs silently got
+  no peers (#196).
 - **Vision: a thumbnail reaches the panel with only its documented fields.** The server passed the agent's `thumbnail` message on to the admin panels as it came, apart from setting `hw_id` from the connection. An agent could add a `pc_name` naming another PC. The panel reads only `hw_id`, so nothing was shown under the wrong PC, but the server's rule is that no agent message reaches the panel in another device's name. Found by the `agent_ws` fuzz target; the input is now in its regression corpus.
 - **Docs: stale facts after 0.1.23.** Getting started, the Turkish "Neden POps?" guide and the positioning page no longer say there is no Linux agent or no directory sign-in. The Veyon guide lists the peer cache port and points to Sistem → Modüller. The quick start shows the language switch, every capability property and the Linux `.deb`. The Linux agent README no longer says Mesaj gönder sends the Windows `msg` command. ROADMAP no longer lists directory sign-in under Later.
 - **Sistem: an agent that is installing an update shows as updating, not off.** The agent's service is stopped during the install, so the PC looked offline and the card said "Hepsi kapalı". PCs with an update in flight are now counted as "güncelleniyor", and "eski ajanı güncelle" doesn't send to them again.
