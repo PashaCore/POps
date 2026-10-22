@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using POps.Shared;
@@ -25,10 +26,20 @@ namespace POps.Tests.Agent
         private readonly byte[] _package = RandomNumberGenerator.GetBytes(3000);
         private readonly List<string> _stages = new List<string>();
         private int _httpRequests;
+        // BITS kapısının kaç kez çağrıldığı
+        private int _bitsCalls;
 
         public BitsDownloadTests()
         {
-            _agent = AgentHarness.Create("bits-data", machine: new MachineSeams { Kiosk = new FakeKioskRegistry(), Bits = (script, timeout) => _runner(script, timeout) });
+            _agent = AgentHarness.Create("bits-data", machine: new MachineSeams
+            {
+                Kiosk = new FakeKioskRegistry(),
+                Bits = (script, timeout) =>
+                {
+                    Interlocked.Increment(ref _bitsCalls);
+                    return _runner(script, timeout);
+                },
+            });
         }
 
         public void Dispose() => _agent.Dispose();
@@ -73,8 +84,47 @@ namespace POps.Tests.Agent
             Assert.True(await Download(path));
             Assert.Equal(_package, File.ReadAllBytes(path));
             Assert.Equal(0, _httpRequests);
+            Assert.Equal(1, _bitsCalls);
             Assert.Equal(new[] { "downloaded", "verified" }, _stages);
             Assert.False(File.Exists(path + ".bits"));
+        }
+
+        // Sunucu sertifikası kurum sertifikasına sabitliyken (server-ca.pem, "server_ca": "custom") BITS hiç çağrılmaz: BITS
+        // Windows'un güven deposunu kullanır, kurum sertifikasını kullanamaz. Paket doğrudan (ajanın HttpClient'ıyla) iner ve
+        // aynı imzalı manifest denetiminden geçer.
+        [Fact]
+        public async Task PinnedServerCa_SkipsBits_AndDownloadsDirectly()
+        {
+            using (ECDsa key = ECDsa.Create())
+            {
+                var request = new CertificateRequest("CN=POps Test CA", key, HashAlgorithmName.SHA256);
+                request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+                using X509Certificate2 ca = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
+                File.WriteAllText(_agent.Paths.ServerCaPath, ca.ExportCertificatePem());
+            }
+            _agent.Trust.Reload();
+            Assert.Equal(ServerTrust.ModeCustom, _agent.Capabilities.ServerCa);
+            Bits(0, _package);
+
+            string path = Path.Combine(_agent.Paths.DataDir, "x.msi");
+            Assert.True(await Download(path));
+            Assert.Equal(0, _bitsCalls);
+            Assert.Equal(1, _httpRequests);
+            Assert.Equal(_package, File.ReadAllBytes(path));
+            Assert.Equal(new[] { "downloaded", "verified" }, _stages);
+            Assert.False(File.Exists(path + ".bits"));
+        }
+
+        // Bozuk server-ca.pem de "custom"dır (bağlantılar kapalı yöne düşer): BITS sistem deposuyla sabitlemeyi aşmaz
+        [Fact]
+        public async Task BrokenServerCa_SkipsBitsToo()
+        {
+            File.WriteAllText(_agent.Paths.ServerCaPath, "sertifika değil");
+            _agent.Trust.Reload();
+            Bits(0, _package);
+            Assert.True(await Download(Path.Combine(_agent.Paths.DataDir, "x.msi")));
+            Assert.Equal(0, _bitsCalls);
+            Assert.Equal(1, _httpRequests);
         }
 
         [Fact]

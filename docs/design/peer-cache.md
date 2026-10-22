@@ -17,7 +17,9 @@ package's SHA-256).
 - A job that does not finish in 15 minutes keeps running, and the next `update_agent` for the same package
   picks it up.
 - If BITS cannot be used (module or service missing, the organisation's private CA trusted only by the agent and
-  not by Windows, a server without Range support), the agent downloads with HttpClient as before.
+  not by Windows, a server without Range support), the agent downloads with HttpClient as before. From the version
+  after 0.1.23-alpha an agent pinned to the school CA (`server_ca = custom`) skips BITS and downloads with
+  HttpClient straight away, instead of waiting for BITS to give up.
 - The signed manifest's size and SHA-256 are checked on both paths.
 
 This fixes the restart-from-zero problem. It does not reduce the 40× load.

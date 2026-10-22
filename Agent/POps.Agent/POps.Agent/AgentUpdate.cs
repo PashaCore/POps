@@ -462,7 +462,7 @@ namespace POpsAgent
             _launchUpdater = machine.LaunchUpdater;
             PeerCache = new PeerCache(paths, capabilities, machine.PeerCacheFirewall, machine.PeerCacheServer);
             PeerDownload = new PeerDownload(address => PeerCache.IsLocalSubnet(address));
-            Bits = new BitsDownload(machine.Bits);
+            Bits = new BitsDownload(machine.Bits, () => capabilities.ServerCa == ServerTrust.ModeCustom);
         }
 
         // Laboratuvar eş önbelleği: doğrulanmış paketi eşlere sunar (bkz. PeerCache); Worker dakikalık denetimi ve kapanışı yapar

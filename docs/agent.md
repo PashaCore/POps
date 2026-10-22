@@ -784,7 +784,11 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
    that is not newer than its own, downloads the MSI from `<ServerUrl>/updates/<name>` and checks its size and
    SHA-256. From 0.1.23-alpha the download uses BITS: it resumes after a network drop or a restart, and a download
    that is still running after 15 minutes continues with the next update command. When BITS cannot be used, the
-   agent downloads directly as before. See [`design/peer-cache.md`](design/peer-cache.md). With the lab-local peer
+   agent downloads directly as before. From the version after 0.1.23-alpha an agent pinned to the school CA
+   (`server_ca = custom`, see [Server certificate](#server-certificate)) does not try BITS at all and downloads
+   directly with its own certificate check: BITS uses the Windows trust store, cannot use `server-ca.pem`, and only
+   fell back after its retry time (about 10 minutes). The log says so once per download (`BITS kullanılmadı: sunucu
+   sertifikası kurum sertifikasıyla (server-ca.pem) doğrulanıyor …`). See [`design/peer-cache.md`](design/peer-cache.md). With the lab-local peer
    cache (below) the server sends `update_agent` to one PC per lab first and to the rest with `peers`.
 3. `POpsUpdater` installs it, waits up to 90 seconds for the new version to report `phase: "operational"`
    in `C:\POpsData\health.json`, and otherwise rolls back to the previous MSI. Operational means the agent's
