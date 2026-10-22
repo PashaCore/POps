@@ -38,8 +38,6 @@ namespace POps.Tests.Agent
             AgentUpdate.DataDir = TestEnvironment.NewDir("connection-data");
             TrayPipeServer.PipeName = "POpsTrayPipe-test-" + Guid.NewGuid().ToString("N").Substring(0, 8);
             TrayPipeServer.ClientCheckOverride = _ => null;
-            // DNS izleme bağlantı kurulunca başlar: gerçek DNS önbelleği okunmaz
-            DnsPolicyMonitor.CacheReader = () => Array.Empty<string>();
             string config = Path.Combine(TestEnvironment.NewDir("connection-config"), "appsettings.json");
             File.WriteAllText(config, "{\"ServerUrl\":\"" + _server.Url + "\"}");
             POpsHelpers.ConfigPaths = new[] { config };
@@ -47,7 +45,8 @@ namespace POps.Tests.Agent
             AgentCredentials.SaveSecret(Secret, HwId);
             SecureStore.WriteProtected(SecureStore.PathOf(AgentCredentials.EnrollTokenFileName), EnrollToken);
             AgentCapabilities.Load();   // dosya yok: varsayılanlar (Vision açık)
-            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context) { HwId = HwId };
+            // DNS izleme bağlantı kurulunca başlar: gerçek DNS önbelleği okunmaz
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context, () => Array.Empty<string>()) { HwId = HwId };
             _logStart = LogLength();
         }
 
@@ -59,8 +58,6 @@ namespace POps.Tests.Agent
             _worker.Dispose();
             _server.Dispose();
             _stop.Dispose();
-            DnsPolicyMonitor.Reset();
-            DnsPolicyMonitor.CacheReader = DnsWatch.ReadCacheNames;
             POpsHelpers.ConfigPaths = new string[0];
             TrayPipeServer.PipeName = "POpsTrayPipe";
             TrayPipeServer.ClientCheckOverride = null;

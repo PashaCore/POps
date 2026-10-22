@@ -83,9 +83,9 @@ namespace POpsAgent
 
         // Karantina (lockdown/unlock/çevrimdışı bypass) ve Windows Update: bkz. QuarantineControl, PatchManager
         private QuarantineControl _quarantine;
-        // DNS eşiğindeki otomatik karantina ve DNS hataları (bkz. BindDnsPolicyMonitor)
-        private readonly Action<string> _dnsQuarantine;
-        private readonly Action<string> _dnsErrorReporter;
+        // DNS politika izleme: bu Worker'ın örneği; eşikteki otomatik karantina ve DNS hataları yalnızca bu Worker'a gider,
+        // Dispose zamanlayıcıyı durdurur (bkz. DnsPolicyMonitor)
+        internal DnsPolicyMonitor Dns { get; }
         private readonly PatchManager _patches;
         // Yardım masası: tepsinin "Sorun bildir" / "Taleplerim" istekleri (bkz. Helpdesk)
         private readonly Helpdesk _helpdesk;
@@ -112,11 +112,18 @@ namespace POpsAgent
         private readonly FileTransferHandler _files;
 
         // Testler: health.json bağlamın veri klasörüne yazılır, tatbikat yok
-        public Worker(ILogger<Worker> logger, AgentContext context)
-            : this(logger, new AgentStartupHealth(false, checks => context.Updater.WriteOperationalHealth(checks)), context) { }
+        public Worker(ILogger<Worker> logger, AgentContext context) : this(logger, context, DnsWatch.ReadCacheNames) { }
+
+        // Testler: DNS politika izlemenin okuduğu önbellek de sahtedir (gerçek DNS önbelleği okunmaz)
+        internal Worker(ILogger<Worker> logger, AgentContext context, Func<IEnumerable<string>> dnsCache)
+            : this(logger, new AgentStartupHealth(false, checks => context.Updater.WriteOperationalHealth(checks)), context, dnsCache) { }
 
         // context: yollar ve çalışma durumu; servis için Program kurar (bkz. AgentContext)
         public Worker(ILogger<Worker> logger, AgentStartupHealth startupHealth, AgentContext context)
+            : this(logger, startupHealth, context, DnsWatch.ReadCacheNames) { }
+
+        // dnsCache: DNS politika izlemenin okuduğu Windows DNS istemci önbelleği (servis: DnsWatch.ReadCacheNames)
+        private Worker(ILogger<Worker> logger, AgentStartupHealth startupHealth, AgentContext context, Func<IEnumerable<string>> dnsCache)
         {
             string[] args = Environment.GetCommandLineArgs();
             if (args.Contains("POpsV", StringComparer.OrdinalIgnoreCase))
@@ -153,11 +160,12 @@ namespace POpsAgent
 
             // Tepsi borusu ve bağlantı aşağıda, en son kurulur; aradakiler onları ancak çalışırken okur
             _channel = new CommandChannel(_wsCommandLock);
+            // DNS eşiğindeki otomatik karantina da kilit ekranı + yalıtım yolundan geçer (bkz. AutoQuarantineAsync); DNS hataları
+            // heartbeat'in agent_health'ine. Karantina kalkınca (unlock, bypass) ihlal sayacı sıfırlanır.
+            Dns = new DnsPolicyMonitor(reason => _ = AutoQuarantineAsync(reason), message => _health.RecordError("dns", message), _http, _credentials,
+                TimeProvider.System, dnsCache);
             _quarantine = new QuarantineControl(_paths, message => _tray.Pipe?.SendCommandToDesktop(message),
-                EnableNetworkIsolationAsync, DisableNetworkIsolationAsync, audit: LocalAudit.Write);
-            _dnsErrorReporter = message => _health.RecordError("dns", message);
-            // DNS eşiğindeki otomatik karantina da kilit ekranı + yalıtım yolundan geçer (bkz. AutoQuarantineAsync)
-            _dnsQuarantine = reason => _ = AutoQuarantineAsync(reason);
+                EnableNetworkIsolationAsync, DisableNetworkIsolationAsync, audit: LocalAudit.Write, unlocked: Dns.ResetViolations);
             _patches = new PatchManager(_paths, _serverUrl, () => _hwId, _modules, _http);
             // Talebin sahibi konsoldaki değil, isteği yapan tepsinin oturumundaki kullanıcı (hızlı kullanıcı değiştirme, RDP)
             _helpdesk = new Helpdesk(_paths, _serverUrl, () => _hwId, () => _tray.Pipe?.ClientUser, message => _tray.Pipe?.SendCommandToDesktop(message), _modules, _http);
@@ -179,7 +187,7 @@ namespace POpsAgent
             Binding = new HardwareBinding(_paths,
                 () => (HardwareInfo.GetWmiValue("Win32_ComputerSystemProduct", "UUID"), HardwareInfo.GetWmiValue("Win32_BIOS", "SerialNumber")));
             _updates = new UpdateReporter(Handshake, UpdateResults, _channel.TrySendAsync, LocalAudit.Write, _paths, _updater);
-            _policy = new PolicySync(_serverUrl, () => _hwId, _httpClient, _health, _vision, () => _tray.Pipe, () => _software, LocalAudit.Write, _modules, _http);
+            _policy = new PolicySync(_serverUrl, () => _hwId, _httpClient, _health, _vision, () => _tray.Pipe, () => _software, LocalAudit.Write, _modules, _http, Dns);
             Dispatcher = BuildDispatcher();
             _tray = new TrayMessageRouter(() => new TrayPipeServer(), _startupHealth, _vision, _remoteInput, _channel, () => _hwId, _policy, _helpdesk, _activity,
                 Power, Messages, () => _quarantine, HandleBypassAttemptAsync, ToTray, ConfigErrorMessage);
@@ -323,7 +331,6 @@ namespace POpsAgent
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            BindDnsPolicyMonitor();
             ReportConfigProblem();
             // Tepsi ve watchdog kullanıcı oturumunda yoksa başlatılır (kurulum/güncelleme sonrası, karantinada kilit ekranı).
             // Yavaş WMI açılışını beklemez.
@@ -358,7 +365,7 @@ namespace POpsAgent
             {
                 _tray.ForgetForegroundApp();
                 // Yeni kullanıcı öncekinin DNS ihlalleriyle karantinaya girmesin
-                DnsPolicyMonitor.OnUserChanged();
+                Dns.OnUserChanged();
             };
             _software = new SoftwareReporter(_paths, _serverUrl, () => _hwId, _modules, _http, _health.InventoryUploaded, error => _health.RecordError("inventory", error));
             _ = Task.Run(() => _software.RunAsync(stoppingToken), stoppingToken);
@@ -445,14 +452,10 @@ namespace POpsAgent
         internal void ApplyPolicy(string json) => _policy.ApplyPolicy(json);
         internal string HelpdeskMenuMessage() => _policy.HelpdeskMenuMessage();
 
-        // DNS izleme statiktir: otomatik karantina ve DNS hataları yalnızca çalışan Worker'a gider. ExecuteAsync'in
-        // başında bağlanır (izleme ancak komut tüneli kurulunca başlar), Dispose'da yalnızca hâlâ bu Worker'ınsa
-        // bırakılır. Testte kurulup başlatılmayan Worker da, atılmış Worker da hiçbir şey almaz.
-        internal void BindDnsPolicyMonitor() => DnsPolicyMonitor.Bind(_dnsQuarantine, _dnsErrorReporter);
-
         public override void Dispose()
         {
-            DnsPolicyMonitor.Release(_dnsQuarantine, _dnsErrorReporter);
+            // DNS politika izlemenin zamanlayıcısı durur, geri çağrıları bırakılır: atılmış Worker hiçbir şey almaz
+            Dns.Dispose();
             // Sınav döngüsünün ağ olayı ve sınav giriş/çıkış kilidi (bkz. ExamLoopAsync, ExamHandler)
             System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnExamNetworkAddressChanged;
             _exam.Dispose();

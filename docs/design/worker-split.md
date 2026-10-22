@@ -20,7 +20,8 @@ Status: proposed, not built. The code changes start after #97, #99, #100 and #10
   Examples on main and in open PRs:
   - Worker's constructor assigns the static `DnsPolicyMonitor.Quarantine` and `DnsPolicyMonitor.ErrorReporter`.
     The last Worker constructed in the process gets every DNS auto-quarantine. **Fixed** in
-    [#137 test(agent): per-Worker DNS callbacks, no real folders in tests (split prerequisite)](https://github.com/PashaCore/POps/pull/137).
+    [#137 test(agent): per-Worker DNS callbacks, no real folders in tests (split prerequisite)](https://github.com/PashaCore/POps/pull/137);
+    since b4 each Worker owns its monitor.
   - `AgentHttp.Client` is swapped for a fake by `ModulesTests`, `ReporterFlowTests` and `AgentHttpFlowTests`, and by
     `FileTransferTests` in #99.
   - `TestIsolationTests.RealFoldersAreNeverUsed` points `AgentUpdate.DataDir` at the real `C:\POpsData` for a moment.
@@ -326,8 +327,8 @@ Assert.Contains(1020, agent.AuditIds);       // quarantine start, not checkable 
 | `ServerTrust.CaPath` and its cache (`_ca`, `_loadedPath`, `_broken`, last-reject time) | Worker (reload, sockets), `AgentHttp.Handler`, `capabilities` (`server_ca`) | `ServerTrustTests` | `AgentPaths.ServerCaPath` (b1); `ServerTrust` instance in the context (`AgentContext.Trust`, only the agent uses it). b2: a plain instance class (`ServerTrust(caPath)`); no static is left (`CaPath` and the cache are per instance, `AgentDirectories.Use` no longer sets a path). The Worker's policy/download client, `AgentHttp`, the command and Vision sockets and `server_ca` use the context's one instance | path b1 (**done** in #163), instance b2 (**done** in #192) |
 | `AgentCapabilities` state | Worker, the gate, the heartbeat, `capabilities` | `Load()` after writing `capabilities.json` | `CapabilityState` instance (`AgentContext.Capabilities`; file and `ServerTrust` as constructor arguments). Stays static: `AgentCapabilities.Process`, a reference to the process default (Program sets it to the context's instance), with one-line forwarders, for `PeerCache`, `AgentFeatures.Header` (the `X-Agent-Features` line in `CommandConnection.cs` that `PeerCacheTests` and `PowerMessageTests` read stays as it is), `AgentUpdate`'s peer-cache decisions (b3) and the `SharedState` Worker tests | b2 (**done** in #192); `Process` goes in b3 |
 | `AgentModules` (`_closed`, `_known`) | Worker, `Helpdesk`, `PatchManager`, `SoftwareReporter` | `Apply`, `Reset` before every test | `ModuleState` instance (`AgentContext.Modules`), one per context; `AgentModules` keeps only the module names. `Reset()` and its line in `EnsureIsolated` are gone | b2 (**done** in #192) |
-| `AgentCredentials` (`_currentSecret`, `_badTokenLogged`) | auth headers, Vision auth, `AgentHttp.CanReport` | `SaveSecret` | `CredentialStore` instance (`AgentContext.Credentials`; secure folder and config files from `AgentPaths`). Stays static: `AgentCredentials.Process` with one-line forwarders, for `AddHttpAuth` in `FileTransfer` (b3) and `DnsPolicyMonitor` (b4) and the `SharedState` tests; Program sets it to the context's instance, so those two keep sending the device secret | b2 (**done** in #192); `Process` goes in b3 |
-| `AgentHttp.Client`, `Handler`, `MaxResponseBytes`, `_noSecretLogged` | every HTTP report | `ModulesTests`, `OperationalFlowTests`, `FileTransferTests` (#99) | `AgentHttp` instance built from an `HttpMessageHandler` (`AgentContext.Http`; service: `ServerTrust.NewHandler()`). Stays static: `AgentHttp.Default`, a reference to the process default (Program sets it to the context's instance), for `FileTransfer` (b3) and `DnsPolicyMonitor` (b4) | b2 (**done** in #192); `Default` goes in b3 |
+| `AgentCredentials` (`_currentSecret`, `_badTokenLogged`) | auth headers, Vision auth, `AgentHttp.CanReport` | `SaveSecret` | `CredentialStore` instance (`AgentContext.Credentials`; secure folder and config files from `AgentPaths`). Stays static: `AgentCredentials.Process` with one-line forwarders, for `AddHttpAuth` in `FileTransfer` (b3) and the `SharedState` tests; Program sets it to the context's instance, so `FileTransfer` keeps sending the device secret. `DnsPolicyMonitor` read it too until b4; since b4 it takes the context's `CredentialStore` | b2 (**done** in #192); `Process` goes in b3 |
+| `AgentHttp.Client`, `Handler`, `MaxResponseBytes`, `_noSecretLogged` | every HTTP report | `ModulesTests`, `OperationalFlowTests`, `FileTransferTests` (#99) | `AgentHttp` instance built from an `HttpMessageHandler` (`AgentContext.Http`; service: `ServerTrust.NewHandler()`). Stays static: `AgentHttp.Default`, a reference to the process default (Program sets it to the context's instance), for `FileTransfer` (b3). `DnsPolicyMonitor` read it too until b4; since b4 it takes the context's `AgentHttp` | b2 (**done** in #192); `Default` goes in b3 |
 | `AgentUpdate` `_busy`, `_preparingVersion`, `_auditedResult`, `TrustedKeyOverride`, `LaunchOverride`, `InstalledVersionOverride` | update command and reporting | `UpdateProgressTests`, `RollbackDrillTests`, `Pr24ReviewTests`, `AgentUpdateTests` | `AgentUpdater` instance with key, launcher and version as constructor arguments (`AgentContext.Updater`; `ApplyRollbackDrillOnStartup`, `WriteOperationalHealth`, `HandleUpdateCommandAsync` and `PendingResultAudit` are its methods; Program builds it before the host, for the drill decision) | b2 (**done** in #192) |
 | `NetworkIsolation.ScriptRunner` | isolation, exam (#97) | `NetworkIsolationFlowTests`; `ExamModeTests` and a default in `EnsureIsolated` (#97) | constructor argument | b3 |
 | `KioskMode.Registry` | quarantine, kiosk sync | `TestEnvironment`, `KioskPoliciesTests` | constructor argument (`IKioskRegistry` exists) | b3 |
@@ -337,7 +338,7 @@ Assert.Contains(1020, agent.AuditIds);       // quarantine start, not checkable 
 | `WindowsUpdateAgent.AbortGrace`, `_browseOnlyUnreadableLogged` | WUA jobs | `WuaJobTests` | argument / instance | b3 |
 | `Generalizer.IsAdministrator`, `StopAgent` | `--generalize` (no Worker) | `GeneralizeTests` | arguments to `Generalizer.Run` | b3 |
 | `ExamMode.Resolver` (#97), `FileTransfer.PublicDesktopOverride`, `ProfileInfo` (#99), `WingetInstall.Locator` (#100) | the new handlers | their test classes | handler constructor arguments | b3 |
-| `DnsPolicyMonitor`: timer, policy, index, reported and recent lists, baseline, flags, `UtcNow`, `CacheReader`, `Reporter`, `Quarantine`, `ErrorReporter`, `IndexBuilds` | Worker (configure, start, user change) | `DnsPolicyMonitorTests`, `QuarantineControlTests`, `ReReviewTests` | instance owned by Worker; callbacks and clock as constructor arguments | b4 |
+| `DnsPolicyMonitor`: timer, policy, index, reported and recent lists, baseline, flags, `UtcNow`, `CacheReader`, `Reporter`, `Quarantine`, `ErrorReporter`, `IndexBuilds` | Worker (configure, start, user change) | `DnsPolicyMonitorTests`, `QuarantineControlTests`, `ReReviewTests` | sealed, disposable instance owned by the Worker (`Worker.Dns`), not a context part: its callbacks are the Worker's. Constructor arguments: quarantine and error callbacks, the context's `AgentHttp` and `CredentialStore` (`/api/policy_alert`), `TimeProvider` (the Worker passes `TimeProvider.System`) and the DNS cache reader (service: `DnsWatch.ReadCacheNames`); an internal overload takes a fake reporter. `PolicySync` configures and starts the Worker's instance, `QuarantineControl` gets an `unlocked` callback (the Worker passes `Dns.ResetViolations`), `Worker.Dispose` stops the timer and releases the callbacks. #137's `BindDnsPolicyMonitor`/`Bind`/`Release` and the default quarantine (`NetworkIsolation.EnableAsync`, which never ran in the service: the Worker bound its own before the monitor could start) are gone. No static is left | b4 (**done** in #193) |
 
 These can stay static, because they are immutable or describe the whole process or machine:
 - constants, compiled regexes, `JsonSerializerOptions`, `AppVersion`, `TrayExePath`, `LocalAudit.Source`, and pure
@@ -379,20 +380,25 @@ left. The order: paths first (b1), then runtime state (b2), then `DnsPolicyMonit
 Worker binds and releases its callbacks, the policy configures and starts it), so b3 could not free any of those
 classes while the monitor is static. With b4 first, b3 removes the last statics they reach.
 
-As built in b1 (#163) and b2 (#192), the shape the later steps extend:
+As built in b1 (#163), b2 (#192) and b4 (#193), the shape the later steps extend:
 - `AgentContext` (`Agent/POps.Agent/POps.Agent/AgentContext.cs`) has one constructor argument and one read-only
   property per part. b1 has `Paths`; b2 adds the runtime state: `Capabilities` (`CapabilityState`), `Modules`
   (`ModuleState`), `Credentials` (`CredentialStore`), `Trust` (`ServerTrust`), `Http` (`AgentHttp`) and `Updater`
-  (`AgentUpdater`), each appended at the end of the constructor; b4 adds the `DnsPolicyMonitor`, b3 `AgentMachine`.
-  `IAuditSink` and `TimeProvider`, planned for b2, are not statics and no b2 class needed them; they come with the
-  step whose tests need them. Program builds every part once (wiring by hand, as above) and registers the context for
-  the host; `Worker(ILogger, AgentStartupHealth, AgentContext)` is the host's constructor and `Worker(ILogger,
-  AgentContext)` the tests'.
-- The process defaults that statics left for b3/b4 read (`AgentCapabilities.Process`, `AgentCredentials.Process`,
+  (`AgentUpdater`), each appended at the end of the constructor; b3 adds `AgentMachine`. b4 adds no part: the
+  `DnsPolicyMonitor` belongs to the Worker (`Worker.Dns`), because its quarantine and error callbacks are the
+  Worker's; it takes `Http` and `Credentials` from the context. `IAuditSink` and `TimeProvider`, planned for b2, are
+  not statics and no b2 class needed them; they come with the step whose tests need them (b4: the monitor takes a
+  `TimeProvider` as a constructor argument, the Worker passes `TimeProvider.System`, as for `CapabilityGate`). Program
+  builds every part once (wiring by hand, as above) and registers the context for the host; `Worker(ILogger,
+  AgentStartupHealth, AgentContext)` is the host's constructor and `Worker(ILogger, AgentContext)` the tests'
+  (`Worker(ILogger, AgentContext, dnsCache)` since b4, for tests that also fake the DNS cache).
+- The process defaults that statics left for b3 read (`AgentCapabilities.Process`, `AgentCredentials.Process`,
   `AgentHttp.Default`) are set in one place, `AgentContext.UseForProcess()`, which Program calls right after building
   the context: in the service every part has exactly one instance, shared by the Worker and the static code. Their
   initial values (used only by tests) resolve their files at each use from `SecureStore.Dir` and
-  `POpsHelpers.ConfigPaths`, the way the statics did.
+  `POpsHelpers.ConfigPaths`, the way the statics did. Since b4 their product readers are `PeerCache`,
+  `AgentFeatures.Header` and `AgentUpdate`'s peer-cache decisions (capabilities) and `FileTransfer` (HTTP client and
+  credentials).
 - `AgentPaths` is immutable. `AgentPaths.ForFolders(data, log, configPaths)` is the service layout (secure folder
   and server CA inside the data folder); the constructor takes every folder for the tests.
 - `AgentHarness` (`Agent/POps.Tests/AgentHarness.cs`): `Create(name, http)` gives a test its own folders under
@@ -402,7 +408,9 @@ As built in b1 (#163) and b2 (#192), the shape the later steps extend:
   remaining statics point at and the process defaults (a new `ModuleState` and `AgentUpdater` each call), for
   `SharedState` classes that still set them; a class switches to `Create()` in the step that frees it. The harness
   exposes the parts (`Capabilities`, `Modules`, `Credentials`, `Trust`, `Http`, `Updater`). Each step adds its parts'
-  test versions (fakes, recorders) to the harness.
+  test versions (fakes, recorders) to the harness. b4: `NewDnsMonitor(cache, reporter, quarantine, errors, clock)`
+  builds a test's own `DnsPolicyMonitor` over the harness's `Http` and `Credentials`, with a fake DNS cache (callbacks
+  not given do nothing, so nothing reaches a server).
 - The process-default path facades are set in one place, `AgentDirectories.Use(AgentPaths)`, from the same
   `AgentPaths` the context gets (b2: no longer the server CA path).
 
@@ -478,7 +486,18 @@ keeps that window short.
   are `AgentUpdater` constructor arguments since b2. Thirteen classes left `SharedState` (see (c)); the scanner's
   self-test now uses `AgentDirectories.Use` (it writes `POpsHelpers.MachineLogDir`, which stays static) as its
   sample of a write deep in product code from an async method, instead of `AgentUpdate._auditedResult`.
-- **b4. `DnsPolicyMonitor`** becomes an instance. Before b3: see the order above.
+- **b4. `DnsPolicyMonitor`** becomes an instance. Before b3: see the order above. **Done** in
+  [#193 refactor(agent): DnsPolicyMonitor is an instance (split step b4)](https://github.com/PashaCore/POps/pull/193):
+  the monitor is a sealed, disposable instance owned by the Worker (`Worker.Dns`; see its row above). Its quarantine
+  and error callbacks are constructor arguments, so #137's per-Worker binding (`BindDnsPolicyMonitor` at the start of
+  `ExecuteAsync`, `Release` in `Dispose`) is gone: a Worker gets only its own monitor's auto-quarantine and errors, and
+  `Worker.Dispose` stops the timer and releases the callbacks. `PolicySync` configures and starts the Worker's
+  instance, `SessionReporter.UserChanged` calls its `OnUserChanged`, and `QuarantineControl.UnlockAsync` calls the
+  `unlocked` callback the Worker passes (`Dns.ResetViolations`) instead of the static. The policy alert uses the context's `AgentHttp` and `CredentialStore`,
+  so after b4 only `FileTransfer` (b3) reads `AgentHttp.Default` and `AgentCredentials.Process`. Timer interval,
+  window, thresholds, log lines and `LocalAudit` events are unchanged. `DnsPolicyMonitor.cs` is nullable-clean (no
+  logic change; the policy alert payload's properties are `string?`). One class left `SharedState` (see (c)); the
+  other six b4 classes build a Worker or a `QuarantineControl` and reach b3 seams.
 - **b3. Machine seams:** isolation runner, kiosk registry, BITS, pipe options, command runner timeouts and task folder,
   WUA grace, generalizer, the three seams from #97/#99/#100, and the static stand-ins b2 left for the peer cache and
   the file transfer (`AgentCapabilities.Process`, `AgentCredentials.Process`, `AgentHttp.Default`).
@@ -490,7 +509,11 @@ rewritten: instead of setting the real path for a moment, it checks that `AgentH
 `C:\POps*`. (b1: `EnsureIsolated` no longer resets paths, and `TestEnvironmentTests` checks the harness paths and the
 service defaults. b2: it no longer resets the server modules, and `TestEnvironment` no longer sets a CA path. One
 asserted expression changed in b2: `FolderSettingsTests` read the removed `ServerTrust.CaPath` and now reads the
-returned `AgentPaths.ServerCaPath`, the same value.)
+returned `AgentPaths.ServerCaPath`, the same value. b4: `EnsureIsolated` never reset the DNS monitor, so it loses no
+line; the monitor's own resets in the tests are gone. The DNS assertions read the test's instance (`_dns.Violations`,
+`worker.Dns.IsRunning`) instead of the static, with the same expected values; in `DnsWorkerBindingTests` the helpers
+that make a violation or a failed cache read name the monitor they act on: the test's own one, which belongs to no
+Worker, or the Worker's.)
 
 ### (c) Parallel tests, per collection
 
@@ -511,7 +534,7 @@ first form of the guard test from (d) landed here.
     `CommandRunnerTests`, `CommandOutputChunkTests` and `StaleTaskFileTests` (cmd.exe), `PipeOwnerTests` (pipe) and
     `WebSocketMessagesTests` (loopback socket). The timing classes the plan put here, `WindowsUpdateAgentTests` (the
     former `WuaJobTests`) and `DnsDomainIndexTests`, also set statics, so they are in `SharedState` and move to
-    `Machine` when (b) frees them.
+    `Machine` when (b) frees them (`DnsDomainIndexTests`: b4, #193).
   - net472 (MSI custom actions): `SetupTests`, `FolderSetupTests` and `ServerCaSetupTests` set
     `Setup.TrustedBaseForTests` and are in `SharedState`; `KioskRestoreSetupTests` and `EventSourcePackageTests` run
     in parallel.
@@ -523,9 +546,12 @@ first form of the guard test from (d) landed here.
   | --- | --- |
   | b1 (paths) | **done** in #163, 10: `BypassDecayTests`, `HealthCheckTests`, `IsolationRefreshTests`, `NetworkIsolationTests` (to `Machine`: it starts powershell.exe), `PatchScheduleTests`, `ResultSpoolTests`, `SessionEventsTests`, `TestEnvironmentTests`, `UpdateResultAckTests`, `UserSessionAppsTests`. `HealthCheckTests` was counted in b2; its only static was the `AgentUpdate.DataDir` behind `AgentStartupHealth`'s default writer, which b1 removed |
   | b2 (runtime state) | **done** in #192, 13: `ActivityHistoryTests`, `AgentCapabilitiesTests`, `AgentHttpFlowTests`, `AgentHttpTests` (to `Machine`: it listens on a TCP socket), `HelpdeskTests`, `HelpdeskThrottleTests`, `InventoryLoadTests`, `LocalAuditTests`, `PatchDeliveryTests`, `ReporterFlowTests`, `RollbackDrillTests`, `ServerTrustTests`, `StaleLockDrillTests` |
-  | b3 (machine seams; the peer cache seams from #123 counted here) | 20: `AgentHealthTelemetryTests`, `AgentUpdateTests`, `BitsDownloadTests`, `CommandDispatcherTests`, `ExamModeTests`, `FileTransferTests`, `FolderSettingsTests`, `GeneralizerTests`, `HardwareBindingTests`, `KioskPoliciesTests`, `NetworkIsolationFlowTests`, `PeerCacheTests`, `PowerMessageTests`, `UpdateProgressTests`, `VisionLockedStartTests`, `VisionRelayTests`, `WindowsUpdateAgentTests`, `WingetInstallTests`, `WorkerCommandTests`, `WorkerResultAckTests` |
-  | b4 (`DnsPolicyMonitor`) | 7: `DnsDomainIndexTests`, `DnsPolicyMonitorTests`, `DnsWorkerBindingTests`, `ModulesTests`, `QuarantineControlTests`, `QuarantineHeartbeatTests`, `TrayPipeLifetimeTests`. b4 now goes before b3 (see [Static state](#static-state)): a class here that also reaches a b3 seam leaves in b3; the guard names them |
+  | b3 (machine seams; the peer cache seams from #123 counted here) | 26: `AgentHealthTelemetryTests`, `AgentUpdateTests`, `BitsDownloadTests`, `CommandDispatcherTests`, `DnsPolicyMonitorTests`, `DnsWorkerBindingTests`, `ExamModeTests`, `FileTransferTests`, `FolderSettingsTests`, `GeneralizerTests`, `HardwareBindingTests`, `KioskPoliciesTests`, `ModulesTests`, `NetworkIsolationFlowTests`, `PeerCacheTests`, `PowerMessageTests`, `QuarantineControlTests`, `QuarantineHeartbeatTests`, `TrayPipeLifetimeTests`, `UpdateProgressTests`, `VisionLockedStartTests`, `VisionRelayTests`, `WindowsUpdateAgentTests`, `WingetInstallTests`, `WorkerCommandTests`, `WorkerResultAckTests`. Six of them were counted in b4 until b4 showed that they reach b3 seams too: a Worker (`NetworkIsolation.ScriptRunner`, `PeerCache`, `KioskMode.Registry`, `SessionTasks`) or a `QuarantineControl` (`KioskMode.Registry`, `SecureStore.Dir`) |
+  | b4 (`DnsPolicyMonitor`) | **done** in #193, 1: `DnsDomainIndexTests` (to `Machine`: it measures elapsed time). The other six classes counted here first (`DnsPolicyMonitorTests`, `DnsWorkerBindingTests`, `ModulesTests`, `QuarantineControlTests`, `QuarantineHeartbeatTests`, `TrayPipeLifetimeTests`) no longer reach a `DnsPolicyMonitor` static, but the guard keeps them in `SharedState` for the b3 seams they reach; they moved to the b3 row |
   | not covered by (b) | 8: `AgentCredentialsTests`, `ConfigProblemTests`, `POpsHelpersTests` (environment variables; `POpsHelpers.Component`), `SecureStoreTests` (`SecureStore.SystemSid`), `ProtocolVectorTests` (its own static schema cache), `SetupTests`, `FolderSetupTests`, `ServerCaSetupTests` (`Setup.TrustedBaseForTests`) |
+
+  After b4, 97 test classes: 37 `SharedState` (34 net10.0, 3 net472), 8 `Machine`, 52 parallel (both targets counted
+  once). Classes added after (c) are not in the table above.
 
 - **Guard.** `ParallelSafetyTests` reads the IL of every test class and of the product code it reaches
   (`StaticAccessScanner`: calls, lambdas, async state machines and nested types; not interface or virtual dispatch,

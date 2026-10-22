@@ -36,8 +36,8 @@ namespace POpsAgent
         private static readonly Regex TokenRegex = new Regex(@"^[A-Za-z0-9_-]{16,256}$", RegexOptions.Compiled);
 
         // Süreç varsayılanı: servis açılışta bağlamın örneğine çevirir (bkz. AgentContext.UseForProcess). Worker ve kurduğu
-        // servisler bağlamın örneğini kullanır; bunu Worker bölmesinin b3/b4 adımlarına kadar statik kalan HTTP kodu
-        // (FileTransfer, DnsPolicyMonitor: AddHttpAuth) ve aşağıdaki biçimleri çağıran SharedState testleri okur. Başlangıç
+        // servisler bağlamın örneğini kullanır; bunu Worker bölmesinin b3 adımına kadar statik kalan HTTP kodu
+        // (FileTransfer: AddHttpAuth) ve aşağıdaki biçimleri çağıran SharedState testleri okur. Başlangıç
         // değeri yolları her kullanımda SecureStore.Dir ve POpsHelpers.ConfigPaths'ten alır.
         public static CredentialStore Process { get; internal set; } = new CredentialStore(() => SecureStore.Dir, () => POpsHelpers.ConfigPaths);
 

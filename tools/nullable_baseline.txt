@@ -17,7 +17,6 @@ Agent/POps.Agent/POps.Agent/BypassSecretCommand.cs
 Agent/POps.Agent/POps.Agent/CommandExecutionPolicy.cs
 Agent/POps.Agent/POps.Agent/CommandExecutionResult.cs
 Agent/POps.Agent/POps.Agent/CommandRunner.cs
-Agent/POps.Agent/POps.Agent/DnsPolicyMonitor.cs
 Agent/POps.Agent/POps.Agent/DnsWatch.cs
 Agent/POps.Agent/POps.Agent/Generalizer.cs
 Agent/POps.Agent/POps.Agent/HardwareBinding.cs

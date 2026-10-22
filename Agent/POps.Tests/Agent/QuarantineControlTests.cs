@@ -31,7 +31,7 @@ namespace POps.Tests.Agent
             SecureStore.Dir = TestEnvironment.NewDir("quarantine");
         }
 
-        private QuarantineControl Control(OfflineBypass bypass = null) => new QuarantineControl(
+        private QuarantineControl Control(OfflineBypass bypass = null, Action unlocked = null) => new QuarantineControl(
             AgentHarness.FromStatics().Paths,
             _tray.Add,
             () => { _enabled++; File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
@@ -41,7 +41,7 @@ namespace POps.Tests.Agent
                 if (_disableSucceeds) File.Delete(NetworkIsolation.StatePath);
                 return Task.FromResult(_disableSucceeds);
             },
-            bypass ?? new OfflineBypass(), _audit.Add);
+            bypass ?? new OfflineBypass(), _audit.Add, unlocked);
 
         private static string ValidCode() =>
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(HwId + Secret + "2026-09-26"))).Substring(0, 6);
@@ -207,28 +207,19 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task Unlock_ResetsDnsViolationCount()
         {
-            DnsPolicyMonitor.Reset();
-            DnsPolicyMonitor.CacheReader = () => new[] { "x.bet.example" };
-            DnsPolicyMonitor.Reporter = (_, _) => { };
-            DnsPolicyMonitor.Configure(new AgentPolicy
+            // Worker'daki gibi: karantina kalkınca DNS izlemenin ihlal sayacı sıfırlanır
+            using DnsPolicyMonitor dns = AgentHarness.FromStatics().NewDnsMonitor(() => new[] { "x.bet.example" });
+            dns.Configure(new AgentPolicy
             {
                 DnsCategories = new List<string> { "bahis" },
                 DnsDomains = new Dictionary<string, List<string>> { ["bahis"] = new List<string> { "bet.example" } },
             }, HwId, "https://pops.example");
-            try
-            {
-                QuarantineControl control = Control();
-                await control.LockdownAsync("DNS kural ihlali eşiği");
-                DnsPolicyMonitor.CheckNow();
-                Assert.Equal(1, DnsPolicyMonitor.Violations);
-                await control.UnlockAsync("bypass");
-                Assert.Equal(0, DnsPolicyMonitor.Violations);
-            }
-            finally
-            {
-                DnsPolicyMonitor.Reset();
-                DnsPolicyMonitor.CacheReader = DnsWatch.ReadCacheNames;
-            }
+            QuarantineControl control = Control(unlocked: dns.ResetViolations);
+            await control.LockdownAsync("DNS kural ihlali eşiği");
+            dns.CheckNow();
+            Assert.Equal(1, dns.Violations);
+            await control.UnlockAsync("bypass");
+            Assert.Equal(0, dns.Violations);
         }
 
         [Fact]
@@ -291,14 +282,12 @@ namespace POps.Tests.Agent
 
     // HB: heartbeat karantina durumunu taşır; kilit/açma idempotenttir
     [Collection(SharedStateCollection.Name)]
-    public class QuarantineHeartbeatTests : SharedStateTestBase, IDisposable
+    public class QuarantineHeartbeatTests : SharedStateTestBase
     {
         private readonly List<string> _tray = new List<string>();
         private int _enabled, _disabled;
 
         public QuarantineHeartbeatTests() => SecureStore.Dir = TestEnvironment.NewDir("hb");
-
-        public void Dispose() => DnsPolicyMonitor.Quarantine = _ => { };
 
         private QuarantineControl Control() => new QuarantineControl(
             AgentHarness.FromStatics().Paths,

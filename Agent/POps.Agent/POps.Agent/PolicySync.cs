@@ -26,15 +26,19 @@ namespace POpsAgent
         // Bağlamın sunucu modülleri ve HTTP istemcisi
         private readonly ModuleState _modules;
         private readonly AgentHttp _http;
+        // Worker'ın DNS politika izlemesi (politikayla yapılandırılır, komut tüneli kurulunca başlar)
+        private readonly DnsPolicyMonitor _dns;
 
         private AgentPolicy _currentPolicy = new AgentPolicy();
         private bool _fairUseAcknowledged;
 
         // Kimlik, tepsi borusu ve yazılım envanteri çalışırken değişir (set_identity, servis açılışı, testler): her
         // kullanımda okunur. httpClient: anahtarsız politika isteği (sunucu sertifikası ServerTrust ile doğrulanır);
-        // audit: modül değişikliğinin Olay Günlüğü kaydı; modules: politika yanıtındaki modüller; http: anahtarlı politika isteği
+        // audit: modül değişikliğinin Olay Günlüğü kaydı; modules: politika yanıtındaki modüller; http: anahtarlı politika isteği;
+        // dns: Worker'ın DNS politika izlemesi
         public PolicySync(string serverUrl, Func<string?> hwId, HttpClient httpClient, AgentHealthTelemetry health, VisionSession vision,
-            Func<TrayPipeServer?> trayPipe, Func<SoftwareReporter?> software, Action<LocalAuditEvent> audit, ModuleState modules, AgentHttp http)
+            Func<TrayPipeServer?> trayPipe, Func<SoftwareReporter?> software, Action<LocalAuditEvent> audit, ModuleState modules, AgentHttp http,
+            DnsPolicyMonitor dns)
         {
             _serverUrl = serverUrl;
             _hwId = hwId ?? throw new ArgumentNullException(nameof(hwId));
@@ -46,6 +50,7 @@ namespace POpsAgent
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
             _modules = modules ?? throw new ArgumentNullException(nameof(modules));
             _http = http ?? throw new ArgumentNullException(nameof(http));
+            _dns = dns ?? throw new ArgumentNullException(nameof(dns));
         }
 
         // Kullanıcı aydınlatma metnini onayladı (tepsi: FAIR_USE_ACK); bu çalışmada yeniden gösterilmez
@@ -55,8 +60,8 @@ namespace POpsAgent
         // dns_domains her dakika PolicyPollingLoop'ta yenilenir.
         internal void OnCommandChannelConnected()
         {
-            DnsPolicyMonitor.Configure(_currentPolicy, _hwId(), _serverUrl);
-            DnsPolicyMonitor.Start();
+            _dns.Configure(_currentPolicy, _hwId(), _serverUrl);
+            _dns.Start();
         }
 
         internal async Task PolicyPollingLoop(CancellationToken token)
@@ -97,7 +102,7 @@ namespace POpsAgent
             if (policy == null) return;
             using (JsonDocument doc = JsonDocument.Parse(json)) OnModulesChanged(_modules.Apply(doc.RootElement));
             _currentPolicy = policy;
-            DnsPolicyMonitor.Configure(policy, _hwId(), _serverUrl);
+            _dns.Configure(policy, _hwId(), _serverUrl);
             _health.PolicySynced();
 
             if (!string.IsNullOrWhiteSpace(policy.FairUseText) && !_fairUseAcknowledged)
