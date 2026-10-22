@@ -347,7 +347,7 @@ command (the package id and version may be recorded in clear).
   cannot filter by version).
 - **Scope in the output.** The first line of `output` names the scope the install ran with: `[kapsam: machine]`, or
   after the retry `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`. When the agent chose the
-  version, the next line says which: `[sürüm: kaynaktaki en yeni sürüm 26.09.3 seçildi]`, or
+  version, the next line says which: `[sürüm: kaynaktaki en yeni sürüm <sürüm> seçildi]` (for example 26.09.3 for Anki.Anki), or
   `[sürüm: en yeni sürüm bulunamadı (<reason>); winget kendisi seçti]` with a short reason (`winget show çıkış kodu
   <code>`, `winget show 60 sn içinde bitmedi`, `çıktıda sürüm listesi yok`, `sürüm listesi boş`, `listedeki ilk sürüm
   geçersiz ya da kısaltılmış`); with a server-given version there is no such line. When the location was checked, the
