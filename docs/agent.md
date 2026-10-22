@@ -523,6 +523,28 @@ Each transfer is announced in the tray and written to the event log.
   transfer is `failed` when no data has moved for 2 minutes (while connecting and waiting for the response too;
   `detail`: `zaman aşımı: 2 dakikadır veri yok`) or when it has taken 2 hours in all (`toplam süre 2 saati aştı`),
   which a 1 GB file meets at about 150 KB/s.
+- **Failure details:** a `failed` transfer's `detail` says in Turkish what happened, with .NET's own error in
+  parentheses (and the innermost error when the outer one does not contain it, e.g. "see inner exception"; the raw
+  part is shortened so the whole text fits in 300 characters). The cause is taken from the exception type,
+  `HttpRequestError`, `SocketError` and the status code, never from the message text, which depends on the system
+  language and the .NET version:
+
+  | Case | `detail` |
+  | --- | --- |
+  | Pull: connection reset or closed by the other end while uploading | `bağlantı kesildi: sunucu ya da önündeki vekil sunucu yüklemeyi yarıda kesti; olası neden vekilin boyut sınırı (ör. Cloudflare 100 MB) (…)` |
+  | Push: connection reset, or the response ended early | `bağlantı kesildi: indirme yarıda kaldı; sunucu ya da aradaki bir vekil sunucu bağlantıyı kapattı (…)` |
+  | Pull: HTTP 413 | `dosya çok büyük; sunucu ya da önündeki vekil kabul etmedi (HTTP 413)` |
+  | Any other status | `yüklenemedi: HTTP <code>` / `indirilemedi: HTTP <code>` |
+  | Name not resolved | `sunucunun adı çözülemedi: DNS yanıt vermedi ya da ad bulunamadı (…)` |
+  | No connection (refused, timed out while connecting) | `sunucuya bağlanılamadı: sunucu kapalı ya da ağdan erişilemiyor (…)` |
+  | TLS (server certificate rejected, handshake failed) | `güvenli bağlantı kurulamadı: sunucu sertifikası reddedildi ya da TLS el sıkışması başarısız (…)` |
+  | Anything else (disk, file read, other network errors) | `yükleme tamamlanmadı (…)` / `indirme tamamlanmadı (…)` |
+
+  The time limits keep their texts above; when the service is stopping, the error's own message is sent as before.
+  A proxy in front of the server may refuse a large upload: Cloudflare's Free and Pro plans take request bodies up
+  to 100 MB, and as the agent is still sending the file it usually sees the connection closed rather than the 413
+  answer (field test, 190 MB). The agent log line carries the same text, raw error included:
+  `Dosya alma tamamlanmadı (<transfer_id>, failed): <detail>.` (push: `Dosya gönderimi tamamlanmadı …`).
 - **Result:** `{"type": "file_result", "transfer_id", "outcome": "done" | "rejected" | "failed", "path", "detail"}`.
   The field is `outcome`, not `status`: a server that does not know `file_result` would take a message with
   `status` for a heartbeat. `path` is left out when it is longer than 1024 characters; `detail` is cut at 300.

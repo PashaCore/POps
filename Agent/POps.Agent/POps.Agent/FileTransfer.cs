@@ -33,6 +33,7 @@ namespace POpsAgent
     //  * İkisi de ajanın HTTP işleyicisiyle (sunucu sertifikası denetimi, yönlendirme yok), ama bildirimlerin 100 sn'lik
     //    süresi olmayan kendi istemcisiyle gider (AgentHttp.TransferClient): 2 dakika veri akmazsa ya da toplam 2 saat dolarsa
     //    aktarım "failed" olur (bkz. TransferWatchdog); veri aktığı sürece 1 GiB'lık dosya yavaş bağlantıda da kesilmez.
+    //    Ağ ve HTTP hataları "failed" açıklamasında Türkçe söylenir, .NET'in iletisi parantez içinde (bkz. TransferError).
     // Her işlem PC kullanıcısına tepsiden söylenir ve yerel denetim kaydına yazılır. Worker'ın örneği dosya aktarımı
     // işleyicisindedir (bkz. FileTransferHandler).
     [SupportedOSPlatform("windows")]
@@ -255,7 +256,7 @@ namespace POpsAgent
                 using var message = new HttpRequestMessage(HttpMethod.Get, request.Url);
                 _credentials.AddHttpAuth(message, hwId);
                 using HttpResponseMessage response = await _http.TransferClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, watchdog.Token);
-                if (!response.IsSuccessStatusCode) return ("failed", null, $"indirilemedi: HTTP {(int)response.StatusCode}");
+                if (!response.IsSuccessStatusCode) return ("failed", null, TransferError.Status((int)response.StatusCode, upload: false));
                 watchdog.Progress();
                 using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
                 long total = 0;
@@ -282,7 +283,7 @@ namespace POpsAgent
             }
             catch (Exception ex) when (ex is IOException || ex is HttpRequestException || ex is UnauthorizedAccessException || ex is OperationCanceledException)
             {
-                return ("failed", null, watchdog.Expired ?? ex.Message);
+                return ("failed", null, watchdog.Detail(ex, upload: false));
             }
             finally { TryDelete(partial); }
         }
@@ -312,11 +313,11 @@ namespace POpsAgent
                     using HttpResponseMessage response = await _http.TransferClient.SendAsync(message, watchdog.Token);
                     return response.IsSuccessStatusCode
                         ? ("done", finalPath, null, size)
-                        : ("failed", finalPath, $"yüklenemedi: HTTP {(int)response.StatusCode}", size);
+                        : ("failed", finalPath, TransferError.Status((int)response.StatusCode, upload: true), size);
                 }
                 catch (Exception ex) when (ex is IOException || ex is HttpRequestException || ex is OperationCanceledException)
                 {
-                    return ("failed", finalPath, watchdog.Expired ?? ex.Message, size);
+                    return ("failed", finalPath, watchdog.Detail(ex, upload: true), size);
                 }
             }
         }
