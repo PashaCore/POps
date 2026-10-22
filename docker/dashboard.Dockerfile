@@ -3,7 +3,8 @@
 # root; see docs/docker.md. TLS is terminated in front of this container.
 # The base image is pinned by digest (multi-arch index); Dependabot proposes the new digest
 # of the same tag weekly (.github/dependabot.yml).
-FROM php:8.3-apache@sha256:f8506a19d79cad7fcf0c8049f1ed2208824961018fdc10bd80f324094dcd36bd
+# PHP 8.3.36 or newer: 8.3.35 and older are open to PHP2Shell (CVE-2026-109618, CVE-2026-109619).
+FROM php:8.3-apache@sha256:1b8b5b0f31cc4552fa3da2f0f02556a8207cbca6e86ec4882ff7b6a644c84a2b
 
 # The panel only needs curl, json and session, all built into the official image.
 RUN a2enmod proxy proxy_http proxy_wstunnel headers remoteip rewrite deflate \

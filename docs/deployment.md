@@ -29,7 +29,10 @@ Windows PCs (POpsAgent)              Browsers (admins)
 | Web server | nginx or Apache | Terminates TLS and proxies four paths to the backend. |
 
 Requirements: Linux with systemd, PostgreSQL, Python 3.10 or newer (3.12 recommended), PHP 8, and a web server that
-can proxy WebSockets. `install.sh` is tested on AlmaLinux/RHEL/Rocky and Debian/Ubuntu. AlmaLinux/RHEL 9's own
+can proxy WebSockets. Keep PHP patched: every PHP serving web requests before 8.2.35, 8.3.36, 8.4.27 and 8.5.12 is open
+to unauthenticated remote code execution through PHP2Shell (CVE-2026-109618, CVE-2026-109619). Distribution packages
+carry the fix under their own version (AlmaLinux 9: `php-*-8.0.30-8.el9_8.alma.1`); `dnf update 'php*'` or
+`apt upgrade` and restart PHP-FPM (or Apache with mod_php). `install.sh` is tested on AlmaLinux/RHEL/Rocky and Debian/Ubuntu. AlmaLinux/RHEL 9's own
 `python3` is 3.9; `install.sh` installs the `python3.12` package there. Ubuntu 22.04 (3.10), Debian 12 (3.11) and
 Ubuntu 24.04 (3.12) need nothing extra. Why 3.9 was dropped: [`decisions.md`](decisions.md) D-20.
 
