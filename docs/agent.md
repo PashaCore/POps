@@ -372,6 +372,12 @@ command (the package id and version may be recorded in clear).
   package (zip) installed machine-wide under `%ProgramFiles%\WinGet\Packages` counts as machine-wide although it has
   no Start menu shortcut; a Program Files folder moved off `<drive>:\Program Files` gives no signal; per-user
   installs for accounts other than SYSTEM are not looked at (the agent installs only as SYSTEM).
+- **Known limit: uninstalling from SYSTEM's 32-bit profile.** winget cannot uninstall a package that a 32-bit
+  installer put into SYSTEM's profile (Anki 2.1.65 above): the uninstall entry says
+  `C:\WINDOWS\system32\config\systemprofile\…`, but because of WOW64 file system redirection the files are under
+  `C:\Windows\SysWOW64\config\systemprofile\…`, and `winget uninstall` fails with `0x800401F5` (-2147221003,
+  "Application not found"). The uninstaller has to be run from `C:\Windows\SysWOW64\config\systemprofile\…` (for
+  example `…\AppData\Local\Programs\Anki\uninstall.exe`).
 - **Scope in the output.** The first line of `output` names the scope the install ran with: `[kapsam: machine]`, or
   after the retry `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`. When the agent chose the
   version, the next line says which: `[sürüm: kaynaktaki en yeni sürüm <sürüm> seçildi]` (for example 26.09.3 for Anki.Anki), or
