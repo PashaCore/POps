@@ -64,7 +64,7 @@ _RULES = (
         "dna_disk": "S4EVNF0M123456", "dna_mac": "00:1A:2B:3C:4D:5E", "dna_ram": "1A2B3C4D", "cap_ram_readable": True,
     }]),
     ("SELECT is_quarantined, pending_quarantine_action", [{"is_quarantined": True, "act": "lock", "reason": "Sınav"}]),
-    ("SELECT cap_terminal_disable_requested", [{"t": True, "v": True}]),
+    ("SELECT cap_terminal_disable_requested", [{"t": True, "v": True, "f": True}]),
     ("SELECT id, script_path, dispatched_at, agent_started_at FROM tasks", [
         {"id": 7, "script_path": "shutdown /r /t 0", "dispatched_at": datetime.datetime(2026, 10, 1, 8, 0),
          "agent_started_at": 1790000000.0},
