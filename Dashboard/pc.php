@@ -104,6 +104,8 @@
     const host = new URLSearchParams(location.search).get('id') || '';
     const UNASSIGNED = dev.UNASSIGNED;
     let headSig = '', generalSig = '';
+    // MAC adresi cihaz listesinde yok, donanım envanterinden gelir (bkz. loadInvMac)
+    let invMac = null;
     let swQuery = '', swItems = null;
     // Sekme ?tab=files ile açılınca loadFiles aşağıdaki pageTabs çağrısında hemen çalışır: sayaç ondan önce tanımlı olmalı
     let filesTimer = null;
@@ -267,7 +269,7 @@
     const FEATURE_NAMES = { exam: 'Sınav modu', files: 'Dosya aktarımı', winget: 'winget kurulumu', power: 'Güç işlemleri', message: 'Mesaj', peer_cache: 'Sınıf içi paket paylaşımı' };
     function renderGeneral(d) {
         const h = d.agent_health || {};
-        const sig = JSON.stringify([d, (state.mainPcs || {})[d.lab]]);
+        const sig = JSON.stringify([d, (state.mainPcs || {})[d.lab], invMac]);
         if (sig === generalSig) return;
         generalSig = sig;
         const off = POps.isOffline(d);
@@ -281,7 +283,7 @@
             + (!off && dev.app(d) ? kvHtml(POps.t('Öndeki uygulama'), escapeHtml(dev.app(d))) : '')
             + kvHtml(POps.t('Sınıf'), lab ? `<a href="labs?lab=${encodeURIComponent(lab)}">${escapeHtml(lab)}</a>` + (teacher ? ' · ' + POps.tHtml('öğretmen bilgisayarı') : '') : POps.tHtml('Atanmamış'));
         const netHtml = kvHtml(POps.t('IP adresi'), d.ip ? `<span class="mono">${escapeHtml(d.ip)}</span>` : '—')
-            + kvHtml(POps.t('MAC adresi'), d.mac ? `<span class="mono">${escapeHtml(d.mac)}</span>` : '—')
+            + kvHtml(POps.t('MAC adresi'), invMac ? `<span class="mono">${escapeHtml(invMac)}</span>` : '—')
             + kvHtml(POps.t('Sistem'), escapeHtml(dev.platform(d)))
             + kvHtml(POps.t('Donanım kimliği'), `<span class="mono">${escapeHtml(d.hostname)}</span>`);
         const tray = typeof h.tray_connected === 'boolean' ? h.tray_connected : null;
@@ -520,6 +522,14 @@
     document.addEventListener('pops_data_updated', render);
     POps.watchDevices({ inventory: false });
     render();
+    // Genel'deki MAC adresi: envanter bir kez okunur; ajan "-" bildirdiyse boş sayılır
+    (async function loadInvMac() {
+        try {
+            const r = ((await POps.get('/api/inventory')) || []).find(x => x.pc_name === host);
+            invMac = r && r.mac_address && r.mac_address !== '-' ? r.mac_address : null;
+            render();
+        } catch (e) { /* MAC yalnızca bilgi; envanter okunamazsa — kalır */ }
+    })();
     if (tabs.current() !== 'general') loadPane(tabs.current());
 })();
 </script>
