@@ -458,14 +458,14 @@ alternative path that has not been evaluated yet. There are no dates.
   <img alt="Timeline from 0.1.0 (August 2026) to 0.1.23 (October 2026) and what comes next." src="assets/readme/timeline.en.svg" width="100%">
 </picture>
 
-The two most recent releases, both on 5 October 2026:
+The two most recent releases:
 
-- **0.1.22-alpha:** Python 3.10+ with current FastAPI, Starlette and python-multipart (17 known vulnerabilities
-  closed), a panel that works without internet, the organisation's name and logo on the sign-in page, Docker images
-  on GHCR, the OpenSSF Scorecard and the first SSH-signed release tag.
-- **0.1.23-alpha:** exam mode, file transfer, winget, power actions and messages, Vision v2 in the panel, the whole
-  panel in English, LDAP/AD and OpenID Connect sign-in, organisational units, REST API v1 with tokens, the GLPI
-  export, optional several workers with Redis, the Linux agent's first version and the public demo.
+- **0.1.23-alpha** (5 October 2026): exam mode, file transfer, winget, power actions and messages, Vision v2 in the
+  panel, the whole panel in English, LDAP/AD and OpenID Connect sign-in, organisational units, REST API v1 with
+  tokens, the GLPI export, optional several workers with Redis, the Linux agent's first version and the public demo.
+- **0.1.24-alpha** (22 October 2026): the agent fixes of the second external review, tried on a real PC and on a
+  throwaway Windows machine in CI; a panel rebuilt for everyday work; file transfer in the capability policy; and
+  the panel image on PHP 8.3.36 against PHP2Shell.
 
 Every release, with upgrade notes, is in [`CHANGELOG.md`](CHANGELOG.md). Packages and signed manifests are on the
 [releases page](https://github.com/PashaCore/POps/releases).

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.24-alpha] - 2026-10-22
+
+**For operators, in short:**
+1. **Security first: PHP2Shell (CVE-2026-109618, CVE-2026-109619).** Update the PHP of a native server now
+   (AlmaLinux/RHEL 9: `dnf update 'php*'`, Debian/Ubuntu: `apt upgrade`) and restart PHP-FPM. The Docker panel image of
+   this release runs PHP 8.3.36. Details under **Security**.
+2. **A rebuilt panel for everyday work.** One **Bilgisayarlar** section (lab tiles, the lab's PCs, a list) and a full
+   page per PC with its problems and how to fix them; labelled buttons; **Sistem ve Güncelleme** and **Ayarlar** as
+   sidebar sections. Same features, same API.
+3. **Agent fixes from the second external review, tried on a real PC and on a throwaway Windows machine in CI:**
+   - uninstalling during a quarantine or an exam no longer leaves the PC without network;
+   - an exam no longer gets shorter or longer when the PC clock is wrong;
+   - winget uses only the winget source, installs the newest version, retries once without a scope when the package
+     has no machine installer, and says where the package landed;
+   - a refused shutdown or restart is reported as an error;
+   - large file transfers no longer stop after 100 seconds, and transfer errors are in plain Turkish;
+   - no BITS when the server CA is pinned; the peer cache also works in labs with public IPv4 addresses.
+4. **Keep file transfer off on a PC** like remote command and remote screen, and pick features to install off from the
+   enrollment token dialog, which now shows the ready `msiexec` command.
+5. **Before updating a native server:** migration `0033` adds one column. Reinstall `/usr/local/sbin/pops-backup` from
+   this release for the weekly backup retention. Then send the new agent from **Sistem ve Güncelleme**.
+6. **Known limitation:** behind Cloudflare's Free or Pro plan, a file transfer over 100 MB fails (one request per
+   file); see the troubleshooting guide.
+
+Try it without installing: https://demo.pashacore.com.tr (demo / demo, read-only).
+
 ### Added
 
 - **Panel: keep file transfer off on a PC, and choose features to install off.** The capability policy on
@@ -1052,7 +1078,8 @@ Security release. The backend now needs a `.env` file; run `python3 Backend/setu
 - **Policy Engine:** Network isolation and Kiosk lockdown capabilities.
 - **Audit Logging:** Immutable `agent_logs_v2` tracking all management actions.
 
-[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.23-alpha...HEAD
+[Unreleased]: https://github.com/PashaCore/POps/compare/v0.1.24-alpha...HEAD
+[0.1.24-alpha]: https://github.com/PashaCore/POps/compare/v0.1.23-alpha...v0.1.24-alpha
 [0.1.23-alpha]: https://github.com/PashaCore/POps/compare/v0.1.22-alpha...v0.1.23-alpha
 [0.1.22-alpha]: https://github.com/PashaCore/POps/compare/v0.1.21-alpha...v0.1.22-alpha
 [0.1.21-alpha]: https://github.com/PashaCore/POps/compare/v0.1.20-alpha...v0.1.21-alpha

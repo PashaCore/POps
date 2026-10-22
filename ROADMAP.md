@@ -136,6 +136,16 @@ tagged release.
   (0.1.23)
 - [x] **Supply chain:** hash-locked CI tools, pinned images, read-only workflow tokens, fuzzing (0.1.23)
 
+### After the 0.1.23 field test (0.1.24)
+
+- [x] **Agent fixes from the second external review**, field-tested: uninstall clears every POps firewall rule,
+  exam end on a monotonic clock, winget source and version pinning, honest power results, file transfer timeouts,
+  no BITS with a pinned CA, peer cache on public IPv4 (0.1.24)
+- [x] **Agent Worker split** into command handlers and a per-agent context; agent tests in parallel (0.1.24)
+- [x] **Panel rebuilt for everyday work:** one Bilgisayarlar section, a page per PC, labelled actions (0.1.24)
+- [x] **Capability policy for file transfer**, and features chosen at install from the enrollment token (0.1.24)
+- [x] **PHP2Shell:** patched panel image and operator guidance (0.1.24)
+
 ## In progress
 
 Nothing right now; the next items are below.

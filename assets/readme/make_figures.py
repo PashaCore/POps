@@ -169,6 +169,7 @@ T = {
             ("0.1.15", "2 Oct", [".NET 10 built in,", "modules per lab"]),
             ("0.1.16–0.1.21", "3 Oct", ["New panel: one", "layout, details,", "charts"]),
             ("0.1.22–0.1.23", "5 Oct", ["English panel,", "exam mode, Linux,", "SSO, schools, HA"]),
+            ("0.1.24", "22 Oct", ["Field-tested", "fixes, everyday", "panel, PHP2Shell"]),
             ("next", "", ["Code signing,", "pilot schools"]),
         ],
 
@@ -249,6 +250,7 @@ T = {
             ("0.1.15", "2 Eki", [".NET 10 içinde,", "sınıf modülleri"]),
             ("0.1.16–0.1.21", "3 Eki", ["Yeni panel: tek", "düzen, ayrıntı,", "grafikler"]),
             ("0.1.22–0.1.23", "5 Eki", ["İngilizce panel,", "sınav modu, Linux,", "SSO, okullar, HA"]),
+            ("0.1.24", "22 Eki", ["Sahada sınanmış", "düzeltmeler, yeni", "panel, PHP2Shell"]),
             ("sırada", "", ["Kod imzalama,", "pilot okullar"]),
         ],
 

@@ -463,14 +463,14 @@ ile bütünleştirmek de bir seçenek; henüz değerlendirilmedi. Tarih verilmiy
   <img alt="0.1.0'dan (Ağustos 2026) 0.1.23'e (Ekim 2026) ve sıradaki işlere zaman çizelgesi." src="assets/readme/timeline.tr.svg" width="100%">
 </picture>
 
-En yeni iki sürüm, ikisi de 5 Ekim 2026'da:
+En yeni iki sürüm:
 
-- **0.1.22-alpha:** güncel FastAPI, Starlette ve python-multipart ile Python 3.10+ (bilinen 17 güvenlik açığı
-  kapandı), internetsiz çalışan panel, giriş sayfasında kurumun adı ve logosu, GHCR'da Docker imajları, OpenSSF
-  Scorecard ve SSH ile imzalanan ilk sürüm etiketi.
-- **0.1.23-alpha:** sınav modu, dosya aktarımı, winget, güç işlemleri ve mesajlar, panelde Vision v2, bütün panelin
-  İngilizcesi, LDAP/AD ve OpenID Connect ile giriş, kurum birimleri, jetonlu REST API v1, GLPI aktarımı, isteğe bağlı
-  Redis'li birden çok süreç, Linux ajanının ilk sürümü ve herkese açık demo.
+- **0.1.23-alpha** (5 Ekim 2026): sınav modu, dosya aktarımı, winget, güç işlemleri ve mesajlar, panelde Vision v2,
+  bütün panelin İngilizcesi, LDAP/AD ve OpenID Connect ile giriş, kurum birimleri, jetonlu REST API v1, GLPI
+  aktarımı, isteğe bağlı Redis'li birden çok süreç, Linux ajanının ilk sürümü ve herkese açık demo.
+- **0.1.24-alpha** (22 Ekim 2026): ikinci dış incelemenin ajan düzeltmeleri, gerçek bir bilgisayarda ve CI'da tek
+  kullanımlık bir Windows makinesinde denendi; gündelik iş için yeniden yapılan panel; yetenek politikasında dosya
+  aktarımı; PHP2Shell'e karşı PHP 8.3.36 ile panel imajı.
 
 Her sürüm, yükseltme notlarıyla [`CHANGELOG.md`](CHANGELOG.md) içindedir. Paketler ve imzalı manifestler
 [sürümler sayfasındadır](https://github.com/PashaCore/POps/releases).
