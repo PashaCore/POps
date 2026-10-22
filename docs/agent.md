@@ -328,32 +328,57 @@ command (the package id and version may be recorded in clear).
   `task_id` stays reserved (a repeated `winget_install` is ignored), `cancel_task` and a service stop end the running
   step or keep the next one from starting, and the 30-minute limit covers all of them together. There is still one
   `result`, with the last install run's exit code.
-- **Where the package landed.** `--scope machine` is what winget was asked for, not where the package ended up. In
-  the field test Anki 2.1.65 (manifest scope machine, a 32-bit NSIS installer) ran as SYSTEM and installed into
-  SYSTEM's own profile (`C:\Windows\SysWOW64\config\systemprofile\AppData\Local\Programs\Anki`, uninstall entry
-  under `HKEY_USERS\S-1-5-18`), where no user of the PC sees it; after the retry without `--scope` a user-scope
-  installer lands there too. So when the package is on the PC after the install (exit code 0, `0x8A150109` restart
-  needed, `0x8A15002B` or `0x8A150061` already installed) the agent runs
-  `winget list --id <id> -e --source winget --scope machine --accept-source-agreements --disable-interactivity`
-  and, only when that finds nothing, the same with `--scope user` (as SYSTEM: SYSTEM's own profile). Only exit codes
-  are read, never the localized text: 0 is found, `0x8A150014` (-1978335212,
-  `APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND`) is not found. Each query has its own 60-second limit. Any other
-  code, the limit, nothing found in either scope, or a stop (`cancel_task`, service stop, task limit) during the
-  check means the location is not known. A stop during the check does not change the result: the package is
-  installed, the result keeps the install's exit code. After `0x8A15010B` (the PC restarts itself) and after a failed
-  install nothing is asked. Not covered: a portable package (zip) installed machine-wide under
-  `%ProgramFiles%\WinGet\Packages` counts as machine-wide although it has no Start menu shortcut, and when the
-  same id is also installed machine-wide (for example an older version), the line says machine-wide (`winget list`
-  cannot filter by version).
+- **Where the package landed** (`WingetLocation.cs`). `--scope machine` is what winget was asked for, not where the
+  package ended up, and winget cannot tell either: it derives a package's scope from the hive of its uninstall
+  (Apps & features) entry. Field cases, agent as LocalSystem: Anki 2.1.65 (manifest scope machine, a 32-bit NSIS
+  installer) went into SYSTEM's own profile (`C:\Windows\SysWOW64\config\systemprofile\AppData\Local\Programs\Anki`,
+  uninstall entry under `HKEY_USERS\S-1-5-18`); Anki 26.09.3 (a WiX MSI with manifest scope user, installed by the
+  retry without `--scope`) went into `C:\Windows\System32\config\systemprofile\AppData\Local\Programs\Anki` with its
+  Start menu shortcut only in SYSTEM's profile, and Windows Installer registered the product per-user for SYSTEM
+  (`HKEY_USERS\S-1-5-18\Software\Microsoft\Installer\Products\<packed code>`, nothing under
+  `HKLM\SOFTWARE\Classes\Installer\Products`), but it wrote the uninstall entry under HKLM, so
+  `winget list --scope machine` found it and 0.1.24-alpha said machine-wide. No user of the PC sees either install.
+  So the agent no longer asks winget. It reads the registry itself just before the first install run and again after
+  the last one (milliseconds; on the thread pool, not a winget run): the uninstall entries under
+  `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall` (64-bit), `HKLM\SOFTWARE\WOW6432Node\…\Uninstall` and
+  `HKEY_USERS\S-1-5-18\Software\Microsoft\Windows\CurrentVersion\Uninstall` (name, version, `WindowsInstaller`,
+  `InstallLocation`, `UninstallString`, `DisplayIcon`), and the names under `HKLM\SOFTWARE\Classes\Installer\Products`
+  and `HKEY_USERS\S-1-5-18\Software\Microsoft\Installer\Products`. The package's entries are the ones that are new
+  after the install; when there are none, the ones whose `DisplayVersion` changed (an in-place upgrade). Each entry
+  gives signals:
+  - an MSI entry (`WindowsInstaller` = 1 and the key is a product code `{…}`): the product registered under
+    `HKLM\SOFTWARE\Classes\Installer\Products\<packed code>` is machine-wide, under
+    `HKEY_USERS\S-1-5-18\Software\Microsoft\Installer\Products\<packed code>` it is SYSTEM's profile. The packed code
+    is Windows Installer's transform of the product code: the first three groups reversed character by character,
+    the characters of each pair swapped in the last two (`{7AD362E6-020E-4F25-AD49-94A408DC5CA5}` →
+    `6E263DA7E02052F4DA94494A80CDC55A`). The hive of an MSI's uninstall entry is not a signal;
+  - an entry under `HKEY_USERS\S-1-5-18` is SYSTEM's profile;
+  - an `InstallLocation`, `UninstallString` or `DisplayIcon` under `\System32\config\systemprofile\` (or `SysWOW64`,
+    `Sysnative`) is SYSTEM's profile, one under `<drive>:\Program Files\` or `Program Files (x86)\` (8.3 names
+    included) is machine-wide. A non-MSI entry under HKLM says nothing by its hive alone.
+
+  When all signals point to one place, the line names it. Otherwise the line says the location is not known, with a
+  short reason, rather than guessing: both places (`kayıtlar hem makine genelini hem SYSTEM'in profilini gösteriyor`),
+  no signal (`kaldırma kaydı kurulduğu yeri göstermiyor`, for example a non-MSI entry under HKLM installed outside
+  Program Files), no new or changed entry (`yeni ya da sürümü değişen kaldırma kaydı yok`: an MSIX package, an
+  installer that writes no uninstall entry), the registry could not be read (`kayıt defteri okunamadı`), or the
+  package was already installed (`0x8A15002B`, `0x8A150061`: `paket zaten kuruluydu; yükleyici çalışmadı`; winget
+  ran no installer, so nothing that changed belongs to it, and the second read is skipped). The line is written
+  after exit code 0 and after `0x8A150109` (restart needed); after `0x8A15010B` (the PC restarts itself) and after a
+  failed install there is none. The decision and the entries it used go to the agent log. Limits: an unrelated
+  program that installs itself at the same time is counted too (one that only updates itself, like a browser, is
+  ignored while the package has a new entry; when the package has none, its version change is counted); a portable
+  package (zip) installed machine-wide under `%ProgramFiles%\WinGet\Packages` counts as machine-wide although it has
+  no Start menu shortcut; a Program Files folder moved off `<drive>:\Program Files` gives no signal; per-user
+  installs for accounts other than SYSTEM are not looked at (the agent installs only as SYSTEM).
 - **Scope in the output.** The first line of `output` names the scope the install ran with: `[kapsam: machine]`, or
   after the retry `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`. When the agent chose the
   version, the next line says which: `[sürüm: kaynaktaki en yeni sürüm <sürüm> seçildi]` (for example 26.09.3 for Anki.Anki), or
   `[sürüm: en yeni sürüm bulunamadı (<reason>); winget kendisi seçti]` with a short reason (`winget show çıkış kodu
   <code>`, `winget show 60 sn içinde bitmedi`, `çıktıda sürüm listesi yok`, `sürüm listesi boş`, `listedeki ilk sürüm
-  geçersiz ya da kısaltılmış`); with a server-given version there is no such line. When the location was checked, the
+  geçersiz ya da kısaltılmış`); with a server-given version there is no such line. When the package is on the PC, the
   next line is `[kurulduğu yer: makine geneli]`, `[kurulduğu yer: yalnızca SYSTEM hesabının profili — bilgisayarın
-  kullanıcıları göremez]` or `[kurulduğu yer: belirlenemedi (<reason>)]` (`winget list çıkış kodu <code>`,
-  `winget list 60 sn içinde bitmedi`, `winget list paketi iki kapsamda da bulamadı`, `görev durdu`). Then the first
+  kullanıcıları göremez]` or `[kurulduğu yer: belirlenemedi (<reason>)]` with one of the reasons above. Then the first
   run's output (at most 4,096 characters) and the second run's, each under its own heading. Refusals (-5, -7) carry
   no scope line; neither does a task stopped during the lookup (-1, -2, -4), which starts with `[sürüm: en yeni sürüm
   sorgulanırken görev durdu; kurulum başlamadı]` followed by the stop reason.

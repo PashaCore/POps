@@ -11,8 +11,8 @@ namespace POpsAgent
     // winget_install (bkz. WingetInstall). Retler "result" olarak bildirilir (-5; winget yoksa -7) ve hiçbir şey
     // çalıştırılmaz. Yerel terminal yeteneği ya da sınıfın deploy modülü kapalıysa ardından capability_denied gider
     // (execute ile aynı sıra). Çalıştırma execute gibi: aynı görev iki kez başlamaz, süre sınırı, cancel_task, sonuç
-    // result_ack'e kadar saklanır. Sürüm sorgusu, kapsamsız yeniden deneme ve kurulduğu yerin sorgusu aynı görevin parçasıdır
-    // (bkz. WingetInstall.LatestVersion, WingetInstall.RetryArguments, WingetInstall.ListArguments).
+    // result_ack'e kadar saklanır. Sürüm sorgusu, kapsamsız yeniden deneme ve kurulduğu yerin kararı aynı görevin parçasıdır
+    // (bkz. WingetInstall.LatestVersion, WingetInstall.RetryArguments, WingetLocation).
     [SupportedOSPlatform("windows")]
     internal sealed class WingetInstallHandler : ICommandHandler
     {
@@ -23,14 +23,17 @@ namespace POpsAgent
         private readonly Action<LocalAuditEvent> _audit;
         private readonly CapabilityState _capabilities;
         private readonly Func<string?> _locator;
+        private readonly Func<InstallRegistrySnapshot> _registry;
 
         // Çalıştırıcı testlerde sahtesiyle değiştirilir, kimlik set_identity ile değişir: her kullanımda okunur.
         // capabilities: bağlamın yetenek durumu; locator: winget.exe'nin yeri, her emirde sorulur (null: yok; bkz.
-        // MachineSeams.WingetLocator)
+        // MachineSeams.WingetLocator); registry: kurulu yazılım kayıtlarının okunması, kurulumdan önce ve sonra (bkz.
+        // MachineSeams.InstallRegistry, WingetLocation)
         public WingetInstallHandler(Func<CommandRunner> runner, CapabilityGate gate, ResultOutbox outbox, Func<string?> hwId,
-            Action<LocalAuditEvent> audit, CapabilityState capabilities, Func<string?> locator)
+            Action<LocalAuditEvent> audit, CapabilityState capabilities, Func<string?> locator, Func<InstallRegistrySnapshot> registry)
         {
             _locator = locator ?? throw new ArgumentNullException(nameof(locator));
+            _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _runner = runner ?? throw new ArgumentNullException(nameof(runner));
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
@@ -41,7 +44,7 @@ namespace POpsAgent
 
         public IReadOnlyList<string> Actions { get; } = new[] { WingetInstall.Action };
 
-        // winget sorgularının (sürüm, kurulduğu yer) her birinin kendi süre sınırı (testler kısaltır)
+        // winget'in sürüm sorgusunun kendi süre sınırı (testler kısaltır)
         internal TimeSpan QueryLimit { get; set; } = WingetInstall.QueryLimit;
 
         public Task HandleAsync(ServerCommand command) => HandleWingetInstallAsync(command.Root, command.Stopping);
@@ -90,10 +93,10 @@ namespace POpsAgent
             POpsHelpers.Log("AGENT", $"winget kurulumu başlıyor: {WingetInstall.Describe(id, version)} (TaskID: {tid})");
             _audit(LocalAudit.CommandStarted(tid, WingetInstall.Describe(id, version), requestedBy));
             // Görev kimliği burada (eşzamanlı olarak) ayrılır: arkasından gelen aynı kimlik ikinci işlem başlatamaz. Bütün adımlar
-            // (sürüm sorgusu, kurulum, kapsamsız yeniden deneme, kurulduğu yerin sorgusu) aynı görevdir: kimlik ayrılı, aynı iptal ve
+            // (sürüm sorgusu, kurulum, kapsamsız yeniden deneme, kurulduğu yerin kararı) aynı görevdir: kimlik ayrılı, aynı iptal ve
             // süre sınırı; sonuç bir tanedir, son kurulum denemesinin çıkış koduyla.
             var clock = Stopwatch.StartNew();
-            var install = new InstallSteps(tid, wingetPath!, id, version, QueryLimit);
+            var install = new InstallSteps(tid, wingetPath!, id, version, QueryLimit, _registry);
             Task<CommandExecutionResult> run = runner.RunProgramsAsync(tid, install.RunAsync, stoppingToken);
             _ = Task.Run(async () =>
             {
@@ -124,14 +127,16 @@ namespace POpsAgent
             private readonly string _id;
             private readonly string? _version;
             private readonly TimeSpan _queryLimit;
+            private readonly Func<InstallRegistrySnapshot> _registry;
 
-            public InstallSteps(int tid, string winget, string id, string? version, TimeSpan queryLimit)
+            public InstallSteps(int tid, string winget, string id, string? version, TimeSpan queryLimit, Func<InstallRegistrySnapshot> registry)
             {
                 _tid = tid;
                 _winget = winget;
                 _id = id;
                 _version = version;
                 _queryLimit = queryLimit;
+                _registry = registry;
             }
 
             // Sürümü ajan seçtiyse çıktının ikinci satırı (WingetInstall.PinnedNote ya da UnpinnedNote)
@@ -164,6 +169,8 @@ namespace POpsAgent
                     else
                         POpsHelpers.Log("AGENT", $"winget: en yeni sürüm bulunamadı ({reason}); sürüm verilmeden kuruluyor (TaskID: {_tid}).", true);
                 }
+                // Kurulumdan önceki kaldırma kayıtları: paketin kayıtları kurulumdan sonra yeni olanlardır (bkz. WingetLocation)
+                InstallRegistrySnapshot before = await SnapshotAsync();
                 CommandExecutionResult result = await steps.RunAsync(_winget, WingetInstall.Arguments(_id, version));
                 List<string>? retry = WingetInstall.RetryArguments(result.ExitCode, _id, version);
                 if (retry != null)
@@ -172,31 +179,30 @@ namespace POpsAgent
                     POpsHelpers.Log("AGENT", $"winget: paketin machine kapsamında uygulanabilir yükleyicisi yok ({WingetInstall.ExitNoApplicableInstaller}); --scope olmadan yeniden deneniyor (TaskID: {_tid}).");
                     result = await steps.RunAsync(_winget, retry);
                 }
-                // Sonuç kurulumun kendisidir: kurulduğu yerin sorgusu sırasında görev dursa da paket kurulmuştur
-                if (WingetInstall.IsOnThePc(result.ExitCode)) LocationNote = await LocateAsync(steps);
+                if (WingetInstall.IsOnThePc(result.ExitCode)) LocationNote = await LocateAsync(before, result.ExitCode);
                 return result;
             }
 
-            // Paket nerede: önce makine geneli kurulu paketlerde, yoksa "user" kapsamında aranır (ajan SYSTEM olarak çalışır: bu SYSTEM
-            // hesabının kendi profilidir, bilgisayarın kullanıcıları oradaki uygulamayı göremez). Yalnızca çıkış kodları okunur;
-            // başka bir kod, süre sınırı ya da iki kapsamda da yok: belirlenemedi.
-            private async Task<string> LocateAsync(ProgramSteps steps)
+            // Paket nerede: kurulumdan önceki ve sonraki kayıt defterinden (winget'in çıktısı ya da "winget list" değil; bkz.
+            // WingetLocation). Zaten kuruluyken yükleyici çalışmadı: sonraki kayıtlar okunmaz.
+            private async Task<string> LocateAsync(InstallRegistrySnapshot before, int exitCode)
             {
-                foreach (string scope in new[] { "machine", "user" })
-                {
-                    CommandExecutionResult list = await steps.RunAsync(_winget, WingetInstall.ListArguments(_id, scope), _queryLimit);
-                    if (list.ExitCode == 0)
-                    {
-                        if (scope == "machine") return WingetInstall.MachineWideNote;
-                        POpsHelpers.Log("AGENT", $"winget: {_id} yalnızca SYSTEM hesabının profilinde; bilgisayarın kullanıcıları göremez (TaskID: {_tid}).", true);
-                        return WingetInstall.SystemProfileNote;
-                    }
-                    if (steps.Stopped) return WingetInstall.UnknownLocationNote("görev durdu");
-                    if (list.ExitCode != WingetInstall.ExitNoPackageFound)
-                        return WingetInstall.UnknownLocationNote(WingetInstall.QueryFailure("list", list.ExitCode, steps.LimitReached, _queryLimit) ?? "");
-                }
-                return WingetInstall.UnknownLocationNote("winget list paketi iki kapsamda da bulamadı");
+                InstallRegistrySnapshot after = WingetInstall.AlreadyInstalled(exitCode) ? before : await SnapshotAsync();
+                LocationDecision decision = WingetLocation.Decide(exitCode, before, after);
+                string? failure = before.Failure ?? after.Failure;
+                string entries = decision.Entries.Count == 0 ? "-" : string.Join(", ", decision.Entries.Take(5)) + (decision.Entries.Count > 5 ? ", …" : "");
+                POpsHelpers.Log("AGENT", $"winget: {_id} {decision.Note}; kaldırma kayıtları: {entries}" + (failure == null ? "" : $"; okuma hatası: {failure}")
+                    + $" (TaskID: {_tid}).", decision.Note != WingetInstall.MachineWideNote);
+                return decision.Note;
             }
+
+            // Kayıt defteri iş parçacığı havuzunda okunur (birkaç yüz anahtar): komut dağıtıcısı beklemez. Okuma hatası
+            // belirlenemedi olur, görevi durdurmaz.
+            private Task<InstallRegistrySnapshot> SnapshotAsync() => Task.Run(() =>
+            {
+                try { return _registry(); }
+                catch (Exception ex) { return InstallRegistrySnapshot.Unreadable(ex.Message); }
+            });
         }
     }
 }
