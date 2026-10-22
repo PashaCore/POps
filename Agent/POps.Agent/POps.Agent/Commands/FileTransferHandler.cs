@@ -18,11 +18,12 @@ namespace POpsAgent
         private readonly Func<object, Task<bool>> _send;
         private readonly Action<string> _toTray;
         private readonly Action<LocalAuditEvent> _audit;
+        private readonly CapabilityState _capabilities;
 
         // send: komut kanalına gönderim; toTray: tepsiye mesaj. Kimlik set_identity ile değişir, gönderim ve tepsi
-        // testlerde sahteleriyle değiştirilir: her kullanımda okunur.
+        // testlerde sahteleriyle değiştirilir: her kullanımda okunur. capabilities: bağlamın yetenek durumu
         public FileTransferHandler(CapabilityGate gate, string serverUrl, Func<string> hwId, Func<object, Task<bool>> send,
-            Action<string> toTray, Action<LocalAuditEvent> audit)
+            Action<string> toTray, Action<LocalAuditEvent> audit, CapabilityState capabilities)
         {
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _serverUrl = serverUrl;
@@ -30,6 +31,7 @@ namespace POpsAgent
             _send = send ?? throw new ArgumentNullException(nameof(send));
             _toTray = toTray ?? throw new ArgumentNullException(nameof(toTray));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { "file_push", "file_pull" };
@@ -42,7 +44,7 @@ namespace POpsAgent
         internal async Task HandleFileTransferAsync(string action, JsonElement root, CancellationToken token)
         {
             string? transferId = FileTransfer.TransferIdOf(root);
-            if (!AgentCapabilities.FilesEnabled)
+            if (!_capabilities.FilesEnabled)
             {
                 await _gate.DenyAsync("files", action, transferId: transferId);
                 return;

@@ -18,10 +18,12 @@ namespace POpsAgent
         private readonly Func<object, Task<bool>> _send;
         private readonly Action<LocalAuditEvent> _audit;
         private readonly Func<Task> _afterReport;
+        private readonly CapabilityState _capabilities;
 
-        // Tepsi borusu servis çalışırken kurulur: her kullanımda okunur. afterReport: "capabilities" gönderildikten sonra
+        // Tepsi borusu servis çalışırken kurulur: her kullanımda okunur. afterReport: "capabilities" gönderildikten sonra;
+        // capabilities: bağlamın yetenek durumu
         public CapabilitiesHandler(VisionSession vision, PowerActions power, Func<TrayPipeServer?> trayPipe,
-            Func<object, Task<bool>> send, Action<LocalAuditEvent> audit, Func<Task> afterReport)
+            Func<object, Task<bool>> send, Action<LocalAuditEvent> audit, Func<Task> afterReport, CapabilityState capabilities)
         {
             _vision = vision ?? throw new ArgumentNullException(nameof(vision));
             _power = power ?? throw new ArgumentNullException(nameof(power));
@@ -29,6 +31,7 @@ namespace POpsAgent
             _send = send ?? throw new ArgumentNullException(nameof(send));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
             _afterReport = afterReport ?? throw new ArgumentNullException(nameof(afterReport));
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { "set_capabilities" };
@@ -36,20 +39,20 @@ namespace POpsAgent
         public async Task HandleAsync(ServerCommand command)
         {
             JsonElement request = command.Root;
-            var changed = AgentCapabilities.ApplyServerRequest(request);
+            var changed = _capabilities.ApplyServerRequest(request);
             foreach (string capability in changed.Disabled)
                 _audit(LocalAudit.CapabilityChanged(capability.Replace("_enabled", "", StringComparison.Ordinal), true, false));
             // Eş önbelleği kapandıysa önbellek silinir, sunum durur
             if (changed.Disabled.Contains(AgentCapabilities.PeerCacheKey)) await PeerCache.SyncAsync();
-            if (!AgentCapabilities.VisionEnabled && _vision.StreamActive)
+            if (!_capabilities.VisionEnabled && _vision.StreamActive)
             {
                 _trayPipe()?.SendCommandToDesktop("STOP_CAPTURE");
                 await _vision.DisconnectVisionTunnelAsync();
             }
             // Güç işlemleri kapandıysa süren geri sayım da durur
-            if (!AgentCapabilities.PowerEnabled && _power.CancelForDisabledCapability())
+            if (!_capabilities.PowerEnabled && _power.CancelForDisabledCapability())
                 POpsHelpers.Log("AGENT", "Güç işlemleri kapatıldı; süren geri sayım durduruldu.");
-            await _send(AgentCapabilities.StatusMessage());
+            await _send(_capabilities.StatusMessage());
             await _afterReport();
         }
     }

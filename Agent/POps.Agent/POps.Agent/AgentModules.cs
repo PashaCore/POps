@@ -22,6 +22,7 @@ namespace POpsAgent
     // yenilenir; istek başarısızsa son bilinen durum kalır.
     // Durum yalnızca bellekte tutulur, capabilities.json'a hiç yazılmaz: yerel yetenek kilidi ayrı kalır ve sunucu
     // modülü yeniden açınca özellik kendiliğinden geri gelir. Etkin = sunucuda modül açık VE yerelde yetenek izinli.
+    // Bu çalışmanın durumu bağlamdaki ModuleState örneğindedir (bkz. AgentContext.Modules); burada modül adları kalır.
     public static class AgentModules
     {
         public const string Vision = "vision", Terminal = "terminal", Deploy = "deploy", Schedules = "schedules",
@@ -30,24 +31,29 @@ namespace POpsAgent
 
         // capability_denied "reason": istek, modül kapalı olduğu için reddedildi
         public const string DisabledReason = "module_disabled";
+    }
 
-        private static readonly object Sync = new object();
+    // Bir ajanın sunucu modülleri (bkz. AgentModules): yalnızca bellekte, ilk politika yanıtına kadar hepsi açık. Servis için
+    // Program bir kez kurar, her test kendi örneğini kurar.
+    public sealed class ModuleState
+    {
+        private readonly object _sync = new object();
         // Kapalı modüller; boş: hepsi açık
-        private static HashSet<string> _closed = new HashSet<string>(StringComparer.Ordinal);
-        private static bool _known;
+        private HashSet<string> _closed = new HashSet<string>(StringComparer.Ordinal);
+        private bool _known;
 
-        public static bool IsEnabled(string module)
+        public bool IsEnabled(string module)
         {
-            lock (Sync) return !_closed.Contains(module);
+            lock (_sync) return !_closed.Contains(module);
         }
 
-        public static IReadOnlyList<string> Closed()
+        public IReadOnlyList<string> Closed()
         {
-            lock (Sync) return _closed.OrderBy(m => m, StringComparer.Ordinal).ToList();
+            lock (_sync) return _closed.OrderBy(m => m, StringComparer.Ordinal).ToList();
         }
 
         // Politika yanıtındaki "modules": yalnızca false olanlar kapalıdır; alan yoksa ya da nesne değilse hepsi açık.
-        public static ModuleChange Apply(JsonElement policy)
+        public ModuleChange Apply(JsonElement policy)
         {
             var closed = new HashSet<string>(StringComparer.Ordinal);
             if (policy.ValueKind == JsonValueKind.Object && policy.TryGetProperty("modules", out JsonElement modules)
@@ -57,7 +63,7 @@ namespace POpsAgent
                     if (module.Value.ValueKind == JsonValueKind.False) closed.Add(module.Name);
             }
 
-            lock (Sync)
+            lock (_sync)
             {
                 var change = new ModuleChange
                 {
@@ -68,16 +74,6 @@ namespace POpsAgent
                 _closed = closed;
                 _known = true;
                 return change;
-            }
-        }
-
-        // Testler içindir: hepsi açık, henüz yanıt yok
-        internal static void Reset()
-        {
-            lock (Sync)
-            {
-                _closed = new HashSet<string>(StringComparer.Ordinal);
-                _known = false;
             }
         }
     }

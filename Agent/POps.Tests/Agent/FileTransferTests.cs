@@ -20,7 +20,7 @@ namespace POps.Tests.Agent
     {
         private const string Server = "https://pops.example";
         private const string Secret = "files-secret-0123456789abcdefghijklm";
-        private readonly HttpClient _client = AgentHttp.Client;
+        private readonly HttpClient _client = AgentHttp.Default.Client;
         // Testin değiştirdiği FileTransfer kancalarının önceki değerleri (Dispose'da geri konur; null bırakılmaz)
         private readonly Func<string> _publicDesktopOverride = FileTransfer.PublicDesktopOverride;
         private readonly Func<(string ProfilesDirectory, string CurrentProfile)> _profileInfo = FileTransfer.ProfileInfo;
@@ -43,12 +43,12 @@ namespace POps.Tests.Agent
             Directory.CreateDirectory(Path.Combine(_profiles, "Public"));
             FileTransfer.ProfileInfo = () => (_profiles, Path.Combine(_profiles, "ali"));
             _testClient = new HttpClient(new Handler(this));
-            AgentHttp.Client = _testClient;
+            AgentHttp.Default.Client = _testClient;
         }
 
         public void Dispose()
         {
-            AgentHttp.Client = _client;
+            AgentHttp.Default.Client = _client;
             _testClient.Dispose();
             FileTransfer.PublicDesktopOverride = _publicDesktopOverride;
             FileTransfer.ProfileInfo = _profileInfo;

@@ -129,8 +129,10 @@ namespace POps.Shared
             @"C:\POps\appsettings.json",
         };
 
-        // Süreç varsayılanı: Worker'ın dışında ayar okuyan ajan kodu (AgentCredentials; Worker bölmesinin b2 adımı kaldırır)
-        // ve onu sınayan testler için. Servis değiştirmez; testler yolları değiştirebilir.
+        // Süreç varsayılanı: Worker'ın bağlamı dışında ayar okuyan ajan kodu (PersistDir: HardwareBinding ve Generalizer,
+        // Worker bölmesinin b3 adımına kadar; kimlik bilgilerinin süreç varsayılanı AgentCredentials.Process) ve onları
+        // sınayan testler için. Bağlamdaki CredentialStore AgentPaths.ConfigPaths'i kullanır. Servis değiştirmez; testler
+        // yolları değiştirebilir.
         public static IReadOnlyList<string> ConfigPaths { get; internal set; } = DefaultConfigPaths;
 
         // Sunucu adresi okunamazsa son çare (yalnızca aynı makinedeki sunucu için anlamlı)
@@ -203,10 +205,13 @@ namespace POps.Shared
             && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback));
 
         // Gizli olmayan bir ayar: önce sistem ortam değişkeni, sonra appsettings.json.
-        public static string GetSetting(string key, string envVar)
+        public static string GetSetting(string key, string envVar) => GetSetting(key, envVar, ConfigPaths);
+
+        // paths: ayarın arandığı dosyalar (ajan: AgentPaths.ConfigPaths)
+        public static string GetSetting(string key, string envVar, IEnumerable<string> paths)
         {
             string env = Environment.GetEnvironmentVariable(envVar);
-            return !string.IsNullOrWhiteSpace(env) ? env.Trim() : ReadConfigValue(key);
+            return !string.IsNullOrWhiteSpace(env) ? env.Trim() : ReadConfigValue(key, paths);
         }
 
         // Klasör ayarı (LogDirectory, DataDirectory): paths'teki ilk dolu metin değeri. Log yazmaz (log klasörü henüz

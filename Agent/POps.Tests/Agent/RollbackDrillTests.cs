@@ -9,26 +9,22 @@ namespace POps.Tests.Agent
 {
     // Geri dönüş tatbikatı: işaret, güncellemeyle kurulan yeni sürümün ilk açılışında tüketilir. Sahada 0.1.4 -> 0.1.5
     // tatbikatı "rollback_failed" vermişti: geri kurulan 0.1.4 de işareti görüp sağlık bildirmemişti.
-    [Collection(SharedStateCollection.Name)]
-    public class RollbackDrillTests : SharedStateTestBase, IDisposable
+    public class RollbackDrillTests : TestBase, IDisposable
     {
-        public RollbackDrillTests()
-        {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("drill");
-            Directory.CreateDirectory(AgentUpdate.SecureDataDir);
-        }
+        // Testin klasörleri (güvenli depo dahil) ve açılan sürüm
+        private readonly AgentHarness _agent = AgentHarness.Create("drill");
+        private string _installedVersion;
 
-        public void Dispose()
-        {
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentUpdate.InstalledVersionOverride = null;
-        }
+        public void Dispose() => _agent.Dispose();
+
+        // Servisin açılışı: bu klasörlerde, _installedVersion sürümüyle
+        private bool ApplyRollbackDrillOnStartup() => new AgentUpdater(_agent.Paths, _installedVersion).ApplyRollbackDrillOnStartup();
 
         private static AgentUpdate.UpdateRun Run(string to, long startedAt) => new AgentUpdate.UpdateRun { ToVersion = to, StartedAt = startedAt };
         private static AgentUpdate.ConsumedDrill Consumed(string version, long startedAt) => new AgentUpdate.ConsumedDrill { Version = version, UpdateStartedAt = startedAt };
 
-        private static void WriteLock(string from, string to, long startedAt) =>
-            File.WriteAllText(AgentUpdate.LockPath, JsonSerializer.Serialize(new { from_version = from, to_version = to, started_at = startedAt }));
+        private void WriteLock(string from, string to, long startedAt) =>
+            File.WriteAllText(_agent.Paths.UpdateLockPath, JsonSerializer.Serialize(new { from_version = from, to_version = to, started_at = startedAt }));
 
         // ------------------------------------------------------------------ karar (dosyasız)
 
@@ -95,56 +91,56 @@ namespace POps.Tests.Agent
         [Fact]
         public void DrillFlow_OnDisk()
         {
-            File.WriteAllText(AgentUpdate.RollbackDrillPath, "");
+            File.WriteAllText(_agent.Paths.RollbackDrillPath, "");
             WriteLock("0.1.5-alpha", "0.1.6-alpha", 1000);
 
             // 1) Yeni sürüm açıldı: işaret tüketilir, sağlık bildirilmez
-            AgentUpdate.InstalledVersionOverride = "0.1.6-alpha";
-            Assert.True(AgentUpdate.ApplyRollbackDrillOnStartup());
-            Assert.False(File.Exists(AgentUpdate.RollbackDrillPath));
-            Assert.Contains("0.1.6-alpha", File.ReadAllText(AgentUpdate.ConsumedDrillPath));
+            _installedVersion = "0.1.6-alpha";
+            Assert.True(ApplyRollbackDrillOnStartup());
+            Assert.False(File.Exists(_agent.Paths.RollbackDrillPath));
+            Assert.Contains("0.1.6-alpha", File.ReadAllText(_agent.Paths.ConsumedDrillPath));
 
             // 2) SCM yeni sürümü yeniden başlattı: tatbikat sürer
-            Assert.True(AgentUpdate.ApplyRollbackDrillOnStartup());
+            Assert.True(ApplyRollbackDrillOnStartup());
 
             // 3) Geri kurulan 0.1.5 işareti tanımıyordu (yalnızca rollback-drill'e bakar): artık görmez, sağlık bildirir
-            Assert.False(AgentUpdate.RollbackDrillRequested());
+            Assert.False(AgentUpdate.RollbackDrillRequested(_agent.Paths));
             //    Yeni kodlu eski sürüm de sağlık bildirir ve başkasının kaydını siler
-            AgentUpdate.InstalledVersionOverride = "0.1.5-alpha";
-            Assert.False(AgentUpdate.ApplyRollbackDrillOnStartup());
-            Assert.False(File.Exists(AgentUpdate.ConsumedDrillPath));
+            _installedVersion = "0.1.5-alpha";
+            Assert.False(ApplyRollbackDrillOnStartup());
+            Assert.False(File.Exists(_agent.Paths.ConsumedDrillPath));
         }
 
         [Fact]
         public void OldUpdaterLeftTheRecord_NextSendIsNormal()
         {
             // 0.1.5 updater yalnızca rollback-drill'i siler; .consumed kalır. 0.1.6 yeniden gönderilince yeni çalışma başlar.
-            File.WriteAllText(AgentUpdate.RollbackDrillPath, "");
+            File.WriteAllText(_agent.Paths.RollbackDrillPath, "");
             WriteLock("0.1.5-alpha", "0.1.6-alpha", 1000);
-            AgentUpdate.InstalledVersionOverride = "0.1.6-alpha";
-            Assert.True(AgentUpdate.ApplyRollbackDrillOnStartup());
+            _installedVersion = "0.1.6-alpha";
+            Assert.True(ApplyRollbackDrillOnStartup());
 
             WriteLock("0.1.5-alpha", "0.1.6-alpha", 2000);
-            Assert.False(AgentUpdate.ApplyRollbackDrillOnStartup());
-            Assert.False(File.Exists(AgentUpdate.ConsumedDrillPath));
+            Assert.False(ApplyRollbackDrillOnStartup());
+            Assert.False(File.Exists(_agent.Paths.ConsumedDrillPath));
         }
 
         [Fact]
         public void MarkerPlacedBeforeTheUpdate_SurvivesAServiceRestart()
         {
-            File.WriteAllText(AgentUpdate.RollbackDrillPath, "");
-            AgentUpdate.InstalledVersionOverride = "0.1.6-alpha";
-            Assert.False(AgentUpdate.ApplyRollbackDrillOnStartup());   // güncelleme yok: servis yeniden başladı
-            Assert.True(AgentUpdate.RollbackDrillRequested());
+            File.WriteAllText(_agent.Paths.RollbackDrillPath, "");
+            _installedVersion = "0.1.6-alpha";
+            Assert.False(ApplyRollbackDrillOnStartup());   // güncelleme yok: servis yeniden başladı
+            Assert.True(AgentUpdate.RollbackDrillRequested(_agent.Paths));
         }
 
         [Fact]
         public void UnreadableState_StillReportsHealth()
         {
-            File.WriteAllText(AgentUpdate.RollbackDrillPath, "");
-            File.WriteAllText(AgentUpdate.LockPath, "{bozuk");
-            AgentUpdate.InstalledVersionOverride = "0.1.6-alpha";
-            Assert.False(AgentUpdate.ApplyRollbackDrillOnStartup());
+            File.WriteAllText(_agent.Paths.RollbackDrillPath, "");
+            File.WriteAllText(_agent.Paths.UpdateLockPath, "{bozuk");
+            _installedVersion = "0.1.6-alpha";
+            Assert.False(ApplyRollbackDrillOnStartup());
         }
 
         // ------------------------------------------------------------------ updater temizliği
@@ -152,48 +148,44 @@ namespace POps.Tests.Agent
         [Fact]
         public void UpdaterClear_RemovesBothMarkers()
         {
-            File.WriteAllText(AgentUpdate.RollbackDrillPath, "");
-            File.WriteAllText(AgentUpdate.ConsumedDrillPath, "{}");
-            Assert.Equal(2, RollbackDrill.Clear(AgentUpdate.SecureDataDir, null));
-            Assert.False(File.Exists(AgentUpdate.RollbackDrillPath));
-            Assert.False(File.Exists(AgentUpdate.ConsumedDrillPath));
-            Assert.Equal(0, RollbackDrill.Clear(AgentUpdate.SecureDataDir, null));
+            File.WriteAllText(_agent.Paths.RollbackDrillPath, "");
+            File.WriteAllText(_agent.Paths.ConsumedDrillPath, "{}");
+            Assert.Equal(2, RollbackDrill.Clear(_agent.Paths.SecureDir, null));
+            Assert.False(File.Exists(_agent.Paths.RollbackDrillPath));
+            Assert.False(File.Exists(_agent.Paths.ConsumedDrillPath));
+            Assert.Equal(0, RollbackDrill.Clear(_agent.Paths.SecureDir, null));
         }
 
         [Fact]
         public void SharedFileNames_MatchTheAgentPaths()
         {
-            Assert.Equal(RollbackDrill.MarkerFileName, Path.GetFileName(AgentUpdate.RollbackDrillPath));
-            Assert.Equal(RollbackDrill.ConsumedFileName, Path.GetFileName(AgentUpdate.ConsumedDrillPath));
+            Assert.Equal(RollbackDrill.MarkerFileName, Path.GetFileName(_agent.Paths.RollbackDrillPath));
+            Assert.Equal(RollbackDrill.ConsumedFileName, Path.GetFileName(_agent.Paths.ConsumedDrillPath));
         }
     }
 
-    [Collection(SharedStateCollection.Name)]
-    public class StaleLockDrillTests : SharedStateTestBase, IDisposable
+    public class StaleLockDrillTests : TestBase, IDisposable
     {
-        public StaleLockDrillTests()
-        {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("stale");
-            Directory.CreateDirectory(AgentUpdate.SecureDataDir);
-        }
+        // Testin klasörleri (güvenli depo dahil) ve açılan sürüm
+        private readonly AgentHarness _agent = AgentHarness.Create("stale");
+        private string _installedVersion;
 
-        public void Dispose()
-        {
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            AgentUpdate.InstalledVersionOverride = null;
-        }
+        public void Dispose() => _agent.Dispose();
+
+        // Servisin açılışı: bu klasörlerde, _installedVersion sürümüyle
+        private bool ApplyRollbackDrillOnStartup() => new AgentUpdater(_agent.Paths, _installedVersion).ApplyRollbackDrillOnStartup();
 
         // L4: çökmüş bir updater'dan kalan eski kilit "güncelleme var" sayılmaz; işaret tüketilmez
         [Fact]
         public void StaleUpdateLock_DoesNotConsumeTheMarker()
         {
-            File.WriteAllText(AgentUpdate.RollbackDrillPath, "");
-            File.WriteAllText(AgentUpdate.LockPath, JsonSerializer.Serialize(new { from_version = "0.1.5-alpha", to_version = "0.1.6-alpha", started_at = 1000 }));
-            File.SetLastWriteTimeUtc(AgentUpdate.LockPath, DateTime.UtcNow.AddMinutes(-20));
-            AgentUpdate.InstalledVersionOverride = "0.1.6-alpha";
+            File.WriteAllText(_agent.Paths.RollbackDrillPath, "");
+            File.WriteAllText(_agent.Paths.UpdateLockPath, JsonSerializer.Serialize(new { from_version = "0.1.5-alpha", to_version = "0.1.6-alpha", started_at = 1000 }));
+            File.SetLastWriteTimeUtc(_agent.Paths.UpdateLockPath, DateTime.UtcNow.AddMinutes(-20));
+            _installedVersion = "0.1.6-alpha";
 
-            Assert.False(AgentUpdate.ApplyRollbackDrillOnStartup());
-            Assert.True(AgentUpdate.RollbackDrillRequested());
+            Assert.False(ApplyRollbackDrillOnStartup());
+            Assert.True(AgentUpdate.RollbackDrillRequested(_agent.Paths));
         }
     }
 }

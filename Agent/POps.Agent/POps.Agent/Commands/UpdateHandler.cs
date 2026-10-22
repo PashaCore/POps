@@ -17,15 +17,18 @@ namespace POpsAgent
         private readonly string _serverUrl;
         private readonly Func<Dictionary<string, object>, Task<bool>> _reportProgress;
         private readonly AgentPaths _paths;
+        private readonly AgentUpdater _updater;
 
-        // reportProgress: update_progress gönderimi (bkz. UpdateReporter.ReportUpdateProgressAsync); paths: indirilen paket,
-        // updater'ın kopyası ve updater'la paylaşılan dosyalar
-        public UpdateHandler(HttpClient httpClient, string serverUrl, Func<Dictionary<string, object>, Task<bool>> reportProgress, AgentPaths paths)
+        // reportProgress: update_progress gönderimi (bkz. UpdateReporter.ReportUpdateProgressAsync); paths: updater'la
+        // paylaşılan dosyalar (sonuç); updater: bağlamın güncelleme durumu (indirilen paket, updater'ın kopyası; aynı anda tek emir)
+        public UpdateHandler(HttpClient httpClient, string serverUrl, Func<Dictionary<string, object>, Task<bool>> reportProgress, AgentPaths paths,
+            AgentUpdater updater)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _serverUrl = serverUrl;
             _reportProgress = reportProgress ?? throw new ArgumentNullException(nameof(reportProgress));
             _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+            _updater = updater ?? throw new ArgumentNullException(nameof(updater));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { "update_agent", "update_result_ack" };
@@ -35,7 +38,7 @@ namespace POpsAgent
             if (command.Action == "update_agent")
             {
                 JsonElement update = command.Root.Clone();
-                _ = Task.Run(() => AgentUpdate.HandleUpdateCommandAsync(update, _httpClient, _serverUrl, _paths, _reportProgress), CancellationToken.None);
+                _ = Task.Run(() => _updater.HandleUpdateCommandAsync(update, _httpClient, _serverUrl, _reportProgress), CancellationToken.None);
             }
             else HandleUpdateResultAck(command.Root);
             return Task.CompletedTask;

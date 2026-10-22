@@ -68,16 +68,18 @@ namespace POpsAgent
         private readonly Func<string> _hwId;
         private readonly string _hostname;
         private readonly Action<string> _error;
+        private readonly AgentHttp _http;
 
-        // paths: son bildirilen oturumun dosyası (<veri klasörü>\session.json)
-        public SessionReporter(AgentPaths paths, string serverUrl, Func<string> hwId, string hostname, Action<string> error = null)
+        // paths: son bildirilen oturumun dosyası (<veri klasörü>\session.json); http: bağlamın HTTP istemcisi
+        public SessionReporter(AgentPaths paths, string serverUrl, Func<string> hwId, string hostname, AgentHttp http, Action<string> error = null)
         {
             StatePath = paths.DataFile(StateFileName);
             _serverUrl = serverUrl;
             _hwId = hwId;
             _hostname = hostname;
+            _http = http ?? throw new ArgumentNullException(nameof(http));
             _error = error ?? (_ => { });
-            Poster = (action, id, body) => AgentHttp.PostJsonAsync(_serverUrl, "/api/auth/" + action, id, body,
+            Poster = (action, id, body) => _http.PostJsonAsync(_serverUrl, "/api/auth/" + action, id, body,
                 action == "login" ? "Oturum açma bildirimi" : "Oturum kapama bildirimi");
         }
 
@@ -106,7 +108,7 @@ namespace POpsAgent
                         lastSeenUser = current.User;
                         UserChanged(current.User);
                     }
-                    if (DateTime.UtcNow >= retryAfterUtc && AgentHttp.EnsureCanReport())
+                    if (DateTime.UtcNow >= retryAfterUtc && _http.EnsureCanReport())
                     {
                         (reported, bool delivered) = await ReportChangesAsync(reported, current);
                         retryAfterUtc = delivered ? DateTime.MinValue : DateTime.UtcNow + RetryDelay;

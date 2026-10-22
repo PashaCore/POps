@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 namespace POpsAgent
 {
     // Sunucu modülü denetimi ve ret bildirimi; Worker'ın ve işleyicilerin tek örneği (dakikada bir sınırı tüm eylemlerde
-    // ortaktır). Yerel yetenekler bugünkü gibi AgentCapabilities'ten okunur.
+    // ortaktır). Yerel yetenekler bağlamın CapabilityState'inden okunur (bkz. AgentCapabilities).
     [SupportedOSPlatform("windows")]
     internal sealed class CapabilityGate
     {
@@ -14,7 +14,7 @@ namespace POpsAgent
         private readonly Func<string, bool> _moduleEnabled;
         private readonly TimeProvider _clock;
 
-        // send: komut kanalına gönderim (dönen: gönderildi mi); moduleEnabled: sunucu modülü açık mı (AgentModules.IsEnabled)
+        // send: komut kanalına gönderim (dönen: gönderildi mi); moduleEnabled: sunucu modülü açık mı (ModuleState.IsEnabled)
         public CapabilityGate(Func<object, Task<bool>> send, Func<string, bool> moduleEnabled, TimeProvider clock)
         {
             _send = send ?? throw new ArgumentNullException(nameof(send));

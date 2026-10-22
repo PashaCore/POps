@@ -54,7 +54,6 @@ namespace POps.Tests.Agent
             foreach (FakeTray tray in _trays) tray.Dispose();
             _worker.TrayPipe?.Stop();
             _worker.Dispose();
-            AgentModules.Reset();
             POpsHelpers.ConfigPaths = new string[0];
             TrayPipeServer.PipeName = "POpsTrayPipe";
             TrayPipeServer.ClientCheckOverride = null;

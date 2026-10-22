@@ -182,27 +182,21 @@ namespace POps.Tests.Agent
     }
 
     // Yazılım envanteri: açılışta rastgele gecikme, değişmeyen listeyi 7 gün göndermeme
-    [Collection(SharedStateCollection.Name)]
-    public class InventoryLoadTests : SharedStateTestBase, IDisposable
+    public class InventoryLoadTests : TestBase, IDisposable
     {
         private static readonly DateTime T0 = new DateTime(2026, 10, 2, 8, 0, 0, DateTimeKind.Utc);
         private int _posts, _uploaded;
         private DateTime _now = T0;
         private string _hwId = "HW-I";
         private List<SoftwareItem> _items = Items("1");
+        private readonly AgentHarness _agent = AgentHarness.Create("inventory");
 
         public InventoryLoadTests()
         {
-            AgentUpdate.DataDir = TestEnvironment.NewDir("inventory-data");
-            SecureStore.Dir = TestEnvironment.NewDir("inventory-secure");
-            AgentCredentials.SaveSecret("inventory-secret-0123456789abcdefghij", "HW-I");
+            _agent.Credentials.SaveSecret("inventory-secret-0123456789abcdefghij", "HW-I");
         }
 
-        public void Dispose()
-        {
-            AgentUpdate.DataDir = TestEnvironment.DefaultDataDir;
-            SecureStore.Dir = TestEnvironment.DefaultSecureDir;
-        }
+        public void Dispose() => _agent.Dispose();
 
         private static List<SoftwareItem> Items(string version) => new List<SoftwareItem>
         {
@@ -211,10 +205,10 @@ namespace POps.Tests.Agent
         };
 
         // Son başarılı gönderimin kaydı (veri klasöründe)
-        private static string StatePath => Path.Combine(AgentUpdate.DataDir, SoftwareReporter.StateFileName);
+        private string StatePath => _agent.Paths.DataFile(SoftwareReporter.StateFileName);
 
         // Her çağrı yeni bir raporlayıcı: servis yeniden başlamış gibi
-        private SoftwareReporter Reporter() => new SoftwareReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => _hwId, () => _uploaded++)
+        private SoftwareReporter Reporter() => new SoftwareReporter(_agent.Paths, "https://pops.example", () => _hwId, _agent.Modules, _agent.Http, () => _uploaded++)
         {
             Collector = () => _items,
             UtcNow = () => _now,

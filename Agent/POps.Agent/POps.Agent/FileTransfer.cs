@@ -223,7 +223,7 @@ namespace POpsAgent
                 SecureStore.EnsureDirectory();
                 using var message = new HttpRequestMessage(HttpMethod.Get, request.Url);
                 AgentCredentials.AddHttpAuth(message, hwId);
-                using HttpResponseMessage response = await AgentHttp.Client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token);
+                using HttpResponseMessage response = await AgentHttp.Default.Client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token);
                 if (!response.IsSuccessStatusCode) return ("failed", null, $"indirilemedi: HTTP {(int)response.StatusCode}");
                 using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
                 long total = 0;
@@ -273,7 +273,7 @@ namespace POpsAgent
                     message.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
                     message.Content.Headers.ContentLength = size;
                     AgentCredentials.AddHttpAuth(message, hwId);
-                    using HttpResponseMessage response = await AgentHttp.Client.SendAsync(message, token);
+                    using HttpResponseMessage response = await AgentHttp.Default.Client.SendAsync(message, token);
                     return response.IsSuccessStatusCode
                         ? ("done", finalPath, null, size)
                         : ("failed", finalPath, $"yüklenemedi: HTTP {(int)response.StatusCode}", size);

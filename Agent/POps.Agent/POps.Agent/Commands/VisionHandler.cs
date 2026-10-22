@@ -14,13 +14,15 @@ namespace POpsAgent
         private readonly VisionSession _vision;
         private readonly CapabilityGate _gate;
         private readonly Func<TrayPipeServer?> _trayPipe;
+        private readonly CapabilityState _capabilities;
 
-        // Tepsi borusu servis çalışırken kurulur: her kullanımda okunur
-        public VisionHandler(VisionSession vision, CapabilityGate gate, Func<TrayPipeServer?> trayPipe)
+        // Tepsi borusu servis çalışırken kurulur: her kullanımda okunur. capabilities: bağlamın yetenek durumu
+        public VisionHandler(VisionSession vision, CapabilityGate gate, Func<TrayPipeServer?> trayPipe, CapabilityState capabilities)
         {
             _vision = vision ?? throw new ArgumentNullException(nameof(vision));
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _trayPipe = trayPipe ?? throw new ArgumentNullException(nameof(trayPipe));
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { "start_stream", "start_vision_session", "stop_stream" };
@@ -31,7 +33,7 @@ namespace POpsAgent
             JsonElement root = command.Root;
             string action = command.Action;
             CancellationToken stoppingToken = command.Stopping;
-            if ((action == "start_stream" || action == "start_vision_session") && !AgentCapabilities.VisionEnabled)
+            if ((action == "start_stream" || action == "start_vision_session") && !_capabilities.VisionEnabled)
             {
                 await _gate.DenyAsync("vision", action);
             }

@@ -32,7 +32,7 @@ namespace POpsAgent
         // appsettings.json yalnızca SYSTEM ve Administrators'a açıktır; izin üst klasörden devralınmaz
         // (Program Files, Users'a okuma verir). Kurulum ya da onarım dosyayı varsayılan izinlerle yeniden
         // oluşturabildiği için ACL her açılışta kurulur ve sonuç geri okunarak doğrulanır. Gizli değerler
-        // zaten bu dosyada tutulmaz (bkz. AgentCredentials.MigrateSecrets).
+        // zaten bu dosyada tutulmaz (bkz. CredentialStore.MigrateSecrets).
         internal static void SecureConfigFile(string path)
         {
             try

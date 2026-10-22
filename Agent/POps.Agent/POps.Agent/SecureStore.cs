@@ -25,9 +25,10 @@ namespace POpsAgent
         private static readonly SecurityIdentifier AdminsSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
 
         // Süreç varsayılanı: servis açılışta AgentPaths.SecureDir'e çevirir (bkz. AgentDirectories.Use). Worker ve kurduğu
-        // servisler yolu AgentPaths'ten alır; bunu yalnızca Worker bölmesinin b2/b3 adımlarının örneğe çevireceği statik
-        // sınıflar (AgentCapabilities, AgentCredentials, KioskMode, NetworkIsolation, ExamMode, FileTransfer) ve onları
-        // sınayan testler okur.
+        // servisler yolu AgentPaths'ten alır; bunu yalnızca Worker bölmesinin b3 adımının örneğe çevireceği statik kod
+        // (yeteneklerin, kimlik bilgilerinin ve HTTP istemcisinin süreç varsayılanı: AgentCapabilities.Process,
+        // AgentCredentials.Process, AgentHttp.Default; KioskMode, NetworkIsolation, ExamMode, FileTransfer) ve onları sınayan
+        // testler okur.
         public static string Dir { get; set; } = DefaultDir;
 
         public static string PathOf(string name) => Path.Combine(Dir, name);

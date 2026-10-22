@@ -301,19 +301,20 @@ namespace POps.Tests.Agent
     }
 
     // M2: gönderilemeyen durum saklanır, yalnızca gönderim yeniden denenir; uç yoksa bırakılır
-    [Collection(SharedStateCollection.Name)]
-    public class PatchDeliveryTests : SharedStateTestBase
+    public class PatchDeliveryTests : TestBase, IDisposable
     {
-        // Testin veri klasörü (patch-scan.json)
-        private readonly AgentPaths _paths = AgentHarness.Create("patch").Paths;
+        // Testin ajanı: veri klasörü (patch-scan.json), sunucu modülleri ve HTTP istemcisi
+        private readonly AgentHarness _agent = AgentHarness.Create("patch");
 
-        private string StatePath => _paths.DataFile(PatchManager.StateFileName);
+        public void Dispose() => _agent.Dispose();
+
+        private string StatePath => _agent.Paths.DataFile(PatchManager.StateFileName);
 
         private static PatchStatusPayload Status(string lastResult = null) =>
             PatchClassifier.BuildStatus(new List<PendingUpdate> { new PendingUpdate { Kb = "KB1", Title = "t", Severity = "Critical" } }, false, DateTime.UtcNow, null, lastResult);
 
         private PatchManager Manager(PostResult result) =>
-            new PatchManager(_paths, "https://pops.example", () => "HW-A") { Poster = _ => Task.FromResult(result) };
+            new PatchManager(_agent.Paths, "https://pops.example", () => "HW-A", _agent.Modules, _agent.Http) { Poster = _ => Task.FromResult(result) };
 
         [Fact]
         public async Task FailedPost_KeepsTheReportForARetry()

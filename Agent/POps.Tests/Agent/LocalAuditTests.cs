@@ -6,9 +6,12 @@ using Xunit;
 
 namespace POps.Tests.Agent
 {
-    [Collection(SharedStateCollection.Name)]
-    public class LocalAuditTests : SharedStateTestBase
+    public class LocalAuditTests : TestBase, IDisposable
     {
+        private readonly AgentHarness _agent = AgentHarness.Create("audit");
+
+        public void Dispose() => _agent.Dispose();
+
         [Fact]
         public void CommandEvents_ContainHashAndMetadata_ButNeverCommandText()
         {
@@ -42,14 +45,14 @@ namespace POps.Tests.Agent
                 ["rollback"] = "none",
                 ["detail"] = Guid.NewGuid().ToString("N"),
             };
-            LocalAuditEvent first = AgentUpdate.PendingResultAudit(message);
+            LocalAuditEvent first = _agent.Updater.PendingResultAudit(message);
 
             Assert.Equal(1030, first.EventId);
             Assert.Contains("from: 0.1.11-alpha", first.Message);
             Assert.Contains("to: 0.1.12-alpha", first.Message);
             Assert.Contains("outcome: success", first.Message);
-            Assert.Null(AgentUpdate.PendingResultAudit(message));
-            Assert.Null(AgentUpdate.PendingResultAudit(null));
+            Assert.Null(_agent.Updater.PendingResultAudit(message));
+            Assert.Null(_agent.Updater.PendingResultAudit(null));
         }
 
         [Fact]

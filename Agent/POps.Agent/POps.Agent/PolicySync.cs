@@ -23,15 +23,18 @@ namespace POpsAgent
         private readonly Func<TrayPipeServer?> _trayPipe;
         private readonly Func<SoftwareReporter?> _software;
         private readonly Action<LocalAuditEvent> _audit;
+        // Bağlamın sunucu modülleri ve HTTP istemcisi
+        private readonly ModuleState _modules;
+        private readonly AgentHttp _http;
 
         private AgentPolicy _currentPolicy = new AgentPolicy();
         private bool _fairUseAcknowledged;
 
         // Kimlik, tepsi borusu ve yazılım envanteri çalışırken değişir (set_identity, servis açılışı, testler): her
         // kullanımda okunur. httpClient: anahtarsız politika isteği (sunucu sertifikası ServerTrust ile doğrulanır);
-        // audit: modül değişikliğinin Olay Günlüğü kaydı
+        // audit: modül değişikliğinin Olay Günlüğü kaydı; modules: politika yanıtındaki modüller; http: anahtarlı politika isteği
         public PolicySync(string serverUrl, Func<string?> hwId, HttpClient httpClient, AgentHealthTelemetry health, VisionSession vision,
-            Func<TrayPipeServer?> trayPipe, Func<SoftwareReporter?> software, Action<LocalAuditEvent> audit)
+            Func<TrayPipeServer?> trayPipe, Func<SoftwareReporter?> software, Action<LocalAuditEvent> audit, ModuleState modules, AgentHttp http)
         {
             _serverUrl = serverUrl;
             _hwId = hwId ?? throw new ArgumentNullException(nameof(hwId));
@@ -41,6 +44,8 @@ namespace POpsAgent
             _trayPipe = trayPipe ?? throw new ArgumentNullException(nameof(trayPipe));
             _software = software ?? throw new ArgumentNullException(nameof(software));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+            _modules = modules ?? throw new ArgumentNullException(nameof(modules));
+            _http = http ?? throw new ArgumentNullException(nameof(http));
         }
 
         // Kullanıcı aydınlatma metnini onayladı (tepsi: FAIR_USE_ACK); bu çalışmada yeniden gösterilmez
@@ -77,9 +82,9 @@ namespace POpsAgent
         // Anahtar yoksa kurum geneli politika başlıksız istenir.
         internal async Task<string> FetchPolicyJsonAsync(CancellationToken token)
         {
-            if (AgentHttp.CanReport && POpsHelpers.IsSecureServerUrl(_serverUrl))
+            if (_http.CanReport && POpsHelpers.IsSecureServerUrl(_serverUrl))
             {
-                var (status, body) = await AgentHttp.SendAsync(HttpMethod.Get, _serverUrl, "/api/agent_policies", _hwId(), null, "Politika");
+                var (status, body) = await _http.SendAsync(HttpMethod.Get, _serverUrl, "/api/agent_policies", _hwId(), null, "Politika");
                 if (status >= 200 && status < 300 && body != null) return body;
                 throw new HttpRequestException(status == null ? "yanıt yok" : $"HTTP {status}");
             }
@@ -90,7 +95,7 @@ namespace POpsAgent
         {
             var policy = JsonSerializer.Deserialize<AgentPolicy>(json, PolicyJson);
             if (policy == null) return;
-            using (JsonDocument doc = JsonDocument.Parse(json)) OnModulesChanged(AgentModules.Apply(doc.RootElement));
+            using (JsonDocument doc = JsonDocument.Parse(json)) OnModulesChanged(_modules.Apply(doc.RootElement));
             _currentPolicy = policy;
             DnsPolicyMonitor.Configure(policy, _hwId(), _serverUrl);
             _health.PolicySynced();
@@ -126,7 +131,7 @@ namespace POpsAgent
         }
 
         // Tepside "Sorun bildir" ve "Taleplerim" yalnızca yardım masası modülü açıkken görünür
-        internal static string HelpdeskMenuMessage() => "HELPDESK_MENU:" + (AgentModules.IsEnabled(AgentModules.Helpdesk) ? "1" : "0");
+        internal string HelpdeskMenuMessage() => "HELPDESK_MENU:" + (_modules.IsEnabled(AgentModules.Helpdesk) ? "1" : "0");
 
         internal void SyncTrayModules() => _trayPipe()?.SendCommandToDesktop(HelpdeskMenuMessage());
     }

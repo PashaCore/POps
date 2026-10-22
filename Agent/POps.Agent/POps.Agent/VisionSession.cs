@@ -27,6 +27,11 @@ namespace POpsAgent
         private readonly Action<string> _toTray;
         private readonly Func<TrayPipeServer?> _trayPipe;
         private readonly Action<LocalAuditEvent> _audit;
+        // Bağlamın yetenek durumu, kimlik bilgileri, sunucu sertifikasına güveni ve HTTP istemcisi
+        private readonly CapabilityState _capabilities;
+        private readonly CredentialStore _credentials;
+        private readonly ServerTrust _trust;
+        private readonly AgentHttp _http;
 
         private ClientWebSocket? _visionWs;
         private readonly SemaphoreSlim _wsVisionLock;
@@ -48,9 +53,10 @@ namespace POpsAgent
 
         // Kimlik ve tepsi borusu her kullanımda okunur. toTray: Worker.ToTray (testlerde TrayOverride); trayPipe: doğrudan
         // boruya giden mesajlar; audit: Vision olaylarının Olay Günlüğü kaydı (testlerde AuditOverride); visionLock: Vision
-        // tünelinin yazma kilidi (Worker'ındır, servis boyunca yaşar)
+        // tünelinin yazma kilidi (Worker'ındır, servis boyunca yaşar); capabilities, credentials, trust, http: bağlamın parçaları
         public VisionSession(Func<string?> hwId, string pcName, string serverUrl, CapabilityGate gate, ServerHandshake handshake,
-            Action<string> toTray, Func<TrayPipeServer?> trayPipe, Action<LocalAuditEvent> audit, SemaphoreSlim visionLock)
+            Action<string> toTray, Func<TrayPipeServer?> trayPipe, Action<LocalAuditEvent> audit, SemaphoreSlim visionLock,
+            CapabilityState capabilities, CredentialStore credentials, ServerTrust trust, AgentHttp http)
         {
             _hwId = hwId ?? throw new ArgumentNullException(nameof(hwId));
             _pcName = pcName;
@@ -61,6 +67,10 @@ namespace POpsAgent
             _trayPipe = trayPipe ?? throw new ArgumentNullException(nameof(trayPipe));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
             _wsVisionLock = visionLock ?? throw new ArgumentNullException(nameof(visionLock));
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+            _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
+            _trust = trust ?? throw new ArgumentNullException(nameof(trust));
+            _http = http ?? throw new ArgumentNullException(nameof(http));
             _visionRelay = new VisionRelay(SendVisionBinaryAsync, SendVisionTextAsync, toTray);
         }
 
@@ -114,7 +124,7 @@ namespace POpsAgent
             AgentLogPayload log = VisionLockedStartLog(_visionSessionId, _visionRequestedBy, mandatory);
             _ = DeviceLogOverride != null
                 ? DeviceLogOverride(log)
-                : AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId()), _hwId(), log, "Kilitliyken başlayan Vision oturumu kaydı");
+                : _http.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", _hwId()), _hwId(), log, "Kilitliyken başlayan Vision oturumu kaydı");
         }
 
         // Sunucuda sıradan bir olay günlüğü kaydı (agent_logs_v2); sunucu bu türe özel bir şey yapmaz
@@ -137,7 +147,7 @@ namespace POpsAgent
         private async Task ConnectVisionTunnelAsync(CancellationToken token)
         {
             if (_visionWs != null && _visionWs.State == WebSocketState.Open) return;
-            if (!AgentCapabilities.VisionEnabled)
+            if (!_capabilities.VisionEnabled)
             {
                 await _gate.DenyAsync("vision", "vision_tunnel");
                 return;
@@ -160,8 +170,8 @@ namespace POpsAgent
                 return;
             }
             string visionWsUrl = _serverUrl.Replace("http://", "ws://").Replace("https://", "wss://") + $"/ws/vision/{_hwId()}";
-            string secret = AgentCredentials.CurrentSecret ?? AgentCredentials.LoadSecret();
-            VisionAuthSelection auth = VisionChannel.SelectHeaders(secret, AgentCredentials.GetEnrollToken(), POpsHelpers.AppVersion);
+            string secret = _credentials.CurrentSecret ?? _credentials.LoadSecret();
+            VisionAuthSelection auth = VisionChannel.SelectHeaders(secret, _credentials.GetEnrollToken(), POpsHelpers.AppVersion);
             if (!auth.CanConnect)
             {
                 POpsHelpers.Log("AGENT", "[GÜVENLİK] Vision tüneli açılmadı: cihaz henüz kayıtlı değil (anahtar yok)", true);
@@ -169,7 +179,7 @@ namespace POpsAgent
                 return;
             }
             var newWs = new ClientWebSocket();
-            newWs.Options.RemoteCertificateValidationCallback = ServerTrust.WebSocketCallback(new Uri(visionWsUrl));
+            newWs.Options.RemoteCertificateValidationCallback = _trust.WebSocketCallback(new Uri(visionWsUrl));
             foreach (KeyValuePair<string, string> header in auth.Headers)
                 newWs.Options.SetRequestHeader(header.Key, header.Value);
             try
@@ -215,8 +225,8 @@ namespace POpsAgent
         // Reddedilirse capability_denied'ın yeteneği ve nedeni; yerel yetenek kilidi önce, sonra sunucu modülü, sonra onay
         internal (string? Capability, string? Reason) VisionDenial(bool isInputEvent)
         {
-            if (AgentCapabilities.VisionEnabled && !_gate.ModuleEnabled(AgentModules.Vision)) return ("vision", AgentModules.DisabledReason);
-            return (VisionInputGate.DenialReason(AgentCapabilities.VisionEnabled, _visionSessionApproved, _isVisionStreamActive, isInputEvent), null);
+            if (_capabilities.VisionEnabled && !_gate.ModuleEnabled(AgentModules.Vision)) return ("vision", AgentModules.DisabledReason);
+            return (VisionInputGate.DenialReason(_capabilities.VisionEnabled, _visionSessionApproved, _isVisionStreamActive, isInputEvent), null);
         }
 
         private async Task ReceiveVisionInputsAsync(ClientWebSocket ws, CancellationToken token)

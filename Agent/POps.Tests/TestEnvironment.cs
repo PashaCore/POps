@@ -43,7 +43,6 @@ namespace POps.Tests
             // (ör. karantina kaydını yazan test, klasörü oluşturan başka bir testten önce çalışabilir)
             Directory.CreateDirectory(DefaultSecureDir);
             Directory.CreateDirectory(DefaultDataDir);
-            POps.Shared.ServerTrust.CaPath = Path.Combine(DefaultSecureDir, POps.Shared.ServerTrust.FileName);
             // Bütün test seam'leri süreç başında bir kez kurulur (karantina testleri gerçek Görev Yöneticisi / oturum
             // politikalarına, güvenlik duvarına, güç API'sine dokunmaz ...). Paralel sınıflar EnsureIsolated çağırmaz ve
             // statikleri değiştirmez: seri koleksiyonlar paralel sınıflardan sonra çalıştığı için bu değerleri görürler.
@@ -77,18 +76,16 @@ namespace POps.Tests
 
 #if !NETFRAMEWORK
         // SharedState sınıflarında her testten önce: test seam'leri ve bellekteki ajan durumu test değerlerine geri alınır.
-        // Yollar burada değildir: Worker ve kurduğu servisler yolları AgentContext'ten alır (bkz. AgentHarness); henüz
-        // statik kalan yolları (SecureStore.Dir, AgentUpdate.DataDir, ...) statik kurucu bir kez geçici klasörlere çevirir,
-        // testler yalnızca geçici klasörlere çevirir. Worker bölmesinin (b) adımları buradan satır siler; b4'ten sonra
-        // EnsureIsolated kalmaz.
+        // Yollar ve çalışma durumu burada değildir: Worker ve kurduğu servisler onları AgentContext'ten alır (bkz.
+        // AgentHarness; sunucu modülleri her bağlamda yenidir); henüz statik kalan yolları (SecureStore.Dir,
+        // AgentUpdate.DataDir, ...) statik kurucu bir kez geçici klasörlere çevirir, testler yalnızca geçici klasörlere
+        // çevirir. Worker bölmesinin (b) adımları buradan satır siler; sonuncusundan (b3) sonra EnsureIsolated kalmaz.
         public static void EnsureIsolated()
         {
             if (!(POpsAgent.KioskMode.Registry is FakeKioskRegistry)) POpsAgent.KioskMode.Registry = new FakeKioskRegistry();
             // Güncelleme indirmeleri testlerde BITS'e gitmez (BITS testleri sahte çalıştırıcıyla açar)
             POpsAgent.BitsDownload.Enabled = false;
             IsolatePeerCache();
-            // Sunucu modülleri bellekte tutulur: her test hepsi açık başlar
-            POpsAgent.AgentModules.Reset();
             // Güvenlik duvarı betikleri ve sınav izin listesinin ad çözümü gerçek sisteme gitmez (ör. paylaşılan protokol
             // vektörlerindeki exam_mode); bunları sınayan sınıflar kendi sahtelerini kurar
             POpsAgent.NetworkIsolation.ScriptRunner = _ => System.Threading.Tasks.Task.FromResult((1, "testlerde güvenlik duvarına dokunulmaz"));

@@ -43,7 +43,7 @@ namespace POps.Tests.Agent
         {
             string dir = NewDataDir();
             var server = new FakeServer();
-            await AgentUpdate.HandleUpdateCommandAsync(Json("{\"action\":\"update_agent\",\"download_url\":\"http://evil/x.zip\",\"hash\":\"" + new string('a', 64) + "\"}"), new HttpClient(server), "https://pops.example");
+            await AgentHarness.FromStatics().Updater.HandleUpdateCommandAsync(Json("{\"action\":\"update_agent\",\"download_url\":\"http://evil/x.zip\",\"hash\":\"" + new string('a', 64) + "\"}"), new HttpClient(server), "https://pops.example");
             Assert.Empty(server.Requests);
             Assert.False(Directory.Exists(Path.Combine(dir, "updates")));
         }
@@ -59,7 +59,7 @@ namespace POps.Tests.Agent
                 manifest = Convert.ToBase64String(File.ReadAllBytes(TestEnvironment.TestData("manifest.json"))),
                 manifest_sig = File.ReadAllText(TestEnvironment.TestData("manifest.json.sig")),
             });
-            await AgentUpdate.HandleUpdateCommandAsync(Json(command), new HttpClient(server), "https://pops.example");
+            await AgentHarness.FromStatics().Updater.HandleUpdateCommandAsync(Json(command), new HttpClient(server), "https://pops.example");
             Assert.Empty(server.Requests);
         }
 
@@ -119,32 +119,28 @@ namespace POps.Tests.Agent
         public void WriteOperationalHealth_WritesPhaseChecksVersionAndTimestamp()
         {
             NewDataDir();
-            AgentUpdate.InstalledVersionOverride = "0.1.3-alpha";
-            try
+            var updater = new AgentUpdater(AgentHarness.FromStatics().Paths, installedVersion: "0.1.3-alpha");
+            updater.WriteOperationalHealth(new OperationalChecks
             {
-                AgentUpdate.WriteOperationalHealth(new OperationalChecks
-                {
-                    Identity = true,
-                    Credentials = true,
-                    Capabilities = true,
-                    Pipe = true,
-                    Loop = true,
-                });
-                using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(AgentUpdate.HealthPath));
-                Assert.Equal("0.1.3-alpha", doc.RootElement.GetProperty("version").GetString());
-                Assert.Equal("operational", doc.RootElement.GetProperty("phase").GetString());
-                Assert.All(doc.RootElement.GetProperty("checks").EnumerateObject(), check => Assert.True(check.Value.GetBoolean()));
-                Assert.InRange(doc.RootElement.GetProperty("ts").GetInt64(), DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 5, DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 5);
-                Assert.False(File.Exists(AgentUpdate.HealthPath + ".tmp"));
-            }
-            finally { AgentUpdate.InstalledVersionOverride = null; }
+                Identity = true,
+                Credentials = true,
+                Capabilities = true,
+                Pipe = true,
+                Loop = true,
+            });
+            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(AgentUpdate.HealthPath));
+            Assert.Equal("0.1.3-alpha", doc.RootElement.GetProperty("version").GetString());
+            Assert.Equal("operational", doc.RootElement.GetProperty("phase").GetString());
+            Assert.All(doc.RootElement.GetProperty("checks").EnumerateObject(), check => Assert.True(check.Value.GetBoolean()));
+            Assert.InRange(doc.RootElement.GetProperty("ts").GetInt64(), DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 5, DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 5);
+            Assert.False(File.Exists(AgentUpdate.HealthPath + ".tmp"));
         }
 
         [Fact]
         public void WriteOperationalHealth_DoesNotWriteIncompleteChecks()
         {
             NewDataDir();
-            AgentUpdate.WriteOperationalHealth(new OperationalChecks { Identity = true });
+            AgentHarness.FromStatics().Updater.WriteOperationalHealth(new OperationalChecks { Identity = true });
             Assert.False(File.Exists(AgentUpdate.HealthPath));
         }
 

@@ -17,11 +17,13 @@ namespace POpsAgent
         private readonly Func<bool> _commandUsesDeviceSecret;
         private readonly Func<object, Task<bool>> _send;
         private readonly Action<LocalAuditEvent> _audit;
+        private readonly CredentialStore _credentials;
 
         // Kimlik, donanım bağı ve yazılım envanteri çalışırken değişebilir (set_identity, testler); her kullanımda okunur.
-        // commandUsesDeviceSecret: komut bağlantısı cihaz secret'ıyla mı kuruldu (bkz. CommandConnection.ApplyAuthHeaders)
+        // commandUsesDeviceSecret: komut bağlantısı cihaz secret'ıyla mı kuruldu (bkz. CommandConnection.ApplyAuthHeaders);
+        // credentials: bağlamın kimlik bilgileri
         public SecretsHandler(Func<string?> hwId, Func<HardwareBinding> binding, Func<SoftwareReporter?> software,
-            Func<bool> commandUsesDeviceSecret, Func<object, Task<bool>> send, Action<LocalAuditEvent> audit)
+            Func<bool> commandUsesDeviceSecret, Func<object, Task<bool>> send, Action<LocalAuditEvent> audit, CredentialStore credentials)
         {
             _hwId = hwId ?? throw new ArgumentNullException(nameof(hwId));
             _binding = binding ?? throw new ArgumentNullException(nameof(binding));
@@ -29,6 +31,7 @@ namespace POpsAgent
             _commandUsesDeviceSecret = commandUsesDeviceSecret ?? throw new ArgumentNullException(nameof(commandUsesDeviceSecret));
             _send = send ?? throw new ArgumentNullException(nameof(send));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+            _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { "set_secret", "set_bypass_secret" };
@@ -52,9 +55,9 @@ namespace POpsAgent
             // Anahtar bu donanıma bağlanır; yeni kayıtta sunucunun yazılım listesi boştur, son gönderim unutulur
             _binding().Bind(_hwId(), "set_secret");
             _software()?.ForgetLastReport();
-            if (AgentCredentials.SaveSecret(secret, _hwId()))
+            if (_credentials.SaveSecret(secret, _hwId()))
             {
-                AgentCredentials.ForgetEnrollToken();
+                _credentials.ForgetEnrollToken();
                 POpsHelpers.Log("AGENT", "Cihaz secret'ı alındı ve güvenli depoya yazıldı; sonraki bağlantılar secret ile doğrulanacak.");
             }
             else
@@ -68,7 +71,7 @@ namespace POpsAgent
             string? secret = root.TryGetProperty("secret", out var property) && property.ValueKind == JsonValueKind.String
                 ? property.GetString() : null;
             bool saved = BypassSecretCommand.Process(secret, _commandUsesDeviceSecret(),
-                AgentCredentials.SaveDeviceBypassSecret,
+                _credentials.SaveDeviceBypassSecret,
                 message => POpsHelpers.Log("AGENT", message,
                     message.StartsWith("[GÜVENLİK]", StringComparison.Ordinal) || message.EndsWith("yazılamadı.", StringComparison.Ordinal)),
                 out string fingerprint);

@@ -114,19 +114,23 @@ namespace POpsAgent
         private readonly Func<int, Task> _deny;
         private readonly Action<string> _toTray;
         private readonly Func<bool> _trayInConsoleSession;
+        private readonly CapabilityState _capabilities;
         private readonly object _gate = new object();
         private Pending? _current;
 
         // Olay Günlüğü (testler yakalar)
         internal Action<LocalAuditEvent> Audit { get; set; } = LocalAudit.Write;
 
-        // sendResult(task_id, output, exit_code); deny(task_id): capability_denied power/power
-        public PowerActions(Func<int, string, int, Task> sendResult, Func<int, Task> deny, Action<string> toTray, Func<bool> trayInConsoleSession)
+        // sendResult(task_id, output, exit_code); deny(task_id): capability_denied power/power; capabilities: bağlamın yetenek
+        // durumu
+        public PowerActions(Func<int, string, int, Task> sendResult, Func<int, Task> deny, Action<string> toTray, Func<bool> trayInConsoleSession,
+            CapabilityState capabilities)
         {
             _sendResult = sendResult;
             _deny = deny;
             _toTray = toTray;
             _trayInConsoleSession = trayInConsoleSession;
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
         }
 
         // Geri sayımı süren (ya da işlemi yapılmakta olan) görev; yoksa null
@@ -146,7 +150,7 @@ namespace POpsAgent
                 POpsHelpers.Log("AGENT", $"Güç işlemi zaten sürüyor; yinelenen emir yok sayıldı (TaskID: {taskId}).");
                 return;
             }
-            if (!AgentCapabilities.PowerEnabled)
+            if (!_capabilities.PowerEnabled)
             {
                 await _sendResult(taskId, DisabledMessage, CommandRunner.ExitDenied);
                 await _deny(taskId);

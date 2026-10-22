@@ -53,7 +53,6 @@ namespace POps.Tests.Agent
         public void Dispose()
         {
             _worker.Dispose();
-            AgentModules.Reset();
             SecureStore.Dir = TestEnvironment.NewDir("vision-commands-reset");
             AgentCapabilities.Load();
         }

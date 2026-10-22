@@ -40,6 +40,14 @@ namespace POpsAgent
         private string _hwId;
         // Ajanın klasörleri ve dosyaları (bkz. AgentPaths; servis açılışta seçer, testlerde geçici klasörler)
         private readonly AgentPaths _paths;
+        // Bağlamın çalışma durumu: yetenekler, sunucu modülleri, kimlik bilgileri, sunucu sertifikasına güven, HTTP istemcisi
+        // ve güncelleme (bkz. AgentContext)
+        private readonly CapabilityState _capabilities;
+        private readonly ModuleState _modules;
+        private readonly CredentialStore _credentials;
+        private readonly ServerTrust _trust;
+        private readonly AgentHttp _http;
+        private readonly AgentUpdater _updater;
         // <veri klasörü>\identity.key
         private readonly string _identityFilePath;
         // Ağ yalıtımının durum dosyası (<güvenli depo>\isolation.json; bkz. NetworkIsolation)
@@ -105,9 +113,9 @@ namespace POpsAgent
 
         // Testler: health.json bağlamın veri klasörüne yazılır, tatbikat yok
         public Worker(ILogger<Worker> logger, AgentContext context)
-            : this(logger, new AgentStartupHealth(false, checks => AgentUpdate.WriteOperationalHealth(context.Paths, checks)), context) { }
+            : this(logger, new AgentStartupHealth(false, checks => context.Updater.WriteOperationalHealth(checks)), context) { }
 
-        // context: yollar (ve Worker bölmesinin sonraki adımlarında durum); servis için Program kurar (bkz. AgentContext)
+        // context: yollar ve çalışma durumu; servis için Program kurar (bkz. AgentContext)
         public Worker(ILogger<Worker> logger, AgentStartupHealth startupHealth, AgentContext context)
         {
             string[] args = Environment.GetCommandLineArgs();
@@ -124,12 +132,18 @@ namespace POpsAgent
             _logger = logger;
             _startupHealth = startupHealth ?? throw new ArgumentNullException(nameof(startupHealth));
             _paths = (context ?? throw new ArgumentNullException(nameof(context))).Paths;
+            _capabilities = context.Capabilities;
+            _modules = context.Modules;
+            _credentials = context.Credentials;
+            _trust = context.Trust;
+            _http = context.Http;
+            _updater = context.Updater;
             _identityFilePath = _paths.IdentityPath;
             _isolationState = _paths.SecureFile(NetworkIsolation.StateFileName);
             FolderProblem = _paths.FolderProblem;
             _pcName = Environment.MachineName;
             // Politika ve /updates paket indirme: sunucu sertifikası da ServerTrust ile doğrulanır
-            _httpClient = new HttpClient(ServerTrust.NewHandler());
+            _httpClient = new HttpClient(_trust.NewHandler());
 
             // 🚀 IP'Yİ CONFIG DOSYASINDAN AL
             // Yapılandırma okunamadıysa adres son çaredir; sorun açılışta Olay Günlüğüne yazılır, tepside gösterilir
@@ -144,33 +158,34 @@ namespace POpsAgent
             _dnsErrorReporter = message => _health.RecordError("dns", message);
             // DNS eşiğindeki otomatik karantina da kilit ekranı + yalıtım yolundan geçer (bkz. AutoQuarantineAsync)
             _dnsQuarantine = reason => _ = AutoQuarantineAsync(reason);
-            _patches = new PatchManager(_paths, _serverUrl, () => _hwId);
+            _patches = new PatchManager(_paths, _serverUrl, () => _hwId, _modules, _http);
             // Talebin sahibi konsoldaki değil, isteği yapan tepsinin oturumundaki kullanıcı (hızlı kullanıcı değiştirme, RDP)
-            _helpdesk = new Helpdesk(_paths, _serverUrl, () => _hwId, () => _tray.Pipe?.ClientUser, message => _tray.Pipe?.SendCommandToDesktop(message));
-            _activity = new ActivityHistory(_serverUrl, () => _hwId, message => _tray.Pipe?.SendCommandToDesktop(message));
+            _helpdesk = new Helpdesk(_paths, _serverUrl, () => _hwId, () => _tray.Pipe?.ClientUser, message => _tray.Pipe?.SendCommandToDesktop(message), _modules, _http);
+            _activity = new ActivityHistory(_serverUrl, () => _hwId, message => _tray.Pipe?.SendCommandToDesktop(message), _http);
             UpdateResults = new UpdateResultReporter(Handshake);
             // Önceki çalışmadan onay bekleyen sonuçlar okunur
             Results = new ResultSpool(_paths.SecureFile(ResultSpool.FileName));
             _outbox = new ResultOutbox(Handshake, Results, _channel.TrySendAsync);
-            _gate = new CapabilityGate(_channel.TrySendAsync, AgentModules.IsEnabled, TimeProvider.System);
-            _vision = new VisionSession(() => _hwId, _pcName, _serverUrl, _gate, Handshake, ToTray, () => _tray.Pipe, Audit, _wsVisionLock);
+            _gate = new CapabilityGate(_channel.TrySendAsync, _modules.IsEnabled, TimeProvider.System);
+            _vision = new VisionSession(() => _hwId, _pcName, _serverUrl, _gate, Handshake, ToTray, () => _tray.Pipe, Audit, _wsVisionLock,
+                _capabilities, _credentials, _trust, _http);
             _remoteInput = new RemoteInputHandler(_vision, _gate, () => _hwId, () => _tray.Pipe, _channel);
             Power = new PowerActions(SendTaskResultAsync, taskId => DenyCapabilityAsync(PowerActions.Capability, PowerActions.ActionName, taskId),
-                ToTray, TrayInConsoleSession);
+                ToTray, TrayInConsoleSession, _capabilities);
             Messages = new UserMessages(SendTaskResultAsync, taskId => DenyCapabilityAsync(UserMessages.Capability, UserMessages.ActionName, taskId),
-                ToTray, TrayConnected);
-            _exam = new ExamHandler(_gate, Handshake, _channel.TrySendAsync, ToTray, LocalAudit.Write, _serverUrl, () => ExamClock());
-            _files = new FileTransferHandler(_gate, _serverUrl, () => _hwId, _channel.TrySendAsync, ToTray, LocalAudit.Write);
+                ToTray, TrayConnected, _capabilities);
+            _exam = new ExamHandler(_gate, Handshake, _channel.TrySendAsync, ToTray, LocalAudit.Write, _serverUrl, () => ExamClock(), _capabilities);
+            _files = new FileTransferHandler(_gate, _serverUrl, () => _hwId, _channel.TrySendAsync, ToTray, LocalAudit.Write, _capabilities);
             Binding = new HardwareBinding(_paths,
                 () => (HardwareInfo.GetWmiValue("Win32_ComputerSystemProduct", "UUID"), HardwareInfo.GetWmiValue("Win32_BIOS", "SerialNumber")));
-            _updates = new UpdateReporter(Handshake, UpdateResults, _channel.TrySendAsync, LocalAudit.Write, _paths);
-            _policy = new PolicySync(_serverUrl, () => _hwId, _httpClient, _health, _vision, () => _tray.Pipe, () => _software, LocalAudit.Write);
+            _updates = new UpdateReporter(Handshake, UpdateResults, _channel.TrySendAsync, LocalAudit.Write, _paths, _updater);
+            _policy = new PolicySync(_serverUrl, () => _hwId, _httpClient, _health, _vision, () => _tray.Pipe, () => _software, LocalAudit.Write, _modules, _http);
             Dispatcher = BuildDispatcher();
             _tray = new TrayMessageRouter(() => new TrayPipeServer(), _startupHealth, _vision, _remoteInput, _channel, () => _hwId, _policy, _helpdesk, _activity,
                 Power, Messages, () => _quarantine, HandleBypassAttemptAsync, ToTray, ConfigErrorMessage);
             _connection = new CommandConnection(_serverUrl, _pcName, () => _hwId, _channel, Dispatcher, _updates, _outbox, _vision, _tray,
                 () => _quarantine, () => _cachedDna, _health, _startupHealth, () => _slowInitialization, OnCommandSocketOpened,
-                _policy.OnCommandChannelConnected, LocalAudit.Write, _isolationState);
+                _policy.OnCommandChannelConnected, LocalAudit.Write, _isolationState, _capabilities, _credentials, _trust);
         }
 
         // Yavaş olabilen açılış işleri (WMI donanım sorguları, kimlik, güvenli depo). ExecuteAsync bunları arka
@@ -187,16 +202,16 @@ namespace POpsAgent
 
             _startupHealth.Run(StartupCheck.Credentials, () =>
             {
-                AgentCredentials.Initialize();
-                AgentCredentials.LoadSecret();
+                _credentials.Initialize();
+                _credentials.LoadSecret();
             });
             ApplyHardwareBinding(binding);
-            _startupHealth.Run(StartupCheck.Capabilities, AgentCapabilities.Load);
+            _startupHealth.Run(StartupCheck.Capabilities, _capabilities.Load);
             // Karantina yeniden başlatmadan sonra sürüyorsa Ctrl+Alt+Del seçenekleri yeniden kapatılır; sürmüyorsa kalıntı temizlenir
             KioskMode.Sync(_quarantine.IsLocked);
             if (_quarantine.IsLocked) LocalAudit.Write(LocalAudit.QuarantineStarted("açılış"));
             // Kurum sertifikası (server-ca.pem) varsa sunucu yalnızca onunla doğrulanır; kip loglanır
-            ServerTrust.Reload();
+            _trust.Reload();
         }
 
         private BindingVerdict CheckHardwareBinding()
@@ -221,7 +236,7 @@ namespace POpsAgent
                 {
                     int dropped = Results.Discard();
                     if (dropped > 0) POpsHelpers.Log("AGENT", $"Asıl cihazın onay bekleyen {dropped} görev sonucu gönderilmeyecek (klon klasöründe).", true);
-                    bool token = AgentCredentials.GetEnrollToken() != null;
+                    bool token = _credentials.GetEnrollToken() != null;
                     LocalAudit.Write(LocalAudit.CloneDetected(Binding.PreviousHwId, _hwId, Binding.CloneFolder, Binding.MovedFiles, token));
                     POpsHelpers.Log("AGENT", $"[GÜVENLİK] Kopyalanmış kurulum: cihaz anahtarı bu donanıma ait değil. {string.Join(", ", Binding.MovedFiles)} "
                         + $"{Binding.CloneFolder} klasörüne taşındı; kimlik {Binding.PreviousHwId ?? "(yok)"} -> {_hwId}. "
@@ -238,7 +253,7 @@ namespace POpsAgent
                         UpdateIdentityFile(bound);
                     }
                 }
-                else if (verdict == BindingVerdict.Missing && AgentCredentials.CurrentSecret != null)
+                else if (verdict == BindingVerdict.Missing && _credentials.CurrentSecret != null)
                     Binding.Bind(_hwId, "ilk kullanımda güven");
             }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Donanım bağı işlenemedi: {ex.Message}", true); }
@@ -337,7 +352,7 @@ namespace POpsAgent
 
             // Sunucuya bildirimler (yalnızca cihaz secret'ı varken; bkz. AgentHttp): yazılım envanteri (açılıştan
             // kısa süre sonra, sonra 6 saatte bir), günlük Windows Update taraması, oturum açma/kapama
-            var sessions = new SessionReporter(_paths, _serverUrl, () => _hwId, _pcName,
+            var sessions = new SessionReporter(_paths, _serverUrl, () => _hwId, _pcName, _http,
                 error => _health.RecordError("session", error));
             sessions.UserChanged += _ =>
             {
@@ -345,7 +360,7 @@ namespace POpsAgent
                 // Yeni kullanıcı öncekinin DNS ihlalleriyle karantinaya girmesin
                 DnsPolicyMonitor.OnUserChanged();
             };
-            _software = new SoftwareReporter(_paths, _serverUrl, () => _hwId, _health.InventoryUploaded, error => _health.RecordError("inventory", error));
+            _software = new SoftwareReporter(_paths, _serverUrl, () => _hwId, _modules, _http, _health.InventoryUploaded, error => _health.RecordError("inventory", error));
             _ = Task.Run(() => _software.RunAsync(stoppingToken), stoppingToken);
             _ = Task.Run(() => _patches.ScheduleLoopAsync(stoppingToken), stoppingToken);
             _ = Task.Run(() => sessions.RunAsync(stoppingToken), stoppingToken);
@@ -428,7 +443,7 @@ namespace POpsAgent
         internal void OnCommandChannelConnected() => _policy.OnCommandChannelConnected();
         internal Task<string> FetchPolicyJsonAsync(CancellationToken token) => _policy.FetchPolicyJsonAsync(token);
         internal void ApplyPolicy(string json) => _policy.ApplyPolicy(json);
-        internal static string HelpdeskMenuMessage() => PolicySync.HelpdeskMenuMessage();
+        internal string HelpdeskMenuMessage() => _policy.HelpdeskMenuMessage();
 
         // DNS izleme statiktir: otomatik karantina ve DNS hataları yalnızca çalışan Worker'a gider. ExecuteAsync'in
         // başında bağlanır (izleme ancak komut tüneli kurulunca başlar), Dispose'da yalnızca hâlâ bu Worker'ınsa
@@ -468,11 +483,11 @@ namespace POpsAgent
         {
             try
             {
-                string deviceSecret = AgentCredentials.GetDeviceBypassSecret(out bool deviceSecretPresent);
-                if (!await _quarantine.HandleBypassAsync(token, _hwId, AgentCredentials.GetBypassSecret(),
+                string deviceSecret = _credentials.GetDeviceBypassSecret(out bool deviceSecretPresent);
+                if (!await _quarantine.HandleBypassAsync(token, _hwId, _credentials.GetBypassSecret(),
                     deviceSecret, deviceSecretPresent, DateTime.Now)) return;
                 string hwId = _hwId;
-                await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, QuarantineControl.OfflineBypassLog(), "Bypass denetim kaydı");
+                await _http.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, QuarantineControl.OfflineBypassLog(), "Bypass denetim kaydı");
             }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Offline Bypass işlenemedi: {ex.Message}", true); }
         }
@@ -486,7 +501,7 @@ namespace POpsAgent
             {
                 await _quarantine.LockdownAsync(QuarantineControl.AutoQuarantineReason, "dns");
                 string hwId = _hwId;
-                await AgentHttp.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, QuarantineControl.AutoQuarantineLog(reason), "Otomatik karantina bildirimi");
+                await _http.PostJsonAsync(_serverUrl, AgentHttp.DevicePath("/api/logs/", hwId), hwId, QuarantineControl.AutoQuarantineLog(reason), "Otomatik karantina bildirimi");
             }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"Otomatik karantina uygulanamadı: {ex.Message}", true); }
         }
@@ -549,17 +564,17 @@ namespace POpsAgent
         {
             new HandshakeHandler(Handshake, ReportExamStateOnConnectAsync),
             new ResultAckHandler(_outbox),
-            new UpdateHandler(_httpClient, _serverUrl, _updates.ReportUpdateProgressAsync, _paths),
+            new UpdateHandler(_httpClient, _serverUrl, _updates.ReportUpdateProgressAsync, _paths, _updater),
             new WakeOnLanHandler(_gate),
             new PatchesHandler(_patches, _gate),
             new IdentityHandler(UpdateIdentityFile),
-            new SecretsHandler(() => _hwId, () => Binding, () => _software, () => _connection.UsesDeviceSecret, _channel.TrySendAsync, LocalAudit.Write),
-            new InventoryHandler(() => _cachedInventory, _serverUrl, () => _hwId, _health),
-            new QuarantineHandler(() => _quarantine, _serverUrl, () => _hwId),
-            new ExecuteHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, Power, Messages),
-            new WingetInstallHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write),
-            new CapabilitiesHandler(_vision, Power, () => _tray.Pipe, _channel.TrySendAsync, LocalAudit.Write, _exam.EndIfCapabilityOffAsync),
-            new VisionHandler(_vision, _gate, () => _tray.Pipe),
+            new SecretsHandler(() => _hwId, () => Binding, () => _software, () => _connection.UsesDeviceSecret, _channel.TrySendAsync, LocalAudit.Write, _credentials),
+            new InventoryHandler(() => _cachedInventory, _serverUrl, () => _hwId, _health, _credentials, _http),
+            new QuarantineHandler(() => _quarantine, _serverUrl, () => _hwId, _http),
+            new ExecuteHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, Power, Messages, _capabilities),
+            new WingetInstallHandler(() => _commandRunner, _gate, _outbox, () => _hwId, LocalAudit.Write, _capabilities),
+            new CapabilitiesHandler(_vision, Power, () => _tray.Pipe, _channel.TrySendAsync, LocalAudit.Write, _exam.EndIfCapabilityOffAsync, _capabilities),
+            new VisionHandler(_vision, _gate, () => _tray.Pipe, _capabilities),
             _exam,
             _files,
             new PowerHandler(Power),

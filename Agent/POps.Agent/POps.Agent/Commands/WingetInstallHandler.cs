@@ -19,17 +19,19 @@ namespace POpsAgent
         private readonly ResultOutbox _outbox;
         private readonly Func<string?> _hwId;
         private readonly Action<LocalAuditEvent> _audit;
+        private readonly CapabilityState _capabilities;
 
         // Çalıştırıcı testlerde sahtesiyle değiştirilir, kimlik set_identity ile değişir: her kullanımda okunur.
-        // winget.exe'nin yeri her emirde WingetInstall.Locator'dan bulunur.
+        // winget.exe'nin yeri her emirde WingetInstall.Locator'dan bulunur. capabilities: bağlamın yetenek durumu
         public WingetInstallHandler(Func<CommandRunner> runner, CapabilityGate gate, ResultOutbox outbox, Func<string?> hwId,
-            Action<LocalAuditEvent> audit)
+            Action<LocalAuditEvent> audit, CapabilityState capabilities)
         {
             _runner = runner ?? throw new ArgumentNullException(nameof(runner));
             _gate = gate ?? throw new ArgumentNullException(nameof(gate));
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
             _hwId = hwId ?? throw new ArgumentNullException(nameof(hwId));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+            _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
         }
 
         public IReadOnlyList<string> Actions { get; } = new[] { WingetInstall.Action };
@@ -53,7 +55,7 @@ namespace POpsAgent
             string? rejection = null, deniedCapability = null, deniedReason = null, wingetPath = null, version = null;
             string id = "";
             int exitCode = CommandRunner.ExitDenied;
-            if (!AgentCapabilities.TerminalEnabled)
+            if (!_capabilities.TerminalEnabled)
             {
                 rejection = WingetInstall.TerminalOffMessage;
                 deniedCapability = "terminal";

@@ -32,17 +32,22 @@ namespace POpsAgent
         private DateTime? _lastAttemptUtc;
         // Son başarıyla gönderilen durum: sonraki bir tarama başarısız olursa hata last_result ile bunun üzerinden bildirilir
         private PatchStatusPayload _lastStatus;
+        private readonly ModuleState _modules;
+        private readonly AgentHttp _http;
 
-        // paths: gönderilemeyen durumun dosyası (<veri klasörü>\patch-scan.json)
-        public PatchManager(AgentPaths paths, string serverUrl, Func<string> hwId)
+        // paths: gönderilemeyen durumun dosyası (<veri klasörü>\patch-scan.json); modules, http: bağlamın sunucu modülleri
+        // ve HTTP istemcisi
+        public PatchManager(AgentPaths paths, string serverUrl, Func<string> hwId, ModuleState modules, AgentHttp http)
         {
             StatePath = paths.DataFile(StateFileName);
             _serverUrl = serverUrl;
             _hwId = hwId;
+            _modules = modules ?? throw new ArgumentNullException(nameof(modules));
+            _http = http ?? throw new ArgumentNullException(nameof(http));
             Poster = status =>
             {
                 string id = _hwId();
-                return AgentHttp.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/patches/", id), id, status, "Windows Update durumu");
+                return _http.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/patches/", id), id, status, "Windows Update durumu");
             };
         }
 
@@ -71,7 +76,7 @@ namespace POpsAgent
 
         private bool TryRun(string what, Func<Task> work)
         {
-            if (!AgentHttp.EnsureCanReport())
+            if (!_http.EnsureCanReport())
             {
                 POpsHelpers.Log("PATCH", $"{what} istendi ama cihaz secret'ı yok; sonuç gönderilemeyeceği için başlatılmadı.", true);
                 return false;
@@ -103,7 +108,7 @@ namespace POpsAgent
                 DateTime? pendingPost = state.PendingReport != null ? state.NextPostUtc ?? now : null;
                 PatchStep step = PatchSchedule.NextStep(state.LastScanUtc, _lastAttemptUtc, pendingPost, started, now, _hwId());
                 // Modül sunucuda kapalı: tarama yapılmaz, sonuç gönderilmez; açılınca sıradaki tur taramayı yapar
-                if (step == PatchStep.Wait || !AgentHttp.EnsureCanReport() || !AgentModules.IsEnabled(AgentModules.Patches)) continue;
+                if (step == PatchStep.Wait || !_http.EnsureCanReport() || !_modules.IsEnabled(AgentModules.Patches)) continue;
                 if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) continue;
                 try
                 {
@@ -202,7 +207,7 @@ namespace POpsAgent
         // Durumu gönderir. Başarısızsa saklar ve yalnızca gönderimi sonra yeniden dener (bkz. PatchSchedule.NextPostUtc).
         internal async Task<PostResult> DeliverAsync(PatchStatusPayload status)
         {
-            if (!AgentModules.IsEnabled(AgentModules.Patches))
+            if (!_modules.IsEnabled(AgentModules.Patches))
             {
                 // Tarama ya da kurulum sürerken modül kapandı: sonuç gönderilmez, bekleyen gönderim de bırakılır
                 lock (_stateLock)

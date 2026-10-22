@@ -46,8 +46,21 @@ namespace POpsAgent
             POpsHelpers.Log("AGENT", $"POps Agent Başlatılıyor ({Worker.AppVersion})");
             AgentDirectories.LogChoice(folders);
 
+            // Worker'ın yolları ve çalışma durumu (bkz. AgentContext): her parçanın servis boyunca tek örneği. Statik kalan kodun
+            // süreç varsayılanları da bu örneklerdir. Güncelleme durumu tatbikat kararından önce gerekir.
+            var trust = new ServerTrust(paths.ServerCaPath);
+            var credentials = new CredentialStore(paths);
+            var context = new AgentContext(paths,
+                new CapabilityState(paths.SecureFile(AgentCapabilities.FileName), trust),
+                new ModuleState(),
+                credentials,
+                trust,
+                new AgentHttp(trust.NewHandler(), credentials),
+                new AgentUpdater(paths));
+            context.UseForProcess();
+
             // Tatbikat kararı açılışın başında alınır; health.json ancak Worker çekirdek başlangıcını tamamlayınca yazılır.
-            bool suppressOperationalHealth = AgentUpdate.ApplyRollbackDrillOnStartup(paths);
+            bool suppressOperationalHealth = context.Updater.ApplyRollbackDrillOnStartup();
             if (suppressOperationalHealth)
                 POpsHelpers.Log("UPDATE", "[TATBİKAT] health.json yazılmadı; updater bu sürümü sağlıksız sayıp önceki sürüme dönecek.", true);
 
@@ -59,9 +72,9 @@ namespace POpsAgent
                 options.ServiceName = "POpsAgent";
             });
 
-            builder.Services.AddSingleton(new AgentStartupHealth(suppressOperationalHealth, checks => AgentUpdate.WriteOperationalHealth(paths, checks)));
-            // Worker'ın yolları (ve bölmenin sonraki adımlarında durumu); bkz. AgentContext
-            builder.Services.AddSingleton(new AgentContext(paths));
+            builder.Services.AddSingleton(new AgentStartupHealth(suppressOperationalHealth, context.Updater.WriteOperationalHealth));
+            // Worker'ın yolları ve durumu; bkz. AgentContext
+            builder.Services.AddSingleton(context);
 
             // Asıl beynimiz olan Worker dosyasını ayağa kaldırıyoruz
             builder.Services.AddHostedService<Worker>();
