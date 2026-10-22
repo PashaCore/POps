@@ -888,7 +888,9 @@ Updates are signed MSI packages; the agent installs nothing unsigned.
    that is not newer than its own, downloads the MSI from `<ServerUrl>/updates/<name>` and checks its size and
    SHA-256. From 0.1.23-alpha the download uses BITS: it resumes after a network drop or a restart, and a download
    that is still running after 15 minutes continues with the next update command. When BITS cannot be used, the
-   agent downloads directly as before. From the version after 0.1.23-alpha an agent pinned to the school CA
+   agent downloads directly as before. The `downloaded` stage's `detail` and the log name the way the package came
+   (`bits` / `Paket indirildi (BITS).`, `server` for a direct download; see the peer cache contract, point 6, for
+   `cache` and `peer <hw_id>`). From the version after 0.1.23-alpha an agent pinned to the school CA
    (`server_ca = custom`, see [Server certificate](#server-certificate)) does not try BITS at all and downloads
    directly with its own certificate check: BITS uses the Windows trust store, cannot use `server-ca.pem`, and only
    fell back after its retry time (about 10 minutes). The log says so once per download (`BITS kullanılmadı: sunucu
@@ -994,8 +996,8 @@ today; `peers` is read only after that.
 - Check the size and SHA-256 against the signed manifest **whatever the source**. A mismatch from a peer deletes
   the file and moves on to the next source (log the peer's `hw_id`); it never fails the update and never installs.
 - Report `update_progress` as today (`received`, `downloaded`, `verified`, …). Optionally put the source in
-  `detail` of `downloaded` (for example `peer HW-LAB1-PC12` or `server`); the server stores it but does not depend
-  on it.
+  `detail` of `downloaded` (for example `peer HW-LAB1-PC12`, `bits` or `server`); the server stores it but does not
+  depend on it.
 
 **5. The seed's (and every peer's) cache.** After `verified`, keep the package for others:
 
@@ -1060,7 +1062,10 @@ leave a choice or where it differs:
   public addresses gets no `peers` until the server's rule changes as well. Connect timeout 3 seconds, up to 75
   seconds for the response headers (a busy peer queues the request for up to 60 seconds), then 15 seconds without
   data or 5 minutes in all ends the attempt. No proxy, redirects, cookies or headers: the device secret never goes to
-  a peer. The `downloaded` detail is `peer <hw_id>`, `server` or `cache`.
+  a peer. The `downloaded` detail is `peer <hw_id>`, `bits` (from the server over BITS), `server` (from the server
+  directly, with the agent's own HttpClient: BITS unavailable, or the server certificate pinned to `server-ca.pem`) or
+  `cache`; the log line says the same (`Paket indirildi (BITS).`, `Paket indirildi (server).`, …). Agents up to
+  0.1.24-alpha said `server` for a BITS download too.
 - **Logs.** Start and stop of serving, each transfer (address, SHA-256 prefix, bytes, seconds) and refusals (at most
   one line every 10 seconds) go to the POps log (`PEERCACHE`); no event log entry.
 

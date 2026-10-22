@@ -224,9 +224,10 @@ namespace POpsAgent
         // update.lock'taki hedef sürüm (yoksa null)
         internal static string LockedVersion(AgentPaths paths) => ReadJson<UpdateRun>(paths.UpdateLockPath)?.ToVersion;
 
-        // "downloaded" aşamasının detail'i: paketin kaynağı (docs/agent.md#peer-cache-contract: "peer <hw_id>", "server";
-        // ajanın kendi önbelleğindeki aynı paket "cache")
+        // "downloaded" aşamasının detail'i: paketin kaynağı (docs/agent.md#peer-cache-contract: "peer <hw_id>", sunucudan BITS
+        // ile "bits", sunucudan doğrudan (HttpClient) "server"; ajanın kendi önbelleğindeki aynı paket "cache")
         public const string SourceServer = "server";
+        public const string SourceBits = "bits";
         public const string SourceCache = "cache";
         public const string SourcePeerPrefix = "peer ";
 
@@ -280,7 +281,7 @@ namespace POpsAgent
             if (outcome == BitsDownload.Outcome.Done)
             {
                 (long size, byte[] digest) = HashFile(bitsTarget);
-                return await AcceptAsync(bitsTarget, size, digest);
+                return await AcceptAsync(bitsTarget, size, digest, SourceBits, "BITS");
             }
 
             string partial = path + ".partial";
@@ -310,13 +311,14 @@ namespace POpsAgent
                 }
             }
 
-            return await AcceptAsync(partial, total, hash.GetHashAndReset());
+            return await AcceptAsync(partial, total, hash.GetHashAndReset(), SourceServer, SourceServer);
 
-            // İki yol için aynı: imzalı manifest'teki boyut ve SHA-256 tutmazsa dosya silinir, emir reddedilir
-            async Task<bool> AcceptAsync(string downloaded, long total, byte[] actual)
+            // İki yol için aynı (BITS ve doğrudan indirme): imzalı manifest'teki boyut ve SHA-256 tutmazsa dosya silinir, emir
+            // reddedilir. source: "downloaded" aşamasının detail'i, label: logdaki adı ("Paket indirildi (BITS).")
+            async Task<bool> AcceptAsync(string downloaded, long total, byte[] actual, string source, string label)
             {
-                POpsHelpers.Log("UPDATE", $"Paket indirildi ({SourceServer}).");
-                if (update != null) await update.StageAsync("downloaded", SourceServer);
+                POpsHelpers.Log("UPDATE", $"Paket indirildi ({label}).");
+                if (update != null) await update.StageAsync("downloaded", source);
                 if (total != expected.Size || !CryptographicOperations.FixedTimeEquals(actual, Convert.FromHexString(expected.Sha256)))
                 {
                     TryDelete(downloaded);
