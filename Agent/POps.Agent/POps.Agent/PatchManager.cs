@@ -33,8 +33,10 @@ namespace POpsAgent
         // Son başarıyla gönderilen durum: sonraki bir tarama başarısız olursa hata last_result ile bunun üzerinden bildirilir
         private PatchStatusPayload _lastStatus;
 
-        public PatchManager(string serverUrl, Func<string> hwId)
+        // paths: gönderilemeyen durumun dosyası (<veri klasörü>\patch-scan.json)
+        public PatchManager(AgentPaths paths, string serverUrl, Func<string> hwId)
         {
+            StatePath = paths.DataFile(StateFileName);
             _serverUrl = serverUrl;
             _hwId = hwId;
             Poster = status =>
@@ -47,7 +49,9 @@ namespace POpsAgent
         // Testlerde değiştirilir: durumu sunucuya gönderen çağrı
         internal Func<PatchStatusPayload, Task<PostResult>> Poster { get; set; }
 
-        public static string StatePath => Path.Combine(AgentUpdate.DataDir, "patch-scan.json");
+        public const string StateFileName = "patch-scan.json";
+
+        public string StatePath { get; }
 
         public bool IsBusy => Volatile.Read(ref _busy) == 1;
 
@@ -94,7 +98,7 @@ namespace POpsAgent
             while (!token.IsCancellationRequested)
             {
                 await Task.Delay(ScheduleTick, token);
-                PatchState state = LoadState();
+                PatchState state = LoadState(StatePath);
                 DateTime now = DateTime.UtcNow;
                 DateTime? pendingPost = state.PendingReport != null ? state.NextPostUtc ?? now : null;
                 PatchStep step = PatchSchedule.NextStep(state.LastScanUtc, _lastAttemptUtc, pendingPost, started, now, _hwId());
@@ -203,10 +207,10 @@ namespace POpsAgent
                 // Tarama ya da kurulum sürerken modül kapandı: sonuç gönderilmez, bekleyen gönderim de bırakılır
                 lock (_stateLock)
                 {
-                    PatchState state = LoadState();
+                    PatchState state = LoadState(StatePath);
                     state.PendingReport = null;
                     state.NextPostUtc = null;
-                    SaveState(state);
+                    SaveState(StatePath, state);
                 }
                 POpsHelpers.Log("PATCH", "Windows Update modülü bu bilgisayarın laboratuvarında kapalı; durum gönderilmedi.");
                 return PostResult.NotSent;
@@ -215,11 +219,11 @@ namespace POpsAgent
             DateTime now = DateTime.UtcNow;
             lock (_stateLock)
             {
-                PatchState state = LoadState();
+                PatchState state = LoadState(StatePath);
                 DateTime? next = PatchSchedule.NextPostUtc(result, now);
                 state.PendingReport = next.HasValue ? status : null;
                 state.NextPostUtc = next;
-                SaveState(state);
+                SaveState(StatePath, state);
             }
             if (result == PostResult.Sent)
             {
@@ -237,9 +241,9 @@ namespace POpsAgent
         {
             lock (_stateLock)
             {
-                PatchState state = LoadState();
+                PatchState state = LoadState(StatePath);
                 state.LastScanUtc = utc;
-                SaveState(state);
+                SaveState(StatePath, state);
             }
         }
 
@@ -269,24 +273,24 @@ namespace POpsAgent
             return tcs.Task;
         }
 
-        internal static PatchState LoadState()
+        internal static PatchState LoadState(string statePath)
         {
             try
             {
-                if (File.Exists(StatePath)) return JsonSerializer.Deserialize<PatchState>(File.ReadAllText(StatePath)) ?? new PatchState();
+                if (File.Exists(statePath)) return JsonSerializer.Deserialize<PatchState>(File.ReadAllText(statePath)) ?? new PatchState();
             }
             catch { }
             return new PatchState();
         }
 
-        internal static void SaveState(PatchState state)
+        internal static void SaveState(string statePath, PatchState state)
         {
             try
             {
-                Directory.CreateDirectory(AgentUpdate.DataDir);
-                File.WriteAllText(StatePath, JsonSerializer.Serialize(state));
+                Directory.CreateDirectory(Path.GetDirectoryName(statePath));
+                File.WriteAllText(statePath, JsonSerializer.Serialize(state));
             }
-            catch (Exception ex) { POpsHelpers.Log("PATCH", $"{StatePath} yazılamadı: {ex.Message}", true); }
+            catch (Exception ex) { POpsHelpers.Log("PATCH", $"{statePath} yazılamadı: {ex.Message}", true); }
         }
 
         private sealed class PatchRescanException : Exception

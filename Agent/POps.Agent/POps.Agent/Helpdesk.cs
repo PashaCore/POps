@@ -140,8 +140,10 @@ namespace POpsAgent
         private readonly Action<string> _toTray;
         private readonly object _seenLock = new object();
 
-        public Helpdesk(string serverUrl, Func<string> hwId, Func<string> currentUser, Action<string> toTray)
+        // paths: görüntülenen yanıtların kaydı (<veri klasörü>\tickets-seen.json)
+        public Helpdesk(AgentPaths paths, string serverUrl, Func<string> hwId, Func<string> currentUser, Action<string> toTray)
         {
+            SeenPath = paths.DataFile(SeenFileName);
             _serverUrl = serverUrl;
             _hwId = hwId;
             _currentUser = currentUser;
@@ -152,7 +154,9 @@ namespace POpsAgent
         // Testlerde değiştirilir: sunucuya istek (durum kodu ve gövde; ağ hatasında null)
         internal Func<HttpMethod, string, object, string, Task<(int? Status, string Body)>> Sender { get; set; }
 
-        public static string SeenPath => Path.Combine(AgentUpdate.DataDir, "tickets-seen.json");
+        public const string SeenFileName = "tickets-seen.json";
+
+        public string SeenPath { get; }
 
         private string DevicePath => AgentHttp.DevicePath("/api/tickets/agent/", _hwId());
 
@@ -397,7 +401,7 @@ namespace POpsAgent
             return fresh;
         }
 
-        internal static Dictionary<long, int> LoadSeen()
+        internal Dictionary<long, int> LoadSeen()
         {
             try
             {
@@ -407,13 +411,13 @@ namespace POpsAgent
             return new Dictionary<long, int>();
         }
 
-        internal static void SaveSeen(Dictionary<long, int> seen)
+        internal void SaveSeen(Dictionary<long, int> seen)
         {
             try
             {
                 // Eski talepler birikmesin: en yeni 200 talep
                 var trimmed = seen.OrderByDescending(kv => kv.Key).Take(200).ToDictionary(kv => kv.Key, kv => kv.Value);
-                Directory.CreateDirectory(AgentUpdate.DataDir);
+                Directory.CreateDirectory(Path.GetDirectoryName(SeenPath));
                 File.WriteAllText(SeenPath, JsonSerializer.Serialize(trimmed));
             }
             catch (Exception ex) { POpsHelpers.Log("AGENT", $"{SeenPath} yazılamadı: {ex.Message}", true); }

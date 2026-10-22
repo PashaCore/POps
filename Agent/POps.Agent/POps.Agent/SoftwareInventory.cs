@@ -181,16 +181,16 @@ namespace POpsAgent
         private static readonly TimeSpan WaitForSecret = TimeSpan.FromMinutes(1);
         public const string StateFileName = "software-inventory.json";
 
-        public static string StatePath => Path.Combine(AgentUpdate.DataDir, StateFileName);
-
         private readonly ReportGate _gate;
         private readonly string _serverUrl;
         private readonly Func<string> _hwId;
         private readonly Action _uploaded;
         private readonly Action<string> _error;
 
-        public SoftwareReporter(string serverUrl, Func<string> hwId, Action uploaded = null, Action<string> error = null)
+        // paths: son başarılı gönderimin kaydı (<veri klasörü>\software-inventory.json)
+        public SoftwareReporter(AgentPaths paths, string serverUrl, Func<string> hwId, Action uploaded = null, Action<string> error = null)
         {
+            StatePath = paths.DataFile(StateFileName);
             _serverUrl = serverUrl;
             _hwId = hwId;
             _uploaded = uploaded ?? (() => { });
@@ -198,6 +198,8 @@ namespace POpsAgent
             _gate = new ReportGate(MaxSilence, StatePath);
             Poster = (id, payload) => AgentHttp.PostAsync(_serverUrl, AgentHttp.DevicePath("/api/software/", id), id, payload, "Yazılım envanteri");
         }
+
+        public string StatePath { get; }
 
         // İşletim sistemi ve ağ sınırları testlerde sahteleriyle değiştirilir.
         internal Func<List<SoftwareItem>> Collector { get; set; } = SoftwareInventory.Collect;

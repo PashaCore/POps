@@ -76,7 +76,7 @@ namespace POps.Tests.Agent
         public void Worker_ShowsTheProblemInTheTray_AndAuditsItAsAnError()
         {
             POpsHelpers.ConfigPaths = new[] { Config("{bozuk") };
-            using var worker = new Worker(NullLogger<Worker>.Instance);
+            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context);
             Assert.NotNull(worker.ConfigProblem);
             string message = worker.ConfigErrorMessage();
             Assert.StartsWith("CONFIG_ERROR:", message);
@@ -89,7 +89,7 @@ namespace POps.Tests.Agent
             Assert.Contains("server_url: http://127.0.0.1:8000", audit.Message);
 
             POpsHelpers.ConfigPaths = new[] { Config("{\"ServerUrl\":\"https://pops.example\"}") };
-            using var healthy = new Worker(NullLogger<Worker>.Instance);
+            using var healthy = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context);
             Assert.Null(healthy.ConfigProblem);
             Assert.Null(healthy.ConfigErrorMessage());
         }

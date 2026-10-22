@@ -69,8 +69,10 @@ namespace POpsAgent
         private readonly string _hostname;
         private readonly Action<string> _error;
 
-        public SessionReporter(string serverUrl, Func<string> hwId, string hostname, Action<string> error = null)
+        // paths: son bildirilen oturumun dosyası (<veri klasörü>\session.json)
+        public SessionReporter(AgentPaths paths, string serverUrl, Func<string> hwId, string hostname, Action<string> error = null)
         {
+            StatePath = paths.DataFile(StateFileName);
             _serverUrl = serverUrl;
             _hwId = hwId;
             _hostname = hostname;
@@ -85,11 +87,13 @@ namespace POpsAgent
         // Konsoldaki kullanıcı değişti (null: kimse yok)
         public event Action<string> UserChanged = delegate { };
 
-        public static string StatePath => Path.Combine(AgentUpdate.DataDir, "session.json");
+        public const string StateFileName = "session.json";
+
+        public string StatePath { get; }
 
         public async Task RunAsync(CancellationToken token)
         {
-            SessionSnapshot reported = Load();
+            SessionSnapshot reported = Load(StatePath);
             string lastSeenUser = null;
             DateTime retryAfterUtc = DateTime.MinValue;
             while (!token.IsCancellationRequested)
@@ -127,26 +131,26 @@ namespace POpsAgent
                 if (!await Poster(action, hwId, body))
                     return (reported, false);
                 reported = action == "logout" ? SessionSnapshot.Nobody(current.BootUtc) : current;
-                Save(reported);
+                Save(StatePath, reported);
                 POpsHelpers.Log("AGENT", action == "login" ? "Oturum açma sunucuya bildirildi." : "Oturum kapama sunucuya bildirildi.");
             }
             return (reported, true);
         }
 
-        internal static SessionSnapshot Load()
+        internal static SessionSnapshot Load(string statePath)
         {
-            try { return File.Exists(StatePath) ? JsonSerializer.Deserialize<SessionSnapshot>(File.ReadAllText(StatePath)) : null; }
+            try { return File.Exists(statePath) ? JsonSerializer.Deserialize<SessionSnapshot>(File.ReadAllText(statePath)) : null; }
             catch { return null; }
         }
 
-        internal static void Save(SessionSnapshot snapshot)
+        internal static void Save(string statePath, SessionSnapshot snapshot)
         {
             try
             {
-                Directory.CreateDirectory(AgentUpdate.DataDir);
-                File.WriteAllText(StatePath, JsonSerializer.Serialize(snapshot));
+                Directory.CreateDirectory(Path.GetDirectoryName(statePath));
+                File.WriteAllText(statePath, JsonSerializer.Serialize(snapshot));
             }
-            catch (Exception ex) { POpsHelpers.Log("AGENT", $"{StatePath} yazılamadı: {ex.Message}", true); }
+            catch (Exception ex) { POpsHelpers.Log("AGENT", $"{statePath} yazılamadı: {ex.Message}", true); }
         }
     }
 

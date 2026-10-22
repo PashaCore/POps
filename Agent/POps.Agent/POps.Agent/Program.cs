@@ -23,14 +23,15 @@ namespace POpsAgent
             }
 
             // Log ve veri klasörleri appsettings.json'dan (LogDirectory / DataDirectory; bkz. AgentDirectories), ilk log
-            // satırından önce. Servis seçilen klasörleri oluşturup kilitler; --generalize aynı klasörlerdeki dosyaları siler.
+            // satırından önce, bir kez. Servis seçilen klasörleri oluşturup kilitler; --generalize aynı klasörlerdeki dosyaları
+            // siler. Yollar AgentContext ile Worker'a gider.
             bool generalize = Generalizer.IsRequested(args);
-            FolderSettings folders = AgentDirectories.Apply(secure: !generalize);
+            (FolderSettings folders, AgentPaths paths) = AgentDirectories.Apply(secure: !generalize, configPaths: POpsHelpers.DefaultConfigPaths);
 
             // İmaj öncesi temizlik: servis durdurulur, cihaza özel dosyalar silinir (bkz. Generalizer; çıkış kodları orada)
             if (generalize)
             {
-                Environment.ExitCode = Generalizer.Run(args, Console.Out);
+                Environment.ExitCode = Generalizer.Run(args, Console.Out, paths);
                 return;
             }
 
@@ -46,7 +47,7 @@ namespace POpsAgent
             AgentDirectories.LogChoice(folders);
 
             // Tatbikat kararı açılışın başında alınır; health.json ancak Worker çekirdek başlangıcını tamamlayınca yazılır.
-            bool suppressOperationalHealth = AgentUpdate.ApplyRollbackDrillOnStartup();
+            bool suppressOperationalHealth = AgentUpdate.ApplyRollbackDrillOnStartup(paths);
             if (suppressOperationalHealth)
                 POpsHelpers.Log("UPDATE", "[TATBİKAT] health.json yazılmadı; updater bu sürümü sağlıksız sayıp önceki sürüme dönecek.", true);
 
@@ -58,7 +59,9 @@ namespace POpsAgent
                 options.ServiceName = "POpsAgent";
             });
 
-            builder.Services.AddSingleton(new AgentStartupHealth(suppressOperationalHealth));
+            builder.Services.AddSingleton(new AgentStartupHealth(suppressOperationalHealth, checks => AgentUpdate.WriteOperationalHealth(paths, checks)));
+            // Worker'ın yolları (ve bölmenin sonraki adımlarında durumu); bkz. AgentContext
+            builder.Services.AddSingleton(new AgentContext(paths));
 
             // Asıl beynimiz olan Worker dosyasını ayağa kaldırıyoruz
             builder.Services.AddHostedService<Worker>();

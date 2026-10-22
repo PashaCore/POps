@@ -29,12 +29,13 @@ namespace POps.Tests.Agent
             TrayPipeServer.PipeName = "POpsTrayPipe-test-" + Guid.NewGuid().ToString("N").Substring(0, 8);
             TrayPipeServer.ClientCheckOverride = _ => null;
             SecureStore.WriteProtected(SecureStore.PathOf(AgentCredentials.BypassSecretFileName), FleetSecret);
-            _worker = new Worker(NullLogger<Worker>.Instance)
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = HwId,
                 SendOverride = _ => Task.FromResult(false),   // sunucuya ulaşılamıyor
             };
             _worker.Quarantine = new QuarantineControl(
+                AgentHarness.FromStatics().Paths,
                 message => { lock (_tray) _tray.Add(message); },
                 () => { File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
                 () => { File.Delete(NetworkIsolation.StatePath); return Task.FromResult(true); });

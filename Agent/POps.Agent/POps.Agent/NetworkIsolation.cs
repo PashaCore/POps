@@ -52,14 +52,27 @@ namespace POpsAgent
 
         public enum RefreshResult { NotIsolated, Unchanged, Updated, ResolveFailed, Failed }
 
-        public static string StatePath => SecureStore.PathOf("isolation.json");
+        // Durum dosyası güvenli depoda (AgentPaths.SecureFile(StateFileName)): Worker, CommandConnection ve QuarantineControl
+        // yolu AgentPaths'ten alır ve aşağıdaki işlevlerin statePath alan biçimlerini çağırır.
+        public const string StateFileName = "isolation.json";
 
-        public static bool IsActive => File.Exists(StatePath);
+        // Süreç varsayılanı (SecureStore.Dir): eş önbelleği (PeerCache.DefaultIsolated), DnsPolicyMonitor'ün varsayılan
+        // karantinası ve bunları ya da yalıtımı sınayan testler için. Worker bölmesinin b3 adımı NetworkIsolation'ı örneğe
+        // çevirince kalkar.
+        public static string StatePath => SecureStore.PathOf(StateFileName);
+        public static bool IsActive => IsActiveAt(StatePath);
+        public static Task<bool> EnableAsync(string serverUrl) => EnableAsync(serverUrl, StatePath);
+        public static Task<bool> DisableAsync() => DisableAsync(StatePath);
+        public static Task<RefreshResult> RefreshServerAddressesAsync(string serverUrl, string reason) =>
+            RefreshServerAddressesAsync(serverUrl, reason, StatePath);
+        internal static List<string> ReadPreviouslyDisabledProfiles() => ReadPreviouslyDisabledProfiles(StatePath);
+
+        public static bool IsActiveAt(string statePath) => File.Exists(statePath);
 
         // Betiği çalıştıran (testlerde güvenlik duvarına dokunmayan sahtesiyle değiştirilir)
         internal static Func<string, Task<(int Exit, string Output)>> ScriptRunner { get; set; } = RunPowerShellAsync;
 
-        public static async Task<bool> EnableAsync(string serverUrl)
+        public static async Task<bool> EnableAsync(string serverUrl, string statePath)
         {
             await Gate.WaitAsync();
             try
@@ -79,8 +92,8 @@ namespace POpsAgent
                     POpsHelpers.Log("ISOLATION", $"Karantina uygulanamadı (çıkış {exit}): {output}", true);
                     return false;
                 }
-                SavePreviousProfiles(output);
-                SaveServerAddresses(server);
+                SavePreviousProfiles(statePath, output);
+                SaveServerAddresses(statePath, server);
                 POpsHelpers.Log("ISOLATION", $"AĞ KARANTİNASI AKTİF: yalnızca sunucu ({string.Join(", ", server)}), DNS ve DHCP erişilebilir.");
                 return true;
             }
@@ -92,18 +105,18 @@ namespace POpsAgent
             finally { Gate.Release(); }
         }
 
-        public static async Task<bool> DisableAsync()
+        public static async Task<bool> DisableAsync(string statePath)
         {
             await Gate.WaitAsync();
             try
             {
-                (int exit, string output) = await ScriptRunner(BuildDisableScript(ReadPreviouslyDisabledProfiles()));
+                (int exit, string output) = await ScriptRunner(BuildDisableScript(ReadPreviouslyDisabledProfiles(statePath)));
                 if (exit != 0)
                 {
                     POpsHelpers.Log("ISOLATION", $"Karantina kaldırılamadı (çıkış {exit}): {output}", true);
                     return false;
                 }
-                SecureStore.Delete(StatePath);
+                SecureStore.Delete(statePath);
                 POpsHelpers.Log("ISOLATION", "AĞ KARANTİNASI KALDIRILDI.");
                 return true;
             }
@@ -117,19 +130,19 @@ namespace POpsAgent
 
         // Karantina sürüyorsa sunucu adı yeniden çözülür; adres kümesi değiştiyse kurallar yeni adreslerle kurulur.
         // Çözüm boşsa ya da hata verirse mevcut kurallara dokunulmaz.
-        public static async Task<RefreshResult> RefreshServerAddressesAsync(string serverUrl, string reason)
+        public static async Task<RefreshResult> RefreshServerAddressesAsync(string serverUrl, string reason, string statePath)
         {
             await Gate.WaitAsync();
             try
             {
-                if (!File.Exists(StatePath)) return RefreshResult.NotIsolated;
+                if (!File.Exists(statePath)) return RefreshResult.NotIsolated;
                 List<IPAddress> server = await ResolveServerAsync(serverUrl);
                 if (server.Count == 0)
                 {
                     POpsHelpers.Log("ISOLATION", $"Karantina: sunucu adı çözülemedi ({reason}); mevcut kurallara dokunulmadı.", true);
                     return RefreshResult.ResolveFailed;
                 }
-                List<string> recorded = ReadServerAddresses(SecureStore.Read(StatePath));
+                List<string> recorded = ReadServerAddresses(SecureStore.Read(statePath));
                 if (recorded != null && SameAddresses(server, recorded)) return RefreshResult.Unchanged;
 
                 List<(BigInteger Start, BigInteger End, bool V6)> allowed = AllowedRanges(server.Concat(LocalInfrastructure()));
@@ -140,7 +153,7 @@ namespace POpsAgent
                     return RefreshResult.Failed;
                 }
                 // Önceki profil durumu ilk karantinadaki hâliyle kalır; yalnızca sunucu adresleri güncellenir
-                SaveServerAddresses(server);
+                SaveServerAddresses(statePath, server);
                 List<string> now = NormalizeAddresses(server);
                 POpsHelpers.Log("ISOLATION", $"Karantina izin listesi yenilendi ({reason}): sunucu {(recorded == null ? "(bilinmiyor)" : string.Join(", ", recorded))} -> {string.Join(", ", now)}.");
                 LocalAudit.Write(LocalAudit.QuarantineAllowListRefreshed(recorded, now, reason));
@@ -154,9 +167,9 @@ namespace POpsAgent
             finally { Gate.Release(); }
         }
 
-        private static void SaveServerAddresses(IEnumerable<IPAddress> server)
+        private static void SaveServerAddresses(string statePath, IEnumerable<IPAddress> server)
         {
-            try { SecureStore.WriteProtected(StatePath, MergeServerAddresses(SecureStore.Read(StatePath), server)); }
+            try { SecureStore.WriteProtected(statePath, MergeServerAddresses(SecureStore.Read(statePath), server)); }
             catch (Exception ex) { POpsHelpers.Log("ISOLATION", $"Sunucu adresleri isolation.json'a yazılamadı: {ex.Message}", true); }
         }
 
@@ -331,21 +344,21 @@ ConvertTo-Json -Compress -InputObject $previous
         }
 
         // Enable betiğinin son satırı: karantinadan önceki profil durumları. Zaten karantinadaysa ilk durum korunur.
-        private static void SavePreviousProfiles(string output)
+        private static void SavePreviousProfiles(string statePath, string output)
         {
-            if (File.Exists(StatePath)) return;
+            if (File.Exists(statePath)) return;
             string json = output?.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.StartsWith("[") || l.StartsWith("{"));
             if (json == null) return;
             if (json.StartsWith("{")) json = "[" + json + "]";
-            SecureStore.WriteProtected(StatePath, JsonSerializer.Serialize(new { previous_profiles = JsonDocument.Parse(json).RootElement, since = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
+            SecureStore.WriteProtected(statePath, JsonSerializer.Serialize(new { previous_profiles = JsonDocument.Parse(json).RootElement, since = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
         }
 
-        internal static List<string> ReadPreviouslyDisabledProfiles()
+        internal static List<string> ReadPreviouslyDisabledProfiles(string statePath)
         {
             var disabled = new List<string>();
             try
             {
-                string text = SecureStore.Read(StatePath);
+                string text = SecureStore.Read(statePath);
                 if (text == null) return disabled;
                 using JsonDocument doc = JsonDocument.Parse(text);
                 foreach (JsonElement p in doc.RootElement.GetProperty("previous_profiles").EnumerateArray())

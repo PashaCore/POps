@@ -210,8 +210,11 @@ namespace POps.Tests.Agent
             new SoftwareItem { Name = "POps Test", Version = version },
         };
 
+        // Son başarılı gönderimin kaydı (veri klasöründe)
+        private static string StatePath => Path.Combine(AgentUpdate.DataDir, SoftwareReporter.StateFileName);
+
         // Her çağrı yeni bir raporlayıcı: servis yeniden başlamış gibi
-        private SoftwareReporter Reporter() => new SoftwareReporter("https://pops.example", () => _hwId, () => _uploaded++)
+        private SoftwareReporter Reporter() => new SoftwareReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => _hwId, () => _uploaded++)
         {
             Collector = () => _items,
             UtcNow = () => _now,
@@ -233,7 +236,7 @@ namespace POps.Tests.Agent
         {
             Assert.Null(await Reporter().ReportOnceAsync());
             Assert.Equal((1, 1), (_posts, _uploaded));
-            Assert.True(File.Exists(SoftwareReporter.StatePath));
+            Assert.True(File.Exists(StatePath));
 
             _now = T0.AddDays(6.9);
             Assert.Null(await Reporter().ReportOnceAsync());
@@ -263,7 +266,7 @@ namespace POps.Tests.Agent
             var reporter = Reporter();
             reporter.Poster = (_, _) => Task.FromResult(PostResult.Failed);
             Assert.Equal(SoftwareReporter.RetryDelay, await reporter.ReportOnceAsync());
-            Assert.False(File.Exists(SoftwareReporter.StatePath));
+            Assert.False(File.Exists(StatePath));
             Assert.Equal(0, _uploaded);
             await Reporter().ReportOnceAsync();
             Assert.Equal(1, _posts);
@@ -275,7 +278,7 @@ namespace POps.Tests.Agent
             var reporter = Reporter();
             await reporter.ReportOnceAsync();
             reporter.ForgetLastReport();
-            Assert.False(File.Exists(SoftwareReporter.StatePath));
+            Assert.False(File.Exists(StatePath));
             await reporter.ReportOnceAsync();
             Assert.Equal(2, _posts);
         }
@@ -283,7 +286,7 @@ namespace POps.Tests.Agent
         [Fact]
         public async Task CorruptState_IsIgnored()
         {
-            File.WriteAllText(SoftwareReporter.StatePath, "{bozuk");
+            File.WriteAllText(StatePath, "{bozuk");
             await Reporter().ReportOnceAsync();
             Assert.Equal(1, _posts);
         }

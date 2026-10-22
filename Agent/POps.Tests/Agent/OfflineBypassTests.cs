@@ -141,18 +141,17 @@ namespace POps.Tests.Agent
     }
 
     // L4 notu: 24 saat hatasız geçince eski hatalar ve kilitlenmeler unutulur
-    [Collection(SharedStateCollection.Name)]
-    public class BypassDecayTests : SharedStateTestBase
+    public class BypassDecayTests : TestBase
     {
         private const string HwId = "HW-678CC8C5265E", Secret = "sekret-Ç-1";
         private static readonly DateTime Day = new DateTime(2026, 9, 26);
 
-        public BypassDecayTests() => SecureStore.Dir = TestEnvironment.NewDir("decay");
+        private readonly AgentPaths _paths = AgentHarness.Create("decay").Paths;
 
         [Fact]
         public void OldLockouts_AreForgottenAfterADayWithoutFailures()
         {
-            string path = SecureStore.PathOf(OfflineBypass.StateFileName);
+            string path = _paths.SecureFile(OfflineBypass.StateFileName);
             DateTime t = new DateTime(2026, 9, 26, 8, 0, 0, DateTimeKind.Utc);
             DateTime now = t;
             var guard = new OfflineBypass(() => now, path);

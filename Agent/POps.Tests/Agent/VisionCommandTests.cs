@@ -30,7 +30,7 @@ namespace POps.Tests.Agent
         {
             SecureStore.Dir = TestEnvironment.NewDir("vision-commands-secure");
             AgentCapabilities.Load();   // dosya yok: Vision açık
-            _worker = new Worker(NullLogger<Worker>.Instance)
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = HwId,
                 TrayOverride = m => { lock (_events) _events.Add("tray:" + m); },

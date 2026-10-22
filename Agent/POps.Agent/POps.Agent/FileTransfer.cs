@@ -75,7 +75,8 @@ namespace POpsAgent
         internal static Func<(string ProfilesDirectory, string? CurrentProfile)> ProfileInfo { get; set; } = ReadProfiles;
 
         public static string PublicDesktop => PublicDesktopOverride?.Invoke() ?? Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
-        public static string InboxRoot => System.IO.Path.Combine(AgentUpdate.DataDir, "inbox");
+        // <veri klasörü>\inbox (AgentPaths.InboxDir); Worker bölmesinin b3 adımı yolu AgentPaths'ten verir
+        public static string InboxRoot => System.IO.Path.Combine(AgentUpdate.DataDir, AgentPaths.InboxFolder);
 
         // Geçersiz ya da eksik kimlik: null (sunucu bilmediği aktarımın sonucunu yok sayar; böyle emre file_result gitmez)
         public static string? TransferIdOf(JsonElement command) =>

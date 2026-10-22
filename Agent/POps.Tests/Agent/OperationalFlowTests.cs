@@ -37,7 +37,7 @@ namespace POps.Tests.Agent
         {
             int posts = 0, uploaded = 0;
             DateTime now = new DateTime(2026, 9, 30, 10, 0, 0, DateTimeKind.Utc);
-            var reporter = new SoftwareReporter("https://pops.example", () => "HW-R", () => uploaded++)
+            var reporter = new SoftwareReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-R", () => uploaded++)
             {
                 Collector = () => Inventory(),
                 UtcNow = () => now,
@@ -65,7 +65,7 @@ namespace POps.Tests.Agent
         [InlineData(PostResult.EndpointMissing, 1440)]
         public async Task SoftwareReport_FailureUsesTheExpectedBackoff(PostResult result, int minutes)
         {
-            var reporter = new SoftwareReporter("https://pops.example", () => "HW-R")
+            var reporter = new SoftwareReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-R")
             {
                 Collector = () => Inventory("2"),
                 Poster = (_, _) => Task.FromResult(result),
@@ -77,7 +77,7 @@ namespace POps.Tests.Agent
         public async Task SoftwareReport_CollectorFailureIsReportedWithoutStoppingTheLoop()
         {
             string error = null;
-            var reporter = new SoftwareReporter("https://pops.example", () => "HW-R", error: value => error = value)
+            var reporter = new SoftwareReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-R", error: value => error = value)
             {
                 Collector = () => throw new InvalidOperationException("registry unavailable"),
             };
@@ -96,7 +96,7 @@ namespace POps.Tests.Agent
         public async Task SessionSwitch_ReportsLogoutThenLoginAndPersistsTheNewState()
         {
             var calls = new List<(string Action, string User)>();
-            var reporter = new SessionReporter("https://pops.example", () => "HW-R", "PC-R")
+            var reporter = new SessionReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-R", "PC-R")
             {
                 Poster = (action, id, body) =>
                 {
@@ -111,14 +111,14 @@ namespace POps.Tests.Agent
             Assert.True(delivered);
             Assert.Same(current, saved);
             Assert.Equal(new[] { ("logout", "ali"), ("login", "ayse") }, calls);
-            Assert.Equal("ayse", SessionReporter.Load().User);
+            Assert.Equal("ayse", SessionReporter.Load(reporter.StatePath).User);
         }
 
         [Fact]
         public async Task SessionFailure_KeepsTheLastReportedState()
         {
             SessionSnapshot previous = Session("ali", 1);
-            var reporter = new SessionReporter("https://pops.example", () => "HW-R", "PC-R")
+            var reporter = new SessionReporter(AgentHarness.FromStatics().Paths, "https://pops.example", () => "HW-R", "PC-R")
             {
                 Poster = (_, _, _) => Task.FromResult(false),
             };

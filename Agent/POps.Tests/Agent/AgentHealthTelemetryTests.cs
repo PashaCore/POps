@@ -60,7 +60,7 @@ namespace POps.Tests.Agent
         [Fact]
         public void Heartbeat_ContainsTheHealthContract()
         {
-            using var worker = new Worker(Microsoft.Extensions.Logging.Abstractions.NullLogger<Worker>.Instance);
+            using var worker = new Worker(Microsoft.Extensions.Logging.Abstractions.NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context);
             JsonElement health = JsonSerializer.SerializeToElement(worker.HeartbeatPayload()).GetProperty("agent_health");
 
             Assert.Equal(JsonValueKind.Number, health.GetProperty("started_at").ValueKind);

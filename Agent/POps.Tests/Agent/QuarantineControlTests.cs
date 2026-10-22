@@ -32,6 +32,7 @@ namespace POps.Tests.Agent
         }
 
         private QuarantineControl Control(OfflineBypass bypass = null) => new QuarantineControl(
+            AgentHarness.FromStatics().Paths,
             _tray.Add,
             () => { _enabled++; File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
             () =>
@@ -60,6 +61,7 @@ namespace POps.Tests.Agent
         {
             bool isolationWorks = false;
             var control = new QuarantineControl(
+                AgentHarness.FromStatics().Paths,
                 _tray.Add,
                 () =>
                 {
@@ -299,6 +301,7 @@ namespace POps.Tests.Agent
         public void Dispose() => DnsPolicyMonitor.Quarantine = _ => { };
 
         private QuarantineControl Control() => new QuarantineControl(
+            AgentHarness.FromStatics().Paths,
             _tray.Add,
             () => { _enabled++; File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
             () => { _disabled++; File.Delete(NetworkIsolation.StatePath); return Task.FromResult(true); },
@@ -310,10 +313,10 @@ namespace POps.Tests.Agent
         [Fact]
         public void Heartbeat_ReportsTheLockState()
         {
-            using var worker = new Worker(NullLogger<Worker>.Instance);
+            using var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context);
             Assert.Equal(JsonValueKind.False, Heartbeat(worker).GetProperty("quarantined").ValueKind);
 
-            File.WriteAllText(QuarantineControl.LockPath, "{\"reason\":\"Sınav\"}");
+            File.WriteAllText(worker.Quarantine.LockPath, "{\"reason\":\"Sınav\"}");
             JsonElement hb = Heartbeat(worker);
             Assert.Equal(JsonValueKind.True, hb.GetProperty("quarantined").ValueKind);
             Assert.Equal("Online", hb.GetProperty("status").GetString());

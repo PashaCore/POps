@@ -17,7 +17,6 @@ namespace POpsAgent
     [SupportedOSPlatform("windows")]
     public static class SecureStore
     {
-        // Veri klasörü (DataDirectory) seçilince servis açılışta Dir'i <veri klasörü>\secure yapar (bkz. AgentDirectories)
         public const string DefaultDir = FolderSettings.DefaultDataDirectory + @"\secure";
 
         // Ajanın çalıştığı hesap (LocalSystem). Birim testleri bunu testi çalıştıran kullanıcıya çevirir: korumalı
@@ -25,17 +24,23 @@ namespace POpsAgent
         internal static SecurityIdentifier SystemSid { get; set; } = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
         private static readonly SecurityIdentifier AdminsSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
 
+        // Süreç varsayılanı: servis açılışta AgentPaths.SecureDir'e çevirir (bkz. AgentDirectories.Use). Worker ve kurduğu
+        // servisler yolu AgentPaths'ten alır; bunu yalnızca Worker bölmesinin b2/b3 adımlarının örneğe çevireceği statik
+        // sınıflar (AgentCapabilities, AgentCredentials, KioskMode, NetworkIsolation, ExamMode, FileTransfer) ve onları
+        // sınayan testler okur.
         public static string Dir { get; set; } = DefaultDir;
 
         public static string PathOf(string name) => Path.Combine(Dir, name);
 
+        public static void EnsureDirectory() => EnsureDirectory(Dir);
+
         // Klasörü yoksa korumalı ACL ile oluşturur, varsa ACL'ini her açılışta yeniden kurar (bkz. FolderSettings.Secure).
         // Sahibi güvenilir değilse SYSTEM yapılır: klasörü önceden açan bir kullanıcı sahip olarak izinleri yeniden açabilirdi.
-        public static void EnsureDirectory()
+        public static void EnsureDirectory(string dir)
         {
-            string error = FolderSettings.Secure(Dir, usersRead: false, out bool tightened);
-            if (error != null) throw new IOException($"{Dir} kilitlenemedi: {error}");
-            if (tightened) POpsHelpers.Log("SECURE", FolderSettings.TightenedNote(Dir, usersRead: false));
+            string error = FolderSettings.Secure(dir, usersRead: false, out bool tightened);
+            if (error != null) throw new IOException($"{dir} kilitlenemedi: {error}");
+            if (tightened) POpsHelpers.Log("SECURE", FolderSettings.TightenedNote(dir, usersRead: false));
         }
 
         public static FileSecurity ProtectedFileSecurity()

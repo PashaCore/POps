@@ -185,7 +185,7 @@ namespace POps.Tests.Agent
         private readonly List<JsonElement> _sent = new List<JsonElement>();
         private readonly List<string> _tray = new List<string>();
 
-        private Worker NewWorker(bool online = true) => new Worker(NullLogger<Worker>.Instance)
+        private Worker NewWorker(bool online = true) => new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
         {
             HwId = "HW-EXAM",
             SendOverride = p => { lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(p)); return Task.FromResult(online); },

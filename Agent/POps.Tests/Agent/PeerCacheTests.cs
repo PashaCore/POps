@@ -1074,7 +1074,7 @@ namespace POps.Tests.Agent
             Assert.Matches("^[a-z0-9_]+(,[a-z0-9_]+)*$", AgentFeatures.Header);
 
             // Komut bağlantısı başlığı X-Agent-Version'dan hemen sonra ekler
-            string worker = File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot(), "Agent", "POps.Agent", "POps.Agent", "Worker.cs"));
+            string worker = File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot(), "Agent", "POps.Agent", "POps.Agent", "CommandConnection.cs"));
             Assert.Matches(new Regex(@"SetRequestHeader\(""X-Agent-Version"", AppVersion\);\r?\n\s*_commandWs\.Options\.SetRequestHeader\(AgentFeatures\.HeaderName, AgentFeatures\.Header\);"), worker);
         }
     }

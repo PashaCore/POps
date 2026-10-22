@@ -35,7 +35,7 @@ namespace POps.Tests.Agent
             SecureStore.Dir = TestEnvironment.NewDir("dispatcher-secure");
             AgentUpdate.DataDir = TestEnvironment.NewDir("dispatcher-data");
             AgentCapabilities.Load();
-            _worker = new Worker(NullLogger<Worker>.Instance)
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = "HW-DISPATCH",
                 SendOverride = payload =>

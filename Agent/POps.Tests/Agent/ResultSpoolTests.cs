@@ -8,15 +8,13 @@ using Xunit;
 namespace POps.Tests.Agent
 {
     // B4: görev sonuçlarının disk kuyruğu (result_ack)
-    [Collection(SharedStateCollection.Name)]
-    public class ResultSpoolTests : SharedStateTestBase
+    public class ResultSpoolTests : TestBase
     {
         private readonly string _path;
 
         public ResultSpoolTests()
         {
-            SecureStore.Dir = TestEnvironment.NewDir("spool");
-            _path = SecureStore.PathOf(ResultSpool.FileName);
+            _path = AgentHarness.Create("spool").Paths.SecureFile(ResultSpool.FileName);
         }
 
         private static object Result(int id) => new { type = "result", task_id = id, output = "çıktı " + id, exit_code = 0 };

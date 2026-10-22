@@ -38,8 +38,11 @@ namespace POps.Tests.Agent
             POpsHelpers.ConfigPaths = new string[0];
         }
 
+        // Donanım bağının birincil kopyası (güvenli depoda)
+        private static string PrimaryPath => SecureStore.PathOf(HardwareBinding.FileName);
+
         private static HardwareBinding Binding(string uuid, string bios, DateTimeOffset? now = null) =>
-            new HardwareBinding(AgentUpdate.IdentityPath, () => (uuid, bios), () => now ?? T0);
+            new HardwareBinding(AgentHarness.FromStatics().Paths, () => (uuid, bios), () => now ?? T0);
 
         // PersistDir (dondurulmayan klasör) ayarlanır
         private static string Persist()
@@ -185,7 +188,7 @@ namespace POps.Tests.Agent
             Assert.False(File.Exists(AgentUpdate.IdentityPath));
             Assert.False(File.Exists(SecureStore.PathOf(AgentCredentials.SecretFileName)));
             Assert.False(File.Exists(SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName)));
-            Assert.False(File.Exists(HardwareBinding.PrimaryPath));
+            Assert.False(File.Exists(PrimaryPath));
             Assert.False(File.Exists(PendingResults));
             Assert.Equal("HW-ORIGINAL", File.ReadAllText(Path.Combine(folder, "identity.key")));
             // Jeton kalır: kopya onunla yeni cihaz olarak kaydolur
@@ -216,7 +219,7 @@ namespace POps.Tests.Agent
             Assert.True(File.Exists(AgentUpdate.IdentityPath));
             Assert.True(File.Exists(SecureStore.PathOf(AgentCredentials.SecretFileName)));
             Assert.True(File.Exists(SecureStore.PathOf(AgentCredentials.DeviceBypassSecretFileName)));
-            Assert.True(File.Exists(HardwareBinding.PrimaryPath));
+            Assert.True(File.Exists(PrimaryPath));
             Assert.True(File.Exists(PendingResults));
             Assert.Empty(Directory.GetDirectories(SecureStore.Dir, "clone-*"));
         }
@@ -260,7 +263,7 @@ namespace POps.Tests.Agent
             Persist();
             Assert.True(Binding(Uuid, Bios).Bind("HW-CLONE", "test"));
             var original = HardwareBinding.CreateRecord(OtherUuid, OtherBios, "HW-ORIGINAL", T0.AddDays(-30));
-            SecureStore.WriteProtected(HardwareBinding.PrimaryPath, JsonSerializer.Serialize(original));
+            SecureStore.WriteProtected(PrimaryPath, JsonSerializer.Serialize(original));
 
             var binding = Binding(Uuid, Bios);
             Assert.Equal(BindingVerdict.Match, binding.CheckOnStartup());
@@ -271,7 +274,7 @@ namespace POps.Tests.Agent
         public void Bind_WithoutReadableHardware_WritesNothing()
         {
             Assert.False(Binding("-", "Default string").Bind("HW-A", "test"));
-            Assert.False(File.Exists(HardwareBinding.PrimaryPath));
+            Assert.False(File.Exists(PrimaryPath));
             Assert.Equal(BindingVerdict.Missing, Binding(Uuid, Bios).CheckOnStartup());
         }
 
@@ -280,12 +283,12 @@ namespace POps.Tests.Agent
         {
             Assert.True(Binding(Uuid, Bios).Bind("HW-A", "test"));
             Binding(Uuid, Bios, T0.AddMinutes(1)).UpdateHwId("HW-B");
-            BindingRecord record = HardwareBinding.Load();
+            BindingRecord record = Binding(Uuid, Bios).Load();
             Assert.Equal("HW-B", record.HwId);
             Assert.Equal(HardwareBinding.Digest(Uuid, Bios), record.Digest);
         }
 
-        private static Worker NewWorker(string hwId) => new Worker(NullLogger<Worker>.Instance)
+        private static Worker NewWorker(string hwId) => new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
         {
             HwId = hwId,
             SendOverride = _ => Task.FromResult(true),
@@ -301,7 +304,7 @@ namespace POps.Tests.Agent
             Assert.Equal(BindingVerdict.Missing, worker.Binding.CheckOnStartup());
             worker.ApplyHardwareBinding(BindingVerdict.Missing);
 
-            BindingRecord record = HardwareBinding.Load();
+            BindingRecord record = Binding(Uuid, Bios).Load();
             Assert.Equal(HardwareBinding.Digest(Uuid, Bios), record.Digest);
             Assert.Equal("HW-OLD", record.HwId);
             Assert.Equal(BindingVerdict.Match, Binding(Uuid, Bios).CheckOnStartup());
@@ -312,7 +315,7 @@ namespace POps.Tests.Agent
         {
             using Worker worker = NewWorker("HW-NEW");
             await worker.HandleServerMessageAsync("{\"action\":\"set_secret\",\"secret\":\"" + Secret + "\"}", null, CancellationToken.None);
-            BindingRecord record = HardwareBinding.Load();
+            BindingRecord record = Binding(Uuid, Bios).Load();
             Assert.Equal(HardwareBinding.Digest(Uuid, Bios), record.Digest);
             Assert.Equal("HW-NEW", record.HwId);
         }
@@ -339,7 +342,7 @@ namespace POps.Tests.Agent
             Assert.Equal(BindingVerdict.Clone, worker.Binding.CheckOnStartup());
             worker.ApplyHardwareBinding(BindingVerdict.Clone);   // Olay Günlüğü yazılamasa da durmaz
             Assert.Equal("HW-DERIVED", worker.HwId);
-            Assert.False(File.Exists(HardwareBinding.PrimaryPath));
+            Assert.False(File.Exists(PrimaryPath));
         }
 
         // Asıl cihazın onay bekleyen sonuçları servis açılırken okunmuştu: klonda bellekten de bırakılır, yeni kimlikle gitmez
@@ -350,7 +353,7 @@ namespace POps.Tests.Agent
             PendingResult(7);
             PendingResult(8);
             var sent = new List<JsonElement>();
-            using Worker worker = new Worker(NullLogger<Worker>.Instance)
+            using Worker worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = "HW-DERIVED",
                 SendOverride = payload => { sent.Add(JsonSerializer.SerializeToElement(payload)); return Task.FromResult(true); },

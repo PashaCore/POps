@@ -33,7 +33,7 @@ namespace POps.Tests.Agent
         {
             SecureStore.Dir = TestEnvironment.NewDir("vision-locked-secure");
             AgentCapabilities.Load();   // dosya yok: Vision açık
-            _worker = new Worker(NullLogger<Worker>.Instance)
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = "HW-LOCK",
                 TrayOverride = m => { lock (_tray) _tray.Add(m); },

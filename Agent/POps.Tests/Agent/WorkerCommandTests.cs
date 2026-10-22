@@ -26,7 +26,7 @@ namespace POps.Tests.Agent
             SecureStore.Dir = TestEnvironment.NewDir("worker-secure");
             AgentUpdate.DataDir = TestEnvironment.NewDir("worker-data");
             AgentCapabilities.Load();   // dosya yok: ikisi de açık
-            _worker = new Worker(NullLogger<Worker>.Instance)
+            _worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = "HW-TEST",
                 SendOverride = payload =>
@@ -37,6 +37,7 @@ namespace POps.Tests.Agent
                 CommandRunner = TestEnvironment.NewCommandRunner(),
             };
             _worker.Quarantine = new QuarantineControl(
+                AgentHarness.FromStatics().Paths,
                 _tray.Add,
                 () => { File.WriteAllText(NetworkIsolation.StatePath, "{}"); return Task.FromResult(true); },
                 () =>
@@ -428,7 +429,7 @@ namespace POps.Tests.Agent
 
         private Worker NewWorker()
         {
-            var worker = new Worker(NullLogger<Worker>.Instance)
+            var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = "HW-TEST",
                 SendOverride = payload =>

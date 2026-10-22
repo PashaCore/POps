@@ -122,12 +122,16 @@ namespace POps.Shared
         // 2. AYARLAR
         // ==========================================
         // Ayar dosyası önce bileşenin kurulu olduğu klasörde (MSI: C:\Program Files\POps), sonra eski sabit konumda
-        // (C:\POps) aranır; her ayar için ilk dolu değer kullanılır. Testler yolları değiştirebilir.
-        public static IReadOnlyList<string> ConfigPaths { get; internal set; } = new[]
+        // (C:\POps) aranır; her ayar için ilk dolu değer kullanılır. Ajan bu listeyi açılışta AgentPaths'e alır.
+        public static IReadOnlyList<string> DefaultConfigPaths { get; } = new[]
         {
             Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
             @"C:\POps\appsettings.json",
         };
+
+        // Süreç varsayılanı: Worker'ın dışında ayar okuyan ajan kodu (AgentCredentials; Worker bölmesinin b2 adımı kaldırır)
+        // ve onu sınayan testler için. Servis değiştirmez; testler yolları değiştirebilir.
+        public static IReadOnlyList<string> ConfigPaths { get; internal set; } = DefaultConfigPaths;
 
         // Sunucu adresi okunamazsa son çare (yalnızca aynı makinedeki sunucu için anlamlı)
         public const string FallbackServerUrl = "http://127.0.0.1:8000";
@@ -135,10 +139,12 @@ namespace POps.Shared
         public static string GetServerUrl() => ResolveServerUrl().Url;
 
         // Sunucu adresi ve yapılandırmanın sorunu (null: sorun yok). Adres koda gömülmez: önce POPS_SERVER_URL ortam
-        // değişkeni, sonra ConfigPaths'teki ilk dolu ServerUrl. Okunamayan (bozuk JSON, erişim) bir dosya, adres başka
+        // değişkeni, sonra configPaths'teki ilk dolu ServerUrl. Okunamayan (bozuk JSON, erişim) bir dosya, adres başka
         // bir dosyadan gelse de sorun sayılır. Adres bulunamaz ya da geçerli bir http(s) adresi değilse son çare kullanılır.
         // Eskiden bu durum yalnızca loga yazılıyordu; ajan sağlıklı görünüp hiçbir sunucuya bağlanmıyordu.
-        public static (string Url, string Problem) ResolveServerUrl()
+        public static (string Url, string Problem) ResolveServerUrl() => ResolveServerUrl(ConfigPaths);
+
+        public static (string Url, string Problem) ResolveServerUrl(IReadOnlyList<string> configPaths)
         {
             var problems = new List<string>();
             string url = null, source = null;
@@ -149,7 +155,7 @@ namespace POps.Shared
                 source = "POPS_SERVER_URL";
             }
             bool anyFile = false;
-            foreach (string path in ConfigPaths)
+            foreach (string path in configPaths)
             {
                 if (!File.Exists(path)) continue;
                 anyFile = true;
@@ -177,8 +183,8 @@ namespace POps.Shared
             }
             if (url == null && problems.Count == 0)
                 problems.Add(anyFile
-                    ? $"ServerUrl tanımlı değil ({string.Join(" | ", ConfigPaths)})"
-                    : $"appsettings.json bulunamadı ({string.Join(" | ", ConfigPaths)})");
+                    ? $"ServerUrl tanımlı değil ({string.Join(" | ", configPaths)})"
+                    : $"appsettings.json bulunamadı ({string.Join(" | ", configPaths)})");
 
             string problem = problems.Count > 0 ? string.Join("; ", problems) : null;
             if (url == null)
@@ -203,12 +209,12 @@ namespace POps.Shared
             return !string.IsNullOrWhiteSpace(env) ? env.Trim() : ReadConfigValue(key);
         }
 
-        // Klasör ayarı (LogDirectory, DataDirectory): ConfigPaths'teki ilk dolu metin değeri. Log yazmaz (log klasörü henüz
+        // Klasör ayarı (LogDirectory, DataDirectory): paths'teki ilk dolu metin değeri. Log yazmaz (log klasörü henüz
         // seçilmedi); okunamayan dosya atlanır (ResolveServerUrl onu sorun olarak bildirir). Metin olmayan değer problem'e yazılır.
-        public static string ReadConfigText(string key, out string problem)
+        public static string ReadConfigText(string key, IEnumerable<string> paths, out string problem)
         {
             problem = null;
-            foreach (string path in ConfigPaths)
+            foreach (string path in paths)
             {
                 try
                 {

@@ -51,7 +51,8 @@ namespace POpsAgent
 
         private static readonly Regex Sha256HexRegex = new Regex("^[0-9a-f]{64}$", RegexOptions.Compiled);
 
-        public static string Dir => Path.Combine(AgentUpdate.DataDir, "cache");
+        // <veri klasörü>\cache (AgentPaths.PeerCacheDir); Worker bölmesinin b3 adımı yolu AgentPaths'ten verir
+        public static string Dir => Path.Combine(AgentUpdate.DataDir, AgentPaths.PeerCacheFolder);
 
         // Testler: saat, güvenlik duvarı betiği, dinlenen adres, yerel alt ağ ve karantina denetimi
         internal static Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;

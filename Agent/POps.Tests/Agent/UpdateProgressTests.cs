@@ -238,7 +238,7 @@ namespace POps.Tests.Agent
 
         private Worker NewWorker(bool feature = true)
         {
-            var worker = new Worker(NullLogger<Worker>.Instance)
+            var worker = new Worker(NullLogger<Worker>.Instance, AgentHarness.FromStatics().Context)
             {
                 HwId = "HW-PROG",
                 SendOverride = payload => { lock (_sent) _sent.Add(JsonSerializer.SerializeToElement(payload)); return Task.FromResult(true); },
