@@ -1,0 +1,10 @@
+{
+  "{n} güncelleniyor.": {
+    "one": "{n} is updating.",
+    "other": "{n} are updating."
+  },
+  "{n} kapalı.": {
+    "one": "{n} is off.",
+    "other": "{n} are off."
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/update_progress.json",
+  "title": "update_progress",
+  "description": "A stage of an agent update between `update_agent` and `update_result` (0.1.22+ servers list `update_progress` in `server_info.features`). Never carries `status` (a message with `status` is a heartbeat) and is never the first message of a connection. The server keeps the latest stage only while it has a pending update for the device (and, when `to_version` is given, only for that version); `rejected` ends the update with `detail` as the reason. Unknown stages are ignored.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "type",
+    "stage"
+  ],
+  "not": {
+    "required": [
+      "status"
+    ]
+  },
+  "properties": {
+    "type": {
+      "const": "update_progress",
+      "description": "Message type."
+    },
+    "stage": {
+      "enum": [
+        "received",
+        "downloaded",
+        "verified",
+        "updater_started",
+        "waiting_installer",
+        "installing",
+        "rejected",
+        "ignored_busy"
+      ],
+      "description": "received, downloaded, verified, updater_started (service); waiting_installer (Windows Installer busy, 1618 retry) and installing (updater, forwarded by the service); rejected (with the reason in detail); ignored_busy (a second command arrived while an update was running)."
+    },
+    "to_version": {
+      "type": "string",
+      "pattern": "^[0-9A-Za-z.+_-]{1,64}$",
+      "description": "Version being installed (manifest version)."
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "For waiting_installer/installing: attempts so far."
+    },
+    "of": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "For waiting_installer: maximum attempts."
+    },
+    "detail": {
+      "type": "string",
+      "description": "Short text; the server keeps at most 300 characters and removes control and format characters."
+    }
+  }
+}

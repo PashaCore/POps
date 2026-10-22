@@ -1,0 +1,10 @@
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+/dev/mapper/pardus--vg-root / ext4 rw,relatime,errors=remount-ro 0 0
+tmpfs /run tmpfs rw,nosuid,nodev,noexec,relatime,size=1626304k,mode=755 0 0
+/dev/sda1 /boot/efi vfat rw,relatime 0 0
+/dev/sdb1 /home ext4 rw,relatime 0 0
+/dev/sdb1 /srv/bind ext4 rw,relatime 0 0
+/dev/loop3 /snap/core/123 squashfs ro,nodev,relatime 0 0
+/dev/sdc1 /media/ogrenci/USB\040Bellek vfat rw,nosuid,nodev,relatime 0 0
+overlay /var/lib/docker/overlay2/x/merged overlay rw,relatime 0 0

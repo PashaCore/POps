@@ -1,0 +1,23 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    remove)
+        if command -v deb-systemd-helper >/dev/null 2>&1; then
+            deb-systemd-helper mask pops-agent.service >/dev/null || true
+        fi
+        ;;
+    purge)
+        if command -v deb-systemd-helper >/dev/null 2>&1; then
+            deb-systemd-helper purge pops-agent.service >/dev/null || true
+            deb-systemd-helper unmask pops-agent.service >/dev/null || true
+        fi
+        # Yerel denetim izi yalnızca-ekleme özniteliğiyle korunur; silmeden önce kaldırılır
+        chattr -a /var/log/pops-agent/audit.log 2>/dev/null || true
+        rm -rf /etc/pops-agent /var/lib/pops-agent /var/log/pops-agent
+        ;;
+esac
+if [ -d /run/systemd/system ]; then
+    systemctl --system daemon-reload >/dev/null 2>&1 || true
+fi
+exit 0

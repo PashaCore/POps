@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/execute.json",
+  "title": "execute",
+  "description": "Run a command (task queue: Dağıtım, Uzak komut, scheduled tasks, PC actions). The server marks the task `Running` before it sends this and puts it back to `Pending` if the send fails. Only one task per device runs at a time. The agent answers with `result` (and `capability_denied` when the terminal capability or module is off). The same `task_id` may arrive again; an agent must not run a task twice at the same time.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "task_id",
+    "script_path"
+  ],
+  "properties": {
+    "action": {
+      "const": "execute",
+      "description": "Message type."
+    },
+    "task_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Task ID; echoed in `result` and `result_ack`."
+    },
+    "script_path": {
+      "type": "string",
+      "description": "The command line (the name is historical). The Windows agent runs it as a temporary .bat through cmd.exe as LocalSystem with a 30-minute limit."
+    },
+    "requested_by": {
+      "type": "string",
+      "description": "0.1.12+. Panel user who queued it, or \"System/Queue\"; written to the device's local audit log."
+    }
+  }
+}

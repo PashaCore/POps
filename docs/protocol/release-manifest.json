@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/release-manifest.json",
+  "title": "release manifest (pops-manifest/1)",
+  "description": "manifest.json of a signed release (tools/sign_release.py), carried base64-encoded in `update_agent`. The signature covers its exact bytes; the release tool writes it as sorted, 2-space indented JSON with a trailing newline. Agents parse it only after the signature is verified.",
+  "type": "object",
+  "required": [
+    "schema",
+    "version",
+    "artifacts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "pops-manifest/1",
+      "description": "Format; agents refuse any other value."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?$",
+      "description": "Release version (semantic version); must be newer than the agent's own."
+    },
+    "tag": {
+      "type": "string",
+      "description": "Git tag of the release."
+    },
+    "released_at": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix time (s) of signing."
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Files of the release. `update_agent` requires exactly one Windows agent package (POps-Agent-<version>-win-x64.msi).",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "sha256",
+          "size"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "description": "File name."
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256, lower-case hex."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Size in bytes (the Windows agent accepts at most 512 MiB)."
+          }
+        }
+      }
+    }
+  }
+}

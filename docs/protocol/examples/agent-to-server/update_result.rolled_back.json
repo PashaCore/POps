@@ -1,0 +1,12 @@
+{
+  "type": "update_result",
+  "status": "rolled_back",
+  "result_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "from_version": "0.1.20-alpha",
+  "to_version": "0.1.21-alpha",
+  "running_version": "0.1.20-alpha",
+  "rollback": "msi",
+  "agent_state": "running",
+  "detail": "Yeni sürüm 120 sn içinde sağlıklı açılmadı.",
+  "msi_exit_code": 0
+}

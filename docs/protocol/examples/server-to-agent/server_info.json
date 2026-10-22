@@ -1,0 +1,18 @@
+{
+  "action": "server_info",
+  "version": "0.1.23-alpha",
+  "protocol": 1,
+  "features": [
+    "update_result_ack",
+    "result_ack",
+    "update_progress",
+    "file_transfer",
+    "exam_mode",
+    "winget",
+    "vision_binary",
+    "vision_clipboard",
+    "power",
+    "message",
+    "peer_cache"
+  ]
+}

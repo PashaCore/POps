@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/start_vision_session.json",
+  "title": "start_vision_session",
+  "description": "An administrator opened a remote-control session (POST /api/audit/session/start). Non-mandatory: the user is asked and may decline (`vision_rejected`). Mandatory: the user is told, after `countdown_seconds`. Once approved the agent opens the Vision channel and streams `stream_frame`s. Refused with `capability_denied` when Vision is off.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "session_id",
+    "is_mandatory",
+    "admin_name"
+  ],
+  "properties": {
+    "action": {
+      "const": "start_vision_session",
+      "description": "Message type."
+    },
+    "session_id": {
+      "type": "string",
+      "pattern": "^SES-[0-9A-F]{12}$",
+      "description": "Session ID."
+    },
+    "is_mandatory": {
+      "type": "boolean",
+      "description": "True: no consent dialog (a reason is required)."
+    },
+    "admin_name": {
+      "type": "string",
+      "description": "Panel user shown to the user."
+    },
+    "requested_by": {
+      "type": "string",
+      "description": "0.1.12+. Same as `admin_name`; written to the local audit log."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Reason shown to the user."
+    },
+    "countdown_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Mandatory sessions: 30 (5 when the device is quarantined); 0 otherwise."
+    },
+    "is_quarantined": {
+      "type": "boolean",
+      "description": "The device is quarantined (shorter countdown)."
+    },
+    "fps": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Frames per second to start with; not sent by the server, the Windows tray uses 2."
+    }
+  }
+}

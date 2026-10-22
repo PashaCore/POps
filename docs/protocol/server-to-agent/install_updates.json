@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/install_updates.json",
+  "title": "install_updates",
+  "description": "Install pending operating-system updates (POST /api/patches/install). The agent never restarts the PC; it reports `reboot_required` with POST /api/patches/{hw_id}. 0.1.5+; older agents ignore it.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "scope"
+  ],
+  "properties": {
+    "action": {
+      "const": "install_updates",
+      "description": "Message type."
+    },
+    "scope": {
+      "enum": [
+        "security",
+        "all"
+      ],
+      "description": "security = security and critical updates; all = every pending update."
+    }
+  }
+}

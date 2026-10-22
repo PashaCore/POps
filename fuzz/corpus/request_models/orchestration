@@ -1,0 +1,1 @@
+{"target_mode": "lab", "targets": ["LAB1"], "taskSequence": [{"name": "Temizlik", "type": "cmd", "command": "cleanmgr /sagerun:1"}], "title": "Haftalık", "source": "jobs"}

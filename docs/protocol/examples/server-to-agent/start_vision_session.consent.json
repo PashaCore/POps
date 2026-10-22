@@ -1,0 +1,10 @@
+{
+  "action": "start_vision_session",
+  "session_id": "SES-5D2C9A1B7E30",
+  "is_mandatory": false,
+  "admin_name": "admin",
+  "requested_by": "admin",
+  "reason": "Yazıcı sorunu",
+  "countdown_seconds": 0,
+  "is_quarantined": false
+}

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 516" width="1000" height="516" role="img" aria-label="Katman katman güvenlik">
+<defs>
+<marker id="arr-line" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8c959f"/></marker>
+<marker id="arr-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker>
+<marker id="arr-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+<marker id="arr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b45309"/></marker>
+<marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
+</defs>
+<rect x="0" y="0" width="1000" height="516" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<text x="28" y="38" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="20" font-weight="700" fill="#1f2328" text-anchor="start">Katman katman güvenlik</text>
+<text x="28" y="60" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">Her katman, öncekinin aşılabileceğini varsayar.</text>
+<rect x="28" y="82" width="466" height="164" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1"/>
+<text x="46" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#2563eb" text-anchor="start">Panel</text>
+<circle cx="49" cy="136" r="2.8" fill="#2563eb"/>
+<text x="60" y="140" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">bcrypt şifre, deneme sınırlı giriş</text>
+<circle cx="49" cy="157" r="2.8" fill="#2563eb"/>
+<text x="60" y="161" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">İsteğe bağlı 2FA (TOTP): her kod bir kez geçer, anahtar şifreli</text>
+<circle cx="49" cy="178" r="2.8" fill="#2563eb"/>
+<text x="60" y="182" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Roller: superadmin, admin, viewer</text>
+<circle cx="49" cy="199" r="2.8" fill="#2563eb"/>
+<text x="60" y="203" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Açık oturumlar 10 saniyede bir denetlenir, anında iptal</text>
+<circle cx="49" cy="220" r="2.8" fill="#2563eb"/>
+<text x="60" y="224" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Her değer çıktıda kaçırılır, CI'da denetlenir</text>
+<rect x="506" y="82" width="466" height="164" rx="12" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1"/>
+<text x="524" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#7c3aed" text-anchor="start">Sunucu</text>
+<circle cx="527" cy="136" r="2.8" fill="#7c3aed"/>
+<text x="538" y="140" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">SHA-256 hash zincirli güvenlik denetim kaydı</text>
+<circle cx="527" cy="157" r="2.8" fill="#7c3aed"/>
+<text x="538" y="161" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Kayıt tek işlemde; jetonlar yalnızca özetle saklanır</text>
+<circle cx="527" cy="178" r="2.8" fill="#7c3aed"/>
+<text x="538" y="182" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Cihazın kimliği kendi anahtarına bağlı</text>
+<circle cx="527" cy="199" r="2.8" fill="#7c3aed"/>
+<text x="538" y="203" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Dağıtım dosyalarına imzalı bağlantı, SHA-256 denetimi</text>
+<circle cx="527" cy="220" r="2.8" fill="#7c3aed"/>
+<text x="538" y="224" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">İmzalı sürüm etiketinden kendini günceller, geri alır</text>
+<rect x="28" y="258" width="466" height="164" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1"/>
+<text x="46" y="288" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#059669" text-anchor="start">Bağlantı</text>
+<circle cx="49" cy="312" r="2.8" fill="#059669"/>
+<text x="60" y="316" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Yalnızca TLS: ajan düz http'yi reddeder</text>
+<circle cx="49" cy="333" r="2.8" fill="#059669"/>
+<text x="60" y="337" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">İsteğe bağlı okulun kendi CA'sına sabitleme</text>
+<circle cx="49" cy="354" r="2.8" fill="#059669"/>
+<text x="60" y="358" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Her bağlantıda cihaza özel anahtar</text>
+<circle cx="49" cy="375" r="2.8" fill="#059669"/>
+<text x="60" y="379" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Vision yalnızca cihazın kendi anahtarıyla</text>
+<circle cx="49" cy="396" r="2.8" fill="#059669"/>
+<text x="60" y="400" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Ekran kareleri yalnızca oturumu açan yöneticiye gider</text>
+<rect x="506" y="258" width="466" height="164" rx="12" fill="#fffbeb" stroke="#b45309" stroke-width="1"/>
+<text x="524" y="288" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#b45309" text-anchor="start">Bilgisayar</text>
+<circle cx="527" cy="312" r="2.8" fill="#b45309"/>
+<text x="538" y="316" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Terminal ve Vision cihazda kapatılabilir; sunucu geri açamaz</text>
+<circle cx="527" cy="333" r="2.8" fill="#b45309"/>
+<text x="538" y="337" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Onay sorusu ya da kayıtlı gerekçeyle geri sayım</text>
+<circle cx="527" cy="354" r="2.8" fill="#b45309"/>
+<text x="538" y="358" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Güncelleme cihazda yeniden doğrulanır; yalnızca yeni sürüm</text>
+<circle cx="527" cy="375" r="2.8" fill="#b45309"/>
+<text x="538" y="379" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Uzaktan işlemler Windows olay günlüğüne yazılır</text>
+<circle cx="527" cy="396" r="2.8" fill="#b45309"/>
+<text x="538" y="400" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Kilit ekranı, ağ yalıtımı, cihaza özel bypass kodlu karantina</text>
+<rect x="28" y="446" width="944" height="46" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+<text x="500" y="474" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#1f2328" text-anchor="middle">Sunucu ele geçirilse bile: terminali kapalı bilgisayarda komut yok, imzasız ajan yok, gizli ekran izleme yok.</text>
+</svg>

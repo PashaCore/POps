@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/file_push.json",
+  "title": "file_push",
+  "description": "An admin sent a file to this PC (panel **Dosya gönder**). Sent only to a connected agent that reported `files_enabled: true`, by a server that lists `file_transfer` in `server_info.features`. The agent downloads the file once from `url` on its own server with its device secret headers, checks `size` and `sha256`, writes it only to the allowlisted folder for `dest` and answers with `file_result`. It refuses `.lnk`, `.url` and `.scr` unless `allow_exec` is true. With file transfer switched off locally it answers `capability_denied` (capability `files`) or `file_result` `rejected`.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "transfer_id",
+    "name",
+    "size",
+    "sha256",
+    "url",
+    "dest",
+    "reason",
+    "allow_exec"
+  ],
+  "properties": {
+    "action": {
+      "const": "file_push",
+      "description": "Message type."
+    },
+    "transfer_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "description": "Transfer ID (random, URL-safe). Echoed in `file_result`."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "File name to write, already cleaned by the server (no path parts, no characters Windows refuses, no control or direction characters, reserved names prefixed with `_`). The agent may still refuse it."
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 209715200,
+      "description": "Exact size in bytes (at most 200 MB)."
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the file, lower-case hex. The download also carries it in `X-Content-SHA256`."
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^/api/files/[A-Za-z0-9_-]{8,64}/download\\?t=[A-Za-z0-9_-]+$",
+      "description": "Path on the agent's own server (never another host): `GET` with `X-Agent-Id` and `X-Agent-Secret`. The token in `t` works once and for 1 hour; a second request, another PC, a wrong or expired token all get 404."
+    },
+    "dest": {
+      "enum": [
+        "public_desktop",
+        "inbox"
+      ],
+      "description": "Allowlisted destination: the public desktop (all users) or the agent's inbox folder."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 300,
+      "description": "The admin's reason; the agent may show it and write it to its local audit trail."
+    },
+    "allow_exec": {
+      "type": "boolean",
+      "description": "The admin allowed shortcut and screen saver types (`.lnk`, `.url`, `.scr`)."
+    }
+  }
+}

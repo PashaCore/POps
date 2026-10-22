@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/thumbnail.json",
+  "title": "thumbnail",
+  "description": "Screen preview. On the command channel it answers `remote_input` `get_thumbnail`: the server replaces `hw_id` with the connection's device ID, resolves a waiting `GET /api/thumbnail/{pc}` and forwards it to admin panels only. On the Vision channel the server sets `hw_id` to the connection's device ID and forwards it, like `stream_frame`, to the holders of a remote-control session for the device.",
+  "x-pops-channels": [
+    "/ws/agent",
+    "/ws/vision"
+  ],
+  "type": "object",
+  "required": [
+    "type",
+    "image"
+  ],
+  "properties": {
+    "type": {
+      "const": "thumbnail",
+      "description": "Message type."
+    },
+    "image": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "contentMediaType": "image/jpeg",
+      "description": "Base64 JPEG."
+    },
+    "hw_id": {
+      "type": "string",
+      "description": "The agent's own device ID. Overwritten by the server on the command channel."
+    }
+  }
+}

@@ -1,0 +1,16 @@
+# Her gece 02:30 civarı (15 dk'ya kadar rastgele gecikme). Sunucu o saatte kapalıysa açılınca bir kez çalışır.
+# Kurulum:
+#   sudo install -m 755 Installer/server/pops-backup Installer/server/pops-restore /usr/local/sbin/
+#   sudo install -m 644 Installer/server/pops-backup.service Installer/server/pops-backup.timer /etc/systemd/system/
+#   sudo install -d -m 755 /etc/pops && sudo install -m 600 Installer/server/backup.conf.example /etc/pops/backup.conf
+#   (backup.conf'u düzenleyin) && sudo systemctl daemon-reload && sudo systemctl enable --now pops-backup.timer
+[Unit]
+Description=POps gece yedeği
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/set_capabilities.json",
+  "title": "set_capabilities",
+  "description": "Switch capabilities off (POST /api/system/set-capabilities, and re-sent when the agent reports a capability on that an administrator switched off). Fail-safe: agents apply only `false`; a `true` is ignored (switching on again needs a local reinstall or repair). The agent answers with `capabilities`.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action"
+  ],
+  "properties": {
+    "action": {
+      "const": "set_capabilities",
+      "description": "Message type."
+    },
+    "terminal_enabled": {
+      "type": "boolean",
+      "description": "false = refuse `execute` from now on."
+    },
+    "vision_enabled": {
+      "type": "boolean",
+      "description": "false = refuse previews, streams and remote input; a running stream stops."
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "terminal_enabled"
+      ]
+    },
+    {
+      "required": [
+        "vision_enabled"
+      ]
+    }
+  ]
+}

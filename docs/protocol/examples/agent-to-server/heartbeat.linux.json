@@ -1,0 +1,38 @@
+{
+  "hw_id": "HW-6E2D9A41C7B0",
+  "hostname": "pardus-lab1-07",
+  "lab_name": "Atanmamis_Cihazlar",
+  "status": "Online",
+  "active_window": "-",
+  "platform": "linux",
+  "dna_payload": {
+    "os": "Pardus 23.1",
+    "capabilities": {
+      "ram_readable": true,
+      "disk_serial_real": true,
+      "dmi_readable": true
+    },
+    "hardware": {
+      "uuid": "4C4C4544-0042-3510-8051-B3C04F4D3732",
+      "bios_sn": "5CG1234XYZ",
+      "disk_sn": "WD-WX12A3456789",
+      "mac": "A4:BB:6D:12:34:58",
+      "ram_sn": "1234ABCD"
+    }
+  },
+  "agent_health": {
+    "started_at": 1791200000,
+    "last_policy_sync": 1791203580,
+    "last_inventory_upload": 1791200030,
+    "vision_channel": "off",
+    "loop_errors_1h": 0,
+    "last_error": null
+  },
+  "system": {
+    "cpu_pct": 12.5,
+    "mem_pct": 41.0,
+    "disk_root_pct": 63.2,
+    "uptime_s": 3605,
+    "load1": 0.42
+  }
+}

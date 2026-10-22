@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 580" width="1000" height="580" role="img" aria-label="POps nasıl çalışır">
+<defs>
+<marker id="arr-line" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6e7681"/></marker>
+<marker id="arr-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#58a6ff"/></marker>
+<marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3fb950"/></marker>
+<marker id="arr-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#bc8cff"/></marker>
+<marker id="arr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e3b341"/></marker>
+<marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ff7b72"/></marker>
+</defs>
+<rect x="0" y="0" width="1000" height="580" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="28" y="38" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="20" font-weight="700" fill="#e6edf3" text-anchor="start">POps nasıl çalışır</text>
+<text x="28" y="60" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#9198a1" text-anchor="start">Yönetilen her bilgisayar sunucuya kendisi bağlanır. Bilgisayarlarda dışarıya açık port yoktur.</text>
+<rect x="28" y="132" width="190" height="86" rx="10" fill="#0d2242" stroke="#58a6ff" stroke-width="1"/>
+<text x="44" y="160" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#58a6ff" text-anchor="start">Yönetici</text>
+<text x="44" y="182" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">Tarayıcı, her işletim sistemi</text>
+<text x="44" y="200" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#e6edf3" text-anchor="start">Yalnızca HTTPS</text>
+<rect x="28" y="404" width="190" height="86" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+<text x="44" y="432" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#e6edf3" text-anchor="start">GitHub sürümleri</text>
+<text x="44" y="454" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#9198a1" text-anchor="start">Ajan MSI + sunucu paketi</text>
+<text x="44" y="472" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#9198a1" text-anchor="start">ed25519 imzalı manifest</text>
+<rect x="268" y="92" width="340" height="458" rx="12" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+<text x="286" y="118" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#9198a1" text-anchor="start">POps sunucusu (Linux)</text>
+<rect x="286" y="132" width="304" height="40" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="302" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#e6edf3" text-anchor="start">Web sunucusu: nginx ya da Apache, TLS</text>
+<rect x="286" y="182" width="304" height="40" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="302" y="207" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#e6edf3" text-anchor="start">Panel: PHP 8, sade JavaScript</text>
+<rect x="286" y="252" width="304" height="156" rx="10" fill="#0f2a1c" stroke="#3fb950" stroke-width="1"/>
+<text x="302" y="280" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#3fb950" text-anchor="start">Backend: FastAPI, tek süreç</text>
+<circle cx="307" cy="301.625" r="2.6" fill="#3fb950"/>
+<text x="316" y="306" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#e6edf3" text-anchor="start">REST API + WebSocket merkezi</text>
+<circle cx="307" cy="323.625" r="2.6" fill="#3fb950"/>
+<text x="316" y="328" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#e6edf3" text-anchor="start">Görev kuyruğu ve zamanlayıcı</text>
+<circle cx="307" cy="345.625" r="2.6" fill="#3fb950"/>
+<text x="316" y="350" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#e6edf3" text-anchor="start">Hash zincirli denetim kaydı</text>
+<circle cx="307" cy="367.625" r="2.6" fill="#3fb950"/>
+<text x="316" y="372" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#e6edf3" text-anchor="start">Bildirim, rapor, uyarılar</text>
+<rect x="286" y="438" width="304" height="92" rx="10" fill="#2b2108" stroke="#e3b341" stroke-width="1"/>
+<ellipse cx="320" cy="470" rx="16" ry="5" fill="none" stroke="#e3b341" stroke-width="1.5"/>
+<path d="M304,470 L304,492 A16,5 0 0 0 336,492 L336,470" fill="none" stroke="#e3b341" stroke-width="1.5"/>
+<text x="348" y="478" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#e3b341" text-anchor="start">PostgreSQL</text>
+<text x="348" y="498" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="start">cihazlar, görevler, denetim zinciri</text>
+<rect x="716" y="92" width="256" height="458" rx="12" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+<text x="732" y="118" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#9198a1" text-anchor="start">Windows 10 / 11 bilgisayar</text>
+<rect x="730" y="132" width="228" height="118" rx="10" fill="#221a3d" stroke="#bc8cff" stroke-width="1"/>
+<text x="744" y="156" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#bc8cff" text-anchor="start">POpsAgent</text>
+<text x="744" y="174" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="start">Windows servisi (SYSTEM)</text>
+<circle cx="749" cy="193.975" r="2.6" fill="#bc8cff"/>
+<text x="758" y="198" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="start">Komut, envanter, güncelleme</text>
+<circle cx="749" cy="212.975" r="2.6" fill="#bc8cff"/>
+<text x="758" y="217" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="start">Karantina ve DNS politikası</text>
+<rect x="730" y="284" width="228" height="118" rx="10" fill="#221a3d" stroke="#bc8cff" stroke-width="1"/>
+<text x="744" y="308" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#bc8cff" text-anchor="start">POpsTray</text>
+<text x="744" y="326" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="start">Oturum açan kullanıcının oturumu</text>
+<circle cx="749" cy="345.975" r="2.6" fill="#bc8cff"/>
+<text x="758" y="350" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="start">Onay istekleri, ekran yakalama</text>
+<circle cx="749" cy="364.975" r="2.6" fill="#bc8cff"/>
+<text x="758" y="369" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#e6edf3" text-anchor="start">Kilit ekranı, yardım masası, etkinlik</text>
+<rect x="730" y="416" width="228" height="54" rx="10" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="744" y="438" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#e6edf3" text-anchor="start">POpsWatchdog</text>
+<text x="744" y="457" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#9198a1" text-anchor="start">Servisi ve tepsiyi ayakta tutar</text>
+<rect x="730" y="480" width="228" height="54" rx="10" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+<text x="744" y="502" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#e6edf3" text-anchor="start">POpsUpdater</text>
+<text x="744" y="521" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#9198a1" text-anchor="start">MSI'ı kurar, sorun olursa geri alır</text>
+<line x1="218" y1="168" x2="284" y2="154" stroke="#58a6ff" stroke-width="1.6" marker-end="url(#arr-blue)" marker-start="url(#arr-blue)"/>
+<text x="243" y="148" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#58a6ff" text-anchor="middle">HTTPS</text>
+<line x1="438.0" y1="224" x2="438.0" y2="250" stroke="#6e7681" stroke-width="1.6" marker-end="url(#arr-line)" marker-start="url(#arr-line)"/>
+<text x="448.0" y="242" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#9198a1" text-anchor="start">/api  /ws</text>
+<line x1="438.0" y1="410" x2="438.0" y2="436" stroke="#e3b341" stroke-width="1.6" marker-end="url(#arr-amber)" marker-start="url(#arr-amber)"/>
+<text x="448.0" y="428" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#9198a1" text-anchor="start">SQL</text>
+<line x1="728" y1="168" x2="592" y2="300" stroke="#bc8cff" stroke-width="1.6" marker-end="url(#arr-violet)"/>
+<line x1="728" y1="222" x2="592" y2="362" stroke="#bc8cff" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arr-violet)"/>
+<text x="662.0" y="146" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="700" fill="#bc8cff" text-anchor="middle">WSS</text>
+<text x="662.0" y="161" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#bc8cff" text-anchor="middle">komut, sinyal</text>
+<text x="662.0" y="392" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="700" fill="#bc8cff" text-anchor="middle">WSS</text>
+<text x="662.0" y="407" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#bc8cff" text-anchor="middle">Vision kareleri</text>
+<rect x="600.5" y="424" width="123" height="20" rx="10" fill="#221a3d" stroke="#bc8cff" stroke-width="1"/>
+<text x="662.0" y="438" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="10.5" font-weight="600" fill="#bc8cff" text-anchor="middle">yalnızca dışa 443</text>
+<line x1="844.0" y1="252" x2="844.0" y2="282" stroke="#bc8cff" stroke-width="1.6" marker-end="url(#arr-violet)" marker-start="url(#arr-violet)"/>
+<text x="854.0" y="271" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#9198a1" text-anchor="start">yerel pipe</text>
+<path d="M218,446 C240,446 248,400 284,392" fill="none" stroke="#6e7681" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#arr-line)"/>
+<text x="122" y="512" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#9198a1" text-anchor="middle">hazırlanmadan doğrulanır</text>
+</svg>

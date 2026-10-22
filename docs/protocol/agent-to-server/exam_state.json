@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/agent-to-server/exam_state.json",
+  "title": "exam_state",
+  "description": "The agent's exam mode state, sent after connecting and whenever it changes (entering, leaving at `until`, leaving because the capability was switched off locally). The server keeps it per exam and device. `enabled: true` while the lab has no running exam is answered with `exam_mode` `enabled: false`; `enabled: false` while the lab's exam runs (more than 20 seconds after the last `exam_mode` sent and more than a minute before `until`) counts as leaving early: audit entry and notification. Never the first message of a connection.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "type",
+    "enabled"
+  ],
+  "properties": {
+    "type": {
+      "const": "exam_state",
+      "description": "Message type."
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether exam mode is applied on the device now. A non-boolean value makes the server ignore the message."
+    },
+    "since": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Unix seconds when the current state began (entered or left exam mode). Kept only between the years 2000 and 2100."
+    },
+    "until": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Unix seconds of the end of the applied exam (`exam_mode.until`); null or absent when not in exam mode."
+    }
+  }
+}

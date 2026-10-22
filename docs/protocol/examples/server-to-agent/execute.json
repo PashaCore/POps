@@ -1,0 +1,6 @@
+{
+  "action": "execute",
+  "task_id": 1042,
+  "script_path": "ipconfig /all",
+  "requested_by": "admin"
+}

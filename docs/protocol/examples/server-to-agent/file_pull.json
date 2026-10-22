@@ -1,0 +1,9 @@
+{
+  "action": "file_pull",
+  "transfer_id": "Kq2PzT8vN5mR1xC7bL4wYg",
+  "path": "C:\\Users\\Public\\Documents\\rapor.pdf",
+  "max_size": 10485760,
+  "upload": "/api/files/Kq2PzT8vN5mR1xC7bL4wYg/upload?t=Hn3bV5cX7zL9kJ1gF3dS5aP7oI9uY1tR3eW5qA7sD9f",
+  "reason": "Sınav dosyasının kontrolü",
+  "any_profile": false
+}

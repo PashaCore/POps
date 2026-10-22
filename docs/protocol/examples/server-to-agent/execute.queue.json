@@ -1,0 +1,6 @@
+{
+  "action": "execute",
+  "task_id": 1046,
+  "script_path": "msiexec /i \"\\\\fs01\\paketler\\7z.msi\" /qn",
+  "requested_by": "System/Queue"
+}

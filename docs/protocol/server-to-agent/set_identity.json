@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/set_identity.json",
+  "title": "set_identity",
+  "description": "Gives the agent a different device ID while the first message is processed, on connections that did NOT authenticate with the device secret: a new ID when the hardware does not match the claimed device (copied installation), or an existing device's ID when its hardware is recognised (reinstalled PC). Sent before `set_secret` and `server_info`; the rest of the connection already uses the new ID. The agent stores it and uses it in the URL of the next connection.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "new_hw_id"
+  ],
+  "properties": {
+    "action": {
+      "const": "set_identity",
+      "description": "Message type."
+    },
+    "new_hw_id": {
+      "type": "string",
+      "description": "The device ID to use from now on."
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "action": "start_vision_session",
+  "session_id": "SES-0A1B2C3D4E5F",
+  "is_mandatory": true,
+  "admin_name": "admin",
+  "requested_by": "admin",
+  "reason": "Güvenlik incelemesi",
+  "countdown_seconds": 30,
+  "is_quarantined": false
+}

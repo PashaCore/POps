@@ -1,0 +1,1 @@
+{"pending_count": 2, "pending_security": 1, "reboot_required": false, "updates": [{"kb": "KB5031356", "title": "2026-10 Cumulative Update", "severity": "Critical", "categories": ["Security Updates"], "is_security": true}]}

@@ -1,0 +1,57 @@
+name: Feature request
+description: Propose a change or a new feature.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [ROADMAP.md](https://github.com/PashaCore/POps/blob/main/ROADMAP.md) first: the item may already be
+        planned. Larger design changes are discussed before code is written; if you are not sure yet, start in
+        [Discussions → Ideas](https://github.com/PashaCore/POps/discussions/categories/ideas).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What is hard or impossible today, and for whom? Describe the situation in the lab, not only the solution.
+    validations:
+      required: true
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who is affected
+      multiple: true
+      options:
+        - IT or lab administrator
+        - School management
+        - Teacher
+        - Student or staff member at the PC
+        - Developer or contributor
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should POps do? Mention the page, endpoint or file if you know it.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Other ways to solve it, including outside POps.
+  - type: textarea
+    id: transparency
+    attributes:
+      label: Effect on the people at the PC
+      description: |
+        POps is transparent by design: nothing hidden, no keystroke logging, remote sessions ask or announce.
+        Does the proposal change what users at the PC see or what data is collected?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues and ROADMAP.md.
+          required: true

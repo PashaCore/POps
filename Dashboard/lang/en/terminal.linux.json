@@ -1,0 +1,10 @@
+{
+  "Bu komut yalnızca Windows içindir; hedefte Linux bilgisayar var.": "This command is for Windows only; the target includes a Linux computer.",
+  "Linux: komut root olarak /bin/sh ile çalışır; Windows hızlı komutları gösterilmez.": "Linux: the command runs as root with /bin/sh; Windows quick commands are hidden.",
+  "Hedefte {n} Linux bilgisayar var: komut Windows'ta cmd.exe, Linux'ta sh ile çalışır; ikisinde de geçerli olmalı.": {
+    "one": "The target includes {n} Linux computer: the command runs with cmd.exe on Windows and sh on Linux, so it must work in both.",
+    "other": "The target includes {n} Linux computers: the command runs with cmd.exe on Windows and sh on Linux, so it must work in both."
+  },
+  "Komutlar Windows'ta SYSTEM hesabıyla cmd.exe ile, Linux'ta root olarak /bin/sh ile çalışır.": "Commands run as SYSTEM with cmd.exe on Windows and as root with /bin/sh on Linux.",
+  "Hızlı komutlar Windows içindir; hedefte Linux bilgisayar var.": "Quick commands are for Windows; the target includes a Linux computer."
+}

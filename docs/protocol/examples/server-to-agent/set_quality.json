@@ -1,0 +1,6 @@
+{
+  "action": "set_quality",
+  "quality": 45,
+  "scale": 0.75,
+  "fps": 8
+}

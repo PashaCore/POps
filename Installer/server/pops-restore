@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# POps yedeğinden geri dönüş (pops-backup'ın ürettiği klasörden).
+#
+#   pops-restore --check <yedek>      Yedeği sınar, CANLI SİSTEME DOKUNMAZ: özetleri doğrular, veritabanını geçici
+#                                     bir veritabanına açar, denetim zincirini ve migration kaydını kontrol eder,
+#                                     geçici veritabanını siler. pops-backup her yedekten sonra bunu çalıştırır.
+#   pops-restore [--yes] [--db-only | --files-only] <yedek>
+#                                     Gerçek geri dönüş: servisi durdurur, dosyaları (.env, paketler, yüklenenler)
+#                                     yerine koyar, veritabanını SİLİP yedekten yeniden kurar, servisi başlatır,
+#                                     sağlık ve denetim zincirini doğrular. --yes olmadan veritabanı adını yazıp
+#                                     onaylamanız istenir.
+#
+# Aynı sunucuda (hatalı işlem sonrası) ya da yeni kurulmuş bir sunucuda (install.sh sonrası) çalışır; yeni
+# sunucuda .env yedekteki haline döner ve veritabanı rolünün parolası ona göre ayarlanır. Belge: docs/backup.md
+set -euo pipefail
+
+CONF=${POPS_BACKUP_CONF:-/etc/pops/backup.conf}
+# shellcheck disable=SC1090
+[ -f "$CONF" ] && . "$CONF"
+
+POPS_APP=${POPS_APP:-/opt/pops}
+POPS_SERVICE=${POPS_SERVICE-pops}                   # systemd birimi (boş: durdurma/başlatma atlanır)
+POPS_SERVICE_USER=${POPS_SERVICE_USER-pops}         # backend'in çalıştığı kullanıcı (boş: mevcut kullanıcı)
+POPS_PYTHON=${POPS_PYTHON:-$POPS_APP/venv/bin/python}
+POPS_HEALTH_URL=${POPS_HEALTH_URL:-http://127.0.0.1:8000/api/health}
+# Veritabanı yönetim komutları (oluştur/sil/rol) PostgreSQL süper kullanıcısıyla; SQL stdin'den okunur
+PGADMIN_CMD=${PGADMIN_CMD:-runuser -u postgres -- psql -X -q -v ON_ERROR_STOP=1 -d postgres}
+
+log() { echo "[pops-restore] $*"; }
+die() { echo "[pops-restore] HATA: $*" >&2; exit 1; }
+
+MODE=full; YES=0; PART=all; SRC=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --check) MODE=check ;;
+        --yes) YES=1 ;;
+        --db-only) PART=db ;;
+        --files-only) PART=files ;;
+        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+        -*) die "bilinmeyen seçenek: $1" ;;
+        *) SRC="$1" ;;
+    esac
+    shift
+done
+[ -n "$SRC" ] && [ -d "$SRC" ] || die "yedek klasörü verin (ör. /var/backups/pops/20260929T023000Z)"
+SRC=$(readlink -f "$SRC")
+[ -f "$SRC/db.dump" ] && [ -f "$SRC/SHA256SUMS" ] || die "$SRC bir pops-backup klasörü değil"
+
+log "özetler doğrulanıyor"
+( cd "$SRC" && sha256sum --quiet -c SHA256SUMS ) || die "SHA-256 tutmuyor: yedek bozuk ya da değiştirilmiş"
+pg_restore --list "$SRC/db.dump" >/dev/null || die "döküm okunamıyor"
+
+sql_lit() { printf "'%s'" "${1//\'/\'\'}"; }            # SQL metin sabiti
+sql_id() { printf '"%s"' "${1//\"/\"\"}"; }              # SQL tanımlayıcı
+pgadmin() { (cd / && { echo "SET client_min_messages = warning;"; cat; } | $PGADMIN_CMD); }   # SQL stdin'den
+
+envval() {   # $1=dosya $2=KEY — dosya ÇALIŞTIRILMAZ
+    sed -n "s/^$2=//p" "$1" | tail -n1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+
+run_as_app() {   # backend kullanıcısıyla, uygulama dizininde
+    if [ -n "$POPS_SERVICE_USER" ] && [ "$(id -un)" != "$POPS_SERVICE_USER" ]; then
+        (cd "$POPS_APP" && runuser -u "$POPS_SERVICE_USER" -- env "$@")
+    else
+        (cd "$POPS_APP" && env "$@")
+    fi
+}
+
+restore_db() {   # $1=hedef veritabanı $2=sahibi (rol) $3=parola $4=host $5=port
+    local db="$1" owner="$2" pass="$3" host="$4" port="$5"
+    log "veritabanı yeniden kuruluyor: $db (sahibi $owner)"
+    pgadmin <<SQL
+DROP DATABASE IF EXISTS $(sql_id "$db") WITH (FORCE);
+CREATE DATABASE $(sql_id "$db") OWNER $(sql_id "$owner");
+SQL
+    PGPASSWORD="$pass" pg_restore --no-owner --role="$owner" --exit-on-error \
+        -h "$host" -p "$port" -U "$owner" -d "$db" "$SRC/db.dump"
+}
+
+verify_chain() {   # $1=veritabanı; audit_verify.py çıktısı $CHAIN'e. Çıkış: 0 sağlam, 3 kırık, diğerleri çalıştırılamadı
+    local rc=0
+    CHAIN=$(run_as_app DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_PASS="$DB_PASS" DB_NAME="$1" \
+        "$POPS_PYTHON" audit_verify.py 2>&1) || rc=$?
+    log "denetim zinciri: $CHAIN"
+    case $rc in
+        0) return 0 ;;
+        3) die "geri yüklenen veritabanında denetim zinciri kırık" ;;
+        *) die "denetim zinciri doğrulanamadı ($POPS_PYTHON $POPS_APP/audit_verify.py çalışmadı, çıkış $rc)" ;;
+    esac
+}
+
+# Veritabanı bilgisi: tam dönüşte dosyalar önce yerine konduğu için yedekteki .env; --check ve --db-only'de
+# sunucudaki mevcut .env
+ENV_FILE="$POPS_APP/.env"
+load_db_env() {
+    [ -f "$ENV_FILE" ] || die "$ENV_FILE yok"
+    DB_HOST=$(envval "$ENV_FILE" DB_HOST); DB_HOST=${DB_HOST:-127.0.0.1}
+    DB_PORT=$(envval "$ENV_FILE" DB_PORT); DB_PORT=${DB_PORT:-5432}
+    DB_USER=$(envval "$ENV_FILE" DB_USER); DB_PASS=$(envval "$ENV_FILE" DB_PASS); DB_NAME=$(envval "$ENV_FILE" DB_NAME)
+    [ -n "$DB_USER" ] && [ -n "$DB_NAME" ] || die "DB_USER/DB_NAME $ENV_FILE içinde yok"
+}
+
+if [ "$MODE" = check ]; then
+    load_db_env
+    tmpdb="${DB_NAME}_restorecheck"
+    trap 'printf "DROP DATABASE IF EXISTS %s WITH (FORCE);\n" "$(sql_id "$tmpdb")" | pgadmin >/dev/null 2>&1 || true' EXIT
+    restore_db "$tmpdb" "$DB_USER" "$DB_PASS" "$DB_HOST" "$DB_PORT" >/dev/null
+    verify_chain "$tmpdb"
+    migrations=$(printf '%s' "$CHAIN" | sed -n 's/.*"migrations": *\([0-9]*\).*/\1/p')
+    [ "${migrations:-0}" -gt 0 ] || die "geri yüklenen veritabanında migration kaydı yok"
+    log "yedek geri yüklenebilir"
+    exit 0
+fi
+
+# ---------------- gerçek geri dönüş ----------------
+[ "$(id -u)" -eq 0 ] || die "root olarak çalıştırın"
+if [ "$PART" != files ]; then
+    [ "$PART" = db ] && load_db_env
+    target=${DB_NAME:-$(sed -n 's/.*"db_name":"\([^"]*\)".*/\1/p' "$SRC/meta.json")}
+    if [ "$YES" != 1 ]; then
+        echo "Bu işlem '$target' veritabanını SİLİP $SRC yedeğinden yeniden kurar; servis bu sırada durur."
+        read -r -p "Onaylamak için veritabanı adını yazın: " answer
+        [ "$answer" = "$target" ] || die "onaylanmadı"
+    fi
+fi
+
+if [ -n "$POPS_SERVICE" ]; then
+    log "servis durduruluyor: $POPS_SERVICE"
+    systemctl stop "$POPS_SERVICE" || true
+fi
+
+if [ "$PART" != db ]; then
+    log "dosyalar yerine konuyor"
+    tar -C / -xzpf "$SRC/files.tgz"
+fi
+
+if [ "$PART" != files ]; then
+    load_db_env
+    # Yeni sunucuda rol farklı parolayla kurulmuş olabilir: .env'deki parolaya eşitle (yoksa oluştur)
+    pgadmin <<SQL
+DO \$\$BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $(sql_lit "$DB_USER")) THEN
+    EXECUTE format('ALTER ROLE %I LOGIN PASSWORD %L', $(sql_lit "$DB_USER"), $(sql_lit "$DB_PASS"));
+  ELSE
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', $(sql_lit "$DB_USER"), $(sql_lit "$DB_PASS"));
+  END IF;
+END\$\$;
+SQL
+    restore_db "$DB_NAME" "$DB_USER" "$DB_PASS" "$DB_HOST" "$DB_PORT"
+    verify_chain "$DB_NAME"
+fi
+
+if [ -n "$POPS_SERVICE" ]; then
+    log "servis başlatılıyor: $POPS_SERVICE"
+    systemctl start "$POPS_SERVICE"
+    ok=0
+    for _ in $(seq 1 30); do
+        if curl -sf "$POPS_HEALTH_URL" >/dev/null 2>&1; then ok=1; break; fi
+        sleep 1
+    done
+    [ "$ok" = 1 ] || die "servis sağlık kontrolünden geçmedi: journalctl -u $POPS_SERVICE -n 50"
+fi
+log "geri dönüş tamam ($SRC). Ajanlar kendiliğinden yeniden bağlanır; panelde cihazları kontrol edin."

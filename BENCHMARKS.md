@@ -1,0 +1,205 @@
+# POps — Benchmarks
+
+Measured numbers instead of a "thousands of devices" claim. Reproduce with
+[`tools/agent_simulator.py`](tools/agent_simulator.py) on your own hardware; these are a
+first honest baseline, not a marketing figure.
+
+> **Full capacity report with charts, hardware sizing and 250–5,000 agents: [`docs/kapasite/README.md`](docs/kapasite/README.md)** (Turkish).
+> Headline: 5,000 agents back 11 s after a restart, 0 failed attempts; steady state 40 % of one core + PostgreSQL 17 %,
+> 864 MB (≈ 69 MB + 0.16 MB per agent), 875 heartbeat writes/s. Raw data: [`docs/kapasite/olcum.json`](docs/kapasite/olcum.json).
+
+## Update 2026-10-05: one panel tab's device list traffic (ETag, changes, push)
+
+**Question.** The Cihazlar and Kontrol merkezi pages fetched `GET /api/devices` in full every 5 seconds. How many
+bytes per minute does one open tab pull with 2,000 agents, before and after the device list version
+(`ETag` / `304`, `?since=` changes, `devices_changed` over `/ws/panel`; see
+[`docs/backend.md`](docs/backend.md#device-list-version))?
+
+**Method.** [`tools/bench_devices_delta.py`](tools/bench_devices_delta.py) runs four "virtual tabs" side by side
+for 120 seconds against the same server, so all four see the same changes:
+
+- `full`: the old panel, the whole list every 5 s;
+- `ETag only`: the whole list every 5 s with `If-None-Match` (`304` when nothing changed);
+- `since, 5 s poll`: `?since=` with `If-None-Match` every 5 s, no socket (the panel's fallback when its socket is down);
+- `since + push`: what the panel does now: a `/ws/panel?topics=devices` socket, `?since=` right after each
+  `devices_changed`, a poll every 30 s and a ping every 45 s.
+
+Counted: response bodies as sent by the backend, the same bodies gzipped the way the reverse proxy does it (level 1,
+nginx's default `gzip_comp_level`, and bodies under 1,024 bytes left alone as with `gzip_min_length 1024`; Apache
+mod_deflate's default, level 6, is a little smaller), response headers, and socket frames in both directions. Not
+counted: the first full list when the page opens, request headers (roughly 0.5–0.8 KB per request with the
+session cookie) and the small `/api/custom_labs` and `/api/lab_settings` the page also polls. Load:
+`tools/agent_simulator.py --n 2000 --hb 5 --reconnect`, with `--flap` (agents that disconnect and come back 5 s
+later) and `--app-churn` (foreground app switches) for the busier scenarios; 30 s settle before each window. Same
+host as below (8 vCPU shared with other sites, one uvicorn worker, PostgreSQL 13 on the same machine, simulator on
+the same machine). One full list of these 2,012 devices is 1.20 MB, 39 KB gzipped (level 1); with real agents'
+fuller rows the reviewer measured 1.39 MB and about 47 KB for 2,040 devices.
+
+Per minute, one tab:
+
+| Scenario | Mode | Requests (304) | Body | Body gzipped | Socket |
+|---|---|---:|---:|---:|---:|
+| **Idle**: 2,000 online, only `last_seen` moves | full every 5 s (before) | 12 | 14.39 MB | 475 KB | – |
+| | ETag only | 12 (11) | 1.20 MB | 39 KB | – |
+| | since, 5 s poll | 12 (11) | 76 KB | 9.2 KB | – |
+| | **since + push (panel now)** | **2.5 (1.5)** | **76 KB** | **9.2 KB** | 94 B |
+| **Moderate**: ≈ 21 reconnects + 190 app switches a minute, ≈ 230 changed rows | full every 5 s (before) | 11.5 | 14.89 MB | 711 KB | – |
+| | ETag only | 11.5 (0) | 14.89 MB | 712 KB | – |
+| | since, 5 s poll | 12 (0) | 184 KB | 18.8 KB | – |
+| | **since + push (panel now)** | **54.5 (1.5)** | **234 KB** | **45 KB** | 3.0 KB |
+| **Heavy**: ≈ 52 reconnects + 1,830 app switches a minute, ≈ 2,070 changed rows | full every 5 s (before) | 10.5 | 13.62 MB | 708 KB | – |
+| | ETag only | 11 (0) | 14.27 MB | 743 KB | – |
+| | since, 5 s poll | 11.5 (0) | 1.41 MB | 86 KB | – |
+| | **since + push (panel now)** | **52 (1.5)** | **1.44 MB** | **107 KB** | 2.8 KB |
+
+Response headers add about 0.24 KB per request (12.6 KB a minute for the push tab in the moderate scenario). The
+`full` tab makes slightly fewer than 12 requests a minute because it waits 5 s after each response.
+
+**What it says.**
+
+- An idle tab now pulls 76 KB a minute instead of 14.4 MB (9 KB instead of 475 KB gzipped): **−99.5 %**. What is
+  left is the once-a-minute `last_seen` refresh (`seen`, about 38 bytes per online device); between those, the
+  answer is a `304`.
+- With changes, only the changed rows travel: **−98 %** (moderate) and **−90 %** (heavy, where every PC switches
+  app about once a minute) of the plain bytes, −94 % and −85 % gzipped.
+- ETag alone helps only while nothing changes: in the moderate scenario something changes within every 5 seconds,
+  so every poll gets the whole list again.
+- Push costs more than polling `?since=` every 5 seconds (one request per change round, at most one a second, and
+  many small gzipped bodies) but shows a change about a second after it happens instead of up to 5 seconds. In the
+  browser, with 2,000 simulated agents, Cihazlar showed a device as offline 0.7–0.95 s after its agent disconnected,
+  with only small changes (about 0.7 KB) and `304`s on the wire, no full list; Kontrol merkezi and Sınıflar updated
+  within a second as well.
+- Server side, a quiet minute costs one full read of the list (the minute scan) instead of one per tab every
+  5 seconds; a change costs one read of the marked rows per round.
+
+Reproduce (backend on `127.0.0.1:8099`, `enforce_agent_auth` off for the simulated agents):
+
+```bash
+python tools/agent_simulator.py --n 2000 --url ws://127.0.0.1:8099 --duration 300 --hb 5 --reconnect \
+    --flap 20 --app-churn 200 &          # moderate; idle: no --flap/--app-churn; heavy: --flap 60 --app-churn 2000
+sleep 40
+python tools/bench_devices_delta.py --url http://127.0.0.1:8099 --user admin --password '<password>' --seconds 120
+```
+
+## Update 2026-09-29: restart storm with real reconnect behaviour, and the bottleneck it found
+
+Scenario: the server restarts and every agent reconnects at the same moment (`--ramp 0`), using the agent's
+real reconnect logic from 0.1.8 (`--reconnect`: full-jitter backoff, random 0 – min(60 s, 2 s × 2^n)). Devices
+already known to the server (a warm-up run registered 2000 first). One uvicorn worker, database pool 20,
+PostgreSQL 13 shared with other sites, 8 vCPU / 11.7 GB, simulator on the same host. Heartbeat every 5 s,
+20 s measurement window after everyone connected.
+
+| Agents | All connected after | Failed attempts | Heartbeat writes/s | Server CPU (one core) before → after fix | Server RSS |
+|---:|---:|---:|---:|---:|---:|
+| 500  | 0.9 s | 0 | 90  | 1 % → 2 %      | 149 MB |
+| 1000 | 1.9 s | 0 | 200 | **83 % → 5 %** | 228 MB |
+| 2000 | 4.0 s | 0 | 371 | **84 % → 11 %** | 385 MB |
+
+**What the first run found.** Every agent connection called the task queue, and the queue ran one database query
+**per online device** each time. With N agents arriving together that is about N²/2 queries (≈ 2 million for
+2000): the server stayed busy for minutes after the storm, and even after all clients had left, and a restart hung
+in shutdown. This, not the single worker or the connection count, is what made the earlier 500-agent burst drop
+connections. The queue now returns after one cheap query when nothing is pending, fetches the oldest pending task
+of every idle online device in a single query, and coalesces concurrent calls into one extra pass
+(`Backend/pops/taskqueue.py`).
+
+**What it means.** On one worker, 2000 agents come back within about 4 seconds of a restart with no failed
+attempt, and steady state costs about a tenth of one core. The single process is not the limit at district scale;
+the remaining costs are one database write per heartbeat (batching `last_seen` would cut it ~6–12×) and the
+identity reconciliation on every connect. Multiple workers with shared state (Redis) are about availability
+(surviving a process crash), not capacity, and are not needed for these numbers. Not measured here: Vision frame
+relay (limited to 5 fps per device and to open audit sessions), and agents on a real network with latency.
+
+Reproduce: `python tools/agent_simulator.py --n 2000 --url ws://127.0.0.1:8099 --ramp 0 --reconnect --duration 20
+--hb 5 --server-pid <uvicorn pid>` after one warm-up run (`ulimit -n 65536` for both processes).
+
+## Method
+
+`tools/agent_simulator.py` opens N WebSocket connections to `/ws/agent`, each sending a
+`dna_payload` (device DNA, hardware inventory trigger, first-seen upsert) and then a
+`status` heartbeat every 5 s — the same traffic a real agent produces. It reports how many
+connected, wall time to connect, and the sustained heartbeat (DB-write) rate; alongside it
+we sample the server process RSS and CPU.
+
+- **Reproduce:** `python tools/agent_simulator.py --n 500 --url ws://<server> --duration 20`
+
+## Setup under test
+
+| | |
+|---|---|
+| Host | 8 vCPU, ~11.7 GB RAM (shared dev box, other sites also running) |
+| Server | **single** `uvicorn` worker, `asyncpg` pool `min=5 max=100` |
+| DB | PostgreSQL 13, localhost |
+| Client | simulator connecting **all N within ~1–2 s** (synthetic thundering-herd) |
+
+This is a deliberately un-tuned, single-worker baseline — the floor, not the ceiling.
+
+## Results (first baseline, 2026-09-26)
+
+| Agents (N) | Connected | Connect wall | Server RSS | Server CPU | Notes |
+|-----------:|----------:|-------------:|-----------:|-----------:|-------|
+| 100  | 100 / 100 | 0.3 s | ~85 MB  | ~0.7 core | clean |
+| 500  | ~418 / 500 | 1.4 s | ~162 MB | ~0.6 core | ~90 dropped during the burst (reconnect) |
+| 1000 | ~545 / 1000 | 2.8 s | ~295 MB | ~0.8 core | more dropped during the burst |
+
+### What this says honestly
+
+- **Memory scales well:** roughly **~0.3 MB of server RAM per connected agent** (~295 MB for ~550 live sockets). Memory is not the limit.
+- **The limit is the connect-storm on one worker.** A single `uvicorn` worker with a
+  100-connection DB pool accepts a few hundred agents cleanly, but when **500–1000 agents
+  all connect within ~1–2 s** (each doing several DB writes on connect — reconcile, client
+  upsert, version, inventory), the pool saturates and the server sheds the excess
+  connections (WebSocket close 1011). A real fleet does **not** connect all at once and
+  reconnects with backoff, so steady-state capacity is higher than this burst figure — but
+  we report the burst because it is the honest stress point.
+- **CPU** stayed near a single core (the worker is single-process), confirming the ceiling
+  is per-worker, not the machine.
+
+### Conclusion
+
+On this hardware, **one un-tuned worker comfortably serves a single lab / a few hundred
+agents.** We do **not** claim "thousands" on a single worker. Scaling further is a known,
+ordinary path and is on the roadmap:
+
+1. Run multiple `uvicorn` workers (or Gunicorn/Uvicorn workers) behind the proxy.
+2. Raise the `asyncpg` pool and add a short connect-jitter so agents don't stampede.
+3. For many workers, fan out panel/agent events through Redis pub/sub instead of in-process.
+
+Until those are measured, treat **"a lab to a few hundred agents per worker"** as the
+supported figure. Re-run the simulator after tuning and update this file with the new numbers.
+
+---
+
+## Update 2026-09-27: pool fix and a realistic load profile
+
+Same host (8 cores, shared PostgreSQL 13 with `max_connections = 100`), one `uvicorn` worker, simulator
+`tools/agent_simulator.py` (now with enrollment, software/Windows-update reports, panel sockets and server
+CPU/RSS sampling).
+
+**Correction to the conclusion above.** The WebSocket 1011 closes were not the pool being too small. With
+`max_size = 100` the pool tried to open as many connections as the whole PostgreSQL server allows; on a server
+shared with other applications the database refused new connections ("remaining connection slots are
+reserved"), and those agents were dropped. The pool is now configurable (`DB_POOL_MIN` / `DB_POOL_MAX`,
+default 2 / 20): when it is busy, requests wait for a connection instead of failing. Raising the pool is **not**
+the fix; keep `DB_POOL_MAX` well below `max_connections`.
+
+| Profile | Result |
+|---|---|
+| **A** — 1000 agents connect within 2.6 s, heartbeat every 5 s | 1000/1000 connected, 0 errors, ~200 heartbeat writes/s, server ~83 % of one core, RSS 281 MB, at most 8 PostgreSQL connections in use |
+| **B** — 300 agents enroll with a token, each sends a 150-item software list and a Windows-update status every 30 s, 3 panel sockets open | 0 errors; 45 000 software rows and 300 update states written. Latency software p50 203 ms / p95 1.6 s, update status p50 15 ms / p95 1.4 s (all 300 agents report in the same few seconds on purpose); server ~84 % of one core, RSS 313 MB |
+
+**What this says.** One worker holds 1000 idle agents comfortably. Bulk reports are the expensive part: when
+hundreds of agents send their full software list at the same moment, p95 latency rises above a second and the
+single core is busy. Real agents spread these reports (software on start and when the list changes, Windows
+update 10–70 minutes after start and then daily), so this profile is a worst case.
+
+Not measured yet: Vision streams (they need open audit sessions and the tray capture channel) and several
+workers. Next steps are unchanged: multiple workers with events fanned out through Redis, and connect jitter.
+
+Reproduce:
+
+```bash
+python tools/agent_simulator.py --n 1000 --url ws://127.0.0.1:8099 --duration 20 --hb 5 --server-pid <uvicorn pid>
+python tools/agent_simulator.py --n 300 --url ws://127.0.0.1:8099 --duration 30 --hb 5 --enroll-token <multi-use token> \
+    --software 150 --software-every 30 --patches --patch-every 30 --panels 3 --jwt <superadmin JWT> --server-pid <pid>
+```

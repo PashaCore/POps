@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/wake_peer.json",
+  "title": "wake_peer",
+  "description": "Send a Wake-on-LAN magic packet for another PC of the same lab (the server also sends one itself). Refused with `capability_denied` (capability `wol`) when the module is off.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "mac"
+  ],
+  "properties": {
+    "action": {
+      "const": "wake_peer",
+      "description": "Message type."
+    },
+    "mac": {
+      "type": "string",
+      "pattern": "^[:.-]*([0-9A-Fa-f][:.-]*){12}$",
+      "description": "Target MAC address from the hardware inventory; without the `:`, `-` and `.` separators 12 hex digits remain (any other value: the agent logs it and sends nothing)."
+    }
+  }
+}

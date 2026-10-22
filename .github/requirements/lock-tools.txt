@@ -1,0 +1,4 @@
+# Kilit dosyalarını üreten uv (tools/backend_lock.sh; ci.yml'nin backend-lock işi ve lock-refresh.yml). Elle
+# yükseltilir (Dependabot'ta yok sayılır): başka bir uv sürümü kilitleri farklı biçimde yazabilir, yükseltince
+# tools/backend_lock.sh'yi çalıştırıp bütün kilitleri commit'leyin.
+uv==0.12.23

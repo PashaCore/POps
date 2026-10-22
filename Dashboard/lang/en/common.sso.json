@@ -1,0 +1,10 @@
+{
+    "Kurumsal giriş başka bir tarayıcıda ya da sekmede başlatılmış; yeniden deneyin.": "Organisation sign-in was started in another browser or tab. Try again.",
+    "Giriş isteğinin süresi doldu ya da başka bir tarayıcıda başlatıldı; yeniden deneyin.": "The sign-in request expired or was started in another browser. Try again.",
+    "Kimlik sağlayıcısı girişi reddetti.": "The identity provider refused the sign-in.",
+    "Kimlik sağlayıcısının yanıtı doğrulanamadı; yöneticinize başvurun.": "The identity provider's response could not be verified. Contact your administrator.",
+    "Bu hesabın panele erişim yetkisi yok.": "This account has no access to the panel.",
+    "Bu kullanıcı adı panelde başka bir hesaba ait; yöneticinize başvurun.": "This user name belongs to another account in the panel. Contact your administrator.",
+    "Kimlik sağlayıcısına ulaşılamadı; yerel hesabınızla giriş yapabilirsiniz.": "The identity provider could not be reached. You can sign in with a local account.",
+    "Kurumsal giriş tamamlanamadı.": "Organisation sign-in could not be completed."
+}

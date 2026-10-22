@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 380" width="720" height="380" role="img" aria-label="Görev kuyruğu düzeltmesinin etkisi: sunucu işlemcisi">
+<rect width="720" height="380" rx="8" fill="#fcfcfb"/>
+<text x="72" y="24" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#0b0b0b">Görev kuyruğu düzeltmesinin etkisi: sunucu işlemcisi</text>
+<text x="72" y="42" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">Aynı test, aynı makine. Önce: her bağlantıda çevrimiçi her cihaz için ayrı sorgu (N²/2).</text>
+<line x1="72" x2="570" y1="316.0" y2="316.0" stroke="#b9b7b0" stroke-width="1"/>
+<text x="64" y="320.0" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="end" fill="#52514e">0</text>
+<line x1="72" x2="570" y1="251.0" y2="251.0" stroke="#e4e3df" stroke-width="1"/>
+<text x="64" y="255.0" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="end" fill="#52514e">25</text>
+<line x1="72" x2="570" y1="186.0" y2="186.0" stroke="#e4e3df" stroke-width="1"/>
+<text x="64" y="190.0" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="end" fill="#52514e">50</text>
+<line x1="72" x2="570" y1="121.0" y2="121.0" stroke="#e4e3df" stroke-width="1"/>
+<text x="64" y="125.0" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="end" fill="#52514e">75</text>
+<line x1="72" x2="570" y1="56.0" y2="56.0" stroke="#e4e3df" stroke-width="1"/>
+<text x="64" y="60.0" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="end" fill="#52514e">100</text>
+<text x="16" y="186" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="#52514e" transform="rotate(-90 16 186)" text-anchor="middle">Tek çekirdeğin %'si</text>
+<text x="321" y="364" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="middle" fill="#52514e">Cihaz sayısı</text>
+<text x="155.0" y="334" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="middle" fill="#52514e">500</text>
+<path d="M120.0,316.0 v-1.3 a1.3,1.3 0 0 1 1.3,-1.3 h31.4 a1.3,1.3 0 0 1 1.3,1.3 v1.3 z" fill="#eb6834"><title>Düzeltme öncesi, 500 cihaz: 1 %</title></path>
+<text x="137.0" y="307.4" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="middle" fill="#0b0b0b">1 %</text>
+<path d="M156.0,316.0 v-2.6 a2.6,2.6 0 0 1 2.6,-2.6 h28.8 a2.6,2.6 0 0 1 2.6,2.6 v2.6 z" fill="#2a78d6"><title>Düzeltme sonrası, 500 cihaz: 2 %</title></path>
+<text x="173.0" y="304.8" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="middle" fill="#0b0b0b">2 %</text>
+<text x="321.0" y="334" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="middle" fill="#52514e">1.000</text>
+<path d="M286.0,316.0 v-211.8 a4.0,4.0 0 0 1 4.0,-4.0 h26.0 a4.0,4.0 0 0 1 4.0,4.0 v211.8 z" fill="#eb6834"><title>Düzeltme öncesi, 1.000 cihaz: 83 %</title></path>
+<text x="303.0" y="94.2" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="middle" fill="#0b0b0b">83 %</text>
+<path d="M322.0,316.0 v-11.6 a4.0,4.0 0 0 1 4.0,-4.0 h26.0 a4.0,4.0 0 0 1 4.0,4.0 v11.6 z" fill="#2a78d6"><title>Düzeltme sonrası, 1.000 cihaz: 6 %</title></path>
+<text x="339.0" y="294.4" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="middle" fill="#0b0b0b">6 %</text>
+<text x="487.0" y="334" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="middle" fill="#52514e">2.000</text>
+<path d="M452.0,316.0 v-214.4 a4.0,4.0 0 0 1 4.0,-4.0 h26.0 a4.0,4.0 0 0 1 4.0,4.0 v214.4 z" fill="#eb6834"><title>Düzeltme öncesi, 2.000 cihaz: 84 %</title></path>
+<text x="469.0" y="91.6" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="middle" fill="#0b0b0b">84 %</text>
+<path d="M488.0,316.0 v-27.2 a4.0,4.0 0 0 1 4.0,-4.0 h26.0 a4.0,4.0 0 0 1 4.0,4.0 v27.2 z" fill="#2a78d6"><title>Düzeltme sonrası, 2.000 cihaz: 12 %</title></path>
+<text x="505.0" y="278.8" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" text-anchor="middle" fill="#0b0b0b">12 %</text>
+<rect x="586" y="64" width="12" height="12" rx="3" fill="#eb6834"/>
+<text x="604" y="74" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Düzeltme öncesi</text>
+<rect x="586" y="86" width="12" height="12" rx="3" fill="#2a78d6"/>
+<text x="604" y="96" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Düzeltme sonrası</text>
+</svg>

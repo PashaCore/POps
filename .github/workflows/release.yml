@@ -1,0 +1,297 @@
+name: Release
+
+# v* etiketi push edildiğinde kurulum dosyalarını (sunucu paketi, Windows ajanının MSI'ı ve zip'i, Linux ajanının
+# .deb'i) derler ve tek bir GitHub Release olarak yayımlar; ardından backend ve panel Docker imajlarını GHCR'a iter.
+# Bu dosya main'de değiştiğinde paketler ve imajlar yalnızca derlenir (yayımlanmaz), böylece iş akışı
+# etiket atılmadan denenebilir.
+on:
+  push:
+    tags: [ "v*" ]
+    branches: [ "main" ]
+    paths: [ ".github/workflows/release.yml" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  agent:
+    name: Agent package (win-x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Publish agent components into one folder
+        # Self-contained: .NET 10 çalışma zamanı pakete gömülür, uç noktada ön koşul yoktur (D-19). Dört bileşen aynı
+        # klasöre yayımlanır ve çalışma zamanı dosyalarını paylaşır. Tepsi (WinForms, WindowsDesktop çalışma zamanı)
+        # EN SON yayımlanır: System.Drawing.dll ve Microsoft.VisualBasic.dll'in WindowsDesktop sürümleri (derleme sürümü
+        # 10.x) tepsi için gerekir; diğer bileşenlerin NETCore sürümleri (System.Drawing 4.0.0.0) tepsiyi açılmaz yapar,
+        # tersi ise sorunsuzdur (daha yüksek sürüm kabul edilir). Güncelleme Merkezi paketi C:\POps içine açar, bu yüzden
+        # dosyalar ZIP'in köküne konur.
+        shell: pwsh
+        run: |
+          $out = "dist/POps"
+          $projects = @(
+            "Agent/POps.Agent/POps.Agent/POpsAgent.csproj",
+            "Agent/POpsWatchdog/POpsWatchDog/POpsWatchDog.csproj",
+            "Agent/POpsUpdater/POpsUpdater/POpsUpdater.csproj",
+            "Agent/POpsTray/POpsTray.csproj"
+          )
+          foreach ($p in $projects) {
+            dotnet publish $p -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=false -o $out
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Remove-Item "$out/*.pdb" -ErrorAction SilentlyContinue
+          # Koruma: paylaşılan dosyalar tepsinin istediği sürümde mi (yayın sırası bozulursa paket burada durur)
+          $drawing = [Reflection.AssemblyName]::GetAssemblyName((Resolve-Path "$out/System.Drawing.dll")).Version
+          # "$drawing:" yazılmaz: PowerShell onu $env: gibi kapsam öneki sanar ve betik hiç çalışmaz
+          if ($drawing.Major -lt 10) { Write-Error "System.Drawing.dll $($drawing): tepsi en son yayımlanmamış"; exit 1 }
+          if (-not (Test-Path "$out/hostfxr.dll") -or -not (Test-Path "$out/coreclr.dll")) { Write-Error "Çalışma zamanı dosyaları yok (self-contained değil)"; exit 1 }
+          $files = Get-ChildItem $out -File -Recurse
+          "{0} dosya, {1:N1} MB" -f $files.Count, (($files | Measure-Object Length -Sum).Sum / 1MB)
+      - name: Zip
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag") { $ver = $env:GITHUB_REF_NAME.TrimStart("v") }
+          else { $ver = "dev-" + $env:GITHUB_SHA.Substring(0, 7) }
+          Compress-Archive -Path "dist/POps/*" -DestinationPath "POps-Agent-$ver-win-x64.zip"
+      - name: MSI
+        # WiX 5, NuGet'ten sabit sürümle gelir (Installer/agent/POps.Agent.Installer.wixproj). MSI yalnızca
+        # sayısal sürüm kabul eder: VERSION'ın a.b.c kısmı + çalışma numarası, böylece her derleme bir
+        # öncekini yükseltir. appsettings*.json pakete girmez; ayarları kurulum yazar.
+        shell: pwsh
+        run: |
+          $raw = (Get-Content VERSION -Raw).Trim()
+          if ($raw -notmatch '^(\d+)\.(\d+)\.(\d+)') { throw "VERSION sayısal bir a.b.c ile başlamıyor: $raw" }
+          $msiVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3]).$env:GITHUB_RUN_NUMBER"
+          if ($env:GITHUB_REF_TYPE -eq "tag") { $ver = $env:GITHUB_REF_NAME.TrimStart("v") }
+          else { $ver = "dev-" + $env:GITHUB_SHA.Substring(0, 7) }
+          $publishDir = (Resolve-Path "dist/POps").Path + "\"
+          dotnet build Installer/agent/POps.Agent.Installer.wixproj -c Release "-p:PopsPublishDir=$publishDir" "-p:ProductVersion=$msiVersion" -o msi-out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Move-Item msi-out/POps-Agent.msi "POps-Agent-$ver-win-x64.msi"
+          Write-Host "MSI $msiVersion -> POps-Agent-$ver-win-x64.msi"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: agent
+          path: |
+            POps-Agent-*-win-x64.msi
+            POps-Agent-*-win-x64.zip
+          if-no-files-found: error
+
+  linux-agent:
+    name: Linux agent package (.deb)
+    # Pardus/Debian ajanı: dpkg gerektirmeyen, tekrarlanabilir derleme (Agent-Linux/build_deb.py). Etikette paket adı
+    # pops-agent_<VERSION>_all.deb; imzalı manifest'e girer ve Linux ajanları kendini bununla günceller. Etiketsiz
+    # derlemede sürüm VERSION+dev.<sha> olur (yalnızca derlenir, yayımlanmaz).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Build
+        run: |
+          set -euo pipefail
+          VER=$(tr -d '[:space:]' < VERSION)
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then VER="$VER+dev.${GITHUB_SHA::7}"; fi
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          python3 Agent-Linux/build_deb.py --version "$VER" --out deb-out
+          python3 Agent-Linux/build_deb.py --version "$VER" --out deb-check
+          cmp deb-out/*.deb deb-check/*.deb
+          dpkg-deb --info deb-out/*.deb
+          mv deb-out/*.deb .
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: linux-agent
+          path: pops-agent_*_all.deb
+          if-no-files-found: error
+
+  server:
+    name: Server package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Package backend and dashboard
+        # Native kurulum (Installer/server: install.sh, deploy/self-update/yedek betikleri, systemd birimleri) ve
+        # Docker Compose (docker-compose.yml, docker/, .dockerignore) paketten doğrudan çalışabilsin diye dahildir.
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then VER="${GITHUB_REF_NAME#v}"; else VER="dev-${GITHUB_SHA::7}"; fi
+          NAME="pops-server-$VER"
+          mkdir -p "dist/$NAME/Installer"
+          cp -r Backend Dashboard docs keys docker VERSION .env.example .dockerignore docker-compose.yml CHANGELOG.md LICENSE README.md SECURITY.md "dist/$NAME/"
+          cp -r Installer/server "dist/$NAME/Installer/"
+          find "dist/$NAME/Backend" -type d -name __pycache__ -prune -exec rm -rf {} +
+          tar -C dist -czf "$NAME.tar.gz" "$NAME"
+          tar -tzf "$NAME.tar.gz" | head -20
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: server
+          path: pops-server-*.tar.gz
+          if-no-files-found: error
+
+  # Etiketlenen commit'te bütün CI testleri (ajan, sunucu entegrasyon, güvenlik, yedek/geri yükleme...) yeniden
+  # çalışır; biri bile kırılırsa yayın yapılmaz.
+  tests:
+    name: CI tests
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Publish release
+    if: github.ref_type == 'tag'
+    needs: [ agent, linux-agent, server, tests ]
+    runs-on: ubuntu-latest
+    # İmza anahtarına yalnızca bu iş erişir. Anahtarı "release" GitHub Environment'ının
+    # secret'ı yapın ve environment'a "required reviewers" koruması ekleyin; böylece
+    # imzalı yayın, elle onay olmadan tetiklenemez. (GitHub → Settings → Environments)
+    environment: release
+    permissions:
+      # Yalnızca bu iş: GitHub Release'i oluşturup paketleri ona yüklemek (softprops/action-gh-release)
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Tag == VERSION == CHANGELOG
+        # Etiket, kök VERSION dosyası ve CHANGELOG başlığı birbirini tutmazsa yayım durur.
+        run: |
+          set -euo pipefail
+          VER=$(tr -d '[:space:]' < VERSION)
+          if [ "$GITHUB_REF_NAME" != "v$VER" ]; then
+            echo "::error::Etiket ($GITHUB_REF_NAME) ile VERSION (v$VER) uyuşmuyor; etiketi 'v$VER' olarak atın."
+            exit 1
+          fi
+          if ! grep -q "^## \[$VER\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md içinde '## [$VER]' başlığı yok."
+            exit 1
+          fi
+          echo "Sürüm tutarlı: v$VER"
+      # Yalnızca paketler: "CI tests" işinin kapsam raporları da artifact'tir ve release'e girmemeli
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: agent
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: linux-agent
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: server
+          path: dist
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Sign release manifest (ed25519)
+        # Tüm paketlerin (MSI, zip, .deb, sunucu paketi) SHA-256'sını + sürüm + tag + zaman damgasını içeren
+        # manifest'i imzalar ve depodaki açık anahtarla doğrular. Özel anahtar yalnızca bu secret'tan gelir. Her ajan
+        # manifest'ten yalnızca kendi paketini seçer (Windows: POps-Agent-*-win-x64.msi, Linux: pops-agent_*_all.deb).
+        env:
+          POPS_RELEASE_PRIVATE_KEY: ${{ secrets.POPS_RELEASE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${POPS_RELEASE_PRIVATE_KEY:-}" ]; then
+            echo "::error::POPS_RELEASE_PRIVATE_KEY secret'ı tanımlı değil; imzasız release yayımlanmaz."
+            echo "Kurulum: 'python tools/sign_release.py genkey --out-dir keys' ile üretilen özel PEM'i bu secret'a ekleyin (açık anahtar keys/pops_release_ed25519.pub.pem repoda)."
+            exit 1
+          fi
+          python -m pip install --quiet --require-hashes -r .github/requirements/signing.lock
+          VER=$(tr -d '[:space:]' < VERSION)
+          python tools/sign_release.py sign --dir dist --version "$VER" --tag "$GITHUB_REF_NAME"
+          python tools/sign_release.py verify --dir dist --pub-pem keys/pops_release_ed25519.pub.pem
+          # Linux ajanı tam olarak bu adı arar (Agent-Linux/pops_agent/release.py select_deb)
+          grep -q '"pops-agent_'"$VER"'_all.deb"' dist/manifest.json || { echo "::error::manifest'te pops-agent_${VER}_all.deb yok"; exit 1; }
+      - name: Checksums and release notes
+        run: |
+          (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+          VER="${GITHUB_REF_NAME#v}"
+          {
+            echo "> **İmzalı sürüm (ed25519).** \`manifest.json\` ve \`manifest.json.sig\` release'e dahildir; açık anahtar depoda \`keys/pops_release_ed25519.pub.pem\`. Doğrulama için bkz. \`keys/README.md\`. Ajan için \`POps-Agent-*-win-x64.msi\` önerilir (sessiz kurulum ve özellikleri: \`Installer/README.md\`); zip eski elle kurulum yoludur. Ajan paketleri Windows'ta SmartScreen uyarısı verebilir (Authenticode imzası henüz yok). MSI kendi .NET 10 çalışma zamanını getirir; uç noktada önceden bir şey kurmak gerekmez. Pardus/Debian için \`pops-agent_*_all.deb\` (Debian 12 / Pardus 23 ve sonrası; kurulum: \`Agent-Linux/README.md\`)."
+            echo
+            awk -v v="$VER" 'index($0, "## [" v "]") == 1 {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md
+          } > notes.md
+          cat notes.md
+      - name: Publish
+        # Üçüncü taraf action, repoya yazma yetkisiyle çalıştığı için commit SHA'sına sabitlenmiştir
+        # (Dependabot sürümü günceller)
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+        with:
+          files: dist/*
+          body_path: notes.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # Docker imajları (docs/docker.md): ghcr.io/pashacore/pops-backend ve pops-dashboard, etiketler sürüm ("v"siz,
+  # örn. 0.1.22-alpha) ve "latest". Yalnızca yayın başarıyla çıktıktan sonra itilir: testler, Tag == VERSION
+  # denetimi ya da "release" ortamının onayı geçmezse imaj da itilmez. Main'de ve elle çalıştırmada (etiket
+  # dışında) yalnızca derlenir; GHCR'a giriş ve push etikette yapılır. Yalnızca linux/amd64.
+  images:
+    name: Docker image (${{ matrix.image }})
+    needs: [ release ]
+    if: ${{ !cancelled() && (github.ref_type != 'tag' || needs.release.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # İmajları ghcr.io/pashacore'a itmek için (yalnızca etikette push edilir)
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: pops-backend
+            dockerfile: docker/backend.Dockerfile
+            title: POps backend
+            description: POps server API (FastAPI + uvicorn). Run with docker-compose.yml, see docs/docker.md.
+          - image: pops-dashboard
+            dockerfile: docker/dashboard.Dockerfile
+            title: POps dashboard
+            description: POps web panel (PHP on Apache), proxies the API to the backend. Run with docker-compose.yml, see docs/docker.md.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+      - name: Log in to GHCR
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        env:
+          # Açıklama GHCR sayfasında görünsün diye imaj dizininde (index) de; index'i provenance/SBOM kayıtları oluşturur
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        with:
+          images: ghcr.io/pashacore/${{ matrix.image }}
+          # Ön sürümlere (-alpha) metadata-action kendiliğinden "latest" vermez; açıkça eklenir
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+          # source, version, revision, created ve url metadata-action'dan gelir
+          labels: |
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.licenses=Apache-2.0
+          annotations: |
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.licenses=Apache-2.0
+      - name: Build and push
+        # Önbellek kullanılmaz (yayın imajı başka iş akışlarının bıraktığı katmanlara dayanmasın); taban imajlar
+        # Dockerfile'daki özetle (sha256) çekilir, özetleri Dependabot haftalık günceller. Provenance (SLSA) ve SBOM
+        # kayıtları imajla birlikte GHCR'a gider.
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          pull: true
+          push: ${{ github.ref_type == 'tag' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true

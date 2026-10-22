@@ -1,0 +1,27 @@
+# /etc/pops/deploy.conf — pops-deploy-backend ve pops-selfupdate ayarları. Kabuk sözdizimi.
+# Betikler bu dosyayı root olarak okur (.), bu yüzden dosya ve /etc/pops root'a ait olmalı ve grup/diğerleri
+# yazamamalı (ör. root:root 644); değilse betikler dosyayı okumayı reddeder ve hiçbir şey değiştirmez.
+# install.sh bu dosyayı kurduğu değerlerle yazar (dosya zaten varsa dokunmaz). Dosya yoksa aşağıdaki
+# değerler (install.sh'in varsayılanları) geçerlidir; REPO ise ancak betik bir checkout'un içinden çalışıyorsa
+# bulunur. Belge: docs/deployment.md
+
+# git checkout'u (Backend/ burada). Panel de buradaki Dashboard/'dan sunulur; self-update bunu ff-only ileri sarar.
+REPO=/opt/POps
+# Backend'in çalıştığı dizin (.env burada, venv: $APP/venv)
+APP=/opt/pops
+# systemd birimi (.service eki olmadan) ve backend'in servis kullanıcısı (dosyalar ona ait kurulur)
+SVC=pops
+OWNER=pops
+# Backend'in iç adresi: sağlık kontrolü $HEALTH_BASE/api/health, /api/agent_policies ve /api/devices'a bakar
+HEALTH_BASE=http://127.0.0.1:8000
+# Yeniden başlatmadan sonra sağlığın beklendiği en uzun süre (saniye; migration'lar açılışı uzatabilir)
+HEALTH_WAIT=60
+# Saklanan geri dönüş noktası sayısı ($APP/.deploy-backups): kod yedeği + varsa aynı adlı venv görüntüsü
+KEEP_BACKUPS=10
+
+# Örnek: projenin kendi geliştirme sunucusu (dev.pashacore.com.tr)
+#   REPO=/home/pasha/domains/dev.pashacore.com.tr/public_html
+#   APP=/opt/PashaCore_API
+#   SVC=pashacore
+#   OWNER=pashacore_admin
+#   HEALTH_BASE=http://127.0.0.1:8000

@@ -1,0 +1,8 @@
+PRETTY_NAME="Pardus 23.1"
+NAME="Pardus"
+VERSION_ID="23.1"
+VERSION="23.1 (Yirmiüç)"
+VERSION_CODENAME=yirmiuc
+ID=pardus
+ID_LIKE=debian
+HOME_URL="https://www.pardus.org.tr/"

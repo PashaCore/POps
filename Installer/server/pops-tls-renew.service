@@ -1,0 +1,9 @@
+# Kurum içi sunucu sertifikasını bitmesine 30 günden az kalınca yeniler ve web sunucusunu yeniler (root, oneshot).
+# pops-tls-renew.timer haftada bir tetikler; yalnızca kurum CA'sı kullanılan kurulumlarda etkindir
+# (Let's Encrypt kendi certbot zamanlayıcısıyla yenilenir).
+[Unit]
+Description=POps kurum içi TLS sertifikasını yenile
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pops-tls renew

@@ -1,0 +1,16 @@
+{
+  "Sınıf içinde eşten dağıt": "Share within the lab",
+  "Her sınıfta önce bir bilgisayar paketi sunucudan indirir, diğerleri onun güncellemesi bitince paketi yerel ağdan alır. Paketin imzası ve özeti her bilgisayarda yine doğrulanır.": "In each lab one computer downloads the package from the server first; once it has updated, the others fetch the package from it over the local network. Every computer still checks the package's signature and hash.",
+  "Kapalı: bütün bilgisayarlar paketi sunucudan aynı anda indirir.": "Off: every computer downloads the package from the server at the same time.",
+  "Eşten dağıtım açıldı.": "Sharing within the lab is on.",
+  "Eşten dağıtım kapatıldı; bekleyen bilgisayarlara güncelleme gönderildi.": "Sharing within the lab is off; waiting computers were sent the update.",
+  "{n} bilgisayar sınıfının tohumunu bekliyor.": {"one": "{n} computer is waiting for its lab's seed.", "other": "{n} computers are waiting for their lab's seed."},
+  "Tohum bekleniyor": "Waiting for seed",
+  "Sınıfın tohumu: diğerleri paketi bundan alacak.": "The lab's seed: the others will fetch the package from it.",
+  "Ajan şu an bağlı değil; tohum hazır olunca bağlıysa gönderilir.": "The agent is not connected; it gets the update when the seed is ready, if it is connected then.",
+  "tohum bulunamadı; {n} bilgisayara sunucudan gönderildi": {"one": "no seed; sent to {n} computer from the server", "other": "no seed; sent to {n} computers from the server"},
+  "tohum: {seed}, doğrulandı; {n} bilgisayara eşten dağıtılıyor": {"one": "seed: {seed}, verified; sharing with {n} computer", "other": "seed: {seed}, verified; sharing with {n} computers"},
+  "tohum: {seed}, doğrulandı": "seed: {seed}, verified",
+  "tohum: {seed}, {stage}; {n} bilgisayar bekliyor": {"one": "seed: {seed}, {stage}; {n} computer waiting", "other": "seed: {seed}, {stage}; {n} computers waiting"},
+  "gönderildi": "sent"
+}

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 580" width="1000" height="580" role="img" aria-label="How POps fits together">
+<defs>
+<marker id="arr-line" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8c959f"/></marker>
+<marker id="arr-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker>
+<marker id="arr-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+<marker id="arr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b45309"/></marker>
+<marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
+</defs>
+<rect x="0" y="0" width="1000" height="580" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<text x="28" y="38" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="20" font-weight="700" fill="#1f2328" text-anchor="start">How POps fits together</text>
+<text x="28" y="60" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">Every managed PC connects out to the server. No inbound port is opened on a managed computer.</text>
+<rect x="28" y="132" width="190" height="86" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1"/>
+<text x="44" y="160" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#2563eb" text-anchor="start">Administrator</text>
+<text x="44" y="182" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">Browser, any OS</text>
+<text x="44" y="200" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start">HTTPS only</text>
+<rect x="28" y="404" width="190" height="86" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+<text x="44" y="432" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#1f2328" text-anchor="start">GitHub Releases</text>
+<text x="44" y="454" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#59636e" text-anchor="start">Agent MSI + server package</text>
+<text x="44" y="472" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#59636e" text-anchor="start">ed25519-signed manifest</text>
+<rect x="268" y="92" width="340" height="458" rx="12" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+<text x="286" y="118" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#59636e" text-anchor="start">POps server (Linux)</text>
+<rect x="286" y="132" width="304" height="40" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<text x="302" y="157" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Web server: nginx or Apache, TLS</text>
+<rect x="286" y="182" width="304" height="40" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<text x="302" y="207" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Panel: PHP 8, plain JavaScript</text>
+<rect x="286" y="252" width="304" height="156" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1"/>
+<text x="302" y="280" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#059669" text-anchor="start">Backend: FastAPI, one process</text>
+<circle cx="307" cy="301.625" r="2.6" fill="#059669"/>
+<text x="316" y="306" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">REST API + WebSocket hub</text>
+<circle cx="307" cy="323.625" r="2.6" fill="#059669"/>
+<text x="316" y="328" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Task queue and scheduler</text>
+<circle cx="307" cy="345.625" r="2.6" fill="#059669"/>
+<text x="316" y="350" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Hash-chained audit log</text>
+<circle cx="307" cy="367.625" r="2.6" fill="#059669"/>
+<text x="316" y="372" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="start">Notifications, reports, alerts</text>
+<rect x="286" y="438" width="304" height="92" rx="10" fill="#fffbeb" stroke="#b45309" stroke-width="1"/>
+<ellipse cx="320" cy="470" rx="16" ry="5" fill="none" stroke="#b45309" stroke-width="1.5"/>
+<path d="M304,470 L304,492 A16,5 0 0 0 336,492 L336,470" fill="none" stroke="#b45309" stroke-width="1.5"/>
+<text x="348" y="478" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#b45309" text-anchor="start">PostgreSQL</text>
+<text x="348" y="498" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="start">devices, tasks, audit chain</text>
+<rect x="716" y="92" width="256" height="458" rx="12" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+<text x="732" y="118" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#59636e" text-anchor="start">Windows 10 / 11 PC</text>
+<rect x="730" y="132" width="228" height="118" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1"/>
+<text x="744" y="156" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#7c3aed" text-anchor="start">POpsAgent</text>
+<text x="744" y="174" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="start">Windows service (SYSTEM)</text>
+<circle cx="749" cy="193.975" r="2.6" fill="#7c3aed"/>
+<text x="758" y="198" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="start">Commands, inventory, updates</text>
+<circle cx="749" cy="212.975" r="2.6" fill="#7c3aed"/>
+<text x="758" y="217" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="start">Quarantine and DNS policy</text>
+<rect x="730" y="284" width="228" height="118" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1"/>
+<text x="744" y="308" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#7c3aed" text-anchor="start">POpsTray</text>
+<text x="744" y="326" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="start">Signed-in user's session</text>
+<circle cx="749" cy="345.975" r="2.6" fill="#7c3aed"/>
+<text x="758" y="350" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="start">Consent prompts, screen capture</text>
+<circle cx="749" cy="364.975" r="2.6" fill="#7c3aed"/>
+<text x="758" y="369" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#1f2328" text-anchor="start">Lock screen, helpdesk, activity</text>
+<rect x="730" y="416" width="228" height="54" rx="10" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<text x="744" y="438" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#1f2328" text-anchor="start">POpsWatchdog</text>
+<text x="744" y="457" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">Keeps the service and tray running</text>
+<rect x="730" y="480" width="228" height="54" rx="10" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<text x="744" y="502" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#1f2328" text-anchor="start">POpsUpdater</text>
+<text x="744" y="521" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">Installs the MSI, rolls back on failure</text>
+<line x1="218" y1="168" x2="284" y2="154" stroke="#2563eb" stroke-width="1.6" marker-end="url(#arr-blue)" marker-start="url(#arr-blue)"/>
+<text x="243" y="148" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#2563eb" text-anchor="middle">HTTPS</text>
+<line x1="438.0" y1="224" x2="438.0" y2="250" stroke="#8c959f" stroke-width="1.6" marker-end="url(#arr-line)" marker-start="url(#arr-line)"/>
+<text x="448.0" y="242" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">/api  /ws</text>
+<line x1="438.0" y1="410" x2="438.0" y2="436" stroke="#b45309" stroke-width="1.6" marker-end="url(#arr-amber)" marker-start="url(#arr-amber)"/>
+<text x="448.0" y="428" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">SQL</text>
+<line x1="728" y1="168" x2="592" y2="300" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#arr-violet)"/>
+<line x1="728" y1="222" x2="592" y2="362" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arr-violet)"/>
+<text x="662.0" y="146" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="700" fill="#7c3aed" text-anchor="middle">WSS</text>
+<text x="662.0" y="161" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#7c3aed" text-anchor="middle">commands, heartbeats</text>
+<text x="662.0" y="392" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="700" fill="#7c3aed" text-anchor="middle">WSS</text>
+<text x="662.0" y="407" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#7c3aed" text-anchor="middle">Vision frames</text>
+<rect x="616.5" y="424" width="91" height="20" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1"/>
+<text x="662.0" y="438" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="10.5" font-weight="600" fill="#7c3aed" text-anchor="middle">outbound 443</text>
+<line x1="844.0" y1="252" x2="844.0" y2="282" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#arr-violet)" marker-start="url(#arr-violet)"/>
+<text x="854.0" y="271" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">local pipe</text>
+<path d="M218,446 C240,446 248,400 284,392" fill="none" stroke="#8c959f" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#arr-line)"/>
+<text x="122" y="512" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#59636e" text-anchor="middle">verified before staging</text>
+</svg>

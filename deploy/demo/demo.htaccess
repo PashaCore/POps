@@ -1,0 +1,23 @@
+# POps public demo: the whole site is the demo stack on 127.0.0.1:8180 (deploy/demo/docker-compose.demo.yml).
+# Goes into the Virtualmin site's public_html as .htaccess. Needs mod_rewrite, mod_headers, mod_proxy,
+# mod_proxy_http and mod_proxy_wstunnel (the same modules the dev site's .htaccess uses).
+# Delete Virtualmin's default index.html from public_html, or it is served instead of the panel.
+RewriteEngine On
+
+# The panel marks its cookies Secure when it knows the visitor came over HTTPS
+<IfModule mod_headers.c>
+    RequestHeader set X-Forwarded-Proto "https"
+</IfModule>
+
+# Let's Encrypt (HTTP-01) is answered from public_html itself, never proxied
+RewriteCond %{REQUEST_URI} ^/\.well-known/acme-challenge/
+RewriteRule ^ - [L]
+
+# WebSocket (live panel updates). %1 comes from the LAST matched condition, so the path condition goes last
+RewriteCond %{HTTP:Upgrade} websocket [NC]
+RewriteCond %{REQUEST_URI} ^/ws/(.*)$
+RewriteRule ^ ws://127.0.0.1:8180/ws/%1 [P,L,NS]
+
+# Everything else: panel, /api, assets
+RewriteCond %{REQUEST_URI} ^/(.*)$
+RewriteRule ^ http://127.0.0.1:8180/%1 [P,L,NS]

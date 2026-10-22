@@ -1,0 +1,12 @@
+{
+    "ya da": "or",
+    "{name} ile giriş yap": "Sign in with {name}",
+    "Kurumsal hesap": "organisation account",
+    "Giriş bileti geçersiz ya da süresi dolmuş; yeniden deneyin.": "The sign-in ticket is invalid or has expired. Try again.",
+    "Dizin sunucusuna ulaşılamadı; yerel bir hesapla giriş yapabilirsiniz.": "The directory server could not be reached. You can sign in with a local account.",
+    "Bu hesap dizinde devre dışı bırakılmış.": "This account is disabled in the directory.",
+    "Bu dizin hesabının panele erişimi yok (eşlenen bir grupta değil).": "This directory account has no access to the panel (it is not in a mapped group).",
+    "Hesabın kullanıcı adı panelde kullanılamaz.": "The account's user name cannot be used in the panel.",
+    "Hesap bağlanamadı; yeniden deneyin.": "The account could not be linked. Try again.",
+    "Hesap oluşturulamadı; yeniden deneyin.": "The account could not be created. Try again."
+}

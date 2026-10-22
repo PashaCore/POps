@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/cancel_task.json",
+  "title": "cancel_task",
+  "description": "A running task was cancelled in the panel (or its device deleted). 0.1.13+ agents stop the process and its children; the task's `result` then carries exit code -2. Older agents ignore it.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "task_id"
+  ],
+  "properties": {
+    "action": {
+      "const": "cancel_task",
+      "description": "Message type."
+    },
+    "task_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Task to stop."
+    }
+  }
+}

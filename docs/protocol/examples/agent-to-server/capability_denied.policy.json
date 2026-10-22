@@ -1,0 +1,5 @@
+{
+  "type": "capability_denied",
+  "capability": "vision",
+  "action": "get_thumbnail"
+}

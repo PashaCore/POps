@@ -1,0 +1,4 @@
+# Backend testlerinin koşucusu (Backend/tests, docs/testing.md): CI'da Backend/requirements.lock'un yanına kurulur,
+# canlı sunucunun venv'ine girmez. Sürümü Dependabot günceller; özetli kilidi (pytest.lock) tools/backend_lock.sh
+# üretir, ortak paketler Backend kilidindeki sürümde kalır.
+pytest==9.1.1

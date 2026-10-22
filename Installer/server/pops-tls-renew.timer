@@ -1,0 +1,13 @@
+# Haftada bir (Pazartesi 04:00 civarı) sertifika süresi kontrolü. Kurulum: install.sh (TLS_MODE=internal) ya da
+#   sudo install -m 644 Installer/server/pops-tls-renew.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now pops-tls-renew.timer
+[Unit]
+Description=POps kurum içi TLS sertifika yenileme kontrolü
+
+[Timer]
+OnCalendar=Mon *-*-* 04:00:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

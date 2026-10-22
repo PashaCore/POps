@@ -1,0 +1,23 @@
+{
+  "Yönetici Girişi": "Admin sign-in",
+  "Kurum logosu": "Organisation logo",
+  "POps yönetim paneli": "POps admin panel",
+  "Kullanıcı adı": "Username",
+  "Şifre": "Password",
+  "Giriş yap": "Sign in",
+  "Doğrulama kodu": "Verification code",
+  "Authenticator uygulamanızdaki 6 haneli kodu girin.": "Enter the 6-digit code from your authenticator app.",
+  "Doğrula ve giriş yap": "Verify and sign in",
+  "Baştan giriş yap": "Start over",
+  "Kullanıcı adı ve şifre boş bırakılamaz.": "Enter a username and a password.",
+  "Kod doğrulanamadı (HTTP {code})": "Could not verify the code (HTTP {code})",
+  "Giriş reddedildi (HTTP {code})": "Sign-in refused (HTTP {code})",
+  "API Sunucusuna Ulaşılamıyor! (Detay: {detail})": "Cannot reach the API server ({detail}).",
+  "API Yanıt Hatası (HTTP {code}): {body}": "Unexpected API response (HTTP {code}): {body}",
+  "Geçersiz kullanıcı adı veya şifre": "Wrong username or password",
+  "Doğrulama kodu geçersiz": "Invalid verification code",
+  "Oturum doğrulaması süresi doldu, tekrar giriş yapın": "The verification step expired; sign in again",
+  "Demo (salt okunur):": "Demo (read-only):",
+  "kullanıcı": "username",
+  "şifre": "password"
+}

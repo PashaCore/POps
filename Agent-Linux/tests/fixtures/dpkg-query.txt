@@ -1,0 +1,11 @@
+firefox-esr	115.9.1esr-1~deb12u1	Debian Mozilla Team <team+pkg-mozilla@tracker.debian.org>	web	ii 
+libc6	2.36-9+deb12u4	GNU Libc Maintainers <debian-glibc@lists.debian.org>	libs	ii 
+libreoffice-writer	4:7.4.7-1+deb12u1	Debian LibreOffice Maintainers <debian-openoffice@lists.debian.org>	editors	ii 
+python3-websockets	10.4-1	Debian Python Team <team+python@tracker.debian.org>	python	ii 
+vlc	3.0.20-0+deb12u1	Debian Multimedia Maintainers <debian-multimedia@lists.debian.org>	video	rc 
+libgtk-3-dev	3.24.38-2	Debian GNOME Maintainers <pkg-gnome-maintainers@lists.alioth.debian.org>	libdevel	ii 
+libc6	2.36-9+deb12u4	GNU Libc Maintainers <debian-glibc@lists.debian.org>	libs	ii 
+pardus-software	1.2.3	Pardus Developers	non-free/admin	ii 
+wine32	8.0~repack-4	Debian Wine Party <debian-wine@lists.debian.org>	otherosfs	ii 
+wine32	8.0~repack-4	Debian Wine Party <debian-wine@lists.debian.org>	otherosfs	ii 
+broken-line

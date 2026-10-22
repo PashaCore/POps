@@ -1,0 +1,16 @@
+{
+  "action": "exam_mode",
+  "enabled": true,
+  "allow": [
+    "sinav.meb.gov.tr",
+    "10.0.0.5",
+    "10.1.0.0/24"
+  ],
+  "until": 1791207689,
+  "now": 1791205409,
+  "message": "Sınav modu: yalnızca sınav sitesi açık",
+  "block_apps": [
+    "cmd.exe",
+    "powershell.exe"
+  ]
+}

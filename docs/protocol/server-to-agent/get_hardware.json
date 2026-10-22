@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/get_hardware.json",
+  "title": "get_hardware",
+  "description": "The server has no hardware inventory for this device (sent after `server_info` when the inventory is missing or empty). The agent answers with `POST /api/inventory/{hw_id}` (see docs/api.md), not on the socket.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action"
+  ],
+  "properties": {
+    "action": {
+      "const": "get_hardware",
+      "description": "Message type."
+    }
+  }
+}

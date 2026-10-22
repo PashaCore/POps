@@ -1,0 +1,43 @@
+#!/bin/sh
+set -e
+
+CONF=/etc/pops-agent/agent.conf
+
+case "$1" in
+    configure)
+        install -d -m 0700 -o root -g root /etc/pops-agent /var/lib/pops-agent /var/lib/pops-agent/packages
+        install -d -m 0750 -o root -g adm /var/log/pops-agent 2>/dev/null || install -d -m 0750 -o root -g root /var/log/pops-agent
+        if [ ! -e "$CONF" ]; then
+            umask 077
+            cat > "$CONF" <<'CONF_EOF'
+# POps ajanı ayarları (yalnızca root okuyabilir: 0600). Kolay yol:
+#   sudo pops-agent configure --server https://pops.okul.local --token <kayıt jetonu> [--ca /yol/server-ca.pem]
+# SERVER_URL: panelin adresi, https:// ile.
+# ENROLL_TOKEN: panelden alınan kayıt jetonu; cihaz anahtarı alınınca ajan bu satırı siler.
+# SERVER_CA_CERT: kurum sertifikası (özel CA) kullanılıyorsa PEM dosyasının yolu.
+SERVER_URL=
+ENROLL_TOKEN=
+CONF_EOF
+        fi
+        chown root:root "$CONF"
+        chmod 0600 "$CONF"
+        # Servis açılışta başlasın (chroot'ta ve imaj hazırlarken de: yalnızca bağlantı oluşturulur)
+        if command -v deb-systemd-helper >/dev/null 2>&1; then
+            deb-systemd-helper unmask pops-agent.service >/dev/null || true
+            deb-systemd-helper enable pops-agent.service >/dev/null || true
+        fi
+        if [ -d /run/systemd/system ]; then
+            systemctl --system daemon-reload >/dev/null 2>&1 || true
+            if [ -n "$2" ]; then action=restart; else action=start; fi
+            # deb-systemd-invoke /usr/sbin/policy-rc.d'ye uyar (imaj ve CI ortamında servis başlatılmaz)
+            if command -v deb-systemd-invoke >/dev/null 2>&1; then
+                deb-systemd-invoke "$action" pops-agent.service || true
+            else
+                systemctl enable pops-agent.service >/dev/null 2>&1 || true
+                systemctl "$action" pops-agent.service || true
+            fi
+        fi
+        ;;
+esac
+
+exit 0

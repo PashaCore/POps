@@ -1,0 +1,31 @@
+[Unit]
+Description=POps agent (school lab management)
+Documentation=https://github.com/PashaCore/POps/blob/main/Agent-Linux/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/pops-agent run
+Restart=always
+RestartSec=5
+# Komutlar bitip sonuçları diske yazılsın diye önce yalnızca ajana SIGTERM gider
+KillMode=mixed
+TimeoutStopSec=30
+# Yönetici komutlarını root olarak çalıştırmak bu servisin işi: dosya sistemi, ağ ve süreç kısıtlamaları
+# (ProtectSystem, ProtectHome, PrivateTmp, NoNewPrivileges, sistem çağrısı süzgeci) bilerek yok; olsaydı
+# apt, systemctl, kullanıcı yönetimi gibi komutlar kırılırdı. Kısıtlananlar komutları etkilemeyenlerdir:
+LimitCORE=0
+LockPersonality=yes
+RestrictRealtime=yes
+KeyringMode=private
+StateDirectory=pops-agent
+StateDirectoryMode=0700
+LogsDirectory=pops-agent
+LogsDirectoryMode=0750
+ConfigurationDirectory=pops-agent
+ConfigurationDirectoryMode=0700
+SyslogIdentifier=pops-agent
+
+[Install]
+WantedBy=multi-user.target

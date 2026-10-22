@@ -1,0 +1,1 @@
+{"fair_use_text": "Okul ağı kuralları", "dns_categories": ["bahis", "oyun"], "auto_quarantine": true, "quarantine_threshold": 3, "dns_domains": {"bahis": ["*.bet.example", "https://casino.example/tr/", "Bet.Example."], "oyun": ["games.example", "games.example"]}}

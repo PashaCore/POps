@@ -1,0 +1,22 @@
+# check_html_sinks.py için incelenmiş istisnalar (bkz. betiğin başı ve docs/security.md).
+# Biçim: <dosya> <anahtar> <bir satırlık gerekçe>
+#   anahtar = bulgunun satırının boşlukları sadeleştirilmiş metninin SHA-1'i (ilk 12 hane); denetim başarısız
+#             olunca betik satırı ve anahtarı yazar. Satır değişince anahtar da değişir: yeniden inceleyin.
+#   func:ad   = bu dosyada ad(...) güvenli HTML döndürür (içi denetlenmez, gerekçe şart)
+#   sink:ad/N = ad(...)'ın N. argümanı (0'dan) HTML olarak yazılır; her çağrıda o argüman denetlenir
+
+# ---- HTML yazan yardımcılar ve güvenli HTML döndüren fonksiyonlar
+Dashboard/system.php  func:md  sürüm notu: önce escapeHtml, sonra yalnızca kaçırılmış metne <strong>/<code> ekler
+Dashboard/terminal.php  sink:appendToTerminal/0  terminal geçmişine insertAdjacentHTML ile ekler
+
+# ---- yardımcıların içi: HTML parametreleri çağrı yerinde (sink:) denetlenir
+
+# ---- sabit tablolardan seçilen sınıf/ikon/etiket
+
+# ---- sayfada hesaplanan sayılar ve sabitler
+
+# ---- ortak simge yardımcısı
+Dashboard/assets/pops_script.js  d2808b22b01c  POps.iconHtml: href sunucunun verdiği sabit sprite yolu (window.POPS_ICONS) + sabit simge adı; değer escapeHtml ile kaçırılır
+
+# ---- dil yardımcısı
+Dashboard/assets/pops_script.js  deb050cde09d  POps.tHtml'in html parçaları: çağıranın kurduğu HTML (şablon/birleştirme olarak çağrı yerinde denetlenir); metin ve params escapeHtml'den geçer

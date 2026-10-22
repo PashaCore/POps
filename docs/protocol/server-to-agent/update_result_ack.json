@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PashaCore/POps/blob/main/docs/protocol/server-to-agent/update_result_ack.json",
+  "title": "update_result_ack",
+  "description": "Feature `update_result_ack`: the `update_result` with this `result_id` is stored. Sent after the audit record and the notification were written; the agent then sets its result file aside.",
+  "x-pops-channels": [
+    "/ws/agent"
+  ],
+  "type": "object",
+  "required": [
+    "action",
+    "result_id"
+  ],
+  "properties": {
+    "action": {
+      "const": "update_result_ack",
+      "description": "Message type."
+    },
+    "result_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "description": "`result_id` of the acknowledged `update_result`."
+    }
+  }
+}
