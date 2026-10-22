@@ -882,7 +882,8 @@ unknown fields are ignored).
 today; `peers` is read only after that.
 
 - Ignore a peer whose `url` does not match the pattern above, whose path SHA-256 is not the manifest's MSI
-  SHA-256, or whose host is not a private IPv4 address.
+  SHA-256, or whose host is not a private IPv4 address. (The Windows agent asks for an address on one of the PC's
+  own subnets instead, private or public; see point 6.)
 - Try the peers in the order given, one at a time: connect timeout 3 seconds; if no data arrives for 15 seconds, or
   the answer is anything but `200` with the expected `Content-Length`, go to the next peer. After the last peer,
   download from `<ServerUrl>/updates/<name>` as today (BITS or HttpClient).
@@ -934,21 +935,28 @@ leave a choice or where it differs:
 - **Server.** A `TcpListener` on `[::]:8817` (IPv4 and IPv6) instead of `HttpListener`: traffic to an HttpListener
   belongs to http.sys (the `System` process), so a firewall rule for `POpsAgent.exe` would not match it. It answers
   `GET` and `HEAD` for `/pops-cache/<sha256>`; other methods get `405` (`Allow: GET, HEAD`), other paths `404`, a
-  malformed request `400`, and clients outside the PC's local subnets `403` (on top of the firewall rule). 10 seconds
-  to send the request, 10 minutes per transfer, `Connection: close`, no Range. At most 4 transfers; further requests
-  wait up to 60 seconds for a slot, then get `503` with `Retry-After: 30`; beyond 128 open connections a new one gets
-  `503` at once.
+  malformed request `400`, and clients outside the PC's own subnets `403` (the rule under Downloading; on top of the
+  firewall rule). 10 seconds to send the request, 10 minutes per transfer, `Connection: close`, no Range. At most 4
+  transfers; further requests wait up to 60 seconds for a slot, then get `503` with `Retry-After: 30`; beyond 128 open
+  connections a new one gets `503` at once.
 - **Firewall.** Rule group `POps Peer Cache`: inbound allow, TCP 8817, `LocalSubnet`, program `POpsAgent.exe`, all
   profiles, added with PowerShell when serving starts and removed when it stops (cache empty, quarantine, exam mode,
   service stop). A failed script is retried after 15 minutes. At service start a leftover rule is removed only if
   the cache folder exists. The quarantine and exam rule groups are not touched.
 - **Quarantine and exam mode.** While either is active the agent neither serves nor tries peers (their rules block
   that traffic anyway); serving resumes when both end.
-- **Downloading.** A peer is used only inside one of the PC's local subnets (stricter than "private": the serving
-  side's rule is LocalSubnet-only); private and link-local IPv6 addresses are accepted too, and at most 5 entries are
-  read. Connect timeout 3 seconds, up to 75 seconds for the response headers (a busy peer queues the request for up
-  to 60 seconds), then 15 seconds without data or 5 minutes in all ends the attempt. No proxy, redirects, cookies or
-  headers: the device secret never goes to a peer. The `downloaded` detail is `peer <hw_id>`, `server` or `cache`.
+- **Downloading.** A peer is used only when its address is on one of the PC's own subnets: the subnet of an
+  interface's IPv4 address and mask, or for IPv6 the link-local and on-link prefixes of its interfaces (a prefix wider
+  than /8 for IPv4 or /64 for IPv6 does not count). Private or public makes no difference, so labs that use public
+  IPv4 addresses work too, and a private address on another subnet is refused. This is no wider than the serving
+  side's firewall rule (`LocalSubnet`). Loopback, multicast, broadcast (also an IPv4 subnet's network and broadcast
+  address) and unspecified addresses are refused; at most 5 entries are read. The first peer refused for being
+  outside the PC's subnets is logged once as a warning (`UPDATE`), later ones as information; other refusals stay
+  `[GÜVENLİK]` warnings. The server still lists only private IPv4 addresses as peers (points 1 and 2), so a lab with
+  public addresses gets no `peers` until the server's rule changes as well. Connect timeout 3 seconds, up to 75
+  seconds for the response headers (a busy peer queues the request for up to 60 seconds), then 15 seconds without
+  data or 5 minutes in all ends the attempt. No proxy, redirects, cookies or headers: the device secret never goes to
+  a peer. The `downloaded` detail is `peer <hw_id>`, `server` or `cache`.
 - **Logs.** Start and stop of serving, each transfer (address, SHA-256 prefix, bytes, seconds) and refusals (at most
   one line every 10 seconds) go to the POps log (`PEERCACHE`); no event log entry.
 

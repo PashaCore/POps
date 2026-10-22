@@ -17,6 +17,9 @@ using System.Threading.Tasks;
 
 namespace POpsAgent
 {
+    // Bu bilgisayarın bir arabirimindeki adres ve önek uzunluğu (IPv4'te alt ağ maskesinin bit sayısı; bkz. PeerCache.InLocalSubnet)
+    public readonly record struct InterfaceSubnet(IPAddress Address, int PrefixLength);
+
     // Laboratuvar içi eş önbelleği, ajan tarafı (docs/agent.md "Peer cache contract", docs/design/peer-cache.md seçenek A;
     // X-Agent-Features: peer_cache).
     //  * Paket yalnızca sunucu isteyince tutulur: update_agent emrinde "peer_cache": true (sunucunun eş önbelleği ayarı
@@ -30,6 +33,9 @@ namespace POpsAgent
     //    Güvenlik duvarına "POps Peer Cache" grubunda, yalnızca yerel alt ağdan (LocalSubnet) POpsAgent.exe'ye gelen
     //    TCP 8817 için bir izin kuralı eklenir; sunucu durunca (önbellek boşaldı, karantina, sınav, servis duruyor) kural
     //    kaldırılır.
+    //  * Yerel alt ağ: bu bilgisayarın çalışan arabirimlerinden birinin alt ağı (adres ve maskeden; bkz. InLocalSubnet).
+    //    Sunucu yalnızca oradan gelen isteğe yanıt verir, indirme yalnızca oradaki eşlere gider (bkz. PeerDownload). Adresin
+    //    özel ya da genel olması fark etmez: genel IPv4 kullanan laboratuvarlarda da çalışır.
     //  * Ağ karantinasında ve sınav modunda sunulmaz ve eşlerden indirilmez (yalıtım kuralları gelen bağlantıyı zaten
     //    engeller). peer_cache_enabled kapalıysa önbellek silinir, sunulmaz, eşlerden indirilmez ve özellik duyurulmaz
     //    (bkz. AgentCapabilities, AgentFeatures, PeerDownload).
@@ -60,20 +66,23 @@ namespace POpsAgent
         private readonly string _examState;
 
         // paths: önbellek klasörü (<veri klasörü>\cache), karantina ve sınav modunun durum dosyaları; capabilities: bağlamın
-        // yetenek durumu (peer_cache_enabled); firewall: güvenlik duvarı kuralının betiği, server: sunucuyu kuran (servis:
-        // PowerShell ve [::]:8817'de dinleyen sunucu, bkz. MachineSeams; testlerde güvenlik duvarına dokunmayan sahte ve hiç
-        // dinlemeyen sunucu, PeerCacheTests'te 127.0.0.1)
+        // yetenek durumu (peer_cache_enabled); firewall: güvenlik duvarı kuralının betiği, server: sunucuyu kuran, localSubnets:
+        // bu bilgisayarın arabirim adresleri ve önekleri (servis: PowerShell, [::]:8817'de dinleyen sunucu ve ağ arabirimleri,
+        // bkz. MachineSeams; testlerde güvenlik duvarına dokunmayan sahte, hiç dinlemeyen sunucu ve yerel alt ağ yok,
+        // PeerCacheTests'te 127.0.0.1)
         public PeerCache(AgentPaths paths, CapabilityState capabilities, Func<string, Task<(int Exit, string Output)>> firewall,
-            PeerCacheServerFactory server)
+            PeerCacheServerFactory server, Func<IReadOnlyList<InterfaceSubnet>> localSubnets)
         {
             ArgumentNullException.ThrowIfNull(paths);
             _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
             FirewallRunner = firewall ?? throw new ArgumentNullException(nameof(firewall));
             NewServer = server ?? throw new ArgumentNullException(nameof(server));
+            LocalSubnets = localSubnets ?? throw new ArgumentNullException(nameof(localSubnets));
             Dir = paths.PeerCacheDir;
             _isolationState = paths.SecureFile(NetworkIsolation.StateFileName);
             _examState = paths.SecureFile(ExamMode.StateFileName);
             IsIsolated = DefaultIsolated;
+            IsLocalSubnet = address => InLocalSubnet(address, LocalSubnets());
         }
 
         // <veri klasörü>\cache (AgentPaths.PeerCacheDir)
@@ -82,11 +91,14 @@ namespace POpsAgent
         // peer_cache_enabled: kapalıysa paket tutulmaz, sunulmaz, eşlerden indirilmez
         public bool Enabled => _capabilities.PeerCacheEnabled;
 
+        // Bu bilgisayarın arabirim adresleri ve önekleri (her denetimde sorulur; arabirim değişebilir)
+        internal Func<IReadOnlyList<InterfaceSubnet>> LocalSubnets { get; }
+
         // Testler: saat, güvenlik duvarı betiği, sunucunun kurulması, yerel alt ağ ve karantina denetimi (servis değiştirmez)
         internal Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;
         internal Func<string, Task<(int Exit, string Output)>> FirewallRunner { get; set; }
         internal PeerCacheServerFactory NewServer { get; set; }
-        internal Func<IPAddress, bool> IsLocalSubnet { get; set; } = InLocalSubnet;
+        internal Func<IPAddress, bool> IsLocalSubnet { get; set; }
         internal Func<bool> IsIsolated { get; set; }
 
         // Ağ karantinası ya da sınav modu: ikisinin kuralları da gelen bağlantıyı engeller, giden bağlantıyı izin listesine
@@ -386,10 +398,22 @@ Get-NetFirewallRule -Group {BitsDownload.Quote(RuleGroup)} -ErrorAction Silently
 ";
 
         // ------------------------------------------------------------------------------------------
-        // Yerel alt ağ: bu bilgisayarın çalışan arabirimlerinden birinin ağında mı (güvenlik duvarının LocalSubnet'i gibi)
+        // Yerel alt ağ: bu bilgisayarın çalışan arabirimlerinden birinin ağında bir konak mı (güvenlik duvarının LocalSubnet'i
+        // gibi, ondan geniş değil). Alt ağ arabirimin adresinden ve önek uzunluğundan (IPv4'te maskeden) çıkar; IPv6'da bağlantı-
+        // yerel (fe80::/64) ve arabirimdeki önekler (on-link). Adresin özel ya da genel olması fark etmez. IPv4 ağının adresi ve
+        // yayın adresi (önek /30 ya da daha darsa) konak sayılmaz.
         // ------------------------------------------------------------------------------------------
-        internal static bool InLocalSubnet(IPAddress address)
+        internal static bool InLocalSubnet(IPAddress address, IEnumerable<InterfaceSubnet> subnets)
         {
+            foreach (InterfaceSubnet subnet in subnets)
+                if (IsHostOf(subnet, address)) return true;
+            return false;
+        }
+
+        // Servis: çalışan arabirimlerin tek noktaya yayın adresleri ve önek uzunlukları (bkz. MachineSeams.LocalSubnets)
+        internal static IReadOnlyList<InterfaceSubnet> ReadLocalSubnets()
+        {
+            var subnets = new List<InterfaceSubnet>();
             foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (nic.OperationalStatus != OperationalStatus.Up) continue;
@@ -397,9 +421,20 @@ Get-NetFirewallRule -Group {BitsDownload.Quote(RuleGroup)} -ErrorAction Silently
                 try { props = nic.GetIPProperties(); }
                 catch (NetworkInformationException) { continue; }
                 foreach (UnicastIPAddressInformation unicast in props.UnicastAddresses)
-                    if (SameSubnet(unicast.Address, unicast.PrefixLength, address)) return true;
+                    subnets.Add(new InterfaceSubnet(unicast.Address, unicast.PrefixLength));
             }
-            return false;
+            return subnets;
+        }
+
+        private static bool IsHostOf(InterfaceSubnet subnet, IPAddress address)
+        {
+            if (!SameSubnet(subnet.Address, subnet.PrefixLength, address)) return false;
+            IPAddress a = Normalize(address);
+            if (a.AddressFamily != AddressFamily.InterNetwork || subnet.PrefixLength > 30) return true;
+            // Konak kısmı tümüyle 0 (ağın adresi) ya da tümüyle 1 (yayın adresi) değil
+            uint value = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(a.GetAddressBytes());
+            uint host = value & (uint.MaxValue >> subnet.PrefixLength);
+            return host != 0 && host != uint.MaxValue >> subnet.PrefixLength;
         }
 
         // Çok geniş önekler (IPv4 /8'den, IPv6 /64'ten geniş; ör. tünel arabirimleri) yerel alt ağ sayılmaz
@@ -422,6 +457,27 @@ Get-NetFirewallRule -Group {BitsDownload.Quote(RuleGroup)} -ErrorAction Silently
         {
             IPAddress a = address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
             return a.AddressFamily == AddressFamily.InterNetworkV6 && a.ScopeId != 0 ? new IPAddress(a.GetAddressBytes()) : a;
+        }
+
+        // Hiçbir arabirimin alt ağında olsa da eş olamayan adres: neden, değilse null. Geri döngü ayrıca denetlenir.
+        internal static string? NotAPeerAddress(IPAddress address)
+        {
+            IPAddress a = Normalize(address);
+            if (a.AddressFamily == AddressFamily.InterNetwork)
+            {
+                byte first = a.GetAddressBytes()[0];
+                if (first == 0) return "belirtilmemiş adres (0.0.0.0/8)";
+                if (first >= 224 && first < 240) return "çoklu yayın adresi";
+                if (first >= 240) return "yayın ya da ayrılmış adres";
+                return null;
+            }
+            if (a.AddressFamily == AddressFamily.InterNetworkV6)
+            {
+                if (a.Equals(IPAddress.IPv6Any)) return "belirtilmemiş adres (::)";
+                if (a.IsIPv6Multicast) return "çoklu yayın adresi";
+                return null;
+            }
+            return "IP adresi değil";
         }
 
         // ------------------------------------------------------------------------------------------

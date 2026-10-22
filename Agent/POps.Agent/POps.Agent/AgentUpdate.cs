@@ -446,8 +446,8 @@ namespace POpsAgent
         // Hazırlanmakta olan güncellemenin sürümü (manifest doğrulandıktan sonra; ignored_busy'de bildirilir)
         private volatile string _preparingVersion;
 
-        // capabilities: bağlamın yetenek durumu (peer_cache_enabled); machine: eş önbelleğinin güvenlik duvarı kuralı ve dinlediği
-        // adres, BITS ve updater'ın başlatılması (bkz. MachineSeams). installedVersion: kurulu sürüm (null: bu derlemenin
+        // capabilities: bağlamın yetenek durumu (peer_cache_enabled); machine: eş önbelleğinin güvenlik duvarı kuralı, sunucusu ve
+        // yerel alt ağları, BITS ve updater'ın başlatılması (bkz. MachineSeams). installedVersion: kurulu sürüm (null: bu derlemenin
         // sürümü); trustedKey: manifest'i doğrulayan ed25519 anahtarı (null: gömülü anahtar, ReleaseVerifier.PublicKeyBase64);
         // launch: updater'ın başlatılması (paket, SHA-256, hedef sürüm; dönen: başlatıldı mı; null: makine kapısı). Sürüm,
         // anahtar ve başlatıcıyı testler verir.
@@ -460,7 +460,7 @@ namespace POpsAgent
             _trustedKey = trustedKey;
             _launch = launch;
             _launchUpdater = machine.LaunchUpdater;
-            PeerCache = new PeerCache(paths, capabilities, machine.PeerCacheFirewall, machine.PeerCacheServer);
+            PeerCache = new PeerCache(paths, capabilities, machine.PeerCacheFirewall, machine.PeerCacheServer, machine.LocalSubnets);
             PeerDownload = new PeerDownload(address => PeerCache.IsLocalSubnet(address));
             Bits = new BitsDownload(machine.Bits, () => capabilities.ServerCa == ServerTrust.ModeCustom);
         }

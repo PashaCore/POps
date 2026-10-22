@@ -50,6 +50,8 @@ namespace POps.Tests.Agent
                     }
                     // Bu bilgisayarın sistem ortam değişkenleri okunmaz (eski sürümden kalan gizli değer yok sayılır)
                     if (property.Name == nameof(MachineSeams.ReadMachineVariable)) Assert.Null(machine.ReadMachineVariable("POPS_BYPASS_SECRET"));
+                    // Bu bilgisayarın ağ arabirimleri okunmaz: yerel alt ağ yok (eş önbelleği hiçbir eşi ve istemciyi kabul etmez)
+                    if (property.Name == nameof(MachineSeams.LocalSubnets)) Assert.Empty(machine.LocalSubnets());
                 }
                 else if (property.Name == nameof(MachineSeams.Kiosk))
                     Assert.False(value is WindowsKioskRegistry, "kiosk kaydı gerçek kayıt defteri");
@@ -185,6 +187,7 @@ namespace POps.Tests.Agent
             PeerCache cache = agent.Updater.PeerCache;
             Assert.Same(machine.PeerCacheFirewall, cache.FirewallRunner);
             Assert.Same(machine.PeerCacheServer, cache.NewServer);
+            Assert.Same(machine.LocalSubnets, cache.LocalSubnets);
             Assert.Contains(machine.ReadMachineVariable, Fields(agent.Credentials));
             Assert.Contains(machine.DeleteMachineVariable, Fields(agent.Credentials));
             Assert.Null(agent.Updater.Bits.Runner);
