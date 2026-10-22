@@ -456,8 +456,9 @@ users:
   the agent runs first (`winget install --id Mozilla.Firefox -e --source winget --silent --scope machine
   --accept-package-agreements --accept-source-agreements --disable-interactivity [--version …]`), for display only.
   When the package has no machine-scope installer (`0x8A150010`), the agent runs it once more without
-  `--scope machine` ([`agent.md`](agent.md#winget_install-contract), point 5). Without a `name` the title
-  is `winget: <id>`.
+  `--scope machine` ([`agent.md`](agent.md#winget_install-contract), point 5). Without a version the agent first
+  pins the newest version in the winget source and says so in the output; the output also says where the package
+  landed (machine-wide or only in the SYSTEM account's profile). Without a `name` the title is `winget: <id>`.
 - The queue sends `{"action": "winget_install", "task_id", "id", "version", "requested_by"}` only to an agent whose
   connection announced `winget` (`X-Agent-Features`). Pending winget tasks of other online PCs become `Denied` with
   exit code -8 and an explanation in `output`; nothing is sent to them. With the `deploy` module off in the lab they

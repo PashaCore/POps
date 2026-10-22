@@ -12,7 +12,8 @@ namespace POpsAgent
     //    bağlantı ve yanıt başlığı beklenirken de işler.
     //  * toplam süre (servis: 2 saat), veri aksa da.
     //  * servis duruyor (çağıranın jetonu).
-    // Expired, aktarımın bir süre dolduğu için kesildiğini file_result'ın açıklamasıyla söyler.
+    // Expired, aktarımın bir süre dolduğu için kesildiğini file_result'ın açıklamasıyla söyler; Detail başka hataları da
+    // açıklar (bkz. TransferError).
     internal sealed class TransferWatchdog : IDisposable
     {
         private readonly TimeSpan _idleTimeout;
@@ -50,6 +51,11 @@ namespace POpsAgent
             : _total.IsCancellationRequested ? TotalMessage(_totalTimeout)
             : _idle.IsCancellationRequested ? IdleMessage(_idleTimeout)
             : null;
+
+        // Aktarımı kesen hatanın file_result açıklaması: süre dolduysa süre; servis duruyorsa hatanın kendi iletisi (eskisi gibi);
+        // değilse Türkçe neden ve parantez içinde ham ileti (upload: dosya alma, değilse gönderme)
+        public string Detail(Exception error, bool upload) =>
+            Expired ?? (_stopping.IsCancellationRequested ? error.Message : TransferError.Describe(error, upload));
 
         // Servis: "zaman aşımı: 2 dakikadır veri yok", "toplam süre 2 saati aştı"
         internal static string IdleMessage(TimeSpan idle) =>

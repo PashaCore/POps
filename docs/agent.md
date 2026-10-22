@@ -265,10 +265,20 @@ arm64 to match the OS), and only from that folder. When none exists, answer `exi
 install --id <id> -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity [--version <version>]
 ```
 
-`--source winget` keeps the msstore source out under LocalSystem (agents up to 0.1.23 ran without it). When this run
-ends with `0x8A150010` (-1978335216, no applicable installer: the package has no machine-scope installer), run it
-once more with the same arguments minus `--scope machine`, within the same task and time limit, and answer one result
-with the second run's exit code; see point 7.
+`--source winget` keeps the msstore source out under LocalSystem (agents up to 0.1.23 ran without it). When
+`version` is `null`, first look up the newest version in the source, the same way (no shell, one argument per entry):
+
+```
+show --id <id> -e --source winget --versions --accept-source-agreements --disable-interactivity
+```
+
+and pass it as `--version <newest>`. Without a version, `--scope machine` makes winget silently pick the newest
+version that *has* a machine-scope installer, which can be years old (field test: `Anki.Anki` gave 2.1.65 from 2023
+instead of 26.09.3, because every later version is user-scope only). When the newest version cannot be determined,
+run without `--version`, as before, and say so in the output. When the install run ends with `0x8A150010`
+(-1978335216, no applicable installer: this version has no machine-scope installer), run it once more with the same
+arguments minus `--scope machine` (so with the same pinned version), within the same task and time limit, and answer
+one result with the second run's exit code; see point 7.
 
 Same limits as `execute`: 30-minute time limit (-1), `cancel_task` ends it and its child processes (-2), service
 stop (-4), the same output cap. Capture stdout and stderr; drop the progress-bar and spinner lines winget draws
@@ -298,17 +308,55 @@ command (the package id and version may be recorded in clear).
 
 **7. The Windows agent** (`WingetInstall.cs`, `Commands/WingetInstallHandler.cs`), from 0.1.24-alpha:
 
-- **User-scope-only packages.** When that run ends with winget's "no applicable installer" code, `0x8A150010` =
-  -1978335216 (`APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER`, "None of the installers are applicable for the
-  current system"; see winget's
+- **Newest version pinned.** With `version: null` the agent first runs
+  `winget show --id <id> -e --source winget --versions --accept-source-agreements --disable-interactivity` (point 5)
+  and takes the first row under the dashed separator line of the version table: winget lists the newest version
+  first, and the column header is localized ("Version", "Sürüm") but the dashes are not. The value must pass the same
+  check as a server-given `version` (`^[0-9A-Za-z.+_-]{1,40}$`), so an empty row, a row with spaces or one the table
+  cut short with `…` is not used. The lookup has its own 60-second limit and is part of the task like the install
+  runs. When it fails (non-zero exit code, 60 seconds passed, no version table, an empty or unusable first row) the
+  install runs without `--version`, exactly as before. A server-given `version` is used as it is, with no lookup.
+  Consequence: a package whose newest version has no installer for this PC at all (another architecture only, a newer
+  Windows only) now ends with `0x8A150010` after both runs instead of quietly installing an older version; the admin
+  can ask for a specific version.
+- **User-scope-only packages.** When the install run ends with winget's "no applicable installer" code,
+  `0x8A150010` = -1978335216 (`APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER`, "None of the installers are applicable
+  for the current system"; see winget's
   [return codes](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md)),
-  it runs winget once more with the same arguments minus `--scope machine`. No other code is retried, and there is
-  no third run. Both runs are the same task: the `task_id` stays reserved (a repeated `winget_install` is ignored),
-  `cancel_task` and a service stop end the second run or keep it from starting, and the 30-minute limit covers both
-  runs together. There is still one `result`, with the second run's exit code.
-- **Scope in the output.** The first line of `output` names the scope used: `[kapsam: machine]`, or after the retry
-  `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`, followed by the first run's output (at most
-  4,096 characters) and the second run's, each under its own heading. Refusals (-5, -7) carry no scope line.
+  it runs winget once more with the same arguments minus `--scope machine` (the same pinned version). No other code
+  is retried, and there is no third run. The lookup, both runs and the location check below are the same task: the
+  `task_id` stays reserved (a repeated `winget_install` is ignored), `cancel_task` and a service stop end the running
+  step or keep the next one from starting, and the 30-minute limit covers all of them together. There is still one
+  `result`, with the last install run's exit code.
+- **Where the package landed.** `--scope machine` is what winget was asked for, not where the package ended up. In
+  the field test Anki 2.1.65 (manifest scope machine, a 32-bit NSIS installer) ran as SYSTEM and installed into
+  SYSTEM's own profile (`C:\Windows\SysWOW64\config\systemprofile\AppData\Local\Programs\Anki`, uninstall entry
+  under `HKEY_USERS\S-1-5-18`), where no user of the PC sees it; after the retry without `--scope` a user-scope
+  installer lands there too. So when the package is on the PC after the install (exit code 0, `0x8A150109` restart
+  needed, `0x8A15002B` or `0x8A150061` already installed) the agent runs
+  `winget list --id <id> -e --source winget --scope machine --accept-source-agreements --disable-interactivity`
+  and, only when that finds nothing, the same with `--scope user` (as SYSTEM: SYSTEM's own profile). Only exit codes
+  are read, never the localized text: 0 is found, `0x8A150014` (-1978335212,
+  `APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND`) is not found. Each query has its own 60-second limit. Any other
+  code, the limit, nothing found in either scope, or a stop (`cancel_task`, service stop, task limit) during the
+  check means the location is not known. A stop during the check does not change the result: the package is
+  installed, the result keeps the install's exit code. After `0x8A15010B` (the PC restarts itself) and after a failed
+  install nothing is asked. Not covered: a portable package (zip) installed machine-wide under
+  `%ProgramFiles%\WinGet\Packages` counts as machine-wide although it has no Start menu shortcut, and when the
+  same id is also installed machine-wide (for example an older version), the line says machine-wide (`winget list`
+  cannot filter by version).
+- **Scope in the output.** The first line of `output` names the scope the install ran with: `[kapsam: machine]`, or
+  after the retry `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`. When the agent chose the
+  version, the next line says which: `[sürüm: kaynaktaki en yeni sürüm <sürüm> seçildi]` (for example 26.09.3 for Anki.Anki), or
+  `[sürüm: en yeni sürüm bulunamadı (<reason>); winget kendisi seçti]` with a short reason (`winget show çıkış kodu
+  <code>`, `winget show 60 sn içinde bitmedi`, `çıktıda sürüm listesi yok`, `sürüm listesi boş`, `listedeki ilk sürüm
+  geçersiz ya da kısaltılmış`); with a server-given version there is no such line. When the location was checked, the
+  next line is `[kurulduğu yer: makine geneli]`, `[kurulduğu yer: yalnızca SYSTEM hesabının profili — bilgisayarın
+  kullanıcıları göremez]` or `[kurulduğu yer: belirlenemedi (<reason>)]` (`winget list çıkış kodu <code>`,
+  `winget list 60 sn içinde bitmedi`, `winget list paketi iki kapsamda da bulamadı`, `görev durdu`). Then the first
+  run's output (at most 4,096 characters) and the second run's, each under its own heading. Refusals (-5, -7) carry
+  no scope line; neither does a task stopped during the lookup (-1, -2, -4), which starts with `[sürüm: en yeni sürüm
+  sorgulanırken görev durdu; kurulum başlamadı]` followed by the stop reason.
 
 ### `power` and `user_message` contract
 
@@ -475,6 +523,28 @@ Each transfer is announced in the tray and written to the event log.
   transfer is `failed` when no data has moved for 2 minutes (while connecting and waiting for the response too;
   `detail`: `zaman aşımı: 2 dakikadır veri yok`) or when it has taken 2 hours in all (`toplam süre 2 saati aştı`),
   which a 1 GB file meets at about 150 KB/s.
+- **Failure details:** a `failed` transfer's `detail` says in Turkish what happened, with .NET's own error in
+  parentheses (and the innermost error when the outer one does not contain it, e.g. "see inner exception"; the raw
+  part is shortened so the whole text fits in 300 characters). The cause is taken from the exception type,
+  `HttpRequestError`, `SocketError` and the status code, never from the message text, which depends on the system
+  language and the .NET version:
+
+  | Case | `detail` |
+  | --- | --- |
+  | Pull: connection reset or closed by the other end while uploading | `bağlantı kesildi: sunucu ya da önündeki vekil sunucu yüklemeyi yarıda kesti; olası neden vekilin boyut sınırı (ör. Cloudflare 100 MB) (…)` |
+  | Push: connection reset, or the response ended early | `bağlantı kesildi: indirme yarıda kaldı; sunucu ya da aradaki bir vekil sunucu bağlantıyı kapattı (…)` |
+  | Pull: HTTP 413 | `dosya çok büyük; sunucu ya da önündeki vekil kabul etmedi (HTTP 413)` |
+  | Any other status | `yüklenemedi: HTTP <code>` / `indirilemedi: HTTP <code>` |
+  | Name not resolved | `sunucunun adı çözülemedi: DNS yanıt vermedi ya da ad bulunamadı (…)` |
+  | No connection (refused, timed out while connecting) | `sunucuya bağlanılamadı: sunucu kapalı ya da ağdan erişilemiyor (…)` |
+  | TLS (server certificate rejected, handshake failed) | `güvenli bağlantı kurulamadı: sunucu sertifikası reddedildi ya da TLS el sıkışması başarısız (…)` |
+  | Anything else (disk, file read, other network errors) | `yükleme tamamlanmadı (…)` / `indirme tamamlanmadı (…)` |
+
+  The time limits keep their texts above; when the service is stopping, the error's own message is sent as before.
+  A proxy in front of the server may refuse a large upload: Cloudflare's Free and Pro plans take request bodies up
+  to 100 MB, and as the agent is still sending the file it usually sees the connection closed rather than the 413
+  answer (field test, 190 MB). The agent log line carries the same text, raw error included:
+  `Dosya alma tamamlanmadı (<transfer_id>, failed): <detail>.` (push: `Dosya gönderimi tamamlanmadı …`).
 - **Result:** `{"type": "file_result", "transfer_id", "outcome": "done" | "rejected" | "failed", "path", "detail"}`.
   The field is `outcome`, not `status`: a server that does not know `file_result` would take a message with
   `status` for a heartbeat. `path` is left out when it is longer than 1024 characters; `detail` is cut at 300.
