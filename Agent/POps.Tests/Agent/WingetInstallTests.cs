@@ -72,12 +72,62 @@ namespace POps.Tests.Agent
             Assert.False(WingetInstall.TryParse(Command($"{{\"id\":\"Ab\",\"version\":\"{new string('1', 41)}\"}}"), out _, out _));
         }
 
+        // Yalnızca winget kaynağı (SYSTEM olarak msstore devreye girmez), önce --scope machine
         [Fact]
         public void Arguments_AreTheAgreedCommandLine()
         {
-            Assert.Equal(new[] { "install", "--id", "Mozilla.Firefox", "-e", "--silent", "--scope", "machine", "--accept-package-agreements",
-                "--accept-source-agreements", "--disable-interactivity" }, WingetInstall.Arguments("Mozilla.Firefox", null));
-            Assert.Equal(new[] { "--version", "24.08" }, WingetInstall.Arguments("7zip.7zip", "24.08").TakeLast(2));
+            Assert.Equal(new[] { "install", "--id", "Mozilla.Firefox", "-e", "--source", "winget", "--silent", "--scope", "machine",
+                "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity" }, WingetInstall.Arguments("Mozilla.Firefox", null));
+            Assert.Equal(new[] { "install", "--id", "7zip.7zip", "-e", "--source", "winget", "--silent", "--scope", "machine",
+                "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity", "--version", "24.08" }, WingetInstall.Arguments("7zip.7zip", "24.08"));
+        }
+
+        // Kapsamsız yeniden deneme: aynı komut satırı, yalnızca --scope machine yok
+        [Fact]
+        public void RetryArguments_DropOnlyTheScope()
+        {
+            Assert.Equal(new[] { "install", "--id", "Mozilla.Firefox", "-e", "--source", "winget", "--silent",
+                "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity" },
+                WingetInstall.RetryArguments(WingetInstall.ExitNoApplicableInstaller, "Mozilla.Firefox", null));
+            Assert.Equal(new[] { "install", "--id", "7zip.7zip", "-e", "--source", "winget", "--silent",
+                "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity", "--version", "24.08" },
+                WingetInstall.RetryArguments(WingetInstall.ExitNoApplicableInstaller, "7zip.7zip", "24.08"));
+            Assert.Equal(WingetInstall.RetryArguments(WingetInstall.ExitNoApplicableInstaller, "7zip.7zip", "24.08"), WingetInstall.Arguments("7zip.7zip", "24.08", machineScope: false));
+        }
+
+        // winget belgesi (returnCodes.md): 0x8A150010 APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER, -1978335216
+        [Fact]
+        public void NoApplicableInstaller_IsWingetsCode() => Assert.Equal(-1978335216, WingetInstall.ExitNoApplicableInstaller);
+
+        // Yalnızca "uygulanabilir yükleyici yok" yeniden denenir; başka hiçbir kod (başarı, zaten kurulu, paket yok, ajanın
+        // kendi kodları) denenmez
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1978335189)]   // 0x8A15002B zaten kurulu
+        [InlineData(-1978335135)]   // 0x8A150061 zaten kurulu
+        [InlineData(-1978335212)]   // 0x8A150014 paket yok
+        [InlineData(-1978335215)]   // 0x8A150011 komşu kod
+        [InlineData(-1978334967)]   // 0x8A150109 yeniden başlatma gerekli
+        [InlineData(-1)]
+        [InlineData(-2)]
+        [InlineData(-3)]
+        [InlineData(-4)]
+        [InlineData(1)]
+        public void OtherExitCodes_AreNotRetried(int exitCode) => Assert.Null(WingetInstall.RetryArguments(exitCode, "Mozilla.Firefox", null));
+
+        [Fact]
+        public void ResultOutput_StartsWithTheScope()
+        {
+            Assert.Equal("[kapsam: machine]\nFound Mozilla Firefox\nSuccessfully installed",
+                WingetInstall.ResultOutput("Found Mozilla Firefox\r\n  ██████▒▒▒▒  1.0 MB / 2.0 MB\rSuccessfully installed\r\n"));
+            Assert.Equal("[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]\n[1. deneme, --scope machine: çıkış -1978335216]\n"
+                + "No applicable installer found; see logs for more details.\n[2. deneme, kapsamsız]\nSuccessfully installed",
+                WingetInstall.ResultOutput("   -\r   \\\r\nSuccessfully installed\r\n", "No applicable installer found; see logs for more details.\r\n"));
+            // Yeniden denemede ilk denemenin çıktısı kısaltılır; sonuç sözleşmenin sınırını aşmaz
+            string output = WingetInstall.ResultOutput(new string('b', CommandExecutionPolicy.MaxOutputChars), new string('a', 10000));
+            Assert.StartsWith(WingetInstall.UserScopeNote + "\n[1. deneme, --scope machine: çıkış -1978335216]\n" + new string('a', WingetInstall.MachineAttemptMaxChars) + "\n[ÇIKTI KISALTILDI]\n[2. deneme, kapsamsız]\nbbb", output);
+            Assert.True(output.Length <= CommandExecutionPolicy.MaxOutputChars);
+            Assert.True(WingetInstall.ResultOutput(new string('b', CommandExecutionPolicy.MaxOutputChars)).Length <= CommandExecutionPolicy.MaxOutputChars);
         }
 
         [Fact]
@@ -246,9 +296,109 @@ namespace POps.Tests.Agent
             await worker.HandleServerMessageAsync(Install(46, "Mozilla.Firefox", "131.0"), null, CancellationToken.None);
             JsonElement result = await ResultFor(46);
             Assert.Equal(-1978335189, result.GetProperty("exit_code").GetInt32());
-            Assert.Contains("ARGS:install --id Mozilla.Firefox -e --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity --version 131.0",
+            Assert.Equal("[kapsam: machine]\nARGS:install --id Mozilla.Firefox -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity --version 131.0",
                 result.GetProperty("output").GetString());
             Assert.Empty(Sent("capability_denied"));
+        }
+
+        // Sahte winget: her çağrının bağımsız değişkenlerini calls.txt'ye ve çıktıya yazar; --scope ile çağrılırsa scoped, yoksa
+        // unscoped koduyla biter (unscopedPing: önce o kadar ping, yaklaşık saniye)
+        private (string Fake, string Calls) FakeWinget(int scoped, int unscoped, int unscopedPing = 0)
+        {
+            string dir = TestEnvironment.NewDir("fake-winget");
+            string fake = Path.Combine(dir, "winget.cmd");
+            string calls = Path.Combine(dir, "calls.txt");
+            File.WriteAllText(fake, "@echo off\r\n>>\"%~dp0calls.txt\" echo %*\r\necho ARGS:%*\r\nset scoped=0\r\n"
+                + "for %%a in (%*) do if \"%%a\"==\"--scope\" set scoped=1\r\n"
+                + $"if %scoped%==1 exit /b {scoped}\r\n"
+                + (unscopedPing > 0 ? $"ping -n {unscopedPing} 127.0.0.1 > nul\r\n" : "")
+                + $"exit /b {unscoped}\r\n");
+            _locator = () => fake;
+            return (fake, calls);
+        }
+
+        private static string[] Calls(string calls)
+        {
+            try { return File.Exists(calls) ? File.ReadAllLines(calls).Select(l => l.Trim()).ToArray() : Array.Empty<string>(); }
+            catch (IOException) { return Array.Empty<string>(); }
+        }
+
+        private const string MachineArgs = "install --id Mozilla.Firefox -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity";
+        private const string UnscopedArgs = "install --id Mozilla.Firefox -e --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity";
+
+        // Yalnızca kullanıcı kapsamında yükleyicisi olan paket: aynı görevde bir kez --scope olmadan; tek sonuç, ikinci denemenin
+        // çıkış kodu, kapsam ilk satırda, iki denemenin çıktısı sırayla
+        [Fact]
+        public async Task NoMachineInstaller_IsRetriedOnceWithoutScope_AndReportsTheSecondAttempt()
+        {
+            (_, string calls) = FakeWinget(WingetInstall.ExitNoApplicableInstaller, -1978334967);
+            using Worker worker = NewWorker();
+            await worker.HandleServerMessageAsync(Install(48, "Mozilla.Firefox"), null, CancellationToken.None);
+            JsonElement result = await ResultFor(48);
+            Assert.Equal(-1978334967, result.GetProperty("exit_code").GetInt32());
+            Assert.Equal($"{WingetInstall.UserScopeNote}\n[1. deneme, --scope machine: çıkış -1978335216]\nARGS:{MachineArgs}\n[2. deneme, kapsamsız]\nARGS:{UnscopedArgs}",
+                result.GetProperty("output").GetString());
+            Assert.Equal(new[] { MachineArgs, UnscopedArgs }, Calls(calls));
+
+            // Sürümlü emirde iki deneme de sürümü taşır
+            await worker.HandleServerMessageAsync(Install(49, "Mozilla.Firefox", "131.0"), null, CancellationToken.None);
+            await ResultFor(49);
+            Assert.Equal(new[] { MachineArgs, UnscopedArgs, MachineArgs + " --version 131.0", UnscopedArgs + " --version 131.0" }, Calls(calls));
+            await Task.Delay(200);
+            Assert.Equal(1, Sent("result").Count(m => m.GetProperty("task_id").GetInt32() == 48));
+            Assert.Equal(1, Sent("result").Count(m => m.GetProperty("task_id").GetInt32() == 49));
+        }
+
+        // Kapsamsız deneme de "uygulanabilir yükleyici yok" ile biterse üçüncü deneme yok: o kod bildirilir
+        [Fact]
+        public async Task NoInstallerAtAll_IsRetriedOnlyOnce()
+        {
+            (_, string calls) = FakeWinget(WingetInstall.ExitNoApplicableInstaller, WingetInstall.ExitNoApplicableInstaller);
+            using Worker worker = NewWorker();
+            await worker.HandleServerMessageAsync(Install(50, "Mozilla.Firefox"), null, CancellationToken.None);
+            JsonElement result = await ResultFor(50);
+            Assert.Equal(-1978335216, result.GetProperty("exit_code").GetInt32());
+            Assert.StartsWith(WingetInstall.UserScopeNote + "\n", result.GetProperty("output").GetString());
+            Assert.Equal(new[] { MachineArgs, UnscopedArgs }, Calls(calls));
+        }
+
+        // Başka bir hata kodu yeniden denenmez: tek çağrı, kapsam machine
+        [Theory]
+        [InlineData(-1978335212)]
+        [InlineData(0)]
+        public async Task OtherExitCodes_RunOnce_WithMachineScope(int exitCode)
+        {
+            (_, string calls) = FakeWinget(exitCode, 0);
+            using Worker worker = NewWorker();
+            await worker.HandleServerMessageAsync(Install(51, "Mozilla.Firefox"), null, CancellationToken.None);
+            JsonElement result = await ResultFor(51);
+            Assert.Equal(exitCode, result.GetProperty("exit_code").GetInt32());
+            Assert.Equal($"[kapsam: machine]\nARGS:{MachineArgs}", result.GetProperty("output").GetString());
+            Assert.Equal(new[] { MachineArgs }, Calls(calls));
+        }
+
+        // Kapsamsız deneme aynı görevdir: sürerken gelen aynı emir yeni bir kurulum başlatmaz, cancel_task onu sonlandırır, tek sonuç
+        [Fact]
+        public async Task Retry_IsTheSameTask_ForDuplicatesAndCancel()
+        {
+            (_, string calls) = FakeWinget(WingetInstall.ExitNoApplicableInstaller, 0, unscopedPing: 30);
+            using Worker worker = NewWorker();
+            await worker.HandleServerMessageAsync(Install(52, "Mozilla.Firefox"), null, CancellationToken.None);
+            for (int i = 0; i < 200 && Calls(calls).Length < 2; i++) await Task.Delay(50);
+            Assert.Equal(new[] { MachineArgs, UnscopedArgs }, Calls(calls));
+
+            await worker.HandleServerMessageAsync(Install(52, "Mozilla.Firefox"), null, CancellationToken.None);
+            await Task.Delay(300);
+            Assert.Equal(2, Calls(calls).Length);
+
+            await worker.HandleServerMessageAsync("{\"action\":\"cancel_task\",\"task_id\":52}", null, CancellationToken.None);
+            JsonElement result = await ResultFor(52);
+            Assert.Equal(CommandRunner.ExitCancelled, result.GetProperty("exit_code").GetInt32());
+            Assert.StartsWith(WingetInstall.UserScopeNote + "\n", result.GetProperty("output").GetString());
+            Assert.Contains("[2. deneme, kapsamsız]\n[İPTAL EDİLDİ]", result.GetProperty("output").GetString());
+            await Task.Delay(300);
+            Assert.Equal(1, Sent("result").Count(m => m.GetProperty("task_id").GetInt32() == 52));
+            Assert.Equal(2, Calls(calls).Length);
         }
 
         // Eski "POPS-WINGET" yolu yok: execute yalnızca komuttur (terminal kapalıyken her zamanki ret)

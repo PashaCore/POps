@@ -177,6 +177,67 @@ namespace POps.Tests.Agent
             Assert.Equal(0, (await runner.RunAsync(21, "echo yeniden", CancellationToken.None)).ExitCode);
         }
 
+        // Denemelerin programı: "deneme <ad>" yazar, <çıkış> ile biter; <ping> verilirse önce o kadar ping (yaklaşık saniye),
+        // ad "mark" ise yanına started.txt yazar
+        private static string AttemptScript()
+        {
+            string script = Path.Combine(TestEnvironment.NewDir("retry"), "attempt.cmd");
+            File.WriteAllText(script, "@echo off\r\nif \"%1\"==\"mark\" echo x> \"%~dp0started.txt\"\r\nif not \"%3\"==\"\" ping -n %3 127.0.0.1 > nul\r\n"
+                + "echo deneme %1\r\nexit /b %2\r\n");
+            return script;
+        }
+
+        // İkinci deneme (winget'in kapsamsız yeniden denemesi) aynı görevdir: kimlik ayrılı kalır, yalnızca bir kez sorulur,
+        // sonuç ikincinin
+        [Fact]
+        public async Task Retry_RunsOnce_UnderTheSameReservation()
+        {
+            var runner = TestEnvironment.NewCommandRunner();
+            string script = AttemptScript();
+            var asked = new System.Collections.Generic.List<string>();
+            CommandExecutionResult result = await runner.RunProgramAsync(31, script, new[] { "bir", "7" }, first =>
+            {
+                Assert.True(runner.IsRunning(31));
+                asked.Add($"{first.ExitCode} {first.Output}");
+                return new[] { "iki", "5" };
+            }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20));
+            Assert.Equal(new[] { "7 deneme bir" }, asked);
+            Assert.Equal((5, "deneme iki"), (result.ExitCode, result.Output));
+            Assert.False(runner.IsRunning(31));
+
+            // null: ikinci deneme yok, ilk denemenin sonucu döner
+            CommandExecutionResult single = await runner.RunProgramAsync(32, script, new[] { "tek", "4" }, _ => null, CancellationToken.None);
+            Assert.Equal((4, "deneme tek"), (single.ExitCode, single.Output));
+        }
+
+        // Denemeler arasında gelen cancel_task ikinciyi başlatmaz
+        [Fact]
+        public async Task Retry_CancelledBetweenAttempts_DoesNotStartTheSecond()
+        {
+            var runner = TestEnvironment.NewCommandRunner();
+            string script = AttemptScript();
+            CommandExecutionResult result = await runner.RunProgramAsync(33, script, new[] { "bir", "7" }, _ =>
+            {
+                Assert.True(runner.Cancel(33));
+                return new[] { "mark", "0" };
+            }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20));
+            Assert.Equal((CommandRunner.ExitCancelled, "[İPTAL EDİLDİ]: Görev panelden iptal edildi; işlem sonlandırıldı.", TimeSpan.Zero),
+                (result.ExitCode, result.Output, result.Duration));
+            Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(script), "started.txt")));
+            Assert.False(runner.IsRunning(33));
+        }
+
+        // Süre sınırı iki denemeyi birlikte kapsar: tek başına sınırın altında kalan ikinci deneme (~3 sn < 4 sn), ilkiyle
+        // (~2 sn) birlikte aşınca sonlandırılır
+        [Fact]
+        public async Task Retry_SharesTheTimeLimit()
+        {
+            var runner = TestEnvironment.NewCommandRunner(TimeSpan.FromSeconds(4));
+            CommandExecutionResult result = await runner.RunProgramAsync(34, AttemptScript(), new[] { "bir", "7", "3" },
+                _ => new[] { "iki", "0", "4" }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.Equal(CommandRunner.ExitTimeout, result.ExitCode);
+        }
+
         [Fact]
         public void ExitCodes_AreDistinct()
         {

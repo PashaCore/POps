@@ -10,7 +10,7 @@ namespace POpsAgent
     // winget_install (bkz. WingetInstall). Retler "result" olarak bildirilir (-5; winget yoksa -7) ve hiçbir şey
     // çalıştırılmaz. Yerel terminal yeteneği ya da sınıfın deploy modülü kapalıysa ardından capability_denied gider
     // (execute ile aynı sıra). Çalıştırma execute gibi: aynı görev iki kez başlamaz, süre sınırı, cancel_task, sonuç
-    // result_ack'e kadar saklanır.
+    // result_ack'e kadar saklanır. Kapsamsız yeniden deneme aynı görevin parçasıdır (bkz. WingetInstall.RetryArguments).
     [SupportedOSPlatform("windows")]
     internal sealed class WingetInstallHandler : ICommandHandler
     {
@@ -84,8 +84,18 @@ namespace POpsAgent
             }
             POpsHelpers.Log("AGENT", $"winget kurulumu başlıyor: {WingetInstall.Describe(id, version)} (TaskID: {tid})");
             _audit(LocalAudit.CommandStarted(tid, WingetInstall.Describe(id, version), requestedBy));
-            // Görev kimliği burada (eşzamanlı olarak) ayrılır: arkasından gelen aynı kimlik ikinci işlem başlatamaz
-            Task<CommandExecutionResult> run = runner.RunProgramAsync(tid, wingetPath, WingetInstall.Arguments(id, version), stoppingToken);
+            // Görev kimliği burada (eşzamanlı olarak) ayrılır: arkasından gelen aynı kimlik ikinci işlem başlatamaz. Machine
+            // kapsamında uygulanabilir yükleyici yoksa aynı görevde (kimlik ayrılı, aynı iptal ve süre sınırı) bir kez kapsamsız
+            // yeniden denenir; sonuç bir tanedir, ikinci denemenin çıkış koduyla.
+            CommandExecutionResult? machineAttempt = null;
+            Task<CommandExecutionResult> run = runner.RunProgramAsync(tid, wingetPath, WingetInstall.Arguments(id, version), first =>
+            {
+                List<string>? retry = WingetInstall.RetryArguments(first.ExitCode, id, version);
+                if (retry == null) return null;
+                machineAttempt = first;
+                POpsHelpers.Log("AGENT", $"winget: paketin machine kapsamında uygulanabilir yükleyicisi yok ({WingetInstall.ExitNoApplicableInstaller}); --scope olmadan yeniden deneniyor (TaskID: {tid}).");
+                return retry;
+            }, stoppingToken);
             _ = Task.Run(async () =>
             {
                 CommandExecutionResult execution = await run;
@@ -94,12 +104,13 @@ namespace POpsAgent
                     POpsHelpers.Log("AGENT", $"winget kurulumu zaten çalışıyor; yinelenen emir yok sayıldı (TaskID: {tid}).");
                     return;
                 }
-                _audit(LocalAudit.CommandFinished(tid, execution.ExitCode, execution.Duration));
+                TimeSpan duration = execution.Duration + (machineAttempt?.Duration ?? TimeSpan.Zero);
+                _audit(LocalAudit.CommandFinished(tid, execution.ExitCode, duration));
                 await _outbox.SendResultAsync(tid, new
                 {
                     type = "result",
                     pc_name = _hwId(),
-                    output = WingetInstall.CleanOutput(execution.Output),
+                    output = WingetInstall.ResultOutput(execution.Output, machineAttempt?.Output),
                     task_id = tid,
                     exit_code = execution.ExitCode,
                 });

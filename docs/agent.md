@@ -291,6 +291,24 @@ command (the package id and version may be recorded in clear).
 
 -8 is set by the server only (agent without the feature).
 
+**7. The Windows agent** (`WingetInstall.cs`, `Commands/WingetInstallHandler.cs`). Where it differs from point 5,
+from the version after 0.1.23-alpha:
+
+- **Source.** It adds `--source winget` after `-e`, so only the community source is searched and the msstore source
+  never comes into play under LocalSystem:
+  `install --id <id> -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity [--version <version>]`.
+- **User-scope-only packages.** When that run ends with winget's "no applicable installer" code, `0x8A150010` =
+  -1978335216 (`APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER`, "None of the installers are applicable for the
+  current system"; see winget's
+  [return codes](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md)),
+  it runs winget once more with the same arguments minus `--scope machine`. No other code is retried, and there is
+  no third run. Both runs are the same task: the `task_id` stays reserved (a repeated `winget_install` is ignored),
+  `cancel_task` and a service stop end the second run or keep it from starting, and the 30-minute limit covers both
+  runs together. There is still one `result`, with the second run's exit code.
+- **Scope in the output.** The first line of `output` names the scope used: `[kapsam: machine]`, or after the retry
+  `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`, followed by the first run's output (at most
+  4,096 characters) and the second run's, each under its own heading. Refusals (-5, -7) carry no scope line.
+
 ### `power` and `user_message` contract
 
 Power actions (**Kapat**, **Yeniden başlat**, **Oturumu kapat**, **Kilitle**) and **Mesaj gönder** used to be
