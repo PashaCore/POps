@@ -420,7 +420,8 @@ Steps marked "real PC" also get the manual check on a test machine: enrol, `exec
   [#159 refactor(agent): exam, file transfer, power and message handlers (split step a4)](https://github.com/PashaCore/POps/pull/159).
 - **a5. Connection and tray.** `CommandConnection`, `TrayMessageRouter`, `PolicySync`. Worker.cs is now within its
   budget. Covered by `TrayPipeLifetimeTests`, `UpdateProgressTests`, `ReviewFourTests` (4409) and `ModulesTests`.
-  Checked on a real PC (reconnect, 4401 backoff).
+  Checked on a real PC (reconnect, 4401 backoff). **Done** in
+  [#162 refactor(agent): connection loop, sender and tray routing (split step a5)](https://github.com/PashaCore/POps/pull/162).
 
 Conflicts: each (a) step conflicts only with agent PRs opened after it starts. Keeping the steps to a few days each
 keeps that window short.

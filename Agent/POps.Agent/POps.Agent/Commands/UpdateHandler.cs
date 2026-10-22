@@ -17,7 +17,7 @@ namespace POpsAgent
         private readonly string _serverUrl;
         private readonly Func<Dictionary<string, object>, Task<bool>> _reportProgress;
 
-        // reportProgress: update_progress gönderimi (bkz. Worker.ReportUpdateProgressAsync)
+        // reportProgress: update_progress gönderimi (bkz. UpdateReporter.ReportUpdateProgressAsync)
         public UpdateHandler(HttpClient httpClient, string serverUrl, Func<Dictionary<string, object>, Task<bool>> reportProgress)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));

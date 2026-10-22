@@ -19,7 +19,7 @@ namespace POpsAgent
         private readonly Action<LocalAuditEvent> _audit;
 
         // Kimlik, donanım bağı ve yazılım envanteri çalışırken değişebilir (set_identity, testler); her kullanımda okunur.
-        // commandUsesDeviceSecret: komut bağlantısı cihaz secret'ıyla mı kuruldu (bkz. Worker.ApplyAuthHeaders)
+        // commandUsesDeviceSecret: komut bağlantısı cihaz secret'ıyla mı kuruldu (bkz. CommandConnection.ApplyAuthHeaders)
         public SecretsHandler(Func<string?> hwId, Func<HardwareBinding> binding, Func<SoftwareReporter?> software,
             Func<bool> commandUsesDeviceSecret, Func<object, Task<bool>> send, Action<LocalAuditEvent> audit)
         {

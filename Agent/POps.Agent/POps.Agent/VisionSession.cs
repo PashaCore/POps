@@ -11,7 +11,7 @@ namespace POpsAgent
 {
     // Vision oturumu: tünel (/ws/vision) ve kapanış kodları, onay ve Olay Günlüğü kaydı, kilitliyken başlayan oturumun
     // bildirimi, ekran yakalama, Vision v2 (bkz. VisionRelay) ve görüntüleyici denetimi. Komutlar VisionHandler ve
-    // RemoteInputHandler'dan, tepsi olayları Worker'ın tepsi borusundan gelir; heartbeat, set_capabilities, modül
+    // RemoteInputHandler'dan, tepsi olayları TrayMessageRouter'dan gelir; heartbeat, set_capabilities, modül
     // değişikliği ve bağlantı kaybı oturumun durumunu buradan okur.
     [SupportedOSPlatform("windows")]
     internal sealed class VisionSession
