@@ -22,6 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docs: reinstalling during a quarantine or an exam.** The troubleshooting guide says to lift the quarantine or end
   the exam first; otherwise the server sends it again to the new agent.
 
+### Fixed
+
+- **Agent: winget says truthfully where a package landed (#204).** 0.1.24 read the location from winget, which looks
+  only at the hive of the uninstall entry; a per-user MSI installed as SYSTEM (Anki 26.09.3 in the field test) was
+  reported as machine-wide although its files and shortcut were in the SYSTEM account's profile. The agent now
+  compares the installed-software entries before and after the install and, for an MSI, where Windows Installer
+  registered the product; when the signs disagree it says "belirlenemedi" instead of guessing.
+- **Agent: one Vision end event per session (#204).** Event 1011 was written twice when a session ended, because
+  two shutdown paths saw the session as still open at the same moment.
+- **Agent: the update log names BITS (#204).** A package fetched with BITS is logged as `Paket indirildi (BITS).` and
+  reported with the source `bits`; a direct download stays `(server)`.
+- **Docs: winget cannot uninstall a package from SYSTEM's 32-bit profile** (`0x800401F5`); run its own uninstaller
+  under `SysWOW64` (#204).
+
 ## [0.1.24-alpha] - 2026-10-22
 
 **For operators, in short:**
