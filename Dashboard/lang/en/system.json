@@ -372,7 +372,7 @@
   "Kayıt jetonu hazır": "Enrolment token ready",
   "{n} kullanım": {"one": "{n} use", "other": "{n} uses"},
   "{n} saat geçerli": {"one": "valid for {n} hour", "other": "valid for {n} hours"},
-  "MSI kurulumunda ENROLL_TOKEN olarak verin. Jeton yalnızca şimdi gösterilir, sunucuda saklanmaz; şimdi kopyalayın.": "Pass it to the MSI install as ENROLL_TOKEN. The token is shown only now and is not stored on the server; copy it now.",
+  "Üstteki jeton, altındaki hazır kurulum komutu (yönetici olarak çalıştırın). Jeton yalnızca şimdi gösterilir, sunucuda saklanmaz; şimdi kopyalayın.": "Above: the token; below: the ready install command (run it as administrator). The token is shown only now and is not stored on the server; copy it now.",
   "Kimlik zorlaması açılsın mı?": "Turn on identity enforcement?",
   "{n} ajan kayıtlı değil; zorlama açılınca bağlantılarını kaybederler.": {"one": "{n} agent is not enrolled; it will lose its connection when enforcement is on.", "other": "{n} agents are not enrolled; they will lose their connection when enforcement is on."},
   "Anahtarı olmayan ajan artık bağlanamaz.": "Agents without a key will no longer be able to connect.",
@@ -462,5 +462,12 @@
   "Bu ajan dosya aktarımını desteklemiyor": "This agent does not support file transfer",
   "{name} bilgisayarında dosya aktarımı kapalı tutulsun mu?": "Keep file transfer off on {name}?",
   "{name} bilgisayarında dosya aktarımı kapatılsın mı?": "Turn off file transfer on {name}?",
-  "Dosya aktarımını kapat": "Turn off file transfer"
+  "Dosya aktarımını kapat": "Turn off file transfer",
+  "Bu kurulumda kapalı olsun": "Off in this installation",
+  "Sınav modu": "Exam mode",
+  "Güç işlemleri": "Power actions",
+  "Mesaj": "Message",
+  "Sınıf içi paket paylaşımı": "In-lab package sharing",
+  "Kapalı kurulan özelliği sunucu açamaz; sunucu ele geçirilse bile o bilgisayarda çalışmaz. Açmak için ajan yeniden kurulur.": "The server cannot turn on a feature installed off; it does not run on that PC even if the server is taken over. To turn it on, reinstall the agent.",
+  "<sürüm>": "<version>"
 }

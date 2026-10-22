@@ -150,6 +150,11 @@ if (!$sysSuper || !isset($sysTabs[$sysTab])) { $sysTab = array_key_first($sysTab
     .dr-list label.check { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-top: 1px solid var(--border-subtle); }
     .dr-list label.check:first-child { border-top: 0; }
     .dr-list label.check.off { color: var(--text-muted); cursor: not-allowed; }
+    /* Jeton penceresi: kurulumda kapatılacak yetenekler */
+    .tk-caps { border: 0; padding: 0; margin: 16px 0 0; min-width: 0; }
+    .tk-caps legend { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); padding: 0; margin-bottom: 8px; }
+    .tk-caps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 16px; }
+    .tk-caps .field-hint { margin-top: 10px; }
     .dr-list .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
     .dr-list .vv { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; }
     .dr-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -460,6 +465,19 @@ if (!$sysSuper || !isset($sysTabs[$sysTab])) { $sysTab = array_key_first($sysTab
                 <div class="field"><label for="tkUses"><?php _e('Kullanım sayısı'); ?></label><input type="number" id="tkUses" min="1" max="10000" value="1"></div>
                 <div class="field"><label for="tkTtl"><?php _e('Geçerlilik (saat)'); ?></label><input type="number" id="tkTtl" min="1" max="720" value="72"></div>
             </div>
+            <fieldset class="tk-caps">
+                <legend><?php _e('Bu kurulumda kapalı olsun'); ?></legend>
+                <div class="tk-caps-grid">
+                    <?php foreach ([
+                        'TERMINAL_ENABLED' => __('Uzak komut'), 'VISION_ENABLED' => __('Uzak ekran'), 'FILES_ENABLED' => __('Dosya aktarımı'),
+                        'EXAM_ENABLED' => __('Sınav modu'), 'POWER_ENABLED' => __('Güç işlemleri'), 'MESSAGE_ENABLED' => __('Mesaj'),
+                        'PEER_CACHE_ENABLED' => __('Sınıf içi paket paylaşımı'),
+                    ] as $prop => $label): ?>
+                    <label class="check"><input type="checkbox" class="tk-cap" value="<?php echo htmlspecialchars($prop, ENT_QUOTES); ?>"> <?php echo htmlspecialchars($label, ENT_QUOTES); ?></label>
+                    <?php endforeach; ?>
+                </div>
+                <div class="field-hint"><?php _e('Kapalı kurulan özelliği sunucu açamaz; sunucu ele geçirilse bile o bilgisayarda çalışmaz. Açmak için ajan yeniden kurulur.'); ?></div>
+            </fieldset>
         </div>
         <div class="modal-footer">
             <button type="button" class="btn secondary" data-close-modal><?php _e('Vazgeç'); ?></button>
@@ -1642,16 +1660,22 @@ if (!$sysSuper || !isset($sysTabs[$sysTab])) { $sysTab = array_key_first($sysTab
     }
     if ($('tkCreate')) $('tkCreate').addEventListener('click', async function () {
         const body = { lab_name: $('tkLab').value.trim() || null, note: $('tkNote').value.trim() || null, ttl_hours: parseInt($('tkTtl').value, 10) || 72, max_uses: parseInt($('tkUses').value, 10) || 1 };
+        // Kurulumda kapatılacak yetenekler: MSI özelliği =0 (yalnızca bilinen adlar komuta girer)
+        const off = [...document.querySelectorAll('.tk-cap:checked')].map(c => c.value).filter(v => /^[A-Z_]+_ENABLED$/.test(v));
         let d;
         try { d = await POps.busy(this, () => POps.post('/api/system/enroll-token', body)); }
         catch (e) { POps.toast('error', POps.t('Jeton üretilemedi: {error}', { error: POps.errorMessage(e) })); return; }
         closeModal('tokenModal');
         ['tkLab', 'tkNote'].forEach(id => { $(id).value = ''; });
+        document.querySelectorAll('.tk-cap').forEach(c => { c.checked = false; });
         loadTokens();
+        const ver = S.ver && /^\d+\.\d+\.\d+[0-9A-Za-z.-]*$/.test(String(S.ver.server || '')) ? S.ver.server : POps.t('<sürüm>');
+        const cmd = `msiexec /i POps-Agent-${ver}-win-x64.msi /qn /l*v C:\\Windows\\Temp\\pops-msi-install.log SERVER_URL=${location.origin} ENROLL_TOKEN=${d.token}`
+            + off.map(p => ` ${p}=0`).join('');
         await POps.alert({
-            title: POps.t('Kayıt jetonu hazır'), icon: 'key', codes: [d.token], confirmText: POps.t('Kapat'),
+            title: POps.t('Kayıt jetonu hazır'), icon: 'key', codes: [d.token, cmd], confirmText: POps.t('Kapat'),
             message: (d.lab_name || POps.t('Bütün sınıflar')) + ' · ' + POps.tn('{n} kullanım', d.max_uses) + ' · ' + POps.tn('{n} saat geçerli', d.ttl_hours),
-            note: POps.t('MSI kurulumunda ENROLL_TOKEN olarak verin. Jeton yalnızca şimdi gösterilir, sunucuda saklanmaz; şimdi kopyalayın.')
+            note: POps.t('Üstteki jeton, altındaki hazır kurulum komutu (yönetici olarak çalıştırın). Jeton yalnızca şimdi gösterilir, sunucuda saklanmaz; şimdi kopyalayın.')
         });
     });
     async function setEnforce(sw) {
