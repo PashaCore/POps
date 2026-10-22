@@ -13,7 +13,8 @@ namespace POps.Tests.Agent
 {
     // winget_install (docs/agent.md "winget_install contract"): doğrulama, bağımsız değişkenler, winget'in bulunması,
     // kabuksuz çalıştırma, yetenek/modül retleri, -7, çıktının temizlenmesi, X-Agent-Features, sürümsüz kurulumun en yeni
-    // sürüme sabitlenmesi. Gerçek winget hiçbir testte çalışmaz: winget yerine testin yazdığı sahte bir .cmd çalışır.
+    // sürüme sabitlenmesi, paketin kurulduğu yer. Gerçek winget hiçbir testte çalışmaz: winget yerine testin yazdığı sahte bir
+    // .cmd çalışır.
     // Machine: sahte winget gerçek bir süreç olarak çalışır
     [Collection(MachineCollection.Name)]
     public class WingetInstallTests : TestBase, IDisposable
@@ -145,6 +146,47 @@ namespace POps.Tests.Agent
             Assert.Equal("[sürüm: en yeni sürüm sorgulanırken görev durdu; kurulum başlamadı]\n[İPTAL EDİLDİ]: x",
                 WingetInstall.LookupStoppedOutput("[İPTAL EDİLDİ]: x"));
         }
+
+        // Kurulduğu yer sürüm satırından sonra (sürüm satırı yoksa kapsamdan hemen sonra) gelir
+        [Fact]
+        public void ResultOutput_PutsTheLocationAfterTheVersion()
+        {
+            Assert.Equal("[kapsam: machine]\n[sürüm: kaynaktaki en yeni sürüm 2.1.65 seçildi]\n"
+                + "[kurulduğu yer: yalnızca SYSTEM hesabının profili — bilgisayarın kullanıcıları göremez]\nSuccessfully installed",
+                WingetInstall.ResultOutput("Successfully installed", null, WingetInstall.PinnedNote("2.1.65"), WingetInstall.SystemProfileNote));
+            Assert.Equal("[kapsam: machine]\n[kurulduğu yer: makine geneli]\nx", WingetInstall.ResultOutput("x", null, null, WingetInstall.MachineWideNote));
+            Assert.Equal("[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]\n[kurulduğu yer: belirlenemedi (görev durdu)]\n"
+                + "[1. deneme, --scope machine: çıkış -1978335216]\na\n[2. deneme, kapsamsız]\nb",
+                WingetInstall.ResultOutput("b", "a", null, WingetInstall.UnknownLocationNote("görev durdu")));
+        }
+
+        // Kurulduğu yerin sorgusu: yalnızca topluluk kaynağı, tam eşleşme, tek kapsam; hiçbir şey kurmaz. "Bulunamadı" winget'in
+        // 0x8A150014 kodudur (returnCodes.md: APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND)
+        [Fact]
+        public void ListArguments_AreTheAgreedCommandLine()
+        {
+            Assert.Equal(new[] { "list", "--id", "Anki.Anki", "-e", "--source", "winget", "--scope", "machine", "--accept-source-agreements", "--disable-interactivity" },
+                WingetInstall.ListArguments("Anki.Anki", "machine"));
+            Assert.Equal(new[] { "list", "--id", "Anki.Anki", "-e", "--source", "winget", "--scope", "user", "--accept-source-agreements", "--disable-interactivity" },
+                WingetInstall.ListArguments("Anki.Anki", "user"));
+            Assert.Equal(-1978335212, WingetInstall.ExitNoPackageFound);
+        }
+
+        // Kurulduğu yer yalnızca paket bilgisayardayken sorulur: kuruldu, yeniden başlatma bitirecek, zaten kuruluydu. Bilgisayarın
+        // kendisini yeniden başlattığı kodda (0x8A15010B), hatalarda ve ajanın kendi kodlarında sorulmaz.
+        [Theory]
+        [InlineData(0, true)]
+        [InlineData(-1978334967, true)]    // 0x8A150109 yeniden başlatma bitirecek
+        [InlineData(-1978335189, true)]    // 0x8A15002B zaten kurulu
+        [InlineData(-1978335135, true)]    // 0x8A150061 zaten kurulu
+        [InlineData(-1978334965, false)]   // 0x8A15010B bilgisayar yeniden başlıyor
+        [InlineData(-1978335216, false)]   // 0x8A150010 uygulanabilir yükleyici yok
+        [InlineData(-1978335212, false)]   // 0x8A150014 paket yok
+        [InlineData(1, false)]
+        [InlineData(-1, false)]
+        [InlineData(-2, false)]
+        [InlineData(-4, false)]
+        public void IsOnThePc_OnlyAfterAnInstalledPackage(int exitCode, bool onThePc) => Assert.Equal(onThePc, WingetInstall.IsOnThePc(exitCode));
 
         // Sürüm sorgusu: yalnızca topluluk kaynağı, tam eşleşme, sürüm listesi; hiçbir şey kurmaz
         [Fact]
@@ -346,17 +388,18 @@ namespace POps.Tests.Agent
         }
 
         // winget yerine bağımsız değişkenleri yankılayan bir program: komut satırı kabuksuz ve beklenen biçimde; çıkış kodu
-        // winget'in işaretli 32 bit kodu olarak aynen gider
+        // winget'in işaretli 32 bit kodu olarak aynen gider. 0x8A15010B'de (bilgisayar yeniden başlıyor) kurulduğu yer sorulmaz:
+        // tek çağrı, kurulduğu yer satırı yok
         [Fact]
         public async Task Install_RunsTheProgramWithTheAgreedArguments_AndReportsItsExitCode()
         {
             string fake = Path.Combine(TestEnvironment.NewDir("fake-winget"), "winget.cmd");
-            File.WriteAllText(fake, "@echo off\r\necho ARGS:%*\r\nexit /b -1978335189\r\n");
+            File.WriteAllText(fake, "@echo off\r\necho ARGS:%*\r\nexit /b -1978334965\r\n");
             _locator = () => fake;
             using Worker worker = NewWorker();
             await worker.HandleServerMessageAsync(Install(46, "Mozilla.Firefox", "131.0"), null, CancellationToken.None);
             JsonElement result = await ResultFor(46);
-            Assert.Equal(-1978335189, result.GetProperty("exit_code").GetInt32());
+            Assert.Equal(-1978334965, result.GetProperty("exit_code").GetInt32());
             Assert.Equal("[kapsam: machine]\nARGS:install --id Mozilla.Firefox -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity --version 131.0",
                 result.GetProperty("output").GetString());
             Assert.Empty(Sent("capability_denied"));
@@ -366,15 +409,17 @@ namespace POps.Tests.Agent
         private const string Versions = "Found Mozilla Firefox [Mozilla.Firefox]\r\nVersion\r\n-------\r\n131.0.3\r\n131.0.2\r\n131.0\r\n";
 
         // Sahte winget: her çağrının bağımsız değişkenlerini calls.txt'ye yazar. "show" (sürüm sorgusu): show.txt'yi yazar, showExit
-        // ile biter (showPing: önce o kadar ping, yaklaşık saniye). Kurulum: bağımsız değişkenleri çıktıya yazar; --scope ile
-        // çağrılırsa scoped, yoksa unscoped koduyla biter (unscopedPing: önce o kadar ping)
-        private (string Fake, string Calls) FakeWinget(int scoped, int unscoped, int unscopedPing = 0, string show = Versions, int showExit = 0, int showPing = 0)
+        // ile biter (showPing: önce o kadar ping, yaklaşık saniye). "list" (kurulduğu yer): --scope machine ile listMachine, yoksa
+        // listUser koduyla biter (listPing: önce o kadar ping). Kurulum: bağımsız değişkenleri çıktıya yazar; --scope ile çağrılırsa
+        // scoped, yoksa unscoped koduyla biter (unscopedPing: önce o kadar ping)
+        private (string Fake, string Calls) FakeWinget(int scoped, int unscoped, int unscopedPing = 0, string show = Versions, int showExit = 0, int showPing = 0,
+            int listMachine = 0, int listUser = WingetInstall.ExitNoPackageFound, int listPing = 0)
         {
             string dir = TestEnvironment.NewDir("fake-winget");
             string fake = Path.Combine(dir, "winget.cmd");
             string calls = Path.Combine(dir, "calls.txt");
             File.WriteAllText(Path.Combine(dir, "show.txt"), show);
-            File.WriteAllText(fake, "@echo off\r\n>>\"%~dp0calls.txt\" echo %*\r\nif \"%1\"==\"show\" goto show\r\n"
+            File.WriteAllText(fake, "@echo off\r\n>>\"%~dp0calls.txt\" echo %*\r\nif \"%1\"==\"show\" goto show\r\nif \"%1\"==\"list\" goto list\r\n"
                 + "echo ARGS:%*\r\nset scoped=0\r\n"
                 + "for %%a in (%*) do if \"%%a\"==\"--scope\" set scoped=1\r\n"
                 + $"if %scoped%==1 exit /b {scoped}\r\n"
@@ -383,7 +428,12 @@ namespace POps.Tests.Agent
                 + ":show\r\n"
                 + (showPing > 0 ? $"ping -n {showPing} 127.0.0.1 > nul\r\n" : "")
                 + "type \"%~dp0show.txt\"\r\n"
-                + $"exit /b {showExit}\r\n");
+                + $"exit /b {showExit}\r\n"
+                + ":list\r\n"
+                + (listPing > 0 ? $"ping -n {listPing} 127.0.0.1 > nul\r\n" : "")
+                + "set \"a=%*\"\r\n"
+                + $"if not \"%a:--scope machine=%\"==\"%a%\" exit /b {listMachine}\r\n"
+                + $"exit /b {listUser}\r\n");
             _locator = () => fake;
             return (fake, calls);
         }
@@ -399,28 +449,33 @@ namespace POps.Tests.Agent
         private const string UnscopedArgs = "install --id Mozilla.Firefox -e --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity";
         private const string Pinned = " --version 131.0.3";
         private const string PinnedLine = "[sürüm: kaynaktaki en yeni sürüm 131.0.3 seçildi]";
+        private const string ListMachine = "list --id Mozilla.Firefox -e --source winget --scope machine --accept-source-agreements --disable-interactivity";
+        private const string ListUser = "list --id Mozilla.Firefox -e --source winget --scope user --accept-source-agreements --disable-interactivity";
+        private const int NotFound = WingetInstall.ExitNoPackageFound;
 
         private WingetInstallHandler Handler(Worker worker) => (WingetInstallHandler)worker.Dispatcher.HandlerFor(WingetInstall.Action);
 
         // Yalnızca kullanıcı kapsamında yükleyicisi olan paket: aynı görevde bir kez --scope olmadan; tek sonuç, ikinci denemenin
         // çıkış kodu, kapsam ilk satırda, iki denemenin çıktısı sırayla. Sürümsüz emirde iki deneme de sabitlenen sürümü taşır.
+        // SYSTEM olarak kapsamsız kurulan paket SYSTEM'in profilindedir: kurulduğu yer bunu söyler.
         [Fact]
         public async Task NoMachineInstaller_IsRetriedOnceWithoutScope_AndReportsTheSecondAttempt()
         {
-            (_, string calls) = FakeWinget(WingetInstall.ExitNoApplicableInstaller, -1978334967);
+            (_, string calls) = FakeWinget(WingetInstall.ExitNoApplicableInstaller, -1978334967, listMachine: NotFound, listUser: 0);
             using Worker worker = NewWorker();
             await worker.HandleServerMessageAsync(Install(48, "Mozilla.Firefox"), null, CancellationToken.None);
             JsonElement result = await ResultFor(48);
             Assert.Equal(-1978334967, result.GetProperty("exit_code").GetInt32());
-            Assert.Equal($"{WingetInstall.UserScopeNote}\n{PinnedLine}\n[1. deneme, --scope machine: çıkış -1978335216]\nARGS:{MachineArgs}{Pinned}\n"
-                + $"[2. deneme, kapsamsız]\nARGS:{UnscopedArgs}{Pinned}", result.GetProperty("output").GetString());
-            Assert.Equal(new[] { ShowArgs, MachineArgs + Pinned, UnscopedArgs + Pinned }, Calls(calls));
+            Assert.Equal($"{WingetInstall.UserScopeNote}\n{PinnedLine}\n{WingetInstall.SystemProfileNote}\n[1. deneme, --scope machine: çıkış -1978335216]\n"
+                + $"ARGS:{MachineArgs}{Pinned}\n[2. deneme, kapsamsız]\nARGS:{UnscopedArgs}{Pinned}", result.GetProperty("output").GetString());
+            Assert.Equal(new[] { ShowArgs, MachineArgs + Pinned, UnscopedArgs + Pinned, ListMachine, ListUser }, Calls(calls));
 
             // Sürümlü emirde sorgu yok, iki deneme de sunucunun sürümünü taşır, sürüm satırı yok
             await worker.HandleServerMessageAsync(Install(49, "Mozilla.Firefox", "131.0"), null, CancellationToken.None);
             JsonElement versioned = await ResultFor(49);
-            Assert.Equal(new[] { ShowArgs, MachineArgs + Pinned, UnscopedArgs + Pinned, MachineArgs + " --version 131.0", UnscopedArgs + " --version 131.0" }, Calls(calls));
-            Assert.StartsWith(WingetInstall.UserScopeNote + "\n[1. deneme", versioned.GetProperty("output").GetString());
+            Assert.Equal(new[] { ShowArgs, MachineArgs + Pinned, UnscopedArgs + Pinned, ListMachine, ListUser,
+                MachineArgs + " --version 131.0", UnscopedArgs + " --version 131.0", ListMachine, ListUser }, Calls(calls));
+            Assert.StartsWith(WingetInstall.UserScopeNote + "\n" + WingetInstall.SystemProfileNote + "\n[1. deneme", versioned.GetProperty("output").GetString());
             await Task.Delay(200);
             Assert.Equal(1, Sent("result").Count(m => m.GetProperty("task_id").GetInt32() == 48));
             Assert.Equal(1, Sent("result").Count(m => m.GetProperty("task_id").GetInt32() == 49));
@@ -439,7 +494,7 @@ namespace POps.Tests.Agent
             Assert.Equal(new[] { ShowArgs, MachineArgs + Pinned, UnscopedArgs + Pinned }, Calls(calls));
         }
 
-        // Başka bir hata kodu yeniden denenmez: tek çağrı, kapsam machine
+        // Başka bir kod yeniden denenmez: tek kurulum çağrısı, kapsam machine. Kurulduğu yer yalnızca başarıda sorulur.
         [Theory]
         [InlineData(-1978335212)]
         [InlineData(0)]
@@ -450,8 +505,16 @@ namespace POps.Tests.Agent
             await worker.HandleServerMessageAsync(Install(51, "Mozilla.Firefox"), null, CancellationToken.None);
             JsonElement result = await ResultFor(51);
             Assert.Equal(exitCode, result.GetProperty("exit_code").GetInt32());
-            Assert.Equal($"[kapsam: machine]\n{PinnedLine}\nARGS:{MachineArgs}{Pinned}", result.GetProperty("output").GetString());
-            Assert.Equal(new[] { ShowArgs, MachineArgs + Pinned }, Calls(calls));
+            if (exitCode == 0)
+            {
+                Assert.Equal($"[kapsam: machine]\n{PinnedLine}\n[kurulduğu yer: makine geneli]\nARGS:{MachineArgs}{Pinned}", result.GetProperty("output").GetString());
+                Assert.Equal(new[] { ShowArgs, MachineArgs + Pinned, ListMachine }, Calls(calls));
+            }
+            else
+            {
+                Assert.Equal($"[kapsam: machine]\n{PinnedLine}\nARGS:{MachineArgs}{Pinned}", result.GetProperty("output").GetString());
+                Assert.Equal(new[] { ShowArgs, MachineArgs + Pinned }, Calls(calls));
+            }
         }
 
         // Kapsamsız deneme aynı görevdir: sürerken gelen aynı emir yeni bir kurulum başlatmaz, cancel_task onu sonlandırır, tek sonuç
@@ -485,17 +548,20 @@ namespace POps.Tests.Agent
         public async Task NoVersion_PinsTheLatest_AndRetriesTheSameVersionWithoutScope()
         {
             (_, string calls) = FakeWinget(WingetInstall.ExitNoApplicableInstaller, 0,
-                show: "Found Anki [Anki.Anki]\r\nVersion\r\n-------\r\n26.09.3\r\n25.02.7\r\n2.1.66\r\n2.1.65\r\n");
+                show: "Found Anki [Anki.Anki]\r\nVersion\r\n-------\r\n26.09.3\r\n25.02.7\r\n2.1.66\r\n2.1.65\r\n", listMachine: NotFound, listUser: 0);
             using Worker worker = NewWorker();
             await worker.HandleServerMessageAsync(Install(60, "Anki.Anki"), null, CancellationToken.None);
             JsonElement result = await ResultFor(60);
             string install = "install --id Anki.Anki -e --source winget --silent";
             string tail = " --accept-package-agreements --accept-source-agreements --disable-interactivity --version 26.09.3";
+            string list = "list --id Anki.Anki -e --source winget --scope ";
             Assert.Equal(new[] { "show --id Anki.Anki -e --source winget --versions --accept-source-agreements --disable-interactivity",
-                install + " --scope machine" + tail, install + tail }, Calls(calls));
+                install + " --scope machine" + tail, install + tail, list + "machine --accept-source-agreements --disable-interactivity",
+                list + "user --accept-source-agreements --disable-interactivity" }, Calls(calls));
             Assert.Equal(0, result.GetProperty("exit_code").GetInt32());
-            Assert.Equal($"{WingetInstall.UserScopeNote}\n[sürüm: kaynaktaki en yeni sürüm 26.09.3 seçildi]\n[1. deneme, --scope machine: çıkış -1978335216]\n"
-                + $"ARGS:{install} --scope machine{tail}\n[2. deneme, kapsamsız]\nARGS:{install}{tail}", result.GetProperty("output").GetString());
+            Assert.Equal($"{WingetInstall.UserScopeNote}\n[sürüm: kaynaktaki en yeni sürüm 26.09.3 seçildi]\n{WingetInstall.SystemProfileNote}\n"
+                + $"[1. deneme, --scope machine: çıkış -1978335216]\nARGS:{install} --scope machine{tail}\n[2. deneme, kapsamsız]\nARGS:{install}{tail}",
+                result.GetProperty("output").GetString());
         }
 
         // En yeni sürüm bulunamazsa bugünkü gibi sürüm verilmeden kurulur; çıktının ikinci satırı nedenini söyler
@@ -512,9 +578,9 @@ namespace POps.Tests.Agent
             using Worker worker = NewWorker();
             await worker.HandleServerMessageAsync(Install(61, "Mozilla.Firefox"), null, CancellationToken.None);
             JsonElement result = await ResultFor(61);
-            Assert.Equal(new[] { ShowArgs, MachineArgs }, Calls(calls));
+            Assert.Equal(new[] { ShowArgs, MachineArgs, ListMachine }, Calls(calls));
             Assert.Equal(0, result.GetProperty("exit_code").GetInt32());
-            Assert.Equal($"[kapsam: machine]\n[sürüm: en yeni sürüm bulunamadı ({reason}); winget kendisi seçti]\nARGS:{MachineArgs}",
+            Assert.Equal($"[kapsam: machine]\n[sürüm: en yeni sürüm bulunamadı ({reason}); winget kendisi seçti]\n[kurulduğu yer: makine geneli]\nARGS:{MachineArgs}",
                 result.GetProperty("output").GetString());
         }
 
@@ -527,10 +593,10 @@ namespace POps.Tests.Agent
             Handler(worker).QueryLimit = TimeSpan.FromSeconds(1);
             await worker.HandleServerMessageAsync(Install(62, "Mozilla.Firefox"), null, CancellationToken.None);
             JsonElement result = await ResultFor(62);
-            Assert.Equal(new[] { ShowArgs, MachineArgs }, Calls(calls));
+            Assert.Equal(new[] { ShowArgs, MachineArgs, ListMachine }, Calls(calls));
             Assert.Equal(0, result.GetProperty("exit_code").GetInt32());
-            Assert.Equal($"[kapsam: machine]\n[sürüm: en yeni sürüm bulunamadı (winget show 1 sn içinde bitmedi); winget kendisi seçti]\nARGS:{MachineArgs}",
-                result.GetProperty("output").GetString());
+            Assert.Equal($"[kapsam: machine]\n[sürüm: en yeni sürüm bulunamadı (winget show 1 sn içinde bitmedi); winget kendisi seçti]\n"
+                + $"[kurulduğu yer: makine geneli]\nARGS:{MachineArgs}", result.GetProperty("output").GetString());
             using Worker fresh = NewWorker();
             Assert.Equal(WingetInstall.QueryLimit, Handler(fresh).QueryLimit);
         }
@@ -574,6 +640,82 @@ namespace POps.Tests.Agent
             Assert.StartsWith(WingetInstall.LookupStoppedNote + "\n[DURDURULDU]", result.GetProperty("output").GetString());
             await Task.Delay(300);
             Assert.Equal(new[] { ShowArgs }, Calls(calls));
+        }
+
+        // Saha testi (2026-10-22): manifestinde "Scope: machine" yazan Anki 2.1.65'in 32 bit NSIS yükleyicisi SYSTEM olarak SYSTEM'in
+        // kendi profiline kurdu. Kapsam satırı machine kalır, kurulduğu yer satırı paketin nerede olduğunu söyler.
+        [Fact]
+        public async Task MachineRun_ThatLandedInSystemsProfile_SaysSo()
+        {
+            (_, string calls) = FakeWinget(0, 0, listMachine: NotFound, listUser: 0);
+            using Worker worker = NewWorker();
+            await worker.HandleServerMessageAsync(Install(70, "Mozilla.Firefox", "131.0"), null, CancellationToken.None);
+            JsonElement result = await ResultFor(70);
+            Assert.Equal(0, result.GetProperty("exit_code").GetInt32());
+            Assert.Equal($"[kapsam: machine]\n[kurulduğu yer: yalnızca SYSTEM hesabının profili — bilgisayarın kullanıcıları göremez]\nARGS:{MachineArgs} --version 131.0",
+                result.GetProperty("output").GetString());
+            Assert.Equal(new[] { MachineArgs + " --version 131.0", ListMachine, ListUser }, Calls(calls));
+        }
+
+        // Kurulduğu yer yalnızca winget list'in çıkış kodlarından: makine kapsamında var, yoksa user kapsamında var; başka her
+        // sonuç belirlenemedi (makine sorgusu "yok" dışında bir kodla biterse user kapsamı sorulmaz)
+        [Theory]
+        [InlineData(0, NotFound, "[kurulduğu yer: makine geneli]", 1)]
+        [InlineData(0, 0, "[kurulduğu yer: makine geneli]", 1)]
+        [InlineData(NotFound, 0, "[kurulduğu yer: yalnızca SYSTEM hesabının profili — bilgisayarın kullanıcıları göremez]", 2)]
+        [InlineData(NotFound, NotFound, "[kurulduğu yer: belirlenemedi (winget list paketi iki kapsamda da bulamadı)]", 2)]
+        [InlineData(-1978335230, 0, "[kurulduğu yer: belirlenemedi (winget list çıkış kodu -1978335230)]", 1)]
+        [InlineData(1, 0, "[kurulduğu yer: belirlenemedi (winget list çıkış kodu 1)]", 1)]
+        [InlineData(NotFound, -1978335230, "[kurulduğu yer: belirlenemedi (winget list çıkış kodu -1978335230)]", 2)]
+        public async Task Location_ComesFromTheListExitCodes(int listMachine, int listUser, string note, int lists)
+        {
+            (_, string calls) = FakeWinget(0, 0, listMachine: listMachine, listUser: listUser);
+            using Worker worker = NewWorker();
+            await worker.HandleServerMessageAsync(Install(71, "Mozilla.Firefox", "131.0"), null, CancellationToken.None);
+            JsonElement result = await ResultFor(71);
+            Assert.Equal(0, result.GetProperty("exit_code").GetInt32());
+            Assert.Equal($"[kapsam: machine]\n{note}\nARGS:{MachineArgs} --version 131.0", result.GetProperty("output").GetString());
+            Assert.Equal(new[] { MachineArgs + " --version 131.0", ListMachine, ListUser }.Take(1 + lists), Calls(calls));
+        }
+
+        // Kurulduğu yerin sorgusu kendi süre sınırında bitmezse sonlandırılır: belirlenemedi, user kapsamı sorulmaz, sonuç kurulumun
+        [Fact]
+        public async Task SlowList_IsEnded_AndTheLocationIsUnknown()
+        {
+            (_, string calls) = FakeWinget(0, 0, listPing: 30);
+            using Worker worker = NewWorker();
+            Handler(worker).QueryLimit = TimeSpan.FromSeconds(1);
+            await worker.HandleServerMessageAsync(Install(72, "Mozilla.Firefox", "131.0"), null, CancellationToken.None);
+            JsonElement result = await ResultFor(72);
+            Assert.Equal(0, result.GetProperty("exit_code").GetInt32());
+            Assert.Equal($"[kapsam: machine]\n[kurulduğu yer: belirlenemedi (winget list 1 sn içinde bitmedi)]\nARGS:{MachineArgs} --version 131.0",
+                result.GetProperty("output").GetString());
+            Assert.Equal(new[] { MachineArgs + " --version 131.0", ListMachine }, Calls(calls));
+        }
+
+        // Kurulduğu yerin sorgusu da aynı görevdir: sürerken gelen aynı emir yeni bir kurulum başlatmaz, cancel_task sorguyu
+        // sonlandırır. Paket kurulmuştur: tek sonuç, kurulumun çıkış koduyla, kurulduğu yer belirlenemedi
+        [Fact]
+        public async Task CancelDuringTheLocationQuery_ReportsTheInstall()
+        {
+            (_, string calls) = FakeWinget(0, 0, listPing: 30);
+            using Worker worker = NewWorker();
+            await worker.HandleServerMessageAsync(Install(73, "Mozilla.Firefox", "131.0"), null, CancellationToken.None);
+            for (int i = 0; i < 200 && Calls(calls).Length < 2; i++) await Task.Delay(50);
+            Assert.Equal(new[] { MachineArgs + " --version 131.0", ListMachine }, Calls(calls));
+
+            await worker.HandleServerMessageAsync(Install(73, "Mozilla.Firefox", "131.0"), null, CancellationToken.None);
+            await Task.Delay(300);
+            Assert.Equal(2, Calls(calls).Length);
+
+            await worker.HandleServerMessageAsync("{\"action\":\"cancel_task\",\"task_id\":73}", null, CancellationToken.None);
+            JsonElement result = await ResultFor(73);
+            Assert.Equal(0, result.GetProperty("exit_code").GetInt32());
+            Assert.Equal($"[kapsam: machine]\n[kurulduğu yer: belirlenemedi (görev durdu)]\nARGS:{MachineArgs} --version 131.0",
+                result.GetProperty("output").GetString());
+            await Task.Delay(300);
+            Assert.Equal(1, Sent("result").Count(m => m.GetProperty("task_id").GetInt32() == 73));
+            Assert.Equal(new[] { MachineArgs + " --version 131.0", ListMachine }, Calls(calls));
         }
 
         // Eski "POPS-WINGET" yolu yok: execute yalnızca komuttur (terminal kapalıyken her zamanki ret)

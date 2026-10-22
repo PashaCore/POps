@@ -324,19 +324,39 @@ command (the package id and version may be recorded in clear).
   for the current system"; see winget's
   [return codes](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md)),
   it runs winget once more with the same arguments minus `--scope machine` (the same pinned version). No other code
-  is retried, and there is no third run. The lookup and both runs are the same task: the `task_id` stays reserved (a
-  repeated `winget_install` is ignored), `cancel_task` and a service stop end the running step or keep the next one
-  from starting, and the 30-minute limit covers all of them together. There is still one `result`, with the last
-  install run's exit code.
-- **Scope in the output.** The first line of `output` names the scope used: `[kapsam: machine]`, or after the retry
-  `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`. When the agent chose the version, the second
-  line says which: `[sürüm: kaynaktaki en yeni sürüm 26.09.3 seçildi]`, or
+  is retried, and there is no third run. The lookup, both runs and the location check below are the same task: the
+  `task_id` stays reserved (a repeated `winget_install` is ignored), `cancel_task` and a service stop end the running
+  step or keep the next one from starting, and the 30-minute limit covers all of them together. There is still one
+  `result`, with the last install run's exit code.
+- **Where the package landed.** `--scope machine` is what winget was asked for, not where the package ended up. In
+  the field test Anki 2.1.65 (manifest scope machine, a 32-bit NSIS installer) ran as SYSTEM and installed into
+  SYSTEM's own profile (`C:\Windows\SysWOW64\config\systemprofile\AppData\Local\Programs\Anki`, uninstall entry
+  under `HKEY_USERS\S-1-5-18`), where no user of the PC sees it; after the retry without `--scope` a user-scope
+  installer lands there too. So when the package is on the PC after the install (exit code 0, `0x8A150109` restart
+  needed, `0x8A15002B` or `0x8A150061` already installed) the agent runs
+  `winget list --id <id> -e --source winget --scope machine --accept-source-agreements --disable-interactivity`
+  and, only when that finds nothing, the same with `--scope user` (as SYSTEM: SYSTEM's own profile). Only exit codes
+  are read, never the localized text: 0 is found, `0x8A150014` (-1978335212,
+  `APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND`) is not found. Each query has its own 60-second limit. Any other
+  code, the limit, nothing found in either scope, or a stop (`cancel_task`, service stop, task limit) during the
+  check means the location is not known. A stop during the check does not change the result: the package is
+  installed, the result keeps the install's exit code. After `0x8A15010B` (the PC restarts itself) and after a failed
+  install nothing is asked. Not covered: a portable package (zip) installed machine-wide under
+  `%ProgramFiles%\WinGet\Packages` counts as machine-wide although it has no Start menu shortcut, and when the
+  same id is also installed machine-wide (for example an older version), the line says machine-wide (`winget list`
+  cannot filter by version).
+- **Scope in the output.** The first line of `output` names the scope the install ran with: `[kapsam: machine]`, or
+  after the retry `[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]`. When the agent chose the
+  version, the next line says which: `[sürüm: kaynaktaki en yeni sürüm 26.09.3 seçildi]`, or
   `[sürüm: en yeni sürüm bulunamadı (<reason>); winget kendisi seçti]` with a short reason (`winget show çıkış kodu
   <code>`, `winget show 60 sn içinde bitmedi`, `çıktıda sürüm listesi yok`, `sürüm listesi boş`, `listedeki ilk sürüm
-  geçersiz ya da kısaltılmış`); with a server-given version there is no such line. Then the first run's output (at
-  most 4,096 characters) and the second run's, each under its own heading. Refusals (-5, -7) carry no scope line;
-  neither does a task stopped during the lookup (-1, -2, -4), which starts with `[sürüm: en yeni sürüm sorgulanırken
-  görev durdu; kurulum başlamadı]` followed by the stop reason.
+  geçersiz ya da kısaltılmış`); with a server-given version there is no such line. When the location was checked, the
+  next line is `[kurulduğu yer: makine geneli]`, `[kurulduğu yer: yalnızca SYSTEM hesabının profili — bilgisayarın
+  kullanıcıları göremez]` or `[kurulduğu yer: belirlenemedi (<reason>)]` (`winget list çıkış kodu <code>`,
+  `winget list 60 sn içinde bitmedi`, `winget list paketi iki kapsamda da bulamadı`, `görev durdu`). Then the first
+  run's output (at most 4,096 characters) and the second run's, each under its own heading. Refusals (-5, -7) carry
+  no scope line; neither does a task stopped during the lookup (-1, -2, -4), which starts with `[sürüm: en yeni sürüm
+  sorgulanırken görev durdu; kurulum başlamadı]` followed by the stop reason.
 
 ### `power` and `user_message` contract
 

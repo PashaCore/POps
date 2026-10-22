@@ -24,7 +24,9 @@ namespace POpsAgent
     // winget, machine yükleyicisi olan en yeni sürümü sessizce seçerdi (ör. Anki.Anki: 26.09.3 yerine 2023'ün 2.1.65'i).
     // Yalnızca kullanıcı kapsamında yükleyicisi olan paket (sürüm) --scope machine ile "uygulanabilir yükleyici yok"
     // (ExitNoApplicableInstaller) ile biter: aynı görevde bir kez --scope olmadan yeniden denenir (bkz. RetryArguments). Çıktının
-    // ilk satırı kullanılan kapsamdır; sürümü ajan seçtiyse ikinci satır o sürümdür.
+    // ilk satırı kurulumun çalıştığı kapsamdır; sürümü ajan seçtiyse ardından o sürüm, paket bilgisayardaysa ardından winget
+    // list'e göre kurulduğu yer gelir (bkz. ListArguments). "--scope machine" paketin herkese kurulduğunu söylemez: SYSTEM
+    // olarak çalışan bir yükleyici (ör. Anki 2.1.65'in 32 bit NSIS'i) SYSTEM hesabının kendi profiline kurabilir.
     // Sonuç execute gibi "result"tır; çıkış kodu winget'in kendi kodudur (işaretli 32 bit, ör. 0x8A150061 = -1978335135;
     // yeniden denendiyse ikinci denemenin kodu).
     [SupportedOSPlatform("windows")]
@@ -44,9 +46,17 @@ namespace POpsAgent
         // (https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md). --scope
         // machine ile yalnızca kullanıcı kapsamında yükleyicisi olan paket bu kodla biter.
         public const int ExitNoApplicableInstaller = unchecked((int)0x8A150010);
-        // Çıktının ilk satırı: paket hangi kapsamla kuruldu (denendi)
+        // winget'in APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND kodu, 0x8A150014 = -1978335212: winget list (ve install, show)
+        // aranan paketi bulamadı
+        public const int ExitNoPackageFound = unchecked((int)0x8A150014);
+        // Çıktının ilk satırı: kurulum hangi kapsamla çalıştı (paketin nereye kurulduğunu kurulduğu yer satırı söyler)
         public const string MachineScopeNote = "[kapsam: machine]";
         public const string UserScopeNote = "[kapsam: user — machine yükleyici yok, kapsamsız yeniden denendi]";
+        // Paket bilgisayardaysa kurulduğu yer (bkz. ListArguments). SYSTEM'in "user" kapsamı SYSTEM hesabının kendi profilidir:
+        // oraya kurulan uygulamayı bilgisayarın kullanıcıları göremez.
+        public const string MachineWideNote = "[kurulduğu yer: makine geneli]";
+        public const string SystemProfileNote = "[kurulduğu yer: yalnızca SYSTEM hesabının profili — bilgisayarın kullanıcıları göremez]";
+        public static string UnknownLocationNote(string reason) => $"[kurulduğu yer: belirlenemedi ({reason})]";
         // Yeniden denendiyse ilk denemenin çıktısından en çok bu kadarı (asıl çıktı ikinci denemenin; ilki birkaç satırdır)
         internal const int MachineAttemptMaxChars = 4096;
         // Sürüm sorgusunun kendi süre sınırı; görevin süre sınırı, cancel_task ve servis durması onu da kapsar
@@ -97,6 +107,17 @@ namespace POpsAgent
         public static List<string> VersionsArguments(string id) =>
             new List<string> { "show", "--id", id, "-e", "--source", "winget", "--versions", "--accept-source-agreements", "--disable-interactivity" };
 
+        // Paketin kurulu olduğu yerin sorgusu: "machine" ya da "user" kapsamındaki kurulu paketler arasında bu kimlik var mı. Yalnızca
+        // çıkış koduna bakılır (0: var, ExitNoPackageFound: yok); çıktı yerelleştirilebilir, okunmaz. Hiçbir şey kurmaz.
+        public static List<string> ListArguments(string id, string scope) =>
+            new List<string> { "list", "--id", id, "-e", "--source", "winget", "--scope", scope, "--accept-source-agreements", "--disable-interactivity" };
+
+        // Kurulumdan sonra paket bilgisayarda mı (kurulduğu yer yalnızca o zaman sorulur): kuruldu (0), yeniden başlatma bitirecek
+        // (0x8A150109) ya da zaten kuruluydu (0x8A15002B, 0x8A150061). Bilgisayarın kendisini yeniden başlattığı 0x8A15010B'de
+        // sorulmaz: sonuç beklemeden gitsin.
+        public static bool IsOnThePc(int exitCode) =>
+            exitCode is 0 or unchecked((int)0x8A150109) or unchecked((int)0x8A15002B) or unchecked((int)0x8A150061);
+
         // Bir winget sorgusunun (show, list) neden sonuç vermediği; null: bitti ve 0 ile çıktı. limitReached: kendi süre sınırında
         // (limit) bitmedi
         public static string? QueryFailure(string command, int exitCode, bool limitReached, TimeSpan limit) =>
@@ -137,11 +158,11 @@ namespace POpsAgent
             machineExitCode == ExitNoApplicableInstaller ? Arguments(id, version, machineScope: false) : null;
 
         // Sunucuya giden çıktı: ilk satır kullanılan kapsam, sürümü ajan seçtiyse ardından versionNote (PinnedNote ya da
-        // UnpinnedNote), sonra winget'in temizlenmiş çıktısı. machineAttempt: kapsamsız yeniden denendiyse ilk denemenin (--scope
-        // machine) çıktısı; iki denemenin çıktısı sırayla yazılır.
-        public static string ResultOutput(string output, string? machineAttempt = null, string? versionNote = null)
+        // UnpinnedNote), paket bilgisayardaysa ardından locationNote (kurulduğu yer), sonra winget'in temizlenmiş çıktısı.
+        // machineAttempt: kapsamsız yeniden denendiyse ilk denemenin (--scope machine) çıktısı; iki denemenin çıktısı sırayla yazılır.
+        public static string ResultOutput(string output, string? machineAttempt = null, string? versionNote = null, string? locationNote = null)
         {
-            string notes = versionNote == null ? "" : "\n" + versionNote;
+            string notes = (versionNote == null ? "" : "\n" + versionNote) + (locationNote == null ? "" : "\n" + locationNote);
             if (machineAttempt == null) return CommandExecutionPolicy.TruncateOutput(MachineScopeNote + notes + "\n" + CleanOutput(output));
             string first = CleanOutput(machineAttempt);
             if (first.Length > MachineAttemptMaxChars) first = string.Concat(first.AsSpan(0, MachineAttemptMaxChars), "\n[ÇIKTI KISALTILDI]");
