@@ -607,6 +607,16 @@ async def update_progress_flow(c, admin, superadmin):
             and await c.fetchval("SELECT count(*) FROM pending_updates WHERE pc_name='HW-PUP1'") == 0,
             "sonucu beklenmeyen cihazın adımı saklanmadı")
 
+        print("== elle kurulan ya da geri alınan ajan: bağlantıdaki sürüm running_version'a yazılır")
+        chk(await c.fetchval("SELECT running_version FROM clients WHERE pc_name='HW-PUP1'") == UPV,
+            "sonuçtaki running_version yazıldı")
+        await a1.close()
+        a1 = socks["HW-PUP1"] = await agent("HW-PUP1", {"X-Agent-Secret": "HW-PUP1-s",
+                                                        "X-Agent-Version": "0.1.21-alpha"}, dna("HW-PUP1"))
+        await collect(a1, 1)
+        chk(await c.fetchval("SELECT running_version FROM clients WHERE pc_name='HW-PUP1'") == "0.1.21-alpha",
+            "update_result göndermeden bağlanan ajanın sürümü running_version'da (panel bayat sürüm göstermez)")
+
         print("== rejected gönderimi sebebiyle bitirir")
         await a2.send(json.dumps({"type": "update_progress", "stage": "rejected", "to_version": "0.0.1-alpha",
                                   "detail": "başka sürüm"}))

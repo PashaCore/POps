@@ -52,6 +52,8 @@ namespace POps.Tests
             Assert.Contains("Get-NetFirewallRule | Where-Object { ($groups -contains $_.Group) -or ($_.DisplayName -like $legacy) }", script);
             Assert.Contains("try { $rule | Remove-NetFirewallRule; $removed++ }", script);
             Assert.StartsWith("$ErrorActionPreference = 'Stop'", script, StringComparison.Ordinal);
+            // Sahada (0.1.24): ilerleme kayıtları MSI log'undaki sonuç satırına karışıyordu
+            Assert.Contains("$ProgressPreference = 'SilentlyContinue'", script);
             // Kaldırma hiçbir profili açmaz, hiçbir kural eklemez
             Assert.DoesNotContain("-Enabled True", script);
             Assert.DoesNotContain("New-NetFirewallRule", script);

@@ -1175,6 +1175,13 @@ def test_winget():
     chk(winget.search("yok-boyle-bir-paket")["items"] == [], "eşleşme yoksa boş")
     chk(len(winget.search("", limit=3)["items"]) == 3, "limit")
     chk(-1978335135 in winget.OK_EXIT_CODES and 0 in winget.OK_EXIT_CODES, "zaten kurulu = başarı")
+    chk(winget.result_ok(0, "") and winget.result_ok(-1978335189, "No available upgrade found."),
+        "başarı ve güncel sürüm zaten kurulu")
+    chk(not winget.result_ok(-1978335189, "The install technology of the newer version specified is different from "
+                                          "the current version installed."),
+        "kurulum teknolojisi farklı: kurulmadı, başarı değil")
+    chk(not winget.result_ok(-1978335212, "No package found") and not winget.result_ok(None, ""),
+        "başka kod ve kodsuz sonuç başarı değil")
 
 
 def test_vision_v2():
