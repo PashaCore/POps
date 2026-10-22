@@ -89,7 +89,7 @@ _rollouts: Dict[str, Rollout] = {}   # sınıf -> o sınıfın son gönderimi
 
 def parse_header(value: Optional[str]) -> Announce:
     """X-Agent-Peer-Cache: "port=8817; ip=10.0.5.12; link=wired" (hepsi isteğe bağlı, sıra önemsiz). Geçersiz
-    parça atılır: port 1024-65535, ip özel ağdaki bir IPv4 adresi, link wired ya da wireless."""
+    parça atılır: port 1024-65535, ip tek noktaya yayın bir IPv4 adresi (lan_ip), link wired ya da wireless."""
     out = Announce()
     for part in (value or "")[:256].split(";"):
         key, _, val = part.partition("=")
@@ -103,14 +103,20 @@ def parse_header(value: Optional[str]) -> Announce:
     return out
 
 
-def lan_ip(value) -> Optional[str]:
-    """Eşlerin bağlanabileceği yerel ağ adresi mi: özel aralıkta bir IPv4 (döngü, link-local, çoklu yayın değil)."""
+def lan_ip(value, private_only: bool = False) -> Optional[str]:
+    """Eşlerin bağlanabileceği adres mi: tek noktaya yayın bir IPv4 (döngü, link-local, çoklu yayın, ayrılmış,
+    0.0.0.0/8 değil). Genel adres de olur: genel IPv4 kullanan laboratuvarlarda bilgisayarın kendi adresi genel bir
+    adrestir. Ajan eşi yalnızca kendi alt ağlarından birindeyse kullanır (docs/agent.md, "Peer cache contract"), paket
+    her durumda imzalı boyut ve SHA-256'yla denetlenir. private_only: yalnızca özel aralık (bağlantının geldiği adres
+    için; genel bir bağlantı adresi çoğunlukla okulun NAT adresidir, bilgisayarın değil)."""
     try:
         ip = ipaddress.ip_address(str(value or "").strip())
     except ValueError:
         return None
-    if ip.version != 4 or not ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast \
-            or ip.is_unspecified:
+    if ip.version != 4 or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified \
+            or ip.is_reserved or ip.packed[0] == 0:
+        return None
+    if private_only and not ip.is_private:
         return None
     return str(ip)
 
@@ -149,9 +155,9 @@ def choose_seeds(rows: List[dict], version: str) -> List[str]:
 
 def resolve_ips(rows: List[dict]) -> None:
     """Her satıra eşlerin kullanacağı adresi ("ip") yazar: ajanın başlıkta bildirdiği, yoksa envanterde bildirdiği
-    yerel adres, o da yoksa bağlantının geldiği adres; ama yalnızca özel bir adresse ve başka bir bilgisayarla
-    paylaşılmıyorsa (paylaşılıyorsa araya NAT girmiştir). conn_shared: aynı bağlantı adresli kayıtlı bilgisayar
-    sayısı (yoksa satırlar arasında sayılır)."""
+    adres (bilgisayarın kendi arabirimi; özel ya da genel), o da yoksa bağlantının geldiği adres; ama yalnızca özel bir
+    adresse ve başka bir bilgisayarla paylaşılmıyorsa (paylaşılıyorsa araya NAT girmiştir). conn_shared: aynı
+    bağlantı adresli kayıtlı bilgisayar sayısı (yoksa satırlar arasında sayılır)."""
     shared: Dict[str, int] = {}
     for r in rows:
         if r.get("conn_ip"):
@@ -159,7 +165,7 @@ def resolve_ips(rows: List[dict]) -> None:
     for r in rows:
         ann = _announce.get(r["pc_name"])
         count = r.get("conn_shared") or shared.get(r.get("conn_ip"), 0)
-        conn = lan_ip(r.get("conn_ip")) if count == 1 else None
+        conn = lan_ip(r.get("conn_ip"), private_only=True) if count == 1 else None
         r["ip"] = (ann.ip if ann else None) or lan_ip(r.get("inv_ip")) or conn
 
 

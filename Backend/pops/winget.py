@@ -24,9 +24,11 @@ FEATURE = "winget"
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+_-]{1,127}")
 _VERSION = re.compile(r"[0-9A-Za-z.+_-]{1,40}")
 
-# Ajanın winget'e verdiği argümanlar (sıra ve yazım sözleşmenin parçasıdır; docs/agent.md)
+# Ajanın winget'e verdiği argümanlar (sıra ve yazım sözleşmenin parçasıdır; docs/agent.md). Yalnızca winget kaynağı
+# (SYSTEM olarak msstore devreye girmez). Makine yükleyicisi olmayan pakette ajan bir kez --scope machine'siz yeniden
+# dener (0x8A150010); bu okunur komut ilk denemeyi gösterir.
 BASE_ARGS = (
-    "install", "--id", None, "-e", "--silent", "--scope", "machine",
+    "install", "--id", None, "-e", "--source", "winget", "--silent", "--scope", "machine",
     "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
 )
 

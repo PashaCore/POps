@@ -2,8 +2,9 @@
 
 Kimlikler microsoft/winget-pkgs deposunda doğrulandı (2026-10-05): her kimliğin klasöründe en yeni sürümün
 <Kimlik>.installer.yaml dosyası var ve yalnızca kullanıcı kapsamında kurulan paket alınmadı (ajan --scope machine
-ile SYSTEM olarak kurar). Ad ve yayıncı paketin varsayılan dil manifestinden. Katalogda olmayan bir paket de
-kimliğiyle dağıtılabilir; bu liste yalnızca seçmeyi kolaylaştırır.
+ile SYSTEM olarak kurar; 0.1.24'ten makine yükleyicisi olmayan pakette bir kez kapsamsız yeniden dener, ama böyle
+bir paket büyük olasılıkla SYSTEM'in profiline kurulur ve öğrenci onu görmez). Ad ve yayıncı paketin varsayılan dil
+manifestinden. Katalogda olmayan bir paket de kimliğiyle dağıtılabilir; bu liste yalnızca seçmeyi kolaylaştırır.
 
 Veri Python modülündedir, JSON dosyasında değil: sunucuya kodu kuran pops-deploy-backend yalnızca Backend altındaki
 .py dosyalarını, migration'ları, VERSION'ı ve anahtarı taşır.

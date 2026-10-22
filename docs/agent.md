@@ -262,8 +262,13 @@ arm64 to match the OS), and only from that folder. When none exists, answer `exi
 `ProcessStartInfo.ArgumentList`, in this order:
 
 ```
-install --id <id> -e --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity [--version <version>]
+install --id <id> -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity [--version <version>]
 ```
+
+`--source winget` keeps the msstore source out under LocalSystem (agents up to 0.1.23 ran without it). When this run
+ends with `0x8A150010` (-1978335216, no applicable installer: the package has no machine-scope installer), run it
+once more with the same arguments minus `--scope machine`, within the same task and time limit, and answer one result
+with the second run's exit code; see point 7.
 
 Same limits as `execute`: 30-minute time limit (-1), `cancel_task` ends it and its child processes (-2), service
 stop (-4), the same output cap. Capture stdout and stderr; drop the progress-bar and spinner lines winget draws
@@ -291,12 +296,8 @@ command (the package id and version may be recorded in clear).
 
 -8 is set by the server only (agent without the feature).
 
-**7. The Windows agent** (`WingetInstall.cs`, `Commands/WingetInstallHandler.cs`). Where it differs from point 5,
-from the version after 0.1.23-alpha:
+**7. The Windows agent** (`WingetInstall.cs`, `Commands/WingetInstallHandler.cs`), from 0.1.24-alpha:
 
-- **Source.** It adds `--source winget` after `-e`, so only the community source is searched and the msstore source
-  never comes into play under LocalSystem:
-  `install --id <id> -e --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements --disable-interactivity [--version <version>]`.
 - **User-scope-only packages.** When that run ends with winget's "no applicable installer" code, `0x8A150010` =
   -1978335216 (`APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER`, "None of the installers are applicable for the
   current system"; see winget's
@@ -346,9 +347,15 @@ lists `power` and `message` in `server_info.features`.
   answer `result` with `exit_code` -5 and `[REDDEDİLDİ] …`, then `capability_denied` with `"capability": "power"`,
   `"action": "power"` and the `task_id`.
 - `logoff` and `lock` with nobody signed in: `result` with `exit_code` -6 and `[REDDEDİLDİ] oturum açık kullanıcı yok`.
-- Otherwise show a tray countdown of `delay` seconds with `message`, send `result` with `exit_code` 0 and an output
-  that starts with `[TAMAM]` (for example `[TAMAM] 300 saniye sonra kapanıyor`) just before acting, then act. The
-  result must leave before a shutdown or restart, so the task does not stay `Running`.
+- Otherwise show a tray countdown of `delay` seconds with `message`, then act. The `result` says what really
+  happened (from 0.1.24; agents up to 0.1.23 sent `[TAMAM]` just before acting):
+  - `lock` and `logoff`: act first, then answer `exit_code` 0 with an output that starts with `[TAMAM]`, or the Win32
+    error code with `[HATA] …`.
+  - `shutdown` and `restart`: store `[TAMAM] …` (for example `[TAMAM] 300 saniye sonra kapanıyor`) in the result
+    queue without sending it, then run `shutdown.exe`. When it exits non-zero, replace the result with
+    `[HATA] shutdown.exe <code>: …` and that code (the Win32 code when it cannot start at all), send it at once and
+    leave the PC on. When it exits 0, send `[TAMAM]`; if it cannot leave before the PC goes down, it goes from the
+    result queue after the restart, so the task does not stay `Running`.
 
 **3. `user_message`.**
 
@@ -379,6 +386,7 @@ lists `power` and `message` in `server_info.features`.
 | `0` with `[TAMAM] …` | Completed | Done (or shown / read). |
 | -5 with `[REDDEDİLDİ] …` | Denied | Local capability off. |
 | -6 with `[REDDEDİLDİ] oturum açık kullanıcı yok` | Denied | Nobody signed in (logoff, lock, message). |
+| any other code with `[HATA] …` | Failed | The action failed: a Win32 error code (lock, logoff), `shutdown.exe`'s exit code (shutdown, restart) or -3 (agent error). The PC stays as it was. |
 | -8 | Denied | Set by the server only: the agent did not announce the feature and there is no fallback; nothing was sent. |
 
 On the wire -6 now means "nobody signed in"; the Windows agent's internal duplicate code -6 is never sent.
